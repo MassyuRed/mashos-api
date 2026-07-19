@@ -7738,3 +7738,1699 @@ __all__ += [
     "render_step11_rc0029_experiment_surface",
     "validate_step11_rc0029_experiment_surface_candidate",
 ]
+
+
+# ---------------------------------------------------------------------------
+# rc0030 experiment-only Surface planning (append-only P2 forward owner)
+# ---------------------------------------------------------------------------
+
+STEP11_RC0030_EXPERIMENT_CANDIDATE_VERSION_ID = "nls_v3_rc_0030_experiment"
+STEP11_RC0030_EXPERIMENT_PLAN_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11.rc0030_surface_realization_plan.v1"
+)
+STEP11_RC0030_EXPERIMENT_RENDERED_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11.rc0030_experiment_rendered_surface.v1"
+)
+STEP11_RC0030_EXPERIMENT_CANDIDATE_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11.rc0030_experiment_candidate.v1"
+)
+
+_STEP11_RC0030_CANDIDATE_MAX = 12
+_STEP11_RC0030_REPLAN_MAX = 1
+_STEP11_RC0030_OWNER_MAX = 24
+_STEP11_RC0030_RECEPTION_MOVE_MAX = 3
+_STEP11_RC0030_RECEPTION_SENTENCE_MAX = 3
+_STEP11_RC0030_RECEPTION_MOVES_PER_SENTENCE_MAX = 2
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0030BaseBodyExactReuseBinding:
+    """Body-free commitment produced outside the forward owner.
+
+    P2 accepts and schedules these values but never creates one by parsing the
+    base body.  The disconnected P3/P4 composition must bind the three hashes
+    to an independently produced base-body match before granting reuse credit.
+    """
+
+    source_atom_id: str
+    semantic_family: str
+    base_parsed_atom_id: str
+    base_obligation_id: str
+    match_basis: str
+    base_surface_sha256: str
+    source_authority_sha256: str
+    independent_binding_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0030ObservationChunkAssignment:
+    sentence_group_ordinal: int
+    chunk_ordinal: int
+    source_unit_ids: tuple[str, ...]
+    source_atom_ids: tuple[str, ...]
+    visible_clause_count: int
+    complexity_load: int
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0030SemanticChunkBinding:
+    source_atom_id: str
+    semantic_family: str
+    source_owner_ids: tuple[str, ...]
+    owner_base_nucleus_ids: tuple[str, ...]
+    owner_sentence_group_ordinals: tuple[int, ...]
+    sentence_group_ordinal: int
+    chunk_ordinal: int
+    clause_unit_id: str
+    cross_group_bridge: bool
+    direction: str
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0030ReceptionPredicationBinding:
+    reception_line_ordinal: int
+    sentence_group_ordinal: int
+    chunk_ordinal: int
+    source_base_binding_id: str | None
+    source_reception_opportunity_id: str
+    reception_act: str
+    source_target_owner_ids: tuple[str, ...]
+    supporting_source_owner_ids: tuple[str, ...]
+    target_referent_texts: tuple[str, ...]
+    supporting_referent_texts: tuple[str, ...]
+    association_basis: str
+    additional_clause: bool
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class Step11Rc0030SurfaceRealizationPlan:
+    schema_version: str
+    candidate_version_id: str
+    realization_plan_id: str
+    source_base_candidate_id: str
+    source_base_realization_plan_id: str
+    source_successor_snapshot_sha256: str
+    source_lexical_atom_specs_sha256: str
+    source_clause_ready_lexical_specs_sha256: str
+    surface_catalog_sha256: str
+    base_leading_observation_unit_id: str
+    structure_only_unit_ids: tuple[str, ...]
+    observation_chunk_assignments: tuple[
+        Step11Rc0030ObservationChunkAssignment, ...
+    ]
+    semantic_chunk_bindings: tuple[Step11Rc0030SemanticChunkBinding, ...]
+    base_body_exact_reuse_bindings: tuple[
+        Step11Rc0030BaseBodyExactReuseBinding, ...
+    ]
+    reception_predication_bindings: tuple[
+        Step11Rc0030ReceptionPredicationBinding, ...
+    ]
+    maximum_observation_clauses_per_sentence: int
+    maximum_visible_clauses_per_grammatical_sentence: int
+    maximum_grammatical_complexity_load: int
+    maximum_repeated_joiner_per_group: int
+    peak_observation_clause_count: int
+    peak_grammatical_clause_count: int
+    peak_grammatical_complexity_load: int
+    peak_group_repeated_joiner_count: int
+    body_free: bool = True
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class Step11Rc0030ExperimentRenderedSurface:
+    schema_version: str
+    utf8_bytes: bytes
+    sha256: str
+    observation_group_count: int
+    semantic_atom_count: int
+    exact_reuse_count: int
+    reception_predication_count: int
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class Step11Rc0030ExperimentSurfaceCandidate:
+    schema_version: str
+    candidate_version_id: str
+    candidate_id: str
+    base_candidate: Step11NaturalSurfaceCandidate
+    rendered_surface: Step11Rc0030ExperimentRenderedSurface
+    surface_realization_plan: Step11Rc0030SurfaceRealizationPlan
+    successor_snapshot_sha256: str
+    lexical_atom_specs_sha256: str
+    experiment_catalog_sha256: str
+    natural_handle_specs: Any
+    owner_registry: tuple[str, ...]
+    construction_atoms: tuple[Step11Rc0028ExperimentConstructionAtom, ...]
+    relation_atoms: tuple[Step11Rc0028ExperimentRelationAtom, ...]
+    semantic_link_atoms: tuple[Step11Rc0028ExperimentSemanticLinkAtom, ...]
+    explicit_unknown_atoms: tuple[Step11Rc0028ExperimentExplicitUnknownAtom, ...]
+    reception_bindings: tuple[Step11Rc0030ReceptionPredicationBinding, ...]
+    semantic_coverage_authorized: bool
+    replan_count: int
+    experimental_only: bool = True
+    private_body_full: bool = True
+    shareable: bool = False
+    runtime_connected: bool = False
+
+    @property
+    def final_utf8_bytes(self) -> bytes:
+        return self.rendered_surface.utf8_bytes
+
+
+def _step11_rc0030_exact_reuse_material(
+    value: Step11Rc0030BaseBodyExactReuseBinding,
+) -> dict[str, Any]:
+    return {
+        "source_atom_id": value.source_atom_id,
+        "semantic_family": value.semantic_family,
+        "base_parsed_atom_id": value.base_parsed_atom_id,
+        "base_obligation_id": value.base_obligation_id,
+        "match_basis": value.match_basis,
+        "base_surface_sha256": value.base_surface_sha256,
+        "source_authority_sha256": value.source_authority_sha256,
+        "independent_binding_sha256": value.independent_binding_sha256,
+    }
+
+
+def _step11_rc0030_chunk_assignment_material(
+    value: Step11Rc0030ObservationChunkAssignment,
+) -> dict[str, Any]:
+    return {
+        "sentence_group_ordinal": value.sentence_group_ordinal,
+        "chunk_ordinal": value.chunk_ordinal,
+        "source_unit_ids": list(value.source_unit_ids),
+        "source_atom_ids": list(value.source_atom_ids),
+        "visible_clause_count": value.visible_clause_count,
+        "complexity_load": value.complexity_load,
+    }
+
+
+def _step11_rc0030_semantic_binding_material(
+    value: Step11Rc0030SemanticChunkBinding,
+) -> dict[str, Any]:
+    return {
+        "source_atom_id": value.source_atom_id,
+        "semantic_family": value.semantic_family,
+        "source_owner_ids": list(value.source_owner_ids),
+        "owner_base_nucleus_ids": list(value.owner_base_nucleus_ids),
+        "owner_sentence_group_ordinals": list(
+            value.owner_sentence_group_ordinals
+        ),
+        "sentence_group_ordinal": value.sentence_group_ordinal,
+        "chunk_ordinal": value.chunk_ordinal,
+        "clause_unit_id": value.clause_unit_id,
+        "cross_group_bridge": value.cross_group_bridge,
+        "direction": value.direction,
+    }
+
+
+def _step11_rc0030_reception_binding_material(
+    value: Step11Rc0030ReceptionPredicationBinding,
+) -> dict[str, Any]:
+    return {
+        "reception_line_ordinal": value.reception_line_ordinal,
+        "sentence_group_ordinal": value.sentence_group_ordinal,
+        "chunk_ordinal": value.chunk_ordinal,
+        "source_base_binding_id": value.source_base_binding_id,
+        "source_reception_opportunity_id": (
+            value.source_reception_opportunity_id
+        ),
+        "reception_act": value.reception_act,
+        "source_target_owner_ids": list(value.source_target_owner_ids),
+        "supporting_source_owner_ids": list(
+            value.supporting_source_owner_ids
+        ),
+        "association_basis": value.association_basis,
+        "additional_clause": value.additional_clause,
+    }
+
+
+def step11_rc0030_surface_realization_plan_material(
+    value: Step11Rc0030SurfaceRealizationPlan,
+    *,
+    include_id: bool = True,
+) -> dict[str, Any]:
+    result = {
+        "schema_version": value.schema_version,
+        "candidate_version_id": value.candidate_version_id,
+        "realization_plan_id": value.realization_plan_id,
+        "source_base_candidate_id": value.source_base_candidate_id,
+        "source_base_realization_plan_id": (
+            value.source_base_realization_plan_id
+        ),
+        "source_successor_snapshot_sha256": (
+            value.source_successor_snapshot_sha256
+        ),
+        "source_lexical_atom_specs_sha256": (
+            value.source_lexical_atom_specs_sha256
+        ),
+        "source_clause_ready_lexical_specs_sha256": (
+            value.source_clause_ready_lexical_specs_sha256
+        ),
+        "surface_catalog_sha256": value.surface_catalog_sha256,
+        "base_leading_observation_unit_id": (
+            value.base_leading_observation_unit_id
+        ),
+        "structure_only_unit_ids": list(value.structure_only_unit_ids),
+        "observation_chunk_assignments": [
+            _step11_rc0030_chunk_assignment_material(row)
+            for row in value.observation_chunk_assignments
+        ],
+        "semantic_chunk_bindings": [
+            _step11_rc0030_semantic_binding_material(row)
+            for row in value.semantic_chunk_bindings
+        ],
+        "base_body_exact_reuse_bindings": [
+            _step11_rc0030_exact_reuse_material(row)
+            for row in value.base_body_exact_reuse_bindings
+        ],
+        "reception_predication_bindings": [
+            _step11_rc0030_reception_binding_material(row)
+            for row in value.reception_predication_bindings
+        ],
+        "maximum_observation_clauses_per_sentence": (
+            value.maximum_observation_clauses_per_sentence
+        ),
+        "maximum_visible_clauses_per_grammatical_sentence": (
+            value.maximum_visible_clauses_per_grammatical_sentence
+        ),
+        "maximum_grammatical_complexity_load": (
+            value.maximum_grammatical_complexity_load
+        ),
+        "maximum_repeated_joiner_per_group": (
+            value.maximum_repeated_joiner_per_group
+        ),
+        "peak_observation_clause_count": value.peak_observation_clause_count,
+        "peak_grammatical_clause_count": value.peak_grammatical_clause_count,
+        "peak_grammatical_complexity_load": (
+            value.peak_grammatical_complexity_load
+        ),
+        "peak_group_repeated_joiner_count": (
+            value.peak_group_repeated_joiner_count
+        ),
+        "body_free": value.body_free,
+    }
+    if not include_id:
+        result.pop("realization_plan_id")
+    return result
+
+
+def _step11_rc0030_catalog() -> tuple[dict[str, Any], str]:
+    owner = __import__(
+        "emlis_ai_step11_rc0030_experiment_surface_catalog_v3",
+        fromlist=(
+            "STEP11_RC0030_EXPERIMENT_SURFACE_CATALOG",
+            "STEP11_RC0030_EXPERIMENT_SURFACE_CATALOG_SHA256",
+            "validate_step11_rc0030_experiment_surface_catalog",
+        ),
+    )
+    catalog = owner.STEP11_RC0030_EXPERIMENT_SURFACE_CATALOG
+    issues = owner.validate_step11_rc0030_experiment_surface_catalog(catalog)
+    if issues:
+        raise Step11NaturalSurfaceError(issues[0])
+    return catalog, owner.STEP11_RC0030_EXPERIMENT_SURFACE_CATALOG_SHA256
+
+
+def _step11_rc0030_lexemes(value: Any) -> tuple[Any, ...]:
+    rows = getattr(value, "lexemes", None)
+    if type(rows) is not tuple:
+        rows = getattr(value, "referents", None)
+    if type(rows) is not tuple:
+        rows = getattr(value, "handles", None)
+    if type(rows) is not tuple or not rows:
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0030_CLAUSE_READY_LEXEME_SET_INVALID"
+        )
+    return rows
+
+
+def _step11_rc0030_atom_records(
+    *,
+    lexemes: Sequence[Any],
+    constructions: Sequence[Step11Rc0028ExperimentConstructionAtom],
+    relations: Sequence[Step11Rc0028ExperimentRelationAtom],
+    links: Sequence[Step11Rc0028ExperimentSemanticLinkAtom],
+    unknowns: Sequence[Step11Rc0028ExperimentExplicitUnknownAtom],
+) -> tuple[tuple[str, str, tuple[str, ...], tuple[int, ...], str], ...]:
+    by_ordinal = {row.source_owner_ordinal: row for row in lexemes}
+    if len(by_ordinal) != len(lexemes):
+        raise Step11NaturalSurfaceError("STEP11_RC0030_OWNER_REGISTRY_INVALID")
+
+    def owners(ordinals: Sequence[int]) -> tuple[tuple[str, ...], tuple[int, ...]]:
+        unique = tuple(dict.fromkeys(ordinals))
+        try:
+            return (
+                tuple(by_ordinal[value].source_owner_id for value in unique),
+                unique,
+            )
+        except KeyError as exc:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0030_OWNER_REGISTRY_INVALID"
+            ) from exc
+
+    result: list[tuple[str, str, tuple[str, ...], tuple[int, ...], str]] = []
+    for row in constructions:
+        owner_ids, ordinals = owners(
+            (_step11_rc0029_construction_owner_ordinal(row),)
+        )
+        result.append(
+            (row.construction_instance_id, "construction", owner_ids, ordinals, "")
+        )
+    for row in relations:
+        owner_ids, ordinals = owners(
+            (row.from_owner_ordinal, row.to_owner_ordinal)
+        )
+        result.append(
+            (
+                row.experiment_relation_id,
+                "relation",
+                owner_ids,
+                ordinals,
+                row.direction,
+            )
+        )
+    for row in links:
+        owner_ids, ordinals = owners(
+            (row.from_owner_ordinal, row.to_owner_ordinal)
+        )
+        result.append(
+            (
+                row.source_semantic_link_id,
+                "semantic_link",
+                owner_ids,
+                ordinals,
+                row.direction,
+            )
+        )
+    for row in unknowns:
+        owner_ids, ordinals = owners(row.affected_owner_ordinals)
+        result.append(
+            (row.source_unknown_id, "explicit_unknown", owner_ids, ordinals, "")
+        )
+    if len({row[0] for row in result}) != len(result):
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0030_SOURCE_ATOM_ID_COLLISION"
+        )
+    return tuple(result)
+
+
+def _step11_rc0030_owner_positions(
+    base_candidate: Step11NaturalSurfaceCandidate,
+    lexemes: Sequence[Any],
+) -> dict[int, tuple[str, str, int, int]]:
+    base_plan = base_candidate.surface_ast.surface_realization_plan
+    if type(base_plan) is not Step11SurfaceRealizationPlan:
+        raise Step11NaturalSurfaceError("STEP11_RC0030_BASE_PLAN_INVALID")
+    group_index = {
+        group_id: index
+        for index, group_id in enumerate(
+            base_plan.observation_sentence_group_ids, start=1
+        )
+    }
+    observation_units = tuple(
+        row for row in base_plan.units if row.section_role == "observation"
+    )
+    references = tuple(base_candidate.surface_ast.nucleus_surface_references)
+    positions: dict[int, tuple[str, str, int, int]] = {}
+    for lexeme in lexemes:
+        nucleus_id = str(lexeme.base_source_nucleus_id)
+        owned_units = tuple(
+            row for row in observation_units if nucleus_id in row.owner_nucleus_ids
+        )
+        owned_group_ids = {
+            row.assigned_sentence_group_id for row in owned_units
+        }
+        lexical_group_ids = {
+            str(value)
+            for value in getattr(
+                lexeme, "base_observation_sentence_group_ids", ()
+            )
+            if str(value) in group_index
+        }
+        obligation_ids = {
+            str(value)
+            for value in getattr(lexeme, "owner_obligation_ids", ())
+        }
+        obligation_owned_units = tuple(
+            row
+            for row in owned_units
+            if obligation_ids & {str(value) for value in row.owner_obligation_ids}
+        )
+        matching_refs = tuple(
+            row for row in references if nucleus_id in row.nucleus_ids
+        )
+        reference_group_ids = {
+            row.introduction_sentence_group_id
+            for row in matching_refs
+            if row.introduction_sentence_group_id in group_index
+        }
+        owned_lexical_group_ids = owned_group_ids & lexical_group_ids
+        obligation_overlap_by_group = {
+            group_id: len(
+                obligation_ids
+                & {
+                    str(obligation_id)
+                    for row in obligation_owned_units
+                    if row.assigned_sentence_group_id == group_id
+                    for obligation_id in row.owner_obligation_ids
+                }
+            )
+            for group_id in owned_lexical_group_ids
+        }
+        maximum_obligation_overlap = max(
+            obligation_overlap_by_group.values(), default=0
+        )
+        obligation_preferred_group_ids = {
+            group_id
+            for group_id, overlap in obligation_overlap_by_group.items()
+            if overlap == maximum_obligation_overlap and overlap > 0
+        }
+        if len(owned_group_ids) == 1:
+            group_id = next(iter(owned_group_ids))
+            candidates = tuple(
+                row
+                for row in owned_units
+                if row.assigned_sentence_group_id == group_id
+            )
+        elif len(owned_lexical_group_ids) == 1:
+            group_id = next(iter(owned_lexical_group_ids))
+            candidates = tuple(
+                row
+                for row in owned_units
+                if row.assigned_sentence_group_id == group_id
+            )
+        elif len(obligation_preferred_group_ids) == 1:
+            # When one nucleus supports several base groups, the lexeme's
+            # immutable obligation set selects the group with the uniquely
+            # strongest owner overlap.  A tied maximum remains unresolved;
+            # source order is not promoted into semantic authority.
+            group_id = next(iter(obligation_preferred_group_ids))
+            candidates = tuple(
+                row
+                for row in obligation_owned_units
+                if row.assigned_sentence_group_id == group_id
+            )
+        elif len(reference_group_ids & owned_lexical_group_ids) == 1:
+            # A nucleus may legitimately support units in more than one base
+            # group.  Its immutable rc0027 reference registry still owns one
+            # introduction group; use that existing witness only when it
+            # selects exactly one of the lexically authorized owner groups.
+            group_id = next(iter(reference_group_ids & owned_lexical_group_ids))
+            candidates = tuple(
+                row
+                for row in owned_units
+                if row.assigned_sentence_group_id == group_id
+            )
+        elif not owned_units and len(matching_refs) == 1:
+            group_id = matching_refs[0].introduction_sentence_group_id
+            candidates = tuple(
+                row
+                for row in observation_units
+                if row.assigned_sentence_group_id == group_id
+                and matching_refs[0].reference_ordinal
+                in row.introduced_reference_ordinals
+            )
+        else:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0030_OWNER_BASE_GROUP_UNRESOLVED"
+            )
+        group_ordinal = group_index.get(group_id)
+        if group_ordinal is None:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0030_OWNER_BASE_GROUP_UNRESOLVED"
+            )
+        if not candidates:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0030_OWNER_BASE_CHUNK_UNRESOLVED"
+            )
+        unit = min(
+            candidates,
+            key=lambda row: (
+                row.assigned_grammatical_chunk_ordinal,
+                row.source_order,
+                row.semantic_unit_id,
+            ),
+        )
+        positions[int(lexeme.source_owner_ordinal)] = (
+            str(lexeme.source_owner_id),
+            nucleus_id,
+            group_ordinal,
+            unit.assigned_grammatical_chunk_ordinal,
+        )
+    if len(positions) != len(lexemes) or len(positions) > _STEP11_RC0030_OWNER_MAX:
+        raise Step11NaturalSurfaceError("STEP11_RC0030_OWNER_BOUND_EXCEEDED")
+    return positions
+
+
+def _step11_rc0030_reception_predications(
+    base_candidate: Step11NaturalSurfaceCandidate,
+    *,
+    successor_snapshot: Any,
+    lexemes: Sequence[Any],
+) -> tuple[Step11Rc0030ReceptionPredicationBinding, ...]:
+    base_plan = base_candidate.surface_ast.surface_realization_plan
+    if type(base_plan) is not Step11SurfaceRealizationPlan:
+        raise Step11NaturalSurfaceError("STEP11_RC0030_BASE_PLAN_INVALID")
+    group_count = len(base_plan.reception_sentence_group_ids)
+    if not 1 <= group_count <= _STEP11_RC0030_RECEPTION_SENTENCE_MAX:
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0030_RECEPTION_GROUP_BOUND_INVALID"
+        )
+    nuclei = tuple(successor_snapshot.base_snapshot.nuclei)
+    actual_by_source = {
+        str(row.source_id): str(row.actual_source_id) for row in nuclei
+    }
+    by_owner = {str(row.source_owner_id): row for row in lexemes}
+    base_bindings = tuple(
+        base_candidate.surface_ast.reception_antecedent_bindings
+    )
+    exact: dict[str, tuple[int, Any]] = {}
+    for line_ordinal, binding in enumerate(base_bindings, start=1):
+        for opportunity_id in binding.source_reception_opportunity_ids:
+            key = str(opportunity_id)
+            if key in exact:
+                raise Step11NaturalSurfaceError(
+                    "STEP11_RC0030_RECEPTION_ASSOCIATION_AMBIGUOUS"
+                )
+            exact[key] = (line_ordinal, binding)
+    opportunities = tuple(
+        row
+        for row in successor_snapshot.base_snapshot.reception_opportunities
+        if row.retention == "required" or row.safety_required is True
+    )
+    if not 1 <= len(opportunities) <= _STEP11_RC0030_RECEPTION_MOVE_MAX:
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0030_RECEPTION_MOVE_BOUND_INVALID"
+        )
+    loads = {ordinal: 0 for ordinal in range(1, group_count + 1)}
+    prepared: list[tuple[Any, int, Any | None, str]] = []
+    for opportunity in opportunities:
+        opportunity_id = str(opportunity.source_id)
+        association = exact.get(opportunity_id)
+        if association is not None:
+            ordinal, binding = association
+            if not 1 <= ordinal <= group_count:
+                raise Step11NaturalSurfaceError(
+                    "STEP11_RC0030_RECEPTION_ASSOCIATION_INVALID"
+                )
+            basis = "exact_base_opportunity_id"
+        else:
+            available = tuple(
+                ordinal
+                for ordinal in range(1, group_count + 1)
+                if loads[ordinal]
+                < _STEP11_RC0030_RECEPTION_MOVES_PER_SENTENCE_MAX
+            )
+            if not available:
+                raise Step11NaturalSurfaceError(
+                    "STEP11_RC0030_RECEPTION_DENSITY_UNSATISFIABLE"
+                )
+            ordinal = min(available, key=lambda item: (loads[item], item))
+            binding = None
+            basis = "required_opportunity_bounded_schedule"
+        loads[ordinal] += 1
+        if loads[ordinal] > _STEP11_RC0030_RECEPTION_MOVES_PER_SENTENCE_MAX:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0030_RECEPTION_DENSITY_UNSATISFIABLE"
+            )
+        prepared.append((opportunity, ordinal, binding, basis))
+
+    rows: list[Step11Rc0030ReceptionPredicationBinding] = []
+    ordinal_counts = {ordinal: 0 for ordinal in loads}
+    for opportunity, ordinal, binding, basis in prepared:
+        try:
+            target_ids = tuple(
+                actual_by_source[str(value)]
+                for value in opportunity.target_nucleus_ids
+            )
+            support_ids = tuple(
+                actual_by_source[str(value)]
+                for value in opportunity.support_nucleus_ids
+            )
+            target_texts = tuple(by_owner[value].referent_text for value in target_ids)
+            support_texts = tuple(by_owner[value].referent_text for value in support_ids)
+        except KeyError as exc:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0030_RECEPTION_OWNER_UNRESOLVED"
+            ) from exc
+        if not target_ids or len(set(target_ids)) != len(target_ids):
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0030_RECEPTION_TARGET_INVALID"
+            )
+        ordinal_counts[ordinal] += 1
+        rows.append(
+            Step11Rc0030ReceptionPredicationBinding(
+                reception_line_ordinal=ordinal,
+                sentence_group_ordinal=ordinal,
+                chunk_ordinal=ordinal_counts[ordinal],
+                source_base_binding_id=(
+                    str(binding.binding_id) if binding is not None else None
+                ),
+                source_reception_opportunity_id=str(opportunity.source_id),
+                reception_act=str(opportunity.reception_act),
+                source_target_owner_ids=target_ids,
+                supporting_source_owner_ids=support_ids,
+                target_referent_texts=target_texts,
+                supporting_referent_texts=support_texts,
+                association_basis=basis,
+                additional_clause=binding is None,
+            )
+        )
+    return tuple(rows)
+
+
+def build_step11_rc0030_surface_realization_plan(
+    base_candidate: Step11NaturalSurfaceCandidate,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+    clause_ready_lexical_specs: Any,
+    construction_atoms: Sequence[Step11Rc0028ExperimentConstructionAtom],
+    relation_atoms: Sequence[Step11Rc0028ExperimentRelationAtom],
+    semantic_link_atoms: Sequence[Step11Rc0028ExperimentSemanticLinkAtom],
+    explicit_unknown_atoms: Sequence[Step11Rc0028ExperimentExplicitUnknownAtom],
+    reception_predications: Sequence[Step11Rc0030ReceptionPredicationBinding],
+    base_body_exact_reuse_bindings: Sequence[
+        Step11Rc0030BaseBodyExactReuseBinding
+    ] = (),
+) -> Step11Rc0030SurfaceRealizationPlan:
+    base_plan = base_candidate.surface_ast.surface_realization_plan
+    if type(base_plan) is not Step11SurfaceRealizationPlan:
+        raise Step11NaturalSurfaceError("STEP11_RC0030_BASE_PLAN_INVALID")
+    lexemes = _step11_rc0030_lexemes(clause_ready_lexical_specs)
+    positions = _step11_rc0030_owner_positions(base_candidate, lexemes)
+    records = _step11_rc0030_atom_records(
+        lexemes=lexemes,
+        constructions=construction_atoms,
+        relations=relation_atoms,
+        links=semantic_link_atoms,
+        unknowns=explicit_unknown_atoms,
+    )
+    family_by_id = {row[0]: row[1] for row in records}
+    reuse = tuple(base_body_exact_reuse_bindings)
+    if any(type(row) is not Step11Rc0030BaseBodyExactReuseBinding for row in reuse):
+        raise Step11NaturalSurfaceError("STEP11_RC0030_BASE_REUSE_TYPE_INVALID")
+    if len({row.source_atom_id for row in reuse}) != len(reuse):
+        raise Step11NaturalSurfaceError("STEP11_RC0030_BASE_REUSE_DUPLICATE")
+    exact_match_basis_by_family = {
+        "construction": "construction_instance_role_layout_exact",
+        "relation": "relation_id_endpoint_direction_type_exact",
+        "semantic_link": "semantic_link_id_endpoint_direction_type_exact",
+        "explicit_unknown": "unknown_id_dimension_exact_target",
+    }
+    base_surface_sha256 = hashlib.sha256(
+        base_candidate.final_utf8_bytes
+    ).hexdigest()
+    source_authority_sha256 = str(
+        successor_snapshot.relation_construction_authority.authority_sha256
+    )
+    for row in reuse:
+        if (
+            family_by_id.get(row.source_atom_id) != row.semantic_family
+            or not row.base_parsed_atom_id
+            or not row.base_obligation_id
+            or row.match_basis
+            != exact_match_basis_by_family.get(row.semantic_family)
+            or row.base_surface_sha256 != base_surface_sha256
+            or row.source_authority_sha256 != source_authority_sha256
+            or any(
+                _SHA_RE.fullmatch(value) is None
+                or value == "0" * 64
+                for value in (
+                    row.base_surface_sha256,
+                    row.source_authority_sha256,
+                    row.independent_binding_sha256,
+                )
+            )
+        ):
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0030_BASE_REUSE_COMMITMENT_INVALID"
+            )
+    reused_ids = {row.source_atom_id for row in reuse}
+    pending: list[
+        tuple[
+            str,
+            str,
+            tuple[str, ...],
+            tuple[str, ...],
+            tuple[int, ...],
+            int,
+            int,
+            bool,
+            str,
+        ]
+    ] = []
+    for atom_id, family, owner_ids, owner_ordinals, direction in records:
+        if atom_id in reused_ids:
+            continue
+        try:
+            owner_positions = tuple(positions[value] for value in owner_ordinals)
+        except KeyError as exc:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0030_OWNER_BASE_GROUP_UNRESOLVED"
+            ) from exc
+        group_ordinals = tuple(row[2] for row in owner_positions)
+        target_group = max(group_ordinals)
+        target_chunks = tuple(
+            row[3] for row in owner_positions if row[2] == target_group
+        )
+        if not target_chunks:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0030_OWNER_BASE_CHUNK_UNRESOLVED"
+            )
+        target_chunk = max(target_chunks)
+        pending.append(
+            (
+                atom_id,
+                family,
+                owner_ids,
+                tuple(row[1] for row in owner_positions),
+                group_ordinals,
+                target_group,
+                target_chunk,
+                len(set(group_ordinals)) > 1,
+                direction,
+            )
+        )
+    group_ids = tuple(base_plan.observation_sentence_group_ids)
+    group_index = {value: index for index, value in enumerate(group_ids, start=1)}
+    base_units = tuple(
+        row for row in base_plan.units if row.section_role == "observation"
+    )
+    by_chunk: dict[tuple[int, int], list[Step11SurfaceRealizationUnit]] = {}
+    for row in base_units:
+        key = (
+            group_index[row.assigned_sentence_group_id],
+            row.assigned_grammatical_chunk_ordinal,
+        )
+        by_chunk.setdefault(key, []).append(row)
+    base_unit_count_by_group = {
+        group_ordinal: sum(key[0] == group_ordinal for key in by_chunk for _row in by_chunk[key])
+        for group_ordinal in range(1, len(group_ids) + 1)
+    }
+    chunk_clause_count = {
+        key: len(rows) for key, rows in by_chunk.items()
+    }
+    chunk_complexity_load = {
+        key: sum(row.body_free_complexity_weight for row in rows)
+        for key, rows in by_chunk.items()
+    }
+    structure_count_by_group = {
+        group_ordinal: 0 for group_ordinal in range(1, len(group_ids) + 1)
+    }
+
+    # Pack at most two atom clauses into one structure unit.  Packing is
+    # deterministic and never changes an atom's owner group; a cross-group
+    # atom stays at or after its later endpoint's introduction chunk.
+    pending_by_group: dict[int, list[tuple[Any, ...]]] = {}
+    for row in pending:
+        pending_by_group.setdefault(int(row[5]), []).append(row)
+    packed: list[tuple[int, int, str, tuple[tuple[Any, ...], ...], int]] = []
+    for group_ordinal in sorted(pending_by_group):
+        ordered_rows = sorted(
+            pending_by_group[group_ordinal],
+            key=lambda row: (row[6], row[1], row[2], row[0]),
+        )
+        raw_packs: list[list[tuple[Any, ...]]] = []
+        for row in ordered_rows:
+            placed = False
+            for pack in raw_packs:
+                owners = {
+                    owner_id
+                    for item in (*pack, row)
+                    for owner_id in item[2]
+                }
+                if len(pack) < 2 and len(owners) <= base_plan.maximum_grammatical_complexity_load:
+                    pack.append(row)
+                    placed = True
+                    break
+            if not placed:
+                raw_packs.append([row])
+        for pack_rows in raw_packs:
+            if len(pack_rows) > 2:
+                raise Step11NaturalSurfaceError(
+                    "STEP11_RC0030_STRUCTURE_UNIT_ATOM_BOUND_EXCEEDED"
+                )
+            owner_count = len(
+                {
+                    owner_id
+                    for item in pack_rows
+                    for owner_id in item[2]
+                }
+            )
+            # Up to two nominal semantic items share one finite pack
+            # predicate.  The rendered unit is therefore one grammatical
+            # clause, while complexity still accounts for both atom count
+            # and every distinct visible owner.
+            pack_clause_count = 1
+            pack_complexity_load = max(owner_count, len(pack_rows))
+            preferred_chunk = max(int(item[6]) for item in pack_rows)
+            tail_chunk = max(
+                (
+                    key[1]
+                    for key in chunk_clause_count
+                    if key[0] == group_ordinal
+                ),
+                default=0,
+            )
+            if tail_chunk < preferred_chunk:
+                raise Step11NaturalSurfaceError(
+                    "STEP11_RC0030_OWNER_BASE_CHUNK_UNRESOLVED"
+                )
+            if (
+                chunk_clause_count[(group_ordinal, tail_chunk)]
+                + pack_clause_count
+                <= base_plan.maximum_visible_clauses_per_grammatical_sentence
+                and chunk_complexity_load[(group_ordinal, tail_chunk)]
+                + pack_complexity_load
+                <= base_plan.maximum_grammatical_complexity_load
+            ):
+                chosen_chunk = tail_chunk
+            else:
+                chosen_chunk = tail_chunk + 1
+                chunk_clause_count[(group_ordinal, chosen_chunk)] = 0
+                chunk_complexity_load[(group_ordinal, chosen_chunk)] = 0
+                by_chunk[(group_ordinal, chosen_chunk)] = []
+            if (
+                base_unit_count_by_group[group_ordinal]
+                + structure_count_by_group[group_ordinal]
+                + 1
+                > base_plan.maximum_observation_clauses_per_sentence
+                or chunk_clause_count[(group_ordinal, chosen_chunk)]
+                + pack_clause_count
+                > base_plan.maximum_visible_clauses_per_grammatical_sentence
+                or chunk_complexity_load[(group_ordinal, chosen_chunk)]
+                + pack_complexity_load
+                > base_plan.maximum_grammatical_complexity_load
+            ):
+                raise Step11NaturalSurfaceError(
+                    "STEP11_RC0030_SURFACE_PLAN_DENSITY_UNSATISFIABLE"
+                )
+            unit_id = "nls3s11rc0030unit_" + artifact_sha256(
+                {
+                    "source_atom_ids": [item[0] for item in pack_rows],
+                    "sentence_group_ordinal": group_ordinal,
+                    "chunk_ordinal": chosen_chunk,
+                }
+            )[:16]
+            chunk_clause_count[(group_ordinal, chosen_chunk)] += (
+                pack_clause_count
+            )
+            chunk_complexity_load[(group_ordinal, chosen_chunk)] += (
+                pack_complexity_load
+            )
+            structure_count_by_group[group_ordinal] += 1
+            packed.append(
+                (
+                    group_ordinal,
+                    chosen_chunk,
+                    unit_id,
+                    tuple(pack_rows),
+                    pack_complexity_load,
+                )
+            )
+
+    bindings: list[Step11Rc0030SemanticChunkBinding] = []
+    structure_by_chunk: dict[
+        tuple[int, int], list[tuple[str, tuple[tuple[Any, ...], ...], int]]
+    ] = {}
+    for group_ordinal, chunk_ordinal, unit_id, pack_rows, owner_count in packed:
+        structure_by_chunk.setdefault((group_ordinal, chunk_ordinal), []).append(
+            (unit_id, pack_rows, owner_count)
+        )
+        for row in pack_rows:
+            bindings.append(
+                Step11Rc0030SemanticChunkBinding(
+                    source_atom_id=str(row[0]),
+                    semantic_family=str(row[1]),
+                    source_owner_ids=tuple(row[2]),
+                    owner_base_nucleus_ids=tuple(row[3]),
+                    owner_sentence_group_ordinals=tuple(row[4]),
+                    sentence_group_ordinal=group_ordinal,
+                    chunk_ordinal=chunk_ordinal,
+                    clause_unit_id=unit_id,
+                    cross_group_bridge=bool(row[7]),
+                    direction=str(row[8]),
+                )
+            )
+    bindings.sort(
+        key=lambda row: (
+            row.sentence_group_ordinal,
+            row.chunk_ordinal,
+            row.clause_unit_id,
+            row.semantic_family,
+            row.source_atom_id,
+        )
+    )
+    if len(bindings) + len(reuse) != len(records):
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0030_SEMANTIC_ATOM_COVERAGE_INVALID"
+        )
+    assignments: list[Step11Rc0030ObservationChunkAssignment] = []
+    structure_ids: list[str] = []
+    for key in sorted(by_chunk):
+        rows = sorted(by_chunk[key], key=lambda item: item.source_order)
+        structure_rows = sorted(
+            structure_by_chunk.get(key, ()), key=lambda item: item[0]
+        )
+        semantic_unit_ids = tuple(row[0] for row in structure_rows)
+        structure_ids.extend(semantic_unit_ids)
+        assignments.append(
+            Step11Rc0030ObservationChunkAssignment(
+                sentence_group_ordinal=key[0],
+                chunk_ordinal=key[1],
+                source_unit_ids=(
+                    *(row.semantic_unit_id for row in rows),
+                    *semantic_unit_ids,
+                ),
+                source_atom_ids=tuple(
+                    str(atom[0])
+                    for _unit_id, pack_rows, _owner_count in structure_rows
+                    for atom in pack_rows
+                ),
+                visible_clause_count=(len(rows) + len(structure_rows)),
+                complexity_load=(
+                    sum(row.body_free_complexity_weight for row in rows)
+                    + sum(row[2] for row in structure_rows)
+                ),
+            )
+        )
+    group_clause_counts = tuple(
+        base_unit_count_by_group[group_ordinal]
+        + structure_count_by_group[group_ordinal]
+        for group_ordinal in sorted(base_unit_count_by_group)
+    )
+    grammatical_clause_counts = tuple(
+        row.visible_clause_count for row in assignments
+    )
+    grammatical_loads = tuple(row.complexity_load for row in assignments)
+    joiner_counts = tuple(
+        sum(
+            max(0, row.visible_clause_count - 1)
+            for row in assignments
+            if row.sentence_group_ordinal == group_ordinal
+        )
+        for group_ordinal in sorted(base_unit_count_by_group)
+    )
+    if (
+        max(group_clause_counts, default=0)
+        > base_plan.maximum_observation_clauses_per_sentence
+        or max(grammatical_clause_counts, default=0)
+        > base_plan.maximum_visible_clauses_per_grammatical_sentence
+        or max(grammatical_loads, default=0)
+        > base_plan.maximum_grammatical_complexity_load
+        or max(joiner_counts, default=0)
+        > base_plan.maximum_repeated_joiner_per_group
+    ):
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0030_SURFACE_PLAN_DENSITY_UNSATISFIABLE"
+        )
+    observation_ordered = tuple(
+        sorted(
+            base_units,
+            key=lambda row: (
+                group_index[row.assigned_sentence_group_id],
+                row.assigned_grammatical_chunk_ordinal,
+                row.source_order,
+            ),
+        )
+    )
+    if not observation_ordered:
+        raise Step11NaturalSurfaceError("STEP11_RC0030_BASE_LEADING_UNIT_INVALID")
+    base_leading_id = observation_ordered[0].semantic_unit_id
+    first_assignment = assignments[0] if assignments else None
+    if first_assignment is None or base_leading_id not in first_assignment.source_unit_ids:
+        raise Step11NaturalSurfaceError("STEP11_RC0030_BASE_LEADING_UNIT_INVALID")
+    catalog, catalog_sha256 = _step11_rc0030_catalog()
+    del catalog
+    provisional = Step11Rc0030SurfaceRealizationPlan(
+        schema_version=STEP11_RC0030_EXPERIMENT_PLAN_SCHEMA,
+        candidate_version_id=STEP11_RC0030_EXPERIMENT_CANDIDATE_VERSION_ID,
+        realization_plan_id="nls3s11rc0030plan_0000000000000000",
+        source_base_candidate_id=base_candidate.candidate_id,
+        source_base_realization_plan_id=base_plan.realization_plan_id,
+        source_successor_snapshot_sha256=(
+            successor_snapshot.experiment_snapshot_sha256
+        ),
+        source_lexical_atom_specs_sha256=lexical_atom_specs.specs_sha256,
+        source_clause_ready_lexical_specs_sha256=(
+            clause_ready_lexical_specs.specs_sha256
+        ),
+        surface_catalog_sha256=catalog_sha256,
+        base_leading_observation_unit_id=base_leading_id,
+        structure_only_unit_ids=tuple(structure_ids),
+        observation_chunk_assignments=tuple(assignments),
+        semantic_chunk_bindings=tuple(bindings),
+        base_body_exact_reuse_bindings=reuse,
+        reception_predication_bindings=tuple(reception_predications),
+        maximum_observation_clauses_per_sentence=(
+            base_plan.maximum_observation_clauses_per_sentence
+        ),
+        maximum_visible_clauses_per_grammatical_sentence=(
+            base_plan.maximum_visible_clauses_per_grammatical_sentence
+        ),
+        maximum_grammatical_complexity_load=(
+            base_plan.maximum_grammatical_complexity_load
+        ),
+        maximum_repeated_joiner_per_group=(
+            base_plan.maximum_repeated_joiner_per_group
+        ),
+        peak_observation_clause_count=max(group_clause_counts, default=0),
+        peak_grammatical_clause_count=max(
+            grammatical_clause_counts, default=0
+        ),
+        peak_grammatical_complexity_load=max(
+            grammatical_loads, default=0
+        ),
+        peak_group_repeated_joiner_count=max(joiner_counts, default=0),
+        body_free=True,
+    )
+    return replace(
+        provisional,
+        realization_plan_id=(
+            "nls3s11rc0030plan_"
+            + artifact_sha256(
+                step11_rc0030_surface_realization_plan_material(
+                    provisional, include_id=False
+                )
+            )[:16]
+        ),
+    )
+
+
+def _step11_rc0030_render_semantic_clause(
+    binding: Step11Rc0030SemanticChunkBinding,
+    *,
+    catalog: Mapping[str, Any],
+    referent_by_owner: Mapping[str, str],
+    construction_by_id: Mapping[str, Any],
+    relation_by_id: Mapping[str, Any],
+    link_by_id: Mapping[str, Any],
+    unknown_by_id: Mapping[str, Any],
+) -> str:
+    morphology = catalog["clause_morphology"]
+    try:
+        referents = tuple(referent_by_owner[item] for item in binding.source_owner_ids)
+    except KeyError as exc:
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0030_RENDER_OWNER_UNRESOLVED"
+        ) from exc
+    if binding.semantic_family == "construction":
+        atom = construction_by_id[binding.source_atom_id]
+        fragment = catalog["construction_clause_fragments"].get(
+            atom.construction_code
+        )
+        text = (
+            referents[0]
+            + morphology["construction_item_link"]
+            + str(fragment)
+        )
+    elif binding.semantic_family in {"relation", "semantic_link"}:
+        atom = (
+            relation_by_id[binding.source_atom_id]
+            if binding.semantic_family == "relation"
+            else link_by_id[binding.source_atom_id]
+        )
+        key = (
+            (atom.effective_relation_type if binding.semantic_family == "relation" else atom.relation_type)
+            + ":"
+            + atom.direction
+        )
+        registry = (
+            catalog["relation_clause_fragments"]
+            if binding.semantic_family == "relation"
+            else catalog["semantic_link_clause_fragments"]
+        )
+        fragment = registry.get(key)
+        if atom.direction == "bidirectional":
+            text = (
+                referents[0]
+                + morphology["symmetric_join"]
+                + referents[1]
+                + morphology["bidirectional_item_link"]
+                + str(fragment)
+            )
+        else:
+            text = (
+                referents[0]
+                + morphology["source_particle"]
+                + referents[1]
+                + morphology["directed_item_link"]
+                + str(fragment)
+            )
+    elif binding.semantic_family == "explicit_unknown":
+        atom = unknown_by_id[binding.source_atom_id]
+        fragment = catalog["unknown_clause_fragments"].get(atom.dimension)
+        text = (
+            morphology["symmetric_join"].join(referents)
+            + morphology["unknown_item_link"]
+            + str(fragment)
+        )
+    else:
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0030_SEMANTIC_FAMILY_INVALID"
+        )
+    if (
+        not text
+        or "\r" in text
+        or "\n" in text
+        or "「" in text
+        or "」" in text
+        or text.endswith(("。", "！", "？", "!", "?"))
+        or "None" in text
+    ):
+        raise Step11NaturalSurfaceError("STEP11_RC0030_SCHEMA_FREE_CLAUSE_INVALID")
+    return text
+
+
+def render_step11_rc0030_experiment_surface(
+    base_candidate: Step11NaturalSurfaceCandidate,
+    *,
+    clause_ready_lexical_specs: Any,
+    surface_realization_plan: Step11Rc0030SurfaceRealizationPlan,
+    construction_atoms: Sequence[Step11Rc0028ExperimentConstructionAtom],
+    relation_atoms: Sequence[Step11Rc0028ExperimentRelationAtom],
+    semantic_link_atoms: Sequence[Step11Rc0028ExperimentSemanticLinkAtom],
+    explicit_unknown_atoms: Sequence[Step11Rc0028ExperimentExplicitUnknownAtom],
+    reception_predications: Sequence[Step11Rc0030ReceptionPredicationBinding],
+) -> Step11Rc0030ExperimentRenderedSurface:
+    if type(base_candidate) is not Step11NaturalSurfaceCandidate:
+        raise Step11NaturalSurfaceError("STEP11_RC0030_BASE_CANDIDATE_INVALID")
+    catalog, catalog_sha256 = _step11_rc0030_catalog()
+    if surface_realization_plan.surface_catalog_sha256 != catalog_sha256:
+        raise Step11NaturalSurfaceError("STEP11_RC0030_CATALOG_COMMITMENT_MISMATCH")
+    try:
+        text = base_candidate.final_utf8_bytes.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise Step11NaturalSurfaceError("STEP11_RC0030_BASE_SURFACE_INVALID") from exc
+    marker = "\n\nEmlisから：\n"
+    if not text.startswith("見えたこと：\n") or text.count(marker) != 1:
+        raise Step11NaturalSurfaceError("STEP11_RC0030_BASE_SURFACE_INVALID")
+    observation, reception = text.split(marker, 1)
+    observation_lines = observation.split("\n")
+    reception_lines = reception.split("\n")
+    base_plan = base_candidate.surface_ast.surface_realization_plan
+    if (
+        type(base_plan) is not Step11SurfaceRealizationPlan
+        or len(observation_lines) != len(base_plan.observation_sentence_group_ids) + 1
+        or len(reception_lines) != len(base_plan.reception_sentence_group_ids)
+    ):
+        raise Step11NaturalSurfaceError("STEP11_RC0030_BASE_SURFACE_LAYOUT_INVALID")
+    lexemes = _step11_rc0030_lexemes(clause_ready_lexical_specs)
+    referent_by_owner = {
+        str(row.source_owner_id): str(row.referent_text) for row in lexemes
+    }
+    construction_by_id = {
+        row.construction_instance_id: row for row in construction_atoms
+    }
+    relation_by_id = {row.experiment_relation_id: row for row in relation_atoms}
+    link_by_id = {row.source_semantic_link_id: row for row in semantic_link_atoms}
+    unknown_by_id = {row.source_unknown_id: row for row in explicit_unknown_atoms}
+    clauses_by_unit: dict[
+        tuple[int, int, str], list[tuple[str, str]]
+    ] = {}
+    for binding in surface_realization_plan.semantic_chunk_bindings:
+        clause = _step11_rc0030_render_semantic_clause(
+            binding,
+            catalog=catalog,
+            referent_by_owner=referent_by_owner,
+            construction_by_id=construction_by_id,
+            relation_by_id=relation_by_id,
+            link_by_id=link_by_id,
+            unknown_by_id=unknown_by_id,
+        )
+        clauses_by_unit.setdefault(
+            (
+                binding.sentence_group_ordinal,
+                binding.chunk_ordinal,
+                binding.clause_unit_id,
+            ),
+            [],
+        ).append(
+            (binding.source_atom_id, clause)
+        )
+    morphology = catalog["clause_morphology"]
+    suffix = morphology["sentence_suffix"]
+    structure_id_set = set(surface_realization_plan.structure_only_unit_ids)
+    if len(structure_id_set) != len(
+        surface_realization_plan.structure_only_unit_ids
+    ):
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0030_RENDER_PLAN_CHUNK_MISMATCH"
+        )
+    assignment_by_chunk = {
+        (row.sentence_group_ordinal, row.chunk_ordinal): row
+        for row in surface_realization_plan.observation_chunk_assignments
+    }
+    if len(assignment_by_chunk) != len(
+        surface_realization_plan.observation_chunk_assignments
+    ):
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0030_RENDER_PLAN_CHUNK_MISMATCH"
+        )
+    units_by_group: dict[int, list[tuple[int, str, str]]] = {}
+    for (group_ordinal, chunk_ordinal, unit_id), rows in clauses_by_unit.items():
+        if not 1 <= len(rows) <= 2:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0030_STRUCTURE_UNIT_ATOM_BOUND_EXCEEDED"
+            )
+        unit_text = (
+            morphology["semantic_item_join"].join(
+            text for _atom_id, text in sorted(rows)
+            )
+            + morphology["semantic_pack_predicate_suffix"]
+        )
+        units_by_group.setdefault(group_ordinal, []).append(
+            (chunk_ordinal, unit_id, unit_text)
+        )
+    rendered_structure_ids = tuple(
+        unit_id
+        for rows in units_by_group.values()
+        for _chunk_ordinal, unit_id, _unit_text in rows
+    )
+    if (
+        len(set(rendered_structure_ids)) != len(rendered_structure_ids)
+        or set(rendered_structure_ids) != structure_id_set
+    ):
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0030_RENDER_PLAN_CHUNK_MISMATCH"
+        )
+    for group_ordinal, rows in units_by_group.items():
+        line_index = group_ordinal
+        if not 1 <= line_index < len(observation_lines):
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0030_OBSERVATION_GROUP_INVALID"
+            )
+        base_line = observation_lines[line_index]
+        if not base_line.endswith(suffix):
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0030_BASE_OBSERVATION_SUFFIX_INVALID"
+            )
+        group_id = base_plan.observation_sentence_group_ids[
+            group_ordinal - 1
+        ]
+        base_chunk_ordinals = tuple(
+            row.assigned_grammatical_chunk_ordinal
+            for row in base_plan.units
+            if row.section_role == "observation"
+            and row.assigned_sentence_group_id == group_id
+        )
+        if not base_chunk_ordinals:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0030_RENDER_PLAN_CHUNK_MISMATCH"
+            )
+        base_tail_chunk = max(base_chunk_ordinals)
+        rows_by_chunk: dict[int, list[tuple[str, str]]] = {}
+        for chunk_ordinal, unit_id, unit_text in rows:
+            rows_by_chunk.setdefault(chunk_ordinal, []).append(
+                (unit_id, unit_text)
+            )
+        current_line = base_line
+        previous_chunk = base_tail_chunk
+        for chunk_ordinal in sorted(rows_by_chunk):
+            assignment = assignment_by_chunk.get(
+                (group_ordinal, chunk_ordinal)
+            )
+            ordered_rows = tuple(sorted(rows_by_chunk[chunk_ordinal]))
+            planned_unit_ids = tuple(
+                unit_id
+                for unit_id in assignment.source_unit_ids
+                if unit_id in structure_id_set
+            ) if assignment is not None else ()
+            actual_unit_ids = tuple(unit_id for unit_id, _text in ordered_rows)
+            actual_atom_ids = tuple(
+                atom_id
+                for (bound_group, bound_chunk, unit_id), atom_rows
+                in clauses_by_unit.items()
+                if bound_group == group_ordinal
+                and bound_chunk == chunk_ordinal
+                and unit_id in actual_unit_ids
+                for atom_id, _text in atom_rows
+            )
+            if (
+                assignment is None
+                or planned_unit_ids != actual_unit_ids
+                or len(actual_atom_ids) != len(assignment.source_atom_ids)
+                or set(actual_atom_ids) != set(assignment.source_atom_ids)
+                or chunk_ordinal < base_tail_chunk
+                or chunk_ordinal > previous_chunk + 1
+            ):
+                raise Step11NaturalSurfaceError(
+                    "STEP11_RC0030_RENDER_PLAN_CHUNK_MISMATCH"
+                )
+            separator = (
+                morphology["clause_join"]
+                if chunk_ordinal == previous_chunk
+                else morphology["grammatical_chunk_join"]
+            )
+            chunk_text = morphology["clause_join"].join(
+                text for _unit_id, text in ordered_rows
+            )
+            current_line = (
+                current_line[: -len(suffix)]
+                + separator
+                + chunk_text
+                + suffix
+            )
+            previous_chunk = chunk_ordinal
+        observation_lines[line_index] = current_line
+    receptions_by_line: dict[int, list[Step11Rc0030ReceptionPredicationBinding]] = {}
+    for row in reception_predications:
+        expected_targets = tuple(
+            referent_by_owner.get(value) for value in row.source_target_owner_ids
+        )
+        expected_supports = tuple(
+            referent_by_owner.get(value)
+            for value in row.supporting_source_owner_ids
+        )
+        if (
+            row.association_basis
+            not in {
+                "exact_base_opportunity_id",
+                "required_opportunity_bounded_schedule",
+            }
+            or row.additional_clause
+            is not (
+                row.association_basis
+                == "required_opportunity_bounded_schedule"
+            )
+            or (
+                row.association_basis == "exact_base_opportunity_id"
+                and not row.source_base_binding_id
+            )
+            or (
+                row.association_basis
+                == "required_opportunity_bounded_schedule"
+                and row.source_base_binding_id is not None
+            )
+            or not row.source_target_owner_ids
+            or None in expected_targets
+            or None in expected_supports
+            or row.target_referent_texts != expected_targets
+            or row.supporting_referent_texts != expected_supports
+        ):
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0030_RECEPTION_PREDICATION_INVALID"
+            )
+        receptions_by_line.setdefault(row.reception_line_ordinal, []).append(row)
+    act_fragments = catalog["reception_act_predicate_fragments"]
+    for line_ordinal, rows in receptions_by_line.items():
+        if not 1 <= line_ordinal <= len(reception_lines):
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0030_RECEPTION_GROUP_INVALID"
+            )
+        if len(rows) > _STEP11_RC0030_RECEPTION_MOVES_PER_SENTENCE_MAX:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0030_RECEPTION_DENSITY_UNSATISFIABLE"
+            )
+        predications: list[str] = []
+        for row in sorted(
+            rows,
+            key=lambda item: (
+                item.chunk_ordinal,
+                item.source_reception_opportunity_id,
+            ),
+        ):
+            act = act_fragments.get(row.reception_act)
+            if type(act) is not str or not act:
+                raise Step11NaturalSurfaceError(
+                    "STEP11_RC0030_RECEPTION_ACT_INVALID"
+                )
+            support = ""
+            if row.supporting_referent_texts:
+                support = (
+                    morphology["support_join"].join(
+                        row.supporting_referent_texts
+                    )
+                    + morphology["support_particle"]
+                    + morphology["clause_join"]
+                )
+            predication = (
+                support
+                + morphology["target_join"].join(row.target_referent_texts)
+                + morphology["object_particle"]
+                + act
+            )
+            if any(marker in predication for marker in ("\r", "\n", "「", "」")):
+                raise Step11NaturalSurfaceError(
+                    "STEP11_RC0030_RECEPTION_PREDICATION_INVALID"
+                )
+            predications.append(predication)
+        reception_lines[line_ordinal - 1] = (
+            morphology["grammatical_chunk_join"].join(predications) + suffix
+        )
+    final_text = "\n".join(observation_lines) + marker + "\n".join(reception_lines)
+    body = final_text.encode("utf-8", errors="strict")
+    return Step11Rc0030ExperimentRenderedSurface(
+        schema_version=STEP11_RC0030_EXPERIMENT_RENDERED_SCHEMA,
+        utf8_bytes=body,
+        sha256=hashlib.sha256(body).hexdigest(),
+        observation_group_count=len(observation_lines) - 1,
+        semantic_atom_count=len(surface_realization_plan.semantic_chunk_bindings),
+        exact_reuse_count=len(
+            surface_realization_plan.base_body_exact_reuse_bindings
+        ),
+        reception_predication_count=len(reception_predications),
+    )
+
+
+def _step11_rc0030_candidate_identity(
+    *,
+    base_candidate_id: str,
+    rendered: Step11Rc0030ExperimentRenderedSurface,
+    plan: Step11Rc0030SurfaceRealizationPlan,
+) -> str:
+    return "nls3s11rc0030cand_" + artifact_sha256(
+        {
+            "candidate_version_id": STEP11_RC0030_EXPERIMENT_CANDIDATE_VERSION_ID,
+            "base_candidate_id": base_candidate_id,
+            "final_bytes_sha256": rendered.sha256,
+            "realization_plan_id": plan.realization_plan_id,
+        }
+    )[:20]
+
+
+def _build_step11_rc0030_experiment_surface_candidate(
+    base_candidate: Step11NaturalSurfaceCandidate,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+    base_body_exact_reuse_bindings: Sequence[
+        Step11Rc0030BaseBodyExactReuseBinding
+    ],
+    validate_output: bool,
+) -> Step11Rc0030ExperimentSurfaceCandidate:
+    if type(base_candidate) is not Step11NaturalSurfaceCandidate:
+        raise Step11NaturalSurfaceError("STEP11_RC0030_BASE_CANDIDATE_INVALID")
+    lexical_sha256 = _step11_rc0028_validate_lexical_specs(
+        lexical_atom_specs, successor_snapshot=successor_snapshot
+    )
+    catalog, catalog_sha256 = _step11_rc0030_catalog()
+    del catalog
+    lexical_owner = __import__(
+        "emlis_ai_step11_grounded_lexicalization_v3",
+        fromlist=(
+            "build_step11_rc0030_clause_ready_lexical_specs",
+            "validate_step11_rc0030_clause_ready_lexical_specs",
+        ),
+    )
+    clause_ready = lexical_owner.build_step11_rc0030_clause_ready_lexical_specs(
+        base_candidate,
+        successor_snapshot=successor_snapshot,
+        lexical_atom_specs=lexical_atom_specs,
+    )
+    lexical_issues = lexical_owner.validate_step11_rc0030_clause_ready_lexical_specs(
+        clause_ready,
+        base_candidate=base_candidate,
+        successor_snapshot=successor_snapshot,
+        lexical_atom_specs=lexical_atom_specs,
+    )
+    if lexical_issues:
+        raise Step11NaturalSurfaceError(lexical_issues[0])
+    if clause_ready.surface_catalog_sha256 != catalog_sha256:
+        raise Step11NaturalSurfaceError("STEP11_RC0030_CATALOG_COMMITMENT_MISMATCH")
+    rc0028_catalog, _rc0028_catalog_sha256 = _step11_rc0028_catalog()
+    owner_registry, constructions, relations, links, unknowns = (
+        _step11_rc0028_forward_atoms(
+            successor_snapshot, lexical_atom_specs, rc0028_catalog
+        )
+    )
+    reception_predications = _step11_rc0030_reception_predications(
+        base_candidate,
+        successor_snapshot=successor_snapshot,
+        lexemes=_step11_rc0030_lexemes(clause_ready),
+    )
+    plan = build_step11_rc0030_surface_realization_plan(
+        base_candidate,
+        successor_snapshot=successor_snapshot,
+        lexical_atom_specs=lexical_atom_specs,
+        clause_ready_lexical_specs=clause_ready,
+        construction_atoms=constructions,
+        relation_atoms=relations,
+        semantic_link_atoms=links,
+        explicit_unknown_atoms=unknowns,
+        reception_predications=reception_predications,
+        base_body_exact_reuse_bindings=base_body_exact_reuse_bindings,
+    )
+    rendered = render_step11_rc0030_experiment_surface(
+        base_candidate,
+        clause_ready_lexical_specs=clause_ready,
+        surface_realization_plan=plan,
+        construction_atoms=constructions,
+        relation_atoms=relations,
+        semantic_link_atoms=links,
+        explicit_unknown_atoms=unknowns,
+        reception_predications=reception_predications,
+    )
+    candidate = Step11Rc0030ExperimentSurfaceCandidate(
+        schema_version=STEP11_RC0030_EXPERIMENT_CANDIDATE_SCHEMA,
+        candidate_version_id=STEP11_RC0030_EXPERIMENT_CANDIDATE_VERSION_ID,
+        candidate_id=_step11_rc0030_candidate_identity(
+            base_candidate_id=base_candidate.candidate_id,
+            rendered=rendered,
+            plan=plan,
+        ),
+        base_candidate=base_candidate,
+        rendered_surface=rendered,
+        surface_realization_plan=plan,
+        successor_snapshot_sha256=successor_snapshot.experiment_snapshot_sha256,
+        lexical_atom_specs_sha256=lexical_sha256,
+        experiment_catalog_sha256=catalog_sha256,
+        natural_handle_specs=clause_ready,
+        owner_registry=owner_registry,
+        construction_atoms=constructions,
+        relation_atoms=relations,
+        semantic_link_atoms=links,
+        explicit_unknown_atoms=unknowns,
+        reception_bindings=reception_predications,
+        semantic_coverage_authorized=False,
+        replan_count=0,
+    )
+    if validate_output:
+        issues = validate_step11_rc0030_experiment_surface_candidate(
+            candidate,
+            successor_snapshot=successor_snapshot,
+            lexical_atom_specs=lexical_atom_specs,
+        )
+        if issues:
+            raise Step11NaturalSurfaceError(issues[0])
+    return candidate
+
+
+def build_step11_rc0030_experiment_surface_candidate(
+    base_candidate: Step11NaturalSurfaceCandidate,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+    base_body_exact_reuse_bindings: Sequence[
+        Step11Rc0030BaseBodyExactReuseBinding
+    ] = (),
+) -> Step11Rc0030ExperimentSurfaceCandidate:
+    return _build_step11_rc0030_experiment_surface_candidate(
+        base_candidate,
+        successor_snapshot=successor_snapshot,
+        lexical_atom_specs=lexical_atom_specs,
+        base_body_exact_reuse_bindings=base_body_exact_reuse_bindings,
+        validate_output=True,
+    )
+
+
+def build_step11_rc0030_experiment_surface_candidates(
+    base_candidates: Sequence[Step11NaturalSurfaceCandidate],
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+    base_body_exact_reuse_bindings: Sequence[
+        Step11Rc0030BaseBodyExactReuseBinding
+    ] = (),
+) -> tuple[Step11Rc0030ExperimentSurfaceCandidate, ...]:
+    if (
+        type(base_candidates) not in {tuple, list}
+        or not base_candidates
+        or len(base_candidates) > _STEP11_RC0030_CANDIDATE_MAX
+    ):
+        raise Step11NaturalSurfaceError("STEP11_RC0030_CANDIDATE_BOUND_INVALID")
+    rows: list[Step11Rc0030ExperimentSurfaceCandidate] = []
+    for base_candidate in base_candidates:
+        try:
+            rows.append(
+                build_step11_rc0030_experiment_surface_candidate(
+                    base_candidate,
+                    successor_snapshot=successor_snapshot,
+                    lexical_atom_specs=lexical_atom_specs,
+                    base_body_exact_reuse_bindings=(
+                        base_body_exact_reuse_bindings
+                    ),
+                )
+            )
+        except (Step11GroundedLexicalizationError, Step11NaturalSurfaceError):
+            continue
+    if not rows:
+        raise Step11NaturalSurfaceError("STEP11_RC0030_NO_VALID_FORWARD_CANDIDATE")
+    return tuple(rows)
+
+
+def validate_step11_rc0030_experiment_surface_candidate(
+    value: Any,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> tuple[str, ...]:
+    if type(value) is not Step11Rc0030ExperimentSurfaceCandidate:
+        return ("STEP11_RC0030_CANDIDATE_TYPE_INVALID",)
+    issues: set[str] = set()
+    try:
+        expected = _build_step11_rc0030_experiment_surface_candidate(
+            value.base_candidate,
+            successor_snapshot=successor_snapshot,
+            lexical_atom_specs=lexical_atom_specs,
+            base_body_exact_reuse_bindings=(
+                value.surface_realization_plan.base_body_exact_reuse_bindings
+            ),
+            validate_output=False,
+        )
+    except (
+        AttributeError,
+        KeyError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+        Step11GroundedLexicalizationError,
+        Step11NaturalSurfaceError,
+    ):
+        return ("STEP11_RC0030_CANDIDATE_REVALIDATION_FAILED",)
+    if value != expected:
+        issues.add("STEP11_RC0030_CANDIDATE_SOURCE_MISMATCH")
+    if value.semantic_coverage_authorized is not False:
+        issues.add("STEP11_RC0030_SEMANTIC_COVERAGE_SELF_CLAIM")
+    if (
+        value.experimental_only is not True
+        or value.private_body_full is not True
+        or value.shareable is not False
+        or value.runtime_connected is not False
+    ):
+        issues.add("STEP11_RC0030_RUNTIME_BOUNDARY_INVALID")
+    if type(value.replan_count) is not int or not 0 <= value.replan_count <= 1:
+        issues.add("STEP11_RC0030_REPLAN_BOUND_EXCEEDED")
+    return tuple(sorted(issues))
+
+
+__all__ += [
+    "STEP11_RC0030_EXPERIMENT_CANDIDATE_SCHEMA",
+    "STEP11_RC0030_EXPERIMENT_CANDIDATE_VERSION_ID",
+    "STEP11_RC0030_EXPERIMENT_PLAN_SCHEMA",
+    "STEP11_RC0030_EXPERIMENT_RENDERED_SCHEMA",
+    "Step11Rc0030BaseBodyExactReuseBinding",
+    "Step11Rc0030ExperimentRenderedSurface",
+    "Step11Rc0030ExperimentSurfaceCandidate",
+    "Step11Rc0030ObservationChunkAssignment",
+    "Step11Rc0030ReceptionPredicationBinding",
+    "Step11Rc0030SemanticChunkBinding",
+    "Step11Rc0030SurfaceRealizationPlan",
+    "build_step11_rc0030_experiment_surface_candidate",
+    "build_step11_rc0030_experiment_surface_candidates",
+    "build_step11_rc0030_surface_realization_plan",
+    "render_step11_rc0030_experiment_surface",
+    "step11_rc0030_surface_realization_plan_material",
+    "validate_step11_rc0030_experiment_surface_candidate",
+]

@@ -2700,3 +2700,679 @@ __all__ += [
     "step11_rc0029_natural_handle_specs_material",
     "validate_step11_rc0029_natural_handle_specs",
 ]
+
+
+# ---------------------------------------------------------------------------
+# rc0030 experiment-only clause-ready referent projection (append-only)
+# ---------------------------------------------------------------------------
+
+STEP11_RC0030_CLAUSE_READY_LEXICAL_SPECS_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11.rc0030_clause_ready_lexical_specs.v1"
+)
+_STEP11_RC0030_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_STEP11_RC0030_FORBIDDEN_REFERENT_MARKERS = (
+    "見えたこと",
+    "Emlisから",
+    "構造を見ると",
+    "そこには",
+    "つ目",
+    "owner",
+    "relation record",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0030ClauseReadyLexeme:
+    """One source-grounded noun phrase ready for clause composition.
+
+    ``referent_text`` is the already-authorized rc0027 grounded noun phrase,
+    not an ordinal, schema label, raw quote, or completed sentence.  The
+    ``handle_text`` compatibility view lets the disconnected forward owner
+    migrate without reusing rc0029's generic semantic-head handles.
+    """
+
+    source_owner_id: str
+    source_owner_kind: str
+    source_owner_ordinal: int
+    base_source_nucleus_id: str
+    grounded_phrase_id: str
+    grounded_phrase_text: str
+    referent_text: str
+    referent_text_sha256: str
+    owner_obligation_ids: tuple[str, ...]
+    base_observation_sentence_group_ids: tuple[str, ...]
+    role_qualifier_tokens: tuple[str, ...] = ()
+
+    @property
+    def handle_text(self) -> str:
+        return self.referent_text
+
+    @property
+    def handle_text_sha256(self) -> str:
+        return self.referent_text_sha256
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0030ClauseReadyLexicalSpecs:
+    schema_version: str
+    source_base_candidate_id: str
+    source_base_realization_plan_id: str
+    source_successor_snapshot_sha256: str
+    source_lexical_atom_specs_sha256: str
+    surface_catalog_sha256: str
+    base_leading_observation_unit_id: str
+    required_source_owner_ids: tuple[str, ...]
+    lexemes: tuple[Step11Rc0030ClauseReadyLexeme, ...]
+    semantic_coverage_authority: str
+    specs_sha256: str
+    max_source_owners: int
+    max_referent_scalars: int
+    experimental_only: bool = True
+    private_body_full: bool = True
+    shareable: bool = False
+    runtime_connected: bool = False
+
+    @property
+    def handles(self) -> tuple[Step11Rc0030ClauseReadyLexeme, ...]:
+        """Compatibility view for the disconnected forward experiment."""
+
+        return self.lexemes
+
+
+def _step11_rc0030_clause_ready_lexeme_material(
+    value: Step11Rc0030ClauseReadyLexeme,
+) -> dict[str, Any]:
+    return {
+        "source_owner_id": value.source_owner_id,
+        "source_owner_kind": value.source_owner_kind,
+        "source_owner_ordinal": value.source_owner_ordinal,
+        "base_source_nucleus_id": value.base_source_nucleus_id,
+        "grounded_phrase_id": value.grounded_phrase_id,
+        "grounded_phrase_text": value.grounded_phrase_text,
+        "referent_text": value.referent_text,
+        "referent_text_sha256": value.referent_text_sha256,
+        "owner_obligation_ids": list(value.owner_obligation_ids),
+        "base_observation_sentence_group_ids": list(
+            value.base_observation_sentence_group_ids
+        ),
+        "role_qualifier_tokens": list(value.role_qualifier_tokens),
+    }
+
+
+def _step11_rc0030_clause_ready_specs_payload(
+    value: Step11Rc0030ClauseReadyLexicalSpecs,
+) -> dict[str, Any]:
+    return {
+        "schema_version": value.schema_version,
+        "source_base_candidate_id": value.source_base_candidate_id,
+        "source_base_realization_plan_id": (
+            value.source_base_realization_plan_id
+        ),
+        "source_successor_snapshot_sha256": (
+            value.source_successor_snapshot_sha256
+        ),
+        "source_lexical_atom_specs_sha256": (
+            value.source_lexical_atom_specs_sha256
+        ),
+        "surface_catalog_sha256": value.surface_catalog_sha256,
+        "base_leading_observation_unit_id": (
+            value.base_leading_observation_unit_id
+        ),
+        "required_source_owner_ids": list(value.required_source_owner_ids),
+        "lexemes": [
+            _step11_rc0030_clause_ready_lexeme_material(row)
+            for row in value.lexemes
+        ],
+        "semantic_coverage_authority": value.semantic_coverage_authority,
+        "max_source_owners": value.max_source_owners,
+        "max_referent_scalars": value.max_referent_scalars,
+        "experimental_only": value.experimental_only,
+        "private_body_full": value.private_body_full,
+        "shareable": value.shareable,
+        "runtime_connected": value.runtime_connected,
+    }
+
+
+def _step11_rc0030_referent_text_valid(
+    value: Any,
+    *,
+    maximum: int,
+) -> bool:
+    return bool(
+        type(value) is str
+        and value == value.strip()
+        and 1 <= len(value) <= maximum
+        and unicodedata.normalize("NFC", value) == value
+        and not any(marker in value for marker in ("\r", "\n", "「", "」"))
+        and not value.endswith(("。", "！", "？", "!", "?"))
+        and not any(
+            marker in value
+            for marker in _STEP11_RC0030_FORBIDDEN_REFERENT_MARKERS
+        )
+        and not any(unicodedata.category(char).startswith("C") for char in value)
+    )
+
+
+def _build_step11_rc0030_clause_ready_lexical_specs(
+    base_candidate: Any,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+    validate_output: bool,
+) -> Step11Rc0030ClauseReadyLexicalSpecs:
+    surface_owner = __import__(
+        "emlis_ai_step11_natural_surface_v3",
+        fromlist=(
+            "STEP11_CANDIDATE_VERSION_ID",
+            "STEP11_SURFACE_REALIZATION_PLAN_SCHEMA",
+            "Step11NaturalSurfaceCandidate",
+            "Step11SurfaceRealizationPlan",
+            "step11_surface_realization_plan_material",
+        ),
+    )
+    successor_owner = __import__(
+        "emlis_ai_grounded_lexical_role_experiment_snapshot_successor_v3",
+        fromlist=(
+            "GroundedLexicalRoleExperimentSnapshotSuccessor",
+            "validate_grounded_lexical_role_experiment_snapshot_successor",
+        ),
+    )
+    catalog_owner = __import__(
+        "emlis_ai_step11_rc0030_experiment_surface_catalog_v3",
+        fromlist=(
+            "STEP11_RC0030_EXPERIMENT_SURFACE_CATALOG",
+            "STEP11_RC0030_EXPERIMENT_SURFACE_CATALOG_SHA256",
+            "STEP11_RC0030_OWNER_MAX",
+            "STEP11_RC0030_REFERENT_SCALAR_MAX",
+            "validate_step11_rc0030_experiment_surface_catalog",
+        ),
+    )
+    if type(base_candidate) is not surface_owner.Step11NaturalSurfaceCandidate:
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0030_BASE_CANDIDATE_INVALID"
+        )
+    if (
+        base_candidate.candidate_version_id
+        != surface_owner.STEP11_CANDIDATE_VERSION_ID
+        or type(base_candidate.final_utf8_bytes) is not bytes
+        or not base_candidate.final_utf8_bytes
+        or hashlib.sha256(base_candidate.final_utf8_bytes).hexdigest()
+        != base_candidate.rendered_surface.sha256
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0030_BASE_CANDIDATE_INVALID"
+        )
+    expected_successor_type = (
+        successor_owner.GroundedLexicalRoleExperimentSnapshotSuccessor
+    )
+    if (
+        type(successor_snapshot) is not expected_successor_type
+        or successor_owner.validate_grounded_lexical_role_experiment_snapshot_successor(
+            successor_snapshot
+        )
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0030_SUCCESSOR_SNAPSHOT_INVALID"
+        )
+    lexical_issues = validate_step11_rc0028_experiment_lexical_atom_specs(
+        lexical_atom_specs,
+        successor_snapshot=successor_snapshot,
+    )
+    if lexical_issues:
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0030_LEXICAL_ATOM_SPECS_INVALID"
+        )
+    catalog = catalog_owner.STEP11_RC0030_EXPERIMENT_SURFACE_CATALOG
+    if catalog_owner.validate_step11_rc0030_experiment_surface_catalog(
+        catalog
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0030_CATALOG_INVALID"
+        )
+
+    plan = base_candidate.surface_ast.surface_realization_plan
+    if (
+        type(plan) is not surface_owner.Step11SurfaceRealizationPlan
+        or plan.schema_version
+        != surface_owner.STEP11_SURFACE_REALIZATION_PLAN_SCHEMA
+        or plan.candidate_version_id
+        != surface_owner.STEP11_CANDIDATE_VERSION_ID
+        or plan.body_free is not True
+        or plan.realization_plan_id
+        != "nls3s11real_"
+        + artifact_sha256(
+            surface_owner.step11_surface_realization_plan_material(
+                plan,
+                include_id=False,
+            )
+        )[:16]
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0030_BASE_CANDIDATE_INVALID"
+        )
+    observation_units = tuple(
+        sorted(
+            (row for row in plan.units if row.section_role == "observation"),
+            key=lambda row: row.source_order,
+        )
+    )
+    if (
+        not observation_units
+        or len({row.source_order for row in observation_units})
+        != len(observation_units)
+        or not observation_units[0].semantic_unit_id
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0030_BASE_LEADING_OBSERVATION_UNRESOLVED"
+        )
+    base_leading_observation_unit_id = observation_units[0].semantic_unit_id
+    observation_group_rank = {
+        group_id: index
+        for index, group_id in enumerate(plan.observation_sentence_group_ids)
+    }
+    groups_by_nucleus: dict[str, set[str]] = {}
+    for unit in observation_units:
+        group_id = str(unit.assigned_sentence_group_id)
+        if group_id not in observation_group_rank:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0030_OWNER_GROUP_UNRESOLVED"
+            )
+        for nucleus_id in unit.owner_nucleus_ids:
+            groups_by_nucleus.setdefault(str(nucleus_id), set()).add(group_id)
+
+    # Resolve the owners required by the immutable E1b authority directly
+    # against the rc0027 AST.  In particular, do not delegate to rc0029's
+    # semantic-head/qualifier collision policy: P2's clause-ready referent is
+    # the already-grounded rc0027 phrase itself, and rc0029 is only frozen
+    # predecessor evidence rather than an input authority for rc0030.
+    owner_by_id = {
+        row.source_owner_id: row for row in lexical_atom_specs.owner_bindings
+    }
+    owner_by_ordinal = {
+        row.owner_ordinal: row for row in lexical_atom_specs.owner_bindings
+    }
+    if (
+        len(owner_by_id) != len(lexical_atom_specs.owner_bindings)
+        or len(owner_by_ordinal) != len(lexical_atom_specs.owner_bindings)
+        or len(owner_by_id) > catalog_owner.STEP11_RC0030_OWNER_MAX
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0030_RESOURCE_BOUND_EXCEEDED"
+        )
+
+    required: set[str] = set()
+
+    def require_owner(owner_id: str) -> None:
+        if owner_id not in owner_by_id:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0030_SOURCE_OWNER_INVALID"
+            )
+        required.add(owner_id)
+
+    for atom in lexical_atom_specs.construction_atoms:
+        for ordinal in atom.target_owner_ordinals:
+            owner = owner_by_ordinal.get(ordinal)
+            if owner is None:
+                raise Step11GroundedLexicalizationError(
+                    "STEP11_RC0030_SOURCE_OWNER_INVALID"
+                )
+            require_owner(owner.source_owner_id)
+    for atom in lexical_atom_specs.relation_endpoint_atoms:
+        require_owner(atom.source_owner_id)
+    for atom in lexical_atom_specs.semantic_link_atoms:
+        require_owner(atom.from_semantic_unit_id)
+        require_owner(atom.to_semantic_unit_id)
+    for atom in lexical_atom_specs.explicit_unknown_atoms:
+        for _owner_kind, owner_id, _owner_ordinal in atom.affected_source_owners:
+            require_owner(owner_id)
+
+    nuclei = tuple(successor_snapshot.base_snapshot.nuclei)
+    nucleus_by_actual = {str(row.actual_source_id): row for row in nuclei}
+    nucleus_by_source = {str(row.source_id): row for row in nuclei}
+    actual_by_source = {
+        str(row.source_id): str(row.actual_source_id) for row in nuclei
+    }
+    if (
+        len(nucleus_by_actual) != len(nuclei)
+        or len(nucleus_by_source) != len(nuclei)
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0030_BASE_NUCLEUS_INVALID"
+        )
+    for opportunity in successor_snapshot.base_snapshot.reception_opportunities:
+        if opportunity.retention != "required" and opportunity.safety_required is not True:
+            continue
+        for source_id in (
+            *opportunity.target_nucleus_ids,
+            *opportunity.support_nucleus_ids,
+        ):
+            actual_id = actual_by_source.get(str(source_id))
+            if actual_id is None:
+                raise Step11GroundedLexicalizationError(
+                    "STEP11_RC0030_RECEPTION_OWNER_UNRESOLVED"
+                )
+            require_owner(actual_id)
+    if not required or len(required) > catalog_owner.STEP11_RC0030_OWNER_MAX:
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0030_RESOURCE_BOUND_EXCEEDED"
+        )
+
+    parent_by_semantic: dict[str, set[str]] = {}
+    for row in lexical_atom_specs.participation_bindings:
+        if row.target_owner_kind == "semantic_unit":
+            parent_by_semantic.setdefault(row.target_owner_id, set()).add(
+                row.parent_nucleus_id
+            )
+    phrase_specs = tuple(base_candidate.surface_ast.grounded_phrase_specs)
+    if len({str(row.grounded_phrase_id) for row in phrase_specs}) != len(
+        phrase_specs
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0030_REFERENT_UNRESOLVED"
+        )
+    base_text = base_candidate.final_utf8_bytes.decode("utf-8", errors="strict")
+
+    lexemes: list[Step11Rc0030ClauseReadyLexeme] = []
+    for owner in sorted(
+        (
+            row
+            for row in lexical_atom_specs.owner_bindings
+            if row.source_owner_id in required
+        ),
+        key=lambda row: row.owner_ordinal,
+    ):
+        nucleus = nucleus_by_actual.get(owner.source_owner_id)
+        if nucleus is None:
+            parents = parent_by_semantic.get(owner.source_owner_id, set())
+            if len(parents) != 1:
+                raise Step11GroundedLexicalizationError(
+                    "STEP11_RC0030_OWNER_BASE_NUCLEUS_AMBIGUOUS"
+                )
+            parent_id = next(iter(parents))
+            nucleus = nucleus_by_actual.get(parent_id)
+            if nucleus is None:
+                nucleus = nucleus_by_source.get(parent_id)
+        if nucleus is None:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0030_OWNER_BASE_NUCLEUS_UNRESOLVED"
+            )
+        source_nucleus_id = str(nucleus.source_id)
+        matching_phrases = tuple(
+            row
+            for row in phrase_specs
+            if source_nucleus_id in row.owner_nucleus_ids
+        )
+        if len(matching_phrases) != 1:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0030_REFERENT_UNRESOLVED"
+            )
+        phrase = matching_phrases[0]
+        referent_text = str(phrase.phrase_text)
+        if (
+            referent_text not in base_text
+            or not _step11_rc0030_referent_text_valid(
+                referent_text,
+                maximum=catalog_owner.STEP11_RC0030_REFERENT_SCALAR_MAX,
+            )
+        ):
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0030_REFERENT_TEXT_INVALID"
+            )
+        group_ids = tuple(
+            sorted(
+                groups_by_nucleus.get(source_nucleus_id, ()),
+                key=lambda group_id: observation_group_rank[group_id],
+            )
+        )
+        if not group_ids:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0030_OWNER_GROUP_UNRESOLVED"
+            )
+        lexemes.append(
+            Step11Rc0030ClauseReadyLexeme(
+                source_owner_id=owner.source_owner_id,
+                source_owner_kind=owner.source_owner_kind,
+                source_owner_ordinal=owner.owner_ordinal,
+                base_source_nucleus_id=source_nucleus_id,
+                grounded_phrase_id=str(phrase.grounded_phrase_id),
+                grounded_phrase_text=referent_text,
+                referent_text=referent_text,
+                referent_text_sha256=hashlib.sha256(
+                    referent_text.encode("utf-8")
+                ).hexdigest(),
+                owner_obligation_ids=tuple(phrase.owner_obligation_ids),
+                base_observation_sentence_group_ids=group_ids,
+                role_qualifier_tokens=(),
+            )
+        )
+    lexemes.sort(key=lambda row: row.source_owner_ordinal)
+    if (
+        not lexemes
+        or len({row.source_owner_id for row in lexemes}) != len(lexemes)
+        or len({row.source_owner_ordinal for row in lexemes}) != len(lexemes)
+        or len({row.referent_text for row in lexemes}) != len(lexemes)
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0030_REFERENT_COLLISION"
+        )
+    required_source_owner_ids = tuple(row.source_owner_id for row in lexemes)
+    if set(required_source_owner_ids) != required:
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0030_SOURCE_OWNER_INVALID"
+        )
+
+    provisional = Step11Rc0030ClauseReadyLexicalSpecs(
+        schema_version=STEP11_RC0030_CLAUSE_READY_LEXICAL_SPECS_SCHEMA,
+        source_base_candidate_id=base_candidate.candidate_id,
+        source_base_realization_plan_id=plan.realization_plan_id,
+        source_successor_snapshot_sha256=(
+            successor_snapshot.experiment_snapshot_sha256
+        ),
+        source_lexical_atom_specs_sha256=lexical_atom_specs.specs_sha256,
+        surface_catalog_sha256=(
+            catalog_owner.STEP11_RC0030_EXPERIMENT_SURFACE_CATALOG_SHA256
+        ),
+        base_leading_observation_unit_id=(
+            base_leading_observation_unit_id
+        ),
+        required_source_owner_ids=required_source_owner_ids,
+        lexemes=tuple(lexemes),
+        semantic_coverage_authority="none",
+        specs_sha256="0" * 64,
+        max_source_owners=catalog_owner.STEP11_RC0030_OWNER_MAX,
+        max_referent_scalars=catalog_owner.STEP11_RC0030_REFERENT_SCALAR_MAX,
+    )
+    value = Step11Rc0030ClauseReadyLexicalSpecs(
+        **{
+            **_step11_rc0030_clause_ready_specs_payload(provisional),
+            "required_source_owner_ids": provisional.required_source_owner_ids,
+            "lexemes": provisional.lexemes,
+            "specs_sha256": artifact_sha256(
+                _step11_rc0030_clause_ready_specs_payload(provisional)
+            ),
+        }
+    )
+    if validate_output:
+        issues = validate_step11_rc0030_clause_ready_lexical_specs(
+            value,
+            base_candidate=base_candidate,
+            successor_snapshot=successor_snapshot,
+            lexical_atom_specs=lexical_atom_specs,
+        )
+        if issues:
+            raise Step11GroundedLexicalizationError(issues[0])
+    return value
+
+
+def build_step11_rc0030_clause_ready_lexical_specs(
+    base_candidate: Any,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> Step11Rc0030ClauseReadyLexicalSpecs:
+    """Project immutable rc0027/E1b authority into natural clause referents."""
+
+    return _build_step11_rc0030_clause_ready_lexical_specs(
+        base_candidate,
+        successor_snapshot=successor_snapshot,
+        lexical_atom_specs=lexical_atom_specs,
+        validate_output=True,
+    )
+
+
+def _validate_step11_rc0030_clause_ready_lexical_specs_unsafe(
+    value: Any,
+    *,
+    base_candidate: Any,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> tuple[str, ...]:
+    if type(value) is not Step11Rc0030ClauseReadyLexicalSpecs:
+        return ("STEP11_RC0030_CLAUSE_READY_SPECS_TYPE_INVALID",)
+    issues: set[str] = set()
+    try:
+        expected = _build_step11_rc0030_clause_ready_lexical_specs(
+            base_candidate,
+            successor_snapshot=successor_snapshot,
+            lexical_atom_specs=lexical_atom_specs,
+            validate_output=False,
+        )
+    except (AttributeError, KeyError, TypeError, UnicodeError, ValueError):
+        return ("STEP11_RC0030_CLAUSE_READY_SPECS_REVALIDATION_FAILED",)
+    if value != expected:
+        issues.add("STEP11_RC0030_CLAUSE_READY_SPECS_SOURCE_MISMATCH")
+    if (
+        value.schema_version
+        != STEP11_RC0030_CLAUSE_READY_LEXICAL_SPECS_SCHEMA
+        or value.semantic_coverage_authority != "none"
+        or value.experimental_only is not True
+        or value.private_body_full is not True
+        or value.shareable is not False
+        or value.runtime_connected is not False
+    ):
+        issues.add("STEP11_RC0030_CLAUSE_READY_SPECS_CONTRACT_MISMATCH")
+    if (
+        any(
+            type(item) is not str
+            or _STEP11_RC0030_SHA256_RE.fullmatch(item) is None
+            or item == "0" * 64
+            for item in (
+                value.source_successor_snapshot_sha256,
+                value.source_lexical_atom_specs_sha256,
+                value.surface_catalog_sha256,
+                value.specs_sha256,
+            )
+        )
+        or value.specs_sha256
+        != artifact_sha256(_step11_rc0030_clause_ready_specs_payload(value))
+    ):
+        issues.add("STEP11_RC0030_CLAUSE_READY_SPECS_HASH_MISMATCH")
+    if (
+        not value.lexemes
+        or len(value.lexemes) > value.max_source_owners
+        or value.max_source_owners != 24
+        or value.max_referent_scalars != 32
+        or value.required_source_owner_ids
+        != tuple(row.source_owner_id for row in value.lexemes)
+        or len(set(value.required_source_owner_ids)) != len(value.lexemes)
+        or len({row.source_owner_ordinal for row in value.lexemes})
+        != len(value.lexemes)
+        or len({row.referent_text for row in value.lexemes})
+        != len(value.lexemes)
+        or any(
+            type(row) is not Step11Rc0030ClauseReadyLexeme
+            or row.source_owner_kind not in {"nucleus", "semantic_unit"}
+            or type(row.source_owner_ordinal) is not int
+            or not 1 <= row.source_owner_ordinal <= value.max_source_owners
+            or not row.source_owner_id
+            or not row.base_source_nucleus_id
+            or not row.grounded_phrase_id
+            or not row.owner_obligation_ids
+            or len(set(row.owner_obligation_ids))
+            != len(row.owner_obligation_ids)
+            or not row.base_observation_sentence_group_ids
+            or len(set(row.base_observation_sentence_group_ids))
+            != len(row.base_observation_sentence_group_ids)
+            or row.grounded_phrase_text != row.referent_text
+            or not _step11_rc0030_referent_text_valid(
+                row.referent_text,
+                maximum=value.max_referent_scalars,
+            )
+            or hashlib.sha256(row.referent_text.encode("utf-8")).hexdigest()
+            != row.referent_text_sha256
+            or row.handle_text != row.referent_text
+            or row.handle_text_sha256 != row.referent_text_sha256
+            for row in value.lexemes
+        )
+    ):
+        issues.add("STEP11_RC0030_CLAUSE_READY_SPECS_REFERENT_MISMATCH")
+    return tuple(sorted(issues))
+
+
+def validate_step11_rc0030_clause_ready_lexical_specs(
+    value: Any,
+    *,
+    base_candidate: Any,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> tuple[str, ...]:
+    """Fail closed for malformed or adversarial projection containers."""
+
+    try:
+        return _validate_step11_rc0030_clause_ready_lexical_specs_unsafe(
+            value,
+            base_candidate=base_candidate,
+            successor_snapshot=successor_snapshot,
+            lexical_atom_specs=lexical_atom_specs,
+        )
+    except (
+        AttributeError,
+        KeyError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("STEP11_RC0030_CLAUSE_READY_SPECS_REVALIDATION_FAILED",)
+
+
+def step11_rc0030_clause_ready_lexical_specs_material(
+    value: Step11Rc0030ClauseReadyLexicalSpecs,
+) -> dict[str, Any]:
+    if type(value) is not Step11Rc0030ClauseReadyLexicalSpecs:
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0030_CLAUSE_READY_SPECS_TYPE_INVALID"
+        )
+    return {
+        **_step11_rc0030_clause_ready_specs_payload(value),
+        "specs_sha256": value.specs_sha256,
+    }
+
+
+# A projection is the same closed artifact viewed from the orchestration
+# boundary.  Aliases avoid a second mutable shape or duplicate builder.
+Step11Rc0030ClauseReadyLexicalProjection = (
+    Step11Rc0030ClauseReadyLexicalSpecs
+)
+build_step11_rc0030_clause_ready_lexical_projection = (
+    build_step11_rc0030_clause_ready_lexical_specs
+)
+validate_step11_rc0030_clause_ready_lexical_projection = (
+    validate_step11_rc0030_clause_ready_lexical_specs
+)
+step11_rc0030_clause_ready_lexical_projection_material = (
+    step11_rc0030_clause_ready_lexical_specs_material
+)
+
+
+__all__ += [
+    "STEP11_RC0030_CLAUSE_READY_LEXICAL_SPECS_SCHEMA",
+    "Step11Rc0030ClauseReadyLexeme",
+    "Step11Rc0030ClauseReadyLexicalProjection",
+    "Step11Rc0030ClauseReadyLexicalSpecs",
+    "build_step11_rc0030_clause_ready_lexical_projection",
+    "build_step11_rc0030_clause_ready_lexical_specs",
+    "step11_rc0030_clause_ready_lexical_projection_material",
+    "step11_rc0030_clause_ready_lexical_specs_material",
+    "validate_step11_rc0030_clause_ready_lexical_projection",
+    "validate_step11_rc0030_clause_ready_lexical_specs",
+]
