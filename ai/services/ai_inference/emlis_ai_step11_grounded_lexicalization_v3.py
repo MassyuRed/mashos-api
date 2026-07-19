@@ -804,3 +804,1369 @@ __all__ = [
     "step11_grounded_phrase_spec_material",
     "step11_visible_source_anchor_use_material",
 ]
+
+
+# ---------------------------------------------------------------------------
+# rc0028 runtime-disconnected successor projection (append-only)
+# ---------------------------------------------------------------------------
+
+STEP11_RC0028_EXPERIMENT_LEXICAL_ATOM_SPECS_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11.rc0028_experiment_lexical_atom_specs.v1"
+)
+_STEP11_RC0028_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_STEP11_RC0028_OWNER_ORDINAL_MAX = 24
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentOwnerBinding:
+    source_owner_id: str
+    source_owner_kind: str
+    owner_ordinal: int
+    owner_ordinal_token: str
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentParticipationBinding:
+    participation_id: str
+    parent_nucleus_id: str
+    construction_slot_id: str
+    target_owner_kind: str
+    target_owner_id: str
+    target_owner_ordinal: int
+    target_owner_ordinal_token: str
+    owner_resolution: str
+    source_span_id: str
+    intersection_start_index: int
+    intersection_end_index: int
+    semantic_equivalence_authorized: bool
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentConstructionInstanceBinding:
+    construction_instance_id: str
+    parent_nucleus_id: str
+    construction_code: str
+    construction_atom_code: str
+    construction_surface_token: str
+    source_field: str
+    source_field_role: str
+    source_span_id: str
+    evidence_alias_ids: tuple[str, ...]
+    instance_start_index: int
+    instance_end_index: int
+    slot_ids: tuple[str, ...]
+    participation_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentConstructionIntervalBinding:
+    left_construction_instance_id: str
+    right_construction_instance_id: str
+    range_relation: str
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentConstructionLexicalAtomSpec:
+    lexical_atom_id: str
+    facet_id: str
+    construction_slot_id: str
+    construction_instance_id: str
+    parent_nucleus_id: str
+    source_span_id: str
+    source_field: str
+    source_field_role: str
+    evidence_alias_ids: tuple[str, ...]
+    slot_start_index: int
+    slot_end_index: int
+    lexical_role_kind: str
+    construction_code: str
+    construction_position: str
+    lexical_internal_link: str
+    construction_atom_code: str
+    construction_surface_token: str
+    role_position_atom_code: str
+    role_position_surface_token: str
+    participation_ids: tuple[str, ...]
+    target_owner_ordinals: tuple[int, ...]
+    visible_authority: str
+    required: bool
+    semantic_coverage_authority: str = "none"
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentRelationEndpointLexicalAtomSpec:
+    lexical_atom_id: str
+    experiment_relation_id: str
+    source_relation_id: str
+    refines_source_relation_id: str | None
+    authority_basis: str
+    source_relation_type: str
+    effective_relation_type: str
+    source_certainty: str
+    source_from_nucleus_id: str
+    source_to_nucleus_id: str
+    source_relation_ids: tuple[str, ...]
+    source_meaning_arc_keys: tuple[str, ...]
+    from_source_owner_id: str
+    to_source_owner_id: str
+    relation_endpoint_role: str
+    source_owner_id: str
+    source_owner_ordinal: int
+    source_owner_ordinal_token: str
+    opposite_source_owner_id: str
+    opposite_source_owner_ordinal: int
+    relation_direction: str
+    source_grounding_kind: str
+    source_retention: str
+    experiment_retention: str
+    evidence_alias_ids: tuple[str, ...]
+    marker_code: str | None
+    marker_policy_version: str | None
+    marker_policy_sha256: str | None
+    marker_source_span_id: str | None
+    marker_start_index: int | None
+    marker_end_index: int | None
+    relation_surface_key: str
+    relation_surface_token: str
+    atom_code: str
+    required: bool
+    semantic_coverage_authority: str = "none"
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentSemanticLinkLexicalAtomSpec:
+    lexical_atom_id: str
+    source_semantic_link_id: str
+    source_span_id: str
+    connective_code: str
+    relation_type: str
+    direction: str
+    from_semantic_unit_id: str
+    from_owner_ordinal: int
+    to_semantic_unit_id: str
+    to_owner_ordinal: int
+    semantic_link_surface_key: str
+    semantic_link_surface_token: str
+    atom_code: str
+    required: bool
+    semantic_coverage_authority: str = "none"
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentExplicitUnknownLexicalAtomSpec:
+    lexical_atom_id: str
+    source_unknown_id: str
+    dimension: str
+    source_span_id: str
+    affected_source_owners: tuple[tuple[str, str, int], ...]
+    lexical_role_kind: str
+    unknown_surface_token: str
+    atom_code: str
+    required: bool
+    semantic_coverage_authority: str = "none"
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentLexicalAtomSpecs:
+    schema_version: str
+    source_experiment_snapshot_sha256: str
+    source_relation_construction_authority_sha256: str
+    source_lexical_role_witness_sha256: str
+    surface_catalog_sha256: str
+    owner_bindings: tuple[Step11Rc0028ExperimentOwnerBinding, ...]
+    construction_instances: tuple[
+        Step11Rc0028ExperimentConstructionInstanceBinding, ...
+    ]
+    construction_interval_bindings: tuple[
+        Step11Rc0028ExperimentConstructionIntervalBinding, ...
+    ]
+    participation_bindings: tuple[
+        Step11Rc0028ExperimentParticipationBinding, ...
+    ]
+    construction_atoms: tuple[
+        Step11Rc0028ExperimentConstructionLexicalAtomSpec, ...
+    ]
+    relation_endpoint_atoms: tuple[
+        Step11Rc0028ExperimentRelationEndpointLexicalAtomSpec, ...
+    ]
+    semantic_link_atoms: tuple[
+        Step11Rc0028ExperimentSemanticLinkLexicalAtomSpec, ...
+    ]
+    explicit_unknown_atoms: tuple[
+        Step11Rc0028ExperimentExplicitUnknownLexicalAtomSpec, ...
+    ]
+    visible_lexical_atom_count: int
+    total_matchable_atom_count: int
+    max_visible_lexical_atoms: int
+    max_total_matchable_atoms: int
+    semantic_coverage_authority: str
+    specs_sha256: str
+    experimental_only: bool = True
+    body_free: bool = True
+    runtime_connected: bool = False
+
+
+def _step11_rc0028_owner_binding_material(
+    value: Step11Rc0028ExperimentOwnerBinding,
+) -> dict[str, Any]:
+    return {
+        "source_owner_id": value.source_owner_id,
+        "source_owner_kind": value.source_owner_kind,
+        "owner_ordinal": value.owner_ordinal,
+        "owner_ordinal_token": value.owner_ordinal_token,
+    }
+
+
+def _step11_rc0028_participation_material(
+    value: Step11Rc0028ExperimentParticipationBinding,
+) -> dict[str, Any]:
+    return {
+        "participation_id": value.participation_id,
+        "parent_nucleus_id": value.parent_nucleus_id,
+        "construction_slot_id": value.construction_slot_id,
+        "target_owner_kind": value.target_owner_kind,
+        "target_owner_id": value.target_owner_id,
+        "target_owner_ordinal": value.target_owner_ordinal,
+        "target_owner_ordinal_token": value.target_owner_ordinal_token,
+        "owner_resolution": value.owner_resolution,
+        "source_span_id": value.source_span_id,
+        "intersection_start_index": value.intersection_start_index,
+        "intersection_end_index": value.intersection_end_index,
+        "semantic_equivalence_authorized": (
+            value.semantic_equivalence_authorized
+        ),
+    }
+
+
+def _step11_rc0028_instance_material(
+    value: Step11Rc0028ExperimentConstructionInstanceBinding,
+) -> dict[str, Any]:
+    return {
+        "construction_instance_id": value.construction_instance_id,
+        "parent_nucleus_id": value.parent_nucleus_id,
+        "construction_code": value.construction_code,
+        "construction_atom_code": value.construction_atom_code,
+        "construction_surface_token": value.construction_surface_token,
+        "source_field": value.source_field,
+        "source_field_role": value.source_field_role,
+        "source_span_id": value.source_span_id,
+        "evidence_alias_ids": list(value.evidence_alias_ids),
+        "instance_start_index": value.instance_start_index,
+        "instance_end_index": value.instance_end_index,
+        "slot_ids": list(value.slot_ids),
+        "participation_ids": list(value.participation_ids),
+    }
+
+
+def _step11_rc0028_interval_material(
+    value: Step11Rc0028ExperimentConstructionIntervalBinding,
+) -> dict[str, Any]:
+    return {
+        "left_construction_instance_id": (
+            value.left_construction_instance_id
+        ),
+        "right_construction_instance_id": (
+            value.right_construction_instance_id
+        ),
+        "range_relation": value.range_relation,
+    }
+
+
+def _step11_rc0028_construction_atom_material(
+    value: Step11Rc0028ExperimentConstructionLexicalAtomSpec,
+    *,
+    include_id: bool = True,
+) -> dict[str, Any]:
+    material = {
+        "facet_id": value.facet_id,
+        "construction_slot_id": value.construction_slot_id,
+        "construction_instance_id": value.construction_instance_id,
+        "parent_nucleus_id": value.parent_nucleus_id,
+        "source_span_id": value.source_span_id,
+        "source_field": value.source_field,
+        "source_field_role": value.source_field_role,
+        "evidence_alias_ids": list(value.evidence_alias_ids),
+        "slot_start_index": value.slot_start_index,
+        "slot_end_index": value.slot_end_index,
+        "lexical_role_kind": value.lexical_role_kind,
+        "construction_code": value.construction_code,
+        "construction_position": value.construction_position,
+        "lexical_internal_link": value.lexical_internal_link,
+        "construction_atom_code": value.construction_atom_code,
+        "construction_surface_token": value.construction_surface_token,
+        "role_position_atom_code": value.role_position_atom_code,
+        "role_position_surface_token": value.role_position_surface_token,
+        "participation_ids": list(value.participation_ids),
+        "target_owner_ordinals": list(value.target_owner_ordinals),
+        "visible_authority": value.visible_authority,
+        "required": value.required,
+        "semantic_coverage_authority": value.semantic_coverage_authority,
+    }
+    return (
+        {"lexical_atom_id": value.lexical_atom_id, **material}
+        if include_id
+        else material
+    )
+
+
+def _step11_rc0028_relation_atom_material(
+    value: Step11Rc0028ExperimentRelationEndpointLexicalAtomSpec,
+    *,
+    include_id: bool = True,
+) -> dict[str, Any]:
+    material = {
+        "experiment_relation_id": value.experiment_relation_id,
+        "source_relation_id": value.source_relation_id,
+        "refines_source_relation_id": value.refines_source_relation_id,
+        "authority_basis": value.authority_basis,
+        "source_relation_type": value.source_relation_type,
+        "effective_relation_type": value.effective_relation_type,
+        "source_certainty": value.source_certainty,
+        "source_from_nucleus_id": value.source_from_nucleus_id,
+        "source_to_nucleus_id": value.source_to_nucleus_id,
+        "source_relation_ids": list(value.source_relation_ids),
+        "source_meaning_arc_keys": list(value.source_meaning_arc_keys),
+        "from_source_owner_id": value.from_source_owner_id,
+        "to_source_owner_id": value.to_source_owner_id,
+        "relation_endpoint_role": value.relation_endpoint_role,
+        "source_owner_id": value.source_owner_id,
+        "source_owner_ordinal": value.source_owner_ordinal,
+        "source_owner_ordinal_token": value.source_owner_ordinal_token,
+        "opposite_source_owner_id": value.opposite_source_owner_id,
+        "opposite_source_owner_ordinal": value.opposite_source_owner_ordinal,
+        "relation_direction": value.relation_direction,
+        "source_grounding_kind": value.source_grounding_kind,
+        "source_retention": value.source_retention,
+        "experiment_retention": value.experiment_retention,
+        "evidence_alias_ids": list(value.evidence_alias_ids),
+        "marker_code": value.marker_code,
+        "marker_policy_version": value.marker_policy_version,
+        "marker_policy_sha256": value.marker_policy_sha256,
+        "marker_source_span_id": value.marker_source_span_id,
+        "marker_start_index": value.marker_start_index,
+        "marker_end_index": value.marker_end_index,
+        "relation_surface_key": value.relation_surface_key,
+        "relation_surface_token": value.relation_surface_token,
+        "atom_code": value.atom_code,
+        "required": value.required,
+        "semantic_coverage_authority": value.semantic_coverage_authority,
+    }
+    return (
+        {"lexical_atom_id": value.lexical_atom_id, **material}
+        if include_id
+        else material
+    )
+
+
+def _step11_rc0028_semantic_link_atom_material(
+    value: Step11Rc0028ExperimentSemanticLinkLexicalAtomSpec,
+    *,
+    include_id: bool = True,
+) -> dict[str, Any]:
+    material = {
+        "source_semantic_link_id": value.source_semantic_link_id,
+        "source_span_id": value.source_span_id,
+        "connective_code": value.connective_code,
+        "relation_type": value.relation_type,
+        "direction": value.direction,
+        "from_semantic_unit_id": value.from_semantic_unit_id,
+        "from_owner_ordinal": value.from_owner_ordinal,
+        "to_semantic_unit_id": value.to_semantic_unit_id,
+        "to_owner_ordinal": value.to_owner_ordinal,
+        "semantic_link_surface_key": value.semantic_link_surface_key,
+        "semantic_link_surface_token": value.semantic_link_surface_token,
+        "atom_code": value.atom_code,
+        "required": value.required,
+        "semantic_coverage_authority": value.semantic_coverage_authority,
+    }
+    return (
+        {"lexical_atom_id": value.lexical_atom_id, **material}
+        if include_id
+        else material
+    )
+
+
+def _step11_rc0028_unknown_atom_material(
+    value: Step11Rc0028ExperimentExplicitUnknownLexicalAtomSpec,
+    *,
+    include_id: bool = True,
+) -> dict[str, Any]:
+    material = {
+        "source_unknown_id": value.source_unknown_id,
+        "dimension": value.dimension,
+        "source_span_id": value.source_span_id,
+        "affected_source_owners": [
+            [owner_kind, owner_id, ordinal]
+            for owner_kind, owner_id, ordinal in value.affected_source_owners
+        ],
+        "lexical_role_kind": value.lexical_role_kind,
+        "unknown_surface_token": value.unknown_surface_token,
+        "atom_code": value.atom_code,
+        "required": value.required,
+        "semantic_coverage_authority": value.semantic_coverage_authority,
+    }
+    return (
+        {"lexical_atom_id": value.lexical_atom_id, **material}
+        if include_id
+        else material
+    )
+
+
+def _step11_rc0028_lexical_specs_payload(
+    value: Step11Rc0028ExperimentLexicalAtomSpecs,
+) -> dict[str, Any]:
+    return {
+        "schema_version": value.schema_version,
+        "source_experiment_snapshot_sha256": (
+            value.source_experiment_snapshot_sha256
+        ),
+        "source_relation_construction_authority_sha256": (
+            value.source_relation_construction_authority_sha256
+        ),
+        "source_lexical_role_witness_sha256": (
+            value.source_lexical_role_witness_sha256
+        ),
+        "surface_catalog_sha256": value.surface_catalog_sha256,
+        "owner_bindings": [
+            _step11_rc0028_owner_binding_material(row)
+            for row in value.owner_bindings
+        ],
+        "construction_instances": [
+            _step11_rc0028_instance_material(row)
+            for row in value.construction_instances
+        ],
+        "construction_interval_bindings": [
+            _step11_rc0028_interval_material(row)
+            for row in value.construction_interval_bindings
+        ],
+        "participation_bindings": [
+            _step11_rc0028_participation_material(row)
+            for row in value.participation_bindings
+        ],
+        "construction_atoms": [
+            _step11_rc0028_construction_atom_material(row)
+            for row in value.construction_atoms
+        ],
+        "relation_endpoint_atoms": [
+            _step11_rc0028_relation_atom_material(row)
+            for row in value.relation_endpoint_atoms
+        ],
+        "semantic_link_atoms": [
+            _step11_rc0028_semantic_link_atom_material(row)
+            for row in value.semantic_link_atoms
+        ],
+        "explicit_unknown_atoms": [
+            _step11_rc0028_unknown_atom_material(row)
+            for row in value.explicit_unknown_atoms
+        ],
+        "visible_lexical_atom_count": value.visible_lexical_atom_count,
+        "total_matchable_atom_count": value.total_matchable_atom_count,
+        "max_visible_lexical_atoms": value.max_visible_lexical_atoms,
+        "max_total_matchable_atoms": value.max_total_matchable_atoms,
+        "semantic_coverage_authority": value.semantic_coverage_authority,
+        "experimental_only": value.experimental_only,
+        "body_free": value.body_free,
+        "runtime_connected": value.runtime_connected,
+    }
+
+
+def _step11_rc0028_atom_id(prefix: str, material: Mapping[str, Any]) -> str:
+    return prefix + artifact_sha256(dict(material))[:24]
+
+
+def _step11_rc0028_owner_bindings(
+    snapshot: Any,
+    catalog: Mapping[str, Any],
+) -> tuple[Step11Rc0028ExperimentOwnerBinding, ...]:
+    authority = snapshot.relation_construction_authority
+    witness = snapshot.lexical_role_witness
+    kind_by_id: dict[str, str] = {}
+
+    def bind(owner_id: Any, owner_kind: str) -> None:
+        if type(owner_id) is not str or not owner_id:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0028_SOURCE_OWNER_INVALID"
+            )
+        existing = kind_by_id.get(owner_id)
+        if existing is not None and existing != owner_kind:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0028_SOURCE_OWNER_KIND_MISMATCH"
+            )
+        kind_by_id[owner_id] = owner_kind
+
+    # Bind the successor's explicit owner kinds first.  A frozen inventory
+    # nucleus can carry a semantic-unit ``actual_source_id``; treating every
+    # such identity as kind ``nucleus`` would erase that upstream distinction.
+    for row in authority.source_owner_participations:
+        bind(row.parent_nucleus_id, "nucleus")
+        bind(row.target_owner_id, row.target_owner_kind)
+    for row in witness.relation_endpoint_bindings:
+        bind(row.source_owner_id, "nucleus")
+    for row in authority.semantic_link_bindings:
+        bind(row.from_semantic_unit_id, "semantic_unit")
+        bind(row.to_semantic_unit_id, "semantic_unit")
+    for row in authority.explicit_unknown_authorities:
+        for owner in row.affected_source_owners:
+            bind(owner.owner_id, owner.owner_kind)
+
+    nucleus_order: list[str] = []
+    for row in snapshot.base_snapshot.nuclei:
+        owner_id = str(row.actual_source_id)
+        bind(owner_id, kind_by_id.get(owner_id, "nucleus"))
+        if owner_id not in nucleus_order:
+            nucleus_order.append(owner_id)
+
+    semantic_unit_order = tuple(
+        dict.fromkeys(
+            row.target_owner_id
+            for row in sorted(
+                authority.source_owner_participations,
+                key=lambda item: (
+                    item.source_span_id,
+                    item.intersection_start_index,
+                    item.intersection_end_index,
+                    item.target_owner_id,
+                ),
+            )
+            if row.target_owner_kind == "semantic_unit"
+        )
+    )
+    ordered = tuple(
+        dict.fromkeys(
+            (
+                *nucleus_order,
+                *semantic_unit_order,
+                *sorted(kind_by_id),
+            )
+        )
+    )
+    if len(ordered) > _STEP11_RC0028_OWNER_ORDINAL_MAX:
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0028_RESOURCE_BOUND_EXCEEDED"
+        )
+    ordinal_tokens = catalog["owner_ordinal_tokens"]
+    return tuple(
+        Step11Rc0028ExperimentOwnerBinding(
+            source_owner_id=owner_id,
+            source_owner_kind=kind_by_id[owner_id],
+            owner_ordinal=ordinal,
+            owner_ordinal_token=str(ordinal_tokens[str(ordinal)]),
+        )
+        for ordinal, owner_id in enumerate(ordered, start=1)
+    )
+
+
+def _build_step11_rc0028_experiment_lexical_atom_specs(
+    successor_snapshot: Any,
+    *,
+    validate_output: bool,
+) -> Step11Rc0028ExperimentLexicalAtomSpecs:
+    # Dynamic local load preserves both the rc0027 import graph and the
+    # accepted E1b predecessor's frozen reverse-import audit.
+    successor_owner = __import__(
+        "emlis_ai_grounded_lexical_role_experiment_snapshot_successor_v3",
+        fromlist=(
+            "GroundedLexicalRoleExperimentSnapshotSuccessor",
+            "validate_grounded_lexical_role_experiment_snapshot_successor",
+        ),
+    )
+    GroundedLexicalRoleExperimentSnapshotSuccessor = (
+        successor_owner.GroundedLexicalRoleExperimentSnapshotSuccessor
+    )
+    validate_grounded_lexical_role_experiment_snapshot_successor = (
+        successor_owner.validate_grounded_lexical_role_experiment_snapshot_successor
+    )
+    from emlis_ai_step11_rc0028_experiment_surface_catalog_v3 import (
+        STEP11_RC0028_EXPERIMENT_SURFACE_CATALOG,
+        STEP11_RC0028_EXPERIMENT_SURFACE_CATALOG_SHA256,
+        validate_step11_rc0028_experiment_surface_catalog,
+    )
+
+    if type(successor_snapshot) is not GroundedLexicalRoleExperimentSnapshotSuccessor:
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0028_SUCCESSOR_SNAPSHOT_INVALID"
+        )
+    if validate_grounded_lexical_role_experiment_snapshot_successor(
+        successor_snapshot
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0028_SUCCESSOR_SNAPSHOT_INVALID"
+        )
+    catalog_issues = validate_step11_rc0028_experiment_surface_catalog(
+        STEP11_RC0028_EXPERIMENT_SURFACE_CATALOG
+    )
+    if catalog_issues:
+        raise Step11GroundedLexicalizationError(catalog_issues[0])
+    if (
+        successor_snapshot.semantic_coverage_authorized is not False
+        or successor_snapshot.lexical_role_witness.semantic_coverage_authority
+        != "none"
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0028_SEMANTIC_COVERAGE_SELF_CLAIM"
+        )
+
+    catalog = STEP11_RC0028_EXPERIMENT_SURFACE_CATALOG
+    authority = successor_snapshot.relation_construction_authority
+    witness = successor_snapshot.lexical_role_witness
+    owner_bindings = _step11_rc0028_owner_bindings(
+        successor_snapshot, catalog
+    )
+    owner_by_id = {row.source_owner_id: row for row in owner_bindings}
+    instance_by_id = {
+        row.construction_instance_id: row
+        for row in authority.construction_instances
+    }
+    slot_by_id = {
+        row.construction_slot_id: row for row in authority.construction_slots
+    }
+    participation_by_id = {
+        row.participation_id: row
+        for row in authority.source_owner_participations
+    }
+    relation_by_id = {
+        row.experiment_relation_id: row for row in authority.relation_authorities
+    }
+    if (
+        len(instance_by_id) != len(authority.construction_instances)
+        or len(slot_by_id) != len(authority.construction_slots)
+        or len(participation_by_id)
+        != len(authority.source_owner_participations)
+        or len(relation_by_id) != len(authority.relation_authorities)
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0028_SOURCE_ID_DUPLICATE"
+        )
+
+    construction_instances = tuple(
+        Step11Rc0028ExperimentConstructionInstanceBinding(
+            construction_instance_id=row.construction_instance_id,
+            parent_nucleus_id=row.parent_nucleus_id,
+            construction_code=row.construction_code,
+            construction_atom_code=catalog["construction_atom_codes"][
+                row.construction_code
+            ],
+            construction_surface_token=catalog[
+                "construction_surface_tokens"
+            ][row.construction_code],
+            source_field=row.source_field,
+            source_field_role=row.source_field_role,
+            source_span_id=row.source_span_id,
+            evidence_alias_ids=tuple(row.evidence_alias_ids),
+            instance_start_index=row.instance_start_index,
+            instance_end_index=row.instance_end_index,
+            slot_ids=tuple(row.slot_ids),
+            participation_ids=tuple(row.participation_ids),
+        )
+        for row in authority.construction_instances
+    )
+    construction_interval_bindings = tuple(
+        Step11Rc0028ExperimentConstructionIntervalBinding(
+            left_construction_instance_id=(
+                row.left_construction_instance_id
+            ),
+            right_construction_instance_id=(
+                row.right_construction_instance_id
+            ),
+            range_relation=row.range_relation,
+        )
+        for row in authority.interval_edges
+    )
+    participation_bindings = tuple(
+        Step11Rc0028ExperimentParticipationBinding(
+            participation_id=row.participation_id,
+            parent_nucleus_id=row.parent_nucleus_id,
+            construction_slot_id=row.construction_slot_id,
+            target_owner_kind=row.target_owner_kind,
+            target_owner_id=row.target_owner_id,
+            target_owner_ordinal=owner_by_id[row.target_owner_id].owner_ordinal,
+            target_owner_ordinal_token=(
+                owner_by_id[row.target_owner_id].owner_ordinal_token
+            ),
+            owner_resolution=row.owner_resolution,
+            source_span_id=row.source_span_id,
+            intersection_start_index=row.intersection_start_index,
+            intersection_end_index=row.intersection_end_index,
+            semantic_equivalence_authorized=(
+                row.semantic_equivalence_authorized
+            ),
+        )
+        for row in authority.source_owner_participations
+    )
+
+    construction_atoms: list[
+        Step11Rc0028ExperimentConstructionLexicalAtomSpec
+    ] = []
+    for facet in witness.facets:
+        instance = instance_by_id.get(facet.source_owner_id)
+        slot = slot_by_id.get(facet.construction_slot_id)
+        if (
+            instance is None
+            or slot is None
+            or slot.construction_instance_id != instance.construction_instance_id
+            or facet.parent_nucleus_id != instance.parent_nucleus_id
+            or facet.construction_code != instance.construction_code
+            or tuple(facet.participation_ids) != tuple(slot.participation_ids)
+        ):
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0028_CONSTRUCTION_BINDING_MISMATCH"
+            )
+        role_key = (
+            facet.lexical_role_kind + ":" + facet.construction_position
+        )
+        if role_key not in catalog["role_position_atom_codes"]:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0028_ROLE_POSITION_UNSUPPORTED"
+            )
+        target_ordinals = tuple(
+            owner_by_id[participation_by_id[participation_id].target_owner_id]
+            .owner_ordinal
+            for participation_id in facet.participation_ids
+        )
+        provisional = Step11Rc0028ExperimentConstructionLexicalAtomSpec(
+            lexical_atom_id="",
+            facet_id=facet.facet_id,
+            construction_slot_id=facet.construction_slot_id,
+            construction_instance_id=facet.source_owner_id,
+            parent_nucleus_id=facet.parent_nucleus_id,
+            source_span_id=facet.source_span_id,
+            source_field=slot.source_field,
+            source_field_role=facet.source_field_role,
+            evidence_alias_ids=tuple(slot.evidence_alias_ids),
+            slot_start_index=slot.slot_start_index,
+            slot_end_index=slot.slot_end_index,
+            lexical_role_kind=facet.lexical_role_kind,
+            construction_code=facet.construction_code,
+            construction_position=facet.construction_position,
+            lexical_internal_link=facet.lexical_internal_link,
+            construction_atom_code=catalog["construction_atom_codes"][
+                facet.construction_code
+            ],
+            construction_surface_token=catalog[
+                "construction_surface_tokens"
+            ][facet.construction_code],
+            role_position_atom_code=catalog["role_position_atom_codes"][
+                role_key
+            ],
+            role_position_surface_token=catalog[
+                "role_position_surface_tokens"
+            ][role_key],
+            participation_ids=tuple(facet.participation_ids),
+            target_owner_ordinals=target_ordinals,
+            visible_authority=facet.visible_authority,
+            required=facet.required,
+        )
+        construction_atoms.append(
+            Step11Rc0028ExperimentConstructionLexicalAtomSpec(
+                **{
+                    **_step11_rc0028_construction_atom_material(
+                        provisional, include_id=False
+                    ),
+                    "lexical_atom_id": _step11_rc0028_atom_id(
+                        "rc0028lex:construction:",
+                        _step11_rc0028_construction_atom_material(
+                            provisional, include_id=False
+                        ),
+                    ),
+                    "participation_ids": provisional.participation_ids,
+                    "evidence_alias_ids": provisional.evidence_alias_ids,
+                    "target_owner_ordinals": (
+                        provisional.target_owner_ordinals
+                    ),
+                }
+            )
+        )
+
+    relation_endpoint_atoms: list[
+        Step11Rc0028ExperimentRelationEndpointLexicalAtomSpec
+    ] = []
+    for endpoint in witness.relation_endpoint_bindings:
+        relation = relation_by_id.get(endpoint.relation_id)
+        if relation is None:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0028_RELATION_BINDING_MISMATCH"
+            )
+        expected_owner = (
+            relation.from_source_owner_id
+            if endpoint.relation_endpoint_role == "from"
+            else relation.to_source_owner_id
+        )
+        opposite_owner = (
+            relation.to_source_owner_id
+            if endpoint.relation_endpoint_role == "from"
+            else relation.from_source_owner_id
+        )
+        if (
+            endpoint.source_owner_id != expected_owner
+            or endpoint.source_relation_id != relation.source_relation_id
+            or endpoint.relation_direction != relation.direction
+            or endpoint.effective_relation_type
+            != relation.effective_relation_type
+        ):
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0028_RELATION_BINDING_MISMATCH"
+            )
+        surface_key = (
+            relation.effective_relation_type + ":" + relation.direction
+        )
+        if surface_key not in catalog["relation_surface_tokens"]:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0028_RELATION_TYPE_UNSUPPORTED"
+            )
+        provisional = Step11Rc0028ExperimentRelationEndpointLexicalAtomSpec(
+            lexical_atom_id="",
+            experiment_relation_id=relation.experiment_relation_id,
+            source_relation_id=relation.source_relation_id,
+            refines_source_relation_id=relation.refines_source_relation_id,
+            authority_basis=relation.authority_basis,
+            source_relation_type=relation.source_relation_type,
+            effective_relation_type=relation.effective_relation_type,
+            source_certainty=format(relation.source_certainty, ".17g"),
+            source_from_nucleus_id=relation.source_from_nucleus_id,
+            source_to_nucleus_id=relation.source_to_nucleus_id,
+            source_relation_ids=tuple(relation.source_relation_ids),
+            source_meaning_arc_keys=tuple(
+                relation.source_meaning_arc_keys
+            ),
+            from_source_owner_id=relation.from_source_owner_id,
+            to_source_owner_id=relation.to_source_owner_id,
+            relation_endpoint_role=endpoint.relation_endpoint_role,
+            source_owner_id=endpoint.source_owner_id,
+            source_owner_ordinal=owner_by_id[
+                endpoint.source_owner_id
+            ].owner_ordinal,
+            source_owner_ordinal_token=owner_by_id[
+                endpoint.source_owner_id
+            ].owner_ordinal_token,
+            opposite_source_owner_id=opposite_owner,
+            opposite_source_owner_ordinal=owner_by_id[
+                opposite_owner
+            ].owner_ordinal,
+            relation_direction=relation.direction,
+            source_grounding_kind=relation.source_grounding_kind,
+            source_retention=relation.source_retention,
+            experiment_retention=relation.experiment_retention,
+            evidence_alias_ids=tuple(relation.evidence_alias_ids),
+            marker_code=relation.marker_code,
+            marker_policy_version=relation.marker_policy_version,
+            marker_policy_sha256=relation.marker_policy_sha256,
+            marker_source_span_id=relation.marker_source_span_id,
+            marker_start_index=relation.marker_start_index,
+            marker_end_index=relation.marker_end_index,
+            relation_surface_key=surface_key,
+            relation_surface_token=catalog["relation_surface_tokens"][
+                surface_key
+            ],
+            atom_code=(
+                "relation_"
+                + relation.effective_relation_type
+                + "_"
+                + relation.direction
+                + "_"
+                + endpoint.relation_endpoint_role
+            ),
+            required=endpoint.required,
+        )
+        material = _step11_rc0028_relation_atom_material(
+            provisional, include_id=False
+        )
+        relation_endpoint_atoms.append(
+            Step11Rc0028ExperimentRelationEndpointLexicalAtomSpec(
+                **{
+                    **material,
+                    "lexical_atom_id": _step11_rc0028_atom_id(
+                        "rc0028lex:relation:", material
+                    ),
+                    "evidence_alias_ids": provisional.evidence_alias_ids,
+                    "source_relation_ids": provisional.source_relation_ids,
+                    "source_meaning_arc_keys": (
+                        provisional.source_meaning_arc_keys
+                    ),
+                }
+            )
+        )
+
+    semantic_link_atoms: list[
+        Step11Rc0028ExperimentSemanticLinkLexicalAtomSpec
+    ] = []
+    for link in authority.semantic_link_bindings:
+        surface_key = link.relation_type + ":" + link.direction
+        if surface_key not in catalog["semantic_link_surface_tokens"]:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0028_SEMANTIC_LINK_TYPE_UNSUPPORTED"
+            )
+        provisional = Step11Rc0028ExperimentSemanticLinkLexicalAtomSpec(
+            lexical_atom_id="",
+            source_semantic_link_id=link.source_semantic_link_id,
+            source_span_id=link.source_span_id,
+            connective_code=link.connective_code,
+            relation_type=link.relation_type,
+            direction=link.direction,
+            from_semantic_unit_id=link.from_semantic_unit_id,
+            from_owner_ordinal=owner_by_id[
+                link.from_semantic_unit_id
+            ].owner_ordinal,
+            to_semantic_unit_id=link.to_semantic_unit_id,
+            to_owner_ordinal=owner_by_id[
+                link.to_semantic_unit_id
+            ].owner_ordinal,
+            semantic_link_surface_key=surface_key,
+            semantic_link_surface_token=catalog[
+                "semantic_link_surface_tokens"
+            ][surface_key],
+            atom_code=(
+                "semantic_link_"
+                + link.relation_type
+                + "_"
+                + link.direction
+            ),
+            required=link.required,
+        )
+        material = _step11_rc0028_semantic_link_atom_material(
+            provisional, include_id=False
+        )
+        semantic_link_atoms.append(
+            Step11Rc0028ExperimentSemanticLinkLexicalAtomSpec(
+                **{
+                    **material,
+                    "lexical_atom_id": _step11_rc0028_atom_id(
+                        "rc0028lex:link:", material
+                    ),
+                }
+            )
+        )
+
+    explicit_unknown_atoms: list[
+        Step11Rc0028ExperimentExplicitUnknownLexicalAtomSpec
+    ] = []
+    for unknown in authority.explicit_unknown_authorities:
+        if unknown.dimension not in catalog["unknown_surface_tokens"]:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0028_EXPLICIT_UNKNOWN_DIMENSION_UNSUPPORTED"
+            )
+        affected = tuple(
+            (
+                owner.owner_kind,
+                owner.owner_id,
+                owner_by_id[owner.owner_id].owner_ordinal,
+            )
+            for owner in unknown.affected_source_owners
+        )
+        provisional = Step11Rc0028ExperimentExplicitUnknownLexicalAtomSpec(
+            lexical_atom_id="",
+            source_unknown_id=unknown.source_unknown_id,
+            dimension=unknown.dimension,
+            source_span_id=unknown.source_span_id,
+            affected_source_owners=affected,
+            lexical_role_kind=unknown.lexical_role_kind,
+            unknown_surface_token=catalog["unknown_surface_tokens"][
+                unknown.dimension
+            ],
+            atom_code="unknown_" + unknown.dimension,
+            required=unknown.required,
+        )
+        material = _step11_rc0028_unknown_atom_material(
+            provisional, include_id=False
+        )
+        explicit_unknown_atoms.append(
+            Step11Rc0028ExperimentExplicitUnknownLexicalAtomSpec(
+                **{
+                    **material,
+                    "lexical_atom_id": _step11_rc0028_atom_id(
+                        "rc0028lex:unknown:", material
+                    ),
+                    "affected_source_owners": (
+                        provisional.affected_source_owners
+                    ),
+                }
+            )
+        )
+
+    visible_count = len(construction_atoms)
+    total_count = (
+        visible_count
+        + len(relation_endpoint_atoms)
+        + len(semantic_link_atoms)
+        + len(explicit_unknown_atoms)
+    )
+    max_visible = authority.resource_bounds.max_lexical_construction_slots
+    max_total = (
+        max_visible
+        + 2 * authority.resource_bounds.exact_effective_relations
+        + authority.resource_bounds.exact_semantic_links
+        + authority.resource_bounds.exact_explicit_unknowns
+    )
+    if visible_count > max_visible or total_count > max_total:
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0028_RESOURCE_BOUND_EXCEEDED"
+        )
+    provisional_specs = Step11Rc0028ExperimentLexicalAtomSpecs(
+        schema_version=STEP11_RC0028_EXPERIMENT_LEXICAL_ATOM_SPECS_SCHEMA,
+        source_experiment_snapshot_sha256=(
+            successor_snapshot.experiment_snapshot_sha256
+        ),
+        source_relation_construction_authority_sha256=(
+            successor_snapshot.source_relation_construction_authority_sha256
+        ),
+        source_lexical_role_witness_sha256=(
+            successor_snapshot.source_lexical_role_witness_sha256
+        ),
+        surface_catalog_sha256=(
+            STEP11_RC0028_EXPERIMENT_SURFACE_CATALOG_SHA256
+        ),
+        owner_bindings=owner_bindings,
+        construction_instances=construction_instances,
+        construction_interval_bindings=construction_interval_bindings,
+        participation_bindings=participation_bindings,
+        construction_atoms=tuple(construction_atoms),
+        relation_endpoint_atoms=tuple(relation_endpoint_atoms),
+        semantic_link_atoms=tuple(semantic_link_atoms),
+        explicit_unknown_atoms=tuple(explicit_unknown_atoms),
+        visible_lexical_atom_count=visible_count,
+        total_matchable_atom_count=total_count,
+        max_visible_lexical_atoms=max_visible,
+        max_total_matchable_atoms=max_total,
+        semantic_coverage_authority="none",
+        specs_sha256="0" * 64,
+    )
+    result = Step11Rc0028ExperimentLexicalAtomSpecs(
+        **{
+            **_step11_rc0028_lexical_specs_payload(provisional_specs),
+            "owner_bindings": provisional_specs.owner_bindings,
+            "construction_instances": provisional_specs.construction_instances,
+            "construction_interval_bindings": (
+                provisional_specs.construction_interval_bindings
+            ),
+            "participation_bindings": provisional_specs.participation_bindings,
+            "construction_atoms": provisional_specs.construction_atoms,
+            "relation_endpoint_atoms": provisional_specs.relation_endpoint_atoms,
+            "semantic_link_atoms": provisional_specs.semantic_link_atoms,
+            "explicit_unknown_atoms": provisional_specs.explicit_unknown_atoms,
+            "specs_sha256": artifact_sha256(
+                _step11_rc0028_lexical_specs_payload(provisional_specs)
+            ),
+        }
+    )
+    if validate_output:
+        issues = validate_step11_rc0028_experiment_lexical_atom_specs(result)
+        if issues:
+            raise Step11GroundedLexicalizationError(issues[0])
+    return result
+
+
+def build_step11_rc0028_experiment_lexical_atom_specs(
+    successor_snapshot: Any,
+) -> Step11Rc0028ExperimentLexicalAtomSpecs:
+    """Project the validated E1b successor into bounded lexical atoms."""
+
+    return _build_step11_rc0028_experiment_lexical_atom_specs(
+        successor_snapshot,
+        validate_output=True,
+    )
+
+
+def validate_step11_rc0028_experiment_lexical_atom_specs(
+    value: Any,
+    *,
+    successor_snapshot: Any | None = None,
+) -> tuple[str, ...]:
+    """Validate closed topology, catalog bindings, counts, and commitments."""
+
+    if type(value) is not Step11Rc0028ExperimentLexicalAtomSpecs:
+        return ("STEP11_RC0028_LEXICAL_ATOM_SPECS_TYPE_INVALID",)
+    from emlis_ai_step11_rc0028_experiment_surface_catalog_v3 import (
+        STEP11_RC0028_EXPERIMENT_SURFACE_CATALOG,
+        STEP11_RC0028_EXPERIMENT_SURFACE_CATALOG_SHA256,
+        STEP11_RC0028_OWNER_ORDINAL_MAX,
+        validate_step11_rc0028_experiment_surface_catalog,
+    )
+
+    issues: set[str] = set()
+    catalog = STEP11_RC0028_EXPERIMENT_SURFACE_CATALOG
+    if validate_step11_rc0028_experiment_surface_catalog(catalog):
+        issues.add("STEP11_RC0028_CATALOG_INVALID")
+    if (
+        value.schema_version
+        != STEP11_RC0028_EXPERIMENT_LEXICAL_ATOM_SPECS_SCHEMA
+        or value.experimental_only is not True
+        or value.body_free is not True
+        or value.runtime_connected is not False
+        or value.semantic_coverage_authority != "none"
+    ):
+        issues.add("STEP11_RC0028_LEXICAL_ATOM_SPECS_CONTRACT_MISMATCH")
+    hashes = (
+        value.source_experiment_snapshot_sha256,
+        value.source_relation_construction_authority_sha256,
+        value.source_lexical_role_witness_sha256,
+        value.surface_catalog_sha256,
+        value.specs_sha256,
+    )
+    if any(
+        type(item) is not str
+        or _STEP11_RC0028_SHA256_RE.fullmatch(item) is None
+        or item == "0" * 64
+        for item in hashes
+    ):
+        issues.add("STEP11_RC0028_LEXICAL_ATOM_SPECS_HASH_INVALID")
+    if value.surface_catalog_sha256 != (
+        STEP11_RC0028_EXPERIMENT_SURFACE_CATALOG_SHA256
+    ):
+        issues.add("STEP11_RC0028_CATALOG_COMMITMENT_MISMATCH")
+
+    owner_ids = tuple(row.source_owner_id for row in value.owner_bindings)
+    owner_ordinals = tuple(row.owner_ordinal for row in value.owner_bindings)
+    owner_by_id = {row.source_owner_id: row for row in value.owner_bindings}
+    if (
+        len(owner_by_id) != len(value.owner_bindings)
+        or owner_ordinals != tuple(range(1, len(value.owner_bindings) + 1))
+        or len(owner_ordinals) > STEP11_RC0028_OWNER_ORDINAL_MAX
+        or any(
+            row.source_owner_kind not in {"nucleus", "semantic_unit"}
+            or row.owner_ordinal_token
+            != catalog["owner_ordinal_tokens"].get(str(row.owner_ordinal))
+            for row in value.owner_bindings
+        )
+    ):
+        issues.add("STEP11_RC0028_OWNER_BINDING_MISMATCH")
+
+    instance_by_id = {
+        row.construction_instance_id: row
+        for row in value.construction_instances
+    }
+    participation_by_id = {
+        row.participation_id: row for row in value.participation_bindings
+    }
+    construction_by_slot = {
+        row.construction_slot_id: row for row in value.construction_atoms
+    }
+    if (
+        len(instance_by_id) != len(value.construction_instances)
+        or len(participation_by_id) != len(value.participation_bindings)
+        or len(construction_by_slot) != len(value.construction_atoms)
+    ):
+        issues.add("STEP11_RC0028_LEXICAL_ATOM_ID_DUPLICATE")
+    all_instance_ids = set(instance_by_id)
+    all_slot_ids = set(construction_by_slot)
+    all_participation_ids = set(participation_by_id)
+    if any(
+        row.construction_atom_code
+        != catalog["construction_atom_codes"].get(row.construction_code)
+        or row.construction_surface_token
+        != catalog["construction_surface_tokens"].get(row.construction_code)
+        or not set(row.slot_ids) <= all_slot_ids
+        or not set(row.participation_ids) <= all_participation_ids
+        or row.instance_start_index < 0
+        or row.instance_end_index <= row.instance_start_index
+        for row in value.construction_instances
+    ):
+        issues.add("STEP11_RC0028_CONSTRUCTION_INSTANCE_BINDING_MISMATCH")
+    if any(
+        row.left_construction_instance_id not in all_instance_ids
+        or row.right_construction_instance_id not in all_instance_ids
+        or row.range_relation
+        not in {
+            "disjoint",
+            "contains",
+            "contained_by",
+            "partial_overlap",
+            "coextensive",
+        }
+        for row in value.construction_interval_bindings
+    ):
+        issues.add("STEP11_RC0028_CONSTRUCTION_OVERLAP_BINDING_MISMATCH")
+    if any(
+        row.construction_slot_id not in all_slot_ids
+        or row.target_owner_id not in owner_by_id
+        or owner_by_id[row.target_owner_id].source_owner_kind
+        != row.target_owner_kind
+        or owner_by_id[row.target_owner_id].owner_ordinal
+        != row.target_owner_ordinal
+        or owner_by_id[row.target_owner_id].owner_ordinal_token
+        != row.target_owner_ordinal_token
+        or row.intersection_start_index < 0
+        or row.intersection_end_index <= row.intersection_start_index
+        or row.semantic_equivalence_authorized is not False
+        for row in value.participation_bindings
+    ):
+        issues.add("STEP11_RC0028_PARTICIPATION_BINDING_MISMATCH")
+    if any(
+        row.construction_instance_id not in all_instance_ids
+        or row.parent_nucleus_id not in owner_by_id
+        or row.slot_start_index < 0
+        or row.slot_end_index <= row.slot_start_index
+        or row.construction_atom_code
+        != catalog["construction_atom_codes"].get(row.construction_code)
+        or row.construction_surface_token
+        != catalog["construction_surface_tokens"].get(row.construction_code)
+        or row.role_position_atom_code
+        != catalog["role_position_atom_codes"].get(
+            row.lexical_role_kind + ":" + row.construction_position
+        )
+        or row.role_position_surface_token
+        != catalog["role_position_surface_tokens"].get(
+            row.lexical_role_kind + ":" + row.construction_position
+        )
+        or not set(row.participation_ids) <= all_participation_ids
+        or row.semantic_coverage_authority != "none"
+        or row.lexical_atom_id
+        != _step11_rc0028_atom_id(
+            "rc0028lex:construction:",
+            _step11_rc0028_construction_atom_material(
+                row, include_id=False
+            ),
+        )
+        for row in value.construction_atoms
+    ):
+        issues.add("STEP11_RC0028_CONSTRUCTION_ATOM_BINDING_MISMATCH")
+
+    relation_ids: dict[str, set[str]] = {}
+    if any(
+        row.source_owner_id not in owner_by_id
+        or row.opposite_source_owner_id not in owner_by_id
+        or row.source_owner_ordinal
+        != owner_by_id[row.source_owner_id].owner_ordinal
+        or row.source_owner_ordinal_token
+        != owner_by_id[row.source_owner_id].owner_ordinal_token
+        or row.opposite_source_owner_ordinal
+        != owner_by_id[row.opposite_source_owner_id].owner_ordinal
+        or row.relation_endpoint_role not in {"from", "to"}
+        or row.relation_surface_key
+        != row.effective_relation_type + ":" + row.relation_direction
+        or row.relation_surface_token
+        != catalog["relation_surface_tokens"].get(row.relation_surface_key)
+        or row.semantic_coverage_authority != "none"
+        or row.lexical_atom_id
+        != _step11_rc0028_atom_id(
+            "rc0028lex:relation:",
+            _step11_rc0028_relation_atom_material(row, include_id=False),
+        )
+        for row in value.relation_endpoint_atoms
+    ):
+        issues.add("STEP11_RC0028_RELATION_ENDPOINT_BINDING_MISMATCH")
+    for row in value.relation_endpoint_atoms:
+        relation_ids.setdefault(row.experiment_relation_id, set()).add(
+            row.relation_endpoint_role
+        )
+    if any(roles != {"from", "to"} for roles in relation_ids.values()):
+        issues.add("STEP11_RC0028_RELATION_ENDPOINT_CARDINALITY_MISMATCH")
+
+    if any(
+        row.from_semantic_unit_id not in owner_by_id
+        or row.to_semantic_unit_id not in owner_by_id
+        or row.from_owner_ordinal
+        != owner_by_id[row.from_semantic_unit_id].owner_ordinal
+        or row.to_owner_ordinal
+        != owner_by_id[row.to_semantic_unit_id].owner_ordinal
+        or row.semantic_link_surface_key
+        != row.relation_type + ":" + row.direction
+        or row.semantic_link_surface_token
+        != catalog["semantic_link_surface_tokens"].get(
+            row.semantic_link_surface_key
+        )
+        or row.semantic_coverage_authority != "none"
+        or row.lexical_atom_id
+        != _step11_rc0028_atom_id(
+            "rc0028lex:link:",
+            _step11_rc0028_semantic_link_atom_material(
+                row, include_id=False
+            ),
+        )
+        for row in value.semantic_link_atoms
+    ):
+        issues.add("STEP11_RC0028_SEMANTIC_LINK_BINDING_MISMATCH")
+    if any(
+        not row.affected_source_owners
+        or any(owner_id not in owner_by_id for _kind, owner_id, _ord in row.affected_source_owners)
+        or any(
+            owner_by_id[owner_id].source_owner_kind != owner_kind
+            or owner_by_id[owner_id].owner_ordinal != ordinal
+            for owner_kind, owner_id, ordinal in row.affected_source_owners
+        )
+        or row.unknown_surface_token
+        != catalog["unknown_surface_tokens"].get(row.dimension)
+        or row.semantic_coverage_authority != "none"
+        or row.lexical_atom_id
+        != _step11_rc0028_atom_id(
+            "rc0028lex:unknown:",
+            _step11_rc0028_unknown_atom_material(row, include_id=False),
+        )
+        for row in value.explicit_unknown_atoms
+    ):
+        issues.add("STEP11_RC0028_EXPLICIT_UNKNOWN_BINDING_MISMATCH")
+
+    atom_ids = tuple(
+        row.lexical_atom_id
+        for rows in (
+            value.construction_atoms,
+            value.relation_endpoint_atoms,
+            value.semantic_link_atoms,
+            value.explicit_unknown_atoms,
+        )
+        for row in rows
+    )
+    expected_total = (
+        len(value.construction_atoms)
+        + len(value.relation_endpoint_atoms)
+        + len(value.semantic_link_atoms)
+        + len(value.explicit_unknown_atoms)
+    )
+    if len(set(atom_ids)) != len(atom_ids):
+        issues.add("STEP11_RC0028_LEXICAL_ATOM_ID_DUPLICATE")
+    if (
+        value.visible_lexical_atom_count != len(value.construction_atoms)
+        or value.total_matchable_atom_count != expected_total
+        or value.visible_lexical_atom_count > value.max_visible_lexical_atoms
+        or value.total_matchable_atom_count > value.max_total_matchable_atoms
+        or value.max_total_matchable_atoms < value.max_visible_lexical_atoms
+    ):
+        issues.add("STEP11_RC0028_RESOURCE_BOUND_EXCEEDED")
+    try:
+        expected_hash = artifact_sha256(
+            _step11_rc0028_lexical_specs_payload(value)
+        )
+    except (AttributeError, TypeError, ValueError):
+        expected_hash = ""
+    if value.specs_sha256 != expected_hash:
+        issues.add("STEP11_RC0028_LEXICAL_ATOM_SPECS_HASH_MISMATCH")
+
+    if successor_snapshot is not None:
+        try:
+            expected = _build_step11_rc0028_experiment_lexical_atom_specs(
+                successor_snapshot,
+                validate_output=False,
+            )
+        except (AttributeError, KeyError, TypeError, ValueError):
+            issues.add("STEP11_RC0028_SUCCESSOR_SNAPSHOT_INVALID")
+        else:
+            if value != expected:
+                issues.add("STEP11_RC0028_SOURCE_BINDING_MISMATCH")
+    return tuple(sorted(issues))
+
+
+def step11_rc0028_experiment_lexical_atom_specs_material(
+    value: Step11Rc0028ExperimentLexicalAtomSpecs,
+) -> dict[str, Any]:
+    issues = validate_step11_rc0028_experiment_lexical_atom_specs(value)
+    if issues:
+        raise Step11GroundedLexicalizationError(issues[0])
+    return {
+        **_step11_rc0028_lexical_specs_payload(value),
+        "specs_sha256": value.specs_sha256,
+    }
+
+
+__all__ += [
+    "STEP11_RC0028_EXPERIMENT_LEXICAL_ATOM_SPECS_SCHEMA",
+    "Step11Rc0028ExperimentConstructionInstanceBinding",
+    "Step11Rc0028ExperimentConstructionIntervalBinding",
+    "Step11Rc0028ExperimentConstructionLexicalAtomSpec",
+    "Step11Rc0028ExperimentExplicitUnknownLexicalAtomSpec",
+    "Step11Rc0028ExperimentLexicalAtomSpecs",
+    "Step11Rc0028ExperimentOwnerBinding",
+    "Step11Rc0028ExperimentParticipationBinding",
+    "Step11Rc0028ExperimentRelationEndpointLexicalAtomSpec",
+    "Step11Rc0028ExperimentSemanticLinkLexicalAtomSpec",
+    "build_step11_rc0028_experiment_lexical_atom_specs",
+    "step11_rc0028_experiment_lexical_atom_specs_material",
+    "validate_step11_rc0028_experiment_lexical_atom_specs",
+]

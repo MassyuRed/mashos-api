@@ -9822,3 +9822,1682 @@ __all__ = [
     "parse_step11_natural_surface",
     "select_step11_natural_surface_candidates",
 ]
+
+
+# ---------------------------------------------------------------------------
+# rc0028 runtime-disconnected independent inverse surface (append-only)
+#
+# The rc0027 module above remains byte-for-byte stable.  This inverse reads
+# only final body bytes and the shared declarative experiment catalog.  It
+# never imports the forward surface, lexicalizer, runtime adapter, or gate.
+# Successor authority imports are local to the match entry point.
+
+STEP11_RC0028_EXPERIMENT_PARSED_WITNESS_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11_rc0028_experiment_parsed_witness.v1"
+)
+STEP11_RC0028_EXPERIMENT_VERIFIED_BINDING_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11_rc0028_experiment_verified_binding.v1"
+)
+
+_STEP11_RC0028_EXPERIMENT_BODY_BYTE_MAX = 1_000_000
+_STEP11_RC0028_EXPERIMENT_STRUCTURE_LINE_MAX = 1_024
+_STEP11_RC0028_EXPERIMENT_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+class Step11Rc0028ExperimentInverseSurfaceError(ValueError):
+    """Fail closed with one body-free experiment machine code."""
+
+    def __init__(self, code: str) -> None:
+        if (
+            type(code) is not str
+            or re.fullmatch(r"STEP11_RC0028_[A-Z0-9_]{2,95}", code) is None
+        ):
+            code = "STEP11_RC0028_INVERSE_SURFACE_REJECTED"
+        self.code = code
+        super().__init__(code)
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentParsedConstructionRoleOwner:
+    owner_ordinal: int
+    lexical_role_kind: str
+    construction_position: str
+    role_position_key: str
+    role_position_atom_code: str
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentParsedConstructionAtom:
+    ordinal: int
+    construction_code: str
+    construction_atom_code: str
+    role_owner_bindings: tuple[
+        Step11Rc0028ExperimentParsedConstructionRoleOwner, ...
+    ]
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentParsedRelationAtom:
+    ordinal: int
+    effective_relation_type: str
+    from_owner_ordinal: int
+    to_owner_ordinal: int
+    direction: str
+    relation_surface_key: str
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentParsedSemanticLinkAtom:
+    ordinal: int
+    relation_type: str
+    from_owner_ordinal: int
+    to_owner_ordinal: int
+    direction: str
+    semantic_link_surface_key: str
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentParsedExplicitUnknownAtom:
+    ordinal: int
+    dimension: str
+    affected_owner_ordinals: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class Step11Rc0028ExperimentParsedSurfaceWitness:
+    schema_version: str
+    body_sha256: str
+    experiment_catalog_sha256: str
+    base_witness: Step11ParsedSurfaceWitness
+    construction_atoms: tuple[
+        Step11Rc0028ExperimentParsedConstructionAtom, ...
+    ]
+    relation_atoms: tuple[Step11Rc0028ExperimentParsedRelationAtom, ...]
+    semantic_link_atoms: tuple[
+        Step11Rc0028ExperimentParsedSemanticLinkAtom, ...
+    ]
+    explicit_unknown_atoms: tuple[
+        Step11Rc0028ExperimentParsedExplicitUnknownAtom, ...
+    ]
+    structure_line_count: int
+    body_free_export_allowed: bool = False
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class Step11Rc0028ExperimentVerifiedSurfaceBinding:
+    schema_version: str
+    parsed_witness_sha256: str
+    base_witness_sha256: str
+    successor_snapshot_sha256: str
+    experiment_catalog_sha256: str
+    bound_owner_ordinal_count: int
+    construction_instance_binding_count: int
+    construction_slot_binding_count: int
+    participation_binding_count: int
+    relation_binding_count: int
+    relation_endpoint_binding_count: int
+    semantic_link_binding_count: int
+    explicit_unknown_binding_count: int
+    semantic_coverage_authorized: bool
+    issue_codes: tuple[str, ...]
+    hard_verified: bool
+    body_free_export_allowed: bool = False
+
+
+def _step11_rc0028_inverse_catalog() -> tuple[dict[str, Any], str]:
+    # Local-only import: importing rc0027 matcher must not load rc0028.
+    from emlis_ai_step11_rc0028_experiment_surface_catalog_v3 import (
+        STEP11_RC0028_EXPERIMENT_SURFACE_CATALOG,
+        STEP11_RC0028_EXPERIMENT_SURFACE_CATALOG_SHA256,
+        validate_step11_rc0028_experiment_surface_catalog,
+    )
+
+    catalog = STEP11_RC0028_EXPERIMENT_SURFACE_CATALOG
+    issues = validate_step11_rc0028_experiment_surface_catalog(catalog)
+    if issues:
+        raise Step11Rc0028ExperimentInverseSurfaceError(issues[0])
+    return catalog, STEP11_RC0028_EXPERIMENT_SURFACE_CATALOG_SHA256
+
+
+def _step11_rc0028_exact_inverse_map(
+    value: Any,
+    *,
+    failure_code: str,
+) -> dict[str, str]:
+    if (
+        type(value) is not dict
+        or not value
+        or any(
+            type(key) is not str
+            or not key
+            or type(item) is not str
+            or not item
+            for key, item in value.items()
+        )
+        or len(set(value.values())) != len(value)
+    ):
+        raise Step11Rc0028ExperimentInverseSurfaceError(failure_code)
+    return {item: key for key, item in value.items()}
+
+
+def _step11_rc0028_parse_owner_token(
+    value: str,
+    *,
+    owner_token_to_ordinal: Mapping[str, str],
+) -> int:
+    ordinal_text = owner_token_to_ordinal.get(value)
+    if type(ordinal_text) is not str or not ordinal_text.isdecimal():
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_OWNER_ORDINAL_INVALID"
+        )
+    ordinal = int(ordinal_text)
+    if ordinal < 1:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_OWNER_ORDINAL_INVALID"
+        )
+    return ordinal
+
+
+def _step11_rc0028_parse_construction_line(
+    core: str,
+    *,
+    ordinal: int,
+    catalog: Mapping[str, Any],
+    morphology: Mapping[str, str],
+) -> Step11Rc0028ExperimentParsedConstructionAtom:
+    construction_prefix = morphology["construction_prefix"]
+    construction_open = morphology["construction_open"]
+    construction_suffix = morphology["construction_suffix"]
+    clause_separator = morphology["clause_separator"]
+    owner_noun = morphology["owner_noun"]
+    owner_possessive = morphology["owner_possessive"]
+    line_start = construction_prefix + clause_separator
+    if not core.startswith(line_start) or not core.endswith(construction_suffix):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_CONSTRUCTION_PARSE_FAILED"
+        )
+    payload = core[len(line_start) : -len(construction_suffix)]
+    construction_token_to_code = _step11_rc0028_exact_inverse_map(
+        catalog.get("construction_surface_tokens"),
+        failure_code="STEP11_RC0028_CATALOG_TOKEN_MISMATCH",
+    )
+    construction_matches = tuple(
+        (token, code)
+        for token, code in construction_token_to_code.items()
+        if payload.startswith(token + construction_open + clause_separator)
+    )
+    if len(construction_matches) != 1:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_CONSTRUCTION_PARSE_FAILED"
+        )
+    construction_token, construction_code = construction_matches[0]
+    role_payload = payload[
+        len(construction_token + construction_open + clause_separator) :
+    ]
+    role_parts = role_payload.split(clause_separator)
+    if not role_parts or any(not part for part in role_parts):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_CONSTRUCTION_SLOT_BINDING_MISMATCH"
+        )
+
+    role_token_to_key = _step11_rc0028_exact_inverse_map(
+        catalog.get("role_position_surface_tokens"),
+        failure_code="STEP11_RC0028_CATALOG_TOKEN_MISMATCH",
+    )
+    owner_token_to_ordinal = _step11_rc0028_exact_inverse_map(
+        catalog.get("owner_ordinal_tokens"),
+        failure_code="STEP11_RC0028_CATALOG_TOKEN_MISMATCH",
+    )
+    role_atom_codes = catalog.get("role_position_atom_codes")
+    construction_atom_codes = catalog.get("construction_atom_codes")
+    if type(role_atom_codes) is not dict or type(construction_atom_codes) is not dict:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_CATALOG_ATOM_CODE_MISMATCH"
+        )
+    bindings: list[Step11Rc0028ExperimentParsedConstructionRoleOwner] = []
+    for part in role_parts:
+        matches: list[tuple[int, str]] = []
+        for owner_token, ordinal_text in owner_token_to_ordinal.items():
+            prefix = owner_token + owner_noun + owner_possessive
+            if not part.startswith(prefix):
+                continue
+            role_token = part[len(prefix) :]
+            role_key = role_token_to_key.get(role_token)
+            if type(role_key) is not str:
+                continue
+            matches.append((int(ordinal_text), role_key))
+        if len(matches) != 1:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_CONSTRUCTION_SLOT_BINDING_MISMATCH"
+            )
+        owner_ordinal, role_key = matches[0]
+        role_components = role_key.split(":")
+        atom_code = role_atom_codes.get(role_key)
+        if (
+            len(role_components) != 2
+            or any(not item for item in role_components)
+            or type(atom_code) is not str
+            or not atom_code
+        ):
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_CATALOG_ATOM_CODE_MISMATCH"
+            )
+        bindings.append(
+            Step11Rc0028ExperimentParsedConstructionRoleOwner(
+                owner_ordinal=owner_ordinal,
+                lexical_role_kind=role_components[0],
+                construction_position=role_components[1],
+                role_position_key=role_key,
+                role_position_atom_code=atom_code,
+            )
+        )
+    construction_atom_code = construction_atom_codes.get(construction_code)
+    if type(construction_atom_code) is not str or not construction_atom_code:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_CATALOG_ATOM_CODE_MISMATCH"
+        )
+    return Step11Rc0028ExperimentParsedConstructionAtom(
+        ordinal=ordinal,
+        construction_code=construction_code,
+        construction_atom_code=construction_atom_code,
+        role_owner_bindings=tuple(bindings),
+    )
+
+
+def _step11_rc0028_parse_edge_line(
+    core: str,
+    *,
+    ordinal: int,
+    catalog: Mapping[str, Any],
+    morphology: Mapping[str, str],
+    semantic_link: bool,
+) -> (
+    Step11Rc0028ExperimentParsedRelationAtom
+    | Step11Rc0028ExperimentParsedSemanticLinkAtom
+):
+    owner_noun = morphology["owner_noun"]
+    clause_separator = morphology["clause_separator"]
+    if semantic_link:
+        line_suffix = morphology["semantic_link_suffix"]
+        endpoint_separator = morphology["semantic_link_join"]
+        endpoint_tail = morphology["semantic_link_between"]
+    else:
+        line_suffix = morphology["relation_suffix"]
+        endpoint_separator = morphology["relation_from_to_separator"]
+        endpoint_tail = morphology["relation_to_suffix"]
+    if not core.endswith(line_suffix):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_RELATION_PARSE_FAILED"
+        )
+    payload = core[: -len(line_suffix)]
+    registry_name = (
+        "semantic_link_surface_tokens"
+        if semantic_link
+        else "relation_surface_tokens"
+    )
+    token_to_key = _step11_rc0028_exact_inverse_map(
+        catalog.get(registry_name),
+        failure_code="STEP11_RC0028_CATALOG_TOKEN_MISMATCH",
+    )
+    owner_token_to_ordinal = _step11_rc0028_exact_inverse_map(
+        catalog.get("owner_ordinal_tokens"),
+        failure_code="STEP11_RC0028_CATALOG_TOKEN_MISMATCH",
+    )
+    matches: list[tuple[int, int, str]] = []
+    for surface_token, surface_key in token_to_key.items():
+        visible_token = clause_separator + surface_token
+        if not payload.endswith(visible_token):
+            continue
+        endpoint_text = payload[: -len(visible_token)]
+        for from_token, from_text in owner_token_to_ordinal.items():
+            for to_token, to_text in owner_token_to_ordinal.items():
+                expected = (
+                    from_token
+                    + owner_noun
+                    + endpoint_separator
+                    + to_token
+                    + owner_noun
+                    + endpoint_tail
+                )
+                if endpoint_text == expected:
+                    matches.append((int(from_text), int(to_text), surface_key))
+    if len(matches) != 1:
+        code = (
+            "STEP11_RC0028_SEMANTIC_LINK_BINDING_MISMATCH"
+            if semantic_link
+            else "STEP11_RC0028_RELATION_ENDPOINT_CARDINALITY_MISMATCH"
+        )
+        raise Step11Rc0028ExperimentInverseSurfaceError(code)
+    from_ordinal, to_ordinal, surface_key = matches[0]
+    components = surface_key.rsplit(":", 1)
+    if len(components) != 2 or components[1] not in {
+        "source_to_target",
+        "bidirectional",
+    }:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_CATALOG_TOKEN_MISMATCH"
+        )
+    relation_type, direction = components
+    if semantic_link:
+        return Step11Rc0028ExperimentParsedSemanticLinkAtom(
+            ordinal=ordinal,
+            relation_type=relation_type,
+            from_owner_ordinal=from_ordinal,
+            to_owner_ordinal=to_ordinal,
+            direction=direction,
+            semantic_link_surface_key=surface_key,
+        )
+    return Step11Rc0028ExperimentParsedRelationAtom(
+        ordinal=ordinal,
+        effective_relation_type=relation_type,
+        from_owner_ordinal=from_ordinal,
+        to_owner_ordinal=to_ordinal,
+        direction=direction,
+        relation_surface_key=surface_key,
+    )
+
+
+def _step11_rc0028_parse_unknown_line(
+    core: str,
+    *,
+    ordinal: int,
+    catalog: Mapping[str, Any],
+    morphology: Mapping[str, str],
+) -> Step11Rc0028ExperimentParsedExplicitUnknownAtom:
+    unknown_prefix = morphology["unknown_prefix"]
+    clause_separator = morphology["clause_separator"]
+    owner_noun = morphology["owner_noun"]
+    owner_separator = morphology["owner_separator"]
+    owner_suffix = morphology["unknown_owner_suffix"]
+    unknown_suffix = morphology["unknown_suffix"]
+    line_start = unknown_prefix + clause_separator
+    if not core.startswith(line_start) or not core.endswith(unknown_suffix):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_EXPLICIT_UNKNOWN_BINDING_MISMATCH"
+        )
+    payload = core[len(line_start) : -len(unknown_suffix)]
+    unknown_token_to_dimension = _step11_rc0028_exact_inverse_map(
+        catalog.get("unknown_surface_tokens"),
+        failure_code="STEP11_RC0028_CATALOG_TOKEN_MISMATCH",
+    )
+    owner_token_to_ordinal = _step11_rc0028_exact_inverse_map(
+        catalog.get("owner_ordinal_tokens"),
+        failure_code="STEP11_RC0028_CATALOG_TOKEN_MISMATCH",
+    )
+    matches: list[tuple[str, tuple[int, ...]]] = []
+    for unknown_token, dimension in unknown_token_to_dimension.items():
+        visible_unknown = clause_separator + unknown_token
+        if not payload.endswith(visible_unknown):
+            continue
+        owners_text = payload[: -len(visible_unknown)]
+        if not owners_text.endswith(owner_suffix):
+            continue
+        owners_text = owners_text[: -len(owner_suffix)]
+        owner_phrases = owners_text.split(owner_separator)
+        if not owner_phrases or any(not item for item in owner_phrases):
+            continue
+        try:
+            owner_ordinals = tuple(
+                _step11_rc0028_parse_owner_token(
+                    item[: -len(owner_noun)],
+                    owner_token_to_ordinal=owner_token_to_ordinal,
+                )
+                for item in owner_phrases
+                if item.endswith(owner_noun)
+            )
+        except Step11Rc0028ExperimentInverseSurfaceError:
+            continue
+        if len(owner_ordinals) != len(owner_phrases):
+            continue
+        matches.append((dimension, owner_ordinals))
+    if len(matches) != 1:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_EXPLICIT_UNKNOWN_BINDING_MISMATCH"
+        )
+    dimension, owner_ordinals = matches[0]
+    return Step11Rc0028ExperimentParsedExplicitUnknownAtom(
+        ordinal=ordinal,
+        dimension=dimension,
+        affected_owner_ordinals=owner_ordinals,
+    )
+
+
+def _step11_rc0028_construction_material(
+    value: Step11Rc0028ExperimentParsedConstructionAtom,
+) -> dict[str, Any]:
+    return {
+        "ordinal": value.ordinal,
+        "construction_code": value.construction_code,
+        "construction_atom_code": value.construction_atom_code,
+        "role_owner_bindings": [
+            {
+                "owner_ordinal": row.owner_ordinal,
+                "lexical_role_kind": row.lexical_role_kind,
+                "construction_position": row.construction_position,
+                "role_position_key": row.role_position_key,
+                "role_position_atom_code": row.role_position_atom_code,
+            }
+            for row in value.role_owner_bindings
+        ],
+    }
+
+
+def _step11_rc0028_relation_material(
+    value: Step11Rc0028ExperimentParsedRelationAtom,
+) -> dict[str, Any]:
+    return {
+        "ordinal": value.ordinal,
+        "effective_relation_type": value.effective_relation_type,
+        "from_owner_ordinal": value.from_owner_ordinal,
+        "to_owner_ordinal": value.to_owner_ordinal,
+        "direction": value.direction,
+        "relation_surface_key": value.relation_surface_key,
+    }
+
+
+def _step11_rc0028_semantic_link_material(
+    value: Step11Rc0028ExperimentParsedSemanticLinkAtom,
+) -> dict[str, Any]:
+    return {
+        "ordinal": value.ordinal,
+        "relation_type": value.relation_type,
+        "from_owner_ordinal": value.from_owner_ordinal,
+        "to_owner_ordinal": value.to_owner_ordinal,
+        "direction": value.direction,
+        "semantic_link_surface_key": value.semantic_link_surface_key,
+    }
+
+
+def _step11_rc0028_explicit_unknown_material(
+    value: Step11Rc0028ExperimentParsedExplicitUnknownAtom,
+) -> dict[str, Any]:
+    return {
+        "ordinal": value.ordinal,
+        "dimension": value.dimension,
+        "affected_owner_ordinals": list(value.affected_owner_ordinals),
+    }
+
+
+def step11_rc0028_experiment_parsed_witness_material(
+    value: Step11Rc0028ExperimentParsedSurfaceWitness,
+) -> dict[str, Any]:
+    if type(value) is not Step11Rc0028ExperimentParsedSurfaceWitness:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_PARSED_WITNESS_TYPE_INVALID"
+        )
+    if (
+        value.schema_version
+        != STEP11_RC0028_EXPERIMENT_PARSED_WITNESS_SCHEMA
+        or type(value.body_sha256) is not str
+        or _STEP11_RC0028_EXPERIMENT_SHA256_RE.fullmatch(value.body_sha256)
+        is None
+        or type(value.experiment_catalog_sha256) is not str
+        or _STEP11_RC0028_EXPERIMENT_SHA256_RE.fullmatch(
+            value.experiment_catalog_sha256
+        )
+        is None
+        or type(value.base_witness) is not Step11ParsedSurfaceWitness
+        or type(value.construction_atoms) is not tuple
+        or any(
+            type(row) is not Step11Rc0028ExperimentParsedConstructionAtom
+            for row in value.construction_atoms
+        )
+        or type(value.relation_atoms) is not tuple
+        or any(
+            type(row) is not Step11Rc0028ExperimentParsedRelationAtom
+            for row in value.relation_atoms
+        )
+        or type(value.semantic_link_atoms) is not tuple
+        or any(
+            type(row) is not Step11Rc0028ExperimentParsedSemanticLinkAtom
+            for row in value.semantic_link_atoms
+        )
+        or type(value.explicit_unknown_atoms) is not tuple
+        or any(
+            type(row)
+            is not Step11Rc0028ExperimentParsedExplicitUnknownAtom
+            for row in value.explicit_unknown_atoms
+        )
+        or type(value.structure_line_count) is not int
+        or type(value.structure_line_count) is bool
+        or not 0
+        <= value.structure_line_count
+        <= _STEP11_RC0028_EXPERIMENT_STRUCTURE_LINE_MAX
+        or value.body_free_export_allowed is not False
+        or value.structure_line_count
+        != (
+            len(value.construction_atoms)
+            + len(value.relation_atoms)
+            + len(value.semantic_link_atoms)
+            + len(value.explicit_unknown_atoms)
+        )
+    ):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_PARSED_WITNESS_INVALID"
+        )
+    try:
+        base_witness_material = _witness_material(value.base_witness)
+        construction_material = [
+            _step11_rc0028_construction_material(row)
+            for row in value.construction_atoms
+        ]
+        relation_material = [
+            _step11_rc0028_relation_material(row)
+            for row in value.relation_atoms
+        ]
+        semantic_link_material = [
+            _step11_rc0028_semantic_link_material(row)
+            for row in value.semantic_link_atoms
+        ]
+        explicit_unknown_material = [
+            _step11_rc0028_explicit_unknown_material(row)
+            for row in value.explicit_unknown_atoms
+        ]
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_PARSED_WITNESS_INVALID"
+        ) from exc
+    return {
+        "schema_version": value.schema_version,
+        "body_sha256": value.body_sha256,
+        "experiment_catalog_sha256": value.experiment_catalog_sha256,
+        "base_witness": base_witness_material,
+        "construction_atoms": construction_material,
+        "relation_atoms": relation_material,
+        "semantic_link_atoms": semantic_link_material,
+        "explicit_unknown_atoms": explicit_unknown_material,
+        "structure_line_count": value.structure_line_count,
+        "body_free_export_allowed": value.body_free_export_allowed,
+    }
+
+
+def parse_step11_rc0028_experiment_surface(
+    body: bytes,
+    *forward_metadata: Any,
+    **forward_metadata_by_name: Any,
+) -> Step11Rc0028ExperimentParsedSurfaceWitness:
+    """Parse final bytes only; all candidate/forward metadata is rejected."""
+
+    if forward_metadata or forward_metadata_by_name:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_PARSER_FORWARD_METADATA_FORBIDDEN"
+        )
+    if (
+        type(body) is not bytes
+        or not body
+        or len(body) > _STEP11_RC0028_EXPERIMENT_BODY_BYTE_MAX
+    ):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_PARSER_BODY_INVALID"
+        )
+    catalog, catalog_sha256 = _step11_rc0028_inverse_catalog()
+    try:
+        text = body.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_PARSER_UTF8_INVALID"
+        ) from exc
+    if (
+        unicodedata.normalize("NFC", text) != text
+        or "\r" in text
+        or text.endswith("\n")
+        or text.startswith("\ufeff")
+    ):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_PARSER_CANONICAL_TEXT_INVALID"
+        )
+
+    labels = STEP11_SURFACE_CATALOG.get("labels")
+    morphology = catalog.get("line_morphology")
+    if type(labels) is not dict or type(morphology) is not dict:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_CATALOG_TOKEN_MISMATCH"
+        )
+    required_morphology = {
+        "atom_separator",
+        "clause_separator",
+        "construction_open",
+        "construction_prefix",
+        "construction_suffix",
+        "owner_noun",
+        "owner_possessive",
+        "owner_separator",
+        "relation_from_to_separator",
+        "relation_suffix",
+        "relation_to_suffix",
+        "semantic_link_between",
+        "semantic_link_join",
+        "semantic_link_suffix",
+        "unknown_owner_suffix",
+        "unknown_prefix",
+        "unknown_suffix",
+    }
+    if (
+        not required_morphology <= set(morphology)
+        or any(
+            type(morphology[key]) is not str or not morphology[key]
+            for key in required_morphology
+        )
+    ):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_CATALOG_TOKEN_MISMATCH"
+        )
+    observation_label = labels.get("observation")
+    reception_label = labels.get("reception")
+    if type(observation_label) is not str or type(reception_label) is not str:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_BASE_SURFACE_PARSE_FAILED"
+        )
+    prefix = observation_label + "\n"
+    section_separator = "\n\n" + reception_label + "\n"
+    if not text.startswith(prefix) or text.count(section_separator) != 1:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_BASE_SURFACE_PARSE_FAILED"
+        )
+    observation, reception = text[len(prefix) :].split(section_separator)
+    observation_lines = observation.split("\n")
+    if not observation_lines or any(not line for line in observation_lines):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_BASE_SURFACE_PARSE_FAILED"
+        )
+
+    clause_separator = morphology["clause_separator"]
+    construction_prefix = morphology["construction_prefix"]
+    construction_suffix = morphology["construction_suffix"]
+    relation_marker = morphology["relation_to_suffix"] + clause_separator
+    relation_suffix = morphology["relation_suffix"]
+    semantic_link_marker = (
+        morphology["semantic_link_between"] + clause_separator
+    )
+    semantic_link_suffix = morphology["semantic_link_suffix"]
+    unknown_prefix = morphology["unknown_prefix"]
+    unknown_suffix = morphology["unknown_suffix"]
+    base_lines: list[str] = []
+    constructions: list[Step11Rc0028ExperimentParsedConstructionAtom] = []
+    relations: list[Step11Rc0028ExperimentParsedRelationAtom] = []
+    semantic_links: list[Step11Rc0028ExperimentParsedSemanticLinkAtom] = []
+    explicit_unknowns: list[
+        Step11Rc0028ExperimentParsedExplicitUnknownAtom
+    ] = []
+    structure_started = False
+    current_structure_rank = -1
+    for line in observation_lines:
+        is_construction = (
+            line.startswith(construction_prefix + clause_separator)
+            and line.endswith(construction_suffix)
+        )
+        is_unknown = (
+            line.startswith(unknown_prefix + clause_separator)
+            and line.endswith(unknown_suffix)
+        )
+        is_semantic_link = (
+            semantic_link_marker in line
+            and line.endswith(semantic_link_suffix)
+        )
+        is_relation = (
+            relation_marker in line and line.endswith(relation_suffix)
+        )
+        if not any(
+            (is_construction, is_relation, is_semantic_link, is_unknown)
+        ):
+            if structure_started:
+                raise Step11Rc0028ExperimentInverseSurfaceError(
+                    "STEP11_RC0028_STRUCTURE_LINE_ORDER_INVALID"
+                )
+            base_lines.append(line)
+            continue
+        structure_started = True
+        if sum(
+            (is_construction, is_relation, is_semantic_link, is_unknown)
+        ) != 1:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_STRUCTURE_LINE_PARSE_FAILED"
+            )
+        if is_construction:
+            if current_structure_rank > 0:
+                raise Step11Rc0028ExperimentInverseSurfaceError(
+                    "STEP11_RC0028_STRUCTURE_LINE_ORDER_INVALID"
+                )
+            current_structure_rank = 0
+            constructions.append(
+                _step11_rc0028_parse_construction_line(
+                    line,
+                    ordinal=len(constructions) + 1,
+                    catalog=catalog,
+                    morphology=morphology,
+                )
+            )
+        elif is_relation:
+            if current_structure_rank > 1:
+                raise Step11Rc0028ExperimentInverseSurfaceError(
+                    "STEP11_RC0028_STRUCTURE_LINE_ORDER_INVALID"
+                )
+            current_structure_rank = 1
+            parsed_relation = _step11_rc0028_parse_edge_line(
+                line,
+                ordinal=len(relations) + 1,
+                catalog=catalog,
+                morphology=morphology,
+                semantic_link=False,
+            )
+            if type(parsed_relation) is not Step11Rc0028ExperimentParsedRelationAtom:
+                raise Step11Rc0028ExperimentInverseSurfaceError(
+                    "STEP11_RC0028_RELATION_PARSE_FAILED"
+                )
+            relations.append(parsed_relation)
+        elif is_semantic_link:
+            if current_structure_rank > 2:
+                raise Step11Rc0028ExperimentInverseSurfaceError(
+                    "STEP11_RC0028_STRUCTURE_LINE_ORDER_INVALID"
+                )
+            current_structure_rank = 2
+            parsed_link = _step11_rc0028_parse_edge_line(
+                line,
+                ordinal=len(semantic_links) + 1,
+                catalog=catalog,
+                morphology=morphology,
+                semantic_link=True,
+            )
+            if type(parsed_link) is not Step11Rc0028ExperimentParsedSemanticLinkAtom:
+                raise Step11Rc0028ExperimentInverseSurfaceError(
+                    "STEP11_RC0028_SEMANTIC_LINK_BINDING_MISMATCH"
+                )
+            semantic_links.append(parsed_link)
+        else:
+            if current_structure_rank > 3:
+                raise Step11Rc0028ExperimentInverseSurfaceError(
+                    "STEP11_RC0028_STRUCTURE_LINE_ORDER_INVALID"
+                )
+            current_structure_rank = 3
+            explicit_unknowns.append(
+                _step11_rc0028_parse_unknown_line(
+                    line,
+                    ordinal=len(explicit_unknowns) + 1,
+                    catalog=catalog,
+                    morphology=morphology,
+                )
+            )
+        if (
+            len(constructions)
+            + len(relations)
+            + len(semantic_links)
+            + len(explicit_unknowns)
+            > _STEP11_RC0028_EXPERIMENT_STRUCTURE_LINE_MAX
+        ):
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_RESOURCE_BOUND_EXCEEDED"
+            )
+    if not base_lines or not reception:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_BASE_SURFACE_PARSE_FAILED"
+        )
+    base_text = (
+        prefix
+        + "\n".join(base_lines)
+        + section_separator
+        + reception
+    )
+    base_body = base_text.encode("utf-8", errors="strict")
+    try:
+        base_witness = parse_step11_natural_surface(base_body)
+    except Step11InverseSurfaceError as exc:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_BASE_SURFACE_PARSE_FAILED"
+        ) from exc
+    if base_witness.body_sha256 != hashlib.sha256(base_body).hexdigest():
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_BASE_SURFACE_COMMITMENT_MISMATCH"
+        )
+    return Step11Rc0028ExperimentParsedSurfaceWitness(
+        schema_version=STEP11_RC0028_EXPERIMENT_PARSED_WITNESS_SCHEMA,
+        body_sha256=hashlib.sha256(body).hexdigest(),
+        experiment_catalog_sha256=catalog_sha256,
+        base_witness=base_witness,
+        construction_atoms=tuple(constructions),
+        relation_atoms=tuple(relations),
+        semantic_link_atoms=tuple(semantic_links),
+        explicit_unknown_atoms=tuple(explicit_unknowns),
+        structure_line_count=(
+            len(constructions)
+            + len(relations)
+            + len(semantic_links)
+            + len(explicit_unknowns)
+        ),
+    )
+
+
+def _step11_rc0028_independent_owner_registry(
+    successor_snapshot: Any,
+    *,
+    maximum_owner_ordinal: int,
+) -> tuple[tuple[str, str], ...]:
+    authority = successor_snapshot.relation_construction_authority
+    witness = successor_snapshot.lexical_role_witness
+    kind_by_id: dict[str, str] = {}
+
+    def bind(owner_id: Any, owner_kind: str) -> None:
+        if (
+            type(owner_id) is not str
+            or not owner_id
+            or owner_kind not in {"nucleus", "semantic_unit"}
+        ):
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_PARTICIPATION_OWNER_MISMATCH"
+            )
+        previous = kind_by_id.get(owner_id)
+        if previous is not None and previous != owner_kind:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_PARTICIPATION_OWNER_MISMATCH"
+            )
+        kind_by_id[owner_id] = owner_kind
+
+    for row in authority.source_owner_participations:
+        bind(row.parent_nucleus_id, "nucleus")
+        bind(row.target_owner_id, row.target_owner_kind)
+    for row in witness.relation_endpoint_bindings:
+        bind(row.source_owner_id, "nucleus")
+    for row in authority.semantic_link_bindings:
+        bind(row.from_semantic_unit_id, "semantic_unit")
+        bind(row.to_semantic_unit_id, "semantic_unit")
+    for row in authority.explicit_unknown_authorities:
+        for owner in row.affected_source_owners:
+            bind(owner.owner_id, owner.owner_kind)
+
+    nucleus_order: list[str] = []
+    for row in successor_snapshot.base_snapshot.nuclei:
+        owner_id = row.actual_source_id
+        bind(owner_id, kind_by_id.get(owner_id, "nucleus"))
+        if owner_id not in nucleus_order:
+            nucleus_order.append(owner_id)
+    semantic_unit_order = tuple(
+        dict.fromkeys(
+            row.target_owner_id
+            for row in sorted(
+                authority.source_owner_participations,
+                key=lambda item: (
+                    item.source_span_id,
+                    item.intersection_start_index,
+                    item.intersection_end_index,
+                    item.target_owner_id,
+                ),
+            )
+            if row.target_owner_kind == "semantic_unit"
+        )
+    )
+    ordered = tuple(
+        dict.fromkeys(
+            (*nucleus_order, *semantic_unit_order, *sorted(kind_by_id))
+        )
+    )
+    if not ordered or len(ordered) > maximum_owner_ordinal:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_RESOURCE_BOUND_EXCEEDED"
+        )
+    return tuple((owner_id, kind_by_id[owner_id]) for owner_id in ordered)
+
+
+def _step11_rc0028_expected_constructions(
+    successor_snapshot: Any,
+    *,
+    owner_ordinal_by_id: Mapping[str, int],
+    catalog: Mapping[str, Any],
+) -> tuple[
+    tuple[Step11Rc0028ExperimentParsedConstructionAtom, ...], int, int
+]:
+    authority = successor_snapshot.relation_construction_authority
+    witness = successor_snapshot.lexical_role_witness
+    instances = authority.construction_instances
+    slots = authority.construction_slots
+    participations = authority.source_owner_participations
+    if (
+        len({row.construction_instance_id for row in instances})
+        != len(instances)
+        or len({row.construction_slot_id for row in slots}) != len(slots)
+        or len({row.participation_id for row in participations})
+        != len(participations)
+    ):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_CONSTRUCTION_SLOT_BINDING_MISMATCH"
+        )
+    slot_by_id = {row.construction_slot_id: row for row in slots}
+    participation_by_id = {
+        row.participation_id: row for row in participations
+    }
+    facets_by_slot: dict[str, list[Any]] = {}
+    for facet in witness.facets:
+        facets_by_slot.setdefault(facet.construction_slot_id, []).append(facet)
+    if set(facets_by_slot) != set(slot_by_id) or any(
+        len(rows) != 1 for rows in facets_by_slot.values()
+    ):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_CONSTRUCTION_SLOT_BINDING_MISMATCH"
+        )
+    construction_codes = catalog.get("construction_atom_codes")
+    role_codes = catalog.get("role_position_atom_codes")
+    if type(construction_codes) is not dict or type(role_codes) is not dict:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_CATALOG_ATOM_CODE_MISMATCH"
+        )
+
+    seen_slots: list[str] = []
+    seen_participations: list[str] = []
+    expected: list[Step11Rc0028ExperimentParsedConstructionAtom] = []
+    for ordinal, instance in enumerate(instances, 1):
+        construction_atom_code = construction_codes.get(
+            instance.construction_code
+        )
+        if type(construction_atom_code) is not str:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_CATALOG_ATOM_CODE_MISMATCH"
+            )
+        role_bindings: list[
+            Step11Rc0028ExperimentParsedConstructionRoleOwner
+        ] = []
+        if not instance.slot_ids:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_CONSTRUCTION_SLOT_BINDING_MISMATCH"
+            )
+        for slot_id in instance.slot_ids:
+            slot = slot_by_id.get(slot_id)
+            facet_rows = facets_by_slot.get(slot_id, ())
+            if (
+                slot is None
+                or len(facet_rows) != 1
+                or slot.construction_instance_id
+                != instance.construction_instance_id
+            ):
+                raise Step11Rc0028ExperimentInverseSurfaceError(
+                    "STEP11_RC0028_CONSTRUCTION_SLOT_BINDING_MISMATCH"
+                )
+            facet = facet_rows[0]
+            if (
+                facet.source_owner_id != instance.construction_instance_id
+                or facet.parent_nucleus_id != instance.parent_nucleus_id
+                or facet.construction_code != instance.construction_code
+                or facet.lexical_role_kind != slot.lexical_role_kind
+                or facet.construction_position != slot.construction_position
+                or tuple(facet.participation_ids)
+                != tuple(slot.participation_ids)
+            ):
+                raise Step11Rc0028ExperimentInverseSurfaceError(
+                    "STEP11_RC0028_CONSTRUCTION_SLOT_BINDING_MISMATCH"
+                )
+            role_key = (
+                slot.lexical_role_kind + ":" + slot.construction_position
+            )
+            role_atom_code = role_codes.get(role_key)
+            if type(role_atom_code) is not str:
+                raise Step11Rc0028ExperimentInverseSurfaceError(
+                    "STEP11_RC0028_CATALOG_ATOM_CODE_MISMATCH"
+                )
+            if not slot.participation_ids:
+                raise Step11Rc0028ExperimentInverseSurfaceError(
+                    "STEP11_RC0028_CONSTRUCTION_SLOT_BINDING_MISMATCH"
+                )
+            seen_slots.append(slot_id)
+            for participation_id in slot.participation_ids:
+                participation = participation_by_id.get(participation_id)
+                if (
+                    participation is None
+                    or participation.construction_slot_id != slot_id
+                    or participation.parent_nucleus_id
+                    != instance.parent_nucleus_id
+                ):
+                    raise Step11Rc0028ExperimentInverseSurfaceError(
+                        "STEP11_RC0028_PARTICIPATION_OWNER_MISMATCH"
+                    )
+                if participation.semantic_equivalence_authorized is not False:
+                    raise Step11Rc0028ExperimentInverseSurfaceError(
+                        "STEP11_RC0028_PARTICIPATION_EQUIVALENCE_MISMATCH"
+                    )
+                if (
+                    participation.source_span_id != slot.source_span_id
+                    or type(participation.intersection_start_index) is not int
+                    or type(participation.intersection_end_index) is not int
+                    or not (
+                        slot.slot_start_index
+                        <= participation.intersection_start_index
+                        < participation.intersection_end_index
+                        <= slot.slot_end_index
+                    )
+                ):
+                    raise Step11Rc0028ExperimentInverseSurfaceError(
+                        "STEP11_RC0028_PARTICIPATION_RANGE_MISMATCH"
+                    )
+                owner_ordinal = owner_ordinal_by_id.get(
+                    participation.target_owner_id
+                )
+                if type(owner_ordinal) is not int:
+                    raise Step11Rc0028ExperimentInverseSurfaceError(
+                        "STEP11_RC0028_PARTICIPATION_OWNER_MISMATCH"
+                    )
+                role_bindings.append(
+                    Step11Rc0028ExperimentParsedConstructionRoleOwner(
+                        owner_ordinal=owner_ordinal,
+                        lexical_role_kind=slot.lexical_role_kind,
+                        construction_position=slot.construction_position,
+                        role_position_key=role_key,
+                        role_position_atom_code=role_atom_code,
+                    )
+                )
+                seen_participations.append(participation_id)
+        if set(instance.participation_ids) != {
+            participation_id
+            for slot_id in instance.slot_ids
+            for participation_id in slot_by_id[slot_id].participation_ids
+        }:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_CONSTRUCTION_SLOT_BINDING_MISMATCH"
+            )
+        expected.append(
+            Step11Rc0028ExperimentParsedConstructionAtom(
+                ordinal=ordinal,
+                construction_code=instance.construction_code,
+                construction_atom_code=construction_atom_code,
+                role_owner_bindings=tuple(role_bindings),
+            )
+        )
+    if (
+        len(seen_slots) != len(set(seen_slots))
+        or set(seen_slots) != set(slot_by_id)
+        or len(seen_participations) != len(set(seen_participations))
+        or set(seen_participations) != set(participation_by_id)
+    ):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_CONSTRUCTION_SLOT_BINDING_MISMATCH"
+        )
+    return tuple(expected), len(seen_slots), len(seen_participations)
+
+
+def _step11_rc0028_expected_relations(
+    successor_snapshot: Any,
+    *,
+    owner_ordinal_by_id: Mapping[str, int],
+    catalog: Mapping[str, Any],
+) -> tuple[
+    tuple[Step11Rc0028ExperimentParsedRelationAtom, ...], int
+]:
+    authority = successor_snapshot.relation_construction_authority
+    witness = successor_snapshot.lexical_role_witness
+    endpoint_by_relation: dict[str, list[Any]] = {}
+    for endpoint in witness.relation_endpoint_bindings:
+        endpoint_by_relation.setdefault(endpoint.relation_id, []).append(
+            endpoint
+        )
+    expected: list[Step11Rc0028ExperimentParsedRelationAtom] = []
+    endpoint_count = 0
+    surface_tokens = catalog.get("relation_surface_tokens")
+    if type(surface_tokens) is not dict:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_CATALOG_TOKEN_MISMATCH"
+        )
+    for ordinal, relation in enumerate(authority.relation_authorities, 1):
+        endpoints = endpoint_by_relation.get(
+            relation.experiment_relation_id, ()
+        )
+        if len(endpoints) != 2:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_RELATION_ENDPOINT_CARDINALITY_MISMATCH"
+            )
+        by_role = {row.relation_endpoint_role: row for row in endpoints}
+        if set(by_role) != {"from", "to"}:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_RELATION_ENDPOINT_ROLE_MISMATCH"
+            )
+        if relation.authority_basis == "grounded_plan_projection":
+            if (
+                relation.refines_source_relation_id is not None
+                or relation.effective_relation_type
+                != relation.source_relation_type
+                or relation.experiment_retention != "source_projection"
+            ):
+                raise Step11Rc0028ExperimentInverseSurfaceError(
+                    "STEP11_RC0028_SOURCE_RELATION_TYPE_MISMATCH"
+                )
+        elif relation.authority_basis == "source_explicit_refinement":
+            if (
+                relation.source_relation_type != "uncertain_connection"
+                or relation.effective_relation_type != "coexistence"
+                or relation.refines_source_relation_id
+                != relation.source_relation_id
+                or relation.source_grounding_kind
+                != "bounded_structural_inference"
+                or relation.source_retention != "should"
+                or relation.experiment_retention
+                != "experiment_required_refinement"
+            ):
+                raise Step11Rc0028ExperimentInverseSurfaceError(
+                    "STEP11_RC0028_RELATION_REFINEMENT_AUTHORITY_MISMATCH"
+                )
+        else:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_RELATION_REFINEMENT_AUTHORITY_MISMATCH"
+            )
+        expected_direction = (
+            "bidirectional"
+            if relation.effective_relation_type == "coexistence"
+            else "source_to_target"
+        )
+        if relation.direction != expected_direction:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_RELATION_DIRECTION_MISMATCH"
+            )
+        for role, owner_id in (
+            ("from", relation.from_source_owner_id),
+            ("to", relation.to_source_owner_id),
+        ):
+            endpoint = by_role[role]
+            if endpoint.source_owner_id != owner_id:
+                raise Step11Rc0028ExperimentInverseSurfaceError(
+                    "STEP11_RC0028_RELATION_ENDPOINT_MISMATCH"
+                )
+            if (
+                endpoint.source_relation_id != relation.source_relation_id
+                or endpoint.relation_direction != relation.direction
+                or endpoint.effective_relation_type
+                != relation.effective_relation_type
+            ):
+                raise Step11Rc0028ExperimentInverseSurfaceError(
+                    "STEP11_RC0028_RELATION_ENDPOINT_ROLE_MISMATCH"
+                )
+        surface_key = (
+            relation.effective_relation_type + ":" + relation.direction
+        )
+        if surface_key not in surface_tokens:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_EFFECTIVE_RELATION_TYPE_MISMATCH"
+            )
+        from_ordinal = owner_ordinal_by_id.get(
+            relation.from_source_owner_id
+        )
+        to_ordinal = owner_ordinal_by_id.get(relation.to_source_owner_id)
+        if type(from_ordinal) is not int or type(to_ordinal) is not int:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_RELATION_ENDPOINT_MISMATCH"
+            )
+        expected.append(
+            Step11Rc0028ExperimentParsedRelationAtom(
+                ordinal=ordinal,
+                effective_relation_type=relation.effective_relation_type,
+                from_owner_ordinal=from_ordinal,
+                to_owner_ordinal=to_ordinal,
+                direction=relation.direction,
+                relation_surface_key=surface_key,
+            )
+        )
+        endpoint_count += 2
+    if set(endpoint_by_relation) != {
+        row.experiment_relation_id
+        for row in authority.relation_authorities
+    }:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_RELATION_ENDPOINT_CARDINALITY_MISMATCH"
+        )
+    return tuple(expected), endpoint_count
+
+
+def _step11_rc0028_expected_semantic_links(
+    successor_snapshot: Any,
+    *,
+    owner_ordinal_by_id: Mapping[str, int],
+    catalog: Mapping[str, Any],
+) -> tuple[Step11Rc0028ExperimentParsedSemanticLinkAtom, ...]:
+    authority = successor_snapshot.relation_construction_authority
+    witness = successor_snapshot.lexical_role_witness
+    if tuple(witness.semantic_link_bindings) != tuple(
+        authority.semantic_link_bindings
+    ):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_SEMANTIC_LINK_BINDING_MISMATCH"
+        )
+    surface_tokens = catalog.get("semantic_link_surface_tokens")
+    if type(surface_tokens) is not dict:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_CATALOG_TOKEN_MISMATCH"
+        )
+    expected: list[Step11Rc0028ExperimentParsedSemanticLinkAtom] = []
+    for ordinal, link in enumerate(authority.semantic_link_bindings, 1):
+        surface_key = link.relation_type + ":" + link.direction
+        if surface_key not in surface_tokens:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_SEMANTIC_LINK_TYPE_MISMATCH"
+            )
+        from_ordinal = owner_ordinal_by_id.get(link.from_semantic_unit_id)
+        to_ordinal = owner_ordinal_by_id.get(link.to_semantic_unit_id)
+        if type(from_ordinal) is not int or type(to_ordinal) is not int:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_SEMANTIC_LINK_ENDPOINT_MISMATCH"
+            )
+        expected.append(
+            Step11Rc0028ExperimentParsedSemanticLinkAtom(
+                ordinal=ordinal,
+                relation_type=link.relation_type,
+                from_owner_ordinal=from_ordinal,
+                to_owner_ordinal=to_ordinal,
+                direction=link.direction,
+                semantic_link_surface_key=surface_key,
+            )
+        )
+    return tuple(expected)
+
+
+def _step11_rc0028_expected_explicit_unknowns(
+    successor_snapshot: Any,
+    *,
+    owner_ordinal_by_id: Mapping[str, int],
+    catalog: Mapping[str, Any],
+) -> tuple[Step11Rc0028ExperimentParsedExplicitUnknownAtom, ...]:
+    authority = successor_snapshot.relation_construction_authority
+    witness = successor_snapshot.lexical_role_witness
+    if tuple(witness.explicit_unknown_bindings) != tuple(
+        authority.explicit_unknown_authorities
+    ):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_EXPLICIT_UNKNOWN_BINDING_MISMATCH"
+        )
+    unknown_tokens = catalog.get("unknown_surface_tokens")
+    if type(unknown_tokens) is not dict:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_CATALOG_TOKEN_MISMATCH"
+        )
+    expected: list[Step11Rc0028ExperimentParsedExplicitUnknownAtom] = []
+    for ordinal, unknown in enumerate(
+        authority.explicit_unknown_authorities, 1
+    ):
+        if unknown.dimension not in unknown_tokens:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_EXPLICIT_UNKNOWN_DIMENSION_MISMATCH"
+            )
+        owner_ordinals: list[int] = []
+        for owner in unknown.affected_source_owners:
+            owner_ordinal = owner_ordinal_by_id.get(owner.owner_id)
+            if type(owner_ordinal) is not int:
+                raise Step11Rc0028ExperimentInverseSurfaceError(
+                    "STEP11_RC0028_EXPLICIT_UNKNOWN_OWNER_MISMATCH"
+                )
+            owner_ordinals.append(owner_ordinal)
+        if not owner_ordinals:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_EXPLICIT_UNKNOWN_OWNER_MISMATCH"
+            )
+        expected.append(
+            Step11Rc0028ExperimentParsedExplicitUnknownAtom(
+                ordinal=ordinal,
+                dimension=unknown.dimension,
+                affected_owner_ordinals=tuple(owner_ordinals),
+            )
+        )
+    return tuple(expected)
+
+
+def _step11_rc0028_compare_constructions(
+    parsed: Sequence[Step11Rc0028ExperimentParsedConstructionAtom],
+    expected: Sequence[Step11Rc0028ExperimentParsedConstructionAtom],
+) -> None:
+    if len(parsed) != len(expected):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_CONSTRUCTION_CARDINALITY_MISMATCH"
+        )
+    for left, right in zip(parsed, expected):
+        if (
+            left.ordinal != right.ordinal
+            or left.construction_code != right.construction_code
+            or left.construction_atom_code != right.construction_atom_code
+        ):
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_CONSTRUCTION_CARDINALITY_MISMATCH"
+            )
+        if left.role_owner_bindings != right.role_owner_bindings:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_CONSTRUCTION_SLOT_BINDING_MISMATCH"
+            )
+
+
+def _step11_rc0028_compare_relations(
+    parsed: Sequence[Step11Rc0028ExperimentParsedRelationAtom],
+    expected: Sequence[Step11Rc0028ExperimentParsedRelationAtom],
+) -> None:
+    if len(parsed) != len(expected):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_RELATION_ENDPOINT_CARDINALITY_MISMATCH"
+        )
+    for left, right in zip(parsed, expected):
+        if left.effective_relation_type != right.effective_relation_type:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_EFFECTIVE_RELATION_TYPE_MISMATCH"
+            )
+        if left.direction != right.direction:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_RELATION_DIRECTION_MISMATCH"
+            )
+        if (
+            left.from_owner_ordinal != right.from_owner_ordinal
+            or left.to_owner_ordinal != right.to_owner_ordinal
+        ):
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_RELATION_ENDPOINT_MISMATCH"
+            )
+        if (
+            left.ordinal != right.ordinal
+            or left.relation_surface_key != right.relation_surface_key
+        ):
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_RELATION_ENDPOINT_ROLE_MISMATCH"
+            )
+
+
+def _step11_rc0028_compare_semantic_links(
+    parsed: Sequence[Step11Rc0028ExperimentParsedSemanticLinkAtom],
+    expected: Sequence[Step11Rc0028ExperimentParsedSemanticLinkAtom],
+) -> None:
+    if len(parsed) != len(expected):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_SEMANTIC_LINK_BINDING_MISMATCH"
+        )
+    for left, right in zip(parsed, expected):
+        if left.relation_type != right.relation_type:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_SEMANTIC_LINK_TYPE_MISMATCH"
+            )
+        if left.direction != right.direction:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_SEMANTIC_LINK_DIRECTION_MISMATCH"
+            )
+        if (
+            left.from_owner_ordinal != right.from_owner_ordinal
+            or left.to_owner_ordinal != right.to_owner_ordinal
+        ):
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_SEMANTIC_LINK_ENDPOINT_MISMATCH"
+            )
+        if (
+            left.ordinal != right.ordinal
+            or left.semantic_link_surface_key
+            != right.semantic_link_surface_key
+        ):
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_SEMANTIC_LINK_BINDING_MISMATCH"
+            )
+
+
+def _step11_rc0028_compare_explicit_unknowns(
+    parsed: Sequence[Step11Rc0028ExperimentParsedExplicitUnknownAtom],
+    expected: Sequence[Step11Rc0028ExperimentParsedExplicitUnknownAtom],
+) -> None:
+    parsed_signatures = [
+        (row.dimension, row.affected_owner_ordinals) for row in parsed
+    ]
+    if len(parsed) < len(expected):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_EXPLICIT_UNKNOWN_MISSING"
+        )
+    if len(parsed) > len(expected):
+        if len(set(parsed_signatures)) != len(parsed_signatures):
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_EXPLICIT_UNKNOWN_DUPLICATE"
+            )
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_EXPLICIT_UNKNOWN_BINDING_MISMATCH"
+        )
+    if len(set(parsed_signatures)) != len(parsed_signatures):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_EXPLICIT_UNKNOWN_DUPLICATE"
+        )
+    for left, right in zip(parsed, expected):
+        if left.dimension != right.dimension:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_EXPLICIT_UNKNOWN_DIMENSION_MISMATCH"
+            )
+        if left.affected_owner_ordinals != right.affected_owner_ordinals:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_EXPLICIT_UNKNOWN_OWNER_MISMATCH"
+            )
+        if left.ordinal != right.ordinal:
+            raise Step11Rc0028ExperimentInverseSurfaceError(
+                "STEP11_RC0028_EXPLICIT_UNKNOWN_BINDING_MISMATCH"
+            )
+
+
+def step11_rc0028_experiment_verified_binding_material(
+    value: Step11Rc0028ExperimentVerifiedSurfaceBinding,
+) -> dict[str, Any]:
+    if type(value) is not Step11Rc0028ExperimentVerifiedSurfaceBinding:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_VERIFIED_BINDING_TYPE_INVALID"
+        )
+    if (
+        value.schema_version
+        != STEP11_RC0028_EXPERIMENT_VERIFIED_BINDING_SCHEMA
+        or any(
+            type(item) is not str
+            or _STEP11_RC0028_EXPERIMENT_SHA256_RE.fullmatch(item) is None
+            for item in (
+                value.parsed_witness_sha256,
+                value.base_witness_sha256,
+                value.successor_snapshot_sha256,
+                value.experiment_catalog_sha256,
+            )
+        )
+        or any(
+            type(item) is not int or type(item) is bool or item < 0
+            for item in (
+                value.bound_owner_ordinal_count,
+                value.construction_instance_binding_count,
+                value.construction_slot_binding_count,
+                value.participation_binding_count,
+                value.relation_binding_count,
+                value.relation_endpoint_binding_count,
+                value.semantic_link_binding_count,
+                value.explicit_unknown_binding_count,
+            )
+        )
+        or value.semantic_coverage_authorized is not False
+        or value.issue_codes != ()
+        or value.hard_verified is not True
+        or value.body_free_export_allowed is not False
+    ):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_VERIFIED_BINDING_INVALID"
+        )
+    return {
+        "schema_version": value.schema_version,
+        "parsed_witness_sha256": value.parsed_witness_sha256,
+        "base_witness_sha256": value.base_witness_sha256,
+        "successor_snapshot_sha256": value.successor_snapshot_sha256,
+        "experiment_catalog_sha256": value.experiment_catalog_sha256,
+        "bound_owner_ordinal_count": value.bound_owner_ordinal_count,
+        "construction_instance_binding_count": (
+            value.construction_instance_binding_count
+        ),
+        "construction_slot_binding_count": (
+            value.construction_slot_binding_count
+        ),
+        "participation_binding_count": value.participation_binding_count,
+        "relation_binding_count": value.relation_binding_count,
+        "relation_endpoint_binding_count": (
+            value.relation_endpoint_binding_count
+        ),
+        "semantic_link_binding_count": value.semantic_link_binding_count,
+        "explicit_unknown_binding_count": (
+            value.explicit_unknown_binding_count
+        ),
+        "semantic_coverage_authorized": (
+            value.semantic_coverage_authorized
+        ),
+        "issue_codes": list(value.issue_codes),
+        "hard_verified": value.hard_verified,
+        "body_free_export_allowed": value.body_free_export_allowed,
+    }
+
+
+def match_step11_rc0028_experiment_surface(
+    witness: Step11Rc0028ExperimentParsedSurfaceWitness,
+    *,
+    successor_snapshot: Any,
+) -> Step11Rc0028ExperimentVerifiedSurfaceBinding:
+    """Independently match parsed structure to the accepted successor."""
+
+    if type(witness) is not Step11Rc0028ExperimentParsedSurfaceWitness:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_PARSED_WITNESS_TYPE_INVALID"
+        )
+    catalog, catalog_sha256 = _step11_rc0028_inverse_catalog()
+    witness_material = step11_rc0028_experiment_parsed_witness_material(
+        witness
+    )
+    if witness.experiment_catalog_sha256 != catalog_sha256:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_CATALOG_COMMITMENT_MISMATCH"
+        )
+
+    # Dynamic local load keeps the accepted E1b reverse-import audit frozen.
+    # No forward, lexicalizer, runtime, or gate owner is available here.
+    successor_owner = __import__(
+        "emlis_ai_grounded_lexical_role_experiment_snapshot_successor_v3",
+        fromlist=(
+            "GroundedLexicalRoleExperimentSnapshotSuccessor",
+            "validate_grounded_lexical_role_experiment_snapshot_successor",
+        ),
+    )
+    GroundedLexicalRoleExperimentSnapshotSuccessor = (
+        successor_owner.GroundedLexicalRoleExperimentSnapshotSuccessor
+    )
+    validate_grounded_lexical_role_experiment_snapshot_successor = (
+        successor_owner.validate_grounded_lexical_role_experiment_snapshot_successor
+    )
+
+    if type(successor_snapshot) is not GroundedLexicalRoleExperimentSnapshotSuccessor:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_SOURCE_COMMITMENT_MISMATCH"
+        )
+    if (
+        successor_snapshot.semantic_coverage_authorized is not False
+        or successor_snapshot.experimental_only is not True
+        or successor_snapshot.runtime_connected is not False
+    ):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_SEMANTIC_COVERAGE_SELF_CLAIM"
+        )
+    maximum_owner_ordinal = catalog.get("max_owner_ordinal")
+    if type(maximum_owner_ordinal) is not int or type(maximum_owner_ordinal) is bool:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_CATALOG_TOKEN_MISMATCH"
+        )
+    try:
+        owner_registry = _step11_rc0028_independent_owner_registry(
+            successor_snapshot,
+            maximum_owner_ordinal=maximum_owner_ordinal,
+        )
+        owner_ordinal_by_id = {
+            owner_id: ordinal
+            for ordinal, (owner_id, _owner_kind) in enumerate(
+                owner_registry, 1
+            )
+        }
+        expected_constructions, slot_count, participation_count = (
+            _step11_rc0028_expected_constructions(
+                successor_snapshot,
+                owner_ordinal_by_id=owner_ordinal_by_id,
+                catalog=catalog,
+            )
+        )
+        expected_relations, endpoint_count = (
+            _step11_rc0028_expected_relations(
+                successor_snapshot,
+                owner_ordinal_by_id=owner_ordinal_by_id,
+                catalog=catalog,
+            )
+        )
+        expected_links = _step11_rc0028_expected_semantic_links(
+            successor_snapshot,
+            owner_ordinal_by_id=owner_ordinal_by_id,
+            catalog=catalog,
+        )
+        expected_unknowns = _step11_rc0028_expected_explicit_unknowns(
+            successor_snapshot,
+            owner_ordinal_by_id=owner_ordinal_by_id,
+            catalog=catalog,
+        )
+    except Step11Rc0028ExperimentInverseSurfaceError:
+        raise
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_SOURCE_COMMITMENT_MISMATCH"
+        ) from exc
+
+    snapshot_issues = validate_grounded_lexical_role_experiment_snapshot_successor(
+        successor_snapshot
+    )
+    if snapshot_issues:
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_SOURCE_COMMITMENT_MISMATCH"
+        )
+    _step11_rc0028_compare_constructions(
+        witness.construction_atoms, expected_constructions
+    )
+    _step11_rc0028_compare_relations(
+        witness.relation_atoms, expected_relations
+    )
+    _step11_rc0028_compare_semantic_links(
+        witness.semantic_link_atoms, expected_links
+    )
+    _step11_rc0028_compare_explicit_unknowns(
+        witness.explicit_unknown_atoms, expected_unknowns
+    )
+    resource_bounds = successor_snapshot.relation_construction_authority.resource_bounds
+    if (
+        len(expected_constructions) > resource_bounds.max_construction_instances
+        or slot_count > resource_bounds.max_lexical_construction_slots
+        or participation_count
+        > resource_bounds.max_source_owner_participations
+        or len(expected_relations) != resource_bounds.exact_effective_relations
+        or len(expected_links) != resource_bounds.exact_semantic_links
+        or len(expected_unknowns) != resource_bounds.exact_explicit_unknowns
+    ):
+        raise Step11Rc0028ExperimentInverseSurfaceError(
+            "STEP11_RC0028_RESOURCE_BOUND_EXCEEDED"
+        )
+
+    binding = Step11Rc0028ExperimentVerifiedSurfaceBinding(
+        schema_version=STEP11_RC0028_EXPERIMENT_VERIFIED_BINDING_SCHEMA,
+        parsed_witness_sha256=artifact_sha256(witness_material),
+        base_witness_sha256=artifact_sha256(
+            _witness_material(witness.base_witness)
+        ),
+        successor_snapshot_sha256=(
+            successor_snapshot.experiment_snapshot_sha256
+        ),
+        experiment_catalog_sha256=catalog_sha256,
+        bound_owner_ordinal_count=len(owner_registry),
+        construction_instance_binding_count=len(expected_constructions),
+        construction_slot_binding_count=slot_count,
+        participation_binding_count=participation_count,
+        relation_binding_count=len(expected_relations),
+        relation_endpoint_binding_count=endpoint_count,
+        semantic_link_binding_count=len(expected_links),
+        explicit_unknown_binding_count=len(expected_unknowns),
+        semantic_coverage_authorized=False,
+        issue_codes=(),
+        hard_verified=True,
+    )
+    step11_rc0028_experiment_verified_binding_material(binding)
+    return binding
+
+
+__all__ = [
+    *__all__,
+    "STEP11_RC0028_EXPERIMENT_PARSED_WITNESS_SCHEMA",
+    "STEP11_RC0028_EXPERIMENT_VERIFIED_BINDING_SCHEMA",
+    "Step11Rc0028ExperimentInverseSurfaceError",
+    "Step11Rc0028ExperimentParsedConstructionAtom",
+    "Step11Rc0028ExperimentParsedConstructionRoleOwner",
+    "Step11Rc0028ExperimentParsedExplicitUnknownAtom",
+    "Step11Rc0028ExperimentParsedRelationAtom",
+    "Step11Rc0028ExperimentParsedSemanticLinkAtom",
+    "Step11Rc0028ExperimentParsedSurfaceWitness",
+    "Step11Rc0028ExperimentVerifiedSurfaceBinding",
+    "match_step11_rc0028_experiment_surface",
+    "parse_step11_rc0028_experiment_surface",
+    "step11_rc0028_experiment_parsed_witness_material",
+    "step11_rc0028_experiment_verified_binding_material",
+]

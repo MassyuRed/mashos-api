@@ -5944,3 +5944,728 @@ __all__ = [
     "validate_step11_natural_surface_candidate",
     "validate_step11_surface_ast",
 ]
+
+
+# ---------------------------------------------------------------------------
+# rc0028 experiment-only additive surface
+#
+# Keep every rc0027 definition above byte-for-byte stable.  The types and
+# functions below are reached only from the disconnected rc0028 adapter.
+# Successor and delta-catalog imports stay local so importing the shared
+# rc0027 runtime cannot load the experiment authority transitively.
+
+STEP11_RC0028_EXPERIMENT_CANDIDATE_VERSION_ID = "nls_v3_rc_0028_experiment"
+STEP11_RC0028_EXPERIMENT_RENDERED_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11_rc0028_experiment_rendered_surface.v1"
+)
+STEP11_RC0028_EXPERIMENT_CANDIDATE_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11_rc0028_experiment_candidate.v1"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentConstructionRoleAtom:
+    construction_slot_id: str
+    lexical_role_kind: str
+    construction_position: str
+    role_position_atom_code: str
+    role_position_surface_token: str
+    target_owner_ordinals: tuple[int, ...]
+    participation_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentConstructionAtom:
+    ordinal: int
+    construction_instance_id: str
+    construction_code: str
+    catalog_atom_code: str
+    surface_token: str
+    construction_slot_ids: tuple[str, ...]
+    role_atoms: tuple[Step11Rc0028ExperimentConstructionRoleAtom, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentRelationAtom:
+    ordinal: int
+    experiment_relation_id: str
+    source_relation_id: str
+    source_relation_type: str
+    effective_relation_type: str
+    from_owner_ordinal: int
+    to_owner_ordinal: int
+    direction: str
+    authority_basis: str
+    source_retention: str
+    experiment_retention: str
+    refines_source_relation_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentSemanticLinkAtom:
+    ordinal: int
+    source_semantic_link_id: str
+    relation_type: str
+    from_owner_ordinal: int
+    to_owner_ordinal: int
+    direction: str
+    required: bool
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0028ExperimentExplicitUnknownAtom:
+    ordinal: int
+    source_unknown_id: str
+    dimension: str
+    affected_owner_ordinals: tuple[int, ...]
+    required: bool
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class Step11Rc0028ExperimentRenderedSurface:
+    schema_version: str
+    utf8_bytes: bytes
+    sha256: str
+    added_construction_line_count: int
+    added_relation_line_count: int
+    added_semantic_link_line_count: int
+    added_explicit_unknown_line_count: int
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class Step11Rc0028ExperimentSurfaceCandidate:
+    schema_version: str
+    candidate_version_id: str
+    candidate_id: str
+    base_candidate: Step11NaturalSurfaceCandidate
+    rendered_surface: Step11Rc0028ExperimentRenderedSurface
+    successor_snapshot_sha256: str
+    lexical_atom_specs_sha256: str
+    experiment_catalog_sha256: str
+    owner_registry: tuple[str, ...]
+    construction_atoms: tuple[Step11Rc0028ExperimentConstructionAtom, ...]
+    relation_atoms: tuple[Step11Rc0028ExperimentRelationAtom, ...]
+    semantic_link_atoms: tuple[Step11Rc0028ExperimentSemanticLinkAtom, ...]
+    explicit_unknown_atoms: tuple[Step11Rc0028ExperimentExplicitUnknownAtom, ...]
+    semantic_coverage_authorized: bool
+    replan_count: int
+    experimental_only: bool = True
+    runtime_connected: bool = False
+
+    @property
+    def final_utf8_bytes(self) -> bytes:
+        return self.rendered_surface.utf8_bytes
+
+
+def _step11_rc0028_catalog() -> tuple[dict[str, Any], str]:
+    from emlis_ai_step11_rc0028_experiment_surface_catalog_v3 import (
+        STEP11_RC0028_EXPERIMENT_SURFACE_CATALOG,
+        STEP11_RC0028_EXPERIMENT_SURFACE_CATALOG_SHA256,
+        validate_step11_rc0028_experiment_surface_catalog,
+    )
+
+    catalog = STEP11_RC0028_EXPERIMENT_SURFACE_CATALOG
+    issues = validate_step11_rc0028_experiment_surface_catalog(catalog)
+    if issues:
+        raise Step11NaturalSurfaceError(issues[0])
+    return catalog, STEP11_RC0028_EXPERIMENT_SURFACE_CATALOG_SHA256
+
+
+def _step11_rc0028_validate_lexical_specs(
+    value: Any,
+    *,
+    successor_snapshot: Any,
+) -> str:
+    from emlis_ai_step11_grounded_lexicalization_v3 import (
+        Step11Rc0028ExperimentLexicalAtomSpecs,
+        validate_step11_rc0028_experiment_lexical_atom_specs,
+    )
+
+    if type(value) is not Step11Rc0028ExperimentLexicalAtomSpecs:
+        raise Step11NaturalSurfaceError("STEP11_RC0028_LEXICAL_SPEC_INVALID")
+    issues = validate_step11_rc0028_experiment_lexical_atom_specs(
+        value,
+        successor_snapshot=successor_snapshot,
+    )
+    if issues:
+        raise Step11NaturalSurfaceError(issues[0])
+    return value.specs_sha256
+
+
+def _step11_rc0028_owner_registry(lexical_atom_specs: Any) -> tuple[str, ...]:
+    return tuple(
+        str(row.source_owner_id) for row in lexical_atom_specs.owner_bindings
+    )
+
+
+def _step11_rc0028_forward_atoms(
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+    catalog: Mapping[str, Any],
+) -> tuple[
+    tuple[str, ...],
+    tuple[Step11Rc0028ExperimentConstructionAtom, ...],
+    tuple[Step11Rc0028ExperimentRelationAtom, ...],
+    tuple[Step11Rc0028ExperimentSemanticLinkAtom, ...],
+    tuple[Step11Rc0028ExperimentExplicitUnknownAtom, ...],
+]:
+    witness = successor_snapshot.lexical_role_witness
+    owner_registry = _step11_rc0028_owner_registry(lexical_atom_specs)
+    owner_ordinal = {
+        owner_id: index + 1 for index, owner_id in enumerate(owner_registry)
+    }
+    atom_codes = catalog.get("construction_atom_codes", {})
+    surface_tokens = catalog.get("construction_surface_tokens", {})
+    construction_by_slot = {
+        str(row.construction_slot_id): row
+        for row in lexical_atom_specs.construction_atoms
+    }
+    constructions: list[Step11Rc0028ExperimentConstructionAtom] = []
+    for index, row in enumerate(lexical_atom_specs.construction_instances, 1):
+        code = str(row.construction_code)
+        atom_code = atom_codes.get(code)
+        token = surface_tokens.get(code)
+        if type(atom_code) is not str or not atom_code or type(token) is not str or not token:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0028_CATALOG_ATOM_CODE_MISMATCH"
+            )
+        role_atoms: list[Step11Rc0028ExperimentConstructionRoleAtom] = []
+        for slot_id in row.slot_ids:
+            slot = construction_by_slot.get(str(slot_id))
+            if slot is None:
+                raise Step11NaturalSurfaceError(
+                    "STEP11_RC0028_CONSTRUCTION_SLOT_BINDING_MISMATCH"
+                )
+            if not slot.target_owner_ordinals:
+                raise Step11NaturalSurfaceError(
+                    "STEP11_RC0028_PARTICIPATION_OWNER_MISMATCH"
+                )
+            role_atoms.append(
+                Step11Rc0028ExperimentConstructionRoleAtom(
+                    construction_slot_id=str(slot.construction_slot_id),
+                    lexical_role_kind=str(slot.lexical_role_kind),
+                    construction_position=str(slot.construction_position),
+                    role_position_atom_code=str(slot.role_position_atom_code),
+                    role_position_surface_token=str(
+                        slot.role_position_surface_token
+                    ),
+                    target_owner_ordinals=tuple(
+                        int(value) for value in slot.target_owner_ordinals
+                    ),
+                    participation_ids=tuple(
+                        str(value) for value in slot.participation_ids
+                    ),
+                )
+            )
+        constructions.append(
+            Step11Rc0028ExperimentConstructionAtom(
+                ordinal=index,
+                construction_instance_id=str(row.construction_instance_id),
+                construction_code=code,
+                catalog_atom_code=atom_code,
+                surface_token=token,
+                construction_slot_ids=tuple(str(value) for value in row.slot_ids),
+                role_atoms=tuple(role_atoms),
+            )
+        )
+
+    relations: list[Step11Rc0028ExperimentRelationAtom] = []
+    for index, row in enumerate(witness.relation_authorities, 1):
+        try:
+            from_ordinal = owner_ordinal[str(row.from_source_owner_id)]
+            to_ordinal = owner_ordinal[str(row.to_source_owner_id)]
+        except KeyError as exc:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0028_RELATION_ENDPOINT_MISMATCH"
+            ) from exc
+        relations.append(
+            Step11Rc0028ExperimentRelationAtom(
+                ordinal=index,
+                experiment_relation_id=str(row.experiment_relation_id),
+                source_relation_id=str(row.source_relation_id),
+                source_relation_type=str(row.source_relation_type),
+                effective_relation_type=str(row.effective_relation_type),
+                from_owner_ordinal=from_ordinal,
+                to_owner_ordinal=to_ordinal,
+                direction=str(row.direction),
+                authority_basis=str(row.authority_basis),
+                source_retention=str(row.source_retention),
+                experiment_retention=str(row.experiment_retention),
+                refines_source_relation_id=(
+                    None
+                    if row.refines_source_relation_id is None
+                    else str(row.refines_source_relation_id)
+                ),
+            )
+        )
+
+    links: list[Step11Rc0028ExperimentSemanticLinkAtom] = []
+    for index, row in enumerate(witness.semantic_link_bindings, 1):
+        try:
+            from_ordinal = owner_ordinal[str(row.from_semantic_unit_id)]
+            to_ordinal = owner_ordinal[str(row.to_semantic_unit_id)]
+        except KeyError as exc:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0028_SEMANTIC_LINK_ENDPOINT_MISMATCH"
+            ) from exc
+        links.append(
+            Step11Rc0028ExperimentSemanticLinkAtom(
+                ordinal=index,
+                source_semantic_link_id=str(row.source_semantic_link_id),
+                relation_type=str(row.relation_type),
+                from_owner_ordinal=from_ordinal,
+                to_owner_ordinal=to_ordinal,
+                direction=str(row.direction),
+                required=bool(row.required),
+            )
+        )
+
+    unknowns: list[Step11Rc0028ExperimentExplicitUnknownAtom] = []
+    for index, row in enumerate(witness.explicit_unknown_bindings, 1):
+        try:
+            ordinals = tuple(
+                owner_ordinal[str(owner.owner_id)]
+                for owner in row.affected_source_owners
+            )
+        except KeyError as exc:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0028_EXPLICIT_UNKNOWN_OWNER_MISMATCH"
+            ) from exc
+        unknowns.append(
+            Step11Rc0028ExperimentExplicitUnknownAtom(
+                ordinal=index,
+                source_unknown_id=str(row.source_unknown_id),
+                dimension=str(row.dimension),
+                affected_owner_ordinals=ordinals,
+                required=bool(row.required),
+            )
+        )
+    return (
+        owner_registry,
+        tuple(constructions),
+        tuple(relations),
+        tuple(links),
+        tuple(unknowns),
+    )
+
+
+def _step11_rc0028_catalog_token(
+    catalog: Mapping[str, Any],
+    registry_name: str,
+    semantic_type: str,
+    direction: str,
+) -> str:
+    registry = catalog.get(registry_name, {})
+    if type(registry) is not dict:
+        raise Step11NaturalSurfaceError("STEP11_RC0028_CATALOG_TOKEN_MISMATCH")
+    key = semantic_type + ":" + direction
+    token = registry.get(key, registry.get(semantic_type))
+    if type(token) is not str or not token:
+        raise Step11NaturalSurfaceError("STEP11_RC0028_CATALOG_TOKEN_MISMATCH")
+    return token
+
+
+def _step11_rc0028_owner_token(
+    catalog: Mapping[str, Any], ordinal: int
+) -> str:
+    registry = catalog.get("owner_ordinal_tokens", {})
+    token = registry.get(str(ordinal)) if type(registry) is dict else None
+    if type(token) is not str or not token:
+        raise Step11NaturalSurfaceError("STEP11_RC0028_RESOURCE_BOUND_EXCEEDED")
+    return token
+
+
+def _step11_rc0028_structure_lines(
+    *,
+    catalog: Mapping[str, Any],
+    constructions: Sequence[Step11Rc0028ExperimentConstructionAtom],
+    relations: Sequence[Step11Rc0028ExperimentRelationAtom],
+    links: Sequence[Step11Rc0028ExperimentSemanticLinkAtom],
+    unknowns: Sequence[Step11Rc0028ExperimentExplicitUnknownAtom],
+) -> tuple[str, ...]:
+    morphology = catalog.get("line_morphology", {})
+    if type(morphology) is not dict:
+        raise Step11NaturalSurfaceError("STEP11_RC0028_CATALOG_TOKEN_MISMATCH")
+    required_morphology = (
+        "atom_separator",
+        "clause_separator",
+        "construction_open",
+        "construction_prefix",
+        "construction_suffix",
+        "owner_noun",
+        "owner_possessive",
+        "owner_separator",
+        "relation_from_to_separator",
+        "relation_suffix",
+        "relation_to_suffix",
+        "semantic_link_between",
+        "semantic_link_join",
+        "semantic_link_suffix",
+        "unknown_owner_suffix",
+        "unknown_prefix",
+        "unknown_suffix",
+    )
+    if any(
+        type(morphology.get(key)) is not str or not morphology.get(key)
+        for key in required_morphology
+    ):
+        raise Step11NaturalSurfaceError("STEP11_RC0028_CATALOG_TOKEN_MISMATCH")
+    separator = morphology["atom_separator"]
+    clause_separator = morphology["clause_separator"]
+    owner_noun = morphology["owner_noun"]
+    owner_possessive = morphology["owner_possessive"]
+    from_to = morphology["relation_from_to_separator"]
+    relation_suffix = morphology["relation_suffix"]
+
+    lines: list[str] = []
+    for row in constructions:
+        visible_roles: list[str] = []
+        for role in row.role_atoms:
+            visible_roles.extend(
+                _step11_rc0028_owner_token(catalog, ordinal)
+                + owner_noun
+                + owner_possessive
+                + role.role_position_surface_token
+                for ordinal in role.target_owner_ordinals
+            )
+        lines.append(
+            morphology["construction_prefix"]
+            + clause_separator
+            + row.surface_token
+            + morphology["construction_open"]
+            + clause_separator
+            + clause_separator.join(visible_roles)
+            + morphology["construction_suffix"]
+        )
+    for row in relations:
+        left = _step11_rc0028_owner_token(catalog, row.from_owner_ordinal)
+        right = _step11_rc0028_owner_token(catalog, row.to_owner_ordinal)
+        token = _step11_rc0028_catalog_token(
+            catalog,
+            "relation_surface_tokens",
+            row.effective_relation_type,
+            row.direction,
+        )
+        lines.append(
+            left
+            + owner_noun
+            + from_to
+            + right
+            + owner_noun
+            + morphology["relation_to_suffix"]
+            + clause_separator
+            + token
+            + relation_suffix
+        )
+    for row in links:
+        left = _step11_rc0028_owner_token(catalog, row.from_owner_ordinal)
+        right = _step11_rc0028_owner_token(catalog, row.to_owner_ordinal)
+        token = _step11_rc0028_catalog_token(
+            catalog,
+            "semantic_link_surface_tokens",
+            row.relation_type,
+            row.direction,
+        )
+        lines.append(
+            left
+            + owner_noun
+            + morphology["semantic_link_join"]
+            + right
+            + owner_noun
+            + morphology["semantic_link_between"]
+            + clause_separator
+            + token
+            + morphology["semantic_link_suffix"]
+        )
+    registry = catalog.get("unknown_surface_tokens", {})
+    if type(registry) is not dict:
+        raise Step11NaturalSurfaceError("STEP11_RC0028_CATALOG_TOKEN_MISMATCH")
+    for row in unknowns:
+        dimension = registry.get(row.dimension)
+        if type(dimension) is not str or not dimension:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0028_CATALOG_TOKEN_MISMATCH"
+            )
+        owner_text = morphology["owner_separator"].join(
+            _step11_rc0028_owner_token(catalog, ordinal) + owner_noun
+            for ordinal in row.affected_owner_ordinals
+        )
+        lines.append(
+            morphology["unknown_prefix"]
+            + clause_separator
+            + owner_text
+            + morphology["unknown_owner_suffix"]
+            + clause_separator
+            + dimension
+            + morphology["unknown_suffix"]
+        )
+    if any(not line or "\n" in line or "\r" in line for line in lines):
+        raise Step11NaturalSurfaceError("STEP11_RC0028_CATALOG_TOKEN_MISMATCH")
+    return tuple(lines)
+
+
+def render_step11_rc0028_experiment_surface(
+    base_utf8_bytes: bytes,
+    *,
+    construction_atoms: Sequence[Step11Rc0028ExperimentConstructionAtom] = (),
+    relation_atoms: Sequence[Step11Rc0028ExperimentRelationAtom] = (),
+    semantic_link_atoms: Sequence[Step11Rc0028ExperimentSemanticLinkAtom] = (),
+    explicit_unknown_atoms: Sequence[Step11Rc0028ExperimentExplicitUnknownAtom] = (),
+) -> Step11Rc0028ExperimentRenderedSurface:
+    if type(base_utf8_bytes) is not bytes or not base_utf8_bytes:
+        raise Step11NaturalSurfaceError("STEP11_RC0028_BASE_SURFACE_INVALID")
+    try:
+        text = base_utf8_bytes.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise Step11NaturalSurfaceError("STEP11_RC0028_BASE_SURFACE_INVALID") from exc
+    marker = "\n\nEmlisから：\n"
+    if not text.startswith("見えたこと：\n") or text.count(marker) != 1:
+        raise Step11NaturalSurfaceError("STEP11_RC0028_BASE_SURFACE_INVALID")
+    catalog, _catalog_sha256 = _step11_rc0028_catalog()
+    lines = _step11_rc0028_structure_lines(
+        catalog=catalog,
+        constructions=construction_atoms,
+        relations=relation_atoms,
+        links=semantic_link_atoms,
+        unknowns=explicit_unknown_atoms,
+    )
+    if lines:
+        observation, reception = text.split(marker, 1)
+        text = observation + "\n" + "\n".join(lines) + marker + reception
+    body = text.encode("utf-8", errors="strict")
+    return Step11Rc0028ExperimentRenderedSurface(
+        schema_version=STEP11_RC0028_EXPERIMENT_RENDERED_SCHEMA,
+        utf8_bytes=body,
+        sha256=hashlib.sha256(body).hexdigest(),
+        added_construction_line_count=len(construction_atoms),
+        added_relation_line_count=len(relation_atoms),
+        added_semantic_link_line_count=len(semantic_link_atoms),
+        added_explicit_unknown_line_count=len(explicit_unknown_atoms),
+    )
+
+
+def _step11_rc0028_candidate_identity(
+    *,
+    base_candidate_id: str,
+    rendered: Step11Rc0028ExperimentRenderedSurface,
+    successor_snapshot_sha256: str,
+    lexical_atom_specs_sha256: str,
+    catalog_sha256: str,
+) -> str:
+    return "nls3s11rc0028cand_" + artifact_sha256(
+        {
+            "candidate_version_id": STEP11_RC0028_EXPERIMENT_CANDIDATE_VERSION_ID,
+            "base_candidate_id": base_candidate_id,
+            "final_bytes_sha256": rendered.sha256,
+            "successor_snapshot_sha256": successor_snapshot_sha256,
+            "lexical_atom_specs_sha256": lexical_atom_specs_sha256,
+            "catalog_sha256": catalog_sha256,
+        }
+    )[:20]
+
+
+def build_step11_rc0028_experiment_surface_candidate(
+    base_candidate: Step11NaturalSurfaceCandidate,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> Step11Rc0028ExperimentSurfaceCandidate:
+    successor_owner = __import__(
+        "emlis_ai_grounded_lexical_role_experiment_snapshot_successor_v3",
+        fromlist=(
+            "GroundedLexicalRoleExperimentSnapshotSuccessor",
+            "validate_grounded_lexical_role_experiment_snapshot_successor",
+        ),
+    )
+    GroundedLexicalRoleExperimentSnapshotSuccessor = (
+        successor_owner.GroundedLexicalRoleExperimentSnapshotSuccessor
+    )
+    validate_grounded_lexical_role_experiment_snapshot_successor = (
+        successor_owner.validate_grounded_lexical_role_experiment_snapshot_successor
+    )
+
+    if type(base_candidate) is not Step11NaturalSurfaceCandidate:
+        raise Step11NaturalSurfaceError("STEP11_RC0028_BASE_CANDIDATE_INVALID")
+    if type(successor_snapshot) is not GroundedLexicalRoleExperimentSnapshotSuccessor:
+        raise Step11NaturalSurfaceError("STEP11_RC0028_SOURCE_COMMITMENT_MISMATCH")
+    issues = validate_grounded_lexical_role_experiment_snapshot_successor(
+        successor_snapshot
+    )
+    if issues:
+        raise Step11NaturalSurfaceError(issues[0])
+    if (
+        type(successor_snapshot.semantic_coverage_authorized) is not bool
+        or successor_snapshot.semantic_coverage_authorized is not False
+        or successor_snapshot.runtime_connected is not False
+        or successor_snapshot.experimental_only is not True
+    ):
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0028_SEMANTIC_COVERAGE_SELF_CLAIM"
+        )
+    lexical_sha256 = _step11_rc0028_validate_lexical_specs(
+        lexical_atom_specs,
+        successor_snapshot=successor_snapshot,
+    )
+    catalog, catalog_sha256 = _step11_rc0028_catalog()
+    owner_registry, constructions, relations, links, unknowns = (
+        _step11_rc0028_forward_atoms(
+            successor_snapshot,
+            lexical_atom_specs,
+            catalog,
+        )
+    )
+    rendered = render_step11_rc0028_experiment_surface(
+        base_candidate.final_utf8_bytes,
+        construction_atoms=constructions,
+        relation_atoms=relations,
+        semantic_link_atoms=links,
+        explicit_unknown_atoms=unknowns,
+    )
+    candidate = Step11Rc0028ExperimentSurfaceCandidate(
+        schema_version=STEP11_RC0028_EXPERIMENT_CANDIDATE_SCHEMA,
+        candidate_version_id=STEP11_RC0028_EXPERIMENT_CANDIDATE_VERSION_ID,
+        candidate_id=_step11_rc0028_candidate_identity(
+            base_candidate_id=base_candidate.candidate_id,
+            rendered=rendered,
+            successor_snapshot_sha256=successor_snapshot.experiment_snapshot_sha256,
+            lexical_atom_specs_sha256=lexical_sha256,
+            catalog_sha256=catalog_sha256,
+        ),
+        base_candidate=base_candidate,
+        rendered_surface=rendered,
+        successor_snapshot_sha256=successor_snapshot.experiment_snapshot_sha256,
+        lexical_atom_specs_sha256=lexical_sha256,
+        experiment_catalog_sha256=catalog_sha256,
+        owner_registry=owner_registry,
+        construction_atoms=constructions,
+        relation_atoms=relations,
+        semantic_link_atoms=links,
+        explicit_unknown_atoms=unknowns,
+        semantic_coverage_authorized=False,
+        replan_count=0,
+    )
+    candidate_issues = validate_step11_rc0028_experiment_surface_candidate(
+        candidate,
+        successor_snapshot=successor_snapshot,
+        lexical_atom_specs=lexical_atom_specs,
+    )
+    if candidate_issues:
+        raise Step11NaturalSurfaceError(candidate_issues[0])
+    return candidate
+
+
+def build_step11_rc0028_experiment_surface_candidates(
+    base_candidates: Sequence[Step11NaturalSurfaceCandidate],
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> tuple[Step11Rc0028ExperimentSurfaceCandidate, ...]:
+    if (
+        type(base_candidates) not in {tuple, list}
+        or not base_candidates
+        or len(base_candidates) > 12
+    ):
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0028_CONSTRUCTION_CARDINALITY_MISMATCH"
+        )
+    return tuple(
+        build_step11_rc0028_experiment_surface_candidate(
+            row,
+            successor_snapshot=successor_snapshot,
+            lexical_atom_specs=lexical_atom_specs,
+        )
+        for row in base_candidates
+    )
+
+
+def validate_step11_rc0028_experiment_surface_candidate(
+    value: Any,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> tuple[str, ...]:
+    if type(value) is not Step11Rc0028ExperimentSurfaceCandidate:
+        return ("STEP11_RC0028_CANDIDATE_TYPE_INVALID",)
+    issues: set[str] = set()
+    if value.schema_version != STEP11_RC0028_EXPERIMENT_CANDIDATE_SCHEMA:
+        issues.add("STEP11_RC0028_ARTIFACT_COMMITMENT_MISMATCH")
+    if value.candidate_version_id != STEP11_RC0028_EXPERIMENT_CANDIDATE_VERSION_ID:
+        issues.add("STEP11_RC0028_ARTIFACT_COMMITMENT_MISMATCH")
+    if type(value.base_candidate) is not Step11NaturalSurfaceCandidate:
+        issues.add("STEP11_RC0028_BASE_CANDIDATE_INVALID")
+        return tuple(sorted(issues))
+    try:
+        catalog, catalog_sha256 = _step11_rc0028_catalog()
+        lexical_sha256 = _step11_rc0028_validate_lexical_specs(
+            lexical_atom_specs,
+            successor_snapshot=successor_snapshot,
+        )
+        owner_registry, constructions, relations, links, unknowns = (
+            _step11_rc0028_forward_atoms(
+                successor_snapshot,
+                lexical_atom_specs,
+                catalog,
+            )
+        )
+        rendered = render_step11_rc0028_experiment_surface(
+            value.base_candidate.final_utf8_bytes,
+            construction_atoms=constructions,
+            relation_atoms=relations,
+            semantic_link_atoms=links,
+            explicit_unknown_atoms=unknowns,
+        )
+        expected_id = _step11_rc0028_candidate_identity(
+            base_candidate_id=value.base_candidate.candidate_id,
+            rendered=rendered,
+            successor_snapshot_sha256=successor_snapshot.experiment_snapshot_sha256,
+            lexical_atom_specs_sha256=lexical_sha256,
+            catalog_sha256=catalog_sha256,
+        )
+    except (AttributeError, KeyError, TypeError, ValueError, Step11NaturalSurfaceError):
+        issues.add("STEP11_RC0028_CANDIDATE_REVALIDATION_FAILED")
+        return tuple(sorted(issues))
+    if value.rendered_surface != rendered:
+        issues.add("STEP11_RC0028_FINAL_BYTES_COMMITMENT_MISMATCH")
+    if value.owner_registry != owner_registry:
+        issues.add("STEP11_RC0028_SOURCE_COMMITMENT_MISMATCH")
+    if value.construction_atoms != constructions:
+        issues.add("STEP11_RC0028_CONSTRUCTION_CARDINALITY_MISMATCH")
+    if value.relation_atoms != relations:
+        issues.add("STEP11_RC0028_RELATION_ENDPOINT_MISMATCH")
+    if value.semantic_link_atoms != links:
+        issues.add("STEP11_RC0028_SEMANTIC_LINK_BINDING_MISMATCH")
+    if value.explicit_unknown_atoms != unknowns:
+        issues.add("STEP11_RC0028_EXPLICIT_UNKNOWN_BINDING_MISMATCH")
+    if value.successor_snapshot_sha256 != successor_snapshot.experiment_snapshot_sha256:
+        issues.add("STEP11_RC0028_SOURCE_COMMITMENT_MISMATCH")
+    if value.lexical_atom_specs_sha256 != lexical_sha256:
+        issues.add("STEP11_RC0028_ARTIFACT_COMMITMENT_MISMATCH")
+    if value.experiment_catalog_sha256 != catalog_sha256:
+        issues.add("STEP11_RC0028_CATALOG_TOKEN_MISMATCH")
+    if value.candidate_id != expected_id:
+        issues.add("STEP11_RC0028_ARTIFACT_COMMITMENT_MISMATCH")
+    if type(value.semantic_coverage_authorized) is not bool or value.semantic_coverage_authorized:
+        issues.add("STEP11_RC0028_SEMANTIC_COVERAGE_SELF_CLAIM")
+    if type(value.replan_count) is not int or type(value.replan_count) is bool or not 0 <= value.replan_count <= 1:
+        issues.add("STEP11_RC0028_REPLAN_BOUND_EXCEEDED")
+    if value.experimental_only is not True or value.runtime_connected is not False:
+        issues.add("STEP11_RC0028_RUNTIME_BOUNDARY_INVALID")
+    return tuple(sorted(issues))
+
+
+__all__ += [
+    "STEP11_RC0028_EXPERIMENT_CANDIDATE_SCHEMA",
+    "STEP11_RC0028_EXPERIMENT_CANDIDATE_VERSION_ID",
+    "STEP11_RC0028_EXPERIMENT_RENDERED_SCHEMA",
+    "Step11Rc0028ExperimentConstructionAtom",
+    "Step11Rc0028ExperimentConstructionRoleAtom",
+    "Step11Rc0028ExperimentExplicitUnknownAtom",
+    "Step11Rc0028ExperimentRelationAtom",
+    "Step11Rc0028ExperimentRenderedSurface",
+    "Step11Rc0028ExperimentSemanticLinkAtom",
+    "Step11Rc0028ExperimentSurfaceCandidate",
+    "build_step11_rc0028_experiment_surface_candidate",
+    "build_step11_rc0028_experiment_surface_candidates",
+    "render_step11_rc0028_experiment_surface",
+    "validate_step11_rc0028_experiment_surface_candidate",
+]
