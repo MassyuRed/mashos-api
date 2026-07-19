@@ -19,16 +19,16 @@ from emlis_ai_evidence_ledger_service import (
     build_evidence_ledger,
     build_evidence_span_resolver,
 )
-from emlis_ai_grounded_lexical_role_experiment_snapshot_v3 import (
-    build_grounded_lexical_role_experiment_snapshot,
-    grounded_lexical_role_experiment_snapshot_material,
-    validate_grounded_lexical_role_experiment_snapshot,
+from emlis_ai_grounded_lexical_role_experiment_snapshot_successor_v3 import (
+    build_grounded_lexical_role_experiment_snapshot_successor,
+    grounded_lexical_role_experiment_snapshot_successor_material,
+    validate_grounded_lexical_role_experiment_snapshot_successor,
 )
-from emlis_ai_grounded_lexical_role_witness_v3 import (
-    GroundedLexicalRoleError,
-    build_grounded_lexical_role_witness,
-    grounded_lexical_role_witness_material,
-    validate_grounded_lexical_role_witness,
+from emlis_ai_grounded_lexical_role_witness_successor_v3 import (
+    GroundedLexicalRoleSuccessorError,
+    build_grounded_lexical_role_witness_successor,
+    grounded_lexical_role_witness_successor_material,
+    validate_grounded_lexical_role_witness_successor,
 )
 from emlis_ai_grounded_observation_plan import build_grounded_observation_plan
 from emlis_ai_grounded_observation_semantic_restatement_v3 import (
@@ -104,13 +104,22 @@ def test_rc0028_e1b_cross_span_relation_owner_closure_is_lossless() -> None:
         required = frozenset(
             plan.coverage_requirements.required_relation_ids
         )
+        witness = build_grounded_lexical_role_witness_successor(
+            plan,
+            resolver,
+        )
         matching = tuple(
             row
-            for row in plan.relations
-            if row.relation_id in required
-            and row.type == expected_type
-            and row.grounding_kind == "user_stated_relation"
-            and len(row.source_span_ids) > 1
+            for row in witness.relation_authorities
+            if (
+                row.source_relation_id in required
+                or row.experiment_retention
+                == "experiment_required_refinement"
+            )
+            and row.effective_relation_type == expected_type
+            and row.source_grounding_kind
+            in {"user_stated_relation", "bounded_structural_inference"}
+            and len(row.evidence_alias_ids) > 1
         )
         if len(matching) != 1:
             issues.append(
@@ -121,7 +130,19 @@ def test_rc0028_e1b_cross_span_relation_owner_closure_is_lossless() -> None:
             continue
 
         relation = matching[0]
-        witness = build_grounded_lexical_role_witness(plan, resolver)
+        if expected_type == "coexistence":
+            assert relation.source_relation_type == "uncertain_connection"
+            assert relation.source_grounding_kind == "bounded_structural_inference"
+            assert relation.source_retention == "should"
+            assert relation.authority_basis == "source_explicit_refinement"
+            assert relation.refines_source_relation_id == relation.source_relation_id
+            assert relation.experiment_retention == (
+                "experiment_required_refinement"
+            )
+        else:
+            assert relation.source_relation_type == expected_type
+            assert relation.source_grounding_kind == "user_stated_relation"
+            assert relation.authority_basis == "grounded_plan_projection"
         bindings = tuple(
             row
             for row in getattr(
@@ -129,16 +150,17 @@ def test_rc0028_e1b_cross_span_relation_owner_closure_is_lossless() -> None:
                 "relation_endpoint_bindings",
                 (),
             )
-            if getattr(row, "relation_id", "") == relation.relation_id
+            if getattr(row, "relation_id", "")
+            == relation.experiment_relation_id
         )
         direction = (
             "bidirectional"
-            if relation.type == "coexistence"
+            if relation.effective_relation_type == "coexistence"
             else "source_to_target"
         )
         expected = {
-            ("from", relation.from_nucleus_id, direction),
-            ("to", relation.to_nucleus_id, direction),
+            ("from", relation.from_source_owner_id, direction),
+            ("to", relation.to_source_owner_id, direction),
         }
         actual = {
             (
@@ -170,7 +192,7 @@ def test_rc0028_e1b_overlap_retains_all_nested_constructions() -> None:
     assert len(restatement.semantic_links) == 1
     assert restatement.explicit_unknowns
 
-    witness = build_grounded_lexical_role_witness(plan, resolver)
+    witness = build_grounded_lexical_role_witness_successor(plan, resolver)
     issues: list[str] = []
     if "LEXICAL_ROLE_AMBIGUOUS_ROLE_OVERLAP" in {
         reason for _owner_id, reason in witness.unresolved_owner_reasons
@@ -213,10 +235,7 @@ def test_rc0028_e1b_overlap_retains_all_nested_constructions() -> None:
         issues.append("E1B_OVERLAP_UNKNOWN_BINDING_MISSING")
 
     role_owner_pairs = [
-        (
-            getattr(row, "source_owner_id", row.owner_nucleus_id),
-            row.lexical_role_kind,
-        )
+        (row.source_owner_id, row.lexical_role_kind)
         for row in witness.facets
     ]
     if len(role_owner_pairs) != len(set(role_owner_pairs)):
@@ -231,16 +250,17 @@ def test_rc0028_e1b_relation_endpoint_direction_mutation_fails_closed() -> None:
     _normalized, plan, resolver = _plan_and_resolver(
         _input("準備は進んだ。でも、結論はまだ決められない。")
     )
+    witness = build_grounded_lexical_role_witness_successor(plan, resolver)
     relation = next(
         row
-        for row in plan.relations
-        if row.type == "contrast" and row.retention == "required"
+        for row in witness.relation_authorities
+        if row.effective_relation_type == "contrast"
+        and row.source_retention == "required"
     )
-    witness = build_grounded_lexical_role_witness(plan, resolver)
     rows = tuple(
         row
         for row in getattr(witness, "relation_endpoint_bindings", ())
-        if getattr(row, "relation_id", "") == relation.relation_id
+        if getattr(row, "relation_id", "") == relation.experiment_relation_id
     )
     assert len(rows) == 2, "E1B_RELATION_ENDPOINT_BINDINGS_MISSING"
 
@@ -248,9 +268,9 @@ def test_rc0028_e1b_relation_endpoint_direction_mutation_fails_closed() -> None:
     forged_row = replace(
         original,
         source_owner_id=(
-            relation.to_nucleus_id
-            if original.source_owner_id == relation.from_nucleus_id
-            else relation.from_nucleus_id
+            relation.to_source_owner_id
+            if original.source_owner_id == relation.from_source_owner_id
+            else relation.from_source_owner_id
         ),
         relation_direction=(
             "bidirectional"
@@ -264,17 +284,17 @@ def test_rc0028_e1b_relation_endpoint_direction_mutation_fails_closed() -> None:
     )
     forged = replace(witness, relation_endpoint_bindings=all_rows)
     assert "LEXICAL_ROLE_RELATION_ENDPOINT_BINDINGS_MISMATCH" in (
-        validate_grounded_lexical_role_witness(
+        validate_grounded_lexical_role_witness_successor(
             forged,
             plan=plan,
             resolver=resolver,
         )
     )
     with pytest.raises(
-        GroundedLexicalRoleError,
+        GroundedLexicalRoleSuccessorError,
         match="LEXICAL_ROLE_RELATION_ENDPOINT_BINDINGS_MISMATCH",
     ):
-        grounded_lexical_role_witness_material(
+        grounded_lexical_role_witness_successor_material(
             forged,
             plan=plan,
             resolver=resolver,
@@ -293,7 +313,7 @@ def test_rc0028_e1b_explicit_unknown_has_exact_owner_binding() -> None:
     source_unknown = restatement.explicit_unknowns[0]
     assert source_unknown.dimension == "explicit_unverbalized_unknown"
 
-    witness = build_grounded_lexical_role_witness(plan, resolver)
+    witness = build_grounded_lexical_role_witness_successor(plan, resolver)
     bindings = tuple(
         row
         for row in getattr(witness, "explicit_unknown_bindings", ())
@@ -304,9 +324,9 @@ def test_rc0028_e1b_explicit_unknown_has_exact_owner_binding() -> None:
     binding = bindings[0]
     assert binding.dimension == source_unknown.dimension
     assert binding.source_span_id == source_unknown.source_span_id
-    assert tuple(binding.affected_source_owner_ids) == (
-        source_unknown.affected_unit_ids
-    )
+    assert tuple(
+        row.owner_id for row in binding.affected_source_owners
+    ) == source_unknown.affected_unit_ids
     assert binding.lexical_role_kind == "unknown_or_limit"
 
     forged_binding = replace(
@@ -319,7 +339,7 @@ def test_rc0028_e1b_explicit_unknown_has_exact_owner_binding() -> None:
     )
     forged = replace(witness, explicit_unknown_bindings=all_rows)
     assert "LEXICAL_ROLE_EXPLICIT_UNKNOWN_BINDINGS_MISMATCH" in (
-        validate_grounded_lexical_role_witness(
+        validate_grounded_lexical_role_witness_successor(
             forged,
             plan=plan,
             resolver=resolver,
@@ -337,7 +357,7 @@ def test_rc0028_e1b_facet_presence_cannot_self_certify_coverage() -> None:
     )
     assert restatement.explicit_unknowns
 
-    witness = build_grounded_lexical_role_witness(plan, resolver)
+    witness = build_grounded_lexical_role_witness_successor(plan, resolver)
     facet_present = tuple(
         getattr(
             witness,
@@ -358,7 +378,7 @@ def test_rc0028_e1b_facet_presence_cannot_self_certify_coverage() -> None:
         stage="normal_observation",
         original_input_bundle=normalized,
     )
-    experiment = build_grounded_lexical_role_experiment_snapshot(
+    experiment = build_grounded_lexical_role_experiment_snapshot_successor(
         plan,
         resolver,
         observation_stage_context=stage,
@@ -366,7 +386,7 @@ def test_rc0028_e1b_facet_presence_cannot_self_certify_coverage() -> None:
     )
     if getattr(experiment, "semantic_coverage_authorized", None) is not False:
         issues.append("E1B_SNAPSHOT_COVERAGE_AUTHORITY_NOT_DENIED")
-    material = grounded_lexical_role_experiment_snapshot_material(
+    material = grounded_lexical_role_experiment_snapshot_successor_material(
         experiment
     )
     encoded = json.dumps(material, ensure_ascii=False, sort_keys=True)
@@ -379,7 +399,9 @@ def test_rc0028_e1b_facet_presence_cannot_self_certify_coverage() -> None:
             semantic_coverage_authorized=True,
         )
         if "LEXICAL_ROLE_SEMANTIC_COVERAGE_SELF_CLAIM_FORBIDDEN" not in (
-            validate_grounded_lexical_role_experiment_snapshot(forged)
+            validate_grounded_lexical_role_experiment_snapshot_successor(
+                forged
+            )
         ):
             issues.append("E1B_COVERAGE_SELF_CLAIM_NOT_REJECTED")
     else:
