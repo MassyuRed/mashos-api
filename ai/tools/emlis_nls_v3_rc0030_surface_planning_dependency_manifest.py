@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Build or verify the phase-qualified rc0030 P4 delta closure."""
+"""Build or verify the phase-qualified rc0030 P5 successor closure."""
 
 import argparse
 import hashlib

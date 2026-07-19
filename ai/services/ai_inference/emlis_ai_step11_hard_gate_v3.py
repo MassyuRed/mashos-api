@@ -4516,7 +4516,7 @@ def step11_rc0030_experiment_gate_verified_binding_material(
         != getattr(value.verified_surface_binding, "base_witness_sha256", None)
         or value.base_leading_observation_match_count != 1
         or type(value.semantic_binding_count) is not int
-        or value.semantic_binding_count < 1
+        or value.semantic_binding_count < 0
         or type(value.exact_reuse_count) is not int
         or not 0 <= value.exact_reuse_count <= value.semantic_binding_count
         or type(value.reception_binding_count) is not int

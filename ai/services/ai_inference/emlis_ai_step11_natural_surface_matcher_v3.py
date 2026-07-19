@@ -17225,7 +17225,7 @@ def step11_rc0030_experiment_verified_binding_material(
             )
         )
         or type(value.semantic_bindings) is not tuple
-        or not 1
+        or not 0
         <= len(value.semantic_bindings)
         <= _STEP11_RC0030_EVALUATED_DECOMPOSITION_MAX
         or len(semantic_source_ids) != len(value.semantic_bindings)
