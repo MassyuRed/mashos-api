@@ -14891,3 +14891,2790 @@ def match_step11_rc0029_experiment_surface(
     return _step11_rc0029_final_match_surface(
         witness, successor_snapshot=successor_snapshot
     )
+
+
+# ---------------------------------------------------------------------------
+# rc0030 experiment-only body inverse (append-only P3 owner)
+# ---------------------------------------------------------------------------
+
+import weakref
+
+STEP11_RC0030_EXPERIMENT_PARSED_WITNESS_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11.rc0030_experiment_parsed_witness.v1"
+)
+STEP11_RC0030_EXPERIMENT_VERIFIED_BINDING_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11.rc0030_experiment_verified_binding.v1"
+)
+STEP11_RC0030_VERIFIED_BASE_REUSE_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11.rc0030_verified_base_reuse.v1"
+)
+STEP11_RC0030_BASE_BODY_PARSED_WITNESS_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11.rc0030_base_body_parsed_witness.v1"
+)
+
+_STEP11_RC0030_BODY_BYTE_MAX = 1_000_000
+_STEP11_RC0030_DECOMPOSITION_LOCUS_MAX = 38
+_STEP11_RC0030_EVALUATED_DECOMPOSITION_MAX = 76
+_STEP11_RC0030_STORED_DECOMPOSITION_MAX = 2
+_STEP11_RC0030_BODY_SCAN_PASS_MAX = 2
+_STEP11_RC0030_OWNER_MAX = 24
+_STEP11_RC0030_OWNER_COMPARISON_MAX = 576
+_STEP11_RC0030_RECEPTION_MOVE_MAX = 3
+_STEP11_RC0030_RECEPTION_MOVES_PER_SENTENCE_MAX = 2
+_STEP11_RC0030_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+class Step11Rc0030ExperimentInverseSurfaceError(ValueError):
+    """Fail closed without including source or final-body text."""
+
+    def __init__(self, code: str) -> None:
+        if (
+            type(code) is not str
+            or re.fullmatch(r"STEP11_RC0030_[A-Z0-9_]{2,95}", code) is None
+        ):
+            code = "STEP11_RC0030_INVERSE_SURFACE_REJECTED"
+        self.code = code
+        super().__init__(code)
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class Step11Rc0030ParsedSemanticAtom:
+    atom_id: str
+    semantic_family: str
+    semantic_key: str
+    direction: str
+    owner_expressions: tuple[str, ...]
+    sentence_group_ordinal: int
+    grammatical_chunk_ordinal: int
+    pack_ordinal: int
+    item_ordinal: int
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class Step11Rc0030ParsedReceptionBinding:
+    binding_id: str
+    reception_line_ordinal: int
+    move_ordinal: int
+    reception_act: str
+    target_expression: str
+    supporting_expression: str | None
+    target_expression_sha256: str
+    supporting_expression_sha256: str | None
+
+
+@dataclass(frozen=True, slots=True, repr=False, weakref_slot=True)
+class Step11Rc0030ExperimentParsedSurfaceWitness:
+    schema_version: str
+    body_sha256: str
+    experiment_catalog_sha256: str
+    semantic_atoms: tuple[Step11Rc0030ParsedSemanticAtom, ...]
+    reception_bindings: tuple[Step11Rc0030ParsedReceptionBinding, ...]
+    observation_group_count: int
+    reception_group_count: int
+    base_prefix_commitments: tuple[str, ...]
+    decomposition_locus_count: int
+    evaluated_decomposition_count: int
+    peak_stored_decomposition_count: int
+    body_scan_pass_count: int
+    body_free_export_allowed: bool = False
+
+
+@dataclass(frozen=True, slots=True, repr=False, weakref_slot=True)
+class Step11Rc0030BaseBodyParsedWitness:
+    schema_version: str
+    body_sha256: str
+    base_witness: Step11ParsedSurfaceWitness
+    observation_line_sha256: tuple[str, ...]
+    observation_stem_sha256: tuple[str, ...]
+    observation_group_count: int
+    reception_group_count: int
+    body_scan_pass_count: int
+    body_free_export_allowed: bool = False
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class Step11Rc0030VerifiedBaseBodyReuse:
+    schema_version: str
+    source_atom_id: str
+    semantic_family: str
+    base_parsed_atom_id: str
+    base_obligation_id: str
+    match_basis: str
+    base_surface_sha256: str
+    source_authority_sha256: str
+    independent_binding_sha256: str
+    body_free: bool = True
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class Step11Rc0030VerifiedSemanticBinding:
+    source_atom_id: str
+    semantic_family: str
+    parsed_atom_id: str | None
+    verified_reuse_binding_sha256: str | None
+    match_basis: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class Step11Rc0030VerifiedReceptionBinding:
+    source_reception_opportunity_id: str
+    source_scope: str
+    parsed_binding_id: str
+    reception_line_ordinal: int
+    move_ordinal: int
+    reception_act: str
+    target_owner_count: int
+    supporting_owner_count: int
+    association_basis: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class Step11Rc0030ExperimentVerifiedSurfaceBinding:
+    schema_version: str
+    parsed_witness_sha256: str
+    base_witness_sha256: str
+    successor_snapshot_sha256: str
+    source_authority_sha256: str
+    experiment_catalog_sha256: str
+    semantic_bindings: tuple[Step11Rc0030VerifiedSemanticBinding, ...]
+    reception_bindings: tuple[Step11Rc0030VerifiedReceptionBinding, ...]
+    reception_binding_count: int
+    owner_binding_comparison_count: int
+    unique_solution_count: int
+    semantic_coverage_authorized: bool
+    issue_codes: tuple[str, ...]
+    hard_verified: bool
+    body_free_export_allowed: bool = False
+
+
+def _step11_rc0030_witness_origin_registry():
+    registry: dict[int, weakref.ReferenceType[Any]] = {}
+
+    def register(value: Any) -> None:
+        key = id(value)
+
+        def remove(
+            reference: weakref.ReferenceType[Any],
+            *,
+            registry_key: int = key,
+        ) -> None:
+            if registry.get(registry_key) is reference:
+                registry.pop(registry_key, None)
+
+        registry[key] = weakref.ref(value, remove)
+
+    def validate(value: Any) -> bool:
+        reference = registry.get(id(value))
+        return reference is not None and reference() is value
+
+    return register, validate
+
+
+(
+    _step11_rc0030_register_final_witness,
+    _step11_rc0030_validate_final_witness_origin,
+) = _step11_rc0030_witness_origin_registry()
+(
+    _step11_rc0030_register_base_witness,
+    _step11_rc0030_validate_base_witness_origin,
+) = _step11_rc0030_witness_origin_registry()
+
+
+def _step11_rc0030_inverse_catalog() -> tuple[dict[str, Any], str]:
+    owner = __import__(
+        "emlis_ai_step11_rc0030_experiment_surface_catalog_v3",
+        fromlist=(
+            "STEP11_RC0030_EXPERIMENT_SURFACE_CATALOG",
+            "STEP11_RC0030_EXPERIMENT_SURFACE_CATALOG_SHA256",
+            "validate_step11_rc0030_experiment_surface_catalog",
+        ),
+    )
+    catalog = owner.STEP11_RC0030_EXPERIMENT_SURFACE_CATALOG
+    issues = owner.validate_step11_rc0030_experiment_surface_catalog(catalog)
+    if issues:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_CATALOG_COMMITMENT_MISMATCH"
+        )
+    return catalog, owner.STEP11_RC0030_EXPERIMENT_SURFACE_CATALOG_SHA256
+
+
+def _step11_rc0030_semantic_terminal_index(
+    catalog: Mapping[str, Any],
+) -> tuple[tuple[str, str, str, str], ...]:
+    morphology = catalog["clause_morphology"]
+    result: list[tuple[str, str, str, str]] = []
+    for key, fragment in catalog["construction_clause_fragments"].items():
+        result.append(
+            (
+                morphology["construction_item_link"] + fragment,
+                "construction",
+                key,
+                "",
+            )
+        )
+    for family, registry in (
+        ("relation", catalog["relation_clause_fragments"]),
+        ("semantic_link", catalog["semantic_link_clause_fragments"]),
+    ):
+        for key, fragment in registry.items():
+            semantic_type, direction = key.rsplit(":", 1)
+            link = (
+                morphology["bidirectional_item_link"]
+                if direction == "bidirectional"
+                else morphology["directed_item_link"]
+            )
+            result.append((link + fragment, family, semantic_type, direction))
+    for key, fragment in catalog["unknown_clause_fragments"].items():
+        result.append(
+            (
+                morphology["unknown_item_link"] + fragment,
+                "explicit_unknown",
+                key,
+                "",
+            )
+        )
+    terminals = tuple(sorted(result, key=lambda row: (-len(row[0]), row)))
+    if len({row[0] for row in terminals}) != len(terminals):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_CATALOG_FRAGMENT_AMBIGUOUS"
+        )
+    return terminals
+
+
+def _step11_rc0030_parse_owner_expression(
+    prefix: str,
+    *,
+    family: str,
+    direction: str,
+    morphology: Mapping[str, str],
+) -> tuple[str, ...]:
+    if not prefix or any(
+        char in prefix
+        for char in (
+            "\r",
+            "\n",
+            "「",
+            "」",
+            "、",
+            "。",
+            "！",
+            "？",
+            "!",
+            "?",
+        )
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_OWNER_EXPRESSION_INVALID"
+        )
+    if family in {"construction", "explicit_unknown"}:
+        return (prefix,)
+    separator = (
+        morphology["symmetric_join"]
+        if direction == "bidirectional"
+        else morphology["source_particle"]
+    )
+    positions = tuple(
+        match.start() for match in re.finditer(re.escape(separator), prefix)
+    )
+    decompositions = tuple(
+        (prefix[:position], prefix[position + len(separator) :])
+        for position in positions
+        if prefix[:position] and prefix[position + len(separator) :]
+    )
+    if len(decompositions) != 1:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_OWNER_EXPRESSION_AMBIGUOUS"
+        )
+    return decompositions[0]
+
+
+def _step11_rc0030_parse_semantic_item(
+    value: str,
+    *,
+    terminal: tuple[str, str, str, str],
+    morphology: Mapping[str, str],
+    sentence_group_ordinal: int,
+    grammatical_chunk_ordinal: int,
+    pack_ordinal: int,
+    item_ordinal: int,
+) -> Step11Rc0030ParsedSemanticAtom:
+    terminal_text, family, semantic_key, direction = terminal
+    if not value.endswith(terminal_text):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_SEMANTIC_PACK_UNPARSEABLE"
+        )
+    owner_expressions = _step11_rc0030_parse_owner_expression(
+        value[: -len(terminal_text)],
+        family=family,
+        direction=direction,
+        morphology=morphology,
+    )
+    material = {
+        "family": family,
+        "semantic_key": semantic_key,
+        "direction": direction,
+        "owner_expression_hashes": [
+            hashlib.sha256(row.encode("utf-8")).hexdigest()
+            for row in owner_expressions
+        ],
+        "sentence_group_ordinal": sentence_group_ordinal,
+        "grammatical_chunk_ordinal": grammatical_chunk_ordinal,
+        "pack_ordinal": pack_ordinal,
+        "item_ordinal": item_ordinal,
+    }
+    return Step11Rc0030ParsedSemanticAtom(
+        atom_id="nls3s11rc0030atom_" + artifact_sha256(material)[:16],
+        semantic_family=family,
+        semantic_key=semantic_key,
+        direction=direction,
+        owner_expressions=owner_expressions,
+        sentence_group_ordinal=sentence_group_ordinal,
+        grammatical_chunk_ordinal=grammatical_chunk_ordinal,
+        pack_ordinal=pack_ordinal,
+        item_ordinal=item_ordinal,
+    )
+
+
+def _step11_rc0030_parse_semantic_pack(
+    value: str,
+    *,
+    catalog: Mapping[str, Any],
+    sentence_group_ordinal: int,
+    grammatical_chunk_ordinal: int,
+    pack_ordinal: int,
+    evaluation_budget: list[int],
+) -> tuple[tuple[Step11Rc0030ParsedSemanticAtom, ...], int, int]:
+    morphology = catalog["clause_morphology"]
+    predicate = morphology["semantic_pack_predicate_suffix"]
+    if not value.endswith(predicate):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_SEMANTIC_PACK_PREDICATE_MISMATCH"
+        )
+    core = value[: -len(predicate)]
+    joiner = morphology["semantic_item_join"]
+    terminals = _step11_rc0030_semantic_terminal_index(catalog)
+    initial_evaluated = evaluation_budget[0]
+    loci: list[tuple[int, tuple[str, str, str, str]]] = []
+    for terminal in terminals:
+        start = 0
+        while True:
+            position = core.find(terminal[0], start)
+            if position < 0:
+                break
+            evaluation_budget[0] += 1
+            if (
+                evaluation_budget[0]
+                > _STEP11_RC0030_EVALUATED_DECOMPOSITION_MAX
+            ):
+                raise Step11Rc0030ExperimentInverseSurfaceError(
+                    "STEP11_RC0030_EVALUATED_DECOMPOSITION_BOUND_EXCEEDED"
+                )
+            end = position + len(terminal[0])
+            if end == len(core) or core.startswith(joiner, end):
+                loci.append((end, terminal))
+                if len(loci) > _STEP11_RC0030_STORED_DECOMPOSITION_MAX:
+                    raise Step11Rc0030ExperimentInverseSurfaceError(
+                        "STEP11_RC0030_DECOMPOSITION_AMBIGUOUS"
+                    )
+            start = position + 1
+    loci.sort(key=lambda row: (row[0], row[1]))
+    if not loci:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_SEMANTIC_PACK_UNPARSEABLE"
+        )
+    atoms: list[Step11Rc0030ParsedSemanticAtom] = []
+    cursor = 0
+    for item_ordinal, (end, terminal) in enumerate(loci, 1):
+        if item_ordinal > 2 or end <= cursor:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_SEMANTIC_PACK_DENSITY_EXCEEDED"
+            )
+        atoms.append(
+            _step11_rc0030_parse_semantic_item(
+                core[cursor:end],
+                terminal=terminal,
+                morphology=morphology,
+                sentence_group_ordinal=sentence_group_ordinal,
+                grammatical_chunk_ordinal=grammatical_chunk_ordinal,
+                pack_ordinal=pack_ordinal,
+                item_ordinal=item_ordinal,
+            )
+        )
+        cursor = end
+        if cursor < len(core):
+            if not core.startswith(joiner, cursor):
+                raise Step11Rc0030ExperimentInverseSurfaceError(
+                    "STEP11_RC0030_DECOMPOSITION_AMBIGUOUS"
+                )
+            cursor += len(joiner)
+    if cursor != len(core) or not 1 <= len(atoms) <= 2:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_DECOMPOSITION_AMBIGUOUS"
+        )
+    return (
+        tuple(atoms),
+        len(loci),
+        evaluation_budget[0] - initial_evaluated,
+    )
+
+
+def _step11_rc0030_parse_observation_tail(
+    line: str,
+    *,
+    catalog: Mapping[str, Any],
+    sentence_group_ordinal: int,
+    evaluation_budget: list[int],
+) -> tuple[
+    tuple[Step11Rc0030ParsedSemanticAtom, ...], str, int, int, int
+]:
+    morphology = catalog["clause_morphology"]
+    initial_evaluated = evaluation_budget[0]
+    suffix = morphology["sentence_suffix"]
+    predicate = morphology["semantic_pack_predicate_suffix"]
+    if not line.endswith(suffix):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_OBSERVATION_SUFFIX_INVALID"
+        )
+    last_predicate = line.rfind(predicate)
+    if last_predicate < 0:
+        return (
+            (),
+            hashlib.sha256(line.encode("utf-8")).hexdigest(),
+            0,
+            0,
+            0,
+        )
+    candidate_starts = [0]
+    for index, char in enumerate(line):
+        if index >= last_predicate:
+            break
+        if char in {
+            morphology["clause_join"],
+            morphology["grammatical_chunk_join"],
+        }:
+            candidate_starts.append(index + 1)
+            if (
+                len(candidate_starts)
+                > _STEP11_RC0030_DECOMPOSITION_LOCUS_MAX
+            ):
+                raise Step11Rc0030ExperimentInverseSurfaceError(
+                    "STEP11_RC0030_DECOMPOSITION_LOCUS_BOUND_EXCEEDED"
+                )
+    chosen: tuple[
+        tuple[Step11Rc0030ParsedSemanticAtom, ...], int, int, int
+    ] | None = None
+    ambiguous_maximal = False
+    peak_stored = 0
+    for start in candidate_starts:
+        evaluation_budget[0] += 1
+        if (
+            evaluation_budget[0]
+            > _STEP11_RC0030_EVALUATED_DECOMPOSITION_MAX
+        ):
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_EVALUATED_DECOMPOSITION_BOUND_EXCEEDED"
+            )
+        cursor = start
+        pack_ordinal = 0
+        # This is an append-relative chunk ordinal.  The first structure pack
+        # is 1 when it shares the base tail (clause join), or 2 when the
+        # rendered separator opens one new grammatical chunk.  The matcher
+        # combines this body-only fact with the independently parsed base tail.
+        if start > 0 and line[:start].endswith(morphology["clause_join"]):
+            structure_chunk_ordinal = 1
+        elif start > 0 and line[:start].endswith(
+            morphology["grammatical_chunk_join"]
+        ):
+            structure_chunk_ordinal = 2
+        else:
+            structure_chunk_ordinal = 1
+        rows: list[Step11Rc0030ParsedSemanticAtom] = []
+        local_loci = 0
+        local_evaluated = 0
+        valid = True
+        while valid:
+            predicate_start = line.find(predicate, cursor)
+            if predicate_start < cursor:
+                valid = False
+                break
+            end = predicate_start + len(predicate)
+            pack_ordinal += 1
+            try:
+                parsed, loci, attempts = _step11_rc0030_parse_semantic_pack(
+                    line[cursor:end],
+                    catalog=catalog,
+                    sentence_group_ordinal=sentence_group_ordinal,
+                    grammatical_chunk_ordinal=structure_chunk_ordinal,
+                    pack_ordinal=pack_ordinal,
+                    evaluation_budget=evaluation_budget,
+                )
+            except Step11Rc0030ExperimentInverseSurfaceError:
+                valid = False
+                break
+            rows.extend(parsed)
+            local_loci += loci
+            local_evaluated += attempts
+            if end == len(line) - len(suffix):
+                cursor = end + len(suffix)
+                break
+            if end >= len(line) - len(suffix):
+                valid = False
+                break
+            separator = line[end : end + 1]
+            if separator not in {
+                morphology["clause_join"],
+                morphology["grammatical_chunk_join"],
+            }:
+                valid = False
+                break
+            if separator == morphology["grammatical_chunk_join"]:
+                structure_chunk_ordinal += 1
+            cursor = end + 1
+        if valid and cursor == len(line) and rows:
+            candidate = (tuple(rows), start, local_loci, local_evaluated)
+            if chosen is None or start < chosen[1]:
+                chosen = candidate
+                ambiguous_maximal = False
+                peak_stored = max(peak_stored, 1)
+            elif start == chosen[1] and candidate != chosen:
+                ambiguous_maximal = True
+                peak_stored = _STEP11_RC0030_STORED_DECOMPOSITION_MAX
+    if chosen is None:
+        return (
+            (),
+            hashlib.sha256(line.encode("utf-8")).hexdigest(),
+            len(candidate_starts),
+            evaluation_budget[0] - initial_evaluated,
+            0,
+        )
+    # Every proper suffix of a multi-pack tail is syntactically parseable.
+    # It is not an alternative witness: the body-only grammar owns the
+    # unique maximal contiguous tail, i.e. the earliest successful start.
+    if ambiguous_maximal:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_DECOMPOSITION_AMBIGUOUS"
+        )
+    rows, start, local_loci, local_evaluated = chosen
+    prefix = line[:start]
+    if not prefix or prefix.endswith(("、", "。")):
+        prefix = prefix[:-1]
+    if not prefix:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_PREFIX_EMPTY"
+        )
+    return (
+        rows,
+        hashlib.sha256(prefix.encode("utf-8")).hexdigest(),
+        len(candidate_starts) + local_loci,
+        evaluation_budget[0] - initial_evaluated,
+        peak_stored,
+    )
+
+
+def _step11_rc0030_parse_reception_line(
+    line: str,
+    *,
+    catalog: Mapping[str, Any],
+    line_ordinal: int,
+) -> tuple[Step11Rc0030ParsedReceptionBinding, ...]:
+    morphology = catalog["clause_morphology"]
+    suffix = morphology["sentence_suffix"]
+    if not line.endswith(suffix):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_RECEPTION_SUFFIX_INVALID"
+        )
+    moves = tuple(line[: -len(suffix)].split(morphology["grammatical_chunk_join"]))
+    if (
+        not moves
+        or len(moves) > _STEP11_RC0030_RECEPTION_MOVES_PER_SENTENCE_MAX
+        or any(not row for row in moves)
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_RECEPTION_DENSITY_EXCEEDED"
+        )
+    inverse_acts = {
+        fragment: act
+        for act, fragment in catalog["reception_act_predicate_fragments"].items()
+    }
+    if len(inverse_acts) != len(
+        catalog["reception_act_predicate_fragments"]
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_RECEPTION_ACT_AMBIGUOUS"
+        )
+    result: list[Step11Rc0030ParsedReceptionBinding] = []
+    support_marker = (
+        morphology["support_particle"] + morphology["clause_join"]
+    )
+    for move_ordinal, move in enumerate(moves, 1):
+        act_matches = tuple(
+            (fragment, act)
+            for fragment, act in inverse_acts.items()
+            if move.endswith(fragment)
+        )
+        if len(act_matches) != 1:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_RECEPTION_ACT_AMBIGUOUS"
+            )
+        fragment, act = act_matches[0]
+        prefix = move[: -len(fragment)]
+        if not prefix.endswith(morphology["object_particle"]):
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_RECEPTION_TARGET_UNRESOLVED"
+            )
+        prefix = prefix[: -len(morphology["object_particle"])]
+        support_positions = tuple(
+            match.start()
+            for match in re.finditer(re.escape(support_marker), prefix)
+        )
+        if len(support_positions) > 1:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_RECEPTION_SUPPORT_AMBIGUOUS"
+            )
+        support: str | None = None
+        target = prefix
+        if support_positions:
+            position = support_positions[0]
+            support = prefix[:position]
+            target = prefix[position + len(support_marker) :]
+        if (
+            not target
+            or support == ""
+            or any(
+                char in value
+                for value in (target, support or "")
+                for char in ("\r", "\n", "「", "」")
+            )
+        ):
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_RECEPTION_OWNER_EXPRESSION_INVALID"
+            )
+        target_sha256 = hashlib.sha256(target.encode("utf-8")).hexdigest()
+        support_sha256 = (
+            hashlib.sha256(support.encode("utf-8")).hexdigest()
+            if support is not None
+            else None
+        )
+        binding_material = {
+            "reception_line_ordinal": line_ordinal,
+            "move_ordinal": move_ordinal,
+            "reception_act": act,
+            "target_expression_sha256": target_sha256,
+            "supporting_expression_sha256": support_sha256,
+        }
+        result.append(
+            Step11Rc0030ParsedReceptionBinding(
+                binding_id=(
+                    "nls3s11rc0030recv_"
+                    + artifact_sha256(binding_material)[:16]
+                ),
+                reception_line_ordinal=line_ordinal,
+                move_ordinal=move_ordinal,
+                reception_act=act,
+                target_expression=target,
+                supporting_expression=support,
+                target_expression_sha256=target_sha256,
+                supporting_expression_sha256=support_sha256,
+            )
+        )
+    return tuple(result)
+
+
+def parse_step11_rc0030_experiment_surface(
+    body: bytes,
+) -> Step11Rc0030ExperimentParsedSurfaceWitness:
+    """Parse only final bytes and the versioned declarative catalog."""
+
+    if (
+        type(body) is not bytes
+        or not body
+        or len(body) > _STEP11_RC0030_BODY_BYTE_MAX
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BODY_BOUND_INVALID"
+        )
+    try:
+        text = body.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_UTF8_INVALID"
+        ) from None
+    if (
+        text.encode("utf-8", errors="strict") != body
+        or unicodedata.normalize("NFC", text) != text
+        or "\r" in text
+        or text.startswith("\ufeff")
+        or text.endswith("\n")
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_CANONICAL_TEXT_INVALID"
+        )
+    # Pass 1 establishes canonical bytes and the closed two-section frame.
+    body_scan_pass_count = 1
+    catalog, catalog_sha256 = _step11_rc0030_inverse_catalog()
+    prefix = "見えたこと：\n"
+    separator = "\n\nEmlisから：\n"
+    if not text.startswith(prefix) or text.count(separator) != 1:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_SECTION_LAYOUT_INVALID"
+        )
+    observation_text, reception_text = text[len(prefix) :].split(separator)
+    observation_lines = tuple(observation_text.split("\n"))
+    reception_lines = tuple(reception_text.split("\n"))
+    if (
+        not observation_lines
+        or not reception_lines
+        or any(not row for row in (*observation_lines, *reception_lines))
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_SECTION_LAYOUT_INVALID"
+        )
+    semantic_atoms: list[Step11Rc0030ParsedSemanticAtom] = []
+    prefix_commitments: list[str] = []
+    locus_count = 0
+    evaluated_count = 0
+    peak_stored = 0
+    evaluation_budget = [0]
+    # Pass 2 performs the bounded grammar walk.  All nested decomposition
+    # attempts are separately charged by loci/evaluated counters below.
+    body_scan_pass_count += 1
+    for ordinal, line in enumerate(observation_lines, 1):
+        atoms, commitment, loci, evaluated, stored = (
+            _step11_rc0030_parse_observation_tail(
+                line,
+                catalog=catalog,
+                sentence_group_ordinal=ordinal,
+                evaluation_budget=evaluation_budget,
+            )
+        )
+        semantic_atoms.extend(atoms)
+        prefix_commitments.append(commitment)
+        locus_count += loci
+        evaluated_count += evaluated
+        peak_stored = max(peak_stored, stored)
+    if locus_count > _STEP11_RC0030_DECOMPOSITION_LOCUS_MAX:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_DECOMPOSITION_LOCUS_BOUND_EXCEEDED"
+        )
+    if evaluated_count > _STEP11_RC0030_EVALUATED_DECOMPOSITION_MAX:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_EVALUATED_DECOMPOSITION_BOUND_EXCEEDED"
+        )
+    receptions = tuple(
+        binding
+        for ordinal, line in enumerate(reception_lines, 1)
+        for binding in _step11_rc0030_parse_reception_line(
+            line, catalog=catalog, line_ordinal=ordinal
+        )
+    )
+    if len(receptions) > _STEP11_RC0030_RECEPTION_MOVE_MAX:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_RECEPTION_DENSITY_EXCEEDED"
+        )
+    witness = Step11Rc0030ExperimentParsedSurfaceWitness(
+        schema_version=STEP11_RC0030_EXPERIMENT_PARSED_WITNESS_SCHEMA,
+        body_sha256=hashlib.sha256(body).hexdigest(),
+        experiment_catalog_sha256=catalog_sha256,
+        semantic_atoms=tuple(semantic_atoms),
+        reception_bindings=receptions,
+        observation_group_count=len(observation_lines),
+        reception_group_count=len(reception_lines),
+        base_prefix_commitments=tuple(prefix_commitments),
+        decomposition_locus_count=locus_count,
+        evaluated_decomposition_count=evaluated_count,
+        peak_stored_decomposition_count=peak_stored,
+        body_scan_pass_count=body_scan_pass_count,
+    )
+    _step11_rc0030_register_final_witness(witness)
+    step11_rc0030_experiment_parsed_witness_material(witness)
+    return witness
+
+
+def _step11_rc0030_semantic_atom_material(
+    value: Step11Rc0030ParsedSemanticAtom,
+) -> dict[str, Any]:
+    return {
+        "atom_id": value.atom_id,
+        "semantic_family": value.semantic_family,
+        "semantic_key": value.semantic_key,
+        "direction": value.direction,
+        "owner_expression_count": len(value.owner_expressions),
+        "owner_expression_sha256": [
+            hashlib.sha256(row.encode("utf-8")).hexdigest()
+            for row in value.owner_expressions
+        ],
+        "sentence_group_ordinal": value.sentence_group_ordinal,
+        "grammatical_chunk_ordinal": value.grammatical_chunk_ordinal,
+        "pack_ordinal": value.pack_ordinal,
+        "item_ordinal": value.item_ordinal,
+    }
+
+
+def step11_rc0030_experiment_parsed_witness_material(
+    value: Step11Rc0030ExperimentParsedSurfaceWitness,
+) -> dict[str, Any]:
+    if type(value) is not Step11Rc0030ExperimentParsedSurfaceWitness:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_PARSED_WITNESS_TYPE_INVALID"
+        )
+    if not _step11_rc0030_validate_final_witness_origin(value):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_PARSED_WITNESS_ORIGIN_REQUIRED"
+        )
+    if (
+        value.schema_version
+        != STEP11_RC0030_EXPERIMENT_PARSED_WITNESS_SCHEMA
+        or _STEP11_RC0030_SHA256_RE.fullmatch(value.body_sha256) is None
+        or _STEP11_RC0030_SHA256_RE.fullmatch(
+            value.experiment_catalog_sha256
+        )
+        is None
+        or not 1 <= value.observation_group_count
+        or not 1 <= value.reception_group_count
+        or len(value.base_prefix_commitments)
+        != value.observation_group_count
+        or any(
+            _STEP11_RC0030_SHA256_RE.fullmatch(row) is None
+            for row in value.base_prefix_commitments
+        )
+        or not 0
+        <= value.decomposition_locus_count
+        <= _STEP11_RC0030_DECOMPOSITION_LOCUS_MAX
+        or not 0
+        <= value.evaluated_decomposition_count
+        <= _STEP11_RC0030_EVALUATED_DECOMPOSITION_MAX
+        or not 0
+        <= value.peak_stored_decomposition_count
+        < _STEP11_RC0030_STORED_DECOMPOSITION_MAX
+        or value.body_scan_pass_count != _STEP11_RC0030_BODY_SCAN_PASS_MAX
+        or value.body_free_export_allowed is not False
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_PARSED_WITNESS_INVALID"
+        )
+    atom_ids = tuple(row.atom_id for row in value.semantic_atoms)
+    if (
+        len(atom_ids) != len(set(atom_ids))
+        or any(
+            type(row) is not Step11Rc0030ParsedSemanticAtom
+            or row.semantic_family
+            not in {
+                "construction",
+                "relation",
+                "semantic_link",
+                "explicit_unknown",
+            }
+            or not row.semantic_key
+            or not row.owner_expressions
+            or len(row.owner_expressions) > _STEP11_RC0030_OWNER_MAX
+            or any(not item for item in row.owner_expressions)
+            or row.sentence_group_ordinal < 1
+            or row.grammatical_chunk_ordinal < 1
+            or row.pack_ordinal < 1
+            or row.item_ordinal not in {1, 2}
+            or row.atom_id
+            != (
+                "nls3s11rc0030atom_"
+                + artifact_sha256(
+                    {
+                        "family": row.semantic_family,
+                        "semantic_key": row.semantic_key,
+                        "direction": row.direction,
+                        "owner_expression_hashes": [
+                            hashlib.sha256(item.encode("utf-8")).hexdigest()
+                            for item in row.owner_expressions
+                        ],
+                        "sentence_group_ordinal": row.sentence_group_ordinal,
+                        "grammatical_chunk_ordinal": (
+                            row.grammatical_chunk_ordinal
+                        ),
+                        "pack_ordinal": row.pack_ordinal,
+                        "item_ordinal": row.item_ordinal,
+                    }
+                )[:16]
+            )
+            for row in value.semantic_atoms
+        )
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_PARSED_SEMANTIC_ATOM_SET_INVALID"
+        )
+    reception_positions = tuple(
+        (row.reception_line_ordinal, row.move_ordinal)
+        for row in value.reception_bindings
+    )
+    reception_ids = tuple(row.binding_id for row in value.reception_bindings)
+    moves_by_line: dict[int, list[int]] = {}
+    for line_ordinal, move_ordinal in reception_positions:
+        moves_by_line.setdefault(line_ordinal, []).append(move_ordinal)
+    if (
+        len(value.reception_bindings) > _STEP11_RC0030_RECEPTION_MOVE_MAX
+        or reception_positions != tuple(sorted(reception_positions))
+        or len(reception_positions) != len(set(reception_positions))
+        or len(reception_ids) != len(set(reception_ids))
+        or any(
+            tuple(moves) != tuple(range(1, len(moves) + 1))
+            or len(moves)
+            > _STEP11_RC0030_RECEPTION_MOVES_PER_SENTENCE_MAX
+            for moves in moves_by_line.values()
+        )
+        or any(
+        type(row) is not Step11Rc0030ParsedReceptionBinding
+        or row.reception_line_ordinal < 1
+        or row.reception_line_ordinal > value.reception_group_count
+        or row.move_ordinal not in {1, 2}
+        or re.fullmatch(r"nls3s11rc0030recv_[0-9a-f]{16}", row.binding_id)
+        is None
+        or not row.reception_act
+        or not row.target_expression
+        or row.target_expression_sha256
+        != hashlib.sha256(row.target_expression.encode("utf-8")).hexdigest()
+        or row.supporting_expression_sha256
+        != (
+            hashlib.sha256(row.supporting_expression.encode("utf-8")).hexdigest()
+            if row.supporting_expression is not None
+            else None
+        )
+        or row.binding_id
+        != (
+            "nls3s11rc0030recv_"
+            + artifact_sha256(
+                {
+                    "reception_line_ordinal": row.reception_line_ordinal,
+                    "move_ordinal": row.move_ordinal,
+                    "reception_act": row.reception_act,
+                    "target_expression_sha256": row.target_expression_sha256,
+                    "supporting_expression_sha256": (
+                        row.supporting_expression_sha256
+                    ),
+                }
+            )[:16]
+        )
+            for row in value.reception_bindings
+        )
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_PARSED_RECEPTION_SET_INVALID"
+        )
+    return {
+        "schema_version": value.schema_version,
+        "body_sha256": value.body_sha256,
+        "experiment_catalog_sha256": value.experiment_catalog_sha256,
+        "semantic_atoms": [
+            _step11_rc0030_semantic_atom_material(row)
+            for row in value.semantic_atoms
+        ],
+        "reception_bindings": [
+            {
+                "binding_id": row.binding_id,
+                "reception_line_ordinal": row.reception_line_ordinal,
+                "move_ordinal": row.move_ordinal,
+                "reception_act": row.reception_act,
+                "target_expression_sha256": row.target_expression_sha256,
+                "supporting_expression_sha256": (
+                    row.supporting_expression_sha256
+                ),
+            }
+            for row in value.reception_bindings
+        ],
+        "observation_group_count": value.observation_group_count,
+        "reception_group_count": value.reception_group_count,
+        "base_prefix_commitments": list(value.base_prefix_commitments),
+        "decomposition_locus_count": value.decomposition_locus_count,
+        "evaluated_decomposition_count": (
+            value.evaluated_decomposition_count
+        ),
+        "peak_stored_decomposition_count": (
+            value.peak_stored_decomposition_count
+        ),
+        "body_scan_pass_count": value.body_scan_pass_count,
+        "body_free_export_allowed": value.body_free_export_allowed,
+    }
+
+
+def parse_step11_rc0030_base_body_exact_reuse(
+    base_body: bytes,
+) -> Step11Rc0030BaseBodyParsedWitness:
+    """Parse immutable base bytes without accepting a forward reuse claim."""
+
+    if (
+        type(base_body) is not bytes
+        or not base_body
+        or len(base_body) > _STEP11_RC0030_BODY_BYTE_MAX
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_BODY_BOUND_INVALID"
+        )
+    try:
+        text = base_body.decode("utf-8", errors="strict")
+        witness = parse_step11_natural_surface(base_body)
+    except Step11InverseSurfaceError:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_BODY_PARSE_FAILED"
+        ) from None
+    except UnicodeDecodeError:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_BODY_PARSE_FAILED"
+        ) from None
+    body_scan_pass_count = 1
+    if witness.body_sha256 != hashlib.sha256(base_body).hexdigest():
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_BODY_COMMITMENT_MISMATCH"
+        )
+    prefix = "見えたこと：\n"
+    separator = "\n\nEmlisから：\n"
+    if not text.startswith(prefix) or text.count(separator) != 1:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_BODY_PARSE_FAILED"
+        )
+    observation, reception = text[len(prefix) :].split(separator, 1)
+    observation_lines = tuple(observation.split("\n"))
+    reception_lines = tuple(reception.split("\n"))
+    body_scan_pass_count += 1
+    if (
+        not observation_lines
+        or not reception_lines
+        or any(not row or not row.endswith("。") for row in observation_lines)
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_BODY_PARSE_FAILED"
+        )
+    value = Step11Rc0030BaseBodyParsedWitness(
+        schema_version=STEP11_RC0030_BASE_BODY_PARSED_WITNESS_SCHEMA,
+        body_sha256=witness.body_sha256,
+        base_witness=witness,
+        observation_line_sha256=tuple(
+            hashlib.sha256(row.encode("utf-8")).hexdigest()
+            for row in observation_lines
+        ),
+        observation_stem_sha256=tuple(
+            hashlib.sha256(row[:-1].encode("utf-8")).hexdigest()
+            for row in observation_lines
+        ),
+        observation_group_count=len(observation_lines),
+        reception_group_count=len(reception_lines),
+        body_scan_pass_count=body_scan_pass_count,
+    )
+    _step11_rc0030_register_base_witness(value)
+    step11_rc0030_base_body_parsed_witness_material(value)
+    return value
+
+
+def step11_rc0030_base_body_parsed_witness_material(
+    value: Step11Rc0030BaseBodyParsedWitness,
+) -> dict[str, Any]:
+    if type(value) is not Step11Rc0030BaseBodyParsedWitness:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_WITNESS_TYPE_INVALID"
+        )
+    if not _step11_rc0030_validate_base_witness_origin(value):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_WITNESS_ORIGIN_REQUIRED"
+        )
+    if (
+        value.schema_version != STEP11_RC0030_BASE_BODY_PARSED_WITNESS_SCHEMA
+        or type(value.base_witness) is not Step11ParsedSurfaceWitness
+        or value.body_sha256 != value.base_witness.body_sha256
+        or _STEP11_RC0030_SHA256_RE.fullmatch(value.body_sha256) is None
+        or value.observation_group_count < 1
+        or value.reception_group_count < 1
+        or value.observation_group_count
+        != sum(
+            row.section_role == "observation"
+            for row in value.base_witness.sentences
+        )
+        or value.reception_group_count
+        != sum(
+            row.section_role == "reception"
+            for row in value.base_witness.sentences
+        )
+        or len(value.observation_line_sha256)
+        != value.observation_group_count
+        or len(value.observation_stem_sha256)
+        != value.observation_group_count
+        or any(
+            _STEP11_RC0030_SHA256_RE.fullmatch(row) is None
+            for row in (
+                *value.observation_line_sha256,
+                *value.observation_stem_sha256,
+            )
+        )
+        or value.body_scan_pass_count != _STEP11_RC0030_BODY_SCAN_PASS_MAX
+        or value.body_free_export_allowed is not False
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_WITNESS_INVALID"
+        )
+    return {
+        "schema_version": value.schema_version,
+        "body_sha256": value.body_sha256,
+        "base_witness": _witness_material(value.base_witness),
+        "observation_line_sha256": list(value.observation_line_sha256),
+        "observation_stem_sha256": list(value.observation_stem_sha256),
+        "observation_group_count": value.observation_group_count,
+        "reception_group_count": value.reception_group_count,
+        "body_scan_pass_count": value.body_scan_pass_count,
+        "body_free_export_allowed": value.body_free_export_allowed,
+    }
+
+
+def _step11_rc0030_revalidated_base_binding(
+    base_witness: Step11ParsedSurfaceWitness,
+    *,
+    inventory_result: SemanticObligationInventoryResult,
+    content_plan: Mapping[str, Any],
+    discourse_plan: Mapping[str, Any],
+    current_input: Mapping[str, Any],
+) -> Step11VerifiedSurfaceBinding:
+    if type(base_witness) is not Step11ParsedSurfaceWitness:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_WITNESS_TYPE_INVALID"
+        )
+    try:
+        binding = match_step11_natural_surface(
+            base_witness,
+            inventory_result=inventory_result,
+            content_plan=content_plan,
+            discourse_plan=discourse_plan,
+            current_input=current_input,
+        )
+    except (Step11InverseSurfaceError, TypeError, ValueError):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_BINDING_REVALIDATION_FAILED"
+        ) from None
+    expected_hash = artifact_sha256(_witness_material(base_witness))
+    if (
+        type(binding) is not Step11VerifiedSurfaceBinding
+        or binding.parsed_witness_sha256 != expected_hash
+        or binding.verified is not True
+        or binding.issue_codes
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_BINDING_REVALIDATION_FAILED"
+        )
+    return binding
+
+
+def _step11_rc0030_validated_source_records(
+    successor_snapshot: Any,
+    *,
+    inventory_result: SemanticObligationInventoryResult,
+) -> tuple[
+    tuple[tuple[str, str, str, str, tuple[str, ...]], ...],
+    tuple[
+        tuple[str, str, str, tuple[str, ...], tuple[str, ...]], ...
+    ],
+    dict[str, frozenset[str]],
+    str,
+    str,
+    dict[str, frozenset[str]],
+]:
+    validator_owner = __import__(
+        "emlis_ai_grounded_lexical_role_experiment_snapshot_successor_v3",
+        fromlist=(
+            "validate_grounded_lexical_role_experiment_snapshot_successor",
+        ),
+    )
+    try:
+        issues = validator_owner.validate_grounded_lexical_role_experiment_snapshot_successor(
+            successor_snapshot
+        )
+    except (AttributeError, TypeError, ValueError):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_SOURCE_AUTHORITY_INVALID"
+        ) from None
+    if issues:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_SOURCE_AUTHORITY_INVALID"
+        )
+    authority = successor_snapshot.relation_construction_authority
+    base_snapshot = successor_snapshot.base_snapshot
+    if (
+        type(inventory_result) is not SemanticObligationInventoryResult
+        or base_snapshot != inventory_result.source_snapshot
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_SOURCE_COMMITMENT_MISMATCH"
+        )
+    aliases: dict[str, frozenset[str]] = {}
+    nucleus_aliases: dict[str, frozenset[str]] = {}
+    exact_source_aliases: dict[str, frozenset[str]] = {}
+
+    def bind_alias(owner_id: str, values: frozenset[str]) -> None:
+        previous = aliases.get(owner_id)
+        if previous is not None and previous != values:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_SOURCE_OWNER_PARENT_AMBIGUOUS"
+            )
+        aliases[owner_id] = values
+
+    for nucleus in base_snapshot.nuclei:
+        values = frozenset(
+            {str(nucleus.source_id), str(nucleus.actual_source_id)}
+        )
+        for nucleus_id in (
+            str(nucleus.source_id),
+            str(nucleus.actual_source_id),
+        ):
+            previous = nucleus_aliases.get(nucleus_id)
+            if previous is not None and previous != values:
+                raise Step11Rc0030ExperimentInverseSurfaceError(
+                    "STEP11_RC0030_SOURCE_OWNER_PARENT_AMBIGUOUS"
+                )
+            nucleus_aliases[nucleus_id] = values
+            bind_alias(nucleus_id, values)
+    for participation in authority.source_owner_participations:
+        parent = nucleus_aliases.get(str(participation.parent_nucleus_id))
+        if parent is None:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_SOURCE_OWNER_PARENT_UNRESOLVED"
+            )
+        bind_alias(str(participation.target_owner_id), parent)
+    participation_by_id = {
+        str(row.participation_id): row
+        for row in authority.source_owner_participations
+    }
+    records: list[tuple[str, str, str, str, tuple[str, ...]]] = []
+    for instance in authority.construction_instances:
+        owners = tuple(
+            dict.fromkeys(
+                str(participation_by_id[row].target_owner_id)
+                for row in instance.participation_ids
+                if row in participation_by_id
+            )
+        )
+        if len(owners) != 1 or len(instance.participation_ids) != sum(
+            row in participation_by_id for row in instance.participation_ids
+        ):
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_CONSTRUCTION_OWNER_AMBIGUOUS"
+            )
+        records.append(
+            (
+                str(instance.construction_instance_id),
+                "construction",
+                str(instance.construction_code),
+                "",
+                owners,
+            )
+        )
+    for relation in authority.relation_authorities:
+        identity_aliases = {str(relation.source_relation_id)}
+        if relation.refines_source_relation_id is not None:
+            identity_aliases.add(str(relation.refines_source_relation_id))
+        direct_aliases = {
+            *identity_aliases,
+            *(str(row) for row in relation.source_relation_ids),
+        }
+        parent_matches: list[frozenset[str]] = []
+        for parent in base_snapshot.relations:
+            parent_aliases = frozenset(
+                {
+                    str(parent.source_id),
+                    str(parent.actual_source_id),
+                    *(str(row) for row in parent.source_relation_ids),
+                }
+            )
+            if identity_aliases & {
+                str(parent.source_id),
+                str(parent.actual_source_id),
+            }:
+                parent_matches.append(parent_aliases)
+        if not parent_matches:
+            for parent in base_snapshot.relations:
+                parent_aliases = frozenset(
+                    {
+                        str(parent.source_id),
+                        str(parent.actual_source_id),
+                        *(str(row) for row in parent.source_relation_ids),
+                    }
+                )
+                if direct_aliases & parent_aliases:
+                    parent_matches.append(parent_aliases)
+        if len(parent_matches) != 1:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_SOURCE_RELATION_PARENT_AMBIGUOUS"
+            )
+        exact_source_aliases[str(relation.experiment_relation_id)] = (
+            frozenset(direct_aliases) | parent_matches[0]
+        )
+        records.append(
+            (
+                str(relation.experiment_relation_id),
+                "relation",
+                str(relation.effective_relation_type),
+                str(relation.direction),
+                (
+                    str(relation.from_source_owner_id),
+                    str(relation.to_source_owner_id),
+                ),
+            )
+        )
+    for link in authority.semantic_link_bindings:
+        records.append(
+            (
+                str(link.source_semantic_link_id),
+                "semantic_link",
+                str(link.relation_type),
+                str(link.direction),
+                (
+                    str(link.from_semantic_unit_id),
+                    str(link.to_semantic_unit_id),
+                ),
+            )
+        )
+    for unknown in authority.explicit_unknown_authorities:
+        owner_parent_aliases = tuple(
+            aliases.get(str(row.owner_id), frozenset())
+            for row in unknown.affected_source_owners
+        )
+        if not owner_parent_aliases or any(not row for row in owner_parent_aliases):
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_SOURCE_UNKNOWN_PARENT_UNRESOLVED"
+            )
+        parent_matches: list[Any] = []
+        for parent in base_snapshot.unknowns:
+            parent_aliases = {
+                str(parent.source_id),
+                str(parent.actual_source_id),
+            }
+            affected = tuple(str(row) for row in parent.affected_nucleus_ids)
+            if (
+                str(unknown.source_unknown_id) in parent_aliases
+                and str(parent.source_dimension) == str(unknown.dimension)
+                and len(affected) == len(set(affected))
+                and all(
+                    any(owner_id in owner_aliases for owner_id in affected)
+                    for owner_aliases in owner_parent_aliases
+                )
+                and all(
+                    any(owner_id in owner_aliases for owner_aliases in owner_parent_aliases)
+                    for owner_id in affected
+                )
+            ):
+                parent_matches.append(parent)
+        if len(parent_matches) != 1:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_SOURCE_UNKNOWN_PARENT_AMBIGUOUS"
+            )
+        parent = parent_matches[0]
+        exact_source_aliases[str(unknown.source_unknown_id)] = frozenset(
+            {
+                str(unknown.source_unknown_id),
+                str(parent.source_id),
+                str(parent.actual_source_id),
+            }
+        )
+        records.append(
+            (
+                str(unknown.source_unknown_id),
+                "explicit_unknown",
+                str(unknown.dimension),
+                "",
+                tuple(str(row.owner_id) for row in unknown.affected_source_owners),
+            )
+        )
+    source_ids = tuple(row[0] for row in records)
+    if (
+        len(source_ids) != len(set(source_ids))
+        or len(set(owner for row in records for owner in row[4]))
+        > _STEP11_RC0030_OWNER_MAX
+        or any(owner not in aliases for row in records for owner in row[4])
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_SOURCE_RECORD_SET_INVALID"
+        )
+    receptions = tuple(
+        (
+            str(row.source_id),
+            str(row.family),
+            str(row.reception_act),
+            tuple(str(value) for value in row.target_nucleus_ids),
+            tuple(str(value) for value in row.support_nucleus_ids),
+        )
+        for row in base_snapshot.reception_opportunities
+        if row.retention == "required" or row.safety_required is True
+    )
+    if not 1 <= len(receptions) <= _STEP11_RC0030_RECEPTION_MOVE_MAX:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_RECEPTION_SOURCE_BOUND_INVALID"
+        )
+    reception_ids = tuple(row[0] for row in receptions)
+    all_owner_ids = {
+        owner for row in records for owner in row[4]
+    } | {
+        owner
+        for row in receptions
+        for owner in (*row[3], *row[4])
+    }
+    if (
+        len(reception_ids) != len(set(reception_ids))
+        or len(all_owner_ids) > _STEP11_RC0030_OWNER_MAX
+        or any(owner not in aliases for owner in all_owner_ids)
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_SOURCE_OWNER_SET_INVALID"
+        )
+    return (
+        tuple(records),
+        receptions,
+        aliases,
+        str(successor_snapshot.experiment_snapshot_sha256),
+        str(authority.authority_sha256),
+        exact_source_aliases,
+    )
+
+
+def _step11_rc0030_visible_phrase_registry(
+    base_witness: Step11ParsedSurfaceWitness,
+    base_binding: Step11VerifiedSurfaceBinding,
+    *,
+    source_owner_aliases: Mapping[str, frozenset[str]],
+) -> tuple[dict[str, str], int]:
+    phrase_binding_by_key: dict[tuple[str, str, str], list[Any]] = {}
+    for row in base_binding.grounded_phrase_bindings:
+        phrase_binding_by_key.setdefault(
+            (
+                str(row.atom_id),
+                str(row.visible_feature_fingerprint_sha256),
+                str(row.phrase_profile_id),
+            ),
+            [],
+        ).append(row)
+    phrase_owner_aliases: dict[str, set[str]] = {}
+    for atom in base_witness.atoms:
+        for phrase in atom.grounded_phrases:
+            key = (
+                str(atom.atom_id),
+                str(phrase.visible_feature_fingerprint_sha256),
+                str(phrase.phrase_profile_id),
+            )
+            rows = phrase_binding_by_key.get(key, ())
+            if len(rows) != 1:
+                raise Step11Rc0030ExperimentInverseSurfaceError(
+                    "STEP11_RC0030_BASE_PHRASE_BINDING_AMBIGUOUS"
+                )
+            phrase_owner_aliases.setdefault(str(phrase.phrase_text), set()).update(
+                str(value) for value in rows[0].owner_nucleus_ids
+            )
+    owner_text: dict[str, str] = {}
+    comparisons = 0
+    for source_owner_id, aliases in source_owner_aliases.items():
+        matches: list[str] = []
+        for phrase_text, bound_owner_ids in phrase_owner_aliases.items():
+            comparisons += 1
+            if comparisons > _STEP11_RC0030_OWNER_COMPARISON_MAX:
+                raise Step11Rc0030ExperimentInverseSurfaceError(
+                    "STEP11_RC0030_OWNER_COMPARISON_BOUND_EXCEEDED"
+                )
+            if aliases & bound_owner_ids:
+                matches.append(phrase_text)
+        unique = tuple(dict.fromkeys(matches))
+        if len(unique) != 1:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_OWNER_BINDING_AMBIGUOUS"
+            )
+        owner_text[source_owner_id] = unique[0]
+    reverse: dict[str, list[str]] = {}
+    for owner_id, phrase_text in owner_text.items():
+        reverse.setdefault(phrase_text, []).append(owner_id)
+    for rows in reverse.values():
+        if len(rows) <= 1:
+            continue
+        common = source_owner_aliases[rows[0]]
+        if not all(
+            source_owner_aliases[row] == common and row in common
+            for row in rows
+        ):
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_OWNER_BINDING_AMBIGUOUS"
+            )
+    return owner_text, comparisons
+
+
+def _step11_rc0030_visible_signature(
+    *,
+    family: str,
+    key: str,
+    direction: str,
+    owner_ids: Sequence[str],
+    owner_text: Mapping[str, str],
+    catalog: Mapping[str, Any],
+) -> tuple[str, str, str, tuple[str, ...]]:
+    try:
+        texts = tuple(owner_text[row] for row in owner_ids)
+    except KeyError:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_OWNER_BINDING_UNRESOLVED"
+        ) from None
+    if family == "explicit_unknown":
+        texts = (catalog["clause_morphology"]["symmetric_join"].join(texts),)
+    return family, key, direction, texts
+
+
+def _step11_rc0030_reference_phrase_texts(
+    base_witness: Step11ParsedSurfaceWitness,
+) -> dict[int, str]:
+    result: dict[int, str] = {}
+    for atom in base_witness.atoms:
+        references = (
+            (atom.introduced_reference,)
+            if atom.introduced_reference is not None
+            else atom.compound_label_references
+        )
+        phrase_texts = tuple(row.phrase_text for row in atom.grounded_phrases)
+        if not references or len(references) != len(phrase_texts):
+            continue
+        for reference, phrase_text in zip(references, phrase_texts):
+            previous = result.get(reference.reference_ordinal)
+            if previous is not None and previous != phrase_text:
+                raise Step11Rc0030ExperimentInverseSurfaceError(
+                    "STEP11_RC0030_BASE_REFERENCE_AMBIGUOUS"
+                )
+            result[reference.reference_ordinal] = phrase_text
+    return result
+
+
+def _step11_rc0030_reuse_material(
+    value: Step11Rc0030VerifiedBaseBodyReuse,
+    *,
+    include_binding_sha256: bool = True,
+) -> dict[str, Any]:
+    result = {
+        "schema_version": value.schema_version,
+        "source_atom_id": value.source_atom_id,
+        "semantic_family": value.semantic_family,
+        "base_parsed_atom_id": value.base_parsed_atom_id,
+        "base_obligation_id": value.base_obligation_id,
+        "match_basis": value.match_basis,
+        "base_surface_sha256": value.base_surface_sha256,
+        "source_authority_sha256": value.source_authority_sha256,
+        "independent_binding_sha256": value.independent_binding_sha256,
+        "body_free": value.body_free,
+    }
+    if not include_binding_sha256:
+        result.pop("independent_binding_sha256")
+    return result
+
+
+def step11_rc0030_verified_base_body_reuse_material(
+    value: Step11Rc0030VerifiedBaseBodyReuse,
+) -> dict[str, Any]:
+    if type(value) is not Step11Rc0030VerifiedBaseBodyReuse:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_REUSE_TYPE_INVALID"
+        )
+    if (
+        value.schema_version != STEP11_RC0030_VERIFIED_BASE_REUSE_SCHEMA
+        or value.semantic_family
+        not in {"construction", "relation", "semantic_link", "explicit_unknown"}
+        or re.fullmatch(r"nls3s11atom_[0-9a-f]{16}", value.base_parsed_atom_id)
+        is None
+        or re.fullmatch(r"obl_[0-9a-f]{16}", value.base_obligation_id) is None
+        or _STEP11_RC0030_SHA256_RE.fullmatch(value.base_surface_sha256)
+        is None
+        or _STEP11_RC0030_SHA256_RE.fullmatch(value.source_authority_sha256)
+        is None
+        or _STEP11_RC0030_SHA256_RE.fullmatch(
+            value.independent_binding_sha256
+        )
+        is None
+        or value.body_free is not True
+        or artifact_sha256(
+            _step11_rc0030_reuse_material(
+                value, include_binding_sha256=False
+            )
+        )
+        != value.independent_binding_sha256
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_REUSE_BINDING_INVALID"
+        )
+    return _step11_rc0030_reuse_material(value)
+
+
+def _step11_rc0030_derive_allowed_base_reuse(
+    base_witness: Step11ParsedSurfaceWitness,
+    base_binding: Step11VerifiedSurfaceBinding,
+    *,
+    records: Sequence[tuple[str, str, str, str, tuple[str, ...]]],
+    owner_text: Mapping[str, str],
+    authority_sha: str,
+    exact_aliases: Mapping[str, frozenset[str]],
+    obligation_by_id: Mapping[str, Mapping[str, Any]],
+    catalog: Mapping[str, Any],
+) -> tuple[Step11Rc0030VerifiedBaseBodyReuse, ...]:
+    """Derive reuse from one already-revalidated base binding."""
+
+    atom_by_id = {row.atom_id: row for row in base_witness.atoms}
+    reference_text = _step11_rc0030_reference_phrase_texts(base_witness)
+    unknown_dimension = {
+        "explicit_cause_unknown": "cause",
+        "explicit_unverbalized_unknown": "unverbalized",
+        "explicit_choice_decision_unknown": "choice_decision",
+        "explicit_temporal_referent_unknown": "temporal_referent",
+    }
+    result: list[Step11Rc0030VerifiedBaseBodyReuse] = []
+    for source_id, family, key, direction, owner_ids in records:
+        if family not in {"relation", "explicit_unknown"}:
+            continue
+        expected_signature = _step11_rc0030_visible_signature(
+            family=family,
+            key=key,
+            direction=direction,
+            owner_ids=owner_ids,
+            owner_text=owner_text,
+            catalog=catalog,
+        )
+        candidates: list[tuple[str, str, str]] = []
+        for binding_row in base_binding.binding_rows:
+            basis = str(binding_row.match_basis)
+            if family == "relation" and basis != "relation_type_direction_endpoint":
+                continue
+            if (
+                family == "explicit_unknown"
+                and basis != "unknown_id_dimension_exact_target"
+            ):
+                continue
+            obligation = obligation_by_id.get(str(binding_row.obligation_id))
+            source_field = (
+                "relation_ids"
+                if family == "relation"
+                else "unknown_boundary_ids"
+            )
+            ledger_source_ids = (
+                obligation.get(source_field) if obligation is not None else None
+            )
+            if (
+                type(ledger_source_ids) is not list
+                or len(ledger_source_ids) != 1
+                or type(ledger_source_ids[0]) is not str
+                or ledger_source_ids[0] not in exact_aliases.get(source_id, ())
+            ):
+                continue
+            for atom_id in binding_row.atom_ids:
+                atom = atom_by_id.get(atom_id)
+                if atom is None:
+                    continue
+                if family == "relation":
+                    texts = tuple(
+                        reference_text.get(row.reference_ordinal, "")
+                        for row in atom.relation_endpoint_references
+                    )
+                    actual = (
+                        "relation",
+                        str(atom.relation_type or ""),
+                        str(atom.relation_direction or ""),
+                        texts,
+                    )
+                    match_basis = (
+                        "relation_id_endpoint_direction_type_exact"
+                    )
+                else:
+                    target_texts = tuple(
+                        reference_text.get(row.reference_ordinal, "")
+                        for row in atom.unknown_target_references
+                    )
+                    if not target_texts:
+                        target_texts = tuple(
+                            row.phrase_text for row in atom.grounded_phrases
+                        )
+                    joined = catalog["clause_morphology"][
+                        "symmetric_join"
+                    ].join(target_texts)
+                    actual = (
+                        "explicit_unknown",
+                        next(
+                            (
+                                source_dimension
+                                for source_dimension, base_dimension
+                                in unknown_dimension.items()
+                                if base_dimension
+                                == atom.unknown_dimension_class
+                            ),
+                            "",
+                        ),
+                        "",
+                        (joined,),
+                    )
+                    match_basis = "unknown_id_dimension_exact_target"
+                if actual == expected_signature:
+                    candidates.append(
+                        (
+                            str(atom_id),
+                            str(binding_row.obligation_id),
+                            match_basis,
+                        )
+                    )
+        unique = tuple(dict.fromkeys(candidates))
+        if len(unique) > 1:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_BASE_REUSE_AMBIGUOUS"
+            )
+        if not unique:
+            continue
+        atom_id, obligation_id, match_basis = unique[0]
+        provisional = Step11Rc0030VerifiedBaseBodyReuse(
+            schema_version=STEP11_RC0030_VERIFIED_BASE_REUSE_SCHEMA,
+            source_atom_id=source_id,
+            semantic_family=family,
+            base_parsed_atom_id=atom_id,
+            base_obligation_id=obligation_id,
+            match_basis=match_basis,
+            base_surface_sha256=base_witness.body_sha256,
+            source_authority_sha256=authority_sha,
+            independent_binding_sha256="0" * 64,
+        )
+        value = Step11Rc0030VerifiedBaseBodyReuse(
+            schema_version=provisional.schema_version,
+            source_atom_id=provisional.source_atom_id,
+            semantic_family=provisional.semantic_family,
+            base_parsed_atom_id=provisional.base_parsed_atom_id,
+            base_obligation_id=provisional.base_obligation_id,
+            match_basis=provisional.match_basis,
+            base_surface_sha256=provisional.base_surface_sha256,
+            source_authority_sha256=provisional.source_authority_sha256,
+            independent_binding_sha256=artifact_sha256(
+                _step11_rc0030_reuse_material(
+                    provisional, include_binding_sha256=False
+                )
+            ),
+        )
+        step11_rc0030_verified_base_body_reuse_material(value)
+        result.append(value)
+    return tuple(result)
+
+
+def match_step11_rc0030_base_body_exact_reuse(
+    base_body_witness: Step11Rc0030BaseBodyParsedWitness,
+    *,
+    successor_snapshot: Any,
+    inventory_result: SemanticObligationInventoryResult,
+    content_plan: Mapping[str, Any],
+    discourse_plan: Mapping[str, Any],
+    current_input: Mapping[str, Any],
+) -> tuple[Step11Rc0030VerifiedBaseBodyReuse, ...]:
+    """Grant only independently revalidated family-exact base credit."""
+
+    step11_rc0030_base_body_parsed_witness_material(base_body_witness)
+    base_witness = base_body_witness.base_witness
+    base_binding = _step11_rc0030_revalidated_base_binding(
+        base_witness,
+        inventory_result=inventory_result,
+        content_plan=content_plan,
+        discourse_plan=discourse_plan,
+        current_input=current_input,
+    )
+    records, _receptions, aliases, _snapshot_sha, authority_sha, exact_aliases = (
+        _step11_rc0030_validated_source_records(
+            successor_snapshot,
+            inventory_result=inventory_result,
+        )
+    )
+    try:
+        _ledger, obligation_by_id = _validated_parents(
+            inventory_result, content_plan, discourse_plan
+        )
+    except Step11InverseSurfaceError:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_BINDING_REVALIDATION_FAILED"
+        ) from None
+    catalog, _catalog_sha = _step11_rc0030_inverse_catalog()
+    required_owner_ids = {
+        owner_id for row in records for owner_id in row[4]
+    }
+    owner_text, _comparisons = _step11_rc0030_visible_phrase_registry(
+        base_witness,
+        base_binding,
+        source_owner_aliases={
+            owner_id: aliases[owner_id]
+            for owner_id in required_owner_ids
+        },
+    )
+    return _step11_rc0030_derive_allowed_base_reuse(
+        base_witness,
+        base_binding,
+        records=records,
+        owner_text=owner_text,
+        authority_sha=authority_sha,
+        exact_aliases=exact_aliases,
+        obligation_by_id=obligation_by_id,
+        catalog=catalog,
+    )
+
+
+def _step11_rc0030_reception_schedule(
+    base_body_witness: Step11Rc0030BaseBodyParsedWitness,
+    base_binding: Step11VerifiedSurfaceBinding,
+    *,
+    inventory_result: SemanticObligationInventoryResult,
+    discourse_plan: Mapping[str, Any],
+    current_input: Mapping[str, Any],
+    obligation_by_id: Mapping[str, Mapping[str, Any]],
+    receptions: Sequence[
+        tuple[str, str, str, tuple[str, ...], tuple[str, ...]]
+    ],
+) -> tuple[
+    tuple[
+        str,
+        str,
+        str,
+        tuple[str, ...],
+        tuple[str, ...],
+        int,
+        int,
+        str,
+    ],
+    ...,
+]:
+    """Rebuild exact base associations, then apply the frozen bounded schedule."""
+
+    try:
+        projection = _project_input(current_input)
+        contracts = _independent_reception_owner_contract(
+            snapshot=inventory_result.source_snapshot,
+            by_id=obligation_by_id,
+            discourse_plan=discourse_plan,
+            projection=projection,
+        )
+    except (Step11InverseSurfaceError, AttributeError, TypeError, ValueError):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_RECEPTION_SOURCE_REVALIDATION_FAILED"
+        ) from None
+    base_witness = base_body_witness.base_witness
+    observation_sentences = tuple(
+        row for row in base_witness.sentences if row.section_role == "observation"
+    )
+    reception_sentences = tuple(
+        row for row in base_witness.sentences if row.section_role == "reception"
+    )
+    if (
+        len(observation_sentences) != base_body_witness.observation_group_count
+        or len(reception_sentences) != base_body_witness.reception_group_count
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_RECEPTION_LAYOUT_MISMATCH"
+        )
+    atom_by_id = {row.atom_id: row for row in base_witness.atoms}
+    integrated_ids = tuple(base_binding.integrated_reception_binding_ids)
+    contract_ids = tuple(str(row["binding_id"]) for row in contracts.values())
+    if (
+        len(integrated_ids) != len(set(integrated_ids))
+        or set(integrated_ids) != set(contract_ids)
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_RECEPTION_CONTRACT_MISMATCH"
+        )
+    exact_line_by_opportunity: dict[str, int] = {}
+    for binding_row in base_binding.binding_rows:
+        obligation_id = str(binding_row.obligation_id)
+        contract = contracts.get(obligation_id)
+        if contract is None:
+            continue
+        ledger_row = obligation_by_id.get(obligation_id)
+        opportunity_ids = tuple(
+            str(row) for row in contract["source_reception_opportunity_ids"]
+        )
+        if (
+            ledger_row is None
+            or type(ledger_row.get("reception_opportunity_ids")) is not list
+            or tuple(ledger_row["reception_opportunity_ids"])
+            != opportunity_ids
+            or len(binding_row.atom_ids) != 1
+            or str(contract["binding_id"]) not in integrated_ids
+        ):
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_BASE_RECEPTION_CONTRACT_MISMATCH"
+            )
+        atom = atom_by_id.get(str(binding_row.atom_ids[0]))
+        if (
+            atom is None
+            or atom.section_role != "reception"
+            or atom.reception_act not in contract["allowed_response_acts"]
+        ):
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_BASE_RECEPTION_CONTRACT_MISMATCH"
+            )
+        line_ordinal = (
+            int(atom.sentence_ordinal)
+            - base_body_witness.observation_group_count
+        )
+        if not 1 <= line_ordinal <= base_body_witness.reception_group_count:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_BASE_RECEPTION_LAYOUT_MISMATCH"
+            )
+        for opportunity_id in opportunity_ids:
+            previous = exact_line_by_opportunity.get(opportunity_id)
+            if previous is not None:
+                raise Step11Rc0030ExperimentInverseSurfaceError(
+                    "STEP11_RC0030_RECEPTION_ASSOCIATION_AMBIGUOUS"
+                )
+            exact_line_by_opportunity[opportunity_id] = line_ordinal
+
+    group_count = base_body_witness.reception_group_count
+    loads = {ordinal: 0 for ordinal in range(1, group_count + 1)}
+    scheduled: list[
+        tuple[
+            str,
+            str,
+            str,
+            tuple[str, ...],
+            tuple[str, ...],
+            int,
+            int,
+            str,
+        ]
+    ] = []
+    for source_id, scope, act, targets, supports in receptions:
+        line_ordinal = exact_line_by_opportunity.get(source_id)
+        if line_ordinal is None:
+            available = tuple(
+                ordinal
+                for ordinal in range(1, group_count + 1)
+                if loads[ordinal]
+                < _STEP11_RC0030_RECEPTION_MOVES_PER_SENTENCE_MAX
+            )
+            if not available:
+                raise Step11Rc0030ExperimentInverseSurfaceError(
+                    "STEP11_RC0030_RECEPTION_DENSITY_UNSATISFIABLE"
+                )
+            line_ordinal = min(
+                available, key=lambda row: (loads[row], row)
+            )
+            basis = "required_opportunity_bounded_schedule"
+        else:
+            basis = "exact_base_opportunity_id"
+        loads[line_ordinal] += 1
+        if (
+            loads[line_ordinal]
+            > _STEP11_RC0030_RECEPTION_MOVES_PER_SENTENCE_MAX
+        ):
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_RECEPTION_DENSITY_UNSATISFIABLE"
+            )
+        scheduled.append(
+            (
+                source_id,
+                scope,
+                act,
+                targets,
+                supports,
+                line_ordinal,
+                loads[line_ordinal],
+                basis,
+            )
+        )
+    if set(exact_line_by_opportunity) - {row[0] for row in receptions}:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_RECEPTION_ASSOCIATION_MISMATCH"
+        )
+    return tuple(scheduled)
+
+
+def _step11_rc0030_validate_semantic_placement(
+    base_witness: Step11ParsedSurfaceWitness,
+    base_binding: Step11VerifiedSurfaceBinding,
+    *,
+    records: Sequence[tuple[str, str, str, str, tuple[str, ...]]],
+    parsed_atoms: Sequence[Step11Rc0030ParsedSemanticAtom],
+    parsed_source_ids: Sequence[str],
+    reused_source_ids: frozenset[str],
+    source_owner_aliases: Mapping[str, frozenset[str]],
+    owner_text: Mapping[str, str],
+) -> None:
+    """Reproduce the frozen P2 owner-group, packing, and append order."""
+
+    phrase_binding_by_key: dict[tuple[str, str, str], list[Any]] = {}
+    for row in base_binding.grounded_phrase_bindings:
+        phrase_binding_by_key.setdefault(
+            (
+                str(row.atom_id),
+                str(row.visible_feature_fingerprint_sha256),
+                str(row.phrase_profile_id),
+            ),
+            [],
+        ).append(row)
+    positions_by_owner: dict[str, set[tuple[int, int]]] = {
+        owner_id: set() for owner_id in source_owner_aliases
+    }
+    for atom in base_witness.atoms:
+        if atom.section_role != "observation":
+            continue
+        for phrase in atom.grounded_phrases:
+            rows = phrase_binding_by_key.get(
+                (
+                    str(atom.atom_id),
+                    str(phrase.visible_feature_fingerprint_sha256),
+                    str(phrase.phrase_profile_id),
+                ),
+                (),
+            )
+            if len(rows) != 1:
+                raise Step11Rc0030ExperimentInverseSurfaceError(
+                    "STEP11_RC0030_OWNER_BASE_POSITION_AMBIGUOUS"
+                )
+            bound_ids = {str(row) for row in rows[0].owner_nucleus_ids}
+            for owner_id, aliases in source_owner_aliases.items():
+                if (
+                    phrase.phrase_text == owner_text.get(owner_id)
+                    and aliases & bound_ids
+                ):
+                    positions_by_owner[owner_id].add(
+                        (
+                            int(atom.sentence_ordinal),
+                            int(atom.grammatical_chunk_ordinal),
+                        )
+                    )
+    owner_position: dict[str, tuple[int, int]] = {}
+    for owner_id, positions in positions_by_owner.items():
+        if len(positions) != 1:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_OWNER_BASE_POSITION_AMBIGUOUS"
+            )
+        owner_position[owner_id] = next(iter(positions))
+
+    grammar = STEP11_SURFACE_CATALOG["group_grammar"]
+    maximum_group_clauses = int(
+        grammar["maximum_observation_clauses_per_sentence"]
+    )
+    maximum_chunk_clauses = int(
+        grammar["maximum_visible_clauses_per_grammatical_sentence"]
+    )
+    maximum_chunk_load = int(
+        grammar["maximum_grammatical_complexity_load"]
+    )
+    observation_sentences = tuple(
+        row for row in base_witness.sentences if row.section_role == "observation"
+    )
+    if not observation_sentences:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_OBSERVATION_LAYOUT_INVALID"
+        )
+    chunk_clause_count: dict[tuple[int, int], int] = {}
+    chunk_complexity_load: dict[tuple[int, int], int] = {}
+    base_unit_count_by_group: dict[int, int] = {}
+    for sentence in observation_sentences:
+        group_ordinal = int(sentence.sentence_ordinal)
+        base_unit_count_by_group[group_ordinal] = len(
+            sentence.clause_atom_ids
+        )
+        for chunk_ordinal, count in enumerate(
+            sentence.grammatical_chunk_clause_counts, 1
+        ):
+            chunk_clause_count[(group_ordinal, chunk_ordinal)] = int(count)
+            atoms = tuple(
+                row
+                for row in base_witness.atoms
+                if row.section_role == "observation"
+                and row.sentence_ordinal == group_ordinal
+                and row.grammatical_chunk_ordinal == chunk_ordinal
+            )
+            load = 0
+            for atom in atoms:
+                references = {
+                    row.reference_ordinal
+                    for row in (
+                        *((atom.introduced_reference,)
+                          if atom.introduced_reference is not None else ()),
+                        *atom.relation_endpoint_references,
+                        *atom.unknown_target_references,
+                        *atom.compound_label_references,
+                        *atom.reception_antecedent_references,
+                    )
+                }
+                load += max(1, len(references))
+            chunk_complexity_load[(group_ordinal, chunk_ordinal)] = load
+    base_tail_chunk_by_group = {
+        group_ordinal: max(
+            chunk
+            for (group, chunk) in chunk_clause_count
+            if group == group_ordinal
+        )
+        for group_ordinal in base_unit_count_by_group
+    }
+
+    pending_by_group: dict[int, list[tuple[Any, ...]]] = {}
+    for source_id, family, _key, _direction, owner_ids in records:
+        if source_id in reused_source_ids:
+            continue
+        try:
+            positions = tuple(owner_position[row] for row in owner_ids)
+        except KeyError:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_OWNER_BASE_POSITION_UNRESOLVED"
+            ) from None
+        group_ordinals = tuple(row[0] for row in positions)
+        target_group = max(group_ordinals)
+        target_chunk = max(
+            row[1] for row in positions if row[0] == target_group
+        )
+        pending_by_group.setdefault(target_group, []).append(
+            (source_id, family, owner_ids, target_chunk)
+        )
+
+    expected_rows: list[tuple[str, int, int, int, int]] = []
+    structure_count_by_group = {
+        group_ordinal: 0 for group_ordinal in base_unit_count_by_group
+    }
+    for group_ordinal in sorted(pending_by_group):
+        ordered = sorted(
+            pending_by_group[group_ordinal],
+            key=lambda row: (row[3], row[1], row[2], row[0]),
+        )
+        raw_packs: list[list[tuple[Any, ...]]] = []
+        for row in ordered:
+            for pack in raw_packs:
+                owners = {
+                    owner_id
+                    for item in (*pack, row)
+                    for owner_id in item[2]
+                }
+                if len(pack) < 2 and len(owners) <= maximum_chunk_load:
+                    pack.append(row)
+                    break
+            else:
+                raw_packs.append([row])
+        planned_packs: list[tuple[int, str, tuple[str, ...]]] = []
+        for pack in raw_packs:
+            owner_count = len(
+                {owner_id for item in pack for owner_id in item[2]}
+            )
+            pack_load = max(owner_count, len(pack))
+            preferred_chunk = max(int(item[3]) for item in pack)
+            tail_chunk = max(
+                chunk
+                for (group, chunk) in chunk_clause_count
+                if group == group_ordinal
+            )
+            if tail_chunk < preferred_chunk:
+                raise Step11Rc0030ExperimentInverseSurfaceError(
+                    "STEP11_RC0030_OWNER_BASE_POSITION_UNRESOLVED"
+                )
+            if (
+                chunk_clause_count[(group_ordinal, tail_chunk)] + 1
+                <= maximum_chunk_clauses
+                and chunk_complexity_load[(group_ordinal, tail_chunk)]
+                + pack_load
+                <= maximum_chunk_load
+            ):
+                chosen_chunk = tail_chunk
+            else:
+                chosen_chunk = tail_chunk + 1
+                chunk_clause_count[(group_ordinal, chosen_chunk)] = 0
+                chunk_complexity_load[(group_ordinal, chosen_chunk)] = 0
+            chunk_clause_count[(group_ordinal, chosen_chunk)] += 1
+            chunk_complexity_load[(group_ordinal, chosen_chunk)] += pack_load
+            structure_count_by_group[group_ordinal] += 1
+            if (
+                base_unit_count_by_group[group_ordinal]
+                + structure_count_by_group[group_ordinal]
+                > maximum_group_clauses
+            ):
+                raise Step11Rc0030ExperimentInverseSurfaceError(
+                    "STEP11_RC0030_SEMANTIC_PLACEMENT_DENSITY_INVALID"
+                )
+            source_ids = tuple(sorted(str(item[0]) for item in pack))
+            unit_id = "nls3s11rc0030unit_" + artifact_sha256(
+                {
+                    "source_atom_ids": [str(item[0]) for item in pack],
+                    "sentence_group_ordinal": group_ordinal,
+                    "chunk_ordinal": chosen_chunk,
+                }
+            )[:16]
+            planned_packs.append((chosen_chunk, unit_id, source_ids))
+        for pack_ordinal, (chunk, _unit_id, source_ids) in enumerate(
+            sorted(planned_packs), 1
+        ):
+            for item_ordinal, source_id in enumerate(source_ids, 1):
+                expected_rows.append(
+                    (
+                        source_id,
+                        group_ordinal,
+                        (
+                            chunk
+                            - base_tail_chunk_by_group[group_ordinal]
+                            + 1
+                        ),
+                        pack_ordinal,
+                        item_ordinal,
+                    )
+                )
+    actual_rows = tuple(
+        (
+            source_id,
+            atom.sentence_group_ordinal,
+            atom.grammatical_chunk_ordinal,
+            atom.pack_ordinal,
+            atom.item_ordinal,
+        )
+        for source_id, atom in zip(parsed_source_ids, parsed_atoms)
+    )
+    if actual_rows != tuple(expected_rows):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_SEMANTIC_PLACEMENT_MISMATCH"
+        )
+
+
+def _step11_rc0030_verified_binding_material(
+    value: Step11Rc0030ExperimentVerifiedSurfaceBinding,
+) -> dict[str, Any]:
+    return {
+        "schema_version": value.schema_version,
+        "parsed_witness_sha256": value.parsed_witness_sha256,
+        "base_witness_sha256": value.base_witness_sha256,
+        "successor_snapshot_sha256": value.successor_snapshot_sha256,
+        "source_authority_sha256": value.source_authority_sha256,
+        "experiment_catalog_sha256": value.experiment_catalog_sha256,
+        "semantic_bindings": [
+            {
+                "source_atom_id": row.source_atom_id,
+                "semantic_family": row.semantic_family,
+                "parsed_atom_id": row.parsed_atom_id,
+                "verified_reuse_binding_sha256": (
+                    row.verified_reuse_binding_sha256
+                ),
+                "match_basis": row.match_basis,
+            }
+            for row in value.semantic_bindings
+        ],
+        "reception_bindings": [
+            {
+                "source_reception_opportunity_id": (
+                    row.source_reception_opportunity_id
+                ),
+                "source_scope": row.source_scope,
+                "parsed_binding_id": row.parsed_binding_id,
+                "reception_line_ordinal": row.reception_line_ordinal,
+                "move_ordinal": row.move_ordinal,
+                "reception_act": row.reception_act,
+                "target_owner_count": row.target_owner_count,
+                "supporting_owner_count": row.supporting_owner_count,
+                "association_basis": row.association_basis,
+            }
+            for row in value.reception_bindings
+        ],
+        "reception_binding_count": value.reception_binding_count,
+        "owner_binding_comparison_count": (
+            value.owner_binding_comparison_count
+        ),
+        "unique_solution_count": value.unique_solution_count,
+        "semantic_coverage_authorized": value.semantic_coverage_authorized,
+        "issue_codes": list(value.issue_codes),
+        "hard_verified": value.hard_verified,
+        "body_free_export_allowed": value.body_free_export_allowed,
+    }
+
+
+def step11_rc0030_experiment_verified_binding_material(
+    value: Step11Rc0030ExperimentVerifiedSurfaceBinding,
+) -> dict[str, Any]:
+    if type(value) is not Step11Rc0030ExperimentVerifiedSurfaceBinding:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_VERIFIED_BINDING_TYPE_INVALID"
+        )
+    basis_by_family = {
+        "construction": "construction_instance_role_layout_exact",
+        "relation": "relation_id_endpoint_direction_type_exact",
+        "semantic_link": "semantic_link_id_endpoint_direction_type_exact",
+        "explicit_unknown": "unknown_id_dimension_exact_target",
+    }
+    semantic_source_ids = tuple(
+        row.source_atom_id
+        for row in value.semantic_bindings
+        if type(row) is Step11Rc0030VerifiedSemanticBinding
+    )
+    parsed_ids = tuple(
+        row.parsed_atom_id
+        for row in value.semantic_bindings
+        if type(row) is Step11Rc0030VerifiedSemanticBinding
+        and row.parsed_atom_id is not None
+    )
+    reuse_hashes = tuple(
+        row.verified_reuse_binding_sha256
+        for row in value.semantic_bindings
+        if type(row) is Step11Rc0030VerifiedSemanticBinding
+        and row.verified_reuse_binding_sha256 is not None
+    )
+    reception_source_ids = tuple(
+        row.source_reception_opportunity_id
+        for row in value.reception_bindings
+        if type(row) is Step11Rc0030VerifiedReceptionBinding
+    )
+    reception_parsed_ids = tuple(
+        row.parsed_binding_id
+        for row in value.reception_bindings
+        if type(row) is Step11Rc0030VerifiedReceptionBinding
+    )
+    reception_positions = tuple(
+        (row.reception_line_ordinal, row.move_ordinal)
+        for row in value.reception_bindings
+        if type(row) is Step11Rc0030VerifiedReceptionBinding
+    )
+    if (
+        value.schema_version
+        != STEP11_RC0030_EXPERIMENT_VERIFIED_BINDING_SCHEMA
+        or any(
+            type(row) is not str
+            or _STEP11_RC0030_SHA256_RE.fullmatch(row) is None
+            for row in (
+                value.parsed_witness_sha256,
+                value.base_witness_sha256,
+                value.successor_snapshot_sha256,
+                value.source_authority_sha256,
+                value.experiment_catalog_sha256,
+            )
+        )
+        or type(value.semantic_bindings) is not tuple
+        or not 1
+        <= len(value.semantic_bindings)
+        <= _STEP11_RC0030_EVALUATED_DECOMPOSITION_MAX
+        or len(semantic_source_ids) != len(value.semantic_bindings)
+        or any(type(row) is not str or not row for row in semantic_source_ids)
+        or len(semantic_source_ids) != len(set(semantic_source_ids))
+        or any(type(row) is not str for row in parsed_ids)
+        or len(parsed_ids) != len(set(parsed_ids))
+        or any(type(row) is not str for row in reuse_hashes)
+        or len(reuse_hashes) != len(set(reuse_hashes))
+        or any(
+            not row.source_atom_id
+            or row.semantic_family not in basis_by_family
+            or row.match_basis != basis_by_family.get(row.semantic_family)
+            or (row.parsed_atom_id is None)
+            == (row.verified_reuse_binding_sha256 is None)
+            or (
+                row.parsed_atom_id is not None
+                and (
+                    type(row.parsed_atom_id) is not str
+                    or re.fullmatch(
+                        r"nls3s11rc0030atom_[0-9a-f]{16}",
+                        row.parsed_atom_id,
+                    )
+                    is None
+                )
+            )
+            or (
+                row.verified_reuse_binding_sha256 is not None
+                and (
+                    type(row.verified_reuse_binding_sha256) is not str
+                    or _STEP11_RC0030_SHA256_RE.fullmatch(
+                        row.verified_reuse_binding_sha256
+                    )
+                    is None
+                )
+            )
+            for row in value.semantic_bindings
+        )
+        or type(value.reception_bindings) is not tuple
+        or type(value.reception_binding_count) is not int
+        or not 1
+        <= value.reception_binding_count
+        <= _STEP11_RC0030_RECEPTION_MOVE_MAX
+        or value.reception_binding_count != len(value.reception_bindings)
+        or len(reception_source_ids) != len(value.reception_bindings)
+        or any(
+            type(row) is not str or not row for row in reception_source_ids
+        )
+        or len(reception_source_ids) != len(set(reception_source_ids))
+        or any(type(row) is not str for row in reception_parsed_ids)
+        or len(reception_parsed_ids) != len(set(reception_parsed_ids))
+        or any(
+            type(line_ordinal) is not int or type(move_ordinal) is not int
+            for line_ordinal, move_ordinal in reception_positions
+        )
+        or len(reception_positions) != len(set(reception_positions))
+        or any(
+            type(row.source_scope) is not str
+            or not row.source_scope
+            or type(row.parsed_binding_id) is not str
+            or re.fullmatch(
+                r"nls3s11rc0030recv_[0-9a-f]{16}",
+                row.parsed_binding_id,
+            )
+            is None
+            or type(row.reception_line_ordinal) is not int
+            or not 1 <= row.reception_line_ordinal <= 3
+            or type(row.move_ordinal) is not int
+            or row.move_ordinal not in {1, 2}
+            or type(row.reception_act) is not str
+            or not row.reception_act
+            or type(row.target_owner_count) is not int
+            or not 1 <= row.target_owner_count <= _STEP11_RC0030_OWNER_MAX
+            or type(row.supporting_owner_count) is not int
+            or not 0 <= row.supporting_owner_count <= _STEP11_RC0030_OWNER_MAX
+            or row.target_owner_count + row.supporting_owner_count
+            > _STEP11_RC0030_OWNER_MAX
+            or row.association_basis
+            not in {
+                "exact_base_opportunity_id",
+                "required_opportunity_bounded_schedule",
+            }
+            for row in value.reception_bindings
+        )
+        or type(value.owner_binding_comparison_count) is not int
+        or not 0
+        <= value.owner_binding_comparison_count
+        <= _STEP11_RC0030_OWNER_COMPARISON_MAX
+        or type(value.unique_solution_count) is not int
+        or value.unique_solution_count != 1
+        or value.semantic_coverage_authorized is not False
+        or type(value.issue_codes) is not tuple
+        or value.issue_codes != ()
+        or value.hard_verified is not True
+        or value.body_free_export_allowed is not False
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_VERIFIED_BINDING_INVALID"
+        )
+    return _step11_rc0030_verified_binding_material(value)
+
+
+def _step11_rc0030_expected_base_prefix_commitments(
+    base_body_witness: Step11Rc0030BaseBodyParsedWitness,
+    witness: Step11Rc0030ExperimentParsedSurfaceWitness,
+) -> tuple[str, ...]:
+    step11_rc0030_base_body_parsed_witness_material(base_body_witness)
+    if base_body_witness.body_sha256 == witness.body_sha256:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_FINAL_EQUALS_BASE_SURFACE"
+        )
+    if (
+        base_body_witness.observation_group_count
+        != witness.observation_group_count
+        or base_body_witness.reception_group_count
+        != witness.reception_group_count
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_FINAL_GROUP_MISMATCH"
+        )
+    changed_groups = {
+        row.sentence_group_ordinal for row in witness.semantic_atoms
+    }
+    return tuple(
+        (
+            base_body_witness.observation_stem_sha256[ordinal - 1]
+            if ordinal in changed_groups
+            else base_body_witness.observation_line_sha256[ordinal - 1]
+        )
+        for ordinal in range(1, witness.observation_group_count + 1)
+    )
+
+
+def match_step11_rc0030_experiment_surface(
+    witness: Step11Rc0030ExperimentParsedSurfaceWitness,
+    *,
+    base_body_witness: Step11Rc0030BaseBodyParsedWitness,
+    successor_snapshot: Any,
+    inventory_result: SemanticObligationInventoryResult,
+    content_plan: Mapping[str, Any],
+    discourse_plan: Mapping[str, Any],
+    current_input: Mapping[str, Any],
+    verified_base_reuse_bindings: Sequence[
+        Step11Rc0030VerifiedBaseBodyReuse
+    ] = (),
+) -> Step11Rc0030ExperimentVerifiedSurfaceBinding:
+    """Independently bind final bytes and inverse-owned base reuse."""
+
+    witness_material = step11_rc0030_experiment_parsed_witness_material(
+        witness
+    )
+    catalog, catalog_sha = _step11_rc0030_inverse_catalog()
+    if witness.experiment_catalog_sha256 != catalog_sha:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_CATALOG_COMMITMENT_MISMATCH"
+        )
+    step11_rc0030_base_body_parsed_witness_material(base_body_witness)
+    base_witness = base_body_witness.base_witness
+    if witness.base_prefix_commitments != (
+        _step11_rc0030_expected_base_prefix_commitments(
+            base_body_witness, witness
+        )
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_PREFIX_COMMITMENT_MISMATCH"
+        )
+    base_binding = _step11_rc0030_revalidated_base_binding(
+        base_witness,
+        inventory_result=inventory_result,
+        content_plan=content_plan,
+        discourse_plan=discourse_plan,
+        current_input=current_input,
+    )
+    records, receptions, aliases, snapshot_sha, authority_sha, exact_aliases = (
+        _step11_rc0030_validated_source_records(
+            successor_snapshot,
+            inventory_result=inventory_result,
+        )
+    )
+    required_owner_ids = {
+        owner_id for row in records for owner_id in row[4]
+    } | {
+        owner_id
+        for row in receptions
+        for owner_id in (*row[3], *row[4])
+    }
+    owner_text, comparison_count = _step11_rc0030_visible_phrase_registry(
+        base_witness,
+        base_binding,
+        source_owner_aliases={
+            owner_id: aliases[owner_id] for owner_id in required_owner_ids
+        },
+    )
+    try:
+        _ledger, obligation_by_id = _validated_parents(
+            inventory_result, content_plan, discourse_plan
+        )
+    except Step11InverseSurfaceError:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_BINDING_REVALIDATION_FAILED"
+        ) from None
+    expected_by_signature: dict[
+        tuple[str, str, str, tuple[str, ...]], list[str]
+    ] = {}
+    family_by_source: dict[str, str] = {}
+    for source_id, family, key, direction, owner_ids in records:
+        signature = _step11_rc0030_visible_signature(
+            family=family,
+            key=key,
+            direction=direction,
+            owner_ids=owner_ids,
+            owner_text=owner_text,
+            catalog=catalog,
+        )
+        expected_by_signature.setdefault(signature, []).append(source_id)
+        family_by_source[source_id] = family
+    if any(len(rows) != 1 for rows in expected_by_signature.values()):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_SOURCE_SIGNATURE_AMBIGUOUS"
+        )
+    parsed_bindings: list[Step11Rc0030VerifiedSemanticBinding] = []
+    parsed_source_ids: list[str] = []
+    basis_by_family = {
+        "construction": "construction_instance_role_layout_exact",
+        "relation": "relation_id_endpoint_direction_type_exact",
+        "semantic_link": "semantic_link_id_endpoint_direction_type_exact",
+        "explicit_unknown": "unknown_id_dimension_exact_target",
+    }
+    for atom in witness.semantic_atoms:
+        signature = (
+            atom.semantic_family,
+            atom.semantic_key,
+            atom.direction,
+            atom.owner_expressions,
+        )
+        comparison_count += 1
+        if comparison_count > _STEP11_RC0030_OWNER_COMPARISON_MAX:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_OWNER_COMPARISON_BOUND_EXCEEDED"
+            )
+        source_ids = expected_by_signature.get(signature, ())
+        if len(source_ids) != 1:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_SEMANTIC_BINDING_UNRESOLVED"
+            )
+        source_id = source_ids[0]
+        parsed_source_ids.append(source_id)
+        parsed_bindings.append(
+            Step11Rc0030VerifiedSemanticBinding(
+                source_atom_id=source_id,
+                semantic_family=atom.semantic_family,
+                parsed_atom_id=atom.atom_id,
+                verified_reuse_binding_sha256=None,
+                match_basis=basis_by_family[atom.semantic_family],
+            )
+        )
+    reuse_rows = tuple(verified_base_reuse_bindings)
+    independently_allowed_reuse = _step11_rc0030_derive_allowed_base_reuse(
+        base_witness,
+        base_binding,
+        records=records,
+        owner_text=owner_text,
+        authority_sha=authority_sha,
+        exact_aliases=exact_aliases,
+        obligation_by_id=obligation_by_id,
+        catalog=catalog,
+    )
+    allowed_reuse_by_source = {
+        row.source_atom_id: row for row in independently_allowed_reuse
+    }
+    if len(allowed_reuse_by_source) != len(independently_allowed_reuse):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_REUSE_AMBIGUOUS"
+        )
+    reuse_source_ids: list[str] = []
+    reuse_bindings: list[Step11Rc0030VerifiedSemanticBinding] = []
+    for row in reuse_rows:
+        step11_rc0030_verified_base_body_reuse_material(row)
+        if (
+            allowed_reuse_by_source.get(row.source_atom_id) != row
+            or
+            row.base_surface_sha256 != base_witness.body_sha256
+            or row.source_authority_sha256 != authority_sha
+            or family_by_source.get(row.source_atom_id) != row.semantic_family
+            or row.match_basis != basis_by_family.get(row.semantic_family)
+        ):
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_BASE_REUSE_SOURCE_MISMATCH"
+            )
+        reuse_source_ids.append(row.source_atom_id)
+        reuse_bindings.append(
+            Step11Rc0030VerifiedSemanticBinding(
+                source_atom_id=row.source_atom_id,
+                semantic_family=row.semantic_family,
+                parsed_atom_id=None,
+                verified_reuse_binding_sha256=(
+                    row.independent_binding_sha256
+                ),
+                match_basis=row.match_basis,
+            )
+        )
+    expected_ids = tuple(row[0] for row in records)
+    if (
+        len(parsed_source_ids) != len(set(parsed_source_ids))
+        or len(reuse_source_ids) != len(set(reuse_source_ids))
+        or set(parsed_source_ids) & set(reuse_source_ids)
+        or set((*parsed_source_ids, *reuse_source_ids)) != set(expected_ids)
+        or len(parsed_source_ids) + len(reuse_source_ids) != len(expected_ids)
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_SEMANTIC_COVERAGE_XOR_INVALID"
+        )
+    semantic_owner_ids = {
+        owner_id for row in records for owner_id in row[4]
+    }
+    _step11_rc0030_validate_semantic_placement(
+        base_witness,
+        base_binding,
+        records=records,
+        parsed_atoms=witness.semantic_atoms,
+        parsed_source_ids=parsed_source_ids,
+        reused_source_ids=frozenset(reuse_source_ids),
+        source_owner_aliases={
+            owner_id: aliases[owner_id] for owner_id in semantic_owner_ids
+        },
+        owner_text={
+            owner_id: owner_text[owner_id] for owner_id in semantic_owner_ids
+        },
+    )
+    joiner = catalog["clause_morphology"]["target_join"]
+    scheduled_receptions = _step11_rc0030_reception_schedule(
+        base_body_witness,
+        base_binding,
+        inventory_result=inventory_result,
+        discourse_plan=discourse_plan,
+        current_input=current_input,
+        obligation_by_id=obligation_by_id,
+        receptions=receptions,
+    )
+    parsed_reception_by_signature: dict[
+        tuple[int, int, str, str, str | None],
+        Step11Rc0030ParsedReceptionBinding,
+    ] = {}
+    for row in witness.reception_bindings:
+        signature = (
+            row.reception_line_ordinal,
+            row.move_ordinal,
+            row.reception_act,
+            row.target_expression,
+            row.supporting_expression,
+        )
+        if signature in parsed_reception_by_signature:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_RECEPTION_BINDING_AMBIGUOUS"
+            )
+        parsed_reception_by_signature[signature] = row
+    verified_receptions: list[Step11Rc0030VerifiedReceptionBinding] = []
+    consumed_parsed_ids: set[str] = set()
+    for (
+        source_id,
+        scope,
+        act,
+        targets,
+        supports,
+        line_ordinal,
+        move_ordinal,
+        association_basis,
+    ) in scheduled_receptions:
+        signature = (
+            line_ordinal,
+            move_ordinal,
+            act,
+            joiner.join(owner_text[row] for row in targets),
+            (
+                joiner.join(owner_text[row] for row in supports)
+                if supports
+                else None
+            ),
+        )
+        comparison_count += 1
+        if comparison_count > _STEP11_RC0030_OWNER_COMPARISON_MAX:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_OWNER_COMPARISON_BOUND_EXCEEDED"
+            )
+        parsed = parsed_reception_by_signature.get(signature)
+        if parsed is None or parsed.binding_id in consumed_parsed_ids:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_RECEPTION_BINDING_MISMATCH"
+            )
+        consumed_parsed_ids.add(parsed.binding_id)
+        verified_receptions.append(
+            Step11Rc0030VerifiedReceptionBinding(
+                source_reception_opportunity_id=source_id,
+                source_scope=scope,
+                parsed_binding_id=parsed.binding_id,
+                reception_line_ordinal=line_ordinal,
+                move_ordinal=move_ordinal,
+                reception_act=act,
+                target_owner_count=len(targets),
+                supporting_owner_count=len(supports),
+                association_basis=association_basis,
+            )
+        )
+    if consumed_parsed_ids != {
+        row.binding_id for row in witness.reception_bindings
+    }:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_RECEPTION_BINDING_MISMATCH"
+        )
+    result = Step11Rc0030ExperimentVerifiedSurfaceBinding(
+        schema_version=STEP11_RC0030_EXPERIMENT_VERIFIED_BINDING_SCHEMA,
+        parsed_witness_sha256=artifact_sha256(witness_material),
+        base_witness_sha256=artifact_sha256(_witness_material(base_witness)),
+        successor_snapshot_sha256=snapshot_sha,
+        source_authority_sha256=authority_sha,
+        experiment_catalog_sha256=catalog_sha,
+        semantic_bindings=tuple((*parsed_bindings, *reuse_bindings)),
+        reception_bindings=tuple(verified_receptions),
+        reception_binding_count=len(verified_receptions),
+        owner_binding_comparison_count=comparison_count,
+        unique_solution_count=1,
+        semantic_coverage_authorized=False,
+        issue_codes=(),
+        hard_verified=True,
+    )
+    step11_rc0030_experiment_verified_binding_material(result)
+    return result
+
+
+__all__ += [
+    "STEP11_RC0030_BASE_BODY_PARSED_WITNESS_SCHEMA",
+    "STEP11_RC0030_EXPERIMENT_PARSED_WITNESS_SCHEMA",
+    "STEP11_RC0030_EXPERIMENT_VERIFIED_BINDING_SCHEMA",
+    "STEP11_RC0030_VERIFIED_BASE_REUSE_SCHEMA",
+    "Step11Rc0030ExperimentInverseSurfaceError",
+    "Step11Rc0030BaseBodyParsedWitness",
+    "Step11Rc0030ExperimentParsedSurfaceWitness",
+    "Step11Rc0030ExperimentVerifiedSurfaceBinding",
+    "Step11Rc0030ParsedReceptionBinding",
+    "Step11Rc0030ParsedSemanticAtom",
+    "Step11Rc0030VerifiedBaseBodyReuse",
+    "Step11Rc0030VerifiedReceptionBinding",
+    "Step11Rc0030VerifiedSemanticBinding",
+    "match_step11_rc0030_base_body_exact_reuse",
+    "match_step11_rc0030_experiment_surface",
+    "parse_step11_rc0030_base_body_exact_reuse",
+    "parse_step11_rc0030_experiment_surface",
+    "step11_rc0030_experiment_parsed_witness_material",
+    "step11_rc0030_experiment_verified_binding_material",
+    "step11_rc0030_base_body_parsed_witness_material",
+    "step11_rc0030_verified_base_body_reuse_material",
+]
