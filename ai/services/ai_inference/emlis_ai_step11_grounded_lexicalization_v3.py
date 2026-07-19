@@ -2170,3 +2170,533 @@ __all__ += [
     "step11_rc0028_experiment_lexical_atom_specs_material",
     "validate_step11_rc0028_experiment_lexical_atom_specs",
 ]
+
+
+# ---------------------------------------------------------------------------
+# rc0029 experiment-only grounded natural handles (append-only)
+# ---------------------------------------------------------------------------
+
+STEP11_RC0029_NATURAL_HANDLE_SPECS_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11.rc0029_natural_handle_specs.v1"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0029NaturalHandleSpec:
+    source_owner_id: str
+    source_owner_kind: str
+    source_owner_ordinal: int
+    base_source_nucleus_id: str
+    grounded_phrase_id: str
+    grounded_phrase_text: str
+    semantic_head_kind: str
+    semantic_head_text: str
+    role_qualifier_tokens: tuple[str, ...]
+    handle_text: str
+    handle_text_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0029NaturalHandleSpecs:
+    schema_version: str
+    source_base_candidate_id: str
+    source_successor_snapshot_sha256: str
+    source_lexical_atom_specs_sha256: str
+    surface_catalog_sha256: str
+    required_source_owner_ids: tuple[str, ...]
+    handles: tuple[Step11Rc0029NaturalHandleSpec, ...]
+    semantic_coverage_authority: str
+    specs_sha256: str
+    experimental_only: bool = True
+    private_body_full: bool = True
+    shareable: bool = False
+    runtime_connected: bool = False
+
+
+def _step11_rc0029_handle_material(
+    value: Step11Rc0029NaturalHandleSpec,
+) -> dict[str, Any]:
+    return {
+        "source_owner_id": value.source_owner_id,
+        "source_owner_kind": value.source_owner_kind,
+        "source_owner_ordinal": value.source_owner_ordinal,
+        "base_source_nucleus_id": value.base_source_nucleus_id,
+        "grounded_phrase_id": value.grounded_phrase_id,
+        "grounded_phrase_text": value.grounded_phrase_text,
+        "semantic_head_kind": value.semantic_head_kind,
+        "semantic_head_text": value.semantic_head_text,
+        "role_qualifier_tokens": list(value.role_qualifier_tokens),
+        "handle_text": value.handle_text,
+        "handle_text_sha256": value.handle_text_sha256,
+    }
+
+
+def _step11_rc0029_handles_payload(
+    value: Step11Rc0029NaturalHandleSpecs,
+) -> dict[str, Any]:
+    return {
+        "schema_version": value.schema_version,
+        "source_base_candidate_id": value.source_base_candidate_id,
+        "source_successor_snapshot_sha256": (
+            value.source_successor_snapshot_sha256
+        ),
+        "source_lexical_atom_specs_sha256": (
+            value.source_lexical_atom_specs_sha256
+        ),
+        "surface_catalog_sha256": value.surface_catalog_sha256,
+        "required_source_owner_ids": list(value.required_source_owner_ids),
+        "handles": [
+            _step11_rc0029_handle_material(row) for row in value.handles
+        ],
+        "semantic_coverage_authority": value.semantic_coverage_authority,
+        "experimental_only": value.experimental_only,
+        "private_body_full": value.private_body_full,
+        "shareable": value.shareable,
+        "runtime_connected": value.runtime_connected,
+    }
+
+
+def _build_step11_rc0029_natural_handle_specs(
+    base_candidate: Any,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+    validate_output: bool,
+) -> Step11Rc0029NaturalHandleSpecs:
+    successor_owner = __import__(
+        "emlis_ai_grounded_lexical_role_experiment_snapshot_successor_v3",
+        fromlist=(
+            "GroundedLexicalRoleExperimentSnapshotSuccessor",
+            "validate_grounded_lexical_role_experiment_snapshot_successor",
+        ),
+    )
+    surface_owner = __import__(
+        "emlis_ai_step11_natural_surface_v3",
+        fromlist=("Step11NaturalSurfaceCandidate",),
+    )
+    catalog_owner = __import__(
+        "emlis_ai_step11_rc0029_experiment_surface_catalog_v3",
+        fromlist=(
+            "STEP11_RC0029_EXPERIMENT_SURFACE_CATALOG",
+            "STEP11_RC0029_EXPERIMENT_SURFACE_CATALOG_SHA256",
+            "validate_step11_rc0029_experiment_surface_catalog",
+        ),
+    )
+    expected_successor_type = (
+        successor_owner.GroundedLexicalRoleExperimentSnapshotSuccessor
+    )
+    if type(base_candidate) is not surface_owner.Step11NaturalSurfaceCandidate:
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0029_BASE_CANDIDATE_INVALID"
+        )
+    if (
+        base_candidate.candidate_version_id != "nls_v3_rc_0027"
+        or type(base_candidate.final_utf8_bytes) is not bytes
+        or hashlib.sha256(base_candidate.final_utf8_bytes).hexdigest()
+        != base_candidate.rendered_surface.sha256
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0029_BASE_CANDIDATE_INVALID"
+        )
+    if type(successor_snapshot) is not expected_successor_type:
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0029_SUCCESSOR_SNAPSHOT_INVALID"
+        )
+    if successor_owner.validate_grounded_lexical_role_experiment_snapshot_successor(
+        successor_snapshot
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0029_SUCCESSOR_SNAPSHOT_INVALID"
+        )
+    lexical_issues = validate_step11_rc0028_experiment_lexical_atom_specs(
+        lexical_atom_specs,
+        successor_snapshot=successor_snapshot,
+    )
+    if lexical_issues:
+        raise Step11GroundedLexicalizationError(lexical_issues[0])
+    catalog = catalog_owner.STEP11_RC0029_EXPERIMENT_SURFACE_CATALOG
+    if catalog_owner.validate_step11_rc0029_experiment_surface_catalog(catalog):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0029_CATALOG_INVALID"
+        )
+
+    owner_by_id = {
+        row.source_owner_id: row for row in lexical_atom_specs.owner_bindings
+    }
+    owner_by_ordinal = {
+        row.owner_ordinal: row for row in lexical_atom_specs.owner_bindings
+    }
+    if (
+        len(owner_by_id) != len(lexical_atom_specs.owner_bindings)
+        or len(owner_by_ordinal) != len(lexical_atom_specs.owner_bindings)
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0029_SOURCE_OWNER_INVALID"
+        )
+    required: set[str] = set()
+    qualifiers: dict[str, set[str]] = {}
+
+    def add(owner_id: str, token: str | None = None) -> None:
+        if owner_id not in owner_by_id:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0029_SOURCE_OWNER_INVALID"
+            )
+        required.add(owner_id)
+        if token:
+            qualifiers.setdefault(owner_id, set()).add(token)
+
+    role_tokens = catalog["role_position_surface_tokens"]
+    for atom in lexical_atom_specs.construction_atoms:
+        token = role_tokens.get(
+            atom.lexical_role_kind + ":" + atom.construction_position
+        )
+        if type(token) is not str or not token:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0029_CONSTRUCTION_ROLE_INVALID"
+            )
+        for ordinal in atom.target_owner_ordinals:
+            owner = owner_by_ordinal.get(ordinal)
+            if owner is None:
+                raise Step11GroundedLexicalizationError(
+                    "STEP11_RC0029_SOURCE_OWNER_INVALID"
+                )
+            add(owner.source_owner_id, token)
+    topology_tokens = catalog["owner_role_surface_tokens"]
+    for atom in lexical_atom_specs.relation_endpoint_atoms:
+        add(
+            atom.source_owner_id,
+            topology_tokens["relation_" + atom.relation_endpoint_role],
+        )
+    for atom in lexical_atom_specs.semantic_link_atoms:
+        add(atom.from_semantic_unit_id, topology_tokens["semantic_link_from"])
+        add(atom.to_semantic_unit_id, topology_tokens["semantic_link_to"])
+    for atom in lexical_atom_specs.explicit_unknown_atoms:
+        for _kind, owner_id, _ordinal in atom.affected_source_owners:
+            add(owner_id, topology_tokens["explicit_unknown"])
+
+    nuclei = tuple(successor_snapshot.base_snapshot.nuclei)
+    nucleus_by_actual = {str(row.actual_source_id): row for row in nuclei}
+    nucleus_by_source = {str(row.source_id): row for row in nuclei}
+    actual_by_source = {
+        str(row.source_id): str(row.actual_source_id) for row in nuclei
+    }
+    if (
+        len(nucleus_by_actual) != len(nuclei)
+        or len(nucleus_by_source) != len(nuclei)
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0029_BASE_NUCLEUS_INVALID"
+        )
+    mapped_reception_ids = {
+        str(opportunity_id)
+        for binding in base_candidate.surface_ast.reception_antecedent_bindings
+        for opportunity_id in binding.source_reception_opportunity_ids
+    }
+    required_reception_opportunities = tuple(
+        row
+        for row in successor_snapshot.base_snapshot.reception_opportunities
+        if row.retention == "required" or row.safety_required is True
+    )
+    for opportunity in required_reception_opportunities:
+        target_token = (
+            topology_tokens["reception_antecedent"]
+            if str(opportunity.source_id) in mapped_reception_ids
+            else topology_tokens["reception_target"]
+        )
+        for source_id in opportunity.target_nucleus_ids:
+            actual_id = actual_by_source.get(str(source_id))
+            if actual_id is None:
+                raise Step11GroundedLexicalizationError(
+                    "STEP11_RC0029_RECEPTION_TARGET_UNRESOLVED"
+                )
+            add(actual_id, target_token)
+        for source_id in opportunity.support_nucleus_ids:
+            actual_id = actual_by_source.get(str(source_id))
+            if actual_id is None:
+                raise Step11GroundedLexicalizationError(
+                    "STEP11_RC0029_RECEPTION_SUPPORT_UNRESOLVED"
+                )
+            add(actual_id, topology_tokens["reception_support"])
+    if not required:
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0029_REQUIRED_OWNER_SET_EMPTY"
+        )
+    parent_by_semantic: dict[str, set[str]] = {}
+    for row in lexical_atom_specs.participation_bindings:
+        if row.target_owner_kind == "semantic_unit":
+            parent_by_semantic.setdefault(row.target_owner_id, set()).add(
+                row.parent_nucleus_id
+            )
+    phrase_specs = tuple(base_candidate.surface_ast.grounded_phrase_specs)
+    base_text = base_candidate.final_utf8_bytes.decode("utf-8", errors="strict")
+    prepared: list[
+        tuple[Any, str, Any, str, str, str, tuple[str, ...]]
+    ] = []
+    qualifier_order = tuple(
+        dict.fromkeys(
+            (
+                *catalog["role_position_surface_tokens"].values(),
+                *catalog["owner_role_surface_tokens"].values(),
+            )
+        )
+    )
+    qualifier_rank = {
+        token: index for index, token in enumerate(qualifier_order)
+    }
+    head_tokens = catalog["owner_kind_surface_tokens"]
+    for owner in (
+        row
+        for row in lexical_atom_specs.owner_bindings
+        if row.source_owner_id in required
+    ):
+        # Direct actual-nucleus ownership always wins.  A construction-only
+        # semantic unit may use its one participation parent only when there
+        # is no direct actual nucleus for that owner.
+        nucleus = nucleus_by_actual.get(owner.source_owner_id)
+        if nucleus is None:
+            parents = parent_by_semantic.get(owner.source_owner_id, set())
+            if len(parents) != 1:
+                raise Step11GroundedLexicalizationError(
+                    "STEP11_RC0029_HANDLE_OWNER_AMBIGUOUS"
+                )
+            parent_id = next(iter(parents))
+            nucleus = nucleus_by_actual.get(parent_id)
+            if nucleus is None:
+                nucleus = nucleus_by_source.get(parent_id)
+        if nucleus is None:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0029_HANDLE_OWNER_UNRESOLVED"
+            )
+        source_nucleus_id = str(nucleus.source_id)
+        semantic_head_kind = str(nucleus.kind)
+        semantic_head_text = head_tokens.get(semantic_head_kind)
+        if type(semantic_head_text) is not str or not semantic_head_text:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0029_HANDLE_SEMANTIC_HEAD_UNRESOLVED"
+            )
+        matching = tuple(
+            row
+            for row in phrase_specs
+            if source_nucleus_id in row.owner_nucleus_ids
+        )
+        if len(matching) != 1:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0029_HANDLE_PHRASE_UNRESOLVED"
+            )
+        phrase = matching[0]
+        phrase_text = str(phrase.phrase_text)
+        role_qualifiers = tuple(
+            sorted(
+                qualifiers.get(owner.source_owner_id, ()),
+                key=lambda token: (qualifier_rank.get(token, 10_000), token),
+            )
+        )
+        if phrase_text not in base_text:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0029_HANDLE_TEXT_INVALID"
+            )
+        prepared.append(
+            (
+                owner,
+                source_nucleus_id,
+                phrase,
+                phrase_text,
+                semantic_head_kind,
+                semantic_head_text,
+                role_qualifiers,
+            )
+        )
+
+    selected_qualifiers: dict[str, tuple[str, ...]] = {
+        owner.source_owner_id: () for owner, *_rest in prepared
+    }
+    by_head: dict[
+        str,
+        list[tuple[Any, str, Any, str, str, str, tuple[str, ...]]],
+    ] = {}
+    for row in prepared:
+        by_head.setdefault(row[5], []).append(row)
+    for rows in by_head.values():
+        if len(rows) == 1:
+            continue
+        authorized_by_token: dict[str, set[str]] = {}
+        for row in rows:
+            for token in row[6]:
+                authorized_by_token.setdefault(token, set()).add(
+                    row[0].source_owner_id
+                )
+        for row in rows:
+            owner_id = row[0].source_owner_id
+            unique_tokens = tuple(
+                token
+                for token in row[6]
+                if authorized_by_token.get(token) == {owner_id}
+            )
+            if not unique_tokens:
+                raise Step11GroundedLexicalizationError(
+                    "STEP11_RC0029_HANDLE_COLLISION"
+                )
+            selected_qualifiers[owner_id] = (unique_tokens[0],)
+
+    handles: list[Step11Rc0029NaturalHandleSpec] = []
+    for (
+        owner,
+        source_nucleus_id,
+        phrase,
+        phrase_text,
+        semantic_head_kind,
+        semantic_head_text,
+        _available,
+    ) in prepared:
+        role_qualifiers = selected_qualifiers[owner.source_owner_id]
+        handle_text = (
+            semantic_head_text
+            if not role_qualifiers
+            else role_qualifiers[0] + semantic_head_text
+        )
+        if (
+            not handle_text
+            or len(handle_text) > 32
+            or any(marker in handle_text for marker in ("\r", "\n", "「", "」"))
+            or unicodedata.normalize("NFC", handle_text) != handle_text
+        ):
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0029_HANDLE_TEXT_INVALID"
+            )
+        handles.append(
+            Step11Rc0029NaturalHandleSpec(
+                source_owner_id=owner.source_owner_id,
+                source_owner_kind=owner.source_owner_kind,
+                source_owner_ordinal=owner.owner_ordinal,
+                base_source_nucleus_id=source_nucleus_id,
+                grounded_phrase_id=str(phrase.grounded_phrase_id),
+                grounded_phrase_text=phrase_text,
+                semantic_head_kind=semantic_head_kind,
+                semantic_head_text=semantic_head_text,
+                role_qualifier_tokens=role_qualifiers,
+                handle_text=handle_text,
+                handle_text_sha256=hashlib.sha256(
+                    handle_text.encode("utf-8")
+                ).hexdigest(),
+            )
+        )
+    handles.sort(
+        key=lambda row: (
+            row.semantic_head_text,
+            row.role_qualifier_tokens,
+            row.handle_text,
+        )
+    )
+    if len({row.handle_text for row in handles}) != len(handles):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0029_HANDLE_COLLISION"
+        )
+    provisional = Step11Rc0029NaturalHandleSpecs(
+        schema_version=STEP11_RC0029_NATURAL_HANDLE_SPECS_SCHEMA,
+        source_base_candidate_id=base_candidate.candidate_id,
+        source_successor_snapshot_sha256=(
+            successor_snapshot.experiment_snapshot_sha256
+        ),
+        source_lexical_atom_specs_sha256=lexical_atom_specs.specs_sha256,
+        surface_catalog_sha256=(
+            catalog_owner.STEP11_RC0029_EXPERIMENT_SURFACE_CATALOG_SHA256
+        ),
+        required_source_owner_ids=tuple(sorted(required)),
+        handles=tuple(handles),
+        semantic_coverage_authority="none",
+        specs_sha256="0" * 64,
+    )
+    value = Step11Rc0029NaturalHandleSpecs(
+        **{
+            **_step11_rc0029_handles_payload(provisional),
+            "required_source_owner_ids": provisional.required_source_owner_ids,
+            "handles": provisional.handles,
+            "specs_sha256": artifact_sha256(
+                _step11_rc0029_handles_payload(provisional)
+            ),
+        }
+    )
+    if validate_output:
+        issues = validate_step11_rc0029_natural_handle_specs(
+            value,
+            base_candidate=base_candidate,
+            successor_snapshot=successor_snapshot,
+            lexical_atom_specs=lexical_atom_specs,
+        )
+        if issues:
+            raise Step11GroundedLexicalizationError(issues[0])
+    return value
+
+
+def build_step11_rc0029_natural_handle_specs(
+    base_candidate: Any,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> Step11Rc0029NaturalHandleSpecs:
+    return _build_step11_rc0029_natural_handle_specs(
+        base_candidate,
+        successor_snapshot=successor_snapshot,
+        lexical_atom_specs=lexical_atom_specs,
+        validate_output=True,
+    )
+
+
+def validate_step11_rc0029_natural_handle_specs(
+    value: Any,
+    *,
+    base_candidate: Any,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> tuple[str, ...]:
+    if type(value) is not Step11Rc0029NaturalHandleSpecs:
+        return ("STEP11_RC0029_HANDLE_SPECS_TYPE_INVALID",)
+    issues: set[str] = set()
+    try:
+        expected = _build_step11_rc0029_natural_handle_specs(
+            base_candidate,
+            successor_snapshot=successor_snapshot,
+            lexical_atom_specs=lexical_atom_specs,
+            validate_output=False,
+        )
+    except (AttributeError, KeyError, TypeError, UnicodeError, ValueError):
+        return ("STEP11_RC0029_HANDLE_SPECS_REVALIDATION_FAILED",)
+    if value != expected:
+        issues.add("STEP11_RC0029_HANDLE_SPECS_SOURCE_MISMATCH")
+    if value.semantic_coverage_authority != "none":
+        issues.add("STEP11_RC0029_SEMANTIC_COVERAGE_SELF_CLAIM")
+    if (
+        value.experimental_only is not True
+        or value.private_body_full is not True
+        or value.shareable is not False
+        or value.runtime_connected is not False
+    ):
+        issues.add("STEP11_RC0029_RUNTIME_BOUNDARY_INVALID")
+    if value.specs_sha256 != artifact_sha256(
+        _step11_rc0029_handles_payload(value)
+    ):
+        issues.add("STEP11_RC0029_HANDLE_SPECS_HASH_MISMATCH")
+    return tuple(sorted(issues))
+
+
+def step11_rc0029_natural_handle_specs_material(
+    value: Step11Rc0029NaturalHandleSpecs,
+) -> dict[str, Any]:
+    if type(value) is not Step11Rc0029NaturalHandleSpecs:
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0029_HANDLE_SPECS_TYPE_INVALID"
+        )
+    return {
+        **_step11_rc0029_handles_payload(value),
+        "specs_sha256": value.specs_sha256,
+    }
+
+
+__all__ += [
+    "STEP11_RC0029_NATURAL_HANDLE_SPECS_SCHEMA",
+    "Step11Rc0029NaturalHandleSpec",
+    "Step11Rc0029NaturalHandleSpecs",
+    "build_step11_rc0029_natural_handle_specs",
+    "step11_rc0029_natural_handle_specs_material",
+    "validate_step11_rc0029_natural_handle_specs",
+]

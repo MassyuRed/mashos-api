@@ -2836,3 +2836,691 @@ __all__ += [
     "step11_rc0028_experiment_gate_result_material",
     "step11_rc0028_experiment_selection_result_material",
 ]
+
+
+# ---------------------------------------------------------------------------
+# rc0029 runtime-disconnected common-Surface repair Hard Gate (append-only)
+#
+# rc0027 and rc0028 entry points above are frozen predecessors.  Project
+# imports for this successor remain local so importing the default hard gate
+# cannot connect the experiment catalog/runtime to a shared or public route.
+
+STEP11_RC0029_EXPERIMENT_HARD_GATE_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11_rc0029_experiment_hard_gate.v1"
+)
+STEP11_RC0029_EXPERIMENT_SELECTION_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11_rc0029_experiment_selection.v1"
+)
+STEP11_RC0029_EXPERIMENT_CANDIDATE_LIMIT = 12
+STEP11_RC0029_EXPERIMENT_REPLAN_LIMIT = 1
+
+_STEP11_RC0029_CLOSED_CODE_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,127}$")
+
+
+class Step11Rc0029ExperimentGateError(ValueError):
+    """Fail closed with one body-free rc0029 machine code."""
+
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)
+
+
+@_rc0028_dataclass(frozen=True, slots=True, repr=False)
+class Step11Rc0029ExperimentGateResult:
+    schema_version: str
+    candidate_id: str
+    candidate_version_id: str
+    final_bytes_sha256: str | None
+    parsed_witness_sha256: str | None
+    verified_binding_sha256: str | None
+    successor_snapshot_sha256: str | None
+    experiment_catalog_sha256: str | None
+    base_gate_failure_codes: tuple[str, ...]
+    failure_codes: tuple[str, ...]
+    hard_pass: bool
+    semantic_coverage_authorized: bool
+    replan_count: int | None
+    experimental_only: bool = True
+    runtime_connected: bool = False
+
+
+@_rc0028_dataclass(frozen=True, slots=True, repr=False)
+class Step11Rc0029ExperimentSelectionResult:
+    schema_version: str
+    candidate_version_id: str
+    evaluated_candidate_ids: tuple[str, ...]
+    gate_results: tuple[Step11Rc0029ExperimentGateResult, ...]
+    selected_candidate_id: str | None
+    selected_candidate: Any | None
+    status: str
+    bounded_candidate_limit: int
+    bounded_replan_limit: int
+    recovery_attempted: bool
+    soft_rescue_used: bool
+    experimental_only: bool = True
+    runtime_connected: bool = False
+
+
+def _step11_rc0029_closed_code(value: Any, fallback: str) -> str:
+    if (
+        type(value) is str
+        and _STEP11_RC0029_CLOSED_CODE_RE.fullmatch(value) is not None
+        and (
+            value.startswith("STEP11_RC0029_")
+            or value.startswith("S11_GATE")
+        )
+    ):
+        return value
+    return fallback
+
+
+def _step11_rc0029_surface_contracts() -> tuple[Any, ...]:
+    from emlis_ai_step11_natural_surface_v3 import (
+        STEP11_RC0029_EXPERIMENT_CANDIDATE_VERSION_ID,
+        Step11Rc0029ExperimentSurfaceCandidate,
+        render_step11_rc0029_experiment_surface,
+        validate_step11_rc0029_experiment_surface_candidate,
+    )
+
+    return (
+        STEP11_RC0029_EXPERIMENT_CANDIDATE_VERSION_ID,
+        Step11Rc0029ExperimentSurfaceCandidate,
+        render_step11_rc0029_experiment_surface,
+        validate_step11_rc0029_experiment_surface_candidate,
+    )
+
+
+def _step11_rc0029_inverse_contracts() -> tuple[Any, ...]:
+    from emlis_ai_step11_natural_surface_matcher_v3 import (
+        match_step11_rc0029_experiment_surface,
+        parse_step11_rc0029_experiment_surface,
+        step11_rc0029_experiment_parsed_witness_material,
+        step11_rc0029_experiment_verified_binding_material,
+    )
+
+    return (
+        parse_step11_rc0029_experiment_surface,
+        match_step11_rc0029_experiment_surface,
+        step11_rc0029_experiment_parsed_witness_material,
+        step11_rc0029_experiment_verified_binding_material,
+    )
+
+
+def _step11_rc0029_gate_result_material(
+    value: Step11Rc0029ExperimentGateResult,
+) -> dict[str, Any]:
+    if type(value) is not Step11Rc0029ExperimentGateResult:
+        raise Step11Rc0029ExperimentGateError(
+            "STEP11_RC0029_GATE_RESULT_TYPE_INVALID"
+        )
+    return {
+        "schema_version": value.schema_version,
+        "candidate_id": value.candidate_id,
+        "candidate_version_id": value.candidate_version_id,
+        "final_bytes_sha256": value.final_bytes_sha256,
+        "parsed_witness_sha256": value.parsed_witness_sha256,
+        "verified_binding_sha256": value.verified_binding_sha256,
+        "successor_snapshot_sha256": value.successor_snapshot_sha256,
+        "experiment_catalog_sha256": value.experiment_catalog_sha256,
+        "base_gate_failure_codes": list(value.base_gate_failure_codes),
+        "failure_codes": list(value.failure_codes),
+        "hard_pass": value.hard_pass,
+        "semantic_coverage_authorized": value.semantic_coverage_authorized,
+        "replan_count": value.replan_count,
+        "experimental_only": value.experimental_only,
+        "runtime_connected": value.runtime_connected,
+    }
+
+
+def step11_rc0029_experiment_gate_result_material(
+    value: Step11Rc0029ExperimentGateResult,
+) -> dict[str, Any]:
+    return _step11_rc0029_gate_result_material(value)
+
+
+def step11_rc0029_experiment_selection_result_material(
+    value: Step11Rc0029ExperimentSelectionResult,
+) -> dict[str, Any]:
+    if type(value) is not Step11Rc0029ExperimentSelectionResult:
+        raise Step11Rc0029ExperimentGateError(
+            "STEP11_RC0029_SELECTION_RESULT_TYPE_INVALID"
+        )
+    return {
+        "schema_version": value.schema_version,
+        "candidate_version_id": value.candidate_version_id,
+        "evaluated_candidate_ids": list(value.evaluated_candidate_ids),
+        "gate_results": [
+            _step11_rc0029_gate_result_material(row)
+            for row in value.gate_results
+        ],
+        "selected_candidate_id": value.selected_candidate_id,
+        "status": value.status,
+        "bounded_candidate_limit": value.bounded_candidate_limit,
+        "bounded_replan_limit": value.bounded_replan_limit,
+        "recovery_attempted": value.recovery_attempted,
+        "soft_rescue_used": value.soft_rescue_used,
+        "experimental_only": value.experimental_only,
+        "runtime_connected": value.runtime_connected,
+    }
+
+
+def _step11_rc0029_result(
+    *,
+    candidate_id: str,
+    candidate_version_id: str,
+    final_bytes_sha256: str | None,
+    parsed_witness_sha256: str | None,
+    verified_binding_sha256: str | None,
+    successor_snapshot_sha256: str | None,
+    experiment_catalog_sha256: str | None,
+    base_gate_failure_codes: Sequence[str],
+    failure_codes: Sequence[str],
+    semantic_coverage_authorized: bool,
+    replan_count: int | None,
+) -> Step11Rc0029ExperimentGateResult:
+    base_codes = tuple(
+        sorted(
+            {
+                _step11_rc0029_closed_code(
+                    value, "STEP11_RC0029_BASE_GATE_REJECTED"
+                )
+                for value in base_gate_failure_codes
+            }
+        )
+    )
+    codes = tuple(
+        sorted(
+            {
+                _step11_rc0029_closed_code(
+                    value, "STEP11_RC0029_UNCLOSED_FAILURE_CODE"
+                )
+                for value in (*failure_codes, *base_codes)
+            }
+        )
+    )
+    return Step11Rc0029ExperimentGateResult(
+        schema_version=STEP11_RC0029_EXPERIMENT_HARD_GATE_SCHEMA,
+        candidate_id=candidate_id,
+        candidate_version_id=candidate_version_id,
+        final_bytes_sha256=final_bytes_sha256,
+        parsed_witness_sha256=parsed_witness_sha256,
+        verified_binding_sha256=verified_binding_sha256,
+        successor_snapshot_sha256=successor_snapshot_sha256,
+        experiment_catalog_sha256=experiment_catalog_sha256,
+        base_gate_failure_codes=base_codes,
+        failure_codes=codes,
+        hard_pass=not codes,
+        semantic_coverage_authorized=semantic_coverage_authorized,
+        replan_count=replan_count,
+    )
+
+
+def evaluate_step11_rc0029_experiment_candidate(
+    candidate: Any,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+    inventory_result: SemanticObligationInventoryResult,
+    content_plan: Mapping[str, Any],
+    current_input: Mapping[str, Any],
+) -> Step11Rc0029ExperimentGateResult:
+    """Join forward, final-byte inverse, and source commitments fail closed."""
+
+    candidate_id = ""
+    candidate_version_id = ""
+    final_bytes_sha256: str | None = None
+    parsed_witness_sha256: str | None = None
+    verified_binding_sha256: str | None = None
+    successor_snapshot_sha256 = getattr(
+        successor_snapshot, "experiment_snapshot_sha256", None
+    )
+    if type(successor_snapshot_sha256) is not str:
+        successor_snapshot_sha256 = None
+    experiment_catalog_sha256: str | None = None
+    semantic_coverage_authorized = False
+    replan_count: int | None = None
+    base_gate_failure_codes: tuple[str, ...] = ()
+    failure_codes: list[str] = []
+
+    try:
+        expected_version, candidate_type, render_surface, validate_candidate = (
+            _step11_rc0029_surface_contracts()
+        )
+    except Exception:
+        failure_codes.append("STEP11_RC0029_FORWARD_OWNER_UNAVAILABLE")
+        return _step11_rc0029_result(
+            candidate_id=candidate_id,
+            candidate_version_id=candidate_version_id,
+            final_bytes_sha256=None,
+            parsed_witness_sha256=None,
+            verified_binding_sha256=None,
+            successor_snapshot_sha256=successor_snapshot_sha256,
+            experiment_catalog_sha256=None,
+            base_gate_failure_codes=(),
+            failure_codes=failure_codes,
+            semantic_coverage_authorized=False,
+            replan_count=None,
+        )
+    if type(candidate) is not candidate_type:
+        failure_codes.append("STEP11_RC0029_CANDIDATE_TYPE_INVALID")
+        return _step11_rc0029_result(
+            candidate_id="",
+            candidate_version_id="",
+            final_bytes_sha256=None,
+            parsed_witness_sha256=None,
+            verified_binding_sha256=None,
+            successor_snapshot_sha256=successor_snapshot_sha256,
+            experiment_catalog_sha256=None,
+            base_gate_failure_codes=(),
+            failure_codes=failure_codes,
+            semantic_coverage_authorized=False,
+            replan_count=None,
+        )
+
+    candidate_id = candidate.candidate_id if type(candidate.candidate_id) is str else ""
+    candidate_version_id = (
+        candidate.candidate_version_id
+        if type(candidate.candidate_version_id) is str
+        else ""
+    )
+    experiment_catalog_sha256 = (
+        candidate.experiment_catalog_sha256
+        if type(candidate.experiment_catalog_sha256) is str
+        else None
+    )
+    semantic_coverage_authorized = (
+        candidate.semantic_coverage_authorized
+        if type(candidate.semantic_coverage_authorized) is bool
+        else True
+    )
+    replan_count = (
+        candidate.replan_count
+        if type(candidate.replan_count) is int
+        and type(candidate.replan_count) is not bool
+        else None
+    )
+    body = getattr(candidate, "final_utf8_bytes", None)
+    if type(body) is bytes:
+        final_bytes_sha256 = hashlib.sha256(body).hexdigest()
+        base_body = getattr(candidate.base_candidate, "final_utf8_bytes", None)
+        structural_rows = tuple(
+            getattr(candidate, name, None)
+            for name in (
+                "construction_atoms",
+                "relation_atoms",
+                "semantic_link_atoms",
+                "explicit_unknown_atoms",
+            )
+        )
+        if (
+            type(base_body) is bytes
+            and body == base_body
+            and any(type(rows) is tuple and rows for rows in structural_rows)
+        ):
+            failure_codes.append("STEP11_RC0029_REQUIRED_ATOM_MISSING")
+    else:
+        failure_codes.append("STEP11_RC0029_FINAL_BYTES_COMMITMENT_MISMATCH")
+
+    if not candidate_id:
+        failure_codes.append("STEP11_RC0029_CANDIDATE_ID_INVALID")
+    if candidate_version_id != expected_version:
+        failure_codes.append("STEP11_RC0029_ARTIFACT_COMMITMENT_MISMATCH")
+    if (
+        semantic_coverage_authorized is not False
+        or getattr(successor_snapshot, "semantic_coverage_authorized", None)
+        is not False
+    ):
+        failure_codes.append("STEP11_RC0029_SEMANTIC_COVERAGE_SELF_CLAIM")
+    if replan_count is None or not 0 <= replan_count <= 1:
+        failure_codes.append("STEP11_RC0029_REPLAN_BOUND_EXCEEDED")
+    if (
+        getattr(candidate, "experimental_only", None) is not True
+        or getattr(candidate, "runtime_connected", None) is not False
+        or getattr(successor_snapshot, "experimental_only", None) is not True
+        or getattr(successor_snapshot, "runtime_connected", None) is not False
+    ):
+        failure_codes.append("STEP11_RC0029_RUNTIME_BOUNDARY_INVALID")
+    if (
+        successor_snapshot_sha256 is None
+        or getattr(candidate, "successor_snapshot_sha256", None)
+        != successor_snapshot_sha256
+    ):
+        failure_codes.append("STEP11_RC0029_SOURCE_COMMITMENT_MISMATCH")
+
+    try:
+        forward_issues = validate_candidate(
+            candidate,
+            successor_snapshot=successor_snapshot,
+            lexical_atom_specs=lexical_atom_specs,
+        )
+    except Exception:
+        forward_issues = ("STEP11_RC0029_CANDIDATE_REVALIDATION_FAILED",)
+    if type(forward_issues) not in {tuple, list}:
+        forward_issues = ("STEP11_RC0029_CANDIDATE_REVALIDATION_FAILED",)
+    failure_codes.extend(
+        _step11_rc0029_closed_code(
+            value, "STEP11_RC0029_CANDIDATE_REVALIDATION_FAILED"
+        )
+        for value in forward_issues
+    )
+
+    # Canonical forward rerender must be identical.  The gate supplies only
+    # typed candidate fields; inverse output never participates in rendering.
+    try:
+        rerendered = render_surface(
+            candidate.base_candidate.final_utf8_bytes,
+            natural_handle_specs=candidate.natural_handle_specs,
+            construction_atoms=candidate.construction_atoms,
+            relation_atoms=candidate.relation_atoms,
+            semantic_link_atoms=candidate.semantic_link_atoms,
+            explicit_unknown_atoms=candidate.explicit_unknown_atoms,
+            fused_structure_groups=candidate.fused_structure_groups,
+            reception_bindings=candidate.reception_bindings,
+        )
+        rendered = getattr(candidate, "rendered_surface", None)
+        if (
+            rerendered != rendered
+            or getattr(rerendered, "utf8_bytes", None) != body
+            or getattr(rerendered, "sha256", None) != final_bytes_sha256
+        ):
+            failure_codes.append(
+                "STEP11_RC0029_FINAL_BYTES_COMMITMENT_MISMATCH"
+            )
+    except Exception:
+        failure_codes.append("STEP11_RC0029_FINAL_BYTES_COMMITMENT_MISMATCH")
+
+    try:
+        base_result = evaluate_step11_natural_surface_candidate(
+            candidate.base_candidate,
+            inventory_result=inventory_result,
+            content_plan=content_plan,
+            current_input=current_input,
+        )
+        base_gate_failure_codes = tuple(base_result.failure_codes)
+        if not base_result.hard_pass:
+            failure_codes.append("STEP11_RC0029_BASE_GATE_REJECTED")
+    except Exception:
+        failure_codes.append("STEP11_RC0029_BASE_GATE_EVALUATION_FAILED")
+
+    parsed_witness = None
+    verified_binding = None
+    try:
+        parse_surface, match_surface, parsed_material, binding_material = (
+            _step11_rc0029_inverse_contracts()
+        )
+        if type(body) is not bytes:
+            raise Step11Rc0029ExperimentGateError(
+                "STEP11_RC0029_FINAL_BYTES_COMMITMENT_MISMATCH"
+            )
+        parsed_witness = parse_surface(body)
+        parsed_witness_sha256 = artifact_sha256(
+            parsed_material(parsed_witness)
+        )
+    except Exception as error:
+        failure_codes.append(
+            _step11_rc0029_closed_code(
+                getattr(error, "code", None), "STEP11_RC0029_PARSE_FAILED"
+            )
+        )
+    if parsed_witness is not None:
+        if getattr(parsed_witness, "body_sha256", None) != final_bytes_sha256:
+            failure_codes.append(
+                "STEP11_RC0029_FINAL_BYTES_COMMITMENT_MISMATCH"
+            )
+        if (
+            getattr(parsed_witness, "experiment_catalog_sha256", None)
+            != experiment_catalog_sha256
+        ):
+            failure_codes.append("STEP11_RC0029_CATALOG_COMMITMENT_MISMATCH")
+        rendered = getattr(candidate, "rendered_surface", None)
+        structural_rows = tuple(
+            getattr(candidate, name, None)
+            for name in (
+                "construction_atoms",
+                "relation_atoms",
+                "semantic_link_atoms",
+                "explicit_unknown_atoms",
+            )
+        )
+        if any(type(rows) is not tuple for rows in structural_rows):
+            failure_codes.append("STEP11_RC0029_REQUIRED_ATOM_MISSING")
+        else:
+            structural_atom_count = sum(len(rows) for rows in structural_rows)
+            nonempty_family_count = sum(bool(rows) for rows in structural_rows)
+            parsed_item_count = getattr(
+                parsed_witness, "fused_structure_item_count", None
+            )
+            rendered_item_count = getattr(
+                rendered, "fused_structure_item_count", None
+            )
+            if (
+                parsed_item_count != nonempty_family_count
+                or rendered_item_count != nonempty_family_count
+                or (
+                    structural_atom_count > nonempty_family_count
+                    and not rendered_item_count < structural_atom_count
+                )
+            ):
+                failure_codes.append(
+                    "STEP11_RC0029_STRUCTURE_DEPTH_EXCEEDED"
+                )
+        candidate_groups = getattr(candidate, "fused_structure_groups", None)
+        parsed_group_count = getattr(
+            parsed_witness, "fused_structure_group_count", None
+        )
+        rendered_group_count = getattr(
+            rendered, "fused_structure_group_count", None
+        )
+        if (
+            type(candidate_groups) is not tuple
+            or parsed_group_count != len(candidate_groups)
+            or rendered_group_count != len(candidate_groups)
+        ):
+            failure_codes.append(
+                "STEP11_RC0029_FUSED_GROUP_COMMITMENT_MISMATCH"
+            )
+        candidate_receptions = getattr(candidate, "reception_bindings", None)
+        parsed_receptions = getattr(
+            parsed_witness, "reception_bindings", None
+        )
+        if (
+            type(candidate_receptions) is not tuple
+            or type(parsed_receptions) is not tuple
+            or len(parsed_receptions) != len(candidate_receptions)
+            or getattr(rendered, "reception_binding_count", None)
+            != len(candidate_receptions)
+        ):
+            failure_codes.append(
+                "STEP11_RC0029_RECEPTION_CARDINALITY_MISMATCH"
+            )
+        if (
+            getattr(parsed_witness, "added_observation_line_count", None) != 0
+            or getattr(rendered, "added_observation_line_count", None) != 0
+        ):
+            failure_codes.append("STEP11_RC0029_SURFACE_LAYOUT_INVALID")
+        try:
+            verified_binding = match_surface(
+                parsed_witness, successor_snapshot=successor_snapshot
+            )
+            verified_binding_sha256 = artifact_sha256(
+                binding_material(verified_binding)
+            )
+        except Exception as error:
+            failure_codes.append(
+                _step11_rc0029_closed_code(
+                    getattr(error, "code", None),
+                    "STEP11_RC0029_MATCH_FAILED",
+                )
+            )
+    if verified_binding is not None:
+        failure_codes.extend(
+            _step11_rc0029_closed_code(
+                code, "STEP11_RC0029_BINDING_NOT_VERIFIED"
+            )
+            for code in getattr(verified_binding, "issue_codes", ())
+        )
+        if getattr(verified_binding, "hard_verified", None) is not True:
+            failure_codes.append("STEP11_RC0029_BINDING_NOT_VERIFIED")
+        for actual, expected, code in (
+            (
+                getattr(verified_binding, "parsed_witness_sha256", None),
+                parsed_witness_sha256,
+                "STEP11_RC0029_ARTIFACT_COMMITMENT_MISMATCH",
+            ),
+            (
+                getattr(verified_binding, "successor_snapshot_sha256", None),
+                successor_snapshot_sha256,
+                "STEP11_RC0029_SOURCE_COMMITMENT_MISMATCH",
+            ),
+            (
+                getattr(verified_binding, "experiment_catalog_sha256", None),
+                experiment_catalog_sha256,
+                "STEP11_RC0029_CATALOG_COMMITMENT_MISMATCH",
+            ),
+        ):
+            if actual != expected:
+                failure_codes.append(code)
+
+    lexical_specs_sha256 = getattr(lexical_atom_specs, "specs_sha256", None)
+    if (
+        type(lexical_specs_sha256) is str
+        and getattr(candidate, "lexical_atom_specs_sha256", None)
+        != lexical_specs_sha256
+    ):
+        failure_codes.append("STEP11_RC0029_ARTIFACT_COMMITMENT_MISMATCH")
+
+    return _step11_rc0029_result(
+        candidate_id=candidate_id,
+        candidate_version_id=candidate_version_id,
+        final_bytes_sha256=final_bytes_sha256,
+        parsed_witness_sha256=parsed_witness_sha256,
+        verified_binding_sha256=verified_binding_sha256,
+        successor_snapshot_sha256=successor_snapshot_sha256,
+        experiment_catalog_sha256=experiment_catalog_sha256,
+        base_gate_failure_codes=base_gate_failure_codes,
+        failure_codes=failure_codes,
+        semantic_coverage_authorized=semantic_coverage_authorized,
+        replan_count=replan_count,
+    )
+
+
+def select_step11_rc0029_experiment_candidate(
+    candidates: Sequence[Any],
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+    inventory_result: SemanticObligationInventoryResult,
+    content_plan: Mapping[str, Any],
+    current_input: Mapping[str, Any],
+    candidate_limit: int = STEP11_RC0029_EXPERIMENT_CANDIDATE_LIMIT,
+    replan_limit: int = STEP11_RC0029_EXPERIMENT_REPLAN_LIMIT,
+) -> Step11Rc0029ExperimentSelectionResult:
+    if type(candidates) not in {list, tuple} or not candidates:
+        raise Step11Rc0029ExperimentGateError(
+            "STEP11_RC0029_CANDIDATE_SET_INVALID"
+        )
+    if (
+        type(candidate_limit) is not int
+        or type(candidate_limit) is bool
+        or not 1 <= candidate_limit <= STEP11_RC0029_EXPERIMENT_CANDIDATE_LIMIT
+        or len(candidates) > candidate_limit
+    ):
+        raise Step11Rc0029ExperimentGateError(
+            "STEP11_RC0029_CANDIDATE_BOUND_EXCEEDED"
+        )
+    if (
+        type(replan_limit) is not int
+        or type(replan_limit) is bool
+        or not 0 <= replan_limit <= STEP11_RC0029_EXPERIMENT_REPLAN_LIMIT
+    ):
+        raise Step11Rc0029ExperimentGateError(
+            "STEP11_RC0029_REPLAN_BOUND_EXCEEDED"
+        )
+    try:
+        expected_version, candidate_type, _render, _validate = (
+            _step11_rc0029_surface_contracts()
+        )
+    except Exception as error:
+        raise Step11Rc0029ExperimentGateError(
+            "STEP11_RC0029_FORWARD_OWNER_UNAVAILABLE"
+        ) from error
+    if any(type(row) is not candidate_type for row in candidates):
+        raise Step11Rc0029ExperimentGateError(
+            "STEP11_RC0029_CANDIDATE_TYPE_INVALID"
+        )
+    ordered = tuple(sorted(candidates, key=lambda row: row.candidate_id))
+    candidate_ids = tuple(row.candidate_id for row in ordered)
+    if (
+        any(type(value) is not str or not value for value in candidate_ids)
+        or len(set(candidate_ids)) != len(candidate_ids)
+        or any(
+            type(row.replan_count) is not int
+            or type(row.replan_count) is bool
+            or not 0 <= row.replan_count <= replan_limit
+            for row in ordered
+        )
+    ):
+        raise Step11Rc0029ExperimentGateError(
+            "STEP11_RC0029_CANDIDATE_ID_OR_REPLAN_INVALID"
+        )
+    results = tuple(
+        evaluate_step11_rc0029_experiment_candidate(
+            row,
+            successor_snapshot=successor_snapshot,
+            lexical_atom_specs=lexical_atom_specs,
+            inventory_result=inventory_result,
+            content_plan=content_plan,
+            current_input=current_input,
+        )
+        for row in ordered
+    )
+    selected = next(
+        (
+            candidate
+            for candidate, result in zip(ordered, results)
+            if result.hard_pass
+        ),
+        None,
+    )
+    return Step11Rc0029ExperimentSelectionResult(
+        schema_version=STEP11_RC0029_EXPERIMENT_SELECTION_SCHEMA,
+        candidate_version_id=expected_version,
+        evaluated_candidate_ids=candidate_ids,
+        gate_results=results,
+        selected_candidate_id=(
+            selected.candidate_id if selected is not None else None
+        ),
+        selected_candidate=selected,
+        status=(
+            "selected"
+            if selected is not None
+            else "rc0029_experiment_no_valid_candidate"
+        ),
+        bounded_candidate_limit=candidate_limit,
+        bounded_replan_limit=replan_limit,
+        recovery_attempted=False,
+        soft_rescue_used=False,
+    )
+
+
+def select_step11_rc0029_experiment_candidates(
+    candidates: Sequence[Any],
+    **kwargs: Any,
+) -> Step11Rc0029ExperimentSelectionResult:
+    return select_step11_rc0029_experiment_candidate(candidates, **kwargs)
+
+
+__all__ += [
+    "STEP11_RC0029_EXPERIMENT_CANDIDATE_LIMIT",
+    "STEP11_RC0029_EXPERIMENT_HARD_GATE_SCHEMA",
+    "STEP11_RC0029_EXPERIMENT_REPLAN_LIMIT",
+    "STEP11_RC0029_EXPERIMENT_SELECTION_SCHEMA",
+    "Step11Rc0029ExperimentGateError",
+    "Step11Rc0029ExperimentGateResult",
+    "Step11Rc0029ExperimentSelectionResult",
+    "evaluate_step11_rc0029_experiment_candidate",
+    "select_step11_rc0029_experiment_candidate",
+    "select_step11_rc0029_experiment_candidates",
+    "step11_rc0029_experiment_gate_result_material",
+    "step11_rc0029_experiment_selection_result_material",
+]
