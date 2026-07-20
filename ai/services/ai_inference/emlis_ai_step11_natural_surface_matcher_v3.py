@@ -16171,6 +16171,16 @@ def _step11_rc0030_revalidated_base_binding(
     discourse_plan: Mapping[str, Any],
     current_input: Mapping[str, Any],
 ) -> Step11VerifiedSurfaceBinding:
+    """Return an exact rc0030 base context, not a coverage promotion.
+
+    The shared matcher remains the sole producer of the binding.  rc0030 may
+    consume its independently reproducible phrase/row projections even when
+    the *whole* legacy surface is not verified, but only after every parent
+    commitment and the shape of the returned material has been rechecked.
+    The caller must still prove each owner, reuse, and Reception association;
+    this helper never changes ``binding.verified`` or removes an issue.
+    """
+
     if type(base_witness) is not Step11ParsedSurfaceWitness:
         raise Step11Rc0030ExperimentInverseSurfaceError(
             "STEP11_RC0030_BASE_WITNESS_TYPE_INVALID"
@@ -16187,12 +16197,64 @@ def _step11_rc0030_revalidated_base_binding(
         raise Step11Rc0030ExperimentInverseSurfaceError(
             "STEP11_RC0030_BASE_BINDING_REVALIDATION_FAILED"
         ) from None
-    expected_hash = artifact_sha256(_witness_material(base_witness))
     if (
         type(binding) is not Step11VerifiedSurfaceBinding
+        or type(binding.binding_rows) is not tuple
+        or any(
+            type(row) is not Step11BindingRow
+            or type(row.obligation_id) is not str
+            or type(row.obligation_kind) is not str
+            or type(row.atom_ids) is not tuple
+            or any(type(atom_id) is not str for atom_id in row.atom_ids)
+            or type(row.match_basis) is not str
+            for row in binding.binding_rows
+        )
+        or type(binding.grounded_phrase_bindings) is not tuple
+        or any(
+            type(row) is not Step11GroundedPhraseBinding
+            for row in binding.grounded_phrase_bindings
+        )
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_BINDING_REVALIDATION_FAILED"
+        )
+    try:
+        ledger = inventory_result.ledger
+        expected_hash = artifact_sha256(_witness_material(base_witness))
+        expected_required_ids = tuple(
+            content_plan.get("required_coverage_obligation_ids", [])
+        )
+        binding_obligation_ids = tuple(
+            row.obligation_id for row in binding.binding_rows
+        )
+        expected_source_fragment_count = sum(
+            len(row.source_fragments) + len(row.grounded_phrases)
+            for row in base_witness.atoms
+        )
+        expected_ledger_hash = artifact_sha256(ledger)
+        expected_content_hash = artifact_sha256(content_plan)
+        expected_discourse_hash = artifact_sha256(discourse_plan)
+    except (AttributeError, KeyError, TypeError, ValueError, RecursionError):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_BINDING_REVALIDATION_FAILED"
+        ) from None
+    if (
+        binding.schema_version != STEP11_VERIFIED_BINDING_SCHEMA
         or binding.parsed_witness_sha256 != expected_hash
-        or binding.verified is not True
-        or binding.issue_codes
+        or binding.obligation_ledger_sha256 != expected_ledger_hash
+        or binding.content_plan_sha256 != expected_content_hash
+        or binding.discourse_plan_sha256 != expected_discourse_hash
+        or type(binding.required_obligation_ids) is not tuple
+        or binding.required_obligation_ids != expected_required_ids
+        or binding_obligation_ids != expected_required_ids
+        or len(binding_obligation_ids) != len(set(binding_obligation_ids))
+        or type(binding.issue_codes) is not tuple
+        or any(type(code) is not str for code in binding.issue_codes)
+        or len(binding.issue_codes) != len(set(binding.issue_codes))
+        or tuple(sorted(binding.issue_codes)) != binding.issue_codes
+        or type(binding.verified) is not bool
+        or binding.verified is not (not binding.issue_codes)
+        or binding.source_fragment_count != expected_source_fragment_count
     ):
         raise Step11Rc0030ExperimentInverseSurfaceError(
             "STEP11_RC0030_BASE_BINDING_REVALIDATION_FAILED"
@@ -16486,6 +16548,35 @@ def _step11_rc0030_visible_phrase_registry(
             ),
             [],
         ).append(row)
+    parsed_phrase_keys = tuple(
+        (
+            str(atom.atom_id),
+            str(phrase.visible_feature_fingerprint_sha256),
+            str(phrase.phrase_profile_id),
+        )
+        for atom in base_witness.atoms
+        for phrase in atom.grounded_phrases
+    )
+    if (
+        len(parsed_phrase_keys) != len(set(parsed_phrase_keys))
+        or set(phrase_binding_by_key) != set(parsed_phrase_keys)
+        or len(base_binding.grounded_phrase_bindings)
+        != len(parsed_phrase_keys)
+        or any(
+            len(rows) != 1
+            or rows[0].match_candidate_count != 1
+            or not rows[0].owner_nucleus_ids
+            or not rows[0].owner_obligation_ids
+            or len(rows[0].owner_nucleus_ids)
+            != len(set(rows[0].owner_nucleus_ids))
+            or len(rows[0].owner_obligation_ids)
+            != len(set(rows[0].owner_obligation_ids))
+            for rows in phrase_binding_by_key.values()
+        )
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_PHRASE_BINDING_AMBIGUOUS"
+        )
     phrase_owner_aliases: dict[str, set[str]] = {}
     for atom in base_witness.atoms:
         for phrase in atom.grounded_phrases:
@@ -16933,6 +17024,202 @@ def match_step11_rc0030_base_body_exact_reuse(
     )
 
 
+def _step11_rc0030_independent_base_reception_lines(
+    base_body_witness: Step11Rc0030BaseBodyParsedWitness,
+    *,
+    inventory_result: SemanticObligationInventoryResult,
+    discourse_plan: Mapping[str, Any],
+    current_input: Mapping[str, Any],
+    obligation_by_id: Mapping[str, Mapping[str, Any]],
+    receptions: Sequence[
+        tuple[str, str, str, tuple[str, ...], tuple[str, ...]]
+    ],
+) -> dict[str, int]:
+    """Recover base Reception associations without forward metadata.
+
+    A legacy base can be globally unverified while still containing one
+    structurally exact anaphoric Reception.  For the rc0030 suffix we derive
+    the eligible source opportunity, semantic scope, act, and status from the
+    validated ledger/source contract, then require a unique parsed atom.  An
+    unresolved or surplus base Reception closes the candidate; source order
+    is never used to choose between semantic matches.
+    """
+
+    try:
+        projection = _project_input(current_input)
+        contracts = _independent_reception_owner_contract(
+            snapshot=inventory_result.source_snapshot,
+            by_id=obligation_by_id,
+            discourse_plan=discourse_plan,
+            projection=projection,
+        )
+    except (Step11InverseSurfaceError, AttributeError, TypeError, ValueError):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_RECEPTION_SOURCE_REVALIDATION_FAILED"
+        ) from None
+    if len(contracts) > _STEP11_RC0030_RECEPTION_MOVE_MAX:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_RECEPTION_SOURCE_BOUND_INVALID"
+        )
+
+    reception_ids = {row[0] for row in receptions}
+    heads_by_opportunity: dict[str, frozenset[tuple[str, str, str]]] = {}
+    for contract in contracts.values():
+        opportunity_ids = tuple(
+            str(row)
+            for row in contract["source_reception_opportunity_ids"]
+        )
+        if (
+            len(opportunity_ids) != len(set(opportunity_ids))
+            or any(row not in reception_ids for row in opportunity_ids)
+        ):
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_RECEPTION_SOURCE_REVALIDATION_FAILED"
+            )
+        if not opportunity_ids:
+            continue
+
+        visible_nuclei = frozenset(
+            str(row)
+            for row in (
+                *contract["antecedent_nucleus_ids"],
+                *contract["supporting_nucleus_ids"],
+            )
+        )
+        if not visible_nuclei:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_RECEPTION_SOURCE_REVALIDATION_FAILED"
+            )
+        relation_owner_ids = tuple(
+            obligation_id
+            for obligation_id in dict.fromkeys(
+                (
+                    *contract["source_target_obligation_ids"],
+                    *contract["antecedent_obligation_ids"],
+                )
+            )
+            if obligation_id in obligation_by_id
+            and obligation_by_id[obligation_id].get("kind")
+            == "grounded_relation_preservation"
+            and frozenset(
+                str(row)
+                for row in obligation_by_id[obligation_id].get(
+                    "nucleus_ids", []
+                )
+            )
+            == visible_nuclei
+        )
+        if len(relation_owner_ids) > 1:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_RECEPTION_ASSOCIATION_AMBIGUOUS"
+            )
+        source_slots = {
+            slot
+            for nucleus_id in visible_nuclei
+            for slot in _slots_for_nucleus(
+                inventory_result.source_snapshot, nucleus_id
+            )
+            if slot in {"thought", "action"}
+        }
+        if relation_owner_ids:
+            scope = "relation_action" if "action" in source_slots else "relation"
+        elif {"thought", "action"} <= source_slots:
+            scope = "thought_action"
+        elif "thought" in source_slots:
+            scope = "thought"
+        elif "action" in source_slots:
+            scope = "action"
+        else:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_RECEPTION_ASSOCIATION_MISMATCH"
+            )
+        status = (
+            "reported_content"
+            if scope == "thought"
+            else str(contract["action_lifecycle"])
+            if "action" in source_slots
+            else "undetermined"
+        )
+        heads = frozenset(
+            (str(act), scope, status)
+            for act in contract["allowed_response_acts"]
+        )
+        if not heads:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_RECEPTION_SOURCE_REVALIDATION_FAILED"
+            )
+        for opportunity_id in opportunity_ids:
+            previous = heads_by_opportunity.get(opportunity_id)
+            if previous is not None:
+                raise Step11Rc0030ExperimentInverseSurfaceError(
+                    "STEP11_RC0030_RECEPTION_ASSOCIATION_AMBIGUOUS"
+                )
+            heads_by_opportunity[opportunity_id] = heads
+
+    base_witness = base_body_witness.base_witness
+    exact_line_by_opportunity: dict[str, int] = {}
+    reception_atoms = tuple(
+        row for row in base_witness.atoms if row.section_role == "reception"
+    )
+    if not 1 <= len(reception_atoms) <= _STEP11_RC0030_RECEPTION_MOVE_MAX:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_RECEPTION_LAYOUT_MISMATCH"
+        )
+    for atom in reception_atoms:
+        if (
+            atom.claim_kinds != ("bound_reception",)
+            or not atom.form_id.startswith("reception:anaphoric:")
+            or atom.source_fragments
+            or atom.introduced_reference is not None
+            or atom.compound_label_references
+            or atom.relation_endpoint_references
+            or atom.unknown_target_references
+            or atom.reception_antecedent_references
+            or type(atom.reception_act) is not str
+            or type(atom.reception_scope) is not str
+        ):
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_RECEPTION_ASSOCIATION_MISMATCH"
+            )
+        head = (
+            atom.reception_act,
+            atom.reception_scope,
+            _canonical_status(atom.realization_status),
+        )
+        matches = tuple(
+            opportunity_id
+            for opportunity_id, heads in heads_by_opportunity.items()
+            if head in heads
+        )
+        if len(matches) != 1:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                (
+                    "STEP11_RC0030_RECEPTION_ASSOCIATION_AMBIGUOUS"
+                    if len(matches) > 1
+                    else "STEP11_RC0030_RECEPTION_ASSOCIATION_MISMATCH"
+                )
+            )
+        opportunity_id = matches[0]
+        if opportunity_id in exact_line_by_opportunity:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_RECEPTION_ASSOCIATION_AMBIGUOUS"
+            )
+        line_ordinal = (
+            int(atom.sentence_ordinal)
+            - base_body_witness.observation_group_count
+        )
+        if not 1 <= line_ordinal <= base_body_witness.reception_group_count:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_BASE_RECEPTION_LAYOUT_MISMATCH"
+            )
+        exact_line_by_opportunity[opportunity_id] = line_ordinal
+    if set(exact_line_by_opportunity) != set(heads_by_opportunity):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_RECEPTION_ASSOCIATION_MISMATCH"
+        )
+    return exact_line_by_opportunity
+
+
 def _step11_rc0030_reception_schedule(
     base_body_witness: Step11Rc0030BaseBodyParsedWitness,
     base_binding: Step11VerifiedSurfaceBinding,
@@ -16985,61 +17272,76 @@ def _step11_rc0030_reception_schedule(
         raise Step11Rc0030ExperimentInverseSurfaceError(
             "STEP11_RC0030_BASE_RECEPTION_LAYOUT_MISMATCH"
         )
-    atom_by_id = {row.atom_id: row for row in base_witness.atoms}
-    integrated_ids = tuple(base_binding.integrated_reception_binding_ids)
-    contract_ids = tuple(str(row["binding_id"]) for row in contracts.values())
-    if (
-        len(integrated_ids) != len(set(integrated_ids))
-        or set(integrated_ids) != set(contract_ids)
-    ):
-        raise Step11Rc0030ExperimentInverseSurfaceError(
-            "STEP11_RC0030_BASE_RECEPTION_CONTRACT_MISMATCH"
-        )
-    exact_line_by_opportunity: dict[str, int] = {}
-    for binding_row in base_binding.binding_rows:
-        obligation_id = str(binding_row.obligation_id)
-        contract = contracts.get(obligation_id)
-        if contract is None:
-            continue
-        ledger_row = obligation_by_id.get(obligation_id)
-        opportunity_ids = tuple(
-            str(row) for row in contract["source_reception_opportunity_ids"]
+    if base_binding.verified:
+        atom_by_id = {row.atom_id: row for row in base_witness.atoms}
+        integrated_ids = tuple(base_binding.integrated_reception_binding_ids)
+        contract_ids = tuple(
+            str(row["binding_id"]) for row in contracts.values()
         )
         if (
-            ledger_row is None
-            or type(ledger_row.get("reception_opportunity_ids")) is not list
-            or tuple(ledger_row["reception_opportunity_ids"])
-            != opportunity_ids
-            or len(binding_row.atom_ids) != 1
-            or str(contract["binding_id"]) not in integrated_ids
+            len(integrated_ids) != len(set(integrated_ids))
+            or set(integrated_ids) != set(contract_ids)
         ):
             raise Step11Rc0030ExperimentInverseSurfaceError(
                 "STEP11_RC0030_BASE_RECEPTION_CONTRACT_MISMATCH"
             )
-        atom = atom_by_id.get(str(binding_row.atom_ids[0]))
-        if (
-            atom is None
-            or atom.section_role != "reception"
-            or atom.reception_act not in contract["allowed_response_acts"]
-        ):
-            raise Step11Rc0030ExperimentInverseSurfaceError(
-                "STEP11_RC0030_BASE_RECEPTION_CONTRACT_MISMATCH"
+        exact_line_by_opportunity: dict[str, int] = {}
+        for binding_row in base_binding.binding_rows:
+            obligation_id = str(binding_row.obligation_id)
+            contract = contracts.get(obligation_id)
+            if contract is None:
+                continue
+            ledger_row = obligation_by_id.get(obligation_id)
+            opportunity_ids = tuple(
+                str(row)
+                for row in contract["source_reception_opportunity_ids"]
             )
-        line_ordinal = (
-            int(atom.sentence_ordinal)
-            - base_body_witness.observation_group_count
-        )
-        if not 1 <= line_ordinal <= base_body_witness.reception_group_count:
-            raise Step11Rc0030ExperimentInverseSurfaceError(
-                "STEP11_RC0030_BASE_RECEPTION_LAYOUT_MISMATCH"
-            )
-        for opportunity_id in opportunity_ids:
-            previous = exact_line_by_opportunity.get(opportunity_id)
-            if previous is not None:
+            if (
+                ledger_row is None
+                or type(ledger_row.get("reception_opportunity_ids")) is not list
+                or tuple(ledger_row["reception_opportunity_ids"])
+                != opportunity_ids
+                or len(binding_row.atom_ids) != 1
+                or str(contract["binding_id"]) not in integrated_ids
+            ):
                 raise Step11Rc0030ExperimentInverseSurfaceError(
-                    "STEP11_RC0030_RECEPTION_ASSOCIATION_AMBIGUOUS"
+                    "STEP11_RC0030_BASE_RECEPTION_CONTRACT_MISMATCH"
                 )
-            exact_line_by_opportunity[opportunity_id] = line_ordinal
+            atom = atom_by_id.get(str(binding_row.atom_ids[0]))
+            if (
+                atom is None
+                or atom.section_role != "reception"
+                or atom.reception_act not in contract["allowed_response_acts"]
+            ):
+                raise Step11Rc0030ExperimentInverseSurfaceError(
+                    "STEP11_RC0030_BASE_RECEPTION_CONTRACT_MISMATCH"
+                )
+            line_ordinal = (
+                int(atom.sentence_ordinal)
+                - base_body_witness.observation_group_count
+            )
+            if not 1 <= line_ordinal <= base_body_witness.reception_group_count:
+                raise Step11Rc0030ExperimentInverseSurfaceError(
+                    "STEP11_RC0030_BASE_RECEPTION_LAYOUT_MISMATCH"
+                )
+            for opportunity_id in opportunity_ids:
+                previous = exact_line_by_opportunity.get(opportunity_id)
+                if previous is not None:
+                    raise Step11Rc0030ExperimentInverseSurfaceError(
+                        "STEP11_RC0030_RECEPTION_ASSOCIATION_AMBIGUOUS"
+                    )
+                exact_line_by_opportunity[opportunity_id] = line_ordinal
+    else:
+        exact_line_by_opportunity = (
+            _step11_rc0030_independent_base_reception_lines(
+                base_body_witness,
+                inventory_result=inventory_result,
+                discourse_plan=discourse_plan,
+                current_input=current_input,
+                obligation_by_id=obligation_by_id,
+                receptions=receptions,
+            )
+        )
 
     group_count = base_body_witness.reception_group_count
     loads = {ordinal: 0 for ordinal in range(1, group_count + 1)}

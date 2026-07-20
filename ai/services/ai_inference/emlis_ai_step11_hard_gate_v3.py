@@ -4641,6 +4641,7 @@ def _step11_rc0030_result(
     matcher_invocation_count: int,
     body_byte_inspection_count: int,
     replan_count: int | None,
+    base_gate_suffix_verified: bool = False,
 ) -> Step11Rc0030ExperimentGateResult:
     base_codes = tuple(
         sorted(
@@ -4652,13 +4653,22 @@ def _step11_rc0030_result(
             }
         )
     )
+    # The shared base Gate remains an independently executed diagnostic.  An
+    # rc0030 final candidate may supersede those *base-body* diagnostics only
+    # after this module has constructed an origin-bound, fully joined final
+    # binding.  The default is deliberately fail-closed so no other caller can
+    # accidentally turn base failures into advisory-only material.
+    merge_base_codes = base_gate_suffix_verified is not True
     codes = tuple(
         sorted(
             {
                 _step11_rc0030_closed_code(
                     row, "STEP11_RC0030_UNCLOSED_FAILURE_CODE"
                 )
-                for row in (*failure_codes, *base_codes)
+                for row in (
+                    *failure_codes,
+                    *(base_codes if merge_base_codes else ()),
+                )
             }
         )
     )
@@ -4873,8 +4883,19 @@ def evaluate_step11_rc0030_experiment_candidate(
     byte_inspections = 0
     replan_count: int | None = None
     parsed_witness: Any | None = None
+    verified_surface: Any | None = None
     joined_binding: Step11Rc0030ExperimentGateVerifiedBinding | None = None
     final_body_bounded = False
+    base_gate_evaluated = False
+    base_gate_rejected = False
+    source_commitments_joined = False
+    base_candidate_integrity_verified = False
+    forward_candidate_verified = False
+    final_render_verified = False
+    final_binding_verified = False
+    forward_inverse_join_verified = False
+    resource_bound_verified = False
+    gate_binding_verified = False
 
     try:
         contracts = _step11_rc0030_surface_contracts()
@@ -4988,12 +5009,37 @@ def evaluate_step11_rc0030_experiment_candidate(
                 != commitments
             ):
                 failures.append("STEP11_RC0030_BASE_INVERSE_CONTEXT_MISMATCH")
+            else:
+                source_commitments_joined = True
         except Exception as error:
             failures.append(
                 _step11_rc0030_closed_code(
                     getattr(error, "code", None),
                     "STEP11_RC0030_SOURCE_COMMITMENT_INVALID",
                 )
+            )
+
+        # Base Gate content failures may be superseded only after the original
+        # candidate still proves its frozen schema, AST, canonical render,
+        # input projection, and identity.  This independent validator closes
+        # metadata-only forgeries that do not alter the committed body bytes;
+        # those are predecessor-integrity failures, never replaceable content.
+        try:
+            base_candidate_issues = validate_step11_natural_surface_candidate(
+                candidate.base_candidate,
+                inventory_result=inventory_result,
+                content_plan=content_plan,
+                current_input=current_input,
+            )
+            if type(base_candidate_issues) is not tuple or base_candidate_issues:
+                failures.append(
+                    "STEP11_RC0030_BASE_PREDECESSOR_INTEGRITY_INVALID"
+                )
+            else:
+                base_candidate_integrity_verified = True
+        except Exception:
+            failures.append(
+                "STEP11_RC0030_BASE_PREDECESSOR_INTEGRITY_INVALID"
             )
 
         try:
@@ -5016,6 +5062,7 @@ def evaluate_step11_rc0030_experiment_candidate(
             )
             for row in forward_issues
         )
+        forward_candidate_verified = not forward_issues
 
         try:
             rerendered = contracts[3](
@@ -5028,17 +5075,19 @@ def evaluate_step11_rc0030_experiment_candidate(
                 explicit_unknown_atoms=candidate.explicit_unknown_atoms,
                 reception_predications=candidate.reception_bindings,
             )
-            if (
+            render_mismatch = (
                 rerendered != candidate.rendered_surface
                 or rerendered.utf8_bytes != candidate.final_utf8_bytes
                 or rerendered.sha256 != final_bytes_sha256
-            ):
+            )
+            if render_mismatch:
                 failures.append(
                     "STEP11_RC0030_FINAL_BYTES_COMMITMENT_MISMATCH"
                 )
             plan_sha256 = artifact_sha256(
                 contracts[4](candidate.surface_realization_plan)
             )
+            final_render_verified = not render_mismatch
         except Exception:
             failures.append("STEP11_RC0030_FINAL_BYTES_COMMITMENT_MISMATCH")
 
@@ -5050,8 +5099,12 @@ def evaluate_step11_rc0030_experiment_candidate(
                 current_input=current_input,
             )
             base_codes = tuple(base_result.failure_codes)
-            if base_result.hard_pass is not True:
-                failures.append("STEP11_RC0030_BASE_GATE_REJECTED")
+            base_gate_evaluated = True
+            base_gate_rejected = base_result.hard_pass is not True
+            if base_gate_rejected and not base_codes:
+                failures.append(
+                    "STEP11_RC0030_BASE_GATE_EVALUATION_FAILED"
+                )
         except Exception:
             failures.append("STEP11_RC0030_BASE_GATE_EVALUATION_FAILED")
 
@@ -5070,7 +5123,6 @@ def evaluate_step11_rc0030_experiment_candidate(
                 )
             )
 
-        verified_surface = None
         if parsed_witness is not None:
             try:
                 matcher_count += 1
@@ -5109,6 +5161,8 @@ def evaluate_step11_rc0030_experiment_candidate(
                 != catalog_sha256
             ):
                 failures.append("STEP11_RC0030_BINDING_NOT_VERIFIED")
+            else:
+                final_binding_verified = True
             try:
                 (
                     leading_count,
@@ -5123,6 +5177,7 @@ def evaluate_step11_rc0030_experiment_candidate(
                         base_inverse_context.verified_base_reuse_bindings
                     ),
                 )
+                forward_inverse_join_verified = True
             except Exception as error:
                 failures.append(
                     _step11_rc0030_closed_code(
@@ -5139,6 +5194,8 @@ def evaluate_step11_rc0030_experiment_candidate(
             or byte_inspections > 4 * STEP11_RC0030_BODY_BYTE_LIMIT
         ):
             failures.append("STEP11_RC0030_RESOURCE_BOUND_EXCEEDED")
+        else:
+            resource_bound_verified = True
 
         if verified_surface is not None and not failures:
             joined_binding = Step11Rc0030ExperimentGateVerifiedBinding(
@@ -5172,6 +5229,7 @@ def evaluate_step11_rc0030_experiment_candidate(
                         joined_binding
                     )
                 )
+                gate_binding_verified = True
             except Exception as error:
                 failures.append(
                     _step11_rc0030_closed_code(
@@ -5180,6 +5238,34 @@ def evaluate_step11_rc0030_experiment_candidate(
                     )
                 )
                 joined_binding = None
+
+    # Keep the shared Gate result and its failure codes as evidence, but do not
+    # use a replaceable base-body rejection as the final rc0030 decision when
+    # every independently reconstructed final-surface commitment is exact.
+    # Each predicate is produced by a separate check above; any missing or
+    # malformed artifact therefore restores the historical fail-closed merge.
+    base_gate_suffix_verified = (
+        base_gate_evaluated
+        and base_gate_rejected
+        and bool(base_codes)
+        and context_valid
+        and source_commitments_joined
+        and base_candidate_integrity_verified
+        and forward_candidate_verified
+        and final_render_verified
+        and parsed_witness is not None
+        and parsed_sha256 is not None
+        and verified_surface is not None
+        and final_binding_verified
+        and forward_inverse_join_verified
+        and resource_bound_verified
+        and gate_binding_verified
+        and joined_binding is not None
+        and joined_sha256 is not None
+        and not failures
+    )
+    if base_gate_rejected and not base_gate_suffix_verified:
+        failures.append("STEP11_RC0030_BASE_GATE_REJECTED")
 
     result = _step11_rc0030_result(
         candidate_id=candidate_id,
@@ -5202,6 +5288,7 @@ def evaluate_step11_rc0030_experiment_candidate(
         matcher_invocation_count=matcher_count,
         body_byte_inspection_count=byte_inspections,
         replan_count=replan_count,
+        base_gate_suffix_verified=base_gate_suffix_verified,
     )
     if result.hard_pass and joined_binding is None:
         result = _step11_rc0030_result(
@@ -5225,6 +5312,7 @@ def evaluate_step11_rc0030_experiment_candidate(
             matcher_invocation_count=matcher_count,
             body_byte_inspection_count=byte_inspections,
             replan_count=replan_count,
+            base_gate_suffix_verified=False,
         )
     return Step11Rc0030ExperimentGateEvaluation(
         schema_version=STEP11_RC0030_EXPERIMENT_GATE_EVALUATION_SCHEMA,

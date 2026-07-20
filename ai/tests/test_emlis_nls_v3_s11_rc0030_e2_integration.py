@@ -61,6 +61,22 @@ _CASE_IDS = (
 )
 _DENSITY_CASE_ID = "nls3s_b001_0063"
 _SUPPORT_CASE_IDS = ("D", "I6-D02")
+_SUPPORT_DENOMINATOR_BY_CASE = {
+    "D": (2, 2, 1),
+    "I6-D02": (2, 3, 1),
+}
+_SUPPORT_BASE_GATE_FAILURE_CODES = (
+    "S11_GATE05_EVIDENCE_RESOLUTION",
+    "S11_GATE06_REQUIRED_OBLIGATION_COVERAGE",
+    "S11_GATE07_BOUND_RECEPTION",
+    "S11_GATE08_POLARITY_MODALITY_TIME",
+    "S11_GATE12_SELF_DENIAL",
+    "S11_GATE13_UNSUPPORTED_CLAIM",
+    "S11_GATE15_INPUT_ENUMERATION",
+    "S11_GATE16_CONTRIBUTION_DISTINCTNESS",
+    "S11_GATE17_DEPTH",
+)
+_NO_SUPPORT_CONTROL_CASE_ID = "nls3s_b001_0002"
 _SELECTED_CASE_IDS = tuple(
     case_id for case_id in _CASE_IDS if case_id != _DENSITY_CASE_ID
 )
@@ -419,7 +435,11 @@ def _delimiter_candidate_body_context(
     )
 
 
-def _assert_selected_chain(execution: Any) -> None:
+def _assert_selected_chain(
+    execution: Any,
+    *,
+    expected_denominator: tuple[int, int] | None = None,
+) -> None:
     result = execution.body_free_result
     selection = execution.selection_result
     assert result.disposition == "selected"
@@ -455,8 +475,10 @@ def _assert_selected_chain(execution: Any) -> None:
     assert joined.issue_codes == ()
     assert joined.semantic_coverage_authorized is False
 
-    expected_semantic, expected_reception = _source_denominator(
-        execution.case_id
+    expected_semantic, expected_reception = (
+        _source_denominator(execution.case_id)
+        if expected_denominator is None
+        else expected_denominator
     )
     candidate_semantic = sum(
         len(getattr(candidate, name))
@@ -523,6 +545,263 @@ def _assert_selected_chain(execution: Any) -> None:
     assert gate.step11_rc0030_experiment_gate_result_material(
         direct.gate_result
     ) == gate.step11_rc0030_experiment_gate_result_material(original)
+
+
+def _required_source_denominator(execution: Any) -> tuple[int, int, int]:
+    snapshot = execution.successor_snapshot
+    authority = snapshot.relation_construction_authority
+    required_receptions = tuple(
+        row
+        for row in snapshot.base_snapshot.reception_opportunities
+        if row.retention == "required" or row.safety_required is True
+    )
+    return (
+        sum(
+            len(rows)
+            for rows in (
+                authority.construction_instances,
+                authority.relation_authorities,
+                authority.semantic_link_bindings,
+                authority.explicit_unknown_authorities,
+            )
+        ),
+        len(required_receptions),
+        sum(bool(row.support_nucleus_ids) for row in required_receptions),
+    )
+
+
+def _forward_reception_join_projection(candidate: Any) -> tuple[Any, ...]:
+    return tuple(
+        (
+            row.source_reception_opportunity_id,
+            row.reception_line_ordinal,
+            row.chunk_ordinal,
+            row.reception_act,
+            len(row.source_target_owner_ids),
+            len(row.supporting_source_owner_ids),
+            row.association_basis,
+        )
+        for row in candidate.reception_bindings
+    )
+
+
+def _verified_reception_join_projection(joined: Any) -> tuple[Any, ...]:
+    return tuple(
+        (
+            row.source_reception_opportunity_id,
+            row.reception_line_ordinal,
+            row.move_ordinal,
+            row.reception_act,
+            row.target_owner_count,
+            row.supporting_owner_count,
+            row.association_basis,
+        )
+        for row in joined.verified_surface_binding.reception_bindings
+    )
+
+
+def _assert_exact_chain_denominator(
+    execution: Any,
+    expected: tuple[int, int, int],
+) -> None:
+    candidate, parsed, joined, context = _selected_material(execution)
+    expected_semantic, expected_reception, expected_support = expected
+    plan = candidate.surface_realization_plan
+    verified = joined.verified_surface_binding
+
+    candidate_semantic = sum(
+        len(getattr(candidate, name))
+        for name in (
+            "construction_atoms",
+            "relation_atoms",
+            "semantic_link_atoms",
+            "explicit_unknown_atoms",
+        )
+    )
+    forward_semantic = (
+        len(plan.semantic_chunk_bindings)
+        + len(plan.base_body_exact_reuse_bindings)
+    )
+    parsed_semantic = (
+        len(parsed.semantic_atoms) + len(context.verified_base_reuse_bindings)
+    )
+    assert (
+        candidate_semantic,
+        forward_semantic,
+        parsed_semantic,
+        len(verified.semantic_bindings),
+        joined.semantic_binding_count,
+    ) == (expected_semantic,) * 5
+
+    assert candidate.reception_bindings == plan.reception_predication_bindings
+    assert (
+        len(candidate.reception_bindings),
+        len(parsed.reception_bindings),
+        len(verified.reception_bindings),
+        verified.reception_binding_count,
+        joined.reception_binding_count,
+    ) == (expected_reception,) * 5
+    assert (
+        sum(
+            bool(row.supporting_source_owner_ids)
+            for row in candidate.reception_bindings
+        ),
+        sum(
+            row.supporting_expression is not None
+            for row in parsed.reception_bindings
+        ),
+        sum(row.supporting_owner_count > 0 for row in verified.reception_bindings),
+    ) == (expected_support,) * 3
+
+    assert _forward_reception_join_projection(candidate) == (
+        _verified_reception_join_projection(joined)
+    )
+    parsed_by_id = {
+        row.binding_id: row for row in parsed.reception_bindings
+    }
+    assert len(parsed_by_id) == expected_reception
+    assert all(
+        (
+            parsed_by_id[row.parsed_binding_id].reception_line_ordinal,
+            parsed_by_id[row.parsed_binding_id].move_ordinal,
+            parsed_by_id[row.parsed_binding_id].reception_act,
+            parsed_by_id[row.parsed_binding_id].supporting_expression is not None,
+        )
+        == (
+            row.reception_line_ordinal,
+            row.move_ordinal,
+            row.reception_act,
+            row.supporting_owner_count > 0,
+        )
+        for row in verified.reception_bindings
+    )
+
+
+def _assert_base_gate_evidence_is_separated(execution: Any) -> None:
+    selected_id = execution.selection_result.selected_candidate_id
+    result = next(
+        row for row in execution.gate_results if row.candidate_id == selected_id
+    )
+    assert result.hard_pass is True
+    assert result.base_gate_failure_codes == _SUPPORT_BASE_GATE_FAILURE_CODES
+    assert result.failure_codes == ()
+    assert not (
+        set(result.base_gate_failure_codes) & set(result.failure_codes)
+    )
+    assert "STEP11_RC0030_BASE_GATE_REJECTED" not in result.failure_codes
+
+
+def _assert_base_predecessor_integrity_attack_rejected(execution: Any) -> None:
+    candidate, _parsed, _joined, context = _selected_material(execution)
+    forged_base = replace(
+        candidate.base_candidate,
+        schema_version=candidate.base_candidate.schema_version + ".forged",
+    )
+    forged = replace(candidate, base_candidate=forged_base)
+    result = gate.evaluate_step11_rc0030_experiment_candidate(
+        forged,
+        **_gate_kwargs(execution, context),
+    ).gate_result
+    assert result.hard_pass is False
+    assert "S11_GATE01_ARTIFACT_SCHEMA_PARENT_HASH" in (
+        result.base_gate_failure_codes
+    )
+    assert "STEP11_RC0030_BASE_PREDECESSOR_INTEGRITY_INVALID" in (
+        result.failure_codes
+    )
+    assert "STEP11_RC0030_BASE_GATE_REJECTED" in result.failure_codes
+
+
+def _assert_forward_metadata_attack_rejected(execution: Any) -> None:
+    candidate, _parsed, _joined, context = _selected_material(execution)
+    assert candidate.reception_bindings
+    forged_binding = replace(
+        candidate.reception_bindings[0],
+        source_reception_opportunity_id=(
+            candidate.reception_bindings[0].source_reception_opportunity_id
+            + "_forged"
+        ),
+    )
+    forged = replace(
+        candidate,
+        reception_bindings=(forged_binding, *candidate.reception_bindings[1:]),
+    )
+    result = gate.evaluate_step11_rc0030_experiment_candidate(
+        forged,
+        **_gate_kwargs(execution, context),
+    ).gate_result
+    assert result.hard_pass is False
+    assert "STEP11_RC0030_CANDIDATE_SOURCE_MISMATCH" in result.failure_codes
+
+
+def _assert_stale_base_context_rejected(execution: Any) -> None:
+    candidate, _parsed, _joined, context = _selected_material(execution)
+    stale = replace(
+        context,
+        current_input_sha256=(
+            "0" * 64 if context.current_input_sha256 != "0" * 64 else "1" * 64
+        ),
+    )
+    result = gate.evaluate_step11_rc0030_experiment_candidate(
+        candidate,
+        base_inverse_context=stale,
+        **{
+            key: value
+            for key, value in _gate_kwargs(execution, context).items()
+            if key != "base_inverse_context"
+        },
+    ).gate_result
+    assert result.hard_pass is False
+    assert "STEP11_RC0030_BASE_INVERSE_CONTEXT_ORIGIN_REQUIRED" in (
+        result.failure_codes
+    )
+
+
+def _assert_ambiguous_base_phrase_projection_rejected(execution: Any) -> None:
+    candidate, _parsed, _joined, context = _selected_material(execution)
+    baseline = execution.base_execution
+    base_witness = context.base_body_witness.base_witness
+    binding = inverse.match_step11_natural_surface(
+        base_witness,
+        inventory_result=baseline.inventory_result,
+        content_plan=baseline.content_plan,
+        discourse_plan=candidate.base_candidate.discourse_plan,
+        current_input=baseline.projected_current_input,
+    )
+    assert binding.verified is False
+    assert binding.grounded_phrase_bindings
+    forged_rows = (
+        replace(binding.grounded_phrase_bindings[0], match_candidate_count=2),
+        *binding.grounded_phrase_bindings[1:],
+    )
+    forged = replace(binding, grounded_phrase_bindings=forged_rows)
+    records, receptions, aliases, _snapshot, _authority, _exact = (
+        inverse._step11_rc0030_validated_source_records(
+            execution.successor_snapshot,
+            inventory_result=baseline.inventory_result,
+        )
+    )
+    required_owner_ids = {
+        owner_id for row in records for owner_id in row[4]
+    } | {
+        owner_id
+        for row in receptions
+        for owner_id in (*row[3], *row[4])
+    }
+    with pytest.raises(
+        inverse.Step11Rc0030ExperimentInverseSurfaceError
+    ) as caught:
+        inverse._step11_rc0030_visible_phrase_registry(
+            base_witness,
+            forged,
+            source_owner_aliases={
+                owner_id: aliases[owner_id]
+                for owner_id in required_owner_ids
+            },
+        )
+    assert caught.value.code == (
+        "STEP11_RC0030_BASE_PHRASE_BINDING_AMBIGUOUS"
+    )
 
 
 def _assert_density_schedule(execution: Any) -> None:
@@ -688,13 +967,31 @@ def _assert_support_omission_rejected(execution: Any) -> None:
     omitted = (
         observation + section_marker + "\n".join(lines)
     ).encode("utf-8")
-    _assert_inverse_rejected(
-        lambda: _rematch(
-            execution,
-            inverse.parse_step11_rc0030_experiment_surface(omitted),
-        ),
-        "STEP11_RC0030_E2_SUPPORT_OMISSION_ACCEPTED",
+    try:
+        omitted_parsed = inverse.parse_step11_rc0030_experiment_surface(
+            omitted
+        )
+    except inverse.Step11Rc0030ExperimentInverseSurfaceError:
+        _closed_fail("STEP11_RC0030_E2_SUPPORT_OMISSION_PARSE_REJECTED")
+    assert len(omitted_parsed.semantic_atoms) == len(parsed.semantic_atoms)
+    assert len(omitted_parsed.reception_bindings) == len(
+        parsed.reception_bindings
     )
+    assert sum(
+        binding.supporting_expression is not None
+        for binding in omitted_parsed.reception_bindings
+    ) == sum(
+        binding.supporting_expression is not None
+        for binding in parsed.reception_bindings
+    ) - 1
+    with pytest.raises(
+        inverse.Step11Rc0030ExperimentInverseSurfaceError
+    ) as caught:
+        _rematch(execution, omitted_parsed)
+    assert caught.value.code == (
+        "STEP11_RC0030_RECEPTION_BINDING_MISMATCH"
+    )
+    assert str(caught.value) == caught.value.code
 
 
 def test_rc0030_e2_frozen_authority_and_retained_attack_denominator() -> None:
@@ -1266,6 +1563,24 @@ def test_rc0030_e2_join_cardinality_reuse_and_reception_attacks_fail_closed() ->
         )
     assert caught.value.code == "STEP11_RC0030_BASE_REUSE_COMMITMENT_MISMATCH"
 
+    assert _reuse_context.verified_base_reuse_bindings
+    duplicated_reuse = (
+        _reuse_context.verified_base_reuse_bindings[0],
+        *_reuse_context.verified_base_reuse_bindings,
+    )
+    with pytest.raises(
+        inverse.Step11Rc0030ExperimentInverseSurfaceError
+    ) as duplicate:
+        inverse.match_step11_rc0030_experiment_surface(
+            reuse_parsed,
+            base_body_witness=_reuse_context.base_body_witness,
+            verified_base_reuse_bindings=duplicated_reuse,
+            **_source_kwargs(reuse_execution, reuse_candidate),
+        )
+    assert duplicate.value.code == (
+        "STEP11_RC0030_SEMANTIC_COVERAGE_XOR_INVALID"
+    )
+
     zero = _execution("nls3s_b001_0002")
     _candidate, _parsed, zero_joined, _context = _selected_material(zero)
     zero_binding = zero_joined.verified_surface_binding
@@ -1332,8 +1647,8 @@ def test_rc0030_e2_resource_attempt_and_body_free_receipt_are_synchronized() -> 
     assert replan.value.code == "STEP11_RC0030_REPLAN_BOUND_EXCEEDED"
 
 
-def test_rc0030_e2_phase_a_support_positive_reaches_full_chain() -> None:
-    """Phase A RED until frozen support-positive authority reaches E2."""
+def test_rc0030_e2_phase_b_support_positive_reaches_full_chain() -> None:
+    """Phase B requires exact source-to-verified support cardinality."""
 
     selected: list[Any] = []
     expected_base_candidates = {"D": 2, "I6-D02": 4}
@@ -1341,6 +1656,7 @@ def test_rc0030_e2_phase_a_support_positive_reaches_full_chain() -> None:
         execution = _support_execution(case_id)
         result = execution.body_free_result
         base_candidates = tuple(execution.base_execution.natural_candidates)
+        expected_denominator = _SUPPORT_DENOMINATOR_BY_CASE[case_id]
         support_counts = tuple(
             sum(
                 bool(row.supporting_nucleus_ids)
@@ -1350,7 +1666,8 @@ def test_rc0030_e2_phase_a_support_positive_reaches_full_chain() -> None:
         )
         material = runtime.step11_rc0030_experiment_result_material(result)
         if (
-            len(base_candidates) != expected_base_candidates[case_id]
+            _required_source_denominator(execution) != expected_denominator
+            or len(base_candidates) != expected_base_candidates[case_id]
             or not support_counts
             or any(count < 1 for count in support_counts)
             or _mapping_keys(material) & _FORBIDDEN_PUBLIC_KEYS
@@ -1393,6 +1710,25 @@ def test_rc0030_e2_phase_a_support_positive_reaches_full_chain() -> None:
             _closed_fail("STEP11_RC0030_E2_SUPPORT_RED_SHAPE_CHANGED")
     if len(selected) != len(_SUPPORT_CASE_IDS):
         _closed_fail("STEP11_RC0030_E2_SUPPORT_POSITIVE_FULL_CHAIN_UNREACHABLE")
-    for execution in selected:
-        _assert_selected_chain(execution)
+    for case_id, execution in zip(_SUPPORT_CASE_IDS, selected, strict=True):
+        expected = _SUPPORT_DENOMINATOR_BY_CASE[case_id]
+        _assert_selected_chain(
+            execution,
+            expected_denominator=expected[:2],
+        )
+        _assert_exact_chain_denominator(execution, expected)
+        _assert_base_gate_evidence_is_separated(execution)
+        _assert_base_predecessor_integrity_attack_rejected(execution)
+        _assert_forward_metadata_attack_rejected(execution)
+        _assert_stale_base_context_rejected(execution)
+        _assert_ambiguous_base_phrase_projection_rejected(execution)
         _assert_support_omission_rejected(execution)
+
+    control = _execution(_NO_SUPPORT_CONTROL_CASE_ID)
+    control_expected = (0, 1, 0)
+    assert _required_source_denominator(control) == control_expected
+    _assert_selected_chain(
+        control,
+        expected_denominator=control_expected[:2],
+    )
+    _assert_exact_chain_denominator(control, control_expected)
