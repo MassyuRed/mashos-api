@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""P5 phase-qualified dependency authority for the disconnected rc0030 lane.
+"""E2 phase-qualified dependency authority for the disconnected rc0030 lane.
 
-The rc0029 generated manifest and the completed P4 manifest are immutable
-historical predecessors.  The exact eighteen-path list remains the closed
-maximum for the whole run.  P5 activates only its three previously reserved
-regression paths and requires E2/E3/E4 paths to remain absent.  Filesystem
-discovery is rejection-only and cannot admit a path.
+The rc0029 parent and completed P4/P5 manifests are immutable historical
+predecessors.  The exact eighteen-path list remains the closed maximum for the
+whole run.  E2 activates only its previously reserved integration test and
+requires E3/E4 paths to remain absent.  All four production owners are pinned
+byte-for-byte to the formal E2 predecessor.  Filesystem discovery is
+rejection-only and cannot admit a path.
 """
 
 import ast
@@ -25,7 +26,7 @@ from emlis_ai_rc0029_surface_repair_experiment_dependency_manifest_v3 import (
 
 RC0030_SURFACE_PLANNING_DEPENDENCY_MANIFEST_SCHEMA = (
     "cocolon.emlis.nls_v3."
-    "rc0030_surface_planning_experiment_dependency_manifest.v2"
+    "rc0030_surface_planning_experiment_dependency_manifest.v3"
 )
 RC0030_SURFACE_PLANNING_EXPERIMENT_ID = (
     "nls_v3_rc0030_common_surface_planning_experiment"
@@ -39,7 +40,10 @@ RC0030_P4_PHASE_PREDECESSOR_GIT_COMMIT = (
 RC0030_P5_PHASE_PREDECESSOR_GIT_COMMIT = (
     "3897331a5f605762e09f9953e47801d45d3c5da2"
 )
-RC0030_MANIFEST_PHASE = "P5_CARDINALITY_REGRESSION"
+RC0030_E2_PHASE_PREDECESSOR_GIT_COMMIT = (
+    "45b178cfc0e7d94ab8385682ab3c7bbf0ab9aa25"
+)
+RC0030_MANIFEST_PHASE = "E2_INTEGRATED_SYNCHRONIZATION"
 
 RC0030_P4_MANIFEST_SCHEMA = (
     "cocolon.emlis.nls_v3."
@@ -56,6 +60,28 @@ RC0030_P4_SOURCE_DEPENDENCY_CLOSURE_SHA256 = (
     "29abbb08da497c902ea56cffbc82703801c7228f86e8a4f0f95d00800c31456b"
 )
 RC0030_P4_SOURCE_FILE_COUNT = 219
+
+RC0030_P5_MANIFEST_SCHEMA = (
+    "cocolon.emlis.nls_v3."
+    "rc0030_surface_planning_experiment_dependency_manifest.v2"
+)
+RC0030_P5_MANIFEST_GIT_COMMIT = (
+    "924bd458255f226db54c17d84dd4aafc5db2b1e2"
+)
+RC0030_P5_MANIFEST_PHASE = "P5_CARDINALITY_REGRESSION"
+RC0030_P5_MANIFEST_FILE_SHA256 = (
+    "4ceb33aa6bb6f15d6ad9b7212bbdcee901edb352707f3f19a90e91ff6d91f62c"
+)
+RC0030_P5_MANIFEST_ARTIFACT_SHA256 = (
+    "265418796ec720112ea046014b7dd3c612d392382647a64db5fe7396b4a976b7"
+)
+RC0030_P5_SOURCE_DEPENDENCY_CLOSURE_SHA256 = (
+    "7c905f06c88ed4a19f8ece102cafbb1333dcce1b3e840081952682703ec038e5"
+)
+RC0030_P5_FILE_HASHES_SHA256 = (
+    "75663d3799c8da7e196d4a30fcc29b1358ab4fc3a56b2461f7eb3b9ec2ecbf70"
+)
+RC0030_P5_SOURCE_FILE_COUNT = 222
 
 RC0029_SURFACE_REPAIR_PARENT_MANIFEST_PATH = (
     "ai/tests/fixtures/emlis_nls_v3/cycle_001/"
@@ -101,6 +127,12 @@ RC0030_MODIFIED_OWNER_PREDECESSORS = (
         "p4_phase_predecessor_sha256": (
             "592f3ab7c90831c3191f51e9e7dd9a1f8c3fe4add1fd31bba9fdc65dccaecc28"
         ),
+        "p5_phase_predecessor_sha256": (
+            "592f3ab7c90831c3191f51e9e7dd9a1f8c3fe4add1fd31bba9fdc65dccaecc28"
+        ),
+        "e2_phase_predecessor_sha256": (
+            "592f3ab7c90831c3191f51e9e7dd9a1f8c3fe4add1fd31bba9fdc65dccaecc28"
+        ),
     },
     {
         "path": RC0030_SURFACE_PATH,
@@ -110,6 +142,12 @@ RC0030_MODIFIED_OWNER_PREDECESSORS = (
         ),
         "p4_phase_predecessor_sha256": (
             "8f8ea6f197bac02edc8ee3594165625e1e8f06e5a6a7bb44e41445d880ae9c37"
+        ),
+        "p5_phase_predecessor_sha256": (
+            "8f8ea6f197bac02edc8ee3594165625e1e8f06e5a6a7bb44e41445d880ae9c37"
+        ),
+        "e2_phase_predecessor_sha256": (
+            "5f548499e05e5a982f375dde5f059d7eba08f06fbc59bd0a76d9ed788a1e8eaf"
         ),
     },
     {
@@ -121,6 +159,12 @@ RC0030_MODIFIED_OWNER_PREDECESSORS = (
         "p4_phase_predecessor_sha256": (
             "629305364ac50530265d7d87a6ca28678eb3e1be6ac7289ae770b3b5f871d8c9"
         ),
+        "p5_phase_predecessor_sha256": (
+            "7665406076bdbae621a713df9fdf40ac6bf7cf2bfbbbc6659bcc2829908ddb5a"
+        ),
+        "e2_phase_predecessor_sha256": (
+            "648a3a6690f8df860053c811a5416fcfc9983524e5ff880a0e6921a122a52e30"
+        ),
     },
     {
         "path": RC0030_HARD_GATE_PATH,
@@ -131,10 +175,21 @@ RC0030_MODIFIED_OWNER_PREDECESSORS = (
         "p4_phase_predecessor_sha256": (
             "1926ef12e74f1a9f53015f2d913cbb4b6881606e57e5078c6f8192e2894af4c7"
         ),
+        "p5_phase_predecessor_sha256": (
+            "2a70d294a8457d7f9328789ae6cba118d71bef477e2cc9a2ccb4facf24df68ca"
+        ),
+        "e2_phase_predecessor_sha256": (
+            "88514bb2a179e8d726f36e1666d2618330d95979107403ededc93aa35655943b"
+        ),
     },
 )
 RC0030_MODIFIED_OWNER_PATHS = tuple(
     row["path"] for row in RC0030_MODIFIED_OWNER_PREDECESSORS
+)
+RC0030_E2_CHANGED_OWNER_PATHS = (
+    RC0030_SURFACE_PATH,
+    RC0030_MATCHER_PATH,
+    RC0030_HARD_GATE_PATH,
 )
 
 RC0030_CATALOG_PATH = (
@@ -163,6 +218,12 @@ RC0030_REPRESENTATIVE_FIXTURE_PATH = (
     "ai/tests/fixtures/emlis_nls_v3/cycle_001/"
     "rc0030_representative8_body_free.json"
 )
+RC0030_E2_INTEGRATION_PATH = (
+    "ai/tests/test_emlis_nls_v3_s11_rc0030_e2_integration.py"
+)
+RC0030_E2_INTEGRATION_PHASE_PREDECESSOR_SHA256 = (
+    "789008643a4d7ba388a26f35fbf2276eea5f1c3702f94ea6089377ce372d5eaa"
+)
 
 RC0030_NEW_PATH_ALLOWLIST = (
     RC0030_MANIFEST_OWNER_PATH,
@@ -174,7 +235,7 @@ RC0030_NEW_PATH_ALLOWLIST = (
     RC0030_REPRESENTATIVE_FIXTURE_PATH,
     "ai/tests/test_emlis_nls_v3_s11_rc0030_surface_planning_red.py",
     "ai/tests/test_emlis_nls_v3_s11_rc0030_surface_planning_mutation.py",
-    "ai/tests/test_emlis_nls_v3_s11_rc0030_e2_integration.py",
+    RC0030_E2_INTEGRATION_PATH,
     "ai/tests/test_emlis_nls_v3_s11_rc0030_forward_inverse_independence.py",
     "ai/tests/test_emlis_nls_v3_s11_rc0030_runtime_disconnect.py",
     "ai/tests/test_emlis_nls_v3_s11_rc0030_predecessor_immutability.py",
@@ -203,7 +264,7 @@ RC0030_P4_HASHED_NEW_PATHS = tuple(
 )
 RC0030_P4_RESERVED_ABSENT_PATHS = (
     RC0030_BOUNDED_EXPERIMENT_TOOL_PATH,
-    "ai/tests/test_emlis_nls_v3_s11_rc0030_e2_integration.py",
+    RC0030_E2_INTEGRATION_PATH,
     "ai/tests/test_emlis_nls_v3_s11_rc0030_predecessor_immutability.py",
     "ai/tests/test_emlis_nls_v3_s11_rc0030_predecessor_behavior_regression.py",
     "ai/tests/test_emlis_nls_v3_s11_rc0030_control_non_regression.py",
@@ -220,7 +281,7 @@ RC0030_P5_ACTIVE_NEW_PATHS = tuple(
     for path in RC0030_NEW_PATH_ALLOWLIST
     if path not in {
         RC0030_BOUNDED_EXPERIMENT_TOOL_PATH,
-        "ai/tests/test_emlis_nls_v3_s11_rc0030_e2_integration.py",
+        RC0030_E2_INTEGRATION_PATH,
         "ai/tests/test_emlis_nls_v3_s11_rc0030_e3_representative8.py",
         "ai/tests/test_emlis_nls_v3_s11_rc0030_e4_frozen100_read_only.py",
     }
@@ -231,14 +292,32 @@ RC0030_P5_HASHED_NEW_PATHS = tuple(
 )
 RC0030_P5_RESERVED_ABSENT_PATHS = (
     RC0030_BOUNDED_EXPERIMENT_TOOL_PATH,
-    "ai/tests/test_emlis_nls_v3_s11_rc0030_e2_integration.py",
+    RC0030_E2_INTEGRATION_PATH,
+    "ai/tests/test_emlis_nls_v3_s11_rc0030_e3_representative8.py",
+    "ai/tests/test_emlis_nls_v3_s11_rc0030_e4_frozen100_read_only.py",
+)
+RC0030_E2_NEWLY_ACTIVE_PATHS = (
+    RC0030_E2_INTEGRATION_PATH,
+)
+RC0030_E2_ACTIVE_NEW_PATHS = tuple(
+    path
+    for path in RC0030_NEW_PATH_ALLOWLIST
+    if path not in {
+        RC0030_BOUNDED_EXPERIMENT_TOOL_PATH,
+        "ai/tests/test_emlis_nls_v3_s11_rc0030_e3_representative8.py",
+        "ai/tests/test_emlis_nls_v3_s11_rc0030_e4_frozen100_read_only.py",
+    }
+)
+RC0030_E2_HASHED_NEW_PATHS = tuple(
+    path for path in RC0030_E2_ACTIVE_NEW_PATHS
+    if path != RC0030_GENERATED_MANIFEST_PATH
+)
+RC0030_E2_RESERVED_ABSENT_PATHS = (
+    RC0030_BOUNDED_EXPERIMENT_TOOL_PATH,
     "ai/tests/test_emlis_nls_v3_s11_rc0030_e3_representative8.py",
     "ai/tests/test_emlis_nls_v3_s11_rc0030_e4_frozen100_read_only.py",
 )
 RC0030_LATER_PHASE_ACTIVATION = {
-    "E2_INTEGRATED_SYNCHRONIZATION": (
-        "ai/tests/test_emlis_nls_v3_s11_rc0030_e2_integration.py",
-    ),
     "E3_MACHINE_AND_PRODUCT_READ": (
         RC0030_BOUNDED_EXPERIMENT_TOOL_PATH,
         "ai/tests/test_emlis_nls_v3_s11_rc0030_e3_representative8.py",
@@ -248,7 +327,6 @@ RC0030_LATER_PHASE_ACTIVATION = {
     ),
 }
 RC0030_LATER_PHASE_ORDER = (
-    "E2_INTEGRATED_SYNCHRONIZATION",
     "E3_MACHINE_AND_PRODUCT_READ",
     "E4_FROZEN100",
 )
@@ -305,10 +383,10 @@ def _activation_policy_material() -> dict[str, Any]:
     return {
         "phase": RC0030_MANIFEST_PHASE,
         "exact18_is_closed_maximum": True,
-        "active_new_paths": list(sorted(RC0030_P5_ACTIVE_NEW_PATHS)),
-        "newly_active_paths": list(sorted(RC0030_P5_NEWLY_ACTIVE_PATHS)),
+        "active_new_paths": list(sorted(RC0030_E2_ACTIVE_NEW_PATHS)),
+        "newly_active_paths": list(sorted(RC0030_E2_NEWLY_ACTIVE_PATHS)),
         "reserved_absent_paths": list(
-            sorted(RC0030_P5_RESERVED_ABSENT_PATHS)
+            sorted(RC0030_E2_RESERVED_ABSENT_PATHS)
         ),
         "later_phase_activation": {
             phase: list(sorted(paths))
@@ -323,19 +401,20 @@ def _activation_policy_material() -> dict[str, Any]:
 
 def _phase_predecessor_material() -> dict[str, Any]:
     return {
-        "schema_version": RC0030_P4_MANIFEST_SCHEMA,
-        "git_commit": RC0030_P5_PHASE_PREDECESSOR_GIT_COMMIT,
-        "manifest_phase": RC0030_P4_MANIFEST_PHASE,
+        "schema_version": RC0030_P5_MANIFEST_SCHEMA,
+        "git_commit": RC0030_P5_MANIFEST_GIT_COMMIT,
+        "manifest_phase": RC0030_P5_MANIFEST_PHASE,
         "phase_predecessor_git_commit": (
-            RC0030_P4_PHASE_PREDECESSOR_GIT_COMMIT
+            RC0030_P5_PHASE_PREDECESSOR_GIT_COMMIT
         ),
         "manifest_path": RC0030_GENERATED_MANIFEST_PATH,
-        "manifest_file_sha256": RC0030_P4_MANIFEST_FILE_SHA256,
-        "manifest_artifact_sha256": RC0030_P4_MANIFEST_ARTIFACT_SHA256,
+        "manifest_file_sha256": RC0030_P5_MANIFEST_FILE_SHA256,
+        "manifest_artifact_sha256": RC0030_P5_MANIFEST_ARTIFACT_SHA256,
         "source_dependency_closure_sha256": (
-            RC0030_P4_SOURCE_DEPENDENCY_CLOSURE_SHA256
+            RC0030_P5_SOURCE_DEPENDENCY_CLOSURE_SHA256
         ),
-        "source_file_count": RC0030_P4_SOURCE_FILE_COUNT,
+        "file_hashes_sha256": RC0030_P5_FILE_HASHES_SHA256,
+        "source_file_count": RC0030_P5_SOURCE_FILE_COUNT,
         "immutable": True,
     }
 
@@ -552,7 +631,7 @@ def _delta_import_edges(
         path
         for path in (
             *RC0030_MODIFIED_OWNER_PATHS,
-            *RC0030_P5_HASHED_NEW_PATHS,
+            *RC0030_E2_HASHED_NEW_PATHS,
         )
         if path.endswith(".py")
     )
@@ -659,7 +738,7 @@ def find_rc0030_surface_planning_forbidden_reverse_imports(
         }
     )
     excluded = set(RC0030_MODIFIED_OWNER_PATHS) | set(
-        RC0030_P5_HASHED_NEW_PATHS
+        RC0030_E2_HASHED_NEW_PATHS
     )
     found: list[str] = []
     for root in (repo_root / "ai/services", repo_root / "ai/tools"):
@@ -690,12 +769,12 @@ def find_rc0030_surface_planning_forbidden_reverse_imports(
 def find_rc0030_surface_planning_reserved_paths(
     repo_root: Path,
 ) -> tuple[str, ...]:
-    """Return later-phase paths that P5 requires to remain absent."""
+    """Return later-phase paths that E2 requires to remain absent."""
 
     return tuple(
         sorted(
             path
-            for path in RC0030_P5_RESERVED_ABSENT_PATHS
+            for path in RC0030_E2_RESERVED_ABSENT_PATHS
             if (repo_root / path).exists()
         )
     )
@@ -749,6 +828,12 @@ def _modified_owner_rows(
         p4_phase_predecessor = predecessor[
             "p4_phase_predecessor_sha256"
         ]
+        p5_phase_predecessor = predecessor[
+            "p5_phase_predecessor_sha256"
+        ]
+        e2_phase_predecessor = predecessor[
+            "e2_phase_predecessor_sha256"
+        ]
         if (
             type(size) is not int
             or size <= 0
@@ -765,18 +850,21 @@ def _modified_owner_rows(
                 "path": path,
                 "predecessor_size": size,
                 "predecessor_sha256": expected,
-                "phase_predecessor_sha256": p4_phase_predecessor,
+                "p4_phase_predecessor_sha256": p4_phase_predecessor,
+                "p5_phase_predecessor_sha256": p5_phase_predecessor,
+                "phase_predecessor_sha256": e2_phase_predecessor,
                 "current_sha256": current,
                 "append_only_prefix_verified": True,
             }
         )
-        phase_mutable = path in {RC0030_MATCHER_PATH, RC0030_HARD_GATE_PATH}
+        phase_changed = path in RC0030_E2_CHANGED_OWNER_PATHS
         if (
-            (phase_mutable and current == p4_phase_predecessor)
-            or (not phase_mutable and current != p4_phase_predecessor)
+            current != e2_phase_predecessor
+            or (phase_changed and current == p5_phase_predecessor)
+            or (not phase_changed and current != p5_phase_predecessor)
         ):
             raise Rc0030SurfacePlanningDependencyError(
-                "RC0030_P5_PHASE_OWNER_DELTA_INVALID"
+                "RC0030_E2_PHASE_OWNER_BINDING_INVALID"
             )
     rows.sort(key=lambda row: row["path"])
     return rows, current_by_path
@@ -787,12 +875,12 @@ def build_rc0030_surface_planning_dependency_manifest(
     *,
     repo_root: Path,
 ) -> dict[str, Any]:
-    """Build the P5-active rc0030 delta over immutable P4/rc0029 evidence."""
+    """Build the E2-active rc0030 delta over immutable P5/P4 evidence."""
 
     parent = _validated_parent_manifest(parent_manifest)
     parent_files = _safe_file_rows(parent["file_hashes"])
     parent_by_path = {row["path"]: row["sha256"] for row in parent_files}
-    if any(path in parent_by_path for path in RC0030_P5_HASHED_NEW_PATHS):
+    if any(path in parent_by_path for path in RC0030_E2_HASHED_NEW_PATHS):
         raise Rc0030SurfacePlanningDependencyError(
             "RC0030_NEW_PATH_ALREADY_IN_PARENT"
         )
@@ -823,13 +911,21 @@ def build_rc0030_surface_planning_dependency_manifest(
         current_parent_rows.append({"path": path, "sha256": current})
 
     new_rows: list[dict[str, str]] = []
-    for path in RC0030_P5_HASHED_NEW_PATHS:
+    for path in RC0030_E2_HASHED_NEW_PATHS:
         try:
             sha256 = _sha256(repo_root / path)
         except OSError as error:
             raise Rc0030SurfacePlanningDependencyError(
                 "RC0030_ALLOWLIST_PATH_MISSING"
             ) from error
+        if (
+            path == RC0030_E2_INTEGRATION_PATH
+            and sha256
+            != RC0030_E2_INTEGRATION_PHASE_PREDECESSOR_SHA256
+        ):
+            raise Rc0030SurfacePlanningDependencyError(
+                "RC0030_E2_INTEGRATION_PREDECESSOR_DRIFT"
+            )
         new_rows.append({"path": path, "sha256": sha256})
     new_rows.sort(key=lambda row: row["path"])
 
@@ -864,7 +960,7 @@ def build_rc0030_surface_planning_dependency_manifest(
         "experiment_id": RC0030_SURFACE_PLANNING_EXPERIMENT_ID,
         "baseline_git_commit": RC0030_BASELINE_GIT_COMMIT,
         "phase_predecessor_git_commit": (
-            RC0030_P5_PHASE_PREDECESSOR_GIT_COMMIT
+            RC0030_E2_PHASE_PREDECESSOR_GIT_COMMIT
         ),
         "manifest_phase": RC0030_MANIFEST_PHASE,
         "parent": _parent_binding(parent),
@@ -964,7 +1060,7 @@ def validate_rc0030_surface_planning_dependency_manifest_shape(
         or value.get("experiment_id") != RC0030_SURFACE_PLANNING_EXPERIMENT_ID
         or value.get("baseline_git_commit") != RC0030_BASELINE_GIT_COMMIT
         or value.get("phase_predecessor_git_commit")
-        != RC0030_P5_PHASE_PREDECESSOR_GIT_COMMIT
+        != RC0030_E2_PHASE_PREDECESSOR_GIT_COMMIT
         or value.get("manifest_phase") != RC0030_MANIFEST_PHASE
         or value.get("body_free") is not True
     ):
@@ -988,19 +1084,19 @@ def validate_rc0030_surface_planning_dependency_manifest_shape(
     )
     if (
         len(RC0030_NEW_PATH_ALLOWLIST) != 18
-        or set(RC0030_P5_ACTIVE_NEW_PATHS)
-        & set(RC0030_P5_RESERVED_ABSENT_PATHS)
-        or set(RC0030_P5_ACTIVE_NEW_PATHS)
-        | set(RC0030_P5_RESERVED_ABSENT_PATHS)
+        or set(RC0030_E2_ACTIVE_NEW_PATHS)
+        & set(RC0030_E2_RESERVED_ABSENT_PATHS)
+        or set(RC0030_E2_ACTIVE_NEW_PATHS)
+        | set(RC0030_E2_RESERVED_ABSENT_PATHS)
         != set(RC0030_NEW_PATH_ALLOWLIST)
-        or len(RC0030_P5_ACTIVE_NEW_PATHS) != 14
-        or len(RC0030_P5_HASHED_NEW_PATHS) != 13
-        or len(RC0030_P5_RESERVED_ABSENT_PATHS) != 4
-        or set(RC0030_P5_NEWLY_ACTIVE_PATHS)
-        != set(RC0030_P5_ACTIVE_NEW_PATHS)
-        - set(RC0030_P4_ACTIVE_NEW_PATHS)
+        or len(RC0030_E2_ACTIVE_NEW_PATHS) != 15
+        or len(RC0030_E2_HASHED_NEW_PATHS) != 14
+        or len(RC0030_E2_RESERVED_ABSENT_PATHS) != 3
+        or set(RC0030_E2_NEWLY_ACTIVE_PATHS)
+        != set(RC0030_E2_ACTIVE_NEW_PATHS)
+        - set(RC0030_P5_ACTIVE_NEW_PATHS)
         or len(later_paths) != len(set(later_paths))
-        or set(later_paths) != set(RC0030_P5_RESERVED_ABSENT_PATHS)
+        or set(later_paths) != set(RC0030_E2_RESERVED_ABSENT_PATHS)
         or set(RC0030_LATER_PHASE_ORDER)
         != set(RC0030_LATER_PHASE_ACTIVATION)
     ):
@@ -1050,13 +1146,15 @@ def validate_rc0030_surface_planning_dependency_manifest_shape(
     by_path = {row["path"]: row["sha256"] for row in files}
     new_by_path = {row["path"]: row["sha256"] for row in new_rows}
     if (
-        set(new_by_path) != set(RC0030_P5_HASHED_NEW_PATHS)
+        set(new_by_path) != set(RC0030_E2_HASHED_NEW_PATHS)
+        or new_by_path.get(RC0030_E2_INTEGRATION_PATH)
+        != RC0030_E2_INTEGRATION_PHASE_PREDECESSOR_SHA256
         or any(by_path.get(path) != sha for path, sha in new_by_path.items())
         or RC0030_GENERATED_MANIFEST_PATH in by_path
         or value.get("source_file_count") != len(files)
         or len(files)
         != RC0029_SURFACE_REPAIR_PARENT_SOURCE_FILE_COUNT
-        + len(RC0030_P5_HASHED_NEW_PATHS)
+        + len(RC0030_E2_HASHED_NEW_PATHS)
     ):
         issues.add("RC0030_FILE_CLOSURE_INVALID")
 
@@ -1077,6 +1175,8 @@ def validate_rc0030_surface_planning_dependency_manifest_shape(
                     "path",
                     "predecessor_size",
                     "predecessor_sha256",
+                    "p4_phase_predecessor_sha256",
+                    "p5_phase_predecessor_sha256",
                     "phase_predecessor_sha256",
                     "current_sha256",
                     "append_only_prefix_verified",
@@ -1092,35 +1192,38 @@ def validate_rc0030_surface_planning_dependency_manifest_shape(
                 != predecessor["predecessor_size"]
                 or row.get("predecessor_sha256")
                 != predecessor["predecessor_sha256"]
-                or row.get("phase_predecessor_sha256")
+                or row.get("p4_phase_predecessor_sha256")
                 != predecessor["p4_phase_predecessor_sha256"]
+                or row.get("p5_phase_predecessor_sha256")
+                != predecessor["p5_phase_predecessor_sha256"]
+                or row.get("phase_predecessor_sha256")
+                != predecessor["e2_phase_predecessor_sha256"]
                 or type(row.get("current_sha256")) is not str
                 or _SHA_RE.fullmatch(row["current_sha256"]) is None
                 or row.get("current_sha256")
                 == predecessor["predecessor_sha256"]
+                or row.get("current_sha256")
+                != predecessor["e2_phase_predecessor_sha256"]
                 or row.get("append_only_prefix_verified") is not True
                 or by_path.get(path) != row.get("current_sha256")
                 or path in seen
             ):
                 issues.add("RC0030_MODIFIED_OWNER_LEDGER_INVALID")
             if predecessor is not None:
-                phase_mutable = path in {
-                    RC0030_MATCHER_PATH,
-                    RC0030_HARD_GATE_PATH,
-                }
+                phase_changed = path in RC0030_E2_CHANGED_OWNER_PATHS
                 if (
                     (
-                        phase_mutable
+                        phase_changed
                         and row.get("current_sha256")
-                        == predecessor["p4_phase_predecessor_sha256"]
+                        == predecessor["p5_phase_predecessor_sha256"]
                     )
                     or (
-                        not phase_mutable
+                        not phase_changed
                         and row.get("current_sha256")
-                        != predecessor["p4_phase_predecessor_sha256"]
+                        != predecessor["p5_phase_predecessor_sha256"]
                     )
                 ):
-                    issues.add("RC0030_P5_PHASE_OWNER_DELTA_INVALID")
+                    issues.add("RC0030_E2_PHASE_OWNER_BINDING_INVALID")
             if type(path) is str:
                 seen.add(path)
                 normalized.append(path)
@@ -1200,6 +1303,14 @@ __all__ = [
     "RC0029_SURFACE_REPAIR_PARENT_MANIFEST_FILE_SHA256",
     "RC0029_SURFACE_REPAIR_PARENT_MANIFEST_PATH",
     "RC0030_BASELINE_GIT_COMMIT",
+    "RC0030_E2_ACTIVE_NEW_PATHS",
+    "RC0030_E2_CHANGED_OWNER_PATHS",
+    "RC0030_E2_HASHED_NEW_PATHS",
+    "RC0030_E2_INTEGRATION_PATH",
+    "RC0030_E2_INTEGRATION_PHASE_PREDECESSOR_SHA256",
+    "RC0030_E2_NEWLY_ACTIVE_PATHS",
+    "RC0030_E2_PHASE_PREDECESSOR_GIT_COMMIT",
+    "RC0030_E2_RESERVED_ABSENT_PATHS",
     "RC0030_GENERATED_MANIFEST_PATH",
     "RC0030_LATER_PHASE_ACTIVATION",
     "RC0030_LATER_PHASE_ORDER",
@@ -1218,10 +1329,18 @@ __all__ = [
     "RC0030_P4_SOURCE_DEPENDENCY_CLOSURE_SHA256",
     "RC0030_P4_SOURCE_FILE_COUNT",
     "RC0030_P5_ACTIVE_NEW_PATHS",
+    "RC0030_P5_FILE_HASHES_SHA256",
     "RC0030_P5_HASHED_NEW_PATHS",
+    "RC0030_P5_MANIFEST_ARTIFACT_SHA256",
+    "RC0030_P5_MANIFEST_FILE_SHA256",
+    "RC0030_P5_MANIFEST_GIT_COMMIT",
+    "RC0030_P5_MANIFEST_PHASE",
+    "RC0030_P5_MANIFEST_SCHEMA",
     "RC0030_P5_NEWLY_ACTIVE_PATHS",
     "RC0030_P5_PHASE_PREDECESSOR_GIT_COMMIT",
     "RC0030_P5_RESERVED_ABSENT_PATHS",
+    "RC0030_P5_SOURCE_DEPENDENCY_CLOSURE_SHA256",
+    "RC0030_P5_SOURCE_FILE_COUNT",
     "RC0030_SURFACE_PLANNING_DEPENDENCY_MANIFEST_SCHEMA",
     "RC0030_SURFACE_PLANNING_EXPERIMENT_ID",
     "Rc0030SurfacePlanningDependencyError",
