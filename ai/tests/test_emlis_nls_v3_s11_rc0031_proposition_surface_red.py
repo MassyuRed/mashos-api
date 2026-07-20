@@ -110,6 +110,12 @@ _EXPECTED_EXACT18 = (
     "ai/tests/test_emlis_nls_v3_s11_rc0031_dependency_closure.py",
 )
 _EXPECTED_P1_ACTIVE = frozenset(_EXPECTED_EXACT18[6:8])
+_EXPECTED_P2_ACTIVE = frozenset(
+    (*_EXPECTED_P1_ACTIVE, _EXPECTED_EXACT18[2], _EXPECTED_EXACT18[8])
+)
+_EXPECTED_P3_ACTIVE = frozenset(
+    (*_EXPECTED_P2_ACTIVE, _EXPECTED_EXACT18[10])
+)
 _FORBIDDEN_BODY_KEYS = frozenset(
     {
         "action_text",
@@ -474,9 +480,14 @@ def test_rc0031_p1_predecessor_source_evidence_path_attack_and_resource_freeze_i
     assert scope["p1_modified_existing_paths"] == []
     assert scope["later_phase_reserved_path_count"] == 16
     if importlib.util.find_spec(_RC0031_ADAPTER) is None:
-        assert {
+        active_paths = frozenset(
             path for path in _EXPECTED_EXACT18 if (_REPO_ROOT / path).exists()
-        } == _EXPECTED_P1_ACTIVE
+        )
+        assert active_paths in (
+            _EXPECTED_P1_ACTIVE,
+            _EXPECTED_P2_ACTIVE,
+            _EXPECTED_P3_ACTIVE,
+        )
 
     exact7 = fixture["exact7_contract"]
     assert exact7["collected_count"] == 7
