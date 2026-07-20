@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Phase-qualified E2 successor closure for the disconnected rc0030 lane."""
+"""Phase-qualified E3 successor closure for the disconnected rc0030 lane."""
 
 import hashlib
 import json
@@ -46,7 +46,7 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_rc0030_e2_manifest_rebuilds_from_immutable_predecessors() -> None:
+def test_rc0030_e3_manifest_rebuilds_from_immutable_predecessors() -> None:
     parent = _load(_PARENT)
     current = _load(_CURRENT)
     assert (
@@ -69,7 +69,7 @@ def test_rc0030_e2_manifest_rebuilds_from_immutable_predecessors() -> None:
     )
 
 
-def test_rc0030_e2_manifest_binds_exact_four_plus_active_paths() -> None:
+def test_rc0030_e3_manifest_binds_exact_four_plus_active_paths() -> None:
     current = _load(_CURRENT)
     modified = current["modified_owner_file_hashes"]
     added = current["new_file_hashes"]
@@ -78,7 +78,7 @@ def test_rc0030_e2_manifest_binds_exact_four_plus_active_paths() -> None:
         for row in modified + added
     }
     expected = set(dependency.RC0030_MODIFIED_OWNER_PATHS) | set(
-        dependency.RC0030_E2_HASHED_NEW_PATHS
+        dependency.RC0030_E3_HASHED_NEW_PATHS
     )
     assert set(delta_by_path) == expected
     assert all(
@@ -88,7 +88,7 @@ def test_rc0030_e2_manifest_binds_exact_four_plus_active_paths() -> None:
     assert dependency.RC0030_E2_INTEGRATION_PHASE_PREDECESSOR_SHA256 == (
         "789008643a4d7ba388a26f35fbf2276eea5f1c3702f94ea6089377ce372d5eaa"
     )
-    assert delta_by_path[dependency.RC0030_E2_NEWLY_ACTIVE_PATHS[0]] == (
+    assert delta_by_path[dependency.RC0030_E2_INTEGRATION_PATH] == (
         dependency.RC0030_E2_INTEGRATION_PHASE_PREDECESSOR_SHA256
     )
     assert dependency.RC0030_GENERATED_MANIFEST_PATH not in {
@@ -103,17 +103,20 @@ def test_rc0030_e2_manifest_binds_exact_four_plus_active_paths() -> None:
     )
     assert tuple(
         dependency.RC0030_NEW_PATH_ALLOWLIST[index]
-        for index in (4, 15, 16)
-    ) == dependency.RC0030_E2_RESERVED_ABSENT_PATHS
+        for index in (4, 15)
+    ) == dependency.RC0030_E3_NEWLY_ACTIVE_PATHS
+    assert dependency.RC0030_NEW_PATH_ALLOWLIST[16] == (
+        dependency.RC0030_E3_RESERVED_ABSENT_PATHS[0]
+    )
     assert current["activation_policy"] == {
         "phase": dependency.RC0030_MANIFEST_PHASE,
         "exact18_is_closed_maximum": True,
-        "active_new_paths": sorted(dependency.RC0030_E2_ACTIVE_NEW_PATHS),
+        "active_new_paths": sorted(dependency.RC0030_E3_ACTIVE_NEW_PATHS),
         "newly_active_paths": sorted(
-            dependency.RC0030_E2_NEWLY_ACTIVE_PATHS
+            dependency.RC0030_E3_NEWLY_ACTIVE_PATHS
         ),
         "reserved_absent_paths": sorted(
-            dependency.RC0030_E2_RESERVED_ABSENT_PATHS
+            dependency.RC0030_E3_RESERVED_ABSENT_PATHS
         ),
         "later_phase_activation": {
             phase: sorted(paths)
@@ -124,28 +127,26 @@ def test_rc0030_e2_manifest_binds_exact_four_plus_active_paths() -> None:
         "later_phase_order": list(dependency.RC0030_LATER_PHASE_ORDER),
         "activation_is_monotonic": True,
     }
-    assert set(dependency.RC0030_E2_ACTIVE_NEW_PATHS).isdisjoint(
-        dependency.RC0030_E2_RESERVED_ABSENT_PATHS
+    assert set(dependency.RC0030_E3_ACTIVE_NEW_PATHS).isdisjoint(
+        dependency.RC0030_E3_RESERVED_ABSENT_PATHS
     )
-    assert set(dependency.RC0030_E2_ACTIVE_NEW_PATHS) | set(
-        dependency.RC0030_E2_RESERVED_ABSENT_PATHS
+    assert set(dependency.RC0030_E3_ACTIVE_NEW_PATHS) | set(
+        dependency.RC0030_E3_RESERVED_ABSENT_PATHS
     ) == set(dependency.RC0030_NEW_PATH_ALLOWLIST)
-    assert set(dependency.RC0030_E2_NEWLY_ACTIVE_PATHS) == set(
-        dependency.RC0030_E2_ACTIVE_NEW_PATHS
-    ) - set(dependency.RC0030_P5_ACTIVE_NEW_PATHS)
-    assert dependency.RC0030_E2_NEWLY_ACTIVE_PATHS == (
-        "ai/tests/test_emlis_nls_v3_s11_rc0030_e2_integration.py",
-    )
-    assert len(dependency.RC0030_E2_ACTIVE_NEW_PATHS) == 15
-    assert len(dependency.RC0030_E2_HASHED_NEW_PATHS) == 14
-    assert len(dependency.RC0030_E2_RESERVED_ABSENT_PATHS) == 3
-    assert set(dependency.RC0030_E2_RESERVED_ABSENT_PATHS) == {
+    assert set(dependency.RC0030_E3_NEWLY_ACTIVE_PATHS) == set(
+        dependency.RC0030_E3_ACTIVE_NEW_PATHS
+    ) - set(dependency.RC0030_E2_ACTIVE_NEW_PATHS)
+    assert dependency.RC0030_E3_NEWLY_ACTIVE_PATHS == (
         dependency.RC0030_BOUNDED_EXPERIMENT_TOOL_PATH,
-        "ai/tests/test_emlis_nls_v3_s11_rc0030_e3_representative8.py",
-        "ai/tests/test_emlis_nls_v3_s11_rc0030_e4_frozen100_read_only.py",
+        dependency.RC0030_E3_REPRESENTATIVE_TEST_PATH,
+    )
+    assert len(dependency.RC0030_E3_ACTIVE_NEW_PATHS) == 17
+    assert len(dependency.RC0030_E3_HASHED_NEW_PATHS) == 16
+    assert len(dependency.RC0030_E3_RESERVED_ABSENT_PATHS) == 1
+    assert set(dependency.RC0030_E3_RESERVED_ABSENT_PATHS) == {
+        dependency.RC0030_E4_FROZEN100_TEST_PATH,
     }
     assert dependency.RC0030_LATER_PHASE_ORDER == (
-        "E3_MACHINE_AND_PRODUCT_READ",
         "E4_FROZEN100",
     )
     assert dependency.find_rc0030_surface_planning_reserved_paths(
@@ -155,10 +156,10 @@ def test_rc0030_e2_manifest_binds_exact_four_plus_active_paths() -> None:
     assert current["unbound_project_imports"] == []
     assert current["forbidden_reverse_imports"] == []
     assert current["reserved_paths_present"] == []
-    assert current["source_file_count"] == 223
+    assert current["source_file_count"] == 225
 
 
-def test_rc0030_e2_manifest_closes_phase_flags_and_predecessors() -> None:
+def test_rc0030_e3_manifest_closes_phase_flags_and_predecessors() -> None:
     current = _load(_CURRENT)
     flags = current["flags"]
     assert flags == {
@@ -175,12 +176,19 @@ def test_rc0030_e2_manifest_closes_phase_flags_and_predecessors() -> None:
         "e1e2ec5c17fa165f9972373304899802832ecd5b"
     )
     assert current["phase_predecessor_git_commit"] == (
-        "45b178cfc0e7d94ab8385682ab3c7bbf0ab9aa25"
+        "38ca7fa779065998a363ce9bb581338d98b8f79d"
+    )
+    assert dependency.RC0030_E3_PHASE_PREDECESSOR_GIT_COMMIT == (
+        "38ca7fa779065998a363ce9bb581338d98b8f79d"
+    )
+    assert dependency.RC0030_SURFACE_PLANNING_DEPENDENCY_MANIFEST_SCHEMA == (
+        "cocolon.emlis.nls_v3."
+        "rc0030_surface_planning_experiment_dependency_manifest.v4"
     )
     assert dependency.RC0030_E2_PHASE_PREDECESSOR_GIT_COMMIT == (
         "45b178cfc0e7d94ab8385682ab3c7bbf0ab9aa25"
     )
-    assert current["manifest_phase"] == "E2_INTEGRATED_SYNCHRONIZATION"
+    assert current["manifest_phase"] == "E3_MACHINE_AND_PRODUCT_READ"
     assert dependency.RC0030_P5_MANIFEST_SCHEMA == (
         "cocolon.emlis.nls_v3."
         "rc0030_surface_planning_experiment_dependency_manifest.v2"
@@ -207,6 +215,29 @@ def test_rc0030_e2_manifest_closes_phase_flags_and_predecessors() -> None:
         "75663d3799c8da7e196d4a30fcc29b1358ab4fc3a56b2461f7eb3b9ec2ecbf70"
     )
     assert dependency.RC0030_P5_SOURCE_FILE_COUNT == 222
+    assert dependency.RC0030_E2_MANIFEST_SCHEMA == (
+        "cocolon.emlis.nls_v3."
+        "rc0030_surface_planning_experiment_dependency_manifest.v3"
+    )
+    assert dependency.RC0030_E2_MANIFEST_GIT_COMMIT == (
+        "38ca7fa779065998a363ce9bb581338d98b8f79d"
+    )
+    assert dependency.RC0030_E2_MANIFEST_PHASE == (
+        "E2_INTEGRATED_SYNCHRONIZATION"
+    )
+    assert dependency.RC0030_E2_MANIFEST_FILE_SHA256 == (
+        "754e79dc0f871b9b6c650b174f067f16cef35a9f141bf91205d42c308b1041f7"
+    )
+    assert dependency.RC0030_E2_MANIFEST_ARTIFACT_SHA256 == (
+        "fe468b51e3b9f37558f30b010aad205500759806dfb939f859b0b9699466e097"
+    )
+    assert dependency.RC0030_E2_SOURCE_DEPENDENCY_CLOSURE_SHA256 == (
+        "a49e9bc2b8ce1443c955c9fd010fd07454e2e8a17c70a845db180e97b7023832"
+    )
+    assert dependency.RC0030_E2_FILE_HASHES_SHA256 == (
+        "f7a6fb9c08e3286f1784127e675f0761e87a4431699692082b8e20fbc87a33f3"
+    )
+    assert dependency.RC0030_E2_SOURCE_FILE_COUNT == 223
     assert current["parent"] == {
         "schema_version": (
             "cocolon.emlis.nls_v3."
@@ -231,22 +262,22 @@ def test_rc0030_e2_manifest_closes_phase_flags_and_predecessors() -> None:
         "immutable": True,
     }
     assert current["phase_predecessor"] == {
-        "schema_version": dependency.RC0030_P5_MANIFEST_SCHEMA,
-        "git_commit": dependency.RC0030_P5_MANIFEST_GIT_COMMIT,
-        "manifest_phase": dependency.RC0030_P5_MANIFEST_PHASE,
+        "schema_version": dependency.RC0030_E2_MANIFEST_SCHEMA,
+        "git_commit": dependency.RC0030_E2_MANIFEST_GIT_COMMIT,
+        "manifest_phase": dependency.RC0030_E2_MANIFEST_PHASE,
         "phase_predecessor_git_commit": (
-            dependency.RC0030_P5_PHASE_PREDECESSOR_GIT_COMMIT
+            dependency.RC0030_E2_PHASE_PREDECESSOR_GIT_COMMIT
         ),
         "manifest_path": dependency.RC0030_GENERATED_MANIFEST_PATH,
-        "manifest_file_sha256": dependency.RC0030_P5_MANIFEST_FILE_SHA256,
+        "manifest_file_sha256": dependency.RC0030_E2_MANIFEST_FILE_SHA256,
         "manifest_artifact_sha256": (
-            dependency.RC0030_P5_MANIFEST_ARTIFACT_SHA256
+            dependency.RC0030_E2_MANIFEST_ARTIFACT_SHA256
         ),
         "source_dependency_closure_sha256": (
-            dependency.RC0030_P5_SOURCE_DEPENDENCY_CLOSURE_SHA256
+            dependency.RC0030_E2_SOURCE_DEPENDENCY_CLOSURE_SHA256
         ),
-        "file_hashes_sha256": dependency.RC0030_P5_FILE_HASHES_SHA256,
-        "source_file_count": dependency.RC0030_P5_SOURCE_FILE_COUNT,
+        "file_hashes_sha256": dependency.RC0030_E2_FILE_HASHES_SHA256,
+        "source_file_count": dependency.RC0030_E2_SOURCE_FILE_COUNT,
         "immutable": True,
     }
     by_path = {
@@ -285,9 +316,9 @@ def test_rc0030_e2_manifest_closes_phase_flags_and_predecessors() -> None:
         assert by_path[path]["current_sha256"] == e2_sha256
 
 
-def test_rc0030_e2_manifest_rejects_phase_or_activation_mutation() -> None:
+def test_rc0030_e3_manifest_rejects_phase_or_activation_mutation() -> None:
     current = _load(_CURRENT)
-    stale_phase = {**current, "manifest_phase": "P5_CARDINALITY_REGRESSION"}
+    stale_phase = {**current, "manifest_phase": "E2_INTEGRATED_SYNCHRONIZATION"}
     assert "RC0030_MANIFEST_IDENTITY_INVALID" in (
         dependency.validate_rc0030_surface_planning_dependency_manifest_shape(
             stale_phase
@@ -309,6 +340,38 @@ def test_rc0030_e2_manifest_rejects_phase_or_activation_mutation() -> None:
             collapsed_predecessor
         )
     )
+    altered_phase_commit = {
+        **current,
+        "phase_predecessor_git_commit": (
+            dependency.RC0030_E2_PHASE_PREDECESSOR_GIT_COMMIT
+        ),
+    }
+    assert "RC0030_MANIFEST_IDENTITY_INVALID" in (
+        dependency.validate_rc0030_surface_planning_dependency_manifest_shape(
+            altered_phase_commit
+        )
+    )
+    altered_predecessor_hash = json.loads(json.dumps(current))
+    altered_predecessor_hash["phase_predecessor"][
+        "manifest_file_sha256"
+    ] = "0" * 64
+    assert "RC0030_PHASE_PREDECESSOR_BINDING_INVALID" in (
+        dependency.validate_rc0030_surface_planning_dependency_manifest_shape(
+            altered_predecessor_hash
+        )
+    )
+    altered_new_hash = json.loads(json.dumps(current))
+    bounded_row = next(
+        row
+        for row in altered_new_hash["new_file_hashes"]
+        if row["path"] == dependency.RC0030_BOUNDED_EXPERIMENT_TOOL_PATH
+    )
+    bounded_row["sha256"] = "1" * 64
+    assert "RC0030_FILE_CLOSURE_INVALID" in (
+        dependency.validate_rc0030_surface_planning_dependency_manifest_shape(
+            altered_new_hash
+        )
+    )
     altered_owner = json.loads(json.dumps(current))
     surface_row = next(
         row
@@ -325,7 +388,7 @@ def test_rc0030_e2_manifest_rejects_phase_or_activation_mutation() -> None:
     )
 
 
-def test_rc0030_e2_manifest_tool_verifies_generated_fixture() -> None:
+def test_rc0030_e3_manifest_tool_verifies_generated_fixture() -> None:
     current = _load(_CURRENT)
     completed = subprocess.run(
         (
