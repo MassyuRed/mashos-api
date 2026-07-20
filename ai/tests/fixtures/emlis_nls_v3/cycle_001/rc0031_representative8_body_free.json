@@ -1,0 +1,279 @@
+{
+  "schema_version": "cocolon.emlis.nls_v3.rc0031.representative8.body_free.p1.v1",
+  "body_free": true,
+  "stage": "Step11_Cycle001_rc0031_P1_exact7_RED",
+  "predecessor": {
+    "github_repository": "MassyuRed/mashos-api",
+    "github_commit": "25b98ec8b59eaff717d1dc3261ff21156ccce7ed",
+    "detailed_design_sha256": "6aa3fb799919ac30b0eb84571ac4009d62a2bd799c84322272a59bba533f13bc",
+    "rc0031_design20_3_addendum_sha256": "e032e9681b7da465faf379a19d68f139c02e13f722d721b9a3fd79aced9806e0",
+    "rc0031_impact_boundary_receipt_sha256": "57ce1d4c347142eda8665378137b5c2c6239b19de25be8ec630000951f2c7fe0",
+    "rc0031_session_handoff_sha256": "2763c28a6773d56f06cfc70f4193881178e2e16ad363921b35f998ae44dff023",
+    "rc0030_source_dependency_closure_sha256": "be45dc1c8a34a231c0726fe1570c24e873f55e93b338e614b912112f1c201fbb",
+    "rc0030_manifest_file_sha256": "06327f7e0e6d63923bbdf836aa5d25744a83eeb8f8a704aa23c89a3ca057857b",
+    "rc0030_e3_machine_receipt_sha256": "56fad0a7f96f2af46e94a8b3fe1ca7e6f7500a9605bf8cc7aed8b4a95fd86f7c",
+    "rc0030_e3_product_read_stop_receipt_sha256": "608a1c73fb94fa67a4df39c78661edadb7ec9ec8e905438cb3716b920ea87f95"
+  },
+  "source_fixture_commitments": {
+    "batch_manifest_sha256": "2b3308c4ada090539a2fc71c1cb235970aa0b90687b8d9633464ba61e94deba4",
+    "corpus_file_sha256": "013dd2ad1c1f446f843f400b3eb16231e8f32649e30114e70039b4cb709e8414",
+    "corpus_set_commitment": "35249591e6116564dcb92c7689baaff9a4b1a4a5992a1c7dfdfc04dd94a1e560",
+    "coverage_matrix_sha256": "4ea17d30ebdf624b374591f5ea9dde7240455a3a833c691d4a2a6e77d5649e5f",
+    "duplicate_report_sha256": "140e17311d84ae275ca90d3e93f1aafdfcd667f7bbaaacd92a729df550676354"
+  },
+  "frozen_exact4_prefix": {
+    "ai/services/ai_inference/emlis_ai_step11_grounded_lexicalization_v3.py": {
+      "byte_count": 129615,
+      "sha256": "592f3ab7c90831c3191f51e9e7dd9a1f8c3fe4add1fd31bba9fdc65dccaecc28"
+    },
+    "ai/services/ai_inference/emlis_ai_step11_natural_surface_v3.py": {
+      "byte_count": 360675,
+      "sha256": "5f548499e05e5a982f375dde5f059d7eba08f06fbc59bd0a76d9ed788a1e8eaf"
+    },
+    "ai/services/ai_inference/emlis_ai_step11_natural_surface_matcher_v3.py": {
+      "byte_count": 722658,
+      "sha256": "648a3a6690f8df860053c811a5416fcfc9983524e5ff880a0e6921a122a52e30"
+    },
+    "ai/services/ai_inference/emlis_ai_step11_hard_gate_v3.py": {
+      "byte_count": 208041,
+      "sha256": "88514bb2a179e8d726f36e1666d2618330d95979107403ededc93aa35655943b"
+    }
+  },
+  "path_scope": {
+    "conditional_modify_exact4_is_closed_maximum": true,
+    "new_exact18_is_closed_maximum": true,
+    "new_exact18": [
+      "ai/services/ai_inference/emlis_ai_rc0031_proposition_surface_experiment_dependency_manifest_v3.py",
+      "ai/services/ai_inference/emlis_ai_step11_rc0031_experiment_runtime_adapter_v3.py",
+      "ai/services/ai_inference/emlis_ai_step11_rc0031_experiment_surface_catalog_v3.py",
+      "ai/tools/emlis_nls_v3_rc0031_proposition_surface_dependency_manifest.py",
+      "ai/tools/emlis_nls_v3_rc0031_proposition_surface_bounded_experiment.py",
+      "ai/tests/fixtures/emlis_nls_v3/cycle_001/cycle001_dependency_manifest_rc0031_proposition_surface_experiment.json",
+      "ai/tests/fixtures/emlis_nls_v3/cycle_001/rc0031_representative8_body_free.json",
+      "ai/tests/test_emlis_nls_v3_s11_rc0031_proposition_surface_red.py",
+      "ai/tests/test_emlis_nls_v3_s11_rc0031_proposition_surface_mutation.py",
+      "ai/tests/test_emlis_nls_v3_s11_rc0031_e2_integration.py",
+      "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py",
+      "ai/tests/test_emlis_nls_v3_s11_rc0031_runtime_disconnect.py",
+      "ai/tests/test_emlis_nls_v3_s11_rc0031_predecessor_immutability.py",
+      "ai/tests/test_emlis_nls_v3_s11_rc0031_predecessor_behavior_regression.py",
+      "ai/tests/test_emlis_nls_v3_s11_rc0031_control_non_regression.py",
+      "ai/tests/test_emlis_nls_v3_s11_rc0031_e3_representative8.py",
+      "ai/tests/test_emlis_nls_v3_s11_rc0031_e4_frozen100_read_only.py",
+      "ai/tests/test_emlis_nls_v3_s11_rc0031_dependency_closure.py"
+    ],
+    "p1_active_new_paths": [
+      "ai/tests/fixtures/emlis_nls_v3/cycle_001/rc0031_representative8_body_free.json",
+      "ai/tests/test_emlis_nls_v3_s11_rc0031_proposition_surface_red.py"
+    ],
+    "p1_modified_existing_paths": [],
+    "later_phase_reserved_path_count": 16,
+    "filesystem_discovery_admission": false
+  },
+  "exact7_contract": {
+    "collected_count": 7,
+    "pass_count_on_unchanged_rc0030": 1,
+    "intentional_red_count_on_unchanged_rc0030": 6,
+    "collection_error_count": 0,
+    "skip_count": 0,
+    "xfail_count": 0,
+    "test_nodes": [
+      {
+        "index": 1,
+        "node": "test_rc0031_p1_predecessor_source_evidence_path_attack_and_resource_freeze_is_exact",
+        "p1_expectation": "PASS",
+        "closed_code": null
+      },
+      {
+        "index": 2,
+        "node": "test_rc0031_p1_source_root_and_main_meaning_dominance_is_proved",
+        "p1_expectation": "INTENTIONAL_RED",
+        "closed_code": "STEP11_RC0031_SOURCE_ROOT_DOMINANCE_NOT_PROVED"
+      },
+      {
+        "index": 3,
+        "node": "test_rc0031_p1_schema_free_proposition_realization_is_proved",
+        "p1_expectation": "INTENTIONAL_RED",
+        "closed_code": "STEP11_RC0031_SCHEMA_FREE_PROPOSITION_NOT_PROVED"
+      },
+      {
+        "index": 4,
+        "node": "test_rc0031_p1_relation_endpoint_direction_and_legibility_is_proved",
+        "p1_expectation": "INTENTIONAL_RED",
+        "closed_code": "STEP11_RC0031_RELATION_PROPOSITION_NOT_PROVED"
+      },
+      {
+        "index": 5,
+        "node": "test_rc0031_p1_semantic_chunk_distribution_and_depth_is_proved",
+        "p1_expectation": "INTENTIONAL_RED",
+        "closed_code": "STEP11_RC0031_DISTRIBUTION_DEPTH_NOT_PROVED"
+      },
+      {
+        "index": 6,
+        "node": "test_rc0031_p1_grounded_reception_target_support_act_predication_is_proved",
+        "p1_expectation": "INTENTIONAL_RED",
+        "closed_code": "STEP11_RC0031_GROUNDED_RECEPTION_PREDICATION_NOT_PROVED"
+      },
+      {
+        "index": 7,
+        "node": "test_rc0031_p1_controls_and_retained_improvements_do_not_regress",
+        "p1_expectation": "INTENTIONAL_RED",
+        "closed_code": "STEP11_RC0031_CONTROL_RETAINED_NON_REGRESSION_NOT_PROVED"
+      }
+    ],
+    "test_and_fixture_bytes_immutable_through_p5_green": true,
+    "product_read_remains_final_authority": true
+  },
+  "resource_contract": {
+    "global_bounds": {
+      "candidate_total_max": 12,
+      "replan_max": 1,
+      "source_owner_max": 24,
+      "referent_scalar_max": 32,
+      "parser_body_bytes_max": 1000000,
+      "visible_source_anchor_max": 1,
+      "realization_units_per_discourse_group_max": 4,
+      "visible_clauses_per_grammatical_sentence_max": 2,
+      "complexity_load_max": 4,
+      "repeated_joiners_per_group_max": 2,
+      "reception_moves_max": 3,
+      "reception_sentences_max": 3,
+      "reception_moves_per_sentence_max": 2
+    },
+    "parser_bounds": {
+      "unique_successful_parse_witness_exact": 1,
+      "stored_decomposition_solutions_per_locus_max": 2,
+      "decomposition_loci_per_candidate_max": 38,
+      "evaluated_decompositions_per_candidate_max": 76,
+      "distinct_owner_binding_comparisons_max": 576,
+      "body_scan_passes_per_invocation_max": 2,
+      "parser_invocations_per_candidate_max": 2,
+      "matcher_invocations_per_candidate_max": 2,
+      "parser_invocations_across_candidates_max": 24,
+      "matcher_invocations_across_candidates_max": 24,
+      "body_byte_inspections_across_candidates_max": 48000000,
+      "permutation_or_unbounded_backtracking_allowed": false
+    },
+    "catalog_denominator": {
+      "construction_keys": 13,
+      "construction_layouts": 13,
+      "role_position_keys": 9,
+      "relation_type_direction_keys": 28,
+      "semantic_link_type_direction_keys": 10,
+      "unknown_dimension_keys": 4,
+      "owner_role_keys": 8,
+      "owner_kind_keys": 12,
+      "reception_act_keys": 3,
+      "realization_alternatives_per_semantic_key_max": 1
+    },
+    "representative_observed_maxima": {
+      "base_candidates_per_case": 2,
+      "owners": 15,
+      "required_handles": 5,
+      "construction_instances": 6,
+      "construction_slots": 15,
+      "relations": 4,
+      "relation_endpoints": 8,
+      "semantic_links": 1,
+      "semantic_link_endpoints": 2,
+      "explicit_unknowns": 2,
+      "unknown_owner_endpoints": 2,
+      "receptions": 2,
+      "reception_targets": 2,
+      "reception_supports": 0,
+      "typed_surface_records": 11,
+      "lexical_records": 23,
+      "source_lexical_upper_bound": 38,
+      "base_realization_units": 7,
+      "observation_groups": 3,
+      "reception_groups": 1,
+      "total_groups": 4,
+      "group_visible_clause_capacity": 16
+    }
+  },
+  "support_positive_authority_reference": {
+    "representative8_support_positive_count": 0,
+    "fixture_path": "ai/tests/fixtures/grounded_human_reception_exact8_v2_20260712.json",
+    "fixture_sha256": "cb601019dc2c7e4e46281133d3965addf04adf4f6af8defaf715f91f522e3efb",
+    "source_authority_case_ids": ["D", "I6-D02"],
+    "support_positive_required_for_rc0031_mutation": true,
+    "service_case_branch_authorized": false
+  },
+  "attack_contract": {
+    "inherited_source_fixture_path": "ai/tests/fixtures/emlis_nls_v3/cycle_001/rc0030_representative8_body_free.json",
+    "inherited_source_fixture_sha256": "9cfbdafaf43a3caed8b5dc00e68b56cd2b24003a002f0a7cbd1c3ec06d598fa5",
+    "inherited_rc0029_exact_count": 33,
+    "inherited_rc0030_exact_count": 20,
+    "inherited_named_attack_count": 53,
+    "new_pending_attack_count": 24,
+    "combined_named_attack_count_minimum": 77,
+    "inherited_attack_replacement_or_subtraction_allowed": false,
+    "new_pending_attacks_count_as_executed_at_p1": false,
+    "new_pending_attacks": [
+      {"attack_id":"root-drop","family":"root","consumer_layer":"proposition_plan_matcher_gate","expected_closed_code":"STEP11_RC0031_ROOT_BINDING_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"root-displacement","family":"root","consumer_layer":"proposition_plan_matcher_gate","expected_closed_code":"STEP11_RC0031_ROOT_ORDER_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"root-duplicate","family":"root","consumer_layer":"parser_matcher_gate","expected_closed_code":"STEP11_RC0031_ROOT_CARDINALITY_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"root-structure-only-substitution","family":"root","consumer_layer":"parser_matcher_gate","expected_closed_code":"STEP11_RC0031_ROOT_SOURCE_BINDING_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"schema-taxonomy-noun","family":"schema","consumer_layer":"parser_matcher_gate","expected_closed_code":"STEP11_RC0031_SCHEMA_MARKER_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"schema-role-label","family":"schema","consumer_layer":"parser_matcher_gate","expected_closed_code":"STEP11_RC0031_SCHEMA_MARKER_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"schema-ordinal-record-marker","family":"schema","consumer_layer":"parser_matcher_gate","expected_closed_code":"STEP11_RC0031_SCHEMA_MARKER_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"schema-generic-pack-predicate","family":"schema","consumer_layer":"parser_matcher_gate","expected_closed_code":"STEP11_RC0031_GENERIC_PACK_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"relation-endpoint-swap","family":"relation","consumer_layer":"independent_matcher_gate","expected_closed_code":"STEP11_RC0031_RELATION_ENDPOINT_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"relation-direction-reverse","family":"relation","consumer_layer":"independent_matcher_gate","expected_closed_code":"STEP11_RC0031_RELATION_DIRECTION_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"relation-type-mutation","family":"relation","consumer_layer":"independent_matcher_gate","expected_closed_code":"STEP11_RC0031_RELATION_TYPE_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"relation-taxonomy-nominalization","family":"relation","consumer_layer":"parser_matcher_gate","expected_closed_code":"STEP11_RC0031_RELATION_NOMINALIZATION_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"distribution-wrong-group","family":"distribution","consumer_layer":"independent_matcher_gate","expected_closed_code":"STEP11_RC0031_OWNER_GROUP_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"distribution-tail-concentration","family":"distribution","consumer_layer":"parser_matcher_gate","expected_closed_code":"STEP11_RC0031_TAIL_CONCENTRATION_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"distribution-reorder-or-duplicate","family":"distribution","consumer_layer":"parser_matcher_gate","expected_closed_code":"STEP11_RC0031_SEMANTIC_CARDINALITY_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"distribution-budget-bypass-or-drop","family":"distribution","consumer_layer":"hard_gate","expected_closed_code":"STEP11_RC0031_RESOURCE_OR_COVERAGE_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"reception-target-swap","family":"reception","consumer_layer":"independent_matcher_gate","expected_closed_code":"STEP11_RC0031_RECEPTION_TARGET_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"reception-support-omission","family":"reception","consumer_layer":"independent_matcher_gate","expected_closed_code":"STEP11_RC0031_RECEPTION_SUPPORT_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"reception-act-or-scope-swap","family":"reception","consumer_layer":"independent_matcher_gate","expected_closed_code":"STEP11_RC0031_RECEPTION_ACT_SCOPE_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"reception-generic-unbound","family":"reception","consumer_layer":"parser_matcher_gate","expected_closed_code":"STEP11_RC0031_RECEPTION_GENERIC_UNBOUND_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"boundary-case-family-control-branch","family":"boundary","consumer_layer":"static_runtime_audit","expected_closed_code":"STEP11_RC0031_CASE_BRANCH_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"boundary-control-fixture-severity-mutation","family":"boundary","consumer_layer":"freeze_integrity","expected_closed_code":"STEP11_RC0031_CONTROL_AUTHORITY_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"boundary-p3-metadata-hidden-marker-bypass","family":"boundary","consumer_layer":"independence_audit","expected_closed_code":"STEP11_RC0031_P3_BYPASS_REJECTED","executor_phase":"P5","executed":false},
+      {"attack_id":"boundary-resource-expansion","family":"boundary","consumer_layer":"hard_gate","expected_closed_code":"STEP11_RC0031_RESOURCE_EXPANSION_REJECTED","executor_phase":"P5","executed":false}
+    ]
+  },
+  "control_contract": {
+    "nls3s_b001_0001": {"baseline":"PASS","rc0030":"MINOR","rc0031_required":["PASS"]},
+    "nls3s_b001_0002": {"baseline":"PASS","rc0030":"PASS","rc0031_required":["PASS"]},
+    "nls3s_b001_0009": {"baseline":"MINOR","rc0030":"MAJOR","rc0031_required":["PASS","MINOR"]}
+  },
+  "retained_improvement_contract": {
+    "nls3s_b001_0001_explicit_unknown_exactly_once": true,
+    "nls3s_b001_0063_self_denial_non_promotion": true,
+    "opaque_ordinal_or_repetitive_exposition_count_max": 0,
+    "resolved_unknown_drop_or_partial_regression_case_ids": ["nls3s_b001_0035","nls3s_b001_0043","nls3s_b001_0100"],
+    "resolved_unknown_drop_or_partial_regression_count_max": 0
+  },
+  "representative_count": 8,
+  "rows": [
+    {"case_id":"nls3s_b001_0001","experiment_role":"control","source_case_commitment":"edaa674852ece02333b504e279999f711f3e6a37aef4ea03f2ecb6e9c007b67c","rc0030_selected_final_utf8_sha256":"d5bfee24d480182631a35fc5ef71adb4ac8bbe727a8a8f5640c30c71e024ff34","rc0030_product_read_severity":"MINOR","rc0030_closed_reason_codes":["GENERIC_RECEPTION","SURFACE_UNNATURAL_OR_REPETITIVE"]},
+    {"case_id":"nls3s_b001_0002","experiment_role":"control","source_case_commitment":"56525717f0c64d882d3f48f5c04494eef946d2d532196f3893c04572b0f1d122","rc0030_selected_final_utf8_sha256":"c481b1ca2a8b3234b2cc841981bdebe28c4a9b650c0ca3e247107b710a6061e5","rc0030_product_read_severity":"PASS","rc0030_closed_reason_codes":[]},
+    {"case_id":"nls3s_b001_0009","experiment_role":"control","source_case_commitment":"8a5c4a0d4a1c25df4313906f83b420e7d9e952edb5263df4567e8bda6c73a0e9","rc0030_selected_final_utf8_sha256":"1e5496f759f192cb1c8178e43ec2c131d4580107ee9e641772a861b90a377f90","rc0030_product_read_severity":"MAJOR","rc0030_closed_reason_codes":["GENERIC_RECEPTION","IMMEDIATE_OBSERVATION_NOT_READ","MAIN_MEANING_OBSCURED","RELATION_MISREAD","RELATION_UNREADABLE","SCHEMA_EXPOSITION"]},
+    {"case_id":"nls3s_b001_0019","experiment_role":"improvement_target","source_case_commitment":"7f5ab505800c49ceb15179cf434ad12dec5129046b1b3e625e4e41bbe1331f8a","rc0030_selected_final_utf8_sha256":"ab418c71df51c21f18a4507e9f636b74c94d53d26398b28240e614c59c3fa560","rc0030_product_read_severity":"MAJOR","rc0030_closed_reason_codes":["EMLIS_RECEPTION_UNBOUND","IMMEDIATE_OBSERVATION_NOT_READ","MAIN_MEANING_OBSCURED","RELATION_MISREAD","SCHEMA_EXPOSITION"]},
+    {"case_id":"nls3s_b001_0035","experiment_role":"improvement_target","source_case_commitment":"5d28a368fa9758c1635d5a68e52ee6fbee78a7be802bc71e75506e224d88c6f4","rc0030_selected_final_utf8_sha256":"a7f4fb3147a875b0440268b5057a1fcbc9b92945b1835307d5a5b575a0af0498","rc0030_product_read_severity":"MAJOR","rc0030_closed_reason_codes":["DEPTH_OVERSHOOT","EMLIS_RECEPTION_UNBOUND","MAIN_MEANING_OBSCURED","RELATION_MISREAD","SCHEMA_EXPOSITION","SURFACE_DISTRIBUTION_OVERCONCENTRATED"]},
+    {"case_id":"nls3s_b001_0043","experiment_role":"improvement_target","source_case_commitment":"f7333e4f1ca92ff5a3865de931cad836987499b3bb98ac45c1dcd6239af28464","rc0030_selected_final_utf8_sha256":"7072e4820d51085fb9037d23a75ac19782860c38962720bed3f371592e11b9d9","rc0030_product_read_severity":"MAJOR","rc0030_closed_reason_codes":["EMLIS_RECEPTION_UNBOUND","IMMEDIATE_OBSERVATION_NOT_READ","MAIN_MEANING_OBSCURED","RELATION_MISREAD","SCHEMA_EXPOSITION"]},
+    {"case_id":"nls3s_b001_0063","experiment_role":"improvement_target","source_case_commitment":"3ab51f8c2cd36364db2f4a319642ba52feeb5998c6ebacda687a6bed7e6757ba","rc0030_selected_final_utf8_sha256":"9c89e071f96b8d71cb977b2637e29a8767969ec2d67763979221c52579bdd99e","rc0030_product_read_severity":"MAJOR","rc0030_closed_reason_codes":["DEPTH_OVERSHOOT","EMLIS_RECEPTION_UNBOUND","MAIN_MEANING_OBSCURED","SCHEMA_EXPOSITION","SURFACE_DISTRIBUTION_OVERCONCENTRATED","UNKNOWN_PARTIAL"]},
+    {"case_id":"nls3s_b001_0100","experiment_role":"improvement_target","source_case_commitment":"45413fdc143d286874ec7efbdd58c8e9ae3b216210711b53ce58572e0d233413","rc0030_selected_final_utf8_sha256":"5e1d808e352ce59c10e38f42d33aa825230bdde2bab40c432e31fd5271126184","rc0030_product_read_severity":"MAJOR","rc0030_closed_reason_codes":["DEPTH_OVERSHOOT","EMLIS_RECEPTION_UNBOUND","MAIN_MEANING_OBSCURED","REQUIRED_MEANING_PARTIAL","SCHEMA_EXPOSITION","SURFACE_DISTRIBUTION_OVERCONCENTRATED"]}
+  ],
+  "current_product_read_summary": {
+    "severity_counts": {"PASS":1,"MINOR":1,"MAJOR":6,"BLOCKER":0},
+    "former_major_pass_or_minor_count": 0,
+    "former_major_total": 5,
+    "control_not_worse_count": 1,
+    "control_total": 3,
+    "new_major_count": 1,
+    "canonical_emlis_reception_unbound_count": 5
+  },
+  "privacy_contract": {
+    "body_or_quote_exported": false,
+    "parsed_span_or_binding_detail_exported": false,
+    "unsalted_body_digest_exported": false,
+    "secure_material_required": false,
+    "runtime_connected": false,
+    "formal_or_production_eligible": false
+  }
+}
