@@ -338,6 +338,123 @@ def _assert_selected_chain(execution: Any) -> None:
     ) == gate.step11_rc0030_experiment_gate_result_material(original)
 
 
+def _assert_density_schedule(execution: Any) -> None:
+    result = execution.body_free_result
+    candidate, parsed, joined, _context = _selected_material(execution)
+    plan = candidate.surface_realization_plan
+    bindings = tuple(plan.semantic_chunk_bindings)
+    assert result.base_candidate_count == 2
+    assert result.base_inverse_rejected_candidate_count == 0
+    assert result.base_inverse_prepass_count == 2
+    assert result.forward_rejected_base_candidate_count == 1
+    assert result.experiment_candidate_count == 1
+    assert result.evaluated_candidate_count == 1
+    assert result.final_body_parse_count == 1
+    assert result.final_surface_match_count == 1
+    assert result.hard_gate_pass_count == 1
+    assert len(bindings) == 10
+    assert len(plan.base_body_exact_reuse_bindings) == 0
+    assert len(plan.structure_only_unit_ids) == 6
+    assert candidate.base_candidate is execution.base_execution.natural_candidates[1]
+
+    by_unit: dict[str, list[Any]] = {}
+    for binding in bindings:
+        by_unit.setdefault(binding.clause_unit_id, []).append(binding)
+    assert set(by_unit) == set(plan.structure_only_unit_ids)
+    assert all(1 <= len(rows) <= 2 for rows in by_unit.values())
+    assert tuple(sorted(len(rows) for rows in by_unit.values())) == (
+        1,
+        1,
+        2,
+        2,
+        2,
+        2,
+    )
+    assert all(
+        len({row.sentence_group_ordinal for row in rows}) == 1
+        for rows in by_unit.values()
+    )
+    assert all(
+        len({max(row.owner_sentence_group_ordinals) for row in rows}) == 1
+        for rows in by_unit.values()
+    )
+
+    ready_by_unit = {
+        unit_id: max(rows[0].owner_sentence_group_ordinals)
+        for unit_id, rows in by_unit.items()
+    }
+    assigned_by_unit = {
+        unit_id: rows[0].sentence_group_ordinal
+        for unit_id, rows in by_unit.items()
+    }
+    assert all(
+        assigned_by_unit[unit_id] >= ready_group
+        for unit_id, ready_group in ready_by_unit.items()
+    )
+    assert sum(
+        assigned_by_unit[unit_id] > ready_group
+        for unit_id, ready_group in ready_by_unit.items()
+    ) == 1
+    assert tuple(
+        sum(ready_group == group for ready_group in ready_by_unit.values())
+        for group in range(1, 4)
+    ) == (3, 1, 2)
+    assert tuple(
+        sum(assigned_group == group for assigned_group in assigned_by_unit.values())
+        for group in range(1, 4)
+    ) == (2, 2, 2)
+
+    assert plan.maximum_observation_clauses_per_sentence == 4
+    assert plan.maximum_visible_clauses_per_grammatical_sentence == 2
+    assert plan.maximum_grammatical_complexity_load == 4
+    assert plan.maximum_repeated_joiner_per_group == 2
+    assert plan.peak_observation_clause_count == 4
+    assert plan.peak_grammatical_clause_count == 2
+    assert plan.peak_grammatical_complexity_load == 4
+    assert plan.peak_group_repeated_joiner_count == 2
+    assert all(row.visible_clause_count <= 2 for row in plan.observation_chunk_assignments)
+    assert all(row.complexity_load <= 4 for row in plan.observation_chunk_assignments)
+
+    parsed_by_id = {row.atom_id: row for row in parsed.semantic_atoms}
+    parsed_by_source = {
+        row.source_atom_id: parsed_by_id[row.parsed_atom_id]
+        for row in joined.verified_surface_binding.semantic_bindings
+    }
+    assert set(parsed_by_source) == {row.source_atom_id for row in bindings}
+    assert all(
+        parsed_by_source[row.source_atom_id].sentence_group_ordinal
+        == row.sentence_group_ordinal
+        for row in bindings
+    )
+
+    deferred = next(
+        row
+        for row in bindings
+        if row.sentence_group_ordinal > max(row.owner_sentence_group_ordinals)
+    )
+    deferred_parsed_id = next(
+        row.parsed_atom_id
+        for row in joined.verified_surface_binding.semantic_bindings
+        if row.source_atom_id == deferred.source_atom_id
+    )
+    forged_atoms = tuple(
+        replace(
+            row,
+            sentence_group_ordinal=max(deferred.owner_sentence_group_ordinals),
+        )
+        if row.atom_id == deferred_parsed_id
+        else row
+        for row in parsed.semantic_atoms
+    )
+    _assert_inverse_rejected(
+        lambda: _rematch(
+            execution,
+            replace(parsed, semantic_atoms=forged_atoms),
+        ),
+        "STEP11_RC0030_E2_DEFERRED_PLACEMENT_ATTACK_ACCEPTED",
+    )
+
+
 def test_rc0030_e2_frozen_authority_and_retained_attack_denominator() -> None:
     fixture, _samples, _closure = _authority()
     assert fixture["body_free"] is True
@@ -392,14 +509,20 @@ def test_rc0030_e2_depth_compaction_reaches_the_integrated_chain() -> None:
         assert result.base_candidate_count == 2
         assert result.base_inverse_rejected_candidate_count == 0
         assert result.base_inverse_prepass_count == 2
-        assert result.forward_rejected_base_candidate_count == 2
-        assert result.experiment_candidate_count == 0
-        assert result.evaluated_candidate_count == 0
-        assert result.final_body_parse_count == 0
-        assert result.final_surface_match_count == 0
+        assert result.forward_rejected_base_candidate_count == 1
+        assert result.forward_failure_code_counts == (
+            ("STEP11_RC0030_SURFACE_PLAN_DENSITY_UNSATISFIABLE", 1),
+        )
+        assert result.experiment_candidate_count == 1
+        assert result.evaluated_candidate_count == 1
+        assert result.final_body_parse_count == 1
+        assert result.final_surface_match_count == 1
         assert result.hard_gate_pass_count == 0
         assert result.closed_failure_codes == (
-            "STEP11_RC0030_SURFACE_PLAN_DENSITY_UNSATISFIABLE",
+            "STEP11_RC0030_BASE_PREFIX_COMMITMENT_MISMATCH",
+        )
+        assert result.gate_failure_code_counts == (
+            ("STEP11_RC0030_BASE_PREFIX_COMMITMENT_MISMATCH", 1),
         )
         assert runtime.validate_step11_rc0030_experiment_result(result) == ()
         assert (
@@ -408,8 +531,11 @@ def test_rc0030_e2_depth_compaction_reaches_the_integrated_chain() -> None:
             )
             == ()
         )
-        _closed_fail("STEP11_RC0030_E2_FORWARD_DENSITY_NOT_SYNCHRONIZED")
+        _closed_fail(
+            "STEP11_RC0030_E2_BODY_ONLY_OWNER_EXPRESSION_NOT_SYNCHRONIZED"
+        )
     _assert_selected_chain(execution)
+    _assert_density_schedule(execution)
 
 
 def test_rc0030_e2_inverse_is_body_only_and_selector_is_order_independent() -> None:

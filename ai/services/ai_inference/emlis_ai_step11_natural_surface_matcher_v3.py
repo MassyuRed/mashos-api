@@ -16882,7 +16882,7 @@ def _step11_rc0030_validate_semantic_placement(
     source_owner_aliases: Mapping[str, frozenset[str]],
     owner_text: Mapping[str, str],
 ) -> None:
-    """Reproduce the frozen P2 owner-group, packing, and append order."""
+    """Independently reproduce max-two packing and owner-ready deferral."""
 
     phrase_binding_by_key: dict[tuple[str, str, str], list[Any]] = {}
     for row in base_binding.grounded_phrase_bindings:
@@ -16942,6 +16942,9 @@ def _step11_rc0030_validate_semantic_placement(
     )
     maximum_chunk_load = int(
         grammar["maximum_grammatical_complexity_load"]
+    )
+    maximum_group_joiners = int(
+        grammar["maximum_repeated_joiner_per_group"]
     )
     observation_sentences = tuple(
         row for row in base_witness.sentences if row.section_role == "observation"
@@ -17012,13 +17015,21 @@ def _step11_rc0030_validate_semantic_placement(
             (source_id, family, owner_ids, target_chunk)
         )
 
-    expected_rows: list[tuple[str, int, int, int, int]] = []
     structure_count_by_group = {
         group_ordinal: 0 for group_ordinal in base_unit_count_by_group
     }
-    for group_ordinal in sorted(pending_by_group):
+    group_ordinals = tuple(sorted(base_unit_count_by_group))
+    if group_ordinals != tuple(range(1, len(group_ordinals) + 1)):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_BASE_OBSERVATION_LAYOUT_INVALID"
+        )
+    last_group_ordinal = group_ordinals[-1]
+    planned_packs_by_group: dict[
+        int, list[tuple[int, str, tuple[str, ...]]]
+    ] = {}
+    for ready_group_ordinal in sorted(pending_by_group):
         ordered = sorted(
-            pending_by_group[group_ordinal],
+            pending_by_group[ready_group_ordinal],
             key=lambda row: (row[3], row[1], row[2], row[0]),
         )
         raw_packs: list[list[tuple[Any, ...]]] = []
@@ -17034,56 +17045,105 @@ def _step11_rc0030_validate_semantic_placement(
                     break
             else:
                 raw_packs.append([row])
-        planned_packs: list[tuple[int, str, tuple[str, ...]]] = []
         for pack in raw_packs:
             owner_count = len(
                 {owner_id for item in pack for owner_id in item[2]}
             )
             pack_load = max(owner_count, len(pack))
             preferred_chunk = max(int(item[3]) for item in pack)
-            tail_chunk = max(
-                chunk
-                for (group, chunk) in chunk_clause_count
-                if group == group_ordinal
-            )
-            if tail_chunk < preferred_chunk:
-                raise Step11Rc0030ExperimentInverseSurfaceError(
-                    "STEP11_RC0030_OWNER_BASE_POSITION_UNRESOLVED"
+            chosen_group: int | None = None
+            chosen_chunk: int | None = None
+            for destination_group in range(
+                ready_group_ordinal, last_group_ordinal + 1
+            ):
+                tail_chunk = max(
+                    chunk
+                    for (group, chunk) in chunk_clause_count
+                    if group == destination_group
                 )
-            if (
-                chunk_clause_count[(group_ordinal, tail_chunk)] + 1
-                <= maximum_chunk_clauses
-                and chunk_complexity_load[(group_ordinal, tail_chunk)]
-                + pack_load
-                <= maximum_chunk_load
-            ):
-                chosen_chunk = tail_chunk
-            else:
-                chosen_chunk = tail_chunk + 1
-                chunk_clause_count[(group_ordinal, chosen_chunk)] = 0
-                chunk_complexity_load[(group_ordinal, chosen_chunk)] = 0
-            chunk_clause_count[(group_ordinal, chosen_chunk)] += 1
-            chunk_complexity_load[(group_ordinal, chosen_chunk)] += pack_load
-            structure_count_by_group[group_ordinal] += 1
-            if (
-                base_unit_count_by_group[group_ordinal]
-                + structure_count_by_group[group_ordinal]
-                > maximum_group_clauses
-            ):
+                minimum_chunk = (
+                    preferred_chunk
+                    if destination_group == ready_group_ordinal
+                    else 1
+                )
+                if tail_chunk < minimum_chunk:
+                    raise Step11Rc0030ExperimentInverseSurfaceError(
+                        "STEP11_RC0030_OWNER_BASE_POSITION_UNRESOLVED"
+                    )
+                for candidate_chunk in (tail_chunk, tail_chunk + 1):
+                    current_clause_count = chunk_clause_count.get(
+                        (destination_group, candidate_chunk), 0
+                    )
+                    current_complexity_load = chunk_complexity_load.get(
+                        (destination_group, candidate_chunk), 0
+                    )
+                    projected_clause_count = current_clause_count + 1
+                    projected_complexity_load = (
+                        current_complexity_load + pack_load
+                    )
+                    projected_joiner_count = sum(
+                        max(
+                            0,
+                            (
+                                projected_clause_count
+                                if chunk == candidate_chunk
+                                else count
+                            )
+                            - 1,
+                        )
+                        for (group, chunk), count in chunk_clause_count.items()
+                        if group == destination_group
+                    )
+                    if candidate_chunk not in {
+                        chunk
+                        for group, chunk in chunk_clause_count
+                        if group == destination_group
+                    }:
+                        projected_joiner_count += max(
+                            0, projected_clause_count - 1
+                        )
+                    if (
+                        base_unit_count_by_group[destination_group]
+                        + structure_count_by_group[destination_group]
+                        + 1
+                        <= maximum_group_clauses
+                        and projected_clause_count
+                        <= maximum_chunk_clauses
+                        and projected_complexity_load
+                        <= maximum_chunk_load
+                        and projected_joiner_count
+                        <= maximum_group_joiners
+                    ):
+                        chosen_group = destination_group
+                        chosen_chunk = candidate_chunk
+                        break
+                if chosen_group is not None:
+                    break
+            if chosen_group is None or chosen_chunk is None:
                 raise Step11Rc0030ExperimentInverseSurfaceError(
                     "STEP11_RC0030_SEMANTIC_PLACEMENT_DENSITY_INVALID"
                 )
+            chunk_clause_count.setdefault((chosen_group, chosen_chunk), 0)
+            chunk_complexity_load.setdefault((chosen_group, chosen_chunk), 0)
+            chunk_clause_count[(chosen_group, chosen_chunk)] += 1
+            chunk_complexity_load[(chosen_group, chosen_chunk)] += pack_load
+            structure_count_by_group[chosen_group] += 1
             source_ids = tuple(sorted(str(item[0]) for item in pack))
             unit_id = "nls3s11rc0030unit_" + artifact_sha256(
                 {
                     "source_atom_ids": [str(item[0]) for item in pack],
-                    "sentence_group_ordinal": group_ordinal,
+                    "sentence_group_ordinal": chosen_group,
                     "chunk_ordinal": chosen_chunk,
                 }
             )[:16]
-            planned_packs.append((chosen_chunk, unit_id, source_ids))
+            planned_packs_by_group.setdefault(chosen_group, []).append(
+                (chosen_chunk, unit_id, source_ids)
+            )
+
+    expected_rows: list[tuple[str, int, int, int, int]] = []
+    for group_ordinal in sorted(planned_packs_by_group):
         for pack_ordinal, (chunk, _unit_id, source_ids) in enumerate(
-            sorted(planned_packs), 1
+            sorted(planned_packs_by_group[group_ordinal]), 1
         ):
             for item_ordinal, source_id in enumerate(source_ids, 1):
                 expected_rows.append(

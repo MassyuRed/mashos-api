@@ -8399,6 +8399,80 @@ def _step11_rc0030_reception_predications(
     return tuple(rows)
 
 
+def _step11_rc0030_structure_pack_destination(
+    *,
+    ready_group_ordinal: int,
+    preferred_chunk_ordinal: int,
+    last_group_ordinal: int,
+    pack_clause_count: int,
+    pack_complexity_load: int,
+    base_unit_count_by_group: Mapping[int, int],
+    structure_count_by_group: Mapping[int, int],
+    chunk_clause_count: Mapping[tuple[int, int], int],
+    chunk_complexity_load: Mapping[tuple[int, int], int],
+    maximum_observation_clauses_per_sentence: int,
+    maximum_visible_clauses_per_grammatical_sentence: int,
+    maximum_grammatical_complexity_load: int,
+    maximum_repeated_joiner_per_group: int,
+) -> tuple[int, int] | None:
+    """Return the first owner-ready destination without mutating schedule state."""
+
+    for group_ordinal in range(
+        ready_group_ordinal, last_group_ordinal + 1
+    ):
+        if (
+            base_unit_count_by_group[group_ordinal]
+            + structure_count_by_group[group_ordinal]
+            + 1
+            > maximum_observation_clauses_per_sentence
+        ):
+            continue
+        group_chunk_ordinals = tuple(
+            key[1] for key in chunk_clause_count if key[0] == group_ordinal
+        )
+        tail_chunk = max(group_chunk_ordinals, default=0)
+        effective_preferred_chunk = (
+            preferred_chunk_ordinal
+            if group_ordinal == ready_group_ordinal
+            else 1
+        )
+        candidate_chunks: list[int] = []
+        if tail_chunk >= effective_preferred_chunk and tail_chunk > 0:
+            candidate_chunks.append(tail_chunk)
+        candidate_chunks.append(max(tail_chunk + 1, effective_preferred_chunk))
+        for chunk_ordinal in dict.fromkeys(candidate_chunks):
+            key = (group_ordinal, chunk_ordinal)
+            current_clause_count = chunk_clause_count.get(key, 0)
+            current_complexity_load = chunk_complexity_load.get(key, 0)
+            projected_clause_count = current_clause_count + pack_clause_count
+            projected_complexity_load = (
+                current_complexity_load + pack_complexity_load
+            )
+            if (
+                projected_clause_count
+                > maximum_visible_clauses_per_grammatical_sentence
+                or projected_complexity_load
+                > maximum_grammatical_complexity_load
+            ):
+                continue
+            current_joiner_count = sum(
+                max(0, count - 1)
+                for (candidate_group, _candidate_chunk), count in (
+                    chunk_clause_count.items()
+                )
+                if candidate_group == group_ordinal
+            )
+            projected_joiner_count = (
+                current_joiner_count
+                - max(0, current_clause_count - 1)
+                + max(0, projected_clause_count - 1)
+            )
+            if projected_joiner_count > maximum_repeated_joiner_per_group:
+                continue
+            return group_ordinal, chunk_ordinal
+    return None
+
+
 def build_step11_rc0030_surface_realization_plan(
     base_candidate: Step11NaturalSurfaceCandidate,
     *,
@@ -8540,15 +8614,16 @@ def build_step11_rc0030_surface_realization_plan(
     }
 
     # Pack at most two atom clauses into one structure unit.  Packing is
-    # deterministic and never changes an atom's owner group; a cross-group
-    # atom stays at or after its later endpoint's introduction chunk.
+    # deterministic.  A pack may move only from its latest owner-introduction
+    # group to the first later group whose frozen resource bounds admit it.
     pending_by_group: dict[int, list[tuple[Any, ...]]] = {}
     for row in pending:
         pending_by_group.setdefault(int(row[5]), []).append(row)
     packed: list[tuple[int, int, str, tuple[tuple[Any, ...], ...], int]] = []
-    for group_ordinal in sorted(pending_by_group):
+    last_group_ordinal = len(group_ids)
+    for ready_group_ordinal in sorted(pending_by_group):
         ordered_rows = sorted(
-            pending_by_group[group_ordinal],
+            pending_by_group[ready_group_ordinal],
             key=lambda row: (row[6], row[1], row[2], row[0]),
         )
         raw_packs: list[list[tuple[Any, ...]]] = []
@@ -8585,47 +8660,51 @@ def build_step11_rc0030_surface_realization_plan(
             pack_clause_count = 1
             pack_complexity_load = max(owner_count, len(pack_rows))
             preferred_chunk = max(int(item[6]) for item in pack_rows)
-            tail_chunk = max(
+            ready_tail_chunk = max(
                 (
                     key[1]
                     for key in chunk_clause_count
-                    if key[0] == group_ordinal
+                    if key[0] == ready_group_ordinal
                 ),
                 default=0,
             )
-            if tail_chunk < preferred_chunk:
+            if ready_tail_chunk < preferred_chunk:
                 raise Step11NaturalSurfaceError(
                     "STEP11_RC0030_OWNER_BASE_CHUNK_UNRESOLVED"
                 )
-            if (
-                chunk_clause_count[(group_ordinal, tail_chunk)]
-                + pack_clause_count
-                <= base_plan.maximum_visible_clauses_per_grammatical_sentence
-                and chunk_complexity_load[(group_ordinal, tail_chunk)]
-                + pack_complexity_load
-                <= base_plan.maximum_grammatical_complexity_load
-            ):
-                chosen_chunk = tail_chunk
-            else:
-                chosen_chunk = tail_chunk + 1
-                chunk_clause_count[(group_ordinal, chosen_chunk)] = 0
-                chunk_complexity_load[(group_ordinal, chosen_chunk)] = 0
-                by_chunk[(group_ordinal, chosen_chunk)] = []
-            if (
-                base_unit_count_by_group[group_ordinal]
-                + structure_count_by_group[group_ordinal]
-                + 1
-                > base_plan.maximum_observation_clauses_per_sentence
-                or chunk_clause_count[(group_ordinal, chosen_chunk)]
-                + pack_clause_count
-                > base_plan.maximum_visible_clauses_per_grammatical_sentence
-                or chunk_complexity_load[(group_ordinal, chosen_chunk)]
-                + pack_complexity_load
-                > base_plan.maximum_grammatical_complexity_load
-            ):
+            destination = _step11_rc0030_structure_pack_destination(
+                ready_group_ordinal=ready_group_ordinal,
+                preferred_chunk_ordinal=preferred_chunk,
+                last_group_ordinal=last_group_ordinal,
+                pack_clause_count=pack_clause_count,
+                pack_complexity_load=pack_complexity_load,
+                base_unit_count_by_group=base_unit_count_by_group,
+                structure_count_by_group=structure_count_by_group,
+                chunk_clause_count=chunk_clause_count,
+                chunk_complexity_load=chunk_complexity_load,
+                maximum_observation_clauses_per_sentence=(
+                    base_plan.maximum_observation_clauses_per_sentence
+                ),
+                maximum_visible_clauses_per_grammatical_sentence=(
+                    base_plan.maximum_visible_clauses_per_grammatical_sentence
+                ),
+                maximum_grammatical_complexity_load=(
+                    base_plan.maximum_grammatical_complexity_load
+                ),
+                maximum_repeated_joiner_per_group=(
+                    base_plan.maximum_repeated_joiner_per_group
+                ),
+            )
+            if destination is None:
                 raise Step11NaturalSurfaceError(
                     "STEP11_RC0030_SURFACE_PLAN_DENSITY_UNSATISFIABLE"
                 )
+            group_ordinal, chosen_chunk = destination
+            chosen_key = (group_ordinal, chosen_chunk)
+            if chosen_key not in chunk_clause_count:
+                chunk_clause_count[chosen_key] = 0
+                chunk_complexity_load[chosen_key] = 0
+                by_chunk[chosen_key] = []
             unit_id = "nls3s11rc0030unit_" + artifact_sha256(
                 {
                     "source_atom_ids": [item[0] for item in pack_rows],
@@ -8633,12 +8712,8 @@ def build_step11_rc0030_surface_realization_plan(
                     "chunk_ordinal": chosen_chunk,
                 }
             )[:16]
-            chunk_clause_count[(group_ordinal, chosen_chunk)] += (
-                pack_clause_count
-            )
-            chunk_complexity_load[(group_ordinal, chosen_chunk)] += (
-                pack_complexity_load
-            )
+            chunk_clause_count[chosen_key] += pack_clause_count
+            chunk_complexity_load[chosen_key] += pack_complexity_load
             structure_count_by_group[group_ordinal] += 1
             packed.append(
                 (
