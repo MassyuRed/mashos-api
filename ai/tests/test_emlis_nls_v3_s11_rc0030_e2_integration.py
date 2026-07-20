@@ -40,8 +40,14 @@ _BATCH = (
     / "generated"
     / "batch_001.jsonl"
 )
+_SUPPORT_FIXTURE = (
+    _TEST_ROOT / "fixtures" / "grounded_human_reception_exact8_v2_20260712.json"
+)
 _FIXTURE_SHA256 = (
     "9cfbdafaf43a3caed8b5dc00e68b56cd2b24003a002f0a7cbd1c3ec06d598fa5"
+)
+_SUPPORT_FIXTURE_SHA256 = (
+    "cb601019dc2c7e4e46281133d3965addf04adf4f6af8defaf715f91f522e3efb"
 )
 _CASE_IDS = (
     "nls3s_b001_0001",
@@ -54,6 +60,7 @@ _CASE_IDS = (
     "nls3s_b001_0100",
 )
 _DENSITY_CASE_ID = "nls3s_b001_0063"
+_SUPPORT_CASE_IDS = ("D", "I6-D02")
 _SELECTED_CASE_IDS = tuple(
     case_id for case_id in _CASE_IDS if case_id != _DENSITY_CASE_ID
 )
@@ -174,6 +181,90 @@ def _source_denominator(case_id: str) -> tuple[int, int]:
         )
     )
     return semantic, denominator["receptions"]
+
+
+@lru_cache(maxsize=1)
+def _support_authority() -> tuple[dict[str, dict[str, Any]], str]:
+    fixture, _samples, closure = _authority()
+    reference = fixture.get("support_positive_authority_reference")
+    if (
+        type(reference) is not dict
+        or reference.get("representative8_support_positive_count") != 0
+        or tuple(reference.get("source_authority_case_ids", ()))
+        != _SUPPORT_CASE_IDS
+        or reference.get("support_positive_required_for_rc0030_mutation")
+        is not True
+        or reference.get("service_case_branch_authorized") is not False
+        or reference.get("fixture_sha256") != _SUPPORT_FIXTURE_SHA256
+        or hashlib.sha256(_SUPPORT_FIXTURE.read_bytes()).hexdigest()
+        != _SUPPORT_FIXTURE_SHA256
+    ):
+        _closed_fail("STEP11_RC0030_E2_SUPPORT_AUTHORITY_INVALID")
+    payload = json.loads(_SUPPORT_FIXTURE.read_text(encoding="utf-8"))
+    rows = {
+        row.get("case_id"): row
+        for row in payload.get("cases", ())
+        if type(row) is dict and row.get("case_id") in _SUPPORT_CASE_IDS
+    }
+    if set(rows) != set(_SUPPORT_CASE_IDS):
+        _closed_fail("STEP11_RC0030_E2_SUPPORT_AUTHORITY_INVALID")
+    return rows, closure
+
+
+def _project_support_current_input(value: Any) -> dict[str, Any]:
+    """Apply only the frozen cohort-independent legacy field projection."""
+
+    if type(value) is not dict or set(value) != {
+        "memo",
+        "memo_action",
+        "emotions",
+        "category",
+    }:
+        _closed_fail("STEP11_RC0030_E2_SUPPORT_INPUT_AUTHORITY_INVALID")
+    emotions = value.get("emotions")
+    categories = value.get("category")
+    if (
+        type(value.get("memo")) is not str
+        or type(value.get("memo_action")) is not str
+        or type(emotions) is not list
+        or not emotions
+        or any(type(row) is not str or not row for row in emotions)
+        or type(categories) is not list
+        or not categories
+        or any(type(row) is not str or not row for row in categories)
+    ):
+        _closed_fail("STEP11_RC0030_E2_SUPPORT_INPUT_AUTHORITY_INVALID")
+    return {
+        "thought_text": value["memo"],
+        "action_text": value["memo_action"],
+        "emotions": [
+            {"type": row, "strength": "medium"} for row in emotions
+        ],
+        "categories": list(categories),
+    }
+
+
+@lru_cache(maxsize=None)
+def _support_execution(case_id: str) -> Any:
+    rows, closure = _support_authority()
+    row = rows[case_id]
+    current_input = row.get("exact_current_input")
+    commitment = hashlib.sha256(
+        json.dumps(
+            current_input,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    if commitment != row.get("current_input_sha256"):
+        _closed_fail("STEP11_RC0030_E2_SUPPORT_INPUT_COMMITMENT_MISMATCH")
+    return runtime.execute_step11_rc0030_experiment_private(
+        _project_support_current_input(current_input),
+        case_id="support-" + case_id.lower(),
+        source_case_commitment=commitment,
+        source_dependency_closure_sha256=closure,
+    )
 
 
 def _selected_material(execution: Any) -> tuple[Any, Any, Any, Any]:
@@ -548,6 +639,61 @@ def _assert_density_schedule(execution: Any) -> None:
             replace(parsed, semantic_atoms=forged_atoms),
         ),
         "STEP11_RC0030_E2_DEFERRED_PLACEMENT_ATTACK_ACCEPTED",
+    )
+
+
+def _assert_support_omission_rejected(execution: Any) -> None:
+    candidate, parsed, _joined, _context = _selected_material(execution)
+    supported = tuple(
+        row
+        for row in parsed.reception_bindings
+        if row.supporting_expression is not None
+    )
+    if not supported:
+        _closed_fail("STEP11_RC0030_E2_SUPPORT_POSITIVE_MATERIAL_MISSING")
+    row = supported[0]
+    catalog, _catalog_sha256 = inverse._step11_rc0030_inverse_catalog()
+    morphology = catalog["clause_morphology"]
+    section_marker = "\n\nEmlisから：\n"
+    text = candidate.final_utf8_bytes.decode("utf-8")
+    if text.count(section_marker) != 1:
+        _closed_fail("STEP11_RC0030_E2_SUPPORT_BODY_FRAME_INVALID")
+    observation, reception = text.split(section_marker, 1)
+    lines = reception.split("\n")
+    line_index = row.reception_line_ordinal - 1
+    if not 0 <= line_index < len(lines):
+        _closed_fail("STEP11_RC0030_E2_SUPPORT_BODY_FRAME_INVALID")
+    suffix = morphology["sentence_suffix"]
+    line = lines[line_index]
+    if not line.endswith(suffix):
+        _closed_fail("STEP11_RC0030_E2_SUPPORT_BODY_FRAME_INVALID")
+    moves = line[: -len(suffix)].split(
+        morphology["grammatical_chunk_join"]
+    )
+    move_index = row.move_ordinal - 1
+    support_prefix = (
+        row.supporting_expression
+        + morphology["support_particle"]
+        + morphology["clause_join"]
+    )
+    if (
+        not 0 <= move_index < len(moves)
+        or not moves[move_index].startswith(support_prefix)
+    ):
+        _closed_fail("STEP11_RC0030_E2_SUPPORT_BODY_FRAME_INVALID")
+    moves[move_index] = moves[move_index][len(support_prefix) :]
+    lines[line_index] = (
+        morphology["grammatical_chunk_join"].join(moves) + suffix
+    )
+    omitted = (
+        observation + section_marker + "\n".join(lines)
+    ).encode("utf-8")
+    _assert_inverse_rejected(
+        lambda: _rematch(
+            execution,
+            inverse.parse_step11_rc0030_experiment_surface(omitted),
+        ),
+        "STEP11_RC0030_E2_SUPPORT_OMISSION_ACCEPTED",
     )
 
 
@@ -1184,3 +1330,69 @@ def test_rc0030_e2_resource_attempt_and_body_free_receipt_are_synchronized() -> 
     with pytest.raises(runtime.Step11Rc0030ExperimentRuntimeError) as replan:
         runtime.run_step11_rc0030_experiment({}, replan_limit=2, **kwargs)
     assert replan.value.code == "STEP11_RC0030_REPLAN_BOUND_EXCEEDED"
+
+
+def test_rc0030_e2_phase_a_support_positive_reaches_full_chain() -> None:
+    """Phase A RED until frozen support-positive authority reaches E2."""
+
+    selected: list[Any] = []
+    expected_base_candidates = {"D": 2, "I6-D02": 4}
+    for case_id in _SUPPORT_CASE_IDS:
+        execution = _support_execution(case_id)
+        result = execution.body_free_result
+        base_candidates = tuple(execution.base_execution.natural_candidates)
+        support_counts = tuple(
+            sum(
+                bool(row.supporting_nucleus_ids)
+                for row in candidate.surface_ast.reception_antecedent_bindings
+            )
+            for candidate in base_candidates
+        )
+        material = runtime.step11_rc0030_experiment_result_material(result)
+        if (
+            len(base_candidates) != expected_base_candidates[case_id]
+            or not support_counts
+            or any(count < 1 for count in support_counts)
+            or _mapping_keys(material) & _FORBIDDEN_PUBLIC_KEYS
+            or _contains_bytes(material)
+        ):
+            _closed_fail("STEP11_RC0030_E2_SUPPORT_AUTHORITY_NOT_CONNECTED")
+        if result.disposition == "selected":
+            selected.append(execution)
+            continue
+        expected_count = expected_base_candidates[case_id]
+        if (
+            result.disposition != "no_valid_candidate"
+            or result.base_disposition != "no_valid_candidate"
+            or result.base_candidate_count != expected_count
+            or result.base_inverse_prepass_count != expected_count
+            or result.base_inverse_rejected_candidate_count != expected_count
+            or result.experiment_candidate_count != 0
+            or result.evaluated_candidate_count != 0
+            or result.final_body_parse_count != 0
+            or result.final_surface_match_count != 0
+            or result.hard_gate_pass_count != 0
+            or result.closed_failure_codes
+            != ("STEP11_RC0030_BASE_BINDING_REVALIDATION_FAILED",)
+            or result.base_inverse_failure_code_counts
+            != (
+                (
+                    "STEP11_RC0030_BASE_BINDING_REVALIDATION_FAILED",
+                    expected_count,
+                ),
+            )
+            or any(
+                evaluation.hard_pass is not False
+                or evaluation.failure_codes
+                != ("STEP11_RC0030_BASE_BINDING_REVALIDATION_FAILED",)
+                or evaluation.parser_invocation_count != 1
+                or evaluation.matcher_invocation_count != 1
+                for evaluation in execution.base_inverse_evaluations
+            )
+        ):
+            _closed_fail("STEP11_RC0030_E2_SUPPORT_RED_SHAPE_CHANGED")
+    if len(selected) != len(_SUPPORT_CASE_IDS):
+        _closed_fail("STEP11_RC0030_E2_SUPPORT_POSITIVE_FULL_CHAIN_UNREACHABLE")
+    for execution in selected:
+        _assert_selected_chain(execution)
+        _assert_support_omission_rejected(execution)
