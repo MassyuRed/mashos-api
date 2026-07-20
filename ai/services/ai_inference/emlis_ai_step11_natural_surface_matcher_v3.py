@@ -14899,8 +14899,14 @@ def match_step11_rc0029_experiment_surface(
 
 import weakref
 
-STEP11_RC0030_EXPERIMENT_PARSED_WITNESS_SCHEMA = (
+STEP11_RC0030_EXPERIMENT_PARSED_WITNESS_SCHEMA_V1 = (
     "cocolon.emlis.nls_v3.step11.rc0030_experiment_parsed_witness.v1"
+)
+STEP11_RC0030_EXPERIMENT_PARSED_WITNESS_SCHEMA_V2 = (
+    "cocolon.emlis.nls_v3.step11.rc0030_experiment_parsed_witness.v2"
+)
+STEP11_RC0030_EXPERIMENT_PARSED_WITNESS_SCHEMA = (
+    STEP11_RC0030_EXPERIMENT_PARSED_WITNESS_SCHEMA_V2
 )
 STEP11_RC0030_EXPERIMENT_VERIFIED_BINDING_SCHEMA = (
     "cocolon.emlis.nls_v3.step11.rc0030_experiment_verified_binding.v1"
@@ -14922,6 +14928,9 @@ _STEP11_RC0030_OWNER_COMPARISON_MAX = 576
 _STEP11_RC0030_RECEPTION_MOVE_MAX = 3
 _STEP11_RC0030_RECEPTION_MOVES_PER_SENTENCE_MAX = 2
 _STEP11_RC0030_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_STEP11_RC0030_OWNER_CANDIDATE_COMMITMENT_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11.rc0030_owner_expression_candidate.v1"
+)
 
 
 class Step11Rc0030ExperimentInverseSurfaceError(ValueError):
@@ -14948,6 +14957,8 @@ class Step11Rc0030ParsedSemanticAtom:
     grammatical_chunk_ordinal: int
     pack_ordinal: int
     item_ordinal: int
+    owner_expression_candidate_commitments: tuple[str, ...] = ()
+    owner_expression_prefix_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -15141,13 +15152,67 @@ def _step11_rc0030_semantic_terminal_index(
     return terminals
 
 
+def _step11_rc0030_owner_candidate_commitment(
+    owner_expressions: Sequence[str],
+) -> str:
+    """Commit an ordered owner tuple without retaining candidate text."""
+
+    return artifact_sha256(
+        {
+            "schema_version": (
+                _STEP11_RC0030_OWNER_CANDIDATE_COMMITMENT_SCHEMA
+            ),
+            "owner_expression_sha256": [
+                hashlib.sha256(row.encode("utf-8")).hexdigest()
+                for row in owner_expressions
+            ],
+        }
+    )
+
+
+def _step11_rc0030_semantic_atom_identity_material(
+    *,
+    family: str,
+    semantic_key: str,
+    direction: str,
+    owner_expressions: Sequence[str],
+    sentence_group_ordinal: int,
+    grammatical_chunk_ordinal: int,
+    pack_ordinal: int,
+    item_ordinal: int,
+    owner_expression_candidate_commitments: Sequence[str] = (),
+    owner_expression_prefix_sha256: str | None = None,
+) -> dict[str, Any]:
+    material: dict[str, Any] = {
+        "family": family,
+        "semantic_key": semantic_key,
+        "direction": direction,
+        "owner_expression_hashes": [
+            hashlib.sha256(row.encode("utf-8")).hexdigest()
+            for row in owner_expressions
+        ],
+        "sentence_group_ordinal": sentence_group_ordinal,
+        "grammatical_chunk_ordinal": grammatical_chunk_ordinal,
+        "pack_ordinal": pack_ordinal,
+        "item_ordinal": item_ordinal,
+    }
+    if owner_expression_candidate_commitments:
+        material["owner_expression_candidate_commitments"] = list(
+            owner_expression_candidate_commitments
+        )
+        material["owner_expression_prefix_sha256"] = (
+            owner_expression_prefix_sha256
+        )
+    return material
+
+
 def _step11_rc0030_parse_owner_expression(
     prefix: str,
     *,
     family: str,
     direction: str,
     morphology: Mapping[str, str],
-) -> tuple[str, ...]:
+) -> tuple[tuple[str, ...], ...]:
     if not prefix or any(
         char in prefix
         for char in (
@@ -15167,25 +15232,29 @@ def _step11_rc0030_parse_owner_expression(
             "STEP11_RC0030_OWNER_EXPRESSION_INVALID"
         )
     if family in {"construction", "explicit_unknown"}:
-        return (prefix,)
+        return ((prefix,),)
     separator = (
         morphology["symmetric_join"]
         if direction == "bidirectional"
         else morphology["source_particle"]
     )
-    positions = tuple(
-        match.start() for match in re.finditer(re.escape(separator), prefix)
-    )
-    decompositions = tuple(
-        (prefix[:position], prefix[position + len(separator) :])
-        for position in positions
-        if prefix[:position] and prefix[position + len(separator) :]
-    )
-    if len(decompositions) != 1:
+    decompositions: list[tuple[str, str]] = []
+    for match in re.finditer(re.escape(separator), prefix):
+        position = match.start()
+        source = prefix[:position]
+        target = prefix[position + len(separator) :]
+        if not source or not target:
+            continue
+        if len(decompositions) >= _STEP11_RC0030_STORED_DECOMPOSITION_MAX:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_OWNER_EXPRESSION_AMBIGUOUS"
+            )
+        decompositions.append((source, target))
+    if not decompositions:
         raise Step11Rc0030ExperimentInverseSurfaceError(
             "STEP11_RC0030_OWNER_EXPRESSION_AMBIGUOUS"
         )
-    return decompositions[0]
+    return tuple(decompositions)
 
 
 def _step11_rc0030_parse_semantic_item(
@@ -15203,25 +15272,48 @@ def _step11_rc0030_parse_semantic_item(
         raise Step11Rc0030ExperimentInverseSurfaceError(
             "STEP11_RC0030_SEMANTIC_PACK_UNPARSEABLE"
         )
-    owner_expressions = _step11_rc0030_parse_owner_expression(
-        value[: -len(terminal_text)],
+    owner_prefix = value[: -len(terminal_text)]
+    owner_candidates = _step11_rc0030_parse_owner_expression(
+        owner_prefix,
         family=family,
         direction=direction,
         morphology=morphology,
     )
-    material = {
-        "family": family,
-        "semantic_key": semantic_key,
-        "direction": direction,
-        "owner_expression_hashes": [
-            hashlib.sha256(row.encode("utf-8")).hexdigest()
-            for row in owner_expressions
-        ],
-        "sentence_group_ordinal": sentence_group_ordinal,
-        "grammatical_chunk_ordinal": grammatical_chunk_ordinal,
-        "pack_ordinal": pack_ordinal,
-        "item_ordinal": item_ordinal,
-    }
+    if len(owner_candidates) == 1:
+        owner_expressions = owner_candidates[0]
+        candidate_commitments: tuple[str, ...] = ()
+        prefix_sha256 = None
+    else:
+        if family not in {"relation", "semantic_link"}:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_OWNER_EXPRESSION_AMBIGUOUS"
+            )
+        owner_expressions = ()
+        candidate_commitments = tuple(
+            sorted(
+                _step11_rc0030_owner_candidate_commitment(row)
+                for row in owner_candidates
+            )
+        )
+        if len(set(candidate_commitments)) != len(candidate_commitments):
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_OWNER_EXPRESSION_AMBIGUOUS"
+            )
+        prefix_sha256 = hashlib.sha256(
+            owner_prefix.encode("utf-8")
+        ).hexdigest()
+    material = _step11_rc0030_semantic_atom_identity_material(
+        family=family,
+        semantic_key=semantic_key,
+        direction=direction,
+        owner_expressions=owner_expressions,
+        sentence_group_ordinal=sentence_group_ordinal,
+        grammatical_chunk_ordinal=grammatical_chunk_ordinal,
+        pack_ordinal=pack_ordinal,
+        item_ordinal=item_ordinal,
+        owner_expression_candidate_commitments=candidate_commitments,
+        owner_expression_prefix_sha256=prefix_sha256,
+    )
     return Step11Rc0030ParsedSemanticAtom(
         atom_id="nls3s11rc0030atom_" + artifact_sha256(material)[:16],
         semantic_family=family,
@@ -15232,6 +15324,8 @@ def _step11_rc0030_parse_semantic_item(
         grammatical_chunk_ordinal=grammatical_chunk_ordinal,
         pack_ordinal=pack_ordinal,
         item_ordinal=item_ordinal,
+        owner_expression_candidate_commitments=candidate_commitments,
+        owner_expression_prefix_sha256=prefix_sha256,
     )
 
 
@@ -15693,7 +15787,7 @@ def parse_step11_rc0030_experiment_surface(
 def _step11_rc0030_semantic_atom_material(
     value: Step11Rc0030ParsedSemanticAtom,
 ) -> dict[str, Any]:
-    return {
+    material: dict[str, Any] = {
         "atom_id": value.atom_id,
         "semantic_family": value.semantic_family,
         "semantic_key": value.semantic_key,
@@ -15708,6 +15802,56 @@ def _step11_rc0030_semantic_atom_material(
         "pack_ordinal": value.pack_ordinal,
         "item_ordinal": value.item_ordinal,
     }
+    if value.owner_expression_candidate_commitments:
+        material["owner_expression_candidate_count"] = len(
+            value.owner_expression_candidate_commitments
+        )
+        material["owner_expression_candidate_commitments"] = list(
+            value.owner_expression_candidate_commitments
+        )
+        material["owner_expression_prefix_sha256"] = (
+            value.owner_expression_prefix_sha256
+        )
+    return material
+
+
+def _step11_rc0030_semantic_atom_owner_state_valid(
+    value: Step11Rc0030ParsedSemanticAtom,
+) -> bool:
+    if (
+        type(value.owner_expressions) is not tuple
+        or type(value.owner_expression_candidate_commitments) is not tuple
+    ):
+        return False
+    if value.owner_expression_candidate_commitments:
+        commitments = value.owner_expression_candidate_commitments
+        return (
+            not value.owner_expressions
+            and value.semantic_family in {"relation", "semantic_link"}
+            and len(commitments) == _STEP11_RC0030_STORED_DECOMPOSITION_MAX
+            and commitments == tuple(sorted(commitments))
+            and len(set(commitments)) == len(commitments)
+            and all(
+                type(row) is str
+                and _STEP11_RC0030_SHA256_RE.fullmatch(row) is not None
+                for row in commitments
+            )
+            and type(value.owner_expression_prefix_sha256) is str
+            and _STEP11_RC0030_SHA256_RE.fullmatch(
+                value.owner_expression_prefix_sha256
+            )
+            is not None
+        )
+    expected_owner_count = (
+        1
+        if value.semantic_family in {"construction", "explicit_unknown"}
+        else 2
+    )
+    return (
+        len(value.owner_expressions) == expected_owner_count
+        and all(type(row) is str and bool(row) for row in value.owner_expressions)
+        and value.owner_expression_prefix_sha256 is None
+    )
 
 
 def step11_rc0030_experiment_parsed_witness_material(
@@ -15765,9 +15909,7 @@ def step11_rc0030_experiment_parsed_witness_material(
                 "explicit_unknown",
             }
             or not row.semantic_key
-            or not row.owner_expressions
-            or len(row.owner_expressions) > _STEP11_RC0030_OWNER_MAX
-            or any(not item for item in row.owner_expressions)
+            or not _step11_rc0030_semantic_atom_owner_state_valid(row)
             or row.sentence_group_ordinal < 1
             or row.grammatical_chunk_ordinal < 1
             or row.pack_ordinal < 1
@@ -15776,21 +15918,24 @@ def step11_rc0030_experiment_parsed_witness_material(
             != (
                 "nls3s11rc0030atom_"
                 + artifact_sha256(
-                    {
-                        "family": row.semantic_family,
-                        "semantic_key": row.semantic_key,
-                        "direction": row.direction,
-                        "owner_expression_hashes": [
-                            hashlib.sha256(item.encode("utf-8")).hexdigest()
-                            for item in row.owner_expressions
-                        ],
-                        "sentence_group_ordinal": row.sentence_group_ordinal,
-                        "grammatical_chunk_ordinal": (
+                    _step11_rc0030_semantic_atom_identity_material(
+                        family=row.semantic_family,
+                        semantic_key=row.semantic_key,
+                        direction=row.direction,
+                        owner_expressions=row.owner_expressions,
+                        sentence_group_ordinal=row.sentence_group_ordinal,
+                        grammatical_chunk_ordinal=(
                             row.grammatical_chunk_ordinal
                         ),
-                        "pack_ordinal": row.pack_ordinal,
-                        "item_ordinal": row.item_ordinal,
-                    }
+                        pack_ordinal=row.pack_ordinal,
+                        item_ordinal=row.item_ordinal,
+                        owner_expression_candidate_commitments=(
+                            row.owner_expression_candidate_commitments
+                        ),
+                        owner_expression_prefix_sha256=(
+                            row.owner_expression_prefix_sha256
+                        ),
+                    )
                 )[:16]
             )
             for row in value.semantic_atoms
@@ -16410,6 +16555,91 @@ def _step11_rc0030_visible_signature(
     if family == "explicit_unknown":
         texts = (catalog["clause_morphology"]["symmetric_join"].join(texts),)
     return family, key, direction, texts
+
+
+def _step11_rc0030_owner_expression_prefix_commitment(
+    owner_expressions: Sequence[str],
+    *,
+    family: str,
+    direction: str,
+    morphology: Mapping[str, str],
+) -> str | None:
+    if family not in {"relation", "semantic_link"}:
+        return None
+    separator = (
+        morphology["symmetric_join"]
+        if direction == "bidirectional"
+        else morphology["source_particle"]
+    )
+    return hashlib.sha256(
+        separator.join(owner_expressions).encode("utf-8")
+    ).hexdigest()
+
+
+def _step11_rc0030_resolve_owner_candidate(
+    *,
+    semantic_family: str,
+    semantic_key: str,
+    direction: str,
+    candidate_commitments: Sequence[str],
+    owner_expression_prefix_sha256: str | None,
+    source_ids_by_signature: Mapping[
+        tuple[str, str, str, str, str | None], Sequence[str]
+    ],
+    comparison_count: int,
+) -> tuple[str, int]:
+    """Resolve all body-issued candidates; never privilege tuple order."""
+
+    candidates = tuple(candidate_commitments)
+    if (
+        not 1 <= len(candidates) <= _STEP11_RC0030_STORED_DECOMPOSITION_MAX
+        or len(set(candidates)) != len(candidates)
+        or any(
+            type(row) is not str
+            or _STEP11_RC0030_SHA256_RE.fullmatch(row) is None
+            for row in candidates
+        )
+        or (
+            owner_expression_prefix_sha256 is not None
+            and (
+                type(owner_expression_prefix_sha256) is not str
+                or _STEP11_RC0030_SHA256_RE.fullmatch(
+                    owner_expression_prefix_sha256
+                )
+                is None
+            )
+        )
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_OWNER_EXPRESSION_CANDIDATE_INVALID"
+        )
+    matches: list[tuple[str, str]] = []
+    for commitment in candidates:
+        comparison_count += 1
+        if comparison_count > _STEP11_RC0030_OWNER_COMPARISON_MAX:
+            raise Step11Rc0030ExperimentInverseSurfaceError(
+                "STEP11_RC0030_OWNER_COMPARISON_BOUND_EXCEEDED"
+            )
+        signature = (
+            semantic_family,
+            semantic_key,
+            direction,
+            commitment,
+            owner_expression_prefix_sha256,
+        )
+        matches.extend(
+            (commitment, str(source_id))
+            for source_id in source_ids_by_signature.get(signature, ())
+        )
+    if not matches:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_SEMANTIC_BINDING_UNRESOLVED"
+        )
+    if len(matches) != 1:
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_OWNER_EXPRESSION_CANDIDATE_AMBIGUOUS"
+        )
+    return matches[0][1], comparison_count
 
 
 def _step11_rc0030_reference_phrase_texts(
@@ -17506,6 +17736,40 @@ def match_step11_rc0030_experiment_surface(
         raise Step11Rc0030ExperimentInverseSurfaceError(
             "STEP11_RC0030_SOURCE_SIGNATURE_AMBIGUOUS"
         )
+    morphology = catalog["clause_morphology"]
+    source_ids_by_candidate_signature: dict[
+        tuple[str, str, str, str, str | None], list[str]
+    ] = {}
+    for (
+        family,
+        key,
+        direction,
+        owner_expressions,
+    ), source_ids in expected_by_signature.items():
+        if family not in {"relation", "semantic_link"}:
+            continue
+        candidate_signature = (
+            family,
+            key,
+            direction,
+            _step11_rc0030_owner_candidate_commitment(owner_expressions),
+            _step11_rc0030_owner_expression_prefix_commitment(
+                owner_expressions,
+                family=family,
+                direction=direction,
+                morphology=morphology,
+            ),
+        )
+        source_ids_by_candidate_signature.setdefault(
+            candidate_signature, []
+        ).extend(source_ids)
+    if any(
+        len(rows) != 1
+        for rows in source_ids_by_candidate_signature.values()
+    ):
+        raise Step11Rc0030ExperimentInverseSurfaceError(
+            "STEP11_RC0030_SOURCE_SIGNATURE_AMBIGUOUS"
+        )
     parsed_bindings: list[Step11Rc0030VerifiedSemanticBinding] = []
     parsed_source_ids: list[str] = []
     basis_by_family = {
@@ -17515,23 +17779,42 @@ def match_step11_rc0030_experiment_surface(
         "explicit_unknown": "unknown_id_dimension_exact_target",
     }
     for atom in witness.semantic_atoms:
-        signature = (
-            atom.semantic_family,
-            atom.semantic_key,
-            atom.direction,
-            atom.owner_expressions,
-        )
-        comparison_count += 1
-        if comparison_count > _STEP11_RC0030_OWNER_COMPARISON_MAX:
-            raise Step11Rc0030ExperimentInverseSurfaceError(
-                "STEP11_RC0030_OWNER_COMPARISON_BOUND_EXCEEDED"
+        if atom.owner_expression_candidate_commitments:
+            source_id, comparison_count = (
+                _step11_rc0030_resolve_owner_candidate(
+                    semantic_family=atom.semantic_family,
+                    semantic_key=atom.semantic_key,
+                    direction=atom.direction,
+                    candidate_commitments=(
+                        atom.owner_expression_candidate_commitments
+                    ),
+                    owner_expression_prefix_sha256=(
+                        atom.owner_expression_prefix_sha256
+                    ),
+                    source_ids_by_signature=(
+                        source_ids_by_candidate_signature
+                    ),
+                    comparison_count=comparison_count,
+                )
             )
-        source_ids = expected_by_signature.get(signature, ())
-        if len(source_ids) != 1:
-            raise Step11Rc0030ExperimentInverseSurfaceError(
-                "STEP11_RC0030_SEMANTIC_BINDING_UNRESOLVED"
+        else:
+            signature = (
+                atom.semantic_family,
+                atom.semantic_key,
+                atom.direction,
+                atom.owner_expressions,
             )
-        source_id = source_ids[0]
+            comparison_count += 1
+            if comparison_count > _STEP11_RC0030_OWNER_COMPARISON_MAX:
+                raise Step11Rc0030ExperimentInverseSurfaceError(
+                    "STEP11_RC0030_OWNER_COMPARISON_BOUND_EXCEEDED"
+                )
+            source_ids = expected_by_signature.get(signature, ())
+            if len(source_ids) != 1:
+                raise Step11Rc0030ExperimentInverseSurfaceError(
+                    "STEP11_RC0030_SEMANTIC_BINDING_UNRESOLVED"
+                )
+            source_id = source_ids[0]
         parsed_source_ids.append(source_id)
         parsed_bindings.append(
             Step11Rc0030VerifiedSemanticBinding(
@@ -17718,6 +18001,8 @@ def match_step11_rc0030_experiment_surface(
 __all__ += [
     "STEP11_RC0030_BASE_BODY_PARSED_WITNESS_SCHEMA",
     "STEP11_RC0030_EXPERIMENT_PARSED_WITNESS_SCHEMA",
+    "STEP11_RC0030_EXPERIMENT_PARSED_WITNESS_SCHEMA_V1",
+    "STEP11_RC0030_EXPERIMENT_PARSED_WITNESS_SCHEMA_V2",
     "STEP11_RC0030_EXPERIMENT_VERIFIED_BINDING_SCHEMA",
     "STEP11_RC0030_VERIFIED_BASE_REUSE_SCHEMA",
     "Step11Rc0030ExperimentInverseSurfaceError",

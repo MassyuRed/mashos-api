@@ -17,6 +17,7 @@ import hashlib
 import inspect
 import json
 from pathlib import Path
+import re
 from typing import Any, Callable
 
 import pytest
@@ -229,6 +230,101 @@ def _rematch(execution: Any, witness: Any) -> Any:
         base_body_witness=context.base_body_witness,
         verified_base_reuse_bindings=context.verified_base_reuse_bindings,
         **_source_kwargs(execution, candidate),
+    )
+
+
+def _delimiter_candidate_atom(parsed: Any) -> Any:
+    rows = tuple(
+        row
+        for row in parsed.semantic_atoms
+        if row.owner_expression_candidate_commitments
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.owner_expressions == ()
+    assert len(row.owner_expression_candidate_commitments) == 2
+    assert row.owner_expression_candidate_commitments == tuple(
+        sorted(row.owner_expression_candidate_commitments)
+    )
+    assert len(set(row.owner_expression_candidate_commitments)) == 2
+    assert all(
+        re.fullmatch(r"[0-9a-f]{64}", commitment) is not None
+        for commitment in row.owner_expression_candidate_commitments
+    )
+    assert re.fullmatch(
+        r"[0-9a-f]{64}", row.owner_expression_prefix_sha256
+    ) is not None
+    return row
+
+
+def _delimiter_candidate_body_context(
+    execution: Any,
+) -> tuple[Any, Any, str, int, int, str, dict[str, Any], str, tuple[str, ...]]:
+    candidate, parsed, _joined, _context = _selected_material(execution)
+    atom = _delimiter_candidate_atom(parsed)
+    catalog, _catalog_sha256 = inverse._step11_rc0030_inverse_catalog()
+    terminal = next(
+        row[0]
+        for row in inverse._step11_rc0030_semantic_terminal_index(catalog)
+        if row[1:] == (
+            atom.semantic_family,
+            atom.semantic_key,
+            atom.direction,
+        )
+    )
+    same_terminal_atoms = tuple(
+        row
+        for row in parsed.semantic_atoms
+        if (
+            row.semantic_family,
+            row.semantic_key,
+            row.direction,
+        )
+        == (atom.semantic_family, atom.semantic_key, atom.direction)
+    )
+    target_ordinal = next(
+        index for index, row in enumerate(same_terminal_atoms) if row is atom
+    )
+    text = candidate.final_utf8_bytes.decode("utf-8")
+    terminal_positions = tuple(
+        match.start() for match in re.finditer(re.escape(terminal), text)
+    )
+    assert len(terminal_positions) == len(same_terminal_atoms)
+    terminal_start = terminal_positions[target_ordinal]
+
+    morphology = catalog["clause_morphology"]
+    boundary_markers = (
+        "\n",
+        morphology["semantic_item_join"],
+        morphology["clause_join"],
+        morphology["grammatical_chunk_join"],
+    )
+    owner_start = max(
+        text.rfind(marker, 0, terminal_start) + len(marker)
+        for marker in boundary_markers
+    )
+    owner_prefix = text[owner_start:terminal_start]
+    assert hashlib.sha256(owner_prefix.encode("utf-8")).hexdigest() == (
+        atom.owner_expression_prefix_sha256
+    )
+    separator = (
+        morphology["symmetric_join"]
+        if atom.direction == "bidirectional"
+        else morphology["source_particle"]
+    )
+    pieces = tuple(owner_prefix.split(separator))
+    assert len(pieces) == 3
+    assert all(pieces)
+    return (
+        candidate,
+        atom,
+        text,
+        owner_start,
+        terminal_start,
+        terminal,
+        catalog,
+        separator,
+        pieces,
     )
 
 
@@ -536,6 +632,271 @@ def test_rc0030_e2_depth_compaction_reaches_the_integrated_chain() -> None:
         )
     _assert_selected_chain(execution)
     _assert_density_schedule(execution)
+
+
+def test_rc0030_e2_delimiter_candidate_is_unique_bounded_and_body_free() -> None:
+    execution = _execution(_DENSITY_CASE_ID)
+    candidate, parsed, joined, _context = _selected_material(execution)
+    atom = _delimiter_candidate_atom(parsed)
+    binding = joined.verified_surface_binding
+
+    assert parsed.schema_version == (
+        inverse.STEP11_RC0030_EXPERIMENT_PARSED_WITNESS_SCHEMA_V2
+    )
+    assert len(parsed.semantic_atoms) == 10
+    assert (
+        len(candidate.surface_realization_plan.base_body_exact_reuse_bindings)
+        == 0
+    )
+    assert len(binding.semantic_bindings) == 10
+    assert binding.reception_binding_count == 1
+    assert binding.unique_solution_count == 1
+    assert 0 <= binding.owner_binding_comparison_count <= 576
+    assert parsed.body_scan_pass_count == 2
+    assert 0 <= parsed.decomposition_locus_count <= 38
+    assert 0 <= parsed.evaluated_decomposition_count <= 76
+    assert 0 <= parsed.peak_stored_decomposition_count < 2
+    assert len(candidate.final_utf8_bytes) <= 1_000_000
+    assert inverse._STEP11_RC0030_STORED_DECOMPOSITION_MAX == 2
+    assert inverse._STEP11_RC0030_EVALUATED_DECOMPOSITION_MAX == 76
+    assert inverse._STEP11_RC0030_OWNER_COMPARISON_MAX == 576
+    assert inverse._STEP11_RC0030_BODY_SCAN_PASS_MAX == 2
+    assert inverse._STEP11_RC0030_BODY_BYTE_MAX == 1_000_000
+
+    material = inverse.step11_rc0030_experiment_parsed_witness_material(
+        parsed
+    )
+    assert not (_mapping_keys(material) & _FORBIDDEN_PUBLIC_KEYS)
+    assert _contains_bytes(material) is False
+    serialized = json.dumps(material, ensure_ascii=False, sort_keys=True)
+    assert candidate.final_utf8_bytes.decode("utf-8") not in serialized
+    assert all(
+        expression not in serialized
+        for row in parsed.semantic_atoms
+        for expression in row.owner_expressions
+    )
+    atom_material = next(
+        row
+        for row in material["semantic_atoms"]
+        if row["atom_id"] == atom.atom_id
+    )
+    assert atom_material["owner_expression_count"] == 0
+    assert atom_material["owner_expression_sha256"] == []
+    assert atom_material["owner_expression_candidate_count"] == 2
+    assert tuple(atom_material["owner_expression_candidate_commitments"]) == (
+        atom.owner_expression_candidate_commitments
+    )
+    assert atom_material["owner_expression_prefix_sha256"] == (
+        atom.owner_expression_prefix_sha256
+    )
+    assert candidate.final_utf8_bytes.decode("utf-8") not in repr(parsed)
+    assert _DENSITY_CASE_ID not in inspect.getsource(inverse)
+
+
+def test_rc0030_e2_owner_candidate_exact_one_solver_rejects_zero_and_two() -> None:
+    execution = _execution(_DENSITY_CASE_ID)
+    _candidate, parsed, _joined, _context = _selected_material(execution)
+    atom = _delimiter_candidate_atom(parsed)
+    commitments = atom.owner_expression_candidate_commitments
+
+    def signature(commitment: str) -> tuple[str, str, str, str, str | None]:
+        return (
+            atom.semantic_family,
+            atom.semantic_key,
+            atom.direction,
+            commitment,
+            atom.owner_expression_prefix_sha256,
+        )
+
+    unique_authority = {signature(commitments[0]): ("source-unique",)}
+    resolved = inverse._step11_rc0030_resolve_owner_candidate(
+        semantic_family=atom.semantic_family,
+        semantic_key=atom.semantic_key,
+        direction=atom.direction,
+        candidate_commitments=commitments,
+        owner_expression_prefix_sha256=atom.owner_expression_prefix_sha256,
+        source_ids_by_signature=unique_authority,
+        comparison_count=17,
+    )
+    reversed_resolved = inverse._step11_rc0030_resolve_owner_candidate(
+        semantic_family=atom.semantic_family,
+        semantic_key=atom.semantic_key,
+        direction=atom.direction,
+        candidate_commitments=tuple(reversed(commitments)),
+        owner_expression_prefix_sha256=atom.owner_expression_prefix_sha256,
+        source_ids_by_signature=unique_authority,
+        comparison_count=17,
+    )
+    assert resolved == reversed_resolved == ("source-unique", 19)
+
+    with pytest.raises(
+        inverse.Step11Rc0030ExperimentInverseSurfaceError
+    ) as zero:
+        inverse._step11_rc0030_resolve_owner_candidate(
+            semantic_family=atom.semantic_family,
+            semantic_key=atom.semantic_key,
+            direction=atom.direction,
+            candidate_commitments=commitments,
+            owner_expression_prefix_sha256=atom.owner_expression_prefix_sha256,
+            source_ids_by_signature={},
+            comparison_count=0,
+        )
+    assert zero.value.code == "STEP11_RC0030_SEMANTIC_BINDING_UNRESOLVED"
+
+    two_authorities = {
+        signature(commitment): (f"source-{ordinal}",)
+        for ordinal, commitment in enumerate(commitments, 1)
+    }
+    with pytest.raises(
+        inverse.Step11Rc0030ExperimentInverseSurfaceError
+    ) as multiple:
+        inverse._step11_rc0030_resolve_owner_candidate(
+            semantic_family=atom.semantic_family,
+            semantic_key=atom.semantic_key,
+            direction=atom.direction,
+            candidate_commitments=commitments,
+            owner_expression_prefix_sha256=atom.owner_expression_prefix_sha256,
+            source_ids_by_signature=two_authorities,
+            comparison_count=0,
+        )
+    assert multiple.value.code == (
+        "STEP11_RC0030_OWNER_EXPRESSION_CANDIDATE_AMBIGUOUS"
+    )
+
+    forged_atom = replace(
+        atom,
+        owner_expression_candidate_commitments=tuple(reversed(commitments)),
+    )
+    assert inverse._step11_rc0030_semantic_atom_owner_state_valid(
+        forged_atom
+    ) is False
+    forged_witness = replace(
+        parsed,
+        semantic_atoms=tuple(
+            forged_atom if row is atom else row for row in parsed.semantic_atoms
+        ),
+    )
+    with pytest.raises(
+        inverse.Step11Rc0030ExperimentInverseSurfaceError
+    ) as forged:
+        inverse.step11_rc0030_experiment_parsed_witness_material(
+            forged_witness
+        )
+    assert forged.value.code == "STEP11_RC0030_PARSED_WITNESS_ORIGIN_REQUIRED"
+
+
+def test_rc0030_e2_parser_issued_owner_candidate_zero_solution_fails() -> None:
+    execution = _execution(_DENSITY_CASE_ID)
+    candidate, parsed, _joined, _context = _selected_material(execution)
+    atom = _delimiter_candidate_atom(parsed)
+    catalog, _catalog_sha256 = inverse._step11_rc0030_inverse_catalog()
+    terminal = next(
+        row[0]
+        for row in inverse._step11_rc0030_semantic_terminal_index(catalog)
+        if row[1:] == (
+            atom.semantic_family,
+            atom.semantic_key,
+            atom.direction,
+        )
+    )
+    same_terminal_atoms = tuple(
+        row
+        for row in parsed.semantic_atoms
+        if (
+            row.semantic_family,
+            row.semantic_key,
+            row.direction,
+        )
+        == (atom.semantic_family, atom.semantic_key, atom.direction)
+    )
+    target_ordinal = next(
+        index for index, row in enumerate(same_terminal_atoms) if row is atom
+    )
+    text = candidate.final_utf8_bytes.decode("utf-8")
+    terminal_positions = tuple(
+        match.start() for match in re.finditer(re.escape(terminal), text)
+    )
+    assert len(terminal_positions) == len(same_terminal_atoms)
+    position = terminal_positions[target_ordinal]
+    mutated_body = (text[:position] + "異" + text[position:]).encode("utf-8")
+    mutated = inverse.parse_step11_rc0030_experiment_surface(mutated_body)
+    mutated_atom = _delimiter_candidate_atom(mutated)
+    assert len(mutated.semantic_atoms) == 10
+    assert mutated_atom.owner_expression_prefix_sha256 != (
+        atom.owner_expression_prefix_sha256
+    )
+    with pytest.raises(
+        inverse.Step11Rc0030ExperimentInverseSurfaceError
+    ) as caught:
+        _rematch(execution, mutated)
+    assert caught.value.code == "STEP11_RC0030_SEMANTIC_BINDING_UNRESOLVED"
+
+
+def test_rc0030_e2_delimiter_owner_attacks_fail_closed_within_stored_two() -> None:
+    execution = _execution(_DENSITY_CASE_ID)
+    (
+        candidate,
+        atom,
+        text,
+        owner_start,
+        terminal_start,
+        terminal,
+        catalog,
+        separator,
+        pieces,
+    ) = _delimiter_candidate_body_context(execution)
+
+    attacked_prefixes = (
+        pieces[0] + pieces[1] + separator + pieces[2],
+        pieces[0] + separator + pieces[1] + pieces[2],
+        separator.join(tuple(reversed(pieces))),
+    )
+    assert len(set(attacked_prefixes)) == 3
+    for attacked_prefix in attacked_prefixes:
+        attacked_body = (
+            text[:owner_start] + attacked_prefix + text[terminal_start:]
+        ).encode("utf-8")
+        assert attacked_body != candidate.final_utf8_bytes
+        _assert_inverse_rejected(
+            lambda attacked_body=attacked_body: _rematch(
+                execution,
+                inverse.parse_step11_rc0030_experiment_surface(attacked_body),
+            ),
+            "STEP11_RC0030_E2_DELIMITER_OWNER_ATTACK_ACCEPTED",
+        )
+
+    swapped_direction_terminal = next(
+        row[0]
+        for row in inverse._step11_rc0030_semantic_terminal_index(catalog)
+        if row[1] == atom.semantic_family
+        and row[2] == atom.semantic_key
+        and row[3] != atom.direction
+    )
+    direction_body = (
+        text[:terminal_start]
+        + swapped_direction_terminal
+        + text[terminal_start + len(terminal) :]
+    ).encode("utf-8")
+    _assert_inverse_rejected(
+        lambda: _rematch(
+            execution,
+            inverse.parse_step11_rc0030_experiment_surface(direction_body),
+        ),
+        "STEP11_RC0030_E2_DELIMITER_DIRECTION_ATTACK_ACCEPTED",
+    )
+
+    morphology = catalog["clause_morphology"]
+    three_delimiter_prefix = separator.join(("甲", "乙", "丙", "丁"))
+    with pytest.raises(
+        inverse.Step11Rc0030ExperimentInverseSurfaceError
+    ) as bounded:
+        inverse._step11_rc0030_parse_owner_expression(
+            three_delimiter_prefix,
+            family=atom.semantic_family,
+            direction=atom.direction,
+            morphology=morphology,
+        )
+    assert bounded.value.code == "STEP11_RC0030_OWNER_EXPRESSION_AMBIGUOUS"
 
 
 def test_rc0030_e2_inverse_is_body_only_and_selector_is_order_independent() -> None:
