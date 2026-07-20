@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""E2 phase-qualified dependency authority for the disconnected rc0030 lane.
+"""E3 phase-qualified dependency authority for the disconnected rc0030 lane.
 
-The rc0029 parent and completed P4/P5 manifests are immutable historical
+The rc0029 parent and completed P4/P5/E2 manifests are immutable historical
 predecessors.  The exact eighteen-path list remains the closed maximum for the
-whole run.  E2 activates only its previously reserved integration test and
-requires E3/E4 paths to remain absent.  All four production owners are pinned
-byte-for-byte to the formal E2 predecessor.  Filesystem discovery is
-rejection-only and cannot admit a path.
+whole run.  E3 activates only the bounded runner and representative-eight
+test, and requires the E4 path to remain absent.  All four production owners
+and the E2 integration test stay pinned byte-for-byte to E2 evidence.
+Filesystem discovery is rejection-only and cannot admit a path.
 """
 
 import ast
@@ -26,7 +26,7 @@ from emlis_ai_rc0029_surface_repair_experiment_dependency_manifest_v3 import (
 
 RC0030_SURFACE_PLANNING_DEPENDENCY_MANIFEST_SCHEMA = (
     "cocolon.emlis.nls_v3."
-    "rc0030_surface_planning_experiment_dependency_manifest.v3"
+    "rc0030_surface_planning_experiment_dependency_manifest.v4"
 )
 RC0030_SURFACE_PLANNING_EXPERIMENT_ID = (
     "nls_v3_rc0030_common_surface_planning_experiment"
@@ -43,7 +43,10 @@ RC0030_P5_PHASE_PREDECESSOR_GIT_COMMIT = (
 RC0030_E2_PHASE_PREDECESSOR_GIT_COMMIT = (
     "45b178cfc0e7d94ab8385682ab3c7bbf0ab9aa25"
 )
-RC0030_MANIFEST_PHASE = "E2_INTEGRATED_SYNCHRONIZATION"
+RC0030_E3_PHASE_PREDECESSOR_GIT_COMMIT = (
+    "38ca7fa779065998a363ce9bb581338d98b8f79d"
+)
+RC0030_MANIFEST_PHASE = "E3_MACHINE_AND_PRODUCT_READ"
 
 RC0030_P4_MANIFEST_SCHEMA = (
     "cocolon.emlis.nls_v3."
@@ -82,6 +85,28 @@ RC0030_P5_FILE_HASHES_SHA256 = (
     "75663d3799c8da7e196d4a30fcc29b1358ab4fc3a56b2461f7eb3b9ec2ecbf70"
 )
 RC0030_P5_SOURCE_FILE_COUNT = 222
+
+RC0030_E2_MANIFEST_SCHEMA = (
+    "cocolon.emlis.nls_v3."
+    "rc0030_surface_planning_experiment_dependency_manifest.v3"
+)
+RC0030_E2_MANIFEST_GIT_COMMIT = (
+    "38ca7fa779065998a363ce9bb581338d98b8f79d"
+)
+RC0030_E2_MANIFEST_PHASE = "E2_INTEGRATED_SYNCHRONIZATION"
+RC0030_E2_MANIFEST_FILE_SHA256 = (
+    "754e79dc0f871b9b6c650b174f067f16cef35a9f141bf91205d42c308b1041f7"
+)
+RC0030_E2_MANIFEST_ARTIFACT_SHA256 = (
+    "fe468b51e3b9f37558f30b010aad205500759806dfb939f859b0b9699466e097"
+)
+RC0030_E2_SOURCE_DEPENDENCY_CLOSURE_SHA256 = (
+    "a49e9bc2b8ce1443c955c9fd010fd07454e2e8a17c70a845db180e97b7023832"
+)
+RC0030_E2_FILE_HASHES_SHA256 = (
+    "f7a6fb9c08e3286f1784127e675f0761e87a4431699692082b8e20fbc87a33f3"
+)
+RC0030_E2_SOURCE_FILE_COUNT = 223
 
 RC0029_SURFACE_REPAIR_PARENT_MANIFEST_PATH = (
     "ai/tests/fixtures/emlis_nls_v3/cycle_001/"
@@ -221,6 +246,12 @@ RC0030_REPRESENTATIVE_FIXTURE_PATH = (
 RC0030_E2_INTEGRATION_PATH = (
     "ai/tests/test_emlis_nls_v3_s11_rc0030_e2_integration.py"
 )
+RC0030_E3_REPRESENTATIVE_TEST_PATH = (
+    "ai/tests/test_emlis_nls_v3_s11_rc0030_e3_representative8.py"
+)
+RC0030_E4_FROZEN100_TEST_PATH = (
+    "ai/tests/test_emlis_nls_v3_s11_rc0030_e4_frozen100_read_only.py"
+)
 RC0030_E2_INTEGRATION_PHASE_PREDECESSOR_SHA256 = (
     "789008643a4d7ba388a26f35fbf2276eea5f1c3702f94ea6089377ce372d5eaa"
 )
@@ -241,8 +272,8 @@ RC0030_NEW_PATH_ALLOWLIST = (
     "ai/tests/test_emlis_nls_v3_s11_rc0030_predecessor_immutability.py",
     "ai/tests/test_emlis_nls_v3_s11_rc0030_predecessor_behavior_regression.py",
     "ai/tests/test_emlis_nls_v3_s11_rc0030_control_non_regression.py",
-    "ai/tests/test_emlis_nls_v3_s11_rc0030_e3_representative8.py",
-    "ai/tests/test_emlis_nls_v3_s11_rc0030_e4_frozen100_read_only.py",
+    RC0030_E3_REPRESENTATIVE_TEST_PATH,
+    RC0030_E4_FROZEN100_TEST_PATH,
     "ai/tests/test_emlis_nls_v3_s11_rc0030_dependency_closure.py",
 )
 RC0030_P4_ACTIVE_NEW_PATHS = (
@@ -268,8 +299,8 @@ RC0030_P4_RESERVED_ABSENT_PATHS = (
     "ai/tests/test_emlis_nls_v3_s11_rc0030_predecessor_immutability.py",
     "ai/tests/test_emlis_nls_v3_s11_rc0030_predecessor_behavior_regression.py",
     "ai/tests/test_emlis_nls_v3_s11_rc0030_control_non_regression.py",
-    "ai/tests/test_emlis_nls_v3_s11_rc0030_e3_representative8.py",
-    "ai/tests/test_emlis_nls_v3_s11_rc0030_e4_frozen100_read_only.py",
+    RC0030_E3_REPRESENTATIVE_TEST_PATH,
+    RC0030_E4_FROZEN100_TEST_PATH,
 )
 RC0030_P5_NEWLY_ACTIVE_PATHS = (
     "ai/tests/test_emlis_nls_v3_s11_rc0030_predecessor_immutability.py",
@@ -282,8 +313,8 @@ RC0030_P5_ACTIVE_NEW_PATHS = tuple(
     if path not in {
         RC0030_BOUNDED_EXPERIMENT_TOOL_PATH,
         RC0030_E2_INTEGRATION_PATH,
-        "ai/tests/test_emlis_nls_v3_s11_rc0030_e3_representative8.py",
-        "ai/tests/test_emlis_nls_v3_s11_rc0030_e4_frozen100_read_only.py",
+        RC0030_E3_REPRESENTATIVE_TEST_PATH,
+        RC0030_E4_FROZEN100_TEST_PATH,
     }
 )
 RC0030_P5_HASHED_NEW_PATHS = tuple(
@@ -293,8 +324,8 @@ RC0030_P5_HASHED_NEW_PATHS = tuple(
 RC0030_P5_RESERVED_ABSENT_PATHS = (
     RC0030_BOUNDED_EXPERIMENT_TOOL_PATH,
     RC0030_E2_INTEGRATION_PATH,
-    "ai/tests/test_emlis_nls_v3_s11_rc0030_e3_representative8.py",
-    "ai/tests/test_emlis_nls_v3_s11_rc0030_e4_frozen100_read_only.py",
+    RC0030_E3_REPRESENTATIVE_TEST_PATH,
+    RC0030_E4_FROZEN100_TEST_PATH,
 )
 RC0030_E2_NEWLY_ACTIVE_PATHS = (
     RC0030_E2_INTEGRATION_PATH,
@@ -304,8 +335,8 @@ RC0030_E2_ACTIVE_NEW_PATHS = tuple(
     for path in RC0030_NEW_PATH_ALLOWLIST
     if path not in {
         RC0030_BOUNDED_EXPERIMENT_TOOL_PATH,
-        "ai/tests/test_emlis_nls_v3_s11_rc0030_e3_representative8.py",
-        "ai/tests/test_emlis_nls_v3_s11_rc0030_e4_frozen100_read_only.py",
+        RC0030_E3_REPRESENTATIVE_TEST_PATH,
+        RC0030_E4_FROZEN100_TEST_PATH,
     }
 )
 RC0030_E2_HASHED_NEW_PATHS = tuple(
@@ -314,20 +345,31 @@ RC0030_E2_HASHED_NEW_PATHS = tuple(
 )
 RC0030_E2_RESERVED_ABSENT_PATHS = (
     RC0030_BOUNDED_EXPERIMENT_TOOL_PATH,
-    "ai/tests/test_emlis_nls_v3_s11_rc0030_e3_representative8.py",
-    "ai/tests/test_emlis_nls_v3_s11_rc0030_e4_frozen100_read_only.py",
+    RC0030_E3_REPRESENTATIVE_TEST_PATH,
+    RC0030_E4_FROZEN100_TEST_PATH,
+)
+RC0030_E3_NEWLY_ACTIVE_PATHS = (
+    RC0030_BOUNDED_EXPERIMENT_TOOL_PATH,
+    RC0030_E3_REPRESENTATIVE_TEST_PATH,
+)
+RC0030_E3_ACTIVE_NEW_PATHS = tuple(
+    path
+    for path in RC0030_NEW_PATH_ALLOWLIST
+    if path != RC0030_E4_FROZEN100_TEST_PATH
+)
+RC0030_E3_HASHED_NEW_PATHS = tuple(
+    path for path in RC0030_E3_ACTIVE_NEW_PATHS
+    if path != RC0030_GENERATED_MANIFEST_PATH
+)
+RC0030_E3_RESERVED_ABSENT_PATHS = (
+    RC0030_E4_FROZEN100_TEST_PATH,
 )
 RC0030_LATER_PHASE_ACTIVATION = {
-    "E3_MACHINE_AND_PRODUCT_READ": (
-        RC0030_BOUNDED_EXPERIMENT_TOOL_PATH,
-        "ai/tests/test_emlis_nls_v3_s11_rc0030_e3_representative8.py",
-    ),
     "E4_FROZEN100": (
-        "ai/tests/test_emlis_nls_v3_s11_rc0030_e4_frozen100_read_only.py",
+        RC0030_E4_FROZEN100_TEST_PATH,
     ),
 }
 RC0030_LATER_PHASE_ORDER = (
-    "E3_MACHINE_AND_PRODUCT_READ",
     "E4_FROZEN100",
 )
 
@@ -383,10 +425,10 @@ def _activation_policy_material() -> dict[str, Any]:
     return {
         "phase": RC0030_MANIFEST_PHASE,
         "exact18_is_closed_maximum": True,
-        "active_new_paths": list(sorted(RC0030_E2_ACTIVE_NEW_PATHS)),
-        "newly_active_paths": list(sorted(RC0030_E2_NEWLY_ACTIVE_PATHS)),
+        "active_new_paths": list(sorted(RC0030_E3_ACTIVE_NEW_PATHS)),
+        "newly_active_paths": list(sorted(RC0030_E3_NEWLY_ACTIVE_PATHS)),
         "reserved_absent_paths": list(
-            sorted(RC0030_E2_RESERVED_ABSENT_PATHS)
+            sorted(RC0030_E3_RESERVED_ABSENT_PATHS)
         ),
         "later_phase_activation": {
             phase: list(sorted(paths))
@@ -401,20 +443,20 @@ def _activation_policy_material() -> dict[str, Any]:
 
 def _phase_predecessor_material() -> dict[str, Any]:
     return {
-        "schema_version": RC0030_P5_MANIFEST_SCHEMA,
-        "git_commit": RC0030_P5_MANIFEST_GIT_COMMIT,
-        "manifest_phase": RC0030_P5_MANIFEST_PHASE,
+        "schema_version": RC0030_E2_MANIFEST_SCHEMA,
+        "git_commit": RC0030_E2_MANIFEST_GIT_COMMIT,
+        "manifest_phase": RC0030_E2_MANIFEST_PHASE,
         "phase_predecessor_git_commit": (
-            RC0030_P5_PHASE_PREDECESSOR_GIT_COMMIT
+            RC0030_E2_PHASE_PREDECESSOR_GIT_COMMIT
         ),
         "manifest_path": RC0030_GENERATED_MANIFEST_PATH,
-        "manifest_file_sha256": RC0030_P5_MANIFEST_FILE_SHA256,
-        "manifest_artifact_sha256": RC0030_P5_MANIFEST_ARTIFACT_SHA256,
+        "manifest_file_sha256": RC0030_E2_MANIFEST_FILE_SHA256,
+        "manifest_artifact_sha256": RC0030_E2_MANIFEST_ARTIFACT_SHA256,
         "source_dependency_closure_sha256": (
-            RC0030_P5_SOURCE_DEPENDENCY_CLOSURE_SHA256
+            RC0030_E2_SOURCE_DEPENDENCY_CLOSURE_SHA256
         ),
-        "file_hashes_sha256": RC0030_P5_FILE_HASHES_SHA256,
-        "source_file_count": RC0030_P5_SOURCE_FILE_COUNT,
+        "file_hashes_sha256": RC0030_E2_FILE_HASHES_SHA256,
+        "source_file_count": RC0030_E2_SOURCE_FILE_COUNT,
         "immutable": True,
     }
 
@@ -631,7 +673,7 @@ def _delta_import_edges(
         path
         for path in (
             *RC0030_MODIFIED_OWNER_PATHS,
-            *RC0030_E2_HASHED_NEW_PATHS,
+            *RC0030_E3_HASHED_NEW_PATHS,
         )
         if path.endswith(".py")
     )
@@ -738,7 +780,7 @@ def find_rc0030_surface_planning_forbidden_reverse_imports(
         }
     )
     excluded = set(RC0030_MODIFIED_OWNER_PATHS) | set(
-        RC0030_E2_HASHED_NEW_PATHS
+        RC0030_E3_HASHED_NEW_PATHS
     )
     found: list[str] = []
     for root in (repo_root / "ai/services", repo_root / "ai/tools"):
@@ -769,12 +811,12 @@ def find_rc0030_surface_planning_forbidden_reverse_imports(
 def find_rc0030_surface_planning_reserved_paths(
     repo_root: Path,
 ) -> tuple[str, ...]:
-    """Return later-phase paths that E2 requires to remain absent."""
+    """Return later-phase paths that E3 requires to remain absent."""
 
     return tuple(
         sorted(
             path
-            for path in RC0030_E2_RESERVED_ABSENT_PATHS
+            for path in RC0030_E3_RESERVED_ABSENT_PATHS
             if (repo_root / path).exists()
         )
     )
@@ -875,12 +917,12 @@ def build_rc0030_surface_planning_dependency_manifest(
     *,
     repo_root: Path,
 ) -> dict[str, Any]:
-    """Build the E2-active rc0030 delta over immutable P5/P4 evidence."""
+    """Build the E3-active rc0030 delta over immutable E2/P5/P4 evidence."""
 
     parent = _validated_parent_manifest(parent_manifest)
     parent_files = _safe_file_rows(parent["file_hashes"])
     parent_by_path = {row["path"]: row["sha256"] for row in parent_files}
-    if any(path in parent_by_path for path in RC0030_E2_HASHED_NEW_PATHS):
+    if any(path in parent_by_path for path in RC0030_E3_HASHED_NEW_PATHS):
         raise Rc0030SurfacePlanningDependencyError(
             "RC0030_NEW_PATH_ALREADY_IN_PARENT"
         )
@@ -911,7 +953,7 @@ def build_rc0030_surface_planning_dependency_manifest(
         current_parent_rows.append({"path": path, "sha256": current})
 
     new_rows: list[dict[str, str]] = []
-    for path in RC0030_E2_HASHED_NEW_PATHS:
+    for path in RC0030_E3_HASHED_NEW_PATHS:
         try:
             sha256 = _sha256(repo_root / path)
         except OSError as error:
@@ -960,7 +1002,7 @@ def build_rc0030_surface_planning_dependency_manifest(
         "experiment_id": RC0030_SURFACE_PLANNING_EXPERIMENT_ID,
         "baseline_git_commit": RC0030_BASELINE_GIT_COMMIT,
         "phase_predecessor_git_commit": (
-            RC0030_E2_PHASE_PREDECESSOR_GIT_COMMIT
+            RC0030_E3_PHASE_PREDECESSOR_GIT_COMMIT
         ),
         "manifest_phase": RC0030_MANIFEST_PHASE,
         "parent": _parent_binding(parent),
@@ -1060,7 +1102,7 @@ def validate_rc0030_surface_planning_dependency_manifest_shape(
         or value.get("experiment_id") != RC0030_SURFACE_PLANNING_EXPERIMENT_ID
         or value.get("baseline_git_commit") != RC0030_BASELINE_GIT_COMMIT
         or value.get("phase_predecessor_git_commit")
-        != RC0030_E2_PHASE_PREDECESSOR_GIT_COMMIT
+        != RC0030_E3_PHASE_PREDECESSOR_GIT_COMMIT
         or value.get("manifest_phase") != RC0030_MANIFEST_PHASE
         or value.get("body_free") is not True
     ):
@@ -1084,19 +1126,19 @@ def validate_rc0030_surface_planning_dependency_manifest_shape(
     )
     if (
         len(RC0030_NEW_PATH_ALLOWLIST) != 18
-        or set(RC0030_E2_ACTIVE_NEW_PATHS)
-        & set(RC0030_E2_RESERVED_ABSENT_PATHS)
-        or set(RC0030_E2_ACTIVE_NEW_PATHS)
-        | set(RC0030_E2_RESERVED_ABSENT_PATHS)
+        or set(RC0030_E3_ACTIVE_NEW_PATHS)
+        & set(RC0030_E3_RESERVED_ABSENT_PATHS)
+        or set(RC0030_E3_ACTIVE_NEW_PATHS)
+        | set(RC0030_E3_RESERVED_ABSENT_PATHS)
         != set(RC0030_NEW_PATH_ALLOWLIST)
-        or len(RC0030_E2_ACTIVE_NEW_PATHS) != 15
-        or len(RC0030_E2_HASHED_NEW_PATHS) != 14
-        or len(RC0030_E2_RESERVED_ABSENT_PATHS) != 3
-        or set(RC0030_E2_NEWLY_ACTIVE_PATHS)
-        != set(RC0030_E2_ACTIVE_NEW_PATHS)
-        - set(RC0030_P5_ACTIVE_NEW_PATHS)
+        or len(RC0030_E3_ACTIVE_NEW_PATHS) != 17
+        or len(RC0030_E3_HASHED_NEW_PATHS) != 16
+        or len(RC0030_E3_RESERVED_ABSENT_PATHS) != 1
+        or set(RC0030_E3_NEWLY_ACTIVE_PATHS)
+        != set(RC0030_E3_ACTIVE_NEW_PATHS)
+        - set(RC0030_E2_ACTIVE_NEW_PATHS)
         or len(later_paths) != len(set(later_paths))
-        or set(later_paths) != set(RC0030_E2_RESERVED_ABSENT_PATHS)
+        or set(later_paths) != set(RC0030_E3_RESERVED_ABSENT_PATHS)
         or set(RC0030_LATER_PHASE_ORDER)
         != set(RC0030_LATER_PHASE_ACTIVATION)
     ):
@@ -1146,7 +1188,7 @@ def validate_rc0030_surface_planning_dependency_manifest_shape(
     by_path = {row["path"]: row["sha256"] for row in files}
     new_by_path = {row["path"]: row["sha256"] for row in new_rows}
     if (
-        set(new_by_path) != set(RC0030_E2_HASHED_NEW_PATHS)
+        set(new_by_path) != set(RC0030_E3_HASHED_NEW_PATHS)
         or new_by_path.get(RC0030_E2_INTEGRATION_PATH)
         != RC0030_E2_INTEGRATION_PHASE_PREDECESSOR_SHA256
         or any(by_path.get(path) != sha for path, sha in new_by_path.items())
@@ -1154,7 +1196,7 @@ def validate_rc0030_surface_planning_dependency_manifest_shape(
         or value.get("source_file_count") != len(files)
         or len(files)
         != RC0029_SURFACE_REPAIR_PARENT_SOURCE_FILE_COUNT
-        + len(RC0030_E2_HASHED_NEW_PATHS)
+        + len(RC0030_E3_HASHED_NEW_PATHS)
     ):
         issues.add("RC0030_FILE_CLOSURE_INVALID")
 
@@ -1305,12 +1347,27 @@ __all__ = [
     "RC0030_BASELINE_GIT_COMMIT",
     "RC0030_E2_ACTIVE_NEW_PATHS",
     "RC0030_E2_CHANGED_OWNER_PATHS",
+    "RC0030_E2_FILE_HASHES_SHA256",
     "RC0030_E2_HASHED_NEW_PATHS",
     "RC0030_E2_INTEGRATION_PATH",
     "RC0030_E2_INTEGRATION_PHASE_PREDECESSOR_SHA256",
+    "RC0030_E2_MANIFEST_ARTIFACT_SHA256",
+    "RC0030_E2_MANIFEST_FILE_SHA256",
+    "RC0030_E2_MANIFEST_GIT_COMMIT",
+    "RC0030_E2_MANIFEST_PHASE",
+    "RC0030_E2_MANIFEST_SCHEMA",
     "RC0030_E2_NEWLY_ACTIVE_PATHS",
     "RC0030_E2_PHASE_PREDECESSOR_GIT_COMMIT",
     "RC0030_E2_RESERVED_ABSENT_PATHS",
+    "RC0030_E2_SOURCE_DEPENDENCY_CLOSURE_SHA256",
+    "RC0030_E2_SOURCE_FILE_COUNT",
+    "RC0030_E3_ACTIVE_NEW_PATHS",
+    "RC0030_E3_HASHED_NEW_PATHS",
+    "RC0030_E3_NEWLY_ACTIVE_PATHS",
+    "RC0030_E3_PHASE_PREDECESSOR_GIT_COMMIT",
+    "RC0030_E3_REPRESENTATIVE_TEST_PATH",
+    "RC0030_E3_RESERVED_ABSENT_PATHS",
+    "RC0030_E4_FROZEN100_TEST_PATH",
     "RC0030_GENERATED_MANIFEST_PATH",
     "RC0030_LATER_PHASE_ACTIVATION",
     "RC0030_LATER_PHASE_ORDER",
