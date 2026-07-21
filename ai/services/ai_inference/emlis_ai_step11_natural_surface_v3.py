@@ -12758,3 +12758,1109 @@ __all__ += [
     "step11_rc0031_surface_realization_plan_material",
     "validate_step11_rc0031_experiment_surface_candidate",
 ]
+
+
+# rc0031 experiment-only dimension-bearing Surface successor (append-only P3 owner)
+
+def _step11_rc0031_product_atom_order_key(
+    rc0031_row: tuple[Any, ...],
+) -> tuple[int, int, int]:
+    return (int(rc0031_row[5]), int(rc0031_row[6]), int(rc0031_row[7]))
+
+
+def _step11_rc0031_product_reception_order_key(
+    rc0031_row: Step11Rc0031ReceptionPredicationBinding,
+) -> tuple[int, int, str]:
+    return (
+        rc0031_row.reception_line_ordinal,
+        rc0031_row.grammatical_chunk_ordinal,
+        rc0031_row.source_reception_opportunity_id,
+    )
+
+
+def _step11_rc0031_product_base_unit_order_key(
+    rc0031_row: Any,
+) -> int:
+    return int(rc0031_row.source_order)
+
+
+def _step11_rc0031_product_binding_order_key(
+    rc0031_row: Step11Rc0031PropositionClauseBinding,
+) -> str:
+    return rc0031_row.proposition_unit_id
+
+
+def _step11_rc0031_product_surface_authorities() -> tuple[Any, dict[str, Any], dict[str, Any], str]:
+    rc0031_catalog_owner = __import__(
+        "emlis_ai_step11_rc0031_experiment_surface_catalog_v3"
+    )
+    rc0031_catalog = (
+        rc0031_catalog_owner.STEP11_RC0031_EXPERIMENT_SURFACE_CATALOG
+    )
+    rc0031_catalog_issues = (
+        rc0031_catalog_owner.validate_step11_rc0031_experiment_surface_catalog(
+            rc0031_catalog
+        )
+    )
+    rc0031_grammar = (
+        rc0031_catalog_owner._step11_rc0031_product_surface_b5_grammar()
+    )
+    rc0031_grammar_issues = (
+        rc0031_catalog_owner._step11_rc0031_validate_product_surface_b5_grammar(
+            rc0031_grammar
+        )
+    )
+    if rc0031_catalog_issues or rc0031_grammar_issues:
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0031_CATALOG_COMMITMENT_MISMATCH"
+        )
+    return (
+        rc0031_catalog_owner,
+        rc0031_catalog,
+        rc0031_grammar,
+        rc0031_catalog_owner.STEP11_RC0031_EXPERIMENT_SURFACE_CATALOG_SHA256,
+    )
+
+
+def _step11_rc0031_product_owner_projection(
+    rc0031_base: Step11NaturalSurfaceCandidate,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> tuple[tuple[str, str, str, str, str], ...]:
+    rc0031_lexical_owner = __import__(
+        "emlis_ai_step11_grounded_lexicalization_v3"
+    )
+    rc0031_rows = (
+        rc0031_lexical_owner._step11_rc0031_product_owner_expression_projection(
+            rc0031_base,
+            successor_snapshot=successor_snapshot,
+            lexical_atom_specs=lexical_atom_specs,
+        )
+    )
+    if (
+        type(rc0031_rows) is not tuple
+        or not rc0031_rows
+        or len(rc0031_rows) > _STEP11_RC0031_OWNER_MAX
+        or any(type(rc0031_row) is not tuple or len(rc0031_row) != 5 for rc0031_row in rc0031_rows)
+    ):
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0031_LEXICAL_PROJECTION_COMMITMENT_INVALID"
+        )
+    return rc0031_rows
+
+
+def _step11_rc0031_product_predecessor(
+    value: Any,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> Step11Rc0031ExperimentSurfaceCandidate:
+    if type(value) is not Step11Rc0031ExperimentSurfaceCandidate:
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0031_CANDIDATE_TYPE_INVALID"
+        )
+    try:
+        rc0031_reuse = tuple(
+            value.surface_realization_plan.base_body_exact_reuse_bindings
+        )
+    except Exception as rc0031_exc:
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0031_CANDIDATE_INPUT_INVALID"
+        ) from rc0031_exc
+    return _step11_rc0031_build_candidate_from_verified_reuse_composition(
+        value.base_candidate,
+        successor_snapshot=successor_snapshot,
+        lexical_atom_specs=lexical_atom_specs,
+        verified_base_body_exact_reuse_bindings=rc0031_reuse,
+        validate_output=True,
+    )
+
+
+def _step11_rc0031_product_atom_rows(
+    rc0031_predecessor: Step11Rc0031ExperimentSurfaceCandidate,
+) -> tuple[tuple[str, str, str, tuple[str, ...], str, int, int, int], ...]:
+    rc0031_rows: list[
+        tuple[str, str, str, tuple[str, ...], str, int, int, int]
+    ] = []
+    rc0031_source_order = 0
+    for rc0031_binding in (
+        rc0031_predecessor.surface_realization_plan.proposition_clause_bindings
+    ):
+        for (
+            rc0031_atom_id,
+            rc0031_family,
+            rc0031_key,
+            rc0031_owners,
+            rc0031_direction,
+        ) in zip(
+            rc0031_binding.source_atom_ids,
+            rc0031_binding.semantic_families,
+            rc0031_binding.semantic_keys,
+            rc0031_binding.source_atom_owner_ids,
+            rc0031_binding.directions,
+            strict=True,
+        ):
+            rc0031_source_order += 1
+            rc0031_rows.append(
+                (
+                    str(rc0031_atom_id),
+                    str(rc0031_family),
+                    str(rc0031_key),
+                    tuple(str(rc0031_owner) for rc0031_owner in rc0031_owners),
+                    str(rc0031_direction),
+                    int(rc0031_binding.sentence_group_ordinal),
+                    int(rc0031_binding.grammatical_chunk_ordinal),
+                    rc0031_source_order,
+                )
+            )
+    if len({rc0031_row[0] for rc0031_row in rc0031_rows}) != len(rc0031_rows):
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0031_SOURCE_ATOM_ID_COLLISION"
+        )
+    return tuple(rc0031_rows)
+
+
+def _step11_rc0031_product_atom_clusters(
+    rc0031_rows: tuple[
+        tuple[str, str, str, tuple[str, ...], str, int, int, int], ...
+    ],
+    *,
+    rc0031_load_max: int,
+) -> tuple[
+    tuple[tuple[str, str, str, tuple[str, ...], str, int, int, int], ...], ...
+]:
+    rc0031_pending = list(
+        sorted(rc0031_rows, key=_step11_rc0031_product_atom_order_key)
+    )
+    rc0031_clusters: list[
+        tuple[
+            tuple[str, str, str, tuple[str, ...], str, int, int, int], ...
+        ]
+    ] = []
+    for _rc0031_cluster_bound in range(len(rc0031_rows)):
+        if not rc0031_pending:
+            break
+        rc0031_pack = [rc0031_pending.pop(0)]
+        rc0031_group = rc0031_pack[0][5]
+        rc0031_owner_union = set(rc0031_pack[0][3])
+        for _rc0031_load_bound in range(max(0, rc0031_load_max - 1)):
+            rc0031_next = next(
+                (
+                    rc0031_index
+                    for rc0031_index, rc0031_row in enumerate(rc0031_pending)
+                    if rc0031_row[5] == rc0031_group
+                    and bool(rc0031_owner_union & set(rc0031_row[3]))
+                ),
+                None,
+            )
+            if rc0031_next is None:
+                break
+            rc0031_row = rc0031_pending.pop(rc0031_next)
+            rc0031_pack.append(rc0031_row)
+            rc0031_owner_union.update(rc0031_row[3])
+        rc0031_clusters.append(tuple(rc0031_pack))
+    return tuple(rc0031_clusters)
+
+
+def _step11_rc0031_product_receptions(
+    rc0031_predecessor: Step11Rc0031ExperimentSurfaceCandidate,
+    *,
+    successor_snapshot: Any,
+    rc0031_grammar: dict[str, Any],
+) -> tuple[Step11Rc0031ReceptionPredicationBinding, ...]:
+    rc0031_actual_by_source = {
+        str(rc0031_row.source_id): str(rc0031_row.actual_source_id)
+        for rc0031_row in successor_snapshot.base_snapshot.nuclei
+    }
+    rc0031_required = tuple(
+        rc0031_row
+        for rc0031_row in successor_snapshot.base_snapshot.reception_opportunities
+        if rc0031_row.retention == "required" or rc0031_row.safety_required is True
+    )
+    rc0031_opportunity_by_id = {
+        str(rc0031_row.source_id): rc0031_row for rc0031_row in rc0031_required
+    }
+    rc0031_schedule_by_id = {
+        str(rc0031_row.source_reception_opportunity_id): rc0031_row
+        for rc0031_row in rc0031_predecessor.reception_bindings
+    }
+    rc0031_rows: list[Step11Rc0031ReceptionPredicationBinding] = []
+    rc0031_consumed: set[str] = set()
+    rc0031_contract = rc0031_grammar["reception_contract"]
+    for rc0031_binding in (
+        rc0031_predecessor.base_candidate.surface_ast.reception_antecedent_bindings
+    ):
+        rc0031_matches = tuple(
+            str(rc0031_source)
+            for rc0031_source in rc0031_binding.source_reception_opportunity_ids
+            if str(rc0031_source) in rc0031_opportunity_by_id
+            and str(rc0031_source) not in rc0031_consumed
+        )
+        if len(rc0031_matches) != 1:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0031_RECEPTION_ASSOCIATION_AMBIGUOUS"
+            )
+        rc0031_source = rc0031_matches[0]
+        rc0031_opportunity = rc0031_opportunity_by_id[rc0031_source]
+        rc0031_schedule = rc0031_schedule_by_id[rc0031_source]
+        rc0031_targets = tuple(
+            rc0031_actual_by_source.get(str(rc0031_owner), str(rc0031_owner))
+            for rc0031_owner in rc0031_binding.source_target_nucleus_ids
+        )
+        rc0031_supports = tuple(
+            dict.fromkeys(
+                rc0031_actual_by_source.get(str(rc0031_owner), str(rc0031_owner))
+                for rc0031_owner in (
+                    *rc0031_binding.antecedent_nucleus_ids,
+                    *rc0031_binding.supporting_nucleus_ids,
+                )
+            )
+        )
+        if (
+            not rc0031_targets
+            or str(rc0031_opportunity.reception_act)
+            not in {str(rc0031_act) for rc0031_act in rc0031_binding.allowed_response_acts}
+        ):
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0031_RECEPTION_SOURCE_BINDING_INVALID"
+            )
+        rc0031_rows.append(
+            Step11Rc0031ReceptionPredicationBinding(
+                reception_line_ordinal=rc0031_schedule.reception_line_ordinal,
+                sentence_group_ordinal=rc0031_schedule.sentence_group_ordinal,
+                grammatical_chunk_ordinal=rc0031_schedule.grammatical_chunk_ordinal,
+                source_base_binding_id=str(rc0031_binding.binding_id),
+                source_reception_opportunity_id=rc0031_source,
+                source_scope=str(rc0031_opportunity.family),
+                reception_act=str(rc0031_opportunity.reception_act),
+                source_target_owner_ids=rc0031_targets,
+                supporting_source_owner_ids=rc0031_supports,
+                association_basis=rc0031_contract["base_association_basis"],
+                additional_clause=False,
+            )
+        )
+        rc0031_consumed.add(rc0031_source)
+    for rc0031_opportunity in rc0031_required:
+        rc0031_source = str(rc0031_opportunity.source_id)
+        if rc0031_source in rc0031_consumed:
+            continue
+        rc0031_schedule = rc0031_schedule_by_id[rc0031_source]
+        rc0031_rows.append(
+            Step11Rc0031ReceptionPredicationBinding(
+                reception_line_ordinal=rc0031_schedule.reception_line_ordinal,
+                sentence_group_ordinal=rc0031_schedule.sentence_group_ordinal,
+                grammatical_chunk_ordinal=rc0031_schedule.grammatical_chunk_ordinal,
+                source_base_binding_id=None,
+                source_reception_opportunity_id=rc0031_source,
+                source_scope=str(rc0031_opportunity.family),
+                reception_act=str(rc0031_opportunity.reception_act),
+                source_target_owner_ids=tuple(
+                    rc0031_actual_by_source.get(str(rc0031_owner), str(rc0031_owner))
+                    for rc0031_owner in rc0031_opportunity.target_nucleus_ids
+                ),
+                supporting_source_owner_ids=tuple(
+                    rc0031_actual_by_source.get(str(rc0031_owner), str(rc0031_owner))
+                    for rc0031_owner in rc0031_opportunity.support_nucleus_ids
+                ),
+                association_basis=rc0031_contract["additional_association_basis"],
+                additional_clause=True,
+            )
+        )
+        rc0031_consumed.add(rc0031_source)
+    if (
+        len(rc0031_rows) != len(rc0031_required)
+        or rc0031_consumed != set(rc0031_opportunity_by_id)
+    ):
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0031_RECEPTION_SOURCE_BINDING_INVALID"
+        )
+    return tuple(
+        sorted(
+            rc0031_rows,
+            key=_step11_rc0031_product_reception_order_key,
+        )
+    )
+
+
+def _step11_rc0031_product_plan(
+    rc0031_predecessor: Step11Rc0031ExperimentSurfaceCandidate,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+    rc0031_catalog_sha256: str,
+    rc0031_grammar: dict[str, Any],
+) -> Step11Rc0031SurfaceRealizationPlan:
+    rc0031_base = rc0031_predecessor.base_candidate
+    rc0031_lexemes = _step11_rc0031_lexemes(
+        rc0031_predecessor.natural_handle_specs
+    )
+    rc0031_positions = _step11_rc0031_owner_positions(
+        rc0031_base, rc0031_lexemes
+    )
+    rc0031_position_by_owner = {
+        str(rc0031_row[0]): rc0031_row for rc0031_row in rc0031_positions.values()
+    }
+    rc0031_atom_rows = _step11_rc0031_product_atom_rows(rc0031_predecessor)
+    rc0031_clusters = _step11_rc0031_product_atom_clusters(
+        rc0031_atom_rows,
+        rc0031_load_max=int(rc0031_grammar["product_cluster_load_max"]),
+    )
+    rc0031_base_plan = rc0031_base.surface_ast.surface_realization_plan
+    rc0031_group_index = {
+        str(rc0031_group): rc0031_ordinal
+        for rc0031_ordinal, rc0031_group in enumerate(
+            rc0031_base_plan.observation_sentence_group_ids, start=1
+        )
+    }
+    rc0031_base_by_chunk: dict[tuple[int, int], list[Any]] = {}
+    for rc0031_unit in rc0031_base_plan.units:
+        if rc0031_unit.section_role != "observation":
+            continue
+        rc0031_key = (
+            rc0031_group_index[str(rc0031_unit.assigned_sentence_group_id)],
+            int(rc0031_unit.assigned_grammatical_chunk_ordinal),
+        )
+        rc0031_base_by_chunk.setdefault(rc0031_key, []).append(rc0031_unit)
+    rc0031_tail_by_group = {
+        rc0031_group: max(
+            (
+                rc0031_chunk
+                for rc0031_candidate_group, rc0031_chunk in rc0031_base_by_chunk
+                if rc0031_candidate_group == rc0031_group
+            ),
+            default=0,
+        )
+        for rc0031_group in range(
+            1, len(rc0031_base_plan.observation_sentence_group_ids) + 1
+        )
+    }
+    rc0031_bindings: list[Step11Rc0031PropositionClauseBinding] = []
+    rc0031_structure_by_chunk: dict[
+        tuple[int, int], list[Step11Rc0031PropositionClauseBinding]
+    ] = {}
+    for rc0031_pack in rc0031_clusters:
+        rc0031_group = int(rc0031_pack[0][5])
+        if any(rc0031_row[5] != rc0031_group for rc0031_row in rc0031_pack):
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0031_COMPOSITION_INVALID"
+            )
+        rc0031_chunk = rc0031_tail_by_group[rc0031_group] + 1
+        rc0031_tail_by_group[rc0031_group] = rc0031_chunk
+        rc0031_owner_ids = tuple(
+            dict.fromkeys(
+                rc0031_owner
+                for rc0031_row in rc0031_pack
+                for rc0031_owner in rc0031_row[3]
+            )
+        )
+        try:
+            rc0031_owner_positions = tuple(
+                rc0031_position_by_owner[rc0031_owner]
+                for rc0031_owner in rc0031_owner_ids
+            )
+        except KeyError as rc0031_exc:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0031_OWNER_BASE_GROUP_UNRESOLVED"
+            ) from rc0031_exc
+        rc0031_nonconstruction = tuple(
+            rc0031_row[0]
+            for rc0031_row in rc0031_pack
+            if rc0031_row[1] != "construction"
+        )
+        rc0031_head = (
+            rc0031_nonconstruction[0]
+            if rc0031_nonconstruction
+            else rc0031_pack[0][0]
+        )
+        rc0031_unit_id = "nls3s11rc0031product_" + artifact_sha256(
+            {
+                "composition_mode": rc0031_grammar["product_cluster_contract"]["composition_mode"],
+                "source_atom_ids": [rc0031_row[0] for rc0031_row in rc0031_pack],
+                "sentence_group_ordinal": rc0031_group,
+                "grammatical_chunk_ordinal": rc0031_chunk,
+            }
+        )[:16]
+        rc0031_binding = Step11Rc0031PropositionClauseBinding(
+            proposition_unit_id=rc0031_unit_id,
+            composition_mode=rc0031_grammar["product_cluster_contract"]["composition_mode"],
+            head_source_atom_id=rc0031_head,
+            construction_modifier_atom_ids=(),
+            construction_modifier_target_owner_ids=(),
+            owner_ready_group_ordinal=max(
+                int(rc0031_row[2]) for rc0031_row in rc0031_owner_positions
+            ),
+            source_atom_ids=tuple(rc0031_row[0] for rc0031_row in rc0031_pack),
+            semantic_families=tuple(rc0031_row[1] for rc0031_row in rc0031_pack),
+            semantic_keys=tuple(rc0031_row[2] for rc0031_row in rc0031_pack),
+            source_atom_owner_ids=tuple(rc0031_row[3] for rc0031_row in rc0031_pack),
+            source_owner_ids=rc0031_owner_ids,
+            owner_base_nucleus_ids=tuple(
+                str(rc0031_row[1]) for rc0031_row in rc0031_owner_positions
+            ),
+            owner_sentence_group_ordinals=tuple(
+                int(rc0031_row[2]) for rc0031_row in rc0031_owner_positions
+            ),
+            sentence_group_ordinal=rc0031_group,
+            grammatical_chunk_ordinal=rc0031_chunk,
+            visible_clause_count=1 if len(rc0031_pack) <= 2 else 2,
+            complexity_load=max(
+                len(rc0031_pack),
+                len(rc0031_owner_ids),
+                1 if len(rc0031_pack) <= 2 else 2,
+            ),
+            cross_group_bridge=len(
+                {int(rc0031_row[2]) for rc0031_row in rc0031_owner_positions}
+            ) > 1,
+            directions=tuple(rc0031_row[4] for rc0031_row in rc0031_pack),
+        )
+        if rc0031_binding.owner_ready_group_ordinal > rc0031_group:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0031_OWNER_CONNECTED_GROUP_UNRESOLVED"
+            )
+        rc0031_bindings.append(rc0031_binding)
+        rc0031_structure_by_chunk.setdefault(
+            (rc0031_group, rc0031_chunk), []
+        ).append(rc0031_binding)
+    rc0031_assignments: list[Step11Rc0031PropositionChunkAssignment] = []
+    for rc0031_key in sorted(
+        set((*rc0031_base_by_chunk, *rc0031_structure_by_chunk))
+    ):
+        rc0031_base_rows = tuple(
+            sorted(
+                rc0031_base_by_chunk.get(rc0031_key, ()),
+                key=_step11_rc0031_product_base_unit_order_key,
+            )
+        )
+        rc0031_product_rows = tuple(
+            sorted(
+                rc0031_structure_by_chunk.get(rc0031_key, ()),
+                key=_step11_rc0031_product_binding_order_key,
+            )
+        )
+        rc0031_assignments.append(
+            Step11Rc0031PropositionChunkAssignment(
+                sentence_group_ordinal=rc0031_key[0],
+                grammatical_chunk_ordinal=rc0031_key[1],
+                source_unit_ids=(
+                    *(str(rc0031_row.semantic_unit_id) for rc0031_row in rc0031_base_rows),
+                    *(rc0031_row.proposition_unit_id for rc0031_row in rc0031_product_rows),
+                ),
+                source_atom_ids=tuple(
+                    rc0031_atom
+                    for rc0031_row in rc0031_product_rows
+                    for rc0031_atom in rc0031_row.source_atom_ids
+                ),
+                visible_clause_count=(
+                    len(rc0031_base_rows)
+                    + sum(rc0031_row.visible_clause_count for rc0031_row in rc0031_product_rows)
+                ),
+                complexity_load=max(
+                    (
+                        *(int(rc0031_row.body_free_complexity_weight) for rc0031_row in rc0031_base_rows),
+                        *(rc0031_row.complexity_load for rc0031_row in rc0031_product_rows),
+                    ),
+                    default=0,
+                ),
+            )
+        )
+    rc0031_receptions = _step11_rc0031_product_receptions(
+        rc0031_predecessor,
+        successor_snapshot=successor_snapshot,
+        rc0031_grammar=rc0031_grammar,
+    )
+    rc0031_base_counts = {
+        rc0031_group: sum(
+            len(rc0031_rows)
+            for (rc0031_candidate_group, _rc0031_chunk), rc0031_rows in rc0031_base_by_chunk.items()
+            if rc0031_candidate_group == rc0031_group
+        )
+        for rc0031_group in rc0031_tail_by_group
+    }
+    rc0031_product_counts = {
+        rc0031_group: sum(
+            rc0031_binding.sentence_group_ordinal == rc0031_group
+            for rc0031_binding in rc0031_bindings
+        )
+        for rc0031_group in rc0031_tail_by_group
+    }
+    rc0031_peak_observation = max(
+        (
+            rc0031_base_counts[rc0031_group]
+            + rc0031_product_counts[rc0031_group]
+            for rc0031_group in rc0031_tail_by_group
+        ),
+        default=0,
+    )
+    rc0031_peak_joiner = max(
+        (
+            sum(
+                max(0, rc0031_row.visible_clause_count - 1)
+                for rc0031_row in rc0031_bindings
+                if rc0031_row.sentence_group_ordinal == rc0031_group
+            )
+            for rc0031_group in rc0031_tail_by_group
+        ),
+        default=0,
+    )
+    if (
+        rc0031_peak_observation
+        > int(rc0031_grammar["realization_units_per_group_max"])
+        or rc0031_peak_joiner
+        > int(rc0031_grammar["repeated_joiner_per_group_max"])
+        or any(
+            rc0031_row.complexity_load
+            > int(rc0031_grammar["grammatical_complexity_load_max"])
+            for rc0031_row in rc0031_bindings
+        )
+    ):
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0031_SURFACE_PLAN_DENSITY_UNSATISFIABLE"
+        )
+    rc0031_provisional = Step11Rc0031SurfaceRealizationPlan(
+        schema_version=STEP11_RC0031_EXPERIMENT_PLAN_SCHEMA,
+        candidate_version_id=STEP11_RC0031_EXPERIMENT_CANDIDATE_VERSION_ID,
+        realization_plan_id="nls3s11rc0031plan_0000000000000000",
+        source_base_candidate_id=rc0031_base.candidate_id,
+        source_base_realization_plan_id=rc0031_base_plan.realization_plan_id,
+        source_successor_snapshot_sha256=successor_snapshot.experiment_snapshot_sha256,
+        source_lexical_atom_specs_sha256=lexical_atom_specs.specs_sha256,
+        source_clause_ready_lexical_specs_sha256=rc0031_predecessor.natural_handle_specs.specs_sha256,
+        source_lexical_projection_catalog_sha256=rc0031_predecessor.natural_handle_specs.surface_catalog_sha256,
+        surface_catalog_sha256=rc0031_catalog_sha256,
+        root_proposition_binding=rc0031_predecessor.surface_realization_plan.root_proposition_binding,
+        proposition_chunk_assignments=tuple(rc0031_assignments),
+        proposition_clause_bindings=tuple(rc0031_bindings),
+        base_body_exact_reuse_bindings=(
+            rc0031_predecessor.surface_realization_plan.base_body_exact_reuse_bindings
+        ),
+        reception_predication_bindings=rc0031_receptions,
+        maximum_observation_clauses_per_sentence=int(rc0031_grammar["realization_units_per_group_max"]),
+        maximum_visible_clauses_per_grammatical_sentence=int(rc0031_grammar["visible_clauses_per_grammatical_sentence_max"]),
+        maximum_grammatical_complexity_load=int(rc0031_grammar["grammatical_complexity_load_max"]),
+        maximum_repeated_joiner_per_group=int(rc0031_grammar["repeated_joiner_per_group_max"]),
+        peak_observation_clause_count=rc0031_peak_observation,
+        peak_grammatical_clause_count=max(
+            (
+                *(rc0031_row.visible_clause_count for rc0031_row in rc0031_bindings),
+                1 if rc0031_receptions else 0,
+            )
+        ),
+        peak_grammatical_complexity_load=max(
+            (
+                *(rc0031_row.complexity_load for rc0031_row in rc0031_bindings),
+                *(
+                    len(rc0031_row.source_target_owner_ids)
+                    + len(rc0031_row.supporting_source_owner_ids)
+                    for rc0031_row in rc0031_receptions
+                ),
+                0,
+            )
+        ),
+        peak_group_repeated_joiner_count=rc0031_peak_joiner,
+        body_free=True,
+    )
+    return replace(
+        rc0031_provisional,
+        realization_plan_id=(
+            "nls3s11rc0031plan_"
+            + artifact_sha256(
+                step11_rc0031_surface_realization_plan_material(
+                    rc0031_provisional, include_id=False
+                )
+            )[:16]
+        ),
+    )
+
+
+def _step11_rc0031_product_source_dimensions(
+    rc0031_atom_id: str,
+    rc0031_family: str,
+    rc0031_owner_ids: tuple[str, ...],
+    *,
+    successor_snapshot: Any,
+    rc0031_nucleus_by_owner: dict[str, str],
+) -> tuple[str, str, str, str]:
+    rc0031_snapshot = successor_snapshot.base_snapshot
+    if rc0031_family == "construction":
+        if len(rc0031_owner_ids) != 1:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0031_RENDER_SOURCE_ATOM_MISMATCH"
+            )
+        rc0031_nucleus = rc0031_nucleus_by_owner[rc0031_owner_ids[0]]
+        rc0031_matches = tuple(
+            rc0031_row
+            for rc0031_row in rc0031_snapshot.nuclei
+            if rc0031_nucleus
+            in {str(rc0031_row.source_id), str(rc0031_row.actual_source_id)}
+        )
+        if len(rc0031_matches) != 1:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0031_RENDER_SOURCE_ATOM_MISMATCH"
+            )
+        rc0031_source = rc0031_matches[0]
+        return (
+            str(rc0031_source.temporal_scope),
+            str(rc0031_source.modality),
+            str(rc0031_source.polarity),
+            str(rc0031_source.referent_scope),
+        )
+    if rc0031_family == "relation":
+        rc0031_authorities = tuple(
+            rc0031_row
+            for rc0031_row in successor_snapshot.relation_construction_authority.relation_authorities
+            if str(rc0031_row.experiment_relation_id) == rc0031_atom_id
+        )
+        if len(rc0031_authorities) != 1:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0031_RENDER_SOURCE_ATOM_MISMATCH"
+            )
+        rc0031_authority = rc0031_authorities[0]
+        rc0031_aliases = {str(rc0031_authority.source_relation_id)}
+        if rc0031_authority.refines_source_relation_id is not None:
+            rc0031_aliases.add(str(rc0031_authority.refines_source_relation_id))
+        rc0031_matches = tuple(
+            rc0031_row
+            for rc0031_row in rc0031_snapshot.relations
+            if rc0031_aliases
+            & {
+                str(rc0031_row.source_id),
+                str(rc0031_row.actual_source_id),
+            }
+        )
+        if not rc0031_matches:
+            rc0031_aliases.update(
+                str(rc0031_row)
+                for rc0031_row in rc0031_authority.source_relation_ids
+            )
+            rc0031_matches = tuple(
+                rc0031_row
+                for rc0031_row in rc0031_snapshot.relations
+                if rc0031_aliases
+                & {
+                    str(rc0031_row.source_id),
+                    str(rc0031_row.actual_source_id),
+                    *(
+                        str(rc0031_value)
+                        for rc0031_value in rc0031_row.source_relation_ids
+                    ),
+                }
+            )
+    elif rc0031_family == "semantic_link":
+        rc0031_matches = tuple(
+            rc0031_row
+            for rc0031_row in rc0031_snapshot.relations
+            if rc0031_atom_id
+            in {str(rc0031_row.source_id), str(rc0031_row.actual_source_id)}
+        )
+    elif rc0031_family == "explicit_unknown":
+        rc0031_matches = tuple(
+            rc0031_row
+            for rc0031_row in rc0031_snapshot.unknowns
+            if rc0031_atom_id
+            in {str(rc0031_row.source_id), str(rc0031_row.actual_source_id)}
+        )
+        if len(rc0031_matches) != 1:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0031_RENDER_SOURCE_ATOM_MISMATCH"
+            )
+        return ("unknown", "unknown", "unknown", "unknown")
+    else:
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0031_SEMANTIC_FAMILY_INVALID"
+        )
+    if len(rc0031_matches) != 1:
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0031_RENDER_SOURCE_ATOM_MISMATCH"
+        )
+    rc0031_source = rc0031_matches[0]
+    return (
+        str(rc0031_source.temporal_scope),
+        str(rc0031_source.modality),
+        str(rc0031_source.polarity),
+        "relation",
+    )
+
+
+def _step11_rc0031_product_render_cluster(
+    rc0031_binding: Step11Rc0031PropositionClauseBinding,
+    *,
+    rc0031_catalog: dict[str, Any],
+    rc0031_grammar: dict[str, Any],
+    rc0031_referent_by_owner: dict[str, str],
+    rc0031_nucleus_by_owner: dict[str, str],
+    rc0031_construction_by_id: dict[str, Any],
+    rc0031_relation_by_id: dict[str, Any],
+    rc0031_link_by_id: dict[str, Any],
+    rc0031_unknown_by_id: dict[str, Any],
+    successor_snapshot: Any,
+) -> str:
+    rc0031_clauses: list[str] = []
+    rc0031_temporal_cues: list[str] = []
+    for (
+        rc0031_atom_id,
+        rc0031_family,
+        rc0031_owners,
+    ) in zip(
+        rc0031_binding.source_atom_ids,
+        rc0031_binding.semantic_families,
+        rc0031_binding.source_atom_owner_ids,
+        strict=True,
+    ):
+        (
+            rc0031_temporal,
+            rc0031_modality,
+            rc0031_polarity,
+            rc0031_scope,
+        ) = _step11_rc0031_product_source_dimensions(
+            rc0031_atom_id,
+            rc0031_family,
+            rc0031_owners,
+            successor_snapshot=successor_snapshot,
+            rc0031_nucleus_by_owner=rc0031_nucleus_by_owner,
+        )
+        rc0031_temporal_cue = rc0031_grammar["temporal_scope_cues"].get(
+            rc0031_temporal,
+            rc0031_grammar["temporal_scope_cues"]["unknown"],
+        )
+        rc0031_local_cue = (
+            rc0031_grammar["modality_cues"].get(
+                rc0031_modality,
+                rc0031_grammar["modality_cues"]["unknown"],
+            )
+            + rc0031_grammar["polarity_cues"].get(
+                rc0031_polarity,
+                rc0031_grammar["polarity_cues"]["unknown"],
+            )
+            + rc0031_grammar["referent_scope_cues"].get(
+                rc0031_scope,
+                rc0031_grammar["referent_scope_cues"]["unknown"],
+            )
+        )
+        rc0031_clause = _step11_rc0031_render_semantic_clause(
+            source_atom_id=rc0031_atom_id,
+            semantic_family=rc0031_family,
+            catalog=rc0031_catalog,
+            referent_by_owner=rc0031_referent_by_owner,
+            owner_ids=rc0031_owners,
+            construction_by_id=rc0031_construction_by_id,
+            relation_by_id=rc0031_relation_by_id,
+            link_by_id=rc0031_link_by_id,
+            unknown_by_id=rc0031_unknown_by_id,
+        )
+        rc0031_temporal_cues.append(str(rc0031_temporal_cue))
+        rc0031_clauses.append(str(rc0031_local_cue) + rc0031_clause)
+    if not rc0031_clauses or len(rc0031_clauses) > int(
+        rc0031_grammar["product_cluster_load_max"]
+    ):
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0031_COMPOSITION_INVALID"
+        )
+    rc0031_common_temporal = (
+        rc0031_temporal_cues[0]
+        if len(set(rc0031_temporal_cues)) == 1
+        else ""
+    )
+    if not rc0031_common_temporal:
+        rc0031_clauses = [
+            rc0031_temporal + rc0031_clause
+            for rc0031_temporal, rc0031_clause in zip(
+                rc0031_temporal_cues, rc0031_clauses, strict=True
+            )
+        ]
+    if len(rc0031_clauses) <= 2:
+        rc0031_text = rc0031_grammar["atom_joiners"][0].join(rc0031_clauses)
+    else:
+        rc0031_left = rc0031_grammar["atom_joiners"][0].join(
+            rc0031_clauses[:2]
+        )
+        rc0031_right = rc0031_grammar["atom_joiners"][1].join(
+            rc0031_clauses[2:]
+        )
+        rc0031_text = rc0031_left + rc0031_grammar["clause_join"] + rc0031_right
+    return rc0031_common_temporal + rc0031_text
+
+
+def _step11_rc0031_product_render(
+    rc0031_predecessor: Step11Rc0031ExperimentSurfaceCandidate,
+    rc0031_plan: Step11Rc0031SurfaceRealizationPlan,
+    *,
+    successor_snapshot: Any,
+    rc0031_catalog: dict[str, Any],
+    rc0031_grammar: dict[str, Any],
+    rc0031_owner_rows: tuple[tuple[str, str, str, str, str], ...],
+) -> Step11Rc0031ExperimentRenderedSurface:
+    rc0031_referent_by_owner = {
+        rc0031_row[0]: rc0031_row[3] for rc0031_row in rc0031_owner_rows
+    }
+    rc0031_nucleus_by_owner = {
+        rc0031_row[0]: rc0031_row[1] for rc0031_row in rc0031_owner_rows
+    }
+    rc0031_construction_by_id = {
+        str(rc0031_row.construction_instance_id): rc0031_row
+        for rc0031_row in rc0031_predecessor.construction_atoms
+    }
+    rc0031_relation_by_id = {
+        str(rc0031_row.experiment_relation_id): rc0031_row
+        for rc0031_row in rc0031_predecessor.relation_atoms
+    }
+    rc0031_link_by_id = {
+        str(rc0031_row.source_semantic_link_id): rc0031_row
+        for rc0031_row in rc0031_predecessor.semantic_link_atoms
+    }
+    rc0031_unknown_by_id = {
+        str(rc0031_row.source_unknown_id): rc0031_row
+        for rc0031_row in rc0031_predecessor.explicit_unknown_atoms
+    }
+    try:
+        rc0031_base_text = rc0031_predecessor.base_candidate.final_utf8_bytes.decode(
+            "utf-8", errors="strict"
+        )
+    except UnicodeDecodeError as rc0031_exc:
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0031_BASE_SURFACE_INVALID"
+        ) from rc0031_exc
+    rc0031_separator = rc0031_grammar["section_separator"]
+    rc0031_header = rc0031_grammar["observation_header"]
+    if (
+        not rc0031_base_text.startswith(rc0031_header)
+        or rc0031_base_text.count(rc0031_separator) != 1
+    ):
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0031_BASE_SURFACE_LAYOUT_INVALID"
+        )
+    rc0031_observation, rc0031_reception = rc0031_base_text.split(
+        rc0031_separator, 1
+    )
+    rc0031_observation_lines = rc0031_observation.split("\n")
+    rc0031_reception_lines = rc0031_reception.split("\n")
+    rc0031_suffix = rc0031_catalog["clause_morphology"]["sentence_suffix"]
+    for rc0031_binding in rc0031_plan.proposition_clause_bindings:
+        rc0031_group = rc0031_binding.sentence_group_ordinal
+        if (
+            not 1 <= rc0031_group < len(rc0031_observation_lines)
+            or not rc0031_observation_lines[rc0031_group].endswith(rc0031_suffix)
+        ):
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0031_RENDER_GROUP_INVALID"
+            )
+        rc0031_cluster_text = _step11_rc0031_product_render_cluster(
+            rc0031_binding,
+            rc0031_catalog=rc0031_catalog,
+            rc0031_grammar=rc0031_grammar,
+            rc0031_referent_by_owner=rc0031_referent_by_owner,
+            rc0031_nucleus_by_owner=rc0031_nucleus_by_owner,
+            rc0031_construction_by_id=rc0031_construction_by_id,
+            rc0031_relation_by_id=rc0031_relation_by_id,
+            rc0031_link_by_id=rc0031_link_by_id,
+            rc0031_unknown_by_id=rc0031_unknown_by_id,
+            successor_snapshot=successor_snapshot,
+        )
+        rc0031_observation_lines[rc0031_group] = (
+            rc0031_observation_lines[rc0031_group][:-len(rc0031_suffix)]
+            + rc0031_grammar["clause_join"]
+            + rc0031_cluster_text
+            + rc0031_suffix
+        )
+    rc0031_by_line: dict[
+        int, list[Step11Rc0031ReceptionPredicationBinding]
+    ] = {}
+    for rc0031_row in rc0031_plan.reception_predication_bindings:
+        rc0031_by_line.setdefault(rc0031_row.reception_line_ordinal, []).append(
+            rc0031_row
+        )
+    rc0031_morphology = rc0031_catalog["clause_morphology"]
+    for rc0031_line, rc0031_rows in rc0031_by_line.items():
+        if not 1 <= rc0031_line <= len(rc0031_reception_lines):
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0031_RECEPTION_GROUP_BOUND_INVALID"
+            )
+        rc0031_rendered: list[str] = []
+        for rc0031_row in sorted(
+            rc0031_rows,
+            key=_step11_rc0031_product_reception_order_key,
+        ):
+            try:
+                rc0031_targets = tuple(
+                    rc0031_referent_by_owner[rc0031_owner]
+                    for rc0031_owner in rc0031_row.source_target_owner_ids
+                )
+                rc0031_supports = tuple(
+                    rc0031_referent_by_owner[rc0031_owner]
+                    for rc0031_owner in rc0031_row.supporting_source_owner_ids
+                )
+            except KeyError as rc0031_exc:
+                raise Step11NaturalSurfaceError(
+                    "STEP11_RC0031_RECEPTION_OWNER_UNRESOLVED"
+                ) from rc0031_exc
+            rc0031_act = rc0031_catalog["reception_act_predicate_fragments"].get(
+                rc0031_row.reception_act
+            )
+            if rc0031_act is None or not rc0031_targets:
+                raise Step11NaturalSurfaceError(
+                    "STEP11_RC0031_RECEPTION_SOURCE_BINDING_INVALID"
+                )
+            rc0031_support_prefix = (
+                rc0031_morphology["support_owner_join"].join(rc0031_supports)
+                + rc0031_morphology["support_target_link"]
+                if rc0031_supports
+                else ""
+            )
+            rc0031_rendered.append(
+                rc0031_support_prefix
+                + rc0031_morphology["target_owner_join"].join(rc0031_targets)
+                + rc0031_morphology["reception_object_particle"]
+                + str(rc0031_act)
+            )
+        rc0031_reception_lines[rc0031_line - 1] = (
+            rc0031_morphology["grammatical_sentence_join"].join(rc0031_rendered)
+            + rc0031_suffix
+        )
+    rc0031_final_text = (
+        "\n".join(rc0031_observation_lines)
+        + rc0031_separator
+        + "\n".join(rc0031_reception_lines)
+    )
+    rc0031_body = rc0031_final_text.encode("utf-8", errors="strict")
+    return Step11Rc0031ExperimentRenderedSurface(
+        schema_version=STEP11_RC0031_EXPERIMENT_RENDERED_SCHEMA,
+        utf8_bytes=rc0031_body,
+        sha256=hashlib.sha256(rc0031_body).hexdigest(),
+        observation_group_count=len(rc0031_observation_lines) - 1,
+        proposition_clause_count=sum(
+            rc0031_row.visible_clause_count
+            for rc0031_row in rc0031_plan.proposition_clause_bindings
+        ),
+        semantic_atom_count=sum(
+            len(rc0031_row.source_atom_ids)
+            for rc0031_row in rc0031_plan.proposition_clause_bindings
+        ),
+        exact_reuse_count=len(rc0031_plan.base_body_exact_reuse_bindings),
+        reception_predication_count=len(
+            rc0031_plan.reception_predication_bindings
+        ),
+    )
+
+
+def _step11_rc0031_build_dimension_bearing_product_candidate(
+    value: Any,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> Step11Rc0031ExperimentSurfaceCandidate:
+    (
+        _rc0031_catalog_owner,
+        rc0031_catalog,
+        rc0031_grammar,
+        rc0031_catalog_sha256,
+    ) = _step11_rc0031_product_surface_authorities()
+    rc0031_predecessor = _step11_rc0031_product_predecessor(
+        value,
+        successor_snapshot=successor_snapshot,
+        lexical_atom_specs=lexical_atom_specs,
+    )
+    rc0031_owner_rows = _step11_rc0031_product_owner_projection(
+        rc0031_predecessor.base_candidate,
+        successor_snapshot=successor_snapshot,
+        lexical_atom_specs=lexical_atom_specs,
+    )
+    rc0031_plan = _step11_rc0031_product_plan(
+        rc0031_predecessor,
+        successor_snapshot=successor_snapshot,
+        lexical_atom_specs=lexical_atom_specs,
+        rc0031_catalog_sha256=rc0031_catalog_sha256,
+        rc0031_grammar=rc0031_grammar,
+    )
+    rc0031_ast = _step11_rc0031_build_ast(
+        rc0031_predecessor.base_candidate, rc0031_plan
+    )
+    rc0031_rendered = _step11_rc0031_product_render(
+        rc0031_predecessor,
+        rc0031_plan,
+        successor_snapshot=successor_snapshot,
+        rc0031_catalog=rc0031_catalog,
+        rc0031_grammar=rc0031_grammar,
+        rc0031_owner_rows=rc0031_owner_rows,
+    )
+    rc0031_identity = _step11_rc0031_candidate_identity(
+        base_candidate_id=rc0031_predecessor.base_candidate.candidate_id,
+        rendered=rc0031_rendered,
+        plan=rc0031_plan,
+        ast=rc0031_ast,
+    )
+    return Step11Rc0031ExperimentSurfaceCandidate(
+        schema_version=STEP11_RC0031_EXPERIMENT_CANDIDATE_SCHEMA,
+        candidate_version_id=STEP11_RC0031_EXPERIMENT_CANDIDATE_VERSION_ID,
+        candidate_id=rc0031_identity,
+        base_candidate=rc0031_predecessor.base_candidate,
+        proposition_surface_ast=rc0031_ast,
+        rendered_surface=rc0031_rendered,
+        surface_realization_plan=rc0031_plan,
+        successor_snapshot_sha256=rc0031_predecessor.successor_snapshot_sha256,
+        lexical_atom_specs_sha256=rc0031_predecessor.lexical_atom_specs_sha256,
+        experiment_catalog_sha256=rc0031_catalog_sha256,
+        source_lexical_projection_catalog_sha256=(
+            rc0031_predecessor.source_lexical_projection_catalog_sha256
+        ),
+        natural_handle_specs=rc0031_predecessor.natural_handle_specs,
+        owner_registry=rc0031_predecessor.owner_registry,
+        construction_atoms=rc0031_predecessor.construction_atoms,
+        relation_atoms=rc0031_predecessor.relation_atoms,
+        semantic_link_atoms=rc0031_predecessor.semantic_link_atoms,
+        explicit_unknown_atoms=rc0031_predecessor.explicit_unknown_atoms,
+        reception_bindings=rc0031_plan.reception_predication_bindings,
+        semantic_coverage_authorized=False,
+        replan_count=1,
+        experimental_only=True,
+        private_body_full=True,
+        shareable=False,
+        runtime_connected=False,
+    )
+
+
+def build_step11_rc0031_dimension_bearing_experiment_surface_candidate(
+    value: Any,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> Step11Rc0031ExperimentSurfaceCandidate:
+    try:
+        return _step11_rc0031_build_dimension_bearing_product_candidate(
+            value,
+            successor_snapshot=successor_snapshot,
+            lexical_atom_specs=lexical_atom_specs,
+        )
+    except Exception as rc0031_exc:
+        raise _step11_rc0031_boundary_error(
+            rc0031_exc,
+            input_invalid_code="STEP11_RC0031_CANDIDATE_INPUT_INVALID",
+        ) from rc0031_exc
+
+
+def validate_step11_rc0031_dimension_bearing_experiment_surface_candidate(
+    value: Any,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> tuple[str, ...]:
+    if type(value) is not Step11Rc0031ExperimentSurfaceCandidate:
+        return ("STEP11_RC0031_CANDIDATE_TYPE_INVALID",)
+    try:
+        rc0031_expected = (
+            _step11_rc0031_build_dimension_bearing_product_candidate(
+                value,
+                successor_snapshot=successor_snapshot,
+                lexical_atom_specs=lexical_atom_specs,
+            )
+        )
+    except Exception:
+        return ("STEP11_RC0031_CANDIDATE_REVALIDATION_FAILED",)
+    if not _step11_rc0031_safe_structural_equal(value, rc0031_expected):
+        return ("STEP11_RC0031_CANDIDATE_SOURCE_MISMATCH",)
+    return ()
+
+
+__all__ += [
+    "build_step11_rc0031_dimension_bearing_experiment_surface_candidate",
+    "validate_step11_rc0031_dimension_bearing_experiment_surface_candidate",
+]

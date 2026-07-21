@@ -526,3 +526,132 @@ __all__ = [
     "STEP11_RC0031_REFERENT_SCALAR_MAX",
     "validate_step11_rc0031_experiment_surface_catalog",
 ]
+
+
+# rc0031 experiment-only body-dimension grammar (append-only P3 owner)
+
+STEP11_RC0031_EXPERIMENT_BODY_DIMENSION_RECOVERY_CONTRACT = {
+    "schema_version": (
+        "cocolon.emlis.nls_v3.step11.rc0031_body_dimension_recovery.v1"
+    ),
+    "catalog_derived_dimensions": [
+        "observation_stage",
+        "source_role",
+    ],
+    "body_recovered_dimensions": [
+        "polarity",
+        "modality",
+        "temporal_scope",
+        "topic_fingerprint_sha256",
+        "referent_scope",
+    ],
+    "topic_projection": "owner_expression_sha256_sequence",
+    "candidate_metadata_required": False,
+    "fixed_slot_prefix_max_per_candidate": 1,
+    "schema_free_natural_language_surface_required": True,
+}
+
+
+def validate_step11_rc0031_experiment_body_dimension_recovery_contract(
+    value: Any,
+) -> tuple[str, ...]:
+    if (
+        type(value) is not dict
+        or value
+        != STEP11_RC0031_EXPERIMENT_BODY_DIMENSION_RECOVERY_CONTRACT
+    ):
+        return ("STEP11_RC0031_BODY_DIMENSION_RECOVERY_CONTRACT_INVALID",)
+    return ()
+
+
+def _step11_rc0031_product_surface_b5_grammar() -> dict[str, Any]:
+    return {
+        "schema_version": (
+            "cocolon.emlis.nls_v3.step11.rc0031_product_surface_b5.v1"
+        ),
+        "product_cluster_max": 13,
+        "product_cluster_load_max": 4,
+        "visible_clauses_per_grammatical_sentence_max": 2,
+        "grammatical_complexity_load_max": 4,
+        "repeated_joiner_per_group_max": 2,
+        "realization_units_per_group_max": 4,
+        "visible_source_anchor_max": 1,
+        "owner_source_fragment_evidence_grade": "exact_source_span",
+        "owner_source_fragment_cardinality": "exactly_one",
+        "owner_expression_scalar_max": 32,
+        "owner_expression_selection": [
+            "whole_exact_fragment",
+            "stable_head_tail_compression",
+            "fail_closed",
+        ],
+        "observation_header": "見えたこと：\n",
+        "section_separator": "\n\nEmlisから：\n",
+        "owner_nominalizer": "ということ",
+        "owner_compression_join": "…",
+        "family_realization_locus": {
+            "construction": "owner_modifier_or_predicate",
+            "relation": "directed_owner_predicate",
+            "semantic_link": "directed_owner_connective",
+            "explicit_unknown": "owner_terminal_predicate",
+        },
+        "product_cluster_contract": {
+            "composition_mode": "relation_connected_product_cluster",
+            "stable_order": True,
+            "same_sentence_group": True,
+            "owner_intersection_required": True,
+            "verified_base_reuse_excluded": True,
+        },
+        "reception_contract": {
+            "selection_order": "base_ast_first_then_unmatched_required",
+            "base_association_basis": (
+                "exact_base_ast_antecedent_binding"
+            ),
+            "additional_association_basis": (
+                "unmatched_required_opportunity"
+            ),
+        },
+        "atom_joiners": ["、また、", "、そのうえ、"],
+        "clause_join": "。さらに、",
+        "temporal_scope_cues": {
+            "current_input": "いま、",
+            "reported_past": "これまでのこととして、",
+            "unknown": "時期を決めず、",
+        },
+        "modality_cues": {
+            "observed": "見えている範囲で、",
+            "reported": "語られたこととして、",
+            "intended": "これからの向きとして、",
+            "possible": "可能性を残して、",
+            "unknown": "確かさを決めず、",
+        },
+        "polarity_cues": {
+            "positive": "前向きさを含めて、",
+            "negative": "重さを残して、",
+            "mixed": "異なる向きを残して、",
+            "neutral": "",
+            "unknown": "どちらとも決めず、",
+        },
+        "referent_scope_cues": {
+            "state": "状態として、",
+            "action": "行動として、",
+            "event": "出来事として、",
+            "relation": "",
+            "unknown": "",
+        },
+    }
+
+
+def _step11_rc0031_validate_product_surface_b5_grammar(
+    value: Any,
+) -> tuple[str, ...]:
+    if type(value) is not dict:
+        return ("STEP11_RC0031_PRODUCT_SURFACE_B5_GRAMMAR_INVALID",)
+    if value != _step11_rc0031_product_surface_b5_grammar():
+        return ("STEP11_RC0031_PRODUCT_SURFACE_B5_GRAMMAR_INVALID",)
+    return ()
+
+
+__all__ += [
+    "STEP11_RC0031_EXPERIMENT_BODY_DIMENSION_RECOVERY_CONTRACT",
+    "validate_step11_rc0031_experiment_body_dimension_recovery_contract",
+]

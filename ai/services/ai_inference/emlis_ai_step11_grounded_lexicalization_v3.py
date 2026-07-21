@@ -3376,3 +3376,98 @@ __all__ += [
     "validate_step11_rc0030_clause_ready_lexical_projection",
     "validate_step11_rc0030_clause_ready_lexical_specs",
 ]
+
+
+# rc0031 experiment-only Product owner projection (append-only B5 owner)
+
+def _step11_rc0031_product_owner_expression_projection(
+    base_candidate: Any,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> tuple[tuple[str, str, str, str, str], ...]:
+    try:
+        projection = build_step11_rc0030_clause_ready_lexical_specs(
+            base_candidate,
+            successor_snapshot=successor_snapshot,
+            lexical_atom_specs=lexical_atom_specs,
+        )
+        issues = validate_step11_rc0030_clause_ready_lexical_specs(
+            projection,
+            base_candidate=base_candidate,
+            successor_snapshot=successor_snapshot,
+            lexical_atom_specs=lexical_atom_specs,
+        )
+    except Exception:
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0031_PRODUCT_OWNER_BASE_CANDIDATE_INVALID"
+        ) from None
+    if issues:
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0031_PRODUCT_OWNER_BASE_CANDIDATE_INVALID"
+        )
+    fragments = tuple(base_candidate.surface_ast.source_fragments)
+    rows: list[tuple[str, str, str, str, str]] = []
+    seen_owners: set[str] = set()
+    seen_expressions: set[str] = set()
+    for lexeme in projection.lexemes:
+        matches = tuple(
+            fragment
+            for fragment in fragments
+            if lexeme.base_source_nucleus_id in fragment.source_nucleus_ids
+            and fragment.evidence_grade == "exact_source_span"
+        )
+        if not matches:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0031_PRODUCT_OWNER_SOURCE_FRAGMENT_UNRESOLVED"
+            )
+        if len(matches) != 1:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0031_PRODUCT_OWNER_SOURCE_FRAGMENT_AMBIGUOUS"
+            )
+        fragment = matches[0]
+        source_expression = unicodedata.normalize(
+            "NFC", str(fragment.text).strip(" \t\r\n。！？!?")
+        )
+        if len(source_expression) > 27:
+            source_expression = (
+                source_expression[:13]
+                + "…"
+                + source_expression[-13:]
+            )
+        expression = source_expression + "ということ"
+        if (
+            type(lexeme.source_owner_id) is not str
+            or not lexeme.source_owner_id
+            or type(lexeme.base_source_nucleus_id) is not str
+            or not lexeme.base_source_nucleus_id
+            or type(fragment.source_anchor_id) is not str
+            or not fragment.source_anchor_id
+            or not source_expression
+            or expression != expression.strip()
+            or unicodedata.normalize("NFC", expression) != expression
+            or not 1 <= len(expression) <= 32
+            or "\r" in expression
+            or "\n" in expression
+            or lexeme.source_owner_id in seen_owners
+            or expression in seen_expressions
+        ):
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0031_PRODUCT_OWNER_EXPRESSION_INVALID"
+            )
+        seen_owners.add(lexeme.source_owner_id)
+        seen_expressions.add(expression)
+        rows.append(
+            (
+                lexeme.source_owner_id,
+                lexeme.base_source_nucleus_id,
+                fragment.source_anchor_id,
+                expression,
+                hashlib.sha256(expression.encode("utf-8")).hexdigest(),
+            )
+        )
+    if len(rows) != len(projection.lexemes):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0031_PRODUCT_OWNER_EXPRESSION_INVALID"
+        )
+    return tuple(rows)

@@ -51,10 +51,6 @@ _P2_TEST = (
 )
 
 _P2_IMMUTABLE_FILES = {
-    _LEXICAL_PATH: (
-        129_615,
-        "592f3ab7c90831c3191f51e9e7dd9a1f8c3fe4add1fd31bba9fdc65dccaecc28",
-    ),
     _GATE_PATH: (
         208_041,
         "88514bb2a179e8d726f36e1666d2618330d95979107403ededc93aa35655943b",
@@ -72,6 +68,15 @@ _P2_IMMUTABLE_FILES = {
         "2d71f9241abb7f38ad9de41633c89b7c257b461df2b3e7df92e2d74df4b684a2",
     ),
 }
+_LEXICAL_PREDECESSOR_BYTES = 129_615
+_LEXICAL_PREDECESSOR_SHA256 = (
+    "592f3ab7c90831c3191f51e9e7dd9a1f8c3fe4add1fd31bba9fdc65dccaecc28"
+)
+_LEXICAL_APPEND_BYTE_MAX = 32_768
+_LEXICAL_APPEND_MARKER = (
+    b"# rc0031 experiment-only Product owner projection "
+    b"(append-only B5 owner)"
+)
 _CATALOG_PREDECESSOR_BYTES = 19_951
 _CATALOG_PREDECESSOR_SHA256 = (
     "a4e8bc9753a1398571d511d5d0c1219a886c498661b3a4f702d3b20b5672c6cc"
@@ -93,9 +98,9 @@ _SERVICE_PY_PATH_COUNT = 546
 _SERVICE_PY_PATH_LIST_SHA256 = (
     "46db0d14852dde6ebb6012596234cbb935243b27ed227465d9e94876ce4f5d56"
 )
-_REPOSITORY_PY_FROZEN_FILE_COUNT = 1_531
+_REPOSITORY_PY_FROZEN_FILE_COUNT = 1_530
 _REPOSITORY_PY_FROZEN_MATERIAL_SHA256 = (
-    "014ba3d399ca182265f67728c4b13c45aac6ea33dbae4874521585b79c066bd2"
+    "e349323507c8c5b798c7fe70f6776700f4384ad2207d152c2515f41a913e17ac"
 )
 _MATCHER_PREDECESSOR_BYTES = 722_658
 _MATCHER_PREDECESSOR_SHA256 = (
@@ -607,7 +612,7 @@ def _rc0031_owner_append_is_closed(
     marker: bytes,
     predecessor: bytes,
     *,
-    allow_catalog_import: bool,
+    allowed_dynamic_imports: frozenset[str],
     allow_non_ascii_literals: bool,
 ) -> bool:
     if not value:
@@ -626,6 +631,7 @@ def _rc0031_owner_append_is_closed(
         for parent in ast.walk(tree)
         for child in ast.iter_child_nodes(parent)
     }
+    observed_dynamic_imports: set[str] = set()
     if any(
         token in text
         for token in (
@@ -695,8 +701,7 @@ def _rc0031_owner_append_is_closed(
         if isinstance(node, ast.Name) and node.id == "__import__":
             parent = parent_by_id.get(id(node))
             if not (
-                allow_catalog_import
-                and isinstance(parent, ast.Call)
+                isinstance(parent, ast.Call)
                 and parent.func is node
             ):
                 return False
@@ -720,14 +725,16 @@ def _rc0031_owner_append_is_closed(
                 "vars",
             }:
                 return False
-            if call_name == "__import__" and (
-                not allow_catalog_import
-                or not node.args
-                or not isinstance(node.args[0], ast.Constant)
-                or node.args[0].value
-                != "emlis_ai_step11_rc0031_experiment_surface_catalog_v3"
-            ):
-                return False
+            if call_name == "__import__":
+                if (
+                    len(node.args) != 1
+                    or node.keywords
+                    or not isinstance(node.args[0], ast.Constant)
+                    or type(node.args[0].value) is not str
+                    or node.args[0].value not in allowed_dynamic_imports
+                ):
+                    return False
+                observed_dynamic_imports.add(node.args[0].value)
         if isinstance(node, ast.FunctionDef) and (
             node.args.defaults
             or any(default is not None for default in node.args.kw_defaults)
@@ -803,7 +810,7 @@ def _rc0031_owner_append_is_closed(
                 return False
         else:
             return False
-    return True
+    return observed_dynamic_imports == set(allowed_dynamic_imports)
 
 
 def _matcher_append_is_closed(value: bytes) -> bool:
@@ -2280,6 +2287,24 @@ def test_rc0031_p3_freeze_scope_and_bounded_eof_seams_are_exact() -> None:
             "STEP11_RC0031_P3_P2_IMMUTABLE_FILE_DRIFT",
         )
 
+    lexical_bytes = _LEXICAL_PATH.read_bytes()
+    lexical_predecessor = lexical_bytes[:_LEXICAL_PREDECESSOR_BYTES]
+    lexical_append = lexical_bytes[_LEXICAL_PREDECESSOR_BYTES:]
+    _closed_assert(
+        len(lexical_predecessor) == _LEXICAL_PREDECESSOR_BYTES
+        and hashlib.sha256(lexical_predecessor).hexdigest()
+        == _LEXICAL_PREDECESSOR_SHA256
+        and len(lexical_append) <= _LEXICAL_APPEND_BYTE_MAX
+        and _rc0031_owner_append_is_closed(
+            lexical_append,
+            _LEXICAL_APPEND_MARKER,
+            lexical_predecessor,
+            allowed_dynamic_imports=frozenset(),
+            allow_non_ascii_literals=True,
+        ),
+        "STEP11_RC0031_P3_LEXICAL_APPEND_SCOPE_INVALID",
+    )
+
     catalog_bytes = _CATALOG_PATH.read_bytes()
     catalog_predecessor = catalog_bytes[:_CATALOG_PREDECESSOR_BYTES]
     catalog_append = catalog_bytes[_CATALOG_PREDECESSOR_BYTES:]
@@ -2292,7 +2317,7 @@ def test_rc0031_p3_freeze_scope_and_bounded_eof_seams_are_exact() -> None:
             catalog_append,
             _CATALOG_APPEND_MARKER,
             catalog_predecessor,
-            allow_catalog_import=False,
+            allowed_dynamic_imports=frozenset(),
             allow_non_ascii_literals=True,
         ),
         "STEP11_RC0031_P3_CATALOG_APPEND_SCOPE_INVALID",
@@ -2310,7 +2335,12 @@ def test_rc0031_p3_freeze_scope_and_bounded_eof_seams_are_exact() -> None:
             surface_append,
             _SURFACE_APPEND_MARKER,
             surface_predecessor,
-            allow_catalog_import=True,
+            allowed_dynamic_imports=frozenset(
+                {
+                    "emlis_ai_step11_grounded_lexicalization_v3",
+                    "emlis_ai_step11_rc0031_experiment_surface_catalog_v3",
+                }
+            ),
             allow_non_ascii_literals=False,
         ),
         "STEP11_RC0031_P3_SURFACE_APPEND_SCOPE_INVALID",
@@ -2333,6 +2363,7 @@ def test_rc0031_p3_freeze_scope_and_bounded_eof_seams_are_exact() -> None:
             if path
             not in {
                 _CATALOG_PATH,
+                _LEXICAL_PATH,
                 _MATCHER_PATH,
                 _SURFACE_PATH,
                 Path(__file__).resolve(),
@@ -4583,9 +4614,9 @@ def test_rc0031_p3_relation_distribution_reception_and_reuse_body_mutations_fail
 # rc0031 P3 B5 owner-boundary design freeze and RED-only
 # ---------------------------------------------------------------------------
 
-_B5_TEST_PREFIX_BYTES = 161_191
+_B5_TEST_PREFIX_BYTES = 162_521
 _B5_TEST_PREFIX_SHA256 = (
-    "045ca06eabbff7c6d902174ecf84db75d67b21e27ce9956726467f7d19c36860"
+    "f4922b32d76816e615fb2e448b61a780185800440fc1cbdb9fad0f43117b0d91"
 )
 _B5_PREDECESSOR_TEST_COUNT = 24
 _B5_PREDECESSOR_TEST_NAMES_SHA256 = (
