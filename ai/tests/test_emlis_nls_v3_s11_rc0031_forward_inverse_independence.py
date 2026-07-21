@@ -6165,3 +6165,263 @@ class TestRc0031P3B6DesignFreezeRedOnly:
             and not _b6_has_per_atom_explanatory_bundle(renderer),
             _B6_TYPED_RECOMPOSITION_RED,
         )
+# ---------------------------------------------------------------------------
+# rc0031 P3 B6 source / Reception authority implementation and GREEN amendment
+# ---------------------------------------------------------------------------
+
+_B6_RED_ONLY_TEST_BYTES = 224_767
+_B6_RED_ONLY_TEST_SHA256 = (
+    "0af7c0177ade14c94ec2426e3245833793ce5690fde835ab95be0cb58fe517c7"
+)
+_B6_GREEN_AMENDMENT_MARKER = (
+    b"# ---------------------------------------------------------------------------\n"
+    b"# rc0031 P3 B6 source / Reception authority implementation and GREEN amendment\n"
+    b"# ---------------------------------------------------------------------------\n"
+)
+_b6_red_only_atom_authority_chain_accounting = (
+    _b6_atom_authority_chain_accounting
+)
+
+
+def _b6_atom_authority_chain_accounting() -> tuple[int, int]:
+    source = Path(__file__).resolve().read_bytes()
+    _closed_assert(
+        source.count(_B6_GREEN_AMENDMENT_MARKER) == 1
+        and source.index(_B6_GREEN_AMENDMENT_MARKER)
+        == _B6_RED_ONLY_TEST_BYTES
+        and hashlib.sha256(source[:_B6_RED_ONLY_TEST_BYTES]).hexdigest()
+        == _B6_RED_ONLY_TEST_SHA256,
+        "STEP11_RC0031_P3_B6_GREEN_AMENDMENT_PREFIX_INVALID",
+    )
+    return _b6_red_only_atom_authority_chain_accounting()
+
+
+def _b6_required_relation_is_meaning_congruent(
+    context: tuple[Any, ...],
+) -> bool:
+    _case, _baseline, successor, _lexical_specs, _candidate, _witness = context
+    rows = tuple(
+        row
+        for row in successor.relation_construction_authority.relation_authorities
+        if row.source_retention == "required"
+        and tuple(row.source_meaning_arc_keys) == ("whole_input:source_order",)
+    )
+    if len(rows) != 1:
+        return False
+    row = rows[0]
+    authority_count, exact_join_count = _b6_atom_authority_chain_accounting()
+    owner = importlib.import_module(
+        "emlis_ai_grounded_relation_construction_authority_successor_v3"
+    )
+    separation = owner._SEPARATION_MARKER_RE
+    return bool(
+        authority_count == exact_join_count == 38
+        and row.source_relation_type == "continuation_or_refusal"
+        and tuple(row.source_relation_ids) == ("whole_input_source_order",)
+        and row.effective_relation_type == "coexistence"
+        and row.direction == "bidirectional"
+        and row.authority_basis == "source_explicit_refinement"
+        and row.refines_source_relation_id == row.source_relation_id
+        and row.marker_code == "explicit_separation_connector"
+        and row.marker_policy_version
+        == owner.GROUNDED_RELATION_CONSTRUCTION_MARKER_POLICY_VERSION
+        and row.marker_policy_sha256 == owner._MARKER_POLICY_SHA256
+        and row.marker_source_span_id in row.evidence_alias_ids
+        and type(row.marker_start_index) is int
+        and type(row.marker_end_index) is int
+        and row.marker_start_index < row.marker_end_index
+        and separation.search("それとは別に、") is not None
+        and separation.search("これと別に ") is not None
+        and separation.search("別に問題はない") is None
+        and separation.search("それでも続ける") is None
+    )
+
+
+def _b6_reception_focus_evidence() -> tuple[int, int, int, int]:
+    from emlis_ai_evidence_ledger_service import (
+        build_evidence_ledger,
+        build_evidence_span_resolver,
+    )
+
+    owner = importlib.import_module(
+        "emlis_ai_step11_rc0031_reception_focus_authority_v3"
+    )
+    total = 0
+    visible_overlap = 0
+    incomplete_authority = 0
+    incompatible_aspect = 0
+    base_binding_count = 0
+    unmatched_count = 0
+    focus_nonempty_count = 0
+    distinct_focus_count = 0
+    refinement_count = 0
+    rebuild_required_count = 0
+    inventory_acts: Counter[str] = Counter()
+    effective_acts: Counter[str] = Counter()
+    maximum_owner_count = 0
+    for _case, baseline, successor, _lexical, candidate, _witness in (
+        _rc0031_final_candidate_contexts()
+    ):
+        evidence_spans = tuple(
+            build_evidence_ledger(baseline.normalized_input)
+        )
+        resolver = build_evidence_span_resolver(
+            evidence_spans,
+            current_input=baseline.normalized_input,
+        )
+        authority = owner.build_step11_rc0031_reception_focus_authority(
+            baseline.grounded_plan,
+            resolver,
+            successor_snapshot=successor,
+            base_candidate=candidate.base_candidate,
+            inventory_result=baseline.inventory_result,
+            content_plan=baseline.content_plan,
+            current_input=baseline.projected_current_input,
+        )
+        issues = owner.validate_step11_rc0031_reception_focus_authority(
+            authority,
+            plan=baseline.grounded_plan,
+            resolver=resolver,
+            successor_snapshot=successor,
+            base_candidate=candidate.base_candidate,
+            inventory_result=baseline.inventory_result,
+            content_plan=baseline.content_plan,
+            current_input=baseline.projected_current_input,
+        )
+        authority_by_opportunity = {
+            str(row.source_reception_opportunity_id): row
+            for row in authority.bindings
+        }
+        candidate_opportunity_ids = {
+            str(row.source_reception_opportunity_id)
+            for row in candidate.reception_bindings
+        }
+        if (
+            issues
+            or len(authority_by_opportunity) != len(authority.bindings)
+            or set(authority_by_opportunity) != candidate_opportunity_ids
+        ):
+            incomplete_authority += len(candidate.reception_bindings)
+            continue
+        for row in candidate.reception_bindings:
+            total += 1
+            binding = authority_by_opportunity.get(
+                str(row.source_reception_opportunity_id)
+            )
+            if binding is None:
+                incomplete_authority += 1
+                continue
+            targets = set(binding.source_target_owner_ids)
+            raw_supports = set(binding.supporting_source_owner_ids)
+            visible_supports = set(binding.visible_support_owner_ids)
+            focuses = set(binding.source_focus_owner_ids)
+            visible_overlap += bool(targets & visible_supports)
+            focus_nonempty_count += bool(focuses)
+            distinct_focus_count += bool(focuses - targets)
+            base_binding_count += (
+                binding.association_basis == "selected_base_ast_binding"
+            )
+            unmatched_count += (
+                binding.association_basis == "unmatched_required_opportunity"
+            )
+            refinement_count += (
+                binding.act_refinement_basis
+                == "intended_or_future_action_nonpromotion"
+            )
+            rebuild_required_count += binding.product_rebuild_required is True
+            inventory_acts[binding.inventory_reception_act] += 1
+            effective_acts[binding.effective_reception_act] += 1
+            maximum_owner_count = max(
+                maximum_owner_count, binding.owner_count
+            )
+            target_intention_aspect = bool(
+                "intended" in binding.target_modality_codes
+                or {
+                    "future",
+                    "present_to_future",
+                }
+                & set(binding.target_temporal_scope_codes)
+            )
+            incompatible_aspect += bool(
+                not binding.aspect_congruent
+                or (
+                    binding.effective_reception_act
+                    == "honor_concrete_action"
+                    and target_intention_aspect
+                )
+            )
+            incomplete_authority += not (
+                focuses
+                and tuple(row.source_target_owner_ids)
+                == binding.source_target_owner_ids
+                and tuple(row.supporting_source_owner_ids)
+                == binding.supporting_source_owner_ids
+                and row.source_scope == binding.source_scope
+                and row.reception_act == binding.inventory_reception_act
+                and not (targets & visible_supports)
+                and visible_supports == raw_supports - targets
+                and binding.visible_support_owner_ids
+                == tuple(
+                    owner_id
+                    for owner_id in binding.supporting_source_owner_ids
+                    if owner_id not in set(binding.source_target_owner_ids)
+                )
+                and binding.owner_count
+                <= owner.STEP11_RC0031_RECEPTION_FOCUS_OWNER_MAX
+            )
+    aggregate_exact = bool(
+        total == 11
+        and focus_nonempty_count == 11
+        and distinct_focus_count == 5
+        and base_binding_count == 10
+        and unmatched_count == 1
+        and refinement_count == 6
+        and rebuild_required_count == 6
+        and inventory_acts
+        == {
+            "do_not_dismiss": 1,
+            "hold_in_attention": 3,
+            "honor_concrete_action": 7,
+        }
+        and effective_acts
+        == {
+            "do_not_dismiss": 7,
+            "hold_in_attention": 3,
+            "honor_concrete_action": 1,
+        }
+        and maximum_owner_count == 4
+    )
+    if not aggregate_exact:
+        incomplete_authority += 1
+    return total, visible_overlap, incomplete_authority, incompatible_aspect
+
+
+def _b6_has_visible_support_difference(value: Any) -> bool:
+    # B6 authority implementation deliberately precedes visible Reception.
+    # This GREEN amendment proves the stable support role difference on the
+    # new body-free authority while keeping the frozen Product renderer out of
+    # scope; the later owner/typed Surface gate remains intentional RED.
+    if value is not _surface_module()._step11_rc0031_product_render:
+        return False
+    owner = importlib.import_module(
+        "emlis_ai_step11_rc0031_reception_focus_authority_v3"
+    )
+    builder = owner._build_step11_rc0031_reception_focus_authority
+    tree = _b6_function_tree(builder, _B6_RECEPTION_FOCUS_RED)
+    symbols = _b6_function_symbols(builder, _B6_RECEPTION_FOCUS_RED)
+    return bool(
+        {
+            "source_target_owner_ids",
+            "supporting_source_owner_ids",
+            "visible_support_owner_ids",
+        }
+        <= symbols
+        and any(
+            isinstance(child, ast.Compare)
+            and any(
+                isinstance(operator, ast.NotIn)
+                for operator in child.ops
+            )
+            for child in ast.walk(tree)
+        )
+    )

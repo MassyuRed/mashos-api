@@ -43,7 +43,7 @@ GROUNDED_RELATION_CONSTRUCTION_AUTHORITY_SUCCESSOR_ADAPTER_VERSION: Final = (
     "20260719.v2"
 )
 GROUNDED_RELATION_CONSTRUCTION_MARKER_POLICY_VERSION: Final = (
-    "cocolon.emlis.nls_v3.source_explicit_relation_marker_policy.20260719.v1"
+    "cocolon.emlis.nls_v3.source_explicit_relation_marker_policy.20260722.v2"
 )
 GROUNDED_RELATION_CONSTRUCTION_GIT_BASELINE_COMMIT: Final = (
     "31d3cf183589b27481338277574f90500f3c5b11"
@@ -210,16 +210,38 @@ _BALANCED_RE: Final = re.compile(
 _SIMULTANEOUS_MARKER_RE: Final = re.compile(
     r"^(?P<marker>同時に)(?=[、,\s]|$)"
 )
+_SEPARATION_MARKER_RE: Final = re.compile(
+    r"^(?P<marker>(?:それ|これ)とは?別に)(?=[、,\s]|$)"
+)
 
 _MARKER_POLICY_SHA256: Final = artifact_sha256(
     {
         "policy_version": GROUNDED_RELATION_CONSTRUCTION_MARKER_POLICY_VERSION,
-        "closed_marker_codes": ["explicit_simultaneous_connector"],
-        "closed_source_markers": ["同時に"],
+        "closed_marker_codes": [
+            "explicit_separation_connector",
+            "explicit_simultaneous_connector",
+        ],
+        "closed_source_markers": [
+            "(?:それ|これ)とは?別に",
+            "同時に",
+        ],
         "position": "to_endpoint_span_prefix",
-        "requires_plan_source_type": "uncertain_connection",
-        "requires_plan_grounding_kind": "bounded_structural_inference",
-        "requires_plan_retention": "should",
+        "closed_source_signatures": [
+            {
+                "marker_code": "explicit_simultaneous_connector",
+                "source_relation_type": "uncertain_connection",
+                "source_grounding_kind": "bounded_structural_inference",
+                "source_retention": "should",
+            },
+            {
+                "marker_code": "explicit_separation_connector",
+                "source_relation_type": "continuation_or_refusal",
+                "source_grounding_kind": "user_stated_relation",
+                "source_retention": "required",
+                "source_relation_ids": ["whole_input_source_order"],
+                "source_meaning_arc_keys": ["whole_input:source_order"],
+            },
+        ],
         "requires_adjacent_required_text_endpoints": True,
         "requires_no_competing_required_relation": True,
     }
@@ -321,7 +343,10 @@ class GroundedExperimentRelationAuthority:
         "experiment_required_refinement",
     ]
     evidence_alias_ids: tuple[str, ...]
-    marker_code: Literal["explicit_simultaneous_connector"] | None
+    marker_code: Literal[
+        "explicit_separation_connector",
+        "explicit_simultaneous_connector",
+    ] | None
     marker_policy_version: str | None
     marker_policy_sha256: str | None
     marker_source_span_id: str | None
@@ -1105,12 +1130,39 @@ def _coexistence_marker(
     *,
     plan: GroundedObservationPlan,
     span_by_id: Mapping[str, Any],
-) -> tuple[str, int, int] | None:
-    if not (
+) -> tuple[
+    Literal[
+        "explicit_separation_connector",
+        "explicit_simultaneous_connector",
+    ],
+    str,
+    int,
+    int,
+] | None:
+    marker_code: Literal[
+        "explicit_separation_connector",
+        "explicit_simultaneous_connector",
+    ]
+    marker_pattern: re.Pattern[str]
+    if (
         relation.type == "uncertain_connection"
         and relation.grounding_kind == "bounded_structural_inference"
         and relation.retention == "should"
     ):
+        marker_code = "explicit_simultaneous_connector"
+        marker_pattern = _SIMULTANEOUS_MARKER_RE
+    elif (
+        relation.type == "continuation_or_refusal"
+        and relation.grounding_kind == "user_stated_relation"
+        and relation.retention == "required"
+        and tuple(relation.source_relation_ids)
+        == ("whole_input_source_order",)
+        and tuple(relation.source_meaning_arc_keys)
+        == ("whole_input:source_order",)
+    ):
+        marker_code = "explicit_separation_connector"
+        marker_pattern = _SEPARATION_MARKER_RE
+    else:
         return None
     nucleus_by_id = {row.nucleus_id: row for row in plan.nuclei}
     left = nucleus_by_id.get(relation.from_nucleus_id)
@@ -1144,7 +1196,7 @@ def _coexistence_marker(
             raise GroundedRelationConstructionAuthoritySuccessorError(
                 "SUCCESSOR_AUTHORITY_SOURCE_SPAN_UNRESOLVED"
             )
-        match = _SIMULTANEOUS_MARKER_RE.search(
+        match = marker_pattern.search(
             str(getattr(span, "raw_text", ""))
         )
         if match is not None:
@@ -1155,7 +1207,8 @@ def _coexistence_marker(
         raise GroundedRelationConstructionAuthoritySuccessorError(
             "SUCCESSOR_AUTHORITY_RELATION_REFINEMENT_CONFLICT"
         )
-    return marker_rows[0]
+    marker_span_id, marker_start, marker_end = marker_rows[0]
+    return marker_code, marker_span_id, marker_start, marker_end
 
 
 def _build_relation_authorities(
@@ -1182,8 +1235,8 @@ def _build_relation_authorities(
             if effective_type == "coexistence"
             else "source_to_target"
         )
-        marker_span_id, marker_start, marker_end = (
-            marker if marker is not None else (None, None, None)
+        marker_code, marker_span_id, marker_start, marker_end = (
+            marker if marker is not None else (None, None, None, None)
         )
         identity = {
             "domain": "rc0028_experiment_relation_authority.v2",
@@ -1232,9 +1285,7 @@ def _build_relation_authorities(
                     else "source_projection"
                 ),
                 evidence_alias_ids=relation.source_span_ids,
-                marker_code=(
-                    "explicit_simultaneous_connector" if refined else None
-                ),
+                marker_code=marker_code,
                 marker_policy_version=(
                     GROUNDED_RELATION_CONSTRUCTION_MARKER_POLICY_VERSION
                     if refined
