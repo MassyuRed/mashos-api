@@ -7,9 +7,11 @@ Production is intentionally unchanged.  The suite retains the exact10 GREEN
 composition contract, proves that the current Step8 body-dimension projection
 is non-injective before schema freeze, and counts exact-one source solutions by
 body-relevant verified projection rather than discourse-plan identity.  It
-also specifies provisional body-only Parser / independent Matcher behavior for
-the next separately approved design pass.  Public reuse remains closed and
-projected hashes are not signatures.
+also proves, without adopting it in production, that a closed prefix-free
+Surface dimension lattice and a source-authoritative topic projection can make
+the missing dimensions injective.  It specifies provisional body-only Parser /
+independent Matcher behavior for the next separately approved design pass.
+Public reuse remains closed and projected hashes are not signatures.
 """
 
 import ast
@@ -20,6 +22,7 @@ from functools import lru_cache
 import hashlib
 import importlib
 import inspect
+from itertools import product
 import json
 from pathlib import Path
 import re
@@ -237,6 +240,52 @@ _PRELIMINARY_BODY_DIMENSION_FIELDS = (
     "temporal_scope",
     "topic_fingerprint_sha256",
     "referent_scope",
+)
+_PROPOSED_CATALOG_DERIVED_DIMENSION_DOMAINS = {
+    "observation_stage": ("normal_observation",),
+    "source_role": ("original_input",),
+}
+_PROPOSED_VISIBLE_DIMENSION_ORDER = (
+    "temporal_scope",
+    "modality",
+    "polarity",
+    "referent_scope",
+)
+_PROPOSED_VISIBLE_DIMENSION_TOKENS = {
+    "temporal_scope": {
+        "current_input": "今の入力で",
+        "reported_past": "過去から",
+        "intended_future": "先の時点に向けて",
+        "atemporal": "時点を限らず",
+        "unknown": "時点を決めず",
+    },
+    "modality": {
+        "observed": "見えている",
+        "reported": "伝えられた",
+        "intended": "これからに向けた",
+        "possible": "可能性として示された",
+        "unknown": "まだ確定しない",
+    },
+    "polarity": {
+        "positive": "明るさを帯びた",
+        "negative": "重さを帯びた",
+        "mixed": "異なる向きをともに含む",
+        "neutral": "どちらにも寄せない",
+        "unknown": "向きをまだ定めない",
+    },
+    "referent_scope": {
+        "self": "自分について",
+        "other": "相手について",
+        "event": "出来事について",
+        "action": "行動について",
+        "state": "状態について",
+        "relation": "関係について",
+        "unknown": "対象を決めず",
+    },
+}
+_PROPOSED_VISIBLE_DIMENSION_CLOSE = "、"
+_PROPOSED_TOPIC_FINGERPRINT_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11.rc0031_body_topic_projection.v1"
 )
 _FINAL_PARSED_ATOM_REQUIRED_FIELDS = frozenset(
     {
@@ -1042,6 +1091,250 @@ def _rc0031_catalog_authority() -> tuple[dict[str, Any], str]:
         "STEP11_RC0031_P3_FINAL_CATALOG_INVALID",
     )
     return catalog, owner.STEP11_RC0031_EXPERIMENT_SURFACE_CATALOG_SHA256
+
+
+@lru_cache(maxsize=1)
+def _proposed_visible_dimension_codewords() -> tuple[
+    tuple[str, tuple[tuple[str, str], ...]], ...
+]:
+    value_domains = tuple(
+        tuple(_PROPOSED_VISIBLE_DIMENSION_TOKENS[name])
+        for name in _PROPOSED_VISIBLE_DIMENSION_ORDER
+    )
+    return tuple(
+        (
+            "".join(
+                _PROPOSED_VISIBLE_DIMENSION_TOKENS[name][value]
+                for name, value in zip(
+                    _PROPOSED_VISIBLE_DIMENSION_ORDER,
+                    values,
+                )
+            )
+            + _PROPOSED_VISIBLE_DIMENSION_CLOSE,
+            tuple(zip(_PROPOSED_VISIBLE_DIMENSION_ORDER, values)),
+        )
+        for values in product(*value_domains)
+    )
+
+
+def _proposed_visible_dimension_prefix(
+    values: dict[str, str],
+) -> str:
+    if set(values) != set(_PROPOSED_VISIBLE_DIMENSION_ORDER):
+        raise ValueError("STEP11_RC0031_P3_SURFACE_DIMENSION_INVALID")
+    try:
+        return (
+            "".join(
+                _PROPOSED_VISIBLE_DIMENSION_TOKENS[name][values[name]]
+                for name in _PROPOSED_VISIBLE_DIMENSION_ORDER
+            )
+            + _PROPOSED_VISIBLE_DIMENSION_CLOSE
+        )
+    except (KeyError, TypeError):
+        raise ValueError(
+            "STEP11_RC0031_P3_SURFACE_DIMENSION_INVALID"
+        ) from None
+
+
+def _proposed_parse_visible_dimension_prefix(
+    value: str,
+) -> tuple[dict[str, str], str]:
+    if type(value) is not str:
+        raise ValueError("STEP11_RC0031_P3_SURFACE_DIMENSION_UNPARSEABLE")
+    matches = tuple(
+        (fields, value[len(prefix) :])
+        for prefix, fields in _proposed_visible_dimension_codewords()
+        if value.startswith(prefix)
+    )
+    if len(matches) != 1 or not matches[0][1]:
+        raise ValueError("STEP11_RC0031_P3_SURFACE_DIMENSION_UNPARSEABLE")
+    fields, remainder = matches[0]
+    return dict(fields), remainder
+
+
+def _proposed_topic_fingerprint(
+    owner_expressions: tuple[str, ...],
+) -> str:
+    if (
+        type(owner_expressions) is not tuple
+        or not owner_expressions
+        or any(type(row) is not str or not row for row in owner_expressions)
+    ):
+        raise ValueError("STEP11_RC0031_P3_TOPIC_PROJECTION_INVALID")
+    material = {
+        "schema_version": _PROPOSED_TOPIC_FINGERPRINT_SCHEMA,
+        "owner_expression_sha256": [
+            hashlib.sha256(row.encode("utf-8")).hexdigest()
+            for row in owner_expressions
+        ],
+    }
+    return hashlib.sha256(
+        json.dumps(
+            material,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _proposed_rc0031_source_dimension_projection(
+    context: tuple[Any, ...],
+) -> tuple[dict[str, Any], ...]:
+    (
+        _case_id,
+        baseline,
+        successor,
+        _lexical_specs,
+        _candidate,
+        _base_body_witness,
+    ) = context
+    inverse = _inverse_module()
+    snapshot = baseline.inventory_result.source_snapshot
+    (
+        records,
+        _receptions,
+        aliases,
+        _successor_sha256,
+        _source_authority_sha256,
+        _exact_aliases,
+    ) = inverse._step11_rc0030_validated_source_records(
+        successor,
+        inventory_result=baseline.inventory_result,
+    )
+    semantic_by_source = _independent_rc0031_source_projection(context)[0]
+    relation_authority_by_id = {
+        str(row.experiment_relation_id): row
+        for row in successor.relation_construction_authority.relation_authorities
+    }
+
+    def nucleus_aliases(value: Any) -> frozenset[str]:
+        return frozenset(
+            {str(value.source_id), str(value.actual_source_id)}
+        )
+
+    def relation_parent(source_atom_id: str) -> Any:
+        authority = relation_authority_by_id.get(source_atom_id)
+        if authority is None:
+            raise ValueError(
+                "STEP11_RC0031_P3_SOURCE_DIMENSION_AUTHORITY_INVALID"
+            )
+        identity_aliases = {str(authority.source_relation_id)}
+        if authority.refines_source_relation_id is not None:
+            identity_aliases.add(str(authority.refines_source_relation_id))
+        matches = tuple(
+            row
+            for row in snapshot.relations
+            if identity_aliases
+            & {str(row.source_id), str(row.actual_source_id)}
+        )
+        if not matches:
+            direct_aliases = {
+                *identity_aliases,
+                *(str(row) for row in authority.source_relation_ids),
+            }
+            matches = tuple(
+                row
+                for row in snapshot.relations
+                if direct_aliases
+                & {
+                    str(row.source_id),
+                    str(row.actual_source_id),
+                    *(str(value) for value in row.source_relation_ids),
+                }
+            )
+        if len(matches) != 1:
+            raise ValueError(
+                "STEP11_RC0031_P3_SOURCE_DIMENSION_AUTHORITY_INVALID"
+            )
+        return matches[0]
+
+    result: list[dict[str, Any]] = []
+    for source_atom_id, family, key, direction, owner_ids in records:
+        referent_scope: str
+        if family == "construction":
+            if len(owner_ids) != 1 or owner_ids[0] not in aliases:
+                raise ValueError(
+                    "STEP11_RC0031_P3_SOURCE_DIMENSION_AUTHORITY_INVALID"
+                )
+            owner_aliases = aliases[owner_ids[0]]
+            matches = tuple(
+                row
+                for row in snapshot.nuclei
+                if nucleus_aliases(row) & owner_aliases
+            )
+            if len(matches) != 1:
+                raise ValueError(
+                    "STEP11_RC0031_P3_SOURCE_DIMENSION_AUTHORITY_INVALID"
+                )
+            source = matches[0]
+            referent_scope = str(source.referent_scope)
+        elif family == "relation":
+            source = relation_parent(source_atom_id)
+            referent_scope = "relation"
+        elif family == "semantic_link":
+            matches = tuple(
+                row
+                for row in snapshot.relations
+                if source_atom_id
+                in {str(row.source_id), str(row.actual_source_id)}
+            )
+            if len(matches) != 1:
+                raise ValueError(
+                    "STEP11_RC0031_P3_SOURCE_DIMENSION_AUTHORITY_INVALID"
+                )
+            source = matches[0]
+            referent_scope = "relation"
+        elif family == "explicit_unknown":
+            matches = tuple(
+                row
+                for row in snapshot.unknowns
+                if source_atom_id
+                in {str(row.source_id), str(row.actual_source_id)}
+            )
+            if len(matches) != 1:
+                raise ValueError(
+                    "STEP11_RC0031_P3_SOURCE_DIMENSION_AUTHORITY_INVALID"
+                )
+            source = matches[0]
+            referent_scope = "unknown"
+        else:
+            raise ValueError(
+                "STEP11_RC0031_P3_SOURCE_DIMENSION_AUTHORITY_INVALID"
+            )
+        owner_expressions = semantic_by_source[source_atom_id][3]
+        is_unknown = family == "explicit_unknown"
+        result.append(
+            {
+                "source_atom_id": source_atom_id,
+                "semantic_family": family,
+                "semantic_key": key,
+                "direction": direction,
+                "owner_expressions": owner_expressions,
+                "observation_stage": str(snapshot.observation_stage),
+                "source_role": str(source.source_role),
+                "polarity": (
+                    "unknown" if is_unknown else str(source.polarity)
+                ),
+                "modality": (
+                    "unknown" if is_unknown else str(source.modality)
+                ),
+                "temporal_scope": (
+                    "unknown" if is_unknown else str(source.temporal_scope)
+                ),
+                "topic_scope_ids": tuple(
+                    str(row) for row in source.topic_scope_ids
+                ),
+                "topic_fingerprint_sha256": (
+                    _proposed_topic_fingerprint(owner_expressions)
+                ),
+                "referent_scope": referent_scope,
+                "base_exact_reuse": (
+                    source_atom_id == _EXPECTED_REUSE_SOURCE_ID
+                ),
+            }
+        )
+    return tuple(result)
 
 
 def _independent_rc0031_source_projection(
@@ -2471,6 +2764,311 @@ def test_rc0031_p3_current_body_dimension_recovery_is_injective() -> None:
     _closed_assert(
         len(set(visible_projections)) == len(alternatives),
         "STEP11_RC0031_P3_BODY_DIMENSION_RECOVERY_NOT_INJECTIVE",
+    )
+
+
+def test_rc0031_p3_proposed_surface_dimension_lattice_is_prefix_free_and_attack_closed() -> None:
+    codewords = _proposed_visible_dimension_codewords()
+    prefixes = tuple(row[0] for row in codewords)
+    sorted_prefixes = tuple(sorted(prefixes))
+    token_values = tuple(
+        token
+        for name in _PROPOSED_VISIBLE_DIMENSION_ORDER
+        for token in _PROPOSED_VISIBLE_DIMENSION_TOKENS[name].values()
+    )
+    expected_domains = {
+        "temporal_scope": {
+            "current_input",
+            "reported_past",
+            "intended_future",
+            "atemporal",
+            "unknown",
+        },
+        "modality": {
+            "observed",
+            "reported",
+            "intended",
+            "possible",
+            "unknown",
+        },
+        "polarity": {
+            "positive",
+            "negative",
+            "mixed",
+            "neutral",
+            "unknown",
+        },
+        "referent_scope": {
+            "self",
+            "other",
+            "event",
+            "action",
+            "state",
+            "relation",
+            "unknown",
+        },
+    }
+    round_trips = tuple(
+        _proposed_parse_visible_dimension_prefix(prefix + "意味単位")
+        for prefix in prefixes
+    )
+    _closed_assert(
+        tuple(_PROPOSED_VISIBLE_DIMENSION_TOKENS)
+        == _PROPOSED_VISIBLE_DIMENSION_ORDER
+        and {
+            name: set(tokens)
+            for name, tokens in _PROPOSED_VISIBLE_DIMENSION_TOKENS.items()
+        }
+        == expected_domains
+        and len(codewords) == 875
+        and len(prefixes) == len(set(prefixes))
+        and len(token_values) == 22
+        and len(token_values) == len(set(token_values))
+        and all(
+            token
+            and token == token.strip()
+            and unicodedata.normalize("NFC", token) == token
+            and "\r" not in token
+            and "\n" not in token
+            for token in token_values
+        )
+        and all(
+            not right.startswith(left)
+            for left, right in zip(
+                sorted_prefixes,
+                sorted_prefixes[1:],
+            )
+        )
+        and all(
+            parsed == dict(fields) and remainder == "意味単位"
+            for (_prefix, fields), (parsed, remainder) in zip(
+                codewords,
+                round_trips,
+            )
+        )
+        and _PROPOSED_CATALOG_DERIVED_DIMENSION_DOMAINS
+        == {
+            "observation_stage": ("normal_observation",),
+            "source_role": ("original_input",),
+        },
+        "STEP11_RC0031_P3_SURFACE_DIMENSION_LATTICE_INVALID",
+    )
+
+    source_values = {
+        "temporal_scope": "current_input",
+        "modality": "observed",
+        "polarity": "neutral",
+        "referent_scope": "event",
+    }
+    ordered_tokens = tuple(
+        _PROPOSED_VISIBLE_DIMENSION_TOKENS[name][source_values[name]]
+        for name in _PROPOSED_VISIBLE_DIMENSION_ORDER
+    )
+    valid_prefix = _proposed_visible_dimension_prefix(source_values)
+    attacks = (
+        valid_prefix[len(ordered_tokens[0]) :] + "意味単位",
+        "".join(
+            (
+                ordered_tokens[1],
+                ordered_tokens[0],
+                *ordered_tokens[2:],
+                _PROPOSED_VISIBLE_DIMENSION_CLOSE,
+                "意味単位",
+            )
+        ),
+        valid_prefix[: -len(_PROPOSED_VISIBLE_DIMENSION_CLOSE)]
+        + "；意味単位",
+        "任意" + valid_prefix + "意味単位",
+    )
+    attack_results: list[str] = []
+    for attack in attacks:
+        try:
+            _proposed_parse_visible_dimension_prefix(attack)
+        except ValueError as error:
+            attack_results.append(str(error))
+        else:
+            attack_results.append("accepted")
+    substituted_values = dict(source_values)
+    substituted_values["polarity"] = "negative"
+    substituted, remainder = _proposed_parse_visible_dimension_prefix(
+        _proposed_visible_dimension_prefix(substituted_values) + "意味単位"
+    )
+    _closed_assert(
+        attack_results
+        == [
+            "STEP11_RC0031_P3_SURFACE_DIMENSION_UNPARSEABLE",
+            "STEP11_RC0031_P3_SURFACE_DIMENSION_UNPARSEABLE",
+            "STEP11_RC0031_P3_SURFACE_DIMENSION_UNPARSEABLE",
+            "STEP11_RC0031_P3_SURFACE_DIMENSION_UNPARSEABLE",
+        ]
+        and substituted == substituted_values
+        and substituted != source_values
+        and remainder == "意味単位"
+        and "pre_question_observation"
+        not in _PROPOSED_CATALOG_DERIVED_DIMENSION_DOMAINS[
+            "observation_stage"
+        ]
+        and "refined_observation"
+        not in _PROPOSED_CATALOG_DERIVED_DIMENSION_DOMAINS[
+            "observation_stage"
+        ]
+        and "supplemental_answer"
+        not in _PROPOSED_CATALOG_DERIVED_DIMENSION_DOMAINS["source_role"],
+        "STEP11_RC0031_P3_SURFACE_DIMENSION_ATTACK_NOT_CLOSED",
+    )
+
+
+def test_rc0031_p3_source_dimensions_and_body_topic_projection_are_exact_without_candidate_metadata() -> None:
+    contexts = _rc0031_final_candidate_contexts()
+    expected_source_counts = (1, 0, 1, 3, 3, 7, 3, 3, 10, 8)
+    observed_source_counts: list[int] = []
+    total_source_atoms = 0
+    total_prefixed_atoms = 0
+    total_base_reuse_atoms = 0
+    observed_polarities: set[str] = set()
+    observed_modalities: set[str] = set()
+    observed_temporal_scopes: set[str] = set()
+    observed_referent_scopes: set[str] = set()
+    mutation_row: dict[str, Any] | None = None
+
+    for context in contexts:
+        rows = _proposed_rc0031_source_dimension_projection(context)
+        observed_source_counts.append(len(rows))
+        total_source_atoms += len(rows)
+        topic_scope_by_fingerprint: dict[str, set[tuple[str, ...]]] = {}
+        semantic_signatures: list[tuple[Any, ...]] = []
+        for row in rows:
+            body_dimensions = {
+                name: row[name]
+                for name in _PROPOSED_VISIBLE_DIMENSION_ORDER
+            }
+            parsed_projection = {
+                "observation_stage": row["observation_stage"],
+                "source_role": row["source_role"],
+                "polarity": row["polarity"],
+                "modality": row["modality"],
+                "temporal_scope": row["temporal_scope"],
+                "topic_fingerprint_sha256": row[
+                    "topic_fingerprint_sha256"
+                ],
+                "referent_scope": row["referent_scope"],
+            }
+            if row["base_exact_reuse"]:
+                total_base_reuse_atoms += 1
+                dimension_round_trip = (
+                    row["polarity"],
+                    row["modality"],
+                    row["temporal_scope"],
+                    row["referent_scope"],
+                ) == ("unknown", "unknown", "unknown", "unknown")
+            else:
+                total_prefixed_atoms += 1
+                parsed_dimensions, remainder = (
+                    _proposed_parse_visible_dimension_prefix(
+                        _proposed_visible_dimension_prefix(body_dimensions)
+                        + "意味単位"
+                    )
+                )
+                dimension_round_trip = (
+                    parsed_dimensions == body_dimensions
+                    and remainder == "意味単位"
+                )
+                if mutation_row is None:
+                    mutation_row = row
+            topic_scope_by_fingerprint.setdefault(
+                row["topic_fingerprint_sha256"], set()
+            ).add(row["topic_scope_ids"])
+            semantic_signatures.append(
+                (
+                    row["semantic_family"],
+                    row["semantic_key"],
+                    row["direction"],
+                    row["topic_fingerprint_sha256"],
+                    row["polarity"],
+                    row["modality"],
+                    row["temporal_scope"],
+                    row["referent_scope"],
+                )
+            )
+            observed_polarities.add(row["polarity"])
+            observed_modalities.add(row["modality"])
+            observed_temporal_scopes.add(row["temporal_scope"])
+            observed_referent_scopes.add(row["referent_scope"])
+            _closed_assert(
+                set(parsed_projection)
+                == set(_PRELIMINARY_BODY_DIMENSION_FIELDS)
+                and row["observation_stage"]
+                in _PROPOSED_CATALOG_DERIVED_DIMENSION_DOMAINS[
+                    "observation_stage"
+                ]
+                and row["source_role"]
+                in _PROPOSED_CATALOG_DERIVED_DIMENSION_DOMAINS[
+                    "source_role"
+                ]
+                and row["topic_scope_ids"]
+                and re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    row["topic_fingerprint_sha256"],
+                )
+                is not None
+                and row["topic_fingerprint_sha256"]
+                == _proposed_topic_fingerprint(row["owner_expressions"])
+                and dimension_round_trip,
+                "STEP11_RC0031_P3_SOURCE_DIMENSION_PROJECTION_INVALID",
+            )
+        _closed_assert(
+            all(len(values) == 1 for values in topic_scope_by_fingerprint.values())
+            and len(semantic_signatures) == len(set(semantic_signatures)),
+            "STEP11_RC0031_P3_TOPIC_PROJECTION_NOT_INJECTIVE",
+        )
+
+    _closed_assert(
+        tuple(observed_source_counts) == expected_source_counts
+        and total_source_atoms == 39
+        and total_prefixed_atoms == 38
+        and total_base_reuse_atoms == 1
+        and observed_polarities
+        == {"positive", "negative", "mixed", "neutral", "unknown"}
+        and observed_modalities
+        == {"observed", "reported", "intended", "possible", "unknown"}
+        and observed_temporal_scopes
+        == {"current_input", "reported_past", "unknown"}
+        and observed_referent_scopes
+        == {"event", "state", "action", "relation", "unknown"},
+        "STEP11_RC0031_P3_SOURCE_DIMENSION_DENOMINATOR_DRIFT",
+    )
+
+    _closed_assert(
+        mutation_row is not None,
+        "STEP11_RC0031_P3_SOURCE_DIMENSION_ATTACK_NOT_CLOSED",
+    )
+    original_body_dimensions = {
+        name: mutation_row[name]
+        for name in _PROPOSED_VISIBLE_DIMENSION_ORDER
+    }
+    substituted_body_dimensions = dict(original_body_dimensions)
+    polarity_domain = tuple(_PROPOSED_VISIBLE_DIMENSION_TOKENS["polarity"])
+    substituted_body_dimensions["polarity"] = next(
+        value
+        for value in polarity_domain
+        if value != original_body_dimensions["polarity"]
+    )
+    parsed_substitution, _remainder = (
+        _proposed_parse_visible_dimension_prefix(
+            _proposed_visible_dimension_prefix(substituted_body_dimensions)
+            + "意味単位"
+        )
+    )
+    transplanted_owner_expressions = (
+        mutation_row["owner_expressions"][0] + "別",
+        *mutation_row["owner_expressions"][1:],
+    )
+    _closed_assert(
+        parsed_substitution == substituted_body_dimensions
+        and parsed_substitution != original_body_dimensions
+        and _proposed_topic_fingerprint(transplanted_owner_expressions)
+        != mutation_row["topic_fingerprint_sha256"],
+        "STEP11_RC0031_P3_SOURCE_DIMENSION_ATTACK_NOT_CLOSED",
     )
 
 
