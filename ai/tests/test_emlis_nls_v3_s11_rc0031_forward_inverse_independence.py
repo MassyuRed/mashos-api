@@ -59,10 +59,6 @@ _P2_IMMUTABLE_FILES = {
         208_041,
         "88514bb2a179e8d726f36e1666d2618330d95979107403ededc93aa35655943b",
     ),
-    _CATALOG_PATH: (
-        19_951,
-        "a4e8bc9753a1398571d511d5d0c1219a886c498661b3a4f702d3b20b5672c6cc",
-    ),
     _P1_FIXTURE: (
         19_889,
         "15e8047cd95b453fba4a7a677b428955ea2819e6738e4e1fc1488d24952b78a8",
@@ -76,30 +72,30 @@ _P2_IMMUTABLE_FILES = {
         "2d71f9241abb7f38ad9de41633c89b7c257b461df2b3e7df92e2d74df4b684a2",
     ),
 }
-_SURFACE_MUTABLE_START = (
-    b"def _step11_rc0031_validate_verified_reuse_composition("
+_CATALOG_PREDECESSOR_BYTES = 19_951
+_CATALOG_PREDECESSOR_SHA256 = (
+    "a4e8bc9753a1398571d511d5d0c1219a886c498661b3a4f702d3b20b5672c6cc"
 )
-_SURFACE_MUTABLE_END = b"def _step11_rc0031_composition_units("
-_SURFACE_PREFIX_BYTES = 404_481
-_SURFACE_PREFIX_SHA256 = (
-    "50cd281d79619f785d8065f411eaa020cb3ed8c335025983e5068ea29672e7ed"
+_CATALOG_APPEND_BYTE_MAX = 16_384
+_CATALOG_APPEND_MARKER = (
+    b"# rc0031 experiment-only body-dimension grammar (append-only P3 owner)"
 )
-_SURFACE_SUFFIX_BYTES = 75_831
-_SURFACE_SUFFIX_SHA256 = (
-    "f2f8e3f0201efddf6c197618a8a5f31e8dd823d352ca6241bd331a88e1962985"
+_SURFACE_PREDECESSOR_BYTES = 485_490
+_SURFACE_PREDECESSOR_SHA256 = (
+    "ee2f4bc0ab260e8cf1ce2b87acf499e84712ed6b3e639a6a1a6a0141bd3ea520"
 )
-_SURFACE_MUTABLE_SLOT_BYTES = 5_178
-_SURFACE_MUTABLE_SLOT_SHA256 = (
-    "3356cecd99d65009c34e512966ae154857c4f167afe714c6907744d68a33ddea"
+_SURFACE_APPEND_BYTE_MAX = 65_536
+_SURFACE_APPEND_MARKER = (
+    b"# rc0031 experiment-only dimension-bearing Surface successor "
+    b"(append-only P3 owner)"
 )
-_SURFACE_MUTABLE_SLOT_BYTE_MAX = 8_192
 _SERVICE_PY_PATH_COUNT = 546
 _SERVICE_PY_PATH_LIST_SHA256 = (
     "46db0d14852dde6ebb6012596234cbb935243b27ed227465d9e94876ce4f5d56"
 )
-_REPOSITORY_PY_FROZEN_FILE_COUNT = 1_532
+_REPOSITORY_PY_FROZEN_FILE_COUNT = 1_531
 _REPOSITORY_PY_FROZEN_MATERIAL_SHA256 = (
-    "1170f36dcd2a1e1d96d4c550c6ca62e0522ccebc26015b1827de14b8f391a851"
+    "014ba3d399ca182265f67728c4b13c45aac6ea33dbae4874521585b79c066bd2"
 )
 _MATCHER_PREDECESSOR_BYTES = 722_658
 _MATCHER_PREDECESSOR_SHA256 = (
@@ -184,6 +180,26 @@ _FINAL_MATCH_BASIS = {
     "explicit_unknown": "unknown_id_dimension_exact_target",
 }
 _FINAL_INVERSE_RED_CODE = "STEP11_RC0031_P3_FINAL_INVERSE_NOT_AVAILABLE"
+_DIMENSION_RECOVERY_CONTRACT_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11.rc0031_body_dimension_recovery.v1"
+)
+_DIMENSION_RECOVERY_CONTRACT_EXPORT = (
+    "STEP11_RC0031_EXPERIMENT_BODY_DIMENSION_RECOVERY_CONTRACT"
+)
+_DIMENSION_RECOVERY_VALIDATOR_EXPORT = (
+    "validate_step11_rc0031_experiment_body_dimension_recovery_contract"
+)
+_DIMENSION_SURFACE_BUILDER_EXPORT = (
+    "build_step11_rc0031_dimension_bearing_experiment_surface_candidate"
+)
+_DIMENSION_SURFACE_VALIDATOR_EXPORT = (
+    "validate_step11_rc0031_dimension_bearing_experiment_surface_candidate"
+)
+_DIMENSION_SURFACE_SIGNATURE = (
+    "value",
+    "successor_snapshot",
+    "lexical_atom_specs",
+)
 _FINAL_OWNER_CANDIDATE_COMMITMENT_SCHEMA = (
     "cocolon.emlis.nls_v3.step11.rc0031_owner_expression_candidate.v1"
 )
@@ -493,35 +509,6 @@ _PRIVATE_COMPOSITION_SEAMS = frozenset(
 _FORBIDDEN_RUNTIME_NAMES = frozenset(
     {"__builtins__", "logger", "logging", "os", "subprocess", "sys"}
 )
-_ALLOWED_PATCH_NAME_CALLS = frozenset(
-    {
-        "Step11NaturalSurfaceError",
-        "all",
-        "any",
-        "artifact_sha256",
-        "bool",
-        "dict",
-        "enumerate",
-        "frozenset",
-        "isinstance",
-        "len",
-        "list",
-        "max",
-        "min",
-        "next",
-        "range",
-        "set",
-        "sorted",
-        "str",
-        "sum",
-        "tuple",
-        "type",
-        "zip",
-    }
-)
-_ALLOWED_PATCH_ATTRIBUTE_CALLS = frozenset(
-    {"fullmatch", "get", "hexdigest", "items", "keys", "sha256", "values"}
-)
 _FORBIDDEN_BODY_KEYS = frozenset(
     {
         "action_text",
@@ -590,6 +577,233 @@ def _literal_join_value(node: ast.AST) -> str | None:
     return node.func.value.value.join(
         row.value for row in node.args[0].elts
     )
+
+
+def _top_level_bound_names(tree: ast.Module) -> tuple[str, ...]:
+    result: list[str] = []
+    for node in tree.body:
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            result.append(node.name)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = (
+                node.targets if isinstance(node, ast.Assign) else (node.target,)
+            )
+            result.extend(
+                child.id
+                for target in targets
+                for child in ast.walk(target)
+                if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store)
+            )
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            result.extend(
+                alias.asname or alias.name.split(".", 1)[0]
+                for alias in node.names
+            )
+    return tuple(result)
+
+
+def _rc0031_owner_append_is_closed(
+    value: bytes,
+    marker: bytes,
+    predecessor: bytes,
+    *,
+    allow_catalog_import: bool,
+    allow_non_ascii_literals: bool,
+) -> bool:
+    if not value:
+        return True
+    try:
+        text = value.decode("utf-8", errors="strict")
+        tree = ast.parse(text)
+        predecessor_tree = ast.parse(predecessor.decode("utf-8", errors="strict"))
+    except (UnicodeError, SyntaxError):
+        return False
+    lines = value.lstrip(b"\n").splitlines()
+    if not lines or lines[0] != marker:
+        return False
+    parent_by_id = {
+        id(child): parent
+        for parent in ast.walk(tree)
+        for child in ast.iter_child_nodes(parent)
+    }
+    if any(
+        token in text
+        for token in (
+            "nls3s_b001_",
+            "expected_output",
+            "review_family",
+        )
+    ):
+        return False
+    if any(
+        isinstance(
+            node,
+            (
+                ast.AsyncFunctionDef,
+                ast.Await,
+                ast.ClassDef,
+                ast.Global,
+                ast.Import,
+                ast.ImportFrom,
+                ast.Lambda,
+                ast.NamedExpr,
+                ast.Nonlocal,
+                ast.While,
+                ast.Yield,
+                ast.YieldFrom,
+            ),
+        )
+        for node in ast.walk(tree)
+    ):
+        return False
+    append_bound_names = _top_level_bound_names(tree)
+    predecessor_bound_names = frozenset(_top_level_bound_names(predecessor_tree))
+    if (
+        len(append_bound_names) != len(set(append_bound_names))
+        or bool(set(append_bound_names) & predecessor_bound_names)
+    ):
+        return False
+    if any(
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and (
+            any(ord(char) < 32 and char not in "\t\n\r" for char in node.value)
+            or (
+                not allow_non_ascii_literals
+                and any(ord(char) > 127 for char in node.value)
+            )
+        )
+        for node in ast.walk(tree)
+    ):
+        return False
+    if any(
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, bytes)
+        and (len(node.value) > 32 or any(row > 127 for row in node.value))
+        for node in ast.walk(tree)
+    ):
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and (
+            node.id in _FORBIDDEN_RUNTIME_NAMES
+            or (
+                node.id.startswith("__")
+                and node.id not in {"__all__", "__import__"}
+            )
+        ):
+            return False
+        if isinstance(node, ast.Name) and node.id == "__import__":
+            parent = parent_by_id.get(id(node))
+            if not (
+                allow_catalog_import
+                and isinstance(parent, ast.Call)
+                and parent.func is node
+            ):
+                return False
+        if isinstance(node, ast.Attribute) and node.attr.startswith("__"):
+            return False
+        if isinstance(node, ast.Call):
+            call_name = _ast_call_name(node)
+            if call_name in {
+                "breakpoint",
+                "compile",
+                "delattr",
+                "eval",
+                "exec",
+                "getattr",
+                "globals",
+                "input",
+                "locals",
+                "open",
+                "print",
+                "setattr",
+                "vars",
+            }:
+                return False
+            if call_name == "__import__" and (
+                not allow_catalog_import
+                or not node.args
+                or not isinstance(node.args[0], ast.Constant)
+                or node.args[0].value
+                != "emlis_ai_step11_rc0031_experiment_surface_catalog_v3"
+            ):
+                return False
+        if isinstance(node, ast.FunctionDef) and (
+            node.args.defaults
+            or any(default is not None for default in node.args.kw_defaults)
+        ):
+            return False
+    functions = {
+        row.name: row
+        for row in ast.walk(tree)
+        if isinstance(row, ast.FunctionDef)
+    }
+    call_graph = {
+        name: {
+            call_name
+            for child in ast.walk(function)
+            if isinstance(child, ast.Call)
+            and (call_name := _ast_call_name(child)) in functions
+        }
+        for name, function in functions.items()
+    }
+    for start in call_graph:
+        pending = list(call_graph[start])
+        visited: set[str] = set()
+        while pending:
+            current = pending.pop()
+            if current == start:
+                return False
+            if current not in visited:
+                visited.add(current)
+                pending.extend(call_graph[current])
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef):
+            if "rc0031" not in node.name.lower():
+                return False
+            if node.decorator_list:
+                return False
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = (
+                node.targets if isinstance(node, ast.Assign) else (node.target,)
+            )
+            if not all(isinstance(target, ast.Name) for target in targets):
+                return False
+            assignment_value = node.value
+            if assignment_value is None or any(
+                isinstance(child, ast.Call)
+                for child in ast.walk(assignment_value)
+            ):
+                return False
+            names = {target.id for target in targets}
+            if any(
+                name == "__all__" or "rc0031" not in name.lower()
+                for name in names
+            ):
+                return False
+        elif isinstance(node, ast.AugAssign):
+            if not (
+                isinstance(node.target, ast.Name)
+                and node.target.id == "__all__"
+                and isinstance(node.op, ast.Add)
+                and isinstance(node.value, (ast.List, ast.Tuple))
+                and all(
+                    isinstance(child, ast.Constant)
+                    and type(child.value) is str
+                    and child.value in append_bound_names
+                    for child in node.value.elts
+                )
+            ):
+                return False
+        elif isinstance(node, ast.Expr):
+            if not (
+                isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            ):
+                return False
+        else:
+            return False
+    return True
 
 
 def _matcher_append_is_closed(value: bytes) -> bool:
@@ -1833,6 +2047,16 @@ def _rc0031_final_candidate_contexts() -> tuple[tuple[Any, ...], ...]:
     p2 = _p2_test_module()
     surface = _surface_module()
     inverse = _inverse_module()
+    dimension_builder = getattr(
+        surface,
+        _DIMENSION_SURFACE_BUILDER_EXPORT,
+        None,
+    )
+    dimension_validator = getattr(
+        surface,
+        _DIMENSION_SURFACE_VALIDATOR_EXPORT,
+        None,
+    )
     contexts: list[tuple[Any, ...]] = []
     for case_id in _REPRESENTATIVE_CASE_IDS:
         baseline, successor, lexical_specs = p2._forward_authority(case_id)
@@ -1867,6 +2091,31 @@ def _rc0031_final_candidate_contexts() -> tuple[tuple[Any, ...], ...]:
                         ),
                         validate_output=True,
                     )
+                )
+            if callable(dimension_builder):
+                _closed_assert(
+                    callable(dimension_validator),
+                    "STEP11_RC0031_P3_DIMENSION_SURFACE_CANDIDATE_INVALID",
+                )
+                try:
+                    candidate = dimension_builder(
+                        candidate,
+                        successor_snapshot=successor,
+                        lexical_atom_specs=lexical_specs,
+                    )
+                    candidate_issues = dimension_validator(
+                        candidate,
+                        successor_snapshot=successor,
+                        lexical_atom_specs=lexical_specs,
+                    )
+                except Exception:
+                    pytest.fail(
+                        "STEP11_RC0031_P3_DIMENSION_SURFACE_CANDIDATE_INVALID",
+                        pytrace=False,
+                    )
+                _closed_assert(
+                    candidate_issues == (),
+                    "STEP11_RC0031_P3_DIMENSION_SURFACE_CANDIDATE_INVALID",
                 )
             contexts.append(
                 (
@@ -2023,7 +2272,7 @@ def _replace_body_span(
     )
 
 
-def test_rc0031_p3_freeze_scope_and_single_private_patch_hole_are_exact() -> None:
+def test_rc0031_p3_freeze_scope_and_bounded_eof_seams_are_exact() -> None:
     for path, (byte_count, expected_sha256) in _P2_IMMUTABLE_FILES.items():
         _closed_assert(
             path.stat().st_size == byte_count
@@ -2031,17 +2280,42 @@ def test_rc0031_p3_freeze_scope_and_single_private_patch_hole_are_exact() -> Non
             "STEP11_RC0031_P3_P2_IMMUTABLE_FILE_DRIFT",
         )
 
-    surface_bytes = _SURFACE_PATH.read_bytes()
+    catalog_bytes = _CATALOG_PATH.read_bytes()
+    catalog_predecessor = catalog_bytes[:_CATALOG_PREDECESSOR_BYTES]
+    catalog_append = catalog_bytes[_CATALOG_PREDECESSOR_BYTES:]
     _closed_assert(
-        surface_bytes.count(_SURFACE_MUTABLE_START) == 1
-        and surface_bytes.count(_SURFACE_MUTABLE_END) == 1,
-        "STEP11_RC0031_P3_SURFACE_PATCH_HOLE_INVALID",
+        len(catalog_predecessor) == _CATALOG_PREDECESSOR_BYTES
+        and hashlib.sha256(catalog_predecessor).hexdigest()
+        == _CATALOG_PREDECESSOR_SHA256
+        and len(catalog_append) <= _CATALOG_APPEND_BYTE_MAX
+        and _rc0031_owner_append_is_closed(
+            catalog_append,
+            _CATALOG_APPEND_MARKER,
+            catalog_predecessor,
+            allow_catalog_import=False,
+            allow_non_ascii_literals=True,
+        ),
+        "STEP11_RC0031_P3_CATALOG_APPEND_SCOPE_INVALID",
     )
-    mutable_start = surface_bytes.index(_SURFACE_MUTABLE_START)
-    mutable_end = surface_bytes.index(_SURFACE_MUTABLE_END, mutable_start)
-    prefix = surface_bytes[:mutable_start]
-    mutable_slot = surface_bytes[mutable_start:mutable_end]
-    suffix = surface_bytes[mutable_end:]
+
+    surface_bytes = _SURFACE_PATH.read_bytes()
+    surface_predecessor = surface_bytes[:_SURFACE_PREDECESSOR_BYTES]
+    surface_append = surface_bytes[_SURFACE_PREDECESSOR_BYTES:]
+    _closed_assert(
+        len(surface_predecessor) == _SURFACE_PREDECESSOR_BYTES
+        and hashlib.sha256(surface_predecessor).hexdigest()
+        == _SURFACE_PREDECESSOR_SHA256
+        and len(surface_append) <= _SURFACE_APPEND_BYTE_MAX
+        and _rc0031_owner_append_is_closed(
+            surface_append,
+            _SURFACE_APPEND_MARKER,
+            surface_predecessor,
+            allow_catalog_import=True,
+            allow_non_ascii_literals=False,
+        ),
+        "STEP11_RC0031_P3_SURFACE_APPEND_SCOPE_INVALID",
+    )
+
     service_py_paths = tuple(
         sorted(
             path.relative_to(_REPO_ROOT).as_posix()
@@ -2058,6 +2332,7 @@ def test_rc0031_p3_freeze_scope_and_single_private_patch_hole_are_exact() -> Non
             for path in _REPO_ROOT.rglob("*.py")
             if path
             not in {
+                _CATALOG_PATH,
                 _MATCHER_PATH,
                 _SURFACE_PATH,
                 Path(__file__).resolve(),
@@ -2077,90 +2352,14 @@ def test_rc0031_p3_freeze_scope_and_single_private_patch_hole_are_exact() -> Non
         ).encode("utf-8")
         for path in repository_py_paths
     )
-    try:
-        mutable_tree = ast.parse(mutable_slot.decode("utf-8"))
-    except (UnicodeError, SyntaxError):
-        pytest.fail(
-            "STEP11_RC0031_P3_SURFACE_PATCH_HOLE_INVALID", pytrace=False
-        )
-    mutable_function = (
-        mutable_tree.body[0] if len(mutable_tree.body) == 1 else None
-    )
     _closed_assert(
-        len(prefix) == _SURFACE_PREFIX_BYTES
-        and hashlib.sha256(prefix).hexdigest() == _SURFACE_PREFIX_SHA256
-        and len(mutable_slot) == _SURFACE_MUTABLE_SLOT_BYTES
-        and hashlib.sha256(mutable_slot).hexdigest()
-        == _SURFACE_MUTABLE_SLOT_SHA256
-        and len(mutable_slot) <= _SURFACE_MUTABLE_SLOT_BYTE_MAX
-        and len(suffix) == _SURFACE_SUFFIX_BYTES
-        and hashlib.sha256(suffix).hexdigest() == _SURFACE_SUFFIX_SHA256
-        and type(mutable_function) is ast.FunctionDef
-        and mutable_function.name
-        == "_step11_rc0031_validate_verified_reuse_composition"
-        and tuple(row.arg for row in mutable_function.args.args) == ("rows",)
-        and tuple(row.arg for row in mutable_function.args.kwonlyargs)
-        == ("records", "base_candidate", "successor_snapshot")
-        and mutable_function.args.vararg is None
-        and mutable_function.args.kwarg is None
-        and not mutable_function.decorator_list
-        and sum(
-            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            for node in ast.walk(mutable_tree)
-        )
-        == 1
-        and not any(
-            isinstance(
-                node,
-                (
-                    ast.AsyncFunctionDef,
-                    ast.ClassDef,
-                    ast.Global,
-                    ast.Import,
-                    ast.ImportFrom,
-                    ast.Lambda,
-                    ast.Nonlocal,
-                ),
-            )
-            for node in ast.walk(mutable_tree)
-        )
-        and not any(
-            isinstance(node, (ast.Await, ast.Yield, ast.YieldFrom))
-            for node in ast.walk(mutable_tree)
-        )
-        and not any(
-            isinstance(node, ast.Name)
-            and (
-                node.id in _FORBIDDEN_RUNTIME_NAMES
-                or node.id.startswith("__")
-            )
-            for node in ast.walk(mutable_tree)
-        )
-        and not any(
-            isinstance(node, ast.Attribute) and node.attr.startswith("__")
-            for node in ast.walk(mutable_tree)
-        )
-        and all(
-            (
-                (
-                    isinstance(node.func, ast.Name)
-                    and node.func.id in _ALLOWED_PATCH_NAME_CALLS
-                )
-                or (
-                    isinstance(node.func, ast.Attribute)
-                    and node.func.attr in _ALLOWED_PATCH_ATTRIBUTE_CALLS
-                )
-            )
-            for node in ast.walk(mutable_tree)
-            if isinstance(node, ast.Call)
-        )
-        and len(service_py_paths) == _SERVICE_PY_PATH_COUNT
+        len(service_py_paths) == _SERVICE_PY_PATH_COUNT
         and hashlib.sha256(service_py_path_material).hexdigest()
         == _SERVICE_PY_PATH_LIST_SHA256
         and len(repository_py_paths) == _REPOSITORY_PY_FROZEN_FILE_COUNT
         and hashlib.sha256(repository_py_material).hexdigest()
         == _REPOSITORY_PY_FROZEN_MATERIAL_SHA256,
-        "STEP11_RC0031_P3_SURFACE_OUTSIDE_PATCH_HOLE_DRIFT",
+        "STEP11_RC0031_P3_OUTSIDE_APPEND_SCOPE_DRIFT",
     )
 
     matcher_bytes = _MATCHER_PATH.read_bytes()
@@ -2218,6 +2417,140 @@ def test_rc0031_p3_freeze_scope_and_single_private_patch_hole_are_exact() -> Non
         )
         == _EXPECTED_INVERSE_RESOURCE_BOUNDS,
         "STEP11_RC0031_P3_RESOURCE_OR_BODY_FREE_CONTRACT_DRIFT",
+    )
+
+
+def test_rc0031_p3_predecessor_phase_projection_is_exact() -> None:
+    """Keep the P2 closure claim pinned to P2 while later reserved paths exist."""
+
+    p2 = _p2_test_module()
+    current_test = Path(__file__).resolve().relative_to(_REPO_ROOT).as_posix()
+    discovered = frozenset(
+        path.relative_to(_REPO_ROOT).as_posix()
+        for path in (_REPO_ROOT / "ai").rglob("*rc0031*")
+        if path.is_file()
+        and "__pycache__" not in path.parts
+        and path.suffix != ".pyc"
+    )
+    _closed_assert(
+        discovered == _EXPECTED_P3_ACTIVE
+        and p2._EXPECTED_P2_ACTIVE
+        == _EXPECTED_P3_ACTIVE - {current_test}
+        and current_test in p2._EXPECTED_EXACT18
+        and current_test not in p2._EXPECTED_P2_ACTIVE,
+        "STEP11_RC0031_P3_PREDECESSOR_PHASE_PROJECTION_INVALID",
+    )
+
+
+def test_rc0031_p3_dimension_catalog_and_surface_successor_are_available() -> None:
+    catalog_append = _CATALOG_PATH.read_bytes()[_CATALOG_PREDECESSOR_BYTES:]
+    surface_append = _SURFACE_PATH.read_bytes()[_SURFACE_PREDECESSOR_BYTES:]
+    catalog_append_lines = catalog_append.lstrip(b"\n").splitlines()
+    surface_append_lines = surface_append.lstrip(b"\n").splitlines()
+    catalog_owner = importlib.import_module(
+        "emlis_ai_step11_rc0031_experiment_surface_catalog_v3"
+    )
+    surface = _surface_module()
+    contract = getattr(
+        catalog_owner,
+        _DIMENSION_RECOVERY_CONTRACT_EXPORT,
+        None,
+    )
+    contract_validator = getattr(
+        catalog_owner,
+        _DIMENSION_RECOVERY_VALIDATOR_EXPORT,
+        None,
+    )
+    builder = getattr(surface, _DIMENSION_SURFACE_BUILDER_EXPORT, None)
+    candidate_validator = getattr(
+        surface,
+        _DIMENSION_SURFACE_VALIDATOR_EXPORT,
+        None,
+    )
+    catalog_all = tuple(getattr(catalog_owner, "__all__", ()))
+    surface_all = tuple(getattr(surface, "__all__", ()))
+    catalog_exports = set(catalog_all)
+    surface_exports = set(surface_all)
+    required_contract = {
+        "schema_version": _DIMENSION_RECOVERY_CONTRACT_SCHEMA,
+        "catalog_derived_dimensions": [
+            "observation_stage",
+            "source_role",
+        ],
+        "body_recovered_dimensions": [
+            "polarity",
+            "modality",
+            "temporal_scope",
+            "topic_fingerprint_sha256",
+            "referent_scope",
+        ],
+        "topic_projection": "owner_expression_sha256_sequence",
+        "candidate_metadata_required": False,
+        "fixed_slot_prefix_max_per_candidate": 1,
+        "schema_free_natural_language_surface_required": True,
+    }
+    available = (
+        bool(catalog_append_lines)
+        and catalog_append_lines[0] == _CATALOG_APPEND_MARKER
+        and bool(surface_append_lines)
+        and surface_append_lines[0] == _SURFACE_APPEND_MARKER
+        and type(contract) is dict
+        and contract == required_contract
+        and callable(contract_validator)
+        and callable(builder)
+        and callable(candidate_validator)
+        and {
+            _DIMENSION_RECOVERY_CONTRACT_EXPORT,
+            _DIMENSION_RECOVERY_VALIDATOR_EXPORT,
+        }
+        <= catalog_exports
+        and all(
+            catalog_all.count(name) == 1
+            for name in (
+                _DIMENSION_RECOVERY_CONTRACT_EXPORT,
+                _DIMENSION_RECOVERY_VALIDATOR_EXPORT,
+            )
+        )
+        and {
+            _DIMENSION_SURFACE_BUILDER_EXPORT,
+            _DIMENSION_SURFACE_VALIDATOR_EXPORT,
+        }
+        <= surface_exports
+        and all(
+            surface_all.count(name) == 1
+            for name in (
+                _DIMENSION_SURFACE_BUILDER_EXPORT,
+                _DIMENSION_SURFACE_VALIDATOR_EXPORT,
+            )
+        )
+    )
+    _closed_assert(
+        available,
+        "STEP11_RC0031_P3_DIMENSION_SURFACE_NOT_AVAILABLE",
+    )
+    try:
+        contract_issues = contract_validator(contract)
+        builder_parameters = inspect.signature(builder).parameters
+        validator_parameters = inspect.signature(candidate_validator).parameters
+    except Exception:
+        pytest.fail(
+            "STEP11_RC0031_P3_DIMENSION_SURFACE_CONTRACT_INVALID",
+            pytrace=False,
+        )
+    _closed_assert(
+        contract_issues == ()
+        and tuple(builder_parameters) == _DIMENSION_SURFACE_SIGNATURE
+        and tuple(validator_parameters) == _DIMENSION_SURFACE_SIGNATURE
+        and builder_parameters["value"].kind
+        is inspect.Parameter.POSITIONAL_OR_KEYWORD
+        and validator_parameters["value"].kind
+        is inspect.Parameter.POSITIONAL_OR_KEYWORD
+        and all(
+            parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
+            for parameters in (builder_parameters, validator_parameters)
+            for name in _DIMENSION_SURFACE_SIGNATURE[1:]
+        ),
+        "STEP11_RC0031_P3_DIMENSION_SURFACE_CONTRACT_INVALID",
     )
 
 
@@ -2587,8 +2920,8 @@ def test_rc0031_p3_shape_valid_wrong_authority_attacks_are_distinguished(
         )
 
 
-def test_rc0031_p3_current_body_dimension_recovery_is_injective() -> None:
-    baseline, _successor, _lexical = _p2_test_module()._forward_authority(
+def test_rc0031_p3_historical_p2_body_dimension_projection_is_noninjective() -> None:
+    baseline, successor, lexical_specs = _p2_test_module()._forward_authority(
         "nls3s_b001_0035"
     )
     source_snapshot = baseline.inventory_result.source_snapshot
@@ -2611,26 +2944,6 @@ def test_rc0031_p3_current_body_dimension_recovery_is_injective() -> None:
             for row in obligations
         )
     )
-    rc0031_catalog_owner = importlib.import_module(
-        "emlis_ai_step11_rc0031_experiment_surface_catalog_v3"
-    )
-    recovery_contract = getattr(
-        rc0031_catalog_owner,
-        "STEP11_RC0031_EXPERIMENT_BODY_DIMENSION_RECOVERY_CONTRACT",
-        None,
-    )
-    required_body_dimensions = (
-        "observation_stage",
-        "source_role",
-        "polarity",
-        "modality",
-        "temporal_scope",
-        "topic_scope",
-        "referent_scope",
-    )
-    rc0031_append = _SURFACE_PATH.read_text(encoding="utf-8").split(
-        "def _step11_rc0031_validate_verified_reuse_composition(", 1
-    )[1]
     base_catalog_owner = importlib.import_module(
         "emlis_ai_step11_surface_catalog_v3"
     )
@@ -2702,16 +3015,19 @@ def test_rc0031_p3_current_body_dimension_recovery_is_injective() -> None:
         for dimensions in alternatives
     )
     event_phrase = event_profile["noun_phrase"].encode("utf-8")
+    historical_candidates = (
+        _surface_module().build_step11_rc0031_experiment_surface_candidates(
+            tuple(baseline.natural_candidates),
+            successor_snapshot=successor,
+            lexical_atom_specs=lexical_specs,
+        )
+    )
     representative_event_seen = any(
-        case_id == "nls3s_b001_0035"
-        and event_phrase in candidate.final_utf8_bytes
-        for case_id, _base, _next, _lexical, candidate, _witness
-        in _rc0031_final_candidate_contexts()
+        event_phrase in candidate.final_utf8_bytes
+        for candidate in historical_candidates
     )
     _closed_assert(
         source_side_is_complete
-        and recovery_contract is None
-        and all(name not in rc0031_append for name in required_body_dimensions)
         and len(profiles) == 42
         and len(profiles_by_id) == 42
         and visible_counts
@@ -2762,8 +3078,8 @@ def test_rc0031_p3_current_body_dimension_recovery_is_injective() -> None:
         "STEP11_RC0031_P3_BODY_DIMENSION_PROBE_DRIFT",
     )
     _closed_assert(
-        len(set(visible_projections)) == len(alternatives),
-        "STEP11_RC0031_P3_BODY_DIMENSION_RECOVERY_NOT_INJECTIVE",
+        len(set(visible_projections)) == 1 < len(alternatives),
+        "STEP11_RC0031_P3_P2_BODY_DIMENSION_COLLISION_DRIFT",
     )
 
 
@@ -2915,6 +3231,50 @@ def test_rc0031_p3_proposed_surface_dimension_lattice_is_prefix_free_and_attack_
         and "supplemental_answer"
         not in _PROPOSED_CATALOG_DERIVED_DIMENSION_DOMAINS["source_role"],
         "STEP11_RC0031_P3_SURFACE_DIMENSION_ATTACK_NOT_CLOSED",
+    )
+
+
+def test_rc0031_p3_fixed_slot_dimension_bundle_respects_schema_free_product_boundary() -> None:
+    """A mathematically injective probe is not yet a product Surface grammar."""
+
+    source_atom_counts = tuple(
+        sum(
+            not row["base_exact_reuse"]
+            for row in _proposed_rc0031_source_dimension_projection(context)
+        )
+        for context in _rc0031_final_candidate_contexts()
+    )
+    _closed_assert(
+        source_atom_counts == (0, 0, 1, 3, 3, 7, 3, 3, 10, 8)
+        and sum(source_atom_counts) == 38
+        and sum(count > 1 for count in source_atom_counts) == 7
+        and max(source_atom_counts) == 10,
+        "STEP11_RC0031_P3_FIXED_SLOT_PRODUCT_PROBE_DRIFT",
+    )
+    builder = getattr(
+        _surface_module(),
+        _DIMENSION_SURFACE_BUILDER_EXPORT,
+        None,
+    )
+    _closed_assert(
+        callable(builder),
+        "STEP11_RC0031_P3_FIXED_SLOT_PREFIX_PRODUCT_CONTRACT_NOT_SATISFIED",
+    )
+    fixed_prefixes = tuple(
+        prefix.encode("utf-8")
+        for prefix, _fields in _proposed_visible_dimension_codewords()
+    )
+    fixed_bundle_counts = tuple(
+        sum(
+            candidate.final_utf8_bytes.count(prefix)
+            for prefix in fixed_prefixes
+        )
+        for _case, _base, _next, _lexical, candidate, _witness
+        in _rc0031_final_candidate_contexts()
+    )
+    _closed_assert(
+        all(count <= 1 for count in fixed_bundle_counts),
+        "STEP11_RC0031_P3_FIXED_SLOT_PREFIX_PRODUCT_CONTRACT_NOT_SATISFIED",
     )
 
 
