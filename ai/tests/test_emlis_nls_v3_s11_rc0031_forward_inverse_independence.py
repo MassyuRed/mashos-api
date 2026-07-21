@@ -5208,7 +5208,8 @@ def test_rc0031_p3_b5_relation_connected_product_clusters_account_exact38_with_l
         context_source_atom_ids: list[str] = []
         for binding in bindings:
             _closed_assert(
-                len(
+                _EXPECTED_REUSE_SOURCE_ID not in binding.source_atom_ids
+                and len(
                     {
                         len(binding.source_atom_ids),
                         len(binding.semantic_families),
