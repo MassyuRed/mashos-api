@@ -10686,62 +10686,133 @@ def _step11_rc0031_validate_verified_reuse_composition(
     base_candidate: Step11NaturalSurfaceCandidate,
     successor_snapshot: Any,
 ) -> tuple[Step11Rc0031BaseBodyExactReuseBinding, ...]:
-    """Keep the private composition seam closed throughout P2.
+    """Validate a same-call body-free projection for private composition.
 
-    P2 has neither the Body-only Parser nor the Independent Matcher needed to
-    establish exact reuse.  Shape-valid caller metadata is therefore still
-    not proof: every non-empty value remains unavailable until a separately
-    approved phase adds and tests the missing authority.
+    The digests are consistency commitments, not signatures or proof of the
+    caller's identity.  Public P2 inputs remain closed, and final independent
+    Parser / Matcher revalidation is still required before activation.
     """
 
     if (
         type(rows) is not tuple
         or len(rows) > _STEP11_RC0031_EXACT_REUSE_MAX
         or any(
-        type(row) is not Step11Rc0031BaseBodyExactReuseBinding
-        or any(
-            type(value) is not str
-            for value in (
-                row.source_atom_id,
-                row.semantic_family,
-                row.base_parsed_atom_id,
-                row.base_obligation_id,
-                row.match_basis,
-                row.base_surface_sha256,
-                row.source_authority_sha256,
-                row.independent_binding_sha256,
+            type(row) is not Step11Rc0031BaseBodyExactReuseBinding
+            or any(
+                type(value) is not str
+                for value in (
+                    row.source_atom_id,
+                    row.semantic_family,
+                    row.base_parsed_atom_id,
+                    row.base_obligation_id,
+                    row.match_basis,
+                    row.base_surface_sha256,
+                    row.source_authority_sha256,
+                    row.independent_binding_sha256,
+                )
             )
-        )
-        or not row.source_atom_id
-        or not row.semantic_family
-        or _STEP11_RC0031_BASE_PARSED_ATOM_ID_RE.fullmatch(
-            row.base_parsed_atom_id
-        )
-        is None
-        or _STEP11_RC0031_BASE_OBLIGATION_ID_RE.fullmatch(
-            row.base_obligation_id
-        )
-        is None
-        or not row.match_basis
-        or any(
-            _SHA_RE.fullmatch(value) is None
-            for value in (
-                row.base_surface_sha256,
-                row.source_authority_sha256,
-                row.independent_binding_sha256,
+            or not row.source_atom_id
+            or not row.semantic_family
+            or _STEP11_RC0031_BASE_PARSED_ATOM_ID_RE.fullmatch(
+                row.base_parsed_atom_id
             )
-        )
-        for row in rows
+            is None
+            or _STEP11_RC0031_BASE_OBLIGATION_ID_RE.fullmatch(
+                row.base_obligation_id
+            )
+            is None
+            or not row.match_basis
+            or any(
+                _SHA_RE.fullmatch(value) is None
+                for value in (
+                    row.base_surface_sha256,
+                    row.source_authority_sha256,
+                    row.independent_binding_sha256,
+                )
+            )
+            for row in rows
         )
     ):
         raise Step11NaturalSurfaceError(
             "STEP11_RC0031_VERIFIED_REUSE_COMPOSITION_INVALID"
         )
-    if rows:
+    if not rows:
+        return ()
+    if (
+        len({row.source_atom_id for row in rows}) != len(rows)
+        or type(base_candidate) is not Step11NaturalSurfaceCandidate
+        or type(records) is not tuple
+        or any(
+            type(record) is not tuple
+            or len(record) != 6
+            or type(record[0]) is not str
+            or not record[0]
+            or type(record[1]) is not str
+            or record[1] not in _STEP11_RC0031_EXACT_MATCH_BASIS
+            for record in records
+        )
+        or len({record[0] for record in records}) != len(records)
+    ):
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0031_VERIFIED_REUSE_COMPOSITION_INVALID"
+        )
+    try:
+        base_surface_sha256 = hashlib.sha256(
+            base_candidate.final_utf8_bytes
+        ).hexdigest()
+        source_authority_sha256 = str(
+            successor_snapshot.relation_construction_authority.authority_sha256
+        )
+    except Exception:
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0031_VERIFIED_REUSE_COMPOSITION_INVALID"
+        ) from None
+    if _SHA_RE.fullmatch(source_authority_sha256) is None:
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0031_VERIFIED_REUSE_COMPOSITION_INVALID"
+        )
+    if not records:
+        if any(
+            row.base_surface_sha256 != base_surface_sha256
+            or row.source_authority_sha256 != source_authority_sha256
+            for row in rows
+        ):
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0031_VERIFIED_REUSE_COMPOSITION_INVALID"
+            )
         raise Step11NaturalSurfaceError(
             "STEP11_RC0031_P3_EXACT_REUSE_NOT_AVAILABLE"
         )
-    return ()
+    family_by_id = {record[0]: record[1] for record in records}
+    reuse_schema = (
+        "cocolon.emlis.nls_v3.step11.rc0030_verified_base_reuse.v1"
+    )
+    for row in rows:
+        expected_binding_sha256 = artifact_sha256(
+            {
+                "schema_version": reuse_schema,
+                "source_atom_id": row.source_atom_id,
+                "semantic_family": row.semantic_family,
+                "base_parsed_atom_id": row.base_parsed_atom_id,
+                "base_obligation_id": row.base_obligation_id,
+                "match_basis": row.match_basis,
+                "base_surface_sha256": row.base_surface_sha256,
+                "source_authority_sha256": row.source_authority_sha256,
+                "body_free": True,
+            }
+        )
+        if (
+            family_by_id.get(row.source_atom_id) != row.semantic_family
+            or row.match_basis
+            != _STEP11_RC0031_EXACT_MATCH_BASIS.get(row.semantic_family)
+            or row.base_surface_sha256 != base_surface_sha256
+            or row.source_authority_sha256 != source_authority_sha256
+            or row.independent_binding_sha256 != expected_binding_sha256
+        ):
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0031_VERIFIED_REUSE_COMPOSITION_INVALID"
+            )
+    return rows
 
 
 def _step11_rc0031_composition_units(
