@@ -4,10 +4,12 @@ from __future__ import annotations
 """P3 pre-freeze RED for the rc0031 final body inverse.
 
 Production is intentionally unchanged.  The suite retains the exact10 GREEN
-composition contract, detects the missing Step8 body-dimension recovery
-contract before schema freeze, and specifies provisional body-only Parser /
-independent Matcher behavior for the next separately approved design pass.
-Public reuse remains closed and projected hashes are not signatures.
+composition contract, proves that the current Step8 body-dimension projection
+is non-injective before schema freeze, and counts exact-one source solutions by
+body-relevant verified projection rather than discourse-plan identity.  It
+also specifies provisional body-only Parser / independent Matcher behavior for
+the next separately approved design pass.  Public reuse remains closed and
+projected hashes are not signatures.
 """
 
 import ast
@@ -227,12 +229,22 @@ _FINAL_INVERSE_FORBIDDEN_PARAMETERS = frozenset(
         "verified_base_reuse_bindings",
     }
 )
+_PRELIMINARY_BODY_DIMENSION_FIELDS = (
+    "observation_stage",
+    "source_role",
+    "polarity",
+    "modality",
+    "temporal_scope",
+    "topic_fingerprint_sha256",
+    "referent_scope",
+)
 _FINAL_PARSED_ATOM_REQUIRED_FIELDS = frozenset(
     {
         "atom_id",
         "semantic_family",
         "semantic_key",
         "direction",
+        *_PRELIMINARY_BODY_DIMENSION_FIELDS,
         "sentence_group_ordinal",
         "grammatical_chunk_ordinal",
         "pack_ordinal",
@@ -258,6 +270,7 @@ _FINAL_PARSED_ATOM_FIELDS = (
     "semantic_family",
     "semantic_key",
     "direction",
+    *_PRELIMINARY_BODY_DIMENSION_FIELDS,
     "owner_expressions",
     "sentence_group_ordinal",
     "grammatical_chunk_ordinal",
@@ -870,6 +883,13 @@ def _expected_rc0031_parsed_witness_material(value: Any) -> dict[str, Any]:
             "semantic_family": row.semantic_family,
             "semantic_key": row.semantic_key,
             "direction": row.direction,
+            "observation_stage": row.observation_stage,
+            "source_role": row.source_role,
+            "polarity": row.polarity,
+            "modality": row.modality,
+            "temporal_scope": row.temporal_scope,
+            "topic_fingerprint_sha256": row.topic_fingerprint_sha256,
+            "referent_scope": row.referent_scope,
             "owner_expression_count": len(row.owner_expressions),
             "owner_expression_sha256": [
                 hashlib.sha256(item.encode("utf-8")).hexdigest()
@@ -1026,6 +1046,8 @@ def _rc0031_catalog_authority() -> tuple[dict[str, Any], str]:
 
 def _independent_rc0031_source_projection(
     context: tuple[Any, ...],
+    *,
+    plan_solutions: tuple[tuple[dict[str, Any], Any], ...] | None = None,
 ) -> tuple[
     dict[str, tuple[str, str, str, tuple[str, ...]]],
     dict[str, tuple[str, str, tuple[str, ...], tuple[str, ...], int, int, str]],
@@ -1044,9 +1066,10 @@ def _independent_rc0031_source_projection(
     ) = context
     inverse = _inverse_module()
     base_witness = base_body_witness.base_witness
-    discourse_plan, base_binding = _independent_base_plan_binding(
-        baseline, base_body_witness
-    )
+    if plan_solutions is None:
+        plan_solutions = _independent_base_plan_solutions(
+            baseline, base_body_witness
+        )
     (
         records,
         receptions,
@@ -1065,72 +1088,112 @@ def _independent_rc0031_source_projection(
         for row in receptions
         for owner_id in (*row[3], *row[4])
     }
-    owner_text, comparison_count = (
-        inverse._step11_rc0030_visible_phrase_registry(
-            base_witness,
-            base_binding,
-            source_owner_aliases={
-                owner_id: aliases[owner_id]
-                for owner_id in required_owner_ids
-            },
-        )
-    )
     catalog, _catalog_sha256 = _rc0031_catalog_authority()
-    semantic_by_source = {
-        source_id: (
-            family,
-            key,
-            direction,
-            tuple(owner_text[row] for row in owner_ids),
-        )
-        for source_id, family, key, direction, owner_ids in records
-    }
-    _ledger, obligation_by_id = inverse._validated_parents(
-        baseline.inventory_result,
-        baseline.content_plan,
-        discourse_plan,
-    )
-    scheduled_receptions = inverse._step11_rc0030_reception_schedule(
-        base_body_witness,
-        base_binding,
-        inventory_result=baseline.inventory_result,
-        discourse_plan=discourse_plan,
-        current_input=baseline.projected_current_input,
-        obligation_by_id=obligation_by_id,
-        receptions=receptions,
-    )
     joiner = catalog["clause_morphology"]["target_owner_join"]
-    reception_by_source = {
-        source_id: (
-            scope,
-            act,
-            tuple(owner_text[row] for row in targets),
-            tuple(owner_text[row] for row in supports),
-            line_ordinal,
-            move_ordinal,
-            association_basis,
+    projections: list[
+        tuple[
+            dict[str, tuple[str, str, str, tuple[str, ...]]],
+            dict[
+                str,
+                tuple[
+                    str,
+                    str,
+                    tuple[str, ...],
+                    tuple[str, ...],
+                    int,
+                    int,
+                    str,
+                ],
+            ],
+            int,
+        ]
+    ] = []
+    for discourse_plan, base_binding in plan_solutions:
+        owner_text, comparison_count = (
+            inverse._step11_rc0030_visible_phrase_registry(
+                base_witness,
+                base_binding,
+                source_owner_aliases={
+                    owner_id: aliases[owner_id]
+                    for owner_id in required_owner_ids
+                },
+            )
         )
-        for (
-            source_id,
-            scope,
-            act,
-            targets,
-            supports,
-            line_ordinal,
-            move_ordinal,
-            association_basis,
-        ) in scheduled_receptions
+        semantic_by_source = {
+            source_id: (
+                family,
+                key,
+                direction,
+                tuple(owner_text[row] for row in owner_ids),
+            )
+            for source_id, family, key, direction, owner_ids in records
+        }
+        _ledger, obligation_by_id = inverse._validated_parents(
+            baseline.inventory_result,
+            baseline.content_plan,
+            discourse_plan,
+        )
+        scheduled_receptions = inverse._step11_rc0030_reception_schedule(
+            base_body_witness,
+            base_binding,
+            inventory_result=baseline.inventory_result,
+            discourse_plan=discourse_plan,
+            current_input=baseline.projected_current_input,
+            obligation_by_id=obligation_by_id,
+            receptions=receptions,
+        )
+        reception_by_source = {
+            source_id: (
+                scope,
+                act,
+                tuple(owner_text[row] for row in targets),
+                tuple(owner_text[row] for row in supports),
+                line_ordinal,
+                move_ordinal,
+                association_basis,
+            )
+            for (
+                source_id,
+                scope,
+                act,
+                targets,
+                supports,
+                line_ordinal,
+                move_ordinal,
+                association_basis,
+            ) in scheduled_receptions
+        }
+        _closed_assert(
+            len(semantic_by_source) == len(records)
+            and len(reception_by_source) == len(scheduled_receptions)
+            and all(
+                joiner.join(row[2])
+                and (not row[3] or joiner.join(row[3]))
+                for row in reception_by_source.values()
+            ),
+            "STEP11_RC0031_P3_FINAL_SOURCE_PROJECTION_INVALID",
+        )
+        projections.append(
+            (semantic_by_source, reception_by_source, comparison_count)
+        )
+    projection_material = {
+        json.dumps(
+            {
+                "semantic_by_source": semantic_by_source,
+                "reception_by_source": reception_by_source,
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        for semantic_by_source, reception_by_source, _count in projections
     }
     _closed_assert(
-        len(semantic_by_source) == len(records)
-        and len(reception_by_source) == len(scheduled_receptions)
-        and all(
-            joiner.join(row[2])
-            and (not row[3] or joiner.join(row[3]))
-            for row in reception_by_source.values()
-        ),
-        "STEP11_RC0031_P3_FINAL_SOURCE_PROJECTION_INVALID",
+        len(projection_material) == 1
+        and len({row[2] for row in projections}) == 1,
+        "STEP11_RC0031_P3_SOURCE_PLAN_SOLUTION_AMBIGUOUS",
     )
+    semantic_by_source, reception_by_source, comparison_count = projections[0]
     return (
         semantic_by_source,
         reception_by_source,
@@ -1242,11 +1305,57 @@ def _render_rc0031_reception_for_attack(
     )
 
 
-def _independent_base_plan_binding(
+def _body_relevant_base_solution_material(
+    base_witness: Any,
+    binding: Any,
+) -> dict[str, Any]:
+    inverse = _inverse_module()
+    material = dict(inverse._binding_material(binding))
+    material.pop("discourse_plan_sha256", None)
+    atom_by_id = {row.atom_id: row for row in base_witness.atoms}
+    bound_atom_ids = tuple(
+        sorted(
+            {
+                atom_id
+                for binding_row in binding.binding_rows
+                for atom_id in binding_row.atom_ids
+            }
+        )
+    )
+    _closed_assert(
+        set(bound_atom_ids) <= set(atom_by_id),
+        "STEP11_RC0031_P3_SOURCE_PLAN_PROJECTION_INVALID",
+    )
+    material["body_relevant_placements"] = [
+        {
+            "atom_id": atom_id,
+            "section_role": atom_by_id[atom_id].section_role,
+            "sentence_ordinal": atom_by_id[atom_id].sentence_ordinal,
+            "grammatical_chunk_ordinal": (
+                atom_by_id[atom_id].grammatical_chunk_ordinal
+            ),
+            "clause_ordinal": atom_by_id[atom_id].clause_ordinal,
+        }
+        for atom_id in bound_atom_ids
+    ]
+    return material
+
+
+def _independent_base_plan_solutions(
     baseline: Any,
     base_body_witness: Any,
-) -> tuple[dict[str, Any], Any]:
+) -> tuple[tuple[dict[str, Any], Any], ...]:
     inverse = _inverse_module()
+    planner = importlib.import_module("emlis_ai_discourse_graph_planner_v3")
+    _closed_assert(
+        planner.validate_discourse_graph_plan_set(
+            baseline.discourse_plan_set,
+            inventory_result=baseline.inventory_result,
+            content_plan=baseline.content_plan,
+        )
+        == (),
+        "STEP11_RC0031_P3_SOURCE_PLAN_SET_INVALID",
+    )
     matches: list[tuple[dict[str, Any], Any]] = []
     for discourse_plan in baseline.discourse_plan_set.plans:
         try:
@@ -1262,10 +1371,35 @@ def _independent_base_plan_binding(
         if binding.verified is True and binding.issue_codes == ():
             matches.append((discourse_plan, binding))
     _closed_assert(
-        len(matches) == 1,
-        "STEP11_RC0031_P3_BASE_DISCOURSE_BINDING_NOT_UNIQUE",
+        bool(matches),
+        "STEP11_RC0031_P3_SOURCE_PLAN_SOLUTION_NOT_FOUND",
     )
-    return matches[0]
+    solution_material = {
+        json.dumps(
+            _body_relevant_base_solution_material(
+                base_body_witness.base_witness,
+                binding,
+            ),
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        for _discourse_plan, binding in matches
+    }
+    _closed_assert(
+        len(solution_material) == 1,
+        "STEP11_RC0031_P3_SOURCE_PLAN_SOLUTION_AMBIGUOUS",
+    )
+    return tuple(matches)
+
+
+def _independent_base_plan_binding(
+    baseline: Any,
+    base_body_witness: Any,
+) -> tuple[dict[str, Any], Any]:
+    # Authority order supplies only a representative after equivalence is
+    # proved; it is not a recovered or candidate-selected plan identity.
+    return _independent_base_plan_solutions(baseline, base_body_witness)[0]
 
 
 @lru_cache(maxsize=1)
@@ -2160,7 +2294,7 @@ def test_rc0031_p3_shape_valid_wrong_authority_attacks_are_distinguished(
         )
 
 
-def test_rc0031_p3_p2_grammar_has_explicit_step8_dimension_recovery_contract() -> None:
+def test_rc0031_p3_current_body_dimension_recovery_is_injective() -> None:
     baseline, _successor, _lexical = _p2_test_module()._forward_authority(
         "nls3s_b001_0035"
     )
@@ -2184,54 +2318,252 @@ def test_rc0031_p3_p2_grammar_has_explicit_step8_dimension_recovery_contract() -
             for row in obligations
         )
     )
-    catalog_owner = importlib.import_module(
+    rc0031_catalog_owner = importlib.import_module(
         "emlis_ai_step11_rc0031_experiment_surface_catalog_v3"
     )
     recovery_contract = getattr(
-        catalog_owner,
+        rc0031_catalog_owner,
         "STEP11_RC0031_EXPERIMENT_BODY_DIMENSION_RECOVERY_CONTRACT",
         None,
     )
-    required_body_dimensions = {
+    required_body_dimensions = (
         "observation_stage",
         "source_role",
         "polarity",
         "modality",
         "temporal_scope",
-        "topic_fingerprint",
+        "topic_scope",
         "referent_scope",
+    )
+    rc0031_append = _SURFACE_PATH.read_text(encoding="utf-8").split(
+        "def _step11_rc0031_validate_verified_reuse_composition(", 1
+    )[1]
+    base_catalog_owner = importlib.import_module(
+        "emlis_ai_step11_surface_catalog_v3"
+    )
+    lexical_grammar = base_catalog_owner.STEP11_SURFACE_CATALOG[
+        "grounded_lexicalization"
+    ]
+    profiles = tuple(lexical_grammar["phrase_profile_registry"]["profiles"])
+    profiles_by_id = {row["profile_id"]: row for row in profiles}
+    visible_counts = {
+        name: sum(name in row["visible_feature_names"] for row in profiles)
+        for name in ("polarity", "modality", "temporal_scope", "referent_scope")
     }
+    event_profile = profiles_by_id["event_continuation"]
+    constraint_profile = profiles_by_id["constraint_possible"]
+    action_completed = profiles_by_id["action_completed"]
+    action_intended = profiles_by_id["action_intended"]
+    alternatives = (
+        {
+            "nucleus_kind": "event",
+            "referent_scope": "event",
+            "polarity": "positive",
+            "modality": "observed",
+            "temporal_scope": "current_input",
+            "attribute_codes": ("operator:continuation",),
+        },
+        {
+            "nucleus_kind": "event",
+            "referent_scope": "event",
+            "polarity": "negative",
+            "modality": "reported",
+            "temporal_scope": "reported_past",
+            "attribute_codes": ("operator:continuation",),
+        },
+    )
+    condition_to_field = {
+        "nucleus_kinds": "nucleus_kind",
+        "referent_scopes": "referent_scope",
+        "polarities": "polarity",
+        "modalities": "modality",
+        "temporal_scopes": "temporal_scope",
+    }
+
+    def profile_matches_dimensions(
+        profile: dict[str, Any], dimensions: dict[str, Any]
+    ) -> bool:
+        match = profile["match"]
+        attribute_codes = set(dimensions["attribute_codes"])
+        return (
+            all(
+                condition not in match
+                or dimensions[field_name] in match[condition]
+                for condition, field_name in condition_to_field.items()
+            )
+            and set(match.get("all_attribute_codes", ())) <= attribute_codes
+            and (
+                not match.get("any_attribute_codes")
+                or bool(
+                    set(match["any_attribute_codes"]) & attribute_codes
+                )
+            )
+        )
+
+    visible_projections = tuple(
+        tuple(
+            (name, dimensions[name])
+            for name in event_profile["visible_feature_names"]
+            if name in dimensions
+        )
+        for dimensions in alternatives
+    )
+    event_phrase = event_profile["noun_phrase"].encode("utf-8")
+    representative_event_seen = any(
+        case_id == "nls3s_b001_0035"
+        and event_phrase in candidate.final_utf8_bytes
+        for case_id, _base, _next, _lexical, candidate, _witness
+        in _rc0031_final_candidate_contexts()
+    )
     _closed_assert(
         source_side_is_complete
-        and type(recovery_contract) is dict
-        and required_body_dimensions <= set(recovery_contract)
-        and all(
-            type(key) is str
-            and type(value) is str
-            and key.isascii()
-            and value.isascii()
-            and bool(value)
-            for key, value in recovery_contract.items()
-        ),
-        "STEP11_RC0031_P3_STEP8_DIMENSION_CONTRACT_NOT_AVAILABLE",
-    )
-
-
-def test_rc0031_p3_base_body_selects_one_source_discourse_plan_without_candidate_metadata() -> None:
-    baseline, _successor, _lexical = _p2_test_module()._forward_authority(
-        "nls3s_b001_0009"
-    )
-    base_candidate = baseline.natural_candidates[0]
-    base_body_witness = (
-        _inverse_module().parse_step11_rc0030_base_body_exact_reuse(
-            base_candidate.final_utf8_bytes
+        and recovery_contract is None
+        and all(name not in rc0031_append for name in required_body_dimensions)
+        and len(profiles) == 42
+        and len(profiles_by_id) == 42
+        and visible_counts
+        == {
+            "polarity": 15,
+            "modality": 5,
+            "temporal_scope": 4,
+            "referent_scope": 0,
+        }
+        and sum(
+            all(
+                name in row["visible_feature_names"]
+                for name in visible_counts
+            )
+            for row in profiles
         )
+        == 0
+        and sum(
+            all(
+                name not in row["visible_feature_names"]
+                for name in visible_counts
+            )
+            for row in profiles
+        )
+        == 23
+        and event_profile["match"]
+        == {
+            "nucleus_kinds": ["event"],
+            "all_attribute_codes": ["operator:continuation"],
+        }
+        and event_profile["visible_feature_names"] == ["nucleus_kind"]
+        and all(
+            profile_matches_dimensions(event_profile, row)
+            for row in alternatives
+        )
+        and len(set(visible_projections)) == 1
+        and representative_event_seen
+        and constraint_profile["match"]["modalities"]
+        == ["possible", "unknown"]
+        and "modality" not in constraint_profile["visible_feature_names"]
+        and action_completed["match"]["lifecycles"]
+        == ["reported_completed"]
+        and action_intended["match"]["lifecycles"] == ["intended"]
+        and {"modality", "temporal_scope"}
+        <= set(action_completed["visible_feature_names"])
+        and {"modality", "temporal_scope"}
+        <= set(action_intended["visible_feature_names"]),
+        "STEP11_RC0031_P3_BODY_DIMENSION_PROBE_DRIFT",
     )
     _closed_assert(
-        len(baseline.discourse_plan_set.plans) == 8,
-        "STEP11_RC0031_P3_BASE_DISCOURSE_DENOMINATOR_DRIFT",
+        len(set(visible_projections)) == len(alternatives),
+        "STEP11_RC0031_P3_BODY_DIMENSION_RECOVERY_NOT_INJECTIVE",
     )
-    _independent_base_plan_binding(baseline, base_body_witness)
+
+
+def test_rc0031_p3_source_plan_set_has_exact_one_body_relevant_solution_without_candidate_metadata() -> None:
+    contexts = _rc0031_final_candidate_contexts()
+    expected = (
+        ("nls3s_b001_0001", 1, 1),
+        ("nls3s_b001_0002", 1, 1),
+        ("nls3s_b001_0009", 8, 4),
+        ("nls3s_b001_0019", 2, 1),
+        ("nls3s_b001_0019", 2, 1),
+        ("nls3s_b001_0035", 12, 6),
+        ("nls3s_b001_0043", 2, 1),
+        ("nls3s_b001_0043", 2, 1),
+        ("nls3s_b001_0063", 12, 4),
+        ("nls3s_b001_0100", 12, 4),
+    )
+    observed: list[tuple[str, int, int]] = []
+    source_semantic_total = 0
+    source_reception_total = 0
+    for context in contexts:
+        case_id, baseline, _successor, _lexical, _candidate, base_witness = (
+            context
+        )
+        solutions = _independent_base_plan_solutions(
+            baseline, base_witness
+        )
+        source_projection = _independent_rc0031_source_projection(
+            context,
+            plan_solutions=solutions,
+        )
+        _closed_assert(
+            type(source_projection[0]) is dict
+            and type(source_projection[1]) is dict
+            and 0 <= source_projection[5] <= 576,
+            "STEP11_RC0031_P3_SOURCE_PLAN_PROJECTION_INVALID",
+        )
+        source_semantic_total += len(source_projection[0])
+        source_reception_total += len(source_projection[1])
+        observed.append(
+            (
+                case_id,
+                len(baseline.discourse_plan_set.plans),
+                len(solutions),
+            )
+        )
+    _closed_assert(
+        tuple(observed) == expected
+        and (source_semantic_total, source_reception_total) == (39, 11),
+        "STEP11_RC0031_P3_SOURCE_PLAN_DENOMINATOR_DRIFT",
+    )
+
+    planner = importlib.import_module("emlis_ai_discourse_graph_planner_v3")
+    baseline = contexts[2][1]
+    plan_set = baseline.discourse_plan_set
+    subset = replace(plan_set, plans=plan_set.plans[:1])
+    reordered = replace(plan_set, plans=tuple(reversed(plan_set.plans)))
+    duplicated = replace(
+        plan_set,
+        plans=(*plan_set.plans, plan_set.plans[0]),
+    )
+    mutated_plan = dict(plan_set.plans[0])
+    mutated_plan["structural_signature"] = "0" * 64
+    mutated = replace(
+        plan_set,
+        plans=(mutated_plan, *plan_set.plans[1:]),
+    )
+
+    def plan_set_issues(value: Any) -> frozenset[str]:
+        return frozenset(
+            planner.validate_discourse_graph_plan_set(
+                value,
+                inventory_result=baseline.inventory_result,
+                content_plan=baseline.content_plan,
+            )
+        )
+
+    _closed_assert(
+        plan_set_issues(plan_set) == frozenset()
+        and "DISCOURSE_PLAN_SET_MISMATCH" in plan_set_issues(subset)
+        and "DISCOURSE_PLAN_SET_MISMATCH" in plan_set_issues(reordered)
+        and {
+            "DISCOURSE_PLAN_SET_MISMATCH",
+            "DISCOURSE_SIGNATURE_SET_INVALID",
+        }
+        <= plan_set_issues(duplicated)
+        and {
+            "DISCOURSE_PLAN_SET_MISMATCH",
+            "DISCOURSE_CONTRACT_REJECTED",
+        }
+        <= plan_set_issues(mutated),
+        "STEP11_RC0031_P3_SOURCE_PLAN_SET_ATTACK_NOT_CLOSED",
+    )
 
 
 def test_rc0031_p3_final_inverse_symbols_and_body_only_signatures_are_exact() -> None:
