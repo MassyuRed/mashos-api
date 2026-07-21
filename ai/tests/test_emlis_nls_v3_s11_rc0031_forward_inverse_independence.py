@@ -5610,3 +5610,558 @@ def test_rc0031_p3_b5_product_surface_is_schema_free_metadata_free_and_case_agno
         == _B5_DESIGN_CONTRACT["required_reception_opportunity_count"],
         "STEP11_RC0031_P3_B5_PRODUCT_BOUNDARY_INVALID",
     )
+# ---------------------------------------------------------------------------
+# rc0031 P3 B6 source-congruence / role-inflection design freeze and RED-only
+# ---------------------------------------------------------------------------
+
+_B6_TEST_PREFIX_BYTES = 202_968
+_B6_TEST_PREFIX_SHA256 = (
+    "0821ec5408c43208bdef2c776d3d6c13363ad6c3b21cd79779e95d0aa8ff3813"
+)
+_B6_PREDECESSOR_TOP_LEVEL_TEST_COUNT = 30
+_B6_PREDECESSOR_TOP_LEVEL_TEST_NAMES_SHA256 = (
+    "c517fb179395a9f099cffa1c95ded175c337aba7af269bab228508da407a089e"
+)
+_B6_TEST_CLASS_NAME = "TestRc0031P3B6DesignFreezeRedOnly"
+_B6_NEW_TEST_NAMES = frozenset(
+    {
+        "test_rc0031_p3_b6_freeze_scope_and_predecessor_behavior_are_exact",
+        "test_rc0031_p3_b6_denominators_authority_chain_resource_and_privacy_are_exact",
+        "test_rc0031_p3_b6_required_meaning_source_successor_and_atom_authorities_are_congruent_or_fail_closed",
+        "test_rc0031_p3_b6_product_owner_expressions_are_boundary_safe_and_role_inflected_or_fail_closed",
+        "test_rc0031_p3_b6_reception_focus_target_support_act_and_aspect_are_congruent_or_fail_closed",
+        "test_rc0031_p3_b6_typed_recomposition_is_body_only_recoverable_resource_bounded_and_private",
+    }
+)
+_B6_SOURCE_CONGRUENCE_RED = (
+    "STEP11_RC0031_P3_B6_SOURCE_CONGRUENCE_NOT_PROVED"
+)
+_B6_OWNER_ROLE_INFLECTION_RED = (
+    "STEP11_RC0031_P3_B6_OWNER_ROLE_INFLECTION_NOT_PROVED"
+)
+_B6_RECEPTION_FOCUS_RED = (
+    "STEP11_RC0031_P3_B6_RECEPTION_FOCUS_AUTHORITY_NOT_PROVED"
+)
+_B6_TYPED_RECOMPOSITION_RED = (
+    "STEP11_RC0031_P3_B6_TYPED_RECOMPOSITION_NOT_PROVED"
+)
+
+
+def _b6_context(case_id: str) -> tuple[Any, ...]:
+    matches = tuple(
+        row for row in _b5_predecessor_candidate_contexts() if row[0] == case_id
+    )
+    _closed_assert(
+        bool(matches),
+        "STEP11_RC0031_P3_B6_PREDECESSOR_CONTEXT_DRIFT",
+    )
+    return matches[0]
+
+
+def _b6_function_tree(value: Any, code: str) -> ast.AST:
+    try:
+        source = inspect.getsource(value)
+        return ast.parse(source)
+    except (OSError, TypeError, UnicodeError, SyntaxError):
+        pytest.fail(code, pytrace=False)
+
+
+def _b6_function_symbols(value: Any, code: str) -> frozenset[str]:
+    tree = _b6_function_tree(value, code)
+    return frozenset(
+        child.id
+        if isinstance(child, ast.Name)
+        else child.attr
+        if isinstance(child, ast.Attribute)
+        else child.value
+        if isinstance(child, ast.Constant) and type(child.value) is str
+        else ""
+        for child in ast.walk(tree)
+        if isinstance(child, (ast.Name, ast.Attribute, ast.Constant))
+    )
+
+
+def _b6_has_visible_support_difference(value: Any) -> bool:
+    tree = _b6_function_tree(value, _B6_RECEPTION_FOCUS_RED)
+    return any(
+        (
+            isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Attribute)
+            and child.func.attr == "difference"
+        )
+        or (isinstance(child, ast.BinOp) and isinstance(child.op, ast.Sub))
+        or (
+            isinstance(child, ast.Compare)
+            and any(isinstance(operator, ast.NotIn) for operator in child.ops)
+        )
+        for child in ast.walk(tree)
+    )
+
+
+def _b6_has_per_atom_explanatory_bundle(value: Any) -> bool:
+    tree = _b6_function_tree(value, _B6_TYPED_RECOMPOSITION_RED)
+    symbols = _b6_function_symbols(value, _B6_TYPED_RECOMPOSITION_RED)
+    return bool(
+        any(
+            isinstance(child, (ast.For, ast.comprehension))
+            for child in ast.walk(tree)
+        )
+        and {
+            "source_atom_ids",
+            "modality_cues",
+            "polarity_cues",
+            "referent_scope_cues",
+        }
+        <= symbols
+    )
+
+
+def _b6_has_arbitrary_scalar_cut(value: Any) -> bool:
+    tree = _b6_function_tree(value, _B6_OWNER_ROLE_INFLECTION_RED)
+    integer_slice_bounds = {
+        child.value
+        for child in ast.walk(tree)
+        if isinstance(child, ast.Constant)
+        and type(child.value) is int
+        and child.value > 0
+        and any(
+            isinstance(parent, ast.Slice)
+            and child in {parent.lower, parent.upper, parent.step}
+            for parent in ast.walk(tree)
+            if isinstance(parent, ast.Slice)
+        )
+    }
+    has_mid_fragment_ellipsis = any(
+        isinstance(child, ast.Constant) and child.value == "…"
+        for child in ast.walk(tree)
+    )
+    return bool(integer_slice_bounds and has_mid_fragment_ellipsis)
+
+
+def _b6_required_relation_chain_is_exact(context: tuple[Any, ...]) -> bool:
+    _case, _baseline, successor, lexical_specs, candidate, _witness = context
+    authority_rows = tuple(
+        row
+        for row in successor.relation_construction_authority.relation_authorities
+        if row.source_retention == "required"
+        and tuple(row.source_meaning_arc_keys) == ("whole_input:source_order",)
+    )
+    if len(authority_rows) != 1:
+        return False
+    authority = authority_rows[0]
+    endpoint_rows = tuple(
+        row
+        for row in lexical_specs.relation_endpoint_atoms
+        if row.experiment_relation_id == authority.experiment_relation_id
+    )
+    atom_rows = tuple(
+        row
+        for row in candidate.relation_atoms
+        if row.experiment_relation_id == authority.experiment_relation_id
+    )
+    return bool(
+        len(endpoint_rows) == 2
+        and {row.relation_endpoint_role for row in endpoint_rows}
+        == {"from", "to"}
+        and all(
+            row.source_relation_type == authority.source_relation_type
+            and row.effective_relation_type == authority.effective_relation_type
+            and row.relation_direction == authority.direction
+            and row.authority_basis == authority.authority_basis
+            for row in endpoint_rows
+        )
+        and len(atom_rows) == 1
+        and atom_rows[0].source_relation_type == authority.source_relation_type
+        and atom_rows[0].effective_relation_type
+        == authority.effective_relation_type
+        and atom_rows[0].direction == authority.direction
+        and atom_rows[0].authority_basis == authority.authority_basis
+    )
+
+
+def _b6_atom_authority_chain_accounting() -> tuple[int, int]:
+    accounted_ids: list[str] = []
+    exact_join_count = 0
+    for _case, baseline, successor, _specs, candidate, _witness in (
+        _b5_predecessor_candidate_contexts()
+    ):
+        records, *_source_authority = (
+            _inverse_module()._step11_rc0030_validated_source_records(
+                successor,
+                inventory_result=baseline.inventory_result,
+            )
+        )
+        expected_by_id = {
+            str(source_id): (
+                str(family),
+                str(key),
+                str(direction),
+                tuple(str(owner_id) for owner_id in owner_ids),
+            )
+            for source_id, family, key, direction, owner_ids in records
+            if str(source_id) != _EXPECTED_REUSE_SOURCE_ID
+        }
+        context_ids: list[str] = []
+        for binding in candidate.surface_realization_plan.proposition_clause_bindings:
+            for source_id, family, key, direction, owners in zip(
+                binding.source_atom_ids,
+                binding.semantic_families,
+                binding.semantic_keys,
+                binding.directions,
+                binding.source_atom_owner_ids,
+                strict=True,
+            ):
+                if source_id == _EXPECTED_REUSE_SOURCE_ID:
+                    continue
+                context_ids.append(str(source_id))
+                exact_join_count += expected_by_id.get(str(source_id)) == (
+                    str(family),
+                    str(key),
+                    str(direction),
+                    tuple(str(owner_id) for owner_id in owners),
+                )
+        _closed_assert(
+            len(context_ids) == len(set(context_ids))
+            and set(context_ids) == set(expected_by_id),
+            "STEP11_RC0031_P3_B6_AUTHORITY_CHAIN_DRIFT",
+        )
+        accounted_ids.extend(context_ids)
+    return len(accounted_ids), exact_join_count
+
+
+def _b6_required_relation_is_meaning_congruent(
+    context: tuple[Any, ...],
+) -> bool:
+    _case, _baseline, successor, _lexical_specs, _candidate, _witness = context
+    rows = tuple(
+        row
+        for row in successor.relation_construction_authority.relation_authorities
+        if row.source_retention == "required"
+        and tuple(row.source_meaning_arc_keys) == ("whole_input:source_order",)
+    )
+    if len(rows) != 1:
+        return False
+    row = rows[0]
+    # This is a negative semantic contract over body-free authority codes.  A
+    # source-order relation may not turn the frozen independent-unit meaning
+    # into a directional continuation/subordination claim.
+    return (
+        row.source_relation_type,
+        row.effective_relation_type,
+        row.direction,
+        row.authority_basis,
+    ) != (
+        "continuation_or_refusal",
+        "continuation_or_refusal",
+        "source_to_target",
+        "grounded_plan_projection",
+    )
+
+
+def _b6_owner_role_evidence() -> tuple[int, int]:
+    multi_role_owner_occurrences = 0
+    projected_owner_occurrences = 0
+    projection = _b5_owner_projection_or_red()
+    for _case, _baseline, successor, lexical_specs, candidate, _witness in (
+        _b5_predecessor_candidate_contexts()
+    ):
+        projected = projection(
+            candidate.base_candidate,
+            successor_snapshot=successor,
+            lexical_atom_specs=lexical_specs,
+        )
+        projected_owner_occurrences += len(projected)
+        roles_by_owner: dict[str, set[str]] = {}
+        for binding in candidate.surface_realization_plan.proposition_clause_bindings:
+            for family, direction, owners in zip(
+                binding.semantic_families,
+                binding.directions,
+                binding.source_atom_owner_ids,
+                strict=True,
+            ):
+                if family in {"relation", "semantic_link"} and len(owners) == 2:
+                    role_names = (
+                        ("relation_source", "relation_target")
+                        if direction == "source_to_target"
+                        else ("relation_peer", "relation_peer")
+                    )
+                elif family == "construction":
+                    role_names = tuple("construction_role" for _row in owners)
+                else:
+                    role_names = tuple("terminal_role" for _row in owners)
+                for owner, role_name in zip(owners, role_names, strict=True):
+                    roles_by_owner.setdefault(str(owner), set()).add(role_name)
+        for reception in candidate.reception_bindings:
+            for owner in reception.source_target_owner_ids:
+                roles_by_owner.setdefault(str(owner), set()).add(
+                    "reception_target"
+                )
+            for owner in reception.supporting_source_owner_ids:
+                roles_by_owner.setdefault(str(owner), set()).add(
+                    "reception_support"
+                )
+        multi_role_owner_occurrences += sum(
+            len(role_names) > 1 for role_names in roles_by_owner.values()
+        )
+    return projected_owner_occurrences, multi_role_owner_occurrences
+
+
+def _b6_reception_focus_evidence() -> tuple[int, int, int, int]:
+    total = 0
+    visible_overlap = 0
+    missing_distinct_focus = 0
+    incompatible_aspect = 0
+    for case_id, _baseline, successor, _lexical, candidate, _witness in (
+        _b5_predecessor_candidate_contexts()
+    ):
+        nucleus_by_id = {
+            str(key): row
+            for row in successor.base_snapshot.nuclei
+            for key in (row.source_id, row.actual_source_id)
+        }
+        for row in candidate.reception_bindings:
+            total += 1
+            targets = set(row.source_target_owner_ids)
+            supports = set(row.supporting_source_owner_ids)
+            focuses = set(getattr(row, "source_focus_owner_ids", ()))
+            visible_overlap += bool(targets & supports)
+            if case_id == "nls3s_b001_0063" and not (
+                focuses or supports - targets
+            ):
+                missing_distinct_focus += 1
+            target_nuclei = tuple(
+                nucleus_by_id[owner]
+                for owner in targets
+                if owner in nucleus_by_id
+            )
+            incompatible_aspect += bool(
+                row.reception_act == "honor_concrete_action"
+                and any(
+                    nucleus.modality == "intended"
+                    or nucleus.temporal_scope in {"future", "present_to_future"}
+                    for nucleus in target_nuclei
+                )
+            )
+    return total, visible_overlap, missing_distinct_focus, incompatible_aspect
+
+
+def _b6_typed_recomposition_evidence() -> tuple[int, int, int]:
+    source_atom_count = 0
+    required_modifier_count = 0
+    actual_modifier_count = 0
+    for context in _b5_predecessor_candidate_contexts():
+        candidate = context[4]
+        body = candidate.final_utf8_bytes
+        if type(body) is not bytes:
+            return (0, 0, 0)
+        for binding in candidate.surface_realization_plan.proposition_clause_bindings:
+            source_atom_count += len(binding.source_atom_ids)
+            construction_ids = tuple(
+                source_id
+                for source_id, family in zip(
+                    binding.source_atom_ids,
+                    binding.semantic_families,
+                    strict=True,
+                )
+                if family == "construction"
+            )
+            nonconstruction_ids = tuple(
+                source_id
+                for source_id, family in zip(
+                    binding.source_atom_ids,
+                    binding.semantic_families,
+                    strict=True,
+                )
+                if family != "construction"
+            )
+            required_modifier_count += (
+                len(construction_ids)
+                if nonconstruction_ids
+                else max(0, len(construction_ids) - 1)
+            )
+            actual_modifier_count += len(binding.construction_modifier_atom_ids)
+    return (
+        source_atom_count,
+        required_modifier_count,
+        actual_modifier_count,
+    )
+
+
+class TestRc0031P3B6DesignFreezeRedOnly:
+    def test_rc0031_p3_b6_freeze_scope_and_predecessor_behavior_are_exact(
+        self,
+    ) -> None:
+        source = Path(__file__).resolve().read_bytes()
+        marker = (
+            b"# ---------------------------------------------------------------------------\n"
+            b"# rc0031 P3 B6 source-congruence / role-inflection design freeze and RED-only\n"
+            b"# ---------------------------------------------------------------------------\n"
+        )
+        _closed_assert(
+            source.count(marker) == 1,
+            "STEP11_RC0031_P3_B6_TEST_PREFIX_INVALID",
+        )
+        prefix = source[: source.index(marker)]
+        tree = ast.parse(source.decode("utf-8", errors="strict"))
+        top_level_test_names = tuple(
+            sorted(
+                node.name
+                for node in tree.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name.startswith("test_")
+            )
+        )
+        class_rows = tuple(
+            node
+            for node in tree.body
+            if isinstance(node, ast.ClassDef) and node.name == _B6_TEST_CLASS_NAME
+        )
+        b6_test_names = frozenset(
+            child.name
+            for row in class_rows
+            for child in row.body
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and child.name.startswith("test_")
+        )
+        top_level_name_material = (
+            "\n".join(top_level_test_names) + "\n"
+        ).encode("utf-8")
+        _closed_assert(
+            len(prefix) == _B6_TEST_PREFIX_BYTES
+            and hashlib.sha256(prefix).hexdigest() == _B6_TEST_PREFIX_SHA256
+            and len(top_level_test_names)
+            == _B6_PREDECESSOR_TOP_LEVEL_TEST_COUNT
+            and hashlib.sha256(top_level_name_material).hexdigest()
+            == _B6_PREDECESSOR_TOP_LEVEL_TEST_NAMES_SHA256
+            and len(class_rows) == 1
+            and b6_test_names == _B6_NEW_TEST_NAMES
+            and _EXPECTED_P3_ACTIVE
+            == frozenset(
+                {
+                    "ai/services/ai_inference/emlis_ai_step11_rc0031_experiment_surface_catalog_v3.py",
+                    "ai/tests/fixtures/emlis_nls_v3/cycle_001/rc0031_representative8_body_free.json",
+                    "ai/tests/test_emlis_nls_v3_s11_rc0031_proposition_surface_red.py",
+                    "ai/tests/test_emlis_nls_v3_s11_rc0031_proposition_surface_mutation.py",
+                    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py",
+                }
+            ),
+            "STEP11_RC0031_P3_B6_TEST_SCOPE_DRIFT",
+        )
+
+    def test_rc0031_p3_b6_denominators_authority_chain_resource_and_privacy_are_exact(
+        self,
+    ) -> None:
+        probe = _b5_design_probe()
+        authority_count, exact_authority_join_count = (
+            _b6_atom_authority_chain_accounting()
+        )
+        fixture = json.loads(_P1_FIXTURE.read_text(encoding="utf-8"))
+        privacy = fixture.get("privacy_contract", {})
+        _closed_assert(
+            probe["context_count"] == 10
+            and probe["unique_case_count"] == 8
+            and probe["new_semantic_atom_count"] == 38
+            and authority_count == 38
+            and exact_authority_join_count == 38
+            and probe["verified_base_reuse_count"] == 1
+            and probe["family_counts"] == _B5_EXPECTED_FAMILY_COUNTS
+            and probe["owner_occurrence_count"] == 24
+            and probe["exactly_one_source_fragment_count"] == 24
+            and probe["required_reception_count"] == 11
+            and probe["base_ast_binding_count"] == 10
+            and probe["unmatched_required_count"] == 1
+            and probe["resource_envelopes"] == {(2, 4, 2, 4)}
+            and probe["visible_source_anchor_max"] <= 1
+            and fixture.get("body_free") is True
+            and privacy.get("body_or_quote_exported") is False
+            and privacy.get("parsed_span_or_binding_detail_exported") is False
+            and privacy.get("unsalted_body_digest_exported") is False
+            and privacy.get("runtime_connected") is False
+            and privacy.get("formal_or_production_eligible") is False,
+            "STEP11_RC0031_P3_B6_DENOMINATOR_AUTHORITY_RESOURCE_PRIVACY_DRIFT",
+        )
+
+    def test_rc0031_p3_b6_required_meaning_source_successor_and_atom_authorities_are_congruent_or_fail_closed(
+        self,
+    ) -> None:
+        context = _b6_context("nls3s_b001_0035")
+        _closed_assert(
+            _b6_required_relation_chain_is_exact(context)
+            and _b6_required_relation_is_meaning_congruent(context),
+            _B6_SOURCE_CONGRUENCE_RED,
+        )
+
+    def test_rc0031_p3_b6_product_owner_expressions_are_boundary_safe_and_role_inflected_or_fail_closed(
+        self,
+    ) -> None:
+        projection = _b5_owner_projection_or_red()
+        projected_count, multi_role_count = _b6_owner_role_evidence()
+        surface = _surface_module()
+        render_names = _b6_function_symbols(
+            surface._step11_rc0031_product_render_cluster,
+            _B6_OWNER_ROLE_INFLECTION_RED,
+        ) | _b6_function_symbols(
+            surface._step11_rc0031_product_render,
+            _B6_OWNER_ROLE_INFLECTION_RED,
+        )
+        _closed_assert(
+            projected_count == 24
+            and multi_role_count > 0
+            and not _b6_has_arbitrary_scalar_cut(projection)
+            and {
+                "head_source_atom_id",
+                "construction_modifier_atom_ids",
+                "construction_modifier_target_owner_ids",
+                "owner_role_particle_patterns",
+                "owner_kind_inflection_patterns",
+            }
+            <= render_names,
+            _B6_OWNER_ROLE_INFLECTION_RED,
+        )
+
+    def test_rc0031_p3_b6_reception_focus_target_support_act_and_aspect_are_congruent_or_fail_closed(
+        self,
+    ) -> None:
+        total, overlap, missing_focus, incompatible_aspect = (
+            _b6_reception_focus_evidence()
+        )
+        renderer = _surface_module()._step11_rc0031_product_render
+        render_names = _b6_function_symbols(
+            renderer,
+            _B6_RECEPTION_FOCUS_RED,
+        )
+        _closed_assert(
+            total == 11
+            and missing_focus == 0
+            and incompatible_aspect == 0
+            and {"source_target_owner_ids", "supporting_source_owner_ids"}
+            <= render_names
+            and _b6_has_visible_support_difference(renderer)
+            and overlap >= 0,
+            _B6_RECEPTION_FOCUS_RED,
+        )
+
+    def test_rc0031_p3_b6_typed_recomposition_is_body_only_recoverable_resource_bounded_and_private(
+        self,
+    ) -> None:
+        source_count, required_modifiers, actual_modifiers = (
+            _b6_typed_recomposition_evidence()
+        )
+        renderer = _surface_module()._step11_rc0031_product_render_cluster
+        render_names = _b6_function_symbols(
+            renderer,
+            _B6_TYPED_RECOMPOSITION_RED,
+        )
+        _closed_assert(
+            source_count == 38
+            and required_modifiers > 0
+            and actual_modifiers == required_modifiers
+            and {
+                "head_source_atom_id",
+                "construction_modifier_atom_ids",
+                "construction_modifier_target_owner_ids",
+            }
+            <= render_names
+            and not _b6_has_per_atom_explanatory_bundle(renderer),
+            _B6_TYPED_RECOMPOSITION_RED,
+        )
