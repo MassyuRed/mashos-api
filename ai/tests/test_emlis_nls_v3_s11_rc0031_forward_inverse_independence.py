@@ -4579,3 +4579,1002 @@ def test_rc0031_p3_relation_distribution_reception_and_reuse_body_mutations_fail
             ),
             expected_code=expected_code,
         )
+# ---------------------------------------------------------------------------
+# rc0031 P3 B5 owner-boundary design freeze and RED-only
+# ---------------------------------------------------------------------------
+
+_B5_TEST_PREFIX_BYTES = 161_191
+_B5_TEST_PREFIX_SHA256 = (
+    "045ca06eabbff7c6d902174ecf84db75d67b21e27ce9956726467f7d19c36860"
+)
+_B5_PREDECESSOR_TEST_COUNT = 24
+_B5_PREDECESSOR_TEST_NAMES_SHA256 = (
+    "15132dea6318370f3f63dda2deb2977125253da34a70e15529a97137836f458b"
+)
+_B5_NEW_TEST_NAMES = frozenset(
+    {
+        "test_rc0031_p3_b5_freeze_scope_and_predecessor_behavior_are_exact",
+        "test_rc0031_p3_b5_design_denominators_and_resource_envelope_are_exact",
+        "test_rc0031_p3_b5_source_fragment_product_owner_expression_is_unique_or_fails_closed",
+        "test_rc0031_p3_b5_relation_connected_product_clusters_account_exact38_with_load4",
+        "test_rc0031_p3_b5_ast_first_reception_preserves_bound10_and_adds_unmatched1",
+        "test_rc0031_p3_b5_product_surface_is_schema_free_metadata_free_and_case_agnostic",
+    }
+)
+_B5_CLUSTER_LOADS_BY_CONTEXT = (
+    (),
+    (),
+    (1,),
+    (3,),
+    (3,),
+    (3, 4),
+    (3,),
+    (3,),
+    (3, 4, 3),
+    (3, 2, 3),
+)
+_B5_EXPECTED_FAMILY_COUNTS = {
+    "construction": 22,
+    "relation": 13,
+    "semantic_link": 1,
+    "explicit_unknown": 2,
+}
+_B5_DESIGN_CONTRACT = {
+    "schema_version": (
+        "cocolon.emlis.nls_v3.step11.rc0031_product_surface_b5.v1"
+    ),
+    "final_candidate_context_count": 10,
+    "unique_case_count": 8,
+    "new_semantic_atom_count": 38,
+    "verified_base_reuse_count": 1,
+    "clause_ready_owner_occurrence_count": 24,
+    "product_proposition_cluster_max": 13,
+    "product_proposition_cluster_load_max": 4,
+    "required_reception_opportunity_count": 11,
+    "base_ast_reception_binding_count": 10,
+    "unmatched_required_reception_count": 1,
+    "visible_source_anchor_max": 1,
+    "visible_clauses_per_grammatical_sentence_max": 2,
+    "grammatical_complexity_load_max": 4,
+    "repeated_joiner_per_group_max": 2,
+    "realization_units_per_group_max": 4,
+    "schema_free_natural_language_surface_required": True,
+    "candidate_metadata_required": False,
+    "case_family_review_severity_branch_count": 0,
+}
+_B5_OWNER_PROJECTION_EXPORT = (
+    "_step11_rc0031_product_owner_expression_projection"
+)
+_B5_LEXICAL_PREDECESSOR_BYTES = 129_615
+_B5_SURFACE_PREDECESSOR_BYTES = 485_490
+_B5_OWNER_PROJECTION_SIGNATURE = (
+    "base_candidate",
+    "successor_snapshot",
+    "lexical_atom_specs",
+)
+_B5_OWNER_NOT_AVAILABLE = (
+    "STEP11_RC0031_P3_B5_PRODUCT_OWNER_EXPRESSION_NOT_AVAILABLE"
+)
+_B5_CLUSTER_NOT_AVAILABLE = (
+    "STEP11_RC0031_P3_B5_PRODUCT_PROPOSITION_CLUSTER_NOT_AVAILABLE"
+)
+_B5_RECEPTION_NOT_AVAILABLE = (
+    "STEP11_RC0031_P3_B5_AST_BOUND_RECEPTION_NOT_AVAILABLE"
+)
+_B5_BOUNDARY_NOT_AVAILABLE = (
+    "STEP11_RC0031_P3_B5_PRODUCT_BOUNDARY_NOT_AVAILABLE"
+)
+
+
+@lru_cache(maxsize=1)
+def _b5_predecessor_candidate_contexts() -> tuple[tuple[Any, ...], ...]:
+    p2 = _p2_test_module()
+    surface = _surface_module()
+    inverse = _inverse_module()
+    contexts: list[tuple[Any, ...]] = []
+    for case_id in _REPRESENTATIVE_CASE_IDS:
+        baseline, successor, lexical_specs = p2._forward_authority(case_id)
+        candidates = surface.build_step11_rc0031_experiment_surface_candidates(
+            tuple(baseline.natural_candidates),
+            successor_snapshot=successor,
+            lexical_atom_specs=lexical_specs,
+        )
+        for candidate in candidates:
+            base = candidate.base_candidate
+            base_witness = inverse.parse_step11_rc0030_base_body_exact_reuse(
+                base.final_utf8_bytes
+            )
+            if case_id == "nls3s_b001_0001":
+                verified = inverse.match_step11_rc0030_base_body_exact_reuse(
+                    base_witness,
+                    successor_snapshot=successor,
+                    inventory_result=baseline.inventory_result,
+                    content_plan=baseline.content_plan,
+                    discourse_plan=base.discourse_plan,
+                    current_input=baseline.projected_current_input,
+                )
+                candidate = (
+                    surface
+                    ._step11_rc0031_build_candidate_from_verified_reuse_composition(
+                        base,
+                        successor_snapshot=successor,
+                        lexical_atom_specs=lexical_specs,
+                        verified_base_body_exact_reuse_bindings=tuple(
+                            _project_verified_proof(row) for row in verified
+                        ),
+                        validate_output=True,
+                    )
+                )
+            contexts.append(
+                (
+                    case_id,
+                    baseline,
+                    successor,
+                    lexical_specs,
+                    candidate,
+                    base_witness,
+                )
+            )
+    _closed_assert(
+        len(contexts) == _B5_DESIGN_CONTRACT["final_candidate_context_count"]
+        and len({row[0] for row in contexts})
+        == _B5_DESIGN_CONTRACT["unique_case_count"],
+        "STEP11_RC0031_P3_B5_PREDECESSOR_CONTEXT_DRIFT",
+    )
+    return tuple(contexts)
+
+
+def _b5_normalize_nucleus_id(successor: Any, value: Any) -> str:
+    actual_by_source = {
+        str(row.source_id): str(row.actual_source_id)
+        for row in successor.base_snapshot.nuclei
+    }
+    return actual_by_source.get(str(value), str(value))
+
+
+@lru_cache(maxsize=1)
+def _b5_design_probe() -> dict[str, Any]:
+    contexts = _b5_predecessor_candidate_contexts()
+    family_counts: Counter[str] = Counter()
+    current_proposition_unit_count = 0
+    owner_occurrence_count = 0
+    exactly_one_source_fragment_count = 0
+    current_generic_projection_count = 0
+    required_reception_count = 0
+    base_ast_binding_count = 0
+    matched_opportunity_count = 0
+    unmatched_required_count = 0
+    richer_ast_binding_count = 0
+    resource_envelopes: set[tuple[int, int, int, int]] = set()
+    visible_source_anchor_counts: list[int] = []
+
+    family_rows = (
+        ("construction", "construction_atoms", "construction_instance_id"),
+        ("relation", "relation_atoms", "experiment_relation_id"),
+        ("semantic_link", "semantic_link_atoms", "source_semantic_link_id"),
+        ("explicit_unknown", "explicit_unknown_atoms", "source_unknown_id"),
+    )
+    for _case, _baseline, successor, _specs, candidate, _witness in contexts:
+        for family, collection_name, source_id_name in family_rows:
+            for atom in getattr(candidate, collection_name):
+                if str(getattr(atom, source_id_name)) != _EXPECTED_REUSE_SOURCE_ID:
+                    family_counts[family] += 1
+
+        plan = candidate.surface_realization_plan
+        current_proposition_unit_count += len(plan.proposition_clause_bindings)
+        resource_envelopes.add(
+            (
+                plan.maximum_visible_clauses_per_grammatical_sentence,
+                plan.maximum_grammatical_complexity_load,
+                plan.maximum_repeated_joiner_per_group,
+                plan.maximum_observation_clauses_per_sentence,
+            )
+        )
+        visible_source_anchor_counts.append(
+            candidate.base_candidate.rendered_surface.visible_source_anchor_count
+        )
+
+        lexemes = tuple(candidate.natural_handle_specs.lexemes)
+        fragments = tuple(candidate.base_candidate.surface_ast.source_fragments)
+        owner_occurrence_count += len(lexemes)
+        for lexeme in lexemes:
+            matches = tuple(
+                fragment
+                for fragment in fragments
+                if lexeme.base_source_nucleus_id in fragment.source_nucleus_ids
+                and fragment.evidence_grade == "exact_source_span"
+            )
+            exactly_one_source_fragment_count += len(matches) == 1
+            current_generic_projection_count += (
+                lexeme.referent_text == lexeme.grounded_phrase_text
+            )
+
+        required = tuple(
+            row
+            for row in successor.base_snapshot.reception_opportunities
+            if row.retention == "required" or row.safety_required is True
+        )
+        bindings = tuple(
+            candidate.base_candidate.surface_ast.reception_antecedent_bindings
+        )
+        binding_by_opportunity: dict[str, Any] = {}
+        duplicate_binding_ids: set[str] = set()
+        for binding in bindings:
+            for source_id in binding.source_reception_opportunity_ids:
+                key = str(source_id)
+                if key in binding_by_opportunity:
+                    duplicate_binding_ids.add(key)
+                binding_by_opportunity[key] = binding
+        required_reception_count += len(required)
+        base_ast_binding_count += len(bindings)
+        for opportunity in required:
+            binding = binding_by_opportunity.get(str(opportunity.source_id))
+            if binding is None:
+                unmatched_required_count += 1
+                continue
+            matched_opportunity_count += 1
+            raw_visible = {
+                _b5_normalize_nucleus_id(successor, row)
+                for row in (
+                    *opportunity.target_nucleus_ids,
+                    *opportunity.support_nucleus_ids,
+                )
+            }
+            selected_ast_visible = {
+                _b5_normalize_nucleus_id(successor, row)
+                for row in (
+                    *binding.source_target_nucleus_ids,
+                    *binding.antecedent_nucleus_ids,
+                    *binding.supporting_nucleus_ids,
+                )
+            }
+            richer_ast_binding_count += bool(selected_ast_visible - raw_visible)
+        _closed_assert(
+            not duplicate_binding_ids,
+            "STEP11_RC0031_P3_B5_RECEPTION_SOURCE_BINDING_AMBIGUOUS",
+        )
+
+    return {
+        "context_count": len(contexts),
+        "unique_case_count": len({row[0] for row in contexts}),
+        "family_counts": dict(family_counts),
+        "new_semantic_atom_count": sum(family_counts.values()),
+        "verified_base_reuse_count": sum(
+            row[4].rendered_surface.exact_reuse_count for row in contexts
+        ),
+        "current_proposition_unit_count": current_proposition_unit_count,
+        "owner_occurrence_count": owner_occurrence_count,
+        "exactly_one_source_fragment_count": (
+            exactly_one_source_fragment_count
+        ),
+        "current_generic_projection_count": current_generic_projection_count,
+        "required_reception_count": required_reception_count,
+        "base_ast_binding_count": base_ast_binding_count,
+        "matched_opportunity_count": matched_opportunity_count,
+        "unmatched_required_count": unmatched_required_count,
+        "richer_ast_binding_count": richer_ast_binding_count,
+        "resource_envelopes": resource_envelopes,
+        "visible_source_anchor_max": max(visible_source_anchor_counts),
+    }
+
+
+def _b5_owner_projection_or_red() -> Any:
+    lexical_owner = importlib.import_module(
+        "emlis_ai_step11_grounded_lexicalization_v3"
+    )
+    projection = getattr(lexical_owner, _B5_OWNER_PROJECTION_EXPORT, None)
+    _closed_assert(callable(projection), _B5_OWNER_NOT_AVAILABLE)
+    try:
+        parameters = inspect.signature(projection).parameters
+    except Exception:
+        pytest.fail(
+            "STEP11_RC0031_P3_B5_PRODUCT_OWNER_EXPRESSION_CONTRACT_INVALID",
+            pytrace=False,
+        )
+    _closed_assert(
+        tuple(parameters) == _B5_OWNER_PROJECTION_SIGNATURE
+        and parameters["base_candidate"].kind
+        is inspect.Parameter.POSITIONAL_OR_KEYWORD
+        and all(
+            parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
+            for name in _B5_OWNER_PROJECTION_SIGNATURE[1:]
+        )
+        and _B5_OWNER_PROJECTION_EXPORT
+        not in tuple(getattr(lexical_owner, "__all__", ())),
+        "STEP11_RC0031_P3_B5_PRODUCT_OWNER_EXPRESSION_CONTRACT_INVALID",
+    )
+    return projection
+
+
+def _b5_surface_api_or_red(code: str) -> tuple[Any, Any]:
+    surface = _surface_module()
+    builder = getattr(surface, _DIMENSION_SURFACE_BUILDER_EXPORT, None)
+    validator = getattr(surface, _DIMENSION_SURFACE_VALIDATOR_EXPORT, None)
+    _closed_assert(callable(builder) and callable(validator), code)
+    try:
+        builder_parameters = inspect.signature(builder).parameters
+        validator_parameters = inspect.signature(validator).parameters
+    except Exception:
+        pytest.fail(code, pytrace=False)
+    _closed_assert(
+        tuple(builder_parameters) == _DIMENSION_SURFACE_SIGNATURE
+        and tuple(validator_parameters) == _DIMENSION_SURFACE_SIGNATURE
+        and all(
+            parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
+            for parameters in (builder_parameters, validator_parameters)
+            for name in _DIMENSION_SURFACE_SIGNATURE[1:]
+        )
+        and not (
+            set(builder_parameters) | set(validator_parameters)
+        )
+        & (_FINAL_INVERSE_FORBIDDEN_PARAMETERS - {"lexical_atom_specs"}),
+        code,
+    )
+    return builder, validator
+
+
+def _b5_owner_sets_are_connected(
+    owner_rows: tuple[tuple[str, ...], ...],
+) -> bool:
+    if not owner_rows or any(not row for row in owner_rows):
+        return False
+    pending = [0]
+    visited: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if current in visited:
+            continue
+        visited.add(current)
+        current_owners = set(owner_rows[current])
+        pending.extend(
+            index
+            for index, owners in enumerate(owner_rows)
+            if index not in visited and bool(current_owners & set(owners))
+        )
+    return len(visited) == len(owner_rows)
+
+
+def test_rc0031_p3_b5_freeze_scope_and_predecessor_behavior_are_exact() -> None:
+    source = Path(__file__).resolve().read_bytes()
+    marker = (
+        b"# ---------------------------------------------------------------------------\n"
+        b"# rc0031 P3 B5 owner-boundary design freeze and RED-only\n"
+        b"# ---------------------------------------------------------------------------\n"
+    )
+    _closed_assert(
+        source.count(marker) == 1,
+        "STEP11_RC0031_P3_B5_TEST_PREFIX_INVALID",
+    )
+    prefix = source[: source.index(marker)]
+    tree = ast.parse(source.decode("utf-8", errors="strict"))
+    test_names = frozenset(
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")
+    )
+    predecessor_names = tuple(sorted(test_names - _B5_NEW_TEST_NAMES))
+    predecessor_name_material = (
+        "\n".join(predecessor_names) + "\n"
+    ).encode("utf-8")
+    _closed_assert(
+        len(prefix) == _B5_TEST_PREFIX_BYTES
+        and hashlib.sha256(prefix).hexdigest() == _B5_TEST_PREFIX_SHA256
+        and len(predecessor_names) == _B5_PREDECESSOR_TEST_COUNT
+        and hashlib.sha256(predecessor_name_material).hexdigest()
+        == _B5_PREDECESSOR_TEST_NAMES_SHA256
+        and _B5_NEW_TEST_NAMES <= test_names
+        and len(test_names) == _B5_PREDECESSOR_TEST_COUNT + len(_B5_NEW_TEST_NAMES)
+        and _EXPECTED_P3_ACTIVE
+        == frozenset(
+            {
+                "ai/services/ai_inference/emlis_ai_step11_rc0031_experiment_surface_catalog_v3.py",
+                "ai/tests/fixtures/emlis_nls_v3/cycle_001/rc0031_representative8_body_free.json",
+                "ai/tests/test_emlis_nls_v3_s11_rc0031_proposition_surface_red.py",
+                "ai/tests/test_emlis_nls_v3_s11_rc0031_proposition_surface_mutation.py",
+                "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py",
+            }
+        ),
+        "STEP11_RC0031_P3_B5_TEST_SCOPE_DRIFT",
+    )
+
+
+def test_rc0031_p3_b5_design_denominators_and_resource_envelope_are_exact() -> None:
+    probe = _b5_design_probe()
+    cluster_loads = tuple(
+        load
+        for context_loads in _B5_CLUSTER_LOADS_BY_CONTEXT
+        for load in context_loads
+    )
+    _closed_assert(
+        probe["context_count"]
+        == _B5_DESIGN_CONTRACT["final_candidate_context_count"]
+        and probe["unique_case_count"]
+        == _B5_DESIGN_CONTRACT["unique_case_count"]
+        and probe["family_counts"] == _B5_EXPECTED_FAMILY_COUNTS
+        and probe["new_semantic_atom_count"]
+        == _B5_DESIGN_CONTRACT["new_semantic_atom_count"]
+        and probe["verified_base_reuse_count"]
+        == _B5_DESIGN_CONTRACT["verified_base_reuse_count"]
+        and probe["current_proposition_unit_count"] == 18
+        and len(cluster_loads)
+        == _B5_DESIGN_CONTRACT["product_proposition_cluster_max"]
+        and sum(cluster_loads)
+        == _B5_DESIGN_CONTRACT["new_semantic_atom_count"]
+        and max(cluster_loads)
+        == _B5_DESIGN_CONTRACT["product_proposition_cluster_load_max"]
+        and probe["owner_occurrence_count"]
+        == _B5_DESIGN_CONTRACT["clause_ready_owner_occurrence_count"]
+        and probe["exactly_one_source_fragment_count"]
+        == probe["owner_occurrence_count"]
+        and probe["current_generic_projection_count"]
+        == probe["owner_occurrence_count"]
+        and probe["required_reception_count"]
+        == _B5_DESIGN_CONTRACT["required_reception_opportunity_count"]
+        and probe["base_ast_binding_count"]
+        == _B5_DESIGN_CONTRACT["base_ast_reception_binding_count"]
+        and probe["matched_opportunity_count"] == 10
+        and probe["unmatched_required_count"]
+        == _B5_DESIGN_CONTRACT["unmatched_required_reception_count"]
+        and probe["richer_ast_binding_count"] == 2
+        and probe["resource_envelopes"]
+        == {
+            (
+                _B5_DESIGN_CONTRACT[
+                    "visible_clauses_per_grammatical_sentence_max"
+                ],
+                _B5_DESIGN_CONTRACT["grammatical_complexity_load_max"],
+                _B5_DESIGN_CONTRACT["repeated_joiner_per_group_max"],
+                _B5_DESIGN_CONTRACT["realization_units_per_group_max"],
+            )
+        }
+        and probe["visible_source_anchor_max"]
+        <= _B5_DESIGN_CONTRACT["visible_source_anchor_max"],
+        "STEP11_RC0031_P3_B5_DESIGN_DENOMINATOR_DRIFT",
+    )
+
+
+def test_rc0031_p3_b5_source_fragment_product_owner_expression_is_unique_or_fails_closed() -> None:
+    projection = _b5_owner_projection_or_red()
+    lexical_owner = importlib.import_module(
+        "emlis_ai_step11_grounded_lexicalization_v3"
+    )
+    contexts = _b5_predecessor_candidate_contexts()
+    projected_occurrence_count = 0
+    for _case, _base, successor, lexical_specs, candidate, _witness in contexts:
+        base_candidate = candidate.base_candidate
+        try:
+            rows = projection(
+                base_candidate,
+                successor_snapshot=successor,
+                lexical_atom_specs=lexical_specs,
+            )
+            rows_again = projection(
+                base_candidate,
+                successor_snapshot=successor,
+                lexical_atom_specs=lexical_specs,
+            )
+        except Exception:
+            pytest.fail(
+                "STEP11_RC0031_P3_B5_PRODUCT_OWNER_EXPRESSION_CONTRACT_INVALID",
+                pytrace=False,
+            )
+        lexemes = tuple(candidate.natural_handle_specs.lexemes)
+        fragments = {
+            row.source_anchor_id: row
+            for row in base_candidate.surface_ast.source_fragments
+        }
+        _closed_assert(
+            type(rows) is tuple
+            and rows_again == rows
+            and len(rows) == len(lexemes)
+            and all(type(row) is tuple and len(row) == 5 for row in rows)
+            and len({row[0] for row in rows}) == len(rows)
+            and len({row[3] for row in rows}) == len(rows),
+            "STEP11_RC0031_P3_B5_PRODUCT_OWNER_EXPRESSION_CONTRACT_INVALID",
+        )
+        for lexeme, row in zip(lexemes, rows):
+            owner_id, nucleus_id, anchor_id, expression, digest = row
+            fragment = fragments.get(anchor_id)
+            expected_fragments = tuple(
+                value
+                for value in base_candidate.surface_ast.source_fragments
+                if lexeme.base_source_nucleus_id in value.source_nucleus_ids
+                and value.evidence_grade == "exact_source_span"
+            )
+            _closed_assert(
+                type(owner_id) is str
+                and owner_id == lexeme.source_owner_id
+                and type(nucleus_id) is str
+                and nucleus_id == lexeme.base_source_nucleus_id
+                and len(expected_fragments) == 1
+                and anchor_id == expected_fragments[0].source_anchor_id
+                and fragment is not None
+                and nucleus_id in fragment.source_nucleus_ids
+                and fragment.evidence_grade == "exact_source_span"
+                and type(expression) is str
+                and expression == expression.strip()
+                and unicodedata.normalize("NFC", expression) == expression
+                and 1 <= len(expression)
+                <= _EXPECTED_FORWARD_RESOURCE_BOUNDS["referent_scalar_max"]
+                and "\r" not in expression
+                and "\n" not in expression
+                and type(digest) is str
+                and digest
+                == hashlib.sha256(expression.encode("utf-8")).hexdigest(),
+                "STEP11_RC0031_P3_B5_PRODUCT_OWNER_EXPRESSION_CONTRACT_INVALID",
+            )
+        projected_occurrence_count += len(rows)
+
+        attacked_lexeme = lexemes[0]
+        matching = tuple(
+            row
+            for row in base_candidate.surface_ast.source_fragments
+            if attacked_lexeme.base_source_nucleus_id in row.source_nucleus_ids
+            and row.evidence_grade == "exact_source_span"
+        )
+        _closed_assert(
+            len(matching) == 1,
+            "STEP11_RC0031_P3_B5_OWNER_ATTACK_PRECONDITION_INVALID",
+        )
+        without_fragment_ast = replace(
+            base_candidate.surface_ast,
+            source_fragments=tuple(
+                row
+                for row in base_candidate.surface_ast.source_fragments
+                if row is not matching[0]
+            ),
+        )
+        duplicate_fragment_ast = replace(
+            base_candidate.surface_ast,
+            source_fragments=(
+                *base_candidate.surface_ast.source_fragments,
+                replace(
+                    matching[0],
+                    source_anchor_id=matching[0].source_anchor_id + "_b5dup",
+                ),
+            ),
+        )
+        attacks = (
+            (
+                replace(base_candidate, surface_ast=without_fragment_ast),
+                "STEP11_RC0031_PRODUCT_OWNER_SOURCE_FRAGMENT_UNRESOLVED",
+            ),
+            (
+                replace(base_candidate, surface_ast=duplicate_fragment_ast),
+                "STEP11_RC0031_PRODUCT_OWNER_SOURCE_FRAGMENT_AMBIGUOUS",
+            ),
+        )
+        for attacked_candidate, expected_code in attacks:
+            try:
+                projection(
+                    attacked_candidate,
+                    successor_snapshot=successor,
+                    lexical_atom_specs=lexical_specs,
+                )
+            except lexical_owner.Step11GroundedLexicalizationError as exc:
+                allowed_codes = {
+                    expected_code,
+                    "STEP11_RC0031_PRODUCT_OWNER_BASE_CANDIDATE_INVALID",
+                }
+                _closed_assert(
+                    exc.code in allowed_codes
+                    and str(exc) == exc.code
+                    and exc.args == (exc.code,),
+                    "STEP11_RC0031_P3_B5_PRODUCT_OWNER_EXPRESSION_ATTACK_INVALID",
+                )
+            except Exception:
+                pytest.fail(
+                    "STEP11_RC0031_P3_B5_PRODUCT_OWNER_EXPRESSION_ATTACK_INVALID",
+                    pytrace=False,
+                )
+            else:
+                pytest.fail(
+                    "STEP11_RC0031_P3_B5_PRODUCT_OWNER_EXPRESSION_ATTACK_ACCEPTED",
+                    pytrace=False,
+                )
+    _closed_assert(
+        projected_occurrence_count
+        == _B5_DESIGN_CONTRACT["clause_ready_owner_occurrence_count"],
+        "STEP11_RC0031_P3_B5_PRODUCT_OWNER_EXPRESSION_DENOMINATOR_INVALID",
+    )
+
+
+def test_rc0031_p3_b5_relation_connected_product_clusters_account_exact38_with_load4() -> None:
+    _b5_surface_api_or_red(_B5_CLUSTER_NOT_AVAILABLE)
+    observed_loads: list[tuple[int, ...]] = []
+    source_atom_ids: list[str] = []
+    for context in _rc0031_final_candidate_contexts():
+        _case, baseline, successor, _specs, candidate, _witness = context
+        records, *_source_authority = (
+            _inverse_module()._step11_rc0030_validated_source_records(
+                successor,
+                inventory_result=baseline.inventory_result,
+            )
+        )
+        expected_by_source = {
+            str(source_id): (
+                str(family),
+                str(key),
+                str(direction),
+                tuple(str(owner_id) for owner_id in owner_ids),
+            )
+            for source_id, family, key, direction, owner_ids in records
+            if str(source_id) != _EXPECTED_REUSE_SOURCE_ID
+        }
+        candidate = context[4]
+        bindings = tuple(candidate.surface_realization_plan.proposition_clause_bindings)
+        context_loads: list[int] = []
+        context_source_atom_ids: list[str] = []
+        for binding in bindings:
+            _closed_assert(
+                len(
+                    {
+                        len(binding.source_atom_ids),
+                        len(binding.semantic_families),
+                        len(binding.semantic_keys),
+                        len(binding.directions),
+                        len(binding.source_atom_owner_ids),
+                    }
+                )
+                == 1,
+                "STEP11_RC0031_P3_B5_PRODUCT_PROPOSITION_CLUSTER_INVALID",
+            )
+            new_rows = tuple(
+                (source_id, family, key, direction, owners)
+                for source_id, family, key, direction, owners in zip(
+                    binding.source_atom_ids,
+                    binding.semantic_families,
+                    binding.semantic_keys,
+                    binding.directions,
+                    binding.source_atom_owner_ids,
+                )
+                if source_id != _EXPECTED_REUSE_SOURCE_ID
+            )
+            if not new_rows:
+                continue
+            context_loads.append(len(new_rows))
+            context_source_atom_ids.extend(row[0] for row in new_rows)
+            _closed_assert(
+                len(new_rows)
+                <= _B5_DESIGN_CONTRACT[
+                    "product_proposition_cluster_load_max"
+                ]
+                and all(
+                    expected_by_source.get(str(source_id))
+                    == (
+                        str(family),
+                        str(key),
+                        str(direction),
+                        tuple(str(owner_id) for owner_id in owners),
+                    )
+                    for source_id, family, key, direction, owners in new_rows
+                )
+                and _b5_owner_sets_are_connected(
+                    tuple(
+                        expected_by_source[str(row[0])][3]
+                        for row in new_rows
+                        if str(row[0]) in expected_by_source
+                    )
+                ),
+                "STEP11_RC0031_P3_B5_PRODUCT_PROPOSITION_CLUSTER_INVALID",
+            )
+        _closed_assert(
+            len(context_source_atom_ids) == len(set(context_source_atom_ids))
+            and set(context_source_atom_ids) == set(expected_by_source),
+            "STEP11_RC0031_P3_B5_PRODUCT_PROPOSITION_CLUSTER_INVALID",
+        )
+        source_atom_ids.extend(context_source_atom_ids)
+        observed_loads.append(tuple(context_loads))
+    product_cluster_loads = tuple(
+        load for context_loads in observed_loads for load in context_loads
+    )
+    _closed_assert(
+        len(product_cluster_loads)
+        <= _B5_DESIGN_CONTRACT["product_proposition_cluster_max"]
+        and sum(product_cluster_loads)
+        == _B5_DESIGN_CONTRACT["new_semantic_atom_count"]
+        and max(product_cluster_loads, default=0)
+        <= _B5_DESIGN_CONTRACT["product_proposition_cluster_load_max"]
+        and len(source_atom_ids)
+        == _B5_DESIGN_CONTRACT["new_semantic_atom_count"],
+        "STEP11_RC0031_P3_B5_PRODUCT_PROPOSITION_CLUSTER_INVALID",
+    )
+
+
+def test_rc0031_p3_b5_ast_first_reception_preserves_bound10_and_adds_unmatched1() -> None:
+    _b5_surface_api_or_red(_B5_RECEPTION_NOT_AVAILABLE)
+    represented_base_bindings = 0
+    additional_bindings = 0
+    total_bindings = 0
+    for _case, _base, successor, _specs, candidate, _witness in (
+        _rc0031_final_candidate_contexts()
+    ):
+        product_rows = tuple(candidate.reception_bindings)
+        base_bindings = tuple(
+            candidate.base_candidate.surface_ast.reception_antecedent_bindings
+        )
+        required_opportunities = tuple(
+            row
+            for row in successor.base_snapshot.reception_opportunities
+            if row.retention == "required" or row.safety_required is True
+        )
+        required_opportunity_ids = {
+            str(row.source_id) for row in required_opportunities
+        }
+        opportunity_by_id = {
+            str(row.source_id): row for row in required_opportunities
+        }
+        base_opportunity_ids = {
+            str(source_id)
+            for binding in base_bindings
+            for source_id in binding.source_reception_opportunity_ids
+        }
+        product_opportunity_ids = tuple(
+            str(row.source_reception_opportunity_id) for row in product_rows
+        )
+        by_base_id = {
+            str(row.source_base_binding_id): row
+            for row in product_rows
+            if row.source_base_binding_id is not None
+        }
+        _closed_assert(
+            len(by_base_id)
+            == sum(row.source_base_binding_id is not None for row in product_rows)
+            and len(product_opportunity_ids)
+            == len(set(product_opportunity_ids))
+            and set(product_opportunity_ids) == required_opportunity_ids,
+            "STEP11_RC0031_P3_B5_AST_BOUND_RECEPTION_INVALID",
+        )
+        for binding in base_bindings:
+            row = by_base_id.get(str(binding.binding_id))
+            opportunity = (
+                opportunity_by_id.get(str(row.source_reception_opportunity_id))
+                if row is not None
+                else None
+            )
+            expected_targets = tuple(
+                _b5_normalize_nucleus_id(successor, value)
+                for value in binding.source_target_nucleus_ids
+            )
+            expected_supports = tuple(
+                dict.fromkeys(
+                    _b5_normalize_nucleus_id(successor, value)
+                    for value in (
+                        *binding.antecedent_nucleus_ids,
+                        *binding.supporting_nucleus_ids,
+                    )
+                )
+            )
+            _closed_assert(
+                row is not None
+                and opportunity is not None
+                and str(row.source_reception_opportunity_id)
+                in {str(value) for value in binding.source_reception_opportunity_ids}
+                and row.source_scope == str(opportunity.family)
+                and row.source_target_owner_ids == expected_targets
+                and row.supporting_source_owner_ids == expected_supports
+                and row.reception_act in binding.allowed_response_acts
+                and row.association_basis
+                == "exact_base_ast_antecedent_binding"
+                and row.additional_clause is False,
+                "STEP11_RC0031_P3_B5_AST_BOUND_RECEPTION_INVALID",
+            )
+            represented_base_bindings += 1
+        additional = tuple(
+            row for row in product_rows if row.source_base_binding_id is None
+        )
+        _closed_assert(
+            all(
+                row.additional_clause is True
+                and row.association_basis == "unmatched_required_opportunity"
+                and (
+                    opportunity := opportunity_by_id.get(
+                        str(row.source_reception_opportunity_id)
+                    )
+                )
+                is not None
+                and row.source_scope == str(opportunity.family)
+                and row.reception_act == str(opportunity.reception_act)
+                and row.source_target_owner_ids
+                == tuple(
+                    _b5_normalize_nucleus_id(successor, value)
+                    for value in opportunity.target_nucleus_ids
+                )
+                and row.supporting_source_owner_ids
+                == tuple(
+                    _b5_normalize_nucleus_id(successor, value)
+                    for value in opportunity.support_nucleus_ids
+                )
+                for row in additional
+            )
+            and {str(row.source_reception_opportunity_id) for row in additional}
+            == required_opportunity_ids - base_opportunity_ids,
+            "STEP11_RC0031_P3_B5_ADDITIONAL_RECEPTION_INVALID",
+        )
+        additional_bindings += len(additional)
+        total_bindings += len(product_rows)
+    _closed_assert(
+        represented_base_bindings
+        == _B5_DESIGN_CONTRACT["base_ast_reception_binding_count"]
+        and additional_bindings
+        == _B5_DESIGN_CONTRACT["unmatched_required_reception_count"]
+        and total_bindings
+        == _B5_DESIGN_CONTRACT["required_reception_opportunity_count"],
+        "STEP11_RC0031_P3_B5_AST_BOUND_RECEPTION_INVALID",
+    )
+
+
+def test_rc0031_p3_b5_product_surface_is_schema_free_metadata_free_and_case_agnostic() -> None:
+    builder, _validator = _b5_surface_api_or_red(_B5_BOUNDARY_NOT_AVAILABLE)
+    projection = _b5_owner_projection_or_red()
+    try:
+        lexical_text = _LEXICAL_PATH.read_bytes()[
+            _B5_LEXICAL_PREDECESSOR_BYTES:
+        ].decode("utf-8", errors="strict")
+        surface_text = _SURFACE_PATH.read_bytes()[
+            _B5_SURFACE_PREDECESSOR_BYTES:
+        ].decode("utf-8", errors="strict")
+        lexical_tree = ast.parse(lexical_text)
+        surface_tree = ast.parse(surface_text)
+    except (UnicodeError, SyntaxError):
+        pytest.fail(_B5_BOUNDARY_NOT_AVAILABLE, pytrace=False)
+    lexical_functions = tuple(
+        node
+        for node in lexical_tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    )
+    surface_functions = tuple(
+        node
+        for node in surface_tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    )
+    _closed_assert(
+        sum(node.name == projection.__name__ for node in lexical_functions) == 1
+        and sum(node.name == builder.__name__ for node in surface_functions) == 1,
+        "STEP11_RC0031_P3_B5_CASE_BRANCH_SCAN_INVALID",
+    )
+
+    def branch_selector_names(function: ast.AST) -> set[str]:
+        selectors: list[ast.AST] = []
+        for node in ast.walk(function):
+            if isinstance(node, (ast.If, ast.IfExp)):
+                selectors.append(node.test)
+            elif isinstance(node, ast.Match):
+                selectors.append(node.subject)
+            elif isinstance(node, ast.Subscript):
+                selectors.append(node.slice)
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "get"
+                and node.args
+            ):
+                selectors.append(node.args[0])
+            elif isinstance(
+                node,
+                (ast.DictComp, ast.GeneratorExp, ast.ListComp, ast.SetComp),
+            ):
+                selectors.extend(
+                    condition
+                    for generator in node.generators
+                    for condition in generator.ifs
+                )
+        return {
+            value
+            for selector in selectors
+            for child in ast.walk(selector)
+            for value in (
+                child.id.lower()
+                if isinstance(child, ast.Name)
+                else child.attr.lower()
+                if isinstance(child, ast.Attribute)
+                else "",
+            )
+            if value
+        }
+
+    lexical_forbidden_branch_names = {
+        "case",
+        "case_id",
+        "candidate_id",
+        "candidate_version_id",
+        "family",
+        "input_word",
+        "review",
+        "review_family",
+        "semantic_family",
+        "severity",
+        "source_base_candidate_id",
+        "source_word",
+    }
+    surface_forbidden_branch_names = {
+        "case",
+        "case_id",
+        "candidate_id",
+        "candidate_version_id",
+        "input_word",
+        "review",
+        "review_family",
+        "severity",
+        "source_base_candidate_id",
+        "source_word",
+    }
+    lexical_function_texts = tuple(
+        ast.get_source_segment(lexical_text, function)
+        for function in lexical_functions
+    )
+    surface_function_texts = tuple(
+        ast.get_source_segment(surface_text, function)
+        for function in surface_functions
+    )
+    _closed_assert(
+        all(type(value) is str for value in lexical_function_texts)
+        and all(type(value) is str for value in surface_function_texts)
+        and not set().union(
+            *(branch_selector_names(function) for function in lexical_functions)
+        )
+        & lexical_forbidden_branch_names
+        and not set().union(
+            *(branch_selector_names(function) for function in surface_functions)
+        )
+        & surface_forbidden_branch_names
+        and all(
+            marker not in value
+            for value in (*lexical_function_texts, *surface_function_texts)
+            for marker in (
+                "nls3s_b001_",
+                "expected_output",
+                "candidate_metadata",
+                "review_family",
+                "severity",
+            )
+        ),
+        "STEP11_RC0031_P3_B5_CASE_BRANCH_PRESENT",
+    )
+
+    forbidden_body_tokens = (
+        b"cocolon.emlis",
+        b"schema_version",
+        b"candidate_id",
+        b"source_atom_id",
+        b"source_reception_opportunity_id",
+        b"nls3s_b001_",
+    )
+    semantic_count = 0
+    reuse_count = 0
+    reception_count = 0
+    for context in _rc0031_final_candidate_contexts():
+        candidate = context[4]
+        body = candidate.final_utf8_bytes
+        plan = candidate.surface_realization_plan
+        _closed_assert(
+            not any(token in body for token in forbidden_body_tokens)
+            and candidate.base_candidate.rendered_surface.visible_source_anchor_count
+            <= _B5_DESIGN_CONTRACT["visible_source_anchor_max"]
+            and plan.maximum_visible_clauses_per_grammatical_sentence
+            == _B5_DESIGN_CONTRACT[
+                "visible_clauses_per_grammatical_sentence_max"
+            ]
+            and plan.maximum_grammatical_complexity_load
+            == _B5_DESIGN_CONTRACT["grammatical_complexity_load_max"]
+            and plan.maximum_repeated_joiner_per_group
+            == _B5_DESIGN_CONTRACT["repeated_joiner_per_group_max"]
+            and plan.maximum_observation_clauses_per_sentence
+            == _B5_DESIGN_CONTRACT["realization_units_per_group_max"]
+            and plan.peak_grammatical_complexity_load
+            <= plan.maximum_grammatical_complexity_load
+            and plan.peak_group_repeated_joiner_count
+            <= plan.maximum_repeated_joiner_per_group,
+            "STEP11_RC0031_P3_B5_PRODUCT_BOUNDARY_INVALID",
+        )
+        semantic_count += candidate.rendered_surface.semantic_atom_count
+        reuse_count += candidate.rendered_surface.exact_reuse_count
+        reception_count += candidate.rendered_surface.reception_predication_count
+    _closed_assert(
+        semantic_count == _B5_DESIGN_CONTRACT["new_semantic_atom_count"]
+        and reuse_count == _B5_DESIGN_CONTRACT["verified_base_reuse_count"]
+        and reception_count
+        == _B5_DESIGN_CONTRACT["required_reception_opportunity_count"],
+        "STEP11_RC0031_P3_B5_PRODUCT_BOUNDARY_INVALID",
+    )
