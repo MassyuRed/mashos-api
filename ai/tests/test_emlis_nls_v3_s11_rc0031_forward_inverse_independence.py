@@ -9213,10 +9213,10 @@ _B6_CHAIN_LOCUS_RED = (
 _B6_CHAIN_RECONCILIATION_RED = (
     "STEP11_RC0031_P3_B6_CHAINED_MODIFIER_BODY_RECOVERY_NOT_PROVED"
 )
-_B6_CHAIN_IMPLEMENTATION_PRESENT = False
+_B6_CHAIN_IMPLEMENTATION_PRESENT = True
 _B6_ROLE_TYPED_IMPLEMENTATION_PRESENT = _B6_CHAIN_IMPLEMENTATION_PRESENT
 _B6_CHAIN_DESIGN_MASKED_SHA256 = (
-    "55ba2f0d658b2c05e356bb0eaa72a4bc0adfbf404edd4491579ab56a4df8641c"
+    "a63310efbccb6e69abe557709c38bf480f2d7aef36d123dc76b6d2b63c1e9b03"
 )
 _B6_CHAIN_MAX_DEPTH = 2
 _B6_CHAIN_REQUIRED_MODIFIER_COUNT = 22
@@ -10400,7 +10400,7 @@ class TestRc0031P3B6ChainedModifierLocusMultiplicityReconciliationDesignFreezeRe
             and _b6_git_blob_sha1(prefix) == _B6_CHAIN_TEST_PREFIX_GIT_BLOB_SHA1
             and immutable_blobs == _B6_ROLE_TYPED_IMMUTABLE_GIT_BLOBS
             and surface_exact
-            and surface_append_present is False
+            and surface_append_present is _B6_CHAIN_IMPLEMENTATION_PRESENT
             and topology["context_count"] == _B6_ROLE_TYPED_CONTEXT_COUNT
             and topology["binding_count"] == _B6_ROLE_TYPED_BINDING_COUNT
             and topology["head_count"] == _B6_ROLE_TYPED_HEAD_COUNT
