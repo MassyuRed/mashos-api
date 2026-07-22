@@ -6425,3 +6425,511 @@ def _b6_has_visible_support_difference(value: Any) -> bool:
             for child in ast.walk(tree)
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# rc0031 P3 B6 Reception authority scope / phase reconciliation RED-only
+# ---------------------------------------------------------------------------
+
+_B6_SCOPE_RECONCILIATION_TEST_PREFIX_BYTES = 235_266
+_B6_SCOPE_RECONCILIATION_TEST_PREFIX_SHA256 = (
+    "baa4cdd1df995c87518e25069e237e4a721dd0de2dd3d91b316b97c4894c5f33"
+)
+_B6_SCOPE_RECONCILIATION_TEST_PREFIX_GIT_BLOB_SHA1 = (
+    "21f014f1ed2eaabe8a63b9c66b5050307de0eb35"
+)
+_B6_SCOPE_MANIFEST_RECONCILIATION_RED = (
+    "SCOPE_MANIFEST_RECONCILIATION_NOT_PROVED"
+)
+_B6_PHASE_PROJECTION_RECONCILIATION_RED = (
+    "PHASE_PROJECTION_RECONCILIATION_NOT_PROVED"
+)
+_B6_RECEPTION_AUTHORITY_PATH = (
+    _SERVICE_ROOT / "emlis_ai_step11_rc0031_reception_focus_authority_v3.py"
+)
+_B6_RECONCILIATION_SERVICE_PY_PATH_COUNT = 547
+_B6_RECONCILIATION_SERVICE_PY_PATH_LIST_SHA256 = (
+    "f778dab004d3482f80143c39e78388a968efdbc956a86e8ef81cc112efdee54d"
+)
+_B6_RECONCILIATION_REPOSITORY_PY_FROZEN_FILE_COUNT = 1_531
+_B6_RECONCILIATION_REPOSITORY_PY_FROZEN_MATERIAL_SHA256 = (
+    "3bb8ccac539c2d92369c0bd2af228d339e516fdaac96bf98eaa6cfbe1531369e"
+)
+_B6_RECONCILIATION_ACTIVE_PATH_COUNT = 6
+_B6_RECONCILIATION_ACTIVE_PATH_LIST_SHA256 = (
+    "5acf3f928bdd260532355702e020fa5d104780025fff28068a84a1c6f3936c4c"
+)
+_B6_RECONCILIATION_P2_ACTIVE = frozenset(
+    {
+        "ai/services/ai_inference/emlis_ai_step11_rc0031_experiment_surface_catalog_v3.py",
+        "ai/tests/fixtures/emlis_nls_v3/cycle_001/rc0031_representative8_body_free.json",
+        "ai/tests/test_emlis_nls_v3_s11_rc0031_proposition_surface_red.py",
+        "ai/tests/test_emlis_nls_v3_s11_rc0031_proposition_surface_mutation.py",
+    }
+)
+_B6_RECONCILIATION_P3_ADDITIVE_PATHS = frozenset(
+    {
+        "ai/services/ai_inference/emlis_ai_step11_rc0031_reception_focus_authority_v3.py",
+        "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py",
+    }
+)
+_B6_RECONCILIATION_P3_ACTIVE = (
+    _B6_RECONCILIATION_P2_ACTIVE | _B6_RECONCILIATION_P3_ADDITIVE_PATHS
+)
+_B6_RECONCILIATION_IMMUTABLE_GIT_BLOBS = {
+    _CATALOG_PATH: "94e87e7bdd58359dd3790e30fcd765151ad792d9",
+    _LEXICAL_PATH: "49a47629b3dcd82ed6326ba815c9e044f65c0cf1",
+    _SURFACE_PATH: "ab10c70629edc57ab971760816fc106747f3de34",
+    _MATCHER_PATH: "9d7a82fc746e7827b1893228d6de128d669af975",
+    _GATE_PATH: "b5dadd0e100adddb016dcf5a08dc0afefe477d06",
+    _P1_FIXTURE: "56e4d96f8559e2411305b1dac83b5932df88d1a8",
+    _P1_TEST: "9712f44f7faf3d00b4f447fd3877a11c218740bd",
+    _P2_TEST: "55ca582d5e9d1600db2c27d80d6a623247aae4de",
+    (
+        _SERVICE_ROOT
+        / "emlis_ai_grounded_relation_construction_authority_successor_v3.py"
+    ): "d622874a8ac2c9686a2e716c55c5b7816b46efa8",
+    _B6_RECEPTION_AUTHORITY_PATH: (
+        "7ddd4b62a5a46bf55bb97063d58801228849dd68"
+    ),
+}
+_B6_RECONCILIATION_ALLOWED_ASSIGNMENT_WINDOWS = frozenset(
+    {
+        "_SERVICE_PY_PATH_COUNT",
+        "_SERVICE_PY_PATH_LIST_SHA256",
+        "_REPOSITORY_PY_FROZEN_FILE_COUNT",
+        "_REPOSITORY_PY_FROZEN_MATERIAL_SHA256",
+        "_EXPECTED_P3_ACTIVE",
+        "_B5_TEST_PREFIX_BYTES",
+        "_B5_TEST_PREFIX_SHA256",
+        "_B6_TEST_PREFIX_BYTES",
+        "_B6_TEST_PREFIX_SHA256",
+        "_B6_RED_ONLY_TEST_BYTES",
+        "_B6_RED_ONLY_TEST_SHA256",
+    }
+)
+_B6_RECONCILIATION_ALLOWED_ASSERTION_WINDOWS = frozenset(
+    {
+        (
+            "test_rc0031_p3_predecessor_phase_projection_is_exact",
+            frozenset({"_EXPECTED_P2_ACTIVE", "_EXPECTED_P3_ACTIVE"}),
+        ),
+        (
+            "test_rc0031_p3_b5_freeze_scope_and_predecessor_behavior_are_exact",
+            frozenset({"_EXPECTED_P3_ACTIVE"}),
+        ),
+        (
+            "TestRc0031P3B6DesignFreezeRedOnly."
+            "test_rc0031_p3_b6_freeze_scope_and_predecessor_behavior_are_exact",
+            frozenset({"_EXPECTED_P3_ACTIVE"}),
+        ),
+    }
+)
+_B6_RECONCILIATION_POST_MARKER_MECHANICAL_WINDOWS = frozenset(
+    {
+        "_B6_SCOPE_RECONCILIATION_TEST_PREFIX_BYTES",
+        "_B6_SCOPE_RECONCILIATION_TEST_PREFIX_SHA256",
+        "_B6_SCOPE_RECONCILIATION_TEST_PREFIX_GIT_BLOB_SHA1",
+    }
+)
+_B6_RECONCILIATION_MASKED_PREDECESSOR_SHA256 = (
+    "725fcfbe842d4f292c3c6fad69a3a1be2ead0186b683997fcebcc399125e3726"
+)
+_B6_RECONCILIATION_DESIGN_MASKED_SHA256 = (
+    "a0a034fbccf61c1fcd8baa6fc234afda68e74ebdc952821022ad669099c49e70"
+)
+_B6_RECONCILIATION_EXPECTED_SCOPE_COMPARE_SOURCE = """\
+_EXPECTED_P3_ACTIVE == frozenset(
+    {
+        "ai/services/ai_inference/emlis_ai_step11_rc0031_experiment_surface_catalog_v3.py",
+        "ai/services/ai_inference/emlis_ai_step11_rc0031_reception_focus_authority_v3.py",
+        "ai/tests/fixtures/emlis_nls_v3/cycle_001/rc0031_representative8_body_free.json",
+        "ai/tests/test_emlis_nls_v3_s11_rc0031_proposition_surface_red.py",
+        "ai/tests/test_emlis_nls_v3_s11_rc0031_proposition_surface_mutation.py",
+        "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py",
+    }
+)
+"""
+_B6_RECONCILIATION_EXPECTED_PHASE_COMPARE_SOURCE = """\
+p2._EXPECTED_P2_ACTIVE == _EXPECTED_P3_ACTIVE - {
+    current_test,
+    _B6_RECEPTION_AUTHORITY_PATH.relative_to(_REPO_ROOT).as_posix(),
+}
+"""
+
+
+def _b6_git_blob_sha1(value: bytes) -> str:
+    return hashlib.sha1(
+        b"blob " + str(len(value)).encode("ascii") + b"\0" + value
+    ).hexdigest()
+
+
+def _b6_scope_reconciliation_material() -> tuple[Any, ...]:
+    service_py_paths = tuple(
+        sorted(
+            path.relative_to(_REPO_ROOT).as_posix()
+            for path in _SERVICE_ROOT.rglob("*.py")
+            if "__pycache__" not in path.parts
+        )
+    )
+    service_py_path_material = (
+        "\n".join(service_py_paths) + "\n"
+    ).encode("utf-8")
+    repository_py_paths = tuple(
+        sorted(
+            path
+            for path in _REPO_ROOT.rglob("*.py")
+            if path
+            not in {
+                _CATALOG_PATH,
+                _LEXICAL_PATH,
+                _MATCHER_PATH,
+                _SURFACE_PATH,
+                Path(__file__).resolve(),
+            }
+            and "__pycache__" not in path.parts
+            and ".git" not in path.parts
+        )
+    )
+    repository_py_material = b"".join(
+        (
+            path.relative_to(_REPO_ROOT).as_posix()
+            + "\0"
+            + str(path.stat().st_size)
+            + "\0"
+            + _sha256(path)
+            + "\n"
+        ).encode("utf-8")
+        for path in repository_py_paths
+    )
+    active = frozenset(
+        path.relative_to(_REPO_ROOT).as_posix()
+        for path in (_REPO_ROOT / "ai").rglob("*rc0031*")
+        if path.is_file()
+        and "__pycache__" not in path.parts
+        and path.suffix != ".pyc"
+    )
+    active_path_material = (
+        "\n".join(sorted(active)) + "\n"
+    ).encode("utf-8")
+    return (
+        len(service_py_paths),
+        hashlib.sha256(service_py_path_material).hexdigest(),
+        len(repository_py_paths),
+        hashlib.sha256(repository_py_material).hexdigest(),
+        len(active),
+        hashlib.sha256(active_path_material).hexdigest(),
+        active,
+    )
+
+
+def _b6_reconciliation_masked_predecessor_material(
+    source: bytes,
+) -> tuple[str, frozenset[str]]:
+    marker = (
+        b"# ---------------------------------------------------------------------------\n"
+        b"# rc0031 P3 B6 Reception authority scope / phase reconciliation RED-only\n"
+        b"# ---------------------------------------------------------------------------\n"
+    )
+    _closed_assert(
+        source.count(marker) == 1,
+        "STEP11_RC0031_P3_B6_RECONCILIATION_MARKER_INVALID",
+    )
+    predecessor = source[: source.index(marker)].decode(
+        "utf-8", errors="strict"
+    )
+    tree = ast.parse(predecessor)
+    lines = predecessor.splitlines(keepends=True)
+    windows: list[tuple[int, int, str]] = []
+    found: set[str] = set()
+    for node in tree.body:
+        assignment_name = None
+        if (
+            isinstance(node, (ast.Assign, ast.AnnAssign))
+            and isinstance(
+                node.target if isinstance(node, ast.AnnAssign) else None,
+                ast.Name,
+            )
+        ):
+            assignment_name = node.target.id
+        elif (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+        ):
+            assignment_name = node.targets[0].id
+        if assignment_name in _B6_RECONCILIATION_ALLOWED_ASSIGNMENT_WINDOWS:
+            key = f"assignment:{assignment_name}"
+            windows.append((node.lineno - 1, node.end_lineno, key))
+            found.add(key)
+    function_nodes = {
+        node.name: node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    function_nodes.update(
+        {
+            f"{node.name}.{child.name}": child
+            for node in tree.body
+            if isinstance(node, ast.ClassDef)
+            for child in node.body
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+    )
+    for owner_name, required_names in (
+        _B6_RECONCILIATION_ALLOWED_ASSERTION_WINDOWS
+    ):
+        owner = function_nodes.get(owner_name)
+        _closed_assert(
+            owner is not None,
+            "STEP11_RC0031_P3_B6_RECONCILIATION_ASSERTION_WINDOW_INVALID",
+        )
+        matches = tuple(
+            child
+            for child in ast.walk(owner)
+            if isinstance(child, ast.Compare)
+            and required_names
+            <= frozenset(
+                row.id
+                if isinstance(row, ast.Name)
+                else row.attr
+                if isinstance(row, ast.Attribute)
+                else ""
+                for row in ast.walk(child)
+                if isinstance(row, (ast.Name, ast.Attribute))
+            )
+        )
+        _closed_assert(
+            len(matches) == 1,
+            "STEP11_RC0031_P3_B6_RECONCILIATION_ASSERTION_WINDOW_INVALID",
+        )
+        assertion = matches[0]
+        key = f"assertion:{owner_name}"
+        windows.append(
+            (assertion.lineno - 1, assertion.end_lineno, key)
+        )
+        found.add(key)
+    for start, end, key in windows:
+        lines[start] = f"<MIGRATION_WINDOW:{key}>\n"
+        for index in range(start + 1, end):
+            lines[index] = ""
+    return (
+        hashlib.sha256("".join(lines).encode("utf-8")).hexdigest(),
+        frozenset(found),
+    )
+
+
+def _b6_reconciliation_masked_design_material(source: bytes) -> str:
+    marker = (
+        b"# ---------------------------------------------------------------------------\n"
+        b"# rc0031 P3 B6 Reception authority scope / phase reconciliation RED-only\n"
+        b"# ---------------------------------------------------------------------------\n"
+    )
+    _closed_assert(
+        source.count(marker) == 1,
+        "STEP11_RC0031_P3_B6_RECONCILIATION_MARKER_INVALID",
+    )
+    design = source[source.index(marker) :].decode(
+        "utf-8", errors="strict"
+    )
+    tree = ast.parse(design)
+    lines = design.splitlines(keepends=True)
+    masked_names = (
+        _B6_RECONCILIATION_POST_MARKER_MECHANICAL_WINDOWS
+        | frozenset({"_B6_RECONCILIATION_DESIGN_MASKED_SHA256"})
+    )
+    found: set[str] = set()
+    for node in tree.body:
+        assignment_name = None
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+        ):
+            assignment_name = node.target.id
+        elif (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+        ):
+            assignment_name = node.targets[0].id
+        if assignment_name in masked_names:
+            lines[node.lineno - 1] = (
+                f"<MECHANICAL_COMMITMENT:{assignment_name}>\n"
+            )
+            for index in range(node.lineno, node.end_lineno):
+                lines[index] = ""
+            found.add(assignment_name)
+    _closed_assert(
+        found == masked_names,
+        "STEP11_RC0031_P3_B6_RECONCILIATION_DESIGN_WINDOW_INVALID",
+    )
+    return hashlib.sha256("".join(lines).encode("utf-8")).hexdigest()
+
+
+def _b6_reconciliation_compare_is_exact(
+    value: Any,
+    expected_source: str,
+    code: str,
+) -> bool:
+    import textwrap
+
+    try:
+        tree = ast.parse(textwrap.dedent(inspect.getsource(value)))
+        expected = ast.parse(expected_source, mode="eval").body
+    except (OSError, TypeError, UnicodeError, SyntaxError):
+        pytest.fail(code, pytrace=False)
+    expected_dump = ast.dump(expected, include_attributes=False)
+    return (
+        sum(
+            ast.dump(child, include_attributes=False) == expected_dump
+            for child in ast.walk(tree)
+            if isinstance(child, ast.Compare)
+        )
+        == 1
+    )
+
+
+class TestRc0031P3B6ScopeProjectionReconciliationDesignFreezeRedOnly:
+    def test_rc0031_p3_b6_reconciliation_predecessor_and_boundaries_are_exact(
+        self,
+    ) -> None:
+        source = Path(__file__).resolve().read_bytes()
+        prefix = source[:_B6_SCOPE_RECONCILIATION_TEST_PREFIX_BYTES]
+        fixture = json.loads(_P1_FIXTURE.read_text(encoding="utf-8"))
+        privacy = fixture.get("privacy_contract", {})
+        immutable_blobs = {
+            path: _b6_git_blob_sha1(path.read_bytes())
+            for path in _B6_RECONCILIATION_IMMUTABLE_GIT_BLOBS
+        }
+        _closed_assert(
+            len(prefix) == _B6_SCOPE_RECONCILIATION_TEST_PREFIX_BYTES
+            and hashlib.sha256(prefix).hexdigest()
+            == _B6_SCOPE_RECONCILIATION_TEST_PREFIX_SHA256
+            and _b6_git_blob_sha1(prefix)
+            == _B6_SCOPE_RECONCILIATION_TEST_PREFIX_GIT_BLOB_SHA1
+            and immutable_blobs == _B6_RECONCILIATION_IMMUTABLE_GIT_BLOBS
+            and fixture.get("body_free") is True
+            and privacy.get("body_or_quote_exported") is False
+            and privacy.get("parsed_span_or_binding_detail_exported") is False
+            and privacy.get("unsalted_body_digest_exported") is False
+            and privacy.get("runtime_connected") is False
+            and privacy.get("formal_or_production_eligible") is False
+            and _EXPECTED_FORWARD_RESOURCE_BOUNDS
+            == importlib.import_module(
+                "emlis_ai_step11_rc0031_experiment_surface_catalog_v3"
+            ).STEP11_RC0031_EXPERIMENT_SURFACE_CATALOG["resource_bounds"],
+            "STEP11_RC0031_P3_B6_RECONCILIATION_PREDECESSOR_OR_BOUNDARY_DRIFT",
+        )
+
+    def test_rc0031_p3_b6_reconciliation_future_green_window_is_exact(
+        self,
+    ) -> None:
+        source = Path(__file__).resolve().read_bytes()
+        masked_sha256, found = (
+            _b6_reconciliation_masked_predecessor_material(
+                source
+            )
+        )
+        design_masked_sha256 = (
+            _b6_reconciliation_masked_design_material(source)
+        )
+        expected = frozenset(
+            {
+                f"assignment:{name}"
+                for name in _B6_RECONCILIATION_ALLOWED_ASSIGNMENT_WINDOWS
+            }
+            | {
+                f"assertion:{owner_name}"
+                for owner_name, _required_names in (
+                    _B6_RECONCILIATION_ALLOWED_ASSERTION_WINDOWS
+                )
+            }
+        )
+        _closed_assert(
+            found == expected
+            and masked_sha256
+            == _B6_RECONCILIATION_MASKED_PREDECESSOR_SHA256
+            and design_masked_sha256
+            == _B6_RECONCILIATION_DESIGN_MASKED_SHA256
+            and _B6_RECONCILIATION_POST_MARKER_MECHANICAL_WINDOWS
+            == frozenset(
+                {
+                    "_B6_SCOPE_RECONCILIATION_TEST_PREFIX_BYTES",
+                    "_B6_SCOPE_RECONCILIATION_TEST_PREFIX_SHA256",
+                    "_B6_SCOPE_RECONCILIATION_TEST_PREFIX_GIT_BLOB_SHA1",
+                }
+            ),
+            "STEP11_RC0031_P3_B6_RECONCILIATION_CHANGE_WINDOW_DRIFT",
+        )
+
+    def test_rc0031_p3_b6_scope_manifest_reconciliation_is_proved_or_red(
+        self,
+    ) -> None:
+        observed = _b6_scope_reconciliation_material()
+        b5_scope_compare_is_exact = _b6_reconciliation_compare_is_exact(
+            test_rc0031_p3_b5_freeze_scope_and_predecessor_behavior_are_exact,
+            _B6_RECONCILIATION_EXPECTED_SCOPE_COMPARE_SOURCE,
+            _B6_SCOPE_MANIFEST_RECONCILIATION_RED,
+        )
+        b6_scope_compare_is_exact = _b6_reconciliation_compare_is_exact(
+            getattr(
+                TestRc0031P3B6DesignFreezeRedOnly,
+                "test_rc0031_p3_b6_freeze_scope_and_predecessor_behavior_are_exact",
+            ),
+            _B6_RECONCILIATION_EXPECTED_SCOPE_COMPARE_SOURCE,
+            _B6_SCOPE_MANIFEST_RECONCILIATION_RED,
+        )
+        _closed_assert(
+            observed[:6]
+            == (
+                _B6_RECONCILIATION_SERVICE_PY_PATH_COUNT,
+                _B6_RECONCILIATION_SERVICE_PY_PATH_LIST_SHA256,
+                _B6_RECONCILIATION_REPOSITORY_PY_FROZEN_FILE_COUNT,
+                _B6_RECONCILIATION_REPOSITORY_PY_FROZEN_MATERIAL_SHA256,
+                _B6_RECONCILIATION_ACTIVE_PATH_COUNT,
+                _B6_RECONCILIATION_ACTIVE_PATH_LIST_SHA256,
+            )
+            and observed[6] == _B6_RECONCILIATION_P3_ACTIVE
+            and _SERVICE_PY_PATH_COUNT
+            == _B6_RECONCILIATION_SERVICE_PY_PATH_COUNT
+            and _SERVICE_PY_PATH_LIST_SHA256
+            == _B6_RECONCILIATION_SERVICE_PY_PATH_LIST_SHA256
+            and _REPOSITORY_PY_FROZEN_FILE_COUNT
+            == _B6_RECONCILIATION_REPOSITORY_PY_FROZEN_FILE_COUNT
+            and _REPOSITORY_PY_FROZEN_MATERIAL_SHA256
+            == _B6_RECONCILIATION_REPOSITORY_PY_FROZEN_MATERIAL_SHA256
+            and _EXPECTED_P3_ACTIVE == _B6_RECONCILIATION_P3_ACTIVE
+            and b5_scope_compare_is_exact
+            and b6_scope_compare_is_exact,
+            _B6_SCOPE_MANIFEST_RECONCILIATION_RED,
+        )
+
+    def test_rc0031_p3_b6_phase_projection_reconciliation_is_proved_or_red(
+        self,
+    ) -> None:
+        p2 = _p2_test_module()
+        projection_compare_is_exact = _b6_reconciliation_compare_is_exact(
+            test_rc0031_p3_predecessor_phase_projection_is_exact,
+            _B6_RECONCILIATION_EXPECTED_PHASE_COMPARE_SOURCE,
+            _B6_PHASE_PROJECTION_RECONCILIATION_RED,
+        )
+        _closed_assert(
+            p2._EXPECTED_P2_ACTIVE == _B6_RECONCILIATION_P2_ACTIVE
+            and _B6_RECONCILIATION_P3_ACTIVE
+            == _B6_RECONCILIATION_P2_ACTIVE
+            | _B6_RECONCILIATION_P3_ADDITIVE_PATHS
+            and _B6_RECONCILIATION_P3_ADDITIVE_PATHS
+            == frozenset(
+                {
+                    _B6_RECEPTION_AUTHORITY_PATH.relative_to(
+                        _REPO_ROOT
+                    ).as_posix(),
+                    Path(__file__).resolve().relative_to(
+                        _REPO_ROOT
+                    ).as_posix(),
+                }
+            )
+            and _EXPECTED_P3_ACTIVE == _B6_RECONCILIATION_P3_ACTIVE
+            and projection_compare_is_exact,
+            _B6_PHASE_PROJECTION_RECONCILIATION_RED,
+        )
