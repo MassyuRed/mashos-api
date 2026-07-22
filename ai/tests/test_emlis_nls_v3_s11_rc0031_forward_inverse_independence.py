@@ -94,13 +94,13 @@ _SURFACE_APPEND_MARKER = (
     b"# rc0031 experiment-only dimension-bearing Surface successor "
     b"(append-only P3 owner)"
 )
-_SERVICE_PY_PATH_COUNT = 546
+_SERVICE_PY_PATH_COUNT = 547
 _SERVICE_PY_PATH_LIST_SHA256 = (
-    "46db0d14852dde6ebb6012596234cbb935243b27ed227465d9e94876ce4f5d56"
+    "f778dab004d3482f80143c39e78388a968efdbc956a86e8ef81cc112efdee54d"
 )
-_REPOSITORY_PY_FROZEN_FILE_COUNT = 1_530
+_REPOSITORY_PY_FROZEN_FILE_COUNT = 1_531
 _REPOSITORY_PY_FROZEN_MATERIAL_SHA256 = (
-    "e349323507c8c5b798c7fe70f6776700f4384ad2207d152c2515f41a913e17ac"
+    "3bb8ccac539c2d92369c0bd2af228d339e516fdaac96bf98eaa6cfbe1531369e"
 )
 _MATCHER_PREDECESSOR_BYTES = 722_658
 _MATCHER_PREDECESSOR_SHA256 = (
@@ -111,6 +111,7 @@ _MATCHER_APPEND_MARKER = b"# rc0031 experiment-only final body inverse"
 _EXPECTED_P3_ACTIVE = frozenset(
     {
         "ai/services/ai_inference/emlis_ai_step11_rc0031_experiment_surface_catalog_v3.py",
+        "ai/services/ai_inference/emlis_ai_step11_rc0031_reception_focus_authority_v3.py",
         "ai/tests/fixtures/emlis_nls_v3/cycle_001/rc0031_representative8_body_free.json",
         "ai/tests/test_emlis_nls_v3_s11_rc0031_proposition_surface_red.py",
         "ai/tests/test_emlis_nls_v3_s11_rc0031_proposition_surface_mutation.py",
@@ -2465,8 +2466,12 @@ def test_rc0031_p3_predecessor_phase_projection_is_exact() -> None:
     )
     _closed_assert(
         discovered == _EXPECTED_P3_ACTIVE
-        and p2._EXPECTED_P2_ACTIVE
-        == _EXPECTED_P3_ACTIVE - {current_test}
+        and p2._EXPECTED_P2_ACTIVE == _EXPECTED_P3_ACTIVE - {
+            current_test,
+            _B6_RECEPTION_AUTHORITY_PATH.relative_to(
+                _REPO_ROOT
+            ).as_posix(),
+        }
         and current_test in p2._EXPECTED_EXACT18
         and current_test not in p2._EXPECTED_P2_ACTIVE,
         "STEP11_RC0031_P3_PREDECESSOR_PHASE_PROJECTION_INVALID",
@@ -4614,9 +4619,9 @@ def test_rc0031_p3_relation_distribution_reception_and_reuse_body_mutations_fail
 # rc0031 P3 B5 owner-boundary design freeze and RED-only
 # ---------------------------------------------------------------------------
 
-_B5_TEST_PREFIX_BYTES = 162_521
+_B5_TEST_PREFIX_BYTES = 162_734
 _B5_TEST_PREFIX_SHA256 = (
-    "f4922b32d76816e615fb2e448b61a780185800440fc1cbdb9fad0f43117b0d91"
+    "f3ffa433806b0453feef9ccc7b336d8555dda1ca87ba71d28af700185e203b4f"
 )
 _B5_PREDECESSOR_TEST_COUNT = 24
 _B5_PREDECESSOR_TEST_NAMES_SHA256 = (
@@ -5000,6 +5005,7 @@ def test_rc0031_p3_b5_freeze_scope_and_predecessor_behavior_are_exact() -> None:
         == frozenset(
             {
                 "ai/services/ai_inference/emlis_ai_step11_rc0031_experiment_surface_catalog_v3.py",
+                "ai/services/ai_inference/emlis_ai_step11_rc0031_reception_focus_authority_v3.py",
                 "ai/tests/fixtures/emlis_nls_v3/cycle_001/rc0031_representative8_body_free.json",
                 "ai/tests/test_emlis_nls_v3_s11_rc0031_proposition_surface_red.py",
                 "ai/tests/test_emlis_nls_v3_s11_rc0031_proposition_surface_mutation.py",
@@ -5614,9 +5620,9 @@ def test_rc0031_p3_b5_product_surface_is_schema_free_metadata_free_and_case_agno
 # rc0031 P3 B6 source-congruence / role-inflection design freeze and RED-only
 # ---------------------------------------------------------------------------
 
-_B6_TEST_PREFIX_BYTES = 202_968
+_B6_TEST_PREFIX_BYTES = 203_280
 _B6_TEST_PREFIX_SHA256 = (
-    "0821ec5408c43208bdef2c776d3d6c13363ad6c3b21cd79779e95d0aa8ff3813"
+    "5b7bc4eba199ad5a2ec864fd8e36d2725c02e250ba2ae9a03aab12380a70cd74"
 )
 _B6_PREDECESSOR_TOP_LEVEL_TEST_COUNT = 30
 _B6_PREDECESSOR_TOP_LEVEL_TEST_NAMES_SHA256 = (
@@ -6039,6 +6045,7 @@ class TestRc0031P3B6DesignFreezeRedOnly:
             == frozenset(
                 {
                     "ai/services/ai_inference/emlis_ai_step11_rc0031_experiment_surface_catalog_v3.py",
+                    "ai/services/ai_inference/emlis_ai_step11_rc0031_reception_focus_authority_v3.py",
                     "ai/tests/fixtures/emlis_nls_v3/cycle_001/rc0031_representative8_body_free.json",
                     "ai/tests/test_emlis_nls_v3_s11_rc0031_proposition_surface_red.py",
                     "ai/tests/test_emlis_nls_v3_s11_rc0031_proposition_surface_mutation.py",
@@ -6169,9 +6176,9 @@ class TestRc0031P3B6DesignFreezeRedOnly:
 # rc0031 P3 B6 source / Reception authority implementation and GREEN amendment
 # ---------------------------------------------------------------------------
 
-_B6_RED_ONLY_TEST_BYTES = 224_767
+_B6_RED_ONLY_TEST_BYTES = 225_182
 _B6_RED_ONLY_TEST_SHA256 = (
-    "0af7c0177ade14c94ec2426e3245833793ce5690fde835ab95be0cb58fe517c7"
+    "cd400abfadce39b08a2e19b4ec5b808bd98d51a06954eb5486c24efc0367220e"
 )
 _B6_GREEN_AMENDMENT_MARKER = (
     b"# ---------------------------------------------------------------------------\n"
@@ -6431,12 +6438,12 @@ def _b6_has_visible_support_difference(value: Any) -> bool:
 # rc0031 P3 B6 Reception authority scope / phase reconciliation RED-only
 # ---------------------------------------------------------------------------
 
-_B6_SCOPE_RECONCILIATION_TEST_PREFIX_BYTES = 235_266
+_B6_SCOPE_RECONCILIATION_TEST_PREFIX_BYTES = 235_683
 _B6_SCOPE_RECONCILIATION_TEST_PREFIX_SHA256 = (
-    "baa4cdd1df995c87518e25069e237e4a721dd0de2dd3d91b316b97c4894c5f33"
+    "77b1360e53f9781079afc21671420ca4f765271701647a9958776a0cd8eaef23"
 )
 _B6_SCOPE_RECONCILIATION_TEST_PREFIX_GIT_BLOB_SHA1 = (
-    "21f014f1ed2eaabe8a63b9c66b5050307de0eb35"
+    "864116ec879d5016e455f01a3aa350d7cfa4d5b0"
 )
 _B6_SCOPE_MANIFEST_RECONCILIATION_RED = (
     "SCOPE_MANIFEST_RECONCILIATION_NOT_PROVED"
