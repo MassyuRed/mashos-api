@@ -13864,3 +13864,222 @@ __all__ += [
     "build_step11_rc0031_dimension_bearing_experiment_surface_candidate",
     "validate_step11_rc0031_dimension_bearing_experiment_surface_candidate",
 ]
+# rc0031 experiment-only private Reception authority injection seam (append-only B6 consumer)
+
+def _step11_rc0031_build_dimension_bearing_product_candidate_with_reception_authority(
+    value: Any,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+    reception_focus_authority: Any,
+    plan: Any,
+    resolver: Any,
+    inventory_result: Any,
+    content_plan: Any,
+    current_input: Any,
+) -> Step11Rc0031ExperimentSurfaceCandidate:
+    """Rebuild one private Product candidate from accepted Reception authority."""
+
+    try:
+        reception_authority_owner = __import__(
+            "emlis_ai_step11_rc0031_reception_focus_authority_v3",
+            fromlist=(
+                "validate_step11_rc0031_reception_focus_authority",
+            ),
+        )
+        authority_issues = (
+            reception_authority_owner.validate_step11_rc0031_reception_focus_authority(
+                reception_focus_authority,
+                plan=plan,
+                resolver=resolver,
+                successor_snapshot=successor_snapshot,
+                base_candidate=value.base_candidate,
+                inventory_result=inventory_result,
+                content_plan=content_plan,
+                current_input=current_input,
+            )
+        )
+        if authority_issues:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0031_RECEPTION_SOURCE_BINDING_INVALID"
+            )
+
+        candidate = _step11_rc0031_build_dimension_bearing_product_candidate(
+            value,
+            successor_snapshot=successor_snapshot,
+            lexical_atom_specs=lexical_atom_specs,
+        )
+        if not _step11_rc0031_safe_structural_equal(value, candidate):
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0031_RECEPTION_SOURCE_BINDING_INVALID"
+            )
+
+        current_bindings = tuple(
+            candidate.surface_realization_plan.reception_predication_bindings
+        )
+        authority_bindings = tuple(reception_focus_authority.bindings)
+        current_by_opportunity = {
+            str(row.source_reception_opportunity_id): row
+            for row in current_bindings
+        }
+        authority_by_opportunity = {
+            str(row.source_reception_opportunity_id): row
+            for row in authority_bindings
+        }
+        if (
+            not current_bindings
+            or len(current_by_opportunity) != len(current_bindings)
+            or len(authority_by_opportunity) != len(authority_bindings)
+            or reception_focus_authority.binding_count
+            != len(authority_bindings)
+            or set(current_by_opportunity) != set(authority_by_opportunity)
+        ):
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0031_RECEPTION_SOURCE_BINDING_INVALID"
+            )
+
+        (
+            _catalog_owner,
+            catalog,
+            grammar,
+            _catalog_sha256,
+        ) = _step11_rc0031_product_surface_authorities()
+        reception_contract = grammar["reception_contract"]
+        injected_bindings: list[Step11Rc0031ReceptionPredicationBinding] = []
+        for current_row in current_bindings:
+            authority_row = authority_by_opportunity[
+                str(current_row.source_reception_opportunity_id)
+            ]
+            if authority_row.association_basis == "selected_base_ast_binding":
+                expected_association = reception_contract[
+                    "base_association_basis"
+                ]
+                expected_additional_clause = False
+            elif (
+                authority_row.association_basis
+                == "unmatched_required_opportunity"
+            ):
+                expected_association = reception_contract[
+                    "additional_association_basis"
+                ]
+                expected_additional_clause = True
+            else:
+                raise Step11NaturalSurfaceError(
+                    "STEP11_RC0031_RECEPTION_SOURCE_BINDING_INVALID"
+                )
+            if (
+                current_row.source_base_binding_id
+                != authority_row.source_base_binding_id
+                or current_row.source_scope != authority_row.source_scope
+                or current_row.association_basis != expected_association
+                or current_row.additional_clause
+                is not expected_additional_clause
+                or tuple(current_row.source_target_owner_ids)
+                != tuple(authority_row.source_target_owner_ids)
+                or tuple(current_row.supporting_source_owner_ids)
+                != tuple(authority_row.supporting_source_owner_ids)
+                or current_row.reception_act
+                != authority_row.inventory_reception_act
+            ):
+                raise Step11NaturalSurfaceError(
+                    "STEP11_RC0031_RECEPTION_SOURCE_BINDING_INVALID"
+                )
+            target_owner_ids = tuple(authority_row.source_target_owner_ids)
+            visible_support_owner_ids = tuple(
+                authority_row.visible_support_owner_ids
+            )
+            effective_reception_act = authority_row.effective_reception_act
+            if (
+                not target_owner_ids
+                or len(set(target_owner_ids)) != len(target_owner_ids)
+                or len(set(visible_support_owner_ids))
+                != len(visible_support_owner_ids)
+                or set(target_owner_ids) & set(visible_support_owner_ids)
+                or len(target_owner_ids) + len(visible_support_owner_ids)
+                > candidate.surface_realization_plan.maximum_grammatical_complexity_load
+                or effective_reception_act
+                not in catalog["reception_act_predicate_fragments"]
+            ):
+                raise Step11NaturalSurfaceError(
+                    "STEP11_RC0031_RECEPTION_SOURCE_BINDING_INVALID"
+                )
+            injected_bindings.append(
+                replace(
+                    current_row,
+                    source_scope=authority_row.source_scope,
+                    reception_act=effective_reception_act,
+                    source_target_owner_ids=target_owner_ids,
+                    supporting_source_owner_ids=visible_support_owner_ids,
+                )
+            )
+
+        provisional_plan = replace(
+            candidate.surface_realization_plan,
+            reception_predication_bindings=tuple(injected_bindings),
+            peak_grammatical_complexity_load=max(
+                (
+                    *(
+                        row.complexity_load
+                        for row in candidate.surface_realization_plan.proposition_clause_bindings
+                    ),
+                    *(
+                        len(row.source_target_owner_ids)
+                        + len(row.supporting_source_owner_ids)
+                        for row in injected_bindings
+                    ),
+                    0,
+                )
+            ),
+        )
+        if (
+            provisional_plan.peak_grammatical_complexity_load
+            > provisional_plan.maximum_grammatical_complexity_load
+        ):
+            raise Step11NaturalSurfaceError(
+                "STEP11_RC0031_RECEPTION_SOURCE_BINDING_INVALID"
+            )
+        injected_plan = replace(
+            provisional_plan,
+            realization_plan_id=(
+                "nls3s11rc0031plan_"
+                + artifact_sha256(
+                    step11_rc0031_surface_realization_plan_material(
+                        provisional_plan, include_id=False
+                    )
+                )[:16]
+            ),
+        )
+        injected_ast = _step11_rc0031_build_ast(
+            candidate.base_candidate, injected_plan
+        )
+        owner_rows = _step11_rc0031_product_owner_projection(
+            candidate.base_candidate,
+            successor_snapshot=successor_snapshot,
+            lexical_atom_specs=lexical_atom_specs,
+        )
+        injected_rendered = _step11_rc0031_product_render(
+            candidate,
+            injected_plan,
+            successor_snapshot=successor_snapshot,
+            rc0031_catalog=catalog,
+            rc0031_grammar=grammar,
+            rc0031_owner_rows=owner_rows,
+        )
+        injected_identity = _step11_rc0031_candidate_identity(
+            base_candidate_id=candidate.base_candidate.candidate_id,
+            rendered=injected_rendered,
+            plan=injected_plan,
+            ast=injected_ast,
+        )
+        return replace(
+            candidate,
+            candidate_id=injected_identity,
+            proposition_surface_ast=injected_ast,
+            rendered_surface=injected_rendered,
+            surface_realization_plan=injected_plan,
+            reception_bindings=tuple(injected_bindings),
+        )
+    except Exception:
+        raise Step11NaturalSurfaceError(
+            "STEP11_RC0031_RECEPTION_SOURCE_BINDING_INVALID"
+        ) from None

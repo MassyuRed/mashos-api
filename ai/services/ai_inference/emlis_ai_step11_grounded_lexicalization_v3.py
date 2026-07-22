@@ -3471,3 +3471,531 @@ def _step11_rc0031_product_owner_expression_projection(
             "STEP11_RC0031_PRODUCT_OWNER_EXPRESSION_INVALID"
         )
     return tuple(rows)
+# rc0031 experiment-only Product owner grammatical-head range authority (append-only B6 owner)
+
+_STEP11_RC0031_OWNER_HEAD_RANGE_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11.rc0031_product_owner_head_range.v1"
+)
+_STEP11_RC0031_OWNER_HEAD_RANGE_MAX = 32
+_STEP11_RC0031_OWNER_HEAD_TERMINAL_POSITIONS = frozenset(
+    {"consequent", "predicate", "quality", "limit"}
+)
+_STEP11_RC0031_OWNER_HEAD_FINAL_CONSTRUCTIONS = frozenset(
+    {"explicit_coexistence", "balanced_consideration"}
+)
+
+
+@dataclass(frozen=True, slots=True)
+class Step11Rc0031ProductOwnerGrammaticalHeadRangeBinding:
+    source_owner_id: str
+    base_source_nucleus_id: str
+    source_fragment_anchor_id: str
+    source_slot: str
+    source_fragment_start: int
+    source_fragment_end: int
+    grammatical_head_start: int
+    grammatical_head_end: int
+    grammatical_head_scalar_count: int
+    selection_basis: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class Step11Rc0031ProductOwnerGrammaticalHeadRangeAuthority:
+    schema_version: str
+    source_base_candidate_id: str
+    source_successor_snapshot_sha256: str
+    source_lexical_atom_specs_sha256: str
+    bindings: tuple[
+        Step11Rc0031ProductOwnerGrammaticalHeadRangeBinding, ...
+    ]
+    binding_count: int
+    authority_sha256: str
+    semantic_coverage_authorized: bool = False
+    experimental_only: bool = True
+    body_free: bool = True
+    runtime_connected: bool = False
+
+
+def _step11_rc0031_owner_head_binding_material(
+    value: Step11Rc0031ProductOwnerGrammaticalHeadRangeBinding,
+) -> dict[str, Any]:
+    return {
+        "source_owner_id": value.source_owner_id,
+        "base_source_nucleus_id": value.base_source_nucleus_id,
+        "source_fragment_anchor_id": value.source_fragment_anchor_id,
+        "source_slot": value.source_slot,
+        "source_fragment_start": value.source_fragment_start,
+        "source_fragment_end": value.source_fragment_end,
+        "grammatical_head_start": value.grammatical_head_start,
+        "grammatical_head_end": value.grammatical_head_end,
+        "grammatical_head_scalar_count": value.grammatical_head_scalar_count,
+        "selection_basis": value.selection_basis,
+    }
+
+
+def _step11_rc0031_owner_head_authority_material(
+    value: Step11Rc0031ProductOwnerGrammaticalHeadRangeAuthority,
+    *,
+    include_sha256: bool = True,
+) -> dict[str, Any]:
+    result = {
+        "schema_version": value.schema_version,
+        "source_base_candidate_id": value.source_base_candidate_id,
+        "source_successor_snapshot_sha256": (
+            value.source_successor_snapshot_sha256
+        ),
+        "source_lexical_atom_specs_sha256": (
+            value.source_lexical_atom_specs_sha256
+        ),
+        "bindings": [
+            _step11_rc0031_owner_head_binding_material(row)
+            for row in value.bindings
+        ],
+        "binding_count": value.binding_count,
+        "semantic_coverage_authorized": (
+            value.semantic_coverage_authorized
+        ),
+        "experimental_only": value.experimental_only,
+        "body_free": value.body_free,
+        "runtime_connected": value.runtime_connected,
+        "authority_sha256": value.authority_sha256,
+    }
+    if not include_sha256:
+        result.pop("authority_sha256")
+    return result
+
+
+def _step11_rc0031_owner_head_validated_projection(
+    base_candidate: Any,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> Any:
+    projection = build_step11_rc0030_clause_ready_lexical_specs(
+        base_candidate,
+        successor_snapshot=successor_snapshot,
+        lexical_atom_specs=lexical_atom_specs,
+    )
+    if validate_step11_rc0030_clause_ready_lexical_specs(
+        projection,
+        base_candidate=base_candidate,
+        successor_snapshot=successor_snapshot,
+        lexical_atom_specs=lexical_atom_specs,
+    ) or validate_step11_rc0028_experiment_lexical_atom_specs(
+        lexical_atom_specs,
+        successor_snapshot=successor_snapshot,
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0031_PRODUCT_OWNER_BASE_CANDIDATE_INVALID"
+        )
+    if (
+        lexical_atom_specs.source_experiment_snapshot_sha256
+        != successor_snapshot.experiment_snapshot_sha256
+        or lexical_atom_specs.source_relation_construction_authority_sha256
+        != successor_snapshot.relation_construction_authority.authority_sha256
+        or lexical_atom_specs.source_lexical_role_witness_sha256
+        != successor_snapshot.lexical_role_witness.witness_sha256
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0031_PRODUCT_OWNER_BASE_CANDIDATE_INVALID"
+        )
+    return projection
+
+
+def _step11_rc0031_owner_head_trimmed_range(fragment: Any) -> tuple[int, int]:
+    text = str(fragment.text)
+    if (
+        not text
+        or unicodedata.normalize("NFC", text) != text
+        or fragment.source_end - fragment.source_start != len(text)
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0031_PRODUCT_OWNER_BASE_CANDIDATE_INVALID"
+        )
+    trim = " \t\r\n。！？!?"
+    local_start = 0
+    local_end = len(text)
+    while local_start < local_end and text[local_start] in trim:
+        local_start += 1
+    while local_end > local_start and text[local_end - 1] in trim:
+        local_end -= 1
+    if local_start >= local_end:
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0031_PRODUCT_OWNER_EXPRESSION_INVALID"
+        )
+    return (
+        int(fragment.source_start) + local_start,
+        int(fragment.source_start) + local_end,
+    )
+
+
+def _step11_rc0031_owner_head_syntactic_range(
+    lexeme: Any,
+    fragment: Any,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> tuple[int, int]:
+    base_snapshot = successor_snapshot.base_snapshot
+    nuclei = tuple(
+        row
+        for row in base_snapshot.nuclei
+        if str(row.source_id) == str(lexeme.base_source_nucleus_id)
+    )
+    if (
+        len(nuclei) != 1
+        or str(nuclei[0].actual_source_id) != str(lexeme.source_owner_id)
+    ):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0031_PRODUCT_OWNER_EXPRESSION_INVALID"
+        )
+    nucleus = nuclei[0]
+    evidence_span_ids = {
+        str(row.actual_source_id)
+        for row in base_snapshot.source_id_alias_bindings
+        if str(row.source_kind) == "evidence"
+        and str(row.alias_source_id)
+        in {str(value) for value in nucleus.evidence_ids}
+    }
+    participations = tuple(
+        row
+        for row in lexical_atom_specs.participation_bindings
+        if str(row.target_owner_id) == str(lexeme.source_owner_id)
+        and int(row.target_owner_ordinal)
+        == int(lexeme.source_owner_ordinal)
+        and str(row.parent_nucleus_id) == str(nucleus.actual_source_id)
+        and row.owner_resolution
+        in {"exact_semantic_unit", "parent_nucleus_fallback"}
+        and row.semantic_equivalence_authorized is False
+    )
+    atom_by_slot: dict[str, list[Any]] = {}
+    for atom in lexical_atom_specs.construction_atoms:
+        atom_by_slot.setdefault(str(atom.construction_slot_id), []).append(atom)
+    instance_by_id = {
+        str(row.construction_instance_id): row
+        for row in lexical_atom_specs.construction_instances
+    }
+    text = str(fragment.text)
+    candidates: list[tuple[str, str, int, int]] = []
+    for participation in participations:
+        atoms = tuple(
+            atom_by_slot.get(str(participation.construction_slot_id), ())
+        )
+        if len(atoms) != 1:
+            continue
+        atom = atoms[0]
+        instance = instance_by_id.get(str(atom.construction_instance_id))
+        if instance is None:
+            continue
+        lineage_exact = bool(
+            str(instance.parent_nucleus_id) == str(nucleus.actual_source_id)
+            and str(atom.parent_nucleus_id) == str(nucleus.actual_source_id)
+            and str(instance.source_span_id) in evidence_span_ids
+            and str(atom.source_span_id) == str(instance.source_span_id)
+            and str(participation.source_span_id)
+            == str(instance.source_span_id)
+            and str(instance.source_field) == str(fragment.source_field)
+            and str(atom.source_field) == str(fragment.source_field)
+            and str(instance.source_field_role) == str(fragment.source_slot)
+            and str(atom.source_field_role) == str(fragment.source_slot)
+            and str(atom.construction_slot_id)
+            == str(participation.construction_slot_id)
+            and str(participation.participation_id)
+            in {str(value) for value in atom.participation_ids}
+            and str(participation.participation_id)
+            in {str(value) for value in instance.participation_ids}
+            and str(atom.construction_slot_id)
+            in {str(value) for value in instance.slot_ids}
+            and int(lexeme.source_owner_ordinal)
+            in {int(value) for value in atom.target_owner_ordinals}
+            and int(participation.intersection_start_index)
+            == int(atom.slot_start_index)
+            and int(participation.intersection_end_index)
+            == int(atom.slot_end_index)
+            and str(atom.construction_code)
+            == str(instance.construction_code)
+            and atom.visible_authority == "feature_only"
+            and atom.semantic_coverage_authority == "none"
+            and atom.required is True
+            and int(instance.instance_start_index) == 0
+            and int(instance.instance_end_index) == len(text)
+            and len(text)
+            == int(fragment.source_end) - int(fragment.source_start)
+            and text == text.strip()
+            and unicodedata.normalize("NFC", text) == text
+        )
+        if not lineage_exact:
+            continue
+        if (
+            atom.construction_position
+            in _STEP11_RC0031_OWNER_HEAD_TERMINAL_POSITIONS
+            and int(atom.slot_end_index) == int(instance.instance_end_index)
+        ):
+            local_start = int(atom.slot_start_index)
+            local_end = int(atom.slot_end_index)
+        elif (
+            atom.construction_code
+            in _STEP11_RC0031_OWNER_HEAD_FINAL_CONSTRUCTIONS
+            and atom.construction_position == "secondary"
+            and int(atom.slot_start_index) < int(instance.instance_end_index)
+        ):
+            local_start = int(atom.slot_start_index)
+            local_end = int(instance.instance_end_index)
+        else:
+            continue
+        if (
+            not 0 <= local_start < local_end <= len(text)
+            or local_end - local_start
+            > _STEP11_RC0031_OWNER_HEAD_RANGE_MAX
+        ):
+            continue
+        candidates.append(
+            (
+                str(instance.construction_instance_id),
+                str(atom.construction_slot_id),
+                int(fragment.source_start) + local_start,
+                int(fragment.source_start) + local_end,
+            )
+        )
+    if len(candidates) != 1:
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0031_PRODUCT_OWNER_EXPRESSION_INVALID"
+        )
+    return candidates[0][2], candidates[0][3]
+
+
+def _build_step11_rc0031_product_owner_grammatical_head_range_authority(
+    base_candidate: Any,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> Step11Rc0031ProductOwnerGrammaticalHeadRangeAuthority:
+    try:
+        projection = _step11_rc0031_owner_head_validated_projection(
+            base_candidate,
+            successor_snapshot=successor_snapshot,
+            lexical_atom_specs=lexical_atom_specs,
+        )
+        fragments = tuple(base_candidate.surface_ast.source_fragments)
+        bindings: list[
+            Step11Rc0031ProductOwnerGrammaticalHeadRangeBinding
+        ] = []
+        seen_owner_ids: set[str] = set()
+        for lexeme in projection.lexemes:
+            matches = tuple(
+                fragment
+                for fragment in fragments
+                if lexeme.base_source_nucleus_id
+                in fragment.source_nucleus_ids
+                and fragment.evidence_grade == "exact_source_span"
+            )
+            if len(matches) != 1:
+                raise Step11GroundedLexicalizationError(
+                    "STEP11_RC0031_PRODUCT_OWNER_BASE_CANDIDATE_INVALID"
+                )
+            fragment = matches[0]
+            whole_start, whole_end = _step11_rc0031_owner_head_trimmed_range(
+                fragment
+            )
+            if whole_end - whole_start <= _STEP11_RC0031_OWNER_HEAD_RANGE_MAX:
+                head_start, head_end = whole_start, whole_end
+                selection_basis = "whole_exact_source_fragment"
+            else:
+                head_start, head_end = _step11_rc0031_owner_head_syntactic_range(
+                    lexeme,
+                    fragment,
+                    successor_snapshot=successor_snapshot,
+                    lexical_atom_specs=lexical_atom_specs,
+                )
+                selection_basis = (
+                    "grounded_syntactic_head_exact_source_range"
+                )
+            if (
+                type(lexeme.source_owner_id) is not str
+                or not lexeme.source_owner_id
+                or lexeme.source_owner_id in seen_owner_ids
+                or not int(fragment.source_start)
+                <= head_start
+                < head_end
+                <= int(fragment.source_end)
+                or not 1
+                <= head_end - head_start
+                <= _STEP11_RC0031_OWNER_HEAD_RANGE_MAX
+            ):
+                raise Step11GroundedLexicalizationError(
+                    "STEP11_RC0031_PRODUCT_OWNER_EXPRESSION_INVALID"
+                )
+            seen_owner_ids.add(lexeme.source_owner_id)
+            bindings.append(
+                Step11Rc0031ProductOwnerGrammaticalHeadRangeBinding(
+                    source_owner_id=lexeme.source_owner_id,
+                    base_source_nucleus_id=lexeme.base_source_nucleus_id,
+                    source_fragment_anchor_id=fragment.source_anchor_id,
+                    source_slot=fragment.source_slot,
+                    source_fragment_start=int(fragment.source_start),
+                    source_fragment_end=int(fragment.source_end),
+                    grammatical_head_start=head_start,
+                    grammatical_head_end=head_end,
+                    grammatical_head_scalar_count=head_end - head_start,
+                    selection_basis=selection_basis,
+                )
+            )
+        if not bindings or len(bindings) != len(projection.lexemes):
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0031_PRODUCT_OWNER_EXPRESSION_INVALID"
+            )
+        provisional = (
+            Step11Rc0031ProductOwnerGrammaticalHeadRangeAuthority(
+                schema_version=_STEP11_RC0031_OWNER_HEAD_RANGE_SCHEMA,
+                source_base_candidate_id=base_candidate.candidate_id,
+                source_successor_snapshot_sha256=(
+                    successor_snapshot.experiment_snapshot_sha256
+                ),
+                source_lexical_atom_specs_sha256=(
+                    lexical_atom_specs.specs_sha256
+                ),
+                bindings=tuple(bindings),
+                binding_count=len(bindings),
+                authority_sha256="0" * 64,
+            )
+        )
+        return Step11Rc0031ProductOwnerGrammaticalHeadRangeAuthority(
+            **{
+                **_step11_rc0031_owner_head_authority_material(
+                    provisional, include_sha256=False
+                ),
+                "bindings": provisional.bindings,
+                "authority_sha256": artifact_sha256(
+                    _step11_rc0031_owner_head_authority_material(
+                        provisional, include_sha256=False
+                    )
+                ),
+            }
+        )
+    except Step11GroundedLexicalizationError:
+        raise
+    except Exception:
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0031_PRODUCT_OWNER_BASE_CANDIDATE_INVALID"
+        ) from None
+
+
+def _validate_step11_rc0031_product_owner_grammatical_head_range_authority(
+    value: Any,
+    *,
+    base_candidate: Any,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> tuple[str, ...]:
+    if type(value) is not Step11Rc0031ProductOwnerGrammaticalHeadRangeAuthority:
+        return ("STEP11_RC0031_PRODUCT_OWNER_HEAD_RANGE_TYPE_INVALID",)
+    try:
+        expected = (
+            _build_step11_rc0031_product_owner_grammatical_head_range_authority(
+                base_candidate,
+                successor_snapshot=successor_snapshot,
+                lexical_atom_specs=lexical_atom_specs,
+            )
+        )
+    except Exception:
+        return ("STEP11_RC0031_PRODUCT_OWNER_HEAD_RANGE_REVALIDATION_FAILED",)
+    issues: set[str] = set()
+    if value != expected:
+        issues.add("STEP11_RC0031_PRODUCT_OWNER_HEAD_RANGE_SOURCE_MISMATCH")
+    if (
+        value.schema_version != _STEP11_RC0031_OWNER_HEAD_RANGE_SCHEMA
+        or value.binding_count != len(value.bindings)
+        or value.semantic_coverage_authorized is not False
+        or value.experimental_only is not True
+        or value.body_free is not True
+        or value.runtime_connected is not False
+        or value.authority_sha256
+        != artifact_sha256(
+            _step11_rc0031_owner_head_authority_material(
+                value, include_sha256=False
+            )
+        )
+    ):
+        issues.add("STEP11_RC0031_PRODUCT_OWNER_HEAD_RANGE_CONTRACT_MISMATCH")
+    return tuple(sorted(issues))
+
+
+def _step11_rc0031_product_owner_expression_projection_with_grammatical_head_range_authority(
+    base_candidate: Any,
+    *,
+    successor_snapshot: Any,
+    lexical_atom_specs: Any,
+) -> tuple[tuple[str, str, str, str, str], ...]:
+    authority = (
+        _build_step11_rc0031_product_owner_grammatical_head_range_authority(
+            base_candidate,
+            successor_snapshot=successor_snapshot,
+            lexical_atom_specs=lexical_atom_specs,
+        )
+    )
+    projection = _step11_rc0031_owner_head_validated_projection(
+        base_candidate,
+        successor_snapshot=successor_snapshot,
+        lexical_atom_specs=lexical_atom_specs,
+    )
+    fragments_by_anchor = {
+        str(row.source_anchor_id): row
+        for row in base_candidate.surface_ast.source_fragments
+    }
+    bindings_by_owner = {
+        str(row.source_owner_id): row for row in authority.bindings
+    }
+    rows: list[tuple[str, str, str, str, str]] = []
+    seen_expressions: set[str] = set()
+    for lexeme in projection.lexemes:
+        binding = bindings_by_owner.get(str(lexeme.source_owner_id))
+        if binding is None:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0031_PRODUCT_OWNER_EXPRESSION_INVALID"
+            )
+        fragment = fragments_by_anchor.get(binding.source_fragment_anchor_id)
+        if fragment is None:
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0031_PRODUCT_OWNER_SOURCE_FRAGMENT_UNRESOLVED"
+            )
+        relative_start = (
+            binding.grammatical_head_start - int(fragment.source_start)
+        )
+        relative_end = (
+            binding.grammatical_head_end - int(fragment.source_start)
+        )
+        expression = unicodedata.normalize(
+            "NFC", str(fragment.text)[relative_start:relative_end]
+        )
+        if (
+            not expression
+            or expression != expression.strip()
+            or len(expression) != binding.grammatical_head_scalar_count
+            or len(expression) > _STEP11_RC0031_OWNER_HEAD_RANGE_MAX
+            or "\r" in expression
+            or "\n" in expression
+            or expression in seen_expressions
+        ):
+            raise Step11GroundedLexicalizationError(
+                "STEP11_RC0031_PRODUCT_OWNER_EXPRESSION_INVALID"
+            )
+        seen_expressions.add(expression)
+        rows.append(
+            (
+                binding.source_owner_id,
+                binding.base_source_nucleus_id,
+                binding.source_fragment_anchor_id,
+                expression,
+                hashlib.sha256(expression.encode("utf-8")).hexdigest(),
+            )
+        )
+    if len(rows) != len(authority.bindings):
+        raise Step11GroundedLexicalizationError(
+            "STEP11_RC0031_PRODUCT_OWNER_EXPRESSION_INVALID"
+        )
+    return tuple(rows)
+
+
+_step11_rc0031_product_owner_expression_projection = (
+    _step11_rc0031_product_owner_expression_projection_with_grammatical_head_range_authority
+)
