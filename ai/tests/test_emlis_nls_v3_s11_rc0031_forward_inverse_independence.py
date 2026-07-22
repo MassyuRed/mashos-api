@@ -7816,3 +7816,1368 @@ class TestRc0031P3B6OwnerHeadRangeReceptionInjectionDesignFreezeRedOnly:
             and evidence["resource_boundary_count"] == 10,
             _B6_RECEPTION_INJECTION_SEAM_RED,
         )
+# ---------------------------------------------------------------------------
+# rc0031 P3 B6 owner-role inflection / typed recomposition design freeze RED-only
+# ---------------------------------------------------------------------------
+
+_B6_ROLE_TYPED_TEST_PREFIX_BYTES = 291_114
+_B6_ROLE_TYPED_TEST_PREFIX_SHA256 = (
+    "05ecc4e8be9407686818fc3743d3757ec6104bca8f126d6d609bf765a3c57b92"
+)
+_B6_ROLE_TYPED_TEST_PREFIX_GIT_BLOB_SHA1 = (
+    "2a184e901c4e6202873a542520446833d668bbdc"
+)
+_B6_ROLE_TYPED_CLASS_NAME = (
+    "TestRc0031P3B6OwnerRoleInflectionTypedRecompositionDesignFreezeRedOnly"
+)
+_B6_ROLE_TYPED_TEST_NAMES = frozenset(
+    {
+        "test_rc0031_p3_b6_owner_role_typed_predecessor_scope_and_boundaries_are_exact",
+        "test_rc0031_p3_b6_owner_role_typed_contract_and_future_green_window_are_exact",
+        "test_rc0031_p3_b6_owner_role_inflection_is_body_only_recoverable_or_red",
+        "test_rc0031_p3_b6_typed_recomposition_is_body_only_recoverable_or_red",
+    }
+)
+_B6_ROLE_TYPED_SURFACE_PREFIX_BYTES = 537_842
+_B6_ROLE_TYPED_SURFACE_PREFIX_SHA256 = (
+    "18ad33095754c0132d22a7f2e004f00d5e1655a825e366ade5778adb1bc134d4"
+)
+_B6_ROLE_TYPED_SURFACE_PREFIX_GIT_BLOB_SHA1 = (
+    "478454a1c5fb5b15e0c281ae93a63aa058bf8e26"
+)
+_B6_ROLE_TYPED_SURFACE_APPEND_MARKER = (
+    b"# rc0031 experiment-only owner-role inflection / typed recomposition "
+    b"(append-only B6 private consumer)\n"
+)
+_B6_ROLE_TYPED_SURFACE_APPEND_BYTE_MAX = 48_000
+_B6_ROLE_TYPED_PRIVATE_BUILDER = (
+    "_step11_rc0031_build_owner_role_inflected_typed_recomposition_candidate"
+)
+_B6_ROLE_TYPED_IMPLEMENTATION_PRESENT = False
+_B6_ROLE_TYPED_DESIGN_MASKED_SHA256 = (
+    "a5bccfcb3efaf4a4647aa39d15a6c5041102c622a4d0b30698796f3af500e938"
+)
+_B6_ROLE_TYPED_CONTEXT_COUNT = 10
+_B6_ROLE_TYPED_BINDING_COUNT = 12
+_B6_ROLE_TYPED_SOURCE_ATOM_COUNT = 38
+_B6_ROLE_TYPED_FAMILY_COUNTS = {
+    "construction": 22,
+    "relation": 13,
+    "semantic_link": 1,
+    "explicit_unknown": 2,
+}
+_B6_ROLE_TYPED_HEAD_COUNT = 12
+_B6_ROLE_TYPED_CONSTRUCTION_MODIFIER_COUNT = 22
+_B6_ROLE_TYPED_OTHER_FINITE_COUNT = 4
+_B6_ROLE_TYPED_REUSE_COUNT = 1
+_B6_ROLE_TYPED_OWNER_ROLE_PATTERNS = {
+    "relation_from": "directed_source_particle",
+    "relation_to": "directed_target_particle",
+    "semantic_link_from": "directed_source_particle",
+    "semantic_link_to": "directed_target_particle",
+    "explicit_unknown": "unknown_topic_particle",
+    "reception_antecedent": "support_target_link",
+    "reception_target": "reception_object_particle",
+    "reception_support": "support_source_particle",
+}
+_B6_ROLE_TYPED_OWNER_KIND_PATTERNS = {
+    value: "grounded_referent_uninflected"
+    for value in (
+        "event",
+        "state",
+        "reaction",
+        "wish",
+        "constraint",
+        "action",
+        "change",
+        "self_evaluation",
+        "value",
+        "uncertainty",
+        "conclusion",
+        "other_explicit",
+    )
+}
+_B6_ROLE_TYPED_IMMUTABLE_GIT_BLOBS = {
+    _CATALOG_PATH: "94e87e7bdd58359dd3790e30fcd765151ad792d9",
+    _LEXICAL_PATH: "f0fe1fe6c376a9a80a16b8a5b8679de97c13fa5d",
+    _MATCHER_PATH: "9d7a82fc746e7827b1893228d6de128d669af975",
+    _GATE_PATH: "b5dadd0e100adddb016dcf5a08dc0afefe477d06",
+    _P1_FIXTURE: "56e4d96f8559e2411305b1dac83b5932df88d1a8",
+    _P1_TEST: "9712f44f7faf3d00b4f447fd3877a11c218740bd",
+    _P2_TEST: "55ca582d5e9d1600db2c27d80d6a623247aae4de",
+    (
+        _SERVICE_ROOT
+        / "emlis_ai_grounded_relation_construction_authority_successor_v3.py"
+    ): "d622874a8ac2c9686a2e716c55c5b7816b46efa8",
+    _B6_RECEPTION_AUTHORITY_PATH: (
+        "7ddd4b62a5a46bf55bb97063d58801228849dd68"
+    ),
+}
+
+
+def _b6_role_typed_design_masked_sha256(source: bytes) -> str:
+    marker = (
+        b"# ---------------------------------------------------------------------------\n"
+        b"# rc0031 P3 B6 owner-role inflection / typed recomposition design freeze RED-only\n"
+        b"# ---------------------------------------------------------------------------\n"
+    )
+    _closed_assert(
+        source.count(marker) == 1,
+        "STEP11_RC0031_P3_B6_OWNER_ROLE_TYPED_DESIGN_MARKER_INVALID",
+    )
+    design = source[source.index(marker) :].decode("utf-8", errors="strict")
+    tree = ast.parse(design)
+    lines = design.splitlines(keepends=True)
+    masked = {
+        "_B6_ROLE_TYPED_IMPLEMENTATION_PRESENT",
+        "_B6_ROLE_TYPED_DESIGN_MASKED_SHA256",
+    }
+    found: set[str] = set()
+    for node in tree.body:
+        name = None
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+        ):
+            name = node.targets[0].id
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            name = node.target.id
+        if name not in masked:
+            continue
+        lines[node.lineno - 1] = f"<MECHANICAL_WINDOW:{name}>\n"
+        for index in range(node.lineno, node.end_lineno):
+            lines[index] = ""
+        found.add(name)
+    _closed_assert(
+        found == masked,
+        "STEP11_RC0031_P3_B6_OWNER_ROLE_TYPED_DESIGN_WINDOW_INVALID",
+    )
+    return hashlib.sha256("".join(lines).encode("utf-8")).hexdigest()
+
+
+def _b6_role_typed_owner_term(
+    value: str,
+    owner_lexicon: dict[str, tuple[str, str, str, str]],
+    catalog: dict[str, Any],
+    grammar: dict[str, Any],
+) -> tuple[str, str | None] | None:
+    referent_tokens = tuple(
+        sorted(
+            {
+                str(row)
+                for row in grammar["referent_scope_cues"].values()
+                if row
+            },
+            key=len,
+            reverse=True,
+        )
+    )
+    normalized = value
+    for _row in range(2):
+        token = next(
+            (row for row in referent_tokens if normalized.startswith(row)),
+            None,
+        )
+        if token is None:
+            break
+        normalized = normalized[len(token) :]
+    matches: list[tuple[str, str | None]] = []
+    construction_fragments = catalog["construction_predicate_fragments"]
+    for expression, owner in owner_lexicon.items():
+        if normalized == expression:
+            matches.append((owner[0], None))
+        for code, fragment in construction_fragments.items():
+            if normalized == expression + str(fragment):
+                matches.append((owner[0], str(code)))
+    return matches[0] if len(matches) == 1 else None
+
+
+def _b6_role_typed_owner_sequence(
+    value: str,
+    joiner: str,
+    owner_lexicon: dict[str, tuple[str, str, str, str]],
+    catalog: dict[str, Any],
+    grammar: dict[str, Any],
+) -> tuple[tuple[str, str | None], ...] | None:
+    visible_terms = tuple(
+        sorted(
+            {
+                expression
+                for expression in owner_lexicon
+            }
+            | {
+                expression + str(fragment)
+                for expression in owner_lexicon
+                for fragment in catalog[
+                    "construction_predicate_fragments"
+                ].values()
+            },
+            key=len,
+            reverse=True,
+        )
+    )
+    solutions: list[tuple[tuple[str, str | None], ...]] = []
+
+    def walk(remaining: str, rows: tuple[tuple[str, str | None], ...]) -> None:
+        if not remaining:
+            solutions.append(rows)
+            return
+        for visible in visible_terms:
+            if remaining != visible and not remaining.startswith(visible + joiner):
+                continue
+            parsed = _b6_role_typed_owner_term(
+                visible, owner_lexicon, catalog, grammar
+            )
+            if parsed is None:
+                continue
+            tail = "" if remaining == visible else remaining[len(visible + joiner) :]
+            walk(tail, rows + (parsed,))
+
+    walk(value, ())
+    unique = tuple(dict.fromkeys(solutions))
+    return unique[0] if len(unique) == 1 and unique[0] else None
+
+
+def _b6_role_typed_template_match(
+    template: str,
+    value: str,
+) -> tuple[str, str] | None:
+    parts = re.split(r"(\{source\}|\{target\})", template)
+    if parts.count("{source}") != 1 or parts.count("{target}") != 1:
+        return None
+    pattern = ""
+    for part in parts:
+        if part == "{source}":
+            pattern += r"(?P<source>.+?)"
+        elif part == "{target}":
+            pattern += r"(?P<target>.+?)"
+        else:
+            pattern += re.escape(part)
+    match = re.fullmatch(pattern, value)
+    return (
+        (match.group("source"), match.group("target"))
+        if match is not None
+        else None
+    )
+
+
+def _b6_role_typed_strip_dimension_prefixes(
+    value: str,
+    grammar: dict[str, Any],
+) -> tuple[str, tuple[tuple[str, str], ...]]:
+    registries = (
+        ("temporal", grammar["temporal_scope_cues"]),
+        ("modality", grammar["modality_cues"]),
+        ("polarity", grammar["polarity_cues"]),
+        ("referent", grammar["referent_scope_cues"]),
+    )
+    tokens = tuple(
+        sorted(
+            (
+                (str(token), family, str(code))
+                for family, registry in registries
+                for code, token in registry.items()
+                if token
+            ),
+            key=lambda row: len(row[0]),
+            reverse=True,
+        )
+    )
+    remainder = value
+    recovered: list[tuple[str, str]] = []
+    for _row in range(8):
+        match = next(
+            (row for row in tokens if remainder.startswith(row[0])),
+            None,
+        )
+        if match is None:
+            break
+        token, family, code = match
+        remainder = remainder[len(token) :]
+        recovered.append((family, code))
+    return remainder, tuple(recovered)
+
+
+def _b6_role_typed_product_regions(
+    base_body: bytes,
+    actual_body: bytes,
+    catalog: dict[str, Any],
+    grammar: dict[str, Any],
+) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
+    try:
+        base = base_body.decode("utf-8", errors="strict")
+        actual = actual_body.decode("utf-8", errors="strict")
+    except (AttributeError, UnicodeDecodeError):
+        return None
+    separator = str(grammar["section_separator"])
+    suffix = str(catalog["clause_morphology"]["sentence_suffix"])
+    clause_join = str(grammar["clause_join"])
+    if base.count(separator) != 1 or actual.count(separator) != 1:
+        return None
+    base_observation, _base_reception = base.split(separator, 1)
+    actual_observation, actual_reception = actual.split(separator, 1)
+    base_lines = base_observation.split("\n")
+    actual_lines = actual_observation.split("\n")
+    if len(base_lines) != len(actual_lines):
+        return None
+    product_clusters: list[str] = []
+    for base_line, actual_line in zip(base_lines, actual_lines, strict=True):
+        if base_line == actual_line:
+            continue
+        if (
+            not base_line.endswith(suffix)
+            or not actual_line.endswith(suffix)
+        ):
+            return None
+        prefix = base_line[: -len(suffix)] + clause_join
+        if not actual_line.startswith(prefix):
+            return None
+        product = actual_line[len(prefix) : -len(suffix)]
+        if not product:
+            return None
+        product_clusters.append(product)
+    reception_clauses: list[str] = []
+    sentence_join = str(
+        catalog["clause_morphology"]["grammatical_sentence_join"]
+    )
+    for line in actual_reception.split("\n"):
+        if not line:
+            continue
+        if not line.endswith(suffix):
+            return None
+        reception_clauses.extend(
+            row for row in line[: -len(suffix)].split(sentence_join) if row
+        )
+    return tuple(product_clusters), tuple(reception_clauses)
+
+
+def _b6_role_typed_owner_signature(
+    owner: tuple[str, str, str, str],
+    *,
+    kind: str,
+    role: str,
+    pattern: str,
+    section: str,
+    catalog: dict[str, Any],
+) -> tuple[str, ...]:
+    owner_id, nucleus_id, anchor_id, expression_sha256 = owner
+    return (
+        owner_id,
+        nucleus_id,
+        anchor_id,
+        expression_sha256,
+        kind,
+        str(catalog["owner_kind_inflection_patterns"].get(kind, "")),
+        role,
+        pattern,
+        section,
+    )
+
+
+def _b6_role_typed_parse_observation(
+    clusters: tuple[str, ...],
+    owner_lexicon: dict[str, tuple[str, str, str, str]],
+    kind_by_owner: dict[str, str],
+    catalog: dict[str, Any],
+    grammar: dict[str, Any],
+) -> dict[str, Any]:
+    atom_counter: Counter[Any] = Counter()
+    role_counter: Counter[Any] = Counter()
+    modifier_counter: Counter[Any] = Counter()
+    finite_head_count = 0
+    other_finite_count = 0
+    unparsed = 0
+    ambiguous = 0
+    temporal_locus_count = 0
+    separators = tuple(
+        sorted(
+            {
+                str(grammar["clause_join"]),
+                *(str(row) for row in grammar["atom_joiners"]),
+            },
+            key=len,
+            reverse=True,
+        )
+    )
+    split_pattern = "|".join(re.escape(row) for row in separators)
+
+    def owner_signature(owner_id: str, role: str, pattern: str) -> tuple[str, ...]:
+        owner = next(
+            row for row in owner_lexicon.values() if row[0] == owner_id
+        )
+        return _b6_role_typed_owner_signature(
+            owner,
+            kind=kind_by_owner.get(owner_id, "other_explicit"),
+            role=role,
+            pattern=pattern,
+            section="observation",
+            catalog=catalog,
+        )
+
+    for cluster in clusters:
+        pieces = tuple(row for row in re.split(split_pattern, cluster) if row)
+        parsed_finite: list[tuple[str, str, str, tuple[str, ...]]] = []
+        temporal_seen = False
+        for raw_piece in pieces:
+            piece, dimensions = _b6_role_typed_strip_dimension_prefixes(
+                raw_piece, grammar
+            )
+            if any(row[0] == "temporal" for row in dimensions):
+                temporal_seen = True
+            matches: list[tuple[str, str, str, tuple[str, ...], tuple[Any, ...]]] = []
+            for family, registry in (
+                ("relation", catalog["relation_predicate_fragments"]),
+                ("semantic_link", catalog["semantic_link_predicate_fragments"]),
+            ):
+                for compound_key, template in registry.items():
+                    endpoints = _b6_role_typed_template_match(
+                        str(template), piece
+                    )
+                    if endpoints is None:
+                        continue
+                    source = _b6_role_typed_owner_term(
+                        endpoints[0], owner_lexicon, catalog, grammar
+                    )
+                    target = _b6_role_typed_owner_term(
+                        endpoints[1], owner_lexicon, catalog, grammar
+                    )
+                    if source is None or target is None:
+                        continue
+                    semantic_key, direction = str(compound_key).rsplit(":", 1)
+                    matches.append(
+                        (
+                            family,
+                            semantic_key,
+                            direction,
+                            (source[0], target[0]),
+                            (source, target),
+                        )
+                    )
+            unknown_join = str(catalog["clause_morphology"]["unknown_owner_join"])
+            for semantic_key, fragment in catalog[
+                "unknown_predicate_fragments"
+            ].items():
+                if not piece.endswith(str(fragment)):
+                    continue
+                owners = _b6_role_typed_owner_sequence(
+                    piece[: -len(str(fragment))],
+                    unknown_join,
+                    owner_lexicon,
+                    catalog,
+                    grammar,
+                )
+                if owners is not None:
+                    matches.append(
+                        (
+                            "explicit_unknown",
+                            str(semantic_key),
+                            "unknown",
+                            tuple(row[0] for row in owners),
+                            owners,
+                        )
+                    )
+            standalone = str(
+                catalog["clause_morphology"]["construction_standalone_predicate"]
+            )
+            for semantic_key, fragment in catalog[
+                "construction_predicate_fragments"
+            ].items():
+                suffix = str(fragment) + standalone
+                if not piece.endswith(suffix):
+                    continue
+                owner = _b6_role_typed_owner_term(
+                    piece[: -len(suffix)], owner_lexicon, catalog, grammar
+                )
+                if owner is not None and owner[1] is None:
+                    matches.append(
+                        (
+                            "construction",
+                            str(semantic_key),
+                            "",
+                            (owner[0],),
+                            ((owner[0], "standalone"),),
+                        )
+                    )
+            if len(matches) != 1:
+                ambiguous += len(matches) > 1
+                unparsed += len(matches) == 0
+                continue
+            family, semantic_key, direction, owners, owner_rows = matches[0]
+            atom_counter[(family, semantic_key, direction, owners)] += 1
+            if family in {"relation", "semantic_link"}:
+                prefix = "relation" if family == "relation" else "semantic_link"
+                for owner_id, role_suffix, owner_row in zip(
+                    owners, ("from", "to"), owner_rows, strict=True
+                ):
+                    role = prefix + "_" + role_suffix
+                    role_counter[
+                        owner_signature(
+                            owner_id,
+                            role,
+                            str(catalog["owner_role_particle_patterns"][role]),
+                        )
+                    ] += 1
+                    if owner_row[1] is not None:
+                        modifier_counter[(str(owner_row[1]), owner_id)] += 1
+                        role_counter[
+                            owner_signature(
+                                owner_id,
+                                "construction_modifier",
+                                str(owner_row[1]),
+                            )
+                        ] += 1
+                        atom_counter[
+                            ("construction", str(owner_row[1]), "", (owner_id,))
+                        ] += 1
+            elif family == "explicit_unknown":
+                for owner_id, owner_row in zip(owners, owner_rows, strict=True):
+                    role = "explicit_unknown"
+                    role_counter[
+                        owner_signature(
+                            owner_id,
+                            role,
+                            str(catalog["owner_role_particle_patterns"][role]),
+                        )
+                    ] += 1
+                    if owner_row[1] is not None:
+                        modifier_counter[(str(owner_row[1]), owner_id)] += 1
+                        role_counter[
+                            owner_signature(
+                                owner_id,
+                                "construction_modifier",
+                                str(owner_row[1]),
+                            )
+                        ] += 1
+                        atom_counter[
+                            ("construction", str(owner_row[1]), "", (owner_id,))
+                        ] += 1
+            elif family == "construction":
+                role_counter[
+                    owner_signature(
+                        owners[0], "construction_standalone", semantic_key
+                    )
+                ] += 1
+            else:
+                unparsed += 1
+                continue
+            if family != "construction":
+                parsed_finite.append(
+                    (family, semantic_key, direction, owners)
+                )
+        if parsed_finite:
+            finite_head_count += 1
+            other_finite_count += len(parsed_finite) - 1
+        temporal_locus_count += temporal_seen
+    modality_values = tuple(
+        str(row) for row in grammar["modality_cues"].values() if row
+    )
+    polarity_values = tuple(
+        str(row) for row in grammar["polarity_cues"].values() if row
+    )
+    referent_values = tuple(
+        str(row) for row in grammar["referent_scope_cues"].values() if row
+    )
+    joined = "\n".join(clusters)
+    per_atom_bundle_count = sum(
+        joined.count(modality + polarity + referent)
+        for modality in modality_values
+        for polarity in polarity_values
+        for referent in referent_values
+    )
+    return {
+        "atom_counter": atom_counter,
+        "role_counter": role_counter,
+        "modifier_counter": modifier_counter,
+        "finite_head_count": finite_head_count,
+        "other_finite_count": other_finite_count,
+        "temporal_locus_count": temporal_locus_count,
+        "per_atom_bundle_count": per_atom_bundle_count,
+        "unparsed_count": unparsed,
+        "ambiguous_count": ambiguous,
+    }
+
+
+def _b6_role_typed_parse_reception(
+    clauses: tuple[str, ...],
+    owner_lexicon: dict[str, tuple[str, str, str, str]],
+    kind_by_owner: dict[str, str],
+    catalog: dict[str, Any],
+    grammar: dict[str, Any],
+) -> tuple[Counter[Any], int, int]:
+    roles: Counter[Any] = Counter()
+    parsed_count = 0
+    ambiguous = 0
+    morphology = catalog["clause_morphology"]
+
+    def signature(owner_id: str, role: str) -> tuple[str, ...]:
+        owner = next(
+            row for row in owner_lexicon.values() if row[0] == owner_id
+        )
+        return _b6_role_typed_owner_signature(
+            owner,
+            kind=kind_by_owner.get(owner_id, "other_explicit"),
+            role=role,
+            pattern=str(catalog["owner_role_particle_patterns"][role]),
+            section="reception",
+            catalog=catalog,
+        )
+
+    for clause in clauses:
+        candidates: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
+        for act in catalog["reception_act_predicate_fragments"].values():
+            suffix = str(morphology["reception_object_particle"]) + str(act)
+            if not clause.endswith(suffix):
+                continue
+            owner_material = clause[: -len(suffix)]
+            support_split = str(morphology["support_target_link"])
+            variants = (("", owner_material),)
+            if support_split in owner_material:
+                variants += (tuple(owner_material.split(support_split, 1)),)
+            for support_material, target_material in variants:
+                targets = _b6_role_typed_owner_sequence(
+                    target_material,
+                    str(morphology["target_owner_join"]),
+                    owner_lexicon,
+                    catalog,
+                    grammar,
+                )
+                supports = (
+                    _b6_role_typed_owner_sequence(
+                        support_material,
+                        str(morphology["support_owner_join"]),
+                        owner_lexicon,
+                        catalog,
+                        grammar,
+                    )
+                    if support_material
+                    else ()
+                )
+                if targets is not None and supports is not None:
+                    candidates.append(
+                        (
+                            tuple(row[0] for row in supports),
+                            tuple(row[0] for row in targets),
+                        )
+                    )
+        unique = tuple(dict.fromkeys(candidates))
+        if len(unique) != 1:
+            ambiguous += 1
+            continue
+        supports, targets = unique[0]
+        parsed_count += 1
+        for owner_id in supports:
+            roles[signature(owner_id, "reception_support")] += 1
+        for owner_id in targets:
+            roles[signature(owner_id, "reception_target")] += 1
+    return roles, parsed_count, ambiguous
+
+
+@lru_cache(maxsize=1)
+def _b6_role_typed_evidence() -> dict[str, Any]:
+    from emlis_ai_evidence_ledger_service import (
+        build_evidence_ledger,
+        build_evidence_span_resolver,
+    )
+
+    surface = _surface_module()
+    authority_owner = importlib.import_module(
+        "emlis_ai_step11_rc0031_reception_focus_authority_v3"
+    )
+    projection = _b5_owner_projection_or_red()
+    private_builder = getattr(surface, _B6_ROLE_TYPED_PRIVATE_BUILDER, None)
+    accepted_seam = getattr(surface, _B6_RECEPTION_INJECTION_BUILDER, None)
+    builder = private_builder if callable(private_builder) else accepted_seam
+    result: dict[str, Any] = {
+        "context_count": 0,
+        "binding_count": 0,
+        "source_atom_count": 0,
+        "family_counts": Counter(),
+        "head_count": 0,
+        "other_finite_count": 0,
+        "required_modifier_count": 0,
+        "plan_modifier_count": 0,
+        "plan_modifier_target_count": 0,
+        "plan_modifier_pairs_exact": True,
+        "owner_authority_count": 0,
+        "expected_role_counter": Counter(),
+        "actual_role_counter": Counter(),
+        "expected_atom_counter": Counter(),
+        "actual_atom_counter": Counter(),
+        "actual_modifier_counter": Counter(),
+        "body_head_count": 0,
+        "body_other_finite_count": 0,
+        "temporal_locus_count": 0,
+        "per_atom_bundle_count": 0,
+        "unparsed_count": 0,
+        "ambiguous_count": 0,
+        "reception_count": 0,
+        "reception_rebuild_count": 0,
+        "actual_reception_count": 0,
+        "reuse_count": 0,
+        "resource_boundary_count": 0,
+        "multi_role_owner_count": 0,
+        "dimension_source_count": 0,
+    }
+    if not callable(builder):
+        return result
+    for context in _rc0031_final_candidate_contexts():
+        case_id, baseline, successor, lexical_specs, candidate, witness = context
+        spans = tuple(build_evidence_ledger(baseline.normalized_input))
+        resolver = build_evidence_span_resolver(
+            spans, current_input=baseline.normalized_input
+        )
+        authority = authority_owner.build_step11_rc0031_reception_focus_authority(
+            baseline.grounded_plan,
+            resolver,
+            successor_snapshot=successor,
+            base_candidate=candidate.base_candidate,
+            inventory_result=baseline.inventory_result,
+            content_plan=baseline.content_plan,
+            current_input=baseline.projected_current_input,
+        )
+        if authority_owner.validate_step11_rc0031_reception_focus_authority(
+            authority,
+            plan=baseline.grounded_plan,
+            resolver=resolver,
+            successor_snapshot=successor,
+            base_candidate=candidate.base_candidate,
+            inventory_result=baseline.inventory_result,
+            content_plan=baseline.content_plan,
+            current_input=baseline.projected_current_input,
+        ):
+            continue
+        try:
+            built = builder(
+                candidate,
+                successor_snapshot=successor,
+                lexical_atom_specs=lexical_specs,
+                reception_focus_authority=authority,
+                plan=baseline.grounded_plan,
+                resolver=resolver,
+                inventory_result=baseline.inventory_result,
+                content_plan=baseline.content_plan,
+                current_input=baseline.projected_current_input,
+            )
+            owner_rows = projection(
+                built.base_candidate,
+                successor_snapshot=successor,
+                lexical_atom_specs=lexical_specs,
+            )
+            _catalog_owner, catalog, grammar, _catalog_sha256 = (
+                surface._step11_rc0031_product_surface_authorities()
+            )
+            regions = _b6_role_typed_product_regions(
+                built.base_candidate.final_utf8_bytes,
+                built.rendered_surface.utf8_bytes,
+                catalog,
+                grammar,
+            )
+        except Exception:
+            continue
+        if regions is None:
+            continue
+        owner_lexicon = {
+            str(row[3]): (
+                str(row[0]),
+                str(row[1]),
+                str(row[2]),
+                str(row[4]),
+            )
+            for row in owner_rows
+        }
+        if len(owner_lexicon) != len(owner_rows):
+            continue
+        source_snapshot = baseline.inventory_result.source_snapshot
+        nucleus_by_alias = {
+            str(alias): row
+            for row in source_snapshot.nuclei
+            for alias in (row.source_id, row.actual_source_id)
+        }
+        kind_by_owner = {
+            owner[0]: str(nucleus_by_alias[owner[1]].kind)
+            if owner[1] in nucleus_by_alias
+            and str(nucleus_by_alias[owner[1]].kind)
+            in catalog["owner_kind_inflection_patterns"]
+            else "other_explicit"
+            for owner in owner_lexicon.values()
+        }
+        owner_by_id = {row[0]: row for row in owner_lexicon.values()}
+
+        def expected_signature(
+            owner_id: str,
+            role: str,
+            pattern: str,
+            section: str,
+        ) -> tuple[str, ...]:
+            return _b6_role_typed_owner_signature(
+                owner_by_id[owner_id],
+                kind=kind_by_owner[owner_id],
+                role=role,
+                pattern=pattern,
+                section=section,
+                catalog=catalog,
+            )
+
+        expected_roles: Counter[Any] = Counter()
+        expected_atoms: Counter[Any] = Counter()
+        required_pairs: Counter[Any] = Counter()
+        roles_by_owner: dict[str, set[str]] = {}
+        for binding in built.surface_realization_plan.proposition_clause_bindings:
+            result["binding_count"] += 1
+            nonconstruction = tuple(
+                source_id
+                for source_id, family in zip(
+                    binding.source_atom_ids,
+                    binding.semantic_families,
+                    strict=True,
+                )
+                if family != "construction"
+            )
+            if nonconstruction:
+                result["head_count"] += 1
+                result["other_finite_count"] += len(nonconstruction) - 1
+            required_for_binding: list[tuple[str, str]] = []
+            for source_id, family, semantic_key, direction, owners in zip(
+                binding.source_atom_ids,
+                binding.semantic_families,
+                binding.semantic_keys,
+                binding.directions,
+                binding.source_atom_owner_ids,
+                strict=True,
+            ):
+                owner_ids = tuple(str(row) for row in owners)
+                normalized_direction = (
+                    str(direction)
+                    if family in {"relation", "semantic_link"}
+                    else "unknown"
+                    if family == "explicit_unknown"
+                    else ""
+                )
+                expected_atoms[
+                    (
+                        str(family),
+                        str(semantic_key),
+                        normalized_direction,
+                        owner_ids,
+                    )
+                ] += 1
+                result["source_atom_count"] += 1
+                result["family_counts"][str(family)] += 1
+                if family == "construction":
+                    if len(owner_ids) == 1:
+                        required_for_binding.append(
+                            (str(source_id), owner_ids[0])
+                        )
+                        required_pairs[(str(semantic_key), owner_ids[0])] += 1
+                        expected_roles[
+                            expected_signature(
+                                owner_ids[0],
+                                "construction_modifier",
+                                str(semantic_key),
+                                "observation",
+                            )
+                        ] += 1
+                        roles_by_owner.setdefault(owner_ids[0], set()).add(
+                            "construction_modifier"
+                        )
+                elif family in {"relation", "semantic_link"}:
+                    prefix = (
+                        "relation" if family == "relation" else "semantic_link"
+                    )
+                    for owner_id, suffix in zip(
+                        owner_ids, ("from", "to"), strict=True
+                    ):
+                        role = prefix + "_" + suffix
+                        expected_roles[
+                            expected_signature(
+                                owner_id,
+                                role,
+                                str(
+                                    catalog["owner_role_particle_patterns"][role]
+                                ),
+                                "observation",
+                            )
+                        ] += 1
+                        roles_by_owner.setdefault(owner_id, set()).add(role)
+                elif family == "explicit_unknown":
+                    for owner_id in owner_ids:
+                        role = "explicit_unknown"
+                        expected_roles[
+                            expected_signature(
+                                owner_id,
+                                role,
+                                str(
+                                    catalog["owner_role_particle_patterns"][role]
+                                ),
+                                "observation",
+                            )
+                        ] += 1
+                        roles_by_owner.setdefault(owner_id, set()).add(role)
+            actual_pairs = tuple(
+                zip(
+                    binding.construction_modifier_atom_ids,
+                    binding.construction_modifier_target_owner_ids,
+                    strict=True,
+                )
+            )
+            result["required_modifier_count"] += len(required_for_binding)
+            result["plan_modifier_count"] += len(
+                binding.construction_modifier_atom_ids
+            )
+            result["plan_modifier_target_count"] += len(
+                binding.construction_modifier_target_owner_ids
+            )
+            result["plan_modifier_pairs_exact"] = bool(
+                result["plan_modifier_pairs_exact"]
+                and Counter(actual_pairs) == Counter(required_for_binding)
+            )
+        authority_by_id = {
+            str(row.source_reception_opportunity_id): row
+            for row in authority.bindings
+        }
+        for row in built.reception_bindings:
+            accepted = authority_by_id.get(
+                str(row.source_reception_opportunity_id)
+            )
+            if accepted is None:
+                continue
+            result["reception_count"] += 1
+            result["reception_rebuild_count"] += bool(
+                accepted.product_rebuild_required is True
+            )
+            for owner_id in accepted.visible_support_owner_ids:
+                expected_roles[
+                    expected_signature(
+                        str(owner_id),
+                        "reception_support",
+                        str(
+                            catalog["owner_role_particle_patterns"][
+                                "reception_support"
+                            ]
+                        ),
+                        "reception",
+                    )
+                ] += 1
+                roles_by_owner.setdefault(str(owner_id), set()).add(
+                    "reception_support"
+                )
+            for owner_id in accepted.source_target_owner_ids:
+                expected_roles[
+                    expected_signature(
+                        str(owner_id),
+                        "reception_target",
+                        str(
+                            catalog["owner_role_particle_patterns"][
+                                "reception_target"
+                            ]
+                        ),
+                        "reception",
+                    )
+                ] += 1
+                roles_by_owner.setdefault(str(owner_id), set()).add(
+                    "reception_target"
+                )
+        parsed = _b6_role_typed_parse_observation(
+            regions[0], owner_lexicon, kind_by_owner, catalog, grammar
+        )
+        actual_reception_roles, actual_reception_count, reception_ambiguous = (
+            _b6_role_typed_parse_reception(
+                regions[1], owner_lexicon, kind_by_owner, catalog, grammar
+            )
+        )
+        result["context_count"] += 1
+        result["owner_authority_count"] += len(owner_rows)
+        result["expected_role_counter"].update(expected_roles)
+        result["actual_role_counter"].update(parsed["role_counter"])
+        result["actual_role_counter"].update(actual_reception_roles)
+        result["expected_atom_counter"].update(expected_atoms)
+        result["actual_atom_counter"].update(parsed["atom_counter"])
+        result["actual_modifier_counter"].update(parsed["modifier_counter"])
+        result["body_head_count"] += parsed["finite_head_count"]
+        result["body_other_finite_count"] += parsed["other_finite_count"]
+        result["temporal_locus_count"] += parsed["temporal_locus_count"]
+        result["per_atom_bundle_count"] += parsed["per_atom_bundle_count"]
+        result["unparsed_count"] += parsed["unparsed_count"]
+        result["ambiguous_count"] += (
+            parsed["ambiguous_count"] + reception_ambiguous
+        )
+        result["actual_reception_count"] += actual_reception_count
+        result["reuse_count"] += built.rendered_surface.exact_reuse_count
+        result["resource_boundary_count"] += bool(
+            built.surface_realization_plan.maximum_visible_clauses_per_grammatical_sentence
+            == 2
+            and built.surface_realization_plan.maximum_grammatical_complexity_load
+            == 4
+            and built.surface_realization_plan.maximum_repeated_joiner_per_group
+            == 2
+            and built.surface_realization_plan.maximum_observation_clauses_per_sentence
+            == 4
+            and built.experimental_only is True
+            and built.private_body_full is True
+            and built.shareable is False
+            and built.runtime_connected is False
+        )
+        result["multi_role_owner_count"] += sum(
+            len(roles) > 1 for roles in roles_by_owner.values()
+        )
+        result["dimension_source_count"] += sum(
+            row["base_exact_reuse"] is False
+            for row in _proposed_rc0031_source_dimension_projection(
+                (case_id, baseline, successor, lexical_specs, built, witness)
+            )
+        )
+    return result
+
+
+def _b6_role_typed_owner_green(evidence: dict[str, Any]) -> bool:
+    return bool(
+        evidence["context_count"] == _B6_ROLE_TYPED_CONTEXT_COUNT
+        and evidence["owner_authority_count"] == _B6_OWNER_OCCURRENCE_COUNT
+        and evidence["multi_role_owner_count"] > 0
+        and evidence["expected_role_counter"]
+        == evidence["actual_role_counter"]
+        and evidence["reception_count"]
+        == _B6_RECEPTION_AUTHORITY_BINDING_COUNT
+        and evidence["actual_reception_count"]
+        == _B6_RECEPTION_AUTHORITY_BINDING_COUNT
+        and evidence["reception_rebuild_count"]
+        == _B6_RECEPTION_REBUILD_REQUIRED_COUNT
+        and evidence["unparsed_count"] == 0
+        and evidence["ambiguous_count"] == 0
+    )
+
+
+def _b6_role_typed_recomposition_green(evidence: dict[str, Any]) -> bool:
+    return bool(
+        evidence["context_count"] == _B6_ROLE_TYPED_CONTEXT_COUNT
+        and evidence["binding_count"] == _B6_ROLE_TYPED_BINDING_COUNT
+        and evidence["source_atom_count"] == _B6_ROLE_TYPED_SOURCE_ATOM_COUNT
+        and dict(evidence["family_counts"]) == _B6_ROLE_TYPED_FAMILY_COUNTS
+        and evidence["expected_atom_counter"]
+        == evidence["actual_atom_counter"]
+        and evidence["head_count"] == _B6_ROLE_TYPED_HEAD_COUNT
+        and evidence["body_head_count"] == _B6_ROLE_TYPED_HEAD_COUNT
+        and evidence["other_finite_count"] == _B6_ROLE_TYPED_OTHER_FINITE_COUNT
+        and evidence["body_other_finite_count"]
+        == _B6_ROLE_TYPED_OTHER_FINITE_COUNT
+        and evidence["required_modifier_count"]
+        == _B6_ROLE_TYPED_CONSTRUCTION_MODIFIER_COUNT
+        and evidence["plan_modifier_count"]
+        == _B6_ROLE_TYPED_CONSTRUCTION_MODIFIER_COUNT
+        and evidence["plan_modifier_target_count"]
+        == _B6_ROLE_TYPED_CONSTRUCTION_MODIFIER_COUNT
+        and evidence["plan_modifier_pairs_exact"] is True
+        and sum(evidence["actual_modifier_counter"].values())
+        == _B6_ROLE_TYPED_CONSTRUCTION_MODIFIER_COUNT
+        and evidence["temporal_locus_count"] == _B6_ROLE_TYPED_BINDING_COUNT
+        and evidence["per_atom_bundle_count"] == 0
+        and evidence["dimension_source_count"]
+        == _B6_ROLE_TYPED_SOURCE_ATOM_COUNT
+        and evidence["reuse_count"] == _B6_ROLE_TYPED_REUSE_COUNT
+        and evidence["resource_boundary_count"]
+        == _B6_ROLE_TYPED_CONTEXT_COUNT
+        and evidence["unparsed_count"] == 0
+        and evidence["ambiguous_count"] == 0
+    )
+
+
+# The frozen B6 exact6 resolves these globals when its methods execute.  The
+# append therefore upgrades the two inherited REDs to body evidence without
+# rewriting one byte of their accepted prefix.
+def _b6_owner_role_evidence() -> tuple[int, int]:
+    evidence = _b6_role_typed_evidence()
+    return (
+        _B6_OWNER_OCCURRENCE_COUNT
+        if _b6_role_typed_owner_green(evidence)
+        else 0,
+        int(evidence["multi_role_owner_count"]),
+    )
+
+
+def _b6_typed_recomposition_evidence() -> tuple[int, int, int]:
+    evidence = _b6_role_typed_evidence()
+    return (
+        int(evidence["source_atom_count"]),
+        int(evidence["required_modifier_count"]),
+        int(evidence["required_modifier_count"])
+        if _b6_role_typed_recomposition_green(evidence)
+        else 0,
+    )
+
+
+class TestRc0031P3B6OwnerRoleInflectionTypedRecompositionDesignFreezeRedOnly:
+    def test_rc0031_p3_b6_owner_role_typed_predecessor_scope_and_boundaries_are_exact(
+        self,
+    ) -> None:
+        source = Path(__file__).resolve().read_bytes()
+        prefix = source[:_B6_ROLE_TYPED_TEST_PREFIX_BYTES]
+        surface_exact, surface_append_present = (
+            _b6_owner_reception_bounded_append_is_exact(
+                _SURFACE_PATH,
+                prefix_bytes=_B6_ROLE_TYPED_SURFACE_PREFIX_BYTES,
+                prefix_sha256=_B6_ROLE_TYPED_SURFACE_PREFIX_SHA256,
+                prefix_git_blob_sha1=(
+                    _B6_ROLE_TYPED_SURFACE_PREFIX_GIT_BLOB_SHA1
+                ),
+                marker=_B6_ROLE_TYPED_SURFACE_APPEND_MARKER,
+                append_byte_max=_B6_ROLE_TYPED_SURFACE_APPEND_BYTE_MAX,
+            )
+        )
+        immutable_blobs = {
+            path: _b6_git_blob_sha1(path.read_bytes())
+            for path in _B6_ROLE_TYPED_IMMUTABLE_GIT_BLOBS
+        }
+        scope = _b6_scope_reconciliation_material()
+        fixture = json.loads(_P1_FIXTURE.read_text(encoding="utf-8"))
+        privacy = fixture.get("privacy_contract", {})
+        _closed_assert(
+            len(prefix) == _B6_ROLE_TYPED_TEST_PREFIX_BYTES
+            and hashlib.sha256(prefix).hexdigest()
+            == _B6_ROLE_TYPED_TEST_PREFIX_SHA256
+            and _b6_git_blob_sha1(prefix)
+            == _B6_ROLE_TYPED_TEST_PREFIX_GIT_BLOB_SHA1
+            and immutable_blobs == _B6_ROLE_TYPED_IMMUTABLE_GIT_BLOBS
+            and surface_exact
+            and surface_append_present is _B6_ROLE_TYPED_IMPLEMENTATION_PRESENT
+            and scope[:6]
+            == (
+                _B6_RECONCILIATION_SERVICE_PY_PATH_COUNT,
+                _B6_RECONCILIATION_SERVICE_PY_PATH_LIST_SHA256,
+                _B6_RECONCILIATION_REPOSITORY_PY_FROZEN_FILE_COUNT,
+                _B6_RECONCILIATION_REPOSITORY_PY_FROZEN_MATERIAL_SHA256,
+                _B6_RECONCILIATION_ACTIVE_PATH_COUNT,
+                _B6_RECONCILIATION_ACTIVE_PATH_LIST_SHA256,
+            )
+            and scope[6] == _B6_RECONCILIATION_P3_ACTIVE
+            and fixture.get("body_free") is True
+            and privacy.get("body_or_quote_exported") is False
+            and privacy.get("parsed_span_or_binding_detail_exported") is False
+            and privacy.get("unsalted_body_digest_exported") is False
+            and privacy.get("runtime_connected") is False
+            and privacy.get("formal_or_production_eligible") is False,
+            "STEP11_RC0031_P3_B6_OWNER_ROLE_TYPED_PREDECESSOR_OR_BOUNDARY_DRIFT",
+        )
+
+    def test_rc0031_p3_b6_owner_role_typed_contract_and_future_green_window_are_exact(
+        self,
+    ) -> None:
+        source = Path(__file__).resolve().read_bytes()
+        tree = ast.parse(source.decode("utf-8", errors="strict"))
+        classes = tuple(
+            node
+            for node in tree.body
+            if isinstance(node, ast.ClassDef)
+            and node.name == _B6_ROLE_TYPED_CLASS_NAME
+        )
+        names = frozenset(
+            child.name
+            for row in classes
+            for child in row.body
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and child.name.startswith("test_")
+        )
+        total_tests = sum(
+            child.name.startswith("test_")
+            for node in tree.body
+            for child in (
+                (node,)
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                else tuple(node.body)
+                if isinstance(node, ast.ClassDef)
+                else ()
+            )
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+        )
+        catalog, _catalog_sha256 = _rc0031_catalog_authority()
+        surface = _surface_module()
+        private_builder = getattr(surface, _B6_ROLE_TYPED_PRIVATE_BUILDER, None)
+        private_builder_exact = _b6_owner_reception_signature_is_exact(
+            private_builder,
+            _B6_RECEPTION_INJECTION_SIGNATURE,
+        )
+        topology = _b6_role_typed_evidence()
+        _closed_assert(
+            len(classes) == 1
+            and names == _B6_ROLE_TYPED_TEST_NAMES
+            and total_tests == 48
+            and catalog["owner_role_particle_patterns"]
+            == _B6_ROLE_TYPED_OWNER_ROLE_PATTERNS
+            and catalog["owner_kind_inflection_patterns"]
+            == _B6_ROLE_TYPED_OWNER_KIND_PATTERNS
+            and _B6_ROLE_TYPED_SURFACE_APPEND_BYTE_MAX <= 48_000
+            and (
+                (
+                    private_builder is None
+                    and not _B6_ROLE_TYPED_IMPLEMENTATION_PRESENT
+                )
+                or (
+                    private_builder_exact
+                    and _B6_ROLE_TYPED_PRIVATE_BUILDER
+                    not in tuple(getattr(surface, "__all__", ()))
+                    and _B6_ROLE_TYPED_IMPLEMENTATION_PRESENT
+                )
+            )
+            and topology["context_count"] == _B6_ROLE_TYPED_CONTEXT_COUNT
+            and topology["binding_count"] == _B6_ROLE_TYPED_BINDING_COUNT
+            and topology["source_atom_count"]
+            == _B6_ROLE_TYPED_SOURCE_ATOM_COUNT
+            and dict(topology["family_counts"])
+            == _B6_ROLE_TYPED_FAMILY_COUNTS
+            and topology["head_count"] == _B6_ROLE_TYPED_HEAD_COUNT
+            and topology["other_finite_count"]
+            == _B6_ROLE_TYPED_OTHER_FINITE_COUNT
+            and topology["required_modifier_count"]
+            == _B6_ROLE_TYPED_CONSTRUCTION_MODIFIER_COUNT
+            and topology["owner_authority_count"]
+            == _B6_OWNER_OCCURRENCE_COUNT
+            and topology["reception_count"]
+            == _B6_RECEPTION_AUTHORITY_BINDING_COUNT
+            and topology["reception_rebuild_count"]
+            == _B6_RECEPTION_REBUILD_REQUIRED_COUNT
+            and topology["reuse_count"] == _B6_ROLE_TYPED_REUSE_COUNT
+            and _b6_role_typed_design_masked_sha256(source)
+            == _B6_ROLE_TYPED_DESIGN_MASKED_SHA256,
+            "STEP11_RC0031_P3_B6_OWNER_ROLE_TYPED_CONTRACT_OR_WINDOW_DRIFT",
+        )
+
+    def test_rc0031_p3_b6_owner_role_inflection_is_body_only_recoverable_or_red(
+        self,
+    ) -> None:
+        _closed_assert(
+            _b6_role_typed_owner_green(_b6_role_typed_evidence()),
+            _B6_OWNER_ROLE_INFLECTION_RED,
+        )
+
+    def test_rc0031_p3_b6_typed_recomposition_is_body_only_recoverable_or_red(
+        self,
+    ) -> None:
+        _closed_assert(
+            _b6_role_typed_recomposition_green(_b6_role_typed_evidence()),
+            _B6_TYPED_RECOMPOSITION_RED,
+        )
+
+
+# The owner-range / Reception design owns its accepted section, not every
+# later separately authorized P3 append.  Keep its masked commitment exact and
+# replace only its historical total-node assertion with the new exact48 phase
+# projection.  The original class body and all four behaviors remain intact.
+_b6_owner_reception_design_masked_sha256_before_role_typed = (
+    _b6_owner_reception_design_masked_sha256
+)
+
+
+def _b6_owner_reception_design_masked_sha256(source: bytes) -> str:
+    marker = (
+        b"# ---------------------------------------------------------------------------\n"
+        b"# rc0031 P3 B6 owner-role inflection / typed recomposition design freeze RED-only\n"
+        b"# ---------------------------------------------------------------------------\n"
+    )
+    _closed_assert(
+        source.count(marker) == 1,
+        "STEP11_RC0031_P3_B6_OWNER_ROLE_TYPED_DESIGN_MARKER_INVALID",
+    )
+    return _b6_owner_reception_design_masked_sha256_before_role_typed(
+        source[: source.index(marker)]
+    )
+
+
+def _b6_role_typed_owner_reception_contract_compatibility(
+    self: Any,
+) -> None:
+    source = Path(__file__).resolve().read_bytes()
+    tree = ast.parse(source.decode("utf-8", errors="strict"))
+    class_rows = tuple(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == _B6_OWNER_RECEPTION_CLASS_NAME
+    )
+    names = frozenset(
+        child.name
+        for row in class_rows
+        for child in row.body
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and child.name.startswith("test_")
+    )
+    total_tests = sum(
+        child.name.startswith("test_")
+        for node in tree.body
+        for child in (
+            (node,)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            else tuple(node.body)
+            if isinstance(node, ast.ClassDef)
+            else ()
+        )
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+    )
+    surface = _surface_module()
+    authority_owner = importlib.import_module(
+        "emlis_ai_step11_rc0031_reception_focus_authority_v3"
+    )
+    _closed_assert(
+        len(class_rows) == 1
+        and names == _B6_OWNER_RECEPTION_TEST_NAMES
+        and total_tests == 48
+        and _B6_OWNER_HEAD_BINDING_FIELDS
+        == (
+            "source_owner_id",
+            "base_source_nucleus_id",
+            "source_fragment_anchor_id",
+            "source_slot",
+            "source_fragment_start",
+            "source_fragment_end",
+            "grammatical_head_start",
+            "grammatical_head_end",
+            "grammatical_head_scalar_count",
+            "selection_basis",
+        )
+        and _B6_OWNER_HEAD_MAX_SCALARS == 32
+        and _B6_OWNER_LEXICAL_APPEND_BYTE_MAX <= 24_000
+        and _B6_RECEPTION_SURFACE_APPEND_BYTE_MAX <= 20_000
+        and _b6_owner_reception_signature_is_exact(
+            surface.build_step11_rc0031_dimension_bearing_experiment_surface_candidate,
+            ("value", "successor_snapshot", "lexical_atom_specs"),
+        )
+        and _b6_owner_reception_signature_is_exact(
+            surface.validate_step11_rc0031_dimension_bearing_experiment_surface_candidate,
+            ("value", "successor_snapshot", "lexical_atom_specs"),
+        )
+        and _b6_owner_reception_signature_is_exact(
+            authority_owner.build_step11_rc0031_reception_focus_authority,
+            (
+                "plan",
+                "resolver",
+                "successor_snapshot",
+                "base_candidate",
+                "inventory_result",
+                "content_plan",
+                "current_input",
+            ),
+            positional_count=2,
+        )
+        and _b6_owner_reception_signature_is_exact(
+            authority_owner.validate_step11_rc0031_reception_focus_authority,
+            (
+                "value",
+                "plan",
+                "resolver",
+                "successor_snapshot",
+                "base_candidate",
+                "inventory_result",
+                "content_plan",
+                "current_input",
+            ),
+        )
+        and _B6_RECEPTION_INJECTION_BUILDER
+        not in tuple(getattr(surface, "__all__", ()))
+        and _b6_owner_reception_design_masked_sha256(source)
+        == _B6_OWNER_RECEPTION_DESIGN_MASKED_SHA256,
+        "STEP11_RC0031_P3_B6_OWNER_RECEPTION_CONTRACT_OR_WINDOW_DRIFT",
+    )
+
+
+TestRc0031P3B6OwnerHeadRangeReceptionInjectionDesignFreezeRedOnly.test_rc0031_p3_b6_owner_reception_contract_and_future_green_window_are_exact = (
+    _b6_role_typed_owner_reception_contract_compatibility
+)
