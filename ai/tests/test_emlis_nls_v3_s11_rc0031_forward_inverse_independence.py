@@ -9181,3 +9181,1589 @@ def _b6_role_typed_owner_reception_contract_compatibility(
 TestRc0031P3B6OwnerHeadRangeReceptionInjectionDesignFreezeRedOnly.test_rc0031_p3_b6_owner_reception_contract_and_future_green_window_are_exact = (
     _b6_role_typed_owner_reception_contract_compatibility
 )
+# ---------------------------------------------------------------------------
+# rc0031 P3 B6 chained modifier locus multiplicity reconciliation design freeze RED-only
+# ---------------------------------------------------------------------------
+
+_B6_CHAIN_AUTHORITY = (
+    "P3_PRODUCT_SURFACE_B6_OWNER_ROLE_INFLECTION_AND_TYPED_RECOMPOSITION_"
+    "CHAINED_MODIFIER_LOCUS_MULTIPLICITY_RECONCILIATION_DESIGN_FREEZE_RED_ONLY"
+)
+_B6_CHAIN_TEST_PREFIX_BYTES = 344_556
+_B6_CHAIN_TEST_PREFIX_SHA256 = (
+    "8c9113c991da379e47c4beb496e86b7c25b48b29ab944908eb261ed98768b0c8"
+)
+_B6_CHAIN_TEST_PREFIX_GIT_BLOB_SHA1 = (
+    "3e2dd6c2a0b2e80483f5a552848a4b8672c7f7d0"
+)
+_B6_CHAIN_CLASS_NAME = (
+    "TestRc0031P3B6ChainedModifierLocusMultiplicityReconciliationDesignFreezeRedOnly"
+)
+_B6_CHAIN_TEST_NAMES = frozenset(
+    {
+        "test_rc0031_p3_b6_chained_modifier_reconciliation_predecessor_scope_and_boundaries_are_exact",
+        "test_rc0031_p3_b6_chained_modifier_contract_parser_and_future_green_window_are_exact",
+        "test_rc0031_p3_b6_chained_modifier_locus_multiplicity_is_proved_or_red",
+        "test_rc0031_p3_b6_chained_modifier_body_recovery_is_proved_or_red",
+    }
+)
+_B6_CHAIN_LOCUS_RED = (
+    "STEP11_RC0031_P3_B6_CHAINED_MODIFIER_LOCUS_MULTIPLICITY_NOT_PROVED"
+)
+_B6_CHAIN_RECONCILIATION_RED = (
+    "STEP11_RC0031_P3_B6_CHAINED_MODIFIER_BODY_RECOVERY_NOT_PROVED"
+)
+_B6_CHAIN_IMPLEMENTATION_PRESENT = False
+_B6_ROLE_TYPED_IMPLEMENTATION_PRESENT = _B6_CHAIN_IMPLEMENTATION_PRESENT
+_B6_CHAIN_DESIGN_MASKED_SHA256 = (
+    "55ba2f0d658b2c05e356bb0eaa72a4bc0adfbf404edd4491579ab56a4df8641c"
+)
+_B6_CHAIN_MAX_DEPTH = 2
+_B6_CHAIN_REQUIRED_MODIFIER_COUNT = 22
+_B6_CHAIN_ONE_FRAGMENT_CAPACITY = 20
+_B6_CHAIN_SINGLE_LOCUS_COUNT = 18
+_B6_CHAIN_DOUBLE_LOCUS_COUNT = 2
+_B6_CHAIN_EFFECTIVE_SURFACE_APPEND_BYTE_MAX = 11_090
+
+
+def _b6_chain_design_masked_sha256(source: bytes) -> str:
+    marker = (
+        b"# ---------------------------------------------------------------------------\n"
+        b"# rc0031 P3 B6 chained modifier locus multiplicity reconciliation design freeze RED-only\n"
+        b"# ---------------------------------------------------------------------------\n"
+    )
+    _closed_assert(
+        source.count(marker) == 1,
+        "STEP11_RC0031_P3_B6_CHAIN_DESIGN_MARKER_INVALID",
+    )
+    design = source[source.index(marker) :].decode("utf-8", errors="strict")
+    tree = ast.parse(design)
+    lines = design.splitlines(keepends=True)
+    masked = {
+        "_B6_CHAIN_IMPLEMENTATION_PRESENT",
+        "_B6_CHAIN_DESIGN_MASKED_SHA256",
+    }
+    found: set[str] = set()
+    for node in tree.body:
+        name = None
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+        ):
+            name = node.targets[0].id
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            name = node.target.id
+        if name not in masked:
+            continue
+        lines[node.lineno - 1] = f"<MECHANICAL_WINDOW:{name}>\n"
+        for index in range(node.lineno, node.end_lineno):
+            lines[index] = ""
+        found.add(name)
+    _closed_assert(
+        found == masked,
+        "STEP11_RC0031_P3_B6_CHAIN_DESIGN_WINDOW_INVALID",
+    )
+    return hashlib.sha256("".join(lines).encode("utf-8")).hexdigest()
+
+
+def _b6_chain_fragment_contract(catalog: dict[str, Any]) -> dict[str, int]:
+    fragments = {
+        str(code): str(value)
+        for code, value in catalog["construction_predicate_fragments"].items()
+    }
+    singles = set(fragments.values())
+    pairs: dict[str, tuple[str, str]] = {}
+    collisions = 0
+    for left_code, left in fragments.items():
+        for right_code, right in fragments.items():
+            material = left + right
+            if material in pairs and pairs[material] != (left_code, right_code):
+                collisions += 1
+            pairs[material] = (left_code, right_code)
+    return {
+        "fragment_count": len(fragments),
+        "unique_fragment_count": len(singles),
+        "pair_count": len(pairs),
+        "pair_collision_count": collisions,
+        "pair_equals_single_count": sum(row in singles for row in pairs),
+        "prefix_collision_count": sum(
+            left != right and right.startswith(left)
+            for left in singles
+            for right in singles
+        ),
+    }
+
+
+def _b6_chain_modifier_codes(
+    suffix: str,
+    catalog: dict[str, Any],
+) -> tuple[str, ...] | None:
+    if not suffix:
+        return ()
+    fragments = tuple(
+        (str(code), str(value))
+        for code, value in catalog["construction_predicate_fragments"].items()
+    )
+    solutions: list[tuple[str, ...]] = []
+    for code, fragment in fragments:
+        if suffix == fragment:
+            solutions.append((code,))
+    for left_code, left in fragments:
+        for right_code, right in fragments:
+            if suffix == left + right:
+                solutions.append((left_code, right_code))
+    unique = tuple(dict.fromkeys(solutions))
+    return unique[0] if len(unique) == 1 else None
+
+
+def _b6_role_typed_owner_term(
+    value: str,
+    owner_lexicon: dict[str, tuple[str, str, str, str]],
+    catalog: dict[str, Any],
+    grammar: dict[str, Any],
+) -> tuple[str, tuple[str, ...]] | None:
+    referent_tokens = tuple(
+        sorted(
+            {
+                str(row)
+                for row in grammar["referent_scope_cues"].values()
+                if row
+            },
+            key=len,
+            reverse=True,
+        )
+    )
+    normalized = value
+    for _row in range(2):
+        token = next(
+            (row for row in referent_tokens if normalized.startswith(row)),
+            None,
+        )
+        if token is None:
+            break
+        normalized = normalized[len(token) :]
+    matches: list[tuple[str, tuple[str, ...]]] = []
+    for expression, owner in owner_lexicon.items():
+        if not normalized.startswith(expression):
+            continue
+        codes = _b6_chain_modifier_codes(
+            normalized[len(expression) :], catalog
+        )
+        if codes is not None:
+            matches.append((owner[0], codes))
+    unique = tuple(dict.fromkeys(matches))
+    return unique[0] if len(unique) == 1 else None
+
+
+def _b6_role_typed_owner_sequence(
+    value: str,
+    joiner: str,
+    owner_lexicon: dict[str, tuple[str, str, str, str]],
+    catalog: dict[str, Any],
+    grammar: dict[str, Any],
+) -> tuple[tuple[str, tuple[str, ...]], ...] | None:
+    solutions: list[tuple[tuple[str, tuple[str, ...]], ...]] = []
+
+    def walk(
+        remaining: str,
+        rows: tuple[tuple[str, tuple[str, ...]], ...],
+    ) -> None:
+        whole = _b6_role_typed_owner_term(
+            remaining, owner_lexicon, catalog, grammar
+        )
+        if whole is not None:
+            solutions.append(rows + (whole,))
+        start = 0
+        while joiner:
+            index = remaining.find(joiner, start)
+            if index < 0:
+                break
+            head = _b6_role_typed_owner_term(
+                remaining[:index], owner_lexicon, catalog, grammar
+            )
+            if head is not None:
+                walk(remaining[index + len(joiner) :], rows + (head,))
+            start = index + len(joiner)
+
+    walk(value, ())
+    unique = tuple(dict.fromkeys(solutions))
+    return unique[0] if len(unique) == 1 and unique[0] else None
+
+
+def _b6_chain_template_owner_matches(
+    template: str,
+    value: str,
+    owner_lexicon: dict[str, tuple[str, str, str, str]],
+    catalog: dict[str, Any],
+    grammar: dict[str, Any],
+) -> tuple[
+    tuple[
+        tuple[str, tuple[str, ...]],
+        tuple[str, tuple[str, ...]],
+    ],
+    ...,
+]:
+    parts = tuple(re.split(r"(\{source\}|\{target\})", template))
+    if parts.count("{source}") != 1 or parts.count("{target}") != 1:
+        return ()
+    raw: list[tuple[str, str]] = []
+
+    def walk(
+        part_ordinal: int,
+        offset: int,
+        captures: tuple[tuple[str, str], ...],
+    ) -> None:
+        if part_ordinal == len(parts):
+            if offset == len(value):
+                material = dict(captures)
+                raw.append((material["source"], material["target"]))
+            return
+        part = parts[part_ordinal]
+        if part in {"{source}", "{target}"}:
+            name = part[1:-1]
+            for end in range(offset + 1, len(value) + 1):
+                walk(
+                    part_ordinal + 1,
+                    end,
+                    captures + ((name, value[offset:end]),),
+                )
+            return
+        if value.startswith(part, offset):
+            walk(part_ordinal + 1, offset + len(part), captures)
+
+    walk(0, 0, ())
+    decoded: list[
+        tuple[
+            tuple[str, tuple[str, ...]],
+            tuple[str, tuple[str, ...]],
+        ]
+    ] = []
+    for source_material, target_material in raw:
+        source = _b6_role_typed_owner_term(
+            source_material, owner_lexicon, catalog, grammar
+        )
+        target = _b6_role_typed_owner_term(
+            target_material, owner_lexicon, catalog, grammar
+        )
+        if source is not None and target is not None:
+            decoded.append((source, target))
+    return tuple(dict.fromkeys(decoded))
+
+
+def _b6_role_typed_parse_observation(
+    clusters: tuple[str, ...],
+    owner_lexicon: dict[str, tuple[str, str, str, str]],
+    kind_by_owner: dict[str, str],
+    catalog: dict[str, Any],
+    grammar: dict[str, Any],
+) -> dict[str, Any]:
+    atom_counter: Counter[Any] = Counter()
+    role_counter: Counter[Any] = Counter()
+    modifier_counter: Counter[Any] = Counter()
+    locus_counter: Counter[Any] = Counter()
+    finite_head_count = 0
+    other_finite_count = 0
+    unparsed = 0
+    ambiguous = 0
+    temporal_locus_count = 0
+    separators = tuple(
+        sorted(
+            {
+                str(grammar["clause_join"]),
+                *(str(row) for row in grammar["atom_joiners"]),
+            },
+            key=len,
+            reverse=True,
+        )
+    )
+    split_pattern = "|".join(re.escape(row) for row in separators)
+
+    def owner_signature(owner_id: str, role: str, pattern: str) -> tuple[str, ...]:
+        owner = next(row for row in owner_lexicon.values() if row[0] == owner_id)
+        return _b6_role_typed_owner_signature(
+            owner,
+            kind=kind_by_owner.get(owner_id, "other_explicit"),
+            role=role,
+            pattern=pattern,
+            section="observation",
+            catalog=catalog,
+        )
+
+    def consume_modifiers(owner_id: str, codes: tuple[str, ...]) -> None:
+        for code in codes:
+            modifier_counter[(code, owner_id)] += 1
+            role_counter[
+                owner_signature(owner_id, "construction_modifier", code)
+            ] += 1
+            atom_counter[("construction", code, "", (owner_id,))] += 1
+
+    for cluster in clusters:
+        pieces = tuple(row for row in re.split(split_pattern, cluster) if row)
+        parsed_finite: list[tuple[str, str, str, tuple[str, ...]]] = []
+        temporal_seen = False
+        for raw_piece in pieces:
+            piece, dimensions = _b6_role_typed_strip_dimension_prefixes(
+                raw_piece, grammar
+            )
+            if any(row[0] == "temporal" for row in dimensions):
+                temporal_seen = True
+            matches: list[tuple[str, str, str, tuple[str, ...], tuple[Any, ...]]] = []
+            for family, registry in (
+                ("relation", catalog["relation_predicate_fragments"]),
+                ("semantic_link", catalog["semantic_link_predicate_fragments"]),
+            ):
+                for compound_key, template in registry.items():
+                    semantic_key, direction = str(compound_key).rsplit(":", 1)
+                    for source, target in _b6_chain_template_owner_matches(
+                        str(template),
+                        piece,
+                        owner_lexicon,
+                        catalog,
+                        grammar,
+                    ):
+                        matches.append(
+                            (
+                                family,
+                                semantic_key,
+                                direction,
+                                (source[0], target[0]),
+                                (source, target),
+                            )
+                        )
+            unknown_join = str(catalog["clause_morphology"]["unknown_owner_join"])
+            for semantic_key, fragment in catalog["unknown_predicate_fragments"].items():
+                if not piece.endswith(str(fragment)):
+                    continue
+                owners = _b6_role_typed_owner_sequence(
+                    piece[: -len(str(fragment))],
+                    unknown_join,
+                    owner_lexicon,
+                    catalog,
+                    grammar,
+                )
+                if owners is not None:
+                    matches.append(
+                        (
+                            "explicit_unknown",
+                            str(semantic_key),
+                            "unknown",
+                            tuple(row[0] for row in owners),
+                            owners,
+                        )
+                    )
+            standalone = str(
+                catalog["clause_morphology"]["construction_standalone_predicate"]
+            )
+            for semantic_key, fragment in catalog["construction_predicate_fragments"].items():
+                suffix = str(fragment) + standalone
+                if not piece.endswith(suffix):
+                    continue
+                owner = _b6_role_typed_owner_term(
+                    piece[: -len(suffix)], owner_lexicon, catalog, grammar
+                )
+                if owner is not None and owner[1] == ():
+                    matches.append(
+                        (
+                            "construction",
+                            str(semantic_key),
+                            "",
+                            (owner[0],),
+                            ((owner[0], ()),),
+                        )
+                    )
+            unique_matches = tuple(dict.fromkeys(matches))
+            if len(unique_matches) != 1:
+                ambiguous += len(unique_matches) > 1
+                unparsed += len(unique_matches) == 0
+                continue
+            family, semantic_key, direction, owners, owner_rows = (
+                unique_matches[0]
+            )
+            atom_counter[(family, semantic_key, direction, owners)] += 1
+            if family in {"relation", "semantic_link"}:
+                prefix = "relation" if family == "relation" else "semantic_link"
+                for endpoint_ordinal, (owner_id, role_suffix, owner_row) in enumerate(
+                    zip(owners, ("from", "to"), owner_rows, strict=True)
+                ):
+                    role = prefix + "_" + role_suffix
+                    role_counter[
+                        owner_signature(
+                            owner_id,
+                            role,
+                            str(catalog["owner_role_particle_patterns"][role]),
+                        )
+                    ] += 1
+                    consume_modifiers(owner_id, tuple(owner_row[1]))
+                    if owner_row[1]:
+                        locus_counter[
+                            (
+                                family,
+                                semantic_key,
+                                direction,
+                                owners,
+                                endpoint_ordinal,
+                                owner_id,
+                                tuple(owner_row[1]),
+                            )
+                        ] += 1
+            elif family == "explicit_unknown":
+                for endpoint_ordinal, (owner_id, owner_row) in enumerate(
+                    zip(owners, owner_rows, strict=True)
+                ):
+                    role = "explicit_unknown"
+                    role_counter[
+                        owner_signature(
+                            owner_id,
+                            role,
+                            str(catalog["owner_role_particle_patterns"][role]),
+                        )
+                    ] += 1
+                    consume_modifiers(owner_id, tuple(owner_row[1]))
+                    if owner_row[1]:
+                        locus_counter[
+                            (
+                                family,
+                                semantic_key,
+                                direction,
+                                owners,
+                                endpoint_ordinal,
+                                owner_id,
+                                tuple(owner_row[1]),
+                            )
+                        ] += 1
+            elif family == "construction":
+                role_counter[
+                    owner_signature(
+                        owners[0], "construction_standalone", semantic_key
+                    )
+                ] += 1
+            else:
+                unparsed += 1
+                continue
+            if family != "construction":
+                parsed_finite.append((family, semantic_key, direction, owners))
+        if parsed_finite:
+            finite_head_count += 1
+            other_finite_count += len(parsed_finite) - 1
+        temporal_locus_count += temporal_seen
+    modality_values = tuple(str(row) for row in grammar["modality_cues"].values() if row)
+    polarity_values = tuple(str(row) for row in grammar["polarity_cues"].values() if row)
+    referent_values = tuple(str(row) for row in grammar["referent_scope_cues"].values() if row)
+    joined = "\n".join(clusters)
+    per_atom_bundle_count = sum(
+        joined.count(modality + polarity + referent)
+        for modality in modality_values
+        for polarity in polarity_values
+        for referent in referent_values
+    )
+    return {
+        "atom_counter": atom_counter,
+        "role_counter": role_counter,
+        "modifier_counter": modifier_counter,
+        "locus_counter": locus_counter,
+        "finite_head_count": finite_head_count,
+        "other_finite_count": other_finite_count,
+        "temporal_locus_count": temporal_locus_count,
+        "per_atom_bundle_count": per_atom_bundle_count,
+        "unparsed_count": unparsed,
+        "ambiguous_count": ambiguous,
+    }
+
+
+@lru_cache(maxsize=1)
+def _b6_chain_topology() -> dict[str, int | bool]:
+    result: dict[str, int | bool] = {
+        "context_count": 0,
+        "binding_count": 0,
+        "head_count": 0,
+        "missing_head_count": 0,
+        "required_modifier_count": 0,
+        "one_fragment_capacity": 0,
+        "two_fragment_capacity": 0,
+        "assigned_modifier_count": 0,
+        "single_locus_count": 0,
+        "double_locus_count": 0,
+        "deficit_binding_count": 0,
+        "maximum_chain_depth": 0,
+        "unresolved_modifier_count": 0,
+        "modifier_not_head_count": 0,
+        "alternate_finite_owner_locus_count": 0,
+        "within_candidate_head_signature_collision_count": 0,
+        "same_case_sibling_head_signature_collision_count": 0,
+        "source_order_preserved": True,
+    }
+    same_case_head_signatures: Counter[Any] = Counter()
+    for context in _rc0031_final_candidate_contexts():
+        case_id = str(context[0])
+        candidate = context[4]
+        result["context_count"] = int(result["context_count"]) + 1
+        context_head_signatures: Counter[Any] = Counter()
+        alternate_finite_owner_loci: set[tuple[str, str]] = set()
+        for binding in candidate.surface_realization_plan.proposition_clause_bindings:
+            result["binding_count"] = int(result["binding_count"]) + 1
+            rows = tuple(
+                zip(
+                    binding.source_atom_ids,
+                    binding.semantic_families,
+                    binding.semantic_keys,
+                    binding.directions,
+                    binding.source_atom_owner_ids,
+                    strict=True,
+                )
+            )
+            head_rows = tuple(
+                row
+                for row in rows
+                if str(row[0]) == str(binding.head_source_atom_id)
+                and str(row[1]) != "construction"
+            )
+            if len(head_rows) != 1:
+                missing = sum(str(row[1]) == "construction" for row in rows)
+                result["missing_head_count"] = int(
+                    result["missing_head_count"]
+                ) + 1
+                result["required_modifier_count"] = int(
+                    result["required_modifier_count"]
+                ) + missing
+                result["unresolved_modifier_count"] = int(
+                    result["unresolved_modifier_count"]
+                ) + missing
+                continue
+            result["head_count"] = int(result["head_count"]) + 1
+            head = head_rows[0]
+            head_family = str(head[1])
+            head_direction = (
+                str(head[3])
+                if head_family in {"relation", "semantic_link"}
+                else "unknown"
+                if head_family == "explicit_unknown"
+                else ""
+            )
+            head_owner_ids = tuple(str(row) for row in head[4])
+            context_head_signatures[
+                (
+                    head_family,
+                    str(head[2]),
+                    head_direction,
+                    head_owner_ids,
+                )
+            ] += 1
+            same_case_head_signatures[
+                (
+                    case_id,
+                    head_family,
+                    str(head[2]),
+                    head_direction,
+                    head_owner_ids,
+                )
+            ] += 1
+            required: dict[
+                tuple[int, str],
+                list[tuple[int, str, str]],
+            ] = {}
+            for atom_ordinal, (atom_id, family, semantic_key, _direction, owners) in enumerate(
+                rows
+            ):
+                if str(family) != "construction":
+                    continue
+                result["required_modifier_count"] = int(
+                    result["required_modifier_count"]
+                ) + 1
+                owner_ids = tuple(str(row) for row in owners)
+                matching_endpoints = tuple(
+                    index
+                    for index, owner_id in enumerate(head_owner_ids)
+                    if owner_ids == (owner_id,)
+                )
+                if len(owner_ids) != 1 or len(matching_endpoints) != 1:
+                    result["modifier_not_head_count"] = int(
+                        result["modifier_not_head_count"]
+                    ) + 1
+                    result["unresolved_modifier_count"] = int(
+                        result["unresolved_modifier_count"]
+                    ) + 1
+                    continue
+                endpoint_ordinal = matching_endpoints[0]
+                owner_id = owner_ids[0]
+                required.setdefault((endpoint_ordinal, owner_id), []).append(
+                    (atom_ordinal, str(atom_id), str(semantic_key))
+                )
+                if any(
+                    str(row[0]) != str(binding.head_source_atom_id)
+                    and str(row[1]) != "construction"
+                    and owner_id in tuple(str(value) for value in row[4])
+                    for row in rows
+                ):
+                    alternate_finite_owner_loci.add(
+                        (str(binding.proposition_unit_id), owner_id)
+                    )
+            binding_deficit = False
+            for modifier_rows in required.values():
+                depth = len(modifier_rows)
+                ordinals = tuple(row[0] for row in modifier_rows)
+                result["source_order_preserved"] = bool(
+                    result["source_order_preserved"]
+                    and ordinals == tuple(sorted(ordinals))
+                )
+                result["one_fragment_capacity"] = int(
+                    result["one_fragment_capacity"]
+                ) + 1
+                result["two_fragment_capacity"] = int(
+                    result["two_fragment_capacity"]
+                ) + min(depth, _B6_CHAIN_MAX_DEPTH)
+                result["assigned_modifier_count"] = int(
+                    result["assigned_modifier_count"]
+                ) + min(depth, _B6_CHAIN_MAX_DEPTH)
+                result["single_locus_count"] = int(
+                    result["single_locus_count"]
+                ) + int(depth == 1)
+                result["double_locus_count"] = int(
+                    result["double_locus_count"]
+                ) + int(depth == 2)
+                result["maximum_chain_depth"] = max(
+                    int(result["maximum_chain_depth"]), depth
+                )
+                result["unresolved_modifier_count"] = int(
+                    result["unresolved_modifier_count"]
+                ) + max(0, depth - _B6_CHAIN_MAX_DEPTH)
+                binding_deficit = binding_deficit or depth > 1
+            result["deficit_binding_count"] = int(
+                result["deficit_binding_count"]
+            ) + int(binding_deficit)
+        result["alternate_finite_owner_locus_count"] = int(
+            result["alternate_finite_owner_locus_count"]
+        ) + len(alternate_finite_owner_loci)
+        result["within_candidate_head_signature_collision_count"] = int(
+            result["within_candidate_head_signature_collision_count"]
+        ) + sum(max(0, count - 1) for count in context_head_signatures.values())
+    result["same_case_sibling_head_signature_collision_count"] = sum(
+        max(0, count - 1) for count in same_case_head_signatures.values()
+    )
+    return result
+
+
+def _b6_chain_expected_loci(binding: Any) -> tuple[Counter[Any], int]:
+    rows = tuple(
+        zip(
+            binding.source_atom_ids,
+            binding.semantic_families,
+            binding.semantic_keys,
+            binding.directions,
+            binding.source_atom_owner_ids,
+            strict=True,
+        )
+    )
+    head_rows = tuple(
+        row
+        for row in rows
+        if str(row[0]) == str(binding.head_source_atom_id)
+        and str(row[1]) != "construction"
+    )
+    if len(head_rows) != 1:
+        return Counter(), sum(str(row[1]) == "construction" for row in rows)
+    head = head_rows[0]
+    family = str(head[1])
+    semantic_key = str(head[2])
+    direction = (
+        str(head[3])
+        if family in {"relation", "semantic_link"}
+        else "unknown"
+        if family == "explicit_unknown"
+        else ""
+    )
+    owners = tuple(str(row) for row in head[4])
+    grouped: dict[tuple[int, str], list[tuple[int, str]]] = {}
+    unresolved = 0
+    for atom_ordinal, row in enumerate(rows):
+        if str(row[1]) != "construction":
+            continue
+        modifier_owners = tuple(str(value) for value in row[4])
+        matching_endpoints = tuple(
+            index
+            for index, owner_id in enumerate(owners)
+            if modifier_owners == (owner_id,)
+        )
+        if len(modifier_owners) != 1 or len(matching_endpoints) != 1:
+            unresolved += 1
+            continue
+        grouped.setdefault(
+            (matching_endpoints[0], modifier_owners[0]), []
+        ).append((atom_ordinal, str(row[2])))
+    loci: Counter[Any] = Counter()
+    for (endpoint_ordinal, owner_id), modifier_rows in grouped.items():
+        ordinals = tuple(row[0] for row in modifier_rows)
+        if (
+            ordinals != tuple(sorted(ordinals))
+            or not 1 <= len(modifier_rows) <= _B6_CHAIN_MAX_DEPTH
+        ):
+            unresolved += len(modifier_rows)
+            continue
+        loci[
+            (
+                family,
+                semantic_key,
+                direction,
+                owners,
+                endpoint_ordinal,
+                owner_id,
+                tuple(row[1] for row in modifier_rows),
+            )
+        ] += 1
+    return loci, unresolved
+
+
+@lru_cache(maxsize=1)
+def _b6_chain_term_contract() -> dict[str, int]:
+    surface = _surface_module()
+    projection = _b5_owner_projection_or_red()
+    _catalog_owner, catalog, grammar, _catalog_sha256 = (
+        surface._step11_rc0031_product_surface_authorities()
+    )
+    fragments = {
+        str(code): str(value)
+        for code, value in catalog["construction_predicate_fragments"].items()
+    }
+    result = {
+        "context_count": 0,
+        "owner_count": 0,
+        "term_count": 0,
+        "term_collision_count": 0,
+        "expected_locus_count": 0,
+        "expected_locus_ambiguity_count": 0,
+    }
+    for _case, _baseline, successor, lexical_specs, candidate, _witness in (
+        _rc0031_final_candidate_contexts()
+    ):
+        owner_rows = projection(
+            candidate.base_candidate,
+            successor_snapshot=successor,
+            lexical_atom_specs=lexical_specs,
+        )
+        owner_lexicon = {
+            str(row[3]): (
+                str(row[0]),
+                str(row[1]),
+                str(row[2]),
+                str(row[4]),
+            )
+            for row in owner_rows
+        }
+        material: dict[str, tuple[str, tuple[str, ...]]] = {}
+        collisions = 0
+        code_rows = tuple(fragments)
+        flattened_chains = (
+            ((),)
+            + tuple((code,) for code in code_rows)
+            + tuple(
+                (left, right)
+                for left in code_rows
+                for right in code_rows
+            )
+        )
+        for expression, owner in owner_lexicon.items():
+            for chain in flattened_chains:
+                visible = expression + "".join(fragments[code] for code in chain)
+                row = (owner[0], chain)
+                if visible in material and material[visible] != row:
+                    collisions += 1
+                material[visible] = row
+        result["context_count"] += 1
+        result["owner_count"] += len(owner_rows)
+        result["term_count"] += len(material)
+        result["term_collision_count"] += collisions
+        for binding in candidate.surface_realization_plan.proposition_clause_bindings:
+            loci, unresolved = _b6_chain_expected_loci(binding)
+            result["expected_locus_ambiguity_count"] += unresolved
+            for locus, count in loci.items():
+                owner_id = locus[5]
+                codes = locus[6]
+                expression = next(
+                    visible
+                    for visible, owner in owner_lexicon.items()
+                    if owner[0] == owner_id
+                )
+                parsed = _b6_role_typed_owner_term(
+                    expression + "".join(fragments[code] for code in codes),
+                    owner_lexicon,
+                    catalog,
+                    grammar,
+                )
+                result["expected_locus_count"] += count
+                result["expected_locus_ambiguity_count"] += int(
+                    parsed != (owner_id, codes)
+                )
+    return result
+
+
+@lru_cache(maxsize=1)
+def _b6_chain_synthetic_clause_contract() -> dict[str, int]:
+    surface = _surface_module()
+    projection = _b5_owner_projection_or_red()
+    _catalog_owner, catalog, grammar, _catalog_sha256 = (
+        surface._step11_rc0031_product_surface_authorities()
+    )
+    fragments = {
+        str(code): str(value)
+        for code, value in catalog["construction_predicate_fragments"].items()
+    }
+    result = {
+        "finite_clause_count": 0,
+        "relation_link_clause_count": 0,
+        "explicit_unknown_clause_count": 0,
+        "decoded_candidate_count": 0,
+        "unparsed_count": 0,
+        "ambiguous_count": 0,
+        "semantic_mismatch_count": 0,
+        "modifier_count": 0,
+        "full_parser_atom_count": 0,
+        "full_parser_modifier_count": 0,
+        "full_parser_unparsed_count": 0,
+        "full_parser_ambiguous_count": 0,
+        "full_parser_semantic_mismatch_count": 0,
+    }
+    for _case, _baseline, successor, lexical_specs, candidate, _witness in (
+        _rc0031_final_candidate_contexts()
+    ):
+        owner_rows = projection(
+            candidate.base_candidate,
+            successor_snapshot=successor,
+            lexical_atom_specs=lexical_specs,
+        )
+        owner_lexicon = {
+            str(row[3]): (
+                str(row[0]),
+                str(row[1]),
+                str(row[2]),
+                str(row[4]),
+            )
+            for row in owner_rows
+        }
+        expression_by_owner = {
+            owner[0]: expression
+            for expression, owner in owner_lexicon.items()
+        }
+        for binding in candidate.surface_realization_plan.proposition_clause_bindings:
+            expected_loci, unresolved = _b6_chain_expected_loci(binding)
+            if unresolved:
+                result["unparsed_count"] += unresolved
+                continue
+            chains_by_endpoint = {
+                int(locus[4]): tuple(locus[6])
+                for locus in expected_loci
+            }
+            for atom_id, family, semantic_key, direction, owners in zip(
+                binding.source_atom_ids,
+                binding.semantic_families,
+                binding.semantic_keys,
+                binding.directions,
+                binding.source_atom_owner_ids,
+                strict=True,
+            ):
+                family = str(family)
+                if family == "construction":
+                    continue
+                semantic_key = str(semantic_key)
+                normalized_direction = (
+                    str(direction)
+                    if family in {"relation", "semantic_link"}
+                    else "unknown"
+                )
+                owner_ids = tuple(str(row) for row in owners)
+                owner_terms = tuple(
+                    expression_by_owner[owner_id]
+                    + (
+                        "".join(
+                            fragments[code]
+                            for code in chains_by_endpoint.get(endpoint, ())
+                        )
+                        if str(atom_id) == str(binding.head_source_atom_id)
+                        else ""
+                    )
+                    for endpoint, owner_id in enumerate(owner_ids)
+                )
+                result["modifier_count"] += sum(
+                    len(chains_by_endpoint.get(endpoint, ()))
+                    for endpoint in range(len(owner_ids))
+                    if str(atom_id) == str(binding.head_source_atom_id)
+                )
+                candidates: list[
+                    tuple[str, str, str, tuple[str, ...]]
+                ] = []
+                if family in {"relation", "semantic_link"}:
+                    result["relation_link_clause_count"] += 1
+                    registry = (
+                        catalog["relation_predicate_fragments"]
+                        if family == "relation"
+                        else catalog["semantic_link_predicate_fragments"]
+                    )
+                    template = str(
+                        registry[f"{semantic_key}:{normalized_direction}"]
+                    )
+                    piece = template.format(
+                        source=owner_terms[0], target=owner_terms[1]
+                    )
+                    for candidate_family, candidate_registry in (
+                        ("relation", catalog["relation_predicate_fragments"]),
+                        (
+                            "semantic_link",
+                            catalog["semantic_link_predicate_fragments"],
+                        ),
+                    ):
+                        for compound_key, candidate_template in candidate_registry.items():
+                            candidate_key, candidate_direction = str(
+                                compound_key
+                            ).rsplit(":", 1)
+                            for source, target in _b6_chain_template_owner_matches(
+                                str(candidate_template),
+                                piece,
+                                owner_lexicon,
+                                catalog,
+                                grammar,
+                            ):
+                                candidates.append(
+                                    (
+                                        candidate_family,
+                                        candidate_key,
+                                        candidate_direction,
+                                        (source[0], target[0]),
+                                    )
+                                )
+                elif family == "explicit_unknown":
+                    result["explicit_unknown_clause_count"] += 1
+                    piece = (
+                        str(catalog["clause_morphology"]["unknown_owner_join"])
+                        .join(owner_terms)
+                        + str(
+                            catalog["unknown_predicate_fragments"][semantic_key]
+                        )
+                    )
+                    for candidate_key, fragment in catalog[
+                        "unknown_predicate_fragments"
+                    ].items():
+                        if not piece.endswith(str(fragment)):
+                            continue
+                        decoded = _b6_role_typed_owner_sequence(
+                            piece[: -len(str(fragment))],
+                            str(
+                                catalog["clause_morphology"][
+                                    "unknown_owner_join"
+                                ]
+                            ),
+                            owner_lexicon,
+                            catalog,
+                            grammar,
+                        )
+                        if decoded is not None:
+                            candidates.append(
+                                (
+                                    family,
+                                    str(candidate_key),
+                                    "unknown",
+                                    tuple(row[0] for row in decoded),
+                                )
+                            )
+                unique = tuple(dict.fromkeys(candidates))
+                result["finite_clause_count"] += 1
+                result["decoded_candidate_count"] += len(unique)
+                result["unparsed_count"] += int(not unique)
+                result["ambiguous_count"] += int(len(unique) > 1)
+                result["semantic_mismatch_count"] += int(
+                    unique
+                    != (
+                        (
+                            family,
+                            semantic_key,
+                            normalized_direction,
+                            owner_ids,
+                        ),
+                    )
+                )
+                parsed = _b6_role_typed_parse_observation(
+                    (piece,), owner_lexicon, {}, catalog, grammar
+                )
+                expected_atom = (
+                    family,
+                    semantic_key,
+                    normalized_direction,
+                    owner_ids,
+                )
+                expected_atoms: Counter[Any] = Counter({expected_atom: 1})
+                if str(atom_id) == str(binding.head_source_atom_id):
+                    for endpoint, codes in chains_by_endpoint.items():
+                        for code in codes:
+                            expected_atoms[
+                                (
+                                    "construction",
+                                    code,
+                                    "",
+                                    (owner_ids[endpoint],),
+                                )
+                            ] += 1
+                result["full_parser_atom_count"] += sum(
+                    parsed["atom_counter"].values()
+                )
+                result["full_parser_modifier_count"] += sum(
+                    parsed["modifier_counter"].values()
+                )
+                result["full_parser_unparsed_count"] += parsed[
+                    "unparsed_count"
+                ]
+                result["full_parser_ambiguous_count"] += parsed[
+                    "ambiguous_count"
+                ]
+                result["full_parser_semantic_mismatch_count"] += int(
+                    parsed["atom_counter"] != expected_atoms
+                )
+    return result
+
+
+@lru_cache(maxsize=1)
+def _b6_chain_locus_evidence() -> dict[str, Any]:
+    surface = _surface_module()
+    projection = _b5_owner_projection_or_red()
+    private_builder = getattr(surface, _B6_ROLE_TYPED_PRIVATE_BUILDER, None)
+    result: dict[str, Any] = {
+        "expected_context_count": 0,
+        "context_count": 0,
+        "unique_case_count": 0,
+        "body_context_locus_match_count": 0,
+        "expected_locus_counter": Counter(),
+        "actual_locus_counter": Counter(),
+        "expected_modifier_count": 0,
+        "actual_modifier_count": 0,
+        "unresolved_expected_count": 0,
+        "unparsed_count": 0,
+        "ambiguous_count": 0,
+    }
+    contexts = _rc0031_final_candidate_contexts()
+    result["unique_case_count"] = len({str(row[0]) for row in contexts})
+    for context_ordinal, context in enumerate(contexts):
+        case_id, baseline, successor, lexical_specs, candidate, _witness = context
+        result["expected_context_count"] += 1
+        expected: Counter[Any] = Counter()
+        for binding in candidate.surface_realization_plan.proposition_clause_bindings:
+            loci, unresolved = _b6_chain_expected_loci(binding)
+            expected.update(loci)
+            result["unresolved_expected_count"] += unresolved
+        result["expected_modifier_count"] += sum(
+            len(locus[6]) * count for locus, count in expected.items()
+        )
+        result["expected_locus_counter"].update(
+            {
+                (context_ordinal, case_id) + locus: count
+                for locus, count in expected.items()
+            }
+        )
+        built = candidate
+        if callable(private_builder):
+            from emlis_ai_evidence_ledger_service import (
+                build_evidence_ledger,
+                build_evidence_span_resolver,
+            )
+
+            authority_owner = importlib.import_module(
+                "emlis_ai_step11_rc0031_reception_focus_authority_v3"
+            )
+            spans = tuple(build_evidence_ledger(baseline.normalized_input))
+            resolver = build_evidence_span_resolver(
+                spans, current_input=baseline.normalized_input
+            )
+            authority = authority_owner.build_step11_rc0031_reception_focus_authority(
+                baseline.grounded_plan,
+                resolver,
+                successor_snapshot=successor,
+                base_candidate=candidate.base_candidate,
+                inventory_result=baseline.inventory_result,
+                content_plan=baseline.content_plan,
+                current_input=baseline.projected_current_input,
+            )
+            if authority_owner.validate_step11_rc0031_reception_focus_authority(
+                authority,
+                plan=baseline.grounded_plan,
+                resolver=resolver,
+                successor_snapshot=successor,
+                base_candidate=candidate.base_candidate,
+                inventory_result=baseline.inventory_result,
+                content_plan=baseline.content_plan,
+                current_input=baseline.projected_current_input,
+            ):
+                continue
+            try:
+                built = private_builder(
+                    candidate,
+                    successor_snapshot=successor,
+                    lexical_atom_specs=lexical_specs,
+                    reception_focus_authority=authority,
+                    plan=baseline.grounded_plan,
+                    resolver=resolver,
+                    inventory_result=baseline.inventory_result,
+                    content_plan=baseline.content_plan,
+                    current_input=baseline.projected_current_input,
+                )
+            except Exception:
+                continue
+        try:
+            owner_rows = projection(
+                built.base_candidate,
+                successor_snapshot=successor,
+                lexical_atom_specs=lexical_specs,
+            )
+            _catalog_owner, catalog, grammar, _catalog_sha256 = (
+                surface._step11_rc0031_product_surface_authorities()
+            )
+            regions = _b6_role_typed_product_regions(
+                built.base_candidate.final_utf8_bytes,
+                built.rendered_surface.utf8_bytes,
+                catalog,
+                grammar,
+            )
+        except Exception:
+            continue
+        if regions is None:
+            continue
+        owner_lexicon = {
+            str(row[3]): (
+                str(row[0]),
+                str(row[1]),
+                str(row[2]),
+                str(row[4]),
+            )
+            for row in owner_rows
+        }
+        parsed = _b6_role_typed_parse_observation(
+            regions[0], owner_lexicon, {}, catalog, grammar
+        )
+        result["context_count"] += 1
+        result["actual_locus_counter"].update(
+            {
+                (context_ordinal, case_id) + locus: count
+                for locus, count in parsed["locus_counter"].items()
+            }
+        )
+        result["body_context_locus_match_count"] += int(
+            parsed["locus_counter"] == expected
+        )
+        result["actual_modifier_count"] += sum(
+            parsed["modifier_counter"].values()
+        )
+        result["unparsed_count"] += parsed["unparsed_count"]
+        result["ambiguous_count"] += parsed["ambiguous_count"]
+    return result
+
+
+_b6_role_typed_design_masked_sha256_before_chain = (
+    _b6_role_typed_design_masked_sha256
+)
+
+
+def _b6_role_typed_design_masked_sha256(source: bytes) -> str:
+    marker = (
+        b"# ---------------------------------------------------------------------------\n"
+        b"# rc0031 P3 B6 chained modifier locus multiplicity reconciliation design freeze RED-only\n"
+        b"# ---------------------------------------------------------------------------\n"
+    )
+    _closed_assert(
+        source.count(marker) == 1,
+        "STEP11_RC0031_P3_B6_CHAIN_DESIGN_MARKER_INVALID",
+    )
+    return _b6_role_typed_design_masked_sha256_before_chain(
+        source[: source.index(marker)]
+    )
+
+
+class TestRc0031P3B6ChainedModifierLocusMultiplicityReconciliationDesignFreezeRedOnly:
+    def test_rc0031_p3_b6_chained_modifier_reconciliation_predecessor_scope_and_boundaries_are_exact(
+        self,
+    ) -> None:
+        source = Path(__file__).resolve().read_bytes()
+        prefix = source[:_B6_CHAIN_TEST_PREFIX_BYTES]
+        topology = _b6_chain_topology()
+        scope = _b6_scope_reconciliation_material()
+        immutable_blobs = {
+            path: _b6_git_blob_sha1(path.read_bytes())
+            for path in _B6_ROLE_TYPED_IMMUTABLE_GIT_BLOBS
+        }
+        surface_exact, surface_append_present = (
+            _b6_owner_reception_bounded_append_is_exact(
+                _SURFACE_PATH,
+                prefix_bytes=_B6_ROLE_TYPED_SURFACE_PREFIX_BYTES,
+                prefix_sha256=_B6_ROLE_TYPED_SURFACE_PREFIX_SHA256,
+                prefix_git_blob_sha1=_B6_ROLE_TYPED_SURFACE_PREFIX_GIT_BLOB_SHA1,
+                marker=_B6_ROLE_TYPED_SURFACE_APPEND_MARKER,
+                append_byte_max=_B6_CHAIN_EFFECTIVE_SURFACE_APPEND_BYTE_MAX,
+            )
+        )
+        _closed_assert(
+            len(prefix) == _B6_CHAIN_TEST_PREFIX_BYTES
+            and hashlib.sha256(prefix).hexdigest() == _B6_CHAIN_TEST_PREFIX_SHA256
+            and _b6_git_blob_sha1(prefix) == _B6_CHAIN_TEST_PREFIX_GIT_BLOB_SHA1
+            and immutable_blobs == _B6_ROLE_TYPED_IMMUTABLE_GIT_BLOBS
+            and surface_exact
+            and surface_append_present is False
+            and topology["context_count"] == _B6_ROLE_TYPED_CONTEXT_COUNT
+            and topology["binding_count"] == _B6_ROLE_TYPED_BINDING_COUNT
+            and topology["head_count"] == _B6_ROLE_TYPED_HEAD_COUNT
+            and topology["missing_head_count"] == 0
+            and topology["required_modifier_count"] == _B6_CHAIN_REQUIRED_MODIFIER_COUNT
+            and topology["one_fragment_capacity"] == _B6_CHAIN_ONE_FRAGMENT_CAPACITY
+            and topology["deficit_binding_count"] == 2
+            and topology["modifier_not_head_count"] == 0
+            and topology["alternate_finite_owner_locus_count"] == 3
+            and scope[:6]
+            == (
+                _B6_RECONCILIATION_SERVICE_PY_PATH_COUNT,
+                _B6_RECONCILIATION_SERVICE_PY_PATH_LIST_SHA256,
+                _B6_RECONCILIATION_REPOSITORY_PY_FROZEN_FILE_COUNT,
+                _B6_RECONCILIATION_REPOSITORY_PY_FROZEN_MATERIAL_SHA256,
+                _B6_RECONCILIATION_ACTIVE_PATH_COUNT,
+                _B6_RECONCILIATION_ACTIVE_PATH_LIST_SHA256,
+            )
+            and scope[6] == _B6_RECONCILIATION_P3_ACTIVE,
+            "STEP11_RC0031_P3_B6_CHAIN_PREDECESSOR_OR_CAPACITY_DRIFT",
+        )
+
+    def test_rc0031_p3_b6_chained_modifier_contract_parser_and_future_green_window_are_exact(
+        self,
+    ) -> None:
+        source = Path(__file__).resolve().read_bytes()
+        tree = ast.parse(source.decode("utf-8", errors="strict"))
+        classes = tuple(
+            node
+            for node in tree.body
+            if isinstance(node, ast.ClassDef) and node.name == _B6_CHAIN_CLASS_NAME
+        )
+        names = frozenset(
+            child.name
+            for row in classes
+            for child in row.body
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and child.name.startswith("test_")
+        )
+        total_tests = sum(
+            child.name.startswith("test_")
+            for node in tree.body
+            for child in (
+                (node,)
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                else tuple(node.body)
+                if isinstance(node, ast.ClassDef)
+                else ()
+            )
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+        )
+        catalog, _catalog_sha256 = _rc0031_catalog_authority()
+        fragments = _b6_chain_fragment_contract(catalog)
+        topology = _b6_chain_topology()
+        terms = _b6_chain_term_contract()
+        synthetic = _b6_chain_synthetic_clause_contract()
+        surface = _surface_module()
+        private_builder = getattr(surface, _B6_ROLE_TYPED_PRIVATE_BUILDER, None)
+        private_builder_exact = _b6_owner_reception_signature_is_exact(
+            private_builder, _B6_RECEPTION_INJECTION_SIGNATURE
+        )
+        surface_exact, surface_append_present = (
+            _b6_owner_reception_bounded_append_is_exact(
+                _SURFACE_PATH,
+                prefix_bytes=_B6_ROLE_TYPED_SURFACE_PREFIX_BYTES,
+                prefix_sha256=_B6_ROLE_TYPED_SURFACE_PREFIX_SHA256,
+                prefix_git_blob_sha1=_B6_ROLE_TYPED_SURFACE_PREFIX_GIT_BLOB_SHA1,
+                marker=_B6_ROLE_TYPED_SURFACE_APPEND_MARKER,
+                append_byte_max=_B6_CHAIN_EFFECTIVE_SURFACE_APPEND_BYTE_MAX,
+            )
+        )
+        _closed_assert(
+            len(classes) == 1
+            and names == _B6_CHAIN_TEST_NAMES
+            and total_tests == 52
+            and fragments
+            == {
+                "fragment_count": 13,
+                "unique_fragment_count": 13,
+                "pair_count": 169,
+                "pair_collision_count": 0,
+                "pair_equals_single_count": 0,
+                "prefix_collision_count": 0,
+            }
+            and topology["two_fragment_capacity"] == _B6_CHAIN_REQUIRED_MODIFIER_COUNT
+            and topology["assigned_modifier_count"] == _B6_CHAIN_REQUIRED_MODIFIER_COUNT
+            and topology["single_locus_count"] == _B6_CHAIN_SINGLE_LOCUS_COUNT
+            and topology["double_locus_count"] == _B6_CHAIN_DOUBLE_LOCUS_COUNT
+            and topology["maximum_chain_depth"] == _B6_CHAIN_MAX_DEPTH
+            and topology["unresolved_modifier_count"] == 0
+            and topology[
+                "within_candidate_head_signature_collision_count"
+            ]
+            == 0
+            and topology[
+                "same_case_sibling_head_signature_collision_count"
+            ]
+            == 2
+            and topology["source_order_preserved"] is True
+            and terms
+            == {
+                "context_count": 10,
+                "owner_count": 24,
+                "term_count": 4_392,
+                "term_collision_count": 0,
+                "expected_locus_count": 20,
+                "expected_locus_ambiguity_count": 0,
+            }
+            and synthetic
+            == {
+                "finite_clause_count": 16,
+                "relation_link_clause_count": 14,
+                "explicit_unknown_clause_count": 2,
+                "decoded_candidate_count": 16,
+                "unparsed_count": 0,
+                "ambiguous_count": 0,
+                "semantic_mismatch_count": 0,
+                "modifier_count": 22,
+                "full_parser_atom_count": 38,
+                "full_parser_modifier_count": 22,
+                "full_parser_unparsed_count": 0,
+                "full_parser_ambiguous_count": 0,
+                "full_parser_semantic_mismatch_count": 0,
+            }
+            and _B6_CHAIN_EFFECTIVE_SURFACE_APPEND_BYTE_MAX == 11_090
+            and surface_exact
+            and surface_append_present is _B6_CHAIN_IMPLEMENTATION_PRESENT
+            and _B6_ROLE_TYPED_IMPLEMENTATION_PRESENT
+            is _B6_CHAIN_IMPLEMENTATION_PRESENT
+            and "_b6_chain_template_owner_matches"
+            in _b6_role_typed_parse_observation.__code__.co_names
+            and "_b6_role_typed_template_match"
+            not in _b6_role_typed_parse_observation.__code__.co_names
+            and (
+                (
+                    private_builder is None
+                    and not _B6_CHAIN_IMPLEMENTATION_PRESENT
+                )
+                or (
+                    private_builder_exact
+                    and _B6_ROLE_TYPED_PRIVATE_BUILDER
+                    not in tuple(getattr(surface, "__all__", ()))
+                    and _B6_CHAIN_IMPLEMENTATION_PRESENT
+                )
+            )
+            and _b6_chain_design_masked_sha256(source)
+            == _B6_CHAIN_DESIGN_MASKED_SHA256,
+            "STEP11_RC0031_P3_B6_CHAIN_CONTRACT_OR_WINDOW_DRIFT",
+        )
+
+    def test_rc0031_p3_b6_chained_modifier_locus_multiplicity_is_proved_or_red(
+        self,
+    ) -> None:
+        evidence = _b6_chain_locus_evidence()
+        expected_depths: Counter[int] = Counter()
+        for locus, count in evidence["expected_locus_counter"].items():
+            expected_depths[len(locus[-1])] += count
+        _closed_assert(
+            evidence["expected_context_count"] == _B6_ROLE_TYPED_CONTEXT_COUNT
+            and evidence["context_count"] == _B6_ROLE_TYPED_CONTEXT_COUNT
+            and evidence["unique_case_count"] == 8
+            and evidence["body_context_locus_match_count"]
+            == _B6_ROLE_TYPED_CONTEXT_COUNT
+            and sum(evidence["expected_locus_counter"].values())
+            == _B6_CHAIN_ONE_FRAGMENT_CAPACITY
+            and expected_depths
+            == Counter(
+                {
+                    1: _B6_CHAIN_SINGLE_LOCUS_COUNT,
+                    2: _B6_CHAIN_DOUBLE_LOCUS_COUNT,
+                }
+            )
+            and evidence["expected_modifier_count"]
+            == _B6_CHAIN_REQUIRED_MODIFIER_COUNT
+            and evidence["actual_modifier_count"]
+            == _B6_CHAIN_REQUIRED_MODIFIER_COUNT
+            and evidence["actual_locus_counter"]
+            == evidence["expected_locus_counter"]
+            and evidence["unresolved_expected_count"] == 0
+            and evidence["unparsed_count"] == 0
+            and evidence["ambiguous_count"] == 0,
+            _B6_CHAIN_LOCUS_RED,
+        )
+
+    def test_rc0031_p3_b6_chained_modifier_body_recovery_is_proved_or_red(
+        self,
+    ) -> None:
+        locus = _b6_chain_locus_evidence()
+        _closed_assert(
+            locus["body_context_locus_match_count"]
+            == _B6_ROLE_TYPED_CONTEXT_COUNT
+            and locus["actual_locus_counter"]
+            == locus["expected_locus_counter"]
+            and _b6_role_typed_recomposition_green(_b6_role_typed_evidence()),
+            _B6_CHAIN_RECONCILIATION_RED,
+        )
+
+
+def _b6_chain_role_typed_contract_compatibility(self: Any) -> None:
+    source = Path(__file__).resolve().read_bytes()
+    tree = ast.parse(source.decode("utf-8", errors="strict"))
+    classes = tuple(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == _B6_ROLE_TYPED_CLASS_NAME
+    )
+    names = frozenset(
+        child.name
+        for row in classes
+        for child in row.body
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and child.name.startswith("test_")
+    )
+    total_tests = sum(
+        child.name.startswith("test_")
+        for node in tree.body
+        for child in (
+            (node,)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            else tuple(node.body)
+            if isinstance(node, ast.ClassDef)
+            else ()
+        )
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+    )
+    catalog, _catalog_sha256 = _rc0031_catalog_authority()
+    surface = _surface_module()
+    private_builder = getattr(surface, _B6_ROLE_TYPED_PRIVATE_BUILDER, None)
+    topology = _b6_role_typed_evidence()
+    _closed_assert(
+        len(classes) == 1
+        and names == _B6_ROLE_TYPED_TEST_NAMES
+        and total_tests == 52
+        and catalog["owner_role_particle_patterns"] == _B6_ROLE_TYPED_OWNER_ROLE_PATTERNS
+        and catalog["owner_kind_inflection_patterns"] == _B6_ROLE_TYPED_OWNER_KIND_PATTERNS
+        and _B6_ROLE_TYPED_SURFACE_APPEND_BYTE_MAX <= 48_000
+        and (
+            (
+                private_builder is None
+                and not _B6_ROLE_TYPED_IMPLEMENTATION_PRESENT
+            )
+            or (
+                _b6_owner_reception_signature_is_exact(
+                    private_builder, _B6_RECEPTION_INJECTION_SIGNATURE
+                )
+                and _B6_ROLE_TYPED_PRIVATE_BUILDER
+                not in tuple(getattr(surface, "__all__", ()))
+                and _B6_ROLE_TYPED_IMPLEMENTATION_PRESENT
+            )
+        )
+        and topology["context_count"] == _B6_ROLE_TYPED_CONTEXT_COUNT
+        and topology["binding_count"] == _B6_ROLE_TYPED_BINDING_COUNT
+        and topology["source_atom_count"] == _B6_ROLE_TYPED_SOURCE_ATOM_COUNT
+        and dict(topology["family_counts"]) == _B6_ROLE_TYPED_FAMILY_COUNTS
+        and topology["head_count"] == _B6_ROLE_TYPED_HEAD_COUNT
+        and topology["other_finite_count"] == _B6_ROLE_TYPED_OTHER_FINITE_COUNT
+        and topology["required_modifier_count"] == _B6_ROLE_TYPED_CONSTRUCTION_MODIFIER_COUNT
+        and topology["owner_authority_count"] == _B6_OWNER_OCCURRENCE_COUNT
+        and topology["reception_count"] == _B6_RECEPTION_AUTHORITY_BINDING_COUNT
+        and topology["reception_rebuild_count"] == _B6_RECEPTION_REBUILD_REQUIRED_COUNT
+        and topology["reuse_count"] == _B6_ROLE_TYPED_REUSE_COUNT
+        and _b6_role_typed_design_masked_sha256(source)
+        == _B6_ROLE_TYPED_DESIGN_MASKED_SHA256,
+        "STEP11_RC0031_P3_B6_OWNER_ROLE_TYPED_CONTRACT_OR_WINDOW_DRIFT",
+    )
+
+
+def _b6_chain_owner_reception_contract_compatibility(self: Any) -> None:
+    source = Path(__file__).resolve().read_bytes()
+    tree = ast.parse(source.decode("utf-8", errors="strict"))
+    class_rows = tuple(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == _B6_OWNER_RECEPTION_CLASS_NAME
+    )
+    names = frozenset(
+        child.name
+        for row in class_rows
+        for child in row.body
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and child.name.startswith("test_")
+    )
+    total_tests = sum(
+        child.name.startswith("test_")
+        for node in tree.body
+        for child in (
+            (node,)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            else tuple(node.body)
+            if isinstance(node, ast.ClassDef)
+            else ()
+        )
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+    )
+    surface = _surface_module()
+    authority_owner = importlib.import_module(
+        "emlis_ai_step11_rc0031_reception_focus_authority_v3"
+    )
+    _closed_assert(
+        len(class_rows) == 1
+        and names == _B6_OWNER_RECEPTION_TEST_NAMES
+        and total_tests == 52
+        and _B6_OWNER_HEAD_BINDING_FIELDS
+        == (
+            "source_owner_id",
+            "base_source_nucleus_id",
+            "source_fragment_anchor_id",
+            "source_slot",
+            "source_fragment_start",
+            "source_fragment_end",
+            "grammatical_head_start",
+            "grammatical_head_end",
+            "grammatical_head_scalar_count",
+            "selection_basis",
+        )
+        and _B6_OWNER_HEAD_MAX_SCALARS == 32
+        and _B6_OWNER_LEXICAL_APPEND_BYTE_MAX <= 24_000
+        and _B6_RECEPTION_SURFACE_APPEND_BYTE_MAX <= 20_000
+        and _b6_owner_reception_signature_is_exact(
+            surface.build_step11_rc0031_dimension_bearing_experiment_surface_candidate,
+            ("value", "successor_snapshot", "lexical_atom_specs"),
+        )
+        and _b6_owner_reception_signature_is_exact(
+            surface.validate_step11_rc0031_dimension_bearing_experiment_surface_candidate,
+            ("value", "successor_snapshot", "lexical_atom_specs"),
+        )
+        and _b6_owner_reception_signature_is_exact(
+            authority_owner.build_step11_rc0031_reception_focus_authority,
+            (
+                "plan",
+                "resolver",
+                "successor_snapshot",
+                "base_candidate",
+                "inventory_result",
+                "content_plan",
+                "current_input",
+            ),
+            positional_count=2,
+        )
+        and _b6_owner_reception_signature_is_exact(
+            authority_owner.validate_step11_rc0031_reception_focus_authority,
+            (
+                "value",
+                "plan",
+                "resolver",
+                "successor_snapshot",
+                "base_candidate",
+                "inventory_result",
+                "content_plan",
+                "current_input",
+            ),
+        )
+        and _B6_RECEPTION_INJECTION_BUILDER
+        not in tuple(getattr(surface, "__all__", ()))
+        and _b6_owner_reception_design_masked_sha256(source)
+        == _B6_OWNER_RECEPTION_DESIGN_MASKED_SHA256,
+        "STEP11_RC0031_P3_B6_OWNER_RECEPTION_CONTRACT_OR_WINDOW_DRIFT",
+    )
+
+
+TestRc0031P3B6OwnerRoleInflectionTypedRecompositionDesignFreezeRedOnly.test_rc0031_p3_b6_owner_role_typed_contract_and_future_green_window_are_exact = (
+    _b6_chain_role_typed_contract_compatibility
+)
+TestRc0031P3B6OwnerHeadRangeReceptionInjectionDesignFreezeRedOnly.test_rc0031_p3_b6_owner_reception_contract_and_future_green_window_are_exact = (
+    _b6_chain_owner_reception_contract_compatibility
+)
