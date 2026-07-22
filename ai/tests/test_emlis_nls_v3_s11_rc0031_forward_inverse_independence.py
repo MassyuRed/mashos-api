@@ -6940,3 +6940,879 @@ class TestRc0031P3B6ScopeProjectionReconciliationDesignFreezeRedOnly:
             and projection_compare_is_exact,
             _B6_PHASE_PROJECTION_RECONCILIATION_RED,
         )
+# ---------------------------------------------------------------------------
+# rc0031 P3 B6 owner-head range / Reception injection design freeze RED-only
+# ---------------------------------------------------------------------------
+
+_B6_OWNER_RECEPTION_TEST_PREFIX_BYTES = 254_855
+_B6_OWNER_RECEPTION_TEST_PREFIX_SHA256 = (
+    "e058eb840d0183df5fe955c5af34f58ed8b88c4b2740816eacf40ada6ec08499"
+)
+_B6_OWNER_RECEPTION_TEST_PREFIX_GIT_BLOB_SHA1 = (
+    "fe5d80c102bcebedf28aad664dce42bea7c81f67"
+)
+_B6_OWNER_RECEPTION_CLASS_NAME = (
+    "TestRc0031P3B6OwnerHeadRangeReceptionInjectionDesignFreezeRedOnly"
+)
+_B6_OWNER_RECEPTION_TEST_NAMES = frozenset(
+    {
+        "test_rc0031_p3_b6_owner_reception_predecessor_scope_and_boundaries_are_exact",
+        "test_rc0031_p3_b6_owner_reception_contract_and_future_green_window_are_exact",
+        "test_rc0031_p3_b6_owner_grammatical_head_range_authority_is_proved_or_red",
+        "test_rc0031_p3_b6_reception_authority_injection_seam_is_proved_or_red",
+    }
+)
+_B6_OWNER_GRAMMATICAL_HEAD_RANGE_AUTHORITY_RED = (
+    "STEP11_RC0031_P3_B6_OWNER_GRAMMATICAL_HEAD_RANGE_AUTHORITY_NOT_PROVED"
+)
+_B6_RECEPTION_INJECTION_SEAM_RED = (
+    "STEP11_RC0031_P3_B6_RECEPTION_INJECTION_SEAM_NOT_PROVED"
+)
+_B6_OWNER_HEAD_AUTHORITY_BUILDER = (
+    "_build_step11_rc0031_product_owner_grammatical_head_range_authority"
+)
+_B6_OWNER_HEAD_AUTHORITY_VALIDATOR = (
+    "_validate_step11_rc0031_product_owner_grammatical_head_range_authority"
+)
+_B6_RECEPTION_INJECTION_BUILDER = (
+    "_step11_rc0031_build_dimension_bearing_product_candidate_with_"
+    "reception_authority"
+)
+_B6_OWNER_HEAD_AUTHORITY_BUILDER_SIGNATURE = (
+    "base_candidate",
+    "successor_snapshot",
+    "lexical_atom_specs",
+)
+_B6_OWNER_HEAD_AUTHORITY_VALIDATOR_SIGNATURE = (
+    "value",
+    "base_candidate",
+    "successor_snapshot",
+    "lexical_atom_specs",
+)
+_B6_RECEPTION_INJECTION_SIGNATURE = (
+    "value",
+    "successor_snapshot",
+    "lexical_atom_specs",
+    "reception_focus_authority",
+    "plan",
+    "resolver",
+    "inventory_result",
+    "content_plan",
+    "current_input",
+)
+_B6_OWNER_HEAD_BINDING_FIELDS = (
+    "source_owner_id",
+    "base_source_nucleus_id",
+    "source_fragment_anchor_id",
+    "source_slot",
+    "source_fragment_start",
+    "source_fragment_end",
+    "grammatical_head_start",
+    "grammatical_head_end",
+    "grammatical_head_scalar_count",
+    "selection_basis",
+)
+_B6_OWNER_HEAD_MAX_SCALARS = 32
+_B6_OWNER_HEAD_REQUIRED_SELECTION_BASIS = (
+    "grounded_syntactic_head_exact_source_range"
+)
+_B6_OWNER_HEAD_WHOLE_SELECTION_BASIS = "whole_exact_source_fragment"
+_B6_OWNER_OCCURRENCE_COUNT = 24
+_B6_OWNER_WHOLE_RANGE_COUNT = 19
+_B6_OWNER_LONG_RANGE_COUNT = 5
+_B6_OWNER_LONG_SAFE_ANCHOR_COUNT = 2
+_B6_OWNER_LONG_GENERIC_PHRASE_MATCH_COUNT = 0
+_B6_RECEPTION_AUTHORITY_BINDING_COUNT = 11
+_B6_RECEPTION_REBUILD_REQUIRED_COUNT = 6
+_B6_RECEPTION_CURRENT_EFFECTIVE_ACT_CONSUMPTION_COUNT = 0
+_B6_OWNER_LEXICAL_PREFIX_BYTES = 133_249
+_B6_OWNER_LEXICAL_PREFIX_SHA256 = (
+    "3ea0f94b350dd1243c50783a1c424aff14df5c7694d1aeb4899a80cb5b4c7b71"
+)
+_B6_OWNER_LEXICAL_PREFIX_GIT_BLOB_SHA1 = (
+    "49a47629b3dcd82ed6326ba815c9e044f65c0cf1"
+)
+_B6_OWNER_LEXICAL_APPEND_MARKER = (
+    b"# rc0031 experiment-only Product owner grammatical-head range "
+    b"authority (append-only B6 owner)\n"
+)
+_B6_OWNER_LEXICAL_APPEND_BYTE_MAX = 24_000
+_B6_RECEPTION_SURFACE_PREFIX_BYTES = 528_932
+_B6_RECEPTION_SURFACE_PREFIX_SHA256 = (
+    "acaf74b4ff25b5e312a60b6741e08a7f802aa9202281a5272d32952a9d06509c"
+)
+_B6_RECEPTION_SURFACE_PREFIX_GIT_BLOB_SHA1 = (
+    "ab10c70629edc57ab971760816fc106747f3de34"
+)
+_B6_RECEPTION_SURFACE_APPEND_MARKER = (
+    b"# rc0031 experiment-only private Reception authority injection "
+    b"seam (append-only B6 consumer)\n"
+)
+_B6_RECEPTION_SURFACE_APPEND_BYTE_MAX = 20_000
+_B6_OWNER_RECEPTION_IMPLEMENTATION_PRESENT = False
+_B6_OWNER_RECEPTION_DESIGN_MASKED_SHA256 = (
+    "8db0df6b6798c74cce567b3316a22acd419531173e80efd22e56ac51753b025f"
+)
+_B6_OWNER_RECEPTION_IMMUTABLE_GIT_BLOBS = {
+    _CATALOG_PATH: "94e87e7bdd58359dd3790e30fcd765151ad792d9",
+    _MATCHER_PATH: "9d7a82fc746e7827b1893228d6de128d669af975",
+    _GATE_PATH: "b5dadd0e100adddb016dcf5a08dc0afefe477d06",
+    _P1_FIXTURE: "56e4d96f8559e2411305b1dac83b5932df88d1a8",
+    _P1_TEST: "9712f44f7faf3d00b4f447fd3877a11c218740bd",
+    _P2_TEST: "55ca582d5e9d1600db2c27d80d6a623247aae4de",
+    (
+        _SERVICE_ROOT
+        / "emlis_ai_grounded_relation_construction_authority_successor_v3.py"
+    ): "d622874a8ac2c9686a2e716c55c5b7816b46efa8",
+    _B6_RECEPTION_AUTHORITY_PATH: (
+        "7ddd4b62a5a46bf55bb97063d58801228849dd68"
+    ),
+}
+
+# Reconciliation owns the section that starts at its marker.  Preserve that
+# accepted material exactly while allowing this separately approved later
+# phase to append its own independently fingerprinted section.
+_b6_reconciliation_masked_design_material_before_owner_reception = (
+    _b6_reconciliation_masked_design_material
+)
+
+
+def _b6_reconciliation_masked_design_material(source: bytes) -> str:
+    marker = (
+        b"# ---------------------------------------------------------------------------\n"
+        b"# rc0031 P3 B6 owner-head range / Reception injection design freeze RED-only\n"
+        b"# ---------------------------------------------------------------------------\n"
+    )
+    _closed_assert(
+        source.count(marker) == 1,
+        "STEP11_RC0031_P3_B6_OWNER_RECEPTION_DESIGN_MARKER_INVALID",
+    )
+    return _b6_reconciliation_masked_design_material_before_owner_reception(
+        source[: source.index(marker)]
+    )
+
+
+def _b6_owner_reception_signature_is_exact(
+    value: Any,
+    expected: tuple[str, ...],
+    *,
+    positional_count: int = 1,
+) -> bool:
+    if not callable(value):
+        return False
+    try:
+        parameters = inspect.signature(value).parameters
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        tuple(parameters) == expected
+        and all(
+            parameters[name].kind
+            is inspect.Parameter.POSITIONAL_OR_KEYWORD
+            for name in expected[:positional_count]
+        )
+        and all(
+            parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
+            for name in expected[positional_count:]
+        )
+    )
+
+
+def _b6_owner_reception_bounded_append_is_exact(
+    path: Path,
+    *,
+    prefix_bytes: int,
+    prefix_sha256: str,
+    prefix_git_blob_sha1: str,
+    marker: bytes,
+    append_byte_max: int,
+) -> tuple[bool, bool]:
+    source = path.read_bytes()
+    prefix = source[:prefix_bytes]
+    append = source[prefix_bytes:]
+    prefix_exact = bool(
+        len(prefix) == prefix_bytes
+        and hashlib.sha256(prefix).hexdigest() == prefix_sha256
+        and _b6_git_blob_sha1(prefix) == prefix_git_blob_sha1
+    )
+    if not prefix_exact:
+        return False, False
+    if not append:
+        return True, False
+    return bool(
+        append.startswith(marker)
+        and append.count(marker) == 1
+        and len(append) <= append_byte_max
+    ), True
+
+
+def _b6_owner_reception_design_masked_sha256(source: bytes) -> str:
+    marker = (
+        b"# ---------------------------------------------------------------------------\n"
+        b"# rc0031 P3 B6 owner-head range / Reception injection design freeze RED-only\n"
+        b"# ---------------------------------------------------------------------------\n"
+    )
+    _closed_assert(
+        source.count(marker) == 1,
+        "STEP11_RC0031_P3_B6_OWNER_RECEPTION_DESIGN_MARKER_INVALID",
+    )
+    design = source[source.index(marker):].decode("utf-8", errors="strict")
+    tree = ast.parse(design)
+    lines = design.splitlines(keepends=True)
+    masked = {
+        "_B6_OWNER_RECEPTION_IMPLEMENTATION_PRESENT",
+        "_B6_OWNER_RECEPTION_DESIGN_MASKED_SHA256",
+    }
+    found: set[str] = set()
+    for node in tree.body:
+        name = None
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+        ):
+            name = node.targets[0].id
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            name = node.target.id
+        if name not in masked:
+            continue
+        lines[node.lineno - 1] = f"<MECHANICAL_WINDOW:{name}>\n"
+        for index in range(node.lineno, node.end_lineno):
+            lines[index] = ""
+        found.add(name)
+    _closed_assert(
+        found == masked,
+        "STEP11_RC0031_P3_B6_OWNER_RECEPTION_DESIGN_WINDOW_INVALID",
+    )
+    return hashlib.sha256("".join(lines).encode("utf-8")).hexdigest()
+
+
+def _b6_owner_head_range_evidence() -> dict[str, int | bool]:
+    lexical = importlib.import_module(
+        "emlis_ai_step11_grounded_lexicalization_v3"
+    )
+    projection = _b5_owner_projection_or_red()
+    builder = getattr(lexical, _B6_OWNER_HEAD_AUTHORITY_BUILDER, None)
+    validator = getattr(lexical, _B6_OWNER_HEAD_AUTHORITY_VALIDATOR, None)
+    builder_signature_exact = _b6_owner_reception_signature_is_exact(
+        builder, _B6_OWNER_HEAD_AUTHORITY_BUILDER_SIGNATURE
+    )
+    validator_signature_exact = _b6_owner_reception_signature_is_exact(
+        validator, _B6_OWNER_HEAD_AUTHORITY_VALIDATOR_SIGNATURE
+    )
+    result: dict[str, int | bool] = {
+        "owner_count": 0,
+        "whole_count": 0,
+        "long_count": 0,
+        "long_safe_anchor_count": 0,
+        "long_generic_phrase_match_count": 0,
+        "long_independent_range_count": 0,
+        "authority_binding_count": 0,
+        "projection_range_consumption_count": 0,
+        "tamper_rejection_count": 0,
+        "arbitrary_scalar_cut": _b6_has_arbitrary_scalar_cut(projection),
+        "builder_signature_exact": builder_signature_exact,
+        "validator_signature_exact": validator_signature_exact,
+        "private_nonexported": bool(
+            _B6_OWNER_HEAD_AUTHORITY_BUILDER
+            not in tuple(getattr(lexical, "__all__", ()))
+            and _B6_OWNER_HEAD_AUTHORITY_VALIDATOR
+            not in tuple(getattr(lexical, "__all__", ()))
+        ),
+        "builder_source_policy_exact": False,
+    }
+    if builder_signature_exact:
+        builder_symbols = _b6_function_symbols(
+            builder, _B6_OWNER_GRAMMATICAL_HEAD_RANGE_AUTHORITY_RED
+        )
+        result["builder_source_policy_exact"] = bool(
+            not _b6_has_arbitrary_scalar_cut(builder)
+            and "grounded_phrase_text" not in builder_symbols
+            and "case_id" not in builder_symbols
+            and "fixture" not in builder_symbols
+            and "longest" not in builder_symbols
+        )
+    for _case, _baseline, successor, lexical_specs, candidate, _witness in (
+        _b5_predecessor_candidate_contexts()
+    ):
+        fragments = tuple(candidate.base_candidate.surface_ast.source_fragments)
+        projected = projection(
+            candidate.base_candidate,
+            successor_snapshot=successor,
+            lexical_atom_specs=lexical_specs,
+        )
+        projected_by_owner = {str(row[0]): row for row in projected}
+        authority = None
+        bindings_by_owner: dict[str, Any] = {}
+        if builder_signature_exact and validator_signature_exact:
+            try:
+                authority = builder(
+                    candidate.base_candidate,
+                    successor_snapshot=successor,
+                    lexical_atom_specs=lexical_specs,
+                )
+                issues = validator(
+                    authority,
+                    base_candidate=candidate.base_candidate,
+                    successor_snapshot=successor,
+                    lexical_atom_specs=lexical_specs,
+                )
+                bindings = tuple(authority.bindings)
+                bindings_by_owner = {
+                    str(row.source_owner_id): row for row in bindings
+                }
+                if (
+                    issues
+                    or len(bindings_by_owner) != len(bindings)
+                    or authority.binding_count != len(bindings)
+                    or authority.body_free is not True
+                    or authority.experimental_only is not True
+                    or authority.runtime_connected is not False
+                ):
+                    bindings_by_owner = {}
+            except Exception:
+                authority = None
+                bindings_by_owner = {}
+        for lexeme in candidate.natural_handle_specs.lexemes:
+            matches = tuple(
+                fragment
+                for fragment in fragments
+                if lexeme.base_source_nucleus_id in fragment.source_nucleus_ids
+                and fragment.evidence_grade == "exact_source_span"
+            )
+            _closed_assert(
+                len(matches) == 1,
+                "STEP11_RC0031_P3_B6_OWNER_HEAD_DENOMINATOR_DRIFT",
+            )
+            fragment = matches[0]
+            source_expression = unicodedata.normalize(
+                "NFC", str(fragment.text).strip(" \t\r\n。！？!?")
+            )
+            is_long = len(source_expression) > _B6_OWNER_HEAD_MAX_SCALARS
+            result["owner_count"] = int(result["owner_count"]) + 1
+            key = "long_count" if is_long else "whole_count"
+            result[key] = int(result[key]) + 1
+            if is_long:
+                result["long_safe_anchor_count"] = int(
+                    result["long_safe_anchor_count"]
+                ) + bool(lexical.step11_safe_anchor_segments(fragment))
+                result["long_generic_phrase_match_count"] = int(
+                    result["long_generic_phrase_match_count"]
+                ) + bool(lexeme.grounded_phrase_text in source_expression)
+            binding = bindings_by_owner.get(str(lexeme.source_owner_id))
+            if binding is None:
+                continue
+            binding_fields = tuple(
+                getattr(type(binding), "__dataclass_fields__", {})
+            )
+            if binding_fields != _B6_OWNER_HEAD_BINDING_FIELDS:
+                continue
+            try:
+                head_start = int(binding.grammatical_head_start)
+                head_end = int(binding.grammatical_head_end)
+                relative_start = head_start - int(fragment.source_start)
+                relative_end = head_end - int(fragment.source_start)
+                head_text = str(fragment.text)[relative_start:relative_end]
+                expected_expression = unicodedata.normalize("NFC", head_text)
+                projected_row = projected_by_owner[str(lexeme.source_owner_id)]
+            except (KeyError, TypeError, ValueError):
+                continue
+            binding_exact = bool(
+                binding.source_owner_id == lexeme.source_owner_id
+                and binding.base_source_nucleus_id
+                == lexeme.base_source_nucleus_id
+                and binding.source_fragment_anchor_id
+                == fragment.source_anchor_id
+                and binding.source_slot == fragment.source_slot
+                and binding.source_fragment_start == fragment.source_start
+                and binding.source_fragment_end == fragment.source_end
+                and fragment.source_start <= head_start < head_end
+                <= fragment.source_end
+                and binding.grammatical_head_scalar_count
+                == head_end - head_start
+                == len(head_text)
+                and 1
+                <= binding.grammatical_head_scalar_count
+                <= _B6_OWNER_HEAD_MAX_SCALARS
+                and projected_row[3] == expected_expression
+                and len(expected_expression) <= _B6_OWNER_HEAD_MAX_SCALARS
+                and "…" not in expected_expression
+            )
+            if not binding_exact:
+                continue
+            result["authority_binding_count"] = int(
+                result["authority_binding_count"]
+            ) + 1
+            result["projection_range_consumption_count"] = int(
+                result["projection_range_consumption_count"]
+            ) + 1
+            if (
+                is_long
+                and binding.selection_basis
+                == _B6_OWNER_HEAD_REQUIRED_SELECTION_BASIS
+            ):
+                result["long_independent_range_count"] = int(
+                    result["long_independent_range_count"]
+                ) + 1
+            if authority is not None:
+                try:
+                    tampered_binding = replace(
+                        binding,
+                        grammatical_head_start=head_end,
+                    )
+                    tampered = replace(
+                        authority,
+                        bindings=tuple(
+                            tampered_binding if row is binding else row
+                            for row in authority.bindings
+                        ),
+                    )
+                    tampered_issues = validator(
+                        tampered,
+                        base_candidate=candidate.base_candidate,
+                        successor_snapshot=successor,
+                        lexical_atom_specs=lexical_specs,
+                    )
+                    result["tamper_rejection_count"] = int(
+                        result["tamper_rejection_count"]
+                    ) + bool(tampered_issues)
+                except Exception:
+                    pass
+    return result
+
+
+def _b6_reception_injection_evidence() -> dict[str, int | bool]:
+    from emlis_ai_evidence_ledger_service import (
+        build_evidence_ledger,
+        build_evidence_span_resolver,
+    )
+
+    surface = _surface_module()
+    authority_owner = importlib.import_module(
+        "emlis_ai_step11_rc0031_reception_focus_authority_v3"
+    )
+    seam = getattr(surface, _B6_RECEPTION_INJECTION_BUILDER, None)
+    signature_exact = _b6_owner_reception_signature_is_exact(
+        seam, _B6_RECEPTION_INJECTION_SIGNATURE
+    )
+    symbols = (
+        _b6_function_symbols(seam, _B6_RECEPTION_INJECTION_SEAM_RED)
+        if signature_exact
+        else frozenset()
+    )
+    result: dict[str, int | bool] = {
+        "authority_count": 0,
+        "rebuild_required_count": 0,
+        "current_effective_act_consumption_count": 0,
+        "injected_join_count": 0,
+        "behavioral_consumption_count": 0,
+        "rebuild_behavioral_consumption_count": 0,
+        "tamper_rejection_count": 0,
+        "resource_boundary_count": 0,
+        "signature_exact": signature_exact,
+        "validator_and_authority_symbols_exact": bool(
+            {
+                "validate_step11_rc0031_reception_focus_authority",
+                "source_target_owner_ids",
+                "visible_support_owner_ids",
+                "effective_reception_act",
+            }
+            <= symbols
+        ),
+        "private_nonexported": (
+            _B6_RECEPTION_INJECTION_BUILDER
+            not in tuple(getattr(surface, "__all__", ()))
+        ),
+    }
+    for _case, baseline, successor, lexical_specs, candidate, _witness in (
+        _rc0031_final_candidate_contexts()
+    ):
+        spans = tuple(build_evidence_ledger(baseline.normalized_input))
+        resolver = build_evidence_span_resolver(
+            spans, current_input=baseline.normalized_input
+        )
+        authority = authority_owner.build_step11_rc0031_reception_focus_authority(
+            baseline.grounded_plan,
+            resolver,
+            successor_snapshot=successor,
+            base_candidate=candidate.base_candidate,
+            inventory_result=baseline.inventory_result,
+            content_plan=baseline.content_plan,
+            current_input=baseline.projected_current_input,
+        )
+        _closed_assert(
+            authority_owner.validate_step11_rc0031_reception_focus_authority(
+                authority,
+                plan=baseline.grounded_plan,
+                resolver=resolver,
+                successor_snapshot=successor,
+                base_candidate=candidate.base_candidate,
+                inventory_result=baseline.inventory_result,
+                content_plan=baseline.content_plan,
+                current_input=baseline.projected_current_input,
+            )
+            == (),
+            "STEP11_RC0031_P3_B6_RECEPTION_INJECTION_AUTHORITY_DRIFT",
+        )
+        authority_by_id = {
+            str(row.source_reception_opportunity_id): row
+            for row in authority.bindings
+        }
+        current_by_id = {
+            str(row.source_reception_opportunity_id): row
+            for row in candidate.reception_bindings
+        }
+        result["authority_count"] = int(result["authority_count"]) + len(
+            authority.bindings
+        )
+        result["rebuild_required_count"] = int(
+            result["rebuild_required_count"]
+        ) + sum(row.product_rebuild_required is True for row in authority.bindings)
+        result["current_effective_act_consumption_count"] = int(
+            result["current_effective_act_consumption_count"]
+        ) + sum(
+            row.product_rebuild_required is True
+            and current_by_id[row.source_reception_opportunity_id].reception_act
+            == row.effective_reception_act
+            for row in authority.bindings
+        )
+        if not signature_exact:
+            continue
+        try:
+            injected = seam(
+                candidate,
+                successor_snapshot=successor,
+                lexical_atom_specs=lexical_specs,
+                reception_focus_authority=authority,
+                plan=baseline.grounded_plan,
+                resolver=resolver,
+                inventory_result=baseline.inventory_result,
+                content_plan=baseline.content_plan,
+                current_input=baseline.projected_current_input,
+            )
+            injected_by_id = {
+                str(row.source_reception_opportunity_id): row
+                for row in injected.reception_bindings
+            }
+            owner_rows = surface._step11_rc0031_product_owner_projection(
+                injected.base_candidate,
+                successor_snapshot=successor,
+                lexical_atom_specs=lexical_specs,
+            )
+            referent_by_owner = {str(row[0]): str(row[3]) for row in owner_rows}
+            _catalog_owner, catalog, grammar, _catalog_sha256 = (
+                surface._step11_rc0031_product_surface_authorities()
+            )
+            body = injected.rendered_surface.utf8_bytes.decode(
+                "utf-8", errors="strict"
+            )
+            _observation, reception = body.split(grammar["section_separator"], 1)
+            reception_lines = reception.split("\n")
+        except Exception:
+            continue
+        if set(injected_by_id) == set(authority_by_id):
+            result["injected_join_count"] = int(
+                result["injected_join_count"]
+            ) + len(authority_by_id)
+        morphology = catalog["clause_morphology"]
+        for opportunity_id, authority_row in authority_by_id.items():
+            injected_row = injected_by_id.get(opportunity_id)
+            current_row = current_by_id[opportunity_id]
+            if injected_row is None:
+                continue
+            try:
+                targets = tuple(
+                    referent_by_owner[owner_id]
+                    for owner_id in authority_row.source_target_owner_ids
+                )
+                supports = tuple(
+                    referent_by_owner[owner_id]
+                    for owner_id in authority_row.visible_support_owner_ids
+                )
+                expected = (
+                    (
+                        morphology["support_owner_join"].join(supports)
+                        + morphology["support_target_link"]
+                        if supports
+                        else ""
+                    )
+                    + morphology["target_owner_join"].join(targets)
+                    + morphology["reception_object_particle"]
+                    + catalog["reception_act_predicate_fragments"][
+                        authority_row.effective_reception_act
+                    ]
+                )
+                line = reception_lines[
+                    int(injected_row.reception_line_ordinal) - 1
+                ]
+            except (IndexError, KeyError, TypeError, ValueError):
+                continue
+            consumed = bool(
+                tuple(injected_row.source_target_owner_ids)
+                == authority_row.source_target_owner_ids
+                and tuple(injected_row.supporting_source_owner_ids)
+                == authority_row.visible_support_owner_ids
+                and injected_row.reception_act
+                == authority_row.effective_reception_act
+                and injected_row.source_scope == authority_row.source_scope
+                and expected in line
+            )
+            result["behavioral_consumption_count"] = int(
+                result["behavioral_consumption_count"]
+            ) + consumed
+            result["rebuild_behavioral_consumption_count"] = int(
+                result["rebuild_behavioral_consumption_count"]
+            ) + bool(
+                consumed
+                and authority_row.product_rebuild_required is True
+                and current_row.reception_act
+                != authority_row.effective_reception_act
+            )
+        plan = injected.surface_realization_plan
+        result["resource_boundary_count"] = int(
+            result["resource_boundary_count"]
+        ) + bool(
+            plan.maximum_visible_clauses_per_grammatical_sentence == 2
+            and plan.maximum_grammatical_complexity_load == 4
+            and plan.maximum_repeated_joiner_per_group == 2
+            and plan.maximum_observation_clauses_per_sentence == 4
+            and injected.experimental_only is True
+            and injected.private_body_full is True
+            and injected.shareable is False
+            and injected.runtime_connected is False
+        )
+        try:
+            tampered = replace(
+                authority,
+                binding_count=authority.binding_count + 1,
+            )
+            seam(
+                candidate,
+                successor_snapshot=successor,
+                lexical_atom_specs=lexical_specs,
+                reception_focus_authority=tampered,
+                plan=baseline.grounded_plan,
+                resolver=resolver,
+                inventory_result=baseline.inventory_result,
+                content_plan=baseline.content_plan,
+                current_input=baseline.projected_current_input,
+            )
+        except Exception:
+            result["tamper_rejection_count"] = int(
+                result["tamper_rejection_count"]
+            ) + 1
+    return result
+
+
+class TestRc0031P3B6OwnerHeadRangeReceptionInjectionDesignFreezeRedOnly:
+    def test_rc0031_p3_b6_owner_reception_predecessor_scope_and_boundaries_are_exact(
+        self,
+    ) -> None:
+        source = Path(__file__).resolve().read_bytes()
+        prefix = source[:_B6_OWNER_RECEPTION_TEST_PREFIX_BYTES]
+        lexical_exact, lexical_append_present = (
+            _b6_owner_reception_bounded_append_is_exact(
+                _LEXICAL_PATH,
+                prefix_bytes=_B6_OWNER_LEXICAL_PREFIX_BYTES,
+                prefix_sha256=_B6_OWNER_LEXICAL_PREFIX_SHA256,
+                prefix_git_blob_sha1=_B6_OWNER_LEXICAL_PREFIX_GIT_BLOB_SHA1,
+                marker=_B6_OWNER_LEXICAL_APPEND_MARKER,
+                append_byte_max=_B6_OWNER_LEXICAL_APPEND_BYTE_MAX,
+            )
+        )
+        surface_exact, surface_append_present = (
+            _b6_owner_reception_bounded_append_is_exact(
+                _SURFACE_PATH,
+                prefix_bytes=_B6_RECEPTION_SURFACE_PREFIX_BYTES,
+                prefix_sha256=_B6_RECEPTION_SURFACE_PREFIX_SHA256,
+                prefix_git_blob_sha1=_B6_RECEPTION_SURFACE_PREFIX_GIT_BLOB_SHA1,
+                marker=_B6_RECEPTION_SURFACE_APPEND_MARKER,
+                append_byte_max=_B6_RECEPTION_SURFACE_APPEND_BYTE_MAX,
+            )
+        )
+        immutable_blobs = {
+            path: _b6_git_blob_sha1(path.read_bytes())
+            for path in _B6_OWNER_RECEPTION_IMMUTABLE_GIT_BLOBS
+        }
+        scope = _b6_scope_reconciliation_material()
+        fixture = json.loads(_P1_FIXTURE.read_text(encoding="utf-8"))
+        privacy = fixture.get("privacy_contract", {})
+        _closed_assert(
+            len(prefix) == _B6_OWNER_RECEPTION_TEST_PREFIX_BYTES
+            and hashlib.sha256(prefix).hexdigest()
+            == _B6_OWNER_RECEPTION_TEST_PREFIX_SHA256
+            and _b6_git_blob_sha1(prefix)
+            == _B6_OWNER_RECEPTION_TEST_PREFIX_GIT_BLOB_SHA1
+            and immutable_blobs == _B6_OWNER_RECEPTION_IMMUTABLE_GIT_BLOBS
+            and lexical_exact
+            and surface_exact
+            and lexical_append_present
+            is _B6_OWNER_RECEPTION_IMPLEMENTATION_PRESENT
+            and surface_append_present
+            is _B6_OWNER_RECEPTION_IMPLEMENTATION_PRESENT
+            and scope[:6]
+            == (
+                _B6_RECONCILIATION_SERVICE_PY_PATH_COUNT,
+                _B6_RECONCILIATION_SERVICE_PY_PATH_LIST_SHA256,
+                _B6_RECONCILIATION_REPOSITORY_PY_FROZEN_FILE_COUNT,
+                _B6_RECONCILIATION_REPOSITORY_PY_FROZEN_MATERIAL_SHA256,
+                _B6_RECONCILIATION_ACTIVE_PATH_COUNT,
+                _B6_RECONCILIATION_ACTIVE_PATH_LIST_SHA256,
+            )
+            and scope[6] == _B6_RECONCILIATION_P3_ACTIVE
+            and fixture.get("body_free") is True
+            and privacy.get("body_or_quote_exported") is False
+            and privacy.get("parsed_span_or_binding_detail_exported") is False
+            and privacy.get("unsalted_body_digest_exported") is False
+            and privacy.get("runtime_connected") is False
+            and privacy.get("formal_or_production_eligible") is False,
+            "STEP11_RC0031_P3_B6_OWNER_RECEPTION_PREDECESSOR_OR_BOUNDARY_DRIFT",
+        )
+
+    def test_rc0031_p3_b6_owner_reception_contract_and_future_green_window_are_exact(
+        self,
+    ) -> None:
+        source = Path(__file__).resolve().read_bytes()
+        tree = ast.parse(source.decode("utf-8", errors="strict"))
+        class_rows = tuple(
+            node
+            for node in tree.body
+            if isinstance(node, ast.ClassDef)
+            and node.name == _B6_OWNER_RECEPTION_CLASS_NAME
+        )
+        names = frozenset(
+            child.name
+            for row in class_rows
+            for child in row.body
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and child.name.startswith("test_")
+        )
+        total_tests = sum(
+            child.name.startswith("test_")
+            for node in tree.body
+            for child in (
+                (node,)
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                else tuple(node.body)
+                if isinstance(node, ast.ClassDef)
+                else ()
+            )
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+        )
+        surface = _surface_module()
+        authority_owner = importlib.import_module(
+            "emlis_ai_step11_rc0031_reception_focus_authority_v3"
+        )
+        _closed_assert(
+            len(class_rows) == 1
+            and names == _B6_OWNER_RECEPTION_TEST_NAMES
+            and total_tests == 44
+            and _B6_OWNER_HEAD_BINDING_FIELDS
+            == (
+                "source_owner_id",
+                "base_source_nucleus_id",
+                "source_fragment_anchor_id",
+                "source_slot",
+                "source_fragment_start",
+                "source_fragment_end",
+                "grammatical_head_start",
+                "grammatical_head_end",
+                "grammatical_head_scalar_count",
+                "selection_basis",
+            )
+            and _B6_OWNER_HEAD_MAX_SCALARS == 32
+            and _B6_OWNER_LEXICAL_APPEND_BYTE_MAX <= 24_000
+            and _B6_RECEPTION_SURFACE_APPEND_BYTE_MAX <= 20_000
+            and _b6_owner_reception_signature_is_exact(
+                surface.build_step11_rc0031_dimension_bearing_experiment_surface_candidate,
+                ("value", "successor_snapshot", "lexical_atom_specs"),
+            )
+            and _b6_owner_reception_signature_is_exact(
+                surface.validate_step11_rc0031_dimension_bearing_experiment_surface_candidate,
+                ("value", "successor_snapshot", "lexical_atom_specs"),
+            )
+            and _b6_owner_reception_signature_is_exact(
+                authority_owner.build_step11_rc0031_reception_focus_authority,
+                (
+                    "plan",
+                    "resolver",
+                    "successor_snapshot",
+                    "base_candidate",
+                    "inventory_result",
+                    "content_plan",
+                    "current_input",
+                ),
+                positional_count=2,
+            )
+            and _b6_owner_reception_signature_is_exact(
+                authority_owner.validate_step11_rc0031_reception_focus_authority,
+                (
+                    "value",
+                    "plan",
+                    "resolver",
+                    "successor_snapshot",
+                    "base_candidate",
+                    "inventory_result",
+                    "content_plan",
+                    "current_input",
+                ),
+            )
+            and _B6_RECEPTION_INJECTION_BUILDER
+            not in tuple(getattr(surface, "__all__", ()))
+            and _b6_owner_reception_design_masked_sha256(source)
+            == _B6_OWNER_RECEPTION_DESIGN_MASKED_SHA256,
+            "STEP11_RC0031_P3_B6_OWNER_RECEPTION_CONTRACT_OR_WINDOW_DRIFT",
+        )
+
+    def test_rc0031_p3_b6_owner_grammatical_head_range_authority_is_proved_or_red(
+        self,
+    ) -> None:
+        evidence = _b6_owner_head_range_evidence()
+        _closed_assert(
+            evidence["owner_count"] == _B6_OWNER_OCCURRENCE_COUNT
+            and evidence["whole_count"] == _B6_OWNER_WHOLE_RANGE_COUNT
+            and evidence["long_count"] == _B6_OWNER_LONG_RANGE_COUNT
+            and evidence["long_safe_anchor_count"]
+            == _B6_OWNER_LONG_SAFE_ANCHOR_COUNT
+            and evidence["long_generic_phrase_match_count"]
+            == _B6_OWNER_LONG_GENERIC_PHRASE_MATCH_COUNT
+            and evidence["builder_signature_exact"] is True
+            and evidence["validator_signature_exact"] is True
+            and evidence["private_nonexported"] is True
+            and evidence["builder_source_policy_exact"] is True
+            and evidence["arbitrary_scalar_cut"] is False
+            and evidence["authority_binding_count"]
+            == _B6_OWNER_OCCURRENCE_COUNT
+            and evidence["projection_range_consumption_count"]
+            == _B6_OWNER_OCCURRENCE_COUNT
+            and evidence["long_independent_range_count"]
+            == _B6_OWNER_LONG_RANGE_COUNT
+            and evidence["tamper_rejection_count"]
+            == _B6_OWNER_OCCURRENCE_COUNT,
+            _B6_OWNER_GRAMMATICAL_HEAD_RANGE_AUTHORITY_RED,
+        )
+
+    def test_rc0031_p3_b6_reception_authority_injection_seam_is_proved_or_red(
+        self,
+    ) -> None:
+        evidence = _b6_reception_injection_evidence()
+        _closed_assert(
+            evidence["authority_count"]
+            == _B6_RECEPTION_AUTHORITY_BINDING_COUNT
+            and evidence["rebuild_required_count"]
+            == _B6_RECEPTION_REBUILD_REQUIRED_COUNT
+            and evidence["current_effective_act_consumption_count"]
+            == _B6_RECEPTION_CURRENT_EFFECTIVE_ACT_CONSUMPTION_COUNT
+            and evidence["signature_exact"] is True
+            and evidence["validator_and_authority_symbols_exact"] is True
+            and evidence["private_nonexported"] is True
+            and evidence["injected_join_count"]
+            == _B6_RECEPTION_AUTHORITY_BINDING_COUNT
+            and evidence["behavioral_consumption_count"]
+            == _B6_RECEPTION_AUTHORITY_BINDING_COUNT
+            and evidence["rebuild_behavioral_consumption_count"]
+            == _B6_RECEPTION_REBUILD_REQUIRED_COUNT
+            and evidence["tamper_rejection_count"] == 10
+            and evidence["resource_boundary_count"] == 10,
+            _B6_RECEPTION_INJECTION_SEAM_RED,
+        )
