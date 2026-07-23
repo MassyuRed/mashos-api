@@ -1304,7 +1304,7 @@ def test_s5_cross_role_depth_noninflation_floor_and_effect_scope_red() -> None:
             )
         )
         assert all(
-            bound_ids & selected
+            bound_ids
             for bound_ids in bound_obligation_ids_by_role.values()
         )
 
