@@ -76,6 +76,48 @@ _THIS_PATH = (
     "ai/tests/"
     "test_emlis_nls_v3_recovery_epoch001_current_closure_completion_red.py"
 )
+_STEP5_RED_AUTHORITY = (
+    "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_STEP5_CROSS_ROLE_SEMANTIC_"
+    "RESTATEMENT_WITNESS_AND_DEPTH_NONINFLATION_REMEDIATION_RED_FREEZE_ONLY"
+)
+_STEP5_RED_COCOLON_ENTRY_HEAD = (
+    "ec66fdbadef3ebee4b5a531f77391252146b2e4e"
+)
+_STEP5_RED_MASHOS_API_ENTRY_HEAD = (
+    "21600c3d07b4f3d870beb3acb0bd78bf3e898f36"
+)
+_STEP5_PARENT_ADDENDUM_BLOB = (
+    "df8d2e49287554b3da2867afde634b3afbec4a37"
+)
+_STEP5_PARENT_RECEIPT_BLOB = (
+    "fdb64ba8ddab5b050556eb8025b77fd026c7aa50"
+)
+_STEP5_PARENT_HANDOFF_BLOB = (
+    "ed9f5725ebd843bd258ef767dd0b7a7b74df8277"
+)
+_EXECUTION_AND_CLOSURE_PLAN_BLOB = (
+    "4f4cdd8fd43af06844b8c303443c3635ce62d0ba"
+)
+_PREDECESSOR_CAUSAL_RED_RECEIPT_BLOB = (
+    "e78d528600fef27ce3de52ef91c1118d6866d2ed"
+)
+_CROSS_ROLE_WITNESS_SCHEMA = (
+    "cocolon.emlis.nls_v3."
+    "grounded_cross_role_semantic_restatement_witness.v1"
+)
+_CROSS_ROLE_ADAPTER_VERSION = (
+    "cocolon.emlis.nls_v3."
+    "grounded_cross_role_semantic_restatement_adapter.20260723.v1"
+)
+_CROSS_ROLE_DEPTH_SCHEMA = (
+    "cocolon.emlis.nls_v3.cross_role_semantic_depth_equivalence.v1"
+)
+_REFINED_SOURCE_SNAPSHOT_SCHEMA = (
+    "cocolon.emlis.nls_v3.refined_source_snapshot.v2"
+)
+_CROSS_ROLE_PROOF_CODE = "TYPED_SEMANTIC_GRAPH_EQUIVALENCE"
+_CROSS_ROLE_PROOF_BASIS = "COMPLETE_BODY_FREE_TYPED_COMPONENT_BIJECTION"
+_CROSS_ROLE_EFFECT_SCOPE = "CONTENT_DEPTH_ONLY"
 
 _HERE = Path(__file__).resolve()
 _AI_ROOT = _HERE.parents[1]
@@ -105,6 +147,67 @@ _FUTURE_ADD_PATHS = frozenset(
         _RECEIPT_PATH,
         _SUCCESSOR_PATH,
         _INDEPENDENT_VERIFIER_PATH,
+    }
+)
+_STEP5_FUTURE_SOURCE_SURFACE = frozenset(
+    {
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_grounded_observation_semantic_restatement_v3.py"
+        ),
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_semantic_obligation_inventory_v3.py"
+        ),
+        "ai/services/ai_inference/emlis_ai_content_selection_v3.py",
+    }
+)
+_STEP5_RED_TEST_SURFACE = frozenset(
+    {
+        "ai/tests/test_emlis_ai_grounded_observation_semantic_restatement.py",
+        "ai/tests/test_emlis_nls_v3_s4_semantic_obligation_inventory.py",
+        "ai/tests/test_emlis_nls_v3_s5_content_selection_stage_context.py",
+        _THIS_PATH,
+    }
+)
+_MERGED_FUTURE_CORE_SURFACE = (
+    _FUTURE_CORE_SURFACE | _STEP5_FUTURE_SOURCE_SURFACE
+)
+_MERGED_FUTURE_TEST_SURFACE = (
+    _FUTURE_TEST_SURFACE | _STEP5_RED_TEST_SURFACE
+)
+_STEP5_PROTECTED_SURFACE = frozenset(
+    {
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_refined_source_partition_v3.py"
+        ),
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_nls_v3_artifact_contract.py"
+        ),
+    }
+)
+_CROSS_ROLE_NEGATIVE_CODES = frozenset(
+    {
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_TYPE_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA_MISMATCH",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_ADAPTER_MISMATCH",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_PLAN_BINDING_MISMATCH",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_SOURCE_WITNESS_MISMATCH",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_ROLE_PAIR_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_COMPONENT_UNRESOLVED",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_COMPONENT_KIND_MISMATCH",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_AMBIGUOUS",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_GRAPH_MISMATCH",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_PROOF_CODE_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_PROOF_BASIS_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_EFFECT_SCOPE_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_DEPTH_CONTRACT_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_BODY_FREE_REQUIRED",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_ORDER_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_HASH_MISMATCH",
     }
 )
 _STEP5_PARENT_DESIGN_UNRESOLVED = frozenset(
@@ -441,6 +544,9 @@ _RECEIPT_OWNER_RED = (
 _STEP5_PARENT_DESIGN_RED = (
     "RECOVERY_EPOCH001_S5_CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_REQUIRED"
 )
+_STEP5_CROSS_ROLE_OWNER_RED = (
+    "RECOVERY_EPOCH001_S5_CROSS_ROLE_SEMANTIC_RESTATEMENT_OWNER_NOT_PROVED"
+)
 _STEP9_SUCCESSOR_RED = (
     "RECOVERY_EPOCH001_STEP9_STANDALONE_SUCCESSOR_OWNER_NOT_PROVED"
 )
@@ -546,6 +652,80 @@ def test_recovery_epoch001_future_core_and_test_surface_are_exact() -> None:
         path: (_REPO_ROOT / path).is_file() for path in _FUTURE_ADD_PATHS
     }
     assert set(add_presence.values()) in ({False}, {True})
+
+
+def test_recovery_epoch001_step5_cross_role_red_authority_and_surface_are_exact() -> None:
+    assert _STEP5_RED_AUTHORITY.endswith("REMEDIATION_RED_FREEZE_ONLY")
+    assert _STEP5_RED_COCOLON_ENTRY_HEAD == (
+        "ec66fdbadef3ebee4b5a531f77391252146b2e4e"
+    )
+    assert _STEP5_RED_MASHOS_API_ENTRY_HEAD == (
+        "21600c3d07b4f3d870beb3acb0bd78bf3e898f36"
+    )
+    assert {
+        _STEP5_PARENT_ADDENDUM_BLOB,
+        _STEP5_PARENT_RECEIPT_BLOB,
+        _STEP5_PARENT_HANDOFF_BLOB,
+        _EXECUTION_AND_CLOSURE_PLAN_BLOB,
+        _PREDECESSOR_CAUSAL_RED_RECEIPT_BLOB,
+    } == {
+        "df8d2e49287554b3da2867afde634b3afbec4a37",
+        "fdb64ba8ddab5b050556eb8025b77fd026c7aa50",
+        "ed9f5725ebd843bd258ef767dd0b7a7b74df8277",
+        "4f4cdd8fd43af06844b8c303443c3635ce62d0ba",
+        "e78d528600fef27ce3de52ef91c1118d6866d2ed",
+    }
+    assert _CROSS_ROLE_WITNESS_SCHEMA.endswith(
+        "grounded_cross_role_semantic_restatement_witness.v1"
+    )
+    assert _CROSS_ROLE_ADAPTER_VERSION.endswith(
+        "grounded_cross_role_semantic_restatement_adapter.20260723.v1"
+    )
+    assert _CROSS_ROLE_DEPTH_SCHEMA.endswith(
+        "cross_role_semantic_depth_equivalence.v1"
+    )
+    assert _REFINED_SOURCE_SNAPSHOT_SCHEMA.endswith(
+        "refined_source_snapshot.v2"
+    )
+    assert _CROSS_ROLE_PROOF_CODE == "TYPED_SEMANTIC_GRAPH_EQUIVALENCE"
+    assert _CROSS_ROLE_PROOF_BASIS == (
+        "COMPLETE_BODY_FREE_TYPED_COMPONENT_BIJECTION"
+    )
+    assert _CROSS_ROLE_EFFECT_SCOPE == "CONTENT_DEPTH_ONLY"
+
+    assert len(_STEP5_FUTURE_SOURCE_SURFACE) == 3
+    assert len(_STEP5_RED_TEST_SURFACE) == 4
+    assert len(_MERGED_FUTURE_CORE_SURFACE) == 10
+    assert len(_MERGED_FUTURE_TEST_SURFACE) == 6
+    assert _STEP5_FUTURE_SOURCE_SURFACE <= _MERGED_FUTURE_CORE_SURFACE
+    assert _STEP5_RED_TEST_SURFACE <= _MERGED_FUTURE_TEST_SURFACE
+    assert not (_STEP5_FUTURE_SOURCE_SURFACE & _STEP5_RED_TEST_SURFACE)
+    assert not (_STEP5_PROTECTED_SURFACE & _MERGED_FUTURE_CORE_SURFACE)
+    assert not (_STEP5_PROTECTED_SURFACE & _MERGED_FUTURE_TEST_SURFACE)
+    assert all(
+        (_REPO_ROOT / path).is_file()
+        for path in _STEP5_FUTURE_SOURCE_SURFACE | _STEP5_RED_TEST_SURFACE
+    )
+
+    assert len(_CROSS_ROLE_NEGATIVE_CODES) == 18
+    assert all(
+        code.startswith("CROSS_ROLE_SEMANTIC_RESTATEMENT_")
+        for code in _CROSS_ROLE_NEGATIVE_CODES
+    )
+    assert {
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_PLAN_BINDING_MISMATCH",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_SOURCE_WITNESS_MISMATCH",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_ROLE_PAIR_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_COMPONENT_UNRESOLVED",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_COMPONENT_KIND_MISMATCH",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_AMBIGUOUS",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_GRAPH_MISMATCH",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_EFFECT_SCOPE_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_DEPTH_CONTRACT_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_BODY_FREE_REQUIRED",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_ORDER_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_HASH_MISMATCH",
+    } <= _CROSS_ROLE_NEGATIVE_CODES
 
 
 def test_recovery_epoch001_step_seed_roots_are_exact_and_resolvable() -> None:
@@ -741,6 +921,78 @@ def test_recovery_epoch001_current_step_receipt_owner_is_proved_or_red() -> None
 
 
 def test_recovery_epoch001_s5_cross_role_restatement_owner_is_resolved_or_red() -> None:
+    semantic_module = _module_or_red(
+        "emlis_ai_grounded_observation_semantic_restatement_v3",
+        _STEP5_CROSS_ROLE_OWNER_RED,
+    )
+    _required_attributes(
+        semantic_module,
+        frozenset(
+            {
+                "GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA",
+                "GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_ADAPTER_VERSION",
+                "CROSS_ROLE_SEMANTIC_DEPTH_EQUIVALENCE_SCHEMA",
+                "GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_NEGATIVE_CODES",
+                "GroundedCrossRoleSemanticComponentBinding",
+                "GroundedCrossRoleSemanticRestatementWitness",
+                "build_grounded_cross_role_semantic_restatement_witness",
+                "validate_grounded_cross_role_semantic_restatement_witness",
+            }
+        ),
+        _STEP5_CROSS_ROLE_OWNER_RED,
+    )
+    assert (
+        semantic_module.GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA
+        == _CROSS_ROLE_WITNESS_SCHEMA
+    )
+    assert (
+        semantic_module.GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_ADAPTER_VERSION
+        == _CROSS_ROLE_ADAPTER_VERSION
+    )
+    assert (
+        semantic_module.CROSS_ROLE_SEMANTIC_DEPTH_EQUIVALENCE_SCHEMA
+        == _CROSS_ROLE_DEPTH_SCHEMA
+    )
+    assert frozenset(
+        semantic_module.GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_NEGATIVE_CODES
+    ) == _CROSS_ROLE_NEGATIVE_CODES
+
+    inventory_module = _module_or_red(
+        "emlis_ai_semantic_obligation_inventory_v3",
+        _STEP5_CROSS_ROLE_OWNER_RED,
+    )
+    _required_attributes(
+        inventory_module,
+        frozenset(
+            {
+                "REFINED_SOURCE_SNAPSHOT_SCHEMA",
+                "CROSS_ROLE_SEMANTIC_DEPTH_EQUIVALENCE_SCHEMA",
+                "CrossRoleSemanticDepthComponentBinding",
+                "CrossRoleSemanticDepthEquivalence",
+            }
+        ),
+        _STEP5_CROSS_ROLE_OWNER_RED,
+    )
+    snapshot_fields = set(
+        inventory_module.GroundedSourceSnapshot.__dataclass_fields__
+    )
+    required_snapshot_fields = {
+        "refined_source_snapshot_schema_version",
+        "cross_role_semantic_restatement_witness_sha256",
+        "cross_role_semantic_depth_equivalence",
+    }
+    missing_snapshot_fields = sorted(
+        required_snapshot_fields - snapshot_fields
+    )
+    if missing_snapshot_fields:
+        pytest.fail(
+            (
+                f"{_STEP5_CROSS_ROLE_OWNER_RED}:"
+                f"{','.join(missing_snapshot_fields)}"
+            ),
+            pytrace=False,
+        )
+
     from test_emlis_nls_v3_s5_content_selection_stage_context import (
         _known_input,
         _normal_result,
@@ -760,6 +1012,12 @@ def test_recovery_epoch001_s5_cross_role_restatement_owner_is_resolved_or_red() 
         / "ai_inference"
         / "emlis_ai_semantic_obligation_inventory_v3.py"
     ).read_text(encoding="utf-8")
+    content_source = (
+        _AI_ROOT
+        / "services"
+        / "ai_inference"
+        / "emlis_ai_content_selection_v3.py"
+    ).read_text(encoding="utf-8")
     assert '"cross_source_bindings": []' in partition_source
     assert "REFINED_CROSS_SOURCE_BINDING_UNAUTHORIZED" in partition_source
     assert "refined_original_semantic_restatement_witness_sha256" in (
@@ -768,7 +1026,10 @@ def test_recovery_epoch001_s5_cross_role_restatement_owner_is_resolved_or_red() 
     assert "refined_supplemental_semantic_restatement_witness_sha256" in (
         inventory_source
     )
-    assert "cross_role_semantic_restatement_witness" not in inventory_source
+    assert "cross_role_semantic_restatement_witness" in inventory_source
+    assert "cross_role_semantic_depth_equivalence" in inventory_source
+    assert "cross_role_semantic_depth_equivalence" in content_source
+    assert "CONTENT_DEPTH_ONLY" in content_source
 
     source = _known_input()
     original = {

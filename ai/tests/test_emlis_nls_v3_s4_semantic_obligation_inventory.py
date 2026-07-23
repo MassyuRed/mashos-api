@@ -4,10 +4,12 @@ from __future__ import annotations
 """Step 4 Semantic Obligation Inventory acceptance and RED tests."""
 
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import asdict, fields, replace
 import json
 from pathlib import Path
 import re
+
+import pytest
 
 import emlis_ai_semantic_obligation_inventory_v3 as inventory_module
 from emlis_ai_evidence_ledger_service import (
@@ -42,6 +44,44 @@ _BATCH_PATH = (
     _AI_ROOT / "tests" / "fixtures" / "emlis_nls_v3" / "generated" / "batch_001.jsonl"
 )
 _MACHINE_SOURCE_ID_RE = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
+_REFINED_SOURCE_SNAPSHOT_SCHEMA = (
+    "cocolon.emlis.nls_v3.refined_source_snapshot.v2"
+)
+_CROSS_ROLE_WITNESS_SCHEMA = (
+    "cocolon.emlis.nls_v3."
+    "grounded_cross_role_semantic_restatement_witness.v1"
+)
+_CROSS_ROLE_ADAPTER_VERSION = (
+    "cocolon.emlis.nls_v3."
+    "grounded_cross_role_semantic_restatement_adapter.20260723.v1"
+)
+_CROSS_ROLE_DEPTH_SCHEMA = (
+    "cocolon.emlis.nls_v3.cross_role_semantic_depth_equivalence.v1"
+)
+_CROSS_ROLE_EFFECT_SCOPE = "CONTENT_DEPTH_ONLY"
+_CROSS_ROLE_SNAPSHOT_RED = (
+    "RECOVERY_EPOCH001_S5_CROSS_ROLE_REFINED_SNAPSHOT_BINDING_NOT_PROVED"
+)
+_CROSS_ROLE_DEPTH_COMPONENT_FIELDS = (
+    "component_kind",
+    "original_source_role",
+    "original_source_kind",
+    "original_source_id",
+    "supplemental_source_role",
+    "supplemental_source_kind",
+    "supplemental_source_id",
+    "canonical_typed_component_sha256",
+)
+_CROSS_ROLE_DEPTH_EQUIVALENCE_FIELDS = (
+    "schema_version",
+    "source_witness_schema_version",
+    "source_witness_adapter_version",
+    "source_witness_sha256",
+    "component_bindings",
+    "effect_scope",
+    "equivalence_sha256",
+    "body_free",
+)
 
 
 def _samples() -> tuple[dict[str, object], ...]:
@@ -874,3 +914,440 @@ def test_s4_inventory_bound_is_exact_step1_formula_and_components_are_strict() -
             lambda mutation=mutation: obligation_inventory_upper_bound(mutation),
             "SOURCE_RESOURCE_COUNTS_INVALID",
         )
+
+
+def _cross_role_snapshot_api_or_red():
+    required = (
+        "REFINED_SOURCE_SNAPSHOT_SCHEMA",
+        "CROSS_ROLE_SEMANTIC_DEPTH_EQUIVALENCE_SCHEMA",
+        "CrossRoleSemanticDepthComponentBinding",
+        "CrossRoleSemanticDepthEquivalence",
+    )
+    missing = tuple(
+        name for name in required if not hasattr(inventory_module, name)
+    )
+    snapshot_fields = {
+        row.name for row in fields(inventory_module.GroundedSourceSnapshot)
+    }
+    required_snapshot_fields = {
+        "refined_source_snapshot_schema_version",
+        "cross_role_semantic_restatement_witness_sha256",
+        "cross_role_semantic_depth_equivalence",
+    }
+    missing_snapshot_fields = tuple(
+        sorted(required_snapshot_fields - snapshot_fields)
+    )
+    if missing or missing_snapshot_fields:
+        details = (
+            *(f"attribute:{name}" for name in missing),
+            *(f"snapshot_field:{name}" for name in missing_snapshot_fields),
+        )
+        pytest.fail(
+            f"{_CROSS_ROLE_SNAPSHOT_RED}:{','.join(details)}",
+            pytrace=False,
+        )
+    return (
+        inventory_module.CrossRoleSemanticDepthComponentBinding,
+        inventory_module.CrossRoleSemanticDepthEquivalence,
+    )
+
+
+def test_s4_cross_role_refined_snapshot_lineage_alias_and_tamper_red() -> None:
+    component_type, equivalence_type = _cross_role_snapshot_api_or_red()
+    assert (
+        inventory_module.REFINED_SOURCE_SNAPSHOT_SCHEMA
+        == _REFINED_SOURCE_SNAPSHOT_SCHEMA
+    )
+    assert (
+        inventory_module.CROSS_ROLE_SEMANTIC_DEPTH_EQUIVALENCE_SCHEMA
+        == _CROSS_ROLE_DEPTH_SCHEMA
+    )
+    assert tuple(row.name for row in fields(component_type)) == (
+        _CROSS_ROLE_DEPTH_COMPONENT_FIELDS
+    )
+    assert tuple(row.name for row in fields(equivalence_type)) == (
+        _CROSS_ROLE_DEPTH_EQUIVALENCE_FIELDS
+    )
+
+    policy = inventory_module.SOURCE_POLICY_ARTIFACT
+    assert policy["cross_role_semantic_restatement_witness_schema"] == (
+        _CROSS_ROLE_WITNESS_SCHEMA
+    )
+    assert policy["cross_role_semantic_restatement_adapter_version"] == (
+        _CROSS_ROLE_ADAPTER_VERSION
+    )
+    assert policy["cross_role_semantic_restatement_effect_scope"] == (
+        _CROSS_ROLE_EFFECT_SCOPE
+    )
+    assert policy["cross_role_semantic_depth_equivalence_schema"] == (
+        _CROSS_ROLE_DEPTH_SCHEMA
+    )
+    assert policy["refined_source_snapshot_schema"] == (
+        _REFINED_SOURCE_SNAPSHOT_SCHEMA
+    )
+    refined_commitment = inventory_module._refined_plan_commitment_material(
+        partition_sha256="1" * 64,
+        original_plan_sha256="2" * 64,
+        supplemental_plan_sha256="3" * 64,
+        role_bindings=(
+            ("source:original", "original_input"),
+            ("source:supplemental", "supplemental_answer"),
+        ),
+        cross_role_semantic_restatement_witness_sha256="4" * 64,
+    )
+    assert refined_commitment == {
+        "schema_version": _REFINED_SOURCE_SNAPSHOT_SCHEMA,
+        "refined_source_partition_sha256": "1" * 64,
+        "original_source_observation_plan_sha256": "2" * 64,
+        "supplemental_source_observation_plan_sha256": "3" * 64,
+        "source_role_bindings": [
+            ["source:original", "original_input"],
+            ["source:supplemental", "supplemental_answer"],
+        ],
+        "cross_role_semantic_restatement_witness_sha256": "4" * 64,
+        "body_free": True,
+    }
+
+    from test_emlis_nls_v3_s5_content_selection_stage_context import (
+        _known_input as _s5_known_input,
+        _normal_result,
+        _pre_result,
+        _refined_result,
+    )
+
+    _normal_stage, normal_snapshot, normal_result = _normal_result(
+        _s5_known_input()
+    )
+    _pre_stage, pre_snapshot, pre_result = _pre_result(_s5_known_input())
+    assert normal_snapshot.refined_source_snapshot_schema_version is None
+    assert normal_snapshot.cross_role_semantic_depth_equivalence is None
+    assert normal_snapshot.cross_role_semantic_restatement_witness_sha256 is None
+    assert pre_snapshot.refined_source_snapshot_schema_version is None
+    assert pre_snapshot.cross_role_semantic_depth_equivalence is None
+    assert pre_snapshot.cross_role_semantic_restatement_witness_sha256 is None
+
+    (
+        _current_input,
+        _supplemental,
+        partition,
+        partition_issues,
+        snapshot,
+        result,
+        _content_plan,
+    ) = _refined_result()
+    assert partition_issues == ()
+    assert partition["cross_source_bindings"] == []
+    assert partition["question_need_decision_is_semantic_source"] is False
+    assert partition["control_plane_owner_role"] == "original_input"
+    assert snapshot.refined_source_snapshot_schema_version == (
+        _REFINED_SOURCE_SNAPSHOT_SCHEMA
+    )
+    equivalence = snapshot.cross_role_semantic_depth_equivalence
+    assert type(equivalence) is equivalence_type
+    assert equivalence.schema_version == _CROSS_ROLE_DEPTH_SCHEMA
+    assert equivalence.source_witness_schema_version == (
+        _CROSS_ROLE_WITNESS_SCHEMA
+    )
+    assert equivalence.source_witness_adapter_version == (
+        _CROSS_ROLE_ADAPTER_VERSION
+    )
+    assert equivalence.source_witness_sha256 == (
+        snapshot.cross_role_semantic_restatement_witness_sha256
+    )
+    assert equivalence.effect_scope == _CROSS_ROLE_EFFECT_SCOPE
+    assert equivalence.body_free is True
+    assert len(equivalence.component_bindings) >= 2
+    assert equivalence.equivalence_sha256 == artifact_sha256(
+        {
+            "schema_version": equivalence.schema_version,
+            "source_witness_schema_version": (
+                equivalence.source_witness_schema_version
+            ),
+            "source_witness_adapter_version": (
+                equivalence.source_witness_adapter_version
+            ),
+            "source_witness_sha256": equivalence.source_witness_sha256,
+            "component_bindings": [
+                asdict(row) for row in equivalence.component_bindings
+            ],
+            "effect_scope": equivalence.effect_scope,
+            "body_free": equivalence.body_free,
+        }
+    )
+
+    role_by_id = dict(snapshot.source_role_bindings)
+    assert all(
+        type(row) is component_type
+        and row.component_kind in {"nucleus", "relation", "unknown_boundary"}
+        and row.original_source_role == "original_input"
+        and row.original_source_kind == row.component_kind
+        and row.supplemental_source_role == "supplemental_answer"
+        and row.supplemental_source_kind == row.component_kind
+        and role_by_id[row.original_source_id] == "original_input"
+        and role_by_id[row.supplemental_source_id] == "supplemental_answer"
+        and len(row.canonical_typed_component_sha256) == 64
+        for row in equivalence.component_bindings
+    )
+    assert snapshot.semantic_source_roles == (
+        "original_input",
+        "supplemental_answer",
+    )
+    assert validate_semantic_obligation_inventory(
+        result.ledger,
+        source_snapshot=snapshot,
+    ) == ()
+
+    parent_drift_snapshots = (
+        replace(snapshot, refined_source_partition_sha256="0" * 64),
+        replace(
+            snapshot,
+            refined_original_source_observation_plan_sha256="0" * 64,
+        ),
+        replace(
+            snapshot,
+            refined_supplemental_source_observation_plan_sha256="0" * 64,
+        ),
+    )
+    for drifted in parent_drift_snapshots:
+        drift_issues = set(
+            validate_semantic_obligation_inventory(
+                result.ledger,
+                source_snapshot=drifted,
+            )
+        )
+        assert "SOURCE_ORIGIN_AUTHORITY_REQUIRED" in drift_issues
+        assert (
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_PLAN_BINDING_MISMATCH"
+            in drift_issues
+        )
+
+    stage_binding = snapshot.observation_stage_source_binding
+    for drifted_binding in (
+        replace(stage_binding, original_input_bundle_sha256="0" * 64),
+        replace(stage_binding, supplemental_answer_bundle_sha256="0" * 64),
+    ):
+        stage_drift = replace(
+            snapshot,
+            observation_stage_source_binding=drifted_binding,
+        )
+        stage_issues = set(
+            validate_semantic_obligation_inventory(
+                result.ledger,
+                source_snapshot=stage_drift,
+            )
+        )
+        assert "SOURCE_ORIGIN_AUTHORITY_REQUIRED" in stage_issues
+        assert "OBSERVATION_STAGE_CONTEXT_COMMITMENT_MISMATCH" in stage_issues
+
+    stage_hash_drift = replace(
+        snapshot,
+        source_observation_stage_context_sha256="0" * 64,
+    )
+    stage_hash_issues = set(
+        validate_semantic_obligation_inventory(
+            result.ledger,
+            source_snapshot=stage_hash_drift,
+        )
+    )
+    assert "SOURCE_ORIGIN_AUTHORITY_REQUIRED" in stage_hash_issues
+    assert "OBSERVATION_STAGE_CONTEXT_COMMITMENT_MISMATCH" in stage_hash_issues
+
+    active_nonstance_roles = {
+        ref["source_role"]
+        for row in result.ledger["obligations"]
+        if row["kind"] != "bound_emlis_reception"
+        for ref in row["source_refs"]
+    }
+    assert active_nonstance_roles == {
+        "original_input",
+        "supplemental_answer",
+    }
+    assert all(
+        {
+            ref["source_role"] for ref in row["source_refs"]
+        } == {"original_input"}
+        for row in result.ledger["obligations"]
+        if row["kind"] == "bound_emlis_reception"
+    )
+
+    missing = replace(
+        snapshot,
+        cross_role_semantic_depth_equivalence=None,
+    )
+    missing_issues = set(
+        validate_semantic_obligation_inventory(
+            result.ledger,
+            source_snapshot=missing,
+        )
+    )
+    assert "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_INVALID" in (
+        missing_issues
+    )
+    assert "SOURCE_ORIGIN_AUTHORITY_REQUIRED" in set(
+        inventory_module._snapshot_authority_issues(missing)
+    )
+
+    injected = replace(
+        normal_snapshot,
+        refined_source_snapshot_schema_version=(
+            _REFINED_SOURCE_SNAPSHOT_SCHEMA
+        ),
+        cross_role_semantic_restatement_witness_sha256=(
+            equivalence.source_witness_sha256
+        ),
+        cross_role_semantic_depth_equivalence=equivalence,
+    )
+    assert "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_INVALID" in set(
+        validate_semantic_obligation_inventory(
+            normal_result.ledger,
+            source_snapshot=injected,
+        )
+    )
+
+    wrong_effect = replace(
+        snapshot,
+        cross_role_semantic_depth_equivalence=replace(
+            equivalence,
+            effect_scope="OBLIGATION_SELECTION",
+        ),
+    )
+    assert "CROSS_ROLE_SEMANTIC_RESTATEMENT_EFFECT_SCOPE_INVALID" in set(
+        validate_semantic_obligation_inventory(
+            result.ledger,
+            source_snapshot=wrong_effect,
+        )
+    )
+
+    equivalence_tamper_cases = (
+        (
+            {"schema_version": "forged"},
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_DEPTH_CONTRACT_INVALID",
+        ),
+        (
+            {"source_witness_schema_version": "forged"},
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA_MISMATCH",
+        ),
+        (
+            {"source_witness_adapter_version": "forged"},
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_ADAPTER_MISMATCH",
+        ),
+        (
+            {"source_witness_sha256": "0" * 64},
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_SOURCE_WITNESS_MISMATCH",
+        ),
+        (
+            {"body_free": False},
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_BODY_FREE_REQUIRED",
+        ),
+    )
+    for mutation, expected_code in equivalence_tamper_cases:
+        tampered = replace(
+            snapshot,
+            cross_role_semantic_depth_equivalence=replace(
+                equivalence,
+                **mutation,
+            ),
+        )
+        assert expected_code in set(
+            validate_semantic_obligation_inventory(
+                result.ledger,
+                source_snapshot=tampered,
+            )
+        )
+
+    first = equivalence.component_bindings[0]
+    removed_binding = replace(
+        snapshot,
+        cross_role_semantic_depth_equivalence=replace(
+            equivalence,
+            component_bindings=equivalence.component_bindings[:-1],
+        ),
+    )
+    assert "CROSS_ROLE_SEMANTIC_RESTATEMENT_GRAPH_MISMATCH" in set(
+        validate_semantic_obligation_inventory(
+            result.ledger,
+            source_snapshot=removed_binding,
+        )
+    )
+
+    duplicated_binding = replace(
+        snapshot,
+        cross_role_semantic_depth_equivalence=replace(
+            equivalence,
+            component_bindings=(
+                *equivalence.component_bindings,
+                first,
+            ),
+        ),
+    )
+    assert "CROSS_ROLE_SEMANTIC_RESTATEMENT_AMBIGUOUS" in set(
+        validate_semantic_obligation_inventory(
+            result.ledger,
+            source_snapshot=duplicated_binding,
+        )
+    )
+
+    reordered_binding = replace(
+        snapshot,
+        cross_role_semantic_depth_equivalence=replace(
+            equivalence,
+            component_bindings=tuple(
+                reversed(equivalence.component_bindings)
+            ),
+        ),
+    )
+    assert "CROSS_ROLE_SEMANTIC_RESTATEMENT_ORDER_INVALID" in set(
+        validate_semantic_obligation_inventory(
+            result.ledger,
+            source_snapshot=reordered_binding,
+        )
+    )
+
+    wrong_equivalence_hash = replace(
+        snapshot,
+        cross_role_semantic_depth_equivalence=replace(
+            equivalence,
+            equivalence_sha256="0" * 64,
+        ),
+    )
+    assert "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_HASH_MISMATCH" in set(
+        validate_semantic_obligation_inventory(
+            result.ledger,
+            source_snapshot=wrong_equivalence_hash,
+        )
+    )
+
+    wrong_snapshot_witness_hash = replace(
+        snapshot,
+        cross_role_semantic_restatement_witness_sha256="0" * 64,
+    )
+    assert "CROSS_ROLE_SEMANTIC_RESTATEMENT_SOURCE_WITNESS_MISMATCH" in set(
+        validate_semantic_obligation_inventory(
+            result.ledger,
+            source_snapshot=wrong_snapshot_witness_hash,
+        )
+    )
+
+    wrong_alias = replace(
+        snapshot,
+        cross_role_semantic_depth_equivalence=replace(
+            equivalence,
+            component_bindings=(
+                replace(
+                    first,
+                    supplemental_source_id=first.original_source_id,
+                ),
+                *equivalence.component_bindings[1:],
+            ),
+        ),
+    )
+    assert "CROSS_ROLE_SEMANTIC_RESTATEMENT_GRAPH_MISMATCH" in set(
+        validate_semantic_obligation_inventory(
+            result.ledger,
+            source_snapshot=wrong_alias,
+        )
+    )
+    assert validate_semantic_obligation_inventory(
+        pre_result.ledger,
+        source_snapshot=pre_snapshot,
+    ) == ()

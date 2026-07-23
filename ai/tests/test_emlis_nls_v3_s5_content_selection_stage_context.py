@@ -9,6 +9,9 @@ import inspect
 import json
 from pathlib import Path
 
+import pytest
+
+import emlis_ai_content_selection_v3 as content_module
 from emlis_ai_content_selection_v3 import (
     ContentSelectionBuildError,
     build_content_selection_plan,
@@ -73,6 +76,18 @@ _BUDGETS = {
         "total_sentence_max": 5,
     },
 }
+_CROSS_ROLE_DEPTH_SCHEMA = (
+    "cocolon.emlis.nls_v3.cross_role_semantic_depth_equivalence.v1"
+)
+_CROSS_ROLE_EFFECT_SCOPE = "CONTENT_DEPTH_ONLY"
+_CROSS_ROLE_DEPTH_RED = (
+    "RECOVERY_EPOCH001_S5_CROSS_ROLE_DEPTH_NONINFLATION_NOT_PROVED"
+)
+_DEPTH_RANK = {
+    "minimal": 0,
+    "focused": 1,
+    "layered": 2,
+}
 
 
 def _samples() -> tuple[dict[str, object], ...]:
@@ -93,6 +108,15 @@ def _known_input() -> dict[str, object]:
         "action_text": "今日は候補を一つ調べた。",
         "emotions": [{"type": "不安", "strength": "medium"}],
         "categories": ["仕事"],
+    }
+
+
+def _self_denial_boundary_input() -> dict[str, object]:
+    return {
+        "thought_text": "私は何をしてもだめだ。",
+        "action_text": "それでも相談先を一つ調べた。",
+        "emotions": [{"type": "悲しみ", "strength": "strong"}],
+        "categories": ["人生"],
     }
 
 
@@ -139,15 +163,19 @@ def _pre_result(current_input: dict[str, object]):
     return stage, snapshot, build_semantic_obligation_inventory(snapshot)
 
 
-def _refined_result(current_input: dict[str, object] | None = None):
+def _refined_result(
+    current_input: dict[str, object] | None = None,
+    supplemental: dict[str, object] | None = None,
+):
     if current_input is None:
         current_input = _known_input()
-    supplemental = {
-        "thought_text": current_input["thought_text"],
-        "action_text": "",
-        "emotions": [],
-        "categories": [],
-    }
+    if supplemental is None:
+        supplemental = {
+            "thought_text": current_input["thought_text"],
+            "action_text": "",
+            "emotions": [],
+            "categories": [],
+        }
     original_spans = build_evidence_ledger(current_input)
     original_resolver = build_evidence_span_resolver(
         original_spans,
@@ -234,6 +262,15 @@ def _resign_content(value: dict[str, object]) -> None:
 
 def _resign_ledger(value: dict[str, object]) -> None:
     value["ledger_id"] = derive_content_id("nls3obl_", value, "ledger_id")
+
+
+def _body_free_input_matching(predicate):
+    for row in _samples():
+        _stage, snapshot, result = _normal_result(row["input"])
+        plan = build_content_selection_plan(result)
+        if predicate(snapshot, result, plan):
+            return deepcopy(row["input"])
+    raise AssertionError("body_free_semantic_input_unavailable")
 
 
 def _raises_build_code(call, expected: str) -> None:
@@ -526,12 +563,7 @@ def test_s5_depth_uses_typed_meaning_units_not_repetition_or_length() -> None:
 
 
 def test_s5_self_denial_and_concrete_action_require_layered_separation() -> None:
-    current_input = {
-        "thought_text": "私は何をしてもだめだ。",
-        "action_text": "それでも相談先を一つ調べた。",
-        "emotions": [{"type": "悲しみ", "strength": "strong"}],
-        "categories": ["人生"],
-    }
+    current_input = _self_denial_boundary_input()
     _stage, _snapshot, result = _normal_result(current_input)
     plan = build_content_selection_plan(result)
     assert validate_content_selection_policy(plan, inventory_result=result) == ()
@@ -810,3 +842,591 @@ def test_s5_new_modules_are_runtime_disconnected_and_do_not_read_fixture_cues() 
     assert files[
         "ai/services/ai_inference/emlis_ai_dormant_runtime_adapter_v3.py"
     ]["runtime_connected"] is False
+
+
+def test_s5_cross_role_depth_noninflation_floor_and_effect_scope_red() -> None:
+    source = _known_input()
+    original = {
+        "thought_text": source["thought_text"],
+        "action_text": "",
+        "emotions": source["emotions"],
+        "categories": source["categories"],
+    }
+    _normal_stage, normal_snapshot, normal_result = _normal_result(original)
+    normal_plan = build_content_selection_plan(normal_result)
+    (
+        _current_input,
+        _supplemental,
+        partition,
+        partition_issues,
+        snapshot,
+        result,
+        plan,
+    ) = _refined_result(original)
+
+    required_snapshot_fields = (
+        "refined_source_snapshot_schema_version",
+        "cross_role_semantic_restatement_witness_sha256",
+        "cross_role_semantic_depth_equivalence",
+    )
+    missing = tuple(
+        name for name in required_snapshot_fields if not hasattr(snapshot, name)
+    )
+    if missing:
+        pytest.fail(
+            f"{_CROSS_ROLE_DEPTH_RED}:{','.join(missing)}",
+            pytrace=False,
+        )
+    equivalence = snapshot.cross_role_semantic_depth_equivalence
+    if equivalence is None:
+        pytest.fail(
+            f"{_CROSS_ROLE_DEPTH_RED}:empty_depth_equivalence",
+            pytrace=False,
+        )
+
+    assert partition_issues == ()
+    assert partition["cross_source_bindings"] == []
+    assert partition["question_need_decision_is_semantic_source"] is False
+    assert partition["control_plane_owner_role"] == "original_input"
+    assert equivalence.schema_version == _CROSS_ROLE_DEPTH_SCHEMA
+    assert equivalence.effect_scope == _CROSS_ROLE_EFFECT_SCOPE
+    assert equivalence.source_witness_sha256 == (
+        snapshot.cross_role_semantic_restatement_witness_sha256
+    )
+    assert equivalence.component_bindings
+    assert normal_snapshot.semantic_source_roles == ("original_input",)
+    assert snapshot.semantic_source_roles == (
+        "original_input",
+        "supplemental_answer",
+    )
+
+    assert validate_semantic_obligation_inventory(
+        result.ledger,
+        source_snapshot=snapshot,
+    ) == ()
+    assert validate_content_selection_policy(
+        plan,
+        inventory_result=result,
+    ) == ()
+    assert normal_plan["depth"] == "focused"
+    assert plan["depth"] == normal_plan["depth"]
+    assert _DEPTH_RANK[plan["depth"]] >= _DEPTH_RANK[normal_plan["depth"]]
+    assert plan["source_obligation_ledger_sha256"] == artifact_sha256(
+        result.ledger
+    )
+    assert build_content_selection_plan(deepcopy(result)) == plan
+
+    def assert_binding_preservation(
+        current_snapshot,
+        current_result,
+        current_plan,
+    ) -> None:
+        current_equivalence = (
+            current_snapshot.cross_role_semantic_depth_equivalence
+        )
+        assert current_equivalence is not None
+        obligation_by_id = {
+            row["obligation_id"]
+            for row in current_result.ledger["obligations"]
+        }
+        row_by_id = {
+            row["obligation_id"]: row
+            for row in current_result.ledger["obligations"]
+        }
+        selected = {
+            row["obligation_id"]
+            for row in current_plan["decisions"]
+            if row["status"] == "selected"
+        }
+        required = set(
+            current_result.ledger["required_obligation_ids"]
+        )
+        bound_obligation_ids_by_role = {
+            "original_input": set(),
+            "supplemental_answer": set(),
+        }
+        ref_field = {
+            "nucleus": "nucleus_ids",
+            "relation": "relation_ids",
+            "unknown_boundary": "unknown_boundary_ids",
+        }
+        for binding in current_equivalence.component_bindings:
+            field = ref_field[binding.component_kind]
+            for source_role, source_id in (
+                (
+                    binding.original_source_role,
+                    binding.original_source_id,
+                ),
+                (
+                    binding.supplemental_source_role,
+                    binding.supplemental_source_id,
+                ),
+            ):
+                bound_rows = [
+                    row
+                    for row in current_result.ledger["obligations"]
+                    if row["kind"] != "bound_emlis_reception"
+                    and any(
+                        ref["source_role"] == source_role
+                        and source_id in ref[field]
+                        for ref in row["source_refs"]
+                    )
+                ]
+                assert bound_rows
+                assert all(
+                    {
+                        ref["source_role"]
+                        for ref in row["source_refs"]
+                    } == {source_role}
+                    for row in bound_rows
+                )
+                bound_obligation_ids = {
+                    row["obligation_id"] for row in bound_rows
+                }
+                assert bound_obligation_ids
+                assert bound_obligation_ids & required <= selected
+                bound_obligation_ids_by_role[source_role].update(
+                    bound_obligation_ids
+                )
+        assert (
+            bound_obligation_ids_by_role["original_input"]
+            .isdisjoint(
+                bound_obligation_ids_by_role["supplemental_answer"]
+            )
+        )
+        assert all(
+            bound_ids & selected
+            for bound_ids in bound_obligation_ids_by_role.values()
+        )
+
+        reception_rows = [
+            row
+            for row in current_result.ledger["obligations"]
+            if row["kind"] == "bound_emlis_reception"
+        ]
+        assert reception_rows
+        for reception in reception_rows:
+            assert {
+                ref["source_role"] for ref in reception["source_refs"]
+            } == {"original_input"}
+            assert len(reception["target_obligation_ids"]) == 1
+            target_id = reception["target_obligation_ids"][0]
+            assert target_id in obligation_by_id
+            assert {
+                ref["source_role"]
+                for ref in row_by_id[target_id]["source_refs"]
+            } == {"original_input"}
+
+    assert_binding_preservation(snapshot, result, plan)
+
+    restatement_input = _body_free_input_matching(
+        lambda candidate_snapshot, _candidate_result, _candidate_plan: any(
+            row.endpoint_semantic_relation == "semantic_restatement"
+            for row in candidate_snapshot.relations
+        )
+    )
+    if (
+        not restatement_input.get("thought_text")
+        or not restatement_input.get("action_text")
+        or restatement_input["thought_text"]
+        == restatement_input["action_text"]
+    ):
+        pytest.fail(_CROSS_ROLE_DEPTH_RED, pytrace=False)
+    nonidentical_original = {
+        "thought_text": restatement_input["thought_text"],
+        "action_text": "",
+        "emotions": [],
+        "categories": [],
+    }
+    nonidentical_supplemental = {
+        "thought_text": restatement_input["action_text"],
+        "action_text": "",
+        "emotions": [],
+        "categories": [],
+    }
+    (
+        _nonidentical_normal_stage,
+        _nonidentical_normal_snapshot,
+        nonidentical_normal_result,
+    ) = _normal_result(nonidentical_original)
+    nonidentical_normal_plan = build_content_selection_plan(
+        nonidentical_normal_result
+    )
+    (
+        _nonidentical_current,
+        _nonidentical_answer,
+        nonidentical_partition,
+        nonidentical_partition_issues,
+        nonidentical_snapshot,
+        nonidentical_result,
+        nonidentical_plan,
+    ) = _refined_result(
+        nonidentical_original,
+        nonidentical_supplemental,
+    )
+    assert nonidentical_partition_issues == ()
+    assert nonidentical_partition["cross_source_bindings"] == []
+    assert (
+        nonidentical_partition["question_need_decision_is_semantic_source"]
+        is False
+    )
+    assert nonidentical_snapshot.cross_role_semantic_depth_equivalence is not None
+    assert (
+        nonidentical_snapshot
+        .cross_role_semantic_depth_equivalence
+        .component_bindings
+    )
+    assert nonidentical_plan["depth"] == nonidentical_normal_plan["depth"]
+    assert nonidentical_snapshot.semantic_source_roles == (
+        "original_input",
+        "supplemental_answer",
+    )
+    assert validate_semantic_obligation_inventory(
+        nonidentical_result.ledger,
+        source_snapshot=nonidentical_snapshot,
+    ) == ()
+    assert validate_content_selection_policy(
+        nonidentical_plan,
+        inventory_result=nonidentical_result,
+    ) == ()
+    assert_binding_preservation(
+        nonidentical_snapshot,
+        nonidentical_result,
+        nonidentical_plan,
+    )
+    nonidentical_bodies = (
+        nonidentical_original["thought_text"],
+        nonidentical_supplemental["thought_text"],
+    )
+    if any(
+        body in repr(nonidentical_snapshot)
+        or body in str(nonidentical_plan)
+        for body in nonidentical_bodies
+    ):
+        pytest.fail(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_BODY_FREE_REQUIRED",
+            pytrace=False,
+        )
+
+    layered_input = _body_free_input_matching(
+        lambda candidate_snapshot, _candidate_result, candidate_plan: (
+            candidate_plan["depth"] == "layered"
+            and bool(candidate_snapshot.relations)
+            and bool(candidate_snapshot.unknowns)
+        )
+    )
+    (
+        _layered_stage,
+        _layered_snapshot,
+        layered_normal_result,
+    ) = _normal_result(layered_input)
+    layered_normal_plan = build_content_selection_plan(layered_normal_result)
+    *_layered_parents, layered_refined_result, layered_refined_plan = (
+        _refined_result(layered_input)
+    )
+    assert layered_normal_plan["depth"] == "layered"
+    assert layered_refined_plan["depth"] == "layered"
+    assert _DEPTH_RANK[layered_refined_plan["depth"]] >= _DEPTH_RANK[
+        layered_normal_plan["depth"]
+    ]
+    assert validate_content_selection_policy(
+        layered_refined_plan,
+        inventory_result=layered_refined_result,
+    ) == ()
+
+    safety_input = _self_denial_boundary_input()
+    (
+        _safety_normal_stage,
+        safety_normal_snapshot,
+        safety_normal_result,
+    ) = _normal_result(safety_input)
+    safety_normal_plan = build_content_selection_plan(safety_normal_result)
+    (
+        _safety_current,
+        _safety_supplemental,
+        _safety_partition,
+        safety_partition_issues,
+        safety_refined_snapshot,
+        safety_refined_result,
+        safety_refined_plan,
+    ) = _refined_result(safety_input, safety_input)
+    assert safety_partition_issues == ()
+    assert safety_normal_plan["depth"] == "layered"
+    assert safety_refined_plan["depth"] == "layered"
+    assert safety_normal_snapshot.safety_required_boundary_codes
+    assert safety_refined_snapshot.safety_required_boundary_codes == (
+        safety_normal_snapshot.safety_required_boundary_codes
+    )
+    assert (
+        safety_refined_snapshot.cross_role_semantic_depth_equivalence
+        is not None
+    )
+    assert (
+        safety_refined_snapshot
+        .cross_role_semantic_depth_equivalence
+        .component_bindings
+    )
+    safety_selected_ids = {
+        row["obligation_id"]
+        for row in safety_refined_plan["decisions"]
+        if row["status"] == "selected"
+    }
+    assert set(
+        safety_refined_result.ledger["required_obligation_ids"]
+    ) <= safety_selected_ids
+    assert validate_content_selection_policy(
+        safety_refined_plan,
+        inventory_result=safety_refined_result,
+    ) == ()
+    assert_binding_preservation(
+        safety_refined_snapshot,
+        safety_refined_result,
+        safety_refined_plan,
+    )
+    safety_obligation_rows = [
+        row
+        for row in safety_refined_result.ledger["obligations"]
+        if row["kind"] in {
+            "self_denial_boundary",
+            "bounded_counterposition",
+        }
+    ]
+    assert safety_obligation_rows
+    safety_obligation_by_id = {
+        row["obligation_id"]: row for row in safety_obligation_rows
+    }
+    for safety_row in safety_obligation_rows:
+        assert len(safety_row["must_not_merge_with"]) == 1
+        separated_id = safety_row["must_not_merge_with"][0]
+        assert separated_id in safety_obligation_by_id
+        assert safety_row["obligation_id"] in (
+            safety_obligation_by_id[separated_id]["must_not_merge_with"]
+        )
+    safety_pair_ids = set(safety_obligation_by_id)
+    assert safety_pair_ids <= {
+        row["obligation_id"]
+        for row in safety_refined_plan["decisions"]
+    }
+    assert (
+        safety_pair_ids
+        & set(safety_refined_result.ledger["required_obligation_ids"])
+    ) <= safety_selected_ids
+
+    unsafe_nucleus_ids = {
+        nucleus_id
+        for row in safety_obligation_rows
+        if row["kind"] == "self_denial_boundary"
+        for ref in row["source_refs"]
+        for nucleus_id in ref["nucleus_ids"]
+    }
+    assert unsafe_nucleus_ids
+    safety_bound_endpoint_ids = {
+        endpoint_id
+        for binding in (
+            safety_refined_snapshot
+            .cross_role_semantic_depth_equivalence
+            .component_bindings
+        )
+        for endpoint_id in (
+            binding.original_source_id,
+            binding.supplemental_source_id,
+        )
+    }
+    assert unsafe_nucleus_ids.isdisjoint(
+        safety_bound_endpoint_ids
+    )
+
+    (
+        _unmatched_current,
+        _unmatched_supplemental,
+        _unmatched_partition,
+        unmatched_partition_issues,
+        unmatched_snapshot,
+        unmatched_result,
+        unmatched_plan,
+    ) = _refined_result(_known_input(), layered_input)
+    assert unmatched_partition_issues == ()
+    unmatched_equivalence = (
+        unmatched_snapshot.cross_role_semantic_depth_equivalence
+    )
+    assert unmatched_equivalence is not None
+    bound_supplemental_ids = {
+        row.supplemental_source_id
+        for row in unmatched_equivalence.component_bindings
+    }
+    unmatched_relation_ids = {
+        row.source_id
+        for row in unmatched_snapshot.relations
+        if row.source_role == "supplemental_answer"
+        and row.source_id not in bound_supplemental_ids
+    }
+    unmatched_unknown_ids = {
+        row.source_id
+        for row in unmatched_snapshot.unknowns
+        if row.source_role == "supplemental_answer"
+        and row.source_id not in bound_supplemental_ids
+    }
+    assert unmatched_relation_ids
+    assert unmatched_unknown_ids
+    unmatched_source_ids = unmatched_relation_ids | unmatched_unknown_ids
+    unmatched_obligation_ids = {
+        row["obligation_id"]
+        for row in unmatched_result.ledger["obligations"]
+        if any(
+            unmatched_source_ids
+            & (
+                set(ref["relation_ids"])
+                | set(ref["unknown_boundary_ids"])
+            )
+            for ref in row["source_refs"]
+        )
+    }
+    assert unmatched_obligation_ids
+    unmatched_selected_ids = {
+        row["obligation_id"]
+        for row in unmatched_plan["decisions"]
+        if row["status"] == "selected"
+    }
+    unmatched_required_ids = set(
+        unmatched_result.ledger["required_obligation_ids"]
+    )
+    assert unmatched_obligation_ids <= unmatched_selected_ids
+    assert unmatched_required_ids <= unmatched_selected_ids
+    assert set(
+        unmatched_plan["required_coverage_obligation_ids"]
+    ) == unmatched_required_ids
+    assert all(
+        {
+            ref["source_role"] for ref in row["source_refs"]
+        } == {"original_input"}
+        for row in unmatched_result.ledger["obligations"]
+        if row["kind"] == "bound_emlis_reception"
+    )
+    assert unmatched_plan["depth"] == "layered"
+    assert validate_semantic_obligation_inventory(
+        unmatched_result.ledger,
+        source_snapshot=unmatched_snapshot,
+    ) == ()
+    assert validate_content_selection_policy(
+        unmatched_plan,
+        inventory_result=unmatched_result,
+    ) == ()
+
+    by_id = {
+        row["obligation_id"]: row for row in result.ledger["obligations"]
+    }
+    selected_ids = {
+        row["obligation_id"]
+        for row in plan["decisions"]
+        if row["status"] == "selected"
+    }
+    required_ids = set(result.ledger["required_obligation_ids"])
+    assert required_ids <= selected_ids
+    assert set(plan["required_coverage_obligation_ids"]) == required_ids
+    supplemental_ids = {
+        row["obligation_id"]
+        for row in result.ledger["obligations"]
+        if row["kind"] != "bound_emlis_reception"
+        and {
+            ref["source_role"] for ref in row["source_refs"]
+        } == {"supplemental_answer"}
+    }
+    assert supplemental_ids
+    required_supplemental_ids = supplemental_ids & required_ids
+    assert required_supplemental_ids
+    assert required_supplemental_ids <= selected_ids
+    assert {
+        row["obligation_id"] for row in plan["decisions"]
+    } == set(by_id)
+    assert all(
+        decision["status"] == "selected"
+        for decision in plan["decisions"]
+        if decision["obligation_id"] in required_ids
+    )
+    assert {
+        ref["source_role"]
+        for obligation_id in selected_ids
+        for row in (by_id[obligation_id],)
+        if row["kind"] != "bound_emlis_reception"
+        for ref in row["source_refs"]
+    } == {"original_input", "supplemental_answer"}
+    assert all(
+        {
+            ref["source_role"] for ref in row["source_refs"]
+        } == {"original_input"}
+        for row in result.ledger["obligations"]
+        if row["kind"] == "bound_emlis_reception"
+    )
+
+    target_id = sorted(required_supplemental_ids)[0]
+    other_id = next(
+        row["obligation_id"]
+        for row in plan["decisions"]
+        if row["obligation_id"] != target_id
+    )
+    for status in (
+        "deferred_by_budget",
+        "omitted_redundant",
+        "integrated_into",
+    ):
+        mutation = deepcopy(plan)
+        decision = next(
+            row for row in mutation["decisions"]
+            if row["obligation_id"] == target_id
+        )
+        decision["status"] = status
+        if status == "integrated_into":
+            decision["integrated_into_obligation_id"] = other_id
+        _resign_content(mutation)
+        mutation_codes = _codes(
+            validate_content_selection_policy(
+                mutation,
+                inventory_result=result,
+            )
+        )
+        assert "CONTENT_SELECTION_STATUS_MISMATCH" in mutation_codes
+        assert "REQUIRED_COVERAGE_NOT_100_PERCENT" in mutation_codes
+        if status == "integrated_into":
+            assert "INTEGRATION_WITNESS_AUTHORITY_REQUIRED" in mutation_codes
+
+    wrong_effect_snapshot = replace(
+        snapshot,
+        cross_role_semantic_depth_equivalence=replace(
+            equivalence,
+            effect_scope="OBLIGATION_SELECTION",
+        ),
+    )
+    wrong_effect_result = replace(
+        result,
+        source_snapshot=wrong_effect_snapshot,
+    )
+    assert "CROSS_ROLE_SEMANTIC_RESTATEMENT_EFFECT_SCOPE_INVALID" in set(
+        validate_semantic_obligation_inventory(
+            result.ledger,
+            source_snapshot=wrong_effect_snapshot,
+        )
+    )
+    assert "SEMANTIC_INVENTORY_REVALIDATION_FAILED" in _codes(
+        validate_content_selection_policy(
+            plan,
+            inventory_result=wrong_effect_result,
+        )
+    )
+    _raises_build_code(
+        lambda: build_content_selection_plan(wrong_effect_result),
+        "NLS3_CONTENT_SELECTION_PARENT_INVALID",
+    )
+
+    source_text = inspect.getsource(content_module)
+    assert "cross_role_semantic_depth_equivalence" in source_text
+    assert "CONTENT_DEPTH_ONLY" in source_text
+    for forbidden in (
+        "thought_text",
+        "action_text",
+        "normalized_text",
+        "synonym",
+        "case_id",
+        "family_id",
+        "fixture_id",
+    ):
+        assert forbidden not in source_text
