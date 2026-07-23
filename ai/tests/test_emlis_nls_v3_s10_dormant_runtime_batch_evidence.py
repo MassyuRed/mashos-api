@@ -40,7 +40,7 @@ from emlis_ai_dormant_runtime_adapter_v3 import (
     resolve_dormant_runtime_delivery,
     rollback_runtime_owner_state,
     transition_runtime_owner_state,
-    tester_allowlist_policy_sha256,
+    tester_allowlist_policy_sha256 as _tester_allowlist_policy_sha256,
     runtime_delivery_body_free_summary,
     validate_dormant_runtime_delivery,
     validate_dormant_runtime_execution,
@@ -375,7 +375,7 @@ def test_s10_state_machine_is_fail_closed_and_tester_authority_is_opaque() -> No
         ),
     )
     account_commitment = "c" * 64
-    allowlist_policy = tester_allowlist_policy_sha256(
+    allowlist_policy = _tester_allowlist_policy_sha256(
         allowed_account_commitments=(account_commitment,),
         candidate_version_id=_CANDIDATE_VERSION,
     )
