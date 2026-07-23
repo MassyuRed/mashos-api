@@ -28,6 +28,9 @@ from emlis_ai_grounded_observation_plan import (
     validate_grounded_observation_plan,
 )
 from emlis_ai_grounded_observation_semantic_restatement_v3 import (
+    CROSS_ROLE_SEMANTIC_DEPTH_EQUIVALENCE_SCHEMA,
+    GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_ADAPTER_VERSION,
+    GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA,
     GROUND_SEMANTIC_RESTATEMENT_ADAPTER_VERSION,
     GROUND_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA,
     GroundedSemanticRestatementError,
@@ -35,7 +38,9 @@ from emlis_ai_grounded_observation_semantic_restatement_v3 import (
     GroundedSemanticLinkWitness,
     GroundedSemanticRestatementRelationWitness,
     GroundedSemanticUnitWitness,
+    build_grounded_cross_role_semantic_restatement_witness,
     build_grounded_semantic_restatement_witness,
+    validate_grounded_cross_role_semantic_restatement_witness,
     validate_grounded_semantic_restatement_witness,
 )
 from emlis_ai_nls_v3_artifact_contract import (
@@ -66,9 +71,13 @@ SOURCE_SNAPSHOT_SCHEMA = "cocolon.emlis.nls_v3.grounded_source_snapshot.v1"
 ELIGIBILITY_SOURCE_SCHEMA = "cocolon.emlis.nls_v3.response_eligibility_source.v1"
 RECEPTION_SOURCE_SCHEMA = "cocolon.emlis.nls_v3.reception_opportunity_source.v1"
 SOURCE_ID_ALIAS_SCHEMA = "cocolon.emlis.nls_v3.source_id_alias.v1"
+REFINED_SOURCE_SNAPSHOT_SCHEMA = (
+    "cocolon.emlis.nls_v3.refined_source_snapshot.v2"
+)
 RESPONSE_ELIGIBILITY_ADAPTER_VERSION = (
     "cocolon.emlis.nls_v3.response_eligibility_adapter.v1"
 )
+_CROSS_ROLE_SEMANTIC_EFFECT_SCOPE = "CONTENT_DEPTH_ONLY"
 
 _VISIBLE_ELIGIBILITIES = frozenset({"normal_surface", "source_unavailable"})
 _SPECIAL_KIND_ORDER = {
@@ -205,6 +214,16 @@ SOURCE_POLICY_ARTIFACT = {
         "semantic_link_count": "L<=N",
         "explicit_unknown_count": "X<=2*T+N",
     },
+    "refined_source_component_bounds": {
+        "role_count": "Q==2",
+        "text_evidence_span_count": "T<=E",
+        "nucleus_count": "N<=E",
+        "relation_count": "R<=min(N*(N-1),T+9*Q)",
+        "unknown_boundary_count": "U<=11*Q",
+        "safety_policy_count": "S==1",
+        "safety_required_boundary_code_count": "K<=9",
+        "reception_opportunity_count": "O<=4",
+    },
     "inventory_upper_bound_formula": "(4*N+R+U)*(S+K+1)*(O+2)",
     "candidate_limit_is_inventory_limit": False,
     "truncate_on_overflow": False,
@@ -230,6 +249,19 @@ SOURCE_POLICY_ARTIFACT = {
     ),
     "semantic_decomposition_replaces_parent_nucleus": True,
     "semantic_decomposition_uses_existing_step1_capacity": True,
+    "cross_role_semantic_restatement_witness_schema": (
+        GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA
+    ),
+    "cross_role_semantic_restatement_adapter_version": (
+        GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_ADAPTER_VERSION
+    ),
+    "cross_role_semantic_restatement_effect_scope": (
+        _CROSS_ROLE_SEMANTIC_EFFECT_SCOPE
+    ),
+    "cross_role_semantic_depth_equivalence_schema": (
+        CROSS_ROLE_SEMANTIC_DEPTH_EQUIVALENCE_SCHEMA
+    ),
+    "refined_source_snapshot_schema": REFINED_SOURCE_SNAPSHOT_SCHEMA,
     "allowed_source_owners": list(ALLOWED_SOURCE_OWNERS),
     "obligation_kinds": list(sorted(_SPECIAL_KIND_ORDER)),
     "body_free": True,
@@ -238,7 +270,7 @@ SOURCE_POLICY_SHA256 = artifact_sha256(SOURCE_POLICY_ARTIFACT)
 # Release-bound identity: editing the policy artifact must fail validation
 # until this explicit version boundary is intentionally re-frozen.
 FROZEN_SOURCE_POLICY_SHA256 = (
-    "de77b13a27e08ae3337d3ea8c11e1ba18ff24fb3f601d7639fe38c3948b8ff8c"
+    "b0d6d18a039b982d04e52e83ba5df69f3ba99a59382e4156ce28688f042b87c3"
 )
 
 
@@ -273,6 +305,36 @@ class SourceIdAliasBinding:
     source_owner: str
     actual_source_id: str
     alias_source_id: str
+
+
+@dataclass(frozen=True)
+class CrossRoleSemanticDepthComponentBinding:
+    """Alias-bound projection of one owner-proved semantic component pair."""
+
+    component_kind: str
+    original_source_role: str
+    original_source_kind: str
+    original_source_id: str
+    supplemental_source_role: str
+    supplemental_source_kind: str
+    supplemental_source_id: str
+    canonical_typed_component_sha256: str
+
+
+@dataclass(frozen=True)
+class CrossRoleSemanticDepthEquivalence:
+    """Body-free depth-only proof retained by the refined snapshot owner."""
+
+    schema_version: str
+    source_witness_schema_version: str
+    source_witness_adapter_version: str
+    source_witness_sha256: str
+    component_bindings: tuple[
+        CrossRoleSemanticDepthComponentBinding, ...
+    ]
+    effect_scope: str
+    equivalence_sha256: str
+    body_free: bool
 
 
 @dataclass(frozen=True)
@@ -493,6 +555,11 @@ class GroundedSourceSnapshot:
     refined_supplemental_source_observation_plan_sha256: str | None = None
     refined_original_semantic_restatement_witness_sha256: str | None = None
     refined_supplemental_semantic_restatement_witness_sha256: str | None = None
+    refined_source_snapshot_schema_version: str | None = None
+    cross_role_semantic_restatement_witness_sha256: str | None = None
+    cross_role_semantic_depth_equivalence: (
+        CrossRoleSemanticDepthEquivalence | None
+    ) = None
 
     def __deepcopy__(self, memo: dict[int, Any]) -> "GroundedSourceSnapshot":
         # The snapshot is frozen.  Keeping identity on deepcopy preserves its
@@ -865,6 +932,61 @@ def validate_obligation_inventory_count(
         ("OBLIGATION_INVENTORY_OVERFLOW",)
         if obligation_count > upper_bound
         else ()
+    )
+
+
+def _refined_obligation_inventory_upper_bound(
+    source_counts: Mapping[str, int],
+) -> int:
+    """Bound two independently validated role-local source graphs."""
+
+    keys = {
+        "evidence_span_count",
+        "text_evidence_span_count",
+        "nucleus_count",
+        "relation_count",
+        "unknown_boundary_count",
+        "safety_policy_count",
+        "safety_required_boundary_code_count",
+        "reception_opportunity_count",
+    }
+    if set(source_counts) != keys or any(
+        type(source_counts[key]) is not int or source_counts[key] < 0
+        for key in keys
+    ):
+        raise SemanticObligationInventoryError(
+            "SOURCE_RESOURCE_COUNTS_INVALID"
+        )
+    evidence = source_counts["evidence_span_count"]
+    text = source_counts["text_evidence_span_count"]
+    nuclei = source_counts["nucleus_count"]
+    relations = source_counts["relation_count"]
+    unknowns = source_counts["unknown_boundary_count"]
+    safety = source_counts["safety_policy_count"]
+    boundaries = source_counts[
+        "safety_required_boundary_code_count"
+    ]
+    opportunities = source_counts["reception_opportunity_count"]
+    relation_bound = min(
+        nuclei * max(0, nuclei - 1),
+        text + 18,
+    )
+    if (
+        text > evidence
+        or nuclei > evidence
+        or relations > relation_bound
+        or unknowns > 22
+        or safety != 1
+        or boundaries > 9
+        or opportunities > 4
+    ):
+        raise SemanticObligationInventoryError(
+            "SOURCE_RESOURCE_COUNTS_INVALID"
+        )
+    return (
+        (4 * nuclei + relations + unknowns)
+        * (safety + boundaries + 1)
+        * (opportunities + 2)
     )
 
 
@@ -1862,19 +1984,135 @@ def _transform_supplemental_snapshot(
     )
 
 
+def _cross_role_depth_equivalence_material(
+    *,
+    source_witness_sha256: str,
+    component_bindings: Sequence[
+        CrossRoleSemanticDepthComponentBinding
+    ],
+) -> dict[str, Any]:
+    return {
+        "schema_version": CROSS_ROLE_SEMANTIC_DEPTH_EQUIVALENCE_SCHEMA,
+        "source_witness_schema_version": (
+            GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA
+        ),
+        "source_witness_adapter_version": (
+            GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_ADAPTER_VERSION
+        ),
+        "source_witness_sha256": source_witness_sha256,
+        "component_bindings": [
+            {
+                field: getattr(row, field)
+                for field in row.__dataclass_fields__
+            }
+            for row in component_bindings
+        ],
+        "effect_scope": _CROSS_ROLE_SEMANTIC_EFFECT_SCOPE,
+        "body_free": True,
+    }
+
+
+def _build_cross_role_semantic_depth_equivalence(
+    *,
+    source_witness: Any,
+    original_alias_bindings: Sequence[SourceIdAliasBinding],
+    supplemental_alias_bindings: Sequence[SourceIdAliasBinding],
+) -> CrossRoleSemanticDepthEquivalence | None:
+    if not source_witness.component_bindings:
+        return None
+    original_alias_by_actual = {
+        (row.source_kind, row.actual_source_id): row.alias_source_id
+        for row in original_alias_bindings
+    }
+    supplemental_alias_by_actual = {
+        (row.source_kind, row.actual_source_id): row.alias_source_id
+        for row in supplemental_alias_bindings
+    }
+    projected: list[CrossRoleSemanticDepthComponentBinding] = []
+    try:
+        for row in source_witness.component_bindings:
+            projected.append(
+                CrossRoleSemanticDepthComponentBinding(
+                    component_kind=row.component_kind,
+                    original_source_role=row.original_source_role,
+                    original_source_kind=row.original_source_kind,
+                    original_source_id=original_alias_by_actual[
+                        (
+                            row.original_source_kind,
+                            row.original_component_id,
+                        )
+                    ],
+                    supplemental_source_role=(
+                        row.supplemental_source_role
+                    ),
+                    supplemental_source_kind=(
+                        row.supplemental_source_kind
+                    ),
+                    supplemental_source_id=supplemental_alias_by_actual[
+                        (
+                            row.supplemental_source_kind,
+                            _supplemental_actual_source_id(
+                                row.supplemental_source_kind,
+                                row.supplemental_component_id,
+                            ),
+                        )
+                    ],
+                    canonical_typed_component_sha256=(
+                        row.canonical_typed_component_sha256
+                    ),
+                )
+            )
+    except (AttributeError, KeyError, TypeError) as exc:
+        raise SemanticObligationInventoryError(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_GRAPH_MISMATCH"
+        ) from exc
+    bindings = tuple(
+        sorted(
+            projected,
+            key=lambda row: (
+                row.component_kind,
+                row.original_source_id,
+                row.supplemental_source_id,
+            ),
+        )
+    )
+    material = _cross_role_depth_equivalence_material(
+        source_witness_sha256=source_witness.witness_sha256,
+        component_bindings=bindings,
+    )
+    return CrossRoleSemanticDepthEquivalence(
+        schema_version=CROSS_ROLE_SEMANTIC_DEPTH_EQUIVALENCE_SCHEMA,
+        source_witness_schema_version=(
+            GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA
+        ),
+        source_witness_adapter_version=(
+            GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_ADAPTER_VERSION
+        ),
+        source_witness_sha256=source_witness.witness_sha256,
+        component_bindings=bindings,
+        effect_scope=_CROSS_ROLE_SEMANTIC_EFFECT_SCOPE,
+        equivalence_sha256=artifact_sha256(material),
+        body_free=True,
+    )
+
+
 def _refined_plan_commitment_material(
     *,
     partition_sha256: str,
     original_plan_sha256: str,
     supplemental_plan_sha256: str,
     role_bindings: Sequence[tuple[str, str]],
+    cross_role_semantic_restatement_witness_sha256: str,
 ) -> dict[str, Any]:
     return {
-        "schema_version": "cocolon.emlis.nls_v3.refined_source_snapshot.v1",
+        "schema_version": REFINED_SOURCE_SNAPSHOT_SCHEMA,
         "refined_source_partition_sha256": partition_sha256,
         "original_source_observation_plan_sha256": original_plan_sha256,
         "supplemental_source_observation_plan_sha256": supplemental_plan_sha256,
         "source_role_bindings": [list(item) for item in role_bindings],
+        "cross_role_semantic_restatement_witness_sha256": (
+            cross_role_semantic_restatement_witness_sha256
+        ),
         "body_free": True,
     }
 
@@ -1916,6 +2154,35 @@ def _build_refined_source_snapshot(
         supplemental_relations,
         supplemental_unknowns,
     ) = _transform_supplemental_snapshot(supplemental)
+    try:
+        cross_role_witness = (
+            build_grounded_cross_role_semantic_restatement_witness(
+                original_plan,
+                original_resolver,
+                supplemental_plan,
+                supplemental_resolver,
+            )
+        )
+    except GroundedSemanticRestatementError as exc:
+        raise SemanticObligationInventoryError(exc.code) from exc
+    cross_role_issues = (
+        validate_grounded_cross_role_semantic_restatement_witness(
+            cross_role_witness,
+            original_plan=original_plan,
+            original_resolver=original_resolver,
+            supplemental_plan=supplemental_plan,
+            supplemental_resolver=supplemental_resolver,
+        )
+    )
+    if cross_role_issues:
+        raise SemanticObligationInventoryError(cross_role_issues[0])
+    cross_role_equivalence = (
+        _build_cross_role_semantic_depth_equivalence(
+            source_witness=cross_role_witness,
+            original_alias_bindings=original.source_id_alias_bindings,
+            supplemental_alias_bindings=supplemental_bindings,
+        )
+    )
     bindings = tuple(
         sorted(
             (*original.source_id_alias_bindings, *supplemental_bindings),
@@ -1993,7 +2260,7 @@ def _build_refined_source_snapshot(
             ],
         }
     )
-    inventory_bound = obligation_inventory_upper_bound(counts)
+    inventory_bound = _refined_obligation_inventory_upper_bound(counts)
     stage_binding = ObservationStageSourceBinding(
         schema_version=observation_stage_context["schema_version"],
         stage="refined_observation",
@@ -2019,6 +2286,9 @@ def _build_refined_source_snapshot(
         original_plan_sha256=original.source_observation_plan_sha256,
         supplemental_plan_sha256=supplemental.source_observation_plan_sha256,
         role_bindings=role_bindings,
+        cross_role_semantic_restatement_witness_sha256=(
+            cross_role_witness.witness_sha256
+        ),
     )
     plan_hash = artifact_sha256(plan_material)
     stage_hash = artifact_sha256(_stage_binding_artifact(stage_binding))
@@ -2126,6 +2396,13 @@ def _build_refined_source_snapshot(
         refined_supplemental_semantic_restatement_witness_sha256=(
             supplemental.source_semantic_restatement_witness_sha256
         ),
+        refined_source_snapshot_schema_version=(
+            REFINED_SOURCE_SNAPSHOT_SCHEMA
+        ),
+        cross_role_semantic_restatement_witness_sha256=(
+            cross_role_witness.witness_sha256
+        ),
+        cross_role_semantic_depth_equivalence=cross_role_equivalence,
     )
     if register_origin:
         _register_source_origin(
@@ -2965,10 +3242,289 @@ def _source_origin_authority_issues(
     return _validate_source_origin_capability(snapshot)
 
 
+def _cross_role_snapshot_component_groups(
+    snapshot: GroundedSourceSnapshot,
+    *,
+    source_role: str,
+) -> tuple[frozenset[str], ...]:
+    component_ids = {
+        row.source_id
+        for row in (*snapshot.nuclei, *snapshot.relations, *snapshot.unknowns)
+        if row.source_role == source_role
+    }
+    adjacency = {source_id: set() for source_id in component_ids}
+    for relation in snapshot.relations:
+        if relation.source_role != source_role:
+            continue
+        linked = {
+            relation.source_id,
+            relation.from_nucleus_id,
+            relation.to_nucleus_id,
+            *relation.semantic_restatement_unit_nucleus_ids,
+        } & component_ids
+        for source_id in linked:
+            adjacency[source_id].update(linked - {source_id})
+    for unknown in snapshot.unknowns:
+        if unknown.source_role != source_role:
+            continue
+        linked = {
+            unknown.source_id,
+            *unknown.affected_nucleus_ids,
+        } & component_ids
+        for source_id in linked:
+            adjacency[source_id].update(linked - {source_id})
+    groups: list[frozenset[str]] = []
+    remaining = set(component_ids)
+    while remaining:
+        pending = [min(remaining)]
+        closed: set[str] = set()
+        while pending:
+            current = pending.pop()
+            if current in closed:
+                continue
+            closed.add(current)
+            pending.extend(sorted(adjacency[current] - closed))
+        remaining.difference_update(closed)
+        groups.append(frozenset(closed))
+    return tuple(groups)
+
+
+def _cross_role_snapshot_equivalence_issues(
+    snapshot: GroundedSourceSnapshot,
+    *,
+    source_origin_issues: Sequence[str],
+) -> tuple[str, ...]:
+    issues: list[str] = []
+    refined = snapshot.observation_stage == "refined_observation"
+    equivalence = snapshot.cross_role_semantic_depth_equivalence
+    witness_sha256 = (
+        snapshot.cross_role_semantic_restatement_witness_sha256
+    )
+    if not refined:
+        if any(
+            value is not None
+            for value in (
+                snapshot.refined_source_snapshot_schema_version,
+                witness_sha256,
+                equivalence,
+            )
+        ):
+            issues.append(
+                "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_INVALID"
+            )
+        return tuple(issues)
+    if (
+        snapshot.refined_source_snapshot_schema_version
+        != REFINED_SOURCE_SNAPSHOT_SCHEMA
+    ):
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_INVALID"
+        )
+    if (
+        type(witness_sha256) is not str
+        or _SHA256_RE.fullmatch(witness_sha256) is None
+    ):
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_SOURCE_WITNESS_MISMATCH"
+        )
+    if equivalence is None:
+        if source_origin_issues:
+            issues.append(
+                "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_INVALID"
+            )
+        return tuple(sorted(set(issues)))
+    if type(equivalence) is not CrossRoleSemanticDepthEquivalence:
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_INVALID"
+        )
+        return tuple(sorted(set(issues)))
+    if (
+        equivalence.schema_version
+        != CROSS_ROLE_SEMANTIC_DEPTH_EQUIVALENCE_SCHEMA
+    ):
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_DEPTH_CONTRACT_INVALID"
+        )
+    if (
+        equivalence.source_witness_schema_version
+        != GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA
+    ):
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA_MISMATCH"
+        )
+    if (
+        equivalence.source_witness_adapter_version
+        != GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_ADAPTER_VERSION
+    ):
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_ADAPTER_MISMATCH"
+        )
+    if (
+        type(equivalence.source_witness_sha256) is not str
+        or equivalence.source_witness_sha256 != witness_sha256
+        or _SHA256_RE.fullmatch(equivalence.source_witness_sha256) is None
+    ):
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_SOURCE_WITNESS_MISMATCH"
+        )
+    if equivalence.effect_scope != _CROSS_ROLE_SEMANTIC_EFFECT_SCOPE:
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_EFFECT_SCOPE_INVALID"
+        )
+    if equivalence.body_free is not True:
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_BODY_FREE_REQUIRED"
+        )
+    bindings = equivalence.component_bindings
+    if (
+        type(bindings) is not tuple
+        or any(
+            type(row) is not CrossRoleSemanticDepthComponentBinding
+            for row in bindings
+        )
+    ):
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_INVALID"
+        )
+        return tuple(sorted(set(issues)))
+    if any(
+        any(
+            type(getattr(row, field)) is not str
+            for field in row.__dataclass_fields__
+        )
+        for row in bindings
+    ):
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_INVALID"
+        )
+        return tuple(sorted(set(issues)))
+    if not bindings:
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_INVALID"
+        )
+    expected_order = tuple(
+        sorted(
+            bindings,
+            key=lambda row: (
+                row.component_kind,
+                row.original_source_id,
+                row.supplemental_source_id,
+            ),
+        )
+    )
+    if bindings != expected_order:
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_ORDER_INVALID"
+        )
+    original_ids = [row.original_source_id for row in bindings]
+    supplemental_ids = [row.supplemental_source_id for row in bindings]
+    if (
+        len(original_ids) != len(set(original_ids))
+        or len(supplemental_ids) != len(set(supplemental_ids))
+    ):
+        issues.append("CROSS_ROLE_SEMANTIC_RESTATEMENT_AMBIGUOUS")
+    component_ids = {
+        ("original_input", "nucleus"): {
+            row.source_id
+            for row in snapshot.nuclei
+            if row.source_role == "original_input"
+        },
+        ("supplemental_answer", "nucleus"): {
+            row.source_id
+            for row in snapshot.nuclei
+            if row.source_role == "supplemental_answer"
+        },
+        ("original_input", "relation"): {
+            row.source_id
+            for row in snapshot.relations
+            if row.source_role == "original_input"
+        },
+        ("supplemental_answer", "relation"): {
+            row.source_id
+            for row in snapshot.relations
+            if row.source_role == "supplemental_answer"
+        },
+        ("original_input", "unknown_boundary"): {
+            row.source_id
+            for row in snapshot.unknowns
+            if row.source_role == "original_input"
+        },
+        ("supplemental_answer", "unknown_boundary"): {
+            row.source_id
+            for row in snapshot.unknowns
+            if row.source_role == "supplemental_answer"
+        },
+    }
+    graph_mismatch = False
+    for row in bindings:
+        if (
+            row.component_kind
+            not in {"nucleus", "relation", "unknown_boundary"}
+            or row.original_source_role != "original_input"
+            or row.supplemental_source_role != "supplemental_answer"
+            or row.original_source_kind != row.component_kind
+            or row.supplemental_source_kind != row.component_kind
+            or row.original_source_id
+            not in component_ids.get(
+                ("original_input", row.component_kind), set()
+            )
+            or row.supplemental_source_id
+            not in component_ids.get(
+                ("supplemental_answer", row.component_kind), set()
+            )
+            or type(row.canonical_typed_component_sha256) is not str
+            or _SHA256_RE.fullmatch(
+                row.canonical_typed_component_sha256
+            ) is None
+        ):
+            graph_mismatch = True
+    bound_by_role = {
+        "original_input": set(original_ids),
+        "supplemental_answer": set(supplemental_ids),
+    }
+    if source_origin_issues:
+        for source_role, bound_ids in bound_by_role.items():
+            for group in _cross_role_snapshot_component_groups(
+                snapshot,
+                source_role=source_role,
+            ):
+                if group & bound_ids and not group <= bound_ids:
+                    graph_mismatch = True
+    if graph_mismatch:
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_GRAPH_MISMATCH"
+        )
+    try:
+        expected_hash = artifact_sha256(
+            _cross_role_depth_equivalence_material(
+                source_witness_sha256=equivalence.source_witness_sha256,
+                component_bindings=bindings,
+            )
+        )
+    except (AttributeError, TypeError, ValueError):
+        expected_hash = ""
+    if (
+        type(equivalence.equivalence_sha256) is not str
+        or equivalence.equivalence_sha256 != expected_hash
+        or _SHA256_RE.fullmatch(equivalence.equivalence_sha256) is None
+    ):
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_HASH_MISMATCH"
+        )
+    return tuple(sorted(set(issues)))
+
+
 def _snapshot_authority_issues(snapshot: GroundedSourceSnapshot) -> tuple[str, ...]:
     if type(snapshot) is not GroundedSourceSnapshot:
         return ("SOURCE_SNAPSHOT_TYPE_INVALID",)
-    issues: list[str] = list(_source_origin_authority_issues(snapshot))
+    source_origin_issues = _source_origin_authority_issues(snapshot)
+    issues: list[str] = list(source_origin_issues)
+    issues.extend(
+        _cross_role_snapshot_equivalence_issues(
+            snapshot,
+            source_origin_issues=source_origin_issues,
+        )
+    )
     bindings = snapshot.source_id_alias_bindings
     if type(bindings) is not tuple:
         return ("SOURCE_ID_ALIAS_BINDING_INVALID",)
@@ -3215,7 +3771,11 @@ def _snapshot_authority_issues(snapshot: GroundedSourceSnapshot) -> tuple[str, .
     ):
         issues.append("SEMANTIC_ADAPTER_RESOURCE_BOUND_INVALID")
     try:
-        bound = obligation_inventory_upper_bound(counts)
+        bound = (
+            _refined_obligation_inventory_upper_bound(counts)
+            if is_refined
+            else obligation_inventory_upper_bound(counts)
+        )
     except SemanticObligationInventoryError:
         bound = -1
         issues.append("SOURCE_RESOURCE_COUNTS_INVALID")
@@ -3240,6 +3800,10 @@ def _snapshot_authority_issues(snapshot: GroundedSourceSnapshot) -> tuple[str, .
                         or ""
                     ),
                     role_bindings=snapshot.source_role_bindings,
+                    cross_role_semantic_restatement_witness_sha256=str(
+                        snapshot.cross_role_semantic_restatement_witness_sha256
+                        or ""
+                    ),
                 )
             )
         else:
@@ -3287,6 +3851,10 @@ def _snapshot_authority_issues(snapshot: GroundedSourceSnapshot) -> tuple[str, .
         issues.append("SOURCE_ID_ALIAS_BINDING_INVALID")
     if snapshot.source_observation_plan_sha256 != plan_hash:
         issues.append("SOURCE_OBSERVATION_PLAN_COMMITMENT_MISMATCH")
+        if is_refined:
+            issues.append(
+                "CROSS_ROLE_SEMANTIC_RESTATEMENT_PLAN_BINDING_MISMATCH"
+            )
     if snapshot.source_reception_opportunity_plan_sha256 != reception_hash:
         issues.append("RECEPTION_PLAN_LINEAGE_MISMATCH")
     if (
@@ -3329,9 +3897,7 @@ def build_semantic_obligation_inventory(
     if source_snapshot.response_eligibility == "separate_safety_owner":
         raise SemanticObligationInventoryError("SEPARATE_SAFETY_OWNER")
     rows = _discover_obligation_rows(source_snapshot)
-    if validate_obligation_inventory_count(
-        dict(source_snapshot.resource_counts), len(rows)
-    ):
+    if len(rows) > source_snapshot.obligation_inventory_upper_bound:
         raise SemanticObligationInventoryError("OBLIGATION_INVENTORY_OVERFLOW")
     ledger: dict[str, Any] = {
         "schema_version": LEDGER_SCHEMA,
@@ -3460,6 +4026,9 @@ def validate_semantic_obligation_inventory(
 
 
 __all__ = [
+    "CROSS_ROLE_SEMANTIC_DEPTH_EQUIVALENCE_SCHEMA",
+    "CrossRoleSemanticDepthComponentBinding",
+    "CrossRoleSemanticDepthEquivalence",
     "FROZEN_SOURCE_POLICY_SHA256",
     "GroundedSourceSnapshot",
     "InventoryNucleusSource",
@@ -3472,6 +4041,7 @@ __all__ = [
     "SourceIdAliasBinding",
     "SOURCE_POLICY_ARTIFACT",
     "SOURCE_POLICY_SHA256",
+    "REFINED_SOURCE_SNAPSHOT_SCHEMA",
     "TrustedResponseEligibilityAuthority",
     "build_grounded_source_snapshot",
     "build_semantic_obligation_inventory",

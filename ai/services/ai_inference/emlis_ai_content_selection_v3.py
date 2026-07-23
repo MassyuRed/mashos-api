@@ -91,6 +91,8 @@ _BUDGET_BY_DEPTH: Final = {
         "total_sentence_max": 5,
     },
 }
+_DEPTH_RANK: Final = {"minimal": 0, "focused": 1, "layered": 2}
+_CROSS_ROLE_DEPTH_EFFECT: Final = "CONTENT_DEPTH_ONLY"
 
 _LABEL_SOURCE_FIELDS: Final = frozenset(
     {"category", "emotions", "emotion_details"}
@@ -314,7 +316,7 @@ def _semantic_root_map(
     return {source_id: find(source_id) for source_id in parent}, relation_ids
 
 
-def _depth_from_active_rows(
+def _depth_from_body_free_rows(
     active_rows: Sequence[dict[str, Any]],
     snapshot: GroundedSourceSnapshot,
 ) -> str:
@@ -528,6 +530,106 @@ def _depth_from_active_rows(
     return "minimal"
 
 
+def _cross_role_depth_rows(
+    active_rows: Sequence[dict[str, Any]],
+    snapshot: GroundedSourceSnapshot,
+) -> tuple[dict[str, Any], ...]:
+    """Remove only depth-duplicate supplemental rows proved by Step 4."""
+
+    equivalence = getattr(
+        snapshot,
+        "cross_role_semantic_depth_equivalence",
+        None,
+    )
+    if (
+        equivalence is None
+        or equivalence.effect_scope != _CROSS_ROLE_DEPTH_EFFECT
+    ):
+        return tuple(active_rows)
+    bound_supplemental = {
+        "nucleus": {
+            row.supplemental_source_id
+            for row in equivalence.component_bindings
+            if row.component_kind == "nucleus"
+        },
+        "relation": {
+            row.supplemental_source_id
+            for row in equivalence.component_bindings
+            if row.component_kind == "relation"
+        },
+        "unknown_boundary": {
+            row.supplemental_source_id
+            for row in equivalence.component_bindings
+            if row.component_kind == "unknown_boundary"
+        },
+    }
+
+    def contributes_distinct_depth(row: Mapping[str, Any]) -> bool:
+        if row.get("kind") == STANCE_KIND:
+            return True
+        if _obligation_source_roles(row) != frozenset(
+            {"supplemental_answer"}
+        ):
+            return True
+        refs = row.get("source_refs")
+        if type(refs) is not list:
+            return True
+        saw_component = False
+        for ref in refs:
+            if (
+                type(ref) is not dict
+                or ref.get("source_role") != "supplemental_answer"
+            ):
+                continue
+            for field, component_kind in (
+                ("nucleus_ids", "nucleus"),
+                ("relation_ids", "relation"),
+                ("unknown_boundary_ids", "unknown_boundary"),
+            ):
+                source_ids = _string_tuple(ref.get(field))
+                saw_component = saw_component or bool(source_ids)
+                if not set(source_ids) <= bound_supplemental[
+                    component_kind
+                ]:
+                    return True
+        return not saw_component
+
+    return tuple(
+        row for row in active_rows if contributes_distinct_depth(row)
+    )
+
+
+def _depth_from_active_rows(
+    active_rows: Sequence[dict[str, Any]],
+    snapshot: GroundedSourceSnapshot,
+) -> str:
+    """Apply cross-role equivalence to depth, never to content decisions."""
+
+    depth_rows = _cross_role_depth_rows(active_rows, snapshot)
+    depth = _depth_from_body_free_rows(depth_rows, snapshot)
+    equivalence = getattr(
+        snapshot,
+        "cross_role_semantic_depth_equivalence",
+        None,
+    )
+    if (
+        equivalence is None
+        or equivalence.effect_scope != _CROSS_ROLE_DEPTH_EFFECT
+    ):
+        return depth
+    original_floor_rows = tuple(
+        row
+        for row in active_rows
+        if row.get("kind") == STANCE_KIND
+        or _obligation_source_roles(row) == frozenset({"original_input"})
+    )
+    original_floor = _depth_from_body_free_rows(
+        original_floor_rows,
+        snapshot,
+    )
+    return max((depth, original_floor), key=_DEPTH_RANK.__getitem__)
+
+
 def derive_content_depth(
     inventory_result: SemanticObligationInventoryResult,
     *,
@@ -570,6 +672,123 @@ def _required_stance_target_closure(
         if row.get("required") is True and row.get("kind") == STANCE_KIND
         for target_id in _string_tuple(row.get("target_obligation_ids"))
     )
+
+
+def _cross_role_unmatched_obligation_ids(
+    rows: Sequence[dict[str, Any]],
+    snapshot: GroundedSourceSnapshot,
+) -> frozenset[str]:
+    """Keep every unbound role-local component independently selectable."""
+
+    equivalence = getattr(
+        snapshot,
+        "cross_role_semantic_depth_equivalence",
+        None,
+    )
+    if (
+        equivalence is None
+        or equivalence.effect_scope != _CROSS_ROLE_DEPTH_EFFECT
+    ):
+        return frozenset()
+    bound = {
+        ("original_input", "nucleus"): {
+            row.original_source_id
+            for row in equivalence.component_bindings
+            if row.component_kind == "nucleus"
+        },
+        ("supplemental_answer", "nucleus"): {
+            row.supplemental_source_id
+            for row in equivalence.component_bindings
+            if row.component_kind == "nucleus"
+        },
+        ("original_input", "relation"): {
+            row.original_source_id
+            for row in equivalence.component_bindings
+            if row.component_kind == "relation"
+        },
+        ("supplemental_answer", "relation"): {
+            row.supplemental_source_id
+            for row in equivalence.component_bindings
+            if row.component_kind == "relation"
+        },
+        ("original_input", "unknown_boundary"): {
+            row.original_source_id
+            for row in equivalence.component_bindings
+            if row.component_kind == "unknown_boundary"
+        },
+        ("supplemental_answer", "unknown_boundary"): {
+            row.supplemental_source_id
+            for row in equivalence.component_bindings
+            if row.component_kind == "unknown_boundary"
+        },
+    }
+    all_components = {
+        ("original_input", "nucleus"): {
+            row.source_id
+            for row in snapshot.nuclei
+            if row.source_role == "original_input"
+        },
+        ("supplemental_answer", "nucleus"): {
+            row.source_id
+            for row in snapshot.nuclei
+            if row.source_role == "supplemental_answer"
+        },
+        ("original_input", "relation"): {
+            row.source_id
+            for row in snapshot.relations
+            if row.source_role == "original_input"
+        },
+        ("supplemental_answer", "relation"): {
+            row.source_id
+            for row in snapshot.relations
+            if row.source_role == "supplemental_answer"
+        },
+        ("original_input", "unknown_boundary"): {
+            row.source_id
+            for row in snapshot.unknowns
+            if row.source_role == "original_input"
+        },
+        ("supplemental_answer", "unknown_boundary"): {
+            row.source_id
+            for row in snapshot.unknowns
+            if row.source_role == "supplemental_answer"
+        },
+    }
+    unmatched = {
+        key: all_components[key] - bound[key]
+        for key in all_components
+    }
+    selected: set[str] = set()
+    for row in rows:
+        refs = row.get("source_refs")
+        if type(refs) is not list:
+            continue
+        for ref in refs:
+            if type(ref) is not dict:
+                continue
+            source_role = ref.get("source_role")
+            if source_role not in {
+                "original_input",
+                "supplemental_answer",
+            }:
+                continue
+            if any(
+                set(_string_tuple(ref.get(field)))
+                & unmatched[(source_role, component_kind)]
+                for field, component_kind in (
+                    ("nucleus_ids", "nucleus"),
+                    ("relation_ids", "relation"),
+                    (
+                        "unknown_boundary_ids",
+                        "unknown_boundary",
+                    ),
+                )
+            ):
+                obligation_id = row.get("obligation_id")
+                if type(obligation_id) is str:
+                    selected.add(obligation_id)
+                break
+    return frozenset(selected)
 
 
 def _nucleus_by_id(snapshot: GroundedSourceSnapshot) -> dict[str, Any]:
@@ -733,7 +952,13 @@ def validate_content_selection_policy(
             for row in decisions
             if type(row.get("obligation_id")) is str
         }
-        forced_active_ids = _required_stance_target_closure(ledger_rows)
+        forced_active_ids = frozenset(
+            _required_stance_target_closure(ledger_rows)
+            | _cross_role_unmatched_obligation_ids(
+                ledger_rows,
+                snapshot,
+            )
+        )
         if not forced_active_ids <= set(ledger_by_id):
             _add(issues, "STANCE_TARGET_UNRESOLVED", "$.decisions")
         for index, decision in enumerate(decisions):
@@ -925,7 +1150,13 @@ def build_content_selection_plan(
             "NLS3_CONTENT_SELECTION_SEPARATE_SAFETY_OWNER"
         )
 
-    forced_active_ids = _required_stance_target_closure(ledger_rows)
+    forced_active_ids = frozenset(
+        _required_stance_target_closure(ledger_rows)
+        | _cross_role_unmatched_obligation_ids(
+            ledger_rows,
+            snapshot,
+        )
+    )
     if not forced_active_ids <= set(ledger_by_id):
         raise ContentSelectionBuildError(
             "NLS3_CONTENT_SELECTION_STANCE_TARGET_INVALID"

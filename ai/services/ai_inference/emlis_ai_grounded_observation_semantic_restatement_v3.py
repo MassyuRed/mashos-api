@@ -1179,10 +1179,1182 @@ def validate_grounded_semantic_restatement_witness(
     return tuple(sorted(set(issues)))
 
 
+GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA: Final = (
+    "cocolon.emlis.nls_v3.grounded_cross_role_semantic_restatement_witness.v1"
+)
+GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_ADAPTER_VERSION: Final = (
+    "cocolon.emlis.nls_v3."
+    "grounded_cross_role_semantic_restatement_adapter.20260723.v1"
+)
+CROSS_ROLE_SEMANTIC_DEPTH_EQUIVALENCE_SCHEMA: Final = (
+    "cocolon.emlis.nls_v3.cross_role_semantic_depth_equivalence.v1"
+)
+GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_NEGATIVE_CODES: Final = frozenset(
+    {
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_TYPE_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA_MISMATCH",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_ADAPTER_MISMATCH",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_PLAN_BINDING_MISMATCH",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_SOURCE_WITNESS_MISMATCH",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_ROLE_PAIR_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_COMPONENT_UNRESOLVED",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_COMPONENT_KIND_MISMATCH",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_AMBIGUOUS",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_GRAPH_MISMATCH",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_PROOF_CODE_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_PROOF_BASIS_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_EFFECT_SCOPE_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_DEPTH_CONTRACT_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_BODY_FREE_REQUIRED",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_ORDER_INVALID",
+        "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_HASH_MISMATCH",
+    }
+)
+
+_CROSS_ROLE_PROOF_CODE: Final = "TYPED_SEMANTIC_GRAPH_EQUIVALENCE"
+_CROSS_ROLE_PROOF_BASIS: Final = (
+    "COMPLETE_BODY_FREE_TYPED_COMPONENT_BIJECTION"
+)
+_CROSS_ROLE_EFFECT_SCOPE: Final = "CONTENT_DEPTH_ONLY"
+_CROSS_ROLE_ROLES: Final = ("original_input", "supplemental_answer")
+_CROSS_ROLE_COMPONENT_KINDS: Final = frozenset(
+    {"nucleus", "relation", "unknown_boundary"}
+)
+_CROSS_ROLE_SHA256_RE: Final = re.compile(r"^[0-9a-f]{64}$")
+_CROSS_ROLE_RELATION_DESCRIPTOR: Final = {
+    "temporal_before_after": ("precedes", "source_to_target"),
+    "shift_from_to": ("precedes", "source_to_target"),
+    "contrast": ("contrasts_with", "source_to_target"),
+    "attempt_and_block": ("contrasts_with", "source_to_target"),
+    "wish_and_constraint": ("contrasts_with", "source_to_target"),
+    "continuation_or_refusal": ("contrasts_with", "source_to_target"),
+    "coexistence": ("coexists_with", "bidirectional"),
+    "preserves_despite": ("coexists_with", "source_to_target"),
+    "evaluation_about_event": ("qualifies", "source_to_target"),
+    "self_evaluation_about_state": ("qualifies", "source_to_target"),
+    "uncertain_connection": ("qualifies", "source_to_target"),
+    "user_stated_cause": ("supports_without_guarantee", "source_to_target"),
+    "user_stated_result": ("supports_without_guarantee", "source_to_target"),
+    "action_supports_change": (
+        "supports_without_guarantee",
+        "source_to_target",
+    ),
+}
+
+
+@dataclass(frozen=True)
+class _GroundedCrossRoleTypedSemanticComponent:
+    source_role: str
+    source_kind: str
+    component_id: str
+    component_kind: str
+    semantic_identity_sha256: str
+    referent_identity_sha256: str
+    topic_identity_sha256: str
+    predicate_identity_sha256: str
+    polarity: str
+    modality: str
+    time_scope: str
+    quantifier_degree: str
+    relation_type: str | None
+    relation_direction: str | None
+    relation_from_identity_sha256: str | None
+    relation_to_identity_sha256: str | None
+    unknown_dimension: str | None
+    affected_identity_sha256s: tuple[str, ...]
+    must_separate: bool
+    required: bool
+    body_free: bool
+
+
+@dataclass(frozen=True)
+class GroundedCrossRoleSemanticComponentBinding:
+    binding_id: str
+    component_kind: str
+    original_source_role: str
+    original_source_kind: str
+    original_component_id: str
+    supplemental_source_role: str
+    supplemental_source_kind: str
+    supplemental_component_id: str
+    canonical_typed_component_sha256: str
+    proof_code: str
+    proof_basis: str
+
+
+@dataclass(frozen=True)
+class GroundedCrossRoleSemanticRestatementWitness:
+    schema_version: str
+    adapter_version: str
+    original_plan_binding_sha256: str
+    supplemental_plan_binding_sha256: str
+    original_source_witness_sha256: str
+    supplemental_source_witness_sha256: str
+    component_bindings: tuple[
+        GroundedCrossRoleSemanticComponentBinding, ...
+    ]
+    effect_scope: str
+    depth_equivalence_schema_version: str
+    witness_sha256: str
+    body_free: bool
+
+    def as_body_free_meta(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "adapter_version": self.adapter_version,
+            "original_plan_binding_sha256": (
+                self.original_plan_binding_sha256
+            ),
+            "supplemental_plan_binding_sha256": (
+                self.supplemental_plan_binding_sha256
+            ),
+            "original_source_witness_sha256": (
+                self.original_source_witness_sha256
+            ),
+            "supplemental_source_witness_sha256": (
+                self.supplemental_source_witness_sha256
+            ),
+            "component_bindings": [
+                _canonical_body_free(row) for row in self.component_bindings
+            ],
+            "effect_scope": self.effect_scope,
+            "depth_equivalence_schema_version": (
+                self.depth_equivalence_schema_version
+            ),
+            "witness_sha256": self.witness_sha256,
+            "body_free": self.body_free,
+        }
+
+
+def _cross_role_commitment(namespace: str, material: Any) -> str:
+    return artifact_sha256(
+        {
+            "namespace": (
+                "cocolon.emlis.nls_v3.cross_role_semantic_restatement."
+                + namespace
+            ),
+            "material": _canonical_body_free(material),
+        }
+    )
+
+
+def _cross_role_quantifier_degree(text: str) -> str:
+    values = tuple(sorted(_QUANTIFIER_RE.findall(text)))
+    if not values:
+        return "source_bounded"
+    if (
+        len(values) == 1
+        and values[0]
+        in {"一つ", "ひとつ", "一件", "一通目", "1つ", "1件", "1通目"}
+    ):
+        return "exact_one"
+    return _cross_role_commitment("quantifier_degree", values)
+
+
+def _cross_role_time_scope(
+    nucleus: GroundedSemanticNucleus,
+    text: str,
+) -> str:
+    return _cross_role_commitment(
+        "time_scope",
+        {
+            "plan_time_scope": str(nucleus.semantic_frame.time_scope),
+            "explicit_time_markers": tuple(sorted(_time_markers(text))),
+        },
+    )
+
+
+def _cross_role_nucleus_identities(
+    nucleus: GroundedSemanticNucleus,
+    *,
+    span_by_id: Mapping[str, Any],
+) -> tuple[str, str, str, str]:
+    text = _source_text(nucleus, span_by_id)
+    subjects, objects = _completion_argument_roles(text)
+    relocation_subjects, relocation_objects = _relocation_argument_roles(text)
+    topics = _anchors(_TOPIC_ANCHOR_RE, text)
+    destinations = _anchors(_DESTINATION_RE, text)
+    source_lane = tuple(nucleus.source_fields)
+    explicit_referents = {
+        "subjects": sorted(subjects | relocation_subjects),
+        "objects": sorted(objects | relocation_objects),
+        "topics": sorted(topics),
+        "destinations": sorted(destinations),
+    }
+    has_explicit_referent = any(explicit_referents.values())
+    if has_explicit_referent:
+        referent_material: Any = {
+            "source_lane": source_lane,
+            "explicit_referents": explicit_referents,
+        }
+    elif _COMPLETION_RE.search(text) or _RELOCATION_RE.search(text):
+        referent_material = {
+            "source_lane": source_lane,
+            "explicit_referent": "unresolved",
+        }
+    else:
+        referent_material = {
+            "source_lane": source_lane,
+            "source_meaning_blocks": tuple(
+                nucleus.source_meaning_block_keys
+            ),
+            "source_claims": tuple(nucleus.source_claim_ids),
+            "source_expression": _clean(text),
+        }
+    referent_identity = _cross_role_commitment(
+        "referent_identity", referent_material
+    )
+    topic_identity = _cross_role_commitment(
+        "topic_identity",
+        {
+            "source_lane": source_lane,
+            "referent_identity_sha256": referent_identity,
+            "topic_anchors": sorted(topics),
+        },
+    )
+    if _COMPLETION_RE.search(text):
+        predicate_material: Any = {
+            "predicate_class": "completed_event",
+            "predicate_kind": nucleus.semantic_frame.predicate_kind,
+        }
+    elif _RELOCATION_RE.search(text):
+        predicate_material = {
+            "predicate_class": "relocation_event",
+            "predicate_kind": nucleus.semantic_frame.predicate_kind,
+        }
+    else:
+        predicate_material = {
+            "predicate_kind": nucleus.semantic_frame.predicate_kind,
+            "nucleus_kind": nucleus.kind,
+            "source_expression": _clean(text),
+        }
+    predicate_identity = _cross_role_commitment(
+        "predicate_identity", predicate_material
+    )
+    semantic_identity = _cross_role_commitment(
+        "semantic_identity",
+        {
+            "source_kind": "nucleus",
+            "nucleus_kind": nucleus.kind,
+            "referent_identity_sha256": referent_identity,
+            "topic_identity_sha256": topic_identity,
+            "predicate_identity_sha256": predicate_identity,
+            "polarity": nucleus.semantic_frame.polarity,
+            "modality": nucleus.semantic_frame.modality,
+            "time_scope": _cross_role_time_scope(nucleus, text),
+            "quantifier_degree": _cross_role_quantifier_degree(text),
+        },
+    )
+    return (
+        semantic_identity,
+        referent_identity,
+        topic_identity,
+        predicate_identity,
+    )
+
+
+def _project_grounded_cross_role_typed_semantic_components(
+    plan: GroundedObservationPlan,
+    resolver: EvidenceSpanResolver,
+    source_local_witness: GroundedSemanticRestatementWitness,
+    source_role: str,
+) -> tuple[_GroundedCrossRoleTypedSemanticComponent, ...]:
+    if source_role not in _CROSS_ROLE_ROLES:
+        raise GroundedSemanticRestatementError(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_ROLE_PAIR_INVALID"
+        )
+    if validate_grounded_semantic_restatement_witness(
+        source_local_witness,
+        plan=plan,
+        resolver=resolver,
+    ):
+        raise GroundedSemanticRestatementError(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_SOURCE_WITNESS_MISMATCH"
+        )
+    spans = _validated_plan_and_spans(plan, resolver)
+    span_by_id = {
+        str(getattr(span, "span_id", "")): span for span in spans
+    }
+    required_nuclei = set(
+        plan.coverage_requirements.required_nucleus_ids
+    )
+    required_relations = set(
+        plan.coverage_requirements.required_relation_ids
+    )
+    separated_nuclei = set(plan.response_plan.fact_boundary_nucleus_ids)
+    nucleus_identity: dict[str, str] = {}
+    nucleus_rows: list[_GroundedCrossRoleTypedSemanticComponent] = []
+    for nucleus in sorted(plan.nuclei, key=lambda row: row.nucleus_id):
+        (
+            semantic_identity,
+            referent_identity,
+            topic_identity,
+            predicate_identity,
+        ) = _cross_role_nucleus_identities(
+            nucleus,
+            span_by_id=span_by_id,
+        )
+        nucleus_identity[nucleus.nucleus_id] = semantic_identity
+        text = _source_text(nucleus, span_by_id)
+        nucleus_rows.append(
+            _GroundedCrossRoleTypedSemanticComponent(
+                source_role=source_role,
+                source_kind="nucleus",
+                component_id=nucleus.nucleus_id,
+                component_kind="nucleus",
+                semantic_identity_sha256=semantic_identity,
+                referent_identity_sha256=referent_identity,
+                topic_identity_sha256=topic_identity,
+                predicate_identity_sha256=predicate_identity,
+                polarity=str(nucleus.semantic_frame.polarity),
+                modality=str(nucleus.semantic_frame.modality),
+                time_scope=_cross_role_time_scope(nucleus, text),
+                quantifier_degree=_cross_role_quantifier_degree(text),
+                relation_type=None,
+                relation_direction=None,
+                relation_from_identity_sha256=None,
+                relation_to_identity_sha256=None,
+                unknown_dimension=None,
+                affected_identity_sha256s=(),
+                must_separate=nucleus.nucleus_id in separated_nuclei,
+                required=nucleus.nucleus_id in required_nuclei,
+                body_free=True,
+            )
+        )
+    relation_rows: list[_GroundedCrossRoleTypedSemanticComponent] = []
+    for relation in sorted(plan.relations, key=lambda row: row.relation_id):
+        if (
+            relation.from_nucleus_id not in nucleus_identity
+            or relation.to_nucleus_id not in nucleus_identity
+        ):
+            raise GroundedSemanticRestatementError(
+                "CROSS_ROLE_SEMANTIC_RESTATEMENT_COMPONENT_UNRESOLVED"
+            )
+        semantic_relation_type, relation_direction = (
+            _CROSS_ROLE_RELATION_DESCRIPTOR.get(
+                relation.type,
+                (str(relation.type), "source_to_target"),
+            )
+        )
+        relation_type = str(relation.type)
+        grounding_kind = str(relation.grounding_kind)
+        from_identity = nucleus_identity[relation.from_nucleus_id]
+        to_identity = nucleus_identity[relation.to_nucleus_id]
+        predicate_identity = _cross_role_commitment(
+            "relation_predicate_identity",
+            {
+                "source_relation_type": relation_type,
+                "grounding_kind": grounding_kind,
+                "semantic_relation_type": semantic_relation_type,
+                "relation_direction": relation_direction,
+            },
+        )
+        referent_identity = _cross_role_commitment(
+            "relation_referent_identity",
+            {
+                "from": from_identity,
+                "to": to_identity,
+            },
+        )
+        topic_identity = _cross_role_commitment(
+            "relation_topic_identity",
+            {
+                "from": from_identity,
+                "to": to_identity,
+            },
+        )
+        semantic_identity = _cross_role_commitment(
+            "semantic_identity",
+            {
+                "source_kind": "relation",
+                "source_relation_type": relation_type,
+                "grounding_kind": grounding_kind,
+                "semantic_relation_type": semantic_relation_type,
+                "relation_direction": relation_direction,
+                "from": from_identity,
+                "to": to_identity,
+            },
+        )
+        relation_rows.append(
+            _GroundedCrossRoleTypedSemanticComponent(
+                source_role=source_role,
+                source_kind="relation",
+                component_id=relation.relation_id,
+                component_kind="relation",
+                semantic_identity_sha256=semantic_identity,
+                referent_identity_sha256=referent_identity,
+                topic_identity_sha256=topic_identity,
+                predicate_identity_sha256=predicate_identity,
+                polarity="neutral",
+                modality="fact",
+                time_scope="current",
+                quantifier_degree="source_bounded",
+                relation_type=relation_type,
+                relation_direction=relation_direction,
+                relation_from_identity_sha256=from_identity,
+                relation_to_identity_sha256=to_identity,
+                unknown_dimension=None,
+                affected_identity_sha256s=(),
+                must_separate=False,
+                required=relation.relation_id in required_relations,
+                body_free=True,
+            )
+        )
+    unknown_rows: list[_GroundedCrossRoleTypedSemanticComponent] = []
+    for unknown in sorted(
+        plan.unknown_boundaries, key=lambda row: row.unknown_id
+    ):
+        try:
+            affected = tuple(
+                nucleus_identity[source_id]
+                for source_id in unknown.affected_nucleus_ids
+            )
+        except KeyError as exc:
+            raise GroundedSemanticRestatementError(
+                "CROSS_ROLE_SEMANTIC_RESTATEMENT_COMPONENT_UNRESOLVED"
+            ) from exc
+        predicate_identity = _cross_role_commitment(
+            "unknown_predicate_identity", unknown.dimension
+        )
+        referent_identity = _cross_role_commitment(
+            "unknown_referent_identity", affected
+        )
+        topic_identity = _cross_role_commitment(
+            "unknown_topic_identity", affected
+        )
+        semantic_identity = _cross_role_commitment(
+            "semantic_identity",
+            {
+                "source_kind": "unknown_boundary",
+                "dimension": unknown.dimension,
+                "affected": affected,
+            },
+        )
+        unknown_rows.append(
+            _GroundedCrossRoleTypedSemanticComponent(
+                source_role=source_role,
+                source_kind="unknown_boundary",
+                component_id=unknown.unknown_id,
+                component_kind="unknown_boundary",
+                semantic_identity_sha256=semantic_identity,
+                referent_identity_sha256=referent_identity,
+                topic_identity_sha256=topic_identity,
+                predicate_identity_sha256=predicate_identity,
+                polarity="neutral",
+                modality="uncertain",
+                time_scope="current",
+                quantifier_degree="source_bounded",
+                relation_type=None,
+                relation_direction=None,
+                relation_from_identity_sha256=None,
+                relation_to_identity_sha256=None,
+                unknown_dimension=str(unknown.dimension),
+                affected_identity_sha256s=affected,
+                must_separate=False,
+                required=True,
+                body_free=True,
+            )
+        )
+    return tuple(
+        sorted(
+            (*nucleus_rows, *relation_rows, *unknown_rows),
+            key=lambda row: (row.component_kind, row.component_id),
+        )
+    )
+
+
+def _cross_role_component_material(
+    row: _GroundedCrossRoleTypedSemanticComponent,
+) -> dict[str, Any]:
+    return {
+        field: getattr(row, field)
+        for field in row.__dataclass_fields__
+        if field not in {"source_role", "component_id"}
+    }
+
+
+def _cross_role_component_sha256(
+    row: _GroundedCrossRoleTypedSemanticComponent,
+) -> str:
+    return _cross_role_commitment(
+        "typed_component",
+        _cross_role_component_material(row),
+    )
+
+
+def _cross_role_component_identity(
+    row: _GroundedCrossRoleTypedSemanticComponent,
+) -> tuple[str, str]:
+    return row.component_kind, _cross_role_component_sha256(row)
+
+
+def _cross_role_component_groups(
+    rows: Sequence[_GroundedCrossRoleTypedSemanticComponent],
+) -> tuple[tuple[_GroundedCrossRoleTypedSemanticComponent, ...], ...]:
+    by_id = {row.component_id: row for row in rows}
+    by_semantic_identity: dict[str, set[str]] = {}
+    for row in rows:
+        by_semantic_identity.setdefault(
+            row.semantic_identity_sha256, set()
+        ).add(row.component_id)
+    adjacency = {row.component_id: set() for row in rows}
+    for row in rows:
+        linked_identities: tuple[str, ...] = ()
+        if row.component_kind == "relation":
+            linked_identities = tuple(
+                value
+                for value in (
+                    row.relation_from_identity_sha256,
+                    row.relation_to_identity_sha256,
+                )
+                if value is not None
+            )
+        elif row.component_kind == "unknown_boundary":
+            linked_identities = row.affected_identity_sha256s
+        for identity in linked_identities:
+            for target_id in by_semantic_identity.get(identity, set()):
+                adjacency[row.component_id].add(target_id)
+                adjacency[target_id].add(row.component_id)
+    groups: list[tuple[_GroundedCrossRoleTypedSemanticComponent, ...]] = []
+    remaining = set(by_id)
+    while remaining:
+        seed = min(remaining)
+        pending = [seed]
+        closed: set[str] = set()
+        while pending:
+            current = pending.pop()
+            if current in closed:
+                continue
+            closed.add(current)
+            pending.extend(sorted(adjacency[current] - closed))
+        remaining.difference_update(closed)
+        groups.append(
+            tuple(
+                sorted(
+                    (by_id[source_id] for source_id in closed),
+                    key=lambda row: (
+                        row.component_kind,
+                        row.component_id,
+                    ),
+                )
+            )
+        )
+    return tuple(groups)
+
+
+def _cross_role_components_valid(
+    rows: Any,
+    *,
+    expected_role: str,
+) -> bool:
+    return bool(
+        type(rows) is tuple
+        and all(
+            type(row) is _GroundedCrossRoleTypedSemanticComponent
+            and row.source_role == expected_role
+            and row.source_kind == row.component_kind
+            and row.component_kind in _CROSS_ROLE_COMPONENT_KINDS
+            and type(row.component_id) is str
+            and bool(row.component_id)
+            and all(
+                type(value) is str
+                and _CROSS_ROLE_SHA256_RE.fullmatch(value) is not None
+                for value in (
+                    row.semantic_identity_sha256,
+                    row.referent_identity_sha256,
+                    row.topic_identity_sha256,
+                    row.predicate_identity_sha256,
+                )
+            )
+            and type(row.affected_identity_sha256s) is tuple
+            and all(
+                type(value) is str
+                and _CROSS_ROLE_SHA256_RE.fullmatch(value) is not None
+                for value in row.affected_identity_sha256s
+            )
+            and all(
+                type(value) is str
+                for value in (
+                    row.polarity,
+                    row.modality,
+                    row.time_scope,
+                    row.quantifier_degree,
+                )
+            )
+            and all(
+                value is None or type(value) is str
+                for value in (
+                    row.relation_type,
+                    row.relation_direction,
+                    row.relation_from_identity_sha256,
+                    row.relation_to_identity_sha256,
+                    row.unknown_dimension,
+                )
+            )
+            and type(row.must_separate) is bool
+            and type(row.required) is bool
+            and row.body_free is True
+            for row in rows
+        )
+        and len({row.component_id for row in rows}) == len(rows)
+    )
+
+
+def _cross_role_binding_sort_key(
+    row: GroundedCrossRoleSemanticComponentBinding,
+) -> tuple[str, str, str, str]:
+    return (
+        row.component_kind,
+        row.original_component_id,
+        row.supplemental_component_id,
+        row.binding_id,
+    )
+
+
+def _cross_role_witness_sha256(
+    *,
+    original_plan_binding_sha256: str,
+    supplemental_plan_binding_sha256: str,
+    original_source_witness_sha256: str,
+    supplemental_source_witness_sha256: str,
+    component_bindings: Sequence[
+        GroundedCrossRoleSemanticComponentBinding
+    ],
+) -> str:
+    return artifact_sha256(
+        {
+            "schema_version": (
+                GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA
+            ),
+            "adapter_version": (
+                GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_ADAPTER_VERSION
+            ),
+            "original_plan_binding_sha256": (
+                original_plan_binding_sha256
+            ),
+            "supplemental_plan_binding_sha256": (
+                supplemental_plan_binding_sha256
+            ),
+            "original_source_witness_sha256": (
+                original_source_witness_sha256
+            ),
+            "supplemental_source_witness_sha256": (
+                supplemental_source_witness_sha256
+            ),
+            "component_bindings": [
+                _canonical_body_free(row) for row in component_bindings
+            ],
+            "effect_scope": _CROSS_ROLE_EFFECT_SCOPE,
+            "depth_equivalence_schema_version": (
+                CROSS_ROLE_SEMANTIC_DEPTH_EQUIVALENCE_SCHEMA
+            ),
+            "body_free": True,
+        }
+    )
+
+
+def _build_grounded_cross_role_semantic_restatement_witness_from_typed_components(
+    *,
+    original_components: tuple[
+        _GroundedCrossRoleTypedSemanticComponent, ...
+    ],
+    supplemental_components: tuple[
+        _GroundedCrossRoleTypedSemanticComponent, ...
+    ],
+    original_plan_binding_sha256: str,
+    supplemental_plan_binding_sha256: str,
+    original_source_witness_sha256: str,
+    supplemental_source_witness_sha256: str,
+) -> GroundedCrossRoleSemanticRestatementWitness:
+    hashes = (
+        original_plan_binding_sha256,
+        supplemental_plan_binding_sha256,
+        original_source_witness_sha256,
+        supplemental_source_witness_sha256,
+    )
+    if not all(
+        type(value) is str
+        and _CROSS_ROLE_SHA256_RE.fullmatch(value) is not None
+        for value in hashes
+    ):
+        raise GroundedSemanticRestatementError(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_INVALID"
+        )
+    if not _cross_role_components_valid(
+        original_components,
+        expected_role="original_input",
+    ) or not _cross_role_components_valid(
+        supplemental_components,
+        expected_role="supplemental_answer",
+    ):
+        if (
+            type(original_components) is tuple
+            and type(supplemental_components) is tuple
+            and all(
+                type(row) is _GroundedCrossRoleTypedSemanticComponent
+                for row in (*original_components, *supplemental_components)
+            )
+            and (
+                any(
+                    row.source_role != "original_input"
+                    for row in original_components
+                )
+                or any(
+                    row.source_role != "supplemental_answer"
+                    for row in supplemental_components
+                )
+            )
+        ):
+            raise GroundedSemanticRestatementError(
+                "CROSS_ROLE_SEMANTIC_RESTATEMENT_ROLE_PAIR_INVALID"
+            )
+        raise GroundedSemanticRestatementError(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_INVALID"
+        )
+    for rows in (original_components, supplemental_components):
+        identities = [
+            _cross_role_component_identity(row) for row in rows
+        ]
+        if len(identities) != len(set(identities)):
+            raise GroundedSemanticRestatementError(
+                "CROSS_ROLE_SEMANTIC_RESTATEMENT_AMBIGUOUS"
+            )
+
+    original_groups = _cross_role_component_groups(original_components)
+    supplemental_groups = _cross_role_component_groups(
+        supplemental_components
+    )
+
+    def eligible_groups(
+        groups: Sequence[
+            tuple[_GroundedCrossRoleTypedSemanticComponent, ...]
+        ],
+    ) -> dict[
+        tuple[tuple[str, str], ...],
+        tuple[_GroundedCrossRoleTypedSemanticComponent, ...],
+    ]:
+        output: dict[
+            tuple[tuple[str, str], ...],
+            tuple[_GroundedCrossRoleTypedSemanticComponent, ...],
+        ] = {}
+        for group in groups:
+            if any(row.must_separate for row in group):
+                continue
+            signature = tuple(
+                sorted(_cross_role_component_identity(row) for row in group)
+            )
+            if signature in output:
+                raise GroundedSemanticRestatementError(
+                    "CROSS_ROLE_SEMANTIC_RESTATEMENT_AMBIGUOUS"
+                )
+            output[signature] = group
+        return output
+
+    original_by_graph = eligible_groups(original_groups)
+    supplemental_by_graph = eligible_groups(supplemental_groups)
+    bindings: list[GroundedCrossRoleSemanticComponentBinding] = []
+    for signature in sorted(
+        set(original_by_graph) & set(supplemental_by_graph)
+    ):
+        original_by_identity = {
+            _cross_role_component_identity(row): row
+            for row in original_by_graph[signature]
+        }
+        supplemental_by_identity = {
+            _cross_role_component_identity(row): row
+            for row in supplemental_by_graph[signature]
+        }
+        if (
+            set(original_by_identity) != set(supplemental_by_identity)
+            or len(original_by_identity) != len(original_by_graph[signature])
+            or len(supplemental_by_identity)
+            != len(supplemental_by_graph[signature])
+        ):
+            raise GroundedSemanticRestatementError(
+                "CROSS_ROLE_SEMANTIC_RESTATEMENT_AMBIGUOUS"
+            )
+        for identity in sorted(original_by_identity):
+            original = original_by_identity[identity]
+            supplemental = supplemental_by_identity[identity]
+            canonical_sha256 = identity[1]
+            binding_id = "cross_role_binding:b" + artifact_sha256(
+                {
+                    "adapter_version": (
+                        GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_ADAPTER_VERSION
+                    ),
+                    "component_kind": original.component_kind,
+                    "original_component_id": original.component_id,
+                    "supplemental_component_id": supplemental.component_id,
+                    "canonical_typed_component_sha256": canonical_sha256,
+                }
+            )[:24]
+            bindings.append(
+                GroundedCrossRoleSemanticComponentBinding(
+                    binding_id=binding_id,
+                    component_kind=original.component_kind,
+                    original_source_role=original.source_role,
+                    original_source_kind=original.source_kind,
+                    original_component_id=original.component_id,
+                    supplemental_source_role=supplemental.source_role,
+                    supplemental_source_kind=supplemental.source_kind,
+                    supplemental_component_id=supplemental.component_id,
+                    canonical_typed_component_sha256=canonical_sha256,
+                    proof_code=_CROSS_ROLE_PROOF_CODE,
+                    proof_basis=_CROSS_ROLE_PROOF_BASIS,
+                )
+            )
+    ordered_bindings = tuple(sorted(bindings, key=_cross_role_binding_sort_key))
+    witness_sha256 = _cross_role_witness_sha256(
+        original_plan_binding_sha256=original_plan_binding_sha256,
+        supplemental_plan_binding_sha256=supplemental_plan_binding_sha256,
+        original_source_witness_sha256=original_source_witness_sha256,
+        supplemental_source_witness_sha256=(
+            supplemental_source_witness_sha256
+        ),
+        component_bindings=ordered_bindings,
+    )
+    return GroundedCrossRoleSemanticRestatementWitness(
+        schema_version=(
+            GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA
+        ),
+        adapter_version=(
+            GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_ADAPTER_VERSION
+        ),
+        original_plan_binding_sha256=original_plan_binding_sha256,
+        supplemental_plan_binding_sha256=(
+            supplemental_plan_binding_sha256
+        ),
+        original_source_witness_sha256=original_source_witness_sha256,
+        supplemental_source_witness_sha256=(
+            supplemental_source_witness_sha256
+        ),
+        component_bindings=ordered_bindings,
+        effect_scope=_CROSS_ROLE_EFFECT_SCOPE,
+        depth_equivalence_schema_version=(
+            CROSS_ROLE_SEMANTIC_DEPTH_EQUIVALENCE_SCHEMA
+        ),
+        witness_sha256=witness_sha256,
+        body_free=True,
+    )
+
+
+def _validate_grounded_cross_role_semantic_restatement_witness_from_typed_components(
+    value: Any,
+    *,
+    original_components: tuple[
+        _GroundedCrossRoleTypedSemanticComponent, ...
+    ],
+    supplemental_components: tuple[
+        _GroundedCrossRoleTypedSemanticComponent, ...
+    ],
+    original_plan_binding_sha256: str,
+    supplemental_plan_binding_sha256: str,
+    original_source_witness_sha256: str,
+    supplemental_source_witness_sha256: str,
+) -> tuple[str, ...]:
+    if type(value) is not GroundedCrossRoleSemanticRestatementWitness:
+        return ("CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_TYPE_INVALID",)
+    try:
+        expected = (
+            _build_grounded_cross_role_semantic_restatement_witness_from_typed_components(
+                original_components=original_components,
+                supplemental_components=supplemental_components,
+                original_plan_binding_sha256=original_plan_binding_sha256,
+                supplemental_plan_binding_sha256=(
+                    supplemental_plan_binding_sha256
+                ),
+                original_source_witness_sha256=(
+                    original_source_witness_sha256
+                ),
+                supplemental_source_witness_sha256=(
+                    supplemental_source_witness_sha256
+                ),
+            )
+        )
+    except GroundedSemanticRestatementError as exc:
+        return (exc.code,)
+    issues: list[str] = []
+    if value.schema_version != (
+        GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA
+    ):
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA_MISMATCH"
+        )
+    if value.adapter_version != (
+        GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_ADAPTER_VERSION
+    ):
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_ADAPTER_MISMATCH"
+        )
+    if (
+        value.original_plan_binding_sha256
+        != original_plan_binding_sha256
+        or value.supplemental_plan_binding_sha256
+        != supplemental_plan_binding_sha256
+    ):
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_PLAN_BINDING_MISMATCH"
+        )
+    if (
+        value.original_source_witness_sha256
+        != original_source_witness_sha256
+        or value.supplemental_source_witness_sha256
+        != supplemental_source_witness_sha256
+    ):
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_SOURCE_WITNESS_MISMATCH"
+        )
+    bindings = value.component_bindings
+    if type(bindings) is not tuple or not all(
+        type(row) is GroundedCrossRoleSemanticComponentBinding
+        for row in bindings
+    ):
+        issues.append("CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_INVALID")
+        bindings = ()
+    elif any(
+        any(
+            type(getattr(row, field)) is not str
+            for field in row.__dataclass_fields__
+        )
+        for row in bindings
+    ):
+        issues.append("CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_INVALID")
+        bindings = ()
+    original_by_id = {
+        row.component_id: row for row in original_components
+    }
+    supplemental_by_id = {
+        row.component_id: row for row in supplemental_components
+    }
+    original_ids: list[str] = []
+    supplemental_ids: list[str] = []
+    for row in bindings:
+        original_ids.append(row.original_component_id)
+        supplemental_ids.append(row.supplemental_component_id)
+        if (
+            row.original_source_role != "original_input"
+            or row.supplemental_source_role != "supplemental_answer"
+        ):
+            issues.append(
+                "CROSS_ROLE_SEMANTIC_RESTATEMENT_ROLE_PAIR_INVALID"
+            )
+        original = original_by_id.get(row.original_component_id)
+        supplemental = supplemental_by_id.get(
+            row.supplemental_component_id
+        )
+        if original is None or supplemental is None:
+            issues.append(
+                "CROSS_ROLE_SEMANTIC_RESTATEMENT_COMPONENT_UNRESOLVED"
+            )
+            continue
+        if (
+            row.component_kind != original.component_kind
+            or row.component_kind != supplemental.component_kind
+            or row.original_source_kind != original.source_kind
+            or row.supplemental_source_kind != supplemental.source_kind
+        ):
+            issues.append(
+                "CROSS_ROLE_SEMANTIC_RESTATEMENT_COMPONENT_KIND_MISMATCH"
+            )
+        if (
+            _cross_role_component_identity(original)
+            != _cross_role_component_identity(supplemental)
+            or row.canonical_typed_component_sha256
+            != _cross_role_component_sha256(original)
+        ):
+            issues.append(
+                "CROSS_ROLE_SEMANTIC_RESTATEMENT_GRAPH_MISMATCH"
+            )
+        if row.proof_code != _CROSS_ROLE_PROOF_CODE:
+            issues.append(
+                "CROSS_ROLE_SEMANTIC_RESTATEMENT_PROOF_CODE_INVALID"
+            )
+        if row.proof_basis != _CROSS_ROLE_PROOF_BASIS:
+            issues.append(
+                "CROSS_ROLE_SEMANTIC_RESTATEMENT_PROOF_BASIS_INVALID"
+            )
+    if (
+        len(original_ids) != len(set(original_ids))
+        or len(supplemental_ids) != len(set(supplemental_ids))
+    ):
+        issues.append("CROSS_ROLE_SEMANTIC_RESTATEMENT_AMBIGUOUS")
+    if tuple(sorted(bindings, key=_cross_role_binding_sort_key)) != bindings:
+        issues.append("CROSS_ROLE_SEMANTIC_RESTATEMENT_ORDER_INVALID")
+    if bindings != expected.component_bindings:
+        issues.append("CROSS_ROLE_SEMANTIC_RESTATEMENT_GRAPH_MISMATCH")
+    if value.effect_scope != _CROSS_ROLE_EFFECT_SCOPE:
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_EFFECT_SCOPE_INVALID"
+        )
+    if value.depth_equivalence_schema_version != (
+        CROSS_ROLE_SEMANTIC_DEPTH_EQUIVALENCE_SCHEMA
+    ):
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_DEPTH_CONTRACT_INVALID"
+        )
+    if value.body_free is not True:
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_BODY_FREE_REQUIRED"
+        )
+    try:
+        presented_sha256 = _cross_role_witness_sha256(
+            original_plan_binding_sha256=(
+                value.original_plan_binding_sha256
+            ),
+            supplemental_plan_binding_sha256=(
+                value.supplemental_plan_binding_sha256
+            ),
+            original_source_witness_sha256=(
+                value.original_source_witness_sha256
+            ),
+            supplemental_source_witness_sha256=(
+                value.supplemental_source_witness_sha256
+            ),
+            component_bindings=bindings,
+        )
+    except (AttributeError, TypeError, ValueError):
+        presented_sha256 = ""
+    if (
+        value.witness_sha256 != expected.witness_sha256
+        or value.witness_sha256 != presented_sha256
+    ):
+        issues.append(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_HASH_MISMATCH"
+        )
+    return tuple(sorted(set(issues)))
+
+
+def build_grounded_cross_role_semantic_restatement_witness(
+    original_plan: GroundedObservationPlan,
+    original_resolver: EvidenceSpanResolver,
+    supplemental_plan: GroundedObservationPlan,
+    supplemental_resolver: EvidenceSpanResolver,
+) -> GroundedCrossRoleSemanticRestatementWitness:
+    try:
+        original_local = build_grounded_semantic_restatement_witness(
+            original_plan, original_resolver
+        )
+        supplemental_local = build_grounded_semantic_restatement_witness(
+            supplemental_plan, supplemental_resolver
+        )
+    except GroundedSemanticRestatementError as exc:
+        raise GroundedSemanticRestatementError(
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_PLAN_BINDING_MISMATCH"
+        ) from exc
+    original_components = (
+        _project_grounded_cross_role_typed_semantic_components(
+            original_plan,
+            original_resolver,
+            original_local,
+            "original_input",
+        )
+    )
+    supplemental_components = (
+        _project_grounded_cross_role_typed_semantic_components(
+            supplemental_plan,
+            supplemental_resolver,
+            supplemental_local,
+            "supplemental_answer",
+        )
+    )
+    return (
+        _build_grounded_cross_role_semantic_restatement_witness_from_typed_components(
+            original_components=original_components,
+            supplemental_components=supplemental_components,
+            original_plan_binding_sha256=(
+                original_local.plan_binding_sha256
+            ),
+            supplemental_plan_binding_sha256=(
+                supplemental_local.plan_binding_sha256
+            ),
+            original_source_witness_sha256=original_local.witness_sha256,
+            supplemental_source_witness_sha256=(
+                supplemental_local.witness_sha256
+            ),
+        )
+    )
+
+
+def validate_grounded_cross_role_semantic_restatement_witness(
+    value: Any,
+    *,
+    original_plan: GroundedObservationPlan,
+    original_resolver: EvidenceSpanResolver,
+    supplemental_plan: GroundedObservationPlan,
+    supplemental_resolver: EvidenceSpanResolver,
+) -> tuple[str, ...]:
+    try:
+        original_local = build_grounded_semantic_restatement_witness(
+            original_plan, original_resolver
+        )
+        supplemental_local = build_grounded_semantic_restatement_witness(
+            supplemental_plan, supplemental_resolver
+        )
+    except GroundedSemanticRestatementError:
+        return (
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_PLAN_BINDING_MISMATCH",
+        )
+    if (
+        type(value) is GroundedCrossRoleSemanticRestatementWitness
+        and (
+            value.original_plan_binding_sha256
+            != original_local.plan_binding_sha256
+            or value.supplemental_plan_binding_sha256
+            != supplemental_local.plan_binding_sha256
+        )
+    ):
+        return (
+            "CROSS_ROLE_SEMANTIC_RESTATEMENT_PLAN_BINDING_MISMATCH",
+        )
+    try:
+        original_components = (
+            _project_grounded_cross_role_typed_semantic_components(
+                original_plan,
+                original_resolver,
+                original_local,
+                "original_input",
+            )
+        )
+        supplemental_components = (
+            _project_grounded_cross_role_typed_semantic_components(
+                supplemental_plan,
+                supplemental_resolver,
+                supplemental_local,
+                "supplemental_answer",
+            )
+        )
+    except GroundedSemanticRestatementError as exc:
+        return (exc.code,)
+    return (
+        _validate_grounded_cross_role_semantic_restatement_witness_from_typed_components(
+            value,
+            original_components=original_components,
+            supplemental_components=supplemental_components,
+            original_plan_binding_sha256=(
+                original_local.plan_binding_sha256
+            ),
+            supplemental_plan_binding_sha256=(
+                supplemental_local.plan_binding_sha256
+            ),
+            original_source_witness_sha256=original_local.witness_sha256,
+            supplemental_source_witness_sha256=(
+                supplemental_local.witness_sha256
+            ),
+        )
+    )
+
+
 __all__ = [
+    "CROSS_ROLE_SEMANTIC_DEPTH_EQUIVALENCE_SCHEMA",
     "EndpointSemanticRelation",
+    "GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_ADAPTER_VERSION",
+    "GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_NEGATIVE_CODES",
+    "GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA",
     "GROUND_SEMANTIC_RESTATEMENT_ADAPTER_VERSION",
     "GROUND_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA",
+    "GroundedCrossRoleSemanticComponentBinding",
+    "GroundedCrossRoleSemanticRestatementWitness",
     "GroundedSemanticRestatementError",
     "GroundedExplicitUnknownWitness",
     "GroundedSemanticLinkWitness",
@@ -1191,6 +2363,8 @@ __all__ = [
     "GroundedSemanticUnitWitness",
     "SemanticLinkType",
     "SemanticUnitKind",
+    "build_grounded_cross_role_semantic_restatement_witness",
     "build_grounded_semantic_restatement_witness",
+    "validate_grounded_cross_role_semantic_restatement_witness",
     "validate_grounded_semantic_restatement_witness",
 ]
