@@ -1,0 +1,865 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+"""Recovery Epoch 001 canonical-current-closure completion RED freeze.
+
+The tests in this file reserve the collision-free current candidate, freeze
+the exact owner/verifier/receipt/single-graph responsibilities, and expose
+each missing responsibility as a causal RED.  They do not create a successful
+Step 0-10 receipt, lock a source baseline, authorize P2, or run a corpus.
+"""
+
+import ast
+import hashlib
+import importlib
+import importlib.util
+from pathlib import Path
+from types import ModuleType
+from typing import Any
+
+import pytest
+
+from helpers import emlis_nls_v3_s0_s1_baseline as s01
+
+
+_AUTHORITY = (
+    "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_STEP0_10_CANONICAL_CURRENT_"
+    "CLOSURE_AND_STANDALONE_COMPLETION_PROOF_NONCONFORMANCE_REMEDIATION_"
+    "RED_FREEZE_ONLY"
+)
+_SOURCE_PIN = "bd62ef0eec2348e3b190ec2a39c3794886ccd10d"
+_COCOLON_PIN = "3cb7867c3f8cbe39ee38ffe5c55179df81b5b0fa"
+_DETAILED_DESIGN_SHA256 = (
+    "6aa3fb799919ac30b0eb84571ac4009d62a2bd799c84322272a59bba533f13bc"
+)
+_RECOVERY_CANDIDATE = "nls_v3_rc_0034"
+_RECOVERY_SCOPE = (
+    "RECOVERY_EPOCH001_CANONICAL_CURRENT_CLOSURE_CANDIDATE_ONLY"
+)
+_RECOVERY_DISPOSITION = (
+    "CURRENT_CLOSURE_CANDIDATE_NOT_BASELINE_NOT_CYCLE_ACCEPTANCE"
+)
+_RC0032_DISPOSITION = "FAILED_PREREQUISITE_CANDIDATE_HISTORY_ONLY"
+_RC0033_DISPOSITION = "PREEXISTING_SYNTHETIC_LATER_RC_ONLY"
+
+_CLOSURE_MODULE = (
+    "emlis_ai_recovery_epoch001_canonical_current_closure_v3"
+)
+_CLOSURE_PATH = (
+    "ai/services/ai_inference/"
+    "emlis_ai_recovery_epoch001_canonical_current_closure_v3.py"
+)
+_CLOSURE_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch001."
+    "canonical_current_closure.v1"
+)
+_RECEIPT_MODULE = (
+    "emlis_ai_recovery_epoch001_step_completion_receipt_v3"
+)
+_RECEIPT_PATH = (
+    "ai/services/ai_inference/"
+    "emlis_ai_recovery_epoch001_step_completion_receipt_v3.py"
+)
+_RECEIPT_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch001."
+    "current_step_completion_receipt.v1"
+)
+_SUCCESSOR_MODULE = "emlis_ai_step9_recovery_epoch001_successor_v3"
+_SUCCESSOR_PATH = (
+    "ai/services/ai_inference/"
+    "emlis_ai_step9_recovery_epoch001_successor_v3.py"
+)
+_INDEPENDENT_VERIFIER_PATH = (
+    "ai/tools/emlis_nls_v3_recovery_epoch001_closure_receipt_verify.py"
+)
+_THIS_PATH = (
+    "ai/tests/"
+    "test_emlis_nls_v3_recovery_epoch001_current_closure_completion_red.py"
+)
+
+_HERE = Path(__file__).resolve()
+_AI_ROOT = _HERE.parents[1]
+_REPO_ROOT = _AI_ROOT.parent
+
+_FUTURE_CORE_SURFACE = frozenset(
+    {
+        _CLOSURE_PATH,
+        _RECEIPT_PATH,
+        _SUCCESSOR_PATH,
+        _INDEPENDENT_VERIFIER_PATH,
+        "ai/services/ai_inference/emlis_ai_dormant_runtime_adapter_v3.py",
+        "ai/services/ai_inference/emlis_ai_step10_evidence_v3.py",
+        "ai/tools/emlis_nls_v3_batch_run.py",
+    }
+)
+_FUTURE_TEST_SURFACE = frozenset(
+    {
+        "ai/tests/test_emlis_nls_v3_s5_content_selection_stage_context.py",
+        "ai/tests/test_emlis_nls_v3_s9_hard_gate_selector_recovery.py",
+        "ai/tests/test_emlis_nls_v3_s10_dormant_runtime_batch_evidence.py",
+    }
+)
+_FUTURE_ADD_PATHS = frozenset(
+    {
+        _CLOSURE_PATH,
+        _RECEIPT_PATH,
+        _SUCCESSOR_PATH,
+        _INDEPENDENT_VERIFIER_PATH,
+    }
+)
+_STEP5_PARENT_DESIGN_UNRESOLVED = frozenset(
+    {
+        "BODY_FREE_TYPED_CROSS_ROLE_EQUIVALENCE",
+        "TRUSTED_CROSS_SOURCE_EQUIVALENCE_WITNESS",
+    }
+)
+
+_PROTECTED_SHA256 = {
+    "ai/services/ai_inference/emlis_ai_step9_dependency_manifest_v3.py": (
+        "19a21d5853c44130c2c874e8b9c6bbbc0a1fc79591c529fb060e7c1e3cd7742e"
+    ),
+    "ai/services/ai_inference/emlis_ai_step9_artifact_contract_v3.py": (
+        "216d6d1105a158dc9807d6dada006cff13050b2e2a7b133a31bdf479b5ab2d56"
+    ),
+    "ai/services/ai_inference/emlis_ai_semantic_hard_gate_v3.py": (
+        "ce2a9818b46196fa5966a2e13394cc1b51089aab664e6660e86c4526f9050c51"
+    ),
+    "ai/services/ai_inference/emlis_ai_lexicographic_selector_v3.py": (
+        "4fa8770d82273b328e0a968b1315ec68f6c57cdf4aec576dbc36434f5453833d"
+    ),
+    "ai/services/ai_inference/emlis_ai_bounded_recovery_v3.py": (
+        "e1e62049fc521658597124832d700a4842aca995ffd9ae38f8db583b7ba4f13f"
+    ),
+    "ai/services/ai_inference/emlis_ai_step10_dependency_manifest_v3.py": (
+        "3bc1311c264cbbae71e69c643d055575e9b80c58b71d321ff28e744ad0ee090c"
+    ),
+    (
+        "ai/services/ai_inference/"
+        "emlis_ai_recovery_epoch001_source_baseline_manifest_v3.py"
+    ): "ec6007f5b35fdcc0ec8a330822e4fe9086884dada2415e8557d7f314e2a65127",
+    "ai/tests/test_emlis_nls_v3_recovery_epoch001_prerequisite_red.py": (
+        "fffda42687a77f5f2c1f83d39c96cbf4eb7099438b8c0f7179dacdf5b02ceb14"
+    ),
+    "ai/tests/helpers/emlis_nls_v3_s0_s1_baseline.py": (
+        "652bd446bd33995d9575b6db60f765caa97305b98d439d294de33bc569ea9f80"
+    ),
+    "ai/tests/fixtures/emlis_nls_v3_s0_boundary_20260714.json": (
+        "57f0a583ca970c753bfe656627ca75879dd279ff4e2a1471ee2dd7b55586a024"
+    ),
+    "ai/tests/fixtures/emlis_nls_v3_s1_baseline_receipt_20260714.json": (
+        "669835b0fdce3bc1e2e897325ab37b5f82abc9a353bc864993aa284083b7a518"
+    ),
+    "ai/tests/fixtures/emlis_nls_v3_s1_input_contract_20260714.json": (
+        "d577ac80457e25389c0bac351139b2c80a9a506f225023fb7928a1b9068d53c6"
+    ),
+    "ai/services/ai_inference/emlis_ai_reply_service.py": (
+        "162b94eb185c519e50dceee62e591cc8ab02204312761874eb2fbb636ffbe50a"
+    ),
+    "ai/services/ai_inference/emlis_ai_step11_cycle_evidence_v3.py": (
+        "e9f77f7411b581e96a7035d05aa3a50eb4628cbba37a02b0786a0d35b818d43d"
+    ),
+}
+
+_CURRENT_OWNER_PATHS = (
+    "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
+    "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
+    "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
+    "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
+    "ai/services/ai_inference/emlis_ai_reply_service.py",
+)
+_STOPPED_V2_ANCHORS = (
+    "ai/services/ai_inference/emlis_ai_grounded_reception_content_plan_v2.py",
+    "ai/services/ai_inference/emlis_ai_grounded_reception_candidate_plan_v2.py",
+    "ai/services/ai_inference/emlis_ai_grounded_human_reception_v2.py",
+    "ai/services/ai_inference/emlis_ai_grounded_reception_candidate_selector_v2.py",
+)
+
+_STEP_SEEDS: dict[int, frozenset[str]] = {
+    0: frozenset(
+        {
+            "ai/tests/helpers/emlis_nls_v3_s0_s1_baseline.py",
+            "ai/tests/test_emlis_nls_v3_s0_s1.py",
+            "ai/tests/fixtures/emlis_nls_v3_s0_boundary_20260714.json",
+            *_CURRENT_OWNER_PATHS,
+            *_STOPPED_V2_ANCHORS,
+        }
+    ),
+    1: frozenset(
+        {
+            "ai/tests/helpers/emlis_nls_v3_s0_s1_baseline.py",
+            "ai/tests/test_emlis_nls_v3_s0_s1.py",
+            "ai/tests/fixtures/emlis_nls_v3_s1_input_contract_20260714.json",
+            "ai/tests/fixtures/emlis_nls_v3_s1_baseline_receipt_20260714.json",
+            *_CURRENT_OWNER_PATHS,
+            "ai/services/ai_inference/api_emotion_submit.py",
+            "ai/services/ai_inference/emotion_submit_service.py",
+            "ai/services/ai_inference/emlis_ai_current_input_bundle.py",
+            "ai/services/ai_inference/emlis_ai_public_feedback_meta.py",
+            "ai/services/ai_inference/emlis_ai_evidence_ledger_service.py",
+            "ai/services/ai_inference/emlis_ai_perspective_observers.py",
+            "ai/services/ai_inference/emlis_ai_observation_integrator_service.py",
+            "ai/services/ai_inference/emlis_ai_safety_triage.py",
+        }
+    ),
+    2: frozenset(
+        {
+            "ai/tests/helpers/emlis_nls_v3_s2_sample_registry.py",
+            "ai/tests/test_emlis_nls_v3_s2_sample_registry.py",
+            "ai/tests/schemas/emlis_nls_v3_sample_case_v1.schema.json",
+            "ai/tests/schemas/emlis_nls_v3_coverage_matrix_v1.schema.json",
+            "ai/tests/schemas/emlis_nls_v3_sample_batch_manifest_v1.schema.json",
+            "ai/tests/schemas/emlis_nls_v3_corpus_registry_v1.schema.json",
+            "ai/tests/fixtures/emlis_nls_v3_s2_corpus_registry_20260714.json",
+            "ai/tests/fixtures/emlis_nls_v3/contract/valid_v1.jsonl",
+            "ai/tests/fixtures/emlis_nls_v3/contract/invalid_v1.jsonl",
+            "ai/tests/fixtures/emlis_nls_v3/contract/legacy_v1.jsonl",
+        }
+    ),
+    3: frozenset(
+        {
+            "ai/services/ai_inference/emlis_ai_nls_v3_artifact_contract.py",
+            "ai/tests/test_emlis_nls_v3_s3_strict_artifact_contract.py",
+            "ai/tests/schemas/emlis_nls_v3_case_evidence_receipt_v2.schema.json",
+            (
+                "ai/tests/fixtures/emlis_nls_v3/contract/"
+                "step3_valid_artifacts_v1.json"
+            ),
+            "ai/tests/fixtures/emlis_nls_v3_s3_red_attack_catalog_20260715.json",
+            "ai/tests/fixtures/emlis_nls_v3_s3_contract_receipt_20260715.json",
+        }
+    ),
+    4: frozenset(
+        {
+            "ai/services/ai_inference/emlis_ai_refined_source_partition_v3.py",
+            (
+                "ai/services/ai_inference/"
+                "emlis_ai_semantic_obligation_inventory_v3.py"
+            ),
+            (
+                "ai/services/ai_inference/"
+                "emlis_ai_grounded_observation_semantic_restatement_v3.py"
+            ),
+            "ai/services/ai_inference/emlis_ai_evidence_ledger_service.py",
+            "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
+            "ai/services/ai_inference/emlis_ai_observation_stage_context_v3.py",
+            "ai/tests/test_emlis_nls_v3_s4_semantic_obligation_inventory.py",
+        }
+    ),
+    5: frozenset(
+        {
+            "ai/services/ai_inference/emlis_ai_refined_source_partition_v3.py",
+            (
+                "ai/services/ai_inference/"
+                "emlis_ai_semantic_obligation_inventory_v3.py"
+            ),
+            "ai/services/ai_inference/emlis_ai_content_selection_v3.py",
+            "ai/services/ai_inference/emlis_ai_observation_stage_context_v3.py",
+            "ai/tests/test_emlis_nls_v3_s5_content_selection_stage_context.py",
+        }
+    ),
+    6: frozenset(
+        {
+            "ai/services/ai_inference/emlis_ai_discourse_graph_planner_v3.py",
+            "ai/services/ai_inference/emlis_ai_nls_v3_artifact_contract.py",
+            "ai/tests/test_emlis_nls_v3_s6_discourse_graph_planner.py",
+        }
+    ),
+    7: frozenset(
+        {
+            "ai/services/ai_inference/emlis_ai_typed_surface_ast_v3.py",
+            "ai/services/ai_inference/emlis_ai_canonical_renderer_v3.py",
+            "ai/services/ai_inference/emlis_ai_surface_grammar_catalog_v3.py",
+            "ai/services/ai_inference/emlis_ai_nls_v3_artifact_contract.py",
+            "ai/tests/test_emlis_nls_v3_s7_typed_ast_canonical_renderer.py",
+        }
+    ),
+    8: frozenset(
+        {
+            "ai/services/ai_inference/emlis_ai_body_semantic_atom_parser_v3.py",
+            (
+                "ai/services/ai_inference/"
+                "emlis_ai_independent_semantic_matcher_v3.py"
+            ),
+            "ai/services/ai_inference/emlis_ai_step8_artifact_contract_v3.py",
+            "ai/services/ai_inference/emlis_ai_surface_grammar_catalog_v3.py",
+            (
+                "ai/services/ai_inference/"
+                "emlis_ai_surface_grammar_catalog_v3_step8.py"
+            ),
+            "ai/tests/test_emlis_nls_v3_s8_body_parser_independent_matcher.py",
+        }
+    ),
+    9: frozenset(
+        {
+            "ai/services/ai_inference/emlis_ai_step9_dependency_manifest_v3.py",
+            "ai/services/ai_inference/emlis_ai_step9_artifact_contract_v3.py",
+            "ai/services/ai_inference/emlis_ai_semantic_hard_gate_v3.py",
+            "ai/services/ai_inference/emlis_ai_lexicographic_selector_v3.py",
+            "ai/services/ai_inference/emlis_ai_bounded_recovery_v3.py",
+            _SUCCESSOR_PATH,
+            "ai/tests/test_emlis_nls_v3_s9_hard_gate_selector_recovery.py",
+        }
+    ),
+    10: frozenset(
+        {
+            "ai/services/ai_inference/emlis_ai_dormant_runtime_adapter_v3.py",
+            "ai/services/ai_inference/emlis_ai_reply_service.py",
+            (
+                "ai/services/ai_inference/"
+                "emlis_ai_step10_app_reachable_contract_v3.py"
+            ),
+            "ai/services/ai_inference/emlis_ai_step10_evidence_v3.py",
+            "ai/tools/emlis_nls_v3_batch_run.py",
+            "ai/tools/emlis_nls_v3_cumulative_regression.py",
+            "ai/tools/emlis_nls_v3_output_diff.py",
+            "ai/tools/emlis_nls_v3_receipt_verify.py",
+            "ai/tests/schemas/emlis_nls_v3_case_evidence_receipt_v3.schema.json",
+            "ai/tests/test_emlis_nls_v3_s10_dormant_runtime_batch_evidence.py",
+        }
+    ),
+}
+_CROSS_STEP_SEEDS = frozenset(
+    {
+        _CLOSURE_PATH,
+        _RECEIPT_PATH,
+        _INDEPENDENT_VERIFIER_PATH,
+        _THIS_PATH,
+        "ai/tests/conftest.py",
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_recovery_epoch001_source_baseline_manifest_v3.py"
+        ),
+        "ai/tests/test_emlis_nls_v3_recovery_epoch001_prerequisite_red.py",
+    }
+)
+
+_CLOSURE_NEGATIVE_CODES = frozenset(
+    {
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_ENTRY_INVALID",
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_CANDIDATE_IDENTITY_INVALID",
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_REQUIRED_SEED_MISSING",
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_REQUIRED_FILE_MISSING",
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_EXTRA_FILE",
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_FILE_HASH_DRIFT",
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_GIT_BLOB_DRIFT",
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_EXISTING_LOCAL_IMPORT_UNLISTED",
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_REQUIRED_EDGE_MISSING",
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_EDGE_TARGET_UNRESOLVED",
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_ROLE_BINDING_DRIFT",
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_VIEW_BINDING_DRIFT",
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_FORBIDDEN_EDGE",
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_FORBIDDEN_CUE_INGRESS",
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_PRIVATE_BODY_INGRESS",
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_SELF_NORMALIZATION_SCOPE_DRIFT",
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_START_END_DRIFT",
+    }
+)
+_RECEIPT_NEGATIVE_CODES = frozenset(
+    {
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_ENTRY_INVALID",
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_STEP_INVALID",
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_LINEAGE_INVALID",
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_HISTORICAL_REWRITE_FORBIDDEN",
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_HISTORICAL_AS_CURRENT_FORBIDDEN",
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_CURRENT_BINDING_INVALID",
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_ACTUAL_OWNER_BINDING_INVALID",
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_STRICT_CONTRACT_BINDING_INVALID",
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_POSITIVE_PROOF_INVALID",
+        (
+            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+            "INDEPENDENT_NEGATIVE_PROOF_INVALID"
+        ),
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_ARTIFACT_BINDING_INVALID",
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_PARENT_CHAIN_INVALID",
+        (
+            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+            "SOURCE_OR_VIEW_ROOT_MISMATCH"
+        ),
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_STOP_NOT_FALSE",
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_NEXT_AUTHORITY_INVALID",
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_VERDICT_INVALID",
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_BODY_FREE_REQUIRED",
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_HASH_MISMATCH",
+    }
+)
+_NEXT_AUTHORITY_BY_STEP = {
+    0: (
+        "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_"
+        "P1_STEP1_CURRENT_COMPLETION_PROOF_ONLY"
+    ),
+    1: (
+        "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_"
+        "P1_STEP2_CURRENT_COMPLETION_PROOF_ONLY"
+    ),
+    2: (
+        "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_"
+        "P1_STEP3_CURRENT_COMPLETION_PROOF_ONLY"
+    ),
+    3: (
+        "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_"
+        "P1_STEP4_SEMANTIC_INVENTORY_COMPLETION_VERIFICATION_ONLY"
+    ),
+    4: (
+        "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_"
+        "P1_STEP5_REFINED_CONTENT_SELECTION_COMPLETION_VERIFICATION_ONLY"
+    ),
+    5: (
+        "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_"
+        "P1_STEP6_DISCOURSE_GRAPH_COMPLETION_VERIFICATION_ONLY"
+    ),
+    6: (
+        "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_"
+        "P1_STEP7_TYPED_AST_RENDERER_COMPLETION_VERIFICATION_ONLY"
+    ),
+    7: (
+        "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_"
+        "P1_STEP8_BODY_ONLY_PARSER_MATCHER_COMPLETION_VERIFICATION_ONLY"
+    ),
+    8: (
+        "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_"
+        "P1_STEP9_STANDALONE_SUCCESSOR_COMPLETION_VERIFICATION_ONLY"
+    ),
+    9: (
+        "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_"
+        "P1_STEP10_SINGLE_GRAPH_DORMANT_INTEGRATION_COMPLETION_VERIFICATION_ONLY"
+    ),
+    10: (
+        "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_"
+        "P1_EXIT_TO_P2_SEPARATE_APPROVAL_ONLY"
+    ),
+}
+
+_CLOSURE_OWNER_RED = (
+    "RECOVERY_EPOCH001_CANONICAL_CURRENT_CLOSURE_OWNER_NOT_PROVED"
+)
+_CLOSURE_VERIFIER_RED = (
+    "RECOVERY_EPOCH001_CANONICAL_CURRENT_CLOSURE_INDEPENDENT_VERIFIER_NOT_PROVED"
+)
+_RECEIPT_OWNER_RED = (
+    "RECOVERY_EPOCH001_CURRENT_COMPLETION_RECEIPT_OWNER_NOT_PROVED"
+)
+_STEP5_PARENT_DESIGN_RED = (
+    "RECOVERY_EPOCH001_S5_CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_REQUIRED"
+)
+_STEP9_SUCCESSOR_RED = (
+    "RECOVERY_EPOCH001_STEP9_STANDALONE_SUCCESSOR_OWNER_NOT_PROVED"
+)
+_STEP10_SINGLE_GRAPH_RED = (
+    "RECOVERY_EPOCH001_STEP10_SAME_GRAPH_NO_LOCAL_CLONE_NOT_PROVED"
+)
+_STEP10_START_END_RED = (
+    "RECOVERY_EPOCH001_STEP10_CLOSURE_START_END_BINDING_NOT_PROVED"
+)
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _module_or_red(module_name: str, red_code: str) -> ModuleType:
+    try:
+        return importlib.import_module(module_name)
+    except ModuleNotFoundError as exc:
+        if exc.name == module_name:
+            pytest.fail(red_code, pytrace=False)
+        raise
+
+
+def _tool_module_or_red(path: str, red_code: str) -> ModuleType:
+    absolute = _REPO_ROOT / path
+    if not absolute.is_file():
+        pytest.fail(red_code, pytrace=False)
+    spec = importlib.util.spec_from_file_location(
+        "emlis_nls_v3_recovery_epoch001_closure_receipt_verify",
+        absolute,
+    )
+    if spec is None or spec.loader is None:
+        pytest.fail(red_code, pytrace=False)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _required_attributes(
+    module: ModuleType,
+    names: frozenset[str],
+    red_code: str,
+) -> None:
+    missing = sorted(name for name in names if not hasattr(module, name))
+    if missing:
+        pytest.fail(f"{red_code}:{','.join(missing)}", pytrace=False)
+
+
+def test_recovery_epoch001_candidate_identity_surface_and_history_are_exact() -> None:
+    assert _AUTHORITY.endswith("REMEDIATION_RED_FREEZE_ONLY")
+    assert _SOURCE_PIN == "bd62ef0eec2348e3b190ec2a39c3794886ccd10d"
+    assert _COCOLON_PIN == "3cb7867c3f8cbe39ee38ffe5c55179df81b5b0fa"
+    assert _RECOVERY_CANDIDATE == "nls_v3_rc_0034"
+    assert _RECOVERY_SCOPE.endswith("CANDIDATE_ONLY")
+    assert _RECOVERY_DISPOSITION.endswith("NOT_CYCLE_ACCEPTANCE")
+    assert _RC0032_DISPOSITION == "FAILED_PREREQUISITE_CANDIDATE_HISTORY_ONLY"
+    assert _RC0033_DISPOSITION == "PREEXISTING_SYNTHETIC_LATER_RC_ONLY"
+
+    production_occurrences: set[str] = set()
+    for root in (_AI_ROOT / "services", _AI_ROOT / "tools"):
+        for path in root.rglob("*.py"):
+            if _RECOVERY_CANDIDATE in path.read_text(encoding="utf-8"):
+                production_occurrences.add(
+                    path.relative_to(_REPO_ROOT).as_posix()
+                )
+    assert production_occurrences <= _FUTURE_CORE_SURFACE
+
+    synthetic_path = (
+        _AI_ROOT / "tests" / "test_emlis_nls_v3_s10_dormant_runtime_batch_evidence.py"
+    )
+    assert synthetic_path.read_text(encoding="utf-8").count(
+        "nls_v3_rc_0033"
+    ) == 4
+
+
+def test_recovery_epoch001_future_core_and_test_surface_are_exact() -> None:
+    assert len(_FUTURE_CORE_SURFACE) == 7
+    assert len(_FUTURE_TEST_SURFACE) == 3
+    assert len(_FUTURE_ADD_PATHS) == 4
+    assert _FUTURE_ADD_PATHS <= _FUTURE_CORE_SURFACE
+    assert not (_FUTURE_CORE_SURFACE & set(_PROTECTED_SHA256))
+    assert not (_FUTURE_TEST_SURFACE & set(_PROTECTED_SHA256))
+    assert _STEP5_PARENT_DESIGN_UNRESOLVED == {
+        "BODY_FREE_TYPED_CROSS_ROLE_EQUIVALENCE",
+        "TRUSTED_CROSS_SOURCE_EQUIVALENCE_WITNESS",
+    }
+    assert not any(
+        marker in path
+        for path in _FUTURE_CORE_SURFACE | _FUTURE_TEST_SURFACE
+        for marker in (
+            "api_emotion_submit.py",
+            "emlis_ai_reply_service.py",
+            "emlis_ai_step11_cycle_evidence_v3.py",
+            "fixtures/",
+            "schemas/",
+            "generated/",
+        )
+    )
+    for path in _FUTURE_CORE_SURFACE - _FUTURE_ADD_PATHS:
+        assert (_REPO_ROOT / path).is_file(), path
+    add_presence = {
+        path: (_REPO_ROOT / path).is_file() for path in _FUTURE_ADD_PATHS
+    }
+    assert set(add_presence.values()) in ({False}, {True})
+
+
+def test_recovery_epoch001_step_seed_roots_are_exact_and_resolvable() -> None:
+    assert set(_STEP_SEEDS) == set(range(11))
+    assert all(_STEP_SEEDS[step] for step in range(11))
+    assert _SUCCESSOR_PATH in _STEP_SEEDS[9]
+    assert {
+        "ai/services/ai_inference/emlis_ai_surface_grammar_catalog_v3.py",
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_surface_grammar_catalog_v3_step8.py"
+        ),
+    } <= (_STEP_SEEDS[7] | _STEP_SEEDS[8])
+    assert (
+        "ai/services/ai_inference/"
+        "emlis_ai_grounded_observation_semantic_restatement_v3.py"
+    ) in _STEP_SEEDS[4]
+    assert {_CLOSURE_PATH, _RECEIPT_PATH, _INDEPENDENT_VERIFIER_PATH} <= (
+        _CROSS_STEP_SEEDS
+    )
+
+    all_seeds = set().union(*_STEP_SEEDS.values(), _CROSS_STEP_SEEDS)
+    unresolved = {
+        path for path in all_seeds
+        if not (_REPO_ROOT / path).is_file()
+    }
+    assert unresolved in (set(), set(_FUTURE_ADD_PATHS))
+    assert _DETAILED_DESIGN_SHA256 == s01.DESIGN_SHA256
+
+
+def test_recovery_epoch001_step0_step1_dual_lineage_is_exact() -> None:
+    historical_owners, historical_owner_root = (
+        s01.historical_source_owner_snapshot()
+    )
+    current_owners, current_owner_root = s01.current_source_owner_snapshot()
+    compatibility_owners, compatibility_owner_root = s01.source_owner_snapshot()
+    assert len(historical_owners) == len(current_owners) == 5
+    assert historical_owner_root == (
+        "ed9d7463778909c97115096345d25d6ce260d21ed737a72d7c06ccd8e08687ac"
+    )
+    assert current_owner_root == (
+        "187b370490ff701a0f91041ec7ab90b769ebc73cb80f43ba9739854dc717325d"
+    )
+    assert current_owner_root != historical_owner_root
+    assert compatibility_owners == historical_owners
+    assert compatibility_owner_root == historical_owner_root
+    assert tuple(row["path"] for row in current_owners) == _CURRENT_OWNER_PATHS
+
+    historical_closure, historical_closure_root = (
+        s01.historical_dependency_closure()
+    )
+    current_closure, current_closure_root = s01.current_dependency_closure()
+    compatibility_closure, compatibility_closure_root = s01.dependency_closure()
+    assert len(historical_closure) == 17
+    assert len(current_closure) == 38
+    assert historical_closure_root == (
+        "3d42e942239666dc37d14c9c2969d548988c02e38ac497bb65b825d9b4c1f3bd"
+    )
+    assert current_closure_root == (
+        "948d1ff82c0c311c7c3c0c5189013c5c08af2a72415ad599505aec245e0a1c7c"
+    )
+    assert current_closure_root != historical_closure_root
+    assert compatibility_closure == historical_closure
+    assert compatibility_closure_root == historical_closure_root
+
+
+def test_recovery_epoch001_historical_and_public_artifacts_are_immutable() -> None:
+    assert len(_PROTECTED_SHA256) == 14
+    for path, expected_sha256 in _PROTECTED_SHA256.items():
+        assert _sha256(_REPO_ROOT / path) == expected_sha256, path
+
+
+def test_recovery_epoch001_canonical_current_closure_owner_is_proved_or_red() -> None:
+    module = _module_or_red(_CLOSURE_MODULE, _CLOSURE_OWNER_RED)
+    _required_attributes(
+        module,
+        frozenset(
+            {
+                "RECOVERY_EPOCH001_CANONICAL_CURRENT_CLOSURE_SCHEMA",
+                "RECOVERY_EPOCH001_CANDIDATE_VERSION_ID",
+                "RECOVERY_EPOCH001_SCOPE",
+                "RECOVERY_EPOCH001_DISPOSITION",
+                "RECOVERY_EPOCH001_CANONICAL_CURRENT_CLOSURE_NEGATIVE_CODES",
+                "fresh_recovery_epoch001_canonical_current_closure",
+                "validate_recovery_epoch001_canonical_current_closure_shape",
+            }
+        ),
+        _CLOSURE_OWNER_RED,
+    )
+    assert module.RECOVERY_EPOCH001_CANONICAL_CURRENT_CLOSURE_SCHEMA == (
+        _CLOSURE_SCHEMA
+    )
+    assert module.RECOVERY_EPOCH001_CANDIDATE_VERSION_ID == _RECOVERY_CANDIDATE
+    assert module.RECOVERY_EPOCH001_SCOPE == _RECOVERY_SCOPE
+    assert module.RECOVERY_EPOCH001_DISPOSITION == _RECOVERY_DISPOSITION
+    assert frozenset(
+        module.RECOVERY_EPOCH001_CANONICAL_CURRENT_CLOSURE_NEGATIVE_CODES
+    ) == _CLOSURE_NEGATIVE_CODES
+    closure = module.fresh_recovery_epoch001_canonical_current_closure()
+    assert module.validate_recovery_epoch001_canonical_current_closure_shape(
+        closure
+    ) == ()
+    assert set(closure["step_views"]) == {
+        f"step_{number}" for number in range(11)
+    }
+    assert set(closure["views"]) == {
+        "semantic_execution",
+        "dormant_runtime",
+        "completion_proof",
+        "all_relevant",
+    }
+    assert closure["candidate_version_id"] == _RECOVERY_CANDIDATE
+    assert closure["source_predecessor_commit"] == _SOURCE_PIN
+    assert (
+        type(closure["source_commit"]) is str
+        and len(closure["source_commit"]) == 40
+        and all(
+            character in "0123456789abcdef"
+            for character in closure["source_commit"]
+        )
+    )
+
+
+def test_recovery_epoch001_independent_verifier_rederives_graph_or_red() -> None:
+    verifier = _tool_module_or_red(
+        _INDEPENDENT_VERIFIER_PATH,
+        _CLOSURE_VERIFIER_RED,
+    )
+    _required_attributes(
+        verifier,
+        frozenset(
+            {
+                "fresh_recovery_epoch001_canonical_current_closure",
+                "verify_recovery_epoch001_canonical_current_closure",
+                "verify_recovery_epoch001_current_step_completion_receipt",
+            }
+        ),
+        _CLOSURE_VERIFIER_RED,
+    )
+    source = (_REPO_ROOT / _INDEPENDENT_VERIFIER_PATH).read_text(
+        encoding="utf-8"
+    )
+    imported = {
+        node.module
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.ImportFrom) and node.module
+    } | {
+        alias.name
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    }
+    assert _CLOSURE_MODULE not in imported
+    assert _RECEIPT_MODULE not in imported
+    independently_derived = (
+        verifier.fresh_recovery_epoch001_canonical_current_closure(
+            repo_root=_REPO_ROOT
+        )
+    )
+    assert verifier.verify_recovery_epoch001_canonical_current_closure(
+        independently_derived,
+        repo_root=_REPO_ROOT,
+    ) == ()
+
+
+def test_recovery_epoch001_current_step_receipt_owner_is_proved_or_red() -> None:
+    module = _module_or_red(_RECEIPT_MODULE, _RECEIPT_OWNER_RED)
+    _required_attributes(
+        module,
+        frozenset(
+            {
+                "RECOVERY_EPOCH001_CURRENT_STEP_COMPLETION_RECEIPT_SCHEMA",
+                "RECOVERY_EPOCH001_CURRENT_STEP_COMPLETION_RECEIPT_NEGATIVE_CODES",
+                "RECOVERY_EPOCH001_NEXT_AUTHORITY_BY_STEP",
+                "build_recovery_epoch001_current_step_completion_receipt",
+                "validate_recovery_epoch001_current_step_completion_receipt_shape",
+            }
+        ),
+        _RECEIPT_OWNER_RED,
+    )
+    assert module.RECOVERY_EPOCH001_CURRENT_STEP_COMPLETION_RECEIPT_SCHEMA == (
+        _RECEIPT_SCHEMA
+    )
+    assert frozenset(
+        module.RECOVERY_EPOCH001_CURRENT_STEP_COMPLETION_RECEIPT_NEGATIVE_CODES
+    ) == _RECEIPT_NEGATIVE_CODES
+    assert module.RECOVERY_EPOCH001_NEXT_AUTHORITY_BY_STEP == (
+        _NEXT_AUTHORITY_BY_STEP
+    )
+    assert set(module.RECOVERY_EPOCH001_NEXT_AUTHORITY_BY_STEP) == set(
+        range(11)
+    )
+
+
+def test_recovery_epoch001_s5_cross_role_restatement_owner_is_resolved_or_red() -> None:
+    from test_emlis_nls_v3_s5_content_selection_stage_context import (
+        _known_input,
+        _normal_result,
+        _refined_result,
+    )
+    from emlis_ai_content_selection_v3 import build_content_selection_plan
+
+    partition_source = (
+        _AI_ROOT
+        / "services"
+        / "ai_inference"
+        / "emlis_ai_refined_source_partition_v3.py"
+    ).read_text(encoding="utf-8")
+    inventory_source = (
+        _AI_ROOT
+        / "services"
+        / "ai_inference"
+        / "emlis_ai_semantic_obligation_inventory_v3.py"
+    ).read_text(encoding="utf-8")
+    assert '"cross_source_bindings": []' in partition_source
+    assert "REFINED_CROSS_SOURCE_BINDING_UNAUTHORIZED" in partition_source
+    assert "refined_original_semantic_restatement_witness_sha256" in (
+        inventory_source
+    )
+    assert "refined_supplemental_semantic_restatement_witness_sha256" in (
+        inventory_source
+    )
+    assert "cross_role_semantic_restatement_witness" not in inventory_source
+
+    source = _known_input()
+    original = {
+        "thought_text": source["thought_text"],
+        "action_text": "",
+        "emotions": source["emotions"],
+        "categories": source["categories"],
+    }
+    normal_depth = build_content_selection_plan(
+        _normal_result(original)[2]
+    )["depth"]
+    *_parents, refined_plan = _refined_result(original)
+    assert normal_depth == "focused"
+    if refined_plan["depth"] != normal_depth:
+        pytest.fail(_STEP5_PARENT_DESIGN_RED, pytrace=False)
+
+
+def test_recovery_epoch001_step9_standalone_successor_is_proved_or_red() -> None:
+    module = _module_or_red(_SUCCESSOR_MODULE, _STEP9_SUCCESSOR_RED)
+    _required_attributes(
+        module,
+        frozenset(
+            {
+                "RECOVERY_EPOCH001_STEP9_SUCCESSOR_GRAPH",
+                "RECOVERY_EPOCH001_STEP9_SUCCESSOR_GRAPH_ID",
+                "build_semantic_candidate_set",
+                "evaluate_semantic_hard_gate",
+                "validate_semantic_hard_gate_result",
+                "select_semantic_candidate_lexicographically",
+                "validate_semantic_selection_result",
+                "apply_bounded_recovery",
+                "validate_bounded_recovery_result",
+            }
+        ),
+        _STEP9_SUCCESSOR_RED,
+    )
+    graph = module.RECOVERY_EPOCH001_STEP9_SUCCESSOR_GRAPH
+    assert graph["candidate_version_id"] == _RECOVERY_CANDIDATE
+    assert graph["canonical_current_closure_schema"] == _CLOSURE_SCHEMA
+
+
+def test_recovery_epoch001_step9_step10_use_one_graph_without_clone_or_red() -> None:
+    adapter_path = (
+        _AI_ROOT
+        / "services"
+        / "ai_inference"
+        / "emlis_ai_dormant_runtime_adapter_v3.py"
+    )
+    step9_test_path = (
+        _AI_ROOT / "tests" / "test_emlis_nls_v3_s9_hard_gate_selector_recovery.py"
+    )
+    adapter_source = adapter_path.read_text(encoding="utf-8")
+    step9_test_source = step9_test_path.read_text(encoding="utf-8")
+    adapter_tree = ast.parse(adapter_source)
+    forbidden_names = {
+        "_clone_successor_function",
+        "_SUCCESSOR_BUILD_SEMANTIC_CANDIDATE_SET",
+        "_SUCCESSOR_EVALUATE_SEMANTIC_HARD_GATE",
+        "_SUCCESSOR_SELECT_SEMANTIC_CANDIDATE_LEXICOGRAPHICALLY",
+        "_SUCCESSOR_APPLY_BOUNDED_RECOVERY",
+    }
+    names = {
+        node.id for node in ast.walk(adapter_tree)
+        if isinstance(node, ast.Name)
+    } | {
+        node.name for node in ast.walk(adapter_tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    if "FunctionType" in names or names & forbidden_names:
+        pytest.fail(_STEP10_SINGLE_GRAPH_RED, pytrace=False)
+    if _SUCCESSOR_MODULE not in adapter_source:
+        pytest.fail(_STEP10_SINGLE_GRAPH_RED, pytrace=False)
+    if _SUCCESSOR_MODULE not in step9_test_source:
+        pytest.fail(_STEP10_SINGLE_GRAPH_RED, pytrace=False)
+
+
+def test_recovery_epoch001_step10_binds_fresh_start_and_end_closure_or_red() -> None:
+    evidence_source = (
+        _AI_ROOT / "services" / "ai_inference" / "emlis_ai_step10_evidence_v3.py"
+    ).read_text(encoding="utf-8")
+    runner_source = (
+        _AI_ROOT / "tools" / "emlis_nls_v3_batch_run.py"
+    ).read_text(encoding="utf-8")
+    required_markers = {
+        _CLOSURE_MODULE,
+        "source_closure_start_sha256",
+        "source_closure_end_sha256",
+        "canonical_current_closure_sha256",
+    }
+    if not all(
+        marker in evidence_source and marker in runner_source
+        for marker in required_markers
+    ):
+        pytest.fail(_STEP10_START_END_RED, pytrace=False)
