@@ -29,6 +29,10 @@ from emlis_ai_observation_stage_context_v3 import (
     ObservationStageContextBuildError,
     build_observation_stage_context,
 )
+from emlis_ai_refined_source_partition_v3 import (
+    build_refined_source_partition,
+    validate_refined_source_partition,
+)
 from emlis_ai_recovery_epoch001_source_baseline_manifest_v3 import (
     RECOVERY_EPOCH001_SOURCE_BASELINE_MANIFEST,
     validate_recovery_epoch001_source_baseline_manifest,
@@ -38,6 +42,7 @@ from emlis_ai_semantic_obligation_inventory_v3 import (
     SemanticObligationInventoryError,
     build_grounded_source_snapshot,
     build_semantic_obligation_inventory,
+    validate_semantic_obligation_inventory,
 )
 
 
@@ -132,6 +137,89 @@ def _pre_result(current_input: dict[str, object]):
         trusted_future_authority=authority,
     )
     return stage, snapshot, build_semantic_obligation_inventory(snapshot)
+
+
+def _refined_result(current_input: dict[str, object] | None = None):
+    if current_input is None:
+        current_input = _known_input()
+    supplemental = {
+        "thought_text": current_input["thought_text"],
+        "action_text": "",
+        "emotions": [],
+        "categories": [],
+    }
+    original_spans = build_evidence_ledger(current_input)
+    original_resolver = build_evidence_span_resolver(
+        original_spans,
+        current_input=current_input,
+    )
+    original_plan = build_grounded_observation_plan(
+        current_input,
+        evidence_spans=original_spans,
+    )
+    supplemental_spans = build_evidence_ledger(supplemental)
+    supplemental_resolver = build_evidence_span_resolver(
+        supplemental_spans,
+        current_input=supplemental,
+    )
+    supplemental_plan = build_grounded_observation_plan(
+        supplemental,
+        evidence_spans=supplemental_spans,
+    )
+    authority = TrustedFutureStageAuthority(
+        authority_owner="question_system_core",
+        question_need_decision_sha256="c" * 64,
+        permitted_stages=("refined_observation",),
+        original_input_bundle_sha256=artifact_sha256(current_input),
+        supplemental_answer_bundle_sha256=artifact_sha256(supplemental),
+    )
+    stage = build_observation_stage_context(
+        stage="refined_observation",
+        original_input_bundle=current_input,
+        trusted_future_authority=authority,
+        supplemental_answer_bundle=supplemental,
+    )
+    partition = build_refined_source_partition(
+        original_plan,
+        original_resolver,
+        supplemental_plan,
+        supplemental_resolver,
+        stage,
+        current_input,
+        supplemental,
+        authority,
+    )
+    partition_issues = validate_refined_source_partition(
+        partition,
+        original_plan,
+        original_resolver,
+        supplemental_plan,
+        supplemental_resolver,
+        stage,
+        current_input,
+        supplemental,
+        authority,
+    )
+    snapshot = build_grounded_source_snapshot(
+        original_plan,
+        original_resolver,
+        observation_stage_context=stage,
+        original_input_bundle=current_input,
+        trusted_future_authority=authority,
+        supplemental_answer_bundle=supplemental,
+        refined_source_partition=partition,
+    )
+    result = build_semantic_obligation_inventory(snapshot)
+    plan = build_content_selection_plan(result)
+    return (
+        current_input,
+        supplemental,
+        partition,
+        partition_issues,
+        snapshot,
+        result,
+        plan,
+    )
 
 
 def _codes(issues) -> set[str]:
@@ -229,6 +317,110 @@ def test_s5_refined_schema_is_bound_but_stops_without_partition_owner() -> None:
         assert exc.code == "REFINED_SOURCE_PARTITION_OWNER_UNAVAILABLE"
     else:
         raise AssertionError("refined sources were relabelled without an owner")
+
+
+def test_s5_refined_partition_reaches_content_selection_body_free() -> None:
+    (
+        current_input,
+        supplemental,
+        partition,
+        partition_issues,
+        snapshot,
+        result,
+        plan,
+    ) = _refined_result()
+    assert partition_issues == ()
+    assert validate_semantic_obligation_inventory(
+        result.ledger,
+        source_snapshot=snapshot,
+    ) == ()
+    assert validate_content_selection_policy(
+        plan,
+        inventory_result=result,
+    ) == ()
+    assert snapshot.semantic_source_roles == (
+        "original_input",
+        "supplemental_answer",
+    )
+    assert partition["semantic_source_roles"] == [
+        "original_input",
+        "supplemental_answer",
+    ]
+    assert partition["question_need_decision_is_semantic_source"] is False
+    assert partition["control_plane_owner_role"] == "original_input"
+    assert partition["original_source_commitment_sha256"] != partition[
+        "supplemental_source_commitment_sha256"
+    ]
+
+    by_id = {
+        row["obligation_id"]: row for row in result.ledger["obligations"]
+    }
+    selected_ids = {
+        row["obligation_id"]
+        for row in plan["decisions"]
+        if row["status"] == "selected"
+    }
+    required_ids = set(result.ledger["required_obligation_ids"])
+    assert required_ids <= selected_ids
+    assert set(plan["required_coverage_obligation_ids"]) == required_ids
+    active_nonstance_roles = {
+        ref["source_role"]
+        for obligation_id in selected_ids
+        for row in (by_id[obligation_id],)
+        if row["kind"] != "bound_emlis_reception"
+        for ref in row["source_refs"]
+    }
+    assert active_nonstance_roles == {
+        "original_input",
+        "supplemental_answer",
+    }
+    assert any(
+        row["kind"] == "bound_emlis_reception"
+        and row["obligation_id"] in selected_ids
+        and {
+            ref["source_role"] for ref in row["source_refs"]
+        } == {"original_input"}
+        for row in result.ledger["obligations"]
+    )
+    assert plan["source_obligation_ledger_sha256"] == artifact_sha256(
+        result.ledger
+    )
+    assert build_content_selection_plan(deepcopy(result)) == plan
+    assert partition["body_free"] is True
+    assert plan["body_free"] is True
+    for source_body in (
+        current_input["thought_text"],
+        current_input["action_text"],
+        supplemental["thought_text"],
+    ):
+        if source_body:
+            assert source_body not in repr(partition)
+            assert source_body not in str(plan)
+
+
+def test_s5_refined_active_role_drop_is_independently_rejected() -> None:
+    *_parents, result, plan = _refined_result()
+    by_id = {
+        row["obligation_id"]: row for row in result.ledger["obligations"]
+    }
+    mutation = deepcopy(plan)
+    for decision in mutation["decisions"]:
+        source_roles = {
+            ref["source_role"]
+            for ref in by_id[decision["obligation_id"]]["source_refs"]
+        }
+        if "supplemental_answer" in source_roles:
+            decision["status"] = "deferred_by_budget"
+            decision["reason_code"] = "OPTIONAL_DEFERRED_BY_BUDGET"
+    _resign_content(mutation)
+    codes = _codes(
+        validate_content_selection_policy(
+            mutation,
+            inventory_result=result,
+        )
+    )
+    assert "REFINED_SOURCE_ROLES_MUST_BOTH_REMAIN_ACTIVE" in codes
+    assert "REQUIRED_COVERAGE_NOT_100_PERCENT" in codes
 
 
 def test_s5_normal_plan_has_exact_required_coverage_and_no_unproven_status() -> None:
