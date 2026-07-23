@@ -1222,8 +1222,9 @@ def test_cross_role_semantic_restatement_contract_false_collapse_and_tamper_red(
         nonidentical_supplemental_plan,
         nonidentical_supplemental_resolver,
     )
-    assert len(nonidentical_public_witness.component_bindings) == (
-        len(nonidentical_original_projected)
+    assert (
+        len(nonidentical_public_witness.component_bindings)
+        == len(nonidentical_original_projected)
         == len(nonidentical_supplemental_projected)
     )
     assert {
