@@ -24,6 +24,7 @@ from emlis_ai_evidence_ledger_service import (
 )
 from emlis_ai_grounded_observation_plan import build_grounded_observation_plan
 from emlis_ai_nls_v3_artifact_contract import (
+    STANCE_KIND,
     TrustedFutureStageAuthority,
     artifact_sha256,
     derive_content_id,
@@ -83,6 +84,11 @@ _CROSS_ROLE_EFFECT_SCOPE = "CONTENT_DEPTH_ONLY"
 _CROSS_ROLE_DEPTH_RED = (
     "RECOVERY_EPOCH001_S5_CROSS_ROLE_DEPTH_NONINFLATION_NOT_PROVED"
 )
+_CROSS_ROLE_UNMATCHED_SELECTION_RED = (
+    "RECOVERY_EPOCH001_S5_CROSS_ROLE_UNMATCHED_OPTIONAL_SELECTION_POLICY_"
+    "NOT_PROVED"
+)
+_OPTIONAL_DEFERRED_REASON = "OPTIONAL_DEFERRED_BY_BUDGET"
 _CROSS_ROLE_FULL_REPLAY_POSITIVE = (
     "INDEPENDENT_ROLE_LOCAL_FULL_TYPED_GRAPH_REPLAY"
 )
@@ -569,6 +575,129 @@ def _body_free_input_matching(predicate):
         if predicate(snapshot, result, plan):
             return deepcopy(row["input"])
     raise AssertionError("body_free_semantic_input_unavailable")
+
+
+def _assert_cross_role_unmatched_optional_selection_policy(
+    snapshot,
+    inventory_result,
+    plan: dict[str, object],
+) -> set[str]:
+    equivalence = snapshot.cross_role_semantic_depth_equivalence
+    if equivalence is None:
+        pytest.fail(_CROSS_ROLE_UNMATCHED_SELECTION_RED, pytrace=False)
+
+    bound_ids_by_role = {
+        "original_input": {
+            row.original_source_id
+            for row in equivalence.component_bindings
+        },
+        "supplemental_answer": {
+            row.supplemental_source_id
+            for row in equivalence.component_bindings
+        },
+    }
+    all_ids_by_role = {
+        role: {
+            row.source_id
+            for row in (
+                *snapshot.nuclei,
+                *snapshot.relations,
+                *snapshot.unknowns,
+            )
+            if row.source_role == role
+        }
+        for role in ("original_input", "supplemental_answer")
+    }
+    unmatched_source_ids_by_role = {
+        role: all_ids_by_role[role] - bound_ids_by_role[role]
+        for role in ("original_input", "supplemental_answer")
+    }
+    unmatched_obligation_ids_by_role = {
+        role: {
+            obligation["obligation_id"]
+            for obligation in inventory_result.ledger["obligations"]
+            if any(
+                ref["source_role"] == role
+                and bool(
+                    {
+                        *ref["nucleus_ids"],
+                        *ref["relation_ids"],
+                        *ref["unknown_boundary_ids"],
+                    }
+                    & unmatched_source_ids_by_role[role]
+                )
+                for ref in obligation["source_refs"]
+            )
+        }
+        for role in ("original_input", "supplemental_answer")
+    }
+    if not all(
+        unmatched_source_ids_by_role[role]
+        and unmatched_obligation_ids_by_role[role]
+        for role in ("original_input", "supplemental_answer")
+    ):
+        pytest.fail(_CROSS_ROLE_UNMATCHED_SELECTION_RED, pytrace=False)
+
+    unmatched_obligation_ids = set().union(
+        *unmatched_obligation_ids_by_role.values()
+    )
+    ledger_rows = inventory_result.ledger["obligations"]
+    ledger_ids = {
+        row["obligation_id"] for row in ledger_rows
+    }
+    decisions = plan["decisions"]
+    decision_by_id = {
+        row["obligation_id"]: row for row in decisions
+    }
+    if (
+        not unmatched_obligation_ids <= ledger_ids
+        or not unmatched_obligation_ids <= set(decision_by_id)
+    ):
+        pytest.fail(_CROSS_ROLE_UNMATCHED_SELECTION_RED, pytrace=False)
+
+    required_ids = set(
+        inventory_result.ledger["required_obligation_ids"]
+    )
+    required_stance_target_ids = {
+        target_id
+        for row in ledger_rows
+        if row["required"] is True and row["kind"] == STANCE_KIND
+        for target_id in row["target_obligation_ids"]
+    }
+    independently_selected_unmatched_ids = (
+        unmatched_obligation_ids
+        & (required_ids | required_stance_target_ids)
+    )
+    optional_unmatched_ids = (
+        unmatched_obligation_ids
+        - independently_selected_unmatched_ids
+    )
+    if not optional_unmatched_ids:
+        pytest.fail(_CROSS_ROLE_UNMATCHED_SELECTION_RED, pytrace=False)
+
+    actual_selected_unmatched_ids = {
+        obligation_id
+        for obligation_id in unmatched_obligation_ids
+        if decision_by_id[obligation_id]["status"] == "selected"
+    }
+    optional_policy_is_preserved = all(
+        decision_by_id[obligation_id]["status"] == "deferred_by_budget"
+        and decision_by_id[obligation_id]["reason_code"]
+        == _OPTIONAL_DEFERRED_REASON
+        and decision_by_id[obligation_id][
+            "integrated_into_obligation_id"
+        ]
+        is None
+        for obligation_id in optional_unmatched_ids
+    )
+    if (
+        actual_selected_unmatched_ids
+        != independently_selected_unmatched_ids
+        or not optional_policy_is_preserved
+    ):
+        pytest.fail(_CROSS_ROLE_UNMATCHED_SELECTION_RED, pytrace=False)
+
+    return unmatched_obligation_ids
 
 
 def _raises_build_code(call, expected: str) -> None:
@@ -1675,7 +1804,11 @@ def test_s5_cross_role_depth_noninflation_floor_and_effect_scope_red() -> None:
     unmatched_required_ids = set(
         unmatched_result.ledger["required_obligation_ids"]
     )
-    assert unmatched_obligation_ids <= unmatched_selected_ids
+    assert _assert_cross_role_unmatched_optional_selection_policy(
+        unmatched_snapshot,
+        unmatched_result,
+        unmatched_plan,
+    ) == unmatched_obligation_ids
     assert all(
         (
             unmatched_obligation_ids_by_role[role]
