@@ -1009,7 +1009,10 @@ def test_s4_cross_role_refined_snapshot_lineage_alias_and_tamper_red() -> None:
     }
 
     from test_emlis_nls_v3_s5_content_selection_stage_context import (
+        _assert_exact_cross_role_graph_bijection,
+        _independent_full_replay_supplemental,
         _known_input as _s5_known_input,
+        _legacy_reduced_supplemental,
         _normal_result,
         _pre_result,
         _refined_result,
@@ -1026,6 +1029,10 @@ def test_s4_cross_role_refined_snapshot_lineage_alias_and_tamper_red() -> None:
     assert pre_snapshot.cross_role_semantic_depth_equivalence is None
     assert pre_snapshot.cross_role_semantic_restatement_witness_sha256 is None
 
+    full_replay_original = _s5_known_input()
+    full_replay_supplemental = (
+        _independent_full_replay_supplemental(full_replay_original)
+    )
     (
         _current_input,
         _supplemental,
@@ -1034,7 +1041,10 @@ def test_s4_cross_role_refined_snapshot_lineage_alias_and_tamper_red() -> None:
         snapshot,
         result,
         _content_plan,
-    ) = _refined_result()
+    ) = _refined_result(
+        full_replay_original,
+        full_replay_supplemental,
+    )
     assert partition_issues == ()
     assert partition["cross_source_bindings"] == []
     assert partition["question_need_decision_is_semantic_source"] is False
@@ -1056,7 +1066,7 @@ def test_s4_cross_role_refined_snapshot_lineage_alias_and_tamper_red() -> None:
     )
     assert equivalence.effect_scope == _CROSS_ROLE_EFFECT_SCOPE
     assert equivalence.body_free is True
-    assert len(equivalence.component_bindings) >= 2
+    _assert_exact_cross_role_graph_bijection(snapshot)
     assert equivalence.equivalence_sha256 == artifact_sha256(
         {
             "schema_version": equivalence.schema_version,
@@ -1167,6 +1177,47 @@ def test_s4_cross_role_refined_snapshot_lineage_alias_and_tamper_red() -> None:
             ref["source_role"] for ref in row["source_refs"]
         } == {"original_input"}
         for row in result.ledger["obligations"]
+        if row["kind"] == "bound_emlis_reception"
+    )
+
+    legacy_original = _s5_known_input()
+    legacy_supplemental = _legacy_reduced_supplemental(legacy_original)
+    (
+        _legacy_current,
+        _legacy_answer,
+        legacy_partition,
+        legacy_partition_issues,
+        legacy_snapshot,
+        legacy_result,
+        _legacy_content_plan,
+    ) = _refined_result(legacy_original, legacy_supplemental)
+    assert legacy_partition_issues == ()
+    assert legacy_partition["cross_source_bindings"] == []
+    assert legacy_partition["control_plane_owner_role"] == "original_input"
+    assert (
+        legacy_partition["question_need_decision_is_semantic_source"]
+        is False
+    )
+    assert legacy_snapshot.cross_role_semantic_depth_equivalence is None
+    assert legacy_snapshot.semantic_source_roles == (
+        "original_input",
+        "supplemental_answer",
+    )
+    assert validate_semantic_obligation_inventory(
+        legacy_result.ledger,
+        source_snapshot=legacy_snapshot,
+    ) == ()
+    assert {
+        ref["source_role"]
+        for row in legacy_result.ledger["obligations"]
+        if row["kind"] != "bound_emlis_reception"
+        for ref in row["source_refs"]
+    } == {"original_input", "supplemental_answer"}
+    assert all(
+        {
+            ref["source_role"] for ref in row["source_refs"]
+        } == {"original_input"}
+        for row in legacy_result.ledger["obligations"]
         if row["kind"] == "bound_emlis_reception"
     )
 

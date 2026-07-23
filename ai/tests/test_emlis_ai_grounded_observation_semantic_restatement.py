@@ -56,6 +56,15 @@ _CROSS_ROLE_DEPTH_SCHEMA = (
 _CROSS_ROLE_PROOF_CODE = "TYPED_SEMANTIC_GRAPH_EQUIVALENCE"
 _CROSS_ROLE_PROOF_BASIS = "COMPLETE_BODY_FREE_TYPED_COMPONENT_BIJECTION"
 _CROSS_ROLE_EFFECT_SCOPE = "CONTENT_DEPTH_ONLY"
+_CROSS_ROLE_CLOSURE_RULE = (
+    "INCIDENT_RELATION_AND_UNKNOWN_AFFECTED_GRAPH_CLOSURE"
+)
+_CROSS_ROLE_NONIDENTICAL_POSITIVE = (
+    "EXPLICIT_REFERENT_PREDICATE_CLOSED_SINGLE_COMPONENT_RESTATEMENT"
+)
+_CROSS_ROLE_DEFAULT_GRAPH_NEGATIVE = (
+    "EMPTY_WITNESS_FALSE_COLLAPSE_NEGATIVE"
+)
 _CROSS_ROLE_OWNER_RED = (
     "RECOVERY_EPOCH001_S5_CROSS_ROLE_SEMANTIC_RESTATEMENT_OWNER_NOT_PROVED"
 )
@@ -678,6 +687,71 @@ def _typed_graph(
     return (event, context, relation, unknown)
 
 
+def _typed_component_closure_ids(
+    components,
+    *,
+    seed_ids: set[str],
+) -> set[str]:
+    """Close seeds over incident relations and unknown affected graphs."""
+
+    by_identity: dict[str, set[str]] = {}
+    for row in components:
+        by_identity.setdefault(
+            row.semantic_identity_sha256,
+            set(),
+        ).add(row.component_id)
+    closed = set(seed_ids)
+    changed = True
+    while changed:
+        changed = False
+        closed_identities = {
+            row.semantic_identity_sha256
+            for row in components
+            if row.component_id in closed
+        }
+        for row in components:
+            if row.component_kind == "relation":
+                endpoint_identities = {
+                    row.relation_from_identity_sha256,
+                    row.relation_to_identity_sha256,
+                } - {None}
+                if (
+                    row.component_id in closed
+                    or endpoint_identities & closed_identities
+                ):
+                    expanded = {
+                        row.component_id,
+                        *(
+                            component_id
+                            for identity in endpoint_identities
+                            if identity in by_identity
+                            for component_id in by_identity[identity]
+                        ),
+                    }
+                    if not expanded <= closed:
+                        closed.update(expanded)
+                        changed = True
+            elif row.component_kind == "unknown_boundary":
+                affected = set(row.affected_identity_sha256s)
+                if (
+                    row.component_id in closed
+                    or affected & closed_identities
+                ):
+                    expanded = {
+                        row.component_id,
+                        *(
+                            component_id
+                            for identity in affected
+                            if identity in by_identity
+                            for component_id in by_identity[identity]
+                        ),
+                    }
+                    if not expanded <= closed:
+                        closed.update(expanded)
+                        changed = True
+    return closed
+
+
 def test_cross_role_semantic_restatement_contract_false_collapse_and_tamper_red() -> None:
     (
         typed_component_type,
@@ -754,6 +828,11 @@ def test_cross_role_semantic_restatement_contract_false_collapse_and_tamper_red(
     } & set(semantic_module.__all__)
     assert len(_CROSS_ROLE_FALSE_COLLAPSE_FAMILIES) == 21
     assert len(set(_CROSS_ROLE_FALSE_COLLAPSE_FAMILIES)) == 21
+    assert _CROSS_ROLE_CLOSURE_RULE.endswith("AFFECTED_GRAPH_CLOSURE")
+    assert _CROSS_ROLE_NONIDENTICAL_POSITIVE.endswith(
+        "CLOSED_SINGLE_COMPONENT_RESTATEMENT"
+    )
+    assert _CROSS_ROLE_DEFAULT_GRAPH_NEGATIVE.startswith("EMPTY_WITNESS_")
 
     forbidden_shareable_fields = {
         "raw_text",
@@ -859,6 +938,58 @@ def test_cross_role_semantic_restatement_contract_false_collapse_and_tamper_red(
         **lineage,
     ) == ()
 
+    explicit_semantic_dimensions = {
+        "referent_identity_sha256": _semantic_commitment(
+            "referent_identity",
+            "explicit_shared_referent",
+        ),
+        "topic_identity_sha256": _semantic_commitment(
+            "topic_identity",
+            "explicit_shared_topic",
+        ),
+        "predicate_identity_sha256": _semantic_commitment(
+            "predicate_identity",
+            "explicit_shared_completion_predicate",
+        ),
+    }
+    original_closed_component = _typed_component(
+        typed_component_type,
+        source_role="original_input",
+        component_id="original:closed-single-component",
+        semantic_identity="explicit_closed_single_component",
+        **explicit_semantic_dimensions,
+    )
+    supplemental_closed_component = _typed_component(
+        typed_component_type,
+        source_role="supplemental_answer",
+        component_id="supplemental:closed-single-component",
+        semantic_identity="explicit_closed_single_component",
+        **explicit_semantic_dimensions,
+    )
+    assert original_closed_component is not supplemental_closed_component
+    closed_single_component_witness = build_from_typed_components(
+        original_components=(original_closed_component,),
+        supplemental_components=(supplemental_closed_component,),
+        **lineage,
+    )
+    assert len(closed_single_component_witness.component_bindings) == 1
+    closed_single_binding = (
+        closed_single_component_witness.component_bindings[0]
+    )
+    assert closed_single_binding.component_kind == "nucleus"
+    assert closed_single_binding.original_component_id == (
+        original_closed_component.component_id
+    )
+    assert closed_single_binding.supplemental_component_id == (
+        supplemental_closed_component.component_id
+    )
+    assert validate_from_typed_components(
+        closed_single_component_witness,
+        original_components=(original_closed_component,),
+        supplemental_components=(supplemental_closed_component,),
+        **lineage,
+    ) == ()
+
     encoded = json.dumps(
         witness.as_body_free_meta(),
         ensure_ascii=False,
@@ -953,159 +1084,401 @@ def test_cross_role_semantic_restatement_contract_false_collapse_and_tamper_red(
     assert project_spy.call_count == 2
     assert projected_roles == ["original_input", "supplemental_answer"]
 
-    restatement_sources = []
-    for candidate in parent_rows:
-        _candidate_plan, _candidate_resolver, candidate_witness = _artifacts(
-            candidate["input"]
+    nonidentical_original_input = {
+        "thought_text": "今日、資料を完了した。",
+        "action_text": "",
+        "emotions": [],
+        "categories": [],
+    }
+    nonidentical_supplemental_input = {
+        "thought_text": "今日、資料を終えた。",
+        "action_text": "",
+        "emotions": [],
+        "categories": [],
+    }
+    anchor_absent_supplemental_input = {
+        "thought_text": "今日、終えた。",
+        "action_text": "",
+        "emotions": [],
+        "categories": [],
+    }
+    source_bodies = (
+        nonidentical_original_input["thought_text"],
+        nonidentical_supplemental_input["thought_text"],
+    )
+    assert source_bodies[0] != source_bodies[1]
+    all_test_local_bodies = (
+        *source_bodies,
+        anchor_absent_supplemental_input["thought_text"],
+    )
+
+    (
+        nonidentical_original_plan,
+        nonidentical_original_resolver,
+        nonidentical_original_local,
+    ) = _artifacts(nonidentical_original_input)
+    (
+        nonidentical_supplemental_plan,
+        nonidentical_supplemental_resolver,
+        nonidentical_supplemental_local,
+    ) = _artifacts(nonidentical_supplemental_input)
+    for plan, resolver, source_local in (
+        (
+            nonidentical_original_plan,
+            nonidentical_original_resolver,
+            nonidentical_original_local,
+        ),
+        (
+            nonidentical_supplemental_plan,
+            nonidentical_supplemental_resolver,
+            nonidentical_supplemental_local,
+        ),
+    ):
+        assert validate_grounded_semantic_restatement_witness(
+            source_local,
+            plan=plan,
+            resolver=resolver,
+        ) == ()
+        assert len(plan.nuclei) == 1
+        assert plan.relations == ()
+        assert source_local.relations == ()
+        assert source_local.semantic_units == ()
+        assert source_local.semantic_links == ()
+        assert source_local.explicit_unknowns == ()
+
+    nonidentical_original_projected = project_typed_components(
+        nonidentical_original_plan,
+        nonidentical_original_resolver,
+        nonidentical_original_local,
+        "original_input",
+    )
+    nonidentical_supplemental_projected = project_typed_components(
+        nonidentical_supplemental_plan,
+        nonidentical_supplemental_resolver,
+        nonidentical_supplemental_local,
+        "supplemental_answer",
+    )
+    original_ids = {
+        row.component_id for row in nonidentical_original_projected
+    }
+    supplemental_ids = {
+        row.component_id for row in nonidentical_supplemental_projected
+    }
+    original_nucleus_ids = {
+        row.component_id
+        for row in nonidentical_original_projected
+        if row.component_kind == "nucleus"
+    }
+    supplemental_nucleus_ids = {
+        row.component_id
+        for row in nonidentical_supplemental_projected
+        if row.component_kind == "nucleus"
+    }
+    assert len(original_nucleus_ids) == 1
+    assert len(supplemental_nucleus_ids) == 1
+    assert not {
+        row.component_id
+        for row in nonidentical_original_projected
+        if row.component_kind == "relation"
+    }
+    assert not {
+        row.component_id
+        for row in nonidentical_supplemental_projected
+        if row.component_kind == "relation"
+    }
+    assert sum(
+        row.component_kind == "unknown_boundary"
+        for row in nonidentical_original_projected
+    ) == len(nonidentical_original_plan.unknown_boundaries)
+    assert sum(
+        row.component_kind == "unknown_boundary"
+        for row in nonidentical_supplemental_projected
+    ) == len(nonidentical_supplemental_plan.unknown_boundaries)
+    assert _typed_component_closure_ids(
+        nonidentical_original_projected,
+        seed_ids=original_nucleus_ids,
+    ) == original_ids
+    assert _typed_component_closure_ids(
+        nonidentical_supplemental_projected,
+        seed_ids=supplemental_nucleus_ids,
+    ) == supplemental_ids
+    assert {
+        kind: sum(
+            row.component_kind == kind
+            for row in nonidentical_original_projected
         )
-        candidate_input = candidate["input"]
-        if (
-            candidate_input.get("thought_text")
-            and candidate_input.get("action_text")
-            and candidate_input["thought_text"] != candidate_input["action_text"]
-            and any(
-                row.endpoint_semantic_relation == "semantic_restatement"
-                for row in candidate_witness.relations
-            )
-        ):
-            restatement_sources.append(candidate_input)
-            if len(restatement_sources) == 2:
-                break
-    assert len(restatement_sources) == 2
-    restatement_source = restatement_sources[0]
-    original_restatement_input = {
-        "thought_text": restatement_source["thought_text"],
-        "action_text": "",
-        "emotions": [],
-        "categories": [],
+        for kind in ("nucleus", "relation", "unknown_boundary")
+    } == {
+        kind: sum(
+            row.component_kind == kind
+            for row in nonidentical_supplemental_projected
+        )
+        for kind in ("nucleus", "relation", "unknown_boundary")
     }
-    supplemental_restatement_input = {
-        "thought_text": restatement_source["action_text"],
-        "action_text": "",
-        "emotions": [],
-        "categories": [],
+
+    nonidentical_public_witness = build_cross_role(
+        nonidentical_original_plan,
+        nonidentical_original_resolver,
+        nonidentical_supplemental_plan,
+        nonidentical_supplemental_resolver,
+    )
+    assert len(nonidentical_public_witness.component_bindings) == (
+        len(nonidentical_original_projected)
+        == len(nonidentical_supplemental_projected)
+    )
+    assert {
+        row.original_component_id
+        for row in nonidentical_public_witness.component_bindings
+    } == original_ids
+    assert {
+        row.supplemental_component_id
+        for row in nonidentical_public_witness.component_bindings
+    } == supplemental_ids
+
+    original_by_id = {
+        row.component_id: row for row in nonidentical_original_projected
     }
-    (
-        original_restatement_plan,
-        original_restatement_resolver,
-        _original_restatement_local,
-    ) = _artifacts(original_restatement_input)
-    (
-        supplemental_restatement_plan,
-        supplemental_restatement_resolver,
-        _supplemental_restatement_local,
-    ) = _artifacts(supplemental_restatement_input)
-    actual_public_witness = build_cross_role(
-        original_restatement_plan,
-        original_restatement_resolver,
-        supplemental_restatement_plan,
-        supplemental_restatement_resolver,
+    supplemental_by_id = {
+        row.component_id: row for row in nonidentical_supplemental_projected
+    }
+    semantic_dimension_fields = tuple(
+        field_name
+        for field_name in _CROSS_ROLE_TYPED_COMPONENT_FIELDS
+        if field_name not in {"source_role", "component_id"}
     )
-    assert actual_public_witness == build_cross_role(
-        original_restatement_plan,
-        original_restatement_resolver,
-        supplemental_restatement_plan,
-        supplemental_restatement_resolver,
+    identity_fields = (
+        "referent_identity_sha256",
+        "topic_identity_sha256",
+        "predicate_identity_sha256",
     )
-    assert actual_public_witness.component_bindings
-    assert all(
-        row.original_source_role == "original_input"
-        and row.supplemental_source_role == "supplemental_answer"
-        and row.original_source_kind == row.component_kind
-        and row.supplemental_source_kind == row.component_kind
-        for row in actual_public_witness.component_bindings
-    )
-    assert (
-        actual_public_witness.original_plan_binding_sha256
-        == _original_restatement_local.plan_binding_sha256
-    )
-    assert (
-        actual_public_witness.supplemental_plan_binding_sha256
-        == _supplemental_restatement_local.plan_binding_sha256
-    )
-    assert (
-        actual_public_witness.original_source_witness_sha256
-        == _original_restatement_local.witness_sha256
-    )
-    assert (
-        actual_public_witness.supplemental_source_witness_sha256
-        == _supplemental_restatement_local.witness_sha256
-    )
+    for binding in nonidentical_public_witness.component_bindings:
+        original_component = original_by_id[binding.original_component_id]
+        supplemental_component = supplemental_by_id[
+            binding.supplemental_component_id
+        ]
+        assert tuple(
+            getattr(original_component, field_name)
+            for field_name in semantic_dimension_fields
+        ) == tuple(
+            getattr(supplemental_component, field_name)
+            for field_name in semantic_dimension_fields
+        )
+        assert binding.component_kind == original_component.component_kind
+        assert binding.component_kind == supplemental_component.component_kind
+        assert binding.proof_code == _CROSS_ROLE_PROOF_CODE
+        assert binding.proof_basis == _CROSS_ROLE_PROOF_BASIS
+        assert len(binding.canonical_typed_component_sha256) == 64
+        if binding.component_kind == "nucleus":
+            for field_name in identity_fields:
+                value = getattr(original_component, field_name)
+                assert value == getattr(
+                    supplemental_component,
+                    field_name,
+                )
+                assert len(value) == 64
+                assert all(
+                    character in "0123456789abcdef"
+                    for character in value
+                )
     assert validate_cross_role(
-        actual_public_witness,
-        original_plan=original_restatement_plan,
-        original_resolver=original_restatement_resolver,
-        supplemental_plan=supplemental_restatement_plan,
-        supplemental_resolver=supplemental_restatement_resolver,
+        nonidentical_public_witness,
+        original_plan=nonidentical_original_plan,
+        original_resolver=nonidentical_original_resolver,
+        supplemental_plan=nonidentical_supplemental_plan,
+        supplemental_resolver=nonidentical_supplemental_resolver,
     ) == ()
-    actual_public_meta = json.dumps(
-        actual_public_witness.as_body_free_meta(),
+    assert nonidentical_public_witness == build_cross_role(
+        nonidentical_original_plan,
+        nonidentical_original_resolver,
+        nonidentical_supplemental_plan,
+        nonidentical_supplemental_resolver,
+    )
+    nonidentical_public_meta = json.dumps(
+        nonidentical_public_witness.as_body_free_meta(),
         ensure_ascii=False,
         sort_keys=True,
     )
-    assert original_restatement_input["thought_text"] not in actual_public_meta
-    assert (
-        supplemental_restatement_input["thought_text"]
-        not in actual_public_meta
-    )
+    assert not any(body in nonidentical_public_meta for body in source_bodies)
+    assert not any(body in adapter_source for body in all_test_local_bodies)
     body_derived_digests = {
         artifact_sha256({"raw_text": body})
-        for body in (
-            original_restatement_input["thought_text"],
-            supplemental_restatement_input["thought_text"],
-        )
+        for body in all_test_local_bodies
     } | {
-        artifact_sha256(
-            {
-                "normalized_text": " ".join(body.split()),
-            }
-        )
-        for body in (
-            original_restatement_input["thought_text"],
-            supplemental_restatement_input["thought_text"],
-        )
+        artifact_sha256({"normalized_text": " ".join(body.split())})
+        for body in all_test_local_bodies
     }
+    assert not any(
+        digest in adapter_source for digest in body_derived_digests
+    )
     assert not body_derived_digests & {
         row.canonical_typed_component_sha256
-        for row in actual_public_witness.component_bindings
+        for row in nonidentical_public_witness.component_bindings
     }
-    if any(
-        body in adapter_source
-        for body in (
-            original_restatement_input["thought_text"],
-            supplemental_restatement_input["thought_text"],
-        )
-    ):
-        pytest.fail(
-            "CROSS_ROLE_SEMANTIC_RESTATEMENT_BODY_FREE_REQUIRED",
-            pytrace=False,
-        )
 
-    distinct_supplemental_input = {
-        "thought_text": restatement_sources[1]["action_text"],
-        "action_text": "",
-        "emotions": [],
-        "categories": [],
-    }
     (
-        distinct_supplemental_plan,
-        distinct_supplemental_resolver,
-        _distinct_supplemental_local,
-    ) = _artifacts(distinct_supplemental_input)
-    distinct_public_witness = build_cross_role(
-        original_restatement_plan,
-        original_restatement_resolver,
-        distinct_supplemental_plan,
-        distinct_supplemental_resolver,
+        anchor_absent_plan,
+        anchor_absent_resolver,
+        anchor_absent_local,
+    ) = _artifacts(anchor_absent_supplemental_input)
+    anchor_absent_projected = project_typed_components(
+        anchor_absent_plan,
+        anchor_absent_resolver,
+        anchor_absent_local,
+        "supplemental_answer",
     )
-    assert distinct_public_witness.component_bindings == ()
+    anchor_absent_ids = {
+        row.component_id for row in anchor_absent_projected
+    }
+    anchor_absent_nucleus_ids = {
+        row.component_id
+        for row in anchor_absent_projected
+        if row.component_kind == "nucleus"
+    }
+    assert len(anchor_absent_nucleus_ids) == 1
+    assert len(anchor_absent_projected) == len(
+        nonidentical_supplemental_projected
+    )
+    assert {
+        kind: sum(
+            row.component_kind == kind for row in anchor_absent_projected
+        )
+        for kind in ("nucleus", "relation", "unknown_boundary")
+    } == {
+        kind: sum(
+            row.component_kind == kind
+            for row in nonidentical_supplemental_projected
+        )
+        for kind in ("nucleus", "relation", "unknown_boundary")
+    }
+    assert _typed_component_closure_ids(
+        anchor_absent_projected,
+        seed_ids=anchor_absent_nucleus_ids,
+    ) == anchor_absent_ids
+    original_positive_nucleus = next(
+        row
+        for row in nonidentical_original_projected
+        if row.component_kind == "nucleus"
+    )
+    anchor_absent_nucleus = next(
+        row
+        for row in anchor_absent_projected
+        if row.component_kind == "nucleus"
+    )
+    anchor_shell_fields = tuple(
+        field_name
+        for field_name in _CROSS_ROLE_TYPED_COMPONENT_FIELDS
+        if field_name
+        not in {
+            "source_role",
+            "component_id",
+            "semantic_identity_sha256",
+            "referent_identity_sha256",
+            "topic_identity_sha256",
+            "predicate_identity_sha256",
+            "affected_identity_sha256s",
+        }
+    )
+    assert tuple(
+        getattr(original_positive_nucleus, field_name)
+        for field_name in anchor_shell_fields
+    ) == tuple(
+        getattr(anchor_absent_nucleus, field_name)
+        for field_name in anchor_shell_fields
+    )
+    assert (
+        original_positive_nucleus.predicate_identity_sha256
+        == anchor_absent_nucleus.predicate_identity_sha256
+    )
+    assert (
+        original_positive_nucleus.referent_identity_sha256
+        != anchor_absent_nucleus.referent_identity_sha256
+    )
+    assert (
+        original_positive_nucleus.topic_identity_sha256
+        != anchor_absent_nucleus.topic_identity_sha256
+    )
+    assert (
+        original_positive_nucleus.semantic_identity_sha256
+        != anchor_absent_nucleus.semantic_identity_sha256
+    )
+    original_unknown_by_dimension = {
+        row.unknown_dimension: row
+        for row in nonidentical_original_projected
+        if row.component_kind == "unknown_boundary"
+    }
+    anchor_absent_unknown_by_dimension = {
+        row.unknown_dimension: row
+        for row in anchor_absent_projected
+        if row.component_kind == "unknown_boundary"
+    }
+    assert set(original_unknown_by_dimension) == set(
+        anchor_absent_unknown_by_dimension
+    )
+    for dimension, original_unknown in original_unknown_by_dimension.items():
+        anchor_absent_unknown = anchor_absent_unknown_by_dimension[dimension]
+        assert tuple(
+            getattr(original_unknown, field_name)
+            for field_name in anchor_shell_fields
+        ) == tuple(
+            getattr(anchor_absent_unknown, field_name)
+            for field_name in anchor_shell_fields
+        )
+        assert len(original_unknown.affected_identity_sha256s) == 1
+        assert len(anchor_absent_unknown.affected_identity_sha256s) == 1
+        assert (
+            original_unknown.affected_identity_sha256s
+            != anchor_absent_unknown.affected_identity_sha256s
+        )
+    anchor_absent_public_witness = build_cross_role(
+        nonidentical_original_plan,
+        nonidentical_original_resolver,
+        anchor_absent_plan,
+        anchor_absent_resolver,
+    )
+    assert anchor_absent_public_witness.component_bindings == ()
     assert validate_cross_role(
-        distinct_public_witness,
-        original_plan=original_restatement_plan,
-        original_resolver=original_restatement_resolver,
-        supplemental_plan=distinct_supplemental_plan,
-        supplemental_resolver=distinct_supplemental_resolver,
+        anchor_absent_public_witness,
+        original_plan=nonidentical_original_plan,
+        original_resolver=nonidentical_original_resolver,
+        supplemental_plan=anchor_absent_plan,
+        supplemental_resolver=anchor_absent_resolver,
     ) == ()
+    anchor_absent_public_meta = json.dumps(
+        anchor_absent_public_witness.as_body_free_meta(),
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    assert not any(
+        body in anchor_absent_public_meta
+        for body in all_test_local_bodies
+    )
+
+    underclosed = build_from_typed_components(
+        original_components=original_components,
+        supplemental_components=supplemental_components[:2],
+        **lineage,
+    )
+    assert underclosed.component_bindings == ()
+    assert validate_from_typed_components(
+        underclosed,
+        original_components=original_components,
+        supplemental_components=supplemental_components[:2],
+        **lineage,
+    ) == ()
+
+    anchor_absent = replace(
+        supplemental_closed_component,
+        referent_identity_sha256=_semantic_commitment(
+            "referent_identity",
+            "unproved_referent",
+        ),
+    )
+    anchor_absent_witness = build_from_typed_components(
+        original_components=(original_closed_component,),
+        supplemental_components=(anchor_absent,),
+        **lineage,
+    )
+    assert anchor_absent_witness.component_bindings == ()
 
     with patch.object(
         semantic_module,
@@ -1282,6 +1655,24 @@ def test_cross_role_semantic_restatement_contract_false_collapse_and_tamper_red(
         )
     }
     assert safety_public_witness.component_bindings
+    for projected, endpoint_field in (
+        (safety_original_projected, "original_component_id"),
+        (safety_supplemental_projected, "supplemental_component_id"),
+    ):
+        must_separate_ids = {
+            row.component_id for row in projected if row.must_separate
+        }
+        assert must_separate_ids
+        unsafe_closed_ids = _typed_component_closure_ids(
+            projected,
+            seed_ids=must_separate_ids,
+        )
+        assert unsafe_closed_ids.isdisjoint(
+            {
+                getattr(binding, endpoint_field)
+                for binding in safety_public_witness.component_bindings
+            }
+        )
     assert safety_nucleus_ids.isdisjoint(safety_bound_endpoint_ids)
     assert validate_cross_role(
         safety_public_witness,
@@ -1289,35 +1680,6 @@ def test_cross_role_semantic_restatement_contract_false_collapse_and_tamper_red(
         original_resolver=safety_resolver,
         supplemental_plan=safety_plan,
         supplemental_resolver=safety_resolver,
-    ) == ()
-
-    safety_original = (
-        replace(original_components[0], must_separate=True),
-        original_components[1],
-    )
-    safety_supplemental = (
-        supplemental_components[0],
-        supplemental_components[1],
-    )
-    safety_partial = build_from_typed_components(
-        original_components=safety_original,
-        supplemental_components=safety_supplemental,
-        **lineage,
-    )
-    assert safety_partial.component_bindings
-    assert {
-        row.original_component_id
-        for row in safety_partial.component_bindings
-    } == {original_components[1].component_id}
-    assert {
-        row.supplemental_component_id
-        for row in safety_partial.component_bindings
-    } == {supplemental_components[1].component_id}
-    assert validate_from_typed_components(
-        safety_partial,
-        original_components=safety_original,
-        supplemental_components=safety_supplemental,
-        **lineage,
     ) == ()
 
     relation_index = next(

@@ -83,6 +83,12 @@ _CROSS_ROLE_EFFECT_SCOPE = "CONTENT_DEPTH_ONLY"
 _CROSS_ROLE_DEPTH_RED = (
     "RECOVERY_EPOCH001_S5_CROSS_ROLE_DEPTH_NONINFLATION_NOT_PROVED"
 )
+_CROSS_ROLE_FULL_REPLAY_POSITIVE = (
+    "INDEPENDENT_ROLE_LOCAL_FULL_TYPED_GRAPH_REPLAY"
+)
+_CROSS_ROLE_DEFAULT_GRAPH_NEGATIVE = (
+    "EMPTY_WITNESS_FALSE_COLLAPSE_NEGATIVE"
+)
 _DEPTH_RANK = {
     "minimal": 0,
     "focused": 1,
@@ -163,6 +169,34 @@ def _pre_result(current_input: dict[str, object]):
     return stage, snapshot, build_semantic_obligation_inventory(snapshot)
 
 
+def _legacy_reduced_supplemental(
+    current_input: dict[str, object],
+) -> dict[str, object]:
+    """Return the connected non-isomorphic graph from the superseded positive."""
+
+    return {
+        "thought_text": current_input["thought_text"],
+        "action_text": "",
+        "emotions": [],
+        "categories": [],
+    }
+
+
+def _independent_full_replay_supplemental(
+    current_input: dict[str, object],
+) -> dict[str, object]:
+    """Create a distinct bundle whose complete role-local graph must replay."""
+
+    supplemental = deepcopy(current_input)
+    for field in ("thought_text", "action_text"):
+        value = supplemental.get(field)
+        if isinstance(value, str) and value:
+            supplemental[field] = f" {value} "
+    assert supplemental != current_input
+    assert artifact_sha256(supplemental) != artifact_sha256(current_input)
+    return supplemental
+
+
 def _refined_result(
     current_input: dict[str, object] | None = None,
     supplemental: dict[str, object] | None = None,
@@ -170,12 +204,7 @@ def _refined_result(
     if current_input is None:
         current_input = _known_input()
     if supplemental is None:
-        supplemental = {
-            "thought_text": current_input["thought_text"],
-            "action_text": "",
-            "emotions": [],
-            "categories": [],
-        }
+        supplemental = _legacy_reduced_supplemental(current_input)
     original_spans = build_evidence_ledger(current_input)
     original_resolver = build_evidence_span_resolver(
         original_spans,
@@ -248,6 +277,275 @@ def _refined_result(
         result,
         plan,
     )
+
+def _role_component_ids_by_kind(
+    snapshot,
+    source_role: str,
+) -> dict[str, tuple[str, ...]]:
+    return {
+        component_kind: tuple(
+            sorted(
+                row.source_id
+                for row in getattr(snapshot, field)
+                if row.source_role == source_role
+            )
+        )
+        for component_kind, field in (
+            ("nucleus", "nuclei"),
+            ("relation", "relations"),
+            ("unknown_boundary", "unknowns"),
+        )
+    }
+
+
+def _assert_exact_cross_role_graph_bijection(snapshot) -> None:
+    """Require an exact one-to-one and onto binding of both complete graphs."""
+
+    equivalence = snapshot.cross_role_semantic_depth_equivalence
+    assert equivalence is not None
+    by_role = {
+        role: _role_component_ids_by_kind(snapshot, role)
+        for role in ("original_input", "supplemental_answer")
+    }
+    original_ids = {
+        source_id
+        for ids in by_role["original_input"].values()
+        for source_id in ids
+    }
+    supplemental_ids = {
+        source_id
+        for ids in by_role["supplemental_answer"].values()
+        for source_id in ids
+    }
+    bindings = equivalence.component_bindings
+    assert original_ids
+    assert supplemental_ids
+    assert len(bindings) == len(original_ids) == len(supplemental_ids)
+    assert {
+        row.original_source_id for row in bindings
+    } == original_ids
+    assert {
+        row.supplemental_source_id for row in bindings
+    } == supplemental_ids
+    original_to_supplemental = {
+        row.original_source_id: row.supplemental_source_id
+        for row in bindings
+    }
+    original_to_supplemental_topic: dict[str, str] = {}
+    supplemental_to_original_topic: dict[str, str] = {}
+
+    def assert_mapped_topic_scope(
+        original_topic_ids: tuple[str, ...],
+        supplemental_topic_ids: tuple[str, ...],
+    ) -> None:
+        assert len(original_topic_ids) == len(supplemental_topic_ids)
+        for original_topic_id, supplemental_topic_id in zip(
+            original_topic_ids,
+            supplemental_topic_ids,
+            strict=True,
+        ):
+            prior_supplemental = original_to_supplemental_topic.setdefault(
+                original_topic_id,
+                supplemental_topic_id,
+            )
+            prior_original = supplemental_to_original_topic.setdefault(
+                supplemental_topic_id,
+                original_topic_id,
+            )
+            assert prior_supplemental == supplemental_topic_id
+            assert prior_original == original_topic_id
+
+    rows_by_kind = {
+        "nucleus": {
+            row.source_id: row for row in snapshot.nuclei
+        },
+        "relation": {
+            row.source_id: row for row in snapshot.relations
+        },
+        "unknown_boundary": {
+            row.source_id: row for row in snapshot.unknowns
+        },
+    }
+    for component_kind in ("nucleus", "relation", "unknown_boundary"):
+        original_kind_ids = set(
+            by_role["original_input"][component_kind]
+        )
+        supplemental_kind_ids = set(
+            by_role["supplemental_answer"][component_kind]
+        )
+        kind_bindings = tuple(
+            row for row in bindings if row.component_kind == component_kind
+        )
+        assert len(kind_bindings) == len(original_kind_ids)
+        assert len(kind_bindings) == len(supplemental_kind_ids)
+        assert {
+            row.original_source_id for row in kind_bindings
+        } == original_kind_ids
+        assert {
+            row.supplemental_source_id for row in kind_bindings
+        } == supplemental_kind_ids
+        assert all(
+            row.original_source_kind == component_kind
+            and row.supplemental_source_kind == component_kind
+            and len(row.canonical_typed_component_sha256) == 64
+            for row in kind_bindings
+        )
+        for binding in kind_bindings:
+            original_row = rows_by_kind[component_kind][
+                binding.original_source_id
+            ]
+            supplemental_row = rows_by_kind[component_kind][
+                binding.supplemental_source_id
+            ]
+            assert_mapped_topic_scope(
+                original_row.topic_scope_ids,
+                supplemental_row.topic_scope_ids,
+            )
+            if component_kind == "nucleus":
+                assert (
+                    original_row.kind,
+                    original_row.allowed_claim_scope,
+                    original_row.grounding_kind,
+                    original_row.source_actor,
+                    original_row.source_predicate_kind,
+                    original_row.source_modality,
+                    original_row.source_time_scope,
+                    original_row.source_degree,
+                    original_row.source_attribute_codes,
+                    original_row.polarity,
+                    original_row.modality,
+                    original_row.temporal_scope,
+                    original_row.referent_scope,
+                    original_row.retention,
+                    original_row.required,
+                    original_row.forbidden_claim_codes,
+                    original_row.fact_boundary,
+                ) == (
+                    supplemental_row.kind,
+                    supplemental_row.allowed_claim_scope,
+                    supplemental_row.grounding_kind,
+                    supplemental_row.source_actor,
+                    supplemental_row.source_predicate_kind,
+                    supplemental_row.source_modality,
+                    supplemental_row.source_time_scope,
+                    supplemental_row.source_degree,
+                    supplemental_row.source_attribute_codes,
+                    supplemental_row.polarity,
+                    supplemental_row.modality,
+                    supplemental_row.temporal_scope,
+                    supplemental_row.referent_scope,
+                    supplemental_row.retention,
+                    supplemental_row.required,
+                    supplemental_row.forbidden_claim_codes,
+                    supplemental_row.fact_boundary,
+                )
+            elif component_kind == "relation":
+                assert (
+                    original_row.source_relation_kind,
+                    original_row.grounding_kind,
+                    original_row.endpoint_semantic_relation,
+                    original_row.relation_type,
+                    original_row.relation_direction,
+                    original_row.polarity,
+                    original_row.modality,
+                    original_row.temporal_scope,
+                    original_row.retention,
+                    original_row.required,
+                    original_row.forbidden_claim_codes,
+                ) == (
+                    supplemental_row.source_relation_kind,
+                    supplemental_row.grounding_kind,
+                    supplemental_row.endpoint_semantic_relation,
+                    supplemental_row.relation_type,
+                    supplemental_row.relation_direction,
+                    supplemental_row.polarity,
+                    supplemental_row.modality,
+                    supplemental_row.temporal_scope,
+                    supplemental_row.retention,
+                    supplemental_row.required,
+                    supplemental_row.forbidden_claim_codes,
+                )
+                assert original_to_supplemental[
+                    original_row.from_nucleus_id
+                ] == supplemental_row.from_nucleus_id
+                assert original_to_supplemental[
+                    original_row.to_nucleus_id
+                ] == supplemental_row.to_nucleus_id
+                assert tuple(
+                    original_to_supplemental[source_id]
+                    for source_id in (
+                        original_row
+                        .semantic_restatement_unit_nucleus_ids
+                    )
+                ) == (
+                    supplemental_row
+                    .semantic_restatement_unit_nucleus_ids
+                )
+            else:
+                assert (
+                    original_row.source_dimension,
+                    original_row.dimension_code,
+                    original_row.surface_policy,
+                    original_row.required,
+                ) == (
+                    supplemental_row.source_dimension,
+                    supplemental_row.dimension_code,
+                    supplemental_row.surface_policy,
+                    supplemental_row.required,
+                )
+                assert tuple(
+                    original_to_supplemental[source_id]
+                    for source_id in original_row.affected_nucleus_ids
+                ) == supplemental_row.affected_nucleus_ids
+    for source_role, all_ids in (
+        ("original_input", original_ids),
+        ("supplemental_answer", supplemental_ids),
+    ):
+        assert _incident_affected_closure_ids(
+            snapshot,
+            source_role=source_role,
+            nucleus_ids=set(by_role[source_role]["nucleus"]),
+        ) == all_ids
+
+
+def _incident_affected_closure_ids(
+    snapshot,
+    *,
+    source_role: str,
+    nucleus_ids: set[str],
+) -> set[str]:
+    """Close nucleus seeds over every incident edge and affected unknown."""
+
+    closed = set(nucleus_ids)
+    relations = tuple(
+        row for row in snapshot.relations
+        if row.source_role == source_role
+    )
+    unknowns = tuple(
+        row for row in snapshot.unknowns
+        if row.source_role == source_role
+    )
+    changed = True
+    while changed:
+        changed = False
+        for relation in relations:
+            endpoints = {
+                relation.from_nucleus_id,
+                relation.to_nucleus_id,
+            }
+            if endpoints & closed:
+                expanded = endpoints | {relation.source_id}
+                if not expanded <= closed:
+                    closed.update(expanded)
+                    changed = True
+        for unknown in unknowns:
+            affected = set(unknown.affected_nucleus_ids)
+            if affected & closed:
+                expanded = affected | {unknown.source_id}
+                if not expanded <= closed:
+                    closed.update(expanded)
+                    changed = True
+    return closed
 
 
 def _codes(issues) -> set[str]:
@@ -845,24 +1143,36 @@ def test_s5_new_modules_are_runtime_disconnected_and_do_not_read_fixture_cues() 
 
 
 def test_s5_cross_role_depth_noninflation_floor_and_effect_scope_red() -> None:
-    source = _known_input()
-    original = {
-        "thought_text": source["thought_text"],
-        "action_text": "",
-        "emotions": source["emotions"],
-        "categories": source["categories"],
-    }
+    assert _CROSS_ROLE_FULL_REPLAY_POSITIVE.endswith(
+        "FULL_TYPED_GRAPH_REPLAY"
+    )
+    assert _CROSS_ROLE_DEFAULT_GRAPH_NEGATIVE.startswith("EMPTY_WITNESS_")
+    original = deepcopy(_known_input())
+    full_replay_supplemental = (
+        _independent_full_replay_supplemental(original)
+    )
     _normal_stage, normal_snapshot, normal_result = _normal_result(original)
     normal_plan = build_content_selection_plan(normal_result)
     (
-        _current_input,
-        _supplemental,
+        current_input,
+        supplemental,
         partition,
         partition_issues,
         snapshot,
         result,
         plan,
-    ) = _refined_result(original)
+    ) = _refined_result(original, full_replay_supplemental)
+    assert current_input is original
+    assert supplemental != original
+    assert supplemental is not original
+    assert artifact_sha256(supplemental) != artifact_sha256(original)
+    assert all(
+        str(supplemental[field]).strip() == str(original[field]).strip()
+        and supplemental[field] != original[field]
+        for field in ("thought_text", "action_text")
+    )
+    assert supplemental["emotions"] is not original["emotions"]
+    assert supplemental["categories"] is not original["categories"]
 
     required_snapshot_fields = (
         "refined_source_snapshot_schema_version",
@@ -893,7 +1203,7 @@ def test_s5_cross_role_depth_noninflation_floor_and_effect_scope_red() -> None:
     assert equivalence.source_witness_sha256 == (
         snapshot.cross_role_semantic_restatement_witness_sha256
     )
-    assert equivalence.component_bindings
+    _assert_exact_cross_role_graph_bijection(snapshot)
     assert normal_snapshot.semantic_source_roles == ("original_input",)
     assert snapshot.semantic_source_roles == (
         "original_input",
@@ -908,7 +1218,6 @@ def test_s5_cross_role_depth_noninflation_floor_and_effect_scope_red() -> None:
         plan,
         inventory_result=result,
     ) == ()
-    assert normal_plan["depth"] == "focused"
     assert plan["depth"] == normal_plan["depth"]
     assert _DEPTH_RANK[plan["depth"]] >= _DEPTH_RANK[normal_plan["depth"]]
     assert plan["source_obligation_ledger_sha256"] == artifact_sha256(
@@ -1019,94 +1328,67 @@ def test_s5_cross_role_depth_noninflation_floor_and_effect_scope_red() -> None:
 
     assert_binding_preservation(snapshot, result, plan)
 
-    restatement_input = _body_free_input_matching(
-        lambda candidate_snapshot, _candidate_result, _candidate_plan: any(
-            row.endpoint_semantic_relation == "semantic_restatement"
-            for row in candidate_snapshot.relations
-        )
-    )
-    if (
-        not restatement_input.get("thought_text")
-        or not restatement_input.get("action_text")
-        or restatement_input["thought_text"]
-        == restatement_input["action_text"]
-    ):
-        pytest.fail(_CROSS_ROLE_DEPTH_RED, pytrace=False)
-    nonidentical_original = {
-        "thought_text": restatement_input["thought_text"],
-        "action_text": "",
-        "emotions": [],
-        "categories": [],
-    }
-    nonidentical_supplemental = {
-        "thought_text": restatement_input["action_text"],
-        "action_text": "",
-        "emotions": [],
-        "categories": [],
-    }
+    legacy_original = deepcopy(_known_input())
+    legacy_supplemental = _legacy_reduced_supplemental(legacy_original)
     (
-        _nonidentical_normal_stage,
-        _nonidentical_normal_snapshot,
-        nonidentical_normal_result,
-    ) = _normal_result(nonidentical_original)
-    nonidentical_normal_plan = build_content_selection_plan(
-        nonidentical_normal_result
-    )
-    (
-        _nonidentical_current,
-        _nonidentical_answer,
-        nonidentical_partition,
-        nonidentical_partition_issues,
-        nonidentical_snapshot,
-        nonidentical_result,
-        nonidentical_plan,
+        _legacy_current,
+        _legacy_answer,
+        legacy_partition,
+        legacy_partition_issues,
+        legacy_snapshot,
+        legacy_result,
+        legacy_plan,
     ) = _refined_result(
-        nonidentical_original,
-        nonidentical_supplemental,
+        legacy_original,
+        legacy_supplemental,
     )
-    assert nonidentical_partition_issues == ()
-    assert nonidentical_partition["cross_source_bindings"] == []
+    assert legacy_partition_issues == ()
+    assert legacy_partition["cross_source_bindings"] == []
     assert (
-        nonidentical_partition["question_need_decision_is_semantic_source"]
+        legacy_partition["question_need_decision_is_semantic_source"]
         is False
     )
-    assert nonidentical_snapshot.cross_role_semantic_depth_equivalence is not None
-    assert (
-        nonidentical_snapshot
-        .cross_role_semantic_depth_equivalence
-        .component_bindings
-    )
-    assert nonidentical_plan["depth"] == nonidentical_normal_plan["depth"]
-    assert nonidentical_snapshot.semantic_source_roles == (
+    assert legacy_snapshot.cross_role_semantic_depth_equivalence is None
+    assert legacy_snapshot.semantic_source_roles == (
         "original_input",
         "supplemental_answer",
     )
     assert validate_semantic_obligation_inventory(
-        nonidentical_result.ledger,
-        source_snapshot=nonidentical_snapshot,
+        legacy_result.ledger,
+        source_snapshot=legacy_snapshot,
     ) == ()
     assert validate_content_selection_policy(
-        nonidentical_plan,
-        inventory_result=nonidentical_result,
+        legacy_plan,
+        inventory_result=legacy_result,
     ) == ()
-    assert_binding_preservation(
-        nonidentical_snapshot,
-        nonidentical_result,
-        nonidentical_plan,
+    legacy_required = set(
+        legacy_result.ledger["required_obligation_ids"]
     )
-    nonidentical_bodies = (
-        nonidentical_original["thought_text"],
-        nonidentical_supplemental["thought_text"],
+    legacy_selected = {
+        row["obligation_id"]
+        for row in legacy_plan["decisions"]
+        if row["status"] == "selected"
+    }
+    assert legacy_required <= legacy_selected
+    assert set(
+        legacy_plan["required_coverage_obligation_ids"]
+    ) == legacy_required
+    assert {
+        ref["source_role"]
+        for row in legacy_result.ledger["obligations"]
+        if row["kind"] != "bound_emlis_reception"
+        for ref in row["source_refs"]
+    } == {"original_input", "supplemental_answer"}
+    assert all(
+        {
+            ref["source_role"] for ref in row["source_refs"]
+        } == {"original_input"}
+        for row in legacy_result.ledger["obligations"]
+        if row["kind"] == "bound_emlis_reception"
     )
-    if any(
-        body in repr(nonidentical_snapshot)
-        or body in str(nonidentical_plan)
-        for body in nonidentical_bodies
-    ):
-        pytest.fail(
-            "CROSS_ROLE_SEMANTIC_RESTATEMENT_BODY_FREE_REQUIRED",
-            pytrace=False,
-        )
+    assert _DEPTH_RANK[legacy_plan["depth"]] >= _DEPTH_RANK[
+        normal_plan["depth"]
+    ]
 
     layered_input = _body_free_input_matching(
         lambda candidate_snapshot, _candidate_result, candidate_plan: (
@@ -1122,7 +1404,10 @@ def test_s5_cross_role_depth_noninflation_floor_and_effect_scope_red() -> None:
     ) = _normal_result(layered_input)
     layered_normal_plan = build_content_selection_plan(layered_normal_result)
     *_layered_parents, layered_refined_result, layered_refined_plan = (
-        _refined_result(layered_input)
+        _refined_result(
+            layered_input,
+            _independent_full_replay_supplemental(layered_input),
+        )
     )
     assert layered_normal_plan["depth"] == "layered"
     assert layered_refined_plan["depth"] == "layered"
@@ -1149,7 +1434,10 @@ def test_s5_cross_role_depth_noninflation_floor_and_effect_scope_red() -> None:
         safety_refined_snapshot,
         safety_refined_result,
         safety_refined_plan,
-    ) = _refined_result(safety_input, safety_input)
+    ) = _refined_result(
+        safety_input,
+        _independent_full_replay_supplemental(safety_input),
+    )
     assert safety_partition_issues == ()
     assert safety_normal_plan["depth"] == "layered"
     assert safety_refined_plan["depth"] == "layered"
@@ -1212,29 +1500,39 @@ def test_s5_cross_role_depth_noninflation_floor_and_effect_scope_red() -> None:
         & set(safety_refined_result.ledger["required_obligation_ids"])
     ) <= safety_selected_ids
 
-    unsafe_nucleus_ids = {
-        nucleus_id
-        for row in safety_obligation_rows
-        if row["kind"] == "self_denial_boundary"
-        for ref in row["source_refs"]
-        for nucleus_id in ref["nucleus_ids"]
+    unsafe_nucleus_ids_by_role = {
+        role: {
+            nucleus_id
+            for row in safety_obligation_rows
+            if row["kind"] == "self_denial_boundary"
+            for ref in row["source_refs"]
+            if ref["source_role"] == role
+            for nucleus_id in ref["nucleus_ids"]
+        }
+        for role in ("original_input", "supplemental_answer")
     }
-    assert unsafe_nucleus_ids
-    safety_bound_endpoint_ids = {
-        endpoint_id
-        for binding in (
-            safety_refined_snapshot
-            .cross_role_semantic_depth_equivalence
-            .component_bindings
-        )
-        for endpoint_id in (
-            binding.original_source_id,
-            binding.supplemental_source_id,
-        )
-    }
-    assert unsafe_nucleus_ids.isdisjoint(
-        safety_bound_endpoint_ids
+    assert all(unsafe_nucleus_ids_by_role.values())
+    safety_bindings = (
+        safety_refined_snapshot
+        .cross_role_semantic_depth_equivalence
+        .component_bindings
     )
+    for role, binding_field in (
+        ("original_input", "original_source_id"),
+        ("supplemental_answer", "supplemental_source_id"),
+    ):
+        unsafe_closed_ids = _incident_affected_closure_ids(
+            safety_refined_snapshot,
+            source_role=role,
+            nucleus_ids=unsafe_nucleus_ids_by_role[role],
+        )
+        assert unsafe_closed_ids
+        assert unsafe_closed_ids.isdisjoint(
+            {
+                getattr(binding, binding_field)
+                for binding in safety_bindings
+            }
+        )
 
     (
         _unmatched_current,
@@ -1250,6 +1548,54 @@ def test_s5_cross_role_depth_noninflation_floor_and_effect_scope_red() -> None:
         unmatched_snapshot.cross_role_semantic_depth_equivalence
     )
     assert unmatched_equivalence is not None
+    assert unmatched_equivalence.component_bindings
+    bound_ids_by_role = {
+        "original_input": {
+            row.original_source_id
+            for row in unmatched_equivalence.component_bindings
+        },
+        "supplemental_answer": {
+            row.supplemental_source_id
+            for row in unmatched_equivalence.component_bindings
+        },
+    }
+    bound_nucleus_ids_by_role = {
+        "original_input": {
+            row.original_source_id
+            for row in unmatched_equivalence.component_bindings
+            if row.component_kind == "nucleus"
+        },
+        "supplemental_answer": {
+            row.supplemental_source_id
+            for row in unmatched_equivalence.component_bindings
+            if row.component_kind == "nucleus"
+        },
+    }
+    unmatched_ids_by_role: dict[str, set[str]] = {}
+    for source_role in ("original_input", "supplemental_answer"):
+        all_role_ids = {
+            row.source_id
+            for row in (
+                *unmatched_snapshot.nuclei,
+                *unmatched_snapshot.relations,
+                *unmatched_snapshot.unknowns,
+            )
+            if row.source_role == source_role
+        }
+        assert bound_nucleus_ids_by_role[source_role]
+        bound_closure = _incident_affected_closure_ids(
+            unmatched_snapshot,
+            source_role=source_role,
+            nucleus_ids=bound_nucleus_ids_by_role[source_role],
+        )
+        assert bound_closure == bound_ids_by_role[source_role]
+        unmatched_ids_by_role[source_role] = (
+            all_role_ids - bound_ids_by_role[source_role]
+        )
+        assert unmatched_ids_by_role[source_role]
+        assert unmatched_ids_by_role[source_role].isdisjoint(
+            bound_closure
+        )
     bound_supplemental_ids = {
         row.supplemental_source_id
         for row in unmatched_equivalence.component_bindings
@@ -1266,22 +1612,61 @@ def test_s5_cross_role_depth_noninflation_floor_and_effect_scope_red() -> None:
         if row.source_role == "supplemental_answer"
         and row.source_id not in bound_supplemental_ids
     }
+    unmatched_nucleus_ids = {
+        row.source_id
+        for row in unmatched_snapshot.nuclei
+        if row.source_role == "supplemental_answer"
+        and row.source_id not in bound_supplemental_ids
+    }
+    assert unmatched_nucleus_ids
     assert unmatched_relation_ids
     assert unmatched_unknown_ids
-    unmatched_source_ids = unmatched_relation_ids | unmatched_unknown_ids
-    unmatched_obligation_ids = {
-        row["obligation_id"]
-        for row in unmatched_result.ledger["obligations"]
-        if any(
-            unmatched_source_ids
-            & (
-                set(ref["relation_ids"])
-                | set(ref["unknown_boundary_ids"])
-            )
-            for ref in row["source_refs"]
-        )
+    unmatched_source_ids = (
+        unmatched_nucleus_ids
+        | unmatched_relation_ids
+        | unmatched_unknown_ids
+    )
+    assert unmatched_source_ids == unmatched_ids_by_role[
+        "supplemental_answer"
+    ]
+    referenced_unmatched_ids_by_role = {
+        role: set()
+        for role in ("original_input", "supplemental_answer")
     }
-    assert unmatched_obligation_ids
+    unmatched_obligation_ids_by_role = {
+        role: set()
+        for role in ("original_input", "supplemental_answer")
+    }
+    for obligation in unmatched_result.ledger["obligations"]:
+        obligation_ref_roles = {
+            ref["source_role"] for ref in obligation["source_refs"]
+        }
+        for role in ("original_input", "supplemental_answer"):
+            matched_ids = {
+                source_id
+                for ref in obligation["source_refs"]
+                if ref["source_role"] == role
+                for source_id in (
+                    *ref["nucleus_ids"],
+                    *ref["relation_ids"],
+                    *ref["unknown_boundary_ids"],
+                )
+                if source_id in unmatched_ids_by_role[role]
+            }
+            if matched_ids:
+                assert obligation_ref_roles == {role}
+                referenced_unmatched_ids_by_role[role].update(matched_ids)
+                unmatched_obligation_ids_by_role[role].add(
+                    obligation["obligation_id"]
+                )
+    for role in ("original_input", "supplemental_answer"):
+        assert referenced_unmatched_ids_by_role[role] == (
+            unmatched_ids_by_role[role]
+        )
+        assert unmatched_obligation_ids_by_role[role]
+    unmatched_obligation_ids = set().union(
+        *unmatched_obligation_ids_by_role.values()
+    )
     unmatched_selected_ids = {
         row["obligation_id"]
         for row in unmatched_plan["decisions"]
@@ -1291,6 +1676,14 @@ def test_s5_cross_role_depth_noninflation_floor_and_effect_scope_red() -> None:
         unmatched_result.ledger["required_obligation_ids"]
     )
     assert unmatched_obligation_ids <= unmatched_selected_ids
+    assert all(
+        (
+            unmatched_obligation_ids_by_role[role]
+            & unmatched_required_ids
+        )
+        <= set(unmatched_plan["required_coverage_obligation_ids"])
+        for role in ("original_input", "supplemental_answer")
+    )
     assert unmatched_required_ids <= unmatched_selected_ids
     assert set(
         unmatched_plan["required_coverage_obligation_ids"]
