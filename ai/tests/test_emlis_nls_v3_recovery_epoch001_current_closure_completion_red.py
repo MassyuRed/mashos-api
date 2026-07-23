@@ -191,6 +191,36 @@ _STEP5_UNMATCHED_OPTIONAL_RED_CORRECTION_COCOLON_ENTRY_HEAD = (
 _STEP5_UNMATCHED_OPTIONAL_RED_CORRECTION_MASHOS_API_ENTRY_HEAD = (
     "b43f84a6b868e983a91c40e73735e03865806818"
 )
+_POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_AUTHORITY = (
+    "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_STEP0_10_CANONICAL_CURRENT_"
+    "CLOSURE_AND_STANDALONE_COMPLETION_PROOF_NONCONFORMANCE_REMEDIATION_"
+    "POST_STEP5_CURRENT_CLOSURE_ROOT_RED_CORRECTION_AND_REFREEZE_ONLY"
+)
+_POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_COCOLON_APPROVED_PREDECESSOR_HEAD = (
+    "9bea50895a9237bc396825811bb251067c442032"
+)
+_POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_COCOLON_AUTHORITY_ENTRY_HEAD = (
+    "cdf87802e0a841fc37a342e5800cb1aa7dcf36e7"
+)
+_POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_CURRENT_AUTHORITY_BLOB = (
+    "c381a4b27df20a0064f1cd1af530872516afd7c4"
+)
+_POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_MASHOS_API_ENTRY_HEAD = (
+    "5033435bc94c4c0260cb3193a3c64b177971ceb5"
+)
+_POST_STEP5_CURRENT_DEPENDENCY_CLOSURE_ROOT = (
+    "7d15cc072ac4ac28b6b9ce90676c6238ba08d5f59fd1896a7273ce7d57a7f302"
+)
+_POST_STEP5_PARENT_CONFLICT_DISPOSITION = "RESOLVED"
+_POST_STEP5_TARGETED_EXACT7_DISPOSITION = "7_OF_7_GREEN"
+_POST_STEP5_FORMAL_COMPLETION_DISPOSITION = "STEP5_NOT_COMPLETED"
+_POST_STEP5_SUCCESSFUL_STEP0_10_COMPLETION_RECEIPT_COUNT = 0
+_POST_STEP5_SOURCE_BASELINE_DISPOSITION = "UNLOCKED"
+_POST_STEP5_NEXT_AUTHORITY = (
+    "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_STEP0_10_CANONICAL_CURRENT_"
+    "CLOSURE_AND_STANDALONE_COMPLETION_PROOF_NONCONFORMANCE_REMEDIATION_"
+    "POST_STEP5_CURRENT_CLOSURE_ROOT_IMPLEMENTATION_AND_GREEN_ONLY"
+)
 _STEP5_UNMATCHED_OPTIONAL_RECONCILIATION_CURRENT_AUTHORITY_BLOB = (
     "8762def982bc16417b617faf45161d77b9e9bb01"
 )
@@ -352,6 +382,13 @@ _STEP5_UNMATCHED_OPTIONAL_RED_EXPECTATION = {
     "errors": 0,
     "unexpected": 0,
 }
+_POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_EXPECTATION = {
+    "collected": 15,
+    "passed": 9,
+    "causal_failed": 6,
+    "errors": 0,
+    "unexpected": 0,
+}
 
 _HERE = Path(__file__).resolve()
 _AI_ROOT = _HERE.parents[1]
@@ -368,9 +405,15 @@ _FUTURE_CORE_SURFACE = frozenset(
         "ai/tools/emlis_nls_v3_batch_run.py",
     }
 )
-_FUTURE_TEST_SURFACE = frozenset(
+_HISTORICAL_PRE_STEP5_FUTURE_TEST_SURFACE = frozenset(
     {
         "ai/tests/test_emlis_nls_v3_s5_content_selection_stage_context.py",
+        "ai/tests/test_emlis_nls_v3_s9_hard_gate_selector_recovery.py",
+        "ai/tests/test_emlis_nls_v3_s10_dormant_runtime_batch_evidence.py",
+    }
+)
+_FUTURE_TEST_SURFACE = frozenset(
+    {
         "ai/tests/test_emlis_nls_v3_s9_hard_gate_selector_recovery.py",
         "ai/tests/test_emlis_nls_v3_s10_dormant_runtime_batch_evidence.py",
     }
@@ -433,12 +476,18 @@ _STEP5_UNMATCHED_OPTIONAL_PROTECTED_SOURCE_SURFACE = frozenset(
         ),
     }
 )
-_MERGED_FUTURE_CORE_SURFACE = (
+_HISTORICAL_PRE_STEP5_MERGED_FUTURE_CORE_SURFACE = (
     _FUTURE_CORE_SURFACE | _STEP5_FUTURE_SOURCE_SURFACE
 )
-_MERGED_FUTURE_TEST_SURFACE = (
-    _FUTURE_TEST_SURFACE | _STEP5_RED_TEST_SURFACE
+_HISTORICAL_PRE_STEP5_MERGED_FUTURE_TEST_SURFACE = (
+    _HISTORICAL_PRE_STEP5_FUTURE_TEST_SURFACE | _STEP5_RED_TEST_SURFACE
 )
+_POST_STEP5_REMAINING_FUTURE_CORE_SURFACE = _FUTURE_CORE_SURFACE
+_POST_STEP5_REMAINING_FUTURE_TEST_SURFACE = _FUTURE_TEST_SURFACE
+_POST_STEP5_IMPLEMENTED_PROTECTED_SOURCE_SURFACE = (
+    _STEP5_FUTURE_SOURCE_SURFACE
+)
+_POST_STEP5_IMPLEMENTED_PROTECTED_TEST_SURFACE = _STEP5_RED_TEST_SURFACE
 _STEP5_PROTECTED_SURFACE = frozenset(
     {
         (
@@ -473,7 +522,7 @@ _CROSS_ROLE_NEGATIVE_CODES = frozenset(
         "CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_HASH_MISMATCH",
     }
 )
-_STEP5_PARENT_DESIGN_UNRESOLVED = frozenset(
+_HISTORICAL_STEP5_PARENT_DESIGN_UNRESOLVED = frozenset(
     {
         "BODY_FREE_TYPED_CROSS_ROLE_EQUIVALENCE",
         "TRUSTED_CROSS_SOURCE_EQUIVALENCE_WITNESS",
@@ -548,6 +597,57 @@ _STEP5_UNMATCHED_OPTIONAL_RED_ENTRY_TEST_SHA256 = {
         "0ddbe5c7e1aef2f56276775694e0b016c5902e367fa1de98e7848cc6ab6e3cb1"
     ),
 }
+_POST_STEP5_PROTECTED_SOURCE_BLOBS = {
+    (
+        "ai/services/ai_inference/"
+        "emlis_ai_grounded_observation_semantic_restatement_v3.py"
+    ): "cd2caeac0dfa4b502c798e1e5f65653033c96e2c",
+    (
+        "ai/services/ai_inference/"
+        "emlis_ai_semantic_obligation_inventory_v3.py"
+    ): "241d38331b00fd6c7bd17d4c8a30b6b52b0c3f69",
+    (
+        "ai/services/ai_inference/emlis_ai_content_selection_v3.py"
+    ): "995feb6066842f44b6f69b71b2b97a6109a7e40c",
+}
+_POST_STEP5_PROTECTED_SOURCE_SHA256 = {
+    (
+        "ai/services/ai_inference/"
+        "emlis_ai_grounded_observation_semantic_restatement_v3.py"
+    ): "348003adbe7991de1717a8a2a7ca9d26a04e7f42caccdef2e4a0f31634f171b6",
+    (
+        "ai/services/ai_inference/"
+        "emlis_ai_semantic_obligation_inventory_v3.py"
+    ): "ddc42e6f30c46876b4ccc6c7f936c6cc7dcc6f394cbc2d9825694c7617b465f9",
+    (
+        "ai/services/ai_inference/emlis_ai_content_selection_v3.py"
+    ): "81df9f3205e14efe6de1eac5d2a92c7975df3d51af4451a8059f066aaa223d8b",
+}
+_POST_STEP5_PROTECTED_DIRECT_TEST_BLOBS = {
+    "ai/tests/test_emlis_ai_grounded_observation_semantic_restatement.py": (
+        "49864c6ee6a944c603da21ebd18ba60633e56fb9"
+    ),
+    "ai/tests/test_emlis_nls_v3_s4_semantic_obligation_inventory.py": (
+        "3f0bd59facec541d8bad09d1af9410344c753e45"
+    ),
+    "ai/tests/test_emlis_nls_v3_s5_content_selection_stage_context.py": (
+        "52e1b069f21861a89a1a22bc97de422cd2ac314d"
+    ),
+}
+_POST_STEP5_PROTECTED_DIRECT_TEST_SHA256 = {
+    "ai/tests/test_emlis_ai_grounded_observation_semantic_restatement.py": (
+        "28e74e82e7351a4e3f92345a30cf21e0a59aeb1b820a639baad509316ff3215b"
+    ),
+    "ai/tests/test_emlis_nls_v3_s4_semantic_obligation_inventory.py": (
+        "6aeba82aae9615f089a7fcf034efc317be4988011c6c7239460b6f5538fee3b0"
+    ),
+    "ai/tests/test_emlis_nls_v3_s5_content_selection_stage_context.py": (
+        "ea18716e54a1e85c84b78d85fe8a8ff269d14c911deef08b89013277293fa475"
+    ),
+}
+_POST_STEP5_PROTECTED_BASELINE_HELPER_BLOB = (
+    "77bcb55fed34d19b38ae54734eadef54e092f6ce"
+)
 
 _PROTECTED_SHA256 = {
     "ai/services/ai_inference/emlis_ai_step9_dependency_manifest_v3.py": (
@@ -898,6 +998,16 @@ _STEP10_SINGLE_GRAPH_RED = (
 _STEP10_START_END_RED = (
     "RECOVERY_EPOCH001_STEP10_CLOSURE_START_END_BINDING_NOT_PROVED"
 )
+_POST_STEP5_REMAINING_CAUSAL_RED_CODES = frozenset(
+    {
+        _CLOSURE_OWNER_RED,
+        _CLOSURE_VERIFIER_RED,
+        _RECEIPT_OWNER_RED,
+        _STEP9_SUCCESSOR_RED,
+        _STEP10_SINGLE_GRAPH_RED,
+        _STEP10_START_END_RED,
+    }
+)
 
 
 def _sha256(path: Path) -> str:
@@ -940,8 +1050,68 @@ def _required_attributes(
 
 def test_recovery_epoch001_candidate_identity_surface_and_history_are_exact() -> None:
     assert _AUTHORITY.endswith("REMEDIATION_RED_FREEZE_ONLY")
+    assert _POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_AUTHORITY.endswith(
+        "POST_STEP5_CURRENT_CLOSURE_ROOT_RED_CORRECTION_AND_REFREEZE_ONLY"
+    )
     assert _SOURCE_PIN == "bd62ef0eec2348e3b190ec2a39c3794886ccd10d"
     assert _COCOLON_PIN == "3cb7867c3f8cbe39ee38ffe5c55179df81b5b0fa"
+    assert (
+        _POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_COCOLON_APPROVED_PREDECESSOR_HEAD
+        == "9bea50895a9237bc396825811bb251067c442032"
+    )
+    assert (
+        _POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_COCOLON_AUTHORITY_ENTRY_HEAD
+        == "cdf87802e0a841fc37a342e5800cb1aa7dcf36e7"
+    )
+    assert (
+        _POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_CURRENT_AUTHORITY_BLOB
+        == "c381a4b27df20a0064f1cd1af530872516afd7c4"
+    )
+    assert _POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_MASHOS_API_ENTRY_HEAD == (
+        "5033435bc94c4c0260cb3193a3c64b177971ceb5"
+    )
+    assert _POST_STEP5_CURRENT_DEPENDENCY_CLOSURE_ROOT == (
+        "7d15cc072ac4ac28b6b9ce90676c6238ba08d5f59fd1896a7273ce7d57a7f302"
+    )
+    assert _POST_STEP5_PARENT_CONFLICT_DISPOSITION == "RESOLVED"
+    assert _POST_STEP5_TARGETED_EXACT7_DISPOSITION == "7_OF_7_GREEN"
+    assert _POST_STEP5_FORMAL_COMPLETION_DISPOSITION == (
+        "STEP5_NOT_COMPLETED"
+    )
+    assert _POST_STEP5_SUCCESSFUL_STEP0_10_COMPLETION_RECEIPT_COUNT == 0
+    assert _POST_STEP5_SOURCE_BASELINE_DISPOSITION == "UNLOCKED"
+    assert _POST_STEP5_NEXT_AUTHORITY.endswith(
+        "POST_STEP5_CURRENT_CLOSURE_ROOT_IMPLEMENTATION_AND_GREEN_ONLY"
+    )
+    assert _POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_EXPECTATION == {
+        "collected": 15,
+        "passed": 9,
+        "causal_failed": 6,
+        "errors": 0,
+        "unexpected": 0,
+    }
+    assert _POST_STEP5_REMAINING_CAUSAL_RED_CODES == {
+        "RECOVERY_EPOCH001_CANONICAL_CURRENT_CLOSURE_OWNER_NOT_PROVED",
+        (
+            "RECOVERY_EPOCH001_CANONICAL_CURRENT_CLOSURE_INDEPENDENT_"
+            "VERIFIER_NOT_PROVED"
+        ),
+        "RECOVERY_EPOCH001_CURRENT_COMPLETION_RECEIPT_OWNER_NOT_PROVED",
+        "RECOVERY_EPOCH001_STEP9_STANDALONE_SUCCESSOR_OWNER_NOT_PROVED",
+        "RECOVERY_EPOCH001_STEP10_SAME_GRAPH_NO_LOCAL_CLONE_NOT_PROVED",
+        "RECOVERY_EPOCH001_STEP10_CLOSURE_START_END_BINDING_NOT_PROVED",
+    }
+    assert len(_POST_STEP5_REMAINING_CAUSAL_RED_CODES) == (
+        _POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_EXPECTATION["causal_failed"]
+    )
+    assert (
+        _POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_EXPECTATION["passed"]
+        + _POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_EXPECTATION[
+            "causal_failed"
+        ]
+        == _POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_EXPECTATION["collected"]
+        == 15
+    )
     assert _RECOVERY_CANDIDATE == "nls_v3_rc_0034"
     assert _RECOVERY_SCOPE.endswith("CANDIDATE_ONLY")
     assert _RECOVERY_DISPOSITION.endswith("NOT_CYCLE_ACCEPTANCE")
@@ -967,15 +1137,36 @@ def test_recovery_epoch001_candidate_identity_surface_and_history_are_exact() ->
 
 def test_recovery_epoch001_future_core_and_test_surface_are_exact() -> None:
     assert len(_FUTURE_CORE_SURFACE) == 7
-    assert len(_FUTURE_TEST_SURFACE) == 3
+    assert len(_HISTORICAL_PRE_STEP5_FUTURE_TEST_SURFACE) == 3
+    assert len(_FUTURE_TEST_SURFACE) == 2
     assert len(_FUTURE_ADD_PATHS) == 4
     assert _FUTURE_ADD_PATHS <= _FUTURE_CORE_SURFACE
     assert not (_FUTURE_CORE_SURFACE & set(_PROTECTED_SHA256))
     assert not (_FUTURE_TEST_SURFACE & set(_PROTECTED_SHA256))
-    assert _STEP5_PARENT_DESIGN_UNRESOLVED == {
+    assert _HISTORICAL_STEP5_PARENT_DESIGN_UNRESOLVED == {
         "BODY_FREE_TYPED_CROSS_ROLE_EQUIVALENCE",
         "TRUSTED_CROSS_SOURCE_EQUIVALENCE_WITNESS",
     }
+    assert _POST_STEP5_PARENT_CONFLICT_DISPOSITION == "RESOLVED"
+    assert _POST_STEP5_REMAINING_FUTURE_CORE_SURFACE == _FUTURE_CORE_SURFACE
+    assert _POST_STEP5_REMAINING_FUTURE_TEST_SURFACE == {
+        "ai/tests/test_emlis_nls_v3_s9_hard_gate_selector_recovery.py",
+        "ai/tests/test_emlis_nls_v3_s10_dormant_runtime_batch_evidence.py",
+    }
+    assert _POST_STEP5_IMPLEMENTED_PROTECTED_SOURCE_SURFACE == (
+        _STEP5_FUTURE_SOURCE_SURFACE
+    )
+    assert _POST_STEP5_IMPLEMENTED_PROTECTED_TEST_SURFACE == (
+        _STEP5_RED_TEST_SURFACE
+    )
+    assert not (
+        _POST_STEP5_REMAINING_FUTURE_CORE_SURFACE
+        & _POST_STEP5_IMPLEMENTED_PROTECTED_SOURCE_SURFACE
+    )
+    assert not (
+        _POST_STEP5_REMAINING_FUTURE_TEST_SURFACE
+        & _POST_STEP5_IMPLEMENTED_PROTECTED_TEST_SURFACE
+    )
     assert not any(
         marker in path
         for path in _FUTURE_CORE_SURFACE | _FUTURE_TEST_SURFACE
@@ -994,6 +1185,26 @@ def test_recovery_epoch001_future_core_and_test_surface_are_exact() -> None:
         path: (_REPO_ROOT / path).is_file() for path in _FUTURE_ADD_PATHS
     }
     assert set(add_presence.values()) in ({False}, {True})
+    assert set(_POST_STEP5_PROTECTED_SOURCE_BLOBS) == (
+        _POST_STEP5_IMPLEMENTED_PROTECTED_SOURCE_SURFACE
+    )
+    assert set(_POST_STEP5_PROTECTED_SOURCE_SHA256) == (
+        _POST_STEP5_IMPLEMENTED_PROTECTED_SOURCE_SURFACE
+    )
+    assert set(_POST_STEP5_PROTECTED_DIRECT_TEST_BLOBS) == (
+        _POST_STEP5_IMPLEMENTED_PROTECTED_TEST_SURFACE - {_THIS_PATH}
+    )
+    assert set(_POST_STEP5_PROTECTED_DIRECT_TEST_SHA256) == (
+        _POST_STEP5_IMPLEMENTED_PROTECTED_TEST_SURFACE - {_THIS_PATH}
+    )
+    for path, expected_sha256 in (
+        _POST_STEP5_PROTECTED_SOURCE_SHA256
+        | _POST_STEP5_PROTECTED_DIRECT_TEST_SHA256
+    ).items():
+        assert _sha256(_REPO_ROOT / path) == expected_sha256, path
+    assert _POST_STEP5_PROTECTED_BASELINE_HELPER_BLOB == (
+        "77bcb55fed34d19b38ae54734eadef54e092f6ce"
+    )
 
 
 def test_recovery_epoch001_step5_cross_role_red_authority_and_surface_are_exact() -> None:
@@ -1291,13 +1502,27 @@ def test_recovery_epoch001_step5_cross_role_red_authority_and_surface_are_exact(
         _STEP5_UNMATCHED_OPTIONAL_PROTECTED_SOURCE_SURFACE
         & _STEP5_UNMATCHED_OPTIONAL_FUTURE_SOURCE_SURFACE
     )
-    assert len(_MERGED_FUTURE_CORE_SURFACE) == 10
-    assert len(_MERGED_FUTURE_TEST_SURFACE) == 6
-    assert _STEP5_FUTURE_SOURCE_SURFACE <= _MERGED_FUTURE_CORE_SURFACE
-    assert _STEP5_RED_TEST_SURFACE <= _MERGED_FUTURE_TEST_SURFACE
+    assert len(_HISTORICAL_PRE_STEP5_MERGED_FUTURE_CORE_SURFACE) == 10
+    assert len(_HISTORICAL_PRE_STEP5_MERGED_FUTURE_TEST_SURFACE) == 6
+    assert (
+        _STEP5_FUTURE_SOURCE_SURFACE
+        <= _HISTORICAL_PRE_STEP5_MERGED_FUTURE_CORE_SURFACE
+    )
+    assert (
+        _STEP5_RED_TEST_SURFACE
+        <= _HISTORICAL_PRE_STEP5_MERGED_FUTURE_TEST_SURFACE
+    )
     assert not (_STEP5_FUTURE_SOURCE_SURFACE & _STEP5_RED_TEST_SURFACE)
-    assert not (_STEP5_PROTECTED_SURFACE & _MERGED_FUTURE_CORE_SURFACE)
-    assert not (_STEP5_PROTECTED_SURFACE & _MERGED_FUTURE_TEST_SURFACE)
+    assert not (
+        _STEP5_PROTECTED_SURFACE
+        & _HISTORICAL_PRE_STEP5_MERGED_FUTURE_CORE_SURFACE
+    )
+    assert not (
+        _STEP5_PROTECTED_SURFACE
+        & _HISTORICAL_PRE_STEP5_MERGED_FUTURE_TEST_SURFACE
+    )
+    assert len(_POST_STEP5_REMAINING_FUTURE_CORE_SURFACE) == 7
+    assert len(_POST_STEP5_REMAINING_FUTURE_TEST_SURFACE) == 2
     assert all(
         (_REPO_ROOT / path).is_file()
         for path in _STEP5_FUTURE_SOURCE_SURFACE | _STEP5_RED_TEST_SURFACE
@@ -1473,9 +1698,7 @@ def test_recovery_epoch001_step0_step1_dual_lineage_is_exact() -> None:
     assert historical_closure_root == (
         "3d42e942239666dc37d14c9c2969d548988c02e38ac497bb65b825d9b4c1f3bd"
     )
-    assert current_closure_root == (
-        "948d1ff82c0c311c7c3c0c5189013c5c08af2a72415ad599505aec245e0a1c7c"
-    )
+    assert current_closure_root == _POST_STEP5_CURRENT_DEPENDENCY_CLOSURE_ROOT
     assert current_closure_root != historical_closure_root
     assert compatibility_closure == historical_closure
     assert compatibility_closure_root == historical_closure_root
