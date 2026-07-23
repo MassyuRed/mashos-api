@@ -9,7 +9,7 @@ the obligation ledger.  No surface text, question decision, expected answer,
 case id, or runtime reply path is consumed here.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import re
 from typing import Any, Iterable, Mapping, Sequence
 import weakref
@@ -52,6 +52,12 @@ from emlis_ai_nls_v3_artifact_contract import (
     load_canonical_json_bytes,
     validate_observation_stage_context,
     validate_semantic_obligation_ledger,
+)
+from emlis_ai_refined_source_partition_v3 import (
+    RefinedSourcePartition,
+    RefinedSourcePartitionError,
+    refined_source_partition_sources,
+    validate_refined_source_partition,
 )
 
 
@@ -387,6 +393,7 @@ class _GroundedSourceOrigin:
     original_input_bundle_bytes: bytes
     trusted_future_authority: TrustedFutureStageAuthority | None
     supplemental_answer_bundle_bytes: bytes
+    refined_source_partition: RefinedSourcePartition | None
 
     @classmethod
     def from_sources(
@@ -398,6 +405,7 @@ class _GroundedSourceOrigin:
         original_input_bundle: Any,
         trusted_future_authority: TrustedFutureStageAuthority | None,
         supplemental_answer_bundle: Any | None,
+        refined_source_partition: RefinedSourcePartition | None,
     ) -> "_GroundedSourceOrigin":
         return cls(
             plan=plan,
@@ -415,6 +423,7 @@ class _GroundedSourceOrigin:
             supplemental_answer_bundle_bytes=(
                 canonical_json_bytes(supplemental_answer_bundle) + b"\n"
             ),
+            refined_source_partition=refined_source_partition,
         )
 
     def __repr__(self) -> str:
@@ -435,6 +444,7 @@ class _GroundedSourceOrigin:
             supplemental_answer_bundle=load_canonical_json_bytes(
                 self.supplemental_answer_bundle_bytes
             ),
+            refined_source_partition=self.refined_source_partition,
             _register_origin=False,
         )
 
@@ -478,6 +488,11 @@ class GroundedSourceSnapshot:
     resource_counts: tuple[tuple[str, int], ...]
     obligation_inventory_upper_bound: int
     ledger_source_authority: LedgerSourceAuthority
+    refined_source_partition_sha256: str | None = None
+    refined_original_source_observation_plan_sha256: str | None = None
+    refined_supplemental_source_observation_plan_sha256: str | None = None
+    refined_original_semantic_restatement_witness_sha256: str | None = None
+    refined_supplemental_semantic_restatement_witness_sha256: str | None = None
 
     def __deepcopy__(self, memo: dict[int, Any]) -> "GroundedSourceSnapshot":
         # The snapshot is frozen.  Keeping identity on deepcopy preserves its
@@ -1673,6 +1688,7 @@ def _ledger_authority(
     opportunities: Sequence[InventoryReceptionSource],
     role_bindings: Sequence[tuple[str, str]],
     inventory_bound: int,
+    allowed_source_roles: Sequence[str] = ("original_input",),
 ) -> LedgerSourceAuthority:
     return LedgerSourceAuthority(
         source_observation_plan_sha256=plan_hash,
@@ -1692,7 +1708,7 @@ def _ledger_authority(
             for row in (*nuclei, *relations, *unknowns)
             for item in row.topic_scope_ids
         ),
-        allowed_source_roles=("original_input",),
+        allowed_source_roles=tuple(allowed_source_roles),
         source_role_bindings=tuple(role_bindings),
         source_semantics=_source_semantics(nuclei, relations, unknowns),
         obligation_inventory_max=inventory_bound,
@@ -1715,6 +1731,418 @@ def _stage_binding_artifact(
     }
 
 
+def _normal_stage_context(source_bundle: Any) -> dict[str, Any]:
+    return {
+        "schema_version": STAGE_SCHEMA,
+        "stage": "normal_observation",
+        "original_input_bundle_sha256": artifact_sha256(source_bundle),
+        "question_need_decision_sha256": None,
+        "supplemental_answer_bundle_sha256": None,
+        "allowed_source_roles": ["original_input"],
+        "body_free": True,
+    }
+
+
+def _supplemental_actual_source_id(
+    source_kind: str,
+    actual_source_id: str,
+) -> str:
+    return (
+        "supplemental_answer:"
+        + source_kind
+        + ":"
+        + artifact_sha256(
+            {
+                "source_role": "supplemental_answer",
+                "source_kind": source_kind,
+                "actual_source_id": actual_source_id,
+            }
+        )[:32]
+    )
+
+
+def _supplemental_topic_id(topic_id: str) -> str:
+    return "topic_" + artifact_sha256(
+        {"source_role": "supplemental_answer", "topic_id": topic_id}
+    )[:16]
+
+
+def _transform_supplemental_snapshot(
+    snapshot: GroundedSourceSnapshot,
+) -> tuple[
+    tuple[SourceIdAliasBinding, ...],
+    tuple[str, ...],
+    tuple[str, ...],
+    tuple[InventoryNucleusSource, ...],
+    tuple[InventoryRelationSource, ...],
+    tuple[InventoryUnknownSource, ...],
+]:
+    bindings: list[SourceIdAliasBinding] = []
+    alias_map: dict[str, str] = {}
+    actual_map: dict[str, str] = {}
+    for binding in snapshot.source_id_alias_bindings:
+        if binding.source_kind == "reception_opportunity":
+            continue
+        actual = _supplemental_actual_source_id(
+            binding.source_kind,
+            binding.actual_source_id,
+        )
+        alias = _alias_for(binding.source_kind, actual)
+        alias_map[binding.alias_source_id] = alias
+        actual_map[binding.alias_source_id] = actual
+        bindings.append(
+            SourceIdAliasBinding(
+                source_kind=binding.source_kind,
+                source_owner=binding.source_owner,
+                actual_source_id=actual,
+                alias_source_id=alias,
+            )
+        )
+    if len(alias_map) != len(set(alias_map.values())):
+        raise SemanticObligationInventoryError("SOURCE_ID_ALIAS_COLLISION")
+
+    def aliases(values: Sequence[str]) -> tuple[str, ...]:
+        try:
+            return tuple(alias_map[item] for item in values)
+        except KeyError as exc:
+            raise SemanticObligationInventoryError(
+                "OBLIGATION_SOURCE_REFERENCE_UNRESOLVED"
+            ) from exc
+
+    def topics(values: Sequence[str]) -> tuple[str, ...]:
+        return tuple(_supplemental_topic_id(item) for item in values)
+
+    nuclei = tuple(
+        replace(
+            row,
+            source_id=alias_map[row.source_id],
+            actual_source_id=actual_map[row.source_id],
+            source_role="supplemental_answer",
+            evidence_ids=aliases(row.evidence_ids),
+            topic_scope_ids=topics(row.topic_scope_ids),
+        )
+        for row in snapshot.nuclei
+    )
+    relations = tuple(
+        replace(
+            row,
+            source_id=alias_map[row.source_id],
+            actual_source_id=actual_map[row.source_id],
+            source_role="supplemental_answer",
+            semantic_restatement_unit_nucleus_ids=aliases(
+                row.semantic_restatement_unit_nucleus_ids
+            ),
+            from_nucleus_id=alias_map[row.from_nucleus_id],
+            to_nucleus_id=alias_map[row.to_nucleus_id],
+            source_evidence_ids=aliases(row.source_evidence_ids),
+            evidence_ids=aliases(row.evidence_ids),
+            topic_scope_ids=topics(row.topic_scope_ids),
+        )
+        for row in snapshot.relations
+    )
+    unknowns = tuple(
+        replace(
+            row,
+            source_id=alias_map[row.source_id],
+            actual_source_id=actual_map[row.source_id],
+            source_role="supplemental_answer",
+            affected_nucleus_ids=aliases(row.affected_nucleus_ids),
+            evidence_ids=aliases(row.evidence_ids),
+            topic_scope_ids=topics(row.topic_scope_ids),
+        )
+        for row in snapshot.unknowns
+    )
+    return (
+        tuple(sorted(bindings, key=lambda item: item.alias_source_id)),
+        aliases(snapshot.evidence_ids),
+        aliases(snapshot.text_evidence_ids),
+        tuple(sorted(nuclei, key=lambda item: item.source_id)),
+        tuple(sorted(relations, key=lambda item: item.source_id)),
+        tuple(sorted(unknowns, key=lambda item: item.source_id)),
+    )
+
+
+def _refined_plan_commitment_material(
+    *,
+    partition_sha256: str,
+    original_plan_sha256: str,
+    supplemental_plan_sha256: str,
+    role_bindings: Sequence[tuple[str, str]],
+) -> dict[str, Any]:
+    return {
+        "schema_version": "cocolon.emlis.nls_v3.refined_source_snapshot.v1",
+        "refined_source_partition_sha256": partition_sha256,
+        "original_source_observation_plan_sha256": original_plan_sha256,
+        "supplemental_source_observation_plan_sha256": supplemental_plan_sha256,
+        "source_role_bindings": [list(item) for item in role_bindings],
+        "body_free": True,
+    }
+
+
+def _build_refined_source_snapshot(
+    *,
+    original_plan: GroundedObservationPlan,
+    original_resolver: EvidenceSpanResolver,
+    supplemental_plan: GroundedObservationPlan,
+    supplemental_resolver: EvidenceSpanResolver,
+    observation_stage_context: Mapping[str, Any],
+    original_input_bundle: Any,
+    supplemental_answer_bundle: Any,
+    trusted_future_authority: TrustedFutureStageAuthority,
+    refined_source_partition: RefinedSourcePartition,
+    register_origin: bool,
+) -> GroundedSourceSnapshot:
+    original = build_grounded_source_snapshot(
+        original_plan,
+        original_resolver,
+        observation_stage_context=_normal_stage_context(original_input_bundle),
+        original_input_bundle=original_input_bundle,
+        _register_origin=False,
+    )
+    supplemental = build_grounded_source_snapshot(
+        supplemental_plan,
+        supplemental_resolver,
+        observation_stage_context=_normal_stage_context(
+            supplemental_answer_bundle
+        ),
+        original_input_bundle=supplemental_answer_bundle,
+        _register_origin=False,
+    )
+    (
+        supplemental_bindings,
+        supplemental_evidence_ids,
+        supplemental_text_evidence_ids,
+        supplemental_nuclei,
+        supplemental_relations,
+        supplemental_unknowns,
+    ) = _transform_supplemental_snapshot(supplemental)
+    bindings = tuple(
+        sorted(
+            (*original.source_id_alias_bindings, *supplemental_bindings),
+            key=lambda item: item.alias_source_id,
+        )
+    )
+    aliases = [item.alias_source_id for item in bindings]
+    if len(aliases) != len(set(aliases)):
+        raise SemanticObligationInventoryError("SOURCE_ID_ALIAS_COLLISION")
+    nuclei = tuple(
+        sorted((*original.nuclei, *supplemental_nuclei), key=lambda item: item.source_id)
+    )
+    relations = tuple(
+        sorted(
+            (*original.relations, *supplemental_relations),
+            key=lambda item: item.source_id,
+        )
+    )
+    unknowns = tuple(
+        sorted(
+            (*original.unknowns, *supplemental_unknowns),
+            key=lambda item: item.source_id,
+        )
+    )
+    evidence_ids = tuple(
+        sorted((*original.evidence_ids, *supplemental_evidence_ids))
+    )
+    text_evidence_ids = tuple(
+        sorted(
+            (*original.text_evidence_ids, *supplemental_text_evidence_ids)
+        )
+    )
+    role_bindings = tuple(
+        sorted(
+            (
+                *((item, "original_input") for item in original.evidence_ids),
+                *((row.source_id, row.source_role) for row in nuclei),
+                *((row.source_id, row.source_role) for row in relations),
+                *((row.source_id, row.source_role) for row in unknowns),
+                *(
+                    (row.source_id, "original_input")
+                    for row in original.reception_opportunities
+                ),
+                *(
+                    (item, "supplemental_answer")
+                    for item in supplemental_evidence_ids
+                ),
+            )
+        )
+    )
+    if len(role_bindings) != len(bindings) or {
+        item for item, _role in role_bindings
+    } != set(aliases):
+        raise SemanticObligationInventoryError("SOURCE_ROLE_BINDING_MISMATCH")
+    original_counts = dict(original.resource_counts)
+    supplemental_counts = dict(supplemental.resource_counts)
+    counts = {
+        key: original_counts[key] + supplemental_counts[key]
+        for key in (
+            "evidence_span_count",
+            "text_evidence_span_count",
+            "nucleus_count",
+            "relation_count",
+            "unknown_boundary_count",
+        )
+    }
+    counts.update(
+        {
+            "safety_policy_count": 1,
+            "safety_required_boundary_code_count": original_counts[
+                "safety_required_boundary_code_count"
+            ],
+            "reception_opportunity_count": original_counts[
+                "reception_opportunity_count"
+            ],
+        }
+    )
+    inventory_bound = obligation_inventory_upper_bound(counts)
+    stage_binding = ObservationStageSourceBinding(
+        schema_version=observation_stage_context["schema_version"],
+        stage="refined_observation",
+        original_input_bundle_sha256=observation_stage_context[
+            "original_input_bundle_sha256"
+        ],
+        question_need_decision_sha256=observation_stage_context[
+            "question_need_decision_sha256"
+        ],
+        supplemental_answer_bundle_sha256=observation_stage_context[
+            "supplemental_answer_bundle_sha256"
+        ],
+        allowed_source_roles=tuple(
+            observation_stage_context["allowed_source_roles"]
+        ),
+        body_free=True,
+    )
+    partition_sha256 = artifact_sha256(
+        refined_source_partition.as_body_free_artifact()
+    )
+    plan_material = _refined_plan_commitment_material(
+        partition_sha256=partition_sha256,
+        original_plan_sha256=original.source_observation_plan_sha256,
+        supplemental_plan_sha256=supplemental.source_observation_plan_sha256,
+        role_bindings=role_bindings,
+    )
+    plan_hash = artifact_sha256(plan_material)
+    stage_hash = artifact_sha256(_stage_binding_artifact(stage_binding))
+    reception_artifact = _reception_native_artifact(
+        original.reception_opportunities,
+        bindings,
+    )
+    reception_hash = (
+        artifact_sha256(reception_artifact)
+        if reception_artifact is not None
+        else None
+    )
+    semantic_plan_binding_sha256 = artifact_sha256(
+        {
+            "original": original.semantic_restatement_plan_binding_sha256,
+            "supplemental": supplemental.semantic_restatement_plan_binding_sha256,
+            "partition": partition_sha256,
+        }
+    )
+    semantic_witness_sha256 = artifact_sha256(
+        {
+            "original": original.source_semantic_restatement_witness_sha256,
+            "supplemental": supplemental.source_semantic_restatement_witness_sha256,
+            "partition": partition_sha256,
+        }
+    )
+    authority = _ledger_authority(
+        plan_hash=plan_hash,
+        stage_hash=stage_hash,
+        reception_hash=reception_hash,
+        eligibility=original.response_eligibility_authority,
+        evidence_ids=evidence_ids,
+        nuclei=nuclei,
+        relations=relations,
+        unknowns=unknowns,
+        opportunities=original.reception_opportunities,
+        role_bindings=role_bindings,
+        inventory_bound=inventory_bound,
+        allowed_source_roles=("original_input", "supplemental_answer"),
+    )
+    snapshot = GroundedSourceSnapshot(
+        plan_schema_version=original.plan_schema_version,
+        plan_adapter_version=original.plan_adapter_version,
+        plan_generation_path=original.plan_generation_path,
+        observation_stage="refined_observation",
+        observation_stage_source_binding=stage_binding,
+        semantic_source_roles=("original_input", "supplemental_answer"),
+        semantic_restatement_witness_schema_version=(
+            original.semantic_restatement_witness_schema_version
+        ),
+        semantic_restatement_witness_adapter_version=(
+            original.semantic_restatement_witness_adapter_version
+        ),
+        semantic_restatement_plan_binding_sha256=semantic_plan_binding_sha256,
+        source_semantic_restatement_witness_sha256=semantic_witness_sha256,
+        source_observation_plan_sha256=plan_hash,
+        source_observation_stage_context_sha256=stage_hash,
+        source_reception_opportunity_plan_sha256=reception_hash,
+        response_eligibility_source_sha256=original.response_eligibility_source_sha256,
+        response_eligibility=original.response_eligibility,
+        response_eligibility_authority=original.response_eligibility_authority,
+        source_policy_sha256=FROZEN_SOURCE_POLICY_SHA256,
+        source_id_alias_bindings=bindings,
+        grounded_parent_nucleus_count=(
+            original.grounded_parent_nucleus_count
+            + supplemental.grounded_parent_nucleus_count
+        ),
+        grounded_parent_relation_count=(
+            original.grounded_parent_relation_count
+            + supplemental.grounded_parent_relation_count
+        ),
+        grounded_parent_unknown_boundary_count=(
+            original.grounded_parent_unknown_boundary_count
+            + supplemental.grounded_parent_unknown_boundary_count
+        ),
+        evidence_ids=evidence_ids,
+        text_evidence_ids=text_evidence_ids,
+        nuclei=nuclei,
+        relations=relations,
+        unknowns=unknowns,
+        reception_opportunities=original.reception_opportunities,
+        safety_required_boundary_codes=original.safety_required_boundary_codes,
+        identity_claim_must_not_be_accepted_as_fact=(
+            original.identity_claim_must_not_be_accepted_as_fact
+        ),
+        preserved_unknown_boundary_ids=frozenset(
+            row.source_id
+            for row in original.unknowns
+        ),
+        answered_unknown_boundary_ids=frozenset(),
+        source_role_bindings=role_bindings,
+        resource_counts=tuple(sorted(counts.items())),
+        obligation_inventory_upper_bound=inventory_bound,
+        ledger_source_authority=authority,
+        refined_source_partition_sha256=partition_sha256,
+        refined_original_source_observation_plan_sha256=(
+            original.source_observation_plan_sha256
+        ),
+        refined_supplemental_source_observation_plan_sha256=(
+            supplemental.source_observation_plan_sha256
+        ),
+        refined_original_semantic_restatement_witness_sha256=(
+            original.source_semantic_restatement_witness_sha256
+        ),
+        refined_supplemental_semantic_restatement_witness_sha256=(
+            supplemental.source_semantic_restatement_witness_sha256
+        ),
+    )
+    if register_origin:
+        _register_source_origin(
+            snapshot,
+            _GroundedSourceOrigin.from_sources(
+                plan=original_plan,
+                resolver=original_resolver,
+                observation_stage_context=observation_stage_context,
+                original_input_bundle=original_input_bundle,
+                trusted_future_authority=trusted_future_authority,
+                supplemental_answer_bundle=supplemental_answer_bundle,
+                refined_source_partition=refined_source_partition,
+            ),
+        )
+    return snapshot
+
+
 def build_grounded_source_snapshot(
     plan: GroundedObservationPlan,
     resolver: EvidenceSpanResolver,
@@ -1723,6 +2151,7 @@ def build_grounded_source_snapshot(
     original_input_bundle: Any,
     trusted_future_authority: TrustedFutureStageAuthority | None = None,
     supplemental_answer_bundle: Any | None = None,
+    refined_source_partition: RefinedSourcePartition | None = None,
     _register_origin: bool = True,
 ) -> GroundedSourceSnapshot:
     """Adapt source owners; no caller may declare roles, unknowns, or eligibility."""
@@ -1800,14 +2229,69 @@ def build_grounded_source_snapshot(
         )
     stage = observation_stage_context["stage"]
     if stage == "refined_observation":
-        # The current GroundedObservationPlan has no independently owned
-        # original/supplemental partition.  Relabelling one source here would
-        # violate the Step 4 STOP boundary.
-        raise SemanticObligationInventoryError(
-            "REFINED_SOURCE_PARTITION_OWNER_UNAVAILABLE"
+        if refined_source_partition is None:
+            raise SemanticObligationInventoryError(
+                "REFINED_SOURCE_PARTITION_OWNER_UNAVAILABLE"
+            )
+        try:
+            (
+                partition_original_plan,
+                partition_original_resolver,
+                supplemental_plan,
+                supplemental_resolver,
+                partition_stage_context,
+                partition_original_bundle,
+                partition_supplemental_bundle,
+                partition_authority,
+            ) = refined_source_partition_sources(refined_source_partition)
+        except RefinedSourcePartitionError as exc:
+            raise SemanticObligationInventoryError(exc.code) from exc
+        partition_issues = validate_refined_source_partition(
+            refined_source_partition,
+            partition_original_plan,
+            partition_original_resolver,
+            supplemental_plan,
+            supplemental_resolver,
+            partition_stage_context,
+            partition_original_bundle,
+            partition_supplemental_bundle,
+            partition_authority,
+        )
+        if partition_issues:
+            raise SemanticObligationInventoryError(partition_issues[0])
+        if (
+            partition_original_plan is not plan
+            or tuple(
+                partition_original_resolver.resolve(item)
+                for item in partition_original_resolver.span_ids
+            )
+            != tuple(resolver.resolve(item) for item in resolver.span_ids)
+            or dict(partition_stage_context) != dict(observation_stage_context)
+            or dict(partition_original_bundle) != dict(original_input_bundle)
+            or partition_supplemental_bundle != supplemental_answer_bundle
+            or partition_authority != trusted_future_authority
+        ):
+            raise SemanticObligationInventoryError(
+                "REFINED_SOURCE_PARTITION_COMMITMENT_MISMATCH"
+            )
+        return _build_refined_source_snapshot(
+            original_plan=plan,
+            original_resolver=resolver,
+            supplemental_plan=supplemental_plan,
+            supplemental_resolver=supplemental_resolver,
+            observation_stage_context=observation_stage_context,
+            original_input_bundle=original_input_bundle,
+            supplemental_answer_bundle=supplemental_answer_bundle,
+            trusted_future_authority=trusted_future_authority,
+            refined_source_partition=refined_source_partition,
+            register_origin=_register_origin,
         )
     if stage not in {"normal_observation", "pre_question_observation"}:
         raise SemanticObligationInventoryError("OBSERVATION_STAGE_INVALID")
+    if refined_source_partition is not None:
+        raise SemanticObligationInventoryError(
+            "REFINED_SOURCE_PARTITION_FORBIDDEN"
+        )
 
     units_by_parent: dict[str, tuple[GroundedSemanticUnitWitness, ...]] = {}
     for unit in semantic_restatement_witness.semantic_units:
@@ -2065,6 +2549,7 @@ def build_grounded_source_snapshot(
                 original_input_bundle=original_input_bundle,
                 trusted_future_authority=trusted_future_authority,
                 supplemental_answer_bundle=supplemental_answer_bundle,
+                refined_source_partition=refined_source_partition,
             ),
         )
     return snapshot
@@ -2523,13 +3008,50 @@ def _snapshot_authority_issues(snapshot: GroundedSourceSnapshot) -> tuple[str, .
         issues.append("SOURCE_ID_ALIAS_COVERAGE_MISMATCH")
     if not set(snapshot.text_evidence_ids) <= set(snapshot.evidence_ids):
         issues.append("SOURCE_RESOURCE_COUNTS_INVALID")
-    expected_roles = tuple((item, "original_input") for item in sorted(aliases))
-    stage_binding = snapshot.observation_stage_source_binding
-    expected_stage_roles = (
-        ("original_input",)
-        if snapshot.observation_stage == "normal_observation"
-        else ("original_input", "question_need_decision")
+    is_refined = snapshot.observation_stage == "refined_observation"
+    role_pairs = snapshot.source_role_bindings
+    role_by_alias = (
+        dict(role_pairs)
+        if type(role_pairs) is tuple
+        and all(
+            type(item) is tuple and len(item) == 2
+            for item in role_pairs
+        )
+        else {}
     )
+    if is_refined:
+        expected_roles = tuple(sorted(role_pairs)) if type(role_pairs) is tuple else ()
+        if (
+            role_pairs != expected_roles
+            or len(role_by_alias) != len(aliases)
+            or set(role_by_alias) != set(aliases)
+            or set(role_by_alias.values())
+            != {"original_input", "supplemental_answer"}
+            or any(
+                role_by_alias.get(row.source_id) != row.source_role
+                for row in (*snapshot.nuclei, *snapshot.relations, *snapshot.unknowns)
+            )
+            or any(
+                role_by_alias.get(row.source_id) != "original_input"
+                for row in snapshot.reception_opportunities
+            )
+        ):
+            issues.append("SOURCE_ROLE_BINDING_MISMATCH")
+    else:
+        expected_roles = tuple((item, "original_input") for item in sorted(aliases))
+    stage_binding = snapshot.observation_stage_source_binding
+    expected_stage_roles = {
+        "normal_observation": ("original_input",),
+        "pre_question_observation": (
+            "original_input",
+            "question_need_decision",
+        ),
+        "refined_observation": (
+            "original_input",
+            "question_need_decision",
+            "supplemental_answer",
+        ),
+    }.get(snapshot.observation_stage, ())
     stage_hash_fields_valid = bool(
         type(stage_binding) is ObservationStageSourceBinding
         and _SHA256_RE.fullmatch(stage_binding.original_input_bundle_sha256)
@@ -2539,7 +3061,16 @@ def _snapshot_authority_issues(snapshot: GroundedSourceSnapshot) -> tuple[str, .
             else type(stage_binding.question_need_decision_sha256) is str
             and bool(_SHA256_RE.fullmatch(stage_binding.question_need_decision_sha256))
         )
-        and stage_binding.supplemental_answer_bundle_sha256 is None
+        and (
+            type(stage_binding.supplemental_answer_bundle_sha256) is str
+            and bool(
+                _SHA256_RE.fullmatch(
+                    stage_binding.supplemental_answer_bundle_sha256
+                )
+            )
+            if is_refined
+            else stage_binding.supplemental_answer_bundle_sha256 is None
+        )
     )
     if (
         type(stage_binding) is not ObservationStageSourceBinding
@@ -2553,11 +3084,17 @@ def _snapshot_authority_issues(snapshot: GroundedSourceSnapshot) -> tuple[str, .
     ):
         issues.append("OBSERVATION_STAGE_CONTEXT_COMMITMENT_MISMATCH")
     if (
-        snapshot.semantic_source_roles != ("original_input",)
+        snapshot.semantic_source_roles
+        != (
+            ("original_input", "supplemental_answer")
+            if is_refined
+            else ("original_input",)
+        )
         or snapshot.source_role_bindings != expected_roles
         or snapshot.observation_stage not in {
             "normal_observation",
             "pre_question_observation",
+            "refined_observation",
         }
         or snapshot.answered_unknown_boundary_ids
     ):
@@ -2577,10 +3114,57 @@ def _snapshot_authority_issues(snapshot: GroundedSourceSnapshot) -> tuple[str, .
         )
     ):
         issues.append("SEMANTIC_RESTATEMENT_WITNESS_COMMITMENT_INVALID")
+    if is_refined:
+        refined_hashes = (
+            snapshot.refined_source_partition_sha256,
+            snapshot.refined_original_source_observation_plan_sha256,
+            snapshot.refined_supplemental_source_observation_plan_sha256,
+            snapshot.refined_original_semantic_restatement_witness_sha256,
+            snapshot.refined_supplemental_semantic_restatement_witness_sha256,
+        )
+        if any(
+            type(value) is not str or _SHA256_RE.fullmatch(value) is None
+            for value in refined_hashes
+        ):
+            issues.append("REFINED_SOURCE_PARTITION_COMMITMENT_MISMATCH")
+        else:
+            expected_semantic_witness = artifact_sha256(
+                {
+                    "original": (
+                        snapshot.refined_original_semantic_restatement_witness_sha256
+                    ),
+                    "supplemental": (
+                        snapshot.refined_supplemental_semantic_restatement_witness_sha256
+                    ),
+                    "partition": snapshot.refined_source_partition_sha256,
+                }
+            )
+            if (
+                snapshot.source_semantic_restatement_witness_sha256
+                != expected_semantic_witness
+            ):
+                issues.append("SEMANTIC_RESTATEMENT_WITNESS_COMMITMENT_INVALID")
+    elif any(
+        value is not None
+        for value in (
+            snapshot.refined_source_partition_sha256,
+            snapshot.refined_original_source_observation_plan_sha256,
+            snapshot.refined_supplemental_source_observation_plan_sha256,
+            snapshot.refined_original_semantic_restatement_witness_sha256,
+            snapshot.refined_supplemental_semantic_restatement_witness_sha256,
+        )
+    ):
+        issues.append("REFINED_SOURCE_PARTITION_COMMITMENT_MISMATCH")
     all_unknown_ids = frozenset(row.source_id for row in snapshot.unknowns)
     expected_preserved = (
         all_unknown_ids
         if snapshot.observation_stage == "pre_question_observation"
+        else frozenset(
+            row.source_id
+            for row in snapshot.unknowns
+            if row.source_role == "original_input"
+        )
+        if is_refined
         else frozenset()
     )
     if snapshot.preserved_unknown_boundary_ids != expected_preserved:
@@ -2641,34 +3225,54 @@ def _snapshot_authority_issues(snapshot: GroundedSourceSnapshot) -> tuple[str, .
     ):
         issues.append("SOURCE_RESOURCE_COUNTS_INVALID")
     try:
-        plan_artifact = _plan_native_artifact(
-            plan_schema_version=snapshot.plan_schema_version,
-            plan_adapter_version=snapshot.plan_adapter_version,
-            plan_generation_path=snapshot.plan_generation_path,
-            semantic_restatement_witness_schema_version=(
-                snapshot.semantic_restatement_witness_schema_version
-            ),
-            semantic_restatement_witness_adapter_version=(
-                snapshot.semantic_restatement_witness_adapter_version
-            ),
-            semantic_restatement_plan_binding_sha256=(
-                snapshot.semantic_restatement_plan_binding_sha256
-            ),
-            source_semantic_restatement_witness_sha256=(
-                snapshot.source_semantic_restatement_witness_sha256
-            ),
-            bindings=bindings,
-            evidence_ids=snapshot.evidence_ids,
-            nuclei=snapshot.nuclei,
-            relations=snapshot.relations,
-            unknowns=snapshot.unknowns,
-            safety_required_boundary_codes=snapshot.safety_required_boundary_codes,
-            identity_claim_must_not_be_accepted_as_fact=(
-                snapshot.identity_claim_must_not_be_accepted_as_fact
-            ),
-            eligibility=eligibility,
-        )
-        plan_hash = artifact_sha256(plan_artifact)
+        if is_refined:
+            plan_hash = artifact_sha256(
+                _refined_plan_commitment_material(
+                    partition_sha256=str(
+                        snapshot.refined_source_partition_sha256 or ""
+                    ),
+                    original_plan_sha256=str(
+                        snapshot.refined_original_source_observation_plan_sha256
+                        or ""
+                    ),
+                    supplemental_plan_sha256=str(
+                        snapshot.refined_supplemental_source_observation_plan_sha256
+                        or ""
+                    ),
+                    role_bindings=snapshot.source_role_bindings,
+                )
+            )
+        else:
+            plan_artifact = _plan_native_artifact(
+                plan_schema_version=snapshot.plan_schema_version,
+                plan_adapter_version=snapshot.plan_adapter_version,
+                plan_generation_path=snapshot.plan_generation_path,
+                semantic_restatement_witness_schema_version=(
+                    snapshot.semantic_restatement_witness_schema_version
+                ),
+                semantic_restatement_witness_adapter_version=(
+                    snapshot.semantic_restatement_witness_adapter_version
+                ),
+                semantic_restatement_plan_binding_sha256=(
+                    snapshot.semantic_restatement_plan_binding_sha256
+                ),
+                source_semantic_restatement_witness_sha256=(
+                    snapshot.source_semantic_restatement_witness_sha256
+                ),
+                bindings=bindings,
+                evidence_ids=snapshot.evidence_ids,
+                nuclei=snapshot.nuclei,
+                relations=snapshot.relations,
+                unknowns=snapshot.unknowns,
+                safety_required_boundary_codes=(
+                    snapshot.safety_required_boundary_codes
+                ),
+                identity_claim_must_not_be_accepted_as_fact=(
+                    snapshot.identity_claim_must_not_be_accepted_as_fact
+                ),
+                eligibility=eligibility,
+            )
+            plan_hash = artifact_sha256(plan_artifact)
         reception_artifact = _reception_native_artifact(
             snapshot.reception_opportunities, bindings
         )
@@ -2703,6 +3307,11 @@ def _snapshot_authority_issues(snapshot: GroundedSourceSnapshot) -> tuple[str, .
         opportunities=snapshot.reception_opportunities,
         role_bindings=snapshot.source_role_bindings,
         inventory_bound=bound,
+        allowed_source_roles=(
+            ("original_input", "supplemental_answer")
+            if is_refined
+            else ("original_input",)
+        ),
     )
     if snapshot.ledger_source_authority != expected_authority:
         issues.append("SNAPSHOT_AUTHORITY_COMMITMENT_MISMATCH")

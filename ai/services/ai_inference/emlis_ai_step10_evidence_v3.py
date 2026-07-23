@@ -25,12 +25,12 @@ from emlis_ai_nls_v3_artifact_contract import (
     canonical_json_bytes,
     validate_case_evidence_receipt,
 )
-from emlis_ai_step10_dependency_manifest_v3 import (
-    FROZEN_STEP10_CANDIDATE_VERSION_ID,
-    FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256,
-    fresh_step10_source_closure_sha256,
-    step10_source_file_sha256,
-    validate_step10_dependency_manifest,
+from emlis_ai_recovery_epoch001_source_baseline_manifest_v3 import (
+    FROZEN_RECOVERY_EPOCH001_SOURCE_CLOSURE_SHA256 as FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256,
+    RECOVERY_EPOCH001_CANDIDATE_VERSION_ID as FROZEN_STEP10_CANDIDATE_VERSION_ID,
+    fresh_recovery_epoch001_source_closure_sha256 as fresh_step10_source_closure_sha256,
+    recovery_epoch001_source_file_sha256 as step10_source_file_sha256,
+    validate_recovery_epoch001_source_baseline_manifest as validate_step10_dependency_manifest,
 )
 from emlis_ai_step10_app_reachable_contract_v3 import (
     project_app_reachable_input,

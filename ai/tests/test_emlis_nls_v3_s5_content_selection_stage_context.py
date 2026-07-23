@@ -29,6 +29,11 @@ from emlis_ai_observation_stage_context_v3 import (
     ObservationStageContextBuildError,
     build_observation_stage_context,
 )
+from emlis_ai_recovery_epoch001_source_baseline_manifest_v3 import (
+    RECOVERY_EPOCH001_SOURCE_BASELINE_MANIFEST,
+    validate_recovery_epoch001_source_baseline_manifest,
+    validate_recovery_epoch001_source_guard,
+)
 from emlis_ai_semantic_obligation_inventory_v3 import (
     SemanticObligationInventoryError,
     build_grounded_source_snapshot,
@@ -574,43 +579,6 @@ def test_s5_source_unavailable_is_limited_to_labels_or_explicit_unknown() -> Non
 
 
 def test_s5_new_modules_are_runtime_disconnected_and_do_not_read_fixture_cues() -> None:
-    service_root = _AI_ROOT / "services" / "ai_inference"
-    module_names = {
-        "emlis_ai_grounded_observation_semantic_restatement_v3.py",
-        "emlis_ai_observation_stage_context_v3.py",
-        "emlis_ai_semantic_obligation_inventory_v3.py",
-        "emlis_ai_content_selection_v3.py",
-        "emlis_ai_discourse_graph_planner_v3.py",
-        "emlis_ai_surface_grammar_catalog_v3.py",
-        "emlis_ai_typed_surface_ast_v3.py",
-        "emlis_ai_canonical_renderer_v3.py",
-        "emlis_ai_surface_grammar_catalog_v3_step8.py",
-        "emlis_ai_step8_artifact_contract_v3.py",
-        "emlis_ai_body_semantic_atom_parser_v3.py",
-        "emlis_ai_independent_semantic_matcher_v3.py",
-        "emlis_ai_step9_artifact_contract_v3.py",
-        "emlis_ai_step9_dependency_manifest_v3.py",
-        "emlis_ai_semantic_hard_gate_v3.py",
-        "emlis_ai_lexicographic_selector_v3.py",
-        "emlis_ai_bounded_recovery_v3.py",
-        "emlis_ai_dormant_runtime_adapter_v3.py",
-        "emlis_ai_step10_dependency_manifest_v3.py",
-        "emlis_ai_step10_evidence_v3.py",
-        "emlis_ai_step11_cycle_evidence_v3.py",
-        "emlis_ai_step11_hard_gate_v3.py",
-        "emlis_ai_step11_natural_surface_matcher_v3.py",
-        "emlis_ai_step11_natural_surface_v3.py",
-        "emlis_ai_step11_planning_frontier_v3.py",
-        "emlis_ai_step11_runtime_adapter_v3.py",
-        "emlis_ai_step11_semantic_overlay_v3.py",
-        "emlis_ai_step11_surface_catalog_v3.py",
-    }
-    tool_module_names = {
-        "emlis_nls_v3_step11_batch_run.py",
-        "emlis_nls_v3_step11_cycle_finalize.py",
-        "emlis_nls_v3_step11_dependency_manifest.py",
-        "emlis_nls_v3_step11_regression.py",
-    }
     generation_source = inspect.getsource(
         __import__("emlis_ai_content_selection_v3")
     )
@@ -628,22 +596,25 @@ def test_s5_new_modules_are_runtime_disconnected_and_do_not_read_fixture_cues() 
     assert "emlis_ai_nls_v2" not in generation_source
     assert "def artifact_sha256" not in generation_source
 
-    for path in _AI_ROOT.rglob("*.py"):
-        if (
-            "tests" in path.parts
-            or path.name in module_names | tool_module_names
-        ):
-            continue
-        source = path.read_text(encoding="utf-8")
-        assert (
-            "emlis_ai_grounded_observation_semantic_restatement_v3"
-            not in source
-        ), path
-        assert "emlis_ai_observation_stage_context_v3" not in source, path
-        assert "emlis_ai_semantic_obligation_inventory_v3" not in source, path
-        assert "emlis_ai_content_selection_v3" not in source, path
-    assert all((service_root / name).is_file() for name in module_names)
-    assert all(
-        (_AI_ROOT / "tools" / name).is_file()
-        for name in tool_module_names
-    )
+    assert validate_recovery_epoch001_source_baseline_manifest() == ()
+    files = RECOVERY_EPOCH001_SOURCE_BASELINE_MANIFEST["files"]
+    assert {
+        "ai/services/ai_inference/emlis_ai_refined_source_partition_v3.py",
+        "ai/services/ai_inference/emlis_ai_semantic_obligation_inventory_v3.py",
+        "ai/services/ai_inference/emlis_ai_content_selection_v3.py",
+        "ai/services/ai_inference/emlis_ai_dormant_runtime_adapter_v3.py",
+    } <= set(files)
+    for relative_path in files:
+        path = _AI_ROOT.parent / relative_path
+        assert path.is_file()
+        assert validate_recovery_epoch001_source_guard(
+            relative_path,
+            path.read_bytes(),
+            RECOVERY_EPOCH001_SOURCE_BASELINE_MANIFEST,
+        ) == ()
+    assert files["ai/services/ai_inference/emlis_ai_reply_service.py"][
+        "runtime_connected"
+    ] is True
+    assert files[
+        "ai/services/ai_inference/emlis_ai_dormant_runtime_adapter_v3.py"
+    ]["runtime_connected"] is False

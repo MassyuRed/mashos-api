@@ -22,6 +22,10 @@ from emlis_ai_nls_v3_artifact_contract import (
     derive_obligation_id,
 )
 from emlis_ai_observation_stage_context_v3 import build_observation_stage_context
+from emlis_ai_refined_source_partition_v3 import (
+    build_refined_source_partition,
+    validate_refined_source_partition,
+)
 from emlis_ai_semantic_obligation_inventory_v3 import (
     FROZEN_SOURCE_POLICY_SHA256,
     SemanticObligationInventoryError,
@@ -101,6 +105,15 @@ def _pre_source(current_input: dict[str, object]):
         trusted_future_authority=authority,
     )
     return plan, resolver, stage, authority, snapshot
+
+
+def _plan_and_resolver(current_input: dict[str, object]):
+    spans = build_evidence_ledger(current_input)
+    resolver = build_evidence_span_resolver(spans, current_input=current_input)
+    return build_grounded_observation_plan(
+        current_input,
+        evidence_spans=spans,
+    ), resolver
 
 
 def _raises_code(call, expected: str) -> None:
@@ -663,12 +676,11 @@ def test_s4_frozen_source_policy_rejects_in_process_artifact_drift() -> None:
         inventory_module.SOURCE_POLICY_ARTIFACT["body_free"] = original
 
 
-def test_s4_refined_context_is_valid_but_source_partition_owner_is_required() -> None:
-    current_input = _known_input()
-    supplemental = {"answer": "不安は結果が読めない点についてです。"}
-    spans = build_evidence_ledger(current_input)
-    resolver = build_evidence_span_resolver(spans, current_input=current_input)
-    plan = build_grounded_observation_plan(current_input, evidence_spans=spans)
+def test_s4_refined_context_requires_and_consumes_the_partition_owner() -> None:
+    current_input = _sample("nls3s_b001_0031")["input"]
+    supplemental = {"thought_text": "結果が読めない点が不安。"}
+    plan, resolver = _plan_and_resolver(current_input)
+    supplemental_plan, supplemental_resolver = _plan_and_resolver(supplemental)
     authority = TrustedFutureStageAuthority(
         authority_owner="question_system_core",
         question_need_decision_sha256="b" * 64,
@@ -694,6 +706,58 @@ def test_s4_refined_context_is_valid_but_source_partition_owner_is_required() ->
         ),
         "REFINED_SOURCE_PARTITION_OWNER_UNAVAILABLE",
     )
+
+    partition = build_refined_source_partition(
+        plan,
+        resolver,
+        supplemental_plan,
+        supplemental_resolver,
+        stage,
+        current_input,
+        supplemental,
+        authority,
+    )
+    assert validate_refined_source_partition(
+        partition,
+        plan,
+        resolver,
+        supplemental_plan,
+        supplemental_resolver,
+        stage,
+        current_input,
+        supplemental,
+        authority,
+    ) == ()
+    snapshot = build_grounded_source_snapshot(
+        plan,
+        resolver,
+        observation_stage_context=stage,
+        original_input_bundle=current_input,
+        trusted_future_authority=authority,
+        supplemental_answer_bundle=supplemental,
+        refined_source_partition=partition,
+    )
+    assert snapshot.semantic_source_roles == (
+        "original_input",
+        "supplemental_answer",
+    )
+    assert partition["question_need_decision_is_semantic_source"] is False
+    assert partition["control_plane_owner_role"] == "original_input"
+    assert {
+        role for _source_id, role in snapshot.source_role_bindings
+    } == {"original_input", "supplemental_answer"}
+    assert all(
+        role == "original_input"
+        for source_id, role in snapshot.source_role_bindings
+        if source_id
+        in {row.source_id for row in snapshot.reception_opportunities}
+    )
+    result = build_semantic_obligation_inventory(snapshot)
+    assert validate_semantic_obligation_inventory(
+        result.ledger, source_snapshot=snapshot
+    ) == ()
+    assert current_input["thought_text"] not in repr(partition)
+    assert supplemental["thought_text"] not in repr(partition)
 
 
 def test_s4_source_unavailable_is_label_bounded_and_empty_fails_closed() -> None:

@@ -43,7 +43,7 @@ _RECOVERY_BASELINE_MANIFEST_PATH = (
     "ai/services/ai_inference/"
     "emlis_ai_recovery_epoch001_source_baseline_manifest_v3.py"
 )
-_RECOVERY_IMPLEMENTATION_PRESENT = False
+_RECOVERY_IMPLEMENTATION_PRESENT = True
 
 _HERE = Path(__file__).resolve()
 _AI_ROOT = _HERE.parents[1]

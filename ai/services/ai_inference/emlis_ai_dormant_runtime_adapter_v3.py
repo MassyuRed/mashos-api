@@ -15,11 +15,15 @@ from dataclasses import dataclass
 import hashlib
 import re
 import time
+from types import FunctionType
 from typing import Any, Mapping
 
+import emlis_ai_bounded_recovery_v3 as bounded_recovery_module
+import emlis_ai_lexicographic_selector_v3 as lexicographic_selector_module
+import emlis_ai_semantic_hard_gate_v3 as semantic_hard_gate_module
+import emlis_ai_step9_artifact_contract_v3 as step9_artifact_contract_module
 from emlis_ai_bounded_recovery_v3 import (
     BoundedRecoveryError,
-    select_with_bounded_recovery,
 )
 from emlis_ai_canonical_renderer_v3 import (
     CanonicalSurfaceRenderError,
@@ -63,10 +67,10 @@ from emlis_ai_semantic_obligation_inventory_v3 import (
     build_grounded_source_snapshot,
     build_semantic_obligation_inventory,
 )
-from emlis_ai_step10_dependency_manifest_v3 import (
-    FROZEN_STEP10_CANDIDATE_VERSION_ID,
-    FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256,
-    validate_step10_dependency_manifest,
+from emlis_ai_recovery_epoch001_source_baseline_manifest_v3 import (
+    FROZEN_RECOVERY_EPOCH001_SOURCE_CLOSURE_SHA256 as FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256,
+    RECOVERY_EPOCH001_CANDIDATE_VERSION_ID as FROZEN_STEP10_CANDIDATE_VERSION_ID,
+    validate_recovery_epoch001_source_baseline_manifest as validate_step10_dependency_manifest,
 )
 from emlis_ai_step9_artifact_contract_v3 import (
     BoundedRecoveryResult,
@@ -79,6 +83,72 @@ from emlis_ai_step9_artifact_contract_v3 import (
     validate_selector_decision_structure,
 )
 from emlis_ai_types import ReplyEnvelope
+
+
+def _clone_successor_function(
+    function: Any,
+    replacements: Mapping[str, Any],
+) -> Any:
+    """Copy one historical policy function without mutating its module globals."""
+
+    if type(function) is not FunctionType:
+        raise RuntimeError("recovery_epoch001_successor_function_invalid")
+    function_globals = dict(function.__globals__)
+    function_globals.update(replacements)
+    clone = FunctionType(
+        function.__code__,
+        function_globals,
+        function.__name__,
+        function.__defaults__,
+        function.__closure__,
+    )
+    clone.__kwdefaults__ = function.__kwdefaults__
+    clone.__annotations__ = dict(function.__annotations__)
+    return clone
+
+
+# rc0032 supersedes the historical source closure, not its semantic policies.
+# Build an adapter-local function graph in which only the dependency-manifest
+# validator is replaced.  No historical module global or artifact is changed.
+_SUCCESSOR_STEP9_POLICY_VALIDATOR = _clone_successor_function(
+    step9_artifact_contract_module.validate_step9_policies,
+    {
+        "validate_step9_dependency_manifest": validate_step10_dependency_manifest,
+    },
+)
+_SUCCESSOR_HARD_GATE_EVALUATE = _clone_successor_function(
+    semantic_hard_gate_module._evaluate,
+    {
+        "validate_step9_policies": _SUCCESSOR_STEP9_POLICY_VALIDATOR,
+        "validate_step9_dependency_manifest": validate_step10_dependency_manifest,
+    },
+)
+_SUCCESSOR_EVALUATE_SEMANTIC_HARD_GATE = _clone_successor_function(
+    semantic_hard_gate_module.evaluate_semantic_hard_gate,
+    {"_evaluate": _SUCCESSOR_HARD_GATE_EVALUATE},
+)
+_SUCCESSOR_LEXICOGRAPHIC_SELECT = _clone_successor_function(
+    lexicographic_selector_module._select,
+    {
+        "validate_step9_policies": _SUCCESSOR_STEP9_POLICY_VALIDATOR,
+        "evaluate_semantic_hard_gate": _SUCCESSOR_EVALUATE_SEMANTIC_HARD_GATE,
+    },
+)
+_SUCCESSOR_SELECT_SEMANTIC_CANDIDATES = _clone_successor_function(
+    lexicographic_selector_module.select_semantic_candidates,
+    {"_select": _SUCCESSOR_LEXICOGRAPHIC_SELECT},
+)
+_SUCCESSOR_BOUNDED_RECOVER = _clone_successor_function(
+    bounded_recovery_module._recover,
+    {
+        "validate_step9_policies": _SUCCESSOR_STEP9_POLICY_VALIDATOR,
+        "select_semantic_candidates": _SUCCESSOR_SELECT_SEMANTIC_CANDIDATES,
+    },
+)
+_SUCCESSOR_SELECT_WITH_BOUNDED_RECOVERY = _clone_successor_function(
+    bounded_recovery_module.select_with_bounded_recovery,
+    {"_recover": _SUCCESSOR_BOUNDED_RECOVER},
+)
 
 
 RUNTIME_STATE_SCHEMA = "cocolon.emlis.nls_v3.runtime_owner_state.v1"
@@ -541,7 +611,7 @@ def execute_dormant_v3(
             )
             for plan in discourse.plans
         )
-        recovery = select_with_bounded_recovery(
+        recovery = _SUCCESSOR_SELECT_WITH_BOUNDED_RECOVERY(
             initial_candidates,
             inventory_result=inventory,
             content_plan=content_plan,
@@ -721,7 +791,7 @@ def validate_dormant_runtime_execution(value: Any) -> tuple[str, ...]:
                 )
                 for plan in expected_discourse.plans
             )
-            expected_recovery = select_with_bounded_recovery(
+            expected_recovery = _SUCCESSOR_SELECT_WITH_BOUNDED_RECOVERY(
                 expected_initial_candidates,
                 inventory_result=expected_inventory,
                 content_plan=expected_content_plan,

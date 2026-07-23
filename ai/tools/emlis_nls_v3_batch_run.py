@@ -39,10 +39,10 @@ from emlis_ai_step10_evidence_v3 import (  # noqa: E402
 from emlis_ai_dormant_runtime_adapter_v3 import (  # noqa: E402
     DormantRuntimeAdapterError,
 )
-from emlis_ai_step10_dependency_manifest_v3 import (  # noqa: E402
-    FROZEN_STEP10_CANDIDATE_VERSION_ID,
-    fresh_step10_source_closure_sha256,
-    step10_source_file_sha256,
+from emlis_ai_recovery_epoch001_source_baseline_manifest_v3 import (  # noqa: E402
+    RECOVERY_EPOCH001_CANDIDATE_VERSION_ID as FROZEN_STEP10_CANDIDATE_VERSION_ID,
+    fresh_recovery_epoch001_source_closure_sha256 as fresh_step10_source_closure_sha256,
+    recovery_epoch001_source_file_sha256 as step10_source_file_sha256,
 )
 from emlis_nls_v3_s2_sample_registry import (  # noqa: E402
     load_canonical_json,

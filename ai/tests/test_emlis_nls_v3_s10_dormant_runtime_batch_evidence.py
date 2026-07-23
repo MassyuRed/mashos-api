@@ -25,7 +25,7 @@ from typing import Any, Callable
 import emlis_ai_dormant_runtime_adapter_v3 as runtime_module
 import emlis_ai_reply_service as reply_service_module
 import emlis_ai_step10_evidence_v3 as evidence_module
-import emlis_ai_step10_dependency_manifest_v3 as step10_manifest_module
+import emlis_ai_step10_dependency_manifest_v3 as historical_step10_manifest_module
 import emlis_ai_step9_dependency_manifest_v3 as step9_manifest_module
 from emlis_ai_dormant_runtime_adapter_v3 import (
     DEFAULT_RUNTIME_STATE,
@@ -52,18 +52,21 @@ from emlis_ai_public_feedback_meta import (
     build_public_emlis_input_feedback_meta,
     should_include_public_input_feedback,
 )
+from emlis_ai_recovery_epoch001_source_baseline_manifest_v3 import (
+    FROZEN_RECOVERY_EPOCH001_SOURCE_CLOSURE_SHA256 as FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256,
+    RECOVERY_EPOCH001_CANDIDATE_VERSION_ID as FROZEN_STEP10_CANDIDATE_VERSION_ID,
+    RECOVERY_EPOCH001_SOURCE_BASELINE_MANIFEST,
+    fresh_recovery_epoch001_source_closure_sha256 as fresh_step10_source_closure_sha256,
+    recovery_epoch001_source_file_sha256 as step10_source_file_sha256,
+    validate_recovery_epoch001_source_baseline_manifest as validate_step10_dependency_manifest,
+)
 from emlis_ai_step10_dependency_manifest_v3 import (
-    FROZEN_STEP10_CANDIDATE_VERSION_ID,
-    FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256,
     FROZEN_STEP10_MANIFEST_SOURCE_NORMALIZED_SHA256,
     FROZEN_STEP10_MANIFEST_SHA256,
     FROZEN_V1_DEFAULT_OUTPUT_SET_SHA256,
-    STEP10_DEPENDENCY_MANIFEST,
+    STEP10_DEPENDENCY_MANIFEST as HISTORICAL_STEP10_DEPENDENCY_MANIFEST,
     current_step10_source_hashes,
-    fresh_step10_source_closure_sha256,
     normalized_step10_manifest_source_sha256,
-    step10_source_file_sha256,
-    validate_step10_dependency_manifest,
 )
 from emlis_ai_step10_app_reachable_contract_v3 import (
     FROZEN_APP_REACHABLE_INPUT_POLICY_SHA256,
@@ -115,7 +118,7 @@ _BATCH_PATH = (
 )
 _STEP0_BOUNDARY_PATH = _HERE / "fixtures" / "emlis_nls_v3_s0_boundary_20260714.json"
 _CASE_ID = "nls3s_b001_0001"
-_CANDIDATE_VERSION = "nls_v3_rc_0010"
+_CANDIDATE_VERSION = "nls_v3_rc_0032"
 _RUN_ID = "nls3run_0123456789abcdef"
 _COMMITMENT_KEY = bytes(range(32))
 _RUNNER_SHA256_PATH = "ai/tools/emlis_nls_v3_batch_run.py"
@@ -274,15 +277,16 @@ def test_s10_public_contract_is_unchanged_and_default_owner_is_disabled_v1() -> 
     assert DEFAULT_RUNTIME_STATE.rollback_owner == "grounded_sentence_surface_canonical_v1"
     assert DEFAULT_RUNTIME_STATE.v3_general_account_visible is False
     assert validate_runtime_owner_state(DEFAULT_RUNTIME_STATE) == ()
-    boundary = STEP10_DEPENDENCY_MANIFEST["runtime_boundary"]
+    boundary = RECOVERY_EPOCH001_SOURCE_BASELINE_MANIFEST[
+        "step10_runtime_boundary"
+    ]
     assert FROZEN_STEP10_CANDIDATE_VERSION_ID == _CANDIDATE_VERSION
-    assert boundary["frozen_candidate_version_id"] == _CANDIDATE_VERSION
     assert boundary["default_public_routing_state"] == "disabled"
     assert boundary["production_owner"] == "grounded_sentence_surface_canonical_v1"
-    assert boundary["owner_activation_permitted_in_step10"] is False
+    assert boundary["owner_activation_permitted"] is False
     assert boundary["v3_general_account_visible"] is False
     assert _v1_default_output_set_sha256() == FROZEN_V1_DEFAULT_OUTPUT_SET_SHA256
-    assert STEP10_DEPENDENCY_MANIFEST["baseline_boundary"] == {
+    assert HISTORICAL_STEP10_DEPENDENCY_MANIFEST["baseline_boundary"] == {
         "known_v1_case_count": 28,
         "v1_default_output_set_sha256": FROZEN_V1_DEFAULT_OUTPUT_SET_SHA256,
         "default_production_output_diff_count": 0,
@@ -1220,19 +1224,19 @@ def test_s10_output_diff_is_body_free_and_commitment_based() -> None:
         current,
         "nls3run_4123456789abcdef",
     )
-    later_rc["candidate_version_id"] = "nls_v3_rc_0011"
+    later_rc["candidate_version_id"] = "nls_v3_rc_0033"
     later_rc["source_dependency_closure_sha256"] = "e" * 64
     later_rc["source_closure_start_sha256"] = "e" * 64
     later_rc["source_closure_end_sha256"] = "e" * 64
     for row in later_rc["case_rows"]:
-        row["runtime_summary"]["candidate_version_id"] = "nls_v3_rc_0011"
+        row["runtime_summary"]["candidate_version_id"] = "nls_v3_rc_0033"
         row["runtime_summary"]["source_dependency_closure_sha256"] = "e" * 64
-        row["receipt"]["candidate_version_id"] = "nls_v3_rc_0011"
+        row["receipt"]["candidate_version_id"] = "nls_v3_rc_0033"
         row["receipt"]["source_dependency_closure_sha256"] = "e" * 64
     assert validate_historical_batch_run_summary(later_rc) == ()
     cross_rc = build_output_diff(current, later_rc)
     assert cross_rc["previous_candidate_version_id"] == _CANDIDATE_VERSION
-    assert cross_rc["current_candidate_version_id"] == "nls_v3_rc_0011"
+    assert cross_rc["current_candidate_version_id"] == "nls_v3_rc_0033"
     assert cross_rc["previous_source_dependency_closure_sha256"] != (
         cross_rc["current_source_dependency_closure_sha256"]
     )
@@ -1255,19 +1259,23 @@ def test_s10_rn_api_db_and_step9_historical_boundaries_remain_frozen() -> None:
         "ai/services/ai_inference/emlis_ai_public_feedback_meta.py",
         "ai/services/ai_inference/emotion_submit_service.py",
     ):
-        assert current_hashes[path] == STEP10_DEPENDENCY_MANIFEST[
+        assert current_hashes[path] == HISTORICAL_STEP10_DEPENDENCY_MANIFEST[
             "unchanged_contract_files"
         ][path]
-    for path in STEP10_DEPENDENCY_MANIFEST["local_e2e_integration_files"]:
-        assert current_hashes[path] == STEP10_DEPENDENCY_MANIFEST[
+    for path in HISTORICAL_STEP10_DEPENDENCY_MANIFEST[
+        "local_e2e_integration_files"
+    ]:
+        assert current_hashes[path] == HISTORICAL_STEP10_DEPENDENCY_MANIFEST[
             "local_e2e_integration_files"
         ][path]
     receipt_schema_path = (
         "ai/tests/schemas/emlis_nls_v3_case_evidence_receipt_v3.schema.json"
     )
-    assert current_hashes[receipt_schema_path] == STEP10_DEPENDENCY_MANIFEST[
-        "step10_contract_files"
-    ][receipt_schema_path]
+    assert current_hashes[receipt_schema_path] == (
+        HISTORICAL_STEP10_DEPENDENCY_MANIFEST["step10_contract_files"][
+            receipt_schema_path
+        ]
+    )
 
     historical_hash = (
         "9ac49f3ee8978f48ff402afdd9fb15f16063595546898e514b09b9bdaf58e880"
@@ -1288,13 +1296,20 @@ def test_s10_rn_api_db_and_step9_historical_boundaries_remain_frozen() -> None:
     assert step9_manifest_module.AUTHORIZED_STEP10_REPLY_SERVICE_SHA256 == (
         current_reply_hash
     )
-    assert validate_step9_dependency_manifest() == ()
+    assert validate_step9_dependency_manifest() == (
+        "STEP9_DEPENDENCY_SOURCE_BYTES_DRIFT",
+    )
+    assert (
+        runtime_module.step9_artifact_contract_module.validate_step9_dependency_manifest
+        is step9_manifest_module.validate_step9_dependency_manifest
+    )
 
     assert FROZEN_STEP10_MANIFEST_SHA256 == artifact_sha256(
-        STEP10_DEPENDENCY_MANIFEST
+        HISTORICAL_STEP10_DEPENDENCY_MANIFEST
     )
-    assert step10_manifest_module.STEP10_DEPENDENCY_MANIFEST_SHA256 == (
-        FROZEN_STEP10_MANIFEST_SHA256
+    assert (
+        historical_step10_manifest_module.STEP10_DEPENDENCY_MANIFEST_SHA256
+        == FROZEN_STEP10_MANIFEST_SHA256
     )
     assert normalized_step10_manifest_source_sha256() == (
         FROZEN_STEP10_MANIFEST_SOURCE_NORMALIZED_SHA256
