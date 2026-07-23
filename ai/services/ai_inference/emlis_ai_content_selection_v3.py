@@ -952,13 +952,7 @@ def validate_content_selection_policy(
             for row in decisions
             if type(row.get("obligation_id")) is str
         }
-        forced_active_ids = frozenset(
-            _required_stance_target_closure(ledger_rows)
-            | _cross_role_unmatched_obligation_ids(
-                ledger_rows,
-                snapshot,
-            )
-        )
+        forced_active_ids = _required_stance_target_closure(ledger_rows)
         if not forced_active_ids <= set(ledger_by_id):
             _add(issues, "STANCE_TARGET_UNRESOLVED", "$.decisions")
         for index, decision in enumerate(decisions):
@@ -1150,13 +1144,7 @@ def build_content_selection_plan(
             "NLS3_CONTENT_SELECTION_SEPARATE_SAFETY_OWNER"
         )
 
-    forced_active_ids = frozenset(
-        _required_stance_target_closure(ledger_rows)
-        | _cross_role_unmatched_obligation_ids(
-            ledger_rows,
-            snapshot,
-        )
-    )
+    forced_active_ids = _required_stance_target_closure(ledger_rows)
     if not forced_active_ids <= set(ledger_by_id):
         raise ContentSelectionBuildError(
             "NLS3_CONTENT_SELECTION_STANCE_TARGET_INVALID"
@@ -1239,3 +1227,4 @@ __all__ = [
     "derive_content_depth",
     "validate_content_selection_policy",
 ]
+43346 ai/services/ai_inference/emlis_ai_content_selection_v3.py
