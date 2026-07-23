@@ -101,6 +101,43 @@ _STEP5_RED_CORRECTION_COCOLON_ENTRY_HEAD = (
 _STEP5_RED_CORRECTION_MASHOS_API_ENTRY_HEAD = (
     "e485f4a3c07ec0edeb2c248a74449b95f5017a58"
 )
+_STEP5_CARDINALITY_RECONCILIATION_AUTHORITY = (
+    "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_STEP5_CROSS_ROLE_POSITIVE_"
+    "BINDING_CARDINALITY_ASSERTION_AND_GREEN_DENOMINATOR_RECONCILIATION_"
+    "READ_ONLY"
+)
+_STEP5_CARDINALITY_RED_CORRECTION_AUTHORITY = (
+    "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_STEP5_CROSS_ROLE_POSITIVE_"
+    "BINDING_CARDINALITY_ASSERTION_AND_GREEN_DENOMINATOR_RECONCILIATION_RED_"
+    "CORRECTION_AND_REFREEZE_ONLY"
+)
+_STEP5_CARDINALITY_RECONCILIATION_COCOLON_ENTRY_HEAD = (
+    "ad8095d2e3e8ed6eb642bb5f4c014484edbb608e"
+)
+_STEP5_CARDINALITY_RECONCILIATION_MASHOS_API_ENTRY_HEAD = (
+    "d9a65dc7d5ee329ba3387c8659f435f3fb9f8e8d"
+)
+_STEP5_CARDINALITY_RED_CORRECTION_COCOLON_ENTRY_HEAD = (
+    "db507d9737b078b97a69d5651e62ce43aff27ea1"
+)
+_STEP5_CARDINALITY_RED_CORRECTION_MASHOS_API_ENTRY_HEAD = (
+    "d9a65dc7d5ee329ba3387c8659f435f3fb9f8e8d"
+)
+_STEP5_CARDINALITY_RECONCILIATION_CURRENT_AUTHORITY_BLOB = (
+    "c298cd7759bc0e6df81b4be0231eafd048c41a2c"
+)
+_STEP5_CARDINALITY_RECONCILIATION_EXECUTION_PLAN_BLOB = (
+    "201828886ccee706af38c42c1fceb6b848d53278"
+)
+_STEP5_CARDINALITY_RECONCILIATION_RESULT_BLOB = (
+    "e0f7d270a265251cbf1204f784dd7c0e283b1946"
+)
+_STEP5_CARDINALITY_RECONCILIATION_RECEIPT_BLOB = (
+    "0eee62cfcaece10c79ae0267d2f4df6d835c6a33"
+)
+_STEP5_CARDINALITY_RECONCILIATION_HANDOFF_BLOB = (
+    "61f309fd4f96e164448ae685b5584f26b0a474a9"
+)
 _STEP5_RECONCILIATION_CURRENT_AUTHORITY_BLOB = (
     "662ba8d1bbc67a23dc155cfdd7e163aadbe8af7c"
 )
@@ -160,6 +197,63 @@ _CROSS_ROLE_NONIDENTICAL_POSITIVE = (
 _CROSS_ROLE_DEFAULT_GRAPH_NEGATIVE = (
     "EMPTY_WITNESS_FALSE_COLLAPSE_NEGATIVE"
 )
+_STEP5_CARDINALITY_RULE = (
+    "BINDING_COUNT_EQUALS_BOTH_ELIGIBLE_CLOSED_GRAPH_COMPONENT_COUNTS_"
+    "AND_IS_POSITIVE"
+)
+_STEP5_AUTHORITATIVE_EXACT7_NODES = (
+    (
+        "ai/tests/"
+        "test_emlis_nls_v3_recovery_epoch001_current_closure_completion_red.py"
+        "::test_recovery_epoch001_step5_cross_role_red_authority_and_surface_"
+        "are_exact"
+    ),
+    (
+        "ai/tests/test_emlis_ai_grounded_observation_semantic_restatement.py"
+        "::test_cross_role_semantic_restatement_contract_false_collapse_and_"
+        "tamper_red"
+    ),
+    (
+        "ai/tests/"
+        "test_emlis_nls_v3_recovery_epoch001_current_closure_completion_red.py"
+        "::test_recovery_epoch001_s5_cross_role_semantic_owner_is_resolved_or_"
+        "red"
+    ),
+    (
+        "ai/tests/test_emlis_nls_v3_s4_semantic_obligation_inventory.py"
+        "::test_s4_cross_role_refined_snapshot_lineage_alias_and_tamper_red"
+    ),
+    (
+        "ai/tests/"
+        "test_emlis_nls_v3_recovery_epoch001_current_closure_completion_red.py"
+        "::test_recovery_epoch001_s5_cross_role_inventory_owner_is_resolved_"
+        "or_red"
+    ),
+    (
+        "ai/tests/test_emlis_nls_v3_s5_content_selection_stage_context.py"
+        "::test_s5_cross_role_depth_noninflation_floor_and_effect_scope_red"
+    ),
+    (
+        "ai/tests/"
+        "test_emlis_nls_v3_recovery_epoch001_current_closure_completion_red.py"
+        "::test_recovery_epoch001_s5_cross_role_content_consumer_is_resolved_"
+        "or_red"
+    ),
+)
+_STEP5_CORRECTION_REFREEZE_RED_EXPECTATION = {
+    "collected": 7,
+    "lineage_passed": 1,
+    "causal_failed": 6,
+    "errors": 0,
+    "unexpected": 0,
+}
+_STEP5_IMPLEMENTATION_GREEN_EXPECTATION = {
+    "collected": 7,
+    "passed": 7,
+    "failed": 0,
+    "errors": 0,
+    "unexpected": 0,
+}
 
 _HERE = Path(__file__).resolve()
 _AI_ROOT = _HERE.parents[1]
@@ -258,7 +352,20 @@ _STEP5_PARENT_DESIGN_UNRESOLVED = frozenset(
         "TRUSTED_CROSS_SOURCE_EQUIVALENCE_WITNESS",
     }
 )
-_STEP5_FUTURE_SOURCE_SHA256 = {
+_STEP5_PREIMPLEMENTATION_SOURCE_BLOBS = {
+    (
+        "ai/services/ai_inference/"
+        "emlis_ai_grounded_observation_semantic_restatement_v3.py"
+    ): "d28e2ab3086fa09a62c8dbdb3d887a7bff116c78",
+    (
+        "ai/services/ai_inference/"
+        "emlis_ai_semantic_obligation_inventory_v3.py"
+    ): "685ff7ccc8f5d7fd04dc9ed301b1649b608a868a",
+    (
+        "ai/services/ai_inference/emlis_ai_content_selection_v3.py"
+    ): "7172a628f5ecdfb6ba888c36d42a6a62d0d7c22e",
+}
+_STEP5_PREIMPLEMENTATION_SOURCE_SHA256 = {
     (
         "ai/services/ai_inference/"
         "emlis_ai_grounded_observation_semantic_restatement_v3.py"
@@ -271,6 +378,9 @@ _STEP5_FUTURE_SOURCE_SHA256 = {
         "ai/services/ai_inference/emlis_ai_content_selection_v3.py"
     ): "ec2ccfc92c5566e8ec780e67db54b4a4c620a9334f2ab2cac91a314550f43f0d",
 }
+_STEP5_PREIMPLEMENTATION_SOURCE_DISPOSITION = (
+    "HISTORICAL_PREIMPLEMENTATION_NOT_FUTURE_RESULT"
+)
 
 _PROTECTED_SHA256 = {
     "ai/services/ai_inference/emlis_ai_step9_dependency_manifest_v3.py": (
@@ -723,6 +833,14 @@ def test_recovery_epoch001_step5_cross_role_red_authority_and_surface_are_exact(
     assert _STEP5_RED_CORRECTION_AUTHORITY.endswith(
         "RED_CORRECTION_AND_REFREEZE_ONLY"
     )
+    assert _STEP5_CARDINALITY_RECONCILIATION_AUTHORITY.endswith(
+        "BINDING_CARDINALITY_ASSERTION_AND_GREEN_DENOMINATOR_"
+        "RECONCILIATION_READ_ONLY"
+    )
+    assert _STEP5_CARDINALITY_RED_CORRECTION_AUTHORITY.endswith(
+        "BINDING_CARDINALITY_ASSERTION_AND_GREEN_DENOMINATOR_"
+        "RECONCILIATION_RED_CORRECTION_AND_REFREEZE_ONLY"
+    )
     assert _STEP5_RED_COCOLON_ENTRY_HEAD == (
         "ec66fdbadef3ebee4b5a531f77391252146b2e4e"
     )
@@ -734,6 +852,18 @@ def test_recovery_epoch001_step5_cross_role_red_authority_and_surface_are_exact(
     )
     assert _STEP5_RED_CORRECTION_MASHOS_API_ENTRY_HEAD == (
         "e485f4a3c07ec0edeb2c248a74449b95f5017a58"
+    )
+    assert _STEP5_CARDINALITY_RECONCILIATION_COCOLON_ENTRY_HEAD == (
+        "ad8095d2e3e8ed6eb642bb5f4c014484edbb608e"
+    )
+    assert _STEP5_CARDINALITY_RECONCILIATION_MASHOS_API_ENTRY_HEAD == (
+        "d9a65dc7d5ee329ba3387c8659f435f3fb9f8e8d"
+    )
+    assert _STEP5_CARDINALITY_RED_CORRECTION_COCOLON_ENTRY_HEAD == (
+        "db507d9737b078b97a69d5651e62ce43aff27ea1"
+    )
+    assert _STEP5_CARDINALITY_RED_CORRECTION_MASHOS_API_ENTRY_HEAD == (
+        "d9a65dc7d5ee329ba3387c8659f435f3fb9f8e8d"
     )
     assert {
         _STEP5_PARENT_ADDENDUM_BLOB,
@@ -761,6 +891,19 @@ def test_recovery_epoch001_step5_cross_role_red_authority_and_surface_are_exact(
         "a33d26fa141d059fedbe47b031927a1444ddcde4",
         "d67f265ca06441009a064ac2179a76431774dd57",
     }
+    assert {
+        _STEP5_CARDINALITY_RECONCILIATION_CURRENT_AUTHORITY_BLOB,
+        _STEP5_CARDINALITY_RECONCILIATION_EXECUTION_PLAN_BLOB,
+        _STEP5_CARDINALITY_RECONCILIATION_RESULT_BLOB,
+        _STEP5_CARDINALITY_RECONCILIATION_RECEIPT_BLOB,
+        _STEP5_CARDINALITY_RECONCILIATION_HANDOFF_BLOB,
+    } == {
+        "c298cd7759bc0e6df81b4be0231eafd048c41a2c",
+        "201828886ccee706af38c42c1fceb6b848d53278",
+        "e0f7d270a265251cbf1204f784dd7c0e283b1946",
+        "0eee62cfcaece10c79ae0267d2f4df6d835c6a33",
+        "61f309fd4f96e164448ae685b5584f26b0a474a9",
+    }
     assert _CROSS_ROLE_WITNESS_SCHEMA.endswith(
         "grounded_cross_role_semantic_restatement_witness.v1"
     )
@@ -786,6 +929,66 @@ def test_recovery_epoch001_step5_cross_role_red_authority_and_surface_are_exact(
         "CLOSED_SINGLE_COMPONENT_RESTATEMENT"
     )
     assert _CROSS_ROLE_DEFAULT_GRAPH_NEGATIVE.startswith("EMPTY_WITNESS_")
+    assert _STEP5_CARDINALITY_RULE == (
+        "BINDING_COUNT_EQUALS_BOTH_ELIGIBLE_CLOSED_GRAPH_COMPONENT_COUNTS_"
+        "AND_IS_POSITIVE"
+    )
+    assert _STEP5_AUTHORITATIVE_EXACT7_NODES == (
+        (
+            "ai/tests/"
+            "test_emlis_nls_v3_recovery_epoch001_current_closure_completion_"
+            "red.py::test_recovery_epoch001_step5_cross_role_red_authority_and_"
+            "surface_are_exact"
+        ),
+        (
+            "ai/tests/"
+            "test_emlis_ai_grounded_observation_semantic_restatement.py"
+            "::test_cross_role_semantic_restatement_contract_false_collapse_"
+            "and_tamper_red"
+        ),
+        (
+            "ai/tests/"
+            "test_emlis_nls_v3_recovery_epoch001_current_closure_completion_"
+            "red.py::test_recovery_epoch001_s5_cross_role_semantic_owner_is_"
+            "resolved_or_red"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_s4_semantic_obligation_inventory.py"
+            "::test_s4_cross_role_refined_snapshot_lineage_alias_and_tamper_"
+            "red"
+        ),
+        (
+            "ai/tests/"
+            "test_emlis_nls_v3_recovery_epoch001_current_closure_completion_"
+            "red.py::test_recovery_epoch001_s5_cross_role_inventory_owner_is_"
+            "resolved_or_red"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_s5_content_selection_stage_context.py"
+            "::test_s5_cross_role_depth_noninflation_floor_and_effect_scope_"
+            "red"
+        ),
+        (
+            "ai/tests/"
+            "test_emlis_nls_v3_recovery_epoch001_current_closure_completion_"
+            "red.py::test_recovery_epoch001_s5_cross_role_content_consumer_is_"
+            "resolved_or_red"
+        ),
+    )
+    assert _STEP5_CORRECTION_REFREEZE_RED_EXPECTATION == {
+        "collected": 7,
+        "lineage_passed": 1,
+        "causal_failed": 6,
+        "errors": 0,
+        "unexpected": 0,
+    }
+    assert _STEP5_IMPLEMENTATION_GREEN_EXPECTATION == {
+        "collected": 7,
+        "passed": 7,
+        "failed": 0,
+        "errors": 0,
+        "unexpected": 0,
+    }
 
     assert len(_STEP5_FUTURE_SOURCE_SURFACE) == 3
     assert len(_STEP5_RED_TEST_SURFACE) == 4
@@ -800,10 +1003,46 @@ def test_recovery_epoch001_step5_cross_role_red_authority_and_surface_are_exact(
         (_REPO_ROOT / path).is_file()
         for path in _STEP5_FUTURE_SOURCE_SURFACE | _STEP5_RED_TEST_SURFACE
     )
-    assert set(_STEP5_FUTURE_SOURCE_SHA256) == _STEP5_FUTURE_SOURCE_SURFACE
-    assert all(
-        _sha256(_REPO_ROOT / path) == expected
-        for path, expected in _STEP5_FUTURE_SOURCE_SHA256.items()
+    assert set(_STEP5_PREIMPLEMENTATION_SOURCE_BLOBS) == (
+        _STEP5_FUTURE_SOURCE_SURFACE
+    )
+    assert set(_STEP5_PREIMPLEMENTATION_SOURCE_SHA256) == (
+        _STEP5_FUTURE_SOURCE_SURFACE
+    )
+    assert _STEP5_PREIMPLEMENTATION_SOURCE_BLOBS == {
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_grounded_observation_semantic_restatement_v3.py"
+        ): "d28e2ab3086fa09a62c8dbdb3d887a7bff116c78",
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_semantic_obligation_inventory_v3.py"
+        ): "685ff7ccc8f5d7fd04dc9ed301b1649b608a868a",
+        (
+            "ai/services/ai_inference/emlis_ai_content_selection_v3.py"
+        ): "7172a628f5ecdfb6ba888c36d42a6a62d0d7c22e",
+    }
+    assert _STEP5_PREIMPLEMENTATION_SOURCE_SHA256 == {
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_grounded_observation_semantic_restatement_v3.py"
+        ): (
+            "a014e942b34c2c8f2a424dda0b0ecd30cb34ff99112e813d2182ad84d34b65fc"
+        ),
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_semantic_obligation_inventory_v3.py"
+        ): (
+            "0a66adbf3163cf3aad1d4454a8a26aa6292284911b4bd5ba1825e0780e3aa2bc"
+        ),
+        (
+            "ai/services/ai_inference/emlis_ai_content_selection_v3.py"
+        ): (
+            "ec2ccfc92c5566e8ec780e67db54b4a4c620a9334f2ab2cac91a314550f43f0d"
+        ),
+    }
+    assert _STEP5_PREIMPLEMENTATION_SOURCE_DISPOSITION == (
+        "HISTORICAL_PREIMPLEMENTATION_NOT_FUTURE_RESULT"
     )
 
     assert len(_CROSS_ROLE_NEGATIVE_CODES) == 18
