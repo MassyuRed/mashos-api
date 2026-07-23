@@ -208,8 +208,45 @@ _POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_CURRENT_AUTHORITY_BLOB = (
 _POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_MASHOS_API_ENTRY_HEAD = (
     "5033435bc94c4c0260cb3193a3c64b177971ceb5"
 )
-_POST_STEP5_CURRENT_DEPENDENCY_CLOSURE_ROOT = (
+_POST_STEP5_PREIMPLEMENTATION_DEPENDENCY_CLOSURE_EXACT_COUNT = 38
+_POST_STEP5_PREIMPLEMENTATION_DEPENDENCY_CLOSURE_ROOT = (
     "7d15cc072ac4ac28b6b9ce90676c6238ba08d5f59fd1896a7273ce7d57a7f302"
+)
+_POST_STEP5_PREIMPLEMENTATION_DEPENDENCY_CLOSURE_DISPOSITION = (
+    "POST_STEP5_PREIMPLEMENTATION_PREDECESSOR_ONLY"
+)
+_POST_IMPLEMENTATION_ROOT_CONTRACT_RECONCILIATION_AUTHORITY = (
+    "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_STEP0_10_CANONICAL_CURRENT_"
+    "CLOSURE_AND_STANDALONE_COMPLETION_PROOF_NONCONFORMANCE_REMEDIATION_"
+    "POST_IMPLEMENTATION_CURRENT_DEPENDENCY_CLOSURE_ROOT_CONTRACT_"
+    "RECONCILIATION_RED_CORRECTION_AND_REFREEZE_ONLY"
+)
+_POST_IMPLEMENTATION_ROOT_CONTRACT_COCOLON_APPROVED_PREDECESSOR_HEAD = (
+    "18d670ddf551cb47509290b13a25a35d02182738"
+)
+_POST_IMPLEMENTATION_ROOT_CONTRACT_COCOLON_AUTHORITY_ENTRY_HEAD = (
+    "ca8d4f334c1687ead4a91e1885cb6235e3574d05"
+)
+_POST_IMPLEMENTATION_ROOT_CONTRACT_CURRENT_AUTHORITY_BLOB = (
+    "e4db769813cf45af7ba12ea13fa18d1e501b9d21"
+)
+_POST_IMPLEMENTATION_ROOT_CONTRACT_MASHOS_API_ENTRY_HEAD = (
+    "c3bafd02615e73d47afd222d1ddef53bfc87af59"
+)
+_POST_IMPLEMENTATION_ROOT_CONTRACT_RECOVERY_TEST_ENTRY_BLOB = (
+    "98a80d62b65975d17733c635324e06732dff82d7"
+)
+_POST_IMPLEMENTATION_CURRENT_DEPENDENCY_CLOSURE_ROOT_RULE = (
+    "DERIVE_FROM_FINAL_EXACT9_BYTES_NO_PREDECESSOR_ROOT_REUSE"
+)
+_POST_IMPLEMENTATION_CURRENT_DEPENDENCY_CLOSURE_ROOT_DISPOSITION = (
+    "COUNT_AND_ROOT_DERIVED_FROM_FINAL_BYTES_NOT_PREDECLARED"
+)
+_POST_IMPLEMENTATION_ROOT_CONTRACT_NEXT_AUTHORITY = (
+    "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_STEP0_10_CANONICAL_CURRENT_"
+    "CLOSURE_AND_STANDALONE_COMPLETION_PROOF_NONCONFORMANCE_REMEDIATION_"
+    "POST_IMPLEMENTATION_CURRENT_DEPENDENCY_CLOSURE_ROOT_CONTRACT_"
+    "RECONCILIATION_IMPLEMENTATION_AND_GREEN_ONLY"
 )
 _POST_STEP5_PARENT_CONFLICT_DISPOSITION = "RESOLVED"
 _POST_STEP5_TARGETED_EXACT7_DISPOSITION = "7_OF_7_GREEN"
@@ -1070,8 +1107,45 @@ def test_recovery_epoch001_candidate_identity_surface_and_history_are_exact() ->
     assert _POST_STEP5_CURRENT_CLOSURE_ROOT_REFREEZE_MASHOS_API_ENTRY_HEAD == (
         "5033435bc94c4c0260cb3193a3c64b177971ceb5"
     )
-    assert _POST_STEP5_CURRENT_DEPENDENCY_CLOSURE_ROOT == (
+    assert (
+        _POST_STEP5_PREIMPLEMENTATION_DEPENDENCY_CLOSURE_EXACT_COUNT
+        == 38
+    )
+    assert _POST_STEP5_PREIMPLEMENTATION_DEPENDENCY_CLOSURE_ROOT == (
         "7d15cc072ac4ac28b6b9ce90676c6238ba08d5f59fd1896a7273ce7d57a7f302"
+    )
+    assert _POST_STEP5_PREIMPLEMENTATION_DEPENDENCY_CLOSURE_DISPOSITION == (
+        "POST_STEP5_PREIMPLEMENTATION_PREDECESSOR_ONLY"
+    )
+    assert _POST_IMPLEMENTATION_ROOT_CONTRACT_RECONCILIATION_AUTHORITY.endswith(
+        "POST_IMPLEMENTATION_CURRENT_DEPENDENCY_CLOSURE_ROOT_CONTRACT_"
+        "RECONCILIATION_RED_CORRECTION_AND_REFREEZE_ONLY"
+    )
+    assert (
+        _POST_IMPLEMENTATION_ROOT_CONTRACT_COCOLON_APPROVED_PREDECESSOR_HEAD
+        == "18d670ddf551cb47509290b13a25a35d02182738"
+    )
+    assert _POST_IMPLEMENTATION_ROOT_CONTRACT_COCOLON_AUTHORITY_ENTRY_HEAD == (
+        "ca8d4f334c1687ead4a91e1885cb6235e3574d05"
+    )
+    assert _POST_IMPLEMENTATION_ROOT_CONTRACT_CURRENT_AUTHORITY_BLOB == (
+        "e4db769813cf45af7ba12ea13fa18d1e501b9d21"
+    )
+    assert _POST_IMPLEMENTATION_ROOT_CONTRACT_MASHOS_API_ENTRY_HEAD == (
+        "c3bafd02615e73d47afd222d1ddef53bfc87af59"
+    )
+    assert _POST_IMPLEMENTATION_ROOT_CONTRACT_RECOVERY_TEST_ENTRY_BLOB == (
+        "98a80d62b65975d17733c635324e06732dff82d7"
+    )
+    assert _POST_IMPLEMENTATION_CURRENT_DEPENDENCY_CLOSURE_ROOT_RULE == (
+        "DERIVE_FROM_FINAL_EXACT9_BYTES_NO_PREDECESSOR_ROOT_REUSE"
+    )
+    assert _POST_IMPLEMENTATION_CURRENT_DEPENDENCY_CLOSURE_ROOT_DISPOSITION == (
+        "COUNT_AND_ROOT_DERIVED_FROM_FINAL_BYTES_NOT_PREDECLARED"
+    )
+    assert _POST_IMPLEMENTATION_ROOT_CONTRACT_NEXT_AUTHORITY.endswith(
+        "POST_IMPLEMENTATION_CURRENT_DEPENDENCY_CLOSURE_ROOT_CONTRACT_"
+        "RECONCILIATION_IMPLEMENTATION_AND_GREEN_ONLY"
     )
     assert _POST_STEP5_PARENT_CONFLICT_DISPOSITION == "RESOLVED"
     assert _POST_STEP5_TARGETED_EXACT7_DISPOSITION == "7_OF_7_GREEN"
@@ -1694,11 +1768,42 @@ def test_recovery_epoch001_step0_step1_dual_lineage_is_exact() -> None:
     current_closure, current_closure_root = s01.current_dependency_closure()
     compatibility_closure, compatibility_closure_root = s01.dependency_closure()
     assert len(historical_closure) == 17
-    assert len(current_closure) == 38
     assert historical_closure_root == (
         "3d42e942239666dc37d14c9c2969d548988c02e38ac497bb65b825d9b4c1f3bd"
     )
-    assert current_closure_root == _POST_STEP5_CURRENT_DEPENDENCY_CLOSURE_ROOT
+    assert current_closure_root == s01.sha256_json(current_closure)
+    assert all(
+        row["sha256"] == _sha256(_REPO_ROOT / row["path"])
+        for row in current_closure
+    )
+
+    future_add_presence = {
+        path: (_REPO_ROOT / path).is_file() for path in _FUTURE_ADD_PATHS
+    }
+    if not any(future_add_presence.values()):
+        assert len(current_closure) == (
+            _POST_STEP5_PREIMPLEMENTATION_DEPENDENCY_CLOSURE_EXACT_COUNT
+        )
+        assert current_closure_root == (
+            _POST_STEP5_PREIMPLEMENTATION_DEPENDENCY_CLOSURE_ROOT
+        )
+    else:
+        if not all(future_add_presence.values()):
+            pytest.fail(
+                f"{_CLOSURE_OWNER_RED}:partial_exact9_surface",
+                pytrace=False,
+            )
+        current_paths = {row["path"] for row in current_closure}
+        if _SUCCESSOR_PATH not in current_paths:
+            pytest.fail(_STEP10_SINGLE_GRAPH_RED, pytrace=False)
+        if current_closure_root == (
+            _POST_STEP5_PREIMPLEMENTATION_DEPENDENCY_CLOSURE_ROOT
+        ):
+            pytest.fail(
+                f"{_CLOSURE_OWNER_RED}:preimplementation_root_reused",
+                pytrace=False,
+            )
+
     assert current_closure_root != historical_closure_root
     assert compatibility_closure == historical_closure
     assert compatibility_closure_root == historical_closure_root
@@ -1792,11 +1897,14 @@ def test_recovery_epoch001_independent_verifier_rederives_graph_or_red() -> None
     }
     assert _CLOSURE_MODULE not in imported
     assert _RECEIPT_MODULE not in imported
+    owner = _module_or_red(_CLOSURE_MODULE, _CLOSURE_OWNER_RED)
+    canonical = owner.fresh_recovery_epoch001_canonical_current_closure()
     independently_derived = (
         verifier.fresh_recovery_epoch001_canonical_current_closure(
             repo_root=_REPO_ROOT
         )
     )
+    assert independently_derived == canonical
     assert verifier.verify_recovery_epoch001_canonical_current_closure(
         independently_derived,
         repo_root=_REPO_ROOT,
