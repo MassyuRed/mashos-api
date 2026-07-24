@@ -2268,11 +2268,27 @@ _RECONCILIATION_FUTURE_SOURCE_SURFACE = frozenset(
             "emlis_nls_v3_recovery_epoch001_current_step_proof_run.py"
         ),
         "ai/tools/emlis_nls_v3_recovery_epoch001_all11_receipt_issue.py",
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_recovery_epoch001_sequence_ledger_v3.py"
+        ),
+        (
+            "ai/tools/"
+            "emlis_nls_v3_recovery_epoch001_atomic_publication_bundle_v3.py"
+        ),
     }
 )
 _RECONCILIATION_AGGREGATE_RED_PATH = (
     "ai/tests/"
     "test_emlis_nls_v3_recovery_epoch001_proved_receipt_contract_red.py"
+)
+_RECONCILIATION_ACCEPTED_SUCCESS_RED_PATH = (
+    "ai/tests/"
+    "test_emlis_nls_v3_recovery_epoch001_exact134_accepted_success_red.py"
+)
+_RECONCILIATION_SEQUENCE_PUBLICATION_RED_PATH = (
+    "ai/tests/"
+    "test_emlis_nls_v3_recovery_epoch001_sequence_ledger_publication_red.py"
 )
 _RECONCILIATION_NEGATIVE_SOURCE_PATHS = frozenset(
     {
@@ -2326,6 +2342,8 @@ _RECONCILIATION_RED_TEST_SURFACE = frozenset(
     {
         _THIS_PATH,
         _RECONCILIATION_AGGREGATE_RED_PATH,
+        _RECONCILIATION_ACCEPTED_SUCCESS_RED_PATH,
+        _RECONCILIATION_SEQUENCE_PUBLICATION_RED_PATH,
         *_RECONCILIATION_NEGATIVE_SOURCE_PATHS,
     }
 )
@@ -2365,9 +2383,9 @@ def test_recovery_epoch001_reconciliation_red_authority_and_surface_are_exact() 
     assert _RECONCILIATION_DESIGN_BLOB == (
         "f074cdd402eb9f160e6f3fbae67527d386e31161"
     )
-    assert len(_RECONCILIATION_FUTURE_SOURCE_SURFACE) == 7
+    assert len(_RECONCILIATION_FUTURE_SOURCE_SURFACE) == 9
     assert len(_RECONCILIATION_NEGATIVE_SOURCE_PATHS) == 11
-    assert len(_RECONCILIATION_RED_TEST_SURFACE) == 13
+    assert len(_RECONCILIATION_RED_TEST_SURFACE) == 15
     assert not (
         _RECONCILIATION_FUTURE_SOURCE_SURFACE
         & _RECONCILIATION_RED_TEST_SURFACE
@@ -2381,11 +2399,21 @@ def test_recovery_epoch001_reconciliation_red_authority_and_surface_are_exact() 
     )
     for path in _RECONCILIATION_RED_TEST_SURFACE:
         assert (_REPO_ROOT / path).is_file(), path
-    future_presence = {
-        path: (_REPO_ROOT / path).is_file()
-        for path in _RECONCILIATION_FUTURE_SOURCE_SURFACE
-        - {_CLOSURE_PATH, _RECEIPT_PATH, _INDEPENDENT_VERIFIER_PATH}
+    new_future = {
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_recovery_epoch001_sequence_ledger_v3.py"
+        ),
+        (
+            "ai/tools/"
+            "emlis_nls_v3_recovery_epoch001_atomic_publication_bundle_v3.py"
+        ),
     }
-    assert set(future_presence.values()) in ({False}, {True})
+    implemented = _RECONCILIATION_FUTURE_SOURCE_SURFACE - new_future
+    assert all((_REPO_ROOT / path).is_file() for path in implemented)
+    new_presence = {
+        path: (_REPO_ROOT / path).is_file() for path in new_future
+    }
+    assert set(new_presence.values()) in ({False}, {True})
     for path, expected_sha256 in _RECONCILIATION_PROTECTED_SHA256.items():
         assert _sha256(_REPO_ROOT / path) == expected_sha256, path

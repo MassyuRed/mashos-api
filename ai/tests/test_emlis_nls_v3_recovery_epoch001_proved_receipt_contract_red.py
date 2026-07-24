@@ -90,6 +90,14 @@ _RUNNER_PATH = (
 _ISSUER_PATH = (
     "ai/tools/emlis_nls_v3_recovery_epoch001_all11_receipt_issue.py"
 )
+_SEQUENCE_OWNER_PATH = (
+    "ai/services/ai_inference/"
+    "emlis_ai_recovery_epoch001_sequence_ledger_v3.py"
+)
+_ATOMIC_PUBLISHER_PATH = (
+    "ai/tools/"
+    "emlis_nls_v3_recovery_epoch001_atomic_publication_bundle_v3.py"
+)
 _CURRENT_RED_PATH = (
     "ai/tests/"
     "test_emlis_nls_v3_recovery_epoch001_current_closure_completion_red.py"
@@ -97,6 +105,14 @@ _CURRENT_RED_PATH = (
 _THIS_PATH = (
     "ai/tests/"
     "test_emlis_nls_v3_recovery_epoch001_proved_receipt_contract_red.py"
+)
+_ACCEPTED_SUCCESS_RED_PATH = (
+    "ai/tests/"
+    "test_emlis_nls_v3_recovery_epoch001_exact134_accepted_success_red.py"
+)
+_SEQUENCE_PUBLICATION_RED_PATH = (
+    "ai/tests/"
+    "test_emlis_nls_v3_recovery_epoch001_sequence_ledger_publication_red.py"
 )
 _FUTURE_SOURCE_SURFACE = frozenset(
     {
@@ -107,6 +123,8 @@ _FUTURE_SOURCE_SURFACE = frozenset(
         _ACCEPTED_RUN_PATH,
         _RUNNER_PATH,
         _ISSUER_PATH,
+        _SEQUENCE_OWNER_PATH,
+        _ATOMIC_PUBLISHER_PATH,
     }
 )
 _NEGATIVE_SOURCE_PATHS = {
@@ -156,7 +174,13 @@ _NEGATIVE_SOURCE_PATHS = {
     ),
 }
 _TEST_SURFACE = frozenset(
-    {_CURRENT_RED_PATH, _THIS_PATH, *_NEGATIVE_SOURCE_PATHS.values()}
+    {
+        _CURRENT_RED_PATH,
+        _THIS_PATH,
+        _ACCEPTED_SUCCESS_RED_PATH,
+        _SEQUENCE_PUBLICATION_RED_PATH,
+        *_NEGATIVE_SOURCE_PATHS.values(),
+    }
 )
 _PROTECTED_SHA256 = {
     (
@@ -1291,8 +1315,8 @@ def test_reconciliation_literal_exact11_and_formal_node_registry_is_frozen() -> 
     assert len(negative_nodes) == len(set(negative_nodes)) == 11
     assert not (set(positive_nodes) & set(negative_nodes))
     assert len(positive_nodes) + len(negative_nodes) == 134
-    assert len(_FUTURE_SOURCE_SURFACE) == 7
-    assert len(_TEST_SURFACE) == 13
+    assert len(_FUTURE_SOURCE_SURFACE) == 9
+    assert len(_TEST_SURFACE) == 15
     assert set(_NEGATIVE_SOURCE_PATHS) == set(range(11))
     assert len(set(_NEGATIVE_SOURCE_PATHS.values())) == 11
     assert not (_FUTURE_SOURCE_SURFACE & _TEST_SURFACE)
