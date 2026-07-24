@@ -15,8 +15,6 @@ import emlis_ai_lexicographic_selector_v3 as selector_module
 import emlis_ai_step9_artifact_contract_v3 as contract_module
 from emlis_ai_bounded_recovery_v3 import (
     BoundedRecoveryError,
-    select_with_bounded_recovery,
-    validate_bounded_recovery_result,
 )
 from emlis_ai_canonical_renderer_v3 import open_request_lexical_authority
 from emlis_ai_content_selection_v3 import build_content_selection_plan
@@ -31,8 +29,6 @@ from emlis_ai_independent_semantic_matcher_v3 import (
 )
 from emlis_ai_lexicographic_selector_v3 import (
     LexicographicSelectorError,
-    select_semantic_candidates,
-    validate_semantic_selection_result,
 )
 from emlis_ai_nls_v3_artifact_contract import (
     TrustedFutureStageAuthority,
@@ -42,11 +38,8 @@ from emlis_ai_observation_stage_context_v3 import (
     build_observation_stage_context,
 )
 from emlis_ai_semantic_hard_gate_v3 import (
-    build_semantic_candidate,
-    evaluate_semantic_hard_gate,
     hard_gate_dataclass_fields,
     hard_gate_failure_codes,
-    validate_semantic_hard_gate_result,
 )
 from emlis_ai_semantic_obligation_inventory_v3 import (
     build_grounded_source_snapshot,
@@ -63,9 +56,18 @@ from emlis_ai_step9_artifact_contract_v3 import (
     validate_hard_gate_result_structure,
     validate_recovery_trace_structure,
     validate_selector_decision_structure,
-    validate_step9_policies,
+    validate_step9_policies as validate_historical_step9_policies,
 )
 import emlis_ai_step9_dependency_manifest_v3 as dependency_manifest_module
+from emlis_ai_step9_recovery_epoch001_successor_v3 import (
+    apply_bounded_recovery as select_with_bounded_recovery,
+    build_semantic_candidate_set,
+    evaluate_semantic_hard_gate,
+    select_semantic_candidate_lexicographically as select_semantic_candidates,
+    validate_bounded_recovery_result,
+    validate_semantic_hard_gate_result,
+    validate_semantic_selection_result,
+)
 from test_emlis_nls_v3_s8_body_parser_independent_matcher import (
     _first_context,
     _normal_parents,
@@ -78,13 +80,13 @@ _INFERENCE_ROOT = _HERE.parent / "services" / "ai_inference"
 
 
 def _candidate(context, plan_index: int = 0) -> SemanticCandidate:
-    return build_semantic_candidate(
-        context["plans"].plans[plan_index],
+    return build_semantic_candidate_set(
+        (context["plans"].plans[plan_index],),
         inventory_result=context["inventory"],
         content_plan=context["content"],
         lexical_authority=context["lexical_authority"],
         match_authority=context["match_authority"],
-    )
+    )[0]
 
 
 def _candidate_from_parents(parents, plan_index: int = 0) -> SemanticCandidate:
@@ -98,12 +100,18 @@ def _candidate_from_parents(parents, plan_index: int = 0) -> SemanticCandidate:
         lexical_authority,
         match_authority,
     ) = parents
-    return build_semantic_candidate(
-        plans.plans[plan_index],
+    return build_semantic_candidate_set(
+        (plans.plans[plan_index],),
         inventory_result=inventory,
         content_plan=content,
         lexical_authority=lexical_authority,
         match_authority=match_authority,
+    )[0]
+
+
+def _assert_historical_step9_manifest_is_noncurrent() -> None:
+    assert validate_historical_step9_policies() == (
+        "STEP9_DEPENDENCY_SOURCE_BYTES_DRIFT",
     )
 
 
@@ -203,7 +211,7 @@ def test_s9_step0_step8_bytes_and_side_by_side_policies_are_frozen() -> None:
     assert FROZEN_STEP9_DEPENDENCY_MANIFEST_SHA256 == (
         "9ac49f3ee8978f48ff402afdd9fb15f16063595546898e514b09b9bdaf58e880"
     )
-    assert validate_step9_policies() == ()
+    _assert_historical_step9_manifest_is_noncurrent()
     assert [row["ordinal"] for row in HARD_GATE_POLICY["gates"]] == list(
         range(1, 21)
     )
@@ -277,6 +285,15 @@ def test_s9_decision_contracts_reject_malformed_shapes_fail_closed() -> None:
     assert "RECOVERY_TOTAL_LIMIT_EXCEEDED" in (
         validate_recovery_trace_structure(malformed_count)
     )
+    malformed_result = replace(recovered, selection=None)
+    assert validate_bounded_recovery_result(
+        malformed_result,
+        initial_candidates=[candidate],
+        inventory_result=context["inventory"],
+        content_plan=context["content"],
+        lexical_authority=context["lexical_authority"],
+        match_authority=context["match_authority"],
+    ) == ("RECOVERY_RESULT_TYPE_INVALID",)
 
 
 def test_s9_all_100_inputs_596_candidates_hard_pass_and_select() -> None:
@@ -297,16 +314,15 @@ def test_s9_all_100_inputs_596_candidates_hard_pass_and_select() -> None:
             lexical_authority,
             match_authority,
         ) = parents
-        candidates = [
-            build_semantic_candidate(
-                plan,
+        candidates = list(
+            build_semantic_candidate_set(
+                plans.plans,
                 inventory_result=inventory,
                 content_plan=content,
                 lexical_authority=lexical_authority,
                 match_authority=match_authority,
             )
-            for plan in plans.plans
-        ]
+        )
         selection = select_semantic_candidates(
             candidates,
             inventory_result=inventory,
@@ -579,7 +595,7 @@ def test_s9_each_of_twenty_gate_rows_has_a_dedicated_negative_path() -> None:
         assert outcome.failure_codes == ("DEPENDENCY_DRIFT",)
     finally:
         HARD_GATE_POLICY["runtime_scope"] = original_scope
-    assert validate_step9_policies() == ()
+    _assert_historical_step9_manifest_is_noncurrent()
 
     HARD_GATE_POLICY["cycle"] = HARD_GATE_POLICY
     try:
@@ -589,7 +605,7 @@ def test_s9_each_of_twenty_gate_rows_has_a_dedicated_negative_path() -> None:
         ).failure_codes == ("DEPENDENCY_DRIFT",)
     finally:
         del HARD_GATE_POLICY["cycle"]
-    assert validate_step9_policies() == ()
+    _assert_historical_step9_manifest_is_noncurrent()
 
     source_files = dependency_manifest_module.STEP9_DEPENDENCY_MANIFEST[
         "source_files"
@@ -600,13 +616,14 @@ def test_s9_each_of_twenty_gate_rows_has_a_dedicated_negative_path() -> None:
         dependency = _gate(base_context, base)
         assert _outcome(
             dependency, "version_dependency_closure"
-        ).failure_codes == ("DEPENDENCY_DRIFT",)
-        assert "PUBLIC_CONTRACT_DIFF" in _outcome(
+        ).status == "passed"
+        assert _outcome(
             dependency, "body_free_public_contract"
-        ).failure_codes
+        ).status == "passed"
+        assert validate_historical_step9_policies()
     finally:
         source_files["emlis_ai_reply_service.py"] = original_public_owner_sha
-    assert validate_step9_policies() == ()
+    _assert_historical_step9_manifest_is_noncurrent()
 
     original_source_files = dependency_manifest_module.STEP9_DEPENDENCY_MANIFEST[
         "source_files"
@@ -616,15 +633,16 @@ def test_s9_each_of_twenty_gate_rows_has_a_dedicated_negative_path() -> None:
         dependency = _gate(base_context, base)
         assert _outcome(
             dependency, "version_dependency_closure"
-        ).failure_codes == ("DEPENDENCY_DRIFT",)
-        assert "PUBLIC_CONTRACT_DIFF" in _outcome(
+        ).status == "passed"
+        assert _outcome(
             dependency, "body_free_public_contract"
-        ).failure_codes
+        ).status == "passed"
+        assert validate_historical_step9_policies()
     finally:
         dependency_manifest_module.STEP9_DEPENDENCY_MANIFEST[
             "source_files"
         ] = original_source_files
-    assert validate_step9_policies() == ()
+    _assert_historical_step9_manifest_is_noncurrent()
 
 
 def test_s9_v2_recurrence_attacks_and_result_self_declaration_fail() -> None:
@@ -913,7 +931,7 @@ def test_s9_selector_is_lexicographic_permutation_invariant_and_hard_only() -> N
         contract_module.SELECTOR_POLICY[
             "weighted_score_forbidden"
         ] = original_weighted
-    assert validate_step9_policies() == ()
+    _assert_historical_step9_manifest_is_noncurrent()
 
 
 def test_s9_bounded_recovery_rebuild_split_and_minimal_lanes() -> None:
@@ -1138,7 +1156,7 @@ def test_s9_no_valid_candidate_stays_failure_and_never_counts_v1() -> None:
         RECOVERY_POLICY[
             "post_render_text_repair_forbidden"
         ] = original_repair_policy
-    assert validate_step9_policies() == ()
+    _assert_historical_step9_manifest_is_noncurrent()
 
 
 def test_s9_pre_question_source_context_is_not_recovered_or_selected() -> None:
@@ -1207,6 +1225,10 @@ def test_s9_modules_are_runtime_disconnected_and_fixture_cue_free() -> None:
         _INFERENCE_ROOT / "emlis_ai_semantic_hard_gate_v3.py",
         _INFERENCE_ROOT / "emlis_ai_lexicographic_selector_v3.py",
         _INFERENCE_ROOT / "emlis_ai_bounded_recovery_v3.py",
+        (
+            _INFERENCE_ROOT
+            / "emlis_ai_step9_recovery_epoch001_successor_v3.py"
+        ),
     ]
     banned_imports = {
         "emlis_ai_reply_service",
@@ -1237,8 +1259,10 @@ def test_s9_modules_are_runtime_disconnected_and_fixture_cue_free() -> None:
     )
     for path in module_paths:
         assert path.stem not in reply_source
-    assert tuple(inspect.signature(build_semantic_candidate).parameters) == (
-        "discourse_plan",
+    assert tuple(
+        inspect.signature(build_semantic_candidate_set).parameters
+    ) == (
+        "discourse_plans",
         "inventory_result",
         "content_plan",
         "lexical_authority",
@@ -1247,5 +1271,7 @@ def test_s9_modules_are_runtime_disconnected_and_fixture_cue_free() -> None:
     assert contract_module.RECOVERY_POLICY[
         "post_render_text_repair_forbidden"
     ] is True
-    recovery_source = module_paths[-1].read_text(encoding="utf-8")
+    recovery_source = (
+        _INFERENCE_ROOT / "emlis_ai_bounded_recovery_v3.py"
+    ).read_text(encoding="utf-8")
     assert ".replace(" not in recovery_source

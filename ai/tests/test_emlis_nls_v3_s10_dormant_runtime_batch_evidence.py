@@ -14,6 +14,7 @@ from copy import deepcopy
 from dataclasses import replace
 from functools import lru_cache
 import hashlib
+import importlib.util
 import inspect
 import json
 from pathlib import Path
@@ -27,6 +28,7 @@ import emlis_ai_reply_service as reply_service_module
 import emlis_ai_step10_evidence_v3 as evidence_module
 import emlis_ai_step10_dependency_manifest_v3 as historical_step10_manifest_module
 import emlis_ai_step9_dependency_manifest_v3 as step9_manifest_module
+import emlis_ai_step9_recovery_epoch001_successor_v3 as successor_module
 from emlis_ai_dormant_runtime_adapter_v3 import (
     DEFAULT_RUNTIME_STATE,
     DormantRuntimeAdapterError,
@@ -34,7 +36,7 @@ from emlis_ai_dormant_runtime_adapter_v3 import (
     DormantRuntimeExecution,
     RuntimeOwnerState,
     RuntimeTransitionAuthority,
-    TesterExecutionAuthority,
+    TesterExecutionAuthority as _TesterExecutionAuthority,
     issue_tester_execution_authority,
     map_verified_v3_bytes_to_reply_envelope,
     resolve_dormant_runtime_delivery,
@@ -52,13 +54,21 @@ from emlis_ai_public_feedback_meta import (
     build_public_emlis_input_feedback_meta,
     should_include_public_input_feedback,
 )
-from emlis_ai_recovery_epoch001_source_baseline_manifest_v3 import (
-    FROZEN_RECOVERY_EPOCH001_SOURCE_CLOSURE_SHA256 as FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256,
+from emlis_ai_recovery_epoch001_canonical_current_closure_v3 import (
     RECOVERY_EPOCH001_CANDIDATE_VERSION_ID as FROZEN_STEP10_CANDIDATE_VERSION_ID,
-    RECOVERY_EPOCH001_SOURCE_BASELINE_MANIFEST,
+    fresh_recovery_epoch001_canonical_current_closure,
     fresh_recovery_epoch001_source_closure_sha256 as fresh_step10_source_closure_sha256,
     recovery_epoch001_source_file_sha256 as step10_source_file_sha256,
-    validate_recovery_epoch001_source_baseline_manifest as validate_step10_dependency_manifest,
+    validate_recovery_epoch001_canonical_current_closure_shape,
+    validate_recovery_epoch001_closure_start_end,
+    validate_recovery_epoch001_canonical_current_closure as validate_step10_dependency_manifest,
+)
+from emlis_ai_recovery_epoch001_step_completion_receipt_v3 import (
+    build_recovery_epoch001_current_step_completion_receipt,
+    validate_recovery_epoch001_current_step_completion_receipt_shape,
+)
+from emlis_ai_recovery_epoch001_source_baseline_manifest_v3 import (
+    RECOVERY_EPOCH001_SOURCE_BASELINE_MANIFEST as HISTORICAL_RECOVERY_EPOCH001_SOURCE_BASELINE_MANIFEST,
 )
 from emlis_ai_step10_dependency_manifest_v3 import (
     FROZEN_STEP10_MANIFEST_SOURCE_NORMALIZED_SHA256,
@@ -109,6 +119,15 @@ from emlis_nls_v3_s2_sample_registry import (
 from helpers.emlis_nls_v3_s0_s1_baseline import load_baseline_cases
 
 
+_CURRENT_STEP10_CLOSURE = fresh_recovery_epoch001_canonical_current_closure()
+FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256 = _CURRENT_STEP10_CLOSURE[
+    "source_dependency_closure_sha256"
+]
+FROZEN_STEP10_CANONICAL_CURRENT_CLOSURE_SHA256 = _CURRENT_STEP10_CLOSURE[
+    "canonical_current_closure_sha256"
+]
+
+
 _HERE = Path(__file__).resolve().parent
 _AI_ROOT = _HERE.parent
 _REPO_ROOT = _AI_ROOT.parent
@@ -118,10 +137,26 @@ _BATCH_PATH = (
 )
 _STEP0_BOUNDARY_PATH = _HERE / "fixtures" / "emlis_nls_v3_s0_boundary_20260714.json"
 _CASE_ID = "nls3s_b001_0001"
-_CANDIDATE_VERSION = "nls_v3_rc_0032"
+_CANDIDATE_VERSION = "nls_v3_rc_0034"
 _RUN_ID = "nls3run_0123456789abcdef"
 _COMMITMENT_KEY = bytes(range(32))
 _RUNNER_SHA256_PATH = "ai/tools/emlis_nls_v3_batch_run.py"
+
+
+def _independent_recovery_verifier() -> ModuleType:
+    path = (
+        _AI_ROOT
+        / "tools"
+        / "emlis_nls_v3_recovery_epoch001_closure_receipt_verify.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "emlis_nls_v3_recovery_epoch001_closure_receipt_verify_test",
+        path,
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _raises_code(
@@ -277,7 +312,7 @@ def test_s10_public_contract_is_unchanged_and_default_owner_is_disabled_v1() -> 
     assert DEFAULT_RUNTIME_STATE.rollback_owner == "grounded_sentence_surface_canonical_v1"
     assert DEFAULT_RUNTIME_STATE.v3_general_account_visible is False
     assert validate_runtime_owner_state(DEFAULT_RUNTIME_STATE) == ()
-    boundary = RECOVERY_EPOCH001_SOURCE_BASELINE_MANIFEST[
+    boundary = HISTORICAL_RECOVERY_EPOCH001_SOURCE_BASELINE_MANIFEST[
         "step10_runtime_boundary"
     ]
     assert FROZEN_STEP10_CANDIDATE_VERSION_ID == _CANDIDATE_VERSION
@@ -392,7 +427,7 @@ def test_s10_state_machine_is_fail_closed_and_tester_authority_is_opaque() -> No
             tester_allowlist_policy_sha256=allowlist_policy,
         ),
     )
-    forged = TesterExecutionAuthority(
+    forged = _TesterExecutionAuthority(
         account_identity_commitment=account_commitment,
         allowlist_policy_sha256=allowlist_policy,
         candidate_version_id=_CANDIDATE_VERSION,
@@ -674,6 +709,9 @@ def test_s10_batch_runner_aborts_infrastructure_and_lineage_failures() -> None:
     original_v1 = runner._v1_body
     original_v3 = runner._render_emlis_ai_reply_v3_dormant
     original_evidence = runner.build_case_evidence
+    original_canonical = (
+        runner.FROZEN_STEP10_CANONICAL_CURRENT_CLOSURE_SHA256
+    )
 
     async def v1_ok(_current_input: dict[str, Any], _case_id: str) -> bytes:
         return b"v1"
@@ -686,6 +724,21 @@ def test_s10_batch_runner_aborts_infrastructure_and_lineage_failures() -> None:
         raise OSError("simulated infrastructure failure")
 
     try:
+        runner.FROZEN_STEP10_CANONICAL_CURRENT_CLOSURE_SHA256 = "0" * 64
+        _raises_code(
+            ValueError,
+            "canonical_current_closure_start_binding_invalid",
+            lambda: runner.run_batch(
+                samples,
+                manifest,
+                candidate_version_id=_CANDIDATE_VERSION,
+                run_id="nls3run_4123456789abcdef",
+                commitment_key=_COMMITMENT_KEY,
+            ),
+        )
+        runner.FROZEN_STEP10_CANONICAL_CURRENT_CLOSURE_SHA256 = (
+            original_canonical
+        )
         runner._v1_body = v1_ok
         runner._render_emlis_ai_reply_v3_dormant = infrastructure_failure
         try:
@@ -746,6 +799,9 @@ def test_s10_batch_runner_aborts_infrastructure_and_lineage_failures() -> None:
         runner._v1_body = original_v1
         runner._render_emlis_ai_reply_v3_dormant = original_v3
         runner.build_case_evidence = original_evidence
+        runner.FROZEN_STEP10_CANONICAL_CURRENT_CLOSURE_SHA256 = (
+            original_canonical
+        )
 
 
 def test_s10_private_io_rejects_ancestor_symlinks() -> None:
@@ -1103,6 +1159,138 @@ def test_s10_receipt_v3_schema_and_step11_evidence_builders_are_closed() -> None
     assert no_valid_aggregate["output_duplicate_cluster_count"] == 0
     assert no_valid_aggregate["near_duplicate_cluster_count"] == 0
 
+    forged_proved = {
+        "schema_version": (
+            "cocolon.emlis.nls_v3.recovery_epoch001."
+            "current_step_completion_receipt.v1"
+        ),
+        "candidate_version_id": _CANDIDATE_VERSION,
+        "step_number": 0,
+        "lineage": {
+            "kind": "current",
+            "historical_disposition": "IMMUTABLE_NONCURRENT_EVIDENCE",
+            "historical_rewrite": False,
+            "historical_as_current": False,
+            "backfill": False,
+        },
+        "current_binding": {},
+        "actual_owners": [],
+        "strict_contracts": [],
+        "positive_proof": {},
+        "independent_negative_proof": {},
+        "artifact_receipt": {},
+        "parent_binding": {},
+        "completion_condition": {
+            "condition_id": "STEP0_COMPLETE",
+            "required": True,
+            "satisfied": True,
+            "evidence_sha256": "a" * 64,
+        },
+        "stop_conditions": [
+            {
+                "condition_id": "STEP0_STOP",
+                "triggered": False,
+                "evidence_sha256": "b" * 64,
+            }
+        ],
+        "next_authority": (
+            "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_"
+            "P1_STEP1_CURRENT_COMPLETION_PROOF_ONLY"
+        ),
+        "verdict": "PROVED",
+        "body_free": True,
+        "receipt_sha256": "c" * 64,
+    }
+    assert (
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_VERDICT_INVALID"
+        in validate_recovery_epoch001_current_step_completion_receipt_shape(
+            forged_proved
+        )
+    )
+    verifier = _independent_recovery_verifier()
+    assert (
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_VERDICT_INVALID"
+        in verifier.verify_recovery_epoch001_current_step_completion_receipt(
+            forged_proved,
+            repo_root=_REPO_ROOT,
+        )
+    )
+    _raises_code(
+        ValueError,
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_VERDICT_INVALID",
+        lambda: build_recovery_epoch001_current_step_completion_receipt(
+            step_number=0,
+            actual_owners=(),
+            strict_contracts=(),
+            positive_proof={},
+            independent_negative_proof={},
+            artifact_receipt={},
+            parent_binding={},
+            completion_condition=forged_proved["completion_condition"],
+            stop_conditions=forged_proved["stop_conditions"],
+            verdict="PROVED",
+        ),
+    )
+    malformed = deepcopy(forged_proved)
+    malformed["step_number"] = []
+    malformed["actual_owners"] = [None]
+    malformed["positive_proof"] = {"source_path": []}
+    assert (
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_STEP_INVALID"
+        in validate_recovery_epoch001_current_step_completion_receipt_shape(
+            malformed
+        )
+    )
+    assert (
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_STEP_INVALID"
+        in verifier.verify_recovery_epoch001_current_step_completion_receipt(
+            malformed,
+            repo_root=_REPO_ROOT,
+        )
+    )
+    malformed_invariants = deepcopy(forged_proved)
+    malformed_invariants["strict_contracts"] = [
+        {
+            "contract_id": "STEP0_CONTRACT",
+            "schema_version": "schema.v1",
+            "validator_path": "ai/tests/test_invalid.py",
+            "validator_blob_sha1": "a" * 40,
+            "validator_symbol": "test_invalid",
+            "invariant_ids": [[]],
+        }
+    ]
+    assert (
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_STRICT_CONTRACT_BINDING_INVALID"
+        in validate_recovery_epoch001_current_step_completion_receipt_shape(
+            malformed_invariants
+        )
+    )
+    assert (
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+        "STRICT_CONTRACT_BINDING_INVALID"
+        in verifier.verify_recovery_epoch001_current_step_completion_receipt(
+            malformed_invariants,
+            repo_root=_REPO_ROOT,
+        )
+    )
+    cyclic = deepcopy(forged_proved)
+    cyclic_lineage: dict[str, Any] = {}
+    cyclic_lineage["cycle"] = cyclic_lineage
+    cyclic["lineage"] = cyclic_lineage
+    assert (
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_BODY_FREE_REQUIRED"
+        in validate_recovery_epoch001_current_step_completion_receipt_shape(
+            cyclic
+        )
+    )
+    assert (
+        "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_BODY_FREE_REQUIRED"
+        in verifier.verify_recovery_epoch001_current_step_completion_receipt(
+            cyclic,
+            repo_root=_REPO_ROOT,
+        )
+    )
+
 
 def test_s10_partial_batch_cannot_claim_formal_completion_or_acceptance() -> None:
     _private, partial = _evidence_pair(expected_case_count=2)
@@ -1144,10 +1332,194 @@ def test_s10_cumulative_uses_fresh_closure_and_rejects_missing_or_duplicate_case
     assert cumulative["source_closure_end_sha256"] == (
         FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256
     )
+    assert cumulative["source_dependency_closure_sha256"] == (
+        FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256
+    )
+    assert cumulative["canonical_current_closure_sha256"] == (
+        FROZEN_STEP10_CANONICAL_CURRENT_CLOSURE_SHA256
+    )
     assert cumulative["source_closure_stable"] is True
     assert cumulative["formal_status"] == "step10_ready_for_step11"
     assert cumulative["batch_acceptance_claimed"] is False
     assert cumulative["next_step_authority"] == "step11_cycle001_initial_run_only"
+
+    canonical = fresh_recovery_epoch001_canonical_current_closure()
+    assert canonical["source_dependency_closure_sha256"] != (
+        "7d15cc072ac4ac28b6b9ce90676c6238ba08d5f59fd1896a7273ce7d57a7f302"
+    )
+    historical_v2_paths = {
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_grounded_reception_content_plan_v2.py"
+        ),
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_grounded_reception_candidate_plan_v2.py"
+        ),
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_grounded_human_reception_v2.py"
+        ),
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_grounded_reception_candidate_selector_v2.py"
+        ),
+    }
+    file_rows = {row["path"]: row for row in canonical["files"]}
+    assert all(
+        file_rows[path]["role"] == "immutable_historical_evidence"
+        for path in historical_v2_paths
+    )
+    assert historical_v2_paths.isdisjoint(canonical["step_views"]["step_0"])
+    assert historical_v2_paths.isdisjoint(
+        canonical["views"]["semantic_execution"]
+    )
+    assert {
+        "source": (
+            "ai/tests/"
+            "test_emlis_nls_v3_s5_content_selection_stage_context.py"
+        ),
+        "target": (
+            "ai/services/ai_inference/emlis_ai_content_selection_v3.py"
+        ),
+    } in canonical["edges"]
+    verifier = _independent_recovery_verifier()
+    independently_derived = (
+        verifier.fresh_recovery_epoch001_canonical_current_closure(
+            repo_root=_REPO_ROOT
+        )
+    )
+    assert independently_derived == canonical
+    assert verifier.verify_recovery_epoch001_canonical_current_closure(
+        independently_derived,
+        repo_root=_REPO_ROOT,
+    ) == ()
+    missing = deepcopy(canonical)
+    missing["files"].pop()
+    assert (
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_REQUIRED_FILE_MISSING"
+        in validate_recovery_epoch001_canonical_current_closure_shape(missing)
+    )
+    extra = deepcopy(canonical)
+    extra["files"].append(
+        {
+            "path": "ai/forbidden_synthetic.py",
+            "role": "semantic_or_shared_owner",
+            "sha256": "0" * 64,
+            "git_blob_sha1": "0" * 40,
+        }
+    )
+    assert (
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_EXTRA_FILE"
+        in validate_recovery_epoch001_canonical_current_closure_shape(extra)
+    )
+    forbidden_edge = deepcopy(canonical)
+    forbidden_edge["edges"].append(
+        {
+            "source": (
+                "ai/services/ai_inference/"
+                "emlis_ai_step9_recovery_epoch001_successor_v3.py"
+            ),
+            "target": (
+                "ai/tests/"
+                "test_emlis_nls_v3_s9_hard_gate_selector_recovery.py"
+            ),
+        }
+    )
+    forbidden_issues = (
+        validate_recovery_epoch001_canonical_current_closure_shape(
+            forbidden_edge
+        )
+    )
+    assert {
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_FORBIDDEN_EDGE",
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_FORBIDDEN_CUE_INGRESS",
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_PRIVATE_BODY_INGRESS",
+    } <= set(forbidden_issues)
+    self_normalized = deepcopy(canonical)
+    self_normalized["views"]["completion_proof"].remove(
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_recovery_epoch001_canonical_current_closure_v3.py"
+        )
+    )
+    assert (
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_SELF_NORMALIZATION_SCOPE_DRIFT"
+        in validate_recovery_epoch001_canonical_current_closure_shape(
+            self_normalized
+        )
+    )
+    malformed_dependency = deepcopy(canonical)
+    malformed_dependency["dependency_closure"][0]["path"] = []
+    assert (
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_ENTRY_INVALID"
+        in validate_recovery_epoch001_canonical_current_closure_shape(
+            malformed_dependency
+        )
+    )
+    assert (
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_ENTRY_INVALID"
+        in verifier.verify_recovery_epoch001_canonical_current_closure(
+            malformed_dependency,
+            repo_root=_REPO_ROOT,
+        )
+    )
+    malformed_edge = deepcopy(canonical)
+    malformed_edge["edges"][0]["source"] = []
+    assert (
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_EDGE_TARGET_UNRESOLVED"
+        in validate_recovery_epoch001_canonical_current_closure_shape(
+            malformed_edge
+        )
+    )
+    malformed_view = deepcopy(canonical)
+    malformed_view["views"]["completion_proof"] = [[]]
+    assert (
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_SELF_NORMALIZATION_SCOPE_DRIFT"
+        in validate_recovery_epoch001_canonical_current_closure_shape(
+            malformed_view
+        )
+    )
+    malformed_semantic_view = deepcopy(canonical)
+    malformed_semantic_view["views"]["semantic_execution"] = None
+    assert (
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_VIEW_BINDING_DRIFT"
+        in validate_recovery_epoch001_canonical_current_closure_shape(
+            malformed_semantic_view
+        )
+    )
+    assert (
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_VIEW_BINDING_DRIFT"
+        in verifier.verify_recovery_epoch001_canonical_current_closure(
+            malformed_semantic_view,
+            repo_root=_REPO_ROOT,
+        )
+    )
+    cyclic_views = deepcopy(canonical)
+    cyclic_view: dict[str, Any] = {}
+    cyclic_view["semantic_execution"] = cyclic_view
+    cyclic_views["views"] = cyclic_view
+    assert (
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_VIEW_BINDING_DRIFT"
+        in validate_recovery_epoch001_canonical_current_closure_shape(
+            cyclic_views
+        )
+    )
+    assert (
+        "RECOVERY_CANONICAL_CURRENT_CLOSURE_VIEW_BINDING_DRIFT"
+        in verifier.verify_recovery_epoch001_canonical_current_closure(
+            cyclic_views,
+            repo_root=_REPO_ROOT,
+        )
+    )
+    assert validate_recovery_epoch001_closure_start_end(
+        canonical["source_dependency_closure_sha256"],
+        canonical["source_dependency_closure_sha256"],
+    ) == ()
+    assert validate_recovery_epoch001_closure_start_end(
+        canonical["source_dependency_closure_sha256"],
+        "0" * 64,
+    ) == ("RECOVERY_CANONICAL_CURRENT_CLOSURE_START_END_DRIFT",)
 
     missing = build_cumulative_run_manifest(
         [complete],
@@ -1226,6 +1598,7 @@ def test_s10_output_diff_is_body_free_and_commitment_based() -> None:
     )
     later_rc["candidate_version_id"] = "nls_v3_rc_0033"
     later_rc["source_dependency_closure_sha256"] = "e" * 64
+    later_rc["canonical_current_closure_sha256"] = "e" * 64
     later_rc["source_closure_start_sha256"] = "e" * 64
     later_rc["source_closure_end_sha256"] = "e" * 64
     for row in later_rc["case_rows"]:
@@ -1234,6 +1607,17 @@ def test_s10_output_diff_is_body_free_and_commitment_based() -> None:
         row["receipt"]["candidate_version_id"] = "nls_v3_rc_0033"
         row["receipt"]["source_dependency_closure_sha256"] = "e" * 64
     assert validate_historical_batch_run_summary(later_rc) == ()
+    historical_rc0010 = json.loads(
+        (
+            _HERE
+            / "fixtures"
+            / "emlis_nls_v3"
+            / "cycle_001"
+            / "cycle001_initial_rc0010_summary.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert "canonical_current_closure_sha256" not in historical_rc0010
+    assert validate_historical_batch_run_summary(historical_rc0010) == ()
     cross_rc = build_output_diff(current, later_rc)
     assert cross_rc["previous_candidate_version_id"] == _CANDIDATE_VERSION
     assert cross_rc["current_candidate_version_id"] == "nls_v3_rc_0033"
@@ -1299,10 +1683,15 @@ def test_s10_rn_api_db_and_step9_historical_boundaries_remain_frozen() -> None:
     assert validate_step9_dependency_manifest() == (
         "STEP9_DEPENDENCY_SOURCE_BYTES_DRIFT",
     )
-    assert (
-        runtime_module.step9_artifact_contract_module.validate_step9_dependency_manifest
-        is step9_manifest_module.validate_step9_dependency_manifest
+    assert runtime_module.apply_bounded_recovery is (
+        successor_module.apply_bounded_recovery
     )
+    assert successor_module.RECOVERY_EPOCH001_STEP9_SUCCESSOR_GRAPH[
+        "candidate_version_id"
+    ] == _CANDIDATE_VERSION
+    assert successor_module.RECOVERY_EPOCH001_STEP9_SUCCESSOR_GRAPH[
+        "canonical_current_closure_sha256"
+    ] == FROZEN_STEP10_CANONICAL_CURRENT_CLOSURE_SHA256
 
     assert FROZEN_STEP10_MANIFEST_SHA256 == artifact_sha256(
         HISTORICAL_STEP10_DEPENDENCY_MANIFEST
@@ -1314,7 +1703,18 @@ def test_s10_rn_api_db_and_step9_historical_boundaries_remain_frozen() -> None:
     assert normalized_step10_manifest_source_sha256() == (
         FROZEN_STEP10_MANIFEST_SOURCE_NORMALIZED_SHA256
     )
-    assert validate_step10_dependency_manifest() == ()
+    assert evidence_module.validate_step10_dependency_manifest() == ()
+    probe_row = evidence_module._CURRENT_STEP10_CLOSURE["files"][0]
+    original_probe_sha256 = probe_row["sha256"]
+    try:
+        probe_row["sha256"] = "0" * 64
+        assert (
+            "RECOVERY_CANONICAL_CURRENT_CLOSURE_FILE_HASH_DRIFT"
+            in evidence_module.validate_step10_dependency_manifest()
+        )
+    finally:
+        probe_row["sha256"] = original_probe_sha256
+    assert evidence_module.validate_step10_dependency_manifest() == ()
 
 
 def test_s10_local_emotion_submit_e2e_preserves_db_and_public_contract() -> None:

@@ -9,6 +9,7 @@ import hmac
 from pathlib import Path
 import platform
 import re
+import subprocess
 import sys
 from typing import Any, Mapping, Sequence
 
@@ -25,12 +26,11 @@ from emlis_ai_nls_v3_artifact_contract import (
     canonical_json_bytes,
     validate_case_evidence_receipt,
 )
-from emlis_ai_recovery_epoch001_source_baseline_manifest_v3 import (
-    FROZEN_RECOVERY_EPOCH001_SOURCE_CLOSURE_SHA256 as FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256,
+from emlis_ai_recovery_epoch001_canonical_current_closure_v3 import (
     RECOVERY_EPOCH001_CANDIDATE_VERSION_ID as FROZEN_STEP10_CANDIDATE_VERSION_ID,
+    fresh_recovery_epoch001_canonical_current_closure,
     fresh_recovery_epoch001_source_closure_sha256 as fresh_step10_source_closure_sha256,
-    recovery_epoch001_source_file_sha256 as step10_source_file_sha256,
-    validate_recovery_epoch001_source_baseline_manifest as validate_step10_dependency_manifest,
+    validate_recovery_epoch001_canonical_current_closure_shape,
 )
 from emlis_ai_step10_app_reachable_contract_v3 import (
     project_app_reachable_input,
@@ -38,6 +38,65 @@ from emlis_ai_step10_app_reachable_contract_v3 import (
     validate_app_reachable_input_policy,
 )
 from emlis_ai_step9_artifact_contract_v3 import HARD_GATE_POLICY
+
+
+_CURRENT_STEP10_CLOSURE = fresh_recovery_epoch001_canonical_current_closure()
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256 = _CURRENT_STEP10_CLOSURE[
+    "source_dependency_closure_sha256"
+]
+FROZEN_STEP10_CANONICAL_CURRENT_CLOSURE_SHA256 = _CURRENT_STEP10_CLOSURE[
+    "canonical_current_closure_sha256"
+]
+_CURRENT_STEP10_CLOSURE_ISSUES = (
+    validate_recovery_epoch001_canonical_current_closure_shape(
+        _CURRENT_STEP10_CLOSURE
+    )
+)
+
+
+def validate_step10_dependency_manifest() -> tuple[str, ...]:
+    issues = set(_CURRENT_STEP10_CLOSURE_ISSUES)
+    try:
+        current_commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=_REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        current_commit = None
+    if current_commit != _CURRENT_STEP10_CLOSURE["source_commit"]:
+        issues.add(
+            "RECOVERY_CANONICAL_CURRENT_CLOSURE_CANDIDATE_IDENTITY_INVALID"
+        )
+    for row in _CURRENT_STEP10_CLOSURE["files"]:
+        path = _REPO_ROOT / row["path"]
+        try:
+            actual_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            actual_sha256 = None
+        if actual_sha256 != row["sha256"]:
+            issues.add(
+                "RECOVERY_CANONICAL_CURRENT_CLOSURE_FILE_HASH_DRIFT"
+            )
+            break
+    return tuple(sorted(issues))
+
+
+def step10_source_file_sha256(path: str) -> str | None:
+    if type(path) is not str:
+        return None
+    return next(
+        (
+            row["sha256"]
+            for row in _CURRENT_STEP10_CLOSURE["files"]
+            if row["path"] == path
+        ),
+        None,
+    )
 
 
 PRIVATE_PACKET_SCHEMA = "cocolon.emlis.nls_v3.private_batch_packet.v1"
@@ -1659,7 +1718,8 @@ def build_batch_evidence(
     )
     if (
         start_closure != end_closure
-        or start_closure != FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256
+        or start_closure
+        != FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256
     ):
         raise Step10EvidenceError("STEP10_SOURCE_CLOSURE_CHANGED_DURING_RUN")
     if type(bundles) not in {list, tuple} or any(
@@ -1720,6 +1780,9 @@ def build_batch_evidence(
         "batch_id": batch_id,
         "batch_manifest_sha256": batch_manifest_sha256,
         "source_dependency_closure_sha256": FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256,
+        "canonical_current_closure_sha256": (
+            FROZEN_STEP10_CANONICAL_CURRENT_CLOSURE_SHA256
+        ),
         "source_closure_start_sha256": start_closure,
         "source_closure_end_sha256": end_closure,
         "source_closure_stable": True,
@@ -1786,7 +1849,7 @@ def _validate_batch_run_summary(
     issues: set[str] = set()
     if require_current_authority and validate_step10_dependency_manifest():
         issues.add("BATCH_RUN_CURRENT_DEPENDENCY_DRIFT")
-    expected_keys = {
+    historical_keys = {
         "schema_version", "candidate_version_id", "run_id", "batch_id",
         "batch_manifest_sha256", "source_dependency_closure_sha256",
         "source_closure_start_sha256", "source_closure_end_sha256",
@@ -1799,13 +1862,29 @@ def _validate_batch_run_summary(
         "step10_smoke_only", "formal_batch001_initial_run_locked",
         "batch_accepted", "next_step_authority", "body_free",
     }
-    if type(value) is not dict or set(value) != expected_keys:
+    current_keys = historical_keys | {"canonical_current_closure_sha256"}
+    value_keys = frozenset(value) if type(value) is dict else frozenset()
+    if type(value) is not dict or (
+        (
+            require_current_authority
+            and value_keys != frozenset(current_keys)
+        )
+        or (
+            not require_current_authority
+            and value_keys
+            not in {
+                frozenset(historical_keys),
+                frozenset(current_keys),
+            }
+        )
+    ):
         return ("BATCH_RUN_KEYSET_INVALID",)
     if _scan_body_free(value):
         issues.add("BATCH_RUN_BODY_FREE_VIOLATION")
     if value.get("schema_version") != BATCH_RUN_SCHEMA:
         issues.add("BATCH_RUN_SCHEMA_INVALID")
     source_closure = value.get("source_dependency_closure_sha256")
+    canonical_closure = value.get("canonical_current_closure_sha256")
     protocol_sha = value.get("runtime_validation_protocol_sha256")
     policy_sha = value.get("commitment_policy_sha256")
     if not _valid_nonzero_sha(source_closure):
@@ -1815,6 +1894,22 @@ def _validate_batch_run_summary(
         and source_closure != FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256
     ):
         issues.add("BATCH_RUN_DEPENDENCY_MISMATCH")
+    if require_current_authority and not _valid_nonzero_sha(
+        canonical_closure
+    ):
+        issues.add("BATCH_RUN_CANONICAL_CURRENT_CLOSURE_HASH_INVALID")
+    elif (
+        require_current_authority
+        and canonical_closure
+        != FROZEN_STEP10_CANONICAL_CURRENT_CLOSURE_SHA256
+    ):
+        issues.add("BATCH_RUN_CANONICAL_CURRENT_CLOSURE_MISMATCH")
+    elif (
+        not require_current_authority
+        and "canonical_current_closure_sha256" in value
+        and not _valid_nonzero_sha(canonical_closure)
+    ):
+        issues.add("BATCH_RUN_CANONICAL_CURRENT_CLOSURE_HASH_INVALID")
     if (
         value.get("source_closure_start_sha256") != source_closure
         or value.get("source_closure_end_sha256") != source_closure
@@ -2576,7 +2671,9 @@ def build_cumulative_run_manifest(
     )
     end_closure = fresh_step10_source_closure_sha256()
     closure_stable = bool(
-        start_closure == end_closure == FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256
+        start_closure
+        == end_closure
+        == FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256
     )
     result = {
         "schema_version": CUMULATIVE_RUN_SCHEMA,
@@ -2592,6 +2689,12 @@ def build_cumulative_run_manifest(
         "executed_case_count": len(rows),
         "all_expected_cases_executed": all_expected,
         "batch_manifest_bindings_verified": manifest_bound,
+        "source_dependency_closure_sha256": (
+            FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256
+        ),
+        "canonical_current_closure_sha256": (
+            FROZEN_STEP10_CANONICAL_CURRENT_CLOSURE_SHA256
+        ),
         "source_closure_start_sha256": start_closure,
         "source_closure_end_sha256": end_closure,
         "source_closure_stable": closure_stable,

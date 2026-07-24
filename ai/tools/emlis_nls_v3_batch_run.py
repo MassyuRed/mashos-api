@@ -29,6 +29,7 @@ from emlis_ai_reply_service import (  # noqa: E402
 )
 from emlis_ai_step10_evidence_v3 import (  # noqa: E402
     CaseEvidenceBundle,
+    FROZEN_STEP10_CANONICAL_CURRENT_CLOSURE_SHA256,
     RUNNER_CASE_FAILURE_CODES,
     Step10EvidenceError,
     build_batch_evidence,
@@ -39,10 +40,9 @@ from emlis_ai_step10_evidence_v3 import (  # noqa: E402
 from emlis_ai_dormant_runtime_adapter_v3 import (  # noqa: E402
     DormantRuntimeAdapterError,
 )
-from emlis_ai_recovery_epoch001_source_baseline_manifest_v3 import (  # noqa: E402
+from emlis_ai_recovery_epoch001_canonical_current_closure_v3 import (  # noqa: E402
     RECOVERY_EPOCH001_CANDIDATE_VERSION_ID as FROZEN_STEP10_CANDIDATE_VERSION_ID,
-    fresh_recovery_epoch001_source_closure_sha256 as fresh_step10_source_closure_sha256,
-    recovery_epoch001_source_file_sha256 as step10_source_file_sha256,
+    fresh_recovery_epoch001_canonical_current_closure,
 )
 from emlis_nls_v3_s2_sample_registry import (  # noqa: E402
     load_canonical_json,
@@ -277,7 +277,18 @@ def run_batch(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     if candidate_version_id != FROZEN_STEP10_CANDIDATE_VERSION_ID:
         raise ValueError("candidate_version_not_frozen_step10_rc")
-    source_closure_start_sha256 = fresh_step10_source_closure_sha256()
+    closure_start = fresh_recovery_epoch001_canonical_current_closure()
+    source_closure_start_sha256 = closure_start[
+        "source_dependency_closure_sha256"
+    ]
+    canonical_current_closure_sha256 = closure_start[
+        "canonical_current_closure_sha256"
+    ]
+    if (
+        canonical_current_closure_sha256
+        != FROZEN_STEP10_CANONICAL_CURRENT_CLOSURE_SHA256
+    ):
+        raise ValueError("canonical_current_closure_start_binding_invalid")
     selected_samples = list(samples if limit is None else samples[:limit])
     previous_key_id, previous = _previous_by_case(previous_summary)
     manifest_sha256 = hashlib.sha256(
@@ -294,8 +305,13 @@ def run_batch(
             raise ValueError("previous_summary_manifest_mismatch")
     bundles: list[CaseEvidenceBundle] = []
     failures: list[dict[str, Any]] = []
-    runner_sha256 = step10_source_file_sha256(
-        "ai/tools/emlis_nls_v3_batch_run.py"
+    runner_sha256 = next(
+        (
+            row["sha256"]
+            for row in closure_start["files"]
+            if row["path"] == "ai/tools/emlis_nls_v3_batch_run.py"
+        ),
+        None,
     )
     if type(runner_sha256) is not str:
         raise ValueError("batch_runner_owner_hash_unfrozen")
@@ -366,7 +382,17 @@ def run_batch(
                     "v1_body_utf8": v1_body,
                 }
             )
-    source_closure_end_sha256 = fresh_step10_source_closure_sha256()
+    closure_end = fresh_recovery_epoch001_canonical_current_closure()
+    source_closure_end_sha256 = closure_end[
+        "source_dependency_closure_sha256"
+    ]
+    if (
+        canonical_current_closure_sha256
+        != closure_end["canonical_current_closure_sha256"]
+        or canonical_current_closure_sha256
+        != FROZEN_STEP10_CANONICAL_CURRENT_CLOSURE_SHA256
+    ):
+        raise ValueError("canonical_current_closure_start_binding_invalid")
     return build_batch_evidence(
         bundles,
         failure_rows=failures,

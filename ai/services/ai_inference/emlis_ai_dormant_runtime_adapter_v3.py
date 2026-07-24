@@ -15,13 +15,8 @@ from dataclasses import dataclass
 import hashlib
 import re
 import time
-from types import FunctionType
 from typing import Any, Mapping
 
-import emlis_ai_bounded_recovery_v3 as bounded_recovery_module
-import emlis_ai_lexicographic_selector_v3 as lexicographic_selector_module
-import emlis_ai_semantic_hard_gate_v3 as semantic_hard_gate_module
-import emlis_ai_step9_artifact_contract_v3 as step9_artifact_contract_module
 from emlis_ai_bounded_recovery_v3 import (
     BoundedRecoveryError,
 )
@@ -58,7 +53,6 @@ from emlis_ai_perspective_observers import run_perspective_observers
 from emlis_ai_safety_triage import build_emlis_safety_triage_decision
 from emlis_ai_semantic_hard_gate_v3 import (
     SemanticHardGateError,
-    build_semantic_candidate,
     derive_semantic_candidate_id,
 )
 from emlis_ai_semantic_obligation_inventory_v3 import (
@@ -67,10 +61,10 @@ from emlis_ai_semantic_obligation_inventory_v3 import (
     build_grounded_source_snapshot,
     build_semantic_obligation_inventory,
 )
-from emlis_ai_recovery_epoch001_source_baseline_manifest_v3 import (
-    FROZEN_RECOVERY_EPOCH001_SOURCE_CLOSURE_SHA256 as FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256,
+from emlis_ai_recovery_epoch001_canonical_current_closure_v3 import (
     RECOVERY_EPOCH001_CANDIDATE_VERSION_ID as FROZEN_STEP10_CANDIDATE_VERSION_ID,
-    validate_recovery_epoch001_source_baseline_manifest as validate_step10_dependency_manifest,
+    fresh_recovery_epoch001_canonical_current_closure,
+    validate_recovery_epoch001_canonical_current_closure_shape,
 )
 from emlis_ai_step9_artifact_contract_v3 import (
     BoundedRecoveryResult,
@@ -83,72 +77,28 @@ from emlis_ai_step9_artifact_contract_v3 import (
     validate_selector_decision_structure,
 )
 from emlis_ai_types import ReplyEnvelope
+from emlis_ai_step9_recovery_epoch001_successor_v3 import (
+    apply_bounded_recovery,
+    build_semantic_candidate_set,
+)
 
 
-def _clone_successor_function(
-    function: Any,
-    replacements: Mapping[str, Any],
-) -> Any:
-    """Copy one historical policy function without mutating its module globals."""
-
-    if type(function) is not FunctionType:
-        raise RuntimeError("recovery_epoch001_successor_function_invalid")
-    function_globals = dict(function.__globals__)
-    function_globals.update(replacements)
-    clone = FunctionType(
-        function.__code__,
-        function_globals,
-        function.__name__,
-        function.__defaults__,
-        function.__closure__,
+_CURRENT_STEP10_CLOSURE = fresh_recovery_epoch001_canonical_current_closure()
+FROZEN_STEP10_DEPENDENCY_CLOSURE_SHA256 = _CURRENT_STEP10_CLOSURE[
+    "source_dependency_closure_sha256"
+]
+FROZEN_STEP10_CANONICAL_CURRENT_CLOSURE_SHA256 = _CURRENT_STEP10_CLOSURE[
+    "canonical_current_closure_sha256"
+]
+_CURRENT_STEP10_CLOSURE_ISSUES = (
+    validate_recovery_epoch001_canonical_current_closure_shape(
+        _CURRENT_STEP10_CLOSURE
     )
-    clone.__kwdefaults__ = function.__kwdefaults__
-    clone.__annotations__ = dict(function.__annotations__)
-    return clone
+)
 
 
-# rc0032 supersedes the historical source closure, not its semantic policies.
-# Build an adapter-local function graph in which only the dependency-manifest
-# validator is replaced.  No historical module global or artifact is changed.
-_SUCCESSOR_STEP9_POLICY_VALIDATOR = _clone_successor_function(
-    step9_artifact_contract_module.validate_step9_policies,
-    {
-        "validate_step9_dependency_manifest": validate_step10_dependency_manifest,
-    },
-)
-_SUCCESSOR_HARD_GATE_EVALUATE = _clone_successor_function(
-    semantic_hard_gate_module._evaluate,
-    {
-        "validate_step9_policies": _SUCCESSOR_STEP9_POLICY_VALIDATOR,
-        "validate_step9_dependency_manifest": validate_step10_dependency_manifest,
-    },
-)
-_SUCCESSOR_EVALUATE_SEMANTIC_HARD_GATE = _clone_successor_function(
-    semantic_hard_gate_module.evaluate_semantic_hard_gate,
-    {"_evaluate": _SUCCESSOR_HARD_GATE_EVALUATE},
-)
-_SUCCESSOR_LEXICOGRAPHIC_SELECT = _clone_successor_function(
-    lexicographic_selector_module._select,
-    {
-        "validate_step9_policies": _SUCCESSOR_STEP9_POLICY_VALIDATOR,
-        "evaluate_semantic_hard_gate": _SUCCESSOR_EVALUATE_SEMANTIC_HARD_GATE,
-    },
-)
-_SUCCESSOR_SELECT_SEMANTIC_CANDIDATES = _clone_successor_function(
-    lexicographic_selector_module.select_semantic_candidates,
-    {"_select": _SUCCESSOR_LEXICOGRAPHIC_SELECT},
-)
-_SUCCESSOR_BOUNDED_RECOVER = _clone_successor_function(
-    bounded_recovery_module._recover,
-    {
-        "validate_step9_policies": _SUCCESSOR_STEP9_POLICY_VALIDATOR,
-        "select_semantic_candidates": _SUCCESSOR_SELECT_SEMANTIC_CANDIDATES,
-    },
-)
-_SUCCESSOR_SELECT_WITH_BOUNDED_RECOVERY = _clone_successor_function(
-    bounded_recovery_module.select_with_bounded_recovery,
-    {"_recover": _SUCCESSOR_BOUNDED_RECOVER},
-)
+def validate_step10_dependency_manifest() -> tuple[str, ...]:
+    return _CURRENT_STEP10_CLOSURE_ISSUES
 
 
 RUNTIME_STATE_SCHEMA = "cocolon.emlis.nls_v3.runtime_owner_state.v1"
@@ -601,17 +551,14 @@ def execute_dormant_v3(
             observation_stage_context=stage,
             original_input_bundle=normalized_input,
         )
-        initial_candidates = tuple(
-            build_semantic_candidate(
-                plan,
-                inventory_result=inventory,
-                content_plan=content_plan,
-                lexical_authority=lexical_authority,
-                match_authority=match_authority,
-            )
-            for plan in discourse.plans
+        initial_candidates = build_semantic_candidate_set(
+            discourse.plans,
+            inventory_result=inventory,
+            content_plan=content_plan,
+            lexical_authority=lexical_authority,
+            match_authority=match_authority,
         )
-        recovery = _SUCCESSOR_SELECT_WITH_BOUNDED_RECOVERY(
+        recovery = apply_bounded_recovery(
             initial_candidates,
             inventory_result=inventory,
             content_plan=content_plan,
@@ -781,17 +728,14 @@ def validate_dormant_runtime_execution(value: Any) -> tuple[str, ...]:
                 observation_stage_context=expected_stage,
                 original_input_bundle=value.normalized_input,
             )
-            expected_initial_candidates = tuple(
-                build_semantic_candidate(
-                    plan,
-                    inventory_result=expected_inventory,
-                    content_plan=expected_content_plan,
-                    lexical_authority=expected_lexical_authority,
-                    match_authority=expected_match_authority,
-                )
-                for plan in expected_discourse.plans
+            expected_initial_candidates = build_semantic_candidate_set(
+                expected_discourse.plans,
+                inventory_result=expected_inventory,
+                content_plan=expected_content_plan,
+                lexical_authority=expected_lexical_authority,
+                match_authority=expected_match_authority,
             )
-            expected_recovery = _SUCCESSOR_SELECT_WITH_BOUNDED_RECOVERY(
+            expected_recovery = apply_bounded_recovery(
                 expected_initial_candidates,
                 inventory_result=expected_inventory,
                 content_plan=expected_content_plan,
