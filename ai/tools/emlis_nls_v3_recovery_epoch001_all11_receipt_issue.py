@@ -2,13 +2,9 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Atomically stage, but never publish, Recovery Epoch 001 all11 receipts.
+"""Build the inert Recovery Epoch 001 all11 atomic-publication candidate."""
 
-This tool has no filesystem or GitHub write path.  It builds all eleven
-PROVED candidates in memory, requires owner and independent-verifier
-agreement for every item, and returns nothing partial on failure.
-"""
-
+import hashlib
 from pathlib import Path
 import re
 import sys
@@ -23,15 +19,15 @@ for _path in (str(_INFERENCE_ROOT), str(_TOOLS_ROOT)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from emlis_ai_nls_v3_artifact_contract import artifact_sha256
+from emlis_ai_nls_v3_artifact_contract import (
+    artifact_sha256,
+    canonical_json_bytes,
+)
 from emlis_ai_recovery_epoch001_accepted_test_run_receipt_v3 import (
-    RECOVERY_EPOCH001_SEQUENCE_EVENT_2,
-    RECOVERY_EPOCH001_SEQUENCE_EVENT_2_ORDINAL,
     validate_recovery_epoch001_accepted_test_run_receipt_shape,
 )
 from emlis_ai_recovery_epoch001_current_step_requirement_registry_v3 import (
-    RECOVERY_EPOCH001_CANDIDATE_VERSION_ID,
-    fresh_recovery_epoch001_current_step_requirement_registry,
+    RECOVERY_EPOCH001_EXPECTED_FORMAL_NODE_REGISTRY_SHA256,
     validate_recovery_epoch001_current_step_requirement_registry_shape,
 )
 from emlis_ai_recovery_epoch001_step_completion_receipt_v3 import (
@@ -42,7 +38,7 @@ import emlis_nls_v3_recovery_epoch001_closure_receipt_verify as independent
 
 
 RECOVERY_EPOCH001_ALL11_COMPLETION_CHAIN_SCHEMA = (
-    "cocolon.emlis.nls_v3.recovery_epoch001.all11_completion_chain.v1"
+    "cocolon.emlis.nls_v3.recovery_epoch001.all11_completion_chain.v2"
 )
 RECOVERY_EPOCH001_ALL11_COMPLETION_CHAIN_NEGATIVE_CODES = frozenset(
     {
@@ -58,12 +54,35 @@ RECOVERY_EPOCH001_ALL11_COMPLETION_CHAIN_NEGATIVE_CODES = frozenset(
         "P2_NOT_AUTHORIZED",
         "BODY_FREE_VIOLATION",
         "HASH_MISMATCH",
+        "ACCEPTED_RECEIPT_NOT_ISSUABLE",
     }
 )
 
-_SHA_RE = re.compile(r"^[0-9a-f]{64}$")
-_BODY_FREE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_./:+-]{1,512}$")
-_PUBLICATION_STATE = "STAGED_NOT_PUBLISHED"
+_CANDIDATE = "nls_v3_rc_0034"
+_LOGICAL_CYCLE = "NLS_V3_CYCLE_001"
+_RECOVERY_EPOCH = "NLS_V3_CYCLE001_RECOVERY_EPOCH_001"
+_REPOSITORY = "MassyuRed/Cocolon"
+_PREFIX = "EmlisAIの実装済み資料/documents/"
+_ACCEPTED_PATH = (
+    f"{_PREFIX}NLSv3_Step11_Cycle001_RecoveryEpoch001_"
+    "AcceptedTestRunExact134_BodyFree_Receipt_20260724.json"
+)
+_STEP_PATHS = tuple(
+    (
+        f"{_PREFIX}NLSv3_Step11_Cycle001_RecoveryEpoch001_"
+        f"Step{step:02d}_CurrentStepCompletion_PROVED_BodyFree_"
+        "Receipt_20260724.json"
+    )
+    for step in range(11)
+)
+_ACCEPTED_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch001."
+    "accepted_test_run_receipt.v2"
+)
+_STEP_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch001."
+    "current_step_completion_receipt.v1"
+)
 _STEP10_NEXT_AUTHORITY = (
     "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_"
     "P1_EXIT_TO_P2_SEPARATE_APPROVAL_ONLY"
@@ -72,18 +91,18 @@ _TOP_KEYS = frozenset(
     {
         "schema_version",
         "candidate_version_id",
-        "recovery_epoch",
-        "source_baseline_event_sha256",
-        "baseline_id",
-        "source_commit",
-        "source_tree",
-        "canonical_current_closure_sha256",
-        "source_dependency_closure_sha256",
+        "logical_cycle_id",
+        "recovery_epoch_id",
+        "source_baseline_event",
+        "source_closure",
         "registry_sha256",
+        "formal_node_registry_sha256",
+        "accepted_test_run_artifact",
         "accepted_test_run_receipt_sha256",
         "receipt_count",
         "ordered_steps",
         "receipts",
+        "receipt_artifacts",
         "receipt_sha256s",
         "required_sequence_event_2",
         "next_authority",
@@ -93,13 +112,30 @@ _TOP_KEYS = frozenset(
         "all11_completion_chain_sha256",
     }
 )
+_IDENTITY_KEYS = frozenset(
+    {
+        "artifact_role",
+        "schema_version",
+        "repository_full_name",
+        "path",
+        "git_blob_sha1",
+        "raw_sha256",
+        "logical_artifact_sha256",
+        "body_free",
+    }
+)
+_SHA_RE = re.compile(r"^[0-9a-f]{64}$")
+_BODY_FREE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_./:+-]{1,512}$")
 
 
 def _body_free(value: Any, active: set[int] | None = None) -> bool:
     if value is None or type(value) in (bool, int):
         return True
     if type(value) is str:
-        return _BODY_FREE_TOKEN_RE.fullmatch(value) is not None
+        return (
+            0 < len(value) <= 4096
+            and not any(ord(character) < 32 for character in value)
+        )
     if type(value) not in (list, dict):
         return False
     seen = set() if active is None else active
@@ -110,10 +146,9 @@ def _body_free(value: Any, active: set[int] | None = None) -> bool:
     try:
         if type(value) is list:
             return all(_body_free(item, seen) for item in value)
-        for key, item in value.items():
-            if type(key) is not str:
-                return False
-            if any(
+        return all(
+            type(key) is str
+            and not any(
                 token in key.lower()
                 for token in (
                     "raw_body",
@@ -124,21 +159,79 @@ def _body_free(value: Any, active: set[int] | None = None) -> bool:
                     "stdout",
                     "stderr",
                     "traceback",
+                    "environment_dump",
                 )
-            ):
-                return False
-            if not _body_free(item, seen):
-                return False
-        return True
+            )
+            and _body_free(item, seen)
+            for key, item in value.items()
+        )
     finally:
         seen.remove(identity)
 
 
 def _material(value: Mapping[str, Any]) -> dict[str, Any]:
     return {
-        key: value[key]
-        for key in sorted(set(value) - {"all11_completion_chain_sha256"})
+        key: item
+        for key, item in value.items()
+        if key != "all11_completion_chain_sha256"
     }
+
+
+def _published_bytes(value: Mapping[str, Any]) -> bytes:
+    return canonical_json_bytes(value) + b"\n"
+
+
+def _git_blob_sha1(raw: bytes) -> str:
+    prefix = f"blob {len(raw)}\0".encode("ascii")
+    return hashlib.sha1(
+        prefix + raw,
+        usedforsecurity=False,
+    ).hexdigest()
+
+
+def _artifact_identity(
+    *,
+    value: Mapping[str, Any],
+    path: str,
+    role: str,
+    schema: str,
+    hash_key: str,
+) -> dict[str, Any]:
+    raw = _published_bytes(value)
+    return {
+        "artifact_role": role,
+        "schema_version": schema,
+        "repository_full_name": _REPOSITORY,
+        "path": path,
+        "git_blob_sha1": _git_blob_sha1(raw),
+        "raw_sha256": hashlib.sha256(raw).hexdigest(),
+        "logical_artifact_sha256": value[hash_key],
+        "body_free": True,
+    }
+
+
+def _attempt(
+    accepted: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    value = accepted.get("formal_test_run_attempt")
+    return value if type(value) is dict else {}
+
+
+def _accepted_valid(
+    accepted: Mapping[str, Any],
+    *,
+    registry: Mapping[str, Any],
+    source_event: Mapping[str, Any],
+    publication_evidence: Mapping[str, Any],
+    root: Path,
+) -> bool:
+    return not validate_recovery_epoch001_accepted_test_run_receipt_shape(
+        accepted,
+        requirement_registry=registry,
+        source_baseline_event=source_event,
+        publication_evidence=publication_evidence,
+        repo_root=root,
+    )
 
 
 def stage_recovery_epoch001_all11_current_step_completion_receipts(
@@ -146,6 +239,7 @@ def stage_recovery_epoch001_all11_current_step_completion_receipts(
     requirement_registry: Mapping[str, Any],
     accepted_test_run_receipt: Mapping[str, Any],
     source_baseline_event: Mapping[str, Any],
+    publication_evidence: Mapping[str, Any],
     repo_root: Path | None = None,
 ) -> tuple[dict[str, Any], ...]:
     """Return exact11 only after owner and independent checks all agree."""
@@ -154,23 +248,26 @@ def stage_recovery_epoch001_all11_current_step_completion_receipts(
     registry = dict(requirement_registry)
     accepted = dict(accepted_test_run_receipt)
     event = dict(source_baseline_event)
+    evidence = dict(publication_evidence)
     if validate_recovery_epoch001_current_step_requirement_registry_shape(
         registry,
         repo_root=root,
     ):
         raise ValueError("ALL11_INCOMPLETE")
-    if validate_recovery_epoch001_accepted_test_run_receipt_shape(
+    if not _accepted_valid(
         accepted,
-        requirement_registry=registry,
-        source_baseline_event=event,
-        repo_root=root,
+        registry=registry,
+        source_event=event,
+        publication_evidence=evidence,
+        root=root,
     ):
-        raise ValueError("ALL11_INCOMPLETE")
+        raise ValueError("ACCEPTED_RECEIPT_NOT_ISSUABLE")
     if independent.verify_recovery_epoch001_accepted_test_run_receipt(
         accepted,
         repo_root=root,
         requirement_registry=registry,
         source_baseline_event=event,
+        publication_evidence=evidence,
     ):
         raise ValueError("OWNER_VERIFIER_CONFLICT")
     staged: list[dict[str, Any]] = []
@@ -184,6 +281,7 @@ def stage_recovery_epoch001_all11_current_step_completion_receipts(
             previous_receipt=previous,
             step0_parent_authority=event,
             prior_receipts=tuple(staged),
+            publication_evidence=evidence,
         )
         owner_issues = (
             validate_recovery_epoch001_current_step_completion_receipt_shape(
@@ -194,6 +292,7 @@ def stage_recovery_epoch001_all11_current_step_completion_receipts(
                 requirement_registry=registry,
                 accepted_test_run_receipt=accepted,
                 prior_receipts=tuple(staged),
+                publication_evidence=evidence,
             )
         )
         verifier_issues = (
@@ -205,15 +304,12 @@ def stage_recovery_epoch001_all11_current_step_completion_receipts(
                 requirement_registry=registry,
                 accepted_test_run_receipt=accepted,
                 prior_receipts=tuple(staged),
+                publication_evidence=evidence,
             )
         )
         if owner_issues or verifier_issues:
-            staged.clear()
             raise ValueError("OWNER_VERIFIER_CONFLICT")
         staged.append(receipt)
-    if len(staged) != 11:
-        staged.clear()
-        raise ValueError("ALL11_INCOMPLETE")
     return tuple(staged)
 
 
@@ -223,247 +319,117 @@ def build_recovery_epoch001_all11_completion_chain(
     requirement_registry: Mapping[str, Any],
     accepted_test_run_receipt: Mapping[str, Any],
     source_baseline_event: Mapping[str, Any],
+    publication_evidence: Mapping[str, Any],
     repo_root: Path | None = None,
 ) -> dict[str, Any]:
-    """Build a body-free event-2 candidate without publishing it."""
+    """Build the exact11 v2 candidate; this function performs no write."""
 
     root = (_REPO_ROOT if repo_root is None else Path(repo_root)).resolve()
     registry = dict(requirement_registry)
     accepted = dict(accepted_test_run_receipt)
     event = dict(source_baseline_event)
-    receipt_rows = [dict(receipt) for receipt in receipts]
+    evidence = dict(publication_evidence)
+    receipt_rows = [
+        dict(receipt) for receipt in receipts if type(receipt) is dict
+    ]
     if len(receipt_rows) != 11:
         raise ValueError("ALL11_INCOMPLETE")
+    if not _accepted_valid(
+        accepted,
+        registry=registry,
+        source_event=event,
+        publication_evidence=evidence,
+        root=root,
+    ):
+        raise ValueError("ACCEPTED_RECEIPT_NOT_ISSUABLE")
+    attempt = _attempt(accepted)
+    source_closure = attempt.get("source_closure")
+    event_identity = attempt.get("source_baseline_event")
+    if (
+        type(source_closure) is not dict
+        or type(event_identity) is not dict
+    ):
+        raise ValueError("SOURCE_OR_ROOT_MISMATCH")
+    accepted_identity = _artifact_identity(
+        value=accepted,
+        path=_ACCEPTED_PATH,
+        role="ACCEPTED_TEST_RUN_RECEIPT",
+        schema=_ACCEPTED_SCHEMA,
+        hash_key="accepted_test_run_receipt_sha256",
+    )
+    receipt_identities = [
+        _artifact_identity(
+            value=receipt,
+            path=_STEP_PATHS[step],
+            role="CURRENT_STEP_COMPLETION_RECEIPT",
+            schema=_STEP_SCHEMA,
+            hash_key="receipt_sha256",
+        )
+        for step, receipt in enumerate(receipt_rows)
+    ]
     chain: dict[str, Any] = {
         "schema_version": RECOVERY_EPOCH001_ALL11_COMPLETION_CHAIN_SCHEMA,
-        "candidate_version_id": accepted["candidate_version_id"],
-        "recovery_epoch": 1,
-        "source_baseline_event_sha256": event["event_sha256"],
-        "baseline_id": accepted["baseline_id"],
-        "source_commit": accepted["source_commit"],
-        "source_tree": accepted["source_tree"],
-        "canonical_current_closure_sha256": accepted[
-            "canonical_current_closure_sha256"
-        ],
-        "source_dependency_closure_sha256": accepted[
-            "source_dependency_closure_sha256"
-        ],
+        "candidate_version_id": _CANDIDATE,
+        "logical_cycle_id": _LOGICAL_CYCLE,
+        "recovery_epoch_id": _RECOVERY_EPOCH,
+        "source_baseline_event": dict(event_identity),
+        "source_closure": dict(source_closure),
         "registry_sha256": registry["registry_sha256"],
+        "formal_node_registry_sha256": (
+            RECOVERY_EPOCH001_EXPECTED_FORMAL_NODE_REGISTRY_SHA256
+        ),
+        "accepted_test_run_artifact": accepted_identity,
         "accepted_test_run_receipt_sha256": accepted[
             "accepted_test_run_receipt_sha256"
         ],
         "receipt_count": 11,
         "ordered_steps": list(range(11)),
         "receipts": receipt_rows,
+        "receipt_artifacts": receipt_identities,
         "receipt_sha256s": [
             receipt["receipt_sha256"] for receipt in receipt_rows
         ],
         "required_sequence_event_2": {
-            "event_name": RECOVERY_EPOCH001_SEQUENCE_EVENT_2,
-            "event_ordinal": RECOVERY_EPOCH001_SEQUENCE_EVENT_2_ORDINAL,
-            "event_1_sha256": event["event_sha256"],
+            "event_id": (
+                "NLS_V3_CYCLE001_RECOVERY_EPOCH001_EVENT_002_"
+                "STEP0_10_PREREQUISITES_PROVED"
+            ),
+            "event_name": "STEP0_10_PREREQUISITES_PROVED",
+            "event_ordinal": 2,
+            "state": "STEP0_10_PREREQUISITES_PROVED",
+            "prior_event_identity_sha256": event_identity[
+                "identity_sha256"
+            ],
         },
         "next_authority": _STEP10_NEXT_AUTHORITY,
-        "publication_state": _PUBLICATION_STATE,
+        "publication_state": "PUBLISHED_ATOMIC",
         "automatic_progression": False,
         "body_free": True,
     }
-    chain["all11_completion_chain_sha256"] = artifact_sha256(chain)
+    chain["all11_completion_chain_sha256"] = artifact_sha256(
+        _material(chain)
+    )
     issues = validate_recovery_epoch001_all11_completion_chain(
         chain,
         requirement_registry=registry,
         accepted_test_run_receipt=accepted,
         source_baseline_event=event,
+        publication_evidence=evidence,
         repo_root=root,
     )
+    if issues:
+        raise ValueError(issues[0])
     verifier_issues = independent.verify_recovery_epoch001_all11_completion_chain(
         chain,
         repo_root=root,
         requirement_registry=registry,
         accepted_test_run_receipt=accepted,
         source_baseline_event=event,
+        publication_evidence=evidence,
     )
-    if issues or verifier_issues:
-        raise ValueError(
-            "OWNER_VERIFIER_CONFLICT"
-            if verifier_issues
-            else issues[0]
-        )
+    if verifier_issues:
+        raise ValueError("OWNER_VERIFIER_CONFLICT")
     return chain
-
-
-def _validate_recovery_epoch001_all11_completion_chain_impl(
-    value: Any,
-    *,
-    requirement_registry: Mapping[str, Any] | None = None,
-    accepted_test_run_receipt: Mapping[str, Any] | None = None,
-    source_baseline_event: Mapping[str, Any] | None = None,
-    repo_root: Path | None = None,
-) -> tuple[str, ...]:
-    """Validate all11 atomicity, ordering, roots, STOPs, and P2 boundary."""
-
-    if type(value) is not dict:
-        return ("ALL11_INCOMPLETE",)
-    issues: set[str] = set()
-    if set(value) != _TOP_KEYS:
-        issues.add("ALL11_INCOMPLETE")
-    if (
-        value.get("schema_version")
-        != RECOVERY_EPOCH001_ALL11_COMPLETION_CHAIN_SCHEMA
-        or value.get("candidate_version_id")
-        != RECOVERY_EPOCH001_CANDIDATE_VERSION_ID
-        or value.get("recovery_epoch") != 1
-    ):
-        issues.add("ALL11_INCOMPLETE")
-    root = (_REPO_ROOT if repo_root is None else Path(repo_root)).resolve()
-    registry = (
-        fresh_recovery_epoch001_current_step_requirement_registry()
-        if requirement_registry is None
-        else dict(requirement_registry)
-    )
-    accepted = (
-        dict(accepted_test_run_receipt)
-        if type(accepted_test_run_receipt) is dict
-        else {}
-    )
-    event = (
-        dict(source_baseline_event)
-        if type(source_baseline_event) is dict
-        else {}
-    )
-    if validate_recovery_epoch001_current_step_requirement_registry_shape(
-        registry,
-        repo_root=root,
-    ):
-        issues.add("SOURCE_OR_ROOT_MISMATCH")
-    if validate_recovery_epoch001_accepted_test_run_receipt_shape(
-        accepted,
-        requirement_registry=registry,
-        source_baseline_event=event,
-        repo_root=root,
-    ):
-        issues.add("SOURCE_OR_ROOT_MISMATCH")
-    receipts = value.get("receipts")
-    if type(receipts) is not list or len(receipts) != 11:
-        issues.add("ALL11_INCOMPLETE")
-        receipts = []
-    steps = [
-        receipt.get("step_number")
-        for receipt in receipts
-        if type(receipt) is dict
-    ]
-    if (
-        value.get("receipt_count") != 11
-        or value.get("ordered_steps") != list(range(11))
-        or steps != list(range(11))
-    ):
-        issues.add("RECEIPT_ORDER_INVALID")
-    previous: Mapping[str, Any] | None = None
-    for step, receipt in enumerate(receipts):
-        if type(receipt) is not dict:
-            issues.add("ALL11_INCOMPLETE")
-            continue
-        owner_issues = (
-            validate_recovery_epoch001_current_step_completion_receipt_shape(
-                receipt,
-                repo_root=root,
-                previous_receipt=previous,
-                step0_parent_authority=event,
-                requirement_registry=registry,
-                accepted_test_run_receipt=accepted,
-                prior_receipts=tuple(receipts[:step]),
-            )
-        )
-        verifier_issues = (
-            independent.verify_recovery_epoch001_current_step_completion_receipt(
-                receipt,
-                repo_root=root,
-                previous_receipt=previous,
-                step0_parent_authority=event,
-                requirement_registry=registry,
-                accepted_test_run_receipt=accepted,
-                prior_receipts=tuple(receipts[:step]),
-            )
-        )
-        if owner_issues or verifier_issues:
-            issues.add("OWNER_VERIFIER_CONFLICT")
-        if receipt.get("verdict") != "PROVED":
-            issues.add("ALL11_INCOMPLETE")
-        if receipt.get("completion_condition", {}).get("satisfied") is not True:
-            issues.add("ALL11_INCOMPLETE")
-        if any(
-            stop.get("triggered") is not False
-            for stop in receipt.get("stop_conditions", [])
-            if type(stop) is dict
-        ):
-            issues.add("STOP_TRIGGERED")
-        if step > 0 and receipt.get("parent_binding", {}).get(
-            "previous_receipt_sha256"
-        ) != previous.get("receipt_sha256"):
-            issues.add("PARENT_CHAIN_INVALID")
-        expected_next = registry["steps"][step]["next_authority"]
-        if receipt.get("next_authority") != expected_next:
-            issues.add("NEXT_AUTHORITY_INVALID")
-        previous = receipt
-    receipt_hashes = [
-        receipt.get("receipt_sha256")
-        for receipt in receipts
-        if type(receipt) is dict
-    ]
-    if (
-        value.get("receipt_sha256s") != receipt_hashes
-        or any(
-            _SHA_RE.fullmatch(str(receipt_hash)) is None
-            for receipt_hash in receipt_hashes
-        )
-    ):
-        issues.add("PARENT_CHAIN_INVALID")
-    root_fields = {
-        "source_baseline_event_sha256": event.get("event_sha256"),
-        "baseline_id": accepted.get("baseline_id"),
-        "source_commit": accepted.get("source_commit"),
-        "source_tree": accepted.get("source_tree"),
-        "canonical_current_closure_sha256": accepted.get(
-            "canonical_current_closure_sha256"
-        ),
-        "source_dependency_closure_sha256": accepted.get(
-            "source_dependency_closure_sha256"
-        ),
-        "registry_sha256": registry.get("registry_sha256"),
-        "accepted_test_run_receipt_sha256": accepted.get(
-            "accepted_test_run_receipt_sha256"
-        ),
-    }
-    if any(value.get(key) != expected for key, expected in root_fields.items()):
-        issues.add("SOURCE_OR_ROOT_MISMATCH")
-    if value.get("required_sequence_event_2") != {
-        "event_name": RECOVERY_EPOCH001_SEQUENCE_EVENT_2,
-        "event_ordinal": RECOVERY_EPOCH001_SEQUENCE_EVENT_2_ORDINAL,
-        "event_1_sha256": event.get("event_sha256"),
-    }:
-        issues.add("SEQUENCE_INVALID")
-    if value.get("next_authority") != _STEP10_NEXT_AUTHORITY:
-        issues.add("NEXT_AUTHORITY_INVALID")
-    if value.get("publication_state") != _PUBLICATION_STATE:
-        issues.add("PUBLICATION_CONFLICT")
-    if value.get("automatic_progression") is not False:
-        issues.add("P2_NOT_AUTHORIZED")
-    if value.get("body_free") is not True or not _body_free(value):
-        issues.add("BODY_FREE_VIOLATION")
-    try:
-        expected_hash = artifact_sha256(_material(value))
-    except (KeyError, RecursionError, TypeError, UnicodeError, ValueError):
-        expected_hash = None
-    if (
-        expected_hash is None
-        or value.get("all11_completion_chain_sha256") != expected_hash
-        or _SHA_RE.fullmatch(
-            str(value.get("all11_completion_chain_sha256", ""))
-        )
-        is None
-    ):
-        issues.add("HASH_MISMATCH")
-    return tuple(sorted(issues))
 
 
 def validate_recovery_epoch001_all11_completion_chain(
@@ -472,20 +438,152 @@ def validate_recovery_epoch001_all11_completion_chain(
     requirement_registry: Mapping[str, Any] | None = None,
     accepted_test_run_receipt: Mapping[str, Any] | None = None,
     source_baseline_event: Mapping[str, Any] | None = None,
+    publication_evidence: Mapping[str, Any] | None = None,
     repo_root: Path | None = None,
 ) -> tuple[str, ...]:
     try:
-        return _validate_recovery_epoch001_all11_completion_chain_impl(
-            value,
-            requirement_registry=requirement_registry,
-            accepted_test_run_receipt=accepted_test_run_receipt,
-            source_baseline_event=source_baseline_event,
-            repo_root=repo_root,
+        if type(value) is not dict or set(value) != _TOP_KEYS:
+            return ("ALL11_INCOMPLETE",)
+        root = (_REPO_ROOT if repo_root is None else Path(repo_root)).resolve()
+        registry = (
+            dict(requirement_registry)
+            if type(requirement_registry) is dict
+            else {}
         )
+        accepted = (
+            dict(accepted_test_run_receipt)
+            if type(accepted_test_run_receipt) is dict
+            else {}
+        )
+        event = (
+            dict(source_baseline_event)
+            if type(source_baseline_event) is dict
+            else {}
+        )
+        evidence = (
+            dict(publication_evidence)
+            if type(publication_evidence) is dict
+            else {}
+        )
+        if (
+            value.get("schema_version")
+            != RECOVERY_EPOCH001_ALL11_COMPLETION_CHAIN_SCHEMA
+            or value.get("candidate_version_id") != _CANDIDATE
+            or value.get("logical_cycle_id") != _LOGICAL_CYCLE
+            or value.get("recovery_epoch_id") != _RECOVERY_EPOCH
+        ):
+            return ("ALL11_INCOMPLETE",)
+        if not _accepted_valid(
+            accepted,
+            registry=registry,
+            source_event=event,
+            publication_evidence=evidence,
+            root=root,
+        ):
+            return ("ACCEPTED_RECEIPT_NOT_ISSUABLE",)
+        attempt = _attempt(accepted)
+        if (
+            value.get("source_baseline_event")
+            != attempt.get("source_baseline_event")
+            or value.get("source_closure") != attempt.get("source_closure")
+            or value.get("registry_sha256")
+            != registry.get("registry_sha256")
+            or value.get("formal_node_registry_sha256")
+            != RECOVERY_EPOCH001_EXPECTED_FORMAL_NODE_REGISTRY_SHA256
+        ):
+            return ("SOURCE_OR_ROOT_MISMATCH",)
+        receipts = value.get("receipts")
+        artifacts = value.get("receipt_artifacts")
+        hashes = value.get("receipt_sha256s")
+        if (
+            type(receipts) is not list
+            or type(artifacts) is not list
+            or type(hashes) is not list
+            or len(receipts) != 11
+            or len(artifacts) != 11
+            or len(hashes) != 11
+            or value.get("receipt_count") != 11
+            or value.get("ordered_steps") != list(range(11))
+            or [row.get("step_number") for row in receipts]
+            != list(range(11))
+            or [row.get("receipt_sha256") for row in receipts] != hashes
+        ):
+            return ("ALL11_INCOMPLETE",)
+        previous: Mapping[str, Any] | None = None
+        for step, (receipt, identity) in enumerate(
+            zip(receipts, artifacts)
+        ):
+            if (
+                type(receipt) is not dict
+                or type(identity) is not dict
+                or set(identity) != _IDENTITY_KEYS
+                or identity
+                != _artifact_identity(
+                    value=receipt,
+                    path=_STEP_PATHS[step],
+                    role="CURRENT_STEP_COMPLETION_RECEIPT",
+                    schema=_STEP_SCHEMA,
+                    hash_key="receipt_sha256",
+                )
+            ):
+                return ("ALL11_INCOMPLETE",)
+            if step and receipt.get("parent_binding", {}).get(
+                "previous_receipt_sha256"
+            ) != previous.get("receipt_sha256"):
+                return ("PARENT_CHAIN_INVALID",)
+            if receipt.get("verdict") != "PROVED":
+                return ("ALL11_INCOMPLETE",)
+            previous = receipt
+        expected_accepted_identity = _artifact_identity(
+            value=accepted,
+            path=_ACCEPTED_PATH,
+            role="ACCEPTED_TEST_RUN_RECEIPT",
+            schema=_ACCEPTED_SCHEMA,
+            hash_key="accepted_test_run_receipt_sha256",
+        )
+        if (
+            value.get("accepted_test_run_artifact")
+            != expected_accepted_identity
+            or value.get("accepted_test_run_receipt_sha256")
+            != accepted.get("accepted_test_run_receipt_sha256")
+        ):
+            return ("SOURCE_OR_ROOT_MISMATCH",)
+        event_identity = attempt["source_baseline_event"]
+        if value.get("required_sequence_event_2") != {
+            "event_id": (
+                "NLS_V3_CYCLE001_RECOVERY_EPOCH001_EVENT_002_"
+                "STEP0_10_PREREQUISITES_PROVED"
+            ),
+            "event_name": "STEP0_10_PREREQUISITES_PROVED",
+            "event_ordinal": 2,
+            "state": "STEP0_10_PREREQUISITES_PROVED",
+            "prior_event_identity_sha256": event_identity[
+                "identity_sha256"
+            ],
+        }:
+            return ("SEQUENCE_INVALID",)
+        if (
+            value.get("next_authority") != _STEP10_NEXT_AUTHORITY
+            or value.get("automatic_progression") is not False
+        ):
+            return ("P2_NOT_AUTHORIZED",)
+        if value.get("publication_state") != "PUBLISHED_ATOMIC":
+            return ("PUBLICATION_CONFLICT",)
+        if value.get("body_free") is not True or not _body_free(value):
+            return ("BODY_FREE_VIOLATION",)
+        if (
+            value.get("all11_completion_chain_sha256")
+            != artifact_sha256(_material(value))
+            or _SHA_RE.fullmatch(
+                str(value.get("all11_completion_chain_sha256", ""))
+            )
+            is None
+        ):
+            return ("HASH_MISMATCH",)
+        return ()
     except (
         AttributeError,
         KeyError,
-        OSError,
         RecursionError,
         TypeError,
         UnicodeError,
@@ -495,6 +593,4 @@ def validate_recovery_epoch001_all11_completion_chain(
 
 
 if __name__ == "__main__":
-    raise SystemExit(
-        "formal P1 may stage all11 in memory; publication remains separate"
-    )
+    raise SystemExit("inert candidate builder; publication remains separate")

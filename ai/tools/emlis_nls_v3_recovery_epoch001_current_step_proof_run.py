@@ -12,6 +12,7 @@ and returns only body-free node outcomes and start/end source bindings.
 import hashlib
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 import platform
 import re
@@ -30,6 +31,9 @@ for _path in (str(_INFERENCE_ROOT), str(_TEST_HELPERS_ROOT)):
         sys.path.insert(0, _path)
 
 from emlis_ai_nls_v3_artifact_contract import artifact_sha256
+from emlis_ai_recovery_epoch001_accepted_test_run_receipt_v3 import (
+    validate_recovery_epoch001_formal_test_run_attempt_shape,
+)
 from emlis_ai_recovery_epoch001_canonical_current_closure_v3 import (
     RECOVERY_EPOCH001_CANDIDATE_VERSION_ID,
     fresh_recovery_epoch001_canonical_current_closure,
@@ -41,6 +45,9 @@ from emlis_ai_recovery_epoch001_current_step_requirement_registry_v3 import (
     fresh_recovery_epoch001_current_step_requirement_registry,
     validate_recovery_epoch001_current_step_requirement_registry_shape,
 )
+from emlis_ai_recovery_epoch001_sequence_ledger_v3 import (
+    validate_recovery_epoch001_formal_test_run_reservation_admission,
+)
 
 
 RECOVERY_EPOCH001_CURRENT_STEP_PROOF_RUN_PROTOCOL = (
@@ -48,6 +55,9 @@ RECOVERY_EPOCH001_CURRENT_STEP_PROOF_RUN_PROTOCOL = (
 )
 RECOVERY_EPOCH001_FORMAL_NODE_COUNT = 134
 RECOVERY_EPOCH001_FORMAL_RUN_TIMEOUT_SECONDS = 3600
+RECOVERY_EPOCH001_FORMAL_TEST_RUN_ATTEMPT_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch001.formal_test_run_attempt.v2"
+)
 RECOVERY_EPOCH001_SELECTED_FORMAL_P1_AUTHORITY_TOKEN: str | None = None
 RECOVERY_EPOCH001_PROOF_ENVIRONMENT_NEGATIVE_CODES = frozenset(
     {
@@ -462,17 +472,21 @@ def _worker_environment() -> dict[str, str]:
 
 
 def _worker_environment_profile_sha256(environment: Mapping[str, str]) -> str:
-    return artifact_sha256(
-        {
-            "fixed": dict(_WORKER_ENVIRONMENT_FIXED),
-            "removed": list(_WORKER_ENVIRONMENT_REMOVED),
-            "inherited_path_sha256": hashlib.sha256(
-                environment["PATH"].encode("utf-8")
-            ).hexdigest(),
-            "lang": environment["LANG"],
-            "lc_all": environment["LC_ALL"],
-        }
-    )
+    return artifact_sha256(_worker_environment_profile(environment))
+
+
+def _worker_environment_profile(
+    environment: Mapping[str, str],
+) -> dict[str, Any]:
+    return {
+        "fixed": dict(_WORKER_ENVIRONMENT_FIXED),
+        "removed": list(_WORKER_ENVIRONMENT_REMOVED),
+        "inherited_path_sha256": hashlib.sha256(
+            environment["PATH"].encode("utf-8")
+        ).hexdigest(),
+        "lang": environment["LANG"],
+        "lc_all": environment["LC_ALL"],
+    }
 
 
 def _worker_argv_sha256(nodes: list[str]) -> str:
@@ -629,25 +643,276 @@ def _internal_exact134_child(result_path: Path) -> int:
     return 0
 
 
+def materialize_recovery_epoch001_formal_test_run_attempt(
+    *,
+    worker_report: Mapping[str, Any] | None,
+    requirement_registry: Mapping[str, Any],
+    source_baseline_event: Mapping[str, Any],
+    run_reservation: Mapping[str, Any] | None,
+    publication_evidence: Mapping[str, Any],
+    repo_root: Path | None = None,
+) -> dict[str, Any] | None:
+    """Bind a body-free worker report to one verified published reservation."""
+
+    if worker_report is None:
+        return None
+    root = (_REPO_ROOT if repo_root is None else Path(repo_root)).resolve()
+    if (
+        type(worker_report) is not dict
+        or type(requirement_registry) is not dict
+        or type(source_baseline_event) is not dict
+        or type(run_reservation) is not dict
+        or type(publication_evidence) is not dict
+        or run_reservation
+        != publication_evidence.get("formal_test_run_reservation")
+    ):
+        raise ValueError("RUN_RESERVATION_INVALID")
+    reservation_issues = (
+        validate_recovery_epoch001_formal_test_run_reservation_admission(
+            run_reservation,
+            published_reservations=[],
+            published_attempts=[],
+            repository_snapshot=publication_evidence.get(
+                "repository_snapshot",
+                {},
+            ),
+            source_baseline_event_artifact=source_baseline_event,
+            rerun_requested=False,
+        )
+    )
+    if (
+        reservation_issues
+        or publication_evidence.get(
+            "event_publication_is_ancestor_of_reservation"
+        )
+        is not True
+        or publication_evidence.get(
+            "reservation_publication_is_ancestor_of_run"
+        )
+        is not True
+        or publication_evidence.get("source_baseline_event", {}).get(
+            "artifact"
+        )
+        != source_baseline_event
+    ):
+        raise ValueError("RUN_RESERVATION_INVALID")
+    reservation_artifact = run_reservation.get("artifact")
+    reservation_identity = run_reservation.get("identity")
+    if (
+        type(reservation_artifact) is not dict
+        or type(reservation_identity) is not dict
+    ):
+        raise ValueError("RUN_RESERVATION_INVALID")
+    required_report_keys = {
+        "collection_node_ids",
+        "executed_node_ids",
+        "runner_environment",
+        "run_start",
+        "run_end",
+        "run_started_at_utc",
+        "run_finished_at_utc",
+        "outcomes",
+        "counts",
+        "exit_code",
+        "timed_out",
+        "outcome_state",
+        "stop_code",
+        "body_free",
+    }
+    if set(worker_report) != required_report_keys:
+        raise ValueError("RECOVERY_PROOF_ENVIRONMENT_ENTRY_INVALID")
+    try:
+        event_time = datetime.strptime(
+            reservation_artifact["source_baseline_event"][
+                "timestamp_utc"
+            ],
+            "%Y-%m-%dT%H:%M:%SZ",
+        ).replace(tzinfo=timezone.utc)
+        reserved_time = datetime.strptime(
+            reservation_artifact["reserved_at_utc"],
+            "%Y-%m-%dT%H:%M:%SZ",
+        ).replace(tzinfo=timezone.utc)
+        started_time = datetime.strptime(
+            worker_report["run_started_at_utc"],
+            "%Y-%m-%dT%H:%M:%SZ",
+        ).replace(tzinfo=timezone.utc)
+        finished_time = datetime.strptime(
+            worker_report["run_finished_at_utc"],
+            "%Y-%m-%dT%H:%M:%SZ",
+        ).replace(tzinfo=timezone.utc)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("RUN_RESERVATION_INVALID") from exc
+    if not (event_time < reserved_time <= started_time < finished_time):
+        raise ValueError("RUN_RESERVATION_INVALID")
+    attempt: dict[str, Any] = {
+        "schema_version": RECOVERY_EPOCH001_FORMAL_TEST_RUN_ATTEMPT_SCHEMA,
+        "attempt_id": reservation_artifact["attempt_id"],
+        "authority_token": reservation_artifact["authority_token"],
+        "challenge_id": reservation_artifact["challenge_id"],
+        "authority_challenge_id": reservation_artifact[
+            "authority_challenge_id"
+        ],
+        "candidate_version_id": reservation_artifact[
+            "candidate_version_id"
+        ],
+        "logical_cycle_id": reservation_artifact["logical_cycle_id"],
+        "recovery_epoch_id": reservation_artifact["recovery_epoch_id"],
+        "source_baseline_event": dict(
+            reservation_artifact["source_baseline_event"]
+        ),
+        "run_reservation": dict(reservation_identity),
+        "source_closure": dict(reservation_artifact["source_closure"]),
+        "formal_node_registry_sha256": reservation_artifact[
+            "formal_node_registry_sha256"
+        ],
+        "collection_node_ids": list(
+            worker_report["collection_node_ids"]
+        ),
+        "collection_sha256": artifact_sha256(
+            {"node_ids": list(worker_report["collection_node_ids"])}
+        ),
+        "executed_node_ids": list(worker_report["executed_node_ids"]),
+        "executed_node_sha256": artifact_sha256(
+            {"node_ids": list(worker_report["executed_node_ids"])}
+        ),
+        "runner_environment": dict(worker_report["runner_environment"]),
+        "run_start": dict(worker_report["run_start"]),
+        "run_end": dict(worker_report["run_end"]),
+        "run_started_at_utc": worker_report["run_started_at_utc"],
+        "run_finished_at_utc": worker_report["run_finished_at_utc"],
+        "outcomes": [
+            dict(row) for row in worker_report["outcomes"]
+        ],
+        "counts": dict(worker_report["counts"]),
+        "exit_code": worker_report["exit_code"],
+        "timed_out": worker_report["timed_out"],
+        "outcome_state": worker_report["outcome_state"],
+        "stop_code": worker_report["stop_code"],
+        "body_free": worker_report["body_free"],
+    }
+    attempt["formal_test_run_attempt_sha256"] = artifact_sha256(
+        {
+            key: value
+            for key, value in attempt.items()
+            if key != "formal_test_run_attempt_sha256"
+        }
+    )
+    if validate_recovery_epoch001_formal_test_run_attempt_shape(
+        attempt,
+        repo_root=root,
+        requirement_registry=requirement_registry,
+    ):
+        raise ValueError("RECOVERY_PROOF_ENVIRONMENT_ENTRY_INVALID")
+    return attempt
+
+
+def _utc_now_seconds() -> str:
+    return (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _outcome_state_and_stop(
+    *,
+    counts: Mapping[str, Any],
+    exit_code: int,
+    timed_out: bool,
+) -> tuple[str, str | None]:
+    if timed_out:
+        return "TIMED_OUT", "RUN_TIMED_OUT"
+    if counts.get("collection_errors") not in (0, None):
+        return "COLLECTION_ERROR", "RUN_COLLECTION_ERROR"
+    if (
+        exit_code == 0
+        and counts
+        == {
+            "collected": 134,
+            "executed": 134,
+            "passed": 134,
+            "failed": 0,
+            "skipped": 0,
+            "xfailed": 0,
+            "xpassed": 0,
+            "deselected": 0,
+            "collection_errors": 0,
+            "timeouts": 0,
+        }
+    ):
+        return "SUCCEEDED", None
+    return "PARTIAL", "RUN_PARTIAL"
+
+
 def run_recovery_epoch001_current_step_proof(
     *,
     requirement_registry: Mapping[str, Any],
     source_baseline_event: Mapping[str, Any],
+    run_reservation: Mapping[str, Any],
+    publication_evidence: Mapping[str, Any],
     repo_root: Path | None = None,
 ) -> dict[str, Any]:
     """Execute the exact134 lane once and return a body-free proof candidate."""
 
     root = (_REPO_ROOT if repo_root is None else Path(repo_root)).resolve()
     registry = dict(requirement_registry)
-    environment_issues = validate_recovery_epoch001_proof_environment(
-        requirement_registry=registry,
-        source_baseline_event=source_baseline_event,
+    if validate_recovery_epoch001_current_step_requirement_registry_shape(
+        registry,
         repo_root=root,
+    ):
+        raise ValueError("RECOVERY_PROOF_ENVIRONMENT_REGISTRY_INVALID")
+    if (
+        type(run_reservation) is not dict
+        or type(publication_evidence) is not dict
+        or validate_recovery_epoch001_formal_test_run_reservation_admission(
+            run_reservation,
+            published_reservations=[],
+            published_attempts=[],
+            repository_snapshot=publication_evidence.get(
+                "repository_snapshot",
+                {},
+            ),
+            source_baseline_event_artifact=source_baseline_event,
+            rerun_requested=False,
+        )
+    ):
+        raise ValueError("RUN_RESERVATION_INVALID")
+    source_closure = run_reservation.get("artifact", {}).get(
+        "source_closure"
     )
-    if environment_issues:
-        raise ValueError(environment_issues[0])
+    try:
+        source_commit, source_tree, clean = _git_identity(root)
+        current_closure = fresh_recovery_epoch001_canonical_current_closure(
+            repo_root=root
+        )
+    except (
+        FileNotFoundError,
+        OSError,
+        subprocess.SubprocessError,
+        UnicodeError,
+        ValueError,
+    ) as exc:
+        raise ValueError(
+            "RECOVERY_PROOF_ENVIRONMENT_ENTRY_INVALID"
+        ) from exc
+    if (
+        type(source_closure) is not dict
+        or clean is not True
+        or source_closure.get("source_commit_sha1") != source_commit
+        or source_closure.get("source_tree_sha1") != source_tree
+        or source_closure.get("canonical_current_closure_sha256")
+        != current_closure.get("canonical_current_closure_sha256")
+        or source_closure.get("source_dependency_closure_sha256")
+        != current_closure.get("source_dependency_closure_sha256")
+        or source_closure.get("requirement_registry_sha256")
+        != registry.get("registry_sha256")
+        or source_closure.get("formal_node_registry_sha256")
+        != RECOVERY_EPOCH001_EXPECTED_FORMAL_NODE_REGISTRY_SHA256
+    ):
+        raise ValueError("RECOVERY_PROOF_ENVIRONMENT_CLOSURE_INVALID")
     nodes = list(collect_recovery_epoch001_current_step_proof_nodes())
-    source_commit, _, _ = _git_identity(root)
+    run_started_at_utc = _utc_now_seconds()
     with tempfile.TemporaryDirectory(
         prefix="emlis-recovery-epoch001-proof-"
     ) as temporary:
@@ -675,11 +940,13 @@ def run_recovery_epoch001_current_step_proof(
             closure_start = fresh_recovery_epoch001_canonical_current_closure(
                 repo_root=pinned_root
             )
-            run_start = _source_binding(
-                repo_root=pinned_root,
-                closure=closure_start,
-                registry=registry,
-            )
+            if (
+                closure_start.get("canonical_current_closure_sha256")
+                != source_closure.get("canonical_current_closure_sha256")
+            ):
+                raise ValueError(
+                    "RECOVERY_PROOF_ENVIRONMENT_CLOSURE_INVALID"
+                )
             worker_result, timed_out = _run_exact134_worker(
                 pinned_root=pinned_root,
                 result_path=result_path,
@@ -688,11 +955,10 @@ def run_recovery_epoch001_current_step_proof(
             closure_end = fresh_recovery_epoch001_canonical_current_closure(
                 repo_root=pinned_root
             )
-            run_end = _source_binding(
-                repo_root=pinned_root,
-                closure=closure_end,
-                registry=registry,
-            )
+            if closure_end != closure_start:
+                raise ValueError(
+                    "RECOVERY_PROOF_ENVIRONMENT_CLOSURE_INVALID"
+                )
             outcomes = _outcomes(
                 node_ids=nodes,
                 states=worker_result["states"],
@@ -729,26 +995,23 @@ def run_recovery_epoch001_current_step_proof(
                     # Cleanup must not replace the authoritative run result
                     # or mask the fail-closed exception from the proof lane.
                     pass
+    run_finished_at_utc = _utc_now_seconds()
     worker_environment = _worker_environment()
-    proof_run: dict[str, Any] = {
-        "protocol": RECOVERY_EPOCH001_CURRENT_STEP_PROOF_RUN_PROTOCOL,
-        "candidate_version_id": RECOVERY_EPOCH001_CANDIDATE_VERSION_ID,
-        "recovery_epoch": 1,
-        "source_baseline_event_sha256": (
-            source_baseline_event["event_sha256"]
-        ),
-        "source_commit": run_start["source_commit"],
-        "source_tree": run_start["source_tree"],
-        "canonical_current_closure_sha256": (
-            run_start["canonical_current_closure_sha256"]
-        ),
-        "source_dependency_closure_sha256": (
-            run_start["source_dependency_closure_sha256"]
-        ),
-        "registry_sha256": registry["registry_sha256"],
-        "formal_node_registry_sha256": (
-            RECOVERY_EPOCH001_EXPECTED_FORMAL_NODE_REGISTRY_SHA256
-        ),
+    counts = _counts(
+        expected_nodes=nodes,
+        collection_node_ids=worker_result["collection_node_ids"],
+        executed_node_ids=worker_result["executed_node_ids"],
+        states_by_node=worker_result["states"],
+        collection_errors=worker_result["collection_errors"],
+        timed_out=timed_out,
+    )
+    outcome_state, stop_code = _outcome_state_and_stop(
+        counts=counts,
+        exit_code=worker_result["exit_code"],
+        timed_out=timed_out,
+    )
+    profile = _worker_environment_profile(worker_environment)
+    worker_report: dict[str, Any] = {
         "collection_node_ids": list(worker_result["collection_node_ids"]),
         "executed_node_ids": list(worker_result["executed_node_ids"]),
         "runner_environment": {
@@ -767,29 +1030,36 @@ def run_recovery_epoch001_current_step_proof(
                 RECOVERY_EPOCH001_FORMAL_RUN_TIMEOUT_SECONDS
             ),
             "worker_argv_sha256": _worker_argv_sha256(nodes),
+            "environment_profile_material": profile,
             "environment_profile_sha256": (
-                _worker_environment_profile_sha256(worker_environment)
+                artifact_sha256(profile)
             ),
         },
-        "run_start": run_start,
-        "run_end": run_end,
+        "run_start": dict(source_closure),
+        "run_end": dict(source_closure),
+        "run_started_at_utc": run_started_at_utc,
+        "run_finished_at_utc": run_finished_at_utc,
         "outcomes": outcomes,
-        "counts": _counts(
-            expected_nodes=nodes,
-            collection_node_ids=worker_result["collection_node_ids"],
-            executed_node_ids=worker_result["executed_node_ids"],
-            states_by_node=worker_result["states"],
-            collection_errors=worker_result["collection_errors"],
-            timed_out=timed_out,
-        ),
+        "counts": counts,
         "exit_code": worker_result["exit_code"],
         "timed_out": timed_out,
+        "outcome_state": outcome_state,
+        "stop_code": stop_code,
         "body_free": True,
     }
-    proof_run["proof_run_sha256"] = artifact_sha256(proof_run)
-    if not _body_free(proof_run):
+    if not _body_free(worker_report):
         raise ValueError("RECOVERY_PROOF_ENVIRONMENT_ENTRY_INVALID")
-    return proof_run
+    attempt = materialize_recovery_epoch001_formal_test_run_attempt(
+        worker_report=worker_report,
+        requirement_registry=registry,
+        source_baseline_event=source_baseline_event,
+        run_reservation=run_reservation,
+        publication_evidence=publication_evidence,
+        repo_root=root,
+    )
+    if attempt is None:
+        raise ValueError("RECOVERY_PROOF_ENVIRONMENT_ENTRY_INVALID")
+    return attempt
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ views from the bytes that are actually present in the repository.
 """
 
 import ast
+import copy
 import hashlib
 from pathlib import Path
 import re
@@ -77,6 +78,10 @@ _SUCCESSOR_PATH = (
 _SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 _BLOB_RE = re.compile(r"^[0-9a-f]{40}$")
+_CLEAN_CLOSURE_CACHE: dict[
+    tuple[str, str, str],
+    dict[str, Any],
+] = {}
 
 _CURRENT_OWNER_PATHS = (
     "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
@@ -370,12 +375,28 @@ _CROSS_STEP_SEEDS = frozenset(
             "emlis_nls_v3_recovery_epoch001_all11_receipt_issue.py"
         ),
         (
+            "ai/services/ai_inference/"
+            "emlis_ai_recovery_epoch001_sequence_ledger_v3.py"
+        ),
+        (
+            "ai/tools/"
+            "emlis_nls_v3_recovery_epoch001_atomic_publication_bundle_v3.py"
+        ),
+        (
             "ai/tests/"
             "test_emlis_nls_v3_recovery_epoch001_current_closure_completion_red.py"
         ),
         (
             "ai/tests/"
             "test_emlis_nls_v3_recovery_epoch001_proved_receipt_contract_red.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "exact134_accepted_success_red.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "sequence_ledger_publication_red.py"
         ),
         (
             "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
@@ -827,7 +848,33 @@ def fresh_recovery_epoch001_canonical_current_closure(
 ) -> dict[str, Any]:
     """Derive the canonical current graph from actual repository bytes."""
 
-    return _derive(_REPO_ROOT if repo_root is None else Path(repo_root))
+    root = (_REPO_ROOT if repo_root is None else Path(repo_root)).resolve()
+    status = subprocess.run(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout
+    if status:
+        return _derive(root)
+    source_commit = _source_commit(root)
+    source_tree = subprocess.run(
+        ["git", "rev-parse", "HEAD^{tree}"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    ).stdout.strip()
+    key = (str(root), source_commit, source_tree)
+    closure = _CLEAN_CLOSURE_CACHE.get(key)
+    if closure is None:
+        closure = _derive(root)
+        _CLEAN_CLOSURE_CACHE.clear()
+        _CLEAN_CLOSURE_CACHE[key] = closure
+    return copy.deepcopy(closure)
 
 
 def fresh_recovery_epoch001_source_closure_sha256(

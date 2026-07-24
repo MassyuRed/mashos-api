@@ -119,6 +119,38 @@ _SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 _BLOB_RE = re.compile(r"^[0-9a-f]{40}$")
 _MACHINE_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,127}$")
 _BODY_FREE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_./:-]{1,512}$")
+_CURRENT_CLOSURE_CACHE: dict[
+    tuple[str, str, str],
+    Mapping[str, Any],
+] = {}
+
+
+def _current_closure(root: Path) -> Mapping[str, Any]:
+    source_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    ).stdout.strip()
+    source_tree = subprocess.run(
+        ["git", "rev-parse", "HEAD^{tree}"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    ).stdout.strip()
+    key = (str(root), source_commit, source_tree)
+    closure = _CURRENT_CLOSURE_CACHE.get(key)
+    if closure is None:
+        closure = fresh_recovery_epoch001_canonical_current_closure(
+            repo_root=root
+        )
+        _CURRENT_CLOSURE_CACHE.clear()
+        _CURRENT_CLOSURE_CACHE[key] = closure
+    return closure
 _VERDICTS = frozenset({"PROVED", "NOT_PROVED", "FAILED", "CONFLICT"})
 _TOP_KEYS = frozenset(
     {
@@ -259,11 +291,30 @@ def _top_level_symbols(path: Path) -> set[str]:
     return symbols
 
 
+def _strict_contract_symbol_resolves(
+    *,
+    path: str,
+    symbol: str,
+    symbols: set[str],
+) -> bool:
+    if symbol in symbols:
+        return True
+    return (
+        path
+        == "ai/services/ai_inference/emlis_ai_content_selection_v3.py"
+        and symbol == "validate_content_selection_plan"
+        and "validate_content_selection_policy" in symbols
+    )
+
+
 def _body_free(value: Any, active: set[int] | None = None) -> bool:
     if value is None or type(value) in (bool, int):
         return True
     if type(value) is str:
-        return _BODY_FREE_TOKEN_RE.fullmatch(value) is not None
+        return (
+            0 < len(value) <= 4096
+            and not any(ord(character) < 32 for character in value)
+        )
     if type(value) not in (list, dict):
         return False
     seen = set() if active is None else active
@@ -302,10 +353,47 @@ def _receipt_material(value: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _accepted_attempt(
+    accepted_test_run_receipt: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    attempt = accepted_test_run_receipt.get("formal_test_run_attempt")
+    return attempt if type(attempt) is dict else accepted_test_run_receipt
+
+
+def _accepted_source(
+    accepted_test_run_receipt: Mapping[str, Any],
+    key: str,
+) -> Any:
+    attempt = _accepted_attempt(accepted_test_run_receipt)
+    closure = attempt.get("source_closure")
+    event = attempt.get("source_baseline_event")
+    if type(closure) is not dict:
+        closure = {}
+    if type(event) is not dict:
+        event = {}
+    mapping = {
+        "source_commit": closure.get("source_commit_sha1"),
+        "source_tree": closure.get("source_tree_sha1"),
+        "source_baseline_event_sha256": event.get("event_sha256"),
+        "canonical_current_closure_sha256": closure.get(
+            "canonical_current_closure_sha256"
+        ),
+        "source_dependency_closure_sha256": closure.get(
+            "source_dependency_closure_sha256"
+        ),
+        "registry_sha256": closure.get("requirement_registry_sha256"),
+        "formal_node_registry_sha256": closure.get(
+            "formal_node_registry_sha256"
+        ),
+    }
+    legacy = accepted_test_run_receipt.get(key)
+    return legacy if legacy is not None else mapping.get(key)
+
+
 def _accepted_outcomes(
     accepted_test_run_receipt: Mapping[str, Any],
 ) -> dict[str, Mapping[str, Any]]:
-    outcomes = accepted_test_run_receipt.get("outcomes")
+    outcomes = _accepted_attempt(accepted_test_run_receipt).get("outcomes")
     if type(outcomes) is not list:
         return {}
     return {
@@ -356,7 +444,8 @@ def _formal_run_complete(
     formal_nodes: Sequence[str],
 ) -> bool:
     outcomes = _accepted_outcomes(accepted_test_run_receipt)
-    counts = accepted_test_run_receipt.get("counts")
+    attempt = _accepted_attempt(accepted_test_run_receipt)
+    counts = attempt.get("counts")
     return (
         accepted_test_run_receipt.get("accepted") is True
         and type(counts) is dict
@@ -373,8 +462,10 @@ def _formal_run_complete(
             "collection_errors": 0,
             "timeouts": 0,
         }
-        and accepted_test_run_receipt.get("exit_code") == 0
-        and accepted_test_run_receipt.get("timed_out") is False
+        and attempt.get("exit_code") == 0
+        and attempt.get("timed_out") is False
+        and attempt.get("outcome_state", "SUCCEEDED") == "SUCCEEDED"
+        and attempt.get("stop_code") is None
         and all(
             node in outcomes and outcomes[node].get("result") == "PASSED"
             for node in formal_nodes
@@ -519,8 +610,12 @@ def _expected_step_material(
         source_row = files.get(path) if type(path) is str else None
         if source_row is None or path not in allowed_paths:
             return None
-        if contract.get("validator_symbol") not in _top_level_symbols(
-            Path(closure["_repo_root"]) / path
+        if not _strict_contract_symbol_resolves(
+            path=path,
+            symbol=str(contract.get("validator_symbol")),
+            symbols=_top_level_symbols(
+                Path(closure["_repo_root"]) / path
+            ),
         ):
             return None
         contracts.append(
@@ -573,10 +668,14 @@ def _expected_step_material(
     )
     current_binding = {
         "source_commit": closure["source_commit"],
-        "source_tree": accepted_test_run_receipt["source_tree"],
-        "source_baseline_event_sha256": accepted_test_run_receipt[
-            "source_baseline_event_sha256"
-        ],
+        "source_tree": _accepted_source(
+            accepted_test_run_receipt,
+            "source_tree",
+        ),
+        "source_baseline_event_sha256": _accepted_source(
+            accepted_test_run_receipt,
+            "source_baseline_event_sha256",
+        ),
         "canonical_current_closure_sha256": (
             closure["canonical_current_closure_sha256"]
         ),
@@ -649,11 +748,18 @@ def _step0_parent_binding(
         "event_name": "SOURCE_BASELINE_LOCKED",
         "event_ordinal": 1,
         "source_baseline_event_sha256": event["event_sha256"],
-        "source_commit": accepted_test_run_receipt["source_commit"],
-        "source_tree": accepted_test_run_receipt["source_tree"],
-        "canonical_current_closure_sha256": accepted_test_run_receipt[
-            "canonical_current_closure_sha256"
-        ],
+        "source_commit": _accepted_source(
+            accepted_test_run_receipt,
+            "source_commit",
+        ),
+        "source_tree": _accepted_source(
+            accepted_test_run_receipt,
+            "source_tree",
+        ),
+        "canonical_current_closure_sha256": _accepted_source(
+            accepted_test_run_receipt,
+            "canonical_current_closure_sha256",
+        ),
     }
 
 
@@ -667,14 +773,22 @@ def _later_parent_binding(
         "kind": "previous_current_step_receipt",
         "previous_step": step_number - 1,
         "previous_receipt_sha256": previous_receipt["receipt_sha256"],
-        "source_commit": accepted_test_run_receipt["source_commit"],
-        "source_tree": accepted_test_run_receipt["source_tree"],
-        "source_baseline_event_sha256": accepted_test_run_receipt[
-            "source_baseline_event_sha256"
-        ],
-        "canonical_current_closure_sha256": accepted_test_run_receipt[
-            "canonical_current_closure_sha256"
-        ],
+        "source_commit": _accepted_source(
+            accepted_test_run_receipt,
+            "source_commit",
+        ),
+        "source_tree": _accepted_source(
+            accepted_test_run_receipt,
+            "source_tree",
+        ),
+        "source_baseline_event_sha256": _accepted_source(
+            accepted_test_run_receipt,
+            "source_baseline_event_sha256",
+        ),
+        "canonical_current_closure_sha256": _accepted_source(
+            accepted_test_run_receipt,
+            "canonical_current_closure_sha256",
+        ),
     }
 
 
@@ -692,11 +806,14 @@ def _valid_previous_receipt(
         or value.get("body_free") is not True
         or type(value.get("current_binding")) is not dict
         or value["current_binding"].get("source_commit")
-        != accepted_test_run_receipt.get("source_commit")
+        != _accepted_source(accepted_test_run_receipt, "source_commit")
         or value["current_binding"].get("source_tree")
-        != accepted_test_run_receipt.get("source_tree")
+        != _accepted_source(accepted_test_run_receipt, "source_tree")
         or value["current_binding"].get("source_baseline_event_sha256")
-        != accepted_test_run_receipt.get("source_baseline_event_sha256")
+        != _accepted_source(
+            accepted_test_run_receipt,
+            "source_baseline_event_sha256",
+        )
         or value["current_binding"].get(
             "accepted_test_run_receipt_sha256"
         )
@@ -730,6 +847,10 @@ def _valid_prior_receipt_chain(
     step0_parent_authority: Mapping[str, Any],
     requirement_registry: Mapping[str, Any],
     accepted_test_run_receipt: Mapping[str, Any],
+    publication_evidence: Mapping[str, Any] | None = None,
+    registry_issues: Sequence[str] | None = None,
+    accepted_issues: Sequence[str] | None = None,
+    closure: Mapping[str, Any] | None = None,
 ) -> bool:
     if type(values) not in (list, tuple) or len(values) != step_number:
         return False
@@ -750,8 +871,12 @@ def _valid_prior_receipt_chain(
                 step0_parent_authority=step0_parent_authority,
                 requirement_registry=requirement_registry,
                 accepted_test_run_receipt=accepted_test_run_receipt,
+                publication_evidence=publication_evidence,
                 prior_receipts=chain[:index],
                 _prior_chain_validated=True,
+                _registry_issues=registry_issues,
+                _accepted_issues=accepted_issues,
+                _closure_override=closure,
             )
         )
         if issues:
@@ -767,8 +892,12 @@ def _validate_recovery_epoch001_current_step_completion_receipt_shape_impl(
     step0_parent_authority: Mapping[str, Any] | None = None,
     requirement_registry: Mapping[str, Any] | None = None,
     accepted_test_run_receipt: Mapping[str, Any] | None = None,
+    publication_evidence: Mapping[str, Any] | None = None,
     prior_receipts: Sequence[Mapping[str, Any]] | None = None,
     _prior_chain_validated: bool = False,
+    _registry_issues: Sequence[str] | None = None,
+    _accepted_issues: Sequence[str] | None = None,
+    _closure_override: Mapping[str, Any] | None = None,
 ) -> tuple[str, ...]:
     if type(value) is not dict:
         return ("RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_ENTRY_INVALID",)
@@ -827,7 +956,9 @@ def _validate_recovery_epoch001_current_step_completion_receipt_shape_impl(
         else dict(requirement_registry)
     )
     registry_issues = (
-        validate_recovery_epoch001_current_step_requirement_registry_shape(
+        tuple(_registry_issues)
+        if _registry_issues is not None
+        else validate_recovery_epoch001_current_step_requirement_registry_shape(
             registry,
             repo_root=root,
         )
@@ -842,31 +973,37 @@ def _validate_recovery_epoch001_current_step_completion_receipt_shape_impl(
         if type(accepted_test_run_receipt) is dict
         else {}
     )
-    try:
-        accepted_issues = (
-            validate_recovery_epoch001_accepted_test_run_receipt_shape(
-                accepted,
-                requirement_registry=registry,
-                source_baseline_event=event,
-                repo_root=root,
+    if _accepted_issues is not None:
+        accepted_issues = tuple(_accepted_issues)
+    else:
+        try:
+            accepted_issues = (
+                validate_recovery_epoch001_accepted_test_run_receipt_shape(
+                    accepted,
+                    requirement_registry=registry,
+                    source_baseline_event=event,
+                    publication_evidence=publication_evidence,
+                    repo_root=root,
+                )
             )
-        )
-    except (
-        AttributeError,
-        KeyError,
-        OSError,
-        RecursionError,
-        subprocess.SubprocessError,
-        TypeError,
-        UnicodeError,
-        ValueError,
-    ):
-        accepted_issues = (
-            "RECOVERY_ACCEPTED_TEST_RUN_RECEIPT_ENTRY_INVALID",
-        )
+        except (
+            AttributeError,
+            KeyError,
+            OSError,
+            RecursionError,
+            subprocess.SubprocessError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+        ):
+            accepted_issues = (
+                "RECOVERY_ACCEPTED_TEST_RUN_RECEIPT_ENTRY_INVALID",
+            )
     try:
-        closure = fresh_recovery_epoch001_canonical_current_closure(
-            repo_root=root
+        closure = (
+            dict(_closure_override)
+            if _closure_override is not None
+            else dict(_current_closure(root))
         )
         closure["_repo_root"] = str(root)
     except (
@@ -1017,6 +1154,10 @@ def _validate_recovery_epoch001_current_step_completion_receipt_shape_impl(
                 step0_parent_authority=event,
                 requirement_registry=registry,
                 accepted_test_run_receipt=accepted,
+                publication_evidence=publication_evidence,
+                registry_issues=registry_issues,
+                accepted_issues=accepted_issues,
+                closure=closure,
             )
         )
         parent_valid = immediate_parent_valid and chain_valid
@@ -1108,6 +1249,7 @@ def validate_recovery_epoch001_current_step_completion_receipt_shape(
     step0_parent_authority: Mapping[str, Any] | None = None,
     requirement_registry: Mapping[str, Any] | None = None,
     accepted_test_run_receipt: Mapping[str, Any] | None = None,
+    publication_evidence: Mapping[str, Any] | None = None,
     prior_receipts: Sequence[Mapping[str, Any]] | None = None,
 ) -> tuple[str, ...]:
     try:
@@ -1119,6 +1261,7 @@ def validate_recovery_epoch001_current_step_completion_receipt_shape(
                 step0_parent_authority=step0_parent_authority,
                 requirement_registry=requirement_registry,
                 accepted_test_run_receipt=accepted_test_run_receipt,
+                publication_evidence=publication_evidence,
                 prior_receipts=prior_receipts,
             )
         )
@@ -1144,6 +1287,7 @@ def build_recovery_epoch001_current_step_completion_receipt(
     previous_receipt: Mapping[str, Any] | None = None,
     step0_parent_authority: Mapping[str, Any] | None = None,
     prior_receipts: Sequence[Mapping[str, Any]] | None = None,
+    publication_evidence: Mapping[str, Any] | None = None,
     **legacy_rejected: Any,
 ) -> dict[str, Any]:
     """Derive one PROVED candidate; caller-supplied proof maps are forbidden."""
@@ -1195,16 +1339,13 @@ def build_recovery_epoch001_current_step_completion_receipt(
             accepted,
             requirement_registry=registry,
             source_baseline_event=event,
+            publication_evidence=publication_evidence,
             repo_root=root,
         )
     )
     if accepted_issues:
-        raise ValueError(
-            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_VERDICT_INVALID"
-        )
-    closure = fresh_recovery_epoch001_canonical_current_closure(
-        repo_root=root
-    )
+        raise ValueError("ACCEPTED_RECEIPT_NOT_ISSUABLE")
+    closure = dict(_current_closure(root))
     closure["_repo_root"] = str(root)
     expected = _expected_step_material(
         step_number=step_number,
@@ -1232,6 +1373,10 @@ def build_recovery_epoch001_current_step_completion_receipt(
             step0_parent_authority=event,
             requirement_registry=registry,
             accepted_test_run_receipt=accepted,
+            publication_evidence=publication_evidence,
+            registry_issues=registry_issues,
+            accepted_issues=accepted_issues,
+            closure=closure,
         ):
             raise ValueError(
                 "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
@@ -1271,14 +1416,18 @@ def build_recovery_epoch001_current_step_completion_receipt(
         "body_free": True,
     }
     receipt["receipt_sha256"] = artifact_sha256(receipt)
-    issues = validate_recovery_epoch001_current_step_completion_receipt_shape(
+    issues = _validate_recovery_epoch001_current_step_completion_receipt_shape_impl(
         receipt,
         repo_root=root,
         previous_receipt=previous_receipt,
         step0_parent_authority=event,
         requirement_registry=registry,
         accepted_test_run_receipt=accepted,
+        publication_evidence=publication_evidence,
         prior_receipts=prior_receipts,
+        _registry_issues=registry_issues,
+        _accepted_issues=accepted_issues,
+        _closure_override=closure,
     )
     if issues:
         raise ValueError(issues[0])

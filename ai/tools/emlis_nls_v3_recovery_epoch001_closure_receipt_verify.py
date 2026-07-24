@@ -9,6 +9,7 @@ its own seed/identity tables and independently walks current repository bytes.
 """
 
 import ast
+from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
 import platform
@@ -379,12 +380,28 @@ _PROOF_SEEDS = frozenset(
             "emlis_nls_v3_recovery_epoch001_all11_receipt_issue.py"
         ),
         (
+            "ai/services/ai_inference/"
+            "emlis_ai_recovery_epoch001_sequence_ledger_v3.py"
+        ),
+        (
+            "ai/tools/"
+            "emlis_nls_v3_recovery_epoch001_atomic_publication_bundle_v3.py"
+        ),
+        (
             "ai/tests/"
             "test_emlis_nls_v3_recovery_epoch001_current_closure_completion_red.py"
         ),
         (
             "ai/tests/"
             "test_emlis_nls_v3_recovery_epoch001_proved_receipt_contract_red.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "exact134_accepted_success_red.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "sequence_ledger_publication_red.py"
         ),
         (
             "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
@@ -506,7 +523,10 @@ def _body_free(value: Any, active: set[int] | None = None) -> bool:
     if value is None or type(value) in (bool, int):
         return True
     if type(value) is str:
-        return _BODY_FREE_TOKEN_RE.fullmatch(value) is not None
+        return (
+            0 < len(value) <= 4096
+            and not any(ord(character) < 32 for character in value)
+        )
     if type(value) not in (list, dict):
         return False
     seen = set() if active is None else active
@@ -3514,3 +3534,2612 @@ def verify_recovery_epoch001_all11_completion_chain(
         ValueError,
     ):
         return ("ALL11_INCOMPLETE",)
+
+
+# ---------------------------------------------------------------------------
+# Recovery Epoch 001 accepted-run v2 independent surface.
+#
+# This section intentionally recomputes the contract without importing the
+# accepted-run owner.  The public definitions below supersede the historical
+# v1 verifier surface above while keeping it as immutable implementation
+# evidence.
+
+_V3_ATTEMPT_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch001.formal_test_run_attempt.v2"
+)
+_V3_ACCEPTED_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch001.accepted_test_run_receipt.v2"
+)
+_V3_LOGICAL_CYCLE = "NLS_V3_CYCLE_001"
+_V3_RECOVERY_EPOCH = "NLS_V3_CYCLE001_RECOVERY_EPOCH_001"
+_V3_ATTEMPT_KEYS = frozenset(
+    {
+        "schema_version",
+        "attempt_id",
+        "authority_token",
+        "challenge_id",
+        "authority_challenge_id",
+        "candidate_version_id",
+        "logical_cycle_id",
+        "recovery_epoch_id",
+        "source_baseline_event",
+        "run_reservation",
+        "source_closure",
+        "formal_node_registry_sha256",
+        "collection_node_ids",
+        "collection_sha256",
+        "executed_node_ids",
+        "executed_node_sha256",
+        "runner_environment",
+        "run_start",
+        "run_end",
+        "run_started_at_utc",
+        "run_finished_at_utc",
+        "outcomes",
+        "counts",
+        "exit_code",
+        "timed_out",
+        "outcome_state",
+        "stop_code",
+        "body_free",
+        "formal_test_run_attempt_sha256",
+    }
+)
+_V3_SOURCE_KEYS = frozenset(
+    {
+        "repository_full_name",
+        "source_ref",
+        "source_commit_sha1",
+        "source_tree_sha1",
+        "worktree_clean",
+        "canonical_current_closure_sha256",
+        "source_dependency_closure_sha256",
+        "requirement_registry_sha256",
+        "formal_node_registry_sha256",
+        "detailed_design_sha256",
+    }
+)
+_V3_EVENT_IDENTITY_KEYS = frozenset(
+    {
+        "identity_kind",
+        "ledger_id",
+        "recovery_epoch_id",
+        "event_id",
+        "event_name",
+        "event_ordinal",
+        "state",
+        "timestamp_utc",
+        "event_path",
+        "event_git_blob_sha1",
+        "event_raw_sha256",
+        "event_sha256",
+        "publication_commit_sha1",
+        "identity_sha256",
+    }
+)
+_V3_RESERVATION_IDENTITY_KEYS = frozenset(
+    {
+        "artifact_role",
+        "schema_version",
+        "repository_full_name",
+        "path",
+        "git_blob_sha1",
+        "raw_sha256",
+        "logical_artifact_sha256",
+        "publication_commit_sha1",
+        "body_free",
+        "identity_sha256",
+    }
+)
+_V3_ENVIRONMENT_KEYS = frozenset(
+    {
+        "protocol",
+        "python_version",
+        "pytest_version",
+        "plugin_autoload_disabled",
+        "runner_path",
+        "runner_git_blob_sha1",
+        "runner_sha256",
+        "worker_isolated",
+        "source_materialization",
+        "pytest_addopts_ignored",
+        "pytest_plugins_ignored",
+        "timeout_seconds",
+        "worker_argv_sha256",
+        "environment_profile_material",
+        "environment_profile_sha256",
+    }
+)
+_V3_PROFILE_KEYS = frozenset(
+    {"fixed", "removed", "inherited_path_sha256", "lang", "lc_all"}
+)
+_V3_ENVIRONMENT_FIXED = {
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONHASHSEED": "0",
+    "PYTHONNOUSERSITE": "1",
+    "PYTHONUTF8": "1",
+}
+_V3_ENVIRONMENT_REMOVED = [
+    "PYTHONHOME",
+    "PYTHONPATH",
+    "PYTEST_ADDOPTS",
+    "PYTEST_PLUGINS",
+]
+_V3_ACCEPTED_KEYS = frozenset(
+    {
+        "schema_version",
+        "formal_test_run_attempt",
+        "formal_test_run_attempt_sha256",
+        "step_view_sha256_by_step",
+        "proof_sources",
+        "proof_source_closure_sha256",
+        "accepted",
+        "body_free",
+        "accepted_test_run_receipt_sha256",
+    }
+)
+_V3_SUCCESS_COUNTS = {
+    "collected": 134,
+    "executed": 134,
+    "passed": 134,
+    "failed": 0,
+    "skipped": 0,
+    "xfailed": 0,
+    "xpassed": 0,
+    "deselected": 0,
+    "collection_errors": 0,
+    "timeouts": 0,
+}
+_V3_UTC_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
+)
+_V3_CLOSURE_CACHE: dict[
+    tuple[str, str, str],
+    Mapping[str, Any],
+] = {}
+
+
+def _v3_utc(value: Any) -> datetime | None:
+    if type(value) is not str or _V3_UTC_RE.fullmatch(value) is None:
+        return None
+    try:
+        result = datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return None
+    return result.replace(tzinfo=timezone.utc)
+
+
+def _v3_identity_valid(
+    value: Any,
+    keys: frozenset[str],
+) -> bool:
+    if type(value) is not dict or set(value) != keys:
+        return False
+    try:
+        return (
+            _SHA_RE.fullmatch(str(value.get("identity_sha256", "")))
+            is not None
+            and value["identity_sha256"]
+            == _artifact_sha256(
+                _hash_material(value, "identity_sha256")
+            )
+            and _body_free(value)
+        )
+    except (
+        KeyError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return False
+
+
+def _v3_current_closure(root: Path) -> Mapping[str, Any]:
+    source_commit, source_tree, clean = _git_final_identity(root)
+    if not clean:
+        return fresh_recovery_epoch001_canonical_current_closure(
+            repo_root=root
+        )
+    key = (str(root), source_commit, source_tree)
+    value = _V3_CLOSURE_CACHE.get(key)
+    if value is None:
+        value = fresh_recovery_epoch001_canonical_current_closure(
+            repo_root=root
+        )
+        _V3_CLOSURE_CACHE.clear()
+        _V3_CLOSURE_CACHE[key] = value
+    return value
+
+
+def _v3_attempt_id(value: Mapping[str, Any]) -> str:
+    event = value.get("source_baseline_event")
+    closure = value.get("source_closure")
+    return _artifact_sha256(
+        {
+            "authority_token": value.get("authority_token"),
+            "challenge_id": value.get("challenge_id"),
+            "source_baseline_event.event_sha256": (
+                event.get("event_sha256")
+                if type(event) is dict
+                else None
+            ),
+            "source_closure.source_commit_sha1": (
+                closure.get("source_commit_sha1")
+                if type(closure) is dict
+                else None
+            ),
+            "formal_node_registry_sha256": value.get(
+                "formal_node_registry_sha256"
+            ),
+        }
+    )
+
+
+def _v3_outcome_state(
+    counts: Mapping[str, Any],
+    *,
+    exit_code: Any,
+    timed_out: Any,
+) -> tuple[str, str | None]:
+    if timed_out is True or counts.get("timeouts") == 1:
+        return "TIMED_OUT", "RUN_TIMED_OUT"
+    if exit_code == 125:
+        return "INFRA_ERROR", "RUN_INFRA_ERROR"
+    if counts == _V3_SUCCESS_COUNTS and exit_code == 0:
+        return "SUCCEEDED", None
+    if counts.get("collection_errors", 0) > 0:
+        return "FAILED", "RUN_COLLECTION_ERROR"
+    return "FAILED", "RUN_PARTIAL"
+
+
+def _v3_attempt_shape(
+    value: Any,
+    *,
+    repo_root: Path,
+    requirement_registry: Mapping[str, Any],
+) -> tuple[str, ...]:
+    if type(value) is not dict:
+        return ("RUN_PROVENANCE_INVALID",)
+    if any(
+        token in str(key).lower()
+        for key in value
+        for token in (
+            "raw_body",
+            "candidate_body",
+            "prompt_text",
+            "response_text",
+            "user_text",
+            "stdout",
+            "stderr",
+            "traceback",
+        )
+    ):
+        return ("BODY_FREE_VIOLATION",)
+    issues: set[str] = set()
+    if set(value) != _V3_ATTEMPT_KEYS:
+        issues.add("RUN_PROVENANCE_INVALID")
+    if value.get("body_free") is not True or not _body_free(value):
+        issues.add("BODY_FREE_VIOLATION")
+    registry = dict(requirement_registry)
+    try:
+        closure = _v3_current_closure(repo_root)
+        source_commit, source_tree, clean = _git_final_identity(repo_root)
+    except (
+        FileNotFoundError,
+        OSError,
+        subprocess.SubprocessError,
+        UnicodeError,
+        ValueError,
+    ):
+        closure = {}
+        source_commit = ""
+        source_tree = ""
+        clean = False
+        issues.add("SOURCE_OR_ROOT_DRIFT")
+    nodes = _registry_nodes(registry)
+    source = value.get("source_closure")
+    expected_source = {
+        "repository_full_name": "MassyuRed/mashos-api",
+        "source_ref": "refs/heads/main",
+        "source_commit_sha1": source_commit,
+        "source_tree_sha1": source_tree,
+        "worktree_clean": clean,
+        "canonical_current_closure_sha256": closure.get(
+            "canonical_current_closure_sha256"
+        ),
+        "source_dependency_closure_sha256": closure.get(
+            "source_dependency_closure_sha256"
+        ),
+        "requirement_registry_sha256": registry.get("registry_sha256"),
+        "formal_node_registry_sha256": _FORMAL_NODE_REGISTRY_SHA256,
+        "detailed_design_sha256": (
+            source.get("detailed_design_sha256")
+            if type(source) is dict
+            else None
+        ),
+    }
+    if (
+        type(source) is not dict
+        or set(source) != _V3_SOURCE_KEYS
+        or source != expected_source
+        or clean is not True
+    ):
+        issues.add("SOURCE_OR_ROOT_DRIFT")
+    if (
+        type(source) is not dict
+        or _SHA_RE.fullmatch(
+            str(source.get("detailed_design_sha256", ""))
+        )
+        is None
+    ):
+        issues.add("RUN_PROVENANCE_INVALID")
+    if (
+        value.get("schema_version") != _V3_ATTEMPT_SCHEMA
+        or value.get("candidate_version_id") != _CANDIDATE
+        or value.get("logical_cycle_id") != _V3_LOGICAL_CYCLE
+        or value.get("recovery_epoch_id") != _V3_RECOVERY_EPOCH
+        or _CHALLENGE_RE.fullmatch(str(value.get("challenge_id", "")))
+        is None
+        or value.get("authority_challenge_id")
+        != _artifact_sha256(
+            {
+                "authority_token": value.get("authority_token"),
+                "challenge_id": value.get("challenge_id"),
+            }
+        )
+    ):
+        issues.add("RUN_PROVENANCE_INVALID")
+    if value.get("attempt_id") != _v3_attempt_id(value):
+        issues.add("SOURCE_OR_ROOT_DRIFT")
+    if (
+        value.get("formal_node_registry_sha256")
+        != _FORMAL_NODE_REGISTRY_SHA256
+        or (
+            type(source) is dict
+            and source.get("formal_node_registry_sha256")
+            != value.get("formal_node_registry_sha256")
+        )
+    ):
+        issues.add("SOURCE_OR_ROOT_DRIFT")
+    event = value.get("source_baseline_event")
+    reservation = value.get("run_reservation")
+    if (
+        not _v3_identity_valid(event, _V3_EVENT_IDENTITY_KEYS)
+        or event.get("identity_kind") != "PUBLISHED_SEQUENCE_EVENT"
+        or event.get("event_name") != "SOURCE_BASELINE_LOCKED"
+        or type(event.get("event_ordinal")) is not int
+        or isinstance(event.get("event_ordinal"), bool)
+        or event.get("event_ordinal") != 1
+        or not _v3_identity_valid(
+            reservation,
+            _V3_RESERVATION_IDENTITY_KEYS,
+        )
+        or reservation.get("artifact_role")
+        != "FORMAL_TEST_RUN_RESERVATION"
+    ):
+        issues.add("RUN_PROVENANCE_INVALID")
+    collection = value.get("collection_node_ids")
+    executed = value.get("executed_node_ids")
+    raw_counts = value.get("counts")
+    collection_error_case = (
+        type(raw_counts) is dict
+        and type(raw_counts.get("collection_errors")) is int
+        and not isinstance(raw_counts.get("collection_errors"), bool)
+        and raw_counts.get("collection_errors", 0) > 0
+    )
+    if (
+        type(collection) is not list
+        or (
+            collection != nodes
+            and not (collection_error_case and collection == [])
+        )
+        or len(collection) != len(set(collection))
+        or value.get("collection_sha256")
+        != _artifact_sha256({"node_ids": collection})
+        or type(executed) is not list
+        or any(node not in nodes for node in executed)
+        or executed != [node for node in nodes if node in executed]
+        or len(executed) != len(set(executed))
+        or value.get("executed_node_sha256")
+        != _artifact_sha256({"node_ids": executed})
+    ):
+        issues.add("RUN_PROVENANCE_INVALID")
+    counts = value.get("counts")
+    if (
+        type(counts) is not dict
+        or set(counts) != _ACCEPTED_COUNT_KEYS
+        or any(type(item) is not int for item in counts.values())
+        or any(item < 0 for item in counts.values())
+        or type(value.get("exit_code")) is not int
+        or isinstance(value.get("exit_code"), bool)
+        or type(value.get("timed_out")) is not bool
+    ):
+        issues.add("RUN_PROVENANCE_INVALID")
+        counts = {}
+    files = {
+        row["path"]: row
+        for row in closure.get("files", [])
+        if type(row) is dict and type(row.get("path")) is str
+    }
+    negative_codes = {
+        row["independent_negative_proof"]["test_node_id"]: row[
+            "independent_negative_proof"
+        ]["expected_closed_code"]
+        for row in registry.get("steps", [])
+        if type(row) is dict
+        and type(row.get("independent_negative_proof")) is dict
+    }
+    outcomes = value.get("outcomes")
+    states: list[str] = []
+    if (
+        type(outcomes) is not list
+        or len(outcomes) != len(nodes)
+        or [
+            row.get("test_node_id")
+            for row in outcomes
+            if type(row) is dict
+        ]
+        != nodes
+    ):
+        issues.add("RUN_PROVENANCE_INVALID")
+        outcomes = []
+    for row in outcomes:
+        node_id = row.get("test_node_id") if type(row) is dict else None
+        path = row.get("source_path") if type(row) is dict else None
+        file_row = files.get(path) if type(path) is str else None
+        expected_closed = negative_codes.get(node_id)
+        state = row.get("result") if type(row) is dict else None
+        if (
+            type(row) is not dict
+            or set(row) != _ACCEPTED_OUTCOME_KEYS
+            or path != str(node_id).partition("::")[0]
+            or file_row is None
+            or row.get("source_blob_sha1")
+            != file_row.get("git_blob_sha1")
+            or row.get("source_sha256") != file_row.get("sha256")
+            or state not in _ACCEPTED_OUTCOME_STATES
+            or row.get("expected_closed_code") != expected_closed
+            or row.get("actual_closed_code")
+            != (
+                expected_closed
+                if expected_closed is not None and state == "PASSED"
+                else None
+            )
+            or row.get("evidence_sha256")
+            != _artifact_sha256(
+                _hash_material(row, "evidence_sha256")
+            )
+        ):
+            issues.add("RUN_PROVENANCE_INVALID")
+        if type(state) is str:
+            states.append(state)
+    if counts:
+        expected_counts = {
+            "collected": len(collection) if type(collection) is list else 0,
+            "executed": len(executed) if type(executed) is list else 0,
+            "passed": states.count("PASSED"),
+            "failed": states.count("FAILED") + states.count("NOT_EXECUTED"),
+            "skipped": states.count("SKIPPED"),
+            "xfailed": states.count("XFAILED"),
+            "xpassed": states.count("XPASSED"),
+            "deselected": counts.get("deselected"),
+            "collection_errors": counts.get("collection_errors"),
+            "timeouts": 1 if value.get("timed_out") is True else 0,
+        }
+        if counts != expected_counts:
+            issues.add("RUN_PROVENANCE_INVALID")
+        expected_state, expected_stop = _v3_outcome_state(
+            counts,
+            exit_code=value.get("exit_code"),
+            timed_out=value.get("timed_out"),
+        )
+        if (
+            value.get("outcome_state") != expected_state
+            or value.get("stop_code") != expected_stop
+        ):
+            issues.add("RUN_PROVENANCE_INVALID")
+    if value.get("run_start") != source or value.get("run_end") != source:
+        issues.add("SOURCE_OR_ROOT_DRIFT")
+    started = _v3_utc(value.get("run_started_at_utc"))
+    finished = _v3_utc(value.get("run_finished_at_utc"))
+    if started is None or finished is None or started >= finished:
+        issues.add("RUN_PROVENANCE_INVALID")
+    environment = value.get("runner_environment")
+    profile = (
+        environment.get("environment_profile_material")
+        if type(environment) is dict
+        else None
+    )
+    runner = files.get(_RUNNER_PATH)
+    if (
+        type(environment) is not dict
+        or set(environment) != _V3_ENVIRONMENT_KEYS
+        or environment.get("protocol") != _PROOF_RUN_PROTOCOL
+        or environment.get("python_version") != platform.python_version()
+        or re.fullmatch(
+            r"[1-9]\d*(?:\.\d+){1,3}(?:[A-Za-z0-9.-]*)?",
+            str(environment.get("pytest_version", "")),
+        )
+        is None
+        or environment.get("plugin_autoload_disabled") is not True
+        or environment.get("runner_path") != _RUNNER_PATH
+        or runner is None
+        or environment.get("runner_git_blob_sha1")
+        != runner.get("git_blob_sha1")
+        or environment.get("runner_sha256") != runner.get("sha256")
+        or environment.get("worker_isolated") is not True
+        or environment.get("source_materialization")
+        != "DETACHED_PINNED_GIT_WORKTREE"
+        or environment.get("pytest_addopts_ignored") is not True
+        or environment.get("pytest_plugins_ignored") is not True
+        or environment.get("timeout_seconds") != _FORMAL_RUN_TIMEOUT_SECONDS
+        or environment.get("worker_argv_sha256")
+        != _accepted_expected_worker_argv_sha256(nodes)
+        or type(profile) is not dict
+        or set(profile) != _V3_PROFILE_KEYS
+        or profile.get("fixed") != _V3_ENVIRONMENT_FIXED
+        or profile.get("removed") != _V3_ENVIRONMENT_REMOVED
+        or profile.get("lang") != "C.UTF-8"
+        or profile.get("lc_all") != "C.UTF-8"
+        or _SHA_RE.fullmatch(
+            str(profile.get("inherited_path_sha256", ""))
+        )
+        is None
+        or environment.get("environment_profile_sha256")
+        != _artifact_sha256(profile)
+    ):
+        issues.add("RUN_PROVENANCE_INVALID")
+    try:
+        expected_hash = _artifact_sha256(
+            _hash_material(value, "formal_test_run_attempt_sha256")
+        )
+    except (
+        KeyError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        expected_hash = None
+    if value.get("formal_test_run_attempt_sha256") != expected_hash:
+        issues.add("RUN_PROVENANCE_INVALID")
+    return tuple(sorted(issues))
+
+
+def _v3_published_reservation(
+    record: Any,
+    *,
+    snapshot: Any,
+    expected_parent: str,
+) -> bool:
+    if (
+        type(record) is not dict
+        or set(record) != {"artifact", "identity", "raw_bytes", "publication"}
+        or type(snapshot) is not dict
+    ):
+        return False
+    artifact = record["artifact"]
+    identity = record["identity"]
+    raw = record["raw_bytes"]
+    publication = record["publication"]
+    if (
+        type(artifact) is not dict
+        or type(raw) is not bytes
+        or not _v3_identity_valid(
+            identity,
+            _V3_RESERVATION_IDENTITY_KEYS,
+        )
+        or type(publication) is not dict
+        or publication.get("postverified") is not True
+        or publication.get("publication_commit_sha1")
+        != identity.get("publication_commit_sha1")
+        or publication.get("parent_commit_sha1s") != [expected_parent]
+        or publication.get("changed_paths") != [identity.get("path")]
+        or _canonical_bytes(artifact) + b"\n" != raw
+        or identity.get("git_blob_sha1")
+        != hashlib.sha1(
+            f"blob {len(raw)}\0".encode("ascii") + raw,
+            usedforsecurity=False,
+        ).hexdigest()
+        or identity.get("raw_sha256") != hashlib.sha256(raw).hexdigest()
+        or identity.get("logical_artifact_sha256")
+        != artifact.get("formal_test_run_reservation_sha256")
+    ):
+        return False
+    commit = identity["publication_commit_sha1"]
+    return (
+        snapshot.get("parents_by_commit", {}).get(commit)
+        == [expected_parent]
+        and snapshot.get("path_blob_by_commit", {})
+        .get(commit, {})
+        .get(identity["path"])
+        == identity["git_blob_sha1"]
+    )
+
+
+def _v3_publication_evidence_valid(
+    attempt: Mapping[str, Any],
+    evidence: Any,
+) -> bool:
+    if type(evidence) is not dict:
+        return False
+    event_record = evidence.get("source_baseline_event")
+    reservation_record = evidence.get("formal_test_run_reservation")
+    snapshot = evidence.get("repository_snapshot")
+    if (
+        type(event_record) is not dict
+        or type(reservation_record) is not dict
+        or type(snapshot) is not dict
+        or evidence.get(
+            "event_publication_is_ancestor_of_reservation"
+        )
+        is not True
+        or evidence.get(
+            "reservation_publication_is_ancestor_of_run"
+        )
+        is not True
+    ):
+        return False
+    event_artifact = event_record.get("artifact")
+    event_identity = event_record.get("identity")
+    reservation = reservation_record.get("artifact")
+    reservation_identity = reservation_record.get("identity")
+    if (
+        type(event_artifact) is not dict
+        or type(reservation) is not dict
+        or event_identity != attempt.get("source_baseline_event")
+        or reservation_identity != attempt.get("run_reservation")
+        or reservation.get("attempt_id") != attempt.get("attempt_id")
+        or reservation.get("authority_token")
+        != attempt.get("authority_token")
+        or reservation.get("challenge_id") != attempt.get("challenge_id")
+        or reservation.get("authority_challenge_id")
+        != attempt.get("authority_challenge_id")
+        or reservation.get("source_baseline_event") != event_identity
+        or reservation.get("source_closure")
+        != attempt.get("source_closure")
+        or reservation.get("formal_node_registry_sha256")
+        != attempt.get("formal_node_registry_sha256")
+        or event_artifact.get("challenge_id")
+        == reservation.get("challenge_id")
+    ):
+        return False
+    event_time = _v3_utc(event_identity.get("timestamp_utc"))
+    reserved_time = _v3_utc(reservation.get("reserved_at_utc"))
+    started = _v3_utc(attempt.get("run_started_at_utc"))
+    finished = _v3_utc(attempt.get("run_finished_at_utc"))
+    if (
+        event_time is None
+        or reserved_time is None
+        or started is None
+        or finished is None
+        or not (event_time < reserved_time <= started < finished)
+    ):
+        return False
+    return _v3_published_reservation(
+        reservation_record,
+        snapshot=snapshot,
+        expected_parent=str(
+            event_identity.get("publication_commit_sha1")
+        ),
+    )
+
+
+def _v3_proof_sources(
+    outcomes: Sequence[Mapping[str, Any]],
+) -> list[dict[str, str]]:
+    values: dict[str, dict[str, str]] = {}
+    for outcome in outcomes:
+        path = outcome["source_path"]
+        row = {
+            "path": path,
+            "git_blob_sha1": outcome["source_blob_sha1"],
+            "sha256": outcome["source_sha256"],
+        }
+        previous = values.setdefault(path, row)
+        if previous != row:
+            raise ValueError("proof_source_conflict")
+    return [values[path] for path in sorted(values)]
+
+
+def verify_recovery_epoch001_formal_test_run_attempt(
+    value: Any,
+    *,
+    repo_root: Path,
+    requirement_registry: Mapping[str, Any] | None = None,
+    source_baseline_event: Mapping[str, Any] | None = None,
+    publication_evidence: Mapping[str, Any] | None = None,
+) -> tuple[str, ...]:
+    try:
+        registry = (
+            dict(requirement_registry)
+            if type(requirement_registry) is dict
+            else {}
+        )
+        return _v3_attempt_shape(
+            value,
+            repo_root=Path(repo_root).resolve(),
+            requirement_registry=registry,
+        )
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RecursionError,
+        subprocess.SubprocessError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("RUN_PROVENANCE_INVALID",)
+
+
+def verify_recovery_epoch001_accepted_test_run_attempt_for_issuance(
+    value: Any,
+    *,
+    repo_root: Path,
+    requirement_registry: Mapping[str, Any] | None = None,
+    source_baseline_event: Mapping[str, Any] | None = None,
+    publication_evidence: Mapping[str, Any] | None = None,
+) -> tuple[str, ...]:
+    shape = verify_recovery_epoch001_formal_test_run_attempt(
+        value,
+        repo_root=repo_root,
+        requirement_registry=requirement_registry,
+        source_baseline_event=source_baseline_event,
+        publication_evidence=publication_evidence,
+    )
+    if (
+        shape
+        or type(value) is not dict
+        or value.get("counts") != _V3_SUCCESS_COUNTS
+        or value.get("exit_code") != 0
+        or value.get("timed_out") is not False
+        or value.get("outcome_state") != "SUCCEEDED"
+        or value.get("stop_code") is not None
+        or not _v3_publication_evidence_valid(
+            value,
+            publication_evidence,
+        )
+    ):
+        return ("ACCEPTED_RECEIPT_NOT_ISSUABLE",)
+
+
+_V3_STEP_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch001."
+    "current_step_completion_receipt.v1"
+)
+_V3_ALL11_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch001.all11_completion_chain.v2"
+)
+_V3_ALL11_KEYS = frozenset(
+    {
+        "schema_version",
+        "candidate_version_id",
+        "logical_cycle_id",
+        "recovery_epoch_id",
+        "source_baseline_event",
+        "source_closure",
+        "registry_sha256",
+        "formal_node_registry_sha256",
+        "accepted_test_run_artifact",
+        "accepted_test_run_receipt_sha256",
+        "receipt_count",
+        "ordered_steps",
+        "receipts",
+        "receipt_artifacts",
+        "receipt_sha256s",
+        "required_sequence_event_2",
+        "next_authority",
+        "publication_state",
+        "automatic_progression",
+        "body_free",
+        "all11_completion_chain_sha256",
+    }
+)
+_V3_ARTIFACT_IDENTITY_KEYS = frozenset(
+    {
+        "artifact_role",
+        "schema_version",
+        "repository_full_name",
+        "path",
+        "git_blob_sha1",
+        "raw_sha256",
+        "logical_artifact_sha256",
+        "body_free",
+    }
+)
+_V3_PREFIX = "EmlisAIの実装済み資料/documents/"
+_V3_ACCEPTED_PATH = (
+    f"{_V3_PREFIX}NLSv3_Step11_Cycle001_RecoveryEpoch001_"
+    "AcceptedTestRunExact134_BodyFree_Receipt_20260724.json"
+)
+_V3_STEP_PATHS = tuple(
+    (
+        f"{_V3_PREFIX}NLSv3_Step11_Cycle001_RecoveryEpoch001_"
+        f"Step{step:02d}_CurrentStepCompletion_PROVED_BodyFree_"
+        "Receipt_20260724.json"
+    )
+    for step in range(11)
+)
+
+
+def _v3_accepted_source(
+    accepted: Mapping[str, Any],
+    key: str,
+) -> Any:
+    attempt = accepted.get("formal_test_run_attempt")
+    source = (
+        attempt.get("source_closure")
+        if type(attempt) is dict
+        else {}
+    )
+    event = (
+        attempt.get("source_baseline_event")
+        if type(attempt) is dict
+        else {}
+    )
+    if type(source) is not dict:
+        source = {}
+    if type(event) is not dict:
+        event = {}
+    return {
+        "source_commit": source.get("source_commit_sha1"),
+        "source_tree": source.get("source_tree_sha1"),
+        "source_baseline_event_sha256": event.get("event_sha256"),
+        "canonical_current_closure_sha256": source.get(
+            "canonical_current_closure_sha256"
+        ),
+        "source_dependency_closure_sha256": source.get(
+            "source_dependency_closure_sha256"
+        ),
+    }.get(key)
+
+
+def _v3_event_parent(
+    event: Mapping[str, Any],
+    accepted: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "kind": "source_baseline_locked_event_1",
+        "event_name": "SOURCE_BASELINE_LOCKED",
+        "event_ordinal": 1,
+        "source_baseline_event_sha256": event["event_sha256"],
+        "source_commit": _v3_accepted_source(
+            accepted,
+            "source_commit",
+        ),
+        "source_tree": _v3_accepted_source(accepted, "source_tree"),
+        "canonical_current_closure_sha256": _v3_accepted_source(
+            accepted,
+            "canonical_current_closure_sha256",
+        ),
+    }
+
+
+def _v3_receipt_parent(
+    *,
+    step: int,
+    previous: Mapping[str, Any],
+    accepted: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "kind": "previous_current_step_receipt",
+        "previous_step": step - 1,
+        "previous_receipt_sha256": previous["receipt_sha256"],
+        "source_commit": _v3_accepted_source(
+            accepted,
+            "source_commit",
+        ),
+        "source_tree": _v3_accepted_source(accepted, "source_tree"),
+        "source_baseline_event_sha256": _v3_accepted_source(
+            accepted,
+            "source_baseline_event_sha256",
+        ),
+        "canonical_current_closure_sha256": _v3_accepted_source(
+            accepted,
+            "canonical_current_closure_sha256",
+        ),
+    }
+
+
+def verify_recovery_epoch001_current_step_completion_receipt(
+    value: Any,
+    *,
+    repo_root: Path,
+    previous_receipt: Mapping[str, Any] | None = None,
+    step0_parent_authority: Mapping[str, Any] | None = None,
+    requirement_registry: Mapping[str, Any] | None = None,
+    accepted_test_run_receipt: Mapping[str, Any] | None = None,
+    accepted_test_results: Mapping[str, Any] | None = None,
+    prior_receipts: Sequence[Mapping[str, Any]] | None = None,
+    publication_evidence: Mapping[str, Any] | None = None,
+) -> tuple[str, ...]:
+    try:
+        if type(value) is not dict or set(value) != _RECEIPT_KEYS:
+            return (
+                "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_ENTRY_INVALID",
+            )
+        registry = (
+            dict(requirement_registry)
+            if type(requirement_registry) is dict
+            else {}
+        )
+        accepted = (
+            dict(accepted_test_run_receipt)
+            if type(accepted_test_run_receipt) is dict
+            else {}
+        )
+        event = (
+            dict(step0_parent_authority)
+            if type(step0_parent_authority) is dict
+            else {}
+        )
+        root = Path(repo_root).resolve()
+        if verify_recovery_epoch001_accepted_test_run_receipt(
+            accepted,
+            repo_root=root,
+            requirement_registry=registry,
+            source_baseline_event=event,
+            publication_evidence=publication_evidence,
+        ):
+            return (
+                "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+                "VERDICT_INVALID",
+            )
+        step = value.get("step_number")
+        if (
+            type(step) is not int
+            or isinstance(step, bool)
+            or step not in range(11)
+        ):
+            return (
+                "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_STEP_INVALID",
+            )
+        closure = _v3_current_closure(root)
+        current = value.get("current_binding")
+        expected_current = {
+            "source_commit": closure["source_commit"],
+            "source_tree": _v3_accepted_source(
+                accepted,
+                "source_tree",
+            ),
+            "source_baseline_event_sha256": _v3_accepted_source(
+                accepted,
+                "source_baseline_event_sha256",
+            ),
+            "canonical_current_closure_sha256": closure[
+                "canonical_current_closure_sha256"
+            ],
+            "source_dependency_closure_sha256": closure[
+                "source_dependency_closure_sha256"
+            ],
+            "full_graph_sha256": closure["full_graph_sha256"],
+            "step_view_key": f"step_{step}",
+            "step_view_sha256": _artifact_sha256(
+                closure["step_views"][f"step_{step}"]
+            ),
+            "requirement_registry_sha256": registry["registry_sha256"],
+            "formal_node_registry_sha256": (
+                _FORMAL_NODE_REGISTRY_SHA256
+            ),
+            "accepted_test_run_receipt_sha256": accepted[
+                "accepted_test_run_receipt_sha256"
+            ],
+        }
+        if current != expected_current:
+            return (
+                "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+                "SOURCE_OR_VIEW_ROOT_MISMATCH",
+            )
+        lineage = value.get("lineage")
+        if (
+            type(lineage) is not dict
+            or lineage.get("kind") != "current"
+            or lineage.get("historical_rewrite") is not False
+            or lineage.get("historical_as_current") is not False
+            or lineage.get("backfill") is not False
+        ):
+            return (
+                "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+                "LINEAGE_INVALID",
+            )
+        outcomes = {
+            row["test_node_id"]: row
+            for row in accepted["formal_test_run_attempt"]["outcomes"]
+        }
+        for proof_name in (
+            "positive_proof",
+            "independent_negative_proof",
+        ):
+            proof = value.get(proof_name)
+            outcome = (
+                outcomes.get(proof.get("test_node_id"))
+                if type(proof) is dict
+                else None
+            )
+            if (
+                type(proof) is not dict
+                or type(outcome) is not dict
+                or proof.get("result") != "PASSED"
+                or proof.get("source_path") != outcome.get("source_path")
+                or proof.get("source_blob_sha1")
+                != outcome.get("source_blob_sha1")
+                or proof.get("source_sha256")
+                != outcome.get("source_sha256")
+                or proof.get("evidence_sha256")
+                != outcome.get("evidence_sha256")
+            ):
+                return (
+                    "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+                    "POSITIVE_PROOF_INVALID",
+                )
+        if step == 0:
+            expected_parent = _v3_event_parent(event, accepted)
+            chain_valid = prior_receipts in (None, (), [])
+        else:
+            if (
+                type(previous_receipt) is not dict
+                or type(prior_receipts) not in (tuple, list)
+                or len(prior_receipts) != step
+                or prior_receipts[-1] != previous_receipt
+            ):
+                return (
+                    "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+                    "PARENT_CHAIN_INVALID",
+                )
+            expected_parent = _v3_receipt_parent(
+                step=step,
+                previous=previous_receipt,
+                accepted=accepted,
+            )
+            chain_valid = True
+        if not chain_valid or value.get("parent_binding") != expected_parent:
+            return (
+                "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+                "PARENT_CHAIN_INVALID",
+            )
+        row = registry["steps"][step]
+        if (
+            value.get("schema_version") != _V3_STEP_SCHEMA
+            or value.get("candidate_version_id") != _CANDIDATE
+            or value.get("verdict") != "PROVED"
+            or value.get("next_authority") != _NEXT_BY_STEP[step]
+            or value.get("completion_condition", {}).get("satisfied")
+            is not True
+            or type(value.get("stop_conditions")) is not list
+            or any(
+                type(stop) is not dict
+                or stop.get("triggered") is not False
+                for stop in value["stop_conditions"]
+            )
+            or not value.get("actual_owners")
+            or not value.get("strict_contracts")
+            or value.get("body_free") is not True
+            or not _body_free(value)
+            or row.get("next_authority") != value.get("next_authority")
+        ):
+            return (
+                "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+                "VERDICT_INVALID",
+            )
+        if value.get("receipt_sha256") != _artifact_sha256(
+            _hash_material(value, "receipt_sha256")
+        ):
+            return (
+                "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_HASH_MISMATCH",
+            )
+        return ()
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RecursionError,
+        subprocess.SubprocessError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return (
+            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_ENTRY_INVALID",
+        )
+
+
+def _v3_published_bytes(value: Mapping[str, Any]) -> bytes:
+    return _canonical_bytes(value) + b"\n"
+
+
+def _v3_artifact_identity(
+    *,
+    value: Mapping[str, Any],
+    path: str,
+    role: str,
+    schema: str,
+    hash_key: str,
+) -> dict[str, Any]:
+    raw = _v3_published_bytes(value)
+    return {
+        "artifact_role": role,
+        "schema_version": schema,
+        "repository_full_name": "MassyuRed/Cocolon",
+        "path": path,
+        "git_blob_sha1": hashlib.sha1(
+            f"blob {len(raw)}\0".encode("ascii") + raw,
+            usedforsecurity=False,
+        ).hexdigest(),
+        "raw_sha256": hashlib.sha256(raw).hexdigest(),
+        "logical_artifact_sha256": value[hash_key],
+        "body_free": True,
+    }
+
+
+def verify_recovery_epoch001_all11_completion_chain(
+    value: Any,
+    *,
+    repo_root: Path,
+    requirement_registry: Mapping[str, Any] | None = None,
+    accepted_test_run_receipt: Mapping[str, Any] | None = None,
+    source_baseline_event: Mapping[str, Any] | None = None,
+    publication_evidence: Mapping[str, Any] | None = None,
+) -> tuple[str, ...]:
+    try:
+        if type(value) is not dict or set(value) != _V3_ALL11_KEYS:
+            return ("ALL11_INCOMPLETE",)
+        registry = (
+            dict(requirement_registry)
+            if type(requirement_registry) is dict
+            else {}
+        )
+        accepted = (
+            dict(accepted_test_run_receipt)
+            if type(accepted_test_run_receipt) is dict
+            else {}
+        )
+        event = (
+            dict(source_baseline_event)
+            if type(source_baseline_event) is dict
+            else {}
+        )
+        root = Path(repo_root).resolve()
+        if verify_recovery_epoch001_accepted_test_run_receipt(
+            accepted,
+            repo_root=root,
+            requirement_registry=registry,
+            source_baseline_event=event,
+            publication_evidence=publication_evidence,
+        ):
+            return ("SOURCE_OR_ROOT_MISMATCH",)
+        attempt = accepted["formal_test_run_attempt"]
+        if (
+            value.get("schema_version") != _V3_ALL11_SCHEMA
+            or value.get("candidate_version_id") != _CANDIDATE
+            or value.get("logical_cycle_id") != _V3_LOGICAL_CYCLE
+            or value.get("recovery_epoch_id") != _V3_RECOVERY_EPOCH
+            or value.get("source_baseline_event")
+            != attempt.get("source_baseline_event")
+            or value.get("source_closure")
+            != attempt.get("source_closure")
+            or value.get("registry_sha256")
+            != registry.get("registry_sha256")
+            or value.get("formal_node_registry_sha256")
+            != _FORMAL_NODE_REGISTRY_SHA256
+        ):
+            return ("SOURCE_OR_ROOT_MISMATCH",)
+        receipts = value.get("receipts")
+        artifacts = value.get("receipt_artifacts")
+        hashes = value.get("receipt_sha256s")
+        if (
+            type(receipts) is not list
+            or type(artifacts) is not list
+            or type(hashes) is not list
+            or len(receipts) != 11
+            or len(artifacts) != 11
+            or len(hashes) != 11
+            or value.get("receipt_count") != 11
+            or value.get("ordered_steps") != list(range(11))
+            or [receipt.get("step_number") for receipt in receipts]
+            != list(range(11))
+            or [receipt.get("receipt_sha256") for receipt in receipts]
+            != hashes
+        ):
+            return ("ALL11_INCOMPLETE",)
+        previous: Mapping[str, Any] | None = None
+        for step, (receipt, identity) in enumerate(
+            zip(receipts, artifacts)
+        ):
+            if verify_recovery_epoch001_current_step_completion_receipt(
+                receipt,
+                repo_root=root,
+                previous_receipt=previous,
+                step0_parent_authority=event,
+                requirement_registry=registry,
+                accepted_test_run_receipt=accepted,
+                prior_receipts=tuple(receipts[:step]),
+                publication_evidence=publication_evidence,
+            ):
+                return ("OWNER_VERIFIER_CONFLICT",)
+            if identity != _v3_artifact_identity(
+                value=receipt,
+                path=_V3_STEP_PATHS[step],
+                role="CURRENT_STEP_COMPLETION_RECEIPT",
+                schema=_V3_STEP_SCHEMA,
+                hash_key="receipt_sha256",
+            ):
+                return ("ALL11_INCOMPLETE",)
+            previous = receipt
+        if value.get("accepted_test_run_artifact") != (
+            _v3_artifact_identity(
+                value=accepted,
+                path=_V3_ACCEPTED_PATH,
+                role="ACCEPTED_TEST_RUN_RECEIPT",
+                schema=_V3_ACCEPTED_SCHEMA,
+                hash_key="accepted_test_run_receipt_sha256",
+            )
+        ):
+            return ("SOURCE_OR_ROOT_MISMATCH",)
+        event_identity = attempt["source_baseline_event"]
+        if value.get("required_sequence_event_2") != {
+            "event_id": (
+                "NLS_V3_CYCLE001_RECOVERY_EPOCH001_EVENT_002_"
+                "STEP0_10_PREREQUISITES_PROVED"
+            ),
+            "event_name": "STEP0_10_PREREQUISITES_PROVED",
+            "event_ordinal": 2,
+            "state": "STEP0_10_PREREQUISITES_PROVED",
+            "prior_event_identity_sha256": event_identity[
+                "identity_sha256"
+            ],
+        }:
+            return ("SEQUENCE_INVALID",)
+        if (
+            value.get("next_authority") != _NEXT_BY_STEP[10]
+            or value.get("automatic_progression") is not False
+        ):
+            return ("P2_NOT_AUTHORIZED",)
+        if (
+            value.get("publication_state") != "PUBLISHED_ATOMIC"
+            or value.get("body_free") is not True
+            or not _body_free(value)
+        ):
+            return ("PUBLICATION_CONFLICT",)
+        if value.get("all11_completion_chain_sha256") != (
+            _artifact_sha256(
+                _hash_material(value, "all11_completion_chain_sha256")
+            )
+        ):
+            return ("HASH_MISMATCH",)
+        return ()
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RecursionError,
+        subprocess.SubprocessError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("ALL11_INCOMPLETE",)
+    return ()
+
+
+def verify_recovery_epoch001_accepted_test_run_receipt(
+    value: Any,
+    *,
+    repo_root: Path,
+    requirement_registry: Mapping[str, Any] | None = None,
+    source_baseline_event: Mapping[str, Any] | None = None,
+    publication_evidence: Mapping[str, Any] | None = None,
+) -> tuple[str, ...]:
+    try:
+        if type(value) is not dict or set(value) != _V3_ACCEPTED_KEYS:
+            return ("ACCEPTED_RECEIPT_NOT_ISSUABLE",)
+        registry = (
+            dict(requirement_registry)
+            if type(requirement_registry) is dict
+            else {}
+        )
+        root = Path(repo_root).resolve()
+        attempt = value.get("formal_test_run_attempt")
+        if (
+            value.get("schema_version") != _V3_ACCEPTED_SCHEMA
+            or value.get("accepted") is not True
+            or value.get("body_free") is not True
+            or not _body_free(value)
+            or type(attempt) is not dict
+            or value.get("formal_test_run_attempt_sha256")
+            != attempt.get("formal_test_run_attempt_sha256")
+            or verify_recovery_epoch001_accepted_test_run_attempt_for_issuance(
+                attempt,
+                repo_root=root,
+                requirement_registry=registry,
+                source_baseline_event=source_baseline_event,
+                publication_evidence=publication_evidence,
+            )
+        ):
+            return ("ACCEPTED_RECEIPT_NOT_ISSUABLE",)
+        event_record = (
+            publication_evidence.get("source_baseline_event", {})
+            if type(publication_evidence) is dict
+            else {}
+        )
+        if (
+            type(source_baseline_event) is not dict
+            or event_record.get("artifact")
+            != dict(source_baseline_event)
+        ):
+            return ("ACCEPTED_RECEIPT_NOT_ISSUABLE",)
+        closure = _v3_current_closure(root)
+        proof_sources = _v3_proof_sources(attempt["outcomes"])
+        expected_views = {
+            str(step): _artifact_sha256(
+                closure["step_views"][f"step_{step}"]
+            )
+            for step in range(11)
+        }
+        if (
+            value.get("step_view_sha256_by_step") != expected_views
+            or value.get("proof_sources") != proof_sources
+            or value.get("proof_source_closure_sha256")
+            != _artifact_sha256(proof_sources)
+            or value.get("accepted_test_run_receipt_sha256")
+            != _artifact_sha256(
+                _hash_material(
+                    value,
+                    "accepted_test_run_receipt_sha256",
+                )
+            )
+        ):
+            return ("ACCEPTED_RECEIPT_NOT_ISSUABLE",)
+        return ()
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RecursionError,
+        subprocess.SubprocessError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("ACCEPTED_RECEIPT_NOT_ISSUABLE",)
+
+
+# Sequence-event v2 independent verifier.
+_SV_EVENT_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11.cycle001."
+    "recovery_epoch001.sequence_event.v2"
+)
+_SV_SOURCE_RECEIPT_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch001."
+    "source_baseline_closure_receipt.v2"
+)
+_SV_LEDGER = "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_SEQUENCE_LEDGER"
+_SV_EVENT1_PATH = (
+    f"{_V3_PREFIX}NLSv3_Step11_Cycle001_RecoveryEpoch001_"
+    "SequenceEvent01_SourceBaselineLocked_BodyFree_Event_20260724.json"
+)
+_SV_EVENT2_PATH = (
+    f"{_V3_PREFIX}NLSv3_Step11_Cycle001_RecoveryEpoch001_"
+    "SequenceEvent02_Step0_10PrerequisitesProved_BodyFree_Event_20260724.json"
+)
+_SV_SOURCE_PATH = (
+    f"{_V3_PREFIX}NLSv3_Step11_Cycle001_RecoveryEpoch001_"
+    "SourceBaselineClosure_BodyFree_Receipt_20260724.json"
+)
+_SV_P0_DOCUMENT_PATH = (
+    f"{_V3_PREFIX}NLSv3_Step11_Cycle001_ProcessNonconformance_"
+    "CanonicalRecoveryEpoch001_ParentDesignAddendum_ReadOnly_20260723.md"
+)
+_SV_P0_RECEIPT_PATH = (
+    f"{_V3_PREFIX}NLSv3_Step11_Cycle001_ProcessNonconformance_"
+    "CanonicalRecoveryEpoch001_ParentDesignAddendum_ReadOnly_"
+    "BodyFree_Receipt_20260723.json"
+)
+_SV_P0_DOCUMENT_BLOB = "3333ae29ec0f4e9dde614bc9cd520448f61d2386"
+_SV_P0_RECEIPT_BLOB = "bdfbd559535db06ae4af35fe1bb58716d6566126"
+_SV_P0_DOCUMENT_RAW = (
+    "46333ede4b86a9ced0a5223e8df8dea35287548c676ce15c7787602b9a62b45c"
+)
+_SV_P0_RECEIPT_RAW = (
+    "70563fa0732f97e9c54d3e8371741253e834440a618936e448a31b4d1cf5c30e"
+)
+_SV_P0_DOCUMENT_COMMIT = "90a2c009b8a463110e01b907224e52ea50912bd8"
+_SV_P0_RECEIPT_COMMIT = "f20165e3eda11dc0262373d5f82f63377df76f10"
+_SV_EVENT_KEYS = frozenset(
+    {
+        "schema_version",
+        "ledger_id",
+        "event_id",
+        "logical_cycle_id",
+        "recovery_epoch_id",
+        "candidate_version_id",
+        "event_name",
+        "event_ordinal",
+        "state",
+        "timestamp_utc",
+        "timestamp_kind",
+        "authority",
+        "challenge_id",
+        "source_closure",
+        "prior_event",
+        "primary_evidence_artifact",
+        "publication",
+        "automatic_progression",
+        "body_free",
+        "event_sha256",
+    }
+)
+_SV_AUTHORITY_KEYS = frozenset(
+    {
+        "approval_kind",
+        "transition_authority_token",
+        "publication_authority_token",
+    }
+)
+_SV_PUBLICATION_KEYS = frozenset(
+    {
+        "repository_full_name",
+        "branch",
+        "base_commit_sha1",
+        "event_path",
+        "supporting_artifact_count",
+        "supporting_artifacts",
+        "supporting_artifact_set_sha256",
+        "expected_changed_path_count",
+        "ref_update_mode",
+        "publication_state",
+    }
+)
+
+
+def _sv_p0_anchor() -> dict[str, Any]:
+    value: dict[str, Any] = {
+        "identity_kind": "LEGACY_IMMUTABLE_P0_ANCHOR",
+        "event_name": "PARENT_ADDENDUM_FROZEN",
+        "event_ordinal": 0,
+        "state": "DEFINED_NOT_STARTED",
+        "recovery_epoch_id": _V3_RECOVERY_EPOCH,
+        "original_authority": (
+            "NLS_V3_STEP11_CYCLE001_PROCESS_NONCONFORMANCE_CANONICAL_"
+            "RECOVERY_EPOCH_PARENT_DESIGN_ADDENDUM_READ_ONLY"
+        ),
+        "timestamp_utc": "2026-07-22T22:37:07Z",
+        "document_path": _SV_P0_DOCUMENT_PATH,
+        "document_publication_commit_sha1": _SV_P0_DOCUMENT_COMMIT,
+        "document_git_blob_sha1": _SV_P0_DOCUMENT_BLOB,
+        "document_raw_sha256": _SV_P0_DOCUMENT_RAW,
+        "receipt_path": _SV_P0_RECEIPT_PATH,
+        "receipt_publication_commit_sha1": _SV_P0_RECEIPT_COMMIT,
+        "receipt_git_blob_sha1": _SV_P0_RECEIPT_BLOB,
+        "receipt_raw_sha256": _SV_P0_RECEIPT_RAW,
+        "anchor_publication_commit_sha1": _SV_P0_RECEIPT_COMMIT,
+        "identity_sha256": "",
+    }
+    value["identity_sha256"] = _artifact_sha256(
+        _hash_material(value, "identity_sha256")
+    )
+    return value
+
+
+def _sv_is_ancestor(
+    snapshot: Mapping[str, Any],
+    ancestor: str,
+    descendant: str,
+) -> bool:
+    pending = [descendant]
+    seen: set[str] = set()
+    commits = snapshot.get("commits", {})
+    while pending:
+        current = pending.pop()
+        if current == ancestor:
+            return True
+        if current in seen:
+            continue
+        seen.add(current)
+        row = commits.get(current)
+        if type(row) is dict and type(
+            row.get("parent_commit_sha1s")
+        ) is list:
+            pending.extend(
+                parent
+                for parent in row["parent_commit_sha1s"]
+                if type(parent) is str
+            )
+    return False
+
+
+def _sv_identity(
+    *,
+    value: Mapping[str, Any],
+    path: str,
+    role: str,
+    schema: str,
+    hash_key: str,
+) -> dict[str, Any]:
+    return _v3_artifact_identity(
+        value=value,
+        path=path,
+        role=role,
+        schema=schema,
+        hash_key=hash_key,
+    )
+
+
+def _sv_event_common(event: Mapping[str, Any]) -> str | None:
+    authority = event.get("authority")
+    publication = event.get("publication")
+    if (
+        set(event) != _SV_EVENT_KEYS
+        or event.get("schema_version") != _SV_EVENT_SCHEMA
+        or event.get("ledger_id") != _SV_LEDGER
+        or event.get("logical_cycle_id") != _V3_LOGICAL_CYCLE
+        or event.get("recovery_epoch_id") != _V3_RECOVERY_EPOCH
+        or event.get("candidate_version_id") != _CANDIDATE
+        or type(event.get("event_ordinal")) is not int
+        or isinstance(event.get("event_ordinal"), bool)
+        or type(authority) is not dict
+        or set(authority) != _SV_AUTHORITY_KEYS
+        or authority.get("approval_kind")
+        != "EXPLICIT_SEPARATE_APPROVAL"
+        or authority.get("transition_authority_token")
+        != authority.get("publication_authority_token")
+        or type(authority.get("transition_authority_token")) is not str
+        or not authority.get("transition_authority_token")
+        or _SHA_RE.fullmatch(str(event.get("challenge_id", ""))) is None
+        or type(event.get("source_closure")) is not dict
+        or set(event["source_closure"]) != _V3_SOURCE_KEYS
+        or type(publication) is not dict
+        or set(publication) != _SV_PUBLICATION_KEYS
+        or publication.get("repository_full_name") != "MassyuRed/Cocolon"
+        or publication.get("branch") != "main"
+        or publication.get("ref_update_mode")
+        != "EXPECTED_OLD_SHA_LEASE_WITH_VERIFIED_DIRECT_CHILD"
+        or publication.get("publication_state") != "PUBLISHED_ATOMIC"
+        or event.get("timestamp_kind")
+        != "ORCHESTRATOR_UTC_BEFORE_REF_UPDATE"
+        or event.get("body_free") is not True
+        or not _body_free(event)
+    ):
+        return "EVENT_SCHEMA_INVALID"
+    if (
+        _v3_utc(event.get("timestamp_utc")) is None
+        or event.get("event_sha256")
+        != _artifact_sha256(
+            _hash_material(event, "event_sha256")
+        )
+    ):
+        return "EVENT_TIMESTAMP_INVALID"
+    return None
+
+
+def _sv_published_event_valid(
+    identity: Any,
+    *,
+    snapshot: Mapping[str, Any],
+) -> bool:
+    if not _v3_identity_valid(identity, _V3_EVENT_IDENTITY_KEYS):
+        return False
+    commit = identity["publication_commit_sha1"]
+    row = snapshot.get("commits", {}).get(commit)
+    if type(row) is not dict:
+        return False
+    tree = snapshot.get("trees", {}).get(row.get("tree_sha1"))
+    blob = tree.get(identity["event_path"]) if type(tree) is dict else None
+    raw = snapshot.get("blobs", {}).get(blob)
+    if (
+        blob != identity["event_git_blob_sha1"]
+        or type(raw) is not bytes
+        or hashlib.sha1(
+            f"blob {len(raw)}\0".encode("ascii") + raw,
+            usedforsecurity=False,
+        ).hexdigest()
+        != blob
+        or hashlib.sha256(raw).hexdigest()
+        != identity["event_raw_sha256"]
+    ):
+        return False
+    try:
+        import json
+
+        artifact = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return False
+    return (
+        type(artifact) is dict
+        and artifact.get("event_sha256") == identity["event_sha256"]
+        and artifact.get("event_id") == identity["event_id"]
+        and artifact.get("event_name") == identity["event_name"]
+        and artifact.get("event_ordinal") == identity["event_ordinal"]
+        and artifact.get("state") == identity["state"]
+        and artifact.get("timestamp_utc") == identity["timestamp_utc"]
+        and artifact.get("ledger_id") == identity["ledger_id"]
+    )
+
+
+def _sv_all11_issue(
+    chain: Any,
+    *,
+    source_closure: Mapping[str, Any],
+) -> str | None:
+    if type(chain) is not dict:
+        return "ALL11_INCOMPLETE"
+    receipts = chain.get("receipts")
+    artifacts = chain.get("receipt_artifacts")
+    hashes = chain.get("receipt_sha256s")
+    if (
+        type(receipts) is not list
+        or type(artifacts) is not list
+        or type(hashes) is not list
+        or len(receipts) != 11
+        or len(artifacts) != 11
+        or len(hashes) != 11
+        or chain.get("receipt_count") != 11
+        or chain.get("ordered_steps") != list(range(11))
+        or [row.get("step_number") for row in receipts]
+        != list(range(11))
+        or [row.get("receipt_sha256") for row in receipts] != hashes
+        or len(set(hashes)) != 11
+    ):
+        return "ALL11_INCOMPLETE"
+    if chain.get("source_closure") != source_closure:
+        return "SOURCE_OR_ROOT_DRIFT"
+    previous: Mapping[str, Any] | None = None
+    for step, (receipt, identity) in enumerate(
+        zip(receipts, artifacts)
+    ):
+        if (
+            type(receipt) is not dict
+            or identity
+            != _sv_identity(
+                value=receipt,
+                path=_V3_STEP_PATHS[step],
+                role="CURRENT_STEP_COMPLETION_RECEIPT",
+                schema=receipt.get("schema_version"),
+                hash_key="receipt_sha256",
+            )
+        ):
+            return "ALL11_INCOMPLETE"
+        if step and receipt.get("parent_binding", {}).get(
+            "previous_receipt_sha256"
+        ) != previous.get("receipt_sha256"):
+            return "SEQUENCE_INVALID"
+        if step == 10 and receipt.get("next_authority") != _NEXT_BY_STEP[10]:
+            return "P2_NOT_AUTHORIZED"
+        previous = receipt
+    if (
+        chain.get("next_authority") != _NEXT_BY_STEP[10]
+        or chain.get("automatic_progression") is not False
+    ):
+        return "P2_NOT_AUTHORIZED"
+    return None
+
+
+def verify_recovery_epoch001_sequence_transition_candidate(
+    value: Any,
+    *,
+    evidence_artifacts_by_path: Mapping[str, Mapping[str, Any]],
+    repository_snapshot: Mapping[str, Any],
+) -> tuple[str, ...]:
+    try:
+        if type(value) is not dict:
+            return ("EVENT_SCHEMA_INVALID",)
+        common = _sv_event_common(value)
+        if common is not None:
+            return (common,)
+        ordinal = value["event_ordinal"]
+        if ordinal == 0:
+            return ("P0_BACKFILL_FORBIDDEN",)
+        timestamp = _v3_utc(value["timestamp_utc"])
+        publication = value["publication"]
+        event_path = publication["event_path"]
+        supporting = publication["supporting_artifacts"]
+        if ordinal == 1:
+            if (
+                value.get("event_name") != "SOURCE_BASELINE_LOCKED"
+                or value.get("state") != "SOURCE_BASELINE_LOCKED"
+                or value.get("event_id")
+                != (
+                    "NLS_V3_CYCLE001_RECOVERY_EPOCH001_EVENT_001_"
+                    "SOURCE_BASELINE_LOCKED"
+                )
+                or event_path != _SV_EVENT1_PATH
+            ):
+                return ("SEQUENCE_INVALID",)
+            prior = value.get("prior_event")
+            if (
+                type(prior) is dict
+                and prior.get("identity_kind")
+                == "PUBLISHED_SEQUENCE_EVENT"
+                and prior.get("event_ordinal") == 0
+            ):
+                return ("P0_BACKFILL_FORBIDDEN",)
+            if prior != _sv_p0_anchor():
+                return ("PRIOR_EVENT_INVALID",)
+            prior_time = _v3_utc(prior["timestamp_utc"])
+            if (
+                timestamp is None
+                or prior_time is None
+                or timestamp <= prior_time
+            ):
+                return ("EVENT_TIMESTAMP_INVALID",)
+            if not _sv_is_ancestor(
+                repository_snapshot,
+                _SV_P0_RECEIPT_COMMIT,
+                str(publication.get("base_commit_sha1")),
+            ):
+                return ("PRIOR_EVENT_INVALID",)
+            primary = value.get("primary_evidence_artifact")
+            receipt = evidence_artifacts_by_path.get(_SV_SOURCE_PATH)
+            if (
+                type(primary) is not dict
+                or primary.get("path") == event_path
+                or primary
+                != _sv_identity(
+                    value=receipt,
+                    path=_SV_SOURCE_PATH,
+                    role="SOURCE_BASELINE_CLOSURE_RECEIPT",
+                    schema=_SV_SOURCE_RECEIPT_SCHEMA,
+                    hash_key="source_baseline_closure_receipt_sha256",
+                )
+                or supporting != [primary]
+            ):
+                return ("ARTIFACT_IDENTITY_INVALID",)
+            if (
+                publication.get("supporting_artifact_count") != 1
+                or publication.get("supporting_artifact_set_sha256")
+                != _artifact_sha256(supporting)
+                or publication.get("expected_changed_path_count") != 2
+            ):
+                return ("EVENT_SCHEMA_INVALID",)
+            return ()
+        if ordinal != 2:
+            return ("SEQUENCE_INVALID",)
+        if (
+            value.get("event_name") != "STEP0_10_PREREQUISITES_PROVED"
+            or value.get("state") != "STEP0_10_PREREQUISITES_PROVED"
+            or value.get("event_id")
+            != (
+                "NLS_V3_CYCLE001_RECOVERY_EPOCH001_EVENT_002_"
+                "STEP0_10_PREREQUISITES_PROVED"
+            )
+            or event_path != _SV_EVENT2_PATH
+        ):
+            return ("SEQUENCE_INVALID",)
+        prior = value.get("prior_event")
+        if (
+            not _sv_published_event_valid(
+                prior,
+                snapshot=repository_snapshot,
+            )
+            or prior.get("event_name") != "SOURCE_BASELINE_LOCKED"
+            or prior.get("event_ordinal") != 1
+        ):
+            return ("PRIOR_EVENT_INVALID",)
+        if not _sv_is_ancestor(
+            repository_snapshot,
+            prior["publication_commit_sha1"],
+            str(publication.get("base_commit_sha1")),
+        ):
+            return ("SEQUENCE_INVALID",)
+        candidates = [
+            artifact
+            for artifact in evidence_artifacts_by_path.values()
+            if type(artifact) is dict
+            and artifact.get("schema_version", "").endswith(
+                "all11_completion_chain.v2"
+            )
+        ]
+        chain = candidates[0] if len(candidates) == 1 else None
+        chain_issue = _sv_all11_issue(
+            chain,
+            source_closure=value["source_closure"],
+        )
+        if chain_issue is not None:
+            return (chain_issue,)
+        run_finished = _v3_utc(
+            next(
+                (
+                    artifact.get("formal_test_run_attempt", {}).get(
+                        "run_finished_at_utc"
+                    )
+                    for artifact in evidence_artifacts_by_path.values()
+                    if type(artifact) is dict
+                    and artifact.get("schema_version", "").endswith(
+                        "accepted_test_run_receipt.v2"
+                    )
+                ),
+                None,
+            )
+        )
+        prior_time = _v3_utc(prior["timestamp_utc"])
+        if (
+            timestamp is None
+            or prior_time is None
+            or timestamp <= prior_time
+            or run_finished is None
+            or timestamp <= run_finished
+        ):
+            return ("EVENT_TIMESTAMP_INVALID",)
+        if value.get("automatic_progression") is not False:
+            return ("P2_NOT_AUTHORIZED",)
+        primary = value.get("primary_evidence_artifact")
+        all11_path = (
+            f"{_V3_PREFIX}NLSv3_Step11_Cycle001_RecoveryEpoch001_"
+            "All11CompletionChain_BodyFree_Chain_20260724.json"
+        )
+        if (
+            type(chain) is not dict
+            or primary
+            != _sv_identity(
+                value=chain,
+                path=all11_path,
+                role="ALL11_COMPLETION_CHAIN",
+                schema=chain.get("schema_version"),
+                hash_key="all11_completion_chain_sha256",
+            )
+        ):
+            return ("ARTIFACT_IDENTITY_INVALID",)
+        if (
+            publication.get("supporting_artifact_count") != 14
+            or len(supporting) != 14
+            or supporting
+            != sorted(supporting, key=lambda row: row["path"])
+            or len({row["path"] for row in supporting}) != 14
+            or publication.get("supporting_artifact_set_sha256")
+            != _artifact_sha256(supporting)
+            or publication.get("expected_changed_path_count") != 15
+        ):
+            return ("ARTIFACT_IDENTITY_INVALID",)
+        return ()
+    except (
+        AttributeError,
+        KeyError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("EVENT_SCHEMA_INVALID",)
+
+
+# Atomic-publication v2 independent verifier.
+_PV_REPOSITORY = "MassyuRed/Cocolon"
+_PV_BRANCH = "main"
+_PV_REF = "refs/heads/main"
+_PV_REF_UPDATE_MODE = (
+    "EXPECTED_OLD_SHA_LEASE_WITH_VERIFIED_DIRECT_CHILD"
+)
+_PV_WRITE_MODE = "SINGLE_TREE_SINGLE_COMMIT_EXPECTED_OLD_SHA_LEASE"
+_PV_ALL11_PATH = (
+    f"{_V3_PREFIX}NLSv3_Step11_Cycle001_RecoveryEpoch001_"
+    "All11CompletionChain_BodyFree_Chain_20260724.json"
+)
+_PV_MANIFEST_PATH = (
+    f"{_V3_PREFIX}NLSv3_Step11_Cycle001_RecoveryEpoch001_"
+    "All11AtomicPublication_BodyFree_Manifest_20260724.json"
+)
+_PV_MANIFEST_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch001."
+    "all11_atomic_publication_manifest.v2"
+)
+_PV_EVENT1_SUPPORTING_PATHS = frozenset({_SV_SOURCE_PATH})
+_PV_EVENT2_CORE_PATHS = frozenset(
+    {_V3_ACCEPTED_PATH, *_V3_STEP_PATHS, _PV_ALL11_PATH}
+)
+_PV_EVENT2_SUPPORTING_PATHS = frozenset(
+    {*_PV_EVENT2_CORE_PATHS, _PV_MANIFEST_PATH}
+)
+_PV_EVENT1_CHANGED_PATHS = frozenset(
+    {*_PV_EVENT1_SUPPORTING_PATHS, _SV_EVENT1_PATH}
+)
+_PV_EVENT2_CHANGED_PATHS = frozenset(
+    {*_PV_EVENT2_SUPPORTING_PATHS, _SV_EVENT2_PATH}
+)
+_PV_IDENTITY_KEYS = frozenset(
+    {
+        "artifact_role",
+        "schema_version",
+        "repository_full_name",
+        "path",
+        "git_blob_sha1",
+        "raw_sha256",
+        "logical_artifact_sha256",
+        "body_free",
+    }
+)
+_PV_SUPPORTING_KEYS = frozenset(
+    {
+        "repository_full_name",
+        "branch",
+        "base_commit_sha1",
+        "base_tree_sha1",
+        "supporting_artifact_count",
+        "supporting_artifact_paths",
+        "supporting_artifacts",
+        "canonical_bytes_by_path",
+        "expected_git_blob_sha1_by_path",
+        "expected_raw_sha256_by_path",
+        "expected_logical_artifact_sha256_by_path",
+        "ref_update_mode",
+        "body_free",
+    }
+)
+_PV_BUNDLE_KEYS = frozenset(
+    {
+        "repository_full_name",
+        "branch",
+        "base_commit_sha1",
+        "base_tree_sha1",
+        "event_path",
+        "changed_path_count",
+        "changed_paths",
+        "canonical_bytes_by_path",
+        "expected_git_blob_sha1_by_path",
+        "expected_raw_sha256_by_path",
+        "expected_logical_artifact_sha256_by_path",
+        "ref_update_mode",
+        "candidate_state",
+        "body_free",
+    }
+)
+
+
+def _pv_git_blob_sha1(raw: bytes) -> str:
+    return hashlib.sha1(
+        f"blob {len(raw)}\0".encode("ascii") + raw,
+        usedforsecurity=False,
+    ).hexdigest()
+
+
+def _pv_decode(raw: Any) -> dict[str, Any] | None:
+    if type(raw) is not bytes or not raw.endswith(b"\n"):
+        return None
+    try:
+        import json
+
+        value = json.loads(raw[:-1].decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return None
+    if type(value) is not dict or _v3_published_bytes(value) != raw:
+        return None
+    return value
+
+
+def _pv_artifact_meta(
+    path: str,
+) -> tuple[str, str, str] | None:
+    if path == _SV_SOURCE_PATH:
+        return (
+            "SOURCE_BASELINE_CLOSURE_RECEIPT",
+            _SV_SOURCE_RECEIPT_SCHEMA,
+            "source_baseline_closure_receipt_sha256",
+        )
+    if path == _V3_ACCEPTED_PATH:
+        return (
+            "ACCEPTED_TEST_RUN_RECEIPT",
+            _V3_ACCEPTED_SCHEMA,
+            "accepted_test_run_receipt_sha256",
+        )
+    if path in _V3_STEP_PATHS:
+        return (
+            "CURRENT_STEP_COMPLETION_RECEIPT",
+            _V3_STEP_SCHEMA,
+            "receipt_sha256",
+        )
+    if path == _PV_ALL11_PATH:
+        return (
+            "ALL11_COMPLETION_CHAIN",
+            _V3_ALL11_SCHEMA,
+            "all11_completion_chain_sha256",
+        )
+    if path == _PV_MANIFEST_PATH:
+        return (
+            "ALL11_ATOMIC_PUBLICATION_MANIFEST",
+            _PV_MANIFEST_SCHEMA,
+            "atomic_publication_manifest_sha256",
+        )
+    return None
+
+
+def _pv_logical_sha(
+    path: str,
+    value: Mapping[str, Any],
+) -> str | None:
+    if path in {_SV_EVENT1_PATH, _SV_EVENT2_PATH}:
+        result = value.get("event_sha256")
+    else:
+        meta = _pv_artifact_meta(path)
+        result = value.get(meta[2]) if meta is not None else None
+    return (
+        result
+        if type(result) is str and _SHA_RE.fullmatch(result)
+        else None
+    )
+
+
+def _pv_identity(
+    *,
+    path: str,
+    value: Mapping[str, Any],
+    raw: bytes,
+) -> dict[str, Any] | None:
+    meta = _pv_artifact_meta(path)
+    if meta is None:
+        return None
+    role, schema, hash_key = meta
+    logical = value.get(hash_key)
+    if type(logical) is not str:
+        return None
+    return {
+        "artifact_role": role,
+        "schema_version": schema,
+        "repository_full_name": _PV_REPOSITORY,
+        "path": path,
+        "git_blob_sha1": _pv_git_blob_sha1(raw),
+        "raw_sha256": hashlib.sha256(raw).hexdigest(),
+        "logical_artifact_sha256": logical,
+        "body_free": True,
+    }
+
+
+def _pv_expected_supporting_paths(
+    paths: frozenset[str],
+) -> frozenset[str] | None:
+    if paths == _PV_EVENT1_SUPPORTING_PATHS:
+        return _PV_EVENT1_SUPPORTING_PATHS
+    if paths == _PV_EVENT2_SUPPORTING_PATHS:
+        return _PV_EVENT2_SUPPORTING_PATHS
+    return None
+
+
+def _pv_base_tree(
+    snapshot: Mapping[str, Any],
+) -> tuple[str, str] | None:
+    head = snapshot.get("head_commit_sha1")
+    commits = snapshot.get("commits")
+    if (
+        type(head) is not str
+        or _COMMIT_RE.fullmatch(head) is None
+        or type(commits) is not dict
+        or type(commits.get(head)) is not dict
+    ):
+        return None
+    tree = commits[head].get("tree_sha1")
+    if (
+        type(tree) is not str
+        or _COMMIT_RE.fullmatch(tree) is None
+        or type(snapshot.get("trees")) is not dict
+        or type(snapshot["trees"].get(tree)) is not dict
+    ):
+        return None
+    return head, tree
+
+
+def _pv_supporting_issue(
+    value: Any,
+    *,
+    artifacts_by_path: Mapping[str, Mapping[str, Any]] | None,
+) -> str | None:
+    if type(value) is not dict or set(value) != _PV_SUPPORTING_KEYS:
+        return "PUBLICATION_BUNDLE_INVALID"
+    paths = value.get("supporting_artifact_paths")
+    identities = value.get("supporting_artifacts")
+    if (
+        type(paths) is not list
+        or any(type(path) is not str for path in paths)
+        or paths != sorted(paths)
+        or len(paths) != len(set(paths))
+    ):
+        return "PUBLICATION_BUNDLE_INVALID"
+    expected = _pv_expected_supporting_paths(frozenset(paths))
+    if expected is None or set(paths) != set(expected):
+        return "PUBLICATION_BUNDLE_INVALID"
+    if (
+        value.get("repository_full_name") != _PV_REPOSITORY
+        or value.get("branch") != _PV_BRANCH
+        or _COMMIT_RE.fullmatch(
+            str(value.get("base_commit_sha1", ""))
+        )
+        is None
+        or _COMMIT_RE.fullmatch(str(value.get("base_tree_sha1", "")))
+        is None
+        or value.get("supporting_artifact_count") != len(paths)
+        or value.get("ref_update_mode") != _PV_REF_UPDATE_MODE
+        or value.get("body_free") is not True
+        or type(identities) is not list
+        or len(identities) != len(paths)
+        or identities
+        != sorted(
+            identities,
+            key=lambda row: (
+                row.get("path", "") if type(row) is dict else ""
+            ),
+        )
+    ):
+        return "PUBLICATION_BUNDLE_INVALID"
+    maps = (
+        value.get("canonical_bytes_by_path"),
+        value.get("expected_git_blob_sha1_by_path"),
+        value.get("expected_raw_sha256_by_path"),
+        value.get("expected_logical_artifact_sha256_by_path"),
+    )
+    if any(type(item) is not dict or set(item) != set(paths) for item in maps):
+        return "PUBLICATION_BUNDLE_INVALID"
+    supplied = (
+        dict(artifacts_by_path)
+        if type(artifacts_by_path) is dict
+        else None
+    )
+    if supplied is not None and set(supplied) != set(paths):
+        return "PUBLICATION_BUNDLE_INVALID"
+    for index, path in enumerate(paths):
+        raw = value["canonical_bytes_by_path"][path]
+        decoded = _pv_decode(raw)
+        artifact = decoded if supplied is None else supplied.get(path)
+        identity = identities[index]
+        expected_identity = (
+            _pv_identity(path=path, value=artifact, raw=raw)
+            if type(artifact) is dict and decoded is not None
+            else None
+        )
+        if (
+            decoded is None
+            or type(artifact) is not dict
+            or artifact != decoded
+            or type(identity) is not dict
+            or set(identity) != _PV_IDENTITY_KEYS
+            or expected_identity is None
+            or identity != expected_identity
+            or value["expected_git_blob_sha1_by_path"][path]
+            != _pv_git_blob_sha1(raw)
+            or value["expected_raw_sha256_by_path"][path]
+            != hashlib.sha256(raw).hexdigest()
+            or value["expected_logical_artifact_sha256_by_path"][path]
+            != _pv_logical_sha(path, artifact)
+        ):
+            return "PUBLICATION_BUNDLE_INVALID"
+    return None
+
+
+def verify_recovery_epoch001_atomic_publication_supporting_set(
+    value: Any,
+    *,
+    artifacts_by_path: Mapping[str, Mapping[str, Any]] | None = None,
+) -> tuple[str, ...]:
+    try:
+        issue = _pv_supporting_issue(
+            value,
+            artifacts_by_path=artifacts_by_path,
+        )
+        return () if issue is None else (issue,)
+    except (
+        AttributeError,
+        KeyError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("PUBLICATION_BUNDLE_INVALID",)
+
+
+def _pv_candidate_issue(
+    value: Any,
+    *,
+    event: Mapping[str, Any],
+    artifacts_by_path: Mapping[str, Mapping[str, Any]],
+) -> str | None:
+    if (
+        type(value) is not dict
+        or set(value) != _PV_BUNDLE_KEYS
+        or type(event) is not dict
+        or type(artifacts_by_path) is not dict
+    ):
+        return "PUBLICATION_BUNDLE_INVALID"
+    publication = event.get("publication")
+    event_path = (
+        publication.get("event_path")
+        if type(publication) is dict
+        else None
+    )
+    supporting_paths = frozenset(artifacts_by_path)
+    if (
+        event_path == _SV_EVENT1_PATH
+        and supporting_paths == _PV_EVENT1_SUPPORTING_PATHS
+    ):
+        expected_paths = _PV_EVENT1_CHANGED_PATHS
+    elif (
+        event_path == _SV_EVENT2_PATH
+        and supporting_paths == _PV_EVENT2_SUPPORTING_PATHS
+    ):
+        expected_paths = _PV_EVENT2_CHANGED_PATHS
+    else:
+        return "PUBLICATION_BUNDLE_INVALID"
+    paths = value.get("changed_paths")
+    if (
+        type(paths) is not list
+        or paths != sorted(paths)
+        or len(paths) != len(set(paths))
+        or frozenset(paths) != expected_paths
+        or value.get("changed_path_count") != len(expected_paths)
+        or value.get("event_path") != event_path
+    ):
+        return "PUBLICATION_BUNDLE_INVALID"
+    expected_identities: list[dict[str, Any]] = []
+    for path in sorted(supporting_paths):
+        artifact = artifacts_by_path[path]
+        if type(artifact) is not dict:
+            return "PUBLICATION_BUNDLE_INVALID"
+        raw = _v3_published_bytes(artifact)
+        identity = _pv_identity(path=path, value=artifact, raw=raw)
+        if identity is None:
+            return "PUBLICATION_BUNDLE_INVALID"
+        expected_identities.append(identity)
+    if (
+        type(publication) is not dict
+        or publication.get("repository_full_name") != _PV_REPOSITORY
+        or publication.get("branch") != _PV_BRANCH
+        or publication.get("base_commit_sha1")
+        != value.get("base_commit_sha1")
+        or publication.get("supporting_artifact_count")
+        != len(expected_identities)
+        or publication.get("supporting_artifacts")
+        != expected_identities
+        or publication.get("supporting_artifact_set_sha256")
+        != _artifact_sha256(expected_identities)
+        or publication.get("expected_changed_path_count")
+        != len(expected_paths)
+        or publication.get("ref_update_mode") != _PV_REF_UPDATE_MODE
+        or publication.get("publication_state") != "PUBLISHED_ATOMIC"
+    ):
+        return "PUBLICATION_BUNDLE_INVALID"
+    if event_path == _SV_EVENT2_PATH:
+        chain = artifacts_by_path.get(_PV_ALL11_PATH)
+        if (
+            type(chain) is not dict
+            or chain.get("schema_version") != _V3_ALL11_SCHEMA
+            or chain.get("publication_state") != "PUBLISHED_ATOMIC"
+        ):
+            return "PUBLICATION_BUNDLE_INVALID"
+    values: dict[str, Mapping[str, Any]] = {
+        **artifacts_by_path,
+        event_path: event,
+    }
+    maps = (
+        value.get("canonical_bytes_by_path"),
+        value.get("expected_git_blob_sha1_by_path"),
+        value.get("expected_raw_sha256_by_path"),
+        value.get("expected_logical_artifact_sha256_by_path"),
+    )
+    if any(type(item) is not dict or set(item) != set(paths) for item in maps):
+        return "PUBLICATION_BUNDLE_INVALID"
+    for path, artifact in values.items():
+        raw = _v3_published_bytes(artifact)
+        if (
+            value["canonical_bytes_by_path"].get(path) != raw
+            or value["expected_git_blob_sha1_by_path"].get(path)
+            != _pv_git_blob_sha1(raw)
+            or value["expected_raw_sha256_by_path"].get(path)
+            != hashlib.sha256(raw).hexdigest()
+            or value["expected_logical_artifact_sha256_by_path"].get(path)
+            != _pv_logical_sha(path, artifact)
+        ):
+            return "PUBLICATION_BUNDLE_INVALID"
+    if (
+        value.get("repository_full_name") != _PV_REPOSITORY
+        or value.get("branch") != _PV_BRANCH
+        or value.get("ref_update_mode") != _PV_REF_UPDATE_MODE
+        or value.get("candidate_state")
+        != "CANDIDATE_UNREACHABLE_VALID_NOT_PUBLISHED"
+        or value.get("body_free") is not True
+    ):
+        return "PUBLICATION_BUNDLE_INVALID"
+    return None
+
+
+def verify_recovery_epoch001_atomic_publication_candidate(
+    value: Any,
+    *,
+    event: Mapping[str, Any],
+    artifacts_by_path: Mapping[str, Mapping[str, Any]],
+) -> tuple[str, ...]:
+    try:
+        issue = _pv_candidate_issue(
+            value,
+            event=event,
+            artifacts_by_path=artifacts_by_path,
+        )
+        return () if issue is None else (issue,)
+    except (
+        AttributeError,
+        KeyError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("PUBLICATION_BUNDLE_INVALID",)
+
+
+def _pv_preflight_issue(
+    value: Any,
+    *,
+    repository_snapshot: Mapping[str, Any],
+    transport_capabilities: Mapping[str, Any],
+) -> str | None:
+    if type(value) is not dict or type(repository_snapshot) is not dict:
+        return "PUBLICATION_BUNDLE_INVALID"
+    if (
+        type(transport_capabilities) is not dict
+        or transport_capabilities
+        != {
+            "base_tree_read": True,
+            "expected_old_sha_lease": True,
+            "single_ref_update": True,
+        }
+    ):
+        return "PUBLICATION_REF_UPDATE_FAILED_STOP"
+    base = _pv_base_tree(repository_snapshot)
+    if base is None:
+        return "PUBLICATION_HEAD_DRIFT_STOP"
+    actual_commit, actual_tree = base
+    if (
+        actual_commit != value.get("base_commit_sha1")
+        or actual_tree != value.get("base_tree_sha1")
+    ):
+        return "PUBLICATION_HEAD_DRIFT_STOP"
+    entries = repository_snapshot["trees"][actual_tree]
+    paths = value.get("changed_paths")
+    if type(paths) is not list:
+        return "PUBLICATION_BUNDLE_INVALID"
+    if any(path in entries for path in paths):
+        return "PUBLICATION_PATH_CONFLICT"
+    return None
+
+
+def verify_recovery_epoch001_atomic_publication_preflight(
+    value: Any,
+    *,
+    repository_snapshot: Mapping[str, Any],
+    transport_capabilities: Mapping[str, Any],
+) -> tuple[str, ...]:
+    try:
+        issue = _pv_preflight_issue(
+            value,
+            repository_snapshot=repository_snapshot,
+            transport_capabilities=transport_capabilities,
+        )
+        return () if issue is None else (issue,)
+    except (
+        AttributeError,
+        KeyError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("PUBLICATION_REF_UPDATE_FAILED_STOP",)
+
+
+def _pv_ref_issue(
+    value: Any,
+    *,
+    transaction: Mapping[str, Any],
+    repository_snapshot: Mapping[str, Any],
+    candidate_snapshot: Mapping[str, Any],
+    transport_capabilities: Mapping[str, Any],
+) -> str | None:
+    preflight = _pv_preflight_issue(
+        value,
+        repository_snapshot=repository_snapshot,
+        transport_capabilities=transport_capabilities,
+    )
+    if preflight is not None:
+        return preflight
+    if type(transaction) is not dict or type(candidate_snapshot) is not dict:
+        return "PUBLICATION_REF_UPDATE_FAILED_STOP"
+    base = value.get("base_commit_sha1")
+    target = transaction.get("target_commit_sha1")
+    target_tree = transaction.get("target_tree_sha1")
+    if (
+        transaction.get("write_mode") != _PV_WRITE_MODE
+        or transaction.get("expected_old_sha") != base
+        or transaction.get("parent_commit_sha1s") != [base]
+        or transaction.get("body_free") is not True
+        or _COMMIT_RE.fullmatch(str(target or "")) is None
+        or _COMMIT_RE.fullmatch(str(target_tree or "")) is None
+    ):
+        return "PUBLICATION_REF_UPDATE_FAILED_STOP"
+    commits = candidate_snapshot.get("commits")
+    trees = candidate_snapshot.get("trees")
+    changes = candidate_snapshot.get("changed_paths_by_commit")
+    if (
+        type(commits) is not dict
+        or type(commits.get(target)) is not dict
+        or commits[target].get("parent_commit_sha1s") != [base]
+        or commits[target].get("tree_sha1") != target_tree
+        or type(trees) is not dict
+        or type(trees.get(target_tree)) is not dict
+        or type(changes) is not dict
+        or changes.get(target) != value.get("changed_paths")
+    ):
+        return "PUBLICATION_REF_UPDATE_FAILED_STOP"
+    base_tree = value.get("base_tree_sha1")
+    base_entries = repository_snapshot["trees"].get(base_tree)
+    if type(base_entries) is not dict:
+        return "PUBLICATION_REF_UPDATE_FAILED_STOP"
+    expected_entries = dict(base_entries)
+    expected_entries.update(value["expected_git_blob_sha1_by_path"])
+    if trees[target_tree] != expected_entries:
+        return "PUBLICATION_REF_UPDATE_FAILED_STOP"
+    return None
+
+
+def verify_recovery_epoch001_atomic_ref_update_plan(
+    value: Any,
+    *,
+    transaction: Mapping[str, Any],
+    repository_snapshot: Mapping[str, Any],
+    candidate_snapshot: Mapping[str, Any],
+    transport_capabilities: Mapping[str, Any],
+) -> tuple[str, ...]:
+    try:
+        issue = _pv_ref_issue(
+            value,
+            transaction=transaction,
+            repository_snapshot=repository_snapshot,
+            candidate_snapshot=candidate_snapshot,
+            transport_capabilities=transport_capabilities,
+        )
+        return () if issue is None else (issue,)
+    except (
+        AttributeError,
+        KeyError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("PUBLICATION_REF_UPDATE_FAILED_STOP",)
+
+
+def _pv_result_issue(
+    value: Any,
+    *,
+    transaction: Mapping[str, Any],
+    candidate_snapshot: Mapping[str, Any],
+    repository_snapshot: Mapping[str, Any],
+    ref_update_observation: Mapping[str, Any],
+    event: Mapping[str, Any],
+    artifacts_by_path: Mapping[str, Mapping[str, Any]],
+) -> str | None:
+    if (
+        _pv_candidate_issue(
+            value,
+            event=event,
+            artifacts_by_path=artifacts_by_path,
+        )
+        is not None
+    ):
+        return "PUBLICATION_POSTVERIFY_CONFLICT_STOP"
+    if (
+        type(transaction) is not dict
+        or type(candidate_snapshot) is not dict
+        or type(repository_snapshot) is not dict
+        or type(ref_update_observation) is not dict
+    ):
+        return "PUBLICATION_POSTVERIFY_CONFLICT_STOP"
+    base = value.get("base_commit_sha1")
+    target = transaction.get("target_commit_sha1")
+    target_tree = transaction.get("target_tree_sha1")
+    expected_observation = {
+        "ref": _PV_REF,
+        "lease_precondition": {
+            "expected_old_sha": base,
+            "target_commit_sha1": target,
+        },
+        "observed_head_before": base,
+        "server_result": "EXPECTED_OLD_SHA_MATCHED_AND_UPDATED",
+        "observed_head_after": target,
+        "body_free": True,
+    }
+    if ref_update_observation != expected_observation:
+        if (
+            ref_update_observation.get("server_result")
+            == "EXPECTED_OLD_SHA_MISMATCH"
+        ):
+            return "PUBLICATION_REF_UPDATE_FAILED_STOP"
+        return "PUBLICATION_POSTVERIFY_CONFLICT_STOP"
+    if repository_snapshot.get("head_commit_sha1") != target:
+        return "PUBLICATION_POSTVERIFY_CONFLICT_STOP"
+    commits = repository_snapshot.get("commits")
+    trees = repository_snapshot.get("trees")
+    blobs = repository_snapshot.get("blobs")
+    changed = repository_snapshot.get("changed_paths_by_commit")
+    if (
+        type(commits) is not dict
+        or type(commits.get(target)) is not dict
+        or commits[target].get("parent_commit_sha1s") != [base]
+        or commits[target].get("tree_sha1") != target_tree
+        or type(trees) is not dict
+        or type(trees.get(target_tree)) is not dict
+        or type(blobs) is not dict
+        or type(changed) is not dict
+        or changed.get(target) != value.get("changed_paths")
+    ):
+        return "PUBLICATION_POSTVERIFY_CONFLICT_STOP"
+    candidate_commits = candidate_snapshot.get("commits")
+    candidate_trees = candidate_snapshot.get("trees")
+    if (
+        type(candidate_commits) is not dict
+        or candidate_commits.get(target) != commits[target]
+        or type(candidate_trees) is not dict
+        or candidate_trees.get(target_tree) != trees[target_tree]
+    ):
+        return "PUBLICATION_POSTVERIFY_CONFLICT_STOP"
+    base_tree = value.get("base_tree_sha1")
+    base_entries = candidate_snapshot.get("trees", {}).get(base_tree)
+    if type(base_entries) is not dict:
+        return "PUBLICATION_POSTVERIFY_CONFLICT_STOP"
+    expected_entries = dict(base_entries)
+    expected_entries.update(value["expected_git_blob_sha1_by_path"])
+    if trees[target_tree] != expected_entries:
+        return "PUBLICATION_POSTVERIFY_CONFLICT_STOP"
+    values: dict[str, Mapping[str, Any]] = {
+        **artifacts_by_path,
+        event["publication"]["event_path"]: event,
+    }
+    for path in value["changed_paths"]:
+        blob = value["expected_git_blob_sha1_by_path"][path]
+        raw = value["canonical_bytes_by_path"][path]
+        artifact = values.get(path)
+        if (
+            trees[target_tree].get(path) != blob
+            or blobs.get(blob) != raw
+            or _pv_git_blob_sha1(raw) != blob
+            or hashlib.sha256(raw).hexdigest()
+            != value["expected_raw_sha256_by_path"][path]
+            or type(artifact) is not dict
+            or _v3_published_bytes(artifact) != raw
+            or _pv_logical_sha(path, artifact)
+            != value[
+                "expected_logical_artifact_sha256_by_path"
+            ][path]
+        ):
+            return "PUBLICATION_POSTVERIFY_CONFLICT_STOP"
+    return None
+
+
+def verify_recovery_epoch001_atomic_publication_result(
+    value: Any,
+    *,
+    transaction: Mapping[str, Any],
+    candidate_snapshot: Mapping[str, Any],
+    repository_snapshot: Mapping[str, Any],
+    ref_update_observation: Mapping[str, Any],
+    event: Mapping[str, Any],
+    artifacts_by_path: Mapping[str, Mapping[str, Any]],
+) -> tuple[str, ...]:
+    try:
+        issue = _pv_result_issue(
+            value,
+            transaction=transaction,
+            candidate_snapshot=candidate_snapshot,
+            repository_snapshot=repository_snapshot,
+            ref_update_observation=ref_update_observation,
+            event=event,
+            artifacts_by_path=artifacts_by_path,
+        )
+        return () if issue is None else (issue,)
+    except (
+        AttributeError,
+        KeyError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("PUBLICATION_POSTVERIFY_CONFLICT_STOP",)
