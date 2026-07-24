@@ -15,9 +15,18 @@ import subprocess
 from typing import Any, Mapping, Sequence
 
 from emlis_ai_nls_v3_artifact_contract import artifact_sha256
+from emlis_ai_recovery_epoch001_accepted_test_run_receipt_v3 import (
+    RECOVERY_EPOCH001_ACCEPTED_TEST_RUN_RECEIPT_SCHEMA,
+    validate_recovery_epoch001_accepted_test_run_receipt_shape,
+)
 from emlis_ai_recovery_epoch001_canonical_current_closure_v3 import (
     RECOVERY_EPOCH001_CANDIDATE_VERSION_ID,
     fresh_recovery_epoch001_canonical_current_closure,
+)
+from emlis_ai_recovery_epoch001_current_step_requirement_registry_v3 import (
+    RECOVERY_EPOCH001_EXPECTED_FORMAL_NODE_REGISTRY_SHA256,
+    fresh_recovery_epoch001_current_step_requirement_registry,
+    validate_recovery_epoch001_current_step_requirement_registry_shape,
 )
 
 
@@ -25,7 +34,11 @@ RECOVERY_EPOCH001_CURRENT_STEP_COMPLETION_RECEIPT_SCHEMA = (
     "cocolon.emlis.nls_v3.recovery_epoch001."
     "current_step_completion_receipt.v1"
 )
-RECOVERY_EPOCH001_PROVED_ISSUANCE_AUTHORIZED = False
+RECOVERY_EPOCH001_CURRENT_STEP_ARTIFACT_EVIDENCE_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch001."
+    "current_step_artifact_evidence.v1"
+)
+RECOVERY_EPOCH001_PROVED_ISSUANCE_AUTHORIZED = True
 RECOVERY_EPOCH001_NEXT_AUTHORITY_BY_STEP = {
     0: (
         "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_"
@@ -140,10 +153,16 @@ _LINEAGE_KEYS = frozenset(
 _CURRENT_KEYS = frozenset(
     {
         "source_commit",
+        "source_tree",
+        "source_baseline_event_sha256",
         "canonical_current_closure_sha256",
         "source_dependency_closure_sha256",
+        "full_graph_sha256",
         "step_view_key",
         "step_view_sha256",
+        "requirement_registry_sha256",
+        "formal_node_registry_sha256",
+        "accepted_test_run_receipt_sha256",
     }
 )
 _OWNER_KEYS = frozenset(
@@ -170,13 +189,30 @@ _PROOF_KEYS = frozenset(
     }
 )
 _ARTIFACT_KEYS = frozenset(
-    {"path", "git_blob_sha1", "sha256", "schema_version", "body_free"}
+    {
+        "schema_version",
+        "step_number",
+        "required_artifact_schema_version",
+        "owner_binding_sha256",
+        "strict_contract_binding_sha256",
+        "requirement_registry_sha256",
+        "accepted_test_run_receipt_sha256",
+        "formal_completion_evidence_sha256",
+        "body_free",
+    }
 )
 _COMPLETION_KEYS = frozenset(
     {"condition_id", "required", "satisfied", "evidence_sha256"}
 )
 _STOP_KEYS = frozenset(
-    {"condition_id", "triggered", "evidence_sha256"}
+    {
+        "condition_id",
+        "proof_scope",
+        "proof_node_registry_sha256",
+        "accepted_test_run_receipt_sha256",
+        "triggered",
+        "evidence_sha256",
+    }
 )
 
 
@@ -259,49 +295,468 @@ def _body_free(value: Any, active: set[int] | None = None) -> bool:
         seen.remove(identity)
 
 
-def _proof_valid(
-    value: Any,
-    *,
-    files: Mapping[str, Mapping[str, str]],
-    repo_root: Path,
-    allowed_paths: frozenset[str],
-    accepted_test_results: Mapping[str, Any] | None,
-) -> bool:
-    if type(value) is not dict or set(value) != _PROOF_KEYS:
-        return False
-    path = value.get("source_path")
-    row = files.get(path) if type(path) is str else None
-    node_id = value.get("test_node_id")
-    if (
-        row is None
-        or path not in allowed_paths
-        or row.get("role") == "immutable_historical_evidence"
-        or value.get("result") != "PASSED"
-        or value.get("source_blob_sha1") != row.get("git_blob_sha1")
-        or value.get("source_sha256") != row.get("sha256")
-        or not _valid_sha(value.get("evidence_sha256"))
-        or type(node_id) is not str
-        or not node_id.startswith(f"{path}::test_")
-        or node_id.rpartition("::")[2] not in _top_level_symbols(
-            repo_root / path
-        )
-        or type(accepted_test_results) is not dict
-    ):
-        return False
-    accepted = accepted_test_results.get(node_id)
-    return (
-        type(accepted) is dict
-        and accepted.get("result") == "PASSED"
-        and accepted.get("evidence_sha256")
-        == value.get("evidence_sha256")
-    )
-
-
 def _receipt_material(value: Mapping[str, Any]) -> dict[str, Any]:
     return {
         key: value[key]
         for key in sorted(_TOP_KEYS - {"receipt_sha256"})
     }
+
+
+def _accepted_outcomes(
+    accepted_test_run_receipt: Mapping[str, Any],
+) -> dict[str, Mapping[str, Any]]:
+    outcomes = accepted_test_run_receipt.get("outcomes")
+    if type(outcomes) is not list:
+        return {}
+    return {
+        row["test_node_id"]: row
+        for row in outcomes
+        if type(row) is dict and type(row.get("test_node_id")) is str
+    }
+
+
+def _proof_from_outcome(
+    *,
+    proof: Mapping[str, Any],
+    outcomes: Mapping[str, Mapping[str, Any]],
+    files: Mapping[str, Mapping[str, str]],
+    allowed_paths: frozenset[str],
+) -> dict[str, Any] | None:
+    node_id = proof.get("test_node_id")
+    source_path = proof.get("source_path")
+    outcome = outcomes.get(node_id) if type(node_id) is str else None
+    source_row = (
+        files.get(source_path) if type(source_path) is str else None
+    )
+    if (
+        type(outcome) is not dict
+        or source_row is None
+        or source_path not in allowed_paths
+        or outcome.get("test_node_id") != node_id
+        or outcome.get("source_path") != source_path
+        or outcome.get("source_blob_sha1")
+        != source_row.get("git_blob_sha1")
+        or outcome.get("source_sha256") != source_row.get("sha256")
+        or outcome.get("result") != "PASSED"
+        or not _valid_sha(outcome.get("evidence_sha256"))
+    ):
+        return None
+    return {
+        "test_node_id": node_id,
+        "result": "PASSED",
+        "source_path": source_path,
+        "source_blob_sha1": source_row["git_blob_sha1"],
+        "source_sha256": source_row["sha256"],
+        "evidence_sha256": outcome["evidence_sha256"],
+    }
+
+
+def _formal_run_complete(
+    accepted_test_run_receipt: Mapping[str, Any],
+    formal_nodes: Sequence[str],
+) -> bool:
+    outcomes = _accepted_outcomes(accepted_test_run_receipt)
+    counts = accepted_test_run_receipt.get("counts")
+    return (
+        accepted_test_run_receipt.get("accepted") is True
+        and type(counts) is dict
+        and counts
+        == {
+            "collected": 134,
+            "executed": 134,
+            "passed": 134,
+            "failed": 0,
+            "skipped": 0,
+            "xfailed": 0,
+            "xpassed": 0,
+            "deselected": 0,
+            "collection_errors": 0,
+            "timeouts": 0,
+        }
+        and accepted_test_run_receipt.get("exit_code") == 0
+        and accepted_test_run_receipt.get("timed_out") is False
+        and all(
+            node in outcomes and outcomes[node].get("result") == "PASSED"
+            for node in formal_nodes
+        )
+    )
+
+
+def _global_stop_condition_ids(
+    registry: Mapping[str, Any],
+) -> frozenset[str]:
+    rows = registry.get("steps")
+    if type(rows) is not list or not rows:
+        return frozenset()
+    stop_sets = [
+        {
+            condition_id
+            for condition_id in row.get("stop_condition_ids", [])
+            if type(condition_id) is str
+        }
+        for row in rows
+        if type(row) is dict
+    ]
+    if len(stop_sets) != len(rows) or not stop_sets:
+        return frozenset()
+    return frozenset.intersection(*(frozenset(items) for items in stop_sets))
+
+
+def _stop_material(
+    *,
+    condition_id: str,
+    step_nodes: list[str],
+    all_nodes: list[str],
+    global_stop_ids: frozenset[str],
+    outcomes: Mapping[str, Mapping[str, Any]],
+    accepted_hash: str,
+) -> dict[str, Any] | None:
+    proof_nodes = all_nodes if condition_id in global_stop_ids else step_nodes
+    if (
+        not proof_nodes
+        or any(
+            node not in outcomes
+            or outcomes[node].get("result") != "PASSED"
+            for node in proof_nodes
+        )
+    ):
+        return None
+    proof_scope = (
+        "GLOBAL_EXACT134"
+        if condition_id in global_stop_ids
+        else "STEP_EXACT_REQUIRED_NODES"
+    )
+    proof_node_registry_sha256 = artifact_sha256(
+        {"node_ids": proof_nodes}
+    )
+    evidence_material = {
+        "condition_id": condition_id,
+        "proof_scope": proof_scope,
+        "proof_node_registry_sha256": proof_node_registry_sha256,
+        "outcome_evidence_sha256s": [
+            outcomes[node]["evidence_sha256"] for node in proof_nodes
+        ],
+        "accepted_test_run_receipt_sha256": accepted_hash,
+        "triggered": False,
+    }
+    return {
+        "condition_id": condition_id,
+        "proof_scope": proof_scope,
+        "proof_node_registry_sha256": proof_node_registry_sha256,
+        "accepted_test_run_receipt_sha256": accepted_hash,
+        "triggered": False,
+        "evidence_sha256": artifact_sha256(evidence_material),
+    }
+
+
+def _expected_step_material(
+    *,
+    step_number: int,
+    registry: Mapping[str, Any],
+    accepted_test_run_receipt: Mapping[str, Any],
+    closure: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    rows = registry.get("steps")
+    if type(rows) is not list or step_number not in range(len(rows)):
+        return None
+    row = rows[step_number]
+    if type(row) is not dict or row.get("step_number") != step_number:
+        return None
+    files = _file_rows(closure)
+    step_key = f"step_{step_number}"
+    step_view = closure.get("step_views", {}).get(step_key)
+    if type(step_view) is not list:
+        return None
+    allowed_paths = frozenset(
+        path for path in step_view if type(path) is str
+    )
+    outcomes = _accepted_outcomes(accepted_test_run_receipt)
+    formal_nodes = row.get("formal_completion_node_ids")
+    all_formal_nodes = [
+        node
+        for registry_row in rows
+        if type(registry_row) is dict
+        for node in registry_row.get("formal_completion_node_ids", [])
+        if type(node) is str
+    ]
+    if (
+        type(formal_nodes) is not list
+        or len(all_formal_nodes) != 134
+        or not _formal_run_complete(
+            accepted_test_run_receipt,
+            all_formal_nodes,
+        )
+    ):
+        return None
+    owners: list[dict[str, Any]] = []
+    for owner in row.get("actual_owners", []):
+        path = owner.get("path") if type(owner) is dict else None
+        source_row = files.get(path) if type(path) is str else None
+        if (
+            source_row is None
+            or path not in allowed_paths
+            or owner.get("symbol") not in _top_level_symbols(
+                Path(closure["_repo_root"]) / path
+            )
+        ):
+            return None
+        owners.append(
+            {
+                "path": path,
+                "git_blob_sha1": source_row["git_blob_sha1"],
+                "sha256": source_row["sha256"],
+                "symbol": owner["symbol"],
+                "role": owner["role"],
+            }
+        )
+    contracts: list[dict[str, Any]] = []
+    for contract in row.get("strict_contracts", []):
+        path = (
+            contract.get("validator_path")
+            if type(contract) is dict
+            else None
+        )
+        source_row = files.get(path) if type(path) is str else None
+        if source_row is None or path not in allowed_paths:
+            return None
+        if contract.get("validator_symbol") not in _top_level_symbols(
+            Path(closure["_repo_root"]) / path
+        ):
+            return None
+        contracts.append(
+            {
+                "contract_id": contract["contract_id"],
+                "schema_version": contract["schema_version"],
+                "validator_path": path,
+                "validator_blob_sha1": source_row["git_blob_sha1"],
+                "validator_symbol": contract["validator_symbol"],
+                "invariant_ids": list(contract["invariant_ids"]),
+            }
+        )
+    positive = _proof_from_outcome(
+        proof=row["positive_proof"],
+        outcomes=outcomes,
+        files=files,
+        allowed_paths=allowed_paths,
+    )
+    negative = _proof_from_outcome(
+        proof=row["independent_negative_proof"],
+        outcomes=outcomes,
+        files=files,
+        allowed_paths=allowed_paths,
+    )
+    if positive is None or negative is None:
+        return None
+    negative_registry = row["independent_negative_proof"]
+    negative_outcome = outcomes.get(negative_registry["test_node_id"])
+    if (
+        type(negative_outcome) is not dict
+        or negative_outcome.get("expected_closed_code")
+        != negative_registry["expected_closed_code"]
+        or negative_outcome.get("actual_closed_code")
+        != negative_registry["expected_closed_code"]
+    ):
+        return None
+    accepted_hash = accepted_test_run_receipt[
+        "accepted_test_run_receipt_sha256"
+    ]
+    evidence_hashes = [
+        outcomes[node]["evidence_sha256"] for node in formal_nodes
+    ]
+    formal_evidence_sha256 = artifact_sha256(
+        {
+            "step_number": step_number,
+            "formal_node_ids": formal_nodes,
+            "outcome_evidence_sha256s": evidence_hashes,
+            "accepted_test_run_receipt_sha256": accepted_hash,
+        }
+    )
+    current_binding = {
+        "source_commit": closure["source_commit"],
+        "source_tree": accepted_test_run_receipt["source_tree"],
+        "source_baseline_event_sha256": accepted_test_run_receipt[
+            "source_baseline_event_sha256"
+        ],
+        "canonical_current_closure_sha256": (
+            closure["canonical_current_closure_sha256"]
+        ),
+        "source_dependency_closure_sha256": (
+            closure["source_dependency_closure_sha256"]
+        ),
+        "full_graph_sha256": closure["full_graph_sha256"],
+        "step_view_key": step_key,
+        "step_view_sha256": artifact_sha256(step_view),
+        "requirement_registry_sha256": registry["registry_sha256"],
+        "formal_node_registry_sha256": (
+            RECOVERY_EPOCH001_EXPECTED_FORMAL_NODE_REGISTRY_SHA256
+        ),
+        "accepted_test_run_receipt_sha256": accepted_hash,
+    }
+    artifact_receipt = {
+        "schema_version": (
+            RECOVERY_EPOCH001_CURRENT_STEP_ARTIFACT_EVIDENCE_SCHEMA
+        ),
+        "step_number": step_number,
+        "required_artifact_schema_version": (
+            row["artifact_receipt_schema_version"]
+        ),
+        "owner_binding_sha256": artifact_sha256(owners),
+        "strict_contract_binding_sha256": artifact_sha256(contracts),
+        "requirement_registry_sha256": registry["registry_sha256"],
+        "accepted_test_run_receipt_sha256": accepted_hash,
+        "formal_completion_evidence_sha256": formal_evidence_sha256,
+        "body_free": True,
+    }
+    completion = {
+        "condition_id": row["completion_condition_ids"][0],
+        "required": True,
+        "satisfied": True,
+        "evidence_sha256": formal_evidence_sha256,
+    }
+    global_stop_ids = _global_stop_condition_ids(registry)
+    stops = [
+        _stop_material(
+            condition_id=condition_id,
+            step_nodes=formal_nodes,
+            all_nodes=all_formal_nodes,
+            global_stop_ids=global_stop_ids,
+            outcomes=outcomes,
+            accepted_hash=accepted_hash,
+        )
+        for condition_id in row["stop_condition_ids"]
+    ]
+    if any(stop is None for stop in stops):
+        return None
+    return {
+        "row": row,
+        "current_binding": current_binding,
+        "actual_owners": owners,
+        "strict_contracts": contracts,
+        "positive_proof": positive,
+        "independent_negative_proof": negative,
+        "artifact_receipt": artifact_receipt,
+        "completion_condition": completion,
+        "stop_conditions": [stop for stop in stops if stop is not None],
+    }
+
+
+def _step0_parent_binding(
+    event: Mapping[str, Any],
+    accepted_test_run_receipt: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "kind": "source_baseline_locked_event_1",
+        "event_name": "SOURCE_BASELINE_LOCKED",
+        "event_ordinal": 1,
+        "source_baseline_event_sha256": event["event_sha256"],
+        "source_commit": accepted_test_run_receipt["source_commit"],
+        "source_tree": accepted_test_run_receipt["source_tree"],
+        "canonical_current_closure_sha256": accepted_test_run_receipt[
+            "canonical_current_closure_sha256"
+        ],
+    }
+
+
+def _later_parent_binding(
+    *,
+    step_number: int,
+    previous_receipt: Mapping[str, Any],
+    accepted_test_run_receipt: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "kind": "previous_current_step_receipt",
+        "previous_step": step_number - 1,
+        "previous_receipt_sha256": previous_receipt["receipt_sha256"],
+        "source_commit": accepted_test_run_receipt["source_commit"],
+        "source_tree": accepted_test_run_receipt["source_tree"],
+        "source_baseline_event_sha256": accepted_test_run_receipt[
+            "source_baseline_event_sha256"
+        ],
+        "canonical_current_closure_sha256": accepted_test_run_receipt[
+            "canonical_current_closure_sha256"
+        ],
+    }
+
+
+def _valid_previous_receipt(
+    value: Any,
+    *,
+    expected_step: int,
+    accepted_test_run_receipt: Mapping[str, Any],
+) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != _TOP_KEYS
+        or value.get("step_number") != expected_step
+        or value.get("verdict") != "PROVED"
+        or value.get("body_free") is not True
+        or type(value.get("current_binding")) is not dict
+        or value["current_binding"].get("source_commit")
+        != accepted_test_run_receipt.get("source_commit")
+        or value["current_binding"].get("source_tree")
+        != accepted_test_run_receipt.get("source_tree")
+        or value["current_binding"].get("source_baseline_event_sha256")
+        != accepted_test_run_receipt.get("source_baseline_event_sha256")
+        or value["current_binding"].get(
+            "accepted_test_run_receipt_sha256"
+        )
+        != accepted_test_run_receipt.get(
+            "accepted_test_run_receipt_sha256"
+        )
+        or not _valid_sha(value.get("receipt_sha256"))
+    ):
+        return False
+    try:
+        return (
+            artifact_sha256(_receipt_material(value))
+            == value["receipt_sha256"]
+        )
+    except (
+        KeyError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return False
+
+
+def _valid_prior_receipt_chain(
+    values: Any,
+    *,
+    step_number: int,
+    previous_receipt: Mapping[str, Any] | None,
+    repo_root: Path,
+    step0_parent_authority: Mapping[str, Any],
+    requirement_registry: Mapping[str, Any],
+    accepted_test_run_receipt: Mapping[str, Any],
+) -> bool:
+    if type(values) not in (list, tuple) or len(values) != step_number:
+        return False
+    chain = [dict(item) for item in values if type(item) is dict]
+    if len(chain) != step_number:
+        return False
+    if step_number > 0 and (
+        type(previous_receipt) is not dict
+        or chain[-1] != dict(previous_receipt)
+    ):
+        return False
+    for index, receipt in enumerate(chain):
+        issues = (
+            _validate_recovery_epoch001_current_step_completion_receipt_shape_impl(
+                receipt,
+                repo_root=repo_root,
+                previous_receipt=(chain[index - 1] if index else None),
+                step0_parent_authority=step0_parent_authority,
+                requirement_registry=requirement_registry,
+                accepted_test_run_receipt=accepted_test_run_receipt,
+                prior_receipts=chain[:index],
+                _prior_chain_validated=True,
+            )
+        )
+        if issues:
+            return False
+    return True
 
 
 def _validate_recovery_epoch001_current_step_completion_receipt_shape_impl(
@@ -310,32 +765,17 @@ def _validate_recovery_epoch001_current_step_completion_receipt_shape_impl(
     repo_root: Path | None = None,
     previous_receipt: Mapping[str, Any] | None = None,
     step0_parent_authority: Mapping[str, Any] | None = None,
-    accepted_test_results: Mapping[str, Any] | None = None,
+    requirement_registry: Mapping[str, Any] | None = None,
+    accepted_test_run_receipt: Mapping[str, Any] | None = None,
+    prior_receipts: Sequence[Mapping[str, Any]] | None = None,
+    _prior_chain_validated: bool = False,
 ) -> tuple[str, ...]:
-    """Validate actual owners, tests, parent chain, STOPs, and current roots."""
-
     if type(value) is not dict:
         return ("RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_ENTRY_INVALID",)
     issues: set[str] = set()
     if set(value) != _TOP_KEYS:
         issues.add("RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_ENTRY_INVALID")
     root = (_REPO_ROOT if repo_root is None else Path(repo_root)).resolve()
-    try:
-        closure = fresh_recovery_epoch001_canonical_current_closure(
-            repo_root=root
-        )
-    except (
-        FileNotFoundError,
-        KeyError,
-        OSError,
-        RecursionError,
-        subprocess.SubprocessError,
-        SyntaxError,
-        UnicodeError,
-        ValueError,
-    ):
-        closure = {}
-    files = _file_rows(closure)
     step = value.get("step_number")
     valid_step = (
         type(step) is int
@@ -351,8 +791,10 @@ def _validate_recovery_epoch001_current_step_completion_receipt_shape_impl(
         != RECOVERY_EPOCH001_CANDIDATE_VERSION_ID
     ):
         issues.add(
-            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_HISTORICAL_AS_CURRENT_FORBIDDEN"
+            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+            "HISTORICAL_AS_CURRENT_FORBIDDEN"
         )
+
     lineage = value.get("lineage")
     if type(lineage) is not dict or set(lineage) != _LINEAGE_KEYS:
         issues.add("RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_LINEAGE_INVALID")
@@ -370,261 +812,224 @@ def _validate_recovery_epoch001_current_step_completion_receipt_shape_impl(
             or lineage.get("backfill") is not False
         ):
             issues.add(
-                "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_HISTORICAL_REWRITE_FORBIDDEN"
+                "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+                "HISTORICAL_REWRITE_FORBIDDEN"
             )
         if lineage.get("historical_as_current") is not False:
             issues.add(
-                "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_HISTORICAL_AS_CURRENT_FORBIDDEN"
+                "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+                "HISTORICAL_AS_CURRENT_FORBIDDEN"
             )
 
-    current = value.get("current_binding")
-    step_key = f"step_{step}" if valid_step else None
-    expected_view = (
-        closure.get("step_views", {}).get(step_key)
-        if type(closure.get("step_views")) is dict
+    registry = (
+        fresh_recovery_epoch001_current_step_requirement_registry()
+        if requirement_registry is None
+        else dict(requirement_registry)
+    )
+    registry_issues = (
+        validate_recovery_epoch001_current_step_requirement_registry_shape(
+            registry,
+            repo_root=root,
+        )
+    )
+    event = (
+        dict(step0_parent_authority)
+        if type(step0_parent_authority) is dict
+        else {}
+    )
+    accepted = (
+        dict(accepted_test_run_receipt)
+        if type(accepted_test_run_receipt) is dict
+        else {}
+    )
+    try:
+        accepted_issues = (
+            validate_recovery_epoch001_accepted_test_run_receipt_shape(
+                accepted,
+                requirement_registry=registry,
+                source_baseline_event=event,
+                repo_root=root,
+            )
+        )
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RecursionError,
+        subprocess.SubprocessError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        accepted_issues = (
+            "RECOVERY_ACCEPTED_TEST_RUN_RECEIPT_ENTRY_INVALID",
+        )
+    try:
+        closure = fresh_recovery_epoch001_canonical_current_closure(
+            repo_root=root
+        )
+        closure["_repo_root"] = str(root)
+    except (
+        FileNotFoundError,
+        KeyError,
+        OSError,
+        subprocess.SubprocessError,
+        SyntaxError,
+        UnicodeError,
+        ValueError,
+    ):
+        closure = {}
+    expected = (
+        _expected_step_material(
+            step_number=step,
+            registry=registry,
+            accepted_test_run_receipt=accepted,
+            closure=closure,
+        )
+        if valid_step
+        and not registry_issues
+        and not accepted_issues
+        and closure
         else None
     )
-    expected_view_sha = (
-        artifact_sha256(expected_view)
-        if type(expected_view) is list
-        else None
+    issuance_valid = (
+        RECOVERY_EPOCH001_PROVED_ISSUANCE_AUTHORIZED is True
+        and expected is not None
     )
-    allowed_paths = frozenset(
-        path for path in (expected_view or ()) if type(path) is str
-    )
+
     if (
-        type(current) is not dict
-        or set(current) != _CURRENT_KEYS
-        or current.get("source_commit") != closure.get("source_commit")
-        or current.get("canonical_current_closure_sha256")
-        != closure.get("canonical_current_closure_sha256")
-        or current.get("source_dependency_closure_sha256")
-        != closure.get("source_dependency_closure_sha256")
-        or current.get("step_view_key") != step_key
-        or current.get("step_view_sha256") != expected_view_sha
+        expected is None
+        or value.get("current_binding") != expected["current_binding"]
     ):
         issues.add(
             "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_CURRENT_BINDING_INVALID"
         )
         issues.add(
-            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_SOURCE_OR_VIEW_ROOT_MISMATCH"
+            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+            "SOURCE_OR_VIEW_ROOT_MISMATCH"
         )
-
     owners = value.get("actual_owners")
-    owner_paths: set[str] = set()
-    if type(owners) is not list or not owners:
-        issues.add(
-            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_ACTUAL_OWNER_BINDING_INVALID"
+    if (
+        expected is None
+        or owners != expected["actual_owners"]
+        or type(owners) is not list
+        or any(
+            type(owner) is not dict or set(owner) != _OWNER_KEYS
+            for owner in (owners if type(owners) is list else ())
         )
-    else:
-        for owner in owners:
-            path = owner.get("path") if type(owner) is dict else None
-            row = files.get(path) if type(path) is str else None
-            if (
-                type(owner) is not dict
-                or set(owner) != _OWNER_KEYS
-                or row is None
-                or path not in allowed_paths
-                or row.get("role") == "immutable_historical_evidence"
-                or path in owner_paths
-                or owner.get("git_blob_sha1") != row.get("git_blob_sha1")
-                or owner.get("sha256") != row.get("sha256")
-                or owner.get("role") != row.get("role")
-                or owner.get("symbol") not in _top_level_symbols(root / path)
-            ):
-                issues.add(
-                    "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_ACTUAL_OWNER_BINDING_INVALID"
-                )
-            if type(path) is str:
-                owner_paths.add(path)
-        if all(type(item) is dict for item in owners) and owners != sorted(
-            owners,
-            key=lambda item: (
-                str(item.get("path")),
-                str(item.get("symbol")),
-            ),
-        ):
-            issues.add(
-                "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_ACTUAL_OWNER_BINDING_INVALID"
-            )
-
-    contracts = value.get("strict_contracts")
-    contract_ids: set[str] = set()
-    if type(contracts) is not list or not contracts:
-        issues.add(
-            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_STRICT_CONTRACT_BINDING_INVALID"
-        )
-    else:
-        for contract in contracts:
-            path = (
-                contract.get("validator_path")
-                if type(contract) is dict
-                else None
-            )
-            row = files.get(path) if type(path) is str else None
-            contract_id = (
-                contract.get("contract_id")
-                if type(contract) is dict
-                else None
-            )
-            invariants = (
-                contract.get("invariant_ids")
-                if type(contract) is dict
-                else None
-            )
-            if (
-                type(contract) is not dict
-                or set(contract) != _CONTRACT_KEYS
-                or row is None
-                or path not in allowed_paths
-                or row.get("role") == "immutable_historical_evidence"
-                or contract.get("validator_blob_sha1")
-                != row.get("git_blob_sha1")
-                or contract.get("validator_symbol")
-                not in _top_level_symbols(root / path)
-                or type(contract_id) is not str
-                or not _valid_machine(contract_id)
-                or contract_id in contract_ids
-                or type(contract.get("schema_version")) is not str
-                or not contract.get("schema_version")
-                or type(invariants) is not list
-                or not invariants
-                or any(not _valid_machine(item) for item in invariants)
-                or invariants != sorted(invariants)
-                or len(invariants) != len(set(invariants))
-            ):
-                issues.add(
-                    "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_STRICT_CONTRACT_BINDING_INVALID"
-                )
-            if type(contract_id) is str:
-                contract_ids.add(contract_id)
-        if all(type(item) is dict for item in contracts) and contracts != sorted(
-            contracts,
-            key=lambda item: str(item.get("contract_id")),
-        ):
-            issues.add(
-                "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_STRICT_CONTRACT_BINDING_INVALID"
-            )
-
-    positive = value.get("positive_proof")
-    negative = value.get("independent_negative_proof")
-    if not _proof_valid(
-        positive,
-        files=files,
-        repo_root=root,
-        allowed_paths=allowed_paths,
-        accepted_test_results=accepted_test_results,
     ):
         issues.add(
-            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_POSITIVE_PROOF_INVALID"
+            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+            "ACTUAL_OWNER_BINDING_INVALID"
         )
-    if not _proof_valid(
-        negative,
-        files=files,
-        repo_root=root,
-        allowed_paths=allowed_paths,
-        accepted_test_results=accepted_test_results,
-    ) or (
-        type(positive) is dict
-        and type(negative) is dict
-        and positive.get("source_path") == negative.get("source_path")
+    contracts = value.get("strict_contracts")
+    if (
+        expected is None
+        or contracts != expected["strict_contracts"]
+        or type(contracts) is not list
+        or any(
+            type(contract) is not dict
+            or set(contract) != _CONTRACT_KEYS
+            or type(contract.get("invariant_ids")) is not list
+            or any(
+                not _valid_machine(item)
+                for item in (
+                    contract.get("invariant_ids", [])
+                    if type(contract.get("invariant_ids")) is list
+                    else ()
+                )
+            )
+            for contract in (
+                contracts if type(contracts) is list else ()
+            )
+        )
+    ):
+        issues.add(
+            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+            "STRICT_CONTRACT_BINDING_INVALID"
+        )
+    positive = value.get("positive_proof")
+    if (
+        expected is None
+        or positive != expected["positive_proof"]
+        or type(positive) is not dict
+        or set(positive) != _PROOF_KEYS
+    ):
+        issues.add(
+            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+            "POSITIVE_PROOF_INVALID"
+        )
+    negative = value.get("independent_negative_proof")
+    if (
+        expected is None
+        or negative != expected["independent_negative_proof"]
+        or type(negative) is not dict
+        or set(negative) != _PROOF_KEYS
+        or (
+            type(positive) is dict
+            and positive.get("source_path") == negative.get("source_path")
+        )
     ):
         issues.add(
             "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
             "INDEPENDENT_NEGATIVE_PROOF_INVALID"
         )
-
     artifact = value.get("artifact_receipt")
-    artifact_path = (
-        artifact.get("path") if type(artifact) is dict else None
-    )
-    artifact_row = (
-        files.get(artifact_path) if type(artifact_path) is str else None
-    )
     if (
-        type(artifact) is not dict
+        expected is None
+        or artifact != expected["artifact_receipt"]
+        or type(artifact) is not dict
         or set(artifact) != _ARTIFACT_KEYS
-        or artifact_row is None
-        or artifact_path not in allowed_paths
-        or artifact_row.get("role") == "immutable_historical_evidence"
-        or artifact.get("git_blob_sha1")
-        != artifact_row.get("git_blob_sha1")
-        or artifact.get("sha256") != artifact_row.get("sha256")
-        or type(artifact.get("schema_version")) is not str
-        or not artifact.get("schema_version")
         or artifact.get("body_free") is not True
     ):
         issues.add(
-            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_ARTIFACT_BINDING_INVALID"
+            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+            "ARTIFACT_BINDING_INVALID"
         )
 
     parent = value.get("parent_binding")
-    if step == 0:
-        expected_parent_keys = {
-            "kind",
-            "detailed_design_sha256",
-            "parent_receipt_path",
-            "parent_receipt_git_blob_sha1",
-            "parent_receipt_sha256",
-            "canonical_current_closure_sha256",
-        }
+    if step == 0 and issuance_valid:
+        expected_parent = _step0_parent_binding(event, accepted)
         parent_valid = (
-            type(parent) is dict
-            and set(parent) == expected_parent_keys
-            and parent.get("kind") == "step0_design_parent"
-            and _valid_sha(parent.get("detailed_design_sha256"))
-            and _valid_blob(parent.get("parent_receipt_git_blob_sha1"))
-            and _valid_sha(parent.get("parent_receipt_sha256"))
-            and parent.get("canonical_current_closure_sha256")
-            == closure.get("canonical_current_closure_sha256")
-            and type(step0_parent_authority) is dict
-            and parent == step0_parent_authority
-        )
-    elif valid_step:
-        expected_parent_keys = {
-            "kind",
-            "previous_step",
-            "previous_receipt_sha256",
-            "source_commit",
-            "canonical_current_closure_sha256",
-        }
-        parent_valid = (
-            type(parent) is dict
-            and set(parent) == expected_parent_keys
-            and parent.get("kind") == "previous_current_step_receipt"
-            and parent.get("previous_step") == step - 1
-            and parent.get("source_commit") == closure.get("source_commit")
-            and parent.get("canonical_current_closure_sha256")
-            == closure.get("canonical_current_closure_sha256")
-            and type(previous_receipt) is dict
-            and set(previous_receipt) == _TOP_KEYS
-            and previous_receipt.get("step_number") == step - 1
-            and previous_receipt.get("verdict") == "PROVED"
-            and type(previous_receipt.get("current_binding")) is dict
-            and previous_receipt["current_binding"].get("source_commit")
-            == closure.get("source_commit")
-            and previous_receipt["current_binding"].get(
-                "canonical_current_closure_sha256"
-            )
-            == closure.get("canonical_current_closure_sha256")
-            and parent.get("previous_receipt_sha256")
-            == previous_receipt.get("receipt_sha256")
-            and _valid_sha(previous_receipt.get("receipt_sha256"))
-        )
-        if parent_valid:
-            try:
-                parent_valid = (
-                    artifact_sha256(_receipt_material(previous_receipt))
-                    == previous_receipt["receipt_sha256"]
+            parent == expected_parent
+            and (
+                prior_receipts is None
+                or (
+                    type(prior_receipts) in (list, tuple)
+                    and len(prior_receipts) == 0
                 )
-            except (
-                KeyError,
-                RecursionError,
-                TypeError,
-                UnicodeError,
-                ValueError,
-            ):
-                parent_valid = False
+            )
+        )
+    elif valid_step and step > 0 and issuance_valid:
+        immediate_parent_valid = _valid_previous_receipt(
+            previous_receipt,
+            expected_step=step - 1,
+            accepted_test_run_receipt=accepted,
+        )
+        chain_valid = (
+            True
+            if _prior_chain_validated
+            else _valid_prior_receipt_chain(
+                prior_receipts,
+                step_number=step,
+                previous_receipt=previous_receipt,
+                repo_root=root,
+                step0_parent_authority=event,
+                requirement_registry=registry,
+                accepted_test_run_receipt=accepted,
+            )
+        )
+        parent_valid = immediate_parent_valid and chain_valid
+        expected_parent = (
+            _later_parent_binding(
+                step_number=step,
+                previous_receipt=previous_receipt,
+                accepted_test_run_receipt=accepted,
+            )
+            if parent_valid and type(previous_receipt) is dict
+            else None
+        )
+        parent_valid = parent_valid and parent == expected_parent
     else:
         parent_valid = False
     if not parent_valid:
@@ -633,81 +1038,44 @@ def _validate_recovery_epoch001_current_step_completion_receipt_shape_impl(
         )
 
     completion = value.get("completion_condition")
-    completion_shape_invalid = (
-        type(completion) is not dict
+    if (
+        expected is None
+        or completion != expected["completion_condition"]
+        or type(completion) is not dict
         or set(completion) != _COMPLETION_KEYS
-        or not _valid_machine(completion.get("condition_id"))
         or completion.get("required") is not True
-        or type(completion.get("satisfied")) is not bool
-        or not _valid_sha(completion.get("evidence_sha256"))
-    )
-    if completion_shape_invalid:
+        or completion.get("satisfied") is not True
+    ):
         issues.add(
             "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_VERDICT_INVALID"
         )
     stops = value.get("stop_conditions")
-    stop_shape_invalid = (
-        type(stops) is not list
+    if (
+        expected is None
+        or stops != expected["stop_conditions"]
+        or type(stops) is not list
         or not stops
         or any(
             type(item) is not dict
             or set(item) != _STOP_KEYS
-            or not _valid_machine(item.get("condition_id"))
-            or type(item.get("triggered")) is not bool
-            or not _valid_sha(item.get("evidence_sha256"))
+            or item.get("triggered") is not False
             for item in (stops if type(stops) is list else ())
         )
-    )
-    if not stop_shape_invalid:
-        stop_ids = [item["condition_id"] for item in stops]
-        stop_shape_invalid = (
-            stop_ids != sorted(stop_ids)
-            or len(stop_ids) != len(set(stop_ids))
-        )
-    if stop_shape_invalid:
+    ):
         issues.add(
             "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_STOP_NOT_FALSE"
         )
-    verdict = value.get("verdict")
-    if verdict not in _VERDICTS:
-        issues.add("RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_VERDICT_INVALID")
-    elif verdict == "PROVED":
-        # Successful receipt issuance remains outside this authority.  A
-        # later authority must add the immutable per-step requirement
-        # registry and accepted-run receipt binding before this can open.
-        issues.add("RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_VERDICT_INVALID")
-        if (
-            completion_shape_invalid
-            or completion.get("satisfied") is not True
-            or stop_shape_invalid
-            or any(item["triggered"] is not False for item in stops)
-        ):
-            issues.add(
-                "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_STOP_NOT_FALSE"
-            )
-    elif not completion_shape_invalid:
-        if completion.get("satisfied") is not False:
-            issues.add(
-                "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_VERDICT_INVALID"
-            )
-        elif not stop_shape_invalid:
-            triggered = [item["triggered"] for item in stops]
-            if verdict == "NOT_PROVED" and any(triggered):
-                issues.add(
-                    "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_VERDICT_INVALID"
-                )
-            if verdict in {"FAILED", "CONFLICT"} and not any(triggered):
-                issues.add(
-                    "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_VERDICT_INVALID"
-                )
-    expected_next_authority = (
-        RECOVERY_EPOCH001_NEXT_AUTHORITY_BY_STEP.get(step)
-        if verdict == "PROVED" and valid_step
-        else None
-    )
-    if value.get("next_authority") != expected_next_authority:
+    if (
+        expected is None
+        or value.get("next_authority")
+        != expected["row"]["next_authority"]
+    ):
         issues.add(
             "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_NEXT_AUTHORITY_INVALID"
+        )
+    if value.get("verdict") != "PROVED" or not issuance_valid:
+        issues.add(
+            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_VERDICT_INVALID"
         )
     if value.get("body_free") is not True or not _body_free(value):
         issues.add(
@@ -715,7 +1083,13 @@ def _validate_recovery_epoch001_current_step_completion_receipt_shape_impl(
         )
     try:
         expected_hash = artifact_sha256(_receipt_material(value))
-    except (KeyError, RecursionError, TypeError, UnicodeError, ValueError):
+    except (
+        KeyError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
         expected_hash = None
     if (
         expected_hash is None
@@ -732,15 +1106,21 @@ def validate_recovery_epoch001_current_step_completion_receipt_shape(
     repo_root: Path | None = None,
     previous_receipt: Mapping[str, Any] | None = None,
     step0_parent_authority: Mapping[str, Any] | None = None,
-    accepted_test_results: Mapping[str, Any] | None = None,
+    requirement_registry: Mapping[str, Any] | None = None,
+    accepted_test_run_receipt: Mapping[str, Any] | None = None,
+    prior_receipts: Sequence[Mapping[str, Any]] | None = None,
 ) -> tuple[str, ...]:
     try:
-        return _validate_recovery_epoch001_current_step_completion_receipt_shape_impl(
-            value,
-            repo_root=repo_root,
-            previous_receipt=previous_receipt,
-            step0_parent_authority=step0_parent_authority,
-            accepted_test_results=accepted_test_results,
+        return (
+            _validate_recovery_epoch001_current_step_completion_receipt_shape_impl(
+                value,
+                repo_root=repo_root,
+                previous_receipt=previous_receipt,
+                step0_parent_authority=step0_parent_authority,
+                requirement_registry=requirement_registry,
+                accepted_test_run_receipt=accepted_test_run_receipt,
+                prior_receipts=prior_receipts,
+            )
         )
     except (
         AttributeError,
@@ -758,26 +1138,17 @@ def validate_recovery_epoch001_current_step_completion_receipt_shape(
 def build_recovery_epoch001_current_step_completion_receipt(
     *,
     step_number: int,
-    actual_owners: Sequence[Mapping[str, Any]],
-    strict_contracts: Sequence[Mapping[str, Any]],
-    positive_proof: Mapping[str, Any],
-    independent_negative_proof: Mapping[str, Any],
-    artifact_receipt: Mapping[str, Any],
-    parent_binding: Mapping[str, Any],
-    completion_condition: Mapping[str, Any],
-    stop_conditions: Sequence[Mapping[str, Any]],
-    verdict: str,
+    requirement_registry: Mapping[str, Any] | None = None,
+    accepted_test_run_receipt: Mapping[str, Any] | None = None,
     repo_root: Path | None = None,
     previous_receipt: Mapping[str, Any] | None = None,
     step0_parent_authority: Mapping[str, Any] | None = None,
-    accepted_test_results: Mapping[str, Any] | None = None,
+    prior_receipts: Sequence[Mapping[str, Any]] | None = None,
+    **legacy_rejected: Any,
 ) -> dict[str, Any]:
-    """Build one candidate only after independently supplied proof authority."""
+    """Derive one PROVED candidate; caller-supplied proof maps are forbidden."""
 
-    if (
-        verdict == "PROVED"
-        and not RECOVERY_EPOCH001_PROVED_ISSUANCE_AUTHORIZED
-    ):
+    if legacy_rejected:
         raise ValueError(
             "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_VERDICT_INVALID"
         )
@@ -785,42 +1156,92 @@ def build_recovery_epoch001_current_step_completion_receipt(
         type(step_number) is not int
         or isinstance(step_number, bool)
         or step_number not in range(11)
-        or verdict not in _VERDICTS
     ):
         raise ValueError(
             "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_STEP_INVALID"
         )
-    if (
-        any(type(item) is not dict for item in actual_owners)
-        or any(type(item) is not dict for item in strict_contracts)
-        or type(positive_proof) is not dict
-        or type(independent_negative_proof) is not dict
-        or type(artifact_receipt) is not dict
-        or type(parent_binding) is not dict
-        or type(completion_condition) is not dict
-        or any(type(item) is not dict for item in stop_conditions)
-    ):
+    if not RECOVERY_EPOCH001_PROVED_ISSUANCE_AUTHORIZED:
         raise ValueError(
-            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_ENTRY_INVALID"
+            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_VERDICT_INVALID"
         )
     root = (_REPO_ROOT if repo_root is None else Path(repo_root)).resolve()
+    registry = (
+        fresh_recovery_epoch001_current_step_requirement_registry()
+        if requirement_registry is None
+        else dict(requirement_registry)
+    )
+    registry_issues = (
+        validate_recovery_epoch001_current_step_requirement_registry_shape(
+            registry,
+            repo_root=root,
+        )
+    )
+    if registry_issues:
+        raise ValueError(
+            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_VERDICT_INVALID"
+        )
+    event = (
+        dict(step0_parent_authority)
+        if type(step0_parent_authority) is dict
+        else {}
+    )
+    accepted = (
+        dict(accepted_test_run_receipt)
+        if type(accepted_test_run_receipt) is dict
+        else {}
+    )
+    accepted_issues = (
+        validate_recovery_epoch001_accepted_test_run_receipt_shape(
+            accepted,
+            requirement_registry=registry,
+            source_baseline_event=event,
+            repo_root=root,
+        )
+    )
+    if accepted_issues:
+        raise ValueError(
+            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_VERDICT_INVALID"
+        )
     closure = fresh_recovery_epoch001_canonical_current_closure(
         repo_root=root
     )
-    step_key = f"step_{step_number}"
-    current_binding = {
-        "source_commit": closure["source_commit"],
-        "canonical_current_closure_sha256": (
-            closure["canonical_current_closure_sha256"]
-        ),
-        "source_dependency_closure_sha256": (
-            closure["source_dependency_closure_sha256"]
-        ),
-        "step_view_key": step_key,
-        "step_view_sha256": artifact_sha256(
-            closure["step_views"].get(step_key)
-        ),
-    }
+    closure["_repo_root"] = str(root)
+    expected = _expected_step_material(
+        step_number=step_number,
+        registry=registry,
+        accepted_test_run_receipt=accepted,
+        closure=closure,
+    )
+    if expected is None:
+        raise ValueError(
+            "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_VERDICT_INVALID"
+        )
+    if step_number == 0:
+        if prior_receipts not in (None, (), []):
+            raise ValueError(
+                "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+                "PARENT_CHAIN_INVALID"
+            )
+        parent_binding = _step0_parent_binding(event, accepted)
+    else:
+        if not _valid_prior_receipt_chain(
+            prior_receipts,
+            step_number=step_number,
+            previous_receipt=previous_receipt,
+            repo_root=root,
+            step0_parent_authority=event,
+            requirement_registry=registry,
+            accepted_test_run_receipt=accepted,
+        ):
+            raise ValueError(
+                "RECOVERY_CURRENT_STEP_COMPLETION_RECEIPT_"
+                "PARENT_CHAIN_INVALID"
+            )
+        parent_binding = _later_parent_binding(
+            step_number=step_number,
+            previous_receipt=previous_receipt,
+            accepted_test_run_receipt=accepted,
+        )
     receipt: dict[str, Any] = {
         "schema_version": (
             RECOVERY_EPOCH001_CURRENT_STEP_COMPLETION_RECEIPT_SCHEMA
@@ -834,17 +1255,19 @@ def build_recovery_epoch001_current_step_completion_receipt(
             "historical_as_current": False,
             "backfill": False,
         },
-        "current_binding": current_binding,
-        "actual_owners": [dict(item) for item in actual_owners],
-        "strict_contracts": [dict(item) for item in strict_contracts],
-        "positive_proof": dict(positive_proof),
-        "independent_negative_proof": dict(independent_negative_proof),
-        "artifact_receipt": dict(artifact_receipt),
-        "parent_binding": dict(parent_binding),
-        "completion_condition": dict(completion_condition),
-        "stop_conditions": [dict(item) for item in stop_conditions],
-        "next_authority": None,
-        "verdict": verdict,
+        "current_binding": expected["current_binding"],
+        "actual_owners": expected["actual_owners"],
+        "strict_contracts": expected["strict_contracts"],
+        "positive_proof": expected["positive_proof"],
+        "independent_negative_proof": (
+            expected["independent_negative_proof"]
+        ),
+        "artifact_receipt": expected["artifact_receipt"],
+        "parent_binding": parent_binding,
+        "completion_condition": expected["completion_condition"],
+        "stop_conditions": expected["stop_conditions"],
+        "next_authority": expected["row"]["next_authority"],
+        "verdict": "PROVED",
         "body_free": True,
     }
     receipt["receipt_sha256"] = artifact_sha256(receipt)
@@ -852,8 +1275,10 @@ def build_recovery_epoch001_current_step_completion_receipt(
         receipt,
         repo_root=root,
         previous_receipt=previous_receipt,
-        step0_parent_authority=step0_parent_authority,
-        accepted_test_results=accepted_test_results,
+        step0_parent_authority=event,
+        requirement_registry=registry,
+        accepted_test_run_receipt=accepted,
+        prior_receipts=prior_receipts,
     )
     if issues:
         raise ValueError(issues[0])

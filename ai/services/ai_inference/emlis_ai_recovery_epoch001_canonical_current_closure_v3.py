@@ -101,6 +101,10 @@ _STEP_SEEDS: dict[int, frozenset[str]] = {
             "ai/tests/helpers/emlis_nls_v3_s0_s1_baseline.py",
             "ai/tests/test_emlis_nls_v3_s0_s1.py",
             "ai/tests/fixtures/emlis_nls_v3_s0_boundary_20260714.json",
+            (
+                "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+                "step00_independent_negative.py"
+            ),
             *_CURRENT_OWNER_PATHS,
         }
     ),
@@ -110,6 +114,10 @@ _STEP_SEEDS: dict[int, frozenset[str]] = {
             "ai/tests/test_emlis_nls_v3_s0_s1.py",
             "ai/tests/fixtures/emlis_nls_v3_s1_input_contract_20260714.json",
             "ai/tests/fixtures/emlis_nls_v3_s1_baseline_receipt_20260714.json",
+            (
+                "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+                "step01_independent_negative.py"
+            ),
             *_CURRENT_OWNER_PATHS,
             "ai/services/ai_inference/api_emotion_submit.py",
             "ai/services/ai_inference/emotion_submit_service.py",
@@ -139,6 +147,10 @@ _STEP_SEEDS: dict[int, frozenset[str]] = {
             "ai/tests/fixtures/emlis_nls_v3/contract/valid_v1.jsonl",
             "ai/tests/fixtures/emlis_nls_v3/contract/invalid_v1.jsonl",
             "ai/tests/fixtures/emlis_nls_v3/contract/legacy_v1.jsonl",
+            (
+                "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+                "step02_independent_negative.py"
+            ),
         }
     ),
     3: frozenset(
@@ -161,6 +173,10 @@ _STEP_SEEDS: dict[int, frozenset[str]] = {
                 "ai/tests/fixtures/"
                 "emlis_nls_v3_s3_contract_receipt_20260715.json"
             ),
+            (
+                "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+                "step03_independent_negative.py"
+            ),
         }
     ),
     4: frozenset(
@@ -181,6 +197,10 @@ _STEP_SEEDS: dict[int, frozenset[str]] = {
                 "emlis_ai_observation_stage_context_v3.py"
             ),
             "ai/tests/test_emlis_nls_v3_s4_semantic_obligation_inventory.py",
+            (
+                "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+                "step04_independent_negative.py"
+            ),
         }
     ),
     5: frozenset(
@@ -196,6 +216,10 @@ _STEP_SEEDS: dict[int, frozenset[str]] = {
                 "emlis_ai_observation_stage_context_v3.py"
             ),
             "ai/tests/test_emlis_nls_v3_s5_content_selection_stage_context.py",
+            (
+                "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+                "step05_independent_negative.py"
+            ),
         }
     ),
     6: frozenset(
@@ -206,6 +230,10 @@ _STEP_SEEDS: dict[int, frozenset[str]] = {
             ),
             "ai/services/ai_inference/emlis_ai_nls_v3_artifact_contract.py",
             "ai/tests/test_emlis_nls_v3_s6_discourse_graph_planner.py",
+            (
+                "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+                "step06_independent_negative.py"
+            ),
         }
     ),
     7: frozenset(
@@ -218,6 +246,10 @@ _STEP_SEEDS: dict[int, frozenset[str]] = {
             ),
             "ai/services/ai_inference/emlis_ai_nls_v3_artifact_contract.py",
             "ai/tests/test_emlis_nls_v3_s7_typed_ast_canonical_renderer.py",
+            (
+                "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+                "step07_independent_negative.py"
+            ),
         }
     ),
     8: frozenset(
@@ -246,6 +278,10 @@ _STEP_SEEDS: dict[int, frozenset[str]] = {
                 "ai/tests/"
                 "test_emlis_nls_v3_s8_body_parser_independent_matcher.py"
             ),
+            (
+                "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+                "step08_independent_negative.py"
+            ),
         }
     ),
     9: frozenset(
@@ -266,6 +302,10 @@ _STEP_SEEDS: dict[int, frozenset[str]] = {
                 "emlis_ai_step9_recovery_epoch001_successor_v3.py"
             ),
             "ai/tests/test_emlis_nls_v3_s9_hard_gate_selector_recovery.py",
+            (
+                "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+                "step09_independent_negative.py"
+            ),
         }
     ),
     10: frozenset(
@@ -292,6 +332,10 @@ _STEP_SEEDS: dict[int, frozenset[str]] = {
                 "ai/tests/"
                 "test_emlis_nls_v3_s10_dormant_runtime_batch_evidence.py"
             ),
+            (
+                "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+                "step10_independent_negative.py"
+            ),
         }
     ),
 }
@@ -310,8 +354,72 @@ _CROSS_STEP_SEEDS = frozenset(
             "emlis_nls_v3_recovery_epoch001_closure_receipt_verify.py"
         ),
         (
+            "ai/services/ai_inference/"
+            "emlis_ai_recovery_epoch001_current_step_requirement_registry_v3.py"
+        ),
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_recovery_epoch001_accepted_test_run_receipt_v3.py"
+        ),
+        (
+            "ai/tools/"
+            "emlis_nls_v3_recovery_epoch001_current_step_proof_run.py"
+        ),
+        (
+            "ai/tools/"
+            "emlis_nls_v3_recovery_epoch001_all11_receipt_issue.py"
+        ),
+        (
             "ai/tests/"
             "test_emlis_nls_v3_recovery_epoch001_current_closure_completion_red.py"
+        ),
+        (
+            "ai/tests/"
+            "test_emlis_nls_v3_recovery_epoch001_proved_receipt_contract_red.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step00_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step01_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step02_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step03_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step04_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step05_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step06_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step07_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step08_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step09_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step10_independent_negative.py"
         ),
         "ai/tests/conftest.py",
         (
@@ -556,6 +664,20 @@ def _dependency_closure(
 def _role(path: str) -> str:
     if path in _HISTORICAL_EVIDENCE_SEEDS:
         return "immutable_historical_evidence"
+    if "current_step_requirement_registry" in path:
+        return "requirement_registry_owner"
+    if "accepted_test_run_receipt" in path:
+        return "accepted_test_run_receipt_owner"
+    if "step_completion_receipt" in path:
+        return "current_step_completion_receipt_owner"
+    if "closure_receipt_verify" in path:
+        return "independent_verifier"
+    if "current_step_proof_run" in path:
+        return "current_step_proof_runner"
+    if "all11_receipt_issue" in path:
+        return "all11_receipt_issuer"
+    if "independent_negative.py" in path:
+        return "dedicated_independent_negative_source"
     if path.startswith("ai/tools/"):
         return "tool"
     if path.startswith("ai/tests/"):
