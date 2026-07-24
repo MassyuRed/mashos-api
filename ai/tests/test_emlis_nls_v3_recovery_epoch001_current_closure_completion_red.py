@@ -1199,7 +1199,9 @@ def test_recovery_epoch001_candidate_identity_surface_and_history_are_exact() ->
                 production_occurrences.add(
                     path.relative_to(_REPO_ROOT).as_posix()
                 )
-    assert production_occurrences <= _FUTURE_CORE_SURFACE
+    assert production_occurrences <= (
+        _FUTURE_CORE_SURFACE | _RECONCILIATION_FUTURE_SOURCE_SURFACE
+    )
 
     synthetic_path = (
         _AI_ROOT / "tests" / "test_emlis_nls_v3_s10_dormant_runtime_batch_evidence.py"
@@ -2232,3 +2234,158 @@ def test_recovery_epoch001_step10_binds_fresh_start_and_end_closure_or_red() -> 
         for marker in required_markers
     ):
         pytest.fail(_STEP10_START_END_RED, pytrace=False)
+
+
+_RECONCILIATION_RED_AUTHORITY = (
+    "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_CURRENT_STEP_COMPLETION_RECEIPT_"
+    "PROVED_ISSUANCE_AND_INDEPENDENT_PROOF_SOURCE_CLOSURE_RECONCILIATION_"
+    "RED_FREEZE_ONLY"
+)
+_RECONCILIATION_COCOLON_ENTRY_HEAD = (
+    "232738e728ff35c5d8ae7b19884ac80394cad72a"
+)
+_RECONCILIATION_MASHOS_API_ENTRY_HEAD = (
+    "8def65c53df9b50795b52a22b6779e5adc5c4465"
+)
+_RECONCILIATION_DESIGN_BLOB = (
+    "f074cdd402eb9f160e6f3fbae67527d386e31161"
+)
+_RECONCILIATION_FUTURE_SOURCE_SURFACE = frozenset(
+    {
+        _CLOSURE_PATH,
+        _RECEIPT_PATH,
+        _INDEPENDENT_VERIFIER_PATH,
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_recovery_epoch001_current_step_requirement_registry_v3.py"
+        ),
+        (
+            "ai/services/ai_inference/"
+            "emlis_ai_recovery_epoch001_accepted_test_run_receipt_v3.py"
+        ),
+        (
+            "ai/tools/"
+            "emlis_nls_v3_recovery_epoch001_current_step_proof_run.py"
+        ),
+        "ai/tools/emlis_nls_v3_recovery_epoch001_all11_receipt_issue.py",
+    }
+)
+_RECONCILIATION_AGGREGATE_RED_PATH = (
+    "ai/tests/"
+    "test_emlis_nls_v3_recovery_epoch001_proved_receipt_contract_red.py"
+)
+_RECONCILIATION_NEGATIVE_SOURCE_PATHS = frozenset(
+    {
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step00_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step01_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step02_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step03_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step04_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step05_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step06_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step07_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step08_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step09_independent_negative.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "step10_independent_negative.py"
+        ),
+    }
+)
+_RECONCILIATION_RED_TEST_SURFACE = frozenset(
+    {
+        _THIS_PATH,
+        _RECONCILIATION_AGGREGATE_RED_PATH,
+        *_RECONCILIATION_NEGATIVE_SOURCE_PATHS,
+    }
+)
+_RECONCILIATION_PROTECTED_SHA256 = {
+    (
+        "ai/services/ai_inference/"
+        "emlis_ai_recovery_epoch001_source_baseline_manifest_v3.py"
+    ): "ec6007f5b35fdcc0ec8a330822e4fe9086884dada2415e8557d7f314e2a65127",
+    "ai/services/ai_inference/emlis_ai_reply_service.py": (
+        "162b94eb185c519e50dceee62e591cc8ab02204312761874eb2fbb636ffbe50a"
+    ),
+    "ai/services/ai_inference/emlis_ai_step11_cycle_evidence_v3.py": (
+        "e9f77f7411b581e96a7035d05aa3a50eb4628cbba37a02b0786a0d35b818d43d"
+    ),
+    "ai/services/ai_inference/emlis_ai_step9_dependency_manifest_v3.py": (
+        "19a21d5853c44130c2c874e8b9c6bbbc0a1fc79591c529fb060e7c1e3cd7742e"
+    ),
+    "ai/services/ai_inference/emlis_ai_step10_dependency_manifest_v3.py": (
+        "3bc1311c264cbbae71e69c643d055575e9b80c58b71d321ff28e744ad0ee090c"
+    ),
+}
+_RECONCILIATION_NEXT_AUTHORITY = (
+    "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH001_CURRENT_STEP_COMPLETION_RECEIPT_"
+    "PROVED_ISSUANCE_AND_INDEPENDENT_PROOF_SOURCE_CLOSURE_RECONCILIATION_"
+    "IMPLEMENTATION_AND_GREEN_ONLY"
+)
+
+
+def test_recovery_epoch001_reconciliation_red_authority_and_surface_are_exact() -> None:
+    assert _RECONCILIATION_RED_AUTHORITY.endswith("RED_FREEZE_ONLY")
+    assert _RECONCILIATION_COCOLON_ENTRY_HEAD == (
+        "232738e728ff35c5d8ae7b19884ac80394cad72a"
+    )
+    assert _RECONCILIATION_MASHOS_API_ENTRY_HEAD == (
+        "8def65c53df9b50795b52a22b6779e5adc5c4465"
+    )
+    assert _RECONCILIATION_DESIGN_BLOB == (
+        "f074cdd402eb9f160e6f3fbae67527d386e31161"
+    )
+    assert len(_RECONCILIATION_FUTURE_SOURCE_SURFACE) == 7
+    assert len(_RECONCILIATION_NEGATIVE_SOURCE_PATHS) == 11
+    assert len(_RECONCILIATION_RED_TEST_SURFACE) == 13
+    assert not (
+        _RECONCILIATION_FUTURE_SOURCE_SURFACE
+        & _RECONCILIATION_RED_TEST_SURFACE
+    )
+    assert not (
+        _RECONCILIATION_FUTURE_SOURCE_SURFACE
+        & set(_RECONCILIATION_PROTECTED_SHA256)
+    )
+    assert _RECONCILIATION_NEXT_AUTHORITY.endswith(
+        "RECONCILIATION_IMPLEMENTATION_AND_GREEN_ONLY"
+    )
+    for path in _RECONCILIATION_RED_TEST_SURFACE:
+        assert (_REPO_ROOT / path).is_file(), path
+    future_presence = {
+        path: (_REPO_ROOT / path).is_file()
+        for path in _RECONCILIATION_FUTURE_SOURCE_SURFACE
+        - {_CLOSURE_PATH, _RECEIPT_PATH, _INDEPENDENT_VERIFIER_PATH}
+    }
+    assert set(future_presence.values()) in ({False}, {True})
+    for path, expected_sha256 in _RECONCILIATION_PROTECTED_SHA256.items():
+        assert _sha256(_REPO_ROOT / path) == expected_sha256, path
