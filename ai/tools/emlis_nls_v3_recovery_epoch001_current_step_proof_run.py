@@ -10,6 +10,7 @@ and returns only body-free node outcomes and start/end source bindings.
 """
 
 import hashlib
+from importlib.metadata import PackageNotFoundError, version
 import json
 import os
 from datetime import datetime, timezone
@@ -547,6 +548,31 @@ def _valid_worker_result(
     return _body_free(value)
 
 
+def _installed_pytest_version() -> str:
+    try:
+        return version("pytest")
+    except PackageNotFoundError:
+        return "0.0.0"
+
+
+def _read_worker_result(
+    result_path: Path,
+    *,
+    expected_nodes: list[str],
+) -> dict[str, Any] | None:
+    if not result_path.is_file():
+        return None
+    try:
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, UnicodeError):
+        return None
+    return (
+        result
+        if _valid_worker_result(result, expected_nodes=expected_nodes)
+        else None
+    )
+
+
 def _run_exact134_worker(
     *,
     pinned_root: Path,
@@ -574,24 +600,26 @@ def _run_exact134_worker(
             timeout=RECOVERY_EPOCH001_FORMAL_RUN_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
+        checkpoint = _read_worker_result(
+            result_path,
+            expected_nodes=expected_nodes,
+        )
+        if checkpoint is not None:
+            return checkpoint, True
         return {
-            "collection_node_ids": [],
+            "collection_node_ids": list(expected_nodes),
             "executed_node_ids": [],
             "states": {},
             "collection_errors": 0,
             "exit_code": 124,
             "python_version": platform.python_version(),
-            "pytest_version": "TIMEOUT",
+            "pytest_version": _installed_pytest_version(),
         }, True
-    if completed.returncode != 0 or not result_path.is_file():
-        raise ValueError("RECOVERY_PROOF_ENVIRONMENT_ENTRY_INVALID")
-    try:
-        result = json.loads(result_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError, UnicodeError) as exc:
-        raise ValueError(
-            "RECOVERY_PROOF_ENVIRONMENT_ENTRY_INVALID"
-        ) from exc
-    if not _valid_worker_result(result, expected_nodes=expected_nodes):
+    result = _read_worker_result(
+        result_path,
+        expected_nodes=expected_nodes,
+    )
+    if result is None:
         raise ValueError("RECOVERY_PROOF_ENVIRONMENT_ENTRY_INVALID")
     return result, False
 
@@ -821,10 +849,10 @@ def _outcome_state_and_stop(
     exit_code: int,
     timed_out: bool,
 ) -> tuple[str, str | None]:
-    if timed_out:
+    if timed_out is True or counts.get("timeouts") == 1:
         return "TIMED_OUT", "RUN_TIMED_OUT"
-    if counts.get("collection_errors") not in (0, None):
-        return "COLLECTION_ERROR", "RUN_COLLECTION_ERROR"
+    if exit_code == 125:
+        return "INFRA_ERROR", "RUN_INFRA_ERROR"
     if (
         exit_code == 0
         and counts
@@ -842,7 +870,9 @@ def _outcome_state_and_stop(
         }
     ):
         return "SUCCEEDED", None
-    return "PARTIAL", "RUN_PARTIAL"
+    if counts.get("collection_errors", 0) > 0:
+        return "FAILED", "RUN_COLLECTION_ERROR"
+    return "FAILED", "RUN_PARTIAL"
 
 
 def run_recovery_epoch001_current_step_proof(

@@ -388,6 +388,10 @@ _PROOF_SEEDS = frozenset(
             "emlis_nls_v3_recovery_epoch001_atomic_publication_bundle_v3.py"
         ),
         (
+            "ai/tools/"
+            "emlis_nls_v3_recovery_epoch001_formal_parent_orchestrator_v3.py"
+        ),
+        (
             "ai/tests/"
             "test_emlis_nls_v3_recovery_epoch001_current_closure_completion_red.py"
         ),
@@ -402,6 +406,10 @@ _PROOF_SEEDS = frozenset(
         (
             "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
             "sequence_ledger_publication_red.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "formal_lane_owner_completeness_red.py"
         ),
         (
             "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
@@ -774,6 +782,8 @@ def _role(path: str) -> str:
         return "independent_verifier"
     if "current_step_proof_run" in path:
         return "current_step_proof_runner"
+    if "formal_parent_orchestrator" in path:
+        return "formal_parent_orchestrator"
     if "all11_receipt_issue" in path:
         return "all11_receipt_issuer"
     if "independent_negative.py" in path:
@@ -5425,6 +5435,28 @@ _PV_MANIFEST_SCHEMA = (
     "cocolon.emlis.nls_v3.recovery_epoch001."
     "all11_atomic_publication_manifest.v2"
 )
+_PV_CANDIDATE = "nls_v3_rc_0034"
+_PV_LOGICAL_CYCLE = "NLS_V3_CYCLE_001"
+_PV_RECOVERY_EPOCH = "NLS_V3_CYCLE001_RECOVERY_EPOCH_001"
+_PV_MANIFEST_KEYS = frozenset(
+    {
+        "schema_version",
+        "candidate_version_id",
+        "logical_cycle_id",
+        "recovery_epoch_id",
+        "source_baseline_event",
+        "base_commit_sha1",
+        "core_artifact_count",
+        "core_artifacts",
+        "core_artifact_set_sha256",
+        "event_supporting_artifact_count",
+        "expected_changed_path_count",
+        "event_path",
+        "ref_update_mode",
+        "body_free",
+        "atomic_publication_manifest_sha256",
+    }
+)
 _PV_EVENT1_SUPPORTING_PATHS = frozenset({_SV_SOURCE_PATH})
 _PV_EVENT2_CORE_PATHS = frozenset(
     {_V3_ACCEPTED_PATH, *_V3_STEP_PATHS, _PV_ALL11_PATH}
@@ -5585,6 +5617,143 @@ def _pv_identity(
     }
 
 
+def _pv_manifest_material(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        key: item
+        for key, item in value.items()
+        if key != "atomic_publication_manifest_sha256"
+    }
+
+
+def _pv_manifest_issue(
+    value: Any,
+    *,
+    core_artifacts_by_path: Mapping[str, Mapping[str, Any]],
+    expected_source_baseline_event: Mapping[str, Any],
+    expected_base_commit_sha1: str,
+) -> str | None:
+    if (
+        type(value) is not dict
+        or set(value) != _PV_MANIFEST_KEYS
+        or type(core_artifacts_by_path) is not dict
+        or set(core_artifacts_by_path) != _PV_EVENT2_CORE_PATHS
+        or type(expected_source_baseline_event) is not dict
+        or _COMMIT_RE.fullmatch(str(expected_base_commit_sha1)) is None
+    ):
+        return "PUBLICATION_BUNDLE_INVALID"
+    chain = core_artifacts_by_path.get(_PV_ALL11_PATH)
+    if (
+        type(chain) is not dict
+        or chain.get("schema_version") != _V3_ALL11_SCHEMA
+        or chain.get("candidate_version_id") != _PV_CANDIDATE
+        or chain.get("logical_cycle_id") != _PV_LOGICAL_CYCLE
+        or chain.get("recovery_epoch_id") != _PV_RECOVERY_EPOCH
+        or chain.get("source_baseline_event")
+        != expected_source_baseline_event
+        or chain.get("publication_state") != "PUBLISHED_ATOMIC"
+        or chain.get("body_free") is not True
+    ):
+        return "PUBLICATION_BUNDLE_INVALID"
+    identities: list[dict[str, Any]] = []
+    for path in sorted(_PV_EVENT2_CORE_PATHS):
+        artifact = core_artifacts_by_path.get(path)
+        if type(artifact) is not dict:
+            return "PUBLICATION_BUNDLE_INVALID"
+        identity = _pv_identity(
+            path=path,
+            value=artifact,
+            raw=_v3_published_bytes(artifact),
+        )
+        if (
+            type(identity) is not dict
+            or set(identity) != _PV_IDENTITY_KEYS
+            or _SHA_RE.fullmatch(
+                str(identity.get("logical_artifact_sha256", ""))
+            )
+            is None
+        ):
+            return "PUBLICATION_BUNDLE_INVALID"
+        identities.append(identity)
+    if (
+        value.get("schema_version") != _PV_MANIFEST_SCHEMA
+        or value.get("candidate_version_id") != _PV_CANDIDATE
+        or value.get("logical_cycle_id") != _PV_LOGICAL_CYCLE
+        or value.get("recovery_epoch_id") != _PV_RECOVERY_EPOCH
+        or value.get("source_baseline_event")
+        != expected_source_baseline_event
+        or value.get("base_commit_sha1") != expected_base_commit_sha1
+        or value.get("core_artifact_count") != 13
+        or value.get("core_artifacts") != identities
+        or value.get("core_artifact_set_sha256")
+        != _artifact_sha256(identities)
+        or value.get("event_supporting_artifact_count") != 14
+        or value.get("expected_changed_path_count") != 15
+        or value.get("event_path") != _SV_EVENT2_PATH
+        or value.get("ref_update_mode") != _PV_REF_UPDATE_MODE
+        or value.get("body_free") is not True
+        or value.get("atomic_publication_manifest_sha256")
+        != _artifact_sha256(_pv_manifest_material(value))
+    ):
+        return "PUBLICATION_BUNDLE_INVALID"
+    return None
+
+
+def verify_recovery_epoch001_all11_atomic_publication_manifest(
+    value: Any,
+    *,
+    core_artifacts_by_path: Mapping[str, Mapping[str, Any]],
+    expected_source_baseline_event: Mapping[str, Any],
+    expected_base_commit_sha1: str,
+) -> tuple[str, ...]:
+    try:
+        issue = _pv_manifest_issue(
+            value,
+            core_artifacts_by_path=core_artifacts_by_path,
+            expected_source_baseline_event=expected_source_baseline_event,
+            expected_base_commit_sha1=expected_base_commit_sha1,
+        )
+        return () if issue is None else (issue,)
+    except (
+        AttributeError,
+        KeyError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("PUBLICATION_BUNDLE_INVALID",)
+
+
+def _pv_event2_manifest_issue(
+    artifacts_by_path: Mapping[str, Mapping[str, Any]],
+    *,
+    base_commit_sha1: str,
+) -> str | None:
+    if (
+        type(artifacts_by_path) is not dict
+        or set(artifacts_by_path) != _PV_EVENT2_SUPPORTING_PATHS
+    ):
+        return "PUBLICATION_BUNDLE_INVALID"
+    core = {
+        path: artifacts_by_path[path]
+        for path in _PV_EVENT2_CORE_PATHS
+    }
+    chain = core.get(_PV_ALL11_PATH)
+    manifest = artifacts_by_path.get(_PV_MANIFEST_PATH)
+    if type(chain) is not dict:
+        return "PUBLICATION_BUNDLE_INVALID"
+    return _pv_manifest_issue(
+        manifest,
+        core_artifacts_by_path=core,
+        expected_source_baseline_event=chain.get(
+            "source_baseline_event"
+        ),
+        expected_base_commit_sha1=base_commit_sha1,
+    )
+
+
 def _pv_expected_supporting_paths(
     paths: frozenset[str],
 ) -> frozenset[str] | None:
@@ -5701,6 +5870,29 @@ def _pv_supporting_issue(
             != _pv_logical_sha(path, artifact)
         ):
             return "PUBLICATION_BUNDLE_INVALID"
+    if expected == _PV_EVENT2_SUPPORTING_PATHS:
+        semantic_artifacts = (
+            supplied
+            if supplied is not None
+            else {
+                path: _pv_decode(
+                    value["canonical_bytes_by_path"][path]
+                )
+                for path in paths
+            }
+        )
+        if (
+            any(
+                type(artifact) is not dict
+                for artifact in semantic_artifacts.values()
+            )
+            or _pv_event2_manifest_issue(
+                semantic_artifacts,
+                base_commit_sha1=value["base_commit_sha1"],
+            )
+            is not None
+        ):
+            return "PUBLICATION_BUNDLE_INVALID"
     return None
 
 
@@ -5757,6 +5949,15 @@ def _pv_candidate_issue(
     ):
         expected_paths = _PV_EVENT2_CHANGED_PATHS
     else:
+        return "PUBLICATION_BUNDLE_INVALID"
+    if (
+        event_path == _SV_EVENT2_PATH
+        and _pv_event2_manifest_issue(
+            artifacts_by_path,
+            base_commit_sha1=str(value.get("base_commit_sha1", "")),
+        )
+        is not None
+    ):
         return "PUBLICATION_BUNDLE_INVALID"
     paths = value.get("changed_paths")
     if (
@@ -6016,6 +6217,19 @@ def _pv_result_issue(
     event: Mapping[str, Any],
     artifacts_by_path: Mapping[str, Mapping[str, Any]],
 ) -> str | None:
+    if (
+        type(event) is dict
+        and event.get("publication", {}).get("event_path")
+        == _SV_EVENT2_PATH
+        and _pv_event2_manifest_issue(
+            artifacts_by_path,
+            base_commit_sha1=str(value.get("base_commit_sha1", ""))
+            if type(value) is dict
+            else "",
+        )
+        is not None
+    ):
+        return "PUBLICATION_BUNDLE_INVALID"
     if (
         _pv_candidate_issue(
             value,

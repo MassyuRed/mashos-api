@@ -383,6 +383,10 @@ _CROSS_STEP_SEEDS = frozenset(
             "emlis_nls_v3_recovery_epoch001_atomic_publication_bundle_v3.py"
         ),
         (
+            "ai/tools/"
+            "emlis_nls_v3_recovery_epoch001_formal_parent_orchestrator_v3.py"
+        ),
+        (
             "ai/tests/"
             "test_emlis_nls_v3_recovery_epoch001_current_closure_completion_red.py"
         ),
@@ -397,6 +401,10 @@ _CROSS_STEP_SEEDS = frozenset(
         (
             "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
             "sequence_ledger_publication_red.py"
+        ),
+        (
+            "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
+            "formal_lane_owner_completeness_red.py"
         ),
         (
             "ai/tests/test_emlis_nls_v3_recovery_epoch001_"
@@ -695,6 +703,8 @@ def _role(path: str) -> str:
         return "independent_verifier"
     if "current_step_proof_run" in path:
         return "current_step_proof_runner"
+    if "formal_parent_orchestrator" in path:
+        return "formal_parent_orchestrator"
     if "all11_receipt_issue" in path:
         return "all11_receipt_issuer"
     if "independent_negative.py" in path:

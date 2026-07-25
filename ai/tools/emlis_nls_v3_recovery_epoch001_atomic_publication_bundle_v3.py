@@ -99,6 +99,31 @@ _MANIFEST_SCHEMA = (
     "cocolon.emlis.nls_v3.recovery_epoch001."
     "all11_atomic_publication_manifest.v2"
 )
+RECOVERY_EPOCH001_ALL11_ATOMIC_PUBLICATION_MANIFEST_SCHEMA = (
+    _MANIFEST_SCHEMA
+)
+_CANDIDATE = "nls_v3_rc_0034"
+_LOGICAL_CYCLE = "NLS_V3_CYCLE_001"
+_RECOVERY_EPOCH = "NLS_V3_CYCLE001_RECOVERY_EPOCH_001"
+_MANIFEST_KEYS = frozenset(
+    {
+        "schema_version",
+        "candidate_version_id",
+        "logical_cycle_id",
+        "recovery_epoch_id",
+        "source_baseline_event",
+        "base_commit_sha1",
+        "core_artifact_count",
+        "core_artifacts",
+        "core_artifact_set_sha256",
+        "event_supporting_artifact_count",
+        "expected_changed_path_count",
+        "event_path",
+        "ref_update_mode",
+        "body_free",
+        "atomic_publication_manifest_sha256",
+    }
+)
 _IDENTITY_KEYS = frozenset(
     {
         "artifact_role",
@@ -237,6 +262,198 @@ def _identity(
         "logical_artifact_sha256": value[hash_key],
         "body_free": True,
     }
+
+
+def _manifest_material(value: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: item
+        for key, item in value.items()
+        if key != "atomic_publication_manifest_sha256"
+    }
+
+
+def _manifest_issue(
+    value: Any,
+    *,
+    core_artifacts_by_path: Mapping[str, Mapping[str, Any]],
+    expected_source_baseline_event: Mapping[str, Any],
+    expected_base_commit_sha1: str,
+) -> str | None:
+    if (
+        type(value) is not dict
+        or set(value) != _MANIFEST_KEYS
+        or type(core_artifacts_by_path) is not dict
+        or set(core_artifacts_by_path) != _EVENT2_CORE_PATHS
+        or type(expected_source_baseline_event) is not dict
+        or _COMMIT_RE.fullmatch(str(expected_base_commit_sha1)) is None
+    ):
+        return "PUBLICATION_BUNDLE_INVALID"
+    chain = core_artifacts_by_path.get(_ALL11_PATH)
+    if (
+        type(chain) is not dict
+        or chain.get("schema_version") != _ALL11_SCHEMA
+        or chain.get("candidate_version_id") != _CANDIDATE
+        or chain.get("logical_cycle_id") != _LOGICAL_CYCLE
+        or chain.get("recovery_epoch_id") != _RECOVERY_EPOCH
+        or chain.get("source_baseline_event")
+        != expected_source_baseline_event
+        or chain.get("publication_state") != "PUBLISHED_ATOMIC"
+        or chain.get("body_free") is not True
+    ):
+        return "PUBLICATION_BUNDLE_INVALID"
+    identities: list[dict[str, Any]] = []
+    for path in sorted(_EVENT2_CORE_PATHS):
+        artifact = core_artifacts_by_path.get(path)
+        if type(artifact) is not dict:
+            return "PUBLICATION_BUNDLE_INVALID"
+        try:
+            identity = _identity(
+                path=path,
+                value=artifact,
+                raw=_published_bytes(artifact),
+            )
+        except (KeyError, TypeError, ValueError):
+            return "PUBLICATION_BUNDLE_INVALID"
+        if (
+            set(identity) != _IDENTITY_KEYS
+            or _SHA_RE.fullmatch(
+                str(identity.get("logical_artifact_sha256", ""))
+            )
+            is None
+        ):
+            return "PUBLICATION_BUNDLE_INVALID"
+        identities.append(identity)
+    if (
+        value.get("schema_version") != _MANIFEST_SCHEMA
+        or value.get("candidate_version_id") != _CANDIDATE
+        or value.get("logical_cycle_id") != _LOGICAL_CYCLE
+        or value.get("recovery_epoch_id") != _RECOVERY_EPOCH
+        or value.get("source_baseline_event")
+        != expected_source_baseline_event
+        or value.get("base_commit_sha1") != expected_base_commit_sha1
+        or value.get("core_artifact_count") != 13
+        or value.get("core_artifacts") != identities
+        or value.get("core_artifact_set_sha256")
+        != artifact_sha256(identities)
+        or value.get("event_supporting_artifact_count") != 14
+        or value.get("expected_changed_path_count") != 15
+        or value.get("event_path") != _EVENT2_PATH
+        or value.get("ref_update_mode") != _REF_UPDATE_MODE
+        or value.get("body_free") is not True
+        or value.get("atomic_publication_manifest_sha256")
+        != artifact_sha256(_manifest_material(value))
+    ):
+        return "PUBLICATION_BUNDLE_INVALID"
+    return None
+
+
+def validate_recovery_epoch001_all11_atomic_publication_manifest(
+    value: Any,
+    *,
+    core_artifacts_by_path: Mapping[str, Mapping[str, Any]],
+    expected_source_baseline_event: Mapping[str, Any],
+    expected_base_commit_sha1: str,
+) -> tuple[str, ...]:
+    try:
+        issue = _manifest_issue(
+            value,
+            core_artifacts_by_path=core_artifacts_by_path,
+            expected_source_baseline_event=expected_source_baseline_event,
+            expected_base_commit_sha1=expected_base_commit_sha1,
+        )
+        return () if issue is None else (issue,)
+    except (
+        AttributeError,
+        KeyError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("PUBLICATION_BUNDLE_INVALID",)
+
+
+def build_recovery_epoch001_all11_atomic_publication_manifest(
+    *,
+    core_artifacts_by_path: Mapping[str, Mapping[str, Any]],
+    source_baseline_event: Mapping[str, Any],
+    base_commit_sha1: str,
+) -> dict[str, Any]:
+    core = {
+        path: dict(value)
+        for path, value in core_artifacts_by_path.items()
+        if type(path) is str and type(value) is dict
+    }
+    if (
+        set(core) != _EVENT2_CORE_PATHS
+        or type(source_baseline_event) is not dict
+        or _COMMIT_RE.fullmatch(str(base_commit_sha1)) is None
+    ):
+        raise ValueError("PUBLICATION_BUNDLE_INVALID")
+    identities = [
+        _identity(
+            path=path,
+            value=core[path],
+            raw=_published_bytes(core[path]),
+        )
+        for path in sorted(_EVENT2_CORE_PATHS)
+    ]
+    manifest: dict[str, Any] = {
+        "schema_version": _MANIFEST_SCHEMA,
+        "candidate_version_id": _CANDIDATE,
+        "logical_cycle_id": _LOGICAL_CYCLE,
+        "recovery_epoch_id": _RECOVERY_EPOCH,
+        "source_baseline_event": dict(source_baseline_event),
+        "base_commit_sha1": base_commit_sha1,
+        "core_artifact_count": 13,
+        "core_artifacts": identities,
+        "core_artifact_set_sha256": artifact_sha256(identities),
+        "event_supporting_artifact_count": 14,
+        "expected_changed_path_count": 15,
+        "event_path": _EVENT2_PATH,
+        "ref_update_mode": _REF_UPDATE_MODE,
+        "body_free": True,
+        "atomic_publication_manifest_sha256": "",
+    }
+    manifest["atomic_publication_manifest_sha256"] = artifact_sha256(
+        _manifest_material(manifest)
+    )
+    if validate_recovery_epoch001_all11_atomic_publication_manifest(
+        manifest,
+        core_artifacts_by_path=core,
+        expected_source_baseline_event=source_baseline_event,
+        expected_base_commit_sha1=base_commit_sha1,
+    ):
+        raise ValueError("PUBLICATION_BUNDLE_INVALID")
+    return manifest
+
+
+def _event2_manifest_issue(
+    artifacts_by_path: Mapping[str, Mapping[str, Any]],
+    *,
+    base_commit_sha1: str,
+) -> str | None:
+    if (
+        type(artifacts_by_path) is not dict
+        or set(artifacts_by_path) != _EVENT2_SUPPORTING_PATHS
+    ):
+        return "PUBLICATION_BUNDLE_INVALID"
+    core = {
+        path: artifacts_by_path[path]
+        for path in _EVENT2_CORE_PATHS
+    }
+    chain = core.get(_ALL11_PATH)
+    manifest = artifacts_by_path.get(_MANIFEST_PATH)
+    if type(chain) is not dict:
+        return "PUBLICATION_BUNDLE_INVALID"
+    return _manifest_issue(
+        manifest,
+        core_artifacts_by_path=core,
+        expected_source_baseline_event=chain.get(
+            "source_baseline_event"
+        ),
+        expected_base_commit_sha1=base_commit_sha1,
+    )
 
 
 def _expected_supporting_paths(paths: frozenset[str]) -> frozenset[str] | None:
@@ -435,6 +652,29 @@ def _supporting_issue(
             != _logical_sha(path, artifact)
         ):
             return "PUBLICATION_BUNDLE_INVALID"
+    if expected == _EVENT2_SUPPORTING_PATHS:
+        semantic_artifacts = (
+            supplied
+            if supplied is not None
+            else {
+                path: _decode(
+                    value["canonical_bytes_by_path"][path]
+                )
+                for path in paths
+            }
+        )
+        if (
+            any(
+                type(artifact) is not dict
+                for artifact in semantic_artifacts.values()
+            )
+            or _event2_manifest_issue(
+                semantic_artifacts,
+                base_commit_sha1=value["base_commit_sha1"],
+            )
+            is not None
+        ):
+            return "PUBLICATION_BUNDLE_INVALID"
     return None
 
 
@@ -589,6 +829,15 @@ def _candidate_issue(
     ):
         expected_paths = _EVENT2_CHANGED_PATHS
     else:
+        return "PUBLICATION_BUNDLE_INVALID"
+    if (
+        event_path == _EVENT2_PATH
+        and _event2_manifest_issue(
+            artifacts_by_path,
+            base_commit_sha1=str(value.get("base_commit_sha1", "")),
+        )
+        is not None
+    ):
         return "PUBLICATION_BUNDLE_INVALID"
     paths = value.get("changed_paths")
     if (
@@ -871,6 +1120,19 @@ def _result_issue(
     event: Mapping[str, Any],
     artifacts_by_path: Mapping[str, Mapping[str, Any]],
 ) -> str | None:
+    if (
+        type(event) is dict
+        and event.get("publication", {}).get("event_path")
+        == _EVENT2_PATH
+        and _event2_manifest_issue(
+            artifacts_by_path,
+            base_commit_sha1=str(value.get("base_commit_sha1", ""))
+            if type(value) is dict
+            else "",
+        )
+        is not None
+    ):
+        return "PUBLICATION_BUNDLE_INVALID"
     if _candidate_issue(
         value,
         event=event,
