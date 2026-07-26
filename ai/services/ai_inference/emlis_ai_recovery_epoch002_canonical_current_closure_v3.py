@@ -647,10 +647,33 @@ def validate_recovery_epoch002_operational_source_manifest(
 
     observed_owners: dict[str, set[str]] = {}
     unresolved_dynamic_import_count = 0
+    if type(dependency_lock) is not dict or type(stdlib_module_names) is not frozenset:
+        return ("READINESS_FORBIDDEN",)
+    module_mapping = dependency_lock.get("module_distribution_map")
+    if type(module_mapping) is not dict:
+        return ("READINESS_FORBIDDEN",)
 
     def observe(import_name: str, owner_path: str) -> None:
         if import_name:
             observed_owners.setdefault(import_name, set()).add(owner_path)
+
+    def module_search_roots(owner_path: str) -> tuple[Path, ...]:
+        if owner_path.startswith("ai/tests/"):
+            return (
+                Path("ai/tests"),
+                Path("ai/tests/helpers"),
+                Path("ai/tools"),
+                Path("ai/services/ai_inference"),
+                Path("ai/services"),
+                Path(),
+            )
+        return (
+            Path("ai/tests/helpers"),
+            Path("ai/tools"),
+            Path("ai/services/ai_inference"),
+            Path("ai/services"),
+            Path(),
+        )
 
     def module_source_paths(
         import_name: str,
@@ -659,22 +682,8 @@ def validate_recovery_epoch002_operational_source_manifest(
         if not import_name or import_name.startswith("file:"):
             return []
         module_relative = Path(*import_name.split("."))
-        search_roots = (
-            (
-                Path("ai/tests"),
-                Path("ai/tools"),
-                Path("ai/services/ai_inference"),
-                Path(),
-            )
-            if owner_path.startswith("ai/tests/")
-            else (
-                Path("ai/tools"),
-                Path("ai/services/ai_inference"),
-                Path(),
-            )
-        )
         result: list[str] = []
-        for search_root in search_roots:
+        for search_root in module_search_roots(owner_path):
             for suffix in (
                 module_relative / "__init__.py",
                 Path(f"{module_relative}.py"),
@@ -691,6 +700,18 @@ def validate_recovery_epoch002_operational_source_manifest(
                     result.append(relative.as_posix())
         return result
 
+    def owner_package_parts(owner_path: str) -> list[str] | None:
+        path = Path(owner_path)
+        for search_root in module_search_roots(owner_path):
+            try:
+                relative = path.relative_to(search_root)
+            except ValueError:
+                continue
+            if relative.suffix != ".py":
+                return None
+            return list(relative.parts[:-1])
+        return None
+
     for owner_path, observed in source_payloads.items():
         if not owner_path.endswith(".py"):
             continue
@@ -698,13 +719,132 @@ def validate_recovery_epoch002_operational_source_manifest(
             tree = ast.parse(observed, filename=owner_path)
         except (SyntaxError, UnicodeError):
             return ("READINESS_FORBIDDEN",)
-        package_parts = owner_path[:-3].split("/")[:-1]
+        package_parts = owner_package_parts(owner_path)
+        if package_parts is None:
+            return ("READINESS_FORBIDDEN",)
         importlib_aliases = {"importlib"}
         import_module_aliases: set[str] = set()
         pathlib_aliases = {"pathlib"}
         path_constructor_aliases: set[str] = set()
         pytest_aliases = {"pytest"}
-        for node in ast.walk(tree):
+
+        def import_name(import_node: ast.ImportFrom) -> str | None:
+            if not import_node.level:
+                return import_node.module or ""
+            keep = len(package_parts) - (import_node.level - 1)
+            if keep <= 0:
+                return None
+            parts = package_parts[:keep]
+            if import_node.module:
+                parts.extend(import_node.module.split("."))
+            return ".".join(parts)
+
+        source_exports: dict[str, frozenset[str]] = {}
+
+        def exported_names(path_text: str) -> frozenset[str]:
+            cached = source_exports.get(path_text)
+            if cached is not None:
+                return cached
+            payload = source_payloads.get(path_text)
+            if payload is None:
+                return frozenset()
+            try:
+                source_tree = ast.parse(payload, filename=path_text)
+            except (SyntaxError, UnicodeError):
+                return frozenset()
+            names: set[str] = set()
+
+            def bind(target: ast.AST) -> None:
+                if isinstance(target, ast.Name):
+                    names.add(target.id)
+                elif isinstance(target, (ast.Tuple, ast.List)):
+                    for element in target.elts:
+                        bind(element)
+
+            for statement in source_tree.body:
+                if isinstance(
+                    statement,
+                    (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef),
+                ):
+                    names.add(statement.name)
+                elif isinstance(statement, ast.Assign):
+                    for target in statement.targets:
+                        bind(target)
+                elif isinstance(statement, ast.AnnAssign):
+                    bind(statement.target)
+                elif isinstance(statement, ast.Import):
+                    for alias in statement.names:
+                        names.add(alias.asname or alias.name.split(".", 1)[0])
+                elif isinstance(statement, ast.ImportFrom):
+                    for alias in statement.names:
+                        if alias.name != "*":
+                            names.add(alias.asname or alias.name)
+            result = frozenset(names)
+            source_exports[path_text] = result
+            return result
+
+        def first_party_import_available(import_node: ast.AST) -> bool:
+            if isinstance(import_node, ast.Import):
+                return all(
+                    len(module_source_paths(alias.name, owner_path)) == 1
+                    for alias in import_node.names
+                )
+            if not isinstance(import_node, ast.ImportFrom):
+                return False
+            resolved = import_name(import_node)
+            if not resolved:
+                return False
+            target_paths = module_source_paths(resolved, owner_path)
+            if len(target_paths) != 1:
+                return False
+            target_exports = exported_names(target_paths[0])
+            for alias in import_node.names:
+                if alias.name == "*":
+                    return False
+                submodule = f"{resolved}.{alias.name}"
+                if (
+                    len(module_source_paths(submodule, owner_path)) == 1
+                    or alias.name in target_exports
+                ):
+                    continue
+                return False
+            return True
+
+        def runtime_reachable_nodes(node: ast.AST) -> list[ast.AST]:
+            result = [node]
+            if isinstance(node, ast.Try):
+                primary_imports = [
+                    statement
+                    for statement in node.body
+                    if isinstance(statement, (ast.Import, ast.ImportFrom))
+                ]
+                if primary_imports and all(
+                    isinstance(statement, (ast.Import, ast.ImportFrom))
+                    for statement in node.body
+                ) and all(
+                    first_party_import_available(item)
+                    for item in primary_imports
+                ):
+                    children: list[ast.AST] = [
+                        *node.body,
+                        *node.orelse,
+                        *node.finalbody,
+                    ]
+                else:
+                    children = [
+                        *node.body,
+                        *node.handlers,
+                        *node.orelse,
+                        *node.finalbody,
+                    ]
+            else:
+                children = list(ast.iter_child_nodes(node))
+            for child_node in children:
+                result.extend(runtime_reachable_nodes(child_node))
+            return result
+
+        runtime_nodes = runtime_reachable_nodes(tree)
+        for node in runtime_nodes:
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     observe(alias.name, owner_path)
@@ -715,21 +855,14 @@ def validate_recovery_epoch002_operational_source_manifest(
                     if alias.name == "pathlib":
                         pathlib_aliases.add(alias.asname or alias.name)
             elif isinstance(node, ast.ImportFrom):
-                if node.level:
-                    keep = len(package_parts) - (node.level - 1)
-                    if keep < 0:
-                        return ("READINESS_FORBIDDEN",)
-                    parts = package_parts[:keep]
-                    if node.module:
-                        parts.extend(node.module.split("."))
-                    import_name = ".".join(parts)
-                else:
-                    import_name = node.module or ""
-                observe(import_name, owner_path)
+                resolved_import_name = import_name(node)
+                if resolved_import_name is None:
+                    return ("READINESS_FORBIDDEN",)
+                observe(resolved_import_name, owner_path)
                 for alias in node.names:
-                    if alias.name == "*" or not import_name:
+                    if alias.name == "*" or not resolved_import_name:
                         continue
-                    submodule = f"{import_name}.{alias.name}"
+                    submodule = f"{resolved_import_name}.{alias.name}"
                     if module_source_paths(submodule, owner_path):
                         observe(submodule, owner_path)
                 if node.level == 0 and node.module == "importlib":
@@ -810,7 +943,7 @@ def validate_recovery_epoch002_operational_source_manifest(
 
         assignments = [
             node
-            for node in ast.walk(tree)
+            for node in runtime_nodes
             if isinstance(node, (ast.Assign, ast.AnnAssign, ast.For))
         ]
         for _ in range(len(assignments) + 1):
@@ -843,7 +976,7 @@ def validate_recovery_epoch002_operational_source_manifest(
 
         resolved_spec_count = 0
         exec_module_count = 0
-        for node in ast.walk(tree):
+        for node in runtime_nodes:
             if not isinstance(node, ast.Call):
                 continue
             function = node.func
@@ -934,11 +1067,6 @@ def validate_recovery_epoch002_operational_source_manifest(
             for row in manifest["import_manifest"]
         }
     except (KeyError, TypeError):
-        return ("READINESS_FORBIDDEN",)
-    if type(dependency_lock) is not dict or type(stdlib_module_names) is not frozenset:
-        return ("READINESS_FORBIDDEN",)
-    module_mapping = dependency_lock.get("module_distribution_map")
-    if type(module_mapping) is not dict:
         return ("READINESS_FORBIDDEN",)
     for import_name, owner_paths in observed_owners.items():
         row = declared_rows.get(import_name)
