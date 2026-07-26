@@ -1,0 +1,1168 @@
+{
+  "distribution_count": 46,
+  "distributions": [
+    {
+      "distribution_version": "0.0.4",
+      "installed_record_closure_sha256": "8c17cc5306227844fcdbed7e8316dacca769eea19ea53247eeca872eb6b04b04",
+      "normalized_distribution_name": "annotated-doc",
+      "requires_dist": [],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "annotated_doc"
+      ],
+      "wheel_filename": "annotated_doc-0.0.4-py3-none-any.whl",
+      "wheel_record_sha256": "94bdf3f350cf3a0fb756ce2740909c2daa4c4d4d3c5058b97f52deeae1dd06fd",
+      "wheel_sha256": "571ac1dc6991c450b25a9c2d84a3705e2ae7a53467b5d111c24fa8baabbed320"
+    },
+    {
+      "distribution_version": "0.8.0",
+      "installed_record_closure_sha256": "a6b947b85b133dce722e668e6e6aff1931933dbc419023607387c6c86505d7c9",
+      "normalized_distribution_name": "annotated-types",
+      "requires_dist": [],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "annotated_types"
+      ],
+      "wheel_filename": "annotated_types-0.8.0-py3-none-any.whl",
+      "wheel_record_sha256": "114b36a7ba292e2b78ecd901d104c3fade4699ccfb684a5d9179749cbaeaeaaa",
+      "wheel_sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0"
+    },
+    {
+      "distribution_version": "4.14.2",
+      "installed_record_closure_sha256": "dbca2c19c074a5bc47b24eccff5e90918f76bb1b78be435b557009e0eb6d381e",
+      "normalized_distribution_name": "anyio",
+      "requires_dist": [
+        "exceptiongroup>=1.0.2; python_version < \"3.11\"",
+        "idna>=2.8",
+        "trio>=0.32.0; extra == \"trio\"",
+        "typing_extensions>=4.5; python_version < \"3.13\""
+      ],
+      "selected_dependency_names": [
+        "idna",
+        "typing-extensions"
+      ],
+      "top_level_imports": [
+        "anyio"
+      ],
+      "wheel_filename": "anyio-4.14.2-py3-none-any.whl",
+      "wheel_record_sha256": "5b200e3b20a42ce3acf7c2089a5d1e0f50a709c5e9f6a533ed30972d8659c960",
+      "wheel_sha256": "9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494"
+    },
+    {
+      "distribution_version": "0.14.4",
+      "installed_record_closure_sha256": "74441324d7144806d7b83b3f9ab762d5faa4366f0f7b85f4c3b95bfcfc51faab",
+      "normalized_distribution_name": "cachecontrol",
+      "requires_dist": [
+        "cachecontrol[filecache,redis] ; extra == 'dev'",
+        "cheroot>=11.1.2 ; extra == 'dev'",
+        "cherrypy ; extra == 'dev'",
+        "codespell ; extra == 'dev'",
+        "filelock>=3.8.0 ; extra == 'filecache'",
+        "furo ; extra == 'dev'",
+        "msgpack>=0.5.2,<2.0.0",
+        "mypy ; extra == 'dev'",
+        "pytest ; extra == 'dev'",
+        "pytest-cov ; extra == 'dev'",
+        "redis>=2.10.5 ; extra == 'redis'",
+        "requests>=2.16.0",
+        "ruff ; extra == 'dev'",
+        "sphinx ; extra == 'dev'",
+        "sphinx-copybutton ; extra == 'dev'",
+        "types-redis ; extra == 'dev'",
+        "types-requests ; extra == 'dev'"
+      ],
+      "selected_dependency_names": [
+        "msgpack",
+        "requests"
+      ],
+      "top_level_imports": [
+        "cachecontrol"
+      ],
+      "wheel_filename": "cachecontrol-0.14.4-py3-none-any.whl",
+      "wheel_record_sha256": "b9a4a16809203b1b6f6bc47427f08aa527ab62353e416bbc7220c1defc405b47",
+      "wheel_sha256": "b7ac014ff72ee199b5f8af1de29d60239954f223e948196fa3d84adaffc71d2b"
+    },
+    {
+      "distribution_version": "2026.7.22",
+      "installed_record_closure_sha256": "b35f6fc950a36db34bd8edcf095f9defcd72b7aaa8c382aa1a9990ebf8fd0876",
+      "normalized_distribution_name": "certifi",
+      "requires_dist": [],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "certifi"
+      ],
+      "wheel_filename": "certifi-2026.7.22-py3-none-any.whl",
+      "wheel_record_sha256": "ffbaaaa116c13b3c0337a451c316aab71c19aec40b67f4fc971e4685565bddc5",
+      "wheel_sha256": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775"
+    },
+    {
+      "distribution_version": "2.1.0",
+      "installed_record_closure_sha256": "90293b5767f0aa865b83b06046df5b4aa5db3af57922f69c8fcf976c7953aece",
+      "normalized_distribution_name": "cffi",
+      "requires_dist": [
+        "pycparser; implementation_name != \"PyPy\""
+      ],
+      "selected_dependency_names": [
+        "pycparser"
+      ],
+      "top_level_imports": [
+        "_cffi_backend",
+        "cffi"
+      ],
+      "wheel_filename": "cffi-2.1.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "wheel_record_sha256": "4618b56e1d007d524bdb576410c4c79369d4b3fc8c74f04e56b53c7ffd7024c2",
+      "wheel_sha256": "1e9f50d192a3e525b15a75ab5114e442d83d657b7ec29182a991bc9a88fd3a66"
+    },
+    {
+      "distribution_version": "3.4.9",
+      "installed_record_closure_sha256": "a1cf469837e9a4c43664eddf7627a9e926e41fca69671290550420ae8d960f69",
+      "normalized_distribution_name": "charset-normalizer",
+      "requires_dist": [],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "ada92cb5d92a588d1b93__mypyc",
+        "charset_normalizer"
+      ],
+      "wheel_filename": "charset_normalizer-3.4.9-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+      "wheel_record_sha256": "0db5433d17197f469245e63bc66aac7eaf9ea4355c4cc509fbc8be7fd22f0bfa",
+      "wheel_sha256": "5e226f6218febc71f6c1fc2fafb91c226f75bdc1d8fb12d66823716e891608fd"
+    },
+    {
+      "distribution_version": "49.0.0",
+      "installed_record_closure_sha256": "17568cd5cca94f2566df79a4505146306efc49ce7e2ab8c51408997ab6c5a872",
+      "normalized_distribution_name": "cryptography",
+      "requires_dist": [
+        "bcrypt>=3.1.5 ; extra == 'ssh'",
+        "cffi>=2.0.0 ; platform_python_implementation != 'PyPy'",
+        "typing-extensions>=4.13.2 ; python_full_version < '3.11'"
+      ],
+      "selected_dependency_names": [
+        "cffi"
+      ],
+      "top_level_imports": [
+        "cryptography"
+      ],
+      "wheel_filename": "cryptography-49.0.0-cp311-abi3-manylinux_2_34_x86_64.whl",
+      "wheel_record_sha256": "8b57f21d8a28762a48906c267c19f5a450597d6a51338046fdd40f81900890d7",
+      "wheel_sha256": "cbc77da8c523d5abd028635ba850a6966fcee2c82e2bf65a41d1d8afe0f98be9"
+    },
+    {
+      "distribution_version": "0.140.0",
+      "installed_record_closure_sha256": "42b7b7939422cc609073e9ec2dfd5d0dbf61b1c63b5a5ed70c439da80d8f8b52",
+      "normalized_distribution_name": "fastapi",
+      "requires_dist": [
+        "annotated-doc>=0.0.2",
+        "email-validator>=2.0.0; extra == \"all\"",
+        "email-validator>=2.0.0; extra == \"standard\"",
+        "email-validator>=2.0.0; extra == \"standard-no-fastapi-cloud-cli\"",
+        "fastapi-cli[standard-no-fastapi-cloud-cli]>=0.0.8; extra == \"standard-no-fastapi-cloud-cli\"",
+        "fastapi-cli[standard]>=0.0.8; extra == \"all\"",
+        "fastapi-cli[standard]>=0.0.8; extra == \"standard\"",
+        "fastar>=0.9.0; extra == \"standard\"",
+        "httpx<1.0.0,>=0.23.0; extra == \"all\"",
+        "httpx<1.0.0,>=0.23.0; extra == \"standard\"",
+        "httpx<1.0.0,>=0.23.0; extra == \"standard-no-fastapi-cloud-cli\"",
+        "itsdangerous>=1.1.0; extra == \"all\"",
+        "jinja2>=3.1.5; extra == \"all\"",
+        "jinja2>=3.1.5; extra == \"standard\"",
+        "jinja2>=3.1.5; extra == \"standard-no-fastapi-cloud-cli\"",
+        "pydantic-extra-types>=2.0.0; extra == \"all\"",
+        "pydantic-extra-types>=2.0.0; extra == \"standard\"",
+        "pydantic-extra-types>=2.0.0; extra == \"standard-no-fastapi-cloud-cli\"",
+        "pydantic-settings>=2.0.0; extra == \"all\"",
+        "pydantic-settings>=2.0.0; extra == \"standard\"",
+        "pydantic-settings>=2.0.0; extra == \"standard-no-fastapi-cloud-cli\"",
+        "pydantic>=2.9.0",
+        "python-multipart>=0.0.18; extra == \"all\"",
+        "python-multipart>=0.0.18; extra == \"standard\"",
+        "python-multipart>=0.0.18; extra == \"standard-no-fastapi-cloud-cli\"",
+        "pyyaml>=5.3.1; extra == \"all\"",
+        "starlette>=0.46.0",
+        "typing-extensions>=4.8.0",
+        "typing-inspection>=0.4.2",
+        "uvicorn[standard]>=0.12.0; extra == \"all\"",
+        "uvicorn[standard]>=0.12.0; extra == \"standard\"",
+        "uvicorn[standard]>=0.12.0; extra == \"standard-no-fastapi-cloud-cli\""
+      ],
+      "selected_dependency_names": [
+        "annotated-doc",
+        "pydantic",
+        "starlette",
+        "typing-extensions",
+        "typing-inspection"
+      ],
+      "top_level_imports": [
+        "fastapi"
+      ],
+      "wheel_filename": "fastapi-0.140.0-py3-none-any.whl",
+      "wheel_record_sha256": "ab79ec19b2b7f13ad33070a570262d97924dfe8641b558fd2d94a8f2ae79f2a6",
+      "wheel_sha256": "e951c0a0d9540bf5d9a2a9e078fd415da2ab7e312d435139e7d9e2e7fe9f0b23"
+    },
+    {
+      "distribution_version": "7.5.0",
+      "installed_record_closure_sha256": "3a5df8290b3cb53db35e8d50a13104f45e62f1cc6be44a3436b3523913d4aab5",
+      "normalized_distribution_name": "firebase-admin",
+      "requires_dist": [
+        "cachecontrol>=0.14.3",
+        "cryptography<44.0.0; platform_python_implementation == \"PyPy\" and python_version < \"3.11\"",
+        "google-api-core[grpc]<3.0.0dev,>=2.25.1; platform_python_implementation != \"PyPy\"",
+        "google-cloud-firestore>=2.21.0; platform_python_implementation != \"PyPy\"",
+        "google-cloud-storage>=3.1.1",
+        "httpx[http2]==0.28.1",
+        "pyjwt[crypto]>=2.10.1"
+      ],
+      "selected_dependency_names": [
+        "cachecontrol",
+        "google-api-core",
+        "google-cloud-firestore",
+        "google-cloud-storage",
+        "httpx",
+        "pyjwt"
+      ],
+      "top_level_imports": [
+        "firebase_admin"
+      ],
+      "wheel_filename": "firebase_admin-7.5.0-py3-none-any.whl",
+      "wheel_record_sha256": "9f9e67e3c3ec6b7068f97d6752a080fc6956e3279cd5f303e485ddbefbf529b4",
+      "wheel_sha256": "a37383d9c2e406d82a660776679672bed74407fc50bde7aa1418ed436d0346b7"
+    },
+    {
+      "distribution_version": "2.33.0",
+      "installed_record_closure_sha256": "354c002fef44be3480b974f1284e2bdffa43fc53dbea6bd3c41bda10e656897f",
+      "normalized_distribution_name": "google-api-core",
+      "requires_dist": [
+        "aiohttp>=3.13.4; extra == \"async-rest\"",
+        "google-auth<3.0.0,>=2.14.1",
+        "google-auth[aiohttp]<3.0.0,>=2.14.1; extra == \"async-rest\"",
+        "googleapis-common-protos<2.0.0,>=1.63.2",
+        "grpcio-status<2.0.0,>=1.41.0; extra == \"grpc\"",
+        "grpcio-status<2.0.0,>=1.49.1; python_version >= \"3.11\" and extra == \"grpc\"",
+        "grpcio-status<2.0.0,>=1.75.1; python_version >= \"3.14\" and extra == \"grpc\"",
+        "grpcio<2.0.0,>=1.41.0; extra == \"grpc\"",
+        "grpcio<2.0.0,>=1.49.1; python_version >= \"3.11\" and extra == \"grpc\"",
+        "grpcio<2.0.0,>=1.75.1; python_version >= \"3.14\" and extra == \"grpc\"",
+        "proto-plus<2.0.0,>=1.24.0",
+        "proto-plus<2.0.0,>=1.25.0; python_version >= \"3.13\"",
+        "protobuf<8.0.0,>=5.29.6",
+        "requests<3.0.0,>=2.33.0"
+      ],
+      "selected_dependency_names": [
+        "google-auth",
+        "googleapis-common-protos",
+        "grpcio",
+        "grpcio-status",
+        "proto-plus",
+        "protobuf",
+        "requests"
+      ],
+      "top_level_imports": [
+        "google"
+      ],
+      "wheel_filename": "google_api_core-2.33.0-py3-none-any.whl",
+      "wheel_record_sha256": "0de81ad257202fe4e3b05377efe7cef666c9672ffbb253dc13798ccb2dc02f79",
+      "wheel_sha256": "a2e22a0c1d0f03eafff1858b38cf46f832d5902b0c052235bf0ab8402929fbdc"
+    },
+    {
+      "distribution_version": "2.56.2",
+      "installed_record_closure_sha256": "ed23b742c2f0acddc68051360f921975a63094b408e95ed9a3e29661b0f599e2",
+      "normalized_distribution_name": "google-auth",
+      "requires_dist": [
+        "aiohttp<4.0.0,>=3.8.0; python_version < \"3.14\" and extra == \"aiohttp\"",
+        "aiohttp<4.0.0,>=3.8.0; python_version < \"3.14\" and extra == \"testing\"",
+        "aiohttp<4.0.0,>=3.9.0; python_version >= \"3.14\" and extra == \"aiohttp\"",
+        "aiohttp<4.0.0,>=3.9.0; python_version >= \"3.14\" and extra == \"testing\"",
+        "aioresponses; extra == \"testing\"",
+        "cryptography>=38.0.3; python_version < \"3.14\"",
+        "cryptography>=38.0.3; python_version < \"3.14\" and extra == \"cryptography\"",
+        "cryptography>=38.0.3; python_version < \"3.14\" and extra == \"enterprise-cert\"",
+        "cryptography>=38.0.3; python_version < \"3.14\" and extra == \"pyopenssl\"",
+        "cryptography>=41.0.5; python_version >= \"3.14\"",
+        "cryptography>=41.0.5; python_version >= \"3.14\" and extra == \"cryptography\"",
+        "cryptography>=41.0.5; python_version >= \"3.14\" and extra == \"enterprise-cert\"",
+        "cryptography>=41.0.5; python_version >= \"3.14\" and extra == \"pyopenssl\"",
+        "flask; extra == \"testing\"",
+        "freezegun; extra == \"testing\"",
+        "grpcio<2.0.0,>=1.59.0; python_version < \"3.14\" and extra == \"grpc\"",
+        "grpcio<2.0.0,>=1.59.0; python_version < \"3.14\" and extra == \"testing\"",
+        "grpcio<2.0.0,>=1.75.1; python_version >= \"3.14\" and extra == \"grpc\"",
+        "grpcio<2.0.0,>=1.75.1; python_version >= \"3.14\" and extra == \"testing\"",
+        "packaging>=20.0; extra == \"testing\"",
+        "packaging>=20.0; extra == \"urllib3\"",
+        "pyasn1-modules>=0.2.1",
+        "pyjwt>=2.0; extra == \"pyjwt\"",
+        "pyjwt>=2.0; extra == \"testing\"",
+        "pytest-asyncio; extra == \"testing\"",
+        "pytest-cov; extra == \"testing\"",
+        "pytest-localserver; extra == \"testing\"",
+        "pytest; extra == \"testing\"",
+        "pyu2f>=0.1.5; extra == \"reauth\"",
+        "pyu2f>=0.1.5; extra == \"testing\"",
+        "requests<3.0.0,>=2.30.0; extra == \"aiohttp\"",
+        "requests<3.0.0,>=2.30.0; extra == \"requests\"",
+        "requests<3.0.0,>=2.30.0; extra == \"testing\"",
+        "responses; extra == \"testing\"",
+        "rsa<5,>=4.0.0; extra == \"rsa\"",
+        "urllib3<3.0.0,>=1.26.15; extra == \"testing\"",
+        "urllib3<3.0.0,>=1.26.15; extra == \"urllib3\""
+      ],
+      "selected_dependency_names": [
+        "cryptography",
+        "pyasn1-modules"
+      ],
+      "top_level_imports": [
+        "google"
+      ],
+      "wheel_filename": "google_auth-2.56.2-py3-none-any.whl",
+      "wheel_record_sha256": "d7a51021d0836b233a2e95f443ec48f34e8fbe4850f2a2d2f4e0313a8486e69c",
+      "wheel_sha256": "c8270ea95b2697b74e3d8438ae9c5b898e38b623b915c7b5c5635921e7de68a6"
+    },
+    {
+      "distribution_version": "2.6.0",
+      "installed_record_closure_sha256": "e3ac27167991fbdeb85315323401098d668d34f4b706bffc1ef28e264398a32d",
+      "normalized_distribution_name": "google-cloud-core",
+      "requires_dist": [
+        "google-api-core<3.0.0,>=2.11.0",
+        "google-auth!=2.24.0,!=2.25.0,<3.0.0,>=2.14.1",
+        "grpcio-status<2.0.0,>=1.47.0; extra == \"grpc\"",
+        "grpcio<2.0.0,>=1.47.0; python_version < \"3.14\" and extra == \"grpc\"",
+        "grpcio<2.0.0,>=1.75.1; python_version >= \"3.14\" and extra == \"grpc\""
+      ],
+      "selected_dependency_names": [
+        "google-api-core",
+        "google-auth"
+      ],
+      "top_level_imports": [
+        "google"
+      ],
+      "wheel_filename": "google_cloud_core-2.6.0-py3-none-any.whl",
+      "wheel_record_sha256": "63f6cfa4cd070f0e8c75e0fbaa4bf9fe6f4278898cbd2f35d3110660d1f9f95c",
+      "wheel_sha256": "6d63ac8e5eca6d9e4319d0a1e2265fadcd7f1049904378caecfa01cf52dd869e"
+    },
+    {
+      "distribution_version": "2.28.0",
+      "installed_record_closure_sha256": "9bae046d1c04c36645c0ff943f40a5c12f8ba7f78c23c2f1e43863833c195ecd",
+      "normalized_distribution_name": "google-cloud-firestore",
+      "requires_dist": [
+        "google-api-core[grpc]<3.0.0,>=2.24.2",
+        "google-auth!=2.24.0,!=2.25.0,<3.0.0,>=2.14.1",
+        "google-cloud-core<3.0.0,>=2.0.0",
+        "grpcio<2.0.0,>=1.59.0",
+        "grpcio<2.0.0,>=1.75.1; python_version >= \"3.14\"",
+        "proto-plus<2.0.0,>=1.26.1",
+        "protobuf<8.0.0,>=6.33.5"
+      ],
+      "selected_dependency_names": [
+        "google-api-core",
+        "google-auth",
+        "google-cloud-core",
+        "grpcio",
+        "proto-plus",
+        "protobuf"
+      ],
+      "top_level_imports": [
+        "google"
+      ],
+      "wheel_filename": "google_cloud_firestore-2.28.0-py3-none-any.whl",
+      "wheel_record_sha256": "65551e2979ff92ddb155c8012e1a888dc780f4f6599035224ea0abb7f6266e38",
+      "wheel_sha256": "055daab3e5fb292f389b4e7d9e03dffb30f38a3463c23363f93d25569c933e59"
+    },
+    {
+      "distribution_version": "3.13.0",
+      "installed_record_closure_sha256": "64d277ad7979db35d39f3eab5d0359dcbce5e723d0436a7608981d9e8fdbf10b",
+      "normalized_distribution_name": "google-cloud-storage",
+      "requires_dist": [
+        "PyYAML; extra == \"testing\"",
+        "black; extra == \"testing\"",
+        "brotli; extra == \"testing\"",
+        "coverage; extra == \"testing\"",
+        "flake8; extra == \"testing\"",
+        "google-api-core<3.0.0,>=2.27.0",
+        "google-api-core[grpc]<3.0.0,>=2.27.0; extra == \"grpc\"",
+        "google-auth<3.0.0,>=2.26.1",
+        "google-cloud-core<3.0.0,>=2.4.2",
+        "google-cloud-iam; extra == \"testing\"",
+        "google-cloud-kms; extra == \"testing\"",
+        "google-cloud-pubsub; extra == \"testing\"",
+        "google-cloud-testutils; extra == \"testing\"",
+        "google-cloud-testutils; extra == \"testing\"",
+        "google-crc32c<2.0.0,>=1.6.0",
+        "google-resumable-media<3.0.0,>=2.7.2",
+        "grpc-google-iam-v1<1.0.0,>=0.14.0; extra == \"grpc\"",
+        "grpcio-status<2.0.0,>=1.59.0; python_version < \"3.14\" and extra == \"grpc\"",
+        "grpcio-status<2.0.0,>=1.75.1; python_version >= \"3.14\" and extra == \"grpc\"",
+        "grpcio<2.0.0,>=1.59.0; python_version < \"3.14\" and extra == \"grpc\"",
+        "grpcio<2.0.0,>=1.75.1; python_version >= \"3.14\" and extra == \"grpc\"",
+        "mock; extra == \"testing\"",
+        "numpy; extra == \"testing\"",
+        "opentelemetry-api<2.0.0,>=1.1.0; extra == \"tracing\"",
+        "opentelemetry-sdk; extra == \"testing\"",
+        "proto-plus<2.0.0,>=1.22.3; python_version < \"3.13\" and extra == \"grpc\"",
+        "proto-plus<2.0.0,>=1.25.0; python_version >= \"3.13\" and extra == \"grpc\"",
+        "protobuf<7.0.0,>=3.20.2; extra == \"protobuf\"",
+        "protobuf<8.0.0,>=4.25.8; extra == \"grpc\"",
+        "psutil; extra == \"testing\"",
+        "py-cpuinfo; extra == \"testing\"",
+        "pyopenssl; extra == \"testing\"",
+        "pytest-asyncio; extra == \"testing\"",
+        "pytest-benchmark; extra == \"testing\"",
+        "pytest-cov; extra == \"testing\"",
+        "pytest-rerunfailures; extra == \"testing\"",
+        "pytest-xdist; extra == \"testing\"",
+        "pytest; extra == \"testing\"",
+        "requests<3.0.0,>=2.22.0"
+      ],
+      "selected_dependency_names": [
+        "google-api-core",
+        "google-auth",
+        "google-cloud-core",
+        "google-crc32c",
+        "google-resumable-media",
+        "requests"
+      ],
+      "top_level_imports": [
+        "google"
+      ],
+      "wheel_filename": "google_cloud_storage-3.13.0-py3-none-any.whl",
+      "wheel_record_sha256": "d43ebacbf34e4571e93929c98ac4d3ab1ed256817a1abe996f654be1d072aea5",
+      "wheel_sha256": "648af3ef8a6acc674e1359d3c920c67eb89a7a5ab66b336bd3ac43fed6b5ab84"
+    },
+    {
+      "distribution_version": "1.8.0",
+      "installed_record_closure_sha256": "244cd96bdb6d1ae63af4c0caca70fdee62164dbd531f495813aafd9bf82bb3e6",
+      "normalized_distribution_name": "google-crc32c",
+      "requires_dist": [],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "google_crc32c"
+      ],
+      "wheel_filename": "google_crc32c-1.8.0-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl",
+      "wheel_record_sha256": "c6dc8ed94cb3e5a99b7b45334faf3fdd65ab572866f3214f7f9d4c56b31e438c",
+      "wheel_sha256": "14f87e04d613dfa218d6135e81b78272c3b904e2a7053b841481b38a7d901411"
+    },
+    {
+      "distribution_version": "2.10.0",
+      "installed_record_closure_sha256": "a2523ba0a3a327ed1244e1b4a4db7812c39c2930b33327136d4b74ba19d4d159",
+      "normalized_distribution_name": "google-resumable-media",
+      "requires_dist": [
+        "aiohttp<4.0.0,>=3.6.2; extra == \"aiohttp\"",
+        "google-auth<2.0.0,>=1.22.0; extra == \"aiohttp\"",
+        "google-crc32c<2.0.0,>=1.0.0",
+        "requests<3.0.0,>=2.18.0; extra == \"requests\""
+      ],
+      "selected_dependency_names": [
+        "google-crc32c"
+      ],
+      "top_level_imports": [
+        "google"
+      ],
+      "wheel_filename": "google_resumable_media-2.10.0-py3-none-any.whl",
+      "wheel_record_sha256": "43b35e34692c4c90ac3097d5ad3545c8f7bc7e14173e516ffa7af809a3dd3179",
+      "wheel_sha256": "88152884bee37b2bf36a0ab81ad8c7fd12212c9803dd981d77c1b35b02d34e7c"
+    },
+    {
+      "distribution_version": "1.75.0",
+      "installed_record_closure_sha256": "9be23d88a00b58070999bd15fac220b6b2381c65c4fcbc773cd2abfced06901e",
+      "normalized_distribution_name": "googleapis-common-protos",
+      "requires_dist": [
+        "grpcio<2.0.0,>=1.44.0; extra == \"grpc\"",
+        "protobuf<8.0.0,>=4.25.8"
+      ],
+      "selected_dependency_names": [
+        "protobuf"
+      ],
+      "top_level_imports": [
+        "google"
+      ],
+      "wheel_filename": "googleapis_common_protos-1.75.0-py3-none-any.whl",
+      "wheel_record_sha256": "be1dd83b674f973544ed331db16982c9ef0dc80ad97a14cc3d07c24b907160e7",
+      "wheel_sha256": "961ed60399c457ceb0ee8f285a84c870aabc9c6a832b9d37bb281b5bebde43ed"
+    },
+    {
+      "distribution_version": "1.83.0",
+      "installed_record_closure_sha256": "d35bf37d2f64fb9740ec1d5aa4ebde1cdf0ededaeb955eef23f150824fccb9c6",
+      "normalized_distribution_name": "grpcio",
+      "requires_dist": [
+        "grpcio-tools>=1.83.0; extra == \"protobuf\"",
+        "typing-extensions~=4.12"
+      ],
+      "selected_dependency_names": [
+        "typing-extensions"
+      ],
+      "top_level_imports": [
+        "grpc"
+      ],
+      "wheel_filename": "grpcio-1.83.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "wheel_record_sha256": "2a15923a0f3c687649594ed1716ac2ce54fd5da7588b4f29e6197faec65d7fe1",
+      "wheel_sha256": "aeb339838db07600481ef869507279b75326c75eac6d10f7afa62a0da1d2bcdd"
+    },
+    {
+      "distribution_version": "1.83.0",
+      "installed_record_closure_sha256": "27580aaaa4969d07b66985dd3789e517225a18ba1493ae9bcb4e18b4a7e9a5b9",
+      "normalized_distribution_name": "grpcio-status",
+      "requires_dist": [
+        "googleapis-common-protos>=1.5.5",
+        "grpcio>=1.83.0",
+        "protobuf<8.0.0,>=6.33.5"
+      ],
+      "selected_dependency_names": [
+        "googleapis-common-protos",
+        "grpcio",
+        "protobuf"
+      ],
+      "top_level_imports": [
+        "grpc_status"
+      ],
+      "wheel_filename": "grpcio_status-1.83.0-py3-none-any.whl",
+      "wheel_record_sha256": "f235faa11110f17aaf1d7ed99ddea2d07efa7f398a00f64865ca35add00dfb60",
+      "wheel_sha256": "f6a838a7c5fb84ae98833ec0ef81ed438c26e11e54b2ddb8e92ad328c861de69"
+    },
+    {
+      "distribution_version": "0.16.0",
+      "installed_record_closure_sha256": "53cee91f0b5e6905420b87c4c2306cd85c5b6c063bdfe8050d24e62e42677222",
+      "normalized_distribution_name": "h11",
+      "requires_dist": [],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "h11"
+      ],
+      "wheel_filename": "h11-0.16.0-py3-none-any.whl",
+      "wheel_record_sha256": "1f1d4d9080c9f2a995417616ead6ea614da41b477958ed0ba0e45a82c6212721",
+      "wheel_sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86"
+    },
+    {
+      "distribution_version": "4.4.0",
+      "installed_record_closure_sha256": "d8c0b721c90264d008735b2aa0a773db64deeae7071a75d7e1ab1f784a036bde",
+      "normalized_distribution_name": "h2",
+      "requires_dist": [
+        "hpack<5,>=4.2",
+        "hyperframe<7,>=6.1"
+      ],
+      "selected_dependency_names": [
+        "hpack",
+        "hyperframe"
+      ],
+      "top_level_imports": [
+        "h2"
+      ],
+      "wheel_filename": "h2-4.4.0-py3-none-any.whl",
+      "wheel_record_sha256": "7c1f24a4392839e84c0cbd4305666ae116c5d56152243a529db7cc105beaacff",
+      "wheel_sha256": "6acffe1aeab79098d7eb0f8385c1add11f2c7a94815f6fa2b7060eeddee3d87c"
+    },
+    {
+      "distribution_version": "4.2.0",
+      "installed_record_closure_sha256": "bbeb74e71a1f1b5a6dc8de05f41b73510347ce4202d5e9c583a72bd4171cd54b",
+      "normalized_distribution_name": "hpack",
+      "requires_dist": [],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "hpack"
+      ],
+      "wheel_filename": "hpack-4.2.0-py3-none-any.whl",
+      "wheel_record_sha256": "15ed3c3218b193fb48783057fa6fb37acf340b0f8927b18bbf0964f284a2a823",
+      "wheel_sha256": "858ac0b02280fa582b5080d68db0899c62a80375e0e5413a74970c5e518b6986"
+    },
+    {
+      "distribution_version": "1.0.9",
+      "installed_record_closure_sha256": "2dc63207f32834c94bbaa2c21139dfcd88319a0822033fe20710a29d571bfc86",
+      "normalized_distribution_name": "httpcore",
+      "requires_dist": [
+        "anyio<5.0,>=4.0; extra == 'asyncio'",
+        "certifi",
+        "h11>=0.16",
+        "h2<5,>=3; extra == 'http2'",
+        "socksio==1.*; extra == 'socks'",
+        "trio<1.0,>=0.22.0; extra == 'trio'"
+      ],
+      "selected_dependency_names": [
+        "certifi",
+        "h11"
+      ],
+      "top_level_imports": [
+        "httpcore"
+      ],
+      "wheel_filename": "httpcore-1.0.9-py3-none-any.whl",
+      "wheel_record_sha256": "56c7eb698ca4b47f9eb3ccbae04bdd802a651114200a9fadbff5665029d441db",
+      "wheel_sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55"
+    },
+    {
+      "distribution_version": "0.28.1",
+      "installed_record_closure_sha256": "faf52760865b8ad1d1d77ea005c51883017f3cc79fa823fd3b76026cd6b55343",
+      "normalized_distribution_name": "httpx",
+      "requires_dist": [
+        "anyio",
+        "brotli; (platform_python_implementation == 'CPython') and extra == 'brotli'",
+        "brotlicffi; (platform_python_implementation != 'CPython') and extra == 'brotli'",
+        "certifi",
+        "click==8.*; extra == 'cli'",
+        "h2<5,>=3; extra == 'http2'",
+        "httpcore==1.*",
+        "idna",
+        "pygments==2.*; extra == 'cli'",
+        "rich<14,>=10; extra == 'cli'",
+        "socksio==1.*; extra == 'socks'",
+        "zstandard>=0.18.0; extra == 'zstd'"
+      ],
+      "selected_dependency_names": [
+        "anyio",
+        "certifi",
+        "h2",
+        "httpcore",
+        "idna"
+      ],
+      "top_level_imports": [
+        "httpx"
+      ],
+      "wheel_filename": "httpx-0.28.1-py3-none-any.whl",
+      "wheel_record_sha256": "0ecebd0f1f2f26e90b04b235c20c996fe53f9fbf24cf0a84c8cd2e668d3b0ec5",
+      "wheel_sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad"
+    },
+    {
+      "distribution_version": "6.1.0",
+      "installed_record_closure_sha256": "39a0d2e21bc1d2bb9ca08efd82e73e340cbdbebb444cb4c9d95ab6d68a1ff56f",
+      "normalized_distribution_name": "hyperframe",
+      "requires_dist": [],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "hyperframe"
+      ],
+      "wheel_filename": "hyperframe-6.1.0-py3-none-any.whl",
+      "wheel_record_sha256": "5821a7cf3ccf0244a2feaf6c48086d9df142e886efab2562be6817f0176f763f",
+      "wheel_sha256": "b03380493a519fce58ea5af42e4a42317bf9bd425596f7a0835ffce80f1a42e5"
+    },
+    {
+      "distribution_version": "3.18",
+      "installed_record_closure_sha256": "915a43db19a0465eb5e6586ebaa2d6e827aeda360831e868092b5dbb987f1304",
+      "normalized_distribution_name": "idna",
+      "requires_dist": [
+        "mypy >= 1.11.2 ; extra == \"all\"",
+        "pytest >= 8.3.2 ; extra == \"all\"",
+        "ruff >= 0.6.2 ; extra == \"all\""
+      ],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "idna"
+      ],
+      "wheel_filename": "idna-3.18-py3-none-any.whl",
+      "wheel_record_sha256": "4fe1429acff53c0b0d685faaecf45a6d605947479fad5b16b32af928351c5513",
+      "wheel_sha256": "7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2"
+    },
+    {
+      "distribution_version": "2.3.0",
+      "installed_record_closure_sha256": "390ff70b72d7d6be5bf03dae9ff546d6a13584704d3078ce0000eded74092e05",
+      "normalized_distribution_name": "iniconfig",
+      "requires_dist": [],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "iniconfig"
+      ],
+      "wheel_filename": "iniconfig-2.3.0-py3-none-any.whl",
+      "wheel_record_sha256": "06144d1d47c00e05c46b66ee3503fc35022bbce0a18089371d0bcd24de9abcad",
+      "wheel_sha256": "f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12"
+    },
+    {
+      "distribution_version": "1.2.1",
+      "installed_record_closure_sha256": "4a286def00bc591d56cf52685adea77456a5e9f0e2cea39fe50bca0f8b467dd3",
+      "normalized_distribution_name": "msgpack",
+      "requires_dist": [],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "msgpack"
+      ],
+      "wheel_filename": "msgpack-1.2.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+      "wheel_record_sha256": "751aba39e171794f93a20512c85e7b383790fd709b6153960005586560fdbc3f",
+      "wheel_sha256": "020e881a764b20d8d7ca1a54fc01b8175519d108e3c3f194fddc200bda95951a"
+    },
+    {
+      "distribution_version": "26.2",
+      "installed_record_closure_sha256": "851cdb430628cce99eb887f87405c6c2bfb24e642a972cdf843267018c82c3a1",
+      "normalized_distribution_name": "packaging",
+      "requires_dist": [],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "packaging"
+      ],
+      "wheel_filename": "packaging-26.2-py3-none-any.whl",
+      "wheel_record_sha256": "f8970ce9313b03142296fcbb8c9db6df7836e66710a71ae07b99939fc49f30cf",
+      "wheel_sha256": "5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e"
+    },
+    {
+      "distribution_version": "1.6.0",
+      "installed_record_closure_sha256": "b072098f6cace7afdf1d4759f13b91f805836743a0af3c4f38f40343c60ee942",
+      "normalized_distribution_name": "pluggy",
+      "requires_dist": [
+        "coverage; extra == \"testing\"",
+        "pre-commit; extra == \"dev\"",
+        "pytest-benchmark; extra == \"testing\"",
+        "pytest; extra == \"testing\"",
+        "tox; extra == \"dev\""
+      ],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "pluggy"
+      ],
+      "wheel_filename": "pluggy-1.6.0-py3-none-any.whl",
+      "wheel_record_sha256": "e3f054e6e651035e45561a2f97427e0cd24205e6c1ee6c9c38cc59424b743c90",
+      "wheel_sha256": "e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746"
+    },
+    {
+      "distribution_version": "1.28.2",
+      "installed_record_closure_sha256": "371f4f04da23f68b4ede09326fb68a4600d12d69b87b4db3bf4a347f6228c10c",
+      "normalized_distribution_name": "proto-plus",
+      "requires_dist": [
+        "google-api-core>=1.31.5; extra == \"testing\"",
+        "protobuf<8.0.0,>=4.25.8"
+      ],
+      "selected_dependency_names": [
+        "protobuf"
+      ],
+      "top_level_imports": [
+        "proto"
+      ],
+      "wheel_filename": "proto_plus-1.28.2-py3-none-any.whl",
+      "wheel_record_sha256": "6f6a7a2bc164a18f19982934e038533a40560919fc4a37948c91a4867153ff04",
+      "wheel_sha256": "b874236fcac2358f601e4330bcb76cb8b89c851303ccf4078408b3d4774d1c52"
+    },
+    {
+      "distribution_version": "7.35.1",
+      "installed_record_closure_sha256": "54ec3686a1c19590a9ae8b4a0f5228e0d567d67543f489918515016230355eeb",
+      "normalized_distribution_name": "protobuf",
+      "requires_dist": [],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "google"
+      ],
+      "wheel_filename": "protobuf-7.35.1-cp310-abi3-manylinux2014_x86_64.whl",
+      "wheel_record_sha256": "f7bb7fd4bb9722ef0f40302e08ec63704e1be002683e7ba5e79ab0c102ff72fb",
+      "wheel_sha256": "74758715c53d7158fb76caf4f0cfdacc5329a4b1bb994f865d6cf302d413a1c4"
+    },
+    {
+      "distribution_version": "0.6.4",
+      "installed_record_closure_sha256": "c50b86f55c0ed74e537ce3d1689ced5e5b890906a7675e4c6a36ce7cb46a024c",
+      "normalized_distribution_name": "pyasn1",
+      "requires_dist": [],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "pyasn1"
+      ],
+      "wheel_filename": "pyasn1-0.6.4-py3-none-any.whl",
+      "wheel_record_sha256": "3925f9b5b54a92649e98ad60fb42618e5785d59c8630d3544565dcf5ee62d223",
+      "wheel_sha256": "deda9277cfd454080ec40b207fb6df82206a3a2688735233cdcd8d3d565f088b"
+    },
+    {
+      "distribution_version": "0.4.2",
+      "installed_record_closure_sha256": "f7ce09d749e6da0b29b77c18778645bf3bbbc488e61f61d2562cda9acdde701e",
+      "normalized_distribution_name": "pyasn1-modules",
+      "requires_dist": [
+        "pyasn1<0.7.0,>=0.6.1"
+      ],
+      "selected_dependency_names": [
+        "pyasn1"
+      ],
+      "top_level_imports": [
+        "pyasn1_modules"
+      ],
+      "wheel_filename": "pyasn1_modules-0.4.2-py3-none-any.whl",
+      "wheel_record_sha256": "90d2aa76b3ba8bd561f055f9feff9f87ff25d44ad3c16f0c76263699987571fa",
+      "wheel_sha256": "29253a9207ce32b64c3ac6600edc75368f98473906e8fd1043bd6b5b1de2c14a"
+    },
+    {
+      "distribution_version": "3.0",
+      "installed_record_closure_sha256": "a985019aefab83e29fce6e282f42988d5ea06e4817dbced5116f447bc81ad037",
+      "normalized_distribution_name": "pycparser",
+      "requires_dist": [],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "pycparser"
+      ],
+      "wheel_filename": "pycparser-3.0-py3-none-any.whl",
+      "wheel_record_sha256": "0e588c3b8b949767736c5b87aca74eeb1c97be53dc3d08a7b8bc7098bce392f7",
+      "wheel_sha256": "b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992"
+    },
+    {
+      "distribution_version": "2.13.4",
+      "installed_record_closure_sha256": "83b043b19c24f16fde5fda48e0bd5a305eabd295c830486988b9d4ee074a81c7",
+      "normalized_distribution_name": "pydantic",
+      "requires_dist": [
+        "annotated-types>=0.6.0",
+        "email-validator>=2.0.0; extra == 'email'",
+        "pydantic-core==2.46.4",
+        "typing-extensions>=4.14.1",
+        "typing-inspection>=0.4.2",
+        "tzdata; (python_version >= '3.9' and platform_system == 'Windows') and extra == 'timezone'"
+      ],
+      "selected_dependency_names": [
+        "annotated-types",
+        "pydantic-core",
+        "typing-extensions",
+        "typing-inspection"
+      ],
+      "top_level_imports": [
+        "pydantic"
+      ],
+      "wheel_filename": "pydantic-2.13.4-py3-none-any.whl",
+      "wheel_record_sha256": "78ab16ca0e9b7c1ce1a3262f1e41b3003792fb304cf490ed3ec05d6ba534bd7a",
+      "wheel_sha256": "45a282cde31d808236fd7ea9d919b128653c8b38b393d1c4ab335c62924d9aba"
+    },
+    {
+      "distribution_version": "2.46.4",
+      "installed_record_closure_sha256": "804dd1ee67c60714b14ba8345c1a28ff477dd1561771e9fb498c20c3574307c3",
+      "normalized_distribution_name": "pydantic-core",
+      "requires_dist": [
+        "typing-extensions>=4.14.1"
+      ],
+      "selected_dependency_names": [
+        "typing-extensions"
+      ],
+      "top_level_imports": [
+        "pydantic_core"
+      ],
+      "wheel_filename": "pydantic_core-2.46.4-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "wheel_record_sha256": "c0b40bc9fd9c3e5effd1d55c2be4cb73a7106ef1443475157e577b4c631d99aa",
+      "wheel_sha256": "926c9541b14b12b1681dca8a0b75feb510b06c6341b70a8e500c2fdcff837cce"
+    },
+    {
+      "distribution_version": "2.20.0",
+      "installed_record_closure_sha256": "ce2debc2a42c4274ea75b03e9c0f4dc5bd01c6f25e86da4fac5d76296e3b1a05",
+      "normalized_distribution_name": "pygments",
+      "requires_dist": [
+        "colorama>=0.4.6; extra == 'windows-terminal'"
+      ],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "pygments"
+      ],
+      "wheel_filename": "pygments-2.20.0-py3-none-any.whl",
+      "wheel_record_sha256": "cbcfe0f4255177b43aad099d47a0551c6304fa6a3dd8d5d65d6ff0d2f53ff804",
+      "wheel_sha256": "81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176"
+    },
+    {
+      "distribution_version": "2.13.0",
+      "installed_record_closure_sha256": "f5838921a99901c98df9a5d1b6130caa0a1fd677e9bb05d809cd5ee8d1b37d51",
+      "normalized_distribution_name": "pyjwt",
+      "requires_dist": [
+        "cryptography>=3.4.0; extra == \"crypto\"",
+        "typing_extensions>=4.0; python_version < \"3.11\""
+      ],
+      "selected_dependency_names": [
+        "cryptography"
+      ],
+      "top_level_imports": [
+        "jwt"
+      ],
+      "wheel_filename": "pyjwt-2.13.0-py3-none-any.whl",
+      "wheel_record_sha256": "ce44d25874650eb7f95676e38c823fe4e8b5a97e9888a6e827b20df13c7a6e91",
+      "wheel_sha256": "66adcc2aff09b3f1bbd95fc1e1577df8ac8723c978552fd43304c8a290ac5728"
+    },
+    {
+      "distribution_version": "8.4.1",
+      "installed_record_closure_sha256": "5cefca6d1f84bef673818f562c6b63b100d32b51dc26405c5bed8cbd91b11874",
+      "normalized_distribution_name": "pytest",
+      "requires_dist": [
+        "argcomplete; extra == \"dev\"",
+        "attrs>=19.2; extra == \"dev\"",
+        "colorama>=0.4; sys_platform == \"win32\"",
+        "exceptiongroup>=1; python_version < \"3.11\"",
+        "hypothesis>=3.56; extra == \"dev\"",
+        "iniconfig>=1",
+        "mock; extra == \"dev\"",
+        "packaging>=20",
+        "pluggy<2,>=1.5",
+        "pygments>=2.7.2",
+        "requests; extra == \"dev\"",
+        "setuptools; extra == \"dev\"",
+        "tomli>=1; python_version < \"3.11\"",
+        "xmlschema; extra == \"dev\""
+      ],
+      "selected_dependency_names": [
+        "iniconfig",
+        "packaging",
+        "pluggy",
+        "pygments"
+      ],
+      "top_level_imports": [
+        "_pytest",
+        "py",
+        "pytest"
+      ],
+      "wheel_filename": "pytest-8.4.1-py3-none-any.whl",
+      "wheel_record_sha256": "73ca68976a7a39a5127f1ad03216d55b1f6a1bda49e509543a8288c45310237c",
+      "wheel_sha256": "539c70ba6fcead8e78eebbf1115e8b589e7565830d7d006a8723f19ac8a0afb7"
+    },
+    {
+      "distribution_version": "2.34.2",
+      "installed_record_closure_sha256": "4c24b918c4cd9e9be4eb6e0b4261ed936b5ba0d3b2fbb64c7ba22d7c95d13573",
+      "normalized_distribution_name": "requests",
+      "requires_dist": [
+        "PySocks!=1.5.7,>=1.5.6; extra == \"socks\"",
+        "certifi>=2023.5.7",
+        "chardet<8,>=3.0.2; extra == \"use-chardet-on-py3\"",
+        "charset_normalizer<4,>=2",
+        "idna<4,>=2.5",
+        "urllib3<3,>=1.26"
+      ],
+      "selected_dependency_names": [
+        "certifi",
+        "charset-normalizer",
+        "idna",
+        "urllib3"
+      ],
+      "top_level_imports": [
+        "requests"
+      ],
+      "wheel_filename": "requests-2.34.2-py3-none-any.whl",
+      "wheel_record_sha256": "6c12f50645e5a7f6080e69eb18a4b7bd52329be9cb47f8bc29b62b24b303c89c",
+      "wheel_sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0"
+    },
+    {
+      "distribution_version": "1.3.1",
+      "installed_record_closure_sha256": "0b6f693801478f2aacbb3db90970761248ecd888df6a43ea6eea84f0bc7e0387",
+      "normalized_distribution_name": "starlette",
+      "requires_dist": [
+        "anyio<5,>=3.6.2",
+        "httpx2>=2.0.0; extra == 'full'",
+        "httpx<0.29.0,>=0.27.0; extra == 'full'",
+        "itsdangerous; extra == 'full'",
+        "jinja2; extra == 'full'",
+        "python-multipart>=0.0.18; extra == 'full'",
+        "pyyaml; extra == 'full'",
+        "typing-extensions>=4.10.0; python_version < '3.13'"
+      ],
+      "selected_dependency_names": [
+        "anyio",
+        "typing-extensions"
+      ],
+      "top_level_imports": [
+        "starlette"
+      ],
+      "wheel_filename": "starlette-1.3.1-py3-none-any.whl",
+      "wheel_record_sha256": "817d4ae7113b49bb599de04d17844b2e1b37f60a07f462fc207552ba612a543e",
+      "wheel_sha256": "c7372aae11c3c3f26a42df7bd626cec2f47d03483d261d369516a615a53714c6"
+    },
+    {
+      "distribution_version": "4.16.0",
+      "installed_record_closure_sha256": "63d3309269108452fc1811ffd8a54019acfa49717469a23fe694396b676e4f6d",
+      "normalized_distribution_name": "typing-extensions",
+      "requires_dist": [],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "typing_extensions"
+      ],
+      "wheel_filename": "typing_extensions-4.16.0-py3-none-any.whl",
+      "wheel_record_sha256": "44dcf97810bea7b84bcd83890b6674bbcc2f4c5ef899a4887f15d524bdf6bb97",
+      "wheel_sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
+    },
+    {
+      "distribution_version": "0.4.2",
+      "installed_record_closure_sha256": "db21a21890ac80d10b83c6a5a5d6f91d240376942d25397c692ca80f3baa105b",
+      "normalized_distribution_name": "typing-inspection",
+      "requires_dist": [
+        "typing-extensions>=4.12.0"
+      ],
+      "selected_dependency_names": [
+        "typing-extensions"
+      ],
+      "top_level_imports": [
+        "typing_inspection"
+      ],
+      "wheel_filename": "typing_inspection-0.4.2-py3-none-any.whl",
+      "wheel_record_sha256": "27ecdaf1676de517351f31b35c74b99cc57237735eed5441369e7c26ba2a946f",
+      "wheel_sha256": "4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7"
+    },
+    {
+      "distribution_version": "2.7.0",
+      "installed_record_closure_sha256": "090b1367108a209494e67fe3cc7ae3171f0e71b53ff652903cb5a958843063ae",
+      "normalized_distribution_name": "urllib3",
+      "requires_dist": [
+        "backports-zstd>=1.0.0; (python_version < '3.14') and extra == 'zstd'",
+        "brotli>=1.2.0; (platform_python_implementation == 'CPython') and extra == 'brotli'",
+        "brotlicffi>=1.2.0.0; (platform_python_implementation != 'CPython') and extra == 'brotli'",
+        "h2<5,>=4; extra == 'h2'",
+        "pysocks!=1.5.7,<2.0,>=1.5.6; extra == 'socks'"
+      ],
+      "selected_dependency_names": [],
+      "top_level_imports": [
+        "urllib3"
+      ],
+      "wheel_filename": "urllib3-2.7.0-py3-none-any.whl",
+      "wheel_record_sha256": "4100397eb65d69ffbfcabfe99373cb59ab2b7c0261abf9a5bdfb2f263baef787",
+      "wheel_sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897"
+    }
+  ],
+  "identity_class": "PIP_REQUIRE_HASHES_WHEEL_LOCK_V1",
+  "lock_sha256": "801ba54efc0f6655238d14e7c153fb70b555801489aa8ba028515fc64d9c05f4",
+  "module_distribution_map": {
+    "_cffi_backend": "cffi",
+    "_pytest": "pytest",
+    "ada92cb5d92a588d1b93__mypyc": "charset-normalizer",
+    "annotated_doc": "annotated-doc",
+    "annotated_types": "annotated-types",
+    "anyio": "anyio",
+    "cachecontrol": "cachecontrol",
+    "certifi": "certifi",
+    "cffi": "cffi",
+    "charset_normalizer": "charset-normalizer",
+    "cryptography": "cryptography",
+    "fastapi": "fastapi",
+    "firebase_admin": "firebase-admin",
+    "google": "google-api-core",
+    "google.api_core": "google-api-core",
+    "google.auth": "google-auth",
+    "google.cloud.firestore": "google-cloud-firestore",
+    "google.cloud.storage": "google-cloud-storage",
+    "google.oauth2": "google-auth",
+    "google.protobuf": "protobuf",
+    "google.rpc": "googleapis-common-protos",
+    "google_crc32c": "google-crc32c",
+    "grpc": "grpcio",
+    "grpc_status": "grpcio-status",
+    "h11": "h11",
+    "h2": "h2",
+    "hpack": "hpack",
+    "httpcore": "httpcore",
+    "httpx": "httpx",
+    "hyperframe": "hyperframe",
+    "idna": "idna",
+    "iniconfig": "iniconfig",
+    "jwt": "pyjwt",
+    "msgpack": "msgpack",
+    "packaging": "packaging",
+    "pluggy": "pluggy",
+    "proto": "proto-plus",
+    "py": "pytest",
+    "pyasn1": "pyasn1",
+    "pyasn1_modules": "pyasn1-modules",
+    "pycparser": "pycparser",
+    "pydantic": "pydantic",
+    "pydantic_core": "pydantic-core",
+    "pygments": "pygments",
+    "pytest": "pytest",
+    "requests": "requests",
+    "starlette": "starlette",
+    "typing_extensions": "typing-extensions",
+    "typing_inspection": "typing-inspection",
+    "urllib3": "urllib3"
+  },
+  "pip_require_hashes_lines": [
+    "annotated-doc==0.0.4 --hash=sha256:571ac1dc6991c450b25a9c2d84a3705e2ae7a53467b5d111c24fa8baabbed320",
+    "annotated-types==0.8.0 --hash=sha256:f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0",
+    "anyio==4.14.2 --hash=sha256:9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494",
+    "cachecontrol==0.14.4 --hash=sha256:b7ac014ff72ee199b5f8af1de29d60239954f223e948196fa3d84adaffc71d2b",
+    "certifi==2026.7.22 --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775",
+    "cffi==2.1.0 --hash=sha256:1e9f50d192a3e525b15a75ab5114e442d83d657b7ec29182a991bc9a88fd3a66",
+    "charset-normalizer==3.4.9 --hash=sha256:5e226f6218febc71f6c1fc2fafb91c226f75bdc1d8fb12d66823716e891608fd",
+    "cryptography==49.0.0 --hash=sha256:cbc77da8c523d5abd028635ba850a6966fcee2c82e2bf65a41d1d8afe0f98be9",
+    "fastapi==0.140.0 --hash=sha256:e951c0a0d9540bf5d9a2a9e078fd415da2ab7e312d435139e7d9e2e7fe9f0b23",
+    "firebase-admin==7.5.0 --hash=sha256:a37383d9c2e406d82a660776679672bed74407fc50bde7aa1418ed436d0346b7",
+    "google-api-core==2.33.0 --hash=sha256:a2e22a0c1d0f03eafff1858b38cf46f832d5902b0c052235bf0ab8402929fbdc",
+    "google-auth==2.56.2 --hash=sha256:c8270ea95b2697b74e3d8438ae9c5b898e38b623b915c7b5c5635921e7de68a6",
+    "google-cloud-core==2.6.0 --hash=sha256:6d63ac8e5eca6d9e4319d0a1e2265fadcd7f1049904378caecfa01cf52dd869e",
+    "google-cloud-firestore==2.28.0 --hash=sha256:055daab3e5fb292f389b4e7d9e03dffb30f38a3463c23363f93d25569c933e59",
+    "google-cloud-storage==3.13.0 --hash=sha256:648af3ef8a6acc674e1359d3c920c67eb89a7a5ab66b336bd3ac43fed6b5ab84",
+    "google-crc32c==1.8.0 --hash=sha256:14f87e04d613dfa218d6135e81b78272c3b904e2a7053b841481b38a7d901411",
+    "google-resumable-media==2.10.0 --hash=sha256:88152884bee37b2bf36a0ab81ad8c7fd12212c9803dd981d77c1b35b02d34e7c",
+    "googleapis-common-protos==1.75.0 --hash=sha256:961ed60399c457ceb0ee8f285a84c870aabc9c6a832b9d37bb281b5bebde43ed",
+    "grpcio-status==1.83.0 --hash=sha256:f6a838a7c5fb84ae98833ec0ef81ed438c26e11e54b2ddb8e92ad328c861de69",
+    "grpcio==1.83.0 --hash=sha256:aeb339838db07600481ef869507279b75326c75eac6d10f7afa62a0da1d2bcdd",
+    "h11==0.16.0 --hash=sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86",
+    "h2==4.4.0 --hash=sha256:6acffe1aeab79098d7eb0f8385c1add11f2c7a94815f6fa2b7060eeddee3d87c",
+    "hpack==4.2.0 --hash=sha256:858ac0b02280fa582b5080d68db0899c62a80375e0e5413a74970c5e518b6986",
+    "httpcore==1.0.9 --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55",
+    "httpx==0.28.1 --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad",
+    "hyperframe==6.1.0 --hash=sha256:b03380493a519fce58ea5af42e4a42317bf9bd425596f7a0835ffce80f1a42e5",
+    "idna==3.18 --hash=sha256:7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2",
+    "iniconfig==2.3.0 --hash=sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12",
+    "msgpack==1.2.1 --hash=sha256:020e881a764b20d8d7ca1a54fc01b8175519d108e3c3f194fddc200bda95951a",
+    "packaging==26.2 --hash=sha256:5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e",
+    "pluggy==1.6.0 --hash=sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746",
+    "proto-plus==1.28.2 --hash=sha256:b874236fcac2358f601e4330bcb76cb8b89c851303ccf4078408b3d4774d1c52",
+    "protobuf==7.35.1 --hash=sha256:74758715c53d7158fb76caf4f0cfdacc5329a4b1bb994f865d6cf302d413a1c4",
+    "pyasn1-modules==0.4.2 --hash=sha256:29253a9207ce32b64c3ac6600edc75368f98473906e8fd1043bd6b5b1de2c14a",
+    "pyasn1==0.6.4 --hash=sha256:deda9277cfd454080ec40b207fb6df82206a3a2688735233cdcd8d3d565f088b",
+    "pycparser==3.0 --hash=sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992",
+    "pydantic-core==2.46.4 --hash=sha256:926c9541b14b12b1681dca8a0b75feb510b06c6341b70a8e500c2fdcff837cce",
+    "pydantic==2.13.4 --hash=sha256:45a282cde31d808236fd7ea9d919b128653c8b38b393d1c4ab335c62924d9aba",
+    "pygments==2.20.0 --hash=sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176",
+    "pyjwt==2.13.0 --hash=sha256:66adcc2aff09b3f1bbd95fc1e1577df8ac8723c978552fd43304c8a290ac5728",
+    "pytest==8.4.1 --hash=sha256:539c70ba6fcead8e78eebbf1115e8b589e7565830d7d006a8723f19ac8a0afb7",
+    "requests==2.34.2 --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
+    "starlette==1.3.1 --hash=sha256:c7372aae11c3c3f26a42df7bd626cec2f47d03483d261d369516a615a53714c6",
+    "typing-extensions==4.16.0 --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+    "typing-inspection==0.4.2 --hash=sha256:4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7",
+    "urllib3==2.7.0 --hash=sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897"
+  ],
+  "resolution": {
+    "activated_extras": {
+      "google-api-core": [
+        "grpc"
+      ],
+      "httpx": [
+        "http2"
+      ],
+      "pyjwt": [
+        "crypto"
+      ]
+    },
+    "allow_sdist": false,
+    "hashes_required": true,
+    "index_access_during_install": false,
+    "installation_mode": "no_index_no_compile_target",
+    "installed_record_closure_rule": "verified_actual_sha256_size_of_importable_record_files_excluding_pyc_record_and_entrypoint_scripts",
+    "marker_environment": {
+      "implementation_name": "cpython",
+      "implementation_version": "3.12.13",
+      "os_name": "posix",
+      "platform_machine": "x86_64",
+      "platform_python_implementation": "CPython",
+      "platform_release": "6.12.13",
+      "platform_system": "Linux",
+      "platform_version": "#1 SMP Wed Jul 22 00:33:13 UTC 2026",
+      "python_full_version": "3.12.13",
+      "python_version": "3.12",
+      "sys_platform": "linux"
+    },
+    "namespace_module_distribution_map": {
+      "google": [
+        "google-api-core",
+        "google-auth",
+        "google-cloud-core",
+        "google-cloud-firestore",
+        "google-cloud-storage",
+        "google-resumable-media",
+        "googleapis-common-protos",
+        "protobuf"
+      ]
+    },
+    "only_binary": ":all:",
+    "pip_version": "26.0.1",
+    "reachable_distribution_count": 46,
+    "resolver": "pip",
+    "root_requirement_count": 5,
+    "unresolved_dependency_count": 0
+  },
+  "root_imports": [
+    "fastapi",
+    "firebase_admin",
+    "google",
+    "httpx",
+    "pydantic",
+    "pytest"
+  ],
+  "root_requirements": [
+    "fastapi==0.140.0",
+    "firebase-admin==7.5.0",
+    "httpx==0.28.1",
+    "pydantic==2.13.4",
+    "pytest==8.4.1"
+  ],
+  "schema_version": "cocolon.emlis.nls_v3.recovery_epoch002.formal_worker_bootstrap_lock.v1",
+  "target": {
+    "abi_flags": "",
+    "byte_order": "little",
+    "implementation": "CPYTHON",
+    "machine": "x86_64",
+    "platform": "linux-x86_64",
+    "python_cache_tag": "cpython-312",
+    "python_version": "3.12.13",
+    "wheel_only": true
+  }
+}
