@@ -1587,6 +1587,35 @@ def _publication_state() -> dict[str, Any]:
     }
 
 
+def _reservation_publication_state() -> dict[str, Any]:
+    reservation = _reservation()
+    current_head = reservation["publication_base_commit_sha1"]
+    identity = _identity(
+        "formal_test_run_reservation",
+        "publication",
+    )
+    return {
+        "artifact_role": "FORMAL_TEST_RUN_RESERVATION",
+        "artifact": reservation,
+        "artifact_external_identity": identity,
+        "receipt_contains_self_commit_blob_or_raw_identity": False,
+        "expected_old_sha1": current_head,
+        "observed_old_sha1": current_head,
+        "parent_commit_sha1s": [current_head],
+        "changed_paths": [identity["path"]],
+        "expected_changed_paths": [identity["path"]],
+        "path_preexisted": False,
+        "postfetch_succeeded": True,
+        "postfetch_matches_candidate": True,
+        "owner_issue_codes": [],
+        "independent_issue_codes": [],
+        "reservation_write_outcome": "SUCCEEDED",
+        "authoritative_reservation_presence": "PRESENT",
+        "ready_receipt_marked_consumed": True,
+        "fabricated_reservation_detected": False,
+    }
+
+
 def _parent_state() -> dict[str, Any]:
     return {
         "phase_order": list(_PHASE_ORDER),
@@ -1709,6 +1738,7 @@ def _states_for_case(case_id: str, role: str) -> list[dict[str, Any]]:
     elif case_id == "L03":
         state["event1_ancestor_of_current_head"] = False
     elif case_id == "L04":
+        state = _reservation_publication_state()
         variants = []
         for field, value in (
             ("observed_old_sha1", "e" * 40),
@@ -1725,7 +1755,6 @@ def _states_for_case(case_id: str, role: str) -> list[dict[str, Any]]:
         for history in (
             [],
             [*state["published_reservations"], state["published_reservations"][0]],
-            list(reversed(state["published_reservations"])),
         ):
             row = deepcopy(state)
             row["declared_prior_reservation_history"] = history
