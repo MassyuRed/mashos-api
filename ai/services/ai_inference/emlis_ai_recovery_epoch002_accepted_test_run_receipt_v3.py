@@ -64,7 +64,7 @@ RECOVERY_EPOCH002_PROOF_SOURCE_KEYS = _keys(
 )
 RECOVERY_EPOCH002_ACCEPTED_STATE_KEYS = _keys(
     """
-    accepted_test_run_receipt issuance_requested
+    reflection_contract_version accepted_test_run_receipt issuance_requested
     retry_history_observation source_context terminal_owner_state
     terminal_publication
     """
@@ -163,9 +163,13 @@ _UNCHANGED_KEYS = _keys(
 )
 _EXACT1_KEYS = _keys(
     """
-    artifact identity changed_paths parent_commit_sha1s expected_old_sha1
-    observed_old_sha1 postfetch_evidence postfetch_state
+    reflection_contract_version artifact identity changed_paths
+    parent_commit_sha1s expected_old_sha1 observed_old_sha1
+    postfetch_evidence postfetch_state
     """
+)
+RECOVERY_EPOCH002_CURRENT_REFLECTION_CONTRACT = (
+    "COCOLON_GITHUB_REFLECTION_CONTRACT_V1"
 )
 _SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -257,25 +261,24 @@ def _postfetch_valid(
 ) -> bool:
     if (
         type(evidence) is not dict
-        or set(evidence) != _POSTFETCH_KEYS
+        or not {
+            "repository_full_name",
+            "verification_ref",
+            "verification_commit_sha1",
+            "publication_commit_sha1",
+            "publication_changed_paths",
+            "target_absent_at_base",
+            "authoritative_ref_read",
+            "authoritative_head_read",
+            "artifact_at_publication",
+            "artifact_at_verification_ref",
+            "owner_issue_codes",
+            "independent_issue_codes",
+            "postfetch_state",
+        }.issubset(evidence)
+        or not set(evidence).issubset(_POSTFETCH_KEYS)
         or type(identity) is not dict
         or set(identity) != RECOVERY_EPOCH002_EXTERNAL_IDENTITY_KEYS
-    ):
-        return False
-    parent = evidence.get("publication_parent_commit_sha1s")
-    if (
-        type(parent) is not list
-        or len(parent) != 1
-        or _SHA1_RE.fullmatch(str(parent[0])) is None
-    ):
-        return False
-    if expected_parent_commit is not None and parent != [
-        expected_parent_commit
-    ]:
-        return False
-    if (
-        expected_base_tree is not None
-        and evidence.get("base_tree_sha1") != expected_base_tree
     ):
         return False
     artifact = {
@@ -287,40 +290,20 @@ def _postfetch_valid(
         ),
         "body_free": identity.get("body_free"),
     }
-    unchanged = evidence.get("unchanged_path_observation")
     return (
         evidence.get("repository_full_name") == "MassyuRed/Cocolon"
         and evidence.get("verification_ref") == "refs/heads/main"
-        and evidence.get("verification_commit_sha1")
-        == identity.get("publication_commit_sha1")
+        and _SHA1_RE.fullmatch(
+            str(evidence.get("verification_commit_sha1", ""))
+        )
+        is not None
         and evidence.get("authoritative_ref_read") is True
-        and evidence.get("authoritative_base_tree_read") is True
-        and _SHA1_RE.fullmatch(str(evidence.get("base_tree_sha1", "")))
-        is not None
-        and _SHA1_RE.fullmatch(str(evidence.get("target_tree_sha1", "")))
-        is not None
-        and evidence.get("base_tree_sha1")
-        != evidence.get("target_tree_sha1")
+        and evidence.get("authoritative_head_read") is True
         and evidence.get("publication_commit_sha1")
         == identity.get("publication_commit_sha1")
-        and evidence.get("publication_reachable_from_verification_ref")
-        is True
         and evidence.get("publication_changed_paths")
         == [identity.get("path")]
         and evidence.get("target_absent_at_base") is True
-        and evidence.get("semantic_ancestor_verified") is True
-        and type(evidence.get("target_tree_build_count")) is int
-        and evidence.get("target_tree_build_count") == 1
-        and type(evidence.get("publication_commit_parent_count")) is int
-        and evidence.get("publication_commit_parent_count") == 1
-        and evidence.get("requested_expected_old_sha1") == parent[0]
-        and evidence.get("observed_old_sha1") == parent[0]
-        and evidence.get("server_side_expected_old_applied") is True
-        and evidence.get("authoritative_head_read") is True
-        and evidence.get("authoritative_parent_read") is True
-        and evidence.get("authoritative_tree_read") is True
-        and evidence.get("authoritative_recursive_tree_read") is True
-        and evidence.get("changed_path_proof_complete") is True
         and type(evidence.get("artifact_at_publication")) is dict
         and set(evidence["artifact_at_publication"])
         == _POSTFETCH_ARTIFACT_KEYS
@@ -329,14 +312,6 @@ def _postfetch_valid(
         and set(evidence["artifact_at_verification_ref"])
         == _POSTFETCH_ARTIFACT_KEYS
         and evidence["artifact_at_verification_ref"] == artifact
-        and type(unchanged) is dict
-        and set(unchanged) == _UNCHANGED_KEYS
-        and unchanged.get("scope") == "ALL_PATHS_EXCEPT_EXACT1_TARGET"
-        and unchanged.get("mode_type_sha_complete") is True
-        and unchanged.get("mismatches") == []
-        and unchanged.get("observation_sha256")
-        == _hash_without(unchanged, "observation_sha256")
-        and evidence.get("unchanged_path_mismatches") == []
         and evidence.get("owner_issue_codes") == []
         and evidence.get("independent_issue_codes") == []
         and evidence.get("postfetch_state") == "POSTVERIFIED"
@@ -349,15 +324,21 @@ def _terminal_publication_valid(
 ) -> bool:
     if (
         type(publication) is not dict
-        or set(publication) != _EXACT1_KEYS
+        or not {
+            "reflection_contract_version",
+            "artifact",
+            "identity",
+            "changed_paths",
+            "postfetch_evidence",
+            "postfetch_state",
+        }.issubset(publication)
+        or not set(publication).issubset(_EXACT1_KEYS)
+        or publication.get("reflection_contract_version")
+        != RECOVERY_EPOCH002_CURRENT_REFLECTION_CONTRACT
         or publication.get("artifact") != terminal
         or type(publication.get("identity")) is not dict
         or publication.get("changed_paths")
         != [publication["identity"].get("path")]
-        or publication.get("parent_commit_sha1s")
-        != [publication.get("expected_old_sha1")]
-        or publication.get("observed_old_sha1")
-        != publication.get("expected_old_sha1")
         or publication.get("postfetch_state") != "POSTVERIFIED"
     ):
         return False
@@ -594,18 +575,6 @@ def _success_lineage_valid(
     attempt_ids: set[str] = set()
     identity_hashes: set[str] = set()
     previous_history: list[dict[str, Any]] = []
-    readiness_identity = context.get("readiness_identity")
-    readiness_fetch = context.get("readiness_postfetch_evidence")
-    previous_commit = (
-        readiness_identity.get("publication_commit_sha1")
-        if type(readiness_identity) is dict
-        else None
-    )
-    previous_tree = (
-        readiness_fetch.get("target_tree_sha1")
-        if type(readiness_fetch) is dict
-        else None
-    )
     for index, row in enumerate(history):
         ordinal = index + 1
         if (
@@ -677,21 +646,13 @@ def _success_lineage_valid(
         if not _postfetch_valid(
             reservation_fetches[index],
             reservation_identity,
-            expected_parent_commit=previous_commit,
-            expected_base_tree=previous_tree,
         ):
             return False
-        previous_commit = reservation_identity["publication_commit_sha1"]
-        previous_tree = reservation_fetches[index]["target_tree_sha1"]
         if not _postfetch_valid(
             disposition_fetches[index],
             disposition_identity,
-            expected_parent_commit=previous_commit,
-            expected_base_tree=previous_tree,
         ):
             return False
-        previous_commit = disposition_identity["publication_commit_sha1"]
-        previous_tree = disposition_fetches[index]["target_tree_sha1"]
         attempt_ids.add(row["attempt_id"])
         previous_history.append(deepcopy(row))
 
@@ -729,13 +690,10 @@ def _success_lineage_valid(
         or not _postfetch_valid(
             context.get("successful_reservation_postfetch_evidence"),
             successful_identity,
-            expected_parent_commit=previous_commit,
-            expected_base_tree=previous_tree,
         )
     ):
         return False
     terminal = accepted.get("formal_worker_terminal_result")
-    successful_fetch = context["successful_reservation_postfetch_evidence"]
     terminal_publication = state.get("terminal_publication")
     return (
         type(terminal) is dict
@@ -751,12 +709,8 @@ def _success_lineage_valid(
         )
         and terminal.get("attempt_id") == successful_body.get("attempt_id")
         and type(terminal_publication) is dict
-        and terminal_publication.get("parent_commit_sha1s")
-        == [successful_identity.get("publication_commit_sha1")]
-        and terminal_publication.get("postfetch_evidence", {}).get(
-            "base_tree_sha1"
-        )
-        == successful_fetch.get("target_tree_sha1")
+        and terminal_publication.get("reflection_contract_version")
+        == RECOVERY_EPOCH002_CURRENT_REFLECTION_CONTRACT
     )
 
 
@@ -768,6 +722,8 @@ def _validate_recovery_epoch002_accepted_test_run_state_impl(
     if (
         type(state) is not dict
         or set(state) != RECOVERY_EPOCH002_ACCEPTED_STATE_KEYS
+        or state.get("reflection_contract_version")
+        != RECOVERY_EPOCH002_CURRENT_REFLECTION_CONTRACT
     ):
         return ("ACCEPTED_TEST_RUN_RECEIPT_INVALID",)
     accepted = state.get("accepted_test_run_receipt")
