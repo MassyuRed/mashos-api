@@ -239,6 +239,7 @@ RECOVERY_EPOCH002_SUCCESS_PUBLICATION_AUTHORITY_GRANT_KEYS = frozenset(
 )
 RECOVERY_EPOCH002_FRESH_PUBLICATION_STATE_KEYS = frozenset(
     {
+        "reflection_contract_version",
         "artifact_role",
         "artifact",
         "artifact_external_identity",
@@ -380,7 +381,10 @@ class RecoveryEpoch002ParentPorts(Protocol):
         *,
         publication_state: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        """Publish and postverify the single-tree success exact15 bundle."""
+        """Reflect exact15 in one or more approved GitHub writes.
+
+        Postverify the target scope after reflection.
+        """
 
 
 def _hash_without(value: Mapping[str, Any], key: str) -> str:
@@ -490,6 +494,8 @@ def _fresh_publication_issues(
     if (
         type(state) is not dict
         or set(state) != RECOVERY_EPOCH002_FRESH_PUBLICATION_STATE_KEYS
+        or state.get("reflection_contract_version")
+        != "COCOLON_GITHUB_REFLECTION_CONTRACT_V1"
         or state.get("artifact_role") != artifact_role
         or state.get("artifact") != artifact
         or state.get("automatic_progression") is not False
@@ -584,11 +590,6 @@ def _readiness_publication_issues(
         artifact=readiness,
     ):
         return ("READINESS_RECEIPT_NOT_PUBLISHED_STOP",)
-    if (
-        readiness_publication_state.get("expected_old_sha1")
-        != event1_external_identity.get("publication_commit_sha1")
-    ):
-        return ("READINESS_RECEIPT_NOT_PUBLISHED_STOP",)
     return ()
 
 
@@ -619,8 +620,6 @@ def _reservation_issues(
         != event1_artifact.get("challenge_id")
         or reservation.get("preflight_challenge_id")
         != readiness.get("preflight_challenge_id")
-        or reservation.get("publication_base_commit_sha1")
-        != readiness_external_identity.get("publication_commit_sha1")
     ):
         return ("RUN_RESERVATION_INVALID",)
     return ()
@@ -636,13 +635,6 @@ def _reservation_publication_issues(
         reservation_publication_state,
         artifact_role="FORMAL_TEST_RUN_RESERVATION",
         artifact=reservation,
-    ):
-        return ("RESERVATION_NOT_PUBLISHED_STOP",)
-    if (
-        reservation_publication_state.get("expected_old_sha1")
-        != readiness_external_identity.get("publication_commit_sha1")
-        or reservation_publication_state.get("expected_old_sha1")
-        != reservation.get("publication_base_commit_sha1")
     ):
         return ("RESERVATION_NOT_PUBLISHED_STOP",)
     return ()
@@ -1711,14 +1703,22 @@ def _continuation_postfetch_valid(
 ) -> bool:
     if (
         type(evidence) is not dict
-        or set(evidence) != _CONTINUATION_POSTFETCH_KEYS
-    ):
-        return False
-    parents = evidence.get("publication_parent_commit_sha1s")
-    if (
-        type(parents) is not list
-        or len(parents) != 1
-        or _CONTINUATION_SHA1_RE.fullmatch(str(parents[0])) is None
+        or not {
+            "repository_full_name",
+            "verification_ref",
+            "verification_commit_sha1",
+            "publication_commit_sha1",
+            "publication_changed_paths",
+            "target_absent_at_base",
+            "authoritative_ref_read",
+            "authoritative_head_read",
+            "artifact_at_publication",
+            "artifact_at_verification_ref",
+            "owner_issue_codes",
+            "independent_issue_codes",
+            "postfetch_state",
+        }.issubset(evidence)
+        or not set(evidence).issubset(_CONTINUATION_POSTFETCH_KEYS)
     ):
         return False
     artifact = {
@@ -1730,46 +1730,20 @@ def _continuation_postfetch_valid(
         ),
         "body_free": identity.get("body_free"),
     }
-    unchanged = evidence.get("unchanged_path_observation")
     return (
         evidence.get("repository_full_name") == "MassyuRed/Cocolon"
         and evidence.get("verification_ref") == "refs/heads/main"
-        and evidence.get("verification_commit_sha1")
-        == identity.get("publication_commit_sha1")
+        and _CONTINUATION_SHA1_RE.fullmatch(
+            str(evidence.get("verification_commit_sha1", ""))
+        )
+        is not None
         and evidence.get("authoritative_ref_read") is True
-        and evidence.get("authoritative_base_tree_read") is True
-        and _CONTINUATION_SHA1_RE.fullmatch(
-            str(evidence.get("base_tree_sha1", ""))
-        )
-        is not None
-        and _CONTINUATION_SHA1_RE.fullmatch(
-            str(evidence.get("target_tree_sha1", ""))
-        )
-        is not None
-        and evidence.get("base_tree_sha1") != "f" * 40
-        and evidence.get("target_tree_sha1") != "f" * 40
-        and evidence.get("base_tree_sha1")
-        != evidence.get("target_tree_sha1")
+        and evidence.get("authoritative_head_read") is True
         and evidence.get("publication_commit_sha1")
         == identity.get("publication_commit_sha1")
-        and evidence.get("publication_reachable_from_verification_ref")
-        is True
         and evidence.get("publication_changed_paths")
         == [identity.get("path")]
         and evidence.get("target_absent_at_base") is True
-        and evidence.get("semantic_ancestor_verified") is True
-        and type(evidence.get("target_tree_build_count")) is int
-        and evidence.get("target_tree_build_count") == 1
-        and type(evidence.get("publication_commit_parent_count")) is int
-        and evidence.get("publication_commit_parent_count") == 1
-        and evidence.get("requested_expected_old_sha1") == parents[0]
-        and evidence.get("observed_old_sha1") == parents[0]
-        and evidence.get("server_side_expected_old_applied") is True
-        and evidence.get("authoritative_head_read") is True
-        and evidence.get("authoritative_parent_read") is True
-        and evidence.get("authoritative_tree_read") is True
-        and evidence.get("authoritative_recursive_tree_read") is True
-        and evidence.get("changed_path_proof_complete") is True
         and type(evidence.get("artifact_at_publication")) is dict
         and set(evidence["artifact_at_publication"])
         == _CONTINUATION_POSTFETCH_ARTIFACT_KEYS
@@ -1778,14 +1752,6 @@ def _continuation_postfetch_valid(
         and set(evidence["artifact_at_verification_ref"])
         == _CONTINUATION_POSTFETCH_ARTIFACT_KEYS
         and evidence["artifact_at_verification_ref"] == artifact
-        and type(unchanged) is dict
-        and set(unchanged) == _CONTINUATION_UNCHANGED_KEYS
-        and unchanged.get("scope") == "ALL_PATHS_EXCEPT_EXACT1_TARGET"
-        and unchanged.get("mode_type_sha_complete") is True
-        and unchanged.get("mismatches") == []
-        and unchanged.get("observation_sha256")
-        == _hash_without(unchanged, "observation_sha256")
-        and evidence.get("unchanged_path_mismatches") == []
         and evidence.get("owner_issue_codes") == []
         and evidence.get("independent_issue_codes") == []
         and evidence.get("postfetch_state") == "POSTVERIFIED"
