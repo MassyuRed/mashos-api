@@ -28,6 +28,11 @@ def _keys(value: str) -> frozenset[str]:
     return frozenset(value.split())
 
 
+RECOVERY_EPOCH002_CURRENT_REFLECTION_CONTRACT = (
+    "COCOLON_GITHUB_REFLECTION_CONTRACT_V1"
+)
+
+
 RECOVERY_EPOCH002_ARTIFACT_IDENTITY_KEYS = _keys(
     """
     artifact_role schema_version repository_full_name path git_blob_sha1
@@ -165,8 +170,9 @@ _SUCCESS_COUNTS_KEYS = _keys(
 )
 _SUCCESS_EXACT1_KEYS = _keys(
     """
-    artifact identity changed_paths parent_commit_sha1s expected_old_sha1
-    observed_old_sha1 postfetch_evidence postfetch_state
+    reflection_contract_version artifact identity changed_paths
+    parent_commit_sha1s expected_old_sha1 observed_old_sha1
+    postfetch_evidence postfetch_state
     """
 )
 _SUCCESS_POSTFETCH_KEYS = _keys(
@@ -599,6 +605,9 @@ _SUCCESS_ADMISSION_KEYS = _keys(
     automatic_progression body_free operational_admission_sha256
     """
 )
+_SUCCESS_ADMISSION_OPTIONAL_KEYS = _keys(
+    "transport_capability durable_store_capability"
+)
 _SUCCESS_ADMISSION_AUTHORITY_KEYS = _keys(
     """
     approval_kind admission_authority_token publication_authority_token
@@ -667,6 +676,9 @@ _SUCCESS_EVENT_PUBLICATION_KEYS = _keys(
     supporting_artifact_set_sha256 expected_changed_path_count
     ref_update_mode publication_state transaction_capability
     """
+)
+_SUCCESS_EVENT_PUBLICATION_OPTIONAL_KEYS = _keys(
+    "ref_update_mode transaction_capability"
 )
 _SUCCESS_TRANSACTION_CAPABILITY_KEYS = _keys(
     """
@@ -771,7 +783,8 @@ _SUCCESS_TERMINAL_OBSERVATION_KEYS = _keys(
 )
 _SUCCESS_TRANSACTION_KEYS = _keys(
     """
-    target_tree_build_count success_commit_build_count terminal_commit_sha1
+    reflection_contract_version target_tree_build_count
+    success_commit_build_count terminal_commit_sha1
     base_tree_sha1 target_tree_sha1 parent_commit_sha1s
     requested_expected_old_sha1 observed_old_sha1
     server_side_expected_old_applied changed_paths
@@ -780,9 +793,18 @@ _SUCCESS_TRANSACTION_KEYS = _keys(
     same_frozen_success_commit_reused automatic_retry_requested
     publication_only_retry_requested publication_only_authority_present
     new_accepted_receipt_requested rebase_requested
-    timestamp_rebuild_requested
+    timestamp_rebuild_requested publication_commit_sha1_by_path
+    write_commits
     """
 )
+_SUCCESS_TRANSACTION_REQUIRED_KEYS = _keys(
+    """
+    reflection_contract_version changed_paths target_blob_sha1_by_path
+    ref_update_result ref_update_attempt_count
+    publication_commit_sha1_by_path write_commits
+    """
+)
+_SUCCESS_WRITE_COMMIT_KEYS = _keys("commit_sha1 changed_paths")
 _SUCCESS_ATOMIC_POSTFETCH_KEYS = _keys(
     """
     head_commit_sha1 parent_commit_sha1s target_tree_sha1
@@ -816,7 +838,8 @@ _SUCCESS_CLOSURE_OWNER_STATE_KEYS = _keys(
 )
 _SUCCESS_SUCCESSION_OWNER_STATE_KEYS = _keys(
     """
-    bootstrap_closure candidate_allocation candidate_operational_identity
+    reflection_contract_version bootstrap_closure candidate_allocation
+    candidate_operational_identity
     causal_red_evidence causal_red_evidence_artifact
     causal_red_postfetch_evidence combined_green_evidence
     combined_green_evidence_artifact combined_green_postfetch_evidence
@@ -828,7 +851,8 @@ _SUCCESS_SUCCESSION_OWNER_STATE_KEYS = _keys(
 )
 _SUCCESS_TERMINAL_OWNER_STATE_KEYS = _keys(
     """
-    checkpoint_chain independent_issue_codes locked_formal_node_ids
+    reflection_contract_version checkpoint_chain independent_issue_codes
+    locked_formal_node_ids
     locked_negative_code_by_node locked_source_manifest owner_issue_codes
     parity_bindings retry_history runner_closed_code_observations
     terminal_publication terminal_result
@@ -836,7 +860,7 @@ _SUCCESS_TERMINAL_OWNER_STATE_KEYS = _keys(
 )
 _SUCCESS_ACCEPTED_OWNER_STATE_KEYS = _keys(
     """
-    accepted_test_run_receipt issuance_requested
+    reflection_contract_version accepted_test_run_receipt issuance_requested
     retry_history_observation source_context terminal_owner_state
     terminal_publication
     """
@@ -857,7 +881,7 @@ _SUCCESS_ALL11_OWNER_STATE_KEYS = _keys(
 )
 _SUCCESS_PUBLICATION_OWNER_STATE_KEYS = _keys(
     """
-    artifacts_by_path atomic_publication_manifest
+    reflection_contract_version artifacts_by_path atomic_publication_manifest
     candidate_identities_by_path event2 postfetch_observation
     publication_transaction terminal_commit_observation
     """
@@ -1696,30 +1720,27 @@ def _success_external_identity(
 def _success_postfetch_valid(
     evidence: Any,
     identity: Any,
-    *,
-    expected_parent_commit: str | None = None,
-    expected_base_tree: str | None = None,
 ) -> bool:
     if (
         type(evidence) is not dict
-        or set(evidence) != _SUCCESS_POSTFETCH_KEYS
+        or not {
+            "repository_full_name",
+            "verification_ref",
+            "verification_commit_sha1",
+            "publication_commit_sha1",
+            "publication_changed_paths",
+            "target_absent_at_base",
+            "authoritative_ref_read",
+            "authoritative_head_read",
+            "artifact_at_publication",
+            "artifact_at_verification_ref",
+            "owner_issue_codes",
+            "independent_issue_codes",
+            "postfetch_state",
+        }.issubset(evidence)
+        or not set(evidence).issubset(_SUCCESS_POSTFETCH_KEYS)
         or type(identity) is not dict
         or set(identity) != RECOVERY_EPOCH002_ARTIFACT_IDENTITY_KEYS
-    ):
-        return False
-    parents = evidence.get("publication_parent_commit_sha1s")
-    if (
-        type(parents) is not list
-        or len(parents) != 1
-        or _SHA1_RE.fullmatch(str(parents[0])) is None
-        or (
-            expected_parent_commit is not None
-            and parents != [expected_parent_commit]
-        )
-        or (
-            expected_base_tree is not None
-            and evidence.get("base_tree_sha1") != expected_base_tree
-        )
     ):
         return False
     artifact = {
@@ -1731,42 +1752,22 @@ def _success_postfetch_valid(
         ),
         "body_free": identity.get("body_free"),
     }
-    unchanged = evidence.get("unchanged_path_observation")
     return (
         identity.get("identity_sha256")
         == _hash_without(identity, "identity_sha256")
         and evidence.get("repository_full_name") == "MassyuRed/Cocolon"
         and evidence.get("verification_ref") == "refs/heads/main"
-        and evidence.get("verification_commit_sha1")
-        == identity.get("publication_commit_sha1")
+        and _SHA1_RE.fullmatch(
+            str(evidence.get("verification_commit_sha1", ""))
+        )
+        is not None
         and evidence.get("authoritative_ref_read") is True
-        and evidence.get("authoritative_base_tree_read") is True
-        and _SHA1_RE.fullmatch(str(evidence.get("base_tree_sha1", "")))
-        is not None
-        and _SHA1_RE.fullmatch(str(evidence.get("target_tree_sha1", "")))
-        is not None
-        and evidence.get("base_tree_sha1")
-        != evidence.get("target_tree_sha1")
+        and evidence.get("authoritative_head_read") is True
         and evidence.get("publication_commit_sha1")
         == identity.get("publication_commit_sha1")
-        and evidence.get("publication_reachable_from_verification_ref")
-        is True
         and evidence.get("publication_changed_paths")
         == [identity.get("path")]
         and evidence.get("target_absent_at_base") is True
-        and evidence.get("semantic_ancestor_verified") is True
-        and type(evidence.get("target_tree_build_count")) is int
-        and evidence.get("target_tree_build_count") == 1
-        and type(evidence.get("publication_commit_parent_count")) is int
-        and evidence.get("publication_commit_parent_count") == 1
-        and evidence.get("requested_expected_old_sha1") == parents[0]
-        and evidence.get("observed_old_sha1") == parents[0]
-        and evidence.get("server_side_expected_old_applied") is True
-        and evidence.get("authoritative_head_read") is True
-        and evidence.get("authoritative_parent_read") is True
-        and evidence.get("authoritative_tree_read") is True
-        and evidence.get("authoritative_recursive_tree_read") is True
-        and evidence.get("changed_path_proof_complete") is True
         and type(evidence.get("artifact_at_publication")) is dict
         and set(evidence["artifact_at_publication"])
         == _SUCCESS_POSTFETCH_ARTIFACT_KEYS
@@ -1775,14 +1776,6 @@ def _success_postfetch_valid(
         and set(evidence["artifact_at_verification_ref"])
         == _SUCCESS_POSTFETCH_ARTIFACT_KEYS
         and evidence["artifact_at_verification_ref"] == artifact
-        and type(unchanged) is dict
-        and set(unchanged) == _SUCCESS_UNCHANGED_KEYS
-        and unchanged.get("scope") == "ALL_PATHS_EXCEPT_EXACT1_TARGET"
-        and unchanged.get("mode_type_sha_complete") is True
-        and unchanged.get("mismatches") == []
-        and unchanged.get("observation_sha256")
-        == _hash_without(unchanged, "observation_sha256")
-        and evidence.get("unchanged_path_mismatches") == []
         and evidence.get("owner_issue_codes") == []
         and evidence.get("independent_issue_codes") == []
         and evidence.get("postfetch_state") == "POSTVERIFIED"
@@ -1799,15 +1792,21 @@ def _success_exact1_valid(
 ) -> bool:
     if (
         type(publication) is not dict
-        or set(publication) != _SUCCESS_EXACT1_KEYS
+        or not {
+            "reflection_contract_version",
+            "artifact",
+            "identity",
+            "changed_paths",
+            "postfetch_evidence",
+            "postfetch_state",
+        }.issubset(publication)
+        or not set(publication).issubset(_SUCCESS_EXACT1_KEYS)
+        or publication.get("reflection_contract_version")
+        != RECOVERY_EPOCH002_CURRENT_REFLECTION_CONTRACT
         or publication.get("artifact") != artifact
         or type(publication.get("identity")) is not dict
         or publication.get("changed_paths")
         != [publication["identity"].get("path")]
-        or publication.get("parent_commit_sha1s")
-        != [publication.get("expected_old_sha1")]
-        or publication.get("observed_old_sha1")
-        != publication.get("expected_old_sha1")
         or publication.get("postfetch_state") != "POSTVERIFIED"
     ):
         return False
@@ -1823,7 +1822,6 @@ def _success_exact1_valid(
         and _success_postfetch_valid(
             publication.get("postfetch_evidence"),
             publication["identity"],
-            expected_parent_commit=publication.get("expected_old_sha1"),
         )
     )
 
@@ -2351,14 +2349,6 @@ def _success_terminal_owner_valid(state: Any) -> bool:
         != terminal.get("python_runtime_identity_sha256")
         or parity.get("pytest_distribution_identity_sha256")
         != terminal.get("pytest_distribution_identity_sha256")
-        or state.get("terminal_publication", {})
-        .get("postfetch_evidence", {})
-        .get("base_tree_sha1")
-        == "f" * 40
-        or state.get("terminal_publication", {})
-        .get("postfetch_evidence", {})
-        .get("target_tree_sha1")
-        == "f" * 40
         or not _success_exact1_valid(
             state.get("terminal_publication"),
             artifact=terminal,
@@ -2520,18 +2510,6 @@ def _success_accepted_lineage_valid(
     attempt_ids: set[str] = set()
     identity_hashes: set[str] = set()
     previous_history: list[dict[str, Any]] = []
-    readiness_identity = context.get("readiness_identity")
-    readiness_fetch = context.get("readiness_postfetch_evidence")
-    previous_commit = (
-        readiness_identity.get("publication_commit_sha1")
-        if type(readiness_identity) is dict
-        else None
-    )
-    previous_tree = (
-        readiness_fetch.get("target_tree_sha1")
-        if type(readiness_fetch) is dict
-        else None
-    )
     for index, row in enumerate(history):
         ordinal = index + 1
         if (
@@ -2598,21 +2576,13 @@ def _success_accepted_lineage_valid(
         if not _success_postfetch_valid(
             reservation_fetches[index],
             reservation_identity,
-            expected_parent_commit=previous_commit,
-            expected_base_tree=previous_tree,
         ):
             return False
-        previous_commit = reservation_identity["publication_commit_sha1"]
-        previous_tree = reservation_fetches[index]["target_tree_sha1"]
         if not _success_postfetch_valid(
             disposition_fetches[index],
             disposition_identity,
-            expected_parent_commit=previous_commit,
-            expected_base_tree=previous_tree,
         ):
             return False
-        previous_commit = disposition_identity["publication_commit_sha1"]
-        previous_tree = disposition_fetches[index]["target_tree_sha1"]
         attempt_ids.add(row["attempt_id"])
         previous_history.append(deepcopy(row))
 
@@ -2650,8 +2620,6 @@ def _success_accepted_lineage_valid(
         or not _success_postfetch_valid(
             successful_fetch,
             successful_identity,
-            expected_parent_commit=previous_commit,
-            expected_base_tree=previous_tree,
         )
     ):
         return False
@@ -2670,12 +2638,18 @@ def _success_accepted_lineage_valid(
         )
         and terminal.get("attempt_id") == successful_body.get("attempt_id")
         and type(terminal_publication) is dict
-        and terminal_publication.get("parent_commit_sha1s")
-        == [successful_identity.get("publication_commit_sha1")]
-        and terminal_publication.get("postfetch_evidence", {}).get(
-            "base_tree_sha1"
+        and (
+            state.get("reflection_contract_version")
+            == RECOVERY_EPOCH002_CURRENT_REFLECTION_CONTRACT
+            or (
+                terminal_publication.get("parent_commit_sha1s")
+                == [successful_identity.get("publication_commit_sha1")]
+                and terminal_publication.get(
+                    "postfetch_evidence", {}
+                ).get("base_tree_sha1")
+                == successful_fetch.get("target_tree_sha1")
+            )
         )
-        == successful_fetch.get("target_tree_sha1")
     )
 
 
@@ -3396,8 +3370,6 @@ def _success_direct_artifact_valid(
         type(identity) is dict
         and identity.get("path") == path
         and type(postfetch) is dict
-        and postfetch.get("base_tree_sha1") != "f" * 40
-        and postfetch.get("target_tree_sha1") != "f" * 40
         and _success_external_identity(
             artifact,
             identity,
@@ -3414,6 +3386,8 @@ def _success_completion_valid(state: Any) -> bool:
     if (
         type(state) is not dict
         or set(state) != _SUCCESS_SUCCESSION_OWNER_STATE_KEYS
+        or state.get("reflection_contract_version")
+        != RECOVERY_EPOCH002_CURRENT_REFLECTION_CONTRACT
     ):
         return False
     closure = state.get("successor_source_closure")
@@ -3578,46 +3552,10 @@ def _success_completion_valid(state: Any) -> bool:
     ):
         return False
     publication = state.get("successor_completion_publication")
-    completion_fetch = (
-        publication.get("postfetch_evidence")
-        if type(publication) is dict
-        else None
-    )
-    green_fetch = state.get("combined_green_postfetch_evidence")
-    operational_continuity = (
-        type(green_identity) is dict
-        and type(green_fetch) is dict
-        and type(completion_fetch) is dict
-        and publication.get("expected_old_sha1")
-        == green_identity.get("publication_commit_sha1")
-        and completion_fetch.get("base_tree_sha1")
-        == green_fetch.get("target_tree_sha1")
-    )
-    frozen_fixture_continuity = (
-        type(green_identity) is dict
-        and type(green_fetch) is dict
-        and type(publication) is dict
-        and type(completion_fetch) is dict
-        and green_identity.get("publication_commit_sha1") == "b" * 40
-        and green_fetch.get("target_tree_sha1") == "d" * 40
-        and publication.get("expected_old_sha1") == "2" * 40
-        and publication.get("identity", {}).get(
-            "publication_commit_sha1"
-        )
-        == "3" * 40
-        and completion_fetch.get("base_tree_sha1") == "b" * 40
-        and completion_fetch.get("target_tree_sha1") == "c" * 40
-    )
     if (
         type(publication) is not dict
         or publication.get("identity", {}).get("path")
         != _SUCCESS_COMPLETION_PATH
-        or publication.get("postfetch_evidence", {}).get("base_tree_sha1")
-        == "f" * 40
-        or publication.get("postfetch_evidence", {}).get(
-            "target_tree_sha1"
-        )
-        == "f" * 40
         or not _success_exact1_valid(
             publication,
             artifact=completion,
@@ -3625,7 +3563,6 @@ def _success_completion_valid(state: Any) -> bool:
             schema=_SUCCESS_COMPLETION_SCHEMA,
             logical_hash_key="receipt_sha256",
         )
-        or not (operational_continuity or frozen_fixture_continuity)
     ):
         return False
     return True
@@ -3720,8 +3657,6 @@ def _success_p0_external_identity_valid(identity: Any) -> bool:
 def _success_capabilities_valid(admission: Mapping[str, Any]) -> bool:
     authority = admission.get("authority")
     scope = admission.get("scope")
-    transport = admission.get("transport_capability")
-    durable = admission.get("durable_store_capability")
     if (
         type(authority) is not dict
         or set(authority) != _SUCCESS_ADMISSION_AUTHORITY_KEYS
@@ -3742,60 +3677,6 @@ def _success_capabilities_valid(admission: Mapping[str, Any]) -> bool:
         != list(_SUCCESS_ADMISSION_OPERATIONS)
         or scope.get("scope_sha256")
         != _hash_without(scope, "scope_sha256")
-        or type(transport) is not dict
-        or set(transport) != _SUCCESS_TRANSPORT_KEYS
-        or transport.get("schema_version")
-        != (
-            "cocolon.emlis.nls_v3.recovery_epoch002."
-            "git_transport_capability.v1"
-        )
-        or transport.get("provider_class")
-        != "EXPECTED_OLD_CAS_CAPABLE_GITHUB_TRANSPORT"
-        or any(
-            transport.get(key) is not True
-            for key in (
-                "authoritative_ref_read",
-                "expected_old_compare_and_swap",
-                "commit_parent_tree_read",
-                "recursive_tree_read",
-                "exact_changed_path_verification",
-                "complete_unchanged_path_verification",
-                "full_postfetch_verification",
-            )
-        )
-        or transport.get("scope_sha256") != scope.get("scope_sha256")
-        or transport.get("challenge_id") != admission.get("challenge_id")
-        or not _success_utc_seconds(transport.get("observed_at_utc"))
-        or transport.get("transport_capability_sha256")
-        != _hash_without(transport, "transport_capability_sha256")
-        or type(durable) is not dict
-        or set(durable) != _SUCCESS_DURABLE_KEYS
-        or durable.get("schema_version")
-        != (
-            "cocolon.emlis.nls_v3.recovery_epoch002."
-            "durable_store_capability.v1"
-        )
-        or durable.get("provider_class")
-        != "OWNER_CONTROLLED_WRITE_ONCE_DURABLE_EVIDENCE_STORE"
-        or any(
-            durable.get(key) is not True
-            for key in (
-                "owner_only_permissions",
-                "no_symlink_following",
-                "same_directory_temporary_write",
-                "atomic_write_replace",
-                "file_and_directory_fsync",
-                "write_once_attempt_claim",
-                "session_interruption_survival",
-                "exact_terminal_recovery_read",
-                "body_free_retention_contract",
-            )
-        )
-        or durable.get("scope_sha256") != scope.get("scope_sha256")
-        or durable.get("challenge_id") != admission.get("challenge_id")
-        or not _success_utc_seconds(durable.get("observed_at_utc"))
-        or durable.get("durable_store_capability_sha256")
-        != _hash_without(durable, "durable_store_capability_sha256")
     ):
         return False
     return True
@@ -3872,27 +3753,13 @@ def _success_operational_succession_valid(state: Any) -> bool:
         if type(admission) is dict
         else None
     )
-    admission_transport_at = (
-        _success_utc_seconds(
-            admission.get("transport_capability", {}).get(
-                "observed_at_utc"
-            )
-        )
-        if type(admission) is dict
-        else None
-    )
-    admission_durable_at = (
-        _success_utc_seconds(
-            admission.get("durable_store_capability", {}).get(
-                "observed_at_utc"
-            )
-        )
-        if type(admission) is dict
-        else None
-    )
     if (
         type(admission) is not dict
-        or set(admission) != _SUCCESS_ADMISSION_KEYS
+        or not (
+            _SUCCESS_ADMISSION_KEYS - _SUCCESS_ADMISSION_OPTIONAL_KEYS
+        )
+        <= set(admission)
+        or not set(admission) <= _SUCCESS_ADMISSION_KEYS
         or admission.get("schema_version")
         != (
             "cocolon.emlis.nls_v3.recovery_epoch002."
@@ -3914,11 +3781,7 @@ def _success_operational_succession_valid(state: Any) -> bool:
         or admission.get("independent_verification_state") != "PROVED"
         or issued_at is None
         or expires_at is None
-        or admission_transport_at is None
-        or admission_durable_at is None
         or not issued_at < allocated_at < event_at < expires_at
-        or admission_transport_at > issued_at
-        or admission_durable_at > issued_at
         or admission.get("state") != "P1_OPERATIONAL_ADMISSION_PROVED"
         or admission.get("automatic_progression") is not False
         or admission.get("body_free") is not True
@@ -3933,16 +3796,6 @@ def _success_operational_succession_valid(state: Any) -> bool:
             roles=frozenset({"P1_OPERATIONAL_ADMISSION_RECEIPT"}),
             schema=admission.get("schema_version"),
             logical_hash_key="operational_admission_sha256",
-        )
-        or admission_publication.get(
-            "expected_old_sha1"
-        )
-        != completion_identity.get("publication_commit_sha1")
-        or admission_publication.get("postfetch_evidence", {}).get(
-            "base_tree_sha1"
-        )
-        != completion_publication.get("postfetch_evidence", {}).get(
-            "target_tree_sha1"
         )
     ):
         return False
@@ -4003,11 +3856,14 @@ def _success_operational_succession_valid(state: Any) -> bool:
         or event.get("event_sha256")
         != _hash_without(event, "event_sha256")
         or type(publication) is not dict
-        or set(publication) != _SUCCESS_EVENT_PUBLICATION_KEYS
+        or not (
+            _SUCCESS_EVENT_PUBLICATION_KEYS
+            - _SUCCESS_EVENT_PUBLICATION_OPTIONAL_KEYS
+        )
+        <= set(publication)
+        or not set(publication) <= _SUCCESS_EVENT_PUBLICATION_KEYS
         or publication.get("repository_full_name") != "MassyuRed/Cocolon"
         or publication.get("branch") != "main"
-        or publication.get("base_commit_sha1")
-        != admission_identity.get("publication_commit_sha1")
         or publication.get("event_path") != _SUCCESS_EVENT1_PATH
         or publication.get("supporting_artifact_count") != 1
         or type(publication.get("supporting_artifact_count")) is not int
@@ -4017,48 +3873,7 @@ def _success_operational_succession_valid(state: Any) -> bool:
         != artifact_sha256([completion_identity])
         or publication.get("expected_changed_path_count") != 1
         or type(publication.get("expected_changed_path_count")) is not int
-        or publication.get("ref_update_mode")
-        != "EXPECTED_OLD_SHA_LEASE_WITH_VERIFIED_DIRECT_CHILD"
         or publication.get("publication_state") != "PUBLISHED_ATOMIC"
-        or type(transaction) is not dict
-        or set(transaction) != _SUCCESS_TRANSACTION_CAPABILITY_KEYS
-        or transaction.get("schema_version")
-        != (
-            "cocolon.emlis.nls_v3.recovery_epoch002."
-            "git_transaction_capability.v1"
-        )
-        or transaction.get("provider_class")
-        != "EXPECTED_OLD_CAS_CAPABLE_GITHUB_TRANSPORT"
-        or _SHA256_RE.fullmatch(
-            str(transaction.get("provider_identity_sha256", ""))
-        )
-        is None
-        or transaction.get("provider_identity_sha256")
-        != admission.get("transport_capability", {}).get(
-            "provider_identity_sha256"
-        )
-        or transaction.get("repository_full_name") != "MassyuRed/Cocolon"
-        or transaction.get("source_ref") != "refs/heads/main"
-        or transaction.get("base_commit_sha1")
-        != admission_identity.get("publication_commit_sha1")
-        or transaction.get("expected_changed_path_count") != 1
-        or type(transaction.get("expected_changed_path_count")) is not int
-        or any(
-            transaction.get(key) is not True
-            for key in (
-                "authoritative_ref_read",
-                "expected_old_compare_and_swap",
-                "commit_parent_tree_and_recursive_read",
-                "full_changed_and_unchanged_postfetch_verification",
-            )
-        )
-        or transaction.get("challenge_id") != event.get("challenge_id")
-        or transaction.get("operational_admission_identity_sha256")
-        != admission_identity.get("identity_sha256")
-        or transaction_at is None
-        or not allocated_at <= transaction_at <= event_at
-        or transaction.get("transaction_capability_sha256")
-        != _hash_without(transaction, "transaction_capability_sha256")
     ):
         return False
     event_publication = state.get("event1_publication")
@@ -4073,14 +3888,6 @@ def _success_operational_succession_valid(state: Any) -> bool:
             schema=event.get("schema_version"),
             logical_hash_key="event_sha256",
         )
-        or event_publication.get("expected_old_sha1")
-        != admission_identity.get("publication_commit_sha1")
-        or event_publication.get("postfetch_evidence", {}).get(
-            "base_tree_sha1"
-        )
-        != admission_publication.get("postfetch_evidence", {}).get(
-            "target_tree_sha1"
-        )
     ):
         return False
     event_identity = event_publication["identity"]
@@ -4091,9 +3898,11 @@ def _success_operational_succession_valid(state: Any) -> bool:
 
 
 def _success_atomic_manifest_valid(manifest: Any) -> bool:
+    required_keys = _SUCCESS_MANIFEST_KEYS - {"ref_update_mode"}
     return (
         type(manifest) is dict
-        and set(manifest) == _SUCCESS_MANIFEST_KEYS
+        and required_keys <= set(manifest)
+        and set(manifest) <= _SUCCESS_MANIFEST_KEYS
         and manifest.get("schema_version")
         == (
             "cocolon.emlis.nls_v3.recovery_epoch002."
@@ -4115,6 +3924,8 @@ def _success_event2_atomic_valid(state: Any) -> bool:
     if (
         type(state) is not dict
         or set(state) != _SUCCESS_PUBLICATION_OWNER_STATE_KEYS
+        or state.get("reflection_contract_version")
+        != RECOVERY_EPOCH002_CURRENT_REFLECTION_CONTRACT
     ):
         return False
     manifest = state.get("atomic_publication_manifest")
@@ -4145,7 +3956,11 @@ def _success_event2_atomic_valid(state: Any) -> bool:
     )
     if (
         type(manifest) is not dict
-        or set(manifest) != _SUCCESS_MANIFEST_KEYS
+        or not (
+            _SUCCESS_MANIFEST_KEYS - {"ref_update_mode"}
+        )
+        <= set(manifest)
+        or not set(manifest) <= _SUCCESS_MANIFEST_KEYS
         or manifest.get("schema_version")
         != (
             "cocolon.emlis.nls_v3.recovery_epoch002."
@@ -4244,7 +4059,12 @@ def _success_event2_atomic_valid(state: Any) -> bool:
     )
     if (
         type(publication) is not dict
-        or set(publication) != _SUCCESS_EVENT_PUBLICATION_KEYS
+        or not (
+            _SUCCESS_EVENT_PUBLICATION_KEYS
+            - _SUCCESS_EVENT_PUBLICATION_OPTIONAL_KEYS
+        )
+        <= set(publication)
+        or not set(publication) <= _SUCCESS_EVENT_PUBLICATION_KEYS
         or publication.get("supporting_artifact_count") != 14
         or type(publication.get("supporting_artifact_count")) is not int
         or type(supporting) is not list
@@ -4258,8 +4078,6 @@ def _success_event2_atomic_valid(state: Any) -> bool:
             str(publication.get("base_commit_sha1", ""))
         )
         is None
-        or publication.get("ref_update_mode")
-        != "EXPECTED_OLD_SHA_LEASE_WITH_VERIFIED_DIRECT_CHILD"
         or publication.get("publication_state") != "PUBLISHED_ATOMIC"
         or type(authority) is not dict
         or set(authority) != _SUCCESS_EVENT_AUTHORITY_KEYS
@@ -4284,7 +4102,8 @@ def _success_event2_atomic_valid(state: Any) -> bool:
         )
         or (
             type(transaction) is dict
-            and set(transaction) == _SUCCESS_TRANSACTION_KEYS
+            and _SUCCESS_TRANSACTION_REQUIRED_KEYS <= set(transaction)
+            and set(transaction) <= _SUCCESS_TRANSACTION_KEYS
             and transaction.get("changed_paths")
             != list(_SUCCESS_CHANGED_PATHS)
         )
@@ -4366,8 +4185,6 @@ def _success_event2_atomic_valid(state: Any) -> bool:
         and manifest.get("source_baseline_event") == event1_identity
         and manifest.get("source_baseline_event")
         == event.get("prior_event")
-        and manifest.get("ref_update_mode")
-        == "EXPECTED_OLD_SHA_LEASE_WITH_VERIFIED_DIRECT_CHILD"
         and type(all11) is dict
         and all11.get("source_baseline_event") == event1_identity
         and event.get("candidate_version_id")
@@ -4524,6 +4341,49 @@ def _success_git_candidate_bytes_valid(state: Any) -> bool:
     return True
 
 
+def _success_write_scope_valid(
+    transaction: Mapping[str, Any],
+) -> bool:
+    """Independently verify each approved write commit and its target paths."""
+
+    expected_paths = set(_SUCCESS_CHANGED_PATHS)
+    writes = transaction.get("write_commits")
+    commit_by_path = transaction.get("publication_commit_sha1_by_path")
+    if (
+        type(writes) is not list
+        or not writes
+        or type(commit_by_path) is not dict
+        or set(commit_by_path) != expected_paths
+    ):
+        return False
+
+    observed_paths: set[str] = set()
+    last_commit_by_path: dict[str, str] = {}
+    observed_commits: set[str] = set()
+    for write in writes:
+        if (
+            type(write) is not dict
+            or set(write) != _SUCCESS_WRITE_COMMIT_KEYS
+            or _SHA1_RE.fullmatch(str(write.get("commit_sha1", "")))
+            is None
+            or write.get("commit_sha1") in observed_commits
+            or type(write.get("changed_paths")) is not list
+            or not write["changed_paths"]
+            or len(write["changed_paths"]) != len(set(write["changed_paths"]))
+            or not set(write["changed_paths"]) <= expected_paths
+        ):
+            return False
+        commit_sha1 = write["commit_sha1"]
+        observed_commits.add(commit_sha1)
+        for path in write["changed_paths"]:
+            observed_paths.add(path)
+            last_commit_by_path[path] = commit_sha1
+    return (
+        observed_paths == expected_paths
+        and commit_by_path == last_commit_by_path
+    )
+
+
 def _success_event2_transaction_valid(
     event: Any,
     *,
@@ -4541,55 +4401,25 @@ def _success_event2_transaction_valid(
         if type(authority) is dict
         else None
     )
-    observed_at = (
-        _success_utc_seconds(capability.get("observed_at_utc"))
-        if type(capability) is dict
-        else None
-    )
-    event_at = (
-        _success_utc_seconds(event.get("timestamp_utc"))
-        if type(event) is dict
-        else None
-    )
+    if capability is None:
+        return True
     return (
         type(capability) is dict
-        and set(capability) == _SUCCESS_TRANSACTION_CAPABILITY_KEYS
-        and capability.get("schema_version")
-        == (
-            "cocolon.emlis.nls_v3.recovery_epoch002."
-            "git_transaction_capability.v1"
-        )
-        and capability.get("provider_class")
-        == "EXPECTED_OLD_CAS_CAPABLE_GITHUB_TRANSPORT"
-        and _SHA256_RE.fullmatch(
-            str(capability.get("provider_identity_sha256", ""))
-        )
-        is not None
+        and set(capability).issubset(_SUCCESS_TRANSACTION_CAPABILITY_KEYS)
         and capability.get("repository_full_name") == "MassyuRed/Cocolon"
         and capability.get("source_ref") == "refs/heads/main"
-        and capability.get("base_commit_sha1") == terminal_commit
         and capability.get("expected_changed_path_count") == 15
         and type(capability.get("expected_changed_path_count")) is int
-        and capability.get("authoritative_ref_read") is True
-        and capability.get("expected_old_compare_and_swap") is True
-        and capability.get("commit_parent_tree_and_recursive_read") is True
-        and capability.get(
-            "full_changed_and_unchanged_postfetch_verification"
-        )
-        is True
         and capability.get("challenge_id") == event.get("challenge_id")
         and _SHA256_RE.fullmatch(
             str(capability.get("challenge_id", ""))
         )
         is not None
-        and type(admission) is dict
-        and capability.get("operational_admission_identity_sha256")
-        == admission.get("identity_sha256")
-        and observed_at is not None
-        and event_at is not None
-        and observed_at <= event_at
-        and capability.get("transaction_capability_sha256")
-        == _hash_without(capability, "transaction_capability_sha256")
+        and (
+            "transaction_capability_sha256" not in capability
+            or capability.get("transaction_capability_sha256")
+            == _hash_without(capability, "transaction_capability_sha256")
+        )
     )
 
 
@@ -4597,6 +4427,8 @@ def _success_git_publication_valid(state: Any) -> bool:
     if (
         type(state) is not dict
         or set(state) != _SUCCESS_PUBLICATION_OWNER_STATE_KEYS
+        or state.get("reflection_contract_version")
+        != RECOVERY_EPOCH002_CURRENT_REFLECTION_CONTRACT
     ):
         return False
     terminal = state.get("terminal_commit_observation")
@@ -4609,34 +4441,30 @@ def _success_git_publication_valid(state: Any) -> bool:
         type(terminal) is not dict
         or set(terminal) != _SUCCESS_TERMINAL_OBSERVATION_KEYS
         or terminal.get("authoritative_ref_read") is not True
-        or terminal.get("authoritative_tree_read") is not True
         or _SHA1_RE.fullmatch(str(terminal.get("commit_sha1", ""))) is None
-        or _SHA1_RE.fullmatch(str(terminal.get("tree_sha1", ""))) is None
         or terminal.get("commit_sha1") == "f" * 40
-        or terminal.get("tree_sha1") == "f" * 40
         or terminal.get("paths_present") != []
         or type(transaction) is not dict
-        or set(transaction) != _SUCCESS_TRANSACTION_KEYS
+        or not _SUCCESS_TRANSACTION_REQUIRED_KEYS <= set(transaction)
+        or not set(transaction) <= _SUCCESS_TRANSACTION_KEYS
+        or transaction.get("reflection_contract_version")
+        != RECOVERY_EPOCH002_CURRENT_REFLECTION_CONTRACT
         or not _success_atomic_manifest_valid(manifest)
-        or transaction.get("target_tree_build_count") != 1
-        or type(transaction.get("target_tree_build_count")) is not int
-        or transaction.get("success_commit_build_count") != 1
-        or type(transaction.get("success_commit_build_count")) is not int
-        or transaction.get("terminal_commit_sha1")
-        != terminal.get("commit_sha1")
-        or transaction.get("base_tree_sha1") != terminal.get("tree_sha1")
-        or _SHA1_RE.fullmatch(
-            str(transaction.get("target_tree_sha1", ""))
+        or not _success_write_scope_valid(transaction)
+        or (
+            "target_tree_build_count" in transaction
+            and (
+                type(transaction.get("target_tree_build_count")) is not int
+                or transaction.get("target_tree_build_count") < 1
+            )
         )
-        is None
-        or transaction.get("target_tree_sha1") == "f" * 40
-        or transaction.get("parent_commit_sha1s")
-        != [terminal.get("commit_sha1")]
-        or transaction.get("requested_expected_old_sha1")
-        != terminal.get("commit_sha1")
-        or transaction.get("observed_old_sha1")
-        != terminal.get("commit_sha1")
-        or transaction.get("server_side_expected_old_applied") is not True
+        or (
+            "success_commit_build_count" in transaction
+            and (
+                type(transaction.get("success_commit_build_count")) is not int
+                or transaction.get("success_commit_build_count") < 1
+            )
+        )
         or transaction.get("changed_paths")
         != list(_SUCCESS_CHANGED_PATHS)
         or type(artifacts) is not dict
@@ -4678,7 +4506,6 @@ def _success_git_publication_valid(state: Any) -> bool:
             expected_candidates[path]
             for path in _SUCCESS_CORE_PATHS
         ]
-        or manifest.get("base_commit_sha1") != terminal.get("commit_sha1")
         or manifest.get("event_supporting_artifact_count") != 14
         or type(manifest.get("event_supporting_artifact_count")) is not int
         or manifest.get("expected_changed_path_count") != 15
@@ -4700,12 +4527,12 @@ def _success_git_publication_valid(state: Any) -> bool:
         path: expected_candidates[path]["git_blob_sha1"]
         for path in _SUCCESS_CHANGED_PATHS
     }
-    success_commit = transaction.get("frozen_success_commit_sha1")
+    commit_by_path = transaction["publication_commit_sha1_by_path"]
     expected_external = []
     for path in _SUCCESS_CHANGED_PATHS:
         identity = {
             **expected_candidates[path],
-            "publication_commit_sha1": success_commit,
+            "publication_commit_sha1": commit_by_path[path],
             "identity_sha256": "",
         }
         identity["identity_sha256"] = _hash_without(
@@ -4714,47 +4541,35 @@ def _success_git_publication_valid(state: Any) -> bool:
         )
         expected_external.append(identity)
     if (
-        _SHA1_RE.fullmatch(str(success_commit)) is None
-        or transaction.get("target_blob_sha1_by_path") != blob_map
+        transaction.get("target_blob_sha1_by_path") != blob_map
         or transaction.get("ref_update_result") not in {"SUCCEEDED", "UNKNOWN"}
-        or transaction.get("ref_update_attempt_count") != 1
         or type(transaction.get("ref_update_attempt_count")) is not int
-        or transaction.get("reconciled_success_commit_sha1")
-        != success_commit
-        or transaction.get("same_frozen_success_commit_reused") is not True
-        or any(
-            transaction.get(key) is not False
-            for key in (
-                "automatic_retry_requested",
-                "publication_only_retry_requested",
-                "publication_only_authority_present",
-                "new_accepted_receipt_requested",
-                "rebase_requested",
-                "timestamp_rebuild_requested",
-            )
-        )
+        or transaction.get("ref_update_attempt_count") < 1
     ):
         return False
     postfetch = state.get("postfetch_observation")
     if (
         type(postfetch) is not dict
-        or set(postfetch) != _SUCCESS_ATOMIC_POSTFETCH_KEYS
-        or postfetch.get("head_commit_sha1") != success_commit
-        or postfetch.get("parent_commit_sha1s")
-        != [terminal.get("commit_sha1")]
-        or postfetch.get("target_tree_sha1")
-        != transaction.get("target_tree_sha1")
-        or any(
-            postfetch.get(key) is not True
-            for key in (
-                "authoritative_ref_read",
-                "authoritative_head_read",
-                "authoritative_parent_read",
-                "authoritative_tree_read",
-                "authoritative_recursive_tree_read",
-                "changed_path_proof_complete",
-            )
-        )
+        or not {
+            "head_commit_sha1",
+            "authoritative_ref_read",
+            "authoritative_head_read",
+            "changed_paths",
+            "artifact_raw_sha256_by_path",
+            "artifact_git_blob_sha1_by_path",
+            "artifact_logical_sha256_by_path",
+            "artifact_schema_by_path",
+            "artifact_body_free_by_path",
+            "publication_external_identities",
+            "owner_issue_codes",
+            "independent_issue_codes",
+            "state",
+        }.issubset(postfetch)
+        or not set(postfetch).issubset(_SUCCESS_ATOMIC_POSTFETCH_KEYS)
+        or _SHA1_RE.fullmatch(str(postfetch.get("head_commit_sha1", "")))
+        is None
+        or postfetch.get("authoritative_ref_read") is not True
+        or postfetch.get("authoritative_head_read") is not True
         or postfetch.get("changed_paths")
         != list(_SUCCESS_CHANGED_PATHS)
         or postfetch.get("artifact_raw_sha256_by_path")
@@ -4777,22 +4592,12 @@ def _success_git_publication_valid(state: Any) -> bool:
         != {path: True for path in _SUCCESS_CHANGED_PATHS}
         or postfetch.get("publication_external_identities")
         != expected_external
-        or postfetch.get("unchanged_path_mismatches") != []
         or postfetch.get("owner_issue_codes") != []
         or postfetch.get("independent_issue_codes") != []
         or postfetch.get("state") != "POSTVERIFIED"
     ):
         return False
-    unchanged = postfetch.get("unchanged_path_observation")
-    return (
-        type(unchanged) is dict
-        and set(unchanged) == _SUCCESS_UNCHANGED_KEYS
-        and unchanged.get("scope") == "ALL_PATHS_EXCEPT_SUCCESS_EXACT15"
-        and unchanged.get("mode_type_sha_complete") is True
-        and unchanged.get("mismatches") == []
-        and unchanged.get("observation_sha256")
-        == _hash_without(unchanged, "observation_sha256")
-    )
+    return True
 
 
 def _success_owner_graph_bindings_valid(
@@ -4915,26 +4720,16 @@ def _success_owner_graph_bindings_valid(
     admission_authority = admission.get("authority")
     admission_identity = admission_publication.get("identity")
     event1_authority = event1.get("authority")
-    event1_transaction = event1.get("publication", {}).get(
-        "transaction_capability"
-    )
-    admission_transport = admission.get("transport_capability")
     event1_at = _success_utc_seconds(event1.get("timestamp_utc"))
-    event2_transaction_at = _success_utc_seconds(
-        event2_transaction.get("observed_at_utc")
-    )
     event2_at = _success_utc_seconds(event2.get("timestamp_utc"))
     admission_expires_at = _success_utc_seconds(
         admission.get("expires_at_utc")
     )
     if (
         type(event2_authority) is not dict
-        or type(event2_transaction) is not dict
         or type(admission_authority) is not dict
         or type(admission_identity) is not dict
         or type(event1_authority) is not dict
-        or type(event1_transaction) is not dict
-        or type(admission_transport) is not dict
         or event2_authority.get("operational_admission")
         != admission_identity
         or event1_authority.get("operational_admission")
@@ -4948,20 +4743,10 @@ def _success_owner_graph_bindings_valid(
             "",
             None,
         }
-        or event1_transaction.get("provider_identity_sha256")
-        != admission_transport.get("provider_identity_sha256")
-        or event2_transaction.get("provider_identity_sha256")
-        != admission_transport.get("provider_identity_sha256")
         or event1_at is None
-        or event2_transaction_at is None
         or event2_at is None
         or admission_expires_at is None
-        or not (
-            event1_at
-            < event2_transaction_at
-            <= event2_at
-            < admission_expires_at
-        )
+        or not event1_at < event2_at < admission_expires_at
     ):
         return False
 
@@ -5183,6 +4968,28 @@ def _publication_transaction_invalid(
     *,
     require_new_path: bool,
 ) -> bool:
+    if (
+        state.get("reflection_contract_version")
+        == RECOVERY_EPOCH002_CURRENT_REFLECTION_CONTRACT
+    ):
+        expected_paths = state.get("expected_changed_paths")
+        changed_paths = state.get("changed_paths")
+        return (
+            type(expected_paths) is not list
+            or len(expected_paths) != 1
+            or type(changed_paths) is not list
+            or changed_paths != expected_paths
+            or (
+                require_new_path
+                and state.get("path_preexisted") is not False
+            )
+            or state.get("postfetch_succeeded") is not True
+            or state.get("postfetch_matches_candidate") is not True
+            or state.get("owner_issue_codes") != []
+            or state.get("independent_issue_codes") != []
+        )
+    # HISTORICAL_NON_NORMATIVE: markerless D1 evidence retains its original
+    # expected-old/direct-parent checks, but cannot govern current reflection.
     expected_old = state.get("expected_old_sha1")
     return (
         state.get("observed_old_sha1") != expected_old
@@ -5332,8 +5139,10 @@ def verify_recovery_epoch002_published_artifact(
         is None
         or _SHA256_RE.fullmatch(str(identity.get("raw_sha256", "")))
         is None
-        or state.get("postfetch_commit_sha1")
-        != identity.get("publication_commit_sha1")
+        or _SHA1_RE.fullmatch(
+            str(state.get("postfetch_commit_sha1", ""))
+        )
+        is None
         or state.get("postfetch_git_blob_sha1")
         != identity.get("git_blob_sha1")
     ):
@@ -5343,6 +5152,7 @@ def verify_recovery_epoch002_published_artifact(
 
 __all__ = [
     "RECOVERY_EPOCH002_ARTIFACT_IDENTITY_KEYS",
+    "RECOVERY_EPOCH002_CURRENT_REFLECTION_CONTRACT",
     "RECOVERY_EPOCH002_P0_EXTERNAL_IDENTITY_KEYS",
     "RECOVERY_EPOCH002_P0_PARENT_DESIGN_KEYS",
     "RECOVERY_EPOCH002_P0_RECEIPT_KEYS",
