@@ -52,6 +52,9 @@ from emlis_ai_recovery_epoch001_current_step_requirement_registry_v3 import (  #
 from emlis_ai_recovery_epoch001_canonical_current_closure_v3 import (  # noqa: E402
     fresh_recovery_epoch001_canonical_current_closure,
 )
+from emlis_nls_v3_recovery_epoch002_closure_receipt_verify import (  # noqa: E402
+    verify_recovery_epoch002_published_artifact,
+)
 
 
 def _keys(value: str) -> frozenset[str]:
@@ -473,6 +476,9 @@ _EVENT_PUBLICATION_KEYS = _keys(
     ref_update_mode publication_state transaction_capability
     """
 )
+_EVENT_PUBLICATION_OPTIONAL_KEYS = _keys(
+    "ref_update_mode transaction_capability"
+)
 _TRANSACTION_CAPABILITY_KEYS = _keys(
     """
     schema_version provider_class provider_identity_sha256
@@ -486,7 +492,8 @@ _TRANSACTION_CAPABILITY_KEYS = _keys(
 )
 _SUCCESS_PUBLICATION_TRANSACTION_KEYS = _keys(
     """
-    target_tree_build_count success_commit_build_count terminal_commit_sha1
+    reflection_contract_version target_tree_build_count
+    success_commit_build_count terminal_commit_sha1
     base_tree_sha1 target_tree_sha1 parent_commit_sha1s
     requested_expected_old_sha1 observed_old_sha1
     server_side_expected_old_applied changed_paths
@@ -495,9 +502,18 @@ _SUCCESS_PUBLICATION_TRANSACTION_KEYS = _keys(
     same_frozen_success_commit_reused automatic_retry_requested
     publication_only_retry_requested publication_only_authority_present
     new_accepted_receipt_requested rebase_requested
-    timestamp_rebuild_requested
+    timestamp_rebuild_requested publication_commit_sha1_by_path
+    write_commits
     """
 )
+_SUCCESS_PUBLICATION_TRANSACTION_REQUIRED_KEYS = _keys(
+    """
+    reflection_contract_version changed_paths target_blob_sha1_by_path
+    ref_update_result ref_update_attempt_count
+    publication_commit_sha1_by_path write_commits
+    """
+)
+_WRITE_COMMIT_KEYS = _keys("commit_sha1 changed_paths")
 _TERMINAL_COMMIT_OBSERVATION_KEYS = _keys(
     """
     commit_sha1 tree_sha1 authoritative_ref_read authoritative_tree_read
@@ -513,6 +529,9 @@ _OPERATIONAL_ADMISSION_KEYS = _keys(
     independent_verification_state issued_at_utc expires_at_utc state
     automatic_progression body_free operational_admission_sha256
     """
+)
+_OPERATIONAL_ADMISSION_OPTIONAL_KEYS = _keys(
+    "transport_capability durable_store_capability"
 )
 _ADMISSION_AUTHORITY_KEYS = _keys(
     """
@@ -578,18 +597,21 @@ _TERMINAL_V2_KEYS = _keys(
 )
 _EXACT1_PUBLICATION_KEYS = _keys(
     """
-    artifact identity changed_paths parent_commit_sha1s expected_old_sha1
-    observed_old_sha1 postfetch_evidence postfetch_state
+    reflection_contract_version artifact identity changed_paths
+    parent_commit_sha1s expected_old_sha1 observed_old_sha1
+    postfetch_evidence postfetch_state
     """
 )
 _SINGLE_PUBLICATION_TRANSACTION_KEYS = _keys(
     """
-    artifact_role path expected_changed_paths parent_commit_sha1s
+    reflection_contract_version artifact_role path expected_changed_paths
+    parent_commit_sha1s
     expected_old_sha1 requested_expected_old_sha1 observed_old_sha1
     head_commit_sha1 target_absent_at_base unchanged_path_mismatches
     owner_issue_codes independent_issue_codes postfetch_state publication
     """
 )
+_CURRENT_REFLECTION_CONTRACT = "COCOLON_GITHUB_REFLECTION_CONTRACT_V1"
 _OUTCOME_KEYS = _keys(
     """
     test_node_id source_path source_blob_sha1 source_sha256 result
@@ -1315,7 +1337,7 @@ _CASES = (
     ("C07", "SUCCESS_OWNER_GRAPH_EXACT15_ROLE12_PATH", "closure", "SUCCESS_OWNER_GRAPH_INVALID"),
     ("C08", "SUCCESS_CONTRACT_TEST_MANIFEST_BOUND", "closure", "SUCCESS_CONTRACT_TEST_MANIFEST_BINDING_INVALID"),
     ("C09", "COMPLETION_RECEIPT_RED_GREEN_BOUND", "sequence", "SUCCESSOR_COMPLETION_EVIDENCE_BINDING_INVALID"),
-    ("C10", "ALLOCATION_V2_EVENT1_V2_OPERATIONAL_ADMISSION_EXACT20_SUCCESSION_ONLY", "sequence", "SUCCESSOR_OPERATIONAL_SUCCESSION_INVALID"),
+    ("C10", "ALLOCATION_EVENT1_OWNER_AUTHORITY_AND_CURRENT_REFLECTION_CONTRACT", "sequence", "SUCCESSOR_OPERATIONAL_SUCCESSION_INVALID"),
     ("T01", "TERMINAL_V2_EXACT32", "terminal", "TERMINAL_OR_ACCEPTANCE_PUBLICATION_REJECTED"),
     ("T02", "COLLECTION_EXACT134_REGISTRY_ORDER", "terminal", "TERMINAL_COLLECTION_ORDER_INVALID"),
     ("T03", "EXECUTION_EXACT134_REGISTRY_ORDER", "terminal", "TERMINAL_EXECUTION_ORDER_INVALID"),
@@ -1325,7 +1347,7 @@ _CASES = (
     ("T07", "ACTUAL_CLOSED_CODE_OBSERVED_EXACT11", "runner", "TERMINAL_ACTUAL_CLOSED_CODE_NOT_OBSERVED"),
     ("T08", "COUNTS_EXACT10_STATES_PARITY", "terminal", "TERMINAL_COUNTS_STATE_PARITY_INVALID"),
     ("T09", "TERMINAL_SUCCESS_PREDICATE_EXACT", "terminal", "TERMINAL_SUCCESS_PREDICATE_NOT_PROVED"),
-    ("T10", "TERMINAL_DURABLE_PUBLICATION_POSTVERIFIED", "terminal", "RESULT_DURABLY_PRESENT_TERMINAL_PUBLICATION_PENDING_STOP"),
+    ("T10", "TERMINAL_TARGET_CONTENT_POSTVERIFIED", "terminal", "RESULT_DURABLY_PRESENT_TERMINAL_PUBLICATION_PENDING_STOP"),
     ("A01", "POSTVERIFIED_TERMINAL_REQUIRED", "accepted", "POSTVERIFIED_TERMINAL_REQUIRED"),
     ("A02", "TERMINAL_ALL_SUCCESS_ONLY", "accepted", "TERMINAL_ALL_SUCCESS_REQUIRED"),
     ("A03", "FORMAL_INVOCATION_EXACT1", "accepted", "FORMAL_INVOCATION_EXACT1_REQUIRED"),
@@ -1351,16 +1373,16 @@ _CASES = (
     ("B05", "EVENT2_SUPPORT_SET_HASH", "event2", "EVENT2_SUPPORTING_ARTIFACT_SET_HASH_INVALID"),
     ("B06", "EVENT2_EVENT1_ANCESTRY", "event2", "EVENT2_EVENT1_ANCESTRY_INVALID"),
     ("B07", "EVENT2_TERMINAL_SUCCESS_LINEAGE", "event2", "EVENT2_TERMINAL_SUCCESS_LINEAGE_INVALID"),
-    ("B08", "ONE_TREE_ONE_COMMIT", "publication", "SUCCESS_PUBLICATION_ONE_TREE_ONE_COMMIT_INVALID"),
-    ("B09", "SUCCESS_COMMIT_DIRECT_PARENT_T", "publication", "SUCCESS_COMMIT_DIRECT_PARENT_INVALID"),
-    ("B10", "EXPECTED_OLD_T_LEASE", "publication", "SUCCESS_EXPECTED_OLD_LEASE_INVALID"),
-    ("B11", "FULL_POSTFETCH_AND_UNCHANGED_PATHS", "publication", "SUCCESS_PUBLICATION_POSTFETCH_INVALID"),
-    ("B12", "UNKNOWN_RESULT_SAME_S_NO_RETRY_REBASE", "publication", "SUCCESS_PUBLICATION_UNKNOWN_RESULT_RECONCILIATION_STOP"),
+    ("B08", "MULTIPLE_WRITE_OPERATIONS_ALLOWED", "publication", "SUCCESS_PUBLICATION_POSTFETCH_INVALID"),
+    ("B09", "NONCONFLICTING_HEAD_DRIFT_ALLOWED", "publication", "SUCCESS_PUBLICATION_POSTFETCH_INVALID"),
+    ("B10", "SPECIAL_TRANSPORT_NON_NORMATIVE", "publication", "SUCCESS_PUBLICATION_POSTFETCH_INVALID"),
+    ("B11", "TARGET_SCOPED_POSTVERIFY", "publication", "SUCCESS_PUBLICATION_POSTFETCH_INVALID"),
+    ("B12", "UNKNOWN_RESULT_REFETCH_BEFORE_RETRY", "publication", "SUCCESS_PUBLICATION_UNKNOWN_RESULT_RECONCILIATION_STOP"),
     ("I01", "VERIFIER_OWNER_IMPORT_SPLIT", "independent", "VERIFIER_OWNER_IMPORT_FORBIDDEN"),
     ("I02", "TERMINAL_SCHEMA_INDEPENDENT", "independent", "INDEPENDENT_TERMINAL_SCHEMA_INVALID"),
     ("I03", "ACCEPTED_STEP_ALL11_INDEPENDENT", "independent", "INDEPENDENT_SUCCESS_RECEIPT_INVALID"),
     ("I04", "EVENT2_EXACT14_15_INDEPENDENT", "independent", "INDEPENDENT_EVENT2_ATOMIC_CARDINALITY_INVALID"),
-    ("I05", "GIT_GRAPH_BYTES_HASHES_INDEPENDENT", "independent", "INDEPENDENT_GIT_GRAPH_BYTES_HASH_INVALID"),
+    ("I05", "TARGET_BYTES_HASHES_AND_SCOPE_INDEPENDENT", "independent", "INDEPENDENT_GIT_GRAPH_BYTES_HASH_INVALID"),
     ("I06", "OWNER_VERIFIER_DISAGREEMENT_STOP", "independent", "OWNER_VERIFIER_DISAGREEMENT_STOP"),
     ("P01", "FORMAL_PARENT_PHASE_ORDER_EXACT9", "parent", "FORMAL_PARENT_PHASE_ORDER_INVALID"),
     ("P02", "EXECUTABLE_PHASES_EXACT7", "parent", "FORMAL_PARENT_EXECUTABLE_PHASE_SET_INVALID"),
@@ -1605,41 +1627,15 @@ _COMPLETE_EXACT1_POSTFETCH_MUTATIONS: tuple[
     ...,
 ] = (
     (("authoritative_ref_read",), _DELETE_MUTATION),
+    (("authoritative_head_read",), _DELETE_MUTATION),
+    (("artifact_at_verification_ref",), _DELETE_MUTATION),
     (("repository_full_name",), "Other/Repository"),
     (("verification_ref",), "refs/heads/other"),
-    (("verification_commit_sha1",), "f" * 40),
+    (("verification_commit_sha1",), "not-a-sha1"),
     (("authoritative_ref_read",), False),
-    (("authoritative_base_tree_read",), False),
-    (("base_tree_sha1",), "f" * 40),
-    (("target_tree_sha1",), "f" * 40),
-    (("publication_commit_sha1",), "f" * 40),
-    (("publication_reachable_from_verification_ref",), False),
-    (("publication_parent_commit_sha1s",), ["f" * 40, "e" * 40]),
-    (
-        ("publication_parent_commit_sha1s",),
-        _WRONG_SINGLE_PARENT_MUTATION,
-    ),
     (("publication_changed_paths",), ["forbidden/extra.json"]),
     (("target_absent_at_base",), False),
-    (("semantic_ancestor_verified",), False),
-    (("target_tree_build_count",), 2),
-    (("publication_commit_parent_count",), 2),
-    (("requested_expected_old_sha1",), "f" * 40),
-    (("observed_old_sha1",), "f" * 40),
-    (("server_side_expected_old_applied",), False),
     (("authoritative_head_read",), False),
-    (("authoritative_parent_read",), False),
-    (("authoritative_tree_read",), False),
-    (("authoritative_recursive_tree_read",), False),
-    (("changed_path_proof_complete",), False),
-    (("artifact_at_publication", "path"), "forbidden/other.json"),
-    (("artifact_at_publication", "git_blob_sha1"), "f" * 40),
-    (("artifact_at_publication", "raw_sha256"), "f" * 64),
-    (
-        ("artifact_at_publication", "logical_artifact_sha256"),
-        "f" * 64,
-    ),
-    (("artifact_at_publication", "body_free"), False),
     (
         ("artifact_at_verification_ref", "path"),
         "forbidden/other.json",
@@ -1651,23 +1647,6 @@ _COMPLETE_EXACT1_POSTFETCH_MUTATIONS: tuple[
         "f" * 64,
     ),
     (("artifact_at_verification_ref", "body_free"), False),
-    (
-        ("unchanged_path_observation", "scope"),
-        "TARGET_ONLY",
-    ),
-    (
-        ("unchanged_path_observation", "mode_type_sha_complete"),
-        False,
-    ),
-    (
-        ("unchanged_path_observation", "mismatches"),
-        ["forbidden/drift"],
-    ),
-    (
-        ("unchanged_path_observation", "observation_sha256"),
-        "f" * 64,
-    ),
-    (("unchanged_path_mismatches",), ["forbidden/drift"]),
     (("owner_issue_codes",), ["OWNER_ISSUE"]),
     (("independent_issue_codes",), ["INDEPENDENT_ISSUE"]),
     (("postfetch_state",), "UNKNOWN"),
@@ -1774,7 +1753,7 @@ def _exact1_publication_contract_mutations(
     *,
     logical_hash_key: str,
 ) -> list[dict[str, Any]]:
-    """Generate strict exact8/identity/exact1 negative observations."""
+    """Generate current target-scoped exact1 negative observations."""
 
     variants: list[dict[str, Any]] = []
 
@@ -1789,9 +1768,6 @@ def _exact1_publication_contract_mutations(
     for field, value in (
         ("postfetch_state", "UNKNOWN"),
         ("changed_paths", ["forbidden/other.json"]),
-        ("parent_commit_sha1s", ["f" * 40]),
-        ("expected_old_sha1", "f" * 40),
-        ("observed_old_sha1", "f" * 40),
     ):
         variant(
             lambda _row,
@@ -1802,17 +1778,17 @@ def _exact1_publication_contract_mutations(
                 deepcopy(value),
             )
         )
-    variant(
-        lambda _row, publication: publication.__setitem__(
-            "parent_commit_sha1s",
-            [
-                publication["parent_commit_sha1s"][0],
-                "f" * 40,
-            ],
-        )
+    required_publication_keys = frozenset(
+        {
+            "reflection_contract_version",
+            "artifact",
+            "identity",
+            "changed_paths",
+            "postfetch_evidence",
+            "postfetch_state",
+        }
     )
-
-    for key in sorted(_EXACT1_PUBLICATION_KEYS):
+    for key in sorted(required_publication_keys):
         variant(
             lambda _row, publication, key=key: publication.pop(key)
         )
@@ -1873,7 +1849,11 @@ def _exact1_publication_contract_mutations(
             "extra_key",
         )
     )
-    for field, value in _EXTERNAL_IDENTITY_FIELD_MUTATIONS:
+    for field, value in (
+        mutation
+        for mutation in _EXTERNAL_IDENTITY_FIELD_MUTATIONS
+        if mutation[0] != "publication_commit_sha1"
+    ):
         variant(
             lambda row,
             publication,
@@ -2521,6 +2501,8 @@ def _transaction_capability(
     admission_identity_sha256: str,
     observed_at_utc: str,
 ) -> dict[str, Any]:
+    """Build a legacy optional diagnostic fixture, not current canonical input."""
+
     transaction = {
         "schema_version": _SCHEMAS["transaction_capability"],
         "provider_class": "EXPECTED_OLD_CAS_CAPABLE_GITHUB_TRANSPORT",
@@ -2572,50 +2554,6 @@ def _operational_admission_fixture(
         "scope_sha256": "",
     }
     scope["scope_sha256"] = _hash_without(scope, "scope_sha256")
-    transport = {
-        "schema_version": _SCHEMAS["transport_capability"],
-        "provider_class": "EXPECTED_OLD_CAS_CAPABLE_GITHUB_TRANSPORT",
-        "provider_identity_sha256": "c" * 64,
-        "authoritative_ref_read": True,
-        "expected_old_compare_and_swap": True,
-        "commit_parent_tree_read": True,
-        "recursive_tree_read": True,
-        "exact_changed_path_verification": True,
-        "complete_unchanged_path_verification": True,
-        "full_postfetch_verification": True,
-        "scope_sha256": scope["scope_sha256"],
-        "challenge_id": "d" * 64,
-        "observed_at_utc": "2026-07-26T12:00:00Z",
-        "transport_capability_sha256": "",
-    }
-    transport["transport_capability_sha256"] = _hash_without(
-        transport,
-        "transport_capability_sha256",
-    )
-    durable = {
-        "schema_version": _SCHEMAS["durable_store_capability"],
-        "provider_class": (
-            "OWNER_CONTROLLED_WRITE_ONCE_DURABLE_EVIDENCE_STORE"
-        ),
-        "provider_identity_sha256": "e" * 64,
-        "owner_only_permissions": True,
-        "no_symlink_following": True,
-        "same_directory_temporary_write": True,
-        "atomic_write_replace": True,
-        "file_and_directory_fsync": True,
-        "write_once_attempt_claim": True,
-        "session_interruption_survival": True,
-        "exact_terminal_recovery_read": True,
-        "body_free_retention_contract": True,
-        "scope_sha256": scope["scope_sha256"],
-        "challenge_id": "d" * 64,
-        "observed_at_utc": "2026-07-26T12:00:00Z",
-        "durable_store_capability_sha256": "",
-    }
-    durable["durable_store_capability_sha256"] = _hash_without(
-        durable,
-        "durable_store_capability_sha256",
-    )
     admission = {
         "schema_version": _SCHEMAS["operational_admission"],
         "logical_cycle_id": "NLS_V3_CYCLE_001",
@@ -2629,8 +2567,6 @@ def _operational_admission_fixture(
         "authority": authority,
         "challenge_id": "d" * 64,
         "scope": scope,
-        "transport_capability": transport,
-        "durable_store_capability": durable,
         "owner_validation_state": "PROVED",
         "independent_verification_state": "PROVED",
         "issued_at_utc": "2026-07-26T12:01:00Z",
@@ -2686,13 +2622,6 @@ def _event1_fixture(
 ) -> dict[str, Any]:
     p0_identity = _p0_external_identity()
     challenge = "1" * 64
-    transaction = _transaction_capability(
-        base_commit_sha1="4" * 40,
-        expected_changed_path_count=1,
-        challenge_id=challenge,
-        admission_identity_sha256=admission_identity["identity_sha256"],
-        observed_at_utc="2026-07-26T12:02:30Z",
-    )
     publication = {
         "repository_full_name": "MassyuRed/Cocolon",
         "branch": "main",
@@ -2704,11 +2633,7 @@ def _event1_fixture(
             [dict(completion_identity)]
         ),
         "expected_changed_path_count": 1,
-        "ref_update_mode": (
-            "EXPECTED_OLD_SHA_LEASE_WITH_VERIFIED_DIRECT_CHILD"
-        ),
         "publication_state": "PUBLISHED_ATOMIC",
-        "transaction_capability": transaction,
     }
     event = {
         "schema_version": _SCHEMAS["event_v2"],
@@ -2802,6 +2727,7 @@ def _sequence_state() -> dict[str, Any]:
         publication_commit_sha1="5" * 40,
     )
     return {
+        "reflection_contract_version": _CURRENT_REFLECTION_CONTRACT,
         "successor_source_closure": source_closure,
         "bootstrap_closure": bootstrap,
         "parent_addendum_external_identity": (
@@ -2826,6 +2752,7 @@ def _sequence_state() -> dict[str, Any]:
             target_tree_sha1="d" * 40,
         ),
         "successor_completion_publication": {
+            "reflection_contract_version": _CURRENT_REFLECTION_CONTRACT,
             "artifact": completion,
             "identity": completion_identity,
             "changed_paths": [_SUCCESSOR_COMPLETION_PATH],
@@ -2840,6 +2767,7 @@ def _sequence_state() -> dict[str, Any]:
         },
         "operational_admission_receipt": admission,
         "operational_admission_publication": {
+            "reflection_contract_version": _CURRENT_REFLECTION_CONTRACT,
             "artifact": admission,
             "identity": admission_identity,
             "changed_paths": [_OPERATIONAL_ADMISSION_PATH],
@@ -2857,6 +2785,7 @@ def _sequence_state() -> dict[str, Any]:
         "candidate_allocation": allocation,
         "event1": event1,
         "event1_publication": {
+            "reflection_contract_version": _CURRENT_REFLECTION_CONTRACT,
             "artifact": event1,
             "identity": event1_identity,
             "changed_paths": [_EVENT1_PATH],
@@ -2888,6 +2817,7 @@ def _single_publication_state() -> dict[str, Any]:
         },
         "exact1_transactions": [
             {
+                "reflection_contract_version": _CURRENT_REFLECTION_CONTRACT,
                 "artifact_role": "SUCCESSOR_COMPLETION_RECEIPT",
                 "path": _SUCCESSOR_COMPLETION_PATH,
                 "expected_changed_paths": [_SUCCESSOR_COMPLETION_PATH],
@@ -2906,6 +2836,7 @@ def _single_publication_state() -> dict[str, Any]:
                 ),
             },
             {
+                "reflection_contract_version": _CURRENT_REFLECTION_CONTRACT,
                 "artifact_role": "P1_OPERATIONAL_ADMISSION_RECEIPT",
                 "path": _OPERATIONAL_ADMISSION_PATH,
                 "expected_changed_paths": [_OPERATIONAL_ADMISSION_PATH],
@@ -3127,6 +3058,7 @@ def _terminal_state() -> dict[str, Any]:
         publication_commit_sha1="e" * 40,
     )
     return {
+        "reflection_contract_version": _CURRENT_REFLECTION_CONTRACT,
         "terminal_result": terminal,
         "locked_formal_node_ids": list(_FORMAL_NODE_IDS),
         "locked_negative_code_by_node": dict(
@@ -3167,6 +3099,7 @@ def _terminal_state() -> dict[str, Any]:
             ],
         },
         "terminal_publication": {
+            "reflection_contract_version": _CURRENT_REFLECTION_CONTRACT,
             "artifact": deepcopy(terminal),
             "identity": terminal_identity,
             "changed_paths": [terminal_candidate["path"]],
@@ -3399,6 +3332,33 @@ def _readiness_artifact_fixture(
         publication_commit_sha1="6" * 40,
     )
     return readiness, identity
+
+
+def _current_published_artifact_state() -> dict[str, Any]:
+    """Build a current target-scoped postverify observation."""
+
+    readiness, identity = _readiness_artifact_fixture(_sequence_state())
+    path = identity["path"]
+    return {
+        "reflection_contract_version": _CURRENT_REFLECTION_CONTRACT,
+        "artifact_role": "BOOTSTRAP_READINESS",
+        "artifact": readiness,
+        "artifact_external_identity": identity,
+        "receipt_contains_self_commit_blob_or_raw_identity": False,
+        "changed_paths": [path],
+        "expected_changed_paths": [path],
+        "path_preexisted": False,
+        "postfetch_succeeded": True,
+        "postfetch_matches_candidate": True,
+        "owner_issue_codes": [],
+        "independent_issue_codes": [],
+        "reservation_write_outcome": "NOT_ATTEMPTED",
+        "authoritative_reservation_presence": "ABSENT",
+        "ready_receipt_marked_consumed": False,
+        "fabricated_reservation_detected": False,
+        "postfetch_commit_sha1": "f" * 40,
+        "postfetch_git_blob_sha1": identity["git_blob_sha1"],
+    }
 
 
 def _reservation_attempt_id(
@@ -3871,6 +3831,7 @@ def _accepted_state() -> dict[str, Any]:
         "accepted_test_run_receipt_sha256",
     )
     return {
+        "reflection_contract_version": _CURRENT_REFLECTION_CONTRACT,
         "accepted_test_run_receipt": accepted,
         "terminal_publication": terminal_state["terminal_publication"],
         "terminal_owner_state": terminal_state,
@@ -4675,8 +4636,6 @@ def _all11_state(
 
 def _publication_state(
     all11_state: Mapping[str, Any] | None = None,
-    *,
-    terminal_tree_sha1: str = "3" * 40,
 ) -> dict[str, Any]:
     all11_state = (
         _all11_state()
@@ -4706,6 +4665,7 @@ def _publication_state(
     terminal_commit = accepted["terminal_result_artifact"][
         "publication_commit_sha1"
     ]
+    diagnostic_base_tree_sha1 = "3" * 40
     success_commit = "c" * 40
     success_tree = "4" * 40
     event1 = all11_state["source_context"]["event1_artifact"]
@@ -4725,9 +4685,6 @@ def _publication_state(
         "event_supporting_artifact_count": 14,
         "expected_changed_path_count": 15,
         "event_path": _EVENT2_PATH,
-        "ref_update_mode": (
-            "EXPECTED_OLD_SHA_LEASE_WITH_VERIFIED_DIRECT_CHILD"
-        ),
         "body_free": True,
         "atomic_publication_manifest_sha256": "",
     }
@@ -4759,19 +4716,7 @@ def _publication_state(
         "supporting_artifacts": supporting,
         "supporting_artifact_set_sha256": artifact_sha256(supporting),
         "expected_changed_path_count": 15,
-        "ref_update_mode": (
-            "EXPECTED_OLD_SHA_LEASE_WITH_VERIFIED_DIRECT_CHILD"
-        ),
         "publication_state": "PUBLISHED_ATOMIC",
-        "transaction_capability": _transaction_capability(
-            base_commit_sha1=terminal_commit,
-            expected_changed_path_count=15,
-            challenge_id=challenge,
-            admission_identity_sha256=admission_identity[
-                "identity_sha256"
-            ],
-            observed_at_utc="2026-07-26T12:20:00Z",
-        ),
     }
     event2 = {
         "schema_version": _SCHEMAS["event_v2"],
@@ -4844,9 +4789,10 @@ def _publication_state(
         unchanged_path_observation
     )
     return {
+        "reflection_contract_version": _CURRENT_REFLECTION_CONTRACT,
         "terminal_commit_observation": {
             "commit_sha1": terminal_commit,
-            "tree_sha1": terminal_tree_sha1,
+            "tree_sha1": diagnostic_base_tree_sha1,
             "authoritative_ref_read": True,
             "authoritative_tree_read": True,
             "paths_present": [],
@@ -4856,10 +4802,11 @@ def _publication_state(
         "atomic_publication_manifest": manifest,
         "event2": event2,
         "publication_transaction": {
+            "reflection_contract_version": _CURRENT_REFLECTION_CONTRACT,
             "target_tree_build_count": 1,
             "success_commit_build_count": 1,
             "terminal_commit_sha1": terminal_commit,
-            "base_tree_sha1": terminal_tree_sha1,
+            "base_tree_sha1": diagnostic_base_tree_sha1,
             "target_tree_sha1": success_tree,
             "parent_commit_sha1s": [terminal_commit],
             "requested_expected_old_sha1": terminal_commit,
@@ -4870,6 +4817,15 @@ def _publication_state(
                 path: candidates_by_path[path]["git_blob_sha1"]
                 for path in _SUCCESS_CHANGED_PATHS
             },
+            "publication_commit_sha1_by_path": {
+                path: success_commit for path in _SUCCESS_CHANGED_PATHS
+            },
+            "write_commits": [
+                {
+                    "commit_sha1": success_commit,
+                    "changed_paths": list(_SUCCESS_CHANGED_PATHS),
+                }
+            ],
             "ref_update_result": "SUCCEEDED",
             "ref_update_attempt_count": 1,
             "frozen_success_commit_sha1": success_commit,
@@ -4925,6 +4881,45 @@ def _publication_state(
     }
 
 
+def _set_publication_write_commits(
+    state: dict[str, Any],
+    writes: list[dict[str, Any]],
+    *,
+    verification_head_sha1: str | None = None,
+) -> None:
+    """Bind final target identities to the last approved write per path."""
+
+    commit_by_path: dict[str, str] = {}
+    for write in writes:
+        for path in write["changed_paths"]:
+            commit_by_path[path] = write["commit_sha1"]
+    assert set(commit_by_path) == set(_SUCCESS_CHANGED_PATHS)
+    transaction = state["publication_transaction"]
+    transaction["write_commits"] = deepcopy(writes)
+    transaction["publication_commit_sha1_by_path"] = commit_by_path
+    transaction["target_tree_build_count"] = len(writes)
+    transaction["success_commit_build_count"] = len(writes)
+    transaction["ref_update_attempt_count"] = len(writes)
+    transaction["frozen_success_commit_sha1"] = writes[-1]["commit_sha1"]
+    transaction["reconciled_success_commit_sha1"] = writes[-1][
+        "commit_sha1"
+    ]
+    postfetch = state["postfetch_observation"]
+    postfetch["head_commit_sha1"] = (
+        writes[-1]["commit_sha1"]
+        if verification_head_sha1 is None
+        else verification_head_sha1
+    )
+    candidates = state["candidate_identities_by_path"]
+    postfetch["publication_external_identities"] = [
+        _external_identity_from_candidate(
+            candidates[path],
+            publication_commit_sha1=commit_by_path[path],
+        )
+        for path in _SUCCESS_CHANGED_PATHS
+    ]
+
+
 def _independent_state(
     accepted_owner_state: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -4935,12 +4930,7 @@ def _independent_state(
     )
     step_owner_state = _step_state(accepted_owner_state)
     all11_owner_state = _all11_state(step_owner_state)
-    publication_owner_state = _publication_state(
-        all11_owner_state,
-        terminal_tree_sha1=accepted_owner_state[
-            "terminal_publication"
-        ]["postfetch_evidence"]["target_tree_sha1"],
-    )
+    publication_owner_state = _publication_state(all11_owner_state)
     return {
         "parent_addendum_external_identity": (
             _parent_addendum_external_identity()
@@ -5228,18 +5218,18 @@ def _rehash_operational_admission(admission: dict[str, Any]) -> None:
             admission["scope"],
             "scope_sha256",
         )
-    admission["transport_capability"][
-        "transport_capability_sha256"
-    ] = _hash_without(
-        admission["transport_capability"],
-        "transport_capability_sha256",
-    )
-    admission["durable_store_capability"][
-        "durable_store_capability_sha256"
-    ] = _hash_without(
-        admission["durable_store_capability"],
-        "durable_store_capability_sha256",
-    )
+    transport = admission.get("transport_capability")
+    if type(transport) is dict and "transport_capability_sha256" in transport:
+        transport["transport_capability_sha256"] = _hash_without(
+            transport,
+            "transport_capability_sha256",
+        )
+    durable = admission.get("durable_store_capability")
+    if type(durable) is dict and "durable_store_capability_sha256" in durable:
+        durable["durable_store_capability_sha256"] = _hash_without(
+            durable,
+            "durable_store_capability_sha256",
+        )
     if "operational_admission_sha256" in admission:
         admission["operational_admission_sha256"] = _hash_without(
             admission,
@@ -5312,9 +5302,9 @@ def _refresh_atomic_publication_derived(
         ]
         external_identity = _external_identity_from_candidate(
             identity,
-            publication_commit_sha1=state["postfetch_observation"][
-                "head_commit_sha1"
-            ],
+            publication_commit_sha1=state["publication_transaction"][
+                "publication_commit_sha1_by_path"
+            ][path],
         )
         for index, observed in enumerate(external_identities):
             if observed["path"] == path:
@@ -5402,14 +5392,15 @@ def _rebind_completion_chain(
     event["publication"]["supporting_artifact_set_sha256"] = (
         artifact_sha256([completion_identity])
     )
-    transaction = event["publication"]["transaction_capability"]
-    transaction["operational_admission_identity_sha256"] = (
-        admission_identity["identity_sha256"]
-    )
-    transaction["transaction_capability_sha256"] = _hash_without(
-        transaction,
-        "transaction_capability_sha256",
-    )
+    transaction = event["publication"].get("transaction_capability")
+    if type(transaction) is dict:
+        transaction["operational_admission_identity_sha256"] = (
+            admission_identity["identity_sha256"]
+        )
+        transaction["transaction_capability_sha256"] = _hash_without(
+            transaction,
+            "transaction_capability_sha256",
+        )
     _rehash_event(event)
     event_publication = state["event1_publication"]
     event_candidate = _candidate_identity(
@@ -6649,25 +6640,14 @@ def _mutated_states(case_id: str, role: str) -> list[dict[str, Any]]:
             "path",
             "authority",
             "scope_order",
-            "transport",
-            "durable",
             "freshness",
             "scope_binding",
-            "challenge_binding",
             "exact1",
-            "admission_direct_parent",
-            "admission_expected_old",
             "admission_postfetch",
             "admission_independent_postfetch",
             "admission_target_absence",
-            "completion_admission_tree_link",
-            "admission_event_tree_link",
             "event_authority",
             "event_authority_token",
-            "event_publication",
-            "transaction_binding",
-            "event_direct_parent",
-            "event_expected_old",
             "event_postfetch",
             "event_independent_postfetch",
             "primary_supporting_parity",
@@ -6838,18 +6818,6 @@ def _mutated_states(case_id: str, role: str) -> list[dict[str, Any]]:
         for field, value in (
             ("postfetch_state", "UNKNOWN"),
             ("changed_paths", ["forbidden/terminal.json"]),
-            ("parent_commit_sha1s", ["f" * 40]),
-            (
-                "parent_commit_sha1s",
-                [
-                    state["terminal_publication"][
-                        "parent_commit_sha1s"
-                    ][0],
-                    "f" * 40,
-                ],
-            ),
-            ("expected_old_sha1", "f" * 40),
-            ("observed_old_sha1", "f" * 40),
         ):
             variant(
                 lambda row,
@@ -6861,7 +6829,16 @@ def _mutated_states(case_id: str, role: str) -> list[dict[str, Any]]:
                 )
             )
 
-        for key in sorted(_EXACT1_PUBLICATION_KEYS):
+        for key in sorted(
+            {
+                "reflection_contract_version",
+                "artifact",
+                "identity",
+                "changed_paths",
+                "postfetch_evidence",
+                "postfetch_state",
+            }
+        ):
             variant(
                 lambda row, key=key: row[
                     "terminal_publication"
@@ -7355,7 +7332,11 @@ def _mutated_states(case_id: str, role: str) -> list[dict[str, Any]]:
         for field, value in (
             ("__missing_path__", None),
             ("__extra_key__", None),
-            *paired_field_mutations,
+            *(
+                row
+                for row in paired_field_mutations
+                if row[0] != "publication_commit_sha1"
+            ),
         ):
             variant(
                 lambda row,
@@ -7938,212 +7919,55 @@ def _mutated_states(case_id: str, role: str) -> list[dict[str, Any]]:
         )
     elif case_id == "B08":
         variant(
-            lambda row: row["publication_transaction"].__setitem__(
-                "target_tree_build_count",
-                2,
+            lambda row: row["postfetch_observation"][
+                "artifact_raw_sha256_by_path"
+            ].pop(
+                _SUCCESS_CHANGED_PATHS[-1]
             )
         )
         variant(
-            lambda row: row["publication_transaction"].__setitem__(
-                "success_commit_build_count",
-                2,
+            lambda row: row["publication_transaction"][
+                "target_blob_sha1_by_path"
+            ].pop(
+                _SUCCESS_CHANGED_PATHS[-1]
             )
         )
         return variants
     elif case_id == "B09":
         variant(
-            lambda row: row["publication_transaction"].__setitem__(
-                "parent_commit_sha1s",
-                [
-                    row["publication_transaction"][
-                        "terminal_commit_sha1"
-                    ],
-                    "f" * 40,
-                ],
-            )
-        )
-        variant(
-            lambda row: row["publication_transaction"].__setitem__(
-                "parent_commit_sha1s",
-                ["f" * 40],
-            )
-        )
-        return variants
-    elif case_id == "B10":
-        for field, value in (
-            ("requested_expected_old_sha1", "f" * 40),
-            ("observed_old_sha1", "f" * 40),
-            ("server_side_expected_old_applied", False),
-        ):
-            variant(
-                lambda row,
-                field=field,
-                value=value: row["publication_transaction"].__setitem__(
-                    field,
-                    value,
-                )
-            )
-        return variants
-    elif case_id == "B11":
-        variant(
-            lambda row: row["terminal_commit_observation"].__setitem__(
-                "authoritative_ref_read",
-                False,
-            )
-        )
-        variant(
-            lambda row: row["terminal_commit_observation"].__setitem__(
-                "authoritative_tree_read",
-                False,
-            )
-        )
-        variant(
-            lambda row: row["terminal_commit_observation"].__setitem__(
-                "commit_sha1",
-                "f" * 40,
-            )
-        )
-        variant(
-            lambda row: row["terminal_commit_observation"].__setitem__(
-                "tree_sha1",
-                "f" * 40,
-            )
-        )
-        for key in sorted(_TERMINAL_COMMIT_OBSERVATION_KEYS):
-            variant(
-                lambda row, key=key: row[
-                    "terminal_commit_observation"
-                ].pop(key)
-            )
-        variant(
-            lambda row: row["terminal_commit_observation"].__setitem__(
-                "unexpected_key",
-                "forbidden",
-            )
-        )
-        variant(
-            lambda row: row["publication_transaction"].__setitem__(
-                "target_tree_sha1",
-                "f" * 40,
-            )
-        )
-        for field, value in (("base_tree_sha1", "f" * 40),):
-            variant(
-                lambda row,
-                field=field,
-                value=value: row["publication_transaction"].__setitem__(
-                    field,
-                    value,
-                )
-            )
-
-        def mutate_target_blob_map(row: dict[str, Any]) -> None:
-            path = _SUCCESS_CHANGED_PATHS[0]
-            current = row["publication_transaction"][
-                "target_blob_sha1_by_path"
-            ][path]
-            row["publication_transaction"][
-                "target_blob_sha1_by_path"
-            ][path] = (
-                "0" * 40 if current != "0" * 40 else "1" * 40
-            )
-
-        variant(mutate_target_blob_map)
-
-        def mutate_target_blob_map_shape(
-            row: dict[str, Any],
-            mutation: str,
-        ) -> None:
-            target_blobs = row["publication_transaction"][
-                "target_blob_sha1_by_path"
-            ]
-            if mutation == "missing":
-                target_blobs.pop(_SUCCESS_CHANGED_PATHS[7])
-            else:
-                target_blobs["forbidden/extra.json"] = "f" * 40
-
-        for mutation in ("missing", "extra"):
-            variant(
-                lambda row,
-                mutation=mutation: mutate_target_blob_map_shape(
-                    row,
-                    mutation,
-                )
-            )
-
-        for key in sorted(_SUCCESS_PUBLICATION_TRANSACTION_KEYS):
-            variant(
-                lambda row, key=key: row[
-                    "publication_transaction"
-                ].pop(key)
-            )
-        variant(
-            lambda row: row["publication_transaction"].__setitem__(
-                "unexpected_key",
-                "forbidden",
-            )
-        )
-
-        def mutate_event2_transaction_shape(
-            row: dict[str, Any],
-            key: str | None,
-        ) -> None:
-            event = row["event2"]
-            capability = event["publication"][
-                "transaction_capability"
-            ]
-            if key is None:
-                capability["unexpected_key"] = "forbidden"
-            else:
-                capability.pop(key)
-            if "transaction_capability_sha256" in capability:
-                capability[
-                    "transaction_capability_sha256"
-                ] = _hash_without(
-                    capability,
-                    "transaction_capability_sha256",
-                )
-            _rehash_event(event)
-            _refresh_atomic_publication_derived(
-                row,
-                manifest_changed=False,
-            )
-
-        for key in sorted(_TRANSACTION_CAPABILITY_KEYS):
-            variant(
-                lambda row,
-                key=key: mutate_event2_transaction_shape(
-                    row,
-                    key,
-                )
-            )
-        variant(
-            lambda row: mutate_event2_transaction_shape(
-                row,
-                None,
-            )
-        )
-        variant(
             lambda row: row["postfetch_observation"].__setitem__(
-                "state", "FAILED"
+                "changed_paths",
+                list(_SUCCESS_CHANGED_PATHS[:-1]),
             )
         )
         variant(
             lambda row: row["postfetch_observation"][
-                "unchanged_path_mismatches"
-            ].append("ai/services/ai_inference/unexpected.py")
+                "artifact_raw_sha256_by_path"
+            ].pop(
+                _SUCCESS_CHANGED_PATHS[-1]
+            )
         )
+        return variants
+    elif case_id == "B10":
         variant(
-            lambda row: row["postfetch_observation"].__setitem__(
-                "head_commit_sha1",
-                "f" * 40,
+            lambda row: row["postfetch_observation"][
+                "owner_issue_codes"
+            ].append(
+                "OWNER_ISSUE"
             )
         )
         variant(
             lambda row: row["postfetch_observation"].__setitem__(
-                "parent_commit_sha1s",
-                ["f" * 40],
+                "state",
+                "FAILED",
             )
+        )
+        return variants
+    elif case_id == "B11":
+        variant(
+            lambda row: row["publication_transaction"]["write_commits"][0][
+                "changed_paths"
+            ].append("unapproved/non_target_path.json")
         )
         variant(
             lambda row: row["postfetch_observation"].__setitem__(
@@ -8151,233 +7975,35 @@ def _mutated_states(case_id: str, role: str) -> list[dict[str, Any]]:
                 list(_SUCCESS_CHANGED_PATHS[:-1]),
             )
         )
-        for field in (
-            "authoritative_ref_read",
-            "authoritative_head_read",
-            "authoritative_parent_read",
-            "authoritative_tree_read",
-            "authoritative_recursive_tree_read",
-            "changed_path_proof_complete",
-        ):
-            variant(
-                lambda row, field=field: row[
-                    "postfetch_observation"
-                ].__setitem__(field, False)
-            )
         variant(
-            lambda row: row["postfetch_observation"].__setitem__(
-                "target_tree_sha1",
+            lambda row: row["postfetch_observation"][
+                "artifact_git_blob_sha1_by_path"
+            ].__setitem__(
+                _SUCCESS_CHANGED_PATHS[0],
                 "f" * 40,
             )
         )
-
-        def mutate_postfetch_map(
-            row: dict[str, Any],
-            map_key: str,
-        ) -> None:
-            row["postfetch_observation"][map_key][
-                _SUCCESS_CHANGED_PATHS[0]
-            ] = (
-                "f" * 40
-                if "blob" in map_key
-                else (
-                    "forbidden.schema.v0"
-                    if "schema" in map_key
-                    else (
-                        False
-                        if "body_free" in map_key
-                        else "f" * 64
-                    )
-                )
-            )
-
-        for map_key in (
-            "artifact_raw_sha256_by_path",
-            "artifact_git_blob_sha1_by_path",
-            "artifact_logical_sha256_by_path",
-            "artifact_schema_by_path",
-            "artifact_body_free_by_path",
-        ):
-            variant(
-                lambda row, map_key=map_key: mutate_postfetch_map(
-                    row,
-                    map_key,
-                )
-            )
-
-        def mutate_postfetch_map_shape(
-            row: dict[str, Any],
-            map_key: str,
-            mutation: str,
-        ) -> None:
-            observed_map = row["postfetch_observation"][map_key]
-            if mutation == "missing":
-                observed_map.pop(_SUCCESS_CHANGED_PATHS[7])
-            elif "blob" in map_key:
-                observed_map["forbidden/extra.json"] = "f" * 40
-            elif "schema" in map_key:
-                observed_map["forbidden/extra.json"] = (
-                    "forbidden.schema.v0"
-                )
-            elif "body_free" in map_key:
-                observed_map["forbidden/extra.json"] = True
-            else:
-                observed_map["forbidden/extra.json"] = "f" * 64
-
-        for map_key in (
-            "artifact_raw_sha256_by_path",
-            "artifact_git_blob_sha1_by_path",
-            "artifact_logical_sha256_by_path",
-            "artifact_schema_by_path",
-            "artifact_body_free_by_path",
-        ):
-            for mutation in ("missing", "extra"):
-                variant(
-                    lambda row,
-                    map_key=map_key,
-                    mutation=mutation: mutate_postfetch_map_shape(
-                        row,
-                        map_key,
-                        mutation,
-                    )
-                )
-
-        def mutate_candidate_identity_contract(
-            row: dict[str, Any],
-            path: str,
-            mutation: str,
-            field: str | None = None,
-            value: Any = None,
-        ) -> None:
-            identity = row["candidate_identities_by_path"][path]
-            if mutation == "missing_key":
-                assert field is not None
-                identity.pop(field)
-            elif mutation == "extra_key":
-                identity["unexpected_key"] = "forbidden"
-            else:
-                assert field is not None
-                replacement = deepcopy(value)
-                if identity.get(field) == replacement:
-                    current = identity[field]
-                    if type(current) is bool:
-                        replacement = not current
-                    elif type(current) is str and len(current) in {40, 64}:
-                        replacement = (
-                            "0" * len(current)
-                            if current != "0" * len(current)
-                            else "1" * len(current)
-                        )
-                    else:
-                        replacement = "DIFFERENT_VALUE"
-                identity[field] = replacement
-
-        representative_candidate_paths = (
-            _ACCEPTED_PATH,
-            _STEP_PATHS[0],
-            _ALL11_PATH,
-            _ATOMIC_MANIFEST_PATH,
-            _EVENT2_PATH,
-        )
-        candidate_field_mutations = (
-            ("artifact_role", "WRONG_ROLE"),
-            ("schema_version", "wrong.schema.v1"),
-            ("repository_full_name", "Other/Repository"),
-            ("path", "forbidden/other.json"),
-            ("git_blob_sha1", "f" * 40),
-            ("raw_sha256", "f" * 64),
-            ("logical_artifact_sha256", "f" * 64),
-            ("body_free", False),
-        )
-        for path in representative_candidate_paths:
-            for field in sorted(_CANDIDATE_IDENTITY_KEYS):
-                variant(
-                    lambda row,
-                    path=path,
-                    field=field: mutate_candidate_identity_contract(
-                        row,
-                        path,
-                        "missing_key",
-                        field,
-                    )
-                )
-            variant(
-                lambda row,
-                path=path: mutate_candidate_identity_contract(
-                    row,
-                    path,
-                    "extra_key",
-                )
-            )
-            for field, value in candidate_field_mutations:
-                variant(
-                    lambda row,
-                    path=path,
-                    field=field,
-                    value=value: mutate_candidate_identity_contract(
-                        row,
-                        path,
-                        "field",
-                        field,
-                        value,
-                )
-            )
-
-        def mutate_candidate_map_shape(
-            row: dict[str, Any],
-            mutation: str,
-        ) -> None:
-            candidates = row["candidate_identities_by_path"]
-            if mutation == "missing":
-                candidates.pop(_SUCCESS_CHANGED_PATHS[7])
-            else:
-                extra = deepcopy(candidates[_ACCEPTED_PATH])
-                extra["path"] = "forbidden/extra.json"
-                candidates[extra["path"]] = extra
-
-        for mutation in ("missing", "extra"):
-            variant(
-                lambda row,
-                mutation=mutation: mutate_candidate_map_shape(
-                    row,
-                    mutation,
-                )
-            )
-
-        def mutate_unchanged_path_semantic(
-            row: dict[str, Any],
-            field: str,
-        ) -> None:
-            postfetch = row["postfetch_observation"]
-            observation = postfetch["unchanged_path_observation"]
-            if field == "scope":
-                observation["scope"] = "SUCCESS_EXACT15_ONLY"
-            elif field == "mode":
-                observation["mode_type_sha_complete"] = False
-            else:
-                observation["mismatches"] = [
-                    "ai/services/ai_inference/unexpected.py"
-                ]
-                postfetch["unchanged_path_mismatches"] = deepcopy(
-                    observation["mismatches"]
-                )
-            observation["observation_sha256"] = _hash_without(
-                observation,
-                "observation_sha256",
-            )
-
-        for field in ("scope", "mode", "mismatches"):
-            variant(
-                lambda row,
-                field=field: mutate_unchanged_path_semantic(
-                    row,
-                    field,
-                )
-            )
         variant(
             lambda row: row["postfetch_observation"][
-                "unchanged_path_observation"
-            ].__setitem__("observation_sha256", "f" * 64)
+                "independent_issue_codes"
+            ].append(
+                "INDEPENDENT_ISSUE"
+            )
+        )
+        variant(
+            lambda row: row["postfetch_observation"].__setitem__(
+                "state",
+                "FAILED",
+            )
+        )
+        return variants
+    elif case_id == "B12":
+        state["publication_transaction"]["ref_update_result"] = "UNKNOWN"
+        variant(
+            lambda row: row["postfetch_observation"].__setitem__(
+                "state",
+                "UNKNOWN",
+            )
         )
         variant(
             lambda row: row["postfetch_observation"][
@@ -8385,164 +8011,19 @@ def _mutated_states(case_id: str, role: str) -> list[dict[str, Any]]:
             ].append("OWNER_ISSUE")
         )
         variant(
-            lambda row: row["postfetch_observation"][
-                "independent_issue_codes"
-            ].append("INDEPENDENT_ISSUE")
+            lambda row: row["postfetch_observation"].__setitem__(
+                "changed_paths",
+                list(_SUCCESS_CHANGED_PATHS[:-1]),
+            )
         )
-
-        def mutate_external_identities(
-            row: dict[str, Any],
-            mutation: str,
-        ) -> None:
-            identities = row["postfetch_observation"][
-                "publication_external_identities"
-            ]
-            if mutation == "missing":
-                identities.pop()
-            elif mutation == "order":
-                identities[-2:] = reversed(identities[-2:])
-            elif mutation == "extra":
-                extra = deepcopy(identities[0])
-                _mutate_external_identity_field(
-                    extra,
-                    "path",
-                    "forbidden/extra.json",
-                )
-                identities.append(extra)
-            elif mutation == "duplicate":
-                identities.append(deepcopy(identities[0]))
-            elif mutation == "publication_commit":
-                identities[0]["publication_commit_sha1"] = "f" * 40
-                identities[0]["identity_sha256"] = _hash_without(
-                    identities[0],
-                    "identity_sha256",
-                )
-            else:
-                identities[0]["identity_sha256"] = "f" * 64
-
-        for mutation in (
-            "missing",
-            "order",
-            "extra",
-            "duplicate",
-            "publication_commit",
-            "self_hash",
-        ):
-            variant(
-                lambda row, mutation=mutation: mutate_external_identities(
-                    row,
-                    mutation,
-                )
-            )
-
-        def mutate_external_identity_contract(
-            row: dict[str, Any],
-            index: int,
-            mutation: str,
-            field: str | None = None,
-            value: Any = None,
-        ) -> None:
-            identity = row["postfetch_observation"][
-                "publication_external_identities"
-            ][index]
-            if mutation == "missing_key":
-                assert field is not None
-                identity.pop(field)
-                if "identity_sha256" in identity:
-                    identity["identity_sha256"] = _hash_without(
-                        identity,
-                        "identity_sha256",
-                    )
-            elif mutation == "extra_key":
-                identity["unexpected_key"] = "forbidden"
-                identity["identity_sha256"] = _hash_without(
-                    identity,
-                    "identity_sha256",
-                )
-            else:
-                assert field is not None
-                _mutate_external_identity_field(
-                    identity,
-                    field,
-                    value,
-                )
-
-        for index in (0, 1, 2, 3, 4):
-            for field in sorted(_EXTERNAL_IDENTITY_KEYS):
-                variant(
-                    lambda row,
-                    index=index,
-                    field=field: mutate_external_identity_contract(
-                        row,
-                        index,
-                        "missing_key",
-                        field,
-                    )
-                )
-            variant(
-                lambda row,
-                index=index: mutate_external_identity_contract(
-                    row,
-                    index,
-                    "extra_key",
-                )
-            )
-            for field, value in _EXTERNAL_IDENTITY_FIELD_MUTATIONS:
-                variant(
-                    lambda row,
-                    index=index,
-                    field=field,
-                    value=value: mutate_external_identity_contract(
-                        row,
-                        index,
-                        "field",
-                        field,
-                        value,
-                    )
-                )
-        return variants
-    elif case_id == "B12":
-        state["publication_transaction"]["ref_update_result"] = "UNKNOWN"
         variant(
-            lambda row: row["publication_transaction"].__setitem__(
-                "same_frozen_success_commit_reused",
-                False,
+            lambda row: row["postfetch_observation"][
+                "artifact_raw_sha256_by_path"
+            ].__setitem__(
+                _SUCCESS_CHANGED_PATHS[0],
+                "f" * 64,
             )
         )
-        for mutation in (
-            "commit",
-            "rebase",
-            "timestamp",
-            "attempt_count",
-            "automatic_retry",
-            "unauthorized_publication_only_retry",
-            "new_accepted",
-        ):
-            def mutate_unknown(
-                row: dict[str, Any],
-                mutation: str = mutation,
-            ) -> None:
-                transaction = row["publication_transaction"]
-                if mutation == "commit":
-                    transaction[
-                        "reconciled_success_commit_sha1"
-                    ] = "f" * 40
-                elif mutation == "rebase":
-                    transaction["rebase_requested"] = True
-                elif mutation == "timestamp":
-                    transaction["timestamp_rebuild_requested"] = True
-                elif mutation == "attempt_count":
-                    transaction["ref_update_attempt_count"] = 2
-                elif mutation == "automatic_retry":
-                    transaction["automatic_retry_requested"] = True
-                elif mutation == "unauthorized_publication_only_retry":
-                    transaction[
-                        "publication_only_retry_requested"
-                    ] = True
-                else:
-                    transaction["new_accepted_receipt_requested"] = True
-
-            variant(mutate_unknown)
         return variants
     elif case_id == "I01":
         state["verifier_import_violations"].append(
@@ -8591,12 +8072,6 @@ def _mutated_states(case_id: str, role: str) -> list[dict[str, Any]]:
         )
         return variants
     elif case_id == "I05":
-        variant(
-            lambda row: row["publication_owner_state"][
-                "postfetch_observation"
-            ].__setitem__("parent_commit_sha1s", ["f" * 40])
-        )
-
         def mutate_raw(row: dict[str, Any]) -> None:
             observation = row["publication_owner_state"][
                 "postfetch_observation"
@@ -9184,28 +8659,15 @@ def _single_publication_mutations(
         ("artifact_role", "WRONG_ROLE"),
         ("path", "forbidden/other.json"),
         ("expected_changed_paths", ["forbidden/other.json"]),
-        ("parent_commit_sha1s", ["f" * 40]),
-        ("expected_old_sha1", "f" * 40),
-        ("requested_expected_old_sha1", "f" * 40),
-        ("observed_old_sha1", "f" * 40),
-        ("head_commit_sha1", "f" * 40),
+        ("head_commit_sha1", "not-a-sha1"),
         ("postfetch_state", "UNKNOWN"),
         ("target_absent_at_base", False),
-        ("unchanged_path_mismatches", ["forbidden/drift"]),
         ("owner_issue_codes", ["OWNER_ISSUE"]),
         ("independent_issue_codes", ["INDEPENDENT_ISSUE"]),
     ):
         state = _single_publication_state()
         target(state)[field] = value
         variants.append(state)
-    state = _single_publication_state()
-    transaction = target(state)
-    transaction["parent_commit_sha1s"] = [
-        transaction["parent_commit_sha1s"][0],
-        "f" * 40,
-    ]
-    variants.append(state)
-
     state = _single_publication_state()
     other_role = (
         "P1_OPERATIONAL_ADMISSION_RECEIPT"
@@ -9220,7 +8682,20 @@ def _single_publication_mutations(
     target(state)["publication"] = deepcopy(other_publication)
     variants.append(state)
 
-    for key in sorted(_SINGLE_PUBLICATION_TRANSACTION_KEYS):
+    for key in sorted(
+        {
+            "reflection_contract_version",
+            "artifact_role",
+            "path",
+            "expected_changed_paths",
+            "head_commit_sha1",
+            "target_absent_at_base",
+            "owner_issue_codes",
+            "independent_issue_codes",
+            "postfetch_state",
+            "publication",
+        }
+    ):
         state = _single_publication_state()
         target(state).pop(key)
         variants.append(state)
@@ -9379,19 +8854,22 @@ def _assert_static_contract() -> None:
     assert len(_CANDIDATE_V2_KEYS) == 10
     assert len(_EVENT_V2_KEYS) == 23
     assert len(_EVENT_AUTHORITY_KEYS) == 4
-    assert len(_EVENT_PUBLICATION_KEYS) == 11
-    assert len(_TRANSACTION_CAPABILITY_KEYS) == 15
-    assert len(_SUCCESS_PUBLICATION_TRANSACTION_KEYS) == 22
+    assert len(
+        _EVENT_PUBLICATION_KEYS - _EVENT_PUBLICATION_OPTIONAL_KEYS
+    ) == 9
+    assert len(_SUCCESS_PUBLICATION_TRANSACTION_REQUIRED_KEYS) == 7
+    assert len(_WRITE_COMMIT_KEYS) == 2
     assert len(_TERMINAL_COMMIT_OBSERVATION_KEYS) == 5
-    assert len(_OPERATIONAL_ADMISSION_KEYS) == 20
+    assert len(
+        _OPERATIONAL_ADMISSION_KEYS
+        - _OPERATIONAL_ADMISSION_OPTIONAL_KEYS
+    ) == 18
     assert len(_ADMISSION_AUTHORITY_KEYS) == 4
     assert len(_ADMISSION_SCOPE_KEYS) == 5
     assert len(_ADMISSION_OPERATION_SET) == 11
-    assert len(_TRANSPORT_CAPABILITY_KEYS) == 14
-    assert len(_DURABLE_STORE_CAPABILITY_KEYS) == 16
     assert len(_TERMINAL_V2_KEYS) == 32
-    assert len(_EXACT1_PUBLICATION_KEYS) == 8
-    assert len(_SINGLE_PUBLICATION_TRANSACTION_KEYS) == 14
+    assert len(_EXACT1_PUBLICATION_KEYS) == 9
+    assert len(_SINGLE_PUBLICATION_TRANSACTION_KEYS) == 15
     assert len(_OUTCOME_KEYS) == 8
     assert len(_COUNTS_KEYS) == 10
     assert len(_READINESS_KEYS) == 30
@@ -9645,6 +9123,207 @@ def _assert_case(case_id: str) -> None:
             case_id,
             expected_code,
         )
+    if case_id == "B08":
+        multi_write = _publication_state()
+        writes = [
+            {
+                "commit_sha1": "6" * 40,
+                "changed_paths": list(_SUCCESS_CHANGED_PATHS[:7]),
+            },
+            {
+                "commit_sha1": "7" * 40,
+                "changed_paths": list(_SUCCESS_CHANGED_PATHS[7:]),
+            },
+        ]
+        _set_publication_write_commits(multi_write, writes)
+        assert _issue_codes(api(deepcopy(multi_write))) == ()
+        assert len(
+            {
+                identity["publication_commit_sha1"]
+                for identity in multi_write["postfetch_observation"][
+                    "publication_external_identities"
+                ]
+            }
+        ) == 2
+        independent_multi_write = _independent_state()
+        _set_publication_write_commits(
+            independent_multi_write["publication_owner_state"],
+            writes,
+        )
+        independent_api = _target_api_or_red("independent", case_id)
+        assert _issue_codes(
+            independent_api(deepcopy(independent_multi_write))
+        ) == ()
+    if case_id == "B09":
+        head_drift = _publication_state()
+        head_drift["publication_transaction"]["parent_commit_sha1s"] = [
+            "f" * 40
+        ]
+        head_drift["publication_transaction"][
+            "requested_expected_old_sha1"
+        ] = "e" * 40
+        head_drift["publication_transaction"]["observed_old_sha1"] = (
+            "d" * 40
+        )
+        head_drift["postfetch_observation"]["parent_commit_sha1s"] = [
+            "f" * 40
+        ]
+        head_drift["postfetch_observation"]["head_commit_sha1"] = "9" * 40
+        assert _issue_codes(api(deepcopy(head_drift))) == ()
+    if case_id == "B10":
+        ordinary_transport = _publication_state()
+        transaction = ordinary_transport["publication_transaction"]
+        for key in tuple(transaction):
+            if key not in _SUCCESS_PUBLICATION_TRANSACTION_REQUIRED_KEYS:
+                transaction.pop(key)
+        assert "transaction_capability" not in ordinary_transport[
+            "event2"
+        ]["publication"]
+        assert "ref_update_mode" not in ordinary_transport[
+            "event2"
+        ]["publication"]
+        assert "ref_update_mode" not in ordinary_transport[
+            "atomic_publication_manifest"
+        ]
+        assert _issue_codes(api(deepcopy(ordinary_transport))) == ()
+    if case_id == "C10":
+        ordinary_sequence = _sequence_state()
+        admission = ordinary_sequence["operational_admission_receipt"]
+        assert "transport_capability" not in admission
+        assert "durable_store_capability" not in admission
+        _rebind_completion_chain(
+            ordinary_sequence,
+            deepcopy(ordinary_sequence["successor_completion_receipt"]),
+        )
+        event = ordinary_sequence["event1"]
+        assert "transaction_capability" not in event["publication"]
+        assert "ref_update_mode" not in event["publication"]
+        for publication_key in (
+            "successor_completion_publication",
+            "operational_admission_publication",
+            "event1_publication",
+        ):
+            publication = ordinary_sequence[publication_key]
+            publication["parent_commit_sha1s"] = ["f" * 40]
+            publication["expected_old_sha1"] = "e" * 40
+            publication["observed_old_sha1"] = "d" * 40
+            postfetch = publication["postfetch_evidence"]
+            postfetch["authoritative_recursive_tree_read"] = False
+            postfetch["unchanged_path_mismatches"] = [
+                "unrelated/non_target_path"
+            ]
+        assert _issue_codes(api(deepcopy(ordinary_sequence))) == ()
+        independent_api = _target_api_or_red("independent", case_id)
+        assert _issue_codes(
+            independent_api(deepcopy(_independent_state()))
+        ) == ()
+
+        def sequence_postfetches(
+            sequence_state: dict[str, Any],
+        ) -> tuple[dict[str, Any], ...]:
+            return (
+                sequence_state["causal_red_postfetch_evidence"],
+                sequence_state["combined_green_postfetch_evidence"],
+                sequence_state["successor_completion_publication"][
+                    "postfetch_evidence"
+                ],
+                sequence_state["operational_admission_publication"][
+                    "postfetch_evidence"
+                ],
+                sequence_state["event1_publication"][
+                    "postfetch_evidence"
+                ],
+            )
+
+        def assert_sequence_owner_and_independent(
+            sequence_state: dict[str, Any],
+        ) -> None:
+            assert _issue_codes(api(deepcopy(sequence_state))) == ()
+            independent_state = _independent_state()
+            independent_state[
+                "successor_succession_owner_state"
+            ] = deepcopy(sequence_state)
+            assert _issue_codes(
+                independent_api(deepcopy(independent_state))
+            ) == ()
+
+        transport_metadata_absent = _sequence_state()
+        for publication_key in (
+            "successor_completion_publication",
+            "operational_admission_publication",
+            "event1_publication",
+        ):
+            publication = transport_metadata_absent[publication_key]
+            for key in (
+                "parent_commit_sha1s",
+                "expected_old_sha1",
+                "observed_old_sha1",
+            ):
+                publication.pop(key)
+        required_postfetch_keys = {
+            "repository_full_name",
+            "verification_ref",
+            "verification_commit_sha1",
+            "publication_commit_sha1",
+            "publication_changed_paths",
+            "target_absent_at_base",
+            "authoritative_ref_read",
+            "authoritative_head_read",
+            "artifact_at_publication",
+            "artifact_at_verification_ref",
+            "owner_issue_codes",
+            "independent_issue_codes",
+            "postfetch_state",
+        }
+        for postfetch in sequence_postfetches(
+            transport_metadata_absent
+        ):
+            for key in tuple(postfetch):
+                if key not in required_postfetch_keys:
+                    postfetch.pop(key)
+        assert_sequence_owner_and_independent(
+            transport_metadata_absent
+        )
+
+        arbitrary_tree_metadata = _sequence_state()
+        for postfetch in sequence_postfetches(arbitrary_tree_metadata):
+            postfetch["base_tree_sha1"] = "f" * 40
+            postfetch["target_tree_sha1"] = "f" * 40
+        assert_sequence_owner_and_independent(arbitrary_tree_metadata)
+
+        published = _current_published_artifact_state()
+        assert (
+            published["postfetch_commit_sha1"]
+            != published["artifact_external_identity"][
+                "publication_commit_sha1"
+            ]
+        )
+        assert verify_recovery_epoch002_published_artifact(
+            deepcopy(published)
+        ) == ()
+
+        bytes_mutated = deepcopy(published)
+        bytes_mutated["artifact"]["candidate_version_id"] = (
+            "different_candidate"
+        )
+        assert verify_recovery_epoch002_published_artifact(
+            bytes_mutated
+        ) == ("READINESS_RECEIPT_NOT_PUBLISHED_STOP",)
+
+        hash_mutated = deepcopy(published)
+        hash_mutated["postfetch_git_blob_sha1"] = "0" * 40
+        assert verify_recovery_epoch002_published_artifact(
+            hash_mutated
+        ) == ("PUBLISHED_ARTIFACT_IDENTITY_MISMATCH",)
+
+        path_mutated = deepcopy(published)
+        path_mutated["changed_paths"] = ["forbidden/other.json"]
+        path_mutated["expected_changed_paths"] = [
+            "forbidden/other.json"
+        ]
+        assert verify_recovery_epoch002_published_artifact(
+            path_mutated
+        ) == ("READINESS_RECEIPT_NOT_PUBLISHED_STOP",)
     independent_replay_contracts = {
         "I02": tuple(
             (f"T{number:02d}", "terminal_owner_state")
@@ -9748,6 +9427,109 @@ def _assert_case(case_id: str) -> None:
             case_id,
             "independent accepted baseline must be accepted",
         )
+
+        def accepted_postfetches(
+            accepted_state: dict[str, Any],
+        ) -> tuple[dict[str, Any], ...]:
+            context = accepted_state["source_context"]
+            observation = accepted_state[
+                "retry_history_observation"
+            ]
+            return (
+                accepted_state["terminal_publication"][
+                    "postfetch_evidence"
+                ],
+                context["event1_postfetch_evidence"],
+                context["readiness_postfetch_evidence"],
+                context["successful_reservation_postfetch_evidence"],
+                *observation[
+                    "prior_reservation_postfetch_evidence"
+                ],
+                *observation[
+                    "prior_disposition_postfetch_evidence"
+                ],
+            )
+
+        def assert_accepted_owner_and_independent(
+            accepted_state: dict[str, Any],
+        ) -> None:
+            assert _issue_codes(api(deepcopy(accepted_state))) == ()
+            assert _issue_codes(
+                independent_api(
+                    deepcopy(_independent_state(accepted_state))
+                )
+            ) == ()
+
+        accepted_without_tree_metadata = _accepted_state()
+        for postfetch in accepted_postfetches(
+            accepted_without_tree_metadata
+        ):
+            postfetch.pop("base_tree_sha1", None)
+            postfetch.pop("target_tree_sha1", None)
+        assert_accepted_owner_and_independent(
+            accepted_without_tree_metadata
+        )
+
+        accepted_with_arbitrary_tree_metadata = _accepted_state()
+        for postfetch in accepted_postfetches(
+            accepted_with_arbitrary_tree_metadata
+        ):
+            postfetch["base_tree_sha1"] = "f" * 40
+            postfetch["target_tree_sha1"] = "f" * 40
+        assert_accepted_owner_and_independent(
+            accepted_with_arbitrary_tree_metadata
+        )
+
+        terminal_head_drift = _accepted_state()
+        for publication in (
+            terminal_head_drift["terminal_publication"],
+            terminal_head_drift["terminal_owner_state"][
+                "terminal_publication"
+            ],
+        ):
+            publication["parent_commit_sha1s"] = ["a" * 40]
+            publication["expected_old_sha1"] = "a" * 40
+            publication["observed_old_sha1"] = "a" * 40
+            postfetch = publication["postfetch_evidence"]
+            postfetch["publication_parent_commit_sha1s"] = [
+                "a" * 40
+            ]
+            postfetch["base_tree_sha1"] = "b" * 40
+        assert _issue_codes(api(deepcopy(terminal_head_drift))) == ()
+        assert _issue_codes(
+            independent_api(
+                deepcopy(_independent_state(terminal_head_drift))
+            )
+        ) == ()
+
+        for mutation_kind in ("bytes", "hash", "path"):
+            terminal_mutated = deepcopy(terminal_head_drift)
+            for publication in (
+                terminal_mutated["terminal_publication"],
+                terminal_mutated["terminal_owner_state"][
+                    "terminal_publication"
+                ],
+            ):
+                if mutation_kind == "bytes":
+                    publication["artifact"]["attempt_id"] = "0" * 64
+                else:
+                    artifact_at_head = publication[
+                        "postfetch_evidence"
+                    ]["artifact_at_verification_ref"]
+                    if mutation_kind == "hash":
+                        artifact_at_head["raw_sha256"] = "0" * 64
+                    else:
+                        artifact_at_head["path"] = (
+                            "forbidden/other.json"
+                        )
+            assert _issue_codes(
+                api(deepcopy(terminal_mutated))
+            ) == ("POSTVERIFIED_TERMINAL_REQUIRED",)
+            assert _issue_codes(
+                independent_api(
+                    deepcopy(_independent_state(terminal_mutated))
+                )
+            ) == ("INDEPENDENT_TERMINAL_SCHEMA_INVALID",)
         for valid_history in valid_history_states:
             independent_valid = _independent_state(valid_history)
             assert _issue_codes(
@@ -9767,7 +9549,26 @@ def _assert_case(case_id: str) -> None:
             case_id,
             "same frozen success commit must be reconcilable after UNKNOWN",
         )
+        not_applied = _publication_state()
+        not_applied["publication_transaction"]["ref_update_result"] = (
+            "NOT_APPLIED"
+        )
+        assert _issue_codes(api(deepcopy(not_applied))) == (
+            "SUCCESS_PUBLICATION_NOT_APPLIED_STOP",
+        )
+        failed = _publication_state()
+        failed["publication_transaction"]["ref_update_result"] = "FAILED"
+        assert _issue_codes(api(deepcopy(failed))) == (
+            "SUCCESS_PUBLICATION_WRITE_FAILED_STOP",
+        )
     if case_id == "I05":
+        independent_head_drift = _independent_state()
+        independent_head_drift["publication_owner_state"][
+            "postfetch_observation"
+        ]["parent_commit_sha1s"] = ["f" * 40]
+        assert _issue_codes(
+            api(deepcopy(independent_head_drift))
+        ) == ()
         independent_unknown_reconciled = _independent_state()
         independent_unknown_reconciled["publication_owner_state"][
             "publication_transaction"
@@ -9810,11 +9611,35 @@ def _assert_case(case_id: str) -> None:
             case_id,
             "publisher additive exact1 role baseline must be accepted",
         )
-        for publisher_mutation in _single_publication_mutations(case_id):
+        publisher_head_drift = _single_publication_state()
+        target_role = (
+            "SUCCESSOR_COMPLETION_RECEIPT"
+            if case_id == "C09"
+            else "P1_OPERATIONAL_ADMISSION_RECEIPT"
+        )
+        drifted_transaction = next(
+            row
+            for row in publisher_head_drift["exact1_transactions"]
+            if row["artifact_role"] == target_role
+        )
+        drifted_transaction["head_commit_sha1"] = "f" * 40
+        assert (
+            drifted_transaction["head_commit_sha1"]
+            != drifted_transaction["publication"]["identity"][
+                "publication_commit_sha1"
+            ]
+        )
+        assert _issue_codes(
+            publisher_api(deepcopy(publisher_head_drift))
+        ) == ()
+        for publisher_index, publisher_mutation in enumerate(
+            _single_publication_mutations(case_id)
+        ):
             assert _issue_codes(
                 publisher_api(deepcopy(publisher_mutation))
             ) == (expected_code,), (
                 case_id,
+                publisher_index,
                 "publisher additive exact1 role must be causal",
             )
 
@@ -9855,7 +9680,7 @@ def test_c09_completion_receipt_red_green_bound() -> None:
     _assert_case("C09")
 
 
-def test_c10_allocation_v2_event1_v2_operational_admission_exact20_succession_only() -> None:
+def test_c10_allocation_event1_owner_authority_and_current_reflection_contract() -> None:
     _assert_case("C10")
 
 
@@ -9895,7 +9720,7 @@ def test_t09_terminal_success_predicate_exact() -> None:
     _assert_case("T09")
 
 
-def test_t10_terminal_durable_publication_postverified() -> None:
+def test_t10_terminal_target_content_postverified() -> None:
     _assert_case("T10")
 
 
@@ -9999,23 +9824,23 @@ def test_b07_event2_terminal_success_lineage() -> None:
     _assert_case("B07")
 
 
-def test_b08_one_tree_one_commit() -> None:
+def test_b08_multiple_write_operations_allowed() -> None:
     _assert_case("B08")
 
 
-def test_b09_success_commit_direct_parent_t() -> None:
+def test_b09_nonconflicting_head_drift_allowed() -> None:
     _assert_case("B09")
 
 
-def test_b10_expected_old_t_lease() -> None:
+def test_b10_special_transport_non_normative() -> None:
     _assert_case("B10")
 
 
-def test_b11_full_postfetch_and_unchanged_paths() -> None:
+def test_b11_target_scoped_postverify() -> None:
     _assert_case("B11")
 
 
-def test_b12_unknown_result_same_s_no_retry_rebase() -> None:
+def test_b12_unknown_result_refetch_before_retry() -> None:
     _assert_case("B12")
 
 
@@ -10035,7 +9860,7 @@ def test_i04_event2_exact14_15_independent() -> None:
     _assert_case("I04")
 
 
-def test_i05_git_graph_bytes_hashes_independent() -> None:
+def test_i05_target_bytes_hashes_and_scope_independent() -> None:
     _assert_case("I05")
 
 
