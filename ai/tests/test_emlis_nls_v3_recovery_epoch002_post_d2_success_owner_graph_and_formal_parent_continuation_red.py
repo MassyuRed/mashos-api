@@ -9678,6 +9678,164 @@ def test_c08_success_contract_test_manifest_bound() -> None:
 
 def test_c09_completion_receipt_red_green_bound() -> None:
     _assert_case("C09")
+    expected_code = "SUCCESSOR_COMPLETION_EVIDENCE_BINDING_INVALID"
+    historical_test_identity = {
+        "path": _THIS_PATH,
+        "git_blob_sha1": "1616de8b9f738b7037b6e18a64113280fa6ec478",
+        "raw_sha256": (
+            "3e5cdcd5c2cd2113f273f6cc1a43ff09bdd4845b14cd7aea"
+            "49237d26cfc0753b"
+        ),
+    }
+    current_test_identity = _source_file_identity(_THIS_PATH)
+    assert historical_test_identity["path"] == current_test_identity["path"]
+    assert historical_test_identity != current_test_identity
+
+    def actual_s1_state() -> dict[str, Any]:
+        state = _sequence_state()
+        causal_red = deepcopy(state["causal_red_evidence_artifact"])
+        causal_red["successor_test_file"] = deepcopy(
+            historical_test_identity
+        )
+        state["causal_red_evidence"]["publication_commit_sha1"] = (
+            "a45a958cab1a5e1d052e6b470dd26d8e19764b7b"
+        )
+        _rebind_successor_evidence(
+            state,
+            evidence_kind="causal_red",
+            artifact=causal_red,
+        )
+        actual_artifact = state["causal_red_evidence_artifact"]
+        actual_identity = state["causal_red_evidence"]
+        assert actual_artifact["receipt_sha256"] == (
+            "7b3b6d0890038642d69feb18e46630fbf97a5918fe0e95db"
+            "766b8c8175e2d179"
+        )
+        assert actual_identity["git_blob_sha1"] == (
+            "fa2ac8978294e9eb92211147c09989ae7583455e"
+        )
+        assert actual_identity["raw_sha256"] == (
+            "f03bf71f267813d25664ceacd1344d74fb354156a9c65b19c"
+            "14a3c7f315e4c03"
+        )
+        assert actual_identity["identity_sha256"] == (
+            "1504bf4f58ca02b76df7f0a9fd6f88a429b01a56c59b7a90"
+            "82648a25fb3614b4"
+        )
+        combined_green = deepcopy(
+            state["combined_green_evidence_artifact"]
+        )
+        combined_green["causal_red_evidence_sha256"] = actual_identity[
+            "logical_artifact_sha256"
+        ]
+        _rebind_successor_evidence(
+            state,
+            evidence_kind="combined_green",
+            artifact=combined_green,
+        )
+        return state
+
+    def current_active_test_identity_substitution() -> dict[str, Any]:
+        state = actual_s1_state()
+        causal_red = deepcopy(state["causal_red_evidence_artifact"])
+        causal_red["successor_test_file"] = deepcopy(
+            current_test_identity
+        )
+        _rebind_successor_evidence(
+            state,
+            evidence_kind="causal_red",
+            artifact=causal_red,
+        )
+        combined_green = deepcopy(
+            state["combined_green_evidence_artifact"]
+        )
+        combined_green["causal_red_evidence_sha256"] = state[
+            "causal_red_evidence"
+        ]["logical_artifact_sha256"]
+        _rebind_successor_evidence(
+            state,
+            evidence_kind="combined_green",
+            artifact=combined_green,
+        )
+        return state
+
+    def nonmanifest_exact110_substitution(
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        state = deepcopy(state)
+        combined_green = deepcopy(
+            state["combined_green_evidence_artifact"]
+        )
+        node_ids = list(combined_green["test_node_ids"])
+        nonmanifest_node = (
+            f"{_THIS_PATH}::c09_unique_non_manifest_exact110"
+        )
+        assert nonmanifest_node not in _success_contract_node_ids()
+        node_ids[-1] = nonmanifest_node
+        assert len(node_ids) == len(set(node_ids)) == 110
+        combined_green["test_node_ids"] = node_ids
+        combined_green["executed_node_ids"] = list(node_ids)
+        combined_green["outcome_states"] = {
+            node_id: "PASSED" for node_id in node_ids
+        }
+        _rebind_successor_evidence(
+            state,
+            evidence_kind="combined_green",
+            artifact=combined_green,
+        )
+        return state
+
+    owner_api = _target_api_or_red("sequence", "C09")
+    independent_api = _target_api_or_red("independent", "C09")
+
+    def observe(state: dict[str, Any]) -> dict[str, tuple[str, ...]]:
+        independent_state = _independent_state()
+        independent_state["successor_succession_owner_state"] = deepcopy(
+            state
+        )
+        return {
+            "owner": _issue_codes(owner_api(deepcopy(state))),
+            "independent": _issue_codes(
+                independent_api(independent_state)
+            ),
+        }
+
+    observed = {
+        "actual_published_s1": observe(actual_s1_state()),
+        "current_active_test_identity_substitution": observe(
+            current_active_test_identity_substitution()
+        ),
+        "nonmanifest_exact110_from_actual_s1": observe(
+            nonmanifest_exact110_substitution(actual_s1_state())
+        ),
+        "nonmanifest_exact110_from_current_active_substitution": observe(
+            nonmanifest_exact110_substitution(
+                current_active_test_identity_substitution()
+            )
+        ),
+    }
+    assert observed == {
+        "actual_published_s1": {
+            "owner": (),
+            "independent": (),
+        },
+        "current_active_test_identity_substitution": {
+            "owner": (expected_code,),
+            "independent": (expected_code,),
+        },
+        "nonmanifest_exact110_from_actual_s1": {
+            "owner": (expected_code,),
+            "independent": (expected_code,),
+        },
+        "nonmanifest_exact110_from_current_active_substitution": {
+            "owner": (expected_code,),
+            "independent": (expected_code,),
+        },
+    }, (
+        "C09",
+        "actual S1 identity and exact110 manifest parity must be causal",
+        observed,
+    )
 
 
 def test_c10_allocation_event1_owner_authority_and_current_reflection_contract() -> None:
