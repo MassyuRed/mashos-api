@@ -1073,28 +1073,8 @@ def _validate_operational_admission(
     if readiness.get("preflight_id") != artifact_sha256(preflight_preimage):
         raise ValueError("FORMAL_PREFLIGHT_IDENTITY_INVALID")
 
-    readiness_commit = readiness_external_identity.get(
-        "publication_commit_sha1"
-    )
-    event1_commit = event1_external_identity.get(
-        "publication_commit_sha1"
-    )
     if (
-        readiness_publication_state.get("expected_old_sha1")
-        != event1_commit
-        or readiness_publication_state.get("observed_old_sha1")
-        != event1_commit
-        or readiness_publication_state.get("parent_commit_sha1s")
-        != [event1_commit]
-        or reservation.get("publication_base_commit_sha1")
-        != readiness_commit
-        or reservation_publication_state.get("expected_old_sha1")
-        != readiness_commit
-        or reservation_publication_state.get("observed_old_sha1")
-        != readiness_commit
-        or reservation_publication_state.get("parent_commit_sha1s")
-        != [readiness_commit]
-        or reservation_publication_state.get(
+        reservation_publication_state.get(
             "ready_receipt_marked_consumed"
         )
         is not True
