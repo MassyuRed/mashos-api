@@ -61,12 +61,21 @@ from emlis_nls_v3_recovery_epoch002_formal_worker_bootstrap_preflight import (
     validate_recovery_epoch002_readiness_artifact,
 )
 from emlis_nls_v3_recovery_epoch002_formal_worker_evidence_v3 import (
+    RECOVERY_EPOCH002_FORMAL_NODE_IDS,
+    RECOVERY_EPOCH002_NEGATIVE_CLOSED_CODE_BY_NODE,
     validate_recovery_epoch002_attempt_state,
     validate_recovery_epoch002_checkpoint_chain,
     validate_recovery_epoch002_diagnostic,
     validate_recovery_epoch002_operational_terminal_result,
+    validate_recovery_epoch002_success_terminal_state,
     validate_recovery_epoch002_unknown_disposition,
     write_recovery_epoch002_body_free_json_once,
+)
+
+RECOVERY_EPOCH002_REGISTERED_NEGATIVE_NODE_IDS = tuple(
+    node_id
+    for node_id in RECOVERY_EPOCH002_FORMAL_NODE_IDS
+    if node_id in RECOVERY_EPOCH002_NEGATIVE_CLOSED_CODE_BY_NODE
 )
 
 
@@ -2153,6 +2162,44 @@ def run_recovery_epoch002_current_step_proof(
         raise failure from closure_failure
 
 
+def validate_recovery_epoch002_closed_code_capture_state(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Require the eleven registered negative codes to be observed."""
+
+    if (
+        type(state) is not dict
+        or validate_recovery_epoch002_success_terminal_state(state) != ()
+    ):
+        return ("TERMINAL_ACTUAL_CLOSED_CODE_NOT_OBSERVED",)
+    observations = state.get("runner_closed_code_observations")
+    terminal = state.get("terminal_result")
+    outcomes = (
+        terminal.get("outcomes")
+        if type(terminal) is dict
+        else None
+    )
+    if (
+        type(observations) is not dict
+        or observations != RECOVERY_EPOCH002_NEGATIVE_CLOSED_CODE_BY_NODE
+        or type(outcomes) is not list
+    ):
+        return ("TERMINAL_ACTUAL_CLOSED_CODE_NOT_OBSERVED",)
+    actual_by_node = {
+        row.get("test_node_id"): row.get("actual_closed_code")
+        for row in outcomes
+        if type(row) is dict
+    }
+    if any(
+        actual_by_node.get(node_id) != expected_code
+        for node_id, expected_code in (
+            RECOVERY_EPOCH002_NEGATIVE_CLOSED_CODE_BY_NODE.items()
+        )
+    ):
+        return ("TERMINAL_ACTUAL_CLOSED_CODE_NOT_OBSERVED",)
+    return ()
+
+
 def _main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--internal-exact134-child", action="store_true")
@@ -2192,6 +2239,10 @@ __all__ = [
     "RECOVERY_EPOCH002_WORKER_ENVIRONMENT_FIXED",
     "RECOVERY_EPOCH002_WORKER_ENVIRONMENT_REMOVED",
     "RECOVERY_EPOCH002_RUN_CONTEXT_KEYS",
+    "RECOVERY_EPOCH002_REGISTERED_NEGATIVE_NODE_IDS",
+    "RECOVERY_EPOCH002_FORMAL_NODE_IDS",
+    "RECOVERY_EPOCH002_NEGATIVE_CLOSED_CODE_BY_NODE",
     "build_recovery_epoch002_formal_worker_argv",
     "run_recovery_epoch002_current_step_proof",
+    "validate_recovery_epoch002_closed_code_capture_state",
 ]

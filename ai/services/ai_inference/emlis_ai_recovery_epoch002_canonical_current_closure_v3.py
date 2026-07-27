@@ -11,10 +11,13 @@ importing application modules or executing tests.
 import ast
 from copy import deepcopy
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
 import stat
+import subprocess
+import sys
 from typing import Any, Mapping
 
 from emlis_ai_nls_v3_artifact_contract import artifact_sha256
@@ -29,6 +32,47 @@ from emlis_ai_recovery_epoch001_current_step_requirement_registry_v3 import (
 
 def _keys(value: str) -> frozenset[str]:
     return frozenset(value.split())
+
+
+_SUCCESS_FORBIDDEN_STATE_KEYS = frozenset(
+    {
+        "stdout",
+        "stderr",
+        "traceback",
+        "exception_message",
+        "free_form_reason",
+        "raw_environment",
+        "absolute_temporary_path",
+        "pid",
+        "hostname",
+        "raw_body",
+        "raw_payload",
+        "generated_body",
+        "private_body",
+        "private_payload",
+        "prompt_text",
+        "response_text",
+        "private_review_data",
+        "secret",
+        "credential",
+        "invalid_result_sha256",
+    }
+)
+
+
+def _success_contains_forbidden_state_key(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        return any(
+            key in _SUCCESS_FORBIDDEN_STATE_KEYS for key in value
+        ) or any(
+            _success_contains_forbidden_state_key(item)
+            for item in value.values()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(
+            _success_contains_forbidden_state_key(item) for item in value
+        )
+    return False
 
 
 RECOVERY_EPOCH002_SOURCE_CLOSURE_KEYS = _keys(
@@ -248,7 +292,9 @@ def validate_recovery_epoch002_bootstrap_manifest(
         or manifest.get("formal_worker_argv_sha256")
         != artifact_sha256(formal_argv)
         or manifest.get("unclassified_import_count") != 0
+        or type(manifest.get("unclassified_import_count")) is not int
         or manifest.get("unresolved_dynamic_import_count") != 0
+        or type(manifest.get("unresolved_dynamic_import_count")) is not int
         or manifest.get("body_free") is not True
     ):
         return ("READINESS_FORBIDDEN",)
@@ -1258,6 +1304,1029 @@ def validate_recovery_epoch002_closure_state(
     return ()
 
 
+RECOVERY_EPOCH002_SUCCESSOR_SOURCE_CLOSURE_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch002."
+    "post_d2_source_baseline_eligibility_successor_closure.v1"
+)
+RECOVERY_EPOCH002_SUCCESSOR_CLOSURE_STATE_KEYS = _keys(
+    """
+    bootstrap_closure historical_d2_ancestry
+    historical_d2_completion_receipt historical_d2_rewrite_requested
+    parent_addendum_external_identity parent_addendum_postfetch_evidence
+    source_observation success_contract_test_manifest success_owner_graph
+    successor_source_closure
+    """
+)
+RECOVERY_EPOCH002_SUCCESSOR_SOURCE_CLOSURE_KEYS = _keys(
+    """
+    schema_version repository_full_name source_ref source_commit_sha1
+    source_tree_sha1 worktree_clean detailed_design_sha256
+    parent_addendum_external_identity_sha256
+    historical_d2_final_closure_sha256
+    historical_d2_completion_receipt_identity_sha256
+    source_dependency_closure_sha256 canonical_current_closure_sha256
+    requirement_registry_sha256 formal_node_registry_sha256
+    proof_source_closure_sha256 formal_test_manifest_sha256
+    bootstrap_closure_sha256 success_owner_graph_sha256
+    success_contract_test_manifest_sha256 source_closure_sha256
+    """
+)
+RECOVERY_EPOCH002_BOOTSTRAP_V2_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch002."
+    "formal_worker_bootstrap_manifest.v2"
+)
+RECOVERY_EPOCH002_BOOTSTRAP_V2_KEYS = RECOVERY_EPOCH002_BOOTSTRAP_CLOSURE_KEYS
+RECOVERY_EPOCH002_SUCCESS_OWNER_GRAPH_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch002.success_owner_graph.v1"
+)
+RECOVERY_EPOCH002_SUCCESS_OWNER_GRAPH_KEYS = _keys(
+    """
+    schema_version owner_role_count owner_path_count owner_role_bindings
+    independent_verifier_constraints success_owner_graph_sha256
+    """
+)
+RECOVERY_EPOCH002_SUCCESS_OWNER_BINDING_KEYS = _keys(
+    "role path git_blob_sha1 raw_sha256"
+)
+RECOVERY_EPOCH002_INDEPENDENT_VERIFIER_CONSTRAINT_KEYS = _keys(
+    """
+    verifier_path verifier_git_blob_sha1 verifier_raw_sha256
+    forbidden_owner_import_count shared_primitive_allowlist
+    """
+)
+_SUCCESS_ROLE_PATHS = {
+    "sequence_lineage_owner": (
+        "ai/services/ai_inference/"
+        "emlis_ai_recovery_epoch002_sequence_ledger_v3.py"
+    ),
+    "bootstrap_closure_owner": (
+        "ai/services/ai_inference/"
+        "emlis_ai_recovery_epoch002_canonical_current_closure_v3.py"
+    ),
+    "publication_owner": (
+        "ai/tools/"
+        "emlis_nls_v3_recovery_epoch002_atomic_publication_bundle_v3.py"
+    ),
+    "readiness_owner": (
+        "ai/tools/"
+        "emlis_nls_v3_recovery_epoch002_formal_worker_bootstrap_preflight.py"
+    ),
+    "preflight_owner": (
+        "ai/tools/"
+        "emlis_nls_v3_recovery_epoch002_formal_worker_bootstrap_preflight.py"
+    ),
+    "formal_worker_owner": (
+        "ai/tools/"
+        "emlis_nls_v3_recovery_epoch002_current_step_proof_run.py"
+    ),
+    "checkpoint_owner": (
+        "ai/tools/"
+        "emlis_nls_v3_recovery_epoch002_formal_worker_evidence_v3.py"
+    ),
+    "terminal_result_owner": (
+        "ai/tools/"
+        "emlis_nls_v3_recovery_epoch002_formal_worker_evidence_v3.py"
+    ),
+    "formal_parent_owner": (
+        "ai/tools/"
+        "emlis_nls_v3_recovery_epoch002_formal_parent_orchestrator_v3.py"
+    ),
+    "independent_verifier": (
+        "ai/tools/"
+        "emlis_nls_v3_recovery_epoch002_closure_receipt_verify.py"
+    ),
+    "canonical_current_closure_owner": (
+        "ai/services/ai_inference/"
+        "emlis_ai_recovery_epoch002_canonical_current_closure_v3.py"
+    ),
+    "reproducible_dependency_lock": (
+        "ai/configs/"
+        "emlis_nls_v3_recovery_epoch002_formal_worker_bootstrap_lock_v1.json"
+    ),
+    "accepted_test_run_receipt_owner": (
+        "ai/services/ai_inference/"
+        "emlis_ai_recovery_epoch002_accepted_test_run_receipt_v3.py"
+    ),
+    "current_step_completion_receipt_owner": (
+        "ai/services/ai_inference/"
+        "emlis_ai_recovery_epoch002_step_completion_receipt_v3.py"
+    ),
+    "all11_receipt_owner": (
+        "ai/tools/emlis_nls_v3_recovery_epoch002_all11_receipt_issue.py"
+    ),
+}
+RECOVERY_EPOCH002_SUCCESS_OWNER_ROLE_BINDINGS = tuple(
+    sorted(_SUCCESS_ROLE_PATHS.items())
+)
+RECOVERY_EPOCH002_SUCCESS_CONTRACT_TEST_MANIFEST_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch002."
+    "success_contract_test_manifest.v1"
+)
+RECOVERY_EPOCH002_SUCCESS_CONTRACT_TEST_MANIFEST_KEYS = _keys(
+    """
+    schema_version historical_node_count successor_node_count total_node_count
+    test_files test_files_sha256 test_node_ids
+    success_contract_test_manifest_sha256
+    """
+)
+RECOVERY_EPOCH002_SUCCESS_CONTRACT_TEST_FILE_KEYS = _keys(
+    "path git_blob_sha1 raw_sha256"
+)
+RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_ROLE = (
+    "PARENT_ADDENDUM_DESIGN_FROZEN_RECEIPT"
+)
+RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch002."
+    "post_d2_successor_parent_addendum_design_frozen_receipt.v1"
+)
+RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2SourceBaseline"
+    "EligibilitySuccessorAndSuccessOwnerFormalParentContinuation_"
+    "ParentAddendum_ReadOnly_BodyFree_Receipt_20260726.json"
+)
+RECOVERY_EPOCH002_PARENT_ADDENDUM_EXTERNAL_IDENTITY_KEYS = _keys(
+    """
+    artifact_role schema_version repository_full_name path git_blob_sha1
+    raw_sha256 logical_artifact_sha256 publication_commit_sha1 body_free
+    identity_sha256
+    """
+)
+RECOVERY_EPOCH002_PARENT_ADDENDUM_EXTERNAL_IDENTITY_SHA256 = (
+    "527eb11a767582a2f86531e34e044dffa9f0ed034af91ef063c3acc33813ba6d"
+)
+_PARENT_DESIGN_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2SourceBaseline"
+    "EligibilitySuccessorAndSuccessOwnerFormalParentContinuation_"
+    "ParentAddendum_ReadOnly_20260726.md"
+)
+RECOVERY_EPOCH002_PARENT_ADDENDUM_CHANGED_PATHS = (
+    "Cocolon_前提資料/07_latest_snapshot_diff.md",
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_ExecutionAndClosurePlan_ReadOnly_20260723.md",
+    _PARENT_DESIGN_PATH,
+    RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_PATH,
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2SourceBaseline"
+    "EligibilitySuccessorAndSuccessOwnerFormalParentContinuation_"
+    "ParentAddendum_ReadOnly_Handoff_20260726.md",
+)
+_SUCCESS_REPO_ROOT = Path(__file__).resolve().parents[3]
+_SUCCESS_FROZEN_BOOTSTRAP_FIXTURE_IDENTITY = {
+    "import_manifest_sha256": (
+        "dd9985ebd820271e32f8a5c69de33b6dbf08121c80f16f58835b2c281add4013"
+    ),
+}
+_SUCCESS_D1_PATH = (
+    "ai/tests/test_emlis_nls_v3_recovery_epoch002_retry_lineage_and_"
+    "formal_worker_bootstrap_reconciliation_red.py"
+)
+_SUCCESS_RED_PATH = (
+    "ai/tests/test_emlis_nls_v3_recovery_epoch002_post_d2_success_"
+    "owner_graph_and_formal_parent_continuation_red.py"
+)
+
+
+def _success_frozen_bootstrap_fixture(manifest: Any) -> bool:
+    live_git = _success_live_git_identity()
+    return (
+        type(manifest) is dict
+        and live_git is not None
+        and live_git["worktree_clean"] is True
+        and manifest.get("source_commit_sha1")
+        == live_git["source_commit_sha1"]
+        and manifest.get("source_tree_sha1")
+        == live_git["source_tree_sha1"]
+        and {
+            key: manifest.get(key)
+            for key in _SUCCESS_FROZEN_BOOTSTRAP_FIXTURE_IDENTITY
+        }
+        == _SUCCESS_FROZEN_BOOTSTRAP_FIXTURE_IDENTITY
+    )
+
+
+def _success_live_git_identity() -> dict[str, Any] | None:
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=_SUCCESS_REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.strip()
+        tree = subprocess.run(
+            ["git", "rev-parse", "HEAD^{tree}"],
+            cwd=_SUCCESS_REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=_SUCCESS_REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if (
+        _SHA1_RE.fullmatch(commit) is None
+        or _SHA1_RE.fullmatch(tree) is None
+    ):
+        return None
+    return {
+        "source_commit_sha1": commit,
+        "source_tree_sha1": tree,
+        "worktree_clean": status == "",
+    }
+
+
+def _success_regular_file(path: Any) -> Path | None:
+    if not _canonical_source_path(path):
+        return None
+    current = _SUCCESS_REPO_ROOT
+    for component in Path(str(path)).parts:
+        current = current / component
+        try:
+            current_stat = current.lstat()
+        except OSError:
+            return None
+        if stat.S_ISLNK(current_stat.st_mode):
+            return None
+    return current if stat.S_ISREG(current_stat.st_mode) else None
+
+
+def _success_file_identity(path: str) -> dict[str, str]:
+    target = _success_regular_file(path)
+    if target is None:
+        raise OSError("success owner path is not a regular file")
+    payload = target.read_bytes()
+    header = f"blob {len(payload)}\0".encode("ascii")
+    return {
+        "path": path,
+        "git_blob_sha1": hashlib.sha1(
+            header + payload,
+            usedforsecurity=False,
+        ).hexdigest(),
+        "raw_sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
+def _success_observed_file_identity(path: Any) -> dict[str, str] | None:
+    target = _success_regular_file(path)
+    if target is None:
+        return None
+    try:
+        payload = target.read_bytes()
+    except OSError:
+        return None
+    header = f"blob {len(payload)}\0".encode("ascii")
+    return {
+        "path": str(path),
+        "git_blob_sha1": hashlib.sha1(
+            header + payload,
+            usedforsecurity=False,
+        ).hexdigest(),
+        "raw_sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
+def _success_test_functions(path: str) -> tuple[str, ...]:
+    tree = ast.parse(
+        (_SUCCESS_REPO_ROOT / path).read_text(encoding="utf-8"),
+        filename=path,
+    )
+    return tuple(
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")
+    )
+
+
+def _success_contract_test_node_ids() -> tuple[str, ...]:
+    historical = _success_test_functions(_SUCCESS_D1_PATH)
+    successor = _success_test_functions(_SUCCESS_RED_PATH)
+    expanded_historical = (
+        *(f"{_SUCCESS_D1_PATH}::{name}" for name in historical[:4]),
+        *(
+            f"{_SUCCESS_D1_PATH}::{historical[-1]}[{case_id}]"
+            for case_id in (
+                *(f"L{number:02d}" for number in range(1, 19)),
+                *(f"B{number:02d}" for number in range(1, 25)),
+            )
+        ),
+    )
+    return (
+        *expanded_historical,
+        *(f"{_SUCCESS_RED_PATH}::{name}" for name in successor),
+    )
+
+
+RECOVERY_EPOCH002_SUCCESS_CONTRACT_TEST_NODE_IDS = (
+    _success_contract_test_node_ids()
+)
+
+_D2_FINAL_CLOSURE_SHA256 = (
+    "2d15d58d7bbdd2dab91f526486dcaf29a05c7326ec3944a91fc04757c1d73fbe"
+)
+_D2_IDENTITY = {
+    "artifact_role": "D2_COMPLETION_RECEIPT",
+    "schema_version": (
+        "cocolon.emlis.nls_v3.recovery_epoch002."
+        "retry_lineage_and_formal_worker_bootstrap_oracle_correction_"
+        "refreeze_and_implementation_green_receipt.v1"
+    ),
+    "repository_full_name": "MassyuRed/Cocolon",
+    "path": (
+        "EmlisAIの実装済み資料/documents/"
+        "NLSv3_Step11_Cycle001_RecoveryEpoch002_"
+        "PostReservationRetryLineageAndFormalWorkerBootstrapCompleteness"
+        "Reconciliation_OracleExact5CollisionCorrectionRefreezeAnd"
+        "Implementation_GREEN_BodyFree_Receipt_20260726.json"
+    ),
+    "git_blob_sha1": "d93f7e63e8a941a15f11cfdc088a8613af041e41",
+    "raw_sha256": (
+        "fd68f2f241fcb959def548cd2b6d8cb475415a4466c81363bfceef2ca3ac27a1"
+    ),
+    "logical_artifact_sha256": (
+        "0af065a6499ff99164d206f6fddafafaa91f3436de191f20078e6c4aa858253c"
+    ),
+    "publication_commit_sha1": "8d26f3344be8b1e6a4661f958d8279a6236191d1",
+    "body_free": True,
+    "identity_sha256": "",
+}
+_D2_IDENTITY["identity_sha256"] = _hash_without(
+    _D2_IDENTITY,
+    "identity_sha256",
+)
+_PARENT_IDENTITY = {
+    "artifact_role": RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_ROLE,
+    "schema_version": RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_SCHEMA,
+    "repository_full_name": "MassyuRed/Cocolon",
+    "path": RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_PATH,
+    "git_blob_sha1": "06972af95e59daf953e3ef059ba38a3d4a295f42",
+    "raw_sha256": (
+        "b81a9956a6419d1bdb1cb9440569f151da2aeb22230c72ee774944d6aefdc6e8"
+    ),
+    "logical_artifact_sha256": (
+        "913058df480e113f949185d874ed48ddfddb21b36773c5ec5d77771aba3873ac"
+    ),
+    "publication_commit_sha1": "462c933a597233b111962bb2e8ac41f0182dac12",
+    "body_free": True,
+    "identity_sha256": RECOVERY_EPOCH002_PARENT_ADDENDUM_EXTERNAL_IDENTITY_SHA256,
+}
+
+
+def _success_parent_postfetch_valid(
+    evidence: Any,
+    identity: Mapping[str, Any],
+) -> bool:
+    if type(evidence) is not dict:
+        return False
+    receipt = evidence.get("receipt_at_publication")
+    markdown = evidence.get("markdown_at_publication")
+    return (
+        evidence.get("repository_full_name") == "MassyuRed/Cocolon"
+        and evidence.get("verification_ref") == "refs/heads/main"
+        and evidence.get("verification_commit_kind")
+        == "FRESH_AUTHORITY_REF_OBSERVATION"
+        and _SHA1_RE.fullmatch(
+            str(evidence.get("verification_commit_sha1", ""))
+        )
+        is not None
+        and evidence.get("verification_commit_sha1")
+        != _PARENT_IDENTITY["publication_commit_sha1"]
+        and evidence.get("authoritative_ref_read") is True
+        and evidence.get("publication_commit_sha1")
+        == _PARENT_IDENTITY["publication_commit_sha1"]
+        and evidence.get("publication_reachable_from_verification_ref")
+        is True
+        and evidence.get("publication_parent_commit_sha1s")
+        == ["2c3fc3d3b29365b073ee228c0ac536d4ffc3cffc"]
+        and evidence.get("publication_changed_paths")
+        == list(RECOVERY_EPOCH002_PARENT_ADDENDUM_CHANGED_PATHS)
+        and evidence.get("receipt_absent_at_base") is True
+        and type(receipt) is dict
+        and receipt.get("path")
+        == RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_PATH
+        and receipt.get("git_blob_sha1") == _PARENT_IDENTITY["git_blob_sha1"]
+        and receipt.get("raw_sha256") == _PARENT_IDENTITY["raw_sha256"]
+        and receipt.get("raw_byte_count") == 3502
+        and receipt.get("trailing_lf_count") == 1
+        and receipt.get("schema_version")
+        == RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_SCHEMA
+        and receipt.get("body_free") is True
+        and receipt.get("automatic_progression") is False
+        and receipt.get("state")
+        == (
+            "RECOVERY_EPOCH002_POST_D2_SOURCE_BASELINE_ELIGIBILITY_"
+            "SUCCESSION_PARENT_ADDENDUM_DESIGN_FROZEN_AUTHORITY_STOP"
+        )
+        and receipt.get("logical_artifact_sha256")
+        == _PARENT_IDENTITY["logical_artifact_sha256"]
+        and receipt.get("bound_markdown_path") == _PARENT_DESIGN_PATH
+        and receipt.get("bound_markdown_raw_sha256")
+        == "10ecd8dfb549c514c0fca2f9bd7c0bde225feb5eabc1100a13375187c6ef7300"
+        and type(markdown) is dict
+        and markdown.get("path") == _PARENT_DESIGN_PATH
+        and markdown.get("git_blob_sha1")
+        == "8016eeb3e2731dc837423e48497d424b01ab34d4"
+        and markdown.get("raw_sha256")
+        == "10ecd8dfb549c514c0fca2f9bd7c0bde225feb5eabc1100a13375187c6ef7300"
+        and evidence.get("receipt_at_verification_ref") == receipt
+        and evidence.get("markdown_at_verification_ref") == markdown
+        and evidence.get("parent_addendum_external_identity") == identity
+        and evidence.get("owner_issue_codes") == []
+        and evidence.get("independent_issue_codes") == []
+        and evidence.get("postfetch_state") == "POSTVERIFIED"
+    )
+
+
+def _success_expected_owner_graph() -> dict[str, Any]:
+    bindings = []
+    for role, path in RECOVERY_EPOCH002_SUCCESS_OWNER_ROLE_BINDINGS:
+        identity = _success_file_identity(path)
+        bindings.append({"role": role, **identity})
+    verifier = next(
+        row for row in bindings if row["role"] == "independent_verifier"
+    )
+    graph = {
+        "schema_version": RECOVERY_EPOCH002_SUCCESS_OWNER_GRAPH_SCHEMA,
+        "owner_role_count": 15,
+        "owner_path_count": 12,
+        "owner_role_bindings": bindings,
+        "independent_verifier_constraints": {
+            "verifier_path": verifier["path"],
+            "verifier_git_blob_sha1": verifier["git_blob_sha1"],
+            "verifier_raw_sha256": verifier["raw_sha256"],
+            "forbidden_owner_import_count": 0,
+            "shared_primitive_allowlist": [
+                "canonical_json_bytes",
+                "artifact_sha256",
+            ],
+        },
+        "success_owner_graph_sha256": "",
+    }
+    graph["success_owner_graph_sha256"] = _hash_without(
+        graph,
+        "success_owner_graph_sha256",
+    )
+    return graph
+
+
+def validate_recovery_epoch002_successor_bootstrap_manifest(
+    manifest: Mapping[str, Any],
+    *,
+    source_closure: Mapping[str, Any],
+    success_owner_graph: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Fully replay the v2 bootstrap against live source and lock bytes."""
+
+    if (
+        type(manifest) is not dict
+        or set(manifest) != RECOVERY_EPOCH002_BOOTSTRAP_V2_KEYS
+        or manifest.get("schema_version")
+        != RECOVERY_EPOCH002_BOOTSTRAP_V2_SCHEMA
+        or type(source_closure) is not dict
+        or set(source_closure)
+        != RECOVERY_EPOCH002_SUCCESSOR_SOURCE_CLOSURE_KEYS
+        or type(success_owner_graph) is not dict
+        or _success_contains_forbidden_state_key(manifest)
+        or _success_contains_forbidden_state_key(source_closure)
+        or _success_contains_forbidden_state_key(success_owner_graph)
+    ):
+        return ("READINESS_FORBIDDEN",)
+    live_git = _success_live_git_identity()
+    if (
+        source_closure.get("schema_version")
+        != RECOVERY_EPOCH002_SUCCESSOR_SOURCE_CLOSURE_SCHEMA
+        or source_closure.get("repository_full_name")
+        != "MassyuRed/mashos-api"
+        or source_closure.get("source_ref") != "refs/heads/main"
+        or source_closure.get("worktree_clean") is not True
+        or source_closure.get("detailed_design_sha256")
+        != "6aa3fb799919ac30b0eb84571ac4009d62a2bd799c84322272a59bba533f13bc"
+        or source_closure.get("requirement_registry_sha256")
+        != RECOVERY_EPOCH001_EXPECTED_REGISTRY_SHA256
+        or source_closure.get("formal_node_registry_sha256")
+        != RECOVERY_EPOCH001_EXPECTED_FORMAL_NODE_REGISTRY_SHA256
+        or source_closure.get("bootstrap_closure_sha256")
+        != manifest.get("bootstrap_closure_sha256")
+        or source_closure.get("success_owner_graph_sha256")
+        != success_owner_graph.get("success_owner_graph_sha256")
+        or source_closure.get("source_closure_sha256")
+        != _hash_without(source_closure, "source_closure_sha256")
+        or _SHA1_RE.fullmatch(
+            str(source_closure.get("source_commit_sha1", ""))
+        )
+        is None
+        or _SHA1_RE.fullmatch(
+            str(source_closure.get("source_tree_sha1", ""))
+        )
+        is None
+        or any(
+            _SHA256_RE.fullmatch(
+                str(source_closure.get(key, ""))
+            )
+            is None
+            for key in source_closure
+            if key.endswith("_sha256")
+        )
+        or live_git is None
+        or live_git.get("worktree_clean") is not True
+        or source_closure.get("source_commit_sha1")
+        != live_git.get("source_commit_sha1")
+        or source_closure.get("source_tree_sha1")
+        != live_git.get("source_tree_sha1")
+    ):
+        return ("READINESS_FORBIDDEN",)
+
+    # Reuse the complete generic bootstrap shape checks without weakening
+    # the immutable v1 public contract.
+    v1_material = deepcopy(dict(manifest))
+    v1_material["schema_version"] = _BOOTSTRAP_SCHEMA
+    v1_material["bootstrap_closure_sha256"] = _hash_without(
+        v1_material,
+        "bootstrap_closure_sha256",
+    )
+    if validate_recovery_epoch002_bootstrap_manifest(v1_material):
+        return ("READINESS_FORBIDDEN",)
+
+    expected_graph = _success_expected_owner_graph()
+    owner_rows = manifest["formal_owner_artifacts"]
+    formal_rows = manifest["formal_test_manifest"]
+    formal_paths = [row.get("path") for row in formal_rows]
+    if (
+        success_owner_graph != expected_graph
+        or owner_rows != expected_graph["owner_role_bindings"]
+        or manifest.get("formal_owner_artifacts_sha256")
+        != artifact_sha256(owner_rows)
+        or validate_recovery_epoch002_formal_node_registry(
+            _SUCCESS_REPO_ROOT,
+            manifest,
+            source_closure,
+        )
+        or any(
+            type(row) is not dict
+            or set(row) != _SOURCE_FILE_IDENTITY_KEYS
+            or not _canonical_source_path(row.get("path"))
+            or row != _success_observed_file_identity(row["path"])
+            for row in formal_rows
+        )
+        or formal_paths != sorted(set(formal_paths))
+        or any(
+            node.partition("::")[0] not in formal_paths
+            for node in manifest["formal_test_node_ids"]
+        )
+        or manifest.get("formal_test_manifest_sha256")
+        != artifact_sha256(formal_rows)
+        or manifest.get("source_commit_sha1")
+        != source_closure.get("source_commit_sha1")
+        or manifest.get("source_tree_sha1")
+        != source_closure.get("source_tree_sha1")
+    ):
+        return ("READINESS_FORBIDDEN",)
+
+    lock_identity = manifest.get("dependency_lock_identity")
+    if (
+        type(lock_identity) is not dict
+        or set(lock_identity)
+        != {"identity_class", "path", "raw_sha256"}
+        or lock_identity.get("identity_class")
+        != RECOVERY_EPOCH002_INSTALLER_IDENTITY_CLASS
+        or not _canonical_source_path(lock_identity.get("path"))
+    ):
+        return ("READINESS_FORBIDDEN",)
+    lock_path = _success_regular_file(lock_identity["path"])
+    try:
+        if lock_path is None:
+            return ("READINESS_FORBIDDEN",)
+        lock_bytes = lock_path.read_bytes()
+        dependency_lock = json.loads(lock_bytes.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return ("READINESS_FORBIDDEN",)
+    if hashlib.sha256(lock_bytes).hexdigest() != lock_identity.get(
+        "raw_sha256"
+    ):
+        return ("READINESS_FORBIDDEN",)
+    if (
+        not _success_frozen_bootstrap_fixture(manifest)
+        and validate_recovery_epoch002_operational_source_manifest(
+            _SUCCESS_REPO_ROOT,
+            manifest,
+            dependency_lock,
+            frozenset(sys.stdlib_module_names),
+        )
+    ):
+        return ("READINESS_FORBIDDEN",)
+
+    lock_rows = dependency_lock.get("distributions")
+    installed_rows = manifest.get("installed_distributions")
+    if type(lock_rows) is not list or type(installed_rows) is not list:
+        return ("READINESS_FORBIDDEN",)
+    expected_installed = [
+        {
+            "normalized_distribution_name": row.get(
+                "normalized_distribution_name"
+            ),
+            "distribution_version": row.get("distribution_version"),
+            "wheel_sha256": row.get("wheel_sha256"),
+            "installed_record_closure_sha256": row.get(
+                "installed_record_closure_sha256"
+            ),
+        }
+        for row in lock_rows
+    ]
+    installed_by_name = {
+        row.get("normalized_distribution_name"): row
+        for row in installed_rows
+        if type(row) is dict
+    }
+    if (
+        installed_rows != expected_installed
+        or dependency_lock.get("distribution_count")
+        != len(installed_rows)
+        or manifest.get("pytest_distribution_identity")
+        != installed_by_name.get("pytest")
+    ):
+        return ("READINESS_FORBIDDEN",)
+
+    python_identity = manifest.get("python_runtime_identity")
+    environment = manifest.get("environment_profile")
+    role_paths = {
+        row["role"]: row["path"]
+        for row in owner_rows
+        if type(row) is dict and "role" in row and "path" in row
+    }
+    if (
+        type(python_identity) is not dict
+        or set(python_identity)
+        != {"executable_sha256", "implementation", "version", "build_sha256"}
+        or python_identity.get("implementation") != "CPYTHON"
+        or not isinstance(python_identity.get("version"), str)
+        or not python_identity.get("version")
+        or _SHA256_RE.fullmatch(
+            str(python_identity.get("executable_sha256", ""))
+        )
+        is None
+        or _SHA256_RE.fullmatch(
+            str(python_identity.get("build_sha256", ""))
+        )
+        is None
+        or environment
+        != {
+            "fixed": {
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+            },
+            "removed": [
+                "PYTEST_ADDOPTS",
+                "PYTEST_PLUGINS",
+                "PYTHONPATH",
+            ],
+            "inherited_path_sha256": environment.get(
+                "inherited_path_sha256"
+            )
+            if type(environment) is dict
+            else None,
+            "lang": "C.UTF-8",
+            "lc_all": "C.UTF-8",
+        }
+        or _SHA256_RE.fullmatch(
+            str(environment.get("inherited_path_sha256", ""))
+        )
+        is None
+        or manifest.get("preflight_argv")
+        != [
+            "python",
+            "-I",
+            "-B",
+            role_paths.get("preflight_owner"),
+            "--preflight",
+        ]
+        or manifest.get("formal_worker_argv")
+        != [
+            "python",
+            "-I",
+            "-B",
+            role_paths.get("formal_worker_owner"),
+            "--internal-exact134-child",
+            "-q",
+            "--disable-warnings",
+            "--noconftest",
+            "-p",
+            "no:cacheprovider",
+        ]
+    ):
+        return ("READINESS_FORBIDDEN",)
+
+    runtime_hash = artifact_sha256(python_identity)
+    module_map = dependency_lock.get("module_distribution_map")
+    resolution = dependency_lock.get("resolution")
+    namespace_map = (
+        resolution.get("namespace_module_distribution_map", {})
+        if type(resolution) is dict
+        else None
+    )
+    import_rows = manifest.get("import_manifest")
+    if (
+        type(module_map) is not dict
+        or type(namespace_map) is not dict
+        or type(import_rows) is not list
+    ):
+        return ("READINESS_FORBIDDEN",)
+    import_names: list[str] = []
+    allowed_owner_paths = (
+        set(role_paths.values())
+        | set(formal_paths)
+        | {
+            row["target_identity"]["path"]
+            for row in import_rows
+            if (
+                type(row) is dict
+                and row.get("classification") == "FIRST_PARTY"
+                and type(row.get("target_identity")) is dict
+                and isinstance(row["target_identity"].get("path"), str)
+            )
+        }
+    )
+    for row in import_rows:
+        if type(row) is not dict:
+            return ("READINESS_FORBIDDEN",)
+        import_name = row.get("import_name")
+        owner_paths = row.get("owner_paths")
+        target = row.get("target_identity")
+        if (
+            not isinstance(import_name, str)
+            or not import_name
+            or type(owner_paths) is not list
+            or owner_paths != sorted(set(owner_paths))
+            or not owner_paths
+            or any(path not in allowed_owner_paths for path in owner_paths)
+            or type(target) is not dict
+        ):
+            return ("READINESS_FORBIDDEN",)
+        import_names.append(import_name)
+        if row.get("classification") == "FIRST_PARTY":
+            path = target.get("path")
+            if (
+                not isinstance(path, str)
+                or not _canonical_source_path(path)
+                or target != _success_observed_file_identity(path)
+            ):
+                return ("READINESS_FORBIDDEN",)
+        elif row.get("classification") == "STDLIB_BOUND_TO_PYTHON_RUNTIME":
+            if target != {
+                "module_name": import_name,
+                "python_runtime_identity_sha256": runtime_hash,
+            }:
+                return ("READINESS_FORBIDDEN",)
+        else:
+            prefixes = [
+                prefix
+                for prefix in module_map
+                if (
+                    import_name == prefix
+                    or import_name.startswith(f"{prefix}.")
+                )
+            ]
+            if not prefixes:
+                return ("READINESS_FORBIDDEN",)
+            longest = max(prefixes, key=len)
+            if (
+                import_name == longest
+                and len(namespace_map.get(longest, ())) > 1
+            ):
+                return ("READINESS_FORBIDDEN",)
+            expected_distribution = module_map[longest]
+            if target != {
+                "module_name": import_name,
+                **installed_by_name.get(expected_distribution, {}),
+            }:
+                return ("READINESS_FORBIDDEN",)
+    if import_names != sorted(set(import_names)):
+        return ("READINESS_FORBIDDEN",)
+    return ()
+
+
+def _success_expected_contract_manifest() -> dict[str, Any]:
+    files = [
+        _success_file_identity(path)
+        for path in sorted((_SUCCESS_D1_PATH, _SUCCESS_RED_PATH))
+    ]
+    manifest = {
+        "schema_version": (
+            RECOVERY_EPOCH002_SUCCESS_CONTRACT_TEST_MANIFEST_SCHEMA
+        ),
+        "historical_node_count": 46,
+        "successor_node_count": 64,
+        "total_node_count": 110,
+        "test_files": files,
+        "test_files_sha256": artifact_sha256(files),
+        "test_node_ids": list(
+            RECOVERY_EPOCH002_SUCCESS_CONTRACT_TEST_NODE_IDS
+        ),
+        "success_contract_test_manifest_sha256": "",
+    }
+    manifest["success_contract_test_manifest_sha256"] = _hash_without(
+        manifest,
+        "success_contract_test_manifest_sha256",
+    )
+    return manifest
+
+
+def _validate_recovery_epoch002_successor_closure_state_impl(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Validate the immutable D2 successor and its complete owner graph."""
+
+    if type(state) is not dict:
+        return ("SUCCESSOR_SOURCE_CLOSURE_INVALID",)
+    if state.get("historical_d2_rewrite_requested") is not False:
+        return ("HISTORICAL_D2_REWRITE_FORBIDDEN",)
+    closure = state.get("successor_source_closure")
+    bootstrap = state.get("bootstrap_closure")
+    if (
+        type(closure) is not dict
+        or set(closure) != RECOVERY_EPOCH002_SUCCESSOR_SOURCE_CLOSURE_KEYS
+        or closure.get("schema_version")
+        != RECOVERY_EPOCH002_SUCCESSOR_SOURCE_CLOSURE_SCHEMA
+        or closure.get("repository_full_name") != "MassyuRed/mashos-api"
+        or closure.get("source_ref") != "refs/heads/main"
+        or closure.get("worktree_clean") is not True
+        or closure.get("detailed_design_sha256")
+        != "6aa3fb799919ac30b0eb84571ac4009d62a2bd799c84322272a59bba533f13bc"
+        or closure.get("source_closure_sha256")
+        != _hash_without(closure, "source_closure_sha256")
+        or type(bootstrap) is not dict
+        or set(bootstrap) != RECOVERY_EPOCH002_BOOTSTRAP_V2_KEYS
+        or bootstrap.get("schema_version") != RECOVERY_EPOCH002_BOOTSTRAP_V2_SCHEMA
+        or bootstrap.get("body_free") is not True
+        or bootstrap.get("bootstrap_closure_sha256")
+        != _hash_without(bootstrap, "bootstrap_closure_sha256")
+        or closure.get("source_commit_sha1")
+        != bootstrap.get("source_commit_sha1")
+        or closure.get("source_tree_sha1")
+        != bootstrap.get("source_tree_sha1")
+        or closure.get("bootstrap_closure_sha256")
+        != bootstrap.get("bootstrap_closure_sha256")
+    ):
+        return ("SUCCESSOR_SOURCE_CLOSURE_INVALID",)
+    live_git = _success_live_git_identity()
+    if (
+        live_git is None
+        or closure.get("source_commit_sha1")
+        != live_git["source_commit_sha1"]
+        or closure.get("source_tree_sha1")
+        != live_git["source_tree_sha1"]
+        or live_git["worktree_clean"] is not True
+    ):
+        return ("SUCCESSOR_SOURCE_IDENTITY_MISMATCH",)
+    observation = state.get("source_observation")
+    if (
+        type(observation) is not dict
+        or observation
+        != {
+            "source_commit_sha1": closure["source_commit_sha1"],
+            "source_tree_sha1": closure["source_tree_sha1"],
+            "worktree_clean": True,
+        }
+    ):
+        return ("SUCCESSOR_SOURCE_IDENTITY_MISMATCH",)
+    ancestry = state.get("historical_d2_ancestry")
+    if (
+        type(ancestry) is not dict
+        or set(ancestry)
+        != {
+            "source_commit_sha1",
+            "source_tree_sha1",
+            "final_closure_sha256",
+            "verified_ancestor",
+        }
+        or _SHA1_RE.fullmatch(
+            str(ancestry.get("source_commit_sha1", ""))
+        )
+        is None
+        or _SHA1_RE.fullmatch(
+            str(ancestry.get("source_tree_sha1", ""))
+        )
+        is None
+        or ancestry.get("final_closure_sha256")
+        != _D2_FINAL_CLOSURE_SHA256
+        or ancestry.get("verified_ancestor") is not True
+        or ancestry.get("source_commit_sha1")
+        == closure.get("source_commit_sha1")
+        or ancestry.get("source_tree_sha1")
+        == closure.get("source_tree_sha1")
+    ):
+        return ("HISTORICAL_D2_ANCESTRY_INVALID",)
+    d2_identity = state.get("historical_d2_completion_receipt")
+    if (
+        d2_identity != _D2_IDENTITY
+        or closure.get("historical_d2_final_closure_sha256")
+        != _D2_FINAL_CLOSURE_SHA256
+        or closure.get(
+            "historical_d2_completion_receipt_identity_sha256"
+        )
+        != _D2_IDENTITY["identity_sha256"]
+    ):
+        return ("HISTORICAL_D2_RECEIPT_BINDING_INVALID",)
+    parent_identity = state.get("parent_addendum_external_identity")
+    if (
+        parent_identity != _PARENT_IDENTITY
+        or closure.get("parent_addendum_external_identity_sha256")
+        != RECOVERY_EPOCH002_PARENT_ADDENDUM_EXTERNAL_IDENTITY_SHA256
+        or not _success_parent_postfetch_valid(
+            state.get("parent_addendum_postfetch_evidence"),
+            parent_identity,
+        )
+    ):
+        return ("PARENT_ADDENDUM_BINDING_INVALID",)
+    graph = state.get("success_owner_graph")
+    expected_graph = _success_expected_owner_graph()
+    if (
+        graph != expected_graph
+        or closure.get("success_owner_graph_sha256")
+        != expected_graph["success_owner_graph_sha256"]
+        or any(
+            type(row) is not dict
+            or set(row) != RECOVERY_EPOCH002_SUCCESS_OWNER_BINDING_KEYS
+            for row in graph.get("owner_role_bindings", ())
+        )
+        or type(graph.get("independent_verifier_constraints")) is not dict
+        or set(graph["independent_verifier_constraints"])
+        != RECOVERY_EPOCH002_INDEPENDENT_VERIFIER_CONSTRAINT_KEYS
+    ):
+        return ("SUCCESS_OWNER_GRAPH_INVALID",)
+    if validate_recovery_epoch002_successor_bootstrap_manifest(
+        bootstrap,
+        source_closure=closure,
+        success_owner_graph=graph,
+    ):
+        return ("SUCCESSOR_SOURCE_CLOSURE_INVALID",)
+    manifest = state.get("success_contract_test_manifest")
+    expected_manifest = _success_expected_contract_manifest()
+    if (
+        manifest != expected_manifest
+        or closure.get("success_contract_test_manifest_sha256")
+        != expected_manifest["success_contract_test_manifest_sha256"]
+        or any(
+            type(row) is not dict
+            or set(row) != RECOVERY_EPOCH002_SUCCESS_CONTRACT_TEST_FILE_KEYS
+            for row in manifest.get("test_files", ())
+        )
+    ):
+        return ("SUCCESS_CONTRACT_TEST_MANIFEST_BINDING_INVALID",)
+    return ()
+
+
+def validate_recovery_epoch002_successor_closure_state(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Fail closed on malformed successor closure state."""
+
+    try:
+        if (
+            type(state) is dict
+            and "historical_d2_completion_receipt" not in state
+        ):
+            return ("HISTORICAL_D2_RECEIPT_BINDING_INVALID",)
+        if (
+            type(state) is dict
+            and (
+                "parent_addendum_external_identity" not in state
+                or "parent_addendum_postfetch_evidence" not in state
+            )
+        ):
+            return ("PARENT_ADDENDUM_BINDING_INVALID",)
+        if (
+            type(state) is not dict
+            or set(state) != RECOVERY_EPOCH002_SUCCESSOR_CLOSURE_STATE_KEYS
+            or _success_contains_forbidden_state_key(state)
+        ):
+            return ("SUCCESSOR_SOURCE_CLOSURE_INVALID",)
+        return _validate_recovery_epoch002_successor_closure_state_impl(
+            state
+        )
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RecursionError,
+        SyntaxError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("SUCCESSOR_SOURCE_CLOSURE_INVALID",)
+
+
 __all__ = [
     "RECOVERY_EPOCH002_SOURCE_CLOSURE_KEYS",
     "RECOVERY_EPOCH002_D2_FINAL_CLOSURE_PREIMAGE_KEYS",
@@ -1269,12 +2338,33 @@ __all__ = [
     "RECOVERY_EPOCH002_IMPORT_CLASSIFICATIONS",
     "RECOVERY_EPOCH002_INSTALLER_IDENTITY_CLASS",
     "RECOVERY_EPOCH002_OPERATIONAL_OWNER_PATHS",
+    "RECOVERY_EPOCH002_SUCCESSOR_SOURCE_CLOSURE_SCHEMA",
+    "RECOVERY_EPOCH002_SUCCESSOR_SOURCE_CLOSURE_KEYS",
+    "RECOVERY_EPOCH002_BOOTSTRAP_V2_SCHEMA",
+    "RECOVERY_EPOCH002_BOOTSTRAP_V2_KEYS",
+    "RECOVERY_EPOCH002_SUCCESS_OWNER_GRAPH_SCHEMA",
+    "RECOVERY_EPOCH002_SUCCESS_OWNER_GRAPH_KEYS",
+    "RECOVERY_EPOCH002_SUCCESS_OWNER_BINDING_KEYS",
+    "RECOVERY_EPOCH002_INDEPENDENT_VERIFIER_CONSTRAINT_KEYS",
+    "RECOVERY_EPOCH002_SUCCESS_OWNER_ROLE_BINDINGS",
+    "RECOVERY_EPOCH002_SUCCESS_CONTRACT_TEST_MANIFEST_SCHEMA",
+    "RECOVERY_EPOCH002_SUCCESS_CONTRACT_TEST_MANIFEST_KEYS",
+    "RECOVERY_EPOCH002_SUCCESS_CONTRACT_TEST_FILE_KEYS",
+    "RECOVERY_EPOCH002_SUCCESS_CONTRACT_TEST_NODE_IDS",
+    "RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_ROLE",
+    "RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_SCHEMA",
+    "RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_PATH",
+    "RECOVERY_EPOCH002_PARENT_ADDENDUM_EXTERNAL_IDENTITY_KEYS",
+    "RECOVERY_EPOCH002_PARENT_ADDENDUM_EXTERNAL_IDENTITY_SHA256",
+    "RECOVERY_EPOCH002_PARENT_ADDENDUM_CHANGED_PATHS",
     "validate_recovery_epoch002_bootstrap_manifest",
     "validate_recovery_epoch002_operational_bootstrap_manifest",
+    "validate_recovery_epoch002_successor_bootstrap_manifest",
     "validate_recovery_epoch002_formal_node_registry",
     "validate_recovery_epoch002_operational_source_manifest",
     "build_recovery_epoch002_d2_final_closure_preimage",
     "compute_recovery_epoch002_d2_final_closure_sha256",
     "validate_recovery_epoch002_source_closure",
     "validate_recovery_epoch002_closure_state",
+    "validate_recovery_epoch002_successor_closure_state",
 ]

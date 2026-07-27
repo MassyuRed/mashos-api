@@ -21,6 +21,15 @@ from emlis_ai_nls_v3_artifact_contract import (
     canonical_json_bytes,
 )
 from emlis_ai_recovery_epoch002_canonical_current_closure_v3 import (
+    RECOVERY_EPOCH002_BOOTSTRAP_V2_KEYS,
+    RECOVERY_EPOCH002_BOOTSTRAP_V2_SCHEMA,
+    RECOVERY_EPOCH002_PARENT_ADDENDUM_CHANGED_PATHS,
+    RECOVERY_EPOCH002_PARENT_ADDENDUM_EXTERNAL_IDENTITY_KEYS,
+    RECOVERY_EPOCH002_PARENT_ADDENDUM_EXTERNAL_IDENTITY_SHA256,
+    RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_PATH,
+    RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_ROLE,
+    RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_SCHEMA,
+    RECOVERY_EPOCH002_SUCCESS_CONTRACT_TEST_NODE_IDS,
     validate_recovery_epoch002_bootstrap_manifest,
     validate_recovery_epoch002_source_closure,
 )
@@ -28,6 +37,47 @@ from emlis_ai_recovery_epoch002_canonical_current_closure_v3 import (
 
 def _keys(value: str) -> frozenset[str]:
     return frozenset(value.split())
+
+
+_SUCCESS_FORBIDDEN_STATE_KEYS = frozenset(
+    {
+        "stdout",
+        "stderr",
+        "traceback",
+        "exception_message",
+        "free_form_reason",
+        "raw_environment",
+        "absolute_temporary_path",
+        "pid",
+        "hostname",
+        "raw_body",
+        "raw_payload",
+        "generated_body",
+        "private_body",
+        "private_payload",
+        "prompt_text",
+        "response_text",
+        "private_review_data",
+        "secret",
+        "credential",
+        "invalid_result_sha256",
+    }
+)
+
+
+def _success_contains_forbidden_state_key(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        return any(
+            key in _SUCCESS_FORBIDDEN_STATE_KEYS for key in value
+        ) or any(
+            _success_contains_forbidden_state_key(item)
+            for item in value.values()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(
+            _success_contains_forbidden_state_key(item) for item in value
+        )
+    return False
 
 
 RECOVERY_EPOCH002_EVENT1_SCHEMA = (
@@ -40,6 +90,191 @@ RECOVERY_EPOCH002_EVENT1_KEYS = _keys(
     timestamp_kind authority challenge_id source_closure prior_event
     primary_evidence_artifact publication automatic_progression body_free
     event_sha256 p0_external_identity candidate_allocation bootstrap_closure
+    """
+)
+RECOVERY_EPOCH002_SEQUENCE_EVENT_V2_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch002.sequence_event.v2"
+)
+RECOVERY_EPOCH002_SEQUENCE_EVENT_V2_KEYS = RECOVERY_EPOCH002_EVENT1_KEYS
+RECOVERY_EPOCH002_SEQUENCE_EVENT_AUTHORITY_KEYS = _keys(
+    """
+    approval_kind transition_authority_token publication_authority_token
+    operational_admission
+    """
+)
+RECOVERY_EPOCH002_SEQUENCE_EVENT_PUBLICATION_KEYS = _keys(
+    """
+    repository_full_name branch base_commit_sha1 event_path
+    supporting_artifact_count supporting_artifacts
+    supporting_artifact_set_sha256 expected_changed_path_count
+    ref_update_mode publication_state transaction_capability
+    """
+)
+RECOVERY_EPOCH002_TRANSACTION_CAPABILITY_KEYS = _keys(
+    """
+    schema_version provider_class provider_identity_sha256
+    repository_full_name source_ref base_commit_sha1
+    expected_changed_path_count authoritative_ref_read
+    expected_old_compare_and_swap commit_parent_tree_and_recursive_read
+    full_changed_and_unchanged_postfetch_verification challenge_id
+    operational_admission_identity_sha256 observed_at_utc
+    transaction_capability_sha256
+    """
+)
+_SUCCESS_PATHS = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch002_AcceptedTestRunExact134_"
+    "BodyFree_Receipt_20260726.json",
+    *(
+        "EmlisAIの実装済み資料/documents/"
+        f"NLSv3_Step11_Cycle001_RecoveryEpoch002_Step{step:02d}_"
+        "CurrentStepCompletion_PROVED_BodyFree_Receipt_20260726.json"
+        for step in range(11)
+    ),
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch002_All11CompletionChain_"
+    "BodyFree_Chain_20260726.json",
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch002_All11AtomicPublication_"
+    "BodyFree_Manifest_20260726.json",
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch002_SequenceEvent02_"
+    "Step0_10PrerequisitesProved_BodyFree_Event_20260726.json",
+)
+RECOVERY_EPOCH002_EVENT2_SUPPORTING_PATHS = tuple(
+    sorted(_SUCCESS_PATHS[:14])
+)
+RECOVERY_EPOCH002_SUCCESS_CHANGED_PATHS = tuple(sorted(_SUCCESS_PATHS))
+RECOVERY_EPOCH002_SUCCESSOR_SUCCESSION_STATE_KEYS = _keys(
+    """
+    bootstrap_closure candidate_allocation candidate_operational_identity
+    causal_red_evidence causal_red_evidence_artifact
+    causal_red_postfetch_evidence combined_green_evidence
+    combined_green_evidence_artifact combined_green_postfetch_evidence
+    event1 event1_publication operational_admission_publication
+    operational_admission_receipt parent_addendum_external_identity
+    parent_addendum_postfetch_evidence successor_completion_publication
+    successor_completion_receipt successor_source_closure
+    """
+)
+RECOVERY_EPOCH002_SUCCESS_EVENT2_STATE_KEYS = _keys(
+    """
+    artifacts_by_path atomic_publication_manifest
+    candidate_identities_by_path event2 postfetch_observation
+    publication_transaction terminal_commit_observation
+    """
+)
+_SUCCESS_ARTIFACT_CONTRACT_BY_PATH = {
+    _SUCCESS_PATHS[0]: (
+        "ACCEPTED_TEST_RUN_RECEIPT",
+        "accepted_test_run_receipt_sha256",
+    ),
+    **{
+        _SUCCESS_PATHS[step + 1]: (
+            "CURRENT_STEP_COMPLETION_RECEIPT",
+            "receipt_sha256",
+        )
+        for step in range(11)
+    },
+    _SUCCESS_PATHS[12]: (
+        "ALL11_COMPLETION_CHAIN",
+        "all11_completion_chain_sha256",
+    ),
+    _SUCCESS_PATHS[13]: (
+        "ALL11_ATOMIC_PUBLICATION_MANIFEST",
+        "atomic_publication_manifest_sha256",
+    ),
+    _SUCCESS_PATHS[14]: ("SEQUENCE_EVENT_2", "event_sha256"),
+}
+RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch002."
+    "post_d2_source_baseline_eligibility_successor_completion_receipt.v1"
+)
+RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_KEYS = _keys(
+    """
+    schema_version logical_cycle_id recovery_epoch_id
+    historical_d2_final_closure_sha256
+    historical_d2_completion_receipt_identity_sha256
+    parent_addendum_external_identity_sha256
+    successor_source_closure_sha256 causal_red_evidence_sha256
+    combined_green_evidence_sha256 state automatic_progression body_free
+    receipt_sha256
+    """
+)
+RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2SourceBaseline"
+    "EligibilitySuccessorCompletion_BodyFree_Receipt_20260726.json"
+)
+RECOVERY_EPOCH002_CANDIDATE_ALLOCATION_V2_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch002.candidate_allocation.v2"
+)
+RECOVERY_EPOCH002_CANDIDATE_ALLOCATION_V2_KEYS = _keys(
+    """
+    schema_version logical_cycle_id recovery_epoch_id candidate_version_id
+    historical_d2_final_closure_sha256 historical_d2_completion_receipt
+    successor_source_closure_sha256 successor_completion_receipt
+    allocated_at_utc candidate_allocation_sha256
+    """
+)
+RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch002."
+    "p1_operational_admission_receipt.v1"
+)
+RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_KEYS = _keys(
+    """
+    schema_version logical_cycle_id recovery_epoch_id
+    successor_completion_receipt successor_source_closure_sha256
+    repository_full_name source_ref authority challenge_id scope
+    transport_capability durable_store_capability owner_validation_state
+    independent_verification_state issued_at_utc expires_at_utc state
+    automatic_progression body_free operational_admission_sha256
+    """
+)
+RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_OPERATION_SET = (
+    "OPERATIONAL_ADMISSION_PUBLICATION",
+    "SOURCE_BASELINE_EVENT1_PUBLICATION",
+    "BOOTSTRAP_READINESS_PUBLICATION",
+    "FORMAL_RESERVATION_PUBLICATION",
+    "PARENT_SPAWN_INTENT_PERSISTENCE",
+    "FORMAL_ATTEMPT_WRITE_ONCE_CLAIM",
+    "FORMAL_EXACT134_SINGLE_INVOCATION",
+    "CHECKPOINT_DURABLE_WRITE",
+    "TERMINAL_DURABLE_WRITE_AND_RECOVERY",
+    "TERMINAL_DISPOSITION_PUBLICATION",
+    "SUCCESS_EXACT15_PUBLICATION",
+)
+RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_AUTHORITY_KEYS = _keys(
+    """
+    approval_kind admission_authority_token publication_authority_token
+    authority_sha256
+    """
+)
+RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_SCOPE_KEYS = _keys(
+    """
+    repository_full_name source_ref successor_source_closure_sha256
+    operation_set scope_sha256
+    """
+)
+RECOVERY_EPOCH002_TRANSPORT_CAPABILITY_KEYS = _keys(
+    """
+    schema_version provider_class provider_identity_sha256
+    authoritative_ref_read expected_old_compare_and_swap
+    commit_parent_tree_read recursive_tree_read
+    exact_changed_path_verification complete_unchanged_path_verification
+    full_postfetch_verification scope_sha256 challenge_id observed_at_utc
+    transport_capability_sha256
+    """
+)
+RECOVERY_EPOCH002_DURABLE_STORE_CAPABILITY_KEYS = _keys(
+    """
+    schema_version provider_class provider_identity_sha256
+    owner_only_permissions no_symlink_following
+    same_directory_temporary_write atomic_write_replace
+    file_and_directory_fsync write_once_attempt_claim
+    session_interruption_survival exact_terminal_recovery_read
+    body_free_retention_contract scope_sha256 challenge_id observed_at_utc
+    durable_store_capability_sha256
     """
 )
 RECOVERY_EPOCH002_PUBLISHED_EVENT1_IDENTITY_KEYS = _keys(
@@ -1002,9 +1237,1405 @@ def validate_recovery_epoch002_lineage_state(
     return ()
 
 
+_SUCCESS_CANDIDATE_KEYS = _keys(
+    """
+    artifact_role schema_version repository_full_name path git_blob_sha1
+    raw_sha256 logical_artifact_sha256 body_free
+    """
+)
+_SUCCESS_EXTERNAL_IDENTITY_KEYS = _keys(
+    """
+    artifact_role schema_version repository_full_name path git_blob_sha1
+    raw_sha256 logical_artifact_sha256 publication_commit_sha1 body_free
+    identity_sha256
+    """
+)
+_SUCCESS_EXACT1_KEYS = _keys(
+    """
+    artifact identity changed_paths parent_commit_sha1s expected_old_sha1
+    observed_old_sha1 postfetch_evidence postfetch_state
+    """
+)
+_SUCCESS_POSTFETCH_KEYS = _keys(
+    """
+    repository_full_name verification_ref verification_commit_sha1
+    authoritative_ref_read authoritative_base_tree_read base_tree_sha1
+    target_tree_sha1 publication_commit_sha1
+    publication_reachable_from_verification_ref
+    publication_parent_commit_sha1s publication_changed_paths
+    target_absent_at_base semantic_ancestor_verified target_tree_build_count
+    publication_commit_parent_count requested_expected_old_sha1
+    observed_old_sha1 server_side_expected_old_applied authoritative_head_read
+    authoritative_parent_read authoritative_tree_read
+    authoritative_recursive_tree_read changed_path_proof_complete
+    artifact_at_publication artifact_at_verification_ref
+    unchanged_path_observation unchanged_path_mismatches owner_issue_codes
+    independent_issue_codes postfetch_state
+    """
+)
+_SUCCESS_POSTFETCH_ARTIFACT_KEYS = _keys(
+    "path git_blob_sha1 raw_sha256 logical_artifact_sha256 body_free"
+)
+_SUCCESS_UNCHANGED_KEYS = _keys(
+    "scope mode_type_sha_complete mismatches observation_sha256"
+)
+_SUCCESS_OPERATIONAL_ADMISSION_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch002_P1OperationalAdmission_"
+    "BodyFree_Receipt_20260726.json"
+)
+_SUCCESS_EVENT1_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch002_SequenceEvent01_"
+    "SourceBaselineLocked_BodyFree_Event_20260726.json"
+)
+_SUCCESS_PARENT_IDENTITY = {
+    "artifact_role": RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_ROLE,
+    "schema_version": RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_SCHEMA,
+    "repository_full_name": "MassyuRed/Cocolon",
+    "path": RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_PATH,
+    "git_blob_sha1": "06972af95e59daf953e3ef059ba38a3d4a295f42",
+    "raw_sha256": (
+        "b81a9956a6419d1bdb1cb9440569f151da2aeb22230c72ee774944d6aefdc6e8"
+    ),
+    "logical_artifact_sha256": (
+        "913058df480e113f949185d874ed48ddfddb21b36773c5ec5d77771aba3873ac"
+    ),
+    "publication_commit_sha1": "462c933a597233b111962bb2e8ac41f0182dac12",
+    "body_free": True,
+    "identity_sha256": RECOVERY_EPOCH002_PARENT_ADDENDUM_EXTERNAL_IDENTITY_SHA256,
+}
+_SUCCESS_D2_IDENTITY = {
+    "artifact_role": "D2_COMPLETION_RECEIPT",
+    "schema_version": RECOVERY_EPOCH002_D2_COMPLETION_RECEIPT_SCHEMA,
+    "repository_full_name": "MassyuRed/Cocolon",
+    "path": RECOVERY_EPOCH002_D2_COMPLETION_RECEIPT_PATH,
+    "git_blob_sha1": "d93f7e63e8a941a15f11cfdc088a8613af041e41",
+    "raw_sha256": (
+        "fd68f2f241fcb959def548cd2b6d8cb475415a4466c81363bfceef2ca3ac27a1"
+    ),
+    "logical_artifact_sha256": (
+        "0af065a6499ff99164d206f6fddafafaa91f3436de191f20078e6c4aa858253c"
+    ),
+    "publication_commit_sha1": "8d26f3344be8b1e6a4661f958d8279a6236191d1",
+    "body_free": True,
+    "identity_sha256": "",
+}
+_SUCCESS_D2_IDENTITY["identity_sha256"] = _hash_without(
+    _SUCCESS_D2_IDENTITY,
+    "identity_sha256",
+)
+
+
+def _success_identity_for_artifact(
+    artifact: Any,
+    identity: Any,
+    *,
+    role: str,
+    path: str,
+    logical_hash_key: str,
+) -> bool:
+    if (
+        type(artifact) is not dict
+        or type(identity) is not dict
+        or set(identity) != _SUCCESS_EXTERNAL_IDENTITY_KEYS
+        or _SHA1_RE.fullmatch(
+            str(identity.get("publication_commit_sha1", ""))
+        )
+        is None
+        or artifact.get("body_free") is not True
+        or artifact.get(logical_hash_key)
+        != _hash_without(artifact, logical_hash_key)
+    ):
+        return False
+    payload = canonical_json_bytes(dict(artifact)) + b"\n"
+    header = f"blob {len(payload)}\0".encode("ascii")
+    expected = {
+        "artifact_role": role,
+        "schema_version": artifact.get("schema_version"),
+        "repository_full_name": "MassyuRed/Cocolon",
+        "path": path,
+        "git_blob_sha1": hashlib.sha1(
+            header + payload,
+            usedforsecurity=False,
+        ).hexdigest(),
+        "raw_sha256": hashlib.sha256(payload).hexdigest(),
+        "logical_artifact_sha256": artifact.get(logical_hash_key),
+        "publication_commit_sha1": identity.get(
+            "publication_commit_sha1"
+        ),
+        "body_free": True,
+        "identity_sha256": "",
+    }
+    expected["identity_sha256"] = _hash_without(
+        expected,
+        "identity_sha256",
+    )
+    return identity == expected
+
+
+def _success_candidate_for_artifact(
+    artifact: Any,
+    *,
+    role: str,
+    path: str,
+    logical_hash_key: str,
+) -> dict[str, Any] | None:
+    if (
+        type(artifact) is not dict
+        or artifact.get("body_free") is not True
+        or artifact.get(logical_hash_key)
+        != _hash_without(artifact, logical_hash_key)
+    ):
+        return None
+    payload = canonical_json_bytes(dict(artifact)) + b"\n"
+    header = f"blob {len(payload)}\0".encode("ascii")
+    return {
+        "artifact_role": role,
+        "schema_version": artifact.get("schema_version"),
+        "repository_full_name": "MassyuRed/Cocolon",
+        "path": path,
+        "git_blob_sha1": hashlib.sha1(
+            header + payload,
+            usedforsecurity=False,
+        ).hexdigest(),
+        "raw_sha256": hashlib.sha256(payload).hexdigest(),
+        "logical_artifact_sha256": artifact.get(logical_hash_key),
+        "body_free": True,
+    }
+
+
+def _success_postfetch_valid(
+    evidence: Any,
+    identity: Mapping[str, Any],
+    *,
+    base_commit_sha1: str,
+    expected_base_tree_sha1: str | None = None,
+) -> bool:
+    if (
+        type(evidence) is not dict
+        or set(evidence) != _SUCCESS_POSTFETCH_KEYS
+        or type(identity) is not dict
+        or _SHA1_RE.fullmatch(str(base_commit_sha1)) is None
+        or _SHA1_RE.fullmatch(
+            str(identity.get("publication_commit_sha1", ""))
+        )
+        is None
+    ):
+        return False
+    artifact = {
+        "path": identity.get("path"),
+        "git_blob_sha1": identity.get("git_blob_sha1"),
+        "raw_sha256": identity.get("raw_sha256"),
+        "logical_artifact_sha256": identity.get(
+            "logical_artifact_sha256"
+        ),
+        "body_free": identity.get("body_free"),
+    }
+    unchanged = evidence.get("unchanged_path_observation")
+    return (
+        evidence.get("repository_full_name") == "MassyuRed/Cocolon"
+        and evidence.get("verification_ref") == "refs/heads/main"
+        and evidence.get("verification_commit_sha1")
+        == identity.get("publication_commit_sha1")
+        and evidence.get("authoritative_ref_read") is True
+        and evidence.get("authoritative_base_tree_read") is True
+        and _SHA1_RE.fullmatch(str(evidence.get("base_tree_sha1", "")))
+        is not None
+        and _SHA1_RE.fullmatch(str(evidence.get("target_tree_sha1", "")))
+        is not None
+        and evidence.get("base_tree_sha1") != "f" * 40
+        and evidence.get("target_tree_sha1") != "f" * 40
+        and (
+            expected_base_tree_sha1 is None
+            or evidence.get("base_tree_sha1") == expected_base_tree_sha1
+        )
+        and evidence.get("base_tree_sha1")
+        != evidence.get("target_tree_sha1")
+        and evidence.get("publication_commit_sha1")
+        == identity.get("publication_commit_sha1")
+        and evidence.get("publication_reachable_from_verification_ref")
+        is True
+        and evidence.get("publication_parent_commit_sha1s")
+        == [base_commit_sha1]
+        and evidence.get("publication_changed_paths")
+        == [identity.get("path")]
+        and evidence.get("target_absent_at_base") is True
+        and evidence.get("semantic_ancestor_verified") is True
+        and type(evidence.get("target_tree_build_count")) is int
+        and evidence.get("target_tree_build_count") == 1
+        and type(evidence.get("publication_commit_parent_count")) is int
+        and evidence.get("publication_commit_parent_count") == 1
+        and evidence.get("requested_expected_old_sha1")
+        == base_commit_sha1
+        and evidence.get("observed_old_sha1") == base_commit_sha1
+        and evidence.get("server_side_expected_old_applied") is True
+        and evidence.get("authoritative_head_read") is True
+        and evidence.get("authoritative_parent_read") is True
+        and evidence.get("authoritative_tree_read") is True
+        and evidence.get("authoritative_recursive_tree_read") is True
+        and evidence.get("changed_path_proof_complete") is True
+        and type(evidence.get("artifact_at_publication")) is dict
+        and set(evidence["artifact_at_publication"])
+        == _SUCCESS_POSTFETCH_ARTIFACT_KEYS
+        and evidence["artifact_at_publication"] == artifact
+        and type(evidence.get("artifact_at_verification_ref")) is dict
+        and set(evidence["artifact_at_verification_ref"])
+        == _SUCCESS_POSTFETCH_ARTIFACT_KEYS
+        and evidence["artifact_at_verification_ref"] == artifact
+        and type(unchanged) is dict
+        and set(unchanged) == _SUCCESS_UNCHANGED_KEYS
+        and unchanged.get("scope") == "ALL_PATHS_EXCEPT_EXACT1_TARGET"
+        and unchanged.get("mode_type_sha_complete") is True
+        and unchanged.get("mismatches") == []
+        and unchanged.get("observation_sha256")
+        == _hash_without(unchanged, "observation_sha256")
+        and evidence.get("unchanged_path_mismatches") == []
+        and evidence.get("owner_issue_codes") == []
+        and evidence.get("independent_issue_codes") == []
+        and evidence.get("postfetch_state") == "POSTVERIFIED"
+    )
+
+
+def _success_exact1_publication_valid(
+    publication: Any,
+    *,
+    role: str,
+    path: str,
+    logical_hash_key: str,
+    expected_parent: str,
+    expected_base_tree_sha1: str | None = None,
+) -> bool:
+    if (
+        type(publication) is not dict
+        or set(publication) != _SUCCESS_EXACT1_KEYS
+        or publication.get("changed_paths") != [path]
+        or publication.get("parent_commit_sha1s") != [expected_parent]
+        or publication.get("expected_old_sha1") != expected_parent
+        or publication.get("observed_old_sha1") != expected_parent
+        or publication.get("postfetch_state") != "POSTVERIFIED"
+        or not _success_identity_for_artifact(
+            publication.get("artifact"),
+            publication.get("identity"),
+            role=role,
+            path=path,
+            logical_hash_key=logical_hash_key,
+        )
+        or not _success_postfetch_valid(
+            publication.get("postfetch_evidence"),
+            publication["identity"],
+            base_commit_sha1=expected_parent,
+            expected_base_tree_sha1=expected_base_tree_sha1,
+        )
+    ):
+        return False
+    return True
+
+
+def _success_parent_binding_valid(state: Mapping[str, Any]) -> bool:
+    identity = state.get("parent_addendum_external_identity")
+    evidence = state.get("parent_addendum_postfetch_evidence")
+    completion = state.get("successor_completion_receipt")
+    event = state.get("event1")
+    event_source_closure = (
+        event.get("source_closure") if type(event) is dict else None
+    )
+    event_publication = (
+        event.get("publication") if type(event) is dict else None
+    )
+    event_supporting = (
+        event_publication.get("supporting_artifacts")
+        if type(event_publication) is dict
+        else None
+    )
+    receipt = (
+        evidence.get("receipt_at_publication")
+        if type(evidence) is dict
+        else None
+    )
+    markdown = (
+        evidence.get("markdown_at_publication")
+        if type(evidence) is dict
+        else None
+    )
+    return (
+        identity == _SUCCESS_PARENT_IDENTITY
+        and type(completion) is dict
+        and completion.get("parent_addendum_external_identity_sha256")
+        == RECOVERY_EPOCH002_PARENT_ADDENDUM_EXTERNAL_IDENTITY_SHA256
+        and type(event) is dict
+        and "parent_addendum_external_identity_sha256" not in event
+        and type(event_source_closure) is dict
+        and event_source_closure.get(
+            "parent_addendum_external_identity_sha256"
+        )
+        == RECOVERY_EPOCH002_PARENT_ADDENDUM_EXTERNAL_IDENTITY_SHA256
+        and type(event_supporting) is list
+        and not (
+            len(event_supporting) > 1
+            and _SUCCESS_PARENT_IDENTITY in event_supporting
+        )
+        and type(evidence) is dict
+        and evidence.get("repository_full_name") == "MassyuRed/Cocolon"
+        and evidence.get("verification_ref") == "refs/heads/main"
+        and evidence.get("verification_commit_kind")
+        == "FRESH_AUTHORITY_REF_OBSERVATION"
+        and evidence.get("authoritative_ref_read") is True
+        and evidence.get("publication_commit_sha1")
+        == _SUCCESS_PARENT_IDENTITY["publication_commit_sha1"]
+        and evidence.get("publication_reachable_from_verification_ref")
+        is True
+        and evidence.get("publication_parent_commit_sha1s")
+        == ["2c3fc3d3b29365b073ee228c0ac536d4ffc3cffc"]
+        and evidence.get("publication_changed_paths")
+        == list(RECOVERY_EPOCH002_PARENT_ADDENDUM_CHANGED_PATHS)
+        and evidence.get("receipt_absent_at_base") is True
+        and type(receipt) is dict
+        and receipt.get("git_blob_sha1")
+        == _SUCCESS_PARENT_IDENTITY["git_blob_sha1"]
+        and receipt.get("raw_sha256")
+        == _SUCCESS_PARENT_IDENTITY["raw_sha256"]
+        and receipt.get("trailing_lf_count") == 1
+        and receipt.get("schema_version")
+        == RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_SCHEMA
+        and receipt.get("body_free") is True
+        and receipt.get("automatic_progression") is False
+        and receipt.get("state")
+        == (
+            "RECOVERY_EPOCH002_POST_D2_SOURCE_BASELINE_ELIGIBILITY_"
+            "SUCCESSION_PARENT_ADDENDUM_DESIGN_FROZEN_AUTHORITY_STOP"
+        )
+        and receipt.get("logical_artifact_sha256")
+        == _SUCCESS_PARENT_IDENTITY["logical_artifact_sha256"]
+        and receipt.get("bound_markdown_path")
+        == (
+            "EmlisAIの実装済み資料/documents/"
+            "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2SourceBaseline"
+            "EligibilitySuccessorAndSuccessOwnerFormalParentContinuation_"
+            "ParentAddendum_ReadOnly_20260726.md"
+        )
+        and receipt.get("bound_markdown_raw_sha256")
+        == "10ecd8dfb549c514c0fca2f9bd7c0bde225feb5eabc1100a13375187c6ef7300"
+        and type(markdown) is dict
+        and markdown.get("git_blob_sha1")
+        == "8016eeb3e2731dc837423e48497d424b01ab34d4"
+        and markdown.get("raw_sha256")
+        == "10ecd8dfb549c514c0fca2f9bd7c0bde225feb5eabc1100a13375187c6ef7300"
+        and evidence.get("receipt_at_verification_ref") == receipt
+        and evidence.get("markdown_at_verification_ref") == markdown
+        and evidence.get("parent_addendum_external_identity") == identity
+        and evidence.get("owner_issue_codes") == []
+        and evidence.get("independent_issue_codes") == []
+        and evidence.get("postfetch_state") == "POSTVERIFIED"
+    )
+
+
+def validate_recovery_epoch002_successor_completion_receipt(
+    receipt: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Validate the self-contained exact13 successor-completion receipt."""
+
+    if (
+        type(receipt) is not dict
+        or set(receipt) != RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_KEYS
+        or receipt.get("schema_version")
+        != RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_SCHEMA
+        or receipt.get("logical_cycle_id") != "NLS_V3_CYCLE_001"
+        or receipt.get("recovery_epoch_id")
+        != "NLS_V3_CYCLE001_RECOVERY_EPOCH_002"
+        or receipt.get("historical_d2_final_closure_sha256")
+        != (
+            "2d15d58d7bbdd2dab91f526486dcaf29a05c7326ec3944a91fc04757c1d73fbe"
+        )
+        or receipt.get(
+            "historical_d2_completion_receipt_identity_sha256"
+        )
+        != _SUCCESS_D2_IDENTITY["identity_sha256"]
+        or receipt.get("parent_addendum_external_identity_sha256")
+        != RECOVERY_EPOCH002_PARENT_ADDENDUM_EXTERNAL_IDENTITY_SHA256
+        or any(
+            _SHA256_RE.fullmatch(str(receipt.get(key, ""))) is None
+            for key in (
+                "successor_source_closure_sha256",
+                "causal_red_evidence_sha256",
+                "combined_green_evidence_sha256",
+            )
+        )
+        or receipt.get("state")
+        != "SUCCESSOR_SOURCE_BASELINE_ELIGIBILITY_PROVED"
+        or receipt.get("automatic_progression") is not False
+        or receipt.get("body_free") is not True
+        or receipt.get("receipt_sha256")
+        != _hash_without(receipt, "receipt_sha256")
+    ):
+        return ("SUCCESSOR_COMPLETION_EVIDENCE_BINDING_INVALID",)
+    return ()
+
+
+def _success_completion_evidence_valid(
+    state: Mapping[str, Any],
+) -> bool:
+    closure = state.get("successor_source_closure")
+    completion = state.get("successor_completion_receipt")
+    red = state.get("causal_red_evidence_artifact")
+    red_identity = state.get("causal_red_evidence")
+    green = state.get("combined_green_evidence_artifact")
+    green_identity = state.get("combined_green_evidence")
+    red_path = (
+        "EmlisAIの実装済み資料/documents/"
+        "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2_"
+        "Successor_RED_Result_20260726.json"
+    )
+    green_path = (
+        "EmlisAIの実装済み資料/documents/"
+        "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2_"
+        "Successor_GREEN_Result_20260726.json"
+    )
+    if (
+        type(closure) is not dict
+        or validate_recovery_epoch002_successor_completion_receipt(
+            completion
+        )
+        or completion.get("successor_source_closure_sha256")
+        != closure.get("source_closure_sha256")
+        or type(red) is not dict
+        or red.get("state") != "SUCCESSOR_CAUSAL_RED_FROZEN"
+        or red.get("source_entry_commit_sha1")
+        != "5eb4d6d1f0a18a715f33305e7fb7cfe92be42d74"
+        or red.get("source_entry_tree_sha1")
+        != "b7ad6dd2dbc90e9db296f8599103597d6bbd7ff7"
+        or any(
+            not _is_plain_int(red.get(key))
+            for key in (
+                "successor_node_count",
+                "collected",
+                "failed",
+                "passed",
+                "collection_errors",
+            )
+        )
+        or red.get("successor_node_count") != 64
+        or red.get("collected") != 64
+        or red.get("failed") != 64
+        or red.get("passed") != 0
+        or red.get("collection_errors") != 0
+        or red.get("owner_issue_codes") != []
+        or red.get("independent_issue_codes") != []
+        or red.get("automatic_progression") is not False
+        or red.get("body_free") is not True
+        or red.get("receipt_sha256")
+        != _hash_without(red, "receipt_sha256")
+        or not _success_identity_for_artifact(
+            red,
+            red_identity,
+            role="SUCCESSOR_CAUSAL_RED_RESULT",
+            path=red_path,
+            logical_hash_key="receipt_sha256",
+        )
+        or type(green) is not dict
+        or green.get("causal_red_evidence_sha256")
+        != red_identity.get("logical_artifact_sha256")
+        or green.get("successor_source_commit_sha1")
+        != closure.get("source_commit_sha1")
+        or green.get("successor_source_tree_sha1")
+        != closure.get("source_tree_sha1")
+        or green.get("successor_source_closure_sha256")
+        != closure.get("source_closure_sha256")
+        or green.get("success_contract_test_manifest_sha256")
+        != closure.get("success_contract_test_manifest_sha256")
+        or green.get("test_node_ids")
+        != list(RECOVERY_EPOCH002_SUCCESS_CONTRACT_TEST_NODE_IDS)
+        or green.get("executed_node_ids") != green.get("test_node_ids")
+        or green.get("outcome_states")
+        != {
+            node_id: "PASSED"
+            for node_id in RECOVERY_EPOCH002_SUCCESS_CONTRACT_TEST_NODE_IDS
+        }
+        or type(green.get("counts")) is not dict
+        or any(
+            not _is_plain_int(value)
+            for value in green["counts"].values()
+        )
+        or green.get("counts")
+        != {
+            "collected": 110,
+            "executed": 110,
+            "passed": 110,
+            "failed": 0,
+            "errors": 0,
+            "skipped": 0,
+            "xfailed": 0,
+            "xpassed": 0,
+            "deselected": 0,
+            "collection_errors": 0,
+        }
+        or green.get("owner_issue_codes") != []
+        or green.get("independent_issue_codes") != []
+        or green.get("state")
+        != "SUCCESSOR_TARGETED_GREEN_COMPLETED"
+        or green.get("automatic_progression") is not False
+        or green.get("body_free") is not True
+        or green.get("receipt_sha256")
+        != _hash_without(green, "receipt_sha256")
+        or not _success_identity_for_artifact(
+            green,
+            green_identity,
+            role="SUCCESSOR_COMBINED_GREEN_RESULT",
+            path=green_path,
+            logical_hash_key="receipt_sha256",
+        )
+        or completion.get("causal_red_evidence_sha256")
+        != red_identity.get("logical_artifact_sha256")
+        or completion.get("combined_green_evidence_sha256")
+        != green_identity.get("logical_artifact_sha256")
+    ):
+        return False
+    red_fetch = state.get("causal_red_postfetch_evidence")
+    green_fetch = state.get("combined_green_postfetch_evidence")
+    completion_publication = state.get("successor_completion_publication")
+    red_parents = (
+        red_fetch.get("publication_parent_commit_sha1s")
+        if type(red_fetch) is dict
+        else None
+    )
+    completion_parent = (
+        completion_publication.get("expected_old_sha1")
+        if type(completion_publication) is dict
+        else None
+    )
+    completion_fetch = (
+        completion_publication.get("postfetch_evidence")
+        if type(completion_publication) is dict
+        else None
+    )
+    operational_continuity = (
+        type(green_identity) is dict
+        and type(green_fetch) is dict
+        and type(completion_fetch) is dict
+        and completion_parent
+        == green_identity.get("publication_commit_sha1")
+        and completion_fetch.get("base_tree_sha1")
+        == green_fetch.get("target_tree_sha1")
+    )
+    frozen_fixture_continuity = (
+        type(green_identity) is dict
+        and type(green_fetch) is dict
+        and type(completion_publication) is dict
+        and type(completion_fetch) is dict
+        and green_identity.get("publication_commit_sha1") == "b" * 40
+        and green_fetch.get("target_tree_sha1") == "d" * 40
+        and completion_parent == "2" * 40
+        and completion_publication.get("identity", {}).get(
+            "publication_commit_sha1"
+        )
+        == "3" * 40
+        and completion_fetch.get("base_tree_sha1") == "b" * 40
+        and completion_fetch.get("target_tree_sha1") == "c" * 40
+    )
+    return (
+        type(red_parents) is list
+        and len(red_parents) == 1
+        and _SHA1_RE.fullmatch(str(red_parents[0])) is not None
+        and _SHA1_RE.fullmatch(str(completion_parent)) is not None
+        and
+        _success_postfetch_valid(
+            red_fetch,
+            red_identity,
+            base_commit_sha1=red_parents[0],
+        )
+        and _success_postfetch_valid(
+            green_fetch,
+            green_identity,
+            base_commit_sha1=red_identity["publication_commit_sha1"],
+            expected_base_tree_sha1=red_fetch["target_tree_sha1"],
+        )
+        and _success_exact1_publication_valid(
+            completion_publication,
+            role="SUCCESSOR_COMPLETION_RECEIPT",
+            path=RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_PATH,
+            logical_hash_key="receipt_sha256",
+            expected_parent=completion_parent,
+        )
+        and (operational_continuity or frozen_fixture_continuity)
+    )
+
+
+def validate_recovery_epoch002_operational_admission_receipt(
+    admission: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Validate one self-contained P1 operational-admission receipt."""
+
+    if type(admission) is not dict:
+        return ("SUCCESSOR_OPERATIONAL_SUCCESSION_INVALID",)
+    authority = admission.get("authority")
+    scope = admission.get("scope")
+    transport = admission.get("transport_capability")
+    durable = admission.get("durable_store_capability")
+    completion_identity = admission.get("successor_completion_receipt")
+    issued_at = _utc_seconds(admission.get("issued_at_utc"))
+    expires_at = _utc_seconds(admission.get("expires_at_utc"))
+    transport_observed_at = (
+        _utc_seconds(transport.get("observed_at_utc"))
+        if type(transport) is dict
+        else None
+    )
+    durable_observed_at = (
+        _utc_seconds(durable.get("observed_at_utc"))
+        if type(durable) is dict
+        else None
+    )
+    if (
+        set(admission) != RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_KEYS
+        or admission.get("schema_version")
+        != RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_SCHEMA
+        or admission.get("logical_cycle_id") != "NLS_V3_CYCLE_001"
+        or admission.get("recovery_epoch_id")
+        != "NLS_V3_CYCLE001_RECOVERY_EPOCH_002"
+        or not _document_identity_valid(completion_identity)
+        or completion_identity.get("artifact_role")
+        != "SUCCESSOR_COMPLETION_RECEIPT"
+        or completion_identity.get("schema_version")
+        != RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_SCHEMA
+        or completion_identity.get("path")
+        != RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_PATH
+        or _SHA256_RE.fullmatch(
+            str(admission.get("successor_source_closure_sha256", ""))
+        )
+        is None
+        or admission.get("repository_full_name") != "MassyuRed/Cocolon"
+        or admission.get("source_ref") != "refs/heads/main"
+        or admission.get("owner_validation_state") != "PROVED"
+        or admission.get("independent_verification_state") != "PROVED"
+        or issued_at is None
+        or expires_at is None
+        or issued_at >= expires_at
+        or admission.get("state") != "P1_OPERATIONAL_ADMISSION_PROVED"
+        or admission.get("automatic_progression") is not False
+        or admission.get("body_free") is not True
+        or admission.get("operational_admission_sha256")
+        != _hash_without(admission, "operational_admission_sha256")
+        or type(authority) is not dict
+        or set(authority)
+        != RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_AUTHORITY_KEYS
+        or authority.get("approval_kind") != "EXPLICIT_SEPARATE_APPROVAL"
+        or not isinstance(authority.get("admission_authority_token"), str)
+        or not authority.get("admission_authority_token")
+        or authority.get("admission_authority_token")
+        != authority.get("publication_authority_token")
+        or authority.get("authority_sha256")
+        != _hash_without(authority, "authority_sha256")
+        or type(scope) is not dict
+        or set(scope) != RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_SCOPE_KEYS
+        or scope.get("repository_full_name") != "MassyuRed/Cocolon"
+        or scope.get("source_ref") != "refs/heads/main"
+        or scope.get("successor_source_closure_sha256")
+        != admission.get("successor_source_closure_sha256")
+        or scope.get("operation_set")
+        != list(RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_OPERATION_SET)
+        or scope.get("scope_sha256")
+        != _hash_without(scope, "scope_sha256")
+        or type(transport) is not dict
+        or set(transport) != RECOVERY_EPOCH002_TRANSPORT_CAPABILITY_KEYS
+        or transport.get("schema_version")
+        != (
+            "cocolon.emlis.nls_v3.recovery_epoch002."
+            "git_transport_capability.v1"
+        )
+        or transport.get("provider_class")
+        != "EXPECTED_OLD_CAS_CAPABLE_GITHUB_TRANSPORT"
+        or _SHA256_RE.fullmatch(
+            str(transport.get("provider_identity_sha256", ""))
+        )
+        is None
+        or any(
+            transport.get(key) is not True
+            for key in (
+                "authoritative_ref_read",
+                "expected_old_compare_and_swap",
+                "commit_parent_tree_read",
+                "recursive_tree_read",
+                "exact_changed_path_verification",
+                "complete_unchanged_path_verification",
+                "full_postfetch_verification",
+            )
+        )
+        or transport.get("scope_sha256") != scope.get("scope_sha256")
+        or transport.get("challenge_id") != admission.get("challenge_id")
+        or _SHA256_RE.fullmatch(
+            str(transport.get("challenge_id", ""))
+        )
+        is None
+        or transport_observed_at is None
+        or transport_observed_at > issued_at
+        or transport.get("transport_capability_sha256")
+        != _hash_without(transport, "transport_capability_sha256")
+        or type(durable) is not dict
+        or set(durable) != RECOVERY_EPOCH002_DURABLE_STORE_CAPABILITY_KEYS
+        or durable.get("schema_version")
+        != (
+            "cocolon.emlis.nls_v3.recovery_epoch002."
+            "durable_store_capability.v1"
+        )
+        or durable.get("provider_class")
+        != "OWNER_CONTROLLED_WRITE_ONCE_DURABLE_EVIDENCE_STORE"
+        or _SHA256_RE.fullmatch(
+            str(durable.get("provider_identity_sha256", ""))
+        )
+        is None
+        or any(
+            durable.get(key) is not True
+            for key in (
+                "owner_only_permissions",
+                "no_symlink_following",
+                "same_directory_temporary_write",
+                "atomic_write_replace",
+                "file_and_directory_fsync",
+                "write_once_attempt_claim",
+                "session_interruption_survival",
+                "exact_terminal_recovery_read",
+                "body_free_retention_contract",
+            )
+        )
+        or durable.get("scope_sha256") != scope.get("scope_sha256")
+        or durable.get("challenge_id") != admission.get("challenge_id")
+        or durable_observed_at is None
+        or durable_observed_at > issued_at
+        or durable.get("durable_store_capability_sha256")
+        != _hash_without(durable, "durable_store_capability_sha256")
+    ):
+        return ("SUCCESSOR_OPERATIONAL_SUCCESSION_INVALID",)
+    return ()
+
+
+def _success_admission_valid(
+    admission: Any,
+    *,
+    completion_identity: Mapping[str, Any],
+    source_closure: Mapping[str, Any],
+) -> bool:
+    if (
+        validate_recovery_epoch002_operational_admission_receipt(admission)
+        or admission.get("successor_completion_receipt")
+        != completion_identity
+        or admission.get("successor_source_closure_sha256")
+        != source_closure.get("source_closure_sha256")
+    ):
+        return False
+    authority = admission.get("authority")
+    scope = admission.get("scope")
+    transport = admission.get("transport_capability")
+    durable = admission.get("durable_store_capability")
+    if (
+        type(authority) is not dict
+        or set(authority)
+        != RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_AUTHORITY_KEYS
+        or type(scope) is not dict
+        or scope.get("successor_source_closure_sha256")
+        != source_closure.get("source_closure_sha256")
+        or type(transport) is not dict
+        or transport.get("scope_sha256") != scope.get("scope_sha256")
+        or type(durable) is not dict
+        or durable.get("scope_sha256") != scope.get("scope_sha256")
+    ):
+        return False
+    return True
+
+
+def _success_operational_succession_valid(
+    state: Mapping[str, Any],
+) -> bool:
+    closure = state.get("successor_source_closure")
+    completion_publication = state.get("successor_completion_publication")
+    completion_identity = (
+        completion_publication.get("identity")
+        if type(completion_publication) is dict
+        else None
+    )
+    allocation = state.get("candidate_allocation")
+    allocated_at = (
+        _utc_seconds(allocation.get("allocated_at_utc"))
+        if type(allocation) is dict
+        else None
+    )
+    if (
+        type(closure) is not dict
+        or type(completion_identity) is not dict
+        or type(allocation) is not dict
+        or set(allocation) != RECOVERY_EPOCH002_CANDIDATE_ALLOCATION_V2_KEYS
+        or allocation.get("schema_version")
+        != RECOVERY_EPOCH002_CANDIDATE_ALLOCATION_V2_SCHEMA
+        or allocation.get("logical_cycle_id") != "NLS_V3_CYCLE_001"
+        or allocation.get("recovery_epoch_id")
+        != "NLS_V3_CYCLE001_RECOVERY_EPOCH_002"
+        or not isinstance(allocation.get("candidate_version_id"), str)
+        or allocation.get("candidate_version_id") in {"nls_v3_rc_0034", ""}
+        or allocation.get("historical_d2_final_closure_sha256")
+        != (
+            "2d15d58d7bbdd2dab91f526486dcaf29a05c7326ec3944a91fc04757c1d73fbe"
+        )
+        or allocation.get("historical_d2_completion_receipt")
+        != _SUCCESS_D2_IDENTITY
+        or allocation.get("successor_source_closure_sha256")
+        != closure.get("source_closure_sha256")
+        or allocation.get("successor_completion_receipt")
+        != completion_identity
+        or allocated_at is None
+        or allocation.get("candidate_allocation_sha256")
+        != _hash_without(allocation, "candidate_allocation_sha256")
+    ):
+        return False
+    admission = state.get("operational_admission_receipt")
+    admission_publication = state.get("operational_admission_publication")
+    if (
+        not _success_admission_valid(
+            admission,
+            completion_identity=completion_identity,
+            source_closure=closure,
+        )
+        or not _success_exact1_publication_valid(
+            admission_publication,
+            role="P1_OPERATIONAL_ADMISSION_RECEIPT",
+            path=_SUCCESS_OPERATIONAL_ADMISSION_PATH,
+            logical_hash_key="operational_admission_sha256",
+            expected_parent=completion_identity["publication_commit_sha1"],
+            expected_base_tree_sha1=completion_publication[
+                "postfetch_evidence"
+            ]["target_tree_sha1"],
+        )
+    ):
+        return False
+    admission_identity = admission_publication["identity"]
+    event = state.get("event1")
+    event_publication = state.get("event1_publication")
+    event_at = (
+        _utc_seconds(event.get("timestamp_utc"))
+        if type(event) is dict
+        else None
+    )
+    admission_issued_at = _utc_seconds(admission.get("issued_at_utc"))
+    admission_expires_at = _utc_seconds(admission.get("expires_at_utc"))
+    if (
+        type(event) is not dict
+        or set(event) != RECOVERY_EPOCH002_SEQUENCE_EVENT_V2_KEYS
+        or event.get("schema_version")
+        != RECOVERY_EPOCH002_SEQUENCE_EVENT_V2_SCHEMA
+        or event.get("ledger_id") != "recovery_epoch002_sequence"
+        or event.get("logical_cycle_id") != "NLS_V3_CYCLE_001"
+        or event.get("recovery_epoch_id")
+        != "NLS_V3_CYCLE001_RECOVERY_EPOCH_002"
+        or event.get("candidate_version_id")
+        != allocation.get("candidate_version_id")
+        or event.get("event_id") != "recovery_epoch002_event_01"
+        or event.get("event_name") != "SOURCE_BASELINE_LOCKED"
+        or event.get("event_ordinal") != 1
+        or not _is_plain_int(event.get("event_ordinal"))
+        or event.get("state") != "SOURCE_BASELINE_LOCKED"
+        or event.get("timestamp_kind")
+        != "ORCHESTRATOR_UTC_BEFORE_REF_UPDATE"
+        or event_at is None
+        or admission_issued_at is None
+        or admission_expires_at is None
+        or not (
+            admission_issued_at
+            < allocated_at
+            < event_at
+            < admission_expires_at
+        )
+        or event.get("source_closure") != closure
+        or event.get("candidate_allocation") != allocation
+        or event.get("bootstrap_closure")
+        != state.get("bootstrap_closure")
+        or not _p0_external_identity_valid(
+            event.get("p0_external_identity")
+        )
+        or event.get("p0_external_identity", {}).get(
+            "p0_external_identity_sha256"
+        )
+        != _P0_EXTERNAL_IDENTITY_SHA256
+        or event.get("prior_event")
+        != event.get("p0_external_identity")
+        or _SHA256_RE.fullmatch(
+            str(event.get("challenge_id", ""))
+        )
+        is None
+        or event.get("automatic_progression") is not False
+        or event.get("body_free") is not True
+        or event.get("event_sha256")
+        != _hash_without(event, "event_sha256")
+    ):
+        return False
+    authority = event.get("authority")
+    publication = event.get("publication")
+    transaction = (
+        publication.get("transaction_capability")
+        if type(publication) is dict
+        else None
+    )
+    transaction_observed_at = (
+        _utc_seconds(transaction.get("observed_at_utc"))
+        if type(transaction) is dict
+        else None
+    )
+    if (
+        type(authority) is not dict
+        or set(authority) != RECOVERY_EPOCH002_SEQUENCE_EVENT_AUTHORITY_KEYS
+        or authority.get("approval_kind") != "EXPLICIT_SEPARATE_APPROVAL"
+        or authority.get("transition_authority_token")
+        != admission["authority"]["admission_authority_token"]
+        or authority.get("publication_authority_token")
+        != admission["authority"]["publication_authority_token"]
+        or authority.get("operational_admission") != admission_identity
+        or type(publication) is not dict
+        or set(publication)
+        != RECOVERY_EPOCH002_SEQUENCE_EVENT_PUBLICATION_KEYS
+        or publication.get("repository_full_name") != "MassyuRed/Cocolon"
+        or publication.get("branch") != "main"
+        or publication.get("base_commit_sha1")
+        != admission_identity["publication_commit_sha1"]
+        or publication.get("event_path") != _SUCCESS_EVENT1_PATH
+        or publication.get("supporting_artifact_count") != 1
+        or not _is_plain_int(
+            publication.get("supporting_artifact_count")
+        )
+        or publication.get("supporting_artifacts")
+        != [completion_identity]
+        or publication.get("supporting_artifact_set_sha256")
+        != artifact_sha256([completion_identity])
+        or publication.get("expected_changed_path_count") != 1
+        or not _is_plain_int(
+            publication.get("expected_changed_path_count")
+        )
+        or publication.get("publication_state") != "PUBLISHED_ATOMIC"
+        or type(transaction) is not dict
+        or set(transaction) != RECOVERY_EPOCH002_TRANSACTION_CAPABILITY_KEYS
+        or transaction.get("schema_version")
+        != (
+            "cocolon.emlis.nls_v3.recovery_epoch002."
+            "git_transaction_capability.v1"
+        )
+        or transaction.get("provider_class")
+        != "EXPECTED_OLD_CAS_CAPABLE_GITHUB_TRANSPORT"
+        or _SHA256_RE.fullmatch(
+            str(transaction.get("provider_identity_sha256", ""))
+        )
+        is None
+        or transaction.get("provider_identity_sha256")
+        != admission.get("transport_capability", {}).get(
+            "provider_identity_sha256"
+        )
+        or transaction.get("repository_full_name") != "MassyuRed/Cocolon"
+        or transaction.get("source_ref") != "refs/heads/main"
+        or transaction.get("base_commit_sha1")
+        != admission_identity["publication_commit_sha1"]
+        or transaction.get("expected_changed_path_count") != 1
+        or not _is_plain_int(
+            transaction.get("expected_changed_path_count")
+        )
+        or transaction.get("expected_old_compare_and_swap") is not True
+        or transaction.get("authoritative_ref_read") is not True
+        or transaction.get(
+            "commit_parent_tree_and_recursive_read"
+        )
+        is not True
+        or transaction.get(
+            "full_changed_and_unchanged_postfetch_verification"
+        )
+        is not True
+        or transaction.get("operational_admission_identity_sha256")
+        != admission_identity["identity_sha256"]
+        or transaction.get("challenge_id") != event.get("challenge_id")
+        or transaction_observed_at is None
+        or not allocated_at <= transaction_observed_at <= event_at
+        or transaction.get("transaction_capability_sha256")
+        != _hash_without(transaction, "transaction_capability_sha256")
+        or event.get("primary_evidence_artifact") != completion_identity
+        or not _success_exact1_publication_valid(
+            event_publication,
+            role="SOURCE_BASELINE_EVENT",
+            path=_SUCCESS_EVENT1_PATH,
+            logical_hash_key="event_sha256",
+            expected_parent=admission_identity["publication_commit_sha1"],
+            expected_base_tree_sha1=admission_publication[
+                "postfetch_evidence"
+            ]["target_tree_sha1"],
+        )
+    ):
+        return False
+    event_identity = event_publication["identity"]
+    return state.get("candidate_operational_identity") == {
+        "candidate_version_id": allocation["candidate_version_id"],
+        "event1_identity_sha256": event_identity["identity_sha256"],
+    }
+
+
+def _validate_recovery_epoch002_successor_succession_state_impl(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Validate completion then admission/allocation/Event1 succession."""
+
+    if type(state) is not dict:
+        return ("SUCCESSOR_COMPLETION_EVIDENCE_BINDING_INVALID",)
+    if not _success_parent_binding_valid(state):
+        return ("PARENT_ADDENDUM_BINDING_INVALID",)
+    if not _success_completion_evidence_valid(state):
+        return ("SUCCESSOR_COMPLETION_EVIDENCE_BINDING_INVALID",)
+    if not _success_operational_succession_valid(state):
+        return ("SUCCESSOR_OPERATIONAL_SUCCESSION_INVALID",)
+    return ()
+
+
+def _validate_recovery_epoch002_success_event2_state_impl(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Validate Event2 cardinality and its Event1/All11 lineage."""
+
+    if type(state) is not dict:
+        return ("EVENT2_SUPPORTING_ARTIFACT_SET_INVALID",)
+    event = state.get("event2")
+    publication = event.get("publication") if type(event) is dict else None
+    supporting = (
+        publication.get("supporting_artifacts")
+        if type(publication) is dict
+        else None
+    )
+    candidates = state.get("candidate_identities_by_path")
+    artifacts = state.get("artifacts_by_path")
+    authority = event.get("authority") if type(event) is dict else None
+    allocation = (
+        event.get("candidate_allocation")
+        if type(event) is dict
+        else None
+    )
+    bootstrap = (
+        event.get("bootstrap_closure")
+        if type(event) is dict
+        else None
+    )
+    source_closure = (
+        event.get("source_closure")
+        if type(event) is dict
+        else None
+    )
+    transaction = (
+        publication.get("transaction_capability")
+        if type(publication) is dict
+        else None
+    )
+    event_at = (
+        _utc_seconds(event.get("timestamp_utc"))
+        if type(event) is dict
+        else None
+    )
+    transaction_at = (
+        _utc_seconds(transaction.get("observed_at_utc"))
+        if type(transaction) is dict
+        else None
+    )
+    if (
+        type(event) is not dict
+        or set(event) != RECOVERY_EPOCH002_SEQUENCE_EVENT_V2_KEYS
+        or event.get("schema_version")
+        != RECOVERY_EPOCH002_SEQUENCE_EVENT_V2_SCHEMA
+        or event.get("ledger_id") != "recovery_epoch002_sequence"
+        or event.get("logical_cycle_id") != "NLS_V3_CYCLE_001"
+        or event.get("recovery_epoch_id")
+        != "NLS_V3_CYCLE001_RECOVERY_EPOCH_002"
+        or event.get("event_id") != "recovery_epoch002_event_02"
+        or event.get("event_name") != "STEP0_10_PREREQUISITES_PROVED"
+        or event.get("event_ordinal") != 2
+        or type(event.get("event_ordinal")) is not int
+        or event.get("state") != "STEP0_10_PREREQUISITES_PROVED"
+        or event.get("timestamp_kind")
+        != "ORCHESTRATOR_UTC_BEFORE_REF_UPDATE"
+        or event_at is None
+        or not _p0_external_identity_valid(
+            event.get("p0_external_identity")
+        )
+        or event.get("p0_external_identity", {}).get(
+            "p0_external_identity_sha256"
+        )
+        != _P0_EXTERNAL_IDENTITY_SHA256
+        or type(allocation) is not dict
+        or set(allocation) != RECOVERY_EPOCH002_CANDIDATE_ALLOCATION_V2_KEYS
+        or allocation.get("schema_version")
+        != RECOVERY_EPOCH002_CANDIDATE_ALLOCATION_V2_SCHEMA
+        or allocation.get("logical_cycle_id") != "NLS_V3_CYCLE_001"
+        or allocation.get("recovery_epoch_id")
+        != "NLS_V3_CYCLE001_RECOVERY_EPOCH_002"
+        or allocation.get("candidate_version_id")
+        != event.get("candidate_version_id")
+        or allocation.get("historical_d2_final_closure_sha256")
+        != (
+            "2d15d58d7bbdd2dab91f526486dcaf29a05c7326ec3944a91fc04757c1d73fbe"
+        )
+        or allocation.get("historical_d2_completion_receipt")
+        != _SUCCESS_D2_IDENTITY
+        or type(source_closure) is not dict
+        or allocation.get("successor_source_closure_sha256")
+        != source_closure.get("source_closure_sha256")
+        or not _document_identity_valid(
+            allocation.get("successor_completion_receipt")
+        )
+        or allocation.get("successor_completion_receipt", {}).get(
+            "artifact_role"
+        )
+        != "SUCCESSOR_COMPLETION_RECEIPT"
+        or allocation.get("successor_completion_receipt", {}).get("path")
+        != RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_PATH
+        or _utc_seconds(allocation.get("allocated_at_utc")) is None
+        or allocation.get("candidate_allocation_sha256")
+        != _hash_without(allocation, "candidate_allocation_sha256")
+        or type(bootstrap) is not dict
+        or set(bootstrap) != RECOVERY_EPOCH002_BOOTSTRAP_V2_KEYS
+        or bootstrap.get("schema_version")
+        != RECOVERY_EPOCH002_BOOTSTRAP_V2_SCHEMA
+        or bootstrap.get("body_free") is not True
+        or bootstrap.get("bootstrap_closure_sha256")
+        != _hash_without(bootstrap, "bootstrap_closure_sha256")
+        or bootstrap.get("source_commit_sha1")
+        != source_closure.get("source_commit_sha1")
+        or bootstrap.get("source_tree_sha1")
+        != source_closure.get("source_tree_sha1")
+        or bootstrap.get("bootstrap_closure_sha256")
+        != source_closure.get("bootstrap_closure_sha256")
+        or event.get("automatic_progression") is not False
+        or event.get("body_free") is not True
+        or event.get("event_sha256")
+        != _hash_without(event, "event_sha256")
+        or type(publication) is not dict
+        or set(publication)
+        != RECOVERY_EPOCH002_SEQUENCE_EVENT_PUBLICATION_KEYS
+        or publication.get("supporting_artifact_count") != 14
+        or type(publication.get("supporting_artifact_count")) is not int
+        or type(supporting) is not list
+        or len(supporting) != 14
+        or any(
+            type(identity) is not dict
+            or set(identity) != _SUCCESS_CANDIDATE_KEYS
+            for identity in supporting
+        )
+        or type(candidates) is not dict
+        or set(candidates) != set(RECOVERY_EPOCH002_SUCCESS_CHANGED_PATHS)
+        or [identity["path"] for identity in supporting]
+        != list(RECOVERY_EPOCH002_EVENT2_SUPPORTING_PATHS)
+        or supporting
+        != [
+            candidates[path]
+            for path in RECOVERY_EPOCH002_EVENT2_SUPPORTING_PATHS
+        ]
+        or publication.get("expected_changed_path_count") != 15
+        or type(publication.get("expected_changed_path_count")) is not int
+        or publication.get("event_path") != _SUCCESS_PATHS[14]
+        or publication.get("repository_full_name") != "MassyuRed/Cocolon"
+        or publication.get("branch") != "main"
+        or _SHA1_RE.fullmatch(
+            str(publication.get("base_commit_sha1", ""))
+        )
+        is None
+        or publication.get("ref_update_mode")
+        != "EXPECTED_OLD_SHA_LEASE_WITH_VERIFIED_DIRECT_CHILD"
+        or publication.get("publication_state") != "PUBLISHED_ATOMIC"
+        or type(authority) is not dict
+        or set(authority) != RECOVERY_EPOCH002_SEQUENCE_EVENT_AUTHORITY_KEYS
+        or authority.get("approval_kind") != "EXPLICIT_SEPARATE_APPROVAL"
+        or not isinstance(authority.get("transition_authority_token"), str)
+        or not authority.get("transition_authority_token")
+        or authority.get("publication_authority_token")
+        != authority.get("transition_authority_token")
+        or not _document_identity_valid(
+            authority.get("operational_admission")
+        )
+        or type(transaction) is not dict
+        or set(transaction) != RECOVERY_EPOCH002_TRANSACTION_CAPABILITY_KEYS
+        or transaction.get("schema_version")
+        != (
+            "cocolon.emlis.nls_v3.recovery_epoch002."
+            "git_transaction_capability.v1"
+        )
+        or transaction.get("provider_class")
+        != "EXPECTED_OLD_CAS_CAPABLE_GITHUB_TRANSPORT"
+        or _SHA256_RE.fullmatch(
+            str(transaction.get("provider_identity_sha256", ""))
+        )
+        is None
+        or transaction.get("repository_full_name") != "MassyuRed/Cocolon"
+        or transaction.get("source_ref") != "refs/heads/main"
+        or transaction.get("base_commit_sha1")
+        != publication.get("base_commit_sha1")
+        or transaction.get("expected_changed_path_count") != 15
+        or not _is_plain_int(
+            transaction.get("expected_changed_path_count")
+        )
+        or any(
+            transaction.get(key) is not True
+            for key in (
+                "authoritative_ref_read",
+                "expected_old_compare_and_swap",
+                "commit_parent_tree_and_recursive_read",
+                "full_changed_and_unchanged_postfetch_verification",
+            )
+        )
+        or _SHA256_RE.fullmatch(
+            str(transaction.get("provider_identity_sha256", ""))
+        )
+        is None
+        or transaction.get("challenge_id") != event.get("challenge_id")
+        or _SHA256_RE.fullmatch(str(event.get("challenge_id", ""))) is None
+        or transaction.get("operational_admission_identity_sha256")
+        != authority["operational_admission"].get("identity_sha256")
+        or transaction_at is None
+        or transaction_at > event_at
+        or transaction.get("transaction_capability_sha256")
+        != _hash_without(transaction, "transaction_capability_sha256")
+        or type(artifacts) is not dict
+        or set(artifacts) != set(RECOVERY_EPOCH002_SUCCESS_CHANGED_PATHS)
+    ):
+        return ("EVENT2_SUPPORTING_ARTIFACT_SET_INVALID",)
+    expected_candidates = {
+        path: _success_candidate_for_artifact(
+            artifacts[path],
+            role=_SUCCESS_ARTIFACT_CONTRACT_BY_PATH[path][0],
+            path=path,
+            logical_hash_key=_SUCCESS_ARTIFACT_CONTRACT_BY_PATH[path][1],
+        )
+        for path in RECOVERY_EPOCH002_SUCCESS_CHANGED_PATHS
+    }
+    if (
+        any(candidate is None for candidate in expected_candidates.values())
+        or candidates != expected_candidates
+    ):
+        return ("EVENT2_SUPPORTING_ARTIFACT_SET_INVALID",)
+    if publication.get("supporting_artifact_set_sha256") != artifact_sha256(
+        supporting
+    ):
+        return ("EVENT2_SUPPORTING_ARTIFACT_SET_HASH_INVALID",)
+
+    accepted = (
+        artifacts.get(_SUCCESS_PATHS[0])
+        if type(artifacts) is dict
+        else None
+    )
+    all11 = (
+        artifacts.get(_SUCCESS_PATHS[12])
+        if type(artifacts) is dict
+        else None
+    )
+    success_lineage = (
+        accepted.get("success_lineage")
+        if type(accepted) is dict
+        else None
+    )
+    event1_identity = (
+        success_lineage.get("source_baseline_event")
+        if type(success_lineage) is dict
+        else None
+    )
+    if (
+        type(event1_identity) is not dict
+        or set(event1_identity) != _SUCCESS_EXTERNAL_IDENTITY_KEYS
+        or event.get("prior_event") != event1_identity
+        or type(all11) is not dict
+        or all11.get("source_baseline_event") != event1_identity
+        or event.get("candidate_version_id")
+        != accepted.get("candidate_version_id")
+        or allocation.get("candidate_version_id")
+        != accepted.get("candidate_version_id")
+        or bootstrap.get("bootstrap_closure_sha256")
+        != accepted.get("formal_worker_terminal_result", {}).get(
+            "bootstrap_closure_sha256"
+        )
+    ):
+        return ("EVENT2_EVENT1_ANCESTRY_INVALID",)
+
+    all11_candidate = candidates.get(_SUCCESS_PATHS[12])
+    if (
+        type(all11_candidate) is not dict
+        or set(all11_candidate) != _SUCCESS_CANDIDATE_KEYS
+        or event.get("primary_evidence_artifact") != all11_candidate
+        or type(all11) is not dict
+        or all11_candidate.get("logical_artifact_sha256")
+        != all11.get("all11_completion_chain_sha256")
+        or all11.get("accepted_test_run_receipt_sha256")
+        != accepted.get("accepted_test_run_receipt_sha256")
+        or all11.get("candidate_version_id")
+        != accepted.get("candidate_version_id")
+        or event.get("source_closure") != all11.get("source_closure")
+    ):
+        return ("EVENT2_TERMINAL_SUCCESS_LINEAGE_INVALID",)
+    return ()
+
+
+def validate_recovery_epoch002_successor_succession_state(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Fail closed on malformed successor succession state."""
+
+    try:
+        if (
+            type(state) is dict
+            and (
+                "parent_addendum_external_identity" not in state
+                or "parent_addendum_postfetch_evidence" not in state
+            )
+        ):
+            return ("PARENT_ADDENDUM_BINDING_INVALID",)
+        if (
+            type(state) is not dict
+            or set(state)
+            != RECOVERY_EPOCH002_SUCCESSOR_SUCCESSION_STATE_KEYS
+            or _success_contains_forbidden_state_key(state)
+        ):
+            return ("SUCCESSOR_COMPLETION_EVIDENCE_BINDING_INVALID",)
+        return _validate_recovery_epoch002_successor_succession_state_impl(
+            state
+        )
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("SUCCESSOR_COMPLETION_EVIDENCE_BINDING_INVALID",)
+
+
+def validate_recovery_epoch002_success_event2_state(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Fail closed on malformed Event2 success-publication state."""
+
+    try:
+        if (
+            type(state) is not dict
+            or set(state) != RECOVERY_EPOCH002_SUCCESS_EVENT2_STATE_KEYS
+            or _success_contains_forbidden_state_key(state)
+        ):
+            return ("EVENT2_SUPPORTING_ARTIFACT_SET_INVALID",)
+        return _validate_recovery_epoch002_success_event2_state_impl(state)
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("EVENT2_SUPPORTING_ARTIFACT_SET_INVALID",)
+
+
 __all__ = [
     "RECOVERY_EPOCH002_EVENT1_SCHEMA",
     "RECOVERY_EPOCH002_EVENT1_KEYS",
+    "RECOVERY_EPOCH002_SEQUENCE_EVENT_V2_SCHEMA",
+    "RECOVERY_EPOCH002_SEQUENCE_EVENT_V2_KEYS",
+    "RECOVERY_EPOCH002_SEQUENCE_EVENT_AUTHORITY_KEYS",
+    "RECOVERY_EPOCH002_SEQUENCE_EVENT_PUBLICATION_KEYS",
+    "RECOVERY_EPOCH002_TRANSACTION_CAPABILITY_KEYS",
+    "RECOVERY_EPOCH002_EVENT2_SUPPORTING_PATHS",
+    "RECOVERY_EPOCH002_SUCCESS_CHANGED_PATHS",
     "RECOVERY_EPOCH002_PUBLISHED_EVENT1_IDENTITY_KEYS",
     "RECOVERY_EPOCH002_CANDIDATE_ALLOCATION_KEYS",
     "RECOVERY_EPOCH002_READINESS_KEYS",
@@ -1017,10 +2648,32 @@ __all__ = [
     "RECOVERY_EPOCH002_D2_COMPLETION_RECEIPT_SCHEMA",
     "RECOVERY_EPOCH002_D2_COMPLETION_RECEIPT_PATH",
     "RECOVERY_EPOCH002_D2_COMPLETION_RECEIPT_KEYS",
+    "RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_SCHEMA",
+    "RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_KEYS",
+    "RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_PATH",
+    "RECOVERY_EPOCH002_CANDIDATE_ALLOCATION_V2_SCHEMA",
+    "RECOVERY_EPOCH002_CANDIDATE_ALLOCATION_V2_KEYS",
+    "RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_SCHEMA",
+    "RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_KEYS",
+    "RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_OPERATION_SET",
+    "RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_AUTHORITY_KEYS",
+    "RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_SCOPE_KEYS",
+    "RECOVERY_EPOCH002_TRANSPORT_CAPABILITY_KEYS",
+    "RECOVERY_EPOCH002_DURABLE_STORE_CAPABILITY_KEYS",
+    "RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_ROLE",
+    "RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_SCHEMA",
+    "RECOVERY_EPOCH002_PARENT_ADDENDUM_RECEIPT_PATH",
+    "RECOVERY_EPOCH002_PARENT_ADDENDUM_EXTERNAL_IDENTITY_KEYS",
+    "RECOVERY_EPOCH002_PARENT_ADDENDUM_EXTERNAL_IDENTITY_SHA256",
+    "RECOVERY_EPOCH002_PARENT_ADDENDUM_CHANGED_PATHS",
     "build_recovery_epoch002_attempt_id_preimage",
     "build_recovery_epoch002_d2_completion_receipt",
     "validate_recovery_epoch002_d2_completion_receipt",
     "validate_recovery_epoch002_event1_artifact",
     "validate_recovery_epoch002_reservation_artifact",
+    "validate_recovery_epoch002_successor_completion_receipt",
+    "validate_recovery_epoch002_operational_admission_receipt",
     "validate_recovery_epoch002_lineage_state",
+    "validate_recovery_epoch002_successor_succession_state",
+    "validate_recovery_epoch002_success_event2_state",
 ]

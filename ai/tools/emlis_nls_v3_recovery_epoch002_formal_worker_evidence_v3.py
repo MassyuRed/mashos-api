@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -18,6 +19,7 @@ from emlis_ai_nls_v3_artifact_contract import (
     canonical_json_bytes,
 )
 from emlis_ai_recovery_epoch001_current_step_requirement_registry_v3 import (
+    RECOVERY_EPOCH001_CURRENT_STEP_REQUIREMENT_ROWS,
     RECOVERY_EPOCH001_FORMAL_NODE_IDS_BY_STEP,
 )
 
@@ -77,6 +79,57 @@ RECOVERY_EPOCH002_UNKNOWN_DISPOSITION_KEYS = _keys(
     attempt_consumption_unknown_disposition_sha256
     """
 )
+
+# Post-D2 success evidence is additive.  These contracts validate supplied
+# body-free observations only; they do not execute pytest or publish an
+# artifact.
+RECOVERY_EPOCH002_TERMINAL_RESULT_V2_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch002."
+    "formal_worker_terminal_result.v2"
+)
+RECOVERY_EPOCH002_TERMINAL_RESULT_V2_KEYS = _keys(
+    """
+    schema_version logical_cycle_id recovery_epoch_id authority_token_id
+    event1_challenge_id formal_run_challenge_id
+    formal_authority_challenge_id attempt_id candidate_version_id
+    source_baseline_event_sha256 source_closure_sha256
+    bootstrap_closure_sha256 formal_test_run_reservation_sha256
+    terminal_checkpoint_sha256 collection_node_ids executed_node_ids states
+    collection_errors exit_class exit_code signal_number timed_out
+    python_runtime_identity_sha256 pytest_distribution_identity_sha256
+    started_at_utc finished_at_utc body_free formal_worker_result_sha256
+    outcomes counts formal_node_outcome_evidence_sha256
+    formal_exact134_invocation_count
+    """
+)
+RECOVERY_EPOCH002_FORMAL_NODE_OUTCOME_KEYS = _keys(
+    """
+    test_node_id source_path source_blob_sha1 source_sha256 result
+    expected_closed_code actual_closed_code evidence_sha256
+    """
+)
+RECOVERY_EPOCH002_FORMAL_RESULT_COUNTS_KEYS = _keys(
+    """
+    collected executed passed failed errors skipped xfailed xpassed deselected
+    collection_errors
+    """
+)
+RECOVERY_EPOCH002_FORMAL_NODE_IDS = tuple(
+    node_id
+    for step in range(11)
+    for node_id in RECOVERY_EPOCH001_FORMAL_NODE_IDS_BY_STEP[step]
+)
+RECOVERY_EPOCH002_NEGATIVE_CLOSED_CODE_BY_NODE = {
+    row["independent_negative_proof"]["test_node_id"]: (
+        row["independent_negative_proof"]["expected_closed_code"]
+    )
+    for row in RECOVERY_EPOCH001_CURRENT_STEP_REQUIREMENT_ROWS
+}
+RECOVERY_EPOCH002_NEGATIVE_CLOSED_CODES = tuple(
+    RECOVERY_EPOCH002_NEGATIVE_CLOSED_CODE_BY_NODE[node_id]
+    for node_id in RECOVERY_EPOCH002_FORMAL_NODE_IDS
+    if node_id in RECOVERY_EPOCH002_NEGATIVE_CLOSED_CODE_BY_NODE
+)
 RECOVERY_EPOCH002_FORMAL_STAGE_GRAPH = {
     "PARENT_SPAWN_INTENT_PERSISTED": ("CHILD_PROCESS_ENTRY",),
     "CHILD_PROCESS_ENTRY": ("SOURCE_BINDING_VALIDATED",),
@@ -115,6 +168,32 @@ RECOVERY_EPOCH002_FORBIDDEN_DIAGNOSTIC_KEYS = frozenset(
         "credential",
         "invalid_result_sha256",
     }
+)
+_SUCCESS_FORBIDDEN_STATE_KEYS = (
+    RECOVERY_EPOCH002_FORBIDDEN_DIAGNOSTIC_KEYS
+    | frozenset({"raw_payload", "private_body", "private_payload"})
+)
+RECOVERY_EPOCH002_SUCCESS_TERMINAL_STATE_KEYS = _keys(
+    """
+    checkpoint_chain independent_issue_codes locked_formal_node_ids
+    locked_negative_code_by_node locked_source_manifest owner_issue_codes
+    parity_bindings retry_history runner_closed_code_observations
+    terminal_publication terminal_result
+    """
+)
+RECOVERY_EPOCH002_SUCCESS_RETRY_HISTORY_KEYS = _keys(
+    """
+    consumed_attempt_ids successful_attempt_id
+    successful_reservation_ordinal
+    """
+)
+RECOVERY_EPOCH002_SUCCESS_PARITY_BINDING_KEYS = _keys(
+    """
+    bootstrap_closure_sha256 event1_candidate_version_id
+    pytest_distribution_identity_sha256 python_runtime_identity_sha256
+    readiness_candidate_version_id reservation_candidate_version_id
+    source_closure_sha256
+    """
 )
 
 _PREFLIGHT_CHECKPOINT_SCHEMA = (
@@ -162,7 +241,7 @@ def _hash_without(value: Mapping[str, Any], key: str) -> str:
 def _contains_forbidden_key(value: Any) -> bool:
     if isinstance(value, Mapping):
         if any(
-            key in RECOVERY_EPOCH002_FORBIDDEN_DIAGNOSTIC_KEYS
+            key in _SUCCESS_FORBIDDEN_STATE_KEYS
             for key in value
         ):
             return True
@@ -376,7 +455,28 @@ def validate_recovery_epoch002_operational_terminal_result(
 ) -> tuple[str, ...]:
     """Validate a terminal result identically at write, parent, and publish."""
 
-    generic_issues = validate_recovery_epoch002_terminal_result(result)
+    if (
+        type(result) is dict
+        and result.get("schema_version")
+        == RECOVERY_EPOCH002_TERMINAL_RESULT_V2_SCHEMA
+    ):
+        if not _success_terminal_shape_valid(result):
+            return ("TERMINAL_OR_ACCEPTANCE_PUBLICATION_REJECTED",)
+        v1_result = {
+            key: deepcopy(value)
+            for key, value in result.items()
+            if key in RECOVERY_EPOCH002_TERMINAL_RESULT_KEYS
+        }
+        v1_result["schema_version"] = _TERMINAL_RESULT_SCHEMA
+        v1_result["formal_worker_result_sha256"] = _hash_without(
+            v1_result,
+            "formal_worker_result_sha256",
+        )
+        generic_issues = validate_recovery_epoch002_terminal_result(
+            v1_result
+        )
+    else:
+        generic_issues = validate_recovery_epoch002_terminal_result(result)
     if generic_issues:
         return generic_issues
     if (
@@ -765,6 +865,448 @@ def validate_recovery_epoch002_attempt_state(
     return ()
 
 
+_SUCCESS_EXTERNAL_IDENTITY_KEYS = _keys(
+    """
+    artifact_role schema_version repository_full_name path git_blob_sha1
+    raw_sha256 logical_artifact_sha256 publication_commit_sha1 body_free
+    identity_sha256
+    """
+)
+_SUCCESS_EXACT1_PUBLICATION_KEYS = _keys(
+    """
+    artifact identity changed_paths parent_commit_sha1s expected_old_sha1
+    observed_old_sha1 postfetch_evidence postfetch_state
+    """
+)
+_SUCCESS_POSTFETCH_KEYS = _keys(
+    """
+    repository_full_name verification_ref verification_commit_sha1
+    authoritative_ref_read authoritative_base_tree_read base_tree_sha1
+    target_tree_sha1 publication_commit_sha1
+    publication_reachable_from_verification_ref
+    publication_parent_commit_sha1s publication_changed_paths
+    target_absent_at_base semantic_ancestor_verified target_tree_build_count
+    publication_commit_parent_count requested_expected_old_sha1
+    observed_old_sha1 server_side_expected_old_applied authoritative_head_read
+    authoritative_parent_read authoritative_tree_read
+    authoritative_recursive_tree_read changed_path_proof_complete
+    artifact_at_publication artifact_at_verification_ref
+    unchanged_path_observation unchanged_path_mismatches owner_issue_codes
+    independent_issue_codes postfetch_state
+    """
+)
+_SUCCESS_POSTFETCH_ARTIFACT_KEYS = _keys(
+    """
+    path git_blob_sha1 raw_sha256 logical_artifact_sha256 body_free
+    """
+)
+_SUCCESS_UNCHANGED_OBSERVATION_KEYS = _keys(
+    "scope mode_type_sha_complete mismatches observation_sha256"
+)
+_SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _success_raw_identity(
+    artifact: Mapping[str, Any],
+    *,
+    path: str,
+    role: str,
+    logical_hash_key: str,
+    publication_commit_sha1: str,
+) -> dict[str, Any] | None:
+    if (
+        type(artifact) is not dict
+        or artifact.get("body_free") is not True
+        or artifact.get(logical_hash_key)
+        != _hash_without(artifact, logical_hash_key)
+    ):
+        return None
+    payload = canonical_json_bytes(dict(artifact)) + b"\n"
+    header = f"blob {len(payload)}\0".encode("ascii")
+    identity = {
+        "artifact_role": role,
+        "schema_version": artifact.get("schema_version"),
+        "repository_full_name": "MassyuRed/Cocolon",
+        "path": path,
+        "git_blob_sha1": hashlib.sha1(
+            header + payload,
+            usedforsecurity=False,
+        ).hexdigest(),
+        "raw_sha256": hashlib.sha256(payload).hexdigest(),
+        "logical_artifact_sha256": artifact.get(logical_hash_key),
+        "publication_commit_sha1": publication_commit_sha1,
+        "body_free": True,
+        "identity_sha256": "",
+    }
+    identity["identity_sha256"] = _hash_without(
+        identity,
+        "identity_sha256",
+    )
+    return identity
+
+
+def _success_postfetch_valid(
+    evidence: Any,
+    identity: Mapping[str, Any],
+    *,
+    base_commit_sha1: str,
+) -> bool:
+    if (
+        type(evidence) is not dict
+        or set(evidence) != _SUCCESS_POSTFETCH_KEYS
+        or type(identity) is not dict
+        or set(identity) != _SUCCESS_EXTERNAL_IDENTITY_KEYS
+    ):
+        return False
+    artifact = {
+        "path": identity.get("path"),
+        "git_blob_sha1": identity.get("git_blob_sha1"),
+        "raw_sha256": identity.get("raw_sha256"),
+        "logical_artifact_sha256": identity.get(
+            "logical_artifact_sha256"
+        ),
+        "body_free": identity.get("body_free"),
+    }
+    unchanged = evidence.get("unchanged_path_observation")
+    return (
+        identity.get("identity_sha256")
+        == _hash_without(identity, "identity_sha256")
+        and identity.get("repository_full_name") == "MassyuRed/Cocolon"
+        and identity.get("body_free") is True
+        and _SHA1_RE.fullmatch(
+            str(identity.get("publication_commit_sha1", ""))
+        )
+        is not None
+        and evidence.get("repository_full_name") == "MassyuRed/Cocolon"
+        and evidence.get("verification_ref") == "refs/heads/main"
+        and evidence.get("verification_commit_sha1")
+        == identity.get("publication_commit_sha1")
+        and evidence.get("authoritative_ref_read") is True
+        and evidence.get("authoritative_base_tree_read") is True
+        and _SHA1_RE.fullmatch(str(evidence.get("base_tree_sha1", "")))
+        is not None
+        and _SHA1_RE.fullmatch(str(evidence.get("target_tree_sha1", "")))
+        is not None
+        and evidence.get("base_tree_sha1") != "f" * 40
+        and evidence.get("target_tree_sha1") != "f" * 40
+        and evidence.get("base_tree_sha1")
+        != evidence.get("target_tree_sha1")
+        and evidence.get("publication_commit_sha1")
+        == identity.get("publication_commit_sha1")
+        and evidence.get("publication_reachable_from_verification_ref")
+        is True
+        and evidence.get("publication_parent_commit_sha1s")
+        == [base_commit_sha1]
+        and evidence.get("publication_changed_paths")
+        == [identity.get("path")]
+        and evidence.get("target_absent_at_base") is True
+        and evidence.get("semantic_ancestor_verified") is True
+        and evidence.get("target_tree_build_count") == 1
+        and type(evidence.get("target_tree_build_count")) is int
+        and evidence.get("publication_commit_parent_count") == 1
+        and type(evidence.get("publication_commit_parent_count")) is int
+        and evidence.get("requested_expected_old_sha1")
+        == base_commit_sha1
+        and evidence.get("observed_old_sha1") == base_commit_sha1
+        and evidence.get("server_side_expected_old_applied") is True
+        and evidence.get("authoritative_head_read") is True
+        and evidence.get("authoritative_parent_read") is True
+        and evidence.get("authoritative_tree_read") is True
+        and evidence.get("authoritative_recursive_tree_read") is True
+        and evidence.get("changed_path_proof_complete") is True
+        and type(evidence.get("artifact_at_publication")) is dict
+        and set(evidence["artifact_at_publication"])
+        == _SUCCESS_POSTFETCH_ARTIFACT_KEYS
+        and evidence.get("artifact_at_publication") == artifact
+        and type(evidence.get("artifact_at_verification_ref")) is dict
+        and set(evidence["artifact_at_verification_ref"])
+        == _SUCCESS_POSTFETCH_ARTIFACT_KEYS
+        and evidence.get("artifact_at_verification_ref") == artifact
+        and type(unchanged) is dict
+        and set(unchanged) == _SUCCESS_UNCHANGED_OBSERVATION_KEYS
+        and unchanged.get("scope") == "ALL_PATHS_EXCEPT_EXACT1_TARGET"
+        and unchanged.get("mode_type_sha_complete") is True
+        and unchanged.get("mismatches") == []
+        and unchanged.get("observation_sha256")
+        == _hash_without(unchanged, "observation_sha256")
+        and evidence.get("unchanged_path_mismatches") == []
+        and evidence.get("owner_issue_codes") == []
+        and evidence.get("independent_issue_codes") == []
+        and evidence.get("postfetch_state") == "POSTVERIFIED"
+    )
+
+
+def _success_terminal_shape_valid(terminal: Any) -> bool:
+    return (
+        type(terminal) is dict
+        and set(terminal) == RECOVERY_EPOCH002_TERMINAL_RESULT_V2_KEYS
+        and terminal.get("schema_version")
+        == RECOVERY_EPOCH002_TERMINAL_RESULT_V2_SCHEMA
+        and terminal.get("body_free") is True
+        and terminal.get("formal_worker_result_sha256")
+        == _hash_without(terminal, "formal_worker_result_sha256")
+    )
+
+
+def _success_terminal_outcomes_valid(
+    terminal: Mapping[str, Any],
+    locked_sources: Any,
+) -> tuple[bool, bool, bool]:
+    outcomes = terminal.get("outcomes")
+    if type(locked_sources) is not list:
+        return False, False, False
+    source_by_path: dict[str, Mapping[str, Any]] = {}
+    for source in locked_sources:
+        if (
+            type(source) is not dict
+            or set(source) != {"path", "git_blob_sha1", "raw_sha256"}
+            or not isinstance(source.get("path"), str)
+        ):
+            return False, False, False
+        source_by_path[source["path"]] = source
+    if (
+        type(outcomes) is not list
+        or len(outcomes) != len(RECOVERY_EPOCH002_FORMAL_NODE_IDS)
+    ):
+        return False, False, False
+    evidence_valid = True
+    sources_valid = True
+    codes_valid = True
+    for node_id, outcome in zip(
+        RECOVERY_EPOCH002_FORMAL_NODE_IDS,
+        outcomes,
+        strict=True,
+    ):
+        if (
+            type(outcome) is not dict
+            or set(outcome) != RECOVERY_EPOCH002_FORMAL_NODE_OUTCOME_KEYS
+            or outcome.get("test_node_id") != node_id
+            or outcome.get("evidence_sha256")
+            != _hash_without(outcome, "evidence_sha256")
+        ):
+            evidence_valid = False
+            continue
+        source_path = node_id.partition("::")[0]
+        source = source_by_path.get(source_path)
+        if (
+            outcome.get("source_path") != source_path
+            or source is None
+            or outcome.get("source_blob_sha1")
+            != source.get("git_blob_sha1")
+            or outcome.get("source_sha256") != source.get("raw_sha256")
+        ):
+            sources_valid = False
+        expected = RECOVERY_EPOCH002_NEGATIVE_CLOSED_CODE_BY_NODE.get(
+            node_id
+        )
+        if outcome.get("expected_closed_code") != expected:
+            codes_valid = False
+    if terminal.get("formal_node_outcome_evidence_sha256") != artifact_sha256(
+        outcomes
+    ):
+        evidence_valid = False
+    return evidence_valid, sources_valid, codes_valid
+
+
+def _validate_recovery_epoch002_success_terminal_state_impl(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Validate observed exact134 success and its exact1 terminal receipt."""
+
+    if type(state) is not dict:
+        return ("TERMINAL_OR_ACCEPTANCE_PUBLICATION_REJECTED",)
+    terminal = state.get("terminal_result")
+    if not _success_terminal_shape_valid(terminal):
+        return ("TERMINAL_OR_ACCEPTANCE_PUBLICATION_REJECTED",)
+    if terminal.get("collection_node_ids") != list(
+        RECOVERY_EPOCH002_FORMAL_NODE_IDS
+    ):
+        return ("TERMINAL_COLLECTION_ORDER_INVALID",)
+    if (
+        type(terminal.get("executed_node_ids")) is list
+        and len(terminal["executed_node_ids"])
+        == len(RECOVERY_EPOCH002_FORMAL_NODE_IDS)
+        and terminal.get("executed_node_ids")
+        != list(RECOVERY_EPOCH002_FORMAL_NODE_IDS)
+    ):
+        return ("TERMINAL_EXECUTION_ORDER_INVALID",)
+    evidence_valid, sources_valid, codes_valid = (
+        _success_terminal_outcomes_valid(
+            terminal,
+            state.get("locked_source_manifest"),
+        )
+    )
+    if not evidence_valid:
+        return ("TERMINAL_OUTCOME_EVIDENCE_INVALID",)
+    if not sources_valid:
+        return ("TERMINAL_SOURCE_IDENTITY_MISMATCH",)
+    if (
+        state.get("locked_formal_node_ids")
+        != list(RECOVERY_EPOCH002_FORMAL_NODE_IDS)
+        or state.get("locked_negative_code_by_node")
+        != RECOVERY_EPOCH002_NEGATIVE_CLOSED_CODE_BY_NODE
+        or not codes_valid
+    ):
+        return ("TERMINAL_EXPECTED_CLOSED_CODE_MISMATCH",)
+
+    counts = terminal.get("counts")
+    states = terminal.get("states")
+    outcomes = terminal["outcomes"]
+    if (
+        type(counts) is not dict
+        or set(counts) != RECOVERY_EPOCH002_FORMAL_RESULT_COUNTS_KEYS
+        or any(type(value) is not int for value in counts.values())
+        or type(states) is not dict
+        or set(states) != set(RECOVERY_EPOCH002_FORMAL_NODE_IDS)
+        or any(
+            states.get(outcome["test_node_id"]) != outcome.get("result")
+            for outcome in outcomes
+        )
+        or counts.get("collected") != len(terminal["collection_node_ids"])
+        or counts.get("executed") != len(terminal["executed_node_ids"])
+        or counts.get("passed")
+        != sum(outcome.get("result") == "PASSED" for outcome in outcomes)
+        or counts.get("failed")
+        != sum(outcome.get("result") == "FAILED" for outcome in outcomes)
+        or counts.get("skipped")
+        != sum(outcome.get("result") == "SKIPPED" for outcome in outcomes)
+        or counts.get("xfailed")
+        != sum(outcome.get("result") == "XFAILED" for outcome in outcomes)
+        or counts.get("xpassed")
+        != sum(outcome.get("result") == "XPASSED" for outcome in outcomes)
+        or counts.get("errors") != 0
+        or counts.get("deselected") != 0
+        or counts.get("collection_errors")
+        != terminal.get("collection_errors")
+        or len(terminal["executed_node_ids"]) != len(states)
+    ):
+        return ("TERMINAL_COUNTS_STATE_PARITY_INVALID",)
+
+    retry = state.get("retry_history")
+    parity = state.get("parity_bindings")
+    chain = state.get("checkpoint_chain")
+    if (
+        state.get("owner_issue_codes") != []
+        or state.get("independent_issue_codes") != []
+        or validate_recovery_epoch002_checkpoint_chain(
+            chain,
+            allow_prefix=False,
+        )
+        != ()
+        or not chain
+        or terminal.get("terminal_checkpoint_sha256")
+        != chain[-1].get("checkpoint_sha256")
+        or any(outcome.get("result") != "PASSED" for outcome in outcomes)
+        or terminal.get("collection_errors") != 0
+        or terminal.get("exit_class") != "EXITED"
+        or type(terminal.get("exit_code")) is not int
+        or terminal.get("exit_code") != 0
+        or terminal.get("signal_number") is not None
+        or terminal.get("timed_out") is not False
+        or terminal.get("formal_exact134_invocation_count") != 1
+        or type(terminal.get("formal_exact134_invocation_count")) is not int
+        or type(retry) is not dict
+        or set(retry) != RECOVERY_EPOCH002_SUCCESS_RETRY_HISTORY_KEYS
+        or type(retry.get("successful_reservation_ordinal")) is not int
+        or retry.get("successful_reservation_ordinal") < 1
+        or type(retry.get("consumed_attempt_ids")) is not list
+        or len(retry.get("consumed_attempt_ids"))
+        != retry.get("successful_reservation_ordinal") - 1
+        or len(set(retry.get("consumed_attempt_ids")))
+        != len(retry.get("consumed_attempt_ids"))
+        or retry.get("successful_attempt_id") != terminal.get("attempt_id")
+        or retry.get("successful_attempt_id")
+        in retry.get("consumed_attempt_ids")
+        or type(parity) is not dict
+        or set(parity) != RECOVERY_EPOCH002_SUCCESS_PARITY_BINDING_KEYS
+        or parity.get("source_closure_sha256")
+        != terminal.get("source_closure_sha256")
+        or parity.get("bootstrap_closure_sha256")
+        != terminal.get("bootstrap_closure_sha256")
+        or any(
+            parity.get(key) != terminal.get("candidate_version_id")
+            for key in (
+                "event1_candidate_version_id",
+                "readiness_candidate_version_id",
+                "reservation_candidate_version_id",
+            )
+        )
+        or parity.get("python_runtime_identity_sha256")
+        != terminal.get("python_runtime_identity_sha256")
+        or parity.get("pytest_distribution_identity_sha256")
+        != terminal.get("pytest_distribution_identity_sha256")
+    ):
+        return ("TERMINAL_SUCCESS_PREDICATE_NOT_PROVED",)
+
+    publication = state.get("terminal_publication")
+    if (
+        type(publication) is not dict
+        or set(publication) != _SUCCESS_EXACT1_PUBLICATION_KEYS
+        or publication.get("artifact") != terminal
+        or type(publication.get("identity")) is not dict
+        or publication["identity"].get("path")
+        not in publication.get("changed_paths", ())
+        or publication.get("changed_paths")
+        != [publication["identity"].get("path")]
+        or publication.get("parent_commit_sha1s")
+        != [publication.get("expected_old_sha1")]
+        or publication.get("observed_old_sha1")
+        != publication.get("expected_old_sha1")
+        or publication.get("postfetch_state") != "POSTVERIFIED"
+    ):
+        return (
+            "RESULT_DURABLY_PRESENT_TERMINAL_PUBLICATION_PENDING_STOP",
+        )
+    expected_identity = _success_raw_identity(
+        terminal,
+        path=publication["identity"].get("path", ""),
+        role="FORMAL_WORKER_TERMINAL_RESULT",
+        logical_hash_key="formal_worker_result_sha256",
+        publication_commit_sha1=publication["identity"].get(
+            "publication_commit_sha1",
+            "",
+        ),
+    )
+    if (
+        expected_identity is None
+        or publication["identity"] != expected_identity
+        or not _success_postfetch_valid(
+            publication.get("postfetch_evidence"),
+            publication["identity"],
+            base_commit_sha1=publication.get("expected_old_sha1"),
+        )
+    ):
+        return (
+            "RESULT_DURABLY_PRESENT_TERMINAL_PUBLICATION_PENDING_STOP",
+        )
+    return ()
+
+
+def validate_recovery_epoch002_success_terminal_state(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Fail closed on malformed exact134 success-terminal state."""
+
+    try:
+        if (
+            type(state) is not dict
+            or set(state) != RECOVERY_EPOCH002_SUCCESS_TERMINAL_STATE_KEYS
+            or _contains_forbidden_key(state)
+        ):
+            return ("TERMINAL_OR_ACCEPTANCE_PUBLICATION_REJECTED",)
+        return _validate_recovery_epoch002_success_terminal_state_impl(state)
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("TERMINAL_OR_ACCEPTANCE_PUBLICATION_REJECTED",)
+
+
 def _canonical_json_bytes(value: Mapping[str, Any]) -> bytes:
     if _contains_forbidden_key(value):
         raise ValueError("body-free evidence contains a forbidden key")
@@ -846,6 +1388,13 @@ __all__ = [
     "RECOVERY_EPOCH002_TERMINAL_RESULT_KEYS",
     "RECOVERY_EPOCH002_DIAGNOSTIC_KEYS",
     "RECOVERY_EPOCH002_UNKNOWN_DISPOSITION_KEYS",
+    "RECOVERY_EPOCH002_TERMINAL_RESULT_V2_SCHEMA",
+    "RECOVERY_EPOCH002_TERMINAL_RESULT_V2_KEYS",
+    "RECOVERY_EPOCH002_FORMAL_NODE_OUTCOME_KEYS",
+    "RECOVERY_EPOCH002_FORMAL_RESULT_COUNTS_KEYS",
+    "RECOVERY_EPOCH002_FORMAL_NODE_IDS",
+    "RECOVERY_EPOCH002_NEGATIVE_CLOSED_CODE_BY_NODE",
+    "RECOVERY_EPOCH002_NEGATIVE_CLOSED_CODES",
     "RECOVERY_EPOCH002_FORMAL_STAGE_GRAPH",
     "RECOVERY_EPOCH002_FORBIDDEN_DIAGNOSTIC_KEYS",
     "validate_recovery_epoch002_checkpoint_chain",
@@ -854,5 +1403,6 @@ __all__ = [
     "validate_recovery_epoch002_diagnostic",
     "validate_recovery_epoch002_unknown_disposition",
     "validate_recovery_epoch002_attempt_state",
+    "validate_recovery_epoch002_success_terminal_state",
     "write_recovery_epoch002_body_free_json_once",
 ]

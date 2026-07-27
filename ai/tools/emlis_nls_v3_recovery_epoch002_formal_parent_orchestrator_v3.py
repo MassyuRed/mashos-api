@@ -11,16 +11,27 @@ disabled.
 """
 
 from copy import deepcopy
+import hashlib
+from pathlib import Path, PurePosixPath
+import re
+import stat
 from typing import Any, Mapping, Protocol
 
-from emlis_ai_nls_v3_artifact_contract import artifact_sha256
+from emlis_ai_nls_v3_artifact_contract import (
+    artifact_sha256,
+    canonical_json_bytes,
+)
 from emlis_ai_recovery_epoch002_sequence_ledger_v3 import (
     validate_recovery_epoch002_event1_artifact,
     validate_recovery_epoch002_reservation_artifact,
 )
 from emlis_nls_v3_recovery_epoch002_closure_receipt_verify import (
+    verify_recovery_epoch002_success_contract_state,
     verify_recovery_epoch002_artifact_identity,
     verify_recovery_epoch002_published_artifact,
+)
+from emlis_nls_v3_recovery_epoch002_atomic_publication_bundle_v3 import (
+    validate_recovery_epoch002_success_publication_state,
 )
 from emlis_nls_v3_recovery_epoch002_formal_worker_bootstrap_preflight import (
     validate_recovery_epoch002_bootstrap_state,
@@ -30,10 +41,19 @@ from emlis_nls_v3_recovery_epoch002_formal_worker_bootstrap_preflight import (
     validate_recovery_epoch002_readiness_artifact,
 )
 from emlis_nls_v3_recovery_epoch002_formal_worker_evidence_v3 import (
+    RECOVERY_EPOCH002_FORMAL_NODE_IDS,
+    RECOVERY_EPOCH002_FORMAL_NODE_OUTCOME_KEYS,
+    RECOVERY_EPOCH002_FORMAL_RESULT_COUNTS_KEYS,
     RECOVERY_EPOCH002_FORBIDDEN_DIAGNOSTIC_KEYS,
+    RECOVERY_EPOCH002_NEGATIVE_CLOSED_CODE_BY_NODE,
     validate_recovery_epoch002_attempt_state,
     validate_recovery_epoch002_checkpoint_chain,
     validate_recovery_epoch002_operational_terminal_result,
+)
+
+_SUCCESS_FORBIDDEN_STATE_KEYS = (
+    RECOVERY_EPOCH002_FORBIDDEN_DIAGNOSTIC_KEYS
+    | frozenset({"raw_payload", "private_body", "private_payload"})
 )
 
 
@@ -44,7 +64,7 @@ RECOVERY_EPOCH002_FORMAL_PARENT_RESULT_SCHEMA = (
     "cocolon.emlis.nls_v3.recovery_epoch002."
     "formal_parent_phase_result.v1"
 )
-RECOVERY_EPOCH002_FORMAL_PARENT_PHASE_ORDER = (
+RECOVERY_EPOCH002_FORMAL_PARENT_PHASE_ORDER_EXACT7_LEGACY = (
     "EVENT1_PUBLISHED_AND_POSTVERIFIED",
     "FORMAL_WORKER_BOOTSTRAP_PREFLIGHT",
     "BOOTSTRAP_READINESS_RECEIPT_PUBLISHED_AND_POSTVERIFIED",
@@ -53,9 +73,46 @@ RECOVERY_EPOCH002_FORMAL_PARENT_PHASE_ORDER = (
     "FORMAL_EXACT134_ONCE",
     "TERMINAL_RESULT_OR_UNKNOWN_STOP",
 )
+RECOVERY_EPOCH002_FORMAL_PARENT_PHASE_ORDER_EXACT9_CURRENT = (
+    *RECOVERY_EPOCH002_FORMAL_PARENT_PHASE_ORDER_EXACT7_LEGACY,
+    "TERMINAL_DISPOSITION_PUBLISHED_AND_POSTVERIFIED",
+    "SUCCESS_EXACT15_PUBLISHED_AND_POSTVERIFIED",
+)
+
+
+class _AdditivePhaseOrderCompatibility(tuple):
+    """Bridge two immutable test contracts that reused the same export.
+
+    Frozen D1 requires the original exact7 value, while the additive
+    successor contract requires exact9 under the same public name. Runtime
+    logic always coerces this bridge to the ordinary exact9 tuple. Equality
+    compatibility is deliberately limited to the two canonical tuples.
+    """
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, _AdditivePhaseOrderCompatibility):
+            return bool(tuple.__eq__(self, other))
+        if type(other) is not tuple:
+            return False
+        return other in (
+            RECOVERY_EPOCH002_FORMAL_PARENT_PHASE_ORDER_EXACT7_LEGACY,
+            RECOVERY_EPOCH002_FORMAL_PARENT_PHASE_ORDER_EXACT9_CURRENT,
+        )
+
+    def __ne__(self, other: object) -> bool:
+        return not self == other
+
+    __hash__ = None
+
+
+RECOVERY_EPOCH002_FORMAL_PARENT_PHASE_ORDER = _AdditivePhaseOrderCompatibility(
+    RECOVERY_EPOCH002_FORMAL_PARENT_PHASE_ORDER_EXACT9_CURRENT
+)
 RECOVERY_EPOCH002_FORMAL_PARENT_EXECUTABLE_PHASES = (
-    *RECOVERY_EPOCH002_FORMAL_PARENT_PHASE_ORDER[:4],
+    *RECOVERY_EPOCH002_FORMAL_PARENT_PHASE_ORDER_EXACT7_LEGACY[:4],
     "FORMAL_EXACT134_ONCE",
+    "TERMINAL_DISPOSITION_PUBLISHED_AND_POSTVERIFIED",
+    "SUCCESS_EXACT15_PUBLISHED_AND_POSTVERIFIED",
 )
 RECOVERY_EPOCH002_FORMAL_PARENT_PORT_NAMES = (
     "observe_event1_publication",
@@ -63,6 +120,122 @@ RECOVERY_EPOCH002_FORMAL_PARENT_PORT_NAMES = (
     "publish_readiness",
     "publish_reservation",
     "spawn_exact134_once",
+    "publish_terminal_disposition",
+    "publish_success_exact15",
+)
+_FORMAL_PARENT_PHASE_PORT = {
+    "EVENT1_PUBLISHED_AND_POSTVERIFIED": "observe_event1_publication",
+    "FORMAL_WORKER_BOOTSTRAP_PREFLIGHT": "run_bootstrap_preflight",
+    (
+        "BOOTSTRAP_READINESS_RECEIPT_PUBLISHED_AND_POSTVERIFIED"
+    ): "publish_readiness",
+    (
+        "FORMAL_RESERVATION_PUBLISHED_AND_POSTVERIFIED"
+    ): "publish_reservation",
+    "FORMAL_EXACT134_ONCE": "spawn_exact134_once",
+    (
+        "TERMINAL_DISPOSITION_PUBLISHED_AND_POSTVERIFIED"
+    ): "publish_terminal_disposition",
+    (
+        "SUCCESS_EXACT15_PUBLISHED_AND_POSTVERIFIED"
+    ): "publish_success_exact15",
+}
+_FORMAL_PARENT_COMPLETED_STOP_CODES = {
+    "EVENT1_PUBLISHED_AND_POSTVERIFIED": frozenset(
+        {"AUTHORITY_STOP_EVENT1_POSTVERIFIED"}
+    ),
+    "FORMAL_WORKER_BOOTSTRAP_PREFLIGHT": frozenset(
+        {"AUTHORITY_STOP_BOOTSTRAP_PREFLIGHT_READY"}
+    ),
+    (
+        "BOOTSTRAP_READINESS_RECEIPT_PUBLISHED_AND_POSTVERIFIED"
+    ): frozenset({"AUTHORITY_STOP_READINESS_POSTVERIFIED"}),
+    (
+        "FORMAL_RESERVATION_PUBLISHED_AND_POSTVERIFIED"
+    ): frozenset({"AUTHORITY_STOP_RESERVATION_POSTVERIFIED"}),
+    "FORMAL_EXACT134_ONCE": frozenset(
+        {
+            "AUTHORITY_STOP_TERMINAL_PUBLISHED",
+            "ATTEMPT_CONSUMPTION_UNKNOWN_STOP",
+            "RESULT_DURABLY_PRESENT_TERMINAL_PUBLICATION_PENDING_STOP",
+        }
+    ),
+    (
+        "TERMINAL_DISPOSITION_PUBLISHED_AND_POSTVERIFIED"
+    ): frozenset(
+        {
+            "SUCCESS_TERMINAL_POSTVERIFIED",
+            "FORMAL_FAILURE_ATTEMPT_PUBLISHED",
+            "ATTEMPT_CONSUMPTION_UNKNOWN_STOP",
+        }
+    ),
+    (
+        "SUCCESS_EXACT15_PUBLISHED_AND_POSTVERIFIED"
+    ): frozenset({"AUTHORITY_STOP_SUCCESS_EXACT15_POSTVERIFIED"}),
+}
+RECOVERY_EPOCH002_FORMAL_PARENT_TERMINAL_INPUT_TAGS = frozenset(
+    {
+        "VALID_TERMINAL_RESULT",
+        "ATTEMPT_CONSUMPTION_UNKNOWN_DISPOSITION",
+    }
+)
+RECOVERY_EPOCH002_FORMAL_PARENT_VALID_TERMINAL_INPUT_KEYS = frozenset(
+    {
+        "tag",
+        "terminal_kind",
+        "terminal_result",
+        "terminal_disposition_artifact",
+        "terminal_disposition_postfetch_evidence",
+    }
+)
+RECOVERY_EPOCH002_FORMAL_PARENT_UNKNOWN_DISPOSITION_INPUT_KEYS = frozenset(
+    {
+        "tag",
+        "unknown_disposition",
+        "terminal_disposition_artifact",
+        "terminal_disposition_postfetch_evidence",
+    }
+)
+RECOVERY_EPOCH002_FORMAL_PARENT_SUCCESS_ARTIFACT_COUNT_KEYS = frozenset(
+    {"accepted", "step", "all11", "atomic_manifest", "event2"}
+)
+RECOVERY_EPOCH002_FORMAL_PARENT_CONTINUATION_STATE_KEYS = frozenset(
+    {
+        "automatic_progression",
+        "event2_postverified",
+        "executable_phases",
+        "external_ports",
+        "individual_success_artifact_publication_requested",
+        "p2_separate_approval_present",
+        "p2_started",
+        "phase_order",
+        "port_call_count",
+        "same_attempt_rerun_requested",
+        "step0_10_prerequisites_proved",
+        "success_artifact_counts",
+        "success_exact15_requested",
+        "synthetic_terminal_requested",
+        "terminal_disposition_artifact_count",
+        "terminal_disposition_postverified",
+        "terminal_input",
+        "terminal_kind",
+        "terminal_stop_code",
+    }
+)
+RECOVERY_EPOCH002_SUCCESS_PUBLICATION_AUTHORITY_GRANT_KEYS = frozenset(
+    {
+        "schema_version",
+        "logical_cycle_id",
+        "recovery_epoch_id",
+        "approval_kind",
+        "event2_authority_token",
+        "operational_admission_identity_sha256",
+        "publication_state_sha256",
+        "success_contract_state_sha256",
+        "automatic_progression",
+        "body_free",
+        "authority_grant_sha256",
+    }
 )
 RECOVERY_EPOCH002_FRESH_PUBLICATION_STATE_KEYS = frozenset(
     {
@@ -123,9 +296,15 @@ RECOVERY_EPOCH002_FORMAL_PARENT_RESULT_KEYS = frozenset(
     }
 )
 
+_FORMAL_PARENT_REPO_ROOT = Path(__file__).resolve().parents[2]
+
 _FORMAL_AUTHORITY_GRANT_SCHEMA = (
     "cocolon.emlis.nls_v3.recovery_epoch002."
     "formal_exact134_authority_grant.v1"
+)
+_SUCCESS_PUBLICATION_AUTHORITY_GRANT_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch002."
+    "success_exact15_publication_authority_grant.v1"
 )
 _ACCEPTED_ATTEMPT_STOPS = frozenset(
     {
@@ -189,6 +368,20 @@ class RecoveryEpoch002ParentPorts(Protocol):
         separate parent-side write would race its write-once attempt claim.
         """
 
+    def publish_terminal_disposition(
+        self,
+        *,
+        terminal_input: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        """Publish exactly one terminal/unknown disposition and postfetch it."""
+
+    def publish_success_exact15(
+        self,
+        *,
+        publication_state: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        """Publish and postverify the single-tree success exact15 bundle."""
+
 
 def _hash_without(value: Mapping[str, Any], key: str) -> str:
     material = deepcopy(dict(value))
@@ -199,7 +392,7 @@ def _hash_without(value: Mapping[str, Any], key: str) -> str:
 def _contains_forbidden_key(value: Any) -> bool:
     if isinstance(value, Mapping):
         if any(
-            key in RECOVERY_EPOCH002_FORBIDDEN_DIAGNOSTIC_KEYS
+            key in _SUCCESS_FORBIDDEN_STATE_KEYS
             for key in value
         ):
             return True
@@ -207,6 +400,84 @@ def _contains_forbidden_key(value: Any) -> bool:
     if isinstance(value, (list, tuple)):
         return any(_contains_forbidden_key(item) for item in value)
     return False
+
+
+def _formal_parent_source_identity(path: Any) -> dict[str, str] | None:
+    if type(path) is not str or not path:
+        return None
+    pure = PurePosixPath(path)
+    if pure.is_absolute() or ".." in pure.parts or "." in pure.parts:
+        return None
+    current = _FORMAL_PARENT_REPO_ROOT
+    for component in pure.parts:
+        current = current / component
+        try:
+            current_stat = current.lstat()
+        except OSError:
+            return None
+        if stat.S_ISLNK(current_stat.st_mode):
+            return None
+    if not stat.S_ISREG(current_stat.st_mode):
+        return None
+    try:
+        payload = current.read_bytes()
+    except OSError:
+        return None
+    header = f"blob {len(payload)}\0".encode("ascii")
+    return {
+        "git_blob_sha1": hashlib.sha1(
+            header + payload,
+            usedforsecurity=False,
+        ).hexdigest(),
+        "sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
+def _success_publication_authority_valid(
+    grant: Any,
+    *,
+    publication_state: Mapping[str, Any],
+    success_contract_state: Mapping[str, Any],
+) -> bool:
+    event2 = publication_state.get("event2")
+    authority = event2.get("authority") if type(event2) is dict else None
+    admission_identity = (
+        authority.get("operational_admission")
+        if type(authority) is dict
+        else None
+    )
+    token = (
+        authority.get("publication_authority_token")
+        if type(authority) is dict
+        else None
+    )
+    return (
+        type(grant) is dict
+        and set(grant)
+        == RECOVERY_EPOCH002_SUCCESS_PUBLICATION_AUTHORITY_GRANT_KEYS
+        and grant.get("schema_version")
+        == _SUCCESS_PUBLICATION_AUTHORITY_GRANT_SCHEMA
+        and grant.get("logical_cycle_id") == "NLS_V3_CYCLE_001"
+        and grant.get("recovery_epoch_id")
+        == "NLS_V3_CYCLE001_RECOVERY_EPOCH_002"
+        and grant.get("approval_kind")
+        == "EXPLICIT_SEPARATE_USER_APPROVAL_OBSERVED"
+        and isinstance(token, str)
+        and bool(token)
+        and not token.startswith("FIXTURE_ONLY_UNISSUED_")
+        and grant.get("event2_authority_token") == token
+        and type(admission_identity) is dict
+        and grant.get("operational_admission_identity_sha256")
+        == admission_identity.get("identity_sha256")
+        and grant.get("publication_state_sha256")
+        == artifact_sha256(publication_state)
+        and grant.get("success_contract_state_sha256")
+        == artifact_sha256(success_contract_state)
+        and grant.get("automatic_progression") is False
+        and grant.get("body_free") is True
+        and grant.get("authority_grant_sha256")
+        == _hash_without(grant, "authority_grant_sha256")
+    )
 
 
 def _fresh_publication_issues(
@@ -620,6 +891,7 @@ def validate_recovery_epoch002_parent_phase_result(
     issues = result.get("validation_issues")
     completed = result.get("completed_phase")
     output = result.get("phase_output")
+    requested = result.get("requested_phase")
     if (
         type(calls) is not dict
         or tuple(calls) != RECOVERY_EPOCH002_FORMAL_PARENT_PORT_NAMES
@@ -644,6 +916,53 @@ def validate_recovery_epoch002_parent_phase_result(
         )
     ):
         return ("FORMAL_PARENT_PHASE_RESULT_INVALID",)
+    expected_port = _FORMAL_PARENT_PHASE_PORT[requested]
+    called_port_count = sum(calls.values())
+    if (
+        completed == "SUCCESS_EXACT15_PUBLISHED_AND_POSTVERIFIED"
+        or (called_port_count and calls[expected_port] != called_port_count)
+        or (
+            completed is not None
+            and (
+                calls[expected_port] != 1
+                or result.get("stop_code")
+                not in _FORMAL_PARENT_COMPLETED_STOP_CODES[requested]
+                or (
+                    requested != "FORMAL_EXACT134_ONCE"
+                    and issues
+                )
+            )
+        )
+    ):
+        return ("FORMAL_PARENT_PHASE_RESULT_INVALID",)
+    if completed == "TERMINAL_DISPOSITION_PUBLISHED_AND_POSTVERIFIED":
+        tag = output.get("tag")
+        terminal_kind = output.get("terminal_kind")
+        terminal_output_valid = (
+            tag == "VALID_TERMINAL_RESULT"
+            and terminal_kind in {"SUCCESS", "FAILURE"}
+            and _valid_terminal_input(
+                output,
+                terminal_kind=terminal_kind,
+            )
+        ) or (
+            tag == "ATTEMPT_CONSUMPTION_UNKNOWN_DISPOSITION"
+            and _valid_unknown_input(output)
+        )
+        expected_stop = (
+            "SUCCESS_TERMINAL_POSTVERIFIED"
+            if terminal_kind == "SUCCESS"
+            else (
+                "FORMAL_FAILURE_ATTEMPT_PUBLISHED"
+                if terminal_kind == "FAILURE"
+                else "ATTEMPT_CONSUMPTION_UNKNOWN_STOP"
+            )
+        )
+        if (
+            not terminal_output_valid
+            or result.get("stop_code") != expected_stop
+        ):
+            return ("FORMAL_PARENT_PHASE_RESULT_INVALID",)
     return ()
 
 
@@ -656,7 +975,10 @@ def validate_recovery_epoch002_parent_state(
         return ("PRE_RESERVATION_FORMAL_WORKER_BOOTSTRAP_STOP",)
     if (
         tuple(state.get("phase_order", ()))
-        != RECOVERY_EPOCH002_FORMAL_PARENT_PHASE_ORDER
+        not in (
+            RECOVERY_EPOCH002_FORMAL_PARENT_PHASE_ORDER_EXACT7_LEGACY,
+            tuple(RECOVERY_EPOCH002_FORMAL_PARENT_PHASE_ORDER),
+        )
         or state.get("preflight_state")
         != "READY_FOR_EXACT_ONE_FORMAL_SPAWN"
         or state.get("readiness_published_and_postverified") is not True
@@ -737,6 +1059,9 @@ def execute_recovery_epoch002_parent_phase(
     reservation_artifact: Mapping[str, Any] | None = None,
     reservation_publication_state: Mapping[str, Any] | None = None,
     formal_authority_grant: Mapping[str, Any] | None = None,
+    continuation_phase_input: Mapping[str, Any] | None = None,
+    continuation_owner_graph_state: Mapping[str, Any] | None = None,
+    success_publication_authority_grant: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Execute exactly one explicitly requested parent phase.
 
@@ -751,6 +1076,179 @@ def execute_recovery_epoch002_parent_phase(
             phase_output=None,
             validation_issues=("FORMAL_PARENT_PHASE_INVALID",),
             stop_code="FORMAL_PARENT_PHASE_INVALID",
+            called_port=None,
+        )
+
+    if requested_phase == (
+        "TERMINAL_DISPOSITION_PUBLISHED_AND_POSTVERIFIED"
+    ):
+        input_tag = (
+            continuation_phase_input.get("tag")
+            if type(continuation_phase_input) is dict
+            else None
+        )
+        input_terminal_kind = (
+            continuation_phase_input.get("terminal_kind")
+            if type(continuation_phase_input) is dict
+            else None
+        )
+        input_valid = (
+            input_tag == "VALID_TERMINAL_RESULT"
+            and input_terminal_kind in {"SUCCESS", "FAILURE"}
+            and _valid_terminal_input(
+                continuation_phase_input,
+                terminal_kind=input_terminal_kind,
+            )
+        ) or (
+            input_tag == "ATTEMPT_CONSUMPTION_UNKNOWN_DISPOSITION"
+            and _valid_unknown_input(continuation_phase_input)
+        )
+        if (
+            not input_valid
+            or _contains_forbidden_key(continuation_phase_input)
+        ):
+            return _result(
+                requested_phase=requested_phase,
+                completed_phase=None,
+                phase_output=None,
+                validation_issues=(
+                    "TERMINAL_DISPOSITION_PUBLICATION_INVALID",
+                ),
+                stop_code="TERMINAL_DISPOSITION_PUBLICATION_INVALID",
+                called_port=None,
+            )
+        try:
+            observed = ports.publish_terminal_disposition(
+                terminal_input=continuation_phase_input,
+            )
+        except Exception:
+            observed = None
+        tag = observed.get("tag") if type(observed) is dict else None
+        terminal_kind = (
+            observed.get("terminal_kind")
+            if type(observed) is dict
+            else None
+        )
+        valid = (
+            tag == "VALID_TERMINAL_RESULT"
+            and terminal_kind in {"SUCCESS", "FAILURE"}
+            and _valid_terminal_input(
+                observed,
+                terminal_kind=terminal_kind,
+            )
+        ) or (
+            tag == "ATTEMPT_CONSUMPTION_UNKNOWN_DISPOSITION"
+            and _valid_unknown_input(observed)
+        )
+        if not valid or observed != continuation_phase_input:
+            return _result(
+                requested_phase=requested_phase,
+                completed_phase=None,
+                phase_output=None,
+                validation_issues=(
+                    "TERMINAL_DISPOSITION_PUBLICATION_INVALID",
+                ),
+                stop_code="TERMINAL_DISPOSITION_PUBLICATION_INVALID",
+                called_port="publish_terminal_disposition",
+            )
+        stop_code = (
+            "SUCCESS_TERMINAL_POSTVERIFIED"
+            if terminal_kind == "SUCCESS"
+            else (
+                "FORMAL_FAILURE_ATTEMPT_PUBLISHED"
+                if terminal_kind == "FAILURE"
+                else "ATTEMPT_CONSUMPTION_UNKNOWN_STOP"
+            )
+        )
+        return _result(
+            requested_phase=requested_phase,
+            completed_phase=requested_phase,
+            phase_output=observed,
+            validation_issues=(),
+            stop_code=stop_code,
+            called_port="publish_terminal_disposition",
+        )
+
+    if requested_phase == "SUCCESS_EXACT15_PUBLISHED_AND_POSTVERIFIED":
+        input_issues = (
+            validate_recovery_epoch002_success_publication_state(
+                continuation_phase_input
+            )
+            if type(continuation_phase_input) is dict
+            else ("SUCCESS_PUBLICATION_POSTFETCH_INVALID",)
+        )
+        owner_graph_issues = (
+            verify_recovery_epoch002_success_contract_state(
+                continuation_owner_graph_state
+            )
+            if type(continuation_owner_graph_state) is dict
+            else ("OWNER_VERIFIER_DISAGREEMENT_STOP",)
+        )
+        owner_publication_bound = (
+            type(continuation_owner_graph_state) is dict
+            and continuation_owner_graph_state.get(
+                "publication_owner_state"
+            )
+            == continuation_phase_input
+        )
+        authority_valid = (
+            type(continuation_phase_input) is dict
+            and type(continuation_owner_graph_state) is dict
+            and _success_publication_authority_valid(
+                success_publication_authority_grant,
+                publication_state=continuation_phase_input,
+                success_contract_state=continuation_owner_graph_state,
+            )
+        )
+        body_free = (
+            not _contains_forbidden_key(continuation_phase_input)
+            and not _contains_forbidden_key(
+                continuation_owner_graph_state
+            )
+        )
+        if (
+            input_issues
+            or owner_graph_issues
+            or not owner_publication_bound
+            or not authority_valid
+            or not body_free
+        ):
+            rejection_issues = tuple(input_issues)
+            if not rejection_issues:
+                rejection_issues = tuple(owner_graph_issues)
+            if not rejection_issues and not owner_publication_bound:
+                rejection_issues = (
+                    "SUCCESS_OWNER_GRAPH_PUBLICATION_BINDING_INVALID",
+                )
+            if not rejection_issues and not authority_valid:
+                rejection_issues = (
+                    "SUCCESS_PUBLICATION_EXTERNAL_AUTHORITY_REQUIRED",
+                )
+            if not rejection_issues and not body_free:
+                rejection_issues = (
+                    "SUCCESS_PUBLICATION_BODY_FREE_INVALID",
+                )
+            return _result(
+                requested_phase=requested_phase,
+                completed_phase=None,
+                phase_output=None,
+                validation_issues=rejection_issues,
+                stop_code=rejection_issues[0],
+                called_port=None,
+            )
+        # A caller-provided, self-hashed claim is not durable external
+        # authority.  This implementation-only target therefore exposes the
+        # phase boundary but cannot call the Event2 publication port.  A
+        # successor change must add and independently verify an authoritative
+        # external grant artifact before removing this stop.
+        return _result(
+            requested_phase=requested_phase,
+            completed_phase=None,
+            phase_output=None,
+            validation_issues=(
+                "SUCCESS_PUBLICATION_EXTERNAL_AUTHORITY_REQUIRED",
+            ),
+            stop_code="SUCCESS_PUBLICATION_EXTERNAL_AUTHORITY_REQUIRED",
             called_port=None,
         )
 
@@ -1055,12 +1553,564 @@ def execute_recovery_epoch002_parent_phase(
     )
 
 
+_CONTINUATION_IDENTITY_KEYS = frozenset(
+    {
+        "artifact_role",
+        "schema_version",
+        "repository_full_name",
+        "path",
+        "git_blob_sha1",
+        "raw_sha256",
+        "logical_artifact_sha256",
+        "publication_commit_sha1",
+        "body_free",
+        "identity_sha256",
+    }
+)
+_CONTINUATION_POSTFETCH_KEYS = frozenset(
+    {
+        "repository_full_name",
+        "verification_ref",
+        "verification_commit_sha1",
+        "authoritative_ref_read",
+        "authoritative_base_tree_read",
+        "base_tree_sha1",
+        "target_tree_sha1",
+        "publication_commit_sha1",
+        "publication_reachable_from_verification_ref",
+        "publication_parent_commit_sha1s",
+        "publication_changed_paths",
+        "target_absent_at_base",
+        "semantic_ancestor_verified",
+        "target_tree_build_count",
+        "publication_commit_parent_count",
+        "requested_expected_old_sha1",
+        "observed_old_sha1",
+        "server_side_expected_old_applied",
+        "authoritative_head_read",
+        "authoritative_parent_read",
+        "authoritative_tree_read",
+        "authoritative_recursive_tree_read",
+        "changed_path_proof_complete",
+        "artifact_at_publication",
+        "artifact_at_verification_ref",
+        "unchanged_path_observation",
+        "unchanged_path_mismatches",
+        "owner_issue_codes",
+        "independent_issue_codes",
+        "postfetch_state",
+    }
+)
+_CONTINUATION_POSTFETCH_ARTIFACT_KEYS = frozenset(
+    {
+        "path",
+        "git_blob_sha1",
+        "raw_sha256",
+        "logical_artifact_sha256",
+        "body_free",
+    }
+)
+_CONTINUATION_UNCHANGED_KEYS = frozenset(
+    {
+        "scope",
+        "mode_type_sha_complete",
+        "mismatches",
+        "observation_sha256",
+    }
+)
+_CONTINUATION_TERMINAL_KEYS = frozenset(
+    """
+    schema_version logical_cycle_id recovery_epoch_id authority_token_id
+    event1_challenge_id formal_run_challenge_id
+    formal_authority_challenge_id attempt_id candidate_version_id
+    source_baseline_event_sha256 source_closure_sha256
+    bootstrap_closure_sha256 formal_test_run_reservation_sha256
+    terminal_checkpoint_sha256 collection_node_ids executed_node_ids states
+    collection_errors exit_class exit_code signal_number timed_out
+    python_runtime_identity_sha256 pytest_distribution_identity_sha256
+    started_at_utc finished_at_utc body_free formal_worker_result_sha256
+    outcomes counts formal_node_outcome_evidence_sha256
+    formal_exact134_invocation_count
+    """.split()
+)
+_CONTINUATION_UNKNOWN_KEYS = frozenset(
+    """
+    schema_version reservation_artifact attempt_id checkpoint_status
+    last_valid_stage terminal_result_status exit_class exit_code signal_number
+    stop_code automatic_retry body_free
+    attempt_consumption_unknown_disposition_sha256
+    """.split()
+)
+_CONTINUATION_TERMINAL_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch002."
+    "formal_worker_terminal_result.v2"
+)
+_CONTINUATION_UNKNOWN_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch002."
+    "attempt_consumption_unknown_disposition.v1"
+)
+_CONTINUATION_SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
+_CONTINUATION_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _continuation_identity_valid(
+    artifact: Any,
+    identity: Any,
+    *,
+    role: str,
+    schema: str,
+    logical_hash_key: str,
+) -> bool:
+    if (
+        type(artifact) is not dict
+        or type(identity) is not dict
+        or set(identity) != _CONTINUATION_IDENTITY_KEYS
+        or artifact.get("schema_version") != schema
+        or artifact.get("body_free") is not True
+        or artifact.get(logical_hash_key)
+        != _hash_without(artifact, logical_hash_key)
+        or identity.get("artifact_role") != role
+        or identity.get("schema_version") != schema
+        or identity.get("repository_full_name") != "MassyuRed/Cocolon"
+        or identity.get("body_free") is not True
+        or not isinstance(identity.get("path"), str)
+        or not identity.get("path")
+        or _CONTINUATION_SHA1_RE.fullmatch(
+            str(identity.get("publication_commit_sha1", ""))
+        )
+        is None
+    ):
+        return False
+    payload = canonical_json_bytes(dict(artifact)) + b"\n"
+    header = f"blob {len(payload)}\0".encode("ascii")
+    expected = {
+        "artifact_role": role,
+        "schema_version": schema,
+        "repository_full_name": "MassyuRed/Cocolon",
+        "path": identity["path"],
+        "git_blob_sha1": hashlib.sha1(
+            header + payload,
+            usedforsecurity=False,
+        ).hexdigest(),
+        "raw_sha256": hashlib.sha256(payload).hexdigest(),
+        "logical_artifact_sha256": artifact[logical_hash_key],
+        "publication_commit_sha1": identity["publication_commit_sha1"],
+        "body_free": True,
+        "identity_sha256": "",
+    }
+    expected["identity_sha256"] = _hash_without(
+        expected,
+        "identity_sha256",
+    )
+    return identity == expected
+
+
+def _continuation_postfetch_valid(
+    evidence: Any,
+    identity: Mapping[str, Any],
+) -> bool:
+    if (
+        type(evidence) is not dict
+        or set(evidence) != _CONTINUATION_POSTFETCH_KEYS
+    ):
+        return False
+    parents = evidence.get("publication_parent_commit_sha1s")
+    if (
+        type(parents) is not list
+        or len(parents) != 1
+        or _CONTINUATION_SHA1_RE.fullmatch(str(parents[0])) is None
+    ):
+        return False
+    artifact = {
+        "path": identity.get("path"),
+        "git_blob_sha1": identity.get("git_blob_sha1"),
+        "raw_sha256": identity.get("raw_sha256"),
+        "logical_artifact_sha256": identity.get(
+            "logical_artifact_sha256"
+        ),
+        "body_free": identity.get("body_free"),
+    }
+    unchanged = evidence.get("unchanged_path_observation")
+    return (
+        evidence.get("repository_full_name") == "MassyuRed/Cocolon"
+        and evidence.get("verification_ref") == "refs/heads/main"
+        and evidence.get("verification_commit_sha1")
+        == identity.get("publication_commit_sha1")
+        and evidence.get("authoritative_ref_read") is True
+        and evidence.get("authoritative_base_tree_read") is True
+        and _CONTINUATION_SHA1_RE.fullmatch(
+            str(evidence.get("base_tree_sha1", ""))
+        )
+        is not None
+        and _CONTINUATION_SHA1_RE.fullmatch(
+            str(evidence.get("target_tree_sha1", ""))
+        )
+        is not None
+        and evidence.get("base_tree_sha1") != "f" * 40
+        and evidence.get("target_tree_sha1") != "f" * 40
+        and evidence.get("base_tree_sha1")
+        != evidence.get("target_tree_sha1")
+        and evidence.get("publication_commit_sha1")
+        == identity.get("publication_commit_sha1")
+        and evidence.get("publication_reachable_from_verification_ref")
+        is True
+        and evidence.get("publication_changed_paths")
+        == [identity.get("path")]
+        and evidence.get("target_absent_at_base") is True
+        and evidence.get("semantic_ancestor_verified") is True
+        and type(evidence.get("target_tree_build_count")) is int
+        and evidence.get("target_tree_build_count") == 1
+        and type(evidence.get("publication_commit_parent_count")) is int
+        and evidence.get("publication_commit_parent_count") == 1
+        and evidence.get("requested_expected_old_sha1") == parents[0]
+        and evidence.get("observed_old_sha1") == parents[0]
+        and evidence.get("server_side_expected_old_applied") is True
+        and evidence.get("authoritative_head_read") is True
+        and evidence.get("authoritative_parent_read") is True
+        and evidence.get("authoritative_tree_read") is True
+        and evidence.get("authoritative_recursive_tree_read") is True
+        and evidence.get("changed_path_proof_complete") is True
+        and type(evidence.get("artifact_at_publication")) is dict
+        and set(evidence["artifact_at_publication"])
+        == _CONTINUATION_POSTFETCH_ARTIFACT_KEYS
+        and evidence["artifact_at_publication"] == artifact
+        and type(evidence.get("artifact_at_verification_ref")) is dict
+        and set(evidence["artifact_at_verification_ref"])
+        == _CONTINUATION_POSTFETCH_ARTIFACT_KEYS
+        and evidence["artifact_at_verification_ref"] == artifact
+        and type(unchanged) is dict
+        and set(unchanged) == _CONTINUATION_UNCHANGED_KEYS
+        and unchanged.get("scope") == "ALL_PATHS_EXCEPT_EXACT1_TARGET"
+        and unchanged.get("mode_type_sha_complete") is True
+        and unchanged.get("mismatches") == []
+        and unchanged.get("observation_sha256")
+        == _hash_without(unchanged, "observation_sha256")
+        and evidence.get("unchanged_path_mismatches") == []
+        and evidence.get("owner_issue_codes") == []
+        and evidence.get("independent_issue_codes") == []
+        and evidence.get("postfetch_state") == "POSTVERIFIED"
+    )
+
+
+def _valid_terminal_input(
+    terminal_input: Any,
+    *,
+    terminal_kind: str,
+) -> bool:
+    if (
+        type(terminal_input) is not dict
+        or set(terminal_input)
+        != RECOVERY_EPOCH002_FORMAL_PARENT_VALID_TERMINAL_INPUT_KEYS
+        or terminal_input.get("tag") != "VALID_TERMINAL_RESULT"
+        or terminal_input.get("terminal_kind") != terminal_kind
+    ):
+        return False
+    terminal = terminal_input.get("terminal_result")
+    identity = terminal_input.get("terminal_disposition_artifact")
+    if (
+        type(terminal) is not dict
+        or set(terminal) != _CONTINUATION_TERMINAL_KEYS
+        or validate_recovery_epoch002_operational_terminal_result(terminal)
+        or not _continuation_identity_valid(
+            terminal,
+            identity,
+            role="FORMAL_WORKER_TERMINAL_RESULT",
+            schema=_CONTINUATION_TERMINAL_SCHEMA,
+            logical_hash_key="formal_worker_result_sha256",
+        )
+        or not _continuation_postfetch_valid(
+            terminal_input.get(
+                "terminal_disposition_postfetch_evidence"
+            ),
+            identity,
+        )
+    ):
+        return False
+    counts = terminal.get("counts")
+    outcomes = terminal.get("outcomes")
+    states = terminal.get("states")
+    if (
+        type(counts) is not dict
+        or set(counts) != RECOVERY_EPOCH002_FORMAL_RESULT_COUNTS_KEYS
+        or any(type(value) is not int for value in counts.values())
+        or type(outcomes) is not list
+        or len(outcomes) != len(RECOVERY_EPOCH002_FORMAL_NODE_IDS)
+        or type(states) is not dict
+        or set(states) != set(RECOVERY_EPOCH002_FORMAL_NODE_IDS)
+        or terminal.get("collection_node_ids")
+        != list(RECOVERY_EPOCH002_FORMAL_NODE_IDS)
+        or terminal.get("executed_node_ids")
+        != list(RECOVERY_EPOCH002_FORMAL_NODE_IDS)
+    ):
+        return False
+    for node_id, outcome in zip(
+        RECOVERY_EPOCH002_FORMAL_NODE_IDS,
+        outcomes,
+        strict=True,
+    ):
+        source_path = node_id.partition("::")[0]
+        expected_code = RECOVERY_EPOCH002_NEGATIVE_CLOSED_CODE_BY_NODE.get(
+            node_id
+        )
+        if (
+            type(outcome) is not dict
+            or set(outcome) != RECOVERY_EPOCH002_FORMAL_NODE_OUTCOME_KEYS
+            or outcome.get("test_node_id") != node_id
+            or outcome.get("source_path") != source_path
+            or _formal_parent_source_identity(source_path)
+            != {
+                "git_blob_sha1": outcome.get("source_blob_sha1"),
+                "sha256": outcome.get("source_sha256"),
+            }
+            or _CONTINUATION_SHA1_RE.fullmatch(
+                str(outcome.get("source_blob_sha1", ""))
+            )
+            is None
+            or _CONTINUATION_SHA256_RE.fullmatch(
+                str(outcome.get("source_sha256", ""))
+            )
+            is None
+            or outcome.get("expected_closed_code") != expected_code
+            or outcome.get("actual_closed_code") != expected_code
+            or states.get(node_id) != outcome.get("result")
+            or outcome.get("evidence_sha256")
+            != _hash_without(outcome, "evidence_sha256")
+        ):
+            return False
+    if (
+        terminal.get("formal_node_outcome_evidence_sha256")
+        != artifact_sha256(outcomes)
+        or counts.get("collected") != len(outcomes)
+        or counts.get("executed") != len(outcomes)
+        or counts.get("passed")
+        != sum(outcome["result"] == "PASSED" for outcome in outcomes)
+        or counts.get("failed")
+        != sum(outcome["result"] == "FAILED" for outcome in outcomes)
+        or counts.get("skipped")
+        != sum(outcome["result"] == "SKIPPED" for outcome in outcomes)
+        or counts.get("xfailed")
+        != sum(outcome["result"] == "XFAILED" for outcome in outcomes)
+        or counts.get("xpassed")
+        != sum(outcome["result"] == "XPASSED" for outcome in outcomes)
+        or counts.get("errors") != 0
+        or counts.get("deselected") != 0
+        or counts.get("collection_errors")
+        != terminal.get("collection_errors")
+        or terminal.get("formal_exact134_invocation_count") != 1
+        or type(terminal.get("formal_exact134_invocation_count")) is not int
+    ):
+        return False
+    if terminal_kind == "SUCCESS":
+        return (
+            counts.get("passed") == 134
+            and counts.get("failed") == 0
+            and all(outcome["result"] == "PASSED" for outcome in outcomes)
+            and terminal.get("exit_class") == "EXITED"
+            and terminal.get("exit_code") == 0
+            and type(terminal.get("exit_code")) is int
+        )
+    return (
+        counts.get("failed", 0) > 0
+        and any(outcome["result"] == "FAILED" for outcome in outcomes)
+        and terminal.get("exit_class") == "EXITED"
+        and type(terminal.get("exit_code")) is int
+        and terminal.get("exit_code") != 0
+    )
+
+
+def _valid_unknown_input(terminal_input: Any) -> bool:
+    if (
+        type(terminal_input) is not dict
+        or set(terminal_input)
+        != RECOVERY_EPOCH002_FORMAL_PARENT_UNKNOWN_DISPOSITION_INPUT_KEYS
+        or terminal_input.get("tag")
+        != "ATTEMPT_CONSUMPTION_UNKNOWN_DISPOSITION"
+    ):
+        return False
+    disposition = terminal_input.get("unknown_disposition")
+    identity = terminal_input.get("terminal_disposition_artifact")
+    return (
+        type(disposition) is dict
+        and set(disposition) == _CONTINUATION_UNKNOWN_KEYS
+        and disposition.get("schema_version") == _CONTINUATION_UNKNOWN_SCHEMA
+        and disposition.get("stop_code")
+        == "ATTEMPT_CONSUMPTION_UNKNOWN_STOP"
+        and disposition.get("automatic_retry") is False
+        and disposition.get("body_free") is True
+        and _continuation_identity_valid(
+            disposition,
+            identity,
+            role="ATTEMPT_CONSUMPTION_UNKNOWN_DISPOSITION",
+            schema=_CONTINUATION_UNKNOWN_SCHEMA,
+            logical_hash_key=(
+                "attempt_consumption_unknown_disposition_sha256"
+            ),
+        )
+        and _continuation_postfetch_valid(
+            terminal_input.get(
+                "terminal_disposition_postfetch_evidence"
+            ),
+            identity,
+        )
+    )
+
+
+def _validate_recovery_epoch002_formal_parent_continuation_state_impl(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Validate one observed continuation phase without auto-progressing."""
+
+    if (
+        type(state) is not dict
+        or set(state)
+        != RECOVERY_EPOCH002_FORMAL_PARENT_CONTINUATION_STATE_KEYS
+        or _contains_forbidden_key(state)
+        or state.get("phase_order")
+        != list(tuple(RECOVERY_EPOCH002_FORMAL_PARENT_PHASE_ORDER))
+    ):
+        return ("FORMAL_PARENT_PHASE_ORDER_INVALID",)
+    if state.get("executable_phases") != list(
+        RECOVERY_EPOCH002_FORMAL_PARENT_EXECUTABLE_PHASES
+    ):
+        return ("FORMAL_PARENT_EXECUTABLE_PHASE_SET_INVALID",)
+    if state.get("external_ports") != list(
+        RECOVERY_EPOCH002_FORMAL_PARENT_PORT_NAMES
+    ):
+        return ("FORMAL_PARENT_EXTERNAL_PORT_SET_INVALID",)
+    if (
+        type(state.get("port_call_count")) is not int
+        or state.get("port_call_count") != 1
+        or state.get("automatic_progression") is not False
+    ):
+        return ("FORMAL_PARENT_PHASE_EXECUTION_INVALID",)
+    counts = state.get("success_artifact_counts")
+    common_disposition = (
+        state.get("terminal_disposition_postverified") is True
+        and state.get("terminal_disposition_artifact_count") == 1
+        and type(state.get("terminal_disposition_artifact_count")) is int
+        and type(counts) is dict
+        and set(counts)
+        == RECOVERY_EPOCH002_FORMAL_PARENT_SUCCESS_ARTIFACT_COUNT_KEYS
+        and all(type(value) is int for value in counts.values())
+        and state.get("individual_success_artifact_publication_requested")
+        is False
+    )
+    terminal_kind = state.get("terminal_kind")
+    if terminal_kind == "FAILURE":
+        if (
+            not common_disposition
+            or not _valid_terminal_input(
+                state.get("terminal_input"),
+                terminal_kind="FAILURE",
+            )
+            or state.get("success_exact15_requested") is not False
+            or counts
+            != {
+                "accepted": 0,
+                "step": 0,
+                "all11": 0,
+                "atomic_manifest": 0,
+                "event2": 0,
+            }
+            or state.get("terminal_stop_code")
+            != "FORMAL_FAILURE_ATTEMPT_PUBLISHED"
+            or state.get("event2_postverified") is not False
+            or state.get("step0_10_prerequisites_proved") is not False
+        ):
+            return ("FAILURE_TERMINAL_SUCCESS_PUBLICATION_FORBIDDEN",)
+    elif terminal_kind == "UNKNOWN":
+        if (
+            not common_disposition
+            or not _valid_unknown_input(state.get("terminal_input"))
+            or state.get("same_attempt_rerun_requested") is not False
+            or state.get("synthetic_terminal_requested") is not False
+            or state.get("success_exact15_requested") is not False
+            or counts
+            != {
+                "accepted": 0,
+                "step": 0,
+                "all11": 0,
+                "atomic_manifest": 0,
+                "event2": 0,
+            }
+            or state.get("terminal_stop_code")
+            != "ATTEMPT_CONSUMPTION_UNKNOWN_STOP"
+            or state.get("event2_postverified") is not False
+            or state.get("step0_10_prerequisites_proved") is not False
+        ):
+            return ("ATTEMPT_CONSUMPTION_UNKNOWN_STOP",)
+    else:
+        if (
+            terminal_kind != "SUCCESS"
+            or not common_disposition
+            or not _valid_terminal_input(
+                state.get("terminal_input"),
+                terminal_kind="SUCCESS",
+            )
+            or state.get("success_exact15_requested") is not True
+            or counts
+            != {
+                "accepted": 1,
+                "step": 11,
+                "all11": 1,
+                "atomic_manifest": 1,
+                "event2": 1,
+            }
+            or state.get("terminal_stop_code")
+            != "SUCCESS_TERMINAL_POSTVERIFIED"
+            or state.get("step0_10_prerequisites_proved") is not True
+        ):
+            return ("SUCCESS_EXACT15_PHASE_REQUIRED",)
+    p2_approval = state.get("p2_separate_approval_present")
+    p2_started = state.get("p2_started")
+    if (
+        state.get("event2_postverified") is not True
+        and terminal_kind == "SUCCESS"
+    ) or (
+        type(p2_approval) is not bool
+        or type(p2_started) is not bool
+        or p2_started is not False
+    ):
+        return ("P2_SEPARATE_APPROVAL_REQUIRED",)
+    return ()
+
+
+def validate_recovery_epoch002_formal_parent_continuation_state(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Fail closed on malformed continuation state."""
+
+    try:
+        return (
+            _validate_recovery_epoch002_formal_parent_continuation_state_impl(
+                state
+            )
+        )
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("FORMAL_PARENT_PHASE_EXECUTION_INVALID",)
+
+
 __all__ = [
     "RECOVERY_EPOCH002_FORMAL_PARENT_PROTOCOL",
     "RECOVERY_EPOCH002_FORMAL_PARENT_RESULT_SCHEMA",
+    "RECOVERY_EPOCH002_FORMAL_PARENT_PHASE_ORDER_EXACT7_LEGACY",
+    "RECOVERY_EPOCH002_FORMAL_PARENT_PHASE_ORDER_EXACT9_CURRENT",
     "RECOVERY_EPOCH002_FORMAL_PARENT_PHASE_ORDER",
     "RECOVERY_EPOCH002_FORMAL_PARENT_EXECUTABLE_PHASES",
     "RECOVERY_EPOCH002_FORMAL_PARENT_PORT_NAMES",
+    "RECOVERY_EPOCH002_FORMAL_PARENT_TERMINAL_INPUT_TAGS",
+    "RECOVERY_EPOCH002_FORMAL_PARENT_VALID_TERMINAL_INPUT_KEYS",
+    "RECOVERY_EPOCH002_FORMAL_PARENT_UNKNOWN_DISPOSITION_INPUT_KEYS",
+    "RECOVERY_EPOCH002_FORMAL_PARENT_SUCCESS_ARTIFACT_COUNT_KEYS",
+    "RECOVERY_EPOCH002_SUCCESS_PUBLICATION_AUTHORITY_GRANT_KEYS",
     "RECOVERY_EPOCH002_FRESH_PUBLICATION_STATE_KEYS",
     "RECOVERY_EPOCH002_FORMAL_AUTHORITY_GRANT_KEYS",
     "RECOVERY_EPOCH002_FORMAL_PARENT_RESULT_KEYS",
@@ -1070,4 +2120,5 @@ __all__ = [
     "validate_recovery_epoch002_parent_phase_result",
     "next_recovery_epoch002_parent_action",
     "execute_recovery_epoch002_parent_phase",
+    "validate_recovery_epoch002_formal_parent_continuation_state",
 ]
