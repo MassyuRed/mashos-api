@@ -90,6 +90,29 @@ _IDENTITY_ROLE_SCHEMAS = {
     for role, aliases in _ROLE_IDENTITY_ALIASES.items()
     for alias in aliases
 }
+_SOURCE_BASELINE_EVENT_SCHEMAS = frozenset(
+    {
+        _ROLE_SCHEMAS[_ROLE_SOURCE_BASELINE],
+        "cocolon.emlis.nls_v3.recovery_epoch002.sequence_event.v2",
+    }
+)
+
+
+def _role_schema_valid(role: str, schema_version: Any) -> bool:
+    if role == _ROLE_SOURCE_BASELINE:
+        return schema_version in _SOURCE_BASELINE_EVENT_SCHEMAS
+    return schema_version == _ROLE_SCHEMAS.get(role)
+
+
+def _identity_role_schema_valid(
+    artifact_role: Any,
+    schema_version: Any,
+) -> bool:
+    if artifact_role in _ROLE_IDENTITY_ALIASES[_ROLE_SOURCE_BASELINE]:
+        return schema_version in _SOURCE_BASELINE_EVENT_SCHEMAS
+    return schema_version == _IDENTITY_ROLE_SCHEMAS.get(artifact_role)
+
+
 _SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -4954,8 +4977,10 @@ def verify_recovery_epoch002_operational_artifact_identity(
     if (
         identity.get("artifact_role")
         not in _IDENTITY_ROLE_SCHEMAS
-        or identity.get("schema_version")
-        != _IDENTITY_ROLE_SCHEMAS.get(identity.get("artifact_role"))
+        or not _identity_role_schema_valid(
+            identity.get("artifact_role"),
+            identity.get("schema_version"),
+        )
         or identity.get("repository_full_name") != "MassyuRed/Cocolon"
         or parsed_path is None
         or parsed_path.is_absolute()
@@ -5161,7 +5186,10 @@ def verify_recovery_epoch002_published_artifact(
     header = f"blob {len(payload)}\0".encode("ascii")
     if (
         verify_recovery_epoch002_operational_artifact_identity(identity)
-        or artifact.get("schema_version") != _ROLE_SCHEMAS[role]
+        or not _role_schema_valid(
+            role,
+            artifact.get("schema_version"),
+        )
         or identity.get("schema_version") != artifact.get("schema_version")
         or identity.get("logical_artifact_sha256") != artifact[hash_key]
         or identity.get("raw_sha256")

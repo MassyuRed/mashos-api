@@ -179,6 +179,18 @@ _ROLE_SCHEMAS = {
         "p1_operational_admission_receipt.v1"
     ),
 }
+_SOURCE_BASELINE_EVENT_SCHEMAS = frozenset(
+    {
+        _ROLE_SCHEMAS["SOURCE_BASELINE_EVENT"],
+        "cocolon.emlis.nls_v3.recovery_epoch002.sequence_event.v2",
+    }
+)
+
+
+def _role_schema_valid(artifact_role: str, schema_version: Any) -> bool:
+    if artifact_role == "SOURCE_BASELINE_EVENT":
+        return schema_version in _SOURCE_BASELINE_EVENT_SCHEMAS
+    return schema_version == _ROLE_SCHEMAS.get(artifact_role)
 
 RECOVERY_EPOCH002_ATOMIC_SUCCESS_MANIFEST_SCHEMA = (
     "cocolon.emlis.nls_v3.recovery_epoch002."
@@ -416,7 +428,10 @@ def build_recovery_epoch002_publication_candidate(
         raise ValueError("PUBLICATION_ARTIFACT_INVALID")
     if (
         _contains_forbidden_key(artifact)
-        or artifact.get("schema_version") != _ROLE_SCHEMAS[artifact_role]
+        or not _role_schema_valid(
+            artifact_role,
+            artifact.get("schema_version"),
+        )
         or _role_artifact_issues(artifact_role, artifact)
         or _SHA256_RE.fullmatch(logical_artifact_sha256) is None
         or _artifact_logical_hash(artifact_role, artifact)
@@ -483,8 +498,10 @@ def validate_recovery_epoch002_publication_candidate(
         or type(artifact) is not dict
         or artifact.get("body_free") is not True
         or _contains_forbidden_key(artifact)
-        or artifact.get("schema_version")
-        != _ROLE_SCHEMAS.get(str(candidate.get("artifact_role", "")))
+        or not _role_schema_valid(
+            str(candidate.get("artifact_role", "")),
+            artifact.get("schema_version"),
+        )
         or _artifact_logical_hash(
             str(candidate.get("artifact_role", "")),
             artifact,
@@ -632,8 +649,10 @@ def validate_recovery_epoch002_artifact_identity(
         or identity.get("repository_full_name")
         != RECOVERY_EPOCH002_PUBLICATION_REPOSITORY
         or not _new_document_path_valid(identity.get("path"))
-        or identity.get("schema_version")
-        != _ROLE_SCHEMAS.get(identity.get("artifact_role"))
+        or not _role_schema_valid(
+            str(identity.get("artifact_role", "")),
+            identity.get("schema_version"),
+        )
         or _SHA1_RE.fullmatch(str(identity.get("git_blob_sha1", "")))
         is None
         or _SHA1_RE.fullmatch(

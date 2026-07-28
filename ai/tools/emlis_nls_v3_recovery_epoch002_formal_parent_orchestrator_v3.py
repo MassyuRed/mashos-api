@@ -264,6 +264,18 @@ RECOVERY_EPOCH002_FRESH_PUBLICATION_STATE_KEYS = frozenset(
         "body_free",
     }
 )
+RECOVERY_EPOCH002_FRESH_PUBLICATION_STATE_REQUIRED_KEYS = (
+    RECOVERY_EPOCH002_FRESH_PUBLICATION_STATE_KEYS
+    - frozenset(
+        {
+            "expected_old_sha1",
+            "observed_old_sha1",
+            "parent_commit_sha1s",
+            "automatic_progression",
+            "body_free",
+        }
+    )
+)
 RECOVERY_EPOCH002_FORMAL_AUTHORITY_GRANT_KEYS = frozenset(
     {
         "schema_version",
@@ -491,15 +503,21 @@ def _fresh_publication_issues(
     artifact: Mapping[str, Any],
     external_identity: Mapping[str, Any] | None = None,
 ) -> tuple[str, ...]:
+    state_keys = set(state) if type(state) is dict else frozenset()
     if (
         type(state) is not dict
-        or set(state) != RECOVERY_EPOCH002_FRESH_PUBLICATION_STATE_KEYS
+        or not RECOVERY_EPOCH002_FRESH_PUBLICATION_STATE_REQUIRED_KEYS
+        <= state_keys
+        or not state_keys <= RECOVERY_EPOCH002_FRESH_PUBLICATION_STATE_KEYS
         or state.get("reflection_contract_version")
         != "COCOLON_GITHUB_REFLECTION_CONTRACT_V1"
         or state.get("artifact_role") != artifact_role
         or state.get("artifact") != artifact
-        or state.get("automatic_progression") is not False
-        or state.get("body_free") is not True
+        or (
+            "automatic_progression" in state
+            and state.get("automatic_progression") is not False
+        )
+        or ("body_free" in state and state.get("body_free") is not True)
         or _contains_forbidden_key(state)
         or verify_recovery_epoch002_published_artifact(state)
     ):
