@@ -2361,7 +2361,14 @@ def _successor_completion_fixture() -> tuple[
         "authority_token": _AUTHORITY,
         "source_entry_commit_sha1": _MASHOS_API_ENTRY,
         "source_entry_tree_sha1": _MASHOS_API_ENTRY_TREE,
-        "successor_test_file": _source_file_identity(_THIS_PATH),
+        "successor_test_file": {
+            "path": _THIS_PATH,
+            "git_blob_sha1": "1616de8b9f738b7037b6e18a64113280fa6ec478",
+            "raw_sha256": (
+                "3e5cdcd5c2cd2113f273f6cc1a43ff09bdd4845b14cd7aea"
+                "49237d26cfc0753b"
+            ),
+        },
         "successor_node_count": 64,
         "collected": 64,
         "failed": 64,
@@ -2390,7 +2397,9 @@ def _successor_completion_fixture() -> tuple[
     )
     causal_red_identity = _external_identity_from_candidate(
         causal_red_candidate,
-        publication_commit_sha1="a" * 40,
+        publication_commit_sha1=(
+            "a45a958cab1a5e1d052e6b470dd26d8e19764b7b"
+        ),
     )
     contract_node_ids = list(_success_contract_node_ids())
     combined_green_artifact = {
