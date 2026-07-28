@@ -6,7 +6,10 @@ from __future__ import annotations
 This exact64 oracle freezes the additive successor closure, terminal-v2
 evidence, accepted/Step/all11 owners, atomic success publication,
 independent verification, and formal-parent continuation defined by the
-post-D2 Parent Addendum.  It does not implement any production owner.
+post-D2 Parent Addendum.  C10 additionally freezes one canonical Event1-v2
+acceptance contract across its sequence, publication, public independent-
+verification, formal-parent, and preflight owners.  It does not implement
+any production owner.
 
 All fixtures are body-free contract probes.  The test does not allocate a
 candidate, publish Event1, create readiness or a reservation, invoke formal
@@ -52,8 +55,18 @@ from emlis_ai_recovery_epoch001_current_step_requirement_registry_v3 import (  #
 from emlis_ai_recovery_epoch001_canonical_current_closure_v3 import (  # noqa: E402
     fresh_recovery_epoch001_canonical_current_closure,
 )
+from emlis_nls_v3_recovery_epoch002_atomic_publication_bundle_v3 import (  # noqa: E402
+    build_recovery_epoch002_publication_candidate,
+    validate_recovery_epoch002_publication_candidate,
+)
 from emlis_nls_v3_recovery_epoch002_closure_receipt_verify import (  # noqa: E402
     verify_recovery_epoch002_published_artifact,
+)
+from emlis_nls_v3_recovery_epoch002_formal_parent_orchestrator_v3 import (  # noqa: E402
+    execute_recovery_epoch002_parent_phase,
+)
+from emlis_nls_v3_recovery_epoch002_formal_worker_bootstrap_preflight import (  # noqa: E402,E501
+    validate_recovery_epoch002_event1_publication_binding,
 )
 
 
@@ -66,6 +79,11 @@ _AUTHORITY = (
     "ELIGIBILITY_SUCCESSION_ACCEPTED_STEP0_10_ALL11_EVENT2_ATOMIC_"
     "SUCCESS_OWNER_GRAPH_AND_FORMAL_PARENT_CONTINUATION_REMEDIATION_"
     "RED_FREEZE_ONLY"
+)
+_OWNER_CONTRACT_RECONCILIATION_RED_AUTHORITY = (
+    "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH002_POST_D2_SUCCESSOR_P1_"
+    "EVENT1_V2_PUBLICATION_INDEPENDENT_VERIFICATION_FORMAL_PARENT_AND_"
+    "PREFLIGHT_OWNER_CONTRACT_INCONSISTENCY_RECONCILIATION_RED_FREEZE_ONLY"
 )
 _FUTURE_P1_AUTHORITY_TOKEN = (
     "FIXTURE_ONLY_UNISSUED_RECOVERY_EPOCH002_FUTURE_P1_AUTHORITY"
@@ -3352,6 +3370,36 @@ def _current_published_artifact_state() -> dict[str, Any]:
         "reflection_contract_version": _CURRENT_REFLECTION_CONTRACT,
         "artifact_role": "BOOTSTRAP_READINESS",
         "artifact": readiness,
+        "artifact_external_identity": identity,
+        "receipt_contains_self_commit_blob_or_raw_identity": False,
+        "changed_paths": [path],
+        "expected_changed_paths": [path],
+        "path_preexisted": False,
+        "postfetch_succeeded": True,
+        "postfetch_matches_candidate": True,
+        "owner_issue_codes": [],
+        "independent_issue_codes": [],
+        "reservation_write_outcome": "NOT_ATTEMPTED",
+        "authoritative_reservation_presence": "ABSENT",
+        "ready_receipt_marked_consumed": False,
+        "fabricated_reservation_detected": False,
+        "postfetch_commit_sha1": "f" * 40,
+        "postfetch_git_blob_sha1": identity["git_blob_sha1"],
+    }
+
+
+def _current_published_event1_v2_state(
+    sequence: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build the canonical current Event1-v2 postverify observation."""
+
+    event = deepcopy(sequence["event1"])
+    identity = deepcopy(sequence["event1_publication"]["identity"])
+    path = identity["path"]
+    return {
+        "reflection_contract_version": _CURRENT_REFLECTION_CONTRACT,
+        "artifact_role": "SOURCE_BASELINE_EVENT",
+        "artifact": event,
         "artifact_external_identity": identity,
         "receipt_contains_self_commit_blob_or_raw_identity": False,
         "changed_paths": [path],
@@ -8782,6 +8830,9 @@ def _target_api_or_red(
 
 def _assert_static_contract() -> None:
     assert _AUTHORITY.endswith("REMEDIATION_RED_FREEZE_ONLY")
+    assert _OWNER_CONTRACT_RECONCILIATION_RED_AUTHORITY.endswith(
+        "INCONSISTENCY_RECONCILIATION_RED_FREEZE_ONLY"
+    )
     assert _FUTURE_P1_AUTHORITY_TOKEN.startswith("FIXTURE_ONLY_UNISSUED_")
     assert _FUTURE_EVENT2_AUTHORITY_TOKEN.startswith(
         "FIXTURE_ONLY_UNISSUED_"
@@ -8789,10 +8840,11 @@ def _assert_static_contract() -> None:
     assert len(
         {
             _AUTHORITY,
+            _OWNER_CONTRACT_RECONCILIATION_RED_AUTHORITY,
             _FUTURE_P1_AUTHORITY_TOKEN,
             _FUTURE_EVENT2_AUTHORITY_TOKEN,
         }
-    ) == 3
+    ) == 4
     assert _PARENT_ADDENDUM_PUBLICATION_COMMIT != _COCOLON_ENTRY
     assert (
         _SYNTHETIC_FRESH_COCOLON_VERIFICATION_COMMIT
@@ -9333,6 +9385,115 @@ def _assert_case(case_id: str) -> None:
         assert verify_recovery_epoch002_published_artifact(
             path_mutated
         ) == ("READINESS_RECEIPT_NOT_PUBLISHED_STOP",)
+
+        canonical_sequence = _sequence_state()
+        canonical_event1 = canonical_sequence["event1"]
+        canonical_event1_identity = canonical_sequence[
+            "event1_publication"
+        ]["identity"]
+        canonical_event1_publication = (
+            _current_published_event1_v2_state(canonical_sequence)
+        )
+        readiness, _readiness_identity = _readiness_artifact_fixture(
+            canonical_sequence
+        )
+
+        try:
+            publication_candidate = (
+                build_recovery_epoch002_publication_candidate(
+                    artifact_role="SOURCE_BASELINE_EVENT",
+                    source_ref="refs/heads/main",
+                    path=_EVENT1_PATH,
+                    expected_old_sha1="4" * 40,
+                    artifact=canonical_event1,
+                    logical_artifact_sha256=canonical_event1[
+                        "event_sha256"
+                    ],
+                )
+            )
+        except ValueError as exc:
+            publication_owner_issues = (str(exc),)
+        else:
+            publication_owner_issues = (
+                validate_recovery_epoch002_publication_candidate(
+                    publication_candidate
+                )
+            )
+
+        class Event1ObservationPorts:
+            def observe_event1_publication(
+                self,
+                *,
+                event1_artifact: Mapping[str, Any],
+                event1_external_identity: Mapping[str, Any],
+            ) -> Mapping[str, Any]:
+                assert event1_artifact == canonical_event1
+                assert event1_external_identity == (
+                    canonical_event1_identity
+                )
+                return deepcopy(canonical_event1_publication)
+
+        parent_result = execute_recovery_epoch002_parent_phase(
+            requested_phase="EVENT1_PUBLISHED_AND_POSTVERIFIED",
+            ports=Event1ObservationPorts(),
+            event1_artifact=canonical_event1,
+            event1_external_identity=canonical_event1_identity,
+        )
+        observed_owner_contract = {
+            "publication_owner": publication_owner_issues,
+            "public_independent_verifier": (
+                verify_recovery_epoch002_published_artifact(
+                    deepcopy(canonical_event1_publication)
+                )
+            ),
+            "preflight_owner": (
+                validate_recovery_epoch002_event1_publication_binding(
+                    event1_artifact=canonical_event1,
+                    event1_external_identity=canonical_event1_identity,
+                    event1_publication_state=(
+                        canonical_event1_publication
+                    ),
+                    readiness=readiness,
+                )
+            ),
+            "formal_parent": {
+                "completed_phase": parent_result["completed_phase"],
+                "validation_issues": parent_result[
+                    "validation_issues"
+                ],
+                "stop_code": parent_result["stop_code"],
+                "port_call_counts": parent_result[
+                    "port_call_counts"
+                ],
+                "automatic_progression": parent_result[
+                    "automatic_progression"
+                ],
+            },
+        }
+        expected_port_calls = {
+            port_name: int(port_name == "observe_event1_publication")
+            for port_name in _EXTERNAL_PORTS
+        }
+        assert observed_owner_contract == {
+            "publication_owner": (),
+            "public_independent_verifier": (),
+            "preflight_owner": (),
+            "formal_parent": {
+                "completed_phase": (
+                    "EVENT1_PUBLISHED_AND_POSTVERIFIED"
+                ),
+                "validation_issues": [],
+                "stop_code": "AUTHORITY_STOP_EVENT1_POSTVERIFIED",
+                "port_call_counts": expected_port_calls,
+                "automatic_progression": False,
+            },
+        }, (
+            "C10",
+            "canonical Event1-v2 must have one acceptance meaning across "
+            "publication, public independent verification, formal parent, "
+            "and preflight owners",
+            observed_owner_contract,
+        )
     independent_replay_contracts = {
         "I02": tuple(
             (f"T{number:02d}", "terminal_owner_state")
