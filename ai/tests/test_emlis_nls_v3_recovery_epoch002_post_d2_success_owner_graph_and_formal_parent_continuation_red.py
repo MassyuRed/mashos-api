@@ -9794,6 +9794,34 @@ def test_c09_completion_receipt_red_green_bound() -> None:
         )
         return state
 
+    def canonical_publication_roundtrip(
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        state = deepcopy(state)
+        source_green = deepcopy(
+            state["combined_green_evidence_artifact"]
+        )
+        assert list(source_green["outcome_states"]) == source_green[
+            "test_node_ids"
+        ]
+        canonical_payload = _canonical_raw_bytes(source_green)
+        combined_green = json.loads(canonical_payload)
+        assert combined_green == source_green
+        assert _canonical_raw_bytes(combined_green) == canonical_payload
+        assert list(combined_green["outcome_states"]) != combined_green[
+            "test_node_ids"
+        ]
+        assert combined_green["outcome_states"] == {
+            node_id: "PASSED"
+            for node_id in combined_green["test_node_ids"]
+        }
+        _rebind_successor_evidence(
+            state,
+            evidence_kind="combined_green",
+            artifact=combined_green,
+        )
+        return state
+
     owner_api = _target_api_or_red("sequence", "C09")
     independent_api = _target_api_or_red("independent", "C09")
 
@@ -9822,6 +9850,9 @@ def test_c09_completion_receipt_red_green_bound() -> None:
                 current_active_test_identity_substitution()
             )
         ),
+        "canonical_publication_roundtrip_from_actual_s1": observe(
+            canonical_publication_roundtrip(actual_s1_state())
+        ),
     }
     assert observed == {
         "actual_published_s1": {
@@ -9840,9 +9871,16 @@ def test_c09_completion_receipt_red_green_bound() -> None:
             "owner": (expected_code,),
             "independent": (expected_code,),
         },
+        "canonical_publication_roundtrip_from_actual_s1": {
+            "owner": (),
+            "independent": (),
+        },
     }, (
         "C09",
-        "actual S1 identity and exact110 manifest parity must be causal",
+        (
+            "actual S1 identity, exact110 manifest parity, and canonical "
+            "publication round-trip must be causal"
+        ),
         observed,
     )
 
