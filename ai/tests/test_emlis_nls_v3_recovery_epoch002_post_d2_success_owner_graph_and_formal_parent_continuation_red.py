@@ -10045,6 +10045,715 @@ def test_c09_completion_receipt_red_green_bound() -> None:
         observed,
     )
 
+    historical_source_closure = {
+        "schema_version": _SCHEMAS["successor_closure"],
+        "repository_full_name": "MassyuRed/mashos-api",
+        "source_ref": "refs/heads/main",
+        "source_commit_sha1": (
+            "0205f81a4719a578f0e188bcfbd164cb9e2abb08"
+        ),
+        "source_tree_sha1": (
+            "677e9c0c4cdfcaf254aa9eb8089cdf3b02a85727"
+        ),
+        "worktree_clean": True,
+        "detailed_design_sha256": (
+            "6aa3fb799919ac30b0eb84571ac4009d62a2bd799c84322272"
+            "a59bba533f13bc"
+        ),
+        "parent_addendum_external_identity_sha256": (
+            "527eb11a767582a2f86531e34e044dffa9f0ed034af91ef063"
+            "c3acc33813ba6d"
+        ),
+        "historical_d2_final_closure_sha256": (
+            "2d15d58d7bbdd2dab91f526486dcaf29a05c7326ec3944a91"
+            "fc04757c1d73fbe"
+        ),
+        "historical_d2_completion_receipt_identity_sha256": (
+            "7420f1ec60d0db3e83ae2a6fd1c900217256bc0e1b356a353"
+            "bf74e0155681157"
+        ),
+        "source_dependency_closure_sha256": (
+            "594f8105b29b516b1d1eb8eb3ed9f434bd69a88c7851674c5"
+            "96b09d2328a5b67"
+        ),
+        "canonical_current_closure_sha256": (
+            "7fea71f51dc646d1660e9fd56658f4c276dc686bdf266c18d7"
+            "368c8b43bc9cc7"
+        ),
+        "requirement_registry_sha256": (
+            "70a75ae561fad0846604d05b1262615be4c4a16b36b332150"
+            "f8c7dc04ee71728"
+        ),
+        "formal_node_registry_sha256": (
+            "fbe29ce0b819563cb5db2dc79fec8277b32ae0dea5a3a5cba"
+            "64230ba4a1f73cf"
+        ),
+        "proof_source_closure_sha256": (
+            "93f1032fe17b265a6a268688e7ecd3a2e53cb3f68bac5b3ec"
+            "f9e8345aa0c8a43"
+        ),
+        "formal_test_manifest_sha256": (
+            "ba5b15f22c5ced74936d6a94e3a24a31c0243e42609c2f1b"
+            "519a71c5e9984e6a"
+        ),
+        "bootstrap_closure_sha256": (
+            "876ed049fdb2b90f1c87471661fd37308df2b57a3c2c0daea"
+            "06650b84d510d91"
+        ),
+        "success_owner_graph_sha256": (
+            "a29cb70c4c6380510c391c439523bfb2d6f95d8a069ed03ab"
+            "2faf4baeab6c206"
+        ),
+        "success_contract_test_manifest_sha256": (
+            "76f4115ce992f1718448aae4e0d2ce6c733c7f2902ffa5077"
+            "6e13833e6163f3c"
+        ),
+        "source_closure_sha256": (
+            "d4156b14eddf5e1f6a13411017bd522784b26e3e67d780203a"
+            "727cc7cc1aa97f"
+        ),
+    }
+    assert set(historical_source_closure) == _SUCCESSOR_CLOSURE_KEYS
+    assert len(historical_source_closure) == 20
+    assert historical_source_closure["source_closure_sha256"] == (
+        _hash_without(
+            historical_source_closure,
+            "source_closure_sha256",
+        )
+    )
+
+    historical_green_path = (
+        "EmlisAIの実装済み資料/documents/"
+        "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2_"
+        "Successor_GREEN_Result_20260726.json"
+    )
+    historical_completion_path = _SUCCESSOR_COMPLETION_PATH
+    lineage02_green_path = (
+        "EmlisAIの実装済み資料/documents/"
+        "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2_"
+        "SourceIdentityLineage02_Successor_GREEN_Result_20260728.json"
+    )
+    lineage02_completion_path = (
+        "EmlisAIの実装済み資料/documents/"
+        "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2"
+        "SourceIdentityLineage02_SourceBaselineEligibilitySuccessor"
+        "Completion_BodyFree_Receipt_20260728.json"
+    )
+    lineage02_completion_schema = (
+        "cocolon.emlis.nls_v3.recovery_epoch002."
+        "post_d2_source_baseline_eligibility_successor_completion_"
+        "receipt.v2"
+    )
+    decision_identity = {
+        "artifact_role": (
+            "SOURCE_IDENTITY_LINEAGE_RECOVERY_DECISION_DESIGN_"
+            "FROZEN_RECEIPT"
+        ),
+        "schema_version": (
+            "cocolon.emlis.nls_v3.recovery_epoch002."
+            "post_d2_source_identity_lineage_recovery_decision_design_"
+            "frozen_receipt.v1"
+        ),
+        "repository_full_name": "MassyuRed/Cocolon",
+        "path": (
+            "EmlisAIの実装済み資料/documents/"
+            "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2_"
+            "Event1V2OwnerContract_PostImplementationSourceIdentity"
+            "Lineage02_RecoveryDecision_Design_ReadOnly_BodyFree_"
+            "Receipt_20260728.json"
+        ),
+        "git_blob_sha1": (
+            "d54fd0b1094a10c12754aef0586cde93bc0301e3"
+        ),
+        "raw_sha256": (
+            "67c2f2856748efa54adb53c13cb5da204c670cf92029cfb949"
+            "d59d4b4ea46c7b"
+        ),
+        "logical_artifact_sha256": (
+            "da9fe3a067a41ba0beeafd92b0015b46627d51b77bf4da3ae5"
+            "9f4a7fbbd46581"
+        ),
+        "publication_commit_sha1": (
+            "1baec8b32690f69feee7a51657c0fcb3f23e100e"
+        ),
+        "body_free": True,
+        "identity_sha256": (
+            "9602c7cf4092594950d988c05a886c0780c32ff1eebc9fa940"
+            "9d00959becad13"
+        ),
+    }
+    assert set(decision_identity) == _EXTERNAL_IDENTITY_KEYS
+    assert len(decision_identity) == 10
+    assert decision_identity["identity_sha256"] == _hash_without(
+        decision_identity,
+        "identity_sha256",
+    )
+    assert len(
+        {
+            historical_green_path,
+            historical_completion_path,
+            lineage02_green_path,
+            lineage02_completion_path,
+        }
+    ) == 4
+
+    historical_green_artifact = deepcopy(
+        actual_s1_state()["combined_green_evidence_artifact"]
+    )
+    historical_green_artifact.update(
+        {
+            "successor_source_commit_sha1": (
+                historical_source_closure["source_commit_sha1"]
+            ),
+            "successor_source_tree_sha1": (
+                historical_source_closure["source_tree_sha1"]
+            ),
+            "successor_source_closure_sha256": (
+                historical_source_closure["source_closure_sha256"]
+            ),
+            "success_contract_test_manifest_sha256": (
+                historical_source_closure[
+                    "success_contract_test_manifest_sha256"
+                ]
+            ),
+        }
+    )
+    historical_green_artifact["receipt_sha256"] = _hash_without(
+        historical_green_artifact,
+        "receipt_sha256",
+    )
+    assert len(historical_green_artifact) == 16
+    assert historical_green_artifact["receipt_sha256"] == (
+        "2cca7b1f1ce4586448352cf1041e990cde930d20dba3f2a0b7"
+        "2f09aec9f0414c"
+    )
+    historical_green_identity = _external_identity_from_candidate(
+        _candidate_identity(
+            artifact_role="SUCCESSOR_COMBINED_GREEN_RESULT",
+            path=historical_green_path,
+            artifact=historical_green_artifact,
+            logical_hash_key="receipt_sha256",
+        ),
+        publication_commit_sha1=(
+            "ed03af56edefb378f74a0f5a20b08b6ab11abfd8"
+        ),
+    )
+    assert historical_green_identity == {
+        "artifact_role": "SUCCESSOR_COMBINED_GREEN_RESULT",
+        "schema_version": (
+            "cocolon.emlis.nls_v3.recovery_epoch002."
+            "post_d2_successor_targeted_green_result.v1"
+        ),
+        "repository_full_name": "MassyuRed/Cocolon",
+        "path": historical_green_path,
+        "git_blob_sha1": (
+            "7d6763d9a2c38b8b3fc40c0e5b15e6328948d75a"
+        ),
+        "raw_sha256": (
+            "7beb737ba6962391df8d3549db0c5a483024d32a4abc52e059"
+            "f99f89f91267c7"
+        ),
+        "logical_artifact_sha256": (
+            "2cca7b1f1ce4586448352cf1041e990cde930d20dba3f2a0b7"
+            "2f09aec9f0414c"
+        ),
+        "publication_commit_sha1": (
+            "ed03af56edefb378f74a0f5a20b08b6ab11abfd8"
+        ),
+        "body_free": True,
+        "identity_sha256": (
+            "022e1f4014c055325e192f415601f31d890272cf24cbd837fa"
+            "ac9dad8f8660d7"
+        ),
+    }
+
+    historical_completion_artifact = {
+        "schema_version": _SCHEMAS["successor_completion"],
+        "logical_cycle_id": "NLS_V3_CYCLE_001",
+        "recovery_epoch_id": "NLS_V3_CYCLE001_RECOVERY_EPOCH_002",
+        "historical_d2_final_closure_sha256": (
+            "2d15d58d7bbdd2dab91f526486dcaf29a05c7326ec3944a91"
+            "fc04757c1d73fbe"
+        ),
+        "historical_d2_completion_receipt_identity_sha256": (
+            "7420f1ec60d0db3e83ae2a6fd1c900217256bc0e1b356a353"
+            "bf74e0155681157"
+        ),
+        "parent_addendum_external_identity_sha256": (
+            "527eb11a767582a2f86531e34e044dffa9f0ed034af91ef063"
+            "c3acc33813ba6d"
+        ),
+        "successor_source_closure_sha256": (
+            historical_source_closure["source_closure_sha256"]
+        ),
+        "causal_red_evidence_sha256": (
+            "7b3b6d0890038642d69feb18e46630fbf97a5918fe0e95db76"
+            "6b8c8175e2d179"
+        ),
+        "combined_green_evidence_sha256": (
+            historical_green_identity["logical_artifact_sha256"]
+        ),
+        "state": "SUCCESSOR_SOURCE_BASELINE_ELIGIBILITY_PROVED",
+        "automatic_progression": False,
+        "body_free": True,
+        "receipt_sha256": (
+            "7b726c5fd6c7b87546962065a1bea48bdc20ed82a335e068deb"
+            "e828a9237e124"
+        ),
+    }
+    assert set(historical_completion_artifact) == (
+        _SUCCESSOR_COMPLETION_KEYS
+    )
+    assert len(historical_completion_artifact) == 13
+    assert historical_completion_artifact["receipt_sha256"] == (
+        _hash_without(
+            historical_completion_artifact,
+            "receipt_sha256",
+        )
+    )
+    historical_completion_identity = (
+        _external_identity_from_candidate(
+            _candidate_identity(
+                artifact_role="SUCCESSOR_COMPLETION_RECEIPT",
+                path=historical_completion_path,
+                artifact=historical_completion_artifact,
+                logical_hash_key="receipt_sha256",
+            ),
+            publication_commit_sha1=(
+                "d1629e0e0fe3f04d715caa242aab751c5e62e30b"
+            ),
+        )
+    )
+    assert historical_completion_identity == {
+        "artifact_role": "SUCCESSOR_COMPLETION_RECEIPT",
+        "schema_version": _SCHEMAS["successor_completion"],
+        "repository_full_name": "MassyuRed/Cocolon",
+        "path": historical_completion_path,
+        "git_blob_sha1": (
+            "6dba9d00660f6dbac2013df331f77375a24e4648"
+        ),
+        "raw_sha256": (
+            "f29007bff71e8cc647b3ee18e8e8aaf8a59df841f6dd8ae73"
+            "9eb8544a6b4c98b"
+        ),
+        "logical_artifact_sha256": (
+            "7b726c5fd6c7b87546962065a1bea48bdc20ed82a335e068deb"
+            "e828a9237e124"
+        ),
+        "publication_commit_sha1": (
+            "d1629e0e0fe3f04d715caa242aab751c5e62e30b"
+        ),
+        "body_free": True,
+        "identity_sha256": (
+            "9213577db07d55c6901494ac2e30b69335c1e5b274079e491c"
+            "a451aa3281b643"
+        ),
+    }
+
+    ordered_nodes = list(_success_contract_node_ids())
+    assert len(ordered_nodes) == len(set(ordered_nodes)) == 110
+    assert artifact_sha256(ordered_nodes) == (
+        "da8db0f75db162ca3f4dafc0e60c1348c63c3bbd5cbb5dfc1"
+        "55788eb2c46ac83"
+    )
+
+    def lineage02_state() -> dict[str, Any]:
+        state = actual_s1_state()
+        closure = state["successor_source_closure"]
+        assert set(closure) == _SUCCESSOR_CLOSURE_KEYS
+        assert len(closure) == 20
+        assert (
+            closure["source_commit_sha1"],
+            closure["source_tree_sha1"],
+        ) == _git_head_tree()
+        assert closure["source_closure_sha256"] != (
+            historical_source_closure["source_closure_sha256"]
+        )
+
+        green = deepcopy(state["combined_green_evidence_artifact"])
+        green_identity = _external_identity_from_candidate(
+            _candidate_identity(
+                artifact_role="SUCCESSOR_COMBINED_GREEN_RESULT",
+                path=lineage02_green_path,
+                artifact=green,
+                logical_hash_key="receipt_sha256",
+            ),
+            publication_commit_sha1="6" * 40,
+        )
+        old_green_postfetch = state[
+            "combined_green_postfetch_evidence"
+        ]
+        state["combined_green_evidence"] = green_identity
+        state[
+            "combined_green_postfetch_evidence"
+        ] = _single_artifact_postfetch(
+            green_identity,
+            base_commit_sha1=old_green_postfetch[
+                "publication_parent_commit_sha1s"
+            ][0],
+            base_tree_sha1=old_green_postfetch["base_tree_sha1"],
+            target_tree_sha1=old_green_postfetch["target_tree_sha1"],
+        )
+
+        completion = deepcopy(state["successor_completion_receipt"])
+        completion["schema_version"] = lineage02_completion_schema
+        completion[
+            "lineage_recovery_decision_external_identity_sha256"
+        ] = decision_identity["identity_sha256"]
+        completion["combined_green_evidence_sha256"] = green_identity[
+            "logical_artifact_sha256"
+        ]
+        completion["receipt_sha256"] = _hash_without(
+            completion,
+            "receipt_sha256",
+        )
+        assert len(completion) == 14
+        assert set(completion) == (
+            _SUCCESSOR_COMPLETION_KEYS
+            | {
+                "lineage_recovery_decision_external_identity_sha256"
+            }
+        )
+        completion_publication = state[
+            "successor_completion_publication"
+        ]
+        completion_publication["identity"]["path"] = (
+            lineage02_completion_path
+        )
+        completion_publication["identity"][
+            "publication_commit_sha1"
+        ] = "7" * 40
+        completion_publication["changed_paths"] = [
+            lineage02_completion_path
+        ]
+        _rebind_completion_chain(state, completion)
+        assert state["combined_green_evidence"]["path"] == (
+            lineage02_green_path
+        )
+        assert state["successor_completion_publication"][
+            "identity"
+        ]["path"] == lineage02_completion_path
+        return state
+
+    def lineage02_single_publication_state(
+        sequence_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        state = _single_publication_state()
+        state["additive_role_paths"][
+            "SUCCESSOR_COMPLETION_RECEIPT"
+        ] = lineage02_completion_path
+        completion_transaction = next(
+            row
+            for row in state["exact1_transactions"]
+            if row["artifact_role"] == "SUCCESSOR_COMPLETION_RECEIPT"
+        )
+        completion_publication = deepcopy(
+            sequence_state["successor_completion_publication"]
+        )
+        completion_transaction["path"] = lineage02_completion_path
+        completion_transaction["expected_changed_paths"] = [
+            lineage02_completion_path
+        ]
+        completion_transaction["head_commit_sha1"] = (
+            completion_publication["identity"][
+                "publication_commit_sha1"
+            ]
+        )
+        completion_transaction["target_absent_at_base"] = True
+        completion_transaction["publication"] = completion_publication
+        admission_transaction = next(
+            row
+            for row in state["exact1_transactions"]
+            if row["artifact_role"]
+            == "P1_OPERATIONAL_ADMISSION_RECEIPT"
+        )
+        admission_publication = deepcopy(
+            sequence_state["operational_admission_publication"]
+        )
+        admission_transaction["head_commit_sha1"] = (
+            admission_publication["identity"][
+                "publication_commit_sha1"
+            ]
+        )
+        admission_transaction["publication"] = admission_publication
+        return state
+
+    def historical_current_use_state() -> dict[str, Any]:
+        state = actual_s1_state()
+        closure_owner = _closure_state()
+        closure_owner["successor_source_closure"] = deepcopy(
+            historical_source_closure
+        )
+        _rebind_c06_sequence_from_closure_owner(
+            state,
+            closure_owner,
+        )
+        state["combined_green_evidence"]["publication_commit_sha1"] = (
+            historical_green_identity["publication_commit_sha1"]
+        )
+        state["successor_completion_publication"]["identity"][
+            "publication_commit_sha1"
+        ] = historical_completion_identity["publication_commit_sha1"]
+        _rebind_successor_evidence(
+            state,
+            evidence_kind="combined_green",
+            artifact=deepcopy(historical_green_artifact),
+        )
+        assert state["combined_green_evidence"] == (
+            historical_green_identity
+        )
+        assert state["successor_completion_receipt"] == (
+            historical_completion_artifact
+        )
+        assert state["successor_completion_publication"][
+            "identity"
+        ] == historical_completion_identity
+        return state
+
+    def current_closure_historical_green_state() -> dict[str, Any]:
+        state = lineage02_state()
+        state["combined_green_evidence"] = deepcopy(
+            historical_green_identity
+        )
+        state[
+            "combined_green_postfetch_evidence"
+        ] = _single_artifact_postfetch(
+            historical_green_identity,
+            base_commit_sha1="a" * 40,
+            base_tree_sha1="c" * 40,
+            target_tree_sha1="d" * 40,
+        )
+        _rebind_successor_evidence(
+            state,
+            evidence_kind="combined_green",
+            artifact=deepcopy(historical_green_artifact),
+        )
+        return state
+
+    def lineage02_green_historical_completion_state() -> dict[str, Any]:
+        state = lineage02_state()
+        completion_publication = state[
+            "successor_completion_publication"
+        ]
+        completion_publication["identity"] = deepcopy(
+            historical_completion_identity
+        )
+        completion_publication["changed_paths"] = [
+            historical_completion_path
+        ]
+        _rebind_completion_chain(
+            state,
+            deepcopy(historical_completion_artifact),
+        )
+        return state
+
+    def lineage02_green_historical_path_state() -> dict[str, Any]:
+        state = lineage02_state()
+        green = deepcopy(state["combined_green_evidence_artifact"])
+        state["combined_green_evidence"]["path"] = (
+            historical_green_path
+        )
+        state["combined_green_evidence"]["publication_commit_sha1"] = (
+            "8" * 40
+        )
+        _rebind_successor_evidence(
+            state,
+            evidence_kind="combined_green",
+            artifact=green,
+        )
+        return state
+
+    def lineage02_completion_historical_path_state() -> dict[str, Any]:
+        state = lineage02_state()
+        completion = deepcopy(state["successor_completion_receipt"])
+        publication = state["successor_completion_publication"]
+        publication["identity"]["path"] = historical_completion_path
+        publication["identity"]["publication_commit_sha1"] = "8" * 40
+        publication["changed_paths"] = [historical_completion_path]
+        _rebind_completion_chain(state, completion)
+        return state
+
+    def lineage02_new_path_v1_without_decision_state() -> dict[str, Any]:
+        state = lineage02_state()
+        completion = deepcopy(state["successor_completion_receipt"])
+        completion["schema_version"] = _SCHEMAS["successor_completion"]
+        completion.pop(
+            "lineage_recovery_decision_external_identity_sha256"
+        )
+        completion["receipt_sha256"] = _hash_without(
+            completion,
+            "receipt_sha256",
+        )
+        _rebind_completion_chain(state, completion)
+        return state
+
+    def wrong_decision_identity_state() -> dict[str, Any]:
+        state = lineage02_state()
+        completion = deepcopy(state["successor_completion_receipt"])
+        completion[
+            "lineage_recovery_decision_external_identity_sha256"
+        ] = (
+            "0afaf2a55059b99b6ee68cc3073aff20db190eb56a60e79f8"
+            "d7b5c8308285f54"
+        )
+        completion["receipt_sha256"] = _hash_without(
+            completion,
+            "receipt_sha256",
+        )
+        _rebind_completion_chain(state, completion)
+        return state
+
+    def historical_path_overwrite_publication_state() -> dict[str, Any]:
+        sequence_state = lineage02_state()
+        state = lineage02_single_publication_state(sequence_state)
+        completion_transaction = next(
+            row
+            for row in state["exact1_transactions"]
+            if row["artifact_role"] == "SUCCESSOR_COMPLETION_RECEIPT"
+        )
+        completion = sequence_state["successor_completion_receipt"]
+        overwrite_identity = _external_identity_from_candidate(
+            _candidate_identity(
+                artifact_role="SUCCESSOR_COMPLETION_RECEIPT",
+                path=historical_completion_path,
+                artifact=completion,
+                logical_hash_key="receipt_sha256",
+            ),
+            publication_commit_sha1="8" * 40,
+        )
+        overwrite_publication = deepcopy(
+            sequence_state["successor_completion_publication"]
+        )
+        overwrite_publication["identity"] = overwrite_identity
+        overwrite_publication["changed_paths"] = [
+            historical_completion_path
+        ]
+        overwrite_publication[
+            "postfetch_evidence"
+        ] = _single_artifact_postfetch(
+            overwrite_identity,
+            base_commit_sha1=overwrite_publication[
+                "parent_commit_sha1s"
+            ][0],
+        )
+        completion_transaction["path"] = historical_completion_path
+        completion_transaction["expected_changed_paths"] = [
+            historical_completion_path
+        ]
+        completion_transaction["head_commit_sha1"] = (
+            overwrite_identity["publication_commit_sha1"]
+        )
+        completion_transaction["target_absent_at_base"] = False
+        completion_transaction["publication"] = overwrite_publication
+        return state
+
+    publisher_api = _target_api_or_red("single_publication", "C09")
+
+    def observe_lineage(
+        state: dict[str, Any],
+    ) -> dict[str, tuple[str, ...]]:
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            monkeypatch.setitem(
+                globals(),
+                "_sequence_state",
+                lambda: deepcopy(state),
+            )
+            independent_state = _independent_state()
+        return {
+            "owner": _issue_codes(owner_api(deepcopy(state))),
+            "independent": _issue_codes(
+                independent_api(independent_state)
+            ),
+        }
+
+    coherent_lineage02 = lineage02_state()
+    lineage02_observed = {
+        "coherent_current_exact20_lineage02_exact16_exact14": {
+            **observe_lineage(coherent_lineage02),
+            "publisher": _issue_codes(
+                publisher_api(
+                    lineage02_single_publication_state(
+                        coherent_lineage02
+                    )
+                )
+            ),
+        },
+        "historical_exact20_exact16_exact13_current_use": observe(
+            historical_current_use_state()
+        ),
+        "current_exact20_historical_exact16_mixed": observe_lineage(
+            current_closure_historical_green_state()
+        ),
+        "lineage02_exact16_historical_exact13_mixed": observe_lineage(
+            lineage02_green_historical_completion_state()
+        ),
+        "lineage02_exact16_historical_path_overwrite": observe_lineage(
+            lineage02_green_historical_path_state()
+        ),
+        "lineage02_exact14_historical_path_overwrite": observe_lineage(
+            lineage02_completion_historical_path_state()
+        ),
+        "lineage02_new_path_v1_without_decision": observe_lineage(
+            lineage02_new_path_v1_without_decision_state()
+        ),
+        "bare_design_hash_instead_of_decision_external_identity": (
+            observe_lineage(wrong_decision_identity_state())
+        ),
+        "historical_completion_path_overwrite": {
+            "publisher": _issue_codes(
+                publisher_api(
+                    historical_path_overwrite_publication_state()
+                )
+            )
+        },
+    }
+    assert lineage02_observed == {
+        "coherent_current_exact20_lineage02_exact16_exact14": {
+            "owner": (),
+            "independent": (),
+            "publisher": (),
+        },
+        "historical_exact20_exact16_exact13_current_use": {
+            "owner": (expected_code,),
+            "independent": (expected_code,),
+        },
+        "current_exact20_historical_exact16_mixed": {
+            "owner": (expected_code,),
+            "independent": (expected_code,),
+        },
+        "lineage02_exact16_historical_exact13_mixed": {
+            "owner": (expected_code,),
+            "independent": (expected_code,),
+        },
+        "lineage02_exact16_historical_path_overwrite": {
+            "owner": (expected_code,),
+            "independent": (expected_code,),
+        },
+        "lineage02_exact14_historical_path_overwrite": {
+            "owner": (expected_code,),
+            "independent": (expected_code,),
+        },
+        "lineage02_new_path_v1_without_decision": {
+            "owner": (expected_code,),
+            "independent": (expected_code,),
+        },
+        "bare_design_hash_instead_of_decision_external_identity": {
+            "owner": (expected_code,),
+            "independent": (expected_code,),
+        },
+        "historical_completion_path_overwrite": {
+            "publisher": (expected_code,),
+        },
+    }, (
+        "C09",
+        (
+            "Lineage01 identities must remain immutable historical "
+            "evidence while only a decision-bound Lineage02 exact20 -> "
+            "exact16 -> completion-v2 exact14 chain is current-eligible"
+        ),
+        lineage02_observed,
+    )
+
 
 def test_c10_allocation_event1_owner_authority_and_current_reflection_contract() -> None:
     _assert_case("C10")
