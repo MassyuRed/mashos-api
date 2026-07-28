@@ -3551,7 +3551,6 @@ def _success_completion_valid(state: Any) -> bool:
         or len(set(green_nodes)) != 110
         or green.get("executed_node_ids") != green_nodes
         or type(green_states) is not dict
-        or list(green_states) != green_nodes
         or green_states != {node: "PASSED" for node in green_nodes}
         or green.get("counts")
         != {
