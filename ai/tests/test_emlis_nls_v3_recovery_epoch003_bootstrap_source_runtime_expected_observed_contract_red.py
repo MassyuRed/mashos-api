@@ -13,6 +13,10 @@ during collection.
 All fixtures are body-free and in-memory.  This file does not materialize a
 runtime, allocate a candidate, publish Event1, create readiness or a
 reservation, invoke formal exact134, or advance Cycle 001.
+
+The exact30 oracle denominator is distinct from the future formal-worker
+manifest.  The embedded Epoch003 bootstrap fixture binds the authoritative
+Step00--10 exact134 node sequence and its exact21 source manifest.
 """
 
 import ast
@@ -38,6 +42,10 @@ _TOOLS_ROOT = _AI_ROOT / "tools"
 for _path in (_INFERENCE_ROOT, _TOOLS_ROOT, _HERE.parent):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
+
+from emlis_ai_recovery_epoch001_current_step_requirement_registry_v3 import (
+    RECOVERY_EPOCH001_FORMAL_NODE_IDS_BY_STEP,
+)
 
 
 def _keys(value: str) -> frozenset[str]:
@@ -75,6 +83,11 @@ _AUTHORITY = (
     "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH003_D1_BOOTSTRAP_SOURCE_"
     "RUNTIME_EXPECTED_OBSERVED_SEPARATION_SCHEMA_PAIR_DISPATCH_EVENT1_"
     "IMMUTABILITY_AND_INDEPENDENT_OPERATIONAL_PROJECTION_RED_FREEZE_ONLY"
+)
+_CORRECTION_AUTHORITY = (
+    "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH003_D1_BOOTSTRAP_FORMAL_"
+    "EXACT134_MANIFEST_AND_REFERENCE_RUNTIME_ROOT_IDENTITY_BINDING_"
+    "ORACLE_CORRECTION_AND_CAUSAL_RED_REFREEZE_ONLY"
 )
 _LOGICAL_CYCLE_ID = "NLS_V3_CYCLE_001"
 _RECOVERY_EPOCH_ID = "NLS_V3_CYCLE001_RECOVERY_EPOCH_003"
@@ -149,6 +162,10 @@ _PREFLIGHT_CHALLENGE_ID = _sha256_text(
 )
 _PREFLIGHT_ID = _sha256_text(
     "fixture-only-recovery-epoch003-preflight-id"
+)
+_FORMAL_EXACT134_STEP_COUNTS = (4, 9, 14, 23, 19, 16, 5, 8, 9, 11, 16)
+_FORMAL_EXACT134_NODE_IDS_SHA256 = (
+    "0ab1039a35b8621a257617688cc5d63bb331f5c32dd08f34df1173a6b9e57118"
 )
 
 _REFERENCE_OBSERVATION_PATH = (
@@ -660,12 +677,23 @@ def _owner_artifacts() -> list[dict[str, Any]]:
 
 
 def _formal_test_manifest() -> list[dict[str, Any]]:
+    paths = sorted(
+        {
+            node_id.split("::", 1)[0]
+            for node_id in _formal_exact134_node_ids()
+        }
+    )
     return [
         {
-            "path": _THIS_PATH,
-            "git_blob_sha1": _sha1_text("fixture-d1-test-blob"),
-            "raw_sha256": _sha256_text("fixture-d1-test-raw"),
+            "path": path,
+            "git_blob_sha1": _sha1_text(
+                "fixture-formal-test-blob:" + path
+            ),
+            "raw_sha256": _sha256_text(
+                "fixture-formal-test-raw:" + path
+            ),
         }
+        for path in paths
     ]
 
 
@@ -777,7 +805,7 @@ def _bootstrap_closure(
         "--noconftest",
         "-p",
         "no:cacheprovider",
-        *_formal_node_ids(),
+        *_formal_exact134_node_ids(),
     ]
     value = {
         "schema_version": _BOOTSTRAP_SCHEMA,
@@ -785,7 +813,7 @@ def _bootstrap_closure(
         "source_tree_sha1": reference["source_tree_sha1"],
         "formal_owner_artifacts": owners,
         "formal_owner_artifacts_sha256": _sha256_value(owners),
-        "formal_test_node_ids": list(_formal_node_ids()),
+        "formal_test_node_ids": list(_formal_exact134_node_ids()),
         "formal_test_manifest": tests,
         "formal_test_manifest_sha256": _sha256_value(tests),
         "conftest_plugin_mode": "NOCONFTEST",
@@ -1072,6 +1100,7 @@ def _projection_from_operational(
 def _operational_observation(
     event: Mapping[str, Any],
     event_identity: Mapping[str, Any],
+    reference_runtime_root_identity_sha256: str,
 ) -> dict[str, Any]:
     expected = _projection_from_event(event)
     operational_runtime = _runtime_materialization("operational")
@@ -1135,9 +1164,7 @@ def _operational_observation(
             "runtime_root_identity_sha256"
         ],
         "reference_runtime_root_identity_sha256": (
-            event["bootstrap_closure"][
-                "reference_runtime_observation_external_identity"
-            ]["identity_sha256"]
+            reference_runtime_root_identity_sha256
         ),
         "attempt_registry_root_identity_sha256": _sha256_text(
             "fixture:attempt-registry-root"
@@ -1235,7 +1262,13 @@ def _baseline_state() -> dict[str, Any]:
         path=_EVENT1_PATH,
         logical_hash=event["event_sha256"],
     )
-    operational = _operational_observation(event, event_identity)
+    operational = _operational_observation(
+        event,
+        event_identity,
+        reference["runtime_materialization"][
+            "runtime_root_identity_sha256"
+        ],
+    )
     operational_identity = _external_identity(
         role="RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_OBSERVATION",
         schema=_OPERATIONAL_OBSERVATION_SCHEMA,
@@ -1589,15 +1622,28 @@ _CASES = (
 _CASE_BY_ID = {row[0]: row for row in _CASES}
 
 
-def _formal_node_ids() -> tuple[str, ...]:
+def _oracle_node_ids() -> tuple[str, ...]:
     return tuple(
         f"{_THIS_PATH}::test_{case_id.lower()}_{boundary}"
         for case_id, boundary, _role in _CASES
     )
 
 
+def _formal_exact134_node_ids() -> tuple[str, ...]:
+    return tuple(
+        node_id
+        for step in range(11)
+        for node_id in RECOVERY_EPOCH001_FORMAL_NODE_IDS_BY_STEP[step]
+    )
+
+
 def _assert_static_contract() -> None:
     assert _AUTHORITY.endswith("RED_FREEZE_ONLY")
+    assert _CORRECTION_AUTHORITY == (
+        "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH003_D1_BOOTSTRAP_FORMAL_"
+        "EXACT134_MANIFEST_AND_REFERENCE_RUNTIME_ROOT_IDENTITY_BINDING_"
+        "ORACLE_CORRECTION_AND_CAUSAL_RED_REFREEZE_ONLY"
+    )
     assert _HERE.relative_to(_REPO_ROOT).as_posix() == _THIS_PATH
     assert len(_ROLE_PATHS) == len(set(_ROLE_PATHS.values())) == 7
     assert all((_REPO_ROOT / path).is_file() for path in _ROLE_PATHS.values())
@@ -1670,12 +1716,38 @@ def _assert_static_contract() -> None:
         == baseline["owner_operational_projection"]
         == baseline["independent_operational_projection"]
     )
+    exact134 = _formal_exact134_node_ids()
+    assert tuple(
+        len(RECOVERY_EPOCH001_FORMAL_NODE_IDS_BY_STEP[step])
+        for step in range(11)
+    ) == _FORMAL_EXACT134_STEP_COUNTS
+    assert len(exact134) == len(set(exact134)) == 134
+    assert _sha256_value(list(exact134)) == (
+        _FORMAL_EXACT134_NODE_IDS_SHA256
+    )
+    assert baseline["bootstrap_closure"]["formal_test_node_ids"] == list(
+        exact134
+    )
+    assert baseline["bootstrap_closure"]["formal_worker_argv"][-134:] == list(
+        exact134
+    )
+    formal_manifest = baseline["bootstrap_closure"][
+        "formal_test_manifest"
+    ]
+    assert len(formal_manifest) == 21
+    assert [row["path"] for row in formal_manifest] == sorted(
+        {node_id.split("::", 1)[0] for node_id in exact134}
+    )
+    assert all(row["path"] != _THIS_PATH for row in formal_manifest)
     reference_root = baseline["reference_runtime_observation"][
         "runtime_materialization"
     ]["runtime_root_identity_sha256"]
     operational_root = baseline["operational_runtime_observation"][
         "runtime_root_identity_sha256"
     ]
+    assert baseline["operational_runtime_observation"][
+        "reference_runtime_root_identity_sha256"
+    ] == reference_root
     assert reference_root != operational_root
     ids = [row[0] for row in _CASES]
     assert ids == [
@@ -1688,14 +1760,16 @@ def _assert_static_contract() -> None:
         *(f"A{number:02d}" for number in range(1, 5)),
     ]
     assert len(ids) == len(set(ids)) == 30
-    expected_names = tuple(node.rsplit("::", 1)[1] for node in _formal_node_ids())
+    expected_names = tuple(
+        node.rsplit("::", 1)[1] for node in _oracle_node_ids()
+    )
     actual_names = tuple(
         name
         for name, value in globals().items()
         if name.startswith("test_") and callable(value)
     )
     assert actual_names == expected_names
-    assert len(_formal_node_ids()) == len(set(_formal_node_ids())) == 30
+    assert len(_oracle_node_ids()) == len(set(_oracle_node_ids())) == 30
     for name in expected_names:
         assert not inspect.signature(globals()[name]).parameters
 
