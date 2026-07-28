@@ -146,6 +146,10 @@ _ROLE_LOGICAL_HASH_KEYS = {
     "SUCCESSOR_COMPLETION_RECEIPT": "receipt_sha256",
     "P1_OPERATIONAL_ADMISSION_RECEIPT": "operational_admission_sha256",
 }
+_LINEAGE02_SUCCESSOR_COMPLETION_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch002."
+    "post_d2_source_baseline_eligibility_successor_completion_receipt.v2"
+)
 _ROLE_SCHEMAS = {
     "SOURCE_BASELINE_EVENT": (
         "cocolon.emlis.nls_v3.recovery_epoch002.sequence_event.v1"
@@ -190,6 +194,12 @@ _SOURCE_BASELINE_EVENT_SCHEMAS = frozenset(
 def _role_schema_valid(artifact_role: str, schema_version: Any) -> bool:
     if artifact_role == "SOURCE_BASELINE_EVENT":
         return schema_version in _SOURCE_BASELINE_EVENT_SCHEMAS
+    if artifact_role == "SUCCESSOR_COMPLETION_RECEIPT":
+        return (
+            schema_version
+            == _ROLE_SCHEMAS["SUCCESSOR_COMPLETION_RECEIPT"]
+            or schema_version == _LINEAGE02_SUCCESSOR_COMPLETION_SCHEMA
+        )
     return schema_version == _ROLE_SCHEMAS.get(artifact_role)
 
 RECOVERY_EPOCH002_ATOMIC_SUCCESS_MANIFEST_SCHEMA = (
@@ -245,11 +255,47 @@ RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_PATH = (
     "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2SourceBaseline"
     "EligibilitySuccessorCompletion_BodyFree_Receipt_20260726.json"
 )
+_LINEAGE02_SUCCESSOR_COMPLETION_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2"
+    "SourceIdentityLineage02_SourceBaselineEligibilitySuccessor"
+    "Completion_BodyFree_Receipt_20260728.json"
+)
 RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_PATH = (
     "EmlisAIの実装済み資料/documents/"
     "NLSv3_Step11_Cycle001_RecoveryEpoch002_P1OperationalAdmission_"
     "BodyFree_Receipt_20260726.json"
 )
+
+
+def _role_schema_path_valid(
+    artifact_role: str,
+    schema_version: Any,
+    path: Any,
+) -> bool:
+    if artifact_role != "SUCCESSOR_COMPLETION_RECEIPT":
+        return True
+    return (
+        schema_version
+        == _ROLE_SCHEMAS["SUCCESSOR_COMPLETION_RECEIPT"]
+        and path == RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_PATH
+    ) or (
+        schema_version == _LINEAGE02_SUCCESSOR_COMPLETION_SCHEMA
+        and path == _LINEAGE02_SUCCESSOR_COMPLETION_PATH
+    )
+
+
+def _role_publication_path_valid(
+    artifact_role: Any,
+    path: Any,
+) -> bool:
+    if artifact_role != "SUCCESSOR_COMPLETION_RECEIPT":
+        return True
+    return (
+        path == RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_PATH
+        or path == _LINEAGE02_SUCCESSOR_COMPLETION_PATH
+    )
+
 
 def _hash_without(value: Mapping[str, Any], key: str) -> str:
     material = deepcopy(dict(value))
@@ -432,6 +478,11 @@ def build_recovery_epoch002_publication_candidate(
             artifact_role,
             artifact.get("schema_version"),
         )
+        or not _role_schema_path_valid(
+            artifact_role,
+            artifact.get("schema_version"),
+            path,
+        )
         or _role_artifact_issues(artifact_role, artifact)
         or _SHA256_RE.fullmatch(logical_artifact_sha256) is None
         or _artifact_logical_hash(artifact_role, artifact)
@@ -502,6 +553,11 @@ def validate_recovery_epoch002_publication_candidate(
             str(candidate.get("artifact_role", "")),
             artifact.get("schema_version"),
         )
+        or not _role_schema_path_valid(
+            str(candidate.get("artifact_role", "")),
+            artifact.get("schema_version"),
+            candidate.get("path"),
+        )
         or _artifact_logical_hash(
             str(candidate.get("artifact_role", "")),
             artifact,
@@ -562,6 +618,10 @@ def validate_recovery_epoch002_publication_result(
         != RECOVERY_EPOCH002_PUBLICATION_REPOSITORY
         or result.get("source_ref") != RECOVERY_EPOCH002_PUBLICATION_REF
         or not _new_document_path_valid(path)
+        or not _role_publication_path_valid(
+            result.get("artifact_role"),
+            path,
+        )
         or result.get("path_preexisted") is not False
         or _SHA1_RE.fullmatch(str(expected_old or "")) is None
         or _SHA1_RE.fullmatch(str(commit or "")) is None
@@ -652,6 +712,11 @@ def validate_recovery_epoch002_artifact_identity(
         or not _role_schema_valid(
             str(identity.get("artifact_role", "")),
             identity.get("schema_version"),
+        )
+        or not _role_schema_path_valid(
+            str(identity.get("artifact_role", "")),
+            identity.get("schema_version"),
+            identity.get("path"),
         )
         or _SHA1_RE.fullmatch(str(identity.get("git_blob_sha1", "")))
         is None
@@ -958,6 +1023,17 @@ def _success_exact1_publication_valid(
     ):
         return False
     artifact = publication["artifact"]
+    if (
+        not _role_schema_valid(role, artifact.get("schema_version"))
+        or not _role_schema_path_valid(
+            role,
+            artifact.get("schema_version"),
+            path,
+        )
+        or _contains_forbidden_key(artifact)
+        or _role_artifact_issues(role, artifact)
+    ):
+        return False
     logical_hash_key = _ROLE_LOGICAL_HASH_KEYS[role]
     candidate = _success_candidate_identity(
         artifact,
@@ -1001,15 +1077,6 @@ def validate_recovery_epoch002_post_d2_single_publication_state(
         ):
             return ("SUCCESSOR_OPERATIONAL_SUCCESSION_INVALID",)
         return ("SUCCESSOR_COMPLETION_EVIDENCE_BINDING_INVALID",)
-    if state.get("additive_role_paths") != {
-        "SUCCESSOR_COMPLETION_RECEIPT": (
-            RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_PATH
-        ),
-        "P1_OPERATIONAL_ADMISSION_RECEIPT": (
-            RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_PATH
-        ),
-    }:
-        return ("SUCCESSOR_COMPLETION_EVIDENCE_BINDING_INVALID",)
     transactions = state.get("exact1_transactions")
     if type(transactions) is not list or len(transactions) != 2:
         if (
@@ -1023,10 +1090,42 @@ def validate_recovery_epoch002_post_d2_single_publication_state(
         ):
             return ("SUCCESSOR_OPERATIONAL_SUCCESSION_INVALID",)
         return ("SUCCESSOR_COMPLETION_EVIDENCE_BINDING_INVALID",)
+    completion_transaction = transactions[0]
+    completion_publication = (
+        completion_transaction.get("publication")
+        if type(completion_transaction) is dict
+        else None
+    )
+    completion_artifact = (
+        completion_publication.get("artifact")
+        if type(completion_publication) is dict
+        else None
+    )
+    completion_schema = (
+        completion_artifact.get("schema_version")
+        if type(completion_artifact) is dict
+        else None
+    )
+    if (
+        completion_schema
+        == _ROLE_SCHEMAS["SUCCESSOR_COMPLETION_RECEIPT"]
+    ):
+        completion_path = RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_PATH
+    elif completion_schema == _LINEAGE02_SUCCESSOR_COMPLETION_SCHEMA:
+        completion_path = _LINEAGE02_SUCCESSOR_COMPLETION_PATH
+    else:
+        completion_path = None
+    if completion_path is None or state.get("additive_role_paths") != {
+        "SUCCESSOR_COMPLETION_RECEIPT": completion_path,
+        "P1_OPERATIONAL_ADMISSION_RECEIPT": (
+            RECOVERY_EPOCH002_OPERATIONAL_ADMISSION_PATH
+        ),
+    }:
+        return ("SUCCESSOR_COMPLETION_EVIDENCE_BINDING_INVALID",)
     contracts = (
         (
             "SUCCESSOR_COMPLETION_RECEIPT",
-            RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_PATH,
+            completion_path,
             "SUCCESSOR_COMPLETION_EVIDENCE_BINDING_INVALID",
         ),
         (

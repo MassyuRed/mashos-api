@@ -582,6 +582,10 @@ _SUCCESS_COMPLETION_SCHEMA = (
     "cocolon.emlis.nls_v3.recovery_epoch002."
     "post_d2_source_baseline_eligibility_successor_completion_receipt.v1"
 )
+_LINEAGE02_SUCCESS_COMPLETION_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch002."
+    "post_d2_source_baseline_eligibility_successor_completion_receipt.v2"
+)
 _SUCCESS_COMPLETION_KEYS = _keys(
     """
     schema_version logical_cycle_id recovery_epoch_id
@@ -592,6 +596,20 @@ _SUCCESS_COMPLETION_KEYS = _keys(
     combined_green_evidence_sha256 state automatic_progression body_free
     receipt_sha256
     """
+)
+_LINEAGE02_SUCCESS_COMPLETION_KEYS = (
+    _SUCCESS_COMPLETION_KEYS
+    | frozenset(
+        {"lineage_recovery_decision_external_identity_sha256"}
+    )
+)
+_LINEAGE02_RECOVERY_DECISION_EXTERNAL_IDENTITY_SHA256 = (
+    "9602c7cf4092594950d988c05a886c0780c32ff1eebc9fa940"
+    "9d00959becad13"
+)
+_HISTORICAL_SUCCESSOR_SOURCE_CLOSURE_SHA256 = (
+    "d4156b14eddf5e1f6a13411017bd522784b26e3e67d780203a"
+    "727cc7cc1aa97f"
 )
 _SUCCESS_RED_KEYS = _keys(
     """
@@ -801,6 +819,17 @@ _SUCCESS_COMPLETION_PATH = (
     "EmlisAIの実装済み資料/documents/"
     "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2SourceBaseline"
     "EligibilitySuccessorCompletion_BodyFree_Receipt_20260726.json"
+)
+_LINEAGE02_SUCCESS_GREEN_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2_"
+    "SourceIdentityLineage02_Successor_GREEN_Result_20260728.json"
+)
+_LINEAGE02_SUCCESS_COMPLETION_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2"
+    "SourceIdentityLineage02_SourceBaselineEligibilitySuccessor"
+    "Completion_BodyFree_Receipt_20260728.json"
 )
 _SUCCESS_ADMISSION_PATH = (
     "EmlisAIの実装済み資料/documents/"
@@ -3453,6 +3482,67 @@ def _success_direct_artifact_valid(
     )
 
 
+def _success_completion_contract(
+    completion: Any,
+) -> tuple[str, str, str] | None:
+    if type(completion) is not dict:
+        return None
+    if (
+        completion.get("schema_version") == _SUCCESS_COMPLETION_SCHEMA
+        and set(completion) == _SUCCESS_COMPLETION_KEYS
+    ):
+        return (
+            _SUCCESS_COMPLETION_SCHEMA,
+            (
+                "EmlisAIの実装済み資料/documents/"
+                "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2_"
+                "Successor_GREEN_Result_20260726.json"
+            ),
+            _SUCCESS_COMPLETION_PATH,
+        )
+    if (
+        completion.get("schema_version")
+        == _LINEAGE02_SUCCESS_COMPLETION_SCHEMA
+        and set(completion) == _LINEAGE02_SUCCESS_COMPLETION_KEYS
+        and completion.get(
+            "lineage_recovery_decision_external_identity_sha256"
+        )
+        == _LINEAGE02_RECOVERY_DECISION_EXTERNAL_IDENTITY_SHA256
+    ):
+        return (
+            _LINEAGE02_SUCCESS_COMPLETION_SCHEMA,
+            _LINEAGE02_SUCCESS_GREEN_PATH,
+            _LINEAGE02_SUCCESS_COMPLETION_PATH,
+        )
+    return None
+
+
+def _success_completion_identity_valid(identity: Any) -> bool:
+    return (
+        type(identity) is dict
+        and set(identity) == RECOVERY_EPOCH002_ARTIFACT_IDENTITY_KEYS
+        and identity.get("artifact_role")
+        == "SUCCESSOR_COMPLETION_RECEIPT"
+        and (
+            identity.get("schema_version"),
+            identity.get("path"),
+        )
+        in {
+            (
+                _SUCCESS_COMPLETION_SCHEMA,
+                _SUCCESS_COMPLETION_PATH,
+            ),
+            (
+                _LINEAGE02_SUCCESS_COMPLETION_SCHEMA,
+                _LINEAGE02_SUCCESS_COMPLETION_PATH,
+            ),
+        }
+        and identity.get("body_free") is True
+        and identity.get("identity_sha256")
+        == _hash_without(identity, "identity_sha256")
+    )
+
+
 def _success_completion_valid(state: Any) -> bool:
     if (
         type(state) is not dict
@@ -3468,16 +3558,14 @@ def _success_completion_valid(state: Any) -> bool:
     green = state.get("combined_green_evidence_artifact")
     green_identity = state.get("combined_green_evidence")
     expected_contract_manifest = _success_expected_contract_manifest()
-    green_path = (
-        "EmlisAIの実装済み資料/documents/"
-        "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2_"
-        "Successor_GREEN_Result_20260726.json"
-    )
+    completion_contract = _success_completion_contract(completion)
+    if completion_contract is None:
+        return False
+    completion_schema, green_path, completion_path = completion_contract
     if (
         type(closure) is not dict
-        or type(completion) is not dict
-        or set(completion) != _SUCCESS_COMPLETION_KEYS
-        or completion.get("schema_version") != _SUCCESS_COMPLETION_SCHEMA
+        or closure.get("source_closure_sha256")
+        == _HISTORICAL_SUCCESSOR_SOURCE_CLOSURE_SHA256
         or completion.get("logical_cycle_id") != "NLS_V3_CYCLE_001"
         or completion.get("recovery_epoch_id")
         != "NLS_V3_CYCLE001_RECOVERY_EPOCH_002"
@@ -3617,12 +3705,12 @@ def _success_completion_valid(state: Any) -> bool:
     if (
         type(publication) is not dict
         or publication.get("identity", {}).get("path")
-        != _SUCCESS_COMPLETION_PATH
+        != completion_path
         or not _success_exact1_valid(
             publication,
             artifact=completion,
             roles=frozenset({"SUCCESSOR_COMPLETION_RECEIPT"}),
-            schema=_SUCCESS_COMPLETION_SCHEMA,
+            schema=completion_schema,
             logical_hash_key="receipt_sha256",
         )
     ):
@@ -4084,15 +4172,7 @@ def _success_event2_atomic_valid(state: Any) -> bool:
         or type(source_closure) is not dict
         or allocation.get("successor_source_closure_sha256")
         != source_closure.get("source_closure_sha256")
-        or type(completion_identity) is not dict
-        or set(completion_identity)
-        != RECOVERY_EPOCH002_ARTIFACT_IDENTITY_KEYS
-        or completion_identity.get("artifact_role")
-        != "SUCCESSOR_COMPLETION_RECEIPT"
-        or completion_identity.get("path") != _SUCCESS_COMPLETION_PATH
-        or completion_identity.get("body_free") is not True
-        or completion_identity.get("identity_sha256")
-        != _hash_without(completion_identity, "identity_sha256")
+        or not _success_completion_identity_valid(completion_identity)
         or _success_utc_seconds(allocation.get("allocated_at_utc")) is None
         or allocation.get("candidate_allocation_sha256")
         != _hash_without(allocation, "candidate_allocation_sha256")

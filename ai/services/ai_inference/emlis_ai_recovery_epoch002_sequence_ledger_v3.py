@@ -218,6 +218,35 @@ RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_PATH = (
     "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2SourceBaseline"
     "EligibilitySuccessorCompletion_BodyFree_Receipt_20260726.json"
 )
+_LINEAGE02_SUCCESSOR_COMPLETION_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch002."
+    "post_d2_source_baseline_eligibility_successor_completion_receipt.v2"
+)
+_LINEAGE02_SUCCESSOR_COMPLETION_KEYS = (
+    RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_KEYS
+    | frozenset(
+        {"lineage_recovery_decision_external_identity_sha256"}
+    )
+)
+_LINEAGE02_SUCCESSOR_GREEN_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2_"
+    "SourceIdentityLineage02_Successor_GREEN_Result_20260728.json"
+)
+_LINEAGE02_SUCCESSOR_COMPLETION_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2"
+    "SourceIdentityLineage02_SourceBaselineEligibilitySuccessor"
+    "Completion_BodyFree_Receipt_20260728.json"
+)
+_LINEAGE02_RECOVERY_DECISION_EXTERNAL_IDENTITY_SHA256 = (
+    "9602c7cf4092594950d988c05a886c0780c32ff1eebc9fa940"
+    "9d00959becad13"
+)
+_HISTORICAL_SUCCESSOR_SOURCE_CLOSURE_SHA256 = (
+    "d4156b14eddf5e1f6a13411017bd522784b26e3e67d780203a"
+    "727cc7cc1aa97f"
+)
 _SUCCESS_HISTORICAL_S1_SCHEMA = (
     "cocolon.emlis.nls_v3.recovery_epoch002."
     "post_d2_successor_red_result.v1"
@@ -1751,13 +1780,7 @@ def _current_recovery_epoch002_event1_v2_artifact_valid(
         or allocated_at >= event_at
         or allocation.get("candidate_allocation_sha256")
         != _hash_without(allocation, "candidate_allocation_sha256")
-        or not _document_identity_valid(completion_identity)
-        or completion_identity.get("artifact_role")
-        != "SUCCESSOR_COMPLETION_RECEIPT"
-        or completion_identity.get("schema_version")
-        != RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_SCHEMA
-        or completion_identity.get("path")
-        != RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_PATH
+        or not _successor_completion_identity_valid(completion_identity)
         or type(bootstrap) is not dict
         or set(bootstrap) != RECOVERY_EPOCH002_BOOTSTRAP_V2_KEYS
         or bootstrap.get("schema_version")
@@ -1945,13 +1968,11 @@ def _success_parent_binding_valid(state: Mapping[str, Any]) -> bool:
 def validate_recovery_epoch002_successor_completion_receipt(
     receipt: Mapping[str, Any],
 ) -> tuple[str, ...]:
-    """Validate the self-contained exact13 successor-completion receipt."""
+    """Validate one strict historical exact13 or Lineage02 exact14 receipt."""
 
     if (
         type(receipt) is not dict
-        or set(receipt) != RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_KEYS
-        or receipt.get("schema_version")
-        != RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_SCHEMA
+        or _successor_completion_contract(receipt) is None
         or receipt.get("logical_cycle_id") != "NLS_V3_CYCLE_001"
         or receipt.get("recovery_epoch_id")
         != "NLS_V3_CYCLE001_RECOVERY_EPOCH_002"
@@ -1984,6 +2005,61 @@ def validate_recovery_epoch002_successor_completion_receipt(
     return ()
 
 
+def _successor_completion_contract(
+    receipt: Any,
+) -> tuple[str, str] | None:
+    if type(receipt) is not dict:
+        return None
+    if (
+        receipt.get("schema_version")
+        == RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_SCHEMA
+        and set(receipt) == RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_KEYS
+    ):
+        return (
+            (
+                "EmlisAIの実装済み資料/documents/"
+                "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2_"
+                "Successor_GREEN_Result_20260726.json"
+            ),
+            RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_PATH,
+        )
+    if (
+        receipt.get("schema_version")
+        == _LINEAGE02_SUCCESSOR_COMPLETION_SCHEMA
+        and set(receipt) == _LINEAGE02_SUCCESSOR_COMPLETION_KEYS
+        and receipt.get(
+            "lineage_recovery_decision_external_identity_sha256"
+        )
+        == _LINEAGE02_RECOVERY_DECISION_EXTERNAL_IDENTITY_SHA256
+    ):
+        return (
+            _LINEAGE02_SUCCESSOR_GREEN_PATH,
+            _LINEAGE02_SUCCESSOR_COMPLETION_PATH,
+        )
+    return None
+
+
+def _successor_completion_identity_valid(identity: Any) -> bool:
+    if (
+        not _document_identity_valid(identity)
+        or identity.get("artifact_role") != "SUCCESSOR_COMPLETION_RECEIPT"
+    ):
+        return False
+    return (
+        identity.get("schema_version"),
+        identity.get("path"),
+    ) in {
+        (
+            RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_SCHEMA,
+            RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_PATH,
+        ),
+        (
+            _LINEAGE02_SUCCESSOR_COMPLETION_SCHEMA,
+            _LINEAGE02_SUCCESSOR_COMPLETION_PATH,
+        ),
+    }
+
+
 def _success_completion_evidence_valid(
     state: Mapping[str, Any],
 ) -> bool:
@@ -1993,13 +2069,14 @@ def _success_completion_evidence_valid(
     red_identity = state.get("causal_red_evidence")
     green = state.get("combined_green_evidence_artifact")
     green_identity = state.get("combined_green_evidence")
-    green_path = (
-        "EmlisAIの実装済み資料/documents/"
-        "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2_"
-        "Successor_GREEN_Result_20260726.json"
-    )
+    completion_contract = _successor_completion_contract(completion)
+    if completion_contract is None:
+        return False
+    green_path, completion_path = completion_contract
     if (
         type(closure) is not dict
+        or closure.get("source_closure_sha256")
+        == _HISTORICAL_SUCCESSOR_SOURCE_CLOSURE_SHA256
         or validate_recovery_epoch002_successor_completion_receipt(
             completion
         )
@@ -2122,7 +2199,7 @@ def _success_completion_evidence_valid(
         and _success_exact1_publication_valid(
             completion_publication,
             role="SUCCESSOR_COMPLETION_RECEIPT",
-            path=RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_PATH,
+            path=completion_path,
             logical_hash_key="receipt_sha256",
         )
     )
@@ -2152,13 +2229,7 @@ def validate_recovery_epoch002_operational_admission_receipt(
         or admission.get("logical_cycle_id") != "NLS_V3_CYCLE_001"
         or admission.get("recovery_epoch_id")
         != "NLS_V3_CYCLE001_RECOVERY_EPOCH_002"
-        or not _document_identity_valid(completion_identity)
-        or completion_identity.get("artifact_role")
-        != "SUCCESSOR_COMPLETION_RECEIPT"
-        or completion_identity.get("schema_version")
-        != RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_SCHEMA
-        or completion_identity.get("path")
-        != RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_PATH
+        or not _successor_completion_identity_valid(completion_identity)
         or _SHA256_RE.fullmatch(
             str(admission.get("successor_source_closure_sha256", ""))
         )
@@ -2518,15 +2589,9 @@ def _validate_recovery_epoch002_success_event2_state_impl(
         or type(source_closure) is not dict
         or allocation.get("successor_source_closure_sha256")
         != source_closure.get("source_closure_sha256")
-        or not _document_identity_valid(
+        or not _successor_completion_identity_valid(
             allocation.get("successor_completion_receipt")
         )
-        or allocation.get("successor_completion_receipt", {}).get(
-            "artifact_role"
-        )
-        != "SUCCESSOR_COMPLETION_RECEIPT"
-        or allocation.get("successor_completion_receipt", {}).get("path")
-        != RECOVERY_EPOCH002_SUCCESSOR_COMPLETION_PATH
         or _utc_seconds(allocation.get("allocated_at_utc")) is None
         or allocation.get("candidate_allocation_sha256")
         != _hash_without(allocation, "candidate_allocation_sha256")
