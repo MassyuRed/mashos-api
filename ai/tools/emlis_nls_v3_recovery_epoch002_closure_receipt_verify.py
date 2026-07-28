@@ -578,6 +578,54 @@ _SUCCESS_RED_KEYS = _keys(
     state automatic_progression body_free receipt_sha256
     """
 )
+_SUCCESS_HISTORICAL_S1_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch002."
+    "post_d2_successor_red_result.v1"
+)
+_SUCCESS_HISTORICAL_S1_AUTHORITY = (
+    "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH002_POST_D2_"
+    "SOURCE_BASELINE_ELIGIBILITY_SUCCESSION_ACCEPTED_STEP0_10_ALL11_"
+    "EVENT2_ATOMIC_SUCCESS_OWNER_GRAPH_AND_FORMAL_PARENT_CONTINUATION_"
+    "REMEDIATION_RED_FREEZE_ONLY"
+)
+_SUCCESS_HISTORICAL_S1_TEST_FILE = {
+    "path": (
+        "ai/tests/test_emlis_nls_v3_recovery_epoch002_post_d2_success_"
+        "owner_graph_and_formal_parent_continuation_red.py"
+    ),
+    "git_blob_sha1": "1616de8b9f738b7037b6e18a64113280fa6ec478",
+    "raw_sha256": (
+        "3e5cdcd5c2cd2113f273f6cc1a43ff09bdd4845b14cd7aea"
+        "49237d26cfc0753b"
+    ),
+}
+_SUCCESS_HISTORICAL_S1_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2_"
+    "Successor_RED_Result_20260726.json"
+)
+_SUCCESS_HISTORICAL_S1_LOGICAL_SHA256 = (
+    "7b3b6d0890038642d69feb18e46630fbf97a5918fe0e95db"
+    "766b8c8175e2d179"
+)
+_SUCCESS_HISTORICAL_S1_IDENTITY = {
+    "artifact_role": "SUCCESSOR_CAUSAL_RED_RESULT",
+    "schema_version": _SUCCESS_HISTORICAL_S1_SCHEMA,
+    "repository_full_name": "MassyuRed/Cocolon",
+    "path": _SUCCESS_HISTORICAL_S1_PATH,
+    "git_blob_sha1": "fa2ac8978294e9eb92211147c09989ae7583455e",
+    "raw_sha256": (
+        "f03bf71f267813d25664ceacd1344d74fb354156a9c65b19c"
+        "14a3c7f315e4c03"
+    ),
+    "logical_artifact_sha256": _SUCCESS_HISTORICAL_S1_LOGICAL_SHA256,
+    "publication_commit_sha1": "a45a958cab1a5e1d052e6b470dd26d8e19764b7b",
+    "body_free": True,
+    "identity_sha256": (
+        "1504bf4f58ca02b76df7f0a9fd6f88a429b01a56c59b7a90"
+        "82648a25fb3614b4"
+    ),
+}
 _SUCCESS_GREEN_KEYS = _keys(
     """
     schema_version causal_red_evidence_sha256 successor_source_commit_sha1
@@ -3396,11 +3444,7 @@ def _success_completion_valid(state: Any) -> bool:
     red_identity = state.get("causal_red_evidence")
     green = state.get("combined_green_evidence_artifact")
     green_identity = state.get("combined_green_evidence")
-    red_path = (
-        "EmlisAIの実装済み資料/documents/"
-        "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2_"
-        "Successor_RED_Result_20260726.json"
-    )
+    expected_contract_manifest = _success_expected_contract_manifest()
     green_path = (
         "EmlisAIの実装済み資料/documents/"
         "NLSv3_Step11_Cycle001_RecoveryEpoch002_PostD2_"
@@ -3435,29 +3479,16 @@ def _success_completion_valid(state: Any) -> bool:
         or type(red) is not dict
         or set(red) != _SUCCESS_RED_KEYS
         or red.get("schema_version")
-        != (
-            "cocolon.emlis.nls_v3.recovery_epoch002."
-            "post_d2_successor_red_result.v1"
-        )
+        != _SUCCESS_HISTORICAL_S1_SCHEMA
+        or red.get("authority_token")
+        != _SUCCESS_HISTORICAL_S1_AUTHORITY
         or red.get("source_entry_commit_sha1")
         != "5eb4d6d1f0a18a715f33305e7fb7cfe92be42d74"
         or red.get("source_entry_tree_sha1")
         != "b7ad6dd2dbc90e9db296f8599103597d6bbd7ff7"
         or type(red.get("successor_test_file")) is not dict
-        or set(red["successor_test_file"])
-        != {"path", "git_blob_sha1", "raw_sha256"}
-        or not red["successor_test_file"].get("path", "").endswith(
-            "post_d2_success_owner_graph_and_formal_parent_continuation_red.py"
-        )
-        or _success_source_identity(
-            red["successor_test_file"].get("path", "")
-        )
-        != {
-            "git_blob_sha1": red["successor_test_file"].get(
-                "git_blob_sha1"
-            ),
-            "sha256": red["successor_test_file"].get("raw_sha256"),
-        }
+        or red.get("successor_test_file")
+        != _SUCCESS_HISTORICAL_S1_TEST_FILE
         or red.get("successor_node_count") != 64
         or type(red.get("successor_node_count")) is not int
         or red.get("collected") != 64
@@ -3474,6 +3505,9 @@ def _success_completion_valid(state: Any) -> bool:
         or red.get("automatic_progression") is not False
         or red.get("body_free") is not True
         or red.get("receipt_sha256")
+        != _SUCCESS_HISTORICAL_S1_LOGICAL_SHA256
+        or red_identity != _SUCCESS_HISTORICAL_S1_IDENTITY
+        or red.get("receipt_sha256")
         != _hash_without(red, "receipt_sha256")
         or not _success_direct_artifact_valid(
             red,
@@ -3481,7 +3515,7 @@ def _success_completion_valid(state: Any) -> bool:
             state.get("causal_red_postfetch_evidence"),
             role="SUCCESSOR_CAUSAL_RED_RESULT",
             schema=red.get("schema_version"),
-            path=red_path,
+            path=_SUCCESS_HISTORICAL_S1_PATH,
             logical_hash_key="receipt_sha256",
         )
     ):
@@ -3506,7 +3540,13 @@ def _success_completion_valid(state: Any) -> bool:
         != closure.get("source_closure_sha256")
         or green.get("success_contract_test_manifest_sha256")
         != closure.get("success_contract_test_manifest_sha256")
+        or expected_contract_manifest is None
+        or green.get("success_contract_test_manifest_sha256")
+        != expected_contract_manifest.get(
+            "success_contract_test_manifest_sha256"
+        )
         or type(green_nodes) is not list
+        or green_nodes != expected_contract_manifest.get("test_node_ids")
         or len(green_nodes) != 110
         or len(set(green_nodes)) != 110
         or green.get("executed_node_ids") != green_nodes
