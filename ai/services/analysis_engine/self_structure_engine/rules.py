@@ -28,10 +28,10 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 try:  # expected package import
     from ..models import TargetCandidate, TagScore, RoleScore, SurfaceSignals
-except Exception:  # local / standalone fallback for design review files
+except ImportError:  # local / standalone fallback for design review files
     try:
         from models_updated import TargetCandidate, TagScore, RoleScore, SurfaceSignals  # type: ignore
-    except Exception:
+    except ImportError:
         from models import TargetCandidate, TagScore, RoleScore, SurfaceSignals  # type: ignore
 
 

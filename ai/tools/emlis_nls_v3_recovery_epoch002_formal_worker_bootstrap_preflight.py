@@ -58,6 +58,7 @@ from emlis_nls_v3_recovery_epoch002_closure_receipt_verify import (
     verify_recovery_epoch002_operational_artifact_identity,
     verify_recovery_epoch002_published_artifact,
     verify_recovery_epoch003_bootstrap_source_runtime_contract,
+    verify_recovery_epoch003_bootstrap_source_runtime_contract_current,
 )
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.tags import sys_tags
@@ -3096,6 +3097,106 @@ def evaluate_recovery_epoch003_preflight_contract(
         )
 
 
+_RECOVERY_EPOCH003_CURRENT_STRICT_ZERO_EFFECTS = {
+    "reference_runtime_materialization_count": 0,
+    "operational_runtime_materialization_count": 0,
+    "reference_observation_publication_count": 0,
+    "operational_admission_publication_count": 0,
+    "runtime_publication_count": 0,
+    "candidate_publication_count": 0,
+    "event1_publication_count": 0,
+    "readiness_publication_count": 0,
+    "failure_publication_count": 0,
+    "reservation_count": 0,
+    "attempt_count": 0,
+    "formal_exact134_invocation_count": 0,
+    "formal_collection_count": 0,
+    "formal_execution_count": 0,
+}
+_RECOVERY_EPOCH003_CURRENT_STRICT_OVERRIDE_KEYS = frozenset(
+    {
+        "profile",
+        "verification_mode",
+        "allow_historical_fallback",
+    }
+)
+
+
+def _recovery_epoch003_current_strict_preflight_result(
+    failure_code: str | None,
+) -> dict[str, Any]:
+    return {
+        "schema_version": (
+            "cocolon.emlis.nls_v3.recovery_epoch003."
+            "current_strict_preflight_result.v1"
+        ),
+        "current_strict_preflight_state": (
+            "VALID" if failure_code is None else "INVALID"
+        ),
+        "failure_code": failure_code,
+        "source_baseline_state": "UNLOCKED",
+        "body_free": True,
+        "automatic_progression": False,
+        "pytest_main_called": False,
+        **_RECOVERY_EPOCH003_CURRENT_STRICT_ZERO_EFFECTS,
+    }
+
+
+def execute_recovery_epoch003_current_strict_preflight_v1(
+    state: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Verify current supplied state without materializing or publishing."""
+
+    try:
+        if type(state) is not dict:
+            return _recovery_epoch003_current_strict_preflight_result(
+                "SOURCE_BOOTSTRAP_BASELINE_MISMATCH"
+            )
+        if any(
+            key in state
+            for key in _RECOVERY_EPOCH003_CURRENT_STRICT_OVERRIDE_KEYS
+        ):
+            return _recovery_epoch003_current_strict_preflight_result(
+                (
+                    "RECOVERY_EPOCH003_CURRENT_STRICT_"
+                    "PROFILE_OVERRIDE_FORBIDDEN"
+                )
+            )
+        issues = (
+            verify_recovery_epoch003_bootstrap_source_runtime_contract_current(
+                state
+            )
+        )
+        if (
+            type(issues) is not tuple
+            or len(issues) > 1
+            or any(
+                not isinstance(issue, str) or not issue
+                for issue in issues
+            )
+        ):
+            return _recovery_epoch003_current_strict_preflight_result(
+                "SOURCE_BOOTSTRAP_BASELINE_MISMATCH"
+            )
+        return _recovery_epoch003_current_strict_preflight_result(
+            issues[0] if issues else None
+        )
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RecursionError,
+        subprocess.SubprocessError,
+        SyntaxError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return _recovery_epoch003_current_strict_preflight_result(
+            "SOURCE_BOOTSTRAP_BASELINE_MISMATCH"
+        )
+
+
 def _recovery_epoch003_effective_environment_policy(
     environment: Any,
 ) -> dict[str, Any] | None:
@@ -4393,6 +4494,7 @@ __all__ = [
     "materialize_recovery_epoch003_reference_runtime",
     "build_recovery_epoch003_reference_runtime_observation",
     "evaluate_recovery_epoch003_preflight_contract",
+    "execute_recovery_epoch003_current_strict_preflight_v1",
 ]
 
 

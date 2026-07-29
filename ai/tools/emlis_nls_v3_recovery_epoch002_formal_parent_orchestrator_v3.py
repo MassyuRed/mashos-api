@@ -57,6 +57,7 @@ from emlis_nls_v3_recovery_epoch002_formal_worker_bootstrap_preflight import (
     RECOVERY_EPOCH003_PREFLIGHT_STOP_CODE,
     RECOVERY_EPOCH003_READINESS_SCHEMA,
     RECOVERY_EPOCH003_REFERENCE_OBSERVATION_SCHEMA,
+    execute_recovery_epoch003_current_strict_preflight_v1,
     validate_recovery_epoch002_bootstrap_state,
     validate_recovery_epoch002_event1_publication_binding,
     validate_recovery_epoch002_operational_preflight_attestation,
@@ -4346,6 +4347,168 @@ def validate_recovery_epoch003_parent_phase_evidence_state(
         return failure
 
 
+_RECOVERY_EPOCH003_CURRENT_STRICT_PARENT_ENVELOPE_KEYS = frozenset(
+    {
+        "current_strict_preflight_state",
+        "parent_phase_evidence_state",
+        "automatic_progression",
+    }
+)
+_RECOVERY_EPOCH003_CURRENT_STRICT_PARENT_ZERO_EFFECTS = {
+    "reference_runtime_materialization_count": 0,
+    "operational_runtime_materialization_count": 0,
+    "reference_observation_publication_count": 0,
+    "operational_admission_publication_count": 0,
+    "runtime_publication_count": 0,
+    "candidate_publication_count": 0,
+    "event1_publication_count": 0,
+    "readiness_publication_count": 0,
+    "failure_publication_count": 0,
+    "reservation_count": 0,
+    "attempt_count": 0,
+    "formal_exact134_invocation_count": 0,
+    "formal_collection_count": 0,
+    "formal_execution_count": 0,
+}
+
+
+def _recovery_epoch003_current_strict_parent_result(
+    failure_code: str | None,
+) -> dict[str, Any]:
+    return {
+        "schema_version": (
+            "cocolon.emlis.nls_v3.recovery_epoch003."
+            "current_strict_parent_phase_result.v1"
+        ),
+        "current_strict_parent_phase_state": (
+            "VALID" if failure_code is None else "INVALID"
+        ),
+        "failure_code": failure_code,
+        "source_baseline_state": "UNLOCKED",
+        "body_free": True,
+        "automatic_progression": False,
+        "pytest_main_called": False,
+        **_RECOVERY_EPOCH003_CURRENT_STRICT_PARENT_ZERO_EFFECTS,
+    }
+
+
+def _recovery_epoch003_current_strict_preflight_result_valid(
+    result: Any,
+) -> bool:
+    expected_keys = {
+        "schema_version",
+        "current_strict_preflight_state",
+        "failure_code",
+        "source_baseline_state",
+        "body_free",
+        "automatic_progression",
+        "pytest_main_called",
+        *_RECOVERY_EPOCH003_CURRENT_STRICT_PARENT_ZERO_EFFECTS,
+    }
+    return bool(
+        type(result) is dict
+        and set(result) == expected_keys
+        and result.get("schema_version")
+        == (
+            "cocolon.emlis.nls_v3.recovery_epoch003."
+            "current_strict_preflight_result.v1"
+        )
+        and result.get("current_strict_preflight_state") == "VALID"
+        and result.get("failure_code") is None
+        and result.get("source_baseline_state") == "UNLOCKED"
+        and result.get("body_free") is True
+        and result.get("automatic_progression") is False
+        and result.get("pytest_main_called") is False
+        and {
+            key: result.get(key)
+            for key in _RECOVERY_EPOCH003_CURRENT_STRICT_PARENT_ZERO_EFFECTS
+        }
+        == _RECOVERY_EPOCH003_CURRENT_STRICT_PARENT_ZERO_EFFECTS
+    )
+
+
+def execute_recovery_epoch003_current_strict_parent_phase_v1(
+    state: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Verify the current preflight boundary without advancing the parent."""
+
+    failure_code = "RECOVERY_EPOCH003_CURRENT_STRICT_PARENT_PHASE_INVALID"
+    try:
+        preflight_source = (
+            state.get("current_strict_preflight_state")
+            if type(state) is dict
+            else state
+        )
+        evidence_source = (
+            state.get("parent_phase_evidence_state")
+            if type(state) is dict
+            else state
+        )
+        preflight_state = deepcopy(preflight_source)
+        evidence_state = deepcopy(evidence_source)
+        preflight_result = (
+            execute_recovery_epoch003_current_strict_preflight_v1(
+                preflight_state
+            )
+        )
+        evidence_issues = (
+            validate_recovery_epoch003_parent_phase_evidence_state(
+                evidence_state
+            )
+        )
+        envelope_valid = bool(
+            type(state) is dict
+            and set(state)
+            == _RECOVERY_EPOCH003_CURRENT_STRICT_PARENT_ENVELOPE_KEYS
+            and state.get("automatic_progression") is False
+            and type(preflight_state) is dict
+            and type(evidence_state) is dict
+        )
+        preflight_boundary_valid = bool(
+            type(evidence_state.get("completed_phases")) is list
+            and evidence_state["completed_phases"]
+            == list(_RECOVERY_EPOCH003_EVIDENCE_PHASE_ORDER[:3])
+            and evidence_state.get("next_phase")
+            == _RECOVERY_EPOCH003_EVIDENCE_PHASE_ORDER[3]
+        )
+        event_record = evidence_state["phase_evidence"][2][
+            "artifact_records"
+        ][0]
+        event_cross_binding_valid = bool(
+            type(event_record) is dict
+            and preflight_state.get("event1_at_publication")
+            == event_record.get("published_body")
+            and preflight_state.get("event1_at_postfetch")
+            == event_record.get("postfetch_body")
+            and preflight_state.get("event1_external_identity")
+            == event_record.get("external_identity")
+        )
+        if (
+            envelope_valid
+            and preflight_boundary_valid
+            and event_cross_binding_valid
+            and _recovery_epoch003_current_strict_preflight_result_valid(
+                preflight_result
+            )
+            and evidence_issues == ()
+        ):
+            return _recovery_epoch003_current_strict_parent_result(None)
+    except (
+        AttributeError,
+        IndexError,
+        KeyError,
+        OSError,
+        RecursionError,
+        subprocess.SubprocessError,
+        SyntaxError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        pass
+    return _recovery_epoch003_current_strict_parent_result(failure_code)
+
+
 __all__ = [
     "RECOVERY_EPOCH002_FORMAL_PARENT_PROTOCOL",
     "RECOVERY_EPOCH002_FORMAL_PARENT_RESULT_SCHEMA",
@@ -4372,4 +4535,5 @@ __all__ = [
     "RECOVERY_EPOCH003_PARENT_PHASE_ORDER",
     "validate_recovery_epoch003_parent_phase_state",
     "validate_recovery_epoch003_parent_phase_evidence_state",
+    "execute_recovery_epoch003_current_strict_parent_phase_v1",
 ]

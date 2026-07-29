@@ -73,10 +73,10 @@ except Exception:  # pragma: no cover
 # Self-structure dictionaries (used for Deep visual contract labels)
 try:
     from analysis_engine.self_structure_engine.rules import ACTION_DICT, THINKING_DICT, ROLE_LABELS_JA
-except Exception:  # pragma: no cover
+except ImportError:  # pragma: no cover
     try:
         from self_structure_engine.rules import ACTION_DICT, THINKING_DICT, ROLE_LABELS_JA  # type: ignore
-    except Exception:  # pragma: no cover
+    except ImportError:  # pragma: no cover
         ACTION_DICT = {}  # type: ignore
         THINKING_DICT = {}  # type: ignore
         ROLE_LABELS_JA = {}  # type: ignore

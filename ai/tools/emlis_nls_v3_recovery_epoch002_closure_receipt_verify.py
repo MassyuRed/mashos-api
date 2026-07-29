@@ -10829,6 +10829,31 @@ def _verify_recovery_epoch003_bootstrap_source_runtime_contract_current(
     )
 
 
+def verify_recovery_epoch003_bootstrap_source_runtime_contract_current(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Fail closed while verifying only the current Epoch003 profile."""
+
+    try:
+        return (
+            _verify_recovery_epoch003_bootstrap_source_runtime_contract_current(
+                state
+            )
+        )
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RecursionError,
+        subprocess.SubprocessError,
+        SyntaxError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("SOURCE_BOOTSTRAP_BASELINE_MISMATCH",)
+
+
 __all__ = [
     "RECOVERY_EPOCH002_ARTIFACT_IDENTITY_KEYS",
     "RECOVERY_EPOCH002_CURRENT_REFLECTION_CONTRACT",
@@ -10854,4 +10879,5 @@ __all__ = [
     "verify_recovery_epoch003_reference_runtime_observation",
     "verify_recovery_epoch003_operational_admission_contract",
     "verify_recovery_epoch003_bootstrap_source_runtime_contract",
+    "verify_recovery_epoch003_bootstrap_source_runtime_contract_current",
 ]
