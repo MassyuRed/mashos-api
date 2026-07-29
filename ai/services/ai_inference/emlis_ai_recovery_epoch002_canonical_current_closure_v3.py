@@ -13,14 +13,17 @@ from copy import deepcopy
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import stat
 import subprocess
 import sys
 from typing import Any, Mapping
 
-from emlis_ai_nls_v3_artifact_contract import artifact_sha256
+from emlis_ai_nls_v3_artifact_contract import (
+    artifact_sha256,
+    canonical_json_bytes,
+)
 from emlis_ai_recovery_epoch001_current_step_requirement_registry_v3 import (
     RECOVERY_EPOCH001_EXPECTED_FORMAL_NODE_REGISTRY_SHA256,
     RECOVERY_EPOCH001_EXPECTED_REGISTRY_SHA256,
@@ -2441,8 +2444,72 @@ _RECOVERY_EPOCH003_REFERENCE_PATH = (
     "NLSv3_Step11_Cycle001_RecoveryEpoch003_"
     "PreEvent1_ReferenceRuntimeObservation_BodyFree_Receipt.json"
 )
+_RECOVERY_EPOCH003_FINAL_ISSUANCE_AUTHORITY = (
+    "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH003_FINAL_PRE_EVENT1_REFERENCE_"
+    "RUNTIME_OBSERVATION_AND_SOURCE_BOOTSTRAP_OPERATIONAL_ADMISSION_"
+    "CARRIER_ISSUANCE_INDEPENDENT_VERIFICATION_AND_POSTVERIFICATION_ONLY"
+)
+_RECOVERY_EPOCH003_REFERENCE_KEYS = _keys(
+    """
+    schema_version logical_cycle_id recovery_epoch_id authority_token
+    source_commit_sha1 source_tree_sha1 dependency_lock_identity
+    wheel_bundle_manifest_sha256 runtime_materialization
+    python_runtime_identity pytest_distribution_identity
+    installed_distributions installed_distributions_sha256
+    environment_policy environment_policy_sha256 reservation_count_delta
+    formal_exact134_invocation_count collection_state test_execution_state
+    body_free reference_runtime_observation_sha256
+    """
+)
+_RECOVERY_EPOCH003_RUNTIME_MATERIALIZATION_KEYS = _keys(
+    """
+    schema_version runtime_root_identity_sha256
+    python_executable_relative_path installed_directory_relative_path
+    dependency_lock_raw_sha256 wheel_bundle_manifest_sha256
+    distribution_count runtime_materialization_state body_free
+    runtime_materialization_sha256
+    """
+)
+_RECOVERY_EPOCH003_RUNTIME_MATERIALIZATION_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch003.runtime_materialization.v1"
+)
+_RECOVERY_EPOCH003_DETAILED_DESIGN_SHA256 = (
+    "6aa3fb799919ac30b0eb84571ac4009d62a2bd799c84322272a59bba533f13bc"
+)
+_RECOVERY_EPOCH003_D1_RECEIPT_IDENTITY_SHA256 = (
+    "d9164d82715abb519b549a7581737a37ebd3bf153b53284697cbe4573a8edb9e"
+)
+_RECOVERY_EPOCH003_D2_RECEIPT_IDENTITY_SHA256 = (
+    "cbd665b12b3af16b251a66073222d12823fb8776207922616718290e4bddc738"
+)
 _RECOVERY_EPOCH003_P0_EXTERNAL_IDENTITY_SHA256 = (
     "74286b862eeee1663d2758ee18d1e848316da6fc27b12fef38c149c5a2b52f36"
+)
+_RECOVERY_EPOCH003_EPOCH002_PREDECESSOR_SET_SHA256 = (
+    "44ef0cf922e8fb6503ae4a96f458a60abc8fbae2e48aa11863269ff783d7343d"
+)
+_RECOVERY_EPOCH003_LOCK_PATH = (
+    "ai/configs/"
+    "emlis_nls_v3_recovery_epoch002_formal_worker_bootstrap_lock_v1.json"
+)
+_RECOVERY_EPOCH003_LOCK_BLOB_SHA1 = (
+    "0822fcb010985cd0d384f250a9e8a1fe16dc8fd4"
+)
+_RECOVERY_EPOCH003_LOCK_RAW_SHA256 = (
+    "9bb2875541a6d959c1dca47cb5b96de5b0041ccf5288e849c469c15a8b310787"
+)
+_RECOVERY_EPOCH003_LOCK_LOGICAL_SHA256 = (
+    "801ba54efc0f6655238d14e7c153fb70b555801489aa8ba028515fc64d9c05f4"
+)
+_RECOVERY_EPOCH003_WHEEL_BUNDLE_SHA256 = (
+    "63f3915ccf57845dc0c4b5d14762207d23d1cb7a435a9de8411add8491ba6fc8"
+)
+_RECOVERY_EPOCH003_INSTALLED_DISTRIBUTIONS_SHA256 = (
+    "0e2e4b5ec3f3b1aef7fad4474af28d8eeea8fa7bec1a57a9cb7180fc81b80e42"
+)
+_RECOVERY_EPOCH003_REQUIREMENT_REGISTRY_PATH = (
+    "ai/services/ai_inference/"
+    "emlis_ai_recovery_epoch001_current_step_requirement_registry_v3.py"
 )
 _RECOVERY_EPOCH003_OWNER_ROLE_PATHS = tuple(
     sorted(
@@ -2618,6 +2685,1613 @@ def _recovery_epoch003_environment_valid(value: Any) -> bool:
         isinstance(value.get(key), str) and bool(value.get(key))
         for key in ("lang", "lc_all")
     )
+
+
+def _recovery_epoch003_materialization_valid(
+    value: Any,
+    *,
+    lock_raw_sha256: str,
+    wheel_bundle_manifest_sha256: str,
+    distribution_count: int,
+) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != _RECOVERY_EPOCH003_RUNTIME_MATERIALIZATION_KEYS
+        or value.get("schema_version")
+        != _RECOVERY_EPOCH003_RUNTIME_MATERIALIZATION_SCHEMA
+        or not _recovery_epoch003_sha256(
+            value.get("runtime_root_identity_sha256")
+        )
+        or value.get("dependency_lock_raw_sha256") != lock_raw_sha256
+        or value.get("wheel_bundle_manifest_sha256")
+        != wheel_bundle_manifest_sha256
+        or value.get("distribution_count") != distribution_count
+        or value.get("runtime_materialization_state")
+        != "VERIFIED_LOCKED_REFERENCE_RUNTIME"
+        or value.get("body_free") is not True
+        or value.get("runtime_materialization_sha256")
+        != _recovery_epoch003_hash_without(
+            value,
+            "runtime_materialization_sha256",
+        )
+    ):
+        return False
+    for key in (
+        "python_executable_relative_path",
+        "installed_directory_relative_path",
+    ):
+        path = value.get(key)
+        if (
+            not isinstance(path, str)
+            or not path
+            or PurePosixPath(path).is_absolute()
+            or ".." in PurePosixPath(path).parts
+        ):
+            return False
+    return True
+
+
+def _recovery_epoch003_reference_valid(value: Any) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != _RECOVERY_EPOCH003_REFERENCE_KEYS
+        or value.get("schema_version") != _RECOVERY_EPOCH003_REFERENCE_SCHEMA
+        or value.get("logical_cycle_id") != "NLS_V3_CYCLE_001"
+        or value.get("recovery_epoch_id")
+        != "NLS_V3_CYCLE001_RECOVERY_EPOCH_003"
+        or value.get("authority_token")
+        != _RECOVERY_EPOCH003_FINAL_ISSUANCE_AUTHORITY
+        or not _recovery_epoch003_sha1(value.get("source_commit_sha1"))
+        or not _recovery_epoch003_sha1(value.get("source_tree_sha1"))
+        or value.get("reservation_count_delta") != 0
+        or value.get("formal_exact134_invocation_count") != 0
+        or value.get("collection_state") != "NOT_STARTED"
+        or value.get("test_execution_state") != "NOT_STARTED"
+        or value.get("body_free") is not True
+        or value.get("reference_runtime_observation_sha256")
+        != _recovery_epoch003_hash_without(
+            value,
+            "reference_runtime_observation_sha256",
+        )
+    ):
+        return False
+    lock = value.get("dependency_lock_identity")
+    installed = value.get("installed_distributions")
+    environment = value.get("environment_policy")
+    return bool(
+        type(lock) is dict
+        and set(lock) == _RECOVERY_EPOCH003_DEPENDENCY_LOCK_KEYS
+        and lock.get("identity_class") == "EXACT_HASH_LOCK"
+        and lock.get("path") == _RECOVERY_EPOCH003_LOCK_PATH
+        and lock.get("raw_sha256")
+        == _RECOVERY_EPOCH003_LOCK_RAW_SHA256
+        and value.get("wheel_bundle_manifest_sha256")
+        == _RECOVERY_EPOCH003_WHEEL_BUNDLE_SHA256
+        and type(installed) is list
+        and len(installed) == 46
+        and all(
+            _recovery_epoch003_distribution_valid(row)
+            for row in installed
+        )
+        and [row["normalized_distribution_name"] for row in installed]
+        == sorted(
+            {
+                row["normalized_distribution_name"]
+                for row in installed
+            }
+        )
+        and value.get("installed_distributions_sha256")
+        == artifact_sha256(installed)
+        == _RECOVERY_EPOCH003_INSTALLED_DISTRIBUTIONS_SHA256
+        and _recovery_epoch003_runtime_identity_valid(
+            value.get("python_runtime_identity")
+        )
+        and value["python_runtime_identity"].get("implementation")
+        == "CPYTHON"
+        and value["python_runtime_identity"].get("version") == "3.12.13"
+        and _recovery_epoch003_distribution_valid(
+            value.get("pytest_distribution_identity")
+        )
+        and value.get("pytest_distribution_identity") in installed
+        and value["pytest_distribution_identity"].get(
+            "normalized_distribution_name"
+        )
+        == "pytest"
+        and _recovery_epoch003_environment_valid(environment)
+        and value.get("environment_policy_sha256")
+        == artifact_sha256(environment)
+        and _recovery_epoch003_materialization_valid(
+            value.get("runtime_materialization"),
+            lock_raw_sha256=_RECOVERY_EPOCH003_LOCK_RAW_SHA256,
+            wheel_bundle_manifest_sha256=(
+                _RECOVERY_EPOCH003_WHEEL_BUNDLE_SHA256
+            ),
+            distribution_count=46,
+        )
+    )
+
+
+def _recovery_epoch003_git(root: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    ).stdout.strip()
+
+
+def _recovery_epoch003_git_file_bytes(
+    root: Path,
+    path: str,
+) -> bytes:
+    return subprocess.run(
+        ["git", "show", f"HEAD:{path}"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        timeout=20,
+    ).stdout
+
+
+def _recovery_epoch003_expected_source_repository(root: Path) -> bool:
+    try:
+        head = _recovery_epoch003_git(root, "rev-parse", "HEAD")
+        main = _recovery_epoch003_git(
+            root,
+            "rev-parse",
+            "refs/heads/main",
+        )
+        top_level = Path(
+            _recovery_epoch003_git(
+                root,
+                "rev-parse",
+                "--show-toplevel",
+            )
+        ).resolve()
+        origin = _recovery_epoch003_git(
+            root,
+            "config",
+            "--get",
+            "remote.origin.url",
+        ).rstrip("/")
+    except (OSError, subprocess.SubprocessError):
+        return False
+    normalized = origin.removesuffix(".git")
+    return bool(
+        top_level == root
+        and head == main
+        and (
+            normalized.endswith("/MassyuRed/mashos-api")
+            or normalized.endswith(":MassyuRed/mashos-api")
+        )
+    )
+
+
+def _recovery_epoch003_path_has_symlink_component(path: Path) -> bool:
+    absolute = path.absolute()
+    current = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        current /= part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def _recovery_epoch003_git_file_identity(
+    root: Path,
+    path: str,
+) -> dict[str, str]:
+    payload = _recovery_epoch003_git_file_bytes(root, path)
+    return {
+        "path": path,
+        "git_blob_sha1": _recovery_epoch003_git(
+            root,
+            "rev-parse",
+            f"HEAD:{path}",
+        ),
+        "raw_sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
+def _recovery_epoch003_owner_artifacts(
+    root: Path,
+) -> list[dict[str, str]]:
+    return [
+        {
+            "role": role,
+            **_recovery_epoch003_git_file_identity(root, path),
+        }
+        for role, path in _RECOVERY_EPOCH003_OWNER_ROLE_PATHS
+    ]
+
+
+def _recovery_epoch003_formal_test_manifest(
+    root: Path,
+    paths: tuple[str, ...] | None = None,
+) -> list[dict[str, str]]:
+    return [
+        _recovery_epoch003_git_file_identity(root, path)
+        for path in (
+            _RECOVERY_EPOCH003_FORMAL_TEST_PATHS
+            if paths is None
+            else paths
+        )
+    ]
+
+
+def _recovery_epoch003_literal_assignment(
+    root: Path,
+    path: str,
+    name: str,
+) -> Any:
+    tree = ast.parse(
+        _recovery_epoch003_git_file_bytes(root, path).decode("utf-8")
+    )
+    for node in tree.body:
+        targets: list[ast.expr] = []
+        value: ast.expr | None = None
+        if isinstance(node, ast.Assign):
+            targets = list(node.targets)
+            value = node.value
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+            value = node.value
+        if (
+            value is not None
+            and any(
+                isinstance(target, ast.Name) and target.id == name
+                for target in targets
+            )
+        ):
+            return ast.literal_eval(value)
+    raise ValueError("literal assignment missing")
+
+
+def _recovery_epoch003_top_level_symbols(
+    root: Path,
+    path: str,
+) -> frozenset[str]:
+    tree = ast.parse(
+        _recovery_epoch003_git_file_bytes(root, path).decode("utf-8")
+    )
+    result: set[str] = set()
+    for node in tree.body:
+        if isinstance(
+            node,
+            (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef),
+        ):
+            result.add(node.name)
+        elif isinstance(node, ast.Import):
+            result.update(
+                alias.asname or alias.name.partition(".")[0]
+                for alias in node.names
+            )
+        elif isinstance(node, ast.ImportFrom):
+            result.update(
+                alias.asname or alias.name
+                for alias in node.names
+                if alias.name != "*"
+            )
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = (
+                node.targets
+                if isinstance(node, ast.Assign)
+                else [node.target]
+            )
+            result.update(
+                target.id
+                for target in targets
+                if isinstance(target, ast.Name)
+            )
+    return frozenset(result)
+
+
+def _recovery_epoch003_import_manifest(
+    root: Path,
+    *,
+    lock: Mapping[str, Any],
+    runtime_identity: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    mapping = lock.get("module_distribution_map")
+    distributions = {
+        row.get("normalized_distribution_name"): row
+        for row in lock.get("distributions", [])
+        if type(row) is dict
+    }
+    if type(mapping) is not dict:
+        raise ValueError("module distribution map invalid")
+    tracked_modes = {
+        path: metadata.split()[0]
+        for line in _recovery_epoch003_git(
+            root,
+            "ls-files",
+            "-s",
+            "*.py",
+        ).splitlines()
+        if line and "\t" in line
+        for metadata, path in [line.split("\t", 1)]
+    }
+    tracked_paths = tuple(
+        sorted(
+            path
+            for path, mode in tracked_modes.items()
+            if mode in {"100644", "100755"}
+        )
+    )
+    tracked_set = frozenset(tracked_paths)
+
+    def module_search_roots(importer_path: str) -> tuple[PurePosixPath, ...]:
+        if importer_path.startswith("ai/tests/"):
+            return (
+                PurePosixPath("ai/tests"),
+                PurePosixPath("ai/tests/helpers"),
+                PurePosixPath("ai/tools"),
+                PurePosixPath("ai/services/ai_inference"),
+                PurePosixPath("ai/services"),
+                PurePosixPath(),
+            )
+        return (
+            PurePosixPath("ai/tests/helpers"),
+            PurePosixPath("ai/tools"),
+            PurePosixPath("ai/services/ai_inference"),
+            PurePosixPath("ai/services"),
+            PurePosixPath(),
+        )
+
+    def resolve_first_party_binding(
+        module_name: str,
+        importer_path: str,
+    ) -> tuple[str, PurePosixPath] | None:
+        module_relative = PurePosixPath(*module_name.split("."))
+        for search_root in module_search_roots(importer_path):
+            for suffix in (
+                module_relative / "__init__.py",
+                PurePosixPath(f"{module_relative}.py"),
+            ):
+                candidate = (search_root / suffix).as_posix()
+                if candidate in tracked_set:
+                    return candidate, search_root
+        return None
+
+    def resolve_first_party(
+        module_name: str,
+        importer_path: str,
+    ) -> str | None:
+        binding = resolve_first_party_binding(module_name, importer_path)
+        return binding[0] if binding is not None else None
+
+    def relative_module(
+        runtime_module_name: str | None,
+        importer_is_package: bool,
+        module_name: str | None,
+        level: int,
+    ) -> str:
+        if level == 0:
+            if module_name is None:
+                raise ValueError("empty absolute import")
+            return module_name
+        if runtime_module_name is None:
+            raise ValueError("relative file import has no runtime package")
+        package = runtime_module_name.split(".")
+        if not importer_is_package:
+            package = package[:-1]
+        if not package or level > len(package):
+            raise ValueError("relative import above runtime package")
+        base = package[: len(package) - level + 1]
+        if module_name:
+            base.extend(module_name.split("."))
+        return ".".join(base)
+
+    exported_name_cache: dict[str, frozenset[str]] = {}
+
+    def exported_names(path: str) -> frozenset[str]:
+        cached = exported_name_cache.get(path)
+        if cached is not None:
+            return cached
+        tree = ast.parse(
+            _recovery_epoch003_git_file_bytes(root, path).decode("utf-8")
+        )
+        names: set[str] = set()
+
+        def bind(target: ast.AST) -> None:
+            if isinstance(target, ast.Name):
+                names.add(target.id)
+            elif isinstance(target, (ast.Tuple, ast.List)):
+                for child in target.elts:
+                    bind(child)
+
+        for statement in tree.body:
+            if isinstance(
+                statement,
+                (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef),
+            ):
+                names.add(statement.name)
+            elif isinstance(statement, ast.Assign):
+                for target in statement.targets:
+                    bind(target)
+            elif isinstance(statement, ast.AnnAssign):
+                if statement.value is not None:
+                    bind(statement.target)
+            elif isinstance(statement, ast.Import):
+                for alias in statement.names:
+                    names.add(
+                        alias.asname or alias.name.split(".", 1)[0]
+                    )
+            elif isinstance(statement, ast.ImportFrom):
+                for alias in statement.names:
+                    if alias.name != "*":
+                        names.add(alias.asname or alias.name)
+        result = frozenset(names)
+        exported_name_cache[path] = result
+        return result
+
+    def first_party_import_available(
+        node: ast.AST,
+        importer_path: str,
+        runtime_module_name: str | None,
+        importer_is_package: bool,
+    ) -> bool:
+        if isinstance(node, ast.Import):
+            return all(
+                resolve_first_party(alias.name, importer_path) is not None
+                for alias in node.names
+            )
+        if not isinstance(node, ast.ImportFrom):
+            return False
+        base = relative_module(
+            runtime_module_name,
+            importer_is_package,
+            node.module,
+            node.level,
+        )
+        base_path = resolve_first_party(base, importer_path)
+        exports = (
+            exported_names(base_path)
+            if base_path is not None
+            else frozenset()
+        )
+        for alias in node.names:
+            if alias.name == "*":
+                return False
+            if (
+                resolve_first_party(
+                    f"{base}.{alias.name}",
+                    importer_path,
+                )
+                is not None
+                or alias.name in exports
+            ):
+                continue
+            return False
+        return base_path is not None or bool(node.names)
+
+    def import_error_only_handler(node: ast.ExceptHandler) -> bool:
+        expected = {"ImportError", "ModuleNotFoundError"}
+        if isinstance(node.type, ast.Name):
+            return node.type.id in expected
+        return bool(
+            isinstance(node.type, ast.Tuple)
+            and node.type.elts
+            and all(
+                isinstance(item, ast.Name) and item.id in expected
+                for item in node.type.elts
+            )
+        )
+
+    def runtime_reachable_nodes(
+        node: ast.AST,
+        importer_path: str,
+        runtime_module_name: str | None,
+        importer_is_package: bool,
+    ) -> list[ast.AST]:
+        result = [node]
+        if isinstance(node, ast.Try):
+            primary_imports = [
+                statement
+                for statement in node.body
+                if isinstance(statement, (ast.Import, ast.ImportFrom))
+            ]
+            if (
+                primary_imports
+                and len(primary_imports) == len(node.body)
+                and all(
+                    first_party_import_available(
+                        statement,
+                        importer_path,
+                        runtime_module_name,
+                        importer_is_package,
+                    )
+                    for statement in primary_imports
+                )
+                and all(
+                    import_error_only_handler(handler)
+                    for handler in node.handlers
+                )
+            ):
+                children: list[ast.AST] = [
+                    *node.body,
+                    *node.orelse,
+                    *node.finalbody,
+                ]
+            else:
+                children = [
+                    *node.body,
+                    *node.handlers,
+                    *node.orelse,
+                    *node.finalbody,
+                ]
+        else:
+            children = list(ast.iter_child_nodes(node))
+        for child in children:
+            result.extend(
+                runtime_reachable_nodes(
+                    child,
+                    importer_path,
+                    runtime_module_name,
+                    importer_is_package,
+                )
+            )
+        return result
+
+    importers: dict[str, set[str]] = {}
+    first_party_targets: dict[str, str] = {}
+    seeds = {
+        path for _role, path in _RECOVERY_EPOCH003_OWNER_ROLE_PATHS
+    } | set(_RECOVERY_EPOCH003_FORMAL_TEST_PATHS)
+    pending: list[tuple[str, str | None]] = [
+        (path, None) for path in sorted(seeds)
+    ]
+    visited: set[tuple[str, str | None]] = set()
+
+    def record(module_name: str, importer_path: str) -> None:
+        if not module_name:
+            raise ValueError("empty import")
+        importers.setdefault(module_name, set()).add(importer_path)
+        target_binding = resolve_first_party_binding(
+            module_name,
+            importer_path,
+        )
+        if target_binding is not None:
+            target_path, selected_root = target_binding
+            existing = first_party_targets.setdefault(
+                module_name,
+                target_path,
+            )
+            if existing != target_path:
+                raise ValueError("ambiguous first-party import")
+            parts = module_name.split(".")
+            for index in range(1, len(parts)):
+                package_name = ".".join(parts[:index])
+                package_path = (
+                    selected_root
+                    / PurePosixPath(*parts[:index])
+                    / "__init__.py"
+                ).as_posix()
+                if package_path not in tracked_set:
+                    continue
+                importers.setdefault(package_name, set()).add(importer_path)
+                prior = first_party_targets.setdefault(
+                    package_name,
+                    package_path,
+                )
+                if prior != package_path:
+                    raise ValueError("ambiguous first-party package")
+                package_item = (package_path, package_name)
+                if package_item not in visited:
+                    pending.append(package_item)
+            target_item = (target_path, module_name)
+            if target_item not in visited:
+                pending.append(target_item)
+
+    def record_file(
+        target_path: str,
+        importer_path: str,
+        runtime_context: str | None,
+    ) -> None:
+        import_name = f"file:{target_path}"
+        importers.setdefault(import_name, set()).add(importer_path)
+        previous = first_party_targets.setdefault(import_name, target_path)
+        if previous != target_path:
+            raise ValueError("ambiguous first-party file import")
+        target_item = (target_path, runtime_context)
+        if target_item not in visited:
+            pending.append(target_item)
+
+    while pending:
+        path, runtime_module_name = pending.pop(0)
+        visit_key = (path, runtime_module_name)
+        if visit_key in visited:
+            continue
+        if path not in tracked_paths:
+            raise ValueError("untracked import owner")
+        visited.add(visit_key)
+        tree = ast.parse(
+            _recovery_epoch003_git_file_bytes(root, path).decode("utf-8")
+        )
+        importer_is_package = path.endswith("/__init__.py")
+        runtime_nodes = runtime_reachable_nodes(
+            tree,
+            path,
+            runtime_module_name,
+            importer_is_package,
+        )
+        reachable_ids = {id(node) for node in runtime_nodes}
+        parent_by_id = {
+            id(child): parent
+            for parent in ast.walk(tree)
+            for child in ast.iter_child_nodes(parent)
+        }
+        scope_types = (
+            ast.FunctionDef,
+            ast.AsyncFunctionDef,
+            ast.Lambda,
+            ast.ClassDef,
+        )
+
+        def evaluate_paths(
+            node: ast.AST,
+            path_values: Mapping[str, set[Path]],
+            collection_names: set[str],
+        ) -> set[Path]:
+            if isinstance(node, ast.Name):
+                return set(path_values.get(node.id, ()))
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+            ):
+                return {Path(node.value)}
+            if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+                groups = [
+                    evaluate_paths(item, path_values, collection_names)
+                    for item in node.elts
+                ]
+                if any(not group for group in groups):
+                    return set()
+                return {value for group in groups for value in group}
+            if isinstance(node, ast.Dict):
+                groups = [
+                    evaluate_paths(item, path_values, collection_names)
+                    for item in node.values
+                ]
+                if any(not group for group in groups):
+                    return set()
+                return {value for group in groups for value in group}
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+                left_values = evaluate_paths(
+                    node.left,
+                    path_values,
+                    collection_names,
+                )
+                right_values = evaluate_paths(
+                    node.right,
+                    path_values,
+                    collection_names,
+                )
+                if not left_values or not right_values:
+                    return set()
+                return {
+                    left / right
+                    for left in left_values
+                    for right in right_values
+                }
+            if isinstance(node, ast.Attribute):
+                if node.attr != "parent":
+                    return set()
+                return {
+                    value.parent
+                    for value in evaluate_paths(
+                        node.value,
+                        path_values,
+                        collection_names,
+                    )
+                }
+            if isinstance(node, ast.Subscript):
+                if (
+                    isinstance(node.value, ast.Attribute)
+                    and node.value.attr == "parents"
+                    and isinstance(node.slice, ast.Constant)
+                    and type(node.slice.value) is int
+                ):
+                    return {
+                        value.parents[node.slice.value]
+                        for value in evaluate_paths(
+                            node.value.value,
+                            path_values,
+                            collection_names,
+                        )
+                        if 0 <= node.slice.value < len(value.parents)
+                    }
+                if (
+                    isinstance(node.value, ast.Name)
+                    and node.value.id in collection_names
+                ):
+                    return set(path_values.get(node.value.id, ()))
+                return set()
+            if isinstance(node, ast.Call):
+                function = node.func
+                if (
+                    (
+                        isinstance(function, ast.Name)
+                        and function.id == "Path"
+                    )
+                    or (
+                        isinstance(function, ast.Attribute)
+                        and function.attr == "Path"
+                    )
+                ) and len(node.args) == 1 and not node.keywords:
+                    return evaluate_paths(
+                        node.args[0],
+                        path_values,
+                        collection_names,
+                    )
+                if isinstance(function, ast.Attribute):
+                    base = evaluate_paths(
+                        function.value,
+                        path_values,
+                        collection_names,
+                    )
+                    if (
+                        function.attr in {"resolve", "absolute"}
+                        and not node.args
+                        and not node.keywords
+                    ):
+                        return {
+                            (
+                                value.absolute()
+                                if value.is_absolute()
+                                else (root / value).absolute()
+                            )
+                            for value in base
+                        }
+                    if function.attr == "joinpath":
+                        if not node.args or node.keywords:
+                            return set()
+                        values = base
+                        for argument in node.args:
+                            argument_values = evaluate_paths(
+                                argument,
+                                path_values,
+                                collection_names,
+                            )
+                            if not values or not argument_values:
+                                return set()
+                            values = {
+                                left / right
+                                for left in values
+                                for right in argument_values
+                            }
+                        return values
+            return set()
+
+        def target_names(target: ast.AST) -> set[str]:
+            if isinstance(target, ast.Name):
+                return {target.id}
+            if isinstance(target, (ast.Tuple, ast.List)):
+                return {
+                    name
+                    for item in target.elts
+                    for name in target_names(item)
+                }
+            return set()
+
+        def scope_assignments(
+            scope: ast.AST,
+            *,
+            before_line: int | None,
+        ) -> list[ast.Assign | ast.AnnAssign | ast.For]:
+            result: list[ast.Assign | ast.AnnAssign | ast.For] = []
+
+            def visit(node: ast.AST) -> None:
+                if node is not scope and isinstance(node, scope_types):
+                    return
+                if id(node) not in reachable_ids:
+                    return
+                if isinstance(node, (ast.Assign, ast.AnnAssign, ast.For)):
+                    if (
+                        before_line is None
+                        or getattr(node, "lineno", before_line) < before_line
+                    ):
+                        result.append(node)
+                for child in ast.iter_child_nodes(node):
+                    visit(child)
+
+            for child in ast.iter_child_nodes(scope):
+                visit(child)
+            return sorted(
+                result,
+                key=lambda item: (
+                    getattr(item, "lineno", 0),
+                    getattr(item, "col_offset", 0),
+                ),
+            )
+
+        def apply_assignments(
+            assignments: list[ast.Assign | ast.AnnAssign | ast.For],
+            path_values: dict[str, set[Path]],
+            collection_names: set[str],
+        ) -> None:
+            for _ in range(len(assignments) + 1):
+                changed = False
+                for assignment in assignments:
+                    if isinstance(assignment, ast.Assign):
+                        targets = list(assignment.targets)
+                        value_node = assignment.value
+                    elif isinstance(assignment, ast.AnnAssign):
+                        targets = [assignment.target]
+                        value_node = assignment.value
+                    else:
+                        targets = [assignment.target]
+                        value_node = assignment.iter
+                    if value_node is None:
+                        continue
+                    values = evaluate_paths(
+                        value_node,
+                        path_values,
+                        collection_names,
+                    )
+                    is_collection = bool(
+                        isinstance(
+                            value_node,
+                            (ast.Dict, ast.List, ast.Tuple, ast.Set),
+                        )
+                        or (
+                            isinstance(value_node, ast.Name)
+                            and value_node.id in collection_names
+                        )
+                    )
+                    for target in targets:
+                        for name in target_names(target):
+                            if is_collection and name not in collection_names:
+                                collection_names.add(name)
+                                changed = True
+                            if not values:
+                                continue
+                            previous = path_values.get(name, set())
+                            merged = previous | values
+                            if merged != previous:
+                                path_values[name] = merged
+                                changed = True
+                if not changed:
+                    break
+
+        module_assignments = scope_assignments(
+            tree,
+            before_line=None,
+        )
+
+        def lexical_scope(node: ast.AST) -> ast.AST:
+            current = parent_by_id.get(id(node))
+            while current is not None:
+                if isinstance(current, scope_types):
+                    return current
+                current = parent_by_id.get(id(current))
+            return tree
+
+        def environment_for(
+            node: ast.AST,
+        ) -> tuple[dict[str, set[Path]], set[str]]:
+            path_values: dict[str, set[Path]] = {
+                "__file__": {(root / path).absolute()}
+            }
+            collections: set[str] = set()
+            apply_assignments(
+                module_assignments,
+                path_values,
+                collections,
+            )
+            scope = lexical_scope(node)
+            if scope is not tree:
+                local_assignments = scope_assignments(
+                    scope,
+                    before_line=getattr(node, "lineno", 0),
+                )
+                local_bound = {
+                    name
+                    for assignment in scope_assignments(
+                        scope,
+                        before_line=None,
+                    )
+                    for target in (
+                        list(assignment.targets)
+                        if isinstance(assignment, ast.Assign)
+                        else [assignment.target]
+                    )
+                    for name in target_names(target)
+                }
+                if isinstance(
+                    scope,
+                    (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda),
+                ):
+                    local_bound.update(
+                        argument.arg
+                        for argument in (
+                            *scope.args.posonlyargs,
+                            *scope.args.args,
+                            *scope.args.kwonlyargs,
+                        )
+                    )
+                    if scope.args.vararg is not None:
+                        local_bound.add(scope.args.vararg.arg)
+                    if scope.args.kwarg is not None:
+                        local_bound.add(scope.args.kwarg.arg)
+                for name in local_bound:
+                    path_values.pop(name, None)
+                    collections.discard(name)
+                apply_assignments(
+                    local_assignments,
+                    path_values,
+                    collections,
+                )
+            return path_values, collections
+
+        resolved_file_targets: set[tuple[str, str | None]] = set()
+        spec_bindings: dict[tuple[int, str], int] = {}
+        exec_bindings: dict[tuple[int, str], int] = {}
+        for node in runtime_nodes:
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    record(alias.name, path)
+            elif isinstance(node, ast.ImportFrom):
+                base = relative_module(
+                    runtime_module_name,
+                    importer_is_package,
+                    node.module,
+                    node.level,
+                )
+                resolved_any = False
+                if resolve_first_party(base, path) is not None:
+                    record(base, path)
+                    resolved_any = True
+                for alias in node.names:
+                    if alias.name == "*":
+                        continue
+                    candidate = f"{base}.{alias.name}"
+                    if resolve_first_party(candidate, path) is not None:
+                        record(candidate, path)
+                        resolved_any = True
+                if not resolved_any:
+                    record(base, path)
+            elif isinstance(node, ast.Call):
+                function = node.func
+                function_name = (
+                    function.id
+                    if isinstance(function, ast.Name)
+                    else (
+                        function.attr
+                        if isinstance(function, ast.Attribute)
+                        else ""
+                    )
+                )
+                if function_name in {"__import__", "import_module"}:
+                    if (
+                        not node.args
+                        or not isinstance(node.args[0], ast.Constant)
+                        or not isinstance(node.args[0].value, str)
+                    ):
+                        raise ValueError("unresolved dynamic import")
+                    record(node.args[0].value, path)
+                elif function_name == "spec_from_file_location":
+                    if len(node.args) < 2:
+                        raise ValueError("unresolved file import")
+                    assignment = parent_by_id.get(id(node))
+                    if (
+                        isinstance(assignment, ast.Assign)
+                        and assignment.value is node
+                        and len(assignment.targets) == 1
+                        and isinstance(assignment.targets[0], ast.Name)
+                    ):
+                        spec_name = assignment.targets[0].id
+                    elif (
+                        isinstance(assignment, ast.AnnAssign)
+                        and assignment.value is node
+                        and isinstance(assignment.target, ast.Name)
+                    ):
+                        spec_name = assignment.target.id
+                    else:
+                        raise ValueError("unbound file import spec")
+                    scope_key = id(lexical_scope(node))
+                    binding_key = (scope_key, spec_name)
+                    spec_bindings[binding_key] = (
+                        spec_bindings.get(binding_key, 0) + 1
+                    )
+                    path_values, collections = environment_for(node)
+                    resolved: set[str] = set()
+                    path_candidates = evaluate_paths(
+                        node.args[1],
+                        path_values,
+                        collections,
+                    )
+                    if not path_candidates:
+                        raise ValueError("unresolved file import")
+                    for candidate in path_candidates:
+                        absolute = (
+                            candidate
+                            if candidate.is_absolute()
+                            else (root / candidate).absolute()
+                        )
+                        try:
+                            relative = absolute.relative_to(root).as_posix()
+                        except ValueError as exc:
+                            raise ValueError(
+                                "file import outside repository"
+                            ) from exc
+                        if relative not in tracked_set:
+                            raise ValueError("untracked file import")
+                        resolved.add(relative)
+                    candidates = sorted(resolved)
+                    if not candidates:
+                        raise ValueError("unresolved file import")
+                    alias_values = evaluate_paths(
+                        node.args[0],
+                        path_values,
+                        collections,
+                    )
+                    runtime_context: str | None = None
+                    if len(alias_values) == 1:
+                        alias = str(next(iter(alias_values)))
+                        if (
+                            alias
+                            and all(
+                                part.isidentifier()
+                                for part in alias.split(".")
+                            )
+                        ):
+                            runtime_context = alias
+                    resolved_file_targets.update(
+                        (candidate, runtime_context)
+                        for candidate in candidates
+                    )
+                elif function_name == "exec_module":
+                    owner = (
+                        function.value
+                        if isinstance(function, ast.Attribute)
+                        else None
+                    )
+                    if (
+                        not isinstance(owner, ast.Attribute)
+                        or owner.attr != "loader"
+                        or not isinstance(owner.value, ast.Name)
+                    ):
+                        raise ValueError("unbound file import execution")
+                    binding_key = (
+                        id(lexical_scope(node)),
+                        owner.value.id,
+                    )
+                    exec_bindings[binding_key] = (
+                        exec_bindings.get(binding_key, 0) + 1
+                    )
+        if (
+            set(spec_bindings) != set(exec_bindings)
+            or any(count != 1 for count in spec_bindings.values())
+            or any(count != 1 for count in exec_bindings.values())
+        ):
+            raise ValueError("unmatched file import execution")
+        for target_path, runtime_context in sorted(
+            resolved_file_targets,
+            key=lambda item: (item[0], item[1] or ""),
+        ):
+            record_file(target_path, path, runtime_context)
+
+    runtime_hash = artifact_sha256(runtime_identity)
+    rows: list[dict[str, Any]] = []
+    for import_name in sorted(importers):
+        owner_paths = sorted(importers[import_name])
+        first_party_path = first_party_targets.get(import_name)
+        root_name = import_name.split(".", 1)[0]
+        if first_party_path is not None:
+            rows.append(
+                {
+                    "import_name": import_name,
+                    "classification": "FIRST_PARTY",
+                    "owner_paths": owner_paths,
+                    "target_identity": (
+                        _recovery_epoch003_git_file_identity(
+                            root,
+                            first_party_path,
+                        )
+                    ),
+                }
+            )
+        elif root_name in sys.stdlib_module_names or import_name == (
+            "__future__"
+        ):
+            rows.append(
+                {
+                    "import_name": import_name,
+                    "classification": (
+                        "STDLIB_BOUND_TO_PYTHON_RUNTIME"
+                    ),
+                    "owner_paths": owner_paths,
+                    "target_identity": {
+                        "module_name": import_name,
+                        "python_runtime_identity_sha256": runtime_hash,
+                    },
+                }
+            )
+        else:
+            matching_prefixes = [
+                prefix
+                for prefix in mapping
+                if (
+                    import_name == prefix
+                    or import_name.startswith(f"{prefix}.")
+                )
+            ]
+            distribution_name = (
+                mapping[max(matching_prefixes, key=len)]
+                if matching_prefixes
+                else None
+            )
+            distribution = distributions.get(distribution_name)
+            if type(distribution) is not dict:
+                raise ValueError(f"unclassified import: {import_name}")
+            target = {
+                key: distribution[key]
+                for key in _RECOVERY_EPOCH003_DISTRIBUTION_KEYS
+            }
+            rows.append(
+                {
+                    "import_name": import_name,
+                    "classification": (
+                        "THIRD_PARTY_BOUND_TO_LOCKED_DISTRIBUTION"
+                    ),
+                    "owner_paths": owner_paths,
+                    "target_identity": {
+                        "module_name": import_name,
+                        **target,
+                    },
+                }
+            )
+    if not rows:
+        raise ValueError("empty import manifest")
+    return rows
+
+
+def build_recovery_epoch003_source_bootstrap_closure(
+    state: Mapping[str, Any],
+) -> dict[str, Any] | tuple[str, ...]:
+    """Derive the nested exact20/exact33 carrier from actual source bytes."""
+
+    failure = ("RECOVERY_EPOCH003_SOURCE_BOOTSTRAP_BUILD_INVALID",)
+    try:
+        required = _keys(
+            """
+            source_repository_root source_commit_sha1 source_tree_sha1
+            reference_runtime_observation
+            reference_runtime_observation_external_identity
+            """
+        )
+        if type(state) is not dict or set(state) != required:
+            return failure
+        if (
+            not isinstance(state.get("source_repository_root"), str)
+            or not state.get("source_repository_root")
+        ):
+            return failure
+        raw_root = Path(state["source_repository_root"]).absolute()
+        if _recovery_epoch003_path_has_symlink_component(raw_root):
+            return failure
+        root = raw_root.resolve()
+        commit = _recovery_epoch003_git(root, "rev-parse", "HEAD")
+        tree = _recovery_epoch003_git(root, "rev-parse", "HEAD^{tree}")
+        clean = (
+            _recovery_epoch003_git(
+                root,
+                "status",
+                "--porcelain",
+                "--untracked-files=all",
+            )
+            == ""
+        )
+        reference = state.get("reference_runtime_observation")
+        reference_identity = state.get(
+            "reference_runtime_observation_external_identity"
+        )
+        reference_bytes = (
+            canonical_json_bytes(reference) + b"\n"
+            if type(reference) is dict
+            else b""
+        )
+        reference_blob_sha1 = hashlib.sha1(
+            b"blob "
+            + str(len(reference_bytes)).encode("ascii")
+            + b"\0"
+            + reference_bytes
+        ).hexdigest()
+        if (
+            not clean
+            or not _recovery_epoch003_expected_source_repository(root)
+            or state.get("source_commit_sha1") != commit
+            or state.get("source_tree_sha1") != tree
+            or not _recovery_epoch003_reference_valid(reference)
+            or reference.get("source_commit_sha1") != commit
+            or reference.get("source_tree_sha1") != tree
+            or not _recovery_epoch003_external_identity_valid(
+                reference_identity,
+                role=_RECOVERY_EPOCH003_REFERENCE_ROLE,
+                schema=_RECOVERY_EPOCH003_REFERENCE_SCHEMA,
+                path=_RECOVERY_EPOCH003_REFERENCE_PATH,
+            )
+            or reference_identity.get("logical_artifact_sha256")
+            != reference.get("reference_runtime_observation_sha256")
+            or reference_identity.get("raw_sha256")
+            != hashlib.sha256(reference_bytes).hexdigest()
+            or reference_identity.get("git_blob_sha1")
+            != reference_blob_sha1
+        ):
+            return failure
+        lock_identity = reference["dependency_lock_identity"]
+        lock_payload = _recovery_epoch003_git_file_bytes(
+            root,
+            _RECOVERY_EPOCH003_LOCK_PATH,
+        )
+        lock = json.loads(lock_payload)
+        if (
+            hashlib.sha256(lock_payload).hexdigest()
+            != _RECOVERY_EPOCH003_LOCK_RAW_SHA256
+            or lock_identity
+            != {
+                "identity_class": "EXACT_HASH_LOCK",
+                "path": _RECOVERY_EPOCH003_LOCK_PATH,
+                "raw_sha256": _RECOVERY_EPOCH003_LOCK_RAW_SHA256,
+            }
+            or _recovery_epoch003_git(
+                root,
+                "rev-parse",
+                f"HEAD:{_RECOVERY_EPOCH003_LOCK_PATH}",
+            )
+            != _RECOVERY_EPOCH003_LOCK_BLOB_SHA1
+            or lock.get("lock_sha256")
+            != _RECOVERY_EPOCH003_LOCK_LOGICAL_SHA256
+            or lock.get("lock_sha256")
+            != _recovery_epoch003_hash_without(lock, "lock_sha256")
+            or lock.get("distribution_count") != 46
+            or type(lock.get("distributions")) is not list
+            or len(lock["distributions"]) != 46
+            or lock.get("target", {}).get("implementation") != "CPYTHON"
+            or lock.get("target", {}).get("python_version") != "3.12.13"
+            or lock.get("target", {}).get("platform") != "linux-x86_64"
+            or lock.get("target", {}).get("machine") != "x86_64"
+            or lock.get("resolution", {}).get("pip_version") != "26.0.1"
+        ):
+            return failure
+        expected_installed = [
+            {
+                key: row[key]
+                for key in _RECOVERY_EPOCH003_DISTRIBUTION_KEYS
+            }
+            for row in lock["distributions"]
+        ]
+        expected_installed.sort(
+            key=lambda row: row["normalized_distribution_name"]
+        )
+        wheel_manifest = [
+            {
+                "wheel_filename": row["wheel_filename"],
+                "wheel_sha256": row["wheel_sha256"],
+                "wheel_record_sha256": row["wheel_record_sha256"],
+            }
+            for row in lock["distributions"]
+        ]
+        if (
+            expected_installed != reference["installed_distributions"]
+            or artifact_sha256(expected_installed)
+            != _RECOVERY_EPOCH003_INSTALLED_DISTRIBUTIONS_SHA256
+            or artifact_sha256(wheel_manifest)
+            != _RECOVERY_EPOCH003_WHEEL_BUNDLE_SHA256
+        ):
+            return failure
+        actual_nodes_by_step = _recovery_epoch003_literal_assignment(
+            root,
+            _RECOVERY_EPOCH003_REQUIREMENT_REGISTRY_PATH,
+            "RECOVERY_EPOCH001_FORMAL_NODE_IDS_BY_STEP",
+        )
+        actual_rows = _recovery_epoch003_literal_assignment(
+            root,
+            _RECOVERY_EPOCH003_REQUIREMENT_REGISTRY_PATH,
+            "_RECOVERY_EPOCH001_CURRENT_STEP_REQUIREMENT_ROWS",
+        )
+        actual_registry_hash = _recovery_epoch003_literal_assignment(
+            root,
+            _RECOVERY_EPOCH003_REQUIREMENT_REGISTRY_PATH,
+            "RECOVERY_EPOCH001_EXPECTED_REGISTRY_SHA256",
+        )
+        actual_formal_registry_hash = (
+            _recovery_epoch003_literal_assignment(
+                root,
+                _RECOVERY_EPOCH003_REQUIREMENT_REGISTRY_PATH,
+                "RECOVERY_EPOCH001_EXPECTED_FORMAL_NODE_REGISTRY_SHA256",
+            )
+        )
+        actual_registry_material = {
+            "schema_version": _recovery_epoch003_literal_assignment(
+                root,
+                _RECOVERY_EPOCH003_REQUIREMENT_REGISTRY_PATH,
+                (
+                    "RECOVERY_EPOCH001_CURRENT_STEP_"
+                    "REQUIREMENT_REGISTRY_SCHEMA"
+                ),
+            ),
+            "candidate_version_id": _recovery_epoch003_literal_assignment(
+                root,
+                _RECOVERY_EPOCH003_REQUIREMENT_REGISTRY_PATH,
+                "RECOVERY_EPOCH001_CANDIDATE_VERSION_ID",
+            ),
+            "recovery_epoch": 1,
+            "red_freeze_authority": _recovery_epoch003_literal_assignment(
+                root,
+                _RECOVERY_EPOCH003_REQUIREMENT_REGISTRY_PATH,
+                "RECOVERY_EPOCH001_REGISTRY_RED_FREEZE_AUTHORITY",
+            ),
+            "detailed_design_sha256": _recovery_epoch003_literal_assignment(
+                root,
+                _RECOVERY_EPOCH003_REQUIREMENT_REGISTRY_PATH,
+                "RECOVERY_EPOCH001_DETAILED_DESIGN_SHA256",
+            ),
+            "required_sequence_event_1": (
+                _recovery_epoch003_literal_assignment(
+                    root,
+                    _RECOVERY_EPOCH003_REQUIREMENT_REGISTRY_PATH,
+                    "RECOVERY_EPOCH001_REQUIRED_SEQUENCE_EVENT_1",
+                )
+            ),
+            "completion_sequence_event_2": (
+                _recovery_epoch003_literal_assignment(
+                    root,
+                    _RECOVERY_EPOCH003_REQUIREMENT_REGISTRY_PATH,
+                    "RECOVERY_EPOCH001_COMPLETION_SEQUENCE_EVENT_2",
+                )
+            ),
+            "steps": actual_rows,
+            "automatic_progression": False,
+            "body_free": True,
+        }
+        actual_nodes = tuple(
+            node
+            for step in range(11)
+            for node in actual_nodes_by_step[step]
+        )
+        actual_test_paths = tuple(
+            sorted(
+                {
+                    node_id.split("::", 1)[0]
+                    for node_id in actual_nodes
+                }
+            )
+        )
+        actual_test_functions = {
+            path: frozenset(
+                node.name
+                for node in ast.parse(
+                    _recovery_epoch003_git_file_bytes(
+                        root,
+                        path,
+                    ).decode("utf-8")
+                ).body
+                if isinstance(
+                    node,
+                    (ast.FunctionDef, ast.AsyncFunctionDef),
+                )
+            )
+            for path in actual_test_paths
+        }
+        if (
+            type(actual_nodes_by_step) is not dict
+            or set(actual_nodes_by_step) != set(range(11))
+            or type(actual_rows) is not list
+            or len(actual_rows) != 11
+            or [row.get("step_number") for row in actual_rows]
+            != list(range(11))
+            or any(
+                type(row) is not dict
+                or row.get("formal_completion_node_ids")
+                != actual_nodes_by_step[step]
+                for step, row in enumerate(actual_rows)
+            )
+            or actual_nodes_by_step
+            != RECOVERY_EPOCH001_FORMAL_NODE_IDS_BY_STEP
+            or actual_nodes != _RECOVERY_EPOCH003_FORMAL_NODE_IDS
+            or len(actual_nodes) != 134
+            or len(set(actual_nodes)) != 134
+            or actual_test_paths
+            != _RECOVERY_EPOCH003_FORMAL_TEST_PATHS
+            or len(actual_test_paths) != 21
+            or actual_registry_hash
+            != RECOVERY_EPOCH001_EXPECTED_REGISTRY_SHA256
+            or artifact_sha256(actual_registry_material)
+            != actual_registry_hash
+            or actual_formal_registry_hash
+            != RECOVERY_EPOCH001_EXPECTED_FORMAL_NODE_REGISTRY_SHA256
+            or artifact_sha256(
+                {
+                    "step_nodes": {
+                        str(step): list(actual_nodes_by_step[step])
+                        for step in range(11)
+                    }
+                }
+            )
+            != actual_formal_registry_hash
+            or any(
+                not function_name.startswith("test_")
+                or function_name
+                not in actual_test_functions.get(path, frozenset())
+                for path, function_name in (
+                    node_id.split("::", 1)
+                    for node_id in actual_nodes
+                )
+            )
+        ):
+            return failure
+        owners = _recovery_epoch003_owner_artifacts(root)
+        tests = _recovery_epoch003_formal_test_manifest(
+            root,
+            actual_test_paths,
+        )
+        imports = _recovery_epoch003_import_manifest(
+            root,
+            lock=lock,
+            runtime_identity=reference["python_runtime_identity"],
+        )
+        preflight_argv = deepcopy(_RECOVERY_EPOCH003_PREFLIGHT_ARGV)
+        formal_argv = [
+            *_RECOVERY_EPOCH003_FORMAL_WORKER_ARGV_PREFIX,
+            *actual_nodes,
+        ]
+        bootstrap = {
+            "schema_version": RECOVERY_EPOCH003_BOOTSTRAP_MANIFEST_SCHEMA,
+            "source_commit_sha1": commit,
+            "source_tree_sha1": tree,
+            "formal_owner_artifacts": owners,
+            "formal_owner_artifacts_sha256": artifact_sha256(owners),
+            "formal_test_node_ids": list(
+                actual_nodes
+            ),
+            "formal_test_manifest": tests,
+            "formal_test_manifest_sha256": artifact_sha256(tests),
+            "conftest_plugin_mode": "NOCONFTEST",
+            "pytest_plugins_environment_variable_removed": True,
+            "pytest_entrypoint_autoload_disabled": True,
+            "explicit_plugin_allowlist": [],
+            "loaded_plugin_manifest": [],
+            "loaded_plugin_manifest_sha256": artifact_sha256([]),
+            "import_manifest": imports,
+            "import_manifest_sha256": artifact_sha256(imports),
+            "dependency_lock_identity": deepcopy(lock_identity),
+            "wheel_bundle_manifest_sha256": reference[
+                "wheel_bundle_manifest_sha256"
+            ],
+            "expected_installed_distributions": deepcopy(
+                reference["installed_distributions"]
+            ),
+            "expected_installed_distributions_sha256": reference[
+                "installed_distributions_sha256"
+            ],
+            "expected_python_runtime_identity": deepcopy(
+                reference["python_runtime_identity"]
+            ),
+            "expected_pytest_distribution_identity": deepcopy(
+                reference["pytest_distribution_identity"]
+            ),
+            "reference_runtime_observation_external_identity": deepcopy(
+                reference_identity
+            ),
+            "environment_policy": deepcopy(
+                reference["environment_policy"]
+            ),
+            "environment_policy_sha256": reference[
+                "environment_policy_sha256"
+            ],
+            "preflight_argv": preflight_argv,
+            "preflight_argv_sha256": artifact_sha256(preflight_argv),
+            "formal_worker_argv": formal_argv,
+            "formal_worker_argv_sha256": artifact_sha256(formal_argv),
+            "unclassified_import_count": 0,
+            "unresolved_dynamic_import_count": 0,
+            "body_free": True,
+            "bootstrap_closure_sha256": "",
+        }
+        bootstrap["bootstrap_closure_sha256"] = (
+            _recovery_epoch003_hash_without(
+                bootstrap,
+                "bootstrap_closure_sha256",
+            )
+        )
+        proof_owner = next(
+            row
+            for row in owners
+            if row["role"] == "current_step_proof_gate"
+        )
+        source = {
+            "schema_version": RECOVERY_EPOCH003_SOURCE_CLOSURE_SCHEMA,
+            "repository_full_name": "MassyuRed/mashos-api",
+            "source_ref": "refs/heads/main",
+            "source_commit_sha1": commit,
+            "source_tree_sha1": tree,
+            "worktree_clean": True,
+            "detailed_design_sha256": (
+                _RECOVERY_EPOCH003_DETAILED_DESIGN_SHA256
+            ),
+            "epoch003_p0_external_identity_sha256": (
+                _RECOVERY_EPOCH003_P0_EXTERNAL_IDENTITY_SHA256
+            ),
+            "epoch002_predecessor_set_sha256": (
+                _RECOVERY_EPOCH003_EPOCH002_PREDECESSOR_SET_SHA256
+            ),
+            "d1_red_receipt_external_identity_sha256": (
+                _RECOVERY_EPOCH003_D1_RECEIPT_IDENTITY_SHA256
+            ),
+            "d2_green_receipt_external_identity_sha256": (
+                _RECOVERY_EPOCH003_D2_RECEIPT_IDENTITY_SHA256
+            ),
+            "source_dependency_closure_sha256": artifact_sha256(imports),
+            "canonical_current_closure_sha256": artifact_sha256(owners),
+            "requirement_registry_sha256": (
+                actual_registry_hash
+            ),
+            "formal_node_registry_sha256": (
+                actual_formal_registry_hash
+            ),
+            "proof_source_closure_sha256": artifact_sha256(proof_owner),
+            "formal_test_manifest_sha256": bootstrap[
+                "formal_test_manifest_sha256"
+            ],
+            "bootstrap_closure_sha256": bootstrap[
+                "bootstrap_closure_sha256"
+            ],
+            "reference_runtime_observation_external_identity_sha256": (
+                reference_identity["identity_sha256"]
+            ),
+            "source_closure_sha256": "",
+        }
+        source["source_closure_sha256"] = (
+            _recovery_epoch003_hash_without(
+                source,
+                "source_closure_sha256",
+            )
+        )
+        if (
+            not _recovery_epoch003_bootstrap_valid(bootstrap)
+            or not _recovery_epoch003_source_valid(source, bootstrap)
+            or validate_recovery_epoch002_formal_node_registry(
+                root,
+                bootstrap,
+                source,
+            )
+            or _recovery_epoch003_git(root, "rev-parse", "HEAD")
+            != commit
+            or _recovery_epoch003_git(root, "rev-parse", "HEAD^{tree}")
+            != tree
+            or _recovery_epoch003_git(
+                root,
+                "status",
+                "--porcelain",
+                "--untracked-files=all",
+            )
+            != ""
+            or not _recovery_epoch003_expected_source_repository(root)
+        ):
+            return failure
+        return {
+            "source_closure": source,
+            "bootstrap_closure": bootstrap,
+        }
+    except (
+        AttributeError,
+        IndexError,
+        json.JSONDecodeError,
+        KeyError,
+        OSError,
+        RecursionError,
+        StopIteration,
+        subprocess.SubprocessError,
+        SyntaxError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return failure
 
 
 def _recovery_epoch003_placeholder_present(
@@ -2799,7 +4473,6 @@ def _recovery_epoch003_bootstrap_valid(value: Any) -> bool:
             if (
                 set(target) != _RECOVERY_EPOCH003_FIRST_PARTY_TARGET_KEYS
                 or owner_paths == []
-                or target.get("path") not in owner_paths
                 or not _recovery_epoch003_sha1(
                     target.get("git_blob_sha1")
                 )
@@ -2810,8 +4483,7 @@ def _recovery_epoch003_bootstrap_valid(value: Any) -> bool:
                 return False
         elif classification == "STDLIB_BOUND_TO_PYTHON_RUNTIME":
             if (
-                owner_paths != []
-                or set(target) != _RECOVERY_EPOCH003_STDLIB_TARGET_KEYS
+                set(target) != _RECOVERY_EPOCH003_STDLIB_TARGET_KEYS
                 or target.get("module_name") != row["import_name"]
                 or target.get("python_runtime_identity_sha256")
                 != runtime_identity_hash
@@ -2822,8 +4494,7 @@ def _recovery_epoch003_bootstrap_valid(value: Any) -> bool:
                 target.get("normalized_distribution_name")
             )
             if (
-                owner_paths != []
-                or set(target)
+                set(target)
                 != _RECOVERY_EPOCH003_THIRD_PARTY_TARGET_KEYS
                 or target.get("module_name") != row["import_name"]
                 or distribution is None
@@ -3008,5 +4679,6 @@ __all__ = [
     "RECOVERY_EPOCH003_SOURCE_CLOSURE_KEYS",
     "RECOVERY_EPOCH003_BOOTSTRAP_MANIFEST_KEYS",
     "RECOVERY_EPOCH003_KNOWN_SCHEMA_PAIRS",
+    "build_recovery_epoch003_source_bootstrap_closure",
     "validate_recovery_epoch003_source_bootstrap_contract_state",
 ]

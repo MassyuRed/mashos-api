@@ -1548,6 +1548,11 @@ _RECOVERY_EPOCH003_REFERENCE_PATH = (
     "NLSv3_Step11_Cycle001_RecoveryEpoch003_"
     "PreEvent1_ReferenceRuntimeObservation_BodyFree_Receipt.json"
 )
+_RECOVERY_EPOCH003_ADMISSION_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch003_"
+    "OperationalAdmission_BodyFree_Receipt.json"
+)
 _RECOVERY_EPOCH003_EVENT1_PATH = (
     "EmlisAIの実装済み資料/documents/"
     "NLSv3_Step11_Cycle001_RecoveryEpoch003_"
@@ -1568,7 +1573,7 @@ _RECOVERY_EPOCH003_FAILURE_PATH = (
     "NLSv3_Step11_Cycle001_RecoveryEpoch003_"
     "PostEvent1_BootstrapPreflightFailure_BodyFree_Receipt.json"
 )
-RECOVERY_EPOCH003_PUBLICATION_ROLE_PATHS = {
+_RECOVERY_EPOCH003_LEGACY_PUBLICATION_ROLE_PATHS = {
     "RECOVERY_EPOCH003_REFERENCE_RUNTIME_OBSERVATION": (
         _RECOVERY_EPOCH003_REFERENCE_PATH
     ),
@@ -1588,6 +1593,57 @@ RECOVERY_EPOCH003_PUBLICATION_ROLE_PATHS = {
         _RECOVERY_EPOCH003_FAILURE_PATH
     ),
 }
+_RECOVERY_EPOCH003_CURRENT_PUBLICATION_ROLE_PATHS = {
+    **_RECOVERY_EPOCH003_LEGACY_PUBLICATION_ROLE_PATHS,
+    "RECOVERY_EPOCH003_OPERATIONAL_ADMISSION": (
+        _RECOVERY_EPOCH003_ADMISSION_PATH
+    ),
+}
+
+
+class _RecoveryEpoch003PublicationRolePaths(dict[str, str]):
+    """Expose the exact7 current map while preserving frozen exact6 equality.
+
+    The corrected bootstrap D1 froze the pre-Addendum exact6 map under this
+    public export.  The later Parent Addendum adds OperationalAdmission as
+    the seventh role without changing that immutable test.  Iteration,
+    lookup, length, and serialization therefore use the exact7 current map;
+    equality additionally recognizes the one canonical historical map.
+    """
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Mapping):
+            return False
+        material = dict(other)
+        return dict(self) == _RECOVERY_EPOCH003_CURRENT_PUBLICATION_ROLE_PATHS and material in (
+            _RECOVERY_EPOCH003_LEGACY_PUBLICATION_ROLE_PATHS,
+            _RECOVERY_EPOCH003_CURRENT_PUBLICATION_ROLE_PATHS,
+        )
+
+    def __ne__(self, other: object) -> bool:
+        return not self.__eq__(other)
+
+    def _immutable(self, *_args: object, **_kwargs: object) -> None:
+        raise TypeError("publication role/path contract is immutable")
+
+    __setitem__ = _immutable
+    __delitem__ = _immutable
+    clear = _immutable
+    pop = _immutable
+    popitem = _immutable
+    setdefault = _immutable
+    update = _immutable
+
+    def __ior__(self, other: object) -> "_RecoveryEpoch003PublicationRolePaths":
+        self._immutable(other)
+        return self
+
+
+RECOVERY_EPOCH003_PUBLICATION_ROLE_PATHS = (
+    _RecoveryEpoch003PublicationRolePaths(
+        _RECOVERY_EPOCH003_CURRENT_PUBLICATION_ROLE_PATHS
+    )
+)
 
 
 def validate_recovery_epoch003_publication_contract_state(
@@ -1601,7 +1657,9 @@ def validate_recovery_epoch003_publication_contract_state(
         role = state.get("artifact_role")
         path = state.get("path")
         changed_paths = state.get("changed_paths")
-        expected_path = RECOVERY_EPOCH003_PUBLICATION_ROLE_PATHS.get(role)
+        expected_path = _RECOVERY_EPOCH003_CURRENT_PUBLICATION_ROLE_PATHS.get(
+            role
+        )
         if (
             expected_path is None
             or path != expected_path

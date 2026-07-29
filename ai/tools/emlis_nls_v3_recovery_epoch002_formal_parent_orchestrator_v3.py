@@ -12,28 +12,51 @@ disabled.
 
 from copy import deepcopy
 import hashlib
+import json
 from pathlib import Path, PurePosixPath
 import re
 import stat
+import subprocess
 from typing import Any, Mapping, Protocol
 
 from emlis_ai_nls_v3_artifact_contract import (
     artifact_sha256,
     canonical_json_bytes,
+    load_canonical_json_bytes,
+)
+from emlis_ai_recovery_epoch002_canonical_current_closure_v3 import (
+    RECOVERY_EPOCH003_BOOTSTRAP_MANIFEST_KEYS,
+    RECOVERY_EPOCH003_BOOTSTRAP_MANIFEST_SCHEMA,
+    RECOVERY_EPOCH003_SOURCE_CLOSURE_KEYS,
+    RECOVERY_EPOCH003_SOURCE_CLOSURE_SCHEMA,
+    build_recovery_epoch003_source_bootstrap_closure,
+    validate_recovery_epoch003_source_bootstrap_contract_state,
 )
 from emlis_ai_recovery_epoch002_sequence_ledger_v3 import (
+    RECOVERY_EPOCH003_SEQUENCE_EVENT_KEYS,
+    RECOVERY_EPOCH003_SEQUENCE_EVENT_SCHEMA,
     validate_recovery_epoch002_event1_artifact,
     validate_recovery_epoch002_reservation_artifact,
+    validate_recovery_epoch003_sequence_event1_contract_state,
 )
 from emlis_nls_v3_recovery_epoch002_closure_receipt_verify import (
     verify_recovery_epoch002_success_contract_state,
     verify_recovery_epoch002_artifact_identity,
     verify_recovery_epoch002_published_artifact,
+    verify_recovery_epoch003_operational_admission_contract,
 )
 from emlis_nls_v3_recovery_epoch002_atomic_publication_bundle_v3 import (
+    RECOVERY_EPOCH003_PUBLICATION_ROLE_PATHS,
     validate_recovery_epoch002_success_publication_state,
+    validate_recovery_epoch003_publication_contract_state,
 )
 from emlis_nls_v3_recovery_epoch002_formal_worker_bootstrap_preflight import (
+    RECOVERY_EPOCH003_FAILURE_CLASSES,
+    RECOVERY_EPOCH003_FAILURE_SCHEMA,
+    RECOVERY_EPOCH003_OPERATIONAL_OBSERVATION_SCHEMA,
+    RECOVERY_EPOCH003_PREFLIGHT_STOP_CODE,
+    RECOVERY_EPOCH003_READINESS_SCHEMA,
+    RECOVERY_EPOCH003_REFERENCE_OBSERVATION_SCHEMA,
     validate_recovery_epoch002_bootstrap_state,
     validate_recovery_epoch002_event1_publication_binding,
     validate_recovery_epoch002_operational_preflight_attestation,
@@ -2143,6 +2166,2186 @@ def validate_recovery_epoch003_parent_phase_state(
         return ("RECOVERY_EPOCH003_PARENT_PHASE_STATE_INVALID",)
 
 
+_RECOVERY_EPOCH003_EVIDENCE_PHASE_ORDER = (
+    "REFERENCE_RUNTIME_OBSERVATION_PUBLISHED_AND_POSTVERIFIED",
+    (
+        "SOURCE_BOOTSTRAP_OPERATIONAL_ADMISSION_CARRIER_"
+        "PUBLISHED_AND_POSTVERIFIED"
+    ),
+    (
+        "CANDIDATE_ALLOCATED_WITH_EVENT1_"
+        "PUBLISHED_AND_POSTVERIFIED"
+    ),
+    "OPERATIONAL_RUNTIME_MATERIALIZATION_AND_PREFLIGHT",
+    "READINESS_OR_FAILURE_PUBLISHED_AND_POSTVERIFIED",
+    "FORMAL_RESERVATION_PUBLISHED_AND_POSTVERIFIED",
+)
+_RECOVERY_EPOCH003_EVIDENCE_STATE_KEYS = frozenset(
+    {
+        "artifact_repository_root",
+        "source_repository_root",
+        "phase_order",
+        "completed_phases",
+        "phase_evidence",
+        "next_phase",
+        "reservation_count_delta",
+        "formal_exact134_invocation_count",
+        "automatic_progression",
+    }
+)
+_RECOVERY_EPOCH003_PHASE_EVIDENCE_KEYS = frozenset(
+    {
+        "phase",
+        "artifact_records",
+        "runtime_records",
+        "owner_validation_state",
+        "independent_verification_state",
+        "phase_evidence_sha256",
+    }
+)
+_RECOVERY_EPOCH003_ARTIFACT_RECORD_KEYS = frozenset(
+    {
+        "external_identity",
+        "published_body",
+        "postfetch_body",
+        "publication_base_commit_sha1",
+        "changed_paths",
+    }
+)
+_RECOVERY_EPOCH003_RUNTIME_RECORD_KEYS = frozenset(
+    {
+        "evidence_role",
+        "evidence_body",
+        "logical_sha256",
+        "body_free",
+    }
+)
+_RECOVERY_EPOCH003_EXTERNAL_IDENTITY_KEYS = frozenset(
+    {
+        "artifact_role",
+        "body_free",
+        "git_blob_sha1",
+        "identity_sha256",
+        "logical_artifact_sha256",
+        "path",
+        "publication_commit_sha1",
+        "raw_sha256",
+        "repository_full_name",
+        "schema_version",
+    }
+)
+_RECOVERY_EPOCH003_PHASE_ARTIFACT_ROLES = (
+    frozenset({"RECOVERY_EPOCH003_REFERENCE_RUNTIME_OBSERVATION"}),
+    frozenset({"RECOVERY_EPOCH003_OPERATIONAL_ADMISSION"}),
+    frozenset({"RECOVERY_EPOCH003_SOURCE_BASELINE_EVENT"}),
+    frozenset(),
+    frozenset(
+        {
+            "RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_OBSERVATION",
+            "RECOVERY_EPOCH003_BOOTSTRAP_READINESS",
+            "RECOVERY_EPOCH003_FORMAL_WORKER_BOOTSTRAP_PREFLIGHT_FAILURE",
+        }
+    ),
+    frozenset(
+        {"RECOVERY_EPOCH003_FORMAL_ATTEMPT_ONE_SHOT_RESERVATION"}
+    ),
+)
+_RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_ROLE = (
+    "OPERATIONAL_RUNTIME_OBSERVATION_CANDIDATE"
+)
+_RECOVERY_EPOCH003_READINESS_RUNTIME_ROLES = frozenset(
+    {
+        "BOOTSTRAP_READINESS_CANDIDATE",
+        "FORMAL_WORKER_BOOTSTRAP_PREFLIGHT_FAILURE_CANDIDATE",
+    }
+)
+
+
+def _recovery_epoch003_evidence_external_identity_valid(
+    value: Any,
+) -> bool:
+    return bool(
+        type(value) is dict
+        and set(value) == _RECOVERY_EPOCH003_EXTERNAL_IDENTITY_KEYS
+        and value.get("repository_full_name") == "MassyuRed/Cocolon"
+        and value.get("body_free") is True
+        and isinstance(value.get("artifact_role"), str)
+        and bool(value.get("artifact_role"))
+        and isinstance(value.get("schema_version"), str)
+        and bool(value.get("schema_version"))
+        and isinstance(value.get("path"), str)
+        and bool(value.get("path"))
+        and not PurePosixPath(value["path"]).is_absolute()
+        and ".." not in PurePosixPath(value["path"]).parts
+        and _CONTINUATION_SHA1_RE.fullmatch(
+            str(value.get("git_blob_sha1", ""))
+        )
+        is not None
+        and _CONTINUATION_SHA1_RE.fullmatch(
+            str(value.get("publication_commit_sha1", ""))
+        )
+        is not None
+        and _CONTINUATION_SHA256_RE.fullmatch(
+            str(value.get("raw_sha256", ""))
+        )
+        is not None
+        and _CONTINUATION_SHA256_RE.fullmatch(
+            str(value.get("logical_artifact_sha256", ""))
+        )
+        is not None
+        and value.get("identity_sha256")
+        == _hash_without(value, "identity_sha256")
+    )
+
+
+def _recovery_epoch003_artifact_record_valid(value: Any) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != _RECOVERY_EPOCH003_ARTIFACT_RECORD_KEYS
+        or not _recovery_epoch003_evidence_external_identity_valid(
+            value.get("external_identity")
+        )
+        or type(value.get("published_body")) is not dict
+        or value.get("published_body") != value.get("postfetch_body")
+        or _CONTINUATION_SHA1_RE.fullmatch(
+            str(value.get("publication_base_commit_sha1", ""))
+        )
+        is None
+    ):
+        return False
+    identity = value["external_identity"]
+    body = value["published_body"]
+    logical_fields = (
+        "operational_admission_sha256",
+        "reference_runtime_observation_sha256",
+        "event_sha256",
+        "operational_runtime_observation_sha256",
+        "bootstrap_readiness_receipt_sha256",
+        "receipt_sha256",
+        "formal_test_run_reservation_sha256",
+    )
+    logical_values = [
+        body[key]
+        for key in logical_fields
+        if key in body and isinstance(body[key], str)
+    ]
+    return bool(
+        value.get("changed_paths") == [identity["path"]]
+        and len(logical_values) == 1
+        and logical_values[0] == identity["logical_artifact_sha256"]
+    )
+
+
+def _recovery_epoch003_git(root: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    ).stdout.strip()
+
+
+def _recovery_epoch003_artifact_record_repository_valid(
+    value: Mapping[str, Any],
+    *,
+    root: Path,
+) -> bool:
+    identity = value["external_identity"]
+    commit = identity["publication_commit_sha1"]
+    path = identity["path"]
+    try:
+        parents = _recovery_epoch003_git(
+            root,
+            "show",
+            "-s",
+            "--format=%P",
+            commit,
+        ).split()
+        changed = _recovery_epoch003_git(
+            root,
+            "diff-tree",
+            "--no-commit-id",
+            "--name-only",
+            "-r",
+            commit,
+        ).splitlines()
+        blob = _recovery_epoch003_git(
+            root,
+            "rev-parse",
+            f"{commit}:{path}",
+        )
+        raw = subprocess.run(
+            ["git", "show", f"{commit}:{path}"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            timeout=20,
+        ).stdout
+        body = load_canonical_json_bytes(raw)
+        reachable = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", commit, "HEAD"],
+            cwd=root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=20,
+        ).returncode == 0
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        UnicodeError,
+        ValueError,
+        json.JSONDecodeError,
+    ):
+        return False
+    return bool(
+        len(parents) == 1
+        and parents[0] == value.get("publication_base_commit_sha1")
+        and changed == value.get("changed_paths")
+        and reachable
+        and blob == identity.get("git_blob_sha1")
+        and hashlib.sha256(raw).hexdigest()
+        == identity.get("raw_sha256")
+        and body == value.get("published_body")
+        == value.get("postfetch_body")
+    )
+
+
+def _recovery_epoch003_runtime_record_valid(value: Any) -> bool:
+    return bool(
+        type(value) is dict
+        and set(value) == _RECOVERY_EPOCH003_RUNTIME_RECORD_KEYS
+        and isinstance(value.get("evidence_role"), str)
+        and bool(value.get("evidence_role"))
+        and type(value.get("evidence_body")) is dict
+        and value.get("logical_sha256")
+        == artifact_sha256(value["evidence_body"])
+        and value.get("body_free") is True
+    )
+
+
+def _recovery_epoch003_phase_membership_valid(
+    phase_index: int,
+    artifact_records: list[dict[str, Any]],
+    runtime_records: list[dict[str, Any]],
+) -> bool:
+    artifact_roles = [
+        row["external_identity"]["artifact_role"]
+        for row in artifact_records
+    ]
+    runtime_roles = [row["evidence_role"] for row in runtime_records]
+    if phase_index in {0, 1, 2, 5}:
+        return bool(
+            len(artifact_roles) == 1
+            and set(artifact_roles)
+            == _RECOVERY_EPOCH003_PHASE_ARTIFACT_ROLES[phase_index]
+            and runtime_roles == []
+        )
+    if phase_index == 3:
+        return bool(
+            artifact_roles == []
+            and len(runtime_roles) == 2
+            and _RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_ROLE
+            in runtime_roles
+            and len(
+                set(runtime_roles)
+                & _RECOVERY_EPOCH003_READINESS_RUNTIME_ROLES
+            )
+            == 1
+        )
+    return bool(
+        runtime_roles == []
+        and len(artifact_roles) == 2
+        and "RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_OBSERVATION"
+        in artifact_roles
+        and len(
+            set(artifact_roles)
+            & {
+                "RECOVERY_EPOCH003_BOOTSTRAP_READINESS",
+                (
+                    "RECOVERY_EPOCH003_FORMAL_WORKER_"
+                    "BOOTSTRAP_PREFLIGHT_FAILURE"
+                ),
+            }
+        )
+        == 1
+    )
+
+
+def _validate_recovery_epoch003_parent_phase_evidence_state_legacy_internal(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Retain the pre-Addendum validator for internal history only."""
+
+    failure = ("RECOVERY_EPOCH003_PARENT_PHASE_EVIDENCE_INVALID",)
+    try:
+        if (
+            type(state) is not dict
+            or set(state) != _RECOVERY_EPOCH003_EVIDENCE_STATE_KEYS
+            or not isinstance(state.get("artifact_repository_root"), str)
+            or not state["artifact_repository_root"]
+            or not isinstance(state.get("source_repository_root"), str)
+            or not state["source_repository_root"]
+            or state.get("phase_order")
+            != list(_RECOVERY_EPOCH003_EVIDENCE_PHASE_ORDER)
+            or type(state.get("completed_phases")) is not list
+            or state["completed_phases"]
+            != list(
+                _RECOVERY_EPOCH003_EVIDENCE_PHASE_ORDER[
+                    : len(state["completed_phases"])
+                ]
+            )
+            or len(state["completed_phases"])
+            > len(_RECOVERY_EPOCH003_EVIDENCE_PHASE_ORDER)
+            or state.get("next_phase")
+            != (
+                _RECOVERY_EPOCH003_EVIDENCE_PHASE_ORDER[
+                    len(state["completed_phases"])
+                ]
+                if len(state["completed_phases"])
+                < len(_RECOVERY_EPOCH003_EVIDENCE_PHASE_ORDER)
+                else None
+            )
+            or state.get("reservation_count_delta") != 0
+            or state.get("formal_exact134_invocation_count") != 0
+            or state.get("automatic_progression") is not False
+            or type(state.get("phase_evidence")) is not list
+            or len(state["phase_evidence"])
+            != len(state["completed_phases"])
+        ):
+            return failure
+        artifact_root = Path(state["artifact_repository_root"]).resolve()
+        source_root = Path(state["source_repository_root"]).resolve()
+        if (
+            artifact_root.is_symlink()
+            or not artifact_root.is_dir()
+            or source_root.is_symlink()
+            or not source_root.is_dir()
+        ):
+            return failure
+        try:
+            _recovery_epoch003_git(artifact_root, "rev-parse", "HEAD")
+            _recovery_epoch003_git(source_root, "rev-parse", "HEAD")
+        except (OSError, subprocess.SubprocessError):
+            return failure
+        for index, row in enumerate(state["phase_evidence"]):
+            if (
+                type(row) is not dict
+                or set(row) != _RECOVERY_EPOCH003_PHASE_EVIDENCE_KEYS
+                or row.get("phase")
+                != _RECOVERY_EPOCH003_EVIDENCE_PHASE_ORDER[index]
+                or row.get("owner_validation_state") != "PROVED"
+                or row.get("independent_verification_state") != "PROVED"
+                or row.get("phase_evidence_sha256")
+                != _hash_without(row, "phase_evidence_sha256")
+                or type(row.get("artifact_records")) is not list
+                or type(row.get("runtime_records")) is not list
+                or any(
+                    not _recovery_epoch003_artifact_record_valid(record)
+                    for record in row["artifact_records"]
+                )
+                or any(
+                    not _recovery_epoch003_artifact_record_repository_valid(
+                        record,
+                        root=artifact_root,
+                    )
+                    for record in row["artifact_records"]
+                )
+                or any(
+                    not _recovery_epoch003_runtime_record_valid(record)
+                    for record in row["runtime_records"]
+                )
+            ):
+                return failure
+            artifact_records = row["artifact_records"]
+            runtime_records = row["runtime_records"]
+            if artifact_records != sorted(
+                artifact_records,
+                key=lambda record: (
+                    record["external_identity"]["artifact_role"],
+                    record["external_identity"]["path"],
+                    record["external_identity"]["identity_sha256"],
+                ),
+            ) or runtime_records != sorted(
+                runtime_records,
+                key=lambda record: (
+                    record["evidence_role"],
+                    record["logical_sha256"],
+                ),
+            ):
+                return failure
+            if not _recovery_epoch003_phase_membership_valid(
+                index,
+                artifact_records,
+                runtime_records,
+            ):
+                return failure
+            if index == 4:
+                candidates = {
+                    record["evidence_role"]: record
+                    for record in state["phase_evidence"][3][
+                        "runtime_records"
+                    ]
+                }
+                candidate_role_by_artifact_role = {
+                    (
+                        "RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_OBSERVATION"
+                    ): "OPERATIONAL_RUNTIME_OBSERVATION_CANDIDATE",
+                    "RECOVERY_EPOCH003_BOOTSTRAP_READINESS": (
+                        "BOOTSTRAP_READINESS_CANDIDATE"
+                    ),
+                    (
+                        "RECOVERY_EPOCH003_FORMAL_WORKER_"
+                        "BOOTSTRAP_PREFLIGHT_FAILURE"
+                    ): (
+                        "FORMAL_WORKER_BOOTSTRAP_PREFLIGHT_"
+                        "FAILURE_CANDIDATE"
+                    ),
+                }
+                for record in artifact_records:
+                    artifact_role = record["external_identity"][
+                        "artifact_role"
+                    ]
+                    candidate = candidates.get(
+                        candidate_role_by_artifact_role.get(
+                            artifact_role,
+                            "",
+                        )
+                    )
+                    if (
+                        candidate is None
+                        or candidate["evidence_body"]
+                        != record["published_body"]
+                        or candidate["logical_sha256"]
+                        != record["external_identity"][
+                            "logical_artifact_sha256"
+                        ]
+                    ):
+                        return failure
+        return ()
+    except (
+        AttributeError,
+        KeyError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return failure
+
+
+# The evidence validator above is retained as the historical D1
+# implementation.  The additive D2 implementation below deliberately
+# redefines only the current public validator: legacy parent APIs and their
+# frozen behavior remain untouched.
+
+
+def _e3_keys(value: str) -> frozenset[str]:
+    return frozenset(value.split())
+
+
+_E3_REFERENCE_KEYS = _e3_keys(
+    """
+    schema_version logical_cycle_id recovery_epoch_id authority_token
+    source_commit_sha1 source_tree_sha1 dependency_lock_identity
+    wheel_bundle_manifest_sha256 runtime_materialization
+    python_runtime_identity pytest_distribution_identity
+    installed_distributions installed_distributions_sha256
+    environment_policy environment_policy_sha256 reservation_count_delta
+    formal_exact134_invocation_count collection_state test_execution_state
+    body_free reference_runtime_observation_sha256
+    """
+)
+_E3_ADMISSION_KEYS = _e3_keys(
+    """
+    schema_version logical_cycle_id recovery_epoch_id predecessor_bindings
+    source_closure bootstrap_closure authority scope freshness
+    effect_boundary owner_validation_state independent_verification_state
+    state automatic_progression body_free operational_admission_sha256
+    """
+)
+_E3_PREDECESSOR_KEYS = _e3_keys(
+    """
+    p0_external_identity
+    operational_admission_parent_addendum_receipt_external_identity
+    bootstrap_contract_d1_receipt_external_identity
+    bootstrap_contract_d2_receipt_external_identity
+    operational_admission_contract_d1_receipt_external_identity
+    operational_admission_contract_d2_receipt_external_identity
+    reference_runtime_observation_external_identity
+    predecessor_bindings_sha256
+    """
+)
+_E3_OPERATIONAL_KEYS = _e3_keys(
+    """
+    schema_version logical_cycle_id recovery_epoch_id candidate_version_id
+    authority_token preflight_challenge_id preflight_id
+    source_baseline_event_external_identity_sha256 source_closure_sha256
+    bootstrap_closure_sha256 source_commit_sha1 source_tree_sha1
+    worktree_clean formal_owner_artifacts_sha256
+    formal_test_manifest_sha256 import_manifest_sha256
+    dependency_lock_raw_sha256 wheel_bundle_manifest_sha256
+    installed_distributions_sha256 pytest_distribution_identity
+    python_runtime_identity loaded_plugin_manifest_sha256
+    preflight_argv_sha256 formal_worker_argv_sha256 environment_policy
+    environment_policy_sha256 runtime_materialization
+    runtime_root_identity_sha256 reference_runtime_root_identity_sha256
+    attempt_registry_root_identity_sha256
+    owner_operational_projection_sha256
+    independent_operational_projection_sha256 owner_validation_state
+    independent_verification_state reservation_count_delta
+    formal_exact134_invocation_count collection_state test_execution_state
+    pytest_main_called body_free operational_runtime_observation_sha256
+    """
+)
+_E3_READINESS_KEYS = _e3_keys(
+    """
+    schema_version logical_cycle_id recovery_epoch_id candidate_version_id
+    authority_token event1_external_identity_sha256
+    event1_bootstrap_closure event1_bootstrap_closure_sha256
+    operational_runtime_observation_external_identity
+    operational_runtime_observation_sha256
+    expected_observed_projection_sha256 readiness_receipt_path
+    preflight_started_at_utc preflight_finished_at_utc
+    owner_validation_state independent_verification_state
+    reservation_count_delta formal_exact134_invocation_count
+    collection_state test_execution_state pytest_main_called
+    automatic_progression body_free bootstrap_readiness_receipt_sha256
+    """
+)
+_E3_FAILURE_KEYS = _e3_keys(
+    """
+    schema_version logical_cycle_id recovery_epoch_id candidate_version_id
+    authority_token preflight_challenge_id preflight_id
+    event1_external_identity_sha256 source_closure_sha256
+    bootstrap_closure_sha256 operational_runtime_observation_state
+    operational_runtime_observation_external_identity
+    operational_runtime_observation_sha256
+    owner_operational_projection_sha256
+    independent_operational_projection_sha256
+    expected_observed_projection_sha256 failure_stage failure_class
+    failure_issue_codes stop_code reservation_count_delta attempt_id
+    formal_exact134_invocation_count owner_validation_state
+    independent_verification_state automatic_retry automatic_progression
+    body_free receipt_sha256
+    """
+)
+_E3_MATERIALIZATION_KEYS = _e3_keys(
+    """
+    schema_version runtime_root_identity_sha256
+    python_executable_relative_path installed_directory_relative_path
+    dependency_lock_raw_sha256 wheel_bundle_manifest_sha256
+    distribution_count runtime_materialization_state body_free
+    runtime_materialization_sha256
+    """
+)
+_E3_RUNTIME_IDENTITY_KEYS = _e3_keys(
+    "executable_sha256 implementation version build_sha256"
+)
+_E3_DISTRIBUTION_KEYS = _e3_keys(
+    """
+    normalized_distribution_name distribution_version wheel_sha256
+    installed_record_closure_sha256
+    """
+)
+_E3_ENVIRONMENT_KEYS = _e3_keys(
+    "fixed removed inherited_path_sha256 lang lc_all"
+)
+_E3_ENVIRONMENT_FIXED_KEYS = _e3_keys(
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD PYTHONDONTWRITEBYTECODE"
+)
+_E3_PROJECTION_KEYS = _e3_keys(
+    """
+    source_commit_sha1 source_tree_sha1 formal_owner_artifacts_sha256
+    formal_test_manifest_sha256 import_manifest_sha256
+    dependency_lock_raw_sha256 wheel_bundle_manifest_sha256
+    installed_distributions_sha256 pytest_distribution_identity
+    python_runtime_identity loaded_plugin_manifest_sha256
+    preflight_argv_sha256 formal_worker_argv_sha256
+    environment_policy_sha256
+    """
+)
+_E3_ADMISSION_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch003.operational_admission.v1"
+)
+_E3_MATERIALIZATION_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch003.runtime_materialization.v1"
+)
+_E3_FINAL_AUTHORITY = (
+    "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH003_FINAL_PRE_EVENT1_REFERENCE_"
+    "RUNTIME_OBSERVATION_AND_SOURCE_BOOTSTRAP_OPERATIONAL_ADMISSION_"
+    "CARRIER_ISSUANCE_INDEPENDENT_VERIFICATION_AND_POSTVERIFICATION_ONLY"
+)
+_E3_PREFLIGHT_AUTHORITY = (
+    "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH003_POST_EVENT1_LOCKED_RUNTIME_"
+    "MATERIALIZATION_OPERATIONAL_RUNTIME_OBSERVATION_READINESS_OR_FAILURE_"
+    "CANDIDATE_AND_INDEPENDENT_PREFLIGHT_VERIFICATION_ONLY"
+)
+_E3_LOCK_PATH = (
+    "ai/configs/"
+    "emlis_nls_v3_recovery_epoch002_formal_worker_bootstrap_lock_v1.json"
+)
+_E3_LOCK_RAW = (
+    "9bb2875541a6d959c1dca47cb5b96de5b0041ccf5288e849c469c15a8b310787"
+)
+_E3_WHEEL_BUNDLE = (
+    "63f3915ccf57845dc0c4b5d14762207d23d1cb7a435a9de8411add8491ba6fc8"
+)
+_E3_INSTALLED = (
+    "0e2e4b5ec3f3b1aef7fad4474af28d8eeea8fa7bec1a57a9cb7180fc81b80e42"
+)
+_E3_UTC_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
+)
+_E3_ROLE_SCHEMA_HASH = {
+    "RECOVERY_EPOCH003_REFERENCE_RUNTIME_OBSERVATION": (
+        RECOVERY_EPOCH003_REFERENCE_OBSERVATION_SCHEMA,
+        "reference_runtime_observation_sha256",
+    ),
+    "RECOVERY_EPOCH003_OPERATIONAL_ADMISSION": (
+        _E3_ADMISSION_SCHEMA,
+        "operational_admission_sha256",
+    ),
+    "RECOVERY_EPOCH003_SOURCE_BASELINE_EVENT": (
+        RECOVERY_EPOCH003_SEQUENCE_EVENT_SCHEMA,
+        "event_sha256",
+    ),
+    "RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_OBSERVATION": (
+        RECOVERY_EPOCH003_OPERATIONAL_OBSERVATION_SCHEMA,
+        "operational_runtime_observation_sha256",
+    ),
+    (
+        "RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_"
+        "OBSERVATION_FAILURE_EVIDENCE"
+    ): (
+        RECOVERY_EPOCH003_OPERATIONAL_OBSERVATION_SCHEMA,
+        "operational_runtime_observation_sha256",
+    ),
+    "RECOVERY_EPOCH003_BOOTSTRAP_READINESS": (
+        RECOVERY_EPOCH003_READINESS_SCHEMA,
+        "bootstrap_readiness_receipt_sha256",
+    ),
+    "RECOVERY_EPOCH003_FORMAL_WORKER_BOOTSTRAP_PREFLIGHT_FAILURE": (
+        RECOVERY_EPOCH003_FAILURE_SCHEMA,
+        "receipt_sha256",
+    ),
+}
+
+
+def _e3_sha1(value: Any) -> bool:
+    return bool(
+        isinstance(value, str)
+        and _CONTINUATION_SHA1_RE.fullmatch(value) is not None
+    )
+
+
+def _e3_sha256(value: Any) -> bool:
+    return bool(
+        isinstance(value, str)
+        and _CONTINUATION_SHA256_RE.fullmatch(value) is not None
+    )
+
+
+def _e3_environment_valid(value: Any) -> bool:
+    return bool(
+        type(value) is dict
+        and set(value) == _E3_ENVIRONMENT_KEYS
+        and type(value.get("fixed")) is dict
+        and set(value["fixed"]) == _E3_ENVIRONMENT_FIXED_KEYS
+        and value["fixed"].get("PYTEST_DISABLE_PLUGIN_AUTOLOAD") == "1"
+        and value["fixed"].get("PYTHONDONTWRITEBYTECODE") == "1"
+        and value.get("removed")
+        == ["PYTEST_ADDOPTS", "PYTEST_PLUGINS", "PYTHONPATH"]
+        and _e3_sha256(value.get("inherited_path_sha256"))
+        and value.get("inherited_path_sha256") != "0" * 64
+        and isinstance(value.get("lang"), str)
+        and bool(value.get("lang"))
+        and isinstance(value.get("lc_all"), str)
+        and bool(value.get("lc_all"))
+    )
+
+
+def _e3_environment_shape_valid(value: Any) -> bool:
+    return bool(
+        type(value) is dict
+        and set(value) == _E3_ENVIRONMENT_KEYS
+        and type(value.get("fixed")) is dict
+        and set(value["fixed"]) == _E3_ENVIRONMENT_FIXED_KEYS
+        and all(
+            isinstance(item, str)
+            for item in value["fixed"].values()
+        )
+        and type(value.get("removed")) is list
+        and all(
+            isinstance(item, str) and item
+            for item in value["removed"]
+        )
+        and len(value["removed"]) == len(set(value["removed"]))
+        and _e3_sha256(value.get("inherited_path_sha256"))
+        and isinstance(value.get("lang"), str)
+        and bool(value.get("lang"))
+        and isinstance(value.get("lc_all"), str)
+        and bool(value.get("lc_all"))
+    )
+
+
+def _e3_distribution_valid(value: Any) -> bool:
+    return bool(
+        type(value) is dict
+        and set(value) == _E3_DISTRIBUTION_KEYS
+        and isinstance(value.get("normalized_distribution_name"), str)
+        and bool(value.get("normalized_distribution_name"))
+        and isinstance(value.get("distribution_version"), str)
+        and bool(value.get("distribution_version"))
+        and _e3_sha256(value.get("wheel_sha256"))
+        and _e3_sha256(value.get("installed_record_closure_sha256"))
+    )
+
+
+def _e3_runtime_identity_valid(value: Any) -> bool:
+    return bool(
+        type(value) is dict
+        and set(value) == _E3_RUNTIME_IDENTITY_KEYS
+        and value.get("implementation") == "CPYTHON"
+        and value.get("version") == "3.12.13"
+        and _e3_sha256(value.get("executable_sha256"))
+        and _e3_sha256(value.get("build_sha256"))
+    )
+
+
+def _e3_runtime_identity_shape_valid(value: Any) -> bool:
+    return bool(
+        type(value) is dict
+        and set(value) == _E3_RUNTIME_IDENTITY_KEYS
+        and isinstance(value.get("implementation"), str)
+        and bool(value.get("implementation"))
+        and isinstance(value.get("version"), str)
+        and bool(value.get("version"))
+        and _e3_sha256(value.get("executable_sha256"))
+        and _e3_sha256(value.get("build_sha256"))
+    )
+
+
+def _e3_materialization_shape_valid(value: Any) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != _E3_MATERIALIZATION_KEYS
+        or value.get("schema_version") != _E3_MATERIALIZATION_SCHEMA
+        or not _e3_sha256(value.get("runtime_root_identity_sha256"))
+        or not _e3_sha256(value.get("dependency_lock_raw_sha256"))
+        or not _e3_sha256(value.get("wheel_bundle_manifest_sha256"))
+        or not isinstance(value.get("distribution_count"), int)
+        or isinstance(value.get("distribution_count"), bool)
+        or value["distribution_count"] <= 0
+        or not isinstance(value.get("runtime_materialization_state"), str)
+        or not value["runtime_materialization_state"]
+        or value.get("body_free") is not True
+        or value.get("runtime_materialization_sha256")
+        != _hash_without(value, "runtime_materialization_sha256")
+    ):
+        return False
+    return all(
+        isinstance(value.get(key), str)
+        and bool(value[key])
+        and not PurePosixPath(value[key]).is_absolute()
+        and ".." not in PurePosixPath(value[key]).parts
+        for key in (
+            "python_executable_relative_path",
+            "installed_directory_relative_path",
+        )
+    )
+
+
+def _e3_materialization_valid(value: Any, state: str) -> bool:
+    if (
+        not _e3_materialization_shape_valid(value)
+        or value.get("dependency_lock_raw_sha256") != _E3_LOCK_RAW
+        or value.get("wheel_bundle_manifest_sha256") != _E3_WHEEL_BUNDLE
+        or value.get("distribution_count") != 46
+        or value.get("runtime_materialization_state") != state
+    ):
+        return False
+    return True
+
+
+def _e3_reference_body_valid(value: Any) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != _E3_REFERENCE_KEYS
+        or value.get("schema_version")
+        != RECOVERY_EPOCH003_REFERENCE_OBSERVATION_SCHEMA
+        or value.get("logical_cycle_id") != "NLS_V3_CYCLE_001"
+        or value.get("recovery_epoch_id")
+        != "NLS_V3_CYCLE001_RECOVERY_EPOCH_003"
+        or value.get("authority_token") != _E3_FINAL_AUTHORITY
+        or not _e3_sha1(value.get("source_commit_sha1"))
+        or not _e3_sha1(value.get("source_tree_sha1"))
+        or value.get("reservation_count_delta") != 0
+        or value.get("formal_exact134_invocation_count") != 0
+        or value.get("collection_state") != "NOT_STARTED"
+        or value.get("test_execution_state") != "NOT_STARTED"
+        or value.get("body_free") is not True
+        or value.get("reference_runtime_observation_sha256")
+        != _hash_without(
+            value,
+            "reference_runtime_observation_sha256",
+        )
+    ):
+        return False
+    installed = value.get("installed_distributions")
+    pytest_identity = value.get("pytest_distribution_identity")
+    environment = value.get("environment_policy")
+    return bool(
+        value.get("dependency_lock_identity")
+        == {
+            "identity_class": "EXACT_HASH_LOCK",
+            "path": _E3_LOCK_PATH,
+            "raw_sha256": _E3_LOCK_RAW,
+        }
+        and value.get("wheel_bundle_manifest_sha256")
+        == _E3_WHEEL_BUNDLE
+        and type(installed) is list
+        and len(installed) == 46
+        and all(_e3_distribution_valid(row) for row in installed)
+        and [
+            row["normalized_distribution_name"] for row in installed
+        ]
+        == sorted(
+            {
+                row["normalized_distribution_name"]
+                for row in installed
+            }
+        )
+        and value.get("installed_distributions_sha256")
+        == _E3_INSTALLED
+        == artifact_sha256(installed)
+        and _e3_runtime_identity_valid(
+            value.get("python_runtime_identity")
+        )
+        and _e3_distribution_valid(pytest_identity)
+        and pytest_identity in installed
+        and pytest_identity.get("normalized_distribution_name")
+        == "pytest"
+        and _e3_environment_valid(environment)
+        and value.get("environment_policy_sha256")
+        == artifact_sha256(environment)
+        and _e3_materialization_valid(
+            value.get("runtime_materialization"),
+            "VERIFIED_LOCKED_REFERENCE_RUNTIME",
+        )
+    )
+
+
+def _e3_admission_body_valid(value: Any) -> bool:
+    return bool(
+        type(value) is dict
+        and set(value) == _E3_ADMISSION_KEYS
+        and value.get("schema_version") == _E3_ADMISSION_SCHEMA
+        and value.get("logical_cycle_id") == "NLS_V3_CYCLE_001"
+        and value.get("recovery_epoch_id")
+        == "NLS_V3_CYCLE001_RECOVERY_EPOCH_003"
+        and type(value.get("predecessor_bindings")) is dict
+        and set(value["predecessor_bindings"])
+        == _E3_PREDECESSOR_KEYS
+        and value["predecessor_bindings"].get(
+            "predecessor_bindings_sha256"
+        )
+        == _hash_without(
+            value["predecessor_bindings"],
+            "predecessor_bindings_sha256",
+        )
+        and type(value.get("source_closure")) is dict
+        and set(value["source_closure"])
+        == RECOVERY_EPOCH003_SOURCE_CLOSURE_KEYS
+        and value["source_closure"].get("schema_version")
+        == RECOVERY_EPOCH003_SOURCE_CLOSURE_SCHEMA
+        and type(value.get("bootstrap_closure")) is dict
+        and set(value["bootstrap_closure"])
+        == RECOVERY_EPOCH003_BOOTSTRAP_MANIFEST_KEYS
+        and value["bootstrap_closure"].get("schema_version")
+        == RECOVERY_EPOCH003_BOOTSTRAP_MANIFEST_SCHEMA
+        and validate_recovery_epoch003_source_bootstrap_contract_state(
+            {
+                "source_closure": value["source_closure"],
+                "bootstrap_closure": value["bootstrap_closure"],
+            }
+        )
+        == ()
+        and all(
+            type(value.get(key)) is dict
+            for key in (
+                "authority",
+                "scope",
+                "freshness",
+                "effect_boundary",
+            )
+        )
+        and value.get("owner_validation_state") == "PROVED"
+        and value.get("independent_verification_state") == "PROVED"
+        and value.get("state")
+        == (
+            "SOURCE_BOOTSTRAP_REFERENCE_RUNTIME_CLOSED_AWAITING_"
+            "SEPARATE_CANDIDATE_EVENT1_AUTHORITY"
+        )
+        and value.get("automatic_progression") is False
+        and value.get("body_free") is True
+        and value.get("operational_admission_sha256")
+        == _hash_without(value, "operational_admission_sha256")
+    )
+
+
+def _e3_operational_body_valid(value: Any) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != _E3_OPERATIONAL_KEYS
+        or value.get("schema_version")
+        != RECOVERY_EPOCH003_OPERATIONAL_OBSERVATION_SCHEMA
+        or value.get("logical_cycle_id") != "NLS_V3_CYCLE_001"
+        or value.get("recovery_epoch_id")
+        != "NLS_V3_CYCLE001_RECOVERY_EPOCH_003"
+        or not isinstance(value.get("candidate_version_id"), str)
+        or not value.get("candidate_version_id")
+        or not isinstance(value.get("authority_token"), str)
+        or not value.get("authority_token")
+        or not _e3_sha256(value.get("preflight_challenge_id"))
+        or not _e3_sha256(value.get("preflight_id"))
+        or not _e3_sha1(value.get("source_commit_sha1"))
+        or not _e3_sha1(value.get("source_tree_sha1"))
+        or type(value.get("worktree_clean")) is not bool
+        or not _e3_sha256(value.get("dependency_lock_raw_sha256"))
+        or not _e3_sha256(value.get("wheel_bundle_manifest_sha256"))
+        or not _e3_sha256(value.get("installed_distributions_sha256"))
+        or not _e3_distribution_valid(
+            value.get("pytest_distribution_identity")
+        )
+        or not _e3_runtime_identity_shape_valid(
+            value.get("python_runtime_identity")
+        )
+        or not _e3_environment_shape_valid(
+            value.get("environment_policy")
+        )
+        or value.get("environment_policy_sha256")
+        != artifact_sha256(value["environment_policy"])
+        or not _e3_materialization_shape_valid(
+            value.get("runtime_materialization")
+        )
+        or value.get("owner_validation_state") != "VALID"
+        or value.get("independent_verification_state") != "VALID"
+        or value.get("reservation_count_delta") != 0
+        or value.get("formal_exact134_invocation_count") != 0
+        or value.get("collection_state") != "NOT_STARTED"
+        or value.get("test_execution_state") != "NOT_STARTED"
+        or value.get("pytest_main_called") is not False
+        or value.get("body_free") is not True
+        or value.get("operational_runtime_observation_sha256")
+        != _hash_without(
+            value,
+            "operational_runtime_observation_sha256",
+        )
+    ):
+        return False
+    roots = (
+        value.get("runtime_root_identity_sha256"),
+        value.get("reference_runtime_root_identity_sha256"),
+        value.get("attempt_registry_root_identity_sha256"),
+    )
+    return bool(
+        all(_e3_sha256(root) for root in roots)
+        and _e3_sha256(
+            value.get("owner_operational_projection_sha256")
+        )
+        and _e3_sha256(
+            value.get("independent_operational_projection_sha256")
+        )
+    )
+
+
+def _e3_identity_valid(
+    value: Any,
+    *,
+    role: str | None = None,
+    logical_hash: str | None = None,
+) -> bool:
+    valid = bool(
+        type(value) is dict
+        and set(value) == _RECOVERY_EPOCH003_EXTERNAL_IDENTITY_KEYS
+        and value.get("repository_full_name") == "MassyuRed/Cocolon"
+        and value.get("body_free") is True
+        and isinstance(value.get("artifact_role"), str)
+        and bool(value.get("artifact_role"))
+        and isinstance(value.get("schema_version"), str)
+        and bool(value.get("schema_version"))
+        and isinstance(value.get("path"), str)
+        and bool(value.get("path"))
+        and not PurePosixPath(value["path"]).is_absolute()
+        and ".." not in PurePosixPath(value["path"]).parts
+        and _e3_sha1(value.get("git_blob_sha1"))
+        and _e3_sha1(value.get("publication_commit_sha1"))
+        and _e3_sha256(value.get("raw_sha256"))
+        and _e3_sha256(value.get("logical_artifact_sha256"))
+        and value.get("identity_sha256")
+        == _hash_without(value, "identity_sha256")
+    )
+    if not valid or role is None:
+        return valid
+    contract = _E3_ROLE_SCHEMA_HASH.get(role)
+    return bool(
+        contract is not None
+        and value.get("artifact_role") == role
+        and value.get("schema_version") == contract[0]
+        and value.get("path")
+        == RECOVERY_EPOCH003_PUBLICATION_ROLE_PATHS.get(role)
+        and (
+            logical_hash is None
+            or value.get("logical_artifact_sha256") == logical_hash
+        )
+    )
+
+
+def _e3_readiness_body_valid(value: Any) -> bool:
+    identity = (
+        value.get("operational_runtime_observation_external_identity")
+        if type(value) is dict
+        else None
+    )
+    return bool(
+        type(value) is dict
+        and set(value) == _E3_READINESS_KEYS
+        and value.get("schema_version") == RECOVERY_EPOCH003_READINESS_SCHEMA
+        and value.get("logical_cycle_id") == "NLS_V3_CYCLE_001"
+        and value.get("recovery_epoch_id")
+        == "NLS_V3_CYCLE001_RECOVERY_EPOCH_003"
+        and isinstance(value.get("candidate_version_id"), str)
+        and bool(value.get("candidate_version_id"))
+        and isinstance(value.get("authority_token"), str)
+        and bool(value.get("authority_token"))
+        and _e3_sha256(value.get("event1_external_identity_sha256"))
+        and type(value.get("event1_bootstrap_closure")) is dict
+        and set(value["event1_bootstrap_closure"])
+        == RECOVERY_EPOCH003_BOOTSTRAP_MANIFEST_KEYS
+        and value.get("event1_bootstrap_closure_sha256")
+        == value["event1_bootstrap_closure"].get(
+            "bootstrap_closure_sha256"
+        )
+        and _e3_identity_valid(
+            identity,
+            role="RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_OBSERVATION",
+            logical_hash=value.get(
+                "operational_runtime_observation_sha256"
+            ),
+        )
+        and _e3_sha256(
+            value.get("expected_observed_projection_sha256")
+        )
+        and value.get("readiness_receipt_path")
+        == RECOVERY_EPOCH003_PUBLICATION_ROLE_PATHS[
+            "RECOVERY_EPOCH003_BOOTSTRAP_READINESS"
+        ]
+        and _E3_UTC_RE.fullmatch(
+            str(value.get("preflight_started_at_utc", ""))
+        )
+        is not None
+        and _E3_UTC_RE.fullmatch(
+            str(value.get("preflight_finished_at_utc", ""))
+        )
+        is not None
+        and value["preflight_started_at_utc"]
+        <= value["preflight_finished_at_utc"]
+        and value.get("owner_validation_state") == "VALID"
+        and value.get("independent_verification_state") == "VALID"
+        and value.get("reservation_count_delta") == 0
+        and value.get("formal_exact134_invocation_count") == 0
+        and value.get("collection_state") == "NOT_STARTED"
+        and value.get("test_execution_state") == "NOT_STARTED"
+        and value.get("pytest_main_called") is False
+        and value.get("automatic_progression") is False
+        and value.get("body_free") is True
+        and value.get("bootstrap_readiness_receipt_sha256")
+        == _hash_without(
+            value,
+            "bootstrap_readiness_receipt_sha256",
+        )
+    )
+
+
+def _e3_failure_body_valid(value: Any) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != _E3_FAILURE_KEYS
+        or value.get("schema_version") != RECOVERY_EPOCH003_FAILURE_SCHEMA
+        or value.get("logical_cycle_id") != "NLS_V3_CYCLE_001"
+        or value.get("recovery_epoch_id")
+        != "NLS_V3_CYCLE001_RECOVERY_EPOCH_003"
+        or not isinstance(value.get("candidate_version_id"), str)
+        or not value.get("candidate_version_id")
+        or not isinstance(value.get("authority_token"), str)
+        or not value.get("authority_token")
+        or not _e3_sha256(value.get("preflight_challenge_id"))
+        or not _e3_sha256(value.get("preflight_id"))
+        or not _e3_sha256(value.get("event1_external_identity_sha256"))
+        or not _e3_sha256(value.get("source_closure_sha256"))
+        or not _e3_sha256(value.get("bootstrap_closure_sha256"))
+        or value.get("failure_class") not in RECOVERY_EPOCH003_FAILURE_CLASSES
+        or value.get("failure_issue_codes")
+        != [value.get("failure_class")]
+        or value.get("stop_code") != RECOVERY_EPOCH003_PREFLIGHT_STOP_CODE
+        or value.get("reservation_count_delta") != 0
+        or value.get("attempt_id") is not None
+        or value.get("formal_exact134_invocation_count") != 0
+        or value.get("automatic_retry") is not False
+        or value.get("automatic_progression") is not False
+        or value.get("body_free") is not True
+        or value.get("receipt_sha256")
+        != _hash_without(value, "receipt_sha256")
+    ):
+        return False
+    fields = (
+        "operational_runtime_observation_sha256",
+        "owner_operational_projection_sha256",
+        "independent_operational_projection_sha256",
+        "expected_observed_projection_sha256",
+    )
+    identity = value.get(
+        "operational_runtime_observation_external_identity"
+    )
+    failure_class = value["failure_class"]
+    early_stage = {
+        "BOOTSTRAP_SCHEMA_PAIR_UNSUPPORTED": "BEFORE_MATERIALIZATION",
+        "SOURCE_BOOTSTRAP_BASELINE_MISMATCH": "BEFORE_MATERIALIZATION",
+        (
+            "OPERATIONAL_MATERIALIZATION_BINDING_MISSING"
+        ): "MATERIALIZATION_BINDING",
+    }
+    if failure_class in early_stage:
+        return bool(
+            value.get("authority_token")
+            == "UNISSUED_RECOVERY_EPOCH003_PREFLIGHT_AUTHORITY"
+            and value.get("failure_stage") == early_stage[failure_class]
+            and value.get("operational_runtime_observation_state")
+            == "NOT_AVAILABLE"
+            and identity is None
+            and value.get("owner_validation_state") == "NOT_STARTED"
+            and value.get("independent_verification_state")
+            == "NOT_STARTED"
+            and all(value.get(key) is None for key in fields)
+        )
+    if (
+        failure_class
+        not in {
+            "OPERATIONAL_RUNTIME_IDENTITY_MISMATCH",
+            "INDEPENDENT_OPERATIONAL_PROJECTION_DISAGREEMENT",
+        }
+        or value.get("operational_runtime_observation_state")
+        != "OBSERVED"
+        or not _e3_identity_valid(
+            identity,
+            role=(
+                "RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_"
+                "OBSERVATION_FAILURE_EVIDENCE"
+            ),
+            logical_hash=value.get(
+                "operational_runtime_observation_sha256"
+            ),
+        )
+        or not all(_e3_sha256(value.get(key)) for key in fields)
+    ):
+        return False
+    owner_hash = value["owner_operational_projection_sha256"]
+    independent_hash = value[
+        "independent_operational_projection_sha256"
+    ]
+    if failure_class == "OPERATIONAL_RUNTIME_IDENTITY_MISMATCH":
+        return bool(
+            value.get("failure_stage")
+            == "EXPECTED_OBSERVED_COMPARISON"
+            and value.get("owner_validation_state") == "INVALID"
+            and value.get("independent_verification_state") == "VALID"
+            and independent_hash == owner_hash
+        )
+    return bool(
+        value.get("failure_stage") == "INDEPENDENT_PROJECTION"
+        and value.get("owner_validation_state") == "VALID"
+        and value.get("independent_verification_state") == "INVALID"
+        and owner_hash != independent_hash
+        and value.get("expected_observed_projection_sha256")
+        == artifact_sha256(
+            {
+                "owner": owner_hash,
+                "independent": independent_hash,
+            }
+        )
+    )
+
+
+def _e3_body_valid(role: str, value: Any) -> bool:
+    if role == "RECOVERY_EPOCH003_REFERENCE_RUNTIME_OBSERVATION":
+        return _e3_reference_body_valid(value)
+    if role == "RECOVERY_EPOCH003_OPERATIONAL_ADMISSION":
+        return _e3_admission_body_valid(value)
+    if role == "RECOVERY_EPOCH003_SOURCE_BASELINE_EVENT":
+        return bool(
+            type(value) is dict
+            and set(value) == RECOVERY_EPOCH003_SEQUENCE_EVENT_KEYS
+            and validate_recovery_epoch003_sequence_event1_contract_state(
+                value
+            )
+            == ()
+        )
+    if role in {
+        "RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_OBSERVATION",
+        (
+            "RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_"
+            "OBSERVATION_FAILURE_EVIDENCE"
+        ),
+    }:
+        return _e3_operational_body_valid(value)
+    if role == "RECOVERY_EPOCH003_BOOTSTRAP_READINESS":
+        return _e3_readiness_body_valid(value)
+    if (
+        role
+        == "RECOVERY_EPOCH003_FORMAL_WORKER_BOOTSTRAP_PREFLIGHT_FAILURE"
+    ):
+        return _e3_failure_body_valid(value)
+    return False
+
+
+def _e3_artifact_record_valid(value: Any) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != _RECOVERY_EPOCH003_ARTIFACT_RECORD_KEYS
+        or type(value.get("external_identity")) is not dict
+        or type(value.get("published_body")) is not dict
+        or value.get("published_body") != value.get("postfetch_body")
+        or not _e3_sha1(value.get("publication_base_commit_sha1"))
+    ):
+        return False
+    identity = value["external_identity"]
+    body = value["published_body"]
+    role = identity.get("artifact_role")
+    contract = _E3_ROLE_SCHEMA_HASH.get(role)
+    if contract is None:
+        return False
+    logical_hash = body.get(contract[1])
+    return bool(
+        _e3_sha256(logical_hash)
+        and _e3_identity_valid(
+            identity,
+            role=role,
+            logical_hash=logical_hash,
+        )
+        and _e3_body_valid(role, body)
+        and value.get("changed_paths") == [identity["path"]]
+        and validate_recovery_epoch003_publication_contract_state(
+            {
+                "artifact_role": role,
+                "path": identity["path"],
+                "changed_paths": value["changed_paths"],
+                "body_free": True,
+                "automatic_progression": False,
+            }
+        )
+        == ()
+    )
+
+
+def _e3_runtime_record_valid(value: Any) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != _RECOVERY_EPOCH003_RUNTIME_RECORD_KEYS
+        or value.get("body_free") is not True
+        or type(value.get("evidence_body")) is not dict
+        or value.get("logical_sha256")
+        != artifact_sha256(value["evidence_body"])
+    ):
+        return False
+    role = value.get("evidence_role")
+    if role == "OPERATIONAL_RUNTIME_OBSERVATION_CANDIDATE":
+        return _e3_operational_body_valid(value["evidence_body"])
+    if role == "BOOTSTRAP_READINESS_CANDIDATE":
+        return _e3_readiness_body_valid(value["evidence_body"])
+    if (
+        role
+        == "FORMAL_WORKER_BOOTSTRAP_PREFLIGHT_FAILURE_CANDIDATE"
+    ):
+        return _e3_failure_body_valid(value["evidence_body"])
+    return False
+
+
+def _e3_git(root: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    ).stdout.strip()
+
+
+def _e3_git_bytes(root: Path, *args: str) -> bytes:
+    return subprocess.run(
+        ["git", *args],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        timeout=20,
+    ).stdout
+
+
+def _e3_changed_paths(root: Path, commit: str) -> list[str]:
+    raw = _e3_git_bytes(
+        root,
+        "diff-tree",
+        "--no-commit-id",
+        "--name-only",
+        "-r",
+        "-z",
+        commit,
+    )
+    return [
+        item.decode("utf-8")
+        for item in raw.split(b"\0")
+        if item
+    ]
+
+
+def _e3_path_has_symlink_component(path: Path) -> bool:
+    absolute = path.absolute()
+    current = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        current /= part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def _e3_expected_repository(root: Path, name: str) -> bool:
+    try:
+        head = _e3_git(root, "rev-parse", "HEAD")
+        main = _e3_git(root, "rev-parse", "refs/heads/main")
+        top = Path(
+            _e3_git(root, "rev-parse", "--show-toplevel")
+        ).resolve()
+        origin = _e3_git(
+            root,
+            "config",
+            "--get",
+            "remote.origin.url",
+        ).rstrip("/").removesuffix(".git")
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return bool(
+        top == root
+        and head == main
+        and (
+            origin.endswith(f"/MassyuRed/{name}")
+            or origin.endswith(f":MassyuRed/{name}")
+        )
+    )
+
+
+def _e3_artifact_repository_valid(
+    value: Mapping[str, Any],
+    *,
+    root: Path,
+) -> bool:
+    identity = value["external_identity"]
+    commit = identity["publication_commit_sha1"]
+    base = value["publication_base_commit_sha1"]
+    path = identity["path"]
+    try:
+        parents = _e3_git(
+            root,
+            "show",
+            "-s",
+            "--format=%P",
+            commit,
+        ).split()
+        changed = _e3_changed_paths(root, commit)
+        blob = _e3_git(root, "rev-parse", f"{commit}:{path}")
+        raw = _e3_git_bytes(root, "show", f"{commit}:{path}")
+        body = load_canonical_json_bytes(raw)
+        reachable = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", commit, "HEAD"],
+            cwd=root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=20,
+        ).returncode == 0
+        absent_at_base = subprocess.run(
+            ["git", "cat-file", "-e", f"{base}:{path}"],
+            cwd=root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=20,
+        ).returncode != 0
+        head_blob = _e3_git(root, "rev-parse", f"HEAD:{path}")
+        intervening = _e3_git(
+            root,
+            "rev-list",
+            f"{commit}..HEAD",
+            "--",
+            path,
+        ).splitlines()
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        UnicodeError,
+        ValueError,
+        json.JSONDecodeError,
+    ):
+        return False
+    return bool(
+        parents == [base]
+        and changed == value["changed_paths"]
+        and changed == [path]
+        and reachable
+        and absent_at_base
+        and intervening == []
+        and blob == identity["git_blob_sha1"]
+        and head_blob == blob
+        and hashlib.sha256(raw).hexdigest() == identity["raw_sha256"]
+        and raw == canonical_json_bytes(value["published_body"]) + b"\n"
+        and body == value["published_body"] == value["postfetch_body"]
+    )
+
+
+def _e3_source_state(root: Path) -> tuple[str, str] | None:
+    try:
+        commit = _e3_git(root, "rev-parse", "HEAD")
+        tree = _e3_git(root, "rev-parse", "HEAD^{tree}")
+        clean = (
+            _e3_git(
+                root,
+                "status",
+                "--porcelain",
+                "--untracked-files=all",
+            )
+            == ""
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return (commit, tree) if clean else None
+
+
+def _e3_identity_fresh_at_base(
+    root: Path,
+    identity: Mapping[str, Any],
+    base_commit: str,
+) -> bool:
+    publication_commit = identity["publication_commit_sha1"]
+    path = identity["path"]
+    try:
+        ancestry = subprocess.run(
+            [
+                "git",
+                "merge-base",
+                "--is-ancestor",
+                publication_commit,
+                base_commit,
+            ],
+            cwd=root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=20,
+        ).returncode == 0
+        blob = _e3_git(
+            root,
+            "rev-parse",
+            f"{base_commit}:{path}",
+        )
+        raw = _e3_git_bytes(
+            root,
+            "show",
+            f"{base_commit}:{path}",
+        )
+        intervening = _e3_git(
+            root,
+            "rev-list",
+            f"{publication_commit}..{base_commit}",
+            "--",
+            path,
+        ).splitlines()
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return bool(
+        ancestry
+        and intervening == []
+        and blob == identity["git_blob_sha1"]
+        and hashlib.sha256(raw).hexdigest() == identity["raw_sha256"]
+    )
+
+
+def _e3_membership_valid(
+    index: int,
+    artifacts: list[dict[str, Any]],
+    runtime: list[dict[str, Any]],
+) -> bool:
+    artifact_roles = [
+        row["external_identity"]["artifact_role"] for row in artifacts
+    ]
+    runtime_roles = [row["evidence_role"] for row in runtime]
+    if index == 0:
+        return bool(
+            artifact_roles
+            == ["RECOVERY_EPOCH003_REFERENCE_RUNTIME_OBSERVATION"]
+            and runtime_roles == []
+        )
+    if index == 1:
+        return bool(
+            artifact_roles == ["RECOVERY_EPOCH003_OPERATIONAL_ADMISSION"]
+            and runtime_roles == []
+        )
+    if index == 2:
+        return bool(
+            artifact_roles == ["RECOVERY_EPOCH003_SOURCE_BASELINE_EVENT"]
+            and runtime_roles == []
+        )
+    if index == 3:
+        return bool(
+            artifact_roles == []
+            and len(runtime_roles) == 2
+            and "OPERATIONAL_RUNTIME_OBSERVATION_CANDIDATE"
+            in runtime_roles
+            and len(
+                set(runtime_roles)
+                & {
+                    "BOOTSTRAP_READINESS_CANDIDATE",
+                    (
+                        "FORMAL_WORKER_BOOTSTRAP_PREFLIGHT_"
+                        "FAILURE_CANDIDATE"
+                    ),
+                }
+            )
+            == 1
+        )
+    if index != 4 or runtime_roles != [] or len(artifact_roles) != 2:
+        return False
+    operational = {
+        "RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_OBSERVATION",
+        (
+            "RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_"
+            "OBSERVATION_FAILURE_EVIDENCE"
+        ),
+    }
+    terminal = {
+        "RECOVERY_EPOCH003_BOOTSTRAP_READINESS",
+        "RECOVERY_EPOCH003_FORMAL_WORKER_BOOTSTRAP_PREFLIGHT_FAILURE",
+    }
+    return bool(
+        len(set(artifact_roles)) == 2
+        and len(set(artifact_roles) & operational) == 1
+        and len(set(artifact_roles) & terminal) == 1
+    )
+
+
+def _e3_reference_phase_valid(
+    rows: list[dict[str, Any]],
+    source_state: tuple[str, str],
+) -> bool:
+    body = rows[0]["artifact_records"][0]["published_body"]
+    return bool(
+        _e3_reference_body_valid(body)
+        and source_state
+        == (body["source_commit_sha1"], body["source_tree_sha1"])
+    )
+
+
+def _e3_admission_phase_valid(
+    rows: list[dict[str, Any]],
+    *,
+    artifact_root: Path,
+    source_root: Path,
+    source_state: tuple[str, str],
+) -> bool:
+    reference_record = rows[0]["artifact_records"][0]
+    admission_record = rows[1]["artifact_records"][0]
+    reference = reference_record["published_body"]
+    reference_identity = reference_record["external_identity"]
+    admission = admission_record["published_body"]
+    admission_identity = admission_record["external_identity"]
+    admission_base = admission_record["publication_base_commit_sha1"]
+    if (
+        not _e3_identity_fresh_at_base(
+            artifact_root,
+            reference_identity,
+            admission_base,
+        )
+        or admission["predecessor_bindings"].get(
+            "reference_runtime_observation_external_identity"
+        )
+        != reference_identity
+        or source_state
+        != (
+            admission["source_closure"]["source_commit_sha1"],
+            admission["source_closure"]["source_tree_sha1"],
+        )
+    ):
+        return False
+    rebuilt = build_recovery_epoch003_source_bootstrap_closure(
+        {
+            "source_repository_root": str(source_root),
+            "source_commit_sha1": source_state[0],
+            "source_tree_sha1": source_state[1],
+            "reference_runtime_observation": reference,
+            "reference_runtime_observation_external_identity": (
+                reference_identity
+            ),
+        }
+    )
+    if (
+        type(rebuilt) is not dict
+        or rebuilt.get("source_closure") != admission["source_closure"]
+        or rebuilt.get("bootstrap_closure")
+        != admission["bootstrap_closure"]
+    ):
+        return False
+    publication_state = {
+        "artifact_repository_root": str(artifact_root),
+        "external_identity": reference_identity,
+        "postfetch_body": reference_record["postfetch_body"],
+        "admission_base_commit_sha1": admission_base,
+        "admission_base_tree_sha1": _e3_git(
+            artifact_root,
+            "rev-parse",
+            f"{admission_base}^{{tree}}",
+        ),
+        "reference_publication_is_ancestor_of_admission_base": True,
+        "reference_path_blob_at_admission_base_sha1": (
+            reference_identity["git_blob_sha1"]
+        ),
+    }
+    return (
+        verify_recovery_epoch003_operational_admission_contract(
+            {
+                "verification_mode": "BODY_AND_POSTFETCH",
+                "artifact_repository_root": str(artifact_root),
+                "source_repository_observation": {
+                    "source_repository_root": str(source_root),
+                    "source_commit_sha1": source_state[0],
+                    "source_tree_sha1": source_state[1],
+                    "worktree_clean": True,
+                },
+                "operational_admission": admission,
+                "operational_admission_external_identity": (
+                    admission_identity
+                ),
+                "reference_runtime_observation": reference,
+                "reference_publication_state": publication_state,
+            }
+        )
+        == ()
+    )
+
+
+def _e3_event_phase_valid(
+    rows: list[dict[str, Any]],
+    *,
+    artifact_root: Path,
+) -> bool:
+    reference_record = rows[0]["artifact_records"][0]
+    admission_record = rows[1]["artifact_records"][0]
+    event_record = rows[2]["artifact_records"][0]
+    reference_identity = reference_record["external_identity"]
+    admission_identity = admission_record["external_identity"]
+    admission = admission_record["published_body"]
+    event = event_record["published_body"]
+    event_base = event_record["publication_base_commit_sha1"]
+    supporting = sorted(
+        [reference_identity, admission_identity],
+        key=lambda item: (
+            item["artifact_role"],
+            item["path"],
+            item["identity_sha256"],
+        ),
+    )
+    return bool(
+        _e3_identity_fresh_at_base(
+            artifact_root,
+            reference_identity,
+            event_base,
+        )
+        and _e3_identity_fresh_at_base(
+            artifact_root,
+            admission_identity,
+            event_base,
+        )
+        and event["source_closure"] == admission["source_closure"]
+        and event["bootstrap_closure"] == admission["bootstrap_closure"]
+        and event["authority"].get("operational_admission")
+        == admission_identity
+        and event["primary_evidence_artifact"] == admission_identity
+        and event["publication"].get("supporting_artifacts")
+        == supporting
+        and event["publication"].get("supporting_artifact_count") == 2
+        and event["publication"].get("expected_changed_path_count") == 1
+        and event["publication"].get("base_commit_sha1")
+        == event_record["publication_base_commit_sha1"]
+        and event["publication"].get("supporting_artifact_set_sha256")
+        == artifact_sha256(supporting)
+    )
+
+
+def _e3_projection(event: Mapping[str, Any]) -> dict[str, Any]:
+    source = event["source_closure"]
+    bootstrap = event["bootstrap_closure"]
+    return {
+        "source_commit_sha1": source["source_commit_sha1"],
+        "source_tree_sha1": source["source_tree_sha1"],
+        "formal_owner_artifacts_sha256": bootstrap[
+            "formal_owner_artifacts_sha256"
+        ],
+        "formal_test_manifest_sha256": bootstrap[
+            "formal_test_manifest_sha256"
+        ],
+        "import_manifest_sha256": bootstrap["import_manifest_sha256"],
+        "dependency_lock_raw_sha256": bootstrap[
+            "dependency_lock_identity"
+        ]["raw_sha256"],
+        "wheel_bundle_manifest_sha256": bootstrap[
+            "wheel_bundle_manifest_sha256"
+        ],
+        "installed_distributions_sha256": bootstrap[
+            "expected_installed_distributions_sha256"
+        ],
+        "pytest_distribution_identity": bootstrap[
+            "expected_pytest_distribution_identity"
+        ],
+        "python_runtime_identity": bootstrap[
+            "expected_python_runtime_identity"
+        ],
+        "loaded_plugin_manifest_sha256": bootstrap[
+            "loaded_plugin_manifest_sha256"
+        ],
+        "preflight_argv_sha256": bootstrap["preflight_argv_sha256"],
+        "formal_worker_argv_sha256": bootstrap[
+            "formal_worker_argv_sha256"
+        ],
+        "environment_policy_sha256": bootstrap[
+            "environment_policy_sha256"
+        ],
+    }
+
+
+def _e3_observed_projection(
+    operational: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        key: operational[key]
+        for key in _E3_PROJECTION_KEYS
+    }
+
+
+def _e3_phase4_records(
+    rows: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    by_role = {
+        item["evidence_role"]: item
+        for item in rows[3]["runtime_records"]
+    }
+    operational = by_role[
+        "OPERATIONAL_RUNTIME_OBSERVATION_CANDIDATE"
+    ]
+    terminal = next(
+        by_role[role]
+        for role in (
+            "BOOTSTRAP_READINESS_CANDIDATE",
+            (
+                "FORMAL_WORKER_BOOTSTRAP_PREFLIGHT_"
+                "FAILURE_CANDIDATE"
+            ),
+        )
+        if role in by_role
+    )
+    return operational, terminal
+
+
+def _e3_phase4_valid(
+    rows: list[dict[str, Any]],
+    source_state: tuple[str, str],
+) -> bool:
+    reference = rows[0]["artifact_records"][0]["published_body"]
+    event_record = rows[2]["artifact_records"][0]
+    event = event_record["published_body"]
+    operational_record, terminal_record = _e3_phase4_records(rows)
+    operational = operational_record["evidence_body"]
+    terminal = terminal_record["evidence_body"]
+    expected = _e3_projection(event)
+    expected_hash = artifact_sha256(expected)
+    observed = _e3_observed_projection(operational)
+    observed_hash = artifact_sha256(observed)
+    owner_hash = operational["owner_operational_projection_sha256"]
+    independent_hash = operational[
+        "independent_operational_projection_sha256"
+    ]
+    runtime = operational["runtime_materialization"]
+    roots = (
+        operational["runtime_root_identity_sha256"],
+        operational["reference_runtime_root_identity_sha256"],
+        operational["attempt_registry_root_identity_sha256"],
+    )
+    identity_chain_valid = bool(
+        operational["authority_token"] == _E3_PREFLIGHT_AUTHORITY
+        and operational[
+            "source_baseline_event_external_identity_sha256"
+        ]
+        == event_record["external_identity"]["identity_sha256"]
+        and operational["candidate_version_id"]
+        == event["candidate_version_id"]
+        and source_state
+        == (
+            operational["source_commit_sha1"],
+            operational["source_tree_sha1"],
+        )
+        and operational["source_closure_sha256"]
+        == event["source_closure"]["source_closure_sha256"]
+        and operational["bootstrap_closure_sha256"]
+        == event["bootstrap_closure"]["bootstrap_closure_sha256"]
+        and operational["worktree_clean"] is True
+        and operational["environment_policy"]
+        == event["bootstrap_closure"]["environment_policy"]
+        and operational["environment_policy_sha256"]
+        == artifact_sha256(operational["environment_policy"])
+        and runtime["runtime_root_identity_sha256"]
+        == operational["runtime_root_identity_sha256"]
+        and runtime["dependency_lock_raw_sha256"]
+        == operational["dependency_lock_raw_sha256"]
+        and runtime["wheel_bundle_manifest_sha256"]
+        == operational["wheel_bundle_manifest_sha256"]
+        and runtime["distribution_count"]
+        == len(
+            event["bootstrap_closure"][
+                "expected_installed_distributions"
+            ]
+        )
+        and operational["reference_runtime_root_identity_sha256"]
+        == reference["runtime_materialization"][
+            "runtime_root_identity_sha256"
+        ]
+        and len(set(roots)) == 3
+    )
+    identity_mismatch = bool(
+        not identity_chain_valid
+        or expected != observed
+        or owner_hash != observed_hash
+    )
+    independent_disagreement = bool(
+        not identity_mismatch
+        and independent_hash != observed_hash
+    )
+    if (
+        set(expected) != _E3_PROJECTION_KEYS
+        or set(observed) != _E3_PROJECTION_KEYS
+        or terminal.get("candidate_version_id")
+        != event["candidate_version_id"]
+        or terminal.get("event1_external_identity_sha256")
+        != event_record["external_identity"]["identity_sha256"]
+    ):
+        return False
+    if (
+        terminal_record["evidence_role"]
+        == "BOOTSTRAP_READINESS_CANDIDATE"
+    ):
+        nested = terminal[
+            "operational_runtime_observation_external_identity"
+        ]
+        return bool(
+            not identity_mismatch
+            and not independent_disagreement
+            and independent_hash == observed_hash == expected_hash
+            and terminal["authority_token"]
+            == operational["authority_token"]
+            and terminal["event1_bootstrap_closure"]
+            == event["bootstrap_closure"]
+            and terminal["operational_runtime_observation_sha256"]
+            == operational["operational_runtime_observation_sha256"]
+            and nested["artifact_role"]
+            == "RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_OBSERVATION"
+            and nested["logical_artifact_sha256"]
+            == operational["operational_runtime_observation_sha256"]
+            and terminal["expected_observed_projection_sha256"]
+            == artifact_sha256(
+                {"expected": expected_hash, "observed": observed_hash}
+            )
+        )
+    if terminal.get("operational_runtime_observation_state") != "OBSERVED":
+        return False
+    failure_class = (
+        "OPERATIONAL_RUNTIME_IDENTITY_MISMATCH"
+        if identity_mismatch
+        else "INDEPENDENT_OPERATIONAL_PROJECTION_DISAGREEMENT"
+        if independent_disagreement
+        else None
+    )
+    nested = terminal[
+        "operational_runtime_observation_external_identity"
+    ]
+    if (
+        failure_class is None
+        or terminal["failure_class"] != failure_class
+        or terminal["authority_token"] != operational["authority_token"]
+        or terminal["preflight_challenge_id"]
+        != operational["preflight_challenge_id"]
+        or terminal["preflight_id"] != operational["preflight_id"]
+        or terminal["source_closure_sha256"]
+        != event["source_closure"]["source_closure_sha256"]
+        or terminal["bootstrap_closure_sha256"]
+        != event["bootstrap_closure"]["bootstrap_closure_sha256"]
+        or terminal["operational_runtime_observation_sha256"]
+        != operational["operational_runtime_observation_sha256"]
+        or nested["artifact_role"]
+        != (
+            "RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_"
+            "OBSERVATION_FAILURE_EVIDENCE"
+        )
+        or nested["logical_artifact_sha256"]
+        != operational["operational_runtime_observation_sha256"]
+        or terminal["owner_operational_projection_sha256"]
+        != observed_hash
+    ):
+        return False
+    if failure_class == "OPERATIONAL_RUNTIME_IDENTITY_MISMATCH":
+        return bool(
+            terminal["independent_operational_projection_sha256"]
+            == observed_hash
+            and terminal["expected_observed_projection_sha256"]
+            == artifact_sha256(
+                {
+                    "expected": expected_hash,
+                    "observed": observed_hash,
+                }
+            )
+        )
+    return bool(
+        terminal["independent_operational_projection_sha256"]
+        == independent_hash
+        and independent_hash != observed_hash
+        and terminal["expected_observed_projection_sha256"]
+        == artifact_sha256(
+            {
+                "owner": observed_hash,
+                "independent": independent_hash,
+            }
+        )
+    )
+
+
+def _e3_phase5_valid(
+    rows: list[dict[str, Any]],
+    *,
+    artifact_root: Path,
+) -> bool:
+    operational_candidate, terminal_candidate = _e3_phase4_records(rows)
+    by_role = {
+        item["external_identity"]["artifact_role"]: item
+        for item in rows[4]["artifact_records"]
+    }
+    ready = (
+        terminal_candidate["evidence_role"]
+        == "BOOTSTRAP_READINESS_CANDIDATE"
+    )
+    operational_role = (
+        "RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_OBSERVATION"
+        if ready
+        else (
+            "RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_"
+            "OBSERVATION_FAILURE_EVIDENCE"
+        )
+    )
+    terminal_role = (
+        "RECOVERY_EPOCH003_BOOTSTRAP_READINESS"
+        if ready
+        else (
+            "RECOVERY_EPOCH003_FORMAL_WORKER_"
+            "BOOTSTRAP_PREFLIGHT_FAILURE"
+        )
+    )
+    operational = by_role.get(operational_role)
+    terminal = by_role.get(terminal_role)
+    event_identity = rows[2]["artifact_records"][0]["external_identity"]
+    if (
+        len(by_role) != 2
+        or operational is None
+        or terminal is None
+        or operational["published_body"]
+        != operational_candidate["evidence_body"]
+        or terminal["published_body"]
+        != terminal_candidate["evidence_body"]
+        or not _e3_identity_fresh_at_base(
+            artifact_root,
+            event_identity,
+            operational["publication_base_commit_sha1"],
+        )
+        or not _e3_identity_fresh_at_base(
+            artifact_root,
+            operational["external_identity"],
+            terminal["publication_base_commit_sha1"],
+        )
+    ):
+        return False
+    nested = terminal["published_body"].get(
+        "operational_runtime_observation_external_identity"
+    )
+    if nested is None:
+        return False
+    return nested == operational["external_identity"]
+
+
+def validate_recovery_epoch003_parent_phase_evidence_state(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Revalidate exact6 Epoch003 evidence without advancing the cursor."""
+
+    failure = ("RECOVERY_EPOCH003_PARENT_PHASE_EVIDENCE_INVALID",)
+    try:
+        if (
+            type(state) is not dict
+            or set(state) != _RECOVERY_EPOCH003_EVIDENCE_STATE_KEYS
+            or not isinstance(state.get("artifact_repository_root"), str)
+            or not state["artifact_repository_root"]
+            or not isinstance(state.get("source_repository_root"), str)
+            or not state["source_repository_root"]
+            or state.get("phase_order")
+            != list(_RECOVERY_EPOCH003_EVIDENCE_PHASE_ORDER)
+            or type(state.get("completed_phases")) is not list
+            or len(state["completed_phases"]) > 5
+            or state["completed_phases"]
+            != list(
+                _RECOVERY_EPOCH003_EVIDENCE_PHASE_ORDER[
+                    : len(state["completed_phases"])
+                ]
+            )
+            or state.get("next_phase")
+            != _RECOVERY_EPOCH003_EVIDENCE_PHASE_ORDER[
+                len(state["completed_phases"])
+            ]
+            or state.get("reservation_count_delta") != 0
+            or state.get("formal_exact134_invocation_count") != 0
+            or state.get("automatic_progression") is not False
+            or type(state.get("phase_evidence")) is not list
+            or len(state["phase_evidence"])
+            != len(state["completed_phases"])
+        ):
+            return failure
+        artifact_input = Path(state["artifact_repository_root"])
+        source_input = Path(state["source_repository_root"])
+        if (
+            _e3_path_has_symlink_component(artifact_input)
+            or _e3_path_has_symlink_component(source_input)
+            or not artifact_input.is_dir()
+            or not source_input.is_dir()
+        ):
+            return failure
+        artifact_root = artifact_input.resolve()
+        source_root = source_input.resolve()
+        _e3_git(artifact_root, "rev-parse", "HEAD")
+        _e3_git(source_root, "rev-parse", "HEAD")
+        # The initial zero-evidence cursor is shape-only compatibility
+        # input.  It grants no repository, publication, or operational
+        # credit and therefore intentionally does not assert repository
+        # identities yet.
+        if not state["completed_phases"]:
+            return ()
+        if (
+            artifact_root == source_root
+            or not _e3_expected_repository(artifact_root, "Cocolon")
+            or not _e3_expected_repository(source_root, "mashos-api")
+        ):
+            return failure
+        source_state = _e3_source_state(source_root)
+        if source_state is None:
+            return failure
+        rows = state["phase_evidence"]
+        for index, row in enumerate(rows):
+            if (
+                type(row) is not dict
+                or set(row) != _RECOVERY_EPOCH003_PHASE_EVIDENCE_KEYS
+                or row.get("phase")
+                != _RECOVERY_EPOCH003_EVIDENCE_PHASE_ORDER[index]
+                or row.get("owner_validation_state") != "PROVED"
+                or row.get("independent_verification_state") != "PROVED"
+                or row.get("phase_evidence_sha256")
+                != _hash_without(row, "phase_evidence_sha256")
+                or type(row.get("artifact_records")) is not list
+                or type(row.get("runtime_records")) is not list
+                or any(
+                    not _e3_artifact_record_valid(record)
+                    for record in row["artifact_records"]
+                )
+                or any(
+                    not _e3_artifact_repository_valid(
+                        record,
+                        root=artifact_root,
+                    )
+                    for record in row["artifact_records"]
+                )
+                or any(
+                    not _e3_runtime_record_valid(record)
+                    for record in row["runtime_records"]
+                )
+            ):
+                return failure
+            artifacts = row["artifact_records"]
+            runtime = row["runtime_records"]
+            if artifacts != sorted(
+                artifacts,
+                key=lambda record: (
+                    record["external_identity"]["artifact_role"],
+                    record["external_identity"]["path"],
+                    record["external_identity"]["identity_sha256"],
+                ),
+            ) or runtime != sorted(
+                runtime,
+                key=lambda record: (
+                    record["evidence_role"],
+                    record["logical_sha256"],
+                ),
+            ):
+                return failure
+            if not _e3_membership_valid(index, artifacts, runtime):
+                return failure
+        count = len(rows)
+        if count >= 1 and not _e3_reference_phase_valid(
+            rows,
+            source_state,
+        ):
+            return failure
+        if count >= 2 and not _e3_admission_phase_valid(
+            rows,
+            artifact_root=artifact_root,
+            source_root=source_root,
+            source_state=source_state,
+        ):
+            return failure
+        if count >= 3 and not _e3_event_phase_valid(
+            rows,
+            artifact_root=artifact_root,
+        ):
+            return failure
+        if count >= 4 and not _e3_phase4_valid(rows, source_state):
+            return failure
+        if count >= 5 and not _e3_phase5_valid(
+            rows,
+            artifact_root=artifact_root,
+        ):
+            return failure
+        return ()
+    except (
+        AttributeError,
+        IndexError,
+        KeyError,
+        OSError,
+        RecursionError,
+        StopIteration,
+        subprocess.SubprocessError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return failure
+
+
 __all__ = [
     "RECOVERY_EPOCH002_FORMAL_PARENT_PROTOCOL",
     "RECOVERY_EPOCH002_FORMAL_PARENT_RESULT_SCHEMA",
@@ -2168,4 +4371,5 @@ __all__ = [
     "validate_recovery_epoch002_formal_parent_continuation_state",
     "RECOVERY_EPOCH003_PARENT_PHASE_ORDER",
     "validate_recovery_epoch003_parent_phase_state",
+    "validate_recovery_epoch003_parent_phase_evidence_state",
 ]

@@ -22,6 +22,8 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import secrets
+import shutil
 import stat
 import subprocess
 import sys
@@ -2058,6 +2060,53 @@ _RECOVERY_EPOCH003_SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 _RECOVERY_EPOCH003_UTC_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
 )
+_RECOVERY_EPOCH003_FINAL_ISSUANCE_AUTHORITY = (
+    "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH003_FINAL_PRE_EVENT1_REFERENCE_"
+    "RUNTIME_OBSERVATION_AND_SOURCE_BOOTSTRAP_OPERATIONAL_ADMISSION_"
+    "CARRIER_ISSUANCE_INDEPENDENT_VERIFICATION_AND_POSTVERIFICATION_ONLY"
+)
+_RECOVERY_EPOCH003_MATERIALIZATION_REQUEST_KEYS = _keys(
+    """
+    authority_token artifact_repository_root source_repository_root
+    expected_source_commit_sha1 expected_source_tree_sha1
+    dependency_lock_path wheelhouse_path destination_root environment
+    """
+)
+_RECOVERY_EPOCH003_MATERIALIZATION_RESULT_KEYS = _keys(
+    """
+    runtime_root wheel_snapshot_root runtime_materialization
+    effective_environment_policy
+    """
+)
+_RECOVERY_EPOCH003_REFERENCE_BUILD_KEYS = _keys(
+    "materialization_request materialization_result"
+)
+_RECOVERY_EPOCH003_ROOT_IDENTITY_PREIMAGE_KEYS = _keys(
+    """
+    schema_version materialization_kind root_nonce_sha256
+    source_commit_sha1 source_tree_sha1 dependency_lock_raw_sha256
+    wheel_bundle_manifest_sha256 installed_distributions_sha256
+    python_runtime_identity_sha256 pytest_distribution_identity_sha256
+    environment_policy_sha256
+    """
+)
+_RECOVERY_EPOCH003_LOCK_PATH = (
+    "ai/configs/"
+    "emlis_nls_v3_recovery_epoch002_formal_worker_bootstrap_lock_v1.json"
+)
+_RECOVERY_EPOCH003_LOCK_RAW_SHA256 = (
+    "9bb2875541a6d959c1dca47cb5b96de5b0041ccf5288e849c469c15a8b310787"
+)
+_RECOVERY_EPOCH003_LOCK_LOGICAL_SHA256 = (
+    "801ba54efc0f6655238d14e7c153fb70b555801489aa8ba028515fc64d9c05f4"
+)
+_RECOVERY_EPOCH003_WHEEL_BUNDLE_SHA256 = (
+    "63f3915ccf57845dc0c4b5d14762207d23d1cb7a435a9de8411add8491ba6fc8"
+)
+_RECOVERY_EPOCH003_INSTALLED_DISTRIBUTIONS_SHA256 = (
+    "0e2e4b5ec3f3b1aef7fad4474af28d8eeea8fa7bec1a57a9cb7180fc81b80e42"
+)
+_RECOVERY_EPOCH003_ROOT_NONCE_FILE = ".cocolon-root-nonce"
 
 
 def _recovery_epoch003_external_identity_valid(
@@ -3047,6 +3096,1200 @@ def evaluate_recovery_epoch003_preflight_contract(
         )
 
 
+def _recovery_epoch003_effective_environment_policy(
+    environment: Any,
+) -> dict[str, Any] | None:
+    if (
+        type(environment) is not dict
+        or any(
+            not isinstance(key, str)
+            or not isinstance(value, str)
+            for key, value in environment.items()
+        )
+        or any(
+            key.startswith("PIP_")
+            or key in {
+                "PYTHONPATH",
+                "PYTHONHOME",
+                "PYTEST_ADDOPTS",
+                "PYTEST_PLUGINS",
+            }
+            for key in environment
+        )
+    ):
+        return None
+    path = environment.get("PATH")
+    lang = environment.get("LANG")
+    lc_all = environment.get("LC_ALL")
+    if not all(
+        isinstance(value, str) and bool(value)
+        for value in (path, lang, lc_all)
+    ):
+        return None
+    return {
+        "fixed": {
+            "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
+        },
+        "removed": ["PYTEST_ADDOPTS", "PYTEST_PLUGINS", "PYTHONPATH"],
+        "inherited_path_sha256": hashlib.sha256(
+            path.encode("utf-8")
+        ).hexdigest(),
+        "lang": lang,
+        "lc_all": lc_all,
+    }
+
+
+def _recovery_epoch003_sanitized_environment(
+    environment: Mapping[str, str],
+) -> dict[str, str]:
+    return {
+        "PATH": environment["PATH"],
+        "LANG": environment["LANG"],
+        "LC_ALL": environment["LC_ALL"],
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+
+
+def _recovery_epoch003_is_outside(
+    candidate: Path,
+    protected: Path,
+) -> bool:
+    if candidate == protected:
+        return False
+    try:
+        candidate.relative_to(protected)
+    except ValueError:
+        return True
+    return False
+
+
+def _recovery_epoch003_paths_disjoint(left: Path, right: Path) -> bool:
+    return bool(
+        _recovery_epoch003_is_outside(left, right)
+        and _recovery_epoch003_is_outside(right, left)
+    )
+
+
+def _recovery_epoch003_path_has_symlink_component(path: Path) -> bool:
+    absolute = path.absolute()
+    current = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        current /= part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def _recovery_epoch003_git(root: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    ).stdout.strip()
+
+
+def _recovery_epoch003_expected_source_repository(root: Path) -> bool:
+    try:
+        head = _recovery_epoch003_git(root, "rev-parse", "HEAD")
+        main = _recovery_epoch003_git(
+            root,
+            "rev-parse",
+            "refs/heads/main",
+        )
+        top_level = Path(
+            _recovery_epoch003_git(
+                root,
+                "rev-parse",
+                "--show-toplevel",
+            )
+        ).resolve()
+        origin = _recovery_epoch003_git(
+            root,
+            "config",
+            "--get",
+            "remote.origin.url",
+        ).rstrip("/")
+    except (OSError, subprocess.SubprocessError):
+        return False
+    normalized = origin.removesuffix(".git")
+    return bool(
+        top_level == root
+        and head == main
+        and (
+            normalized.endswith("/MassyuRed/mashos-api")
+            or normalized.endswith(":MassyuRed/mashos-api")
+        )
+    )
+
+
+def _recovery_epoch003_expected_artifact_repository(root: Path) -> bool:
+    try:
+        head = _recovery_epoch003_git(root, "rev-parse", "HEAD")
+        main = _recovery_epoch003_git(
+            root,
+            "rev-parse",
+            "refs/heads/main",
+        )
+        top_level = Path(
+            _recovery_epoch003_git(
+                root,
+                "rev-parse",
+                "--show-toplevel",
+            )
+        ).resolve()
+        origin = _recovery_epoch003_git(
+            root,
+            "config",
+            "--get",
+            "remote.origin.url",
+        ).rstrip("/")
+    except (OSError, subprocess.SubprocessError):
+        return False
+    normalized = origin.removesuffix(".git")
+    return bool(
+        top_level == root
+        and head == main
+        and (
+            normalized.endswith("/MassyuRed/Cocolon")
+            or normalized.endswith(":MassyuRed/Cocolon")
+        )
+    )
+
+
+def _recovery_epoch003_load_materialization_inputs(
+    state: Mapping[str, Any],
+    *,
+    allow_existing_destination: bool = False,
+) -> tuple[
+    Path,
+    Path,
+    Path,
+    Path,
+    dict[str, Any],
+    str,
+    dict[str, Any],
+]:
+    if (
+        type(state) is not dict
+        or set(state) != _RECOVERY_EPOCH003_MATERIALIZATION_REQUEST_KEYS
+        or state.get("authority_token")
+        != _RECOVERY_EPOCH003_FINAL_ISSUANCE_AUTHORITY
+    ):
+        raise ValueError("request shape")
+    path_keys = (
+        "artifact_repository_root",
+        "source_repository_root",
+        "dependency_lock_path",
+        "wheelhouse_path",
+        "destination_root",
+    )
+    if any(
+        not isinstance(state.get(key), str) or not state.get(key)
+        for key in path_keys
+    ):
+        raise ValueError("request path")
+    raw_artifact_root = Path(state["artifact_repository_root"]).absolute()
+    raw_source_root = Path(state["source_repository_root"]).absolute()
+    raw_lock_path = Path(state["dependency_lock_path"]).absolute()
+    raw_wheelhouse = Path(state["wheelhouse_path"]).absolute()
+    raw_destination = Path(state["destination_root"]).absolute()
+    if any(
+        _recovery_epoch003_path_has_symlink_component(path)
+        for path in (
+            raw_artifact_root,
+            raw_source_root,
+            raw_lock_path,
+            raw_wheelhouse,
+            raw_destination,
+            raw_destination.parent,
+        )
+    ):
+        raise ValueError("symlink boundary")
+    artifact_root = raw_artifact_root.resolve()
+    source_root = raw_source_root.resolve()
+    lock_path = raw_lock_path.resolve()
+    wheelhouse = raw_wheelhouse.resolve()
+    destination = raw_destination.resolve()
+    policy = _recovery_epoch003_effective_environment_policy(
+        state.get("environment")
+    )
+    if policy is None:
+        raise ValueError("environment")
+    if (
+        not artifact_root.is_dir()
+        or not source_root.is_dir()
+        or not wheelhouse.is_dir()
+        or (
+            (destination.exists() or destination.is_symlink())
+            if not allow_existing_destination
+            else not destination.is_dir()
+        )
+        or any(
+            not _recovery_epoch003_paths_disjoint(destination, protected)
+            for protected in (artifact_root, source_root, wheelhouse)
+        )
+        or not _recovery_epoch003_paths_disjoint(
+            artifact_root,
+            source_root,
+        )
+        or not _recovery_epoch003_expected_source_repository(source_root)
+        or not _recovery_epoch003_expected_artifact_repository(
+            artifact_root
+        )
+    ):
+        raise ValueError("root boundary")
+    commit = _recovery_epoch003_git(source_root, "rev-parse", "HEAD")
+    tree = _recovery_epoch003_git(
+        source_root,
+        "rev-parse",
+        "HEAD^{tree}",
+    )
+    clean = (
+        _recovery_epoch003_git(
+            source_root,
+            "status",
+            "--porcelain",
+            "--untracked-files=all",
+        )
+        == ""
+    )
+    if (
+        not clean
+        or state.get("expected_source_commit_sha1") != commit
+        or state.get("expected_source_tree_sha1") != tree
+        or lock_path
+        != (source_root / _RECOVERY_EPOCH003_LOCK_PATH).resolve()
+        or not lock_path.is_file()
+    ):
+        raise ValueError("source identity")
+    lock, raw_sha256 = (
+        load_recovery_epoch002_dependency_lock_with_raw_sha256(lock_path)
+    )
+    if (
+        raw_sha256 != _RECOVERY_EPOCH003_LOCK_RAW_SHA256
+        or lock.get("lock_sha256")
+        != _RECOVERY_EPOCH003_LOCK_LOGICAL_SHA256
+        or lock.get("distribution_count") != 46
+        or lock.get("resolution", {}).get("pip_version") != "26.0.1"
+        or lock.get("target", {}).get("python_version") != "3.12.13"
+        or lock.get("target", {}).get("implementation") != "CPYTHON"
+        or lock.get("target", {}).get("machine") != "x86_64"
+        or validate_recovery_epoch002_dependency_lock(
+            lock,
+            wheel_directory=wheelhouse,
+        )
+    ):
+        raise ValueError("lock")
+    expected_names = {
+        row["wheel_filename"] for row in lock["distributions"]
+    }
+    entries = list(os.scandir(wheelhouse))
+    if (
+        len(entries) != 46
+        or {entry.name for entry in entries} != expected_names
+        or any(
+            entry.is_symlink()
+            or not entry.is_file(follow_symlinks=False)
+            for entry in entries
+        )
+    ):
+        raise ValueError("wheelhouse")
+    environment = _recovery_epoch003_sanitized_environment(
+        state["environment"]
+    )
+    installer_identity, _stdlib, installer_target = (
+        _recovery_epoch003_runtime_probe(
+            Path(sys.executable).resolve(),
+            environment=environment,
+        )
+    )
+    if (
+        installer_identity["implementation"] != "CPYTHON"
+        or installer_identity["version"] != "3.12.13"
+        or installer_target.get("system") != "Linux"
+        or installer_target.get("machine") != "x86_64"
+    ):
+        raise ValueError("installer runtime")
+    pip_output = subprocess.run(
+        [sys.executable, "-I", "-B", "-m", "pip", "--version"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=environment,
+    ).stdout.split()
+    if len(pip_output) < 2 or pip_output[1] != "26.0.1":
+        raise ValueError("installer pip")
+    return (
+        artifact_root,
+        source_root,
+        wheelhouse,
+        destination,
+        lock,
+        raw_sha256,
+        policy,
+    )
+
+
+def _recovery_epoch003_copy_wheel_nofollow(
+    source: Path,
+    target: Path,
+) -> None:
+    source_fd = os.open(
+        source,
+        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+    )
+    target_fd: int | None = None
+    try:
+        source_stat = os.fstat(source_fd)
+        if not stat.S_ISREG(source_stat.st_mode):
+            raise ValueError("wheel is not regular")
+        target_fd = os.open(
+            target,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0),
+            0o400,
+        )
+        while True:
+            chunk = os.read(source_fd, 1024 * 1024)
+            if not chunk:
+                break
+            offset = 0
+            while offset < len(chunk):
+                offset += os.write(target_fd, chunk[offset:])
+        os.fsync(target_fd)
+    finally:
+        os.close(source_fd)
+        if target_fd is not None:
+            os.close(target_fd)
+
+
+def _recovery_epoch003_runtime_probe(
+    python_executable: Path,
+    *,
+    environment: Mapping[str, str],
+) -> tuple[dict[str, Any], frozenset[str], dict[str, str]]:
+    probe = (
+        "import json,platform,sys;"
+        "print(json.dumps({"
+        "'python_build':list(platform.python_build()),"
+        "'python_compiler':platform.python_compiler(),"
+        "'platform':platform.platform(),"
+        "'system':platform.system(),"
+        "'machine':platform.machine(),"
+        "'abi_flags':sys.abiflags,"
+        "'byte_order':sys.byteorder,"
+        "'python_cache_tag':sys.implementation.cache_tag,"
+        "'sys_platform':sys.platform,"
+        "'implementation':platform.python_implementation().upper(),"
+        "'version':platform.python_version(),"
+        "'stdlib_module_names':sorted(sys.stdlib_module_names)"
+        "},sort_keys=True))"
+    )
+    observed = json.loads(
+        subprocess.run(
+            [str(python_executable), "-I", "-B", "-c", probe],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=dict(environment),
+        ).stdout
+    )
+    stdlib = observed.get("stdlib_module_names")
+    if (
+        type(stdlib) is not list
+        or stdlib != sorted(set(stdlib))
+        or any(not isinstance(name, str) or not name for name in stdlib)
+    ):
+        raise ValueError("stdlib probe")
+    identity = {
+        "executable_sha256": hashlib.sha256(
+            python_executable.read_bytes()
+        ).hexdigest(),
+        "implementation": observed["implementation"],
+        "version": observed["version"],
+        "build_sha256": artifact_sha256(
+            {
+                "python_build": observed["python_build"],
+                "python_compiler": observed["python_compiler"],
+                "platform": observed["platform"],
+                "abi_flags": observed["abi_flags"],
+            }
+        ),
+    }
+    target = {
+        "system": observed["system"],
+        "machine": observed["machine"],
+        "abi_flags": observed["abi_flags"],
+        "byte_order": observed["byte_order"],
+        "python_cache_tag": observed["python_cache_tag"],
+        "sys_platform": observed["sys_platform"],
+    }
+    return identity, frozenset(stdlib), target
+
+
+def _recovery_epoch003_installed_identities(
+    lock: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    rows = [
+        {
+            key: row[key]
+            for key in _RECOVERY_EPOCH003_DISTRIBUTION_KEYS
+        }
+        for row in lock["distributions"]
+    ]
+    rows.sort(key=lambda row: row["normalized_distribution_name"])
+    return rows
+
+
+def _recovery_epoch003_root_identity(
+    *,
+    root: Path,
+    materialization_kind: str,
+    source_commit_sha1: str,
+    source_tree_sha1: str,
+    lock_raw_sha256: str,
+    wheel_bundle_manifest_sha256: str,
+    installed_distributions: list[dict[str, Any]],
+    python_runtime_identity: Mapping[str, Any],
+    pytest_distribution_identity: Mapping[str, Any],
+    environment_policy: Mapping[str, Any],
+) -> str:
+    nonce_path = root / _RECOVERY_EPOCH003_ROOT_NONCE_FILE
+    descriptor = os.open(
+        nonce_path,
+        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+    )
+    try:
+        nonce_stat = os.fstat(descriptor)
+        nonce = os.read(descriptor, 33)
+    finally:
+        os.close(descriptor)
+    if (
+        not stat.S_ISREG(nonce_stat.st_mode)
+        or len(nonce) != 32
+        or nonce_stat.st_nlink != 1
+        or nonce_stat.st_uid != os.geteuid()
+        or nonce_stat.st_mode
+        & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
+        or materialization_kind not in {"REFERENCE", "OPERATIONAL"}
+    ):
+        raise ValueError("root nonce")
+    preimage = {
+        "schema_version": (
+            "cocolon.emlis.nls_v3.recovery_epoch003."
+            "runtime_root_identity_preimage.v1"
+        ),
+        "materialization_kind": materialization_kind,
+        "root_nonce_sha256": hashlib.sha256(nonce).hexdigest(),
+        "source_commit_sha1": source_commit_sha1,
+        "source_tree_sha1": source_tree_sha1,
+        "dependency_lock_raw_sha256": lock_raw_sha256,
+        "wheel_bundle_manifest_sha256": wheel_bundle_manifest_sha256,
+        "installed_distributions_sha256": artifact_sha256(
+            installed_distributions
+        ),
+        "python_runtime_identity_sha256": artifact_sha256(
+            python_runtime_identity
+        ),
+        "pytest_distribution_identity_sha256": artifact_sha256(
+            pytest_distribution_identity
+        ),
+        "environment_policy_sha256": artifact_sha256(
+            environment_policy
+        ),
+    }
+    if set(preimage) != _RECOVERY_EPOCH003_ROOT_IDENTITY_PREIMAGE_KEYS:
+        raise ValueError("root identity")
+    return artifact_sha256(preimage)
+
+
+def materialize_recovery_epoch003_reference_runtime(
+    state: Mapping[str, Any],
+) -> dict[str, Any] | tuple[str, ...]:
+    """Materialize one fresh exact46 reference runtime without tests."""
+
+    failure = (
+        "RECOVERY_EPOCH003_REFERENCE_RUNTIME_MATERIALIZATION_INVALID",
+    )
+    destination: Path | None = None
+    snapshot: Path | None = None
+    destination_created = False
+    snapshot_created = False
+    try:
+        (
+            artifact_root,
+            source_root,
+            wheelhouse,
+            destination,
+            lock,
+            lock_raw_sha256,
+            policy,
+        ) = _recovery_epoch003_load_materialization_inputs(state)
+        snapshot = destination.parent / (
+            destination.name
+            + ".wheel-snapshot-"
+            + secrets.token_hex(16)
+        )
+        if (
+            snapshot.exists()
+            or snapshot.is_symlink()
+            or snapshot == destination
+            or any(
+                not _recovery_epoch003_paths_disjoint(
+                    snapshot,
+                    protected,
+                )
+                for protected in (
+                    artifact_root,
+                    source_root,
+                    wheelhouse,
+                )
+            )
+            or not _recovery_epoch003_paths_disjoint(
+                snapshot,
+                destination,
+            )
+        ):
+            return failure
+        os.mkdir(snapshot, 0o700)
+        snapshot_created = True
+        for row in lock["distributions"]:
+            _recovery_epoch003_copy_wheel_nofollow(
+                wheelhouse / row["wheel_filename"],
+                snapshot / row["wheel_filename"],
+            )
+        if validate_recovery_epoch002_dependency_lock(
+            lock,
+            wheel_directory=snapshot,
+        ):
+            raise ValueError("snapshot")
+        snapshot_entries = list(os.scandir(snapshot))
+        if (
+            len(snapshot_entries) != 46
+            or {
+                entry.name for entry in snapshot_entries
+            }
+            != {
+                row["wheel_filename"] for row in lock["distributions"]
+            }
+            or any(
+                entry.is_symlink()
+                or not entry.is_file(follow_symlinks=False)
+                or entry.stat(follow_symlinks=False).st_uid
+                != os.geteuid()
+                or entry.stat(follow_symlinks=False).st_nlink != 1
+                or entry.stat(follow_symlinks=False).st_mode
+                & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
+                for entry in snapshot_entries
+            )
+        ):
+            raise ValueError("snapshot entries")
+        os.chmod(snapshot, 0o500)
+        os.mkdir(destination, 0o700)
+        destination_created = True
+        nonce = secrets.token_bytes(32)
+        nonce_fd = os.open(
+            destination / _RECOVERY_EPOCH003_ROOT_NONCE_FILE,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0),
+            0o400,
+        )
+        try:
+            os.write(nonce_fd, nonce)
+            os.fsync(nonce_fd)
+        finally:
+            os.close(nonce_fd)
+        environment = _recovery_epoch003_sanitized_environment(
+            state["environment"]
+        )
+        subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-B",
+                "-m",
+                "venv",
+                "--without-pip",
+                "--copies",
+                str(destination),
+            ],
+            check=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=120,
+            env=environment,
+        )
+        python_relative = (
+            Path("Scripts/python.exe")
+            if os.name == "nt"
+            else Path("bin/python")
+        )
+        python_executable = destination / python_relative
+        if (
+            not python_executable.is_file()
+            or python_executable.is_symlink()
+            or not stat.S_ISREG(python_executable.lstat().st_mode)
+        ):
+            raise ValueError("runtime executable")
+        requirements = destination / "locked-requirements.txt"
+        requirements_payload = (
+            "\n".join(lock["pip_require_hashes_lines"]) + "\n"
+        ).encode("utf-8")
+        requirements_fd = os.open(
+            requirements,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0),
+            0o400,
+        )
+        try:
+            os.write(requirements_fd, requirements_payload)
+            os.fsync(requirements_fd)
+        finally:
+            os.close(requirements_fd)
+        subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-B",
+                "-m",
+                "pip",
+                "--python",
+                str(python_executable),
+                "install",
+                "--isolated",
+                "--no-index",
+                "--no-cache-dir",
+                "--require-hashes",
+                "--only-binary=:all:",
+                "--no-compile",
+                f"--find-links={snapshot}",
+                "--requirement",
+                str(requirements),
+            ],
+            check=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=600,
+            env=environment,
+        )
+        site_output = subprocess.run(
+            [
+                str(python_executable),
+                "-I",
+                "-B",
+                "-c",
+                (
+                    "import json,sysconfig;"
+                    "print(json.dumps(sysconfig.get_path('purelib')))"
+                ),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=environment,
+        ).stdout
+        installed_directory = Path(json.loads(site_output)).resolve()
+        installed_relative = installed_directory.relative_to(destination)
+        if validate_recovery_epoch002_dependency_lock(
+            lock,
+            wheel_directory=snapshot,
+            installed_directory=installed_directory,
+            runtime_root=destination,
+        ):
+            raise ValueError("installed closure")
+        post_install_snapshot_entries = list(os.scandir(snapshot))
+        if (
+            len(post_install_snapshot_entries) != 46
+            or {
+                entry.name for entry in post_install_snapshot_entries
+            }
+            != {
+                row["wheel_filename"] for row in lock["distributions"]
+            }
+            or any(
+                entry.is_symlink()
+                or not entry.is_file(follow_symlinks=False)
+                or entry.stat(follow_symlinks=False).st_uid
+                != os.geteuid()
+                or entry.stat(follow_symlinks=False).st_nlink != 1
+                or entry.stat(follow_symlinks=False).st_mode
+                & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
+                for entry in post_install_snapshot_entries
+            )
+            or snapshot.stat().st_mode
+            & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
+            or validate_recovery_epoch002_dependency_lock(
+                lock,
+                wheel_directory=snapshot,
+            )
+        ):
+            raise ValueError("snapshot changed")
+        runtime_identity, _stdlib, runtime_target = (
+            _recovery_epoch003_runtime_probe(
+                python_executable,
+                environment=environment,
+            )
+        )
+        target = lock["target"]
+        if (
+            runtime_identity["implementation"] != target["implementation"]
+            or runtime_identity["version"] != target["python_version"]
+            or runtime_target.get("system") != "Linux"
+            or runtime_target.get("machine") != target["machine"]
+            or runtime_target.get("abi_flags") != target["abi_flags"]
+            or runtime_target.get("byte_order") != target["byte_order"]
+            or runtime_target.get("python_cache_tag")
+            != target["python_cache_tag"]
+            or runtime_target.get("sys_platform") != "linux"
+        ):
+            raise ValueError("runtime target")
+        installed = _recovery_epoch003_installed_identities(lock)
+        pytest_identity = next(
+            row
+            for row in installed
+            if row["normalized_distribution_name"] == "pytest"
+        )
+        installer_pip = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-B",
+                "-m",
+                "pip",
+                "--version",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=environment,
+        ).stdout.split()
+        runtime_pytest_version = subprocess.run(
+            [
+                str(python_executable),
+                "-I",
+                "-B",
+                "-c",
+                (
+                    "import importlib.metadata as m;"
+                    "print(m.version('pytest'))"
+                ),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=environment,
+        ).stdout.strip()
+        if (
+            len(installer_pip) < 2
+            or installer_pip[1] != "26.0.1"
+            or runtime_pytest_version
+            != pytest_identity["distribution_version"]
+        ):
+            raise ValueError("runtime distributions")
+        wheel_manifest = [
+            {
+                "wheel_filename": row["wheel_filename"],
+                "wheel_sha256": row["wheel_sha256"],
+                "wheel_record_sha256": row["wheel_record_sha256"],
+            }
+            for row in lock["distributions"]
+        ]
+        wheel_bundle_hash = artifact_sha256(wheel_manifest)
+        if (
+            wheel_bundle_hash != _RECOVERY_EPOCH003_WHEEL_BUNDLE_SHA256
+            or artifact_sha256(installed)
+            != _RECOVERY_EPOCH003_INSTALLED_DISTRIBUTIONS_SHA256
+        ):
+            raise ValueError("frozen identity")
+        root_identity = _recovery_epoch003_root_identity(
+            root=destination,
+            materialization_kind="REFERENCE",
+            source_commit_sha1=state["expected_source_commit_sha1"],
+            source_tree_sha1=state["expected_source_tree_sha1"],
+            lock_raw_sha256=lock_raw_sha256,
+            wheel_bundle_manifest_sha256=wheel_bundle_hash,
+            installed_distributions=installed,
+            python_runtime_identity=runtime_identity,
+            pytest_distribution_identity=pytest_identity,
+            environment_policy=policy,
+        )
+        materialization = {
+            "schema_version": (
+                "cocolon.emlis.nls_v3.recovery_epoch003."
+                "runtime_materialization.v1"
+            ),
+            "runtime_root_identity_sha256": root_identity,
+            "python_executable_relative_path": python_relative.as_posix(),
+            "installed_directory_relative_path": (
+                installed_relative.as_posix()
+            ),
+            "dependency_lock_raw_sha256": lock_raw_sha256,
+            "wheel_bundle_manifest_sha256": wheel_bundle_hash,
+            "distribution_count": 46,
+            "runtime_materialization_state": (
+                "VERIFIED_LOCKED_REFERENCE_RUNTIME"
+            ),
+            "body_free": True,
+            "runtime_materialization_sha256": "",
+        }
+        materialization["runtime_materialization_sha256"] = _hash_without(
+            materialization,
+            "runtime_materialization_sha256",
+        )
+        return {
+            "runtime_root": str(destination),
+            "wheel_snapshot_root": str(snapshot),
+            "runtime_materialization": materialization,
+            "effective_environment_policy": policy,
+        }
+    except (
+        AttributeError,
+        IndexError,
+        json.JSONDecodeError,
+        KeyError,
+        OSError,
+        RecursionError,
+        StopIteration,
+        subprocess.SubprocessError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        if destination_created and destination is not None:
+            shutil.rmtree(destination, ignore_errors=True)
+        if snapshot_created and snapshot is not None:
+            try:
+                os.chmod(snapshot, 0o700)
+                for entry in os.scandir(snapshot):
+                    if entry.is_file(follow_symlinks=False):
+                        os.chmod(entry.path, 0o600)
+            except OSError:
+                pass
+            shutil.rmtree(snapshot, ignore_errors=True)
+        return failure
+
+
+def _recovery_epoch003_probe_materialization(
+    request: Mapping[str, Any],
+    result: Mapping[str, Any],
+) -> tuple[
+    dict[str, Any],
+    list[dict[str, Any]],
+    dict[str, Any],
+    dict[str, Any],
+] | None:
+    try:
+        (
+            artifact_root,
+            source_root,
+            wheelhouse,
+            destination,
+            lock,
+            lock_raw_sha256,
+            policy,
+        ) = _recovery_epoch003_load_materialization_inputs(
+            request,
+            allow_existing_destination=True,
+        )
+        if (
+            type(result) is not dict
+            or set(result) != _RECOVERY_EPOCH003_MATERIALIZATION_RESULT_KEYS
+            or Path(result.get("runtime_root", "")).resolve()
+            != destination
+            or type(result.get("wheel_snapshot_root")) is not str
+            or not result.get("wheel_snapshot_root")
+            or result.get("effective_environment_policy") != policy
+        ):
+            return None
+        raw_snapshot = Path(
+            result["wheel_snapshot_root"]
+        ).absolute()
+        if _recovery_epoch003_path_has_symlink_component(raw_snapshot):
+            return None
+        snapshot = raw_snapshot.resolve()
+        expected_wheel_names = {
+            row["wheel_filename"] for row in lock["distributions"]
+        }
+        snapshot_entries = list(os.scandir(snapshot))
+        if (
+            not destination.is_dir()
+            or not snapshot.is_dir()
+            or not _recovery_epoch003_paths_disjoint(
+                snapshot,
+                destination,
+            )
+            or any(
+                not _recovery_epoch003_paths_disjoint(
+                    snapshot,
+                    protected,
+                )
+                for protected in (
+                    artifact_root,
+                    source_root,
+                    wheelhouse,
+                )
+            )
+            or len(snapshot_entries) != 46
+            or {
+                entry.name for entry in snapshot_entries
+            }
+            != expected_wheel_names
+            or any(
+                entry.is_symlink()
+                or not entry.is_file(follow_symlinks=False)
+                or entry.stat(follow_symlinks=False).st_uid
+                != os.geteuid()
+                or entry.stat(follow_symlinks=False).st_nlink != 1
+                or entry.stat(follow_symlinks=False).st_mode
+                & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
+                for entry in snapshot_entries
+            )
+            or snapshot.stat().st_mode
+            & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
+            or validate_recovery_epoch002_dependency_lock(
+                lock,
+                wheel_directory=snapshot,
+            )
+        ):
+            return None
+        materialization = result.get("runtime_materialization")
+        if (
+            not _recovery_epoch003_materialization_valid(
+                materialization,
+                dependency_lock_raw_sha256=lock_raw_sha256,
+                wheel_bundle_manifest_sha256=(
+                    _RECOVERY_EPOCH003_WHEEL_BUNDLE_SHA256
+                ),
+                distribution_count=46,
+            )
+            or materialization.get("runtime_materialization_state")
+            != "VERIFIED_LOCKED_REFERENCE_RUNTIME"
+        ):
+            return None
+        python_relative = Path(
+            materialization["python_executable_relative_path"]
+        )
+        installed_relative = Path(
+            materialization["installed_directory_relative_path"]
+        )
+        if (
+            python_relative.is_absolute()
+            or installed_relative.is_absolute()
+            or ".." in python_relative.parts
+            or ".." in installed_relative.parts
+        ):
+            return None
+        python_executable = destination / python_relative
+        installed_directory = destination / installed_relative
+        if (
+            not python_executable.is_file()
+            or python_executable.is_symlink()
+            or not stat.S_ISREG(python_executable.lstat().st_mode)
+            or not installed_directory.is_dir()
+            or installed_directory.is_symlink()
+        ):
+            return None
+        if validate_recovery_epoch002_dependency_lock(
+            lock,
+            wheel_directory=snapshot,
+            installed_directory=installed_directory,
+            runtime_root=destination,
+        ):
+            return None
+        environment = _recovery_epoch003_sanitized_environment(
+            request["environment"]
+        )
+        runtime_identity, _stdlib, runtime_target = (
+            _recovery_epoch003_runtime_probe(
+                python_executable,
+                environment=environment,
+            )
+        )
+        installed = _recovery_epoch003_installed_identities(lock)
+        pytest_identity = next(
+            row
+            for row in installed
+            if row["normalized_distribution_name"] == "pytest"
+        )
+        installer_pip = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-B",
+                "-m",
+                "pip",
+                "--version",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=environment,
+        ).stdout.split()
+        runtime_pytest_version = subprocess.run(
+            [
+                str(python_executable),
+                "-I",
+                "-B",
+                "-c",
+                (
+                    "import importlib.metadata as m;"
+                    "print(m.version('pytest'))"
+                ),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=environment,
+        ).stdout.strip()
+        root_identity = _recovery_epoch003_root_identity(
+            root=destination,
+            materialization_kind="REFERENCE",
+            source_commit_sha1=request["expected_source_commit_sha1"],
+            source_tree_sha1=request["expected_source_tree_sha1"],
+            lock_raw_sha256=lock_raw_sha256,
+            wheel_bundle_manifest_sha256=(
+                _RECOVERY_EPOCH003_WHEEL_BUNDLE_SHA256
+            ),
+            installed_distributions=installed,
+            python_runtime_identity=runtime_identity,
+            pytest_distribution_identity=pytest_identity,
+            environment_policy=policy,
+        )
+        if (
+            root_identity
+            != materialization.get("runtime_root_identity_sha256")
+            or artifact_sha256(installed)
+            != _RECOVERY_EPOCH003_INSTALLED_DISTRIBUTIONS_SHA256
+            or runtime_identity.get("implementation") != "CPYTHON"
+            or runtime_identity.get("version") != "3.12.13"
+            or runtime_target.get("system") != "Linux"
+            or runtime_target.get("machine") != "x86_64"
+            or runtime_target.get("abi_flags")
+            != lock["target"]["abi_flags"]
+            or runtime_target.get("byte_order")
+            != lock["target"]["byte_order"]
+            or runtime_target.get("python_cache_tag")
+            != lock["target"]["python_cache_tag"]
+            or runtime_target.get("sys_platform") != "linux"
+            or len(installer_pip) < 2
+            or installer_pip[1] != "26.0.1"
+            or runtime_pytest_version
+            != pytest_identity["distribution_version"]
+        ):
+            return None
+        return runtime_identity, installed, pytest_identity, policy
+    except (
+        AttributeError,
+        IndexError,
+        KeyError,
+        OSError,
+        StopIteration,
+        subprocess.SubprocessError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return None
+
+
+def build_recovery_epoch003_reference_runtime_observation(
+    state: Mapping[str, Any],
+) -> dict[str, Any] | tuple[str, ...]:
+    """Freshly probe one materialized reference runtime into exact21."""
+
+    failure = (
+        "RECOVERY_EPOCH003_REFERENCE_RUNTIME_OBSERVATION_INVALID",
+    )
+    try:
+        if (
+            type(state) is not dict
+            or set(state) != _RECOVERY_EPOCH003_REFERENCE_BUILD_KEYS
+        ):
+            return failure
+        request = state.get("materialization_request")
+        result = state.get("materialization_result")
+        if (
+            type(request) is not dict
+            or request.get("authority_token")
+            != _RECOVERY_EPOCH003_FINAL_ISSUANCE_AUTHORITY
+        ):
+            return failure
+        probed = _recovery_epoch003_probe_materialization(request, result)
+        if probed is None:
+            return failure
+        runtime_identity, installed, pytest_identity, policy = probed
+        materialization = deepcopy(result["runtime_materialization"])
+        reference = {
+            "schema_version": RECOVERY_EPOCH003_REFERENCE_OBSERVATION_SCHEMA,
+            "logical_cycle_id": "NLS_V3_CYCLE_001",
+            "recovery_epoch_id": "NLS_V3_CYCLE001_RECOVERY_EPOCH_003",
+            "authority_token": (
+                _RECOVERY_EPOCH003_FINAL_ISSUANCE_AUTHORITY
+            ),
+            "source_commit_sha1": request[
+                "expected_source_commit_sha1"
+            ],
+            "source_tree_sha1": request["expected_source_tree_sha1"],
+            "dependency_lock_identity": {
+                "identity_class": "EXACT_HASH_LOCK",
+                "path": _RECOVERY_EPOCH003_LOCK_PATH,
+                "raw_sha256": _RECOVERY_EPOCH003_LOCK_RAW_SHA256,
+            },
+            "wheel_bundle_manifest_sha256": (
+                _RECOVERY_EPOCH003_WHEEL_BUNDLE_SHA256
+            ),
+            "runtime_materialization": materialization,
+            "python_runtime_identity": runtime_identity,
+            "pytest_distribution_identity": pytest_identity,
+            "installed_distributions": installed,
+            "installed_distributions_sha256": artifact_sha256(installed),
+            "environment_policy": policy,
+            "environment_policy_sha256": artifact_sha256(policy),
+            "reservation_count_delta": 0,
+            "formal_exact134_invocation_count": 0,
+            "collection_state": "NOT_STARTED",
+            "test_execution_state": "NOT_STARTED",
+            "body_free": True,
+            "reference_runtime_observation_sha256": "",
+        }
+        reference["reference_runtime_observation_sha256"] = _hash_without(
+            reference,
+            "reference_runtime_observation_sha256",
+        )
+        return reference
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RecursionError,
+        subprocess.SubprocessError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return failure
+
+
 def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Recovery Epoch002 read-only bootstrap preflight",
@@ -3147,6 +4390,8 @@ __all__ = [
     "RECOVERY_EPOCH003_FAILURE_SCHEMA",
     "RECOVERY_EPOCH003_FAILURE_CLASSES",
     "RECOVERY_EPOCH003_PREFLIGHT_STOP_CODE",
+    "materialize_recovery_epoch003_reference_runtime",
+    "build_recovery_epoch003_reference_runtime_observation",
     "evaluate_recovery_epoch003_preflight_contract",
 ]
 
