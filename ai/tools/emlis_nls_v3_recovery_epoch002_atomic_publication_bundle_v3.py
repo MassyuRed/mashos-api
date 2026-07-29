@@ -1543,6 +1543,81 @@ def validate_recovery_epoch002_success_publication_state(
         return ("SUCCESS_PUBLICATION_POSTFETCH_INVALID",)
 
 
+_RECOVERY_EPOCH003_REFERENCE_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch003_"
+    "PreEvent1_ReferenceRuntimeObservation_BodyFree_Receipt.json"
+)
+_RECOVERY_EPOCH003_EVENT1_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch003_"
+    "SequenceEvent01_SourceBaselineLocked_BodyFree_Event.json"
+)
+_RECOVERY_EPOCH003_OPERATIONAL_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch003_"
+    "PostEvent1_OperationalRuntimeObservation_BodyFree_Receipt.json"
+)
+_RECOVERY_EPOCH003_READINESS_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch003_"
+    "PostEvent1_BootstrapReadiness_BodyFree_Receipt.json"
+)
+_RECOVERY_EPOCH003_FAILURE_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch003_"
+    "PostEvent1_BootstrapPreflightFailure_BodyFree_Receipt.json"
+)
+RECOVERY_EPOCH003_PUBLICATION_ROLE_PATHS = {
+    "RECOVERY_EPOCH003_REFERENCE_RUNTIME_OBSERVATION": (
+        _RECOVERY_EPOCH003_REFERENCE_PATH
+    ),
+    "RECOVERY_EPOCH003_SOURCE_BASELINE_EVENT": (
+        _RECOVERY_EPOCH003_EVENT1_PATH
+    ),
+    "RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_OBSERVATION": (
+        _RECOVERY_EPOCH003_OPERATIONAL_PATH
+    ),
+    "RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_OBSERVATION_FAILURE_EVIDENCE": (
+        _RECOVERY_EPOCH003_OPERATIONAL_PATH
+    ),
+    "RECOVERY_EPOCH003_BOOTSTRAP_READINESS": (
+        _RECOVERY_EPOCH003_READINESS_PATH
+    ),
+    "RECOVERY_EPOCH003_FORMAL_WORKER_BOOTSTRAP_PREFLIGHT_FAILURE": (
+        _RECOVERY_EPOCH003_FAILURE_PATH
+    ),
+}
+
+
+def validate_recovery_epoch003_publication_contract_state(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Validate one body-free Epoch003 publication candidate without I/O."""
+
+    try:
+        if type(state) is not dict:
+            return ("RECOVERY_EPOCH003_PUBLICATION_SCOPE_INVALID",)
+        role = state.get("artifact_role")
+        path = state.get("path")
+        changed_paths = state.get("changed_paths")
+        expected_path = RECOVERY_EPOCH003_PUBLICATION_ROLE_PATHS.get(role)
+        if (
+            expected_path is None
+            or path != expected_path
+            or type(changed_paths) is not list
+            or changed_paths != [expected_path]
+            or state.get("body_free") is not True
+            or state.get("automatic_progression") is not False
+            or PurePosixPath(path).is_absolute()
+            or ".." in PurePosixPath(path).parts
+        ):
+            return ("RECOVERY_EPOCH003_PUBLICATION_SCOPE_INVALID",)
+        return ()
+    except (AttributeError, TypeError, ValueError):
+        return ("RECOVERY_EPOCH003_PUBLICATION_SCOPE_INVALID",)
+
+
 __all__ = [
     "RECOVERY_EPOCH002_PUBLICATION_REPOSITORY",
     "RECOVERY_EPOCH002_PUBLICATION_REF",
@@ -1568,4 +1643,6 @@ __all__ = [
     "validate_recovery_epoch002_ready_unused_authority_stop",
     "validate_recovery_epoch002_success_publication_state",
     "validate_recovery_epoch002_post_d2_single_publication_state",
+    "RECOVERY_EPOCH003_PUBLICATION_ROLE_PATHS",
+    "validate_recovery_epoch003_publication_contract_state",
 ]

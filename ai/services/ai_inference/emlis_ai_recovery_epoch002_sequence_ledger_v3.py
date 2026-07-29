@@ -34,6 +34,7 @@ from emlis_ai_recovery_epoch002_canonical_current_closure_v3 import (
     RECOVERY_EPOCH002_SUCCESSOR_SOURCE_CLOSURE_SCHEMA,
     validate_recovery_epoch002_bootstrap_manifest,
     validate_recovery_epoch002_source_closure,
+    validate_recovery_epoch003_source_bootstrap_contract_state,
 )
 
 
@@ -2807,6 +2808,532 @@ def validate_recovery_epoch002_success_event2_state(
         return ("EVENT2_SUPPORTING_ARTIFACT_SET_INVALID",)
 
 
+RECOVERY_EPOCH003_SEQUENCE_EVENT_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch003.sequence_event.v1"
+)
+RECOVERY_EPOCH003_SEQUENCE_EVENT_KEYS = _keys(
+    """
+    schema_version ledger_id event_id logical_cycle_id recovery_epoch_id
+    candidate_version_id event_ordinal event_name state prior_event
+    challenge_id timestamp_utc timestamp_kind authority p0_external_identity
+    candidate_allocation source_closure bootstrap_closure
+    primary_evidence_artifact publication body_free automatic_progression
+    event_sha256
+    """
+)
+_RECOVERY_EPOCH003_HISTORICAL_CHALLENGE_IDS = frozenset(
+    {
+        "5d58979338cbc30ce603df884d466981895e05198196925e209424a129c4b0f9",
+        "6c315203ce98f635feb80b04f27ab7dcb43545f2883b8a6fcca36c8c1cb7acf4",
+    }
+)
+_RECOVERY_EPOCH003_EVENT_FORBIDDEN_KEYS = frozenset(
+    {
+        "runtime_materialization",
+        "runtime_root_identity_sha256",
+        "reference_runtime_root_identity_sha256",
+        "attempt_registry_root_identity_sha256",
+        "operational_runtime_observation",
+        "readiness_receipt",
+        "failure_receipt",
+        "reservation",
+        "attempt",
+        "pytest_main_called",
+        "formal_exact134_invocation_count",
+        "collection_state",
+        "test_execution_state",
+    }
+)
+_RECOVERY_EPOCH003_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_RECOVERY_EPOCH003_SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
+_RECOVERY_EPOCH003_UTC_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
+)
+_RECOVERY_EPOCH003_EXTERNAL_IDENTITY_KEYS = _keys(
+    """
+    artifact_role body_free git_blob_sha1 identity_sha256
+    logical_artifact_sha256 path publication_commit_sha1 raw_sha256
+    repository_full_name schema_version
+    """
+)
+_RECOVERY_EPOCH003_P0_KEYS = _keys(
+    """
+    schema_version logical_cycle_id recovery_epoch_id parent_design receipt
+    p0_external_identity_sha256
+    """
+)
+_RECOVERY_EPOCH003_P0_PARENT_KEYS = _keys(
+    "path publication_commit_sha1 git_blob_sha1 raw_sha256"
+)
+_RECOVERY_EPOCH003_P0_RECEIPT_KEYS = _keys(
+    """
+    path publication_commit_sha1 git_blob_sha1 raw_sha256
+    logical_receipt_sha256
+    """
+)
+_RECOVERY_EPOCH003_AUTHORITY_KEYS = _keys(
+    """
+    approval_kind operational_admission publication_authority_token
+    transition_authority_token
+    """
+)
+_RECOVERY_EPOCH003_CANDIDATE_KEYS = _keys(
+    """
+    schema_version logical_cycle_id recovery_epoch_id candidate_version_id
+    allocated_at_utc p0_external_identity_sha256 source_closure_sha256
+    reference_runtime_observation_external_identity_sha256
+    candidate_allocation_sha256
+    """
+)
+_RECOVERY_EPOCH003_PUBLICATION_KEYS = _keys(
+    """
+    base_commit_sha1 branch event_path expected_changed_path_count
+    publication_state repository_full_name supporting_artifact_count
+    supporting_artifact_set_sha256 supporting_artifacts
+    """
+)
+_RECOVERY_EPOCH003_P0_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11.cycle001."
+    "recovery_epoch003.p0_external_identity.v1"
+)
+_RECOVERY_EPOCH003_P0_IDENTITY_SHA256 = (
+    "74286b862eeee1663d2758ee18d1e848316da6fc27b12fef38c149c5a2b52f36"
+)
+_RECOVERY_EPOCH003_EVENT_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch003_"
+    "SequenceEvent01_SourceBaselineLocked_BodyFree_Event.json"
+)
+_RECOVERY_EPOCH003_REFERENCE_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch003."
+    "reference_runtime_observation.v1"
+)
+_RECOVERY_EPOCH003_REFERENCE_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch003_"
+    "PreEvent1_ReferenceRuntimeObservation_BodyFree_Receipt.json"
+)
+def _recovery_epoch003_event_hash(value: Mapping[str, Any]) -> str:
+    payload = dict(value)
+    payload.pop("event_sha256", None)
+    return artifact_sha256(payload)
+
+
+def _recovery_epoch003_external_identity_valid(
+    value: Any,
+    *,
+    role: str,
+    schema: str | None,
+    path: str | None,
+) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != _RECOVERY_EPOCH003_EXTERNAL_IDENTITY_KEYS
+        or value.get("artifact_role") != role
+        or (
+            value.get("schema_version") != schema
+            if schema is not None
+            else not isinstance(value.get("schema_version"), str)
+            or not value.get("schema_version")
+        )
+        or (
+            value.get("path") != path
+            if path is not None
+            else not isinstance(value.get("path"), str)
+            or not value.get("path")
+            or PurePosixPath(value["path"]).is_absolute()
+            or ".." in PurePosixPath(value["path"]).parts
+        )
+        or value.get("repository_full_name") != "MassyuRed/Cocolon"
+        or value.get("body_free") is not True
+        or _RECOVERY_EPOCH003_SHA1_RE.fullmatch(
+            str(value.get("git_blob_sha1", ""))
+        )
+        is None
+        or _RECOVERY_EPOCH003_SHA1_RE.fullmatch(
+            str(value.get("publication_commit_sha1", ""))
+        )
+        is None
+        or _RECOVERY_EPOCH003_SHA256_RE.fullmatch(
+            str(value.get("raw_sha256", ""))
+        )
+        is None
+        or _RECOVERY_EPOCH003_SHA256_RE.fullmatch(
+            str(value.get("logical_artifact_sha256", ""))
+        )
+        is None
+    ):
+        return False
+    material = dict(value)
+    material.pop("identity_sha256", None)
+    return value.get("identity_sha256") == artifact_sha256(material)
+
+
+def _recovery_epoch003_p0_valid(value: Any) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != _RECOVERY_EPOCH003_P0_KEYS
+        or value.get("schema_version") != _RECOVERY_EPOCH003_P0_SCHEMA
+        or value.get("logical_cycle_id") != "NLS_V3_CYCLE_001"
+        or value.get("recovery_epoch_id")
+        != "NLS_V3_CYCLE001_RECOVERY_EPOCH_003"
+        or type(value.get("parent_design")) is not dict
+        or set(value["parent_design"])
+        != _RECOVERY_EPOCH003_P0_PARENT_KEYS
+        or type(value.get("receipt")) is not dict
+        or set(value["receipt"]) != _RECOVERY_EPOCH003_P0_RECEIPT_KEYS
+    ):
+        return False
+    identity_fields = (
+        value["parent_design"],
+        value["receipt"],
+    )
+    if any(
+        _RECOVERY_EPOCH003_SHA1_RE.fullmatch(
+            str(row.get(key, ""))
+        )
+        is None
+        for row in identity_fields
+        for key in (
+            "publication_commit_sha1",
+            "git_blob_sha1",
+        )
+    ) or any(
+        _RECOVERY_EPOCH003_SHA256_RE.fullmatch(
+            str(row.get(key, ""))
+        )
+        is None
+        for row in identity_fields
+        for key in (
+            "raw_sha256",
+            *(
+                ("logical_receipt_sha256",)
+                if row is value["receipt"]
+                else ()
+            ),
+        )
+    ):
+        return False
+    material = dict(value)
+    material.pop("p0_external_identity_sha256", None)
+    return (
+        value.get("p0_external_identity_sha256")
+        == _RECOVERY_EPOCH003_P0_IDENTITY_SHA256
+        == artifact_sha256(material)
+    )
+
+
+def _recovery_epoch003_candidate_valid(
+    value: Any,
+    *,
+    event: Mapping[str, Any],
+) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != _RECOVERY_EPOCH003_CANDIDATE_KEYS
+        or value.get("schema_version")
+        != (
+            "cocolon.emlis.nls_v3.recovery_epoch003."
+            "candidate_allocation.v1"
+        )
+        or value.get("logical_cycle_id") != event.get("logical_cycle_id")
+        or value.get("recovery_epoch_id")
+        != event.get("recovery_epoch_id")
+        or value.get("candidate_version_id")
+        != event.get("candidate_version_id")
+        or _RECOVERY_EPOCH003_UTC_RE.fullmatch(
+            str(value.get("allocated_at_utc", ""))
+        )
+        is None
+        or value.get("p0_external_identity_sha256")
+        != _RECOVERY_EPOCH003_P0_IDENTITY_SHA256
+        or value.get("source_closure_sha256")
+        != event["source_closure"].get("source_closure_sha256")
+        or value.get(
+            "reference_runtime_observation_external_identity_sha256"
+        )
+        != event["bootstrap_closure"][
+            "reference_runtime_observation_external_identity"
+        ].get("identity_sha256")
+    ):
+        return False
+    material = dict(value)
+    material.pop("candidate_allocation_sha256", None)
+    return value.get("candidate_allocation_sha256") == artifact_sha256(
+        material
+    )
+
+
+def _recovery_epoch003_authority_valid(value: Any) -> bool:
+    return bool(
+        type(value) is dict
+        and set(value) == _RECOVERY_EPOCH003_AUTHORITY_KEYS
+        and isinstance(value.get("approval_kind"), str)
+        and bool(value.get("approval_kind"))
+        and isinstance(value.get("publication_authority_token"), str)
+        and bool(value.get("publication_authority_token"))
+        and isinstance(value.get("transition_authority_token"), str)
+        and bool(value.get("transition_authority_token"))
+        and value.get("publication_authority_token")
+        != value.get("transition_authority_token")
+        and _recovery_epoch003_external_identity_valid(
+            value.get("operational_admission"),
+            role="RECOVERY_EPOCH003_OPERATIONAL_ADMISSION",
+            schema=None,
+            path=None,
+        )
+    )
+
+
+def _recovery_epoch003_publication_valid(
+    value: Any,
+    *,
+    event: Mapping[str, Any],
+) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != _RECOVERY_EPOCH003_PUBLICATION_KEYS
+        or _RECOVERY_EPOCH003_SHA1_RE.fullmatch(
+            str(value.get("base_commit_sha1", ""))
+        )
+        is None
+        or value.get("branch") != "main"
+        or value.get("event_path") != _RECOVERY_EPOCH003_EVENT_PATH
+        or value.get("repository_full_name") != "MassyuRed/Cocolon"
+        or not isinstance(value.get("publication_state"), str)
+        or not value.get("publication_state")
+        or type(value.get("supporting_artifacts")) is not list
+    ):
+        return False
+    supporting = value["supporting_artifacts"]
+    primary = event["primary_evidence_artifact"]
+    reference = event["bootstrap_closure"][
+        "reference_runtime_observation_external_identity"
+    ]
+    if (
+        supporting
+        != sorted(
+            supporting,
+            key=lambda row: (
+                row.get("artifact_role")
+                if type(row) is dict
+                else "",
+                row.get("path") if type(row) is dict else "",
+                row.get("identity_sha256")
+                if type(row) is dict
+                else "",
+            ),
+        )
+        or len(
+            {
+                (
+                    row.get("artifact_role"),
+                    row.get("path"),
+                    row.get("identity_sha256"),
+                )
+                for row in supporting
+                if type(row) is dict
+            }
+        )
+        != len(supporting)
+        or supporting
+        != sorted(
+            [deepcopy(reference), deepcopy(primary)],
+            key=lambda row: (
+                row["artifact_role"],
+                row["path"],
+                row["identity_sha256"],
+            ),
+        )
+        or value.get("supporting_artifact_count") != len(supporting)
+        or value.get("expected_changed_path_count")
+        != 1 + len(supporting)
+        or value.get("supporting_artifact_set_sha256")
+        != artifact_sha256(supporting)
+    ):
+        return False
+    return all(
+        type(row) is dict
+        and set(row) == _RECOVERY_EPOCH003_EXTERNAL_IDENTITY_KEYS
+        for row in supporting
+    )
+
+
+def _recovery_epoch003_event_contains_forbidden_key(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        return bool(
+            set(value) & _RECOVERY_EPOCH003_EVENT_FORBIDDEN_KEYS
+        ) or any(
+            _recovery_epoch003_event_contains_forbidden_key(item)
+            for item in value.values()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(
+            _recovery_epoch003_event_contains_forbidden_key(item)
+            for item in value
+        )
+    return False
+
+
+def _recovery_epoch003_event_valid(value: Any) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != RECOVERY_EPOCH003_SEQUENCE_EVENT_KEYS
+        or value.get("schema_version")
+        != RECOVERY_EPOCH003_SEQUENCE_EVENT_SCHEMA
+        or value.get("logical_cycle_id") != "NLS_V3_CYCLE_001"
+        or value.get("recovery_epoch_id")
+        != "NLS_V3_CYCLE001_RECOVERY_EPOCH_003"
+        or value.get("ledger_id")
+        != "NLS_V3_STEP11_CYCLE001_RECOVERY_EPOCH003"
+        or value.get("event_id")
+        != "NLS_V3_RECOVERY_EPOCH003_SEQUENCE_EVENT_01"
+        or value.get("event_ordinal") != 1
+        or value.get("event_name") != "SOURCE_BASELINE_LOCKED"
+        or not isinstance(value.get("candidate_version_id"), str)
+        or not value.get("candidate_version_id")
+        or not isinstance(value.get("state"), str)
+        or not value.get("state")
+        or _RECOVERY_EPOCH003_UTC_RE.fullmatch(
+            str(value.get("timestamp_utc", ""))
+        )
+        is None
+        or not isinstance(value.get("timestamp_kind"), str)
+        or not value.get("timestamp_kind")
+        or value.get("body_free") is not True
+        or value.get("automatic_progression") is not False
+        or value.get("event_sha256") != _recovery_epoch003_event_hash(value)
+        or _RECOVERY_EPOCH003_SHA256_RE.fullmatch(
+            str(value.get("challenge_id", ""))
+        )
+        is None
+    ):
+        return False
+    required_objects = (
+        "prior_event",
+        "authority",
+        "p0_external_identity",
+        "candidate_allocation",
+        "source_closure",
+        "bootstrap_closure",
+        "primary_evidence_artifact",
+        "publication",
+    )
+    if any(type(value.get(key)) is not dict for key in required_objects):
+        return False
+    if (
+        value["source_closure"].get("schema_version")
+        != (
+            "cocolon.emlis.nls_v3.recovery_epoch003."
+            "source_baseline_eligibility_closure.v1"
+        )
+        or value["bootstrap_closure"].get("schema_version")
+        != (
+            "cocolon.emlis.nls_v3.recovery_epoch003."
+            "formal_worker_bootstrap_manifest.v1"
+        )
+        or validate_recovery_epoch003_source_bootstrap_contract_state(
+            {
+                "source_closure": value["source_closure"],
+                "bootstrap_closure": value["bootstrap_closure"],
+            }
+        )
+        != ()
+        or not _recovery_epoch003_p0_valid(value["p0_external_identity"])
+        or value["prior_event"] != value["p0_external_identity"]
+        or not _recovery_epoch003_candidate_valid(
+            value["candidate_allocation"],
+            event=value,
+        )
+        or not _recovery_epoch003_authority_valid(value["authority"])
+        or not _recovery_epoch003_external_identity_valid(
+            value["primary_evidence_artifact"],
+            role="RECOVERY_EPOCH003_D2_GREEN_RECEIPT",
+            schema=None,
+            path=None,
+        )
+        or not _recovery_epoch003_external_identity_valid(
+            value["bootstrap_closure"][
+                "reference_runtime_observation_external_identity"
+            ],
+            role="RECOVERY_EPOCH003_REFERENCE_RUNTIME_OBSERVATION",
+            schema=_RECOVERY_EPOCH003_REFERENCE_SCHEMA,
+            path=_RECOVERY_EPOCH003_REFERENCE_PATH,
+        )
+        or not _recovery_epoch003_publication_valid(
+            value["publication"],
+            event=value,
+        )
+    ):
+        return False
+    return not _recovery_epoch003_event_contains_forbidden_key(value)
+
+
+def validate_recovery_epoch003_sequence_event1_contract_state(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Validate immutable Epoch003 Event1 bytes without publishing an event."""
+
+    try:
+        if type(state) is not dict:
+            return ("RECOVERY_EPOCH003_EVENT1_CONTRACT_INVALID",)
+        published = state.get("event1_at_publication")
+        postfetch = state.get("event1_at_postfetch")
+        if (
+            type(published) is not dict
+            or type(postfetch) is not dict
+        ):
+            return ("RECOVERY_EPOCH003_EVENT1_CONTRACT_INVALID",)
+        if _recovery_epoch003_event_contains_forbidden_key(postfetch):
+            return (
+                "RECOVERY_EPOCH003_EVENT1_OPERATIONAL_FACT_FORBIDDEN",
+            )
+        if postfetch.get("challenge_id") in (
+            _RECOVERY_EPOCH003_HISTORICAL_CHALLENGE_IDS
+        ):
+            return (
+                "RECOVERY_EPOCH003_CHALLENGE_PROVENANCE_"
+                "INHERITANCE_FORBIDDEN",
+            )
+        if (
+            not _recovery_epoch003_event_valid(published)
+            or not _recovery_epoch003_event_valid(postfetch)
+        ):
+            return ("RECOVERY_EPOCH003_EVENT1_CONTRACT_INVALID",)
+        published_raw = hashlib.sha256(
+            canonical_json_bytes(published) + b"\n"
+        ).hexdigest()
+        postfetch_raw = hashlib.sha256(
+            canonical_json_bytes(postfetch) + b"\n"
+        ).hexdigest()
+        if (
+            published != postfetch
+            or state.get("event1_publication_raw_sha256")
+            != published_raw
+            or state.get("event1_postfetch_raw_sha256") != postfetch_raw
+            or published_raw != postfetch_raw
+        ):
+            return (
+                "RECOVERY_EPOCH003_EVENT1_IMMUTABILITY_VIOLATION",
+            )
+        if (
+            state.get("source_closure") != published["source_closure"]
+            or state.get("bootstrap_closure")
+            != published["bootstrap_closure"]
+        ):
+            return ("RECOVERY_EPOCH003_EVENT1_CONTRACT_INVALID",)
+        return ()
+    except (
+        AttributeError,
+        KeyError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("RECOVERY_EPOCH003_EVENT1_CONTRACT_INVALID",)
+
+
 __all__ = [
     "RECOVERY_EPOCH002_EVENT1_SCHEMA",
     "RECOVERY_EPOCH002_EVENT1_KEYS",
@@ -2857,4 +3384,7 @@ __all__ = [
     "validate_recovery_epoch002_lineage_state",
     "validate_recovery_epoch002_successor_succession_state",
     "validate_recovery_epoch002_success_event2_state",
+    "RECOVERY_EPOCH003_SEQUENCE_EVENT_SCHEMA",
+    "RECOVERY_EPOCH003_SEQUENCE_EVENT_KEYS",
+    "validate_recovery_epoch003_sequence_event1_contract_state",
 ]

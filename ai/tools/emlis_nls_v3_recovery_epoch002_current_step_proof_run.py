@@ -2208,6 +2208,252 @@ def _main(argv: Sequence[str] | None = None) -> int:
         return 2
 
 
+RECOVERY_EPOCH003_READINESS_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch003."
+    "bootstrap_readiness_receipt.v1"
+)
+RECOVERY_EPOCH003_PREFLIGHT_STOP_CODE = (
+    "PRE_RESERVATION_FORMAL_WORKER_BOOTSTRAP_STOP"
+)
+_RECOVERY_EPOCH003_READINESS_KEYS = frozenset(
+    """
+    schema_version logical_cycle_id recovery_epoch_id candidate_version_id
+    authority_token event1_external_identity_sha256
+    event1_bootstrap_closure event1_bootstrap_closure_sha256
+    operational_runtime_observation_external_identity
+    operational_runtime_observation_sha256
+    expected_observed_projection_sha256 readiness_receipt_path
+    preflight_started_at_utc preflight_finished_at_utc
+    owner_validation_state independent_verification_state
+    reservation_count_delta formal_exact134_invocation_count
+    collection_state test_execution_state pytest_main_called
+    automatic_progression body_free bootstrap_readiness_receipt_sha256
+    """.split()
+)
+_RECOVERY_EPOCH003_EXTERNAL_IDENTITY_KEYS = frozenset(
+    """
+    artifact_role body_free git_blob_sha1 identity_sha256
+    logical_artifact_sha256 path publication_commit_sha1 raw_sha256
+    repository_full_name schema_version
+    """.split()
+)
+_RECOVERY_EPOCH003_BOOTSTRAP_KEYS = frozenset(
+    """
+    schema_version source_commit_sha1 source_tree_sha1
+    formal_owner_artifacts formal_owner_artifacts_sha256
+    formal_test_node_ids formal_test_manifest formal_test_manifest_sha256
+    conftest_plugin_mode pytest_plugins_environment_variable_removed
+    pytest_entrypoint_autoload_disabled explicit_plugin_allowlist
+    loaded_plugin_manifest loaded_plugin_manifest_sha256 import_manifest
+    import_manifest_sha256 dependency_lock_identity
+    wheel_bundle_manifest_sha256 expected_installed_distributions
+    expected_installed_distributions_sha256 expected_python_runtime_identity
+    expected_pytest_distribution_identity
+    reference_runtime_observation_external_identity environment_policy
+    environment_policy_sha256 preflight_argv preflight_argv_sha256
+    formal_worker_argv formal_worker_argv_sha256 unclassified_import_count
+    unresolved_dynamic_import_count body_free bootstrap_closure_sha256
+    """.split()
+)
+_RECOVERY_EPOCH003_BOOTSTRAP_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch003."
+    "formal_worker_bootstrap_manifest.v1"
+)
+_RECOVERY_EPOCH003_EVENT_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch003.sequence_event.v1"
+)
+_RECOVERY_EPOCH003_OPERATIONAL_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch003."
+    "operational_runtime_observation.v1"
+)
+_RECOVERY_EPOCH003_EVENT_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch003_"
+    "SequenceEvent01_SourceBaselineLocked_BodyFree_Event.json"
+)
+_RECOVERY_EPOCH003_OPERATIONAL_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch003_"
+    "PostEvent1_OperationalRuntimeObservation_BodyFree_Receipt.json"
+)
+_RECOVERY_EPOCH003_READINESS_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch003_"
+    "PostEvent1_BootstrapReadiness_BodyFree_Receipt.json"
+)
+_RECOVERY_EPOCH003_SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
+_RECOVERY_EPOCH003_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_RECOVERY_EPOCH003_UTC_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
+)
+
+
+def _recovery_epoch003_external_identity_valid(
+    value: Any,
+    *,
+    role: str,
+    schema: str,
+    path: str,
+    logical_hash: str,
+) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != _RECOVERY_EPOCH003_EXTERNAL_IDENTITY_KEYS
+        or value.get("artifact_role") != role
+        or value.get("schema_version") != schema
+        or value.get("path") != path
+        or value.get("repository_full_name") != "MassyuRed/Cocolon"
+        or value.get("body_free") is not True
+        or _RECOVERY_EPOCH003_SHA1_RE.fullmatch(
+            str(value.get("git_blob_sha1", ""))
+        )
+        is None
+        or _RECOVERY_EPOCH003_SHA1_RE.fullmatch(
+            str(value.get("publication_commit_sha1", ""))
+        )
+        is None
+        or _RECOVERY_EPOCH003_SHA256_RE.fullmatch(
+            str(value.get("raw_sha256", ""))
+        )
+        is None
+        or _RECOVERY_EPOCH003_SHA256_RE.fullmatch(str(logical_hash))
+        is None
+        or value.get("logical_artifact_sha256") != logical_hash
+    ):
+        return False
+    material = dict(value)
+    material.pop("identity_sha256", None)
+    return value.get("identity_sha256") == artifact_sha256(material)
+
+
+def _recovery_epoch003_readiness_valid(
+    readiness: Any,
+    event1_identity: Any,
+) -> bool:
+    bootstrap = (
+        readiness.get("event1_bootstrap_closure")
+        if type(readiness) is dict
+        else None
+    )
+    observation_identity = (
+        readiness.get(
+            "operational_runtime_observation_external_identity"
+        )
+        if type(readiness) is dict
+        else None
+    )
+    if (
+        type(readiness) is not dict
+        or set(readiness) != _RECOVERY_EPOCH003_READINESS_KEYS
+        or readiness.get("schema_version")
+        != RECOVERY_EPOCH003_READINESS_SCHEMA
+        or readiness.get("logical_cycle_id") != "NLS_V3_CYCLE_001"
+        or readiness.get("recovery_epoch_id")
+        != "NLS_V3_CYCLE001_RECOVERY_EPOCH_003"
+        or not isinstance(readiness.get("candidate_version_id"), str)
+        or not readiness.get("candidate_version_id")
+        or not isinstance(readiness.get("authority_token"), str)
+        or not readiness.get("authority_token")
+        or type(event1_identity) is not dict
+        or not _recovery_epoch003_external_identity_valid(
+            event1_identity,
+            role="RECOVERY_EPOCH003_SOURCE_BASELINE_EVENT",
+            schema=_RECOVERY_EPOCH003_EVENT_SCHEMA,
+            path=_RECOVERY_EPOCH003_EVENT_PATH,
+            logical_hash=event1_identity.get("logical_artifact_sha256"),
+        )
+        or readiness.get("event1_external_identity_sha256")
+        != event1_identity.get("identity_sha256")
+        or type(bootstrap) is not dict
+        or set(bootstrap) != _RECOVERY_EPOCH003_BOOTSTRAP_KEYS
+        or bootstrap.get("schema_version")
+        != _RECOVERY_EPOCH003_BOOTSTRAP_SCHEMA
+        or bootstrap.get("body_free") is not True
+        or readiness.get("event1_bootstrap_closure_sha256")
+        != bootstrap.get("bootstrap_closure_sha256")
+        or bootstrap.get("bootstrap_closure_sha256")
+        != artifact_sha256(
+            {
+                key: value
+                for key, value in bootstrap.items()
+                if key != "bootstrap_closure_sha256"
+            }
+        )
+        or not _recovery_epoch003_external_identity_valid(
+            observation_identity,
+            role="RECOVERY_EPOCH003_OPERATIONAL_RUNTIME_OBSERVATION",
+            schema=_RECOVERY_EPOCH003_OPERATIONAL_SCHEMA,
+            path=_RECOVERY_EPOCH003_OPERATIONAL_PATH,
+            logical_hash=readiness.get(
+                "operational_runtime_observation_sha256"
+            ),
+        )
+        or readiness.get("operational_runtime_observation_sha256")
+        != observation_identity.get("logical_artifact_sha256")
+        or _RECOVERY_EPOCH003_SHA256_RE.fullmatch(
+            str(readiness.get("expected_observed_projection_sha256", ""))
+        )
+        is None
+        or readiness.get("readiness_receipt_path")
+        != _RECOVERY_EPOCH003_READINESS_PATH
+        or _RECOVERY_EPOCH003_UTC_RE.fullmatch(
+            str(readiness.get("preflight_started_at_utc", ""))
+        )
+        is None
+        or _RECOVERY_EPOCH003_UTC_RE.fullmatch(
+            str(readiness.get("preflight_finished_at_utc", ""))
+        )
+        is None
+        or readiness.get("preflight_started_at_utc")
+        > readiness.get("preflight_finished_at_utc")
+        or readiness.get("owner_validation_state") != "VALID"
+        or readiness.get("independent_verification_state") != "VALID"
+        or readiness.get("reservation_count_delta") != 0
+        or readiness.get("formal_exact134_invocation_count") != 0
+        or readiness.get("collection_state") != "NOT_STARTED"
+        or readiness.get("test_execution_state") != "NOT_STARTED"
+        or readiness.get("pytest_main_called") is not False
+        or readiness.get("automatic_progression") is not False
+        or readiness.get("body_free") is not True
+    ):
+        return False
+    material = dict(readiness)
+    material.pop("bootstrap_readiness_receipt_sha256", None)
+    return readiness.get(
+        "bootstrap_readiness_receipt_sha256"
+    ) == artifact_sha256(material)
+
+
+def validate_recovery_epoch003_formal_execution_gate_state(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Keep Epoch003 formal execution stopped until readiness is verified."""
+
+    try:
+        if (
+            type(state) is not dict
+            or state.get("readiness_postverified") is not True
+            or state.get("reservation_count_delta") != 0
+            or state.get("formal_exact134_invocation_count") != 0
+            or state.get("automatic_progression") is not False
+            or not _recovery_epoch003_readiness_valid(
+                state.get("readiness_receipt"),
+                state.get("event1_external_identity"),
+            )
+        ):
+            return (RECOVERY_EPOCH003_PREFLIGHT_STOP_CODE,)
+        return ()
+    except (
+        AttributeError,
+        KeyError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return (RECOVERY_EPOCH003_PREFLIGHT_STOP_CODE,)
+
+
 if __name__ == "__main__":
     raise SystemExit(_main())
 
@@ -2225,4 +2471,7 @@ __all__ = [
     "build_recovery_epoch002_formal_worker_argv",
     "run_recovery_epoch002_current_step_proof",
     "validate_recovery_epoch002_closed_code_capture_state",
+    "RECOVERY_EPOCH003_READINESS_SCHEMA",
+    "RECOVERY_EPOCH003_PREFLIGHT_STOP_CODE",
+    "validate_recovery_epoch003_formal_execution_gate_state",
 ]

@@ -2327,6 +2327,642 @@ def validate_recovery_epoch002_successor_closure_state(
         return ("SUCCESSOR_SOURCE_CLOSURE_INVALID",)
 
 
+# Recovery Epoch003 is additive.  These constants and the validator below
+# deliberately leave every Epoch002 schema and validation branch untouched.
+RECOVERY_EPOCH003_SOURCE_CLOSURE_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch003."
+    "source_baseline_eligibility_closure.v1"
+)
+RECOVERY_EPOCH003_BOOTSTRAP_MANIFEST_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch003."
+    "formal_worker_bootstrap_manifest.v1"
+)
+RECOVERY_EPOCH003_SOURCE_CLOSURE_KEYS = _keys(
+    """
+    schema_version repository_full_name source_ref source_commit_sha1
+    source_tree_sha1 worktree_clean detailed_design_sha256
+    epoch003_p0_external_identity_sha256 epoch002_predecessor_set_sha256
+    d1_red_receipt_external_identity_sha256
+    d2_green_receipt_external_identity_sha256
+    source_dependency_closure_sha256 canonical_current_closure_sha256
+    requirement_registry_sha256 formal_node_registry_sha256
+    proof_source_closure_sha256 formal_test_manifest_sha256
+    bootstrap_closure_sha256
+    reference_runtime_observation_external_identity_sha256
+    source_closure_sha256
+    """
+)
+RECOVERY_EPOCH003_BOOTSTRAP_MANIFEST_KEYS = _keys(
+    """
+    schema_version source_commit_sha1 source_tree_sha1
+    formal_owner_artifacts formal_owner_artifacts_sha256
+    formal_test_node_ids formal_test_manifest formal_test_manifest_sha256
+    conftest_plugin_mode pytest_plugins_environment_variable_removed
+    pytest_entrypoint_autoload_disabled explicit_plugin_allowlist
+    loaded_plugin_manifest loaded_plugin_manifest_sha256 import_manifest
+    import_manifest_sha256 dependency_lock_identity
+    wheel_bundle_manifest_sha256 expected_installed_distributions
+    expected_installed_distributions_sha256 expected_python_runtime_identity
+    expected_pytest_distribution_identity
+    reference_runtime_observation_external_identity environment_policy
+    environment_policy_sha256 preflight_argv preflight_argv_sha256
+    formal_worker_argv formal_worker_argv_sha256 unclassified_import_count
+    unresolved_dynamic_import_count body_free bootstrap_closure_sha256
+    """
+)
+RECOVERY_EPOCH003_KNOWN_SCHEMA_PAIRS = (
+    (
+        RECOVERY_EPOCH002_SUCCESSOR_SOURCE_CLOSURE_SCHEMA,
+        RECOVERY_EPOCH002_BOOTSTRAP_V2_SCHEMA,
+    ),
+    (
+        RECOVERY_EPOCH003_SOURCE_CLOSURE_SCHEMA,
+        RECOVERY_EPOCH003_BOOTSTRAP_MANIFEST_SCHEMA,
+    ),
+)
+
+_RECOVERY_EPOCH003_EXTERNAL_IDENTITY_KEYS = _keys(
+    """
+    artifact_role body_free git_blob_sha1 identity_sha256
+    logical_artifact_sha256 path publication_commit_sha1 raw_sha256
+    repository_full_name schema_version
+    """
+)
+_RECOVERY_EPOCH003_RUNTIME_IDENTITY_KEYS = _keys(
+    "executable_sha256 implementation version build_sha256"
+)
+_RECOVERY_EPOCH003_DISTRIBUTION_KEYS = _keys(
+    """
+    normalized_distribution_name distribution_version wheel_sha256
+    installed_record_closure_sha256
+    """
+)
+_RECOVERY_EPOCH003_DEPENDENCY_LOCK_KEYS = _keys(
+    "identity_class path raw_sha256"
+)
+_RECOVERY_EPOCH003_ENVIRONMENT_POLICY_KEYS = _keys(
+    "fixed removed inherited_path_sha256 lang lc_all"
+)
+_RECOVERY_EPOCH003_ENVIRONMENT_FIXED_KEYS = _keys(
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD PYTHONDONTWRITEBYTECODE"
+)
+_RECOVERY_EPOCH003_OWNER_ROW_KEYS = _keys(
+    "role path git_blob_sha1 raw_sha256"
+)
+_RECOVERY_EPOCH003_TEST_ROW_KEYS = _keys(
+    "path git_blob_sha1 raw_sha256"
+)
+_RECOVERY_EPOCH003_IMPORT_ROW_KEYS = _keys(
+    "import_name classification owner_paths target_identity"
+)
+_RECOVERY_EPOCH003_FIRST_PARTY_TARGET_KEYS = _keys(
+    "path git_blob_sha1 raw_sha256"
+)
+_RECOVERY_EPOCH003_STDLIB_TARGET_KEYS = _keys(
+    "module_name python_runtime_identity_sha256"
+)
+_RECOVERY_EPOCH003_THIRD_PARTY_TARGET_KEYS = _keys(
+    """
+    module_name normalized_distribution_name distribution_version
+    wheel_sha256 installed_record_closure_sha256
+    """
+)
+_RECOVERY_EPOCH003_SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
+_RECOVERY_EPOCH003_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_RECOVERY_EPOCH003_REFERENCE_ROLE = (
+    "RECOVERY_EPOCH003_REFERENCE_RUNTIME_OBSERVATION"
+)
+_RECOVERY_EPOCH003_REFERENCE_SCHEMA = (
+    "cocolon.emlis.nls_v3.recovery_epoch003."
+    "reference_runtime_observation.v1"
+)
+_RECOVERY_EPOCH003_REFERENCE_PATH = (
+    "EmlisAIの実装済み資料/documents/"
+    "NLSv3_Step11_Cycle001_RecoveryEpoch003_"
+    "PreEvent1_ReferenceRuntimeObservation_BodyFree_Receipt.json"
+)
+_RECOVERY_EPOCH003_P0_EXTERNAL_IDENTITY_SHA256 = (
+    "74286b862eeee1663d2758ee18d1e848316da6fc27b12fef38c149c5a2b52f36"
+)
+_RECOVERY_EPOCH003_OWNER_ROLE_PATHS = tuple(
+    sorted(
+        (
+            (
+                "atomic_publication_bundle",
+                "ai/tools/"
+                "emlis_nls_v3_recovery_epoch002_"
+                "atomic_publication_bundle_v3.py",
+            ),
+            (
+                "canonical_current_closure",
+                "ai/services/ai_inference/"
+                "emlis_ai_recovery_epoch002_"
+                "canonical_current_closure_v3.py",
+            ),
+            (
+                "current_step_proof_gate",
+                "ai/tools/"
+                "emlis_nls_v3_recovery_epoch002_current_step_proof_run.py",
+            ),
+            (
+                "formal_parent_orchestrator",
+                "ai/tools/"
+                "emlis_nls_v3_recovery_epoch002_"
+                "formal_parent_orchestrator_v3.py",
+            ),
+            (
+                "formal_worker_bootstrap_preflight",
+                "ai/tools/"
+                "emlis_nls_v3_recovery_epoch002_"
+                "formal_worker_bootstrap_preflight.py",
+            ),
+            (
+                "independent_closure_verifier",
+                "ai/tools/"
+                "emlis_nls_v3_recovery_epoch002_closure_receipt_verify.py",
+            ),
+            (
+                "sequence_ledger",
+                "ai/services/ai_inference/"
+                "emlis_ai_recovery_epoch002_sequence_ledger_v3.py",
+            ),
+        ),
+        key=lambda row: (row[0], row[1]),
+    )
+)
+_RECOVERY_EPOCH003_FORMAL_NODE_IDS = tuple(
+    node_id
+    for step in range(11)
+    for node_id in RECOVERY_EPOCH001_FORMAL_NODE_IDS_BY_STEP[step]
+)
+_RECOVERY_EPOCH003_FORMAL_TEST_PATHS = tuple(
+    sorted(
+        {
+            node_id.split("::", 1)[0]
+            for node_id in _RECOVERY_EPOCH003_FORMAL_NODE_IDS
+        }
+    )
+)
+_RECOVERY_EPOCH003_PREFLIGHT_ARGV = [
+    "python",
+    "-m",
+    "ai.tools.emlis_nls_v3_recovery_epoch002_"
+    "formal_worker_bootstrap_preflight",
+]
+_RECOVERY_EPOCH003_FORMAL_WORKER_ARGV_PREFIX = [
+    "python",
+    "-m",
+    "pytest",
+    "--noconftest",
+    "-p",
+    "no:cacheprovider",
+]
+
+
+def _recovery_epoch003_hash_without(
+    value: Mapping[str, Any],
+    key: str,
+) -> str:
+    payload = dict(value)
+    payload.pop(key, None)
+    return artifact_sha256(payload)
+
+
+def _recovery_epoch003_sha1(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and _RECOVERY_EPOCH003_SHA1_RE.fullmatch(value) is not None
+    )
+
+
+def _recovery_epoch003_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and _RECOVERY_EPOCH003_SHA256_RE.fullmatch(value) is not None
+    )
+
+
+def _recovery_epoch003_external_identity_valid(
+    value: Any,
+    *,
+    role: str,
+    schema: str,
+    path: str,
+) -> bool:
+    return bool(
+        type(value) is dict
+        and set(value) == _RECOVERY_EPOCH003_EXTERNAL_IDENTITY_KEYS
+        and value.get("artifact_role") == role
+        and value.get("schema_version") == schema
+        and value.get("path") == path
+        and value.get("repository_full_name") == "MassyuRed/Cocolon"
+        and value.get("body_free") is True
+        and _recovery_epoch003_sha1(value.get("git_blob_sha1"))
+        and _recovery_epoch003_sha1(value.get("publication_commit_sha1"))
+        and _recovery_epoch003_sha256(value.get("raw_sha256"))
+        and _recovery_epoch003_sha256(
+            value.get("logical_artifact_sha256")
+        )
+        and value.get("identity_sha256")
+        == _recovery_epoch003_hash_without(value, "identity_sha256")
+    )
+
+
+def _recovery_epoch003_runtime_identity_valid(value: Any) -> bool:
+    return bool(
+        type(value) is dict
+        and set(value) == _RECOVERY_EPOCH003_RUNTIME_IDENTITY_KEYS
+        and isinstance(value.get("implementation"), str)
+        and bool(value.get("implementation"))
+        and isinstance(value.get("version"), str)
+        and bool(value.get("version"))
+        and _recovery_epoch003_sha256(value.get("executable_sha256"))
+        and _recovery_epoch003_sha256(value.get("build_sha256"))
+        and value.get("executable_sha256") != "0" * 64
+        and value.get("build_sha256") != "0" * 64
+    )
+
+
+def _recovery_epoch003_distribution_valid(value: Any) -> bool:
+    return bool(
+        type(value) is dict
+        and set(value) == _RECOVERY_EPOCH003_DISTRIBUTION_KEYS
+        and isinstance(value.get("normalized_distribution_name"), str)
+        and bool(value.get("normalized_distribution_name"))
+        and isinstance(value.get("distribution_version"), str)
+        and bool(value.get("distribution_version"))
+        and _recovery_epoch003_sha256(value.get("wheel_sha256"))
+        and _recovery_epoch003_sha256(
+            value.get("installed_record_closure_sha256")
+        )
+    )
+
+
+def _recovery_epoch003_environment_valid(value: Any) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != _RECOVERY_EPOCH003_ENVIRONMENT_POLICY_KEYS
+        or type(value.get("fixed")) is not dict
+        or set(value["fixed"]) != _RECOVERY_EPOCH003_ENVIRONMENT_FIXED_KEYS
+        or value["fixed"].get("PYTEST_DISABLE_PLUGIN_AUTOLOAD") != "1"
+        or value["fixed"].get("PYTHONDONTWRITEBYTECODE") != "1"
+        or value.get("removed")
+        != ["PYTEST_ADDOPTS", "PYTEST_PLUGINS", "PYTHONPATH"]
+        or value.get("inherited_path_sha256") == "0" * 64
+        or not _recovery_epoch003_sha256(
+            value.get("inherited_path_sha256")
+        )
+    ):
+        return False
+    return all(
+        isinstance(value.get(key), str) and bool(value.get(key))
+        for key in ("lang", "lc_all")
+    )
+
+
+def _recovery_epoch003_placeholder_present(
+    bootstrap: Mapping[str, Any],
+) -> bool:
+    runtime = bootstrap.get("expected_python_runtime_identity")
+    environment = bootstrap.get("environment_policy")
+    return bool(
+        type(runtime) is dict
+        and (
+            runtime.get("executable_sha256") == "0" * 64
+            or runtime.get("build_sha256") == "0" * 64
+        )
+    ) or bool(
+        type(environment) is dict
+        and environment.get("inherited_path_sha256") == "0" * 64
+    )
+
+
+def _recovery_epoch003_bootstrap_valid(value: Any) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != RECOVERY_EPOCH003_BOOTSTRAP_MANIFEST_KEYS
+        or value.get("schema_version")
+        != RECOVERY_EPOCH003_BOOTSTRAP_MANIFEST_SCHEMA
+        or not _recovery_epoch003_sha1(value.get("source_commit_sha1"))
+        or not _recovery_epoch003_sha1(value.get("source_tree_sha1"))
+        or value.get("body_free") is not True
+        or value.get("bootstrap_closure_sha256")
+        != _recovery_epoch003_hash_without(
+            value,
+            "bootstrap_closure_sha256",
+        )
+        or value.get("conftest_plugin_mode") != "NOCONFTEST"
+        or value.get("pytest_plugins_environment_variable_removed")
+        is not True
+        or value.get("pytest_entrypoint_autoload_disabled") is not True
+        or value.get("explicit_plugin_allowlist") != []
+        or value.get("loaded_plugin_manifest") != []
+        or value.get("loaded_plugin_manifest_sha256")
+        != artifact_sha256(value["loaded_plugin_manifest"])
+        or value.get("unclassified_import_count") != 0
+        or value.get("unresolved_dynamic_import_count") != 0
+    ):
+        return False
+
+    owners = value.get("formal_owner_artifacts")
+    if (
+        type(owners) is not list
+        or not owners
+        or any(
+            type(row) is not dict
+            or set(row) != _RECOVERY_EPOCH003_OWNER_ROW_KEYS
+            or not isinstance(row.get("role"), str)
+            or not row.get("role")
+            or not isinstance(row.get("path"), str)
+            or not row.get("path")
+            or not _recovery_epoch003_sha1(row.get("git_blob_sha1"))
+            or not _recovery_epoch003_sha256(row.get("raw_sha256"))
+            for row in owners
+        )
+        or len({(row["role"], row["path"]) for row in owners})
+        != len(owners)
+        or [
+            (row["role"], row["path"])
+            for row in owners
+        ]
+        != list(_RECOVERY_EPOCH003_OWNER_ROLE_PATHS)
+        or value.get("formal_owner_artifacts_sha256")
+        != artifact_sha256(owners)
+    ):
+        return False
+
+    nodes = value.get("formal_test_node_ids")
+    tests = value.get("formal_test_manifest")
+    if (
+        type(nodes) is not list
+        or nodes != list(_RECOVERY_EPOCH003_FORMAL_NODE_IDS)
+        or len(nodes) != len(set(nodes))
+        or len(nodes) != 134
+        or type(tests) is not list
+        or len(tests) != 21
+        or any(
+            type(row) is not dict
+            or set(row) != _RECOVERY_EPOCH003_TEST_ROW_KEYS
+            or not isinstance(row.get("path"), str)
+            or not row.get("path")
+            or not _recovery_epoch003_sha1(row.get("git_blob_sha1"))
+            or not _recovery_epoch003_sha256(row.get("raw_sha256"))
+            for row in tests
+        )
+        or [row["path"] for row in tests]
+        != list(_RECOVERY_EPOCH003_FORMAL_TEST_PATHS)
+        or value.get("formal_test_manifest_sha256")
+        != artifact_sha256(tests)
+    ):
+        return False
+
+    imports = value.get("import_manifest")
+    if (
+        type(imports) is not list
+        or not imports
+        or any(
+            type(row) is not dict
+            or set(row) != _RECOVERY_EPOCH003_IMPORT_ROW_KEYS
+            or not isinstance(row.get("import_name"), str)
+            or not row.get("import_name")
+            or row.get("classification")
+            not in {
+                "FIRST_PARTY",
+                "STDLIB_BOUND_TO_PYTHON_RUNTIME",
+                "THIRD_PARTY_BOUND_TO_LOCKED_DISTRIBUTION",
+            }
+            or type(row.get("owner_paths")) is not list
+            or type(row.get("target_identity")) is not dict
+            for row in imports
+        )
+        or [row["import_name"] for row in imports]
+        != sorted({row["import_name"] for row in imports})
+        or value.get("import_manifest_sha256") != artifact_sha256(imports)
+    ):
+        return False
+
+    lock = value.get("dependency_lock_identity")
+    installed = value.get("expected_installed_distributions")
+    pytest_identity = value.get("expected_pytest_distribution_identity")
+    if (
+        type(lock) is not dict
+        or set(lock) != _RECOVERY_EPOCH003_DEPENDENCY_LOCK_KEYS
+        or lock.get("identity_class") != "EXACT_HASH_LOCK"
+        or not isinstance(lock.get("path"), str)
+        or not lock.get("path")
+        or not _recovery_epoch003_sha256(lock.get("raw_sha256"))
+        or not _recovery_epoch003_sha256(
+            value.get("wheel_bundle_manifest_sha256")
+        )
+        or type(installed) is not list
+        or not installed
+        or any(
+            not _recovery_epoch003_distribution_valid(row)
+            for row in installed
+        )
+        or [row["normalized_distribution_name"] for row in installed]
+        != sorted(
+            {
+                row["normalized_distribution_name"]
+                for row in installed
+            }
+        )
+        or value.get("expected_installed_distributions_sha256")
+        != artifact_sha256(installed)
+        or not _recovery_epoch003_distribution_valid(pytest_identity)
+        or pytest_identity.get("normalized_distribution_name") != "pytest"
+        or pytest_identity not in installed
+        or not _recovery_epoch003_runtime_identity_valid(
+            value.get("expected_python_runtime_identity")
+        )
+    ):
+        return False
+    runtime_identity_hash = artifact_sha256(
+        value["expected_python_runtime_identity"]
+    )
+    distribution_by_name = {
+        row["normalized_distribution_name"]: row for row in installed
+    }
+    for row in imports:
+        classification = row["classification"]
+        owner_paths = row["owner_paths"]
+        target = row["target_identity"]
+        if (
+            owner_paths != sorted(set(owner_paths))
+            or any(
+                not isinstance(path, str) or not path
+                for path in owner_paths
+            )
+        ):
+            return False
+        if classification == "FIRST_PARTY":
+            if (
+                set(target) != _RECOVERY_EPOCH003_FIRST_PARTY_TARGET_KEYS
+                or owner_paths == []
+                or target.get("path") not in owner_paths
+                or not _recovery_epoch003_sha1(
+                    target.get("git_blob_sha1")
+                )
+                or not _recovery_epoch003_sha256(
+                    target.get("raw_sha256")
+                )
+            ):
+                return False
+        elif classification == "STDLIB_BOUND_TO_PYTHON_RUNTIME":
+            if (
+                owner_paths != []
+                or set(target) != _RECOVERY_EPOCH003_STDLIB_TARGET_KEYS
+                or target.get("module_name") != row["import_name"]
+                or target.get("python_runtime_identity_sha256")
+                != runtime_identity_hash
+            ):
+                return False
+        else:
+            distribution = distribution_by_name.get(
+                target.get("normalized_distribution_name")
+            )
+            if (
+                owner_paths != []
+                or set(target)
+                != _RECOVERY_EPOCH003_THIRD_PARTY_TARGET_KEYS
+                or target.get("module_name") != row["import_name"]
+                or distribution is None
+                or {
+                    key: target.get(key)
+                    for key in _RECOVERY_EPOCH003_DISTRIBUTION_KEYS
+                }
+                != distribution
+            ):
+                return False
+
+    reference = value.get(
+        "reference_runtime_observation_external_identity"
+    )
+    environment = value.get("environment_policy")
+    preflight_argv = value.get("preflight_argv")
+    formal_argv = value.get("formal_worker_argv")
+    return bool(
+        _recovery_epoch003_external_identity_valid(
+            reference,
+            role=_RECOVERY_EPOCH003_REFERENCE_ROLE,
+            schema=_RECOVERY_EPOCH003_REFERENCE_SCHEMA,
+            path=_RECOVERY_EPOCH003_REFERENCE_PATH,
+        )
+        and _recovery_epoch003_environment_valid(environment)
+        and value.get("environment_policy_sha256")
+        == artifact_sha256(environment)
+        and type(preflight_argv) is list
+        and preflight_argv == _RECOVERY_EPOCH003_PREFLIGHT_ARGV
+        and value.get("preflight_argv_sha256")
+        == artifact_sha256(preflight_argv)
+        and type(formal_argv) is list
+        and formal_argv
+        == [
+            *_RECOVERY_EPOCH003_FORMAL_WORKER_ARGV_PREFIX,
+            *_RECOVERY_EPOCH003_FORMAL_NODE_IDS,
+        ]
+        and value.get("formal_worker_argv_sha256")
+        == artifact_sha256(formal_argv)
+    )
+
+
+def _recovery_epoch003_source_valid(
+    value: Any,
+    bootstrap: Mapping[str, Any],
+) -> bool:
+    if (
+        type(value) is not dict
+        or set(value) != RECOVERY_EPOCH003_SOURCE_CLOSURE_KEYS
+        or value.get("schema_version")
+        != RECOVERY_EPOCH003_SOURCE_CLOSURE_SCHEMA
+        or value.get("repository_full_name") != "MassyuRed/mashos-api"
+        or value.get("source_ref") != "refs/heads/main"
+        or value.get("worktree_clean") is not True
+        or value.get("epoch003_p0_external_identity_sha256")
+        != _RECOVERY_EPOCH003_P0_EXTERNAL_IDENTITY_SHA256
+    ):
+        return False
+    if (
+        not _recovery_epoch003_sha1(value.get("source_commit_sha1"))
+        or not _recovery_epoch003_sha1(value.get("source_tree_sha1"))
+        or value.get("source_commit_sha1")
+        != bootstrap.get("source_commit_sha1")
+        or value.get("source_tree_sha1")
+        != bootstrap.get("source_tree_sha1")
+        or value.get("formal_test_manifest_sha256")
+        != bootstrap.get("formal_test_manifest_sha256")
+        or value.get("bootstrap_closure_sha256")
+        != bootstrap.get("bootstrap_closure_sha256")
+        or value.get(
+            "reference_runtime_observation_external_identity_sha256"
+        )
+        != bootstrap[
+            "reference_runtime_observation_external_identity"
+        ].get("identity_sha256")
+        or value.get("source_closure_sha256")
+        != _recovery_epoch003_hash_without(
+            value,
+            "source_closure_sha256",
+        )
+    ):
+        return False
+    sha256_fields = RECOVERY_EPOCH003_SOURCE_CLOSURE_KEYS - {
+        "schema_version",
+        "repository_full_name",
+        "source_ref",
+        "source_commit_sha1",
+        "source_tree_sha1",
+        "worktree_clean",
+    }
+    return all(
+        _recovery_epoch003_sha256(value.get(key))
+        for key in sha256_fields
+    )
+
+
+def validate_recovery_epoch003_source_bootstrap_contract_state(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Validate the versioned Epoch003 source/bootstrap pair without effects."""
+
+    try:
+        if type(state) is not dict:
+            return ("SOURCE_BOOTSTRAP_BASELINE_MISMATCH",)
+        source = state.get("source_closure")
+        bootstrap = state.get("bootstrap_closure")
+        if type(source) is not dict or type(bootstrap) is not dict:
+            return ("SOURCE_BOOTSTRAP_BASELINE_MISMATCH",)
+        pair = (
+            source.get("schema_version"),
+            bootstrap.get("schema_version"),
+        )
+        if pair not in RECOVERY_EPOCH003_KNOWN_SCHEMA_PAIRS:
+            return ("BOOTSTRAP_SCHEMA_PAIR_UNSUPPORTED",)
+        if pair == RECOVERY_EPOCH003_KNOWN_SCHEMA_PAIRS[0]:
+            # The historical pair keeps its already-accepted meaning.  This
+            # additive dispatch does not reinterpret its inner schema.
+            return ()
+        if _recovery_epoch003_placeholder_present(bootstrap):
+            return (
+                "RECOVERY_EPOCH003_RUNTIME_IDENTITY_PLACEHOLDER_FORBIDDEN",
+            )
+        if (
+            not _recovery_epoch003_bootstrap_valid(bootstrap)
+            or not _recovery_epoch003_source_valid(source, bootstrap)
+        ):
+            return ("SOURCE_BOOTSTRAP_BASELINE_MISMATCH",)
+        return ()
+    except (
+        AttributeError,
+        KeyError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("SOURCE_BOOTSTRAP_BASELINE_MISMATCH",)
+
+
 __all__ = [
     "RECOVERY_EPOCH002_SOURCE_CLOSURE_KEYS",
     "RECOVERY_EPOCH002_D2_FINAL_CLOSURE_PREIMAGE_KEYS",
@@ -2367,4 +3003,10 @@ __all__ = [
     "validate_recovery_epoch002_source_closure",
     "validate_recovery_epoch002_closure_state",
     "validate_recovery_epoch002_successor_closure_state",
+    "RECOVERY_EPOCH003_SOURCE_CLOSURE_SCHEMA",
+    "RECOVERY_EPOCH003_BOOTSTRAP_MANIFEST_SCHEMA",
+    "RECOVERY_EPOCH003_SOURCE_CLOSURE_KEYS",
+    "RECOVERY_EPOCH003_BOOTSTRAP_MANIFEST_KEYS",
+    "RECOVERY_EPOCH003_KNOWN_SCHEMA_PAIRS",
+    "validate_recovery_epoch003_source_bootstrap_contract_state",
 ]

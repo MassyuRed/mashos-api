@@ -2082,6 +2082,67 @@ def validate_recovery_epoch002_formal_parent_continuation_state(
         return ("FORMAL_PARENT_PHASE_EXECUTION_INVALID",)
 
 
+RECOVERY_EPOCH003_PARENT_PHASE_ORDER = (
+    "REFERENCE_RUNTIME_OBSERVATION_PUBLISHED_AND_POSTVERIFIED",
+    (
+        "SOURCE_BOOTSTRAP_CLOSURE_AND_OPERATIONAL_ADMISSION_"
+        "PUBLISHED_AND_POSTVERIFIED"
+    ),
+    "CANDIDATE_ALLOCATED",
+    "EVENT1_PUBLISHED_AND_POSTVERIFIED",
+    "OPERATIONAL_RUNTIME_MATERIALIZATION_AND_PREFLIGHT",
+    "READINESS_OR_FAILURE_PUBLISHED_AND_POSTVERIFIED",
+    "FORMAL_RESERVATION_PUBLISHED_AND_POSTVERIFIED",
+)
+
+
+def validate_recovery_epoch003_parent_phase_state(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Validate the additive Epoch003 phase cursor without advancing it."""
+
+    try:
+        if (
+            type(state) is dict
+            and state.get("automatic_progression") is True
+        ):
+            return (
+                "RECOVERY_EPOCH003_AUTOMATIC_PROGRESSION_FORBIDDEN",
+            )
+        if type(state) is not dict:
+            return ("RECOVERY_EPOCH003_PARENT_PHASE_STATE_INVALID",)
+        phase_order = state.get("phase_order")
+        completed = state.get("completed_phases")
+        if (
+            phase_order != list(RECOVERY_EPOCH003_PARENT_PHASE_ORDER)
+            or type(completed) is not list
+            or len(completed) > len(RECOVERY_EPOCH003_PARENT_PHASE_ORDER)
+            or completed
+            != list(RECOVERY_EPOCH003_PARENT_PHASE_ORDER[: len(completed)])
+            or state.get("next_phase")
+            != (
+                RECOVERY_EPOCH003_PARENT_PHASE_ORDER[len(completed)]
+                if len(completed)
+                < len(RECOVERY_EPOCH003_PARENT_PHASE_ORDER)
+                else None
+            )
+            or state.get("reservation_count_delta") != 0
+            or state.get("formal_exact134_invocation_count") != 0
+            or state.get("automatic_progression") is not False
+        ):
+            return ("RECOVERY_EPOCH003_PARENT_PHASE_STATE_INVALID",)
+        return ()
+    except (
+        AttributeError,
+        KeyError,
+        RecursionError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return ("RECOVERY_EPOCH003_PARENT_PHASE_STATE_INVALID",)
+
+
 __all__ = [
     "RECOVERY_EPOCH002_FORMAL_PARENT_PROTOCOL",
     "RECOVERY_EPOCH002_FORMAL_PARENT_RESULT_SCHEMA",
@@ -2105,4 +2166,6 @@ __all__ = [
     "next_recovery_epoch002_parent_action",
     "execute_recovery_epoch002_parent_phase",
     "validate_recovery_epoch002_formal_parent_continuation_state",
+    "RECOVERY_EPOCH003_PARENT_PHASE_ORDER",
+    "validate_recovery_epoch003_parent_phase_state",
 ]
