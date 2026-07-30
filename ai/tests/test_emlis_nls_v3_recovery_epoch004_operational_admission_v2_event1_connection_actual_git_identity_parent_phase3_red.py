@@ -7532,6 +7532,17 @@ def test_o06_parent_phase3_reconstructs_actual_postfetch_and_calls_independent_o
     assert reconstruction_calls == [positive_original]
     assert postfetch_calls == [positive_original]
     assert calls == [credit_connection]
+    monkeypatch.setattr(
+        module,
+        _PARENT_RECONSTRUCT_API,
+        reconstruct_actual,
+    )
+    monkeypatch.setattr(
+        module,
+        _PARENT_POSTFETCH_VERIFY_API,
+        postfetch_verify_actual,
+    )
+    monkeypatch.setattr(module, _INDEPENDENT_API, independent_actual)
     assert _module_imports_name(
         module,
         imported_module=_MODULE_NAMES["independent"],
@@ -7571,17 +7582,6 @@ def test_o06_parent_phase3_reconstructs_actual_postfetch_and_calls_independent_o
         "validate_recovery_epoch003_parent_phase_evidence_state"
         not in source
     )
-    monkeypatch.setattr(
-        module,
-        _PARENT_RECONSTRUCT_API,
-        reconstruct_actual,
-    )
-    monkeypatch.setattr(
-        module,
-        _PARENT_POSTFETCH_VERIFY_API,
-        postfetch_verify_actual,
-    )
-    monkeypatch.setattr(module, _INDEPENDENT_API, independent_actual)
     missing_phase = copy.deepcopy(state)
     missing_phase["parent_phase_evidence_state"]["completed_phases"].pop()
     missing_original = copy.deepcopy(missing_phase)
