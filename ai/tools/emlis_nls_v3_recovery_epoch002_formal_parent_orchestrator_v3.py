@@ -44,6 +44,8 @@ from emlis_nls_v3_recovery_epoch002_closure_receipt_verify import (
     verify_recovery_epoch002_artifact_identity,
     verify_recovery_epoch002_published_artifact,
     verify_recovery_epoch003_operational_admission_contract,
+    verify_recovery_epoch003_operational_admission_contract_v2,
+    verify_recovery_epoch003_reference_runtime_observation_v2,
 )
 from emlis_nls_v3_recovery_epoch002_atomic_publication_bundle_v3 import (
     RECOVERY_EPOCH003_PUBLICATION_ROLE_PATHS,
@@ -4509,6 +4511,204 @@ def execute_recovery_epoch003_current_strict_parent_phase_v1(
     return _recovery_epoch003_current_strict_parent_result(failure_code)
 
 
+def validate_recovery_epoch003_parent_pre_event1_phase_evidence_state_v2(
+    state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Reexecute the independent v2 paths for phase exact1 or exact2."""
+
+    failure = ("RECOVERY_EPOCH003_PARENT_PRE_EVENT1_V2_INVALID",)
+    try:
+        snapshot = deepcopy(state)
+        required = frozenset(
+            {
+                "parent_phase_evidence_state",
+                "reference_materialization_request",
+                "reference_materialization_result",
+                "automatic_progression",
+            }
+        )
+        if (
+            type(snapshot) is not dict
+            or set(snapshot) != required
+            or snapshot.get("automatic_progression") is not False
+        ):
+            return failure
+        evidence = snapshot.get("parent_phase_evidence_state")
+        if (
+            type(evidence) is not dict
+            or set(evidence) != _RECOVERY_EPOCH003_EVIDENCE_STATE_KEYS
+            or evidence.get("phase_order")
+            != list(_RECOVERY_EPOCH003_EVIDENCE_PHASE_ORDER)
+            or type(evidence.get("completed_phases")) is not list
+            or len(evidence["completed_phases"]) not in {1, 2}
+            or evidence["completed_phases"]
+            != list(
+                _RECOVERY_EPOCH003_EVIDENCE_PHASE_ORDER[
+                    : len(evidence["completed_phases"])
+                ]
+            )
+            or evidence.get("next_phase")
+            != _RECOVERY_EPOCH003_EVIDENCE_PHASE_ORDER[
+                len(evidence["completed_phases"])
+            ]
+            or evidence.get("reservation_count_delta") != 0
+            or evidence.get("formal_exact134_invocation_count") != 0
+            or evidence.get("automatic_progression") is not False
+            or type(evidence.get("phase_evidence")) is not list
+            or len(evidence["phase_evidence"])
+            != len(evidence["completed_phases"])
+            or not isinstance(evidence.get("artifact_repository_root"), str)
+            or not evidence["artifact_repository_root"]
+            or not isinstance(evidence.get("source_repository_root"), str)
+            or not evidence["source_repository_root"]
+        ):
+            return failure
+        artifact_root = Path(
+            evidence["artifact_repository_root"]
+        ).resolve(strict=True)
+        source_root = Path(
+            evidence["source_repository_root"]
+        ).resolve(strict=True)
+        if (
+            artifact_root == source_root
+            or not _e3_expected_repository(artifact_root, "Cocolon")
+            or not _e3_expected_repository(source_root, "mashos-api")
+        ):
+            return failure
+        rows = evidence["phase_evidence"]
+        for index, row in enumerate(rows):
+            if (
+                type(row) is not dict
+                or set(row) != _RECOVERY_EPOCH003_PHASE_EVIDENCE_KEYS
+                or row.get("phase")
+                != _RECOVERY_EPOCH003_EVIDENCE_PHASE_ORDER[index]
+                or row.get("owner_validation_state") != "PROVED"
+                or row.get("independent_verification_state") != "PROVED"
+                or row.get("phase_evidence_sha256")
+                != _hash_without(row, "phase_evidence_sha256")
+                or row.get("runtime_records") != []
+                or type(row.get("artifact_records")) is not list
+                or len(row["artifact_records"]) != 1
+            ):
+                return failure
+            record = row["artifact_records"][0]
+            if (
+                not _recovery_epoch003_artifact_record_valid(record)
+                or not _recovery_epoch003_artifact_record_repository_valid(
+                    record,
+                    root=artifact_root,
+                )
+            ):
+                return failure
+        reference_record = rows[0]["artifact_records"][0]
+        reference_identity = reference_record["external_identity"]
+        reference_body = deepcopy(reference_record["postfetch_body"])
+        reference_commit = reference_identity["publication_commit_sha1"]
+        reference_tree = _recovery_epoch003_git(
+            artifact_root,
+            "rev-parse",
+            f"{reference_commit}^{{tree}}",
+        )
+        reference_state = {
+            "artifact_repository_root": str(artifact_root),
+            "external_identity": deepcopy(reference_identity),
+            "postfetch_body": deepcopy(reference_body),
+            "admission_base_commit_sha1": reference_commit,
+            "admission_base_tree_sha1": reference_tree,
+            "reference_publication_is_ancestor_of_admission_base": True,
+            "reference_path_blob_at_admission_base_sha1": (
+                reference_identity["git_blob_sha1"]
+            ),
+        }
+        reference_issues = (
+            verify_recovery_epoch003_reference_runtime_observation_v2(
+                {
+                    "verification_mode": (
+                        "STRICT_REFERENCE_BODY_AND_POSTFETCH"
+                    ),
+                    "materialization_request": deepcopy(
+                        snapshot["reference_materialization_request"]
+                    ),
+                    "materialization_result": deepcopy(
+                        snapshot["reference_materialization_result"]
+                    ),
+                    "reference_runtime_observation": deepcopy(
+                        reference_body
+                    ),
+                    (
+                        "reference_runtime_observation_external_identity"
+                    ): deepcopy(reference_identity),
+                    "reference_publication_state": deepcopy(
+                        reference_state
+                    ),
+                }
+            )
+        )
+        if reference_issues != ():
+            return failure
+        if len(evidence["completed_phases"]) == 1:
+            return ()
+        admission_record = rows[1]["artifact_records"][0]
+        source_commit = _recovery_epoch003_git(
+            source_root,
+            "rev-parse",
+            "HEAD",
+        )
+        source_tree = _recovery_epoch003_git(
+            source_root,
+            "rev-parse",
+            "HEAD^{tree}",
+        )
+        source_clean = (
+            _recovery_epoch003_git(
+                source_root,
+                "status",
+                "--porcelain",
+                "--untracked-files=all",
+            )
+            == ""
+        )
+        admission_issues = (
+            verify_recovery_epoch003_operational_admission_contract_v2(
+                {
+                    "verification_mode": "STRICT_POSTFETCH_ACTUAL",
+                    "artifact_repository_root": str(artifact_root),
+                    "source_repository_observation": {
+                        "source_repository_root": str(source_root),
+                        "source_commit_sha1": source_commit,
+                        "source_tree_sha1": source_tree,
+                        "worktree_clean": source_clean,
+                    },
+                    "operational_admission": deepcopy(
+                        admission_record["postfetch_body"]
+                    ),
+                    "operational_admission_external_identity": deepcopy(
+                        admission_record["external_identity"]
+                    ),
+                    "reference_runtime_observation": deepcopy(
+                        reference_body
+                    ),
+                    "reference_publication_state": deepcopy(
+                        reference_state
+                    ),
+                }
+            )
+        )
+        return () if admission_issues == () else failure
+    except (
+        AttributeError,
+        IndexError,
+        KeyError,
+        OSError,
+        RecursionError,
+        subprocess.SubprocessError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ):
+        return failure
+
+
 __all__ = [
     "RECOVERY_EPOCH002_FORMAL_PARENT_PROTOCOL",
     "RECOVERY_EPOCH002_FORMAL_PARENT_RESULT_SCHEMA",
@@ -4535,5 +4735,6 @@ __all__ = [
     "RECOVERY_EPOCH003_PARENT_PHASE_ORDER",
     "validate_recovery_epoch003_parent_phase_state",
     "validate_recovery_epoch003_parent_phase_evidence_state",
+    "validate_recovery_epoch003_parent_pre_event1_phase_evidence_state_v2",
     "execute_recovery_epoch003_current_strict_parent_phase_v1",
 ]
