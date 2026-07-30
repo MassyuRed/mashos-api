@@ -7961,7 +7961,6 @@ def test_o07_missing_mixed_stale_identity_evidence_fail_closed_with_zero_effects
         return forbidden_effect(*args, **kwargs)
 
     for name in (
-        "__import__",
         "compile",
         "eval",
         "exec",
@@ -8073,6 +8072,7 @@ def test_o07_missing_mixed_stale_identity_evidence_fail_closed_with_zero_effects
         "getstatusoutput",
     ):
         monkeypatch.setattr(subprocess, name, forbidden_effect)
+    monkeypatch.setattr(builtins, "__import__", forbidden_effect)
     before_module_state = _formal_owner_module_state_sha256(
         formal_owner_modules,
         root,
