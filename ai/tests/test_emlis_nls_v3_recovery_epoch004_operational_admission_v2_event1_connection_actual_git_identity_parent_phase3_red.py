@@ -2171,8 +2171,24 @@ def _fresh_role_module(role: str, label: str) -> ModuleType:
     return module
 
 
+def _resolve_formal_owner_modules_for_read_only_guard(
+    trusted_root: Path,
+) -> dict[str, ModuleType]:
+    resolved_modules: dict[str, ModuleType] = {}
+    for relative_path in _FORMAL_OWNER_PATHS:
+        module = importlib.import_module(Path(relative_path).stem)
+        assert type(module) is ModuleType
+        source_path = Path(inspect.getsourcefile(module) or "").resolve()
+        assert source_path == (trusted_root / relative_path).resolve()
+        resolved_modules[relative_path] = module
+    assert set(resolved_modules) == set(_FORMAL_OWNER_PATHS)
+    return resolved_modules
+
+
 def _guard_api_read_only(
     api: Callable[[Mapping[str, Any]], Any],
+    *,
+    formal_owner_modules: Mapping[str, ModuleType] | None = None,
 ) -> Callable[[Mapping[str, Any]], Any]:
     trusted_root = _repository_root().resolve()
     trusted_git_path_text = shutil.which("git")
@@ -2181,10 +2197,21 @@ def _guard_api_read_only(
     assert trusted_git.is_file()
     _prepare_imports(trusted_root)
     _preflight_formal_owner_import_closure(trusted_root)
-    guarded_modules = {
-        path: importlib.import_module(Path(path).stem)
-        for path in _FORMAL_OWNER_PATHS
-    }
+    if formal_owner_modules is None:
+        guarded_modules = _resolve_formal_owner_modules_for_read_only_guard(
+            trusted_root
+        )
+    else:
+        assert set(formal_owner_modules) == set(_FORMAL_OWNER_PATHS)
+        guarded_modules = {}
+        for relative_path in _FORMAL_OWNER_PATHS:
+            module = formal_owner_modules[relative_path]
+            assert type(module) is ModuleType
+            source_path = Path(
+                inspect.getsourcefile(module) or ""
+            ).resolve()
+            assert source_path == (trusted_root / relative_path).resolve()
+            guarded_modules[relative_path] = module
     api_module = sys.modules.get(api.__module__)
     assert type(api_module) is ModuleType
     api_source_path = Path(inspect.getsourcefile(api) or "").resolve()
@@ -6586,6 +6613,9 @@ def test_o02_event1_v2_independent_schema_dispatch_reexecutes_without_owner_trus
     _assert_success_without_mutation(api, fixture)
 
     root = _repository_root()
+    pre_resolved_formal_owner_modules = (
+        _resolve_formal_owner_modules_for_read_only_guard(root.resolve())
+    )
     owner_path = (
         root / _MANDATORY_DIRECT_PATHS["sequence"]
     ).resolve()
@@ -6730,7 +6760,10 @@ def test_o02_event1_v2_independent_schema_dispatch_reexecutes_without_owner_trus
     _assert_independent_owner_boundary(fresh_module)
     _assert_no_owner_runtime_references(fresh_module)
     _assert_no_effect_sink_calls(fresh_module, _INDEPENDENT_API)
-    fresh_api = _guard_api_read_only(fresh_api_actual)
+    fresh_api = _guard_api_read_only(
+        fresh_api_actual,
+        formal_owner_modules=pre_resolved_formal_owner_modules,
+    )
     _assert_success_without_mutation(fresh_api, fixture)
     fresh_calls = _reachable_call_names(fresh_module, _INDEPENDENT_API)
     for call in fresh_calls:
