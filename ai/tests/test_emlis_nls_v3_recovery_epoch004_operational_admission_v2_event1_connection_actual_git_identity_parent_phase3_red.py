@@ -8098,6 +8098,7 @@ def test_o07_missing_mixed_stale_identity_evidence_fail_closed_with_zero_effects
         root,
     ) == before_module_state
     assert effect_calls == []
+    monkeypatch.undo()
     after_repository = (
         _git(root, "rev-parse", "HEAD"),
         _git(root, "rev-parse", "HEAD^{tree}"),
