@@ -8,7 +8,9 @@ from collections.abc import Mapping as MappingABC
 from collections.abc import Sequence as SequenceABC
 from collections.abc import Set as SetABC
 import copy
-from functools import lru_cache, partial
+from contextlib import ExitStack, contextmanager
+from datetime import datetime, timezone
+from functools import lru_cache, partial, wraps
 import hashlib
 import importlib
 import inspect
@@ -18,10 +20,21 @@ import os
 from pathlib import Path, PurePath
 import re
 import runpy
+import secrets
 import shutil
+import socket
 import subprocess
 import sys
-from types import FunctionType, GenericAlias, MethodType, ModuleType, UnionType
+import time
+from types import (
+    FunctionType,
+    GenericAlias,
+    GetSetDescriptorType,
+    MemberDescriptorType,
+    MethodType,
+    ModuleType,
+    UnionType,
+)
 from typing import Any, Callable, Mapping
 
 import pytest
@@ -213,31 +226,114 @@ _PARENT_FAILURE = (
 )
 
 _CAUSAL_RED_SIGNATURES = {
-    "O01": (
-        "O01_RECOVERY_EPOCH004_EVENT1_V2_OWNER_API_NOT_IMPLEMENTED"
-    ),
-    "O02": (
-        "O02_RECOVERY_EPOCH004_EVENT1_V2_INDEPENDENT_API_NOT_IMPLEMENTED"
-    ),
-    "O03": (
-        "O03_RECOVERY_EPOCH004_EVENT1_V2_EXECUTOR_IDENTITY_"
-        "CONNECTION_NOT_IMPLEMENTED"
-    ),
-    "O04": (
-        "O04_RECOVERY_EPOCH004_EVENT1_V2_SCHEMA_DISPATCH_NOT_IMPLEMENTED"
-    ),
-    "O05": (
-        "O05_RECOVERY_EPOCH004_EVENT1_V2_EXACT23_EXACTLY_ONCE_"
-        "NOT_IMPLEMENTED"
-    ),
-    "O06": (
-        "O06_RECOVERY_EPOCH004_PARENT_PHASE3_REEXECUTION_NOT_IMPLEMENTED"
-    ),
-    "O07": (
-        "O07_RECOVERY_EPOCH004_EVENT1_V2_FAIL_CLOSED_ZERO_EFFECTS_"
-        "NOT_IMPLEMENTED"
+    "O01": "O01_OWNER_ADDITIONAL_LIVE_REMOTE_QUERY",
+    "O02": "O02_INDEPENDENT_ADDITIONAL_LIVE_REMOTE_QUERY",
+    "O03": "O03_SOURCE_AND_ROLES_NOT_ONE_OBSERVATION_CUT",
+    "O04": "O04_VALID_DISPATCH_ADDITIONAL_LIVE_REMOTE_QUERY",
+    "O05": "O05_EXACT23_CANDIDATE_OA_PATHS_REACQUIRE",
+    "O06": "O06_PARENT_POSTFETCH_AND_INDEPENDENT_REACQUIRE",
+    "O07": "O07_HARNESS_POSITIVE_PATH_EXCEEDS_EXACT1",
+}
+_CAUSAL_RED_VIOLATIONS = {
+    "O01": "LIVE_REMOTE_REQUERY_OUTSIDE_ACQUIRER",
+    "O02": "LIVE_REMOTE_REQUERY_OUTSIDE_ACQUIRER",
+    "O03": "OBSERVATION_MISSING_OR_MIXED",
+    "O04": "LIVE_REMOTE_REQUERY_OUTSIDE_ACQUIRER",
+    "O05": "LIVE_REMOTE_REQUERY_OUTSIDE_ACQUIRER",
+    "O06": "LIVE_REMOTE_REQUERY_OUTSIDE_ACQUIRER",
+    "O07": "ACQUISITION_CARDINALITY_INVALID",
+}
+_CAUSAL_RED_REQUEST_LANES = {
+    "O01": frozenset({"OWNER_EXECUTOR"}),
+    "O02": frozenset({"INDEPENDENT_EXECUTOR"}),
+    "O03": frozenset({"OWNER_EXECUTOR", "INDEPENDENT_EXECUTOR"}),
+    "O04": frozenset({"OWNER_EXECUTOR", "INDEPENDENT_EXECUTOR"}),
+    "O05": frozenset({"OWNER_EXECUTOR", "INDEPENDENT_EXECUTOR"}),
+    "O06": frozenset({"PARENT_PHASE3", "INDEPENDENT_EXECUTOR"}),
+    "O07": frozenset(
+        {
+            "HARNESS",
+            "OWNER_EXECUTOR",
+            "INDEPENDENT_EXECUTOR",
+            "PARENT_PHASE3",
+        }
     ),
 }
+_CAUSAL_RED_REQUIRED_LANES = {
+    "O01": frozenset({"OWNER_EXECUTOR"}),
+    "O02": frozenset({"INDEPENDENT_EXECUTOR"}),
+    "O03": frozenset({"OWNER_EXECUTOR", "INDEPENDENT_EXECUTOR"}),
+    "O04": frozenset({"OWNER_EXECUTOR", "INDEPENDENT_EXECUTOR"}),
+    "O05": frozenset({"OWNER_EXECUTOR", "INDEPENDENT_EXECUTOR"}),
+    "O06": frozenset({"PARENT_PHASE3", "INDEPENDENT_EXECUTOR"}),
+    "O07": frozenset({"OWNER_EXECUTOR", "INDEPENDENT_EXECUTOR"}),
+}
+
+_OBSERVATION_PORT_ATTRIBUTE = (
+    "_RECOVERY_EPOCH004_ACTUAL_GIT_OBSERVATION_CONSUMER_PORT_V1"
+)
+_OBSERVATION_SCHEMA_V1 = (
+    "cocolon.emlis.nls_v3.recovery_epoch004."
+    "actual_git_remote_main_observation.v1"
+)
+_PREFLIGHT_SCHEMA_V1 = (
+    "cocolon.emlis.nls_v3.recovery_epoch004.actual_git_preflight.v1"
+)
+_CLOSURE_SCHEMA_V1 = (
+    "cocolon.emlis.nls_v3.recovery_epoch004.actual_git_run_closure.v1"
+)
+_PROJECTION_SCHEMA_V1 = (
+    "cocolon.emlis.nls_v3.recovery_epoch004."
+    "actual_git_observation_body_free_projection.v1"
+)
+_ABORT_SCHEMA_V1 = (
+    "cocolon.emlis.nls_v3.recovery_epoch004."
+    "actual_git_postacquisition_local_introspection_abort.v1"
+)
+_CONSUMPTION_EVENT = (
+    "cocolon.emlis.nls_v3.recovery_epoch004."
+    "actual_git_observation_consumed.v1"
+)
+_CONSUMPTION_EVIDENCE_SCHEMA_V1 = (
+    "cocolon.emlis.nls_v3.recovery_epoch004."
+    "actual_git_role_observation_consumption_evidence.v1"
+)
+_ROLE_VERDICT_SCHEMA_V1 = (
+    "cocolon.emlis.nls_v3.recovery_epoch004."
+    "actual_git_role_verdict_preimage.v1"
+)
+_ACQUISITION_PROFILE_ID = (
+    "cocolon.emlis.nls_v3.recovery_epoch004."
+    "actual_git_ls_remote_main.v1"
+)
+_ACQUISITION_ROLE = "ACTUAL_GIT_REMOTE_MAIN_OBSERVATION_ACQUIRER"
+_RUN_SCOPE_D1 = "D1_V5_CAUSAL_RED_REFREEZE"
+_RUN_SCOPE_D2 = "D2_CORRECTED_TARGETED_GREEN"
+_ROLE_NAMES = {
+    "sequence": "OWNER_EXECUTOR",
+    "independent": "INDEPENDENT_EXECUTOR",
+    "parent": "PARENT_PHASE3",
+}
+_ROLE_DERIVATION_MODES = {
+    "OWNER_EXECUTOR": "OWNER_DIRECT_DERIVATION",
+    "INDEPENDENT_EXECUTOR": "INDEPENDENT_REDERIVATION",
+    "PARENT_PHASE3": "PARENT_DISTINCT_ROLE_AGGREGATION",
+}
+_ROLE_PUBLIC_APIS = {
+    "OWNER_EXECUTOR": _OWNER_API,
+    "INDEPENDENT_EXECUTOR": _INDEPENDENT_API,
+    "PARENT_PHASE3": _PARENT_PHASE3_API,
+}
+_ROLE_FAILURES = {
+    "OWNER_EXECUTOR": _OWNER_FAILURE,
+    "INDEPENDENT_EXECUTOR": _INDEPENDENT_FAILURE,
+    "PARENT_PHASE3": _PARENT_FAILURE,
+}
+_EXPECTED_GLOBAL_VIOLATIONS = (
+    "ACQUISITION_CARDINALITY_INVALID",
+    "OBSERVATION_MISSING_OR_MIXED",
+    "LIVE_REMOTE_REQUERY_OUTSIDE_ACQUIRER",
+)
 
 _ORACLE_NAMES = (
     "EVENT1_V2_OWNER_SCHEMA_DISPATCH_PUBLIC_SIGNATURE_AND_INVALID_ENVELOPE",
@@ -1031,6 +1127,62 @@ _FORBIDDEN_OWNER_TRUST_CALL_TAILS = frozenset(
     }
 )
 
+_RUN_STATE: dict[str, Any] = {
+    "active": False,
+    "preflight": None,
+    "observation": None,
+    "observation_bytes": None,
+    "active_observation": None,
+    "postacquisition_module_identities": None,
+    "abort": None,
+    "port_mode": None,
+    "current_node": None,
+    "additional_requests": [],
+    "additional_executions": 0,
+    "neutral_request_count": 0,
+    "neutral_execution_count": 0,
+    "retry_count": 0,
+    "fallback_count": 0,
+    "prior_run_reuse_count": 0,
+    "oracle_outcomes": {},
+    "audit_events": [],
+    "active_role_windows": [],
+    "audit_hook_installed": False,
+    "active_substitution_probes": {},
+    "completed_substitution_probes": [],
+    "canonical_port_stack": None,
+    "preflight_port_mode": None,
+    "preflight_port_modules": None,
+    "preflight_runtime_error": False,
+    "mixed_role_identity_probe_detected": False,
+    "runtime_import_guard": False,
+    "port_operation_depth": 0,
+    "port_local_git_count": 0,
+    "postprojection_credit_gate": False,
+    "closure": None,
+    "projection": None,
+    "terminalization_count": 0,
+}
+
+
+class _GuardViolation(BaseException):
+    def __init__(self, *, node: str, lane: str, route: str) -> None:
+        super().__init__(f"{node}:{lane}:{route}")
+        self.node = node
+        self.lane = lane
+        self.route = route
+
+
+class _PostAcquisitionLocalIntrospectionError(RuntimeError):
+    def __init__(self, *, stage: str, failure_class: str) -> None:
+        super().__init__(f"{stage}:{failure_class}")
+        self.stage = stage
+        self.failure_class = failure_class
+
+
+class _MixedRoleObservationIdentity(ValueError):
+    pass
+
 
 def _canonical_bytes(value: Any) -> bytes:
     return json.dumps(
@@ -1124,6 +1276,1320 @@ def _canonical_remote_repository(remote: str) -> str:
     return "/".join(components[-2:])
 
 
+def _remote_identity(remote: str) -> tuple[str, str]:
+    value = remote.strip().removesuffix("/")
+    if "://" in value:
+        scheme, location = value.split("://", 1)
+        assert scheme in {"git", "http", "https", "ssh"}
+        authority, separator, path = location.partition("/")
+        assert separator == "/" and authority
+    else:
+        authority, separator, path = value.partition(":")
+        assert separator == ":" and authority and "@" in authority
+    host = authority.rsplit("@", 1)[-1].partition(":")[0].lower()
+    assert host
+    repository = "/".join(path.removesuffix(".git").strip("/").split("/")[-2:])
+    assert repository.count("/") == 1
+    assert all(repository.split("/"))
+    return host, repository
+
+
+def _utc_now() -> str:
+    return (
+        datetime.now(timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
+
+
+def _is_lower_hex(value: Any, length: int) -> bool:
+    return bool(
+        type(value) is str
+        and len(value) == length
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _delete_self_hash_valid(value: Any, field: str) -> bool:
+    return bool(
+        type(value) is dict
+        and _is_lower_hex(value.get(field), 64)
+        and _hash_without(value, field) == value[field]
+    )
+
+
+def _repository_identity(root: Path) -> dict[str, Any]:
+    remote = _git(root, "remote", "get-url", "origin")
+    host, repository = _remote_identity(remote)
+    value = {
+        "repository_full_name": repository,
+        "repository_root": str(root.resolve()),
+        "remote_name": "origin",
+        "normalized_remote_host": host,
+        "normalized_remote_repository": repository,
+        "source_ref": "refs/heads/main",
+    }
+    assert len(value) == 6
+    return value
+
+
+def _ancestor(root: Path, earlier: str, later: str) -> bool:
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", earlier, later],
+        cwd=root,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=20,
+    )
+    assert result.returncode in {0, 1}
+    return result.returncode == 0
+
+
+def _local_source_identity(
+    root: Path,
+    repository: Mapping[str, Any],
+) -> dict[str, Any]:
+    head_commit = _git(root, "rev-parse", "HEAD")
+    origin_main = _git(root, "rev-parse", "refs/remotes/origin/main")
+    branch_ref = _git(root, "symbolic-ref", "--quiet", "HEAD")
+    value = {
+        "repository_root": str(root.resolve()),
+        "remote_name": "origin",
+        "normalized_remote_host": repository["normalized_remote_host"],
+        "normalized_remote_repository": (
+            repository["normalized_remote_repository"]
+        ),
+        "source_ref": "refs/heads/main",
+        "entry_commit_sha1": _ENTRY_COMMIT_SHA1,
+        "entry_tree_sha1": _ENTRY_TREE_SHA1,
+        "head_commit_sha1": head_commit,
+        "head_tree_sha1": _git(
+            root,
+            "rev-parse",
+            f"{head_commit}^{{tree}}",
+        ),
+        "origin_main_commit_sha1": origin_main,
+        "branch_ref": branch_ref,
+        "worktree_clean": (
+            _git(
+                root,
+                "status",
+                "--porcelain",
+                "--untracked-files=all",
+            )
+            == ""
+        ),
+        "entry_commit_is_ancestor": _ancestor(
+            root,
+            _ENTRY_COMMIT_SHA1,
+            head_commit,
+        ),
+        "origin_main_is_ancestor_of_head": _ancestor(
+            root,
+            origin_main,
+            head_commit,
+        ),
+    }
+    assert len(value) == 14
+    assert _git(root, "rev-parse", "HEAD") == head_commit
+    assert _git(root, "rev-parse", "refs/remotes/origin/main") == origin_main
+    assert _git(root, "symbolic-ref", "--quiet", "HEAD") == branch_ref
+    return value
+
+
+def _module_identities(
+    root: Path,
+    head_commit_sha1: str,
+) -> dict[str, Any]:
+    assert _is_lower_hex(head_commit_sha1, 40)
+    role_paths = {
+        "owner_executor": _MANDATORY_DIRECT_PATHS["sequence"],
+        "independent_executor": _MANDATORY_DIRECT_PATHS["independent"],
+        "parent_phase3_source": _MANDATORY_DIRECT_PATHS["parent"],
+    }
+    identities: dict[str, Any] = {}
+    for role, relative_path in role_paths.items():
+        source_path = (root / relative_path).resolve()
+        assert source_path.is_relative_to(root.resolve())
+        assert source_path.is_file()
+        object_name = f"{head_commit_sha1}:{relative_path}"
+        raw = _git_bytes(root, "show", object_name)
+        assert source_path.read_bytes() == raw
+        identity = {
+            "module_path": relative_path,
+            "module_origin": str(source_path),
+            "git_blob_sha1": _git(
+                root,
+                "rev-parse",
+                object_name,
+            ),
+            "raw_sha256": hashlib.sha256(raw).hexdigest(),
+        }
+        assert len(identity) == 4
+        assert _is_lower_hex(identity["git_blob_sha1"], 40)
+        assert _is_lower_hex(identity["raw_sha256"], 64)
+        identities[role] = identity
+    assert tuple(identities) == (
+        "owner_executor",
+        "independent_executor",
+        "parent_phase3_source",
+    )
+    return identities
+
+
+def _classify_preflight(
+    root: Path,
+    repository: Mapping[str, Any],
+    before: Mapping[str, Any],
+    modules: Mapping[str, Any],
+) -> tuple[str, str]:
+    repository_keys = {
+        "repository_full_name",
+        "repository_root",
+        "remote_name",
+        "normalized_remote_host",
+        "normalized_remote_repository",
+        "source_ref",
+    }
+    repository_structural = bool(
+        type(repository) is dict
+        and set(repository) == repository_keys
+        and all(type(repository[key]) is str for key in repository_keys)
+    )
+    if not repository_structural or (
+        root.resolve() != Path(__file__).resolve().parents[2]
+        or repository["repository_full_name"] != "MassyuRed/mashos-api"
+        or repository["repository_root"] != str(root.resolve())
+        or repository["remote_name"] != "origin"
+        or repository["normalized_remote_repository"]
+        != "MassyuRed/mashos-api"
+        or repository["normalized_remote_host"]
+        not in {
+            "git.chatgpt-team.site",
+            "github.com",
+            "ssh.github.com",
+            "www.github.com",
+        }
+    ):
+        return "PREFLIGHT_REPOSITORY_MISMATCH", "REPOSITORY_IDENTITY"
+
+    local_keys = {
+        "repository_root",
+        "remote_name",
+        "normalized_remote_host",
+        "normalized_remote_repository",
+        "source_ref",
+        "entry_commit_sha1",
+        "entry_tree_sha1",
+        "head_commit_sha1",
+        "head_tree_sha1",
+        "origin_main_commit_sha1",
+        "branch_ref",
+        "worktree_clean",
+        "entry_commit_is_ancestor",
+        "origin_main_is_ancestor_of_head",
+    }
+    local_structural = bool(
+        type(before) is dict
+        and set(before) == local_keys
+        and all(
+            type(before[key]) is str
+            for key in local_keys
+            - {
+                "worktree_clean",
+                "entry_commit_is_ancestor",
+                "origin_main_is_ancestor_of_head",
+            }
+        )
+        and all(
+            type(before[key]) is bool
+            for key in {
+                "worktree_clean",
+                "entry_commit_is_ancestor",
+                "origin_main_is_ancestor_of_head",
+            }
+        )
+    )
+    if (
+        repository["source_ref"] != "refs/heads/main"
+        or (
+            local_structural
+            and (
+                before["source_ref"] != "refs/heads/main"
+                or before["branch_ref"] != "refs/heads/main"
+            )
+        )
+    ):
+        return "PREFLIGHT_REF_MISMATCH", "SOURCE_REF"
+    if not local_structural or (
+        before["repository_root"] != repository["repository_root"]
+        or before["remote_name"] != repository["remote_name"]
+        or before["normalized_remote_host"]
+        != repository["normalized_remote_host"]
+        or before["normalized_remote_repository"]
+        != repository["normalized_remote_repository"]
+        or before["entry_commit_sha1"] != _ENTRY_COMMIT_SHA1
+        or before["entry_tree_sha1"] != _ENTRY_TREE_SHA1
+        or not all(
+            _is_lower_hex(before[key], 40)
+            for key in (
+                "head_commit_sha1",
+                "head_tree_sha1",
+                "origin_main_commit_sha1",
+            )
+        )
+        or before["worktree_clean"] is not True
+        or before["entry_commit_is_ancestor"] is not True
+        or before["origin_main_is_ancestor_of_head"] is not True
+        or before["head_commit_sha1"]
+        != before["origin_main_commit_sha1"]
+    ):
+        return (
+            "PREFLIGHT_LOCAL_SOURCE_CUT_INVALID",
+            "LOCAL_SOURCE_IDENTITY",
+        )
+
+    role_paths = {
+        "owner_executor": _MANDATORY_DIRECT_PATHS["sequence"],
+        "independent_executor": _MANDATORY_DIRECT_PATHS["independent"],
+        "parent_phase3_source": _MANDATORY_DIRECT_PATHS["parent"],
+    }
+    modules_valid = bool(
+        type(modules) is dict
+        and set(modules) == set(role_paths)
+        and all(
+            type(identity) is dict
+            and set(identity)
+            == {
+                "module_path",
+                "module_origin",
+                "git_blob_sha1",
+                "raw_sha256",
+            }
+            and identity["module_path"] == role_paths[role]
+            and identity["module_origin"]
+            == str((root / role_paths[role]).resolve())
+            and _is_lower_hex(identity["git_blob_sha1"], 40)
+            and _is_lower_hex(identity["raw_sha256"], 64)
+            for role, identity in modules.items()
+        )
+    )
+    if not modules_valid:
+        return (
+            "PREFLIGHT_EXECUTOR_IDENTITY_INVALID",
+            "MODULE_IDENTITIES",
+        )
+    return "PREFLIGHT_ELIGIBLE", "NONE"
+
+
+def _build_preflight(
+    *,
+    challenge: str,
+    run_scope: str,
+    repository: Mapping[str, Any] | None,
+    before: Mapping[str, Any] | None,
+    modules: Mapping[str, Any] | None,
+    preflight_class: str,
+    failure_stage: str,
+) -> dict[str, Any]:
+    value = {
+        "schema_version": _PREFLIGHT_SCHEMA_V1,
+        "run_challenge_id": challenge,
+        "run_scope": run_scope,
+        "repository_full_name": "MassyuRed/mashos-api",
+        "acquisition_profile_id": _ACQUISITION_PROFILE_ID,
+        "preflight_class": preflight_class,
+        "failure_stage": failure_stage,
+        "repository_identity_sha256": (
+            _sha256_value(repository) if repository is not None else None
+        ),
+        "before_local_source_identity_sha256": (
+            _sha256_value(before) if before is not None else None
+        ),
+        "module_identities_sha256": (
+            _sha256_value(modules) if modules is not None else None
+        ),
+        "live_query_count_at_preflight": 0,
+        "domain_effect_count": 0,
+        "preflight_sha256": "",
+    }
+    value["preflight_sha256"] = _hash_without(value, "preflight_sha256")
+    assert set(value) == {
+        "schema_version",
+        "run_challenge_id",
+        "run_scope",
+        "repository_full_name",
+        "acquisition_profile_id",
+        "preflight_class",
+        "failure_stage",
+        "repository_identity_sha256",
+        "before_local_source_identity_sha256",
+        "module_identities_sha256",
+        "live_query_count_at_preflight",
+        "domain_effect_count",
+        "preflight_sha256",
+    }
+    assert _is_lower_hex(value["run_challenge_id"], 64)
+    assert value["run_scope"] in {
+        _RUN_SCOPE_D1,
+        _RUN_SCOPE_D2,
+        "POSTPUBLICATION_STABILITY_MATRIX_RUN_A",
+        "POSTPUBLICATION_STABILITY_MATRIX_RUN_B",
+    }
+    class_stage = {
+        "PREFLIGHT_ELIGIBLE": {"NONE"},
+        "PREFLIGHT_REPOSITORY_MISMATCH": {"REPOSITORY_IDENTITY"},
+        "PREFLIGHT_REF_MISMATCH": {"SOURCE_REF"},
+        "PREFLIGHT_LOCAL_SOURCE_CUT_INVALID": {
+            "LOCAL_SOURCE_IDENTITY",
+            "SAFE_LOCAL_INTROSPECTION_EXCEPTION",
+        },
+        "PREFLIGHT_EXECUTOR_IDENTITY_INVALID": {
+            "MODULE_IDENTITIES",
+            "SAFE_LOCAL_INTROSPECTION_EXCEPTION",
+        },
+    }
+    assert value["preflight_class"] in class_stage
+    assert value["failure_stage"] in class_stage[value["preflight_class"]]
+    assert type(value["live_query_count_at_preflight"]) is int
+    assert type(value["domain_effect_count"]) is int
+    assert value["live_query_count_at_preflight"] == 0
+    assert value["domain_effect_count"] == 0
+    if value["preflight_class"] == "PREFLIGHT_ELIGIBLE":
+        assert all(
+            _is_lower_hex(value[key], 64)
+            for key in (
+                "repository_identity_sha256",
+                "before_local_source_identity_sha256",
+                "module_identities_sha256",
+            )
+        )
+    if value["preflight_class"] == "PREFLIGHT_REPOSITORY_MISMATCH":
+        assert value["before_local_source_identity_sha256"] is None
+        assert value["module_identities_sha256"] is None
+    if value["preflight_class"] in {
+        "PREFLIGHT_REF_MISMATCH",
+        "PREFLIGHT_LOCAL_SOURCE_CUT_INVALID",
+    }:
+        assert _is_lower_hex(value["repository_identity_sha256"], 64)
+        assert value["module_identities_sha256"] is None
+    if value["preflight_class"] == "PREFLIGHT_EXECUTOR_IDENTITY_INVALID":
+        assert _is_lower_hex(value["repository_identity_sha256"], 64)
+        assert _is_lower_hex(
+            value["before_local_source_identity_sha256"],
+            64,
+        )
+    assert _delete_self_hash_valid(value, "preflight_sha256")
+    return value
+
+
+def _sanitized_git_environment(git_executable: Path) -> dict[str, str]:
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if not (
+            key.startswith("GIT_")
+            or key
+            in {
+                "LD_AUDIT",
+                "LD_LIBRARY_PATH",
+                "LD_PRELOAD",
+                "PYTHONPATH",
+            }
+        )
+    }
+    environment.update(
+        {
+            "GIT_ATTR_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_EXTERNAL_DIFF": "",
+            "GIT_OPTIONAL_LOCKS": "0",
+            "GIT_PAGER": "cat",
+            "GIT_TERMINAL_PROMPT": "0",
+            "PATH": str(git_executable.parent),
+        }
+    )
+    return environment
+
+
+def _actual_remote_observation(
+    root: Path,
+    before: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    git_text = shutil.which("git")
+    assert git_text is not None
+    git_executable = Path(git_text).resolve()
+    assert git_executable.is_file()
+    command = [
+        str(git_executable),
+        "ls-remote",
+        "--exit-code",
+        "origin",
+        "refs/heads/main",
+    ]
+    started_at = _utc_now()
+    started_clock = time.monotonic()
+    if _RUN_STATE["neutral_request_count"] != 0:
+        _RUN_STATE["retry_count"] += 1
+    _RUN_STATE["neutral_request_count"] += 1
+    result_class = "OBSERVATION_UNAVAILABLE_EXCEPTION"
+    return_code: int | None = None
+    stdout = b""
+    stderr = b""
+    exception_class = "NONE"
+    timed_out = False
+    try:
+        _RUN_STATE["neutral_execution_count"] += 1
+        result = subprocess.run(
+            command,
+            cwd=root,
+            shell=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=20,
+            env=_sanitized_git_environment(git_executable),
+            check=False,
+        )
+        return_code = result.returncode
+        stdout = bytes(result.stdout)
+        stderr = bytes(result.stderr)
+    except subprocess.TimeoutExpired as error:
+        timed_out = True
+        exception_class = "TIMEOUT_EXPIRED"
+        stdout = bytes(error.stdout or b"")
+        stderr = bytes(error.stderr or b"")
+        result_class = "OBSERVATION_UNAVAILABLE_TIMEOUT"
+    except subprocess.SubprocessError:
+        exception_class = "SUBPROCESS_ERROR"
+    except OSError:
+        exception_class = "OS_ERROR"
+    except Exception:
+        exception_class = "OTHER_SAFE_CLASS"
+    finished_at = _utc_now()
+    duration = max(0, int((time.monotonic() - started_clock) * 1000))
+    row_count = 0
+    observed_oid: str | None = None
+    matches: bool | None = None
+    if not timed_out and return_code is not None:
+        row_count = len(stdout.splitlines())
+        try:
+            stdout.decode("utf-8", errors="strict")
+            stdout_utf8 = True
+        except UnicodeDecodeError:
+            stdout_utf8 = False
+        try:
+            stderr.decode("utf-8", errors="strict")
+            stderr_utf8 = True
+        except UnicodeDecodeError:
+            stderr_utf8 = False
+        if return_code != 0:
+            result_class = "OBSERVATION_UNAVAILABLE_NONZERO"
+        elif stderr:
+            result_class = "OBSERVATION_STDERR_NONEMPTY"
+        elif not stdout_utf8 or not stderr_utf8:
+            result_class = "OBSERVATION_MALFORMED"
+        else:
+            row = re.fullmatch(
+                rb"([0-9a-f]{40})\trefs/heads/main(?:\r?\n)?",
+                stdout,
+            )
+            if row is None:
+                result_class = "OBSERVATION_MALFORMED"
+            else:
+                row_count = 1
+                observed_oid = row.group(1).decode("ascii")
+                matches = (
+                    observed_oid
+                    == before["origin_main_commit_sha1"]
+                )
+                result_class = (
+                    "AVAILABLE_MATCH"
+                    if matches
+                    else "REMOTE_MAIN_OID_MISMATCH"
+                )
+    remote = {
+        "remote_ref": "refs/heads/main",
+        "attempt_count": 1,
+        "live_query_count": 1,
+        "row_count": row_count,
+        "observed_oid_sha1": observed_oid,
+        "return_code": return_code,
+        "started_at_utc": started_at,
+        "finished_at_utc": finished_at,
+        "duration_milliseconds": duration,
+        "result_class": result_class,
+        "stderr_nonempty": bool(stderr),
+        "matches_local_origin_main": matches,
+    }
+    diagnostic = {
+        "command_attempted": True,
+        "timed_out": timed_out,
+        "exception_class": exception_class,
+        "body_free": True,
+    }
+    assert len(remote) == 12
+    assert len(diagnostic) == 4
+    return remote, diagnostic
+
+
+def _build_postacquisition_abort(
+    *,
+    preflight: Mapping[str, Any],
+    remote: Mapping[str, Any],
+    diagnostic: Mapping[str, Any],
+    after_repository_identity: Mapping[str, Any] | None,
+    after_local_identity: Mapping[str, Any] | None,
+    error: _PostAcquisitionLocalIntrospectionError,
+) -> dict[str, Any]:
+    violations = ["POSTACQUISITION_LOCAL_INTROSPECTION_FAILED"]
+    if (
+        _RUN_STATE["neutral_request_count"] != 1
+        or _RUN_STATE["retry_count"] != 0
+        or _RUN_STATE["fallback_count"] != 0
+    ):
+        violations.insert(0, "ACQUISITION_CARDINALITY_INVALID")
+    if _RUN_STATE["prior_run_reuse_count"] != 0:
+        violations.append("OBSERVATION_REUSE_FORBIDDEN")
+    value = {
+        "schema_version": _ABORT_SCHEMA_V1,
+        "source_preflight_sha256": preflight["preflight_sha256"],
+        "run_challenge_id": preflight["run_challenge_id"],
+        "run_scope": preflight["run_scope"],
+        "repository_full_name": "MassyuRed/mashos-api",
+        "acquisition_profile_id": _ACQUISITION_PROFILE_ID,
+        "attempt_ordinal": 1,
+        "remote_observation": copy.deepcopy(dict(remote)),
+        "remote_diagnostic": copy.deepcopy(dict(diagnostic)),
+        "before_local_source_identity_sha256": (
+            preflight["before_local_source_identity_sha256"]
+        ),
+        "preflight_module_identities_sha256": (
+            preflight["module_identities_sha256"]
+        ),
+        "after_repository_identity_sha256": (
+            _sha256_value(after_repository_identity)
+            if after_repository_identity is not None
+            else None
+        ),
+        "after_local_source_identity_sha256": (
+            _sha256_value(after_local_identity)
+            if after_local_identity is not None
+            else None
+        ),
+        "acquisition_cardinality": {
+            "live_query_count": _RUN_STATE["neutral_request_count"],
+            "retry_count": _RUN_STATE["retry_count"],
+            "fallback_count": _RUN_STATE["fallback_count"],
+            "prior_run_reuse_count": _RUN_STATE["prior_run_reuse_count"],
+        },
+        "abort_class": (
+            "POSTACQUISITION_LOCAL_INTROSPECTION_ABORT_"
+            "NO_OBSERVATION_CONSTRUCTED"
+        ),
+        "failure_stage": error.stage,
+        "failure_class": error.failure_class,
+        "violation_classes": violations,
+        "body_free": True,
+        "domain_effect_count": 0,
+        "automatic_progression": False,
+        "abort_sha256": "",
+    }
+    value["abort_sha256"] = _hash_without(value, "abort_sha256")
+    assert len(value) == 22
+    assert len(value["acquisition_cardinality"]) == 4
+    assert type(value["attempt_ordinal"]) is int
+    assert all(
+        type(count) is int and count >= 0
+        for count in value["acquisition_cardinality"].values()
+    )
+    assert type(value["body_free"]) is bool
+    assert type(value["domain_effect_count"]) is int
+    assert type(value["automatic_progression"]) is bool
+    assert _delete_self_hash_valid(value, "abort_sha256")
+    return value
+
+
+def _local_introspection_failure_class(error: BaseException) -> str:
+    if isinstance(error, subprocess.TimeoutExpired):
+        return "LOCAL_GIT_TIMEOUT"
+    if isinstance(error, subprocess.CalledProcessError):
+        return "LOCAL_GIT_NONZERO_OR_MALFORMED"
+    if isinstance(error, OSError):
+        return "LOCAL_OS_ERROR"
+    if isinstance(error, (AssertionError, UnicodeError, ValueError)):
+        return "LOCAL_VALIDATION_ERROR"
+    return "OTHER_SAFE_CLASS"
+
+
+def _validate_observation(value: Any) -> None:
+    assert type(value) is dict
+    assert set(value) == {
+        "schema_version",
+        "logical_cycle_id",
+        "recovery_epoch_id",
+        "run_challenge_id",
+        "run_scope",
+        "attempt_ordinal",
+        "acquisition_role",
+        "acquisition_profile_id",
+        "preflight_sha256",
+        "repository_identity",
+        "remote_observation",
+        "local_source_cut",
+        "module_identities",
+        "freshness",
+        "diagnostic",
+        "automatic_progression",
+        "observation_sha256",
+    }
+    assert value["schema_version"] == _OBSERVATION_SCHEMA_V1
+    assert value["logical_cycle_id"] == _LOGICAL_CYCLE_ID
+    assert value["recovery_epoch_id"] == _RECOVERY_EPOCH_ID
+    assert _is_lower_hex(value["run_challenge_id"], 64)
+    assert value["run_scope"] in {
+        _RUN_SCOPE_D1,
+        _RUN_SCOPE_D2,
+        "POSTPUBLICATION_STABILITY_MATRIX_RUN_A",
+        "POSTPUBLICATION_STABILITY_MATRIX_RUN_B",
+    }
+    assert type(value["attempt_ordinal"]) is int
+    assert value["attempt_ordinal"] == 1
+    assert value["acquisition_role"] == _ACQUISITION_ROLE
+    assert value["acquisition_profile_id"] == _ACQUISITION_PROFILE_ID
+    assert _is_lower_hex(value["preflight_sha256"], 64)
+
+    repository = value["repository_identity"]
+    repository_keys = {
+        "repository_full_name",
+        "repository_root",
+        "remote_name",
+        "normalized_remote_host",
+        "normalized_remote_repository",
+        "source_ref",
+    }
+    assert type(repository) is dict and set(repository) == repository_keys
+    assert repository["repository_full_name"] == "MassyuRed/mashos-api"
+    assert repository["repository_root"] == str(
+        Path(__file__).resolve().parents[2]
+    )
+    assert repository["remote_name"] == "origin"
+    assert repository["normalized_remote_host"] in {
+        "git.chatgpt-team.site",
+        "github.com",
+        "ssh.github.com",
+        "www.github.com",
+    }
+    assert (
+        repository["normalized_remote_repository"]
+        == repository["repository_full_name"]
+    )
+    assert repository["source_ref"] == "refs/heads/main"
+
+    remote = value["remote_observation"]
+    assert type(remote) is dict and set(remote) == {
+        "remote_ref",
+        "attempt_count",
+        "live_query_count",
+        "row_count",
+        "observed_oid_sha1",
+        "return_code",
+        "started_at_utc",
+        "finished_at_utc",
+        "duration_milliseconds",
+        "result_class",
+        "stderr_nonempty",
+        "matches_local_origin_main",
+    }
+    assert remote["remote_ref"] == "refs/heads/main"
+    assert type(remote["attempt_count"]) is int
+    assert type(remote["live_query_count"]) is int
+    assert remote["attempt_count"] == remote["live_query_count"] == 1
+    assert type(remote["row_count"]) is int and remote["row_count"] >= 0
+    assert (
+        type(remote["duration_milliseconds"]) is int
+        and remote["duration_milliseconds"] >= 0
+    )
+    assert type(remote["started_at_utc"]) is str
+    assert type(remote["finished_at_utc"]) is str
+    timestamp_pattern = re.compile(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"
+        r"(?:\.\d+)?Z"
+    )
+    assert timestamp_pattern.fullmatch(remote["started_at_utc"])
+    assert timestamp_pattern.fullmatch(remote["finished_at_utc"])
+    started_at = datetime.fromisoformat(
+        remote["started_at_utc"][:-1] + "+00:00"
+    )
+    finished_at = datetime.fromisoformat(
+        remote["finished_at_utc"][:-1] + "+00:00"
+    )
+    assert started_at.utcoffset() == timezone.utc.utcoffset(started_at)
+    assert finished_at.utcoffset() == timezone.utc.utcoffset(finished_at)
+    assert finished_at >= started_at
+    assert type(remote["stderr_nonempty"]) is bool
+    result_class = remote["result_class"]
+    assert result_class in {
+        "AVAILABLE_MATCH",
+        "REMOTE_MAIN_OID_MISMATCH",
+        "OBSERVATION_UNAVAILABLE_TIMEOUT",
+        "OBSERVATION_UNAVAILABLE_EXCEPTION",
+        "OBSERVATION_UNAVAILABLE_NONZERO",
+        "OBSERVATION_STDERR_NONEMPTY",
+        "OBSERVATION_MALFORMED",
+    }
+
+    source_cut = value["local_source_cut"]
+    assert type(source_cut) is dict and set(source_cut) == {
+        "before",
+        "after",
+        "same_cut",
+        "source_cut_sha256",
+    }
+    local_keys = {
+        "repository_root",
+        "remote_name",
+        "normalized_remote_host",
+        "normalized_remote_repository",
+        "source_ref",
+        "entry_commit_sha1",
+        "entry_tree_sha1",
+        "head_commit_sha1",
+        "head_tree_sha1",
+        "origin_main_commit_sha1",
+        "branch_ref",
+        "worktree_clean",
+        "entry_commit_is_ancestor",
+        "origin_main_is_ancestor_of_head",
+    }
+    for identity in (source_cut["before"], source_cut["after"]):
+        assert type(identity) is dict and set(identity) == local_keys
+        assert identity["repository_root"] == repository["repository_root"]
+        assert identity["remote_name"] == repository["remote_name"]
+        assert (
+            identity["normalized_remote_host"]
+            == repository["normalized_remote_host"]
+        )
+        assert (
+            identity["normalized_remote_repository"]
+            == repository["normalized_remote_repository"]
+        )
+        assert identity["source_ref"] == repository["source_ref"]
+        assert identity["entry_commit_sha1"] == _ENTRY_COMMIT_SHA1
+        assert identity["entry_tree_sha1"] == _ENTRY_TREE_SHA1
+        assert all(
+            _is_lower_hex(identity[key], 40)
+            for key in (
+                "head_commit_sha1",
+                "head_tree_sha1",
+                "origin_main_commit_sha1",
+            )
+        )
+        assert type(identity["branch_ref"]) is str
+        assert identity["branch_ref"].startswith("refs/heads/")
+        assert identity["branch_ref"] != "refs/heads/"
+        assert not any(
+            character.isspace() or character == "\x00"
+            for character in identity["branch_ref"]
+        )
+        assert all(
+            type(identity[key]) is bool
+            for key in (
+                "worktree_clean",
+                "entry_commit_is_ancestor",
+                "origin_main_is_ancestor_of_head",
+            )
+        )
+    assert source_cut["before"]["branch_ref"] == "refs/heads/main"
+    assert type(source_cut["same_cut"]) is bool
+    assert source_cut["same_cut"] is (
+        source_cut["before"] == source_cut["after"]
+    )
+    assert _is_lower_hex(source_cut["source_cut_sha256"], 64)
+    assert _hash_without(source_cut, "source_cut_sha256") == (
+        source_cut["source_cut_sha256"]
+    )
+
+    before = source_cut["before"]
+    if result_class in {"AVAILABLE_MATCH", "REMOTE_MAIN_OID_MISMATCH"}:
+        assert type(remote["return_code"]) is int
+        assert remote["return_code"] == 0
+        assert remote["row_count"] == 1
+        assert remote["stderr_nonempty"] is False
+        assert _is_lower_hex(remote["observed_oid_sha1"], 40)
+        expected_match = (
+            remote["observed_oid_sha1"]
+            == before["origin_main_commit_sha1"]
+        )
+        assert remote["matches_local_origin_main"] is expected_match
+        assert (result_class == "AVAILABLE_MATCH") is expected_match
+    else:
+        assert remote["observed_oid_sha1"] is None
+        assert remote["matches_local_origin_main"] is None
+        if result_class in {
+            "OBSERVATION_UNAVAILABLE_TIMEOUT",
+            "OBSERVATION_UNAVAILABLE_EXCEPTION",
+        }:
+            assert remote["return_code"] is None
+            assert remote["row_count"] == 0
+        elif result_class == "OBSERVATION_UNAVAILABLE_NONZERO":
+            assert (
+                type(remote["return_code"]) is int
+                and remote["return_code"] != 0
+            )
+        else:
+            assert type(remote["return_code"]) is int
+            assert remote["return_code"] == 0
+        if result_class == "OBSERVATION_STDERR_NONEMPTY":
+            assert remote["stderr_nonempty"] is True
+        if result_class == "OBSERVATION_MALFORMED":
+            assert remote["stderr_nonempty"] is False
+
+    modules = value["module_identities"]
+    role_paths = {
+        "owner_executor": _MANDATORY_DIRECT_PATHS["sequence"],
+        "independent_executor": _MANDATORY_DIRECT_PATHS["independent"],
+        "parent_phase3_source": _MANDATORY_DIRECT_PATHS["parent"],
+    }
+    assert type(modules) is dict and set(modules) == set(role_paths)
+    for role, identity in modules.items():
+        assert type(identity) is dict and set(identity) == {
+            "module_path",
+            "module_origin",
+            "git_blob_sha1",
+            "raw_sha256",
+        }
+        assert identity["module_path"] == role_paths[role]
+        assert identity["module_origin"] == str(
+            (
+                Path(repository["repository_root"])
+                / role_paths[role]
+            ).resolve()
+        )
+        assert _is_lower_hex(identity["git_blob_sha1"], 40)
+        assert _is_lower_hex(identity["raw_sha256"], 64)
+
+    assert type(value["freshness"]) is dict
+    assert all(
+        type(item) is bool for item in value["freshness"].values()
+    )
+    assert value["freshness"] == {
+        "acquired_after_source_identity_freeze": True,
+        "acquired_before_first_oracle": True,
+        "run_challenge_bound": True,
+        "valid_for_single_run": True,
+        "reusable": False,
+        "must_close_at_run_end": True,
+        "wall_clock_ttl_is_credit_authority": False,
+    }
+    diagnostic = value["diagnostic"]
+    assert type(diagnostic) is dict and set(diagnostic) == {
+        "command_attempted",
+        "timed_out",
+        "exception_class",
+        "body_free",
+    }
+    assert type(diagnostic["command_attempted"]) is bool
+    assert type(diagnostic["timed_out"]) is bool
+    assert type(diagnostic["body_free"]) is bool
+    assert diagnostic["command_attempted"] is True
+    assert diagnostic["body_free"] is True
+    assert diagnostic["exception_class"] in {
+        "NONE",
+        "TIMEOUT_EXPIRED",
+        "SUBPROCESS_ERROR",
+        "OS_ERROR",
+        "OTHER_SAFE_CLASS",
+    }
+    assert diagnostic["timed_out"] is (
+        result_class == "OBSERVATION_UNAVAILABLE_TIMEOUT"
+    )
+    if result_class == "OBSERVATION_UNAVAILABLE_TIMEOUT":
+        assert diagnostic["exception_class"] == "TIMEOUT_EXPIRED"
+    elif result_class == "OBSERVATION_UNAVAILABLE_EXCEPTION":
+        assert diagnostic["exception_class"] in {
+            "SUBPROCESS_ERROR",
+            "OS_ERROR",
+            "OTHER_SAFE_CLASS",
+        }
+    else:
+        assert diagnostic["exception_class"] == "NONE"
+    assert value["automatic_progression"] is False
+    assert _delete_self_hash_valid(value, "observation_sha256")
+
+
+def _preflight_port_mode(
+    root: Path,
+    head_commit_sha1: str,
+) -> str:
+    assert _is_lower_hex(head_commit_sha1, 40)
+    present: list[bool] = []
+    for role in ("sequence", "independent", "parent"):
+        relative_path = _MANDATORY_DIRECT_PATHS[role]
+        source_path = (root / relative_path).resolve()
+        assert source_path.is_relative_to(root.resolve())
+        pinned = _git_bytes(
+            root,
+            "show",
+            f"{head_commit_sha1}:{relative_path}",
+        )
+        tree = ast.parse(pinned, filename=str(source_path))
+        present.append(
+            _OBSERVATION_PORT_ATTRIBUTE
+            in _module_level_bindings(tree)
+        )
+    if present == [False, False, False]:
+        return "all_absent"
+    if present == [True, True, True]:
+        return "all_present"
+    return "mixed"
+
+
+def _acquire_run_observation() -> tuple[
+    dict[str, Any],
+    dict[str, Any] | None,
+]:
+    challenge = hashlib.sha256(secrets.token_bytes(32)).hexdigest()
+    run_scope = _RUN_SCOPE_D1
+    canonical_root: Path | None = None
+    requested_root: Path | None = None
+    try:
+        canonical_root = Path(__file__).resolve().parents[2]
+        configured_root = os.environ.get(
+            "MASHOS_API_SOURCE_REPOSITORY_ROOT"
+        )
+        requested_root = (
+            Path(configured_root).resolve()
+            if configured_root
+            else canonical_root
+        )
+    except (OSError, RuntimeError, TypeError, ValueError):
+        pass
+    if (
+        canonical_root is None
+        or requested_root is None
+        or requested_root != canonical_root
+    ):
+        return (
+            _build_preflight(
+                challenge=challenge,
+                run_scope=run_scope,
+                repository=None,
+                before=None,
+                modules=None,
+                preflight_class="PREFLIGHT_REPOSITORY_MISMATCH",
+                failure_stage="REPOSITORY_IDENTITY",
+            ),
+            None,
+        )
+    root = requested_root
+    repository: dict[str, Any] | None = None
+    before: dict[str, Any] | None = None
+    modules: dict[str, Any] | None = None
+    try:
+        assert _git(root, "rev-parse", "--show-toplevel") == str(root)
+        repository = _repository_identity(root)
+    except Exception:
+        return (
+            _build_preflight(
+                challenge=challenge,
+                run_scope=run_scope,
+                repository=repository,
+                before=None,
+                modules=None,
+                preflight_class="PREFLIGHT_REPOSITORY_MISMATCH",
+                failure_stage="REPOSITORY_IDENTITY",
+            ),
+            None,
+        )
+    repository_class, repository_stage = _classify_preflight(
+        root,
+        repository,
+        {},
+        {},
+    )
+    if repository_class in {
+        "PREFLIGHT_REPOSITORY_MISMATCH",
+        "PREFLIGHT_REF_MISMATCH",
+    }:
+        return (
+            _build_preflight(
+                challenge=challenge,
+                run_scope=run_scope,
+                repository=repository,
+                before=None,
+                modules=None,
+                preflight_class=repository_class,
+                failure_stage=repository_stage,
+            ),
+            None,
+        )
+    try:
+        before = _local_source_identity(root, repository)
+    except Exception:
+        return (
+            _build_preflight(
+                challenge=challenge,
+                run_scope=run_scope,
+                repository=repository,
+                before=before,
+                modules=None,
+                preflight_class="PREFLIGHT_LOCAL_SOURCE_CUT_INVALID",
+                failure_stage="SAFE_LOCAL_INTROSPECTION_EXCEPTION",
+            ),
+            None,
+        )
+    local_class, local_stage = _classify_preflight(
+        root,
+        repository,
+        before,
+        {},
+    )
+    if local_class != "PREFLIGHT_EXECUTOR_IDENTITY_INVALID":
+        return (
+            _build_preflight(
+                challenge=challenge,
+                run_scope=run_scope,
+                repository=repository,
+                before=before,
+                modules=None,
+                preflight_class=local_class,
+                failure_stage=local_stage,
+            ),
+            None,
+        )
+    expected_head = os.environ.get(
+        "MASHOS_API_EXPECTED_HEAD_COMMIT_SHA1"
+    )
+    expected_tree = os.environ.get(
+        "MASHOS_API_EXPECTED_HEAD_TREE_SHA1"
+    )
+    if (
+        expected_head is not None
+        and (
+            not _is_lower_hex(expected_head, 40)
+            or before["head_commit_sha1"] != expected_head
+        )
+    ) or (
+        expected_tree is not None
+        and (
+            not _is_lower_hex(expected_tree, 40)
+            or before["head_tree_sha1"] != expected_tree
+        )
+    ):
+        return (
+            _build_preflight(
+                challenge=challenge,
+                run_scope=run_scope,
+                repository=repository,
+                before=before,
+                modules=None,
+                preflight_class="PREFLIGHT_LOCAL_SOURCE_CUT_INVALID",
+                failure_stage="LOCAL_SOURCE_IDENTITY",
+            ),
+            None,
+        )
+    try:
+        modules = _module_identities(root, before["head_commit_sha1"])
+    except Exception:
+        return (
+            _build_preflight(
+                challenge=challenge,
+                run_scope=run_scope,
+                repository=repository,
+                before=before,
+                modules=modules,
+                preflight_class="PREFLIGHT_EXECUTOR_IDENTITY_INVALID",
+                failure_stage="SAFE_LOCAL_INTROSPECTION_EXCEPTION",
+            ),
+            None,
+        )
+    preflight_class, failure_stage = _classify_preflight(
+        root,
+        repository,
+        before,
+        modules,
+    )
+    if preflight_class == "PREFLIGHT_ELIGIBLE":
+        try:
+            static_mode = _preflight_port_mode(
+                root,
+                before["head_commit_sha1"],
+            )
+        except Exception:
+            return (
+                _build_preflight(
+                    challenge=challenge,
+                    run_scope=run_scope,
+                    repository=repository,
+                    before=before,
+                    modules=modules,
+                    preflight_class=(
+                        "PREFLIGHT_EXECUTOR_IDENTITY_INVALID"
+                    ),
+                    failure_stage="SAFE_LOCAL_INTROSPECTION_EXCEPTION",
+                ),
+                None,
+            )
+        if static_mode == "mixed":
+            return (
+                _build_preflight(
+                    challenge=challenge,
+                    run_scope=_RUN_SCOPE_D2,
+                    repository=repository,
+                    before=before,
+                    modules=modules,
+                    preflight_class=(
+                        "PREFLIGHT_EXECUTOR_IDENTITY_INVALID"
+                    ),
+                    failure_stage="MODULE_IDENTITIES",
+                ),
+                None,
+            )
+        run_scope = (
+            _RUN_SCOPE_D1
+            if static_mode == "all_absent"
+            else _RUN_SCOPE_D2
+        )
+    eligible = preflight_class == "PREFLIGHT_ELIGIBLE"
+    preflight = _build_preflight(
+        challenge=challenge,
+        run_scope=run_scope,
+        repository=repository,
+        before=before,
+        modules=modules,
+        preflight_class=preflight_class,
+        failure_stage=failure_stage,
+    )
+    if not eligible:
+        return preflight, None
+    remote, diagnostic = _actual_remote_observation(root, before)
+    after_repository: dict[str, Any] | None = None
+    after: dict[str, Any] | None = None
+    try:
+        try:
+            after_repository = _repository_identity(root)
+        except Exception as cause:
+            raise _PostAcquisitionLocalIntrospectionError(
+                stage="AFTER_REPOSITORY_IDENTITY",
+                failure_class=_local_introspection_failure_class(cause),
+            ) from None
+        if after_repository != repository:
+            raise _PostAcquisitionLocalIntrospectionError(
+                stage="AFTER_LOCAL_SOURCE_IDENTITY",
+                failure_class="LOCAL_VALIDATION_ERROR",
+            )
+        try:
+            after = _local_source_identity(root, after_repository)
+        except Exception as cause:
+            raise _PostAcquisitionLocalIntrospectionError(
+                stage="AFTER_LOCAL_SOURCE_IDENTITY",
+                failure_class=_local_introspection_failure_class(cause),
+            ) from None
+        try:
+            after_modules = _module_identities(
+                root,
+                after["head_commit_sha1"],
+            )
+        except Exception as cause:
+            raise _PostAcquisitionLocalIntrospectionError(
+                stage="AFTER_MODULE_IDENTITIES",
+                failure_class=_local_introspection_failure_class(cause),
+            ) from None
+    except _PostAcquisitionLocalIntrospectionError as error:
+        abort = _build_postacquisition_abort(
+            preflight=preflight,
+            remote=remote,
+            diagnostic=diagnostic,
+            after_repository_identity=after_repository,
+            after_local_identity=after,
+            error=error,
+        )
+        _RUN_STATE["abort"] = abort
+        return preflight, None
+    same_cut = before == after
+    source_cut = {
+        "before": before,
+        "after": after,
+        "same_cut": same_cut,
+        "source_cut_sha256": "",
+    }
+    source_cut["source_cut_sha256"] = _hash_without(
+        source_cut,
+        "source_cut_sha256",
+    )
+    value = {
+        "schema_version": _OBSERVATION_SCHEMA_V1,
+        "logical_cycle_id": _LOGICAL_CYCLE_ID,
+        "recovery_epoch_id": _RECOVERY_EPOCH_ID,
+        "run_challenge_id": challenge,
+        "run_scope": run_scope,
+        "attempt_ordinal": 1,
+        "acquisition_role": _ACQUISITION_ROLE,
+        "acquisition_profile_id": _ACQUISITION_PROFILE_ID,
+        "preflight_sha256": preflight["preflight_sha256"],
+        "repository_identity": repository,
+        "remote_observation": remote,
+        "local_source_cut": source_cut,
+        "module_identities": modules,
+        "freshness": {
+            "acquired_after_source_identity_freeze": True,
+            "acquired_before_first_oracle": True,
+            "run_challenge_bound": True,
+            "valid_for_single_run": True,
+            "reusable": False,
+            "must_close_at_run_end": True,
+            "wall_clock_ttl_is_credit_authority": False,
+        },
+        "diagnostic": diagnostic,
+        "automatic_progression": False,
+        "observation_sha256": "",
+    }
+    value["observation_sha256"] = _hash_without(
+        value,
+        "observation_sha256",
+    )
+    _validate_observation(value)
+    _RUN_STATE["postacquisition_module_identities"] = after_modules
+    if (
+        remote["result_class"] != "AVAILABLE_MATCH"
+        or source_cut["same_cut"] is not True
+        or after_modules != modules
+    ):
+        return preflight, value
+    try:
+        runtime_modules, runtime_mode = _load_runtime_port_modules(root)
+        assert runtime_mode == static_mode
+        for role, module in runtime_modules.items():
+            relative_path = _MANDATORY_DIRECT_PATHS[role]
+            source_path = Path(
+                inspect.getsourcefile(module) or ""
+            ).resolve()
+            assert type(module) is ModuleType
+            assert source_path == (root / relative_path).resolve()
+            pinned = _git_bytes(
+                root,
+                "show",
+                f"{before['head_commit_sha1']}:{relative_path}",
+            )
+            assert source_path.read_bytes() == pinned
+            identity_key = {
+                "sequence": "owner_executor",
+                "independent": "independent_executor",
+                "parent": "parent_phase3_source",
+            }[role]
+            assert hashlib.sha256(pinned).hexdigest() == modules[
+                identity_key
+            ]["raw_sha256"]
+    except BaseException:
+        _RUN_STATE["preflight_runtime_error"] = True
+    else:
+        _RUN_STATE["preflight_port_mode"] = runtime_mode
+        _RUN_STATE["preflight_port_modules"] = runtime_modules
+    return preflight, value
+
+
 def _repository_root(*, require_current_clean: bool = False) -> Path:
     configured = os.environ.get("MASHOS_API_SOURCE_REPOSITORY_ROOT")
     root = (
@@ -1160,10 +2626,13 @@ def _repository_root(*, require_current_clean: bool = False) -> Path:
     if expected_tree is not None:
         assert _git(root, "rev-parse", "HEAD^{tree}") == expected_tree
     if require_current_clean:
-        assert _remote_main_commit(root) == _git(
-            root,
-            "rev-parse",
-            "origin/main",
+        observation = _RUN_STATE.get("observation")
+        assert type(observation) is dict
+        assert observation["remote_observation"]["result_class"] == (
+            "AVAILABLE_MATCH"
+        )
+        assert observation["remote_observation"]["observed_oid_sha1"] == (
+            _git(root, "rev-parse", "origin/main")
         )
         assert _git(root, "symbolic-ref", "--quiet", "HEAD") == (
             "refs/heads/main"
@@ -1259,17 +2728,17 @@ def _immutable_fixture_module() -> ModuleType:
 
 def _actual_source_subject() -> dict[str, Any]:
     root = _repository_root(require_current_clean=True)
+    observation = _RUN_STATE.get("observation")
+    assert type(observation) is dict
+    before = observation["local_source_cut"]["before"]
+    assert before == observation["local_source_cut"]["after"]
     return {
         "repository_full_name": "MassyuRed/mashos-api",
         "source_ref": "refs/heads/main",
         "repository_root": str(root),
-        "head_commit_sha1": _git(root, "rev-parse", "HEAD"),
-        "head_tree_sha1": _git(root, "rev-parse", "HEAD^{tree}"),
-        "origin_main_commit_sha1": _git(
-            root,
-            "rev-parse",
-            "origin/main",
-        ),
+        "head_commit_sha1": before["head_commit_sha1"],
+        "head_tree_sha1": before["head_tree_sha1"],
+        "origin_main_commit_sha1": before["origin_main_commit_sha1"],
         "worktree_clean": True,
     }
 
@@ -1282,15 +2751,29 @@ def _actual_executor(
     path = _MANDATORY_DIRECT_PATHS[role]
     module = _module(role)
     origin = Path(inspect.getsourcefile(module) or "").resolve()
-    raw = _git_bytes(root, "show", f"HEAD:{path}")
+    observation = _RUN_STATE.get("observation")
+    assert type(observation) is dict
+    identity_key = {
+        "sequence": "owner_executor",
+        "independent": "independent_executor",
+        "parent": "parent_phase3_source",
+    }[role]
+    identity = observation["module_identities"][identity_key]
+    raw = _git_bytes(
+        root,
+        "show",
+        f"{subject['head_commit_sha1']}:{path}",
+    )
     assert origin == (root / path).resolve()
     assert origin.read_bytes() == raw
+    assert identity["module_path"] == path
+    assert identity["module_origin"] == str(origin)
     return {
         **copy.deepcopy(dict(subject)),
         "module_path": path,
         "module_origin": str(origin),
-        "git_blob_sha1": _git(root, "rev-parse", f"HEAD:{path}"),
-        "raw_sha256": hashlib.sha256(raw).hexdigest(),
+        "git_blob_sha1": identity["git_blob_sha1"],
+        "raw_sha256": identity["raw_sha256"],
     }
 
 
@@ -2399,6 +3882,1304 @@ def _guard_api_read_only(
     return guarded_api
 
 
+def _infer_request_lane() -> str:
+    frame = inspect.currentframe()
+    try:
+        cursor = frame.f_back if frame is not None else None
+        while cursor is not None:
+            filename = Path(cursor.f_code.co_filename).resolve()
+            for role, relative_path in _MANDATORY_DIRECT_PATHS.items():
+                if filename == (
+                    Path(__file__).resolve().parents[2] / relative_path
+                ).resolve():
+                    return _ROLE_NAMES[role]
+            cursor = cursor.f_back
+    finally:
+        del frame
+    return "HARNESS"
+
+
+def _process_route(command: Any) -> str | None:
+    if isinstance(command, (list, tuple)):
+        argv = [str(item) for item in command]
+    elif isinstance(command, (str, bytes, os.PathLike)):
+        argv = [os.fsdecode(command)]
+    else:
+        argv = []
+    if not argv:
+        return None
+    lowered = [item.lower() for item in argv]
+    executable = Path(lowered[0]).name
+    args = lowered[1:]
+    if len(args) >= 2 and args[0] == "-c":
+        args = args[2:]
+    if "ls-remote" in args or any("ls-remote" in item for item in lowered):
+        return "GIT_LS_REMOTE"
+    if executable in {
+        "curl",
+        "ftp",
+        "git-remote-http",
+        "git-remote-https",
+        "scp",
+        "sftp",
+        "ssh",
+        "wget",
+    }:
+        return "ALTERNATE_TRANSPORT"
+    if executable == "git":
+        if any(
+            item
+            in {
+                "clone",
+                "fetch",
+                "pull",
+                "push",
+                "remote-fd",
+                "remote-ext",
+                "submodule",
+            }
+            for item in args
+        ):
+            return "ALTERNATE_GIT_TRANSPORT"
+        if args and args[0] == "remote" and tuple(args) != (
+            "remote",
+            "get-url",
+            "origin",
+        ):
+            return "ALTERNATE_GIT_TRANSPORT"
+    if len(argv) == 1 and any(
+        token in lowered[0]
+        for token in (
+            "github.com",
+            "git.chatgpt-team.site",
+            "ls-remote",
+            "ssh.github.com",
+        )
+    ):
+        return "SHELL_OR_NETWORK_TRANSPORT"
+    return None
+
+
+def _local_git_process(command: Any) -> bool:
+    if not isinstance(command, (list, tuple)):
+        return False
+    argv = [str(item) for item in command]
+    if not argv:
+        return False
+    executable = argv[0]
+    try:
+        resolved = (
+            Path(executable).resolve()
+            if Path(executable).is_absolute()
+            else Path(shutil.which(executable) or "").resolve()
+        )
+        trusted = Path(shutil.which("git") or "").resolve()
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return False
+    if not trusted.is_file() or resolved != trusted:
+        return False
+    args = argv[1:]
+    if len(args) >= 2 and args[0] == "-C":
+        try:
+            if Path(args[1]).resolve() != Path(__file__).resolve().parents[2]:
+                return False
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return False
+        args = args[2:]
+    if not args:
+        return False
+
+    def safe_object(value: str) -> bool:
+        object_name, separator, path = value.partition(":")
+        base = object_name.removesuffix("^{tree}")
+        if base not in {
+            "HEAD",
+            "origin/main",
+            "refs/remotes/origin/main",
+        } and not _is_lower_hex(base, 40):
+            return False
+        if not separator:
+            return True
+        pure = PurePath(path)
+        return bool(
+            path
+            and not pure.is_absolute()
+            and ".." not in pure.parts
+            and "\x00" not in path
+        )
+
+    def safe_path(value: str) -> bool:
+        pure = PurePath(value)
+        return bool(
+            value
+            and not pure.is_absolute()
+            and ".." not in pure.parts
+            and "\x00" not in value
+        )
+
+    shape = tuple(args)
+    return bool(
+        shape == ("remote", "get-url", "origin")
+        or shape == ("rev-parse", "--show-toplevel")
+        or (
+            len(shape) == 2
+            and shape[0] == "rev-parse"
+            and safe_object(shape[1])
+        )
+        or (
+            len(shape) == 2
+            and shape[0] == "show"
+            and safe_object(shape[1])
+        )
+        or (
+            len(shape) == 2
+            and shape[0] == "hash-object"
+            and safe_path(shape[1])
+        )
+        or (
+            len(shape) == 3
+            and shape[:2] == ("ls-files", "--error-unmatch")
+            and safe_path(shape[2])
+        )
+        or (
+            len(shape) == 4
+            and shape[:2] == ("merge-base", "--is-ancestor")
+            and safe_object(shape[2])
+            and safe_object(shape[3])
+        )
+        or shape == ("status", "--porcelain", "--untracked-files=all")
+        or shape == ("symbolic-ref", "--quiet", "HEAD")
+    )
+
+
+def _exact_remote_main_query(command: Any) -> bool:
+    if not isinstance(command, (list, tuple)):
+        return False
+    argv = tuple(str(item) for item in command)
+    if not argv:
+        return False
+    try:
+        executable = (
+            Path(argv[0]).resolve()
+            if Path(argv[0]).is_absolute()
+            else Path(shutil.which(argv[0]) or "").resolve()
+        )
+        trusted = Path(shutil.which("git") or "").resolve()
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return False
+    if executable != trusted or not trusted.is_file():
+        return False
+    args = argv[1:]
+    if len(args) >= 2 and args[0] == "-C":
+        try:
+            if Path(args[1]).resolve() != Path(__file__).resolve().parents[2]:
+                return False
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return False
+        args = args[2:]
+    return args == (
+        "ls-remote",
+        "--exit-code",
+        "origin",
+        "refs/heads/main",
+    )
+
+
+def _remote_replay_request_safe(
+    command: Any,
+    positional: tuple[Any, ...],
+    kwargs: Mapping[str, Any],
+) -> bool:
+    if positional or not _exact_remote_main_query(command):
+        return False
+    if "cwd" not in kwargs:
+        return False
+    if Path(kwargs.get("cwd", "")).resolve() != (
+        Path(__file__).resolve().parents[2]
+    ):
+        return False
+    if (
+        kwargs.get("shell", False) is not False
+        or kwargs.get("check", False) is not False
+        or kwargs.get("timeout") != 20
+        or kwargs.get("capture_output") is not True
+        or kwargs.get("text") is not True
+        or kwargs.get("input") is not None
+    ):
+        return False
+    environment = kwargs.get("env")
+    if type(environment) is not dict:
+        return False
+    fixed = {
+        "GIT_ATTR_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_EXTERNAL_DIFF": "",
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_PAGER": "cat",
+        "GIT_TERMINAL_PROMPT": "0",
+    }
+    if any(environment.get(key) != value for key, value in fixed.items()):
+        return False
+    trusted_git = Path(shutil.which("git") or "").resolve()
+    if environment.get("PATH") != str(trusted_git.parent):
+        return False
+    if any(
+        key in environment
+        for key in {
+            "LD_AUDIT",
+            "LD_LIBRARY_PATH",
+            "LD_PRELOAD",
+            "PYTHONPATH",
+        }
+    ):
+        return False
+    return not any(
+        key.startswith("GIT_") and key not in fixed
+        for key in environment
+    )
+
+
+def _record_additional_request(route: str) -> dict[str, Any]:
+    node = str(_RUN_STATE.get("current_node") or "OUTSIDE_ORACLE")
+    lane = _infer_request_lane()
+    observation = _RUN_STATE.get("observation")
+    record = {
+        "node": node,
+        "lane": lane,
+        "route": route,
+        "blocked_before_execution": True,
+        "executed": False,
+        "replayed_from_observation_sha256": (
+            observation.get("observation_sha256")
+            if type(observation) is dict and route == "GIT_LS_REMOTE"
+            else None
+        ),
+    }
+    _RUN_STATE["additional_requests"].append(record)
+    if route in {
+        "ALTERNATE_GIT_TRANSPORT",
+        "ALTERNATE_TRANSPORT",
+        "SHELL_OR_NETWORK_TRANSPORT",
+    }:
+        _RUN_STATE["fallback_count"] += 1
+    return record
+
+
+def _replay_remote_main_result(
+    command: Any,
+    kwargs: Mapping[str, Any],
+) -> subprocess.CompletedProcess[Any]:
+    observation = _RUN_STATE.get("observation")
+    assert type(observation) is dict
+    remote = observation["remote_observation"]
+    assert remote["result_class"] == "AVAILABLE_MATCH"
+    oid = remote["observed_oid_sha1"]
+    assert _is_lower_hex(oid, 40)
+    raw = f"{oid}\trefs/heads/main\n"
+    text_mode = bool(
+        kwargs.get("text")
+        or kwargs.get("universal_newlines")
+        or kwargs.get("encoding") is not None
+        or kwargs.get("errors") is not None
+    )
+    stdout: str | bytes = raw if text_mode else raw.encode("ascii")
+    stderr: str | bytes = "" if text_mode else b""
+    return subprocess.CompletedProcess(
+        args=command,
+        returncode=0,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
+def _install_process_guards() -> dict[str, Any]:
+    originals: dict[str, Any] = {
+        "subprocess.run": subprocess.run,
+        "subprocess.Popen": subprocess.Popen,
+        "subprocess.call": subprocess.call,
+        "subprocess.check_call": subprocess.check_call,
+        "subprocess.check_output": subprocess.check_output,
+        "subprocess.getoutput": subprocess.getoutput,
+        "subprocess.getstatusoutput": subprocess.getstatusoutput,
+        "socket.create_connection": socket.create_connection,
+        "socket.create_server": socket.create_server,
+        "socket.socket": socket.socket,
+    }
+    for name in (
+        "_exit",
+        "execl",
+        "execle",
+        "execlp",
+        "execlpe",
+        "execv",
+        "execve",
+        "execvp",
+        "execvpe",
+        "popen",
+        "posix_spawn",
+        "posix_spawnp",
+        "spawnl",
+        "spawnle",
+        "spawnlp",
+        "spawnlpe",
+        "spawnv",
+        "spawnve",
+        "spawnvp",
+        "spawnvpe",
+        "system",
+    ):
+        if hasattr(os, name):
+            originals[f"os.{name}"] = getattr(os, name)
+
+    popen_depth = [0]
+
+    def reject(route: str) -> None:
+        if route == "PORT_LOCAL_GIT_INTROSPECTION":
+            _RUN_STATE["port_local_git_count"] += 1
+        record = _record_additional_request(route)
+        raise _GuardViolation(
+            node=record["node"],
+            lane=record["lane"],
+            route=record["route"],
+        )
+
+    def guarded_run(command: Any, *args: Any, **kwargs: Any) -> Any:
+        if _RUN_STATE["runtime_import_guard"] is True:
+            reject("RUNTIME_IMPORT_PROCESS_EXECUTION")
+        if _RUN_STATE["port_operation_depth"] > 0:
+            reject(
+                "PORT_LOCAL_GIT_INTROSPECTION"
+                if _local_git_process(command)
+                else "PORT_PROCESS_EXECUTION"
+            )
+        route = _process_route(command)
+        if route is not None:
+            record = _record_additional_request(route)
+            if (
+                route == "GIT_LS_REMOTE"
+                and _remote_replay_request_safe(command, args, kwargs)
+                and _RUN_STATE.get("port_mode") == "all_absent"
+                and record["node"] in _CAUSAL_RED_REQUIRED_LANES
+            ):
+                return _replay_remote_main_result(command, kwargs)
+            raise _GuardViolation(
+                node=record["node"],
+                lane=record["lane"],
+                route=record["route"],
+            )
+        if not _local_git_process(command):
+            reject("DIRECT_PROCESS_SPAWN")
+        return originals["subprocess.run"](command, *args, **kwargs)
+
+    def guarded_popen(*args: Any, **kwargs: Any) -> Any:
+        command = args[0] if args else kwargs.get("args")
+        if _RUN_STATE["runtime_import_guard"] is True:
+            reject("RUNTIME_IMPORT_PROCESS_EXECUTION")
+        if _RUN_STATE["port_operation_depth"] > 0:
+            reject(
+                "PORT_LOCAL_GIT_INTROSPECTION"
+                if _local_git_process(command)
+                else "PORT_PROCESS_EXECUTION"
+            )
+        route = _process_route(command)
+        if route is not None:
+            reject(route)
+        if not _local_git_process(command):
+            reject("DIRECT_PROCESS_SPAWN")
+        popen_depth[0] += 1
+        try:
+            return originals["subprocess.Popen"](*args, **kwargs)
+        finally:
+            popen_depth[0] -= 1
+
+    def guarded_convenience(name: str) -> Callable[..., Any]:
+        original = originals[f"subprocess.{name}"]
+
+        @wraps(original)
+        def guarded(command: Any, *args: Any, **kwargs: Any) -> Any:
+            if _RUN_STATE["runtime_import_guard"] is True:
+                reject("RUNTIME_IMPORT_PROCESS_EXECUTION")
+            if _RUN_STATE["port_operation_depth"] > 0:
+                reject(
+                    "PORT_LOCAL_GIT_INTROSPECTION"
+                    if _local_git_process(command)
+                    else "PORT_PROCESS_EXECUTION"
+                )
+            route = _process_route(command)
+            if route is not None:
+                reject(route)
+            if not _local_git_process(command):
+                reject("DIRECT_PROCESS_SPAWN")
+            return original(command, *args, **kwargs)
+
+        return guarded
+
+    def guarded_os_process(name: str) -> Callable[..., Any]:
+        original = originals[f"os.{name}"]
+
+        @wraps(original)
+        def guarded(*args: Any, **kwargs: Any) -> Any:
+            if _RUN_STATE["runtime_import_guard"] is True:
+                reject("RUNTIME_IMPORT_PROCESS_EXECUTION")
+            if name in {"posix_spawn", "posix_spawnp"} and popen_depth[0] > 0:
+                return original(*args, **kwargs)
+            if _RUN_STATE["port_operation_depth"] > 0:
+                reject("PORT_PROCESS_EXECUTION")
+            command = args[1] if name.startswith("posix_spawn") and len(args) > 1 else (
+                args[0] if args else kwargs.get("args", name)
+            )
+            route = _process_route(command) or "DIRECT_PROCESS_SPAWN"
+            reject(route)
+
+        return guarded
+
+    def guarded_socket(*args: Any, **kwargs: Any) -> Any:
+        reject("DIRECT_SOCKET_CONNECTION")
+
+    subprocess.run = guarded_run
+    subprocess.Popen = guarded_popen
+    for name in (
+        "call",
+        "check_call",
+        "check_output",
+        "getoutput",
+        "getstatusoutput",
+    ):
+        setattr(subprocess, name, guarded_convenience(name))
+    socket.create_connection = guarded_socket
+    socket.create_server = guarded_socket
+    socket.socket = guarded_socket
+    for key in tuple(originals):
+        if key.startswith("os."):
+            name = key.partition(".")[2]
+            setattr(os, name, guarded_os_process(name))
+    return originals
+
+
+def _restore_process_guards(originals: Mapping[str, Any]) -> None:
+    for key, value in originals.items():
+        owner_name, _, attribute = key.partition(".")
+        owner = {
+            "subprocess": subprocess,
+            "os": os,
+            "socket": socket,
+        }[owner_name]
+        setattr(owner, attribute, value)
+
+
+def _role_verdict_preimage(
+    role: str,
+    result: Any,
+) -> dict[str, Any]:
+    assert type(result) is tuple
+    assert all(
+        type(code) is str
+        and re.fullmatch(r"[A-Z0-9_]+", code) is not None
+        for code in result
+    )
+    value = {
+        "schema_version": _ROLE_VERDICT_SCHEMA_V1,
+        "consumer_role": role,
+        "public_api_name": _ROLE_PUBLIC_APIS[role],
+        "accepted": result == (),
+        "issue_codes": list(result),
+    }
+    assert len(value) == 5
+    return value
+
+
+def _validate_consumption_event(
+    payload: bytes,
+    *,
+    role: str,
+    result: Any,
+    observation: Mapping[str, Any],
+    request_delta: int,
+) -> None:
+    assert type(payload) is bytes
+    value = json.loads(payload.decode("utf-8", errors="strict"))
+    assert _canonical_bytes(value) == payload
+    assert type(value) is dict
+    assert set(value) == {
+        "schema_version",
+        "run_challenge_id",
+        "run_scope",
+        "consumer_role",
+        "observation_sha256",
+        "source_cut_sha256",
+        "module_identity_sha256",
+        "derivation_mode",
+        "semantic_verdict_sha256",
+        "additional_live_query_request_count",
+        "consumption_evidence_sha256",
+    }
+    assert value["schema_version"] == _CONSUMPTION_EVIDENCE_SCHEMA_V1
+    assert value["run_challenge_id"] == observation["run_challenge_id"]
+    assert value["run_scope"] == observation["run_scope"]
+    assert value["consumer_role"] == role
+    assert value["observation_sha256"] == observation["observation_sha256"]
+    assert value["source_cut_sha256"] == (
+        observation["local_source_cut"]["source_cut_sha256"]
+    )
+    identity_key = {
+        "OWNER_EXECUTOR": "owner_executor",
+        "INDEPENDENT_EXECUTOR": "independent_executor",
+        "PARENT_PHASE3": "parent_phase3_source",
+    }[role]
+    assert value["module_identity_sha256"] == _sha256_value(
+        observation["module_identities"][identity_key]
+    )
+    assert value["derivation_mode"] == _ROLE_DERIVATION_MODES[role]
+    assert all(
+        _is_lower_hex(value[key], 64)
+        for key in (
+            "run_challenge_id",
+            "observation_sha256",
+            "source_cut_sha256",
+            "module_identity_sha256",
+            "semantic_verdict_sha256",
+            "consumption_evidence_sha256",
+        )
+    )
+    expected_verdict = _role_verdict_preimage(role, result)
+    assert value["semantic_verdict_sha256"] == _sha256_value(
+        expected_verdict
+    )
+    assert request_delta == 0
+    assert type(value["additional_live_query_request_count"]) is int
+    assert value["additional_live_query_request_count"] == 0
+    assert _delete_self_hash_valid(value, "consumption_evidence_sha256")
+    forbidden = {
+        "command",
+        "credential",
+        "environment",
+        "exception",
+        "observation_body",
+        "path",
+        "stderr",
+        "stdout",
+        "url",
+        "verdict_body",
+    }
+    assert forbidden.isdisjoint(value)
+
+
+def _audit_hook(event: str, args: tuple[Any, ...]) -> None:
+    if event != _CONSUMPTION_EVENT:
+        return
+    if _RUN_STATE.get("active") is not True:
+        return
+    windows = tuple(_RUN_STATE["active_role_windows"])
+    _RUN_STATE["audit_events"].append(
+        {
+            "argument_count": len(args),
+            "payload": args[0] if len(args) == 1 else None,
+            "windows": windows,
+            "accepted_by": None,
+        }
+    )
+    if not windows:
+        return
+    role = windows[-1]
+    probes = _RUN_STATE["active_substitution_probes"].pop(role, ())
+    for port, payload, label in probes:
+        _assert_port_rejects(port, payload)
+        _RUN_STATE["completed_substitution_probes"].append(label)
+
+
+def _install_audit_hook() -> None:
+    if not _RUN_STATE["audit_hook_installed"]:
+        sys.addaudithook(_audit_hook)
+        _RUN_STATE["audit_hook_installed"] = True
+
+
+def _wrap_role_api(
+    api: Callable[[Mapping[str, Any]], Any],
+    role: str,
+) -> Callable[[Mapping[str, Any]], Any]:
+    @wraps(api)
+    def observed(state: Mapping[str, Any]) -> Any:
+        if _RUN_STATE.get("port_mode") != "all_present":
+            return api(state)
+        observation = (
+            _RUN_STATE.get("active_observation")
+            or _RUN_STATE.get("observation")
+        )
+        assert type(observation) is dict
+        event_start = len(_RUN_STATE["audit_events"])
+        request_start = len(_RUN_STATE["additional_requests"])
+        _RUN_STATE["active_role_windows"].append(role)
+        nested_module: ModuleType | None = None
+        nested_original: Any = None
+        if role == "PARENT_PHASE3":
+            candidate = sys.modules.get(api.__module__)
+            if type(candidate) is ModuleType:
+                current = getattr(candidate, _INDEPENDENT_API, None)
+                if callable(current):
+                    nested_module = candidate
+                    nested_original = current
+                    setattr(
+                        nested_module,
+                        _INDEPENDENT_API,
+                        _wrap_role_api(
+                            current,
+                            "INDEPENDENT_EXECUTOR",
+                        ),
+                    )
+        try:
+            result = api(state)
+        finally:
+            if nested_module is not None:
+                setattr(
+                    nested_module,
+                    _INDEPENDENT_API,
+                    nested_original,
+                )
+            popped = _RUN_STATE["active_role_windows"].pop()
+            assert popped == role
+        matching_indexes = [
+            index
+            for index in range(
+                event_start,
+                len(_RUN_STATE["audit_events"]),
+            )
+            if _RUN_STATE["audit_events"][index]["windows"]
+            and _RUN_STATE["audit_events"][index]["windows"][-1] == role
+        ]
+        assert len(matching_indexes) == 1
+        event_record = _RUN_STATE["audit_events"][matching_indexes[0]]
+        assert event_record["argument_count"] == 1
+        assert type(event_record["payload"]) is bytes
+        assert event_record["accepted_by"] is None
+        _validate_consumption_event(
+            event_record["payload"],
+            role=role,
+            result=result,
+            observation=observation,
+            request_delta=(
+                len(_RUN_STATE["additional_requests"]) - request_start
+            ),
+        )
+        event_record["accepted_by"] = role
+        assert all(
+            event["accepted_by"] is not None
+            for event in _RUN_STATE["audit_events"][event_start:]
+        )
+        return result
+
+    return observed
+
+
+def _port_modules() -> dict[str, ModuleType]:
+    return {
+        "sequence": _module("sequence"),
+        "independent": _module("independent"),
+        "parent": _module("parent"),
+    }
+
+
+def _load_runtime_port_modules(
+    root: Path,
+) -> tuple[dict[str, ModuleType], str]:
+    _prepare_imports(root)
+    _preflight_formal_owner_import_closure(root)
+    snapshot = {
+        key: copy.deepcopy(_RUN_STATE[key])
+        for key in (
+            "additional_requests",
+            "additional_executions",
+            "neutral_request_count",
+            "neutral_execution_count",
+            "retry_count",
+            "fallback_count",
+            "prior_run_reuse_count",
+        )
+    }
+    originals = _install_process_guards()
+    _RUN_STATE["runtime_import_guard"] = True
+    try:
+        modules = {
+            role: importlib.import_module(_MODULE_NAMES[role])
+            for role in ("sequence", "independent", "parent")
+        }
+        mode = _port_mode(modules)
+        assert all(
+            _RUN_STATE[key] == value
+            for key, value in snapshot.items()
+        )
+        return modules, mode
+    finally:
+        _RUN_STATE["runtime_import_guard"] = False
+        _restore_process_guards(originals)
+
+
+def _port_mode(modules: Mapping[str, ModuleType]) -> str:
+    present = [
+        hasattr(module, _OBSERVATION_PORT_ATTRIBUTE)
+        for module in modules.values()
+    ]
+    if present == [False, False, False]:
+        return "all_absent"
+    if present == [True, True, True]:
+        assert all(
+            callable(getattr(module, _OBSERVATION_PORT_ATTRIBUTE))
+            for module in modules.values()
+        )
+        return "all_present"
+    return "mixed"
+
+
+@contextmanager
+def _port_operation() -> IteratorABC[Any]:
+    assert type(_RUN_STATE["port_operation_depth"]) is int
+    assert _RUN_STATE["port_operation_depth"] >= 0
+    _RUN_STATE["port_operation_depth"] += 1
+    try:
+        yield
+    finally:
+        _RUN_STATE["port_operation_depth"] -= 1
+        assert _RUN_STATE["port_operation_depth"] >= 0
+
+
+def _observation_port(module: ModuleType) -> Callable[[bytes], Any]:
+    with _port_operation():
+        port = getattr(module, _OBSERVATION_PORT_ATTRIBUTE)
+        assert callable(port)
+    return port
+
+
+@contextmanager
+def _guarded_port_binding(
+    port: Callable[[bytes], Any],
+    payload: bytes,
+) -> IteratorABC[Any]:
+    with _port_operation():
+        context = port(payload)
+        assert hasattr(context, "__enter__") and hasattr(
+            context,
+            "__exit__",
+        )
+    with _port_operation():
+        entered = context.__enter__()
+    try:
+        yield entered
+    except BaseException:
+        error = sys.exc_info()
+        with _port_operation():
+            suppressed = context.__exit__(*error)
+        if not suppressed:
+            raise
+    else:
+        with _port_operation():
+            context.__exit__(None, None, None)
+
+
+def _enter_port_contexts_by_role(
+    modules: Mapping[str, ModuleType],
+    observation_bytes: Mapping[str, bytes],
+) -> ExitStack:
+    assert set(observation_bytes) == {
+        "sequence",
+        "independent",
+        "parent",
+    }
+    assert all(type(payload) is bytes for payload in observation_bytes.values())
+    if len(set(observation_bytes.values())) != 1:
+        raise _MixedRoleObservationIdentity(
+            "role observation bytes are not identical"
+        )
+    stack = ExitStack()
+    try:
+        for role in ("sequence", "independent", "parent"):
+            port = _observation_port(modules[role])
+            stack.enter_context(
+                _guarded_port_binding(port, observation_bytes[role])
+            )
+    except BaseException:
+        stack.close()
+        raise
+    return stack
+
+
+def _enter_port_contexts(
+    modules: Mapping[str, ModuleType],
+    observation_bytes: bytes,
+) -> ExitStack:
+    return _enter_port_contexts_by_role(
+        modules,
+        {
+            role: observation_bytes
+            for role in ("sequence", "independent", "parent")
+        },
+    )
+
+
+def _rehash_observation(value: dict[str, Any]) -> bytes:
+    payload = _outer_rehash_observation(value)
+    _validate_observation(value)
+    return payload
+
+
+def _outer_rehash_observation(value: dict[str, Any]) -> bytes:
+    value["observation_sha256"] = _hash_without(
+        value,
+        "observation_sha256",
+    )
+    return _canonical_bytes(value)
+
+
+def _different_oid(value: str) -> str:
+    candidate = "0" * 40
+    return "1" * 40 if value == candidate else candidate
+
+
+def _counterfactual_observations(
+    observation: Mapping[str, Any],
+) -> tuple[bytes, bytes]:
+    mismatch = copy.deepcopy(dict(observation))
+    actual_oid = str(
+        mismatch["remote_observation"]["observed_oid_sha1"]
+    )
+    mismatch["remote_observation"]["observed_oid_sha1"] = _different_oid(
+        actual_oid
+    )
+    mismatch["remote_observation"]["result_class"] = (
+        "REMOTE_MAIN_OID_MISMATCH"
+    )
+    mismatch["remote_observation"]["matches_local_origin_main"] = False
+    mismatch_bytes = _rehash_observation(mismatch)
+
+    changed_cut = copy.deepcopy(dict(observation))
+    after = changed_cut["local_source_cut"]["after"]
+    assert after["worktree_clean"] is True
+    after["worktree_clean"] = False
+    changed_cut["local_source_cut"]["same_cut"] = False
+    changed_cut["local_source_cut"]["source_cut_sha256"] = _hash_without(
+        changed_cut["local_source_cut"],
+        "source_cut_sha256",
+    )
+    changed_cut_bytes = _rehash_observation(changed_cut)
+    assert mismatch_bytes != changed_cut_bytes
+    return mismatch_bytes, changed_cut_bytes
+
+
+def _probe_role_calls() -> None:
+    connection = _connection_fixture()
+    calls = (
+        (
+            _wrap_role_api(
+                _guard_api_read_only(
+                    getattr(_module("sequence"), _OWNER_API)
+                ),
+                "OWNER_EXECUTOR",
+            ),
+            connection,
+            "OWNER_EXECUTOR",
+        ),
+        (
+            _wrap_role_api(
+                _guard_api_read_only(
+                    getattr(_module("independent"), _INDEPENDENT_API)
+                ),
+                "INDEPENDENT_EXECUTOR",
+            ),
+            connection,
+            "INDEPENDENT_EXECUTOR",
+        ),
+        (
+            _wrap_role_api(
+                _guard_api_read_only(
+                    getattr(_module("parent"), _PARENT_PHASE3_API)
+                ),
+                "PARENT_PHASE3",
+            ),
+            _parent_fixture(connection),
+            "PARENT_PHASE3",
+        ),
+    )
+    for api, state, role in calls:
+        result = api(state)
+        assert result == _ROLE_FAILURES[role]
+
+
+def _assert_port_rejects(
+    port: Callable[[bytes], Any],
+    payload: bytes,
+) -> None:
+    event_start = len(_RUN_STATE["audit_events"])
+    binding = _guarded_port_binding(port, payload)
+    try:
+        binding.__enter__()
+    except Exception:
+        pass
+    else:
+        _RUN_STATE["prior_run_reuse_count"] += 1
+        try:
+            binding.__exit__(None, None, None)
+        finally:
+            raise AssertionError(
+                "consumer port accepted a rejected observation"
+            )
+    assert len(_RUN_STATE["audit_events"]) == event_start
+
+
+def _assert_mixed_role_inputs_rejected(
+    modules: Mapping[str, ModuleType],
+    payloads: Mapping[str, bytes],
+) -> None:
+    assert set(payloads) == {"sequence", "independent", "parent"}
+    event_start = len(_RUN_STATE["audit_events"])
+    request_start = len(_RUN_STATE["additional_requests"])
+    local_git_start = _RUN_STATE["port_local_git_count"]
+    reuse_start = _RUN_STATE["prior_run_reuse_count"]
+    decoded = {
+        role: json.loads(payload.decode("utf-8", errors="strict"))
+        for role, payload in payloads.items()
+    }
+    for observation in decoded.values():
+        _validate_observation(observation)
+    identities = {
+        observation["observation_sha256"]
+        for observation in decoded.values()
+    }
+    assert len(identities) > 1
+    try:
+        _enter_port_contexts_by_role(modules, payloads)
+    except _MixedRoleObservationIdentity:
+        pass
+    else:
+        raise AssertionError("mixed role observation identity was accepted")
+    _RUN_STATE["mixed_role_identity_probe_detected"] = True
+    assert len(_RUN_STATE["audit_events"]) == event_start
+    assert len(_RUN_STATE["additional_requests"]) == request_start
+    assert _RUN_STATE["port_local_git_count"] == local_git_start
+    assert _RUN_STATE["prior_run_reuse_count"] == reuse_start
+    _assert_missing_binding_fail_closed()
+
+
+def _assert_missing_binding_fail_closed() -> None:
+    connection = _connection_fixture()
+    parent_module = _module("parent")
+    reconstruct_original = getattr(
+        parent_module,
+        _PARENT_RECONSTRUCT_API,
+    )
+    postfetch_original = getattr(
+        parent_module,
+        _PARENT_POSTFETCH_VERIFY_API,
+    )
+    credit_connection = copy.deepcopy(connection)
+    credit_connection["verification_profile"] = (
+        _ACTUAL_GIT_POSTFETCH_VERIFICATION_PROFILE
+    )
+    credit_connection["credit_eligible"] = True
+    positive_parent_state = _parent_fixture(connection)
+    positive_parent_state["verification_profile"] = (
+        _ACTUAL_GIT_POSTFETCH_VERIFICATION_PROFILE
+    )
+    positive_parent_state["credit_eligible"] = True
+
+    def parent_reconstruct(
+        _value: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        return copy.deepcopy(credit_connection)
+
+    def parent_postfetch(_value: Mapping[str, Any]) -> bool:
+        return True
+
+    def parent_positive_probe(state: Mapping[str, Any]) -> Any:
+        setattr(
+            parent_module,
+            _PARENT_RECONSTRUCT_API,
+            parent_reconstruct,
+        )
+        setattr(
+            parent_module,
+            _PARENT_POSTFETCH_VERIFY_API,
+            parent_postfetch,
+        )
+        try:
+            api = _guard_api_read_only(
+                getattr(parent_module, _PARENT_PHASE3_API)
+            )
+            return api(state)
+        finally:
+            setattr(
+                parent_module,
+                _PARENT_RECONSTRUCT_API,
+                reconstruct_original,
+            )
+            setattr(
+                parent_module,
+                _PARENT_POSTFETCH_VERIFY_API,
+                postfetch_original,
+            )
+
+    calls = (
+        (
+            _guard_api_read_only(
+                getattr(_module("sequence"), _OWNER_API)
+            ),
+            connection,
+            "OWNER_EXECUTOR",
+        ),
+        (
+            _guard_api_read_only(
+                getattr(_module("independent"), _INDEPENDENT_API)
+            ),
+            connection,
+            "INDEPENDENT_EXECUTOR",
+        ),
+        (
+            parent_positive_probe,
+            positive_parent_state,
+            "PARENT_PHASE3",
+        ),
+    )
+    for api, state, role in calls:
+        event_start = len(_RUN_STATE["audit_events"])
+        _RUN_STATE["active_role_windows"].append(role)
+        try:
+            result = api(state)
+        finally:
+            popped = _RUN_STATE["active_role_windows"].pop()
+            assert popped == role
+        assert result == _ROLE_FAILURES[role]
+        assert len(_RUN_STATE["audit_events"]) == event_start
+
+
+def _run_port_semantic_matrix(
+    modules: Mapping[str, ModuleType],
+    observation: Mapping[str, Any],
+) -> None:
+    mismatch_bytes, changed_cut_bytes = _counterfactual_observations(
+        observation
+    )
+    _assert_mixed_role_inputs_rejected(
+        modules,
+        {
+            "sequence": mismatch_bytes,
+            "independent": changed_cut_bytes,
+            "parent": mismatch_bytes,
+        },
+    )
+    for index, payload in enumerate((mismatch_bytes, changed_cut_bytes)):
+        _RUN_STATE["active_observation"] = json.loads(
+            payload.decode("utf-8", errors="strict")
+        )
+        try:
+            with _enter_port_contexts(modules, payload):
+                if index == 0:
+                    for module_role, consumer_role in (
+                        ("sequence", "OWNER_EXECUTOR"),
+                        ("independent", "INDEPENDENT_EXECUTOR"),
+                        ("parent", "PARENT_PHASE3"),
+                    ):
+                        port = _observation_port(modules[module_role])
+                        _RUN_STATE["active_substitution_probes"][
+                            consumer_role
+                        ] = (
+                            (
+                                port,
+                                mismatch_bytes,
+                                f"{consumer_role}_ACTIVE_SAME_IDENTITY_"
+                                "SECOND_BIND_REJECTED",
+                            ),
+                            (
+                                port,
+                                changed_cut_bytes,
+                                f"{consumer_role}_ACTIVE_OBSERVATION_"
+                                "SUBSTITUTION_REJECTED",
+                            ),
+                        )
+                _probe_role_calls()
+        finally:
+            _RUN_STATE["active_substitution_probes"].clear()
+            _RUN_STATE["active_observation"] = None
+    assert _RUN_STATE["completed_substitution_probes"] == [
+        "OWNER_EXECUTOR_ACTIVE_SAME_IDENTITY_SECOND_BIND_REJECTED",
+        "OWNER_EXECUTOR_ACTIVE_OBSERVATION_SUBSTITUTION_REJECTED",
+        "INDEPENDENT_EXECUTOR_ACTIVE_SAME_IDENTITY_SECOND_BIND_REJECTED",
+        "INDEPENDENT_EXECUTOR_ACTIVE_OBSERVATION_SUBSTITUTION_REJECTED",
+        "PARENT_PHASE3_ACTIVE_SAME_IDENTITY_SECOND_BIND_REJECTED",
+        "PARENT_PHASE3_ACTIVE_OBSERVATION_SUBSTITUTION_REJECTED",
+    ]
+    _assert_missing_binding_fail_closed()
+
+    malformed = b"{"
+    bad_hash_value = copy.deepcopy(dict(observation))
+    bad_hash_value["automatic_progression"] = True
+    bad_hash = _canonical_bytes(bad_hash_value)
+    automatic_progression = copy.deepcopy(dict(observation))
+    automatic_progression["automatic_progression"] = True
+    automatic_progression_bytes = _outer_rehash_observation(
+        automatic_progression
+    )
+    wrong_challenge = copy.deepcopy(dict(observation))
+    wrong_challenge["run_challenge_id"] = (
+        "1" * 64
+        if wrong_challenge["run_challenge_id"] == "0" * 64
+        else "0" * 64
+    )
+    wrong_challenge_bytes = _rehash_observation(wrong_challenge)
+    wrong_scope = copy.deepcopy(dict(observation))
+    wrong_scope["run_scope"] = "UNAUTHORIZED_SCOPE"
+    wrong_scope_bytes = _outer_rehash_observation(wrong_scope)
+    wrong_source_cut = copy.deepcopy(dict(observation))
+    current_cut_hash = wrong_source_cut["local_source_cut"][
+        "source_cut_sha256"
+    ]
+    wrong_source_cut["local_source_cut"]["source_cut_sha256"] = (
+        "1" * 64 if current_cut_hash == "0" * 64 else "0" * 64
+    )
+    wrong_source_cut_bytes = _outer_rehash_observation(wrong_source_cut)
+    module_identity_keys = {
+        "sequence": "owner_executor",
+        "independent": "independent_executor",
+        "parent": "parent_phase3_source",
+    }
+    for role, module in modules.items():
+        port = _observation_port(module)
+        for payload in (
+            b"",
+            malformed,
+            bad_hash,
+            automatic_progression_bytes,
+            wrong_challenge_bytes,
+            wrong_scope_bytes,
+            wrong_source_cut_bytes,
+        ):
+            _assert_port_rejects(port, payload)
+        wrong_module = copy.deepcopy(dict(observation))
+        identity_key = module_identity_keys[role]
+        current_raw = wrong_module["module_identities"][identity_key][
+            "raw_sha256"
+        ]
+        wrong_module["module_identities"][identity_key][
+            "raw_sha256"
+        ] = "1" * 64 if current_raw == "0" * 64 else "0" * 64
+        wrong_module_bytes = _rehash_observation(wrong_module)
+        _assert_port_rejects(port, wrong_module_bytes)
+        _assert_missing_binding_fail_closed()
+
+    for role, module in modules.items():
+        port = _observation_port(module)
+        stale_payload = mismatch_bytes if role != "parent" else changed_cut_bytes
+        _assert_port_rejects(port, stale_payload)
+
+    _assert_missing_binding_fail_closed()
+    assert len({mismatch_bytes, changed_cut_bytes}) == 2
+
+
+def _record_oracle(
+    node: str,
+    *,
+    outcome: str,
+    signature: str | None,
+    violation: str | None,
+) -> None:
+    assert node not in _RUN_STATE["oracle_outcomes"]
+    _RUN_STATE["oracle_outcomes"][node] = {
+        "node_id": _ORDERED_NODE_IDS[int(node[1:]) - 1],
+        "outcome": outcome,
+        "causal_signature_id": signature,
+        "violation_class": violation,
+    }
+
+
+def _causal_oracle(node: str) -> Callable[[Callable[..., None]], Callable[..., None]]:
+    def decorate(function: Callable[..., None]) -> Callable[..., None]:
+        @wraps(function)
+        def wrapped(*args: Any, **kwargs: Any) -> None:
+            assert _RUN_STATE.get("active") is True
+            assert _RUN_STATE.get("current_node") is None
+            _RUN_STATE["current_node"] = node
+            request_start = len(_RUN_STATE["additional_requests"])
+            execution_start = _RUN_STATE["additional_executions"]
+            fallback_start = _RUN_STATE["fallback_count"]
+            retry_start = _RUN_STATE["retry_count"]
+            causal_red = False
+            try:
+                function(*args, **kwargs)
+                requests = _RUN_STATE["additional_requests"][request_start:]
+                assert (
+                    _RUN_STATE["additional_executions"] == execution_start
+                )
+                assert _RUN_STATE["fallback_count"] == fallback_start
+                assert _RUN_STATE["retry_count"] == retry_start
+                if _RUN_STATE.get("port_mode") == "all_absent":
+                    observation = _RUN_STATE.get("observation")
+                    assert type(observation) is dict
+                    observed_lanes = {
+                        request["lane"] for request in requests
+                    }
+                    assert _CAUSAL_RED_REQUIRED_LANES[node].issubset(
+                        observed_lanes
+                    )
+                    assert all(
+                        request
+                        == {
+                            "node": node,
+                            "lane": request["lane"],
+                            "route": "GIT_LS_REMOTE",
+                            "blocked_before_execution": True,
+                            "executed": False,
+                            "replayed_from_observation_sha256": (
+                                observation["observation_sha256"]
+                            ),
+                        }
+                        and request["lane"]
+                        in _CAUSAL_RED_REQUEST_LANES[node]
+                        for request in requests
+                    )
+                    if node == "O03":
+                        assert _port_mode(_port_modules()) == "all_absent"
+                        assert (
+                            observation["local_source_cut"]["same_cut"]
+                            is True
+                        )
+                    _record_oracle(
+                        node,
+                        outcome="CAUSAL_RED",
+                        signature=_CAUSAL_RED_SIGNATURES[node],
+                        violation=_CAUSAL_RED_VIOLATIONS[node],
+                    )
+                    causal_red = True
+                else:
+                    assert _RUN_STATE.get("port_mode") == "all_present"
+                    assert requests == []
+                    _record_oracle(
+                        node,
+                        outcome="GREEN",
+                        signature=None,
+                        violation=None,
+                    )
+            except BaseException as error:
+                if node not in _RUN_STATE["oracle_outcomes"]:
+                    signature = (
+                        error.route
+                        if isinstance(error, _GuardViolation)
+                        else "NODE_OBLIGATION_FAILURE"
+                    )
+                    _record_oracle(
+                        node,
+                        outcome="UNEXPECTED_FAILURE",
+                        signature=signature,
+                        violation="ORACLE_FAILURE",
+                    )
+                raise
+            finally:
+                assert _RUN_STATE.get("current_node") == node
+                _RUN_STATE["current_node"] = None
+            if causal_red:
+                pytest.fail(_CAUSAL_RED_SIGNATURES[node], pytrace=False)
+
+        return wrapped
+
+    return decorate
+
+
 def _module_level_bindings(
     tree: ast.Module,
 ) -> dict[str, list[ast.AST]]:
@@ -2526,7 +5307,8 @@ def _require_api(
         _assert_independent_owner_boundary(module)
         _assert_no_owner_runtime_references(module)
     _assert_no_effect_sink_calls(module, name)
-    return _guard_api_read_only(api)
+    guarded = _guard_api_read_only(api)
+    return _wrap_role_api(guarded, _ROLE_NAMES[role])
 
 
 def _function_node(module: ModuleType, name: str) -> ast.FunctionDef:
@@ -3028,6 +5810,146 @@ def _observable_module_state_value(
     return {"type": type_identity, "attributes": attributes}
 
 
+def _port_runtime_binding_names(module: ModuleType) -> set[str]:
+    bindings = ModuleType.__getattribute__(module, "__dict__")
+    if _OBSERVATION_PORT_ATTRIBUTE not in bindings:
+        return set()
+    port = bindings[_OBSERVATION_PORT_ATTRIBUTE]
+    names = {
+        _OBSERVATION_PORT_ATTRIBUTE,
+        *(
+            name
+            for name, value in bindings.items()
+            if value is port
+        ),
+    }
+    pending: deque[Any] = deque([port])
+    visited: set[int] = set()
+    while pending:
+        value = pending.popleft()
+        if value is None or type(value) in {
+            bool,
+            bytes,
+            float,
+            int,
+            str,
+        }:
+            continue
+        value_id = id(value)
+        if value_id in visited:
+            continue
+        visited.add(value_id)
+
+        for binding_name, binding_value in bindings.items():
+            if binding_value is value and binding_name not in names:
+                names.add(binding_name)
+
+        wrapped = inspect.getattr_static(value, "__wrapped__", None)
+        if wrapped is not None:
+            pending.append(wrapped)
+
+        if type(value) is FunctionType:
+            if value.__module__ != module.__name__:
+                continue
+            for referenced_name in value.__code__.co_names:
+                if referenced_name in bindings:
+                    names.add(referenced_name)
+                    pending.append(bindings[referenced_name])
+            pending.extend(value.__defaults__ or ())
+            pending.extend((value.__kwdefaults__ or {}).values())
+            pending.extend(value.__annotations__.values())
+            pending.extend(value.__dict__.values())
+            for cell in value.__closure__ or ():
+                try:
+                    pending.append(cell.cell_contents)
+                except ValueError:
+                    pass
+            continue
+
+        if type(value) is MethodType:
+            pending.append(value.__func__)
+            pending.append(value.__self__)
+            continue
+
+        if isinstance(value, partial):
+            pending.append(value.func)
+            pending.extend(value.args)
+            pending.extend((value.keywords or {}).values())
+            continue
+
+        if isinstance(value, type):
+            if value.__module__ != module.__name__:
+                continue
+            namespace = type.__getattribute__(value, "__dict__")
+            for member_name, member in namespace.items():
+                if isinstance(member, (classmethod, staticmethod)):
+                    pending.append(member.__func__)
+                elif isinstance(member, property):
+                    pending.extend(
+                        candidate
+                        for candidate in (
+                            member.fget,
+                            member.fset,
+                            member.fdel,
+                        )
+                        if candidate is not None
+                    )
+                elif type(member) is FunctionType:
+                    pending.append(member)
+                elif not member_name.startswith("__"):
+                    pending.append(member)
+            continue
+
+        if type(value) in {tuple, list, set, frozenset, deque}:
+            pending.extend(value)
+            continue
+        if type(value) is dict:
+            pending.extend(value.keys())
+            pending.extend(value.values())
+            continue
+
+        value_type = type(value)
+        if callable(value):
+            if value_type.__module__ == module.__name__:
+                pending.append(value_type)
+                for owned_type in type.__getattribute__(
+                    value_type,
+                    "__mro__",
+                ):
+                    if owned_type.__module__ != module.__name__:
+                        continue
+                    namespace = type.__getattribute__(
+                        owned_type,
+                        "__dict__",
+                    )
+                    for slot_name, descriptor in namespace.items():
+                        if (
+                            slot_name in {"__dict__", "__weakref__"}
+                            or not isinstance(
+                                descriptor,
+                                (
+                                    GetSetDescriptorType,
+                                    MemberDescriptorType,
+                                ),
+                            )
+                        ):
+                            continue
+                        try:
+                            pending.append(
+                                descriptor.__get__(value, value_type)
+                            )
+                        except AttributeError:
+                            pass
+            try:
+                attributes = object.__getattribute__(value, "__dict__")
+            except AttributeError:
+                attributes = None
+            if type(attributes) is dict:
+                pending.extend(attributes.values())
+
+    return names
+
+
 def _formal_owner_module_state_sha256(
     modules_by_path: Mapping[str, ModuleType],
     root: Path,
@@ -3044,6 +5966,7 @@ def _formal_owner_module_state_sha256(
         assert type(module) is ModuleType
         bindings = ModuleType.__getattribute__(module, "__dict__")
         assert type(bindings) is dict
+        port_runtime_names = _port_runtime_binding_names(module)
         rows.append(
             {
                 "path": path,
@@ -3058,6 +5981,7 @@ def _formal_owner_module_state_sha256(
                     }
                     for name, value in sorted(dict.items(bindings))
                     if name not in runtime_metadata_names
+                    and name not in port_runtime_names
                 ],
             }
         )
@@ -3517,12 +6441,15 @@ def _assert_module_actual_git_identity(
     path: str,
 ) -> None:
     root = _repository_root()
+    observation = _RUN_STATE.get("observation")
+    assert type(observation) is dict
+    commit = observation["local_source_cut"]["before"]["head_commit_sha1"]
     origin = Path(
         inspect.getsourcefile(inspect.unwrap(api)) or ""
     ).resolve()
     assert origin == (root / path).resolve()
-    blob = _git(root, "rev-parse", f"HEAD:{path}")
-    raw = _git_bytes(root, "show", f"HEAD:{path}")
+    blob = _git(root, "rev-parse", f"{commit}:{path}")
+    raw = _git_bytes(root, "show", f"{commit}:{path}")
     assert hashlib.sha256(raw).hexdigest() == hashlib.sha256(
         origin.read_bytes()
     ).hexdigest()
@@ -3536,24 +6463,22 @@ def _assert_executor_actual_git_identity(
     path: str,
 ) -> None:
     root = _repository_root(require_current_clean=True)
+    observation = _RUN_STATE.get("observation")
+    assert type(observation) is dict
+    before = observation["local_source_cut"]["before"]
+    commit = before["head_commit_sha1"]
     origin = Path(
         inspect.getsourcefile(inspect.unwrap(api)) or ""
     ).resolve()
-    raw = _git_bytes(root, "show", f"HEAD:{path}")
+    raw = _git_bytes(root, "show", f"{commit}:{path}")
     assert set(executor) == _EXECUTOR_KEYS
     assert executor["repository_full_name"] == "MassyuRed/mashos-api"
     assert executor["source_ref"] == "refs/heads/main"
     assert executor["repository_root"] == str(root)
-    assert executor["head_commit_sha1"] == _git(root, "rev-parse", "HEAD")
-    assert executor["head_tree_sha1"] == _git(
-        root,
-        "rev-parse",
-        "HEAD^{tree}",
-    )
-    assert executor["origin_main_commit_sha1"] == _git(
-        root,
-        "rev-parse",
-        "origin/main",
+    assert executor["head_commit_sha1"] == before["head_commit_sha1"]
+    assert executor["head_tree_sha1"] == before["head_tree_sha1"]
+    assert executor["origin_main_commit_sha1"] == (
+        before["origin_main_commit_sha1"]
     )
     assert executor["worktree_clean"] is True
     assert executor["module_path"] == path
@@ -3561,7 +6486,7 @@ def _assert_executor_actual_git_identity(
     assert executor["git_blob_sha1"] == _git(
         root,
         "rev-parse",
-        f"HEAD:{path}",
+        f"{commit}:{path}",
     )
     assert executor["raw_sha256"] == hashlib.sha256(raw).hexdigest()
     assert origin.read_bytes() == raw
@@ -5562,6 +8487,7 @@ def _assert_no_effect_sink_calls(
 ) -> None:
     source_path = Path(inspect.getsourcefile(module) or "")
     tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    port_runtime_names = _port_runtime_binding_names(module)
     module_aliases = {
         alias.asname or alias.name.partition(".")[0]: alias.name
         for statement in tree.body
@@ -5599,6 +8525,7 @@ def _assert_no_effect_sink_calls(
         "PurePosixPath",
         "TypeError",
         "ValueError",
+        "audit",
         "all",
         "any",
         "artifact_sha256",
@@ -5658,6 +8585,7 @@ def _assert_no_effect_sink_calls(
         "stat.S_ISLNK",
         "stat.S_ISREG",
         "subprocess.run",
+        "sys.audit",
         "unicodedata.normalize",
     }
     safe_method_tails = {
@@ -6529,6 +9457,11 @@ def _assert_no_effect_sink_calls(
                 f"non-allowlisted module call: {canonical_call}"
             )
         if root_name in vars(module):
+            if (
+                root_name in port_runtime_names
+                and tail == "get"
+            ):
+                continue
             global_value = vars(module)[root_name]
             assert (
                 type(global_value) in safe_global_types
@@ -6540,6 +9473,841 @@ def _assert_no_effect_sink_calls(
         assert tail in safe_method_tails
 
 
+def _exercise_abort_builder_contract(
+    preflight: Mapping[str, Any],
+    observation: Mapping[str, Any],
+) -> None:
+    repository = observation["repository_identity"]
+    after = observation["local_source_cut"]["after"]
+    probes = (
+        (
+            "AFTER_REPOSITORY_IDENTITY",
+            "LOCAL_GIT_NONZERO_OR_MALFORMED",
+            None,
+            None,
+        ),
+        (
+            "AFTER_LOCAL_SOURCE_IDENTITY",
+            "LOCAL_OS_ERROR",
+            repository,
+            None,
+        ),
+        (
+            "AFTER_MODULE_IDENTITIES",
+            "LOCAL_VALIDATION_ERROR",
+            repository,
+            after,
+        ),
+    )
+    for stage, failure_class, after_repository, after_local in probes:
+        abort = _build_postacquisition_abort(
+            preflight=preflight,
+            remote=observation["remote_observation"],
+            diagnostic=observation["diagnostic"],
+            after_repository_identity=after_repository,
+            after_local_identity=after_local,
+            error=_PostAcquisitionLocalIntrospectionError(
+                stage=stage,
+                failure_class=failure_class,
+            ),
+        )
+        assert len(abort) == 22
+        assert abort["failure_stage"] == stage
+        assert abort["failure_class"] == failure_class
+        assert abort["domain_effect_count"] == 0
+        assert abort["automatic_progression"] is False
+        assert _delete_self_hash_valid(abort, "abort_sha256")
+
+
+def _finalize_unevaluated_observation() -> None:
+    assert _RUN_STATE["terminalization_count"] == 0
+    preflight = _RUN_STATE.get("preflight")
+    observation = _RUN_STATE.get("observation")
+    postacquisition_modules = _RUN_STATE.get(
+        "postacquisition_module_identities"
+    )
+    assert type(preflight) is dict
+    assert type(observation) is dict
+    assert type(postacquisition_modules) is dict
+    before = observation["local_source_cut"]["before"]
+    after = observation["local_source_cut"]["after"]
+    closure: dict[str, Any] | None = None
+    post_repository: dict[str, Any] | None = None
+    post_local: dict[str, Any] | None = None
+    post_modules: dict[str, Any] | None = None
+    try:
+        root = Path(observation["repository_identity"]["repository_root"])
+        post_repository = _repository_identity(root)
+        post_local = _local_source_identity(root, post_repository)
+        post_modules = _module_identities(
+            root,
+            post_local["head_commit_sha1"],
+        )
+        post_matches = bool(
+            post_local == before == after
+            and postacquisition_modules == observation["module_identities"]
+            and post_modules == observation["module_identities"]
+        )
+        closure = {
+            "schema_version": _CLOSURE_SCHEMA_V1,
+            "run_challenge_id": observation["run_challenge_id"],
+            "observation_sha256": observation["observation_sha256"],
+            "run_state": "CLOSED",
+            "closed_at_utc": _utc_now(),
+            "postrun_local_source_cut_sha256": _sha256_value(post_local),
+            "postrun_module_identities_sha256": _sha256_value(post_modules),
+            "postrun_matches_acquisition": post_matches,
+            "domain_effect_count": 0,
+            "closure_sha256": "",
+        }
+        closure["closure_sha256"] = _hash_without(
+            closure,
+            "closure_sha256",
+        )
+        assert len(closure) == 10
+        assert _delete_self_hash_valid(closure, "closure_sha256")
+    except Exception:
+        post_matches = False
+
+    violations: list[str] = []
+    if (
+        _RUN_STATE["neutral_request_count"] != 1
+        or _RUN_STATE["neutral_execution_count"] != 1
+        or _RUN_STATE["retry_count"] != 0
+        or _RUN_STATE["fallback_count"] != 0
+    ):
+        violations.append("ACQUISITION_CARDINALITY_INVALID")
+    if _RUN_STATE["preflight_runtime_error"] is True:
+        violations.append("ORACLE_FAILURE")
+    if before != after:
+        violations.append("LOCAL_SOURCE_CUT_CHANGED_AFTER_ACQUISITION")
+    if postacquisition_modules != observation["module_identities"]:
+        violations.append("EXECUTOR_IDENTITY_CHANGED_AFTER_ACQUISITION")
+    if (
+        post_local is not None
+        and post_modules is not None
+        and (
+            post_local != after
+            or post_modules != postacquisition_modules
+        )
+    ):
+        violations.append("POSTRUN_LOCAL_DRIFT")
+    if not post_matches:
+        violations.append("RUN_CLOSURE_INVALID")
+    violations = list(dict.fromkeys(violations))
+    acquisition_class = observation["remote_observation"]["result_class"]
+    terminal = (
+        "RUN_NOT_EVALUABLE"
+        if acquisition_class != "AVAILABLE_MATCH" and not violations
+        else "RUN_FAILED"
+    )
+    rows = [
+        {
+            "node_id": node_id,
+            "outcome": "NOT_EVALUATED",
+            "causal_signature_id": None,
+            "violation_class": None,
+        }
+        for node_id in _ORDERED_NODE_IDS
+    ]
+    equality = {
+        "repository_identity_consistent": (
+            post_repository == observation["repository_identity"]
+            if post_repository is not None
+            else False
+        ),
+        "source_cut_consistent": before == after,
+        "owner_executor_consistent": bool(
+            post_modules is not None
+            and postacquisition_modules["owner_executor"]
+            == post_modules["owner_executor"]
+            == observation["module_identities"]["owner_executor"]
+        ),
+        "independent_executor_consistent": bool(
+            post_modules is not None
+            and postacquisition_modules["independent_executor"]
+            == post_modules["independent_executor"]
+            == observation["module_identities"]["independent_executor"]
+        ),
+        "parent_phase3_source_consistent": bool(
+            post_modules is not None
+            and postacquisition_modules["parent_phase3_source"]
+            == post_modules["parent_phase3_source"]
+            == observation["module_identities"]["parent_phase3_source"]
+        ),
+        "live_remote_match": (
+            observation["remote_observation"][
+                "matches_local_origin_main"
+            ]
+            is True
+        ),
+        "closure_consistent": post_matches,
+        "body_free": True,
+    }
+    projection = {
+        "schema_version": _PROJECTION_SCHEMA_V1,
+        "source_preflight_sha256": preflight["preflight_sha256"],
+        "source_observation_sha256": observation["observation_sha256"],
+        "source_closure_sha256": (
+            closure["closure_sha256"] if post_matches else None
+        ),
+        "run_challenge_id": observation["run_challenge_id"],
+        "run_scope": observation["run_scope"],
+        "repository_full_name": "MassyuRed/mashos-api",
+        "remote_ref": "refs/heads/main",
+        "acquisition_profile_id": _ACQUISITION_PROFILE_ID,
+        "preflight_class": preflight["preflight_class"],
+        "acquisition_class": acquisition_class,
+        "run_terminal_class": terminal,
+        "violation_classes": violations,
+        "oracle_outcomes": rows,
+        "equality_verdicts": equality,
+        "projection_sha256": "",
+    }
+    projection["projection_sha256"] = _hash_without(
+        projection,
+        "projection_sha256",
+    )
+    assert len(projection) == 16
+    assert _delete_self_hash_valid(projection, "projection_sha256")
+    _RUN_STATE["closure"] = closure
+    _RUN_STATE["projection"] = projection
+    _RUN_STATE["terminalization_count"] = 1
+
+
+def _finalize_run_after_o08() -> None:
+    assert _RUN_STATE["terminalization_count"] == 0
+    assert tuple(_RUN_STATE["oracle_outcomes"]) == (
+        "O01",
+        "O02",
+        "O03",
+        "O04",
+        "O05",
+        "O06",
+        "O07",
+        "O08",
+    )
+    preflight = _RUN_STATE.get("preflight")
+    observation = _RUN_STATE.get("observation")
+    assert type(preflight) is dict
+    assert type(observation) is dict
+    root = Path(observation["repository_identity"]["repository_root"])
+    post_repository = _repository_identity(root)
+    post_local = _local_source_identity(root, post_repository)
+    post_modules = _module_identities(
+        root,
+        post_local["head_commit_sha1"],
+    )
+    postacquisition_modules = _RUN_STATE.get(
+        "postacquisition_module_identities"
+    )
+    assert type(postacquisition_modules) is dict
+    before = observation["local_source_cut"]["before"]
+    after = observation["local_source_cut"]["after"]
+    post_matches = bool(
+        post_local == before == after
+        and postacquisition_modules == observation["module_identities"]
+        and _sha256_value(post_modules)
+        == preflight["module_identities_sha256"]
+        == _sha256_value(observation["module_identities"])
+    )
+    closure = {
+        "schema_version": _CLOSURE_SCHEMA_V1,
+        "run_challenge_id": observation["run_challenge_id"],
+        "observation_sha256": observation["observation_sha256"],
+        "run_state": "CLOSED",
+        "closed_at_utc": _utc_now(),
+        "postrun_local_source_cut_sha256": _sha256_value(post_local),
+        "postrun_module_identities_sha256": _sha256_value(post_modules),
+        "postrun_matches_acquisition": post_matches,
+        "domain_effect_count": 0,
+        "closure_sha256": "",
+    }
+    closure["closure_sha256"] = _hash_without(
+        closure,
+        "closure_sha256",
+    )
+    assert len(closure) == 10
+    assert _delete_self_hash_valid(closure, "closure_sha256")
+
+    rows = [
+        _RUN_STATE["oracle_outcomes"][node]
+        for node in (
+            "O01",
+            "O02",
+            "O03",
+            "O04",
+            "O05",
+            "O06",
+            "O07",
+            "O08",
+        )
+    ]
+    assert len(rows) == 8
+    port_mode = _RUN_STATE["port_mode"]
+    if port_mode == "all_absent":
+        for index, node in enumerate(
+            ("O01", "O02", "O03", "O04", "O05", "O06", "O07")
+        ):
+            assert rows[index] == {
+                "node_id": _ORDERED_NODE_IDS[index],
+                "outcome": "CAUSAL_RED",
+                "causal_signature_id": _CAUSAL_RED_SIGNATURES[node],
+                "violation_class": _CAUSAL_RED_VIOLATIONS[node],
+            }
+        assert rows[7] == {
+            "node_id": _ORDERED_NODE_IDS[7],
+            "outcome": "GREEN",
+            "causal_signature_id": None,
+            "violation_class": None,
+        }
+        violations = list(_EXPECTED_GLOBAL_VIOLATIONS)
+        terminal = "D1_CAUSAL_RED_REFREEZE_ESTABLISHED"
+        assert all(
+            _CAUSAL_RED_REQUIRED_LANES[node].issubset(
+                {
+                    request["lane"]
+                    for request in _RUN_STATE["additional_requests"]
+                    if request["node"] == node
+                }
+            )
+            for node in (
+                "O01",
+                "O02",
+                "O03",
+                "O04",
+                "O05",
+                "O06",
+                "O07",
+            )
+        )
+        assert all(
+            request["route"] == "GIT_LS_REMOTE"
+            and request["blocked_before_execution"] is True
+            and request["executed"] is False
+            and request["replayed_from_observation_sha256"]
+            == observation["observation_sha256"]
+            and request["lane"]
+            in _CAUSAL_RED_REQUEST_LANES[request["node"]]
+            for request in _RUN_STATE["additional_requests"]
+        )
+    else:
+        assert port_mode == "all_present"
+        assert _RUN_STATE["mixed_role_identity_probe_detected"] is True
+        assert all(row["outcome"] == "GREEN" for row in rows)
+        assert all(
+            row["causal_signature_id"] is None
+            and row["violation_class"] is None
+            for row in rows
+        )
+        violations = []
+        terminal = "RUN_EVALUATED_GREEN"
+        assert _RUN_STATE["additional_requests"] == []
+    assert _RUN_STATE["port_operation_depth"] == 0
+    assert _RUN_STATE["port_local_git_count"] == 0
+    assert _RUN_STATE["active_substitution_probes"] == {}
+    assert all(
+        event["accepted_by"] is not None
+        for event in _RUN_STATE["audit_events"]
+    )
+
+    assert _RUN_STATE["neutral_request_count"] == 1
+    assert _RUN_STATE["neutral_execution_count"] == 1
+    assert _RUN_STATE["additional_executions"] == 0
+    assert _RUN_STATE["retry_count"] == 0
+    assert _RUN_STATE["fallback_count"] == 0
+    assert _RUN_STATE["prior_run_reuse_count"] == 0
+    assert preflight["preflight_class"] == "PREFLIGHT_ELIGIBLE"
+    assert observation["remote_observation"]["result_class"] == (
+        "AVAILABLE_MATCH"
+    )
+    equality = {
+        "repository_identity_consistent": (
+            post_repository == observation["repository_identity"]
+        ),
+        "source_cut_consistent": (
+            observation["local_source_cut"]["same_cut"] is True
+        ),
+        "owner_executor_consistent": (
+            post_modules["owner_executor"]
+            == postacquisition_modules["owner_executor"]
+            == observation["module_identities"]["owner_executor"]
+        ),
+        "independent_executor_consistent": (
+            post_modules["independent_executor"]
+            == postacquisition_modules["independent_executor"]
+            == observation["module_identities"]["independent_executor"]
+        ),
+        "parent_phase3_source_consistent": (
+            post_modules["parent_phase3_source"]
+            == postacquisition_modules["parent_phase3_source"]
+            == observation["module_identities"]["parent_phase3_source"]
+        ),
+        "live_remote_match": (
+            observation["remote_observation"][
+                "matches_local_origin_main"
+            ]
+            is True
+        ),
+        "closure_consistent": post_matches,
+        "body_free": True,
+    }
+    assert len(equality) == 8 and all(equality.values())
+    projection = {
+        "schema_version": _PROJECTION_SCHEMA_V1,
+        "source_preflight_sha256": preflight["preflight_sha256"],
+        "source_observation_sha256": observation["observation_sha256"],
+        "source_closure_sha256": closure["closure_sha256"],
+        "run_challenge_id": observation["run_challenge_id"],
+        "run_scope": observation["run_scope"],
+        "repository_full_name": "MassyuRed/mashos-api",
+        "remote_ref": "refs/heads/main",
+        "acquisition_profile_id": _ACQUISITION_PROFILE_ID,
+        "preflight_class": preflight["preflight_class"],
+        "acquisition_class": observation["remote_observation"][
+            "result_class"
+        ],
+        "run_terminal_class": terminal,
+        "violation_classes": violations,
+        "oracle_outcomes": rows,
+        "equality_verdicts": equality,
+        "projection_sha256": "",
+    }
+    projection["projection_sha256"] = _hash_without(
+        projection,
+        "projection_sha256",
+    )
+    assert len(projection) == 16
+    assert _delete_self_hash_valid(projection, "projection_sha256")
+    assert len(projection["oracle_outcomes"]) == 8
+    assert len(projection["equality_verdicts"]) == 8
+    _RUN_STATE["closure"] = closure
+    _RUN_STATE["projection"] = projection
+    _RUN_STATE["terminalization_count"] = 1
+
+
+def _terminalize_diagnostic_observation_once() -> None:
+    if _RUN_STATE.get("projection") is not None:
+        assert _RUN_STATE["terminalization_count"] == 1
+        return
+    assert _RUN_STATE["terminalization_count"] == 0
+    preflight = _RUN_STATE.get("preflight")
+    observation = _RUN_STATE.get("observation")
+    if type(preflight) is not dict or type(observation) is not dict:
+        return
+
+    before = observation["local_source_cut"]["before"]
+    after = observation["local_source_cut"]["after"]
+    postacquisition_modules = _RUN_STATE.get(
+        "postacquisition_module_identities"
+    )
+    post_repository: dict[str, Any] | None = None
+    post_local: dict[str, Any] | None = None
+    post_modules: dict[str, Any] | None = None
+    closure: dict[str, Any] | None = None
+    try:
+        root = Path(observation["repository_identity"]["repository_root"])
+        post_repository = _repository_identity(root)
+        post_local = _local_source_identity(root, post_repository)
+        post_modules = _module_identities(
+            root,
+            post_local["head_commit_sha1"],
+        )
+        post_matches = bool(
+            post_repository == observation["repository_identity"]
+            and post_local == before == after
+            and type(postacquisition_modules) is dict
+            and postacquisition_modules
+            == post_modules
+            == observation["module_identities"]
+        )
+        closure = {
+            "schema_version": _CLOSURE_SCHEMA_V1,
+            "run_challenge_id": observation["run_challenge_id"],
+            "observation_sha256": observation["observation_sha256"],
+            "run_state": "CLOSED",
+            "closed_at_utc": _utc_now(),
+            "postrun_local_source_cut_sha256": _sha256_value(post_local),
+            "postrun_module_identities_sha256": _sha256_value(
+                post_modules
+            ),
+            "postrun_matches_acquisition": post_matches,
+            "domain_effect_count": 0,
+            "closure_sha256": "",
+        }
+        closure["closure_sha256"] = _hash_without(
+            closure,
+            "closure_sha256",
+        )
+    except BaseException:
+        post_matches = False
+        closure = None
+
+    outcomes = _RUN_STATE["oracle_outcomes"]
+    rows = [
+        copy.deepcopy(
+            outcomes.get(
+                node,
+                {
+                    "node_id": _ORDERED_NODE_IDS[index],
+                    "outcome": "NOT_EVALUATED",
+                    "causal_signature_id": None,
+                    "violation_class": None,
+                },
+            )
+        )
+        for index, node in enumerate(
+            ("O01", "O02", "O03", "O04", "O05", "O06", "O07", "O08")
+        )
+    ]
+    violations: list[str] = []
+    if (
+        _RUN_STATE["neutral_request_count"] != 1
+        or _RUN_STATE["neutral_execution_count"] != 1
+        or _RUN_STATE["retry_count"] != 0
+        or _RUN_STATE["fallback_count"] != 0
+    ):
+        violations.append("ACQUISITION_CARDINALITY_INVALID")
+    try:
+        _validate_observation(observation)
+    except Exception:
+        violations.append("OBSERVATION_SCHEMA_OR_HASH_INVALID")
+    if _RUN_STATE.get("port_mode") == "mixed":
+        violations.append("OBSERVATION_MISSING_OR_MIXED")
+    if _RUN_STATE["prior_run_reuse_count"] != 0:
+        violations.append("OBSERVATION_REUSE_FORBIDDEN")
+    if any(
+        request["route"] != "GIT_LS_REMOTE"
+        or request["executed"] is not False
+        for request in _RUN_STATE["additional_requests"]
+    ):
+        violations.append("LIVE_REMOTE_REQUERY_OUTSIDE_ACQUIRER")
+    if before != after:
+        violations.append("LOCAL_SOURCE_CUT_CHANGED_AFTER_ACQUISITION")
+    if (
+        type(postacquisition_modules) is not dict
+        or postacquisition_modules != observation["module_identities"]
+    ):
+        violations.append("EXECUTOR_IDENTITY_CHANGED_AFTER_ACQUISITION")
+    if (
+        any(row["outcome"] in {"UNEXPECTED_FAILURE", "NOT_EVALUATED"} for row in rows)
+        or any(
+            event["accepted_by"] is None
+            for event in _RUN_STATE["audit_events"]
+        )
+    ):
+        violations.append("ORACLE_FAILURE")
+    if (
+        post_local is None
+        or post_modules is None
+        or post_local != after
+        or post_modules != postacquisition_modules
+    ):
+        violations.append("POSTRUN_LOCAL_DRIFT")
+    if not post_matches:
+        violations.append("RUN_CLOSURE_INVALID")
+    if not violations:
+        violations.append("ORACLE_FAILURE")
+    violations = list(dict.fromkeys(violations))
+    equality = {
+        "repository_identity_consistent": (
+            post_repository == observation["repository_identity"]
+        ),
+        "source_cut_consistent": before == after,
+        "owner_executor_consistent": bool(
+            type(post_modules) is dict
+            and type(postacquisition_modules) is dict
+            and post_modules.get("owner_executor")
+            == postacquisition_modules.get("owner_executor")
+            == observation["module_identities"]["owner_executor"]
+        ),
+        "independent_executor_consistent": bool(
+            type(post_modules) is dict
+            and type(postacquisition_modules) is dict
+            and post_modules.get("independent_executor")
+            == postacquisition_modules.get("independent_executor")
+            == observation["module_identities"]["independent_executor"]
+        ),
+        "parent_phase3_source_consistent": bool(
+            type(post_modules) is dict
+            and type(postacquisition_modules) is dict
+            and post_modules.get("parent_phase3_source")
+            == postacquisition_modules.get("parent_phase3_source")
+            == observation["module_identities"]["parent_phase3_source"]
+        ),
+        "live_remote_match": (
+            observation["remote_observation"][
+                "matches_local_origin_main"
+            ]
+            is True
+        ),
+        "closure_consistent": post_matches,
+        "body_free": True,
+    }
+    projection = {
+        "schema_version": _PROJECTION_SCHEMA_V1,
+        "source_preflight_sha256": preflight["preflight_sha256"],
+        "source_observation_sha256": observation["observation_sha256"],
+        "source_closure_sha256": (
+            closure["closure_sha256"]
+            if closure is not None and post_matches
+            else None
+        ),
+        "run_challenge_id": observation["run_challenge_id"],
+        "run_scope": observation["run_scope"],
+        "repository_full_name": "MassyuRed/mashos-api",
+        "remote_ref": "refs/heads/main",
+        "acquisition_profile_id": _ACQUISITION_PROFILE_ID,
+        "preflight_class": preflight["preflight_class"],
+        "acquisition_class": observation["remote_observation"][
+            "result_class"
+        ],
+        "run_terminal_class": "RUN_FAILED",
+        "violation_classes": violations,
+        "oracle_outcomes": rows,
+        "equality_verdicts": equality,
+        "projection_sha256": "",
+    }
+    projection["projection_sha256"] = _hash_without(
+        projection,
+        "projection_sha256",
+    )
+    assert len(rows) == 8
+    assert len(equality) == 8
+    assert len(projection) == 16
+    assert _delete_self_hash_valid(projection, "projection_sha256")
+    _RUN_STATE["closure"] = closure
+    _RUN_STATE["projection"] = projection
+    _RUN_STATE["terminalization_count"] = 1
+
+
+def _invariance_oracle(
+    function: Callable[..., None],
+) -> Callable[..., None]:
+    @wraps(function)
+    def wrapped(*args: Any, **kwargs: Any) -> None:
+        node = "O08"
+        assert _RUN_STATE.get("active") is True
+        assert _RUN_STATE.get("current_node") is None
+        _RUN_STATE["current_node"] = node
+        try:
+            try:
+                function(*args, **kwargs)
+            except BaseException:
+                if node not in _RUN_STATE["oracle_outcomes"]:
+                    _record_oracle(
+                        node,
+                        outcome="UNEXPECTED_FAILURE",
+                        signature="O08_INVARIANCE_OBLIGATION_FAILURE",
+                        violation="ORACLE_FAILURE",
+                    )
+                _terminalize_diagnostic_observation_once()
+                raise
+            _record_oracle(
+                node,
+                outcome="GREEN",
+                signature=None,
+                violation=None,
+            )
+            try:
+                _finalize_run_after_o08()
+            except BaseException:
+                _terminalize_diagnostic_observation_once()
+                raise
+        finally:
+            assert _RUN_STATE.get("current_node") == node
+            _RUN_STATE["current_node"] = None
+
+    return wrapped
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _actual_git_file_run(request: pytest.FixtureRequest) -> Any:
+    collected = tuple(item.nodeid for item in request.session.items)
+    assert len(request.session.items) == 8
+    assert collected == _ORDERED_NODE_IDS
+    for key, default in (
+        ("preflight", None),
+        ("observation", None),
+        ("observation_bytes", None),
+        ("active_observation", None),
+        ("postacquisition_module_identities", None),
+        ("abort", None),
+        ("port_mode", None),
+        ("preflight_port_mode", None),
+        ("preflight_port_modules", None),
+        ("preflight_runtime_error", False),
+        ("current_node", None),
+        ("canonical_port_stack", None),
+        ("closure", None),
+        ("projection", None),
+    ):
+        _RUN_STATE[key] = default
+    for key in (
+        "additional_requests",
+        "oracle_outcomes",
+        "audit_events",
+        "active_role_windows",
+        "completed_substitution_probes",
+    ):
+        _RUN_STATE[key] = [] if key != "oracle_outcomes" else {}
+    _RUN_STATE["active_substitution_probes"] = {}
+    for key in (
+        "additional_executions",
+        "neutral_request_count",
+        "neutral_execution_count",
+        "retry_count",
+        "fallback_count",
+        "prior_run_reuse_count",
+        "port_operation_depth",
+        "port_local_git_count",
+        "terminalization_count",
+    ):
+        _RUN_STATE[key] = 0
+    for key in (
+        "mixed_role_identity_probe_detected",
+        "postprojection_credit_gate",
+        "runtime_import_guard",
+    ):
+        _RUN_STATE[key] = False
+    _RUN_STATE["active"] = True
+    preflight, observation = _acquire_run_observation()
+    modules = _RUN_STATE.get("preflight_port_modules")
+    mode = _RUN_STATE.get("preflight_port_mode")
+    _RUN_STATE["port_mode"] = mode
+    _RUN_STATE["preflight"] = preflight
+    if observation is None:
+        _RUN_STATE["active"] = False
+        if _RUN_STATE["abort"] is not None:
+            pytest.exit(
+                "RECOVERY_EPOCH004_POSTACQUISITION_LOCAL_"
+                "INTROSPECTION_TYPED_ABORT_NON_CREDIT",
+                returncode=2,
+            )
+        if _RUN_STATE["preflight_runtime_error"] is True:
+            pytest.exit(
+                "RECOVERY_EPOCH004_PREFLIGHT_RUNTIME_MODULE_"
+                "RECONCILIATION_NON_CREDIT",
+                returncode=2,
+            )
+        pytest.exit(
+            "RECOVERY_EPOCH004_PREFLIGHT_REJECTED_NON_CREDIT",
+            returncode=2,
+        )
+    _RUN_STATE["observation"] = observation
+    _RUN_STATE["observation_bytes"] = _canonical_bytes(observation)
+    _validate_observation(observation)
+    assert preflight["preflight_class"] == "PREFLIGHT_ELIGIBLE"
+    assert observation["preflight_sha256"] == preflight["preflight_sha256"]
+    assert observation["run_challenge_id"] == preflight["run_challenge_id"]
+    assert observation["run_scope"] == preflight["run_scope"]
+    assert preflight["repository_identity_sha256"] == _sha256_value(
+        observation["repository_identity"]
+    )
+    assert preflight["before_local_source_identity_sha256"] == (
+        _sha256_value(observation["local_source_cut"]["before"])
+    )
+    assert preflight["module_identities_sha256"] == _sha256_value(
+        observation["module_identities"]
+    )
+    _exercise_abort_builder_contract(preflight, observation)
+    if (
+        observation["remote_observation"]["result_class"]
+        != "AVAILABLE_MATCH"
+        or observation["local_source_cut"]["same_cut"] is not True
+        or _RUN_STATE["postacquisition_module_identities"]
+        != observation["module_identities"]
+    ):
+        _finalize_unevaluated_observation()
+        _RUN_STATE["active"] = False
+        pytest.exit(
+            "RECOVERY_EPOCH004_REMOTE_OBSERVATION_NOT_EVALUABLE_NON_CREDIT",
+            returncode=2,
+        )
+    if _RUN_STATE["preflight_runtime_error"] is True:
+        _finalize_unevaluated_observation()
+        _RUN_STATE["active"] = False
+        pytest.exit(
+            "RECOVERY_EPOCH004_RUNTIME_MODULE_RECONCILIATION_NON_CREDIT",
+            returncode=2,
+        )
+    assert type(modules) is dict
+    assert set(modules) == {"sequence", "independent", "parent"}
+    assert mode in {"all_absent", "all_present"}
+    _install_audit_hook()
+    originals = _install_process_guards()
+    canonical_stack: ExitStack | None = None
+    try:
+        if mode == "all_present":
+            _run_port_semantic_matrix(modules, observation)
+            canonical_stack = _enter_port_contexts(
+                modules,
+                _RUN_STATE["observation_bytes"],
+            )
+            _RUN_STATE["canonical_port_stack"] = canonical_stack
+            mismatch_bytes, _changed_bytes = _counterfactual_observations(
+                observation
+            )
+            for module in modules.values():
+                port = _observation_port(module)
+                _assert_port_rejects(
+                    port,
+                    _RUN_STATE["observation_bytes"],
+                )
+                _assert_port_rejects(port, mismatch_bytes)
+        yield
+    finally:
+        terminal_ready = False
+        try:
+            try:
+                if (
+                    _RUN_STATE.get("observation") is not None
+                    and _RUN_STATE.get("projection") is None
+                ):
+                    _terminalize_diagnostic_observation_once()
+                if _RUN_STATE.get("projection") is not None:
+                    assert _RUN_STATE["terminalization_count"] == 1
+                    terminal_ready = True
+            finally:
+                if canonical_stack is not None:
+                    lifecycle_snapshot = {
+                        key: copy.deepcopy(_RUN_STATE[key])
+                        for key in (
+                            "additional_requests",
+                            "additional_executions",
+                            "neutral_request_count",
+                            "neutral_execution_count",
+                            "retry_count",
+                            "fallback_count",
+                            "prior_run_reuse_count",
+                            "port_local_git_count",
+                        )
+                    }
+                    event_count = len(_RUN_STATE["audit_events"])
+                    canonical_stack.close()
+                    _RUN_STATE["canonical_port_stack"] = None
+                    assert _RUN_STATE["port_operation_depth"] == 0
+                    _assert_missing_binding_fail_closed()
+                    assert len(_RUN_STATE["audit_events"]) == event_count
+                    assert all(
+                        event["accepted_by"] is not None
+                        for event in _RUN_STATE["audit_events"]
+                    )
+                    assert all(
+                        _RUN_STATE[key] == value
+                        for key, value in lifecycle_snapshot.items()
+                    )
+                    assert _RUN_STATE["active_role_windows"] == []
+                    assert _RUN_STATE["active_substitution_probes"] == {}
+                if terminal_ready:
+                    _RUN_STATE["postprojection_credit_gate"] = True
+        finally:
+            _restore_process_guards(originals)
+            _RUN_STATE["active"] = False
+            assert _RUN_STATE["port_operation_depth"] == 0
+
+
+@_causal_oracle("O01")
 def test_o01_event1_v2_owner_schema_dispatch_public_signature_and_invalid_envelope() -> None:
     api = _require_api("sequence", _OWNER_API, "O01")
     _assert_public_signature(api)
@@ -6569,6 +10337,7 @@ def test_o01_event1_v2_owner_schema_dispatch_public_signature_and_invalid_envelo
     )
 
 
+@_causal_oracle("O02")
 def test_o02_event1_v2_independent_schema_dispatch_reexecutes_without_owner_trust(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -6760,11 +10529,27 @@ def test_o02_event1_v2_independent_schema_dispatch_reexecutes_without_owner_trus
     _assert_independent_owner_boundary(fresh_module)
     _assert_no_owner_runtime_references(fresh_module)
     _assert_no_effect_sink_calls(fresh_module, _INDEPENDENT_API)
-    fresh_api = _guard_api_read_only(
-        fresh_api_actual,
-        formal_owner_modules=pre_resolved_formal_owner_modules,
+    fresh_api = _wrap_role_api(
+        _guard_api_read_only(
+            fresh_api_actual,
+            formal_owner_modules=pre_resolved_formal_owner_modules,
+        ),
+        "INDEPENDENT_EXECUTOR",
     )
-    _assert_success_without_mutation(fresh_api, fixture)
+    if _RUN_STATE.get("port_mode") == "all_present":
+        observation_bytes = _RUN_STATE.get("observation_bytes")
+        assert type(observation_bytes) is bytes
+        fresh_port = _observation_port(fresh_module)
+        mismatch_bytes, _changed_bytes = _counterfactual_observations(
+            _RUN_STATE["observation"]
+        )
+        with _guarded_port_binding(fresh_port, observation_bytes):
+            _assert_port_rejects(fresh_port, observation_bytes)
+            _assert_port_rejects(fresh_port, mismatch_bytes)
+            _assert_success_without_mutation(fresh_api, fixture)
+        _assert_port_rejects(fresh_port, observation_bytes)
+    else:
+        _assert_success_without_mutation(fresh_api, fixture)
     fresh_calls = _reachable_call_names(fresh_module, _INDEPENDENT_API)
     for call in fresh_calls:
         tail = call.rsplit(".", 1)[-1]
@@ -6772,6 +10557,7 @@ def test_o02_event1_v2_independent_schema_dispatch_reexecutes_without_owner_trus
         assert tail not in _FORBIDDEN_OWNER_TRUST_CALL_TAILS
 
 
+@_causal_oracle("O03")
 def test_o03_source_subject_owner_independent_same_actual_git_root_head_tree_module_blob_raw() -> None:
     owner = _require_api("sequence", _OWNER_API, "O03")
     independent = _require_api("independent", _INDEPENDENT_API, "O03")
@@ -6990,6 +10776,7 @@ def test_o03_source_subject_owner_independent_same_actual_git_root_head_tree_mod
         assert token in parent_source
 
 
+@_causal_oracle("O04")
 def test_o04_unknown_mixed_and_v2_to_v1_fallback_rejected_fail_closed() -> None:
     owner = _require_api("sequence", _OWNER_API, "O04")
     independent = _require_api("independent", _INDEPENDENT_API, "O04")
@@ -7096,6 +10883,7 @@ def test_o04_unknown_mixed_and_v2_to_v1_fallback_rejected_fail_closed() -> None:
     )
 
 
+@_causal_oracle("O05")
 def test_o05_event1_exact23_nests_distinct_candidate_and_consumes_oa_v2_exactly_once() -> None:
     owner = _require_api("sequence", _OWNER_API, "O05")
     independent = _require_api("independent", _INDEPENDENT_API, "O05")
@@ -7378,6 +11166,7 @@ def test_o05_event1_exact23_nests_distinct_candidate_and_consumes_oa_v2_exactly_
         )
 
 
+@_causal_oracle("O06")
 def test_o06_parent_phase3_reconstructs_actual_postfetch_and_calls_independent_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -7466,9 +11255,10 @@ def test_o06_parent_phase3_reconstructs_actual_postfetch_and_calls_independent_o
     def independent_spy(value: Mapping[str, Any]) -> tuple[str, ...]:
         received = copy.deepcopy(dict(value))
         calls.append(received)
+        result = independent_actual(copy.deepcopy(dict(value)))
         if isinstance(value, dict):
             value["automatic_progression"] = True
-        return ()
+        return result
 
     assert hasattr(module, _INDEPENDENT_API)
     monkeypatch.setattr(
@@ -7513,6 +11303,8 @@ def test_o06_parent_phase3_reconstructs_actual_postfetch_and_calls_independent_o
         value: Mapping[str, Any],
     ) -> tuple[str, ...]:
         calls.append(copy.deepcopy(dict(value)))
+        if _RUN_STATE.get("port_mode") == "all_present":
+            return independent_actual({})
         return _INDEPENDENT_FAILURE
 
     reconstruction_calls.clear()
@@ -7623,6 +11415,7 @@ def test_o06_parent_phase3_reconstructs_actual_postfetch_and_calls_independent_o
     assert calls == []
 
 
+@_causal_oracle("O07")
 def test_o07_missing_mixed_stale_identity_evidence_fail_closed_with_zero_effects(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -8107,6 +11900,7 @@ def test_o07_missing_mixed_stale_identity_evidence_fail_closed_with_zero_effects
     assert after_repository == before_repository
 
 
+@_invariance_oracle
 def test_o08_v1_exact16_exact8_and_predecessor_oracles_remain_immutable() -> None:
     assert _sha256_value(_ORACLE_NAMES) == _ORACLE_LIST_SHA256
     assert _sha256_value(_ORDERED_NODE_IDS) == _ORDERED_NODE_LIST_SHA256
