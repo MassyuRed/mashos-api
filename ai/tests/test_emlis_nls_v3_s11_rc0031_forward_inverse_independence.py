@@ -10767,131 +10767,556 @@ TestRc0031P3B6OwnerRoleInflectionTypedRecompositionDesignFreezeRedOnly.test_rc00
 TestRc0031P3B6OwnerHeadRangeReceptionInjectionDesignFreezeRedOnly.test_rc0031_p3_b6_owner_reception_contract_and_future_green_window_are_exact = (
     _b6_chain_owner_reception_contract_compatibility
 )
-
-
-# ---------------------------------------------------------------------------
-# Cycle001 G4 B6 remediation design freeze RED-only
-# ---------------------------------------------------------------------------
-_G4_B6_PREDECESSOR_TEST_BYTES = 408_068
-_G4_B6_PREDECESSOR_TEST_SHA256 = "ac457122e12e87c95fb0f5e9b2d8d2eddc5d7bce7430dcdfb14bdfc03c5a6b19"
-_G4_B6_PREDECESSOR_TEST_GIT_BLOB_SHA1 = "0b49a7ae02234a9b8741b6bc7d1c8580630e099b"
-_G4_B6_PRODUCTION_GIT_BLOB_SHA1 = "1c19b6c293e20a9094b9180fded8c167daaaf5eb"
-_G4_B6_DIRECT_ORDERED_NODE_IDS_EXACT24 = (
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_predecessor_phase_projection_is_exact",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_dimension_catalog_and_surface_successor_are_available",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_representative8_base_reuse_denominator_is_exact",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_public_reuse_claim_stays_closed_and_private_seam_unexported",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_reuse_envelope_and_bound_fail_closed",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_fresh_proof_material_is_body_free_and_bounded",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_trusted_reuse_is_consumed_before_forward_planning",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_reuse_and_rendered_atoms_form_exact_xor",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_0001_duplicate_reexposition_is_absent",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_verified_composition_is_canonical_and_deterministic",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_shape_valid_wrong_authority_attacks_are_distinguished",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_historical_p2_body_dimension_projection_is_noninjective",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_proposed_surface_dimension_lattice_is_prefix_free_and_attack_closed",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_fixed_slot_dimension_bundle_respects_schema_free_product_boundary",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_source_dimensions_and_body_topic_projection_are_exact_without_candidate_metadata",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_source_plan_set_has_exact_one_body_relevant_solution_without_candidate_metadata",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_b5_freeze_scope_and_predecessor_behavior_are_exact",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_b5_design_denominators_and_resource_envelope_are_exact",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_b5_source_fragment_product_owner_expression_is_unique_or_fails_closed",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_b5_relation_connected_product_clusters_account_exact38_with_load4",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_b5_ast_first_reception_preserves_bound10_and_adds_unmatched1",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::test_rc0031_p3_b5_product_surface_is_schema_free_metadata_free_and_case_agnostic",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031Cycle001G4B6RemediationDesignFreezeRedOnly::test_rc0031_g4_reachable_dimension_equivalence_locus_is_proved_or_red",
-    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031Cycle001G4B6RemediationDesignFreezeRedOnly::test_rc0031_g4_root_head_dominant_typed_attachment_is_proved_or_red",
+_G4_TB=408_068
+_G4_TS="ac457122e12e87c95fb0f5e9b2d8d2eddc5d7bce7430dcdfb14bdfc03c5a6b19"
+_G4_TG="0b49a7ae02234a9b8741b6bc7d1c8580630e099b"
+_G4_PB=537_842
+_G4_PS="18ad33095754c0132d22a7f2e004f00d5e1655a825e366ade5778adb1bc134d4"
+_G4_PG="478454a1c5fb5b15e0c281ae93a63aa058bf8e26"
+_G4_SB=11_090
+_G4_SM=b"# rc0031 experiment-only owner-role inflection / typed recomposition (append-only B6 private consumer)\n"
+_G4_MS=("_rc0031_rt_cluster", "_step11_rc0031_product_render_cluster", "_step11_rc0031_build_owner_role_inflected_typed_recomposition_candidate")
+_G4_MH="c448d8f514669a7b0379e3a85b79fc5aabf29d00cbe002725592f74e9f60fc1d"
+_G4_X="ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::"
+_G4_N="test_rc0031_p3_"
+_G4_P=_G4_X + _G4_N
+_G4_R=_G4_X + "TestRc0031P3B6OwnerRoleInflectionTypedRecompositionDesignFreezeRedOnly::" + _G4_N + "b6_"
+_G4_IDS = tuple(
+    _G4_P + name
+    for name in """
+predecessor_phase_projection_is_exact
+dimension_catalog_and_surface_successor_are_available
+representative8_base_reuse_denominator_is_exact
+public_reuse_claim_stays_closed_and_private_seam_unexported
+reuse_envelope_and_bound_fail_closed
+fresh_proof_material_is_body_free_and_bounded
+trusted_reuse_is_consumed_before_forward_planning
+reuse_and_rendered_atoms_form_exact_xor
+0001_duplicate_reexposition_is_absent
+verified_composition_is_canonical_and_deterministic
+shape_valid_wrong_authority_attacks_are_distinguished
+historical_p2_body_dimension_projection_is_noninjective
+proposed_surface_dimension_lattice_is_prefix_free_and_attack_closed
+fixed_slot_dimension_bundle_respects_schema_free_product_boundary
+source_dimensions_and_body_topic_projection_are_exact_without_candidate_metadata
+source_plan_set_has_exact_one_body_relevant_solution_without_candidate_metadata
+b5_freeze_scope_and_predecessor_behavior_are_exact
+b5_design_denominators_and_resource_envelope_are_exact
+b5_source_fragment_product_owner_expression_is_unique_or_fails_closed
+b5_relation_connected_product_clusters_account_exact38_with_load4
+b5_ast_first_reception_preserves_bound10_and_adds_unmatched1
+b5_product_surface_is_schema_free_metadata_free_and_case_agnostic
+""".split()
+) + (
+    _G4_R + "owner_role_inflection_is_body_only_recoverable_or_red",
+    _G4_R + "typed_recomposition_is_body_only_recoverable_or_red",
 )
-_G4_B6_DIRECT_ORDERED_NODE_LIST_SHA256 = "efad5c20407db72dea12cd726ea3bace95b755efe182c03bd71cd45e49c670fc"
-_G4_B6_P3_FINAL_INVERSE_EXCLUDED_EXACT7 = (
-    "test_rc0031_p3_final_body_inverse_predecessor_and_scope_are_exact",
-    "test_rc0031_p3_final_body_inverse_contract_and_future_green_window_are_exact",
-    "test_rc0031_p3_final_body_inverse_parser_is_body_only_or_red",
-    "test_rc0031_p3_final_body_inverse_matcher_is_independent_or_red",
-    "test_rc0031_p3_final_body_inverse_round_trip_is_exact_or_red",
-    "test_rc0031_p3_final_body_inverse_ambiguity_is_fail_closed_or_red",
-    "test_rc0031_p3_final_body_inverse_resource_and_privacy_are_exact",
+_G4_IH="ea5f4afb819210eac771db02287c02475afb19cf9cff0408c7ce3dd866df10b9"
+_G4_EX=tuple(
+    _G4_N + name
+    for name in """
+final_inverse_symbols_and_body_only_signatures_are_exact
+representative10_final_round_trip_is_unique_deterministic_body_only
+0001_final_rederives_reuse_and_source_xor_without_forward_claim
+parser_rejects_forward_metadata_hidden_markers_utf8_and_bounds
+renderer_mutation_and_generator_metadata_are_differentially_isolated
+rehashed_witness_base_and_source_authority_attacks_fail_closed
+relation_distribution_reception_and_reuse_body_mutations_fail_closed_and_private
+""".split()
 )
-_G4_B6_REQUIRED_PROJECTION = {"PASS": 22, "CAUSAL_RED": 2, "UNEXPECTED": 0, "ERROR": 0}
-_G4_B6_DIMENSION_RED = "REACHABLE_DIMENSION_EQUIVALENCE_LOCUS_NOT_PROVED"
-_G4_B6_HEAD_RED = "HEAD_DOMINANT_TYPED_ATTACHMENT_NOT_PROVED"
+_G4_B6_DIMENSION_RED="REACHABLE_DIMENSION_EQUIVALENCE_LOCUS_NOT_PROVED"
+_G4_B6_HEAD_RED="HEAD_DOMINANT_TYPED_ATTACHMENT_NOT_PROVED"
+def _g4_b6_production_masked_sha256(source):
+    text = source[_G4_PB:].decode("utf-8")
+    lines = text.splitlines(True)
+    functions = tuple(node for node in ast.parse(text).body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)))
+    nodes = tuple(node for node in functions if node.name in _G4_MS)
+    walked = tuple(row for node in nodes for row in ast.walk(node))
+    forbidden = "case_ family_id coverage_family cohort source_scope fixture batch normalized_input projected_current_input current_input_projection raw_input input_text input_word thought_text action_text emotions categories source_fragment final_utf8 utf8_bytes rendered_surface proper_noun username user_name honorific expected_ review_ failure_ test_only test_cue random_seed question_relevance primary_reception_act secondary_reception_act".split()
+    selector_count = sum(any(value in str(getattr(row, "id", getattr(
+        row, "attr", getattr(row, "value", "")))).lower()
+        for value in forbidden) or (
+        isinstance(row, ast.Constant) and isinstance(row.value, str)
+        and any(ord(value) > 127 for value in row.value)
+    ) for row in walked)
+    loads = sum(isinstance(row, ast.Name) and row.id == "current_input"
+        and isinstance(row.ctx, ast.Load)
+        for row in walked)
+    forwards = sum(isinstance(row, ast.Call) and isinstance(row.func, ast.Name)
+        and row.func.id == _B6_RECEPTION_INJECTION_BUILDER
+        and any(keyword.arg == "current_input"
+            and isinstance(keyword.value, ast.Name)
+            and keyword.value.id == "current_input" for keyword in row.keywords)
+        for row in walked)
+    selector_count += loads != 1 or forwards != 1
+    _closed_assert(tuple(node.name for node in functions)
+        == ("_rc0031_rt_plan", *_G4_MS) and tuple(node.name for node in nodes)
+        == _G4_MS, "STEP11_RC0031_G4_G5_MUTABLE_SYMBOL_DRIFT")
+    for node in reversed(nodes):
+        lines[node.body[0].lineno - 1:node.end_lineno] = [
+            f"    G5_MUTABLE_{node.name}\n"
+        ]
+    return hashlib.sha256("".join(lines).encode("utf-8")).hexdigest(), selector_count
 
 
-def _g4_b6_function_node(module_tree: ast.Module, name: str) -> ast.FunctionDef:
-    rows = tuple(node for node in module_tree.body if isinstance(node, ast.FunctionDef) and node.name == name)
-    _closed_assert(len(rows) >= 1, "STEP11_RC0031_G4_OWNER_SYMBOL_DRIFT")
-    return rows[-1]
+def _g4_b6_production_window_is_exact(source):
+    prefix = source[:_G4_PB]
+    suffix = source[_G4_PB:]
+    return bool(
+        len(prefix) == _G4_PB
+        and hashlib.sha256(prefix).hexdigest() == _G4_PS
+        and _b6_git_blob_sha1(prefix) == _G4_PG
+        and len(suffix) <= _G4_SB
+        and suffix.startswith(_G4_SM)
+        and source.count(_G4_SM) == 1
+        and _g4_b6_production_masked_sha256(source)[0]
+        == _G4_MH
+    )
+_g4_b6_parse_observation_before_correction=_b6_role_typed_parse_observation
+_g4_b6_evidence_before_correction=_b6_role_typed_evidence.__wrapped__
+_g4_b6_body_first_atoms=[]
+def _g4_b6_parse_observation_order_independent(
+    clusters, owners, kinds, catalog, grammar,
+):
+    typed = str(catalog["clause_morphology"]["within_sentence_clause_join"])
+    join = str(grammar["atom_joiners"][0])
+    result = dict(_g4_b6_parse_observation_before_correction(tuple(
+        row.replace(typed, join) for row in clusters),
+        owners, kinds, catalog, grammar))
+    separators = tuple(sorted({str(grammar["clause_join"]), *map(str,
+        grammar["atom_joiners"]), typed} - {""}, key=len, reverse=True))
+    pattern = "(" + "|".join(re.escape(row) for row in separators) + ")"
+    full = count = 0
+    for cluster in clusters:
+        dependent = False
+        for piece in (row for row in re.split(pattern, cluster) if row):
+            if piece in separators:
+                dependent = piece == typed
+                continue
+            parsed = _g4_b6_parse_observation_before_correction(
+                (piece,), owners, kinds, catalog, grammar)
+            finite = Counter({key: value for key, value in
+                parsed["atom_counter"].items() if key[0] != "construction"})
+            if not dependent:
+                _g4_b6_body_first_atoms.append(
+                    next(iter(finite))
+                    if sum(finite.values()) == 1
+                    else ("G4_INVALID_FIRST_FINITE",)
+                )
+                continue
+            count += 1
+            dimensions = _b6_role_typed_strip_dimension_prefixes(piece, grammar)[1]
+            full += {"modality", "polarity"} <= {row[0] for row in dimensions}
+            dependent = False
+    result["per_atom_bundle_count"] = full + abs(
+        result["other_finite_count"] - count)
+    return result
 
 
-def _g4_b6_call_names(node: ast.AST) -> tuple[str, ...]:
-    names = []
-    for child in ast.walk(node):
-        if isinstance(child, ast.Call):
-            if isinstance(child.func, ast.Name):
-                names.append(child.func.id)
-            elif isinstance(child.func, ast.Attribute):
-                names.append(child.func.attr)
-    return tuple(names)
+_b6_role_typed_parse_observation=_g4_b6_parse_observation_order_independent
+@lru_cache(maxsize=1)
+def _g4_b6_role_typed_evidence():
+    _g4_b6_body_first_atoms.clear()
+    result = dict(_g4_b6_evidence_before_correction())
+    actual, expected = tuple(_g4_b6_body_first_atoms), []
+    for context in _rc0031_final_candidate_contexts():
+        for row in context[4].surface_realization_plan.proposition_clause_bindings:
+            i = tuple(map(str, row.source_atom_ids)).index(str(row.head_source_atom_id))
+            family = str(row.semantic_families[i])
+            direction = str(row.directions[i]) if family in {
+                "relation", "semantic_link"} else (
+                "unknown" if family == "explicit_unknown" else "")
+            expected.append((family, str(row.semantic_keys[i]), direction,
+                tuple(map(str, row.source_atom_owner_ids[i]))))
+    result["declared_head_body_first_count"] = (
+        len(expected) if actual == tuple(expected) else 0)
+    _g4_b6_body_first_atoms.clear()
+    return result
 
 
-def _g4_b6_loop_over_source_atoms(node: ast.AST) -> tuple[ast.For, ...]:
-    return tuple(child for child in ast.walk(node) if isinstance(child, ast.For) and "source_atom_ids" in ast.unparse(child.iter))
+_b6_role_typed_evidence=_g4_b6_role_typed_evidence
+def _g4_b6_freeze_is_exact():
+    source = Path(__file__).resolve().read_bytes()
+    prefix = source[:_G4_TB]
+    tree = ast.parse(source.decode())
+    top = {node.name for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")}
+    total = sum(
+        child.name.startswith("test_")
+        for node in tree.body
+        for child in (
+            (node,)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            else tuple(node.body) if isinstance(node, ast.ClassDef) else ()
+        )
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+    )
+    ordered = ("\n".join(_G4_IDS) + "\n").encode()
+    return bool(
+        (
+            len(prefix),
+            hashlib.sha256(prefix).hexdigest(),
+            _b6_git_blob_sha1(prefix),
+            total,
+            len(_G4_IDS),
+            len(set(_G4_IDS)),
+        )
+        == (408_068, _G4_TS, _G4_TG, 52, 24, 24)
+        and len(source) - 408_068 <= 24_000
+        and hashlib.sha256(ordered).hexdigest() == _G4_IH
+        and len(_G4_EX) == 7
+        and set(_G4_EX) <= top
+        and not any(name in node for name in _G4_EX for node in _G4_IDS)
+        and _g4_b6_production_window_is_exact(_SURFACE_PATH.read_bytes())
+    )
 
 
-def _g4_b6_dimension_equivalence_evidence() -> dict[str, Any]:
-    source = _SURFACE_PATH.read_bytes()
-    tree = ast.parse(source.decode("utf-8", errors="strict"))
-    wrapper = _g4_b6_function_node(tree, "_step11_rc0031_product_render_cluster")
-    cluster = _g4_b6_function_node(tree, "_rc0031_rt_cluster")
-    loops = _g4_b6_loop_over_source_atoms(cluster)
-    calls = tuple(call for loop in loops for call in ast.walk(loop) if isinstance(call, ast.Call))
-    fallback = sum(len(call.args) >= 2 and isinstance(call.func, ast.Attribute) and call.func.attr == "get" and '"unknown"' in ast.unparse(call.args[1]) for call in calls)
-    cues = sum(isinstance(call.func, ast.Attribute) and call.func.attr == "get" and any(key in ast.unparse(call.func.value) for key in ("temporal_scope_cues", "referent_scope_cues", "modality_cues", "polarity_cues")) for call in calls)
-    return {"production_blob": _b6_git_blob_sha1(source), "wrapper_reaches_actual_cluster": "_rc0031_rt_cluster" in _g4_b6_call_names(wrapper), "source_atom_loop_count": len(loops), "atom_local_dimension_cue_count": cues, "generic_unknown_fallback_count": fallback}
+def _g4_b6_call_matches(call, baseline, mode):
+    try:
+        same = call() == baseline
+    except Exception:
+        return mode in {"e", "f"}
+    return False if mode == "f" else same if mode == "s" else not same
+@lru_cache(maxsize=1)
+def _g4_b6_controlled_behavior_evidence():
+    try:
+        check, swap = _g4_b6_call_matches, replace
+        selector_exact = _g4_b6_production_masked_sha256(
+            _SURFACE_PATH.read_bytes())[1] == 0
+        e = _b6_chain_locus_evidence()
+        keys = "expected_context_count context_count unique_case_count body_context_locus_match_count expected_modifier_count actual_modifier_count unresolved_expected_count unparsed_count ambiguous_count".split()
+        locus_exact = (
+            tuple(e[key] for key in keys)
+            == (10, 10, 8, 10, 22, 22, 0, 0, 0)
+            and Counter(len(key[-1]) for key in
+                e["expected_locus_counter"].elements()) == Counter({1: 18, 2: 2})
+            and e["actual_locus_counter"] == e["expected_locus_counter"]
+        )
+        surface = _surface_module()
+        authority_owner = importlib.import_module(
+            "emlis_ai_step11_rc0031_reception_focus_authority_v3"
+        )
+        captured, name = [], "build_step11_rc0031_reception_focus_authority"
+        original = getattr(authority_owner, name)
+        setattr(authority_owner, name, lambda *a, **k:
+            captured.append(value := original(*a, **k)) or value)
+        try:
+            focus_evidence = _b6_reception_focus_evidence()
+        finally:
+            setattr(authority_owner, name, original)
+        def focus_body_count(a, c):
+            x = {str(alias): str(row.actual_source_id)
+                for row in c[2].base_snapshot.nuclei
+                for alias in (row.source_id, row.actual_source_id)}
+            z = lambda value: x.get(str(value), str(value))
+            p = c[4].surface_realization_plan
+            r = p.root_proposition_binding
+            o = {str(row[0]): z(row[1])
+                for row in surface._step11_rc0031_product_owner_projection(
+                c[4].base_candidate, successor_snapshot=c[2],
+                lexical_atom_specs=c[3])}
+            h = tuple({o[str(value)] for value in row.source_atom_owner_ids[i]}
+                for row in p.proposition_clause_bindings
+                for i in (tuple(map(str, row.source_atom_ids)).index(
+                    str(row.head_source_atom_id)),))
+            return sum(
+                r.complete_base_proposition_preserved
+                and (r.sentence_group_ordinal, r.grammatical_chunk_ordinal) == (1,1)
+                and set(map(z, c[1].grounded_plan.response_plan.primary_nucleus_ids))
+                <= set(map(z, r.source_owner_nucleus_ids))
+                and all(sum(value in head for head in h) == 1
+                    for value in map(z, row.source_focus_owner_ids))
+                for row in a.bindings)
 
-
-def _g4_b6_head_dominance_evidence() -> dict[str, Any]:
-    source = _SURFACE_PATH.read_bytes()
-    tree = ast.parse(source.decode("utf-8", errors="strict"))
-    cluster = _g4_b6_function_node(tree, "_rc0031_rt_cluster")
-    builder = _g4_b6_function_node(tree, "_step11_rc0031_build_owner_role_inflected_typed_recomposition_candidate")
-    loops = _g4_b6_loop_over_source_atoms(cluster)
-    peer = sum(isinstance(call.func, ast.Attribute) and call.func.attr == "append" and ast.unparse(call.func.value) == "clauses" for loop in loops for call in ast.walk(loop) if isinstance(call, ast.Call))
-    cm, bm = ast.unparse(cluster), ast.unparse(builder)
-    return {"production_blob": _b6_git_blob_sha1(source), "source_atom_loop_count": len(loops), "peer_clause_append_count": peer, "head_only_controls_construction_attachment": "head_source_atom_id" in cm and "clauses.append" in cm, "owner_role_mapping_consumed_by_cluster": "owner_role_particle_patterns" in cm, "owner_kind_mapping_consumed_by_cluster": "owner_kind_inflection_patterns" in cm, "late_base_and_reception_string_splice": "base.split(sep, 1)[0]" in bm and "injected.split(sep, 1)[1]" in bm}
-
-
-class TestRc0031Cycle001G4B6RemediationDesignFreezeRedOnly:
-    def test_rc0031_g4_reachable_dimension_equivalence_locus_is_proved_or_red(self) -> None:
-        source = Path(__file__).resolve().read_bytes()
-        prefix = source[:_G4_B6_PREDECESSOR_TEST_BYTES]
-        ordered_material = ("\n".join(_G4_B6_DIRECT_ORDERED_NODE_IDS_EXACT24) + "\n").encode("utf-8", errors="strict")
-        evidence = _g4_b6_dimension_equivalence_evidence()
-        _closed_assert(
-            len(prefix) == _G4_B6_PREDECESSOR_TEST_BYTES
-            and hashlib.sha256(prefix).hexdigest() == _G4_B6_PREDECESSOR_TEST_SHA256
-            and _b6_git_blob_sha1(prefix) == _G4_B6_PREDECESSOR_TEST_GIT_BLOB_SHA1
-            and len(_G4_B6_DIRECT_ORDERED_NODE_IDS_EXACT24) == 24
-            and len(set(_G4_B6_DIRECT_ORDERED_NODE_IDS_EXACT24)) == 24
-            and hashlib.sha256(ordered_material).hexdigest() == _G4_B6_DIRECT_ORDERED_NODE_LIST_SHA256
-            and len(_G4_B6_P3_FINAL_INVERSE_EXCLUDED_EXACT7) == 7
-            and evidence["production_blob"] == _G4_B6_PRODUCTION_GIT_BLOB_SHA1
-            and evidence["wrapper_reaches_actual_cluster"] is True
-            and evidence["source_atom_loop_count"] == 1
-            and evidence["atom_local_dimension_cue_count"] == 0
-            and evidence["generic_unknown_fallback_count"] == 0,
-            _G4_B6_DIMENSION_RED,
+        focus_body = sum(focus_body_count(*rows) for rows in zip(
+            captured, _rc0031_final_candidate_contexts(), strict=True))
+        injection = _b6_reception_injection_evidence()
+        reception_exact = bool(
+            focus_evidence == (11, 0, 0, 0)
+            and focus_body == 11
+            and tuple(injection.values())
+            == (11, 6, 0, 11, 11, 6, 10, 10, True, True, True)
+        )
+        builder = getattr(surface, _B6_ROLE_TYPED_PRIVATE_BUILDER)
+        seam = getattr(surface, _B6_RECEPTION_INJECTION_BUILDER)
+        has_other = lambda value: sum(
+            str(row) != "construction" for row in value.semantic_families
+        ) > 1
+        context = next(
+            row
+            for row in _rc0031_final_candidate_contexts()
+            if any(
+                has_other(value)
+                for value in row[4].surface_realization_plan.proposition_clause_bindings
+            )
+        )
+        _case, base, successor, lexical, candidate, _witness = context
+        from emlis_ai_evidence_ledger_service import (
+            build_evidence_ledger,
+            build_evidence_span_resolver,
         )
 
-    def test_rc0031_g4_root_head_dominant_typed_attachment_is_proved_or_red(self) -> None:
-        evidence = _g4_b6_head_dominance_evidence()
-        _closed_assert(
-            evidence["production_blob"] == _G4_B6_PRODUCTION_GIT_BLOB_SHA1
-            and evidence["source_atom_loop_count"] == 1
-            and evidence["peer_clause_append_count"] == 0
-            and evidence["head_only_controls_construction_attachment"] is False
-            and evidence["owner_role_mapping_consumed_by_cluster"] is True
-            and evidence["owner_kind_mapping_consumed_by_cluster"] is True
-            and evidence["late_base_and_reception_string_splice"] is False,
-            _G4_B6_HEAD_RED,
+        resolver = build_evidence_span_resolver(
+            tuple(build_evidence_ledger(base.normalized_input)),
+            current_input=base.normalized_input,
         )
+        authority = authority_owner.build_step11_rc0031_reception_focus_authority(
+            base.grounded_plan,
+            resolver,
+            successor_snapshot=successor,
+            base_candidate=candidate.base_candidate,
+            inventory_result=base.inventory_result,
+            content_plan=base.content_plan,
+            current_input=base.projected_current_input,
+        )
+        kwargs = dict(
+            successor_snapshot=successor,
+            lexical_atom_specs=lexical,
+            reception_focus_authority=authority,
+            plan=base.grounded_plan,
+            resolver=resolver,
+            inventory_result=base.inventory_result,
+            content_plan=base.content_plan,
+            current_input=base.projected_current_input,
+        )
+        seed, built = seam(candidate, **kwargs), builder(candidate, **kwargs)
+        owner_rows = _b5_owner_projection_or_red()(
+            built.base_candidate,
+            successor_snapshot=successor,
+            lexical_atom_specs=lexical,
+        )
+        _owner, catalog, grammar, _sha = (
+            surface._step11_rc0031_product_surface_authorities()
+        )
+        maps = (
+            {row[0]: row[3] for row in owner_rows},
+            {row[0]: row[1] for row in owner_rows},
+            {str(row.construction_instance_id): row for row in built.construction_atoms},
+            {str(row.experiment_relation_id): row for row in built.relation_atoms},
+            {str(row.source_semantic_link_id): row for row in built.semantic_link_atoms},
+            {str(row.source_unknown_id): row for row in built.explicit_unknown_atoms},
+        )
+        bindings = tuple(built.surface_realization_plan.proposition_clause_bindings)
+        multi = next(row for row in bindings if has_other(row))
+        role_binding, role_row = next(
+            (binding, row)
+            for binding in bindings
+            for row in zip(
+                binding.source_atom_ids,
+                binding.semantic_families,
+                binding.source_atom_owner_ids,
+                strict=True,
+            )
+            if str(row[0]) == str(binding.head_source_atom_id)
+            and str(row[1]) in {"relation", "semantic_link"}
+        )
+
+        def render(value: Any, c: Any = catalog, g: Any = grammar) -> str:
+            return surface._step11_rc0031_product_render_cluster(
+                value, c=c, g=g, m=maps, s=successor
+            )
+
+        def body_with(value: Any) -> bytes:
+            setattr(
+                surface,
+                _B6_RECEPTION_INJECTION_BUILDER,
+                lambda *_args, **_kwargs: value,
+            )
+            try:
+                return builder(candidate, **kwargs).rendered_surface.utf8_bytes
+            finally:
+                setattr(surface, _B6_RECEPTION_INJECTION_BUILDER, seam)
+
+        role_baseline, multi_baseline = render(role_binding), render(multi)
+        role_keys = (str(role_row[1]) + "_from", str(role_row[1]) + "_to")
+        patterns = dict(catalog["owner_role_particle_patterns"])
+        patterns.update(dict.fromkeys(role_keys, "g4_controlled_bad_role"))
+        role_effect = check(
+            lambda: render(
+                role_binding,
+                {**catalog, "owner_role_particle_patterns": patterns},
+            ),
+            role_baseline,
+            "e",
+        )
+        nuclei = {
+            str(alias): row
+            for row in successor.base_snapshot.nuclei
+            for alias in (row.source_id, row.actual_source_id)
+        }
+        patterns = dict(catalog["owner_kind_inflection_patterns"])
+        owner = str(tuple(role_row[2])[0])
+        patterns[str(nuclei[str(maps[1][owner])].kind)] = "g4_controlled_bad_kind"
+        kind_effect = check(
+            lambda: render(
+                role_binding,
+                {**catalog, "owner_kind_inflection_patterns": patterns},
+            ),
+            role_baseline,
+            "e",
+        )
+        morphology = dict(catalog["clause_morphology"])
+        for key in role_keys:
+            morphology.pop(str(catalog["owner_role_particle_patterns"][key]))
+        morphology_fail = check(
+            lambda: render(
+                role_binding, {**catalog, "clause_morphology": morphology}
+            ),
+            None,
+            "f",
+        )
+        dimensions = surface._step11_rc0031_product_source_dimensions(
+            str(role_row[0]),
+            str(role_row[1]),
+            tuple(str(row) for row in role_row[2]),
+            successor_snapshot=successor,
+            rc0031_nucleus_by_owner=maps[1],
+        )
+        dimension_effect = dimension_fail = 0
+        for registry, dimension in zip((
+            "temporal_scope_cues", "modality_cues",
+            "polarity_cues", "referent_scope_cues",
+        ), map(str, dimensions), strict=True):
+            cues = dict(grammar[registry])
+            changed = {**cues, dimension: "g4_controlled_" + registry}
+            dimension_effect += check(
+                lambda: render(role_binding, g={**grammar, registry: changed}),
+                role_baseline, "d",
+            )
+            cues.pop(dimension)
+            dimension_fail += check(
+                lambda: render(role_binding, g={**grammar, registry: cues}),
+                None, "f",
+            )
+        alternate = next(
+            atom for atom, family in zip(
+                multi.source_atom_ids, multi.semantic_families, strict=True
+            )
+            if str(atom) != str(multi.head_source_atom_id)
+            and str(family) != "construction"
+        )
+        head_identity = check(
+            lambda: render(swap(multi, head_source_atom_id=alternate)),
+            multi_baseline,
+            "e",
+        )
+        body = built.rendered_surface.utf8_bytes
+        raw = seed.base_candidate.final_utf8_bytes
+        rendered = swap(
+            seed.rendered_surface,
+            utf8_bytes=raw,
+            sha256=hashlib.sha256(raw).hexdigest(),
+        )
+        corrupt = swap(
+            seed,
+            rendered_surface=rendered,
+            candidate_id=surface._step11_rc0031_candidate_identity(
+                base_candidate_id=seed.base_candidate.candidate_id,
+                rendered=rendered,
+                plan=seed.surface_realization_plan,
+                ast=seed.proposition_surface_ast,
+            ),
+        )
+        tail_closed = check(
+            lambda: body_with(corrupt), body, "s"
+        )
+        receptions = tuple(
+            seed.surface_realization_plan.reception_predication_bindings
+        )
+        first = receptions[0]
+        target = (
+            first.supporting_source_owner_ids[0]
+            if first.supporting_source_owner_ids
+            else next(
+                row
+                for row in maps[0]
+                if row not in first.source_target_owner_ids
+            )
+        )
+        support = first.source_target_owner_ids[0]
+        act = next(
+            row
+            for row in catalog["reception_act_predicate_fragments"]
+            if row != first.reception_act
+        )
+        mutations = (
+            swap(first, source_target_owner_ids=(target,)),
+            swap(first, supporting_source_owner_ids=(support,)),
+            swap(first, reception_act=str(act)),
+        )
+        mutation_count = 0
+        for changed, mode in zip(mutations, ("e", "e", "d"), strict=True):
+            plan = swap(
+                seed.surface_realization_plan,
+                reception_predication_bindings=(changed, *receptions[1:]),
+            )
+            changed_seed = swap(
+                seed,
+                surface_realization_plan=plan,
+                reception_bindings=plan.reception_predication_bindings,
+            )
+            mutation_count += check(
+                lambda changed_seed=changed_seed: body_with(changed_seed),
+                body,
+                mode,
+            )
+        return (
+            dimension_effect,
+            dimension_fail,
+            morphology_fail,
+            role_effect,
+            kind_effect,
+            head_identity,
+            tail_closed,
+            locus_exact,
+            reception_exact,
+            mutation_count,
+            selector_exact,
+        )
+    except Exception:
+        return (0,) * 11
+
+
+def _g4_b6_reachable_dimension_equivalence_locus_or_red(self):
+    evidence = _b6_role_typed_evidence()
+    controlled = _g4_b6_controlled_behavior_evidence()
+    _closed_assert(
+        _g4_b6_freeze_is_exact()
+        and _b6_role_typed_owner_green(evidence)
+        and _b6_role_typed_recomposition_green(evidence)
+        and controlled[0] == 4
+        and controlled[1] == 4
+        and controlled[2] is True
+        and controlled[7] is True,
+        _G4_B6_DIMENSION_RED,
+    )
+
+
+def _g4_b6_head_dominant_typed_attachment_or_red(self):
+    evidence = _b6_role_typed_evidence()
+    controlled = _g4_b6_controlled_behavior_evidence()
+    _closed_assert(
+        _g4_b6_freeze_is_exact()
+        and _b6_role_typed_owner_green(evidence)
+        and _b6_role_typed_recomposition_green(evidence)
+        and controlled[3] is True
+        and controlled[4] is True
+        and controlled[5] is True
+        and controlled[6] is True
+        and controlled[8] is True
+        and controlled[9] == 3
+        and controlled[10] is True
+        and evidence["declared_head_body_first_count"]
+        == _B6_ROLE_TYPED_HEAD_COUNT,
+        _G4_B6_HEAD_RED,
+    )
+
+
+TestRc0031P3B6OwnerRoleInflectionTypedRecompositionDesignFreezeRedOnly.test_rc0031_p3_b6_owner_role_inflection_is_body_only_recoverable_or_red = (
+    _g4_b6_reachable_dimension_equivalence_locus_or_red
+)
+TestRc0031P3B6OwnerRoleInflectionTypedRecompositionDesignFreezeRedOnly.test_rc0031_p3_b6_typed_recomposition_is_body_only_recoverable_or_red = (
+    _g4_b6_head_dominant_typed_attachment_or_red
+)
