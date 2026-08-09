@@ -10767,3 +10767,131 @@ TestRc0031P3B6OwnerRoleInflectionTypedRecompositionDesignFreezeRedOnly.test_rc00
 TestRc0031P3B6OwnerHeadRangeReceptionInjectionDesignFreezeRedOnly.test_rc0031_p3_b6_owner_reception_contract_and_future_green_window_are_exact = (
     _b6_chain_owner_reception_contract_compatibility
 )
+
+
+# ---------------------------------------------------------------------------
+# Cycle001 G4 B6 remediation design freeze RED-only
+# ---------------------------------------------------------------------------
+_G4_B6_PREDECESSOR_TEST_BYTES = 408_068
+_G4_B6_PREDECESSOR_TEST_SHA256 = "ac457122e12e87c95fb0f5e9b2d8d2eddc5d7bce7430dcdfb14bdfc03c5a6b19"
+_G4_B6_PREDECESSOR_TEST_GIT_BLOB_SHA1 = "0b49a7ae02234a9b8741b6bc7d1c8580630e099b"
+_G4_B6_PRODUCTION_GIT_BLOB_SHA1 = "1c19b6c293e20a9094b9180fded8c167daaaf5eb"
+_G4_B6_DIRECT_ORDERED_NODE_IDS_EXACT24 = (
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6DesignFreezeRedOnly::test_rc0031_p3_b6_freeze_scope_and_predecessor_behavior_are_exact",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6DesignFreezeRedOnly::test_rc0031_p3_b6_denominators_authority_chain_resource_and_privacy_are_exact",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6DesignFreezeRedOnly::test_rc0031_p3_b6_required_meaning_source_successor_and_atom_authorities_are_congruent_or_fail_closed",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6DesignFreezeRedOnly::test_rc0031_p3_b6_product_owner_expressions_are_boundary_safe_and_role_inflected_or_fail_closed",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6DesignFreezeRedOnly::test_rc0031_p3_b6_reception_focus_target_support_act_and_aspect_are_congruent_or_fail_closed",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6DesignFreezeRedOnly::test_rc0031_p3_b6_typed_recomposition_is_body_only_recoverable_resource_bounded_and_private",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6ScopeProjectionReconciliationDesignFreezeRedOnly::test_rc0031_p3_b6_reconciliation_predecessor_and_boundaries_are_exact",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6ScopeProjectionReconciliationDesignFreezeRedOnly::test_rc0031_p3_b6_reconciliation_future_green_window_is_exact",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6ScopeProjectionReconciliationDesignFreezeRedOnly::test_rc0031_p3_b6_scope_manifest_reconciliation_is_proved_or_red",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6ScopeProjectionReconciliationDesignFreezeRedOnly::test_rc0031_p3_b6_phase_projection_reconciliation_is_proved_or_red",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6OwnerHeadRangeReceptionInjectionDesignFreezeRedOnly::test_rc0031_p3_b6_owner_reception_predecessor_scope_and_boundaries_are_exact",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6OwnerHeadRangeReceptionInjectionDesignFreezeRedOnly::test_rc0031_p3_b6_owner_reception_contract_and_future_green_window_are_exact",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6OwnerHeadRangeReceptionInjectionDesignFreezeRedOnly::test_rc0031_p3_b6_owner_grammatical_head_range_authority_is_proved_or_red",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6OwnerHeadRangeReceptionInjectionDesignFreezeRedOnly::test_rc0031_p3_b6_reception_authority_injection_seam_is_proved_or_red",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6OwnerRoleInflectionTypedRecompositionDesignFreezeRedOnly::test_rc0031_p3_b6_owner_role_typed_predecessor_scope_and_boundaries_are_exact",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6OwnerRoleInflectionTypedRecompositionDesignFreezeRedOnly::test_rc0031_p3_b6_owner_role_typed_contract_and_future_green_window_are_exact",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6OwnerRoleInflectionTypedRecompositionDesignFreezeRedOnly::test_rc0031_p3_b6_owner_role_inflection_is_body_only_recoverable_or_red",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6OwnerRoleInflectionTypedRecompositionDesignFreezeRedOnly::test_rc0031_p3_b6_typed_recomposition_is_body_only_recoverable_or_red",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6ChainedModifierLocusMultiplicityReconciliationDesignFreezeRedOnly::test_rc0031_p3_b6_chained_modifier_reconciliation_predecessor_scope_and_boundaries_are_exact",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6ChainedModifierLocusMultiplicityReconciliationDesignFreezeRedOnly::test_rc0031_p3_b6_chained_modifier_contract_parser_and_future_green_window_are_exact",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6ChainedModifierLocusMultiplicityReconciliationDesignFreezeRedOnly::test_rc0031_p3_b6_chained_modifier_locus_multiplicity_is_proved_or_red",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031P3B6ChainedModifierLocusMultiplicityReconciliationDesignFreezeRedOnly::test_rc0031_p3_b6_chained_modifier_body_recovery_is_proved_or_red",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031Cycle001G4B6RemediationDesignFreezeRedOnly::test_rc0031_g4_reachable_dimension_equivalence_locus_is_proved_or_red",
+    "ai/tests/test_emlis_nls_v3_s11_rc0031_forward_inverse_independence.py::TestRc0031Cycle001G4B6RemediationDesignFreezeRedOnly::test_rc0031_g4_root_head_dominant_typed_attachment_is_proved_or_red",
+)
+_G4_B6_DIRECT_ORDERED_NODE_LIST_SHA256 = "589e55bf49b8f27e3f1a13c11ce15271895aef150631d99c457f02ec5b8f9ba5"
+_G4_B6_P3_FINAL_INVERSE_EXCLUDED_EXACT7 = (
+    "test_rc0031_p3_final_body_inverse_predecessor_and_scope_are_exact",
+    "test_rc0031_p3_final_body_inverse_contract_and_future_green_window_are_exact",
+    "test_rc0031_p3_final_body_inverse_parser_is_body_only_or_red",
+    "test_rc0031_p3_final_body_inverse_matcher_is_independent_or_red",
+    "test_rc0031_p3_final_body_inverse_round_trip_is_exact_or_red",
+    "test_rc0031_p3_final_body_inverse_ambiguity_is_fail_closed_or_red",
+    "test_rc0031_p3_final_body_inverse_resource_and_privacy_are_exact",
+)
+_G4_B6_REQUIRED_PROJECTION = {"PASS": 22, "CAUSAL_RED": 2, "UNEXPECTED": 0, "ERROR": 0}
+_G4_B6_DIMENSION_RED = "REACHABLE_DIMENSION_EQUIVALENCE_LOCUS_NOT_PROVED"
+_G4_B6_HEAD_RED = "HEAD_DOMINANT_TYPED_ATTACHMENT_NOT_PROVED"
+
+
+def _g4_b6_function_node(module_tree: ast.Module, name: str) -> ast.FunctionDef:
+    rows = tuple(node for node in module_tree.body if isinstance(node, ast.FunctionDef) and node.name == name)
+    _closed_assert(len(rows) == 1, "STEP11_RC0031_G4_OWNER_SYMBOL_DRIFT")
+    return rows[0]
+
+
+def _g4_b6_call_names(node: ast.AST) -> tuple[str, ...]:
+    names = []
+    for child in ast.walk(node):
+        if isinstance(child, ast.Call):
+            if isinstance(child.func, ast.Name):
+                names.append(child.func.id)
+            elif isinstance(child.func, ast.Attribute):
+                names.append(child.func.attr)
+    return tuple(names)
+
+
+def _g4_b6_loop_over_source_atoms(node: ast.AST) -> tuple[ast.For, ...]:
+    return tuple(child for child in ast.walk(node) if isinstance(child, ast.For) and "source_atom_ids" in ast.unparse(child.iter))
+
+
+def _g4_b6_dimension_equivalence_evidence() -> dict[str, Any]:
+    source = _SURFACE_PATH.read_bytes()
+    tree = ast.parse(source.decode("utf-8", errors="strict"))
+    wrapper = _g4_b6_function_node(tree, "_step11_rc0031_product_render_cluster")
+    cluster = _g4_b6_function_node(tree, "_rc0031_rt_cluster")
+    loops = _g4_b6_loop_over_source_atoms(cluster)
+    calls = tuple(call for loop in loops for call in ast.walk(loop) if isinstance(call, ast.Call))
+    fallback = sum(len(call.args) >= 2 and isinstance(call.func, ast.Attribute) and call.func.attr == "get" and '"unknown"' in ast.unparse(call.args[1]) for call in calls)
+    cues = sum(isinstance(call.func, ast.Attribute) and call.func.attr == "get" and any(key in ast.unparse(call.func.value) for key in ("temporal_scope_cues", "referent_scope_cues", "modality_cues", "polarity_cues")) for call in calls)
+    return {"production_blob": _b6_git_blob_sha1(source), "wrapper_reaches_actual_cluster": "_rc0031_rt_cluster" in _g4_b6_call_names(wrapper), "source_atom_loop_count": len(loops), "atom_local_dimension_cue_count": cues, "generic_unknown_fallback_count": fallback}
+
+
+def _g4_b6_head_dominance_evidence() -> dict[str, Any]:
+    source = _SURFACE_PATH.read_bytes()
+    tree = ast.parse(source.decode("utf-8", errors="strict"))
+    cluster = _g4_b6_function_node(tree, "_rc0031_rt_cluster")
+    builder = _g4_b6_function_node(tree, "_step11_rc0031_build_owner_role_inflected_typed_recomposition_candidate")
+    loops = _g4_b6_loop_over_source_atoms(cluster)
+    peer = sum(isinstance(call.func, ast.Attribute) and call.func.attr == "append" and ast.unparse(call.func.value) == "clauses" for loop in loops for call in ast.walk(loop) if isinstance(call, ast.Call))
+    cm, bm = ast.unparse(cluster), ast.unparse(builder)
+    return {"production_blob": _b6_git_blob_sha1(source), "source_atom_loop_count": len(loops), "peer_clause_append_count": peer, "head_only_controls_construction_attachment": "head_source_atom_id" in cm and "clauses.append" in cm, "owner_role_mapping_consumed_by_cluster": "owner_role_particle_patterns" in cm, "owner_kind_mapping_consumed_by_cluster": "owner_kind_inflection_patterns" in cm, "late_base_and_reception_string_splice": "base.split(sep, 1)[0]" in bm and "injected.split(sep, 1)[1]" in bm}
+
+
+class TestRc0031Cycle001G4B6RemediationDesignFreezeRedOnly:
+    def test_rc0031_g4_reachable_dimension_equivalence_locus_is_proved_or_red(self) -> None:
+        source = Path(__file__).resolve().read_bytes()
+        prefix = source[:_G4_B6_PREDECESSOR_TEST_BYTES]
+        ordered_material = ("\n".join(_G4_B6_DIRECT_ORDERED_NODE_IDS_EXACT24) + "\n").encode("utf-8", errors="strict")
+        evidence = _g4_b6_dimension_equivalence_evidence()
+        _closed_assert(
+            len(prefix) == _G4_B6_PREDECESSOR_TEST_BYTES
+            and hashlib.sha256(prefix).hexdigest() == _G4_B6_PREDECESSOR_TEST_SHA256
+            and _b6_git_blob_sha1(prefix) == _G4_B6_PREDECESSOR_TEST_GIT_BLOB_SHA1
+            and len(_G4_B6_DIRECT_ORDERED_NODE_IDS_EXACT24) == 24
+            and len(set(_G4_B6_DIRECT_ORDERED_NODE_IDS_EXACT24)) == 24
+            and hashlib.sha256(ordered_material).hexdigest() == _G4_B6_DIRECT_ORDERED_NODE_LIST_SHA256
+            and len(_G4_B6_P3_FINAL_INVERSE_EXCLUDED_EXACT7) == 7
+            and evidence["production_blob"] == _G4_B6_PRODUCTION_GIT_BLOB_SHA1
+            and evidence["wrapper_reaches_actual_cluster"] is True
+            and evidence["source_atom_loop_count"] == 1
+            and evidence["atom_local_dimension_cue_count"] == 0
+            and evidence["generic_unknown_fallback_count"] == 0,
+            _G4_B6_DIMENSION_RED,
+        )
+
+    def test_rc0031_g4_root_head_dominant_typed_attachment_is_proved_or_red(self) -> None:
+        evidence = _g4_b6_head_dominance_evidence()
+        _closed_assert(
+            evidence["production_blob"] == _G4_B6_PRODUCTION_GIT_BLOB_SHA1
+            and evidence["source_atom_loop_count"] == 1
+            and evidence["peer_clause_append_count"] == 0
+            and evidence["head_only_controls_construction_attachment"] is False
+            and evidence["owner_role_mapping_consumed_by_cluster"] is True
+            and evidence["owner_kind_mapping_consumed_by_cluster"] is True
+            and evidence["late_base_and_reception_string_splice"] is False,
+            _G4_B6_HEAD_RED,
+        )
