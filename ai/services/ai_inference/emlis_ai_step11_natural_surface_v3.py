@@ -14185,62 +14185,72 @@ def _rc0031_rt_cluster(
     v, *, c, g, m, s,
 ):
     refs, nuclei, cs, rs, links, unknowns = m
+    morphology = c["clause_morphology"]
+    roles = c["owner_role_particle_patterns"]
+    kinds = c["owner_kind_inflection_patterns"]
+    kind_by_nucleus = {
+        str(alias): str(row.kind)
+        for row in s.base_snapshot.nuclei
+        for alias in (row.source_id, row.actual_source_id)
+    }
     frags = {}
     for atom_id, owner in zip(
         v.construction_modifier_atom_ids,
         v.construction_modifier_target_owner_ids,
         strict=True,
     ):
-        atom = cs.get(str(atom_id))
-        fragment = (
-            c["construction_predicate_fragments"].get(
-                atom.construction_code
-            )
-            if atom is not None else None
-        )
-        if fragment is None:
-            raise Step11NaturalSurfaceError(_RC0031_E)
+        atom = cs[str(atom_id)]
+        fragment = c["construction_predicate_fragments"][
+            atom.construction_code
+        ]
         frags.setdefault(str(owner), []).append(str(fragment))
-    clauses = []
-    times = []
+    rows = []
     for atom_id, family, owners in zip(
         v.source_atom_ids, v.semantic_families,
         v.source_atom_owner_ids, strict=True,
     ):
-        if str(family) == "construction":
+        family = str(family)
+        if family == "construction":
             continue
         owner_ids = tuple(str(owner) for owner in owners)
+        if family in {"relation", "semantic_link"}:
+            for suffix in ("_from", "_to"):
+                morphology[roles[family + suffix]]
+        elif family == "explicit_unknown":
+            if roles[family] != "unknown_topic_particle":
+                raise Step11NaturalSurfaceError(_RC0031_E)
+        else:
+            raise Step11NaturalSurfaceError(_RC0031_E)
+        for owner in owner_ids:
+            kind = kind_by_nucleus[str(nuclei[owner])]
+            if kinds[kind] != "grounded_referent_uninflected":
+                raise Step11NaturalSurfaceError(_RC0031_E)
         referents = dict(refs)
         if str(atom_id) == str(v.head_source_atom_id):
-            for owner, rows in frags.items():
+            for owner, fragments in frags.items():
                 if owner not in owner_ids:
                     raise Step11NaturalSurfaceError(
                         _RC0031_E
                     )
-                referents[owner] += "".join(rows)
+                referents[owner] += "".join(fragments)
         temporal, modality, polarity, scope = (
             _step11_rc0031_product_source_dimensions(
-                str(atom_id), str(family), owner_ids,
+                str(atom_id), family, owner_ids,
                 successor_snapshot=s,
                 rc0031_nucleus_by_owner=nuclei,
             )
         )
-        times.append(str(g["temporal_scope_cues"].get(
-            temporal, g["temporal_scope_cues"]["unknown"]
-        )))
-        clauses.append(
-            str(g["referent_scope_cues"].get(
-                scope, g["referent_scope_cues"]["unknown"]
-            ))
-            + str(g["modality_cues"].get(
-                modality, g["modality_cues"]["unknown"]
-            ))
-            + str(g["polarity_cues"].get(
-                polarity, g["polarity_cues"]["unknown"]
-            ))
-            + _step11_rc0031_render_semantic_clause(
+        cues = "".join((
+            str(g["temporal_scope_cues"][temporal]),
+            str(g["modality_cues"][modality]),
+            str(g["polarity_cues"][polarity]),
+            str(g["referent_scope_cues"][scope]),
+        ))
+        rows.append((
+            str(atom_id), cues,
+            _step11_rc0031_render_semantic_clause(
                 source_atom_id=str(atom_id),
-                semantic_family=str(family),
+                semantic_family=family,
                 catalog=c,
                 referent_by_owner=referents,
                 owner_ids=owner_ids,
@@ -14248,37 +14258,44 @@ def _rc0031_rt_cluster(
                 relation_by_id=rs,
                 link_by_id=links,
                 unknown_by_id=unknowns,
-            )
-        )
-    if (
-        not clauses
-        or len(clauses) > 3
-        or v.visible_clause_count != (1 if len(clauses) <= 2 else 2)
-    ):
+            ),
+        ))
+    head = tuple(row for row in rows
+        if row[0] == str(v.head_source_atom_id))
+    if (len(head) != 1 or not 1 <= len(rows) <= 3
+        or v.visible_clause_count != (1 if len(rows) <= 2 else 2)):
         raise Step11NaturalSurfaceError(_RC0031_E)
-    common = len(set(times)) == 1
-    if not common:
-        clauses = [x + y for x, y in zip(times, clauses, strict=True)]
-    if len(clauses) <= 2:
-        text = g["atom_joiners"][0].join(clauses)
-    else:
-        text = (
-            g["atom_joiners"][0].join(clauses[:2])
-            + g["clause_join"]
-            + g["atom_joiners"][1].join(clauses[2:])
-        )
-    return (times[0] if common else "") + text
+    ordered = head + tuple(row for row in rows if row is not head[0])
+    text = head[0][1] + head[0][2]
+    for index, row in enumerate(ordered[1:]):
+        if index:
+            text += str(g["clause_join"])
+        text += str(morphology["within_sentence_clause_join"]) + row[2]
+    return text
 _RC0031_C0 = _step11_rc0031_product_render_cluster
 def _step11_rc0031_product_render_cluster(v, **kw):
-    if "m" not in kw:
-        return _RC0031_C0(v, **kw)
-    c = kw["c"]
+    if "m" in kw:
+        c, g, m, s = kw["c"], kw["g"], kw["m"], kw["s"]
+    else:
+        c = kw["rc0031_catalog"]
+        if type(c) is dict:
+            return _RC0031_C0(v, **kw)
+        g, s = kw["rc0031_grammar"], kw["successor_snapshot"]
+        m = (
+            kw["rc0031_referent_by_owner"],
+            kw["rc0031_nucleus_by_owner"],
+            kw["rc0031_construction_by_id"],
+            kw["rc0031_relation_by_id"],
+            kw["rc0031_link_by_id"],
+            kw["rc0031_unknown_by_id"],
+        )
     if (not v.head_source_atom_id
-        or len(v.construction_modifier_atom_ids) != len(v.construction_modifier_target_owner_ids)
+        or len(v.construction_modifier_atom_ids)
+        != len(v.construction_modifier_target_owner_ids)
         or len(c["owner_role_particle_patterns"]) != 8
         or len(c["owner_kind_inflection_patterns"]) != 12):
         raise Step11NaturalSurfaceError(_RC0031_E)
-    return _rc0031_rt_cluster(v, **kw)
+    return _rc0031_rt_cluster(v, c=c, g=g, m=m, s=s)
 def _step11_rc0031_build_owner_role_inflected_typed_recomposition_candidate(
     value, *, successor_snapshot, lexical_atom_specs,
     reception_focus_authority, plan, resolver, inventory_result,
@@ -14306,73 +14323,12 @@ def _step11_rc0031_build_owner_role_inflected_typed_recomposition_candidate(
             successor_snapshot=successor_snapshot,
             lexical_atom_specs=lexical_atom_specs,
         )
-        maps = (
-            {row[0]: row[3] for row in rows},
-            {row[0]: row[1] for row in rows},
-            {
-                str(row.construction_instance_id): row
-                for row in v.construction_atoms
-            },
-            {
-                str(row.experiment_relation_id): row
-                for row in v.relation_atoms
-            },
-            {
-                str(row.source_semantic_link_id): row
-                for row in v.semantic_link_atoms
-            },
-            {
-                str(row.source_unknown_id): row
-                for row in v.explicit_unknown_atoms
-            },
-        )
-        sep = grammar["section_separator"]
-        base = v.base_candidate.final_utf8_bytes.decode(
-            "utf-8", errors="strict"
-        )
-        injected = v.rendered_surface.utf8_bytes.decode(
-            "utf-8", errors="strict"
-        )
-        if base.count(sep) != 1 or injected.count(sep) != 1:
-            raise Step11NaturalSurfaceError(_RC0031_E)
-        lines = base.split(sep, 1)[0].split("\n")
-        rec = injected.split(sep, 1)[1]
-        suffix = catalog["clause_morphology"]["sentence_suffix"]
-        for binding in p.proposition_clause_bindings:
-            group = binding.sentence_group_ordinal
-            if (
-                not 1 <= group < len(lines)
-                or not lines[group].endswith(suffix)
-            ):
-                raise Step11NaturalSurfaceError(
-                    _RC0031_E
-                )
-            cluster = _step11_rc0031_product_render_cluster(
-                binding,
-                c=catalog,
-                g=grammar,
-                m=maps,
-                s=successor_snapshot,
-            )
-            lines[group] = (
-                lines[group][:-len(suffix)] + grammar["clause_join"]
-                + cluster + suffix
-            )
-        body = ("\n".join(lines) + sep + rec).encode(
-            "utf-8", errors="strict"
-        )
-        out = replace(
-            v.rendered_surface,
-            utf8_bytes=body,
-            sha256=hashlib.sha256(body).hexdigest(),
-            proposition_clause_count=sum(
-                row.visible_clause_count
-                for row in p.proposition_clause_bindings
-            ),
-            semantic_atom_count=sum(
-                len(row.source_atom_ids)
-                for row in p.proposition_clause_bindings
-            ),
+        out = _step11_rc0031_product_render(
+            v, p,
+            successor_snapshot=successor_snapshot,
+            rc0031_catalog=__import__("types").MappingProxyType(catalog),
+            rc0031_grammar=grammar,
+            rc0031_owner_rows=rows,
         )
         identity = _step11_rc0031_candidate_identity(
             base_candidate_id=v.base_candidate.candidate_id,
