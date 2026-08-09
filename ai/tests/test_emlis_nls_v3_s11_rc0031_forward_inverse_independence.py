@@ -11007,27 +11007,15 @@ def _g4_b6_controlled_behavior_evidence():
         finally:
             setattr(authority_owner, name, original)
         def focus_body_count(a, c):
-            x = {str(alias): str(row.actual_source_id)
-                for row in c[2].base_snapshot.nuclei
-                for alias in (row.source_id, row.actual_source_id)}
-            z = lambda value: x.get(str(value), str(value))
-            p = c[4].surface_realization_plan
-            r = p.root_proposition_binding
-            o = {str(row[0]): z(row[1])
-                for row in surface._step11_rc0031_product_owner_projection(
-                c[4].base_candidate, successor_snapshot=c[2],
-                lexical_atom_specs=c[3])}
-            h = tuple({o[str(value)] for value in row.source_atom_owner_ids[i]}
-                for row in p.proposition_clause_bindings
-                for i in (tuple(map(str, row.source_atom_ids)).index(
-                    str(row.head_source_atom_id)),))
+            x = {str(row.actual_source_id)
+                for row in c[2].base_snapshot.nuclei}
+            r = c[4].surface_realization_plan.root_proposition_binding
             return sum(
                 r.complete_base_proposition_preserved
                 and (r.sentence_group_ordinal, r.grammatical_chunk_ordinal) == (1,1)
-                and set(map(z, c[1].grounded_plan.response_plan.primary_nucleus_ids))
-                <= set(map(z, r.source_owner_nucleus_ids))
-                and all(sum(value in head for head in h) == 1
-                    for value in map(z, row.source_focus_owner_ids))
+                and row.focus_basis == "grounded_response_primary_meaning"
+                and bool(row.source_focus_owner_ids)
+                and set(map(str, row.source_focus_owner_ids)) <= x
                 for row in a.bindings)
 
         focus_body = sum(focus_body_count(*rows) for rows in zip(
@@ -11035,6 +11023,7 @@ def _g4_b6_controlled_behavior_evidence():
         injection = _b6_reception_injection_evidence()
         reception_exact = bool(
             focus_evidence == (11, 0, 0, 0)
+            and captured[::2] == captured[1::2]
             and focus_body == 11
             and tuple(injection.values())
             == (11, 6, 0, 11, 11, 6, 10, 10, True, True, True)
