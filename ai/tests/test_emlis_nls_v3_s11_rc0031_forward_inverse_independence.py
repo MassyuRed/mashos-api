@@ -11031,7 +11031,7 @@ def _g4_b6_controlled_behavior_evidence():
                 for row in a.bindings)
 
         focus_body = sum(focus_body_count(*rows) for rows in zip(
-            captured, _rc0031_final_candidate_contexts(), strict=True))
+            captured[::2], _rc0031_final_candidate_contexts(), strict=True))
         injection = _b6_reception_injection_evidence()
         reception_exact = bool(
             focus_evidence == (11, 0, 0, 0)
