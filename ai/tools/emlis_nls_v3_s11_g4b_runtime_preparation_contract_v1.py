@@ -179,13 +179,18 @@ class PreparationContractV1:
 
     METHOD_ID = "G4B_RUNTIME_PREPARATION_CONTROLLER_FAMILY_V1"
     CANDIDATE_ID = (
-        "NLS_V3_STEP11_CYCLE001_G4_GATE_B_RUNTIME_PREPARATION_CONTROLLER_"
-        "FAMILY_V1_FUNCTIONAL_EXACT7_JOINT_IMPLEMENTATION_CANDIDATE_"
-        "CORRECTED_DRAFT_V3"
+        "NLS_V3_STEP11_CYCLE001_G4B_V6_FD9_PRIVILEGED_PROOF_CWD_ORDER_"
+        "AND_TYPED_PREEXEC_EVIDENCE_CORRECTION_CANDIDATE"
     )
     APPROVED_CANDIDATE_BODY_SHA256 = (
-        "3eae1025095726a29ec01d37ab4e5056270d115722a746d95ab7744e1aa03bf2"
+        "f9eb0d883a1f1691e50db0a90b4a09b76a7d42d41bcf225e01d436841b3b9c89"
     )
+
+    TRANSFER_MECHANISM_ID = (
+        "PLATFORM_OPENED_EXEC_TIME_INHERITED_READ_ONLY_FD_MAPPING_V1"
+    )
+    TRANSFER_CLASS = "EXEC_TIME_INHERITED_FD_MAPPING_V1"
+    SOURCE_DESCRIPTOR_NUMBER = 9
 
     FORMAL_LOCK_RAW_SHA256 = (
         "9bb2875541a6d959c1dca47cb5b96de5b0041ccf5288e849c469c15a8b310787"
@@ -277,10 +282,28 @@ class PreparationContractV1:
         "emlis.nls_v3.s11.g4b.runtime_preparation.private_transport.v1"
     )
     EGRESS_ATTESTATION_SOURCE_SCHEMA = (
-        "emlis.nls_v3.s11.g4b.runtime_preparation.egress_attestation_source.v1"
+        "emlis.nls_v3.s11.g4b.runtime_preparation.egress_attestation_source.v2"
     )
     EGRESS_ATTESTATION_SCHEMA = (
-        "emlis.nls_v3.s11.g4b.runtime_preparation.egress_attestation.v1"
+        "emlis.nls_v3.s11.g4b.runtime_preparation.egress_attestation.v2"
+    )
+    P1_CREDENTIAL_CONTRACT_SCHEMA = (
+        "emlis.nls_v3.s11.g4b.runtime_preparation.p1_credential_contract.v1"
+    )
+    P1_SOURCE_FIXED_TUPLE_SCHEMA = (
+        "emlis.nls_v3.s11.g4b.runtime_preparation.p1_source_fixed_tuple.v1"
+    )
+    PLATFORM_OPEN_CONTRACT_SCHEMA = (
+        "emlis.nls_v3.s11.g4b.runtime_preparation.platform_open_contract.v1"
+    )
+    PLATFORM_SOURCE_OBJECT_IDENTITY_SCHEMA = (
+        "emlis.nls_v3.s11.g4b.runtime_preparation.platform_source_object_identity.v1"
+    )
+    PLATFORM_MAPPING_PROVENANCE_SCHEMA = (
+        "emlis.nls_v3.s11.g4b.runtime_preparation.platform_mapping_provenance.v1"
+    )
+    ISSUER_PROVENANCE_SCHEMA = (
+        "emlis.nls_v3.s11.g4b.runtime_preparation.issuer_provenance.v2"
     )
     PUBLICATION_CONTRACT_SCHEMA = (
         "emlis.nls_v3.s11.g4b.runtime_preparation.publication_contract.v1"
@@ -391,15 +414,65 @@ class PreparationContractV1:
     )
     EGRESS_ATTESTATION_SOURCE_KEYS = frozenset(
         {
-            "schema_version", "private_locator", "expected_owner_class",
+            "schema_version", "transfer_mechanism_id", "transfer_class",
+            "descriptor_number", "platform_mapping_provenance",
+            "platform_mapping_provenance_binding_sha256", "expected_owner_uid",
             "expected_mode", "expected_regular_file", "expected_nlink",
+            "expected_source_identity", "expected_source_identity_binding_sha256",
             "expected_raw_sha256", "expected_expiry",
+        }
+    )
+    P1_CREDENTIAL_CONTRACT_KEYS = frozenset(
+        {
+            "schema_version", "ruid", "euid", "suid", "fsuid", "rgid", "egid",
+            "sgid", "fsgid", "supplementary_gids", "cap_effective",
+            "cap_permitted", "cap_inheritable", "cap_ambient", "no_new_privs",
+        }
+    )
+    P1_SOURCE_FIXED_TUPLE_KEYS = frozenset(
+        {
+            "schema_version", "st_dev", "st_ino", "st_uid", "st_gid", "st_mode",
+            "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns",
+        }
+    )
+    PLATFORM_OPEN_CONTRACT_KEYS = frozenset(
+        {
+            "schema_version", "trusted_root_binding_sha256", "open_access_mode",
+            "parent_fd_cloexec_before_mapping", "resolve_beneath",
+            "resolve_no_symlinks", "resolve_no_magiclinks",
+            "p1_writable_resolved_ancestor_count", "p1_writable_source",
+            "retained_writable_source_fd_count", "same_authority_mutation_count",
+            "same_authority_replacement_count", "same_authority_relink_count",
+            "same_authority_reissue_count",
+        }
+    )
+    PLATFORM_SOURCE_OBJECT_IDENTITY_KEYS = frozenset(
+        {
+            "schema_version", "st_dev", "st_ino", "st_uid", "st_gid", "st_mode",
+            "st_nlink",
+        }
+    )
+    PLATFORM_MAPPING_PROVENANCE_KEYS = frozenset(
+        {
+            "schema_version", "platform_control_state_instance_id",
+            "platform_mapping_event_id", "authority_id", "observation_session_id",
+            "stable_authority_approval_binding_sha256", "approved_candidate_body_sha256",
+            "issuer_policy_id", "transfer_mechanism_id", "transfer_class",
+            "descriptor_number", "p1_credential_contract",
+            "p1_credential_contract_binding_sha256", "platform_open_contract",
+            "platform_open_contract_binding_sha256", "platform_source_object_identity",
+            "platform_source_object_identity_binding_sha256", "source_issue_count",
+            "source_open_count", "mapping_count", "p1_launch_count",
+            "inherited_nonstdio_platform_descriptor_count", "stdin_writer_count",
+            "stdin_writer_duplicate_count_after_final_byte", "stdin_canonical_exact_bytes",
+            "stdin_bounded_eof", "parent_source_copy_closed_after_launch_acceptance",
         }
     )
     EGRESS_ATTESTATION_KEYS = frozenset(
         {
             "schema_version", "source_class", "issuer_policy_id",
             "platform_control_state_instance_id", "issuer_provenance_binding_sha256",
+            "platform_mapping_provenance_binding_sha256",
             "stable_authority_approval_binding_sha256", "approved_candidate_body_sha256",
             "policy_id", "allowed_scheme", "allowed_hosts", "enforcement_scope",
             "authority_id", "observation_session_id", "acquisition_process_count",
@@ -408,8 +481,9 @@ class PreparationContractV1:
     )
     ISSUER_PROVENANCE_KEYS = (
         "schema_version", "source_class", "issuer_policy_id",
-        "platform_control_state_instance_id", "stable_authority_approval_binding_sha256",
-        "approved_candidate_body_sha256", "authority_id", "observation_session_id",
+        "platform_control_state_instance_id", "platform_mapping_provenance_binding_sha256",
+        "stable_authority_approval_binding_sha256", "approved_candidate_body_sha256",
+        "authority_id", "observation_session_id",
     )
     PUBLICATION_CONTRACT_KEYS = frozenset(
         {
@@ -841,6 +915,156 @@ def validate_path_plan(path_plan: dict[str, Any]) -> dict[str, Any]:
     return copy.deepcopy(path_plan)
 
 
+def _validate_p1_credential_contract(value: Any) -> dict[str, Any]:
+    c = PreparationContractV1
+    value = _expect_keys(
+        value, c.P1_CREDENTIAL_CONTRACT_KEYS, "p1_credential_contract"
+    )
+    _expect_fixed(
+        value["schema_version"], c.P1_CREDENTIAL_CONTRACT_SCHEMA,
+        "p1_credential_contract.schema_version",
+    )
+    for key in ("ruid", "euid", "suid", "fsuid", "rgid", "egid", "sgid", "fsgid"):
+        _expect_int(value[key], f"p1_credential_contract.{key}", minimum=1)
+    if len({value[key] for key in ("ruid", "euid", "suid", "fsuid")}) != 1:
+        _fail("P1_CREDENTIAL_CONTRACT_INVALID", "uid quartet")
+    if len({value[key] for key in ("rgid", "egid", "sgid", "fsgid")}) != 1:
+        _fail("P1_CREDENTIAL_CONTRACT_INVALID", "gid quartet")
+    groups = value["supplementary_gids"]
+    if type(groups) is not list or any(type(item) is not int or item <= 0 for item in groups):
+        _fail("P1_CREDENTIAL_CONTRACT_INVALID", "supplementary gids")
+    if groups != sorted(set(groups)):
+        _fail("P1_CREDENTIAL_CONTRACT_INVALID", "supplementary gids ordering")
+    for key in ("cap_effective", "cap_permitted", "cap_inheritable", "cap_ambient"):
+        _expect_fixed(value[key], 0, f"p1_credential_contract.{key}")
+    _expect_fixed(value["no_new_privs"], 1, "p1_credential_contract.no_new_privs")
+    return value
+
+
+def _validate_source_fixed_tuple(value: Any) -> dict[str, Any]:
+    c = PreparationContractV1
+    value = _expect_keys(
+        value, c.P1_SOURCE_FIXED_TUPLE_KEYS, "expected_source_identity"
+    )
+    _expect_fixed(
+        value["schema_version"], c.P1_SOURCE_FIXED_TUPLE_SCHEMA,
+        "expected_source_identity.schema_version",
+    )
+    for key in c.P1_SOURCE_FIXED_TUPLE_KEYS - {"schema_version"}:
+        _expect_int(value[key], f"expected_source_identity.{key}")
+    _expect_fixed(value["st_uid"], 0, "expected_source_identity.st_uid")
+    _expect_fixed(value["st_nlink"], 1, "expected_source_identity.st_nlink")
+    if value["st_mode"] & 0o170000 != 0o100000 or value["st_mode"] & 0o7777 != 0o400:
+        _fail("EGRESS_ATTESTATION_SOURCE_INVALID", "source is not regular exact0400")
+    if value["st_size"] <= 0:
+        _fail("EGRESS_ATTESTATION_SOURCE_INVALID", "source size is not positive")
+    return value
+
+
+def _validate_platform_source_object_identity(value: Any) -> dict[str, Any]:
+    c = PreparationContractV1
+    value = _expect_keys(
+        value, c.PLATFORM_SOURCE_OBJECT_IDENTITY_KEYS,
+        "platform_source_object_identity",
+    )
+    _expect_fixed(
+        value["schema_version"], c.PLATFORM_SOURCE_OBJECT_IDENTITY_SCHEMA,
+        "platform_source_object_identity.schema_version",
+    )
+    for key in c.PLATFORM_SOURCE_OBJECT_IDENTITY_KEYS - {"schema_version"}:
+        _expect_int(value[key], f"platform_source_object_identity.{key}")
+    _expect_fixed(value["st_uid"], 0, "platform_source_object_identity.st_uid")
+    _expect_fixed(value["st_nlink"], 1, "platform_source_object_identity.st_nlink")
+    if value["st_mode"] & 0o170000 != 0o100000 or value["st_mode"] & 0o7777 != 0o400:
+        _fail("PLATFORM_MAPPING_PROVENANCE_INVALID", "source object mode")
+    return value
+
+
+def _validate_platform_open_contract(value: Any) -> dict[str, Any]:
+    c = PreparationContractV1
+    value = _expect_keys(
+        value, c.PLATFORM_OPEN_CONTRACT_KEYS, "platform_open_contract"
+    )
+    fixed = {
+        "schema_version": c.PLATFORM_OPEN_CONTRACT_SCHEMA,
+        "open_access_mode": "O_RDONLY",
+        "parent_fd_cloexec_before_mapping": True,
+        "resolve_beneath": True,
+        "resolve_no_symlinks": True,
+        "resolve_no_magiclinks": True,
+        "p1_writable_resolved_ancestor_count": 0,
+        "p1_writable_source": False,
+        "retained_writable_source_fd_count": 0,
+        "same_authority_mutation_count": 0,
+        "same_authority_replacement_count": 0,
+        "same_authority_relink_count": 0,
+        "same_authority_reissue_count": 0,
+    }
+    for key, expected in fixed.items():
+        _expect_fixed(value[key], expected, f"platform_open_contract.{key}")
+    _expect_sha256(
+        value["trusted_root_binding_sha256"],
+        "platform_open_contract.trusted_root_binding_sha256",
+    )
+    return value
+
+
+def _validate_platform_mapping_provenance(value: Any) -> dict[str, Any]:
+    c = PreparationContractV1
+    value = _expect_keys(
+        value, c.PLATFORM_MAPPING_PROVENANCE_KEYS,
+        "platform_mapping_provenance",
+    )
+    fixed = {
+        "schema_version": c.PLATFORM_MAPPING_PROVENANCE_SCHEMA,
+        "approved_candidate_body_sha256": c.APPROVED_CANDIDATE_BODY_SHA256,
+        "issuer_policy_id": c.EGRESS_ISSUER_POLICY_ID,
+        "transfer_mechanism_id": c.TRANSFER_MECHANISM_ID,
+        "transfer_class": c.TRANSFER_CLASS,
+        "descriptor_number": c.SOURCE_DESCRIPTOR_NUMBER,
+        "source_issue_count": 1,
+        "source_open_count": 1,
+        "mapping_count": 1,
+        "p1_launch_count": 1,
+        "inherited_nonstdio_platform_descriptor_count": 1,
+        "stdin_writer_count": 1,
+        "stdin_writer_duplicate_count_after_final_byte": 0,
+        "stdin_canonical_exact_bytes": True,
+        "stdin_bounded_eof": True,
+        "parent_source_copy_closed_after_launch_acceptance": True,
+    }
+    for key, expected in fixed.items():
+        _expect_fixed(value[key], expected, f"platform_mapping_provenance.{key}")
+    for key in (
+        "platform_control_state_instance_id", "platform_mapping_event_id",
+        "authority_id", "observation_session_id",
+    ):
+        _expect_string(value[key], f"platform_mapping_provenance.{key}")
+    _expect_sha256(
+        value["stable_authority_approval_binding_sha256"],
+        "platform_mapping_provenance.stable_authority_approval_binding_sha256",
+    )
+    credential = _validate_p1_credential_contract(value["p1_credential_contract"])
+    if canonical_sha256(credential) != value["p1_credential_contract_binding_sha256"]:
+        _fail("PLATFORM_MAPPING_PROVENANCE_INVALID", "credential binding")
+    open_contract = _validate_platform_open_contract(value["platform_open_contract"])
+    if canonical_sha256(open_contract) != value["platform_open_contract_binding_sha256"]:
+        _fail("PLATFORM_MAPPING_PROVENANCE_INVALID", "open contract binding")
+    source_identity = _validate_platform_source_object_identity(
+        value["platform_source_object_identity"]
+    )
+    if canonical_sha256(source_identity) != value[
+        "platform_source_object_identity_binding_sha256"
+    ]:
+        _fail("PLATFORM_MAPPING_PROVENANCE_INVALID", "source object binding")
+    for key in (
+        "p1_credential_contract_binding_sha256", "platform_open_contract_binding_sha256",
+        "platform_source_object_identity_binding_sha256",
+    ):
+        _expect_sha256(value[key], f"platform_mapping_provenance.{key}")
+    return value
+
+
 def _validate_egress_attestation(attestation: dict[str, Any]) -> None:
     c = PreparationContractV1
     _expect_keys(attestation, c.EGRESS_ATTESTATION_KEYS, "egress_attestation")
@@ -863,12 +1087,14 @@ def _validate_egress_attestation(attestation: dict[str, Any]) -> None:
     ):
         _expect_string(attestation[key], f"egress_attestation.{key}")
     for key in (
-        "issuer_provenance_binding_sha256", "stable_authority_approval_binding_sha256"
+        "issuer_provenance_binding_sha256", "platform_mapping_provenance_binding_sha256",
+        "stable_authority_approval_binding_sha256"
     ):
         _expect_sha256(attestation[key], f"egress_attestation.{key}")
     provenance = {key: attestation[key] for key in c.ISSUER_PROVENANCE_KEYS}
+    provenance["schema_version"] = c.ISSUER_PROVENANCE_SCHEMA
     if canonical_sha256(provenance) != attestation["issuer_provenance_binding_sha256"]:
-        _fail("ISSUER_PROVENANCE_BINDING_INVALID", "canonical exact8")
+        _fail("ISSUER_PROVENANCE_BINDING_INVALID", "canonical exact9")
     issued = _validate_rfc3339(attestation["issued_at"], "egress_attestation.issued_at")
     expires = _validate_rfc3339(attestation["expires_at"], "egress_attestation.expires_at")
     lifetime = int((expires - issued).total_seconds())
@@ -949,14 +1175,44 @@ def validate_execution_request(request: dict[str, Any]) -> dict[str, Any]:
         source["schema_version"], c.EGRESS_ATTESTATION_SOURCE_SCHEMA,
         "egress_attestation_source.schema_version",
     )
-    _expect_string(source["private_locator"], "egress_attestation_source.private_locator")
-    if source["expected_owner_class"] not in (
-        "PLATFORM_ROOT", "APPROVED_DISTINCT_NON_AUTHORITY_OWNER"
-    ):
-        _fail("EGRESS_ATTESTATION_SOURCE_INVALID", "owner class")
+    _expect_fixed(
+        source["transfer_mechanism_id"], c.TRANSFER_MECHANISM_ID,
+        "egress_attestation_source.transfer_mechanism_id",
+    )
+    _expect_fixed(
+        source["transfer_class"], c.TRANSFER_CLASS,
+        "egress_attestation_source.transfer_class",
+    )
+    _expect_fixed(
+        source["descriptor_number"], c.SOURCE_DESCRIPTOR_NUMBER,
+        "egress_attestation_source.descriptor_number",
+    )
+    mapping = _validate_platform_mapping_provenance(
+        source["platform_mapping_provenance"]
+    )
+    _expect_sha256(
+        source["platform_mapping_provenance_binding_sha256"],
+        "egress_attestation_source.platform_mapping_provenance_binding_sha256",
+    )
+    if canonical_sha256(mapping) != source["platform_mapping_provenance_binding_sha256"]:
+        _fail("PLATFORM_MAPPING_PROVENANCE_INVALID", "canonical exact27")
+    _expect_fixed(source["expected_owner_uid"], 0, "egress_attestation_source.owner_uid")
     _expect_fixed(source["expected_mode"], "0400", "egress_attestation_source.expected_mode")
     _expect_fixed(source["expected_regular_file"], True, "egress_attestation_source.regular")
     _expect_fixed(source["expected_nlink"], 1, "egress_attestation_source.nlink")
+    source_identity = _validate_source_fixed_tuple(source["expected_source_identity"])
+    _expect_sha256(
+        source["expected_source_identity_binding_sha256"],
+        "egress_attestation_source.expected_source_identity_binding_sha256",
+    )
+    if canonical_sha256(source_identity) != source[
+        "expected_source_identity_binding_sha256"
+    ]:
+        _fail("EGRESS_ATTESTATION_SOURCE_INVALID", "source identity binding")
+    platform_identity = mapping["platform_source_object_identity"]
+    for key in ("st_dev", "st_ino", "st_uid", "st_gid", "st_mode", "st_nlink"):
+        if source_identity[key] != platform_identity[key]:
+            _fail("PLATFORM_MAPPING_PROVENANCE_INVALID", f"source identity {key}")
     _expect_sha256(source["expected_raw_sha256"], "egress_attestation_source.raw_sha256")
     _validate_rfc3339(source["expected_expiry"], "egress_attestation_source.expected_expiry")
 
@@ -971,6 +1227,29 @@ def validate_execution_request(request: dict[str, Any]) -> dict[str, Any]:
         != request["stable_authority_approval_binding_sha256"]
     ):
         _fail("AUTHORITY_BINDING_INVALID", "stable approval")
+    mapping_matches = {
+        "platform_control_state_instance_id": attestation[
+            "platform_control_state_instance_id"
+        ],
+        "authority_id": request["authority_id"],
+        "observation_session_id": request["observation_session_id"],
+        "stable_authority_approval_binding_sha256": request[
+            "stable_authority_approval_binding_sha256"
+        ],
+        "approved_candidate_body_sha256": request["approved_candidate_body_sha256"],
+        "issuer_policy_id": attestation["issuer_policy_id"],
+        "platform_mapping_provenance_binding_sha256": attestation[
+            "platform_mapping_provenance_binding_sha256"
+        ],
+    }
+    for key, expected in mapping_matches.items():
+        actual = (
+            source["platform_mapping_provenance_binding_sha256"]
+            if key == "platform_mapping_provenance_binding_sha256"
+            else mapping[key]
+        )
+        if actual != expected:
+            _fail("PLATFORM_MAPPING_PROVENANCE_INVALID", key)
     attestation_sha = canonical_sha256(attestation)
     _expect_fixed(request["egress_attestation_sha256"], attestation_sha, "egress_attestation_sha256")
     _expect_fixed(source["expected_raw_sha256"], attestation_sha, "egress source raw SHA")
