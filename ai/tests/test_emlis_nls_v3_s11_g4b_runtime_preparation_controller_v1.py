@@ -6,12 +6,21 @@ from __future__ import annotations
 import ast
 import base64
 import copy
+import ctypes
+import datetime as _datetime
+import errno
+import fcntl
 import hashlib
 import io
+import json
 import os
 from pathlib import Path
+import signal
 import stat
+import sys
+import sysconfig
 import tempfile
+import time
 import types
 import unittest
 from unittest import mock
@@ -31,6 +40,500 @@ CONFIGS = REPO_ROOT / "ai" / "configs"
 DERIVED_LOCK = CONFIGS / "emlis_nls_v3_s11_g4b_runtime_preparation_exact5_lock_v1.json"
 FORMAL_LOCK = CONFIGS / "emlis_nls_v3_recovery_epoch002_formal_worker_bootstrap_lock_v1.json"
 SHA256_ZERO = "0" * 64
+_PRIVILEGED_PARENT_FLAG = "--privileged-fd9-integration-parent-v2"
+_PRIVILEGED_UID = 65534
+_PRIVILEGED_GID = 65534
+_PRIVILEGED_STDIN_LIMIT = 131_072
+_PRIVILEGED_RECORD_LIMIT = 512
+_PRIVILEGED_SENTINEL = b"G4B_V6_BODY_FREE:"
+_PRIVILEGED_EVENT_SCHEMA = "g4b.v6.privileged_event.v1"
+_PRIVILEGED_DIAGNOSTIC_SCHEMA = "g4b.v6.privileged_diagnostic.v1"
+_PRIVILEGED_ENVELOPE_SCHEMA = "g4b.privileged_fd9.integration.v2"
+_PRIVILEGED_RUNTIME_SOURCE_SIZE_LIMIT = 67_108_864
+_PRIVILEGED_MANIFEST = (
+    (
+        "ai.tools.emlis_nls_v3_s11_g4b_runtime_preparation_contract_v1",
+        "ai/tools/emlis_nls_v3_s11_g4b_runtime_preparation_contract_v1.py",
+        73834,
+        "966587a6457dc6376d53272e96019909d4c11ec98acc4c85d337f300ea462816",
+    ),
+    (
+        "ai.tools.emlis_nls_v3_s11_g4b_runtime_acquisition_v1",
+        "ai/tools/emlis_nls_v3_s11_g4b_runtime_acquisition_v1.py",
+        43593,
+        "de39e53edf88018c0c87179e0a5760986f995537867c588102679a704e5b007b",
+    ),
+)
+_PRIVILEGED_SAFE_ERRNOS = frozenset(
+    {1, 2, 5, 9, 13, 17, 20, 21, 22, 24, 32, 36, 38, 40, 75, 95, 110}
+)
+_PRIVILEGED_STAGES = frozenset(
+    {
+        "ROOT_PARENT_OR_FIXTURE",
+        "PRE_DROP_CWD_AND_FD9_SETUP",
+        "CREDENTIAL_AND_AUTHORITY_DROP",
+        "EXECVE_REQUEST",
+        "POSTEXEC_BOOTSTRAP_AND_LOADER",
+        "POSTEXEC_PRODUCTION_CAPTURE",
+        "POSTEXEC_PRE_P3_REREAD_AND_CLOSE",
+        "PARENT_WAIT_OR_RESULT_TRANSPORT",
+        "EVIDENCE_INSUFFICIENT",
+    }
+)
+_PRIVILEGED_INTERNAL_REASONS = frozenset(
+    {
+        "OS_ERROR_OUTSIDE_SAFE_SET",
+        "SCHEMA_OR_CANONICALITY_INVALID",
+        "IDENTITY_OR_HASH_MISMATCH",
+        "DESCRIPTOR_SET_OR_CLOSE_UNCERTAIN",
+        "CREDENTIAL_CONTRACT_MISMATCH",
+        "EVENT_OR_RESULT_TRANSPORT_INVALID",
+        "BOOTSTRAP_ENVELOPE_INVALID",
+        "BOOTSTRAP_SOURCE_LOAD_INVALID",
+        "BOOTSTRAP_REQUEST_INVALID",
+        "BOOTSTRAP_RUNTIME_IDENTITY_INVALID",
+        "BOOTSTRAP_CLEANUP_INVALID",
+        "BOOTSTRAP_DESCRIPTOR_BOUNDARY_INVALID",
+        "BOOTSTRAP_NEGATIVE_DAC_INVALID",
+    }
+)
+_PRIVILEGED_REASON_CLASSES = frozenset(
+    {
+        "IMPLEMENTATION_CONTRACT",
+        "WORK_PRIVILEGE_OR_OS_SURFACE",
+        "EXEC_BOOTSTRAP",
+        "PRODUCTION_FD9_PROOF",
+        "RESULT_TRANSPORT_INDETERMINATE",
+    }
+)
+
+_PRIVILEGED_BOOTSTRAP_SOURCE = r'''import sys, os
+_postexec_event = b'G4B_V6_BODY_FREE:{"event_class":"POSTEXEC_ENTERED","schema_version":"g4b.v6.privileged_event.v1","sequence_number":2}\n'
+if os.write(2, _postexec_event) != len(_postexec_event):
+    os._exit(71)
+sys.path[:] = [entry for entry in sys.path if entry]
+_stage = "POSTEXEC_BOOTSTRAP_AND_LOADER"
+try:
+    import errno as _errno
+    import fcntl as _fcntl
+    import hashlib as _hashlib
+    import importlib.abc as _abc
+    import importlib.machinery as _machinery
+    import importlib.util as _util
+    import json as _json
+    import stat as _stat
+    import types as _types
+
+    _sentinel = b"G4B_V6_BODY_FREE:"
+    _safe_errno = {1, 2, 5, 9, 13, 17, 20, 21, 22, 24, 32, 36, 38, 40, 75, 95, 110}
+    _internal = {
+        "OS_ERROR_OUTSIDE_SAFE_SET", "SCHEMA_OR_CANONICALITY_INVALID",
+        "IDENTITY_OR_HASH_MISMATCH", "DESCRIPTOR_SET_OR_CLOSE_UNCERTAIN",
+        "CREDENTIAL_CONTRACT_MISMATCH", "EVENT_OR_RESULT_TRANSPORT_INVALID",
+        "BOOTSTRAP_ENVELOPE_INVALID", "BOOTSTRAP_SOURCE_LOAD_INVALID",
+        "BOOTSTRAP_REQUEST_INVALID", "BOOTSTRAP_RUNTIME_IDENTITY_INVALID",
+        "BOOTSTRAP_CLEANUP_INVALID", "BOOTSTRAP_DESCRIPTOR_BOUNDARY_INVALID",
+        "BOOTSTRAP_NEGATIVE_DAC_INVALID",
+    }
+    _bootstrap_internal = "BOOTSTRAP_ENVELOPE_INVALID"
+
+    def _canonical(value):
+        return _json.dumps(
+            value, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"), allow_nan=False,
+        ).encode("utf-8")
+
+    def _pairs(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate key")
+            result[key] = value
+        return result
+
+    def _emit_diagnostic(stage, reason_class, error=None, internal=None):
+        safe_number = None
+        safe_internal = internal
+        if isinstance(error, OSError) and error.errno in _safe_errno:
+            safe_number = error.errno
+            safe_internal = None
+        elif safe_internal is None:
+            safe_internal = "OS_ERROR_OUTSIDE_SAFE_SET" if isinstance(error, OSError) else "EVENT_OR_RESULT_TRANSPORT_INVALID"
+        if safe_internal is not None and safe_internal not in _internal:
+            safe_internal = "EVENT_OR_RESULT_TRANSPORT_INVALID"
+        row = {
+            "schema_version": "g4b.v6.privileged_diagnostic.v1",
+            "terminal_class": "STOP",
+            "stage": stage,
+            "reason_class": reason_class,
+            "safe_errno": safe_number,
+            "safe_internal_reason": safe_internal,
+            "execve_request_count": 1,
+            "postexec_entry_count": 1,
+            "child_exit_class": "CHILD_NONZERO",
+        }
+        payload = _sentinel + _canonical(row) + b"\n"
+        if len(payload) <= 512:
+            if os.write(2, payload) != len(payload):
+                os._exit(71)
+
+    def _read_stdin():
+        chunks = []
+        total = 0
+        while True:
+            block = os.read(0, 8192)
+            if not block:
+                break
+            total += len(block)
+            if total > 131072:
+                raise ValueError("stdin limit")
+            chunks.append(block)
+        raw = b"".join(chunks)
+        if not raw.endswith(b"\n") or raw.endswith(b"\n\n") or b"\r" in raw:
+            raise ValueError("stdin framing")
+        value = _json.loads(raw[:-1].decode("utf-8", "strict"), object_pairs_hook=_pairs)
+        if _canonical(value) + b"\n" != raw:
+            raise ValueError("stdin canonicality")
+        return raw, value
+
+    def _live_nonstdio():
+        result = set()
+        for name in os.listdir("/proc/self/fd"):
+            if not name.isdigit():
+                raise ValueError("fd name")
+            fd = int(name)
+            if fd < 3:
+                continue
+            try:
+                _fcntl.fcntl(fd, _fcntl.F_GETFD)
+            except OSError as error:
+                if error.errno != _errno.EBADF:
+                    raise
+            else:
+                result.add(fd)
+        return result
+
+    def _close_fd(fd):
+        os.close(fd)
+        try:
+            _fcntl.fcntl(fd, _fcntl.F_GETFD)
+        except OSError as error:
+            if error.errno != _errno.EBADF:
+                raise
+        else:
+            raise ValueError("descriptor remains open")
+
+    def _sha_file(path, limit):
+        digest = _hashlib.sha256()
+        total = 0
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            observed = os.fstat(fd)
+            if not _stat.S_ISREG(observed.st_mode) or observed.st_nlink != 1:
+                raise ValueError("runtime source type")
+            while True:
+                block = os.read(fd, 131072)
+                if not block:
+                    break
+                total += len(block)
+                if total > limit:
+                    raise ValueError("runtime source budget")
+                digest.update(block)
+        finally:
+            _close_fd(fd)
+        return total, digest.hexdigest()
+
+    _raw_envelope, _envelope = _read_stdin()
+    if type(_envelope) is not dict or set(_envelope) != {
+        "schema_version", "bootstrap_source_manifest", "repository_cwd_identity",
+        "negative_dac_locator", "runtime_source_identity", "execution_request",
+    }:
+        raise ValueError("envelope schema")
+    if _envelope["schema_version"] != "g4b.privileged_fd9.integration.v2":
+        raise ValueError("envelope version")
+    _manifest = _envelope["bootstrap_source_manifest"]
+    if type(_manifest) is not list or len(_manifest) != 2:
+        raise ValueError("manifest count")
+    _expected = {
+        "ai.tools.emlis_nls_v3_s11_g4b_runtime_preparation_contract_v1":
+            "ai/tools/emlis_nls_v3_s11_g4b_runtime_preparation_contract_v1.py",
+        "ai.tools.emlis_nls_v3_s11_g4b_runtime_acquisition_v1":
+            "ai/tools/emlis_nls_v3_s11_g4b_runtime_acquisition_v1.py",
+    }
+    _rows = {}
+    for _row in _manifest:
+        if type(_row) is not dict or set(_row) != {"module", "relative_path", "byte_size", "raw_sha256"}:
+            raise ValueError("manifest row schema")
+        _module = _row["module"]
+        if _module not in _expected or _row["relative_path"] != _expected[_module] or _module in _rows:
+            raise ValueError("manifest identity")
+        if type(_row["byte_size"]) is not int or not 0 < _row["byte_size"] <= 1048576:
+            raise ValueError("manifest byte size")
+        if type(_row["raw_sha256"]) is not str or len(_row["raw_sha256"]) != 64:
+            raise ValueError("manifest hash")
+        int(_row["raw_sha256"], 16)
+        _rows[_module] = dict(_row)
+    if set(_rows) != set(_expected):
+        raise ValueError("manifest module set")
+
+    _bootstrap_internal = "BOOTSTRAP_SOURCE_LOAD_INVALID"
+    _root_open = False
+    _root_fd = os.open(
+        ".", os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0) |
+        getattr(os, "O_NOFOLLOW", 0),
+    )
+    _root_open = True
+    _root_stat = os.fstat(_root_fd)
+    _cwd_identity = _envelope["repository_cwd_identity"]
+    if type(_cwd_identity) is not dict or set(_cwd_identity) != {"st_dev", "st_ino"}:
+        raise ValueError("cwd identity schema")
+    if (_root_stat.st_dev, _root_stat.st_ino) != (_cwd_identity["st_dev"], _cwd_identity["st_ino"]):
+        raise ValueError("cwd identity mismatch")
+
+    def _source_bytes(row):
+        parts = row["relative_path"].split("/")
+        if not parts or any(not part or part in (".", "..") for part in parts):
+            raise ValueError("relative path")
+        current = _root_fd
+        current_owned = False
+        source_fd = None
+        pending_fd = None
+        try:
+            for component in parts[:-1]:
+                pending_fd = os.open(
+                    component,
+                    os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0) |
+                    getattr(os, "O_NOFOLLOW", 0), dir_fd=current,
+                )
+                if current_owned:
+                    old = current
+                    current_owned = False
+                    _close_fd(old)
+                current = pending_fd
+                pending_fd = None
+                current_owned = True
+            source_fd = os.open(
+                parts[-1], os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) |
+                getattr(os, "O_NOFOLLOW", 0), dir_fd=current,
+            )
+            observed = os.fstat(source_fd)
+            if not _stat.S_ISREG(observed.st_mode) or observed.st_nlink != 1 or observed.st_size != row["byte_size"]:
+                raise ValueError("source stat")
+            chunks = []
+            remaining = row["byte_size"]
+            while remaining:
+                block = os.read(source_fd, min(131072, remaining))
+                if not block:
+                    raise ValueError("source short read")
+                chunks.append(block)
+                remaining -= len(block)
+            if os.read(source_fd, 1) != b"":
+                raise ValueError("source extra byte")
+            raw = b"".join(chunks)
+            if _hashlib.sha256(raw).hexdigest() != row["raw_sha256"]:
+                raise ValueError("source hash")
+            return raw
+        finally:
+            try:
+                try:
+                    if source_fd is not None:
+                        closing = source_fd
+                        source_fd = None
+                        _close_fd(closing)
+                finally:
+                    if pending_fd is not None:
+                        closing = pending_fd
+                        pending_fd = None
+                        _close_fd(closing)
+            finally:
+                if current_owned:
+                    closing = current
+                    current_owned = False
+                    _close_fd(closing)
+
+    class _Finder(_abc.MetaPathFinder, _abc.Loader):
+        def __init__(self, rows):
+            self.rows = rows
+            self.loaded = set()
+
+        def find_spec(self, fullname, path=None, target=None):
+            if fullname in self.rows:
+                return _util.spec_from_loader(fullname, self, origin=self.rows[fullname]["relative_path"])
+            if fullname.startswith("ai."):
+                raise ImportError("unknown ai module")
+            return None
+
+        def create_module(self, spec):
+            return None
+
+        def exec_module(self, module):
+            fullname = module.__spec__.name
+            if fullname in self.loaded:
+                raise ImportError("duplicate load")
+            raw = _source_bytes(self.rows[fullname])
+            module.__file__ = self.rows[fullname]["relative_path"]
+            module.__package__ = fullname.rpartition(".")[0]
+            self.loaded.add(fullname)
+            exec(compile(raw.decode("utf-8", "strict"), module.__file__, "exec", dont_inherit=True), module.__dict__)
+
+    for _package in ("ai", "ai.tools"):
+        if _package in sys.modules:
+            raise ImportError("unexpected ai namespace")
+        _module_object = _types.ModuleType(_package)
+        _module_object.__package__ = _package
+        _module_object.__path__ = []
+        _module_object.__spec__ = _machinery.ModuleSpec(_package, loader=None, is_package=True)
+        _module_object.__spec__.submodule_search_locations = []
+        sys.modules[_package] = _module_object
+
+    _finder = _Finder(_rows)
+    sys.meta_path.insert(0, _finder)
+    _contract = __import__(
+        "ai.tools.emlis_nls_v3_s11_g4b_runtime_preparation_contract_v1",
+        fromlist=["*"],
+    )
+    _acquisition = __import__(
+        "ai.tools.emlis_nls_v3_s11_g4b_runtime_acquisition_v1",
+        fromlist=["*"],
+    )
+    if _finder.loaded != set(_expected):
+        raise ImportError("exact2 load incomplete")
+    _bootstrap_internal = "BOOTSTRAP_REQUEST_INVALID"
+    _reparsed = _contract.strict_json_from_bytes(_raw_envelope, require_final_lf=True)
+    if _reparsed != _envelope:
+        raise ValueError("contract reparse mismatch")
+    _locator = _envelope["negative_dac_locator"]
+    _request_input = _envelope["execution_request"]
+    _bootstrap_internal = "BOOTSTRAP_RUNTIME_IDENTITY_INVALID"
+    _runtime_source = _envelope["runtime_source_identity"]
+    if type(_runtime_source) is not dict or set(_runtime_source) != {"byte_size", "raw_sha256"}:
+        raise ValueError("runtime source schema")
+    _runtime_size, _runtime_sha = _sha_file(sys.executable, 67108864)
+    if _runtime_size != _runtime_source["byte_size"] or _runtime_sha != _runtime_source["raw_sha256"]:
+        raise ValueError("runtime source identity")
+    _request_input["control_runtime"]["executable"] = sys.executable
+    _request = _contract.validate_execution_request(_request_input)
+    _bootstrap_internal = "BOOTSTRAP_CLEANUP_INVALID"
+    sys.meta_path.remove(_finder)
+    _finder_removed = True
+    for _loaded_module in (_contract, _acquisition):
+        if (
+            _loaded_module.__loader__ is not _finder
+            or _loaded_module.__spec__ is None
+            or _loaded_module.__spec__.loader is not _finder
+        ):
+            raise ImportError("loader ownership drift")
+        _loaded_module.__loader__ = None
+        _loaded_module.__spec__.loader = None
+        _loaded_module.__spec__.loader_state = None
+    _loaded_module = None
+    _package = None
+    _module_object = None
+    _finder.rows.clear()
+    _finder.loaded.clear()
+    _row.clear()
+    _row = None
+    _module = None
+    _rows.clear()
+    _manifest.clear()
+    _expected.clear()
+    _request_input = None
+    _runtime_source.clear()
+    _runtime_source = None
+    _raw_envelope = b""
+    _reparsed.clear()
+    _envelope.clear()
+    _cwd_identity.clear()
+    _rows = None
+    _manifest = None
+    _expected = None
+    _reparsed = None
+    _envelope = None
+    _cwd_identity = None
+    _finder = None
+    _Finder = None
+    _source_bytes = None
+    _abc = None
+    _util = None
+    _machinery = None
+    _closing_root = _root_fd
+    _root_fd = -1
+    _root_open = False
+    _close_fd(_closing_root)
+    _bootstrap_internal = "BOOTSTRAP_DESCRIPTOR_BOUNDARY_INVALID"
+    if _live_nonstdio() != {9}:
+        raise ValueError("post-loader descriptor set")
+
+    _bootstrap_internal = "BOOTSTRAP_NEGATIVE_DAC_INVALID"
+    if type(_locator) is not str:
+        raise ValueError("negative locator")
+    try:
+        _unexpected = os.open(_locator, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError as _open_error:
+        if _open_error.errno != _errno.EACCES:
+            raise
+    else:
+        _close_fd(_unexpected)
+        raise ValueError("pathname authority widened")
+    _locator = None
+
+    _stage = "POSTEXEC_PRODUCTION_CAPTURE"
+    _source_state = _acquisition._capture_descriptor_source(_request)
+    if _source_state["source_rows"][0]["stage"] != "P1_ENTRY":
+        raise ValueError("P1 source row")
+    _owned_fd = _source_state["source_owned_fd"]
+    _stage = "POSTEXEC_PRE_P3_REREAD_AND_CLOSE"
+    _p3_row, _p3_sha = _acquisition._observe_and_close_descriptor_before_p3(_request, _source_state)
+    if _p3_row["stage"] != "P3_PRELAUNCH" or _p3_sha != _request["egress_attestation_sha256"]:
+        raise ValueError("P1/P3 mismatch")
+    if _source_state.get("source_owned_fd") is not None:
+        raise ValueError("owned source remains")
+    try:
+        os.setresuid(0, 0, 0)
+    except PermissionError:
+        pass
+    else:
+        raise ValueError("privilege regain")
+    if os.getresuid() != (65534, 65534, 65534):
+        raise ValueError("failed regain changed credentials")
+    for _closed_fd in (9, _owned_fd):
+        try:
+            _fcntl.fcntl(_closed_fd, _fcntl.F_GETFD)
+        except OSError as _closed_error:
+            if _closed_error.errno != _errno.EBADF:
+                raise
+        else:
+            raise ValueError("source descriptor remains open")
+    if _live_nonstdio():
+        raise ValueError("terminal descriptor set")
+except BaseException as _error:
+    try:
+        if globals().get("_root_open", False):
+            _closing_root = _root_fd
+            _root_fd = -1
+            _root_open = False
+            _close_fd(_closing_root)
+    except BaseException as _cleanup_error:
+        _error = _cleanup_error
+    try:
+        if globals().get("_finder", None) in sys.meta_path:
+            sys.meta_path.remove(_finder)
+            _finder_removed = True
+    except BaseException as _cleanup_error:
+        _error = _cleanup_error
+    try:
+        _reason = "EXEC_BOOTSTRAP"
+        if _stage == "POSTEXEC_PRODUCTION_CAPTURE" or _stage == "POSTEXEC_PRE_P3_REREAD_AND_CLOSE":
+            _reason = "PRODUCTION_FD9_PROOF"
+        _internal_reason = None
+        if not isinstance(_error, OSError):
+            _internal_reason = globals().get("_bootstrap_internal", "IDENTITY_OR_HASH_MISMATCH") if _stage == "POSTEXEC_BOOTSTRAP_AND_LOADER" else "EVENT_OR_RESULT_TRANSPORT_INVALID"
+        _emit_diagnostic(_stage, _reason, _error, _internal_reason)
+    except BaseException:
+        pass
+    os._exit(71)
+os._exit(0)
+'''
 
 
 def _sha(payload: bytes) -> str:
@@ -48,8 +551,122 @@ def _path_plan(authority_root: str = "/private/g4b-authority", repo: str = "/rep
     return plan
 
 
-def _execution_request() -> dict[str, object]:
+def _credential_contract(
+    uid: int = 1000, gid: int = 1000, supplementary_gids: list[int] | None = None
+) -> dict[str, object]:
     c = contract.PreparationContractV1
+    return {
+        "schema_version": c.P1_CREDENTIAL_CONTRACT_SCHEMA,
+        "ruid": uid,
+        "euid": uid,
+        "suid": uid,
+        "fsuid": uid,
+        "rgid": gid,
+        "egid": gid,
+        "sgid": gid,
+        "fsgid": gid,
+        "supplementary_gids": list(supplementary_gids or []),
+        "cap_effective": 0,
+        "cap_permitted": 0,
+        "cap_inheritable": 0,
+        "cap_ambient": 0,
+        "no_new_privs": 1,
+    }
+
+
+def _source_object_identity(observed: object) -> dict[str, object]:
+    c = contract.PreparationContractV1
+    return {
+        "schema_version": c.PLATFORM_SOURCE_OBJECT_IDENTITY_SCHEMA,
+        "st_dev": observed.st_dev,
+        "st_ino": observed.st_ino,
+        "st_uid": observed.st_uid,
+        "st_gid": observed.st_gid,
+        "st_mode": observed.st_mode,
+        "st_nlink": observed.st_nlink,
+    }
+
+
+def _source_fixed_identity(observed: object) -> dict[str, object]:
+    c = contract.PreparationContractV1
+    return {
+        "schema_version": c.P1_SOURCE_FIXED_TUPLE_SCHEMA,
+        "st_dev": observed.st_dev,
+        "st_ino": observed.st_ino,
+        "st_uid": observed.st_uid,
+        "st_gid": observed.st_gid,
+        "st_mode": observed.st_mode,
+        "st_nlink": observed.st_nlink,
+        "st_size": observed.st_size,
+        "st_mtime_ns": observed.st_mtime_ns,
+        "st_ctime_ns": observed.st_ctime_ns,
+    }
+
+
+def _mapping_provenance(
+    source_object_identity: dict[str, object],
+    credential: dict[str, object],
+    trusted_root_binding_sha256: str = "7" * 64,
+) -> dict[str, object]:
+    c = contract.PreparationContractV1
+    platform_open_contract = {
+        "schema_version": c.PLATFORM_OPEN_CONTRACT_SCHEMA,
+        "trusted_root_binding_sha256": trusted_root_binding_sha256,
+        "open_access_mode": "O_RDONLY",
+        "parent_fd_cloexec_before_mapping": True,
+        "resolve_beneath": True,
+        "resolve_no_symlinks": True,
+        "resolve_no_magiclinks": True,
+        "p1_writable_resolved_ancestor_count": 0,
+        "p1_writable_source": False,
+        "retained_writable_source_fd_count": 0,
+        "same_authority_mutation_count": 0,
+        "same_authority_replacement_count": 0,
+        "same_authority_relink_count": 0,
+        "same_authority_reissue_count": 0,
+    }
+    return {
+        "schema_version": c.PLATFORM_MAPPING_PROVENANCE_SCHEMA,
+        "platform_control_state_instance_id": "PLATFORM_STATE_001",
+        "platform_mapping_event_id": "PLATFORM_MAPPING_EVENT_001",
+        "authority_id": "AUTHORITY_001",
+        "observation_session_id": "OBSERVATION_001",
+        "stable_authority_approval_binding_sha256": "1" * 64,
+        "approved_candidate_body_sha256": c.APPROVED_CANDIDATE_BODY_SHA256,
+        "issuer_policy_id": c.EGRESS_ISSUER_POLICY_ID,
+        "transfer_mechanism_id": c.TRANSFER_MECHANISM_ID,
+        "transfer_class": c.TRANSFER_CLASS,
+        "descriptor_number": c.SOURCE_DESCRIPTOR_NUMBER,
+        "p1_credential_contract": credential,
+        "p1_credential_contract_binding_sha256": contract.canonical_sha256(credential),
+        "platform_open_contract": platform_open_contract,
+        "platform_open_contract_binding_sha256": contract.canonical_sha256(
+            platform_open_contract
+        ),
+        "platform_source_object_identity": source_object_identity,
+        "platform_source_object_identity_binding_sha256": contract.canonical_sha256(
+            source_object_identity
+        ),
+        "source_issue_count": 1,
+        "source_open_count": 1,
+        "mapping_count": 1,
+        "p1_launch_count": 1,
+        "inherited_nonstdio_platform_descriptor_count": 1,
+        "stdin_writer_count": 1,
+        "stdin_writer_duplicate_count_after_final_byte": 0,
+        "stdin_canonical_exact_bytes": True,
+        "stdin_bounded_eof": True,
+        "parent_source_copy_closed_after_launch_acceptance": True,
+    }
+
+
+def _egress_attestation(
+    mapping: dict[str, object],
+    issued_at: str = "2026-08-12T00:00:00Z",
+    expires_at: str = "2026-08-12T00:15:00Z",
+) -> dict[str, object]:
+    c = contract.PreparationContractV1
+    mapping_binding = contract.canonical_sha256(mapping)
     authority_id = "AUTHORITY_001"
     observation_session_id = "OBSERVATION_001"
     stable_binding = "1" * 64
@@ -59,6 +676,7 @@ def _execution_request() -> dict[str, object]:
         "issuer_policy_id": c.EGRESS_ISSUER_POLICY_ID,
         "platform_control_state_instance_id": "PLATFORM_STATE_001",
         "issuer_provenance_binding_sha256": "",
+        "platform_mapping_provenance_binding_sha256": mapping_binding,
         "stable_authority_approval_binding_sha256": stable_binding,
         "approved_candidate_body_sha256": c.APPROVED_CANDIDATE_BODY_SHA256,
         "policy_id": c.ACQUISITION_POLICY_ID,
@@ -69,11 +687,24 @@ def _execution_request() -> dict[str, object]:
         "observation_session_id": observation_session_id,
         "acquisition_process_count": 1,
         "active": True,
-        "issued_at": "2026-08-12T00:00:00Z",
-        "expires_at": "2026-08-12T00:15:00Z",
+        "issued_at": issued_at,
+        "expires_at": expires_at,
     }
     provenance = {key: attestation[key] for key in c.ISSUER_PROVENANCE_KEYS}
+    provenance["schema_version"] = c.ISSUER_PROVENANCE_SCHEMA
     attestation["issuer_provenance_binding_sha256"] = contract.canonical_sha256(provenance)
+    return attestation
+
+
+def _execution_request_from_source(
+    mapping: dict[str, object],
+    attestation: dict[str, object],
+    source_identity: dict[str, object],
+) -> dict[str, object]:
+    c = contract.PreparationContractV1
+    authority_id = "AUTHORITY_001"
+    observation_session_id = "OBSERVATION_001"
+    stable_binding = "1" * 64
     attestation_sha = contract.canonical_sha256(attestation)
     return {
         "schema_version": c.EXECUTION_REQUEST_SCHEMA,
@@ -114,11 +745,21 @@ def _execution_request() -> dict[str, object]:
         },
         "egress_attestation_source": {
             "schema_version": c.EGRESS_ATTESTATION_SOURCE_SCHEMA,
-            "private_locator": "/platform/egress-attestation.json",
-            "expected_owner_class": "PLATFORM_ROOT",
+            "transfer_mechanism_id": c.TRANSFER_MECHANISM_ID,
+            "transfer_class": c.TRANSFER_CLASS,
+            "descriptor_number": c.SOURCE_DESCRIPTOR_NUMBER,
+            "platform_mapping_provenance": mapping,
+            "platform_mapping_provenance_binding_sha256": contract.canonical_sha256(
+                mapping
+            ),
+            "expected_owner_uid": 0,
             "expected_mode": "0400",
             "expected_regular_file": True,
             "expected_nlink": 1,
+            "expected_source_identity": source_identity,
+            "expected_source_identity_binding_sha256": contract.canonical_sha256(
+                source_identity
+            ),
             "expected_raw_sha256": attestation_sha,
             "expected_expiry": attestation["expires_at"],
         },
@@ -135,6 +776,30 @@ def _execution_request() -> dict[str, object]:
             "result_unknown_policy": c.RESULT_UNKNOWN_POLICY,
         },
     }
+
+
+def _execution_request() -> dict[str, object]:
+    synthetic = types.SimpleNamespace(
+        st_dev=11,
+        st_ino=12,
+        st_uid=0,
+        st_gid=0,
+        st_mode=stat.S_IFREG | 0o400,
+        st_nlink=1,
+    )
+    mapping = _mapping_provenance(
+        _source_object_identity(synthetic), _credential_contract()
+    )
+    attestation = _egress_attestation(mapping)
+    observed = types.SimpleNamespace(
+        **vars(synthetic),
+        st_size=len(contract.canonical_json_bytes(attestation)),
+        st_mtime_ns=13,
+        st_ctime_ns=14,
+    )
+    return _execution_request_from_source(
+        mapping, attestation, _source_fixed_identity(observed)
+    )
 
 
 def _validated_lock() -> dict[str, object]:
@@ -212,7 +877,7 @@ class RuntimePreparationControllerV1Tests(unittest.TestCase):
             (6, "official_pypi_exact2_host_policy"),
             (7, "path20_distinct19_private18"),
             (8, "preactivation_head_identity_and_effect_zero_validation"),
-            (9, "private_transport_b0_b1_b2_seal_and_public_redaction"),
+            (9, "descriptor_v2_fd9_capture_p3_close_and_transport_redaction"),
             (10, "acquisition_argv_exact12_environment_and_single_success_child"),
             (11, "acquisition_rejection_timeout_hash_failure_consumed_no_retry"),
             (12, "wheel_metadata_record_and_zip_safety"),
@@ -400,7 +1065,7 @@ class RuntimePreparationControllerV1Tests(unittest.TestCase):
             with self.assertRaises(contract.PreparationViolation):
                 controller._actual_git_head_tree(repo.as_posix())
 
-    def test_09_private_transport_b0_b1_b2_seal_and_public_redaction(self) -> None:
+    def test_09_descriptor_v2_fd9_capture_p3_close_and_transport_redaction(self) -> None:
         request = _execution_request()
         ca_raw = b"PRIVATE CA BYTES"
         observed = types.SimpleNamespace(
@@ -439,10 +1104,19 @@ class RuntimePreparationControllerV1Tests(unittest.TestCase):
         chmod.assert_called_once_with(7, 0o400)
         self.assertEqual(state["fd"], -1)
 
+        # Portable P2 freezes the descriptor contract and lifecycle with OS
+        # surfaces mocked.  It deliberately makes no actual-DAC claim; that
+        # proof is owned by the separate non-discovered privileged entry.
         attestation_raw = contract.canonical_json_bytes(request["egress_attestation"])
+        expected_identity = request["egress_attestation_source"][
+            "expected_source_identity"
+        ]
         platform_source = types.SimpleNamespace(
-            st_mode=stat.S_IFREG | 0o400, st_nlink=1, st_uid=0, st_gid=0,
+            **{key: value for key, value in expected_identity.items() if key != "schema_version"}
         )
+        expected_credential = request["egress_attestation_source"][
+            "platform_mapping_provenance"
+        ]["p1_credential_contract"]
 
         class FrozenDateTime(acquisition._datetime.datetime):
             @classmethod
@@ -452,40 +1126,56 @@ class RuntimePreparationControllerV1Tests(unittest.TestCase):
                     tzinfo=acquisition._datetime.timezone.utc,
                 )
 
+        closed: set[int] = set()
+
+        def portable_fcntl(fd: int, command: int, argument: int | None = None) -> int:
+            if command == fcntl.F_DUPFD_CLOEXEC:
+                self.assertEqual((fd, argument), (9, 10))
+                return 11
+            if command == fcntl.F_GETFD:
+                if fd in closed:
+                    raise OSError(errno.EBADF, "closed")
+                return fcntl.FD_CLOEXEC if fd == 11 else 0
+            if command == fcntl.F_GETFL:
+                return os.O_RDONLY
+            raise AssertionError("unapproved fcntl command")
+
+        def portable_close(fd: int) -> None:
+            self.assertNotIn(fd, closed)
+            closed.add(fd)
+
+        def portable_pread(_fd: int, count: int, offset: int) -> bytes:
+            return attestation_raw[offset : offset + count]
+
         with mock.patch.object(
-            acquisition, "_read_regular_nofollow",
-            return_value=(attestation_raw, platform_source),
+            acquisition.fcntl, "fcntl", side_effect=portable_fcntl
         ), mock.patch.object(
-            acquisition.os, "geteuid", return_value=1000
+            acquisition.os, "fstat", return_value=platform_source
         ), mock.patch.object(
-            acquisition.os, "getegid", return_value=1000
+            acquisition.os, "pread", side_effect=portable_pread
         ), mock.patch.object(
-            acquisition.os, "getgroups", return_value=[]
+            acquisition.os, "close", side_effect=portable_close
+        ), mock.patch.object(
+            acquisition.os, "get_inheritable", return_value=False
+        ), mock.patch.object(
+            acquisition, "_credential_observation", return_value=expected_credential
         ), mock.patch.object(
             acquisition._datetime, "datetime", FrozenDateTime
         ):
-            p1_row, _raw_sha = acquisition._source_observation(request, "P1_ENTRY")
-            p3_row, _raw_sha = acquisition._source_observation(request, "P3_PRELAUNCH")
-        self.assertTrue(p1_row["expiry_valid"] and p3_row["expiry_valid"])
-        self.assertFalse(p3_row["authority_writable"])
-        self.assertEqual(p3_row["owner_class"], "PLATFORM_ROOT")
-
-        self_owned = types.SimpleNamespace(
-            st_mode=stat.S_IFREG | 0o400, st_nlink=1, st_uid=1000, st_gid=1000,
-        )
-        with mock.patch.object(
-            acquisition, "_read_regular_nofollow",
-            return_value=(attestation_raw, self_owned),
-        ), mock.patch.object(
-            acquisition.os, "geteuid", return_value=1000
-        ), mock.patch.object(
-            acquisition.os, "getegid", return_value=1000
-        ), mock.patch.object(
-            acquisition.os, "getgroups", return_value=[]
-        ), mock.patch.object(
-            acquisition._datetime, "datetime", FrozenDateTime
-        ), self.assertRaises(contract.PreparationViolation):
-            acquisition._source_observation(request, "P3_PRELAUNCH")
+            source_state = acquisition._capture_descriptor_source(request)
+            self.assertIn(9, closed)
+            self.assertEqual(source_state["source_owned_fd"], 11)
+            self.assertEqual(source_state["source_rows"][0]["stage"], "P1_ENTRY")
+            p3_row, p3_sha = acquisition._observe_and_close_descriptor_before_p3(
+                request, source_state
+            )
+        self.assertEqual(p3_row["stage"], "P3_PRELAUNCH")
+        self.assertEqual(p3_sha, request["egress_attestation_sha256"])
+        self.assertEqual(source_state["source_descriptor_state"], "CLOSED_BEFORE_P3")
+        self.assertNotIn("source_owned_fd", source_state)
+        self.assertIn(11, closed)
+        self.assertNotIn("private_locator", request["egress_attestation_source"])
+        self.assertNotIn(b"/platform/", contract.canonical_json_bytes(p3_row))
         self.assertIn(
             "_validate_control_runtime_actual(request)",
             (TOOLS / "emlis_nls_v3_s11_g4b_runtime_acquisition_v1.py").read_text(
@@ -526,6 +1216,118 @@ class RuntimePreparationControllerV1Tests(unittest.TestCase):
             self.assertEqual(summary["record_count"], 1)
             self.assertFalse(summary["stable_projection_full_match"])
 
+        # The portable suite freezes the separate privileged-entry contract
+        # without claiming to execute its root boundary.  In particular, the
+        # focused test is not part of its own loader manifest.
+        self.assertEqual(len(_PRIVILEGED_MANIFEST), 2)
+        self.assertEqual(
+            [row[0] for row in _PRIVILEGED_MANIFEST],
+            [
+                "ai.tools.emlis_nls_v3_s11_g4b_runtime_preparation_contract_v1",
+                "ai.tools.emlis_nls_v3_s11_g4b_runtime_acquisition_v1",
+            ],
+        )
+        self.assertNotIn(
+            "test_emlis_nls_v3_s11_g4b_runtime_preparation_controller_v1",
+            _PRIVILEGED_BOOTSTRAP_SOURCE,
+        )
+        self.assertNotIn("resolve(", _PRIVILEGED_BOOTSTRAP_SOURCE)
+        self.assertNotIn("realpath", _PRIVILEGED_BOOTSTRAP_SOURCE)
+        self.assertNotIn("abspath", _PRIVILEGED_BOOTSTRAP_SOURCE)
+        self.assertNotIn("getcwd", _PRIVILEGED_BOOTSTRAP_SOURCE)
+        self.assertIsInstance(ast.parse(_PRIVILEGED_BOOTSTRAP_SOURCE), ast.Module)
+        self.assertEqual(len(_PRIVILEGED_SAFE_ERRNOS), 17)
+        self.assertEqual(len(_PRIVILEGED_STAGES), 9)
+        self.assertEqual(len(_PRIVILEGED_INTERNAL_REASONS), 13)
+        self.assertEqual(len(_PRIVILEGED_REASON_CLASSES), 5)
+
+        repo_fd = os.open(
+            REPO_ROOT,
+            os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        try:
+            rows = _privileged_manifest_rows(repo_fd)
+        finally:
+            closing = repo_fd
+            repo_fd = -1
+            _privileged_close_once(closing)
+        self.assertEqual(
+            [(row["module"], row["relative_path"]) for row in rows],
+            [(row[0], row[1]) for row in _PRIVILEGED_MANIFEST],
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "one" / "two").mkdir(parents=True)
+            payload = b"bounded manifest source\n"
+            (root / "one" / "two" / "module.py").write_bytes(payload)
+            root_fd = os.open(
+                root,
+                os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+            )
+            try:
+                self.assertEqual(
+                    _privileged_read_relative(
+                        root_fd,
+                        "one/two/module.py",
+                        len(payload),
+                        _sha(payload),
+                    ),
+                    payload,
+                )
+                with self.assertRaises(RuntimeError):
+                    _privileged_read_relative(
+                        root_fd,
+                        "one/two/module.py",
+                        len(payload),
+                        "0" * 64,
+                    )
+                os.symlink("two", root / "one" / "linked")
+                with self.assertRaises(OSError):
+                    _privileged_read_relative(
+                        root_fd,
+                        "one/linked/module.py",
+                        len(payload),
+                        _sha(payload),
+                    )
+            finally:
+                closing = root_fd
+                root_fd = -1
+                _privileged_close_once(closing)
+
+        captured_records: list[bytes] = []
+
+        def capture_record(fd: int, payload: bytes) -> int:
+            self.assertEqual(fd, 2)
+            captured_records.append(payload)
+            return len(payload)
+
+        with mock.patch.object(os, "write", side_effect=capture_record):
+            _privileged_emit_event("EXECVE_REQUESTED", 1)
+            _privileged_emit_diagnostic(
+                stage="PRE_DROP_CWD_AND_FD9_SETUP",
+                reason_class="WORK_PRIVILEGE_OR_OS_SURFACE",
+                error=OSError(errno.EACCES, "private locator must not escape"),
+                internal_reason=None,
+                execve_request_count=0,
+                postexec_entry_count=0,
+                child_exit_class="CHILD_NONZERO",
+            )
+        self.assertEqual(len(captured_records), 2)
+        for payload in captured_records:
+            self.assertLessEqual(len(payload), _PRIVILEGED_RECORD_LIMIT)
+            self.assertTrue(payload.startswith(_PRIVILEGED_SENTINEL))
+            self.assertNotIn(b"private locator", payload)
+            parsed = contract.strict_json_from_bytes(
+                payload[len(_PRIVILEGED_SENTINEL):], require_final_lf=True
+            )
+            self.assertIn(parsed["schema_version"], {
+                _PRIVILEGED_EVENT_SCHEMA,
+                _PRIVILEGED_DIAGNOSTIC_SCHEMA,
+            })
+
     def _invoke_acquire(
         self,
         process: object,
@@ -544,7 +1346,9 @@ class RuntimePreparationControllerV1Tests(unittest.TestCase):
         with mock.patch.object(acquisition, "validate_execution_request", side_effect=lambda value: value), mock.patch.object(
             acquisition, "_transport_record", side_effect=({"binding_sha256": "4" * 64}, {"binding_sha256": "4" * 64})
         ), mock.patch.object(acquisition, "_append_record"), mock.patch.object(
-            acquisition, "_source_observation", return_value=({"stage": "P3_PRELAUNCH"}, "5" * 64)
+            acquisition,
+            "_observe_and_close_descriptor_before_p3",
+            return_value=({"stage": "P3_PRELAUNCH"}, "5" * 64),
         ), mock.patch.object(acquisition, "_exclusive_file"), mock.patch.object(acquisition.os, "mkdir"), mock.patch.object(
             acquisition, "_seal_transport", return_value="6" * 64
         ), mock.patch.object(acquisition.subprocess, "Popen", popen), mock.patch.object(
@@ -638,7 +1442,9 @@ class RuntimePreparationControllerV1Tests(unittest.TestCase):
             with mock.patch.object(acquisition, "validate_execution_request", side_effect=lambda value: value), mock.patch.object(
                 acquisition, "_transport_record", side_effect=({"binding_sha256": "4" * 64}, {"binding_sha256": "4" * 64})
             ), mock.patch.object(acquisition, "_append_record"), mock.patch.object(
-                acquisition, "_source_observation", return_value=({"stage": "P3_PRELAUNCH"}, "5" * 64)
+                acquisition,
+                "_observe_and_close_descriptor_before_p3",
+                return_value=({"stage": "P3_PRELAUNCH"}, "5" * 64),
             ), mock.patch.object(acquisition, "_exclusive_file"), mock.patch.object(acquisition.os, "mkdir"), mock.patch.object(
                 acquisition, "_seal_transport", return_value="6" * 64
             ), mock.patch.object(acquisition, "_terminate"), mock.patch.object(
@@ -1317,5 +2123,644 @@ class RuntimePreparationControllerV1Tests(unittest.TestCase):
             emit.assert_not_called()
 
 
+class _CapHeader(ctypes.Structure):
+    _fields_ = (("version", ctypes.c_uint32), ("pid", ctypes.c_int))
+
+
+class _CapData(ctypes.Structure):
+    _fields_ = (
+        ("effective", ctypes.c_uint32),
+        ("permitted", ctypes.c_uint32),
+        ("inheritable", ctypes.c_uint32),
+    )
+
+
+def _privileged_canonical_bytes(value: object) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def _privileged_emit_event(event_class: str, sequence_number: int) -> None:
+    if (event_class, sequence_number) not in {
+        ("EXECVE_REQUESTED", 1),
+        ("POSTEXEC_ENTERED", 2),
+    }:
+        raise RuntimeError("event contract")
+    row = {
+        "schema_version": _PRIVILEGED_EVENT_SCHEMA,
+        "event_class": event_class,
+        "sequence_number": sequence_number,
+    }
+    payload = _PRIVILEGED_SENTINEL + _privileged_canonical_bytes(row) + b"\n"
+    if len(payload) > _PRIVILEGED_RECORD_LIMIT:
+        raise RuntimeError("event bound")
+    written = os.write(2, payload)
+    if written != len(payload):
+        raise RuntimeError("event atomic write")
+
+
+def _privileged_emit_diagnostic(
+    *,
+    stage: str,
+    reason_class: str,
+    error: BaseException | None,
+    internal_reason: str | None,
+    execve_request_count: int,
+    postexec_entry_count: int,
+    child_exit_class: str,
+) -> None:
+    if stage not in _PRIVILEGED_STAGES:
+        stage = "EVIDENCE_INSUFFICIENT"
+    if reason_class not in _PRIVILEGED_REASON_CLASSES:
+        reason_class = "RESULT_TRANSPORT_INDETERMINATE"
+    safe_errno: int | None = None
+    safe_internal = internal_reason
+    if isinstance(error, OSError) and error.errno in _PRIVILEGED_SAFE_ERRNOS:
+        safe_errno = error.errno
+        safe_internal = None
+    elif safe_internal is None:
+        safe_internal = (
+            "OS_ERROR_OUTSIDE_SAFE_SET"
+            if isinstance(error, OSError)
+            else "EVENT_OR_RESULT_TRANSPORT_INVALID"
+        )
+    if safe_internal is not None and safe_internal not in _PRIVILEGED_INTERNAL_REASONS:
+        safe_internal = "EVENT_OR_RESULT_TRANSPORT_INVALID"
+    row = {
+        "schema_version": _PRIVILEGED_DIAGNOSTIC_SCHEMA,
+        "terminal_class": "STOP",
+        "stage": stage,
+        "reason_class": reason_class,
+        "safe_errno": safe_errno,
+        "safe_internal_reason": safe_internal,
+        "execve_request_count": execve_request_count,
+        "postexec_entry_count": postexec_entry_count,
+        "child_exit_class": child_exit_class,
+    }
+    if (safe_errno is None) == (safe_internal is None):
+        raise RuntimeError("diagnostic reason cardinality")
+    payload = _PRIVILEGED_SENTINEL + _privileged_canonical_bytes(row) + b"\n"
+    if len(payload) > _PRIVILEGED_RECORD_LIMIT:
+        raise RuntimeError("diagnostic bound")
+    written = os.write(2, payload)
+    if written != len(payload):
+        raise RuntimeError("diagnostic atomic write")
+
+
+def _privileged_close_once(fd: int) -> None:
+    os.close(fd)
+    try:
+        fcntl.fcntl(fd, fcntl.F_GETFD)
+    except OSError as error:
+        if error.errno != errno.EBADF:
+            raise
+    else:
+        raise RuntimeError("descriptor remains open")
+
+
+def _privileged_live_nonstdio() -> set[int]:
+    result: set[int] = set()
+    for name in os.listdir("/proc/self/fd"):
+        if not name.isdigit():
+            raise RuntimeError("non-numeric descriptor entry")
+        fd = int(name)
+        if fd < 3:
+            continue
+        try:
+            fcntl.fcntl(fd, fcntl.F_GETFD)
+        except OSError as error:
+            if error.errno != errno.EBADF:
+                raise
+        else:
+            result.add(fd)
+    return result
+
+
+def _privileged_close_other_nonstdio(keep: set[int]) -> None:
+    for fd in sorted(_privileged_live_nonstdio() - keep):
+        _privileged_close_once(fd)
+    if _privileged_live_nonstdio() != keep:
+        raise RuntimeError("nonstdio descriptor set")
+
+
+def _privileged_read_status() -> dict[str, str]:
+    values: dict[str, str] = {}
+    with open("/proc/self/status", "r", encoding="ascii") as status_file:
+        for line in status_file:
+            key, separator, value = line.partition(":")
+            if separator and key in {
+                "Uid", "Gid", "Groups", "CapInh", "CapPrm", "CapEff", "CapAmb",
+                "NoNewPrivs",
+            }:
+                if key in values:
+                    raise RuntimeError("duplicate credential status key")
+                values[key] = value.strip()
+    return values
+
+
+def _privileged_verify_credentials() -> None:
+    expected_uid = (_PRIVILEGED_UID,) * 3
+    expected_gid = (_PRIVILEGED_GID,) * 3
+    if os.getresuid() != expected_uid or os.getresgid() != expected_gid:
+        raise RuntimeError("res credential contract")
+    values = _privileged_read_status()
+    if set(values) != {
+        "Uid", "Gid", "Groups", "CapInh", "CapPrm", "CapEff", "CapAmb", "NoNewPrivs"
+    }:
+        raise RuntimeError("credential status keyset")
+    if tuple(int(item) for item in values["Uid"].split()) != (_PRIVILEGED_UID,) * 4:
+        raise RuntimeError("uid quartet")
+    if tuple(int(item) for item in values["Gid"].split()) != (_PRIVILEGED_GID,) * 4:
+        raise RuntimeError("gid quartet")
+    if values["Groups"]:
+        raise RuntimeError("supplementary group contract")
+    if any(int(values[key], 16) != 0 for key in ("CapInh", "CapPrm", "CapEff", "CapAmb")):
+        raise RuntimeError("capability contract")
+    if values["NoNewPrivs"] != "1":
+        raise RuntimeError("no_new_privs contract")
+
+
+def _privileged_clear_authority() -> None:
+    libc = ctypes.CDLL(None, use_errno=True)
+    header = _CapHeader(0x20080522, 0)
+    data = (_CapData * 2)()
+    if libc.capset(ctypes.byref(header), ctypes.byref(data)) != 0:
+        raise OSError(ctypes.get_errno(), "capset")
+    pr_cap_ambient = 47
+    pr_cap_ambient_clear_all = 4
+    if libc.prctl(pr_cap_ambient, pr_cap_ambient_clear_all, 0, 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "PR_CAP_AMBIENT_CLEAR_ALL")
+    if libc.prctl(38, 1, 0, 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "PR_SET_NO_NEW_PRIVS")
+
+
+def _privileged_read_relative(
+    root_fd: int,
+    relative_path: str,
+    expected_size: int,
+    expected_sha256: str,
+) -> bytes:
+    parts = relative_path.split("/")
+    if not parts or any(not part or part in {".", ".."} for part in parts):
+        raise RuntimeError("manifest relative path")
+    current_fd = root_fd
+    current_owned = False
+    source_fd = -1
+    pending_fd = -1
+    try:
+        for component in parts[:-1]:
+            pending_fd = os.open(
+                component,
+                os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=current_fd,
+            )
+            observed = os.fstat(pending_fd)
+            if not stat.S_ISDIR(observed.st_mode):
+                closing = pending_fd
+                pending_fd = -1
+                _privileged_close_once(closing)
+                raise RuntimeError("manifest ancestor type")
+            if current_owned:
+                closing = current_fd
+                current_owned = False
+                _privileged_close_once(closing)
+            current_fd = pending_fd
+            pending_fd = -1
+            current_owned = True
+        source_fd = os.open(
+            parts[-1],
+            os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=current_fd,
+        )
+        observed = os.fstat(source_fd)
+        if (
+            not stat.S_ISREG(observed.st_mode)
+            or observed.st_nlink != 1
+            or observed.st_size != expected_size
+        ):
+            raise RuntimeError("manifest source stat")
+        chunks: list[bytes] = []
+        remaining = expected_size
+        while remaining:
+            block = os.read(source_fd, min(131_072, remaining))
+            if not block:
+                raise RuntimeError("manifest source short read")
+            chunks.append(block)
+            remaining -= len(block)
+        if os.read(source_fd, 1) != b"":
+            raise RuntimeError("manifest source extra byte")
+        raw = b"".join(chunks)
+        if hashlib.sha256(raw).hexdigest() != expected_sha256:
+            raise RuntimeError("manifest source hash")
+        return raw
+    finally:
+        try:
+            try:
+                if source_fd >= 0:
+                    closing = source_fd
+                    source_fd = -1
+                    _privileged_close_once(closing)
+            finally:
+                if pending_fd >= 0:
+                    closing = pending_fd
+                    pending_fd = -1
+                    _privileged_close_once(closing)
+        finally:
+            if current_owned:
+                closing = current_fd
+                current_owned = False
+                _privileged_close_once(closing)
+
+
+def _privileged_manifest_rows(repo_fd: int) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for module, relative_path, byte_size, raw_sha256 in _PRIVILEGED_MANIFEST:
+        _privileged_read_relative(repo_fd, relative_path, byte_size, raw_sha256)
+        rows.append(
+            {
+                "module": module,
+                "relative_path": relative_path,
+                "byte_size": byte_size,
+                "raw_sha256": raw_sha256,
+            }
+        )
+    return rows
+
+
+def _privileged_id_is_mapped(path: str, identity: int) -> bool:
+    """Return whether an inside user-namespace identity has an active mapping."""
+
+    try:
+        rows = Path(path).read_text(encoding="ascii").splitlines()
+    except (OSError, UnicodeError):
+        return False
+    for row in rows:
+        fields = row.split()
+        if len(fields) != 3:
+            return False
+        try:
+            inside, _outside, length = (int(field, 10) for field in fields)
+        except ValueError:
+            return False
+        if length > 0 and inside <= identity < inside + length:
+            return True
+    return False
+
+
+def _privileged_runner_admission() -> None:
+    """Fail before fixture/fork when the current namespace cannot prove UID 65534."""
+
+    if os.geteuid() != 0 or os.getegid() != 0:
+        raise PermissionError(errno.EPERM, "root integration required")
+    try:
+        setgroups_policy = Path("/proc/self/setgroups").read_text(
+            encoding="ascii"
+        ).strip()
+    except (OSError, UnicodeError) as error:
+        raise PermissionError(errno.EPERM, "setgroups policy unavailable") from error
+    if setgroups_policy != "allow":
+        raise PermissionError(errno.EPERM, "setgroups policy denies transition")
+    if not _privileged_id_is_mapped("/proc/self/uid_map", _PRIVILEGED_UID):
+        raise PermissionError(errno.EPERM, "privileged uid is not mapped")
+    if not _privileged_id_is_mapped("/proc/self/gid_map", _PRIVILEGED_GID):
+        raise PermissionError(errno.EPERM, "privileged gid is not mapped")
+    status = _privileged_read_status()
+    try:
+        effective = int(status["CapEff"], 16)
+    except (KeyError, ValueError) as error:
+        raise PermissionError(errno.EPERM, "effective capabilities unavailable") from error
+    required = (1 << 6) | (1 << 7) | (1 << 8)
+    if effective & required != required:
+        raise PermissionError(errno.EPERM, "credential transition capabilities unavailable")
+
+
+def _privileged_runtime_manifest_sha256() -> str:
+    """Bind the exact installed pip source used by this admitted interpreter."""
+
+    purelib = sysconfig.get_path("purelib")
+    if not purelib or not os.path.isabs(purelib):
+        raise RuntimeError("control pip source root")
+    version = contract.PreparationContractV1.EXPECTED_PIP_VERSION
+    roots = (
+        os.path.join(purelib, "pip"),
+        os.path.join(purelib, f"pip-{version}.dist-info"),
+    )
+    rows: list[dict[str, object]] = []
+    total = 0
+    for root in roots:
+        if not os.path.isdir(root):
+            raise RuntimeError("control pip source missing")
+        for directory, directories, files in os.walk(
+            root, topdown=True, followlinks=False
+        ):
+            directories.sort()
+            files.sort()
+            for name in directories:
+                if stat.S_ISLNK(os.lstat(os.path.join(directory, name)).st_mode):
+                    raise RuntimeError("control pip source symlink")
+            for name in files:
+                path = os.path.join(directory, name)
+                observed = os.lstat(path)
+                if not stat.S_ISREG(observed.st_mode):
+                    raise RuntimeError("control pip source type")
+                raw = Path(path).read_bytes()
+                if len(raw) != observed.st_size:
+                    raise RuntimeError("control pip source size")
+                total += len(raw)
+                if total > 67_108_864 or len(rows) >= 8192:
+                    raise RuntimeError("control pip source budget")
+                rows.append(
+                    {
+                        "relative_path": os.path.relpath(path, purelib).replace(
+                            os.sep, "/"
+                        ),
+                        "byte_count": len(raw),
+                        "raw_sha256": hashlib.sha256(raw).hexdigest(),
+                    }
+                )
+    rows.sort(key=lambda row: str(row["relative_path"]))
+    return contract.canonical_sha256(rows)
+
+
+def _privileged_runtime_source_identity() -> dict[str, object]:
+    """Bind the pre-exec interpreter bytes without binding its transient locator."""
+
+    raw = Path(sys.executable).read_bytes()
+    if not raw or len(raw) > _PRIVILEGED_RUNTIME_SOURCE_SIZE_LIMIT:
+        raise RuntimeError("control interpreter source budget")
+    if hashlib.sha256(raw).hexdigest() != contract.PreparationContractV1.EXPECTED_INTERPRETER_SHA256:
+        raise RuntimeError("control interpreter source identity")
+    return {"byte_size": len(raw), "raw_sha256": hashlib.sha256(raw).hexdigest()}
+
+
+def _privileged_exec_child(
+    source_fd: int,
+    stdin_fd: int,
+    repo_fd: int,
+    repo_identity: tuple[int, int],
+) -> None:
+    stage = "PRE_DROP_CWD_AND_FD9_SETUP"
+    reason_class = "WORK_PRIVILEGE_OR_OS_SURFACE"
+    execve_request_count = 0
+    try:
+        if len({source_fd, stdin_fd, repo_fd}) != 3 or min(source_fd, stdin_fd, repo_fd) < 3:
+            raise RuntimeError("inherited descriptor contract")
+        source_copy = fcntl.fcntl(source_fd, fcntl.F_DUPFD_CLOEXEC, 10)
+        stdin_copy = fcntl.fcntl(stdin_fd, fcntl.F_DUPFD_CLOEXEC, 10)
+        repo_copy = fcntl.fcntl(repo_fd, fcntl.F_DUPFD_CLOEXEC, 10)
+        os.fchdir(repo_copy)
+        observed_cwd = os.stat(".", follow_symlinks=False)
+        if (observed_cwd.st_dev, observed_cwd.st_ino) != repo_identity:
+            raise RuntimeError("pre-drop cwd identity")
+        closing = repo_copy
+        repo_copy = -1
+        _privileged_close_once(closing)
+        closing = repo_fd
+        repo_fd = -1
+        _privileged_close_once(closing)
+
+        os.dup2(source_copy, 9, inheritable=True)
+        os.dup2(stdin_copy, 0, inheritable=True)
+        for original in (source_copy, stdin_copy, source_fd, stdin_fd):
+            if original not in {0, 2, 9}:
+                _privileged_close_once(original)
+        _privileged_close_other_nonstdio({9})
+
+        stage = "CREDENTIAL_AND_AUTHORITY_DROP"
+        os.setgroups([])
+        os.setresgid(_PRIVILEGED_GID, _PRIVILEGED_GID, _PRIVILEGED_GID)
+        os.setresuid(_PRIVILEGED_UID, _PRIVILEGED_UID, _PRIVILEGED_UID)
+        _privileged_clear_authority()
+        _privileged_verify_credentials()
+        observed_cwd = os.stat(".", follow_symlinks=False)
+        if (observed_cwd.st_dev, observed_cwd.st_ino) != repo_identity:
+            raise RuntimeError("post-drop cwd identity")
+        if _privileged_live_nonstdio() != {9}:
+            raise RuntimeError("pre-exec descriptor set")
+
+        stage = "EXECVE_REQUEST"
+        reason_class = "EXEC_BOOTSTRAP"
+        _privileged_emit_event("EXECVE_REQUESTED", 1)
+        execve_request_count = 1
+        argv = [sys.executable, "-E", "-s", "-S", "-B", "-c", _PRIVILEGED_BOOTSTRAP_SOURCE]
+        os.execve(sys.executable, argv, {})
+    except BaseException as error:
+        try:
+            internal = None
+            diagnostic_reason = reason_class
+            if not isinstance(error, OSError):
+                if stage == "CREDENTIAL_AND_AUTHORITY_DROP":
+                    internal = "CREDENTIAL_CONTRACT_MISMATCH"
+                elif stage == "PRE_DROP_CWD_AND_FD9_SETUP":
+                    internal = "DESCRIPTOR_SET_OR_CLOSE_UNCERTAIN"
+                else:
+                    internal = "EVENT_OR_RESULT_TRANSPORT_INVALID"
+                diagnostic_reason = (
+                    "EXEC_BOOTSTRAP" if stage == "EXECVE_REQUEST" else "IMPLEMENTATION_CONTRACT"
+                )
+            _privileged_emit_diagnostic(
+                stage=stage,
+                reason_class=diagnostic_reason,
+                error=error,
+                internal_reason=internal,
+                execve_request_count=execve_request_count,
+                postexec_entry_count=0,
+                child_exit_class="CHILD_NONZERO",
+            )
+        except BaseException:
+            pass
+        os._exit(71)
+
+
+def _write_pipe_exact(fd: int, payload: bytes) -> None:
+    view = memoryview(payload)
+    while view:
+        written = os.write(fd, view)
+        if written <= 0:
+            raise RuntimeError("stdin writer made no progress")
+        view = view[written:]
+
+
+def _privileged_parent() -> int:
+    temporary = ""
+    source_path = ""
+    temporary_exists = False
+    source_exists = False
+    repo_fd = -1
+    source_write_fd = -1
+    source_read_fd = -1
+    read_fd = -1
+    write_fd = -1
+    child_pid = -1
+    fork_succeeded = False
+    waited = False
+    try:
+        _privileged_runner_admission()
+        temporary = tempfile.mkdtemp(prefix="g4b-fd9-dac-")
+        temporary_exists = True
+        source_path = os.path.join(temporary, "source")
+        repo_fd = os.open(
+            REPO_ROOT,
+            os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        repo_observed = os.fstat(repo_fd)
+        repo_identity = (repo_observed.st_dev, repo_observed.st_ino)
+        manifest_rows = _privileged_manifest_rows(repo_fd)
+        os.chmod(temporary, 0o755)
+        source_write_fd = os.open(
+            source_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+        )
+        source_exists = True
+        initial = os.fstat(source_write_fd)
+        source_object = _source_object_identity(
+            types.SimpleNamespace(
+                st_dev=initial.st_dev,
+                st_ino=initial.st_ino,
+                st_uid=0,
+                st_gid=initial.st_gid,
+                st_mode=stat.S_IFREG | 0o400,
+                st_nlink=1,
+            )
+        )
+        credential = _credential_contract(_PRIVILEGED_UID, _PRIVILEGED_GID, [])
+        mapping = _mapping_provenance(source_object, credential)
+        now = _datetime.datetime.now(_datetime.timezone.utc).replace(microsecond=0)
+        issued_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        expires_at = (now + _datetime.timedelta(minutes=15)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        attestation = _egress_attestation(mapping, issued_at, expires_at)
+        attestation_raw = contract.canonical_json_bytes(attestation)
+        _write_pipe_exact(source_write_fd, attestation_raw)
+        os.fsync(source_write_fd)
+        os.fchmod(source_write_fd, 0o400)
+        closing = source_write_fd
+        source_write_fd = -1
+        _privileged_close_once(closing)
+        source_observed = os.stat(source_path, follow_symlinks=False)
+        source_identity = _source_fixed_identity(source_observed)
+        request = _execution_request_from_source(mapping, attestation, source_identity)
+        request["control_runtime"][
+            "pip_installed_source_manifest_sha256"
+        ] = _privileged_runtime_manifest_sha256()
+        runtime_source_identity = _privileged_runtime_source_identity()
+        contract.validate_execution_request(request)
+        source_read_fd = os.open(
+            source_path,
+            os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0),
+        )
+        read_fd, write_fd = os.pipe()
+        child_pid = os.fork()
+        if child_pid == 0:
+            _privileged_exec_child(source_read_fd, read_fd, repo_fd, repo_identity)
+            os._exit(74)
+        fork_succeeded = True
+        closing = repo_fd
+        repo_fd = -1
+        _privileged_close_once(closing)
+        closing = source_read_fd
+        source_read_fd = -1
+        _privileged_close_once(closing)
+        closing = read_fd
+        read_fd = -1
+        _privileged_close_once(closing)
+        envelope = {
+            "schema_version": _PRIVILEGED_ENVELOPE_SCHEMA,
+            "bootstrap_source_manifest": manifest_rows,
+            "repository_cwd_identity": {
+                "st_dev": repo_identity[0],
+                "st_ino": repo_identity[1],
+            },
+            "negative_dac_locator": source_path,
+            "runtime_source_identity": runtime_source_identity,
+            "execution_request": request,
+        }
+        payload = contract.canonical_file_bytes(envelope)
+        if len(payload) > _PRIVILEGED_STDIN_LIMIT:
+            raise RuntimeError("integration envelope bound")
+        _write_pipe_exact(write_fd, payload)
+        closing = write_fd
+        write_fd = -1
+        _privileged_close_once(closing)
+        waited_pid, status_value = os.waitpid(child_pid, 0)
+        waited = True
+        child_pid = -1
+        if waited_pid <= 0:
+            return 73
+        if os.WIFSIGNALED(status_value):
+            return 72
+        if not os.WIFEXITED(status_value) or os.WEXITSTATUS(status_value) != 0:
+            return 71
+        source_exists = False
+        os.unlink(source_path)
+        temporary_exists = False
+        os.rmdir(temporary)
+        pass_record = b"PRIVILEGED_ACTUAL_DAC_INTEGRATION_EXACT1_PASS\n"
+        if os.write(1, pass_record) != len(pass_record):
+            return 73
+        return 0
+    except BaseException as error:
+        if not fork_succeeded:
+            try:
+                _privileged_emit_diagnostic(
+                    stage="ROOT_PARENT_OR_FIXTURE",
+                    reason_class=(
+                        "WORK_PRIVILEGE_OR_OS_SURFACE"
+                        if isinstance(error, OSError)
+                        else "IMPLEMENTATION_CONTRACT"
+                    ),
+                    error=error,
+                    internal_reason=(
+                        None if isinstance(error, OSError) else "EVENT_OR_RESULT_TRANSPORT_INVALID"
+                    ),
+                    execve_request_count=0,
+                    postexec_entry_count=0,
+                    child_exit_class=(
+                        "PRE_FORK_ROOT_FAILURE" if isinstance(error, OSError) else "INTERNAL_ROOT_FAILURE"
+                    ),
+                )
+            except BaseException:
+                pass
+            return 70 if isinstance(error, OSError) else 74
+        if child_pid > 0 and not waited:
+            try:
+                os.kill(child_pid, signal.SIGKILL)
+            except OSError:
+                pass
+            try:
+                os.waitpid(child_pid, 0)
+            except OSError:
+                pass
+            waited = True
+            child_pid = -1
+        return 73
+    finally:
+        for fd in (repo_fd, source_write_fd, source_read_fd, read_fd, write_fd):
+            if fd >= 0:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+        if source_exists:
+            try:
+                os.unlink(source_path)
+            except OSError:
+                pass
+        if temporary_exists:
+            try:
+                os.rmdir(temporary)
+            except OSError:
+                pass
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == [_PRIVILEGED_PARENT_FLAG]:
+        raise SystemExit(_privileged_parent())
     unittest.main()
