@@ -2,12 +2,14 @@
 """One-shot, hash-locked acquisition for the G4-B preparation family.
 
 The module deliberately exposes only the two effect surfaces approved by the
-V3 design.  It does not use pip as a library and it has no direct network API;
+current candidate.  It does not use pip as a library and it has no direct network API;
 the single ``pip download`` child is the only possible network edge.
 """
 
 from __future__ import annotations
 
+import errno
+import fcntl
 import hashlib
 import datetime as _datetime
 import os
@@ -36,6 +38,7 @@ __all__ = ("capture_transport_binding_at_start", "acquire_once")
 
 _ACTIVE_TRANSPORT: dict[tuple[str, str, str], dict[str, Any]] = {}
 _MAX_OUTPUT = 1_048_576
+_PROC_STATUS_LIMIT = 65_536
 _ACQUISITION_TIMEOUT = 300
 _PIP_SOURCE_EXACT3 = (
     ("pip/_internal/cli/main_parser.py", PreparationContractV1.PIP_MAIN_PARSER_SHA256),
@@ -311,8 +314,8 @@ def _seal_transport(state: dict[str, Any], *, full_match: bool) -> str:
     fd = state["fd"]
     os.fchmod(fd, 0o400)
     os.fsync(fd)
-    os.close(fd)
     state["fd"] = -1
+    os.close(fd)
     directory_fd = os.open(os.path.dirname(state["path"]), os.O_RDONLY | os.O_DIRECTORY)
     try:
         os.fsync(directory_fd)
@@ -324,46 +327,187 @@ def _seal_transport(state: dict[str, Any], *, full_match: bool) -> str:
     return _sha256_bytes(raw)
 
 
-def _source_observation(request: dict[str, Any], stage: str) -> tuple[dict[str, Any], str]:
-    source = request["egress_attestation_source"]
-    raw, observed = _read_regular_nofollow(
-        source["private_locator"], "HOST_EXCEPTION_NOT_ENFORCED"
-    )
-    mode = stat.S_IMODE(observed.st_mode)
-    raw_sha = _sha256_bytes(raw)
-    expected_mode = int(source["expected_mode"], 8)
-    effective_uid = os.geteuid()
-    effective_groups = set(os.getgroups()) | {os.getegid()}
-    authority_writable = effective_uid == 0 or bool(
-        (observed.st_uid == effective_uid and mode & stat.S_IWUSR)
-        or (observed.st_gid in effective_groups and mode & stat.S_IWGRP)
-        or mode & stat.S_IWOTH
-    )
-    owner_class_valid = (
-        source["expected_owner_class"] == "PLATFORM_ROOT"
-        and observed.st_uid == 0
-        and effective_uid != 0
-    ) or (
-        source["expected_owner_class"] == "APPROVED_DISTINCT_NON_AUTHORITY_OWNER"
-        and observed.st_uid != 0
-        and observed.st_uid != effective_uid
-    )
-    if (
-        mode != expected_mode
-        or not source["expected_regular_file"]
-        or observed.st_nlink != source["expected_nlink"]
-        or raw_sha != source["expected_raw_sha256"]
-        or mode & 0o222
-        or not owner_class_valid
-        or authority_writable
-    ):
-        _fail("HOST_EXCEPTION_NOT_ENFORCED", "egress trust-root source identity mismatches")
+def _seal_transport_once(state: dict[str, Any], *, full_match: bool) -> str:
+    if state.get("transport_seal_attempted", False):
+        _fail("PRIVATE_TRANSPORT_BINDING_INVALID", "transport seal was already attempted")
+    state["transport_seal_attempted"] = True
+    return _seal_transport(state, full_match=full_match)
+
+
+def _abandon_transport_fd_no_retry(state: dict[str, Any]) -> None:
+    """Relinquish and close an unsealed transport fd with one close attempt."""
+
+    fd = state.get("fd", -1)
+    if type(fd) is not int or fd < 0:
+        return
     try:
-        body = strict_json_from_bytes(raw, require_final_lf=False)
-    except PreparationViolation:
-        raise
-    if body != request["egress_attestation"] or raw_sha != request["egress_attestation_sha256"]:
-        _fail("HOST_EXCEPTION_NOT_ENFORCED", "egress attestation raw body mismatches")
+        os.fchmod(fd, 0o400)
+        os.fsync(fd)
+    except OSError:
+        pass
+    state["fd"] = -1
+    try:
+        os.close(fd)
+    except OSError:
+        _fail(
+            "PRIVATE_TRANSPORT_BINDING_INVALID",
+            "transport descriptor close state is uncertain",
+        )
+
+
+def _failure_seal_transport(state: dict[str, Any]) -> str | None:
+    """Attempt one failure seal, then close once if sealing failed pre-close."""
+
+    if state.get("fd", -1) < 0:
+        return None
+    if state.get("transport_seal_attempted", False):
+        _abandon_transport_fd_no_retry(state)
+        _fail(
+            "PRIVATE_TRANSPORT_BINDING_INVALID",
+            "the sole transport seal attempt did not complete",
+        )
+    try:
+        return _seal_transport_once(state, full_match=False)
+    except BaseException as error:
+        _abandon_transport_fd_no_retry(state)
+        if isinstance(error, PreparationViolation):
+            raise
+        _fail("PRIVATE_TRANSPORT_BINDING_INVALID", "transport failure seal failed")
+
+
+def _source_fixed_tuple(observed: os.stat_result) -> dict[str, Any]:
+    return {
+        "schema_version": PreparationContractV1.P1_SOURCE_FIXED_TUPLE_SCHEMA,
+        "st_dev": observed.st_dev,
+        "st_ino": observed.st_ino,
+        "st_uid": observed.st_uid,
+        "st_gid": observed.st_gid,
+        "st_mode": observed.st_mode,
+        "st_nlink": observed.st_nlink,
+        "st_size": observed.st_size,
+        "st_mtime_ns": observed.st_mtime_ns,
+        "st_ctime_ns": observed.st_ctime_ns,
+    }
+
+
+def _require_descriptor_closed(fd: int, code: str) -> None:
+    try:
+        fcntl.fcntl(fd, fcntl.F_GETFD)
+    except OSError as exc:
+        if exc.errno == errno.EBADF:
+            return
+        _fail(code, "descriptor close state cannot be verified")
+    _fail(code, "closed descriptor remains valid")
+
+
+def _close_descriptor_no_retry(fd: int, code: str) -> None:
+    try:
+        os.close(fd)
+    except OSError:
+        _fail(code, "descriptor close state is uncertain")
+    _require_descriptor_closed(fd, code)
+
+
+def _read_proc_status_fields() -> dict[str, Any]:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open("/proc/self/status", flags)
+    except OSError:
+        _fail("P1_CREDENTIAL_CONTRACT_INVALID", "credential status is unavailable")
+    try:
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            block = os.read(fd, 8192)
+            if not block:
+                break
+            total += len(block)
+            if total > _PROC_STATUS_LIMIT:
+                _fail("P1_CREDENTIAL_CONTRACT_INVALID", "credential status exceeds limit")
+            chunks.append(block)
+    finally:
+        os.close(fd)
+    try:
+        lines = b"".join(chunks).decode("ascii", "strict").splitlines()
+    except UnicodeDecodeError:
+        _fail("P1_CREDENTIAL_CONTRACT_INVALID", "credential status is not ASCII")
+    required = {
+        "Uid", "Gid", "Groups", "CapInh", "CapPrm", "CapEff", "CapAmb",
+        "NoNewPrivs",
+    }
+    values: dict[str, str] = {}
+    for line in lines:
+        if ":" not in line:
+            continue
+        key, raw_value = line.split(":", 1)
+        if key not in required:
+            continue
+        if key in values:
+            _fail("P1_CREDENTIAL_CONTRACT_INVALID", f"duplicate status field: {key}")
+        values[key] = raw_value.strip()
+    if set(values) != required:
+        _fail("P1_CREDENTIAL_CONTRACT_INVALID", "credential status field set")
+    try:
+        uid = tuple(int(item, 10) for item in values["Uid"].split())
+        gid = tuple(int(item, 10) for item in values["Gid"].split())
+        groups = [int(item, 10) for item in values["Groups"].split()]
+        capabilities = {
+            "cap_inheritable": int(values["CapInh"], 16),
+            "cap_permitted": int(values["CapPrm"], 16),
+            "cap_effective": int(values["CapEff"], 16),
+            "cap_ambient": int(values["CapAmb"], 16),
+        }
+        no_new_privs = int(values["NoNewPrivs"], 10)
+    except ValueError:
+        _fail("P1_CREDENTIAL_CONTRACT_INVALID", "credential status value")
+    if len(uid) != 4 or len(gid) != 4:
+        _fail("P1_CREDENTIAL_CONTRACT_INVALID", "credential status quartet")
+    return {
+        "uid": uid,
+        "gid": gid,
+        "groups": sorted(groups),
+        **capabilities,
+        "no_new_privs": no_new_privs,
+    }
+
+
+def _credential_observation(expected: dict[str, Any]) -> dict[str, Any]:
+    try:
+        before = (os.getresuid(), os.getresgid(), tuple(sorted(os.getgroups())))
+        observed = _read_proc_status_fields()
+        after = (os.getresuid(), os.getresgid(), tuple(sorted(os.getgroups())))
+    except AttributeError:
+        _fail("P1_CREDENTIAL_CONTRACT_INVALID", "Linux credential API unavailable")
+    if before != after:
+        _fail("P1_CREDENTIAL_CONTRACT_INVALID", "credential state changed during capture")
+    if tuple(observed["uid"][:3]) != before[0] or tuple(observed["gid"][:3]) != before[1]:
+        _fail("P1_CREDENTIAL_CONTRACT_INVALID", "kernel and process credential mismatch")
+    if tuple(observed["groups"]) != before[2]:
+        _fail("P1_CREDENTIAL_CONTRACT_INVALID", "supplementary group mismatch")
+    actual = {
+        "schema_version": PreparationContractV1.P1_CREDENTIAL_CONTRACT_SCHEMA,
+        "ruid": observed["uid"][0],
+        "euid": observed["uid"][1],
+        "suid": observed["uid"][2],
+        "fsuid": observed["uid"][3],
+        "rgid": observed["gid"][0],
+        "egid": observed["gid"][1],
+        "sgid": observed["gid"][2],
+        "fsgid": observed["gid"][3],
+        "supplementary_gids": observed["groups"],
+        "cap_effective": observed["cap_effective"],
+        "cap_permitted": observed["cap_permitted"],
+        "cap_inheritable": observed["cap_inheritable"],
+        "cap_ambient": observed["cap_ambient"],
+        "no_new_privs": observed["no_new_privs"],
+    }
+    if actual != expected:
+        _fail("P1_CREDENTIAL_CONTRACT_INVALID", "actual credentials differ from request")
+    return actual
+
+
+def _validate_source_time(request: dict[str, Any], body: dict[str, Any], stage: str) -> None:
+    source = request["egress_attestation_source"]
     if source["expected_expiry"] != body["expires_at"]:
         _fail("HOST_EXCEPTION_NOT_ENFORCED", "egress source expiry mismatches")
     try:
@@ -383,22 +527,161 @@ def _source_observation(request: dict[str, Any], stage: str) -> tuple[dict[str, 
         )
     if not expiry_valid:
         _fail("HOST_EXCEPTION_NOT_ENFORCED", "egress attestation validity window is not admissible")
+
+
+def _pread_source_body(
+    fd: int, request: dict[str, Any], stage: str
+) -> tuple[dict[str, Any], bytes, str]:
+    source = request["egress_attestation_source"]
+    expected = source["expected_source_identity"]
+    try:
+        before = _source_fixed_tuple(os.fstat(fd))
+    except OSError:
+        _fail("HOST_EXCEPTION_NOT_ENFORCED", "source fstat failed")
+    if before != expected:
+        _fail("HOST_EXCEPTION_NOT_ENFORCED", "source pre-read identity mismatch")
+    size = expected["st_size"]
+    if not 0 < size <= _MAX_OUTPUT:
+        _fail("HOST_EXCEPTION_NOT_ENFORCED", "source byte size is out of bounds")
+    chunks: list[bytes] = []
+    offset = 0
+    try:
+        while offset < size:
+            block = os.pread(fd, min(131_072, size - offset), offset)
+            if not block:
+                _fail("HOST_EXCEPTION_NOT_ENFORCED", "source positional read is short")
+            chunks.append(block)
+            offset += len(block)
+        if os.pread(fd, 1, size) != b"":
+            _fail("HOST_EXCEPTION_NOT_ENFORCED", "source has an uncommitted extra byte")
+        after = _source_fixed_tuple(os.fstat(fd))
+    except OSError:
+        _fail("HOST_EXCEPTION_NOT_ENFORCED", "source positional read failed")
+    if after != expected or before != after:
+        _fail("HOST_EXCEPTION_NOT_ENFORCED", "source post-read identity mismatch")
+    raw = b"".join(chunks)
+    raw_sha = _sha256_bytes(raw)
+    if raw_sha != source["expected_raw_sha256"] or raw_sha != request[
+        "egress_attestation_sha256"
+    ]:
+        _fail("HOST_EXCEPTION_NOT_ENFORCED", "egress attestation raw identity mismatch")
+    body = strict_json_from_bytes(raw, require_final_lf=False)
+    if body != request["egress_attestation"]:
+        _fail("HOST_EXCEPTION_NOT_ENFORCED", "egress attestation body mismatch")
+    _validate_source_time(request, body, stage)
     row = {
         "stage": stage,
-        "owner_class": source["expected_owner_class"],
-        "mode": mode,
-        "regular_file": True,
-        "nlink": observed.st_nlink,
-        "authority_writable": authority_writable,
+        "transfer_mechanism_id": source["transfer_mechanism_id"],
+        "descriptor_number": source["descriptor_number"],
+        "source_identity_binding_sha256": source[
+            "expected_source_identity_binding_sha256"
+        ],
+        "platform_mapping_provenance_binding_sha256": source[
+            "platform_mapping_provenance_binding_sha256"
+        ],
         "raw_sha256": raw_sha,
-        "expiry_valid": expiry_valid,
-        "stable_approval_match": (
-            body["stable_authority_approval_binding_sha256"]
-            == request["stable_authority_approval_binding_sha256"]
-        ),
+        "pre_post_source_identity_match": True,
+        "locator_resolved": False,
     }
-    if not row["stable_approval_match"]:
-        _fail("HOST_EXCEPTION_NOT_ENFORCED", "stable approval binding mismatches")
+    return row, raw, raw_sha
+
+
+def _capture_descriptor_source(request: dict[str, Any]) -> dict[str, Any]:
+    request = validate_execution_request(request)
+    source = request["egress_attestation_source"]
+    ingress = source["descriptor_number"]
+    owned: int | None = None
+    ingress_open = True
+    try:
+        descriptor_flags = fcntl.fcntl(ingress, fcntl.F_GETFD)
+        status_flags = fcntl.fcntl(ingress, fcntl.F_GETFL)
+        if descriptor_flags & fcntl.FD_CLOEXEC:
+            _fail("HOST_EXCEPTION_NOT_ENFORCED", "fd9 is not exec-inherited")
+        if status_flags & os.O_ACCMODE != os.O_RDONLY:
+            _fail("HOST_EXCEPTION_NOT_ENFORCED", "fd9 is not read-only")
+        if getattr(os, "O_PATH", 0) and status_flags & os.O_PATH:
+            _fail("HOST_EXCEPTION_NOT_ENFORCED", "fd9 is O_PATH")
+        initial = _source_fixed_tuple(os.fstat(ingress))
+        if initial != source["expected_source_identity"]:
+            _fail("HOST_EXCEPTION_NOT_ENFORCED", "initial fd9 identity mismatch")
+        duplicate_command = getattr(fcntl, "F_DUPFD_CLOEXEC", None)
+        if duplicate_command is None:
+            _fail("HOST_EXCEPTION_NOT_ENFORCED", "atomic CLOEXEC duplicate unavailable")
+        owned = fcntl.fcntl(ingress, duplicate_command, 10)
+        if owned < 10:
+            _fail("HOST_EXCEPTION_NOT_ENFORCED", "owned descriptor minimum violated")
+        if not fcntl.fcntl(owned, fcntl.F_GETFD) & fcntl.FD_CLOEXEC:
+            _fail("HOST_EXCEPTION_NOT_ENFORCED", "owned descriptor lacks CLOEXEC")
+        if os.get_inheritable(owned):
+            _fail("HOST_EXCEPTION_NOT_ENFORCED", "owned descriptor is inheritable")
+        if _source_fixed_tuple(os.fstat(owned)) != initial:
+            _fail("HOST_EXCEPTION_NOT_ENFORCED", "owned descriptor identity mismatch")
+        ingress_open = False
+        _close_descriptor_no_retry(ingress, "HOST_EXCEPTION_NOT_ENFORCED")
+        credential = source["platform_mapping_provenance"]["p1_credential_contract"]
+        credential_observation = _credential_observation(credential)
+        row, _raw, raw_sha = _pread_source_body(owned, request, "P1_ENTRY")
+        row["credential_binding_sha256"] = canonical_sha256(credential_observation)
+        result = {
+            "source_owned_fd": owned,
+            "source_descriptor_state": "OWNED_CLOEXEC_NONINHERITABLE",
+            "source_fixed_tuple": initial,
+            "source_raw_sha256": raw_sha,
+            "source_rows": [row],
+        }
+        owned = None
+        return result
+    except OSError:
+        _fail("HOST_EXCEPTION_NOT_ENFORCED", "descriptor capture failed")
+    finally:
+        try:
+            if ingress_open:
+                ingress_open = False
+                _close_descriptor_no_retry(ingress, "HOST_EXCEPTION_NOT_ENFORCED")
+        finally:
+            if owned is not None:
+                owned_to_close = owned
+                owned = None
+                _close_descriptor_no_retry(
+                    owned_to_close, "HOST_EXCEPTION_NOT_ENFORCED"
+                )
+
+
+def _close_owned_source_state(state: dict[str, Any]) -> None:
+    owned = state.pop("source_owned_fd", None)
+    if owned is None:
+        return
+    state["source_descriptor_state"] = "CLOSING_NO_RETRY"
+    _close_descriptor_no_retry(owned, "HOST_EXCEPTION_NOT_ENFORCED")
+    state["source_descriptor_state"] = "CLOSED_BEFORE_P3"
+
+
+def _observe_and_close_descriptor_before_p3(
+    request: dict[str, Any], state: dict[str, Any]
+) -> tuple[dict[str, Any], str]:
+    owned = state.get("source_owned_fd")
+    if type(owned) is not int or owned < 10:
+        _fail("HOST_EXCEPTION_NOT_ENFORCED", "owned source descriptor is absent")
+    try:
+        if not fcntl.fcntl(owned, fcntl.F_GETFD) & fcntl.FD_CLOEXEC:
+            _fail("HOST_EXCEPTION_NOT_ENFORCED", "owned source CLOEXEC drift")
+        if os.get_inheritable(owned):
+            _fail("HOST_EXCEPTION_NOT_ENFORCED", "owned source inheritability drift")
+        credential = request["egress_attestation_source"][
+            "platform_mapping_provenance"
+        ]["p1_credential_contract"]
+        _credential_observation(credential)
+        row, _raw, raw_sha = _pread_source_body(owned, request, "P3_PRELAUNCH")
+        if raw_sha != state["source_raw_sha256"]:
+            _fail("HOST_EXCEPTION_NOT_ENFORCED", "P1/P3 source body drift")
+        if request["egress_attestation_source"]["expected_source_identity"] != state[
+            "source_fixed_tuple"
+        ]:
+            _fail("HOST_EXCEPTION_NOT_ENFORCED", "P1/P3 source tuple drift")
+    except Exception:
+        _close_owned_source_state(state)
+        raise
+    _close_owned_source_state(state)
     return row, raw_sha
 
 
@@ -414,10 +697,16 @@ def capture_transport_binding_at_start(request: dict[str, Any]) -> dict[str, Any
     """Capture B0 and begin the single-writer append-only private observation."""
 
     request = validate_execution_request(request)
-    _validate_control_runtime_actual(request)
     key = _state_key(request)
-    if key in _ACTIVE_TRANSPORT:
-        _fail("PRIVATE_TRANSPORT_BINDING_INVALID", "B0 already exists for this session")
+    if _ACTIVE_TRANSPORT:
+        active_key, active_state = next(iter(_ACTIVE_TRANSPORT.items()))
+        _ACTIVE_TRANSPORT.pop(active_key, None)
+        try:
+            _close_owned_source_state(active_state)
+        finally:
+            _failure_seal_transport(active_state)
+        _fail("PRIVATE_TRANSPORT_BINDING_INVALID", "a B0 already exists in P1")
+    _validate_control_runtime_actual(request)
     path = key[2]
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     try:
@@ -429,16 +718,17 @@ def capture_transport_binding_at_start(request: dict[str, Any]) -> dict[str, Any
         b0 = _transport_record(request, "B0")
         _append_record(state, b0)
         state["records"].append(b0)
-        source_row, _source_sha = _source_observation(request, "P1_ENTRY")
-        state["source_rows"] = [source_row]
+        state.update(_capture_descriptor_source(request))
         _ACTIVE_TRANSPORT[key] = state
         return b0
     except Exception:
         try:
-            if state["fd"] >= 0:
-                _seal_transport(state, full_match=False)
+            _close_owned_source_state(state)
         finally:
-            _ACTIVE_TRANSPORT.pop(key, None)
+            try:
+                _failure_seal_transport(state)
+            finally:
+                _ACTIVE_TRANSPORT.pop(key, None)
         raise
 
 
@@ -456,27 +746,24 @@ def _abort_transport_binding(request: dict[str, Any]) -> str | None:
     except (KeyError, TypeError):
         return None
     state = _ACTIVE_TRANSPORT.pop(key, None)
-    if state is None or state.get("fd", -1) < 0:
+    if state is None:
         return None
+    source_error: BaseException | None = None
     try:
-        return _seal_transport(state, full_match=False)
-    except Exception:
-        # A failed seal must not leak the controller-owned descriptor.  Keep
-        # the artifact non-writable whenever the descriptor still permits it;
-        # the caller still receives the original seal failure and fails closed.
-        fd = state.get("fd", -1)
-        if fd >= 0:
-            try:
-                os.fchmod(fd, 0o400)
-                os.fsync(fd)
-            except OSError:
-                pass
-            finally:
-                try:
-                    os.close(fd)
-                finally:
-                    state["fd"] = -1
-        raise
+        _close_owned_source_state(state)
+    except BaseException as error:
+        source_error = error
+    sealed_sha256: str | None = None
+    seal_error: BaseException | None = None
+    try:
+        sealed_sha256 = _failure_seal_transport(state)
+    except BaseException as error:
+        seal_error = error
+    if seal_error is not None:
+        raise seal_error
+    if source_error is not None:
+        raise source_error
+    return sealed_sha256
 
 
 def _acquisition_argv(request: dict[str, Any]) -> list[str]:
@@ -529,16 +816,16 @@ def _capture_child(process: subprocess.Popen[bytes], timeout_seconds: float) -> 
     if process.stdout is None or process.stderr is None:
         _terminate(process)
         _fail("ACQUISITION_PROCESS_INVALID", "P3 pipes are unavailable", consumed=True)
-    selector = selectors.DefaultSelector()
-    selector.register(process.stdout, selectors.EVENT_READ, "stdout")
-    selector.register(process.stderr, selectors.EVENT_READ, "stderr")
+    selector: selectors.BaseSelector | None = None
     captured = {"stdout": bytearray(), "stderr": bytearray()}
     deadline = time.monotonic() + timeout_seconds
     try:
+        selector = selectors.DefaultSelector()
+        selector.register(process.stdout, selectors.EVENT_READ, "stdout")
+        selector.register(process.stderr, selectors.EVENT_READ, "stderr")
         while selector.get_map():
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                _terminate(process)
                 _fail("ACQUISITION_PROCESS_INVALID", "P3 timeout", consumed=True)
             for key, _events in selector.select(min(remaining, 0.25)):
                 block = os.read(key.fileobj.fileno(), 65_536)
@@ -547,22 +834,20 @@ def _capture_child(process: subprocess.Popen[bytes], timeout_seconds: float) -> 
                     continue
                 target = captured[key.data]
                 if len(target) + len(block) > _MAX_OUTPUT:
-                    _terminate(process)
                     _fail("ACQUISITION_PROCESS_INVALID", "P3 output overflow", consumed=True)
                 target.extend(block)
         try:
             process.wait(timeout=max(0.0, deadline - time.monotonic()))
         except subprocess.TimeoutExpired:
-            _terminate(process)
             _fail("ACQUISITION_PROCESS_INVALID", "P3 wait timeout", consumed=True)
-    except PreparationViolation:
+    except BaseException as error:
         _terminate(process)
-        raise
-    except OSError:
-        _terminate(process)
+        if isinstance(error, PreparationViolation):
+            raise
         _fail("ACQUISITION_PROCESS_INVALID", "P3 bounded capture failed", consumed=True)
     finally:
-        selector.close()
+        if selector is not None:
+            selector.close()
     return bytes(captured["stdout"]), bytes(captured["stderr"])
 
 
@@ -612,14 +897,26 @@ def acquire_once(
 ) -> dict[str, Any]:
     """Consume the one-shot authority at P3 and return/persist exact18 evidence."""
 
-    request = validate_execution_request(request)
-    key = _state_key(request)
-    state = _ACTIVE_TRANSPORT.get(key)
-    if state is None or state["records"] != [transport_binding_b0]:
+    if not _ACTIVE_TRANSPORT:
         _fail("PRIVATE_TRANSPORT_BINDING_INVALID", "active B0 ownership is absent")
+    if len(_ACTIVE_TRANSPORT) != 1:
+        for invalid_key, invalid_state in list(_ACTIVE_TRANSPORT.items()):
+            _ACTIVE_TRANSPORT.pop(invalid_key, None)
+            try:
+                _close_owned_source_state(invalid_state)
+            finally:
+                _failure_seal_transport(invalid_state)
+        _fail("PRIVATE_TRANSPORT_BINDING_INVALID", "active B0 cardinality is invalid")
+    active_key, state = next(iter(_ACTIVE_TRANSPORT.items()))
+    key = active_key
     consumed = False
     transport_sha = ""
     try:
+        request = validate_execution_request(request)
+        if _state_key(request) != active_key:
+            _fail("PRIVATE_TRANSPORT_BINDING_INVALID", "active B0 key mismatches")
+        if state["records"] != [transport_binding_b0]:
+            _fail("PRIVATE_TRANSPORT_BINDING_INVALID", "active B0 ownership mismatches")
         requirements = derive_requirements_bytes(validated_lock)
         expected_requirements = getattr(
             PreparationContractV1,
@@ -639,7 +936,7 @@ def acquire_once(
         state["records"].append(b1)
         if b1["binding_sha256"] != transport_binding_b0["binding_sha256"]:
             _fail("PRIVATE_TRANSPORT_DRIFT", "B0/B1 transport binding drift")
-        source_row, source_sha = _source_observation(request, "P3_PRELAUNCH")
+        source_row, source_sha = _observe_and_close_descriptor_before_p3(request, state)
         state["source_rows"].append(source_row)
 
         argv = _acquisition_argv(request)
@@ -667,7 +964,7 @@ def acquire_once(
         _append_record(state, b2)
         state["records"].append(b2)
         match = len({item["binding_sha256"] for item in state["records"]}) == 1
-        _seal_transport(state, full_match=match)
+        _seal_transport_once(state, full_match=match)
         if not match:
             _fail("PRIVATE_TRANSPORT_DRIFT", "B0/B1/B2 transport drift", consumed=True)
         if process.returncode != 0:
@@ -728,13 +1025,39 @@ def acquire_once(
             "termination_state": "EXITED",
         }
         return returned
-    except PreparationViolation as error:
-        error.consumed = bool(getattr(error, "consumed", False) or consumed)
-        if state.get("fd", -1) >= 0:
-            try:
-                _seal_transport(state, full_match=False)
-            except Exception:
-                pass
-        raise
+    except BaseException as error:
+        if isinstance(error, PreparationViolation):
+            terminal_error = error
+        else:
+            terminal_error = PreparationViolation(
+                "INTERNAL_FAIL_CLOSED", "acquisition exception was normalized"
+            )
+        terminal_error.consumed = bool(
+            getattr(terminal_error, "consumed", False) or consumed
+        )
+        try:
+            _close_owned_source_state(state)
+        except BaseException as cleanup_error:
+            if isinstance(cleanup_error, PreparationViolation):
+                terminal_error = cleanup_error
+            else:
+                terminal_error = PreparationViolation(
+                    "INTERNAL_FAIL_CLOSED", "source descriptor cleanup failed"
+                )
+            terminal_error.consumed = consumed
+        try:
+            _failure_seal_transport(state)
+        except BaseException as cleanup_error:
+            if isinstance(cleanup_error, PreparationViolation):
+                terminal_error = cleanup_error
+            else:
+                terminal_error = PreparationViolation(
+                    "INTERNAL_FAIL_CLOSED", "transport cleanup failed"
+                )
+            terminal_error.consumed = consumed
+        raise terminal_error
     finally:
-        _ACTIVE_TRANSPORT.pop(key, None)
+        try:
+            _close_owned_source_state(state)
+        finally:
+            _ACTIVE_TRANSPORT.pop(key, None)
