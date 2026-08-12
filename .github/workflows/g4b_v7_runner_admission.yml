@@ -1,0 +1,43 @@
+name: g4b-v7-runner-admission
+on:
+  push:
+    branches:
+      - agent/g4b-v7-runner-admission
+permissions:
+  contents: read
+jobs:
+  admission:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify fixed non-root credential transition
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n /usr/bin/python3 - <<'PY'
+          import json
+          import os
+
+          result = {
+              "euid_before": os.geteuid(),
+              "egid_before": os.getegid(),
+              "setgroups_policy": open("/proc/self/setgroups", encoding="ascii").read().strip(),
+              "uid_map": open("/proc/self/uid_map", encoding="ascii").read().strip(),
+              "gid_map": open("/proc/self/gid_map", encoding="ascii").read().strip(),
+          }
+          os.setgroups([])
+          os.setresgid(65534, 65534, 65534)
+          os.setresuid(65534, 65534, 65534)
+          result.update({
+              "resuid_after": os.getresuid(),
+              "resgid_after": os.getresgid(),
+              "groups_after": os.getgroups(),
+          })
+          print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+          if result["resuid_after"] != (65534, 65534, 65534):
+              raise SystemExit(81)
+          if result["resgid_after"] != (65534, 65534, 65534):
+              raise SystemExit(82)
+          if result["groups_after"] != []:
+              raise SystemExit(83)
+          PY
