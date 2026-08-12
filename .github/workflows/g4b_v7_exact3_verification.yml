@@ -1,0 +1,137 @@
+name: g4b-v7-exact3-verification
+on:
+  push:
+    branches:
+      - agent/g4b-v7-exact3-verification-r5
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact staging commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Verify exact staging scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'agent/g4b-v7-exact3-verification-r5'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = 'e96df82e790d32779940d7972a340be319553137'
+          cat > "$RUNNER_TEMP/expected-paths" <<'EOF'
+          .github/workflows/g4b_v7_exact3_verification.yml
+          ai/tests/test_emlis_nls_v3_s11_g4b_runtime_preparation_controller_v1.py
+          ai/tools/emlis_nls_v3_s11_g4b_runtime_acquisition_v1.py
+          ai/tools/emlis_nls_v3_s11_g4b_runtime_preparation_contract_v1.py
+          EOF
+          git diff --name-only HEAD^ HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual-paths"
+          cmp "$RUNNER_TEMP/expected-paths" "$RUNNER_TEMP/actual-paths"
+          echo '966587a6457dc6376d53272e96019909d4c11ec98acc4c85d337f300ea462816  ai/tools/emlis_nls_v3_s11_g4b_runtime_preparation_contract_v1.py' | sha256sum --check -
+          echo 'de39e53edf88018c0c87179e0a5760986f995537867c588102679a704e5b007b  ai/tools/emlis_nls_v3_s11_g4b_runtime_acquisition_v1.py' | sha256sum --check -
+          echo 'd5dcbeb3424ad39b0e249d02a488d53c5638ab207e5a3359ec026ab6629c90a7  ai/tests/test_emlis_nls_v3_s11_g4b_runtime_preparation_controller_v1.py' | sha256sum --check -
+      - name: Materialize frozen interpreter and pip source
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime_dir="$RUNNER_TEMP/g4b-runtime"
+          archive="$RUNNER_TEMP/python.tar.gz"
+          wheel="$RUNNER_TEMP/pip-26.0.1-py3-none-any.whl"
+          curl --fail --location --silent --show-error \
+            'https://github.com/astral-sh/python-build-standalone/releases/download/20260303/cpython-3.12.13%2B20260303-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz' \
+            --output "$archive"
+          echo 'c710dd6b63e4df92f4c5b7b29ccad4276226a024a9017d5018f15321c7854af4  '"$archive" | sha256sum --check -
+          mkdir "$runtime_dir"
+          tar -xzf "$archive" -C "$runtime_dir"
+          staging_py="$runtime_dir/python/bin/python3.12"
+          echo '9ed008e5a8685235361f0c53771b520ab082dd99a877ad2fd796a93fa4c0b488  '"$staging_py" | sha256sum --check -
+          curl --fail --location --silent --show-error \
+            'https://files.pythonhosted.org/packages/de/f0/c81e05b613866b76d2d1066490adf1a3dbc4ee9d9c839961c3fc8a6997af/pip-26.0.1-py3-none-any.whl' \
+            --output "$wheel"
+          echo 'bdb1b08f4274833d62c1aa29e20907365a2ceb950410df15fc9521bad440122b  '"$wheel" | sha256sum --check -
+          purelib=$("$staging_py" -E -s -S -B -c 'import sysconfig; print(sysconfig.get_path("purelib"))')
+          rm -rf "$purelib/pip" "$purelib"/pip-*.dist-info
+          "$staging_py" -E -s -S -B -m zipfile -e "$wheel" "$purelib"
+          echo '623cc9023a9fefc01136c2e59c94fd97a7cd6e9c833c903e6ab3885d8b0ae489  '"$purelib/pip/_internal/cli/main_parser.py" | sha256sum --check -
+          echo '5e980e2254d02e0cf73ef0d3da7ee3d8dcd7feb54564b0881bbb7b6f675d85c3  '"$purelib/pip/_internal/build_env.py" | sha256sum --check -
+          echo '24ea04653c2bb6fee345a5c1920490280134e323727c59861f1aa91e2187bcbd  '"$purelib/pip/__pip-runner__.py" | sha256sum --check -
+          sudo -n mv "$runtime_dir/python" /opt/g4b-v7-python
+          sudo -n find /opt/g4b-v7-python -type d -exec chmod 0755 {} +
+          py='/opt/g4b-v7-python/bin/python3.12'
+          echo '9ed008e5a8685235361f0c53771b520ab082dd99a877ad2fd796a93fa4c0b488  '"$py" | sha256sum --check -
+          printf '%s\n' "$py" > "$RUNNER_TEMP/g4b-python"
+      - name: Run portable stdlib unittest exact18 once
+        shell: bash
+        run: |
+          set -euo pipefail
+          py=$(cat "$RUNNER_TEMP/g4b-python")
+          set +e
+          "$py" -E -s -S -B -m unittest -v \
+            ai.tests.test_emlis_nls_v3_s11_g4b_runtime_preparation_controller_v1 \
+            > "$RUNNER_TEMP/portable.stdout" 2> "$RUNNER_TEMP/portable.stderr"
+          rc=$?
+          set -e
+          test "$rc" -eq 0
+          grep -F 'Ran 18 tests' "$RUNNER_TEMP/portable.stderr"
+          grep -Fx 'OK' "$RUNNER_TEMP/portable.stderr"
+          sha256sum "$RUNNER_TEMP/portable.stdout" "$RUNNER_TEMP/portable.stderr"
+      - name: Fresh same-job credential admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          py=$(cat "$RUNNER_TEMP/g4b-python")
+          sudo -n "$py" -E -s -S -B - <<'PY'
+          import os
+          import sys
+          def mapped(path, identity):
+              for line in open(path, encoding="ascii"):
+                  inside, outside, length = map(int, line.split())
+                  if length > 0 and inside <= identity < inside + length:
+                      return True
+              return False
+          status = {}
+          for line in open("/proc/self/status", encoding="ascii"):
+              if ":" in line:
+                  key, value = line.split(":", 1)
+                  status[key] = value.strip()
+          required = (1 << 6) | (1 << 7) | (1 << 8)
+          checks = {
+              "cpython": sys.implementation.name == "cpython",
+              "python_version": sys.version_info[:3] == (3, 12, 13),
+              "root": os.geteuid() == 0 and os.getegid() == 0,
+              "setgroups_allow": open("/proc/self/setgroups", encoding="ascii").read().strip() == "allow",
+              "uid_65534_mapped": mapped("/proc/self/uid_map", 65534),
+              "gid_65534_mapped": mapped("/proc/self/gid_map", 65534),
+              "caps": int(status.get("CapEff", "0"), 16) & required == required,
+          }
+          if not all(checks.values()):
+              print(checks)
+              raise SystemExit(80)
+          print("G4B_V7_SAME_JOB_ADMISSION_PASS")
+          PY
+      - name: Run privileged actual-DAC exact1 once
+        shell: bash
+        run: |
+          set -euo pipefail
+          py=$(cat "$RUNNER_TEMP/g4b-python")
+          set +e
+          sudo -n -- "$py" -E -s -S -B -m \
+            ai.tests.test_emlis_nls_v3_s11_g4b_runtime_preparation_controller_v1 \
+            --privileged-fd9-integration-parent-v2 \
+            > "$RUNNER_TEMP/privileged.stdout" 2> "$RUNNER_TEMP/privileged.stderr"
+          rc=$?
+          set -e
+          sha256sum "$RUNNER_TEMP/privileged.stdout" "$RUNNER_TEMP/privileged.stderr"
+          test "$rc" -eq 0
+          printf 'PRIVILEGED_ACTUAL_DAC_INTEGRATION_EXACT1_PASS\n' > "$RUNNER_TEMP/expected.stdout"
+          cat > "$RUNNER_TEMP/expected.stderr" <<'EOF'
+          G4B_V6_BODY_FREE:{"event_class":"EXECVE_REQUESTED","schema_version":"g4b.v6.privileged_event.v1","sequence_number":1}
+          G4B_V6_BODY_FREE:{"event_class":"POSTEXEC_ENTERED","schema_version":"g4b.v6.privileged_event.v1","sequence_number":2}
+          EOF
+          cmp "$RUNNER_TEMP/expected.stdout" "$RUNNER_TEMP/privileged.stdout"
+          cmp "$RUNNER_TEMP/expected.stderr" "$RUNNER_TEMP/privileged.stderr"
+          echo 'G4B_V7_EXACT3_VERIFICATION_PASS'
