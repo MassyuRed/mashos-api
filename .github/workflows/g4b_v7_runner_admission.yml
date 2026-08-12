@@ -8,16 +8,23 @@ permissions:
 jobs:
   admission:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Verify fixed non-root credential transition
+      - name: Verify fixed non-root transition and frozen interpreter
         shell: bash
         run: |
           set -euo pipefail
-          sudo -n /usr/bin/python3 - <<'PY'
+          runtime_dir="$RUNNER_TEMP/g4b-runtime"
+          archive="$RUNNER_TEMP/python.tar.gz"
+          curl --fail --location --silent --show-error             'https://github.com/astral-sh/python-build-standalone/releases/download/20260303/cpython-3.12.13%2B20260303-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz'             --output "$archive"
+          echo 'c710dd6b63e4df92f4c5b7b29ccad4276226a024a9017d5018f15321c7854af4  '"$archive" | sha256sum --check -
+          mkdir "$runtime_dir"
+          tar -xzf "$archive" -C "$runtime_dir"
+          "$runtime_dir/python/bin/python3.12" --version
+          sha256sum "$runtime_dir/python/bin/python3.12"
+          sudo -n "$runtime_dir/python/bin/python3.12" - <<'PY'
           import json
           import os
-
           result = {
               "euid_before": os.geteuid(),
               "egid_before": os.getegid(),
