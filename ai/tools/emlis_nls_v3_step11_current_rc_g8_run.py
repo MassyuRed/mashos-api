@@ -13,6 +13,7 @@ directory outside the repository.
 """
 
 import argparse
+import ast
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
@@ -23,6 +24,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat as stat_module
 import sys
 from typing import Any, Mapping, Sequence
 
@@ -47,13 +49,17 @@ _BATCH_PATH = (
 _MANIFEST_PATH = _BATCH_PATH.with_name("batch_001_manifest.json")
 _PRIVATE_FILENAME = "current_rc_g8_exact100_private.json"
 _BODY_FREE_FILENAME = "current_rc_g8_exact100_body_free.json"
-_PRIVATE_SCHEMA = "cocolon.emlis.nls_v3.current_rc.g8.private_exact100.v1"
+_PRIVATE_SCHEMA = "cocolon.emlis.nls_v3.current_rc.g8.private_exact100.v3"
 _BODY_FREE_SCHEMA = (
-    "cocolon.emlis.nls_v3.current_rc.g8.body_free_exact100.v1"
+    "cocolon.emlis.nls_v3.current_rc.g8.body_free_exact100.v3"
 )
 _CASE_RE = re.compile(r"^nls3s_b001_[0-9]{4}$")
 _RUN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{2,63}$")
 _CODE_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,127}$")
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_ALLOWED_DISPOSITIONS = frozenset(
+    {"selected", "no_valid_candidate", "fail_close"}
+)
 _TRUST_PROJECTION_FIELDS = (
     "source_atom_id",
     "semantic_family",
@@ -75,6 +81,37 @@ _CHECK_KEYS = (
     "reception_bindings_exact",
     "dimension_loci_exact",
 )
+_PRIVATE_ROW_KEYS = frozenset(
+    {
+        "case_id",
+        "source_case_commitment",
+        "source_input",
+        "disposition",
+        "current_candidate_id",
+        "candidate_output_utf8",
+        "machine_checks",
+        "failure_code",
+        "exception_captured",
+    }
+)
+_PUBLIC_FAILURE_CODES = frozenset(
+    {
+        "CURRENT_RC_G8_BASE_RUNTIME_INVALID",
+        "CURRENT_RC_G8_BASE_STATUS_INVALID",
+        "CURRENT_RC_G8_CASE_REJECTED",
+        "CURRENT_RC_G8_CURRENT_BUILDER_UNAVAILABLE",
+        "CURRENT_RC_G8_INVERSE_REJECTED",
+        "CURRENT_RC_G8_PRIVATE_OUTPUT_INVALID",
+        "STEP11_GROUNDED_PHRASE_AMBIGUOUS",
+        "STEP11_INPUT_SPECIFIC_ANCHOR_UNRESOLVED",
+        "STEP11_RC0031_OWNER_ROLE_TYPED_RECOMPOSITION_INVALID",
+        "STEP11_RC0031_PRODUCT_OWNER_EXPRESSION_INVALID",
+        "STEP11_RELATION_MULTI_EDGE_LOCAL_ANAPHORA_AMBIGUOUS",
+        "STEP11_REQUIRED_OWNER_INPUT_SPECIFICITY_UNRESOLVED",
+    }
+)
+_PAIR_KEYS = frozenset({"body_free_core_sha256", "run_hmac"})
+_SOURCE_SEARCH_ROOTS = (SERVICES, HELPERS, TOOLS)
 
 
 class CurrentRcG8RunError(RuntimeError):
@@ -168,12 +205,158 @@ def _exact100_sources(
     return samples, manifest, commitment_by_case
 
 
-def _source_closure(batch_path: Path, manifest_path: Path) -> str:
-    """Bind one run to the exact current builder and exact-100 inputs."""
+def _repo_relative(path: Path) -> tuple[Path, str]:
+    try:
+        resolved = path.resolve(strict=True)
+        relative = resolved.relative_to(REPO_ROOT).as_posix()
+    except Exception as exc:
+        raise CurrentRcG8RunError("CURRENT_RC_G8_SOURCE_UNAVAILABLE") from exc
+    if (
+        not relative
+        or relative.startswith("../")
+        or "/../" in relative
+        or resolved != REPO_ROOT / relative
+    ):
+        raise CurrentRcG8RunError("CURRENT_RC_G8_SOURCE_UNAVAILABLE")
+    return resolved, relative
 
-    paths = (
-        batch_path,
-        manifest_path,
+
+def _module_name(root: Path, path: Path) -> str:
+    relative = path.relative_to(root)
+    parts = list(relative.parts)
+    if parts[-1] == "__init__.py":
+        parts = parts[:-1]
+    else:
+        parts[-1] = Path(parts[-1]).stem
+    return ".".join(parts)
+
+
+def _local_module_index() -> tuple[dict[str, Path], dict[Path, str]]:
+    by_name: dict[str, Path] = {}
+    by_path: dict[Path, str] = {}
+    for root in _SOURCE_SEARCH_ROOTS:
+        for path in sorted(root.rglob("*.py")):
+            resolved, _relative = _repo_relative(path)
+            name = _module_name(root, resolved)
+            if not name:
+                continue
+            prior = by_name.get(name)
+            if prior is not None and prior != resolved:
+                raise CurrentRcG8RunError(
+                    "CURRENT_RC_G8_SOURCE_MODULE_AMBIGUOUS"
+                )
+            by_name[name] = resolved
+            by_path[resolved] = name
+    return by_name, by_path
+
+
+def _import_candidates(
+    tree: ast.AST,
+    *,
+    module_name: str,
+    is_package: bool,
+) -> tuple[str, ...]:
+    names: set[str] = set()
+    package = module_name.split(".") if is_package else module_name.split(".")[:-1]
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+            continue
+        if isinstance(node, ast.ImportFrom):
+            if node.level:
+                drop = node.level - 1
+                if drop > len(package):
+                    continue
+                base_parts = package[: len(package) - drop]
+                if node.module:
+                    base_parts.extend(node.module.split("."))
+                base = ".".join(base_parts)
+            else:
+                base = node.module or ""
+            if base:
+                names.add(base)
+            for alias in node.names:
+                if alias.name != "*":
+                    names.add(".".join(row for row in (base, alias.name) if row))
+            continue
+        if (
+            isinstance(node, ast.Call)
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and type(node.args[0].value) is str
+            and (
+                isinstance(node.func, ast.Name)
+                and node.func.id in {"import_module", "__import__"}
+                or isinstance(node.func, ast.Attribute)
+                and node.func.attr == "import_module"
+            )
+        ):
+            names.add(node.args[0].value)
+    return tuple(sorted(name for name in names if name))
+
+
+def _transitive_local_python_sources(starts: Sequence[Path]) -> set[Path]:
+    by_name, by_path = _local_module_index()
+    pending = [path.resolve() for path in starts]
+    sources: set[Path] = set()
+    while pending:
+        path = pending.pop()
+        if path in sources:
+            continue
+        if path.suffix != ".py":
+            continue
+        _resolved, _relative = _repo_relative(path)
+        try:
+            tree = ast.parse(path.read_bytes(), filename=path.name)
+        except Exception as exc:
+            raise CurrentRcG8RunError("CURRENT_RC_G8_SOURCE_UNAVAILABLE") from exc
+        sources.add(path)
+        module_name = by_path.get(path, path.stem)
+        for candidate in _import_candidates(
+            tree,
+            module_name=module_name,
+            is_package=path.name == "__init__.py",
+        ):
+            name = candidate
+            while name:
+                imported = by_name.get(name)
+                if imported is not None:
+                    if imported not in sources:
+                        pending.append(imported)
+                    break
+                name = name.rpartition(".")[0]
+    return sources
+
+
+def _closure_data_paths(batch_path: Path, manifest_path: Path) -> set[Path]:
+    fixture_root = AI_ROOT / "tests" / "fixtures"
+    schema_root = AI_ROOT / "tests" / "schemas"
+    paths = {
+        batch_path.resolve(),
+        manifest_path.resolve(),
+        batch_path.with_name("batch_001_coverage_matrix.json").resolve(),
+        batch_path.with_name("batch_001_duplicate_report.json").resolve(),
+    }
+    paths.update(
+        path.resolve()
+        for path in (fixture_root / "emlis_nls_v3").rglob("*")
+        if path.is_file()
+    )
+    paths.update(
+        path.resolve()
+        for path in fixture_root.glob("emlis_nls_v3_s*.json")
+        if path.is_file()
+    )
+    paths.update(
+        path.resolve()
+        for path in schema_root.glob("emlis_nls_v3*.json")
+        if path.is_file()
+    )
+    return paths
+
+
+def _source_closure_paths(batch_path: Path, manifest_path: Path) -> tuple[Path, ...]:
+    roots = (
         Path(__file__),
         SERVICES / "emlis_ai_step10_app_reachable_contract_v3.py",
         SERVICES / "emlis_ai_step11_runtime_adapter_v3.py",
@@ -185,17 +368,183 @@ def _source_closure(batch_path: Path, manifest_path: Path) -> str:
         SERVICES / "emlis_ai_step11_natural_surface_matcher_v3.py",
         SERVICES / "emlis_ai_step11_rc0031_experiment_surface_catalog_v3.py",
         SERVICES / "emlis_ai_step11_rc0031_reception_focus_authority_v3.py",
+        TOOLS / "emlis_nls_v3_batch_run.py",
+        TOOLS / "emlis_nls_v3_rc0029_surface_repair_bounded_experiment.py",
+        HELPERS / "emlis_nls_v3_s2_sample_registry.py",
     )
-    material = bytearray(b"cocolon.current-rc.g8.source-closure.v1\0")
+    for path in roots:
+        _repo_relative(path)
+    paths = _transitive_local_python_sources(roots)
+    paths.update(_closure_data_paths(batch_path, manifest_path))
+    return tuple(sorted(paths, key=lambda path: _repo_relative(path)[1]))
+
+
+def _closure_digest(files: Sequence[Mapping[str, Any]]) -> str:
+    return hashlib.sha256(
+        b"cocolon.current-rc.g8.source-closure.v3\0"
+        + _canonical_json_bytes(list(files))
+    ).hexdigest()
+
+
+def _source_closure_snapshot(
+    batch_path: Path,
+    manifest_path: Path,
+) -> dict[str, Any]:
+    rows: list[dict[str, str]] = []
     try:
-        for path in paths:
-            relative = path.resolve().relative_to(REPO_ROOT).as_posix()
-            material.extend(relative.encode("utf-8", errors="strict"))
-            material.extend(b"\0")
-            material.extend(hashlib.sha256(path.read_bytes()).digest())
+        for path in _source_closure_paths(batch_path, manifest_path):
+            resolved, relative = _repo_relative(path)
+            rows.append(
+                {
+                    "path": relative,
+                    "sha256": hashlib.sha256(resolved.read_bytes()).hexdigest(),
+                }
+            )
+    except CurrentRcG8RunError:
+        raise
     except Exception as exc:
         raise CurrentRcG8RunError("CURRENT_RC_G8_SOURCE_UNAVAILABLE") from exc
-    return hashlib.sha256(material).hexdigest()
+    return {
+        "source_closure_sha256": _closure_digest(rows),
+        "source_closure_file_count": len(rows),
+        "source_closure_files": rows,
+    }
+
+
+def _source_closure(batch_path: Path, manifest_path: Path) -> str:
+    """Compatibility projection of the recomputable v3 closure."""
+
+    return str(
+        _source_closure_snapshot(batch_path, manifest_path)[
+            "source_closure_sha256"
+        ]
+    )
+
+
+def _validated_source_snapshot(value: Any) -> dict[str, Any]:
+    if type(value) is not dict or set(value) != {
+        "source_closure_sha256",
+        "source_closure_file_count",
+        "source_closure_files",
+    }:
+        raise CurrentRcG8RunError("CURRENT_RC_G8_SOURCE_CLOSURE_INVALID")
+    files = value.get("source_closure_files")
+    if (
+        type(value.get("source_closure_sha256")) is not str
+        or _SHA256_RE.fullmatch(value["source_closure_sha256"]) is None
+        or type(value.get("source_closure_file_count")) is not int
+        or type(files) is not list
+        or not files
+    ):
+        raise CurrentRcG8RunError("CURRENT_RC_G8_SOURCE_CLOSURE_INVALID")
+    previous = ""
+    for row in files:
+        if type(row) is not dict or set(row) != {"path", "sha256"}:
+            raise CurrentRcG8RunError("CURRENT_RC_G8_SOURCE_CLOSURE_INVALID")
+        path = row.get("path")
+        sha256 = row.get("sha256")
+        if (
+            type(path) is not str
+            or not path
+            or Path(path).is_absolute()
+            or ".." in Path(path).parts
+            or path <= previous
+            or type(sha256) is not str
+            or _SHA256_RE.fullmatch(sha256) is None
+        ):
+            raise CurrentRcG8RunError("CURRENT_RC_G8_SOURCE_CLOSURE_INVALID")
+        previous = path
+    if (
+        value.get("source_closure_file_count") != len(files)
+        or value.get("source_closure_sha256") != _closure_digest(files)
+    ):
+        raise CurrentRcG8RunError("CURRENT_RC_G8_SOURCE_CLOSURE_INVALID")
+    return {
+        "source_closure_sha256": value["source_closure_sha256"],
+        "source_closure_file_count": len(files),
+        "source_closure_files": [dict(row) for row in files],
+    }
+
+
+def _assert_source_unchanged(
+    expected: Mapping[str, Any],
+    batch_path: Path,
+    manifest_path: Path,
+    *,
+    code: str,
+) -> None:
+    expected_snapshot = _validated_source_snapshot(expected)
+    current = _source_closure_snapshot(batch_path, manifest_path)
+    if _canonical_json_bytes(current) != _canonical_json_bytes(expected_snapshot):
+        raise CurrentRcG8RunError(code)
+
+
+def _bound_exact100_sources(
+    batch_path: Path,
+    manifest_path: Path,
+) -> tuple[
+    list[dict[str, Any]],
+    dict[str, Any],
+    dict[str, str],
+    tuple[tuple[str, str, bytes], ...],
+    dict[str, Any],
+]:
+    """Load exact100 only inside one stable, recomputable source closure."""
+
+    source_snapshot = _source_closure_snapshot(batch_path, manifest_path)
+    samples, manifest, commitment_by_case = _exact100_sources(
+        batch_path, manifest_path
+    )
+    _assert_source_unchanged(
+        source_snapshot,
+        batch_path,
+        manifest_path,
+        code="CURRENT_RC_G8_SOURCE_CHANGED_DURING_PREFLIGHT",
+    )
+    case_sources = _exact100_source_bindings(samples, commitment_by_case)
+    return (
+        samples,
+        manifest,
+        commitment_by_case,
+        case_sources,
+        source_snapshot,
+    )
+
+
+def _exact100_source_bindings(
+    samples: Sequence[Mapping[str, Any]],
+    commitment_by_case: Mapping[str, str],
+) -> tuple[tuple[str, str, bytes], ...]:
+    """Bind each exact100 row to its validated frozen input and manifest row."""
+
+    expected_ids = tuple(
+        f"nls3s_b001_{index:04d}" for index in range(1, 101)
+    )
+    if len(samples) != 100 or tuple(commitment_by_case) != expected_ids:
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_CASE_SOURCE_BINDING_INVALID"
+        )
+    bindings: list[tuple[str, str, bytes]] = []
+    for expected_id, sample in zip(expected_ids, samples, strict=True):
+        commitment = commitment_by_case.get(expected_id)
+        if (
+            type(sample) is not dict
+            or sample.get("case_id") != expected_id
+            or type(sample.get("input")) is not dict
+            or type(commitment) is not str
+            or _SHA256_RE.fullmatch(commitment) is None
+        ):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_CASE_SOURCE_BINDING_INVALID"
+            )
+        bindings.append(
+            (
+                expected_id,
+                commitment,
+                _canonical_json_bytes(sample["input"]),
+            )
+        )
+    return tuple(bindings)
 
 
 def _owner_term(
@@ -907,6 +1256,7 @@ def _case_row(
 
     case_id = sample.get("case_id")
     checks = _empty_checks()
+    exception_captured = False
     if type(case_id) is not str or _CASE_RE.fullmatch(case_id) is None:
         raise CurrentRcG8RunError("CURRENT_RC_G8_SAMPLE_INVALID")
     try:
@@ -920,6 +1270,7 @@ def _case_row(
         disposition = "fail_close"
         candidate = None
         failure_code = _closed_code(exc)
+        exception_captured = True
     output = None
     candidate_id = None
     if candidate is not None:
@@ -932,15 +1283,17 @@ def _case_row(
             disposition = "fail_close"
             failure_code = "CURRENT_RC_G8_PRIVATE_OUTPUT_INVALID"
             checks["final_utf8_valid"] = False
+            exception_captured = True
     return {
         "case_id": case_id,
         "source_case_commitment": source_case_commitment,
         "source_input": dict(sample["input"]),
         "disposition": disposition,
         "current_candidate_id": candidate_id,
-        "selected_output_utf8": output,
+        "candidate_output_utf8": output,
         "machine_checks": checks,
         "failure_code": failure_code,
+        "exception_captured": exception_captured,
     }
 
 
@@ -965,14 +1318,424 @@ def _run_cases(
         return list(executor.map(_case_row_job, jobs, chunksize=1))
 
 
-def _case_commitment(key: bytes, run_id: str, row: Mapping[str, Any]) -> str:
+def _validate_private_rows(
+    rows: Any,
+    *,
+    expected_case_sources: Sequence[tuple[str, str, bytes]],
+) -> list[dict[str, Any]]:
+    if type(rows) is not list or len(rows) != 100:
+        raise CurrentRcG8RunError("CURRENT_RC_G8_EXACT100_REQUIRED")
+    expected_ids = tuple(f"nls3s_b001_{index:04d}" for index in range(1, 101))
+    if (
+        type(expected_case_sources) not in {list, tuple}
+        or len(expected_case_sources) != 100
+    ):
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_CASE_SOURCE_BINDING_INVALID"
+        )
+    actual: list[dict[str, Any]] = []
+    for expected_id, raw, source_binding in zip(
+        expected_ids, rows, expected_case_sources, strict=True
+    ):
+        if (
+            type(source_binding) is not tuple
+            or len(source_binding) != 3
+            or source_binding[0] != expected_id
+            or type(source_binding[1]) is not str
+            or _SHA256_RE.fullmatch(source_binding[1]) is None
+            or type(source_binding[2]) is not bytes
+            or not source_binding[2]
+        ):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_CASE_SOURCE_BINDING_INVALID"
+            )
+        if type(raw) is not dict or set(raw) != _PRIVATE_ROW_KEYS:
+            raise CurrentRcG8RunError("CURRENT_RC_G8_PRIVATE_ROW_INVALID")
+        row = dict(raw)
+        checks = row.get("machine_checks")
+        candidate_id = row.get("current_candidate_id")
+        output = row.get("candidate_output_utf8")
+        failure = row.get("failure_code")
+        disposition = row.get("disposition")
+        exception_captured = row.get("exception_captured")
+        if (
+            row.get("case_id") != expected_id
+            or type(row.get("source_case_commitment")) is not str
+            or _SHA256_RE.fullmatch(row["source_case_commitment"]) is None
+            or type(row.get("source_input")) is not dict
+            or disposition not in _ALLOWED_DISPOSITIONS
+            or type(exception_captured) is not bool
+            or type(checks) is not dict
+            # Canonical JSON sorts object keys, so validate the exact key set
+            # rather than relying on the producer's insertion order.
+            or set(checks) != set(_CHECK_KEYS)
+            or any(type(value) is not bool for value in checks.values())
+            or (
+                candidate_id is not None
+                and (type(candidate_id) is not str or not candidate_id)
+            )
+            or (output is not None and (type(output) is not str or not output))
+            or (
+                failure is not None
+                and (
+                    type(failure) is not str
+                    or _CODE_RE.fullmatch(failure) is None
+                )
+            )
+        ):
+            raise CurrentRcG8RunError("CURRENT_RC_G8_PRIVATE_ROW_INVALID")
+        if disposition == "selected":
+            valid_state = (
+                type(candidate_id) is str
+                and type(output) is str
+                and failure is None
+                and exception_captured is False
+                and all(checks.values())
+            )
+        elif disposition == "no_valid_candidate":
+            valid_state = (
+                candidate_id is None
+                and output is None
+                and failure is None
+                and exception_captured is False
+                and checks["input_projected"]
+                and checks["base_runtime_valid"]
+                and not checks["current_builder_called"]
+                and not any(
+                    checks[key]
+                    for key in _CHECK_KEYS
+                    if key
+                    not in {"input_projected", "base_runtime_valid"}
+                )
+            )
+        else:
+            candidate_absent = (
+                candidate_id is None
+                and output is None
+                and checks["current_builder_called"] is False
+            )
+            inverse_rejected = (
+                type(candidate_id) is str
+                and type(output) is str
+                and failure == "CURRENT_RC_G8_INVERSE_REJECTED"
+                and exception_captured is False
+                and checks["input_projected"]
+                and checks["base_runtime_valid"]
+                and checks["current_builder_called"]
+            )
+            output_rejected = (
+                type(candidate_id) is str
+                and output is None
+                and failure == "CURRENT_RC_G8_PRIVATE_OUTPUT_INVALID"
+                and exception_captured is True
+                and checks["input_projected"]
+                and checks["base_runtime_valid"]
+                and checks["current_builder_called"]
+                and checks["final_utf8_valid"] is False
+            )
+            check_progression_exact = bool(
+                (
+                    checks["input_projected"]
+                    or not any(
+                        checks[key]
+                        for key in _CHECK_KEYS
+                        if key != "input_projected"
+                    )
+                )
+                and (
+                    checks["base_runtime_valid"]
+                    or not any(
+                        checks[key]
+                        for key in _CHECK_KEYS
+                        if key
+                        not in {"input_projected", "base_runtime_valid"}
+                    )
+                )
+                and (
+                    checks["current_builder_called"]
+                    or not any(
+                        checks[key]
+                        for key in _CHECK_KEYS
+                        if key
+                        not in {
+                            "input_projected",
+                            "base_runtime_valid",
+                            "current_builder_called",
+                        }
+                    )
+                )
+            )
+            valid_state = bool(
+                type(failure) is str
+                and not all(checks.values())
+                and check_progression_exact
+                and (candidate_absent or inverse_rejected or output_rejected)
+            )
+        if not valid_state:
+            raise CurrentRcG8RunError("CURRENT_RC_G8_PRIVATE_STATE_INVALID")
+        if (
+            not hmac.compare_digest(
+                row["source_case_commitment"], source_binding[1]
+            )
+            or _canonical_json_bytes(row["source_input"])
+            != source_binding[2]
+        ):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_CASE_SOURCE_BINDING_INVALID"
+            )
+        actual.append(row)
+    return actual
+
+
+def _public_failure_reason(row: Mapping[str, Any]) -> str:
+    disposition = row["disposition"]
+    if disposition == "selected":
+        return "CURRENT_RC_G8_SELECTED"
+    if disposition == "no_valid_candidate":
+        return "CURRENT_RC_G8_NO_VALID_CANDIDATE"
+    code = row.get("failure_code")
+    return (
+        str(code)
+        if code in _PUBLIC_FAILURE_CODES
+        else "CURRENT_RC_G8_CASE_REJECTED"
+    )
+
+
+def _case_commitment(
+    key: bytes,
+    run_id: str,
+    source_closure: str,
+    ordinal: int,
+    row: Mapping[str, Any],
+) -> str:
+    if type(key) is not bytes or len(key) != 32:
+        raise CurrentRcG8RunError("CURRENT_RC_G8_COMMITMENT_KEY_INVALID")
     material = (
-        b"cocolon.current-rc.g8.case-result.v1\0"
+        b"cocolon.current-rc.g8.case-result.v3\0"
         + run_id.encode("ascii", errors="strict")
+        + b"\0"
+        + source_closure.encode("ascii", errors="strict")
+        + b"\0"
+        + str(ordinal).encode("ascii", errors="strict")
         + b"\0"
         + _canonical_json_bytes(row)
     )
     return hmac.new(key, material, hashlib.sha256).hexdigest()
+
+
+def _public_case_row(
+    row: Mapping[str, Any],
+    *,
+    ordinal: int,
+    case_hmac: str,
+) -> dict[str, Any]:
+    return {
+        "ordinal": ordinal,
+        "case_id": row["case_id"],
+        "source_case_commitment": row["source_case_commitment"],
+        "disposition": row["disposition"],
+        "candidate_present": row["current_candidate_id"] is not None,
+        "output_present": row["candidate_output_utf8"] is not None,
+        "exception_present": row["exception_captured"],
+        "failure_reason_code": _public_failure_reason(row),
+        "machine_checks": dict(row["machine_checks"]),
+        "case_hmac": case_hmac,
+    }
+
+
+def _run_commitment(
+    key: bytes,
+    *,
+    run_id: str,
+    source_closure: str,
+    private_core_sha256: str,
+    body_free_core_sha256: str,
+) -> str:
+    material = (
+        b"cocolon.current-rc.g8.run-pair.v3\0"
+        + run_id.encode("ascii", errors="strict")
+        + b"\0"
+        + source_closure.encode("ascii", errors="strict")
+        + b"\0"
+        + private_core_sha256.encode("ascii", errors="strict")
+        + b"\0"
+        + body_free_core_sha256.encode("ascii", errors="strict")
+    )
+    return hmac.new(key, material, hashlib.sha256).hexdigest()
+
+
+def _artifact_source_snapshot(value: Mapping[str, Any]) -> dict[str, Any]:
+    return _validated_source_snapshot(
+        {
+            "source_closure_sha256": value.get("source_closure_sha256"),
+            "source_closure_file_count": value.get(
+                "source_closure_file_count"
+            ),
+            "source_closure_files": value.get("source_closure_files"),
+        }
+    )
+
+
+def _validate_pair(
+    private: Any,
+    body_free: Any,
+    *,
+    key: bytes,
+    expected_source: Mapping[str, Any],
+    expected_case_sources: Sequence[tuple[str, str, bytes]],
+) -> None:
+    private_keys = {
+        "schema_version",
+        "run_id",
+        "source_closure_sha256",
+        "source_closure_file_count",
+        "source_closure_files",
+        "case_count",
+        "cases",
+        "pair_integrity",
+    }
+    body_free_keys = private_keys | {"disposition_counts"}
+    body_free_keys.add("exception_count")
+    if (
+        type(private) is not dict
+        or set(private) != private_keys
+        or type(body_free) is not dict
+        or set(body_free) != body_free_keys
+        or private.get("schema_version") != _PRIVATE_SCHEMA
+        or body_free.get("schema_version") != _BODY_FREE_SCHEMA
+        or private.get("run_id") != body_free.get("run_id")
+        or type(private.get("run_id")) is not str
+        or _RUN_ID_RE.fullmatch(private["run_id"]) is None
+        or private.get("case_count") != 100
+        or body_free.get("case_count") != 100
+    ):
+        raise CurrentRcG8RunError("CURRENT_RC_G8_PAIR_SHAPE_INVALID")
+    expected = _validated_source_snapshot(expected_source)
+    private_source = _artifact_source_snapshot(private)
+    body_free_source = _artifact_source_snapshot(body_free)
+    if not (
+        _canonical_json_bytes(private_source)
+        == _canonical_json_bytes(body_free_source)
+        == _canonical_json_bytes(expected)
+    ):
+        raise CurrentRcG8RunError("CURRENT_RC_G8_SOURCE_CLOSURE_INVALID")
+    private_cases = private.get("cases")
+    public_cases = body_free.get("cases")
+    if (
+        type(private_cases) is not list
+        or len(private_cases) != 100
+        or type(public_cases) is not list
+        or len(public_cases) != 100
+    ):
+        raise CurrentRcG8RunError("CURRENT_RC_G8_EXACT100_REQUIRED")
+    rows: list[dict[str, Any]] = []
+    for ordinal, envelope in enumerate(private_cases, start=1):
+        if (
+            type(envelope) is not dict
+            or set(envelope) != {"ordinal", "result", "case_hmac"}
+            or envelope.get("ordinal") != ordinal
+            or type(envelope.get("result")) is not dict
+            or type(envelope.get("case_hmac")) is not str
+            or _SHA256_RE.fullmatch(envelope["case_hmac"]) is None
+        ):
+            raise CurrentRcG8RunError("CURRENT_RC_G8_PRIVATE_ROW_INVALID")
+        rows.append(dict(envelope["result"]))
+    rows = _validate_private_rows(
+        rows, expected_case_sources=expected_case_sources
+    )
+    source_closure = expected["source_closure_sha256"]
+    for ordinal, (row, private_envelope, public_row) in enumerate(
+        zip(rows, private_cases, public_cases, strict=True), start=1
+    ):
+        expected_hmac = _case_commitment(
+            key,
+            private["run_id"],
+            source_closure,
+            ordinal,
+            row,
+        )
+        if not hmac.compare_digest(
+            expected_hmac, private_envelope["case_hmac"]
+        ):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_HMAC_VERIFICATION_FAILED"
+            )
+        expected_public = _public_case_row(
+            row, ordinal=ordinal, case_hmac=expected_hmac
+        )
+        if (
+            type(public_row) is not dict
+            or _canonical_json_bytes(public_row)
+            != _canonical_json_bytes(expected_public)
+        ):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_BODY_FREE_PROJECTION_INVALID"
+            )
+    counts = Counter(row["disposition"] for row in rows)
+    expected_counts = {
+        disposition: counts.get(disposition, 0)
+        for disposition in sorted(_ALLOWED_DISPOSITIONS)
+    }
+    if body_free.get("disposition_counts") != expected_counts:
+        raise CurrentRcG8RunError("CURRENT_RC_G8_ACCOUNTING_INVALID")
+    if body_free.get("exception_count") != sum(
+        row["exception_captured"] for row in rows
+    ):
+        raise CurrentRcG8RunError("CURRENT_RC_G8_ACCOUNTING_INVALID")
+    private_pair = private.get("pair_integrity")
+    body_free_pair = body_free.get("pair_integrity")
+    if (
+        type(private_pair) is not dict
+        or set(private_pair) != _PAIR_KEYS
+        or type(body_free_pair) is not dict
+        or set(body_free_pair) != _PAIR_KEYS
+        or private_pair != body_free_pair
+        or any(
+            type(value) is not str or _SHA256_RE.fullmatch(value) is None
+            for value in private_pair.values()
+        )
+    ):
+        raise CurrentRcG8RunError("CURRENT_RC_G8_PAIR_INTEGRITY_INVALID")
+    private_core = dict(private)
+    body_free_core = dict(body_free)
+    private_core.pop("pair_integrity")
+    body_free_core.pop("pair_integrity")
+    private_sha = hashlib.sha256(
+        _canonical_json_bytes(private_core)
+    ).hexdigest()
+    body_free_sha = hashlib.sha256(
+        _canonical_json_bytes(body_free_core)
+    ).hexdigest()
+    expected_run_hmac = _run_commitment(
+        key,
+        run_id=private["run_id"],
+        source_closure=source_closure,
+        private_core_sha256=private_sha,
+        body_free_core_sha256=body_free_sha,
+    )
+    if (
+        private_pair["body_free_core_sha256"] != body_free_sha
+        or not hmac.compare_digest(
+            private_pair["run_hmac"], expected_run_hmac
+        )
+    ):
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_HMAC_VERIFICATION_FAILED"
+        )
+
+
+def _decode_canonical_payload(payload: bytes) -> dict[str, Any]:
+    try:
+        if payload.startswith(b"\xef\xbb\xbf"):
+            raise ValueError("bom")
+        value = json.loads(payload.decode("utf-8", errors="strict"))
+    except Exception as exc:
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_RESULT_NOT_CANONICAL"
+        ) from exc
+    if type(value) is not dict or _canonical_json_bytes(value) != payload:
+        raise CurrentRcG8RunError("CURRENT_RC_G8_RESULT_NOT_CANONICAL")
+    return value
 
 
 def _result_payloads(
@@ -980,50 +1743,80 @@ def _result_payloads(
     *,
     key: bytes,
     run_id: str,
-    source_closure: str,
+    source_snapshot: Mapping[str, Any],
+    expected_case_sources: Sequence[tuple[str, str, bytes]],
 ) -> tuple[bytes, bytes, dict[str, Any]]:
-    if len(rows) != 100:
-        raise CurrentRcG8RunError("CURRENT_RC_G8_EXACT100_REQUIRED")
-    summary: list[dict[str, Any]] = []
-    for row in rows:
-        commitment = _case_commitment(key, run_id, row)
-        if not hmac.compare_digest(
-            commitment, _case_commitment(key, run_id, row)
-        ):
-            raise CurrentRcG8RunError("CURRENT_RC_G8_HMAC_VERIFICATION_FAILED")
-        checks = dict(row["machine_checks"])
-        checks["hmac_commitment_verified"] = True
-        summary.append(
-            {
-                "case_id": row["case_id"],
-                "disposition": row["disposition"],
-                "machine_checks": checks,
-                "hmac_commitment": commitment,
-            }
+    if type(run_id) is not str or _RUN_ID_RE.fullmatch(run_id) is None:
+        raise CurrentRcG8RunError("CURRENT_RC_G8_ARGUMENT_INVALID")
+    source = _validated_source_snapshot(source_snapshot)
+    private_rows = _validate_private_rows(
+        list(rows), expected_case_sources=expected_case_sources
+    )
+    source_closure = source["source_closure_sha256"]
+    private_cases: list[dict[str, Any]] = []
+    body_free_cases: list[dict[str, Any]] = []
+    for ordinal, row in enumerate(private_rows, start=1):
+        commitment = _case_commitment(
+            key, run_id, source_closure, ordinal, row
         )
-    disposition_counts = Counter(row["disposition"] for row in summary)
-    private = {
-        "schema_version": _PRIVATE_SCHEMA,
+        private_cases.append(
+            {"ordinal": ordinal, "result": row, "case_hmac": commitment}
+        )
+        body_free_cases.append(
+            _public_case_row(row, ordinal=ordinal, case_hmac=commitment)
+        )
+    disposition_counts = Counter(
+        row["disposition"] for row in body_free_cases
+    )
+    common = {
         "run_id": run_id,
         "source_closure_sha256": source_closure,
+        "source_closure_file_count": source["source_closure_file_count"],
+        "source_closure_files": source["source_closure_files"],
         "case_count": 100,
-        "cases": list(rows),
     }
-    body_free = {
+    private_core = {
+        "schema_version": _PRIVATE_SCHEMA,
+        **common,
+        "cases": private_cases,
+    }
+    body_free_core = {
         "schema_version": _BODY_FREE_SCHEMA,
-        "run_id": run_id,
-        "source_closure_sha256": source_closure,
-        "case_count": 100,
+        **common,
         "disposition_counts": {
             disposition: disposition_counts.get(disposition, 0)
-            for disposition in (
-                "selected",
-                "no_valid_candidate",
-                "fail_close",
-            )
+            for disposition in sorted(_ALLOWED_DISPOSITIONS)
         },
-        "cases": summary,
+        "exception_count": sum(
+            row["exception_captured"] for row in private_rows
+        ),
+        "cases": body_free_cases,
     }
+    private_core_sha256 = hashlib.sha256(
+        _canonical_json_bytes(private_core)
+    ).hexdigest()
+    body_free_core_sha256 = hashlib.sha256(
+        _canonical_json_bytes(body_free_core)
+    ).hexdigest()
+    pair = {
+        "body_free_core_sha256": body_free_core_sha256,
+        "run_hmac": _run_commitment(
+            key,
+            run_id=run_id,
+            source_closure=source_closure,
+            private_core_sha256=private_core_sha256,
+            body_free_core_sha256=body_free_core_sha256,
+        ),
+    }
+    private = {**private_core, "pair_integrity": pair}
+    body_free = {**body_free_core, "pair_integrity": pair}
+    _validate_pair(
+        private,
+        body_free,
+        key=key,
+        expected_source=source,
+        expected_case_sources=expected_case_sources,
+    )
     return (
         _canonical_json_bytes(private),
         _canonical_json_bytes(body_free),
@@ -1035,17 +1828,60 @@ def _write_outputs(
     output_dir: Path,
     private_payload: bytes,
     body_free_payload: bytes,
-) -> None:
+    *,
+    key: bytes,
+    source_snapshot: Mapping[str, Any],
+    expected_case_sources: Sequence[tuple[str, str, bytes]],
+    batch_path: Path,
+    manifest_path: Path,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     from emlis_nls_v3_rc0029_surface_repair_bounded_experiment import (
         _open_private_directory,
         _write_private_pair,
     )
 
-    directory_fd = _open_private_directory(
-        output_dir,
-        output_names=(_PRIVATE_FILENAME, _BODY_FREE_FILENAME),
+    _assert_source_unchanged(
+        source_snapshot,
+        batch_path,
+        manifest_path,
+        code="CURRENT_RC_G8_SOURCE_CHANGED_BEFORE_WRITE",
     )
+    private = _decode_canonical_payload(private_payload)
+    body_free = _decode_canonical_payload(body_free_payload)
+    _validate_pair(
+        private,
+        body_free,
+        key=key,
+        expected_source=source_snapshot,
+        expected_case_sources=expected_case_sources,
+    )
+    directory_fd: int | None = None
+    pair_written = False
+
+    def discard_written_pair() -> None:
+        if directory_fd is None or not pair_written:
+            return
+        for name in (_PRIVATE_FILENAME, _BODY_FREE_FILENAME):
+            try:
+                os.unlink(name, dir_fd=directory_fd)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
+        try:
+            os.fsync(directory_fd)
+        except OSError:
+            pass
+
     try:
+        directory_fd = _open_private_directory(
+            output_dir,
+            output_names=(_PRIVATE_FILENAME, _BODY_FREE_FILENAME),
+        )
+        if os.listdir(directory_fd):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_PRIVATE_DIRECTORY_NOT_FRESH"
+            )
         _write_private_pair(
             directory_fd,
             private_payload,
@@ -1053,8 +1889,76 @@ def _write_outputs(
             private_name=_PRIVATE_FILENAME,
             body_free_name=_BODY_FREE_FILENAME,
         )
+        pair_written = True
+        reread: dict[str, bytes] = {}
+        flags = os.O_RDONLY | os.O_NOFOLLOW
+        if hasattr(os, "O_CLOEXEC"):
+            flags |= os.O_CLOEXEC
+        for name in (_PRIVATE_FILENAME, _BODY_FREE_FILENAME):
+            descriptor: int | None = None
+            try:
+                descriptor = os.open(name, flags, dir_fd=directory_fd)
+                status = os.fstat(descriptor)
+                if (
+                    not stat_module.S_ISREG(status.st_mode)
+                    or stat_module.S_IMODE(status.st_mode) != 0o600
+                    or status.st_uid != os.getuid()
+                    or status.st_nlink != 1
+                ):
+                    raise CurrentRcG8RunError(
+                        "CURRENT_RC_G8_PRIVATE_OUTPUT_POSTVERIFY_FAILED"
+                    )
+                chunks: list[bytes] = []
+                while True:
+                    chunk = os.read(descriptor, 1024 * 1024)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                reread[name] = b"".join(chunks)
+            finally:
+                if descriptor is not None:
+                    os.close(descriptor)
+        if (
+            reread[_PRIVATE_FILENAME] != private_payload
+            or reread[_BODY_FREE_FILENAME] != body_free_payload
+        ):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_PRIVATE_OUTPUT_POSTVERIFY_FAILED"
+            )
+        private = _decode_canonical_payload(reread[_PRIVATE_FILENAME])
+        body_free = _decode_canonical_payload(reread[_BODY_FREE_FILENAME])
+        _validate_pair(
+            private,
+            body_free,
+            key=key,
+            expected_source=source_snapshot,
+            expected_case_sources=expected_case_sources,
+        )
+        _assert_source_unchanged(
+            source_snapshot,
+            batch_path,
+            manifest_path,
+            code="CURRENT_RC_G8_SOURCE_CHANGED_DURING_WRITE",
+        )
+        if set(os.listdir(directory_fd)) != {
+            _PRIVATE_FILENAME,
+            _BODY_FREE_FILENAME,
+        }:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_PRIVATE_DIRECTORY_POSTVERIFY_FAILED"
+            )
+        return private, body_free
+    except CurrentRcG8RunError:
+        discard_written_pair()
+        raise
+    except Exception as exc:
+        discard_written_pair()
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_PRIVATE_OUTPUT_REJECTED"
+        ) from exc
     finally:
-        os.close(directory_fd)
+        if directory_fd is not None:
+            os.close(directory_fd)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -1098,10 +2002,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         or not 1 <= args.workers <= 32
     ):
         raise CurrentRcG8RunError("CURRENT_RC_G8_ARGUMENT_INVALID")
-    samples, _manifest, commitment_by_case = _exact100_sources(
-        args.batch, args.manifest
-    )
-    source_closure = _source_closure(args.batch.resolve(), args.manifest.resolve())
+    batch_path = args.batch.resolve()
+    manifest_path = args.manifest.resolve()
+    (
+        samples,
+        _manifest,
+        commitment_by_case,
+        expected_case_sources,
+        source_snapshot,
+    ) = _bound_exact100_sources(batch_path, manifest_path)
+    source_closure = source_snapshot["source_closure_sha256"]
     from emlis_nls_v3_batch_run import _read_key
 
     key = _read_key(args.commitment_key_file)
@@ -1111,13 +2021,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         source_closure,
         workers=args.workers,
     )
+    _assert_source_unchanged(
+        source_snapshot,
+        batch_path,
+        manifest_path,
+        code="CURRENT_RC_G8_SOURCE_CHANGED_DURING_EXECUTION",
+    )
     private_payload, body_free_payload, _summary = _result_payloads(
         rows,
         key=key,
         run_id=args.run_id,
-        source_closure=source_closure,
+        source_snapshot=source_snapshot,
+        expected_case_sources=expected_case_sources,
     )
-    _write_outputs(args.output_dir, private_payload, body_free_payload)
+    _write_outputs(
+        args.output_dir,
+        private_payload,
+        body_free_payload,
+        key=key,
+        source_snapshot=source_snapshot,
+        expected_case_sources=expected_case_sources,
+        batch_path=batch_path,
+        manifest_path=manifest_path,
+    )
     return 0
 
 
