@@ -9,6 +9,23 @@ import emlis_ai_step11_semantic_overlay_v3 as overlay
 
 
 @pytest.mark.parametrize(
+    ("dimension_code", "expected_type"),
+    (
+        ("EXPLICIT_CAUSE_UNKNOWN", "cause"),
+        ("EXPLICIT_UNVERBALIZED_UNKNOWN", "omitted_referent"),
+        ("EXPLICIT_TEMPORAL_REFERENT_UNKNOWN", "omitted_referent"),
+        ("EXPLICIT_REFERENT_UNKNOWN", "omitted_referent"),
+    ),
+)
+def test_closed_explicit_dimension_precedes_raw_reclassification(
+    dimension_code: str,
+    expected_type: str,
+) -> None:
+    assert overlay._explicit_unknown_types("") == ()
+    assert overlay._frozen_unknown_type(dimension_code, "") == expected_type
+
+
+@pytest.mark.parametrize(
     "text",
     (
         "今の情報だけでは選べない。",

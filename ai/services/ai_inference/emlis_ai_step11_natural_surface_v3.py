@@ -14131,6 +14131,54 @@ def _step11_rc0035_cycle001_product_recovery_candidate_identity(
     )[:20]
 
 
+_STEP11_RC0036_CYCLE001_PRODUCT_QUALITY_CANDIDATE_VERSION_ID = (
+    "nls_v3_rc_0036_cycle001_product_quality"
+)
+_STEP11_RC0036_CYCLE001_PRODUCT_QUALITY_CANDIDATE_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11."
+    "cycle001_product_quality_candidate.rc0036.v1"
+)
+
+
+def _step11_rc0036_cycle001_product_quality_candidate_identity(
+    *,
+    source_envelope_sha256: str,
+    source_candidate_id: str,
+    final_sha256: str,
+    realization_plan_id: str,
+    ast_id: str,
+) -> str:
+    """Commit a distinct text-affecting Product-quality candidate."""
+
+    sha_values = (source_envelope_sha256, final_sha256)
+    identity_values = (source_candidate_id, realization_plan_id, ast_id)
+    if (
+        any(
+            type(value) is not str or _SHA_RE.fullmatch(value) is None
+            for value in sha_values
+        )
+        or any(type(value) is not str or not value for value in identity_values)
+    ):
+        raise Step11NaturalSurfaceError(
+            "STEP11_CYCLE001_PRODUCT_QUALITY_IDENTITY_INVALID"
+        )
+    return "nls3s11rc0036cand_" + artifact_sha256(
+        {
+            "candidate_version_id": (
+                _STEP11_RC0036_CYCLE001_PRODUCT_QUALITY_CANDIDATE_VERSION_ID
+            ),
+            "candidate_schema": (
+                _STEP11_RC0036_CYCLE001_PRODUCT_QUALITY_CANDIDATE_SCHEMA
+            ),
+            "source_envelope_sha256": source_envelope_sha256,
+            "source_candidate_id": source_candidate_id,
+            "final_bytes_sha256": final_sha256,
+            "realization_plan_id": realization_plan_id,
+            "ast_id": ast_id,
+        }
+    )[:20]
+
+
 # rc0031 experiment-only owner-role inflection / typed recomposition (append-only B6 private consumer)
 _RC0031_E = "STEP11_RC0031_OWNER_ROLE_TYPED_RECOMPOSITION_INVALID"
 def _rc0031_rt_plan(v):
