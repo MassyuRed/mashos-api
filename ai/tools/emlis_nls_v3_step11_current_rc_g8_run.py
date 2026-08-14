@@ -2,14 +2,13 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Run the frozen exact-100 corpus through the current rc0031 Product builder.
+"""Run exact-100 through the distinct Cycle001 Product recovery candidate.
 
-This is a one-shot, private G8 runner.  It deliberately bypasses G7 and emits
-one current-RC output only for each selected rc0027 base case.  It does not
-activate the production route and it does not add a checker, controller,
-file-descriptor protocol, or approval authority.  Body-full rows are written
-only beside a body-free HMAC summary in an existing caller-owned 0700
-directory outside the repository.
+This one-shot private runner rebuilds upstream typed sources request-locally.
+It imports no prior Step11 runtime adapter, Gate, or selector and accepts only
+the distinct rc0035 recovery identity after source-bound inverse validation.
+Body-full rows are written only beside a body-free HMAC summary in an existing
+caller-owned 0700 directory outside the repository.
 """
 
 import argparse
@@ -17,10 +16,12 @@ import ast
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import dataclass
 import hashlib
 import hmac
 import io
 import json
+import multiprocessing
 import os
 from pathlib import Path
 import re
@@ -32,9 +33,8 @@ from typing import Any, Mapping, Sequence
 AI_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = AI_ROOT.parent.resolve()
 SERVICES = AI_ROOT / "services" / "ai_inference"
-HELPERS = AI_ROOT / "tests" / "helpers"
 TOOLS = AI_ROOT / "tools"
-for entry in (SERVICES, HELPERS, TOOLS):
+for entry in (SERVICES, TOOLS):
     if str(entry) not in sys.path:
         sys.path.insert(0, str(entry))
 
@@ -47,11 +47,95 @@ _BATCH_PATH = (
     / "batch_001.jsonl"
 )
 _MANIFEST_PATH = _BATCH_PATH.with_name("batch_001_manifest.json")
+_FROZEN_BATCH_SHA256 = (
+    "013dd2ad1c1f446f843f400b3eb16231e8f32649e30114e70039b4cb709e8414"
+)
+_FROZEN_MANIFEST_SHA256 = (
+    "2b3308c4ada090539a2fc71c1cb235970aa0b90687b8d9633464ba61e94deba4"
+)
+_FROZEN_PRIVACY_REVIEW = {
+    "status": "passed",
+    "reviewer": "karen",
+    "pii_absent": True,
+    "real_user_text_copy_absent": True,
+    "expected_response_absent": True,
+}
+_FROZEN_SAMPLE_KEYS = frozenset(
+    {
+        "batch_id",
+        "case_id",
+        "coverage",
+        "input",
+        "schema_version",
+        "semantic_contract",
+        "source",
+    }
+)
+_FROZEN_MANIFEST_KEYS = frozenset(
+    {
+        "batch_id",
+        "body_free",
+        "case_commitments",
+        "case_count",
+        "case_ids",
+        "corpus_file_ref",
+        "corpus_file_sha256",
+        "corpus_set_commitment",
+        "counts_toward_karen_minimum",
+        "coverage_matrix_ref",
+        "coverage_matrix_sha256",
+        "duplicate_counts",
+        "duplicate_policy_sha256",
+        "duplicate_report_ref",
+        "duplicate_report_sha256",
+        "frozen",
+        "invalid_case_count",
+        "invalid_case_history",
+        "manifest_id",
+        "near_review_decisions",
+        "near_review_summary",
+        "next_authority",
+        "parent_registry_ref",
+        "parent_registry_sha256",
+        "privacy_review",
+        "reference_case_count",
+        "reference_corpus_set_commitment",
+        "replacement_policy",
+        "sample_schema_ref",
+        "sample_schema_sha256",
+        "schema_version",
+        "source_partition",
+        "state",
+        "valid_case_count",
+        "validator_policy_sha256",
+    }
+)
 _PRIVATE_FILENAME = "current_rc_g8_exact100_private.json"
 _BODY_FREE_FILENAME = "current_rc_g8_exact100_body_free.json"
-_PRIVATE_SCHEMA = "cocolon.emlis.nls_v3.current_rc.g8.private_exact100.v3"
+_PRIVATE_SCHEMA = "cocolon.emlis.nls_v3.current_rc.g8.private_exact100.v4"
 _BODY_FREE_SCHEMA = (
-    "cocolon.emlis.nls_v3.current_rc.g8.body_free_exact100.v3"
+    "cocolon.emlis.nls_v3.current_rc.g8.body_free_exact100.v4"
+)
+_RECOVERY_CANDIDATE_VERSION = "nls_v3_rc_0035_cycle001_product_recovery"
+_RECOVERY_CANDIDATE_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11."
+    "cycle001_product_recovery_candidate.rc0035.v1"
+)
+_RECOVERY_OWNER_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11."
+    "cycle001_product_recovery_owner.rc0035.v1"
+)
+_RECOVERY_SOURCE_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11."
+    "cycle001_product_recovery_source.rc0035.v1"
+)
+_RECOVERY_PLAN_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11."
+    "cycle001_product_recovery_plan.rc0035.v1"
+)
+_RECOVERY_RENDERED_SCHEMA = (
+    "cocolon.emlis.nls_v3.step11."
+    "cycle001_product_recovery_rendered.rc0035.v1"
 )
 _CASE_RE = re.compile(r"^nls3s_b001_[0-9]{4}$")
 _RUN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{2,63}$")
@@ -60,20 +144,13 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ALLOWED_DISPOSITIONS = frozenset(
     {"selected", "no_valid_candidate", "fail_close"}
 )
-_TRUST_PROJECTION_FIELDS = (
-    "source_atom_id",
-    "semantic_family",
-    "base_parsed_atom_id",
-    "base_obligation_id",
-    "match_basis",
-    "base_surface_sha256",
-    "source_authority_sha256",
-    "independent_binding_sha256",
-)
 _CHECK_KEYS = (
     "input_projected",
-    "base_runtime_valid",
-    "current_builder_called",
+    "source_context_built",
+    "recovery_builder_called",
+    "recovery_validator_passed",
+    "recovery_identity_exact",
+    "source_envelope_exact",
     "final_utf8_valid",
     "inverse_layout_exact",
     "semantic_atoms_exact",
@@ -87,6 +164,8 @@ _PRIVATE_ROW_KEYS = frozenset(
         "source_case_commitment",
         "source_input",
         "disposition",
+        "candidate_version_id",
+        "candidate_schema_version",
         "current_candidate_id",
         "candidate_output_utf8",
         "machine_checks",
@@ -111,7 +190,7 @@ _PUBLIC_FAILURE_CODES = frozenset(
     }
 )
 _PAIR_KEYS = frozenset({"body_free_core_sha256", "run_hmac"})
-_SOURCE_SEARCH_ROOTS = (SERVICES, HELPERS, TOOLS)
+_SOURCE_SEARCH_ROOTS = (SERVICES, TOOLS)
 
 
 class CurrentRcG8RunError(RuntimeError):
@@ -153,6 +232,33 @@ def _empty_checks() -> dict[str, bool]:
     return {key: False for key in _CHECK_KEYS}
 
 
+def _canonical_material_bytes(value: Any) -> bytes:
+    payload = _canonical_json_bytes(value)
+    if not payload.endswith(b"\n"):
+        raise CurrentRcG8RunError("CURRENT_RC_G8_RESULT_NOT_CANONICAL")
+    return payload[:-1]
+
+
+def _frozen_repo_ref(value: Any) -> Path:
+    if type(value) is not str or not value or "\\" in value:
+        raise CurrentRcG8RunError("CURRENT_RC_G8_MANIFEST_INVALID")
+    relative = Path(value)
+    if (
+        relative.is_absolute()
+        or any(part in {"", ".", ".."} for part in relative.parts)
+        or relative.as_posix() != value
+    ):
+        raise CurrentRcG8RunError("CURRENT_RC_G8_MANIFEST_INVALID")
+    try:
+        resolved = (REPO_ROOT / relative).resolve(strict=True)
+        resolved.relative_to(REPO_ROOT)
+    except Exception as exc:
+        raise CurrentRcG8RunError("CURRENT_RC_G8_MANIFEST_INVALID") from exc
+    if resolved != REPO_ROOT / relative:
+        raise CurrentRcG8RunError("CURRENT_RC_G8_MANIFEST_INVALID")
+    return resolved
+
+
 def _exact100_sources(
     batch_path: Path,
     manifest_path: Path,
@@ -160,18 +266,70 @@ def _exact100_sources(
     from emlis_ai_step10_app_reachable_contract_v3 import (
         project_app_reachable_input,
     )
-    from emlis_nls_v3_batch_run import load_validated_batch
 
-    samples, manifest = load_validated_batch(
-        batch_path.resolve(), manifest_path.resolve()
-    )
+    try:
+        resolved_batch = batch_path.resolve(strict=True)
+        resolved_manifest = manifest_path.resolve(strict=True)
+        batch_bytes = resolved_batch.read_bytes()
+        manifest_bytes = resolved_manifest.read_bytes()
+    except Exception as exc:
+        raise CurrentRcG8RunError("CURRENT_RC_G8_SOURCE_UNAVAILABLE") from exc
+    if (
+        resolved_batch != _BATCH_PATH.resolve(strict=True)
+        or resolved_manifest != _MANIFEST_PATH.resolve(strict=True)
+        or hashlib.sha256(batch_bytes).hexdigest() != _FROZEN_BATCH_SHA256
+        or hashlib.sha256(manifest_bytes).hexdigest()
+        != _FROZEN_MANIFEST_SHA256
+        or not batch_bytes
+        or not batch_bytes.endswith(b"\n")
+        or batch_bytes.startswith(b"\xef\xbb\xbf")
+        or manifest_bytes.startswith(b"\xef\xbb\xbf")
+    ):
+        raise CurrentRcG8RunError("CURRENT_RC_G8_FROZEN_SOURCE_INVALID")
+    try:
+        manifest = json.loads(manifest_bytes.decode("utf-8", errors="strict"))
+    except Exception as exc:
+        raise CurrentRcG8RunError("CURRENT_RC_G8_MANIFEST_INVALID") from exc
+    if (
+        type(manifest) is not dict
+        or set(manifest) != _FROZEN_MANIFEST_KEYS
+        or _canonical_json_bytes(manifest) != manifest_bytes
+    ):
+        raise CurrentRcG8RunError("CURRENT_RC_G8_MANIFEST_INVALID")
+    lines = tuple(batch_bytes.splitlines(keepends=True))
+    samples: list[dict[str, Any]] = []
+    for line in lines:
+        if not line.endswith(b"\n") or line in {b"\n", b"\r\n"}:
+            raise CurrentRcG8RunError("CURRENT_RC_G8_SAMPLE_INVALID")
+        try:
+            sample = json.loads(line.decode("utf-8", errors="strict"))
+        except Exception as exc:
+            raise CurrentRcG8RunError("CURRENT_RC_G8_SAMPLE_INVALID") from exc
+        if (
+            type(sample) is not dict
+            or set(sample) != _FROZEN_SAMPLE_KEYS
+            or _canonical_json_bytes(sample) != line
+        ):
+            raise CurrentRcG8RunError("CURRENT_RC_G8_SAMPLE_INVALID")
+        samples.append(sample)
     expected_ids = tuple(f"nls3s_b001_{index:04d}" for index in range(1, 101))
     actual_ids = tuple(row.get("case_id") for row in samples)
     manifest_ids = tuple(manifest.get("case_ids", ()))
     commitments = manifest.get("case_commitments")
     if (
-        len(samples) != 100
+        len(lines) != 100
+        or len(samples) != 100
+        or manifest.get("schema_version")
+        != "cocolon.emlis.nls_v3.sample_batch_manifest.v1"
+        or manifest.get("batch_id") != "nls3_batch_001"
+        or manifest.get("state") != "VALIDATED"
+        or manifest.get("frozen") is not True
+        or manifest.get("body_free") is not True
+        or manifest.get("source_partition") != "karen_generated"
+        or manifest.get("privacy_review") != _FROZEN_PRIVACY_REVIEW
         or manifest.get("case_count") != 100
+        or manifest.get("valid_case_count") != 100
+        or manifest.get("invalid_case_count") != 0
         or actual_ids != expected_ids
         or manifest_ids != expected_ids
         or type(commitments) is not list
@@ -179,24 +337,77 @@ def _exact100_sources(
     ):
         raise CurrentRcG8RunError("CURRENT_RC_G8_EXACT100_REQUIRED")
     commitment_by_case: dict[str, str] = {}
-    for row in commitments:
+    expected_commitment_rows: list[dict[str, str]] = []
+    for sample, row in zip(samples, commitments, strict=True):
         if type(row) is not dict:
             raise CurrentRcG8RunError("CURRENT_RC_G8_CASE_COMMITMENT_INVALID")
         case_id = row.get("case_id")
         commitment = row.get("case_commitment")
+        calculated = hashlib.sha256(
+            _canonical_material_bytes(sample)
+        ).hexdigest()
         if (
-            type(case_id) is not str
+            set(row) != {"case_id", "case_commitment"}
+            or type(case_id) is not str
             or _CASE_RE.fullmatch(case_id) is None
             or type(commitment) is not str
             or re.fullmatch(r"[0-9a-f]{64}", commitment) is None
             or case_id in commitment_by_case
+            or case_id != sample.get("case_id")
+            or commitment != calculated
         ):
             raise CurrentRcG8RunError("CURRENT_RC_G8_CASE_COMMITMENT_INVALID")
         commitment_by_case[case_id] = commitment
+        expected_commitment_rows.append(
+            {"case_id": case_id, "case_commitment": calculated}
+        )
     if tuple(commitment_by_case) != expected_ids:
         raise CurrentRcG8RunError("CURRENT_RC_G8_CASE_COMMITMENT_INVALID")
-    for sample in samples:
-        if type(sample) is not dict or type(sample.get("input")) is not dict:
+    corpus_set_commitment = hashlib.sha256(
+        _canonical_material_bytes(sorted(commitment_by_case.values()))
+    ).hexdigest()
+    manifest_payload = dict(manifest)
+    manifest_id = manifest_payload.pop("manifest_id", None)
+    if (
+        manifest.get("case_commitments") != expected_commitment_rows
+        or manifest.get("corpus_file_sha256") != _FROZEN_BATCH_SHA256
+        or manifest.get("corpus_set_commitment") != corpus_set_commitment
+        or manifest_id
+        != "nls3manifest_"
+        + hashlib.sha256(_canonical_material_bytes(manifest_payload)).hexdigest()[
+            :16
+        ]
+    ):
+        raise CurrentRcG8RunError("CURRENT_RC_G8_MANIFEST_INVALID")
+    referenced = (
+        ("corpus_file_ref", "corpus_file_sha256"),
+        ("coverage_matrix_ref", "coverage_matrix_sha256"),
+        ("duplicate_report_ref", "duplicate_report_sha256"),
+        ("parent_registry_ref", "parent_registry_sha256"),
+        ("sample_schema_ref", "sample_schema_sha256"),
+    )
+    for ref_key, sha_key in referenced:
+        path = _frozen_repo_ref(manifest.get(ref_key))
+        try:
+            actual_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+        except Exception as exc:
+            raise CurrentRcG8RunError("CURRENT_RC_G8_MANIFEST_INVALID") from exc
+        if (
+            manifest.get(sha_key) != actual_sha256
+            or (ref_key == "corpus_file_ref" and path != resolved_batch)
+        ):
+            raise CurrentRcG8RunError("CURRENT_RC_G8_MANIFEST_INVALID")
+    for expected_id, sample in zip(expected_ids, samples, strict=True):
+        if (
+            sample.get("case_id") != expected_id
+            or sample.get("batch_id") != "nls3_batch_001"
+            or sample.get("schema_version")
+            != "cocolon.emlis.nls_v3.sample_case.v1"
+            or sample.get("source") != "karen_generated"
+            or type(sample.get("coverage")) is not dict
+            or type(sample.get("semantic_contract")) is not dict
+            or type(sample.get("input")) is not dict
+        ):
             raise CurrentRcG8RunError("CURRENT_RC_G8_SAMPLE_INVALID")
         try:
             project_app_reachable_input(sample["input"])
@@ -359,18 +570,14 @@ def _source_closure_paths(batch_path: Path, manifest_path: Path) -> tuple[Path, 
     roots = (
         Path(__file__),
         SERVICES / "emlis_ai_step10_app_reachable_contract_v3.py",
-        SERVICES / "emlis_ai_step11_runtime_adapter_v3.py",
         SERVICES / "emlis_ai_evidence_ledger_service.py",
         SERVICES
         / "emlis_ai_grounded_lexical_role_experiment_snapshot_successor_v3.py",
         SERVICES / "emlis_ai_step11_grounded_lexicalization_v3.py",
         SERVICES / "emlis_ai_step11_natural_surface_v3.py",
-        SERVICES / "emlis_ai_step11_natural_surface_matcher_v3.py",
+        SERVICES / "emlis_ai_step11_cycle001_product_recovery_v3.py",
         SERVICES / "emlis_ai_step11_rc0031_experiment_surface_catalog_v3.py",
         SERVICES / "emlis_ai_step11_rc0031_reception_focus_authority_v3.py",
-        TOOLS / "emlis_nls_v3_batch_run.py",
-        TOOLS / "emlis_nls_v3_rc0029_surface_repair_bounded_experiment.py",
-        HELPERS / "emlis_nls_v3_s2_sample_registry.py",
     )
     for path in roots:
         _repo_relative(path)
@@ -381,7 +588,7 @@ def _source_closure_paths(batch_path: Path, manifest_path: Path) -> tuple[Path, 
 
 def _closure_digest(files: Sequence[Mapping[str, Any]]) -> str:
     return hashlib.sha256(
-        b"cocolon.current-rc.g8.source-closure.v3\0"
+        b"cocolon.current-rc.g8.source-closure.v4\0"
         + _canonical_json_bytes(list(files))
     ).hexdigest()
 
@@ -412,7 +619,7 @@ def _source_closure_snapshot(
 
 
 def _source_closure(batch_path: Path, manifest_path: Path) -> str:
-    """Compatibility projection of the recomputable v3 closure."""
+    """Compatibility projection of the recomputable v4 closure."""
 
     return str(
         _source_closure_snapshot(batch_path, manifest_path)[
@@ -547,32 +754,1199 @@ def _exact100_source_bindings(
     return tuple(bindings)
 
 
+@dataclass(frozen=True, slots=True, repr=False)
+class _DirectRecoveryContext:
+    """Request-local upstream authority; no surface Gate or selector state."""
+
+    normalized_input: dict[str, Any]
+    projected_current_input: dict[str, Any]
+    resolver: Any
+    grounded_plan: Any
+    observation_stage_context: dict[str, Any]
+    inventory_result: Any
+    content_plan: dict[str, Any]
+    discourse_plans: tuple[Any, ...]
+    successor_snapshot: Any
+    lexical_atom_specs: Any
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class _ExpectedFragment:
+    source_fragment_id: str
+    source_owner_id: str
+    source_nucleus_id: str
+    source_span_id: str
+    source_field: str
+    span_relative_start_index: int
+    span_relative_end_index: int
+    source_fragment_text: str
+    source_fragment_text_sha256: str
+    binding_basis: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class _ExpectedRoot:
+    source_root_id: str
+    source_owner_id: str
+    source_nucleus_id: str
+    source_obligation_ids: tuple[str, ...]
+    source_fragments: tuple[_ExpectedFragment, ...]
+    semantic_kind: str
+    dimensions: tuple[str, str, str, str]
+    required: bool
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class _ExpectedConstructionRole:
+    construction_slot_id: str
+    parent_nucleus_id: str
+    source_span_id: str
+    slot_start_index: int
+    slot_end_index: int
+    lexical_role_kind: str
+    construction_position: str
+    role_position_surface_token: str
+    source_owner_ids: tuple[str, ...]
+    source_owner_dimensions: tuple[tuple[str, str, str, str], ...]
+    participation_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class _ExpectedAtom:
+    source_atom_id: str
+    semantic_family: str
+    semantic_key: str
+    source_owner_ids: tuple[str, ...]
+    direction: str
+    dimensions: tuple[str, str, str, str]
+    source_nucleus_owner_ids: tuple[str, ...]
+    source_semantic_unit_owner_ids: tuple[str, ...]
+    source_parent_nucleus_ids: tuple[str, ...]
+    source_span_ids: tuple[str, ...]
+    source_evidence_alias_ids: tuple[str, ...]
+    source_marker_span_ids: tuple[str, ...]
+    construction_roles: tuple[_ExpectedConstructionRole, ...]
+    source_order: int
+    surface_token: str
+    forward_signature: tuple[Any, ...]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class _ExpectedReception:
+    source_reception_opportunity_id: str
+    source_scope: str
+    source_focus_owner_ids: tuple[str, ...]
+    source_target_owner_ids: tuple[str, ...]
+    supporting_source_owner_ids: tuple[str, ...]
+    visible_support_owner_ids: tuple[str, ...]
+    inventory_reception_act: str
+    effective_reception_act: str
+    act_refinement_basis: str
+    sentence_group_ordinal: int
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class _ExpectedOwner:
+    schema_version: str
+    source_owner_id: str
+    source_owner_kind: str
+    source_owner_ordinal: int
+    source_nucleus_id: str
+    semantic_kind: str
+    dimensions: tuple[str, str, str, str]
+    typed_role_tokens: tuple[str, ...]
+    referent_text: str
+    referent_text_sha256: str
+    referent_basis: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class _ExpectedRecovery:
+    owner_registry: tuple[str, ...]
+    owners: tuple[_ExpectedOwner, ...]
+    roots: tuple[_ExpectedRoot, ...]
+    atoms: tuple[_ExpectedAtom, ...]
+    receptions: tuple[_ExpectedReception, ...]
+    source_counts: tuple[tuple[str, int], ...]
+    source_commitments: tuple[tuple[str, str], ...]
+    current_input_binding: tuple[Any, ...]
+    typed_payload_sha256: str
+    candidate_boundary_sha256: str
+    catalog: Mapping[str, Any]
+    grammar: Mapping[str, Any]
+
+
+def _build_direct_recovery_context(
+    projected_input: Mapping[str, Any],
+) -> _DirectRecoveryContext:
+    """Rebuild typed upstream sources without importing an acceptance owner."""
+
+    from emlis_ai_content_selection_v3 import build_content_selection_plan
+    from emlis_ai_current_input_bundle import normalize_emlis_current_input
+    from emlis_ai_discourse_graph_planner_v3 import (
+        DiscourseGraphPlannerError,
+        build_discourse_graph_plans,
+    )
+    from emlis_ai_evidence_ledger_service import (
+        build_evidence_ledger,
+        build_evidence_span_resolver,
+    )
+    from emlis_ai_grounded_lexical_role_experiment_snapshot_successor_v3 import (
+        build_grounded_lexical_role_experiment_snapshot_successor,
+    )
+    from emlis_ai_grounded_observation_plan import (
+        build_grounded_observation_plan,
+    )
+    from emlis_ai_observation_integrator_service import (
+        integrate_perspective_board,
+    )
+    from emlis_ai_observation_stage_context_v3 import (
+        build_observation_stage_context,
+    )
+    from emlis_ai_perspective_board import build_perspective_board
+    from emlis_ai_perspective_observers import run_perspective_observers
+    from emlis_ai_safety_triage import build_emlis_safety_triage_decision
+    from emlis_ai_semantic_obligation_inventory_v3 import (
+        build_grounded_source_snapshot,
+        build_semantic_obligation_inventory,
+    )
+    from emlis_ai_step10_app_reachable_contract_v3 import (
+        project_app_reachable_input,
+    )
+    from emlis_ai_step11_grounded_lexicalization_v3 import (
+        build_step11_rc0028_experiment_lexical_atom_specs,
+    )
+    from emlis_ai_step11_planning_frontier_v3 import (
+        build_step11_terminal_pair_discourse_plans,
+    )
+
+    projected = project_app_reachable_input(dict(projected_input))
+    normalized = normalize_emlis_current_input(dict(projected))
+    evidence_spans = tuple(build_evidence_ledger(normalized))
+    resolver = build_evidence_span_resolver(
+        evidence_spans,
+        current_input=normalized,
+    )
+    reports = tuple(run_perspective_observers(evidence_spans))
+    board = build_perspective_board(
+        evidence_spans=evidence_spans,
+        reports=reports,
+    )
+    graph = integrate_perspective_board(board=board)
+    safety_decision = build_emlis_safety_triage_decision(
+        current_input=normalized,
+        graph=graph,
+        evidence_spans=evidence_spans,
+    )
+    grounded_plan = build_grounded_observation_plan(
+        normalized,
+        evidence_spans=evidence_spans,
+        reports=reports,
+        board=board,
+        graph=graph,
+        safety_decision=safety_decision,
+    )
+    stage = build_observation_stage_context(
+        stage="normal_observation",
+        original_input_bundle=normalized,
+    )
+    snapshot = build_grounded_source_snapshot(
+        grounded_plan,
+        resolver,
+        observation_stage_context=stage,
+        original_input_bundle=normalized,
+    )
+    inventory = build_semantic_obligation_inventory(snapshot)
+    content_plan = build_content_selection_plan(inventory)
+    try:
+        discourse = build_discourse_graph_plans(inventory, content_plan)
+    except DiscourseGraphPlannerError as exc:
+        if exc.code != "NO_SAFE_DISCOURSE_STRUCTURE":
+            raise
+        discourse = build_step11_terminal_pair_discourse_plans(
+            inventory,
+            content_plan,
+        )
+    discourse_plans = tuple(discourse.plans)
+    if not discourse_plans:
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+        )
+    successor = build_grounded_lexical_role_experiment_snapshot_successor(
+        grounded_plan,
+        resolver,
+        observation_stage_context=stage,
+        original_input_bundle=normalized,
+    )
+    lexical_specs = build_step11_rc0028_experiment_lexical_atom_specs(successor)
+    return _DirectRecoveryContext(
+        normalized_input=normalized,
+        projected_current_input=projected,
+        resolver=resolver,
+        grounded_plan=grounded_plan,
+        observation_stage_context=stage,
+        inventory_result=inventory,
+        content_plan=content_plan,
+        discourse_plans=discourse_plans,
+        successor_snapshot=successor,
+        lexical_atom_specs=lexical_specs,
+    )
+
+
+def _ordered_unique_strings(values: Sequence[Any]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(str(value) for value in values))
+
+
+def _source_dimensions(value: Any) -> tuple[str, str, str, str]:
+    return (
+        str(value.temporal_scope),
+        str(value.modality),
+        str(value.polarity),
+        str(value.referent_scope),
+    )
+
+
+def _aggregate_source_dimensions(
+    values: Sequence[tuple[str, str, str, str]],
+) -> tuple[str, str, str, str]:
+    rows = tuple(values)
+    if not rows:
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+        )
+    return tuple(
+        column[0] if len(set(column)) == 1 else "unknown"
+        for column in zip(*rows, strict=True)
+    )  # type: ignore[return-value]
+
+
+def _relation_source_dimensions(
+    atom_id: str,
+    family: str,
+    *,
+    context: _DirectRecoveryContext,
+) -> tuple[str, str, str, str]:
+    snapshot = context.successor_snapshot.base_snapshot
+    if family == "relation":
+        authorities = tuple(
+            row
+            for row in context.successor_snapshot.relation_construction_authority.relation_authorities
+            if str(row.experiment_relation_id) == atom_id
+        )
+        if len(authorities) != 1:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        authority = authorities[0]
+        aliases = {str(authority.source_relation_id)}
+        if authority.refines_source_relation_id is not None:
+            aliases.add(str(authority.refines_source_relation_id))
+        matches = tuple(
+            row
+            for row in snapshot.relations
+            if aliases & {str(row.source_id), str(row.actual_source_id)}
+        )
+        if not matches:
+            aliases.update(str(value) for value in authority.source_relation_ids)
+            matches = tuple(
+                row
+                for row in snapshot.relations
+                if aliases
+                & {
+                    str(row.source_id),
+                    str(row.actual_source_id),
+                    *(str(value) for value in row.source_relation_ids),
+                }
+            )
+    elif family == "semantic_link":
+        matches = tuple(
+            row
+            for row in snapshot.relations
+            if atom_id in {str(row.source_id), str(row.actual_source_id)}
+        )
+    else:
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+        )
+    if len(matches) != 1:
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+        )
+    source = matches[0]
+    return (
+        str(source.temporal_scope),
+        str(source.modality),
+        str(source.polarity),
+        "relation",
+    )
+
+
+def _direct_expected_recovery(
+    context: _DirectRecoveryContext,
+) -> _ExpectedRecovery:
+    """Derive the complete expected recovery signature from upstream only."""
+
+    from emlis_ai_grounded_observation_semantic_restatement_v3 import (
+        build_grounded_semantic_restatement_witness,
+    )
+    from emlis_ai_nls_v3_artifact_contract import artifact_sha256
+    from emlis_ai_step11_natural_surface_v3 import (
+        _step11_rc0031_product_surface_authorities,
+        project_step11_current_input,
+    )
+    from emlis_ai_step11_rc0029_experiment_surface_catalog_v3 import (
+        STEP11_RC0029_EXPERIMENT_SURFACE_CATALOG,
+        STEP11_RC0029_EXPERIMENT_SURFACE_CATALOG_SHA256,
+    )
+
+    snapshot = context.successor_snapshot.base_snapshot
+    lexical = context.lexical_atom_specs
+    witness = build_grounded_semantic_restatement_witness(
+        context.grounded_plan, context.resolver
+    )
+    if (
+        witness.plan_binding_sha256
+        != snapshot.semantic_restatement_plan_binding_sha256
+        or witness.witness_sha256
+        != snapshot.source_semantic_restatement_witness_sha256
+    ):
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+        )
+    owner_registry = tuple(
+        str(row.source_owner_id) for row in lexical.owner_bindings
+    )
+    owner_by_ordinal = {
+        int(row.owner_ordinal): str(row.source_owner_id)
+        for row in lexical.owner_bindings
+    }
+    owner_kind_by_id = {
+        str(row.source_owner_id): str(row.source_owner_kind)
+        for row in lexical.owner_bindings
+    }
+    nucleus_by_owner = {
+        str(row.actual_source_id): row for row in snapshot.nuclei
+    }
+    source_to_owner = {
+        str(row.source_id): str(row.actual_source_id) for row in snapshot.nuclei
+    }
+    dimensions_by_owner = {
+        owner_id: _source_dimensions(row)
+        for owner_id, row in nucleus_by_owner.items()
+    }
+
+    receptions: list[_ExpectedReception] = []
+    opportunities = tuple(
+        row
+        for row in snapshot.reception_opportunities
+        if row.retention == "required" or row.safety_required is True
+    )
+    for ordinal, opportunity in enumerate(opportunities, start=1):
+        targets = _ordered_unique_strings(
+            source_to_owner.get(str(value), str(value))
+            for value in opportunity.target_nucleus_ids
+        )
+        supports = _ordered_unique_strings(
+            source_to_owner.get(str(value), str(value))
+            for value in opportunity.support_nucleus_ids
+        )
+        if (
+            not targets
+            or any(value not in nucleus_by_owner for value in targets)
+            or any(value not in nucleus_by_owner for value in supports)
+        ):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        inventory_act = str(opportunity.reception_act)
+        intention = any(
+            str(nucleus_by_owner[value].modality) == "intended"
+            or str(nucleus_by_owner[value].temporal_scope)
+            in {"future", "present_to_future", "intended_future"}
+            for value in targets
+        )
+        if inventory_act == "honor_concrete_action" and intention:
+            effective = "do_not_dismiss"
+            basis = "intended_or_future_action_nonpromotion"
+        else:
+            effective = inventory_act
+            basis = "source_reception_act_projection"
+        receptions.append(
+            _ExpectedReception(
+                source_reception_opportunity_id=str(opportunity.source_id),
+                source_scope=str(opportunity.family),
+                source_focus_owner_ids=(),
+                source_target_owner_ids=targets,
+                supporting_source_owner_ids=supports,
+                visible_support_owner_ids=tuple(
+                    value for value in supports if value not in set(targets)
+                ),
+                inventory_reception_act=inventory_act,
+                effective_reception_act=effective,
+                act_refinement_basis=basis,
+                sentence_group_ordinal=ordinal,
+            )
+        )
+
+    obligations = tuple(context.inventory_result.ledger["obligations"])
+    grounded_nucleus_by_id = {
+        str(row.nucleus_id): row for row in context.grounded_plan.nuclei
+    }
+    semantic_unit_by_id = {
+        str(row.unit_id): row for row in witness.semantic_units
+    }
+
+    def fragment(
+        *,
+        owner_id: str,
+        nucleus_id: str,
+        span_id: str,
+        start: int,
+        end: int,
+        basis: str,
+        expected_artifact_sha256: str | None = None,
+    ) -> _ExpectedFragment:
+        span = context.resolver.resolve(span_id)
+        raw_text = str(span.raw_text)
+        text = raw_text[start:end]
+        if (
+            not text
+            or start < 0
+            or end <= start
+            or end > len(raw_text)
+            or (
+                expected_artifact_sha256 is not None
+                and artifact_sha256({"source_fragment": text})
+                != expected_artifact_sha256
+            )
+        ):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        text_sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        material = {
+            "source_owner_id": owner_id,
+            "source_nucleus_id": nucleus_id,
+            "source_span_id": span_id,
+            "source_field": str(span.source_field),
+            "span_relative_start_index": start,
+            "span_relative_end_index": end,
+            "source_fragment_text_sha256": text_sha256,
+            "binding_basis": basis,
+        }
+        return _ExpectedFragment(
+            source_fragment_id=(
+                "nls3s11rc0035fragment_" + artifact_sha256(material)[:16]
+            ),
+            source_owner_id=owner_id,
+            source_nucleus_id=nucleus_id,
+            source_span_id=span_id,
+            source_field=str(span.source_field),
+            span_relative_start_index=start,
+            span_relative_end_index=end,
+            source_fragment_text=text,
+            source_fragment_text_sha256=text_sha256,
+            binding_basis=basis,
+        )
+
+    roots: list[_ExpectedRoot] = []
+    for nucleus in snapshot.nuclei:
+        if nucleus.required is not True:
+            continue
+        owner_id = str(nucleus.actual_source_id)
+        nucleus_id = str(nucleus.source_id)
+        aliases = {owner_id, nucleus_id}
+        obligation_ids = tuple(
+            str(row["obligation_id"])
+            for row in obligations
+            if type(row) is dict
+            and row.get("required") is True
+            and aliases & {str(value) for value in row.get("nucleus_ids", ())}
+        )
+        semantic_unit = semantic_unit_by_id.get(owner_id)
+        if semantic_unit is not None:
+            fragments = (
+                fragment(
+                    owner_id=owner_id,
+                    nucleus_id=nucleus_id,
+                    span_id=str(semantic_unit.source_span_id),
+                    start=int(semantic_unit.start_index),
+                    end=int(semantic_unit.end_index),
+                    basis="semantic_unit_exact_typed_range",
+                    expected_artifact_sha256=str(
+                        semantic_unit.source_fragment_sha256
+                    ),
+                ),
+            )
+        else:
+            grounded = grounded_nucleus_by_id.get(owner_id)
+            if grounded is None:
+                raise CurrentRcG8RunError(
+                    "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+                )
+            span_ids = _ordered_unique_strings(grounded.source_span_ids)
+            fragments = tuple(
+                fragment(
+                    owner_id=owner_id,
+                    nucleus_id=nucleus_id,
+                    span_id=span_id,
+                    start=0,
+                    end=len(str(context.resolver.resolve(span_id).raw_text)),
+                    basis="grounded_nucleus_exact_evidence_span",
+                )
+                for span_id in span_ids
+            )
+        dimensions = _source_dimensions(nucleus)
+        root_material = {
+            "source_owner_id": owner_id,
+            "source_nucleus_id": nucleus_id,
+            "source_obligation_ids": list(obligation_ids),
+            "source_fragment_ids": [
+                row.source_fragment_id for row in fragments
+            ],
+            "semantic_kind": str(nucleus.kind),
+            "dimensions": list(dimensions),
+        }
+        roots.append(
+            _ExpectedRoot(
+                source_root_id=(
+                    "nls3s11rc0035root_"
+                    + artifact_sha256(root_material)[:16]
+                ),
+                source_owner_id=owner_id,
+                source_nucleus_id=nucleus_id,
+                source_obligation_ids=obligation_ids,
+                source_fragments=fragments,
+                semantic_kind=str(nucleus.kind),
+                dimensions=dimensions,
+                required=True,
+            )
+        )
+
+    atom_rows: list[_ExpectedAtom] = []
+    construction_spec_by_slot = {
+        str(row.construction_slot_id): row
+        for row in lexical.construction_atoms
+    }
+    for ordinal, instance in enumerate(lexical.construction_instances, start=1):
+        roles: list[_ExpectedConstructionRole] = []
+        owner_ids: list[str] = []
+        forward_roles: list[tuple[Any, ...]] = []
+        for slot_id_value in instance.slot_ids:
+            slot_id = str(slot_id_value)
+            spec = construction_spec_by_slot[slot_id]
+            role_owner_ids = tuple(
+                owner_by_ordinal[int(value)]
+                for value in spec.target_owner_ordinals
+            )
+            role_dimensions = tuple(
+                dimensions_by_owner[value] for value in role_owner_ids
+            )
+            owner_ids.extend(role_owner_ids)
+            roles.append(
+                _ExpectedConstructionRole(
+                    construction_slot_id=slot_id,
+                    parent_nucleus_id=str(spec.parent_nucleus_id),
+                    source_span_id=str(spec.source_span_id),
+                    slot_start_index=int(spec.slot_start_index),
+                    slot_end_index=int(spec.slot_end_index),
+                    lexical_role_kind=str(spec.lexical_role_kind),
+                    construction_position=str(spec.construction_position),
+                    role_position_surface_token=str(
+                        spec.role_position_surface_token
+                    ),
+                    source_owner_ids=role_owner_ids,
+                    source_owner_dimensions=role_dimensions,
+                    participation_ids=tuple(
+                        str(value) for value in spec.participation_ids
+                    ),
+                )
+            )
+            forward_roles.append(
+                (
+                    slot_id,
+                    str(spec.lexical_role_kind),
+                    str(spec.construction_position),
+                    str(spec.role_position_atom_code),
+                    str(spec.role_position_surface_token),
+                    tuple(int(value) for value in spec.target_owner_ordinals),
+                    tuple(str(value) for value in spec.participation_ids),
+                )
+            )
+        owners = _ordered_unique_strings(owner_ids)
+        atom_rows.append(
+            _ExpectedAtom(
+                source_atom_id=str(instance.construction_instance_id),
+                semantic_family="construction",
+                semantic_key=str(instance.construction_code),
+                source_owner_ids=owners,
+                direction="",
+                dimensions=_aggregate_source_dimensions(
+                    tuple(dimensions_by_owner[value] for value in owners)
+                ),
+                source_nucleus_owner_ids=tuple(
+                    value
+                    for value in owners
+                    if owner_kind_by_id[value] == "nucleus"
+                ),
+                source_semantic_unit_owner_ids=tuple(
+                    value
+                    for value in owners
+                    if owner_kind_by_id[value] == "semantic_unit"
+                ),
+                source_parent_nucleus_ids=(str(instance.parent_nucleus_id),),
+                source_span_ids=(str(instance.source_span_id),),
+                source_evidence_alias_ids=tuple(
+                    str(value) for value in instance.evidence_alias_ids
+                ),
+                source_marker_span_ids=(),
+                construction_roles=tuple(roles),
+                source_order=len(atom_rows) + 1,
+                surface_token=str(instance.construction_surface_token),
+                forward_signature=(
+                    "construction",
+                    ordinal,
+                    str(instance.construction_instance_id),
+                    str(instance.construction_code),
+                    str(instance.construction_atom_code),
+                    str(instance.construction_surface_token),
+                    tuple(str(value) for value in instance.slot_ids),
+                    tuple(forward_roles),
+                ),
+            )
+        )
+
+    relation_specs: dict[str, list[Any]] = {}
+    for spec in lexical.relation_endpoint_atoms:
+        relation_specs.setdefault(str(spec.experiment_relation_id), []).append(
+            spec
+        )
+    for ordinal, authority in enumerate(
+        context.successor_snapshot.lexical_role_witness.relation_authorities,
+        start=1,
+    ):
+        atom_id = str(authority.experiment_relation_id)
+        owners = (
+            str(authority.from_source_owner_id),
+            str(authority.to_source_owner_id),
+        )
+        source_spans = _ordered_unique_strings(
+            str(value)
+            for spec in relation_specs.get(atom_id, ())
+            for value in (
+                *spec.evidence_alias_ids,
+                *((spec.marker_source_span_id,)
+                  if spec.marker_source_span_id is not None else ()),
+            )
+        )
+        atom_rows.append(
+            _ExpectedAtom(
+                source_atom_id=atom_id,
+                semantic_family="relation",
+                semantic_key=str(authority.effective_relation_type),
+                source_owner_ids=owners,
+                direction=str(authority.direction),
+                dimensions=_relation_source_dimensions(
+                    atom_id, "relation", context=context
+                ),
+                source_nucleus_owner_ids=tuple(
+                    value
+                    for value in owners
+                    if owner_kind_by_id[value] == "nucleus"
+                ),
+                source_semantic_unit_owner_ids=tuple(
+                    value
+                    for value in owners
+                    if owner_kind_by_id[value] == "semantic_unit"
+                ),
+                source_parent_nucleus_ids=_ordered_unique_strings(
+                    value
+                    for spec in relation_specs.get(atom_id, ())
+                    for value in (
+                        spec.source_from_nucleus_id,
+                        spec.source_to_nucleus_id,
+                    )
+                ),
+                source_span_ids=(),
+                source_evidence_alias_ids=_ordered_unique_strings(
+                    value
+                    for spec in relation_specs.get(atom_id, ())
+                    for value in spec.evidence_alias_ids
+                ),
+                source_marker_span_ids=_ordered_unique_strings(
+                    str(spec.marker_source_span_id)
+                    for spec in relation_specs.get(atom_id, ())
+                    if spec.marker_source_span_id is not None
+                ),
+                construction_roles=(),
+                source_order=len(atom_rows) + 1,
+                surface_token="",
+                forward_signature=(
+                    "relation",
+                    ordinal,
+                    atom_id,
+                    str(authority.source_relation_id),
+                    str(authority.source_relation_type),
+                    str(authority.effective_relation_type),
+                    owner_registry.index(owners[0]) + 1,
+                    owner_registry.index(owners[1]) + 1,
+                    str(authority.direction),
+                    str(authority.authority_basis),
+                    str(authority.source_retention),
+                    str(authority.experiment_retention),
+                    None
+                    if authority.refines_source_relation_id is None
+                    else str(authority.refines_source_relation_id),
+                ),
+            )
+        )
+
+    link_spec_by_id = {
+        str(row.source_semantic_link_id): row
+        for row in lexical.semantic_link_atoms
+    }
+    for ordinal, link in enumerate(
+        context.successor_snapshot.lexical_role_witness.semantic_link_bindings,
+        start=1,
+    ):
+        atom_id = str(link.source_semantic_link_id)
+        owners = (
+            str(link.from_semantic_unit_id),
+            str(link.to_semantic_unit_id),
+        )
+        spec = link_spec_by_id[atom_id]
+        atom_rows.append(
+            _ExpectedAtom(
+                source_atom_id=atom_id,
+                semantic_family="semantic_link",
+                semantic_key=str(link.relation_type),
+                source_owner_ids=owners,
+                direction=str(link.direction),
+                dimensions=_relation_source_dimensions(
+                    atom_id, "semantic_link", context=context
+                ),
+                source_nucleus_owner_ids=tuple(
+                    value
+                    for value in owners
+                    if owner_kind_by_id[value] == "nucleus"
+                ),
+                source_semantic_unit_owner_ids=tuple(
+                    value
+                    for value in owners
+                    if owner_kind_by_id[value] == "semantic_unit"
+                ),
+                source_parent_nucleus_ids=(),
+                source_span_ids=(str(spec.source_span_id),),
+                source_evidence_alias_ids=(),
+                source_marker_span_ids=(),
+                construction_roles=(),
+                source_order=len(atom_rows) + 1,
+                surface_token="",
+                forward_signature=(
+                    "semantic_link",
+                    ordinal,
+                    atom_id,
+                    str(link.relation_type),
+                    owner_registry.index(owners[0]) + 1,
+                    owner_registry.index(owners[1]) + 1,
+                    str(link.direction),
+                    bool(link.required),
+                ),
+            )
+        )
+
+    unknown_spec_by_id = {
+        str(row.source_unknown_id): row for row in lexical.explicit_unknown_atoms
+    }
+    for ordinal, unknown in enumerate(
+        context.successor_snapshot.lexical_role_witness.explicit_unknown_bindings,
+        start=1,
+    ):
+        atom_id = str(unknown.source_unknown_id)
+        owners = tuple(
+            str(value.owner_id) for value in unknown.affected_source_owners
+        )
+        spec = unknown_spec_by_id[atom_id]
+        atom_rows.append(
+            _ExpectedAtom(
+                source_atom_id=atom_id,
+                semantic_family="explicit_unknown",
+                semantic_key=str(unknown.dimension),
+                source_owner_ids=owners,
+                direction="",
+                dimensions=("unknown", "unknown", "unknown", "unknown"),
+                source_nucleus_owner_ids=tuple(
+                    value
+                    for value in owners
+                    if owner_kind_by_id[value] == "nucleus"
+                ),
+                source_semantic_unit_owner_ids=tuple(
+                    value
+                    for value in owners
+                    if owner_kind_by_id[value] == "semantic_unit"
+                ),
+                source_parent_nucleus_ids=(),
+                source_span_ids=(str(spec.source_span_id),),
+                source_evidence_alias_ids=(),
+                source_marker_span_ids=(),
+                construction_roles=(),
+                source_order=len(atom_rows) + 1,
+                surface_token="",
+                forward_signature=(
+                    "explicit_unknown",
+                    ordinal,
+                    atom_id,
+                    str(unknown.dimension),
+                    tuple(owner_registry.index(value) + 1 for value in owners),
+                    bool(unknown.required),
+                ),
+            )
+        )
+
+    active_owner_ids = {
+        *(row.source_owner_id for row in roots),
+        *(owner for row in atom_rows for owner in row.source_owner_ids),
+        *(
+            owner
+            for row in receptions
+            for owner in row.source_target_owner_ids
+        ),
+    } | {
+        owner
+        for row in receptions
+        for owner in (
+            *row.source_focus_owner_ids,
+            *row.visible_support_owner_ids,
+        )
+        if owner in set(owner_registry) and owner in nucleus_by_owner
+    }
+    role_catalog = STEP11_RC0029_EXPERIMENT_SURFACE_CATALOG[
+        "owner_role_surface_tokens"
+    ]
+    role_tokens: dict[str, list[str]] = {}
+
+    def add_role(owner_id: str, token: str) -> None:
+        role_tokens.setdefault(owner_id, []).append(token)
+
+    for spec in lexical.construction_atoms:
+        for ordinal in spec.target_owner_ordinals:
+            add_role(
+                owner_by_ordinal[int(ordinal)],
+                str(spec.role_position_surface_token),
+            )
+    for spec in lexical.relation_endpoint_atoms:
+        add_role(
+            str(spec.source_owner_id),
+            str(spec.relation_surface_token)
+            + str(role_catalog["relation_" + spec.relation_endpoint_role]),
+        )
+    for spec in lexical.semantic_link_atoms:
+        add_role(
+            str(spec.from_semantic_unit_id),
+            str(spec.semantic_link_surface_token)
+            + str(role_catalog["semantic_link_from"]),
+        )
+        add_role(
+            str(spec.to_semantic_unit_id),
+            str(spec.semantic_link_surface_token)
+            + str(role_catalog["semantic_link_to"]),
+        )
+    for spec in lexical.explicit_unknown_atoms:
+        for _kind, owner_id, _ordinal in spec.affected_source_owners:
+            add_role(
+                str(owner_id),
+                str(spec.unknown_surface_token)
+                + str(role_catalog["explicit_unknown"]),
+            )
+    for reception in receptions:
+        for owner_id in reception.source_target_owner_ids:
+            add_role(owner_id, str(role_catalog["reception_target"]))
+        for owner_id in reception.visible_support_owner_ids:
+            add_role(owner_id, str(role_catalog["reception_support"]))
+        for owner_id in reception.source_focus_owner_ids:
+            add_role(owner_id, str(role_catalog["reception_antecedent"]))
+    unique_role_tokens = {
+        owner_id: _ordered_unique_strings(values)
+        for owner_id, values in role_tokens.items()
+    }
+    owner_specs = tuple(
+        row
+        for row in lexical.owner_bindings
+        if str(row.source_owner_id) in active_owner_ids
+    )
+    head_catalog = STEP11_RC0029_EXPERIMENT_SURFACE_CATALOG[
+        "owner_kind_surface_tokens"
+    ]
+    prepared = tuple(
+        (
+            row,
+            nucleus_by_owner[str(row.source_owner_id)],
+            str(head_catalog[str(nucleus_by_owner[str(row.source_owner_id)].kind)]),
+            unique_role_tokens.get(str(row.source_owner_id), ()),
+        )
+        for row in owner_specs
+    )
+    referents = [row[2] for row in prepared]
+    duplicate_heads = {
+        head
+        for head, count in Counter(referents).items()
+        if count > 1
+    }
+    for head in duplicate_heads:
+        indices = tuple(
+            index
+            for index, _row in enumerate(prepared)
+            if prepared[index][2] == head
+        )
+        options_by_index = {index: prepared[index][3] for index in indices}
+        assigned: dict[int, str] = {}
+        for index in indices:
+            for option in options_by_index[index]:
+                if sum(
+                    option in options_by_index[other] for other in indices
+                ) == 1:
+                    assigned[index] = option + "に関わる" + head
+                    break
+        for index in indices:
+            if index in assigned:
+                continue
+            joined = "、".join(options_by_index[index])
+            if joined:
+                candidate = joined + "に関わる" + head
+                other_candidates = tuple(
+                    "、".join(options_by_index[other]) + "に関わる" + head
+                    for other in indices
+                    if other not in assigned and options_by_index[other]
+                )
+                if candidate not in other_candidates:
+                    assigned[index] = candidate
+        unresolved = tuple(index for index in indices if index not in assigned)
+        if len(unresolved) > 1:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        for index, referent in assigned.items():
+            referents[index] = referent
+        if len({referents[index] for index in indices}) != len(indices):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+    if len(set(referents)) != len(referents):
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+        )
+    owners = tuple(
+        _ExpectedOwner(
+            schema_version=_RECOVERY_OWNER_SCHEMA,
+            source_owner_id=str(spec.source_owner_id),
+            source_owner_kind=str(spec.source_owner_kind),
+            source_owner_ordinal=int(spec.owner_ordinal),
+            source_nucleus_id=str(nucleus.source_id),
+            semantic_kind=str(nucleus.kind),
+            dimensions=_source_dimensions(nucleus),
+            typed_role_tokens=tuple(tokens),
+            referent_text=referent,
+            referent_text_sha256=hashlib.sha256(
+                referent.encode("utf-8")
+            ).hexdigest(),
+            referent_basis=(
+                "typed_kind"
+                if referent == head
+                else "typed_incident_role_disambiguation"
+            ),
+        )
+        for (spec, nucleus, head, tokens), referent in zip(
+            prepared, referents, strict=True
+        )
+    )
+
+    projection = project_step11_current_input(context.projected_current_input)
+    projection_material = {
+        "thought_text": projection.thought_text,
+        "action_text": projection.action_text,
+        "emotions": list(projection.emotions),
+        "categories": list(projection.categories),
+    }
+    normalized_sha256 = artifact_sha256(context.normalized_input)
+    input_binding = (
+        projection.thought_text,
+        projection.action_text,
+        tuple(projection.emotions),
+        tuple(projection.categories),
+        artifact_sha256(projection_material),
+        normalized_sha256,
+        str(
+            snapshot.observation_stage_source_binding.original_input_bundle_sha256
+        ),
+    )
+    _catalog_owner, catalog, grammar, catalog_sha256 = (
+        _step11_rc0031_product_surface_authorities()
+    )
+    discourse_sha256 = artifact_sha256(
+        {
+            "ordered_discourse_plan_sha256s": [
+                artifact_sha256(row) for row in context.discourse_plans
+            ],
+            "discourse_plan_count": len(context.discourse_plans),
+        }
+    )
+    source_commitments = (
+        ("source_observation_plan_sha256", str(snapshot.source_observation_plan_sha256)),
+        ("source_successor_snapshot_sha256", str(context.successor_snapshot.experiment_snapshot_sha256)),
+        ("source_lexical_atom_specs_sha256", str(lexical.specs_sha256)),
+        ("source_semantic_restatement_witness_sha256", str(witness.witness_sha256)),
+        ("source_inventory_ledger_sha256", artifact_sha256(context.inventory_result.ledger)),
+        ("source_content_plan_sha256", artifact_sha256(context.content_plan)),
+        ("source_discourse_plan_sha256", discourse_sha256),
+        ("source_lexical_catalog_sha256", STEP11_RC0029_EXPERIMENT_SURFACE_CATALOG_SHA256),
+        ("surface_catalog_sha256", str(catalog_sha256)),
+    )
+    family_counts = Counter(row.semantic_family for row in atom_rows)
+    source_counts = (
+        ("owners", len(owners)),
+        ("roots", len(roots)),
+        ("constructions", family_counts.get("construction", 0)),
+        ("relations", family_counts.get("relation", 0)),
+        ("semantic_links", family_counts.get("semantic_link", 0)),
+        ("explicit_unknowns", family_counts.get("explicit_unknown", 0)),
+        ("receptions", len(receptions)),
+    )
+    construction_material: list[dict[str, Any]] = []
+    relation_material: list[dict[str, Any]] = []
+    link_material: list[dict[str, Any]] = []
+    unknown_material: list[dict[str, Any]] = []
+    for atom in atom_rows:
+        row = atom.forward_signature
+        if atom.semantic_family == "construction":
+            construction_material.append(
+                {
+                    "ordinal": row[1],
+                    "construction_instance_id": row[2],
+                    "construction_code": row[3],
+                    "catalog_atom_code": row[4],
+                    "surface_token": row[5],
+                    "construction_slot_ids": list(row[6]),
+                    "role_atoms": [
+                        {
+                            "construction_slot_id": role[0],
+                            "lexical_role_kind": role[1],
+                            "construction_position": role[2],
+                            "role_position_atom_code": role[3],
+                            "role_position_surface_token": role[4],
+                            "target_owner_ordinals": list(role[5]),
+                            "participation_ids": list(role[6]),
+                        }
+                        for role in row[7]
+                    ],
+                }
+            )
+        elif atom.semantic_family == "relation":
+            relation_material.append(
+                {
+                    "ordinal": row[1],
+                    "experiment_relation_id": row[2],
+                    "source_relation_id": row[3],
+                    "source_relation_type": row[4],
+                    "effective_relation_type": row[5],
+                    "from_owner_ordinal": row[6],
+                    "to_owner_ordinal": row[7],
+                    "direction": row[8],
+                    "authority_basis": row[9],
+                    "source_retention": row[10],
+                    "experiment_retention": row[11],
+                    "refines_source_relation_id": row[12],
+                }
+            )
+        elif atom.semantic_family == "semantic_link":
+            link_material.append(
+                {
+                    "ordinal": row[1],
+                    "source_semantic_link_id": row[2],
+                    "relation_type": row[3],
+                    "from_owner_ordinal": row[4],
+                    "to_owner_ordinal": row[5],
+                    "direction": row[6],
+                    "required": row[7],
+                }
+            )
+        elif atom.semantic_family == "explicit_unknown":
+            unknown_material.append(
+                {
+                    "ordinal": row[1],
+                    "source_unknown_id": row[2],
+                    "dimension": row[3],
+                    "affected_owner_ordinals": list(row[4]),
+                    "required": row[5],
+                }
+            )
+    typed_payload_sha256 = artifact_sha256(
+        {
+            "owner_registry": list(owner_registry),
+            "construction_atoms": construction_material,
+            "relation_atoms": relation_material,
+            "semantic_link_atoms": link_material,
+            "explicit_unknown_atoms": unknown_material,
+            "reception_bindings": [
+                {
+                    "source_reception_opportunity_id": (
+                        row.source_reception_opportunity_id
+                    ),
+                    "source_scope": row.source_scope,
+                    "source_focus_owner_ids": list(
+                        row.source_focus_owner_ids
+                    ),
+                    "source_target_owner_ids": list(
+                        row.source_target_owner_ids
+                    ),
+                    "supporting_source_owner_ids": list(
+                        row.supporting_source_owner_ids
+                    ),
+                    "visible_support_owner_ids": list(
+                        row.visible_support_owner_ids
+                    ),
+                    "inventory_reception_act": row.inventory_reception_act,
+                    "effective_reception_act": row.effective_reception_act,
+                    "act_refinement_basis": row.act_refinement_basis,
+                    "sentence_group_ordinal": row.sentence_group_ordinal,
+                }
+                for row in receptions
+            ],
+        }
+    )
+    candidate_boundary_sha256 = artifact_sha256(
+        {
+            "semantic_coverage_authorized": True,
+            "old_gate_consulted": False,
+            "old_selector_consulted": False,
+            "base_acceptance_claimed": False,
+            "experimental_only": True,
+            "private_body_full": True,
+            "shareable": False,
+            "runtime_connected": False,
+        }
+    )
+    return _ExpectedRecovery(
+        owner_registry=owner_registry,
+        owners=owners,
+        roots=tuple(roots),
+        atoms=tuple(atom_rows),
+        receptions=tuple(receptions),
+        source_counts=source_counts,
+        source_commitments=source_commitments,
+        current_input_binding=input_binding,
+        typed_payload_sha256=typed_payload_sha256,
+        candidate_boundary_sha256=candidate_boundary_sha256,
+        catalog=catalog,
+        grammar=grammar,
+    )
+
+
 def _owner_term(
     value: str,
     owner_lexicon: Mapping[str, tuple[str, str, str, str]],
     catalog: Mapping[str, Any],
     grammar: Mapping[str, Any],
 ) -> tuple[str, tuple[str, ...]] | None:
-    referent_tokens = tuple(
-        sorted(
-            {
-                str(row)
-                for row in grammar["referent_scope_cues"].values()
-                if row
-            },
-            key=len,
-            reverse=True,
-        )
-    )
-    normalized = value
-    for _bound in range(2):
-        token = next(
-            (row for row in referent_tokens if normalized.startswith(row)),
-            None,
-        )
-        if token is None:
-            break
-        normalized = normalized[len(token) :]
     fragments = tuple(
         (str(code), str(fragment))
         for code, fragment in catalog[
@@ -581,13 +1955,13 @@ def _owner_term(
     )
     matches: list[tuple[str, tuple[str, ...]]] = []
     for expression, owner in owner_lexicon.items():
-        if normalized == expression:
+        if value == expression:
             matches.append((owner[0], ()))
         for first_code, first_fragment in fragments:
-            if normalized == expression + first_fragment:
+            if value == expression + first_fragment:
                 matches.append((owner[0], (first_code,)))
             for second_code, second_fragment in fragments:
-                if normalized == expression + first_fragment + second_fragment:
+                if value == expression + first_fragment + second_fragment:
                     matches.append((owner[0], (first_code, second_code)))
     unique = tuple(dict.fromkeys(matches))
     return unique[0] if len(unique) == 1 else None
@@ -645,22 +2019,71 @@ def _owner_sequence(
     return unique[0] if len(unique) == 1 and unique[0] else None
 
 
-def _template_match(template: str, value: str) -> tuple[str, str] | None:
-    parts = re.split(r"(\{source\}|\{target\})", template)
+def _template_captures(
+    template: str,
+    value: str,
+) -> tuple[tuple[str, str], ...]:
+    """Enumerate bounded literal-template captures before typed decoding."""
+
+    parts = tuple(re.split(r"(\{source\}|\{target\})", template))
     if parts.count("{source}") != 1 or parts.count("{target}") != 1:
-        return None
-    pattern = ""
-    for part in parts:
-        if part == "{source}":
-            pattern += r"(?P<source>.+?)"
-        elif part == "{target}":
-            pattern += r"(?P<target>.+?)"
-        else:
-            pattern += re.escape(part)
-    match = re.fullmatch(pattern, value)
-    if match is None:
-        return None
-    return match.group("source"), match.group("target")
+        return ()
+    rows: list[tuple[str, str]] = []
+
+    def walk(
+        ordinal: int,
+        offset: int,
+        captures: tuple[tuple[str, str], ...],
+    ) -> None:
+        if ordinal == len(parts):
+            if offset == len(value):
+                material = dict(captures)
+                rows.append((material["source"], material["target"]))
+            return
+        part = parts[ordinal]
+        if part in {"{source}", "{target}"}:
+            name = part[1:-1]
+            for end in range(offset + 1, len(value) + 1):
+                walk(ordinal + 1, end, captures + ((name, value[offset:end]),))
+            return
+        if value.startswith(part, offset):
+            walk(ordinal + 1, offset + len(part), captures)
+
+    walk(0, 0, ())
+    return tuple(dict.fromkeys(rows))
+
+
+def _template_owner_matches(
+    template: str,
+    value: str,
+    owner_lexicon: Mapping[str, tuple[str, str, str, str]],
+    catalog: Mapping[str, Any],
+    grammar: Mapping[str, Any],
+) -> tuple[
+    tuple[
+        tuple[str, tuple[str, ...]],
+        tuple[str, tuple[str, ...]],
+    ],
+    ...,
+]:
+    decoded: list[
+        tuple[
+            tuple[str, tuple[str, ...]],
+            tuple[str, tuple[str, ...]],
+        ]
+    ] = []
+    for source_material, target_material in _template_captures(
+        template, value
+    ):
+        source = _owner_term(
+            source_material, owner_lexicon, catalog, grammar
+        )
+        target = _owner_term(
+            target_material, owner_lexicon, catalog, grammar
+        )
+        if source is not None and target is not None:
+            decoded.append((source, target))
+    return tuple(dict.fromkeys(decoded))
 
 
 def _strip_dimension_prefixes(
@@ -725,7 +2148,7 @@ def _plan_owned_regions(
     if any(not line for line in actual_lines):
         return None
     expected_groups = tuple(sorted(set(observation_group_ordinals)))
-    if any(not 1 <= group <= len(actual_lines) for group in expected_groups):
+    if expected_groups != tuple(range(1, len(actual_lines) + 1)):
         return None
     clusters: list[str] = []
     for group in expected_groups:
@@ -740,9 +2163,10 @@ def _plan_owned_regions(
         catalog["clause_morphology"]["grammatical_sentence_join"]
     )
     receptions: list[str] = []
-    for line in actual_reception.split("\n"):
-        if not line:
-            continue
+    reception_lines = () if not actual_reception else actual_reception.split("\n")
+    if any(not line for line in reception_lines):
+        return None
+    for line in reception_lines:
         if not line.endswith(suffix):
             return None
         receptions.extend(
@@ -756,6 +2180,8 @@ def _parse_observation(
     owner_lexicon: Mapping[str, tuple[str, str, str, str]],
     catalog: Mapping[str, Any],
     grammar: Mapping[str, Any],
+    *,
+    strip_leading_dimensions: bool = True,
 ) -> dict[str, Any]:
     atoms: Counter[Any] = Counter()
     modifiers: Counter[Any] = Counter()
@@ -776,7 +2202,11 @@ def _parse_observation(
         temporal_seen = False
         parsed_in_cluster = 0
         for raw_piece in pieces:
-            piece, dimensions = _strip_dimension_prefixes(raw_piece, grammar)
+            piece, dimensions = (
+                _strip_dimension_prefixes(raw_piece, grammar)
+                if strip_leading_dimensions
+                else (raw_piece, ())
+            )
             temporal_seen = temporal_seen or any(
                 row[0] == "temporal" for row in dimensions
             )
@@ -788,27 +2218,23 @@ def _parse_observation(
                 ("semantic_link", catalog["semantic_link_predicate_fragments"]),
             ):
                 for compound_key, template in registry.items():
-                    endpoints = _template_match(str(template), piece)
-                    if endpoints is None:
-                        continue
-                    source = _owner_term(
-                        endpoints[0], owner_lexicon, catalog, grammar
-                    )
-                    target = _owner_term(
-                        endpoints[1], owner_lexicon, catalog, grammar
-                    )
-                    if source is None or target is None:
-                        continue
                     semantic_key, direction = str(compound_key).rsplit(":", 1)
-                    matches.append(
-                        (
-                            family,
-                            semantic_key,
-                            direction,
-                            (source[0], target[0]),
-                            (source, target),
+                    for source, target in _template_owner_matches(
+                        str(template),
+                        piece,
+                        owner_lexicon,
+                        catalog,
+                        grammar,
+                    ):
+                        matches.append(
+                            (
+                                family,
+                                semantic_key,
+                                direction,
+                                (source[0], target[0]),
+                                (source, target),
+                            )
                         )
-                    )
             unknown_join = str(
                 catalog["clause_morphology"]["unknown_owner_join"]
             )
@@ -830,7 +2256,7 @@ def _parse_observation(
                         (
                             "explicit_unknown",
                             str(semantic_key),
-                            "unknown",
+                            "",
                             tuple(row[0] for row in owners),
                             owners,
                         )
@@ -860,8 +2286,7 @@ def _parse_observation(
             unique = tuple(dict.fromkeys(matches))
             if len(unique) != 1:
                 ambiguous += len(unique) > 1
-                if parsed_in_cluster:
-                    unparsed += len(unique) == 0
+                unparsed += len(unique) == 0
                 continue
             family, semantic_key, direction, owners, owner_rows = unique[0]
             parsed_in_cluster += 1
@@ -870,8 +2295,6 @@ def _parse_observation(
                 for code in construction_codes:
                     atoms[("construction", code, "", (owner_id,))] += 1
                     modifiers[(code, owner_id)] += 1
-        if not parsed_in_cluster:
-            unparsed += 1
         temporal_loci += temporal_seen and bool(parsed_in_cluster)
     return {
         "atoms": atoms,
@@ -943,21 +2366,623 @@ def _parse_reception(
     return actual, ambiguous
 
 
-def _inverse_checks(
-    candidate: Any,
-    *,
-    successor_snapshot: Any,
-    lexical_atom_specs: Any,
-    reception_focus_authority: Any,
-) -> dict[str, bool]:
-    from emlis_ai_step11_natural_surface_v3 import (
-        _step11_rc0031_product_owner_projection,
-        _step11_rc0031_product_surface_authorities,
+def _fragment_signature(value: Any) -> tuple[Any, ...]:
+    return (
+        str(value.source_fragment_id),
+        str(value.source_owner_id),
+        str(value.source_nucleus_id),
+        str(value.source_span_id),
+        str(value.source_field),
+        int(value.span_relative_start_index),
+        int(value.span_relative_end_index),
+        str(value.source_fragment_text),
+        str(value.source_fragment_text_sha256),
+        str(value.binding_basis),
     )
 
+
+def _root_signature(value: Any) -> tuple[Any, ...]:
+    return (
+        str(value.source_root_id),
+        str(value.source_owner_id),
+        str(value.source_nucleus_id),
+        tuple(str(row) for row in value.source_obligation_ids),
+        tuple(_fragment_signature(row) for row in value.source_fragments),
+        str(value.semantic_kind),
+        tuple(str(row) for row in value.dimensions),
+        value.required,
+    )
+
+
+def _construction_role_signature(value: Any) -> tuple[Any, ...]:
+    return (
+        str(value.construction_slot_id),
+        str(value.parent_nucleus_id),
+        str(value.source_span_id),
+        int(value.slot_start_index),
+        int(value.slot_end_index),
+        str(value.lexical_role_kind),
+        str(value.construction_position),
+        str(value.role_position_surface_token),
+        tuple(str(row) for row in value.source_owner_ids),
+        tuple(
+            tuple(str(child) for child in row)
+            for row in value.source_owner_dimensions
+        ),
+        tuple(str(row) for row in value.participation_ids),
+    )
+
+
+def _atom_signature(value: Any) -> tuple[Any, ...]:
+    return (
+        str(value.source_atom_id),
+        str(value.semantic_family),
+        str(value.semantic_key),
+        tuple(str(row) for row in value.source_owner_ids),
+        str(value.direction),
+        tuple(str(row) for row in value.dimensions),
+        tuple(str(row) for row in value.source_nucleus_owner_ids),
+        tuple(str(row) for row in value.source_semantic_unit_owner_ids),
+        tuple(str(row) for row in value.source_parent_nucleus_ids),
+        tuple(str(row) for row in value.source_span_ids),
+        tuple(str(row) for row in value.source_evidence_alias_ids),
+        tuple(str(row) for row in value.source_marker_span_ids),
+        tuple(
+            _construction_role_signature(row)
+            for row in value.construction_roles
+        ),
+        int(value.source_order),
+    )
+
+
+def _reception_signature(value: Any) -> tuple[Any, ...]:
+    return (
+        str(value.source_reception_opportunity_id),
+        str(value.source_scope),
+        tuple(str(row) for row in value.source_focus_owner_ids),
+        tuple(str(row) for row in value.source_target_owner_ids),
+        tuple(str(row) for row in value.supporting_source_owner_ids),
+        tuple(str(row) for row in value.visible_support_owner_ids),
+        str(value.inventory_reception_act),
+        str(value.effective_reception_act),
+        str(value.act_refinement_basis),
+        int(value.sentence_group_ordinal),
+    )
+
+
+def _owner_signature(value: Any) -> tuple[Any, ...]:
+    return (
+        str(value.schema_version),
+        str(value.source_owner_id),
+        str(value.source_owner_kind),
+        int(value.source_owner_ordinal),
+        str(value.source_nucleus_id),
+        str(value.semantic_kind),
+        tuple(str(row) for row in value.dimensions),
+        tuple(str(row) for row in value.typed_role_tokens),
+        str(value.referent_text),
+        str(value.referent_text_sha256),
+        str(value.referent_basis),
+    )
+
+
+def _current_input_binding_signature(value: Any) -> tuple[Any, ...]:
+    return (
+        str(value.thought_text),
+        str(value.action_text),
+        tuple(str(row) for row in value.emotions),
+        tuple(str(row) for row in value.categories),
+        str(value.projected_material_sha256),
+        str(value.normalized_bundle_sha256),
+        str(value.snapshot_original_input_bundle_sha256),
+    )
+
+
+def _forward_atom_signatures(candidate: Any) -> tuple[tuple[Any, ...], ...]:
+    rows: list[tuple[Any, ...]] = []
+    for atom in candidate.construction_atoms:
+        rows.append(
+            (
+                "construction",
+                int(atom.ordinal),
+                str(atom.construction_instance_id),
+                str(atom.construction_code),
+                str(atom.catalog_atom_code),
+                str(atom.surface_token),
+                tuple(str(value) for value in atom.construction_slot_ids),
+                tuple(
+                    (
+                        str(role.construction_slot_id),
+                        str(role.lexical_role_kind),
+                        str(role.construction_position),
+                        str(role.role_position_atom_code),
+                        str(role.role_position_surface_token),
+                        tuple(
+                            int(value) for value in role.target_owner_ordinals
+                        ),
+                        tuple(str(value) for value in role.participation_ids),
+                    )
+                    for role in atom.role_atoms
+                ),
+            )
+        )
+    for atom in candidate.relation_atoms:
+        rows.append(
+            (
+                "relation",
+                int(atom.ordinal),
+                str(atom.experiment_relation_id),
+                str(atom.source_relation_id),
+                str(atom.source_relation_type),
+                str(atom.effective_relation_type),
+                int(atom.from_owner_ordinal),
+                int(atom.to_owner_ordinal),
+                str(atom.direction),
+                str(atom.authority_basis),
+                str(atom.source_retention),
+                str(atom.experiment_retention),
+                None
+                if atom.refines_source_relation_id is None
+                else str(atom.refines_source_relation_id),
+            )
+        )
+    for atom in candidate.semantic_link_atoms:
+        rows.append(
+            (
+                "semantic_link",
+                int(atom.ordinal),
+                str(atom.source_semantic_link_id),
+                str(atom.relation_type),
+                int(atom.from_owner_ordinal),
+                int(atom.to_owner_ordinal),
+                str(atom.direction),
+                atom.required,
+            )
+        )
+    for atom in candidate.explicit_unknown_atoms:
+        rows.append(
+            (
+                "explicit_unknown",
+                int(atom.ordinal),
+                str(atom.source_unknown_id),
+                str(atom.dimension),
+                tuple(int(value) for value in atom.affected_owner_ordinals),
+                atom.required,
+            )
+        )
+    return tuple(rows)
+
+
+def _plan_unit_signature(value: Any) -> tuple[Any, ...]:
+    return (
+        int(value.line_ordinal),
+        str(value.section_role),
+        str(value.source_unit_id),
+        tuple(str(row) for row in value.source_atom_ids),
+        tuple(str(row) for row in value.source_owner_ids),
+        tuple(
+            (str(owner_id), tuple(str(child) for child in dimensions))
+            for owner_id, dimensions in value.source_owner_dimensions
+        ),
+        tuple(str(row) for row in value.source_obligation_ids),
+        tuple(str(row) for row in value.source_fragment_ids),
+        tuple(str(row) for row in value.dimensions),
+        int(value.visible_clause_count),
+    )
+
+
+def _expected_plan_unit_signatures(
+    expected: _ExpectedRecovery,
+) -> tuple[tuple[Any, ...], ...]:
+    dimensions_by_owner = {
+        row.source_owner_id: row.dimensions for row in expected.owners
+    }
+    rows: list[tuple[Any, ...]] = []
+    for root in expected.roots:
+        rows.append(
+            (
+                len(rows) + 1,
+                "observation",
+                root.source_root_id,
+                (),
+                (root.source_owner_id,),
+                ((root.source_owner_id, root.dimensions),),
+                root.source_obligation_ids,
+                tuple(
+                    fragment.source_fragment_id
+                    for fragment in root.source_fragments
+                ),
+                root.dimensions,
+                1,
+            )
+        )
+    for atom in expected.atoms:
+        rows.append(
+            (
+                len(rows) + 1,
+                "observation",
+                atom.source_atom_id,
+                (atom.source_atom_id,),
+                atom.source_owner_ids,
+                tuple(
+                    (owner_id, dimensions_by_owner[owner_id])
+                    for owner_id in atom.source_owner_ids
+                ),
+                (),
+                (),
+                atom.dimensions,
+                1,
+            )
+        )
+    available = set(dimensions_by_owner)
+    for reception in expected.receptions:
+        visible_owners = _ordered_unique_strings(
+            value
+            for value in (
+                *reception.source_focus_owner_ids,
+                *reception.source_target_owner_ids,
+                *reception.visible_support_owner_ids,
+            )
+            if value in available
+        )
+        rows.append(
+            (
+                len(rows) + 1,
+                "reception",
+                reception.source_reception_opportunity_id,
+                (),
+                visible_owners,
+                tuple(
+                    (owner_id, dimensions_by_owner[owner_id])
+                    for owner_id in visible_owners
+                ),
+                (),
+                (),
+                ("unknown", "unknown", "unknown", "unknown"),
+                1,
+            )
+        )
+    return tuple(rows)
+
+
+def _visible_dimension_prefix(
+    dimensions: tuple[str, str, str, str],
+    grammar: Mapping[str, Any],
+) -> str:
+    temporal, modality, polarity, referent = dimensions
+    return (
+        str(
+            grammar["temporal_scope_cues"].get(
+                temporal, grammar["temporal_scope_cues"]["unknown"]
+            )
+        )
+        + str(
+            grammar["modality_cues"].get(
+                modality, grammar["modality_cues"]["unknown"]
+            )
+        )
+        + str(
+            grammar["polarity_cues"].get(
+                polarity, grammar["polarity_cues"]["unknown"]
+            )
+        )
+        + str(
+            grammar["referent_scope_cues"].get(
+                referent, grammar["referent_scope_cues"]["unknown"]
+            )
+        )
+    )
+
+
+def _independent_visible_decode(
+    candidate: Any,
+    expected: _ExpectedRecovery,
+) -> dict[str, bool]:
+    """Decode body bytes only against independently derived source rows."""
+
+    result = {
+        "layout": False,
+        "roots": False,
+        "atoms": False,
+        "construction_roles": False,
+        "receptions": False,
+        "dimensions": False,
+    }
     body = candidate.rendered_surface.utf8_bytes
+    observation_count = len(expected.roots) + len(expected.atoms)
+    regions = _plan_owned_regions(
+        body,
+        expected.catalog,
+        expected.grammar,
+        observation_group_ordinals=tuple(range(1, observation_count + 1)),
+    )
+    if regions is None:
+        return result
+    observation_lines, reception_clauses = regions
+    if (
+        len(observation_lines) != observation_count
+        or len(reception_clauses) != len(expected.receptions)
+    ):
+        return result
+    owner_by_id = {row.source_owner_id: row for row in expected.owners}
+    root_lines = observation_lines[: len(expected.roots)]
+    atom_lines = observation_lines[len(expected.roots) :]
+    expected_root_lines: list[str] = []
+    for root in expected.roots:
+        owner = owner_by_id[root.source_owner_id]
+        if owner.referent_basis == "typed_source_fragment_collision_signature":
+            material = owner.referent_text
+        else:
+            material = (
+                "「"
+                + "／".join(
+                    row.source_fragment_text for row in root.source_fragments
+                )
+                + "」に表れている"
+                + owner.referent_text
+            )
+        expected_root_lines.append(
+            _visible_dimension_prefix(root.dimensions, expected.grammar)
+            + material
+            + "がここにあります"
+        )
+    result["roots"] = tuple(root_lines) == tuple(expected_root_lines)
+
+    semantic_lexicon: dict[str, tuple[str, str, str, str]] = {}
+    reception_lexicon: dict[str, tuple[str, str, str, str]] = {}
+    semantic_owner_ids = {
+        value for row in expected.atoms for value in row.source_owner_ids
+    }
+    reception_owner_ids = {
+        value
+        for row in expected.receptions
+        for value in (
+            *row.source_target_owner_ids,
+            *row.visible_support_owner_ids,
+        )
+    }
+    for owner in expected.owners:
+        if owner.source_owner_id in semantic_owner_ids:
+            semantic_expression = (
+                _visible_dimension_prefix(owner.dimensions, expected.grammar)
+                + owner.referent_text
+            )
+            if semantic_expression in semantic_lexicon:
+                return result
+            semantic_lexicon[semantic_expression] = (
+                owner.source_owner_id,
+                "",
+                "",
+                "",
+            )
+        if owner.source_owner_id in reception_owner_ids:
+            if owner.referent_text in reception_lexicon:
+                return result
+            reception_lexicon[owner.referent_text] = (
+                owner.source_owner_id,
+                "",
+                "",
+                "",
+            )
+    atom_matches: list[bool] = []
+    construction_matches: list[bool] = []
+    morphology = expected.catalog["clause_morphology"]
+    for line, atom in zip(atom_lines, expected.atoms, strict=True):
+        if atom.semantic_family == "construction":
+            role_texts = tuple(
+                role.role_position_surface_token
+                + "は"
+                + str(morphology["target_owner_join"]).join(
+                    _visible_dimension_prefix(dimensions, expected.grammar)
+                    + owner_by_id[owner_id].referent_text
+                    for owner_id, dimensions in zip(
+                        role.source_owner_ids,
+                        role.source_owner_dimensions,
+                        strict=True,
+                    )
+                )
+                for role in atom.construction_roles
+            )
+            expected_line = (
+                "、".join(role_texts)
+                + "という"
+                + atom.surface_token
+                + str(morphology["construction_standalone_predicate"])
+            )
+            matched = line == expected_line
+            atom_matches.append(matched)
+            construction_matches.append(matched)
+            continue
+        parsed = _parse_observation(
+            (line,),
+            semantic_lexicon,
+            expected.catalog,
+            expected.grammar,
+            strip_leading_dimensions=False,
+        )
+        signature = (
+            atom.semantic_family,
+            atom.semantic_key,
+            atom.direction,
+            atom.source_owner_ids,
+        )
+        matched = bool(
+            parsed["unparsed"] == 0
+            and parsed["ambiguous"] == 0
+            and parsed["modifiers"] == Counter()
+            and parsed["atoms"] == Counter({signature: 1})
+        )
+        atom_matches.append(matched)
+    result["atoms"] = len(atom_matches) == len(expected.atoms) and all(
+        atom_matches
+    )
+    expected_constructions = sum(
+        row.semantic_family == "construction" for row in expected.atoms
+    )
+    result["construction_roles"] = bool(
+        len(construction_matches) == expected_constructions
+        and all(construction_matches)
+    )
+    parsed_receptions, reception_ambiguity = _parse_reception(
+        reception_clauses,
+        reception_lexicon,
+        expected.catalog,
+        expected.grammar,
+    )
+    expected_receptions = Counter(
+        (
+            row.effective_reception_act,
+            _ordered_unique_strings(
+                value
+                for value in (
+                    *row.source_focus_owner_ids,
+                    *row.visible_support_owner_ids,
+                )
+                if value not in set(row.source_target_owner_ids)
+                and value in owner_by_id
+            ),
+            row.source_target_owner_ids,
+        )
+        for row in expected.receptions
+    )
+    result["receptions"] = bool(
+        reception_ambiguity == 0
+        and parsed_receptions == expected_receptions
+    )
+    result["dimensions"] = bool(
+        result["roots"]
+        and result["atoms"]
+        and all(
+            _visible_dimension_prefix(owner.dimensions, expected.grammar)
+            + owner.referent_text
+            in line
+            for line, atom in zip(atom_lines, expected.atoms, strict=True)
+            for owner in (
+                owner_by_id[value] for value in atom.source_owner_ids
+            )
+        )
+    )
+    result["layout"] = bool(
+        result["roots"]
+        and result["atoms"]
+        and result["receptions"]
+    )
+    return result
+
+
+def _recovery_source_envelope_exact(
+    candidate: Any,
+    *,
+    context: _DirectRecoveryContext,
+) -> bool:
+    """Bind the recovery envelope to independently rebuilt upstream hashes."""
+
     try:
-        utf8_valid = (
+        from emlis_ai_step11_cycle001_product_recovery_v3 import (
+            step11_cycle001_product_recovery_source_envelope_material,
+        )
+        from emlis_ai_nls_v3_artifact_contract import artifact_sha256
+
+        expected = _direct_expected_recovery(context)
+        envelope = candidate.source_envelope
+        owner_bindings = tuple(envelope.owner_bindings)
+        root_bindings = tuple(envelope.root_bindings)
+        atom_bindings = tuple(envelope.atom_bindings)
+        reception_bindings = tuple(envelope.reception_bindings)
+        envelope_fields = set(getattr(type(envelope), "__dataclass_fields__", {}))
+        forbidden = {
+            "body",
+            "current_input",
+            "final_utf8_bytes",
+            "raw_input",
+            "raw_output",
+            "rendered_surface",
+            "utf8_bytes",
+        }
+        expected_commitments = dict(expected.source_commitments)
+        return bool(
+            envelope.schema_version == _RECOVERY_SOURCE_SCHEMA
+            and envelope.candidate_version_id == _RECOVERY_CANDIDATE_VERSION
+            and type(envelope.source_candidate_id) is str
+            and bool(envelope.source_candidate_id)
+            and type(envelope.source_envelope_sha256) is str
+            and _SHA256_RE.fullmatch(envelope.source_envelope_sha256)
+            is not None
+            and envelope.source_envelope_sha256 != "0" * 64
+            and envelope.source_envelope_sha256
+            == artifact_sha256(
+                step11_cycle001_product_recovery_source_envelope_material(
+                    envelope, include_id=False
+                )
+            )
+            and envelope.source_candidate_id
+            == "nls3s11rc0035source_"
+            + envelope.source_envelope_sha256[:16]
+            and all(
+                getattr(envelope, name, None) == value
+                for name, value in expected_commitments.items()
+            )
+            and _current_input_binding_signature(
+                envelope.current_input_binding
+            )
+            == expected.current_input_binding
+            and envelope.duplicated_typed_payload_sha256
+            == expected.typed_payload_sha256
+            and tuple(envelope.source_counts) == expected.source_counts
+            and tuple(_owner_signature(row) for row in owner_bindings)
+            == tuple(_owner_signature(row) for row in expected.owners)
+            and tuple(_root_signature(row) for row in root_bindings)
+            == tuple(_root_signature(row) for row in expected.roots)
+            and tuple(_atom_signature(row) for row in atom_bindings)
+            == tuple(_atom_signature(row) for row in expected.atoms)
+            and tuple(
+                _reception_signature(row) for row in reception_bindings
+            )
+            == tuple(
+                _reception_signature(row) for row in expected.receptions
+            )
+            and not (envelope_fields & forbidden)
+            and owner_bindings
+            and type(candidate.owner_registry) is tuple
+            and tuple(candidate.owner_registry) == expected.owner_registry
+            and envelope.old_gate_consulted is False
+            and envelope.old_selector_consulted is False
+            and envelope.base_acceptance_claimed is False
+            and envelope.semantic_coverage_authorized is True
+            and envelope.semantic_coverage_authority
+            == "rc0035_source_envelope_visible_inverse_replay"
+            and envelope.experimental_only is True
+            and envelope.private_body_full is True
+            and envelope.shareable is False
+            and envelope.runtime_connected is False
+        )
+    except Exception:
+        return False
+
+
+def _recovery_inverse_checks(
+    candidate: Any,
+    *,
+    context: _DirectRecoveryContext,
+) -> dict[str, bool]:
+    """Independently inverse-check final material against upstream sources."""
+
+    result = {
+        "final_utf8_valid": False,
+        "inverse_layout_exact": False,
+        "semantic_atoms_exact": False,
+        "construction_modifiers_exact": False,
+        "reception_bindings_exact": False,
+        "dimension_loci_exact": False,
+    }
+    try:
+        from emlis_ai_step11_cycle001_product_recovery_v3 import (
+            step11_cycle001_product_recovery_visible_inverse,
+        )
+
+        expected = _direct_expected_recovery(context)
+        body = candidate.rendered_surface.utf8_bytes
+        result["final_utf8_valid"] = bool(
             type(body) is bytes
             and bool(body)
             and body.decode("utf-8", errors="strict").encode(
@@ -966,134 +2991,130 @@ def _inverse_checks(
             == body
             and hashlib.sha256(body).hexdigest()
             == candidate.rendered_surface.sha256
+            and candidate.final_utf8_bytes == body
+            and candidate.rendered_surface.schema_version
+            == _RECOVERY_RENDERED_SCHEMA
+            and candidate.rendered_surface.source_envelope_sha256
+            == candidate.source_envelope.source_envelope_sha256
+            and candidate.rendered_surface.source_realization_plan_id
+            == candidate.realization_plan.realization_plan_id
         )
-        _catalog_owner, catalog, grammar, _catalog_sha = (
-            _step11_rc0031_product_surface_authorities()
+        envelope = candidate.source_envelope
+        atom_bindings = tuple(envelope.atom_bindings)
+        expected_atom_signatures = tuple(
+            _atom_signature(row) for row in expected.atoms
         )
-        owner_rows = _step11_rc0031_product_owner_projection(
-            candidate.base_candidate,
-            successor_snapshot=successor_snapshot,
-            lexical_atom_specs=lexical_atom_specs,
+        actual_atom_signatures = tuple(
+            _atom_signature(row) for row in atom_bindings
         )
-        owner_lexicon = {
-            str(row[3]): (
-                str(row[0]),
-                str(row[1]),
-                str(row[2]),
-                str(row[4]),
+        expected_forward = tuple(
+            row.forward_signature for row in expected.atoms
+        )
+        actual_forward = _forward_atom_signatures(candidate)
+        decoded = _independent_visible_decode(candidate, expected)
+        result["semantic_atoms_exact"] = bool(
+            actual_atom_signatures == expected_atom_signatures
+            and actual_forward == expected_forward
+            and decoded["atoms"]
+        )
+        result["construction_modifiers_exact"] = bool(
+            tuple(
+                tuple(
+                    _construction_role_signature(role)
+                    for role in row.construction_roles
+                )
+                for row in atom_bindings
+                if row.semantic_family == "construction"
             )
-            for row in owner_rows
-        }
-        product_bindings = tuple(
-            candidate.surface_realization_plan.proposition_clause_bindings
-        )
-        regions = _plan_owned_regions(
-            body,
-            catalog,
-            grammar,
-            observation_group_ordinals=tuple(
-                row.sentence_group_ordinal for row in product_bindings
-            ),
-        )
-        if len(owner_lexicon) != len(owner_rows) or regions is None:
-            raise ValueError("inverse_layout")
-        parsed = _parse_observation(
-            regions[0], owner_lexicon, catalog, grammar
-        )
-        actual_receptions, reception_ambiguous = _parse_reception(
-            regions[1], owner_lexicon, catalog, grammar
-        )
-
-        expected_atoms: Counter[Any] = Counter()
-        expected_modifiers: Counter[Any] = Counter()
-        for binding in product_bindings:
-            key_by_id = {
-                str(atom_id): str(semantic_key)
-                for atom_id, semantic_key in zip(
-                    binding.source_atom_ids,
-                    binding.semantic_keys,
-                    strict=True,
+            == tuple(
+                tuple(
+                    _construction_role_signature(role)
+                    for role in row.construction_roles
                 )
-            }
-            for family, semantic_key, direction, owners in zip(
-                binding.semantic_families,
-                binding.semantic_keys,
-                binding.directions,
-                binding.source_atom_owner_ids,
-                strict=True,
-            ):
-                normalized_direction = (
-                    str(direction)
-                    if family in {"relation", "semantic_link"}
-                    else "unknown"
-                    if family == "explicit_unknown"
-                    else ""
-                )
-                expected_atoms[
-                    (
-                        str(family),
-                        str(semantic_key),
-                        normalized_direction,
-                        tuple(str(row) for row in owners),
-                    )
-                ] += 1
-            for atom_id, owner_id in zip(
-                binding.construction_modifier_atom_ids,
-                binding.construction_modifier_target_owner_ids,
-                strict=True,
-            ):
-                expected_modifiers[
-                    (key_by_id[str(atom_id)], str(owner_id))
-                ] += 1
-        authority_by_opportunity = {
-            str(row.source_reception_opportunity_id): row
-            for row in reception_focus_authority.bindings
-        }
-        expected_receptions: Counter[Any] = Counter()
-        for row in candidate.surface_realization_plan.reception_predication_bindings:
-            authority = authority_by_opportunity[
-                str(row.source_reception_opportunity_id)
-            ]
-            targets = tuple(str(owner) for owner in row.source_target_owner_ids)
-            supports = tuple(
-                owner
-                for owner in dict.fromkeys(
-                    (
-                        *(str(owner) for owner in authority.source_focus_owner_ids),
-                        *(
-                            str(owner)
-                            for owner in row.supporting_source_owner_ids
-                        ),
-                    )
-                )
-                if owner not in targets
+                for row in expected.atoms
+                if row.semantic_family == "construction"
             )
-            expected_receptions[(str(row.reception_act), supports, targets)] += 1
-        layout_exact = parsed["unparsed"] == 0 and parsed["ambiguous"] == 0
-        semantic_exact = parsed["atoms"] == expected_atoms
-        modifier_exact = parsed["modifiers"] == expected_modifiers
-        reception_exact = (
-            reception_ambiguous == 0
-            and actual_receptions == expected_receptions
+            and decoded["construction_roles"]
         )
-        dimension_exact = parsed["temporal_loci"] == len(regions[0])
-        return {
-            "final_utf8_valid": bool(utf8_valid),
-            "inverse_layout_exact": layout_exact,
-            "semantic_atoms_exact": semantic_exact,
-            "construction_modifiers_exact": modifier_exact,
-            "reception_bindings_exact": reception_exact,
-            "dimension_loci_exact": dimension_exact,
-        }
+        result["reception_bindings_exact"] = bool(
+            tuple(
+                _reception_signature(row)
+                for row in candidate.reception_bindings
+            )
+            == tuple(
+                _reception_signature(row) for row in expected.receptions
+            )
+            and tuple(
+                _reception_signature(row)
+                for row in envelope.reception_bindings
+            )
+            == tuple(
+                _reception_signature(row) for row in expected.receptions
+            )
+            and decoded["receptions"]
+        )
+        expected_plan_units = _expected_plan_unit_signatures(expected)
+        actual_plan_units = tuple(
+            _plan_unit_signature(row) for row in candidate.realization_plan.units
+        )
+        expected_dimension_rows = tuple(row[8] for row in expected_plan_units)
+        actual_dimension_rows = tuple(row[8] for row in actual_plan_units)
+        result["dimension_loci_exact"] = bool(
+            actual_dimension_rows == expected_dimension_rows
+            and actual_plan_units == expected_plan_units
+            and decoded["dimensions"]
+        )
+        visible = step11_cycle001_product_recovery_visible_inverse(candidate)
+        replay_units = tuple(
+            (
+                int(row.line_ordinal),
+                str(row.section_role),
+                str(row.source_unit_id),
+                tuple(str(value) for value in row.source_atom_ids),
+                tuple(str(value) for value in row.source_owner_ids),
+                tuple(
+                    (
+                        str(owner_id),
+                        tuple(str(value) for value in dimensions),
+                    )
+                    for owner_id, dimensions in row.source_owner_dimensions
+                ),
+                tuple(str(value) for value in row.source_obligation_ids),
+                tuple(str(value) for value in row.source_fragment_ids),
+            )
+            for row in visible
+        )
+        expected_replay_units = tuple(row[:8] for row in expected_plan_units)
+        observation_count = len(expected.roots) + len(expected.atoms)
+        reception_count = len(expected.receptions)
+        result["inverse_layout_exact"] = bool(
+            candidate.realization_plan.schema_version == _RECOVERY_PLAN_SCHEMA
+            and candidate.realization_plan.candidate_version_id
+            == _RECOVERY_CANDIDATE_VERSION
+            and candidate.realization_plan.source_envelope_sha256
+            == candidate.source_envelope.source_envelope_sha256
+            and candidate.realization_plan.duplicated_typed_payload_sha256
+            == expected.typed_payload_sha256
+            and candidate.realization_plan.candidate_boundary_sha256
+            == expected.candidate_boundary_sha256
+            and actual_plan_units == expected_plan_units
+            and replay_units == expected_replay_units
+            and decoded["layout"]
+            and candidate.realization_plan.observation_line_count
+            == observation_count
+            and candidate.realization_plan.reception_line_count
+            == reception_count
+            and candidate.realization_plan.maximum_visible_clauses_per_line
+            == 1
+            and candidate.realization_plan.body_free is True
+            and candidate.rendered_surface.observation_line_count
+            == observation_count
+            and candidate.rendered_surface.reception_line_count
+            == reception_count
+        )
     except Exception:
-        return {
-            "final_utf8_valid": False,
-            "inverse_layout_exact": False,
-            "semantic_atoms_exact": False,
-            "construction_modifiers_exact": False,
-            "reception_bindings_exact": False,
-            "dimension_loci_exact": False,
-        }
+        pass
+    return result
 
 
 def _current_candidate(
@@ -1101,155 +3122,101 @@ def _current_candidate(
     *,
     source_closure: str,
 ) -> tuple[str, Any | None, dict[str, bool], str | None]:
-    from emlis_ai_evidence_ledger_service import (
-        build_evidence_ledger,
-        build_evidence_span_resolver,
+    from emlis_ai_step11_cycle001_product_recovery_v3 import (
+        build_step11_cycle001_product_recovery_candidate,
+        validate_step11_cycle001_product_recovery_candidate,
     )
-    from emlis_ai_grounded_lexical_role_experiment_snapshot_successor_v3 import (
-        build_grounded_lexical_role_experiment_snapshot_successor,
-    )
-    from emlis_ai_step11_grounded_lexicalization_v3 import (
-        build_step11_rc0028_experiment_lexical_atom_specs,
-    )
-    from emlis_ai_step11_natural_surface_matcher_v3 import (
-        match_step11_rc0030_base_body_exact_reuse,
-        parse_step11_rc0030_base_body_exact_reuse,
-    )
-    import emlis_ai_step11_natural_surface_v3 as surface
-    import emlis_ai_step11_rc0031_reception_focus_authority_v3 as authority_owner
-    from emlis_ai_step11_runtime_adapter_v3 import (
-        execute_step11_offline_v3,
-    )
+    from emlis_ai_nls_v3_artifact_contract import artifact_sha256
 
     checks = _empty_checks()
     checks["input_projected"] = True
-    execution = execute_step11_offline_v3(
-        dict(projected_input),
-        candidate_version_id="nls_v3_rc_0027",
-        source_dependency_closure_sha256=source_closure,
-    )
-    if execution.status == "v3_no_valid_candidate":
-        if (
-            execution.selected_candidate is not None
-            or execution.final_utf8_bytes is not None
-            or execution.selection_result.selected_candidate_id is not None
-        ):
-            return "fail_close", None, checks, "CURRENT_RC_G8_BASE_RUNTIME_INVALID"
-        checks["base_runtime_valid"] = True
-        return "no_valid_candidate", None, checks, None
-    if (
-        execution.status != "selected"
-        or execution.selected_candidate is None
-        or execution.selection_result.selected_candidate_id
-        != execution.selected_candidate.candidate_id
-        or execution.final_utf8_bytes
-        != execution.selected_candidate.rendered_surface.utf8_bytes
-        or not 1 <= len(execution.natural_candidates) <= 12
-        or execution.v1_fallback_used is not False
-    ):
-        return "fail_close", None, checks, "CURRENT_RC_G8_BASE_STATUS_INVALID"
-    checks["base_runtime_valid"] = True
-
-    resolver = build_evidence_span_resolver(
-        tuple(build_evidence_ledger(execution.normalized_input)),
-        current_input=execution.normalized_input,
-    )
-    successor = build_grounded_lexical_role_experiment_snapshot_successor(
-        execution.grounded_plan,
-        resolver,
-        observation_stage_context=execution.observation_stage_context,
-        original_input_bundle=execution.normalized_input,
-    )
-    lexical_specs = build_step11_rc0028_experiment_lexical_atom_specs(successor)
-
-    base = execution.selected_candidate
-    witness = parse_step11_rc0030_base_body_exact_reuse(base.final_utf8_bytes)
-    proof = match_step11_rc0030_base_body_exact_reuse(
-        witness,
-        successor_snapshot=successor,
-        inventory_result=execution.inventory_result,
-        content_plan=execution.content_plan,
-        discourse_plan=base.discourse_plan,
-        current_input=execution.projected_current_input,
-    )
-    if proof:
-        bindings = tuple(
-            surface.Step11Rc0031BaseBodyExactReuseBinding(
-                **{
-                    field: getattr(row, field)
-                    for field in _TRUST_PROJECTION_FIELDS
-                }
-            )
-            for row in proof
+    if type(source_closure) is not str or _SHA256_RE.fullmatch(source_closure) is None:
+        return (
+            "fail_close",
+            None,
+            checks,
+            "CURRENT_RC_G8_SOURCE_CLOSURE_INVALID",
         )
-        predecessor = (
-            surface._step11_rc0031_build_candidate_from_verified_reuse_composition(
-                base,
-                successor_snapshot=successor,
-                lexical_atom_specs=lexical_specs,
-                verified_base_body_exact_reuse_bindings=bindings,
-                validate_output=True,
-            )
-        )
-    else:
-        predecessor = surface.build_step11_rc0031_experiment_surface_candidate(
-            base,
-            successor_snapshot=successor,
-            lexical_atom_specs=lexical_specs,
-        )
-    dimension_candidate = (
-        surface.build_step11_rc0031_dimension_bearing_experiment_surface_candidate(
-            predecessor,
-            successor_snapshot=successor,
-            lexical_atom_specs=lexical_specs,
-        )
+    context = _build_direct_recovery_context(projected_input)
+    checks["source_context_built"] = True
+    source_arguments = {
+        "plan": context.grounded_plan,
+        "resolver": context.resolver,
+        "successor_snapshot": context.successor_snapshot,
+        "lexical_atom_specs": context.lexical_atom_specs,
+        "inventory_result": context.inventory_result,
+        "content_plan": context.content_plan,
+        "discourse_plans": context.discourse_plans,
+        "current_input": context.projected_current_input,
+    }
+    candidate = build_step11_cycle001_product_recovery_candidate(
+        **source_arguments
     )
-    authority = authority_owner.build_step11_rc0031_reception_focus_authority(
-        execution.grounded_plan,
-        resolver,
-        successor_snapshot=successor,
-        base_candidate=dimension_candidate.base_candidate,
-        inventory_result=execution.inventory_result,
-        content_plan=execution.content_plan,
-        current_input=execution.projected_current_input,
+    checks["recovery_builder_called"] = True
+    issues = validate_step11_cycle001_product_recovery_candidate(
+        candidate,
+        **source_arguments,
     )
-    builder = getattr(
-        surface,
-        "_step11_rc0031_build_owner_role_inflected_typed_recomposition_candidate",
-        None,
+    checks["recovery_validator_passed"] = not issues
+    expected_candidate_id = "nls3s11rc0035cand_" + artifact_sha256(
+        {
+            "candidate_version_id": _RECOVERY_CANDIDATE_VERSION,
+            "candidate_schema": _RECOVERY_CANDIDATE_SCHEMA,
+            "source_envelope_sha256": (
+                candidate.source_envelope.source_envelope_sha256
+            ),
+            "source_candidate_id": candidate.source_envelope.source_candidate_id,
+            "final_bytes_sha256": candidate.rendered_surface.sha256,
+            "realization_plan_id": (
+                candidate.realization_plan.realization_plan_id
+            ),
+            "ast_id": candidate.realization_plan.ast_id,
+        }
+    )[:20]
+    checks["recovery_identity_exact"] = bool(
+        getattr(candidate, "candidate_version_id", None)
+        == _RECOVERY_CANDIDATE_VERSION
+        and getattr(candidate, "schema_version", None)
+        == _RECOVERY_CANDIDATE_SCHEMA
+        and getattr(candidate, "candidate_id", None) == expected_candidate_id
+        and getattr(candidate, "old_gate_consulted", None) is False
+        and getattr(candidate, "old_selector_consulted", None) is False
+        and getattr(candidate, "base_acceptance_claimed", None) is False
+        and getattr(candidate, "semantic_coverage_authorized", None) is True
+        and getattr(candidate, "experimental_only", None) is True
+        and getattr(candidate, "private_body_full", None) is True
+        and getattr(candidate, "shareable", None) is False
+        and getattr(candidate, "runtime_connected", None) is False
     )
-    if not callable(builder):
-        return "fail_close", None, checks, "CURRENT_RC_G8_CURRENT_BUILDER_UNAVAILABLE"
-    current = builder(
-        dimension_candidate,
-        successor_snapshot=successor,
-        lexical_atom_specs=lexical_specs,
-        reception_focus_authority=authority,
-        plan=execution.grounded_plan,
-        resolver=resolver,
-        inventory_result=execution.inventory_result,
-        content_plan=execution.content_plan,
-        current_input=execution.projected_current_input,
+    checks["source_envelope_exact"] = _recovery_source_envelope_exact(
+        candidate,
+        context=context,
     )
-    checks["current_builder_called"] = True
     checks.update(
-        _inverse_checks(
-            current,
-            successor_snapshot=successor,
-            lexical_atom_specs=lexical_specs,
-            reception_focus_authority=authority,
+        _recovery_inverse_checks(
+            candidate,
+            context=context,
         )
     )
     if not all(checks.values()):
-        return "fail_close", current, checks, "CURRENT_RC_G8_INVERSE_REJECTED"
-    return "selected", current, checks, None
+        return "fail_close", candidate, checks, "CURRENT_RC_G8_INVERSE_REJECTED"
+    return "selected", candidate, checks, None
 
 
 def _case_row(
     sample: Mapping[str, Any],
     source_case_commitment: str,
-    source_closure: str,
+    source_snapshot: Mapping[str, Any],
+    batch_path: Path = _BATCH_PATH,
+    manifest_path: Path = _MANIFEST_PATH,
 ) -> dict[str, Any]:
+    source = _validated_source_snapshot(source_snapshot)
+    _assert_source_unchanged(
+        source,
+        batch_path,
+        manifest_path,
+        code="CURRENT_RC_G8_WORKER_SOURCE_STALE",
+    )
     from emlis_ai_step10_app_reachable_contract_v3 import (
         project_app_reachable_input,
     )
@@ -1264,7 +3231,8 @@ def _case_row(
         checks["input_projected"] = True
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             disposition, candidate, checks, failure_code = _current_candidate(
-                projected, source_closure=source_closure
+                projected,
+                source_closure=str(source["source_closure_sha256"]),
             )
     except Exception as exc:
         disposition = "fail_close"
@@ -1284,11 +3252,19 @@ def _case_row(
             failure_code = "CURRENT_RC_G8_PRIVATE_OUTPUT_INVALID"
             checks["final_utf8_valid"] = False
             exception_captured = True
+    _assert_source_unchanged(
+        source,
+        batch_path,
+        manifest_path,
+        code="CURRENT_RC_G8_WORKER_SOURCE_CHANGED",
+    )
     return {
         "case_id": case_id,
         "source_case_commitment": source_case_commitment,
         "source_input": dict(sample["input"]),
         "disposition": disposition,
+        "candidate_version_id": _RECOVERY_CANDIDATE_VERSION,
+        "candidate_schema_version": _RECOVERY_CANDIDATE_SCHEMA,
         "current_candidate_id": candidate_id,
         "candidate_output_utf8": output,
         "machine_checks": checks,
@@ -1297,25 +3273,67 @@ def _case_row(
     }
 
 
-def _case_row_job(args: tuple[dict[str, Any], str, str]) -> dict[str, Any]:
+def _case_row_job(
+    args: tuple[dict[str, Any], str, dict[str, Any], Path, Path],
+) -> dict[str, Any]:
     return _case_row(*args)
 
 
 def _run_cases(
     samples: Sequence[dict[str, Any]],
     commitment_by_case: Mapping[str, str],
-    source_closure: str,
+    source_snapshot: Mapping[str, Any],
     *,
     workers: int,
+    batch_path: Path = _BATCH_PATH,
+    manifest_path: Path = _MANIFEST_PATH,
 ) -> list[dict[str, Any]]:
+    source = _validated_source_snapshot(source_snapshot)
     jobs = tuple(
-        (sample, commitment_by_case[str(sample["case_id"])], source_closure)
+        (
+            sample,
+            commitment_by_case[str(sample["case_id"])],
+            source,
+            batch_path,
+            manifest_path,
+        )
         for sample in samples
     )
     if workers == 1:
         return [_case_row_job(job) for job in jobs]
-    with ProcessPoolExecutor(max_workers=workers) as executor:
+    with ProcessPoolExecutor(
+        max_workers=workers,
+        mp_context=multiprocessing.get_context("spawn"),
+    ) as executor:
         return list(executor.map(_case_row_job, jobs, chunksize=1))
+
+
+def _assert_machine100(rows: Any) -> None:
+    """Admit an evidence pair only for exact recovery output 100/100."""
+
+    if type(rows) is not list or len(rows) != 100:
+        raise CurrentRcG8RunError("CURRENT_RC_G8_MACHINE100_REQUIRED")
+    for row in rows:
+        if (
+            type(row) is not dict
+            or row.get("disposition") != "selected"
+            or row.get("candidate_version_id")
+            != _RECOVERY_CANDIDATE_VERSION
+            or row.get("candidate_schema_version")
+            != _RECOVERY_CANDIDATE_SCHEMA
+            or type(row.get("current_candidate_id")) is not str
+            or not row["current_candidate_id"]
+            or type(row.get("candidate_output_utf8")) is not str
+            or not row["candidate_output_utf8"]
+            or row.get("failure_code") is not None
+            or row.get("exception_captured") is not False
+            or type(row.get("machine_checks")) is not dict
+            or set(row["machine_checks"]) != set(_CHECK_KEYS)
+            or not all(row["machine_checks"].values())
+        ):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_MACHINE100_REQUIRED"
+            )
 
 
 def _validate_private_rows(
@@ -1354,6 +3372,8 @@ def _validate_private_rows(
         row = dict(raw)
         checks = row.get("machine_checks")
         candidate_id = row.get("current_candidate_id")
+        candidate_version = row.get("candidate_version_id")
+        candidate_schema = row.get("candidate_schema_version")
         output = row.get("candidate_output_utf8")
         failure = row.get("failure_code")
         disposition = row.get("disposition")
@@ -1364,6 +3384,8 @@ def _validate_private_rows(
             or _SHA256_RE.fullmatch(row["source_case_commitment"]) is None
             or type(row.get("source_input")) is not dict
             or disposition not in _ALLOWED_DISPOSITIONS
+            or candidate_version != _RECOVERY_CANDIDATE_VERSION
+            or candidate_schema != _RECOVERY_CANDIDATE_SCHEMA
             or type(exception_captured) is not bool
             or type(checks) is not dict
             # Canonical JSON sorts object keys, so validate the exact key set
@@ -1399,20 +3421,20 @@ def _validate_private_rows(
                 and failure is None
                 and exception_captured is False
                 and checks["input_projected"]
-                and checks["base_runtime_valid"]
-                and not checks["current_builder_called"]
+                and checks["source_context_built"]
+                and not checks["recovery_builder_called"]
                 and not any(
                     checks[key]
                     for key in _CHECK_KEYS
                     if key
-                    not in {"input_projected", "base_runtime_valid"}
+                    not in {"input_projected", "source_context_built"}
                 )
             )
         else:
             candidate_absent = (
                 candidate_id is None
                 and output is None
-                and checks["current_builder_called"] is False
+                and checks["recovery_builder_called"] is False
             )
             inverse_rejected = (
                 type(candidate_id) is str
@@ -1420,8 +3442,8 @@ def _validate_private_rows(
                 and failure == "CURRENT_RC_G8_INVERSE_REJECTED"
                 and exception_captured is False
                 and checks["input_projected"]
-                and checks["base_runtime_valid"]
-                and checks["current_builder_called"]
+                and checks["source_context_built"]
+                and checks["recovery_builder_called"]
             )
             output_rejected = (
                 type(candidate_id) is str
@@ -1429,8 +3451,8 @@ def _validate_private_rows(
                 and failure == "CURRENT_RC_G8_PRIVATE_OUTPUT_INVALID"
                 and exception_captured is True
                 and checks["input_projected"]
-                and checks["base_runtime_valid"]
-                and checks["current_builder_called"]
+                and checks["source_context_built"]
+                and checks["recovery_builder_called"]
                 and checks["final_utf8_valid"] is False
             )
             check_progression_exact = bool(
@@ -1443,24 +3465,24 @@ def _validate_private_rows(
                     )
                 )
                 and (
-                    checks["base_runtime_valid"]
+                    checks["source_context_built"]
                     or not any(
                         checks[key]
                         for key in _CHECK_KEYS
                         if key
-                        not in {"input_projected", "base_runtime_valid"}
+                        not in {"input_projected", "source_context_built"}
                     )
                 )
                 and (
-                    checks["current_builder_called"]
+                    checks["recovery_builder_called"]
                     or not any(
                         checks[key]
                         for key in _CHECK_KEYS
                         if key
                         not in {
                             "input_projected",
-                            "base_runtime_valid",
-                            "current_builder_called",
+                            "source_context_built",
+                            "recovery_builder_called",
                         }
                     )
                 )
@@ -1511,7 +3533,7 @@ def _case_commitment(
     if type(key) is not bytes or len(key) != 32:
         raise CurrentRcG8RunError("CURRENT_RC_G8_COMMITMENT_KEY_INVALID")
     material = (
-        b"cocolon.current-rc.g8.case-result.v3\0"
+        b"cocolon.current-rc.g8.case-result.v4\0"
         + run_id.encode("ascii", errors="strict")
         + b"\0"
         + source_closure.encode("ascii", errors="strict")
@@ -1534,6 +3556,8 @@ def _public_case_row(
         "case_id": row["case_id"],
         "source_case_commitment": row["source_case_commitment"],
         "disposition": row["disposition"],
+        "candidate_version_id": row["candidate_version_id"],
+        "candidate_schema_version": row["candidate_schema_version"],
         "candidate_present": row["current_candidate_id"] is not None,
         "output_present": row["candidate_output_utf8"] is not None,
         "exception_present": row["exception_captured"],
@@ -1552,7 +3576,7 @@ def _run_commitment(
     body_free_core_sha256: str,
 ) -> str:
     material = (
-        b"cocolon.current-rc.g8.run-pair.v3\0"
+        b"cocolon.current-rc.g8.run-pair.v4\0"
         + run_id.encode("ascii", errors="strict")
         + b"\0"
         + source_closure.encode("ascii", errors="strict")
@@ -1586,6 +3610,8 @@ def _validate_pair(
 ) -> None:
     private_keys = {
         "schema_version",
+        "candidate_version_id",
+        "candidate_schema_version",
         "run_id",
         "source_closure_sha256",
         "source_closure_file_count",
@@ -1603,6 +3629,13 @@ def _validate_pair(
         or set(body_free) != body_free_keys
         or private.get("schema_version") != _PRIVATE_SCHEMA
         or body_free.get("schema_version") != _BODY_FREE_SCHEMA
+        or private.get("candidate_version_id") != _RECOVERY_CANDIDATE_VERSION
+        or body_free.get("candidate_version_id")
+        != _RECOVERY_CANDIDATE_VERSION
+        or private.get("candidate_schema_version")
+        != _RECOVERY_CANDIDATE_SCHEMA
+        or body_free.get("candidate_schema_version")
+        != _RECOVERY_CANDIDATE_SCHEMA
         or private.get("run_id") != body_free.get("run_id")
         or type(private.get("run_id")) is not str
         or _RUN_ID_RE.fullmatch(private["run_id"]) is None
@@ -1769,6 +3802,8 @@ def _result_payloads(
         row["disposition"] for row in body_free_cases
     )
     common = {
+        "candidate_version_id": _RECOVERY_CANDIDATE_VERSION,
+        "candidate_schema_version": _RECOVERY_CANDIDATE_SCHEMA,
         "run_id": run_id,
         "source_closure_sha256": source_closure,
         "source_closure_file_count": source["source_closure_file_count"],
@@ -1824,6 +3859,261 @@ def _result_payloads(
     )
 
 
+def _outside_repo(path: Path) -> bool:
+    return path != REPO_ROOT and REPO_ROOT not in path.parents
+
+
+def _read_commitment_key(path: Path) -> bytes:
+    """Read one outside-repo caller key without importing batch/runtime code."""
+
+    if (
+        not path.is_absolute()
+        or any(part in {"", ".", ".."} for part in path.parts[1:])
+        or not hasattr(os, "O_DIRECTORY")
+        or not hasattr(os, "O_NOFOLLOW")
+        or not hasattr(os, "getuid")
+    ):
+        raise CurrentRcG8RunError("CURRENT_RC_G8_COMMITMENT_KEY_INVALID")
+    lexical = Path(os.path.abspath(os.fspath(path)))
+    try:
+        resolved = path.resolve(strict=True)
+    except Exception as exc:
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_COMMITMENT_KEY_INVALID"
+        ) from exc
+    if lexical != path or resolved != lexical or not _outside_repo(resolved):
+        raise CurrentRcG8RunError("CURRENT_RC_G8_COMMITMENT_KEY_INVALID")
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        directory_flags |= os.O_CLOEXEC
+        file_flags |= os.O_CLOEXEC
+    directory_fd: int | None = None
+    descriptor: int | None = None
+    try:
+        directory_fd = os.open(lexical.anchor, directory_flags)
+        for component in lexical.parts[1:-1]:
+            following = os.open(
+                component,
+                directory_flags,
+                dir_fd=directory_fd,
+            )
+            os.close(directory_fd)
+            directory_fd = following
+        descriptor = os.open(
+            lexical.name,
+            file_flags,
+            dir_fd=directory_fd,
+        )
+        status = os.fstat(descriptor)
+        if (
+            not stat_module.S_ISREG(status.st_mode)
+            or stat_module.S_IMODE(status.st_mode) != 0o600
+            or status.st_uid != os.getuid()
+            or status.st_nlink != 1
+        ):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_COMMITMENT_KEY_INVALID"
+            )
+        chunks: list[bytes] = []
+        remaining = 257
+        while remaining:
+            chunk = os.read(descriptor, remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+        if len(raw) == 257:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_COMMITMENT_KEY_INVALID"
+            )
+    except CurrentRcG8RunError:
+        raise
+    except Exception as exc:
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_COMMITMENT_KEY_INVALID"
+        ) from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        if directory_fd is not None:
+            os.close(directory_fd)
+    if len(raw) == 32:
+        return raw
+    try:
+        key = bytes.fromhex(raw.decode("ascii", errors="strict").strip())
+    except (UnicodeError, ValueError) as exc:
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_COMMITMENT_KEY_INVALID"
+        ) from exc
+    if len(key) != 32:
+        raise CurrentRcG8RunError("CURRENT_RC_G8_COMMITMENT_KEY_INVALID")
+    return key
+
+
+def _open_private_directory(
+    path: Path,
+    *,
+    output_names: tuple[str, str],
+) -> int:
+    """Open one caller-owned, outside-repo, no-symlink 0700 directory."""
+
+    if (
+        not path.is_absolute()
+        or any(part in {"", ".", ".."} for part in path.parts[1:])
+        or not hasattr(os, "O_DIRECTORY")
+        or not hasattr(os, "O_NOFOLLOW")
+        or not hasattr(os, "getuid")
+        or len(output_names) != 2
+        or len(set(output_names)) != 2
+        or any(
+            type(name) is not str
+            or not name
+            or name != Path(name).name
+            for name in output_names
+        )
+    ):
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_PRIVATE_DIRECTORY_PREFLIGHT_REJECTED"
+        )
+    lexical = Path(os.path.abspath(os.fspath(path)))
+    try:
+        resolved = path.resolve(strict=True)
+    except Exception as exc:
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_PRIVATE_DIRECTORY_PREFLIGHT_REJECTED"
+        ) from exc
+    if lexical != path or resolved != lexical or not _outside_repo(resolved):
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_PRIVATE_DIRECTORY_PREFLIGHT_REJECTED"
+        )
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(lexical.anchor, flags)
+        for component in lexical.parts[1:]:
+            following = os.open(component, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = following
+        status = os.fstat(descriptor)
+        if (
+            not stat_module.S_ISDIR(status.st_mode)
+            or stat_module.S_IMODE(status.st_mode) != 0o700
+            or status.st_uid != os.getuid()
+        ):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_PRIVATE_DIRECTORY_PREFLIGHT_REJECTED"
+            )
+        for name in output_names:
+            try:
+                os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_PRIVATE_OUTPUT_ALREADY_EXISTS"
+            )
+        return descriptor
+    except CurrentRcG8RunError:
+        if descriptor is not None:
+            os.close(descriptor)
+        raise
+    except Exception as exc:
+        if descriptor is not None:
+            os.close(descriptor)
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_PRIVATE_DIRECTORY_PREFLIGHT_REJECTED"
+        ) from exc
+
+
+def _open_exclusive_private_file(directory_fd: int, name: str) -> int:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    try:
+        descriptor = os.open(name, flags, 0o600, dir_fd=directory_fd)
+        os.fchmod(descriptor, 0o600)
+        status = os.fstat(descriptor)
+        if (
+            not stat_module.S_ISREG(status.st_mode)
+            or stat_module.S_IMODE(status.st_mode) != 0o600
+            or status.st_uid != os.getuid()
+            or status.st_nlink != 1
+        ):
+            os.close(descriptor)
+            try:
+                os.unlink(name, dir_fd=directory_fd)
+            except OSError:
+                pass
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_PRIVATE_OUTPUT_PREFLIGHT_REJECTED"
+            )
+        return descriptor
+    except CurrentRcG8RunError:
+        raise
+    except FileExistsError as exc:
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_PRIVATE_OUTPUT_ALREADY_EXISTS"
+        ) from exc
+    except Exception as exc:
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_PRIVATE_OUTPUT_PREFLIGHT_REJECTED"
+        ) from exc
+
+
+def _write_private_pair(
+    directory_fd: int,
+    private_payload: bytes,
+    body_free_payload: bytes,
+    *,
+    private_name: str,
+    body_free_name: str,
+) -> None:
+    """Exclusively create, sync, and retain exactly the two private files."""
+
+    descriptors: dict[str, int] = {}
+    created: list[str] = []
+    try:
+        for name in (private_name, body_free_name):
+            descriptors[name] = _open_exclusive_private_file(
+                directory_fd, name
+            )
+            created.append(name)
+        for name, payload in (
+            (private_name, private_payload),
+            (body_free_name, body_free_payload),
+        ):
+            descriptor = descriptors[name]
+            view = memoryview(payload)
+            while view:
+                written = os.write(descriptor, view)
+                if written < 1:
+                    raise CurrentRcG8RunError(
+                        "CURRENT_RC_G8_PRIVATE_OUTPUT_WRITE_REJECTED"
+                    )
+                view = view[written:]
+            os.fsync(descriptor)
+        os.fsync(directory_fd)
+    except BaseException:
+        for descriptor in descriptors.values():
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        descriptors.clear()
+        for name in created:
+            try:
+                os.unlink(name, dir_fd=directory_fd)
+            except OSError:
+                pass
+        raise
+    finally:
+        for descriptor in descriptors.values():
+            os.close(descriptor)
+
+
 def _write_outputs(
     output_dir: Path,
     private_payload: bytes,
@@ -1835,11 +4125,6 @@ def _write_outputs(
     batch_path: Path,
     manifest_path: Path,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    from emlis_nls_v3_rc0029_surface_repair_bounded_experiment import (
-        _open_private_directory,
-        _write_private_pair,
-    )
-
     _assert_source_unchanged(
         source_snapshot,
         batch_path,
@@ -1964,9 +4249,9 @@ def _write_outputs(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Bypass G7, run each rc0027-selected case in the frozen exact-100 "
-            "corpus through the current rc0031 builder, and save a private "
-            "body-full/HMAC body-free pair."
+            "Build one source-bound rc0035 recovery output for every case in "
+            "the frozen exact-100 corpus and save a private body-full/HMAC "
+            "body-free v4 pair only when machine100 is exact."
         )
     )
     parser.add_argument("--run-id", required=True)
@@ -2011,16 +4296,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         expected_case_sources,
         source_snapshot,
     ) = _bound_exact100_sources(batch_path, manifest_path)
-    source_closure = source_snapshot["source_closure_sha256"]
-    from emlis_nls_v3_batch_run import _read_key
-
-    key = _read_key(args.commitment_key_file)
+    key = _read_commitment_key(args.commitment_key_file)
     rows = _run_cases(
         samples,
         commitment_by_case,
-        source_closure,
+        source_snapshot,
         workers=args.workers,
+        batch_path=batch_path,
+        manifest_path=manifest_path,
     )
+    _assert_machine100(rows)
     _assert_source_unchanged(
         source_snapshot,
         batch_path,

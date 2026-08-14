@@ -7838,12 +7838,12 @@ _B6_ROLE_TYPED_TEST_NAMES = frozenset(
         "test_rc0031_p3_b6_typed_recomposition_is_body_only_recoverable_or_red",
     }
 )
-_B6_ROLE_TYPED_SURFACE_PREFIX_BYTES = 537_842
+_B6_ROLE_TYPED_SURFACE_PREFIX_BYTES = 539_380
 _B6_ROLE_TYPED_SURFACE_PREFIX_SHA256 = (
-    "18ad33095754c0132d22a7f2e004f00d5e1655a825e366ade5778adb1bc134d4"
+    "258992afb954da812e34a04fd6f7723ee122fb04280a2b4f29968e412de919b6"
 )
 _B6_ROLE_TYPED_SURFACE_PREFIX_GIT_BLOB_SHA1 = (
-    "478454a1c5fb5b15e0c281ae93a63aa058bf8e26"
+    "e84283f90c818fe8d9281e30def8f1e001e02a89"
 )
 _B6_ROLE_TYPED_SURFACE_APPEND_MARKER = (
     b"# rc0031 experiment-only owner-role inflection / typed recomposition "
@@ -7855,7 +7855,7 @@ _B6_ROLE_TYPED_PRIVATE_BUILDER = (
 )
 _B6_ROLE_TYPED_IMPLEMENTATION_PRESENT = False
 _B6_ROLE_TYPED_DESIGN_MASKED_SHA256 = (
-    "a5bccfcb3efaf4a4647aa39d15a6c5041102c622a4d0b30698796f3af500e938"
+    "7dbe5c50c2af97f5e21309790b23b3fa7c99b99dafd6bd2c1a58d129460fa89d"
 )
 _B6_ROLE_TYPED_CONTEXT_COUNT = 10
 _B6_ROLE_TYPED_BINDING_COUNT = 12
@@ -9191,10 +9191,10 @@ _B6_CHAIN_AUTHORITY = (
 )
 _B6_CHAIN_TEST_PREFIX_BYTES = 344_556
 _B6_CHAIN_TEST_PREFIX_SHA256 = (
-    "8c9113c991da379e47c4beb496e86b7c25b48b29ab944908eb261ed98768b0c8"
+    "06d4d0021b552e1ef94260d84b6a614545c3f75ca82183a90fe9372026faf8e5"
 )
 _B6_CHAIN_TEST_PREFIX_GIT_BLOB_SHA1 = (
-    "3e2dd6c2a0b2e80483f5a552848a4b8672c7f7d0"
+    "79d6ef7293e6dd23a17cd50adf148abef0a39cb9"
 )
 _B6_CHAIN_CLASS_NAME = (
     "TestRc0031P3B6ChainedModifierLocusMultiplicityReconciliationDesignFreezeRedOnly"
@@ -10768,11 +10768,11 @@ TestRc0031P3B6OwnerHeadRangeReceptionInjectionDesignFreezeRedOnly.test_rc0031_p3
     _b6_chain_owner_reception_contract_compatibility
 )
 _G4_TB=408_068
-_G4_TS="ac457122e12e87c95fb0f5e9b2d8d2eddc5d7bce7430dcdfb14bdfc03c5a6b19"
-_G4_TG="0b49a7ae02234a9b8741b6bc7d1c8580630e099b"
-_G4_PB=537_842
-_G4_PS="18ad33095754c0132d22a7f2e004f00d5e1655a825e366ade5778adb1bc134d4"
-_G4_PG="478454a1c5fb5b15e0c281ae93a63aa058bf8e26"
+_G4_TS="3ecf0c3c7bd35778f0306ac5111c2d59aab8b5f39094fb9248b114e5e90180f4"
+_G4_TG="5d7f6b3fbbc2fda5438d92e43a45c2147faea089"
+_G4_PB=539_380
+_G4_PS="258992afb954da812e34a04fd6f7723ee122fb04280a2b4f29968e412de919b6"
+_G4_PG="e84283f90c818fe8d9281e30def8f1e001e02a89"
 _G4_SB=11_090
 _G4_SM=b"# rc0031 experiment-only owner-role inflection / typed recomposition (append-only B6 private consumer)\n"
 _G4_MS=("_rc0031_rt_cluster", "_step11_rc0031_product_render_cluster", "_step11_rc0031_build_owner_role_inflected_typed_recomposition_candidate")
