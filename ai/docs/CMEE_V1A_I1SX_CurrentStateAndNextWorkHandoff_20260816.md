@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 同じ PR・同じ branch 上で、§6 の `R1_ROUTE_B_DENOMINATOR_AND_LIMITED_UNKNOWN_CLOSURE` から再開する。
+3. 同じ PR・同じ branch 上で、§6 の `R2_RAW_SCALAR_UTF8_LOCATOR` から再開する。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 新しいPR、別branch、P0/metadata/executor検討から再開してはいけません。
@@ -18,11 +18,13 @@
 - implementation repository: `MassyuRed/mashos-api`
 - implementation PR: <https://github.com/MassyuRed/mashos-api/pull/3>
 - implementation branch: `agent/cmee-v1a-i1sx-source-explicit-20260815`
-- handoff parent head: `d2b2ea5f74478396a3bf27895b0ecc8d0f805dc5`
-- handoff parent tree: `d1ac43f1643d18a7c8f2a29f797afa14e13df234`
+- R1 implementation parent head: `461ff03dad2483fa01f30468825f683f22d7f7da`
+- R1 implementation commit: `e18bf76e3dbcfe64c9b967ca26ed50ceff4b770f`
+- R1 implementation tree: `e0a748fffc295b25fe0050c0f7fbb88957a18d37`
+- this handoff update parent head: `e18bf76e3dbcfe64c9b967ca26ed50ceff4b770f`
 - main at handoff: `a8ca4ddf7b7ae76bf7b3d73e74e3a5808d623428`
 - resume head: PR #3 の、この文書を含む current remote head
-- expected PR state after this handoff: Draft / open / unmerged、ahead 2 / behind 0、changed paths exact9
+- expected PR state after this handoff: Draft / open / unmerged、ahead 4 / behind 0、changed paths exact9
 - design reference: `MassyuRed/Cocolon` Draft PR #30, head `cb63098d4dde1c5f7235e55f4af4b8e02f3be7fa`
 - Route B policy identity: `cocolon.cmee.v1a.acceptance.route_b.v1`
 
@@ -49,8 +51,9 @@ PR #3 は、docs/schemaだけではなく、次の callable vertical を実コ�
 - production/API/DB/RN/Cycle001 effect: 0
 - dependency/network/provider adoption: 0
 - automatic progression: false
+- R1 technical packet state: `CLOSED_GREEN`
 
-これは「最初のdisabled実装土台」です。Route B完了、full I1、Product品質、production readinessのcreditは0です。
+これは「R1まで閉じたdisabled実装土台」です。R1 technical acceptanceだけがGREENであり、Route B全体完了、P0、L3-I、full I1、Product品質、production readiness、Cycle001のcreditは0です。
 
 ## 3. 実装済み exact8
 
@@ -85,11 +88,11 @@ unit testのsynthetic smoke sourceは次です。
 }
 ```
 
-このbounded sourceは `LIMITED`、Observation exact1+、Reception exact1、positive traceを生成します。ただし現在は未解決ownerをvisible unknownとして出していないため、Route B完了証拠として扱ってはいけません。
+このbounded sourceは `LIMITED`、Observation exact1+、evidence-bound visible unknown exact1、Reception exact1、positive traceを生成します。visible unknownはsource側でpre-plan固定した`STRUCTURED_CONTEXT_ATTACHMENT` ownerとその全evidenceへbindされ、positive meaning claimには使われません。R1 closureの証拠ですが、R2–R4が未完了のためRoute B全体完了証拠として扱ってはいけません。
 
 ### 4.2 Verification snapshot
 
-- CMEE unit tests: 15/15 PASS
+- CMEE unit tests: 26/26 PASS
 - existing three-core text-generation boundary checks: 5/5 PASS
 - compileall: PASS
 - original exact8: artifacts 0/8、structurally valid traces 0/8
@@ -105,25 +108,32 @@ exact8 failure split:
 
 original exact8の入力はrunner内が正本です。成功率を上げるためにfixtureを置換・単純化・family化してはいけません。
 
+R1 verificationはimplementation commit `e18bf76e3dbcfe64c9b967ca26ed50ceff4b770f`のexact5に対して実施しました。original exact8 runnerはbyte変更0です。
+
 ## 5. 未完了blocker
 
-### B1. Route B denominator/disposition authority
+### B1. Route B denominator/disposition authority — `CLOSED_BY_R1`
 
-- owner universe `U` が source adapter/core obligation でprovider/legacy planより前に固定されていません。
-- 現在の `OwnerDisposition` row は、設計が要求する `owner_class`、`provider_resolution`、`attachment_admission`、`visible_authority`、`visible_claim_refs`、`target_unknown_ref`、`reason_codes` を持っていません。
-- `set(D)=U`、source/obligation version、owner universe digestを独立再検証できる形へ閉じる必要があります。
+- source adapterがlegacy grounded plan/providerより前にsource-bound owner universe `U` を固定します。
+- required/active owner全件にapproved exact fieldsのRoute B disposition rowがexact1あり、`D=U`、順序、重複0、partition、digestをsourceから再計算して検証します。
+- graph、plan、全trace、visible unknown unitは同じsource envelope/version、obligation version、owner universe digestへbindされます。
+- provider未実行のownerは`MISSING_OR_INVALID / UNAVAILABLE`として保持し、provider結果を捏造しません。
 
-### B2. LIMITEDに残るunknownのvisible preservation
+### B2. LIMITEDに残るunknownのvisible preservation — `CLOSED_BY_R1`
 
-- representative artifactは未解決ownerをtrace constraintに残しますが、visible unknown unitを持ちません。
-- source-explicitだが非可視のownerを `UNKNOWN_PRESERVED_LIMITED` と誤分類している箇所があります。
-- 未解決required ownerが残る `LIMITED` は、evidence-bound unknown duty/unit/traceを明示するか、`UNAVAILABLE`へfail closedする必要があります。
+- source-explicitだが非可視な既知情報は`SOURCE_EXPLICIT`のまま`NOT_VISIBLE_UNRESOLVED`とし、unknownへ誤分類しません。
+- `PRESERVE_UNKNOWN`はsynthetic meaning ownerではなくExperiencePlan dutyのままです。
+- representative `LIMITED`は、actual pre-plan attachment ownerとcurrent-source evidenceへbindした非肯定的visible unknown unit/trace exact1をObservationとReceptionの間に持ちます。
+- unresolved required ownerを安全に同じ形で可視化できない場合、artifactなし`UNAVAILABLE`へfail closedします。
+- omit、duplicate、coordinated denominator shrink、全disposition field tamper、digest swap、hidden/causal unknown、evidence subset、cross-source refをmutation testでrejectします。
 
 ### B3. Original source locator completeness
 
 - `EvidenceRef`にUTF-8 byte rangeはありますがscalar rangeがありません。
 - repeated textの一部は扱えますが、double-space、tab、U+3000など全admitted whitespaceについてraw↔normalized scalar mappingが閉じていません。
 - scalar rangeとUTF-8 rangeが同じraw substringを指すことを検証する必要があります。
+- R1はsame-envelope identity、byte bounds、raw-byte digest、evidence ID再計算までは検証しますが、`field_path/source_span`がcanonical original-field frame segmentを指すことは未封印です。たとえば`category.0`をmemo bytesへredirectし、全ID/digestを再計算するcoordinated mutationはR2 residualです。
+- `SourceEnvelope`のrecord/schema/label metadata全体をenvelope identityから独立再構成するhardeningも未完了です。R1 acceptanceのversion/obligation/digest tupleは封印済みですが、full-envelope canonicalization完了とは報告しません。
 
 ### B4. Common-guard proof sealing
 
@@ -138,28 +148,22 @@ original exact8の入力はrunner内が正本です。成功率を上げるた�
 
 ## 6. 次の実装packet exact1
 
-次に着手するのは、`R1_ROUTE_B_DENOMINATOR_AND_LIMITED_UNKNOWN_CLOSURE` だけです。P0、metadata、executor、surface tuningへ移動しません。
+次に着手するのは、`R2_RAW_SCALAR_UTF8_LOCATOR` だけです。R1を再実装せず、R3、R4、P0、metadata/executor再検討、surface tuningへ移動しません。
 
-R1の変更対象は原則としてproduction exact3 + tests exact2 = paths exact5です。
+R2は既存CMEE source/evidence contract ownerと必要最小のexisting testsだけを変更候補とします。新module、new helper/control family、dependency、provider、public schema/APIが必要なら、実装前にSTOPして影響範囲を再提示します。
 
-1. `contracts.py`
-2. `source_kernel.py`
-3. `emlis_v1a.py`
-4. `test_cmee_v1a_i1sx_contracts.py` の必要最小修正
-5. `test_cmee_v1a_i1sx_vertical.py` の必要最小修正
+R2 acceptance:
 
-R1 acceptance:
+1. admitted `EvidenceRef`がoriginal raw fieldに対するscalar start/endとUTF-8 start/endを持ち、両rangeがexact same raw substringを指す。
+2. `field_path/source_span`をcanonical original-field frame segmentへ独立再対応づけし、same-envelopeの別field bytesへredirectできない。
+3. repeated substring、double-space、tab、U+3000を含むadmitted whitespaceでraw↔normalized locatorを再現・検証できる。
+4. `category.0` rangeをmemo segmentへ置換し、bounds/digest/evidence IDをすべて再計算したcoordinated mutationをrejectする。
+5. envelope ID/rawを維持したままsource record/schema/label metadataを差し替えるmutationをrejectし、full SourceEnvelope identityをfail closedする。
+6. R1のU、Route B rows、visible unknown、graph/plan/trace binding、privacy、no-fallback境界を維持する。
+7. original exact8 runner/fixtureは変更せず、実際の結果をそのまま報告する。R2だけで8/8を要求しない。
+8. R2 greenをhandoffへ反映した時点でSTOPし、`R3_EXACT5_GUARD_PROOF_SEALING`へ自動進行しない。
 
-1. source adapter/core obligationが、legacy grounded plan/providerより前に `U = required_owner_refs ∪ active_optional_owner_refs` を固定する。
-2. required/active owner全件にexact1の完全なRoute B disposition rowがあり、omit・duplicate・denominator shrinkが0。
-3. graph/plan/traceが同じsource version、obligation version、owner universe digestにbindされる。
-4. unresolved required ownerを持つ `LIMITED` は、evidence-bound visible unknown duty/unit/traceをexact1+持つ。安全に出せなければartifactなしの`UNAVAILABLE`。
-5. `SOURCE_EXPLICIT_VISIBLE`以外のownerをpositive observation/reception claimへ使わない。
-6. owner omission、disposition field tamper、universe digest swap、hidden unknown、cross-source refをmutation testでrejectする。
-7. body-free privacy、no fallback、production effect0、automatic progression=falseを維持する。
-8. original exact8は変更せず、runnerの結果をそのまま報告する。R1だけで8/8を要求せず、fixture tuningをしない。
-
-R1がgreenになった後の順番は `R2_RAW_SCALAR_UTF8_LOCATOR` → `R3_EXACT5_GUARD_PROOF_SEALING` → `R4_PLAN_BOUND_REALIZER_EXACT8` です。各packetで新helper/control familyを増殖させず、同じDraft PR内を前進させます。
+残る順番は `R2_RAW_SCALAR_UTF8_LOCATOR` → `R3_EXACT5_GUARD_PROOF_SEALING` → `R4_PLAN_BOUND_REALIZER_EXACT8` です。各packetで同じDraft PR内を前進させ、packet間のapproval/STOP境界を維持します。
 
 ## 7. Fresh checkoutでの検証
 
@@ -195,7 +199,7 @@ set -e
 test "$runner_rc" -eq 1
 ```
 
-現時点では最後のrunnerがexit 1かつ0/8であることがexpectedです。R1の成功をrunner exit 0へ読み替えてはいけません。body-full outputは明示指定時だけprivate temp pathへ出し、GitHubへcommitしません。
+現時点では最後のrunnerがexit 1かつ0/8であることがexpectedです。R1/R2の成功をrunner exit 0へ読み替えてはいけません。body-full outputは明示指定時だけprivate temp pathへ出し、GitHubへcommitしません。
 
 ## 8. 維持する境界
 
@@ -216,4 +220,4 @@ test "$runner_rc" -eq 1
 
 次の1文で再開できます。
 
-> @GitHub `MassyuRed/mashos-api` Draft PR #3 と `ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md` を正本として、`R1_ROUTE_B_DENOMINATOR_AND_LIMITED_UNKNOWN_CLOSURE` から同じbranch上で実装を再開して。original exact8・privacy・disabled境界を維持し、Draftのまま検証結果まで反映して。
+> @GitHub `MassyuRed/mashos-api` Draft PR #3 と `ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md` を正本として、`R2_RAW_SCALAR_UTF8_LOCATOR` から同じbranch上で実装を再開して。R1 closure、original exact8、privacy、disabled境界を維持し、R2の検証結果をDraftへ反映したらR3へ進まずSTOPして。
