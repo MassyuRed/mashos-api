@@ -16,6 +16,7 @@ CMEE_SCHEMA_VERSION = "cocolon.cmee.v1a.i1sx.text_grounded_limited.v1"
 CMEE_ROUTE_B_POLICY_VERSION = "cocolon.cmee.v1a.acceptance.route_b.v1"
 CMEE_SOURCE_CONTRACT_VERSION = "cocolon.cmee.emlis.current_input.text_grounded.v1"
 CMEE_OBLIGATION_VERSION = "cocolon.cmee.emlis.i1sx.owner_obligation.v1"
+CMEE_OWNER_UNIVERSE_SCHEMA_VERSION = "cocolon.cmee.v1a.owner_universe.v1"
 CMEE_TERMINAL_GENERATED_DISABLED = (
     "CMEE_V1A_I1SX_TEXT_GROUNDED_VERTICAL_WIP_DISABLED"
 )
@@ -58,6 +59,30 @@ class RouteBDisposition(str, Enum):
     SEPARATE_SAFETY = "SEPARATE_SAFETY"
 
 
+class OwnerClass(str, Enum):
+    REQUIRED = "REQUIRED"
+    ACTIVE_OPTIONAL = "ACTIVE_OPTIONAL"
+
+
+class ProviderResolution(str, Enum):
+    UNIQUE = "UNIQUE"
+    AMBIGUOUS = "AMBIGUOUS"
+    UNRESOLVED = "UNRESOLVED"
+    MISSING_OR_INVALID = "MISSING_OR_INVALID"
+
+
+class AttachmentAdmission(str, Enum):
+    PROVISIONAL_ONLY = "PROVISIONAL_ONLY"
+    UNRESOLVED = "UNRESOLVED"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+class VisibleAuthority(str, Enum):
+    SOURCE_EXPLICIT = "SOURCE_EXPLICIT"
+    SUPPLEMENTAL_USER = "SUPPLEMENTAL_USER"
+    NONE = "NONE"
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class GenerationRequest:
     request_id: str
@@ -98,10 +123,61 @@ class EvidenceRef:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerDisposition:
-    owner_id: str
-    disposition: RouteBDisposition
-    evidence_ids: Tuple[str, ...] = ()
+class SourceOwnerObligation:
+    meaning_owner_id: str
+    owner_class: OwnerClass
+    obligation_kind: str
+    source_span_ids: Tuple[str, ...]
+    evidence_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SourceOwnerUniverse:
+    schema_version: str
+    source_envelope_id: str
+    source_version: str
+    obligation_version: str
+    required_owner_refs: Tuple[str, ...]
+    active_optional_owner_refs: Tuple[str, ...]
+    credit_only_owner_refs: Tuple[str, ...]
+    obligations: Tuple[SourceOwnerObligation, ...]
+    owner_universe_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class RouteBOwnerDisposition:
+    """Complete exact-one Route B disposition for one meaning owner."""
+
+    meaning_owner_id: str
+    owner_class: OwnerClass
+    provider_resolution: ProviderResolution
+    attachment_admission: AttachmentAdmission
+    visible_authority: VisibleAuthority
+    route_b_disposition: RouteBDisposition
+    visible_claim_refs: Tuple[str, ...]
+    evidence_refs: Tuple[str, ...]
+    target_unknown_ref: Optional[str]
+    reason_codes: Tuple[str, ...]
+
+    # Compatibility aliases are intentionally read-only. The disabled exact8
+    # runner remains byte-identical while the private R1 contract uses the
+    # approved Route B field names above.
+    @property
+    def owner_id(self) -> str:
+        return self.meaning_owner_id
+
+    @property
+    def disposition(self) -> RouteBDisposition:
+        return self.route_b_disposition
+
+    @property
+    def evidence_ids(self) -> Tuple[str, ...]:
+        return self.evidence_refs
+
+
+# Read-only compatibility name for the byte-identical disabled exact8 runner
+# and the already-open PR's first vertical implementation.
+OwnerDisposition = RouteBOwnerDisposition
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -144,8 +220,13 @@ class GroundedMeaningGraph:
 @dataclass(frozen=True, slots=True)
 class ExperiencePlan:
     plan_id: str
+    source_envelope_id: str
+    source_version: str
+    obligation_version: str
+    owner_universe_digest: str
     source_plan_version: str
     observation_duty_id: str
+    unknown_duty_id: str
     reception_duty_id: str
     reception_plan_digest: str
     allowed_reception_act_ids: Tuple[str, ...]
@@ -153,6 +234,8 @@ class ExperiencePlan:
     reception_target_owner_ids: Tuple[str, ...]
     visible_owner_ids: Tuple[str, ...]
     unresolved_owner_ids: Tuple[str, ...]
+    visible_unknown_owner_ids: Tuple[str, ...]
+    required_unknown_owner_ids: Tuple[str, ...]
     visible_line_ids: Tuple[str, ...]
 
 
@@ -160,6 +243,10 @@ class ExperiencePlan:
 class VisibleUnitTrace:
     visible_unit_id: str
     source_sentence_id: str
+    source_envelope_id: str
+    source_version: str
+    obligation_version: str
+    owner_universe_digest: str
     role: str
     operation: str
     text_sha256: str = field(repr=False)
@@ -171,6 +258,20 @@ class VisibleUnitTrace:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class VisibleUnknownUnit:
+    unknown_unit_id: str
+    source_sentence_id: str
+    source_envelope_id: str
+    source_version: str
+    obligation_version: str
+    owner_universe_digest: str
+    duty_id: str
+    text: str = field(repr=False)
+    owner_ids: Tuple[str, ...] = ()
+    evidence_ids: Tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class GenerationArtifactBundle:
     artifact_id: str
     realizer_contract_ids: Tuple[str, ...]
@@ -179,10 +280,16 @@ class GenerationArtifactBundle:
     reception: str = field(repr=False)
     plan: ExperiencePlan
     trace: Tuple[VisibleUnitTrace, ...]
+    visible_unknowns: Tuple[VisibleUnknownUnit, ...]
 
     @property
     def text(self) -> str:
-        return f"見えたこと：\n{self.observation}\n\nEmlisから：\n{self.reception}"
+        unknown = "\n".join(row.text for row in self.visible_unknowns)
+        return (
+            f"見えたこと：\n{self.observation}"
+            f"\n\nまだ分からないこと：\n{unknown}"
+            f"\n\nEmlisから：\n{self.reception}"
+        )
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -217,12 +324,21 @@ class EngineOutcome:
             "meaning_node_count": len(graph.nodes) if graph else 0,
             "meaning_edge_count": len(graph.edges) if graph else 0,
             "required_active_owner_count": len(dispositions),
-            "visible_owner_count": sum(row.disposition in visible for row in dispositions),
-            "unresolved_owner_count": sum(row.disposition not in visible for row in dispositions),
+            "visible_owner_count": sum(row.route_b_disposition in visible for row in dispositions),
+            "unresolved_owner_count": sum(
+                row.route_b_disposition not in visible for row in dispositions
+            ),
+            "unresolved_required_owner_count": sum(
+                row.owner_class is OwnerClass.REQUIRED
+                and row.route_b_disposition not in visible
+                for row in dispositions
+            ),
             "visible_unit_trace_count": len(artifact.trace) if artifact else 0,
             "realizer_contract_count": len(artifact.realizer_contract_ids) if artifact else 0,
             "trust_policy_count": len(artifact.trust_policy_ids) if artifact else 0,
             "observation_unit_count": sum(row.role == "OBSERVATION" for row in artifact.trace) if artifact else 0,
+            "unknown_unit_count": len(artifact.visible_unknowns) if artifact else 0,
+            "unknown_trace_count": sum(row.role == "UNKNOWN" for row in artifact.trace) if artifact else 0,
             "reception_unit_count": sum(row.role == "RECEPTION" for row in artifact.trace) if artifact else 0,
             "artifact_present": artifact is not None,
             "implementation_state": "DRAFT_WIP_DISABLED",
@@ -242,7 +358,9 @@ class EngineOutcome:
 
 
 __all__ = [
+    "AttachmentAdmission",
     "CMEE_OBLIGATION_VERSION",
+    "CMEE_OWNER_UNIVERSE_SCHEMA_VERSION",
     "CMEE_ROUTE_B_POLICY_VERSION",
     "CMEE_SCHEMA_VERSION",
     "CMEE_SOURCE_CONTRACT_VERSION",
@@ -259,9 +377,16 @@ __all__ = [
     "GroundedMeaningGraph",
     "MeaningEdge",
     "MeaningNode",
+    "OwnerClass",
     "OwnerDisposition",
     "ProductJob",
+    "ProviderResolution",
     "RouteBDisposition",
+    "RouteBOwnerDisposition",
     "SourceEnvelope",
+    "SourceOwnerObligation",
+    "SourceOwnerUniverse",
+    "VisibleAuthority",
+    "VisibleUnknownUnit",
     "VisibleUnitTrace",
 ]

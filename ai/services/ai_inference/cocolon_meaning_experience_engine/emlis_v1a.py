@@ -30,22 +30,31 @@ from emlis_ai_types import (
 )
 
 from .contracts import (
-    CMEE_OBLIGATION_VERSION,
+    AttachmentAdmission,
     EpistemicState,
     ExperiencePlan,
     GenerationArtifactBundle,
     GroundedMeaningGraph,
     MeaningEdge,
     MeaningNode,
+    OwnerClass,
     OwnerDisposition,
+    ProviderResolution,
     RouteBDisposition,
+    VisibleAuthority,
+    VisibleUnknownUnit,
     VisibleUnitTrace,
 )
-from .source_kernel import AdmittedTextSource
+from .source_kernel import AdmittedTextSource, build_source_owner_universe
 
 
 OBSERVATION_DUTY_ID = "OBSERVE_SOURCE_EXPLICIT_CURRENT_MEANING"
+UNKNOWN_DUTY_ID = "PRESERVE_EVIDENCE_BOUND_UNKNOWN"
 RECEPTION_DUTY_ID = "BOUND_HUMAN_RECEPTION_TO_VISIBLE_OBSERVATION"
+STRUCTURED_ATTACHMENT_UNKNOWN_TEXT = (
+    "書かれた内容と、選択された気持ち・カテゴリのあいだに、"
+    "どのような関係があるかまでは、この入力だけでは決められません。"
+)
 REALIZER_CONTRACT_IDS = (
     "cocolon.cmee.emlis.plan_bound_limited_composer_adapter.v1",
     "cocolon.emlis.grounded_human_reception_surface.v1",
@@ -70,6 +79,21 @@ TRUST_POLICY_IDS = (
     "cocolon.emlis.grounded_human_reception_surface_validation.v1",
     "cocolon.cmee.route_b.positive_realization_trace.v1",
 )
+ROUTE_B_REASON_CODES = frozenset(
+    {
+        "PROVIDER_IDENTITY_MISMATCH",
+        "RESOURCE_LOCK_MISMATCH",
+        "PROVIDER_OUTPUT_INVALID",
+        "REQUIRED_OWNER_MISSING",
+        "ATTACHMENT_AMBIGUOUS",
+        "ATTACHMENT_UNRESOLVED",
+        "OOV_UNRESOLVED",
+        "NO_MEANINGFUL_GROUNDED_CLAIM",
+        "CLARIFICATION_BUDGET_CONSUMED",
+        "SUPPLEMENTAL_LINEAGE_MISMATCH",
+        "PRIVATE_BOUNDARY_VIOLATION",
+    }
+)
 
 
 class CMEEVerticalError(ValueError):
@@ -84,6 +108,7 @@ class _CMEEVisibleBinding:
     nucleus_ids: tuple[str, ...]
     relation_ids: tuple[str, ...]
     evidence_span_ids: tuple[str, ...]
+    constrained_owner_ids: tuple[str, ...] = ()
     claim_scope: str = "cmee_source_explicit_plan"
     contains_question: bool = False
     required: bool = True
@@ -141,7 +166,24 @@ def _graph_id(
         for row in edges
     )
     disposition_parts = tuple(
-        "\x1f".join((row.owner_id, row.disposition.value, *row.evidence_ids))
+        "\x1f".join(
+            (
+                row.meaning_owner_id,
+                row.owner_class.value,
+                row.provider_resolution.value,
+                row.attachment_admission.value,
+                row.visible_authority.value,
+                row.route_b_disposition.value,
+                "visible_claim_refs",
+                *row.visible_claim_refs,
+                "evidence_refs",
+                *row.evidence_refs,
+                "target_unknown_ref",
+                row.target_unknown_ref or "",
+                "reason_codes",
+                *row.reason_codes,
+            )
+        )
         for row in dispositions
     )
     return _stable_id(
@@ -164,8 +206,13 @@ def _plan_id(
         "plan",
         source_envelope_id,
         graph_id,
+        plan.source_envelope_id,
+        plan.source_version,
+        plan.obligation_version,
+        plan.owner_universe_digest,
         plan.source_plan_version,
         plan.observation_duty_id,
+        plan.unknown_duty_id,
         plan.reception_duty_id,
         plan.reception_plan_digest,
         *plan.allowed_reception_act_ids,
@@ -173,6 +220,8 @@ def _plan_id(
         *plan.reception_target_owner_ids,
         *plan.visible_owner_ids,
         *plan.unresolved_owner_ids,
+        *plan.visible_unknown_owner_ids,
+        *plan.required_unknown_owner_ids,
         *visible_line_ids,
     )
 
@@ -213,6 +262,7 @@ def _artifact_id(
     graph_id: str,
     plan_id: str,
     observation: str,
+    visible_unknowns: Sequence[str],
     reception: str,
 ) -> str:
     return _stable_id(
@@ -223,6 +273,7 @@ def _artifact_id(
         *REALIZER_CONTRACT_IDS,
         *TRUST_POLICY_IDS,
         _sha256_text(observation),
+        *(_sha256_text(row) for row in visible_unknowns),
         _sha256_text(reception),
     )
 
@@ -231,16 +282,28 @@ def _ordered(values: Iterable[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(str(value) for value in values if str(value)))
 
 
-def _owner_for_nucleus(nucleus_id: str) -> str:
-    return f"nucleus:{nucleus_id}"
+def _owner_for_source_span(source: AdmittedTextSource, source_span_id: str) -> str:
+    try:
+        return source.meaning_owner_for_span(source_span_id)
+    except Exception:
+        raise CMEEVerticalError("source_span_owner_binding_mismatch") from None
 
 
-def _owner_for_relation(relation_id: str) -> str:
-    return f"relation:{relation_id}"
+def _owner_for_nucleus(source: AdmittedTextSource, nucleus: Any) -> str:
+    source_span_ids = _ordered(getattr(nucleus, "source_span_ids", ()))
+    if len(source_span_ids) != 1:
+        raise CMEEVerticalError("nucleus_owner_binding_not_exact1")
+    return _owner_for_source_span(source, source_span_ids[0])
 
 
-def _owner_for_unknown(unknown_id: str) -> str:
-    return f"unknown:{unknown_id}"
+def _owner_for_relation(source: AdmittedTextSource, relation: Any) -> str:
+    owners = _ordered(
+        _owner_for_source_span(source, source_span_id)
+        for source_span_id in getattr(relation, "source_span_ids", ())
+    )
+    if len(owners) != 1:
+        raise CMEEVerticalError("relation_endpoint_binding_not_supported")
+    return owners[0]
 
 
 def _build_graph(
@@ -249,23 +312,37 @@ def _build_graph(
     planned_visible_nucleus_ids: Sequence[str],
     planned_visible_relation_ids: Sequence[str],
 ) -> GroundedMeaningGraph:
+    try:
+        canonical_universe = build_source_owner_universe(
+            source.envelope,
+            source.evidence_refs,
+        )
+    except Exception:
+        raise CMEEVerticalError("source_owner_universe_recompute_failed") from None
+    if source.owner_universe != canonical_universe:
+        raise CMEEVerticalError("source_owner_universe_mismatch")
+
     visible_nuclei = set(planned_visible_nucleus_ids)
     visible_relations = set(planned_visible_relation_ids)
     ref_by_span = {row.source_span_id: row for row in source.evidence_refs}
 
     nodes: list[MeaningNode] = []
-    dispositions: list[OwnerDisposition] = []
     node_id_by_source: dict[str, str] = {}
+    visible_claims_by_owner: dict[str, list[str]] = {}
     for nucleus in grounded_plan.nuclei:
-        owner = _owner_for_nucleus(nucleus.nucleus_id)
+        is_visible = nucleus.nucleus_id in visible_nuclei
+        if nucleus.grounding_kind not in ADMISSIBLE_NUCLEUS_GROUNDING:
+            if is_visible:
+                raise CMEEVerticalError("provisional_nucleus_visible_authority_forbidden")
+            continue
+        owner = _owner_for_nucleus(source, nucleus)
         evidence = tuple(
             ref_by_span[span_id].evidence_id
             for span_id in nucleus.source_span_ids
             if span_id in ref_by_span
         )
-        is_visible = nucleus.nucleus_id in visible_nuclei
-        if is_visible and nucleus.grounding_kind not in ADMISSIBLE_NUCLEUS_GROUNDING:
-            raise CMEEVerticalError("provisional_nucleus_visible_authority_forbidden")
+        if len(evidence) != len(tuple(nucleus.source_span_ids)) or not evidence:
+            raise CMEEVerticalError("nucleus_evidence_binding_mismatch")
         node_id = _stable_id("mn", source.envelope.envelope_id, nucleus.nucleus_id)
         node_id_by_source[nucleus.nucleus_id] = node_id
         value = "\n".join(
@@ -280,37 +357,30 @@ def _build_graph(
                 node_kind=str(nucleus.kind),
                 grounding_kind=str(nucleus.grounding_kind),
                 value=value,
-                epistemic_state=(
-                    EpistemicState.SOURCE_EXPLICIT
-                    if nucleus.grounding_kind in ADMISSIBLE_NUCLEUS_GROUNDING
-                    else EpistemicState.UNKNOWN
-                ),
+                epistemic_state=EpistemicState.SOURCE_EXPLICIT,
                 evidence_ids=evidence,
             )
         )
-        dispositions.append(
-            OwnerDisposition(
-                owner_id=owner,
-                disposition=(
-                    RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
-                    if is_visible
-                    else RouteBDisposition.UNKNOWN_PRESERVED_LIMITED
-                ),
-                evidence_ids=evidence,
-            )
-        )
+        if is_visible:
+            visible_claims_by_owner.setdefault(owner, []).append(node_id)
 
     edges: list[MeaningEdge] = []
     for relation in grounded_plan.relations:
-        owner = _owner_for_relation(relation.relation_id)
+        is_visible = relation.relation_id in visible_relations
+        if relation.grounding_kind not in ADMISSIBLE_RELATION_GROUNDING:
+            if is_visible:
+                raise CMEEVerticalError("provisional_relation_visible_authority_forbidden")
+            # Route B keeps provisional provider/legacy proposals outside the
+            # grounded graph; absence does not create a post-plan owner.
+            continue
+        owner = _owner_for_relation(source, relation)
         evidence = tuple(
             ref_by_span[span_id].evidence_id
             for span_id in relation.source_span_ids
             if span_id in ref_by_span
         )
-        is_visible = relation.relation_id in visible_relations
-        if is_visible and relation.grounding_kind not in ADMISSIBLE_RELATION_GROUNDING:
-            raise CMEEVerticalError("provisional_relation_visible_authority_forbidden")
+        if len(evidence) != len(tuple(relation.source_span_ids)) or not evidence:
+            raise CMEEVerticalError("relation_evidence_binding_mismatch")
         if relation.from_nucleus_id not in node_id_by_source or relation.to_nucleus_id not in node_id_by_source:
             raise CMEEVerticalError("relation_endpoint_unknown")
         edge_id = _stable_id("me", source.envelope.envelope_id, relation.relation_id)
@@ -322,57 +392,18 @@ def _build_graph(
                 source_node_id=node_id_by_source[relation.from_nucleus_id],
                 target_node_id=node_id_by_source[relation.to_nucleus_id],
                 grounding_kind=str(relation.grounding_kind),
-                epistemic_state=(
-                    EpistemicState.SOURCE_EXPLICIT
-                    if relation.grounding_kind in ADMISSIBLE_RELATION_GROUNDING
-                    else EpistemicState.UNKNOWN
-                ),
+                epistemic_state=EpistemicState.SOURCE_EXPLICIT,
                 evidence_ids=evidence,
             )
         )
-        dispositions.append(
-            OwnerDisposition(
-                owner_id=owner,
-                disposition=(
-                    RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
-                    if is_visible
-                    else RouteBDisposition.UNKNOWN_PRESERVED_LIMITED
-                ),
-                evidence_ids=evidence,
-            )
-        )
-
-    for unknown in grounded_plan.unknown_boundaries:
-        owner = _owner_for_unknown(unknown.unknown_id)
-        evidence = tuple(
-            ref_by_span[span_id].evidence_id
-            for span_id in unknown.evidence_span_ids
-            if span_id in ref_by_span
-        )
-        nodes.append(
-            MeaningNode(
-                node_id=_stable_id("mn", source.envelope.envelope_id, unknown.unknown_id),
-                owner_id=owner,
-                node_kind=f"UNKNOWN:{unknown.dimension}",
-                grounding_kind="unknown_boundary",
-                value="",
-                epistemic_state=EpistemicState.UNKNOWN,
-                evidence_ids=evidence,
-            )
-        )
-        dispositions.append(
-            OwnerDisposition(
-                owner_id=owner,
-                disposition=RouteBDisposition.NOT_VISIBLE_UNRESOLVED,
-                evidence_ids=evidence,
-            )
-        )
+        if is_visible:
+            visible_claims_by_owner.setdefault(owner, []).append(edge_id)
 
     # Strength is part of the admitted structured source but this slice does
-    # not realize it. Keep it in the owner denominator as an explicit unknown
-    # instead of silently dropping the source field.
+    # not realize it. It remains SOURCE_EXPLICIT but is not misclassified as
+    # an unknown merely because it is not selected for the visible plan.
     strength_ref = source.evidence_ref("structured:emotion_strength")
-    strength_owner = "source:emotion_strength"
+    strength_owner = _owner_for_source_span(source, strength_ref.source_span_id)
     nodes.append(
         MeaningNode(
             node_id=_stable_id("mn", source.envelope.envelope_id, strength_owner),
@@ -380,24 +411,69 @@ def _build_graph(
             node_kind="STRUCTURED_EMOTION_STRENGTH",
             grounding_kind="source_explicit_not_realized",
             value=source.strength,
-            epistemic_state=EpistemicState.UNKNOWN,
-            evidence_ids=(strength_ref.evidence_id,),
-        )
-    )
-    dispositions.append(
-        OwnerDisposition(
-            owner_id=strength_owner,
-            disposition=RouteBDisposition.UNKNOWN_PRESERVED_LIMITED,
+            epistemic_state=EpistemicState.SOURCE_EXPLICIT,
             evidence_ids=(strength_ref.evidence_id,),
         )
     )
 
-    owner_refs = tuple(row.owner_id for row in dispositions)
-    if len(owner_refs) != len(set(owner_refs)):
-        raise CMEEVerticalError("route_b_owner_duplicate")
-    owner_digest = _sha256_text(
-        "|".join((source.envelope.source_contract_version, CMEE_OBLIGATION_VERSION, *owner_refs))
+    dispositions: list[OwnerDisposition] = []
+    for obligation in source.owner_universe.obligations:
+        owner_id = obligation.meaning_owner_id
+        visible_claim_refs = tuple(visible_claims_by_owner.get(owner_id, ()))
+        if obligation.obligation_kind == "STRUCTURED_CONTEXT_ATTACHMENT":
+            dispositions.append(
+                OwnerDisposition(
+                    meaning_owner_id=owner_id,
+                    owner_class=obligation.owner_class,
+                    provider_resolution=ProviderResolution.MISSING_OR_INVALID,
+                    attachment_admission=AttachmentAdmission.UNAVAILABLE,
+                    visible_authority=VisibleAuthority.NONE,
+                    route_b_disposition=RouteBDisposition.NOT_VISIBLE_UNRESOLVED,
+                    visible_claim_refs=(),
+                    evidence_refs=obligation.evidence_refs,
+                    target_unknown_ref=None,
+                    reason_codes=("ATTACHMENT_UNRESOLVED",),
+                )
+            )
+        elif visible_claim_refs:
+            dispositions.append(
+                OwnerDisposition(
+                    meaning_owner_id=owner_id,
+                    owner_class=obligation.owner_class,
+                    provider_resolution=ProviderResolution.MISSING_OR_INVALID,
+                    attachment_admission=AttachmentAdmission.UNAVAILABLE,
+                    visible_authority=VisibleAuthority.SOURCE_EXPLICIT,
+                    route_b_disposition=RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
+                    visible_claim_refs=visible_claim_refs,
+                    evidence_refs=obligation.evidence_refs,
+                    target_unknown_ref=None,
+                    reason_codes=(),
+                )
+            )
+        else:
+            dispositions.append(
+                OwnerDisposition(
+                    meaning_owner_id=owner_id,
+                    owner_class=obligation.owner_class,
+                    provider_resolution=ProviderResolution.MISSING_OR_INVALID,
+                    attachment_admission=AttachmentAdmission.UNAVAILABLE,
+                    visible_authority=VisibleAuthority.NONE,
+                    route_b_disposition=RouteBDisposition.NOT_VISIBLE_UNRESOLVED,
+                    visible_claim_refs=(),
+                    evidence_refs=obligation.evidence_refs,
+                    target_unknown_ref=None,
+                    reason_codes=("ATTACHMENT_UNRESOLVED",),
+                )
+            )
+
+    owner_refs = tuple(row.meaning_owner_id for row in dispositions)
+    expected_owner_refs = (
+        source.owner_universe.required_owner_refs
+        + source.owner_universe.active_optional_owner_refs
     )
+    if owner_refs != expected_owner_refs or len(owner_refs) != len(set(owner_refs)):
+        raise CMEEVerticalError("route_b_owner_duplicate")
+    owner_digest = source.owner_universe.owner_universe_digest
     graph_id = _graph_id(
         source.envelope.envelope_id,
         owner_digest,
@@ -411,13 +487,13 @@ def _build_graph(
         nodes=tuple(nodes),
         edges=tuple(edges),
         owner_dispositions=tuple(dispositions),
-        required_owner_refs=owner_refs,
-        active_optional_owner_refs=(),
-        source_version=source.envelope.source_contract_version,
-        obligation_version=CMEE_OBLIGATION_VERSION,
+        required_owner_refs=source.owner_universe.required_owner_refs,
+        active_optional_owner_refs=source.owner_universe.active_optional_owner_refs,
+        source_version=source.owner_universe.source_version,
+        obligation_version=source.owner_universe.obligation_version,
         owner_universe_digest=owner_digest,
     )
-    if set(row.owner_id for row in graph.owner_dispositions) != set(graph.required_owner_refs):
+    if tuple(row.owner_id for row in graph.owner_dispositions) != expected_owner_refs:
         raise CMEEVerticalError("route_b_owner_denominator_mismatch")
     return graph
 
@@ -460,24 +536,65 @@ def _build_experience_plan(
     required_relation_ids: Sequence[str],
     reception_target_ids: Sequence[str],
 ) -> ExperiencePlan:
+    nucleus_index = {row.nucleus_id: row for row in grounded_plan.nuclei}
+    relation_index = {row.relation_id: row for row in grounded_plan.relations}
+    positive_dispositions = {
+        RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
+        RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+    }
     visible = tuple(
         row.owner_id
         for row in graph.owner_dispositions
-        if row.disposition is RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
+        if row.disposition in positive_dispositions
     )
     unresolved = tuple(
         row.owner_id
         for row in graph.owner_dispositions
-        if row.disposition is not RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
+        if row.disposition not in positive_dispositions
+    )
+    visible_unknown = tuple(
+        row.owner_id
+        for row in graph.owner_dispositions
+        if source.owner_obligation(row.owner_id).obligation_kind
+        == "STRUCTURED_CONTEXT_ATTACHMENT"
+        and row.disposition
+        in {
+            RouteBDisposition.UNKNOWN_PRESERVED_LIMITED,
+            RouteBDisposition.NOT_VISIBLE_UNRESOLVED,
+        }
+    )
+    unresolved_required = tuple(
+        row
+        for row in graph.owner_dispositions
+        if row.owner_class is OwnerClass.REQUIRED
+        and row.disposition not in positive_dispositions
+    )
+    if any(row.owner_id not in set(visible_unknown) for row in unresolved_required):
+        raise CMEEVerticalError("required_unknown_not_safely_visible")
+    required_unknown = tuple(
+        row.owner_id for row in unresolved_required
     )
     source_plan_version = f"{grounded_plan.schema_version}|{grounded_plan.generation_path}"
-    required_observation_owners = tuple(
-        (*(_owner_for_nucleus(row_id) for row_id in required_nucleus_ids),
-         *(_owner_for_relation(row_id) for row_id in required_relation_ids))
+    required_observation_owners = _ordered(
+        (
+            *(
+                _owner_for_nucleus(source, nucleus_index[row_id])
+                for row_id in required_nucleus_ids
+            ),
+            *(
+                _owner_for_relation(source, relation_index[row_id])
+                for row_id in required_relation_ids
+            ),
+        )
     )
-    reception_target_owners = tuple(_owner_for_nucleus(row_id) for row_id in reception_target_ids)
+    reception_target_owners = _ordered(
+        _owner_for_nucleus(source, nucleus_index[row_id])
+        for row_id in reception_target_ids
+    )
     if not set(required_observation_owners + reception_target_owners).issubset(set(visible)):
         raise CMEEVerticalError("experience_plan_visible_owner_mismatch")
+    if not visible_unknown:
+        raise CMEEVerticalError("limited_visible_unknown_owner_missing")
     reception_plan_digest, allowed_reception_act_ids = _reception_plan_contract(grounded_plan)
     return ExperiencePlan(
         plan_id=_stable_id(
@@ -488,8 +605,13 @@ def _build_experience_plan(
             *required_observation_owners,
             *reception_target_owners,
         ),
+        source_envelope_id=source.envelope.envelope_id,
+        source_version=graph.source_version,
+        obligation_version=graph.obligation_version,
+        owner_universe_digest=graph.owner_universe_digest,
         source_plan_version=source_plan_version,
         observation_duty_id=OBSERVATION_DUTY_ID,
+        unknown_duty_id=UNKNOWN_DUTY_ID,
         reception_duty_id=RECEPTION_DUTY_ID,
         reception_plan_digest=reception_plan_digest,
         allowed_reception_act_ids=allowed_reception_act_ids,
@@ -497,6 +619,8 @@ def _build_experience_plan(
         reception_target_owner_ids=reception_target_owners,
         visible_owner_ids=visible,
         unresolved_owner_ids=unresolved,
+        visible_unknown_owner_ids=visible_unknown,
+        required_unknown_owner_ids=required_unknown,
         visible_line_ids=(),
     )
 
@@ -518,15 +642,17 @@ def _experience_plan_projection(
         str(getattr(row, "span_id", "") or ""): str(getattr(row, "raw_text", "") or "")
         for row in source.evidence_spans
     }
+    relation_index = {row.relation_id: row for row in grounded_plan.relations}
+    required_owner_set = set(plan.required_observation_owner_ids)
     required_nucleus_ids = tuple(
-        owner_id.removeprefix("nucleus:")
-        for owner_id in plan.required_observation_owner_ids
-        if owner_id.startswith("nucleus:")
+        row_id
+        for row_id in grounded_plan.coverage_requirements.required_nucleus_ids
+        if _owner_for_nucleus(source, nucleus_index[row_id]) in required_owner_set
     )
     required_relation_ids = tuple(
-        owner_id.removeprefix("relation:")
-        for owner_id in plan.required_observation_owner_ids
-        if owner_id.startswith("relation:")
+        row_id
+        for row_id in grounded_plan.coverage_requirements.required_relation_ids
+        if _owner_for_relation(source, relation_index[row_id]) in required_owner_set
     )
     if required_relation_ids:
         # The existing bounded composer binding has a relation type but no
@@ -542,7 +668,7 @@ def _experience_plan_projection(
             raise CMEEVerticalError("experience_plan_projection_nucleus_invalid")
         claims.append(
             GraphClaim(
-                claim_id=_owner_for_nucleus(row_id),
+                claim_id=_owner_for_nucleus(source, row),
                 claim_type=str(row.kind),
                 text=text,
                 evidence_span_ids=evidence_ids,
@@ -605,6 +731,7 @@ def _realize_cmee_experience(
         source.evidence_spans,
         current_input=source.normalized_current_input,
     )
+    ref_by_span = {row.source_span_id: row for row in source.evidence_refs}
     scope = _experience_plan_projection(source, plan, grounded_plan)
     material = build_observation_structure_material(
         current_input=source.normalized_current_input,
@@ -651,18 +778,19 @@ def _realize_cmee_experience(
             if core_binding.get(key) != surface_binding.get(key):
                 raise CMEEVerticalError("plan_bound_observation_core_binding_mismatch")
 
-    required_nucleus_ids = tuple(
-        owner_id.removeprefix("nucleus:")
-        for owner_id in plan.required_observation_owner_ids
-        if owner_id.startswith("nucleus:")
-    )
-    required_relation_ids = tuple(
-        owner_id.removeprefix("relation:")
-        for owner_id in plan.required_observation_owner_ids
-        if owner_id.startswith("relation:")
-    )
     nucleus_index = {row.nucleus_id: row for row in grounded_plan.nuclei}
     relation_index = {row.relation_id: row for row in grounded_plan.relations}
+    required_owner_set = set(plan.required_observation_owner_ids)
+    required_nucleus_ids = tuple(
+        row_id
+        for row_id in grounded_plan.coverage_requirements.required_nucleus_ids
+        if _owner_for_nucleus(source, nucleus_index[row_id]) in required_owner_set
+    )
+    required_relation_ids = tuple(
+        row_id
+        for row_id in grounded_plan.coverage_requirements.required_relation_ids
+        if _owner_for_relation(source, relation_index[row_id]) in required_owner_set
+    )
     allowed_evidence_ids = {
         span_id
         for row_id in required_nucleus_ids
@@ -737,8 +865,12 @@ def _realize_cmee_experience(
         or tuple(reception_surface.realized_reception_acts) != expected_reception_acts
     ):
         raise CMEEVerticalError("bound_human_reception_act_contract_mismatch")
+    reception_owner_set = set(plan.reception_target_owner_ids)
     reception_targets = tuple(
-        owner_id.removeprefix("nucleus:") for owner_id in plan.reception_target_owner_ids
+        row_id
+        for row_id in grounded_plan.response_plan.human_follow_target_ids
+        if row_id in nucleus_index
+        and _owner_for_nucleus(source, nucleus_index[row_id]) in reception_owner_set
     )
     if tuple(reception_surface.grounded_nucleus_ids) != reception_targets:
         raise CMEEVerticalError("bound_human_reception_target_mismatch")
@@ -760,7 +892,29 @@ def _realize_cmee_experience(
             required=True,
         ),
     )
-    lines = (*observation_lines, reception_line)
+    unknown_span_ids = _ordered(
+        source_span_id
+        for owner_id in plan.visible_unknown_owner_ids
+        for source_span_id in source.owner_obligation(owner_id).source_span_ids
+    )
+    if not plan.visible_unknown_owner_ids or not unknown_span_ids:
+        raise CMEEVerticalError("visible_unknown_evidence_unavailable")
+    if any(source_span_id not in ref_by_span for source_span_id in unknown_span_ids):
+        raise CMEEVerticalError("visible_unknown_cross_source_evidence")
+    unknown_line = _CMEEVisibleLine(
+        sentence_id="cmee:unknown:1",
+        text=STRUCTURED_ATTACHMENT_UNKNOWN_TEXT,
+        binding=_CMEEVisibleBinding(
+            line_role="cmee_unknown",
+            nucleus_ids=(),
+            relation_ids=(),
+            evidence_span_ids=unknown_span_ids,
+            constrained_owner_ids=plan.visible_unknown_owner_ids,
+            claim_scope="cmee_evidence_bound_unknown_preservation",
+            required=True,
+        ),
+    )
+    lines = (*observation_lines, unknown_line, reception_line)
     observed_nuclei = {
         nucleus_id
         for line in observation_lines
@@ -791,7 +945,7 @@ def _validate_reception_semantic_compatibility(
     observation_span_ids = {
         span_id
         for line in visible_lines
-        if line.binding.line_role != "human_follow"
+        if line.binding.line_role == "cmee_observation"
         for span_id in line.binding.evidence_span_ids
     }
     source_text = "\n".join(
@@ -823,36 +977,191 @@ def _trace_for_lines(
     plan: ExperiencePlan,
     safe_lines: Sequence[Any],
 ) -> tuple[VisibleUnitTrace, ...]:
-    node_by_owner = {row.owner_id: row for row in graph.nodes}
-    edge_by_owner = {row.owner_id: row for row in graph.edges}
+    node_ids = {row.node_id for row in graph.nodes}
+    edge_ids = {row.edge_id for row in graph.edges}
     ref_by_span = {row.source_span_id: row for row in source.evidence_refs}
     traces: list[VisibleUnitTrace] = []
     for ordinal, line in enumerate(safe_lines, start=1):
         is_reception = line.binding.line_role == "human_follow"
-        node_ids = tuple(
-            node_by_owner[_owner_for_nucleus(source_id)].node_id
+        is_unknown = line.binding.line_role == "cmee_unknown"
+        bound_node_ids = tuple(
+            _stable_id("mn", source.envelope.envelope_id, source_id)
             for source_id in line.binding.nucleus_ids
         )
-        edge_ids = tuple(
-            edge_by_owner[_owner_for_relation(source_id)].edge_id
+        bound_edge_ids = tuple(
+            _stable_id("me", source.envelope.envelope_id, source_id)
             for source_id in line.binding.relation_ids
         )
+        if not set(bound_node_ids).issubset(node_ids) or not set(bound_edge_ids).issubset(edge_ids):
+            raise CMEEVerticalError("visible_trace_claim_binding_missing")
         evidence_ids = tuple(ref_by_span[source_id].evidence_id for source_id in line.binding.evidence_span_ids)
+        role = "UNKNOWN" if is_unknown else ("RECEPTION" if is_reception else "OBSERVATION")
+        operation = (
+            "EVIDENCE_BOUND_UNKNOWN_PRESERVATION"
+            if is_unknown
+            else (
+                "BOUND_HUMAN_RECEPTION"
+                if is_reception
+                else "SOURCE_EXPLICIT_GROUNDED_OBSERVATION"
+            )
+        )
+        duty_id = (
+            plan.unknown_duty_id
+            if is_unknown
+            else (plan.reception_duty_id if is_reception else plan.observation_duty_id)
+        )
+        constrained_owner_ids = (
+            line.binding.constrained_owner_ids
+            if is_unknown
+            else (plan.unresolved_owner_ids if is_reception else ())
+        )
         traces.append(
             VisibleUnitTrace(
                 visible_unit_id=f"visible:{ordinal}",
                 source_sentence_id=line.sentence_id,
-                role="RECEPTION" if is_reception else "OBSERVATION",
-                operation="BOUND_HUMAN_RECEPTION" if is_reception else "SOURCE_EXPLICIT_GROUNDED_OBSERVATION",
+                source_envelope_id=source.envelope.envelope_id,
+                source_version=graph.source_version,
+                obligation_version=graph.obligation_version,
+                owner_universe_digest=graph.owner_universe_digest,
+                role=role,
+                operation=operation,
                 text_sha256=_sha256_text(line.text),
-                duty_id=plan.reception_duty_id if is_reception else plan.observation_duty_id,
-                meaning_node_ids=node_ids,
-                meaning_edge_ids=edge_ids,
+                duty_id=duty_id,
+                meaning_node_ids=() if is_unknown else bound_node_ids,
+                meaning_edge_ids=() if is_unknown else bound_edge_ids,
                 evidence_ids=evidence_ids,
-                constrained_by_owner_ids=plan.unresolved_owner_ids if is_reception else (),
+                constrained_by_owner_ids=constrained_owner_ids,
             )
         )
     return tuple(traces)
+
+
+def _validate_route_b_graph_contract(
+    source: AdmittedTextSource,
+    graph: GroundedMeaningGraph,
+) -> None:
+    try:
+        universe = build_source_owner_universe(source.envelope, source.evidence_refs)
+    except Exception:
+        raise CMEEVerticalError("source_owner_universe_recompute_failed") from None
+    if source.owner_universe != universe:
+        raise CMEEVerticalError("source_owner_universe_mismatch")
+
+    required = universe.required_owner_refs
+    active = universe.active_optional_owner_refs
+    credit = universe.credit_only_owner_refs
+    if (
+        len(required) != len(set(required))
+        or len(active) != len(set(active))
+        or len(credit) != len(set(credit))
+        or set(required).intersection(active)
+        or set(required).intersection(credit)
+        or set(active).intersection(credit)
+    ):
+        raise CMEEVerticalError("route_b_owner_partition_invalid")
+    expected_owners = required + active
+    rows = graph.owner_dispositions
+    actual_owners = tuple(row.meaning_owner_id for row in rows)
+    if actual_owners != expected_owners or len(actual_owners) != len(set(actual_owners)):
+        raise CMEEVerticalError("route_b_owner_denominator_mismatch")
+    if (
+        graph.source_envelope_id != universe.source_envelope_id
+        or graph.required_owner_refs != required
+        or graph.active_optional_owner_refs != active
+        or graph.source_version != universe.source_version
+        or graph.obligation_version != universe.obligation_version
+        or graph.owner_universe_digest != universe.owner_universe_digest
+    ):
+        raise CMEEVerticalError("route_b_owner_universe_binding_mismatch")
+
+    obligation_by_owner = {
+        row.meaning_owner_id: row for row in universe.obligations
+    }
+    evidence_by_id = {row.evidence_id: row for row in source.evidence_refs}
+    claim_by_id: dict[str, MeaningNode | MeaningEdge] = {
+        **{row.node_id: row for row in graph.nodes},
+        **{row.edge_id: row for row in graph.edges},
+    }
+    positive = {
+        RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
+        RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+    }
+    for row in rows:
+        obligation = obligation_by_owner.get(row.meaning_owner_id)
+        if obligation is None or row.owner_class is not obligation.owner_class:
+            raise CMEEVerticalError("route_b_owner_class_mismatch")
+        if row.evidence_refs != obligation.evidence_refs or not row.evidence_refs:
+            raise CMEEVerticalError("route_b_owner_evidence_mismatch")
+        if any(reason_code not in ROUTE_B_REASON_CODES for reason_code in row.reason_codes):
+            raise CMEEVerticalError("route_b_reason_code_invalid")
+        if any(
+            evidence_id not in evidence_by_id
+            or evidence_by_id[evidence_id].source_envelope_id
+            != source.envelope.envelope_id
+            for evidence_id in row.evidence_refs
+        ):
+            raise CMEEVerticalError("route_b_owner_cross_source_evidence")
+        if (
+            row.provider_resolution is ProviderResolution.MISSING_OR_INVALID
+            and row.attachment_admission is not AttachmentAdmission.UNAVAILABLE
+        ):
+            raise CMEEVerticalError("route_b_provider_admission_mismatch")
+
+        if row.route_b_disposition in positive:
+            expected_authority = (
+                VisibleAuthority.SOURCE_EXPLICIT
+                if row.route_b_disposition
+                is RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
+                else VisibleAuthority.SUPPLEMENTAL_USER
+            )
+            if (
+                row.visible_authority is not expected_authority
+                or not row.visible_claim_refs
+                or row.target_unknown_ref is not None
+                or row.reason_codes
+            ):
+                raise CMEEVerticalError("route_b_positive_visible_field_mismatch")
+            for claim_ref in row.visible_claim_refs:
+                claim = claim_by_id.get(claim_ref)
+                if (
+                    claim is None
+                    or claim.owner_id != row.meaning_owner_id
+                    or claim.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
+                    or not set(claim.evidence_ids).issubset(set(row.evidence_refs))
+                ):
+                    raise CMEEVerticalError("route_b_positive_visible_claim_mismatch")
+        elif row.route_b_disposition is RouteBDisposition.UNKNOWN_PRESERVED_LIMITED:
+            target = claim_by_id.get(row.target_unknown_ref or "")
+            if (
+                row.provider_resolution is not ProviderResolution.UNRESOLVED
+                or row.attachment_admission is not AttachmentAdmission.UNRESOLVED
+                or row.visible_authority is not VisibleAuthority.NONE
+                or row.target_unknown_ref is None
+                or row.visible_claim_refs != (row.target_unknown_ref,)
+                or not isinstance(target, MeaningNode)
+                or target.owner_id != row.meaning_owner_id
+                or target.epistemic_state is not EpistemicState.UNKNOWN
+                or target.evidence_ids != row.evidence_refs
+                or obligation.obligation_kind != "STRUCTURED_CONTEXT_ATTACHMENT"
+                or row.reason_codes != ("ATTACHMENT_UNRESOLVED",)
+            ):
+                raise CMEEVerticalError("route_b_visible_unknown_field_mismatch")
+        elif row.route_b_disposition is RouteBDisposition.NOT_VISIBLE_UNRESOLVED:
+            if (
+                row.provider_resolution is not ProviderResolution.MISSING_OR_INVALID
+                or row.attachment_admission is not AttachmentAdmission.UNAVAILABLE
+                or row.visible_authority is not VisibleAuthority.NONE
+                or row.visible_claim_refs
+                or row.target_unknown_ref is not None
+                or row.reason_codes != ("ATTACHMENT_UNRESOLVED",)
+            ):
+                raise CMEEVerticalError("route_b_nonvisible_field_mismatch")
+        else:
+            raise CMEEVerticalError("route_b_disposition_unsupported_in_limited")
+
+    expected_owner_set = set(expected_owners)
+    if any(row.owner_id not in expected_owner_set for row in (*graph.nodes, *graph.edges)):
+        raise CMEEVerticalError("grounded_graph_owner_outside_universe")
 
 
 def validate_positive_realization_trace(
@@ -861,6 +1170,7 @@ def validate_positive_realization_trace(
     artifact: GenerationArtifactBundle,
     safe_lines: Sequence[Any],
 ) -> None:
+    _validate_route_b_graph_contract(source, graph)
     canonical_resolver = build_evidence_span_resolver(
         source.evidence_spans,
         current_input=source.normalized_current_input,
@@ -904,11 +1214,6 @@ def validate_positive_realization_trace(
     expected_owners = graph.required_owner_refs + graph.active_optional_owner_refs
     if owners != expected_owners or len(owners) != len(set(owners)):
         raise CMEEVerticalError("route_b_owner_denominator_mismatch")
-    expected_digest = _sha256_text(
-        "|".join((graph.source_version, graph.obligation_version, *expected_owners))
-    )
-    if graph.owner_universe_digest != expected_digest:
-        raise CMEEVerticalError("route_b_owner_digest_mismatch")
     if graph.graph_id != _graph_id(
         source.envelope.envelope_id,
         graph.owner_universe_digest,
@@ -919,8 +1224,24 @@ def validate_positive_realization_trace(
         raise CMEEVerticalError("grounded_meaning_graph_identity_mismatch")
     if artifact.plan.observation_duty_id != OBSERVATION_DUTY_ID:
         raise CMEEVerticalError("observation_duty_identity_mismatch")
+    if artifact.plan.unknown_duty_id != UNKNOWN_DUTY_ID:
+        raise CMEEVerticalError("unknown_duty_identity_mismatch")
     if artifact.plan.reception_duty_id != RECEPTION_DUTY_ID:
         raise CMEEVerticalError("reception_duty_identity_mismatch")
+    expected_binding = (
+        graph.source_envelope_id,
+        graph.source_version,
+        graph.obligation_version,
+        graph.owner_universe_digest,
+    )
+    plan_binding = (
+        artifact.plan.source_envelope_id,
+        artifact.plan.source_version,
+        artifact.plan.obligation_version,
+        artifact.plan.owner_universe_digest,
+    )
+    if plan_binding != expected_binding:
+        raise CMEEVerticalError("experience_plan_universe_binding_mismatch")
     if artifact.realizer_contract_ids != REALIZER_CONTRACT_IDS:
         raise CMEEVerticalError("realizer_contract_identity_mismatch")
     if artifact.trust_policy_ids != TRUST_POLICY_IDS:
@@ -936,6 +1257,42 @@ def validate_positive_realization_trace(
         raise CMEEVerticalError("plan_owner_partition_overlap")
     if set(artifact.plan.visible_owner_ids + artifact.plan.unresolved_owner_ids) != set(owners):
         raise CMEEVerticalError("plan_owner_partition_mismatch")
+    positive = {
+        RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
+        RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+    }
+    expected_visible_unknown = tuple(
+        row.owner_id
+        for row in graph.owner_dispositions
+        if source.owner_obligation(row.owner_id).obligation_kind
+        == "STRUCTURED_CONTEXT_ATTACHMENT"
+        and row.disposition
+        in {
+            RouteBDisposition.UNKNOWN_PRESERVED_LIMITED,
+            RouteBDisposition.NOT_VISIBLE_UNRESOLVED,
+        }
+    )
+    expected_required_unknown = tuple(
+        row.owner_id
+        for row in graph.owner_dispositions
+        if row.owner_class is OwnerClass.REQUIRED
+        and row.owner_id in set(expected_visible_unknown)
+    )
+    unresolved_required = tuple(
+        row
+        for row in graph.owner_dispositions
+        if row.owner_class is OwnerClass.REQUIRED and row.disposition not in positive
+    )
+    if any(
+        row.owner_id not in set(expected_visible_unknown)
+        for row in unresolved_required
+    ):
+        raise CMEEVerticalError("required_unknown_not_safely_visible")
+    if (
+        artifact.plan.visible_unknown_owner_ids != expected_visible_unknown
+        or artifact.plan.required_unknown_owner_ids != expected_required_unknown
+    ):
+        raise CMEEVerticalError("plan_required_unknown_owner_mismatch")
     if artifact.plan.visible_line_ids != tuple(line.sentence_id for line in safe_lines):
         raise CMEEVerticalError("plan_visible_line_set_mismatch")
     if len(artifact.trace) != len(safe_lines):
@@ -945,28 +1302,120 @@ def validate_positive_realization_trace(
     )
     if tuple(row.visible_unit_id for row in artifact.trace) != expected_visible_unit_ids:
         raise CMEEVerticalError("visible_trace_unit_identity_mismatch")
+    line_roles = tuple(line.binding.line_role for line in safe_lines)
+    if (
+        not line_roles
+        or line_roles[-2:] != ("cmee_unknown", "human_follow")
+        or any(role != "cmee_observation" for role in line_roles[:-2])
+        or not line_roles[:-2]
+    ):
+        raise CMEEVerticalError("visible_line_role_cardinality_mismatch")
+    if any(
+        (
+            row.source_envelope_id,
+            row.source_version,
+            row.obligation_version,
+            row.owner_universe_digest,
+        )
+        != expected_binding
+        for row in artifact.trace
+    ):
+        raise CMEEVerticalError("visible_trace_universe_binding_mismatch")
+
+    unknown_lines = tuple(
+        line for line in safe_lines if line.binding.line_role == "cmee_unknown"
+    )
+    if len(unknown_lines) != 1:
+        raise CMEEVerticalError("visible_required_unknown_missing")
+    covered_unknown_owners = tuple(
+        owner_id
+        for line in unknown_lines
+        for owner_id in line.binding.constrained_owner_ids
+    )
+    if (
+        covered_unknown_owners != artifact.plan.visible_unknown_owner_ids
+        or len(covered_unknown_owners) != len(set(covered_unknown_owners))
+    ):
+        raise CMEEVerticalError("visible_required_unknown_coverage_mismatch")
+    expected_unknown_span_ids = _ordered(
+        source_span_id
+        for owner_id in artifact.plan.visible_unknown_owner_ids
+        for source_span_id in source.owner_obligation(owner_id).source_span_ids
+    )
+    unknown_line = unknown_lines[0]
+    if (
+        unknown_line.sentence_id != "cmee:unknown:1"
+        or unknown_line.text != STRUCTURED_ATTACHMENT_UNKNOWN_TEXT
+        or unknown_line.binding.nucleus_ids
+        or unknown_line.binding.relation_ids
+        or unknown_line.binding.evidence_span_ids != expected_unknown_span_ids
+        or unknown_line.binding.constrained_owner_ids
+        != artifact.plan.visible_unknown_owner_ids
+        or unknown_line.binding.claim_scope
+        != "cmee_evidence_bound_unknown_preservation"
+        or unknown_line.binding.contains_question
+        or not unknown_line.binding.required
+    ):
+        raise CMEEVerticalError("visible_unknown_canonical_binding_mismatch")
 
     nodes = {row.node_id: row for row in graph.nodes}
     edges = {row.edge_id: row for row in graph.edges}
-    disposition = {row.owner_id: row.disposition for row in graph.owner_dispositions}
+    dispositions = {row.owner_id: row for row in graph.owner_dispositions}
     refs = {row.source_span_id: row for row in source.evidence_refs}
     observation_text: list[str] = []
+    unknown_text: list[str] = []
     reception_text: list[str] = []
     for trace, line in zip(artifact.trace, safe_lines, strict=True):
         is_reception = line.binding.line_role == "human_follow"
-        expected_role = "RECEPTION" if is_reception else "OBSERVATION"
-        expected_duty = artifact.plan.reception_duty_id if is_reception else artifact.plan.observation_duty_id
-        expected_operation = "BOUND_HUMAN_RECEPTION" if is_reception else "SOURCE_EXPLICIT_GROUNDED_OBSERVATION"
-        expected_nodes = tuple(
-            next(row.node_id for row in graph.nodes if row.owner_id == _owner_for_nucleus(source_id))
-            for source_id in line.binding.nucleus_ids
+        is_unknown = line.binding.line_role == "cmee_unknown"
+        if not is_reception and not is_unknown and line.binding.line_role != "cmee_observation":
+            raise CMEEVerticalError("visible_line_role_invalid")
+        expected_role = (
+            "UNKNOWN" if is_unknown else ("RECEPTION" if is_reception else "OBSERVATION")
         )
-        expected_edges = tuple(
-            next(row.edge_id for row in graph.edges if row.owner_id == _owner_for_relation(source_id))
-            for source_id in line.binding.relation_ids
+        expected_duty = (
+            artifact.plan.unknown_duty_id
+            if is_unknown
+            else (
+                artifact.plan.reception_duty_id
+                if is_reception
+                else artifact.plan.observation_duty_id
+            )
         )
-        expected_evidence = tuple(refs[source_id].evidence_id for source_id in line.binding.evidence_span_ids)
-        expected_constraints = artifact.plan.unresolved_owner_ids if is_reception else ()
+        expected_operation = (
+            "EVIDENCE_BOUND_UNKNOWN_PRESERVATION"
+            if is_unknown
+            else (
+                "BOUND_HUMAN_RECEPTION"
+                if is_reception
+                else "SOURCE_EXPLICIT_GROUNDED_OBSERVATION"
+            )
+        )
+        expected_nodes = (
+            ()
+            if is_unknown
+            else tuple(
+                _stable_id("mn", source.envelope.envelope_id, source_id)
+                for source_id in line.binding.nucleus_ids
+            )
+        )
+        expected_edges = (
+            ()
+            if is_unknown
+            else tuple(
+                _stable_id("me", source.envelope.envelope_id, source_id)
+                for source_id in line.binding.relation_ids
+            )
+        )
+        expected_evidence = tuple(
+            refs[source_id].evidence_id
+            for source_id in line.binding.evidence_span_ids
+        )
+        expected_constraints = (
+            line.binding.constrained_owner_ids
+            if is_unknown
+            else (artifact.plan.unresolved_owner_ids if is_reception else ())
+        )
         if (
             trace.source_sentence_id != line.sentence_id
             or trace.role != expected_role
@@ -979,22 +1428,34 @@ def validate_positive_realization_trace(
             or trace.constrained_by_owner_ids != expected_constraints
         ):
             raise CMEEVerticalError("visible_trace_exact_binding_mismatch")
-        for node_id in trace.meaning_node_ids:
-            node = nodes.get(node_id)
-            if (
-                node is None
-                or node.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
-                or disposition.get(node.owner_id) is not RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
-            ):
-                raise CMEEVerticalError("visible_trace_node_authority_mismatch")
-        for edge_id in trace.meaning_edge_ids:
-            edge = edges.get(edge_id)
-            if (
-                edge is None
-                or edge.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
-                or disposition.get(edge.owner_id) is not RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
-            ):
-                raise CMEEVerticalError("visible_trace_edge_authority_mismatch")
+        if is_unknown:
+            if not trace.evidence_ids or trace.meaning_node_ids or trace.meaning_edge_ids:
+                raise CMEEVerticalError("visible_unknown_trace_authority_mismatch")
+        else:
+            if not expected_nodes and not expected_edges:
+                raise CMEEVerticalError("positive_visible_claim_binding_empty")
+            for node_id in trace.meaning_node_ids:
+                node = nodes.get(node_id)
+                row = dispositions.get(node.owner_id) if node is not None else None
+                if (
+                    node is None
+                    or row is None
+                    or node.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
+                    or row.disposition is not RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
+                    or node_id not in row.visible_claim_refs
+                ):
+                    raise CMEEVerticalError("visible_trace_node_authority_mismatch")
+            for edge_id in trace.meaning_edge_ids:
+                edge = edges.get(edge_id)
+                row = dispositions.get(edge.owner_id) if edge is not None else None
+                if (
+                    edge is None
+                    or row is None
+                    or edge.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
+                    or row.disposition is not RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
+                    or edge_id not in row.visible_claim_refs
+                ):
+                    raise CMEEVerticalError("visible_trace_edge_authority_mismatch")
         for source_id in line.binding.evidence_span_ids:
             ref = refs[source_id]
             selected_raw = source.envelope.raw_utf8[ref.utf8_start : ref.utf8_end]
@@ -1015,11 +1476,36 @@ def validate_positive_realization_trace(
                 != ref.field_sha256
             ):
                 raise CMEEVerticalError("visible_trace_source_locator_mismatch")
-        (reception_text if is_reception else observation_text).append(line.text)
-    if artifact.observation != "\n".join(observation_text) or artifact.reception != "\n".join(reception_text):
+        (
+            unknown_text
+            if is_unknown
+            else (reception_text if is_reception else observation_text)
+        ).append(line.text)
+    if (
+        artifact.observation != "\n".join(observation_text)
+        or artifact.reception != "\n".join(reception_text)
+    ):
         raise CMEEVerticalError("artifact_surface_trace_mismatch")
-    if not observation_text or not reception_text:
+    if not observation_text or not unknown_text or not reception_text:
         raise CMEEVerticalError("limited_artifact_duty_missing")
+    expected_visible_unknowns = tuple(
+        VisibleUnknownUnit(
+            unknown_unit_id=trace.visible_unit_id,
+            source_sentence_id=line.sentence_id,
+            source_envelope_id=trace.source_envelope_id,
+            source_version=trace.source_version,
+            obligation_version=trace.obligation_version,
+            owner_universe_digest=trace.owner_universe_digest,
+            duty_id=trace.duty_id,
+            text=line.text,
+            owner_ids=trace.constrained_by_owner_ids,
+            evidence_ids=trace.evidence_ids,
+        )
+        for trace, line in zip(artifact.trace, safe_lines, strict=True)
+        if trace.role == "UNKNOWN"
+    )
+    if artifact.visible_unknowns != expected_visible_unknowns:
+        raise CMEEVerticalError("visible_unknown_unit_exact_binding_mismatch")
     realized_observation_owners = {
         *(nodes[node_id].owner_id for row in artifact.trace if row.role == "OBSERVATION" for node_id in row.meaning_node_ids),
         *(edges[edge_id].owner_id for row in artifact.trace if row.role == "OBSERVATION" for edge_id in row.meaning_edge_ids),
@@ -1039,6 +1525,7 @@ def validate_positive_realization_trace(
         graph.graph_id,
         artifact.plan.plan_id,
         artifact.observation,
+        tuple(row.text for row in artifact.visible_unknowns),
         artifact.reception,
     ):
         raise CMEEVerticalError("artifact_identity_mismatch")
@@ -1083,18 +1570,37 @@ def build_text_grounded_limited_artifact(
     safe_lines = _realize_cmee_experience(source, graph, plan, grounded_plan)
     plan = _bind_plan_to_visible_lines(source, graph, plan, safe_lines)
     observation = "\n".join(
-        line.text for line in safe_lines if line.binding.line_role != "human_follow"
+        line.text
+        for line in safe_lines
+        if line.binding.line_role == "cmee_observation"
     )
     reception = "\n".join(
         line.text for line in safe_lines if line.binding.line_role == "human_follow"
     )
     trace = _trace_for_lines(source, graph, plan, safe_lines)
+    visible_unknowns = tuple(
+        VisibleUnknownUnit(
+            unknown_unit_id=trace_row.visible_unit_id,
+            source_sentence_id=line.sentence_id,
+            source_envelope_id=trace_row.source_envelope_id,
+            source_version=trace_row.source_version,
+            obligation_version=trace_row.obligation_version,
+            owner_universe_digest=trace_row.owner_universe_digest,
+            duty_id=trace_row.duty_id,
+            text=line.text,
+            owner_ids=trace_row.constrained_by_owner_ids,
+            evidence_ids=trace_row.evidence_ids,
+        )
+        for trace_row, line in zip(trace, safe_lines, strict=True)
+        if trace_row.role == "UNKNOWN"
+    )
     artifact = GenerationArtifactBundle(
         artifact_id=_artifact_id(
             source.envelope.envelope_id,
             graph.graph_id,
             plan.plan_id,
             observation,
+            tuple(row.text for row in visible_unknowns),
             reception,
         ),
         realizer_contract_ids=REALIZER_CONTRACT_IDS,
@@ -1103,6 +1609,7 @@ def build_text_grounded_limited_artifact(
         reception=reception,
         plan=plan,
         trace=trace,
+        visible_unknowns=visible_unknowns,
     )
     validate_positive_realization_trace(source, graph, artifact, safe_lines)
     return graph, plan, artifact
@@ -1114,6 +1621,7 @@ __all__ = [
     "CMEEVerticalError",
     "OBSERVATION_DUTY_ID",
     "RECEPTION_DUTY_ID",
+    "UNKNOWN_DUTY_ID",
     "build_text_grounded_limited_artifact",
     "validate_positive_realization_trace",
 ]

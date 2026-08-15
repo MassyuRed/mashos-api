@@ -19,10 +19,15 @@ from emlis_ai_evidence_ledger_service import (
 )
 
 from .contracts import (
+    CMEE_OBLIGATION_VERSION,
+    CMEE_OWNER_UNIVERSE_SCHEMA_VERSION,
     CMEE_SOURCE_CONTRACT_VERSION,
     EvidenceRef,
     GenerationRequest,
+    OwnerClass,
     SourceEnvelope,
+    SourceOwnerObligation,
+    SourceOwnerUniverse,
 )
 
 
@@ -49,6 +54,29 @@ def _sha256(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
+def _evidence_id(
+    *,
+    envelope_id: str,
+    source_span_id: str,
+    field_path: str,
+    element_index: int,
+    utf8_start: int,
+    utf8_end: int,
+    literal_sha256: str,
+) -> str:
+    material = "|".join(
+        (
+            envelope_id,
+            source_span_id,
+            field_path,
+            str(element_index),
+            f"{utf8_start}:{utf8_end}",
+            literal_sha256,
+        )
+    )
+    return f"ev-{_sha256(material.encode('utf-8'))[:24]}"
+
+
 LABEL_CONTRACT_DIGEST = _sha256(
     json.dumps(
         {
@@ -71,12 +99,92 @@ class SourceAdmissionError(ValueError):
         super().__init__(self.reason_code)
 
 
+def validate_evidence_refs(
+    envelope: SourceEnvelope,
+    evidence_refs: Tuple[EvidenceRef, ...],
+) -> None:
+    """Recheck every locator and digest against the frozen source bytes."""
+
+    if (
+        envelope.source_role != "CURRENT_INPUT"
+        or envelope.source_contract_version != CMEE_SOURCE_CONTRACT_VERSION
+        or envelope.source_encoding != "CMEE_PRIVATE_FIELD_FRAME_UTF8_V1"
+        or _sha256(envelope.raw_utf8) != envelope.raw_sha256
+    ):
+        raise SourceAdmissionError("owner_universe_source_envelope_invalid")
+    if not evidence_refs:
+        raise SourceAdmissionError("owner_universe_evidence_empty", hard_invalid=False)
+    if len({row.evidence_id for row in evidence_refs}) != len(evidence_refs):
+        raise SourceAdmissionError("owner_universe_evidence_duplicate")
+    if len({row.source_span_id for row in evidence_refs}) != len(evidence_refs):
+        raise SourceAdmissionError("owner_universe_source_span_duplicate")
+
+    allowed_fields = {
+        "memo": -1,
+        "memo_action": -1,
+        "emotion_details.0.type": 0,
+        "emotions.0": 0,
+        "category.0": 0,
+        "emotion_details.0.strength": 0,
+    }
+    raw_length = len(envelope.raw_utf8)
+    for row in evidence_refs:
+        expected_element_index = allowed_fields.get(row.field_path)
+        bounds = (
+            row.field_utf8_start,
+            row.field_utf8_end,
+            row.utf8_start,
+            row.utf8_end,
+        )
+        if (
+            not row.source_span_id
+            or row.source_envelope_id != envelope.envelope_id
+            or expected_element_index is None
+            or row.element_index != expected_element_index
+            or any(not isinstance(value, int) for value in bounds)
+            or not (
+                0
+                <= row.field_utf8_start
+                <= row.utf8_start
+                < row.utf8_end
+                <= row.field_utf8_end
+                <= raw_length
+            )
+        ):
+            raise SourceAdmissionError("owner_universe_evidence_locator_invalid")
+        if (
+            row.source_span_id == "structured:emotion_strength"
+        ) != (row.field_path == "emotion_details.0.strength"):
+            raise SourceAdmissionError("owner_universe_strength_binding_invalid")
+        literal = envelope.raw_utf8[row.utf8_start : row.utf8_end]
+        field_body = envelope.raw_utf8[
+            row.field_utf8_start : row.field_utf8_end
+        ]
+        literal_digest = _sha256(literal)
+        if (
+            literal_digest != row.literal_sha256
+            or _sha256(field_body) != row.field_sha256
+            or row.evidence_id
+            != _evidence_id(
+                envelope_id=envelope.envelope_id,
+                source_span_id=row.source_span_id,
+                field_path=row.field_path,
+                element_index=row.element_index,
+                utf8_start=row.utf8_start,
+                utf8_end=row.utf8_end,
+                literal_sha256=literal_digest,
+            )
+        ):
+            raise SourceAdmissionError("owner_universe_evidence_digest_invalid")
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class AdmittedTextSource:
     envelope: SourceEnvelope
     normalized_current_input: Mapping[str, Any]
     evidence_spans: Tuple[object, ...]
     evidence_refs: Tuple[EvidenceRef, ...]
+    owner_universe: SourceOwnerUniverse
     category: str
     emotion: str
     strength: str
@@ -86,6 +194,223 @@ class AdmittedTextSource:
         if len(matches) != 1:
             raise SourceAdmissionError("evidence_span_binding_mismatch")
         return matches[0]
+
+    def owner_obligation(self, meaning_owner_id: str) -> SourceOwnerObligation:
+        matches = tuple(
+            row
+            for row in self.owner_universe.obligations
+            if row.meaning_owner_id == meaning_owner_id
+        )
+        if len(matches) != 1:
+            raise SourceAdmissionError("meaning_owner_binding_mismatch")
+        return matches[0]
+
+    def meaning_owner_for_span(self, source_span_id: str) -> str:
+        matches = tuple(
+            row.meaning_owner_id
+            for row in self.owner_universe.obligations
+            if row.obligation_kind
+            in {
+                "THOUGHT_MEANING",
+                "ACTION_MEANING",
+                "EMOTION_CONTEXT",
+                "CATEGORY_CONTEXT",
+                "EMOTION_STRENGTH_CONTEXT",
+            }
+            and source_span_id in row.source_span_ids
+        )
+        if len(matches) != 1:
+            raise SourceAdmissionError("source_span_owner_binding_mismatch")
+        return matches[0]
+
+    def attachment_unknown_obligation(self) -> SourceOwnerObligation:
+        matches = tuple(
+            row
+            for row in self.owner_universe.obligations
+            if row.obligation_kind == "STRUCTURED_CONTEXT_ATTACHMENT"
+        )
+        if len(matches) != 1:
+            raise SourceAdmissionError("attachment_unknown_owner_binding_mismatch")
+        return matches[0]
+
+
+def _meaning_owner_id(
+    envelope: SourceEnvelope,
+    obligation_kind: str,
+    source_span_id: str,
+) -> str:
+    material = "|".join(
+        (
+            CMEE_OWNER_UNIVERSE_SCHEMA_VERSION,
+            envelope.envelope_id,
+            CMEE_OBLIGATION_VERSION,
+            obligation_kind,
+            source_span_id,
+        )
+    )
+    return f"mo-{_sha256(material.encode('utf-8'))[:24]}"
+
+
+def build_source_owner_universe(
+    envelope: SourceEnvelope,
+    evidence_refs: Tuple[EvidenceRef, ...],
+) -> SourceOwnerUniverse:
+    """Freeze the Route B denominator without consulting a meaning provider.
+
+    Canonical thought/action obligations are required. Emotion aliases are
+    one active context owner rather than duplicate meaning owners. The
+    structured-context attachment is a conditional, source-evidenced semantic
+    open slot; it is not the plan's ``PRESERVE_UNKNOWN`` duty.
+    """
+
+    validate_evidence_refs(envelope, evidence_refs)
+    refs_by_path = {
+        path: tuple(row for row in evidence_refs if row.field_path == path)
+        for path in {
+            "memo",
+            "memo_action",
+            "emotion_details.0.type",
+            "emotions.0",
+            "category.0",
+            "emotion_details.0.strength",
+        }
+    }
+    thought_refs = refs_by_path["memo"]
+    action_refs = refs_by_path["memo_action"]
+    text_refs = (*thought_refs, *action_refs)
+    if not text_refs:
+        raise SourceAdmissionError("owner_universe_required_text_empty", hard_invalid=False)
+    emotion_refs = (
+        *refs_by_path["emotion_details.0.type"],
+        *refs_by_path["emotions.0"],
+    )
+    category_refs = refs_by_path["category.0"]
+    strength_refs = refs_by_path["emotion_details.0.strength"]
+    if len(emotion_refs) != 2 or len(category_refs) != 1 or len(strength_refs) != 1:
+        raise SourceAdmissionError("owner_universe_structured_context_cardinality")
+    emotion_literals = {
+        envelope.raw_utf8[row.utf8_start : row.utf8_end] for row in emotion_refs
+    }
+    if len(emotion_literals) != 1:
+        raise SourceAdmissionError("owner_universe_emotion_alias_mismatch")
+
+    required_obligations = tuple(
+        SourceOwnerObligation(
+            meaning_owner_id=_meaning_owner_id(
+                envelope,
+                obligation_kind,
+                source_key,
+            ),
+            owner_class=OwnerClass.REQUIRED,
+            obligation_kind=obligation_kind,
+            source_span_ids=tuple(row.source_span_id for row in refs),
+            evidence_refs=tuple(row.evidence_id for row in refs),
+        )
+        for obligation_kind, source_key, refs in (
+            ("THOUGHT_MEANING", "field:memo", thought_refs),
+            ("ACTION_MEANING", "field:memo_action", action_refs),
+        )
+        if refs
+    )
+    structured_context_obligations = tuple(
+        SourceOwnerObligation(
+            meaning_owner_id=_meaning_owner_id(envelope, obligation_kind, source_key),
+            owner_class=OwnerClass.ACTIVE_OPTIONAL,
+            obligation_kind=obligation_kind,
+            source_span_ids=tuple(row.source_span_id for row in refs),
+            evidence_refs=tuple(row.evidence_id for row in refs),
+        )
+        for obligation_kind, source_key, refs in (
+            ("EMOTION_CONTEXT", "field:emotion", emotion_refs),
+            ("CATEGORY_CONTEXT", "field:category", category_refs),
+            (
+                "EMOTION_STRENGTH_CONTEXT",
+                "field:emotion_strength",
+                strength_refs,
+            ),
+        )
+    )
+    attachment_obligation = SourceOwnerObligation(
+        meaning_owner_id=_meaning_owner_id(
+            envelope,
+            "STRUCTURED_CONTEXT_ATTACHMENT",
+            "open-slot:text-to-emotion-category",
+        ),
+        owner_class=OwnerClass.ACTIVE_OPTIONAL,
+        obligation_kind="STRUCTURED_CONTEXT_ATTACHMENT",
+        source_span_ids=tuple(
+            row.source_span_id
+            for row in (*text_refs, *emotion_refs, *category_refs)
+        ),
+        evidence_refs=tuple(
+            row.evidence_id
+            for row in (*text_refs, *emotion_refs, *category_refs)
+        ),
+    )
+    active_obligations = (*structured_context_obligations, attachment_obligation)
+    obligations = (*required_obligations, *active_obligations)
+    required_refs = tuple(row.meaning_owner_id for row in required_obligations)
+    active_refs = tuple(row.meaning_owner_id for row in active_obligations)
+    credit_refs = tuple(
+        _meaning_owner_id(envelope, "EXPLICIT_ABSENCE", source_key)
+        for source_key, refs in (
+            ("field:memo", thought_refs),
+            ("field:memo_action", action_refs),
+        )
+        if not refs
+    )
+    base_obligations = (*required_obligations, *structured_context_obligations)
+    if (
+        tuple(
+            evidence_id
+            for row in base_obligations
+            for evidence_id in row.evidence_refs
+        )
+        != tuple(row.evidence_id for row in evidence_refs)
+    ):
+        raise SourceAdmissionError("owner_universe_base_evidence_partition_mismatch")
+    all_owner_refs = (*required_refs, *active_refs, *credit_refs)
+    if len(all_owner_refs) != len(set(all_owner_refs)):
+        raise SourceAdmissionError("owner_universe_owner_duplicate")
+
+    digest_payload = {
+        "schema_version": CMEE_OWNER_UNIVERSE_SCHEMA_VERSION,
+        "source_envelope_id": envelope.envelope_id,
+        "source_version": envelope.source_contract_version,
+        "obligation_version": CMEE_OBLIGATION_VERSION,
+        "required_owner_refs": required_refs,
+        "active_optional_owner_refs": active_refs,
+        "credit_only_owner_refs": credit_refs,
+        "obligations": [
+            {
+                "meaning_owner_id": row.meaning_owner_id,
+                "owner_class": row.owner_class.value,
+                "obligation_kind": row.obligation_kind,
+                "source_span_ids": row.source_span_ids,
+                "evidence_refs": row.evidence_refs,
+            }
+            for row in obligations
+        ],
+    }
+    digest = _sha256(
+        json.dumps(
+            digest_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
+    return SourceOwnerUniverse(
+        schema_version=CMEE_OWNER_UNIVERSE_SCHEMA_VERSION,
+        source_envelope_id=envelope.envelope_id,
+        source_version=envelope.source_contract_version,
+        obligation_version=CMEE_OBLIGATION_VERSION,
+        required_owner_refs=required_refs,
+        active_optional_owner_refs=active_refs,
+        credit_only_owner_refs=credit_refs,
+        obligations=obligations,
+        owner_universe_digest=digest,
+    )
 
 
 def _json_value(value: Any) -> Any:
@@ -354,7 +679,15 @@ def freeze_text_source(request: GenerationRequest) -> AdmittedTextSource:
         field_digest = _sha256(raw_utf8[field_start:field_end])
         refs.append(
             EvidenceRef(
-                evidence_id=f"ev-{_sha256((envelope_id + '|' + span_id + '|' + field_path + '|' + str(element_index) + '|' + str(start) + ':' + str(end) + '|' + literal_digest).encode('utf-8'))[:24]}",
+                evidence_id=_evidence_id(
+                    envelope_id=envelope_id,
+                    source_span_id=span_id,
+                    field_path=field_path,
+                    element_index=element_index,
+                    utf8_start=start,
+                    utf8_end=end,
+                    literal_sha256=literal_digest,
+                ),
                 source_span_id=span_id,
                 source_envelope_id=envelope_id,
                 field_path=field_path,
@@ -369,7 +702,15 @@ def freeze_text_source(request: GenerationRequest) -> AdmittedTextSource:
         )
     refs.append(
         EvidenceRef(
-            evidence_id=f"ev-{_sha256((envelope_id + '|structured:emotion_strength|' + strength).encode('utf-8'))[:24]}",
+            evidence_id=_evidence_id(
+                envelope_id=envelope_id,
+                source_span_id="structured:emotion_strength",
+                field_path="emotion_details.0.strength",
+                element_index=0,
+                utf8_start=strength_start,
+                utf8_end=strength_end,
+                literal_sha256=_sha256(raw_utf8[strength_start:strength_end]),
+            ),
             source_span_id="structured:emotion_strength",
             source_envelope_id=envelope_id,
             field_path="emotion_details.0.strength",
@@ -397,11 +738,13 @@ def freeze_text_source(request: GenerationRequest) -> AdmittedTextSource:
         ):
             raise SourceAdmissionError("evidence_utf8_locator_mismatch")
 
+    owner_universe = build_source_owner_universe(envelope, tuple(refs))
     return AdmittedTextSource(
         envelope=envelope,
         normalized_current_input=normalized,
         evidence_spans=spans,
         evidence_refs=tuple(refs),
+        owner_universe=owner_universe,
         category=category,
         emotion=emotion,
         strength=strength,
@@ -416,5 +759,7 @@ __all__ = [
     "LABEL_CONTRACT_DIGEST",
     "LABEL_CONTRACT_ID",
     "SourceAdmissionError",
+    "build_source_owner_universe",
     "freeze_text_source",
+    "validate_evidence_refs",
 ]
