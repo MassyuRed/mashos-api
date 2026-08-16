@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import hashlib
+import json
 import re
 from typing import Any, Iterable, Sequence
 
@@ -28,9 +29,13 @@ from emlis_ai_types import (
     ObservationGraph,
     RelationEdge,
 )
+from cocolon_text_generation_core.guards.base import split_sentences
 
 from .contracts import (
     AttachmentAdmission,
+    CMEE_COMMON_GUARD_PROOF_VERSION,
+    CommonGuardProof,
+    CommonGuardResultProof,
     EpistemicState,
     ExperiencePlan,
     GenerationArtifactBundle,
@@ -69,15 +74,29 @@ NEGATIVE_RECEPTION_RE = re.compile(r"(?:苦しさ|つらさ|負担|痛み|しん
 SOURCE_BURDEN_CUE_RE = re.compile(
     r"(?:不安|疲|つら|苦|悲|怒|怖|嫌|限界|痛|しんど|迷惑|ダメ|悪化|不便|動けない|できない|何もしたくない)"
 )
-EXPECTED_COMMON_GUARDS = frozenset(
-    {
-        "cocolon_text_generation_core.guards.japanese_coherence.v1",
-        "cocolon_text_generation_core.guards.template_echo.v1",
-        "cocolon_text_generation_core.guards.overclaim_diagnosis.v1",
-        "cocolon_text_generation_core.guards.grounding.v1",
-        "cocolon_text_generation_core.guards.must_keep_coverage.v1",
-    }
+EXPECTED_COMMON_GUARD_IDS = (
+    "cocolon_text_generation_core.guards.japanese_coherence.v1",
+    "cocolon_text_generation_core.guards.template_echo.v1",
+    "cocolon_text_generation_core.guards.overclaim_diagnosis.v1",
+    "cocolon_text_generation_core.guards.grounding.v1",
+    "cocolon_text_generation_core.guards.must_keep_coverage.v1",
 )
+EXPECTED_COMMON_GUARDS = frozenset(EXPECTED_COMMON_GUARD_IDS)
+EXPECTED_COMMON_SHAPE_PART_IDS = (
+    "SourceAnchor",
+    "EvidenceSpanLike",
+    "PhraseUnit",
+    "SentencePlan",
+    "TextGenerationResult",
+    "GuardResult",
+    "used_evidence_span_ids",
+    "quality_flags",
+)
+COMMON_GUARD_STABILIZATION_REPORT_NAME = (
+    "cocolon_text_generation_core.step15_stabilization.v1"
+)
+COMMON_GUARD_STABILIZATION_PHASE = "step15_common_core_stabilization"
+COMMON_GUARD_STABILIZATION_CORE_ID = "emlis"
 TRUST_POLICY_IDS = (
     *tuple(sorted(EXPECTED_COMMON_GUARDS)),
     "cocolon.emlis.grounded_human_reception_surface_validation.v1",
@@ -125,12 +144,165 @@ class _CMEEVisibleLine:
     binding: _CMEEVisibleBinding
 
 
+@dataclass(frozen=True, slots=True)
+class _CommonGuardSealMaterial:
+    guard_results: tuple[CommonGuardResultProof, ...]
+    stabilization_report_name: str
+    stabilization_phase: str
+    stabilization_core_id: str
+    stabilization_passed: bool
+    common_shapes_ready: bool
+    stabilization_guard_names: tuple[str, ...]
+    issue_codes: tuple[str, ...]
+
+
 def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _stable_id(prefix: str, *values: str) -> str:
     return f"{prefix}-{_sha256_text('|'.join(values))[:24]}"
+
+
+def _extract_common_guard_seal(
+    core_meta: dict[str, Any],
+) -> _CommonGuardSealMaterial:
+    """Validate and project the actual one-shot common-core guard result."""
+
+    result = core_meta.get("result")
+    result_meta = result.get("meta") if type(result) is dict else None
+    raw_rows = result_meta.get("guard_results") if type(result_meta) is dict else None
+    if type(raw_rows) is not list or len(raw_rows) != len(EXPECTED_COMMON_GUARD_IDS):
+        raise CMEEVerticalError("plan_bound_observation_guard_result_shape_mismatch")
+
+    guard_results: list[CommonGuardResultProof] = []
+    for expected_guard_id, raw_row in zip(
+        EXPECTED_COMMON_GUARD_IDS,
+        raw_rows,
+        strict=True,
+    ):
+        if type(raw_row) is not dict:
+            raise CMEEVerticalError("plan_bound_observation_guard_result_shape_mismatch")
+        guard_id = raw_row.get("guard_name")
+        passed = raw_row.get("passed")
+        if type(guard_id) is not str or guard_id != expected_guard_id:
+            raise CMEEVerticalError("plan_bound_observation_guard_set_mismatch")
+        if type(passed) is not bool or passed is not True:
+            raise CMEEVerticalError("plan_bound_observation_guard_failed")
+        if (
+            type(raw_row.get("rejection_reasons")) is not list
+            or raw_row.get("rejection_reasons") != []
+        ):
+            raise CMEEVerticalError("plan_bound_observation_guard_result_mismatch")
+        guard_results.append(CommonGuardResultProof(guard_id=guard_id, passed=passed))
+
+    combined = result_meta.get("combined_guard_result")
+    combined_meta = combined.get("meta") if type(combined) is dict else None
+    combined_guard_rows = (
+        combined_meta.get("guard_results") if type(combined_meta) is dict else None
+    )
+    if (
+        type(combined) is not dict
+        or combined.get("guard_name") != "combined_text_generation_guards"
+        or type(combined.get("passed")) is not bool
+        or combined.get("passed") is not True
+        or type(combined.get("rejection_reasons")) is not list
+        or combined.get("rejection_reasons") != []
+        or type(combined_guard_rows) is not list
+        or len(combined_guard_rows) != len(EXPECTED_COMMON_GUARD_IDS)
+        or any(type(row) is not dict for row in combined_guard_rows)
+        or combined_guard_rows != raw_rows
+    ):
+        raise CMEEVerticalError("plan_bound_observation_combined_guard_mismatch")
+
+    stabilization = core_meta.get("step15_common_core_stabilization")
+    if type(stabilization) is not dict:
+        raise CMEEVerticalError("plan_bound_observation_stabilization_missing")
+    if (
+        stabilization.get("report_name") != COMMON_GUARD_STABILIZATION_REPORT_NAME
+        or stabilization.get("phase") != COMMON_GUARD_STABILIZATION_PHASE
+        or stabilization.get("core_id") != COMMON_GUARD_STABILIZATION_CORE_ID
+    ):
+        raise CMEEVerticalError("plan_bound_observation_stabilization_identity_mismatch")
+    if (
+        type(stabilization.get("passed")) is not bool
+        or stabilization.get("passed") is not True
+    ):
+        raise CMEEVerticalError("plan_bound_observation_stabilization_failed")
+    if (
+        type(stabilization.get("common_shapes_ready")) is not bool
+        or stabilization.get("common_shapes_ready") is not True
+    ):
+        raise CMEEVerticalError("plan_bound_observation_common_shapes_not_ready")
+
+    raw_guard_names = stabilization.get("guard_names")
+    if type(raw_guard_names) is not list or tuple(raw_guard_names) != EXPECTED_COMMON_GUARD_IDS:
+        raise CMEEVerticalError("plan_bound_observation_stabilization_guard_set_mismatch")
+    raw_issue_codes = stabilization.get("issue_codes")
+    if type(raw_issue_codes) is not list or raw_issue_codes:
+        raise CMEEVerticalError("plan_bound_observation_stabilization_issues")
+    shared_parts = stabilization.get("shared_quality_parts")
+    if (
+        type(shared_parts) is not dict
+        or tuple(shared_parts) != EXPECTED_COMMON_SHAPE_PART_IDS
+        or any(type(shared_parts.get(key)) is not bool or shared_parts.get(key) is not True for key in EXPECTED_COMMON_SHAPE_PART_IDS)
+    ):
+        raise CMEEVerticalError("plan_bound_observation_common_shape_parts_mismatch")
+
+    return _CommonGuardSealMaterial(
+        guard_results=tuple(guard_results),
+        stabilization_report_name=COMMON_GUARD_STABILIZATION_REPORT_NAME,
+        stabilization_phase=COMMON_GUARD_STABILIZATION_PHASE,
+        stabilization_core_id=COMMON_GUARD_STABILIZATION_CORE_ID,
+        stabilization_passed=True,
+        common_shapes_ready=True,
+        stabilization_guard_names=EXPECTED_COMMON_GUARD_IDS,
+        issue_codes=(),
+    )
+
+
+def _common_guard_proof_id(
+    *,
+    source_envelope_id: str,
+    graph_id: str,
+    plan_id: str,
+    guarded_observation_units: Sequence[tuple[str, str]],
+    guard_results: Sequence[CommonGuardResultProof],
+    stabilization_report_name: str,
+    stabilization_phase: str,
+    stabilization_core_id: str,
+    stabilization_passed: bool,
+    common_shapes_ready: bool,
+    stabilization_guard_names: Sequence[str],
+    issue_codes: Sequence[str],
+) -> str:
+    material = {
+        "schema_version": CMEE_COMMON_GUARD_PROOF_VERSION,
+        "source_envelope_id": source_envelope_id,
+        "graph_id": graph_id,
+        "plan_id": plan_id,
+        "guarded_observation_units": [list(row) for row in guarded_observation_units],
+        "guard_results": [
+            {"guard_id": row.guard_id, "passed": row.passed}
+            for row in guard_results
+        ],
+        "stabilization": {
+            "report_name": stabilization_report_name,
+            "phase": stabilization_phase,
+            "core_id": stabilization_core_id,
+            "passed": stabilization_passed,
+            "common_shapes_ready": common_shapes_ready,
+            "guard_names": list(stabilization_guard_names),
+            "issue_codes": list(issue_codes),
+        },
+    }
+    canonical = json.dumps(
+        material,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return f"common-guard-proof-{hashlib.sha256(canonical).hexdigest()}"
 
 
 def _graph_id(
@@ -265,6 +437,7 @@ def _artifact_id(
     source_envelope_id: str,
     graph_id: str,
     plan_id: str,
+    common_guard_proof_id: str,
     observation: str,
     visible_unknowns: Sequence[str],
     reception: str,
@@ -274,11 +447,58 @@ def _artifact_id(
         source_envelope_id,
         graph_id,
         plan_id,
+        common_guard_proof_id,
         *REALIZER_CONTRACT_IDS,
         *TRUST_POLICY_IDS,
         _sha256_text(observation),
         *(_sha256_text(row) for row in visible_unknowns),
         _sha256_text(reception),
+    )
+
+
+def _build_common_guard_proof(
+    source: AdmittedTextSource,
+    graph: GroundedMeaningGraph,
+    plan: ExperiencePlan,
+    safe_lines: Sequence[Any],
+    material: _CommonGuardSealMaterial,
+) -> CommonGuardProof:
+    guarded_observation_units = tuple(
+        (line.sentence_id, _sha256_text(line.text))
+        for line in safe_lines
+        if line.binding.line_role == "cmee_observation"
+    )
+    if not guarded_observation_units:
+        raise CMEEVerticalError("common_guard_proof_observation_missing")
+    proof_id = _common_guard_proof_id(
+        source_envelope_id=source.envelope.envelope_id,
+        graph_id=graph.graph_id,
+        plan_id=plan.plan_id,
+        guarded_observation_units=guarded_observation_units,
+        guard_results=material.guard_results,
+        stabilization_report_name=material.stabilization_report_name,
+        stabilization_phase=material.stabilization_phase,
+        stabilization_core_id=material.stabilization_core_id,
+        stabilization_passed=material.stabilization_passed,
+        common_shapes_ready=material.common_shapes_ready,
+        stabilization_guard_names=material.stabilization_guard_names,
+        issue_codes=material.issue_codes,
+    )
+    return CommonGuardProof(
+        schema_version=CMEE_COMMON_GUARD_PROOF_VERSION,
+        proof_id=proof_id,
+        source_envelope_id=source.envelope.envelope_id,
+        graph_id=graph.graph_id,
+        plan_id=plan.plan_id,
+        guarded_observation_units=guarded_observation_units,
+        guard_results=material.guard_results,
+        stabilization_report_name=material.stabilization_report_name,
+        stabilization_phase=material.stabilization_phase,
+        stabilization_core_id=material.stabilization_core_id,
+        stabilization_passed=material.stabilization_passed,
+        common_shapes_ready=material.common_shapes_ready,
+        stabilization_guard_names=material.stabilization_guard_names,
+        issue_codes=material.issue_codes,
     )
 
 
@@ -730,7 +950,7 @@ def _realize_cmee_experience(
     graph: GroundedMeaningGraph,
     plan: ExperiencePlan,
     grounded_plan: Any,
-) -> tuple[_CMEEVisibleLine, ...]:
+) -> tuple[tuple[_CMEEVisibleLine, ...], _CommonGuardSealMaterial]:
     resolver = build_evidence_span_resolver(
         source.evidence_spans,
         current_input=source.normalized_current_input,
@@ -758,29 +978,199 @@ def _realize_cmee_experience(
         not isinstance(core_meta, dict)
         or core_meta.get("core_id") != "emlis"
         or core_meta.get("status") != "generated"
-        or not bool(core_meta.get("passed"))
+        or type(core_meta.get("passed")) is not bool
+        or core_meta.get("passed") is not True
     ):
         raise CMEEVerticalError("plan_bound_observation_common_core_rejected")
     binding_reflection = core_meta.get("step7_gate_binding_reflection")
-    if not isinstance(binding_reflection, dict) or not bool(binding_reflection.get("binding_used")):
-        raise CMEEVerticalError("plan_bound_observation_common_core_binding_unused")
-    stabilization = core_meta.get("step15_common_core_stabilization")
-    if not isinstance(stabilization, dict) or set(stabilization.get("guard_names") or ()) != set(
-        EXPECTED_COMMON_GUARDS
+    if (
+        type(binding_reflection) is not dict
+        or type(binding_reflection.get("binding_used")) is not bool
+        or binding_reflection.get("binding_used") is not True
     ):
-        raise CMEEVerticalError("plan_bound_observation_guard_set_mismatch")
+        raise CMEEVerticalError("plan_bound_observation_common_core_binding_unused")
+    common_guard_material = _extract_common_guard_seal(core_meta)
     core_bindings = core_meta.get("sentence_bindings")
     raw_bindings = composer_meta.get("sentence_bindings")
-    if not isinstance(raw_bindings, list) or not raw_bindings:
+    result = core_meta.get("result")
+    result_meta = result.get("meta") if type(result) is dict else None
+    guarded_candidate = (
+        result_meta.get("candidate") if type(result_meta) is dict else None
+    )
+    guarded_candidate_meta = (
+        guarded_candidate.get("meta") if type(guarded_candidate) is dict else None
+    )
+    guarded_bindings = (
+        guarded_candidate_meta.get("sentence_bindings")
+        if type(guarded_candidate_meta) is dict
+        else None
+    )
+    if type(raw_bindings) is not list or not raw_bindings:
         raise CMEEVerticalError("plan_bound_observation_binding_missing")
-    if not isinstance(core_bindings, list) or len(core_bindings) != len(raw_bindings):
+    if type(core_bindings) is not list or len(core_bindings) != len(raw_bindings):
         raise CMEEVerticalError("plan_bound_observation_core_binding_mismatch")
-    for core_binding, surface_binding in zip(core_bindings, raw_bindings, strict=True):
-        if not isinstance(core_binding, dict) or not isinstance(surface_binding, dict):
+    if type(guarded_bindings) is not list or len(guarded_bindings) != len(raw_bindings):
+        raise CMEEVerticalError("plan_bound_observation_guarded_binding_mismatch")
+
+    guarded_binding_aliases: list[Any] = []
+    for bundle_key in ("sentence_binding_bundle", "binding_bundle", "binding"):
+        bundle = guarded_candidate_meta.get(bundle_key)
+        if type(bundle) is not dict:
+            raise CMEEVerticalError("plan_bound_observation_guarded_binding_alias_mismatch")
+        guarded_binding_aliases.extend(
+            bundle.get(alias_key)
+            for alias_key in ("bindings", "sentence_bindings", "items")
+        )
+    composer_diagnostic = guarded_candidate_meta.get("composer_diagnostic")
+    diagnostic_bundle = (
+        composer_diagnostic.get("sentence_binding_bundle")
+        if type(composer_diagnostic) is dict
+        else None
+    )
+    if type(diagnostic_bundle) is not dict:
+        raise CMEEVerticalError("plan_bound_observation_guarded_binding_alias_mismatch")
+    guarded_binding_aliases.extend(
+        diagnostic_bundle.get(alias_key)
+        for alias_key in ("bindings", "sentence_bindings", "items")
+    )
+    guarded_binding_aliases.append(composer_diagnostic.get("sentence_bindings"))
+    if any(
+        type(alias) is not list
+        or len(alias) != len(guarded_bindings)
+        or any(type(row) is not dict for row in alias)
+        or alias != guarded_bindings
+        for alias in guarded_binding_aliases
+    ):
+        raise CMEEVerticalError("plan_bound_observation_guarded_binding_alias_mismatch")
+
+    guard_rows = result_meta.get("guard_results") if type(result_meta) is dict else None
+    grounding_row = (
+        guard_rows[3]
+        if type(guard_rows) is list and len(guard_rows) == len(EXPECTED_COMMON_GUARD_IDS)
+        else None
+    )
+    grounding_meta = grounding_row.get("meta") if type(grounding_row) is dict else None
+    sentence_claims = (
+        grounding_meta.get("sentence_claims")
+        if type(grounding_meta) is dict
+        else None
+    )
+    if type(sentence_claims) is not list or len(sentence_claims) != len(raw_bindings):
+        raise CMEEVerticalError("plan_bound_observation_guarded_claim_mismatch")
+
+    guarded_claim_sentences: list[str] = []
+    for core_binding, surface_binding, guarded_binding, claim in zip(
+        core_bindings,
+        raw_bindings,
+        guarded_bindings,
+        sentence_claims,
+        strict=True,
+    ):
+        if (
+            type(core_binding) is not dict
+            or type(surface_binding) is not dict
+            or type(guarded_binding) is not dict
+            or type(claim) is not dict
+        ):
             raise CMEEVerticalError("plan_bound_observation_binding_invalid")
-        for key in ("sentence_id", "used_evidence_span_ids", "relation_type", "line_role"):
-            if core_binding.get(key) != surface_binding.get(key):
+        for key, expected_type in (
+            ("sentence_id", str),
+            ("used_evidence_span_ids", list),
+            ("used_phrase_unit_ids", list),
+            ("relation_type", str),
+            ("line_role", str),
+        ):
+            core_value = core_binding.get(key)
+            surface_value = surface_binding.get(key)
+            guarded_value = guarded_binding.get(key)
+            if (
+                type(core_value) is not expected_type
+                or type(surface_value) is not expected_type
+                or type(guarded_value) is not expected_type
+                or not core_value
+                or core_value != surface_value
+                or core_value != guarded_value
+                or (
+                    expected_type is list
+                    and (
+                        any(type(value) is not str or not value for value in core_value)
+                        or len(core_value) != len(set(core_value))
+                    )
+                )
+            ):
                 raise CMEEVerticalError("plan_bound_observation_core_binding_mismatch")
+        surface_text = surface_binding.get("text")
+        guarded_text = guarded_binding.get("text")
+        canonical_sentences = split_sentences(surface_text, skip_greeting=False)
+        if (
+            type(surface_text) is not str
+            or type(guarded_text) is not str
+            or not surface_text
+            or surface_text != surface_text.strip()
+            or surface_text != guarded_text
+        ):
+            raise CMEEVerticalError("plan_bound_observation_guarded_binding_mismatch")
+        if (
+            len(canonical_sentences) != 1
+            or type(claim.get("sentence")) is not str
+            or claim.get("sentence") != canonical_sentences[0]
+            or type(claim.get("binding_present")) is not bool
+            or claim.get("binding_present") is not True
+            or type(claim.get("binding_used")) is not bool
+            or claim.get("binding_used") is not True
+            or type(claim.get("binding_sentence_id")) is not str
+            or claim.get("binding_sentence_id") != surface_binding["sentence_id"]
+            or type(claim.get("binding_evidence_span_ids")) is not list
+            or claim.get("binding_evidence_span_ids")
+            != surface_binding["used_evidence_span_ids"]
+            or type(claim.get("binding_phrase_unit_ids")) is not list
+            or claim.get("binding_phrase_unit_ids")
+            != surface_binding["used_phrase_unit_ids"]
+            or type(claim.get("binding_relation_type")) is not str
+            or claim.get("binding_relation_type") != surface_binding["relation_type"]
+            or type(claim.get("declared_evidence_span_ids")) is not list
+            or claim.get("declared_evidence_span_ids")
+            != surface_binding["used_evidence_span_ids"]
+            or type(claim.get("declared_phrase_unit_ids")) is not list
+            or claim.get("declared_phrase_unit_ids")
+            != surface_binding["used_phrase_unit_ids"]
+            or type(claim.get("evidence_span_ids")) is not list
+            or any(
+                type(value) is not str or not value
+                for value in claim.get("evidence_span_ids")
+            )
+            or len(claim.get("evidence_span_ids"))
+            != len(set(claim.get("evidence_span_ids")))
+            or not set(surface_binding["used_evidence_span_ids"]).issubset(
+                claim.get("evidence_span_ids")
+            )
+        ):
+            raise CMEEVerticalError("plan_bound_observation_guarded_claim_mismatch")
+        guarded_claim_sentences.append(claim["sentence"])
+
+    if type(candidate.comment_text) is not str or not candidate.comment_text:
+        raise CMEEVerticalError("plan_bound_observation_guarded_surface_mismatch")
+    guarded_surface_sentences = split_sentences(candidate.comment_text)
+    guarded_claim_sentence_tuple = tuple(guarded_claim_sentences)
+    if guarded_surface_sentences != guarded_claim_sentence_tuple:
+        completion = composer_meta.get(
+            "environment_state_output_scope_marker_completion"
+        )
+        marker = completion.get("scope_marker") if type(completion) is dict else None
+        expected_scoped_sentences = (
+            f"{marker}、{guarded_claim_sentence_tuple[0]}",
+            *guarded_claim_sentence_tuple[1:],
+        )
+        if (
+            type(completion) is not dict
+            or type(completion.get("applied")) is not bool
+            or completion.get("applied") is not True
+            or type(marker) is not str
+            or not marker
+            or type(completion.get("target_line_index")) is not int
+            or guarded_surface_sentences != expected_scoped_sentences
+        ):
+            raise CMEEVerticalError("plan_bound_observation_guarded_surface_mismatch")
 
     nucleus_index = {row.nucleus_id: row for row in grounded_plan.nuclei}
     relation_index = {row.relation_id: row for row in grounded_plan.relations}
@@ -808,7 +1198,7 @@ def _realize_cmee_experience(
     for ordinal, raw_binding in enumerate(raw_bindings, start=1):
         if not isinstance(raw_binding, dict):
             raise CMEEVerticalError("plan_bound_observation_binding_invalid")
-        text = str(raw_binding.get("text") or "").strip()
+        text = raw_binding.get("text")
         evidence_span_ids = _ordered(raw_binding.get("used_evidence_span_ids") or ())
         relation_type = str(raw_binding.get("relation_type") or "")
         binding_meta = raw_binding.get("meta") if isinstance(raw_binding.get("meta"), dict) else {}
@@ -818,7 +1208,12 @@ def _realize_cmee_experience(
             not in {"", "state_answer_observation"}
         ):
             raise CMEEVerticalError("plan_bound_observation_non_observation_line")
-        if not text or not evidence_span_ids or not set(evidence_span_ids).issubset(allowed_evidence_ids):
+        if (
+            type(text) is not str
+            or not text
+            or not evidence_span_ids
+            or not set(evidence_span_ids).issubset(allowed_evidence_ids)
+        ):
             raise CMEEVerticalError("plan_bound_observation_out_of_plan_evidence")
         nucleus_ids = tuple(
             row_id
@@ -936,7 +1331,7 @@ def _realize_cmee_experience(
     if not set(reception_targets).issubset(observed_nuclei):
         raise CMEEVerticalError("bound_human_reception_target_not_observed")
     _validate_reception_semantic_compatibility(source, lines)
-    return tuple(lines)
+    return tuple(lines), common_guard_material
 
 
 def _validate_reception_semantic_compatibility(
@@ -980,6 +1375,7 @@ def _trace_for_lines(
     graph: GroundedMeaningGraph,
     plan: ExperiencePlan,
     safe_lines: Sequence[Any],
+    artifact_common_guard_proof_ref: str,
 ) -> tuple[VisibleUnitTrace, ...]:
     node_ids = {row.node_id for row in graph.nodes}
     edge_ids = {row.edge_id for row in graph.edges}
@@ -1027,6 +1423,7 @@ def _trace_for_lines(
                 source_version=graph.source_version,
                 obligation_version=graph.obligation_version,
                 owner_universe_digest=graph.owner_universe_digest,
+                artifact_common_guard_proof_ref=artifact_common_guard_proof_ref,
                 role=role,
                 operation=operation,
                 text_sha256=_sha256_text(line.text),
@@ -1168,6 +1565,102 @@ def _validate_route_b_graph_contract(
         raise CMEEVerticalError("grounded_graph_owner_outside_universe")
 
 
+def _validate_common_guard_proof(
+    source: AdmittedTextSource,
+    graph: GroundedMeaningGraph,
+    artifact: GenerationArtifactBundle,
+    safe_lines: Sequence[Any],
+) -> None:
+    """Independently verify the sealed one-shot guard proof and its bindings."""
+
+    proof = artifact.common_guard_proof
+    if type(proof) is not CommonGuardProof:
+        raise CMEEVerticalError("common_guard_proof_type_mismatch")
+    expected_units = tuple(
+        (line.sentence_id, _sha256_text(line.text))
+        for line in safe_lines
+        if line.binding.line_role == "cmee_observation"
+    )
+    if not expected_units:
+        raise CMEEVerticalError("common_guard_proof_observation_missing")
+    if (
+        type(proof.guarded_observation_units) is not tuple
+        or proof.guarded_observation_units != expected_units
+        or any(
+            type(row) is not tuple
+            or len(row) != 2
+            or any(type(value) is not str for value in row)
+            for row in proof.guarded_observation_units
+        )
+    ):
+        raise CMEEVerticalError("common_guard_proof_observation_binding_mismatch")
+    if (
+        proof.schema_version != CMEE_COMMON_GUARD_PROOF_VERSION
+        or proof.source_envelope_id != source.envelope.envelope_id
+        or proof.source_envelope_id != graph.source_envelope_id
+        or proof.graph_id != graph.graph_id
+        or proof.plan_id != artifact.plan.plan_id
+    ):
+        raise CMEEVerticalError("common_guard_proof_artifact_binding_mismatch")
+
+    if type(proof.guard_results) is not tuple or len(proof.guard_results) != len(
+        EXPECTED_COMMON_GUARD_IDS
+    ):
+        raise CMEEVerticalError("common_guard_proof_result_shape_mismatch")
+    for expected_guard_id, row in zip(
+        EXPECTED_COMMON_GUARD_IDS,
+        proof.guard_results,
+        strict=True,
+    ):
+        if (
+            type(row) is not CommonGuardResultProof
+            or type(row.guard_id) is not str
+            or row.guard_id != expected_guard_id
+            or type(row.passed) is not bool
+            or row.passed is not True
+        ):
+            raise CMEEVerticalError("common_guard_proof_result_mismatch")
+
+    if (
+        proof.stabilization_report_name
+        != COMMON_GUARD_STABILIZATION_REPORT_NAME
+        or proof.stabilization_phase != COMMON_GUARD_STABILIZATION_PHASE
+        or proof.stabilization_core_id != COMMON_GUARD_STABILIZATION_CORE_ID
+        or type(proof.stabilization_passed) is not bool
+        or proof.stabilization_passed is not True
+        or type(proof.common_shapes_ready) is not bool
+        or proof.common_shapes_ready is not True
+        or type(proof.stabilization_guard_names) is not tuple
+        or proof.stabilization_guard_names != EXPECTED_COMMON_GUARD_IDS
+        or type(proof.issue_codes) is not tuple
+        or proof.issue_codes
+    ):
+        raise CMEEVerticalError("common_guard_proof_stabilization_mismatch")
+
+    expected_proof_id = _common_guard_proof_id(
+        source_envelope_id=proof.source_envelope_id,
+        graph_id=proof.graph_id,
+        plan_id=proof.plan_id,
+        guarded_observation_units=proof.guarded_observation_units,
+        guard_results=proof.guard_results,
+        stabilization_report_name=proof.stabilization_report_name,
+        stabilization_phase=proof.stabilization_phase,
+        stabilization_core_id=proof.stabilization_core_id,
+        stabilization_passed=proof.stabilization_passed,
+        common_shapes_ready=proof.common_shapes_ready,
+        stabilization_guard_names=proof.stabilization_guard_names,
+        issue_codes=proof.issue_codes,
+    )
+    if proof.proof_id != expected_proof_id:
+        raise CMEEVerticalError("common_guard_proof_identity_mismatch")
+    if not artifact.trace or any(
+        type(row.artifact_common_guard_proof_ref) is not str
+        or row.artifact_common_guard_proof_ref != proof.proof_id
+        for row in artifact.trace
+    ):
+        raise CMEEVerticalError("common_guard_proof_trace_binding_mismatch")
+
+
 def validate_positive_realization_trace(
     source: AdmittedTextSource,
     graph: GroundedMeaningGraph,
@@ -1250,6 +1743,7 @@ def validate_positive_realization_trace(
         raise CMEEVerticalError("realizer_contract_identity_mismatch")
     if artifact.trust_policy_ids != TRUST_POLICY_IDS:
         raise CMEEVerticalError("trust_policy_identity_mismatch")
+    _validate_common_guard_proof(source, graph, artifact, safe_lines)
     if artifact.plan.plan_id != _plan_id(
         source.envelope.envelope_id,
         graph.graph_id,
@@ -1529,6 +2023,7 @@ def validate_positive_realization_trace(
         source.envelope.envelope_id,
         graph.graph_id,
         artifact.plan.plan_id,
+        artifact.common_guard_proof.proof_id,
         artifact.observation,
         tuple(row.text for row in artifact.visible_unknowns),
         artifact.reception,
@@ -1572,7 +2067,12 @@ def build_text_grounded_limited_artifact(
         required_relation_ids,
         reception_target_ids,
     )
-    safe_lines = _realize_cmee_experience(source, graph, plan, grounded_plan)
+    safe_lines, common_guard_material = _realize_cmee_experience(
+        source,
+        graph,
+        plan,
+        grounded_plan,
+    )
     plan = _bind_plan_to_visible_lines(source, graph, plan, safe_lines)
     observation = "\n".join(
         line.text
@@ -1582,7 +2082,20 @@ def build_text_grounded_limited_artifact(
     reception = "\n".join(
         line.text for line in safe_lines if line.binding.line_role == "human_follow"
     )
-    trace = _trace_for_lines(source, graph, plan, safe_lines)
+    common_guard_proof = _build_common_guard_proof(
+        source,
+        graph,
+        plan,
+        safe_lines,
+        common_guard_material,
+    )
+    trace = _trace_for_lines(
+        source,
+        graph,
+        plan,
+        safe_lines,
+        common_guard_proof.proof_id,
+    )
     visible_unknowns = tuple(
         VisibleUnknownUnit(
             unknown_unit_id=trace_row.visible_unit_id,
@@ -1604,12 +2117,14 @@ def build_text_grounded_limited_artifact(
             source.envelope.envelope_id,
             graph.graph_id,
             plan.plan_id,
+            common_guard_proof.proof_id,
             observation,
             tuple(row.text for row in visible_unknowns),
             reception,
         ),
         realizer_contract_ids=REALIZER_CONTRACT_IDS,
         trust_policy_ids=TRUST_POLICY_IDS,
+        common_guard_proof=common_guard_proof,
         observation=observation,
         reception=reception,
         plan=plan,

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import copy
 from dataclasses import replace
 import unittest
 from unittest.mock import patch
@@ -9,9 +10,12 @@ from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
 from emlis_ai_evidence_ledger_service import build_evidence_span_resolver
 from emlis_ai_grounded_observation_plan import build_grounded_observation_plan
 from cocolon_meaning_experience_engine import GenerationRequest, MeaningExperienceEngine
+import cocolon_meaning_experience_engine.emlis_v1a as emlis_v1a_module
 from cocolon_meaning_experience_engine.contracts import (
     AttachmentAdmission,
+    CMEE_COMMON_GUARD_PROOF_VERSION,
     CMEE_TERMINAL_GENERATED_DISABLED,
+    CommonGuardResultProof,
     EpistemicState,
     OwnerClass,
     ProviderResolution,
@@ -20,9 +24,11 @@ from cocolon_meaning_experience_engine.contracts import (
 )
 from cocolon_meaning_experience_engine.emlis_v1a import (
     CMEEVerticalError,
+    EXPECTED_COMMON_GUARD_IDS,
     _artifact_id,
     _build_experience_plan,
     _graph_id,
+    _common_guard_proof_id,
     _plan_id,
     _planned_visible_source_ids,
     _realize_cmee_experience,
@@ -73,7 +79,12 @@ def _private_parts(request: GenerationRequest):
         evidence_spans=source.evidence_spans,
     )
     graph, plan, artifact = build_text_grounded_limited_artifact(source)
-    visible = _realize_cmee_experience(source, graph, plan, grounded_plan)
+    visible, _guard_material = _realize_cmee_experience(
+        source,
+        graph,
+        plan,
+        grounded_plan,
+    )
     return source, graph, plan, artifact, visible
 
 
@@ -100,18 +111,121 @@ def _rehash_artifact(source, graph, artifact):
             artifact.plan.visible_line_ids,
         ),
     )
+    proof = replace(
+        artifact.common_guard_proof,
+        source_envelope_id=source.envelope.envelope_id,
+        graph_id=graph.graph_id,
+        plan_id=plan.plan_id,
+    )
+    proof = replace(
+        proof,
+        proof_id=_common_guard_proof_id(
+            source_envelope_id=proof.source_envelope_id,
+            graph_id=proof.graph_id,
+            plan_id=proof.plan_id,
+            guarded_observation_units=proof.guarded_observation_units,
+            guard_results=proof.guard_results,
+            stabilization_report_name=proof.stabilization_report_name,
+            stabilization_phase=proof.stabilization_phase,
+            stabilization_core_id=proof.stabilization_core_id,
+            stabilization_passed=proof.stabilization_passed,
+            common_shapes_ready=proof.common_shapes_ready,
+            stabilization_guard_names=proof.stabilization_guard_names,
+            issue_codes=proof.issue_codes,
+        ),
+    )
+    trace = tuple(
+        replace(row, artifact_common_guard_proof_ref=proof.proof_id)
+        for row in artifact.trace
+    )
     return replace(
         artifact,
         plan=plan,
+        common_guard_proof=proof,
+        trace=trace,
         artifact_id=_artifact_id(
             source.envelope.envelope_id,
             graph.graph_id,
             plan.plan_id,
+            proof.proof_id,
             artifact.observation,
             tuple(row.text for row in artifact.visible_unknowns),
             artifact.reception,
         ),
     )
+
+
+def _rehash_common_guard_proof_artifact(source, graph, artifact, proof):
+    proof = replace(
+        proof,
+        proof_id=_common_guard_proof_id(
+            source_envelope_id=proof.source_envelope_id,
+            graph_id=proof.graph_id,
+            plan_id=proof.plan_id,
+            guarded_observation_units=proof.guarded_observation_units,
+            guard_results=proof.guard_results,
+            stabilization_report_name=proof.stabilization_report_name,
+            stabilization_phase=proof.stabilization_phase,
+            stabilization_core_id=proof.stabilization_core_id,
+            stabilization_passed=proof.stabilization_passed,
+            common_shapes_ready=proof.common_shapes_ready,
+            stabilization_guard_names=proof.stabilization_guard_names,
+            issue_codes=proof.issue_codes,
+        ),
+    )
+    trace = tuple(
+        replace(row, artifact_common_guard_proof_ref=proof.proof_id)
+        for row in artifact.trace
+    )
+    return replace(
+        artifact,
+        common_guard_proof=proof,
+        trace=trace,
+        artifact_id=_artifact_id(
+            source.envelope.envelope_id,
+            graph.graph_id,
+            artifact.plan.plan_id,
+            proof.proof_id,
+            artifact.observation,
+            tuple(row.text for row in artifact.visible_unknowns),
+            artifact.reception,
+        ),
+    )
+
+
+def _build_with_common_core_mutation(mutator):
+    source = freeze_text_source(_request())
+    original = emlis_v1a_module.compose_emlis_conversation_candidate
+
+    def mutate_result(*args, **kwargs):
+        candidate = original(*args, **kwargs)
+        composer_meta = copy.deepcopy(candidate.composer_meta)
+        core_meta = composer_meta["core_text_generation"]
+        mutator(core_meta)
+        return replace(candidate, composer_meta=composer_meta)
+
+    with patch.object(
+        emlis_v1a_module,
+        "compose_emlis_conversation_candidate",
+        side_effect=mutate_result,
+    ):
+        return build_text_grounded_limited_artifact(source)
+
+
+def _build_with_composer_candidate_mutation(mutator):
+    source = freeze_text_source(_request())
+    original = emlis_v1a_module.compose_emlis_conversation_candidate
+
+    def mutate_result(*args, **kwargs):
+        candidate = original(*args, **kwargs)
+        return mutator(candidate)
+
+    with patch.object(
+        emlis_v1a_module,
+        "compose_emlis_conversation_candidate",
+        side_effect=mutate_result,
+    ):
+        return build_text_grounded_limited_artifact(source)
 
 
 class CMEEV1AI1SXVerticalTest(unittest.TestCase):
@@ -172,6 +286,386 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         self.assertEqual(outcome.terminal_state, CMEE_TERMINAL_GENERATED_DISABLED)
         self.assertNotIn("CANDIDATE_READY", outcome.terminal_state)
         self.assertFalse(outcome.automatic_progression)
+
+    def test_common_guard_proof_seals_exact5_and_binds_artifact_trace(self) -> None:
+        outcome = MeaningExperienceEngine().generate(_request())
+        assert outcome.meaning_graph is not None and outcome.artifact is not None
+        graph = outcome.meaning_graph
+        artifact = outcome.artifact
+        proof = artifact.common_guard_proof
+
+        self.assertEqual(proof.schema_version, CMEE_COMMON_GUARD_PROOF_VERSION)
+        self.assertEqual(proof.source_envelope_id, graph.source_envelope_id)
+        self.assertEqual(proof.graph_id, graph.graph_id)
+        self.assertEqual(proof.plan_id, artifact.plan.plan_id)
+        self.assertEqual(
+            tuple(row.guard_id for row in proof.guard_results),
+            EXPECTED_COMMON_GUARD_IDS,
+        )
+        self.assertTrue(
+            all(type(row.passed) is bool and row.passed is True for row in proof.guard_results)
+        )
+        self.assertIs(proof.stabilization_passed, True)
+        self.assertIs(proof.common_shapes_ready, True)
+        self.assertEqual(proof.stabilization_guard_names, EXPECTED_COMMON_GUARD_IDS)
+        self.assertEqual(proof.issue_codes, ())
+        self.assertEqual(
+            proof.guarded_observation_units,
+            tuple(
+                (row.source_sentence_id, row.text_sha256)
+                for row in artifact.trace
+                if row.role == "OBSERVATION"
+            ),
+        )
+        self.assertTrue(proof.guarded_observation_units)
+        self.assertTrue(
+            all(
+                row.artifact_common_guard_proof_ref == proof.proof_id
+                for row in artifact.trace
+            )
+        )
+        self.assertTrue(
+            all(
+                sentence_id.startswith("cmee:observation:")
+                for sentence_id, _text_sha256 in proof.guarded_observation_units
+            )
+        )
+        self.assertNotIn(REPRESENTATIVE_MEMO, repr(proof))
+
+    def test_actual_common_guard_rows_require_exact_order_identity_and_true_bool(self) -> None:
+        def guard_rows(core_meta):
+            return core_meta["result"]["meta"]["guard_results"]
+
+        def passed_false(core_meta):
+            guard_rows(core_meta)[0]["passed"] = False
+
+        def passed_truthy_int(core_meta):
+            guard_rows(core_meta)[0]["passed"] = 1
+
+        def passed_with_rejection_reason(core_meta):
+            guard_rows(core_meta)[0]["rejection_reasons"] = ["ACTUAL_FAILURE"]
+
+        def wrong_identity(core_meta):
+            guard_rows(core_meta)[0]["guard_name"] = "forged.guard.v1"
+
+        def missing_row(core_meta):
+            guard_rows(core_meta).pop()
+
+        def extra_row(core_meta):
+            guard_rows(core_meta).append(copy.deepcopy(guard_rows(core_meta)[-1]))
+
+        def duplicate_row(core_meta):
+            guard_rows(core_meta)[1] = copy.deepcopy(guard_rows(core_meta)[0])
+
+        def reordered_rows(core_meta):
+            rows = guard_rows(core_meta)
+            rows[0], rows[1] = rows[1], rows[0]
+
+        mutations = {
+            "passed_false": passed_false,
+            "passed_truthy_int": passed_truthy_int,
+            "passed_with_rejection_reason": passed_with_rejection_reason,
+            "wrong_identity": wrong_identity,
+            "missing_row": missing_row,
+            "extra_row": extra_row,
+            "duplicate_row": duplicate_row,
+            "reordered_rows": reordered_rows,
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                with self.assertRaises(CMEEVerticalError):
+                    _build_with_common_core_mutation(mutate)
+
+    def test_common_guard_proof_rejects_outer_binding_text_swap(self) -> None:
+        forged_text = "あなたは絶対に病気だと確定しました。"
+
+        def outer_text_only(candidate):
+            composer_meta = copy.deepcopy(candidate.composer_meta)
+            composer_meta["sentence_bindings"][0]["text"] = forged_text
+            return replace(candidate, composer_meta=composer_meta)
+
+        def guarded_snapshot_text_only(candidate):
+            composer_meta = copy.deepcopy(candidate.composer_meta)
+            guarded_bindings = composer_meta["core_text_generation"]["result"]["meta"][
+                "candidate"
+            ]["meta"]["sentence_bindings"]
+            guarded_bindings[0]["text"] = "これはguard済みではありません。"
+            return replace(candidate, composer_meta=composer_meta)
+
+        def coordinated_outer_and_snapshot_text(candidate):
+            composer_meta = copy.deepcopy(candidate.composer_meta)
+            composer_meta["sentence_bindings"][0]["text"] = forged_text
+            guarded_bindings = composer_meta["core_text_generation"]["result"]["meta"][
+                "candidate"
+            ]["meta"]["sentence_bindings"]
+            guarded_bindings[0]["text"] = forged_text
+            return replace(candidate, composer_meta=composer_meta)
+
+        def coordinated_bindings_and_claim_text(candidate):
+            composer_meta = copy.deepcopy(candidate.composer_meta)
+            composer_meta["sentence_bindings"][0]["text"] = forged_text
+            result_meta = composer_meta["core_text_generation"]["result"]["meta"]
+            result_meta["candidate"]["meta"]["sentence_bindings"][0]["text"] = (
+                forged_text
+            )
+            result_meta["guard_results"][3]["meta"]["sentence_claims"][0][
+                "sentence"
+            ] = forged_text.rstrip("。")
+            return replace(candidate, composer_meta=composer_meta)
+
+        def coordinated_bindings_claim_and_surface_text(candidate):
+            composer_meta = copy.deepcopy(candidate.composer_meta)
+            composer_meta["sentence_bindings"][0]["text"] = forged_text
+            result_meta = composer_meta["core_text_generation"]["result"]["meta"]
+            result_meta["candidate"]["meta"]["sentence_bindings"][0]["text"] = (
+                forged_text
+            )
+            result_meta["guard_results"][3]["meta"]["sentence_claims"][0][
+                "sentence"
+            ] = forged_text.rstrip("。")
+            surface_lines = candidate.comment_text.splitlines()
+            surface_lines[1] = f"今回の入力では、{forged_text}"
+            return replace(
+                candidate,
+                comment_text="\n".join(surface_lines),
+                composer_meta=composer_meta,
+            )
+
+        def coordinated_all_primary_guard_snapshots(candidate):
+            composer_meta = copy.deepcopy(candidate.composer_meta)
+            composer_meta["sentence_bindings"][0]["text"] = forged_text
+            result_meta = composer_meta["core_text_generation"]["result"]["meta"]
+            result_meta["candidate"]["meta"]["sentence_bindings"][0]["text"] = (
+                forged_text
+            )
+            result_meta["guard_results"][3]["meta"]["sentence_claims"][0][
+                "sentence"
+            ] = forged_text.rstrip("。")
+            result_meta["combined_guard_result"]["meta"]["guard_results"][3][
+                "meta"
+            ]["sentence_claims"][0]["sentence"] = forged_text.rstrip("。")
+            surface_lines = candidate.comment_text.splitlines()
+            surface_lines[1] = f"今回の入力では、{forged_text}"
+            return replace(
+                candidate,
+                comment_text="\n".join(surface_lines),
+                composer_meta=composer_meta,
+            )
+
+        def guarded_binding_alias_text_only(candidate):
+            composer_meta = copy.deepcopy(candidate.composer_meta)
+            candidate_meta = composer_meta["core_text_generation"]["result"]["meta"][
+                "candidate"
+            ]["meta"]
+            candidate_meta["sentence_binding_bundle"]["bindings"][0]["text"] = (
+                forged_text
+            )
+            return replace(candidate, composer_meta=composer_meta)
+
+        def grounding_claim_text_only(candidate):
+            composer_meta = copy.deepcopy(candidate.composer_meta)
+            claims = composer_meta["core_text_generation"]["result"]["meta"][
+                "guard_results"
+            ][3]["meta"]["sentence_claims"]
+            claims[0]["sentence"] = "これはguard済みではありません"
+            return replace(candidate, composer_meta=composer_meta)
+
+        def coordinated_exact6_key_missing(candidate):
+            composer_meta = copy.deepcopy(candidate.composer_meta)
+            core_meta = composer_meta["core_text_generation"]
+            core_meta["sentence_bindings"][0].pop("used_phrase_unit_ids")
+            composer_meta["sentence_bindings"][0].pop("used_phrase_unit_ids")
+            core_meta["result"]["meta"]["candidate"]["meta"]["sentence_bindings"][
+                0
+            ].pop("used_phrase_unit_ids")
+            return replace(candidate, composer_meta=composer_meta)
+
+        for name, mutate in {
+            "outer_text_only": outer_text_only,
+            "guarded_snapshot_text_only": guarded_snapshot_text_only,
+            "coordinated_outer_and_snapshot_text": coordinated_outer_and_snapshot_text,
+            "coordinated_bindings_and_claim_text": coordinated_bindings_and_claim_text,
+            "coordinated_bindings_claim_and_surface_text": (
+                coordinated_bindings_claim_and_surface_text
+            ),
+            "coordinated_all_primary_guard_snapshots": (
+                coordinated_all_primary_guard_snapshots
+            ),
+            "guarded_binding_alias_text_only": guarded_binding_alias_text_only,
+            "grounding_claim_text_only": grounding_claim_text_only,
+            "coordinated_exact6_key_missing": coordinated_exact6_key_missing,
+        }.items():
+            with self.subTest(name=name):
+                with self.assertRaises(CMEEVerticalError):
+                    _build_with_composer_candidate_mutation(mutate)
+
+    def test_actual_common_guard_stabilization_requires_exact_success(self) -> None:
+        def stabilization(core_meta):
+            return core_meta["step15_common_core_stabilization"]
+
+        def combined_false(core_meta):
+            core_meta["result"]["meta"]["combined_guard_result"]["passed"] = False
+
+        def combined_truthy_int(core_meta):
+            core_meta["result"]["meta"]["combined_guard_result"]["passed"] = 1
+
+        def combined_nested_row_tampered(core_meta):
+            combined_rows = core_meta["result"]["meta"]["combined_guard_result"][
+                "meta"
+            ]["guard_results"]
+            combined_rows[0]["passed"] = False
+
+        def report_identity(core_meta):
+            stabilization(core_meta)["report_name"] = "forged.stabilization.v1"
+
+        def stabilization_false(core_meta):
+            stabilization(core_meta)["passed"] = False
+
+        def stabilization_truthy_int(core_meta):
+            stabilization(core_meta)["passed"] = 1
+
+        def shapes_false(core_meta):
+            stabilization(core_meta)["common_shapes_ready"] = False
+
+        def shapes_truthy_int(core_meta):
+            stabilization(core_meta)["common_shapes_ready"] = 1
+
+        def issue_added(core_meta):
+            stabilization(core_meta)["issue_codes"] = ["FORGED"]
+
+        def guard_names_reordered(core_meta):
+            names = stabilization(core_meta)["guard_names"]
+            names[0], names[1] = names[1], names[0]
+
+        def shape_part_false(core_meta):
+            stabilization(core_meta)["shared_quality_parts"]["GuardResult"] = False
+
+        def shape_part_truthy_int(core_meta):
+            stabilization(core_meta)["shared_quality_parts"]["GuardResult"] = 1
+
+        mutations = {
+            "combined_false": combined_false,
+            "combined_truthy_int": combined_truthy_int,
+            "combined_nested_row_tampered": combined_nested_row_tampered,
+            "report_identity": report_identity,
+            "stabilization_false": stabilization_false,
+            "stabilization_truthy_int": stabilization_truthy_int,
+            "shapes_false": shapes_false,
+            "shapes_truthy_int": shapes_truthy_int,
+            "issue_added": issue_added,
+            "guard_names_reordered": guard_names_reordered,
+            "shape_part_false": shape_part_false,
+            "shape_part_truthy_int": shape_part_truthy_int,
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                with self.assertRaises(CMEEVerticalError):
+                    _build_with_common_core_mutation(mutate)
+
+    def test_common_guard_proof_mutations_reject_after_coordinated_rehash(self) -> None:
+        source, graph, _plan, artifact, visible = _private_parts(_request())
+        proof = artifact.common_guard_proof
+
+        changed_rows = list(proof.guard_results)
+        changed_rows[0] = replace(changed_rows[0], passed=False)
+        passed_false = replace(proof, guard_results=tuple(changed_rows))
+        changed_rows = list(proof.guard_results)
+        changed_rows[0] = replace(changed_rows[0], passed=1)
+        passed_truthy_int = replace(proof, guard_results=tuple(changed_rows))
+        changed_rows = list(proof.guard_results)
+        changed_rows[0] = replace(changed_rows[0], guard_id="forged.guard.v1")
+        wrong_identity = replace(proof, guard_results=tuple(changed_rows))
+        changed_rows = list(proof.guard_results)
+        changed_rows[0], changed_rows[1] = changed_rows[1], changed_rows[0]
+        reordered = replace(proof, guard_results=tuple(changed_rows))
+        unknown_trace = next(row for row in artifact.trace if row.role == "UNKNOWN")
+        mutations = {
+            "schema": replace(proof, schema_version="forged.proof.v1"),
+            "passed_false": passed_false,
+            "passed_truthy_int": passed_truthy_int,
+            "wrong_identity": wrong_identity,
+            "missing_row": replace(proof, guard_results=proof.guard_results[:-1]),
+            "extra_row": replace(
+                proof,
+                guard_results=(
+                    *proof.guard_results,
+                    CommonGuardResultProof(guard_id="forged.extra.v1", passed=True),
+                ),
+            ),
+            "reordered": reordered,
+            "stabilization_false": replace(proof, stabilization_passed=False),
+            "stabilization_truthy_int": replace(proof, stabilization_passed=1),
+            "shapes_false": replace(proof, common_shapes_ready=False),
+            "issue_added": replace(proof, issue_codes=("FORGED",)),
+            "guard_names_reordered": replace(
+                proof,
+                stabilization_guard_names=(
+                    proof.stabilization_guard_names[1],
+                    proof.stabilization_guard_names[0],
+                    *proof.stabilization_guard_names[2:],
+                ),
+            ),
+            "unknown_inserted_into_guarded_units": replace(
+                proof,
+                guarded_observation_units=(
+                    *proof.guarded_observation_units,
+                    (unknown_trace.source_sentence_id, unknown_trace.text_sha256),
+                ),
+            ),
+            "source_binding": replace(proof, source_envelope_id="source:foreign"),
+            "graph_binding": replace(proof, graph_id="graph:foreign"),
+            "plan_binding": replace(proof, plan_id="plan:foreign"),
+        }
+        for name, changed_proof in mutations.items():
+            with self.subTest(name=name):
+                changed_artifact = _rehash_common_guard_proof_artifact(
+                    source,
+                    graph,
+                    artifact,
+                    changed_proof,
+                )
+                with self.assertRaises(CMEEVerticalError):
+                    validate_positive_realization_trace(
+                        source,
+                        graph,
+                        changed_artifact,
+                        visible,
+                    )
+
+        other_source, _other_graph, _other_plan, other_artifact, _other_visible = (
+            _private_parts(_request(record_id="cmee-common-guard-proof-foreign"))
+        )
+        self.assertNotEqual(
+            other_source.envelope.envelope_id,
+            source.envelope.envelope_id,
+        )
+        copied = _rehash_common_guard_proof_artifact(
+            source,
+            graph,
+            artifact,
+            other_artifact.common_guard_proof,
+        )
+        with self.assertRaisesRegex(CMEEVerticalError, "proof_artifact_binding"):
+            validate_positive_realization_trace(source, graph, copied, visible)
+
+        missing_proof = replace(artifact, common_guard_proof=None)
+        with self.assertRaisesRegex(CMEEVerticalError, "proof_type"):
+            validate_positive_realization_trace(source, graph, missing_proof, visible)
+
+        bad_trace = (
+            replace(
+                artifact.trace[0],
+                artifact_common_guard_proof_ref="common-guard-proof-foreign",
+            ),
+            *artifact.trace[1:],
+        )
+        with self.assertRaisesRegex(CMEEVerticalError, "proof_trace_binding"):
+            validate_positive_realization_trace(
+                source,
+                graph,
+                replace(artifact, trace=bad_trace),
+                visible,
+            )
 
     def test_every_required_meaning_owner_is_realized_without_provisional_promotion(self) -> None:
         outcome = MeaningExperienceEngine().generate(_request())
@@ -426,6 +920,7 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 source.envelope.envelope_id,
                 swapped_graph.graph_id,
                 swapped_plan.plan_id,
+                artifact.common_guard_proof.proof_id,
                 artifact.observation,
                 tuple(row.text for row in swapped_unknowns),
                 artifact.reception,
@@ -495,18 +990,14 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 hidden_plan.visible_line_ids,
             ),
         )
-        hidden_artifact = replace(
-            artifact,
-            plan=hidden_plan,
-            trace=trace_without_unknown,
-            visible_unknowns=(),
-            artifact_id=_artifact_id(
-                source.envelope.envelope_id,
-                graph.graph_id,
-                hidden_plan.plan_id,
-                artifact.observation,
-                (),
-                artifact.reception,
+        hidden_artifact = _rehash_artifact(
+            source,
+            graph,
+            replace(
+                artifact,
+                plan=hidden_plan,
+                trace=trace_without_unknown,
+                visible_unknowns=(),
             ),
         )
         with self.assertRaisesRegex(CMEEVerticalError, "visible_line_role_cardinality"):
@@ -546,6 +1037,7 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 source.envelope.envelope_id,
                 graph.graph_id,
                 artifact.plan.plan_id,
+                artifact.common_guard_proof.proof_id,
                 artifact.observation,
                 (causal_text,),
                 artifact.reception,
@@ -792,6 +1284,7 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 source.envelope.envelope_id,
                 changed_graph.graph_id,
                 changed_plan.plan_id,
+                artifact.common_guard_proof.proof_id,
                 artifact.observation,
                 tuple(row.text for row in artifact.visible_unknowns),
                 artifact.reception,

@@ -17,6 +17,7 @@ CMEE_ROUTE_B_POLICY_VERSION = "cocolon.cmee.v1a.acceptance.route_b.v1"
 CMEE_SOURCE_CONTRACT_VERSION = "cocolon.cmee.emlis.current_input.text_grounded.v2"
 CMEE_OBLIGATION_VERSION = "cocolon.cmee.emlis.i1sx.owner_obligation.v1"
 CMEE_OWNER_UNIVERSE_SCHEMA_VERSION = "cocolon.cmee.v1a.owner_universe.v1"
+CMEE_COMMON_GUARD_PROOF_VERSION = "cocolon.cmee.v1a.common_guard_proof.v1"
 CMEE_TERMINAL_GENERATED_DISABLED = (
     "CMEE_V1A_I1SX_TEXT_GROUNDED_VERTICAL_WIP_DISABLED"
 )
@@ -247,6 +248,34 @@ class ExperiencePlan:
     visible_line_ids: Tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class CommonGuardResultProof:
+    """Body-free identity/pass projection of one actual common guard result."""
+
+    guard_id: str
+    passed: bool
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class CommonGuardProof:
+    """Private proof for the common guards applied to Observation units only."""
+
+    schema_version: str
+    proof_id: str
+    source_envelope_id: str
+    graph_id: str
+    plan_id: str
+    guarded_observation_units: Tuple[Tuple[str, str], ...]
+    guard_results: Tuple[CommonGuardResultProof, ...]
+    stabilization_report_name: str
+    stabilization_phase: str
+    stabilization_core_id: str
+    stabilization_passed: bool
+    common_shapes_ready: bool
+    stabilization_guard_names: Tuple[str, ...]
+    issue_codes: Tuple[str, ...]
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class VisibleUnitTrace:
     visible_unit_id: str
@@ -255,6 +284,7 @@ class VisibleUnitTrace:
     source_version: str
     obligation_version: str
     owner_universe_digest: str
+    artifact_common_guard_proof_ref: str
     role: str
     operation: str
     text_sha256: str = field(repr=False)
@@ -284,6 +314,7 @@ class GenerationArtifactBundle:
     artifact_id: str
     realizer_contract_ids: Tuple[str, ...]
     trust_policy_ids: Tuple[str, ...]
+    common_guard_proof: CommonGuardProof
     observation: str = field(repr=False)
     reception: str = field(repr=False)
     plan: ExperiencePlan
@@ -367,12 +398,15 @@ class EngineOutcome:
 
 __all__ = [
     "AttachmentAdmission",
+    "CMEE_COMMON_GUARD_PROOF_VERSION",
     "CMEE_OBLIGATION_VERSION",
     "CMEE_OWNER_UNIVERSE_SCHEMA_VERSION",
     "CMEE_ROUTE_B_POLICY_VERSION",
     "CMEE_SCHEMA_VERSION",
     "CMEE_SOURCE_CONTRACT_VERSION",
     "CMEE_TERMINAL_GENERATED_DISABLED",
+    "CommonGuardProof",
+    "CommonGuardResultProof",
     "CoreId",
     "EngineOutcome",
     "EngineStatus",
