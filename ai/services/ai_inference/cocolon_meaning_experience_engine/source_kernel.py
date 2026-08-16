@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import re
 from typing import Any, Mapping, Tuple
 
 from emlis_ai_current_input_bundle import (
@@ -48,6 +49,25 @@ LABEL_CONTRACT_ID = (
     "cocolon.input_options.de9c3d985053bbaaa7fc0d396e688cc2097ece40."
     "59f615cbf513d7901b0b1075cc63d4fd799c5b08"
 )
+SOURCE_ENCODING = "CMEE_PRIVATE_FIELD_FRAME_UTF8_V1"
+_SOURCE_ENVELOPE_ID_SCHEMA = "cocolon.cmee.source_envelope.identity.v2"
+_EVIDENCE_ID_SCHEMA = "cocolon.cmee.evidence_ref.identity.v2"
+_FRAME_FIELD_PATHS: Tuple[str, ...] = (
+    "memo",
+    "memo_action",
+    "emotion_details.0.type",
+    "emotions.0",
+    "category.0",
+    "emotion_details.0.strength",
+)
+_SOURCE_FIELD_PATHS = {
+    "memo": ("memo", -1),
+    "memo_action": ("memo_action", -1),
+    "emotion_details": ("emotion_details.0.type", 0),
+    "emotions": ("emotions.0", 0),
+    "category": ("category.0", 0),
+}
+_SPACE_RE = re.compile(r"\s+")
 
 
 def _sha256(value: bytes) -> str:
@@ -60,21 +80,63 @@ def _evidence_id(
     source_span_id: str,
     field_path: str,
     element_index: int,
+    field_utf8_start: int,
+    field_utf8_end: int,
+    scalar_start: int,
+    scalar_end: int,
     utf8_start: int,
     utf8_end: int,
+    field_sha256: str,
     literal_sha256: str,
 ) -> str:
-    material = "|".join(
-        (
-            envelope_id,
-            source_span_id,
-            field_path,
-            str(element_index),
-            f"{utf8_start}:{utf8_end}",
-            literal_sha256,
-        )
+    material = json.dumps(
+        {
+            "schema": _EVIDENCE_ID_SCHEMA,
+            "envelope_id": envelope_id,
+            "source_span_id": source_span_id,
+            "field_path": field_path,
+            "element_index": element_index,
+            "field_utf8_range": (field_utf8_start, field_utf8_end),
+            "scalar_range": (scalar_start, scalar_end),
+            "utf8_byte_range": (utf8_start, utf8_end),
+            "field_sha256": field_sha256,
+            "literal_sha256": literal_sha256,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
     )
     return f"ev-{_sha256(material.encode('utf-8'))[:24]}"
+
+
+def _source_envelope_id(
+    *,
+    source_record_id: str,
+    source_role: str,
+    source_schema_version: str,
+    source_contract_version: str,
+    source_encoding: str,
+    label_contract_id: str,
+    label_contract_digest: str,
+    raw_sha256: str,
+) -> str:
+    material = json.dumps(
+        {
+            "schema": _SOURCE_ENVELOPE_ID_SCHEMA,
+            "source_record_id": source_record_id,
+            "source_role": source_role,
+            "source_schema_version": source_schema_version,
+            "source_contract_version": source_contract_version,
+            "source_encoding": source_encoding,
+            "label_contract_id": label_contract_id,
+            "label_contract_digest": label_contract_digest,
+            "raw_sha256": raw_sha256,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return f"src-{_sha256(material.encode('utf-8'))[:24]}"
 
 
 LABEL_CONTRACT_DIGEST = _sha256(
@@ -103,77 +165,40 @@ def validate_evidence_refs(
     envelope: SourceEnvelope,
     evidence_refs: Tuple[EvidenceRef, ...],
 ) -> None:
-    """Recheck every locator and digest against the frozen source bytes."""
+    """Rebuild every locator from the canonical frame and compare exactly."""
 
-    if (
-        envelope.source_role != "CURRENT_INPUT"
-        or envelope.source_contract_version != CMEE_SOURCE_CONTRACT_VERSION
-        or envelope.source_encoding != "CMEE_PRIVATE_FIELD_FRAME_UTF8_V1"
-        or _sha256(envelope.raw_utf8) != envelope.raw_sha256
-    ):
-        raise SourceAdmissionError("owner_universe_source_envelope_invalid")
+    expected_refs = _canonical_evidence_refs_from_envelope(envelope)
     if not evidence_refs:
         raise SourceAdmissionError("owner_universe_evidence_empty", hard_invalid=False)
     if len({row.evidence_id for row in evidence_refs}) != len(evidence_refs):
         raise SourceAdmissionError("owner_universe_evidence_duplicate")
     if len({row.source_span_id for row in evidence_refs}) != len(evidence_refs):
         raise SourceAdmissionError("owner_universe_source_span_duplicate")
-
-    allowed_fields = {
-        "memo": -1,
-        "memo_action": -1,
-        "emotion_details.0.type": 0,
-        "emotions.0": 0,
-        "category.0": 0,
-        "emotion_details.0.strength": 0,
-    }
-    raw_length = len(envelope.raw_utf8)
-    for row in evidence_refs:
-        expected_element_index = allowed_fields.get(row.field_path)
-        bounds = (
-            row.field_utf8_start,
-            row.field_utf8_end,
-            row.utf8_start,
-            row.utf8_end,
-        )
-        if (
-            not row.source_span_id
-            or row.source_envelope_id != envelope.envelope_id
-            or expected_element_index is None
-            or row.element_index != expected_element_index
-            or any(not isinstance(value, int) for value in bounds)
-            or not (
-                0
-                <= row.field_utf8_start
-                <= row.utf8_start
-                < row.utf8_end
-                <= row.field_utf8_end
-                <= raw_length
-            )
+    if len(evidence_refs) != len(expected_refs):
+        raise SourceAdmissionError("owner_universe_evidence_canonical_binding_invalid")
+    locator_fields = (
+        "source_span_id",
+        "source_envelope_id",
+        "field_path",
+        "element_index",
+        "field_utf8_start",
+        "field_utf8_end",
+        "scalar_start",
+        "scalar_end",
+        "utf8_start",
+        "utf8_end",
+    )
+    for row, expected in zip(evidence_refs, expected_refs, strict=True):
+        if any(
+            type(getattr(row, name)) is not type(getattr(expected, name))
+            or getattr(row, name) != getattr(expected, name)
+            for name in locator_fields
         ):
-            raise SourceAdmissionError("owner_universe_evidence_locator_invalid")
+            raise SourceAdmissionError("owner_universe_evidence_canonical_binding_invalid")
         if (
-            row.source_span_id == "structured:emotion_strength"
-        ) != (row.field_path == "emotion_details.0.strength"):
-            raise SourceAdmissionError("owner_universe_strength_binding_invalid")
-        literal = envelope.raw_utf8[row.utf8_start : row.utf8_end]
-        field_body = envelope.raw_utf8[
-            row.field_utf8_start : row.field_utf8_end
-        ]
-        literal_digest = _sha256(literal)
-        if (
-            literal_digest != row.literal_sha256
-            or _sha256(field_body) != row.field_sha256
-            or row.evidence_id
-            != _evidence_id(
-                envelope_id=envelope.envelope_id,
-                source_span_id=row.source_span_id,
-                field_path=row.field_path,
-                element_index=row.element_index,
-                utf8_start=row.utf8_start,
-                utf8_end=row.utf8_end,
-                literal_sha256=literal_digest,
-            )
+            row.field_sha256 != expected.field_sha256
+            or row.literal_sha256 != expected.literal_sha256
+            or row.evidence_id != expected.evidence_id
         ):
             raise SourceAdmissionError("owner_universe_evidence_digest_invalid")
 
@@ -496,6 +521,38 @@ def _exact_labels(raw: Mapping[str, Any]) -> tuple[str, str, str]:
     return category, emotion, strength
 
 
+def _source_leaf_values(snapshot: Mapping[str, Any]) -> tuple[str, str, str, str, str, str]:
+    if not (
+        isinstance(snapshot.get("memo"), str)
+        and isinstance(snapshot.get("memo_action"), str)
+        and isinstance(snapshot.get("category"), list)
+        and len(snapshot["category"]) == 1
+        and isinstance(snapshot.get("emotion_details"), list)
+        and len(snapshot["emotion_details"]) == 1
+        and isinstance(snapshot["emotion_details"][0], Mapping)
+        and isinstance(snapshot.get("emotions"), list)
+        and len(snapshot["emotions"]) == 1
+    ):
+        raise SourceAdmissionError("noncanonical_current_input_source_shape")
+    values = (
+        snapshot["memo"],
+        snapshot["memo_action"],
+        snapshot["emotion_details"][0].get("type"),
+        snapshot["emotions"][0],
+        snapshot["category"][0],
+        snapshot["emotion_details"][0].get("strength"),
+    )
+    if not all(isinstance(value, str) for value in values):
+        raise SourceAdmissionError("noncanonical_current_input_source_leaf")
+    return values
+
+
+def normalize_evidence_literal(value: str) -> str:
+    """Match the legacy ledger's display-only whitespace normalization."""
+
+    return _SPACE_RE.sub(" ", str(value or "").replace("\u3000", " ")).strip()
+
+
 def _append_field(buffer: bytearray, path: str, literal: str) -> tuple[int, int]:
     raw = literal.encode("utf-8")
     header = f"\n@{path}:{len(raw)}\n".encode("utf-8")
@@ -509,7 +566,6 @@ def _append_field(buffer: bytearray, path: str, literal: str) -> tuple[int, int]
 def _text_span_raw_subrange(
     *,
     raw_field_text: str,
-    field_start: int,
     normalized_field_text: str,
     span: object,
 ) -> tuple[int, int]:
@@ -525,12 +581,273 @@ def _text_span_raw_subrange(
         raise SourceAdmissionError("evidence_scalar_offset_invalid")
     raw_character_start = left_trim + start_index
     raw_character_end = left_trim + end_index
-    translated_slice = translated[raw_character_start:raw_character_end]
-    if translated_slice != str(getattr(span, "raw_text", "") or ""):
+    raw_slice = raw_field_text[raw_character_start:raw_character_end]
+    if normalize_evidence_literal(raw_slice) != str(
+        getattr(span, "raw_text", "") or ""
+    ):
         raise SourceAdmissionError("evidence_scalar_offset_alignment_mismatch")
-    start = field_start + len(raw_field_text[:raw_character_start].encode("utf-8"))
-    end = field_start + len(raw_field_text[:raw_character_end].encode("utf-8"))
-    return start, end
+    return raw_character_start, raw_character_end
+
+
+def _parse_length_prefixed_segment(
+    raw_utf8: bytes,
+    cursor: int,
+    marker: bytes,
+) -> tuple[int, int, int]:
+    if not raw_utf8.startswith(marker, cursor):
+        raise SourceAdmissionError("owner_universe_source_frame_invalid")
+    length_start = cursor + len(marker)
+    length_end = raw_utf8.find(b"\n", length_start)
+    if length_end < 0:
+        raise SourceAdmissionError("owner_universe_source_frame_invalid")
+    length_literal = raw_utf8[length_start:length_end]
+    if (
+        not length_literal
+        or not length_literal.isdigit()
+        or length_literal != str(int(length_literal)).encode("ascii")
+    ):
+        raise SourceAdmissionError("owner_universe_source_frame_invalid")
+    body_start = length_end + 1
+    body_end = body_start + int(length_literal)
+    if body_end > len(raw_utf8):
+        raise SourceAdmissionError("owner_universe_source_frame_invalid")
+    return body_start, body_end, body_end
+
+
+def _parse_canonical_frame(
+    raw_utf8: bytes,
+) -> tuple[Mapping[str, Any], Mapping[str, tuple[int, int, str]]]:
+    if not isinstance(raw_utf8, bytes):
+        raise SourceAdmissionError("owner_universe_source_envelope_invalid")
+    prefix = f"{SOURCE_ENCODING}\n@raw_json:".encode("ascii")
+    raw_json_start, raw_json_end, cursor = _parse_length_prefixed_segment(
+        raw_utf8,
+        0,
+        prefix,
+    )
+    canonical_raw = raw_utf8[raw_json_start:raw_json_end]
+    try:
+        snapshot = json.loads(canonical_raw.decode("utf-8"))
+        raw_utf8.decode("utf-8")
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise SourceAdmissionError("owner_universe_source_frame_invalid") from None
+    if not isinstance(snapshot, Mapping) or _canonical_json(snapshot) != canonical_raw:
+        raise SourceAdmissionError("owner_universe_source_frame_invalid")
+    (
+        raw_memo,
+        raw_action,
+        raw_emotion,
+        raw_simple_emotion,
+        raw_category,
+        raw_strength,
+    ) = _source_leaf_values(snapshot)
+    expected_values = dict(
+        zip(
+            _FRAME_FIELD_PATHS,
+            (
+                raw_memo,
+                raw_action,
+                raw_emotion,
+                raw_simple_emotion,
+                raw_category,
+                raw_strength,
+            ),
+            strict=True,
+        )
+    )
+    segments: dict[str, tuple[int, int, str]] = {}
+    for path in _FRAME_FIELD_PATHS:
+        start, end, cursor = _parse_length_prefixed_segment(
+            raw_utf8,
+            cursor,
+            f"\n@original.{path}:".encode("utf-8"),
+        )
+        try:
+            value = raw_utf8[start:end].decode("utf-8")
+        except UnicodeDecodeError:
+            raise SourceAdmissionError("owner_universe_source_frame_invalid") from None
+        if value != expected_values[path]:
+            raise SourceAdmissionError("owner_universe_source_field_frame_mismatch")
+        segments[path] = (start, end, value)
+    if cursor != len(raw_utf8):
+        raise SourceAdmissionError("owner_universe_source_frame_invalid")
+    return snapshot, segments
+
+
+def _validate_source_envelope_identity(
+    envelope: SourceEnvelope,
+) -> tuple[Mapping[str, Any], Mapping[str, tuple[int, int, str]]]:
+    raw_digest = _sha256(envelope.raw_utf8) if isinstance(envelope.raw_utf8, bytes) else ""
+    if (
+        envelope.source_role != "CURRENT_INPUT"
+        or envelope.source_schema_version != EMLIS_CURRENT_INPUT_BUNDLE_SCHEMA_VERSION
+        or envelope.source_contract_version != CMEE_SOURCE_CONTRACT_VERSION
+        or envelope.source_encoding != SOURCE_ENCODING
+        or envelope.label_contract_id != LABEL_CONTRACT_ID
+        or envelope.label_contract_digest != LABEL_CONTRACT_DIGEST
+        or raw_digest != envelope.raw_sha256
+    ):
+        raise SourceAdmissionError("owner_universe_source_envelope_invalid")
+    snapshot, segments = _parse_canonical_frame(envelope.raw_utf8)
+    category, emotion, strength = _exact_labels(snapshot)
+    (
+        raw_memo,
+        raw_action,
+        raw_emotion,
+        raw_simple_emotion,
+        raw_category,
+        raw_strength,
+    ) = _source_leaf_values(snapshot)
+    if (
+        raw_category != category
+        or raw_emotion != emotion
+        or raw_simple_emotion != emotion
+        or raw_strength != strength
+    ):
+        raise SourceAdmissionError("owner_universe_source_label_binding_mismatch")
+    source_record_id = _alias_text(
+        snapshot,
+        ("id", "source_record_id", "sourceRecordId"),
+    )
+    thought = _alias_text(
+        snapshot,
+        ("memo", "thought_text", "thoughtText", "memo_text", "memoText"),
+    )
+    action = _alias_text(
+        snapshot,
+        ("memo_action", "action_text", "actionText", "memoAction"),
+    )
+    if thought != _clean(raw_memo) or action != _clean(raw_action):
+        raise SourceAdmissionError("owner_universe_source_text_binding_mismatch")
+    if not thought and not action:
+        raise SourceAdmissionError("text_grounded_material_required", hard_invalid=False)
+    if bool(snapshot.get("is_secret", snapshot.get("isSecret", False))):
+        raise SourceAdmissionError("secret_input_out_of_scope", hard_invalid=False)
+    expected_envelope_id = _source_envelope_id(
+        source_record_id=source_record_id,
+        source_role=envelope.source_role,
+        source_schema_version=envelope.source_schema_version,
+        source_contract_version=envelope.source_contract_version,
+        source_encoding=envelope.source_encoding,
+        label_contract_id=envelope.label_contract_id,
+        label_contract_digest=envelope.label_contract_digest,
+        raw_sha256=envelope.raw_sha256,
+    )
+    if (
+        not source_record_id
+        or envelope.source_record_id != source_record_id
+        or envelope.envelope_id != expected_envelope_id
+    ):
+        raise SourceAdmissionError("owner_universe_source_envelope_identity_mismatch")
+    return snapshot, segments
+
+
+def _canonical_evidence_refs_from_envelope(
+    envelope: SourceEnvelope,
+) -> Tuple[EvidenceRef, ...]:
+    snapshot, segments = _validate_source_envelope_identity(envelope)
+    normalized = normalize_emlis_current_input(snapshot)
+    spans = tuple(build_evidence_ledger(normalized))
+    if not spans:
+        raise SourceAdmissionError("evidence_ledger_empty", hard_invalid=False)
+    build_evidence_span_resolver(spans, current_input=normalized)
+
+    locator_rows: list[tuple[str, str, int, int, int, int, int]] = []
+    for span in spans:
+        source_field = str(getattr(span, "source_field", "") or "")
+        binding = _SOURCE_FIELD_PATHS.get(source_field)
+        literal = str(getattr(span, "raw_text", "") or "")
+        if binding is None or not literal:
+            raise SourceAdmissionError("evidence_original_field_binding_missing")
+        path, element_index = binding
+        field_start, field_end, raw_value = segments[path]
+        if source_field in {"memo", "memo_action"}:
+            scalar_start, scalar_end = _text_span_raw_subrange(
+                raw_field_text=raw_value,
+                normalized_field_text=str(normalized.get(source_field) or ""),
+                span=span,
+            )
+        else:
+            if raw_value != literal:
+                raise SourceAdmissionError("evidence_structured_leaf_binding_mismatch")
+            scalar_start, scalar_end = 0, len(raw_value)
+        locator_rows.append(
+            (
+                str(getattr(span, "span_id", "") or ""),
+                path,
+                element_index,
+                field_start,
+                field_end,
+                scalar_start,
+                scalar_end,
+            )
+        )
+    strength_start, strength_end, strength_value = segments[
+        "emotion_details.0.strength"
+    ]
+    locator_rows.append(
+        (
+            "structured:emotion_strength",
+            "emotion_details.0.strength",
+            0,
+            strength_start,
+            strength_end,
+            0,
+            len(strength_value),
+        )
+    )
+
+    refs: list[EvidenceRef] = []
+    for (
+        source_span_id,
+        field_path,
+        element_index,
+        field_start,
+        field_end,
+        scalar_start,
+        scalar_end,
+    ) in locator_rows:
+        raw_value = segments[field_path][2]
+        utf8_start = field_start + len(raw_value[:scalar_start].encode("utf-8"))
+        utf8_end = field_start + len(raw_value[:scalar_end].encode("utf-8"))
+        literal_bytes = envelope.raw_utf8[utf8_start:utf8_end]
+        field_bytes = envelope.raw_utf8[field_start:field_end]
+        if raw_value[scalar_start:scalar_end].encode("utf-8") != literal_bytes:
+            raise SourceAdmissionError("evidence_scalar_utf8_locator_mismatch")
+        literal_digest = _sha256(literal_bytes)
+        field_digest = _sha256(field_bytes)
+        evidence_id = _evidence_id(
+            envelope_id=envelope.envelope_id,
+            source_span_id=source_span_id,
+            field_path=field_path,
+            element_index=element_index,
+            field_utf8_start=field_start,
+            field_utf8_end=field_end,
+            scalar_start=scalar_start,
+            scalar_end=scalar_end,
+            utf8_start=utf8_start,
+            utf8_end=utf8_end,
+            field_sha256=field_digest,
+            literal_sha256=literal_digest,
+        )
+        refs.append(
+            EvidenceRef(
+                evidence_id=evidence_id,
+                source_span_id=source_span_id,
+                source_envelope_id=envelope.envelope_id,
+                field_path=field_path,
+                element_index=element_index,
+                field_utf8_start=field_start,
+                field_utf8_end=field_end,
+                scalar_start=scalar_start,
+                scalar_end=scalar_end,
+                utf8_start=utf8_start,
+                utf8_end=utf8_end,
+                field_sha256=field_digest,
+                literal_sha256=literal_digest,
+            )
+        )
+    return tuple(refs)
 
 
 def freeze_text_source(request: GenerationRequest) -> AdmittedTextSource:
@@ -551,29 +868,14 @@ def freeze_text_source(request: GenerationRequest) -> AdmittedTextSource:
     snapshot = json.loads(canonical_raw.decode("utf-8"))
     if not isinstance(snapshot, Mapping):
         raise SourceAdmissionError("current_input_snapshot_invalid")
-    if not (
-        isinstance(snapshot.get("memo"), str)
-        and isinstance(snapshot.get("memo_action"), str)
-        and isinstance(snapshot.get("category"), list)
-        and len(snapshot["category"]) == 1
-        and isinstance(snapshot.get("emotion_details"), list)
-        and len(snapshot["emotion_details"]) == 1
-        and isinstance(snapshot["emotion_details"][0], Mapping)
-        and isinstance(snapshot.get("emotions"), list)
-        and len(snapshot["emotions"]) == 1
-    ):
-        raise SourceAdmissionError("noncanonical_current_input_source_shape")
-    raw_memo = snapshot["memo"]
-    raw_action = snapshot["memo_action"]
-    raw_category = snapshot["category"][0]
-    raw_emotion = snapshot["emotion_details"][0].get("type")
-    raw_strength = snapshot["emotion_details"][0].get("strength")
-    raw_simple_emotion = snapshot["emotions"][0]
-    if not all(
-        isinstance(value, str)
-        for value in (raw_category, raw_emotion, raw_strength, raw_simple_emotion)
-    ):
-        raise SourceAdmissionError("noncanonical_current_input_source_leaf")
+    (
+        raw_memo,
+        raw_action,
+        raw_emotion,
+        raw_simple_emotion,
+        raw_category,
+        raw_strength,
+    ) = _source_leaf_values(snapshot)
 
     source_record_id = _alias_text(snapshot, ("id", "source_record_id", "sourceRecordId"))
     if not source_record_id or source_record_id != _clean(request.expected_source_record_id):
@@ -602,127 +904,53 @@ def freeze_text_source(request: GenerationRequest) -> AdmittedTextSource:
         raise SourceAdmissionError("evidence_ledger_empty", hard_invalid=False)
     build_evidence_span_resolver(spans, current_input=normalized)
 
-    frame = bytearray(b"CMEE_PRIVATE_FIELD_FRAME_UTF8_V1\n@raw_json:")
+    frame = bytearray(f"{SOURCE_ENCODING}\n@raw_json:".encode("ascii"))
     frame.extend(str(len(canonical_raw)).encode("ascii"))
     frame.extend(b"\n")
     frame.extend(canonical_raw)
     # Each segment stores the original admitted field value, not a normalized
     # ledger copy. Evidence ranges below point into these original-value
     # segments and are independently checked byte-for-byte.
-    original_fields = {
-        "memo": ("memo", raw_memo, thought, -1),
-        "memo_action": ("memo_action", raw_action, action, -1),
-        "emotion_details": ("emotion_details.0.type", raw_emotion, emotion, 0),
-        "emotions": ("emotions.0", raw_simple_emotion, emotion, 0),
-        "category": ("category.0", raw_category, category, 0),
-    }
-    field_segments: dict[str, tuple[str, str, str, int, int, int]] = {}
-    for source_field, (path, raw_value, normalized_value, element_index) in original_fields.items():
-        start, end = _append_field(frame, f"original.{path}", raw_value)
-        field_segments[source_field] = (
-            path,
-            raw_value,
-            normalized_value,
-            element_index,
-            start,
-            end,
-        )
-    strength_start, strength_end = _append_field(
-        frame, "original.emotion_details.0.strength", raw_strength
-    )
-
-    locations: list[tuple[object, int, int, str, int, int, int]] = []
-    for span in spans:
-        literal = str(getattr(span, "raw_text", "") or "")
-        source_field = str(getattr(span, "source_field", "") or "")
-        if source_field not in field_segments or not literal:
-            raise SourceAdmissionError("evidence_original_field_binding_missing")
-        path, raw_value, normalized_value, element_index, field_start, field_end = field_segments[
-            source_field
-        ]
-        if source_field in {"memo", "memo_action"}:
-            start, end = _text_span_raw_subrange(
-                raw_field_text=raw_value,
-                field_start=field_start,
-                normalized_field_text=normalized_value,
-                span=span,
-            )
-        else:
-            if raw_value != literal:
-                raise SourceAdmissionError("evidence_structured_leaf_binding_mismatch")
-            start, end = field_start, field_end
-        locations.append(
-            (span, start, end, path, element_index, field_start, field_end)
-        )
+    for path, raw_value in zip(
+        _FRAME_FIELD_PATHS,
+        (
+            raw_memo,
+            raw_action,
+            raw_emotion,
+            raw_simple_emotion,
+            raw_category,
+            raw_strength,
+        ),
+        strict=True,
+    ):
+        _append_field(frame, f"original.{path}", raw_value)
 
     raw_utf8 = bytes(frame)
     raw_digest = _sha256(raw_utf8)
-    envelope_id = f"src-{_sha256((source_record_id + '|' + raw_digest).encode('utf-8'))[:24]}"
+    envelope_id = _source_envelope_id(
+        source_record_id=source_record_id,
+        source_role="CURRENT_INPUT",
+        source_schema_version=bundle.schema_version,
+        source_contract_version=CMEE_SOURCE_CONTRACT_VERSION,
+        source_encoding=SOURCE_ENCODING,
+        label_contract_id=LABEL_CONTRACT_ID,
+        label_contract_digest=LABEL_CONTRACT_DIGEST,
+        raw_sha256=raw_digest,
+    )
     envelope = SourceEnvelope(
         envelope_id=envelope_id,
         source_record_id=source_record_id,
         source_role="CURRENT_INPUT",
         source_schema_version=bundle.schema_version,
         source_contract_version=CMEE_SOURCE_CONTRACT_VERSION,
-        source_encoding="CMEE_PRIVATE_FIELD_FRAME_UTF8_V1",
+        source_encoding=SOURCE_ENCODING,
         label_contract_id=LABEL_CONTRACT_ID,
         label_contract_digest=LABEL_CONTRACT_DIGEST,
         raw_utf8=raw_utf8,
         raw_sha256=raw_digest,
     )
 
-    refs: list[EvidenceRef] = []
-    for span, start, end, field_path, element_index, field_start, field_end in locations:
-        literal_bytes = raw_utf8[start:end]
-        span_id = str(getattr(span, "span_id", "") or "")
-        literal_digest = _sha256(literal_bytes)
-        field_digest = _sha256(raw_utf8[field_start:field_end])
-        refs.append(
-            EvidenceRef(
-                evidence_id=_evidence_id(
-                    envelope_id=envelope_id,
-                    source_span_id=span_id,
-                    field_path=field_path,
-                    element_index=element_index,
-                    utf8_start=start,
-                    utf8_end=end,
-                    literal_sha256=literal_digest,
-                ),
-                source_span_id=span_id,
-                source_envelope_id=envelope_id,
-                field_path=field_path,
-                element_index=element_index,
-                field_utf8_start=field_start,
-                field_utf8_end=field_end,
-                utf8_start=start,
-                utf8_end=end,
-                field_sha256=field_digest,
-                literal_sha256=literal_digest,
-            )
-        )
-    refs.append(
-        EvidenceRef(
-            evidence_id=_evidence_id(
-                envelope_id=envelope_id,
-                source_span_id="structured:emotion_strength",
-                field_path="emotion_details.0.strength",
-                element_index=0,
-                utf8_start=strength_start,
-                utf8_end=strength_end,
-                literal_sha256=_sha256(raw_utf8[strength_start:strength_end]),
-            ),
-            source_span_id="structured:emotion_strength",
-            source_envelope_id=envelope_id,
-            field_path="emotion_details.0.strength",
-            element_index=0,
-            field_utf8_start=strength_start,
-            field_utf8_end=strength_end,
-            utf8_start=strength_start,
-            utf8_end=strength_end,
-            field_sha256=_sha256(raw_utf8[strength_start:strength_end]),
-            literal_sha256=_sha256(raw_utf8[strength_start:strength_end]),
-        )
-    )
+    refs = list(_canonical_evidence_refs_from_envelope(envelope))
     for ref in refs:
         literal = envelope.raw_utf8[ref.utf8_start : ref.utf8_end]
         field_body = envelope.raw_utf8[ref.field_utf8_start : ref.field_utf8_end]
@@ -735,8 +963,12 @@ def freeze_text_source(request: GenerationRequest) -> AdmittedTextSource:
                 < ref.utf8_end
                 <= ref.field_utf8_end
             )
+            or field_body.decode("utf-8")[
+                ref.scalar_start : ref.scalar_end
+            ].encode("utf-8")
+            != literal
         ):
-            raise SourceAdmissionError("evidence_utf8_locator_mismatch")
+            raise SourceAdmissionError("evidence_scalar_utf8_locator_mismatch")
 
     owner_universe = build_source_owner_universe(envelope, tuple(refs))
     return AdmittedTextSource(

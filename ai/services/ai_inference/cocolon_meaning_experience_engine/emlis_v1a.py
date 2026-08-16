@@ -45,7 +45,11 @@ from .contracts import (
     VisibleUnknownUnit,
     VisibleUnitTrace,
 )
-from .source_kernel import AdmittedTextSource, build_source_owner_universe
+from .source_kernel import (
+    AdmittedTextSource,
+    build_source_owner_universe,
+    normalize_evidence_literal,
+)
 
 
 OBSERVATION_DUTY_ID = "OBSERVE_SOURCE_EXPLICIT_CURRENT_MEANING"
@@ -1466,7 +1470,8 @@ def validate_positive_realization_trace(
             )
             if (
                 ref.source_envelope_id != source.envelope.envelope_id
-                or selected_raw.decode("utf-8").replace("\u3000", " ") != expected_normalized
+                or normalize_evidence_literal(selected_raw.decode("utf-8"))
+                != expected_normalized
                 or _sha256_text(selected_raw.decode("utf-8")) != ref.literal_sha256
                 or _sha256_text(
                     source.envelope.raw_utf8[

@@ -14,7 +14,7 @@ from typing import Any, Mapping, Optional, Tuple
 
 CMEE_SCHEMA_VERSION = "cocolon.cmee.v1a.i1sx.text_grounded_limited.v1"
 CMEE_ROUTE_B_POLICY_VERSION = "cocolon.cmee.v1a.acceptance.route_b.v1"
-CMEE_SOURCE_CONTRACT_VERSION = "cocolon.cmee.emlis.current_input.text_grounded.v1"
+CMEE_SOURCE_CONTRACT_VERSION = "cocolon.cmee.emlis.current_input.text_grounded.v2"
 CMEE_OBLIGATION_VERSION = "cocolon.cmee.emlis.i1sx.owner_obligation.v1"
 CMEE_OWNER_UNIVERSE_SCHEMA_VERSION = "cocolon.cmee.v1a.owner_universe.v1"
 CMEE_TERMINAL_GENERATED_DISABLED = (
@@ -109,6 +109,12 @@ class SourceEnvelope:
 
 @dataclass(frozen=True, slots=True, repr=False)
 class EvidenceRef:
+    """Private source evidence with field-relative scalar coordinates.
+
+    ``scalar_start/end`` index the canonical original field body. The UTF-8
+    coordinates remain absolute offsets into ``SourceEnvelope.raw_utf8``.
+    """
+
     evidence_id: str
     source_span_id: str
     source_envelope_id: str
@@ -116,6 +122,8 @@ class EvidenceRef:
     element_index: int
     field_utf8_start: int
     field_utf8_end: int
+    scalar_start: int
+    scalar_end: int
     utf8_start: int
     utf8_end: int
     field_sha256: str = field(repr=False)
