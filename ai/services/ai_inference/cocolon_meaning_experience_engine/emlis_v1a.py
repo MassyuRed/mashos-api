@@ -16,11 +16,14 @@ from emlis_ai_grounded_human_reception import (
     validate_grounded_human_reception_surface,
 )
 from emlis_ai_grounded_observation_plan import (
+    build_grounded_human_reception_plan,
     build_grounded_observation_plan,
     validate_grounded_observation_plan,
 )
-from emlis_ai_limited_composer_client import CocolonLimitedComposerClient
-from emlis_ai_observation_structure_material_service import build_observation_structure_material
+from emlis_ai_grounded_sentence_surface import (
+    DIRECTIONAL_GROUNDED_RELATION_TYPES,
+    build_grounded_sentence_plan,
+)
 from emlis_ai_safety_triage import TRIAGE_SAFE_OBSERVATION
 from emlis_ai_types import (
     AddresseeNotes,
@@ -30,6 +33,11 @@ from emlis_ai_types import (
     RelationEdge,
 )
 from cocolon_text_generation_core.guards.base import split_sentences
+from cocolon_text_generation_core.adapters.emlis_observation_composer import (
+    attach_core_evaluation_meta,
+    core_rejection_reason,
+    evaluate_emlis_observation_candidate,
+)
 
 from .contracts import (
     AttachmentAdmission,
@@ -65,8 +73,8 @@ STRUCTURED_ATTACHMENT_UNKNOWN_TEXT = (
     "どのような関係があるかまでは、この入力だけでは決められません。"
 )
 REALIZER_CONTRACT_IDS = (
-    "cocolon.cmee.emlis.plan_bound_limited_composer_adapter.v1",
-    "cocolon.emlis.grounded_human_reception_surface.v1",
+    "cocolon.cmee.emlis.plan_bound_grounded_surface_adapter.v2",
+    "cocolon.cmee.emlis.semantic_reception_projection.v1",
 )
 ADMISSIBLE_NUCLEUS_GROUNDING = frozenset({"explicit", "user_stated_relation"})
 ADMISSIBLE_RELATION_GROUNDING = frozenset({"user_stated_relation"})
@@ -74,6 +82,35 @@ NEGATIVE_RECEPTION_RE = re.compile(r"(?:苦しさ|つらさ|負担|痛み|しん
 SOURCE_BURDEN_CUE_RE = re.compile(
     r"(?:不安|疲|つら|苦|悲|怒|怖|嫌|限界|痛|しんど|迷惑|ダメ|悪化|不便|動けない|できない|何もしたくない)"
 )
+CMEE_SOURCE_ANCHOR_LIMIT = 6
+CMEE_RECEPTION_MATERIAL_MODE = "limited_grounding"
+CMEE_POSITIVE_RECEPTION_ACTS = frozenset(
+    {
+        "honor_concrete_effort",
+        "protect_retained_intention",
+        "recognize_lived_change",
+        "hold_help_seeking",
+    }
+)
+CMEE_BURDEN_RECEPTION_ACTS = frozenset(
+    {"stay_with_current_burden", "bounded_counter_self_denial"}
+)
+CMEE_RELATION_SURFACE_LABELS = {
+    "temporal_before_after": "時間の順序",
+    "shift_from_to": "変化の方向",
+    "contrast": "異なる向きの対比",
+    "coexistence": "並存する関係",
+    "user_stated_cause": "入力内で明示された理由の関係",
+    "user_stated_result": "入力内で明示された結果の関係",
+    "attempt_and_block": "試みと制約の関係",
+    "wish_and_constraint": "願いと制約の関係",
+    "action_supports_change": "行動と変化の関係",
+    "evaluation_about_event": "出来事と評価の関係",
+    "self_evaluation_about_state": "状態と自己評価の関係",
+    "preserves_despite": "負荷の中に残る方向",
+    "uncertain_connection": "入力内の順序上の関係",
+    "continuation_or_refusal": "継続と拒否の関係",
+}
 EXPECTED_COMMON_GUARD_IDS = (
     "cocolon_text_generation_core.guards.japanese_coherence.v1",
     "cocolon_text_generation_core.guards.template_echo.v1",
@@ -142,6 +179,28 @@ class _CMEEVisibleLine:
     sentence_id: str
     text: str
     binding: _CMEEVisibleBinding
+
+
+@dataclass(frozen=True, slots=True)
+class _CMEECorePhraseUnit:
+    phrase_unit_id: str
+    evidence_span_id: str
+    raw_text: str
+    compressed_text: str
+    role: str = "source_grounded_observation"
+    polarity: str = "neutral"
+    must_keep: bool = False
+    quality_flags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class _CMEECoreSentencePlan:
+    sentence_plan_id: str
+    line_role: str
+    phrase_unit_ids: tuple[str, ...]
+    relation_type: str
+    max_chars: int = 240
+    must_include: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -403,9 +462,7 @@ def _plan_id(
 
 
 def _reception_plan_contract(grounded_plan: Any) -> tuple[str, tuple[str, ...]]:
-    reception_plan = grounded_plan.response_plan.human_reception_plan
-    if reception_plan is None or not reception_plan.required:
-        raise CMEEVerticalError("bound_human_reception_plan_missing")
+    reception_plan = _cmee_semantic_reception_plan(grounded_plan)
     move_parts = tuple(
         "\x1f".join(
             (
@@ -752,6 +809,50 @@ def _planned_visible_source_ids(grounded_plan: Any) -> tuple[tuple[str, ...], tu
     return required_nuclei, required_relations, reception_targets
 
 
+def _source_plan_binding_version(
+    grounded_plan: Any,
+    required_nucleus_ids: Sequence[str],
+    required_relation_ids: Sequence[str],
+    reception_target_ids: Sequence[str],
+) -> str:
+    """Seal exact private realization obligations into the existing plan field."""
+
+    relation_index = {row.relation_id: row for row in grounded_plan.relations}
+    material = {
+        "binding_version": "cocolon.cmee.emlis.r4_realization_obligations.v1",
+        "source_plan_schema_version": str(grounded_plan.schema_version),
+        "source_plan_generation_path": str(grounded_plan.generation_path),
+        "required_nucleus_ids": list(required_nucleus_ids),
+        "required_relations": [
+            {
+                "relation_id": relation_id,
+                "relation_type": str(relation_index[relation_id].type),
+                "from_nucleus_id": str(
+                    relation_index[relation_id].from_nucleus_id
+                ),
+                "to_nucleus_id": str(relation_index[relation_id].to_nucleus_id),
+                "evidence_span_ids": list(
+                    relation_index[relation_id].source_span_ids
+                ),
+            }
+            for relation_id in required_relation_ids
+        ],
+        "reception_target_ids": list(reception_target_ids),
+    }
+    digest = _sha256_text(
+        json.dumps(
+            material,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+    return (
+        f"{grounded_plan.schema_version}|{grounded_plan.generation_path}|"
+        f"cocolon.cmee.emlis.r4_realization_obligations.v1:{digest}"
+    )
+
+
 def _build_experience_plan(
     source: AdmittedTextSource,
     graph: GroundedMeaningGraph,
@@ -798,7 +899,12 @@ def _build_experience_plan(
     required_unknown = tuple(
         row.owner_id for row in unresolved_required
     )
-    source_plan_version = f"{grounded_plan.schema_version}|{grounded_plan.generation_path}"
+    source_plan_version = _source_plan_binding_version(
+        grounded_plan,
+        required_nucleus_ids,
+        required_relation_ids,
+        reception_target_ids,
+    )
     required_observation_owners = _ordered(
         (
             *(
@@ -849,16 +955,705 @@ def _build_experience_plan(
     )
 
 
+def _cmee_semantic_reception_plan(grounded_plan: Any) -> Any:
+    """Project the existing target into a polarity-strict CMEE reception plan.
+
+    The legacy short-state compatibility policy intentionally collapses every
+    one-span target to current burden.  CMEE keeps the source-selected target
+    and evidence unchanged, but asks the existing semantic selector to choose
+    the act from that target rather than from the short-input compatibility
+    bucket.  This is a private adapter projection; it does not mutate or
+    reclassify ``GroundedObservationPlan.input_profile``.
+    """
+
+    response_plan = grounded_plan.response_plan
+    reception_plan = build_grounded_human_reception_plan(
+        required=grounded_plan.coverage_requirements.human_follow_required,
+        human_follow_target_ids=response_plan.human_follow_target_ids,
+        primary_nucleus_ids=response_plan.primary_nucleus_ids,
+        supporting_nucleus_ids=response_plan.supporting_nucleus_ids,
+        required_nucleus_ids=response_plan.required_nucleus_ids,
+        fact_boundary_nucleus_ids=response_plan.fact_boundary_nucleus_ids,
+        nuclei=grounded_plan.nuclei,
+        relations=grounded_plan.relations,
+        safety_kind=grounded_plan.safety_policy.safety_kind,
+        material_quality=CMEE_RECEPTION_MATERIAL_MODE,
+        semantic_complexity=grounded_plan.input_profile.semantic_complexity,
+    )
+    if reception_plan is None or not reception_plan.required:
+        raise CMEEVerticalError("bound_human_reception_plan_missing")
+    expected_targets = tuple(response_plan.human_follow_target_ids)
+    if reception_plan.target_nucleus_ids != expected_targets:
+        raise CMEEVerticalError("bound_human_reception_target_mismatch")
+    if reception_plan.support_nucleus_ids:
+        raise CMEEVerticalError("bound_human_reception_support_not_supported")
+
+    nucleus_index = {row.nucleus_id: row for row in grounded_plan.nuclei}
+    if any(row_id not in nucleus_index for row_id in reception_plan.target_nucleus_ids):
+        raise CMEEVerticalError("bound_human_reception_target_mismatch")
+    selected_nucleus_ids = _ordered(
+        (*reception_plan.target_nucleus_ids, *reception_plan.support_nucleus_ids)
+    )
+    expected_evidence_ids = _ordered(
+        source_span_id
+        for row_id in selected_nucleus_ids
+        for source_span_id in nucleus_index[row_id].source_span_ids
+    )
+    if reception_plan.source_evidence_span_ids != expected_evidence_ids:
+        raise CMEEVerticalError("bound_human_reception_source_evidence_mismatch")
+    if not reception_plan.moves:
+        raise CMEEVerticalError("bound_human_reception_move_missing")
+    if any(
+        move.target_nucleus_ids != reception_plan.target_nucleus_ids
+        or move.source_evidence_span_ids != reception_plan.source_evidence_span_ids
+        for move in reception_plan.moves
+    ):
+        raise CMEEVerticalError("bound_human_reception_move_binding_mismatch")
+
+    target_polarities = {
+        str(nucleus_index[row_id].semantic_frame.polarity)
+        for row_id in reception_plan.target_nucleus_ids
+    }
+    act_ids = _ordered(move.reception_act for move in reception_plan.moves)
+    if target_polarities == {"positive"} and CMEE_BURDEN_RECEPTION_ACTS.intersection(act_ids):
+        raise CMEEVerticalError("bound_human_reception_positive_burden_promotion")
+    target_nuclei = tuple(
+        nucleus_index[row_id] for row_id in reception_plan.target_nucleus_ids
+    )
+    for act_id in CMEE_POSITIVE_RECEPTION_ACTS.intersection(act_ids):
+        compatible = any(
+            (
+                act_id == "protect_retained_intention"
+                and (
+                    nucleus.kind == "wish"
+                    or nucleus.semantic_frame.modality in {"wish", "intention"}
+                    or "semantic_role:retained_intention"
+                    in set(nucleus.semantic_frame.attribute_codes)
+                )
+            )
+            or (
+                act_id == "recognize_lived_change"
+                and (
+                    nucleus.kind in {"change", "value"}
+                    or "operator:positive_change"
+                    in set(nucleus.semantic_frame.attribute_codes)
+                )
+            )
+            or (
+                act_id == "hold_help_seeking"
+                and "operator:help_seeking"
+                in set(nucleus.semantic_frame.attribute_codes)
+            )
+            or (
+                act_id == "honor_concrete_effort"
+                and (
+                    nucleus.kind == "action"
+                    or "semantic_role:concrete_action_evidence"
+                    in set(nucleus.semantic_frame.attribute_codes)
+                )
+            )
+            for nucleus in target_nuclei
+        )
+        if not compatible:
+            raise CMEEVerticalError(
+                "bound_human_reception_target_act_semantic_mismatch"
+            )
+    return reception_plan
+
+
+def _cmee_source_anchor(nucleus: Any, resolver: Any) -> str:
+    source = "".join(
+        str(resolver.resolve(source_span_id).raw_text or "")
+        for source_span_id in nucleus.source_span_ids
+    )
+    compact = re.sub(r"\s+", "", source).strip("、。！？!?「」『』")
+    compact = re.sub(
+        r"^(?:それでも|けれども?|でも|だけど|一方で|ただ|とはいえ|なのに)",
+        "",
+        compact,
+    )
+    # Never replay a complete short source clause.  A longer clause contributes
+    # only a small source-local anchor; the binding remains authoritative for
+    # the complete evidence range.
+    if len(compact) <= CMEE_SOURCE_ANCHOR_LIMIT + 2:
+        return ""
+    return compact[:CMEE_SOURCE_ANCHOR_LIMIT] + "…"
+
+
+def _cmee_nucleus_surface_label(nucleus: Any) -> str:
+    attributes = set(nucleus.semantic_frame.attribute_codes)
+    if nucleus.kind == "wish":
+        return "保ちたい方向"
+    if nucleus.kind == "constraint":
+        return "前に進む際の制約"
+    if nucleus.kind == "change" or "operator:positive_change" in attributes:
+        return "前向きな変化"
+    if nucleus.kind == "reaction":
+        return (
+            "負荷を伴う反応"
+            if nucleus.semantic_frame.polarity == "negative"
+            else "今の反応"
+        )
+    if nucleus.kind == "state":
+        return (
+            "負荷を伴う状態"
+            if nucleus.semantic_frame.polarity == "negative"
+            else "今の状態"
+        )
+    return {
+        "action": "入力内の行動",
+        "self_evaluation": "現在の自己評価",
+        "value": "大切にしている向き",
+        "event": "入力内の出来事",
+    }.get(str(nucleus.kind), "現在の意味")
+
+
+def _cmee_source_reference(
+    anchor: str,
+    nucleus: Any,
+    *,
+    include_semantic_label: bool = False,
+) -> str:
+    semantic_label = _cmee_nucleus_surface_label(nucleus)
+    if not anchor:
+        return f"{semantic_label}に関する記述"
+    reference = f"「{anchor}」という記述"
+    return (
+        f"{reference}にある{semantic_label}"
+        if include_semantic_label
+        else reference
+    )
+
+
+def _canonical_r4_observation_lines(
+    source: AdmittedTextSource,
+    grounded_plan: Any,
+    resolver: Any,
+) -> tuple[_CMEEVisibleLine, ...]:
+    """Build exact plan-bound observation duties without raw clause replay."""
+
+    sentence_plan = build_grounded_sentence_plan(grounded_plan, resolver)
+    required_nucleus_ids = tuple(
+        grounded_plan.coverage_requirements.required_nucleus_ids
+    )
+    required_relation_ids = tuple(
+        grounded_plan.coverage_requirements.required_relation_ids
+    )
+    if (
+        sentence_plan.status != "generated"
+        or sentence_plan.required_nucleus_ids != required_nucleus_ids
+        or set(sentence_plan.covered_required_nucleus_ids) != set(required_nucleus_ids)
+        or sentence_plan.required_relation_ids != required_relation_ids
+        or set(sentence_plan.covered_required_relation_ids) != set(required_relation_ids)
+        or sentence_plan.unresolved_evidence_span_ids
+    ):
+        raise CMEEVerticalError("grounded_sentence_plan_required_coverage_mismatch")
+
+    nucleus_index = {row.nucleus_id: row for row in grounded_plan.nuclei}
+    relation_index = {row.relation_id: row for row in grounded_plan.relations}
+    oracle_observation_lines = tuple(
+        row for row in sentence_plan.lines if row.binding.line_role != "human_follow"
+    )
+    for relation_id in required_relation_ids:
+        relation = relation_index.get(relation_id)
+        owning_lines = tuple(
+            row
+            for row in oracle_observation_lines
+            if relation_id in row.binding.relation_ids
+        )
+        if relation is None or not owning_lines:
+            raise CMEEVerticalError("grounded_sentence_plan_relation_missing")
+        expected_endpoints = {
+            relation.from_nucleus_id,
+            relation.to_nucleus_id,
+        }
+        expected_evidence = set(relation.source_span_ids)
+        if any(
+            not expected_endpoints.issubset(set(row.binding.nucleus_ids))
+            or not expected_evidence.issubset(set(row.binding.evidence_span_ids))
+            for row in owning_lines
+        ):
+            raise CMEEVerticalError("grounded_sentence_plan_relation_binding_mismatch")
+
+    lines: list[_CMEEVisibleLine] = []
+    covered_nucleus_ids: set[str] = set()
+    for relation_id in required_relation_ids:
+        relation = relation_index[relation_id]
+        from_nucleus = nucleus_index[relation.from_nucleus_id]
+        to_nucleus = nucleus_index[relation.to_nucleus_id]
+        from_reference = _cmee_source_reference(
+            _cmee_source_anchor(from_nucleus, resolver),
+            from_nucleus,
+            include_semantic_label=True,
+        )
+        to_reference = _cmee_source_reference(
+            _cmee_source_anchor(to_nucleus, resolver),
+            to_nucleus,
+            include_semantic_label=True,
+        )
+        relation_label = CMEE_RELATION_SURFACE_LABELS.get(
+            str(relation.type),
+            "入力内の関係",
+        )
+        relation_type = str(relation.type)
+        if relation_type in DIRECTIONAL_GROUNDED_RELATION_TYPES:
+            text = (
+                f"入力では、起点側の{from_reference}から"
+                f"到達側の{to_reference}へ、"
+                f"{relation_label}がこの順に示されています。"
+            )
+        elif relation_type == "contrast":
+            text = (
+                f"一方の{from_reference}ともう一方の{to_reference}は、"
+                "入力内で異なる向きとして対比されています。"
+            )
+        elif relation_type == "wish_and_constraint":
+            text = (
+                f"願いと制約の組として、第一項に{from_reference}、"
+                f"第二項に{to_reference}が示されています。"
+            )
+        elif relation_type == "coexistence":
+            text = (
+                f"並存する二項として、片方に{from_reference}、"
+                f"別の側に{to_reference}が示されています。"
+            )
+        else:
+            text = (
+                f"{relation_label}の二項として、項Aに{from_reference}、"
+                f"項Bに{to_reference}が置かれています。"
+            )
+        lines.append(
+            _CMEEVisibleLine(
+                sentence_id=f"cmee:observation:{len(lines) + 1}",
+                text=text,
+                binding=_CMEEVisibleBinding(
+                    line_role="cmee_observation",
+                    nucleus_ids=(
+                        relation.from_nucleus_id,
+                        relation.to_nucleus_id,
+                    ),
+                    relation_ids=(relation_id,),
+                    evidence_span_ids=tuple(relation.source_span_ids),
+                    claim_scope="cmee_plan_bound_grounded_relation",
+                    required=True,
+                ),
+            )
+        )
+        covered_nucleus_ids.update(
+            (relation.from_nucleus_id, relation.to_nucleus_id)
+        )
+
+    for nucleus_id in required_nucleus_ids:
+        if nucleus_id in covered_nucleus_ids:
+            continue
+        nucleus = nucleus_index[nucleus_id]
+        reference = _cmee_source_reference(
+            _cmee_source_anchor(nucleus, resolver),
+            nucleus,
+        )
+        lines.append(
+            _CMEEVisibleLine(
+                sentence_id=f"cmee:observation:{len(lines) + 1}",
+                text=(
+                    f"入力の{reference}には、"
+                    f"{_cmee_nucleus_surface_label(nucleus)}が示されています。"
+                ),
+                binding=_CMEEVisibleBinding(
+                    line_role="cmee_observation",
+                    nucleus_ids=(nucleus_id,),
+                    relation_ids=(),
+                    evidence_span_ids=tuple(nucleus.source_span_ids),
+                    claim_scope="cmee_plan_bound_grounded_nucleus",
+                    required=True,
+                ),
+            )
+        )
+
+    observed_nuclei = {
+        nucleus_id for line in lines for nucleus_id in line.binding.nucleus_ids
+    }
+    observed_relations = {
+        relation_id for line in lines for relation_id in line.binding.relation_ids
+    }
+    if observed_nuclei != set(required_nucleus_ids):
+        raise CMEEVerticalError("post_realization_required_nucleus_mismatch")
+    if observed_relations != set(required_relation_ids):
+        raise CMEEVerticalError("post_realization_required_relation_mismatch")
+    if not lines:
+        raise CMEEVerticalError("experience_plan_projection_empty")
+    return tuple(lines)
+
+
+def _canonical_r4_tail_lines(
+    source: AdmittedTextSource,
+    plan: ExperiencePlan,
+    grounded_plan: Any,
+    resolver: Any,
+) -> tuple[_CMEEVisibleLine, _CMEEVisibleLine]:
+    nucleus_index = {row.nucleus_id: row for row in grounded_plan.nuclei}
+    reception_plan = _cmee_semantic_reception_plan(grounded_plan)
+    reception_surface = realize_grounded_human_reception(
+        reception_plan,
+        nucleus_index,
+        resolver,
+    )
+    if validate_grounded_human_reception_surface(
+        reception_surface,
+        reception_plan,
+        resolver,
+    ):
+        raise CMEEVerticalError("bound_human_reception_surface_rejected")
+    expected_reception_digest, expected_reception_acts = (
+        _reception_plan_contract(grounded_plan)
+    )
+    if (
+        plan.reception_plan_digest != expected_reception_digest
+        or plan.allowed_reception_act_ids != expected_reception_acts
+        or tuple(reception_surface.realized_reception_acts)
+        != expected_reception_acts
+    ):
+        raise CMEEVerticalError("bound_human_reception_act_contract_mismatch")
+    reception_owner_set = set(plan.reception_target_owner_ids)
+    reception_targets = tuple(
+        row_id
+        for row_id in grounded_plan.response_plan.human_follow_target_ids
+        if row_id in nucleus_index
+        and _owner_for_nucleus(source, nucleus_index[row_id])
+        in reception_owner_set
+    )
+    if tuple(reception_surface.grounded_nucleus_ids) != reception_targets:
+        raise CMEEVerticalError("bound_human_reception_target_mismatch")
+    reception_line = _CMEEVisibleLine(
+        sentence_id="cmee:reception:1",
+        text=reception_surface.text,
+        binding=_CMEEVisibleBinding(
+            line_role="human_follow",
+            nucleus_ids=reception_targets,
+            relation_ids=(),
+            evidence_span_ids=tuple(
+                reception_surface.grounded_evidence_span_ids
+            ),
+            claim_scope="cmee_grounded_human_reception",
+            required=True,
+        ),
+    )
+
+    ref_by_span = {row.source_span_id: row for row in source.evidence_refs}
+    unknown_span_ids = _ordered(
+        source_span_id
+        for owner_id in plan.visible_unknown_owner_ids
+        for source_span_id in source.owner_obligation(owner_id).source_span_ids
+    )
+    if not plan.visible_unknown_owner_ids or not unknown_span_ids:
+        raise CMEEVerticalError("visible_unknown_evidence_unavailable")
+    if any(source_span_id not in ref_by_span for source_span_id in unknown_span_ids):
+        raise CMEEVerticalError("visible_unknown_cross_source_evidence")
+    unknown_line = _CMEEVisibleLine(
+        sentence_id="cmee:unknown:1",
+        text=STRUCTURED_ATTACHMENT_UNKNOWN_TEXT,
+        binding=_CMEEVisibleBinding(
+            line_role="cmee_unknown",
+            nucleus_ids=(),
+            relation_ids=(),
+            evidence_span_ids=unknown_span_ids,
+            constrained_owner_ids=plan.visible_unknown_owner_ids,
+            claim_scope="cmee_evidence_bound_unknown_preservation",
+            required=True,
+        ),
+    )
+    return unknown_line, reception_line
+
+
+def _cmee_core_phrase_unit_id(source_span_id: str) -> str:
+    return f"cmee-phrase:{source_span_id}"
+
+
+def _cmee_core_relation_type(line: _CMEEVisibleLine, grounded_plan: Any) -> str:
+    if not line.binding.relation_ids:
+        return "source_explicit_nucleus"
+    if len(line.binding.relation_ids) != 1:
+        raise CMEEVerticalError("plan_bound_relation_binding_not_exact1")
+    relation_index = {row.relation_id: row for row in grounded_plan.relations}
+    relation = relation_index.get(line.binding.relation_ids[0])
+    if relation is None:
+        raise CMEEVerticalError("plan_bound_relation_binding_unknown")
+    return str(relation.type)
+
+
+def _cmee_composer_binding_row(
+    line: _CMEEVisibleLine,
+    grounded_plan: Any,
+) -> dict[str, Any]:
+    relation_index = {row.relation_id: row for row in grounded_plan.relations}
+    relation_bindings = [
+        {
+            "relation_id": relation_id,
+            "relation_type": str(relation_index[relation_id].type),
+            "from_nucleus_id": str(relation_index[relation_id].from_nucleus_id),
+            "to_nucleus_id": str(relation_index[relation_id].to_nucleus_id),
+            "evidence_span_ids": list(relation_index[relation_id].source_span_ids),
+        }
+        for relation_id in line.binding.relation_ids
+    ]
+    binding_material = {
+        "nucleus_ids": list(line.binding.nucleus_ids),
+        "relation_bindings": relation_bindings,
+        "evidence_span_ids": list(line.binding.evidence_span_ids),
+    }
+    return {
+        "version": "cocolon.cmee.emlis.r4_sentence_binding.v1",
+        "binding_version": "cocolon.cmee.emlis.r4_sentence_binding.v1",
+        "sentence_id": line.sentence_id,
+        "text": line.text,
+        "used_evidence_span_ids": list(line.binding.evidence_span_ids),
+        "used_phrase_unit_ids": [
+            _cmee_core_phrase_unit_id(source_span_id)
+            for source_span_id in line.binding.evidence_span_ids
+        ],
+        "relation_type": _cmee_core_relation_type(line, grounded_plan),
+        "line_role": "cmee_observation",
+        "coverage_scope": "cmee_required_plan",
+        "must_include": True,
+        "raw_input_included": False,
+        "meta": {
+            "cmee_nucleus_ids": list(line.binding.nucleus_ids),
+            "cmee_relation_ids": list(line.binding.relation_ids),
+            "cmee_relation_bindings": relation_bindings,
+            "cmee_binding_digest": _sha256_text(
+                json.dumps(
+                    binding_material,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            ),
+            "raw_input_included": False,
+        },
+    }
+
+
+def _json_exact_identity(actual: Any, expected: Any) -> bool:
+    """Compare JSON-shaped contract values without Python bool/int coercion."""
+
+    try:
+        return json.dumps(
+            actual,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ) == json.dumps(
+            expected,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    except (TypeError, ValueError):
+        return False
+
+
+def _cmee_core_binding_projection(binding: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "version": "emlis.sentence_binding.v1",
+        "binding_version": "emlis.sentence_binding.v1",
+        "sentence_id": binding["sentence_id"],
+        "line_role": binding["line_role"],
+        "relation_type": binding["relation_type"],
+        "used_evidence_span_ids": list(binding["used_evidence_span_ids"]),
+        "used_phrase_unit_ids": list(binding["used_phrase_unit_ids"]),
+        "coverage_scope": binding["coverage_scope"],
+        "must_include": binding["must_include"],
+        "raw_input_included": binding["raw_input_included"],
+        "meta": {
+            "source_adapter": "emlis_observation_composer_adapter.v1",
+            "source_kind": "emlis_sentence_binding",
+        },
+    }
+
+
+def _cmee_binding_aliases(meta: Mapping[str, Any]) -> tuple[Any, ...]:
+    aliases: list[Any] = []
+    for bundle_key in ("sentence_binding_bundle", "binding_bundle", "binding"):
+        bundle = meta.get(bundle_key)
+        if type(bundle) is not dict:
+            return ()
+        aliases.extend(
+            bundle.get(alias_key)
+            for alias_key in ("bindings", "sentence_bindings", "items")
+        )
+    diagnostic = meta.get("composer_diagnostic")
+    diagnostic_bundle = (
+        diagnostic.get("sentence_binding_bundle")
+        if type(diagnostic) is dict
+        else None
+    )
+    if type(diagnostic_bundle) is not dict:
+        return ()
+    aliases.extend(
+        diagnostic_bundle.get(alias_key)
+        for alias_key in ("bindings", "sentence_bindings", "items")
+    )
+    aliases.append(diagnostic.get("sentence_bindings"))
+    return tuple(aliases)
+
+
+class _CMEER4PlanBoundComposerClient:
+    """One-shot adapter from canonical CMEE duties to the unchanged common core."""
+
+    def __init__(
+        self,
+        observation_lines: Sequence[_CMEEVisibleLine],
+        grounded_plan: Any,
+    ) -> None:
+        self._observation_lines = tuple(observation_lines)
+        self._grounded_plan = grounded_plan
+
+    def generate(self, payload: Any) -> dict[str, Any]:
+        if type(payload) is not dict:
+            return {
+                "composer_source": "unavailable",
+                "status": "unavailable",
+                "rejection_reasons": ["cmee_plan_bound_payload_invalid"],
+            }
+        evidence_items = payload.get("evidence_spans")
+        if type(evidence_items) is not list or any(
+            type(row) is not dict for row in evidence_items
+        ):
+            return {
+                "composer_source": "unavailable",
+                "status": "unavailable",
+                "rejection_reasons": ["cmee_plan_bound_evidence_invalid"],
+            }
+        evidence_by_id = {
+            str(row.get("span_id") or ""): row for row in evidence_items
+        }
+        used_evidence_ids = _ordered(
+            source_span_id
+            for line in self._observation_lines
+            for source_span_id in line.binding.evidence_span_ids
+        )
+        if not used_evidence_ids or any(
+            source_span_id not in evidence_by_id
+            for source_span_id in used_evidence_ids
+        ):
+            return {
+                "composer_source": "unavailable",
+                "status": "unavailable",
+                "rejection_reasons": ["cmee_plan_bound_evidence_missing"],
+            }
+
+        phrase_units = tuple(
+            _CMEECorePhraseUnit(
+                phrase_unit_id=_cmee_core_phrase_unit_id(source_span_id),
+                evidence_span_id=source_span_id,
+                raw_text=str(evidence_by_id[source_span_id].get("raw_text") or ""),
+                compressed_text=str(
+                    evidence_by_id[source_span_id].get("raw_text") or ""
+                ),
+            )
+            for source_span_id in used_evidence_ids
+        )
+        binding_rows = [
+            _cmee_composer_binding_row(line, self._grounded_plan)
+            for line in self._observation_lines
+        ]
+        sentence_plans = tuple(
+            _CMEECoreSentencePlan(
+                sentence_plan_id=f"cmee-plan:{index}",
+                line_role="cmee_observation",
+                phrase_unit_ids=tuple(row["used_phrase_unit_ids"]),
+                relation_type=str(row["relation_type"]),
+            )
+            for index, row in enumerate(binding_rows, start=1)
+        )
+        binding_bundle = {
+            "bindings": binding_rows,
+            "sentence_bindings": binding_rows,
+            "items": binding_rows,
+            "raw_text_included": False,
+            "raw_input_required_for_debug": False,
+        }
+        composer_meta = {
+            "cmee_plan_bound_grounded_surface": {
+                "version": "cocolon.cmee.emlis.plan_bound_grounded_surface.v1",
+                "observation_line_count": len(binding_rows),
+                "raw_text_included": False,
+                "raw_input_required_for_debug": False,
+            },
+            "required_roles": [],
+            "covered_roles": [],
+            "sentence_binding_bundle": binding_bundle,
+            "binding_bundle": binding_bundle,
+            "binding": binding_bundle,
+            "sentence_bindings": binding_rows,
+            "composer_diagnostic": {
+                "sentence_binding_bundle": binding_bundle,
+                "sentence_bindings": binding_rows,
+                "raw_text_included": False,
+                "raw_input_required_for_debug": False,
+            },
+        }
+        scope = payload.get("limited_observation_scope")
+        scope = scope if type(scope) is dict else {}
+        response = {
+            "schema_version": "emlis.composer.response.v1",
+            "response_schema_version": "emlis.composer.response.v1",
+            "composer_source": "ai_generated",
+            "status": "generated",
+            "composer_model": "cocolon.cmee.emlis.plan_bound_grounded_surface.v1",
+            "generation_method": "cmee_plan_bound_grounded_surface",
+            "generation_scope": "current_input_only",
+            "fixed_string_renderer_used": False,
+            "coverage_scope": "cmee_required_plan",
+            "comment_text": "\n".join(
+                line.text for line in self._observation_lines
+            ),
+            "used_evidence_span_ids": list(used_evidence_ids),
+            "used_claim_ids": list(scope.get("included_claim_ids") or []),
+            "used_relation_ids": list(scope.get("included_relation_ids") or []),
+            "confidence": 1.0,
+            "used_phrase_unit_ids": [
+                row.phrase_unit_id for row in phrase_units
+            ],
+            "sentence_binding_bundle": binding_bundle,
+            "composer_meta": composer_meta,
+        }
+        evaluation = evaluate_emlis_observation_candidate(
+            composer_payload=payload,
+            evidence_items=evidence_items,
+            phrase_units=phrase_units,
+            sentence_plans=sentence_plans,
+            comment_text=str(response["comment_text"]),
+            used_evidence_span_ids=tuple(used_evidence_ids),
+            used_phrase_unit_ids=tuple(response["used_phrase_unit_ids"]),
+            coverage_scope="cmee_required_plan",
+            composer_model=str(response["composer_model"]),
+            composer_meta=composer_meta,
+            response=response,
+        )
+        if evaluation.passed:
+            return attach_core_evaluation_meta(response, evaluation)
+        core_meta = evaluation.as_meta()
+        return {
+            "composer_source": "unavailable",
+            "status": "unavailable",
+            "rejection_reasons": [core_rejection_reason(evaluation)],
+            "composer_meta": {
+                "text_generation_core": core_meta,
+                "core_text_generation": core_meta,
+            },
+        }
+
+
 def _experience_plan_projection(
     source: AdmittedTextSource,
     plan: ExperiencePlan,
     grounded_plan: Any,
 ) -> LimitedObservationScope:
-    """Project the exact CMEE visible-owner plan into the existing realizer port.
+    """Project exact CMEE duties into the unchanged common-core input port.
 
-    This projection is intentionally not built from a second perspective
-    observer graph. Claim and relation identities are the CMEE owner IDs, and
-    only required visible owners enter the bounded composer.
+    Meaning-owner IDs remain disposition authority only.  Request-local
+    nucleus and relation identities own claims/endpoints so two source meanings
+    under one owner can never collapse into one graph claim.
     """
 
     nucleus_index = {row.nucleus_id: row for row in grounded_plan.nuclei}
@@ -878,21 +1673,19 @@ def _experience_plan_projection(
         for row_id in grounded_plan.coverage_requirements.required_relation_ids
         if _owner_for_relation(source, relation_index[row_id]) in required_owner_set
     )
-    if required_relation_ids:
-        # The existing bounded composer binding has a relation type but no
-        # endpoint/direction commitment. This first slice therefore refuses
-        # relation-required inputs rather than granting false edge credit.
-        raise CMEEVerticalError("relation_endpoint_binding_not_supported")
     claims: list[GraphClaim] = []
+    claim_id_by_nucleus: dict[str, str] = {}
     for row_id in required_nucleus_ids:
         row = nucleus_index[row_id]
         evidence_ids = list(row.source_span_ids)
         text = " / ".join(span_text[span_id] for span_id in evidence_ids if span_id in span_text).strip()
         if not text or row.grounding_kind not in ADMISSIBLE_NUCLEUS_GROUNDING:
             raise CMEEVerticalError("experience_plan_projection_nucleus_invalid")
+        claim_id = _stable_id("gc", source.envelope.envelope_id, row_id)
+        claim_id_by_nucleus[row_id] = claim_id
         claims.append(
             GraphClaim(
-                claim_id=_owner_for_nucleus(source, row),
+                claim_id=claim_id,
                 claim_type=str(row.kind),
                 text=text,
                 evidence_span_ids=evidence_ids,
@@ -903,6 +1696,26 @@ def _experience_plan_projection(
         raise CMEEVerticalError("experience_plan_projection_empty")
 
     relations: list[RelationEdge] = []
+    for row_id in required_relation_ids:
+        row = relation_index[row_id]
+        if (
+            row.grounding_kind not in ADMISSIBLE_RELATION_GROUNDING
+            or row.from_nucleus_id not in claim_id_by_nucleus
+            or row.to_nucleus_id not in claim_id_by_nucleus
+        ):
+            raise CMEEVerticalError(
+                "experience_plan_projection_relation_endpoint_missing"
+            )
+        relations.append(
+            RelationEdge(
+                edge_id=_stable_id("gr", source.envelope.envelope_id, row_id),
+                from_claim_id=claim_id_by_nucleus[row.from_nucleus_id],
+                to_claim_id=claim_id_by_nucleus[row.to_nucleus_id],
+                relation_type=str(row.type),
+                evidence_span_ids=list(row.source_span_ids),
+                confidence=1.0,
+            )
+        )
     claim_ids = {row.claim_id for row in claims}
     if any(
         row.from_claim_id not in claim_ids or row.to_claim_id not in claim_ids
@@ -923,7 +1736,9 @@ def _experience_plan_projection(
             for row in remainder
             if row.claim_type not in {"state", "reaction", "limit", "constraint", "self_awareness"}
         ],
-        addressee_notes=AddresseeNotes(sentence_target=max(2, min(4, len(claims) + 1))),
+        addressee_notes=AddresseeNotes(
+            sentence_target=max(1, min(4, len(claims) + len(relations)))
+        ),
         safety_boundaries=[],
         forbidden_claims=[],
         missing_information=[],
@@ -934,7 +1749,7 @@ def _experience_plan_projection(
         included_claim_ids=[row.claim_id for row in claims],
         included_relation_ids=[row.edge_id for row in relations],
         excluded_claims=[],
-        min_reply_sentence_count=2,
+        min_reply_sentence_count=1,
         max_reply_sentence_count=4,
         coverage_scope="current_input_core",
         rejection_reasons=[],
@@ -955,20 +1770,28 @@ def _realize_cmee_experience(
         source.evidence_spans,
         current_input=source.normalized_current_input,
     )
-    ref_by_span = {row.source_span_id: row for row in source.evidence_refs}
-    scope = _experience_plan_projection(source, plan, grounded_plan)
-    material = build_observation_structure_material(
-        current_input=source.normalized_current_input,
-        evidence_ledger=source.evidence_spans,
-        observation_graph=scope.scoped_graph,
+    canonical_observation_lines = _canonical_r4_observation_lines(
+        source,
+        grounded_plan,
+        resolver,
     )
+    expected_binding_rows = [
+        _cmee_composer_binding_row(line, grounded_plan)
+        for line in canonical_observation_lines
+    ]
+    expected_core_binding_rows = [
+        _cmee_core_binding_projection(row) for row in expected_binding_rows
+    ]
+    scope = _experience_plan_projection(source, plan, grounded_plan)
     candidate = compose_emlis_conversation_candidate(
         graph=scope.scoped_graph,
         evidence_spans=source.evidence_spans,
-        composer_client=CocolonLimitedComposerClient(),
+        composer_client=_CMEER4PlanBoundComposerClient(
+            canonical_observation_lines,
+            grounded_plan,
+        ),
         trace_id=_stable_id("composer", source.envelope.envelope_id, plan.plan_id),
         limited_observation_scope=scope,
-        observation_structure_material=material,
     )
     if candidate.status != "generated" or candidate.composer_source != "ai_generated":
         raise CMEEVerticalError("plan_bound_observation_realizer_unavailable")
@@ -1011,37 +1834,27 @@ def _realize_cmee_experience(
         raise CMEEVerticalError("plan_bound_observation_core_binding_mismatch")
     if type(guarded_bindings) is not list or len(guarded_bindings) != len(raw_bindings):
         raise CMEEVerticalError("plan_bound_observation_guarded_binding_mismatch")
+    if not _json_exact_identity(raw_bindings, expected_binding_rows):
+        raise CMEEVerticalError("plan_bound_observation_exact_binding_mismatch")
+    if not _json_exact_identity(guarded_bindings, expected_binding_rows):
+        raise CMEEVerticalError("plan_bound_observation_guarded_exact_binding_mismatch")
+    if not _json_exact_identity(core_bindings, expected_core_binding_rows):
+        raise CMEEVerticalError("plan_bound_observation_core_exact_binding_mismatch")
 
-    guarded_binding_aliases: list[Any] = []
-    for bundle_key in ("sentence_binding_bundle", "binding_bundle", "binding"):
-        bundle = guarded_candidate_meta.get(bundle_key)
-        if type(bundle) is not dict:
-            raise CMEEVerticalError("plan_bound_observation_guarded_binding_alias_mismatch")
-        guarded_binding_aliases.extend(
-            bundle.get(alias_key)
-            for alias_key in ("bindings", "sentence_bindings", "items")
-        )
-    composer_diagnostic = guarded_candidate_meta.get("composer_diagnostic")
-    diagnostic_bundle = (
-        composer_diagnostic.get("sentence_binding_bundle")
-        if type(composer_diagnostic) is dict
-        else None
-    )
-    if type(diagnostic_bundle) is not dict:
-        raise CMEEVerticalError("plan_bound_observation_guarded_binding_alias_mismatch")
-    guarded_binding_aliases.extend(
-        diagnostic_bundle.get(alias_key)
-        for alias_key in ("bindings", "sentence_bindings", "items")
-    )
-    guarded_binding_aliases.append(composer_diagnostic.get("sentence_bindings"))
+    outer_binding_aliases = _cmee_binding_aliases(composer_meta)
+    guarded_binding_aliases = _cmee_binding_aliases(guarded_candidate_meta)
     if any(
         type(alias) is not list
-        or len(alias) != len(guarded_bindings)
-        or any(type(row) is not dict for row in alias)
-        or alias != guarded_bindings
-        for alias in guarded_binding_aliases
+        or not _json_exact_identity(alias, expected_binding_rows)
+        for alias in (*outer_binding_aliases, *guarded_binding_aliases)
+    ) or len(outer_binding_aliases) != 13 or len(guarded_binding_aliases) != 13:
+        raise CMEEVerticalError("plan_bound_observation_binding_alias_mismatch")
+    if any(
+        type(alias) is not list
+        or len(alias) != len(expected_binding_rows)
+        for alias in (*outer_binding_aliases, *guarded_binding_aliases)
     ):
-        raise CMEEVerticalError("plan_bound_observation_guarded_binding_alias_mismatch")
+        raise CMEEVerticalError("plan_bound_observation_binding_alias_shape_mismatch")
 
     guard_rows = result_meta.get("guard_results") if type(result_meta) is dict else None
     grounding_row = (
@@ -1141,9 +1954,8 @@ def _realize_cmee_experience(
             )
             or len(claim.get("evidence_span_ids"))
             != len(set(claim.get("evidence_span_ids")))
-            or not set(surface_binding["used_evidence_span_ids"]).issubset(
-                claim.get("evidence_span_ids")
-            )
+            or set(surface_binding["used_evidence_span_ids"])
+            != set(claim.get("evidence_span_ids"))
         ):
             raise CMEEVerticalError("plan_bound_observation_guarded_claim_mismatch")
         guarded_claim_sentences.append(claim["sentence"])
@@ -1176,143 +1988,34 @@ def _realize_cmee_experience(
     relation_index = {row.relation_id: row for row in grounded_plan.relations}
     required_owner_set = set(plan.required_observation_owner_ids)
     required_nucleus_ids = tuple(
-        row_id
-        for row_id in grounded_plan.coverage_requirements.required_nucleus_ids
-        if _owner_for_nucleus(source, nucleus_index[row_id]) in required_owner_set
+        grounded_plan.coverage_requirements.required_nucleus_ids
     )
     required_relation_ids = tuple(
-        row_id
-        for row_id in grounded_plan.coverage_requirements.required_relation_ids
-        if _owner_for_relation(source, relation_index[row_id]) in required_owner_set
+        grounded_plan.coverage_requirements.required_relation_ids
     )
-    allowed_evidence_ids = {
-        span_id
+    if any(
+        _owner_for_nucleus(source, nucleus_index[row_id])
+        not in required_owner_set
         for row_id in required_nucleus_ids
-        for span_id in nucleus_index[row_id].source_span_ids
-    } | {
-        span_id
+    ) or any(
+        _owner_for_relation(source, relation_index[row_id])
+        not in required_owner_set
         for row_id in required_relation_ids
-        for span_id in relation_index[row_id].source_span_ids
-    }
-    observation_lines: list[_CMEEVisibleLine] = []
-    for ordinal, raw_binding in enumerate(raw_bindings, start=1):
-        if not isinstance(raw_binding, dict):
-            raise CMEEVerticalError("plan_bound_observation_binding_invalid")
-        text = raw_binding.get("text")
-        evidence_span_ids = _ordered(raw_binding.get("used_evidence_span_ids") or ())
-        relation_type = str(raw_binding.get("relation_type") or "")
-        binding_meta = raw_binding.get("meta") if isinstance(raw_binding.get("meta"), dict) else {}
-        if (
-            str(raw_binding.get("line_role") or "") == "human_follow"
-            or str(binding_meta.get("state_answer_section_role") or "")
-            not in {"", "state_answer_observation"}
-        ):
-            raise CMEEVerticalError("plan_bound_observation_non_observation_line")
-        if (
-            type(text) is not str
-            or not text
-            or not evidence_span_ids
-            or not set(evidence_span_ids).issubset(allowed_evidence_ids)
-        ):
-            raise CMEEVerticalError("plan_bound_observation_out_of_plan_evidence")
-        nucleus_ids = tuple(
-            row_id
-            for row_id in required_nucleus_ids
-            if set(nucleus_index[row_id].source_span_ids).issubset(set(evidence_span_ids))
-        )
-        relation_ids = tuple(
-            row_id
-            for row_id in required_relation_ids
-            if relation_index[row_id].type == relation_type
-            and set(relation_index[row_id].source_span_ids).issubset(set(evidence_span_ids))
-        )
-        if not nucleus_ids and not relation_ids:
-            raise CMEEVerticalError("plan_bound_observation_owner_missing")
-        observation_lines.append(
-            _CMEEVisibleLine(
-                sentence_id=f"cmee:observation:{ordinal}",
-                text=text,
-                binding=_CMEEVisibleBinding(
-                    line_role="cmee_observation",
-                    nucleus_ids=nucleus_ids,
-                    relation_ids=relation_ids,
-                    evidence_span_ids=evidence_span_ids,
-                    claim_scope="cmee_plan_bound_existing_composer",
-                    required=True,
-                ),
-            )
-        )
-    reception_plan = grounded_plan.response_plan.human_reception_plan
-    if reception_plan is None or not reception_plan.required:
-        raise CMEEVerticalError("bound_human_reception_plan_missing")
-    reception_surface = realize_grounded_human_reception(
-        reception_plan,
-        nucleus_index,
-        resolver,
-    )
-    reception_issues = validate_grounded_human_reception_surface(
-        reception_surface,
-        reception_plan,
-        resolver,
-    )
-    if reception_issues:
-        raise CMEEVerticalError("bound_human_reception_surface_rejected")
-    expected_reception_digest, expected_reception_acts = _reception_plan_contract(grounded_plan)
-    if (
-        plan.reception_plan_digest != expected_reception_digest
-        or plan.allowed_reception_act_ids != expected_reception_acts
-        or tuple(reception_surface.realized_reception_acts) != expected_reception_acts
     ):
-        raise CMEEVerticalError("bound_human_reception_act_contract_mismatch")
-    reception_owner_set = set(plan.reception_target_owner_ids)
-    reception_targets = tuple(
-        row_id
-        for row_id in grounded_plan.response_plan.human_follow_target_ids
-        if row_id in nucleus_index
-        and _owner_for_nucleus(source, nucleus_index[row_id]) in reception_owner_set
+        raise CMEEVerticalError("plan_bound_observation_owner_missing")
+    if candidate.comment_text != "\n".join(
+        line.text for line in canonical_observation_lines
+    ):
+        raise CMEEVerticalError("plan_bound_observation_exact_surface_mismatch")
+    observation_lines = list(canonical_observation_lines)
+
+    unknown_line, reception_line = _canonical_r4_tail_lines(
+        source,
+        plan,
+        grounded_plan,
+        resolver,
     )
-    if tuple(reception_surface.grounded_nucleus_ids) != reception_targets:
-        raise CMEEVerticalError("bound_human_reception_target_mismatch")
-    target_polarities = {
-        str(nucleus_index[row_id].semantic_frame.polarity) for row_id in reception_targets
-    }
-    burden_acts = {"stay_with_current_burden", "bounded_counter_self_denial"}
-    if target_polarities == {"positive"} and burden_acts.intersection(expected_reception_acts):
-        raise CMEEVerticalError("bound_human_reception_positive_burden_promotion")
-    reception_line = _CMEEVisibleLine(
-        sentence_id="cmee:reception:1",
-        text=reception_surface.text,
-        binding=_CMEEVisibleBinding(
-            line_role="human_follow",
-            nucleus_ids=reception_targets,
-            relation_ids=(),
-            evidence_span_ids=tuple(reception_surface.grounded_evidence_span_ids),
-            claim_scope="cmee_grounded_human_reception",
-            required=True,
-        ),
-    )
-    unknown_span_ids = _ordered(
-        source_span_id
-        for owner_id in plan.visible_unknown_owner_ids
-        for source_span_id in source.owner_obligation(owner_id).source_span_ids
-    )
-    if not plan.visible_unknown_owner_ids or not unknown_span_ids:
-        raise CMEEVerticalError("visible_unknown_evidence_unavailable")
-    if any(source_span_id not in ref_by_span for source_span_id in unknown_span_ids):
-        raise CMEEVerticalError("visible_unknown_cross_source_evidence")
-    unknown_line = _CMEEVisibleLine(
-        sentence_id="cmee:unknown:1",
-        text=STRUCTURED_ATTACHMENT_UNKNOWN_TEXT,
-        binding=_CMEEVisibleBinding(
-            line_role="cmee_unknown",
-            nucleus_ids=(),
-            relation_ids=(),
-            evidence_span_ids=unknown_span_ids,
-            constrained_owner_ids=plan.visible_unknown_owner_ids,
-            claim_scope="cmee_evidence_bound_unknown_preservation",
-            required=True,
-        ),
-    )
+    reception_targets = reception_line.binding.nucleus_ids
     lines = (*observation_lines, unknown_line, reception_line)
     observed_nuclei = {
         nucleus_id
@@ -1697,11 +2400,30 @@ def validate_positive_realization_trace(
         canonical_relations,
         canonical_reception_targets,
     )
+    canonical_observation_lines = _canonical_r4_observation_lines(
+        source,
+        canonical_grounded_plan,
+        canonical_resolver,
+    )
+    canonical_unknown_line, canonical_reception_line = _canonical_r4_tail_lines(
+        source,
+        canonical_plan,
+        canonical_grounded_plan,
+        canonical_resolver,
+    )
+    canonical_safe_lines = (
+        *canonical_observation_lines,
+        canonical_unknown_line,
+        canonical_reception_line,
+    )
+    if tuple(safe_lines) != canonical_safe_lines:
+        raise CMEEVerticalError("visible_line_source_semantic_mismatch")
+    _validate_reception_semantic_compatibility(source, canonical_safe_lines)
     canonical_plan = _bind_plan_to_visible_lines(
         source,
         canonical_graph,
         canonical_plan,
-        safe_lines,
+        canonical_safe_lines,
     )
     if artifact.plan != canonical_plan:
         raise CMEEVerticalError("experience_plan_source_semantic_mismatch")

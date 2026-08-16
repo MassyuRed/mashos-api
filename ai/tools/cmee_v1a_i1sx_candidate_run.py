@@ -116,30 +116,55 @@ def _structural_trace_valid(outcome: object) -> bool:
     if len(owner_ids) != len(set(owner_ids)):
         return False
     roles = tuple(row.role for row in artifact.trace)
-    if not roles or roles[-1] != "RECEPTION" or roles.count("RECEPTION") != 1:
+    if (
+        len(roles) < 3
+        or roles[-2:] != ("UNKNOWN", "RECEPTION")
+        or any(role != "OBSERVATION" for role in roles[:-2])
+        or roles.count("UNKNOWN") != 1
+        or roles.count("RECEPTION") != 1
+    ):
         return False
-    if "OBSERVATION" not in roles:
+    if not roles[:-2] or not all(row.evidence_ids for row in artifact.trace):
         return False
-    if not all(row.evidence_ids and row.meaning_node_ids for row in artifact.trace):
+    unknown = artifact.trace[-2]
+    if (
+        unknown.duty_id != "PRESERVE_EVIDENCE_BOUND_UNKNOWN"
+        or unknown.operation != "EVIDENCE_BOUND_UNKNOWN_PRESERVATION"
+        or unknown.meaning_node_ids
+        or unknown.meaning_edge_ids
+        or not unknown.constrained_by_owner_ids
+    ):
         return False
     nodes = {row.node_id: row for row in graph.nodes}
     edges = {row.edge_id: row for row in graph.edges}
-    disposition = {row.owner_id: row.disposition for row in graph.owner_dispositions}
+    disposition = {row.owner_id: row for row in graph.owner_dispositions}
+    if any(owner_id not in disposition for owner_id in unknown.constrained_by_owner_ids):
+        return False
     for trace in artifact.trace:
+        if trace.role in {"OBSERVATION", "RECEPTION"} and not trace.meaning_node_ids:
+            return False
         for node_id in trace.meaning_node_ids:
             node = nodes.get(node_id)
+            owner_disposition = disposition.get(node.owner_id) if node else None
             if (
                 node is None
+                or owner_disposition is None
                 or node.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
-                or disposition.get(node.owner_id) is not RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
+                or owner_disposition.disposition
+                is not RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
+                or node_id not in owner_disposition.visible_claim_refs
             ):
                 return False
         for edge_id in trace.meaning_edge_ids:
             edge = edges.get(edge_id)
+            owner_disposition = disposition.get(edge.owner_id) if edge else None
             if (
                 edge is None
+                or owner_disposition is None
                 or edge.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
-                or disposition.get(edge.owner_id) is not RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
+                or owner_disposition.disposition
+                is not RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
+                or edge_id not in owner_disposition.visible_claim_refs
             ):
                 return False
     return True

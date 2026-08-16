@@ -37,6 +37,11 @@ from cocolon_meaning_experience_engine.emlis_v1a import (
     validate_positive_realization_trace,
 )
 from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
+from tools.cmee_v1a_i1sx_candidate_run import (
+    EXACT8,
+    _structural_trace_valid,
+    run as run_exact8_candidate,
+)
 
 
 REPRESENTATIVE_MEMO = "仕事が続いて疲れていて、朝から何も手につかない。"
@@ -212,8 +217,8 @@ def _build_with_common_core_mutation(mutator):
         return build_text_grounded_limited_artifact(source)
 
 
-def _build_with_composer_candidate_mutation(mutator):
-    source = freeze_text_source(_request())
+def _build_with_composer_candidate_mutation(mutator, request=None):
+    source = freeze_text_source(request or _request())
     original = emlis_v1a_module.compose_emlis_conversation_candidate
 
     def mutate_result(*args, **kwargs):
@@ -424,7 +429,7 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 "sentence"
             ] = forged_text.rstrip("。")
             surface_lines = candidate.comment_text.splitlines()
-            surface_lines[1] = f"今回の入力では、{forged_text}"
+            surface_lines[0] = forged_text
             return replace(
                 candidate,
                 comment_text="\n".join(surface_lines),
@@ -445,7 +450,7 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 "meta"
             ]["sentence_claims"][0]["sentence"] = forged_text.rstrip("。")
             surface_lines = candidate.comment_text.splitlines()
-            surface_lines[1] = f"今回の入力では、{forged_text}"
+            surface_lines[0] = forged_text
             return replace(
                 candidate,
                 comment_text="\n".join(surface_lines),
@@ -561,6 +566,93 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             with self.subTest(name=name):
                 with self.assertRaises(CMEEVerticalError):
                     _build_with_common_core_mutation(mutate)
+
+    def test_r4_binding_snapshots_reject_alias_core_and_evidence_tamper(self) -> None:
+        request = _request(
+            record_id="cmee-r4-binding-snapshots",
+            memo="この職場でやっていけるか不安。でも、続けられる形は探したい。",
+        )
+
+        def alias_lists(meta):
+            rows = [meta["sentence_bindings"]]
+            for bundle_key in (
+                "sentence_binding_bundle",
+                "binding_bundle",
+                "binding",
+            ):
+                bundle = meta[bundle_key]
+                rows.extend(
+                    bundle[key] for key in ("bindings", "sentence_bindings", "items")
+                )
+            diagnostic = meta["composer_diagnostic"]
+            diagnostic_bundle = diagnostic["sentence_binding_bundle"]
+            rows.extend(
+                diagnostic_bundle[key]
+                for key in ("bindings", "sentence_bindings", "items")
+            )
+            rows.append(diagnostic["sentence_bindings"])
+            return rows
+
+        def forge_relation_meta(rows):
+            for binding_rows in rows:
+                binding_rows[0]["meta"]["cmee_nucleus_ids"][0] = "nucleus:forged"
+                binding_rows[0]["meta"]["cmee_relation_bindings"][0][
+                    "from_nucleus_id"
+                ] = "nucleus:forged"
+                binding_rows[0]["meta"]["cmee_binding_digest"] = "0" * 64
+
+        def outer_alias_only(candidate):
+            composer_meta = copy.deepcopy(candidate.composer_meta)
+            detached = copy.deepcopy(
+                composer_meta["sentence_binding_bundle"]["bindings"]
+            )
+            forge_relation_meta([detached])
+            composer_meta["sentence_binding_bundle"]["bindings"] = detached
+            return replace(candidate, composer_meta=composer_meta)
+
+        def all_guarded_aliases(candidate):
+            composer_meta = copy.deepcopy(candidate.composer_meta)
+            guarded_meta = composer_meta["core_text_generation"]["result"]["meta"][
+                "candidate"
+            ]["meta"]
+            forge_relation_meta(alias_lists(guarded_meta))
+            return replace(candidate, composer_meta=composer_meta)
+
+        def core_projection_field(candidate):
+            composer_meta = copy.deepcopy(candidate.composer_meta)
+            composer_meta["core_text_generation"]["sentence_bindings"][0][
+                "coverage_scope"
+            ] = "forged_scope"
+            return replace(candidate, composer_meta=composer_meta)
+
+        def core_bool_as_int(candidate):
+            composer_meta = copy.deepcopy(candidate.composer_meta)
+            composer_meta["core_text_generation"]["sentence_bindings"][0][
+                "must_include"
+            ] = 1
+            return replace(candidate, composer_meta=composer_meta)
+
+        def grounding_extra_evidence(candidate):
+            composer_meta = copy.deepcopy(candidate.composer_meta)
+            result_meta = composer_meta["core_text_generation"]["result"]["meta"]
+            result_meta["guard_results"][3]["meta"]["sentence_claims"][0][
+                "evidence_span_ids"
+            ].append("s6")
+            result_meta["combined_guard_result"]["meta"]["guard_results"][3][
+                "meta"
+            ]["sentence_claims"][0]["evidence_span_ids"].append("s6")
+            return replace(candidate, composer_meta=composer_meta)
+
+        for name, mutate in {
+            "outer_alias_only": outer_alias_only,
+            "all_guarded_aliases": all_guarded_aliases,
+            "core_projection_field": core_projection_field,
+            "core_bool_as_int": core_bool_as_int,
+            "grounding_extra_evidence": grounding_extra_evidence,
+        }.items():
+            with self.subTest(name=name):
+                with self.assertRaises(CMEEVerticalError):
+                    _build_with_composer_candidate_mutation(mutate, request=request)
 
     def test_common_guard_proof_mutations_reject_after_coordinated_rehash(self) -> None:
         source, graph, _plan, artifact, visible = _private_parts(_request())
@@ -1000,7 +1092,7 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 visible_unknowns=(),
             ),
         )
-        with self.assertRaisesRegex(CMEEVerticalError, "visible_line_role_cardinality"):
+        with self.assertRaisesRegex(CMEEVerticalError, "visible_line_source_semantic"):
             validate_positive_realization_trace(
                 source,
                 graph,
@@ -1043,7 +1135,7 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 artifact.reception,
             ),
         )
-        with self.assertRaisesRegex(CMEEVerticalError, "unknown_canonical_binding"):
+        with self.assertRaisesRegex(CMEEVerticalError, "visible_line_source_semantic"):
             validate_positive_realization_trace(
                 source,
                 graph,
@@ -1079,7 +1171,7 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             trace=tuple(reduced_trace),
             visible_unknowns=reduced_unknowns,
         )
-        with self.assertRaisesRegex(CMEEVerticalError, "unknown_canonical_binding"):
+        with self.assertRaisesRegex(CMEEVerticalError, "visible_line_source_semantic"):
             validate_positive_realization_trace(
                 source,
                 graph,
@@ -1192,7 +1284,7 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 )
                 with self.assertRaisesRegex(
                     CMEEVerticalError,
-                    "visible_trace_node_authority_mismatch",
+                    "visible_line_source_semantic_mismatch",
                 ):
                     validate_positive_realization_trace(
                         source,
@@ -1223,35 +1315,459 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         self.assertNotEqual(first.artifact.artifact_id, changed.artifact.artifact_id)
         self.assertNotEqual(first.artifact.observation, changed.artifact.observation)
 
-    def test_positive_experience_is_unavailable_instead_of_acquiring_burden(self) -> None:
-        outcome = MeaningExperienceEngine().generate(
-            _request(
-                record_id="cmee-positive",
-                memo="友達と話せて嬉しかった。",
-                category="人間関係",
-                emotion="喜び",
-            )
+    def test_positive_experience_receives_a_semantically_bound_positive_act(self) -> None:
+        request = _request(
+            record_id="cmee-positive",
+            memo="友達と話せて嬉しかった。",
+            category="人間関係",
+            emotion="喜び",
         )
-        self.assertEqual(outcome.status.value, "UNAVAILABLE", outcome.reason_codes)
-        self.assertIn(
-            outcome.reason_codes[0],
-            {
-                "plan_bound_observation_realizer_unavailable",
-                "bound_human_reception_positive_burden_promotion",
-            },
+        outcome = MeaningExperienceEngine().generate(request)
+        self.assertEqual(outcome.status.value, "LIMITED", outcome.reason_codes)
+        self.assertIsNotNone(outcome.artifact)
+        artifact = outcome.artifact
+        assert artifact is not None
+        self.assertEqual(
+            artifact.plan.allowed_reception_act_ids,
+            ("recognize_lived_change",),
         )
-        self.assertIsNone(outcome.artifact)
+        self.assertNotIn("苦しさ", artifact.reception)
+        self.assertNotIn("負担", artifact.reception)
 
-    def test_relation_required_input_is_unavailable_without_endpoint_binding(self) -> None:
-        outcome = MeaningExperienceEngine().generate(
-            _request(
-                record_id="cmee-relation",
-                memo="この職場でやっていけるか不安。でも、続けられる形は探したい。",
-            )
+        source, graph, _plan, private_artifact, visible = _private_parts(request)
+        reception_index = next(
+            index
+            for index, row in enumerate(visible)
+            if row.binding.line_role == "human_follow"
         )
-        self.assertEqual(outcome.status.value, "UNAVAILABLE")
-        self.assertEqual(outcome.reason_codes, ("relation_endpoint_binding_not_supported",))
-        self.assertIsNone(outcome.artifact)
+        burden_visible = list(visible)
+        burden_visible[reception_index] = replace(
+            burden_visible[reception_index],
+            text="その苦しさを、ここで受け止めています。",
+        )
+        with self.assertRaisesRegex(
+            CMEEVerticalError,
+            "visible_line_source_semantic_mismatch",
+        ):
+            validate_positive_realization_trace(
+                source,
+                graph,
+                private_artifact,
+                tuple(burden_visible),
+            )
+
+        changed_plan = replace(
+            private_artifact.plan,
+            allowed_reception_act_ids=("stay_with_current_burden",),
+            reception_plan_digest="forged-burden-plan",
+        )
+        changed_artifact = _rehash_artifact(
+            source,
+            graph,
+            replace(private_artifact, plan=changed_plan),
+        )
+        with self.assertRaisesRegex(
+            CMEEVerticalError,
+            "experience_plan_source_semantic_mismatch",
+        ):
+            validate_positive_realization_trace(
+                source,
+                graph,
+                changed_artifact,
+                visible,
+            )
+
+    def test_relation_required_input_seals_exact_endpoints_direction_and_evidence(self) -> None:
+        request = _request(
+            record_id="cmee-relation",
+            memo="この職場でやっていけるか不安。でも、続けられる形は探したい。",
+        )
+        source, graph, _plan, artifact, visible = _private_parts(request)
+        observation_lines = tuple(
+            line for line in visible if line.binding.line_role == "cmee_observation"
+        )
+        observation_traces = tuple(row for row in artifact.trace if row.role == "OBSERVATION")
+        self.assertEqual(len(observation_lines), 2)
+        self.assertEqual(len(observation_traces), 2)
+        self.assertIn("cocolon.cmee.emlis.r4_realization_obligations.v1", artifact.plan.source_plan_version)
+        changed_plan_artifact = _rehash_artifact(
+            source,
+            graph,
+            replace(
+                artifact,
+                plan=replace(
+                    artifact.plan,
+                    source_plan_version=(
+                        "cocolon.cmee.emlis.r4_realization_obligations.v1:forged"
+                    ),
+                ),
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEVerticalError,
+            "experience_plan_source_semantic_mismatch",
+        ):
+            validate_positive_realization_trace(
+                source,
+                graph,
+                changed_plan_artifact,
+                visible,
+            )
+        edge_index = {row.edge_id: row for row in graph.edges}
+        self.assertEqual(
+            tuple(edge_index[row.meaning_edge_ids[0]].relation for row in observation_traces),
+            ("contrast", "wish_and_constraint"),
+        )
+        self.assertTrue(all("この順" not in line.text for line in observation_lines))
+        self.assertIn("異なる向きとして対比", observation_lines[0].text)
+        self.assertIn("第一項", observation_lines[1].text)
+        self.assertIn("第二項", observation_lines[1].text)
+        for line, trace in zip(observation_lines, observation_traces, strict=True):
+            self.assertEqual(len(line.binding.relation_ids), 1)
+            self.assertEqual(len(trace.meaning_edge_ids), 1)
+            edge = edge_index[trace.meaning_edge_ids[0]]
+            self.assertEqual(
+                trace.meaning_node_ids,
+                (edge.source_node_id, edge.target_node_id),
+            )
+            self.assertEqual(trace.evidence_ids, edge.evidence_ids)
+
+        first, second = observation_lines
+        mutation_cases = {
+            "reverse_endpoints": replace(
+                first,
+                binding=replace(
+                    first.binding,
+                    nucleus_ids=tuple(reversed(first.binding.nucleus_ids)),
+                ),
+            ),
+            "drop_relation": replace(
+                first,
+                binding=replace(first.binding, relation_ids=()),
+            ),
+            "duplicate_relation": replace(
+                second,
+                binding=replace(
+                    second.binding,
+                    relation_ids=first.binding.relation_ids,
+                ),
+            ),
+            "wrong_evidence_subset": replace(
+                first,
+                binding=replace(
+                    first.binding,
+                    evidence_span_ids=first.binding.evidence_span_ids[:-1],
+                ),
+            ),
+            "wrong_surface_direction": replace(first, text=second.text),
+            "non_directional_direction_injection": replace(
+                first,
+                text=(
+                    "入力では、前の記述から後の記述へ、"
+                    "異なる向きの対比がこの順に示されています。"
+                ),
+            ),
+        }
+        for name, changed_line in mutation_cases.items():
+            with self.subTest(name=name):
+                changed_visible = list(visible)
+                changed_visible[observation_lines.index(first if name != "duplicate_relation" else second)] = changed_line
+                with self.assertRaisesRegex(
+                    CMEEVerticalError,
+                    "visible_line_source_semantic_mismatch",
+                ):
+                    validate_positive_realization_trace(
+                        source,
+                        graph,
+                        artifact,
+                        tuple(changed_visible),
+                    )
+
+        reordered = (
+            observation_lines[1],
+            observation_lines[0],
+            *visible[len(observation_lines) :],
+        )
+        with self.assertRaisesRegex(
+            CMEEVerticalError,
+            "visible_line_source_semantic_mismatch",
+        ):
+            validate_positive_realization_trace(source, graph, artifact, reordered)
+
+        directional_request = _request(
+            record_id="cmee-directional-relation",
+            memo="昨日は疲れていた。今日は少し落ち着いた。",
+            category="生活",
+            emotion="平穏",
+        )
+        (
+            directional_source,
+            directional_graph,
+            _directional_plan,
+            directional_artifact,
+            directional_visible,
+        ) = _private_parts(directional_request)
+        directional_line = next(
+            line
+            for line in directional_visible
+            if line.binding.line_role == "cmee_observation"
+        )
+        self.assertEqual(len(directional_line.binding.relation_ids), 1)
+        self.assertIn("から", directional_line.text)
+        self.assertIn("へ", directional_line.text)
+        self.assertIn("この順", directional_line.text)
+        reversed_directional = tuple(
+            replace(
+                line,
+                binding=replace(
+                    line.binding,
+                    nucleus_ids=tuple(reversed(line.binding.nucleus_ids)),
+                ),
+            )
+            if line is directional_line
+            else line
+            for line in directional_visible
+        )
+        with self.assertRaisesRegex(
+            CMEEVerticalError,
+            "visible_line_source_semantic_mismatch",
+        ):
+            validate_positive_realization_trace(
+                directional_source,
+                directional_graph,
+                directional_artifact,
+                reversed_directional,
+            )
+
+        forged_direction_text = (
+            "入力では、後の記述から前の記述へ、"
+            "変化の方向がこの順に示されています。"
+        )
+        coordinated_directional = tuple(
+            replace(
+                line,
+                text=forged_direction_text,
+                binding=replace(
+                    line.binding,
+                    nucleus_ids=tuple(reversed(line.binding.nucleus_ids)),
+                ),
+            )
+            if line is directional_line
+            else line
+            for line in directional_visible
+        )
+        directional_trace = list(directional_artifact.trace)
+        directional_trace_index = next(
+            index for index, row in enumerate(directional_trace) if row.role == "OBSERVATION"
+        )
+        directional_trace[directional_trace_index] = replace(
+            directional_trace[directional_trace_index],
+            meaning_node_ids=tuple(
+                reversed(directional_trace[directional_trace_index].meaning_node_ids)
+            ),
+            text_sha256=_sha256_text(forged_direction_text),
+        )
+        directional_units = list(
+            directional_artifact.common_guard_proof.guarded_observation_units
+        )
+        directional_units[0] = (
+            directional_units[0][0],
+            _sha256_text(forged_direction_text),
+        )
+        coordinated_artifact = _rehash_common_guard_proof_artifact(
+            directional_source,
+            directional_graph,
+            replace(
+                directional_artifact,
+                observation=forged_direction_text,
+                trace=tuple(directional_trace),
+            ),
+            replace(
+                directional_artifact.common_guard_proof,
+                guarded_observation_units=tuple(directional_units),
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEVerticalError,
+            "visible_line_source_semantic_mismatch",
+        ):
+            validate_positive_realization_trace(
+                directional_source,
+                directional_graph,
+                coordinated_artifact,
+                coordinated_directional,
+            )
+
+        short_endpoint_request = _request(
+            record_id="cmee-short-endpoint-labels",
+            memo="不安。でも、続けたい。",
+        )
+        _short_source, _short_graph, _short_plan, short_artifact, _short_visible = (
+            _private_parts(short_endpoint_request)
+        )
+        self.assertIn("負荷を伴う反応", short_artifact.observation)
+        self.assertIn("保ちたい方向", short_artifact.observation)
+        self.assertNotIn("該当する記述", short_artifact.observation)
+
+        collision_request = _request(
+            record_id="cmee-endpoint-anchor-collision",
+            memo="この仕事が不安になる。でも、この仕事が不安でも続けたい。",
+        )
+        (
+            _collision_source,
+            _collision_graph,
+            _collision_plan,
+            collision_artifact,
+            _collision_visible,
+        ) = _private_parts(collision_request)
+        self.assertIn("この仕事が不…", collision_artifact.observation)
+        self.assertIn("負荷を伴う反応", collision_artifact.observation)
+        self.assertIn("保ちたい方向", collision_artifact.observation)
+        self.assertIn("一方の", collision_artifact.observation)
+        self.assertIn("もう一方の", collision_artifact.observation)
+        self.assertNotIn("この順", collision_artifact.observation)
+
+        same_label_contrast = _private_parts(
+            _request(
+                record_id="cmee-same-label-contrast",
+                memo="この仕事がつらい。でも、この仕事が苦しい。",
+            )
+        )[3]
+        self.assertIn("一方の", same_label_contrast.observation)
+        self.assertIn("もう一方の", same_label_contrast.observation)
+        self.assertNotIn("この順", same_label_contrast.observation)
+
+        same_label_directional = _private_parts(
+            _request(
+                record_id="cmee-same-label-directional",
+                memo="昨日は不安だった。今日は不安だ。",
+            )
+        )[3]
+        self.assertIn("起点側", same_label_directional.observation)
+        self.assertIn("到達側", same_label_directional.observation)
+        self.assertIn("この順", same_label_directional.observation)
+
+    def test_role_aware_exact8_comparator_and_mutations(self) -> None:
+        request = _request()
+        outcome = MeaningExperienceEngine().generate(request)
+        self.assertTrue(_structural_trace_valid(outcome))
+        artifact = outcome.artifact
+        assert artifact is not None
+        unknown_index = next(
+            index for index, row in enumerate(artifact.trace) if row.role == "UNKNOWN"
+        )
+        reception_index = next(
+            index for index, row in enumerate(artifact.trace) if row.role == "RECEPTION"
+        )
+        observation_index = next(
+            index for index, row in enumerate(artifact.trace) if row.role == "OBSERVATION"
+        )
+        source_node_id = artifact.trace[observation_index].meaning_node_ids[0]
+        graph = outcome.meaning_graph
+        assert graph is not None
+        nonvisible_node = next(
+            row
+            for row in graph.nodes
+            if graph.owner_dispositions[
+                tuple(item.owner_id for item in graph.owner_dispositions).index(row.owner_id)
+            ].disposition
+            is not RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
+        )
+        mutations = {
+            "unknown_fake_node": replace(
+                artifact.trace[unknown_index],
+                meaning_node_ids=(source_node_id,),
+            ),
+            "unknown_fake_edge": replace(
+                artifact.trace[unknown_index],
+                meaning_edge_ids=("forged-edge",),
+            ),
+            "unknown_without_evidence": replace(
+                artifact.trace[unknown_index],
+                evidence_ids=(),
+            ),
+            "unknown_without_owner": replace(
+                artifact.trace[unknown_index],
+                constrained_by_owner_ids=(),
+            ),
+            "unknown_wrong_duty": replace(
+                artifact.trace[unknown_index],
+                duty_id="FORGED_UNKNOWN_DUTY",
+            ),
+            "unknown_wrong_operation": replace(
+                artifact.trace[unknown_index],
+                operation="FORGED_UNKNOWN_OPERATION",
+            ),
+            "observation_without_meaning": replace(
+                artifact.trace[observation_index],
+                meaning_node_ids=(),
+                meaning_edge_ids=(),
+            ),
+            "observation_nonvisible_meaning": replace(
+                artifact.trace[observation_index],
+                meaning_node_ids=(nonvisible_node.node_id,),
+                meaning_edge_ids=(),
+            ),
+            "reception_without_meaning": replace(
+                artifact.trace[reception_index],
+                meaning_node_ids=(),
+            ),
+        }
+        for name, changed_trace in mutations.items():
+            with self.subTest(name=name):
+                trace = list(artifact.trace)
+                index = (
+                    unknown_index
+                    if name.startswith("unknown_")
+                    else (
+                        observation_index
+                        if name.startswith("observation_")
+                        else reception_index
+                    )
+                )
+                trace[index] = changed_trace
+                self.assertFalse(
+                    _structural_trace_valid(
+                        replace(outcome, artifact=replace(artifact, trace=tuple(trace)))
+                    )
+                )
+
+        sequence_mutations = {
+            "missing_unknown": tuple(
+                row for row in artifact.trace if row.role != "UNKNOWN"
+            ),
+            "duplicate_unknown": (
+                *artifact.trace[:reception_index],
+                artifact.trace[unknown_index],
+                *artifact.trace[reception_index:],
+            ),
+            "unknown_after_reception": (
+                *artifact.trace[:unknown_index],
+                artifact.trace[reception_index],
+                artifact.trace[unknown_index],
+            ),
+        }
+        for name, trace in sequence_mutations.items():
+            with self.subTest(name=name):
+                self.assertFalse(
+                    _structural_trace_valid(
+                        replace(outcome, artifact=replace(artifact, trace=trace))
+                    )
+                )
+
+        body_free, _full = run_exact8_candidate()
+        self.assertEqual(len(EXACT8), 8)
+        self.assertEqual(body_free["case_count"], 8)
+        self.assertEqual(body_free["limited_count"], 8)
+        self.assertEqual(body_free["artifact_count"], 8)
+        self.assertEqual(body_free["structural_trace_valid_count"], 8)
+        self.assertEqual(
+            body_free["candidate_state"],
+            "GENERATED_FOR_PRODUCT_READ_DISABLED",
+        )
+        self.assertFalse(body_free["product_read_eligible"])
+        self.assertFalse(body_free["product_read_evaluated"])
+        self.assertFalse(body_free["automatic_progression"])
 
     def test_coordinated_rehash_cannot_replace_source_semantics(self) -> None:
         source, graph, _plan, artifact, visible = _private_parts(_request())
