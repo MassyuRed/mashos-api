@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 同じ PR・同じ branch 上で、§6 の `R2_RAW_SCALAR_UTF8_LOCATOR` から再開する。
+3. 同じ PR・同じ branch 上で、§6 の `R3_EXACT5_GUARD_PROOF_SEALING` から再開する。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 新しいPR、別branch、P0/metadata/executor検討から再開してはいけません。
@@ -21,10 +21,13 @@
 - R1 implementation parent head: `461ff03dad2483fa01f30468825f683f22d7f7da`
 - R1 implementation commit: `e18bf76e3dbcfe64c9b967ca26ed50ceff4b770f`
 - R1 implementation tree: `e0a748fffc295b25fe0050c0f7fbb88957a18d37`
-- this handoff update parent head: `e18bf76e3dbcfe64c9b967ca26ed50ceff4b770f`
+- R2 implementation parent head: `82a642ce1bb68f8b17d4b32501f9433142bb0dda`
+- R2 implementation commit: `e5be02bddecb1bc931cde6ddc90bfaa3b244bf74`
+- R2 implementation tree: `fc553e1183bfa14570d0523928ba73b49005ffc4`
+- this handoff update parent head: `e5be02bddecb1bc931cde6ddc90bfaa3b244bf74`
 - main at handoff: `a8ca4ddf7b7ae76bf7b3d73e74e3a5808d623428`
 - resume head: PR #3 の、この文書を含む current remote head
-- expected PR state after this handoff: Draft / open / unmerged、ahead 4 / behind 0、changed paths exact9
+- expected PR state after this handoff: Draft / open / unmerged、ahead 6 / behind 0、changed paths exact9
 - design reference: `MassyuRed/Cocolon` Draft PR #30, head `cb63098d4dde1c5f7235e55f4af4b8e02f3be7fa`
 - Route B policy identity: `cocolon.cmee.v1a.acceptance.route_b.v1`
 
@@ -52,8 +55,9 @@ PR #3 は、docs/schemaだけではなく、次の callable vertical を実コ�
 - dependency/network/provider adoption: 0
 - automatic progression: false
 - R1 technical packet state: `CLOSED_GREEN`
+- R2 technical packet state: `CLOSED_GREEN`
 
-これは「R1まで閉じたdisabled実装土台」です。R1 technical acceptanceだけがGREENであり、Route B全体完了、P0、L3-I、full I1、Product品質、production readiness、Cycle001のcreditは0です。
+これは「R2まで閉じたdisabled実装土台」です。R1/R2 technical acceptanceだけがGREENであり、Route B全体完了、P0、L3-I、full I1、Product品質、production readiness、Cycle001のcreditは0です。
 
 ## 3. 実装済み exact8
 
@@ -88,11 +92,11 @@ unit testのsynthetic smoke sourceは次です。
 }
 ```
 
-このbounded sourceは `LIMITED`、Observation exact1+、evidence-bound visible unknown exact1、Reception exact1、positive traceを生成します。visible unknownはsource側でpre-plan固定した`STRUCTURED_CONTEXT_ATTACHMENT` ownerとその全evidenceへbindされ、positive meaning claimには使われません。R1 closureの証拠ですが、R2–R4が未完了のためRoute B全体完了証拠として扱ってはいけません。
+このbounded sourceは `LIMITED`、Observation exact1+、evidence-bound visible unknown exact1、Reception exact1、positive traceを生成します。visible unknownはsource側でpre-plan固定した`STRUCTURED_CONTEXT_ATTACHMENT` ownerとその全evidenceへbindされ、positive meaning claimには使われません。R1/R2 closureの証拠ですが、R3–R4が未完了のためRoute B全体完了証拠として扱ってはいけません。
 
 ### 4.2 Verification snapshot
 
-- CMEE unit tests: 26/26 PASS
+- CMEE unit tests: 31/31 PASS
 - existing three-core text-generation boundary checks: 5/5 PASS
 - compileall: PASS
 - original exact8: artifacts 0/8、structurally valid traces 0/8
@@ -108,7 +112,7 @@ exact8 failure split:
 
 original exact8の入力はrunner内が正本です。成功率を上げるためにfixtureを置換・単純化・family化してはいけません。
 
-R1 verificationはimplementation commit `e18bf76e3dbcfe64c9b967ca26ed50ceff4b770f`のexact5に対して実施しました。original exact8 runnerはbyte変更0です。
+R2 verificationはimplementation commit `e5be02bddecb1bc931cde6ddc90bfaa3b244bf74`のproduction/test exact4に対して実施しました。source contractはbreaking locator/identity semanticsに合わせて`cocolon.cmee.emlis.current_input.text_grounded.v2`へ更新し、frame grammar、Route B policy、obligation、owner-universe schemaは据え置いています。original exact8 runnerはbyte変更0です。
 
 ## 5. 未完了blocker
 
@@ -127,13 +131,14 @@ R1 verificationはimplementation commit `e18bf76e3dbcfe64c9b967ca26ed50ceff4b770
 - unresolved required ownerを安全に同じ形で可視化できない場合、artifactなし`UNAVAILABLE`へfail closedします。
 - omit、duplicate、coordinated denominator shrink、全disposition field tamper、digest swap、hidden/causal unknown、evidence subset、cross-source refをmutation testでrejectします。
 
-### B3. Original source locator completeness
+### B3. Original source locator completeness — `CLOSED_BY_R2`
 
-- `EvidenceRef`にUTF-8 byte rangeはありますがscalar rangeがありません。
-- repeated textの一部は扱えますが、double-space、tab、U+3000など全admitted whitespaceについてraw↔normalized scalar mappingが閉じていません。
-- scalar rangeとUTF-8 rangeが同じraw substringを指すことを検証する必要があります。
-- R1はsame-envelope identity、byte bounds、raw-byte digest、evidence ID再計算までは検証しますが、`field_path/source_span`がcanonical original-field frame segmentを指すことは未封印です。たとえば`category.0`をmemo bytesへredirectし、全ID/digestを再計算するcoordinated mutationはR2 residualです。
-- `SourceEnvelope`のrecord/schema/label metadata全体をenvelope identityから独立再構成するhardeningも未完了です。R1 acceptanceのversion/obligation/digest tupleは封印済みですが、full-envelope canonicalization完了とは報告しません。
+- `EvidenceRef`はcanonical original field bodyに対するfield-relative `scalar_start/end`と、frameに対するabsolute `utf8_start/end`を持ちます。validatorはscalar prefixのUTF-8長からbyte rangeを再計算し、同じraw occurrence・同じraw substringへの一致を検証します。
+- canonical raw JSONを再encodeし、fixed exact6 field header/order/length/bodyとtrailing bytes 0をparseします。そのraw sourceからlegacy ledgerを再構築し、`source_span_id / field_path / element_index / scalar range / UTF-8 range`をsupplied refsと順序込みexact照合します。
+- repeated equal substring、double-space、tab、単一/連続U+3000、emojiを含むraw↔normalized mappingを再現し、whitespace normalizationはledger surface equivalence比較だけに限定します。raw bytes、digest、locator authorityはnormalizeしません。
+- `category.0`をmemo segmentへredirectしてbounds/digests/evidence IDを全再計算するmutation、同一emotion literalのsource-span交換、別occurrenceのscalar/byte混線をrejectします。
+- SourceEnvelope IDはrecord/role/schema/source-contract/encoding/label ID+digest/raw SHAのclosed canonical identityから再計算します。record/schema/label metadata swap、field-frame/raw-JSON不一致、noncanonical label、identity swapをfail closedします。
+- R1のowner universe、Route B rows、visible unknown、graph/plan/trace binding、body-free privacy、no-fallback境界は維持されています。
 
 ### B4. Common-guard proof sealing
 
@@ -148,22 +153,24 @@ R1 verificationはimplementation commit `e18bf76e3dbcfe64c9b967ca26ed50ceff4b770
 
 ## 6. 次の実装packet exact1
 
-次に着手するのは、`R2_RAW_SCALAR_UTF8_LOCATOR` だけです。R1を再実装せず、R3、R4、P0、metadata/executor再検討、surface tuningへ移動しません。
+次に着手するのは、`R3_EXACT5_GUARD_PROOF_SEALING` だけです。R1/R2を再実装せず、R4、P0、metadata/executor再検討、surface tuningへ移動しません。
 
-R2は既存CMEE source/evidence contract ownerと必要最小のexisting testsだけを変更候補とします。新module、new helper/control family、dependency、provider、public schema/APIが必要なら、実装前にSTOPして影響範囲を再提示します。
+R3は既存CMEE artifact/trace validation ownerと必要最小のexisting testsだけを変更候補とします。新module、new helper/control family、dependency、provider、public schema/APIが必要なら、実装前にSTOPして影響範囲を再提示します。
 
-R2 acceptance:
+R3 acceptance:
 
-1. admitted `EvidenceRef`がoriginal raw fieldに対するscalar start/endとUTF-8 start/endを持ち、両rangeがexact same raw substringを指す。
-2. `field_path/source_span`をcanonical original-field frame segmentへ独立再対応づけし、same-envelopeの別field bytesへredirectできない。
-3. repeated substring、double-space、tab、U+3000を含むadmitted whitespaceでraw↔normalized locatorを再現・検証できる。
-4. `category.0` rangeをmemo segmentへ置換し、bounds/digest/evidence IDをすべて再計算したcoordinated mutationをrejectする。
-5. envelope ID/rawを維持したままsource record/schema/label metadataを差し替えるmutationをrejectし、full SourceEnvelope identityをfail closedする。
-6. R1のU、Route B rows、visible unknown、graph/plan/trace binding、privacy、no-fallback境界を維持する。
-7. original exact8 runner/fixtureは変更せず、実際の結果をそのまま報告する。R2だけで8/8を要求しない。
-8. R2 greenをhandoffへ反映した時点でSTOPし、`R3_EXACT5_GUARD_PROOF_SEALING`へ自動進行しない。
+1. common-core exact5各guard resultのidentityと`passed=true`をartifact/trace proofへsealする。
+2. `step15_common_core_stabilization.passed=true`、`common_shapes_ready=true`、issue codes exact0を同じproofへsealする。
+3. guard proofをartifact/traceへbindして独立再検証し、failedまたはtamperedなguard rowをrejectする。
+4. R1のRoute B/visible unknownとR2のsource locator/envelope identity、body-free privacy、no-fallback境界を維持する。
+5. original exact8 runner/fixtureは変更せず、実際の結果をそのまま報告する。R3だけで8/8を要求しない。
+6. R3 greenをhandoffへ反映した時点でSTOPし、`R4_PLAN_BOUND_REALIZER_EXACT8`へ自動進行しない。
 
-残る順番は `R2_RAW_SCALAR_UTF8_LOCATOR` → `R3_EXACT5_GUARD_PROOF_SEALING` → `R4_PLAN_BOUND_REALIZER_EXACT8` です。各packetで同じDraft PR内を前進させ、packet間のapproval/STOP境界を維持します。
+残る順番は `R3_EXACT5_GUARD_PROOF_SEALING` → `R4_PLAN_BOUND_REALIZER_EXACT8` です。各packetで同じDraft PR内を前進させ、packet間のapproval/STOP境界を維持します。
+
+R2のauthority分類は`LEVEL_2 / JOINT_WITHIN_EXISTING_DELEGATION_SCOPE`、成果分類は`TECHNICAL_CREDIT`です。R2 implementationは既存production/test exact4だけを変更し、product credit、Product Read、P0、L3-I、full I1、Cycle001、production creditは0です。
+
+`STRUCTURE_MAP_DELTA_NONE_FOR_R2 = TRUE`です。R2は既存private source/evidence owner内部の契約完成であり、package/entrypoint/owner、API/DB/RN、artifact lifecycle、core境界を変更しません。ただしCocolon PR #30のmapにはPR #3以前からのlifecycle driftが残るため、この判定は「R2が新しい構造差分を作らない」という限定であり、map全体がcurrent actualと一致するという意味ではありません。
 
 ## 7. Fresh checkoutでの検証
 
@@ -220,4 +227,4 @@ test "$runner_rc" -eq 1
 
 次の1文で再開できます。
 
-> @GitHub `MassyuRed/mashos-api` Draft PR #3 と `ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md` を正本として、`R2_RAW_SCALAR_UTF8_LOCATOR` から同じbranch上で実装を再開して。R1 closure、original exact8、privacy、disabled境界を維持し、R2の検証結果をDraftへ反映したらR3へ進まずSTOPして。
+> @GitHub `MassyuRed/mashos-api` Draft PR #3 と `ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md` を正本として、`R3_EXACT5_GUARD_PROOF_SEALING` から同じbranch上で実装を再開して。R1/R2 closure、original exact8、privacy、disabled境界を維持し、R3の検証結果をDraftへ反映したらR4へ進まずSTOPして。
