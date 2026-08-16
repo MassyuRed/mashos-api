@@ -8,10 +8,10 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. `R4_PLAN_BOUND_REALIZER_EXACT8=CLOSED_GREEN`を確認し、別の明示承認がある場合だけ、§6のseparate private human Product Read gateを同じ PR・同じ branch 上で開始する。
+3. `R4_PLAN_BOUND_REALIZER_EXACT8=CLOSED_GREEN`と`SEPARATE_PRIVATE_HUMAN_PRODUCT_READ=EVALUATED_FAIL_STOP`を確認する。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
-新しいPR、別branch、R4再実装、P0/metadata/executor検討、無承認のProduct Readから再開してはいけません。
+新しいPR、別branch、R4再実装、Product Read再実行、無承認のcorrection、P0/metadata/executor検討から再開してはいけません。
 
 ## 1. GitHub anchors
 
@@ -30,12 +30,14 @@
 - R4 implementation parent head: `8a87158c14e3fbc960ca3fb6d1b7d22b8bfb32dd`
 - R4 implementation commit: `dbd03256d93dd28e2a2703c8c754742d9a89ec3c`
 - R4 implementation tree: `69f4e1df94bb50d674ec02b39e27e8bf18822ba6`
-- this handoff update parent head: `dbd03256d93dd28e2a2703c8c754742d9a89ec3c`
+- R4 closure handoff parent head: `dbd03256d93dd28e2a2703c8c754742d9a89ec3c`
+- Product Read terminal reflection parent head: `8accf28f39d29632fa830b88d56d01d0a05d78a3`
 - main at handoff: `a8ca4ddf7b7ae76bf7b3d73e74e3a5808d623428`
 - resume head: PR #3 の、この文書を含む current remote head
-- expected PR state after this handoff: Draft / open / unmerged、ahead 10 / behind 0、changed paths exact9
+- expected PR state after this terminal reflection: Draft / open / unmerged、ahead 11 / behind 0、changed paths exact10
 - design reference: `MassyuRed/Cocolon` Draft PR #30, head `cb63098d4dde1c5f7235e55f4af4b8e02f3be7fa`
 - Route B policy identity: `cocolon.cmee.v1a.acceptance.route_b.v1`
+- Product Read body-free receipt: `ai/docs/CMEE_V1A_I1SX_PrivateHumanProductRead_BodyFree_Receipt_20260816.json`
 
 `Cocolon` PR #30 の architecture/meaning-sovereignty contract は設計参照です。ただし同PR内の `implementation_state=NOT_STARTED` と実装未承認の記録は、その後のMashによるCMEE構築指示と `mashos-api` PR #3 より前の lifecycle snapshot です。以後の disabled WIP 実装の現在地は PR #3 とこの文書が所有します。これは PR #30 の設計を上書きせず、P0、L3-I、production、Product Read、Cycle001 の承認も作りません。
 
@@ -55,7 +57,7 @@ PR #3 は、docs/schemaだけではなく、次の callable vertical を実コ�
 - terminal: `CMEE_V1A_I1SX_TEXT_GROUNDED_VERTICAL_WIP_DISABLED`
 - Route B contract complete: false
 - candidate ready: false
-- Product Read eligible/evaluated: false / false
+- Product Read eligible/evaluated: true / true
 - exact8 acceptance complete: false
 - production/API/DB/RN/Cycle001 effect: 0
 - dependency/network/provider adoption: 0
@@ -64,9 +66,11 @@ PR #3 は、docs/schemaだけではなく、次の callable vertical を実コ�
 - R2 technical packet state: `CLOSED_GREEN`
 - R3 technical packet state: `CLOSED_GREEN`
 - R4 technical packet state: `CLOSED_GREEN`
-- candidate state: `GENERATED_FOR_PRODUCT_READ_DISABLED`
+- Product Read state: `EVALUATED_FAIL_STOP`
+- candidate state: `GENERATED_FOR_PRODUCT_READ_DISABLED_PRODUCT_FAIL`
+- primary outcome: `BLOCKER_NARROWED`
 
-これは「R4まで閉じ、original exact8のmachine structural prerequisiteを満たしたdisabled実装土台」です。R1/R2/R3/R4 technical acceptanceだけがGREENであり、Route B全体完了、candidate ready、Product Read、P0、L3-I、full I1、Product品質、production readiness、Cycle001のcreditは0です。
+これは「R4までのmachine structural prerequisiteはGREENだが、private human Product Readで商品品質FAILとなったdisabled実装土台」です。machine 8/8は維持されていますが、入力固有の観測、自然さ、非テンプレ感、読まれた感の商品受入には到達していません。Route B全体完了、candidate ready、exact8 acceptance、Product credit、P0、L3-I、full I1、production readiness、Cycle001のcreditは0です。
 
 ## 3. 実装済み exact8
 
@@ -112,7 +116,7 @@ unit testのsynthetic smoke sourceは次です。
 - original exact8: `LIMITED` 8/8、artifacts 8/8、Observation+bound Reception traces 8/8、structurally valid traces 8/8
 - exact8 state: `GENERATED_FOR_PRODUCT_READ_DISABLED`
 - exact8 runner exit: 0
-- Product Read: not performed / not eligible
+- Product Read: evaluated / set-level FAIL
 
 exact8 failure split: 0。
 
@@ -178,15 +182,17 @@ runner comparatorはoutcome-onlyで、runnerからprivate implementationへ直�
 - original exact8はfixture、8件denominator、評価軸を変えず、`LIMITED / artifact / structural trace` 8/8、runner exit 0です。
 - runner comparatorはMashのR4限定明示承認に基づくminimal role-aware correctionです。UNKNOWNへfake meaning nodeを付与せず、R1 contractを維持します。
 
-### B6. Separate private human Product Read — `NOT_STARTED / SEPARATE_EXPLICIT_GATE_REQUIRED`
+### B6. Separate private human Product Read — `EVALUATED_FAIL_STOP`
 
-- machine structural 8/8はProduct Readの前提だけです。Product Readを実施・評価・materialize・publishしていません。
-- private/body-full blind Product Readは、別の明示承認を得た後にだけ開始できます。
-- `product_read_eligible=false`、`product_read_evaluated=false`、`candidate_ready=false`、`automatic_progression=false`を維持します。
+- Mashのsingle-use LEVEL_3承認により、original exact8をfresh private packetへexact1回生成し、body-full blind view exact8をhuman reviewerへ提示しました。
+- human reviewerはset-levelで商品品質を明示的にFAILと判断しました。決定的FAIL後に96軸の形式入力を追加要求せず、個別axis/severityを推測・代筆していません。
+- body-full input/output、private note/path/hash/digest/locatorのGitHub反映は0です。private temp exact rootは削除済みです。
+- body-free resultは`CMEE_V1A_I1SX_PrivateHumanProductRead_BodyFree_Receipt_20260816.json`が所有します。
+- `product_read_eligible=true`、`product_read_evaluated=true`、`exact8_acceptance_complete=false`、`candidate_ready=false`、`automatic_progression=false`です。
 
 ## 6. 次のgate exact1
 
-`R4_PLAN_BOUND_REALIZER_EXACT8=CLOSED_GREEN`です。R4 closure facts:
+`R4_PLAN_BOUND_REALIZER_EXACT8=CLOSED_GREEN`かつ`SEPARATE_PRIVATE_HUMAN_PRODUCT_READ=EVALUATED_FAIL_STOP`です。R4 closure facts:
 
 1. canonical source planからrequired nucleus/relation、endpoint/type/direction/evidenceを再構築し、plan-bound concise Observationへexact bindした。
 2. same-label endpointを可視に区別し、non-directional relationへdirectionを発明せず、semantic Receptionをtarget/evidence/act/digestへ固定した。
@@ -196,7 +202,7 @@ runner comparatorはoutcome-onlyで、runnerからprivate implementationへ直�
 6. R1 Route B/visible unknown、R2 locator/envelope identity、R3 §4.3 proof boundary、privacy/no-fallbackを維持した。
 7. runner correctionはMashのR4限定明示承認に基づくoutcome-only role-aware comparatorであり、protected comparator変更の一般的な先例を作らない。
 
-次に開始できるのは、別途明示承認された`SEPARATE_PRIVATE_HUMAN_PRODUCT_READ`だけです。この文書更新時点では`NOT_STARTED / NOT_ELIGIBLE`であり、STOPします。machine 8/8からProduct Read、Product credit、candidate ready、Route B complete、P0、L3-I、full I1、Cycle001、productionへ自動進行してはいけません。
+Product Readは再実行せず、このcandidateを受入・ready・mergeしません。次に商品を進めるには、body-free FAILを入力とした一つのbounded correctionについて、別のMash明示承認が必要です。この文書更新時点ではcorrection未承認であり、STOPします。machine 8/8からProduct credit、candidate ready、Route B complete、P0、L3-I、full I1、Cycle001、productionへ自動進行してはいけません。
 
 R4 implementationのmethod/contract変更は既存delegation内の`LEVEL_2`、protected runner comparator correctionはMashの明示的なR4限定exceptionにより許可されました。成果分類は`TECHNICAL_CREDIT`で、`PRODUCT_CREDIT=0`です。R4 implementationは既存implementation/test/runner exact3、このclosureはhandoff exact1だけを変更し、common core、contracts、engine、source kernel、public API、DB、RN、dependency、production effectは0です。
 
@@ -236,7 +242,7 @@ set -e
 test "$runner_rc" -eq 0
 ```
 
-最後のrunnerはexit 0かつ`LIMITED / artifact / structural trace` 8/8であることがexpectedです。`candidate_state=GENERATED_FOR_PRODUCT_READ_DISABLED`、Product Read flags false、credits 0、`automatic_progression=false`も同時に確認します。body-full outputは別の明示指定時だけprivate temp pathへ出し、GitHubへcommitしません。
+最後のrunnerはR4 machine snapshotを再確認する場合に限りexit 0かつ`LIMITED / artifact / structural trace` 8/8がexpectedです。ただしconsumed Product Read authorityをrunner再実行の根拠にしてはいけません。current product stateは`EVALUATED_FAIL_STOP`、candidate ready false、credits 0、`automatic_progression=false`です。body-full Product Read packetは削除済みで、GitHubへcommitされていません。
 
 ## 8. 維持する境界
 
@@ -245,7 +251,7 @@ test "$runner_rc" -eq 0
 - network / external provider / parser proposal promotion: 0
 - API / DB / RN / production ingress: 0
 - Piece / Analysis implementation: 0
-- P0 / L3-I / full I1 / Product Read / Cycle001 credit: 0
+- P0 / L3-I / full I1 / Product / Cycle001 credit: 0
 - fallback / mirror / retry / raw replay: 0
 - actual user/private raw input、actual generated private text、digest、locatorのpublic反映: 0
 - workflow / Actions / ready / merge: 0
@@ -257,4 +263,4 @@ test "$runner_rc" -eq 0
 
 次の1文で再開できます。
 
-> @GitHub `MassyuRed/mashos-api` Draft PR #3 と `ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md` を正本として、R1/R2/R3/R4 closureとSTOP状態を確認して。別途明示承認がある場合だけ`SEPARATE_PRIVATE_HUMAN_PRODUCT_READ`のscope/authorityを確定し、privacy、disabled境界、Product credit 0、automatic progression falseを維持して開始して。
+> @GitHub `MassyuRed/mashos-api` Draft PR #3、`ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md`、`ai/docs/CMEE_V1A_I1SX_PrivateHumanProductRead_BodyFree_Receipt_20260816.json`を正本として、R1/R2/R3/R4 GREENとProduct Read `EVALUATED_FAIL_STOP`を確認して。Product Readを再実行せず、別途Mashが明示承認した場合だけ一つのbounded product correctionを開始し、privacy、disabled境界、Product credit 0、automatic progression falseを維持して。
