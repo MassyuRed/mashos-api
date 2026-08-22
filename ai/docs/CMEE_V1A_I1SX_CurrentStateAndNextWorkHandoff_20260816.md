@@ -303,3 +303,107 @@ test "$runner_rc" -eq 0
 - exact8 の最終 Product PASS は Mash の本文確認待ちであり、このレシート自体は Product PASS を宣言しない。
 - `candidate_ready=false`、`product_read_evaluated=false`、`exact8_acceptance_complete=false`、`production_effect=0`。
 - Mash の明示確認なしに第2段階へ進まない。
+
+## 19. Stage 1 correction Step 0 — fresh baseline / private before checkpoint（2026-08-23）
+
+> 本節は§18までの旧current-state記述を、Stage 1 correction Step 0についてだけ更新するbody-free receiptである。過去の監査証跡は変更せず、private本文、digest、absolute locatorまたはprivate owner identityをGitHubへ公開しない。
+
+### 19.1 Authority / fresh preimage
+
+- 明示範囲: Mashの「Step 0の実装までを完了」する指示のみ。
+- Cocolon owner: Draft PR #30 / `agent/three-core-cmee-current-structure-20260815` / fresh head `e607c69cfc6d51a881b11e0cfdcf2657c0c648e3` / tree `cc027f3c1cede8ad8d416cbe18f5ad5d41c3a02c`。
+- mashos-api owner: Draft PR #3 / `agent/cmee-v1a-i1sx-source-explicit-20260815` / fresh head `106a1b8c92e808d15e88ce4f56c6300568d93e9f` / tree `84d1d057a337fae24ecaace51b3646d76be161c6`。
+- fresh preimageはPR changed-filesだけでなくheadのfull commit treeから再構成した。
+- head drift 0、fixture drift 0、history rewrite 0。両PRはDraft / open / unmergedを維持する。
+
+### 19.2 Frozen fixture / runner / test identity
+
+```text
+contracts.py blob = a4d095adeceb8ed561d2e74a52af8cc252f1519d
+emlis_v1a.py blob = 6217009b62fe80436abd74408b63271e62ccefa0
+contract test blob = be63e0b6404b6f0a3c7beaacb75cca25b3c939ce
+vertical test blob = a39875e5d2470e1c5f1a13e13eb1e1c15e7ec6ce
+runner blob = 44d4a707d8c2f70d499a763cd8c07c99c19af0de
+handoff preimage blob = 86eb291df1bbf101fedaaf1dee99a62dabb67bb0
+reserved new emlis_stage1_response.py = ABSENT_AT_PREIMAGE
+
+EXACT8 identity / order = SX-01..SX-08
+denominator = exact8
+PRODUCT_READ_AXES = exact12
+historical evaluated runner literal equality = exact8 true / axes true
+engine call = MeaningExperienceEngine.generate exact1
+```
+
+Step 0はruntime、test、runnerを変更していない。historical runner packet identityを再利用せず、private境界内だけでfresh BEFORE identityへretagした。
+
+### 19.3 Fresh reproduction result
+
+```text
+contract tests = 15 / 15 PASS
+vertical tests = 32 / 32 PASS
+combined tests = 47 / 47 PASS
+compileall exact4 = PASS
+three-core boundary = 5 / 5 PASS
+
+exact8 case = 8 / 8
+exact8 GENERATED = 8 / 8
+exact8 artifact = 8 / 8
+exact8 structural trace = 8 / 8
+exact8 visible material unknown = 0
+runner exit = 0
+
+material fixture "疲れた。" = LIMITED
+material fixture artifact = present
+material fixture visible UNKNOWN = exact1
+automatic progression = false
+```
+
+検証はWorkのverified absolute Python entrypointと`PYTHONPATH=services/ai_inference`で実行した。47/47とexact8 8/8はbaseline再現であり、Product PASS、candidate readyまたはtechnical / Product creditを作らない。
+
+### 19.4 Fresh private packet identity / path receipt
+
+```text
+BEFORE_PACKET_ID = CMEE_STAGE1_KAREN_DERIVED_BEFORE_EXACT8_20260823_V1
+AFTER_PACKET_ID  = CMEE_STAGE1_KAREN_DERIVED_AFTER_EXACT8_20260823_V1
+BEFORE_PRIVATE_PATH_SLOT = PRIVATE_SLOT_BEFORE_EXACT8_20260823_V1
+AFTER_PRIVATE_PATH_SLOT  = PRIVATE_SLOT_AFTER_EXACT8_20260823_V1
+
+packet_ids_distinct = true
+private_paths_distinct = true
+historical_packet_identity_reuse = 0
+before_body_full_materialized = true
+before_exclusive_create = true
+before_file_mode = 0600
+before_private_durable_owner = PRESENT_NONPUBLIC
+after_path_reserved_not_materialized = true
+packet_identity_collision_count = 0
+packet_overwrite_count = 0
+private_body_published_to_github = 0
+private_packet_digest_published_to_github = 0
+private_locator_published_to_github = 0
+```
+
+private BEFOREはCocolon / mashos-api preimage head、fixture、runner、test blobsへbindingした。AFTERは別ID・別pathを割り当てただけで、本文はまだ生成していない。GitHubへは上のbody-free factsだけを保持する。
+
+### 19.5 Re-estimate / terminal
+
+- Step 1–7 preliminary re-estimate: `12–20 focused engineering hours`（fresh head / path topology / fixtureにdriftがないため据え置き）。
+- 性質: preliminary / nonbinding。scope、品質Gate、credit、開始承認に使用しない。
+- additional monetary cost 0、external service 0、new dependency 0。
+- Step 0 actual tracked path: このhandoff exact1。Cocolon側はcanonical owner `Cocolon_前提資料/designs/cmee/v1/06_implementation_order_migration_and_verification.md` exact1。
+- `STRUCTURE_MAP_DELTA_NONE`: Step 0はruntime owner、entrypoint、API / DB / RN、artifact lifecycleまたはcore境界を変更しない。
+
+```text
+STAGE1_CORRECTION_STEP0 = COMPLETE
+PRIMARY_OUTCOME = BLOCKER_NARROWED
+PRODUCT_CREDIT = 0
+TECHNICAL_CREDIT = 0
+CANDIDATE_READY = FALSE
+PRODUCT_READ_EVALUATED_FOR_THIS_CORRECTION = FALSE
+EXACT8_ACCEPTANCE_COMPLETE = FALSE
+PRODUCTION_EFFECT = 0
+STEP1 = NOT_STARTED
+CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_STEP0
+AUTOMATIC_PROGRESSION = FALSE
+STOP_AFTER_STEP0
+```
