@@ -3,7 +3,7 @@ from __future__ import annotations
 
 """Emlis V1-A text-grounded graph, plan, realization and trace sealer."""
 
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
 import re
@@ -18,6 +18,7 @@ from emlis_ai_grounded_human_reception import (
 from emlis_ai_grounded_observation_plan import (
     build_grounded_human_reception_plan,
     build_grounded_observation_plan,
+    validate_grounded_human_reception_plan,
     validate_grounded_observation_plan,
 )
 from emlis_ai_grounded_sentence_surface import (
@@ -78,11 +79,429 @@ REALIZER_CONTRACT_IDS = (
 )
 ADMISSIBLE_NUCLEUS_GROUNDING = frozenset({"explicit", "user_stated_relation"})
 ADMISSIBLE_RELATION_GROUNDING = frozenset({"user_stated_relation"})
-NEGATIVE_RECEPTION_RE = re.compile(r"(?:苦しさ|つらさ|負担|痛み|しんどさ)")
+NEGATIVE_RECEPTION_RE = re.compile(r"(?:負荷|苦しさ|つらさ|負担|痛み|しんどさ)")
 SOURCE_BURDEN_CUE_RE = re.compile(
     r"(?:不安|疲|つら|苦|悲|怒|怖|嫌|限界|痛|しんど|迷惑|ダメ|悪化|不便|動けない|できない|何もしたくない)"
 )
-CMEE_SOURCE_ANCHOR_LIMIT = 6
+NONCURRENT_BURDEN_RE = re.compile(
+    r"(?:(?:疲れ|不安|限界|痛み|苦しさ|つらさ|しんどさ|"
+    r"つらい|苦しい|しんどい|だるい|重い)(?:という)?(?:わけ|の)?"
+    r"(?:では?|じゃ)(?:ない|なく|ありません)|"
+    r"疲(?:れ)?て(?:(?:い)?な(?:い|く|かった)|(?:い)?ません(?:でした)?)|"
+    r"(?:つら|苦し|しんど|だる|重)くな(?:い|く|かった)|"
+    r"(?:つら|苦し|しんど|だる|重)く(?:は)?ありません(?:でした)?|"
+    r"(?:不安|限界|痛み|苦しさ|つらさ|しんどさ|疲れ)"
+    r"(?:(?:は|が)?な(?:い|く|かった)|(?:は|が)?ありません(?:でした)?|"
+    r"(?:では?|じゃ)(?:な(?:い|く|かった)|ありません(?:でした)?))|"
+    r"(?:疲れ|不安|痛み|苦しさ|つらさ|しんどさ)(?:が|は)?"
+    r"(?:取れ|抜け|消え|なくな))"
+)
+SOURCE_BURDEN_EXTRA_RE = re.compile(r"(?:だる|重い)")
+NEGATED_DESIRE_ADVERB_PATTERN = (
+    r"(?:全く|まったく|全然|決して|特に|別に|今は|あまり|そこまで|一切)?"
+)
+NEGATED_DESIRE_SUFFIX_PATTERN = (
+    rf"(?:(?:という)?(?:わけ|の)?(?:では?|でも)"
+    rf"(?:な(?:い|く|かった)|ありません(?:でした)?|ございません)|"
+    rf"じゃ(?:な(?:い|く|かった)|ありません)|"
+    rf"気(?:持ち)?(?:は|が){NEGATED_DESIRE_ADVERB_PATTERN}(?:ない|ありません)|"
+    rf"気持ち(?:では?|じゃ)(?:な(?:い|く|かった)|ありません)|"
+    rf"気分(?:は{NEGATED_DESIRE_ADVERB_PATTERN}(?:ない|ありません)|"
+    rf"(?:では?|じゃ)(?:な(?:い|く|かった)|ありません))|"
+    rf"(?:と|とは|なんて|などとは?){NEGATED_DESIRE_ADVERB_PATTERN}"
+    rf"(?:思わない|思いません|思ってない|思っていない|思っていません|"
+    rf"考えない|考えてない|考えていない|考えていません|"
+    rf"感じない|感じません)|"
+    rf"(?:と)?思っている(?:という)?(?:わけ|の)?(?:では?|でも)"
+    rf"(?:な(?:い|く|かった)|ありません))"
+)
+NEGATED_DESIRE_RE = re.compile(
+    r"[ぁ-んァ-ン一-龥ー]{1,24}たい" + NEGATED_DESIRE_SUFFIX_PATTERN
+)
+NEGATED_DESIRE_SUFFIX_RE = re.compile(NEGATED_DESIRE_SUFFIX_PATTERN)
+OTHER_EXPERIENCER_SUBJECT_PATTERN = (
+    r"(?:友達|友人|同僚|家族|相手|上司|部下|彼女?|母|父|夫|妻|旦那|"
+    r"主人|奥さん|娘|息子|子ども|子供|祖母|祖父|兄|姉|弟|妹|先輩|後輩|"
+    r"先生|顧客|お客(?:さん)?|医師|医者|看護師|担当者|パートナー|"
+    r"[ぁ-んァ-ン一-龥ー]{1,12}(?:さん|氏|ちゃん|くん))"
+)
+OTHER_EXPERIENCER_BURDEN_REPORT_RE = re.compile(
+    rf"{OTHER_EXPERIENCER_SUBJECT_PATTERN}(?:が|は)"
+    r"[^。！？!?]{0,48}(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど)"
+    r"[^。！？!?]{0,24}(?:と|って)(?:言|話|述)"
+)
+OTHER_EXPERIENCER_BURDEN_RE = re.compile(
+    rf"{OTHER_EXPERIENCER_SUBJECT_PATTERN}(?:が|は)"
+    r"[^。！？!?]{0,48}(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど)"
+)
+OTHER_EXPERIENCER_DESIRE_RE = re.compile(
+    rf"{OTHER_EXPERIENCER_SUBJECT_PATTERN}(?:が|は)"
+    r"[^。！？!?]{0,56}たい"
+)
+GENERIC_EXPERIENCER_SUBJECT_PATTERN = (
+    r"[^\s、。！？!?「」『』]{1,24}?"
+)
+GENERIC_EXPERIENCER_PARTICLE_PATTERN = (
+    r"(?:が|は|こそ|(?<!で)も)"
+)
+GENERIC_EXPERIENCER_APPEARANCE_RE = re.compile(
+    rf"(?P<subject>{GENERIC_EXPERIENCER_SUBJECT_PATTERN})"
+    rf"{GENERIC_EXPERIENCER_PARTICLE_PATTERN}"
+    r"[^。！？!?]{0,48}(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど)"
+    r"[^。！？!?]{0,20}(?:そう|よう|らしい)"
+)
+GENERIC_EXPERIENCER_REPORTED_DESIRE_RE = re.compile(
+    rf"(?P<subject>{GENERIC_EXPERIENCER_SUBJECT_PATTERN})"
+    rf"{GENERIC_EXPERIENCER_PARTICLE_PATTERN}"
+    r"[^。！？!?]{0,48}たい[^。！？!?]{0,12}"
+    r"(?:と|って)(?:言|話|述)"
+)
+REPORTED_EXTERNAL_APPEARANCE_RE = re.compile(
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど)"
+    r"[^。！？!?]{0,24}(?:そうに見える|そうだ|ようだ|らしい)"
+    r"[^。！？!?]{0,16}(?:と|って)(?:言われ|見られ|思われ)"
+)
+GENERIC_OTHER_THEN_FIRST_PERSON_RE = re.compile(
+    rf"(?P<subject>{GENERIC_EXPERIENCER_SUBJECT_PATTERN})"
+    rf"{GENERIC_EXPERIENCER_PARTICLE_PATTERN}"
+    r"[^。！？!?]{0,64}(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+    r"[^。！？!?]{0,64}。[^。！？!?]{0,20}"
+    r"(?:私|わたし|僕|ぼく|俺|おれ|自分)(?:が|は)"
+)
+GENERIC_EXPERIENCER_STATE_OR_DESIRE_RE = re.compile(
+    rf"(?P<subject>{GENERIC_EXPERIENCER_SUBJECT_PATTERN})"
+    rf"{GENERIC_EXPERIENCER_PARTICLE_PATTERN}"
+    r"[^。！？!?]{0,56}(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+)
+GENERIC_EXPERIENCER_ATTRIBUTION_RE = re.compile(
+    rf"(?P<subject>{GENERIC_EXPERIENCER_SUBJECT_PATTERN})"
+    r"(?:によると|によれば|によりますと|の話では|の話だと|の話によると|"
+    r"の話を(?:聞|聴)くと|曰く|いわく|から(?:聞|聴)いたところ|"
+    r"から(?:聞|聴)くと)"
+    r"[^。！？!?]{0,64}(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+)
+GENERIC_OTHER_SOURCE_BEFORE_CUE_RE = re.compile(
+    rf"(?P<subject>{GENERIC_EXPERIENCER_SUBJECT_PATTERN})"
+    r"(?:から|に|について|に関して)"
+    r"[^。！？!?]{0,64}(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+    r"[^。！？!?]{0,24}(?:(?:と|って)?(?:聞|聴|教え|伝え|言われ|話))"
+)
+GENERIC_POSSESSIVE_EXPERIENCER_RE = re.compile(
+    rf"(?P<subject>{GENERIC_EXPERIENCER_SUBJECT_PATTERN})の"
+    r"(?:不安|疲れ|つらさ|苦しさ|悲しさ|怒り|怖さ|限界|痛み|しんどさ)"
+)
+GENERIC_AFFECTED_OBJECT_RE = re.compile(
+    rf"(?P<subject>{GENERIC_EXPERIENCER_SUBJECT_PATTERN})を"
+    r"[^。！？!?]{0,32}(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど)"
+    r"[^。！？!?]{0,16}(?:に)?(?:させ|した)"
+)
+GENERIC_AFFECTED_DATIVE_RE = re.compile(
+    rf"(?P<subject>{GENERIC_EXPERIENCER_SUBJECT_PATTERN})に"
+    r"[^。！？!?]{0,32}(?:不安|疲れ|つらさ|苦しさ|悲しさ|怒り|怖さ|限界|痛み)"
+    r"[^。！？!?]{0,16}(?:を)?(?:与え|抱かせ|感じさせ)"
+)
+GENERIC_BARE_OTHER_EXPERIENCER_RE = re.compile(
+    r"(?P<subject>(?:みんな|皆|全員|人々|誰も|彼ら|彼女ら))"
+    r"[^。！？!?]{0,12}(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+)
+ATTRIBUTIVE_OTHER_EXPERIENCER_RE = re.compile(
+    r"(?:不安な|疲れた|疲れている|つらい|苦しい|悲しい|怒った|怖い|"
+    r"限界の|痛みの|しんどい)"
+    rf"(?P<subject>(?:{OTHER_EXPERIENCER_SUBJECT_PATTERN}|人(?:たち)?|人々))"
+    r"(?:が|は|を|に|の)"
+)
+UNBOUND_EPISTEMIC_STATE_OR_DESIRE_RE = re.compile(
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+    r"[^。！？!?]{0,24}(?:らしい(?:です)?|みたい(?:だ|です)?|"
+    r"そう(?:だ|です)?|よう(?:だ|です)?|とのこと|っぽい)"
+)
+UNBOUND_REPORTED_STATE_OR_DESIRE_RE = re.compile(
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+    r"[^。！？!?]{0,24}(?:(?:だ|です)?(?:と|って)(?:聞|聴|言っていた|"
+    r"言っていました|伝えられ|教えられ)|(?:と)?いう話を(?:聞|聴)|"
+    r"との話(?:だ|です))"
+)
+UNBOUND_REPORT_OR_EPISTEMIC_WINDOW_RE = re.compile(
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+    r"[^。！？!?]{0,28}(?:耳にし|伝え聞|(?:との)?報告|(?:との)?連絡|"
+    r"との話|ということ|だって(?:[。！？!?]|$)|って(?:[。！？!?]|$)|"
+    r"との噂|とされている)"
+)
+DIRECT_UNCERTAIN_STATE_OR_DESIRE_RE = re.compile(
+    r"(?:(?:不安|限界|痛み|疲れ|つらい|苦しい|悲しい|怖い|しんどい)"
+    r"(?:なの|の)?かもしれない|"
+    r"[ぁ-んァ-ン一-龥ー]{1,24}たい(?:の)?かもしれない|"
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど)(?:っぽ(?:い|かった)|"
+    r"げ(?:だ|です)?))"
+)
+POSTPOSED_EXPERIENCER_RE = re.compile(
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+    r"[^。！？!?]{0,16}(?:なの|の)(?:は|が)"
+    rf"(?P<subject>{GENERIC_EXPERIENCER_SUBJECT_PATTERN})(?:だ|です)?"
+)
+QUOTED_OR_MARKED_OTHER_OWNERSHIP_RE = re.compile(
+    r"(?:「[^」]{0,24}(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+    r"[^」]{0,24}」|\"[^\"]{0,24}(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|"
+    r"しんど|たい)[^\"]{0,24}\"|【[^】]{0,24}(?:不安|疲|つら|苦|悲|怒|"
+    r"怖|限界|痛|しんど|たい)[^】]{0,24}】|"
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい))"
+    r"(?:は|が)"
+    rf"(?P<subject>{GENERIC_EXPERIENCER_SUBJECT_PATTERN})の"
+    r"(?:言葉|発言|話|気持ち|状態|もの)"
+)
+QUOTED_OTHER_AUTHOR_RE = re.compile(
+    r"(?:「[^」]{0,80}(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+    r"[^」]{0,80}」|\"[^\"]{0,80}(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|"
+    r"しんど|たい)[^\"]{0,80}\"|【[^】]{0,80}(?:不安|疲|つら|苦|悲|怒|"
+    r"怖|限界|痛|しんど|たい)[^】]{0,80}】|"
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい))"
+    r"(?:は|と)[、,]?"
+    rf"(?P<subject>{GENERIC_EXPERIENCER_SUBJECT_PATTERN})(?:が|は)"
+    r"[^。！？!?]{0,24}(?:言|話|述|書|投稿|送)"
+)
+OTHER_SOURCE_LABEL_PREFIX_RE = re.compile(
+    rf"(?P<subject>{GENERIC_EXPERIENCER_SUBJECT_PATTERN})の"
+    r"(?:メモ|記録|投稿|発言|診断|評価)[：:]"
+    r"[^。！？!?]{0,16}(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+)
+PARENTHETICAL_OTHER_SOURCE_RE = re.compile(
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+    r"[^。！？!?]{0,8}[（(]"
+    rf"(?P<subject>{GENERIC_EXPERIENCER_SUBJECT_PATTERN})の"
+    r"(?:話|言葉|発言|記録|メモ)[）)]"
+)
+PARENTHETICAL_SOURCE_LABEL_RE = re.compile(
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+    r"[^。！？!?]{0,8}[（(](?:出典|引用元|情報源)[：:]"
+    rf"(?P<subject>{GENERIC_EXPERIENCER_SUBJECT_PATTERN})[）)]"
+)
+EXTERNAL_ASCRIPTION_RE = re.compile(
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+    r"[^。！？!?]{0,24}(?:決めつけられ|思われ|評価を受け|診断され|"
+    r"ラベルを付けられ)"
+)
+CONDITIONAL_STATE_OR_DESIRE_RE = re.compile(
+    r"(?:(?:もし|仮に)[^。！？!?]{0,48}"
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)|"
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+    r"[^。！？!?]{0,16}(?:なら|な場合|だとしても|としても|"
+    r"になったら|になれば|であれば|(?:ている|の)?とき(?:は|だけ)?))"
+)
+UNKNOWN_OR_INTERROGATIVE_STATE_OR_DESIRE_RE = re.compile(
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+    r"[^。！？!?]{0,24}(?:か(?:どうか|否か)?(?:は|自分でも)?分から|"
+    r"なのか分から|だろうか|のかな|(?:な)?気(?:が|も|は)する)"
+)
+FUTURE_OR_POTENTIAL_STATE_RE = re.compile(
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど)"
+    r"[^。！？!?]{0,16}(?:になる)?(?:可能性がある|予定(?:だ|です))"
+)
+RETRACTED_STATE_OR_DESIRE_RE = re.compile(
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+    r"[^。！？!?]{0,28}(?:というより|かと思った(?:が|けど|けれど)"
+    r"[^。！？!?]{0,12}(?:違った|勘違い)|だと思っていた(?:が|けど|けれど)"
+    r"[^。！？!?]{0,12}(?:違った|勘違い))"
+)
+SEMANTIC_NEGATION_STATE_OR_DESIRE_RE = re.compile(
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+    r"[^。！？!?]{0,20}(?:とは(?:言えない|限らない|無縁)|"
+    r"かと言えば[^。！？!?]{0,8}(?:違う|違います)|どころか|とは反対に)"
+)
+NOMINALIZED_PAST_STATE_RE = re.compile(
+    r"(?:不安|疲れ|つらさ|苦しさ|悲しさ|怒り|怖さ|限界|痛み|しんどさ)"
+    r"の(?:記憶|思い出|過去|記録|体験)"
+)
+METALINGUISTIC_STATE_OR_DESIRE_MENTION_RE = re.compile(
+    r"(?:(?:不安|疲れ|つらい|苦しい|悲しい|怒り|怖い|限界|痛み|しんどい|"
+    r"[ぁ-んァ-ン一-龥ー]{1,24}たい)(?:」|』|\"|】)?(?:という)?"
+    r"(?:単語|表現|文|言葉)[^。！？!?]{0,24}(?:書|読|使|調べ|入力)|"
+    r"(?:例|例文|サンプル)[：:][^。！？!?]{0,16}"
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)|"
+    r"(?:テスト|確認|練習)用に[^。！？!?]{0,24}"
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい))"
+)
+GENERIC_PROPOSITION_RE = re.compile(
+    r"(?:(?:不安|疲れ|つらさ|苦しさ|悲しさ|怒り|怖さ|限界|痛み|しんどさ)"
+    r"(?:は|が)[^。！？!?]{0,24}(?:自然な反応|普通の反応|一般的|誰にでも|"
+    r"休息で和らぐ|睡眠で和らぐ|時間で和らぐ|回復する)|"
+    r"(?:不安|疲れ)(?:とは|というのは)[^。！？!?]{0,24}(?:反応|状態|感情))"
+)
+DIRECTIVE_STATE_OR_DESIRE_RE = re.compile(
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+    r"[^。！？!?]{0,28}(?:説明|感じ|書|言|入力|回答|答え|考え|想像)"
+    r"(?:して|いて|って|んで|て)?ください"
+)
+DIRECT_QUESTION_STATE_OR_DESIRE_RE = re.compile(
+    r"(?:不安|疲れている|つらい|苦しい|悲しい|怖い|しんどい|"
+    r"[ぁ-んァ-ン一-龥ー]{1,24}たい)[^。！？!?]{0,6}[？?]"
+)
+NONFACTIVE_STATE_OR_DESIRE_RE = re.compile(
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+    r"[^。！？!?]{0,24}(?:なふりを|と嘘を|だと仮定|と仮定|"
+    r"という設定)"
+)
+DEONTIC_STATE_OR_DESIRE_RE = re.compile(
+    r"(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+    r"[^。！？!?]{0,24}(?:べき(?:だ|です)?|になる必要はない|"
+    r"である必要はない)"
+)
+EMPTY_CLASS_DESIRE_RE = re.compile(
+    r"[ぁ-んァ-ン一-龥ー]{1,24}たい(?:人|者)(?:は|が)"
+    r"(?:いない|いません|存在しない)"
+)
+LEXICAL_FALSE_CUE_RE = re.compile(r"(?:不安定|不安定性|だいたい)")
+NEGATED_DESIDERATIVE_BURDEN_RE = re.compile(
+    r"(?:不安|疲れ|つらく|苦しく|悲しく|怖く|しんどく)"
+    r"[^。！？!?]{0,8}(?:になり|を感じ)たくない"
+)
+COMPLETED_FACTUAL_CHANGE_RESULT_RE = re.compile(
+    r"^(?:(?:少し|だいぶ|徐々に|少しずつ|前より)?"
+    r"(?:落ち着いた|ほっとした|安心した|楽になった|軽くなった|"
+    r"和らいだ|回復した|癒えた|元気になった|前向きになった))$"
+)
+HABITUAL_OR_DISPOSITIONAL_STATE_RE = re.compile(
+    r"(?:(?:疲れ|不安|つらく|苦しく|悲しく|怖く|しんどく)"
+    r"[^。！？!?]{0,12}(?:やすい|がち(?:だ|です)?)|"
+    r"(?:時々|ときどき|いつも|よく|しばしば|普段)"
+    r"[^。！？!?]{0,24}(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど))"
+)
+RELATIVE_CLAUSE_OTHER_EXPERIENCER_RE = re.compile(
+    r"(?:不安を感じている|疲れている|つらがっている|苦しんでいる|"
+    r"悲しんでいる|怖がっている|帰りたいという|"
+    r"[ぁ-んァ-ン一-龥ー]{1,24}たいという)"
+    rf"(?P<subject>(?:人(?:たち)?|者|{OTHER_EXPERIENCER_SUBJECT_PATTERN}))"
+    r"(?:が|は|を|に|の)"
+)
+NONEXPERIENTIAL_STATE_THEME_RE = re.compile(
+    r"(?:(?:不安|疲れ|つらさ|苦しさ|悲しさ|怒り|怖さ|限界|痛み|しんどさ)"
+    r"(?:を|への|について)[^。！？!?]{0,20}(?:研究|調査|分析|対処法|"
+    r"説明|教育)|"
+    r"(?:不安|疲れ|つらさ|苦しさ|悲しさ|怒り|怖さ|限界|痛み|しんどさ)"
+    r"[^。！？!?]{0,12}を表す(?:演技|表現))"
+)
+UNRESOLVED_DESIRE_NEGATION_WINDOW_RE = re.compile(
+    r"たい(?:とは?|なんて|などとは?|気(?:持ち|分)?(?:は|が|では?)|"
+    r"(?:という)?わけ(?:では?|でも))[^。！？!?]{0,20}"
+    r"(?:な(?:い|く|かった)|ません(?:でした)?|ございません)"
+)
+NEGATED_OR_RESOLVED_BURDEN_WINDOW_RE = re.compile(
+    r"(?:(?:不安(?:感)?|疲れ|つらさ|苦しさ|しんどさ|悲しさ|怒り|怖さ|"
+    r"限界|痛み)(?:なんか|など|は|が)?"
+    r"(?:少しも|全く|まったく|全然|一切)?"
+    r"(?:ない|なく|なかった|ありません(?:でした)?|解消(?:した|しました)|"
+    r"なくな(?:った|りました)|消え(?:た|ました)|取れ(?:た|ました)|"
+    r"抜け(?:た|ました)|収ま(?:った|りました)|和らいだ|癒えた|"
+    r"から回復(?:した|しました)|とは無縁(?:だ|です)|"
+    r"を感じずに済んだ|治った|おさまった|感じていない)|"
+    r"疲れて(?:(?:い)?ない|いません))"
+)
+RESOLVED_DESIRE_RE = re.compile(
+    r"[ぁ-んァ-ン一-龥ー]{1,24}たい(?:気持ち|願い)"
+    r"(?:は|が)?(?:消えた|なくなった|薄れた|解消した|皆無(?:だ|です)|"
+    r"ゼロ(?:だ|です)|消滅した)"
+)
+FIRST_PERSON_SUBJECTS = frozenset(
+    {"私", "わたし", "僕", "ぼく", "俺", "おれ", "自分"}
+)
+SAFE_NONPERSON_TOPIC_EXACT = frozenset(
+    {
+        "今",
+        "今日",
+        "今回",
+        "昨日",
+        "一昨日",
+        "昨夜",
+        "昨晩",
+        "今朝",
+        "さっき",
+        "先ほど",
+        "先程",
+        "先日",
+        "この前",
+        "先週",
+        "先月",
+        "去年",
+        "以前",
+        "昔",
+        "かつて",
+        "過去",
+        "当時",
+        "前",
+        "このまま",
+        "このままなの",
+        "体",
+        "身体",
+        "こと",
+        "状態",
+        "状況",
+        "仕事",
+        "環境",
+        "職場",
+        "生活",
+        "気持ち",
+        "形",
+    }
+)
+SAFE_NONPERSON_TOPIC_PATTERNS = (
+    re.compile(r"^(?:ずっと)?このままなの?$"),
+    re.compile(
+        r"^(?:この|その|あの)?(?:仕事|環境|職場|生活|状態|状況|気持ち|体|身体)$"
+    ),
+    re.compile(r"^[^\s、。！？!?「」『』]{1,20}たい気持ち$"),
+    re.compile(r"^[^\s、。！？!?「」『』]{1,20}(?:られる|れる|できる)形$"),
+)
+QUOTED_OTHER_REPORT_RE = re.compile(
+    r"(?:「[^」]{1,80}」|『[^』]{1,80}』)(?:と|って)"
+    r"[^。！？!?]{0,32}(?:が|は)?[^。！？!?]{0,16}(?:言|話|述|聞|聴|伝|教)"
+)
+FUTURE_HYPOTHETICAL_BURDEN_RE = re.compile(
+    r"(?:今夜|今晩|明日|明後日|週末|来週|来月|来年|今後|将来|これから)"
+    r"[^。！？!?]{0,64}(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど)"
+    r"[^。！？!?]{0,40}(?:かもしれない|だろう|でしょう|はず|予定|そう|よう|らしい)"
+)
+FUTURE_HYPOTHETICAL_DESIRE_RE = re.compile(
+    r"(?:今夜|今晩|明日|明後日|週末|来週|来月|来年|今後|将来|これから)"
+    r"[^。！？!?]{0,72}たい[^。！？!?]{0,24}"
+    r"(?:と思う|と考える|つもり|予定|かもしれない|だろう)"
+)
+PAST_SCOPE_MARKER_PATTERN = (
+    r"(?:昨日|一昨日|昨夜|昨晩|今朝|さっき|先ほど|先程|先日|この前|"
+    r"先週|先々週|先月|先々月|去年|昨年|一昨年|おととい|数日前|"
+    r"[一二三四五六七八九十0-9]+日前|その頃|以前|昔|かつて|過去|当時|前は)"
+)
+PAST_TO_CURRENT_SCOPE_RE = re.compile(
+    rf"{PAST_SCOPE_MARKER_PATTERN}(?:は|に)?"
+    r"[^！？!?]{1,80}(?:。(?:でも)?|が|けれども?|けど|でも|一方で)"
+    r"[^。！？!?]{0,24}(?:今日|今)(?:は|も|の)"
+)
+PAST_DESIRE_WITH_CURRENT_SCOPE_RE = re.compile(
+    rf"{PAST_SCOPE_MARKER_PATTERN}(?:は|に)?"
+    r"[^！？!?]{0,80}たい[^！？!?]{0,48}"
+    r"(?:。|が|けれども?|けど|でも|一方で)"
+    r"[^。！？!?]{0,24}(?:今日|今)(?:は|も|の)"
+)
+PAST_BURDEN_OR_DESIRE_RE = re.compile(
+    rf"{PAST_SCOPE_MARKER_PATTERN}(?:は|に)?"
+    r"[^。！？!?]{0,80}(?:不安|疲|つら|苦|悲|怒|怖|限界|痛|しんど|たい)"
+)
+PAST_STATE_OR_DESIRE_MORPHOLOGY_RE = re.compile(
+    r"(?:(?:不安(?:感)?|限界|痛み|疲れ|つらさ|苦しさ|しんどさ|悲しさ|怖さ)"
+    r"(?:だった|でした|であった|でありました|でございました|"
+    r"になった|になりました|"
+    r"があった|がありました|を感じて(?:いた|いました)|"
+    r"を感じた|を抱えて(?:いた|いました)|を抱いて(?:いた|いました)|"
+    r"を抱えた|を覚えた|が残って(?:いた|いました))|"
+    r"疲れ(?:切って(?:いた|いました)|て(?:いた|いました|た|おりました)|ました)|"
+    r"(?:怒って|悲しんで)(?:いた|いました)|"
+    r"(?:つら|苦し|しんど|だる|重|悲し|怖)かった|しんどく感じた|"
+    r"[^。！？!?]{1,32}たかった|"
+    r"[^。！？!?]{1,32}たい[^。！？!?]{0,16}"
+    r"(?:と思った|と思いました|と考えた|と考えました|"
+    r"と思って(?:いた|いました|た|おりました)|"
+    r"と考えて(?:いた|いました|た|おりました))|"
+    r"[^。！？!?]{1,32}たい(?:気持ち|願い)(?:だった|でした|があった|がありました))"
+)
+CMEE_SOURCE_ANCHOR_LIMIT = 10
 CMEE_RECEPTION_MATERIAL_MODE = "limited_grounding"
 CMEE_POSITIVE_RECEPTION_ACTS = frozenset(
     {
@@ -461,33 +880,27 @@ def _plan_id(
     )
 
 
-def _reception_plan_contract(grounded_plan: Any) -> tuple[str, tuple[str, ...]]:
-    reception_plan = _cmee_semantic_reception_plan(grounded_plan)
-    move_parts = tuple(
-        "\x1f".join(
-            (
-                str(move.move_id),
-                str(move.reception_act),
-                str(move.move_role),
-                *(str(value) for value in move.target_nucleus_ids),
-                *(str(value) for value in move.support_nucleus_ids),
-                *(str(value) for value in move.source_evidence_span_ids),
-            )
-        )
-        for move in reception_plan.moves
+def _reception_plan_contract(
+    grounded_plan: Any,
+    resolver: Any,
+) -> tuple[str, tuple[str, ...]]:
+    reception_plan = _cmee_semantic_reception_plan(grounded_plan, resolver)
+    return _reception_plan_digest(reception_plan), _ordered(
+        move.reception_act for move in reception_plan.moves
     )
-    digest = _sha256_text(
-        "|".join(
-            (
-                str(reception_plan.schema_version),
-                *(str(value) for value in reception_plan.target_nucleus_ids),
-                *(str(value) for value in reception_plan.support_nucleus_ids),
-                *(str(value) for value in reception_plan.source_evidence_span_ids),
-                *move_parts,
-            )
+
+
+def _reception_plan_digest(reception_plan: Any) -> str:
+    """Seal the complete body-free nested plan with named JSON boundaries."""
+
+    return _sha256_text(
+        json.dumps(
+            asdict(reception_plan),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
         )
     )
-    return digest, _ordered(move.reception_act for move in reception_plan.moves)
 
 
 def _artifact_id(
@@ -606,6 +1019,18 @@ def _build_graph(
     visible_nuclei = set(planned_visible_nucleus_ids)
     visible_relations = set(planned_visible_relation_ids)
     ref_by_span = {row.source_span_id: row for row in source.evidence_refs}
+    planned_visible_span_ids = {
+        source_span_id
+        for nucleus in grounded_plan.nuclei
+        if nucleus.nucleus_id in visible_nuclei
+        for source_span_id in nucleus.source_span_ids
+    }
+    planned_visible_span_ids.update(
+        source_span_id
+        for relation in grounded_plan.relations
+        if relation.relation_id in visible_relations
+        for source_span_id in relation.source_span_ids
+    )
 
     nodes: list[MeaningNode] = []
     node_id_by_source: dict[str, str] = {}
@@ -702,6 +1127,57 @@ def _build_graph(
         owner_id = obligation.meaning_owner_id
         visible_claim_refs = tuple(visible_claims_by_owner.get(owner_id, ()))
         if obligation.obligation_kind == "STRUCTURED_CONTEXT_ATTACHMENT":
+            selected_attachment_refs = tuple(
+                ref_by_span[source_span_id]
+                for source_span_id in obligation.source_span_ids
+                if source_span_id in planned_visible_span_ids
+                and source_span_id in ref_by_span
+            )
+            selected_field_paths = {
+                row.field_path for row in selected_attachment_refs
+            }
+            attachment_is_material = bool(
+                selected_field_paths.intersection({"memo", "memo_action"})
+                and any(
+                    field_path not in {"memo", "memo_action"}
+                    for field_path in selected_field_paths
+                )
+            )
+            if attachment_is_material:
+                unknown_node_id = _stable_id(
+                    "mn",
+                    source.envelope.envelope_id,
+                    owner_id,
+                    "structured_attachment_unknown",
+                )
+                nodes.append(
+                    MeaningNode(
+                        node_id=unknown_node_id,
+                        owner_id=owner_id,
+                        node_kind="STRUCTURED_CONTEXT_ATTACHMENT_RELATION",
+                        grounding_kind="unresolved_attachment_relation",
+                        value="",
+                        epistemic_state=EpistemicState.UNKNOWN,
+                        evidence_ids=obligation.evidence_refs,
+                    )
+                )
+                dispositions.append(
+                    OwnerDisposition(
+                        meaning_owner_id=owner_id,
+                        owner_class=obligation.owner_class,
+                        provider_resolution=ProviderResolution.UNRESOLVED,
+                        attachment_admission=AttachmentAdmission.UNRESOLVED,
+                        visible_authority=VisibleAuthority.NONE,
+                        route_b_disposition=(
+                            RouteBDisposition.UNKNOWN_PRESERVED_LIMITED
+                        ),
+                        visible_claim_refs=(unknown_node_id,),
+                        evidence_refs=obligation.evidence_refs,
+                        target_unknown_ref=unknown_node_id,
+                        reason_codes=("ATTACHMENT_UNRESOLVED",),
+                    )
+                )
+                continue
             dispositions.append(
                 OwnerDisposition(
                     meaning_owner_id=owner_id,
@@ -877,22 +1353,21 @@ def _build_experience_plan(
         for row in graph.owner_dispositions
         if row.disposition not in positive_dispositions
     )
-    visible_unknown = tuple(
-        row.owner_id
-        for row in graph.owner_dispositions
-        if source.owner_obligation(row.owner_id).obligation_kind
-        == "STRUCTURED_CONTEXT_ATTACHMENT"
-        and row.disposition
-        in {
-            RouteBDisposition.UNKNOWN_PRESERVED_LIMITED,
-            RouteBDisposition.NOT_VISIBLE_UNRESOLVED,
-        }
-    )
     unresolved_required = tuple(
         row
         for row in graph.owner_dispositions
         if row.owner_class is OwnerClass.REQUIRED
         and row.disposition not in positive_dispositions
+    )
+    visible_unknown = tuple(
+        row.owner_id
+        for row in graph.owner_dispositions
+        if source.owner_obligation(row.owner_id).obligation_kind
+        == "STRUCTURED_CONTEXT_ATTACHMENT"
+        and (
+            row.disposition is RouteBDisposition.UNKNOWN_PRESERVED_LIMITED
+            or row in unresolved_required
+        )
     )
     if any(row.owner_id not in set(visible_unknown) for row in unresolved_required):
         raise CMEEVerticalError("required_unknown_not_safely_visible")
@@ -923,9 +1398,14 @@ def _build_experience_plan(
     )
     if not set(required_observation_owners + reception_target_owners).issubset(set(visible)):
         raise CMEEVerticalError("experience_plan_visible_owner_mismatch")
-    if not visible_unknown:
-        raise CMEEVerticalError("limited_visible_unknown_owner_missing")
-    reception_plan_digest, allowed_reception_act_ids = _reception_plan_contract(grounded_plan)
+    reception_resolver = build_evidence_span_resolver(
+        source.evidence_spans,
+        current_input=source.normalized_current_input,
+    )
+    reception_plan_digest, allowed_reception_act_ids = _reception_plan_contract(
+        grounded_plan,
+        reception_resolver,
+    )
     return ExperiencePlan(
         plan_id=_stable_id(
             "plan",
@@ -955,7 +1435,7 @@ def _build_experience_plan(
     )
 
 
-def _cmee_semantic_reception_plan(grounded_plan: Any) -> Any:
+def _cmee_semantic_reception_plan(grounded_plan: Any, resolver: Any) -> Any:
     """Project the existing target into a polarity-strict CMEE reception plan.
 
     The legacy short-state compatibility policy intentionally collapses every
@@ -967,6 +1447,7 @@ def _cmee_semantic_reception_plan(grounded_plan: Any) -> Any:
     """
 
     response_plan = grounded_plan.response_plan
+    nucleus_index = {row.nucleus_id: row for row in grounded_plan.nuclei}
     reception_plan = build_grounded_human_reception_plan(
         required=grounded_plan.coverage_requirements.human_follow_required,
         human_follow_target_ids=response_plan.human_follow_target_ids,
@@ -982,22 +1463,106 @@ def _cmee_semantic_reception_plan(grounded_plan: Any) -> Any:
     )
     if reception_plan is None or not reception_plan.required:
         raise CMEEVerticalError("bound_human_reception_plan_missing")
+
+    # A retained-intention target that consists of uncertainty plus an actual
+    # thinking action cannot itself supply the content of the intention.  Bind
+    # the request-local observation support as evidence for that content so
+    # Stage 1 can keep desire, current action, and result separate.
+    semantic_support_ids: tuple[str, ...] = ()
+    initial_acts = _ordered(move.reception_act for move in reception_plan.moves)
+    target_has_value_operator = any(
+        "operator:value" in set(nucleus_index[row_id].semantic_frame.attribute_codes)
+        for row_id in reception_plan.target_nucleus_ids
+        if row_id in nucleus_index
+    )
+    if (
+        "protect_retained_intention" in initial_acts
+        and target_has_value_operator
+        and not reception_plan.support_nucleus_ids
+    ):
+        semantic_support_ids = tuple(
+            row_id
+            for row_id in response_plan.supporting_nucleus_ids
+            if row_id in nucleus_index
+            and row_id not in set(reception_plan.target_nucleus_ids)
+            and not NEGATED_DESIRE_RE.search(
+                _cmee_source_text(nucleus_index[row_id], resolver)
+            )
+            and _cmee_desire_phrase(
+                _cmee_source_text(nucleus_index[row_id], resolver)
+            )
+        )[:1]
+        if not semantic_support_ids:
+            raise CMEEVerticalError(
+                "bound_human_reception_retained_intention_evidence_missing"
+            )
+        if semantic_support_ids:
+            selected_ids = _ordered(
+                (*reception_plan.target_nucleus_ids, *semantic_support_ids)
+            )
+            selected_evidence_set = {
+                source_span_id
+                for row_id in selected_ids
+                for source_span_id in nucleus_index[row_id].source_span_ids
+            }
+            selected_evidence_ids = tuple(
+                source_span_id
+                for source_span_id in resolver.span_ids
+                if source_span_id in selected_evidence_set
+            )
+            selected_source_field_count = len(
+                {
+                    field
+                    for row_id in selected_ids
+                    for field in nucleus_index[row_id].source_fields
+                }
+            )
+            reception_plan = replace(
+                reception_plan,
+                opportunities=tuple(
+                    replace(
+                        opportunity,
+                        support_nucleus_ids=semantic_support_ids,
+                        source_evidence_span_ids=selected_evidence_ids,
+                        source_field_count=selected_source_field_count,
+                    )
+                    if opportunity.reception_act == "protect_retained_intention"
+                    else opportunity
+                    for opportunity in reception_plan.opportunities
+                ),
+                moves=tuple(
+                    replace(
+                        move,
+                        support_nucleus_ids=semantic_support_ids,
+                        source_evidence_span_ids=selected_evidence_ids,
+                    )
+                    if move.reception_act == "protect_retained_intention"
+                    else move
+                    for move in reception_plan.moves
+                ),
+                support_nucleus_ids=semantic_support_ids,
+                source_evidence_span_ids=selected_evidence_ids,
+            )
     expected_targets = tuple(response_plan.human_follow_target_ids)
     if reception_plan.target_nucleus_ids != expected_targets:
         raise CMEEVerticalError("bound_human_reception_target_mismatch")
-    if reception_plan.support_nucleus_ids:
+    if reception_plan.support_nucleus_ids != semantic_support_ids:
         raise CMEEVerticalError("bound_human_reception_support_not_supported")
 
-    nucleus_index = {row.nucleus_id: row for row in grounded_plan.nuclei}
     if any(row_id not in nucleus_index for row_id in reception_plan.target_nucleus_ids):
         raise CMEEVerticalError("bound_human_reception_target_mismatch")
     selected_nucleus_ids = _ordered(
         (*reception_plan.target_nucleus_ids, *reception_plan.support_nucleus_ids)
     )
-    expected_evidence_ids = _ordered(
+    expected_evidence_set = {
         source_span_id
         for row_id in selected_nucleus_ids
         for source_span_id in nucleus_index[row_id].source_span_ids
+    }
+    expected_evidence_ids = tuple(
+        source_span_id
+        for source_span_id in resolver.span_ids
+        if source_span_id in expected_evidence_set
     )
     if reception_plan.source_evidence_span_ids != expected_evidence_ids:
         raise CMEEVerticalError("bound_human_reception_source_evidence_mismatch")
@@ -1005,10 +1570,22 @@ def _cmee_semantic_reception_plan(grounded_plan: Any) -> Any:
         raise CMEEVerticalError("bound_human_reception_move_missing")
     if any(
         move.target_nucleus_ids != reception_plan.target_nucleus_ids
+        or move.support_nucleus_ids != reception_plan.support_nucleus_ids
         or move.source_evidence_span_ids != reception_plan.source_evidence_span_ids
         for move in reception_plan.moves
     ):
         raise CMEEVerticalError("bound_human_reception_move_binding_mismatch")
+
+    plan_issues = validate_grounded_human_reception_plan(
+        reception_plan,
+        expected_target_ids=expected_targets,
+        nucleus_index=nucleus_index,
+        resolver=resolver,
+        safety_kind=grounded_plan.safety_policy.safety_kind,
+        material_quality=CMEE_RECEPTION_MATERIAL_MODE,
+    )
+    if plan_issues:
+        raise CMEEVerticalError("bound_human_reception_plan_invalid")
 
     target_polarities = {
         str(nucleus_index[row_id].semantic_frame.polarity)
@@ -1072,12 +1649,11 @@ def _cmee_source_anchor(nucleus: Any, resolver: Any) -> str:
         "",
         compact,
     )
-    # Never replay a complete short source clause.  A longer clause contributes
-    # only a small source-local anchor; the binding remains authoritative for
-    # the complete evidence range.
-    if len(compact) <= CMEE_SOURCE_ANCHOR_LIMIT + 2:
-        return ""
-    return compact[:CMEE_SOURCE_ANCHOR_LIMIT] + "…"
+    # Keep a complete source-local phrase. Mid-clause head/tail splicing made
+    # the visible Japanese unreadable and could change the source predicate.
+    if len(compact) <= CMEE_SOURCE_ANCHOR_LIMIT:
+        return compact
+    return _cmee_natural_fragment(compact, limit=CMEE_SOURCE_ANCHOR_LIMIT)
 
 
 def _cmee_nucleus_surface_label(nucleus: Any) -> str:
@@ -1123,6 +1699,764 @@ def _cmee_source_reference(
         if include_semantic_label
         else reference
     )
+
+
+def _cmee_source_text(nucleus: Any, resolver: Any) -> str:
+    text = "".join(
+        str(resolver.resolve(source_span_id).raw_text or "")
+        for source_span_id in nucleus.source_span_ids
+    )
+    return re.sub(r"\s+", " ", text).strip().strip("、。！？!?「」『』 ")
+
+
+def _cmee_split_contrast(text: str) -> tuple[str, str] | None:
+    match = re.match(
+        r"^(.+?)(?:けれども?|けど|なのに|のに|だけど|でも|一方で|ただ)(?:、)?(.+)$",
+        str(text or "").strip(),
+    )
+    if not match:
+        return None
+    left = match.group(1).strip("、。 ")
+    right = match.group(2).strip("、。 ")
+    return (left, right) if left and right else None
+
+
+def _cmee_has_current_burden(text: str) -> bool:
+    """Recognize a current burden cue while preserving explicit negation."""
+
+    value = re.sub(r"\s+", "", str(text or ""))
+    current_only = NONCURRENT_BURDEN_RE.sub("", value)
+    return bool(
+        SOURCE_BURDEN_CUE_RE.search(current_only)
+        or SOURCE_BURDEN_EXTRA_RE.search(current_only)
+    )
+
+
+def _cmee_assert_current_first_person_scope_supported(
+    text: str,
+    grounded_plan: Any,
+) -> None:
+    """Fail closed when Stage 1 cannot safely bind experiencer or time scope."""
+
+    value = re.sub(r"\s+", "", str(text or ""))
+    for pattern in (
+        GENERIC_EXPERIENCER_APPEARANCE_RE,
+        GENERIC_EXPERIENCER_REPORTED_DESIRE_RE,
+        GENERIC_OTHER_THEN_FIRST_PERSON_RE,
+        GENERIC_EXPERIENCER_STATE_OR_DESIRE_RE,
+        GENERIC_EXPERIENCER_ATTRIBUTION_RE,
+        GENERIC_OTHER_SOURCE_BEFORE_CUE_RE,
+        GENERIC_POSSESSIVE_EXPERIENCER_RE,
+        GENERIC_AFFECTED_OBJECT_RE,
+        GENERIC_AFFECTED_DATIVE_RE,
+        GENERIC_BARE_OTHER_EXPERIENCER_RE,
+        ATTRIBUTIVE_OTHER_EXPERIENCER_RE,
+        POSTPOSED_EXPERIENCER_RE,
+        QUOTED_OR_MARKED_OTHER_OWNERSHIP_RE,
+        QUOTED_OTHER_AUTHOR_RE,
+        OTHER_SOURCE_LABEL_PREFIX_RE,
+        PARENTHETICAL_OTHER_SOURCE_RE,
+        PARENTHETICAL_SOURCE_LABEL_RE,
+        RELATIVE_CLAUSE_OTHER_EXPERIENCER_RE,
+    ):
+        for match in pattern.finditer(value):
+            subject = str(match.group("subject") or "")
+            if any(
+                subject.endswith(first_person)
+                for first_person in FIRST_PERSON_SUBJECTS
+            ):
+                continue
+            if (
+                pattern is GENERIC_EXPERIENCER_STATE_OR_DESIRE_RE
+                and (
+                    subject in SAFE_NONPERSON_TOPIC_EXACT
+                    or any(
+                        safe_pattern.fullmatch(subject)
+                        for safe_pattern in SAFE_NONPERSON_TOPIC_PATTERNS
+                    )
+                )
+            ):
+                continue
+            raise CMEEVerticalError(
+                "current_experiencer_or_time_scope_unsupported"
+            )
+    if any(
+        pattern.search(value)
+        for pattern in (
+            OTHER_EXPERIENCER_BURDEN_REPORT_RE,
+            OTHER_EXPERIENCER_BURDEN_RE,
+            OTHER_EXPERIENCER_DESIRE_RE,
+            QUOTED_OTHER_REPORT_RE,
+            REPORTED_EXTERNAL_APPEARANCE_RE,
+            UNBOUND_EPISTEMIC_STATE_OR_DESIRE_RE,
+            UNBOUND_REPORTED_STATE_OR_DESIRE_RE,
+            UNBOUND_REPORT_OR_EPISTEMIC_WINDOW_RE,
+            DIRECT_UNCERTAIN_STATE_OR_DESIRE_RE,
+            EXTERNAL_ASCRIPTION_RE,
+            CONDITIONAL_STATE_OR_DESIRE_RE,
+            UNKNOWN_OR_INTERROGATIVE_STATE_OR_DESIRE_RE,
+            FUTURE_OR_POTENTIAL_STATE_RE,
+            RETRACTED_STATE_OR_DESIRE_RE,
+            SEMANTIC_NEGATION_STATE_OR_DESIRE_RE,
+            NOMINALIZED_PAST_STATE_RE,
+            METALINGUISTIC_STATE_OR_DESIRE_MENTION_RE,
+            GENERIC_PROPOSITION_RE,
+            DIRECTIVE_STATE_OR_DESIRE_RE,
+            DIRECT_QUESTION_STATE_OR_DESIRE_RE,
+            NONFACTIVE_STATE_OR_DESIRE_RE,
+            DEONTIC_STATE_OR_DESIRE_RE,
+            EMPTY_CLASS_DESIRE_RE,
+            LEXICAL_FALSE_CUE_RE,
+            NEGATED_DESIDERATIVE_BURDEN_RE,
+            HABITUAL_OR_DISPOSITIONAL_STATE_RE,
+            NONEXPERIENTIAL_STATE_THEME_RE,
+            NEGATED_OR_RESOLVED_BURDEN_WINDOW_RE,
+            RESOLVED_DESIRE_RE,
+            FUTURE_HYPOTHETICAL_BURDEN_RE,
+            FUTURE_HYPOTHETICAL_DESIRE_RE,
+            PAST_DESIRE_WITH_CURRENT_SCOPE_RE,
+        )
+    ):
+        raise CMEEVerticalError("current_experiencer_or_time_scope_unsupported")
+    change_parts = _cmee_change_parts(value)
+    change_result = change_parts[2] if change_parts else ""
+    has_source_bound_positive_change = any(
+        str(getattr(nucleus.semantic_frame, "actor", "") or "")
+        == "current_user"
+        and "operator:positive_change"
+        in set(nucleus.semantic_frame.attribute_codes)
+        for nucleus in grounded_plan.nuclei
+    )
+    completed_factual_change = bool(
+        change_parts
+        and COMPLETED_FACTUAL_CHANGE_RESULT_RE.fullmatch(change_result)
+    )
+    if (
+        change_parts
+        and has_source_bound_positive_change
+        and not completed_factual_change
+    ):
+        raise CMEEVerticalError("current_experiencer_or_time_scope_unsupported")
+    source_bound_actual_change = bool(
+        completed_factual_change
+        and has_source_bound_positive_change
+    )
+    if (
+        PAST_BURDEN_OR_DESIRE_RE.search(value)
+        or PAST_TO_CURRENT_SCOPE_RE.search(value)
+        or PAST_STATE_OR_DESIRE_MORPHOLOGY_RE.search(value)
+    ) and not any(
+        str(relation.type) in DIRECTIONAL_GROUNDED_RELATION_TYPES
+        for relation in grounded_plan.relations
+    ) and not source_bound_actual_change:
+        raise CMEEVerticalError("current_experiencer_or_time_scope_unsupported")
+
+
+def _cmee_natural_fragment(text: str, *, limit: int = 28) -> str:
+    value = re.sub(r"\s+", "", str(text or "")).strip("、。！？!?「」『』 ")
+    value = re.sub(r"^(?:それでも|けれども?|でも|だけど|一方で|ただ|今日は)", "", value)
+    if len(value) <= limit:
+        return value
+    candidates = tuple(
+        part.strip("、。！？!? ")
+        for part in re.split(
+            r"[、。！？!?]+|(?:けれども?|だけど|一方で|とはいえ)",
+            value,
+        )
+        if part.strip("、。！？!? ")
+    )
+    fitting = tuple(part for part in candidates if 2 <= len(part) <= limit)
+    if fitting:
+        return fitting[-1]
+    desire_candidates = tuple(
+        match[-limit:]
+        for match in re.findall(r"[ぁ-んァ-ン一-龥ー]{1,32}たい", value)
+        if len(match[-limit:]) >= 2
+    )
+    if desire_candidates:
+        return desire_candidates[-1]
+    # A generic complete referent is safer than exposing a broken source
+    # clause. The full evidence remains bound in the private trace.
+    return "今書かれたこと"
+
+
+def _cmee_desire_phrase(text: str) -> str:
+    value = re.sub(r"\s+", "", str(text or "")).strip("、。！？!?「」『』 ")
+    candidates = tuple(re.finditer(r"[ぁ-んァ-ン一-龥ー]{1,22}たい", value))
+    for candidate in reversed(candidates):
+        tail = value[candidate.end() : candidate.end() + 16]
+        if NEGATED_DESIRE_SUFFIX_RE.match(tail):
+            continue
+        phrase = candidate.group(0)
+        for marker in ("けれど", "けど", "のに", "でも", "あと"):
+            if marker in phrase:
+                phrase = phrase.rsplit(marker, 1)[-1]
+        return phrase[-22:]
+    return ""
+
+
+def _cmee_sentence_desire_phrase(desire: str) -> str:
+    """Turn a source desire into a sentence object without objectifying I."""
+
+    value = str(desire or "")
+    first_person_pattern = "|".join(
+        re.escape(subject)
+        for subject in sorted(FIRST_PERSON_SUBJECTS, key=len, reverse=True)
+    )
+    value = re.sub(rf"^(?:{first_person_pattern})は", "", value)
+    return re.sub(r"^(.{1,18})は(.+たい)$", r"\1を\2", value)
+
+
+def _cmee_semantic_desire(nucleus: Any, text: str) -> str:
+    attributes = set(nucleus.semantic_frame.attribute_codes)
+    allowed = (
+        nucleus.kind == "wish"
+        or nucleus.semantic_frame.modality in {"wish", "intention"}
+        or "operator:wish" in attributes
+        or "operator:continuation" in attributes
+        or {"operator:contrast", "operator:negation"}.issubset(attributes)
+    )
+    if not allowed:
+        return ""
+    if NEGATED_DESIRE_RE.search(str(text or "")):
+        return ""
+    desire = _cmee_desire_phrase(text)
+    if desire.endswith("みたい") and "operator:wish" not in attributes:
+        return ""
+    return desire
+
+
+def _cmee_source_state_phrase(text: str) -> str:
+    """Return a source-only state reference without adding a sensation label."""
+
+    value = re.sub(r"\s+", "", str(text or "")).strip("、。！？!?「」『』 ")
+    if not _cmee_has_current_burden(value) and (
+        SOURCE_BURDEN_CUE_RE.search(value)
+        or SOURCE_BURDEN_EXTRA_RE.search(value)
+    ):
+        return f"「{_cmee_natural_fragment(value, limit=24)}」という状態"
+    if re.search(r"(?:なくて|られなくて).*(?:疲|つら|苦し|しんど)", value):
+        return f"「{_cmee_natural_fragment(value, limit=28)}」という状態"
+    for cue, noun in (
+        ("つら", "つらさ"),
+        ("苦し", "苦しさ"),
+        ("しんど", "しんどさ"),
+        ("痛", "痛み"),
+        ("不安", "不安"),
+        ("疲", "疲れ"),
+    ):
+        if cue in value:
+            context = value.split(cue, 1)[0].rstrip("がはをにで、")
+            if 2 <= len(context) <= 14:
+                if context.endswith("て"):
+                    return f"{context}いる中で感じている{noun}"
+                return f"「{context}」について感じている{noun}"
+            return f"いま感じている{noun}"
+    return f"「{_cmee_natural_fragment(text, limit=12)}」という状態"
+
+
+def _cmee_refusal_state_text(text: str) -> str:
+    """Naturalize an explicit present refusal without adding a diagnosis."""
+
+    value = re.sub(r"\s+", "", str(text or "")).strip("、。！？!? ")
+    match = re.match(r"^(.+?)し(.+?(?:たくない|できない|したくない))$", value)
+    if not match:
+        return f"いまは、「{_cmee_natural_fragment(value, limit=24)}」という状態です。"
+    first = match.group(1)
+    second = match.group(2)
+    state_noun = {
+        "だるい": "だるさ",
+        "つらい": "つらさ",
+        "しんどい": "しんどさ",
+        "苦しい": "苦しさ",
+    }.get(first)
+    if state_noun:
+        return f"いまは、{state_noun}があり、{second}状態です。"
+    return f"いまは、「{first}」という状態と、{second}状態が重なっています。"
+
+
+def _cmee_change_parts(text: str) -> tuple[str, str, str] | None:
+    """Return source-stated before/action/result parts without inferring cause."""
+
+    contrast = _cmee_split_contrast(text)
+    if not contrast:
+        return None
+    before, after = contrast
+    transition = re.match(r"^(.+?)(?:たら|なら)(.+)$", after)
+    if not transition:
+        return None
+    action_stem = transition.group(1).strip("、。 ")
+    result = transition.group(2).strip("、。 ")
+    action = action_stem + "た" if action_stem.endswith("し") else action_stem
+    before = re.sub(r"^今日は", "", before).strip("、。 ")
+    return (before, action, result) if before and action and result else None
+
+
+def _cmee_polite_source_clause(text: str) -> str:
+    """Apply only terminal-form normalization to a source-local clause."""
+
+    value = re.sub(r"\s+", "", str(text or "")).strip("、。！？!? ")
+    for pattern, replacement in (
+        (r"ている$", "ています"),
+        (r"でいる$", "でいます"),
+        (r"がある$", "があります"),
+        (r"もある$", "もあります"),
+    ):
+        if re.search(pattern, value):
+            return re.sub(pattern, replacement, value)
+    return value + "と書かれています"
+
+
+def _cmee_nucleus_observation_text(nucleus: Any, resolver: Any) -> str:
+    source_text = _cmee_source_text(nucleus, resolver)
+    attributes = set(nucleus.semantic_frame.attribute_codes)
+    desire = _cmee_semantic_desire(nucleus, source_text)
+    contrast = _cmee_split_contrast(source_text)
+    source_fields = {
+        str(getattr(resolver.resolve(source_span_id), "source_field", "") or "")
+        for source_span_id in nucleus.source_span_ids
+    }
+
+    if "emotion_details" in source_fields:
+        return f"選ばれた気持ちの詳細には「{source_text}」とあります。"
+    if "emotions" in source_fields:
+        return f"気持ちの一覧にも「{source_text}」が含まれています。"
+    if "category" in source_fields:
+        return f"記録のカテゴリには「{source_text}」が選ばれています。"
+
+    if "operator:help_seeking" in attributes:
+        if contrast:
+            left, right = contrast
+            left_desire = _cmee_semantic_desire(nucleus, left)
+            right_desire = _cmee_semantic_desire(nucleus, right)
+            if not left_desire and not right_desire:
+                raise CMEEVerticalError(
+                    "plan_bound_observation_semantic_desire_mismatch"
+                )
+            desire_side = left if left_desire else right
+            hesitation_side = right if desire_side == left else left
+            return (
+                f"「{_cmee_natural_fragment(desire_side)}」という気持ちに、"
+                f"「{_cmee_natural_fragment(hesitation_side)}」というためらいが重なっています。"
+            )
+        return f"今の記録には、「{_cmee_natural_fragment(source_text, limit=36)}」とあります。"
+
+    if "operator:positive_change" in attributes:
+        change_parts = _cmee_change_parts(source_text)
+        if change_parts:
+            before, action, result = change_parts
+            return (
+                f"{before}あと、{action}ことがあり、"
+                f"その後には「{result}」という変化があります。"
+            )
+        if contrast:
+            return (
+                f"「{_cmee_natural_fragment(contrast[0], limit=24)}」という状態のあとに、"
+                f"「{_cmee_natural_fragment(contrast[1], limit=24)}」という変化があります。"
+            )
+        positive_event = re.match(r"^(.+?)て(.+?かった)$", source_text)
+        if positive_event:
+            return (
+                f"{positive_event.group(1)}たことがあり、"
+                f"そのときに「{positive_event.group(2)}」という変化があります。"
+            )
+        return f"「{source_text}」という変化が、今の記録にあります。"
+
+    if contrast:
+        left, right = contrast
+        left_raw_desire = _cmee_desire_phrase(left)
+        right_raw_desire = _cmee_desire_phrase(right)
+        left_desire = _cmee_semantic_desire(nucleus, left) or (
+            left_raw_desire
+            if left_raw_desire and not left_raw_desire.endswith("みたい")
+            else ""
+        )
+        right_desire = _cmee_semantic_desire(nucleus, right) or (
+            right_raw_desire
+            if right_raw_desire and not right_raw_desire.endswith("みたい")
+            else ""
+        )
+        if right_desire:
+            return (
+                f"{_cmee_source_state_phrase(left)}がありながら、"
+                f"「{right_desire}」という気持ちもあります。"
+            )
+        if left_desire:
+            return (
+                f"「{left_desire}」という気持ちはある一方で、"
+                f"{_cmee_source_state_phrase(right)}も同時にあります。"
+            )
+
+    if "operator:refusal" in attributes:
+        return _cmee_refusal_state_text(source_text)
+    if nucleus.kind in {"state", "reaction", "constraint"}:
+        return f"いまは、{_cmee_source_state_phrase(source_text)}があります。"
+    if nucleus.kind == "wish" and desire:
+        visible_desire = _cmee_sentence_desire_phrase(desire)
+        temporal = re.match(
+            r"^(?:今日は)?(.+?(?:あと|後))[、,](.+)$",
+            source_text,
+        )
+        if temporal:
+            source_prefix = temporal.group(1).strip("、。 ")
+            tail_clause = temporal.group(2).strip("、。 ")
+            retained_pair = re.match(
+                r"^(.+?たい)気持ちと(.+?)が残っている$",
+                tail_clause,
+            )
+            if retained_pair:
+                return (
+                    f"{source_prefix}にも、{retained_pair.group(1)}気持ちがあり、"
+                    f"{retained_pair.group(2)}も残っています。"
+                )
+            return f"{source_prefix}にも、{_cmee_polite_source_clause(tail_clause)}。"
+        compact_source = re.sub(r"\s+", "", source_text)
+        if len(compact_source) >= len(desire) + 9:
+            return (
+                f"「{visible_desire}」という気持ちだけでなく、"
+                "その前後に書かれたことも、同じ今の記録にあります。"
+            )
+        return f"「{visible_desire}」という気持ちが、今の言葉の中にあります。"
+    if nucleus.kind == "wish" and "operator:value" in attributes:
+        uncertain_thought = re.match(
+            r"^(?:ずっと)?(.+?)なのが不安で[、,](.+)$",
+            source_text,
+        )
+        if uncertain_thought:
+            uncertain_state = uncertain_thought.group(1).strip("、。 ")
+            thought = uncertain_thought.group(2).strip("、。 ")
+            thought = re.sub(r"いいのか考えている$", "よいかを考えています", thought)
+            thought = re.sub(r"ている$", "ています", thought)
+            return (
+                f"{uncertain_state}かもしれないという不安の中で、"
+                f"{thought}。"
+            )
+        return f"{_cmee_polite_source_clause(source_text)}。"
+    anchor = _cmee_source_anchor(nucleus, resolver)
+    if anchor:
+        return f"「{anchor}」という出来事が、今の記録に残っています。"
+    return "今の入力には、ひとつの具体的な出来事が記録されています。"
+
+
+def _cmee_relation_observation_text(
+    relation: Any,
+    from_nucleus: Any,
+    to_nucleus: Any,
+    resolver: Any,
+) -> str:
+    from_text = _cmee_source_text(from_nucleus, resolver)
+    to_text = _cmee_source_text(to_nucleus, resolver)
+    relation_type = str(relation.type)
+    from_desire = _cmee_semantic_desire(from_nucleus, from_text)
+    to_desire = _cmee_semantic_desire(to_nucleus, to_text)
+
+    if relation_type == "contrast":
+        if to_desire:
+            return (
+                f"{_cmee_source_state_phrase(from_text)}がある一方で、"
+                f"「{to_desire}」という気持ちもあります。"
+            )
+        if from_desire:
+            return (
+                f"「{from_desire}」という気持ちがあり、"
+                f"それと同時に{_cmee_source_state_phrase(to_text)}もあります。"
+            )
+        return (
+            f"{_cmee_source_state_phrase(from_text)}と{_cmee_source_state_phrase(to_text)}が、"
+            "同時にあります。"
+        )
+    if relation_type == "preserves_despite":
+        desire = to_desire or from_desire
+        other_text = from_text if to_desire else to_text
+        desire_text = desire or _cmee_natural_fragment(
+            to_text if from_text == other_text else from_text,
+            limit=24,
+        )
+        return (
+            f"{_cmee_source_state_phrase(other_text)}がありながら、"
+            f"「{desire_text}」という気持ちは残っています。"
+        )
+    if relation_type == "wish_and_constraint":
+        desire = from_desire or to_desire
+        if desire:
+            return (
+                f"「{desire}」という気持ちは、まだ実際にできたという結果ではなく、"
+                "いま残っている願いです。"
+            )
+        return (
+            "ここにある願いは、まだ実際にできたという結果ではなく、"
+            "いま残っている気持ちです。"
+        )
+    if relation_type == "coexistence":
+        return (
+            f"「{_cmee_natural_fragment(from_text)}」と"
+            f"「{_cmee_natural_fragment(to_text)}」が、同じ時点にあります。"
+        )
+    if relation_type in DIRECTIONAL_GROUNDED_RELATION_TYPES:
+        return (
+            f"「{_cmee_natural_fragment(from_text)}」のあとに"
+            f"「{_cmee_natural_fragment(to_text)}」が起きたという順序です。"
+        )
+    return (
+        f"「{_cmee_natural_fragment(from_text)}」と"
+        f"「{_cmee_natural_fragment(to_text)}」が、一つの流れの中にあります。"
+    )
+
+
+def _cmee_stage1_reception_text(
+    act_ids: Sequence[str],
+    target_nuclei: Sequence[Any],
+    resolver: Any,
+) -> str:
+    target_text = "。".join(
+        _cmee_source_text(nucleus, resolver) for nucleus in target_nuclei
+    )
+    desire = next(
+        (
+            value
+            for nucleus in target_nuclei
+            if (value := _cmee_semantic_desire(
+                nucleus,
+                _cmee_source_text(nucleus, resolver),
+            ))
+        ),
+        "",
+    )
+    acts = set(act_ids)
+    attributes = {
+        code
+        for nucleus in target_nuclei
+        for code in nucleus.semantic_frame.attribute_codes
+    }
+    primary_text = (
+        _cmee_source_text(target_nuclei[0], resolver)
+        if target_nuclei
+        else target_text
+    )
+    contrast = _cmee_split_contrast(primary_text)
+    sentence_desire = _cmee_sentence_desire_phrase(desire)
+
+    if "hold_help_seeking" in acts:
+        if not sentence_desire:
+            raise CMEEVerticalError(
+                "bound_human_reception_target_act_semantic_mismatch"
+            )
+        hesitation = "同時にあるためらい"
+        if contrast:
+            left, right = contrast
+            hesitation = right if _cmee_desire_phrase(left) else left
+            hesitation = f"{_cmee_natural_fragment(hesitation, limit=28)}というためらい"
+        help_text = sentence_desire or "助けを求めたい"
+        return (
+            f"{help_text}という気持ちは、助けを求める大切な動きとして、"
+            f"{hesitation}とは別に心に留めます。"
+        )
+    if "recognize_lived_change" in acts:
+        change_parts = _cmee_change_parts(primary_text)
+        if change_parts:
+            _before, action, result = change_parts
+            return (
+                f"{action}あとに{result}という変化を、"
+                "今回起きた一度のこととして見過ごさず、静かに喜びます。"
+            )
+        positive_event = re.match(r"^(.+?)て(.+?かった)$", primary_text)
+        if positive_event:
+            return (
+                f"{positive_event.group(1)}たあとに{positive_event.group(2)}という変化を、"
+                "今回起きた一度のこととして見過ごさず、静かに喜びます。"
+            )
+        return (
+            "今回ここに書かれた変化を、一度の実感として"
+            "軽いこととして流さず受け止めます。"
+        )
+    if "protect_retained_intention" in acts:
+        if NEGATED_DESIRE_RE.search(primary_text) and not sentence_desire:
+            raise CMEEVerticalError(
+                "bound_human_reception_target_act_semantic_mismatch"
+            )
+        named_desire = (
+            f"{sentence_desire}という願い"
+            if sentence_desire
+            else "今の考えに残っている願い"
+        )
+        if "operator:value" in attributes:
+            supported_desire = next(
+                (
+                    _cmee_desire_phrase(_cmee_source_text(nucleus, resolver))
+                    for nucleus in target_nuclei
+                    if not NEGATED_DESIRE_RE.search(
+                        _cmee_source_text(nucleus, resolver)
+                    )
+                    and _cmee_desire_phrase(
+                        _cmee_source_text(nucleus, resolver)
+                    )
+                ),
+                "",
+            )
+            if supported_desire:
+                supported_sentence_desire = _cmee_sentence_desire_phrase(
+                    supported_desire
+                )
+                named_desire = f"{supported_sentence_desire}という願い"
+            uncertain_thought = re.match(
+                r"^(?:ずっと)?(.+?)なのが不安で[、,](.+)$",
+                primary_text,
+            )
+            if uncertain_thought:
+                uncertain_state = uncertain_thought.group(1).strip("、。 ")
+                thought = uncertain_thought.group(2).strip("、。 ")
+                thought = re.sub(r"いいのか考えている$", "よいか考えていること", thought)
+                return (
+                    f"{named_desire}を大切に受け止め、{thought}は、"
+                    "その願いがまだ消えていない中で実際にしていることとして、"
+                    "答えが出た結果とは分けて見守ります。"
+                )
+            return (
+                f"{named_desire}を大切に受け止め、"
+                "まだ実際に起きた結果と同じものにはしません。"
+            )
+        if "operator:shift" in attributes:
+            companion = "同時に残っている感覚"
+            if desire:
+                companion_match = re.search(
+                    rf"{re.escape(desire)}(?:という)?気持ちと(.+?)が残",
+                    primary_text,
+                )
+                if companion_match:
+                    companion = companion_match.group(1).strip("、。 ")
+            return (
+                f"{named_desire}を大切にし、{companion}が残っている今を、"
+                "急いで片づけずに見守ります。"
+            )
+        if "operator:contrast" in attributes:
+            other_state = "同時にある状態"
+            if contrast:
+                left, right = contrast
+                other_text = right if _cmee_desire_phrase(left) else left
+                other_state = _cmee_source_state_phrase(other_text).translate(
+                    str.maketrans("", "", "「」")
+                )
+            return (
+                f"{named_desire}を、{other_state}と並んでいる大切な気持ちとして、"
+                "そのまま受け取ります。"
+            )
+        return (
+            f"{named_desire}を、今ここで言葉になった"
+            "大切な気持ちとして、丁寧に受け取ります。"
+        )
+    if "stay_with_current_burden" in acts:
+        if not _cmee_has_current_burden(primary_text):
+            raise CMEEVerticalError(
+                "bound_human_reception_target_act_semantic_mismatch"
+            )
+        if desire and "operator:negation" in attributes:
+            burden_text = primary_text
+            if contrast:
+                left, right = contrast
+                burden_text = right if _cmee_desire_phrase(left) else left
+            return (
+                f"{burden_text}という負荷を小さくせず、"
+                "その重さに静かに目を留めます。"
+            )
+        if "detected_type:limit_signal" in attributes:
+            tentative_state = _cmee_source_state_phrase(primary_text).translate(
+                str.maketrans("", "", "「」")
+            )
+            if contrast:
+                left, right = contrast
+                state_text = right if _cmee_desire_phrase(left) else left
+                tentative_state = re.sub(
+                    r"(.+?)感じがある$",
+                    r"\1と感じていること",
+                    state_text,
+                )
+            wish_prefix = f"{sentence_desire}という気持ちと、" if sentence_desire else ""
+            if not wish_prefix:
+                return (
+                    f"{tentative_state}にある負荷を小さくせず、"
+                    "その重さに静かに目を留めます。"
+                )
+            return (
+                f"{re.sub(r'こと$', '', tentative_state)}、"
+                "その感覚にある負荷を軽く扱わず、"
+                "今の言葉としてそのまま受け取ります。"
+            )
+        return "ここに書かれた負荷を小さくせず、今置かれた言葉を軽く扱いません。"
+    return "ここに置かれた言葉を軽く扱わず、そのまま大切に受け止めます。"
+
+
+def _cmee_structured_attachment_unknown_text(
+    source: AdmittedTextSource,
+    plan: ExperiencePlan,
+) -> tuple[str, tuple[str, ...]]:
+    ref_by_span = {row.source_span_id: row for row in source.evidence_refs}
+    text_by_span = {
+        str(getattr(row, "span_id", "") or ""): str(
+            getattr(row, "raw_text", "") or ""
+        ).strip()
+        for row in source.evidence_spans
+    }
+    categories: list[str] = []
+    emotions: list[str] = []
+    focus_rows: list[tuple[str, str]] = []
+    for ref in source.evidence_refs:
+        if ref.field_path not in {"memo", "memo_action"}:
+            continue
+        raw_text = text_by_span.get(ref.source_span_id, "")
+        if not raw_text:
+            continue
+        contrast = _cmee_split_contrast(raw_text)
+        parts = contrast or tuple(
+            part.strip("、。 ")
+            for part in re.split(r"[。！？!?]+", raw_text)
+            if part.strip("、。 ")
+        )
+        for part in parts:
+            fragment = _cmee_natural_fragment(part, limit=14)
+            if fragment and all(fragment != existing for existing, _span_id in focus_rows):
+                focus_rows.append((fragment, ref.source_span_id))
+    for owner_id in plan.visible_unknown_owner_ids:
+        for source_span_id in source.owner_obligation(owner_id).source_span_ids:
+            ref = ref_by_span.get(source_span_id)
+            value = text_by_span.get(source_span_id, "")
+            field_path = str(getattr(ref, "field_path", "") or "")
+            if not value:
+                continue
+            if field_path.startswith("category.") and value not in categories:
+                categories.append(value)
+            elif (
+                field_path.endswith(".type") or field_path.startswith("emotions.")
+            ) and value not in emotions:
+                emotions.append(value)
+    focus_span_ids = _ordered(span_id for _text, span_id in focus_rows)
+    if emotions and len(focus_rows) >= 2:
+        first, second = focus_rows[0][0], focus_rows[-1][0]
+        if emotions[0] in "".join(text for text, _span_id in focus_rows):
+            return (
+                f"本文にも「{emotions[0]}」とありますが、その言葉が"
+                f"「{first}」だけに向くのか、「{second}」にも重なるのかまでは、"
+                "今の記録からは読み切れません。",
+                focus_span_ids,
+            )
+        return (
+            f"選ばれた「{emotions[0]}」が、「{first}」と「{second}」の"
+            "どちらに向くのか、両方に重なるのかまでは、"
+            "今の記録からは読み切れません。",
+            focus_span_ids,
+        )
+    if emotions:
+        return (
+            f"選ばれた「{emotions[0]}」と、本文に書かれた今の状態のつながり方までは、"
+            "今の記録からは読み切れません。",
+            focus_span_ids,
+        )
+    if categories:
+        return (
+            f"選ばれた「{categories[0]}」と、ここに書かれた出来事のつながり方は、"
+            "今の記録からは読み切れません。",
+            focus_span_ids,
+        )
+    return STRUCTURED_ATTACHMENT_UNKNOWN_TEXT, focus_span_ids
 
 
 def _canonical_r4_observation_lines(
@@ -1181,47 +2515,12 @@ def _canonical_r4_observation_lines(
         relation = relation_index[relation_id]
         from_nucleus = nucleus_index[relation.from_nucleus_id]
         to_nucleus = nucleus_index[relation.to_nucleus_id]
-        from_reference = _cmee_source_reference(
-            _cmee_source_anchor(from_nucleus, resolver),
+        text = _cmee_relation_observation_text(
+            relation,
             from_nucleus,
-            include_semantic_label=True,
-        )
-        to_reference = _cmee_source_reference(
-            _cmee_source_anchor(to_nucleus, resolver),
             to_nucleus,
-            include_semantic_label=True,
+            resolver,
         )
-        relation_label = CMEE_RELATION_SURFACE_LABELS.get(
-            str(relation.type),
-            "入力内の関係",
-        )
-        relation_type = str(relation.type)
-        if relation_type in DIRECTIONAL_GROUNDED_RELATION_TYPES:
-            text = (
-                f"入力では、起点側の{from_reference}から"
-                f"到達側の{to_reference}へ、"
-                f"{relation_label}がこの順に示されています。"
-            )
-        elif relation_type == "contrast":
-            text = (
-                f"一方の{from_reference}ともう一方の{to_reference}は、"
-                "入力内で異なる向きとして対比されています。"
-            )
-        elif relation_type == "wish_and_constraint":
-            text = (
-                f"願いと制約の組として、第一項に{from_reference}、"
-                f"第二項に{to_reference}が示されています。"
-            )
-        elif relation_type == "coexistence":
-            text = (
-                f"並存する二項として、片方に{from_reference}、"
-                f"別の側に{to_reference}が示されています。"
-            )
-        else:
-            text = (
-                f"{relation_label}の二項として、項Aに{from_reference}、"
-                f"項Bに{to_reference}が置かれています。"
-            )
         lines.append(
             _CMEEVisibleLine(
                 sentence_id=f"cmee:observation:{len(lines) + 1}",
@@ -1243,26 +2542,65 @@ def _canonical_r4_observation_lines(
             (relation.from_nucleus_id, relation.to_nucleus_id)
         )
 
-    for nucleus_id in required_nucleus_ids:
-        if nucleus_id in covered_nucleus_ids:
-            continue
+    span_order = {
+        str(getattr(row, "span_id", "") or ""): index
+        for index, row in enumerate(source.evidence_spans)
+    }
+    uncovered_nucleus_ids = sorted(
+        (
+            nucleus_id
+            for nucleus_id in required_nucleus_ids
+            if nucleus_id not in covered_nucleus_ids
+        ),
+        key=lambda nucleus_id: min(
+            (span_order.get(row_id, len(span_order)) for row_id in nucleus_index[nucleus_id].source_span_ids),
+            default=len(span_order),
+        ),
+    )
+    uncovered_groups: list[list[str]] = []
+    group_index: dict[tuple[str, str, str, str, tuple[str, ...]], int] = {}
+    for nucleus_id in uncovered_nucleus_ids:
         nucleus = nucleus_index[nucleus_id]
-        reference = _cmee_source_reference(
-            _cmee_source_anchor(nucleus, resolver),
-            nucleus,
+        group_key = (
+            str(nucleus.kind),
+            _cmee_source_text(nucleus, resolver),
+            str(nucleus.semantic_frame.polarity),
+            str(nucleus.semantic_frame.modality),
+            tuple(
+                sorted(
+                    str(
+                        getattr(
+                            resolver.resolve(source_span_id),
+                            "source_field",
+                            "",
+                        )
+                        or ""
+                    )
+                    for source_span_id in nucleus.source_span_ids
+                )
+            ),
+        )
+        if group_key not in group_index:
+            group_index[group_key] = len(uncovered_groups)
+            uncovered_groups.append([])
+        uncovered_groups[group_index[group_key]].append(nucleus_id)
+
+    for nucleus_ids in uncovered_groups:
+        nucleus = nucleus_index[nucleus_ids[0]]
+        evidence_span_ids = _ordered(
+            source_span_id
+            for nucleus_id in nucleus_ids
+            for source_span_id in nucleus_index[nucleus_id].source_span_ids
         )
         lines.append(
             _CMEEVisibleLine(
                 sentence_id=f"cmee:observation:{len(lines) + 1}",
-                text=(
-                    f"入力の{reference}には、"
-                    f"{_cmee_nucleus_surface_label(nucleus)}が示されています。"
-                ),
+                text=_cmee_nucleus_observation_text(nucleus, resolver),
                 binding=_CMEEVisibleBinding(
                     line_role="cmee_observation",
-                    nucleus_ids=(nucleus_id,),
+                    nucleus_ids=tuple(nucleus_ids),
                     relation_ids=(),
-                    evidence_span_ids=tuple(nucleus.source_span_ids),
+                    evidence_span_ids=evidence_span_ids,
                     claim_scope="cmee_plan_bound_grounded_nucleus",
                     required=True,
                 ),
@@ -1289,22 +2627,16 @@ def _canonical_r4_tail_lines(
     plan: ExperiencePlan,
     grounded_plan: Any,
     resolver: Any,
-) -> tuple[_CMEEVisibleLine, _CMEEVisibleLine]:
+) -> tuple[_CMEEVisibleLine, ...]:
     nucleus_index = {row.nucleus_id: row for row in grounded_plan.nuclei}
-    reception_plan = _cmee_semantic_reception_plan(grounded_plan)
+    reception_plan = _cmee_semantic_reception_plan(grounded_plan, resolver)
     reception_surface = realize_grounded_human_reception(
         reception_plan,
         nucleus_index,
         resolver,
     )
-    if validate_grounded_human_reception_surface(
-        reception_surface,
-        reception_plan,
-        resolver,
-    ):
-        raise CMEEVerticalError("bound_human_reception_surface_rejected")
     expected_reception_digest, expected_reception_acts = (
-        _reception_plan_contract(grounded_plan)
+        _reception_plan_contract(grounded_plan, resolver)
     )
     if (
         plan.reception_plan_digest != expected_reception_digest
@@ -1321,36 +2653,73 @@ def _canonical_r4_tail_lines(
         and _owner_for_nucleus(source, nucleus_index[row_id])
         in reception_owner_set
     )
-    if tuple(reception_surface.grounded_nucleus_ids) != reception_targets:
+    reception_bound_nucleus_ids = _ordered(
+        (*reception_plan.target_nucleus_ids, *reception_plan.support_nucleus_ids)
+    )
+    if tuple(reception_surface.grounded_nucleus_ids) != reception_bound_nucleus_ids:
         raise CMEEVerticalError("bound_human_reception_target_mismatch")
+    if tuple(reception_plan.target_nucleus_ids) != reception_targets:
+        raise CMEEVerticalError("bound_human_reception_target_mismatch")
+    target_nuclei = tuple(
+        nucleus_index[row_id] for row_id in reception_bound_nucleus_ids
+    )
+    stage1_reception_text = _cmee_stage1_reception_text(
+        expected_reception_acts,
+        target_nuclei,
+        resolver,
+    )
+    reception_quotes = tuple(re.findall(r"「([^」]*)」", stage1_reception_text))
+    stage1_reception_surface = replace(
+        reception_surface,
+        text=stage1_reception_text,
+        sentence_count=len(split_sentences(stage1_reception_text, skip_greeting=False)),
+        source_anchor_count=len(reception_quotes),
+        source_anchor_max_visible_chars=max(
+            (len(value) for value in reception_quotes),
+            default=0,
+        ),
+    )
+    if validate_grounded_human_reception_surface(
+        stage1_reception_surface,
+        reception_plan,
+        resolver,
+    ):
+        raise CMEEVerticalError("bound_human_reception_surface_rejected")
     reception_line = _CMEEVisibleLine(
         sentence_id="cmee:reception:1",
-        text=reception_surface.text,
+        text=stage1_reception_text,
         binding=_CMEEVisibleBinding(
             line_role="human_follow",
-            nucleus_ids=reception_targets,
+            nucleus_ids=reception_bound_nucleus_ids,
             relation_ids=(),
             evidence_span_ids=tuple(
-                reception_surface.grounded_evidence_span_ids
+                stage1_reception_surface.grounded_evidence_span_ids
             ),
             claim_scope="cmee_grounded_human_reception",
             required=True,
         ),
     )
+    if not plan.visible_unknown_owner_ids:
+        return (reception_line,)
 
     ref_by_span = {row.source_span_id: row for row in source.evidence_refs}
-    unknown_span_ids = _ordered(
+    owner_unknown_span_ids = _ordered(
         source_span_id
         for owner_id in plan.visible_unknown_owner_ids
         for source_span_id in source.owner_obligation(owner_id).source_span_ids
     )
-    if not plan.visible_unknown_owner_ids or not unknown_span_ids:
+    if not plan.visible_unknown_owner_ids or not owner_unknown_span_ids:
         raise CMEEVerticalError("visible_unknown_evidence_unavailable")
+    unknown_text, focus_span_ids = _cmee_structured_attachment_unknown_text(
+        source,
+        plan,
+    )
+    unknown_span_ids = _ordered((*owner_unknown_span_ids, *focus_span_ids))
     if any(source_span_id not in ref_by_span for source_span_id in unknown_span_ids):
         raise CMEEVerticalError("visible_unknown_cross_source_evidence")
     unknown_line = _CMEEVisibleLine(
         sentence_id="cmee:unknown:1",
-        text=STRUCTURED_ATTACHMENT_UNKNOWN_TEXT,
+        text=unknown_text,
         binding=_CMEEVisibleBinding(
             line_role="cmee_unknown",
             nucleus_ids=(),
@@ -2009,14 +3378,15 @@ def _realize_cmee_experience(
         raise CMEEVerticalError("plan_bound_observation_exact_surface_mismatch")
     observation_lines = list(canonical_observation_lines)
 
-    unknown_line, reception_line = _canonical_r4_tail_lines(
+    tail_lines = _canonical_r4_tail_lines(
         source,
         plan,
         grounded_plan,
         resolver,
     )
+    reception_line = tail_lines[-1]
     reception_targets = reception_line.binding.nucleus_ids
-    lines = (*observation_lines, unknown_line, reception_line)
+    lines = (*observation_lines, *tail_lines)
     observed_nuclei = {
         nucleus_id
         for line in observation_lines
@@ -2055,7 +3425,10 @@ def _validate_reception_semantic_compatibility(
         for span in source.evidence_spans
         if str(getattr(span, "span_id", "") or "") in observation_span_ids
     )
-    if NEGATIVE_RECEPTION_RE.search(reception[0].text) and not SOURCE_BURDEN_CUE_RE.search(source_text):
+    if (
+        NEGATIVE_RECEPTION_RE.search(reception[0].text)
+        and not _cmee_has_current_burden(source_text)
+    ):
         raise CMEEVerticalError("reception_negative_meaning_promotion")
 
 
@@ -2405,7 +3778,7 @@ def validate_positive_realization_trace(
         canonical_grounded_plan,
         canonical_resolver,
     )
-    canonical_unknown_line, canonical_reception_line = _canonical_r4_tail_lines(
+    canonical_tail_lines = _canonical_r4_tail_lines(
         source,
         canonical_plan,
         canonical_grounded_plan,
@@ -2413,8 +3786,7 @@ def validate_positive_realization_trace(
     )
     canonical_safe_lines = (
         *canonical_observation_lines,
-        canonical_unknown_line,
-        canonical_reception_line,
+        *canonical_tail_lines,
     )
     if tuple(safe_lines) != canonical_safe_lines:
         raise CMEEVerticalError("visible_line_source_semantic_mismatch")
@@ -2481,27 +3853,23 @@ def validate_positive_realization_trace(
         RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
         RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
     }
+    unresolved_required = tuple(
+        row
+        for row in graph.owner_dispositions
+        if row.owner_class is OwnerClass.REQUIRED and row.disposition not in positive
+    )
     expected_visible_unknown = tuple(
         row.owner_id
         for row in graph.owner_dispositions
         if source.owner_obligation(row.owner_id).obligation_kind
         == "STRUCTURED_CONTEXT_ATTACHMENT"
-        and row.disposition
-        in {
-            RouteBDisposition.UNKNOWN_PRESERVED_LIMITED,
-            RouteBDisposition.NOT_VISIBLE_UNRESOLVED,
-        }
+        and (
+            row.disposition is RouteBDisposition.UNKNOWN_PRESERVED_LIMITED
+            or row in unresolved_required
+        )
     )
     expected_required_unknown = tuple(
-        row.owner_id
-        for row in graph.owner_dispositions
-        if row.owner_class is OwnerClass.REQUIRED
-        and row.owner_id in set(expected_visible_unknown)
-    )
-    unresolved_required = tuple(
-        row
-        for row in graph.owner_dispositions
-        if row.owner_class is OwnerClass.REQUIRED and row.disposition not in positive
+        row.owner_id for row in unresolved_required
     )
     if any(
         row.owner_id not in set(expected_visible_unknown)
@@ -2523,11 +3891,23 @@ def validate_positive_realization_trace(
     if tuple(row.visible_unit_id for row in artifact.trace) != expected_visible_unit_ids:
         raise CMEEVerticalError("visible_trace_unit_identity_mismatch")
     line_roles = tuple(line.binding.line_role for line in safe_lines)
+    if not line_roles or line_roles[-1] != "human_follow":
+        raise CMEEVerticalError("visible_line_role_cardinality_mismatch")
+    pre_reception_roles = line_roles[:-1]
+    unknown_role_count = pre_reception_roles.count("cmee_unknown")
+    if unknown_role_count:
+        observation_roles = pre_reception_roles[:-1]
+        unknown_is_tail = pre_reception_roles[-1] == "cmee_unknown"
+    else:
+        observation_roles = pre_reception_roles
+        unknown_is_tail = True
     if (
-        not line_roles
-        or line_roles[-2:] != ("cmee_unknown", "human_follow")
-        or any(role != "cmee_observation" for role in line_roles[:-2])
-        or not line_roles[:-2]
+        unknown_role_count > 1
+        or not unknown_is_tail
+        or not observation_roles
+        or any(role != "cmee_observation" for role in observation_roles)
+        or bool(unknown_role_count)
+        != bool(artifact.plan.visible_unknown_owner_ids)
     ):
         raise CMEEVerticalError("visible_line_role_cardinality_mismatch")
     if any(
@@ -2545,7 +3925,10 @@ def validate_positive_realization_trace(
     unknown_lines = tuple(
         line for line in safe_lines if line.binding.line_role == "cmee_unknown"
     )
-    if len(unknown_lines) != 1:
+    expected_unknown_line_count = (
+        1 if artifact.plan.visible_unknown_owner_ids else 0
+    )
+    if len(unknown_lines) != expected_unknown_line_count:
         raise CMEEVerticalError("visible_required_unknown_missing")
     covered_unknown_owners = tuple(
         owner_id
@@ -2557,26 +3940,36 @@ def validate_positive_realization_trace(
         or len(covered_unknown_owners) != len(set(covered_unknown_owners))
     ):
         raise CMEEVerticalError("visible_required_unknown_coverage_mismatch")
-    expected_unknown_span_ids = _ordered(
-        source_span_id
-        for owner_id in artifact.plan.visible_unknown_owner_ids
-        for source_span_id in source.owner_obligation(owner_id).source_span_ids
-    )
-    unknown_line = unknown_lines[0]
-    if (
-        unknown_line.sentence_id != "cmee:unknown:1"
-        or unknown_line.text != STRUCTURED_ATTACHMENT_UNKNOWN_TEXT
-        or unknown_line.binding.nucleus_ids
-        or unknown_line.binding.relation_ids
-        or unknown_line.binding.evidence_span_ids != expected_unknown_span_ids
-        or unknown_line.binding.constrained_owner_ids
-        != artifact.plan.visible_unknown_owner_ids
-        or unknown_line.binding.claim_scope
-        != "cmee_evidence_bound_unknown_preservation"
-        or unknown_line.binding.contains_question
-        or not unknown_line.binding.required
-    ):
-        raise CMEEVerticalError("visible_unknown_canonical_binding_mismatch")
+    if unknown_lines:
+        owner_unknown_span_ids = _ordered(
+            source_span_id
+            for owner_id in artifact.plan.visible_unknown_owner_ids
+            for source_span_id in source.owner_obligation(owner_id).source_span_ids
+        )
+        expected_unknown_text, focus_span_ids = (
+            _cmee_structured_attachment_unknown_text(
+                source,
+                artifact.plan,
+            )
+        )
+        expected_unknown_span_ids = _ordered(
+            (*owner_unknown_span_ids, *focus_span_ids)
+        )
+        unknown_line = unknown_lines[0]
+        if (
+            unknown_line.sentence_id != "cmee:unknown:1"
+            or unknown_line.text != expected_unknown_text
+            or unknown_line.binding.nucleus_ids
+            or unknown_line.binding.relation_ids
+            or unknown_line.binding.evidence_span_ids != expected_unknown_span_ids
+            or unknown_line.binding.constrained_owner_ids
+            != artifact.plan.visible_unknown_owner_ids
+            or unknown_line.binding.claim_scope
+            != "cmee_evidence_bound_unknown_preservation"
+            or unknown_line.binding.contains_question
+            or not unknown_line.binding.required
+        ):
+            raise CMEEVerticalError("visible_unknown_canonical_binding_mismatch")
 
     nodes = {row.node_id: row for row in graph.nodes}
     edges = {row.edge_id: row for row in graph.edges}
@@ -2707,8 +4100,13 @@ def validate_positive_realization_trace(
         or artifact.reception != "\n".join(reception_text)
     ):
         raise CMEEVerticalError("artifact_surface_trace_mismatch")
-    if not observation_text or not unknown_text or not reception_text:
-        raise CMEEVerticalError("limited_artifact_duty_missing")
+    if (
+        not observation_text
+        or not reception_text
+        or bool(unknown_text)
+        != bool(artifact.plan.visible_unknown_owner_ids)
+    ):
+        raise CMEEVerticalError("artifact_duty_missing")
     expected_visible_unknowns = tuple(
         VisibleUnknownUnit(
             unknown_unit_id=trace.visible_unit_id,
@@ -2770,6 +4168,14 @@ def build_text_grounded_limited_artifact(
         raise CMEEVerticalError("separate_safety_owner_required")
     if validate_grounded_observation_plan(grounded_plan, resolver):
         raise CMEEVerticalError("grounded_meaning_plan_invalid")
+    _cmee_assert_current_first_person_scope_supported(
+        "。".join(
+            str(source.normalized_current_input.get(field_path, "") or "")
+            for field_path in ("memo", "memo_action")
+            if str(source.normalized_current_input.get(field_path, "") or "").strip()
+        ),
+        grounded_plan,
+    )
 
     required_nucleus_ids, required_relation_ids, reception_target_ids = (
         _planned_visible_source_ids(grounded_plan)

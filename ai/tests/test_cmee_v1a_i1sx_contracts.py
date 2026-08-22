@@ -83,7 +83,7 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
     def test_body_free_projection_never_contains_private_body_digest_or_locator(self) -> None:
         outcome = MeaningExperienceEngine().generate(_request())
 
-        self.assertEqual(outcome.status.value, "LIMITED", outcome.reason_codes)
+        self.assertEqual(outcome.status.value, "GENERATED", outcome.reason_codes)
         report = outcome.as_body_free()
         serialized = json.dumps(report, ensure_ascii=False, sort_keys=True)
         for forbidden in (
@@ -102,11 +102,11 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
             self.assertNotIn(forbidden, serialized)
         self.assertNotIn("observation", report)
         self.assertNotIn("reception", report)
-        self.assertEqual(report["status"], "LIMITED")
+        self.assertEqual(report["status"], "GENERATED")
         self.assertTrue(report["artifact_present"])
         self.assertGreaterEqual(report["observation_unit_count"], 1)
-        self.assertEqual(report["unknown_unit_count"], 1)
-        self.assertEqual(report["unknown_trace_count"], 1)
+        self.assertEqual(report["unknown_unit_count"], 0)
+        self.assertEqual(report["unknown_trace_count"], 0)
         self.assertEqual(report["reception_unit_count"], 1)
         self.assertFalse(report["product_read_evaluated"])
         self.assertEqual(report["implementation_state"], "DRAFT_WIP_DISABLED")
@@ -243,7 +243,7 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
         )
 
         outcome = MeaningExperienceEngine().generate(request)
-        self.assertEqual(outcome.status, EngineStatus.LIMITED, outcome.reason_codes)
+        self.assertEqual(outcome.status, EngineStatus.GENERATED, outcome.reason_codes)
         self.assertIsNotNone(outcome.artifact)
 
     def test_canonical_field_binding_rejects_coordinated_other_field_redirect(self) -> None:

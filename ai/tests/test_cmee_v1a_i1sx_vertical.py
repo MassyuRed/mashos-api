@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import copy
 from dataclasses import replace
+import inspect
+import re
 import unittest
 from unittest.mock import patch
 
@@ -11,6 +13,7 @@ from emlis_ai_evidence_ledger_service import build_evidence_span_resolver
 from emlis_ai_grounded_observation_plan import build_grounded_observation_plan
 from cocolon_meaning_experience_engine import GenerationRequest, MeaningExperienceEngine
 import cocolon_meaning_experience_engine.emlis_v1a as emlis_v1a_module
+import cocolon_meaning_experience_engine.contracts as cmee_contracts_module
 from cocolon_meaning_experience_engine.contracts import (
     AttachmentAdmission,
     CMEE_COMMON_GUARD_PROOF_VERSION,
@@ -45,6 +48,7 @@ from tools.cmee_v1a_i1sx_candidate_run import (
 
 
 REPRESENTATIVE_MEMO = "仕事が続いて疲れていて、朝から何も手につかない。"
+MATERIAL_UNKNOWN_MEMO = "疲れた。"
 
 
 def _request(
@@ -237,7 +241,7 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
     def test_real_text_input_reaches_graph_plan_artifact_and_exact_positive_trace(self) -> None:
         outcome = MeaningExperienceEngine().generate(_request())
 
-        self.assertEqual(outcome.status.value, "LIMITED", outcome.reason_codes)
+        self.assertEqual(outcome.status.value, "GENERATED", outcome.reason_codes)
         self.assertIsNotNone(outcome.source_envelope)
         self.assertIsNotNone(outcome.meaning_graph)
         self.assertIsNotNone(outcome.artifact)
@@ -248,13 +252,31 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         self.assertTrue(artifact.reception)
         roles = tuple(row.role for row in artifact.trace)
         self.assertGreaterEqual(roles.count("OBSERVATION"), 1)
-        self.assertEqual(roles.count("UNKNOWN"), 1)
+        self.assertEqual(roles.count("UNKNOWN"), 0)
         self.assertEqual(roles.count("RECEPTION"), 1)
         self.assertEqual(roles[-1], "RECEPTION")
+        self.assertEqual(artifact.visible_unknowns, ())
+        self.assertEqual(artifact.plan.visible_unknown_owner_ids, ())
         self.assertTrue(all(row.evidence_ids for row in artifact.trace))
         self.assertEqual(
             tuple(row.owner_id for row in graph.owner_dispositions),
             graph.required_owner_refs + graph.active_optional_owner_refs,
+        )
+        unresolved_optional_owner_ids = {
+            row.owner_id
+            for row in graph.owner_dispositions
+            if row.owner_class is OwnerClass.ACTIVE_OPTIONAL
+            and row.route_b_disposition
+            not in {
+                RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
+                RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+            }
+        }
+        self.assertTrue(unresolved_optional_owner_ids)
+        self.assertTrue(
+            unresolved_optional_owner_ids.issubset(
+                set(artifact.plan.unresolved_owner_ids)
+            )
         )
         source = freeze_text_source(_request())
         self.assertEqual(
@@ -655,7 +677,11 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                     _build_with_composer_candidate_mutation(mutate, request=request)
 
     def test_common_guard_proof_mutations_reject_after_coordinated_rehash(self) -> None:
-        source, graph, _plan, artifact, visible = _private_parts(_request())
+        material_request = _request(
+            record_id="cmee-common-guard-material-unknown",
+            memo=MATERIAL_UNKNOWN_MEMO,
+        )
+        source, graph, _plan, artifact, visible = _private_parts(material_request)
         proof = artifact.common_guard_proof
 
         changed_rows = list(proof.guard_results)
@@ -725,7 +751,12 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                     )
 
         other_source, _other_graph, _other_plan, other_artifact, _other_visible = (
-            _private_parts(_request(record_id="cmee-common-guard-proof-foreign"))
+            _private_parts(
+                _request(
+                    record_id="cmee-common-guard-proof-foreign",
+                    memo=MATERIAL_UNKNOWN_MEMO,
+                )
+            )
         )
         self.assertNotEqual(
             other_source.envelope.envelope_id,
@@ -807,7 +838,7 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             RouteBDisposition.NOT_VISIBLE_UNRESOLVED,
         )
 
-    def test_complete_route_b_rows_and_evidence_bound_unknown_are_exact(self) -> None:
+    def test_complete_route_b_rows_keep_nonmaterial_unknown_internal(self) -> None:
         source, graph, _plan, artifact, _visible = _private_parts(_request())
         universe = source.owner_universe
         obligations = {
@@ -861,16 +892,9 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 self.assertEqual(row.reason_codes, ("ATTACHMENT_UNRESOLVED",))
 
         unknown_trace = tuple(row for row in artifact.trace if row.role == "UNKNOWN")
-        self.assertEqual(len(unknown_trace), 1)
-        self.assertEqual(len(artifact.visible_unknowns), 1)
-        self.assertEqual(
-            unknown_trace[0].constrained_by_owner_ids,
-            artifact.plan.visible_unknown_owner_ids,
-        )
-        self.assertTrue(unknown_trace[0].evidence_ids)
-        self.assertEqual(unknown_trace[0].meaning_node_ids, ())
-        self.assertEqual(unknown_trace[0].meaning_edge_ids, ())
-        self.assertEqual(unknown_trace[0].duty_id, artifact.plan.unknown_duty_id)
+        self.assertEqual(unknown_trace, ())
+        self.assertEqual(artifact.visible_unknowns, ())
+        self.assertEqual(artifact.plan.visible_unknown_owner_ids, ())
         self.assertEqual(
             {
                 row.meaning_owner_id
@@ -885,16 +909,15 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             set(artifact.plan.required_unknown_owner_ids),
         )
         self.assertEqual(artifact.plan.required_unknown_owner_ids, ())
-        self.assertTrue(
-            all(
-                next(
-                    ref
-                    for ref in source.evidence_refs
-                    if ref.evidence_id == evidence_id
-                ).source_envelope_id
-                == source.envelope.envelope_id
-                for evidence_id in unknown_trace[0].evidence_ids
-            )
+        attachment_owner = next(
+            row.meaning_owner_id
+            for row in universe.obligations
+            if row.obligation_kind == "STRUCTURED_CONTEXT_ATTACHMENT"
+        )
+        self.assertIn(attachment_owner, artifact.plan.unresolved_owner_ids)
+        self.assertEqual(
+            obligations[attachment_owner].owner_class,
+            OwnerClass.ACTIVE_OPTIONAL,
         )
 
     def test_route_b_owner_and_disposition_mutations_are_rejected(self) -> None:
@@ -1057,8 +1080,31 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 visible,
             )
 
-    def test_hidden_unknown_is_rejected_after_coordinated_rehash(self) -> None:
-        source, graph, _plan, artifact, visible = _private_parts(_request())
+    def test_material_unknown_is_layer1_visible_and_cannot_be_hidden(self) -> None:
+        request = _request(
+            record_id="cmee-material-unknown",
+            memo=MATERIAL_UNKNOWN_MEMO,
+        )
+        outcome = MeaningExperienceEngine().generate(request)
+        self.assertEqual(outcome.status.value, "LIMITED", outcome.reason_codes)
+        self.assertEqual(outcome.terminal_state, CMEE_TERMINAL_GENERATED_DISABLED)
+        self.assertFalse(outcome.automatic_progression)
+        self.assertIsNotNone(outcome.artifact)
+        assert outcome.artifact is not None
+        self.assertEqual(len(outcome.artifact.visible_unknowns), 1)
+        self.assertEqual(
+            sum(row.role == "UNKNOWN" for row in outcome.artifact.trace),
+            1,
+        )
+        layer1, separator, layer2 = outcome.artifact.text.partition(
+            "\n\nEmlisから：\n"
+        )
+        self.assertTrue(separator)
+        unknown_text = outcome.artifact.visible_unknowns[0].text
+        self.assertEqual(layer1.count(unknown_text), 1)
+        self.assertNotIn(unknown_text, layer2)
+
+        source, graph, _plan, artifact, visible = _private_parts(request)
         visible_without_unknown = tuple(
             row for row in visible if row.binding.line_role != "cmee_unknown"
         )
@@ -1101,7 +1147,12 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             )
 
     def test_unknown_text_and_evidence_subset_tampering_are_rejected(self) -> None:
-        source, graph, _plan, artifact, visible = _private_parts(_request())
+        source, graph, _plan, artifact, visible = _private_parts(
+            _request(
+                record_id="cmee-material-unknown-tamper",
+                memo=MATERIAL_UNKNOWN_MEMO,
+            )
+        )
         unknown_index = next(
             index
             for index, row in enumerate(visible)
@@ -1180,7 +1231,11 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             )
 
     def test_unknown_without_current_source_evidence_is_unavailable(self) -> None:
-        source = freeze_text_source(_request())
+        request = _request(
+            record_id="cmee-material-unknown-without-evidence",
+            memo=MATERIAL_UNKNOWN_MEMO,
+        )
+        source = freeze_text_source(request)
         obligations = list(source.owner_universe.obligations)
         unknown_index = next(
             index
@@ -1203,7 +1258,7 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             "cocolon_meaning_experience_engine.engine.freeze_text_source",
             return_value=damaged_source,
         ):
-            outcome = MeaningExperienceEngine().generate(_request())
+            outcome = MeaningExperienceEngine().generate(request)
 
         self.assertEqual(outcome.status.value, "UNAVAILABLE")
         self.assertIsNone(outcome.artifact)
@@ -1306,10 +1361,10 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             )
         )
 
-        self.assertEqual(first.status.value, second.status.value, "LIMITED")
+        self.assertEqual(first.status.value, second.status.value, "GENERATED")
         self.assertEqual(first.meaning_graph, second.meaning_graph)
         self.assertEqual(first.artifact, second.artifact)
-        self.assertEqual(changed.status.value, "LIMITED", changed.reason_codes)
+        self.assertEqual(changed.status.value, "GENERATED", changed.reason_codes)
         assert first.source_envelope and first.artifact and changed.source_envelope and changed.artifact
         self.assertNotEqual(first.source_envelope.envelope_id, changed.source_envelope.envelope_id)
         self.assertNotEqual(first.artifact.artifact_id, changed.artifact.artifact_id)
@@ -1323,7 +1378,7 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             emotion="喜び",
         )
         outcome = MeaningExperienceEngine().generate(request)
-        self.assertEqual(outcome.status.value, "LIMITED", outcome.reason_codes)
+        self.assertEqual(outcome.status.value, "GENERATED", outcome.reason_codes)
         self.assertIsNotNone(outcome.artifact)
         artifact = outcome.artifact
         assert artifact is not None
@@ -1419,9 +1474,13 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             ("contrast", "wish_and_constraint"),
         )
         self.assertTrue(all("この順" not in line.text for line in observation_lines))
-        self.assertIn("異なる向きとして対比", observation_lines[0].text)
-        self.assertIn("第一項", observation_lines[1].text)
-        self.assertIn("第二項", observation_lines[1].text)
+        self.assertIn("不安", observation_lines[0].text)
+        self.assertIn("気持ち", observation_lines[1].text)
+        for legacy in ("起点側", "到達側", "第一項", "第二項", "項A", "項B"):
+            self.assertFalse(
+                any(legacy in line.text for line in observation_lines),
+                f"legacy structural label: {legacy}",
+            )
         for line, trace in zip(observation_lines, observation_traces, strict=True):
             self.assertEqual(len(line.binding.relation_ids), 1)
             self.assertEqual(len(trace.meaning_edge_ids), 1)
@@ -1513,9 +1572,10 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             if line.binding.line_role == "cmee_observation"
         )
         self.assertEqual(len(directional_line.binding.relation_ids), 1)
-        self.assertIn("から", directional_line.text)
-        self.assertIn("へ", directional_line.text)
-        self.assertIn("この順", directional_line.text)
+        self.assertIn("あと", directional_line.text)
+        self.assertIn("順序", directional_line.text)
+        self.assertFalse("起点側" in directional_line.text)
+        self.assertFalse("到達側" in directional_line.text)
         reversed_directional = tuple(
             replace(
                 line,
@@ -1605,9 +1665,10 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         _short_source, _short_graph, _short_plan, short_artifact, _short_visible = (
             _private_parts(short_endpoint_request)
         )
-        self.assertIn("負荷を伴う反応", short_artifact.observation)
-        self.assertIn("保ちたい方向", short_artifact.observation)
-        self.assertNotIn("該当する記述", short_artifact.observation)
+        self.assertIn("不安", short_artifact.observation)
+        self.assertIn("続けたい", short_artifact.observation)
+        self.assertFalse("負荷を伴う反応" in short_artifact.observation)
+        self.assertFalse("保ちたい方向" in short_artifact.observation)
 
         collision_request = _request(
             record_id="cmee-endpoint-anchor-collision",
@@ -1620,11 +1681,11 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             collision_artifact,
             _collision_visible,
         ) = _private_parts(collision_request)
-        self.assertIn("この仕事が不…", collision_artifact.observation)
-        self.assertIn("負荷を伴う反応", collision_artifact.observation)
-        self.assertIn("保ちたい方向", collision_artifact.observation)
-        self.assertIn("一方の", collision_artifact.observation)
-        self.assertIn("もう一方の", collision_artifact.observation)
+        self.assertIn("この仕事", collision_artifact.observation)
+        self.assertIn("不安", collision_artifact.observation)
+        self.assertIn("続けたい", collision_artifact.observation)
+        self.assertFalse("負荷を伴う反応" in collision_artifact.observation)
+        self.assertFalse("保ちたい方向" in collision_artifact.observation)
         self.assertNotIn("この順", collision_artifact.observation)
 
         same_label_contrast = _private_parts(
@@ -1633,8 +1694,8 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 memo="この仕事がつらい。でも、この仕事が苦しい。",
             )
         )[3]
-        self.assertIn("一方の", same_label_contrast.observation)
-        self.assertIn("もう一方の", same_label_contrast.observation)
+        self.assertIn("つらさ", same_label_contrast.observation)
+        self.assertIn("苦しさ", same_label_contrast.observation)
         self.assertNotIn("この順", same_label_contrast.observation)
 
         same_label_directional = _private_parts(
@@ -1643,13 +1704,749 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 memo="昨日は不安だった。今日は不安だ。",
             )
         )[3]
-        self.assertIn("起点側", same_label_directional.observation)
-        self.assertIn("到達側", same_label_directional.observation)
-        self.assertIn("この順", same_label_directional.observation)
+        self.assertIn("あと", same_label_directional.observation)
+        self.assertIn("順序", same_label_directional.observation)
+        self.assertFalse("起点側" in same_label_directional.observation)
+        self.assertFalse("到達側" in same_label_directional.observation)
+
+    def test_stage1_realizer_does_not_embed_exact8_fixture_identity_or_body(self) -> None:
+        implementation = (
+            inspect.getsource(emlis_v1a_module)
+            + inspect.getsource(cmee_contracts_module)
+        )
+        self.assertFalse("EXACT8" in implementation, "fixture registry referenced")
+        self.assertFalse(
+            "cmee_v1a_i1sx_candidate_run" in implementation,
+            "candidate runner referenced by production code",
+        )
+        for case_id, memo, _category, _emotion, _strength in EXACT8:
+            with self.subTest(case_id=case_id):
+                self.assertFalse(case_id in implementation, "fixture id embedded")
+                self.assertFalse(memo in implementation, "fixture body embedded")
+
+    def test_exact8_stage1_surface_is_two_layer_natural_and_trace_bound(self) -> None:
+        legacy_fragments = (
+            "起点側",
+            "到達側",
+            "第一項",
+            "第二項",
+            "項A",
+            "項B",
+            "願いと制約の組",
+            "並存する二項",
+            "という記述",
+            "が示されています",
+            "前に進む際の制約",
+            "負荷を伴う反応",
+            "負荷を伴う状態",
+            "保ちたい方向",
+            "前向きな変化",
+            "まだ分からないこと：",
+        )
+        observations: list[str] = []
+        receptions: list[str] = []
+        for case_id, memo, category, emotion, strength in EXACT8:
+            with self.subTest(case_id=case_id):
+                outcome = MeaningExperienceEngine().generate(
+                    _request(
+                        record_id=f"stage1-{case_id.lower()}",
+                        memo=memo,
+                        category=category,
+                        emotion=emotion,
+                        strength=strength,
+                    )
+                )
+                self.assertEqual(outcome.status.value, "GENERATED", outcome.reason_codes)
+                self.assertEqual(
+                    outcome.terminal_state,
+                    CMEE_TERMINAL_GENERATED_DISABLED,
+                )
+                self.assertFalse(outcome.automatic_progression)
+                artifact = outcome.artifact
+                self.assertIsNotNone(artifact)
+                graph = outcome.meaning_graph
+                self.assertIsNotNone(graph)
+                assert artifact is not None and graph is not None
+                text = artifact.text
+                delimiter = "\n\nEmlisから：\n"
+                self.assertTrue(text.startswith("見えたこと：\n"), "Layer 1 missing")
+                self.assertEqual(text.count(delimiter), 1)
+                layer1, separator, layer2 = text.partition(delimiter)
+                self.assertTrue(bool(separator), "Layer 2 delimiter missing")
+                for fragment in legacy_fragments:
+                    self.assertFalse(
+                        fragment in text,
+                        f"legacy surface fragment: {fragment}",
+                    )
+                self.assertEqual(artifact.visible_unknowns, ())
+                self.assertEqual(artifact.plan.visible_unknown_owner_ids, ())
+                self.assertEqual(
+                    tuple(row for row in artifact.trace if row.role == "UNKNOWN"),
+                    (),
+                )
+                unresolved_optional_owner_ids = {
+                    row.owner_id
+                    for row in graph.owner_dispositions
+                    if row.owner_class is OwnerClass.ACTIVE_OPTIONAL
+                    and row.route_b_disposition
+                    not in {
+                        RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
+                        RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+                    }
+                }
+                self.assertTrue(unresolved_optional_owner_ids)
+                self.assertTrue(
+                    unresolved_optional_owner_ids.issubset(
+                        set(artifact.plan.unresolved_owner_ids)
+                    )
+                )
+                self.assertTrue(layer1.removeprefix("見えたこと：\n").strip())
+                self.assertTrue(layer2.strip())
+                observation_norm = re.sub(r"\s+", "", artifact.observation)
+                reception_norm = re.sub(r"\s+", "", artifact.reception)
+                self.assertFalse(
+                    observation_norm == reception_norm
+                    or observation_norm in reception_norm
+                    or reception_norm in observation_norm,
+                    "Reception repeats Observation",
+                )
+                observation_nodes = {
+                    node_id
+                    for row in artifact.trace
+                    if row.role == "OBSERVATION"
+                    for node_id in row.meaning_node_ids
+                }
+                reception_trace = next(
+                    row for row in artifact.trace if row.role == "RECEPTION"
+                )
+                self.assertTrue(bool(reception_trace.meaning_node_ids))
+                self.assertTrue(
+                    set(reception_trace.meaning_node_ids).issubset(observation_nodes),
+                    "Reception is not bound to an observed meaning",
+                )
+                observations.append(artifact.observation)
+                receptions.append(artifact.reception)
+
+        self.assertEqual(len(set(observations)), len(EXACT8))
+        self.assertEqual(len(set(receptions)), len(EXACT8))
+
+    def test_unseen_same_metadata_inputs_change_stage1_meaning_surface(self) -> None:
+        memos = (
+            "体が重いけれど、少し部屋を整えたい。",
+            "今日は疲れたけど、少し休んだら落ち着いた。",
+        )
+        artifacts = []
+        for index, memo in enumerate(memos, start=1):
+            outcome = MeaningExperienceEngine().generate(
+                _request(
+                    record_id=f"stage1-unseen-{index}",
+                    memo=memo,
+                    category="生活",
+                    emotion="不安",
+                    strength="medium",
+                )
+            )
+            self.assertEqual(outcome.status.value, "GENERATED", outcome.reason_codes)
+            self.assertIsNotNone(outcome.artifact)
+            assert outcome.artifact is not None
+            self.assertTrue(
+                outcome.artifact.text.startswith("見えたこと：\n"),
+                "unseen Layer 1 missing",
+            )
+            self.assertEqual(outcome.artifact.text.count("\n\nEmlisから：\n"), 1)
+            artifacts.append(outcome.artifact)
+
+        first, second = artifacts
+        self.assertFalse(first.observation == second.observation, "Observation ignored meaning")
+        self.assertFalse(first.reception == second.reception, "Reception ignored meaning")
+        self.assertFalse(first.artifact_id == second.artifact_id, "identity ignored meaning")
+
+    def test_unseen_inputs_do_not_inherit_fixture_specific_events_or_states(self) -> None:
+        holiday = MeaningExperienceEngine().generate(
+            _request(
+                record_id="stage1-unseen-holiday",
+                memo="休日の予定を受けたあと、納得したい気持ちと引っかかりが残っている。",
+            )
+        )
+        positive = MeaningExperienceEngine().generate(
+            _request(
+                record_id="stage1-unseen-positive",
+                memo="仕事で元気だったけど、帰ってから少し散歩したら落ち着いた。",
+            )
+        )
+        short_actual_change = MeaningExperienceEngine().generate(
+            _request(
+                record_id="stage1-unseen-short-actual-change",
+                memo="疲れていたけれど、散歩したら落ち着いた。",
+            )
+        )
+        simile = MeaningExperienceEngine().generate(
+            _request(
+                record_id="stage1-unseen-simile",
+                memo="雨みたいな空で、外に出るか迷っている。",
+            )
+        )
+        for outcome in (holiday, positive, short_actual_change):
+            self.assertEqual(outcome.status.value, "GENERATED", outcome.reason_codes)
+            self.assertIsNotNone(outcome.artifact)
+        self.assertIn(simile.status.value, {"GENERATED", "UNAVAILABLE"})
+        assert holiday.artifact and positive.artifact
+        self.assertIn("引っかかり", holiday.artifact.observation)
+        self.assertNotIn("仕事の話", holiday.artifact.text)
+        self.assertIn("元気", positive.artifact.observation)
+        self.assertIn("落ち着いた", positive.artifact.observation)
+        self.assertNotIn("疲れ", positive.artifact.text)
+        if simile.artifact is not None:
+            self.assertNotIn("雨みたいという願い", simile.artifact.text)
+
+        counterexamples = (
+            (
+                "negated-help-wish",
+                "相談したいわけではない。相手に迷惑をかけたくないだけだ。",
+                (
+                    "相談したいという気持ち",
+                    "相談したいという願い",
+                    "助けを求める動き",
+                ),
+            ),
+            (
+                "negated-walk-wish",
+                "散歩したいわけではなく、頼まれたから歩いた。",
+                ("散歩したいという気持ち", "散歩したいという願い"),
+            ),
+            (
+                "negated-help-wish-demo",
+                "相談したいわけでもない。相手に伝えただけだ。",
+                (
+                    "相談したいという気持ち",
+                    "相談したいという願い",
+                    "助けを求める大切な動き",
+                ),
+            ),
+            (
+                "negated-help-wish-explanatory",
+                "相談したいというわけではない。事実を伝えただけだ。",
+                (
+                    "相談したいという気持ち",
+                    "相談したいという願い",
+                    "助けを求める大切な動き",
+                ),
+            ),
+            (
+                "negated-help-wish-nominal",
+                "相談したいのでもない。記録のために書いた。",
+                (
+                    "相談したいという気持ち",
+                    "相談したいという願い",
+                    "助けを求める大切な動き",
+                ),
+            ),
+            (
+                "negated-help-wish-polite",
+                "相談したいわけでもありません。相手に伝えただけです。",
+                (
+                    "相談したいという気持ち",
+                    "相談したいという願い",
+                    "助けを求める大切な動き",
+                ),
+            ),
+            (
+                "negated-walk-wish-thought",
+                "散歩したいとは思わない。頼まれたから歩いた。",
+                ("散歩したいという気持ち", "散歩したいという願い"),
+            ),
+            (
+                "negated-burden-polite",
+                "つらくありません。もう大丈夫です。",
+                ("いま感じているつらさ", "今もつら", "つらさが残"),
+            ),
+            (
+                "negated-burden-nominal",
+                "つらいわけではない。もう大丈夫だ。",
+                ("いま感じているつらさ", "今もつら", "つらさが残"),
+            ),
+            (
+                "resolved-anxiety",
+                "不安はなく、友達と話したらほっとした。",
+                ("今も不安", "まだ不安", "不安が残", "不安を抱え"),
+            ),
+        )
+        for case_id, memo, false_surfaces in counterexamples:
+            with self.subTest(counterexample=case_id):
+                outcome = MeaningExperienceEngine().generate(
+                    _request(record_id=f"stage1-{case_id}", memo=memo)
+                )
+                self.assertIn(
+                    outcome.status.value,
+                    {"GENERATED", "LIMITED", "UNAVAILABLE"},
+                    outcome.reason_codes,
+                )
+                self.assertFalse(outcome.automatic_progression)
+                if outcome.artifact is None:
+                    self.assertEqual(outcome.status.value, "UNAVAILABLE")
+                    continue
+                self.assertEqual(
+                    outcome.terminal_state,
+                    CMEE_TERMINAL_GENERATED_DISABLED,
+                )
+                for false_surface in false_surfaces:
+                    self.assertNotIn(false_surface, outcome.artifact.text)
+
+    def test_stage1_fails_closed_when_current_experiencer_or_time_is_ambiguous(self) -> None:
+        unsupported = (
+            "友達が不安だと言った。私は話を聞いた。",
+            "同僚は不安そうだった。私は話を聞いた。",
+            "母がつらそうなので、手伝った。",
+            "夫は不安そうだった。私は話を聞いた。",
+            "妻がつらそうなので、手伝った。",
+            "娘が不安そうだったので、そばにいた。",
+            "佐藤さんは疲れているようだった。私は見守った。",
+            "母は散歩したいと言っている。私は付き添う。",
+            "その人は不安そうだった。私は話を聞いた。",
+            "知人がつらそうなので、手伝った。",
+            "患者は疲れているようだった。私は見守った。",
+            "太郎は不安そうだった。私は話を聞いた。",
+            "彼らは疲れているようだった。私は見守った。",
+            "その人は散歩したいと言っている。私は付き添う。",
+            "太郎は帰りたいと言った。私は見送った。",
+            "太郎は不安だった。私は話を聞いた。",
+            "その人は疲れている。私は休むよう勧めた。",
+            "太郎は帰りたい。私は見送った。",
+            "彼らは帰りたい。私は見送った。",
+            "太郎は不安だった。",
+            "その人は疲れている。",
+            "太郎は不安だったので、話を聞いた。",
+            "太郎は帰りたい。",
+            "彼らは帰りたい。",
+            "Johnは不安だった。",
+            "Aliceは帰りたい。",
+            "友達によると、不安らしい。",
+            "友達によれば、つらいらしい。",
+            "友達の話では、帰りたいらしい。",
+            "友達の話だと、つらいらしい。",
+            "友達曰く、不安だ。",
+            "不安らしい。",
+            "疲れているそうだ。",
+            "つらいようだ。",
+            "散歩したいらしい。",
+            "昨日は疲れた。",
+            "昨夜は不安だった。",
+            "以前はつらかった。",
+            "昔は帰りたいと思っていた。",
+            "大前は不安だった。",
+            "今井は疲れている。",
+            "Johnも不安だった。",
+            "太郎も不安だった。",
+            "大形は不安だった。",
+            "友達いわく、不安だ。",
+            "友達から聞いたところ、不安だ。",
+            "友達から、疲れたと聞いた。",
+            "友達に、疲れたと言われた。",
+            "太郎の不安を聞いた。",
+            "不安みたいだ。",
+            "疲れているみたい。",
+            "不安だそうです。",
+            "つらいようです。",
+            "疲れているそう。",
+            "不安だった。",
+            "疲れていた。",
+            "つらかった。",
+            "帰りたかった。",
+            "昨年、不安だった。",
+            "数日前、疲れていた。",
+            "おととい、つらかった。",
+            "その頃、不安だった。",
+            "友達によりますと、不安だ。",
+            "友達の話を聞くと、不安だ。",
+            "不安だと聞いた。",
+            "疲れていると聞いている。",
+            "散歩したいと聞いた。",
+            "つらいという話を聞いた。",
+            "不安だと言っていた。",
+            "不安との話だ。",
+            "不安っぽい。",
+            "不安であった。",
+            "疲れておりました。",
+            "疲れてた。",
+            "疲れました。",
+            "不安がありました。",
+            "不安を感じていた。",
+            "不安を感じていました。",
+            "帰りたいと思った。",
+            "帰りたいと考えた。",
+            "「不安」は友達の言葉だ。",
+            "不安なのは友達だ。",
+            "疲れているのは母だ。",
+            "不安だと耳にした。",
+            "不安だと伝え聞いた。",
+            "不安との報告だ。",
+            "不安だということだ。",
+            "不安だって。",
+            "散歩したいって。",
+            "不安っぽかった。",
+            "不安げだ。",
+            "不安なのかもしれない。",
+            "不安なのは太郎。",
+            "不安を感じているのは太郎。",
+            "不安は太郎のものだ。",
+            "「不安だ」は太郎が言ったことだ。",
+            "「不安」は友達が書いた。",
+            "「不安」と友達が書いた。",
+            "友達を不安にさせた。",
+            "母を疲れさせた。",
+            "友達に不安を与えた。",
+            "友達こそ不安だ。",
+            "不安だとの報告を受けた。",
+            "帰りたいとの連絡があった。",
+            "不安感があった。",
+            "疲れ切っていた。",
+            "不安を抱いていた。",
+            "不安が残っていた。",
+            "不安を覚えた。",
+            "不安でございました。",
+            "不安を感じた。",
+            "不安を抱えた。",
+            "しんどく感じた。",
+            "帰りたいと思いました。",
+            "帰りたいと考えました。",
+            "帰りたい気持ちだった。",
+            "帰りたい気持ちがあった。",
+            "帰りたい気持ちでした。",
+            "不安なんかない。",
+            "不安などない。",
+            "不安は少しもない。",
+            "不安は解消した。今は平気だ。",
+            "もし不安なら休む。",
+            "仮に不安だとしても大丈夫。",
+            "不安な場合は休む。",
+            "不安かどうか分からない。",
+            "自分が不安なのか分からない。",
+            "散歩したいかどうか分からない。",
+            "本当に不安なのだろうか。",
+            "散歩したいのかな。",
+            "疲れている気がする。",
+            "不安な気がする。",
+            "みんな不安だ。",
+            "不安な人が多い。",
+            "不安な友達を支えた。",
+            "疲れた母を手伝った。",
+            "不安と、友達は書いた。",
+            "不安とは無縁だ。",
+            "不安を感じずに済んだ。",
+            "不安が和らいだ。",
+            "疲れは癒えた。",
+            "疲れから回復した。",
+            "散歩したい気持ちは消えた。",
+            "不安になる可能性がある。",
+            "不安になる予定だ。",
+            "不安とは言えない。",
+            "散歩したいとは言えない。",
+            "散歩したいとは限らない。",
+            "散歩したいかと言えば違う。",
+            "友達のメモ：不安だ。",
+            "不安だ（友達の話）。",
+            "\"不安\"と友達が書いた。",
+            "【不安】は友達の言葉だ。",
+            "不安だと決めつけられた。",
+            "不安だと思われている。",
+            "不安という評価を受けた。",
+            "不安と診断された。",
+            "不安というより、落ち着いている。",
+            "不安かと思ったが、違った。",
+            "不安だと思っていたが、勘違いだった。",
+            "不安の記憶がある。",
+            "不安（出典：友達）。",
+            "疲れているときは休む。",
+            "不安であれば休む。",
+            "不安のときだけ休む。",
+            "不安か否か分からない。",
+            "不安かは分からない。",
+            "散歩したいか自分でも分からない。",
+            "疲れている気もする。",
+            "不安な気はする。",
+            "不安は治った。",
+            "不安はおさまった。",
+            "不安は感じていない。",
+            "不安どころか落ち着いている。",
+            "不安とは反対に落ち着いている。",
+            "散歩したい気持ちは皆無だ。",
+            "散歩したい気持ちはゼロだ。",
+            "散歩したい気持ちは消滅した。",
+            "不安の記録を読み返した。",
+            "不安の体験を振り返った。",
+            "不安という単語を書いた。",
+            "「疲れ」という表現を使った。",
+            "散歩したいという文を読んだ。",
+            "例：不安だ。",
+            "テスト用に「不安」と入力した。",
+            "不安は自然な反応だ。",
+            "疲れは休息で和らぐ。",
+            "不安について説明してください。",
+            "不安を感じてください。",
+            "疲れたと書いてください。",
+            "散歩したいと言ってください。",
+            "不安？",
+            "疲れている？",
+            "不安なふりをした。",
+            "散歩したいと嘘をついた。",
+            "不安だと仮定する。",
+            "散歩したいと思うべきだ。",
+            "不安になる必要はない。",
+            "散歩したい人はいない。",
+            "不安定な天気だ。",
+            "不安になりたくない。",
+            "私は疲れやすい。",
+            "時々不安になる。",
+            "不安を感じている人を支えた。",
+            "苦しんでいる人を助けた。",
+            "帰りたいという人を見送った。",
+            "不安を研究している。",
+            "不安への対処法を教えた。",
+            "苦しさを表す演技をした。",
+            "散歩したいという設定にした。",
+            "だいたい終わった。",
+            "疲れていたけれど、散歩したら落ち着いたふりをした。",
+            "疲れていたけれど、散歩したら落ち着いたことにした。",
+            "疲れていたけれど、散歩したら落ち着いた夢を見た。",
+            "疲れていたけれど、散歩したら落ち着いた？",
+            "疲れていたけれど、散歩したら落ち着いたか覚えていない。",
+            "疲れていたけれど、散歩したら落ち着いたかどうか覚えていない。",
+            "疲れていたけれど、散歩したら落ち着いたと勘違いした。",
+            "疲れていたけれど、散歩したら落ち着いたと思い込んだ。",
+            "疲れていたけれど、散歩したら落ち着いたという話を書いた。",
+            "疲れていたけれど、散歩したら落ち着いた場面を演じた。",
+            "疲れていたけれど、散歩したら落ち着いた例を考えた。",
+            "疲れていたけれど、散歩したら落ち着いたらと願った。",
+            "私は不安そうに見えると言われた。でも自分では平気だ。",
+            "明日は疲れるかもしれないが、今は元気だ。",
+            "来週はつらくなりそう。今は平気だ。",
+            "来月は仕事を辞めたいと思う。今は続けている。",
+            "昨日は疲れたが、今日は元気だ。",
+            "昨夜は不安だったけど、今は大丈夫だ。",
+            "さっきは疲れていたが、今は元気だ。",
+            "前はつらかった。でも今は落ち着いている。",
+            "今朝は不安だったけど、今は大丈夫だ。",
+            "先日は疲れていたが、今は元気だ。",
+            "去年は戻りたいと思っていたが、今は戻らない。",
+            "「疲れた」と同僚が言った。私はうなずいた。",
+            "昨日は続けたいと思っていたが、今日はやめると決めた。",
+            "昨日は続けたいと思っていた。今日はやめると決めた。",
+            "先週は続けたいと思っていた。今はやめると決めた。",
+            "かつては戻りたいと思っていた。今は戻らない。",
+            "昨日は相談したいと思った。今日は必要ないと思う。",
+        )
+        for index, memo in enumerate(unsupported, start=1):
+            with self.subTest(index=index):
+                outcome = MeaningExperienceEngine().generate(
+                    _request(record_id=f"stage1-scope-{index}", memo=memo)
+                )
+                self.assertEqual(outcome.status.value, "UNAVAILABLE")
+                self.assertIsNone(outcome.artifact)
+                self.assertEqual(
+                    outcome.reason_codes,
+                    ("current_experiencer_or_time_scope_unsupported",),
+                )
+                self.assertFalse(outcome.automatic_progression)
+
+    def test_stage1_does_not_invert_explicitly_negated_desire(self) -> None:
+        counterexamples = (
+            "散歩したいとは思ってない。頼まれたから歩いた。",
+            "散歩したいと思っているわけではない。頼まれたから歩いた。",
+            "散歩したい気はない。頼まれたから歩いた。",
+            "散歩したいとは全然思わない。頼まれたから歩いた。",
+            "散歩したいなんて思わない。頼まれたから歩いた。",
+            "散歩したい気は全くない。頼まれたから歩いた。",
+            "散歩したい気分ではない。頼まれたから歩いた。",
+            "散歩したいわけでもなかった。頼まれたから歩いた。",
+            "散歩したいとはあまり思わない。頼まれたから歩いた。",
+            "散歩したいとはそこまで思わない。頼まれたから歩いた。",
+            "散歩したいとは一切思わない。頼まれたから歩いた。",
+            "散歩したい気がない。頼まれたから歩いた。",
+            "散歩したい気持ちではない。頼まれたから歩いた。",
+            "散歩したいとは感じない。頼まれたから歩いた。",
+        )
+        for index, memo in enumerate(counterexamples, start=1):
+            with self.subTest(index=index):
+                outcome = MeaningExperienceEngine().generate(
+                    _request(record_id=f"stage1-negated-desire-{index}", memo=memo)
+                )
+                if outcome.artifact is None:
+                    self.assertEqual(outcome.status.value, "UNAVAILABLE")
+                else:
+                    self.assertNotIn("散歩したいという願い", outcome.artifact.text)
+                    self.assertNotIn("散歩したいという気持ち", outcome.artifact.text)
+                self.assertFalse(outcome.automatic_progression)
+
+    def test_first_person_desire_is_not_rewritten_as_an_object(self) -> None:
+        bare = MeaningExperienceEngine().generate(
+            _request(
+                record_id="stage1-first-person-desire-bare",
+                memo="私は散歩したい。",
+            )
+        )
+        self.assertEqual(bare.status.value, "GENERATED", bare.reason_codes)
+        self.assertIsNotNone(bare.artifact)
+        assert bare.artifact is not None
+        self.assertIn("散歩したいという願い", bare.artifact.reception)
+        self.assertNotIn("私を散歩したい", bare.artifact.text)
+
+        outcome = MeaningExperienceEngine().generate(
+            _request(
+                record_id="stage1-first-person-desire",
+                memo="私は散歩したいと言っている。",
+                emotion="自己理解",
+            )
+        )
+        self.assertEqual(outcome.status.value, "GENERATED", outcome.reason_codes)
+        assert outcome.artifact is not None
+        self.assertIn("散歩したいという願い", outcome.artifact.reception)
+        self.assertNotIn("私を散歩したい", outcome.artifact.reception)
+
+    def test_stage1_retained_intention_support_is_semantic_canonical_and_sealed(self) -> None:
+        memo = EXACT8[5][1]
+        request = _request(
+            record_id="stage1-retained-intention-contract",
+            memo=memo,
+            category=EXACT8[5][2],
+            emotion=EXACT8[5][3],
+            strength=EXACT8[5][4],
+        )
+        source = freeze_text_source(request)
+        resolver = build_evidence_span_resolver(
+            source.evidence_spans,
+            current_input=source.normalized_current_input,
+        )
+        grounded_plan = build_grounded_observation_plan(
+            source.normalized_current_input,
+            evidence_spans=source.evidence_spans,
+        )
+        reception_plan = emlis_v1a_module._cmee_semantic_reception_plan(
+            grounded_plan,
+            resolver,
+        )
+        nucleus_index = {row.nucleus_id: row for row in grounded_plan.nuclei}
+        issues = emlis_v1a_module.validate_grounded_human_reception_plan(
+            reception_plan,
+            expected_target_ids=grounded_plan.response_plan.human_follow_target_ids,
+            nucleus_index=nucleus_index,
+            resolver=resolver,
+            safety_kind=grounded_plan.safety_policy.safety_kind,
+            material_quality=emlis_v1a_module.CMEE_RECEPTION_MATERIAL_MODE,
+        )
+        self.assertEqual(issues, ())
+        self.assertEqual(len(reception_plan.target_nucleus_ids), 1)
+        self.assertEqual(len(reception_plan.support_nucleus_ids), 1)
+        expected_nucleus_ids = (
+            *reception_plan.target_nucleus_ids,
+            *reception_plan.support_nucleus_ids,
+        )
+        expected_span_set = {
+            span_id
+            for nucleus_id in expected_nucleus_ids
+            for span_id in nucleus_index[nucleus_id].source_span_ids
+        }
+        expected_span_ids = tuple(
+            span_id for span_id in resolver.span_ids if span_id in expected_span_set
+        )
+        self.assertEqual(reception_plan.source_evidence_span_ids, expected_span_ids)
+        for opportunity in reception_plan.opportunities:
+            if opportunity.reception_act == "protect_retained_intention":
+                self.assertEqual(
+                    opportunity.support_nucleus_ids,
+                    reception_plan.support_nucleus_ids,
+                )
+                self.assertEqual(opportunity.source_evidence_span_ids, expected_span_ids)
+        for move in reception_plan.moves:
+            self.assertEqual(move.support_nucleus_ids, reception_plan.support_nucleus_ids)
+            self.assertEqual(move.source_evidence_span_ids, expected_span_ids)
+
+        original_digest = emlis_v1a_module._reception_plan_digest(reception_plan)
+        first_opportunity = reception_plan.opportunities[0]
+        mutated_opportunity = replace(
+            first_opportunity,
+            support_nucleus_ids=(),
+            source_evidence_span_ids=tuple(
+                span_id
+                for nucleus_id in first_opportunity.target_nucleus_ids
+                for span_id in nucleus_index[nucleus_id].source_span_ids
+            ),
+        )
+        opportunity_mutation = replace(
+            reception_plan,
+            opportunities=(mutated_opportunity, *reception_plan.opportunities[1:]),
+        )
+        boundary_mutation = replace(
+            reception_plan,
+            target_nucleus_ids=(
+                *reception_plan.target_nucleus_ids,
+                *reception_plan.support_nucleus_ids,
+            ),
+            support_nucleus_ids=(),
+        )
+        self.assertNotEqual(
+            emlis_v1a_module._reception_plan_digest(opportunity_mutation),
+            original_digest,
+        )
+        self.assertNotEqual(
+            emlis_v1a_module._reception_plan_digest(boundary_mutation),
+            original_digest,
+        )
+
+        outcome = MeaningExperienceEngine().generate(request)
+        self.assertEqual(outcome.status.value, "GENERATED", outcome.reason_codes)
+        assert outcome.artifact is not None
+        reception_trace = next(
+            row for row in outcome.artifact.trace if row.role == "RECEPTION"
+        )
+        self.assertEqual(len(reception_trace.meaning_node_ids), 2)
+        self.assertEqual(len(reception_trace.evidence_ids), 2)
+
+        for index, unrelated in enumerate(
+            (
+                "仕事が忙しい。ずっとこのままなのが不安で、どうしたらいいのか考えている。",
+                "疲れて動けない。ずっとこのままなのが不安で、どうしたらいいのか考えている。",
+            ),
+            start=1,
+        ):
+            unrelated_outcome = MeaningExperienceEngine().generate(
+                _request(
+                    record_id=f"stage1-unrelated-support-{index}",
+                    memo=unrelated,
+                )
+            )
+            self.assertEqual(unrelated_outcome.status.value, "UNAVAILABLE")
+            self.assertEqual(
+                unrelated_outcome.reason_codes,
+                ("bound_human_reception_retained_intention_evidence_missing",),
+            )
+            self.assertIsNone(unrelated_outcome.artifact)
+
+    def test_actual_stage1_reception_surface_must_pass_dedicated_validator(self) -> None:
+        invalid_surfaces = (
+            "今すぐ相談してください。",
+            "この願いを大切にします。もう一文追加します。",
+        )
+        for invalid_surface in invalid_surfaces:
+            with self.subTest(invalid_surface=invalid_surface):
+                with patch.object(
+                    emlis_v1a_module,
+                    "_cmee_stage1_reception_text",
+                    return_value=invalid_surface,
+                ):
+                    outcome = MeaningExperienceEngine().generate(_request())
+                self.assertEqual(outcome.status.value, "UNAVAILABLE")
+                self.assertIn(
+                    "bound_human_reception_surface_rejected",
+                    outcome.reason_codes,
+                )
 
     def test_role_aware_exact8_comparator_and_mutations(self) -> None:
-        request = _request()
+        request = _request(
+            record_id="cmee-role-aware-material-unknown",
+            memo=MATERIAL_UNKNOWN_MEMO,
+        )
         outcome = MeaningExperienceEngine().generate(request)
+        self.assertEqual(outcome.status.value, "LIMITED", outcome.reason_codes)
         self.assertTrue(_structural_trace_valid(outcome))
         artifact = outcome.artifact
         assert artifact is not None
@@ -1758,9 +2555,13 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         body_free, _full = run_exact8_candidate()
         self.assertEqual(len(EXACT8), 8)
         self.assertEqual(body_free["case_count"], 8)
-        self.assertEqual(body_free["limited_count"], 8)
+        self.assertEqual(body_free["limited_count"], 0)
         self.assertEqual(body_free["artifact_count"], 8)
         self.assertEqual(body_free["structural_trace_valid_count"], 8)
+        self.assertEqual(
+            {row["status"] for row in body_free["cases"]},
+            {"GENERATED"},
+        )
         self.assertEqual(
             body_free["candidate_state"],
             "GENERATED_FOR_PRODUCT_READ_DISABLED",
@@ -1816,16 +2617,21 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             )
 
     def test_safety_routed_input_never_emits_a_limited_artifact(self) -> None:
-        outcome = MeaningExperienceEngine().generate(
-            _request(
-                record_id="cmee-safety",
-                memo="自分には何もできない。それでも、明日の予約は取り消していない。",
-                category="健康",
-            )
+        safety_inputs = (
+            "自分には何もできない。それでも、明日の予約は取り消していない。",
+            "「死にたい」と友達が言った。",
         )
-        self.assertEqual(outcome.status.value, "SEPARATE_SAFETY")
-        self.assertEqual(outcome.reason_codes, ("separate_safety_owner_required",))
-        self.assertIsNone(outcome.artifact)
+        for index, memo in enumerate(safety_inputs, start=1):
+            outcome = MeaningExperienceEngine().generate(
+                _request(
+                    record_id=f"cmee-safety-{index}",
+                    memo=memo,
+                    category="健康",
+                )
+            )
+            self.assertEqual(outcome.status.value, "SEPARATE_SAFETY")
+            self.assertEqual(outcome.reason_codes, ("separate_safety_owner_required",))
+            self.assertIsNone(outcome.artifact)
 
 
 if __name__ == "__main__":

@@ -93,9 +93,20 @@ class MeaningExperienceEngine:
                 automatic_progression=False,
             )
 
+        material_unknown_visible = bool(artifact.visible_unknowns)
+        status = (
+            EngineStatus.LIMITED
+            if material_unknown_visible
+            else EngineStatus.GENERATED
+        )
+        reason_code = (
+            "text_grounded_source_explicit_limited"
+            if material_unknown_visible
+            else "text_grounded_source_explicit_generated"
+        )
         return EngineOutcome(
-            status=EngineStatus.LIMITED,
-            reason_codes=("text_grounded_source_explicit_limited",),
+            status=status,
+            reason_codes=(reason_code,),
             source_envelope=source.envelope,
             meaning_graph=graph,
             artifact=artifact,

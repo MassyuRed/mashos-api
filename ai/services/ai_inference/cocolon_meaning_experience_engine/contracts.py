@@ -12,7 +12,7 @@ from enum import Enum
 from typing import Any, Mapping, Optional, Tuple
 
 
-CMEE_SCHEMA_VERSION = "cocolon.cmee.v1a.i1sx.text_grounded_limited.v1"
+CMEE_SCHEMA_VERSION = "cocolon.cmee.v1a.i1sx.material_unknown.v2"
 CMEE_ROUTE_B_POLICY_VERSION = "cocolon.cmee.v1a.acceptance.route_b.v1"
 CMEE_SOURCE_CONTRACT_VERSION = "cocolon.cmee.emlis.current_input.text_grounded.v2"
 CMEE_OBLIGATION_VERSION = "cocolon.cmee.emlis.i1sx.owner_obligation.v1"
@@ -323,10 +323,11 @@ class GenerationArtifactBundle:
 
     @property
     def text(self) -> str:
-        unknown = "\n".join(row.text for row in self.visible_unknowns)
+        layer1 = "\n".join(
+            (self.observation, *(row.text for row in self.visible_unknowns))
+        )
         return (
-            f"見えたこと：\n{self.observation}"
-            f"\n\nまだ分からないこと：\n{unknown}"
+            f"見えたこと：\n{layer1}"
             f"\n\nEmlisから：\n{self.reception}"
         )
 

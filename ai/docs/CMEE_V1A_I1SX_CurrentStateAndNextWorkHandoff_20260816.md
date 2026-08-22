@@ -264,3 +264,42 @@ test "$runner_rc" -eq 0
 次の1文で再開できます。
 
 > @GitHub `MassyuRed/mashos-api` Draft PR #3、`ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md`、`ai/docs/CMEE_V1A_I1SX_PrivateHumanProductRead_BodyFree_Receipt_20260816.json`を正本として、R1/R2/R3/R4 GREENとProduct Read `EVALUATED_FAIL_STOP`を確認して。Product Readを再実行せず、別途Mashが明示承認した場合だけ一つのbounded product correctionを開始し、privacy、disabled境界、Product credit 0、automatic progression falseを維持して。
+
+## 18. 第1段階 — EmlisAIの基本応答 実装実行レシート（2026-08-22）
+
+> この節は、この文書に残る旧い current-state / next-gate 記述だけを更新する。過去の監査証跡、契約、HOLD 境界は変更しない。
+
+### 18.1 権限と範囲
+
+- 実行主体: Mash
+- 実行権限: LEVEL_3（この依頼で明示された第1段階の実装・検証・Draft working lineage更新）
+- 実装対象: `TK-01 -> NB-F01` のみ
+- 未着手: `TK-02`〜`TK-06`、Piece / Analysis、DB / API / React Native、activation / cutover / production
+- System Context: Cocolon Draft PR #37 working lineage の `Cocolon_前提資料/system_context/00_read_first.md` を入口として適用
+
+### 18.2 実装結果
+
+- `見えたこと` と `Emlisから` の二層で、current input bundle と evidence span に直接拘束された基本応答を生成する。
+- 願い・負荷・実行済み行動・変化を、role / experiencer / time / negation を保ったまま区別する。
+- 他者経験、外部評価、過去・未来、明示的否定を本人の現在状態へ昇格させず、判別不能時は fail closed とする。
+- safety route を meaning route より先に固定し、safety 入力は `SEPARATE_SAFETY` へ送る。
+- reception plan は opportunity / move / target / support / evidence を field-named canonical JSON digest で封印する。
+- material unknown が残る場合だけ `LIMITED` と可視 UNKNOWN を許し、非materialな未解決要素は内部保持する。
+- 生成状態でも disabled terminal、`automatic_progression=false`、全 credit=0 を維持する。
+
+### 18.3 検証結果
+
+- unit / vertical: 47 tests PASS
+- exact8: 8/8 `GENERATED`、visible material unknown 0、structural trace 8/8
+- material fixture `疲れた。`: `LIMITED`、visible UNKNOWN 1、owner / evidence bind 済み
+- 否定・他者主語・時制・外部評価・safety の反例回帰を通過
+- candidate runner の body-free 出力に本文を含めず、body-full packet は非公開のローカル検証専用
+- 独立 pre-screen: BLOCKER 0 / MAJOR 0（Mash提示可）
+- 既知MINOR: `例えば…` / `例として…` / `テストとして…` / `Q:` のメタ入力prefix表記差はStage 1の未収録境界。disabled候補のまま次段階へ持ち越す。
+
+### 18.4 現在ゲート
+
+- 実装・技術検証は完了。
+- exact8 の最終 Product PASS は Mash の本文確認待ちであり、このレシート自体は Product PASS を宣言しない。
+- `candidate_ready=false`、`product_read_evaluated=false`、`exact8_acceptance_complete=false`、`production_effect=0`。
+- Mash の明示確認なしに第2段階へ進まない。

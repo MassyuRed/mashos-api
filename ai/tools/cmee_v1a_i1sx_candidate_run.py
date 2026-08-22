@@ -25,6 +25,7 @@ if str(AI_INFERENCE) not in sys.path:
 from emlis_ai_current_input_bundle import build_emlis_current_input_bundle  # noqa: E402
 from cocolon_meaning_experience_engine import GenerationRequest, MeaningExperienceEngine  # noqa: E402
 from cocolon_meaning_experience_engine.contracts import (  # noqa: E402
+    CMEE_TERMINAL_GENERATED_DISABLED,
     EpistemicState,
     RouteBDisposition,
 )
@@ -106,9 +107,16 @@ def _raw(case_id: str, memo: str, category: str, emotion: str, strength: str) ->
 def _structural_trace_valid(outcome: object) -> bool:
     artifact = getattr(outcome, "artifact", None)
     graph = getattr(outcome, "meaning_graph", None)
-    if getattr(getattr(outcome, "status", None), "value", "") != "LIMITED":
+    status = getattr(getattr(outcome, "status", None), "value", "")
+    if status not in {"GENERATED", "LIMITED"}:
         return False
-    if artifact is None or graph is None or getattr(outcome, "automatic_progression", True):
+    if (
+        artifact is None
+        or graph is None
+        or getattr(outcome, "terminal_state", "")
+        != CMEE_TERMINAL_GENERATED_DISABLED
+        or getattr(outcome, "automatic_progression", True)
+    ):
         return False
     owner_ids = tuple(row.owner_id for row in graph.owner_dispositions)
     if owner_ids != graph.required_owner_refs + graph.active_optional_owner_refs:
@@ -116,30 +124,48 @@ def _structural_trace_valid(outcome: object) -> bool:
     if len(owner_ids) != len(set(owner_ids)):
         return False
     roles = tuple(row.role for row in artifact.trace)
+    unknown_traces = tuple(row for row in artifact.trace if row.role == "UNKNOWN")
+    visible_unknowns = tuple(getattr(artifact, "visible_unknowns", ()))
+    expected_status = "LIMITED" if unknown_traces else "GENERATED"
     if (
-        len(roles) < 3
-        or roles[-2:] != ("UNKNOWN", "RECEPTION")
-        or any(role != "OBSERVATION" for role in roles[:-2])
-        or roles.count("UNKNOWN") != 1
+        status != expected_status
+        or len(roles) < 2
         or roles.count("RECEPTION") != 1
+        or roles[-1] != "RECEPTION"
+        or not roles[:-1]
+        or any(role not in {"OBSERVATION", "UNKNOWN"} for role in roles[:-1])
+        or "OBSERVATION" not in roles[:-1]
     ):
         return False
-    if not roles[:-2] or not all(row.evidence_ids for row in artifact.trace):
+    if unknown_traces:
+        first_unknown_index = roles.index("UNKNOWN")
+        if (
+            any(role != "OBSERVATION" for role in roles[:first_unknown_index])
+            or any(role != "UNKNOWN" for role in roles[first_unknown_index:-1])
+        ):
+            return False
+    elif any(role != "OBSERVATION" for role in roles[:-1]):
         return False
-    unknown = artifact.trace[-2]
-    if (
-        unknown.duty_id != "PRESERVE_EVIDENCE_BOUND_UNKNOWN"
-        or unknown.operation != "EVIDENCE_BOUND_UNKNOWN_PRESERVATION"
-        or unknown.meaning_node_ids
-        or unknown.meaning_edge_ids
-        or not unknown.constrained_by_owner_ids
-    ):
+    if len(visible_unknowns) != len(unknown_traces):
+        return False
+    if not all(row.evidence_ids for row in artifact.trace):
         return False
     nodes = {row.node_id: row for row in graph.nodes}
     edges = {row.edge_id: row for row in graph.edges}
     disposition = {row.owner_id: row for row in graph.owner_dispositions}
-    if any(owner_id not in disposition for owner_id in unknown.constrained_by_owner_ids):
-        return False
+    for unknown in unknown_traces:
+        if (
+            unknown.duty_id != "PRESERVE_EVIDENCE_BOUND_UNKNOWN"
+            or unknown.operation != "EVIDENCE_BOUND_UNKNOWN_PRESERVATION"
+            or unknown.meaning_node_ids
+            or unknown.meaning_edge_ids
+            or not unknown.constrained_by_owner_ids
+            or any(
+                owner_id not in disposition
+                for owner_id in unknown.constrained_by_owner_ids
+            )
+        ):
+            return False
     for trace in artifact.trace:
         if trace.role in {"OBSERVATION", "RECEPTION"} and not trace.meaning_node_ids:
             return False
@@ -231,7 +257,11 @@ def run() -> tuple[dict[str, Any], dict[str, Any]]:
     body_free: dict[str, Any] = {
         "packet_id": full["packet_id"],
         "case_count": len(body_free_cases),
+        "generated_count": sum(item["status"] == "GENERATED" for item in body_free_cases),
         "limited_count": sum(item["status"] == "LIMITED" for item in body_free_cases),
+        "material_unknown_case_count": sum(
+            item["status"] == "LIMITED" for item in body_free_cases
+        ),
         "structural_trace_valid_count": sum(item["structural_trace_valid"] for item in body_free_cases),
         "artifact_count": artifact_count,
         "observation_plus_bound_reception_trace_count": sum(
