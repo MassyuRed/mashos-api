@@ -21,6 +21,7 @@ from dataclasses import dataclass, replace
 from enum import Enum
 import hashlib
 import json
+import re
 import unicodedata
 from typing import Any, Iterable, Mapping, Optional, Sequence, Tuple
 
@@ -113,7 +114,7 @@ OBSERVATION_SEMANTIC_KEY_VERSION = (
 )
 
 CMEE_STAGE1_MICROGRAMMAR_POLICY_VERSION = (
-    "cocolon.emlis.stage1.microgrammar.v1"
+    "cocolon.emlis.stage1.microgrammar.v2"
 )
 
 # Sole finite Step 4 surface owner.  Every non-source Japanese token used by
@@ -147,6 +148,8 @@ CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE = (
                 (
                     "目が向きます",
                     "心に残ります",
+                    "意識を向けます",
+                    "気に留めます",
                     "大切な動きだと考えます",
                     "見過ごせないことだと考えます",
                 ),
@@ -155,6 +158,7 @@ CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE = (
                 "EMLIS_AFFECT_V1",
                 (
                     ("CONCERN", "気がかりです"),
+                    ("CONCERN", "気にかかります"),
                     ("RELIEF", "ほっとします"),
                     ("JOY", "うれしく思います"),
                     ("SADNESS", "悲しく感じます"),
@@ -190,10 +194,12 @@ CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE = (
         (
             ("NONE", ("",)),
             ("ADDITIVE", ("そして", "そのうえで")),
+            ("COADDITIVE", ("あわせて",)),
             ("SIMULTANEOUS", ("同時に",)),
             ("CONTRASTIVE", ("一方で", "それでも")),
             ("TEMPORAL", ("そのあと", "そこから")),
             ("CONTINUATIVE", ("また", "そのことに")),
+            ("STANCE_TRANSITION", ("そのうえで", "あわせて")),
             ("BOUNDED_CONTRAST", ("ただ",)),
         ),
     ),
@@ -208,34 +214,34 @@ CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE = (
             ("LAYER_1", "SOURCE_EXPLICIT_CAUSE", "ADDITIVE"),
             ("LAYER_2", "ATTEND_TO", "CONTINUATIVE"),
             ("LAYER_2", "FEEL_TOWARD", "CONTINUATIVE"),
-            ("LAYER_2", "APPRAISE_AS_MATERIAL", "CONTINUATIVE"),
-            ("LAYER_2", "PROTECT_VALUE_BOUNDARY", "CONTINUATIVE"),
-            ("LAYER_2", "TAKE_RELATIONAL_STANCE", "CONTINUATIVE"),
+            ("LAYER_2", "APPRAISE_AS_MATERIAL", "ADDITIVE"),
+            ("LAYER_2", "PROTECT_VALUE_BOUNDARY", "ADDITIVE"),
+            ("LAYER_2", "TAKE_RELATIONAL_STANCE", "STANCE_TRANSITION"),
             ("LAYER_2", "COUNTER_SPECIFIC_PROMOTION", "BOUNDED_CONTRAST"),
         ),
     ),
     (
         "modality_wrappers",
         (
-            ("fact", ""),
+            ("fact", "ということ"),
             ("feeling", "という気持ち"),
             ("wish", "という願い"),
             ("intention", "という方向"),
-            ("possibility", "可能性として"),
-            ("uncertain", "まだ決まっていないものとして"),
-            ("refusal", "しない／したくないという境界"),
+            ("possibility", "という可能性"),
+            ("uncertain", "というまだ決まっていないこと"),
+            ("refusal", "という境界"),
         ),
     ),
     (
         "time_wrappers",
         (
-            ("current_input", "今ここにある"),
-            ("present", "今ここにある"),
-            ("past", "その時にあった"),
-            ("future", "これからに向いた"),
-            ("continuing", "今も続く"),
-            ("past_to_present", "その時から今に残る"),
-            ("present_to_future", "今から先へ向く"),
+            ("current_input", ("今", "今の")),
+            ("present", ("今", "今の")),
+            ("past", ("その時", "その時の")),
+            ("future", ("これから", "これからの")),
+            ("continuing", ("今も", "今も続く")),
+            ("past_to_present", ("その時から今も", "その時から今に残る")),
+            ("present_to_future", ("今から先へ", "今から先へ向く")),
         ),
     ),
     (
@@ -259,7 +265,7 @@ CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE = (
         "subjective_operator_rows",
         (
             ("ATTEND_TO", "", "EMLIS_ATTENTION_APPRAISAL_V1", "目が向きます", "心に残ります"),
-            ("FEEL_TOWARD", "CONCERN", "EMLIS_AFFECT_V1", "気がかりです", ""),
+            ("FEEL_TOWARD", "CONCERN", "EMLIS_AFFECT_V1", "気がかりです", "気にかかります"),
             ("FEEL_TOWARD", "RELIEF", "EMLIS_AFFECT_V1", "ほっとします", ""),
             ("FEEL_TOWARD", "JOY", "EMLIS_AFFECT_V1", "うれしく思います", ""),
             ("FEEL_TOWARD", "SADNESS", "EMLIS_AFFECT_V1", "悲しく感じます", ""),
@@ -275,14 +281,256 @@ CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE = (
         ),
     ),
     (
+        "attention_surface_rows",
+        (
+            (
+                "PRESENT_DIRECTION:current_input",
+                (("に", "目が向きます"), ("が", "心に残ります")),
+            ),
+            (
+                "PRESENT_DIRECTION:present",
+                (("が", "心に残ります"), ("に", "目が向きます")),
+            ),
+            (
+                "PRESENT_DIRECTION:continuing",
+                (("に", "意識を向けます"), ("が", "心に残ります")),
+            ),
+            (
+                "PRESENT_BURDEN:current_input",
+                (("に", "目が向きます"), ("に", "意識を向けます")),
+            ),
+            (
+                "PRESENT_BURDEN:continuing",
+                (("に", "意識を向けます"), ("に", "目が向きます")),
+            ),
+            (
+                "*:*",
+                (("に", "目が向きます"), ("が", "心に残ります")),
+            ),
+        ),
+    ),
+    (
         "layer1_direct_slots",
         (
-            ("PRESENT_STATE", "という状態が"),
-            ("PRESENT_DIRECTION", "という方向が"),
-            ("PRESENT_BURDEN", "という負荷が"),
-            ("PRESENT_CHANGE", "という変化が"),
-            ("PRESENT_ACTUAL_OUTPUT", "という出来事が"),
-            ("PRESENT_UNFINISHED", "ということが"),
+            (
+                "PRESENT_STATE",
+                (
+                    ("fact", "という状態が"),
+                    ("feeling", "という気持ちが"),
+                    ("wish", "という気持ちが"),
+                    ("intention", "という気持ちが"),
+                    ("possibility", "という可能性が"),
+                    ("uncertain", "まだ決まっていないことが"),
+                    ("refusal", "という状態が"),
+                ),
+            ),
+            (
+                "PRESENT_DIRECTION",
+                (
+                    ("fact", "という方向が"),
+                    ("feeling", "という方向が"),
+                    ("wish", "という気持ちが"),
+                    ("intention", "という気持ちが"),
+                    ("possibility", "という可能性が"),
+                    ("uncertain", "まだ決まっていない方向が"),
+                    ("refusal", "という境界が"),
+                ),
+            ),
+            (
+                "PRESENT_BURDEN",
+                (
+                    ("fact", "という負荷が"),
+                    ("feeling", "という負荷が"),
+                    ("wish", "という負荷が"),
+                    ("intention", "という負荷が"),
+                    ("possibility", "という負荷が"),
+                    ("uncertain", "という負荷が"),
+                    ("refusal", "という負荷が"),
+                ),
+            ),
+            (
+                "PRESENT_CHANGE",
+                (
+                    ("fact", "という変化が"),
+                    ("feeling", "という変化が"),
+                    ("wish", "という変化が"),
+                    ("intention", "という変化が"),
+                    ("possibility", "という変化が"),
+                    ("uncertain", "という変化が"),
+                    ("refusal", "という変化が"),
+                ),
+            ),
+            (
+                "PRESENT_ACTUAL_OUTPUT",
+                (
+                    ("fact", "という出来事が"),
+                    ("feeling", "という出来事が"),
+                    ("wish", "という出来事が"),
+                    ("intention", "という出来事が"),
+                    ("possibility", "という出来事が"),
+                    ("uncertain", "という出来事が"),
+                    ("refusal", "という出来事が"),
+                ),
+            ),
+            (
+                "PRESENT_UNFINISHED",
+                (
+                    ("fact", "ということが"),
+                    ("feeling", "ということが"),
+                    ("wish", "ということが"),
+                    ("intention", "ということが"),
+                    ("possibility", "ということが"),
+                    ("uncertain", "ということが"),
+                    ("refusal", "ということが"),
+                ),
+            ),
+        ),
+    ),
+    (
+        "layer2_anaphoric_surfaces",
+        (
+            ("PRESENT_STATE:*", "その状態"),
+            ("PRESENT_STATE:feeling", "その気持ち"),
+            ("PRESENT_STATE:refusal", "その境界"),
+            ("PRESENT_DIRECTION:*", "その方向"),
+            ("PRESENT_DIRECTION:wish", "その願い"),
+            ("PRESENT_BURDEN:*", "その負荷"),
+            ("PRESENT_CHANGE:*", "その変化"),
+            ("PRESENT_ACTUAL_OUTPUT:*", "その出来事"),
+            ("PRESENT_RESIDUE:*", "その残っていること"),
+            ("PRESENT_UNFINISHED:*", "その途中にあること"),
+            ("HEAD:QUESTION", "その問い"),
+            ("HEAD:HESITATION", "そのためらい"),
+        ),
+    ),
+    (
+        "modality_anaphoric_surfaces",
+        (
+            ("fact", "そのこと"),
+            ("feeling", "その気持ち"),
+            ("wish", "その願い"),
+            ("intention", "その方向"),
+            ("possibility", "その可能性"),
+            ("uncertain", "そのまだ決まっていないこと"),
+            ("refusal", "その境界"),
+        ),
+    ),
+    (
+        "layer2_explicit_nominalizers",
+        (
+            ("PRESENT_STATE:*", "という状態"),
+            ("PRESENT_STATE:feeling", "という気持ち"),
+            ("PRESENT_STATE:refusal", "という境界"),
+            ("PRESENT_DIRECTION:*", "という方向"),
+            ("PRESENT_DIRECTION:wish", "という願い"),
+            ("PRESENT_BURDEN:*", "という負荷"),
+            ("PRESENT_CHANGE:*", "という変化"),
+            ("PRESENT_ACTUAL_OUTPUT:*", "という出来事"),
+            ("PRESENT_RESIDUE:*", "という残っていること"),
+            ("PRESENT_UNFINISHED:*", "という途中にあること"),
+            ("HEAD:QUESTION", "という問い"),
+            ("HEAD:HESITATION", "というためらい"),
+        ),
+    ),
+    (
+        "direction_under_burden_surface",
+        (
+            ("predicate", "続いています"),
+            ("burden_link", "がある中でも"),
+            ("direction_topic", "は"),
+        ),
+    ),
+    (
+        "direct_contrast_surface",
+        (
+            ("direction_nominalizer", "という願い"),
+            ("burden_nominalizer", "という負荷"),
+            ("hesitation_nominalizer", "というためらい"),
+            ("bridge", "がある一方で"),
+            ("second_topic", "も"),
+        ),
+    ),
+    (
+        "context_residue_surface",
+        (
+            ("context_tail", "あとにも"),
+            ("direction_nominalizer", "という願いがあり"),
+            ("residue_topic", "も"),
+            ("predicate", "残っています"),
+        ),
+    ),
+    (
+        "open_question_surface",
+        (
+            ("burden_link", "な中で"),
+            ("question_case", "を"),
+            ("predicate", "考えています"),
+        ),
+    ),
+    (
+        "compound_burden_surface",
+        (
+            ("context_link", "が続く中で"),
+            ("fatigue_link", "いるうえに"),
+        ),
+    ),
+    (
+        "body_burden_surface",
+        (
+            ("topic_possessive", "の"),
+            ("body_adjective_nominal", "だるさ"),
+            ("topic_object", "を"),
+        ),
+    ),
+    (
+        "epistemic_burden_surface",
+        (("question_link", "という"),),
+    ),
+    (
+        "action_change_surface",
+        (
+            ("context_tail", "あと"),
+            ("action_tail", "ことがあり"),
+            ("sequence", "その後"),
+        ),
+    ),
+    (
+        "simple_change_surface",
+        (
+            ("te_context_tail", "たあと"),
+            ("de_context_tail", "だあと"),
+        ),
+    ),
+    (
+        "bounded_self_denial_surface",
+        (
+            ("basis_nominalizer", "ということと"),
+            ("boundary_nominalizer", "という境界が"),
+        ),
+    ),
+    (
+        "relation_time_precedence",
+        (
+            "past_to_present",
+            "present_to_future",
+            "continuing",
+            "present",
+            "current_input",
+            "past",
+            "future",
+        ),
+    ),
+    (
+        "layer1_optional_connective_rows",
+        (
+            ("PRESENT_DIRECTION", "COADDITIVE"),
+            ("PRESENT_BURDEN", "CONTINUATIVE"),
+            ("PRESENT_CHANGE", "ADDITIVE"),
+            ("PRESENT_STATE", "ADDITIVE"),
+            ("PRESENT_ACTUAL_OUTPUT", "ADDITIVE"),
+            ("PRESENT_RESIDUE", "CONTINUATIVE"),
+            ("PRESENT_UNFINISHED", "CONTINUATIVE"),
+            ("SYNTHESIZE_RELATION", "ADDITIVE"),
         ),
     ),
     (
@@ -299,7 +547,12 @@ CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE = (
         "layer2_case_particles",
         (
             ("ATTEND_TO", "に"),
-            ("FEEL_TOWARD", "について"),
+            ("FEEL_TOWARD:CONCERN", "が"),
+            ("FEEL_TOWARD:RELIEF", "に"),
+            ("FEEL_TOWARD:JOY", "を"),
+            ("FEEL_TOWARD:SADNESS", "を"),
+            ("FEEL_TOWARD:RESPECT", "を"),
+            ("FEEL_TOWARD:DISCOMFORT", "に"),
             ("APPRAISE_AS_MATERIAL", "を"),
             ("PROTECT_VALUE_BOUNDARY", "を"),
             ("TAKE_RELATIONAL_STANCE:STAY_WITH_SPECIFIC_OBJECT", "を"),
@@ -310,10 +563,52 @@ CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE = (
         ),
     ),
     (
+        "subjective_semantic_predicate_rotation_rows",
+        (
+            (
+                "FEEL_TOWARD",
+                "CONCERN",
+                "PRESENT_BURDEN",
+                "current_input",
+            ),
+            (
+                "TAKE_RELATIONAL_STANCE",
+                "PROTECT_USER_AGENCY",
+                "PRESENT_DIRECTION",
+                "continuing",
+            ),
+        ),
+    ),
+    (
+        "subjective_semantic_connective_rotation_rows",
+        (
+            (
+                "TAKE_RELATIONAL_STANCE",
+                "PROTECT_USER_AGENCY",
+                "PRESENT_DIRECTION",
+                "present",
+            ),
+        ),
+    ),
+    (
+        "subjective_basis_connective_rows",
+        (
+            (
+                "TAKE_RELATIONAL_STANCE",
+                "PROTECT_USER_AGENCY",
+                "TENSION_WITH",
+                "ADDITIVE",
+            ),
+        ),
+    ),
+    (
         "structural_tokens",
         (
             ("speaker", "Emlis"),
             ("topic_particle", "は"),
+            ("separator", "、"),
+            ("quote_open", "「"),
+            ("quote_close", "」"),
             ("terminal", "。"),
         ),
     ),
@@ -326,7 +621,7 @@ CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE = (
                 "first_move_and_each_counterposition",
             ),
             ("later_zero_subject", "unique_resolution_only"),
-            ("wrapper_placement", "time_after_topic_then_modality_before_predicate"),
+            ("wrapper_placement", "nominalizer_then_time_adverb_then_predicate"),
             ("inflection_order", "polarity_then_modality_then_time_scope"),
         ),
     ),
@@ -341,7 +636,7 @@ CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE = (
     (
         "role_anchor_policy",
         (
-            ("max_graphemes", 16),
+            ("max_graphemes", 32),
             ("over_limit_selection", "semantic_boundary_or_stop"),
             ("inserted_token_count", 0),
             ("full_value_replay_over_limit", False),
@@ -351,7 +646,7 @@ CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE = (
         "quote_policy",
         (
             ("l1_max_graphemes", 16),
-            ("l1_max_per_sentence", 1),
+            ("l1_max_per_sentence", 2),
             ("l2_max_graphemes", 16),
             ("l2_max_per_sentence", 1),
             ("full_replay", False),
@@ -367,6 +662,78 @@ CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE = (
         ),
     ),
     (
+        "source_shape_recognizers",
+        (
+            (
+                "direct_contrast",
+                r"(?:けれども|けれど|けど|のに)[、,]?",
+            ),
+            (
+                "context_direction_residue",
+                r"(?P<context>.+?)あと[、,]"
+                r"(?P<direction>[^、,。！？!?]{1,16}?たい)"
+                r"(?:気持ち|願い)?(?:と|や)"
+                r"(?P<residue>[^、,。！？!?]{1,16}?)(?:が|は)"
+                r"残って(?:いる|います)",
+            ),
+            (
+                "open_question",
+                r"(?P<burden>.+?)で[、,]"
+                r"(?P<question>どうしたら(?:いい|よい)のか)"
+                r"(?:を)?考えて(?:いる|います)",
+            ),
+            (
+                "compound_burden",
+                r"(?P<context>.+?)が続いて(?P<fatigue>.+?て)いて[、,]"
+                r"(?P<burden>.+)",
+            ),
+            (
+                "action_change",
+                r"(?P<context>.+?)(?:けれども|けれど|けど)[、,]?"
+                r"(?P<action>.+?(?:たら|だら|なら))(?P<result>.+)",
+            ),
+            (
+                "simple_positive_change",
+                r"(?P<context>.+?)(?P<connector>て|で)"
+                r"(?P<result>[^、,。！？!?]{1,16}?かった)",
+            ),
+            ("positive_desire", r"(?<!たくない)たい$"),
+            (
+                "hesitation",
+                r"(?:かもしれない|かもしれません|かも)$",
+            ),
+            (
+                "bounded_self_denial",
+                r"(?P<basis>[^、,。！？!?]{1,16}?から)[、,]"
+                r"(?P<boundary>[^、,。！？!?]{1,16}?てはいけない)",
+            ),
+            (
+                "body_adjective",
+                r"(?P<topic>.+?)が(?P<state>だるい)",
+            ),
+            (
+                "body_weight",
+                r"(?P<topic>.+?)が(?P<state>重く感じる)",
+            ),
+            (
+                "context_de_epistemic_burden",
+                r"(?P<context>[^、,。！？!?]{1,16}?)で"
+                r"(?P<question>[^、,。！？!?]{1,16}?か)"
+                r"(?P<affect>不安|心配)",
+            ),
+        ),
+    ),
+    (
+        "source_shape_inflections",
+        (
+            ("conditional_tara", ("たら", "た")),
+            ("conditional_dara", ("だら", "だ")),
+            ("conditional_nara", ("なら", "")),
+            ("simple_te", "て"),
+            ("simple_de", "で"),
+        ),
+    ),
+    (
         "clause_policy",
         (
             ("one_move_one_sentence", True),
@@ -378,7 +745,7 @@ CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE = (
     (
         "move_ref_policy",
         (
-            ("format", "move:{basis_anchor_ref}@cocolon.emlis.stage1.microgrammar.v1"),
+            ("format", "move:{basis_anchor_ref}@cocolon.emlis.stage1.microgrammar.v2"),
             ("basis_anchor_count", 1),
             ("unit_frame_move_ref_exact", True),
         ),
@@ -395,12 +762,13 @@ CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE = (
     (
         "variant_policy",
         (
-            ("primary_variant_id", "01-primary.v1"),
-            ("alternate_variant_id", "02-alternate.v1"),
+            ("primary_variant_id", "01-primary.v2"),
+            ("alternate_variant_id", "02-alternate.v2"),
             ("max_candidates", 2),
             ("first_predicate_alternate_only", True),
             ("connective_alternate_only_without_predicate_alternate", True),
             ("multiple_slot_replacement", False),
+            ("predicate_case_pair_atomic", True),
             ("automatic_retry", 0),
             ("post_defect_generation", 0),
         ),
@@ -447,6 +815,9 @@ _SUBJECTIVE_PREDICATE_FAMILIES = {
     for operator, detail, family, _primary, _alternate
     in _MICROGRAMMAR_SECTIONS["subjective_operator_rows"]
 }
+_ATTENTION_SURFACE_ROWS = dict(
+    _MICROGRAMMAR_SECTIONS["attention_surface_rows"]
+)
 _CONNECTIVE_FAMILIES = dict(_MICROGRAMMAR_SECTIONS["connective_families"])
 _OPERATOR_CONNECTIVES = {
     (layer, operator): family
@@ -456,14 +827,85 @@ _OPERATOR_CONNECTIVES = {
 }
 _MODALITY_WRAPPERS = dict(_MICROGRAMMAR_SECTIONS["modality_wrappers"])
 _TIME_WRAPPERS = dict(_MICROGRAMMAR_SECTIONS["time_wrappers"])
-_LAYER1_DIRECT_SLOTS = dict(_MICROGRAMMAR_SECTIONS["layer1_direct_slots"])
+_LAYER1_DIRECT_SLOTS = {
+    operator: dict(rows)
+    for operator, rows in _MICROGRAMMAR_SECTIONS["layer1_direct_slots"]
+}
+_LAYER2_ANAPHORIC_SURFACES = dict(
+    _MICROGRAMMAR_SECTIONS["layer2_anaphoric_surfaces"]
+)
+_MODALITY_ANAPHORIC_SURFACES = dict(
+    _MICROGRAMMAR_SECTIONS["modality_anaphoric_surfaces"]
+)
+_LAYER2_EXPLICIT_NOMINALIZERS = dict(
+    _MICROGRAMMAR_SECTIONS["layer2_explicit_nominalizers"]
+)
+_DIRECTION_UNDER_BURDEN_SURFACE = dict(
+    _MICROGRAMMAR_SECTIONS["direction_under_burden_surface"]
+)
+_DIRECT_CONTRAST_SURFACE = dict(
+    _MICROGRAMMAR_SECTIONS["direct_contrast_surface"]
+)
+_CONTEXT_RESIDUE_SURFACE = dict(
+    _MICROGRAMMAR_SECTIONS["context_residue_surface"]
+)
+_OPEN_QUESTION_SURFACE = dict(
+    _MICROGRAMMAR_SECTIONS["open_question_surface"]
+)
+_COMPOUND_BURDEN_SURFACE = dict(
+    _MICROGRAMMAR_SECTIONS["compound_burden_surface"]
+)
+_BODY_BURDEN_SURFACE = dict(
+    _MICROGRAMMAR_SECTIONS["body_burden_surface"]
+)
+_EPISTEMIC_BURDEN_SURFACE = dict(
+    _MICROGRAMMAR_SECTIONS["epistemic_burden_surface"]
+)
+_ACTION_CHANGE_SURFACE = dict(
+    _MICROGRAMMAR_SECTIONS["action_change_surface"]
+)
+_SIMPLE_CHANGE_SURFACE = dict(
+    _MICROGRAMMAR_SECTIONS["simple_change_surface"]
+)
+_BOUNDED_SELF_DENIAL_SURFACE = dict(
+    _MICROGRAMMAR_SECTIONS["bounded_self_denial_surface"]
+)
+_RELATION_TIME_PRECEDENCE = tuple(
+    _MICROGRAMMAR_SECTIONS["relation_time_precedence"]
+)
+_LAYER1_OPTIONAL_CONNECTIVES = dict(
+    _MICROGRAMMAR_SECTIONS["layer1_optional_connective_rows"]
+)
 _LAYER1_RELATION_SLOTS = dict(_MICROGRAMMAR_SECTIONS["layer1_relation_slots"])
 _LAYER2_CASE_PARTICLES = dict(_MICROGRAMMAR_SECTIONS["layer2_case_particles"])
+_SUBJECTIVE_SEMANTIC_PREDICATE_ROTATIONS = frozenset(
+    tuple(row)
+    for row in _MICROGRAMMAR_SECTIONS[
+        "subjective_semantic_predicate_rotation_rows"
+    ]
+)
+_SUBJECTIVE_SEMANTIC_CONNECTIVE_ROTATIONS = frozenset(
+    tuple(row)
+    for row in _MICROGRAMMAR_SECTIONS[
+        "subjective_semantic_connective_rotation_rows"
+    ]
+)
+_SUBJECTIVE_BASIS_CONNECTIVES = {
+    (operator, detail, relation): family
+    for operator, detail, relation, family
+    in _MICROGRAMMAR_SECTIONS["subjective_basis_connective_rows"]
+}
 _STRUCTURAL_TOKENS = dict(_MICROGRAMMAR_SECTIONS["structural_tokens"])
 _TOPIC_SPEAKER_POLICY = dict(_MICROGRAMMAR_SECTIONS["topic_speaker_policy"])
 _REFERENCE_MODE_POLICY = dict(_MICROGRAMMAR_SECTIONS["reference_mode_policy"])
 _QUOTE_POLICY = dict(_MICROGRAMMAR_SECTIONS["quote_policy"])
 _ROLE_ANCHOR_POLICY = dict(_MICROGRAMMAR_SECTIONS["role_anchor_policy"])
+_SOURCE_SHAPE_RECOGNIZERS = dict(
+    _MICROGRAMMAR_SECTIONS["source_shape_recognizers"]
+)
+_SOURCE_SHAPE_INFLECTIONS = dict(
+    _MICROGRAMMAR_SECTIONS["source_shape_inflections"]
+)
 _VARIANT_POLICY = dict(_MICROGRAMMAR_SECTIONS["variant_policy"])
 _PRIMARY_VARIANT_ID = str(_VARIANT_POLICY["primary_variant_id"])
 _ALTERNATE_VARIANT_ID = str(_VARIANT_POLICY["alternate_variant_id"])
@@ -635,6 +1077,7 @@ class _CandidateRow:
     candidate: EmlisInterpretationCandidate
     required: bool
     is_relation: bool
+    obligation_kind: str
     retention_rank: int
     source_order: int
 
@@ -1507,6 +1950,10 @@ def _candidate_rows(
         visible_claim_ids=visible_claim_ids,
     )
     node_by_id = {row.node_id: row for row in graph.nodes}
+    obligation_kind_by_owner = {
+        row.meaning_owner_id: row.obligation_kind
+        for row in source.owner_universe.obligations
+    }
     rows: list[_CandidateRow] = []
 
     # Required relations own endpoint coverage before direct alternatives.
@@ -1569,6 +2016,7 @@ def _candidate_rows(
                 candidate=candidate,
                 required=required,
                 is_relation=True,
+                obligation_kind=obligation_kind_by_owner[edge.owner_id],
                 retention_rank=_retention_rank(
                     binding.edge_meta[edge.edge_id], required=required
                 ),
@@ -1600,6 +2048,7 @@ def _candidate_rows(
                 candidate=candidate,
                 required=required,
                 is_relation=False,
+                obligation_kind=obligation_kind_by_owner[node.owner_id],
                 retention_rank=_retention_rank(
                     binding.node_meta[node.node_id], required=required
                 ),
@@ -1925,14 +2374,21 @@ def _selected_contribution_candidates(
     required = [row for row in rows if row.required]
     if len(required) > LAYER1_OBSERVATION_CONTRIBUTION_CAP:
         raise CMEEStage1ContractError("stage1_required_observation_unrealizable")
+    structured_context_kinds = {
+        "EMOTION_CONTEXT",
+        "CATEGORY_CONTEXT",
+        "EMOTION_STRENGTH_CONTEXT",
+        "STRUCTURED_CONTEXT_ATTACHMENT",
+    }
     optional = [
         row
         for row in rows
         if not row.required
+        and row.obligation_kind not in structured_context_kinds
     ]
-    # Optional meanings deepen a single required observation by exact1.  They
-    # never inflate an already-layered/dense required set or manufacture depth
-    # from sentence budget alone.
+    # Structured labels remain source-explicit candidate evidence, but cannot
+    # manufacture an independently lived state/change sentence.  A genuinely
+    # material optional meaning retains the prior bounded exact-one policy.
     selected_optional = optional[:1] if len(required) == 1 else []
     return tuple((*required, *selected_optional))
 
@@ -2884,6 +3340,8 @@ def _validate_microgrammar_inventory() -> None:
         != expected_observation_families
         or _SUBJECTIVE_PREDICATE_ROWS != expected_subjective_rows
         or _SUBJECTIVE_PREDICATE_FAMILIES != expected_subjective_families
+        or _ATTENTION_SURFACE_ROWS
+        != dict(canonical_sections["attention_surface_rows"])
         or _CONNECTIVE_FAMILIES
         != dict(canonical_sections["connective_families"])
         or _OPERATOR_CONNECTIVES != expected_operator_connectives
@@ -2891,11 +3349,64 @@ def _validate_microgrammar_inventory() -> None:
         != dict(canonical_sections["modality_wrappers"])
         or _TIME_WRAPPERS != dict(canonical_sections["time_wrappers"])
         or _LAYER1_DIRECT_SLOTS
-        != dict(canonical_sections["layer1_direct_slots"])
+        != {
+            operator: dict(rows)
+            for operator, rows in canonical_sections["layer1_direct_slots"]
+        }
+        or _LAYER2_ANAPHORIC_SURFACES
+        != dict(canonical_sections["layer2_anaphoric_surfaces"])
+        or _MODALITY_ANAPHORIC_SURFACES
+        != dict(canonical_sections["modality_anaphoric_surfaces"])
+        or _LAYER2_EXPLICIT_NOMINALIZERS
+        != dict(canonical_sections["layer2_explicit_nominalizers"])
+        or _DIRECTION_UNDER_BURDEN_SURFACE
+        != dict(canonical_sections["direction_under_burden_surface"])
+        or _DIRECT_CONTRAST_SURFACE
+        != dict(canonical_sections["direct_contrast_surface"])
+        or _CONTEXT_RESIDUE_SURFACE
+        != dict(canonical_sections["context_residue_surface"])
+        or _OPEN_QUESTION_SURFACE
+        != dict(canonical_sections["open_question_surface"])
+        or _COMPOUND_BURDEN_SURFACE
+        != dict(canonical_sections["compound_burden_surface"])
+        or _BODY_BURDEN_SURFACE
+        != dict(canonical_sections["body_burden_surface"])
+        or _EPISTEMIC_BURDEN_SURFACE
+        != dict(canonical_sections["epistemic_burden_surface"])
+        or _ACTION_CHANGE_SURFACE
+        != dict(canonical_sections["action_change_surface"])
+        or _SIMPLE_CHANGE_SURFACE
+        != dict(canonical_sections["simple_change_surface"])
+        or _BOUNDED_SELF_DENIAL_SURFACE
+        != dict(canonical_sections["bounded_self_denial_surface"])
+        or _RELATION_TIME_PRECEDENCE
+        != tuple(canonical_sections["relation_time_precedence"])
+        or _LAYER1_OPTIONAL_CONNECTIVES
+        != dict(canonical_sections["layer1_optional_connective_rows"])
         or _LAYER1_RELATION_SLOTS
         != dict(canonical_sections["layer1_relation_slots"])
         or _LAYER2_CASE_PARTICLES
         != dict(canonical_sections["layer2_case_particles"])
+        or _SUBJECTIVE_SEMANTIC_PREDICATE_ROTATIONS
+        != frozenset(
+            tuple(row)
+            for row in canonical_sections[
+                "subjective_semantic_predicate_rotation_rows"
+            ]
+        )
+        or _SUBJECTIVE_SEMANTIC_CONNECTIVE_ROTATIONS
+        != frozenset(
+            tuple(row)
+            for row in canonical_sections[
+                "subjective_semantic_connective_rotation_rows"
+            ]
+        )
+        or _SUBJECTIVE_BASIS_CONNECTIVES
+        != {
+            (operator, detail, relation): family
+            for operator, detail, relation, family
+            in canonical_sections["subjective_basis_connective_rows"]
+        }
         or _STRUCTURAL_TOKENS
         != dict(canonical_sections["structural_tokens"])
         or _TOPIC_SPEAKER_POLICY
@@ -2905,6 +3416,10 @@ def _validate_microgrammar_inventory() -> None:
         or _QUOTE_POLICY != dict(canonical_sections["quote_policy"])
         or _ROLE_ANCHOR_POLICY
         != dict(canonical_sections["role_anchor_policy"])
+        or _SOURCE_SHAPE_RECOGNIZERS
+        != dict(canonical_sections["source_shape_recognizers"])
+        or _SOURCE_SHAPE_INFLECTIONS
+        != dict(canonical_sections["source_shape_inflections"])
         or _VARIANT_POLICY != dict(canonical_sections["variant_policy"])
         or _MICROGRAMMAR_SECTIONS.get("policy_id")
         != CMEE_STAGE1_MICROGRAMMAR_POLICY_VERSION
@@ -2912,12 +3427,13 @@ def _validate_microgrammar_inventory() -> None:
         != CMEE_STAGE1_MICROGRAMMAR_POLICY_REF
         or len(_OBSERVATION_PREDICATE_ROWS) != 12
         or len(_SUBJECTIVE_PREDICATE_ROWS) != 14
-        or len(_CONNECTIVE_FAMILIES) != 7
+        or len(_CONNECTIVE_FAMILIES) != 9
         or len(_OPERATOR_CONNECTIVES) != 12
         or _VARIANT_POLICY.get("max_candidates") != 2
         or _VARIANT_POLICY.get("automatic_retry") != 0
         or _VARIANT_POLICY.get("post_defect_generation") != 0
-        or _ROLE_ANCHOR_POLICY.get("max_graphemes") != 16
+        or _VARIANT_POLICY.get("predicate_case_pair_atomic") is not True
+        or _ROLE_ANCHOR_POLICY.get("max_graphemes") != 32
         or _ROLE_ANCHOR_POLICY.get("inserted_token_count") != 0
         or _ROLE_ANCHOR_POLICY.get("full_value_replay_over_limit") is not False
         or _QUOTE_POLICY.get("l1_max_graphemes") != 16
@@ -2951,9 +3467,55 @@ def _validate_microgrammar_inventory() -> None:
         tokens = family_tokens.get(_SUBJECTIVE_PREDICATE_FAMILIES.get(key, ""), set())
         if primary not in tokens or (alternate and alternate not in tokens):
             raise CMEEStage1ContractError("stage1_microgrammar_inventory_invalid")
+    attention_tokens = family_tokens.get(
+        "EMLIS_ATTENTION_APPRAISAL_V1",
+        set(),
+    )
+    admitted_particles = set(_LAYER2_CASE_PARTICLES.values())
+    if (
+        "*:*" not in _ATTENTION_SURFACE_ROWS
+        or any(
+            type(variants) is not tuple
+            or len(variants) != 2
+            or any(
+                type(pair) is not tuple
+                or len(pair) != 2
+                or pair[0] not in admitted_particles
+                or pair[1] not in attention_tokens
+                for pair in variants
+            )
+            for variants in _ATTENTION_SURFACE_ROWS.values()
+        )
+    ):
+        raise CMEEStage1ContractError("stage1_microgrammar_inventory_invalid")
     if any(
         family not in _CONNECTIVE_FAMILIES
         for family in _OPERATOR_CONNECTIVES.values()
+    ):
+        raise CMEEStage1ContractError("stage1_microgrammar_inventory_invalid")
+    if (
+        set(_MODALITY_ANAPHORIC_SURFACES) != set(_MODALITY_WRAPPERS)
+        or any(
+            family not in _CONNECTIVE_FAMILIES
+            for family in _SUBJECTIVE_BASIS_CONNECTIVES.values()
+        )
+        or any(
+            (operator, detail) not in _SUBJECTIVE_PREDICATE_ROWS
+            or not _SUBJECTIVE_PREDICATE_ROWS[(operator, detail)][1]
+            for operator, detail, _semantic_operator, _time_scope
+            in _SUBJECTIVE_SEMANTIC_PREDICATE_ROTATIONS
+        )
+        or any(
+            ("LAYER_2", operator) not in _OPERATOR_CONNECTIVES
+            or len(
+                _CONNECTIVE_FAMILIES[
+                    _OPERATOR_CONNECTIVES[("LAYER_2", operator)]
+                ]
+            )
+            != 2
+            for operator, _detail, _semantic_operator, _time_scope
+            in _SUBJECTIVE_SEMANTIC_CONNECTIVE_ROTATIONS
+        )
     ):
         raise CMEEStage1ContractError("stage1_microgrammar_inventory_invalid")
     if tuple(sorted((_PRIMARY_VARIANT_ID, _ALTERNATE_VARIANT_ID))) != (
@@ -2999,6 +3561,17 @@ def _observation_predicate_spec(
     projection: EmlisStage1Projection,
     contribution: PlannedObservationContribution,
 ) -> tuple[str, str]:
+    candidate = _candidate_for_contribution(projection, contribution)
+    if (
+        candidate.candidate_kind is InterpretationKind.DIRECTION_UNDER_BURDEN
+        and contribution.relation_operator is RelationOperator.COEXISTS_WITH
+    ):
+        predicate = _DIRECTION_UNDER_BURDEN_SURFACE.get("predicate")
+        if not predicate:
+            raise CMEEStage1ContractError(
+                "stage1_microgrammar_predicate_missing"
+            )
+        return predicate, ""
     key = (
         contribution.semantic_operator.value,
         contribution.relation_operator.value,
@@ -3012,7 +3585,6 @@ def _observation_predicate_spec(
     if condition == "always":
         return primary, alternate
     if condition == "continuing_only":
-        candidate = _candidate_for_contribution(projection, contribution)
         times = tuple(
             _qualifier_value(candidate, "time_scope", role=binding.role)
             if contribution.relation_operator is not RelationOperator.NO_RELATION_CLAIM
@@ -3026,9 +3598,7 @@ def _observation_predicate_spec(
     return primary, ""
 
 
-def _subjective_predicate_spec(
-    claim: EmlisSubjectiveClaim,
-) -> tuple[str, str]:
+def _subjective_operator_detail(claim: EmlisSubjectiveClaim) -> str:
     proposition = claim.asserted_subjective_proposition
     operator = proposition.subjective_operator
     detail = ""
@@ -3040,6 +3610,15 @@ def _subjective_predicate_spec(
         if proposition.stance_operator is None:
             raise CMEEStage1ContractError("stage1_microgrammar_stance_missing")
         detail = proposition.stance_operator.value
+    return detail
+
+
+def _subjective_predicate_spec(
+    claim: EmlisSubjectiveClaim,
+) -> tuple[str, str]:
+    proposition = claim.asserted_subjective_proposition
+    operator = proposition.subjective_operator
+    detail = _subjective_operator_detail(claim)
     row = _SUBJECTIVE_PREDICATE_ROWS.get((operator.value, detail))
     if row is None:
         raise CMEEStage1ContractError("stage1_microgrammar_predicate_missing")
@@ -3051,8 +3630,9 @@ def _connective_family(
     layer: str,
     relation_or_operator: str,
     overall_index: int,
+    layer_index: Optional[int] = None,
 ) -> str:
-    if overall_index == 0:
+    if overall_index == 0 or (layer == "LAYER_2" and layer_index == 0):
         return "NONE"
     family = _OPERATOR_CONNECTIVES.get((layer, relation_or_operator))
     if family is None:
@@ -3069,6 +3649,129 @@ def _connective_token(family: str, *, alternate: bool) -> str:
             raise CMEEStage1ContractError("stage1_microgrammar_alternate_missing")
         return tokens[1]
     return tokens[0]
+
+
+def _subjective_connective_family(
+    projection: EmlisStage1Projection,
+    claim: EmlisSubjectiveClaim,
+    *,
+    overall_index: int,
+    layer_index: int,
+) -> str:
+    proposition = claim.asserted_subjective_proposition
+    base = _connective_family(
+        layer="LAYER_2",
+        relation_or_operator=proposition.subjective_operator.value,
+        overall_index=overall_index,
+        layer_index=layer_index,
+    )
+    if base == "NONE":
+        return base
+    contribution_by_id = {
+        row.contribution_id: row
+        for row in projection.observation_contributions
+    }
+    overrides = {
+        _SUBJECTIVE_BASIS_CONNECTIVES[key]
+        for ref in claim.basis_observation_contribution_refs
+        if ref in contribution_by_id
+        for key in (
+            (
+                proposition.subjective_operator.value,
+                _subjective_operator_detail(claim),
+                contribution_by_id[ref].relation_operator.value,
+            ),
+        )
+        if key in _SUBJECTIVE_BASIS_CONNECTIVES
+    }
+    if len(overrides) > 1:
+        raise CMEEStage1ContractError(
+            "stage1_microgrammar_connective_ambiguous"
+        )
+    return next(iter(overrides), base)
+
+
+def _subjective_semantic_predicate_alternate(
+    projection: EmlisStage1Projection,
+    claim: EmlisSubjectiveClaim,
+    object_ref: str,
+) -> bool:
+    proposition = claim.asserted_subjective_proposition
+    prefix = (
+        proposition.subjective_operator.value,
+        _subjective_operator_detail(claim),
+    )
+    if not any(
+        row[:2] == prefix
+        for row in _SUBJECTIVE_SEMANTIC_PREDICATE_ROTATIONS
+    ):
+        return False
+    key = (
+        *prefix,
+        _semantic_operator_for_object(projection, object_ref),
+        _time_scope_for_semantic_ref(projection, object_ref),
+    )
+    return key in _SUBJECTIVE_SEMANTIC_PREDICATE_ROTATIONS
+
+
+def _subjective_semantic_connective_alternate(
+    projection: EmlisStage1Projection,
+    claim: EmlisSubjectiveClaim,
+    object_ref: str,
+) -> bool:
+    proposition = claim.asserted_subjective_proposition
+    prefix = (
+        proposition.subjective_operator.value,
+        _subjective_operator_detail(claim),
+    )
+    if not any(
+        row[:2] == prefix
+        for row in _SUBJECTIVE_SEMANTIC_CONNECTIVE_ROTATIONS
+    ):
+        return False
+    key = (
+        *prefix,
+        _semantic_operator_for_object(projection, object_ref),
+        _time_scope_for_semantic_ref(projection, object_ref),
+    )
+    return key in _SUBJECTIVE_SEMANTIC_CONNECTIVE_ROTATIONS
+
+
+def _observation_connective_family(
+    projection: EmlisStage1Projection,
+    contribution: PlannedObservationContribution,
+    *,
+    overall_index: int,
+) -> str:
+    if overall_index == 0:
+        return "NONE"
+    candidate = _candidate_for_contribution(projection, contribution)
+    if (
+        candidate.candidate_kind is InterpretationKind.DIRECTION_UNDER_BURDEN
+        and contribution.relation_operator is RelationOperator.COEXISTS_WITH
+    ):
+        return "COADDITIVE"
+    if contribution.retention == "OPTIONAL":
+        prior_ref = projection.ordered_observation_refs[overall_index - 1]
+        prior = next(
+            row
+            for row in projection.observation_contributions
+            if row.contribution_id == prior_ref
+        )
+        family = _LAYER1_OPTIONAL_CONNECTIVES.get(
+            prior.semantic_operator.value
+        )
+        if family not in _CONNECTIVE_FAMILIES:
+            raise CMEEStage1ContractError(
+                "stage1_microgrammar_connective_missing"
+            )
+        return str(family)
+    return _connective_family(
+        layer="LAYER_1",
+        relation_or_operator=contribution.relation_operator.value,
+        overall_index=overall_index,
+        layer_index=overall_index,
+    )
 
 
 def _variant_delta(
@@ -3100,30 +3803,23 @@ def _variant_delta(
     claim_by_id = {
         row.subjective_claim_id: row for row in projection.subjective_claims
     }
-    ordered_moves: list[tuple[str, str, str]] = []
-    for ref in projection.ordered_observation_refs:
+    for index, ref in enumerate(projection.ordered_observation_refs):
         contribution = contribution_by_id[ref]
-        ordered_moves.append(
-            (
-                "LAYER_1",
-                contribution.contribution_id,
-                contribution.relation_operator.value,
-            )
-        )
-    for ref in projection.ordered_subjective_refs:
-        claim = claim_by_id[ref]
-        ordered_moves.append(
-            (
-                "LAYER_2",
-                claim.subjective_claim_id,
-                claim.asserted_subjective_proposition.subjective_operator.value,
-            )
-        )
-    for index, (layer, ref, operator) in enumerate(ordered_moves):
-        family = _connective_family(
-            layer=layer,
-            relation_or_operator=operator,
+        family = _observation_connective_family(
+            projection,
+            contribution,
             overall_index=index,
+        )
+        if len(_CONNECTIVE_FAMILIES[family]) == 2:
+            return "connective", ref
+    observation_count = len(projection.ordered_observation_refs)
+    for layer_index, ref in enumerate(projection.ordered_subjective_refs):
+        claim = claim_by_id[ref]
+        family = _subjective_connective_family(
+            projection,
+            claim,
+            overall_index=observation_count + layer_index,
+            layer_index=layer_index,
         )
         if len(_CONNECTIVE_FAMILIES[family]) == 2:
             return "connective", ref
@@ -3136,9 +3832,29 @@ def _move_ref(anchor_ref: str) -> str:
     return f"move:{anchor_ref}@{CMEE_STAGE1_MICROGRAMMAR_POLICY_VERSION}"
 
 
+def _grapheme_clusters(value: str) -> tuple[str, ...]:
+    clusters: list[str] = []
+    join_next = False
+    for char in value:
+        is_extension = bool(
+            unicodedata.combining(char)
+            or "\ufe00" <= char <= "\ufe0f"
+            or "\U000e0100" <= char <= "\U000e01ef"
+            or join_next
+        )
+        if is_extension and clusters:
+            clusters[-1] += char
+        else:
+            clusters.append(char)
+        join_next = char == "\u200d"
+    return tuple(clusters)
+
+
 def _source_bound_role_surface(
     semantic_ref: str,
     grounded_graph: GroundedMeaningGraph,
+    *,
+    layer: Optional[str] = None,
 ) -> str:
     if not semantic_ref.startswith("node:"):
         raise CMEEStage1ContractError("stage1_surface_binding_unavailable")
@@ -3155,24 +3871,23 @@ def _source_bound_role_surface(
         or "\x00" in value
     ):
         raise CMEEStage1ContractError("stage1_surface_binding_unavailable")
-    clusters: list[str] = []
-    join_next = False
-    for char in value:
-        is_extension = bool(
-            unicodedata.combining(char)
-            or "\ufe00" <= char <= "\ufe0f"
-            or "\U000e0100" <= char <= "\U000e01ef"
-            or join_next
+    clusters = _grapheme_clusters(value)
+    if layer not in {None, "LAYER_1", "LAYER_2"}:
+        raise CMEEStage1ContractError("stage1_role_anchor_policy_invalid")
+    quote_limit = (
+        int(
+            _QUOTE_POLICY[
+                "l1_max_graphemes"
+                if layer == "LAYER_1"
+                else "l2_max_graphemes"
+            ]
         )
-        if is_extension and clusters:
-            clusters[-1] += char
-        else:
-            clusters.append(char)
-        join_next = char == "\u200d"
+        if layer is not None
+        else int(_ROLE_ANCHOR_POLICY["max_graphemes"])
+    )
     max_graphemes = min(
         int(_ROLE_ANCHOR_POLICY["max_graphemes"]),
-        int(_QUOTE_POLICY["l1_max_graphemes"]),
-        int(_QUOTE_POLICY["l2_max_graphemes"]),
+        quote_limit,
     )
     if len(clusters) > max_graphemes:
         if (
@@ -3225,6 +3940,539 @@ def _part(
     )
 
 
+def _time_surface_tokens(time_scope: str) -> tuple[str, str]:
+    row = _TIME_WRAPPERS.get(time_scope)
+    if (
+        type(row) is not tuple
+        or len(row) != 2
+        or any(type(token) is not str or not token for token in row)
+    ):
+        raise CMEEStage1ContractError("stage1_microgrammar_inflection_missing")
+    return row
+
+
+def _direct_nominalizer(semantic_operator: str, modality: str) -> str:
+    rows = _LAYER1_DIRECT_SLOTS.get(semantic_operator)
+    token = rows.get(modality) if rows is not None else None
+    if type(token) is not str or not token:
+        raise CMEEStage1ContractError("stage1_microgrammar_inflection_missing")
+    return token
+
+
+_DIRECT_CONTRAST_CONNECTOR_RE = re.compile(
+    _SOURCE_SHAPE_RECOGNIZERS["direct_contrast"]
+)
+_CONTEXT_DIRECTION_RESIDUE_RE = re.compile(
+    _SOURCE_SHAPE_RECOGNIZERS["context_direction_residue"]
+)
+_OPEN_QUESTION_IN_PROGRESS_RE = re.compile(
+    _SOURCE_SHAPE_RECOGNIZERS["open_question"]
+)
+_COMPOUND_BURDEN_CONTEXT_RE = re.compile(
+    _SOURCE_SHAPE_RECOGNIZERS["compound_burden"]
+)
+_ACTION_CHANGE_CONTEXT_RE = re.compile(
+    _SOURCE_SHAPE_RECOGNIZERS["action_change"]
+)
+_SIMPLE_POSITIVE_CHANGE_RE = re.compile(
+    _SOURCE_SHAPE_RECOGNIZERS["simple_positive_change"]
+)
+_POSITIVE_DESIRE_ROLE_RE = re.compile(
+    _SOURCE_SHAPE_RECOGNIZERS["positive_desire"]
+)
+_HESITATION_ROLE_RE = re.compile(
+    _SOURCE_SHAPE_RECOGNIZERS["hesitation"]
+)
+_BOUNDED_SELF_DENIAL_RE = re.compile(
+    _SOURCE_SHAPE_RECOGNIZERS["bounded_self_denial"]
+)
+_BODY_ADJECTIVE_RE = re.compile(
+    _SOURCE_SHAPE_RECOGNIZERS["body_adjective"]
+)
+_BODY_WEIGHT_RE = re.compile(
+    _SOURCE_SHAPE_RECOGNIZERS["body_weight"]
+)
+_CONTEXT_DE_EPISTEMIC_BURDEN_RE = re.compile(
+    _SOURCE_SHAPE_RECOGNIZERS["context_de_epistemic_burden"]
+)
+
+
+def _bounded_source_fragments(
+    anchor: str,
+    *fragments: str,
+) -> Optional[tuple[str, ...]]:
+    rows = tuple(fragments)
+    if (
+        not rows
+        or any(
+            type(row) is not str
+            or not row
+            or row not in anchor
+            or len(_grapheme_clusters(row))
+            > int(_QUOTE_POLICY["l1_max_graphemes"])
+            for row in rows
+        )
+    ):
+        return None
+    return rows
+
+
+def _source_direct_contrast_roles(
+    anchor: str,
+) -> Optional[tuple[tuple[str, str], tuple[str, str]]]:
+    matches = tuple(_DIRECT_CONTRAST_CONNECTOR_RE.finditer(anchor))
+    if len(matches) != 1:
+        return None
+    match = matches[0]
+    left = anchor[: match.start()].rstrip("、,")
+    right = anchor[match.end() :].lstrip("、,")
+    if _bounded_source_fragments(anchor, left, right) is None:
+        return None
+    left_direction = bool(_POSITIVE_DESIRE_ROLE_RE.search(left))
+    right_direction = bool(_POSITIVE_DESIRE_ROLE_RE.search(right))
+    if left_direction == right_direction:
+        return None
+    other = right if left_direction else left
+    other_kind = (
+        "hesitation"
+        if _HESITATION_ROLE_RE.search(other)
+        else "burden"
+    )
+    return (
+        (left, "direction" if left_direction else other_kind),
+        (right, "direction" if right_direction else other_kind),
+    )
+
+
+def _source_context_direction_residue_parts(
+    anchor: str,
+) -> Optional[tuple[str, str, str]]:
+    match = _CONTEXT_DIRECTION_RESIDUE_RE.fullmatch(anchor)
+    if match is None:
+        return None
+    rows = tuple(match.group(name) for name in ("context", "direction", "residue"))
+    bounded = _bounded_source_fragments(anchor, *rows)
+    return None if bounded is None else (bounded[0], bounded[1], bounded[2])
+
+
+def _source_open_question_parts(
+    anchor: str,
+) -> Optional[tuple[str, str]]:
+    match = _OPEN_QUESTION_IN_PROGRESS_RE.fullmatch(anchor)
+    if match is None:
+        return None
+    rows = tuple(match.group(name) for name in ("burden", "question"))
+    bounded = _bounded_source_fragments(anchor, *rows)
+    return None if bounded is None else (bounded[0], bounded[1])
+
+
+def _source_compound_burden_parts(
+    anchor: str,
+) -> Optional[tuple[str, str, str]]:
+    match = _COMPOUND_BURDEN_CONTEXT_RE.fullmatch(anchor)
+    if match is None:
+        return None
+    rows = tuple(
+        match.group(name) for name in ("context", "fatigue", "burden")
+    )
+    bounded = _bounded_source_fragments(anchor, *rows)
+    return (
+        None
+        if bounded is None
+        else (bounded[0], bounded[1], bounded[2])
+    )
+
+
+def _source_action_change_parts(
+    anchor: str,
+) -> Optional[tuple[str, str, str]]:
+    match = _ACTION_CHANGE_CONTEXT_RE.fullmatch(anchor)
+    if match is None:
+        return None
+    action = str(match.group("action") or "")
+    for inflection_key in (
+        "conditional_tara",
+        "conditional_dara",
+        "conditional_nara",
+    ):
+        suffix, replacement = _SOURCE_SHAPE_INFLECTIONS[inflection_key]
+        if action.endswith(suffix):
+            action = action[: -len(suffix)] + replacement
+            break
+    rows = (str(match.group("context") or ""), action, str(match.group("result") or ""))
+    bounded = _bounded_source_fragments(anchor, *rows)
+    return None if bounded is None else (bounded[0], bounded[1], bounded[2])
+
+
+def _source_simple_change_parts(
+    anchor: str,
+) -> Optional[tuple[str, str, str]]:
+    match = _SIMPLE_POSITIVE_CHANGE_RE.fullmatch(anchor)
+    if match is None:
+        return None
+    context = str(match.group("context") or "")
+    result = str(match.group("result") or "")
+    bounded = _bounded_source_fragments(anchor, context, result)
+    if bounded is None:
+        return None
+    tail_key = (
+        "te_context_tail"
+        if match.group("connector")
+        == _SOURCE_SHAPE_INFLECTIONS["simple_te"]
+        else "de_context_tail"
+    )
+    return bounded[0], tail_key, bounded[1]
+
+
+def _source_bounded_self_denial_parts(
+    anchor: str,
+) -> Optional[tuple[str, str]]:
+    match = _BOUNDED_SELF_DENIAL_RE.fullmatch(anchor)
+    if match is None:
+        return None
+    rows = tuple(match.group(name) for name in ("basis", "boundary"))
+    bounded = _bounded_source_fragments(anchor, *rows)
+    return None if bounded is None else (bounded[0], bounded[1])
+
+
+def _source_body_burden_parts(
+    anchor: str,
+) -> Optional[tuple[str, str, str]]:
+    matches = tuple(
+        (shape, pattern.fullmatch(anchor))
+        for shape, pattern in (
+            ("body_adjective", _BODY_ADJECTIVE_RE),
+            ("body_weight", _BODY_WEIGHT_RE),
+        )
+    )
+    matched = tuple((shape, match) for shape, match in matches if match is not None)
+    if len(matched) != 1:
+        return None
+    shape, match = matched[0]
+    rows = tuple(match.group(name) for name in ("topic", "state"))
+    bounded = _bounded_source_fragments(anchor, *rows)
+    return None if bounded is None else (shape, bounded[0], bounded[1])
+
+
+def _source_context_de_epistemic_burden_parts(
+    anchor: str,
+) -> Optional[tuple[str, str]]:
+    match = _CONTEXT_DE_EPISTEMIC_BURDEN_RE.fullmatch(anchor)
+    if (
+        match is None
+        or len(_grapheme_clusters(anchor))
+        > int(_QUOTE_POLICY["l1_max_graphemes"])
+    ):
+        return None
+    affect = match.group("affect")
+    question_span = anchor[: match.start("affect")]
+    bounded = _bounded_source_fragments(anchor, question_span, affect)
+    return None if bounded is None else (bounded[0], bounded[1])
+
+
+def _quoted_role_parts(
+    *,
+    anchor: str,
+    semantic_ref: str,
+    clause_slot: str,
+    anchor_bindings: tuple[tuple[str, str], ...] = (),
+) -> tuple[_SurfacePart, ...]:
+    return (
+        _part(
+            _STRUCTURAL_TOKENS["quote_open"],
+            semantic_ref,
+            f"{clause_slot}:quote_open",
+        ),
+        _SurfacePart(
+            text=anchor,
+            bindings=(
+                anchor_bindings
+                if anchor_bindings
+                else ((semantic_ref, f"{clause_slot}:anchor"),)
+            ),
+        ),
+        _part(
+            _STRUCTURAL_TOKENS["quote_close"],
+            semantic_ref,
+            f"{clause_slot}:quote_close",
+        ),
+    )
+
+
+def _direct_candidate_for_object(
+    projection: EmlisStage1Projection,
+    object_ref: str,
+) -> EmlisInterpretationCandidate:
+    direct = tuple(
+        candidate
+        for candidate in projection.interpretation_candidates
+        if candidate.relation_operator is RelationOperator.NO_RELATION_CLAIM
+        and any(
+            binding.semantic_ref == object_ref
+            and binding.role is ArgumentRole.PRIMARY
+            for binding in candidate.argument_bindings
+        )
+    )
+    if len(direct) != 1:
+        raise CMEEStage1ContractError("stage1_surface_binding_unavailable")
+    return direct[0]
+
+
+def _semantic_operator_for_object(
+    projection: EmlisStage1Projection,
+    object_ref: str,
+) -> str:
+    return _direct_candidate_for_object(
+        projection,
+        object_ref,
+    ).semantic_operator.value
+
+
+def _typed_reference_surface(
+    rows: Mapping[str, str],
+    *,
+    operator: str,
+    modality: str,
+) -> str:
+    token = rows.get(f"{operator}:{modality}") or rows.get(f"{operator}:*")
+    if type(token) is not str or not token:
+        raise CMEEStage1ContractError("stage1_surface_binding_unavailable")
+    return token
+
+
+def _shared_relation_surface_allocation(
+    projection: EmlisStage1Projection,
+    contribution: PlannedObservationContribution,
+    *,
+    overall_index: int,
+) -> tuple[frozenset[str], frozenset[str]]:
+    """Allocate exact endpoint anchors once across one adjacent relation pair.
+
+    A source contrast can canonically own both a TENSION relation and a
+    direction-under-burden COEXISTS relation over the same two endpoints.  The
+    first move owns both exact endpoint anchors while deferring the direction
+    endpoint's continuing qualifier.  The second move refers back to both
+    endpoints and realizes that qualifier once.  This keeps both required
+    relation moves visible without replaying either complete source
+    proposition or its continuing qualifier.
+    """
+
+    if (
+        contribution.relation_operator is RelationOperator.NO_RELATION_CLAIM
+        or overall_index < 0
+        or overall_index >= len(projection.ordered_observation_refs)
+        or projection.ordered_observation_refs[overall_index]
+        != contribution.contribution_id
+    ):
+        return frozenset(), frozenset()
+    endpoint_refs = frozenset(
+        binding.semantic_ref
+        for binding in contribution.argument_bindings
+        if binding.role is not ArgumentRole.EXPERIENCER
+    )
+    if len(endpoint_refs) != 2:
+        return frozenset(), frozenset()
+    contribution_by_id = {
+        row.contribution_id: row for row in projection.observation_contributions
+    }
+    matching = tuple(
+        (index, contribution_by_id[ref])
+        for index, ref in enumerate(projection.ordered_observation_refs)
+        if contribution_by_id[ref].relation_operator
+        is not RelationOperator.NO_RELATION_CLAIM
+        and frozenset(
+            binding.semantic_ref
+            for binding in contribution_by_id[ref].argument_bindings
+            if binding.role is not ArgumentRole.EXPERIENCER
+        )
+        == endpoint_refs
+    )
+    if (
+        len(matching) != 2
+        or matching[1][0] != matching[0][0] + 1
+        or matching[0][1].relation_operator is not RelationOperator.TENSION_WITH
+        or matching[1][1].relation_operator is not RelationOperator.COEXISTS_WITH
+        or _candidate_for_contribution(projection, matching[0][1]).candidate_kind
+        is not InterpretationKind.TENSION
+        or _candidate_for_contribution(projection, matching[1][1]).candidate_kind
+        is not InterpretationKind.DIRECTION_UNDER_BURDEN
+    ):
+        return frozenset(), frozenset()
+    direction_refs = tuple(
+        ref
+        for ref in endpoint_refs
+        if _direct_candidate_for_object(projection, ref).semantic_operator
+        is SemanticOperator.PRESENT_DIRECTION
+    )
+    burden_refs = tuple(
+        ref
+        for ref in endpoint_refs
+        if _direct_candidate_for_object(projection, ref).semantic_operator
+        is SemanticOperator.PRESENT_BURDEN
+    )
+    if len(direction_refs) != 1 or len(burden_refs) != 1:
+        return frozenset(), frozenset()
+    if overall_index == matching[0][0]:
+        return frozenset(direction_refs), frozenset()
+    if overall_index == matching[1][0]:
+        return frozenset(), endpoint_refs
+    return frozenset(), frozenset()
+
+
+def _claim_uses_question_head(
+    claim: Optional[EmlisSubjectiveClaim],
+) -> bool:
+    if claim is None:
+        return True
+    proposition = claim.asserted_subjective_proposition
+    return bool(
+        proposition.subjective_operator is SubjectiveOperator.ATTEND_TO
+        or (
+            proposition.subjective_operator
+            is SubjectiveOperator.TAKE_RELATIONAL_STANCE
+            and proposition.stance_operator
+            is StanceOperator.HOLD_UNFINISHED_OPEN
+        )
+    )
+
+
+def _anaphoric_surface(
+    projection: EmlisStage1Projection,
+    object_ref: str,
+    grounded_graph: GroundedMeaningGraph,
+    *,
+    claim: Optional[EmlisSubjectiveClaim] = None,
+) -> str:
+    candidate = _direct_candidate_for_object(projection, object_ref)
+    role_value = _source_bound_role_surface(
+        object_ref,
+        grounded_graph,
+        layer=None,
+    )
+    override = None
+    if (
+        candidate.semantic_operator is SemanticOperator.PRESENT_DIRECTION
+        and _source_open_question_parts(role_value) is not None
+        and _claim_uses_question_head(claim)
+    ):
+        override = "HEAD:QUESTION"
+    elif candidate.semantic_operator is SemanticOperator.PRESENT_DIRECTION:
+        contrast = _source_direct_contrast_roles(role_value)
+        claim_is_concern = bool(
+            claim is not None
+            and claim.asserted_subjective_proposition.subjective_operator
+            is SubjectiveOperator.FEEL_TOWARD
+            and claim.asserted_subjective_proposition.affect_category
+            is AffectCategory.CONCERN
+        )
+        if (
+            contrast is not None
+            and contrast[1][1] == "hesitation"
+            and (claim is None or claim_is_concern)
+        ):
+            override = "HEAD:HESITATION"
+    if override is not None:
+        token = _LAYER2_ANAPHORIC_SURFACES.get(override)
+        if type(token) is not str or not token:
+            raise CMEEStage1ContractError("stage1_surface_binding_unavailable")
+        return token
+    return _typed_reference_surface(
+        _LAYER2_ANAPHORIC_SURFACES,
+        operator=candidate.semantic_operator.value,
+        modality=_qualifier_value(candidate, "modality"),
+    )
+
+
+def _prior_visible_anaphoric_surface(
+    projection: EmlisStage1Projection,
+    object_ref: str,
+    prior_contributions: tuple[PlannedObservationContribution, ...],
+    grounded_graph: GroundedMeaningGraph,
+) -> str:
+    matching = tuple(
+        contribution
+        for contribution in prior_contributions
+        if any(
+            binding.semantic_ref == object_ref
+            and binding.role is not ArgumentRole.EXPERIENCER
+            for binding in contribution.argument_bindings
+        )
+    )
+    if not matching:
+        raise CMEEStage1ContractError("stage1_surface_binding_unavailable")
+    prior = matching[-1]
+    if prior.relation_operator is RelationOperator.NO_RELATION_CLAIM:
+        return _anaphoric_surface(
+            projection,
+            object_ref,
+            grounded_graph,
+        )
+    candidate = _candidate_for_contribution(projection, prior)
+    binding = next(
+        (
+            row
+            for row in prior.argument_bindings
+            if row.semantic_ref == object_ref
+            and row.role is not ArgumentRole.EXPERIENCER
+        ),
+        None,
+    )
+    if binding is None:
+        raise CMEEStage1ContractError("stage1_surface_binding_unavailable")
+    modality = _qualifier_value(candidate, "modality", role=binding.role)
+    token = _MODALITY_ANAPHORIC_SURFACES.get(modality)
+    if type(token) is not str or not token:
+        raise CMEEStage1ContractError("stage1_surface_binding_unavailable")
+    return token
+
+
+def _explicit_object_nominalizer(
+    projection: EmlisStage1Projection,
+    object_ref: str,
+    grounded_graph: GroundedMeaningGraph,
+    *,
+    claim: Optional[EmlisSubjectiveClaim] = None,
+) -> str:
+    candidate = _direct_candidate_for_object(projection, object_ref)
+    role_value = _source_bound_role_surface(
+        object_ref,
+        grounded_graph,
+        layer=None,
+    )
+    override = None
+    if (
+        candidate.semantic_operator is SemanticOperator.PRESENT_DIRECTION
+        and _source_open_question_parts(role_value) is not None
+        and _claim_uses_question_head(claim)
+    ):
+        override = "HEAD:QUESTION"
+    elif candidate.semantic_operator is SemanticOperator.PRESENT_DIRECTION:
+        contrast = _source_direct_contrast_roles(role_value)
+        claim_is_concern = bool(
+            claim is not None
+            and claim.asserted_subjective_proposition.subjective_operator
+            is SubjectiveOperator.FEEL_TOWARD
+            and claim.asserted_subjective_proposition.affect_category
+            is AffectCategory.CONCERN
+        )
+        if (
+            contrast is not None
+            and contrast[1][1] == "hesitation"
+            and (claim is None or claim_is_concern)
+        ):
+            override = "HEAD:HESITATION"
+    if override is not None:
+        token = _LAYER2_EXPLICIT_NOMINALIZERS.get(override)
+        if type(token) is not str or not token:
+            raise CMEEStage1ContractError("stage1_surface_binding_unavailable")
+        return token
+    return _typed_reference_surface(
+        _LAYER2_EXPLICIT_NOMINALIZERS,
+        operator=candidate.semantic_operator.value,
+        modality=_qualifier_value(candidate, "modality"),
+    )
+
+
 def _observation_surface_contract(
     projection: EmlisStage1Projection,
     contribution: PlannedObservationContribution,
@@ -3249,9 +4497,9 @@ def _observation_surface_contract(
     if use_alternate_predicate and not alternate_predicate:
         raise CMEEStage1ContractError("stage1_microgrammar_alternate_missing")
     predicate = alternate_predicate if use_alternate_predicate else primary_predicate
-    connective_family = _connective_family(
-        layer="LAYER_1",
-        relation_or_operator=contribution.relation_operator.value,
+    connective_family = _observation_connective_family(
+        projection,
+        contribution,
         overall_index=overall_index,
     )
     connective = _connective_token(
@@ -3270,6 +4518,13 @@ def _observation_surface_contract(
     parts: list[_SurfacePart] = []
     if connective:
         parts.append(_part(connective, predicate_ref, "frame:0:connective"))
+        parts.append(
+            _part(
+                _STRUCTURAL_TOKENS["separator"],
+                predicate_ref,
+                "frame:0:connective_separator",
+            )
+        )
     frames: list[ClauseFrame] = []
 
     if contribution.relation_operator is RelationOperator.NO_RELATION_CLAIM:
@@ -3284,11 +4539,11 @@ def _observation_surface_contract(
         time_scope = _qualifier_value(candidate, "time_scope")
         modality = _qualifier_value(candidate, "modality")
         polarity = _qualifier_value(candidate, "polarity")
-        time_wrapper = _TIME_WRAPPERS.get(time_scope)
-        modality_wrapper = _MODALITY_WRAPPERS.get(modality)
-        direct_slot = _LAYER1_DIRECT_SLOTS.get(contribution.semantic_operator.value)
-        if time_wrapper is None or modality_wrapper is None or direct_slot is None:
-            raise CMEEStage1ContractError("stage1_microgrammar_inflection_missing")
+        time_adverb, _role_modifier = _time_surface_tokens(time_scope)
+        direct_slot = _direct_nominalizer(
+            contribution.semantic_operator.value,
+            modality,
+        )
         anchor_bindings = tuple(
             (
                 row.semantic_ref,
@@ -3296,20 +4551,609 @@ def _observation_surface_contract(
             )
             for row in contribution.argument_bindings
         )
-        anchor = _source_bound_role_surface(primary_ref, grounded_graph)
-        parts.append(
-            _SurfacePart(text=anchor, bindings=anchor_bindings)
+        role_value = _source_bound_role_surface(
+            primary_ref,
+            grounded_graph,
+            layer=None,
         )
-        parts.append(_part(time_wrapper, primary_ref, "frame:0:time"))
-        parts.append(_part(direct_slot, primary_ref, "frame:0:case"))
-        if modality_wrapper:
-            parts.append(
-                _part(modality_wrapper, primary_ref, "frame:0:modality")
+        context_residue = (
+            _source_context_direction_residue_parts(role_value)
+            if contribution.semantic_operator is SemanticOperator.PRESENT_DIRECTION
+            else None
+        )
+        open_question = (
+            _source_open_question_parts(role_value)
+            if contribution.semantic_operator is SemanticOperator.PRESENT_DIRECTION
+            else None
+        )
+        compound_burden = (
+            _source_compound_burden_parts(role_value)
+            if contribution.semantic_operator is SemanticOperator.PRESENT_BURDEN
+            else None
+        )
+        action_change = (
+            _source_action_change_parts(role_value)
+            if contribution.semantic_operator is SemanticOperator.PRESENT_CHANGE
+            else None
+        )
+        simple_change = (
+            _source_simple_change_parts(role_value)
+            if contribution.semantic_operator is SemanticOperator.PRESENT_CHANGE
+            else None
+        )
+        bounded_self_denial = (
+            _source_bounded_self_denial_parts(role_value)
+            if contribution.semantic_operator is SemanticOperator.PRESENT_STATE
+            else None
+        )
+        body_burden = (
+            _source_body_burden_parts(role_value)
+            if contribution.semantic_operator
+            in {
+                SemanticOperator.PRESENT_STATE,
+                SemanticOperator.PRESENT_BURDEN,
+            }
+            else None
+        )
+        direct_contrast = (
+            _source_direct_contrast_roles(role_value)
+            if contribution.semantic_operator
+            in {
+                SemanticOperator.PRESENT_DIRECTION,
+                SemanticOperator.PRESENT_BURDEN,
+            }
+            else None
+        )
+        if direct_contrast is not None:
+            expected_second_kind = (
+                "direction"
+                if contribution.semantic_operator
+                is SemanticOperator.PRESENT_DIRECTION
+                else "burden"
             )
-        parts.append(_part(predicate, primary_ref, "frame:0:predicate"))
-        parts.append(
-            _part(_STRUCTURAL_TOKENS["terminal"], primary_ref, "frame:0:terminal")
-        )
+            if direct_contrast[1][1] not in {
+                expected_second_kind,
+                *(
+                    ("hesitation",)
+                    if contribution.semantic_operator
+                    is SemanticOperator.PRESENT_DIRECTION
+                    else ()
+                ),
+            }:
+                direct_contrast = None
+
+        if context_residue is not None:
+            context, direction, residue = context_residue
+            parts.append(
+                _part(
+                    context,
+                    primary_ref,
+                    "frame:0:argument:PRIMARY:context",
+                )
+            )
+            parts.append(
+                _part(
+                    _CONTEXT_RESIDUE_SURFACE["context_tail"],
+                    primary_ref,
+                    "frame:0:context_tail",
+                )
+            )
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["separator"],
+                    primary_ref,
+                    "frame:0:context_separator",
+                )
+            )
+            parts.extend(
+                _quoted_role_parts(
+                    anchor=direction,
+                    semantic_ref=primary_ref,
+                    clause_slot="frame:0:argument:PRIMARY:direction",
+                    anchor_bindings=anchor_bindings,
+                )
+            )
+            parts.append(
+                _part(
+                    _CONTEXT_RESIDUE_SURFACE["direction_nominalizer"],
+                    primary_ref,
+                    "frame:0:direction_case",
+                )
+            )
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["separator"],
+                    primary_ref,
+                    "frame:0:direction_separator",
+                )
+            )
+            parts.append(
+                _part(
+                    residue,
+                    primary_ref,
+                    "frame:0:argument:PRIMARY:residue",
+                )
+            )
+            parts.append(
+                _part(
+                    _CONTEXT_RESIDUE_SURFACE["residue_topic"],
+                    primary_ref,
+                    "frame:0:residue_topic",
+                )
+            )
+            parts.append(
+                _part(
+                    _CONTEXT_RESIDUE_SURFACE["predicate"],
+                    primary_ref,
+                    "frame:0:predicate",
+                )
+            )
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["terminal"],
+                    primary_ref,
+                    "frame:0:terminal",
+                )
+            )
+        elif open_question is not None:
+            burden, question = open_question
+            parts.append(_part(time_adverb, primary_ref, "frame:0:time"))
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["separator"],
+                    primary_ref,
+                    "frame:0:time_separator",
+                )
+            )
+            parts.append(
+                _part(
+                    burden,
+                    primary_ref,
+                    "frame:0:argument:PRIMARY:burden",
+                )
+            )
+            parts.append(
+                _part(
+                    _OPEN_QUESTION_SURFACE["burden_link"],
+                    primary_ref,
+                    "frame:0:burden_link",
+                )
+            )
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["separator"],
+                    primary_ref,
+                    "frame:0:burden_separator",
+                )
+            )
+            parts.extend(
+                _quoted_role_parts(
+                    anchor=question,
+                    semantic_ref=primary_ref,
+                    clause_slot="frame:0:argument:PRIMARY:question",
+                    anchor_bindings=anchor_bindings,
+                )
+            )
+            parts.append(
+                _part(
+                    _OPEN_QUESTION_SURFACE["question_case"],
+                    primary_ref,
+                    "frame:0:question_case",
+                )
+            )
+            parts.append(
+                _part(
+                    _OPEN_QUESTION_SURFACE["predicate"],
+                    primary_ref,
+                    "frame:0:predicate",
+                )
+            )
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["terminal"],
+                    primary_ref,
+                    "frame:0:terminal",
+                )
+            )
+        elif body_burden is not None:
+            shape, topic, state = body_burden
+            body_direct_slot = (
+                _direct_nominalizer(
+                    SemanticOperator.PRESENT_STATE.value,
+                    "fact",
+                )
+                if contribution.semantic_operator is SemanticOperator.PRESENT_STATE
+                else direct_slot
+            )
+            parts.append(_part(time_adverb, primary_ref, "frame:0:time"))
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["separator"],
+                    primary_ref,
+                    "frame:0:time_separator",
+                )
+            )
+            parts.extend(
+                _quoted_role_parts(
+                    anchor=topic,
+                    semantic_ref=primary_ref,
+                    clause_slot="frame:0:argument:PRIMARY:topic",
+                    anchor_bindings=anchor_bindings,
+                )
+            )
+            if shape == "body_adjective":
+                parts.append(
+                    _part(
+                        _BODY_BURDEN_SURFACE["topic_possessive"],
+                        primary_ref,
+                        "frame:0:topic_possessive",
+                    )
+                )
+                parts.append(
+                    _part(
+                        _BODY_BURDEN_SURFACE["body_adjective_nominal"],
+                        primary_ref,
+                        "frame:0:state_nominal",
+                    )
+                )
+            elif shape == "body_weight":
+                parts.append(
+                    _part(
+                        _BODY_BURDEN_SURFACE["topic_object"],
+                        primary_ref,
+                        "frame:0:topic_object",
+                    )
+                )
+                parts.append(
+                    _part(
+                        state,
+                        primary_ref,
+                        "frame:0:argument:PRIMARY:state",
+                    )
+                )
+            else:
+                raise CMEEStage1ContractError(
+                    "stage1_surface_binding_unavailable"
+                )
+            parts.append(_part(body_direct_slot, primary_ref, "frame:0:case"))
+            parts.append(_part(predicate, primary_ref, "frame:0:predicate"))
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["terminal"],
+                    primary_ref,
+                    "frame:0:terminal",
+                )
+            )
+        elif compound_burden is not None:
+            context, fatigue, burden = compound_burden
+            parts.append(
+                _part(
+                    context,
+                    primary_ref,
+                    "frame:0:argument:PRIMARY:context",
+                )
+            )
+            parts.append(
+                _part(
+                    _COMPOUND_BURDEN_SURFACE["context_link"],
+                    primary_ref,
+                    "frame:0:context_link",
+                )
+            )
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["separator"],
+                    primary_ref,
+                    "frame:0:context_separator",
+                )
+            )
+            parts.append(
+                _part(
+                    fatigue,
+                    primary_ref,
+                    "frame:0:argument:PRIMARY:fatigue",
+                )
+            )
+            parts.append(
+                _part(
+                    _COMPOUND_BURDEN_SURFACE["fatigue_link"],
+                    primary_ref,
+                    "frame:0:fatigue_link",
+                )
+            )
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["separator"],
+                    primary_ref,
+                    "frame:0:fatigue_separator",
+                )
+            )
+            parts.extend(
+                _quoted_role_parts(
+                    anchor=burden,
+                    semantic_ref=primary_ref,
+                    clause_slot="frame:0:argument:PRIMARY:burden",
+                    anchor_bindings=anchor_bindings,
+                )
+            )
+            parts.append(_part(direct_slot, primary_ref, "frame:0:case"))
+            parts.append(_part(predicate, primary_ref, "frame:0:predicate"))
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["terminal"],
+                    primary_ref,
+                    "frame:0:terminal",
+                )
+            )
+        elif action_change is not None:
+            context, action, result = action_change
+            parts.append(
+                _part(
+                    context,
+                    primary_ref,
+                    "frame:0:argument:PRIMARY:context",
+                )
+            )
+            parts.append(
+                _part(
+                    _ACTION_CHANGE_SURFACE["context_tail"],
+                    primary_ref,
+                    "frame:0:context_tail",
+                )
+            )
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["separator"],
+                    primary_ref,
+                    "frame:0:context_separator",
+                )
+            )
+            parts.append(
+                _part(
+                    action,
+                    primary_ref,
+                    "frame:0:argument:PRIMARY:action",
+                )
+            )
+            parts.append(
+                _part(
+                    _ACTION_CHANGE_SURFACE["action_tail"],
+                    primary_ref,
+                    "frame:0:action_tail",
+                )
+            )
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["separator"],
+                    primary_ref,
+                    "frame:0:action_separator",
+                )
+            )
+            parts.append(
+                _part(
+                    _ACTION_CHANGE_SURFACE["sequence"],
+                    primary_ref,
+                    "frame:0:sequence",
+                )
+            )
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["separator"],
+                    primary_ref,
+                    "frame:0:sequence_separator",
+                )
+            )
+            parts.extend(
+                _quoted_role_parts(
+                    anchor=result,
+                    semantic_ref=primary_ref,
+                    clause_slot="frame:0:argument:PRIMARY:result",
+                    anchor_bindings=anchor_bindings,
+                )
+            )
+            parts.append(_part(direct_slot, primary_ref, "frame:0:case"))
+            parts.append(_part(predicate, primary_ref, "frame:0:predicate"))
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["terminal"],
+                    primary_ref,
+                    "frame:0:terminal",
+                )
+            )
+        elif simple_change is not None:
+            context, context_tail_key, result = simple_change
+            parts.append(
+                _part(
+                    context,
+                    primary_ref,
+                    "frame:0:argument:PRIMARY:context",
+                )
+            )
+            parts.append(
+                _part(
+                    _SIMPLE_CHANGE_SURFACE[context_tail_key],
+                    primary_ref,
+                    "frame:0:context_tail",
+                )
+            )
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["separator"],
+                    primary_ref,
+                    "frame:0:context_separator",
+                )
+            )
+            parts.extend(
+                _quoted_role_parts(
+                    anchor=result,
+                    semantic_ref=primary_ref,
+                    clause_slot="frame:0:argument:PRIMARY:result",
+                    anchor_bindings=anchor_bindings,
+                )
+            )
+            parts.append(_part(direct_slot, primary_ref, "frame:0:case"))
+            parts.append(_part(predicate, primary_ref, "frame:0:predicate"))
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["terminal"],
+                    primary_ref,
+                    "frame:0:terminal",
+                )
+            )
+        elif bounded_self_denial is not None:
+            basis, boundary = bounded_self_denial
+            parts.append(_part(time_adverb, primary_ref, "frame:0:time"))
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["separator"],
+                    primary_ref,
+                    "frame:0:time_separator",
+                )
+            )
+            parts.extend(
+                _quoted_role_parts(
+                    anchor=basis,
+                    semantic_ref=primary_ref,
+                    clause_slot="frame:0:argument:PRIMARY:basis",
+                )
+            )
+            parts.append(
+                _part(
+                    _BOUNDED_SELF_DENIAL_SURFACE["basis_nominalizer"],
+                    primary_ref,
+                    "frame:0:basis_nominalizer",
+                )
+            )
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["separator"],
+                    primary_ref,
+                    "frame:0:basis_separator",
+                )
+            )
+            parts.extend(
+                _quoted_role_parts(
+                    anchor=boundary,
+                    semantic_ref=primary_ref,
+                    clause_slot="frame:0:argument:PRIMARY:boundary",
+                    anchor_bindings=anchor_bindings,
+                )
+            )
+            parts.append(
+                _part(
+                    _BOUNDED_SELF_DENIAL_SURFACE["boundary_nominalizer"],
+                    primary_ref,
+                    "frame:0:boundary_nominalizer",
+                )
+            )
+            parts.append(_part(predicate, primary_ref, "frame:0:predicate"))
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["terminal"],
+                    primary_ref,
+                    "frame:0:terminal",
+                )
+            )
+        elif direct_contrast is not None:
+            parts.append(_part(time_adverb, primary_ref, "frame:0:time"))
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["separator"],
+                    primary_ref,
+                    "frame:0:time_separator",
+                )
+            )
+            for role_index, (source_role, role_kind) in enumerate(
+                direct_contrast
+            ):
+                role_bindings = anchor_bindings if role_index == 1 else ()
+                parts.extend(
+                    _quoted_role_parts(
+                        anchor=source_role,
+                        semantic_ref=primary_ref,
+                        clause_slot=(
+                            f"frame:0:argument:PRIMARY:contrast_{role_index}"
+                        ),
+                        anchor_bindings=role_bindings,
+                    )
+                )
+                parts.append(
+                    _part(
+                        _DIRECT_CONTRAST_SURFACE[
+                            f"{role_kind}_nominalizer"
+                        ],
+                        primary_ref,
+                        f"frame:0:contrast_{role_index}_case",
+                    )
+                )
+                if role_index == 0:
+                    parts.append(
+                        _part(
+                            _DIRECT_CONTRAST_SURFACE["bridge"],
+                            primary_ref,
+                            "frame:0:contrast_bridge",
+                        )
+                    )
+                    parts.append(
+                        _part(
+                            _STRUCTURAL_TOKENS["separator"],
+                            primary_ref,
+                            "frame:0:contrast_separator",
+                        )
+                    )
+                else:
+                    parts.append(
+                        _part(
+                            _DIRECT_CONTRAST_SURFACE["second_topic"],
+                            primary_ref,
+                            "frame:0:contrast_topic",
+                        )
+                    )
+                    parts.append(
+                        _part(
+                            predicate,
+                            primary_ref,
+                            "frame:0:predicate",
+                        )
+                    )
+                    parts.append(
+                        _part(
+                            _STRUCTURAL_TOKENS["terminal"],
+                            primary_ref,
+                            "frame:0:terminal",
+                        )
+                    )
+        else:
+            anchor = _source_bound_role_surface(
+                primary_ref,
+                grounded_graph,
+                layer="LAYER_1",
+            )
+            parts.append(_part(time_adverb, primary_ref, "frame:0:time"))
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["separator"],
+                    primary_ref,
+                    "frame:0:time_separator",
+                )
+            )
+            parts.extend(
+                _quoted_role_parts(
+                    anchor=anchor,
+                    semantic_ref=primary_ref,
+                    clause_slot="frame:0:argument:PRIMARY",
+                    anchor_bindings=anchor_bindings,
+                )
+            )
+            parts.append(_part(direct_slot, primary_ref, "frame:0:case"))
+            parts.append(_part(predicate, primary_ref, "frame:0:predicate"))
+            parts.append(
+                _part(
+                    _STRUCTURAL_TOKENS["terminal"],
+                    primary_ref,
+                    "frame:0:terminal",
+                )
+            )
         experiencers = _ordered(
             row.semantic_ref
             for row in contribution.argument_bindings
@@ -3347,6 +5191,19 @@ def _observation_surface_contract(
             binding.role.value for binding in contribution.argument_bindings
         ):
             raise CMEEStage1ContractError("stage1_microgrammar_case_frame_invalid")
+        relation_rows: list[
+            tuple[
+                int,
+                ArgumentBinding,
+                tuple[str, str, str],
+                str,
+                str,
+                str,
+                str,
+                str,
+                str,
+            ]
+        ] = []
         for frame_index, (binding, slot_row) in enumerate(
             zip(contribution.argument_bindings, slot_rows)
         ):
@@ -3356,50 +5213,308 @@ def _observation_surface_contract(
             )
             modality = _qualifier_value(candidate, "modality", role=binding.role)
             polarity = _qualifier_value(candidate, "polarity", role=binding.role)
-            time_wrapper = _TIME_WRAPPERS.get(time_scope)
             modality_wrapper = _MODALITY_WRAPPERS.get(modality)
-            if time_wrapper is None or modality_wrapper is None:
+            time_adverb, role_modifier = _time_surface_tokens(time_scope)
+            if type(modality_wrapper) is not str or not modality_wrapper:
                 raise CMEEStage1ContractError("stage1_microgrammar_inflection_missing")
-            if prefix:
+            relation_rows.append(
+                (
+                    frame_index,
+                    binding,
+                    slot_row,
+                    time_scope,
+                    modality,
+                    polarity,
+                    time_adverb,
+                    role_modifier,
+                    modality_wrapper,
+                )
+            )
+
+        (
+            deferred_qualifier_endpoint_refs,
+            allocated_anaphoric_endpoint_refs,
+        ) = _shared_relation_surface_allocation(
+            projection,
+            contribution,
+            overall_index=overall_index,
+        )
+
+        direction_under_burden = bool(
+            candidate.candidate_kind
+            is InterpretationKind.DIRECTION_UNDER_BURDEN
+            and contribution.relation_operator is RelationOperator.COEXISTS_WITH
+        )
+        if direction_under_burden:
+            by_role = {row[1].role: row for row in relation_rows}
+            if set(by_role) != {ArgumentRole.LEFT, ArgumentRole.RIGHT}:
+                raise CMEEStage1ContractError(
+                    "stage1_microgrammar_case_frame_invalid"
+                )
+            direction = by_role[ArgumentRole.LEFT]
+            burden = by_role[ArgumentRole.RIGHT]
+            burden_index, burden_binding = burden[0], burden[1]
+            direction_index, direction_binding = direction[0], direction[1]
+            contribution_by_id = {
+                row.contribution_id: row
+                for row in projection.observation_contributions
+            }
+            prior_contributions = tuple(
+                contribution_by_id[ref]
+                for ref in projection.ordered_observation_refs[:overall_index]
+            )
+            prior_semantic_refs = {
+                binding.semantic_ref
+                for prior_contribution in prior_contributions
+                for binding in prior_contribution.argument_bindings
+                if binding.role is not ArgumentRole.EXPERIENCER
+            }
+            use_endpoint_anaphora = {
+                burden_binding.semantic_ref,
+                direction_binding.semantic_ref,
+            }.issubset(prior_semantic_refs)
+            allocation_active = bool(
+                deferred_qualifier_endpoint_refs
+                or allocated_anaphoric_endpoint_refs
+            )
+            burden_uses_anaphora = bool(
+                burden_binding.semantic_ref
+                in allocated_anaphoric_endpoint_refs
+                or (use_endpoint_anaphora and not allocation_active)
+            )
+            direction_uses_anaphora = bool(
+                direction_binding.semantic_ref
+                in allocated_anaphoric_endpoint_refs
+                or (use_endpoint_anaphora and not allocation_active)
+            )
+            if burden_uses_anaphora:
                 parts.append(
                     _part(
-                        prefix,
-                        binding.semantic_ref,
-                        f"frame:{frame_index}:case_prefix",
+                        _prior_visible_anaphoric_surface(
+                            projection,
+                            burden_binding.semantic_ref,
+                            prior_contributions,
+                            grounded_graph,
+                        ),
+                        burden_binding.semantic_ref,
+                        f"frame:{burden_index}:argument_anaphora",
+                    )
+                )
+            else:
+                parts.append(
+                    _part(
+                        burden[7],
+                        burden_binding.semantic_ref,
+                        f"frame:{burden_index}:time",
+                    )
+                )
+                parts.extend(
+                    _quoted_role_parts(
+                        anchor=_source_bound_role_surface(
+                            burden_binding.semantic_ref,
+                            grounded_graph,
+                            layer="LAYER_1",
+                        ),
+                        semantic_ref=burden_binding.semantic_ref,
+                        clause_slot=(
+                            f"frame:{burden_index}:argument:"
+                            f"{burden_binding.role.value}"
+                        ),
+                    )
+                )
+                parts.append(
+                    _part(
+                        burden[8],
+                        burden_binding.semantic_ref,
+                        f"frame:{burden_index}:modality",
                     )
                 )
             parts.append(
                 _part(
-                    _source_bound_role_surface(
-                        binding.semantic_ref, grounded_graph
-                    ),
-                    binding.semantic_ref,
-                    f"frame:{frame_index}:argument:{binding.role.value}",
+                    _DIRECTION_UNDER_BURDEN_SURFACE["burden_link"],
+                    burden_binding.semantic_ref,
+                    f"frame:{burden_index}:case_suffix",
                 )
             )
             parts.append(
                 _part(
-                    time_wrapper,
-                    binding.semantic_ref,
-                    f"frame:{frame_index}:time",
+                    _STRUCTURAL_TOKENS["separator"],
+                    burden_binding.semantic_ref,
+                    f"frame:{burden_index}:separator",
                 )
             )
-            if modality_wrapper:
+            if direction_uses_anaphora:
                 parts.append(
                     _part(
-                        modality_wrapper,
-                        binding.semantic_ref,
-                        f"frame:{frame_index}:modality",
+                        _prior_visible_anaphoric_surface(
+                            projection,
+                            direction_binding.semantic_ref,
+                            prior_contributions,
+                            grounded_graph,
+                        ),
+                        direction_binding.semantic_ref,
+                        f"frame:{direction_index}:argument_anaphora",
                     )
                 )
-            if suffix:
+            else:
+                parts.extend(
+                    _quoted_role_parts(
+                        anchor=_source_bound_role_surface(
+                            direction_binding.semantic_ref,
+                            grounded_graph,
+                            layer="LAYER_1",
+                        ),
+                        semantic_ref=direction_binding.semantic_ref,
+                        clause_slot=(
+                            f"frame:{direction_index}:argument:"
+                            f"{direction_binding.role.value}"
+                        ),
+                    )
+                )
                 parts.append(
                     _part(
-                        suffix,
-                        binding.semantic_ref,
-                        f"frame:{frame_index}:case_suffix",
+                        direction[8],
+                        direction_binding.semantic_ref,
+                        f"frame:{direction_index}:modality",
                     )
                 )
+            parts.append(
+                _part(
+                    _DIRECTION_UNDER_BURDEN_SURFACE["direction_topic"],
+                    direction_binding.semantic_ref,
+                    f"frame:{direction_index}:case_suffix",
+                )
+            )
+            parts.append(
+                _part(
+                    direction[6],
+                    direction_binding.semantic_ref,
+                    f"frame:{direction_index}:time",
+                )
+            )
+        else:
+            surface_relation_rows = relation_rows
+            if candidate.candidate_kind in {
+                InterpretationKind.COEXISTENCE,
+                InterpretationKind.TENSION,
+            }:
+                node_source_order = {
+                    node.node_id: index
+                    for index, node in enumerate(grounded_graph.nodes)
+                }
+                surface_relation_rows = sorted(
+                    relation_rows,
+                    key=lambda row: node_source_order[
+                        _local_ref(row[1].semantic_ref)
+                    ],
+                )
+            for row_index, row in enumerate(surface_relation_rows):
+                frame_index, binding, slot_row = row[0], row[1], row[2]
+                _role, prefix, suffix = slot_row
+                if prefix:
+                    parts.append(
+                        _part(
+                            prefix,
+                            binding.semantic_ref,
+                            f"frame:{frame_index}:case_prefix",
+                        )
+                    )
+                anchor = _source_bound_role_surface(
+                    binding.semantic_ref,
+                    grounded_graph,
+                    layer="LAYER_1",
+                )
+                epistemic_burden = (
+                    _source_context_de_epistemic_burden_parts(anchor)
+                    if _semantic_operator_for_object(
+                        projection,
+                        binding.semantic_ref,
+                    )
+                    == SemanticOperator.PRESENT_BURDEN.value
+                    else None
+                )
+                if binding.semantic_ref not in deferred_qualifier_endpoint_refs:
+                    parts.append(
+                        _part(
+                            row[7],
+                            binding.semantic_ref,
+                            f"frame:{frame_index}:time",
+                        )
+                    )
+                if epistemic_burden is not None:
+                    question_span, affect = epistemic_burden
+                    parts.extend(
+                        _quoted_role_parts(
+                            anchor=question_span,
+                            semantic_ref=binding.semantic_ref,
+                            clause_slot=(
+                                f"frame:{frame_index}:argument:"
+                                f"{binding.role.value}:"
+                                "source_exact_epistemic_question"
+                            ),
+                        )
+                    )
+                    parts.append(
+                        _part(
+                            _EPISTEMIC_BURDEN_SURFACE["question_link"],
+                            binding.semantic_ref,
+                            f"frame:{frame_index}:question_link",
+                        )
+                    )
+                    parts.append(
+                        _part(
+                            affect,
+                            binding.semantic_ref,
+                            f"frame:{frame_index}:argument:"
+                            f"{binding.role.value}:affect",
+                        )
+                    )
+                else:
+                    parts.extend(
+                        _quoted_role_parts(
+                            anchor=anchor,
+                            semantic_ref=binding.semantic_ref,
+                            clause_slot=(
+                                f"frame:{frame_index}:argument:"
+                                f"{binding.role.value}"
+                            ),
+                        )
+                    )
+                    parts.append(
+                        _part(
+                            row[8],
+                            binding.semantic_ref,
+                            f"frame:{frame_index}:modality",
+                        )
+                    )
+                if suffix:
+                    parts.append(
+                        _part(
+                            suffix,
+                            binding.semantic_ref,
+                            f"frame:{frame_index}:case_suffix",
+                        )
+                    )
+                if row_index < len(surface_relation_rows) - 1 and not suffix:
+                    parts.append(
+                        _part(
+                            _STRUCTURAL_TOKENS["separator"],
+                            binding.semantic_ref,
+                            f"frame:{frame_index}:separator",
+                        )
+                    )
+
+        for (
+            frame_index,
+            binding,
+            _slot_row,
+            time_scope,
+            modality,
+            polarity,
+            _time_adverb,
+            _role_modifier,
+            _modality_wrapper,
+        ) in relation_rows:
             role_prefix = f"{binding.role.value.lower()}_"
             frames.append(
                 ClauseFrame(
@@ -3551,6 +5666,9 @@ def _reference_mode_for_claim(
     projection: EmlisStage1Projection,
     claim: EmlisSubjectiveClaim,
     object_ref: str,
+    grounded_graph: GroundedMeaningGraph,
+    *,
+    layer2_index: int,
 ) -> str:
     proposition = claim.asserted_subjective_proposition
     if (
@@ -3559,18 +5677,58 @@ def _reference_mode_for_claim(
     ):
         mode = "explicit_emlis_counterposition"
     else:
-        prior_object_count = sum(
-            1
-            for contribution in projection.observation_contributions
+        prior_claim_refs = set(
+            projection.ordered_subjective_refs[:layer2_index]
+        )
+        prior_same_object = any(
+            prior.subjective_claim_id in prior_claim_refs
+            and _subjective_object_ref(projection, prior) == object_ref
+            for prior in projection.subjective_claims
+        )
+        contribution_by_id = {
+            row.contribution_id: row
+            for row in projection.observation_contributions
+        }
+        prior_layer1_rows = tuple(
+            contribution_by_id[ref]
+            for ref in projection.ordered_observation_refs
             if any(
                 binding.semantic_ref == object_ref
                 and binding.role is not ArgumentRole.EXPERIENCER
-                for binding in contribution.argument_bindings
+                for binding in contribution_by_id[ref].argument_bindings
             )
+        )
+        if not prior_layer1_rows:
+            raise CMEEStage1ContractError("stage1_surface_binding_unavailable")
+        last_layer1 = prior_layer1_rows[-1]
+        selected_object_refs = tuple(
+            dict.fromkeys(
+                binding.semantic_ref
+                for binding in last_layer1.argument_bindings
+                if binding.role is not ArgumentRole.EXPERIENCER
+                and binding.semantic_ref.startswith("node:")
+            )
+        )
+        target_anaphora = _anaphoric_surface(
+            projection,
+            object_ref,
+            grounded_graph,
+            claim=claim,
+        )
+        ambiguous_anaphora = any(
+            ref != object_ref
+            and _anaphoric_surface(
+                projection,
+                ref,
+                grounded_graph,
+                claim=claim,
+            )
+            == target_anaphora
+            for ref in selected_object_refs
         )
         mode = (
             "anaphoric_first"
-            if prior_object_count == 1
+            if prior_same_object or not ambiguous_anaphora
             else "short_anchor_if_ambiguous"
         )
     if mode not in _REFERENCE_MODE_POLICY:
@@ -3594,45 +5752,87 @@ def _subjective_surface_contract(
 ]:
     proposition = claim.asserted_subjective_proposition
     primary_predicate, alternate_predicate = _subjective_predicate_spec(claim)
-    use_alternate_predicate = bool(
+    variant_flips_predicate = bool(
         composition_variant_id == _ALTERNATE_VARIANT_ID
         and alternate_target == ("predicate", claim.subjective_claim_id)
+    )
+    object_ref = _subjective_object_ref(projection, claim)
+    semantic_alternate_predicate = _subjective_semantic_predicate_alternate(
+        projection,
+        claim,
+        object_ref,
+    )
+    use_alternate_predicate = bool(
+        semantic_alternate_predicate != variant_flips_predicate
     )
     if use_alternate_predicate and not alternate_predicate:
         raise CMEEStage1ContractError("stage1_microgrammar_alternate_missing")
     predicate = alternate_predicate if use_alternate_predicate else primary_predicate
-    connective_family = _connective_family(
+    connective_family = _subjective_connective_family(
+        projection,
+        claim,
+        overall_index=overall_index,
+        layer_index=layer2_index,
+    )
+    base_connective_family = _connective_family(
         layer="LAYER_2",
         relation_or_operator=proposition.subjective_operator.value,
         overall_index=overall_index,
+        layer_index=layer2_index,
+    )
+    semantic_alternate_connective = bool(
+        connective_family == base_connective_family
+        and _subjective_semantic_connective_alternate(
+            projection,
+            claim,
+            object_ref,
+        )
+    )
+    variant_flips_connective = bool(
+        composition_variant_id == _ALTERNATE_VARIANT_ID
+        and alternate_target == ("connective", claim.subjective_claim_id)
     )
     connective = _connective_token(
         connective_family,
         alternate=bool(
-            composition_variant_id == _ALTERNATE_VARIANT_ID
-            and alternate_target == ("connective", claim.subjective_claim_id)
+            semantic_alternate_connective != variant_flips_connective
         ),
     )
-    object_ref = _subjective_object_ref(projection, claim)
-    reference_mode = _reference_mode_for_claim(projection, claim, object_ref)
+    reference_mode = _reference_mode_for_claim(
+        projection,
+        claim,
+        object_ref,
+        grounded_graph,
+        layer2_index=layer2_index,
+    )
     source_modality = _source_qualifier_for_semantic_ref(
         projection,
         object_ref,
         "modality",
     )
-    anchor = _source_bound_role_surface(object_ref, grounded_graph)
     time_scope = _time_scope_for_semantic_ref(projection, object_ref)
-    time_wrapper = _TIME_WRAPPERS.get(time_scope)
+    time_adverb, _role_modifier = _time_surface_tokens(time_scope)
     source_modality_wrapper = _MODALITY_WRAPPERS.get(source_modality)
     claim_modality_wrapper = _MODALITY_WRAPPERS.get(proposition.modality)
+    explicit_object_nominalizer = _explicit_object_nominalizer(
+        projection,
+        object_ref,
+        grounded_graph,
+        claim=claim,
+    )
     if (
-        time_wrapper is None
-        or source_modality_wrapper is None
-        or claim_modality_wrapper is None
+        type(source_modality_wrapper) is not str
+        or not source_modality_wrapper
+        or type(claim_modality_wrapper) is not str
+        or not claim_modality_wrapper
     ):
         raise CMEEStage1ContractError("stage1_microgrammar_inflection_missing")
     detail = ""
-    if proposition.subjective_operator is SubjectiveOperator.TAKE_RELATIONAL_STANCE:
+    if proposition.subjective_operator is SubjectiveOperator.FEEL_TOWARD:
+        if proposition.affect_category is None:
+            raise CMEEStage1ContractError("stage1_microgrammar_affect_missing")
+        detail = f":{proposition.affect_category.value}"
+    elif proposition.subjective_operator is SubjectiveOperator.TAKE_RELATIONAL_STANCE:
         if proposition.stance_operator is None:
             raise CMEEStage1ContractError("stage1_microgrammar_stance_missing")
         detail = f":{proposition.stance_operator.value}"
@@ -3641,6 +5841,25 @@ def _subjective_surface_contract(
     )
     if particle is None:
         raise CMEEStage1ContractError("stage1_microgrammar_case_frame_invalid")
+    if proposition.subjective_operator is SubjectiveOperator.ATTEND_TO:
+        attention_key = (
+            f"{_semantic_operator_for_object(projection, object_ref)}:"
+            f"{time_scope}"
+        )
+        attention_variants = _ATTENTION_SURFACE_ROWS.get(
+            attention_key,
+            _ATTENTION_SURFACE_ROWS.get("*:*"),
+        )
+        if (
+            type(attention_variants) is not tuple
+            or len(attention_variants) != 2
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_microgrammar_case_frame_invalid"
+            )
+        particle, predicate = attention_variants[
+            1 if use_alternate_predicate else 0
+        ]
     if (
         _TOPIC_SPEAKER_POLICY.get("layer2_explicit_speaker_placement")
         != "first_move_and_each_counterposition"
@@ -3655,6 +5874,13 @@ def _subjective_surface_contract(
     parts: list[_SurfacePart] = []
     if connective:
         parts.append(_part(connective, object_ref, "frame:0:connective"))
+        parts.append(
+            _part(
+                _STRUCTURAL_TOKENS["separator"],
+                object_ref,
+                "frame:0:connective_separator",
+            )
+        )
     if explicit_speaker:
         parts.append(_part(_STRUCTURAL_TOKENS["speaker"], object_ref, "frame:0:speaker"))
         parts.append(
@@ -3664,25 +5890,69 @@ def _subjective_surface_contract(
                 "frame:0:speaker_particle",
             )
         )
-    parts.append(_part(anchor, object_ref, "frame:0:object"))
-    parts.append(_part(time_wrapper, object_ref, "frame:0:time"))
-    parts.append(_part(particle, object_ref, "frame:0:case"))
-    if source_modality_wrapper:
         parts.append(
             _part(
-                source_modality_wrapper,
+                _STRUCTURAL_TOKENS["separator"],
+                object_ref,
+                "frame:0:speaker_separator",
+            )
+        )
+    if reference_mode == "anaphoric_first":
+        parts.append(
+            _part(
+                _anaphoric_surface(
+                    projection,
+                    object_ref,
+                    grounded_graph,
+                    claim=claim,
+                ),
+                object_ref,
+                "frame:0:object_anaphora",
+            )
+        )
+    else:
+        anchor = _source_bound_role_surface(
+            object_ref,
+            grounded_graph,
+            layer=None,
+        )
+        reference_anchor = anchor
+        if (
+            reference_mode == "explicit_emlis_counterposition"
+            and proposition.subjective_operator
+            is SubjectiveOperator.COUNTER_SPECIFIC_PROMOTION
+        ):
+            bounded_self_denial = _source_bounded_self_denial_parts(anchor)
+            if bounded_self_denial is not None:
+                reference_anchor = bounded_self_denial[1]
+        if (
+            len(_grapheme_clusters(reference_anchor))
+            > int(_QUOTE_POLICY["l2_max_graphemes"])
+        ):
+            raise CMEEStage1ContractError("stage1_surface_binding_unavailable")
+        parts.append(_part(time_adverb, object_ref, "frame:0:time"))
+        parts.append(
+            _part(
+                _STRUCTURAL_TOKENS["separator"],
+                object_ref,
+                "frame:0:time_separator",
+            )
+        )
+        parts.extend(
+            _quoted_role_parts(
+                anchor=reference_anchor,
+                semantic_ref=object_ref,
+                clause_slot="frame:0:object",
+            )
+        )
+        parts.append(
+            _part(
+                explicit_object_nominalizer,
                 object_ref,
                 "frame:0:object_modality",
             )
         )
-    if claim_modality_wrapper and claim_modality_wrapper != source_modality_wrapper:
-        parts.append(
-            _part(
-                claim_modality_wrapper,
-                object_ref,
-                "frame:0:modality",
-            )
-        )
+    parts.append(_part(particle, object_ref, "frame:0:case"))
     parts.append(_part(predicate, object_ref, "frame:0:predicate"))
     parts.append(_part(_STRUCTURAL_TOKENS["terminal"], object_ref, "frame:0:terminal"))
     frame = ClauseFrame(
@@ -4361,6 +6631,86 @@ def _validate_surface_partition(unit: RealizedSentenceUnit) -> None:
         raise CMEEStage1ContractError("stage1_surface_binding_not_exact_cover")
 
 
+def _validate_quote_policy(
+    unit: RealizedSentenceUnit,
+    grounded_graph: GroundedMeaningGraph,
+) -> None:
+    """Seal the registered per-sentence quote bounds against realized slots."""
+
+    layer_key = {"LAYER_1": "l1", "LAYER_2": "l2"}.get(unit.layer)
+    if layer_key is None:
+        raise CMEEStage1ContractError("stage1_realization_quote_policy_invalid")
+    quote_open = _STRUCTURAL_TOKENS["quote_open"]
+    quote_close = _STRUCTURAL_TOKENS["quote_close"]
+    openings = sorted(
+        (
+            row
+            for row in unit.realized_semantic_bindings
+            if row.clause_slot.endswith(":quote_open")
+        ),
+        key=lambda row: (row.surface_scalar_start, row.surface_scalar_end),
+    )
+    closings = sorted(
+        (
+            row
+            for row in unit.realized_semantic_bindings
+            if row.clause_slot.endswith(":quote_close")
+        ),
+        key=lambda row: (row.surface_scalar_start, row.surface_scalar_end),
+    )
+    max_count = int(_QUOTE_POLICY[f"{layer_key}_max_per_sentence"])
+    max_graphemes = int(_QUOTE_POLICY[f"{layer_key}_max_graphemes"])
+    if (
+        len(openings) != len(closings)
+        or len(openings) > max_count
+        or unit.text.count(quote_open) != len(openings)
+        or unit.text.count(quote_close) != len(closings)
+    ):
+        raise CMEEStage1ContractError("stage1_realization_quote_policy_invalid")
+    node_values = {
+        f"node:{row.node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}": row.value
+        for row in grounded_graph.nodes
+    }
+    previous_close_end = 0
+    for opening, closing in zip(openings, closings, strict=True):
+        anchor = unit.text[
+            opening.surface_scalar_end : closing.surface_scalar_start
+        ]
+        source_value = node_values.get(opening.semantic_ref)
+        anchor_bindings = tuple(
+            row
+            for row in unit.realized_semantic_bindings
+            if row.surface_scalar_start == opening.surface_scalar_end
+            and row.surface_scalar_end == closing.surface_scalar_start
+        )
+        if (
+            opening.semantic_ref != closing.semantic_ref
+            or opening.surface_scalar_start < previous_close_end
+            or unit.text[
+                opening.surface_scalar_start : opening.surface_scalar_end
+            ]
+            != quote_open
+            or unit.text[
+                closing.surface_scalar_start : closing.surface_scalar_end
+            ]
+            != quote_close
+            or opening.surface_scalar_end > closing.surface_scalar_start
+            or type(source_value) is not str
+            or not anchor
+            or not anchor_bindings
+            or not any(
+                row.semantic_ref == opening.semantic_ref
+                for row in anchor_bindings
+            )
+            or len(_grapheme_clusters(anchor)) > max_graphemes
+            or anchor not in source_value
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_realization_quote_policy_invalid"
+            )
+        previous_close_end = closing.surface_scalar_end
+
+
 def _validate_existing_surface_contract(
     unit: RealizedSentenceUnit,
     parts: tuple[_SurfacePart, ...],
@@ -4499,6 +6849,7 @@ def _validate_realization_candidate(
         ):
             raise CMEEStage1ContractError("stage1_realization_inventory_mismatch")
         _validate_existing_surface_contract(unit, expected_parts)
+        _validate_quote_policy(unit, grounded_graph)
         _validate_surface_partition(unit)
         if index == observation_count:
             state = _begin_layer2(state, projection)

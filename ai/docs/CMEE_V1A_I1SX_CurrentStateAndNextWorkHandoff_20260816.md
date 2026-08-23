@@ -407,3 +407,100 @@ CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_STEP0
 AUTOMATIC_PROGRESSION = FALSE
 STOP_AFTER_STEP0
 ```
+
+## 20. Stage 1 correction Step 7 — final V10 pre-screen handoff（2026-08-23）
+
+本節はStage 1 correctionのcurrent stateについて§19以前よりfreshである。過去節のcheckpoint事実は書き換えず、current verdict / next boundaryだけを本節がsupersedeする。前回Step 6の完了を確認後、最初のStep 7で検出した共通surface原因をscope内のStep 2–4で修正した。provider、source、dependency、allowlist拡張は0である。
+
+### 20.1 Current owner / inventory
+
+```text
+runtime final commit = THIS_COMMIT_SEQUENCE
+policy = cocolon.emlis.stage1.microgrammar.v2
+inventory top-level rows = 44
+inventory UTF-8 bytes = 16695
+inventory SHA-256 = dc4e1e5ef8026d5577698f375e305db7886f57096c69e6e6a0b99bfe1f26de8a
+runtime / canonical 02 / canonical 05 inventory equality = BYTE_EXACT
+production / API / DB / RN / provider / source / dependency effect = 0
+```
+
+### 20.2 Fresh Step 5 / Step 6
+
+```text
+Step 5 atomic proof = 7 / 7 PASS
+contracts = 70 / 70 PASS
+vertical = 41 / 41 PASS
+combined = 111 / 111 PASS
+finite mutation = 12 / 12 PASS (3 / 3 / 4 / 2)
+UNKNOWN / safety / unseen = 6 / 6 PASS
+three-core boundary = 5 / 5 PASS
+compile exact4 = PASS
+exact8 GENERATED / artifact / structural = 8 / 8 / 8
+all-variant quote seal = PASS
+forged three-quote-pair unit = FAIL_CLOSED
+typed source-shape parser table = PASS
+machine GREEN re-established = true
+```
+
+### 20.3 Formal Step 7 pre-screen
+
+```text
+pairwise = 28 / 28 PASS
+case Major = 0
+pairwise Major / Blocker = 0 / 0
+independent set-level reviews = 2 / 2 PASS
+each review Blocker / Major = 0 / 0
+obvious low quality = 0 / 8
+source fidelity = 8 / 8
+duplicates = 0
+forbidden = 0
+SX07 focused conditions = ALL PASS
+case minor = NONBLOCKING
+```
+
+### 20.4 Step 0 to final allowlists
+
+mashos-api local changed-path candidate exact7:
+
+```text
+ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py
+ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py
+ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py
+ai/tests/test_cmee_v1a_i1sx_contracts.py
+ai/tests/test_cmee_v1a_i1sx_vertical.py
+ai/tools/cmee_v1a_i1sx_candidate_run.py
+ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md
+```
+
+Cocolon local changed-path candidate exact5:
+
+```text
+Cocolon_前提資料/designs/cmee/v1/02_emlis_v1a_detailed_design.md
+Cocolon_前提資料/designs/cmee/v1/05_json_schema_and_versioning.md
+Cocolon_前提資料/designs/cmee/v1/06_implementation_order_migration_and_verification.md
+Cocolon_前提資料/current_structure/01_emlis_ai_current_structure.md
+Cocolon_前提資料/current_structure/04_cmee_current_structure.md
+```
+
+remote changed-path exact setとremote / local file bytes equalityはfinal commit / push後の実測だけで閉じる。事前SHA claimは行わない。
+
+### 20.5 Current gate / STOP
+
+`MASH_PRESENTATION_PRE_SCREEN_ELIGIBLE=TRUE`はformal Step 7を通過した候補をMashへ提示できるというpre-screen状態だけを表す。runner fieldsの`candidate_ready=false`および`product_read_eligible=false`を変更せず、Product Readの評価またはProduct PASSを意味しない。
+
+```text
+MASHOS_REMOTE_CHANGED_PATH_EXACT7 = FINAL_POST_PUSH_GATE_REQUIRED
+COCOLON_REMOTE_CHANGED_PATH_EXACT5 = FINAL_POST_PUSH_GATE_REQUIRED
+REMOTE_LOCAL_FILE_BYTES_EQUALITY = FINAL_POST_PUSH_GATE_REQUIRED
+PRIVATE_BODY_DIGEST_LOCATOR_GITHUB_PUBLICATION = 0
+MASH_PRESENTATION_PRE_SCREEN_ELIGIBLE = TRUE
+candidate_ready = false
+product_read_eligible = false
+product_read_evaluated = false
+product_pass = not_declared
+exact8_acceptance_complete = false
+product / technical / full-I1 / Cycle001 / production credit = 0
+production / API / DB / RN / provider / dependency effect = 0
+current_authorized_next_action = MASH_PRODUCT_READ_ONLY
+automatic_progression = false
+```

@@ -2037,9 +2037,10 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             )
 
     def test_relation_required_input_seals_exact_endpoints_direction_and_evidence(self) -> None:
+        memo = "この職場でやっていけるか不安。でも、続けられる形は探したい。"
         request = _request(
             record_id="cmee-relation",
-            memo="この職場でやっていけるか不安。でも、続けられる形は探したい。",
+            memo=memo,
         )
         source, graph, _plan, artifact, visible = _private_parts(request)
         observation_lines = tuple(
@@ -2079,7 +2080,371 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         )
         self.assertTrue(all("この順" not in line.text for line in observation_lines))
         self.assertIn("不安", observation_lines[0].text)
-        self.assertIn("気持ち", observation_lines[1].text)
+        projection, selected_units = _STAGE1_VALIDATION_CAPTURE[
+            source.envelope.envelope_id
+        ]
+        relation_contributions = tuple(
+            row
+            for row in projection.observation_contributions
+            if row.relation_operator.value in {"TENSION_WITH", "COEXISTS_WITH"}
+        )
+        self.assertEqual(
+            tuple(row.relation_operator.value for row in relation_contributions),
+            ("TENSION_WITH", "COEXISTS_WITH"),
+        )
+        unit_by_move = {
+            row.move_ref: row for row in selected_units if row.layer == "LAYER_1"
+        }
+        first_relation_unit, second_relation_unit = tuple(
+            unit_by_move[
+                stage1_response_module._move_ref(row.contribution_id)
+            ]
+            for row in relation_contributions
+        )
+        first_endpoints = {
+            row.semantic_ref
+            for row in relation_contributions[0].argument_bindings
+        }
+        second_endpoints = {
+            row.semantic_ref
+            for row in relation_contributions[1].argument_bindings
+        }
+        self.assertEqual(first_endpoints, second_endpoints)
+        node_by_ref = {
+            (
+                f"node:{row.node_id}@"
+                f"{cmee_contracts_module.CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+            ): row
+            for row in graph.nodes
+        }
+        self.assertEqual(first_endpoints, set(node_by_ref) & first_endpoints)
+        direction_ref = next(
+            ref for ref in first_endpoints if node_by_ref[ref].node_kind == "wish"
+        )
+        burden_ref = next(ref for ref in first_endpoints if ref != direction_ref)
+
+        # The first shared TENSION owns every bounded source anchor exactly
+        # once and reaches both relation endpoints without anaphora.
+        first_source_anchors = tuple(
+            row
+            for row in first_relation_unit.realized_semantic_bindings
+            if row.semantic_ref in first_endpoints
+            and row.clause_slot.endswith((":anchor", ":affect"))
+        )
+        self.assertEqual(
+            {row.semantic_ref for row in first_source_anchors},
+            first_endpoints,
+        )
+        self.assertFalse(
+            any(
+                row.clause_slot.endswith(":argument_anaphora")
+                for row in first_relation_unit.realized_semantic_bindings
+            )
+        )
+        for binding in first_source_anchors:
+            span = first_relation_unit.text[
+                binding.surface_scalar_start : binding.surface_scalar_end
+            ]
+            self.assertIn(span, node_by_ref[binding.semantic_ref].value)
+            self.assertIn(span, memo)
+            self.assertEqual(first_relation_unit.text.count(span), 1)
+
+        first_quote_openings = tuple(
+            row
+            for row in first_relation_unit.realized_semantic_bindings
+            if row.clause_slot.endswith(":quote_open")
+        )
+        first_quote_closings = tuple(
+            row
+            for row in first_relation_unit.realized_semantic_bindings
+            if row.clause_slot.endswith(":quote_close")
+        )
+        self.assertEqual(len(first_quote_openings), 2)
+        self.assertEqual(len(first_quote_closings), 2)
+        self.assertEqual(first_relation_unit.text.count("「"), 2)
+        self.assertEqual(first_relation_unit.text.count("」"), 2)
+        quoted_span_by_ref: dict[str, str] = {}
+        for opening, closing in zip(
+            first_quote_openings,
+            first_quote_closings,
+            strict=True,
+        ):
+            self.assertEqual(opening.semantic_ref, closing.semantic_ref)
+            quoted_span_by_ref[opening.semantic_ref] = first_relation_unit.text[
+                opening.surface_scalar_end : closing.surface_scalar_start
+            ]
+        self.assertEqual(set(quoted_span_by_ref), first_endpoints)
+
+        burden_match = (
+            stage1_response_module._CONTEXT_DE_EPISTEMIC_BURDEN_RE.fullmatch(
+                node_by_ref[burden_ref].value
+            )
+        )
+        self.assertIsNotNone(burden_match)
+        assert burden_match is not None
+        burden_context = burden_match.group("context")
+        burden_question = burden_match.group("question")
+        burden_affect = burden_match.group("affect")
+        burden_question_span = f"{burden_context}で{burden_question}"
+        self.assertEqual(quoted_span_by_ref[burden_ref], burden_question_span)
+        self.assertEqual(
+            burden_question_span + burden_affect,
+            node_by_ref[burden_ref].value,
+        )
+        burden_affect_bindings = tuple(
+            row
+            for row in first_relation_unit.realized_semantic_bindings
+            if row.semantic_ref == burden_ref
+            and row.clause_slot.endswith(":affect")
+        )
+        self.assertEqual(len(burden_affect_bindings), 1)
+        self.assertEqual(
+            first_relation_unit.text[
+                burden_affect_bindings[0].surface_scalar_start :
+                burden_affect_bindings[0].surface_scalar_end
+            ],
+            burden_affect,
+        )
+        self.assertEqual(quoted_span_by_ref[direction_ref], node_by_ref[direction_ref].value)
+        self.assertEqual(memo.count(node_by_ref[burden_ref].value), 1)
+        self.assertEqual(memo.count(node_by_ref[direction_ref].value), 1)
+
+        # The second shared COEXISTS replays no exact anchor.  Each endpoint
+        # is resolved by one prior-bound typed anaphor.
+        second_source_anchors = tuple(
+            row
+            for row in second_relation_unit.realized_semantic_bindings
+            if row.semantic_ref in second_endpoints
+            and row.clause_slot.endswith((":anchor", ":affect"))
+        )
+        self.assertEqual(second_source_anchors, ())
+        self.assertNotRegex(second_relation_unit.text, r"[「」]")
+        second_anaphors = tuple(
+            row
+            for row in second_relation_unit.realized_semantic_bindings
+            if row.clause_slot.endswith(":argument_anaphora")
+        )
+        self.assertEqual(len(second_anaphors), 2)
+        self.assertEqual(
+            {row.semantic_ref for row in second_anaphors},
+            second_endpoints,
+        )
+        self.assertEqual(
+            {
+                row.semantic_ref
+                for row in second_anaphors
+                if row.semantic_ref
+                not in {anchor.semantic_ref for anchor in first_source_anchors}
+            },
+            set(),
+        )
+        for binding in second_anaphors:
+            span = second_relation_unit.text[
+                binding.surface_scalar_start : binding.surface_scalar_end
+            ]
+            self.assertEqual(second_relation_unit.text.count(span), 1)
+
+        first_direction_anchors = tuple(
+            row
+            for row in first_source_anchors
+            if row.semantic_ref == direction_ref
+            and row.clause_slot.endswith(":anchor")
+        )
+        second_direction_anaphors = tuple(
+            row for row in second_anaphors if row.semantic_ref == direction_ref
+        )
+        self.assertEqual(len(first_direction_anchors), 1)
+        self.assertEqual(len(second_direction_anaphors), 1)
+        direction_anaphor = second_relation_unit.text[
+            second_direction_anaphors[0].surface_scalar_start :
+            second_direction_anaphors[0].surface_scalar_end
+        ]
+        self.assertEqual(direction_anaphor, "その願い")
+        self.assertNotIn(
+            "その方向",
+            "\n".join(row.text for row in observation_lines),
+        )
+        self.assertNotRegex(
+            "\n".join(row.text for row in observation_lines),
+            r"(?:この|次の)(?:方向|願い)",
+        )
+
+        # The continuing qualifier belongs to the shared direction endpoint
+        # and is surfaced once across the relation pair, not once per edge.
+        direction_time_spans = tuple(
+            unit.text[binding.surface_scalar_start : binding.surface_scalar_end]
+            for unit in (first_relation_unit, second_relation_unit)
+            for binding in unit.realized_semantic_bindings
+            if binding.semantic_ref == direction_ref
+            and binding.clause_slot.endswith(":time")
+        )
+        self.assertEqual(direction_time_spans, ("今も",))
+        self.assertEqual(
+            sum(
+                unit.text.count("今も")
+                for unit in (first_relation_unit, second_relation_unit)
+            ),
+            1,
+        )
+
+        # The direction coordinate particle is followed by its qualifier,
+        # never by a separator token.
+        second_bindings = second_relation_unit.realized_semantic_bindings
+        coordinate_indexes = tuple(
+            index
+            for index, binding in enumerate(second_bindings)
+            if binding.semantic_ref == direction_ref
+            and binding.clause_slot.endswith(":case_suffix")
+            and second_relation_unit.text[
+                binding.surface_scalar_start : binding.surface_scalar_end
+            ]
+            == "は"
+        )
+        self.assertEqual(len(coordinate_indexes), 1)
+        coordinate_index = coordinate_indexes[0]
+        self.assertLess(coordinate_index + 1, len(second_bindings))
+        self.assertFalse(
+            second_bindings[coordinate_index + 1].clause_slot.endswith(
+                ":separator"
+            )
+        )
+        self.assertNotIn("は、", second_relation_unit.text)
+
+        # A non-fixture input with the same typed relation shape must satisfy
+        # the same quote/anaphora/qualifier/particle contract.
+        synthetic_memo = (
+            "この職場で続けていけるか不安。"
+            "でも、続けられる形は探したい。"
+        )
+        self.assertNotIn(synthetic_memo, {row[1] for row in EXACT8})
+        (
+            synthetic_source,
+            synthetic_graph,
+            _synthetic_plan,
+            _synthetic_artifact,
+            _synthetic_visible,
+        ) = _private_parts(
+            _request(
+                record_id="cmee-relation-synthetic-same-shape",
+                memo=synthetic_memo,
+            )
+        )
+        synthetic_projection, synthetic_units = _STAGE1_VALIDATION_CAPTURE[
+            synthetic_source.envelope.envelope_id
+        ]
+        synthetic_relations = tuple(
+            row
+            for row in synthetic_projection.observation_contributions
+            if row.relation_operator.value in {"TENSION_WITH", "COEXISTS_WITH"}
+        )
+        self.assertEqual(
+            tuple(row.relation_operator.value for row in synthetic_relations),
+            ("TENSION_WITH", "COEXISTS_WITH"),
+        )
+        synthetic_unit_by_move = {
+            row.move_ref: row for row in synthetic_units if row.layer == "LAYER_1"
+        }
+        synthetic_first, synthetic_second = tuple(
+            synthetic_unit_by_move[
+                stage1_response_module._move_ref(row.contribution_id)
+            ]
+            for row in synthetic_relations
+        )
+        synthetic_endpoints = {
+            row.semantic_ref for row in synthetic_relations[0].argument_bindings
+        }
+        self.assertEqual(
+            synthetic_endpoints,
+            {
+                row.semantic_ref
+                for row in synthetic_relations[1].argument_bindings
+            },
+        )
+        self.assertEqual(synthetic_first.text.count("「"), 2)
+        self.assertEqual(synthetic_first.text.count("」"), 2)
+        self.assertEqual(synthetic_second.text.count("「"), 0)
+        self.assertEqual(synthetic_second.text.count("」"), 0)
+        synthetic_first_anchor_refs = {
+            row.semantic_ref
+            for row in synthetic_first.realized_semantic_bindings
+            if row.clause_slot.endswith((":anchor", ":affect"))
+        }
+        synthetic_second_anaphors = tuple(
+            row
+            for row in synthetic_second.realized_semantic_bindings
+            if row.clause_slot.endswith(":argument_anaphora")
+        )
+        self.assertEqual(synthetic_first_anchor_refs, synthetic_endpoints)
+        self.assertEqual(len(synthetic_second_anaphors), 2)
+        self.assertEqual(
+            {row.semantic_ref for row in synthetic_second_anaphors},
+            synthetic_endpoints,
+        )
+        self.assertTrue(
+            all(
+                row.semantic_ref in synthetic_first_anchor_refs
+                for row in synthetic_second_anaphors
+            )
+        )
+        synthetic_node_by_ref = {
+            (
+                f"node:{row.node_id}@"
+                f"{cmee_contracts_module.CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+            ): row
+            for row in synthetic_graph.nodes
+        }
+        synthetic_direction_ref = next(
+            ref
+            for ref in synthetic_endpoints
+            if synthetic_node_by_ref[ref].node_kind == "wish"
+        )
+        synthetic_burden_ref = next(
+            ref for ref in synthetic_endpoints if ref != synthetic_direction_ref
+        )
+        synthetic_burden_parts = (
+            stage1_response_module._source_context_de_epistemic_burden_parts(
+                synthetic_node_by_ref[synthetic_burden_ref].value
+            )
+        )
+        self.assertIsNotNone(synthetic_burden_parts)
+        assert synthetic_burden_parts is not None
+        self.assertEqual(
+            "".join(synthetic_burden_parts),
+            synthetic_node_by_ref[synthetic_burden_ref].value,
+        )
+        self.assertIn(
+            synthetic_node_by_ref[synthetic_burden_ref].value,
+            synthetic_memo,
+        )
+        synthetic_time_spans = tuple(
+            unit.text[binding.surface_scalar_start : binding.surface_scalar_end]
+            for unit in (synthetic_first, synthetic_second)
+            for binding in unit.realized_semantic_bindings
+            if binding.semantic_ref == synthetic_direction_ref
+            and binding.clause_slot.endswith(":time")
+        )
+        self.assertEqual(synthetic_time_spans, ("今も",))
+        synthetic_coordinate_indexes = tuple(
+            index
+            for index, binding in enumerate(
+                synthetic_second.realized_semantic_bindings
+            )
+            if binding.semantic_ref == synthetic_direction_ref
+            and binding.clause_slot.endswith(":case_suffix")
+            and synthetic_second.text[
+                binding.surface_scalar_start : binding.surface_scalar_end
+            ]
+            == "は"
+        )
+        self.assertEqual(len(synthetic_coordinate_indexes), 1)
+        synthetic_coordinate_index = synthetic_coordinate_indexes[0]
+        self.assertFalse(
+            synthetic_second.realized_semantic_bindings[
+                synthetic_coordinate_index + 1
+            ].clause_slot.endswith(":separator")
+        )
+        self.assertNotIn("は、", synthetic_second.text)
+
         for legacy in ("起点側", "到達側", "第一項", "第二項", "項A", "項B"):
             self.assertFalse(
                 any(legacy in line.text for line in observation_lines),
@@ -2359,6 +2724,13 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             "保ちたい方向",
             "前向きな変化",
             "まだ分からないこと：",
+            "がという",
+            "にという",
+            "をという",
+            "についてという",
+            "という願いあります",
+            "という方向がという",
+            "またEmlis",
         )
         observations: list[str] = []
         receptions: list[str] = []
@@ -2419,6 +2791,17 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 )
                 self.assertTrue(layer1.removeprefix("見えたこと：\n").strip())
                 self.assertTrue(layer2.strip())
+                first_reception_sentence = layer2.splitlines()[0]
+                self.assertTrue(first_reception_sentence.startswith("Emlisは、"))
+                self.assertEqual(first_reception_sentence.count("「"), 0)
+                self.assertEqual(first_reception_sentence.count("」"), 0)
+                self.assertTrue(
+                    any(
+                        token in first_reception_sentence
+                        for token in stage1_response_module._LAYER2_ANAPHORIC_SURFACES.values()
+                    ),
+                    "first Reception sentence must use a typed anaphor",
+                )
                 observation_norm = re.sub(r"\s+", "", artifact.observation)
                 reception_norm = re.sub(r"\s+", "", artifact.reception)
                 self.assertFalse(
@@ -2904,16 +3287,11 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         self.assertEqual(bare.status.value, "GENERATED", bare.reason_codes)
         self.assertIsNotNone(bare.artifact)
         assert bare.artifact is not None
-        self.assertIn("散歩したい", bare.artifact.reception)
-        self.assertIn("という願い", bare.artifact.reception)
-        self.assertLess(
-            bare.artifact.reception.index("散歩したい"),
-            bare.artifact.reception.index("今ここにある"),
-        )
-        self.assertLess(
-            bare.artifact.reception.index("今ここにある"),
-            bare.artifact.reception.index("という願い"),
-        )
+        self.assertIn("「散歩したい」という気持ち", bare.artifact.observation)
+        self.assertIn("その願い", bare.artifact.reception)
+        self.assertNotIn("散歩したい", bare.artifact.reception)
+        self.assertNotIn("「", bare.artifact.reception)
+        self.assertNotIn("」", bare.artifact.reception)
         self.assertNotIn("私を散歩したい", bare.artifact.text)
 
         outcome = MeaningExperienceEngine().generate(
@@ -2925,8 +3303,14 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         )
         self.assertEqual(outcome.status.value, "GENERATED", outcome.reason_codes)
         assert outcome.artifact is not None
-        self.assertIn("散歩したい", outcome.artifact.reception)
-        self.assertIn("という願い", outcome.artifact.reception)
+        self.assertIn(
+            "「散歩したい」という気持ち",
+            outcome.artifact.observation,
+        )
+        self.assertIn("その願い", outcome.artifact.reception)
+        self.assertNotIn("散歩したい", outcome.artifact.reception)
+        self.assertNotIn("「", outcome.artifact.reception)
+        self.assertNotIn("」", outcome.artifact.reception)
         self.assertNotIn("私を散歩したい", outcome.artifact.reception)
 
     def test_stage1_retained_intention_support_is_semantic_canonical_and_sealed(self) -> None:
@@ -3504,7 +3888,7 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         self.assertEqual(len(material_unknown.artifact.visible_unknowns), 1)
         self.assertEqual(
             tuple(row.role for row in material_unknown.artifact.trace),
-            ("OBSERVATION", "OBSERVATION", "UNKNOWN", "RECEPTION", "RECEPTION"),
+            ("OBSERVATION", "UNKNOWN", "RECEPTION", "RECEPTION"),
         )
 
         case_id, memo, category, emotion, strength = EXACT8[5]

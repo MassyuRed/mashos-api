@@ -242,7 +242,7 @@ CMEE_STAGE1_VALUE_POLICY_REF = (
 )
 CMEE_STAGE1_MICROGRAMMAR_POLICY_REF = (
     "policy:cocolon.emlis.stage1.microgrammar"
-    "@cocolon.emlis.stage1.microgrammar.v1"
+    "@cocolon.emlis.stage1.microgrammar.v2"
 )
 CMEE_STAGE1_VALUE_PRINCIPLE_REFS = (
     ("V1", "policy:V1@cocolon.emlis.stage1.value_policy.v1"),

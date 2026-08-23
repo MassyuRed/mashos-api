@@ -12,6 +12,7 @@ import unittest
 from collections import Counter
 from dataclasses import fields, replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
@@ -638,10 +639,10 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
                     )
                 )
 
-    def test_step6_exact8_optional_emotion_authority_retains_only_optional_tail(
+    def test_step6_exact8_optional_candidates_remain_structured_not_observed(
         self,
     ) -> None:
-        optional_case_ids: set[str] = set()
+        structured_candidate_refs: set[str] = set()
         for case_id, memo, category, emotion, strength in EXACT8:
             with self.subTest(case_id=case_id):
                 source, grounded_plan, graph, parent_plan = _stage2_inputs(
@@ -698,29 +699,72 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
                     **{row.node_id: row.owner_id for row in graph.nodes},
                     **{row.edge_id: row.owner_id for row in graph.edges},
                 }
+                structured_context_kinds = {
+                    "EMOTION_CONTEXT",
+                    "CATEGORY_CONTEXT",
+                    "EMOTION_STRENGTH_CONTEXT",
+                    "STRUCTURED_CONTEXT_ATTACHMENT",
+                }
+                structured_owner_ids = {
+                    row.meaning_owner_id
+                    for row in source.owner_universe.obligations
+                    if row.obligation_kind in structured_context_kinds
+                    and row.owner_class is OwnerClass.ACTIVE_OPTIONAL
+                }
+                candidate_refs = {
+                    row.candidate_id for row in projection.interpretation_candidates
+                }
+                required_candidate_refs = set(
+                    projection.meaning_field.required_candidate_refs
+                )
+                optional_candidate_refs = candidate_refs - required_candidate_refs
+                field_candidate_refs = {
+                    ref
+                    for entry in projection.meaning_field.entries
+                    for ref in entry.interpretation_candidate_refs
+                }
+                self.assertTrue(optional_candidate_refs)
+                self.assertEqual(field_candidate_refs, candidate_refs)
+
+                for candidate in projection.interpretation_candidates:
+                    candidate_owner_ids = {
+                        claim_owner_by_id[
+                            ref.split(":", 1)[1].rsplit("@", 1)[0]
+                        ]
+                        for ref in (
+                            *candidate.semantic_refs,
+                            *candidate.relation_basis_refs,
+                        )
+                    }
+                    if candidate_owner_ids.intersection(structured_owner_ids):
+                        structured_candidate_refs.add(candidate.candidate_id)
+                        self.assertIn(
+                            candidate.candidate_id,
+                            optional_candidate_refs,
+                        )
+
                 optional_contributions = tuple(
                     row
                     for row in projection.observation_contributions
                     if row.retention == "OPTIONAL"
                 )
-                self.assertLessEqual(len(optional_contributions), 1)
-                for contribution in optional_contributions:
-                    optional_case_ids.add(case_id)
-                    self.assertEqual(contribution.retention, "OPTIONAL")
-                    self.assertEqual(
-                        {
-                            claim_owner_by_id[
-                                ref.split(":", 1)[1].rsplit("@", 1)[0]
-                            ]
-                            for ref in contribution.semantic_refs
-                        },
-                        {emotion_obligation.meaning_owner_id},
+                self.assertEqual(optional_contributions, ())
+                contribution_candidate_refs = {
+                    ref
+                    for row in projection.observation_contributions
+                    for ref in row.interpretation_candidate_refs
+                }
+                self.assertEqual(
+                    contribution_candidate_refs,
+                    required_candidate_refs,
+                )
+                self.assertTrue(
+                    optional_candidate_refs.isdisjoint(
+                        contribution_candidate_refs
                     )
+                )
 
-        self.assertEqual(
-            optional_case_ids,
-            {"SX-01", "SX-02", "SX-03", "SX-05", "SX-08"},
-        )
+        self.assertTrue(structured_candidate_refs)
 
     def test_step6_coordinated_optional_owner_disposition_downgrade_is_rejected(
         self,
@@ -828,13 +872,28 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
                 for claim_id in trace.meaning_edge_ids
             ),
         }
-        runtime_owner_id = next(
-            row.meaning_owner_id
+        optional_visible_dispositions = tuple(
+            row
             for row in outcome.meaning_graph.owner_dispositions
             if row.owner_class is OwnerClass.ACTIVE_OPTIONAL
             and row.route_b_disposition in positive_dispositions
+        )
+        self.assertTrue(optional_visible_dispositions)
+        self.assertTrue(
+            all(
+                set(row.visible_claim_refs).isdisjoint(runtime_used_claim_ids)
+                for row in optional_visible_dispositions
+            )
+        )
+        runtime_owner_ids = tuple(
+            row.meaning_owner_id
+            for row in outcome.meaning_graph.owner_dispositions
+            if row.owner_class is OwnerClass.REQUIRED
+            and row.route_b_disposition in positive_dispositions
             and set(row.visible_claim_refs).intersection(runtime_used_claim_ids)
         )
+        self.assertEqual(len(runtime_owner_ids), 1)
+        runtime_owner_id = runtime_owner_ids[0]
         runtime_dispositions = tuple(
             replace(
                 row,
@@ -2430,6 +2489,19 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
         )
 
     def test_stage2_exact8_is_deterministic_reachable_and_layered(self) -> None:
+        expected_shape_by_case = {
+            "SX-01": (1, ObservationDepthClass.FOCUSED),
+            "SX-02": (1, ObservationDepthClass.FOCUSED),
+            "SX-03": (1, ObservationDepthClass.FOCUSED),
+            "SX-04": (2, ObservationDepthClass.LAYERED),
+            "SX-05": (1, ObservationDepthClass.FOCUSED),
+            "SX-06": (2, ObservationDepthClass.LAYERED),
+            "SX-07": (2, ObservationDepthClass.LAYERED),
+            "SX-08": (1, ObservationDepthClass.FOCUSED),
+        }
+        observed_shape_by_case: dict[
+            str, tuple[int, ObservationDepthClass]
+        ] = {}
         for case_id, memo, category, emotion, strength in EXACT8:
             with self.subTest(case_id=case_id):
                 source, grounded_plan, graph, parent_plan = _stage2_inputs(
@@ -2518,7 +2590,17 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                         set(entry_refs)
                     )
                 )
-                self.assertEqual(len(contributions), 2)
+                self.assertTrue(
+                    all(row.retention == "REQUIRED" for row in contributions)
+                )
+                self.assertEqual(
+                    tuple(
+                        ref
+                        for row in contributions
+                        for ref in row.interpretation_candidate_refs
+                    ),
+                    meaning_field.required_candidate_refs,
+                )
                 self.assertEqual(
                     ordered_refs,
                     tuple(row.contribution_id for row in contributions),
@@ -2527,7 +2609,13 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                     len({row.canonical_semantic_key for row in contributions}),
                     len(contributions),
                 )
-                self.assertIs(depth, ObservationDepthClass.LAYERED)
+                observed_shape_by_case[case_id] = (len(contributions), depth)
+                self.assertEqual(
+                    observed_shape_by_case[case_id],
+                    expected_shape_by_case[case_id],
+                )
+
+        self.assertEqual(observed_shape_by_case, expected_shape_by_case)
 
     def test_stage2_source_evidence_and_unknown_boundaries_fail_closed(self) -> None:
         case_id, memo, category, emotion, strength = EXACT8[0]
@@ -3281,7 +3369,7 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                     )
 
     def test_stage3_cross_field_depth_and_semantic_distinctness_fail_closed(self) -> None:
-        case_id, memo, category, emotion, strength = EXACT8[1]
+        case_id, memo, category, emotion, strength = EXACT8[3]
         source, grounded_plan, graph, parent_plan = _stage2_inputs(
             _request(
                 record_id=case_id,
@@ -3297,7 +3385,8 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             parent_plan=parent_plan,
             grounded_plan=grounded_plan,
         )
-        claim = projection.subjective_claims[0]
+        claim_index = 1
+        claim = projection.subjective_claims[claim_index]
         invalid_claims = (
             (
                 replace(
@@ -3334,7 +3423,7 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             with self.subTest(code=code):
                 invalid_projection = _replace_projection_claim(
                     projection,
-                    0,
+                    claim_index,
                     invalid_claim,
                 )
                 with self.assertRaisesRegex(CMEEStage1ContractError, code):
@@ -3344,18 +3433,30 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                         parent_plan=parent_plan,
                     )
 
-        target_contribution = projection.observation_contributions[0]
-        reachable = {
-            target_contribution.contribution_id,
-            *target_contribution.semantic_refs,
-            *target_contribution.relation_basis_refs,
+        contribution_by_id = {
+            row.contribution_id: row
+            for row in projection.observation_contributions
         }
-        unrelated = next(
+        basis_contributions = tuple(
+            contribution_by_id[ref]
+            for ref in claim.basis_observation_contribution_refs
+        )
+        reachable = {
+            *claim.basis_observation_contribution_refs,
+            *(
+                ref
+                for row in basis_contributions
+                for ref in (*row.semantic_refs, *row.relation_basis_refs)
+            ),
+        }
+        unrelated_refs = tuple(
             f"node:{row.node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
             for row in graph.nodes
             if f"node:{row.node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
             not in reachable
         )
+        self.assertTrue(unrelated_refs)
+        unrelated = unrelated_refs[0]
         unreachable_claim = replace(
             claim,
             asserted_subjective_proposition=replace(
@@ -3368,27 +3469,50 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             "stage1_subjective_response_object_unreachable",
         ):
             validate_stage1_projection(
-                _replace_projection_claim(projection, 0, unreachable_claim),
+                _replace_projection_claim(
+                    projection,
+                    claim_index,
+                    unreachable_claim,
+                ),
                 grounded_graph=graph,
                 parent_plan=parent_plan,
             )
 
-        extra_basis = projection.observation_contributions[1]
+        extra_basis_rows = tuple(
+            row
+            for row in projection.observation_contributions
+            if row.contribution_id
+            not in claim.basis_observation_contribution_refs
+        )
+        self.assertEqual(len(extra_basis_rows), 1)
+        extra_basis = extra_basis_rows[0]
+        duplicate_basis_refs = (
+            *claim.basis_observation_contribution_refs,
+            extra_basis.contribution_id,
+        )
+        duplicate_basis = tuple(
+            contribution_by_id[ref] for ref in duplicate_basis_refs
+        )
         duplicate = _identified(
             replace(
                 claim,
                 subjective_claim_id="",
-                basis_observation_contribution_refs=(
-                    claim.basis_observation_contribution_refs[0],
-                    extra_basis.contribution_id,
-                ),
-                basis_semantic_refs=(
-                    *claim.basis_semantic_refs,
-                    *extra_basis.semantic_refs,
-                    *extra_basis.relation_basis_refs,
+                basis_observation_contribution_refs=duplicate_basis_refs,
+                basis_semantic_refs=tuple(
+                    dict.fromkeys(
+                        ref
+                        for row in duplicate_basis
+                        for ref in (
+                            *row.semantic_refs,
+                            *row.relation_basis_refs,
+                        )
+                    )
                 ),
                 forbidden_promotions=stage1_subjective_forbidden_promotions(
-                    (target_contribution, extra_basis)
+                    duplicate_basis,
+                    material_unknown_refs=(
+                        projection.meaning_field.material_unknown_refs
+                    ),
                 ),
             ),
             "subjective_claim_id",
@@ -3937,7 +4061,7 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
     def test_stage4_microgrammar_inventory_tuple_and_docs_bytes_are_exact(self) -> None:
         self.assertEqual(
             CMEE_STAGE1_MICROGRAMMAR_POLICY_VERSION,
-            "cocolon.emlis.stage1.microgrammar.v1",
+            "cocolon.emlis.stage1.microgrammar.v2",
         )
         self.assertEqual(
             CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_BYTES,
@@ -3945,10 +4069,10 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                 CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE
             ),
         )
-        self.assertEqual(len(CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_BYTES), 9321)
+        self.assertEqual(len(CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_BYTES), 16695)
         self.assertEqual(
             CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_SHA256,
-            "5228a1814d26cbe0a19072804536dea5d7719d0b69a374c8a973f710c3a80459",
+            "dc4e1e5ef8026d5577698f375e305db7886f57096c69e6e6a0b99bfe1f26de8a",
         )
         self.assertEqual(
             hashlib.sha256(
@@ -3957,16 +4081,75 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_SHA256,
         )
         sections = dict(CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE)
+        self.assertEqual(len(CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE), 44)
+        self.assertNotIn("shared_relation_endpoint_heads", sections)
         self.assertEqual(sections["policy_ref"], CMEE_STAGE1_MICROGRAMMAR_POLICY_REF)
         self.assertEqual(len(sections["observation_operator_rows"]), 12)
         self.assertEqual(len(sections["subjective_operator_rows"]), 14)
-        self.assertEqual(len(sections["connective_families"]), 7)
+        self.assertEqual(len(sections["connective_families"]), 9)
+        self.assertEqual(
+            dict(sections["layer2_explicit_nominalizers"])[
+                "PRESENT_DIRECTION:*"
+            ],
+            "という方向",
+        )
+        self.assertEqual(
+            dict(sections["layer2_explicit_nominalizers"])[
+                "PRESENT_DIRECTION:wish"
+            ],
+            "という願い",
+        )
+        self.assertEqual(
+            dict(sections["direction_under_burden_surface"])["predicate"],
+            "続いています",
+        )
+        epistemic_surface = dict(sections["epistemic_burden_surface"])
+        self.assertEqual(epistemic_surface, {"question_link": "という"})
+        self.assertNotIn("context_link", epistemic_surface)
+        self.assertNotIn("における", epistemic_surface.values())
+        quote_policy = dict(sections["quote_policy"])
+        self.assertEqual(quote_policy["l1_max_per_sentence"], 2)
+        self.assertEqual(quote_policy["l2_max_per_sentence"], 1)
+        self.assertEqual(quote_policy["l1_max_graphemes"], 16)
+        self.assertEqual(quote_policy["l2_max_graphemes"], 16)
+        self.assertIs(quote_policy["full_replay"], False)
         self.assertEqual(dict(sections["variant_policy"])["max_candidates"], 2)
         self.assertEqual(dict(sections["variant_policy"])["automatic_retry"], 0)
         self.assertEqual(dict(sections["s9_selection_policy"])["new_generation"], 0)
         self.assertEqual(
             dict(sections["role_anchor_policy"])["over_limit_selection"],
             "semantic_boundary_or_stop",
+        )
+        attention_rows = dict(sections["attention_surface_rows"])
+        attention_predicates = {
+            predicate
+            for variants in attention_rows.values()
+            for _particle, predicate in variants
+        }
+        concern_row = next(
+            row
+            for row in sections["subjective_operator_rows"]
+            if row[:2] == ("FEEL_TOWARD", "CONCERN")
+        )
+        concern_predicates = {token for token in concern_row[3:] if token}
+        self.assertTrue(attention_predicates)
+        self.assertTrue(concern_predicates)
+        self.assertTrue(attention_predicates.isdisjoint(concern_predicates))
+        self.assertTrue(
+            all(
+                len(variants) == 2
+                and len(set(variants)) == 2
+                and all(particle and predicate for particle, predicate in variants)
+                for variants in attention_rows.values()
+            )
+        )
+        self.assertEqual(
+            dict(sections["structural_tokens"])["topic_particle"],
+            "は",
+        )
+        self.assertEqual(
+            dict(sections["structural_tokens"])["separator"],
+            "、",
         )
         stage1_response_module._validate_microgrammar_inventory()
         tampered_role_policy = dict(stage1_response_module._ROLE_ANCHOR_POLICY)
@@ -3994,6 +4177,235 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             recursively_immutable(CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE)
         )
 
+    def test_stage4_registered_source_shape_parsers_are_exact_and_fail_closed(
+        self,
+    ) -> None:
+        def nucleus(
+            *,
+            kind: str,
+            modality: str,
+            attributes: tuple[str, ...] = (),
+        ) -> SimpleNamespace:
+            return SimpleNamespace(
+                kind=kind,
+                semantic_frame=SimpleNamespace(
+                    modality=modality,
+                    attribute_codes=attributes,
+                ),
+            )
+
+        direction = nucleus(kind="wish", modality="wish")
+        burden = nucleus(kind="state", modality="feeling")
+        positive_change = nucleus(
+            kind="state",
+            modality="fact",
+            attributes=("operator:positive_change",),
+        )
+        allow_rows = (
+            (
+                "direct_contrast",
+                lambda value: emlis_v1a_module._cmee_parse_direct_contrast_shape(
+                    direction,
+                    value,
+                ),
+                "続けたいけど不安",
+                (("続けたい", "direction"), ("不安", "burden")),
+            ),
+            (
+                "context_direction_residue",
+                emlis_v1a_module._cmee_parse_context_direction_residue_shape,
+                "仕事のあと、続けたい気持ちと不安が残っている",
+                ("仕事の", "続けたい", "不安"),
+            ),
+            (
+                "open_question",
+                emlis_v1a_module._cmee_parse_open_question_shape,
+                "不安で、どうしたらいいのか考えている",
+                ("不安", "どうしたらいいのか"),
+            ),
+            (
+                "compound_burden",
+                emlis_v1a_module._cmee_parse_compound_burden_shape,
+                "仕事が続いて疲れていて、何も手につかない",
+                ("仕事", "疲れて", "何も手につかない"),
+            ),
+            (
+                "action_change",
+                emlis_v1a_module._cmee_parse_action_change_shape,
+                "疲れたけど散歩したら落ち着いた",
+                ("疲れた", "散歩した", "落ち着いた"),
+            ),
+            (
+                "simple_positive_change",
+                emlis_v1a_module._cmee_parse_simple_change_shape,
+                "散歩して気分が軽かった",
+                ("散歩し", "散歩した", "気分が軽かった"),
+            ),
+            (
+                "body_adjective",
+                stage1_response_module._source_body_burden_parts,
+                "体がだるい",
+                ("body_adjective", "体", "だるい"),
+            ),
+            (
+                "body_weight",
+                stage1_response_module._source_body_burden_parts,
+                "体が重く感じる",
+                ("body_weight", "体", "重く感じる"),
+            ),
+            (
+                "context_de_epistemic_burden",
+                stage1_response_module._source_context_de_epistemic_burden_parts,
+                "この職場でやっていけるか不安",
+                ("この職場でやっていけるか", "不安"),
+            ),
+            (
+                "bounded_self_denial",
+                stage1_response_module._source_bounded_self_denial_parts,
+                "自分が悪いから、助けを求めてはいけない",
+                ("自分が悪いから", "助けを求めてはいけない"),
+            ),
+        )
+        for name, parser, value, expected in allow_rows:
+            with self.subTest(registered_shape=name, disposition="allow"):
+                self.assertEqual(parser(value), expected)
+
+        near_miss_rows = (
+            (
+                "direct_contrast",
+                lambda value: emlis_v1a_module._cmee_parse_direct_contrast_shape(
+                    direction,
+                    value,
+                ),
+                "続けたいけど晴れている",
+            ),
+            (
+                "context_direction_residue",
+                emlis_v1a_module._cmee_parse_context_direction_residue_shape,
+                "仕事のあと、続けたい気持ちと不安が消えている",
+            ),
+            (
+                "open_question",
+                emlis_v1a_module._cmee_parse_open_question_shape,
+                "不安で、どうしたらいいか考えている",
+            ),
+            (
+                "compound_burden",
+                emlis_v1a_module._cmee_parse_compound_burden_shape,
+                "仕事が続いて笑っていて、元気",
+            ),
+            (
+                "action_change",
+                emlis_v1a_module._cmee_parse_action_change_shape,
+                "疲れたけど散歩なら落ち着いた",
+            ),
+            (
+                "simple_positive_change",
+                emlis_v1a_module._cmee_parse_simple_change_shape,
+                "散歩したくて気分が軽かった",
+            ),
+            (
+                "body_burden",
+                stage1_response_module._source_body_burden_parts,
+                "体がだるかった",
+            ),
+            (
+                "context_de_epistemic_burden",
+                stage1_response_module._source_context_de_epistemic_burden_parts,
+                "この職場でやっていけるか迷う",
+            ),
+            (
+                "bounded_self_denial",
+                stage1_response_module._source_bounded_self_denial_parts,
+                "自分が悪いので、助けを求めてはいけない",
+            ),
+        )
+        for name, parser, value in near_miss_rows:
+            with self.subTest(registered_shape=name, disposition="near_miss"):
+                self.assertIsNone(parser(value))
+
+        malformed_rows = (
+            (
+                "conditional_nara",
+                positive_change,
+                "疲れたけど散歩なら落ち着いた",
+            ),
+            (
+                "hypothetical_result",
+                positive_change,
+                "疲れたけど散歩したら落ち着くかもしれない",
+            ),
+            (
+                "typed_other_missing",
+                direction,
+                "続けたいけど晴れている",
+            ),
+            (
+                "compound_burden_role_missing",
+                burden,
+                "仕事が続いて笑っていて、元気",
+            ),
+            (
+                "ambiguous_te_inflection",
+                positive_change,
+                "散歩したくて気分が軽かった",
+            ),
+        )
+        for name, typed_nucleus, value in malformed_rows:
+            with self.subTest(source_shape=name):
+                with self.assertRaisesRegex(
+                    CMEEVerticalError,
+                    "stage1_source_shape_malformed",
+                ):
+                    emlis_v1a_module._cmee_validate_typed_source_shape(
+                        typed_nucleus,
+                        value,
+                    )
+
+        with self.assertRaisesRegex(
+            CMEEVerticalError,
+            "stage1_source_shape_ambiguous",
+        ):
+            emlis_v1a_module._cmee_validate_typed_source_shape(
+                positive_change,
+                "疲れたけど散歩したら落ち着いて良かった",
+            )
+
+        valid_fragment_anchor = "前と後"
+        self.assertEqual(
+            emlis_v1a_module._cmee_valid_source_fragment_rows(
+                valid_fragment_anchor,
+                (("前", 0, 1), ("後", 2, 3)),
+            ),
+            ("前", "後"),
+        )
+        too_long = "あ" * (emlis_v1a_module._CMEE_SOURCE_FRAGMENT_MAX + 1)
+        rejected_fragment_rows = (
+            (
+                "duplicate",
+                "疲れ疲れ",
+                (("疲れ", 0, 2), ("疲れ", 2, 4)),
+            ),
+            (
+                "source_order",
+                "前と後",
+                (("後", 2, 3), ("前", 0, 1)),
+            ),
+            (
+                "over_limit",
+                too_long,
+                ((too_long, 0, len(too_long)),),
+            ),
+        )
+        for name, anchor, rows in rejected_fragment_rows:
+            with self.subTest(source_fragment=name):
+                self.assertIsNone(
+                    emlis_v1a_module._cmee_valid_source_fragment_rows(
+                        anchor,
+                        rows,
+                    )
+                )
+
     def test_stage4_exact8_candidate_sets_are_deterministic_same_projection_max2(self) -> None:
         for index, (case_id, _memo, _category, _emotion, _strength) in enumerate(
             EXACT8
@@ -4013,7 +4425,7 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                 self.assertEqual(len(first.candidates), 2)
                 self.assertEqual(
                     tuple(candidate[0].composition_variant_id for candidate in first.candidates),
-                    ("01-primary.v1", "02-alternate.v1"),
+                    ("01-primary.v2", "02-alternate.v2"),
                 )
                 expected_count = len(projection.ordered_observation_refs) + len(
                     projection.ordered_subjective_refs
@@ -4034,7 +4446,18 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                     grounded_graph=graph,
                     parent_plan=parent,
                 )
-                self.assertEqual(selected[0].composition_variant_id, "01-primary.v1")
+                self.assertEqual(selected[0].composition_variant_id, "01-primary.v2")
+                layer2 = tuple(unit for unit in selected if unit.layer == "LAYER_2")
+                self.assertTrue(layer2)
+                self.assertIn(
+                    "reference_mode:anaphoric_first",
+                    layer2[0].clause_frames[0].qualifier_refs,
+                )
+                for later in layer2[1:]:
+                    self.assertIn(
+                        "reference_mode:anaphoric_first",
+                        later.clause_frames[0].qualifier_refs,
+                    )
 
     def test_stage4_utterance_state_exact14_typed_atomic_transition(self) -> None:
         _source, _plan, _graph, _parent, projection, candidate_set = (
@@ -4043,7 +4466,7 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
         candidate = candidate_set.candidates[0]
         state = initialize_emlis_utterance_state(
             projection,
-            composition_variant_id="01-primary.v1",
+            composition_variant_id="01-primary.v2",
         )
         self.assertEqual(
             tuple(row.name for row in fields(EmlisUtteranceState)),
@@ -4264,7 +4687,7 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                 grounded_graph=graph,
                 parent_plan=parent,
             )
-            self.assertEqual(selected[0].composition_variant_id, "02-alternate.v1")
+            self.assertEqual(selected[0].composition_variant_id, "02-alternate.v2")
             self.assertEqual(realizer.call_count, 0)
             self.assertEqual(composer.call_count, 0)
             self.assertEqual(observation_shape.call_count, 0)
@@ -4344,7 +4767,7 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             grounded_graph=graph,
             parent_plan=parent,
         )
-        self.assertEqual(selected[0].composition_variant_id, "02-alternate.v1")
+        self.assertEqual(selected[0].composition_variant_id, "02-alternate.v2")
 
     def test_stage4_projection_defect_stops_before_any_surface_generation(self) -> None:
         _source, _plan, graph, parent, projection, _candidate_set = (
@@ -4374,7 +4797,7 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
         candidate = candidate_set.candidates[0]
         state = initialize_emlis_utterance_state(
             projection,
-            composition_variant_id="01-primary.v1",
+            composition_variant_id="01-primary.v2",
         )
         state = stage1_response_module._accept_sentence(
             state, candidate[0], projection
@@ -4449,7 +4872,7 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             grounded_graph=graph,
             parent_plan=parent,
         )
-        self.assertEqual(selected[0].composition_variant_id, "02-alternate.v1")
+        self.assertEqual(selected[0].composition_variant_id, "02-alternate.v2")
 
     def test_stage4_state_phase_foreign_unit_stop_and_suppression_fail_closed(self) -> None:
         _source, _plan, _graph, _parent, projection, candidate_set = (
@@ -4457,7 +4880,7 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
         )
         initial = initialize_emlis_utterance_state(
             projection,
-            composition_variant_id="01-primary.v1",
+            composition_variant_id="01-primary.v2",
         )
         with self.assertRaisesRegex(
             CMEEStage1ContractError,
@@ -4509,7 +4932,7 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
         )
         duplicate_state = initialize_emlis_utterance_state(
             projection_with_duplicate,
-            composition_variant_id="01-primary.v1",
+            composition_variant_id="01-primary.v2",
         )
         advanced = stage1_response_module._accept_sentence(
             duplicate_state,
@@ -4522,8 +4945,14 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
         )
 
     def test_stage4_bounded_role_anchor_counter_and_connective_collision(self) -> None:
+        multipart_fragment_sets: dict[str, set[str]] = {}
+        inventory = dict(CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE)
+        quote_policy = dict(inventory["quote_policy"])
+        structural_tokens = dict(inventory["structural_tokens"])
+        quote_open = structural_tokens["quote_open"]
+        quote_close = structural_tokens["quote_close"]
+        forgery_seed = None
         for index in range(len(EXACT8)):
-            case_id, memo, _category, _emotion, _strength = EXACT8[index]
             _source, _plan, graph, _parent, _projection, candidate_set = (
                 _stage4_exact8_fixture(index)
             )
@@ -4533,16 +4962,105 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             }
             self.assertTrue(
                 all(
-                    len(row.value) <= 16
+                    len(row.value) <= 32
                     for row in graph.nodes
                     if row.grounding_kind in {"explicit", "user_stated_relation"}
                 )
             )
             for candidate in candidate_set.candidates:
                 for unit in candidate:
+                    openings = tuple(
+                        sorted(
+                            (
+                                row
+                                for row in unit.realized_semantic_bindings
+                                if row.clause_slot.endswith(":quote_open")
+                            ),
+                            key=lambda row: (
+                                row.surface_scalar_start,
+                                row.surface_scalar_end,
+                            ),
+                        )
+                    )
+                    closings = tuple(
+                        sorted(
+                            (
+                                row
+                                for row in unit.realized_semantic_bindings
+                                if row.clause_slot.endswith(":quote_close")
+                            ),
+                            key=lambda row: (
+                                row.surface_scalar_start,
+                                row.surface_scalar_end,
+                            ),
+                        )
+                    )
+                    self.assertEqual(len(openings), len(closings))
+                    self.assertEqual(unit.text.count(quote_open), len(openings))
+                    self.assertEqual(unit.text.count(quote_close), len(closings))
+                    layer_key = "l1" if unit.layer == "LAYER_1" else "l2"
+                    max_pairs = int(quote_policy[f"{layer_key}_max_per_sentence"])
+                    max_graphemes = int(quote_policy[f"{layer_key}_max_graphemes"])
+                    self.assertLessEqual(len(openings), max_pairs)
+                    previous_close_end = 0
+                    for opening, closing in zip(openings, closings, strict=True):
+                        self.assertEqual(opening.semantic_ref, closing.semantic_ref)
+                        self.assertGreaterEqual(
+                            opening.surface_scalar_start,
+                            previous_close_end,
+                        )
+                        self.assertLessEqual(
+                            opening.surface_scalar_end,
+                            closing.surface_scalar_start,
+                        )
+                        self.assertEqual(
+                            unit.text[
+                                opening.surface_scalar_start :
+                                opening.surface_scalar_end
+                            ],
+                            quote_open,
+                        )
+                        self.assertEqual(
+                            unit.text[
+                                closing.surface_scalar_start :
+                                closing.surface_scalar_end
+                            ],
+                            quote_close,
+                        )
+                        anchor = unit.text[
+                            opening.surface_scalar_end :
+                            closing.surface_scalar_start
+                        ]
+                        self.assertTrue(anchor)
+                        self.assertLessEqual(
+                            len(stage1_response_module._grapheme_clusters(anchor)),
+                            max_graphemes,
+                        )
+                        self.assertIn(opening.semantic_ref, node_values)
+                        self.assertIn(anchor, node_values[opening.semantic_ref])
+                        self.assertTrue(
+                            any(
+                                row.semantic_ref == opening.semantic_ref
+                                and row.surface_scalar_start
+                                == opening.surface_scalar_end
+                                and row.surface_scalar_end
+                                == closing.surface_scalar_start
+                                for row in unit.realized_semantic_bindings
+                            )
+                        )
+                        previous_close_end = closing.surface_scalar_end
+                    if (
+                        forgery_seed is None
+                        and unit.layer == "LAYER_1"
+                        and openings
+                    ):
+                        forgery_seed = (unit, graph, openings[0], closings[0])
+
                     for binding in unit.realized_semantic_bindings:
-                        if not (
-                            binding.clause_slot.endswith(":object")
+                        if binding.clause_slot.endswith(
+                            (":quote_open", ":quote_close")
+                        ) or not (
+                            binding.clause_slot.endswith((":object", ":anchor"))
                             or ":argument:" in binding.clause_slot
                         ):
                             continue
@@ -4550,34 +5068,193 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                             binding.surface_scalar_start : binding.surface_scalar_end
                         ]
                         self.assertLessEqual(len(span), 16)
-                        self.assertEqual(span, node_values[binding.semantic_ref])
+                        source_value = node_values[binding.semantic_ref]
+                        self.assertIn(span, source_value)
+                        if len(source_value) > 16:
+                            multipart_fragment_sets.setdefault(
+                                binding.semantic_ref,
+                                set(),
+                            ).add(span)
 
-            compact_source = re.sub(r"\s+", "", memo).strip("、。！？!?「」『』 ")
-            admitted_values = tuple(
-                row.value
-                for row in graph.nodes
-                if row.grounding_kind in {"explicit", "user_stated_relation"}
+        self.assertIsNotNone(forgery_seed)
+        assert forgery_seed is not None
+        seed_unit, seed_graph, seed_opening, seed_closing = forgery_seed
+        seed_anchor = seed_unit.text[
+            seed_opening.surface_scalar_end : seed_closing.surface_scalar_start
+        ]
+        forged_parts = tuple(
+            part
+            for pair_index in range(3)
+            for part in (
+                stage1_response_module._part(
+                    quote_open,
+                    seed_opening.semantic_ref,
+                    f"forged:{pair_index}:quote_open",
+                ),
+                stage1_response_module._part(
+                    seed_anchor,
+                    seed_opening.semantic_ref,
+                    f"forged:{pair_index}:anchor",
+                ),
+                stage1_response_module._part(
+                    quote_close,
+                    seed_opening.semantic_ref,
+                    f"forged:{pair_index}:quote_close",
+                ),
             )
-            if case_id == "SX-05":
-                self.assertTrue(
-                    any(
-                        value in compact_source
-                        and re.search(r"(?:られなく|れなく|できなく|動けなく)", value)
-                        for value in admitted_values
-                    ),
-                    "negative/inability source anchor was lost at the semantic boundary",
+        )
+        forged_text, forged_bindings = stage1_response_module._surface_parts(
+            forged_parts
+        )
+        forged_unit = replace(
+            seed_unit,
+            text=forged_text,
+            realized_semantic_bindings=forged_bindings,
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_realization_quote_policy_invalid",
+        ):
+            stage1_response_module._validate_quote_policy(
+                forged_unit,
+                seed_graph,
+            )
+
+        self.assertTrue(multipart_fragment_sets)
+        self.assertTrue(
+            all(len(spans) >= 2 for spans in multipart_fragment_sets.values())
+        )
+
+        # Quotation is a source citation, not a paraphrase wrapper.  Exercise
+        # unrelated typed shapes so this remains a source-bound invariant and
+        # not an exact8 expected-text oracle.
+        quoted_shape_count = 0
+        for index, memo in enumerate(
+            (
+                "仕事が重く感じる。",
+                "体がだるい。",
+                "仕事が続いて疲れていて、朝から何も手につかない。",
+                "私は散歩したいと言っている。",
+                "今日は仕事で疲れたけど、帰ってから少し散歩したら落ち着いた。",
+                "環境を変えたいけど変えられなくて疲れた。",
+                "不安。でも、続けたい。",
+            ),
+            start=1,
+        ):
+            with self.subTest(source_quote_shape=index):
+                outcome = MeaningExperienceEngine().generate(
+                    _request(
+                        record_id=f"stage4-source-quote-{index}",
+                        memo=memo,
+                    )
                 )
-            if case_id == "SX-08":
+                self.assertEqual(
+                    outcome.status.value,
+                    "GENERATED",
+                    outcome.reason_codes,
+                )
+                assert outcome.artifact is not None
+                compact_source = re.sub(r"\s+", "", memo)
+                quoted = tuple(
+                    re.sub(r"\s+", "", row)
+                    for row in re.findall(r"「([^」]+)」", outcome.artifact.text)
+                )
+                self.assertTrue(quoted)
+                quoted_shape_count += len(quoted)
+                self.assertTrue(
+                    all(row in compact_source for row in quoted),
+                    "quoted text must be a contiguous source substring",
+                )
+        self.assertGreaterEqual(quoted_shape_count, 7)
+
+        # A bounded interrogative burden keeps the complete source predicate,
+        # including the proposition before か.  It must not collapse to a
+        # terminal noun/right-edge window or introduce a synonym.
+        for index, memo in enumerate(
+            (
+                "うまく進められるか不安。",
+                "仕事を続けられるか心配。",
+            ),
+            start=1,
+        ):
+            with self.subTest(bounded_epistemic_predicate=index):
+                _source, grounded_plan, _graph, _parent = _stage2_inputs(
+                    _request(
+                        record_id=f"stage4-epistemic-predicate-{index}",
+                        memo=memo,
+                    )
+                )
+                nucleus = next(
+                    row
+                    for row in grounded_plan.nuclei
+                    if row.retention == "required"
+                    and row.source_fields == ("memo",)
+                )
+                compact_source = memo.strip("、。！？!?「」『』 ")
+                bounded = emlis_v1a_module._cmee_frozen_lexical_role_surface(
+                    nucleus,
+                    compact_source,
+                )
+                self.assertEqual(bounded, compact_source)
+                self.assertRegex(bounded, r"か(?:不安|心配)$")
+                self.assertGreater(len(bounded), len("心配"))
+
+        for label, memo, source_shape in (
+            (
+                "inability",
+                "環境を変えたいけど変えられなくて疲れた。",
+                r"(?:られなく|れなく|できなく|動けなく)",
+            ),
+            (
+                "conditional-action-change",
+                "仕事で疲れたけど、帰ってから少し散歩したら落ち着いた。",
+                r"(?:たら|だら|なら).+",
+            ),
+        ):
+            with self.subTest(common_cause_source_shape=label):
+                _source, _grounded_plan, shape_graph, _parent = _stage2_inputs(
+                    _request(
+                        record_id=f"stage4-source-shape-{label}",
+                        memo=memo,
+                    )
+                )
+                compact_source = re.sub(r"\s+", "", memo).strip(
+                    "、。！？!?「」『』 "
+                )
+                admitted_values = tuple(
+                    row.value
+                    for row in shape_graph.nodes
+                    if row.grounding_kind
+                    in {"explicit", "user_stated_relation"}
+                )
                 self.assertTrue(
                     any(
                         value in compact_source
-                        and re.search(r"(?:たら|だら|なら).+", value)
+                        and re.search(source_shape, value)
                         for value in admitted_values
                     ),
-                    "conditional action/change source anchor was lost at the semantic boundary",
+                    "source shape was lost at the semantic boundary",
                 )
 
-        over_limit_node = replace(graph.nodes[0], value="あ" * 17)
+        l1_over_limit_node = replace(graph.nodes[0], value="あ" * 17)
+        l1_over_limit_graph = replace(
+            graph,
+            nodes=(l1_over_limit_node, *graph.nodes[1:]),
+        )
+        l1_over_limit_ref = (
+            f"node:{l1_over_limit_node.node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_surface_binding_unavailable",
+        ):
+            stage1_response_module._source_bound_role_surface(
+                l1_over_limit_ref,
+                l1_over_limit_graph,
+                layer="LAYER_1",
+            )
+
+        over_limit_node = replace(graph.nodes[0], value="あ" * 33)
         over_limit_graph = replace(
             graph,
             nodes=(over_limit_node, *graph.nodes[1:]),
@@ -4629,6 +5306,186 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
         self.assertEqual(len(counter_units), 1)
         self.assertEqual(counter_units[0].clause_frames[0].speaker_marker, "EMLIS")
 
+        # Head and connective selection belongs to the semantic claim role.
+        # Scan the denominator by operator/stance/source shape rather than by
+        # case ID or expected full sentence.
+        inventory = dict(CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE)
+        connective_tokens = dict(inventory["connective_families"])
+        operator_connectives = {
+            (layer, operator): family
+            for layer, operator, family in inventory["operator_connective_rows"]
+        }
+        basis_connectives = {
+            (operator, detail, relation): family
+            for operator, detail, relation, family in inventory[
+                "subjective_basis_connective_rows"
+            ]
+        }
+        attention_predicates = {
+            predicate
+            for variants in dict(inventory["attention_surface_rows"]).values()
+            for _particle, predicate in variants
+        }
+        concern_row = next(
+            row
+            for row in inventory["subjective_operator_rows"]
+            if row[:2] == ("FEEL_TOWARD", "CONCERN")
+        )
+        concern_predicates = {token for token in concern_row[3:] if token}
+        special_heads_seen: set[str] = set()
+        for fixture_index in range(len(EXACT8)):
+            (
+                _source,
+                _plan,
+                fixture_graph,
+                _parent,
+                fixture_projection,
+                fixture_candidates,
+            ) = _stage4_exact8_fixture(fixture_index)
+            primary_units = fixture_candidates.candidates[0]
+            contribution_by_id = {
+                row.contribution_id: row
+                for row in fixture_projection.observation_contributions
+            }
+            unit_by_move = {row.move_ref: row for row in primary_units}
+            for layer2_index, claim in enumerate(
+                fixture_projection.subjective_claims
+            ):
+                proposition = claim.asserted_subjective_proposition
+                operator = proposition.subjective_operator.value
+                detail = ""
+                if proposition.subjective_operator is SubjectiveOperator.FEEL_TOWARD:
+                    assert proposition.affect_category is not None
+                    detail = proposition.affect_category.value
+                elif (
+                    proposition.subjective_operator
+                    is SubjectiveOperator.TAKE_RELATIONAL_STANCE
+                ):
+                    assert proposition.stance_operator is not None
+                    detail = proposition.stance_operator.value
+
+                unit = unit_by_move[
+                    stage1_response_module._move_ref(claim.subjective_claim_id)
+                ]
+                frame = unit.clause_frames[0]
+                if layer2_index == 0:
+                    expected_connective = "NONE"
+                else:
+                    expected_connective = operator_connectives[
+                        ("LAYER_2", operator)
+                    ]
+                    overrides = {
+                        basis_connectives[(operator, detail, contribution.relation_operator.value)]
+                        for ref in claim.basis_observation_contribution_refs
+                        if (contribution := contribution_by_id[ref])
+                        and (
+                            operator,
+                            detail,
+                            contribution.relation_operator.value,
+                        )
+                        in basis_connectives
+                    }
+                    self.assertLessEqual(len(overrides), 1)
+                    if overrides:
+                        expected_connective = next(iter(overrides))
+                self.assertEqual(frame.discourse_relation, expected_connective)
+                self.assertEqual(
+                    frame.connective_requirement,
+                    None if expected_connective == "NONE" else expected_connective,
+                )
+                if expected_connective != "NONE":
+                    self.assertTrue(
+                        any(
+                            unit.text.startswith(f"{token}、")
+                            for token in connective_tokens[expected_connective]
+                        )
+                    )
+
+                # The established explicit-speaker prefix owns `Emlisは、`.
+                # Outside that exact prefix, a semantic topic particle and
+                # separator must never be realized adjacently.
+                semantic_body = unit.text
+                if frame.speaker_marker == "EMLIS":
+                    self.assertIn("Emlisは、", semantic_body)
+                    semantic_body = semantic_body.replace("Emlisは、", "", 1)
+                self.assertNotIn("は、", semantic_body)
+
+                object_ref = stage1_response_module._subjective_object_ref(
+                    fixture_projection,
+                    claim,
+                )
+                head = stage1_response_module._anaphoric_surface(
+                    fixture_projection,
+                    object_ref,
+                    fixture_graph,
+                    claim=claim,
+                )
+                role_value = stage1_response_module._source_bound_role_surface(
+                    object_ref,
+                    fixture_graph,
+                    layer=None,
+                )
+                semantic_operator = (
+                    stage1_response_module._semantic_operator_for_object(
+                        fixture_projection,
+                        object_ref,
+                    )
+                )
+                if (
+                    semantic_operator == SemanticOperator.PRESENT_DIRECTION.value
+                    and stage1_response_module._source_open_question_parts(
+                        role_value
+                    )
+                    is not None
+                    and (
+                        proposition.subjective_operator
+                        is SubjectiveOperator.ATTEND_TO
+                        or (
+                            proposition.subjective_operator
+                            is SubjectiveOperator.TAKE_RELATIONAL_STANCE
+                            and proposition.stance_operator is not None
+                            and proposition.stance_operator.value
+                            == "HOLD_UNFINISHED_OPEN"
+                        )
+                    )
+                ):
+                    self.assertEqual(head, "その問い")
+                    self.assertIn(head, unit.text)
+                    special_heads_seen.add(head)
+                contrast = stage1_response_module._source_direct_contrast_roles(
+                    role_value
+                )
+                if (
+                    semantic_operator == SemanticOperator.PRESENT_DIRECTION.value
+                    and contrast is not None
+                    and contrast[1][1] == "hesitation"
+                    and proposition.subjective_operator
+                    is SubjectiveOperator.FEEL_TOWARD
+                    and proposition.affect_category is AffectCategory.CONCERN
+                ):
+                    self.assertEqual(head, "そのためらい")
+                    self.assertIn(head, unit.text)
+                    special_heads_seen.add(head)
+
+                if proposition.subjective_operator is SubjectiveOperator.ATTEND_TO:
+                    self.assertTrue(
+                        any(unit.text.endswith(f"{row}。") for row in attention_predicates)
+                    )
+                    self.assertFalse(
+                        any(unit.text.endswith(f"{row}。") for row in concern_predicates)
+                    )
+                elif (
+                    proposition.subjective_operator is SubjectiveOperator.FEEL_TOWARD
+                    and proposition.affect_category is AffectCategory.CONCERN
+                ):
+                    self.assertTrue(
+                        any(unit.text.endswith(f"{row}。") for row in concern_predicates)
+                    )
+                    self.assertFalse(
+                        any(unit.text.endswith(f"{row}。") for row in attention_predicates)
+                    )
+        self.assertEqual(special_heads_seen, {"その問い", "そのためらい"})
+
         source, grounded_plan, graph, parent = _stage2_inputs(
             _request(
                 record_id="stage4-connective-collision",
@@ -4651,19 +5508,19 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
         with patch.object(
             stage1_response_module,
             "_realize_stage1_variant",
-            side_effect=AssertionError("S9 must not generate after collision"),
+            side_effect=AssertionError("S9 must not generate after composition"),
         ) as realizer:
-            with self.assertRaisesRegex(
-                CMEEStage1ContractError,
-                "stage1_no_hard_valid_realization",
-            ):
-                select_stage1_realization_candidate(
-                    candidate_set,
-                    projection=projection,
-                    grounded_graph=graph,
-                    parent_plan=parent,
-                )
+            selected = select_stage1_realization_candidate(
+                candidate_set,
+                projection=projection,
+                grounded_graph=graph,
+                parent_plan=parent,
+            )
             self.assertEqual(realizer.call_count, 0)
+        selected_text = "\n".join(unit.text for unit in selected)
+        self.assertNotIn("またまた", selected_text)
+        self.assertNotIn("またEmlis", selected_text)
+        self.assertIn("「また疲れている」", selected_text)
 
     def test_stage4_has_no_provider_random_template_or_inventory_bypass(self) -> None:
         source_code = inspect.getsource(stage1_response_module)

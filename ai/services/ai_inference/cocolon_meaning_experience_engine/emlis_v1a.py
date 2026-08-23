@@ -538,6 +538,41 @@ CMEE_FROZEN_ROLE_MAX = int(
         "max_graphemes"
     ]
 )
+_CMEE_SOURCE_SHAPE_RECOGNIZERS = dict(
+    dict(CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE)["source_shape_recognizers"]
+)
+_CMEE_SOURCE_SHAPE_INFLECTIONS = dict(
+    dict(CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE)["source_shape_inflections"]
+)
+_CMEE_SOURCE_FRAGMENT_MAX = int(
+    dict(dict(CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE)["quote_policy"])[
+        "l1_max_graphemes"
+    ]
+)
+_CMEE_DIRECT_CONTRAST_SHAPE_RE = re.compile(
+    _CMEE_SOURCE_SHAPE_RECOGNIZERS["direct_contrast"]
+)
+_CMEE_CONTEXT_DIRECTION_RESIDUE_SHAPE_RE = re.compile(
+    _CMEE_SOURCE_SHAPE_RECOGNIZERS["context_direction_residue"]
+)
+_CMEE_OPEN_QUESTION_SHAPE_RE = re.compile(
+    _CMEE_SOURCE_SHAPE_RECOGNIZERS["open_question"]
+)
+_CMEE_COMPOUND_BURDEN_SHAPE_RE = re.compile(
+    _CMEE_SOURCE_SHAPE_RECOGNIZERS["compound_burden"]
+)
+_CMEE_ACTION_CHANGE_SHAPE_RE = re.compile(
+    _CMEE_SOURCE_SHAPE_RECOGNIZERS["action_change"]
+)
+_CMEE_SIMPLE_CHANGE_SHAPE_RE = re.compile(
+    _CMEE_SOURCE_SHAPE_RECOGNIZERS["simple_positive_change"]
+)
+_CMEE_POSITIVE_DESIRE_SHAPE_RE = re.compile(
+    _CMEE_SOURCE_SHAPE_RECOGNIZERS["positive_desire"]
+)
+_CMEE_HESITATION_SHAPE_RE = re.compile(
+    _CMEE_SOURCE_SHAPE_RECOGNIZERS["hesitation"]
+)
 CMEE_RECEPTION_MATERIAL_MODE = "limited_grounding"
 CMEE_POSITIVE_RECEPTION_ACTS = frozenset(
     {
@@ -1026,6 +1061,300 @@ def _ordered(values: Iterable[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(str(value) for value in values if str(value)))
 
 
+def _cmee_valid_source_fragment_rows(
+    anchor: str,
+    rows: Sequence[tuple[str, int, int]],
+) -> tuple[str, ...] | None:
+    """Prove finite source fragments by their exact, ordered source offsets."""
+
+    if not rows:
+        return None
+    previous_end = 0
+    values: list[str] = []
+    for value, start, end in rows:
+        if (
+            not value
+            or start < previous_end
+            or end <= start
+            or end > len(anchor)
+            or anchor[start:end] != value
+            or len(value) > _CMEE_SOURCE_FRAGMENT_MAX
+            or anchor.find(value) != start
+            or anchor.find(value, start + 1) != -1
+        ):
+            return None
+        values.append(value)
+        previous_end = end
+    if len(set(values)) != len(values):
+        return None
+    return tuple(values)
+
+
+def _cmee_named_source_fragments(
+    anchor: str,
+    match: Any,
+    names: Sequence[str],
+) -> tuple[str, ...] | None:
+    rows: list[tuple[str, int, int]] = []
+    for name in names:
+        start, end = match.span(name)
+        value = str(match.group(name) or "")
+        rows.append((value, start, end))
+    return _cmee_valid_source_fragment_rows(anchor, rows)
+
+
+def _cmee_parse_direct_contrast_shape(
+    nucleus: Any,
+    anchor: str,
+) -> tuple[tuple[str, str], tuple[str, str]] | None:
+    """Classify exactly one source-ordered direction/typed-other contrast."""
+
+    matches = tuple(_CMEE_DIRECT_CONTRAST_SHAPE_RE.finditer(anchor))
+    if len(matches) != 1:
+        return None
+    connector = matches[0]
+    rows = _cmee_valid_source_fragment_rows(
+        anchor,
+        (
+            (anchor[: connector.start()], 0, connector.start()),
+            (anchor[connector.end() :], connector.end(), len(anchor)),
+        ),
+    )
+    if rows is None:
+        return None
+    left, right = rows
+    left_direction = bool(_cmee_semantic_desire(nucleus, left))
+    right_direction = bool(_cmee_semantic_desire(nucleus, right))
+    if left_direction == right_direction:
+        return None
+    other = right if left_direction else left
+    if _CMEE_HESITATION_SHAPE_RE.search(other):
+        other_kind = "hesitation"
+    elif _cmee_has_current_burden(other):
+        other_kind = "burden"
+    else:
+        return None
+    return (
+        (left, "direction" if left_direction else other_kind),
+        (right, "direction" if right_direction else other_kind),
+    )
+
+
+def _cmee_parse_context_direction_residue_shape(
+    anchor: str,
+) -> tuple[str, str, str] | None:
+    match = _CMEE_CONTEXT_DIRECTION_RESIDUE_SHAPE_RE.fullmatch(anchor)
+    if match is None:
+        return None
+    rows = _cmee_named_source_fragments(
+        anchor,
+        match,
+        ("context", "direction", "residue"),
+    )
+    return None if rows is None else (rows[0], rows[1], rows[2])
+
+
+def _cmee_parse_open_question_shape(
+    anchor: str,
+) -> tuple[str, str] | None:
+    match = _CMEE_OPEN_QUESTION_SHAPE_RE.fullmatch(anchor)
+    if match is None:
+        return None
+    rows = _cmee_named_source_fragments(
+        anchor,
+        match,
+        ("burden", "question"),
+    )
+    if rows is None:
+        return None
+    burden, question = rows
+    burden_role = _cmee_bounded_source_burden_role(burden)
+    # The registered surface adds the attributive link owned by the frozen
+    # frame.  Admit only a terminal CJK nominal/na-state cue; arbitrary X+de,
+    # verbal negatives, and adjectival predicates cannot use that link.
+    if (
+        not burden_role
+        or not burden.endswith(burden_role)
+        or not all(0x3400 <= ord(char) <= 0x9FFF for char in burden_role)
+    ):
+        return None
+    return burden, question
+
+
+def _cmee_parse_compound_burden_shape(
+    anchor: str,
+) -> tuple[str, str, str] | None:
+    match = _CMEE_COMPOUND_BURDEN_SHAPE_RE.fullmatch(anchor)
+    if match is None:
+        return None
+    rows = _cmee_named_source_fragments(
+        anchor,
+        match,
+        ("context", "fatigue", "burden"),
+    )
+    if rows is None:
+        return None
+    context, fatigue, burden = rows
+    if not _cmee_has_current_burden(fatigue) or not (
+        _cmee_has_current_burden(burden)
+        or _cmee_bounded_source_burden_role(burden)
+    ):
+        return None
+    return context, fatigue, burden
+
+
+def _cmee_parse_action_change_shape(
+    anchor: str,
+) -> tuple[str, str, str] | None:
+    match = _CMEE_ACTION_CHANGE_SHAPE_RE.fullmatch(anchor)
+    if match is None:
+        return None
+    rows = _cmee_named_source_fragments(
+        anchor,
+        match,
+        ("context", "action", "result"),
+    )
+    if rows is None:
+        return None
+    context, source_action, result = rows
+    inflections = tuple(
+        (
+            key,
+            str(_CMEE_SOURCE_SHAPE_INFLECTIONS[key][0]),
+            str(_CMEE_SOURCE_SHAPE_INFLECTIONS[key][1]),
+        )
+        for key in (
+            "conditional_tara",
+            "conditional_dara",
+            "conditional_nara",
+        )
+        if source_action.endswith(
+            str(_CMEE_SOURCE_SHAPE_INFLECTIONS[key][0])
+        )
+    )
+    if len(inflections) != 1 or inflections[0][0] == "conditional_nara":
+        return None
+    _key, suffix, replacement = inflections[0]
+    stem = source_action[: -len(suffix)]
+    action = stem + replacement
+    if (
+        not stem
+        or source_action != stem + suffix
+        or action != stem + replacement
+        or not COMPLETED_FACTUAL_CHANGE_RESULT_RE.fullmatch(result)
+    ):
+        return None
+    return context, action, result
+
+
+def _cmee_parse_simple_change_shape(
+    anchor: str,
+) -> tuple[str, str, str] | None:
+    match = _CMEE_SIMPLE_CHANGE_SHAPE_RE.fullmatch(anchor)
+    if match is None:
+        return None
+    rows = _cmee_named_source_fragments(
+        anchor,
+        match,
+        ("context", "result"),
+    )
+    if rows is None:
+        return None
+    context, result = rows
+    connector = str(match.group("connector") or "")
+    simple_te = str(_CMEE_SOURCE_SHAPE_INFLECTIONS["simple_te"])
+    simple_de = str(_CMEE_SOURCE_SHAPE_INFLECTIONS["simple_de"])
+    if connector == simple_te:
+        # A generic ku+te split cannot distinguish adjective, negative, or
+        # desiderative morphology.  None of those can be reconstructed as a
+        # past event by appending the registered ta replacement.
+        if not context or ord(context[-1]) == 0x304F:
+            return None
+        replacement = str(
+            _CMEE_SOURCE_SHAPE_INFLECTIONS["conditional_tara"][1]
+        )
+    elif connector == simple_de:
+        # Narrow the voiced class to the unambiguous n+de verb shape.  This
+        # deliberately excludes noun/na-adjective copulas and ambiguous i+de.
+        if not context or ord(context[-1]) != 0x3093:
+            return None
+        replacement = str(
+            _CMEE_SOURCE_SHAPE_INFLECTIONS["conditional_dara"][1]
+        )
+    else:
+        return None
+    reconstructed = context + replacement
+    if not reconstructed or anchor != context + connector + result:
+        return None
+    return context, reconstructed, result
+
+
+def _cmee_validate_typed_source_shape(nucleus: Any, value: str) -> None:
+    """Dispatch finite multipart recognizers exactly once or fail closed."""
+
+    attributes = frozenset(nucleus.semantic_frame.attribute_codes)
+    signatures: list[str] = []
+    parsed: list[str] = []
+
+    if "operator:positive_change" in attributes:
+        for name, pattern, parser in (
+            (
+                "action_change",
+                _CMEE_ACTION_CHANGE_SHAPE_RE,
+                _cmee_parse_action_change_shape,
+            ),
+            (
+                "simple_positive_change",
+                _CMEE_SIMPLE_CHANGE_SHAPE_RE,
+                _cmee_parse_simple_change_shape,
+            ),
+        ):
+            if pattern.fullmatch(value) is not None:
+                signatures.append(name)
+                if parser(value) is not None:
+                    parsed.append(name)
+    else:
+        retained_direction = bool(
+            nucleus.kind == "wish"
+            or nucleus.semantic_frame.modality in {"wish", "intention"}
+            or "semantic_role:retained_intention" in attributes
+        )
+        if retained_direction:
+            for name, pattern, parser in (
+                (
+                    "context_direction_residue",
+                    _CMEE_CONTEXT_DIRECTION_RESIDUE_SHAPE_RE,
+                    _cmee_parse_context_direction_residue_shape,
+                ),
+                (
+                    "open_question",
+                    _CMEE_OPEN_QUESTION_SHAPE_RE,
+                    _cmee_parse_open_question_shape,
+                ),
+            ):
+                if pattern.fullmatch(value) is not None:
+                    signatures.append(name)
+                    if parser(value) is not None:
+                        parsed.append(name)
+
+        if nucleus.kind in {"state", "reaction", "constraint"}:
+            if _CMEE_COMPOUND_BURDEN_SHAPE_RE.fullmatch(value) is not None:
+                signatures.append("compound_burden")
+                if _cmee_parse_compound_burden_shape(value) is not None:
+                    parsed.append("compound_burden")
+
+        direct_matches = tuple(_CMEE_DIRECT_CONTRAST_SHAPE_RE.finditer(value))
+        if direct_matches and _cmee_semantic_desire(nucleus, value):
+            signatures.append("direct_contrast")
+            if _cmee_parse_direct_contrast_shape(nucleus, value) is not None:
+                parsed.append("direct_contrast")
+
+    if len(signatures) > 1 or len(parsed) > 1:
+        raise CMEEVerticalError("stage1_source_shape_ambiguous")
+    if signatures and not parsed:
+        raise CMEEVerticalError("stage1_source_shape_malformed")
+
+
 def _owner_for_source_span(source: AdmittedTextSource, source_span_id: str) -> str:
     try:
         return source.meaning_owner_for_span(source_span_id)
@@ -1127,10 +1456,9 @@ def _cmee_frozen_lexical_role_surface(
     """Freeze one finite source-grounded semantic-role surface.
 
     The only transformations are driven by canonical frame roles.  They
-    preserve the source chunks and admitted connector, or perform the bounded
-    Japanese topic-to-object inflection already used by the legacy semantic
-    desire helper.  No request, fixture, structured optional owner, or output
-    text participates in the decision.
+    preserve exact source chunks and admitted connectors.  No request,
+    fixture, structured optional owner, or output text participates in the
+    decision.
     """
 
     value = re.sub(r"\s+", "", str(source_text or "")).strip(
@@ -1141,6 +1469,7 @@ def _cmee_frozen_lexical_role_surface(
     frame = nucleus.semantic_frame
     attributes = frozenset(frame.attribute_codes)
     contrast = _cmee_exact_contrast_parts(value)
+    _cmee_validate_typed_source_shape(nucleus, value)
 
     # Explicitly negated desire cannot be promoted to a retained direction.
     if (
@@ -1254,6 +1583,13 @@ def _cmee_frozen_lexical_role_surface(
     if "operator:positive_change" in attributes:
         change_parts = _cmee_change_parts(value)
         if change_parts and contrast is not None:
+            current_context = re.sub(r"^今日は?", "", value, count=1)
+            if (
+                current_context
+                and current_context != value
+                and len(current_context) <= CMEE_FROZEN_ROLE_MAX
+            ):
+                return current_context
             before, _action, result = change_parts
             left, separator, right = contrast
             before_result = before + separator + result
@@ -1300,7 +1636,11 @@ def _cmee_frozen_lexical_role_surface(
     # Keep their exact source order and connector; if the full burden clause
     # exceeds the bound, use only a complete source predicate rather than a
     # grapheme window or a newly inflected summary.
-    if contrast is not None and len(value) > CMEE_FROZEN_ROLE_MAX:
+    if (
+        contrast is not None
+        and nucleus.kind != "constraint"
+        and "operator:help_seeking" not in attributes
+    ):
         left, separator, right = contrast
         left_desire = _cmee_semantic_desire(nucleus, left)
         right_desire = _cmee_semantic_desire(nucleus, right)
@@ -1346,8 +1686,24 @@ def _cmee_frozen_lexical_role_surface(
     if (
         nucleus.kind == "wish"
         and "semantic_role:retained_intention" in attributes
-        and len(value) > CMEE_FROZEN_ROLE_MAX
     ):
+        current_context = re.sub(r"^今日は?", "", value, count=1)
+        if (
+            current_context != value
+            and current_context.endswith(("が残っている", "が残っています"))
+            and len(current_context) <= CMEE_FROZEN_ROLE_MAX
+        ):
+            return current_context
+
+        open_question = _cmee_parse_open_question_shape(value)
+        if open_question:
+            # Keep the complete bounded question, including the user's stated
+            # ongoing act of thinking.  Step 4 partitions it into exact role
+            # fragments and finite grammar.
+            if len(value) <= CMEE_FROZEN_ROLE_MAX:
+                return value
+            raise CMEEVerticalError("stage1_source_shape_over_limit")
+
         residue_match = re.search(
             r"(?P<direction>[ぁ-んァ-ン一-龥ー]{1,24}たい)"
             r"(?P<wrapper>気持ち|願い)?(?P<separator>と|や)"
@@ -1384,9 +1740,9 @@ def _cmee_frozen_lexical_role_surface(
             ):
                 return candidate
 
-    # Embedded help seeking: retain every source chunk, but place the limiting
-    # clause before the retained intention so the fixed wish slot stays
-    # grammatical and neither side is lost.
+    # Embedded help seeking keeps source order.  The multipart Stage 1 frame
+    # types its desire and hesitation separately, so no clause reordering is
+    # needed to make a single generic wish slot grammatical.
     if (
         nucleus.kind == "wish"
         and {
@@ -1399,9 +1755,8 @@ def _cmee_frozen_lexical_role_surface(
         left_desire = _cmee_semantic_desire(nucleus, left)
         right_desire = _cmee_semantic_desire(nucleus, right)
         if bool(left_desire) != bool(right_desire):
-            candidate = right + separator + left if left_desire else value
-            if len(candidate) <= CMEE_FROZEN_ROLE_MAX:
-                return candidate
+            if len(value) <= CMEE_FROZEN_ROLE_MAX:
+                return value
 
     # A complete simple intention can use its finite sentence-object
     # inflection.  Compound wishes are deliberately left untouched.
@@ -1410,6 +1765,14 @@ def _cmee_frozen_lexical_role_surface(
         and "semantic_role:retained_intention" in attributes
     ):
         desire = _cmee_semantic_desire(nucleus, value)
+        first_person_pattern = "|".join(
+            re.escape(subject)
+            for subject in sorted(FIRST_PERSON_SUBJECTS, key=len, reverse=True)
+        )
+        plain_first_person = re.fullmatch(
+            rf"(?:{first_person_pattern})は(?P<predicate>.+たい)",
+            desire,
+        )
         reported = GENERIC_EXPERIENCER_REPORTED_DESIRE_RE.search(value)
         first_person_report = bool(
             reported is not None
@@ -1419,13 +1782,19 @@ def _cmee_frozen_lexical_role_surface(
             )
         )
         if desire and (desire == value or first_person_report):
-            candidate = _cmee_sentence_desire_phrase(desire)
+            candidate = (
+                str(plain_first_person.group("predicate") or "")
+                if plain_first_person is not None
+                else _cmee_sentence_desire_phrase(desire)
+                if first_person_report
+                else desire
+            )
             if candidate and len(candidate) <= CMEE_FROZEN_ROLE_MAX:
                 return candidate
 
-    # Constraint: remove only the source's tentative-state shell.  The desire,
-    # exact connector, and complete burden core remain present; the typed
-    # feeling wrapper in Stage 1 carries the removed epistemic shell.
+    # A constraint-side tentative shell is itself source epistemic content.
+    # Preserve the complete bounded role so Stage 1 cannot quote a stronger
+    # burden core while silently dropping the user's tentative framing.
     if (
         nucleus.kind == "constraint"
         and {
@@ -1438,16 +1807,9 @@ def _cmee_frozen_lexical_role_surface(
         left_desire = _cmee_semantic_desire(nucleus, left)
         right_desire = _cmee_semantic_desire(nucleus, right)
         if bool(left_desire) != bool(right_desire):
-            burden = right if left_desire else left
-            core = _cmee_tentative_state_core(burden)
-            if core and _cmee_has_current_burden(core):
-                candidate = (
-                    left + separator + core
-                    if left_desire
-                    else core + separator + right
-                )
-                if len(candidate) <= CMEE_FROZEN_ROLE_MAX:
-                    return candidate
+            if len(value) <= CMEE_FROZEN_ROLE_MAX:
+                return value
+            raise CMEEVerticalError("stage1_source_shape_over_limit")
 
     # A long standalone burden can retain one complete punctuation-delimited
     # source clause or registered burden predicate.  Relation-bearing roles
@@ -1472,6 +1834,16 @@ def _cmee_frozen_lexical_role_surface(
         )
         if candidate and len(candidate) <= CMEE_FROZEN_ROLE_MAX:
             return candidate
+
+    # Registered short burden inflections prevent a complete short evidence
+    # span from being replayed as a quote.  These are bounded Japanese
+    # morphology changes only; actor, polarity, modality, and time scope stay
+    # owned by the canonical semantic frame.
+    if nucleus.kind in {"state", "reaction", "constraint"}:
+        if value in {"疲れているかもしれない", "私は疲れているかもしれない"}:
+            return "疲れている可能性"
+        if value in {"疲れている", "私は疲れている", "疲れた"}:
+            return "疲れ"
 
     return value
 
@@ -2495,16 +2867,14 @@ def _cmee_refusal_state_text(text: str) -> str:
 def _cmee_change_parts(text: str) -> tuple[str, str, str] | None:
     """Return source-stated before/action/result parts without inferring cause."""
 
-    contrast = _cmee_split_contrast(text)
-    if not contrast:
+    compact = re.sub(r"\s+", "", str(text or ""))
+    if compact and ord(compact[-1]) in {0xFF1F, 0x003F, 0xFF01, 0x0021}:
         return None
-    before, after = contrast
-    transition = re.match(r"^(.+?)(?:たら|だら|なら)(.+)$", after)
-    if not transition:
+    value = compact.strip("、。！？!?「」『』 ")
+    parsed = _cmee_parse_action_change_shape(value)
+    if parsed is None:
         return None
-    action_stem = transition.group(1).strip("、。 ")
-    result = transition.group(2).strip("、。 ")
-    action = action_stem + "た" if action_stem.endswith("し") else action_stem
+    before, action, result = parsed
     before = re.sub(r"^今日は", "", before).strip("、。 ")
     return (before, action, result) if before and action and result else None
 
