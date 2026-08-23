@@ -9,15 +9,19 @@ owner.  The complete builder consumes the already-frozen source, grounded
 semantic plan, graph and parent plan.  The smaller builders also support a
 single canonical path through that same frozen source and grounded plan.
 
-Semantic construction never branches on source text or ``MeaningNode.value``.
+Semantic planning never branches on source text or ``MeaningNode.value``.
 The boundary validator replays source admission from the frozen envelope, then
 binds canonical-plan rows to the graph only by owner, kind, endpoint,
-grounding and exact evidence identity.
+grounding and exact evidence identity.  The disabled Step 4 realizer reads a
+bound node value only as that node's frozen lexical role surface; it never uses
+the value to select a predicate, connective, variant, or semantic move.
 """
 
 from dataclasses import dataclass, replace
+from enum import Enum
 import hashlib
 import json
+import unicodedata
 from typing import Any, Iterable, Mapping, Optional, Sequence, Tuple
 
 from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
@@ -53,6 +57,7 @@ from .contracts import (
     CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
     CMEE_STAGE1_VALUE_POLICY_REF,
     CMEEStage1ContractError,
+    ClauseFrame,
     EmlisInterpretationCandidate,
     EmlisMeaningField,
     EmlisStage1Projection,
@@ -71,6 +76,9 @@ from .contracts import (
     ObservationContributionKind,
     ObservationDepthClass,
     PlannedObservationContribution,
+    RealizationCandidateSet,
+    RealizedSemanticBinding,
+    RealizedSentenceUnit,
     RelationOperator,
     RouteBDisposition,
     SemanticOperator,
@@ -87,6 +95,7 @@ from .contracts import (
     stage1_value_principle_ref,
     validate_stage1_identity,
     validate_stage1_projection,
+    validate_stage1_sentence_unit,
 )
 from .source_kernel import (
     AdmittedTextSource,
@@ -102,6 +111,362 @@ LAYER1_OBSERVATION_CONTRIBUTION_CAP = 5
 OBSERVATION_SEMANTIC_KEY_VERSION = (
     "cocolon.cmee.v1a.emlis_stage1.observation_semantic_key.v1"
 )
+
+CMEE_STAGE1_MICROGRAMMAR_POLICY_VERSION = (
+    "cocolon.emlis.stage1.microgrammar.v1"
+)
+
+# Sole finite Step 4 surface owner.  Every non-source Japanese token used by
+# the disabled realizer is present in this immutable tuple.  These are lexical
+# heads and typed slots, never completed sentence templates.
+CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE = (
+    ("policy_id", CMEE_STAGE1_MICROGRAMMAR_POLICY_VERSION),
+    ("policy_ref", CMEE_STAGE1_MICROGRAMMAR_POLICY_REF),
+    (
+        "predicate_families",
+        (
+            (
+                "STATE_RECOGNITION_V1",
+                (
+                    "あります",
+                    "続いています",
+                    "残っています",
+                    "まだ終わっていません",
+                    "かかっています",
+                    "起きています",
+                    "記録されています",
+                    "途中にあります",
+                ),
+            ),
+            ("COEXISTENCE_V1", ("同時にあります", "重なっています")),
+            ("ADMITTED_TENSION_V1", ("並んでいます", "せめぎ合っています")),
+            ("ORDERED_CHANGE_V1", ("変化があります", "変わっています")),
+            ("SOURCE_STATED_CAUSE_V1", ("明示されています",)),
+            (
+                "EMLIS_ATTENTION_APPRAISAL_V1",
+                (
+                    "目が向きます",
+                    "心に残ります",
+                    "大切な動きだと考えます",
+                    "見過ごせないことだと考えます",
+                ),
+            ),
+            (
+                "EMLIS_AFFECT_V1",
+                (
+                    ("CONCERN", "気がかりです"),
+                    ("RELIEF", "ほっとします"),
+                    ("JOY", "うれしく思います"),
+                    ("SADNESS", "悲しく感じます"),
+                    ("RESPECT", "大切に受け取ります"),
+                    ("DISCOMFORT", "違和感があります"),
+                ),
+            ),
+            (
+                "PROTECT_VALUE_BOUNDARY",
+                ("大切にしたいと考えます", "守りたいと考えます"),
+            ),
+            (
+                "TAKE_RELATIONAL_STANCE",
+                (
+                    "そばで受け止めます",
+                    "そのまま受け取ります",
+                    "開いたまま受け取ります",
+                    "結論を急ぎません",
+                    "選ぶ余地を残したいと考えます",
+                    "急いで決めたくありません",
+                    "うれしく受け取ります",
+                    "大切に受け取ります",
+                ),
+            ),
+            (
+                "COUNTER_SPECIFIC_PROMOTION",
+                ("急いで決めつけたくありません", "その決めつけには同意しません"),
+            ),
+        ),
+    ),
+    (
+        "connective_families",
+        (
+            ("NONE", ("",)),
+            ("ADDITIVE", ("そして", "そのうえで")),
+            ("SIMULTANEOUS", ("同時に",)),
+            ("CONTRASTIVE", ("一方で", "それでも")),
+            ("TEMPORAL", ("そのあと", "そこから")),
+            ("CONTINUATIVE", ("また", "そのことに")),
+            ("BOUNDED_CONTRAST", ("ただ",)),
+        ),
+    ),
+    (
+        "operator_connective_rows",
+        (
+            ("LAYER_1", "NO_RELATION_CLAIM", "ADDITIVE"),
+            ("LAYER_1", "COEXISTS_WITH", "SIMULTANEOUS"),
+            ("LAYER_1", "TENSION_WITH", "CONTRASTIVE"),
+            ("LAYER_1", "TEMPORALLY_PRECEDES", "TEMPORAL"),
+            ("LAYER_1", "ACTION_PRECEDES_CHANGE", "TEMPORAL"),
+            ("LAYER_1", "SOURCE_EXPLICIT_CAUSE", "ADDITIVE"),
+            ("LAYER_2", "ATTEND_TO", "CONTINUATIVE"),
+            ("LAYER_2", "FEEL_TOWARD", "CONTINUATIVE"),
+            ("LAYER_2", "APPRAISE_AS_MATERIAL", "CONTINUATIVE"),
+            ("LAYER_2", "PROTECT_VALUE_BOUNDARY", "CONTINUATIVE"),
+            ("LAYER_2", "TAKE_RELATIONAL_STANCE", "CONTINUATIVE"),
+            ("LAYER_2", "COUNTER_SPECIFIC_PROMOTION", "BOUNDED_CONTRAST"),
+        ),
+    ),
+    (
+        "modality_wrappers",
+        (
+            ("fact", ""),
+            ("feeling", "という気持ち"),
+            ("wish", "という願い"),
+            ("intention", "という方向"),
+            ("possibility", "可能性として"),
+            ("uncertain", "まだ決まっていないものとして"),
+            ("refusal", "しない／したくないという境界"),
+        ),
+    ),
+    (
+        "time_wrappers",
+        (
+            ("current_input", "今ここにある"),
+            ("present", "今ここにある"),
+            ("past", "その時にあった"),
+            ("future", "これからに向いた"),
+            ("continuing", "今も続く"),
+            ("past_to_present", "その時から今に残る"),
+            ("present_to_future", "今から先へ向く"),
+        ),
+    ),
+    (
+        "observation_operator_rows",
+        (
+            ("PRESENT_STATE", "NO_RELATION_CLAIM", "STATE_RECOGNITION_V1", "あります", "続いています", "continuing_only"),
+            ("PRESENT_DIRECTION", "NO_RELATION_CLAIM", "STATE_RECOGNITION_V1", "あります", "続いています", "continuing_only"),
+            ("PRESENT_BURDEN", "NO_RELATION_CLAIM", "STATE_RECOGNITION_V1", "かかっています", "", "never"),
+            ("PRESENT_CHANGE", "NO_RELATION_CLAIM", "STATE_RECOGNITION_V1", "あります", "起きています", "always"),
+            ("PRESENT_ACTUAL_OUTPUT", "NO_RELATION_CLAIM", "STATE_RECOGNITION_V1", "起きています", "記録されています", "always"),
+            ("PRESENT_RESIDUE", "NO_RELATION_CLAIM", "STATE_RECOGNITION_V1", "残っています", "続いています", "always"),
+            ("PRESENT_UNFINISHED", "NO_RELATION_CLAIM", "STATE_RECOGNITION_V1", "まだ終わっていません", "途中にあります", "always"),
+            ("SYNTHESIZE_RELATION", "COEXISTS_WITH", "COEXISTENCE_V1", "同時にあります", "重なっています", "always"),
+            ("SYNTHESIZE_RELATION", "TENSION_WITH", "ADMITTED_TENSION_V1", "せめぎ合っています", "並んでいます", "always"),
+            ("PRESENT_RESIDUE", "TEMPORALLY_PRECEDES", "STATE_RECOGNITION_V1", "残っています", "続いています", "always"),
+            ("PRESENT_CHANGE", "ACTION_PRECEDES_CHANGE", "ORDERED_CHANGE_V1", "変化があります", "変わっています", "always"),
+            ("SYNTHESIZE_RELATION", "SOURCE_EXPLICIT_CAUSE", "SOURCE_STATED_CAUSE_V1", "明示されています", "", "never"),
+        ),
+    ),
+    (
+        "subjective_operator_rows",
+        (
+            ("ATTEND_TO", "", "EMLIS_ATTENTION_APPRAISAL_V1", "目が向きます", "心に残ります"),
+            ("FEEL_TOWARD", "CONCERN", "EMLIS_AFFECT_V1", "気がかりです", ""),
+            ("FEEL_TOWARD", "RELIEF", "EMLIS_AFFECT_V1", "ほっとします", ""),
+            ("FEEL_TOWARD", "JOY", "EMLIS_AFFECT_V1", "うれしく思います", ""),
+            ("FEEL_TOWARD", "SADNESS", "EMLIS_AFFECT_V1", "悲しく感じます", ""),
+            ("FEEL_TOWARD", "RESPECT", "EMLIS_AFFECT_V1", "大切に受け取ります", ""),
+            ("FEEL_TOWARD", "DISCOMFORT", "EMLIS_AFFECT_V1", "違和感があります", ""),
+            ("APPRAISE_AS_MATERIAL", "", "EMLIS_ATTENTION_APPRAISAL_V1", "大切な動きだと考えます", "見過ごせないことだと考えます"),
+            ("PROTECT_VALUE_BOUNDARY", "", "PROTECT_VALUE_BOUNDARY", "大切にしたいと考えます", "守りたいと考えます"),
+            ("TAKE_RELATIONAL_STANCE", "STAY_WITH_SPECIFIC_OBJECT", "TAKE_RELATIONAL_STANCE", "そばで受け止めます", "そのまま受け取ります"),
+            ("TAKE_RELATIONAL_STANCE", "HOLD_UNFINISHED_OPEN", "TAKE_RELATIONAL_STANCE", "開いたまま受け取ります", "結論を急ぎません"),
+            ("TAKE_RELATIONAL_STANCE", "PROTECT_USER_AGENCY", "TAKE_RELATIONAL_STANCE", "選ぶ余地を残したいと考えます", "急いで決めたくありません"),
+            ("TAKE_RELATIONAL_STANCE", "WELCOME_BOUNDED_CHANGE", "TAKE_RELATIONAL_STANCE", "うれしく受け取ります", "大切に受け取ります"),
+            ("COUNTER_SPECIFIC_PROMOTION", "", "COUNTER_SPECIFIC_PROMOTION", "急いで決めつけたくありません", "その決めつけには同意しません"),
+        ),
+    ),
+    (
+        "layer1_direct_slots",
+        (
+            ("PRESENT_STATE", "という状態が"),
+            ("PRESENT_DIRECTION", "という方向が"),
+            ("PRESENT_BURDEN", "という負荷が"),
+            ("PRESENT_CHANGE", "という変化が"),
+            ("PRESENT_ACTUAL_OUTPUT", "という出来事が"),
+            ("PRESENT_UNFINISHED", "ということが"),
+        ),
+    ),
+    (
+        "layer1_relation_slots",
+        (
+            ("COEXISTS_WITH", (("LEFT", "", "と"), ("RIGHT", "", "が"))),
+            ("TENSION_WITH", (("LEFT", "", "と"), ("RIGHT", "", "が"))),
+            ("TEMPORALLY_PRECEDES", (("BEFORE", "", "のあとに"), ("AFTER", "", "が"))),
+            ("ACTION_PRECEDES_CHANGE", (("ACTION", "", "のあとに"), ("CHANGE", "", "という"))),
+            ("SOURCE_EXPLICIT_CAUSE", (("CAUSE", "", "が"), ("EFFECT", "", "の理由だと"))),
+        ),
+    ),
+    (
+        "layer2_case_particles",
+        (
+            ("ATTEND_TO", "に"),
+            ("FEEL_TOWARD", "について"),
+            ("APPRAISE_AS_MATERIAL", "を"),
+            ("PROTECT_VALUE_BOUNDARY", "を"),
+            ("TAKE_RELATIONAL_STANCE:STAY_WITH_SPECIFIC_OBJECT", "を"),
+            ("TAKE_RELATIONAL_STANCE:HOLD_UNFINISHED_OPEN", "を"),
+            ("TAKE_RELATIONAL_STANCE:PROTECT_USER_AGENCY", "について"),
+            ("TAKE_RELATIONAL_STANCE:WELCOME_BOUNDED_CHANGE", "を"),
+            ("COUNTER_SPECIFIC_PROMOTION", "について"),
+        ),
+    ),
+    (
+        "structural_tokens",
+        (
+            ("speaker", "Emlis"),
+            ("topic_particle", "は"),
+            ("terminal", "。"),
+        ),
+    ),
+    (
+        "topic_speaker_policy",
+        (
+            ("source_actor_experiencer", "explicit_only_when_ambiguous"),
+            (
+                "layer2_explicit_speaker_placement",
+                "first_move_and_each_counterposition",
+            ),
+            ("later_zero_subject", "unique_resolution_only"),
+            ("wrapper_placement", "time_after_topic_then_modality_before_predicate"),
+            ("inflection_order", "polarity_then_modality_then_time_scope"),
+        ),
+    ),
+    (
+        "reference_mode_policy",
+        (
+            ("anaphoric_first", "unique_prior_object_required"),
+            ("short_anchor_if_ambiguous", "source_bound_anchor_exact0_or1"),
+            ("explicit_emlis_counterposition", "source_bound_target_exact1"),
+        ),
+    ),
+    (
+        "role_anchor_policy",
+        (
+            ("max_graphemes", 16),
+            ("over_limit_selection", "rightmost_grapheme_window"),
+            ("inserted_token_count", 0),
+            ("full_value_replay_over_limit", False),
+        ),
+    ),
+    (
+        "quote_policy",
+        (
+            ("l1_max_graphemes", 16),
+            ("l1_max_per_sentence", 1),
+            ("l2_max_graphemes", 16),
+            ("l2_max_per_sentence", 1),
+            ("full_replay", False),
+        ),
+    ),
+    (
+        "semantic_role_surface_policy",
+        (
+            ("per_required_argument_role", 1),
+            ("binary_relation_role_surface", 2),
+            ("actor_experiencer_addressee_separated", True),
+            ("new_meaning_allowed", False),
+        ),
+    ),
+    (
+        "clause_policy",
+        (
+            ("one_move_one_sentence", True),
+            ("same_observation_argument_join", True),
+            ("multiple_subjective_claim_join", False),
+            ("unknown_join", False),
+        ),
+    ),
+    (
+        "move_ref_policy",
+        (
+            ("format", "move:{basis_anchor_ref}@cocolon.emlis.stage1.microgrammar.v1"),
+            ("basis_anchor_count", 1),
+            ("unit_frame_move_ref_exact", True),
+        ),
+    ),
+    (
+        "polarity_policy",
+        (
+            ("positive", "affirmative_polite_predicate"),
+            ("negative", "source_anchor_preserved_no_predicate_inversion"),
+            ("mixed", "argument_slots_preserved_separately"),
+            ("neutral", "no_evaluative_morpheme_added"),
+        ),
+    ),
+    (
+        "variant_policy",
+        (
+            ("primary_variant_id", "01-primary.v1"),
+            ("alternate_variant_id", "02-alternate.v1"),
+            ("max_candidates", 2),
+            ("first_predicate_alternate_only", True),
+            ("connective_alternate_only_without_predicate_alternate", True),
+            ("multiple_slot_replacement", False),
+            ("automatic_retry", 0),
+            ("post_defect_generation", 0),
+        ),
+    ),
+    (
+        "s9_selection_policy",
+        (
+            ("hard_valid_only", True),
+            ("required_full_coverage", True),
+            ("normalized_exact_repetition", 0),
+            ("unresolved_zero_subject", 0),
+            ("connective_collision", 0),
+            ("tie_break", "composition_variant_id_lexical_ascending"),
+            ("new_recomposition", 0),
+            ("new_generation", 0),
+        ),
+    ),
+)
+CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_BYTES = stage1_canonical_json_bytes(
+    CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE
+)
+CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_SHA256 = hashlib.sha256(
+    CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_BYTES
+).hexdigest()
+
+_MICROGRAMMAR_SECTIONS = dict(CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE)
+_OBSERVATION_PREDICATE_ROWS = {
+    (operator, relation): (primary, alternate, condition)
+    for operator, relation, _family, primary, alternate, condition
+    in _MICROGRAMMAR_SECTIONS["observation_operator_rows"]
+}
+_OBSERVATION_PREDICATE_FAMILIES = {
+    (operator, relation): family
+    for operator, relation, family, _primary, _alternate, _condition
+    in _MICROGRAMMAR_SECTIONS["observation_operator_rows"]
+}
+_SUBJECTIVE_PREDICATE_ROWS = {
+    (operator, detail): (primary, alternate)
+    for operator, detail, _family, primary, alternate
+    in _MICROGRAMMAR_SECTIONS["subjective_operator_rows"]
+}
+_SUBJECTIVE_PREDICATE_FAMILIES = {
+    (operator, detail): family
+    for operator, detail, family, _primary, _alternate
+    in _MICROGRAMMAR_SECTIONS["subjective_operator_rows"]
+}
+_CONNECTIVE_FAMILIES = dict(_MICROGRAMMAR_SECTIONS["connective_families"])
+_OPERATOR_CONNECTIVES = {
+    (layer, operator): family
+    for layer, operator, family in _MICROGRAMMAR_SECTIONS[
+        "operator_connective_rows"
+    ]
+}
+_MODALITY_WRAPPERS = dict(_MICROGRAMMAR_SECTIONS["modality_wrappers"])
+_TIME_WRAPPERS = dict(_MICROGRAMMAR_SECTIONS["time_wrappers"])
+_LAYER1_DIRECT_SLOTS = dict(_MICROGRAMMAR_SECTIONS["layer1_direct_slots"])
+_LAYER1_RELATION_SLOTS = dict(_MICROGRAMMAR_SECTIONS["layer1_relation_slots"])
+_LAYER2_CASE_PARTICLES = dict(_MICROGRAMMAR_SECTIONS["layer2_case_particles"])
+_STRUCTURAL_TOKENS = dict(_MICROGRAMMAR_SECTIONS["structural_tokens"])
+_TOPIC_SPEAKER_POLICY = dict(_MICROGRAMMAR_SECTIONS["topic_speaker_policy"])
+_REFERENCE_MODE_POLICY = dict(_MICROGRAMMAR_SECTIONS["reference_mode_policy"])
+_QUOTE_POLICY = dict(_MICROGRAMMAR_SECTIONS["quote_policy"])
+_ROLE_ANCHOR_POLICY = dict(_MICROGRAMMAR_SECTIONS["role_anchor_policy"])
+_VARIANT_POLICY = dict(_MICROGRAMMAR_SECTIONS["variant_policy"])
+_PRIMARY_VARIANT_ID = str(_VARIANT_POLICY["primary_variant_id"])
+_ALTERNATE_VARIANT_ID = str(_VARIANT_POLICY["alternate_variant_id"])
 
 _PROVISIONAL_QUALIFIER = "epistemic:provisional_interpretation"
 _FORBIDDEN_PROMOTIONS = (
@@ -228,6 +593,41 @@ class _RequestLocalResponseState:
     versioned_value_policy: str
     selected_observation_contribution_refs: tuple[str, ...]
     relationship_care_constraints: tuple[str, ...]
+
+
+class UtterancePhase(str, Enum):
+    L1_ACTIVE = "L1_ACTIVE"
+    L1_COMPLETE = "L1_COMPLETE"
+    L2_ACTIVE = "L2_ACTIVE"
+    CANDIDATE_COMPLETE = "CANDIDATE_COMPLETE"
+    READY_FOR_S9 = "READY_FOR_S9"
+    NO_VALID_SURFACE = "NO_VALID_SURFACE"
+
+
+@dataclass(slots=True)
+class EmlisUtteranceState:
+    """Request-local, noncanonical S8 state; never stored in an artifact."""
+
+    phase: UtterancePhase
+    realized_observation_contribution_refs: list[str]
+    remaining_required_observation_refs: list[str]
+    suppressed_observation_candidate_refs: list[str]
+    realized_subjective_claim_refs: list[str]
+    remaining_required_subjective_refs: list[str]
+    suppressed_subjective_claim_refs: list[str]
+    last_focus_refs: list[str]
+    last_move_kind: Optional[str]
+    realized_semantic_keys: list[str]
+    normalized_surface_digests: list[str]
+    layer_sentence_counts: dict[str, int]
+    composition_variant_id: str
+    stop_reason: Optional[str]
+
+
+@dataclass(frozen=True, slots=True)
+class _SurfacePart:
+    text: str
+    bindings: tuple[tuple[str, str], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -2361,22 +2761,1636 @@ def build_stage1_semantic_projection(
     return identified
 
 
+def _validate_microgrammar_inventory() -> None:
+    if (
+        _MICROGRAMMAR_SECTIONS.get("policy_id")
+        != CMEE_STAGE1_MICROGRAMMAR_POLICY_VERSION
+        or _MICROGRAMMAR_SECTIONS.get("policy_ref")
+        != CMEE_STAGE1_MICROGRAMMAR_POLICY_REF
+        or len(_OBSERVATION_PREDICATE_ROWS) != 12
+        or len(_SUBJECTIVE_PREDICATE_ROWS) != 14
+        or len(_CONNECTIVE_FAMILIES) != 7
+        or len(_OPERATOR_CONNECTIVES) != 12
+        or _VARIANT_POLICY.get("max_candidates") != 2
+        or _VARIANT_POLICY.get("automatic_retry") != 0
+        or _VARIANT_POLICY.get("post_defect_generation") != 0
+        or _ROLE_ANCHOR_POLICY.get("max_graphemes") != 16
+        or _ROLE_ANCHOR_POLICY.get("inserted_token_count") != 0
+        or _ROLE_ANCHOR_POLICY.get("full_value_replay_over_limit") is not False
+        or _QUOTE_POLICY.get("l1_max_graphemes") != 16
+        or _QUOTE_POLICY.get("l2_max_graphemes") != 16
+        or _QUOTE_POLICY.get("full_replay") is not False
+        or set(_REFERENCE_MODE_POLICY) != {
+            "anaphoric_first",
+            "short_anchor_if_ambiguous",
+            "explicit_emlis_counterposition",
+        }
+    ):
+        raise CMEEStage1ContractError("stage1_microgrammar_inventory_invalid")
+    family_tokens: dict[str, set[str]] = {}
+    family_names: set[str] = set()
+    for family_name, entries in _MICROGRAMMAR_SECTIONS["predicate_families"]:
+        if family_name in family_names or type(entries) is not tuple or not entries:
+            raise CMEEStage1ContractError("stage1_microgrammar_inventory_invalid")
+        family_names.add(family_name)
+        if family_name == "EMLIS_AFFECT_V1":
+            tokens = tuple(token for _category, token in entries)
+        else:
+            tokens = entries
+        if any(type(token) is not str or not token for token in tokens):
+            raise CMEEStage1ContractError("stage1_microgrammar_inventory_invalid")
+        family_tokens[family_name] = set(tokens)
+    for key, (primary, alternate, _condition) in _OBSERVATION_PREDICATE_ROWS.items():
+        tokens = family_tokens.get(_OBSERVATION_PREDICATE_FAMILIES.get(key, ""), set())
+        if primary not in tokens or (alternate and alternate not in tokens):
+            raise CMEEStage1ContractError("stage1_microgrammar_inventory_invalid")
+    for key, (primary, alternate) in _SUBJECTIVE_PREDICATE_ROWS.items():
+        tokens = family_tokens.get(_SUBJECTIVE_PREDICATE_FAMILIES.get(key, ""), set())
+        if primary not in tokens or (alternate and alternate not in tokens):
+            raise CMEEStage1ContractError("stage1_microgrammar_inventory_invalid")
+    if any(
+        family not in _CONNECTIVE_FAMILIES
+        for family in _OPERATOR_CONNECTIVES.values()
+    ):
+        raise CMEEStage1ContractError("stage1_microgrammar_inventory_invalid")
+    if tuple(sorted((_PRIMARY_VARIANT_ID, _ALTERNATE_VARIANT_ID))) != (
+        _PRIMARY_VARIANT_ID,
+        _ALTERNATE_VARIANT_ID,
+    ):
+        raise CMEEStage1ContractError("stage1_microgrammar_variant_order_invalid")
+
+
+def _candidate_for_contribution(
+    projection: EmlisStage1Projection,
+    contribution: PlannedObservationContribution,
+) -> EmlisInterpretationCandidate:
+    rows = tuple(
+        row
+        for row in projection.interpretation_candidates
+        if row.candidate_id in set(contribution.interpretation_candidate_refs)
+    )
+    if len(rows) != 1:
+        raise CMEEStage1ContractError("stage1_realization_candidate_binding_invalid")
+    return rows[0]
+
+
+def _qualifier_value(
+    candidate: EmlisInterpretationCandidate,
+    axis: str,
+    *,
+    role: Optional[ArgumentRole] = None,
+) -> str:
+    prefix = f"{role.value.lower()}_" if role is not None else ""
+    marker = f"{prefix}{axis}:"
+    values = tuple(
+        row[len(marker) :]
+        for row in candidate.required_qualifiers
+        if row.startswith(marker)
+    )
+    if len(values) != 1 or not values[0]:
+        raise CMEEStage1ContractError("stage1_microgrammar_qualifier_missing")
+    return values[0]
+
+
+def _observation_predicate_spec(
+    projection: EmlisStage1Projection,
+    contribution: PlannedObservationContribution,
+) -> tuple[str, str]:
+    key = (
+        contribution.semantic_operator.value,
+        contribution.relation_operator.value,
+    )
+    row = _OBSERVATION_PREDICATE_ROWS.get(key)
+    if row is None:
+        raise CMEEStage1ContractError("stage1_microgrammar_predicate_missing")
+    primary, alternate, condition = row
+    if not alternate:
+        return primary, ""
+    if condition == "always":
+        return primary, alternate
+    if condition == "continuing_only":
+        candidate = _candidate_for_contribution(projection, contribution)
+        times = tuple(
+            _qualifier_value(candidate, "time_scope", role=binding.role)
+            if contribution.relation_operator is not RelationOperator.NO_RELATION_CLAIM
+            else _qualifier_value(candidate, "time_scope")
+            for binding in contribution.argument_bindings
+            if binding.role is not ArgumentRole.EXPERIENCER
+        )
+        return (primary, alternate) if times and set(times) == {"continuing"} else (primary, "")
+    if condition != "never":
+        raise CMEEStage1ContractError("stage1_microgrammar_predicate_condition_invalid")
+    return primary, ""
+
+
+def _subjective_predicate_spec(
+    claim: EmlisSubjectiveClaim,
+) -> tuple[str, str]:
+    proposition = claim.asserted_subjective_proposition
+    operator = proposition.subjective_operator
+    detail = ""
+    if operator is SubjectiveOperator.FEEL_TOWARD:
+        if proposition.affect_category is None:
+            raise CMEEStage1ContractError("stage1_microgrammar_affect_missing")
+        detail = proposition.affect_category.value
+    elif operator is SubjectiveOperator.TAKE_RELATIONAL_STANCE:
+        if proposition.stance_operator is None:
+            raise CMEEStage1ContractError("stage1_microgrammar_stance_missing")
+        detail = proposition.stance_operator.value
+    row = _SUBJECTIVE_PREDICATE_ROWS.get((operator.value, detail))
+    if row is None:
+        raise CMEEStage1ContractError("stage1_microgrammar_predicate_missing")
+    return row
+
+
+def _connective_family(
+    *,
+    layer: str,
+    relation_or_operator: str,
+    overall_index: int,
+) -> str:
+    if overall_index == 0:
+        return "NONE"
+    family = _OPERATOR_CONNECTIVES.get((layer, relation_or_operator))
+    if family is None:
+        raise CMEEStage1ContractError("stage1_microgrammar_connective_missing")
+    return family
+
+
+def _connective_token(family: str, *, alternate: bool) -> str:
+    tokens = _CONNECTIVE_FAMILIES.get(family)
+    if tokens is None or not tokens or len(tokens) > 2:
+        raise CMEEStage1ContractError("stage1_microgrammar_connective_missing")
+    if alternate:
+        if len(tokens) != 2:
+            raise CMEEStage1ContractError("stage1_microgrammar_alternate_missing")
+        return tokens[1]
+    return tokens[0]
+
+
+def _variant_delta(
+    projection: EmlisStage1Projection,
+) -> Optional[tuple[str, str]]:
+    for ref in projection.ordered_observation_refs:
+        contribution = next(
+            row
+            for row in projection.observation_contributions
+            if row.contribution_id == ref
+        )
+        _primary, alternate = _observation_predicate_spec(
+            projection, contribution
+        )
+        if alternate:
+            return "predicate", ref
+    for ref in projection.ordered_subjective_refs:
+        claim = next(
+            row
+            for row in projection.subjective_claims
+            if row.subjective_claim_id == ref
+        )
+        _primary, alternate = _subjective_predicate_spec(claim)
+        if alternate:
+            return "predicate", ref
+    contribution_by_id = {
+        row.contribution_id: row for row in projection.observation_contributions
+    }
+    claim_by_id = {
+        row.subjective_claim_id: row for row in projection.subjective_claims
+    }
+    ordered_moves: list[tuple[str, str, str]] = []
+    for ref in projection.ordered_observation_refs:
+        contribution = contribution_by_id[ref]
+        ordered_moves.append(
+            (
+                "LAYER_1",
+                contribution.contribution_id,
+                contribution.relation_operator.value,
+            )
+        )
+    for ref in projection.ordered_subjective_refs:
+        claim = claim_by_id[ref]
+        ordered_moves.append(
+            (
+                "LAYER_2",
+                claim.subjective_claim_id,
+                claim.asserted_subjective_proposition.subjective_operator.value,
+            )
+        )
+    for index, (layer, ref, operator) in enumerate(ordered_moves):
+        family = _connective_family(
+            layer=layer,
+            relation_or_operator=operator,
+            overall_index=index,
+        )
+        if len(_CONNECTIVE_FAMILIES[family]) == 2:
+            return "connective", ref
+    return None
+
+
+def _move_ref(anchor_ref: str) -> str:
+    if type(anchor_ref) is not str or not anchor_ref or "@" in anchor_ref:
+        raise CMEEStage1ContractError("stage1_realization_move_anchor_invalid")
+    return f"move:{anchor_ref}@{CMEE_STAGE1_MICROGRAMMAR_POLICY_VERSION}"
+
+
+def _source_bound_role_surface(
+    semantic_ref: str,
+    grounded_graph: GroundedMeaningGraph,
+) -> str:
+    if not semantic_ref.startswith("node:"):
+        raise CMEEStage1ContractError("stage1_surface_binding_unavailable")
+    node_id = _local_ref(semantic_ref)
+    rows = tuple(row for row in grounded_graph.nodes if row.node_id == node_id)
+    if len(rows) != 1 or type(rows[0].value) is not str:
+        raise CMEEStage1ContractError("stage1_surface_binding_unavailable")
+    value = rows[0].value
+    if (
+        not value
+        or value != value.strip()
+        or "\n" in value
+        or "\r" in value
+        or "\x00" in value
+    ):
+        raise CMEEStage1ContractError("stage1_surface_binding_unavailable")
+    clusters: list[str] = []
+    join_next = False
+    for char in value:
+        is_extension = bool(
+            unicodedata.combining(char)
+            or "\ufe00" <= char <= "\ufe0f"
+            or "\U000e0100" <= char <= "\U000e01ef"
+            or join_next
+        )
+        if is_extension and clusters:
+            clusters[-1] += char
+        else:
+            clusters.append(char)
+        join_next = char == "\u200d"
+    max_graphemes = min(
+        int(_ROLE_ANCHOR_POLICY["max_graphemes"]),
+        int(_QUOTE_POLICY["l1_max_graphemes"]),
+        int(_QUOTE_POLICY["l2_max_graphemes"]),
+    )
+    if len(clusters) > max_graphemes:
+        if (
+            _ROLE_ANCHOR_POLICY.get("over_limit_selection")
+            != "rightmost_grapheme_window"
+            or _ROLE_ANCHOR_POLICY.get("inserted_token_count") != 0
+            or _ROLE_ANCHOR_POLICY.get("full_value_replay_over_limit") is not False
+        ):
+            raise CMEEStage1ContractError("stage1_role_anchor_policy_invalid")
+        value = "".join(clusters[-max_graphemes:])
+    return value
+
+
+def _surface_parts(
+    parts: Sequence[_SurfacePart],
+) -> tuple[str, tuple[RealizedSemanticBinding, ...]]:
+    text_parts: list[str] = []
+    bindings: list[RealizedSemanticBinding] = []
+    offset = 0
+    for part in parts:
+        if type(part) is not _SurfacePart or type(part.text) is not str or not part.text:
+            raise CMEEStage1ContractError("stage1_microgrammar_surface_part_invalid")
+        start = offset
+        offset += len(part.text)
+        text_parts.append(part.text)
+        for semantic_ref, clause_slot in part.bindings:
+            bindings.append(
+                RealizedSemanticBinding(
+                    semantic_ref=semantic_ref,
+                    clause_slot=clause_slot,
+                    surface_scalar_start=start,
+                    surface_scalar_end=offset,
+                    surface_span_sha256=hashlib.sha256(
+                        part.text.encode("utf-8")
+                    ).hexdigest(),
+                )
+            )
+    return "".join(text_parts), tuple(bindings)
+
+
+def _part(
+    text: str,
+    semantic_ref: str,
+    clause_slot: str,
+    *additional_bindings: tuple[str, str],
+) -> _SurfacePart:
+    return _SurfacePart(
+        text=text,
+        bindings=((semantic_ref, clause_slot), *additional_bindings),
+    )
+
+
+def _observation_surface_contract(
+    projection: EmlisStage1Projection,
+    contribution: PlannedObservationContribution,
+    grounded_graph: GroundedMeaningGraph,
+    *,
+    overall_index: int,
+    composition_variant_id: str,
+    alternate_target: Optional[tuple[str, str]],
+) -> tuple[
+    str,
+    tuple[ClauseFrame, ...],
+    tuple[_SurfacePart, ...],
+]:
+    candidate = _candidate_for_contribution(projection, contribution)
+    primary_predicate, alternate_predicate = _observation_predicate_spec(
+        projection, contribution
+    )
+    use_alternate_predicate = bool(
+        composition_variant_id == _ALTERNATE_VARIANT_ID
+        and alternate_target == ("predicate", contribution.contribution_id)
+    )
+    if use_alternate_predicate and not alternate_predicate:
+        raise CMEEStage1ContractError("stage1_microgrammar_alternate_missing")
+    predicate = alternate_predicate if use_alternate_predicate else primary_predicate
+    connective_family = _connective_family(
+        layer="LAYER_1",
+        relation_or_operator=contribution.relation_operator.value,
+        overall_index=overall_index,
+    )
+    connective = _connective_token(
+        connective_family,
+        alternate=bool(
+            composition_variant_id == _ALTERNATE_VARIANT_ID
+            and alternate_target == ("connective", contribution.contribution_id)
+        ),
+    )
+    move_ref = _move_ref(contribution.contribution_id)
+    predicate_ref = (
+        contribution.relation_basis_refs[0]
+        if contribution.relation_basis_refs
+        else contribution.argument_bindings[0].semantic_ref
+    )
+    parts: list[_SurfacePart] = []
+    if connective:
+        parts.append(_part(connective, predicate_ref, "frame:0:connective"))
+    frames: list[ClauseFrame] = []
+
+    if contribution.relation_operator is RelationOperator.NO_RELATION_CLAIM:
+        primary_bindings = tuple(
+            row
+            for row in contribution.argument_bindings
+            if row.role is ArgumentRole.PRIMARY
+        )
+        if len(primary_bindings) != 1:
+            raise CMEEStage1ContractError("stage1_microgrammar_case_frame_invalid")
+        primary_ref = primary_bindings[0].semantic_ref
+        time_scope = _qualifier_value(candidate, "time_scope")
+        modality = _qualifier_value(candidate, "modality")
+        polarity = _qualifier_value(candidate, "polarity")
+        time_wrapper = _TIME_WRAPPERS.get(time_scope)
+        modality_wrapper = _MODALITY_WRAPPERS.get(modality)
+        direct_slot = _LAYER1_DIRECT_SLOTS.get(contribution.semantic_operator.value)
+        if time_wrapper is None or modality_wrapper is None or direct_slot is None:
+            raise CMEEStage1ContractError("stage1_microgrammar_inflection_missing")
+        anchor_bindings = tuple(
+            (
+                row.semantic_ref,
+                f"frame:0:argument:{row.role.value}",
+            )
+            for row in contribution.argument_bindings
+        )
+        anchor = _source_bound_role_surface(primary_ref, grounded_graph)
+        parts.append(
+            _SurfacePart(text=anchor, bindings=anchor_bindings)
+        )
+        parts.append(_part(time_wrapper, primary_ref, "frame:0:time"))
+        parts.append(_part(direct_slot, primary_ref, "frame:0:case"))
+        if modality_wrapper:
+            parts.append(
+                _part(modality_wrapper, primary_ref, "frame:0:modality")
+            )
+        parts.append(_part(predicate, primary_ref, "frame:0:predicate"))
+        parts.append(
+            _part(_STRUCTURAL_TOKENS["terminal"], primary_ref, "frame:0:terminal")
+        )
+        experiencers = _ordered(
+            row.semantic_ref
+            for row in contribution.argument_bindings
+            if row.role is ArgumentRole.EXPERIENCER
+        )
+        frames.append(
+            ClauseFrame(
+                move_ref=move_ref,
+                discourse_relation=connective_family,
+                topic_ref=primary_ref,
+                predicate_operator=contribution.semantic_operator.value,
+                object_ref=primary_ref,
+                argument_bindings=contribution.argument_bindings,
+                qualifier_refs=candidate.required_qualifiers,
+                polarity=polarity,
+                modality=modality,
+                time_scope=time_scope,
+                actor_refs=(),
+                experiencer_refs=experiencers,
+                addressee_role="NONE",
+                epistemic_marker="PROVISIONAL_INTERPRETATION",
+                speaker_marker=None,
+                connective_requirement=(
+                    None if connective_family == "NONE" else connective_family
+                ),
+                reception_style_policy_ref=projection.reception_style_policy_ref,
+                terminal_style="POLITE_DECLARATIVE",
+            )
+        )
+    else:
+        slot_rows = _LAYER1_RELATION_SLOTS.get(
+            contribution.relation_operator.value
+        )
+        if slot_rows is None or tuple(row[0] for row in slot_rows) != tuple(
+            binding.role.value for binding in contribution.argument_bindings
+        ):
+            raise CMEEStage1ContractError("stage1_microgrammar_case_frame_invalid")
+        for frame_index, (binding, slot_row) in enumerate(
+            zip(contribution.argument_bindings, slot_rows)
+        ):
+            _role, prefix, suffix = slot_row
+            time_scope = _qualifier_value(
+                candidate, "time_scope", role=binding.role
+            )
+            modality = _qualifier_value(candidate, "modality", role=binding.role)
+            polarity = _qualifier_value(candidate, "polarity", role=binding.role)
+            time_wrapper = _TIME_WRAPPERS.get(time_scope)
+            modality_wrapper = _MODALITY_WRAPPERS.get(modality)
+            if time_wrapper is None or modality_wrapper is None:
+                raise CMEEStage1ContractError("stage1_microgrammar_inflection_missing")
+            if prefix:
+                parts.append(
+                    _part(
+                        prefix,
+                        binding.semantic_ref,
+                        f"frame:{frame_index}:case_prefix",
+                    )
+                )
+            parts.append(
+                _part(
+                    _source_bound_role_surface(
+                        binding.semantic_ref, grounded_graph
+                    ),
+                    binding.semantic_ref,
+                    f"frame:{frame_index}:argument:{binding.role.value}",
+                )
+            )
+            parts.append(
+                _part(
+                    time_wrapper,
+                    binding.semantic_ref,
+                    f"frame:{frame_index}:time",
+                )
+            )
+            if modality_wrapper:
+                parts.append(
+                    _part(
+                        modality_wrapper,
+                        binding.semantic_ref,
+                        f"frame:{frame_index}:modality",
+                    )
+                )
+            if suffix:
+                parts.append(
+                    _part(
+                        suffix,
+                        binding.semantic_ref,
+                        f"frame:{frame_index}:case_suffix",
+                    )
+                )
+            role_prefix = f"{binding.role.value.lower()}_"
+            frames.append(
+                ClauseFrame(
+                    move_ref=move_ref,
+                    discourse_relation=connective_family,
+                    topic_ref=binding.semantic_ref,
+                    predicate_operator=contribution.semantic_operator.value,
+                    object_ref=binding.semantic_ref,
+                    argument_bindings=(binding,),
+                    qualifier_refs=tuple(
+                        row
+                        for row in candidate.required_qualifiers
+                        if row == _PROVISIONAL_QUALIFIER
+                        or row.startswith(role_prefix)
+                    ),
+                    polarity=polarity,
+                    modality=modality,
+                    time_scope=time_scope,
+                    actor_refs=(),
+                    experiencer_refs=(),
+                    addressee_role="NONE",
+                    epistemic_marker="PROVISIONAL_INTERPRETATION",
+                    speaker_marker=None,
+                    connective_requirement=(
+                        connective_family if frame_index == 0 and connective else None
+                    ),
+                    reception_style_policy_ref=projection.reception_style_policy_ref,
+                    terminal_style="POLITE_DECLARATIVE",
+                )
+            )
+        parts.append(
+            _part(
+                predicate,
+                predicate_ref,
+                f"frame:{len(frames) - 1}:predicate",
+            )
+        )
+        parts.append(
+            _part(
+                _STRUCTURAL_TOKENS["terminal"],
+                predicate_ref,
+                f"frame:{len(frames) - 1}:terminal",
+            )
+        )
+    return move_ref, tuple(frames), tuple(parts)
+
+
+def _observation_surface_shape(
+    projection: EmlisStage1Projection,
+    contribution: PlannedObservationContribution,
+    grounded_graph: GroundedMeaningGraph,
+    *,
+    overall_index: int,
+    composition_variant_id: str,
+    alternate_target: Optional[tuple[str, str]],
+) -> tuple[
+    str,
+    tuple[ClauseFrame, ...],
+    str,
+    tuple[RealizedSemanticBinding, ...],
+]:
+    move_ref, frames, parts = _observation_surface_contract(
+        projection,
+        contribution,
+        grounded_graph,
+        overall_index=overall_index,
+        composition_variant_id=composition_variant_id,
+        alternate_target=alternate_target,
+    )
+    text, bindings = _surface_parts(parts)
+    return move_ref, frames, text, bindings
+
+
+def _subjective_object_ref(
+    projection: EmlisStage1Projection,
+    claim: EmlisSubjectiveClaim,
+) -> str:
+    proposition = claim.asserted_subjective_proposition
+    source_refs = (
+        (proposition.counterposition_target_ref,)
+        if proposition.subjective_operator
+        is SubjectiveOperator.COUNTER_SPECIFIC_PROMOTION
+        else proposition.response_object_refs
+    )
+    if len(source_refs) != 1 or source_refs[0] is None:
+        raise CMEEStage1ContractError("stage1_surface_binding_unavailable")
+    ref = str(source_refs[0])
+    if ref.startswith("node:"):
+        return ref
+    contribution = next(
+        (
+            row
+            for row in projection.observation_contributions
+            if row.contribution_id == ref
+        ),
+        None,
+    )
+    if contribution is None:
+        raise CMEEStage1ContractError("stage1_surface_binding_unavailable")
+    node_refs = tuple(
+        row.semantic_ref
+        for row in contribution.argument_bindings
+        if row.semantic_ref.startswith("node:")
+        and row.role is not ArgumentRole.EXPERIENCER
+    )
+    if len(node_refs) != 1:
+        raise CMEEStage1ContractError("stage1_surface_binding_unavailable")
+    return node_refs[0]
+
+
+def _time_scope_for_semantic_ref(
+    projection: EmlisStage1Projection,
+    semantic_ref: str,
+) -> str:
+    values: list[str] = []
+    for contribution in projection.observation_contributions:
+        candidate = _candidate_for_contribution(projection, contribution)
+        for binding in contribution.argument_bindings:
+            if binding.semantic_ref != semantic_ref:
+                continue
+            if contribution.relation_operator is RelationOperator.NO_RELATION_CLAIM:
+                value = _qualifier_value(candidate, "time_scope")
+            else:
+                value = _qualifier_value(
+                    candidate, "time_scope", role=binding.role
+                )
+            if value not in values:
+                values.append(value)
+    if len(values) != 1:
+        raise CMEEStage1ContractError("stage1_microgrammar_time_scope_ambiguous")
+    return values[0]
+
+
+def _reference_mode_for_claim(
+    projection: EmlisStage1Projection,
+    claim: EmlisSubjectiveClaim,
+    object_ref: str,
+) -> str:
+    proposition = claim.asserted_subjective_proposition
+    if (
+        proposition.subjective_operator
+        is SubjectiveOperator.COUNTER_SPECIFIC_PROMOTION
+    ):
+        mode = "explicit_emlis_counterposition"
+    else:
+        prior_object_count = sum(
+            1
+            for contribution in projection.observation_contributions
+            if any(
+                binding.semantic_ref == object_ref
+                and binding.role is not ArgumentRole.EXPERIENCER
+                for binding in contribution.argument_bindings
+            )
+        )
+        mode = (
+            "anaphoric_first"
+            if prior_object_count == 1
+            else "short_anchor_if_ambiguous"
+        )
+    if mode not in _REFERENCE_MODE_POLICY:
+        raise CMEEStage1ContractError("stage1_microgrammar_reference_mode_invalid")
+    return mode
+
+
+def _subjective_surface_contract(
+    projection: EmlisStage1Projection,
+    claim: EmlisSubjectiveClaim,
+    grounded_graph: GroundedMeaningGraph,
+    *,
+    overall_index: int,
+    layer2_index: int,
+    composition_variant_id: str,
+    alternate_target: Optional[tuple[str, str]],
+) -> tuple[
+    str,
+    tuple[ClauseFrame, ...],
+    tuple[_SurfacePart, ...],
+]:
+    proposition = claim.asserted_subjective_proposition
+    primary_predicate, alternate_predicate = _subjective_predicate_spec(claim)
+    use_alternate_predicate = bool(
+        composition_variant_id == _ALTERNATE_VARIANT_ID
+        and alternate_target == ("predicate", claim.subjective_claim_id)
+    )
+    if use_alternate_predicate and not alternate_predicate:
+        raise CMEEStage1ContractError("stage1_microgrammar_alternate_missing")
+    predicate = alternate_predicate if use_alternate_predicate else primary_predicate
+    connective_family = _connective_family(
+        layer="LAYER_2",
+        relation_or_operator=proposition.subjective_operator.value,
+        overall_index=overall_index,
+    )
+    connective = _connective_token(
+        connective_family,
+        alternate=bool(
+            composition_variant_id == _ALTERNATE_VARIANT_ID
+            and alternate_target == ("connective", claim.subjective_claim_id)
+        ),
+    )
+    object_ref = _subjective_object_ref(projection, claim)
+    reference_mode = _reference_mode_for_claim(projection, claim, object_ref)
+    anchor = _source_bound_role_surface(object_ref, grounded_graph)
+    time_scope = _time_scope_for_semantic_ref(projection, object_ref)
+    time_wrapper = _TIME_WRAPPERS.get(time_scope)
+    modality_wrapper = _MODALITY_WRAPPERS.get(proposition.modality)
+    if time_wrapper is None or modality_wrapper is None:
+        raise CMEEStage1ContractError("stage1_microgrammar_inflection_missing")
+    detail = ""
+    if proposition.subjective_operator is SubjectiveOperator.TAKE_RELATIONAL_STANCE:
+        if proposition.stance_operator is None:
+            raise CMEEStage1ContractError("stage1_microgrammar_stance_missing")
+        detail = f":{proposition.stance_operator.value}"
+    particle = _LAYER2_CASE_PARTICLES.get(
+        f"{proposition.subjective_operator.value}{detail}"
+    )
+    if particle is None:
+        raise CMEEStage1ContractError("stage1_microgrammar_case_frame_invalid")
+    if (
+        _TOPIC_SPEAKER_POLICY.get("layer2_explicit_speaker_placement")
+        != "first_move_and_each_counterposition"
+    ):
+        raise CMEEStage1ContractError("stage1_microgrammar_speaker_policy_invalid")
+    explicit_speaker = bool(
+        layer2_index == 0
+        or proposition.subjective_operator
+        is SubjectiveOperator.COUNTER_SPECIFIC_PROMOTION
+    )
+    move_ref = _move_ref(claim.subjective_claim_id)
+    parts: list[_SurfacePart] = []
+    if connective:
+        parts.append(_part(connective, object_ref, "frame:0:connective"))
+    if explicit_speaker:
+        parts.append(_part(_STRUCTURAL_TOKENS["speaker"], object_ref, "frame:0:speaker"))
+        parts.append(
+            _part(
+                _STRUCTURAL_TOKENS["topic_particle"],
+                object_ref,
+                "frame:0:speaker_particle",
+            )
+        )
+    parts.append(_part(anchor, object_ref, "frame:0:object"))
+    parts.append(_part(time_wrapper, object_ref, "frame:0:time"))
+    parts.append(_part(particle, object_ref, "frame:0:case"))
+    if modality_wrapper:
+        parts.append(_part(modality_wrapper, object_ref, "frame:0:modality"))
+    parts.append(_part(predicate, object_ref, "frame:0:predicate"))
+    parts.append(_part(_STRUCTURAL_TOKENS["terminal"], object_ref, "frame:0:terminal"))
+    frame = ClauseFrame(
+        move_ref=move_ref,
+        discourse_relation=connective_family,
+        topic_ref=object_ref,
+        predicate_operator=proposition.subjective_operator.value,
+        object_ref=object_ref,
+        argument_bindings=(ArgumentBinding(ArgumentRole.PRIMARY, object_ref),),
+        qualifier_refs=(
+            *claim.value_principle_refs,
+            f"reference_mode:{reference_mode}",
+        ),
+        polarity=proposition.polarity,
+        modality=proposition.modality,
+        time_scope=time_scope,
+        actor_refs=proposition.referenced_actor_refs,
+        experiencer_refs=proposition.referenced_experiencer_refs,
+        addressee_role=proposition.addressee_role,
+        epistemic_marker="REQUEST_LOCAL_SUBJECTIVE",
+        speaker_marker="EMLIS" if explicit_speaker else None,
+        connective_requirement=(
+            None if connective_family == "NONE" else connective_family
+        ),
+        reception_style_policy_ref=projection.reception_style_policy_ref,
+        terminal_style="POLITE_DECLARATIVE",
+    )
+    return move_ref, (frame,), tuple(parts)
+
+
+def _subjective_surface_shape(
+    projection: EmlisStage1Projection,
+    claim: EmlisSubjectiveClaim,
+    grounded_graph: GroundedMeaningGraph,
+    *,
+    overall_index: int,
+    layer2_index: int,
+    composition_variant_id: str,
+    alternate_target: Optional[tuple[str, str]],
+) -> tuple[
+    str,
+    tuple[ClauseFrame, ...],
+    str,
+    tuple[RealizedSemanticBinding, ...],
+]:
+    move_ref, frames, parts = _subjective_surface_contract(
+        projection,
+        claim,
+        grounded_graph,
+        overall_index=overall_index,
+        layer2_index=layer2_index,
+        composition_variant_id=composition_variant_id,
+        alternate_target=alternate_target,
+    )
+    text, bindings = _surface_parts(parts)
+    return move_ref, frames, text, bindings
+
+
+def _normalized_surface_digest(text: str) -> str:
+    if type(text) is not str or not text:
+        raise CMEEStage1ContractError("stage1_realization_surface_empty")
+    normalized = "".join(text.split())
+    if not normalized:
+        raise CMEEStage1ContractError("stage1_realization_surface_empty")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _clone_utterance_state(
+    state: EmlisUtteranceState,
+    **changes: object,
+) -> EmlisUtteranceState:
+    values: dict[str, object] = {
+        "phase": state.phase,
+        "realized_observation_contribution_refs": list(
+            state.realized_observation_contribution_refs
+        ),
+        "remaining_required_observation_refs": list(
+            state.remaining_required_observation_refs
+        ),
+        "suppressed_observation_candidate_refs": list(
+            state.suppressed_observation_candidate_refs
+        ),
+        "realized_subjective_claim_refs": list(
+            state.realized_subjective_claim_refs
+        ),
+        "remaining_required_subjective_refs": list(
+            state.remaining_required_subjective_refs
+        ),
+        "suppressed_subjective_claim_refs": list(
+            state.suppressed_subjective_claim_refs
+        ),
+        "last_focus_refs": list(state.last_focus_refs),
+        "last_move_kind": state.last_move_kind,
+        "realized_semantic_keys": list(state.realized_semantic_keys),
+        "normalized_surface_digests": list(state.normalized_surface_digests),
+        "layer_sentence_counts": dict(state.layer_sentence_counts),
+        "composition_variant_id": state.composition_variant_id,
+        "stop_reason": state.stop_reason,
+    }
+    values.update(changes)
+    return EmlisUtteranceState(**values)  # type: ignore[arg-type]
+
+
+def _validate_utterance_state(
+    state: EmlisUtteranceState,
+    projection: EmlisStage1Projection,
+) -> None:
+    if type(state) is not EmlisUtteranceState or type(state.phase) is not UtterancePhase:
+        raise CMEEStage1ContractError("stage1_utterance_state_type_invalid")
+    list_fields = (
+        state.realized_observation_contribution_refs,
+        state.remaining_required_observation_refs,
+        state.suppressed_observation_candidate_refs,
+        state.realized_subjective_claim_refs,
+        state.remaining_required_subjective_refs,
+        state.suppressed_subjective_claim_refs,
+        state.last_focus_refs,
+        state.realized_semantic_keys,
+        state.normalized_surface_digests,
+    )
+    if any(type(rows) is not list for rows in list_fields):
+        raise CMEEStage1ContractError("stage1_utterance_state_array_invalid")
+    if any(
+        any(type(ref) is not str or not ref for ref in rows)
+        or len(rows) != len(set(rows))
+        for rows in list_fields
+    ):
+        raise CMEEStage1ContractError("stage1_utterance_state_ref_invalid")
+    if (
+        state.composition_variant_id
+        not in {_PRIMARY_VARIANT_ID, _ALTERNATE_VARIANT_ID}
+        or type(state.layer_sentence_counts) is not dict
+        or set(state.layer_sentence_counts) != {"LAYER_1", "LAYER_2"}
+        or any(
+            type(value) is not int or value < 0
+            for value in state.layer_sentence_counts.values()
+        )
+    ):
+        raise CMEEStage1ContractError("stage1_utterance_state_shape_invalid")
+    observation_ids = set(projection.ordered_observation_refs)
+    contribution_ids = {
+        row.contribution_id for row in projection.observation_contributions
+    }
+    subjective_ids = set(projection.ordered_subjective_refs)
+    candidate_ids = {
+        row.candidate_id for row in projection.interpretation_candidates
+    }
+    realized_observation = set(
+        state.realized_observation_contribution_refs
+    )
+    remaining_observation = set(state.remaining_required_observation_refs)
+    realized_subjective = set(state.realized_subjective_claim_refs)
+    remaining_subjective = set(state.remaining_required_subjective_refs)
+    suppressed_subjective = set(state.suppressed_subjective_claim_refs)
+    if (
+        observation_ids != contribution_ids
+        or not realized_observation.isdisjoint(remaining_observation)
+        or realized_observation | remaining_observation != observation_ids
+        or not set(state.suppressed_observation_candidate_refs).issubset(
+            candidate_ids
+        )
+        or (realized_observation | remaining_observation)
+        & set(state.suppressed_observation_candidate_refs)
+        or not realized_subjective.isdisjoint(remaining_subjective)
+        or not realized_subjective.isdisjoint(suppressed_subjective)
+        or not remaining_subjective.isdisjoint(suppressed_subjective)
+        or realized_subjective | remaining_subjective | suppressed_subjective
+        != subjective_ids
+    ):
+        raise CMEEStage1ContractError("stage1_utterance_state_namespace_invalid")
+    realized_count = (
+        len(state.realized_observation_contribution_refs)
+        + len(state.realized_subjective_claim_refs)
+    )
+    if (
+        len(state.realized_semantic_keys) != realized_count
+        or len(state.normalized_surface_digests) != realized_count
+        or sum(state.layer_sentence_counts.values()) != realized_count
+    ):
+        raise CMEEStage1ContractError("stage1_utterance_state_count_invalid")
+    observation_complete = not remaining_observation
+    subjective_started = bool(realized_subjective or suppressed_subjective)
+    subjective_complete = not remaining_subjective
+    if state.phase is UtterancePhase.L1_ACTIVE:
+        phase_valid = bool(
+            remaining_observation
+            and not subjective_started
+            and state.layer_sentence_counts["LAYER_2"] == 0
+        )
+    elif state.phase is UtterancePhase.L1_COMPLETE:
+        phase_valid = bool(
+            observation_complete
+            and not subjective_started
+            and state.layer_sentence_counts["LAYER_2"] == 0
+        )
+    elif state.phase is UtterancePhase.L2_ACTIVE:
+        phase_valid = bool(observation_complete and remaining_subjective)
+    elif state.phase in {
+        UtterancePhase.CANDIDATE_COMPLETE,
+        UtterancePhase.READY_FOR_S9,
+    }:
+        phase_valid = bool(observation_complete and subjective_complete)
+    else:
+        phase_valid = state.phase is UtterancePhase.NO_VALID_SURFACE
+    focus_universe = contribution_ids | subjective_ids
+    if (
+        not phase_valid
+        or not set(state.last_focus_refs).issubset(focus_universe)
+        or type(state.last_move_kind) not in {str, type(None)}
+        or bool(state.last_focus_refs) != bool(state.last_move_kind)
+    ):
+        raise CMEEStage1ContractError("stage1_utterance_state_phase_invalid")
+    if state.phase is UtterancePhase.NO_VALID_SURFACE:
+        if type(state.stop_reason) is not str or not state.stop_reason:
+            raise CMEEStage1ContractError("stage1_utterance_state_stop_reason_missing")
+    elif state.stop_reason is not None:
+        raise CMEEStage1ContractError("stage1_utterance_state_stop_reason_invalid")
+
+
+def initialize_emlis_utterance_state(
+    projection: EmlisStage1Projection,
+    *,
+    composition_variant_id: str,
+) -> EmlisUtteranceState:
+    state = EmlisUtteranceState(
+        phase=UtterancePhase.L1_ACTIVE,
+        realized_observation_contribution_refs=[],
+        remaining_required_observation_refs=list(
+            projection.ordered_observation_refs
+        ),
+        suppressed_observation_candidate_refs=[],
+        realized_subjective_claim_refs=[],
+        remaining_required_subjective_refs=list(
+            projection.ordered_subjective_refs
+        ),
+        suppressed_subjective_claim_refs=[],
+        last_focus_refs=[],
+        last_move_kind=None,
+        realized_semantic_keys=[],
+        normalized_surface_digests=[],
+        layer_sentence_counts={"LAYER_1": 0, "LAYER_2": 0},
+        composition_variant_id=composition_variant_id,
+        stop_reason=None,
+    )
+    _validate_utterance_state(state, projection)
+    return state
+
+
+def _accept_sentence(
+    state: EmlisUtteranceState,
+    unit: RealizedSentenceUnit,
+    projection: EmlisStage1Projection,
+) -> EmlisUtteranceState:
+    """Return an atomically advanced state; never mutate ``state`` in place."""
+
+    _validate_utterance_state(state, projection)
+    if type(unit) is RealizedSentenceUnit:
+        validate_stage1_identity(unit)
+    if (
+        type(unit) is not RealizedSentenceUnit
+        or unit.projection_ref != projection.projection_id
+        or unit.composition_variant_id != state.composition_variant_id
+        or len(unit.basis_anchor_refs) != 1
+        or not unit.clause_frames
+    ):
+        raise CMEEStage1ContractError("stage1_utterance_state_unit_invalid")
+    anchor_ref = unit.basis_anchor_refs[0]
+    expected_move_ref = _move_ref(anchor_ref)
+    if (
+        unit.move_ref != expected_move_ref
+        or any(frame.move_ref != expected_move_ref for frame in unit.clause_frames)
+    ):
+        raise CMEEStage1ContractError("stage1_utterance_state_unit_invalid")
+    digest = _normalized_surface_digest(unit.text)
+    if digest in state.normalized_surface_digests:
+        raise CMEEStage1ContractError("stage1_realization_surface_repetition")
+    realized_keys = list(state.realized_semantic_keys)
+    surface_digests = [*state.normalized_surface_digests, digest]
+    layer_counts = dict(state.layer_sentence_counts)
+
+    if unit.layer == "LAYER_1":
+        if state.phase is not UtterancePhase.L1_ACTIVE:
+            raise CMEEStage1ContractError("stage1_utterance_state_phase_invalid")
+        contribution = next(
+            (
+                row
+                for row in projection.observation_contributions
+                if row.contribution_id == anchor_ref
+            ),
+            None,
+        )
+        if (
+            contribution is None
+            or anchor_ref not in state.remaining_required_observation_refs
+        ):
+            raise CMEEStage1ContractError("stage1_utterance_state_anchor_invalid")
+        semantic_key = contribution.canonical_semantic_key
+        if semantic_key in realized_keys:
+            raise CMEEStage1ContractError("stage1_realization_semantic_repetition")
+        selected_candidate_ids = set(contribution.interpretation_candidate_refs)
+        suppressed_candidates = [
+            *state.suppressed_observation_candidate_refs,
+            *(
+                row.candidate_id
+                for row in projection.interpretation_candidates
+                if row.candidate_id not in selected_candidate_ids
+                and row.candidate_id
+                not in state.suppressed_observation_candidate_refs
+                and _semantic_key(row) == semantic_key
+            ),
+        ]
+        realized = [
+            *state.realized_observation_contribution_refs,
+            anchor_ref,
+        ]
+        remaining = [
+            ref
+            for ref in state.remaining_required_observation_refs
+            if ref != anchor_ref
+        ]
+        layer_counts["LAYER_1"] += 1
+        advanced = _clone_utterance_state(
+            state,
+            phase=(
+                UtterancePhase.L1_COMPLETE
+                if not remaining
+                else UtterancePhase.L1_ACTIVE
+            ),
+            realized_observation_contribution_refs=realized,
+            remaining_required_observation_refs=remaining,
+            suppressed_observation_candidate_refs=suppressed_candidates,
+            last_focus_refs=[anchor_ref],
+            last_move_kind=contribution.contribution_kind.value,
+            realized_semantic_keys=[*realized_keys, semantic_key],
+            normalized_surface_digests=surface_digests,
+            layer_sentence_counts=layer_counts,
+        )
+    elif unit.layer == "LAYER_2":
+        if state.phase is not UtterancePhase.L2_ACTIVE:
+            raise CMEEStage1ContractError("stage1_utterance_state_phase_invalid")
+        claim = next(
+            (
+                row
+                for row in projection.subjective_claims
+                if row.subjective_claim_id == anchor_ref
+            ),
+            None,
+        )
+        if claim is None or anchor_ref not in state.remaining_required_subjective_refs:
+            raise CMEEStage1ContractError("stage1_utterance_state_anchor_invalid")
+        semantic_key = stage1_subjective_semantic_key(claim)
+        if semantic_key in realized_keys:
+            raise CMEEStage1ContractError("stage1_realization_semantic_repetition")
+        suppressed_claims = [
+            *state.suppressed_subjective_claim_refs,
+            *(
+                row.subjective_claim_id
+                for row in projection.subjective_claims
+                if row.subjective_claim_id != anchor_ref
+                and row.subjective_claim_id
+                not in state.realized_subjective_claim_refs
+                and row.subjective_claim_id
+                not in state.suppressed_subjective_claim_refs
+                and stage1_subjective_semantic_key(row) == semantic_key
+            ),
+        ]
+        realized = [*state.realized_subjective_claim_refs, anchor_ref]
+        remaining = [
+            ref
+            for ref in state.remaining_required_subjective_refs
+            if ref != anchor_ref and ref not in set(suppressed_claims)
+        ]
+        layer_counts["LAYER_2"] += 1
+        advanced = _clone_utterance_state(
+            state,
+            phase=(
+                UtterancePhase.CANDIDATE_COMPLETE
+                if not remaining
+                else UtterancePhase.L2_ACTIVE
+            ),
+            realized_subjective_claim_refs=realized,
+            remaining_required_subjective_refs=remaining,
+            suppressed_subjective_claim_refs=suppressed_claims,
+            last_focus_refs=[anchor_ref],
+            last_move_kind=claim.subjective_mode.value,
+            realized_semantic_keys=[*realized_keys, semantic_key],
+            normalized_surface_digests=surface_digests,
+            layer_sentence_counts=layer_counts,
+        )
+    else:
+        raise CMEEStage1ContractError("stage1_utterance_state_layer_invalid")
+    _validate_utterance_state(advanced, projection)
+    return advanced
+
+
+def _begin_layer2(
+    state: EmlisUtteranceState,
+    projection: EmlisStage1Projection,
+) -> EmlisUtteranceState:
+    _validate_utterance_state(state, projection)
+    if (
+        state.phase is not UtterancePhase.L1_COMPLETE
+        or state.remaining_required_observation_refs
+    ):
+        raise CMEEStage1ContractError("stage1_utterance_state_phase_invalid")
+    advanced = _clone_utterance_state(
+        state,
+        phase=UtterancePhase.L2_ACTIVE,
+        last_focus_refs=[],
+        last_move_kind=None,
+    )
+    _validate_utterance_state(advanced, projection)
+    return advanced
+
+
+def _ready_for_s9(
+    state: EmlisUtteranceState,
+    projection: EmlisStage1Projection,
+) -> EmlisUtteranceState:
+    _validate_utterance_state(state, projection)
+    if (
+        state.phase is not UtterancePhase.CANDIDATE_COMPLETE
+        or state.remaining_required_observation_refs
+        or state.remaining_required_subjective_refs
+        or len(state.normalized_surface_digests)
+        != len(set(state.normalized_surface_digests))
+    ):
+        raise CMEEStage1ContractError("stage1_realization_candidate_incomplete")
+    advanced = _clone_utterance_state(
+        state,
+        phase=UtterancePhase.READY_FOR_S9,
+    )
+    _validate_utterance_state(advanced, projection)
+    return advanced
+
+
+def _mark_no_valid_surface(
+    state: EmlisUtteranceState,
+    projection: EmlisStage1Projection,
+    *,
+    reason: str,
+) -> EmlisUtteranceState:
+    _validate_utterance_state(state, projection)
+    if type(reason) is not str or not reason:
+        raise CMEEStage1ContractError("stage1_utterance_state_stop_reason_missing")
+    stopped = _clone_utterance_state(
+        state,
+        phase=UtterancePhase.NO_VALID_SURFACE,
+        stop_reason=reason,
+    )
+    _validate_utterance_state(stopped, projection)
+    return stopped
+
+
+def _realized_unit(
+    *,
+    projection: EmlisStage1Projection,
+    layer: str,
+    anchor_ref: str,
+    move_ref: str,
+    frames: tuple[ClauseFrame, ...],
+    text: str,
+    bindings: tuple[RealizedSemanticBinding, ...],
+    prior_unit_id: Optional[str],
+    composition_variant_id: str,
+) -> RealizedSentenceUnit:
+    unit = RealizedSentenceUnit(
+        unit_id="",
+        projection_ref=projection.projection_id,
+        layer=layer,
+        move_ref=move_ref,
+        clause_frames=frames,
+        text=text,
+        basis_anchor_refs=(anchor_ref,),
+        realized_semantic_bindings=bindings,
+        discourse_link_to_prior_sentence=prior_unit_id,
+        composition_variant_id=composition_variant_id,
+    )
+    return _identified(unit, "unit_id")
+
+
+def _realize_stage1_variant(
+    projection: EmlisStage1Projection,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
+    *,
+    composition_variant_id: str,
+    alternate_target: Optional[tuple[str, str]],
+) -> tuple[RealizedSentenceUnit, ...]:
+    state = initialize_emlis_utterance_state(
+        projection,
+        composition_variant_id=composition_variant_id,
+    )
+    units: list[RealizedSentenceUnit] = []
+    contribution_by_id = {
+        row.contribution_id: row for row in projection.observation_contributions
+    }
+    claim_by_id = {
+        row.subjective_claim_id: row for row in projection.subjective_claims
+    }
+    for overall_index, anchor_ref in enumerate(
+        projection.ordered_observation_refs
+    ):
+        contribution = contribution_by_id[anchor_ref]
+        move_ref, frames, text, bindings = _observation_surface_shape(
+            projection,
+            contribution,
+            grounded_graph,
+            overall_index=overall_index,
+            composition_variant_id=composition_variant_id,
+            alternate_target=alternate_target,
+        )
+        unit = _realized_unit(
+            projection=projection,
+            layer="LAYER_1",
+            anchor_ref=anchor_ref,
+            move_ref=move_ref,
+            frames=frames,
+            text=text,
+            bindings=bindings,
+            prior_unit_id=units[-1].unit_id if units else None,
+            composition_variant_id=composition_variant_id,
+        )
+        validate_stage1_sentence_unit(
+            unit,
+            projection,
+            grounded_graph=grounded_graph,
+            parent_plan=parent_plan,
+            prior_unit_ids=tuple(row.unit_id for row in units),
+        )
+        state = _accept_sentence(state, unit, projection)
+        units.append(unit)
+    state = _begin_layer2(state, projection)
+    observation_count = len(units)
+    for layer2_index, anchor_ref in enumerate(projection.ordered_subjective_refs):
+        overall_index = observation_count + layer2_index
+        claim = claim_by_id[anchor_ref]
+        move_ref, frames, text, bindings = _subjective_surface_shape(
+            projection,
+            claim,
+            grounded_graph,
+            overall_index=overall_index,
+            layer2_index=layer2_index,
+            composition_variant_id=composition_variant_id,
+            alternate_target=alternate_target,
+        )
+        unit = _realized_unit(
+            projection=projection,
+            layer="LAYER_2",
+            anchor_ref=anchor_ref,
+            move_ref=move_ref,
+            frames=frames,
+            text=text,
+            bindings=bindings,
+            prior_unit_id=units[-1].unit_id if units else None,
+            composition_variant_id=composition_variant_id,
+        )
+        validate_stage1_sentence_unit(
+            unit,
+            projection,
+            grounded_graph=grounded_graph,
+            parent_plan=parent_plan,
+            prior_unit_ids=tuple(row.unit_id for row in units),
+        )
+        state = _accept_sentence(state, unit, projection)
+        units.append(unit)
+    state = _ready_for_s9(state, projection)
+    if (
+        state.layer_sentence_counts["LAYER_1"]
+        != len(projection.ordered_observation_refs)
+        or state.layer_sentence_counts["LAYER_2"]
+        != len(projection.ordered_subjective_refs)
+        or state.phase is not UtterancePhase.READY_FOR_S9
+    ):
+        raise CMEEStage1ContractError("stage1_realization_candidate_incomplete")
+    return tuple(units)
+
+
+def _validate_candidate_set_envelope(
+    candidate_set: RealizationCandidateSet,
+    projection: EmlisStage1Projection,
+) -> None:
+    expected_count = 2 if _variant_delta(projection) is not None else 1
+    if (
+        type(candidate_set) is not RealizationCandidateSet
+        or type(candidate_set.candidates) is not tuple
+        or candidate_set.projection_ref != projection.projection_id
+        or len(candidate_set.candidates) != expected_count
+        or expected_count > int(_VARIANT_POLICY["max_candidates"])
+        or any(type(candidate) is not tuple for candidate in candidate_set.candidates)
+        or any(
+            type(unit) is not RealizedSentenceUnit
+            for candidate in candidate_set.candidates
+            for unit in candidate
+        )
+    ):
+        raise CMEEStage1ContractError("stage1_realization_candidate_set_invalid")
+
+
+def build_stage1_realization_candidate_set(
+    *,
+    projection: EmlisStage1Projection,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
+) -> RealizationCandidateSet:
+    """S8: generate the complete bounded primary/alternate set exactly once."""
+
+    _validate_microgrammar_inventory()
+    validate_stage1_projection(
+        projection,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+    )
+    if projection.emlis_microgrammar_policy_ref != CMEE_STAGE1_MICROGRAMMAR_POLICY_REF:
+        raise CMEEStage1ContractError("stage1_microgrammar_policy_ref_invalid")
+    alternate_target = _variant_delta(projection)
+    variants = (
+        (_PRIMARY_VARIANT_ID, None),
+        *(((_ALTERNATE_VARIANT_ID, alternate_target),) if alternate_target else ()),
+    )
+    candidates: list[tuple[RealizedSentenceUnit, ...]] = []
+    for composition_variant_id, target in variants:
+        try:
+            candidate = _realize_stage1_variant(
+                projection,
+                grounded_graph,
+                parent_plan,
+                composition_variant_id=composition_variant_id,
+                alternate_target=target,
+            )
+        except CMEEStage1ContractError:
+            _mark_no_valid_surface(
+                initialize_emlis_utterance_state(
+                    projection,
+                    composition_variant_id=composition_variant_id,
+                ),
+                projection,
+                reason="stage1_variant_generation_invalid",
+            )
+            candidate = ()
+        candidates.append(candidate)
+    result = RealizationCandidateSet(
+        projection_ref=projection.projection_id,
+        candidates=tuple(candidates),
+    )
+    _validate_candidate_set_envelope(result, projection)
+    return result
+
+
+def _candidate_variant_id(
+    candidate: tuple[RealizedSentenceUnit, ...],
+) -> str:
+    if not candidate:
+        raise CMEEStage1ContractError("stage1_realization_candidate_empty")
+    variants = tuple(row.composition_variant_id for row in candidate)
+    if len(set(variants)) != 1:
+        raise CMEEStage1ContractError("stage1_realization_variant_mixed")
+    return variants[0]
+
+
+def _validate_surface_partition(unit: RealizedSentenceUnit) -> None:
+    ranges = sorted(
+        {
+            (row.surface_scalar_start, row.surface_scalar_end)
+            for row in unit.realized_semantic_bindings
+        }
+    )
+    if not ranges or ranges[0][0] != 0 or ranges[-1][1] != len(unit.text):
+        raise CMEEStage1ContractError("stage1_surface_binding_not_exact_cover")
+    cursor = 0
+    for start, end in ranges:
+        if start != cursor or end <= start:
+            raise CMEEStage1ContractError("stage1_surface_binding_not_exact_cover")
+        cursor = end
+    if cursor != len(unit.text):
+        raise CMEEStage1ContractError("stage1_surface_binding_not_exact_cover")
+
+
+def _validate_existing_surface_contract(
+    unit: RealizedSentenceUnit,
+    parts: tuple[_SurfacePart, ...],
+) -> None:
+    """Validate existing S8 bytes by slot without composing a new surface."""
+
+    if type(parts) is not tuple or not parts:
+        raise CMEEStage1ContractError("stage1_realization_inventory_mismatch")
+    first_slots = tuple(slot for _ref, slot in parts[0].bindings)
+    if (
+        any(slot.endswith(":connective") for slot in first_slots)
+        and len(parts) > 1
+        and parts[1].text.startswith(parts[0].text)
+    ):
+        raise CMEEStage1ContractError("stage1_realization_connective_collision")
+    scalar_offset = 0
+    binding_index = 0
+    for part in parts:
+        if type(part) is not _SurfacePart or type(part.text) is not str or not part.text:
+            raise CMEEStage1ContractError("stage1_realization_inventory_mismatch")
+        scalar_end = scalar_offset + len(part.text)
+        if unit.text[scalar_offset:scalar_end] != part.text:
+            raise CMEEStage1ContractError("stage1_realization_inventory_mismatch")
+        expected_digest = hashlib.sha256(part.text.encode("utf-8")).hexdigest()
+        for semantic_ref, clause_slot in part.bindings:
+            if binding_index >= len(unit.realized_semantic_bindings):
+                raise CMEEStage1ContractError(
+                    "stage1_realization_inventory_mismatch"
+                )
+            binding = unit.realized_semantic_bindings[binding_index]
+            if (
+                binding.semantic_ref != semantic_ref
+                or binding.clause_slot != clause_slot
+                or binding.surface_scalar_start != scalar_offset
+                or binding.surface_scalar_end != scalar_end
+                or binding.surface_span_sha256 != expected_digest
+            ):
+                raise CMEEStage1ContractError(
+                    "stage1_realization_inventory_mismatch"
+                )
+            binding_index += 1
+        scalar_offset = scalar_end
+    if (
+        scalar_offset != len(unit.text)
+        or binding_index != len(unit.realized_semantic_bindings)
+    ):
+        raise CMEEStage1ContractError("stage1_realization_inventory_mismatch")
+
+
+def _validate_realization_candidate(
+    candidate: tuple[RealizedSentenceUnit, ...],
+    *,
+    expected_variant_id: str,
+    projection: EmlisStage1Projection,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
+    alternate_target: Optional[tuple[str, str]],
+) -> None:
+    if type(candidate) is not tuple or not candidate:
+        raise CMEEStage1ContractError("stage1_realization_candidate_empty")
+    if _candidate_variant_id(candidate) != expected_variant_id:
+        raise CMEEStage1ContractError("stage1_realization_variant_invalid")
+    if expected_variant_id == _ALTERNATE_VARIANT_ID and alternate_target is None:
+        raise CMEEStage1ContractError("stage1_realization_alternate_unavailable")
+    expected_anchors = (
+        *projection.ordered_observation_refs,
+        *projection.ordered_subjective_refs,
+    )
+    expected_layers = (
+        *("LAYER_1" for _ref in projection.ordered_observation_refs),
+        *("LAYER_2" for _ref in projection.ordered_subjective_refs),
+    )
+    actual_anchors = tuple(
+        unit.basis_anchor_refs[0]
+        if len(unit.basis_anchor_refs) == 1
+        else ""
+        for unit in candidate
+    )
+    if (
+        len(candidate) != len(expected_anchors)
+        or actual_anchors != expected_anchors
+        or tuple(unit.layer for unit in candidate) != expected_layers
+    ):
+        raise CMEEStage1ContractError("stage1_realization_coverage_invalid")
+    state = initialize_emlis_utterance_state(
+        projection,
+        composition_variant_id=expected_variant_id,
+    )
+    prior_ids: list[str] = []
+    contribution_by_id = {
+        row.contribution_id: row for row in projection.observation_contributions
+    }
+    claim_by_id = {
+        row.subjective_claim_id: row for row in projection.subjective_claims
+    }
+    observation_count = len(projection.ordered_observation_refs)
+    for index, unit in enumerate(candidate):
+        validate_stage1_sentence_unit(
+            unit,
+            projection,
+            grounded_graph=grounded_graph,
+            parent_plan=parent_plan,
+            prior_unit_ids=tuple(prior_ids),
+        )
+        anchor_ref = expected_anchors[index]
+        if index < observation_count:
+            expected_move, expected_frames, expected_parts = (
+                _observation_surface_contract(
+                    projection,
+                    contribution_by_id[anchor_ref],
+                    grounded_graph,
+                    overall_index=index,
+                    composition_variant_id=expected_variant_id,
+                    alternate_target=alternate_target,
+                )
+            )
+        else:
+            expected_move, expected_frames, expected_parts = (
+                _subjective_surface_contract(
+                    projection,
+                    claim_by_id[anchor_ref],
+                    grounded_graph,
+                    overall_index=index,
+                    layer2_index=index - observation_count,
+                    composition_variant_id=expected_variant_id,
+                    alternate_target=alternate_target,
+                )
+            )
+        expected_prior = prior_ids[-1] if prior_ids else None
+        if (
+            unit.projection_ref != projection.projection_id
+            or unit.move_ref != expected_move
+            or any(frame.move_ref != expected_move for frame in unit.clause_frames)
+            or unit.clause_frames != expected_frames
+            or unit.discourse_link_to_prior_sentence != expected_prior
+        ):
+            raise CMEEStage1ContractError("stage1_realization_inventory_mismatch")
+        _validate_existing_surface_contract(unit, expected_parts)
+        _validate_surface_partition(unit)
+        if index == observation_count:
+            state = _begin_layer2(state, projection)
+        state = _accept_sentence(state, unit, projection)
+        prior_ids.append(unit.unit_id)
+    state = _ready_for_s9(state, projection)
+    if state.phase is not UtterancePhase.READY_FOR_S9:
+        raise CMEEStage1ContractError("stage1_realization_candidate_incomplete")
+
+
+def select_stage1_realization_candidate(
+    candidate_set: RealizationCandidateSet,
+    *,
+    projection: EmlisStage1Projection,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
+) -> tuple[RealizedSentenceUnit, ...]:
+    """S9: reread and select only; this function has no realization call."""
+
+    _validate_microgrammar_inventory()
+    validate_stage1_projection(
+        projection,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+    )
+    _validate_candidate_set_envelope(candidate_set, projection)
+    alternate_target = _variant_delta(projection)
+    valid: list[tuple[RealizedSentenceUnit, ...]] = []
+    for index, candidate in enumerate(candidate_set.candidates):
+        expected_variant_id = (
+            _PRIMARY_VARIANT_ID if index == 0 else _ALTERNATE_VARIANT_ID
+        )
+        try:
+            _validate_realization_candidate(
+                candidate,
+                expected_variant_id=expected_variant_id,
+                projection=projection,
+                grounded_graph=grounded_graph,
+                parent_plan=parent_plan,
+                alternate_target=alternate_target,
+            )
+        except CMEEStage1ContractError:
+            continue
+        valid.append(candidate)
+    if not valid:
+        raise CMEEStage1ContractError("stage1_no_hard_valid_realization")
+    return min(valid, key=_candidate_variant_id)
+
+
 __all__ = [
+    "CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_BYTES",
+    "CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_SHA256",
+    "CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE",
+    "CMEE_STAGE1_MICROGRAMMAR_POLICY_VERSION",
+    "EmlisUtteranceState",
     "INTERPRETATION_CANDIDATE_KIND_CAP",
     "INTERPRETATION_CANDIDATE_POOL_CAP",
     "INTERPRETATION_MATRIX_EXACT13",
     "LAYER1_OBSERVATION_CONTRIBUTION_CAP",
     "OBSERVATION_SEMANTIC_KEY_VERSION",
+    "UtterancePhase",
     "build_emlis_meaning_field",
     "build_interpretation_candidate_pool",
     "build_layer1_semantics",
     "build_stage1_semantic_projection",
+    "build_stage1_realization_candidate_set",
     "classify_affect_intensity",
     "classify_observation_depth",
     "classify_subjective_depth",
     "observation_depth_class",
     "plan_layer1_observation",
     "plan_layer2_subjectivity",
+    "select_stage1_realization_candidate",
     "validate_emlis_meaning_field",
     "validate_interpretation_candidate_pool",
     "validate_layer1_observation_plan",

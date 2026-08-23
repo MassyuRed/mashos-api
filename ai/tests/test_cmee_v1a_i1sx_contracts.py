@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import ast
 import hashlib
 import inspect
 import json
@@ -52,6 +53,7 @@ from cocolon_meaning_experience_engine.contracts import (
     OwnerClass,
     PlannedObservationContribution,
     ProviderResolution,
+    RealizationCandidateSet,
     RealizedSemanticBinding,
     RealizedSentenceUnit,
     RelationOperator,
@@ -80,16 +82,25 @@ from cocolon_meaning_experience_engine.contracts import (
 )
 import cocolon_meaning_experience_engine.emlis_stage1_response as stage1_response_module
 from cocolon_meaning_experience_engine.emlis_stage1_response import (
+    CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_BYTES,
+    CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_SHA256,
+    CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE,
+    CMEE_STAGE1_MICROGRAMMAR_POLICY_VERSION,
+    EmlisUtteranceState,
     INTERPRETATION_CANDIDATE_KIND_CAP,
     INTERPRETATION_CANDIDATE_POOL_CAP,
     INTERPRETATION_MATRIX_EXACT13,
+    UtterancePhase,
     build_emlis_meaning_field,
     build_interpretation_candidate_pool,
     build_layer1_semantics,
+    build_stage1_realization_candidate_set,
     build_stage1_semantic_projection,
     classify_affect_intensity,
     classify_observation_depth,
     classify_subjective_depth,
+    initialize_emlis_utterance_state,
+    select_stage1_realization_candidate,
     validate_layer2_subjective_plan,
     validate_reception_asset_mapping,
     validate_emlis_meaning_field,
@@ -524,6 +535,31 @@ def _stage1_sentence_unit_fixture(
         composition_variant_id="primary.v1",
     )
     return _identified(unit, "unit_id")
+
+
+def _stage4_exact8_fixture(index: int = 0):
+    case_id, memo, category, emotion, strength = EXACT8[index]
+    source, grounded_plan, graph, parent_plan = _stage2_inputs(
+        _request(
+            record_id=case_id,
+            memo=memo,
+            category=category,
+            emotion=emotion,
+            strength=strength,
+        )
+    )
+    projection = build_stage1_semantic_projection(
+        source=source,
+        grounded_graph=graph,
+        parent_plan=parent_plan,
+        grounded_plan=grounded_plan,
+    )
+    candidate_set = build_stage1_realization_candidate_set(
+        projection=projection,
+        grounded_graph=graph,
+        parent_plan=parent_plan,
+    )
+    return source, grounded_plan, graph, parent_plan, projection, candidate_set
 
 
 class CMEEV1AI1SXContractsTest(unittest.TestCase):
@@ -3139,6 +3175,726 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             .parameters["emlis_stage1_projection_ref"]
             .default
         )
+
+    def test_stage4_microgrammar_inventory_tuple_and_docs_bytes_are_exact(self) -> None:
+        self.assertEqual(
+            CMEE_STAGE1_MICROGRAMMAR_POLICY_VERSION,
+            "cocolon.emlis.stage1.microgrammar.v1",
+        )
+        self.assertEqual(
+            CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_BYTES,
+            stage1_canonical_json_bytes(
+                CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE
+            ),
+        )
+        self.assertEqual(len(CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_BYTES), 9321)
+        self.assertEqual(
+            CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_SHA256,
+            "6850d05d22d0378cf5926ce8856e648253df43a468376ba08062246f6c54b966",
+        )
+        self.assertEqual(
+            hashlib.sha256(
+                CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_BYTES
+            ).hexdigest(),
+            CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_SHA256,
+        )
+        sections = dict(CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE)
+        self.assertEqual(sections["policy_ref"], CMEE_STAGE1_MICROGRAMMAR_POLICY_REF)
+        self.assertEqual(len(sections["observation_operator_rows"]), 12)
+        self.assertEqual(len(sections["subjective_operator_rows"]), 14)
+        self.assertEqual(len(sections["connective_families"]), 7)
+        self.assertEqual(dict(sections["variant_policy"])["max_candidates"], 2)
+        self.assertEqual(dict(sections["variant_policy"])["automatic_retry"], 0)
+        self.assertEqual(dict(sections["s9_selection_policy"])["new_generation"], 0)
+        stage1_response_module._validate_microgrammar_inventory()
+
+        def recursively_immutable(value: object) -> bool:
+            if type(value) is tuple:
+                return all(recursively_immutable(row) for row in value)
+            return value is None or type(value) in {str, int, bool}
+
+        self.assertTrue(
+            recursively_immutable(CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE)
+        )
+
+    def test_stage4_exact8_candidate_sets_are_deterministic_same_projection_max2(self) -> None:
+        for index, (case_id, _memo, _category, _emotion, _strength) in enumerate(
+            EXACT8
+        ):
+            with self.subTest(case_id=case_id):
+                _source, _plan, graph, parent, projection, first = (
+                    _stage4_exact8_fixture(index)
+                )
+                second = build_stage1_realization_candidate_set(
+                    projection=projection,
+                    grounded_graph=graph,
+                    parent_plan=parent,
+                )
+                self.assertEqual(first, second)
+                self.assertIs(type(first), RealizationCandidateSet)
+                self.assertEqual(first.projection_ref, projection.projection_id)
+                self.assertEqual(len(first.candidates), 2)
+                self.assertEqual(
+                    tuple(candidate[0].composition_variant_id for candidate in first.candidates),
+                    ("01-primary.v1", "02-alternate.v1"),
+                )
+                expected_count = len(projection.ordered_observation_refs) + len(
+                    projection.ordered_subjective_refs
+                )
+                self.assertTrue(
+                    all(len(candidate) == expected_count for candidate in first.candidates)
+                )
+                self.assertTrue(
+                    all(
+                        unit.projection_ref == projection.projection_id
+                        for candidate in first.candidates
+                        for unit in candidate
+                    )
+                )
+                selected = select_stage1_realization_candidate(
+                    first,
+                    projection=projection,
+                    grounded_graph=graph,
+                    parent_plan=parent,
+                )
+                self.assertEqual(selected[0].composition_variant_id, "01-primary.v1")
+
+    def test_stage4_utterance_state_exact14_typed_atomic_transition(self) -> None:
+        _source, _plan, _graph, _parent, projection, candidate_set = (
+            _stage4_exact8_fixture(0)
+        )
+        candidate = candidate_set.candidates[0]
+        state = initialize_emlis_utterance_state(
+            projection,
+            composition_variant_id="01-primary.v1",
+        )
+        self.assertEqual(
+            tuple(row.name for row in fields(EmlisUtteranceState)),
+            (
+                "phase",
+                "realized_observation_contribution_refs",
+                "remaining_required_observation_refs",
+                "suppressed_observation_candidate_refs",
+                "realized_subjective_claim_refs",
+                "remaining_required_subjective_refs",
+                "suppressed_subjective_claim_refs",
+                "last_focus_refs",
+                "last_move_kind",
+                "realized_semantic_keys",
+                "normalized_surface_digests",
+                "layer_sentence_counts",
+                "composition_variant_id",
+                "stop_reason",
+            ),
+        )
+        self.assertIs(state.phase, UtterancePhase.L1_ACTIVE)
+        self.assertEqual(
+            tuple(state.remaining_required_observation_refs),
+            projection.ordered_observation_refs,
+        )
+        initial = replace(
+            state,
+            realized_observation_contribution_refs=list(
+                state.realized_observation_contribution_refs
+            ),
+            remaining_required_observation_refs=list(
+                state.remaining_required_observation_refs
+            ),
+            suppressed_observation_candidate_refs=list(
+                state.suppressed_observation_candidate_refs
+            ),
+            realized_subjective_claim_refs=list(state.realized_subjective_claim_refs),
+            remaining_required_subjective_refs=list(
+                state.remaining_required_subjective_refs
+            ),
+            suppressed_subjective_claim_refs=list(
+                state.suppressed_subjective_claim_refs
+            ),
+            last_focus_refs=list(state.last_focus_refs),
+            realized_semantic_keys=list(state.realized_semantic_keys),
+            normalized_surface_digests=list(state.normalized_surface_digests),
+            layer_sentence_counts=dict(state.layer_sentence_counts),
+        )
+        first_advanced = stage1_response_module._accept_sentence(
+            state, candidate[0], projection
+        )
+        self.assertEqual(state, initial)
+        self.assertIsNot(first_advanced, state)
+        self.assertEqual(len(first_advanced.realized_observation_contribution_refs), 1)
+        self.assertFalse(first_advanced.realized_subjective_claim_refs)
+        snapshot = replace(
+            first_advanced,
+            realized_observation_contribution_refs=list(
+                first_advanced.realized_observation_contribution_refs
+            ),
+            remaining_required_observation_refs=list(
+                first_advanced.remaining_required_observation_refs
+            ),
+            suppressed_observation_candidate_refs=list(
+                first_advanced.suppressed_observation_candidate_refs
+            ),
+            realized_subjective_claim_refs=list(
+                first_advanced.realized_subjective_claim_refs
+            ),
+            remaining_required_subjective_refs=list(
+                first_advanced.remaining_required_subjective_refs
+            ),
+            suppressed_subjective_claim_refs=list(
+                first_advanced.suppressed_subjective_claim_refs
+            ),
+            last_focus_refs=list(first_advanced.last_focus_refs),
+            realized_semantic_keys=list(first_advanced.realized_semantic_keys),
+            normalized_surface_digests=list(
+                first_advanced.normalized_surface_digests
+            ),
+            layer_sentence_counts=dict(first_advanced.layer_sentence_counts),
+        )
+        with self.assertRaises(CMEEStage1ContractError):
+            stage1_response_module._accept_sentence(
+                first_advanced, candidate[0], projection
+            )
+        self.assertEqual(first_advanced, snapshot)
+
+        state = first_advanced
+        observation_count = len(projection.ordered_observation_refs)
+        for unit in candidate[1:observation_count]:
+            state = stage1_response_module._accept_sentence(state, unit, projection)
+        self.assertIs(state.phase, UtterancePhase.L1_COMPLETE)
+        state = stage1_response_module._begin_layer2(state, projection)
+        self.assertIs(state.phase, UtterancePhase.L2_ACTIVE)
+        for unit in candidate[observation_count:]:
+            state = stage1_response_module._accept_sentence(state, unit, projection)
+        self.assertIs(state.phase, UtterancePhase.CANDIDATE_COMPLETE)
+        state = stage1_response_module._ready_for_s9(state, projection)
+        self.assertIs(state.phase, UtterancePhase.READY_FOR_S9)
+        self.assertFalse(state.remaining_required_observation_refs)
+        self.assertFalse(state.remaining_required_subjective_refs)
+        candidate_ids = {row.candidate_id for row in projection.interpretation_candidates}
+        contribution_ids = {
+            row.contribution_id for row in projection.observation_contributions
+        }
+        self.assertTrue(
+            set(state.suppressed_observation_candidate_refs).issubset(candidate_ids)
+        )
+        self.assertFalse(
+            set(state.suppressed_observation_candidate_refs) & contribution_ids
+        )
+        self.assertNotIn(
+            "state",
+            {row.name for row in fields(RealizationCandidateSet)},
+        )
+
+    def test_stage4_full_coverage_repetition_and_span_binding_exact8(self) -> None:
+        for index, (case_id, _memo, _category, _emotion, _strength) in enumerate(
+            EXACT8
+        ):
+            with self.subTest(case_id=case_id):
+                _source, _plan, graph, parent, projection, candidate_set = (
+                    _stage4_exact8_fixture(index)
+                )
+                expected_anchors = (
+                    *projection.ordered_observation_refs,
+                    *projection.ordered_subjective_refs,
+                )
+                for candidate in candidate_set.candidates:
+                    self.assertEqual(
+                        tuple(unit.basis_anchor_refs[0] for unit in candidate),
+                        expected_anchors,
+                    )
+                    normalized = tuple(
+                        stage1_response_module._normalized_surface_digest(unit.text)
+                        for unit in candidate
+                    )
+                    self.assertEqual(len(normalized), len(set(normalized)))
+                    prior_ids: list[str] = []
+                    for unit in candidate:
+                        validate_stage1_sentence_unit(
+                            unit,
+                            projection,
+                            grounded_graph=graph,
+                            parent_plan=parent,
+                            prior_unit_ids=tuple(prior_ids),
+                        )
+                        for binding in unit.realized_semantic_bindings:
+                            span = unit.text[
+                                binding.surface_scalar_start : binding.surface_scalar_end
+                            ]
+                            self.assertEqual(
+                                hashlib.sha256(span.encode("utf-8")).hexdigest(),
+                                binding.surface_span_sha256,
+                            )
+                        stage1_response_module._validate_surface_partition(unit)
+                        prior_ids.append(unit.unit_id)
+                select_stage1_realization_candidate(
+                    candidate_set,
+                    projection=projection,
+                    grounded_graph=graph,
+                    parent_plan=parent,
+                )
+
+    def test_stage4_s9_selects_existing_alternate_after_bound_span_defect(self) -> None:
+        _source, _plan, graph, parent, projection, candidate_set = (
+            _stage4_exact8_fixture(0)
+        )
+
+        def wrong_span(candidate: tuple[RealizedSentenceUnit, ...]):
+            unit = candidate[0]
+            original = unit.realized_semantic_bindings[0]
+            target = unit.realized_semantic_bindings[-1]
+            forged_binding = replace(
+                original,
+                semantic_ref=target.semantic_ref,
+                clause_slot=target.clause_slot,
+            )
+            forged_unit = _identified(
+                replace(
+                    unit,
+                    unit_id="",
+                    realized_semantic_bindings=(
+                        forged_binding,
+                        *unit.realized_semantic_bindings[1:],
+                    ),
+                ),
+                "unit_id",
+            )
+            return (forged_unit, *candidate[1:])
+
+        primary_bad = wrong_span(candidate_set.candidates[0])
+        one_bad = replace(
+            candidate_set,
+            candidates=(primary_bad, candidate_set.candidates[1]),
+        )
+        with patch.object(
+            stage1_response_module,
+            "_realize_stage1_variant",
+            side_effect=AssertionError("S9 must not generate"),
+        ) as realizer, patch.object(
+            stage1_response_module,
+            "_surface_parts",
+            side_effect=AssertionError("S9 must not compose"),
+        ) as composer, patch.object(
+            stage1_response_module,
+            "_observation_surface_shape",
+            side_effect=AssertionError("S9 must not compose"),
+        ) as observation_shape, patch.object(
+            stage1_response_module,
+            "_subjective_surface_shape",
+            side_effect=AssertionError("S9 must not compose"),
+        ) as subjective_shape:
+            selected = select_stage1_realization_candidate(
+                one_bad,
+                projection=projection,
+                grounded_graph=graph,
+                parent_plan=parent,
+            )
+            self.assertEqual(selected[0].composition_variant_id, "02-alternate.v1")
+            self.assertEqual(realizer.call_count, 0)
+            self.assertEqual(composer.call_count, 0)
+            self.assertEqual(observation_shape.call_count, 0)
+            self.assertEqual(subjective_shape.call_count, 0)
+
+            both_bad = replace(
+                candidate_set,
+                candidates=(primary_bad, wrong_span(candidate_set.candidates[1])),
+            )
+            with self.assertRaisesRegex(
+                CMEEStage1ContractError,
+                "stage1_no_hard_valid_realization",
+            ):
+                select_stage1_realization_candidate(
+                    both_bad,
+                    projection=projection,
+                    grounded_graph=graph,
+                    parent_plan=parent,
+                )
+            self.assertEqual(realizer.call_count, 0)
+            self.assertEqual(composer.call_count, 0)
+            self.assertEqual(observation_shape.call_count, 0)
+            self.assertEqual(subjective_shape.call_count, 0)
+
+    def test_stage4_candidate_set_bounds_projection_and_variant_fail_closed(self) -> None:
+        _source, _plan, graph, parent, projection, candidate_set = (
+            _stage4_exact8_fixture(1)
+        )
+        invalid_sets = (
+            RealizationCandidateSet(projection.projection_id, ()),
+            RealizationCandidateSet(
+                projection.projection_id,
+                (candidate_set.candidates[0],),
+            ),
+            RealizationCandidateSet(
+                projection.projection_id,
+                (
+                    *candidate_set.candidates,
+                    candidate_set.candidates[0],
+                ),
+            ),
+            replace(candidate_set, projection_ref="projection-foreign"),
+            replace(
+                candidate_set,
+                candidates=tuple(reversed(candidate_set.candidates)),
+            ),
+            RealizationCandidateSet(
+                projection.projection_id,
+                (("bad-member",), candidate_set.candidates[1]),
+            ),
+        )
+        for invalid in invalid_sets:
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(CMEEStage1ContractError):
+                    select_stage1_realization_candidate(
+                        invalid,
+                        projection=projection,
+                        grounded_graph=graph,
+                        parent_plan=parent,
+                    )
+
+        first = candidate_set.candidates[0][0]
+        foreign_unit = _identified(
+            replace(first, unit_id="", projection_ref="projection-foreign"),
+            "unit_id",
+        )
+        primary_bad = (
+            foreign_unit,
+            *candidate_set.candidates[0][1:],
+        )
+        selected = select_stage1_realization_candidate(
+            replace(
+                candidate_set,
+                candidates=(primary_bad, candidate_set.candidates[1]),
+            ),
+            projection=projection,
+            grounded_graph=graph,
+            parent_plan=parent,
+        )
+        self.assertEqual(selected[0].composition_variant_id, "02-alternate.v1")
+
+    def test_stage4_projection_defect_stops_before_any_surface_generation(self) -> None:
+        _source, _plan, graph, parent, projection, _candidate_set = (
+            _stage4_exact8_fixture(2)
+        )
+        invalid_projection = replace(
+            projection,
+            parent_observation_duty_ref="foreign-observation-duty",
+        )
+        with patch.object(
+            stage1_response_module,
+            "_realize_stage1_variant",
+            side_effect=AssertionError("defect must stop before generation"),
+        ) as realizer:
+            with self.assertRaises(CMEEStage1ContractError):
+                build_stage1_realization_candidate_set(
+                    projection=invalid_projection,
+                    grounded_graph=graph,
+                    parent_plan=parent,
+                )
+            self.assertEqual(realizer.call_count, 0)
+
+    def test_stage4_state_rejects_normalized_repetition_without_mutation(self) -> None:
+        _source, _plan, _graph, _parent, projection, candidate_set = (
+            _stage4_exact8_fixture(3)
+        )
+        candidate = candidate_set.candidates[0]
+        state = initialize_emlis_utterance_state(
+            projection,
+            composition_variant_id="01-primary.v1",
+        )
+        state = stage1_response_module._accept_sentence(
+            state, candidate[0], projection
+        )
+        repeated = _identified(
+            replace(candidate[1], unit_id="", text=candidate[0].text),
+            "unit_id",
+        )
+        snapshot = tuple(state.normalized_surface_digests)
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_realization_surface_repetition",
+        ):
+            stage1_response_module._accept_sentence(state, repeated, projection)
+        self.assertEqual(tuple(state.normalized_surface_digests), snapshot)
+
+    def test_stage4_alternate_changes_exactly_one_predeclared_surface_slot(self) -> None:
+        _source, _plan, graph, parent, projection, candidate_set = (
+            _stage4_exact8_fixture(6)
+        )
+        primary, alternate = candidate_set.candidates
+        self.assertEqual(
+            tuple(unit.basis_anchor_refs for unit in primary),
+            tuple(unit.basis_anchor_refs for unit in alternate),
+        )
+        self.assertEqual(
+            tuple(unit.move_ref for unit in primary),
+            tuple(unit.move_ref for unit in alternate),
+        )
+        self.assertEqual(
+            sum(left.text != right.text for left, right in zip(primary, alternate)),
+            1,
+        )
+        selected = select_stage1_realization_candidate(
+            candidate_set,
+            projection=projection,
+            grounded_graph=graph,
+            parent_plan=parent,
+        )
+        self.assertIs(selected, primary)
+        self.assertEqual(
+            min(
+                (primary, alternate),
+                key=lambda row: row[0].composition_variant_id,
+            ),
+            primary,
+        )
+
+    def test_stage4_s8_attempts_all_predeclared_variants_after_local_defect(self) -> None:
+        _source, _plan, graph, parent, projection, candidate_set = (
+            _stage4_exact8_fixture(0)
+        )
+        alternate = candidate_set.candidates[1]
+        with patch.object(
+            stage1_response_module,
+            "_realize_stage1_variant",
+            side_effect=(
+                CMEEStage1ContractError("stage1_realization_surface_repetition"),
+                alternate,
+            ),
+        ) as realizer:
+            rebuilt = build_stage1_realization_candidate_set(
+                projection=projection,
+                grounded_graph=graph,
+                parent_plan=parent,
+            )
+        self.assertEqual(realizer.call_count, 2)
+        self.assertEqual(rebuilt.candidates, ((), alternate))
+        selected = select_stage1_realization_candidate(
+            rebuilt,
+            projection=projection,
+            grounded_graph=graph,
+            parent_plan=parent,
+        )
+        self.assertEqual(selected[0].composition_variant_id, "02-alternate.v1")
+
+    def test_stage4_state_phase_foreign_unit_stop_and_suppression_fail_closed(self) -> None:
+        _source, _plan, _graph, _parent, projection, candidate_set = (
+            _stage4_exact8_fixture(0)
+        )
+        initial = initialize_emlis_utterance_state(
+            projection,
+            composition_variant_id="01-primary.v1",
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_utterance_state_phase_invalid",
+        ):
+            stage1_response_module._validate_utterance_state(
+                replace(initial, phase=UtterancePhase.READY_FOR_S9),
+                projection,
+            )
+        stopped = stage1_response_module._mark_no_valid_surface(
+            initial,
+            projection,
+            reason="stage1_surface_binding_unavailable",
+        )
+        self.assertIs(stopped.phase, UtterancePhase.NO_VALID_SURFACE)
+        self.assertEqual(
+            stopped.stop_reason,
+            "stage1_surface_binding_unavailable",
+        )
+
+        first = candidate_set.candidates[0][0]
+        foreign = _identified(
+            replace(first, unit_id="", projection_ref="projection-foreign"),
+            "unit_id",
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_utterance_state_unit_invalid",
+        ):
+            stage1_response_module._accept_sentence(initial, foreign, projection)
+        self.assertFalse(initial.realized_observation_contribution_refs)
+
+        selected_id = projection.observation_contributions[0].interpretation_candidate_refs[0]
+        selected_candidate = next(
+            row
+            for row in projection.interpretation_candidates
+            if row.candidate_id == selected_id
+        )
+        duplicate = replace(
+            selected_candidate,
+            candidate_id="interpretation-suppressed-local",
+        )
+        projection_with_duplicate = replace(
+            projection,
+            interpretation_candidates=(
+                *projection.interpretation_candidates,
+                duplicate,
+            ),
+        )
+        duplicate_state = initialize_emlis_utterance_state(
+            projection_with_duplicate,
+            composition_variant_id="01-primary.v1",
+        )
+        advanced = stage1_response_module._accept_sentence(
+            duplicate_state,
+            first,
+            projection_with_duplicate,
+        )
+        self.assertEqual(
+            advanced.suppressed_observation_candidate_refs,
+            ["interpretation-suppressed-local"],
+        )
+
+    def test_stage4_bounded_role_anchor_counter_and_connective_collision(self) -> None:
+        for index in range(len(EXACT8)):
+            _source, _plan, graph, _parent, _projection, candidate_set = (
+                _stage4_exact8_fixture(index)
+            )
+            node_values = {
+                f"node:{row.node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}": row.value
+                for row in graph.nodes
+            }
+            for candidate in candidate_set.candidates:
+                for unit in candidate:
+                    for binding in unit.realized_semantic_bindings:
+                        if not (
+                            binding.clause_slot.endswith(":object")
+                            or ":argument:" in binding.clause_slot
+                        ):
+                            continue
+                        span = unit.text[
+                            binding.surface_scalar_start : binding.surface_scalar_end
+                        ]
+                        self.assertLessEqual(len(span), 16)
+                        self.assertIn(span, node_values[binding.semantic_ref])
+
+        source, grounded_plan, graph, parent = _stage2_inputs(
+            _request(
+                record_id="stage4-counter-later",
+                memo="自分が悪いから、助けを求めてはいけない。",
+                category="生活",
+                emotion="不安",
+                strength="strong",
+            )
+        )
+        projection = build_stage1_semantic_projection(
+            source=source,
+            grounded_graph=graph,
+            parent_plan=parent,
+            grounded_plan=grounded_plan,
+        )
+        candidate_set = build_stage1_realization_candidate_set(
+            projection=projection,
+            grounded_graph=graph,
+            parent_plan=parent,
+        )
+        selected = select_stage1_realization_candidate(
+            candidate_set,
+            projection=projection,
+            grounded_graph=graph,
+            parent_plan=parent,
+        )
+        counter_units = tuple(
+            unit
+            for unit in selected
+            if unit.clause_frames[0].predicate_operator
+            == SubjectiveOperator.COUNTER_SPECIFIC_PROMOTION.value
+        )
+        self.assertEqual(len(counter_units), 1)
+        self.assertEqual(counter_units[0].clause_frames[0].speaker_marker, "EMLIS")
+
+        source, grounded_plan, graph, parent = _stage2_inputs(
+            _request(
+                record_id="stage4-connective-collision",
+                memo="また疲れている。",
+                category="生活",
+                emotion="不安",
+            )
+        )
+        projection = build_stage1_semantic_projection(
+            source=source,
+            grounded_graph=graph,
+            parent_plan=parent,
+            grounded_plan=grounded_plan,
+        )
+        candidate_set = build_stage1_realization_candidate_set(
+            projection=projection,
+            grounded_graph=graph,
+            parent_plan=parent,
+        )
+        with patch.object(
+            stage1_response_module,
+            "_realize_stage1_variant",
+            side_effect=AssertionError("S9 must not generate after collision"),
+        ) as realizer:
+            with self.assertRaisesRegex(
+                CMEEStage1ContractError,
+                "stage1_no_hard_valid_realization",
+            ):
+                select_stage1_realization_candidate(
+                    candidate_set,
+                    projection=projection,
+                    grounded_graph=graph,
+                    parent_plan=parent,
+                )
+            self.assertEqual(realizer.call_count, 0)
+
+    def test_stage4_has_no_provider_random_template_or_inventory_bypass(self) -> None:
+        source_code = inspect.getsource(stage1_response_module)
+        tree = ast.parse(source_code)
+        imported_roots = {
+            alias.name.split(".", 1)[0]
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        } | {
+            str(node.module).split(".", 1)[0]
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module
+        }
+        self.assertTrue(
+            {"random", "requests", "httpx", "openai"}.isdisjoint(imported_roots)
+        )
+        for forbidden in (
+            "expected_text",
+            "EXACT8",
+            "case_id",
+            "finished_sentence_bank",
+            "automatic_retry(",
+        ):
+            self.assertNotIn(forbidden, source_code)
+
+        inventory_assignment = next(
+            node
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name)
+                and target.id == "CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE"
+                for target in node.targets
+            )
+        )
+
+        def contains_japanese(value: str) -> bool:
+            return any(
+                "\u3040" <= char <= "\u30ff" or "\u3400" <= char <= "\u9fff"
+                for char in value
+            )
+
+        inventory_literals = {
+            node.value
+            for node in ast.walk(inventory_assignment.value)
+            if isinstance(node, ast.Constant)
+            and type(node.value) is str
+            and contains_japanese(node.value)
+        }
+        module_literals = {
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and type(node.value) is str
+            and contains_japanese(node.value)
+        }
+        self.assertTrue(module_literals.issubset(inventory_literals))
 
     def test_stage2_has_no_case_fixture_or_strength_branch(self) -> None:
         source_code = inspect.getsource(stage1_response_module)

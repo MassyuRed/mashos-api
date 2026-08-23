@@ -694,6 +694,14 @@ class RealizedSentenceUnit:
 
 
 @dataclass(frozen=True, slots=True)
+class RealizationCandidateSet:
+    """Bounded S8 surfaces for one immutable Stage 1 projection."""
+
+    projection_ref: str
+    candidates: Tuple[Tuple[RealizedSentenceUnit, ...], ...]
+
+
+@dataclass(frozen=True, slots=True)
 class EmlisStage1PositiveTraceExtension:
     schema_version: str
     claim_domain: EmlisTraceClaimDomain
@@ -778,6 +786,7 @@ _STAGE1_TUPLE_FIELDS = {
         "basis_anchor_refs",
         "realized_semantic_bindings",
     ),
+    RealizationCandidateSet: ("candidates",),
     EmlisStage1PositiveTraceExtension: (
         "contribution_refs",
         "basis_trace_refs",
@@ -3150,7 +3159,9 @@ def validate_stage1_sentence_unit(
         for anchor_ref in unit.basis_anchor_refs:
             contribution = contribution_by_id.get(anchor_ref)
             if contribution is not None:
-                reachable_semantic_refs.update(contribution.semantic_refs)
+                reachable_semantic_refs.update(
+                    (*contribution.semantic_refs, *contribution.relation_basis_refs)
+                )
     elif unit.layer == "LAYER_2":
         for anchor_ref in unit.basis_anchor_refs:
             claim = claim_by_id.get(anchor_ref)
@@ -3716,6 +3727,7 @@ __all__ = [
     "ProviderResolution",
     "RealizedSemanticBinding",
     "RealizedSentenceUnit",
+    "RealizationCandidateSet",
     "RelationOperator",
     "RouteBDisposition",
     "RouteBOwnerDisposition",
