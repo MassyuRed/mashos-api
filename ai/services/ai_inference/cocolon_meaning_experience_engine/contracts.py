@@ -1284,6 +1284,14 @@ def validate_stage1_projection(
     if type(parent_plan) is not ExperiencePlan:
         raise CMEEStage1ContractError("stage1_parent_plan_type_invalid")
     if (
+        parent_plan.source_envelope_id != grounded_graph.source_envelope_id
+        or parent_plan.source_version != grounded_graph.source_version
+        or parent_plan.obligation_version != grounded_graph.obligation_version
+        or parent_plan.owner_universe_digest
+        != grounded_graph.owner_universe_digest
+    ):
+        raise CMEEStage1ContractError("stage1_parent_plan_lineage_mismatch")
+    if (
         projection.parent_observation_duty_ref
         != parent_plan.observation_duty_id
         or projection.parent_reception_duty_ref != parent_plan.reception_duty_id
@@ -1530,6 +1538,13 @@ def validate_stage1_trace_spine(
     subjective_claim_counts = {ref: 0 for ref in claims}
 
     for index, row in enumerate(rows):
+        if (
+            row.source_envelope_id != grounded_graph.source_envelope_id
+            or row.source_version != grounded_graph.source_version
+            or row.obligation_version != grounded_graph.obligation_version
+            or row.owner_universe_digest != grounded_graph.owner_universe_digest
+        ):
+            raise CMEEStage1ContractError("stage1_trace_lineage_metadata_mismatch")
         for field_name in (
             "meaning_node_ids",
             "meaning_edge_ids",

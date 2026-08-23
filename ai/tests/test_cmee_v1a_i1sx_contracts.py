@@ -983,6 +983,21 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             projection, grounded_graph=grounded_graph, parent_plan=parent
         )
         self.assertNotIn("core_projection_ref", {row.name for row in fields(ExperiencePlan)})
+        for field_name, value in (
+            ("source_envelope_id", "foreign-source"),
+            ("source_version", "foreign-source.v9"),
+            ("obligation_version", "foreign-obligation.v9"),
+            ("owner_universe_digest", "foreign-digest"),
+        ):
+            with self.subTest(parent_lineage_field=field_name):
+                with self.assertRaisesRegex(
+                    CMEEStage1ContractError, "parent_plan_lineage_mismatch"
+                ):
+                    validate_stage1_projection(
+                        projection,
+                        grounded_graph=grounded_graph,
+                        parent_plan=replace(parent, **{field_name: value}),
+                    )
 
         invalid_rows = (
             (
@@ -1293,6 +1308,14 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                     reception,
                 ),
                 "duty_mismatch",
+            ),
+            (
+                (
+                    replace(observation, source_version="foreign-source.v9"),
+                    unknown,
+                    reception,
+                ),
+                "lineage_metadata_mismatch",
             ),
             (
                 (
