@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import unittest
+from collections import Counter
 from dataclasses import fields, replace
 from unittest.mock import patch
 
 from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+from emlis_ai_grounded_observation_plan import build_grounded_observation_plan
 from cocolon_meaning_experience_engine import EngineStatus, GenerationRequest, MeaningExperienceEngine
 from cocolon_meaning_experience_engine.contracts import (
     ArgumentBinding,
@@ -32,6 +35,7 @@ from cocolon_meaning_experience_engine.contracts import (
     InterpretationKind,
     MeaningFieldEntry,
     MeaningFieldSlot,
+    MeaningEdge,
     MeaningNode,
     ObservationContributionKind,
     ObservationDepthClass,
@@ -60,6 +64,24 @@ from cocolon_meaning_experience_engine.contracts import (
     validate_stage1_trace_spine,
     validate_version_qualified_ref,
 )
+import cocolon_meaning_experience_engine.emlis_stage1_response as stage1_response_module
+from cocolon_meaning_experience_engine.emlis_stage1_response import (
+    INTERPRETATION_CANDIDATE_KIND_CAP,
+    INTERPRETATION_CANDIDATE_POOL_CAP,
+    INTERPRETATION_MATRIX_EXACT13,
+    build_emlis_meaning_field,
+    build_interpretation_candidate_pool,
+    build_layer1_semantics,
+    classify_observation_depth,
+    validate_emlis_meaning_field,
+    validate_layer1_observation_plan,
+)
+from cocolon_meaning_experience_engine.emlis_v1a import (
+    _build_experience_plan,
+    _build_graph,
+    _ordered,
+    _planned_visible_source_ids,
+)
 from cocolon_meaning_experience_engine.source_kernel import (
     SourceAdmissionError,
     _evidence_id,
@@ -68,6 +90,7 @@ from cocolon_meaning_experience_engine.source_kernel import (
     freeze_text_source,
     normalize_evidence_literal,
 )
+from tools.cmee_v1a_i1sx_candidate_run import EXACT8
 
 
 SAMPLE_MEMO = "仕事が続いて疲れていて、朝から何も手につかない。"
@@ -122,6 +145,32 @@ def _request(
     return GenerationRequest(**values)
 
 
+def _stage2_inputs(request: GenerationRequest):
+    source = freeze_text_source(request)
+    grounded_plan = build_grounded_observation_plan(
+        source.normalized_current_input,
+        evidence_spans=source.evidence_spans,
+    )
+    required_nuclei, required_relations, reception_targets = (
+        _planned_visible_source_ids(grounded_plan)
+    )
+    graph = _build_graph(
+        source,
+        grounded_plan,
+        _ordered((*required_nuclei, *reception_targets)),
+        required_relations,
+    )
+    parent_plan = _build_experience_plan(
+        source,
+        graph,
+        grounded_plan,
+        required_nuclei,
+        required_relations,
+        reception_targets,
+    )
+    return source, grounded_plan, graph, parent_plan
+
+
 def _identified(value: object, identity_field: str) -> object:
     return replace(value, **{identity_field: recompute_stage1_identity(value)})
 
@@ -135,7 +184,7 @@ def _stage1_grounded_graph_fixture() -> GroundedMeaningGraph:
                 node_id="state-1",
                 owner_id="owner-state-1",
                 node_kind="STATE",
-                grounding_kind="SOURCE_EXPLICIT",
+                grounding_kind="explicit",
                 value="状態",
                 epistemic_state=EpistemicState.SOURCE_EXPLICIT,
                 evidence_ids=("memo-1",),
@@ -143,8 +192,8 @@ def _stage1_grounded_graph_fixture() -> GroundedMeaningGraph:
             MeaningNode(
                 node_id="context-1",
                 owner_id="owner-context-1",
-                node_kind="CONTEXT",
-                grounding_kind="SOURCE_EXPLICIT",
+                node_kind="state",
+                grounding_kind="explicit",
                 value="文脈",
                 epistemic_state=EpistemicState.SOURCE_EXPLICIT,
                 evidence_ids=("memo-1",),
@@ -153,7 +202,7 @@ def _stage1_grounded_graph_fixture() -> GroundedMeaningGraph:
                 node_id="other-1",
                 owner_id="owner-other-1",
                 node_kind="OTHER",
-                grounding_kind="SOURCE_EXPLICIT",
+                grounding_kind="explicit",
                 value="別対象",
                 epistemic_state=EpistemicState.SOURCE_EXPLICIT,
                 evidence_ids=("memo-1",),
@@ -191,15 +240,17 @@ def _stage1_projection_fixture() -> EmlisStage1Projection:
             ),
             relation_operator=RelationOperator.NO_RELATION_CLAIM,
             relation_basis_refs=(),
-            derivation_rule_id="direct-state.v1",
-            semantic_refs=semantic_refs,
+            derivation_rule_id=(
+                "cocolon.cmee.v1a.stage1.direct.direct_state.v1"
+            ),
+            semantic_refs=(semantic_refs[0],),
             evidence_refs=evidence_refs,
             basis_candidate_refs=(),
             epistemic_state=(
                 InterpretationEpistemicState.PROVISIONAL_INTERPRETATION
             ),
-            required_qualifiers=("provisional",),
-            forbidden_promotions=("diagnosis",),
+            required_qualifiers=("epistemic:provisional_interpretation",),
+            forbidden_promotions=stage1_response_module._FORBIDDEN_PROMOTIONS,
         ),
         "candidate_id",
     )
@@ -215,15 +266,17 @@ def _stage1_projection_fixture() -> EmlisStage1Projection:
             ),
             relation_operator=RelationOperator.NO_RELATION_CLAIM,
             relation_basis_refs=(),
-            derivation_rule_id="direct-burden.v1",
+            derivation_rule_id=(
+                "cocolon.cmee.v1a.stage1.direct.direct_state.v1"
+            ),
             semantic_refs=(semantic_refs[1],),
             evidence_refs=evidence_refs,
             basis_candidate_refs=(candidate_1.candidate_id,),
             epistemic_state=(
                 InterpretationEpistemicState.PROVISIONAL_INTERPRETATION
             ),
-            required_qualifiers=("provisional",),
-            forbidden_promotions=("hidden-cause",),
+            required_qualifiers=("epistemic:provisional_interpretation",),
+            forbidden_promotions=stage1_response_module._FORBIDDEN_PROMOTIONS,
         ),
         "candidate_id",
     )
@@ -237,7 +290,7 @@ def _stage1_projection_fixture() -> EmlisStage1Projection:
                 MeaningFieldEntry(
                     slot=MeaningFieldSlot.CENTER,
                     interpretation_candidate_refs=(candidate_1.candidate_id,),
-                    semantic_refs=semantic_refs,
+                    semantic_refs=(semantic_refs[0],),
                     evidence_refs=evidence_refs,
                 ),
                 MeaningFieldEntry(
@@ -265,14 +318,22 @@ def _stage1_projection_fixture() -> EmlisStage1Projection:
             ),
             relation_operator=RelationOperator.NO_RELATION_CLAIM,
             relation_basis_refs=(),
-            derivation_rule_id="observe-center.v1",
-            semantic_refs=semantic_refs,
+            derivation_rule_id=(
+                "cocolon.cmee.v1a.stage1.layer1.observe_center.v1"
+            ),
+            semantic_refs=(semantic_refs[0],),
             evidence_refs=evidence_refs,
             retention="REQUIRED",
-            semantic_key_version="semantic-key.v1",
-            canonical_semantic_key="state-1|context-1",
+            semantic_key_version=(
+                stage1_response_module.OBSERVATION_SEMANTIC_KEY_VERSION
+            ),
+            canonical_semantic_key=stage1_response_module._semantic_key(
+                candidate_1
+            ),
             prerequisite_contribution_refs=(),
-            forbidden_operations=("invent-cause",),
+            forbidden_operations=(
+                stage1_response_module._FORBIDDEN_OBSERVATION_OPERATIONS
+            ),
         ),
         "contribution_id",
     )
@@ -900,15 +961,30 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
 
         projection = _stage1_projection_fixture()
         candidate = projection.interpretation_candidates[0]
+        meaning_field = projection.meaning_field
         self.assertNotEqual(
-            recompute_stage1_identity(candidate),
+            recompute_stage1_identity(meaning_field),
             recompute_stage1_identity(
-                replace(candidate, semantic_refs=tuple(reversed(candidate.semantic_refs)))
+                replace(
+                    meaning_field,
+                    entries=tuple(reversed(meaning_field.entries)),
+                )
             ),
         )
+        qualifier_ordered = replace(
+            candidate,
+            required_qualifiers=("qualifier:a", "qualifier:b"),
+        )
         self.assertNotEqual(
-            recompute_stage1_identity(candidate),
-            recompute_stage1_identity(replace(candidate, schema_version="other.v1")),
+            recompute_stage1_identity(qualifier_ordered),
+            recompute_stage1_identity(
+                replace(
+                    qualifier_ordered,
+                    required_qualifiers=tuple(
+                        reversed(qualifier_ordered.required_qualifiers)
+                    ),
+                )
+            ),
         )
         for tampered in (
             replace(
@@ -1106,6 +1182,164 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                 parent_plan=parent_plan,
             )
 
+    def test_projection_rejects_coordinated_relation_endpoint_kind_forgery(
+        self,
+    ) -> None:
+        projection = _stage1_projection_fixture()
+        grounded_graph = _stage1_grounded_graph_fixture()
+        parent_plan = _stage1_parent_plan_fixture(projection)
+        state_ref = f"node:state-1@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        context_ref = f"node:context-1@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        edge = MeaningEdge(
+            edge_id="forged-wish-constraint",
+            owner_id="owner-context-1",
+            relation="wish_and_constraint",
+            source_node_id="state-1",
+            target_node_id="context-1",
+            grounding_kind="user_stated_relation",
+            epistemic_state=EpistemicState.SOURCE_EXPLICIT,
+            evidence_ids=("memo-1",),
+        )
+        forged_graph = replace(grounded_graph, edges=(edge,))
+        first, second = projection.interpretation_candidates
+        forged_second = _identified(
+            replace(
+                second,
+                candidate_id="",
+                candidate_kind=InterpretationKind.DIRECTION_UNDER_BURDEN,
+                semantic_operator=SemanticOperator.SYNTHESIZE_RELATION,
+                argument_bindings=(
+                    ArgumentBinding(ArgumentRole.LEFT, state_ref),
+                    ArgumentBinding(ArgumentRole.RIGHT, context_ref),
+                ),
+                relation_operator=RelationOperator.COEXISTS_WITH,
+                relation_basis_refs=(
+                    f"edge:{edge.edge_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}",
+                ),
+                derivation_rule_id=(
+                    "cocolon.cmee.v1a.stage1.relation."
+                    "wish_and_constraint.v1"
+                ),
+                semantic_refs=(state_ref, context_ref),
+            ),
+            "candidate_id",
+        )
+        forged_relation_entry = MeaningFieldEntry(
+            slot=MeaningFieldSlot.COEXISTENCE,
+            interpretation_candidate_refs=(forged_second.candidate_id,),
+            semantic_refs=(state_ref, context_ref),
+            evidence_refs=("evidence:memo-1@source.v1",),
+        )
+        forged_field = _identified(
+            replace(
+                projection.meaning_field,
+                meaning_field_id="",
+                entries=(
+                    projection.meaning_field.entries[0],
+                    forged_relation_entry,
+                ),
+            ),
+            "meaning_field_id",
+        )
+        forged_projection = _identified(
+            replace(
+                projection,
+                projection_id="",
+                interpretation_candidates=(first, forged_second),
+                meaning_field=forged_field,
+            ),
+            "projection_id",
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_candidate_relation_binding_invalid",
+        ):
+            validate_stage1_projection(
+                forged_projection,
+                grounded_graph=forged_graph,
+                parent_plan=parent_plan,
+            )
+
+    def test_projection_accepts_canonical_capped_relation_endpoint(
+        self,
+    ) -> None:
+        source, grounded_plan, grounded_graph, parent_plan = _stage2_inputs(
+            _request(
+                record_id="stage2-capped-relation-endpoint",
+                memo="困っている。前は動いた。今は不安が残っている。",
+            )
+        )
+        candidates, meaning_field, contributions, ordered_refs, depth = (
+            build_layer1_semantics(
+                source=source,
+                grounded_graph=grounded_graph,
+                parent_plan=parent_plan,
+                grounded_plan=grounded_plan,
+            )
+        )
+        residue = next(
+            row
+            for row in candidates
+            if row.candidate_kind is InterpretationKind.RESIDUE_AFTER_EVENT
+        )
+        after_ref = residue.argument_bindings[1].semantic_ref
+        self.assertFalse(
+            any(
+                row.relation_operator is RelationOperator.NO_RELATION_CLAIM
+                and after_ref in row.semantic_refs
+                for row in candidates
+            )
+        )
+
+        base = _stage1_projection_fixture()
+        base_claim = base.subjective_claims[0]
+        proposition = replace(
+            base_claim.asserted_subjective_proposition,
+            target_contribution_refs=(contributions[0].contribution_id,),
+            response_object_refs=(contributions[0].contribution_id,),
+        )
+        claim = _identified(
+            replace(
+                base_claim,
+                subjective_claim_id="",
+                parent_duty_ref=parent_plan.reception_duty_id,
+                asserted_subjective_proposition=proposition,
+                basis_observation_contribution_refs=(
+                    contributions[0].contribution_id,
+                ),
+                basis_semantic_refs=contributions[0].semantic_refs,
+                source_reception_act_refs=(
+                    parent_plan.allowed_reception_act_ids
+                ),
+            ),
+            "subjective_claim_id",
+        )
+        projection = _identified(
+            replace(
+                base,
+                projection_id="",
+                grounded_graph_ref=meaning_field.grounded_graph_ref,
+                parent_observation_duty_ref=parent_plan.observation_duty_id,
+                parent_reception_duty_ref=parent_plan.reception_duty_id,
+                interpretation_candidates=candidates,
+                meaning_field=meaning_field,
+                observation_contributions=contributions,
+                subjective_claims=(claim,),
+                ordered_observation_refs=ordered_refs,
+                ordered_subjective_refs=(claim.subjective_claim_id,),
+                retained_reception_act_ids=(
+                    parent_plan.allowed_reception_act_ids
+                ),
+                observation_depth_class=depth,
+            ),
+            "projection_id",
+        )
+        validate_stage1_projection(
+            projection,
+            grounded_graph=grounded_graph,
+            parent_plan=parent_plan,
+        )
+
     def test_sentence_unit_binds_projection_utf8_text_and_surface_digest(self) -> None:
         projection = _stage1_projection_fixture()
         grounded_graph = _stage1_grounded_graph_fixture()
@@ -1191,7 +1425,7 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             operation="SEMANTIC_REALIZATION",
             text_sha256="0" * 64,
             duty_id=projection.parent_observation_duty_ref,
-            meaning_node_ids=("state-1", "context-1"),
+            meaning_node_ids=("state-1",),
             meaning_edge_ids=(),
             evidence_ids=("memo-1",),
             emlis_stage1_extension=EmlisStage1PositiveTraceExtension(
@@ -1364,6 +1598,751 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                         grounded_graph=grounded_graph,
                         parent_plan=parent_plan,
                     )
+
+    def test_stage2_interpretation_matrix_is_canonical_exact13(self) -> None:
+        expected = (
+            (InterpretationKind.DIRECT_STATE, SemanticOperator.PRESENT_STATE, RelationOperator.NO_RELATION_CLAIM, (ArgumentRole.PRIMARY,)),
+            (InterpretationKind.DIRECT_STATE, SemanticOperator.PRESENT_BURDEN, RelationOperator.NO_RELATION_CLAIM, (ArgumentRole.PRIMARY,)),
+            (InterpretationKind.DIRECT_STATE, SemanticOperator.PRESENT_CHANGE, RelationOperator.NO_RELATION_CLAIM, (ArgumentRole.PRIMARY,)),
+            (InterpretationKind.DIRECT_STATE, SemanticOperator.PRESENT_ACTUAL_OUTPUT, RelationOperator.NO_RELATION_CLAIM, (ArgumentRole.PRIMARY,)),
+            (InterpretationKind.DIRECT_DIRECTION, SemanticOperator.PRESENT_DIRECTION, RelationOperator.NO_RELATION_CLAIM, (ArgumentRole.PRIMARY,)),
+            (InterpretationKind.COEXISTENCE, SemanticOperator.SYNTHESIZE_RELATION, RelationOperator.COEXISTS_WITH, (ArgumentRole.LEFT, ArgumentRole.RIGHT)),
+            (InterpretationKind.TENSION, SemanticOperator.SYNTHESIZE_RELATION, RelationOperator.TENSION_WITH, (ArgumentRole.LEFT, ArgumentRole.RIGHT)),
+            (InterpretationKind.DIRECTION_UNDER_BURDEN, SemanticOperator.SYNTHESIZE_RELATION, RelationOperator.COEXISTS_WITH, (ArgumentRole.LEFT, ArgumentRole.RIGHT)),
+            (InterpretationKind.DIRECTION_UNDER_BURDEN, SemanticOperator.SYNTHESIZE_RELATION, RelationOperator.TENSION_WITH, (ArgumentRole.LEFT, ArgumentRole.RIGHT)),
+            (InterpretationKind.ACTION_THEN_CHANGE_ONCE, SemanticOperator.PRESENT_CHANGE, RelationOperator.ACTION_PRECEDES_CHANGE, (ArgumentRole.ACTION, ArgumentRole.CHANGE)),
+            (InterpretationKind.RESIDUE_AFTER_EVENT, SemanticOperator.PRESENT_RESIDUE, RelationOperator.TEMPORALLY_PRECEDES, (ArgumentRole.BEFORE, ArgumentRole.AFTER)),
+            (InterpretationKind.SOURCE_STATED_CAUSE, SemanticOperator.SYNTHESIZE_RELATION, RelationOperator.SOURCE_EXPLICIT_CAUSE, (ArgumentRole.CAUSE, ArgumentRole.EFFECT)),
+            (InterpretationKind.UNFINISHED, SemanticOperator.PRESENT_UNFINISHED, RelationOperator.NO_RELATION_CLAIM, (ArgumentRole.PRIMARY,)),
+        )
+        self.assertEqual(INTERPRETATION_MATRIX_EXACT13, expected)
+        self.assertEqual(len(INTERPRETATION_MATRIX_EXACT13), 13)
+        self.assertEqual(
+            {row[0] for row in INTERPRETATION_MATRIX_EXACT13},
+            set(InterpretationKind),
+        )
+
+    def test_stage2_exact8_is_deterministic_reachable_and_layered(self) -> None:
+        for case_id, memo, category, emotion, strength in EXACT8:
+            with self.subTest(case_id=case_id):
+                source, grounded_plan, graph, parent_plan = _stage2_inputs(
+                    _request(
+                        record_id=f"stage2-{case_id.lower()}",
+                        memo=memo,
+                        category=category,
+                        emotion=emotion,
+                        strength=strength,
+                    )
+                )
+                first = build_layer1_semantics(
+                    source=source,
+                    grounded_graph=graph,
+                    parent_plan=parent_plan,
+                    grounded_plan=grounded_plan,
+                )
+                second = build_layer1_semantics(
+                    source=source,
+                    grounded_graph=graph,
+                    parent_plan=parent_plan,
+                    grounded_plan=grounded_plan,
+                )
+                self.assertEqual(first, second)
+                candidates, meaning_field, contributions, ordered_refs, depth = first
+                self.assertLessEqual(
+                    len(candidates), INTERPRETATION_CANDIDATE_POOL_CAP
+                )
+                self.assertTrue(candidates)
+                self.assertTrue(
+                    all(
+                        count <= INTERPRETATION_CANDIDATE_KIND_CAP
+                        for count in Counter(
+                            row.candidate_kind for row in candidates
+                        ).values()
+                    )
+                )
+                node_ids = {row.node_id for row in graph.nodes}
+                edge_ids = {row.edge_id for row in graph.edges}
+                evidence_ids = {row.evidence_id for row in source.evidence_refs}
+                for candidate in candidates:
+                    validate_stage1_identity(candidate)
+                    for ref in candidate.semantic_refs:
+                        self.assertIn(
+                            ref.split(":", 1)[1].rsplit("@", 1)[0], node_ids
+                        )
+                    for ref in candidate.relation_basis_refs:
+                        self.assertIn(
+                            ref.split(":", 1)[1].rsplit("@", 1)[0], edge_ids
+                        )
+                    for ref in candidate.evidence_refs:
+                        self.assertIn(
+                            ref.split(":", 1)[1].rsplit("@", 1)[0],
+                            evidence_ids,
+                        )
+                    roles = tuple(row.role for row in candidate.argument_bindings)
+                    self.assertTrue(
+                        any(
+                            row[:3]
+                            == (
+                                candidate.candidate_kind,
+                                candidate.semantic_operator,
+                                candidate.relation_operator,
+                            )
+                            and roles
+                            in {
+                                row[3],
+                                (*row[3], ArgumentRole.EXPERIENCER),
+                            }
+                            for row in INTERPRETATION_MATRIX_EXACT13
+                        )
+                    )
+                entry_refs = tuple(
+                    ref
+                    for entry in meaning_field.entries
+                    for ref in entry.interpretation_candidate_refs
+                )
+                self.assertEqual(len(entry_refs), len(set(entry_refs)))
+                self.assertEqual(set(entry_refs), {row.candidate_id for row in candidates})
+                self.assertIn(
+                    meaning_field.center_candidate_ref,
+                    {row.candidate_id for row in candidates},
+                )
+                self.assertTrue(
+                    set(meaning_field.required_candidate_refs).issubset(
+                        set(entry_refs)
+                    )
+                )
+                self.assertEqual(len(contributions), 2)
+                self.assertEqual(
+                    ordered_refs,
+                    tuple(row.contribution_id for row in contributions),
+                )
+                self.assertEqual(
+                    len({row.canonical_semantic_key for row in contributions}),
+                    len(contributions),
+                )
+                self.assertIs(depth, ObservationDepthClass.LAYERED)
+
+    def test_stage2_source_evidence_and_unknown_boundaries_fail_closed(self) -> None:
+        case_id, memo, category, emotion, strength = EXACT8[0]
+        source, grounded_plan, graph, parent_plan = _stage2_inputs(
+            _request(
+                record_id=f"stage2-reach-{case_id.lower()}",
+                memo=memo,
+                category=category,
+                emotion=emotion,
+                strength=strength,
+            )
+        )
+        candidates = build_interpretation_candidate_pool(
+            graph,
+            parent_plan,
+            source=source,
+            grounded_plan=grounded_plan,
+        )
+        self.assertTrue(candidates)
+
+        admitted = next(
+            row
+            for row in graph.nodes
+            if row.epistemic_state is EpistemicState.SOURCE_EXPLICIT
+            and row.grounding_kind in {"explicit", "user_stated_relation"}
+        )
+        invalid_nodes = (
+            replace(admitted, evidence_ids=()),
+            replace(admitted, epistemic_state=EpistemicState.UNKNOWN),
+        )
+        for node in invalid_nodes:
+            with self.subTest(node_epistemic=node.epistemic_state.value):
+                with self.assertRaisesRegex(
+                    CMEEStage1ContractError, "stage1_grounded_graph_noncanonical"
+                ):
+                    build_interpretation_candidate_pool(
+                        replace(
+                            graph,
+                            nodes=tuple(
+                                node if row.node_id == admitted.node_id else row
+                                for row in graph.nodes
+                            ),
+                        ),
+                        parent_plan,
+                        source=source,
+                        grounded_plan=grounded_plan,
+                    )
+
+        rename_target = next(
+            row
+            for row in graph.nodes
+            if row.epistemic_state is EpistemicState.SOURCE_EXPLICIT
+            and row.grounding_kind in {"explicit", "user_stated_relation"}
+            and row.owner_id not in set(parent_plan.visible_owner_ids)
+        )
+        renamed_node = replace(rename_target, node_id="attacker-node-id")
+        renamed_graph = replace(
+            graph,
+            nodes=tuple(
+                renamed_node if row.node_id == rename_target.node_id else row
+                for row in graph.nodes
+            ),
+            edges=tuple(
+                replace(
+                    row,
+                    source_node_id=(
+                        renamed_node.node_id
+                        if row.source_node_id == rename_target.node_id
+                        else row.source_node_id
+                    ),
+                    target_node_id=(
+                        renamed_node.node_id
+                        if row.target_node_id == rename_target.node_id
+                        else row.target_node_id
+                    ),
+                )
+                for row in graph.edges
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "stage1_grounded_graph_noncanonical"
+        ):
+            build_interpretation_candidate_pool(
+                renamed_graph,
+                parent_plan,
+                source=source,
+                grounded_plan=grounded_plan,
+            )
+
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "stage1_admitted_text_source_required"
+        ):
+            build_interpretation_candidate_pool(
+                graph,
+                parent_plan,
+                source=object(),
+                grounded_plan=grounded_plan,
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_grounded_observation_plan_required",
+        ):
+            build_interpretation_candidate_pool(
+                graph,
+                parent_plan,
+                source=source,
+                grounded_plan=object(),
+            )
+
+        source_a = freeze_text_source(
+            _request(record_id="stage2-coordinated-source", memo="疲れた。")
+        )
+        source_b = freeze_text_source(
+            _request(
+                record_id="stage2-coordinated-source",
+                memo="不安はあるけれど進みたい。",
+            )
+        )
+        forged_source = replace(
+            source_a,
+            normalized_current_input=source_b.normalized_current_input,
+            evidence_spans=source_b.evidence_spans,
+        )
+        forged_grounded_plan = build_grounded_observation_plan(
+            forged_source.normalized_current_input,
+            evidence_spans=forged_source.evidence_spans,
+        )
+        forged_required_nuclei, forged_required_relations, forged_targets = (
+            _planned_visible_source_ids(forged_grounded_plan)
+        )
+        forged_graph = _build_graph(
+            forged_source,
+            forged_grounded_plan,
+            _ordered((*forged_required_nuclei, *forged_targets)),
+            forged_required_relations,
+        )
+        forged_parent = _build_experience_plan(
+            forged_source,
+            forged_graph,
+            forged_grounded_plan,
+            forged_required_nuclei,
+            forged_required_relations,
+            forged_targets,
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "stage1_source_evidence_unreachable"
+        ):
+            build_layer1_semantics(
+                source=forged_source,
+                grounded_graph=forged_graph,
+                parent_plan=forged_parent,
+                grounded_plan=forged_grounded_plan,
+            )
+
+        relation_case = EXACT8[6]
+        relation_source, relation_grounded_plan, relation_graph, relation_plan = (
+            _stage2_inputs(
+                _request(
+                    record_id="stage2-relation-endpoint",
+                    memo=relation_case[1],
+                    category=relation_case[2],
+                    emotion=relation_case[3],
+                    strength=relation_case[4],
+                )
+            )
+        )
+        relation_edge = next(
+            row
+            for row in relation_graph.edges
+            if row.epistemic_state is EpistemicState.SOURCE_EXPLICIT
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "stage1_relation_endpoint_missing"
+        ):
+            build_interpretation_candidate_pool(
+                replace(
+                    relation_graph,
+                    edges=tuple(
+                        replace(row, target_node_id="missing-node")
+                        if row.edge_id == relation_edge.edge_id
+                        else row
+                        for row in relation_graph.edges
+                    ),
+                ),
+                relation_plan,
+                source=relation_source,
+                grounded_plan=relation_grounded_plan,
+            )
+
+        bounded_source, bounded_grounded_plan, bounded_graph, bounded_plan = (
+            _stage2_inputs(
+                _request(
+                    record_id="stage2-material-unknown",
+                    memo="疲れた。",
+                )
+            )
+        )
+        excluded_node_ids = {
+            row.node_id
+            for row in bounded_graph.nodes
+            if row.epistemic_state is EpistemicState.UNKNOWN
+            or row.grounding_kind == "source_explicit_not_realized"
+        }
+        self.assertTrue(excluded_node_ids)
+        unknown_owner = bounded_plan.visible_unknown_owner_ids[0]
+        disposition = next(
+            row
+            for row in bounded_graph.owner_dispositions
+            if row.meaning_owner_id == unknown_owner
+        )
+        material_unknown_refs = stage1_response_module._material_unknown_refs(
+            bounded_graph,
+            bounded_plan,
+            bounded_source,
+        )
+        self.assertEqual(len(material_unknown_refs), 1)
+        self.assertIn(
+            str(disposition.target_unknown_ref),
+            material_unknown_refs[0],
+        )
+
+        forged_unknown_plan = replace(
+            bounded_plan,
+            visible_unknown_owner_ids=("bogus-owner",),
+            unresolved_owner_ids=(*bounded_plan.unresolved_owner_ids, "bogus-owner"),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "stage1_material_unknown_unreachable"
+        ):
+            stage1_response_module._material_unknown_refs(
+                bounded_graph,
+                forged_unknown_plan,
+                bounded_source,
+            )
+
+    def test_stage2_relations_preserve_symmetric_order_and_direction(self) -> None:
+        case_id, memo, category, emotion, strength = EXACT8[6]
+        source, grounded_plan, contrast_graph, contrast_plan = _stage2_inputs(
+            _request(
+                record_id=f"stage2-relations-{case_id.lower()}",
+                memo=memo,
+                category=category,
+                emotion=emotion,
+                strength=strength,
+            )
+        )
+        candidates = build_interpretation_candidate_pool(
+            contrast_graph,
+            contrast_plan,
+            source=source,
+            grounded_plan=grounded_plan,
+        )
+        contrast = next(
+            row
+            for row in candidates
+            if row.candidate_kind is InterpretationKind.TENSION
+        )
+        self.assertEqual(
+            tuple(row.semantic_ref for row in contrast.argument_bindings),
+            tuple(sorted(contrast.semantic_refs)),
+        )
+        direction = next(
+            row
+            for row in candidates
+            if row.candidate_kind is InterpretationKind.DIRECTION_UNDER_BURDEN
+        )
+        direction_edge = next(
+            row for row in contrast_graph.edges if row.relation == "wish_and_constraint"
+        )
+        self.assertEqual(
+            tuple(row.role for row in direction.argument_bindings),
+            (ArgumentRole.LEFT, ArgumentRole.RIGHT),
+        )
+        self.assertEqual(
+            tuple(
+                row.semantic_ref.split(":", 1)[1].rsplit("@", 1)[0]
+                for row in direction.argument_bindings
+            ),
+            (
+                direction_edge.source_node_id,
+                direction_edge.target_node_id,
+            ),
+        )
+        reversed_graph = replace(
+            contrast_graph,
+            edges=tuple(
+                replace(
+                    row,
+                    source_node_id=row.target_node_id,
+                    target_node_id=row.source_node_id,
+                )
+                if row.edge_id == direction_edge.edge_id
+                else row
+                for row in contrast_graph.edges
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "stage1_grounded_graph_noncanonical"
+        ):
+            build_interpretation_candidate_pool(
+                reversed_graph,
+                contrast_plan,
+                source=source,
+                grounded_plan=grounded_plan,
+            )
+
+        _candidates, _field, contributions, _refs, depth = build_layer1_semantics(
+            source=source,
+            grounded_graph=contrast_graph,
+            parent_plan=contrast_plan,
+            grounded_plan=grounded_plan,
+        )
+        self.assertEqual(len(contributions), 2)
+        self.assertIs(depth, ObservationDepthClass.LAYERED)
+
+    def test_stage2_only_source_explicit_cause_can_be_promoted(self) -> None:
+        source, grounded_plan, graph, parent_plan = _stage2_inputs(
+            _request(
+                record_id="stage2-source-stated-cause",
+                memo="仕事が続いた。そのため、疲れている。",
+            )
+        )
+        cause = next(
+            row
+            for row in build_interpretation_candidate_pool(
+                graph,
+                parent_plan,
+                source=source,
+                grounded_plan=grounded_plan,
+            )
+            if row.candidate_kind is InterpretationKind.SOURCE_STATED_CAUSE
+        )
+        self.assertIs(
+            cause.relation_operator, RelationOperator.SOURCE_EXPLICIT_CAUSE
+        )
+        self.assertEqual(
+            tuple(row.role for row in cause.argument_bindings),
+            (ArgumentRole.CAUSE, ArgumentRole.EFFECT),
+        )
+        result_source, result_grounded_plan, result_graph, result_parent_plan = (
+            _stage2_inputs(
+                _request(
+                    record_id="stage2-source-stated-result",
+                    memo="雨が降った。だから、外出をやめた。",
+                )
+            )
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "stage1_unsupported_cause"
+        ):
+            build_interpretation_candidate_pool(
+                result_graph,
+                result_parent_plan,
+                source=result_source,
+                grounded_plan=result_grounded_plan,
+            )
+
+    def test_stage2_pool_bounds_suppress_optional_tail_and_reject_required_overflow(
+        self,
+    ) -> None:
+        for case_id, memo, category, emotion, strength in EXACT8:
+            with self.subTest(case_id=case_id):
+                source, grounded_plan, graph, parent_plan = _stage2_inputs(
+                    _request(
+                        record_id=f"stage2-bounds-{case_id.lower()}",
+                        memo=memo,
+                        category=category,
+                        emotion=emotion,
+                        strength=strength,
+                    )
+                )
+                first = build_interpretation_candidate_pool(
+                    graph,
+                    parent_plan,
+                    source=source,
+                    grounded_plan=grounded_plan,
+                )
+                second = build_interpretation_candidate_pool(
+                    graph,
+                    parent_plan,
+                    source=source,
+                    grounded_plan=grounded_plan,
+                )
+                self.assertEqual(first, second)
+                self.assertLessEqual(
+                    len(first), INTERPRETATION_CANDIDATE_POOL_CAP
+                )
+                self.assertTrue(
+                    all(
+                        count <= INTERPRETATION_CANDIDATE_KIND_CAP
+                        for count in Counter(
+                            row.candidate_kind for row in first
+                        ).values()
+                    )
+                )
+
+        source, grounded_plan, short_graph, short_parent = _stage2_inputs(
+            _request(record_id="stage2-required-overflow", memo="疲れた。")
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "stage1_required_candidate_overflow"
+        ):
+            build_layer1_semantics(
+                source=source,
+                grounded_graph=short_graph,
+                parent_plan=short_parent,
+                grounded_plan=grounded_plan,
+            )
+
+    def test_stage2_meaning_field_exact_cover_and_tamper_rejection(self) -> None:
+        case_id, memo, category, emotion, strength = EXACT8[6]
+        source, grounded_plan, graph, parent_plan = _stage2_inputs(
+            _request(
+                record_id=f"stage2-field-{case_id.lower()}",
+                memo=memo,
+                category=category,
+                emotion=emotion,
+                strength=strength,
+            )
+        )
+        candidates = build_interpretation_candidate_pool(
+            graph,
+            parent_plan,
+            source=source,
+            grounded_plan=grounded_plan,
+        )
+        meaning_field = build_emlis_meaning_field(
+            graph,
+            parent_plan,
+            candidates,
+            source=source,
+            grounded_plan=grounded_plan,
+        )
+        validate_emlis_meaning_field(
+            meaning_field,
+            candidates=candidates,
+            grounded_graph=graph,
+            parent_plan=parent_plan,
+            source=source,
+            grounded_plan=grounded_plan,
+        )
+        entry_refs = tuple(
+            ref
+            for entry in meaning_field.entries
+            for ref in entry.interpretation_candidate_refs
+        )
+        self.assertEqual(len(entry_refs), len(set(entry_refs)))
+        self.assertEqual(set(entry_refs), {row.candidate_id for row in candidates})
+        self.assertTrue(
+            all(entry_refs.count(ref) == 1 for ref in meaning_field.required_candidate_refs)
+        )
+        first_entry = meaning_field.entries[0]
+        forged_entry = replace(
+            first_entry,
+            interpretation_candidate_refs=first_entry.interpretation_candidate_refs[1:],
+        )
+        forged_field = replace(
+            meaning_field,
+            meaning_field_id="",
+            entries=(forged_entry, *meaning_field.entries[1:]),
+        )
+        forged_field = replace(
+            forged_field,
+            meaning_field_id=recompute_stage1_identity(forged_field),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_meaning_field_required_not_exact_cover",
+        ):
+            validate_emlis_meaning_field(
+                forged_field,
+                candidates=candidates,
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+                source=source,
+                grounded_plan=grounded_plan,
+            )
+
+    def test_stage2_layer1_slot_binding_and_semantic_key_are_canonical(self) -> None:
+        case_id, memo, category, emotion, strength = EXACT8[7]
+        source, grounded_plan, graph, parent_plan = _stage2_inputs(
+            _request(
+                record_id=f"stage2-layer1-{case_id.lower()}",
+                memo=memo,
+                category=category,
+                emotion=emotion,
+                strength=strength,
+            )
+        )
+        candidates, meaning_field, contributions, _ordered_refs, _depth = (
+            build_layer1_semantics(
+                source=source,
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+                grounded_plan=grounded_plan,
+            )
+        )
+        candidate_by_id = {row.candidate_id: row for row in candidates}
+        for contribution in contributions:
+            candidate = candidate_by_id[
+                contribution.interpretation_candidate_refs[0]
+            ]
+            self.assertEqual(contribution.semantic_operator, candidate.semantic_operator)
+            self.assertEqual(contribution.argument_bindings, candidate.argument_bindings)
+            self.assertEqual(contribution.relation_operator, candidate.relation_operator)
+            self.assertEqual(contribution.relation_basis_refs, candidate.relation_basis_refs)
+            self.assertEqual(contribution.semantic_refs, candidate.semantic_refs)
+            self.assertEqual(contribution.evidence_refs, candidate.evidence_refs)
+        self.assertTrue(
+            any(
+                row.semantic_operator is SemanticOperator.PRESENT_CHANGE
+                for row in candidates
+            )
+        )
+        validate_layer1_observation_plan(
+            contributions,
+            candidates=candidates,
+            meaning_field=meaning_field,
+            grounded_graph=graph,
+            parent_plan=parent_plan,
+            source=source,
+            grounded_plan=grounded_plan,
+        )
+        forged = replace(
+            contributions[0],
+            canonical_semantic_key="observation-key-forged",
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "stage1_observation_semantic_key_mismatch"
+        ):
+            validate_layer1_observation_plan(
+                (forged, *contributions[1:]),
+                candidates=candidates,
+                meaning_field=meaning_field,
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+                source=source,
+                grounded_plan=grounded_plan,
+            )
+
+    def test_stage2_observation_depth_uses_distinct_contributions_only(self) -> None:
+        projection = _stage1_projection_fixture()
+        base = projection.observation_contributions[0]
+        rows = tuple(
+            replace(
+                base,
+                contribution_id=f"depth-contribution-{index}",
+                canonical_semantic_key=f"depth-key-{index}",
+            )
+            for index in range(1, 7)
+        )
+        expected = {
+            1: ObservationDepthClass.FOCUSED,
+            2: ObservationDepthClass.LAYERED,
+            3: ObservationDepthClass.LAYERED,
+            4: ObservationDepthClass.DENSE,
+            5: ObservationDepthClass.DENSE,
+        }
+        for count, depth in expected.items():
+            with self.subTest(count=count):
+                self.assertIs(classify_observation_depth(rows[:count]), depth)
+        for invalid in ((), rows):
+            with self.assertRaisesRegex(
+                CMEEStage1ContractError, "stage1_observation_depth_unrealizable"
+            ):
+                classify_observation_depth(invalid)
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "stage1_duplicate_observation_contribution"
+        ):
+            classify_observation_depth(
+                (rows[0], replace(rows[1], canonical_semantic_key=rows[0].canonical_semantic_key))
+            )
+
+    def test_stage2_has_no_case_fixture_or_strength_branch(self) -> None:
+        source_code = inspect.getsource(stage1_response_module)
+        for forbidden in ("case_id", "expected_text", "EXACT8", "SX-"):
+            self.assertNotIn(forbidden, source_code)
+
+        memo = EXACT8[3][1]
+
+        def semantic_shape(record_id: str, strength: str):
+            source, grounded_plan, graph, parent_plan = _stage2_inputs(
+                _request(
+                    record_id=record_id,
+                    memo=memo,
+                    category=EXACT8[3][2],
+                    emotion=EXACT8[3][3],
+                    strength=strength,
+                )
+            )
+            candidates, meaning_field, contributions, _refs, depth = (
+                build_layer1_semantics(
+                    source=source,
+                    grounded_graph=graph,
+                    parent_plan=parent_plan,
+                    grounded_plan=grounded_plan,
+                )
+            )
+            return (
+                tuple(
+                    (
+                        row.candidate_kind,
+                        row.semantic_operator,
+                        row.relation_operator,
+                        tuple(binding.role for binding in row.argument_bindings),
+                    )
+                    for row in candidates
+                ),
+                tuple(entry.slot for entry in meaning_field.entries),
+                tuple(row.contribution_kind for row in contributions),
+                depth,
+            )
+
+        baseline = semantic_shape("stage2-generalization-a", "strong")
+        self.assertEqual(
+            baseline,
+            semantic_shape("stage2-generalization-b", "strong"),
+        )
+        self.assertEqual(
+            baseline,
+            semantic_shape("stage2-generalization-c", "medium"),
+        )
 
 
 if __name__ == "__main__":
