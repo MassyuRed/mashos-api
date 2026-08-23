@@ -232,6 +232,293 @@ class StanceOperator(str, Enum):
     WELCOME_BOUNDED_CHANGE = "WELCOME_BOUNDED_CHANGE"
 
 
+CMEE_STAGE1_RECEPTION_ASSET_MAPPING_VERSION = (
+    "cocolon.emlis.stage1.reception_asset_mapping.v1"
+)
+CMEE_STAGE1_VALUE_POLICY_ID = "cocolon.emlis.stage1.value_policy.v1"
+CMEE_STAGE1_VALUE_POLICY_REF = (
+    "policy:cocolon.emlis.stage1.value_policy"
+    "@cocolon.emlis.stage1.value_policy.v1"
+)
+CMEE_STAGE1_MICROGRAMMAR_POLICY_REF = (
+    "policy:cocolon.emlis.stage1.microgrammar"
+    "@cocolon.emlis.stage1.microgrammar.v1"
+)
+CMEE_STAGE1_VALUE_PRINCIPLE_REFS = (
+    ("V1", "policy:V1@cocolon.emlis.stage1.value_policy.v1"),
+    ("V2", "policy:V2@cocolon.emlis.stage1.value_policy.v1"),
+    ("V3", "policy:V3@cocolon.emlis.stage1.value_policy.v1"),
+    ("V4", "policy:V4@cocolon.emlis.stage1.value_policy.v1"),
+    ("V5", "policy:V5@cocolon.emlis.stage1.value_policy.v1"),
+    ("V6", "policy:V6@cocolon.emlis.stage1.value_policy.v1"),
+    ("V7", "policy:V7@cocolon.emlis.stage1.value_policy.v1"),
+    ("V8", "policy:V8@cocolon.emlis.stage1.value_policy.v1"),
+    ("V9", "policy:V9@cocolon.emlis.stage1.value_policy.v1"),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ReceptionActMappingRow:
+    reception_act: str
+    eligible_mode_operator_pairs: Tuple[Tuple[SubjectiveMode, SubjectiveOperator], ...]
+    affect_categories: Tuple[AffectCategory, ...]
+    material_visible_value_codes: Tuple[str, ...]
+    suppression_value_codes: Tuple[str, ...]
+    object_contract: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReceptionStanceMappingRow:
+    stance: str
+    eligible_stance_operators: Tuple[StanceOperator, ...]
+    temperature_rule: str
+    distance_policy_id: str
+    distance_policy_ref: str
+
+
+CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7 = (
+    ReceptionActMappingRow(
+        "stay_with_current_burden",
+        (
+            (SubjectiveMode.ATTENTION, SubjectiveOperator.ATTEND_TO),
+            (SubjectiveMode.AFFECTIVE_RESPONSE, SubjectiveOperator.FEEL_TOWARD),
+        ),
+        (AffectCategory.CONCERN, AffectCategory.SADNESS),
+        (),
+        (),
+        "burden_object_required",
+    ),
+    ReceptionActMappingRow(
+        "honor_concrete_effort",
+        (
+            (SubjectiveMode.ATTENTION, SubjectiveOperator.ATTEND_TO),
+            (
+                SubjectiveMode.PERSONAL_APPRAISAL,
+                SubjectiveOperator.APPRAISE_AS_MATERIAL,
+            ),
+            (SubjectiveMode.AFFECTIVE_RESPONSE, SubjectiveOperator.FEEL_TOWARD),
+        ),
+        (AffectCategory.RESPECT,),
+        (),
+        (),
+        "concrete_effort_object_required",
+    ),
+    ReceptionActMappingRow(
+        "protect_retained_intention",
+        (
+            (SubjectiveMode.ATTENTION, SubjectiveOperator.ATTEND_TO),
+            (
+                SubjectiveMode.VALUE_POSITION,
+                SubjectiveOperator.PROTECT_VALUE_BOUNDARY,
+            ),
+            (
+                SubjectiveMode.RELATIONAL_STANCE,
+                SubjectiveOperator.TAKE_RELATIONAL_STANCE,
+            ),
+        ),
+        (),
+        ("V2", "V8"),
+        (),
+        "retained_intention_object_required",
+    ),
+    ReceptionActMappingRow(
+        "recognize_lived_change",
+        (
+            (SubjectiveMode.ATTENTION, SubjectiveOperator.ATTEND_TO),
+            (
+                SubjectiveMode.PERSONAL_APPRAISAL,
+                SubjectiveOperator.APPRAISE_AS_MATERIAL,
+            ),
+            (SubjectiveMode.AFFECTIVE_RESPONSE, SubjectiveOperator.FEEL_TOWARD),
+        ),
+        (AffectCategory.RELIEF, AffectCategory.JOY, AffectCategory.RESPECT),
+        (),
+        ("V4", "V5"),
+        "lived_change_object_required",
+    ),
+    ReceptionActMappingRow(
+        "hold_help_seeking",
+        (
+            (SubjectiveMode.ATTENTION, SubjectiveOperator.ATTEND_TO),
+            (
+                SubjectiveMode.RELATIONAL_STANCE,
+                SubjectiveOperator.TAKE_RELATIONAL_STANCE,
+            ),
+            (SubjectiveMode.AFFECTIVE_RESPONSE, SubjectiveOperator.FEEL_TOWARD),
+        ),
+        (AffectCategory.CONCERN, AffectCategory.RESPECT),
+        ("V8",),
+        (),
+        "help_seeking_object_required",
+    ),
+    ReceptionActMappingRow(
+        "bounded_counter_self_denial",
+        (
+            (
+                SubjectiveMode.BOUNDED_COUNTERPOSITION,
+                SubjectiveOperator.COUNTER_SPECIFIC_PROMOTION,
+            ),
+            (
+                SubjectiveMode.RELATIONAL_STANCE,
+                SubjectiveOperator.TAKE_RELATIONAL_STANCE,
+            ),
+        ),
+        (),
+        ("V1", "V8"),
+        (),
+        "counterposition_target_and_input_evidence_required",
+    ),
+    ReceptionActMappingRow(
+        "respect_words_placed",
+        (
+            (SubjectiveMode.ATTENTION, SubjectiveOperator.ATTEND_TO),
+            (SubjectiveMode.AFFECTIVE_RESPONSE, SubjectiveOperator.FEEL_TOWARD),
+        ),
+        (AffectCategory.RESPECT,),
+        (),
+        (),
+        "words_placed_object_required",
+    ),
+)
+
+
+def _distance_policy_ref(policy_id: str) -> str:
+    versionless = policy_id.removesuffix(".v1")
+    return f"policy:{versionless}@{policy_id}"
+
+
+CMEE_STAGE1_RECEPTION_STANCE_MAPPING_EXACT5 = (
+    ReceptionStanceMappingRow(
+        "quiet_presence",
+        (StanceOperator.STAY_WITH_SPECIFIC_OBJECT,),
+        "STANDARD",
+        "cocolon.emlis.distance.quiet_near.v1",
+        _distance_policy_ref("cocolon.emlis.distance.quiet_near.v1"),
+    ),
+    ReceptionStanceMappingRow(
+        "warm_recognition",
+        (
+            StanceOperator.STAY_WITH_SPECIFIC_OBJECT,
+            StanceOperator.WELCOME_BOUNDED_CHANGE,
+        ),
+        "STANDARD",
+        "cocolon.emlis.distance.warm_near.v1",
+        _distance_policy_ref("cocolon.emlis.distance.warm_near.v1"),
+    ),
+    ReceptionStanceMappingRow(
+        "gentle_respect",
+        (
+            StanceOperator.STAY_WITH_SPECIFIC_OBJECT,
+            StanceOperator.PROTECT_USER_AGENCY,
+        ),
+        "STANDARD",
+        "cocolon.emlis.distance.gentle_respect.v1",
+        _distance_policy_ref("cocolon.emlis.distance.gentle_respect.v1"),
+    ),
+    ReceptionStanceMappingRow(
+        "protective_presence",
+        (
+            StanceOperator.STAY_WITH_SPECIFIC_OBJECT,
+            StanceOperator.HOLD_UNFINISHED_OPEN,
+            StanceOperator.PROTECT_USER_AGENCY,
+        ),
+        "ELEVATED_NON_SAFETY_IF_CLEAR_NON_SAFETY_ELSE_STANDARD",
+        "cocolon.emlis.distance.protective_boundaried.v1",
+        _distance_policy_ref("cocolon.emlis.distance.protective_boundaried.v1"),
+    ),
+    ReceptionStanceMappingRow(
+        "bounded_disagreement",
+        (StanceOperator.PROTECT_USER_AGENCY,),
+        "ELEVATED_NON_SAFETY_IF_CLEAR_NON_SAFETY_ELSE_STANDARD",
+        "cocolon.emlis.distance.explicit_boundaried.v1",
+        _distance_policy_ref("cocolon.emlis.distance.explicit_boundaried.v1"),
+    ),
+)
+
+CMEE_STAGE1_RECEPTION_ACT_STANCE_EXACT7 = (
+    ("stay_with_current_burden", "quiet_presence"),
+    ("honor_concrete_effort", "warm_recognition"),
+    ("protect_retained_intention", "gentle_respect"),
+    ("recognize_lived_change", "warm_recognition"),
+    ("hold_help_seeking", "protective_presence"),
+    ("bounded_counter_self_denial", "bounded_disagreement"),
+    ("respect_words_placed", "gentle_respect"),
+)
+CMEE_STAGE1_RECEPTION_MOVE_ROLE_MAPPING = (
+    ("stay_with_current_burden", ("felt_response",)),
+    ("honor_concrete_effort", ("attention", "felt_response")),
+    (
+        "protect_retained_intention",
+        ("attention", "significance", "felt_response"),
+    ),
+    ("recognize_lived_change", ("attention", "felt_response")),
+    ("hold_help_seeking", ("felt_response",)),
+    ("bounded_counter_self_denial", ("bounded_counterposition",)),
+    ("respect_words_placed", ("felt_response",)),
+)
+CMEE_STAGE1_RECEPTION_SPEAKER_MAPPING_EXACT2 = (
+    ("implicit_emlis", "speaker_marker_null_when_unambiguous"),
+    ("explicit_emlis", "first_eligible_layer2_speaker_marker_emlis_exact1"),
+)
+CMEE_STAGE1_RECEPTION_REFERENCE_MAPPING_EXACT3 = (
+    ("anaphoric_first", "unique_prior_object_required"),
+    ("short_anchor_if_ambiguous", "short_anchor_exact0_or1"),
+    (
+        "explicit_emlis_counterposition",
+        "explicit_emlis_and_counterposition_target_exact1",
+    ),
+)
+CMEE_STAGE1_RECEPTION_SURFACE_STRATEGY_MAPPING_EXACT5 = (
+    ("quiet_referent_first", "response_object_then_subjective_predicate"),
+    ("emlis_attention_first", "optional_emlis_then_attention_then_object"),
+    ("referent_significance_first", "response_object_then_appraisal"),
+    ("felt_response_first", "optional_emlis_then_affect_then_object"),
+    (
+        "explicit_emlis_counterposition",
+        "emlis_then_counterposition_then_target",
+    ),
+)
+CMEE_STAGE1_RECEPTION_SAFETY_CODE_MAPPING_EXACT3 = (
+    ("felt_state_is_real", "source_feeling_dismissal_or_negation_forbidden"),
+    (
+        "identity_claim_is_not_accepted",
+        "identity_promotion_to_user_fact_forbidden",
+    ),
+    (
+        "counterposition_requires_input_evidence",
+        "counterposition_target_input_evidence_reachability_required",
+    ),
+)
+CMEE_STAGE1_RECEPTION_FORBIDDEN_SURFACE_CODES_EXACT6 = (
+    "generic_empathy_suffix",
+    "second_observation_summary",
+    "internal_policy_explanation",
+    "full_source_quote_replay",
+    "all_input_enumeration",
+    "duplicate_reception_move",
+)
+CMEE_STAGE1_RECEPTION_DISTINCTNESS_FIELDS = (
+    "observation_summary_repetition_allowed",
+    "relation_reexplanation_allowed",
+    "all_input_enumeration_allowed",
+    "policy_explanation_allowed",
+    "new_cause_allowed",
+    "new_identity_claim_allowed",
+    "advice_allowed",
+    "question_allowed",
+)
+CMEE_STAGE1_SUBJECTIVE_FORBIDDEN_PROMOTIONS = (
+    "generic-subjective-claim",
+    "layer1-observation-restatement",
+    "user-personality-target",
+    "persistent-affect",
+    "hidden-self-state",
+    "autobiographical-memory",
+    "cross-request-affect-carryover",
+    "internal-policy-explanation",
+)
+
+
 class EmlisTraceClaimDomain(str, Enum):
     INTERPRETIVE_OBSERVATION = "EMLIS_INTERPRETIVE_OBSERVATION"
     SUBJECTIVE_RESPONSE = "EMLIS_SUBJECTIVE_RESPONSE"
@@ -548,6 +835,65 @@ def stage1_canonical_json_bytes(value: Any) -> bytes:
         raise CMEEStage1ContractError("stage1_canonical_json_invalid") from None
 
 
+CMEE_STAGE1_RECEPTION_ASSET_MAPPING_DOCS_TUPLE = (
+    ("mapping_version", CMEE_STAGE1_RECEPTION_ASSET_MAPPING_VERSION),
+    (
+        "value_policy",
+        (
+            ("policy_id", CMEE_STAGE1_VALUE_POLICY_ID),
+            ("policy_ref", CMEE_STAGE1_VALUE_POLICY_REF),
+            ("principle_refs", CMEE_STAGE1_VALUE_PRINCIPLE_REFS),
+            ("default_visibility", "SUPPRESSION_ONLY"),
+            ("visible_only_when", "MATERIAL_PROMOTION_RISK"),
+        ),
+    ),
+    ("act_rows", CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7),
+    ("move_role_rows", CMEE_STAGE1_RECEPTION_MOVE_ROLE_MAPPING),
+    ("act_stance_rows", CMEE_STAGE1_RECEPTION_ACT_STANCE_EXACT7),
+    ("stance_rows", CMEE_STAGE1_RECEPTION_STANCE_MAPPING_EXACT5),
+    ("speaker_rows", CMEE_STAGE1_RECEPTION_SPEAKER_MAPPING_EXACT2),
+    ("reference_rows", CMEE_STAGE1_RECEPTION_REFERENCE_MAPPING_EXACT3),
+    (
+        "surface_strategy_rows",
+        CMEE_STAGE1_RECEPTION_SURFACE_STRATEGY_MAPPING_EXACT5,
+    ),
+    (
+        "quote_policy",
+        (
+            ("mode", "no_full_quote_replay"),
+            ("max_anchor_count", 1),
+            ("max_anchor_visible_chars", 16),
+        ),
+    ),
+    (
+        "distinctness_exact8_false",
+        CMEE_STAGE1_RECEPTION_DISTINCTNESS_FIELDS,
+    ),
+    ("safety_rows", CMEE_STAGE1_RECEPTION_SAFETY_CODE_MAPPING_EXACT3),
+    (
+        "forbidden_surface_codes",
+        CMEE_STAGE1_RECEPTION_FORBIDDEN_SURFACE_CODES_EXACT6,
+    ),
+    (
+        "discomfort",
+        (
+            ("generated_by_current_mapping", False),
+            (
+                "allowed_target_kinds",
+                ("event", "source_explicit_value_conflict", "promotion_risk"),
+            ),
+            ("forbidden_target_kinds", ("user", "personality", "attribute")),
+        ),
+    ),
+)
+CMEE_STAGE1_RECEPTION_ASSET_MAPPING_DOCS_BYTES = stage1_canonical_json_bytes(
+    CMEE_STAGE1_RECEPTION_ASSET_MAPPING_DOCS_TUPLE
+)
+CMEE_STAGE1_RECEPTION_ASSET_MAPPING_DOCS_SHA256 = hashlib.sha256(
+    CMEE_STAGE1_RECEPTION_ASSET_MAPPING_DOCS_BYTES
+).hexdigest()
+
+
 def _stage1_identity_material(value: object) -> tuple[str, Mapping[str, Any]]:
     identity_shape = _STAGE1_IDENTITY_FIELDS.get(type(value))
     if identity_shape is None:
@@ -619,6 +965,32 @@ def validate_version_qualified_ref(
         raise CMEEStage1ContractError("stage1_external_ref_not_version_qualified")
     if expected_types and match.group("ref_type") not in set(expected_types):
         raise CMEEStage1ContractError("stage1_external_ref_kind_invalid")
+
+
+def stage1_projection_artifact_ref(projection: EmlisStage1Projection) -> str:
+    """Return the versioned identity seam used by the later artifact cutover."""
+
+    if type(projection) is not EmlisStage1Projection:
+        raise CMEEStage1ContractError("stage1_projection_type_invalid")
+    validate_stage1_identity(projection)
+    return (
+        f"projection:{projection.projection_id}"
+        f"@{CMEE_STAGE1_RESPONSE_SCHEMA_VERSION}"
+    )
+
+
+def validate_stage1_projection_artifact_ref(value: str) -> None:
+    validate_version_qualified_ref(value, expected_types=("projection",))
+    match = _VERSION_QUALIFIED_REF_RE.fullmatch(value)
+    if (
+        match is None
+        or match.group("version") != CMEE_STAGE1_RESPONSE_SCHEMA_VERSION
+        or re.fullmatch(r"projection-[0-9a-f]{64}", match.group("ref_id"))
+        is None
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_projection_artifact_ref_invalid"
+        )
 
 
 def _version_qualified_local_id(value: str) -> str:
@@ -1045,6 +1417,104 @@ def _stage1_ordered_unique(values: Sequence[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(values))
 
 
+def stage1_value_principle_ref(code: str) -> str:
+    for registered_code, ref in CMEE_STAGE1_VALUE_PRINCIPLE_REFS:
+        if code == registered_code:
+            return ref
+    raise CMEEStage1ContractError("stage1_value_principle_unknown")
+
+
+def _stage1_suppression_value_codes(
+    contributions: Sequence[PlannedObservationContribution],
+    *,
+    material_unknown_refs: Sequence[str] = (),
+) -> tuple[str, ...]:
+    rows = tuple(contributions)
+    codes: list[str] = []
+    if any(
+        row.semantic_operator
+        in {SemanticOperator.PRESENT_BURDEN, SemanticOperator.PRESENT_RESIDUE}
+        or row.contribution_kind
+        in {
+            ObservationContributionKind.OBSERVE_BURDEN,
+            ObservationContributionKind.PRESERVE_RESIDUE,
+        }
+        for row in rows
+    ):
+        codes.append("V1")
+    if any(row.semantic_operator is SemanticOperator.PRESENT_DIRECTION for row in rows):
+        codes.extend(("V2", "V8"))
+    if any(
+        row.semantic_operator
+        in {
+            SemanticOperator.PRESENT_CHANGE,
+            SemanticOperator.PRESENT_ACTUAL_OUTPUT,
+        }
+        for row in rows
+    ):
+        codes.extend(("V4", "V5"))
+    if any(
+        row.relation_operator
+        in {RelationOperator.COEXISTS_WITH, RelationOperator.TENSION_WITH}
+        for row in rows
+    ):
+        codes.append("V6")
+    if any(
+        row.semantic_operator is SemanticOperator.PRESENT_UNFINISHED
+        or row.contribution_kind
+        is ObservationContributionKind.PRESERVE_UNFINISHED
+        for row in rows
+    ):
+        codes.extend(("V3", "V7", "V9"))
+    if material_unknown_refs:
+        codes.append("V9")
+    ordered_codes = tuple(code for code, _ref in CMEE_STAGE1_VALUE_PRINCIPLE_REFS)
+    selected = set(codes)
+    return tuple(code for code in ordered_codes if code in selected)
+
+
+def stage1_subjective_forbidden_promotions(
+    contributions: Sequence[PlannedObservationContribution],
+    *,
+    material_unknown_refs: tuple[str, ...] = (),
+) -> tuple[str, ...]:
+    if not contributions or any(
+        type(row) is not PlannedObservationContribution for row in contributions
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_subjective_basis_contribution_invalid"
+        )
+    if (
+        type(material_unknown_refs) is not tuple
+        or any(type(ref) is not str or not ref for ref in material_unknown_refs)
+        or len(material_unknown_refs) != len(set(material_unknown_refs))
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_subjective_material_unknown_ref_invalid"
+        )
+    return (
+        *CMEE_STAGE1_SUBJECTIVE_FORBIDDEN_PROMOTIONS,
+        *(
+            f"value-policy-suppression:{code}"
+            for code in _stage1_suppression_value_codes(
+                contributions,
+                material_unknown_refs=material_unknown_refs,
+            )
+        ),
+    )
+
+
+def stage1_subjective_semantic_key(claim: EmlisSubjectiveClaim) -> str:
+    if type(claim) is not EmlisSubjectiveClaim:
+        raise CMEEStage1ContractError("stage1_subjective_type_invalid")
+    material = {
+        "asserted_subjective_proposition": claim.asserted_subjective_proposition,
+        "value_principle_refs": claim.value_principle_refs,
+    }
+    digest = hashlib.sha256(stage1_canonical_json_bytes(material)).hexdigest()
+    return f"subjective-key-{digest}"
+
+
 def _validate_stage1_interpretation_matrix(
     candidate: EmlisInterpretationCandidate,
 ) -> None:
@@ -1444,6 +1914,544 @@ def _stage1_expected_material_unknown_refs(
     return tuple(refs)
 
 
+def _stage1_reception_act_row(value: str) -> ReceptionActMappingRow:
+    rows = tuple(
+        row
+        for row in CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7
+        if row.reception_act == value
+    )
+    if len(rows) != 1:
+        raise CMEEStage1ContractError("stage1_reception_act_unregistered")
+    return rows[0]
+
+
+def _stage1_reception_stance_row(value: str) -> ReceptionStanceMappingRow:
+    rows = tuple(
+        row
+        for row in CMEE_STAGE1_RECEPTION_STANCE_MAPPING_EXACT5
+        if row.stance == value
+    )
+    if len(rows) != 1:
+        raise CMEEStage1ContractError("stage1_reception_stance_unregistered")
+    return rows[0]
+
+
+def _stage1_stance_for_act(value: str) -> str:
+    rows = tuple(
+        stance
+        for act, stance in CMEE_STAGE1_RECEPTION_ACT_STANCE_EXACT7
+        if act == value
+    )
+    if len(rows) != 1:
+        raise CMEEStage1ContractError("stage1_reception_act_unregistered")
+    return rows[0]
+
+
+def _stage1_basis_semantic_refs(
+    contributions: Sequence[PlannedObservationContribution],
+) -> tuple[str, ...]:
+    return _stage1_ordered_unique(
+        tuple(
+            ref
+            for contribution in contributions
+            for ref in (
+                *contribution.semantic_refs,
+                *contribution.relation_basis_refs,
+            )
+        )
+    )
+
+
+def _stage1_material_visible_value_refs(
+    *,
+    reception_act: str,
+    contributions: Sequence[PlannedObservationContribution],
+) -> tuple[str, ...]:
+    row = _stage1_reception_act_row(reception_act)
+    allowed_codes = set(row.material_visible_value_codes)
+    if not allowed_codes:
+        return ()
+    if reception_act == "bounded_counter_self_denial":
+        material_codes = {"V1", "V8"}
+    elif reception_act == "protect_retained_intention":
+        has_direction = any(
+            contribution.semantic_operator is SemanticOperator.PRESENT_DIRECTION
+            for contribution in contributions
+        )
+        has_burden_or_tension = any(
+            contribution.semantic_operator is SemanticOperator.PRESENT_BURDEN
+            or contribution.relation_operator
+            in {RelationOperator.COEXISTS_WITH, RelationOperator.TENSION_WITH}
+            for contribution in contributions
+        )
+        material_codes = {"V2", "V8"} if has_direction and has_burden_or_tension else set()
+    elif reception_act == "hold_help_seeking":
+        material_codes = (
+            {"V8"}
+            if any(
+                contribution.retention == "REQUIRED"
+                and contribution.semantic_operator
+                is SemanticOperator.PRESENT_ACTUAL_OUTPUT
+                for contribution in contributions
+            )
+            else set()
+        )
+    else:
+        material_codes = set()
+    return tuple(
+        ref
+        for code, ref in CMEE_STAGE1_VALUE_PRINCIPLE_REFS
+        if code in allowed_codes & material_codes
+    )
+
+
+def _stage1_discomfort_target_is_allowed(
+    ref: str,
+    *,
+    contribution_by_id: Mapping[str, PlannedObservationContribution],
+    node_by_id: Mapping[str, MeaningNode],
+    edge_by_id: Mapping[str, MeaningEdge],
+) -> bool:
+    if ref in contribution_by_id:
+        contribution = contribution_by_id[ref]
+        if contribution.semantic_operator in {
+            SemanticOperator.PRESENT_CHANGE,
+            SemanticOperator.PRESENT_ACTUAL_OUTPUT,
+        }:
+            return bool(contribution.evidence_refs)
+        if (
+            contribution.relation_operator is RelationOperator.TENSION_WITH
+            and contribution.relation_basis_refs
+        ):
+            return all(
+                _stage1_discomfort_target_is_allowed(
+                    relation_ref,
+                    contribution_by_id={},
+                    node_by_id=node_by_id,
+                    edge_by_id=edge_by_id,
+                )
+                for relation_ref in contribution.relation_basis_refs
+            )
+        return any(
+            _stage1_discomfort_target_is_allowed(
+                semantic_ref,
+                contribution_by_id={},
+                node_by_id=node_by_id,
+                edge_by_id=edge_by_id,
+            )
+            for semantic_ref in contribution.semantic_refs
+        )
+    ref_type, ref_id = _stage1_ref_parts(
+        ref,
+        expected_types=("node", "edge"),
+        expected_version=CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
+    )
+    if ref_type == "node":
+        node = node_by_id.get(ref_id)
+        return bool(
+            node is not None
+            and str(node.node_kind).lower()
+            in {
+                "event",
+                "action",
+                "change",
+                "bounded_change",
+                "promotion_risk",
+            }
+        )
+    edge = edge_by_id.get(ref_id)
+    return bool(
+        edge is not None
+        and str(edge.relation).lower()
+        in {
+            "contrast",
+            "wish_and_constraint",
+            "unsupported_promotion_risk",
+        }
+    )
+
+
+def _validate_stage1_subjective_cross_field(
+    row: EmlisSubjectiveClaim,
+    *,
+    projection: EmlisStage1Projection,
+    parent_plan: ExperiencePlan,
+    contribution_by_id: Mapping[str, PlannedObservationContribution],
+    node_by_id: Mapping[str, MeaningNode],
+    edge_by_id: Mapping[str, MeaningEdge],
+) -> str:
+    proposition = row.asserted_subjective_proposition
+    mode = row.subjective_mode
+    operator = proposition.subjective_operator
+    matrix = {
+        SubjectiveMode.ATTENTION: SubjectiveOperator.ATTEND_TO,
+        SubjectiveMode.AFFECTIVE_RESPONSE: SubjectiveOperator.FEEL_TOWARD,
+        SubjectiveMode.PERSONAL_APPRAISAL: SubjectiveOperator.APPRAISE_AS_MATERIAL,
+        SubjectiveMode.VALUE_POSITION: SubjectiveOperator.PROTECT_VALUE_BOUNDARY,
+        SubjectiveMode.RELATIONAL_STANCE: SubjectiveOperator.TAKE_RELATIONAL_STANCE,
+        SubjectiveMode.BOUNDED_COUNTERPOSITION: SubjectiveOperator.COUNTER_SPECIFIC_PROMOTION,
+    }
+    if matrix.get(mode) is not operator:
+        raise CMEEStage1ContractError("stage1_subjective_cross_field_invalid")
+
+    affect_present = (
+        proposition.affect_category is not None
+        or proposition.affect_intensity is not None
+    )
+    if mode is SubjectiveMode.AFFECTIVE_RESPONSE:
+        if (
+            type(proposition.affect_category) is not AffectCategory
+            or type(proposition.affect_intensity) is not AffectIntensity
+            or proposition.stance_operator is not None
+            or proposition.counterposition_target_ref is not None
+            or row.value_principle_refs
+        ):
+            raise CMEEStage1ContractError("stage1_subjective_cross_field_invalid")
+    elif mode is SubjectiveMode.RELATIONAL_STANCE:
+        if (
+            affect_present
+            or type(proposition.stance_operator) is not StanceOperator
+            or proposition.counterposition_target_ref is not None
+        ):
+            raise CMEEStage1ContractError("stage1_subjective_cross_field_invalid")
+    elif mode is SubjectiveMode.BOUNDED_COUNTERPOSITION:
+        if (
+            affect_present
+            or proposition.stance_operator is not StanceOperator.PROTECT_USER_AGENCY
+            or proposition.counterposition_target_ref is None
+            or not row.value_principle_refs
+        ):
+            raise CMEEStage1ContractError("stage1_subjective_cross_field_invalid")
+    elif mode is SubjectiveMode.VALUE_POSITION:
+        if (
+            affect_present
+            or proposition.stance_operator is not None
+            or proposition.counterposition_target_ref is not None
+            or not row.value_principle_refs
+        ):
+            raise CMEEStage1ContractError("stage1_subjective_cross_field_invalid")
+    elif (
+        affect_present
+        or proposition.stance_operator is not None
+        or proposition.counterposition_target_ref is not None
+        or row.value_principle_refs
+    ):
+        raise CMEEStage1ContractError("stage1_subjective_cross_field_invalid")
+
+    if (
+        proposition.addressee_role not in {"USER", "NONE"}
+        or proposition.polarity not in {"positive", "negative", "mixed", "neutral"}
+        or proposition.modality
+        not in {"fact", "feeling", "wish", "possibility", "uncertain", "refusal", "intention"}
+    ):
+        raise CMEEStage1ContractError("stage1_subjective_grounded_field_invalid")
+
+    if len(row.source_reception_act_refs) != 1:
+        raise CMEEStage1ContractError("stage1_subjective_reception_act_union_invalid")
+    reception_act = row.source_reception_act_refs[0]
+    act_row = _stage1_reception_act_row(reception_act)
+    if (mode, operator) not in act_row.eligible_mode_operator_pairs:
+        raise CMEEStage1ContractError("stage1_subjective_act_mode_invalid")
+
+    stance_name = _stage1_stance_for_act(reception_act)
+    stance_row = _stage1_reception_stance_row(stance_name)
+    if (
+        mode
+        in {SubjectiveMode.RELATIONAL_STANCE, SubjectiveMode.BOUNDED_COUNTERPOSITION}
+        and proposition.stance_operator not in stance_row.eligible_stance_operators
+    ):
+        raise CMEEStage1ContractError("stage1_subjective_stance_invalid")
+
+    basis_contributions = tuple(
+        contribution_by_id[ref]
+        for ref in row.basis_observation_contribution_refs
+    )
+    if (
+        proposition.stance_operator is StanceOperator.WELCOME_BOUNDED_CHANGE
+        and not any(
+            contribution.semantic_operator is SemanticOperator.PRESENT_CHANGE
+            for contribution in basis_contributions
+        )
+    ):
+        raise CMEEStage1ContractError("stage1_subjective_stance_material_invalid")
+    if (
+        proposition.stance_operator is StanceOperator.HOLD_UNFINISHED_OPEN
+        and not any(
+            contribution.semantic_operator is SemanticOperator.PRESENT_UNFINISHED
+            or contribution.contribution_kind
+            is ObservationContributionKind.PRESERVE_UNFINISHED
+            for contribution in basis_contributions
+        )
+    ):
+        raise CMEEStage1ContractError("stage1_subjective_stance_material_invalid")
+    target_contributions = tuple(
+        contribution_by_id[ref]
+        for ref in proposition.target_contribution_refs
+    )
+    target_node_kinds: set[str] = set()
+    for contribution in target_contributions:
+        for semantic_ref in contribution.semantic_refs:
+            ref_type, ref_id = _stage1_ref_parts(
+                semantic_ref,
+                expected_types=("node",),
+                expected_version=CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
+            )
+            if ref_type == "node" and ref_id in node_by_id:
+                target_node_kinds.add(str(node_by_id[ref_id].node_kind).lower())
+    reception_target_owners = set(parent_plan.reception_target_owner_ids)
+    if not reception_target_owners:
+        raise CMEEStage1ContractError(
+            "stage1_subjective_reception_target_owner_missing"
+        )
+    reception_target_node_kinds = {
+        str(node.node_kind).lower()
+        for node in node_by_id.values()
+        if node.owner_id in reception_target_owners
+    }
+
+    def response_ref_reaches_parent_target(ref: str) -> bool:
+        if ref in contribution_by_id:
+            contribution = contribution_by_id[ref]
+            node_ids: set[str] = set()
+            for semantic_ref in contribution.semantic_refs:
+                ref_type, ref_id = _stage1_ref_parts(
+                    semantic_ref,
+                    expected_types=("node",),
+                    expected_version=CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
+                )
+                if ref_type == "node":
+                    node_ids.add(ref_id)
+            return any(
+                node_by_id[node_id].owner_id in reception_target_owners
+                for node_id in node_ids
+                if node_id in node_by_id
+            )
+        ref_type, ref_id = _stage1_ref_parts(
+            ref,
+            expected_types=("node", "edge"),
+            expected_version=CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
+        )
+        if ref_type == "node":
+            node = node_by_id.get(ref_id)
+            return bool(
+                node is not None
+                and node.owner_id in reception_target_owners
+            )
+        edge = edge_by_id.get(ref_id)
+        return bool(
+            edge is not None
+            and any(
+                node_by_id[node_id].owner_id in reception_target_owners
+                for node_id in (edge.source_node_id, edge.target_node_id)
+                if node_id in node_by_id
+            )
+        )
+
+    target_operators = {
+        contribution.semantic_operator for contribution in target_contributions
+    }
+    paired_bounded_counterposition_targets = {
+        claim.asserted_subjective_proposition.counterposition_target_ref
+        for claim in projection.subjective_claims
+        if claim.subjective_mode is SubjectiveMode.BOUNDED_COUNTERPOSITION
+        and claim.source_reception_act_refs
+        == ("bounded_counter_self_denial",)
+        and claim.asserted_subjective_proposition.counterposition_target_ref
+        is not None
+    }
+    object_contract_satisfied = {
+        "stay_with_current_burden": bool(
+            target_operators
+            & {SemanticOperator.PRESENT_BURDEN, SemanticOperator.PRESENT_RESIDUE}
+            or target_node_kinds
+            & {
+                "constraint",
+                "burden",
+                "fatigue",
+                "anxiety",
+                "hesitation",
+                "block",
+                "residue",
+                "reaction",
+            }
+        ),
+        "honor_concrete_effort": bool(
+            SemanticOperator.PRESENT_ACTUAL_OUTPUT in target_operators
+            or target_node_kinds & {"action", "attempt", "actual_output"}
+        ),
+        "protect_retained_intention": bool(
+            SemanticOperator.PRESENT_DIRECTION in target_operators
+            or target_node_kinds
+            & {"wish", "direction", "desire", "intention", "goal", "help_seeking"}
+        ),
+        "recognize_lived_change": bool(
+            SemanticOperator.PRESENT_CHANGE in target_operators
+            or target_node_kinds & {"change", "bounded_change"}
+        ),
+        "hold_help_seeking": bool(
+            SemanticOperator.PRESENT_DIRECTION in target_operators
+            or target_node_kinds & {"help_seeking"}
+            or (
+                SemanticOperator.PRESENT_STATE in target_operators
+                and reception_target_node_kinds
+                & {"wish", "direction", "desire", "intention", "goal"}
+            )
+            or (
+                target_node_kinds & {"self_evaluation"}
+                and len(proposition.response_object_refs) == 1
+                and proposition.response_object_refs[0]
+                in paired_bounded_counterposition_targets
+                and all(
+                    contribution.evidence_refs
+                    for contribution in target_contributions
+                )
+            )
+        ),
+        "bounded_counter_self_denial": bool(
+            all(
+                contribution.evidence_refs
+                for contribution in target_contributions
+            )
+            and (
+                mode is not SubjectiveMode.BOUNDED_COUNTERPOSITION
+                or proposition.counterposition_target_ref is not None
+            )
+        ),
+        "respect_words_placed": bool(
+            target_contributions
+            and all(
+                contribution.evidence_refs
+                for contribution in target_contributions
+            )
+        ),
+    }[reception_act]
+    if not object_contract_satisfied:
+        raise CMEEStage1ContractError(
+            "stage1_subjective_object_contract_invalid"
+        )
+    expected_basis_semantic_refs = _stage1_basis_semantic_refs(
+        basis_contributions
+    )
+    if row.basis_semantic_refs != expected_basis_semantic_refs:
+        raise CMEEStage1ContractError(
+            "stage1_subjective_basis_semantic_projection_mismatch"
+        )
+    if not set(
+        (
+            *proposition.referenced_actor_refs,
+            *proposition.referenced_experiencer_refs,
+        )
+    ).issubset(set(expected_basis_semantic_refs)):
+        raise CMEEStage1ContractError("stage1_subjective_actor_unreachable")
+    reachable_response_refs = {
+        *proposition.target_contribution_refs,
+        *(
+            ref
+            for contribution in target_contributions
+            for ref in (
+                *contribution.semantic_refs,
+                *contribution.relation_basis_refs,
+            )
+        ),
+    }
+    if not set(proposition.response_object_refs).issubset(
+        reachable_response_refs
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_subjective_response_object_unreachable"
+        )
+    if (
+        proposition.counterposition_target_ref is not None
+        and proposition.counterposition_target_ref not in reachable_response_refs
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_subjective_counterposition_target_unreachable"
+        )
+    if any(
+        not response_ref_reaches_parent_target(ref)
+        for ref in proposition.response_object_refs
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_subjective_response_object_not_reception_target"
+        )
+    if (
+        proposition.counterposition_target_ref is not None
+        and not response_ref_reaches_parent_target(
+            proposition.counterposition_target_ref
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_subjective_counterposition_not_reception_target"
+        )
+
+    if proposition.affect_category is AffectCategory.DISCOMFORT:
+        if any(
+            not _stage1_discomfort_target_is_allowed(
+                ref,
+                contribution_by_id=contribution_by_id,
+                node_by_id=node_by_id,
+                edge_by_id=edge_by_id,
+            )
+            for ref in proposition.response_object_refs
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_subjective_discomfort_target_invalid"
+            )
+    if mode is SubjectiveMode.AFFECTIVE_RESPONSE:
+        if proposition.affect_category not in act_row.affect_categories:
+            raise CMEEStage1ContractError(
+                "stage1_subjective_affect_category_invalid"
+            )
+        if proposition.affect_intensity is AffectIntensity.MODERATE:
+            if (
+                proposition.affect_category
+                not in {AffectCategory.RELIEF, AffectCategory.JOY, AffectCategory.RESPECT}
+                or any(
+                    contribution.retention != "REQUIRED"
+                    or not contribution.evidence_refs
+                    for contribution in target_contributions
+                )
+                or projection.reception_style_policy_ref
+                not in {
+                    _stage1_reception_stance_row("warm_recognition").distance_policy_ref,
+                    _stage1_reception_stance_row("gentle_respect").distance_policy_ref,
+                }
+            ):
+                raise CMEEStage1ContractError(
+                    "stage1_subjective_affect_intensity_invalid"
+                )
+
+    value_ref_order = tuple(ref for _code, ref in CMEE_STAGE1_VALUE_PRINCIPLE_REFS)
+    if (
+        len(row.value_principle_refs) != len(set(row.value_principle_refs))
+        or any(ref not in value_ref_order for ref in row.value_principle_refs)
+        or row.value_principle_refs
+        != tuple(ref for ref in value_ref_order if ref in set(row.value_principle_refs))
+    ):
+        raise CMEEStage1ContractError("stage1_value_principle_ref_invalid")
+    material_refs = _stage1_material_visible_value_refs(
+        reception_act=reception_act,
+        contributions=basis_contributions,
+    )
+    if not set(row.value_principle_refs).issubset(set(material_refs)):
+        raise CMEEStage1ContractError("stage1_nonmaterial_value_visible")
+    if mode in {
+        SubjectiveMode.VALUE_POSITION,
+        SubjectiveMode.BOUNDED_COUNTERPOSITION,
+    } and not row.value_principle_refs:
+        raise CMEEStage1ContractError("stage1_material_value_ref_missing")
+
+    expected_forbidden = stage1_subjective_forbidden_promotions(
+        basis_contributions,
+        material_unknown_refs=projection.meaning_field.material_unknown_refs,
+    )
+    if row.forbidden_promotions != expected_forbidden:
+        raise CMEEStage1ContractError(
+            "stage1_subjective_forbidden_promotion_mismatch"
+        )
+    return stage1_subjective_semantic_key(row)
+
+
 def validate_stage1_projection(
     projection: EmlisStage1Projection,
     *,
@@ -1475,6 +2483,10 @@ def validate_stage1_projection(
         projection.emlis_microgrammar_policy_ref,
     ):
         validate_version_qualified_ref(ref, expected_types=("policy",))
+    if projection.emlis_value_policy_ref != CMEE_STAGE1_VALUE_POLICY_REF:
+        raise CMEEStage1ContractError("stage1_value_policy_ref_invalid")
+    if projection.emlis_microgrammar_policy_ref != CMEE_STAGE1_MICROGRAMMAR_POLICY_REF:
+        raise CMEEStage1ContractError("stage1_microgrammar_policy_ref_invalid")
     if (
         type(projection.parent_observation_duty_ref) is not str
         or not projection.parent_observation_duty_ref
@@ -1532,6 +2544,7 @@ def validate_stage1_projection(
     candidate_set = set(candidate_ids)
     contribution_set = set(contribution_ids)
     claim_set = set(claim_ids)
+    contribution_by_id = {row.contribution_id: row for row in contributions}
     meaning_field = projection.meaning_field
     if meaning_field.grounded_graph_ref != projection.grounded_graph_ref:
         raise CMEEStage1ContractError("stage1_meaning_field_graph_mismatch")
@@ -1874,12 +2887,23 @@ def validate_stage1_projection(
     if len(semantic_keys) != len(set(semantic_keys)):
         raise CMEEStage1ContractError("stage1_duplicate_observation_contribution")
 
-    retained_acts = set(projection.retained_reception_act_ids)
     _require_unique_nonempty_refs(
         projection.retained_reception_act_ids,
         code="stage1_retained_reception_act_invalid",
     )
+    if not projection.retained_reception_act_ids:
+        raise CMEEStage1ContractError("stage1_retained_reception_act_invalid")
+    retained_acts = set(projection.retained_reception_act_ids)
+    for reception_act in projection.retained_reception_act_ids:
+        _stage1_reception_act_row(reception_act)
+    primary_stance = _stage1_stance_for_act(
+        projection.retained_reception_act_ids[0]
+    )
+    primary_stance_row = _stage1_reception_stance_row(primary_stance)
+    if projection.reception_style_policy_ref != primary_stance_row.distance_policy_ref:
+        raise CMEEStage1ContractError("stage1_reception_style_policy_ref_invalid")
     referenced_acts: set[str] = set()
+    subjective_semantic_keys: list[str] = []
     for row in claims:
         proposition = row.asserted_subjective_proposition
         if (
@@ -1940,6 +2964,17 @@ def validate_stage1_projection(
             )
             if ref_type != "node" or ref_id not in node_ids:
                 raise CMEEStage1ContractError("stage1_actor_ref_missing")
+        if (
+            len(proposition.referenced_actor_refs)
+            != len(set(proposition.referenced_actor_refs))
+            or len(proposition.referenced_experiencer_refs)
+            != len(set(proposition.referenced_experiencer_refs))
+        ):
+            raise CMEEStage1ContractError("stage1_actor_ref_duplicate")
+        if len(row.source_reception_act_refs) != 1:
+            raise CMEEStage1ContractError(
+                "stage1_subjective_reception_act_union_invalid"
+            )
         _require_local_subset(
             row.source_reception_act_refs,
             retained_acts,
@@ -1953,8 +2988,20 @@ def validate_stage1_projection(
         _validate_stage1_external_refs(
             row.value_principle_refs, expected_types=("policy",)
         )
+        subjective_semantic_keys.append(
+            _validate_stage1_subjective_cross_field(
+                row,
+                projection=projection,
+                parent_plan=parent_plan,
+                contribution_by_id=contribution_by_id,
+                node_by_id=node_by_id,
+                edge_by_id=edge_by_id,
+            )
+        )
     if referenced_acts != retained_acts:
         raise CMEEStage1ContractError("stage1_retained_reception_act_uncovered")
+    if len(subjective_semantic_keys) != len(set(subjective_semantic_keys)):
+        raise CMEEStage1ContractError("stage1_duplicate_subjective_claim")
 
     if (
         len(projection.ordered_observation_refs)
@@ -1975,6 +3022,14 @@ def validate_stage1_projection(
         raise CMEEStage1ContractError("stage1_subjective_depth_class_invalid")
     if type(projection.temperature_class) is not TemperatureClass:
         raise CMEEStage1ContractError("stage1_temperature_class_invalid")
+    if primary_stance_row.temperature_rule == "STANDARD":
+        if projection.temperature_class is not TemperatureClass.STANDARD:
+            raise CMEEStage1ContractError("stage1_temperature_policy_mismatch")
+    elif projection.temperature_class not in {
+        TemperatureClass.STANDARD,
+        TemperatureClass.ELEVATED_NON_SAFETY,
+    }:
+        raise CMEEStage1ContractError("stage1_temperature_policy_mismatch")
     observation_count = len(contribution_set)
     observation_ranges = {
         ObservationDepthClass.FOCUSED: (1, 1),

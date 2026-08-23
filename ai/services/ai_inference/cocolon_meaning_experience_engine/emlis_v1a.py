@@ -58,6 +58,7 @@ from .contracts import (
     VisibleAuthority,
     VisibleUnknownUnit,
     VisibleUnitTrace,
+    validate_stage1_projection_artifact_ref,
 )
 from .source_kernel import (
     AdmittedTextSource,
@@ -911,7 +912,20 @@ def _artifact_id(
     observation: str,
     visible_unknowns: Sequence[str],
     reception: str,
+    *,
+    emlis_stage1_projection_ref: str | None = None,
 ) -> str:
+    stage1_identity_parts: tuple[str, ...] = ()
+    if emlis_stage1_projection_ref is not None:
+        try:
+            validate_stage1_projection_artifact_ref(
+                emlis_stage1_projection_ref
+            )
+        except Exception:
+            raise CMEEVerticalError(
+                "stage1_projection_artifact_ref_invalid"
+            ) from None
+        stage1_identity_parts = (emlis_stage1_projection_ref,)
     return _stable_id(
         "artifact",
         source_envelope_id,
@@ -923,6 +937,7 @@ def _artifact_id(
         _sha256_text(observation),
         *(_sha256_text(row) for row in visible_unknowns),
         _sha256_text(reception),
+        *stage1_identity_parts,
     )
 
 

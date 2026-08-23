@@ -13,13 +13,23 @@ from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
 from emlis_ai_grounded_observation_plan import build_grounded_observation_plan
 from cocolon_meaning_experience_engine import EngineStatus, GenerationRequest, MeaningExperienceEngine
 from cocolon_meaning_experience_engine.contracts import (
+    AffectCategory,
+    AffectIntensity,
     ArgumentBinding,
     ArgumentRole,
     AttachmentAdmission,
     CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
     CMEE_STAGE1_EMLIS_OWNER_REF,
+    CMEE_STAGE1_MICROGRAMMAR_POLICY_REF,
+    CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7,
+    CMEE_STAGE1_RECEPTION_ASSET_MAPPING_DOCS_BYTES,
+    CMEE_STAGE1_RECEPTION_ASSET_MAPPING_DOCS_SHA256,
+    CMEE_STAGE1_RECEPTION_ASSET_MAPPING_DOCS_TUPLE,
+    CMEE_STAGE1_RECEPTION_ASSET_MAPPING_VERSION,
+    CMEE_STAGE1_RECEPTION_STANCE_MAPPING_EXACT5,
     CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
     CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION,
+    CMEE_STAGE1_VALUE_POLICY_REF,
     CMEEStage1ContractError,
     ClauseFrame,
     EmlisInterpretationCandidate,
@@ -57,6 +67,10 @@ from cocolon_meaning_experience_engine.contracts import (
     VisibleUnitTrace,
     recompute_stage1_identity,
     stage1_canonical_json_bytes,
+    stage1_projection_artifact_ref,
+    stage1_subjective_forbidden_promotions,
+    stage1_subjective_semantic_key,
+    stage1_value_principle_ref,
     validate_stage1_identity,
     validate_stage1_local_ref_dag,
     validate_stage1_projection,
@@ -72,11 +86,18 @@ from cocolon_meaning_experience_engine.emlis_stage1_response import (
     build_emlis_meaning_field,
     build_interpretation_candidate_pool,
     build_layer1_semantics,
+    build_stage1_semantic_projection,
+    classify_affect_intensity,
     classify_observation_depth,
+    classify_subjective_depth,
+    validate_layer2_subjective_plan,
+    validate_reception_asset_mapping,
     validate_emlis_meaning_field,
     validate_layer1_observation_plan,
 )
 from cocolon_meaning_experience_engine.emlis_v1a import (
+    CMEEVerticalError,
+    _artifact_id,
     _build_experience_plan,
     _build_graph,
     _ordered,
@@ -175,6 +196,32 @@ def _identified(value: object, identity_field: str) -> object:
     return replace(value, **{identity_field: recompute_stage1_identity(value)})
 
 
+def _replace_projection_claim(
+    projection: EmlisStage1Projection,
+    index: int,
+    claim: EmlisSubjectiveClaim,
+) -> EmlisStage1Projection:
+    identified_claim = _identified(
+        replace(claim, subjective_claim_id=""),
+        "subjective_claim_id",
+    )
+    claims = tuple(
+        identified_claim if row_index == index else row
+        for row_index, row in enumerate(projection.subjective_claims)
+    )
+    return _identified(
+        replace(
+            projection,
+            projection_id="",
+            subjective_claims=claims,
+            ordered_subjective_refs=tuple(
+                row.subjective_claim_id for row in claims
+            ),
+        ),
+        "projection_id",
+    )
+
+
 def _stage1_grounded_graph_fixture() -> GroundedMeaningGraph:
     return GroundedMeaningGraph(
         graph_id="grounded-1",
@@ -183,7 +230,7 @@ def _stage1_grounded_graph_fixture() -> GroundedMeaningGraph:
             MeaningNode(
                 node_id="state-1",
                 owner_id="owner-state-1",
-                node_kind="STATE",
+                node_kind="BURDEN",
                 grounding_kind="explicit",
                 value="状態",
                 epistemic_state=EpistemicState.SOURCE_EXPLICIT,
@@ -234,7 +281,7 @@ def _stage1_projection_fixture() -> EmlisStage1Projection:
             candidate_id="",
             candidate_kind=InterpretationKind.DIRECT_STATE,
             claim_domain=EmlisTraceClaimDomain.INTERPRETIVE_OBSERVATION.value,
-            semantic_operator=SemanticOperator.PRESENT_STATE,
+            semantic_operator=SemanticOperator.PRESENT_BURDEN,
             argument_bindings=(
                 ArgumentBinding(ArgumentRole.PRIMARY, semantic_refs[0]),
             ),
@@ -260,7 +307,7 @@ def _stage1_projection_fixture() -> EmlisStage1Projection:
             candidate_id="",
             candidate_kind=InterpretationKind.DIRECT_STATE,
             claim_domain=EmlisTraceClaimDomain.INTERPRETIVE_OBSERVATION.value,
-            semantic_operator=SemanticOperator.PRESENT_BURDEN,
+            semantic_operator=SemanticOperator.PRESENT_STATE,
             argument_bindings=(
                 ArgumentBinding(ArgumentRole.PRIMARY, semantic_refs[1]),
             ),
@@ -289,14 +336,14 @@ def _stage1_projection_fixture() -> EmlisStage1Projection:
             entries=(
                 MeaningFieldEntry(
                     slot=MeaningFieldSlot.CENTER,
-                    interpretation_candidate_refs=(candidate_1.candidate_id,),
-                    semantic_refs=(semantic_refs[0],),
+                    interpretation_candidate_refs=(candidate_2.candidate_id,),
+                    semantic_refs=(semantic_refs[1],),
                     evidence_refs=evidence_refs,
                 ),
                 MeaningFieldEntry(
                     slot=MeaningFieldSlot.BURDEN,
-                    interpretation_candidate_refs=(candidate_2.candidate_id,),
-                    semantic_refs=(semantic_refs[1],),
+                    interpretation_candidate_refs=(candidate_1.candidate_id,),
+                    semantic_refs=(semantic_refs[0],),
                     evidence_refs=evidence_refs,
                 ),
             ),
@@ -310,16 +357,16 @@ def _stage1_projection_fixture() -> EmlisStage1Projection:
             schema_version=schema,
             contribution_id="",
             parent_duty_ref=observation_duty_ref,
-            contribution_kind=ObservationContributionKind.OBSERVE_CENTER,
+            contribution_kind=ObservationContributionKind.OBSERVE_BURDEN,
             interpretation_candidate_refs=(candidate_1.candidate_id,),
-            semantic_operator=SemanticOperator.PRESENT_STATE,
+            semantic_operator=SemanticOperator.PRESENT_BURDEN,
             argument_bindings=(
                 ArgumentBinding(ArgumentRole.PRIMARY, semantic_refs[0]),
             ),
             relation_operator=RelationOperator.NO_RELATION_CLAIM,
             relation_basis_refs=(),
             derivation_rule_id=(
-                "cocolon.cmee.v1a.stage1.layer1.observe_center.v1"
+                "cocolon.cmee.v1a.stage1.layer1.observe_burden.v1"
             ),
             semantic_refs=(semantic_refs[0],),
             evidence_refs=evidence_refs,
@@ -361,11 +408,13 @@ def _stage1_projection_fixture() -> EmlisStage1Projection:
             subjective_mode=SubjectiveMode.ATTENTION,
             asserted_subjective_proposition=proposition,
             basis_observation_contribution_refs=(contribution.contribution_id,),
-            basis_semantic_refs=semantic_refs,
-            source_reception_act_refs=("ATTEND_CURRENT_MATERIAL",),
+            basis_semantic_refs=(semantic_refs[0],),
+            source_reception_act_refs=("stay_with_current_burden",),
             value_principle_refs=(),
             user_fact_effect=0,
-            forbidden_promotions=("user-feeling-attribution",),
+            forbidden_promotions=stage1_subjective_forbidden_promotions(
+                (contribution,)
+            ),
         ),
         "subjective_claim_id",
     )
@@ -382,13 +431,17 @@ def _stage1_projection_fixture() -> EmlisStage1Projection:
             subjective_claims=(claim,),
             ordered_observation_refs=(contribution.contribution_id,),
             ordered_subjective_refs=(claim.subjective_claim_id,),
-            retained_reception_act_ids=("ATTEND_CURRENT_MATERIAL",),
+            retained_reception_act_ids=("stay_with_current_burden",),
             observation_depth_class=ObservationDepthClass.FOCUSED,
             subjective_depth_class=SubjectiveDepthClass.FOCUSED,
             temperature_class=TemperatureClass.STANDARD,
-            reception_style_policy_ref="policy:reception-style@policy.v1",
-            emlis_value_policy_ref="policy:emlis-value@policy.v1",
-            emlis_microgrammar_policy_ref="policy:emlis-microgrammar@policy.v1",
+            reception_style_policy_ref=next(
+                row.distance_policy_ref
+                for row in CMEE_STAGE1_RECEPTION_STANCE_MAPPING_EXACT5
+                if row.stance == "quiet_presence"
+            ),
+            emlis_value_policy_ref=CMEE_STAGE1_VALUE_POLICY_REF,
+            emlis_microgrammar_policy_ref=CMEE_STAGE1_MICROGRAMMAR_POLICY_REF,
         ),
         "projection_id",
     )
@@ -410,8 +463,8 @@ def _stage1_parent_plan_fixture(
         reception_plan_digest="reception-digest",
         allowed_reception_act_ids=projection.retained_reception_act_ids,
         required_observation_owner_ids=(),
-        reception_target_owner_ids=(),
-        visible_owner_ids=(),
+        reception_target_owner_ids=("owner-state-1",),
+        visible_owner_ids=("owner-state-1",),
         unresolved_owner_ids=(),
         visible_unknown_owner_ids=(),
         required_unknown_owner_ids=(),
@@ -440,7 +493,7 @@ def _stage1_sentence_unit_fixture(
                 move_ref="move:observe@microgrammar.v1",
                 discourse_relation="OPEN",
                 topic_ref=f"node:state-1@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}",
-                predicate_operator=SemanticOperator.PRESENT_STATE.value,
+                predicate_operator=SemanticOperator.PRESENT_BURDEN.value,
                 object_ref=None,
                 argument_bindings=(
                     ArgumentBinding(
@@ -1235,8 +1288,8 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                 projection.meaning_field,
                 meaning_field_id="",
                 entries=(
-                    projection.meaning_field.entries[0],
                     forged_relation_entry,
+                    projection.meaning_field.entries[1],
                 ),
             ),
             "meaning_field_id",
@@ -1291,48 +1344,11 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             )
         )
 
-        base = _stage1_projection_fixture()
-        base_claim = base.subjective_claims[0]
-        proposition = replace(
-            base_claim.asserted_subjective_proposition,
-            target_contribution_refs=(contributions[0].contribution_id,),
-            response_object_refs=(contributions[0].contribution_id,),
-        )
-        claim = _identified(
-            replace(
-                base_claim,
-                subjective_claim_id="",
-                parent_duty_ref=parent_plan.reception_duty_id,
-                asserted_subjective_proposition=proposition,
-                basis_observation_contribution_refs=(
-                    contributions[0].contribution_id,
-                ),
-                basis_semantic_refs=contributions[0].semantic_refs,
-                source_reception_act_refs=(
-                    parent_plan.allowed_reception_act_ids
-                ),
-            ),
-            "subjective_claim_id",
-        )
-        projection = _identified(
-            replace(
-                base,
-                projection_id="",
-                grounded_graph_ref=meaning_field.grounded_graph_ref,
-                parent_observation_duty_ref=parent_plan.observation_duty_id,
-                parent_reception_duty_ref=parent_plan.reception_duty_id,
-                interpretation_candidates=candidates,
-                meaning_field=meaning_field,
-                observation_contributions=contributions,
-                subjective_claims=(claim,),
-                ordered_observation_refs=ordered_refs,
-                ordered_subjective_refs=(claim.subjective_claim_id,),
-                retained_reception_act_ids=(
-                    parent_plan.allowed_reception_act_ids
-                ),
-                observation_depth_class=depth,
-            ),
-            "projection_id",
+        projection = build_stage1_semantic_projection(
+            source=source,
+            grounded_graph=grounded_graph,
+            parent_plan=parent_plan,
+            grounded_plan=grounded_plan,
         )
         validate_stage1_projection(
             projection,
@@ -1472,7 +1488,7 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             operation="RECEPTION",
             text_sha256="2" * 64,
             duty_id=projection.parent_reception_duty_ref,
-            meaning_node_ids=("state-1", "context-1"),
+            meaning_node_ids=("state-1",),
             meaning_edge_ids=(),
             evidence_ids=("memo-1",),
             emlis_stage1_extension=EmlisStage1PositiveTraceExtension(
@@ -2293,6 +2309,836 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             classify_observation_depth(
                 (rows[0], replace(rows[1], canonical_semantic_key=rows[0].canonical_semantic_key))
             )
+
+    def test_stage3_mapping_tuple_and_canonical_docs_bytes_are_exact(self) -> None:
+        self.assertEqual(
+            CMEE_STAGE1_RECEPTION_ASSET_MAPPING_VERSION,
+            "cocolon.emlis.stage1.reception_asset_mapping.v1",
+        )
+        self.assertEqual(len(CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7), 7)
+        self.assertEqual(len(CMEE_STAGE1_RECEPTION_STANCE_MAPPING_EXACT5), 5)
+        self.assertEqual(
+            CMEE_STAGE1_RECEPTION_ASSET_MAPPING_DOCS_BYTES,
+            stage1_canonical_json_bytes(
+                CMEE_STAGE1_RECEPTION_ASSET_MAPPING_DOCS_TUPLE
+            ),
+        )
+        self.assertEqual(
+            CMEE_STAGE1_RECEPTION_ASSET_MAPPING_DOCS_SHA256,
+            "1fca37e4dd4efd06c09e63f14a1977ab31856dde8b147803cbab0d166eec2587",
+        )
+        self.assertEqual(len(CMEE_STAGE1_RECEPTION_ASSET_MAPPING_DOCS_BYTES), 7336)
+        self.assertEqual(
+            hashlib.sha256(
+                CMEE_STAGE1_RECEPTION_ASSET_MAPPING_DOCS_BYTES
+            ).hexdigest(),
+            CMEE_STAGE1_RECEPTION_ASSET_MAPPING_DOCS_SHA256,
+        )
+
+    def test_stage3_exact8_builds_deterministic_grounded_layer2(self) -> None:
+        legacy_depths: set[str] = set()
+        for case_id, memo, category, emotion, strength in EXACT8:
+            with self.subTest(case_id=case_id):
+                source, grounded_plan, graph, parent_plan = _stage2_inputs(
+                    _request(
+                        record_id=case_id,
+                        memo=memo,
+                        category=category,
+                        emotion=emotion,
+                        strength=strength,
+                    )
+                )
+                first = build_stage1_semantic_projection(
+                    source=source,
+                    grounded_graph=graph,
+                    parent_plan=parent_plan,
+                    grounded_plan=grounded_plan,
+                )
+                second = build_stage1_semantic_projection(
+                    source=source,
+                    grounded_graph=graph,
+                    parent_plan=parent_plan,
+                    grounded_plan=grounded_plan,
+                )
+                self.assertEqual(first, second)
+                material_value_case = case_id == EXACT8[5][0]
+                self.assertEqual(
+                    len(first.subjective_claims),
+                    3 if material_value_case else 2,
+                )
+                self.assertIs(
+                    first.subjective_depth_class,
+                    SubjectiveDepthClass.LAYERED,
+                )
+                self.assertEqual(
+                    {act for claim in first.subjective_claims for act in claim.source_reception_act_refs},
+                    set(parent_plan.allowed_reception_act_ids),
+                )
+                self.assertTrue(
+                    all(
+                        claim.speaker_owner == "EMLIS"
+                        and claim.user_fact_effect == 0
+                        and len(claim.source_reception_act_refs) == 1
+                        and claim.asserted_subjective_proposition.affect_category
+                        is not AffectCategory.DISCOMFORT
+                        for claim in first.subjective_claims
+                    )
+                )
+                visible_value_rows = tuple(
+                    claim.value_principle_refs
+                    for claim in first.subjective_claims
+                    if claim.value_principle_refs
+                )
+                self.assertEqual(
+                    visible_value_rows,
+                    (
+                        (
+                            stage1_value_principle_ref("V2"),
+                            stage1_value_principle_ref("V8"),
+                        ),
+                    )
+                    if material_value_case
+                    else (),
+                )
+                validate_layer2_subjective_plan(
+                    first.subjective_claims,
+                    source=source,
+                    grounded_graph=graph,
+                    parent_plan=parent_plan,
+                    grounded_plan=grounded_plan,
+                    observation_contributions=first.observation_contributions,
+                )
+                reception_plan = stage1_response_module._semantic_reception_asset(
+                    source=source,
+                    grounded_plan=grounded_plan,
+                )
+                legacy_depths.add(reception_plan.depth_policy.level)
+        self.assertEqual(legacy_depths, {"minimal", "focused"})
+
+    def test_stage3_reception_asset_rejects_unregistered_or_relaxed_axes(self) -> None:
+        case_id, memo, category, emotion, strength = EXACT8[3]
+        source, grounded_plan, _graph, _parent = _stage2_inputs(
+            _request(
+                record_id=case_id,
+                memo=memo,
+                category=category,
+                emotion=emotion,
+                strength=strength,
+            )
+        )
+        plan = stage1_response_module._semantic_reception_asset(
+            source=source,
+            grounded_plan=grounded_plan,
+        )
+        move = plan.moves[0]
+        invalid_plans = (
+            replace(
+                plan,
+                primary_reception_act="unregistered_act",
+                moves=(replace(move, reception_act="unregistered_act"),),
+            ),
+            replace(plan, stance="unregistered_stance"),
+            replace(plan, speaker_presence="unregistered_speaker"),
+            replace(plan, reference_mode="unregistered_reference"),
+            replace(
+                plan,
+                moves=(replace(move, surface_strategy="unregistered_strategy"),),
+            ),
+            replace(
+                plan,
+                moves=(replace(move, move_role="unregistered_role"),),
+            ),
+            replace(
+                plan,
+                quote_policy=replace(
+                    plan.quote_policy,
+                    max_anchor_visible_chars=20,
+                ),
+            ),
+            replace(
+                plan,
+                distinctness_policy=replace(
+                    plan.distinctness_policy,
+                    advice_allowed=True,
+                ),
+            ),
+            replace(
+                plan,
+                safety_modifier_codes=("unregistered_safety",),
+            ),
+            replace(
+                plan,
+                forbidden_surface_codes=(
+                    *plan.forbidden_surface_codes,
+                    "unregistered_surface_code",
+                ),
+            ),
+            replace(
+                plan,
+                depth_policy=replace(plan.depth_policy, level="dense"),
+            ),
+        )
+        for invalid in invalid_plans:
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(CMEEStage1ContractError):
+                    validate_reception_asset_mapping(
+                        invalid,
+                        grounded_plan=grounded_plan,
+                    )
+
+    def test_stage3_cross_field_depth_and_semantic_distinctness_fail_closed(self) -> None:
+        case_id, memo, category, emotion, strength = EXACT8[1]
+        source, grounded_plan, graph, parent_plan = _stage2_inputs(
+            _request(
+                record_id=case_id,
+                memo=memo,
+                category=category,
+                emotion=emotion,
+                strength=strength,
+            )
+        )
+        projection = build_stage1_semantic_projection(
+            source=source,
+            grounded_graph=graph,
+            parent_plan=parent_plan,
+            grounded_plan=grounded_plan,
+        )
+        claim = projection.subjective_claims[0]
+        invalid_claims = (
+            (
+                replace(
+                    claim,
+                    asserted_subjective_proposition=replace(
+                        claim.asserted_subjective_proposition,
+                        subjective_operator=SubjectiveOperator.FEEL_TOWARD,
+                    ),
+                ),
+                "stage1_subjective_cross_field_invalid",
+            ),
+            (
+                replace(
+                    claim,
+                    source_reception_act_refs=(
+                        claim.source_reception_act_refs[0],
+                        claim.source_reception_act_refs[0],
+                    ),
+                ),
+                "stage1_subjective_reception_act_union_invalid",
+            ),
+            (
+                replace(
+                    claim,
+                    basis_semantic_refs=(
+                        *claim.basis_semantic_refs,
+                        projection.observation_contributions[1].semantic_refs[0],
+                    ),
+                ),
+                "stage1_subjective_basis_semantic_projection_mismatch",
+            ),
+        )
+        for invalid_claim, code in invalid_claims:
+            with self.subTest(code=code):
+                invalid_projection = _replace_projection_claim(
+                    projection,
+                    0,
+                    invalid_claim,
+                )
+                with self.assertRaisesRegex(CMEEStage1ContractError, code):
+                    validate_stage1_projection(
+                        invalid_projection,
+                        grounded_graph=graph,
+                        parent_plan=parent_plan,
+                    )
+
+        target_contribution = projection.observation_contributions[0]
+        reachable = {
+            target_contribution.contribution_id,
+            *target_contribution.semantic_refs,
+            *target_contribution.relation_basis_refs,
+        }
+        unrelated = next(
+            f"node:{row.node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+            for row in graph.nodes
+            if f"node:{row.node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+            not in reachable
+        )
+        unreachable_claim = replace(
+            claim,
+            asserted_subjective_proposition=replace(
+                claim.asserted_subjective_proposition,
+                response_object_refs=(unrelated,),
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_subjective_response_object_unreachable",
+        ):
+            validate_stage1_projection(
+                _replace_projection_claim(projection, 0, unreachable_claim),
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+            )
+
+        extra_basis = projection.observation_contributions[1]
+        duplicate = _identified(
+            replace(
+                claim,
+                subjective_claim_id="",
+                basis_observation_contribution_refs=(
+                    claim.basis_observation_contribution_refs[0],
+                    extra_basis.contribution_id,
+                ),
+                basis_semantic_refs=(
+                    *claim.basis_semantic_refs,
+                    *extra_basis.semantic_refs,
+                    *extra_basis.relation_basis_refs,
+                ),
+                forbidden_promotions=stage1_subjective_forbidden_promotions(
+                    (target_contribution, extra_basis)
+                ),
+            ),
+            "subjective_claim_id",
+        )
+        claims = (*projection.subjective_claims, duplicate)
+        duplicate_projection = _identified(
+            replace(
+                projection,
+                projection_id="",
+                subjective_claims=claims,
+                ordered_subjective_refs=tuple(
+                    row.subjective_claim_id for row in claims
+                ),
+            ),
+            "projection_id",
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_duplicate_subjective_claim",
+        ):
+            validate_stage1_projection(
+                duplicate_projection,
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+            )
+
+    def test_stage3_discomfort_never_targets_user_state_or_personality(self) -> None:
+        projection = _stage1_projection_fixture()
+        graph = _stage1_grounded_graph_fixture()
+        parent_plan = _stage1_parent_plan_fixture(projection)
+        claim = projection.subjective_claims[0]
+        user_state_ref = (
+            f"node:state-1@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        )
+        discomfort = replace(
+            claim,
+            subjective_mode=SubjectiveMode.AFFECTIVE_RESPONSE,
+            asserted_subjective_proposition=replace(
+                claim.asserted_subjective_proposition,
+                subjective_operator=SubjectiveOperator.FEEL_TOWARD,
+                response_object_refs=(user_state_ref,),
+                affect_category=AffectCategory.DISCOMFORT,
+                affect_intensity=AffectIntensity.QUIET,
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_subjective_discomfort_target_invalid",
+        ):
+            validate_stage1_projection(
+                _replace_projection_claim(projection, 0, discomfort),
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+            )
+
+    def test_stage3_intensity_is_decoupled_from_depth_strength_and_temperature(self) -> None:
+        case_id, memo, category, emotion, _strength = EXACT8[7]
+
+        def build(strength: str, suffix: str):
+            source, grounded_plan, graph, parent_plan = _stage2_inputs(
+                _request(
+                    record_id=f"{case_id}-{suffix}",
+                    memo=memo,
+                    category=category,
+                    emotion=emotion,
+                    strength=strength,
+                )
+            )
+            return build_stage1_semantic_projection(
+                source=source,
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+                grounded_plan=grounded_plan,
+            )
+
+        weak = build("weak", "weak")
+        strong = build("strong", "strong")
+        weak_affect = next(
+            row
+            for row in weak.subjective_claims
+            if row.subjective_mode is SubjectiveMode.AFFECTIVE_RESPONSE
+        )
+        strong_affect = next(
+            row
+            for row in strong.subjective_claims
+            if row.subjective_mode is SubjectiveMode.AFFECTIVE_RESPONSE
+        )
+        self.assertIs(
+            weak_affect.asserted_subjective_proposition.affect_intensity,
+            AffectIntensity.MODERATE,
+        )
+        self.assertEqual(
+            weak_affect.asserted_subjective_proposition.affect_intensity,
+            strong_affect.asserted_subjective_proposition.affect_intensity,
+        )
+        self.assertEqual(weak.temperature_class, strong.temperature_class)
+        self.assertEqual(weak.subjective_depth_class, strong.subjective_depth_class)
+
+        contribution_by_id = {
+            row.contribution_id: row for row in weak.observation_contributions
+        }
+        targets = tuple(
+            contribution_by_id[ref]
+            for ref in weak_affect.asserted_subjective_proposition.target_contribution_refs
+        )
+        self.assertIs(
+            classify_affect_intensity(
+                AffectCategory.CONCERN,
+                targets,
+                reception_style_policy_ref=weak.reception_style_policy_ref,
+                relationship_care_constraints=(),
+            ),
+            AffectIntensity.QUIET,
+        )
+        self.assertIs(
+            classify_affect_intensity(
+                AffectCategory.JOY,
+                (replace(targets[0], retention="OPTIONAL"),),
+                reception_style_policy_ref=weak.reception_style_policy_ref,
+                relationship_care_constraints=(),
+            ),
+            AffectIntensity.QUIET,
+        )
+        quiet_style = next(
+            row.distance_policy_ref
+            for row in CMEE_STAGE1_RECEPTION_STANCE_MAPPING_EXACT5
+            if row.stance == "quiet_presence"
+        )
+        self.assertIs(
+            classify_affect_intensity(
+                AffectCategory.JOY,
+                targets,
+                reception_style_policy_ref=quiet_style,
+                relationship_care_constraints=(),
+            ),
+            AffectIntensity.QUIET,
+        )
+        self.assertIs(
+            classify_affect_intensity(
+                AffectCategory.JOY,
+                targets,
+                reception_style_policy_ref=weak.reception_style_policy_ref,
+                relationship_care_constraints=(
+                    "felt_state_is_real",
+                    "identity_claim_is_not_accepted",
+                ),
+            ),
+            AffectIntensity.QUIET,
+        )
+
+    def test_stage3_depth_uses_distinct_claims_not_legacy_reception_depth(self) -> None:
+        source, grounded_plan, graph, parent_plan = _stage2_inputs(
+            _request(
+                record_id="stage3-bounded-depth",
+                memo="自分が悪いから、助けを求めてはいけない。",
+                category="生活",
+                emotion="悲しみ",
+                strength="strong",
+            )
+        )
+        projection = build_stage1_semantic_projection(
+            source=source,
+            grounded_graph=graph,
+            parent_plan=parent_plan,
+            grounded_plan=grounded_plan,
+        )
+        self.assertEqual(len(projection.subjective_claims), 4)
+        self.assertIs(
+            classify_subjective_depth(projection.subjective_claims[:1]),
+            SubjectiveDepthClass.FOCUSED,
+        )
+        self.assertIs(
+            classify_subjective_depth(projection.subjective_claims[:2]),
+            SubjectiveDepthClass.LAYERED,
+        )
+        self.assertIs(
+            classify_subjective_depth(projection.subjective_claims[:3]),
+            SubjectiveDepthClass.LAYERED,
+        )
+        self.assertIs(
+            classify_subjective_depth(projection.subjective_claims),
+            SubjectiveDepthClass.DENSE,
+        )
+        reception_plan = stage1_response_module._semantic_reception_asset(
+            source=source,
+            grounded_plan=grounded_plan,
+        )
+        self.assertNotEqual(
+            reception_plan.depth_policy.level.upper(),
+            projection.subjective_depth_class.value,
+        )
+
+    def test_stage3_value_visibility_is_material_and_other_values_stay_suppressed(self) -> None:
+        source, grounded_plan, graph, parent_plan = _stage2_inputs(
+            _request(
+                record_id="stage3-bounded-values",
+                memo="自分が悪いから、助けを求めてはいけない。",
+                category="生活",
+                emotion="悲しみ",
+                strength="strong",
+            )
+        )
+        bounded = build_stage1_semantic_projection(
+            source=source,
+            grounded_graph=graph,
+            parent_plan=parent_plan,
+            grounded_plan=grounded_plan,
+        )
+        counter = next(
+            row
+            for row in bounded.subjective_claims
+            if row.subjective_mode is SubjectiveMode.BOUNDED_COUNTERPOSITION
+        )
+        self.assertEqual(
+            counter.value_principle_refs,
+            (
+                stage1_value_principle_ref("V1"),
+                stage1_value_principle_ref("V8"),
+            ),
+        )
+        self.assertTrue(
+            all(
+                not row.value_principle_refs
+                for row in bounded.subjective_claims
+                if row is not counter
+            )
+        )
+        counter_index = bounded.subjective_claims.index(counter)
+        unpaired_counter = replace(
+            counter,
+            asserted_subjective_proposition=replace(
+                counter.asserted_subjective_proposition,
+                counterposition_target_ref=(
+                    counter.asserted_subjective_proposition.target_contribution_refs[0]
+                ),
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_subjective_object_contract_invalid",
+        ):
+            validate_stage1_projection(
+                _replace_projection_claim(
+                    bounded,
+                    counter_index,
+                    unpaired_counter,
+                ),
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+            )
+        base_contribution = bounded.observation_contributions[0]
+        suppression_rows = (
+            replace(
+                base_contribution,
+                contribution_kind=ObservationContributionKind.OBSERVE_BURDEN,
+                semantic_operator=SemanticOperator.PRESENT_BURDEN,
+                relation_operator=RelationOperator.NO_RELATION_CLAIM,
+            ),
+            replace(
+                base_contribution,
+                contribution_kind=ObservationContributionKind.OBSERVE_DIRECTION,
+                semantic_operator=SemanticOperator.PRESENT_DIRECTION,
+                relation_operator=RelationOperator.NO_RELATION_CLAIM,
+            ),
+            replace(
+                base_contribution,
+                contribution_kind=ObservationContributionKind.OBSERVE_CHANGE,
+                semantic_operator=SemanticOperator.PRESENT_CHANGE,
+                relation_operator=RelationOperator.NO_RELATION_CLAIM,
+            ),
+            replace(
+                base_contribution,
+                contribution_kind=ObservationContributionKind.OBSERVE_COEXISTENCE,
+                semantic_operator=SemanticOperator.SYNTHESIZE_RELATION,
+                relation_operator=RelationOperator.COEXISTS_WITH,
+            ),
+            replace(
+                base_contribution,
+                contribution_kind=ObservationContributionKind.PRESERVE_UNFINISHED,
+                semantic_operator=SemanticOperator.PRESENT_UNFINISHED,
+                relation_operator=RelationOperator.NO_RELATION_CLAIM,
+            ),
+        )
+        self.assertEqual(
+            tuple(
+                row.removeprefix("value-policy-suppression:")
+                for row in stage1_subjective_forbidden_promotions(
+                    suppression_rows
+                )
+                if row.startswith("value-policy-suppression:")
+            ),
+            tuple(f"V{index}" for index in range(1, 10)),
+        )
+        unknown_suppression = stage1_subjective_forbidden_promotions(
+            (base_contribution,),
+            material_unknown_refs=(
+                "unknown:material-1@cocolon.cmee.obligation.v1",
+            ),
+        )
+        self.assertIn("value-policy-suppression:V9", unknown_suppression)
+        self.assertNotIn("value-policy-suppression:V3", unknown_suppression)
+        self.assertNotIn("value-policy-suppression:V7", unknown_suppression)
+
+        case_id, memo, category, emotion, strength = EXACT8[7]
+        source, grounded_plan, graph, parent_plan = _stage2_inputs(
+            _request(
+                record_id=case_id,
+                memo=memo,
+                category=category,
+                emotion=emotion,
+                strength=strength,
+            )
+        )
+        change = build_stage1_semantic_projection(
+            source=source,
+            grounded_graph=graph,
+            parent_plan=parent_plan,
+            grounded_plan=grounded_plan,
+        )
+        self.assertTrue(
+            all(not row.value_principle_refs for row in change.subjective_claims)
+        )
+        self.assertTrue(
+            all(
+                {
+                    "value-policy-suppression:V4",
+                    "value-policy-suppression:V5",
+                }.issubset(row.forbidden_promotions)
+                for row in change.subjective_claims
+            )
+        )
+
+        case_id, memo, category, emotion, strength = EXACT8[0]
+        source, grounded_plan, graph, parent_plan = _stage2_inputs(
+            _request(
+                record_id=case_id,
+                memo=memo,
+                category=category,
+                emotion=emotion,
+                strength=strength,
+            )
+        )
+        protect = build_stage1_semantic_projection(
+            source=source,
+            grounded_graph=graph,
+            parent_plan=parent_plan,
+            grounded_plan=grounded_plan,
+        )
+        attention = protect.subjective_claims[0]
+        nonmaterial = replace(
+            attention,
+            subjective_mode=SubjectiveMode.VALUE_POSITION,
+            asserted_subjective_proposition=replace(
+                attention.asserted_subjective_proposition,
+                subjective_operator=SubjectiveOperator.PROTECT_VALUE_BOUNDARY,
+            ),
+            value_principle_refs=(stage1_value_principle_ref("V1"),),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_nonmaterial_value_visible",
+        ):
+            validate_stage1_projection(
+                _replace_projection_claim(protect, 0, nonmaterial),
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+            )
+
+        case_id, memo, category, emotion, strength = EXACT8[5]
+        source, grounded_plan, graph, parent_plan = _stage2_inputs(
+            _request(
+                record_id=case_id,
+                memo=memo,
+                category=category,
+                emotion=emotion,
+                strength=strength,
+            )
+        )
+        material_protect = build_stage1_semantic_projection(
+            source=source,
+            grounded_graph=graph,
+            parent_plan=parent_plan,
+            grounded_plan=grounded_plan,
+        )
+        value_position = next(
+            row
+            for row in material_protect.subjective_claims
+            if row.subjective_mode is SubjectiveMode.VALUE_POSITION
+        )
+        self.assertEqual(
+            value_position.value_principle_refs,
+            (
+                stage1_value_principle_ref("V2"),
+                stage1_value_principle_ref("V8"),
+            ),
+        )
+        burden_contribution = next(
+            row
+            for row in material_protect.observation_contributions
+            if row.semantic_operator is SemanticOperator.PRESENT_BURDEN
+        )
+        attention = next(
+            row
+            for row in material_protect.subjective_claims
+            if row.subjective_mode is SubjectiveMode.ATTENTION
+        )
+        redirected = replace(
+            attention,
+            asserted_subjective_proposition=replace(
+                attention.asserted_subjective_proposition,
+                target_contribution_refs=(burden_contribution.contribution_id,),
+                response_object_refs=(burden_contribution.semantic_refs[0],),
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_subjective_object_contract_invalid",
+        ):
+            validate_stage1_projection(
+                _replace_projection_claim(material_protect, 0, redirected),
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+            )
+
+    def test_stage3_request_local_self_state_is_exact_four_and_a_b_a_stable(self) -> None:
+        def build(index: int):
+            case_id, memo, category, emotion, strength = EXACT8[index]
+            source, grounded_plan, graph, parent_plan = _stage2_inputs(
+                _request(
+                    record_id=case_id,
+                    memo=memo,
+                    category=category,
+                    emotion=emotion,
+                    strength=strength,
+                )
+            )
+            return build_stage1_semantic_projection(
+                source=source,
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+                grounded_plan=grounded_plan,
+            )
+
+        first_a = build(1)
+        state = stage1_response_module._build_request_local_response_state(
+            first_a.observation_contributions,
+            relationship_care_constraints=(),
+        )
+        self.assertEqual(
+            tuple(row.name for row in fields(type(state))),
+            (
+                "speaker_identity",
+                "versioned_value_policy",
+                "selected_observation_contribution_refs",
+                "relationship_care_constraints",
+            ),
+        )
+        self.assertEqual(state.speaker_identity, "EMLIS")
+        self.assertEqual(state.versioned_value_policy, CMEE_STAGE1_VALUE_POLICY_REF)
+        middle_b = build(7)
+        second_a = build(1)
+        self.assertNotEqual(first_a.projection_id, middle_b.projection_id)
+        self.assertEqual(first_a, second_a)
+
+    def test_stage3_policy_projection_and_artifact_identity_are_bound(self) -> None:
+        case_id, memo, category, emotion, strength = EXACT8[1]
+        source, grounded_plan, graph, parent_plan = _stage2_inputs(
+            _request(
+                record_id=case_id,
+                memo=memo,
+                category=category,
+                emotion=emotion,
+                strength=strength,
+            )
+        )
+        projection = build_stage1_semantic_projection(
+            source=source,
+            grounded_graph=graph,
+            parent_plan=parent_plan,
+            grounded_plan=grounded_plan,
+        )
+        projection_ref = stage1_projection_artifact_ref(projection)
+        args = (
+            "source-envelope",
+            "graph",
+            "plan",
+            "proof",
+            "observation",
+            ("unknown",),
+            "reception",
+        )
+        legacy = _artifact_id(*args)
+        self.assertEqual(
+            legacy,
+            _artifact_id(*args, emlis_stage1_projection_ref=None),
+        )
+        bound = _artifact_id(
+            *args,
+            emlis_stage1_projection_ref=projection_ref,
+        )
+        self.assertNotEqual(legacy, bound)
+
+        altered = _identified(
+            replace(
+                projection,
+                projection_id="",
+                emlis_value_policy_ref=(
+                    "policy:cocolon.emlis.stage1.value_policy"
+                    "@cocolon.emlis.stage1.value_policy.v2"
+                ),
+            ),
+            "projection_id",
+        )
+        altered_ref = stage1_projection_artifact_ref(altered)
+        self.assertNotEqual(projection_ref, altered_ref)
+        self.assertNotEqual(
+            bound,
+            _artifact_id(
+                *args,
+                emlis_stage1_projection_ref=altered_ref,
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_value_policy_ref_invalid",
+        ):
+            validate_stage1_projection(
+                altered,
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+            )
+        with self.assertRaisesRegex(
+            CMEEVerticalError,
+            "stage1_projection_artifact_ref_invalid",
+        ):
+            _artifact_id(
+                *args,
+                emlis_stage1_projection_ref="projection:not-local@wrong.v1",
+            )
+        self.assertIsNone(
+            inspect.signature(_artifact_id)
+            .parameters["emlis_stage1_projection_ref"]
+            .default
+        )
 
     def test_stage2_has_no_case_fixture_or_strength_branch(self) -> None:
         source_code = inspect.getsource(stage1_response_module)
