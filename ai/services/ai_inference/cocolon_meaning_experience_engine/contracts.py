@@ -3307,6 +3307,24 @@ def validate_stage1_trace_spine(
     rows = tuple(trace_rows)
     if any(type(row) is not VisibleUnitTrace for row in rows):
         raise CMEEStage1ContractError("stage1_trace_row_type_invalid")
+    roles = tuple(row.role for row in rows)
+    observation_count = roles.count("OBSERVATION")
+    unknown_count = roles.count("UNKNOWN")
+    reception_count = roles.count("RECEPTION")
+    if (
+        not 1 <= observation_count <= 5
+        or not 0 <= unknown_count <= 1
+        or not 1 <= reception_count <= 4
+        or observation_count != len(projection.ordered_observation_refs)
+        or reception_count != len(projection.ordered_subjective_refs)
+        or roles
+        != (
+            *("OBSERVATION" for _ in range(observation_count)),
+            *("UNKNOWN" for _ in range(unknown_count)),
+            *("RECEPTION" for _ in range(reception_count)),
+        )
+    ):
+        raise CMEEStage1ContractError("stage1_trace_role_order_invalid")
     if any(
         any(
             type(getattr(row, field_name)) is not tuple
@@ -3330,6 +3348,9 @@ def validate_stage1_trace_spine(
     claims = {row.subjective_claim_id: row for row in projection.subjective_claims}
     observation_contribution_counts = {ref: 0 for ref in contributions}
     subjective_claim_counts = {ref: 0 for ref in claims}
+    ordered_observation_trace_refs: list[str] = []
+    ordered_reception_trace_refs: list[str] = []
+    positive_composition_variants: set[str] = set()
 
     for index, row in enumerate(rows):
         if (
@@ -3381,6 +3402,7 @@ def validate_stage1_trace_spine(
             or not extension.composition_variant_id
         ):
             raise CMEEStage1ContractError("stage1_trace_variant_missing")
+        positive_composition_variants.add(extension.composition_variant_id)
         if not (row.meaning_node_ids or row.meaning_edge_ids) or not row.evidence_ids:
             raise CMEEStage1ContractError("stage1_trace_base_lineage_missing")
 
@@ -3403,6 +3425,11 @@ def validate_stage1_trace_spine(
                 code="stage1_observation_trace_contribution_invalid",
                 allow_empty=False,
             )
+            if len(extension.contribution_refs) != 1:
+                raise CMEEStage1ContractError(
+                    "stage1_observation_trace_contribution_invalid"
+                )
+            ordered_observation_trace_refs.append(extension.contribution_refs[0])
             _require_local_subset(
                 extension.interpretation_candidate_refs,
                 candidates,
@@ -3440,7 +3467,10 @@ def validate_stage1_trace_spine(
             reachable_edge_ids = {
                 _version_qualified_local_id(ref)
                 for contribution_ref in extension.contribution_refs
-                for ref in contributions[contribution_ref].semantic_refs
+                for ref in (
+                    *contributions[contribution_ref].semantic_refs,
+                    *contributions[contribution_ref].relation_basis_refs,
+                )
                 if ref.startswith("edge:")
             } | {
                 _version_qualified_local_id(ref)
@@ -3492,6 +3522,7 @@ def validate_stage1_trace_spine(
         ):
             raise CMEEStage1ContractError("stage1_reception_trace_domain_invalid")
         claim = claims[extension.subjective_claim_ref]
+        ordered_reception_trace_refs.append(extension.subjective_claim_ref)
         subjective_claim_counts[extension.subjective_claim_ref] += 1
         if (
             tuple(extension.basis_observation_contribution_refs)
@@ -3509,7 +3540,7 @@ def validate_stage1_trace_spine(
             extension.basis_trace_refs,
             code="stage1_reception_trace_ref_invalid",
         )
-        reachable_basis_contributions: set[str] = set()
+        reachable_basis_contributions: list[str] = []
         for basis_ref in extension.basis_trace_refs:
             basis_position = position.get(basis_ref)
             if basis_position is None:
@@ -3521,8 +3552,8 @@ def validate_stage1_trace_spine(
             basis_extension = rows[basis_position].emlis_stage1_extension
             if basis_extension is None:
                 raise CMEEStage1ContractError("stage1_reception_trace_ref_foreign")
-            reachable_basis_contributions.update(basis_extension.contribution_refs)
-        if not set(extension.basis_observation_contribution_refs).issubset(
+            reachable_basis_contributions.extend(basis_extension.contribution_refs)
+        if tuple(extension.basis_observation_contribution_refs) != tuple(
             reachable_basis_contributions
         ):
             raise CMEEStage1ContractError(
@@ -3545,7 +3576,10 @@ def validate_stage1_trace_spine(
         } | {
             _version_qualified_local_id(ref)
             for contribution_ref in extension.basis_observation_contribution_refs
-            for ref in contributions[contribution_ref].semantic_refs
+            for ref in (
+                *contributions[contribution_ref].semantic_refs,
+                *contributions[contribution_ref].relation_basis_refs,
+            )
             if ref.startswith("edge:")
         }
         reachable_evidence_ids = {
@@ -3570,6 +3604,12 @@ def validate_stage1_trace_spine(
         raise CMEEStage1ContractError("stage1_observation_trace_coverage_invalid")
     if any(count != 1 for count in subjective_claim_counts.values()):
         raise CMEEStage1ContractError("stage1_reception_trace_coverage_invalid")
+    if tuple(ordered_observation_trace_refs) != projection.ordered_observation_refs:
+        raise CMEEStage1ContractError("stage1_observation_trace_order_invalid")
+    if tuple(ordered_reception_trace_refs) != projection.ordered_subjective_refs:
+        raise CMEEStage1ContractError("stage1_reception_trace_order_invalid")
+    if len(positive_composition_variants) != 1:
+        raise CMEEStage1ContractError("stage1_trace_variant_mismatch")
 
 
 @dataclass(frozen=True, slots=True, repr=False)

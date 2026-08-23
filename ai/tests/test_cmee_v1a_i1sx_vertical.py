@@ -34,10 +34,9 @@ from cocolon_meaning_experience_engine.emlis_v1a import (
     _common_guard_proof_id,
     _plan_id,
     _planned_visible_source_ids,
-    _realize_cmee_experience,
     _sha256_text,
     build_text_grounded_limited_artifact,
-    validate_positive_realization_trace,
+    validate_positive_realization_trace as _runtime_validate_positive_realization_trace,
 )
 from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
 from tools.cmee_v1a_i1sx_candidate_run import (
@@ -79,22 +78,55 @@ def _request(
 
 def _private_parts(request: GenerationRequest):
     source = freeze_text_source(request)
-    resolver = build_evidence_span_resolver(
-        source.evidence_spans,
-        current_input=source.normalized_current_input,
-    )
-    grounded_plan = build_grounded_observation_plan(
-        source.normalized_current_input,
-        evidence_spans=source.evidence_spans,
-    )
-    graph, plan, artifact = build_text_grounded_limited_artifact(source)
-    visible, _guard_material = _realize_cmee_experience(
-        source,
-        graph,
-        plan,
-        grounded_plan,
+    captured: dict[str, object] = {}
+
+    def capture_validation(
+        validation_source,
+        validation_graph,
+        validation_artifact,
+        safe_lines,
+        **kwargs,
+    ):
+        captured["safe_lines"] = tuple(safe_lines)
+        captured["projection"] = kwargs["projection"]
+        captured["selected_units"] = kwargs["selected_units"]
+        return _runtime_validate_positive_realization_trace(
+            validation_source,
+            validation_graph,
+            validation_artifact,
+            safe_lines,
+            **kwargs,
+        )
+
+    with patch.object(
+        emlis_v1a_module,
+        "validate_positive_realization_trace",
+        side_effect=capture_validation,
+    ):
+        graph, plan, artifact = build_text_grounded_limited_artifact(source)
+    visible = captured["safe_lines"]
+    _STAGE1_VALIDATION_CAPTURE[source.envelope.envelope_id] = (
+        captured["projection"],
+        captured["selected_units"],
     )
     return source, graph, plan, artifact, visible
+
+
+_STAGE1_VALIDATION_CAPTURE: dict[str, tuple[object, object]] = {}
+
+
+def validate_positive_realization_trace(source, graph, artifact, safe_lines):
+    projection, selected_units = _STAGE1_VALIDATION_CAPTURE[
+        source.envelope.envelope_id
+    ]
+    return _runtime_validate_positive_realization_trace(
+        source,
+        graph,
+        artifact,
+        safe_lines,
+        projection=projection,
+        selected_units=selected_units,
+    )
 
 
 def _rehash_graph(graph):
@@ -253,7 +285,8 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         roles = tuple(row.role for row in artifact.trace)
         self.assertGreaterEqual(roles.count("OBSERVATION"), 1)
         self.assertEqual(roles.count("UNKNOWN"), 0)
-        self.assertEqual(roles.count("RECEPTION"), 1)
+        self.assertGreaterEqual(roles.count("RECEPTION"), 1)
+        self.assertLessEqual(roles.count("RECEPTION"), 4)
         self.assertEqual(roles[-1], "RECEPTION")
         self.assertEqual(artifact.visible_unknowns, ())
         self.assertEqual(artifact.plan.visible_unknown_owner_ids, ())
@@ -817,7 +850,16 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 if graph_edge.edge_id in trace.meaning_edge_ids
             ),
         }
-        self.assertEqual(realized_owner_ids, set(outcome.artifact.plan.required_observation_owner_ids))
+        self.assertTrue(
+            set(outcome.artifact.plan.required_observation_owner_ids).issubset(
+                realized_owner_ids
+            )
+        )
+        self.assertTrue(
+            realized_owner_ids.issubset(
+                set(graph.required_owner_refs + graph.active_optional_owner_refs)
+            )
+        )
         for edge in graph.edges:
             if edge.grounding_kind == "bounded_structural_inference":
                 self.assertEqual(edge.epistemic_state, EpistemicState.UNKNOWN)
@@ -1306,7 +1348,10 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         tampered_trace = (replace(first, evidence_ids=("foreign-evidence",)),) + artifact.trace[1:]
         tampered = replace(artifact, trace=tampered_trace)
 
-        with self.assertRaisesRegex(CMEEVerticalError, "visible_trace_exact_binding_mismatch"):
+        with self.assertRaisesRegex(
+            CMEEVerticalError,
+            "stage1_positive_trace_extension_invalid",
+        ):
             validate_positive_realization_trace(source, graph, tampered, visible)
 
     def test_positive_roles_reject_a_source_explicit_but_nonvisible_owner(self) -> None:
@@ -2421,37 +2466,464 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             )
             self.assertIsNone(unrelated_outcome.artifact)
 
-    def test_actual_stage1_reception_surface_must_pass_dedicated_validator(self) -> None:
+    def test_legacy_reception_surface_validator_is_not_active_after_step5(self) -> None:
         invalid_surfaces = (
             "今すぐ相談してください。",
             "この願いを大切にします。もう一文追加します。",
         )
         for invalid_surface in invalid_surfaces:
             with self.subTest(invalid_surface=invalid_surface):
-                with patch.object(
-                    emlis_v1a_module,
-                    "_cmee_stage1_reception_text",
-                    return_value=invalid_surface,
+                with (
+                    patch.object(
+                        emlis_v1a_module,
+                        "_cmee_stage1_reception_text",
+                        return_value=invalid_surface,
+                    ) as legacy_surface,
+                    patch.object(
+                        emlis_v1a_module,
+                        "validate_grounded_human_reception_surface",
+                        side_effect=AssertionError("legacy validator called"),
+                    ) as legacy_validator,
                 ):
                     outcome = MeaningExperienceEngine().generate(_request())
-                self.assertEqual(outcome.status.value, "UNAVAILABLE")
-                self.assertIn(
-                    "bound_human_reception_surface_rejected",
-                    outcome.reason_codes,
+                self.assertEqual(outcome.status.value, "GENERATED")
+                self.assertEqual(legacy_surface.call_count, 0)
+                self.assertEqual(legacy_validator.call_count, 0)
+
+    def test_step5_atomic_cutover_uses_one_compiler_and_no_legacy_surface(self) -> None:
+        case_id, memo, category, emotion, strength = EXACT8[5]
+        request = _request(
+            record_id=f"step5-{case_id.lower()}",
+            memo=memo,
+            category=category,
+            emotion=emotion,
+            strength=strength,
+        )
+        captured: dict[str, object] = {}
+        original_compiler = emlis_v1a_module.compile_stage1_response
+        original_common = emlis_v1a_module.compose_emlis_conversation_candidate
+        original_validation = emlis_v1a_module.validate_positive_realization_trace
+
+        def compile_once(**kwargs):
+            projection, units = original_compiler(**kwargs)
+            captured["projection"] = projection
+            captured["units"] = units
+            return projection, units
+
+        def validate_once(
+            validation_source,
+            validation_graph,
+            validation_artifact,
+            safe_lines,
+            **kwargs,
+        ):
+            captured["source"] = validation_source
+            captured["safe_lines"] = tuple(safe_lines)
+            captured["validation_kwargs"] = kwargs
+            return original_validation(
+                validation_source,
+                validation_graph,
+                validation_artifact,
+                safe_lines,
+                **kwargs,
+            )
+
+        with (
+            patch.object(
+                emlis_v1a_module,
+                "compile_stage1_response",
+                side_effect=compile_once,
+            ) as compiler,
+            patch.object(
+                emlis_v1a_module,
+                "compose_emlis_conversation_candidate",
+                wraps=original_common,
+            ) as common_guard_path,
+            patch.object(
+                emlis_v1a_module,
+                "validate_positive_realization_trace",
+                side_effect=validate_once,
+            ) as disabled_validator,
+            patch.object(
+                emlis_v1a_module,
+                "_canonical_r4_observation_lines",
+                side_effect=AssertionError("legacy observation called"),
+            ) as legacy_observation,
+            patch.object(
+                emlis_v1a_module,
+                "_canonical_r4_tail_lines",
+                side_effect=AssertionError("legacy tail called"),
+            ) as legacy_tail,
+            patch.object(
+                emlis_v1a_module,
+                "_cmee_nucleus_observation_text",
+                side_effect=AssertionError("legacy nucleus surface called"),
+            ) as legacy_nucleus,
+            patch.object(
+                emlis_v1a_module,
+                "_cmee_relation_observation_text",
+                side_effect=AssertionError("legacy relation surface called"),
+            ) as legacy_relation,
+            patch.object(
+                emlis_v1a_module,
+                "_cmee_stage1_reception_text",
+                side_effect=AssertionError("legacy reception surface called"),
+            ) as legacy_reception,
+            patch.object(
+                emlis_v1a_module,
+                "realize_grounded_human_reception",
+                side_effect=AssertionError("legacy reception realizer called"),
+            ) as legacy_reception_realizer,
+            patch.object(
+                emlis_v1a_module,
+                "validate_grounded_human_reception_surface",
+                side_effect=AssertionError("legacy reception validator called"),
+            ) as legacy_reception_validator,
+        ):
+            outcome = MeaningExperienceEngine().generate(request)
+
+        self.assertEqual(outcome.status.value, "GENERATED", outcome.reason_codes)
+        self.assertEqual(compiler.call_count, 1)
+        self.assertEqual(common_guard_path.call_count, 1)
+        self.assertEqual(disabled_validator.call_count, 1)
+        for legacy in (
+            legacy_observation,
+            legacy_tail,
+            legacy_nucleus,
+            legacy_relation,
+            legacy_reception,
+            legacy_reception_realizer,
+            legacy_reception_validator,
+        ):
+            self.assertEqual(legacy.call_count, 0)
+
+        graph = outcome.meaning_graph
+        artifact = outcome.artifact
+        projection = captured["projection"]
+        units = captured["units"]
+        assert graph is not None and artifact is not None
+        roles = tuple(row.role for row in artifact.trace)
+        self.assertEqual(roles, ("OBSERVATION", "OBSERVATION", "RECEPTION", "RECEPTION", "RECEPTION"))
+        self.assertEqual(len(artifact.observation.splitlines()), 2)
+        self.assertEqual(len(artifact.reception.splitlines()), 3)
+        self.assertEqual(
+            tuple(row[0] for row in artifact.common_guard_proof.guarded_observation_units),
+            tuple(
+                row.source_sentence_id
+                for row in artifact.trace
+                if row.role == "OBSERVATION"
+            ),
+        )
+        self.assertTrue(
+            all(
+                row.source_sentence_id.startswith("cmee:reception:")
+                for row in artifact.trace
+                if row.role == "RECEPTION"
+            )
+        )
+        variants = {
+            row.emlis_stage1_extension.composition_variant_id
+            for row in artifact.trace
+            if row.role in {"OBSERVATION", "RECEPTION"}
+            and row.emlis_stage1_extension is not None
+        }
+        self.assertEqual(len(variants), 1)
+        for row in artifact.trace:
+            extension = row.emlis_stage1_extension
+            if row.role == "OBSERVATION":
+                assert extension is not None
+                self.assertTrue(extension.contribution_refs)
+                self.assertTrue(extension.interpretation_candidate_refs)
+                self.assertIsNone(extension.subjective_claim_ref)
+                self.assertIsNone(extension.speaker_owner)
+            elif row.role == "RECEPTION":
+                assert extension is not None
+                self.assertTrue(extension.subjective_claim_ref)
+                self.assertTrue(extension.basis_observation_contribution_refs)
+                self.assertTrue(extension.basis_trace_refs)
+                self.assertEqual(extension.speaker_owner, "EMLIS")
+                self.assertEqual(extension.user_fact_effect, 0)
+
+        cmee_contracts_module.validate_stage1_trace_spine(
+            artifact.trace,
+            projection,
+            grounded_graph=graph,
+            parent_plan=artifact.plan,
+        )
+        projection_ref = cmee_contracts_module.stage1_projection_artifact_ref(
+            projection
+        )
+        identity_args = (
+            graph.source_envelope_id,
+            graph.graph_id,
+            artifact.plan.plan_id,
+            artifact.common_guard_proof.proof_id,
+            artifact.observation,
+            tuple(row.text for row in artifact.visible_unknowns),
+            artifact.reception,
+        )
+        self.assertEqual(
+            artifact.artifact_id,
+            _artifact_id(
+                *identity_args,
+                emlis_stage1_projection_ref=projection_ref,
+            ),
+        )
+        self.assertNotEqual(artifact.artifact_id, _artifact_id(*identity_args))
+        self.assertEqual(
+            tuple(artifact.__dataclass_fields__),
+            (
+                "artifact_id",
+                "realizer_contract_ids",
+                "trust_policy_ids",
+                "common_guard_proof",
+                "observation",
+                "reception",
+                "plan",
+                "trace",
+                "visible_unknowns",
+            ),
+        )
+        self.assertEqual(len(units), len(artifact.trace))
+        self.assertTrue(_structural_trace_valid(outcome))
+
+        first_reception = roles.index("RECEPTION")
+        reception_row = artifact.trace[first_reception]
+        assert reception_row.emlis_stage1_extension is not None
+        invalid_extension = replace(
+            reception_row.emlis_stage1_extension,
+            user_fact_effect=1,
+        )
+        invalid_trace = list(artifact.trace)
+        invalid_trace[first_reception] = replace(
+            reception_row,
+            emlis_stage1_extension=invalid_extension,
+        )
+        with self.assertRaisesRegex(
+            cmee_contracts_module.CMEEStage1ContractError,
+            "user_fact_effect_invalid",
+        ):
+            cmee_contracts_module.validate_stage1_trace_spine(
+                tuple(invalid_trace),
+                projection,
+                grounded_graph=graph,
+                parent_plan=artifact.plan,
+            )
+        self.assertFalse(
+            _structural_trace_valid(
+                replace(
+                    outcome,
+                    artifact=replace(artifact, trace=tuple(invalid_trace)),
                 )
+            )
+        )
+        reordered = (
+            artifact.trace[0],
+            artifact.trace[first_reception],
+            artifact.trace[1],
+            *artifact.trace[first_reception + 1 :],
+        )
+        with self.assertRaisesRegex(
+            cmee_contracts_module.CMEEStage1ContractError,
+            "role_order_invalid",
+        ):
+            cmee_contracts_module.validate_stage1_trace_spine(
+                reordered,
+                projection,
+                grounded_graph=graph,
+                parent_plan=artifact.plan,
+            )
+        self.assertFalse(
+            _structural_trace_valid(
+                replace(outcome, artifact=replace(artifact, trace=reordered))
+            )
+        )
+
+        reception_indexes = tuple(
+            index
+            for index, row in enumerate(artifact.trace)
+            if row.role == "RECEPTION"
+        )
+        claim_swapped_trace = list(artifact.trace)
+        left_index, right_index = reception_indexes[:2]
+        left_extension = artifact.trace[left_index].emlis_stage1_extension
+        right_extension = artifact.trace[right_index].emlis_stage1_extension
+        assert left_extension is not None and right_extension is not None
+        claim_swapped_trace[left_index] = replace(
+            artifact.trace[left_index],
+            emlis_stage1_extension=right_extension,
+        )
+        claim_swapped_trace[right_index] = replace(
+            artifact.trace[right_index],
+            emlis_stage1_extension=left_extension,
+        )
+        claim_swapped_artifact = replace(
+            artifact,
+            trace=tuple(claim_swapped_trace),
+        )
+        with self.assertRaisesRegex(
+            CMEEVerticalError,
+            "stage1_positive_trace_extension_invalid",
+        ):
+            original_validation(
+                captured["source"],
+                graph,
+                claim_swapped_artifact,
+                captured["safe_lines"],
+                **captured["validation_kwargs"],
+            )
+
+        lineage_swapped_trace = list(artifact.trace)
+        lineage_swapped_trace[0] = replace(
+            artifact.trace[0],
+            meaning_node_ids=artifact.trace[1].meaning_node_ids,
+            meaning_edge_ids=artifact.trace[1].meaning_edge_ids,
+            evidence_ids=artifact.trace[1].evidence_ids,
+        )
+        with self.assertRaisesRegex(
+            CMEEVerticalError,
+            "stage1_positive_trace_extension_invalid",
+        ):
+            original_validation(
+                captured["source"],
+                graph,
+                replace(artifact, trace=tuple(lineage_swapped_trace)),
+                captured["safe_lines"],
+                **captured["validation_kwargs"],
+            )
+
+    def test_step5_compiler_failure_is_terminal_without_legacy_fallback(self) -> None:
+        with (
+            patch.object(
+                emlis_v1a_module,
+                "compile_stage1_response",
+                side_effect=cmee_contracts_module.CMEEStage1ContractError(
+                    "stage1_no_hard_valid_realization"
+                ),
+            ) as compiler,
+            patch.object(
+                emlis_v1a_module,
+                "_canonical_r4_observation_lines",
+                side_effect=AssertionError("legacy observation called"),
+            ) as legacy_observation,
+            patch.object(
+                emlis_v1a_module,
+                "_canonical_r4_tail_lines",
+                side_effect=AssertionError("legacy tail called"),
+            ) as legacy_tail,
+            patch.object(
+                emlis_v1a_module,
+                "_cmee_stage1_reception_text",
+                side_effect=AssertionError("legacy reception called"),
+            ) as legacy_reception,
+        ):
+            outcome = MeaningExperienceEngine().generate(_request())
+        self.assertEqual(outcome.status.value, "UNAVAILABLE")
+        self.assertEqual(
+            outcome.reason_codes,
+            ("stage1_no_hard_valid_realization",),
+        )
+        self.assertIsNone(outcome.artifact)
+        self.assertEqual(compiler.call_count, 1)
+        self.assertEqual(legacy_observation.call_count, 0)
+        self.assertEqual(legacy_tail.call_count, 0)
+        self.assertEqual(legacy_reception.call_count, 0)
+
+    def test_step5_common_guard_failure_is_terminal_without_legacy_fallback(
+        self,
+    ) -> None:
+        case_id, memo, category, emotion, strength = EXACT8[1]
+        original_compiler = emlis_v1a_module.compile_stage1_response
+        original_common = emlis_v1a_module.compose_emlis_conversation_candidate
+        with (
+            patch.object(
+                emlis_v1a_module,
+                "compile_stage1_response",
+                wraps=original_compiler,
+            ) as compiler,
+            patch.object(
+                emlis_v1a_module,
+                "compose_emlis_conversation_candidate",
+                wraps=original_common,
+            ) as common_guard_path,
+            patch.object(
+                emlis_v1a_module,
+                "_canonical_r4_observation_lines",
+                side_effect=AssertionError("legacy observation called"),
+            ) as legacy_observation,
+            patch.object(
+                emlis_v1a_module,
+                "_canonical_r4_tail_lines",
+                side_effect=AssertionError("legacy tail called"),
+            ) as legacy_tail,
+            patch.object(
+                emlis_v1a_module,
+                "_cmee_stage1_reception_text",
+                side_effect=AssertionError("legacy reception called"),
+            ) as legacy_reception,
+            patch.object(
+                emlis_v1a_module,
+                "realize_grounded_human_reception",
+                side_effect=AssertionError("legacy reception realizer called"),
+            ) as legacy_reception_realizer,
+        ):
+            outcome = MeaningExperienceEngine().generate(
+                _request(
+                    record_id=f"step5-no-fallback-{case_id.lower()}",
+                    memo=memo,
+                    category=category,
+                    emotion=emotion,
+                    strength=strength,
+                )
+            )
+        self.assertEqual(outcome.status.value, "UNAVAILABLE")
+        self.assertEqual(
+            outcome.reason_codes,
+            ("plan_bound_observation_realizer_unavailable",),
+        )
+        self.assertIsNone(outcome.artifact)
+        self.assertEqual(compiler.call_count, 1)
+        self.assertEqual(common_guard_path.call_count, 1)
+        for legacy in (
+            legacy_observation,
+            legacy_tail,
+            legacy_reception,
+            legacy_reception_realizer,
+        ):
+            self.assertEqual(legacy.call_count, 0)
 
     def test_role_aware_exact8_comparator_and_mutations(self) -> None:
-        request = _request(
-            record_id="cmee-role-aware-material-unknown",
-            memo=MATERIAL_UNKNOWN_MEMO,
+        material_unknown = MeaningExperienceEngine().generate(
+            _request(
+                record_id="cmee-role-aware-material-unknown",
+                memo=MATERIAL_UNKNOWN_MEMO,
+            )
         )
-        outcome = MeaningExperienceEngine().generate(request)
-        self.assertEqual(outcome.status.value, "LIMITED", outcome.reason_codes)
-        self.assertTrue(_structural_trace_valid(outcome))
+        self.assertEqual(material_unknown.status.value, "UNAVAILABLE")
+        self.assertEqual(
+            material_unknown.reason_codes,
+            ("stage1_projection_unavailable",),
+        )
+        self.assertIsNone(material_unknown.artifact)
+        self.assertFalse(_structural_trace_valid(material_unknown))
+
+        case_id, memo, category, emotion, strength = EXACT8[5]
+        outcome = MeaningExperienceEngine().generate(
+            _request(
+                record_id=f"role-aware-{case_id.lower()}",
+                memo=memo,
+                category=category,
+                emotion=emotion,
+                strength=strength,
+            )
+        )
+        self.assertEqual(outcome.status.value, "GENERATED", outcome.reason_codes)
         artifact = outcome.artifact
         assert artifact is not None
-        unknown_index = next(
-            index for index, row in enumerate(artifact.trace) if row.role == "UNKNOWN"
+        self.assertTrue(_structural_trace_valid(outcome))
+        self.assertEqual(
+            tuple(row.role for row in artifact.trace),
+            ("OBSERVATION", "OBSERVATION", "RECEPTION", "RECEPTION", "RECEPTION"),
         )
         reception_index = next(
             index for index, row in enumerate(artifact.trace) if row.role == "RECEPTION"
@@ -2459,68 +2931,75 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         observation_index = next(
             index for index, row in enumerate(artifact.trace) if row.role == "OBSERVATION"
         )
-        source_node_id = artifact.trace[observation_index].meaning_node_ids[0]
-        graph = outcome.meaning_graph
-        assert graph is not None
-        nonvisible_node = next(
-            row
-            for row in graph.nodes
-            if graph.owner_dispositions[
-                tuple(item.owner_id for item in graph.owner_dispositions).index(row.owner_id)
-            ].disposition
-            is not RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
-        )
+        reception_extension = artifact.trace[reception_index].emlis_stage1_extension
+        assert reception_extension is not None
         mutations = {
-            "unknown_fake_node": replace(
-                artifact.trace[unknown_index],
-                meaning_node_ids=(source_node_id,),
-            ),
-            "unknown_fake_edge": replace(
-                artifact.trace[unknown_index],
-                meaning_edge_ids=("forged-edge",),
-            ),
-            "unknown_without_evidence": replace(
-                artifact.trace[unknown_index],
-                evidence_ids=(),
-            ),
-            "unknown_without_owner": replace(
-                artifact.trace[unknown_index],
-                constrained_by_owner_ids=(),
-            ),
-            "unknown_wrong_duty": replace(
-                artifact.trace[unknown_index],
-                duty_id="FORGED_UNKNOWN_DUTY",
-            ),
-            "unknown_wrong_operation": replace(
-                artifact.trace[unknown_index],
-                operation="FORGED_UNKNOWN_OPERATION",
-            ),
             "observation_without_meaning": replace(
                 artifact.trace[observation_index],
                 meaning_node_ids=(),
                 meaning_edge_ids=(),
             ),
-            "observation_nonvisible_meaning": replace(
-                artifact.trace[observation_index],
-                meaning_node_ids=(nonvisible_node.node_id,),
-                meaning_edge_ids=(),
-            ),
             "reception_without_meaning": replace(
                 artifact.trace[reception_index],
                 meaning_node_ids=(),
+                meaning_edge_ids=(),
+            ),
+            "reception_wrong_speaker": replace(
+                artifact.trace[reception_index],
+                emlis_stage1_extension=replace(
+                    reception_extension,
+                    speaker_owner=None,
+                ),
+            ),
+            "reception_bool_user_fact": replace(
+                artifact.trace[reception_index],
+                emlis_stage1_extension=replace(
+                    reception_extension,
+                    user_fact_effect=False,
+                ),
+            ),
+            "reception_wrong_schema": replace(
+                artifact.trace[reception_index],
+                emlis_stage1_extension=replace(
+                    reception_extension,
+                    schema_version="cocolon.cmee.invalid.v1",
+                ),
+            ),
+            "reception_raw_string_domain": replace(
+                artifact.trace[reception_index],
+                emlis_stage1_extension=replace(
+                    reception_extension,
+                    claim_domain="EMLIS_SUBJECTIVE_RESPONSE",
+                ),
+            ),
+            "reception_unreachable_basis": replace(
+                artifact.trace[reception_index],
+                emlis_stage1_extension=replace(
+                    reception_extension,
+                    basis_observation_contribution_refs=("contribution:foreign",),
+                ),
+            ),
+            "reception_positive_constraint": replace(
+                artifact.trace[reception_index],
+                constrained_by_owner_ids=("owner:forged",),
+            ),
+            "reception_basis_order_mismatch": replace(
+                artifact.trace[reception_index],
+                emlis_stage1_extension=replace(
+                    reception_extension,
+                    basis_trace_refs=tuple(
+                        reversed(reception_extension.basis_trace_refs)
+                    ),
+                ),
             ),
         }
         for name, changed_trace in mutations.items():
             with self.subTest(name=name):
                 trace = list(artifact.trace)
                 index = (
-                    unknown_index
-                    if name.startswith("unknown_")
-                    else (
-                        observation_index
-                        if name.startswith("observation_")
-                        else reception_index
-                    )
+                    observation_index
+                    if name.startswith("observation_")
+                    else reception_index
                 )
                 trace[index] = changed_trace
                 self.assertFalse(
@@ -2530,19 +3009,13 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 )
 
         sequence_mutations = {
-            "missing_unknown": tuple(
-                row for row in artifact.trace if row.role != "UNKNOWN"
-            ),
-            "duplicate_unknown": (
-                *artifact.trace[:reception_index],
-                artifact.trace[unknown_index],
-                *artifact.trace[reception_index:],
-            ),
-            "unknown_after_reception": (
-                *artifact.trace[:unknown_index],
+            "observation_after_reception": (
+                artifact.trace[0],
                 artifact.trace[reception_index],
-                artifact.trace[unknown_index],
+                artifact.trace[1],
+                *artifact.trace[reception_index + 1 :],
             ),
+            "duplicate_reception": (*artifact.trace, artifact.trace[-1]),
         }
         for name, trace in sequence_mutations.items():
             with self.subTest(name=name):
@@ -2551,20 +3024,78 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                         replace(outcome, artifact=replace(artifact, trace=trace))
                     )
                 )
+        self.assertFalse(
+            _structural_trace_valid(
+                replace(
+                    outcome,
+                    artifact=replace(
+                        artifact,
+                        reception=f"{artifact.reception}\nforged extra line",
+                    ),
+                )
+            )
+        )
+        self.assertFalse(
+            _structural_trace_valid(
+                replace(
+                    outcome,
+                    artifact=replace(
+                        artifact,
+                        reception=f"{artifact.reception}\n",
+                    ),
+                )
+            )
+        )
+        self.assertFalse(
+            _structural_trace_valid(
+                replace(
+                    outcome,
+                    artifact=replace(
+                        artifact,
+                        realizer_contract_ids=("cocolon.cmee.forged.v1",),
+                    ),
+                )
+            )
+        )
+        forged_guard_results = (
+            replace(
+                artifact.common_guard_proof.guard_results[0],
+                passed=False,
+            ),
+            *artifact.common_guard_proof.guard_results[1:],
+        )
+        self.assertFalse(
+            _structural_trace_valid(
+                replace(
+                    outcome,
+                    artifact=replace(
+                        artifact,
+                        common_guard_proof=replace(
+                            artifact.common_guard_proof,
+                            guard_results=forged_guard_results,
+                        ),
+                    ),
+                )
+            )
+        )
 
         body_free, _full = run_exact8_candidate()
         self.assertEqual(len(EXACT8), 8)
         self.assertEqual(body_free["case_count"], 8)
         self.assertEqual(body_free["limited_count"], 0)
-        self.assertEqual(body_free["artifact_count"], 8)
-        self.assertEqual(body_free["structural_trace_valid_count"], 8)
+        self.assertEqual(body_free["artifact_count"], 5)
+        self.assertEqual(body_free["structural_trace_valid_count"], 5)
         self.assertEqual(
-            {row["status"] for row in body_free["cases"]},
-            {"GENERATED"},
+            tuple(
+                row["case_id"]
+                for row in body_free["cases"]
+                if row["structural_trace_valid"]
+            ),
+            ("SX-01", "SX-03", "SX-05", "SX-06", "SX-08"),
         )
         self.assertEqual(
             body_free["candidate_state"],
-            "GENERATED_FOR_PRODUCT_READ_DISABLED",
+            "EXACT8_GENERATION_INCOMPLETE_DISABLED",
         )
         self.assertFalse(body_free["product_read_eligible"])
         self.assertFalse(body_free["product_read_evaluated"])

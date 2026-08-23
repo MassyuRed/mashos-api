@@ -4367,6 +4367,40 @@ def select_stage1_realization_candidate(
     return min(valid, key=_candidate_variant_id)
 
 
+def compile_stage1_response(
+    *,
+    source: AdmittedTextSource,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
+    grounded_plan: GroundedObservationPlan,
+) -> tuple[EmlisStage1Projection, tuple[RealizedSentenceUnit, ...]]:
+    """Compile one immutable Stage 1 response through the sole S5--S9 path.
+
+    The active orchestrator calls this facade exactly once.  Candidate
+    generation and selection remain bounded inside that call, so callers
+    cannot accidentally install a second planner, retry, or legacy fallback.
+    """
+
+    projection = build_stage1_semantic_projection(
+        source=source,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+        grounded_plan=grounded_plan,
+    )
+    candidate_set = build_stage1_realization_candidate_set(
+        projection=projection,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+    )
+    selected = select_stage1_realization_candidate(
+        candidate_set,
+        projection=projection,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+    )
+    return projection, selected
+
+
 __all__ = [
     "CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_BYTES",
     "CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_SHA256",
@@ -4384,6 +4418,7 @@ __all__ = [
     "build_layer1_semantics",
     "build_stage1_semantic_projection",
     "build_stage1_realization_candidate_set",
+    "compile_stage1_response",
     "classify_affect_intensity",
     "classify_observation_depth",
     "classify_subjective_depth",

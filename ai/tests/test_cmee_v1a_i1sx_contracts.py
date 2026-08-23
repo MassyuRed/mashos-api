@@ -81,6 +81,7 @@ from cocolon_meaning_experience_engine.contracts import (
     validate_version_qualified_ref,
 )
 import cocolon_meaning_experience_engine.emlis_stage1_response as stage1_response_module
+import cocolon_meaning_experience_engine.emlis_v1a as emlis_v1a_module
 from cocolon_meaning_experience_engine.emlis_stage1_response import (
     CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_BYTES,
     CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_SHA256,
@@ -563,6 +564,125 @@ def _stage4_exact8_fixture(index: int = 0):
 
 
 class CMEEV1AI1SXContractsTest(unittest.TestCase):
+    def test_step5_compiler_facade_owns_projection_s8_and_s9_exactly_once(self) -> None:
+        case_id, memo, category, emotion, strength = EXACT8[5]
+        source, grounded_plan, graph, parent_plan = _stage2_inputs(
+            _request(
+                record_id=f"step5-{case_id.lower()}",
+                memo=memo,
+                category=category,
+                emotion=emotion,
+                strength=strength,
+            )
+        )
+        with (
+            patch.object(
+                stage1_response_module,
+                "build_stage1_semantic_projection",
+                wraps=stage1_response_module.build_stage1_semantic_projection,
+            ) as projection_builder,
+            patch.object(
+                stage1_response_module,
+                "build_stage1_realization_candidate_set",
+                wraps=stage1_response_module.build_stage1_realization_candidate_set,
+            ) as candidate_builder,
+            patch.object(
+                stage1_response_module,
+                "select_stage1_realization_candidate",
+                wraps=stage1_response_module.select_stage1_realization_candidate,
+            ) as candidate_selector,
+        ):
+            projection, selected = stage1_response_module.compile_stage1_response(
+                source=source,
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+                grounded_plan=grounded_plan,
+            )
+
+        self.assertEqual(projection_builder.call_count, 1)
+        self.assertEqual(candidate_builder.call_count, 1)
+        self.assertEqual(candidate_selector.call_count, 1)
+        self.assertEqual(
+            tuple(row.layer for row in selected),
+            ("LAYER_1", "LAYER_1", "LAYER_2", "LAYER_2", "LAYER_2"),
+        )
+        self.assertEqual(
+            tuple(row.basis_anchor_refs[0] for row in selected),
+            (
+                *projection.ordered_observation_refs,
+                *projection.ordered_subjective_refs,
+            ),
+        )
+
+    def test_step5_trace_spine_reaches_selected_relation_basis_edges(self) -> None:
+        case_id, memo, category, emotion, strength = EXACT8[6]
+        source, grounded_plan, graph, parent_plan = _stage2_inputs(
+            _request(
+                record_id=f"step5-relation-{case_id.lower()}",
+                memo=memo,
+                category=category,
+                emotion=emotion,
+                strength=strength,
+            )
+        )
+        projection, selected = stage1_response_module.compile_stage1_response(
+            source=source,
+            grounded_graph=graph,
+            parent_plan=parent_plan,
+            grounded_plan=grounded_plan,
+        )
+        observation_lines, reception_lines = emlis_v1a_module._stage1_visible_lines(
+            source,
+            graph,
+            grounded_plan,
+            projection,
+            selected,
+        )
+        safe_lines = (*observation_lines, *reception_lines)
+        bound_plan = emlis_v1a_module._bind_plan_to_visible_lines(
+            source,
+            graph,
+            parent_plan,
+            safe_lines,
+        )
+        trace = emlis_v1a_module._trace_for_lines(
+            source,
+            graph,
+            bound_plan,
+            safe_lines,
+            "proof:step5-relation",
+            projection,
+            selected,
+        )
+
+        relation_rows = tuple(
+            row for row in trace if row.role == "OBSERVATION" and row.meaning_edge_ids
+        )
+        self.assertEqual(len(relation_rows), 2)
+        validate_stage1_trace_spine(
+            trace,
+            projection,
+            grounded_graph=graph,
+            parent_plan=bound_plan,
+        )
+
+        tampered = list(trace)
+        first_index = trace.index(relation_rows[0])
+        tampered[first_index] = replace(
+            relation_rows[0],
+            meaning_edge_ids=relation_rows[1].meaning_edge_ids,
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_observation_trace_lineage_unreachable",
+        ):
+            validate_stage1_trace_spine(
+                tuple(tampered),
+                projection,
+                grounded_graph=graph,
+                parent_plan=bound_plan,
+            )
+
     def test_body_free_projection_never_contains_private_body_digest_or_locator(self) -> None:
         outcome = MeaningExperienceEngine().generate(_request())
 
@@ -590,7 +710,13 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
         self.assertGreaterEqual(report["observation_unit_count"], 1)
         self.assertEqual(report["unknown_unit_count"], 0)
         self.assertEqual(report["unknown_trace_count"], 0)
-        self.assertEqual(report["reception_unit_count"], 1)
+        self.assertGreaterEqual(report["reception_unit_count"], 1)
+        self.assertLessEqual(report["reception_unit_count"], 4)
+        assert outcome.artifact is not None
+        self.assertEqual(
+            report["reception_unit_count"],
+            sum(row.role == "RECEPTION" for row in outcome.artifact.trace),
+        )
         self.assertFalse(report["product_read_evaluated"])
         self.assertEqual(report["implementation_state"], "DRAFT_WIP_DISABLED")
         self.assertFalse(report["route_b_contract_complete"])
@@ -1629,8 +1755,8 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                 ),
                 "variant_missing",
             ),
-            ((reception, unknown, observation), "ref_forward"),
-            ((observation, unknown), "reception_trace_coverage_invalid"),
+            ((reception, unknown, observation), "role_order_invalid"),
+            ((observation, unknown), "role_order_invalid"),
             (
                 (
                     observation,
@@ -1638,7 +1764,7 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                     reception,
                     replace(reception, visible_unit_id="cmee:reception:2"),
                 ),
-                "reception_trace_coverage_invalid",
+                "role_order_invalid",
             ),
         )
         for tampered, code in invalid_rows:

@@ -43,8 +43,15 @@ from cocolon_text_generation_core.adapters.emlis_observation_composer import (
 from .contracts import (
     AttachmentAdmission,
     CMEE_COMMON_GUARD_PROOF_VERSION,
+    CMEE_STAGE1_EMLIS_OWNER_REF,
+    CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+    CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION,
+    CMEEStage1ContractError,
     CommonGuardProof,
     CommonGuardResultProof,
+    EmlisStage1PositiveTraceExtension,
+    EmlisStage1Projection,
+    EmlisTraceClaimDomain,
     EpistemicState,
     ExperiencePlan,
     GenerationArtifactBundle,
@@ -55,11 +62,16 @@ from .contracts import (
     OwnerDisposition,
     ProviderResolution,
     RouteBDisposition,
+    RealizedSentenceUnit,
     VisibleAuthority,
     VisibleUnknownUnit,
     VisibleUnitTrace,
+    stage1_projection_artifact_ref,
+    validate_stage1_sentence_unit,
+    validate_stage1_trace_spine,
     validate_stage1_projection_artifact_ref,
 )
+from .emlis_stage1_response import compile_stage1_response
 from .source_kernel import (
     AdmittedTextSource,
     build_source_owner_universe,
@@ -76,7 +88,7 @@ STRUCTURED_ATTACHMENT_UNKNOWN_TEXT = (
 )
 REALIZER_CONTRACT_IDS = (
     "cocolon.cmee.emlis.plan_bound_grounded_surface_adapter.v2",
-    "cocolon.cmee.emlis.semantic_reception_projection.v1",
+    CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
 )
 ADMISSIBLE_NUCLEUS_GROUNDING = frozenset({"explicit", "user_stated_relation"})
 ADMISSIBLE_RELATION_GROUNDING = frozenset({"user_stated_relation"})
@@ -556,8 +568,8 @@ COMMON_GUARD_STABILIZATION_PHASE = "step15_common_core_stabilization"
 COMMON_GUARD_STABILIZATION_CORE_ID = "emlis"
 TRUST_POLICY_IDS = (
     *tuple(sorted(EXPECTED_COMMON_GUARDS)),
-    "cocolon.emlis.grounded_human_reception_surface_validation.v1",
     "cocolon.cmee.route_b.positive_realization_trace.v1",
+    CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION,
 )
 ROUTE_B_REASON_CODES = frozenset(
     {
@@ -2748,6 +2760,238 @@ def _canonical_r4_tail_lines(
     return unknown_line, reception_line
 
 
+def _stage1_unknown_lines(
+    source: AdmittedTextSource,
+    plan: ExperiencePlan,
+) -> tuple[_CMEEVisibleLine, ...]:
+    """Realize only the unchanged evidence-bound UNKNOWN duty, when present."""
+
+    if not plan.visible_unknown_owner_ids:
+        return ()
+    ref_by_span = {row.source_span_id: row for row in source.evidence_refs}
+    owner_unknown_span_ids = _ordered(
+        source_span_id
+        for owner_id in plan.visible_unknown_owner_ids
+        for source_span_id in source.owner_obligation(owner_id).source_span_ids
+    )
+    if not owner_unknown_span_ids:
+        raise CMEEVerticalError("visible_unknown_evidence_unavailable")
+    unknown_text, focus_span_ids = _cmee_structured_attachment_unknown_text(
+        source,
+        plan,
+    )
+    unknown_span_ids = _ordered((*owner_unknown_span_ids, *focus_span_ids))
+    if any(source_span_id not in ref_by_span for source_span_id in unknown_span_ids):
+        raise CMEEVerticalError("visible_unknown_cross_source_evidence")
+    return (
+        _CMEEVisibleLine(
+            sentence_id="cmee:unknown:1",
+            text=unknown_text,
+            binding=_CMEEVisibleBinding(
+                line_role="cmee_unknown",
+                nucleus_ids=(),
+                relation_ids=(),
+                evidence_span_ids=unknown_span_ids,
+                constrained_owner_ids=plan.visible_unknown_owner_ids,
+                claim_scope="cmee_evidence_bound_unknown_preservation",
+                required=True,
+            ),
+        ),
+    )
+
+
+def _stage1_local_ref_id(value: str, *, expected_kind: str) -> str:
+    prefix = f"{expected_kind}:"
+    if type(value) is not str or not value.startswith(prefix) or "@" not in value:
+        raise CMEEVerticalError("stage1_visible_semantic_ref_invalid")
+    local_id = value[len(prefix) :].split("@", 1)[0]
+    if not local_id:
+        raise CMEEVerticalError("stage1_visible_semantic_ref_invalid")
+    return local_id
+
+
+def _stage1_line_for_unit(
+    source: AdmittedTextSource,
+    graph: GroundedMeaningGraph,
+    grounded_plan: Any,
+    projection: EmlisStage1Projection,
+    unit: RealizedSentenceUnit,
+    *,
+    ordinal: int,
+) -> _CMEEVisibleLine:
+    """Map one selected compiler unit to the existing private line envelope."""
+
+    if len(unit.basis_anchor_refs) != 1:
+        raise CMEEVerticalError("stage1_visible_anchor_invalid")
+    anchor_ref = unit.basis_anchor_refs[0]
+    if unit.layer == "LAYER_1":
+        anchor = next(
+            (
+                row
+                for row in projection.observation_contributions
+                if row.contribution_id == anchor_ref
+            ),
+            None,
+        )
+        if anchor is None:
+            raise CMEEVerticalError("stage1_visible_anchor_invalid")
+        semantic_refs = _ordered(
+            (
+                *anchor.semantic_refs,
+                *anchor.relation_basis_refs,
+                *(row.semantic_ref for row in unit.realized_semantic_bindings),
+            )
+        )
+        line_role = "cmee_observation"
+        sentence_id = f"cmee:observation:{ordinal}"
+        claim_scope = "cmee_stage1_interpretive_observation"
+    elif unit.layer == "LAYER_2":
+        anchor = next(
+            (
+                row
+                for row in projection.subjective_claims
+                if row.subjective_claim_id == anchor_ref
+            ),
+            None,
+        )
+        if anchor is None:
+            raise CMEEVerticalError("stage1_visible_anchor_invalid")
+        semantic_refs = _ordered(
+            (
+                *anchor.basis_semantic_refs,
+                *(row.semantic_ref for row in unit.realized_semantic_bindings),
+            )
+        )
+        line_role = "human_follow"
+        sentence_id = f"cmee:reception:{ordinal}"
+        claim_scope = "cmee_stage1_subjective_response"
+    else:
+        raise CMEEVerticalError("stage1_visible_layer_invalid")
+
+    node_ref_ids = {
+        _stage1_local_ref_id(ref, expected_kind="node")
+        for ref in semantic_refs
+        if ref.startswith("node:")
+    }
+    edge_ref_ids = {
+        _stage1_local_ref_id(ref, expected_kind="edge")
+        for ref in semantic_refs
+        if ref.startswith("edge:")
+    }
+    if len(node_ref_ids) + len(edge_ref_ids) != len(set(semantic_refs)):
+        raise CMEEVerticalError("stage1_visible_semantic_ref_invalid")
+
+    node_by_id = {row.node_id: row for row in graph.nodes}
+    edge_by_id = {row.edge_id: row for row in graph.edges}
+    if not node_ref_ids.issubset(node_by_id) or not edge_ref_ids.issubset(edge_by_id):
+        raise CMEEVerticalError("stage1_visible_semantic_ref_unreachable")
+
+    source_node_id = {
+        _stable_id("mn", source.envelope.envelope_id, row.nucleus_id): row.nucleus_id
+        for row in grounded_plan.nuclei
+    }
+    source_edge_id = {
+        _stable_id("me", source.envelope.envelope_id, row.relation_id): row.relation_id
+        for row in grounded_plan.relations
+    }
+    relation_index = {row.relation_id: row for row in grounded_plan.relations}
+    if not node_ref_ids.issubset(source_node_id) or not edge_ref_ids.issubset(
+        source_edge_id
+    ):
+        raise CMEEVerticalError("stage1_visible_semantic_ref_unreachable")
+    relation_ids = tuple(
+        row.relation_id
+        for row in grounded_plan.relations
+        if _stable_id("me", source.envelope.envelope_id, row.relation_id)
+        in edge_ref_ids
+    )
+    nucleus_id_set = {
+        source_node_id[node_id] for node_id in node_ref_ids
+    }
+    nucleus_id_set.update(
+        endpoint
+        for relation_id in relation_ids
+        for endpoint in (
+            relation_index[relation_id].from_nucleus_id,
+            relation_index[relation_id].to_nucleus_id,
+        )
+    )
+    nucleus_ids = tuple(
+        row.nucleus_id
+        for row in grounded_plan.nuclei
+        if row.nucleus_id in nucleus_id_set
+    )
+
+    evidence_id_set = {
+        evidence_id
+        for node_id in node_ref_ids
+        for evidence_id in node_by_id[node_id].evidence_ids
+    }
+    evidence_id_set.update(
+        evidence_id
+        for edge_id in edge_ref_ids
+        for evidence_id in edge_by_id[edge_id].evidence_ids
+    )
+    evidence_span_ids = tuple(
+        row.source_span_id
+        for row in source.evidence_refs
+        if row.evidence_id in evidence_id_set
+    )
+    if not nucleus_ids or not evidence_span_ids:
+        raise CMEEVerticalError("stage1_visible_lineage_missing")
+    return _CMEEVisibleLine(
+        sentence_id=sentence_id,
+        text=unit.text,
+        binding=_CMEEVisibleBinding(
+            line_role=line_role,
+            nucleus_ids=nucleus_ids,
+            relation_ids=relation_ids,
+            evidence_span_ids=evidence_span_ids,
+            claim_scope=claim_scope,
+            required=True,
+        ),
+    )
+
+
+def _stage1_visible_lines(
+    source: AdmittedTextSource,
+    graph: GroundedMeaningGraph,
+    grounded_plan: Any,
+    projection: EmlisStage1Projection,
+    selected_units: Sequence[RealizedSentenceUnit],
+) -> tuple[tuple[_CMEEVisibleLine, ...], tuple[_CMEEVisibleLine, ...]]:
+    units = tuple(selected_units)
+    observation_units = tuple(row for row in units if row.layer == "LAYER_1")
+    reception_units = tuple(row for row in units if row.layer == "LAYER_2")
+    if units != (*observation_units, *reception_units):
+        raise CMEEVerticalError("stage1_visible_role_order_invalid")
+    observation_lines = tuple(
+        _stage1_line_for_unit(
+            source,
+            graph,
+            grounded_plan,
+            projection,
+            unit,
+            ordinal=index,
+        )
+        for index, unit in enumerate(observation_units, start=1)
+    )
+    reception_lines = tuple(
+        _stage1_line_for_unit(
+            source,
+            graph,
+            grounded_plan,
+            projection,
+            unit,
+            ordinal=index,
+        )
+        for index, unit in enumerate(reception_units, start=1)
+    )
+    if not observation_lines or not reception_lines:
+        raise CMEEVerticalError("stage1_visible_required_layer_missing")
+    return observation_lines, reception_lines
+
+
 def _cmee_core_phrase_unit_id(source_span_id: str) -> str:
     return f"cmee-phrase:{source_span_id}"
 
@@ -2814,6 +3058,18 @@ def _cmee_composer_binding_row(
             "raw_input_included": False,
         },
     }
+
+
+def _cmee_guard_binding_projection(binding: Mapping[str, Any]) -> dict[str, Any]:
+    """Hide finished surface bytes from the common guard's binding matcher.
+
+    The outer private binding retains the exact text.  The unchanged common
+    guard receives the same ordered semantic lineage without ``text`` so its
+    sentence-to-binding resolver uses the explicit ordinal contract instead
+    of fuzzy-matching two lexically similar Stage 1 sentences.
+    """
+
+    return {key: value for key, value in binding.items() if key != "text"}
 
 
 def _json_exact_identity(actual: Any, expected: Any) -> bool:
@@ -2940,6 +3196,9 @@ class _CMEER4PlanBoundComposerClient:
             _cmee_composer_binding_row(line, self._grounded_plan)
             for line in self._observation_lines
         ]
+        guard_binding_rows = [
+            _cmee_guard_binding_projection(row) for row in binding_rows
+        ]
         sentence_plans = tuple(
             _CMEECoreSentencePlan(
                 sentence_plan_id=f"cmee-plan:{index}",
@@ -2953,6 +3212,13 @@ class _CMEER4PlanBoundComposerClient:
             "bindings": binding_rows,
             "sentence_bindings": binding_rows,
             "items": binding_rows,
+            "raw_text_included": False,
+            "raw_input_required_for_debug": False,
+        }
+        guard_binding_bundle = {
+            "bindings": guard_binding_rows,
+            "sentence_bindings": guard_binding_rows,
+            "items": guard_binding_rows,
             "raw_text_included": False,
             "raw_input_required_for_debug": False,
         }
@@ -2972,6 +3238,19 @@ class _CMEER4PlanBoundComposerClient:
             "composer_diagnostic": {
                 "sentence_binding_bundle": binding_bundle,
                 "sentence_bindings": binding_rows,
+                "raw_text_included": False,
+                "raw_input_required_for_debug": False,
+            },
+        }
+        guard_composer_meta = {
+            **composer_meta,
+            "sentence_binding_bundle": guard_binding_bundle,
+            "binding_bundle": guard_binding_bundle,
+            "binding": guard_binding_bundle,
+            "sentence_bindings": guard_binding_rows,
+            "composer_diagnostic": {
+                "sentence_binding_bundle": guard_binding_bundle,
+                "sentence_bindings": guard_binding_rows,
                 "raw_text_included": False,
                 "raw_input_required_for_debug": False,
             },
@@ -3001,6 +3280,11 @@ class _CMEER4PlanBoundComposerClient:
             "sentence_binding_bundle": binding_bundle,
             "composer_meta": composer_meta,
         }
+        guard_response = {
+            **response,
+            "sentence_binding_bundle": guard_binding_bundle,
+            "composer_meta": guard_composer_meta,
+        }
         evaluation = evaluate_emlis_observation_candidate(
             composer_payload=payload,
             evidence_items=evidence_items,
@@ -3011,8 +3295,8 @@ class _CMEER4PlanBoundComposerClient:
             used_phrase_unit_ids=tuple(response["used_phrase_unit_ids"]),
             coverage_scope="cmee_required_plan",
             composer_model=str(response["composer_model"]),
-            composer_meta=composer_meta,
-            response=response,
+            composer_meta=guard_composer_meta,
+            response=guard_response,
         )
         if evaluation.passed:
             return attach_core_evaluation_meta(response, evaluation)
@@ -3032,12 +3316,15 @@ def _experience_plan_projection(
     source: AdmittedTextSource,
     plan: ExperiencePlan,
     grounded_plan: Any,
+    observation_lines: Sequence[_CMEEVisibleLine],
 ) -> LimitedObservationScope:
-    """Project exact CMEE duties into the unchanged common-core input port.
+    """Project the selected Layer 1 scope into the common-core input port.
 
     Meaning-owner IDs remain disposition authority only.  Request-local
     nucleus and relation identities own claims/endpoints so two source meanings
-    under one owner can never collapse into one graph claim.
+    under one owner can never collapse into one graph claim.  The Stage 1
+    compiler's selected Observation units, including admitted optional meaning,
+    are the sole guard scope; legacy owner visibility is not re-projected here.
     """
 
     nucleus_index = {row.nucleus_id: row for row in grounded_plan.nuclei}
@@ -3046,20 +3333,25 @@ def _experience_plan_projection(
         for row in source.evidence_spans
     }
     relation_index = {row.relation_id: row for row in grounded_plan.relations}
-    required_owner_set = set(plan.required_observation_owner_ids)
-    required_nucleus_ids = tuple(
-        row_id
-        for row_id in grounded_plan.coverage_requirements.required_nucleus_ids
-        if _owner_for_nucleus(source, nucleus_index[row_id]) in required_owner_set
+    selected_nucleus_ids = _ordered(
+        nucleus_id
+        for line in observation_lines
+        for nucleus_id in line.binding.nucleus_ids
     )
-    required_relation_ids = tuple(
-        row_id
-        for row_id in grounded_plan.coverage_requirements.required_relation_ids
-        if _owner_for_relation(source, relation_index[row_id]) in required_owner_set
+    selected_relation_ids = _ordered(
+        relation_id
+        for line in observation_lines
+        for relation_id in line.binding.relation_ids
     )
+    if (
+        not selected_nucleus_ids
+        or any(row_id not in nucleus_index for row_id in selected_nucleus_ids)
+        or any(row_id not in relation_index for row_id in selected_relation_ids)
+    ):
+        raise CMEEVerticalError("experience_plan_projection_selection_invalid")
     claims: list[GraphClaim] = []
     claim_id_by_nucleus: dict[str, str] = {}
-    for row_id in required_nucleus_ids:
+    for row_id in selected_nucleus_ids:
         row = nucleus_index[row_id]
         evidence_ids = list(row.source_span_ids)
         text = " / ".join(span_text[span_id] for span_id in evidence_ids if span_id in span_text).strip()
@@ -3080,7 +3372,7 @@ def _experience_plan_projection(
         raise CMEEVerticalError("experience_plan_projection_empty")
 
     relations: list[RelationEdge] = []
-    for row_id in required_relation_ids:
+    for row_id in selected_relation_ids:
         row = relation_index[row_id]
         if (
             row.grounding_kind not in ADMISSIBLE_RELATION_GROUNDING
@@ -3149,15 +3441,32 @@ def _realize_cmee_experience(
     graph: GroundedMeaningGraph,
     plan: ExperiencePlan,
     grounded_plan: Any,
-) -> tuple[tuple[_CMEEVisibleLine, ...], _CommonGuardSealMaterial]:
-    resolver = build_evidence_span_resolver(
-        source.evidence_spans,
-        current_input=source.normalized_current_input,
-    )
-    canonical_observation_lines = _canonical_r4_observation_lines(
+) -> tuple[
+    tuple[_CMEEVisibleLine, ...],
+    _CommonGuardSealMaterial,
+    EmlisStage1Projection,
+    tuple[RealizedSentenceUnit, ...],
+]:
+    try:
+        projection, selected_units = compile_stage1_response(
+            source=source,
+            grounded_graph=graph,
+            parent_plan=plan,
+            grounded_plan=grounded_plan,
+        )
+    except CMEEStage1ContractError as exc:
+        reason_code = (
+            "stage1_no_hard_valid_realization"
+            if str(exc) == "stage1_no_hard_valid_realization"
+            else "stage1_projection_unavailable"
+        )
+        raise CMEEVerticalError(reason_code) from None
+    canonical_observation_lines, reception_lines = _stage1_visible_lines(
         source,
+        graph,
         grounded_plan,
-        resolver,
+        projection,
+        selected_units,
     )
     expected_binding_rows = [
         _cmee_composer_binding_row(line, grounded_plan)
@@ -3166,7 +3475,15 @@ def _realize_cmee_experience(
     expected_core_binding_rows = [
         _cmee_core_binding_projection(row) for row in expected_binding_rows
     ]
-    scope = _experience_plan_projection(source, plan, grounded_plan)
+    expected_guard_binding_rows = [
+        _cmee_guard_binding_projection(row) for row in expected_binding_rows
+    ]
+    scope = _experience_plan_projection(
+        source,
+        plan,
+        grounded_plan,
+        canonical_observation_lines,
+    )
     candidate = compose_emlis_conversation_candidate(
         graph=scope.scoped_graph,
         evidence_spans=source.evidence_spans,
@@ -3220,7 +3537,7 @@ def _realize_cmee_experience(
         raise CMEEVerticalError("plan_bound_observation_guarded_binding_mismatch")
     if not _json_exact_identity(raw_bindings, expected_binding_rows):
         raise CMEEVerticalError("plan_bound_observation_exact_binding_mismatch")
-    if not _json_exact_identity(guarded_bindings, expected_binding_rows):
+    if not _json_exact_identity(guarded_bindings, expected_guard_binding_rows):
         raise CMEEVerticalError("plan_bound_observation_guarded_exact_binding_mismatch")
     if not _json_exact_identity(core_bindings, expected_core_binding_rows):
         raise CMEEVerticalError("plan_bound_observation_core_exact_binding_mismatch")
@@ -3230,7 +3547,11 @@ def _realize_cmee_experience(
     if any(
         type(alias) is not list
         or not _json_exact_identity(alias, expected_binding_rows)
-        for alias in (*outer_binding_aliases, *guarded_binding_aliases)
+        for alias in outer_binding_aliases
+    ) or any(
+        type(alias) is not list
+        or not _json_exact_identity(alias, expected_guard_binding_rows)
+        for alias in guarded_binding_aliases
     ) or len(outer_binding_aliases) != 13 or len(guarded_binding_aliases) != 13:
         raise CMEEVerticalError("plan_bound_observation_binding_alias_mismatch")
     if any(
@@ -3297,14 +3618,12 @@ def _realize_cmee_experience(
             ):
                 raise CMEEVerticalError("plan_bound_observation_core_binding_mismatch")
         surface_text = surface_binding.get("text")
-        guarded_text = guarded_binding.get("text")
         canonical_sentences = split_sentences(surface_text, skip_greeting=False)
         if (
             type(surface_text) is not str
-            or type(guarded_text) is not str
             or not surface_text
             or surface_text != surface_text.strip()
-            or surface_text != guarded_text
+            or "text" in guarded_binding
         ):
             raise CMEEVerticalError("plan_bound_observation_guarded_binding_mismatch")
         if (
@@ -3391,17 +3710,14 @@ def _realize_cmee_experience(
         line.text for line in canonical_observation_lines
     ):
         raise CMEEVerticalError("plan_bound_observation_exact_surface_mismatch")
-    observation_lines = list(canonical_observation_lines)
-
-    tail_lines = _canonical_r4_tail_lines(
-        source,
-        plan,
-        grounded_plan,
-        resolver,
-    )
-    reception_line = tail_lines[-1]
-    reception_targets = reception_line.binding.nucleus_ids
-    lines = (*observation_lines, *tail_lines)
+    observation_lines = tuple(canonical_observation_lines)
+    unknown_lines = _stage1_unknown_lines(source, plan)
+    reception_targets = {
+        nucleus_id
+        for line in reception_lines
+        for nucleus_id in line.binding.nucleus_ids
+    }
+    lines = (*observation_lines, *unknown_lines, *reception_lines)
     observed_nuclei = {
         nucleus_id
         for line in observation_lines
@@ -3412,23 +3728,61 @@ def _realize_cmee_experience(
         for line in observation_lines
         for relation_id in line.binding.relation_ids
     }
-    if set(required_nucleus_ids) != observed_nuclei:
+    if not set(required_nucleus_ids).issubset(observed_nuclei):
         raise CMEEVerticalError("post_realization_required_nucleus_mismatch")
-    if set(required_relation_ids) != observed_relations:
+    if not set(required_relation_ids).issubset(observed_relations):
         raise CMEEVerticalError("post_realization_required_relation_mismatch")
-    if not set(reception_targets).issubset(observed_nuclei):
+    if not reception_targets.issubset(observed_nuclei):
         raise CMEEVerticalError("bound_human_reception_target_not_observed")
-    _validate_reception_semantic_compatibility(source, lines)
-    return tuple(lines), common_guard_material
+    _validate_reception_semantic_compatibility(source, lines, projection)
+    return tuple(lines), common_guard_material, projection, selected_units
 
 
 def _validate_reception_semantic_compatibility(
     source: AdmittedTextSource,
     visible_lines: Sequence[Any],
+    projection: EmlisStage1Projection,
 ) -> None:
-    reception = tuple(line for line in visible_lines if line.binding.line_role == "human_follow")
-    if len(reception) != 1:
+    lines = tuple(visible_lines)
+    roles = tuple(
+        "OBSERVATION"
+        if line.binding.line_role == "cmee_observation"
+        else (
+            "UNKNOWN"
+            if line.binding.line_role == "cmee_unknown"
+            else "RECEPTION"
+        )
+        for line in lines
+    )
+    observation_count = roles.count("OBSERVATION")
+    unknown_count = roles.count("UNKNOWN")
+    reception_count = roles.count("RECEPTION")
+    depth_ranges = {
+        "FOCUSED": (1, 1),
+        "LAYERED": (2, 3),
+        "DENSE": (3, 4),
+    }
+    reception_floor, reception_ceiling = depth_ranges.get(
+        projection.subjective_depth_class.value,
+        (0, 0),
+    )
+    if (
+        not 1 <= observation_count <= 5
+        or not 0 <= unknown_count <= 1
+        or not reception_floor <= reception_count <= reception_ceiling
+        or observation_count != len(projection.ordered_observation_refs)
+        or reception_count != len(projection.ordered_subjective_refs)
+        or roles
+        != (
+            *("OBSERVATION" for _ in range(observation_count)),
+            *("UNKNOWN" for _ in range(unknown_count)),
+            *("RECEPTION" for _ in range(reception_count)),
+        )
+    ):
         raise CMEEVerticalError("reception_semantic_cardinality_mismatch")
+    reception = tuple(
+        line for line in lines if line.binding.line_role == "human_follow"
+    )
     observation_span_ids = {
         span_id
         for line in visible_lines
@@ -3440,9 +3794,8 @@ def _validate_reception_semantic_compatibility(
         for span in source.evidence_spans
         if str(getattr(span, "span_id", "") or "") in observation_span_ids
     )
-    if (
-        NEGATIVE_RECEPTION_RE.search(reception[0].text)
-        and not _cmee_has_current_burden(source_text)
+    if any(NEGATIVE_RECEPTION_RE.search(line.text) for line in reception) and not (
+        _cmee_has_current_burden(source_text)
     ):
         raise CMEEVerticalError("reception_negative_meaning_promotion")
 
@@ -3467,10 +3820,26 @@ def _trace_for_lines(
     plan: ExperiencePlan,
     safe_lines: Sequence[Any],
     artifact_common_guard_proof_ref: str,
+    projection: EmlisStage1Projection,
+    selected_units: Sequence[RealizedSentenceUnit],
 ) -> tuple[VisibleUnitTrace, ...]:
     node_ids = {row.node_id for row in graph.nodes}
     edge_ids = {row.edge_id for row in graph.edges}
     ref_by_span = {row.source_span_id: row for row in source.evidence_refs}
+    units = tuple(selected_units)
+    variants = {row.composition_variant_id for row in units}
+    if len(variants) != 1:
+        raise CMEEVerticalError("stage1_trace_variant_mismatch")
+    composition_variant_id = next(iter(variants))
+    observation_units = iter(row for row in units if row.layer == "LAYER_1")
+    reception_units = iter(row for row in units if row.layer == "LAYER_2")
+    contribution_by_id = {
+        row.contribution_id: row for row in projection.observation_contributions
+    }
+    claim_by_id = {
+        row.subjective_claim_id: row for row in projection.subjective_claims
+    }
+    contribution_trace_refs: dict[str, str] = {}
     traces: list[VisibleUnitTrace] = []
     for ordinal, line in enumerate(safe_lines, start=1):
         is_reception = line.binding.line_role == "human_follow"
@@ -3485,7 +3854,12 @@ def _trace_for_lines(
         )
         if not set(bound_node_ids).issubset(node_ids) or not set(bound_edge_ids).issubset(edge_ids):
             raise CMEEVerticalError("visible_trace_claim_binding_missing")
-        evidence_ids = tuple(ref_by_span[source_id].evidence_id for source_id in line.binding.evidence_span_ids)
+        if any(source_id not in ref_by_span for source_id in line.binding.evidence_span_ids):
+            raise CMEEVerticalError("visible_trace_evidence_binding_missing")
+        evidence_ids = tuple(
+            ref_by_span[source_id].evidence_id
+            for source_id in line.binding.evidence_span_ids
+        )
         role = "UNKNOWN" if is_unknown else ("RECEPTION" if is_reception else "OBSERVATION")
         operation = (
             "EVIDENCE_BOUND_UNKNOWN_PRESERVATION"
@@ -3504,11 +3878,74 @@ def _trace_for_lines(
         constrained_owner_ids = (
             line.binding.constrained_owner_ids
             if is_unknown
-            else (plan.unresolved_owner_ids if is_reception else ())
+            else ()
         )
+        extension = None
+        visible_unit_id = f"visible:{ordinal}"
+        if role == "OBSERVATION":
+            try:
+                unit = next(observation_units)
+            except StopIteration:
+                raise CMEEVerticalError("stage1_trace_unit_coverage_mismatch") from None
+            if len(unit.basis_anchor_refs) != 1:
+                raise CMEEVerticalError("stage1_trace_unit_anchor_invalid")
+            contribution_ref = unit.basis_anchor_refs[0]
+            contribution = contribution_by_id.get(contribution_ref)
+            if contribution is None:
+                raise CMEEVerticalError("stage1_trace_unit_anchor_invalid")
+            contribution_trace_refs[contribution_ref] = visible_unit_id
+            extension = EmlisStage1PositiveTraceExtension(
+                schema_version=CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION,
+                claim_domain=EmlisTraceClaimDomain.INTERPRETIVE_OBSERVATION,
+                owner_ref=CMEE_STAGE1_EMLIS_OWNER_REF,
+                contribution_refs=(contribution_ref,),
+                basis_trace_refs=(),
+                interpretation_candidate_refs=(
+                    contribution.interpretation_candidate_refs
+                ),
+                subjective_claim_ref=None,
+                basis_observation_contribution_refs=(),
+                value_principle_refs=(),
+                speaker_owner=None,
+                user_fact_effect=0,
+                composition_variant_id=composition_variant_id,
+            )
+        elif role == "RECEPTION":
+            try:
+                unit = next(reception_units)
+            except StopIteration:
+                raise CMEEVerticalError("stage1_trace_unit_coverage_mismatch") from None
+            if len(unit.basis_anchor_refs) != 1:
+                raise CMEEVerticalError("stage1_trace_unit_anchor_invalid")
+            claim_ref = unit.basis_anchor_refs[0]
+            claim = claim_by_id.get(claim_ref)
+            if claim is None or any(
+                ref not in contribution_trace_refs
+                for ref in claim.basis_observation_contribution_refs
+            ):
+                raise CMEEVerticalError("stage1_trace_reception_basis_missing")
+            extension = EmlisStage1PositiveTraceExtension(
+                schema_version=CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION,
+                claim_domain=EmlisTraceClaimDomain.SUBJECTIVE_RESPONSE,
+                owner_ref=CMEE_STAGE1_EMLIS_OWNER_REF,
+                contribution_refs=(),
+                basis_trace_refs=tuple(
+                    contribution_trace_refs[ref]
+                    for ref in claim.basis_observation_contribution_refs
+                ),
+                interpretation_candidate_refs=(),
+                subjective_claim_ref=claim_ref,
+                basis_observation_contribution_refs=(
+                    claim.basis_observation_contribution_refs
+                ),
+                value_principle_refs=claim.value_principle_refs,
+                speaker_owner="EMLIS",
+                user_fact_effect=0,
+                composition_variant_id=composition_variant_id,
+            )
         traces.append(
             VisibleUnitTrace(
-                visible_unit_id=f"visible:{ordinal}",
+                visible_unit_id=visible_unit_id,
                 source_sentence_id=line.sentence_id,
                 source_envelope_id=source.envelope.envelope_id,
                 source_version=graph.source_version,
@@ -3523,8 +3960,19 @@ def _trace_for_lines(
                 meaning_edge_ids=() if is_unknown else bound_edge_ids,
                 evidence_ids=evidence_ids,
                 constrained_by_owner_ids=constrained_owner_ids,
+                emlis_stage1_extension=extension,
             )
         )
+    try:
+        next(observation_units)
+        raise CMEEVerticalError("stage1_trace_unit_coverage_mismatch")
+    except StopIteration:
+        pass
+    try:
+        next(reception_units)
+        raise CMEEVerticalError("stage1_trace_unit_coverage_mismatch")
+    except StopIteration:
+        pass
     return tuple(traces)
 
 
@@ -3757,6 +4205,9 @@ def validate_positive_realization_trace(
     graph: GroundedMeaningGraph,
     artifact: GenerationArtifactBundle,
     safe_lines: Sequence[Any],
+    *,
+    projection: EmlisStage1Projection,
+    selected_units: Sequence[RealizedSentenceUnit],
 ) -> None:
     _validate_route_b_graph_contract(source, graph)
     canonical_resolver = build_evidence_span_resolver(
@@ -3788,24 +4239,43 @@ def validate_positive_realization_trace(
         canonical_relations,
         canonical_reception_targets,
     )
-    canonical_observation_lines = _canonical_r4_observation_lines(
+    units = tuple(selected_units)
+    prior_unit_ids: list[str] = []
+    for unit in units:
+        try:
+            validate_stage1_sentence_unit(
+                unit,
+                projection,
+                grounded_graph=canonical_graph,
+                parent_plan=canonical_plan,
+                prior_unit_ids=tuple(prior_unit_ids),
+            )
+        except CMEEStage1ContractError:
+            raise CMEEVerticalError("stage1_selected_unit_invalid") from None
+        prior_unit_ids.append(unit.unit_id)
+    canonical_observation_lines, canonical_reception_lines = _stage1_visible_lines(
         source,
+        canonical_graph,
         canonical_grounded_plan,
-        canonical_resolver,
+        projection,
+        units,
     )
-    canonical_tail_lines = _canonical_r4_tail_lines(
+    canonical_unknown_lines = _stage1_unknown_lines(
         source,
         canonical_plan,
-        canonical_grounded_plan,
-        canonical_resolver,
     )
     canonical_safe_lines = (
         *canonical_observation_lines,
-        *canonical_tail_lines,
+        *canonical_unknown_lines,
+        *canonical_reception_lines,
     )
     if tuple(safe_lines) != canonical_safe_lines:
         raise CMEEVerticalError("visible_line_source_semantic_mismatch")
-    _validate_reception_semantic_compatibility(source, canonical_safe_lines)
+    _validate_reception_semantic_compatibility(
+        source,
+        canonical_safe_lines,
+        projection,
+    )
     canonical_plan = _bind_plan_to_visible_lines(
         source,
         canonical_graph,
@@ -3906,21 +4376,19 @@ def validate_positive_realization_trace(
     if tuple(row.visible_unit_id for row in artifact.trace) != expected_visible_unit_ids:
         raise CMEEVerticalError("visible_trace_unit_identity_mismatch")
     line_roles = tuple(line.binding.line_role for line in safe_lines)
-    if not line_roles or line_roles[-1] != "human_follow":
-        raise CMEEVerticalError("visible_line_role_cardinality_mismatch")
-    pre_reception_roles = line_roles[:-1]
-    unknown_role_count = pre_reception_roles.count("cmee_unknown")
-    if unknown_role_count:
-        observation_roles = pre_reception_roles[:-1]
-        unknown_is_tail = pre_reception_roles[-1] == "cmee_unknown"
-    else:
-        observation_roles = pre_reception_roles
-        unknown_is_tail = True
+    observation_role_count = line_roles.count("cmee_observation")
+    unknown_role_count = line_roles.count("cmee_unknown")
+    reception_role_count = line_roles.count("human_follow")
     if (
-        unknown_role_count > 1
-        or not unknown_is_tail
-        or not observation_roles
-        or any(role != "cmee_observation" for role in observation_roles)
+        line_roles
+        != (
+            *("cmee_observation" for _ in range(observation_role_count)),
+            *("cmee_unknown" for _ in range(unknown_role_count)),
+            *("human_follow" for _ in range(reception_role_count)),
+        )
+        or observation_role_count != len(projection.ordered_observation_refs)
+        or reception_role_count != len(projection.ordered_subjective_refs)
+        or unknown_role_count > 1
         or bool(unknown_role_count)
         != bool(artifact.plan.visible_unknown_owner_ids)
     ):
@@ -3936,6 +4404,46 @@ def validate_positive_realization_trace(
         for row in artifact.trace
     ):
         raise CMEEVerticalError("visible_trace_universe_binding_mismatch")
+    try:
+        validate_stage1_trace_spine(
+            artifact.trace,
+            projection,
+            grounded_graph=graph,
+            parent_plan=artifact.plan,
+        )
+    except CMEEStage1ContractError:
+        raise CMEEVerticalError("stage1_positive_trace_extension_invalid") from None
+    positive_trace_rows = tuple(
+        row for row in artifact.trace if row.role in {"OBSERVATION", "RECEPTION"}
+    )
+    if len(positive_trace_rows) != len(units):
+        raise CMEEVerticalError("stage1_trace_unit_coverage_mismatch")
+    for trace_row, unit in zip(positive_trace_rows, units, strict=True):
+        extension = trace_row.emlis_stage1_extension
+        if extension is None or len(unit.basis_anchor_refs) != 1:
+            raise CMEEVerticalError("stage1_trace_unit_anchor_mismatch")
+        anchor_ref = unit.basis_anchor_refs[0]
+        if (
+            extension.composition_variant_id != unit.composition_variant_id
+            or (
+                unit.layer == "LAYER_1"
+                and (
+                    trace_row.role != "OBSERVATION"
+                    or extension.contribution_refs != (anchor_ref,)
+                    or extension.subjective_claim_ref is not None
+                )
+            )
+            or (
+                unit.layer == "LAYER_2"
+                and (
+                    trace_row.role != "RECEPTION"
+                    or extension.contribution_refs
+                    or extension.subjective_claim_ref != anchor_ref
+                )
+            )
+            or unit.layer not in {"LAYER_1", "LAYER_2"}
+        ):
+            raise CMEEVerticalError("stage1_trace_unit_anchor_mismatch")
 
     unknown_lines = tuple(
         line for line in safe_lines if line.binding.line_role == "cmee_unknown"
@@ -4042,7 +4550,7 @@ def validate_positive_realization_trace(
         expected_constraints = (
             line.binding.constrained_owner_ids
             if is_unknown
-            else (artifact.plan.unresolved_owner_ids if is_reception else ())
+            else ()
         )
         if (
             trace.source_sentence_id != line.sentence_id
@@ -4069,8 +4577,7 @@ def validate_positive_realization_trace(
                     node is None
                     or row is None
                     or node.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
-                    or row.disposition is not RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
-                    or node_id not in row.visible_claim_refs
+                    or not node.evidence_ids
                 ):
                     raise CMEEVerticalError("visible_trace_node_authority_mismatch")
             for edge_id in trace.meaning_edge_ids:
@@ -4080,8 +4587,7 @@ def validate_positive_realization_trace(
                     edge is None
                     or row is None
                     or edge.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
-                    or row.disposition is not RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
-                    or edge_id not in row.visible_claim_refs
+                    or not edge.evidence_ids
                 ):
                     raise CMEEVerticalError("visible_trace_edge_authority_mismatch")
         for source_id in line.binding.evidence_span_ids:
@@ -4144,7 +4650,9 @@ def validate_positive_realization_trace(
         *(nodes[node_id].owner_id for row in artifact.trace if row.role == "OBSERVATION" for node_id in row.meaning_node_ids),
         *(edges[edge_id].owner_id for row in artifact.trace if row.role == "OBSERVATION" for edge_id in row.meaning_edge_ids),
     }
-    if realized_observation_owners != set(artifact.plan.required_observation_owner_ids):
+    if not set(artifact.plan.required_observation_owner_ids).issubset(
+        realized_observation_owners
+    ):
         raise CMEEVerticalError("required_observation_owner_realization_mismatch")
     realized_reception_owners = {
         nodes[node_id].owner_id
@@ -4152,7 +4660,9 @@ def validate_positive_realization_trace(
         if row.role == "RECEPTION"
         for node_id in row.meaning_node_ids
     }
-    if realized_reception_owners != set(artifact.plan.reception_target_owner_ids):
+    if not set(artifact.plan.reception_target_owner_ids).issubset(
+        realized_reception_owners
+    ):
         raise CMEEVerticalError("reception_target_owner_realization_mismatch")
     if artifact.artifact_id != _artifact_id(
         source.envelope.envelope_id,
@@ -4162,6 +4672,7 @@ def validate_positive_realization_trace(
         artifact.observation,
         tuple(row.text for row in artifact.visible_unknowns),
         artifact.reception,
+        emlis_stage1_projection_ref=stage1_projection_artifact_ref(projection),
     ):
         raise CMEEVerticalError("artifact_identity_mismatch")
 
@@ -4210,7 +4721,12 @@ def build_text_grounded_limited_artifact(
         required_relation_ids,
         reception_target_ids,
     )
-    safe_lines, common_guard_material = _realize_cmee_experience(
+    (
+        safe_lines,
+        common_guard_material,
+        stage1_projection,
+        selected_units,
+    ) = _realize_cmee_experience(
         source,
         graph,
         plan,
@@ -4238,6 +4754,8 @@ def build_text_grounded_limited_artifact(
         plan,
         safe_lines,
         common_guard_proof.proof_id,
+        stage1_projection,
+        selected_units,
     )
     visible_unknowns = tuple(
         VisibleUnknownUnit(
@@ -4264,6 +4782,9 @@ def build_text_grounded_limited_artifact(
             observation,
             tuple(row.text for row in visible_unknowns),
             reception,
+            emlis_stage1_projection_ref=stage1_projection_artifact_ref(
+                stage1_projection
+            ),
         ),
         realizer_contract_ids=REALIZER_CONTRACT_IDS,
         trust_policy_ids=TRUST_POLICY_IDS,
@@ -4274,7 +4795,14 @@ def build_text_grounded_limited_artifact(
         trace=trace,
         visible_unknowns=visible_unknowns,
     )
-    validate_positive_realization_trace(source, graph, artifact, safe_lines)
+    validate_positive_realization_trace(
+        source,
+        graph,
+        artifact,
+        safe_lines,
+        projection=stage1_projection,
+        selected_units=selected_units,
+    )
     return graph, plan, artifact
 
 
