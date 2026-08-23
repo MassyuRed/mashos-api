@@ -22,6 +22,7 @@ CMEE_SOURCE_CONTRACT_VERSION = "cocolon.cmee.emlis.current_input.text_grounded.v
 CMEE_OBLIGATION_VERSION = "cocolon.cmee.emlis.i1sx.owner_obligation.v1"
 CMEE_OWNER_UNIVERSE_SCHEMA_VERSION = "cocolon.cmee.v1a.owner_universe.v1"
 CMEE_COMMON_GUARD_PROOF_VERSION = "cocolon.cmee.v1a.common_guard_proof.v1"
+CMEE_GROUNDED_GRAPH_SCHEMA_VERSION = "cocolon.cmee.grounded_meaning_graph.v1alpha1"
 CMEE_STAGE1_RESPONSE_SCHEMA_VERSION = "cocolon.cmee.v1a.emlis_stage1_response.v1"
 CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION = (
     "cocolon.cmee.v1a.emlis_stage1_positive_trace_extension.v1"
@@ -880,16 +881,94 @@ def _validate_stage1_external_refs(
         validate_version_qualified_ref(ref, expected_types=expected_types)
 
 
+def _stage1_ref_parts(
+    value: str,
+    *,
+    expected_types: Sequence[str],
+    expected_version: str,
+) -> tuple[str, str]:
+    validate_version_qualified_ref(value, expected_types=expected_types)
+    match = _VERSION_QUALIFIED_REF_RE.fullmatch(value)
+    if match is None:
+        raise CMEEStage1ContractError("stage1_external_ref_not_version_qualified")
+    if match.group("version") != expected_version:
+        raise CMEEStage1ContractError("stage1_external_ref_version_mismatch")
+    return match.group("ref_type"), match.group("ref_id")
+
+
+def _stage1_graph_universe(
+    projection: EmlisStage1Projection,
+    grounded_graph: GroundedMeaningGraph,
+) -> tuple[set[str], set[str], set[str]]:
+    if type(grounded_graph) is not GroundedMeaningGraph:
+        raise CMEEStage1ContractError("stage1_grounded_graph_required")
+    graph_type, graph_id = _stage1_ref_parts(
+        projection.grounded_graph_ref,
+        expected_types=("grounded",),
+        expected_version=CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
+    )
+    if graph_type != "grounded" or graph_id != grounded_graph.graph_id:
+        raise CMEEStage1ContractError("stage1_grounded_graph_ref_mismatch")
+    node_ids = {row.node_id for row in grounded_graph.nodes}
+    edge_ids = {row.edge_id for row in grounded_graph.edges}
+    if (
+        len(node_ids) != len(grounded_graph.nodes)
+        or len(edge_ids) != len(grounded_graph.edges)
+        or node_ids & edge_ids
+    ):
+        raise CMEEStage1ContractError("stage1_grounded_graph_identity_invalid")
+    evidence_ids = {
+        evidence_id
+        for row in (*grounded_graph.nodes, *grounded_graph.edges)
+        for evidence_id in row.evidence_ids
+    }
+    return node_ids, edge_ids, evidence_ids
+
+
+def _validate_stage1_semantic_refs(
+    values: Sequence[str],
+    *,
+    node_ids: set[str],
+    edge_ids: set[str],
+) -> None:
+    for ref in values:
+        ref_type, ref_id = _stage1_ref_parts(
+            ref,
+            expected_types=("node", "edge"),
+            expected_version=CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
+        )
+        allowed = node_ids if ref_type == "node" else edge_ids
+        if ref_id not in allowed:
+            raise CMEEStage1ContractError("stage1_semantic_ref_missing")
+
+
+def _validate_stage1_evidence_refs(
+    values: Sequence[str],
+    *,
+    evidence_ids: set[str],
+    source_version: str,
+) -> None:
+    for ref in values:
+        _ref_type, ref_id = _stage1_ref_parts(
+            ref,
+            expected_types=("evidence",),
+            expected_version=source_version,
+        )
+        if ref_id not in evidence_ids:
+            raise CMEEStage1ContractError("stage1_evidence_ref_missing")
+
+
 def validate_stage1_projection(
     projection: EmlisStage1Projection,
     *,
-    parent_plan: Optional[ExperiencePlan] = None,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
 ) -> None:
     """Validate the disabled request-local projection and its identity DAG.
 
     The projection is not an ExperiencePlan and this validator never installs a
-    second duty owner.  ``parent_plan`` is only an optional equality check for
-    the existing flat provisional mapping.
+    second duty owner.  The required ``parent_plan`` resolves every duty and
+    retained act against the existing flat provisional mapping.
     """
 
     if type(projection) is not EmlisStage1Projection:
@@ -897,8 +976,8 @@ def validate_stage1_projection(
     _validate_stage1_immutable_shape(projection)
     if projection.schema_version != CMEE_STAGE1_RESPONSE_SCHEMA_VERSION:
         raise CMEEStage1ContractError("stage1_projection_schema_version_invalid")
-    validate_version_qualified_ref(
-        projection.grounded_graph_ref, expected_types=("grounded",)
+    node_ids, edge_ids, evidence_ids = _stage1_graph_universe(
+        projection, grounded_graph
     )
     for ref in (
         projection.reception_style_policy_ref,
@@ -990,11 +1069,13 @@ def validate_stage1_projection(
             code="stage1_meaning_field_candidate_ref_invalid",
             allow_empty=False,
         )
-        _validate_stage1_external_refs(
-            entry.semantic_refs, expected_types=("node", "edge")
+        _validate_stage1_semantic_refs(
+            entry.semantic_refs, node_ids=node_ids, edge_ids=edge_ids
         )
-        _validate_stage1_external_refs(
-            entry.evidence_refs, expected_types=("evidence",)
+        _validate_stage1_evidence_refs(
+            entry.evidence_refs,
+            evidence_ids=evidence_ids,
+            source_version=grounded_graph.source_version,
         )
     _validate_stage1_external_refs(
         meaning_field.material_unknown_refs, expected_types=("unknown",)
@@ -1020,14 +1101,16 @@ def validate_stage1_projection(
         _require_unique_nonempty_refs(
             row.evidence_refs, code="stage1_candidate_evidence_ref_invalid"
         )
-        _validate_stage1_external_refs(
-            row.semantic_refs, expected_types=("node", "edge")
+        _validate_stage1_semantic_refs(
+            row.semantic_refs, node_ids=node_ids, edge_ids=edge_ids
         )
-        _validate_stage1_external_refs(
-            row.evidence_refs, expected_types=("evidence",)
+        _validate_stage1_evidence_refs(
+            row.evidence_refs,
+            evidence_ids=evidence_ids,
+            source_version=grounded_graph.source_version,
         )
-        _validate_stage1_external_refs(
-            row.relation_basis_refs, expected_types=("edge",)
+        _validate_stage1_semantic_refs(
+            row.relation_basis_refs, node_ids=set(), edge_ids=edge_ids
         )
         if any(
             binding.semantic_ref not in set(row.semantic_refs)
@@ -1057,15 +1140,22 @@ def validate_stage1_projection(
             code="stage1_contribution_candidate_ref_invalid",
             allow_empty=False,
         )
-        _validate_stage1_external_refs(
-            row.semantic_refs, expected_types=("node", "edge")
+        _validate_stage1_semantic_refs(
+            row.semantic_refs, node_ids=node_ids, edge_ids=edge_ids
         )
-        _validate_stage1_external_refs(
-            row.evidence_refs, expected_types=("evidence",)
+        _validate_stage1_evidence_refs(
+            row.evidence_refs,
+            evidence_ids=evidence_ids,
+            source_version=grounded_graph.source_version,
         )
-        _validate_stage1_external_refs(
-            row.relation_basis_refs, expected_types=("edge",)
+        _validate_stage1_semantic_refs(
+            row.relation_basis_refs, node_ids=set(), edge_ids=edge_ids
         )
+        if any(
+            binding.semantic_ref not in set(row.semantic_refs)
+            for binding in row.argument_bindings
+        ):
+            raise CMEEStage1ContractError("stage1_contribution_argument_ref_invalid")
 
     retained_acts = set(projection.retained_reception_act_ids)
     _require_unique_nonempty_refs(
@@ -1109,7 +1199,9 @@ def validate_stage1_projection(
         )
         for ref in proposition.response_object_refs:
             if ref not in contribution_set:
-                validate_version_qualified_ref(ref, expected_types=("node", "edge"))
+                _validate_stage1_semantic_refs(
+                    (ref,), node_ids=node_ids, edge_ids=edge_ids
+                )
         if proposition.counterposition_target_ref is not None:
             counterposition_ref = proposition.counterposition_target_ref
             if type(counterposition_ref) is not str or not counterposition_ref:
@@ -1117,15 +1209,20 @@ def validate_stage1_projection(
                     "stage1_subjective_counterposition_ref_invalid"
                 )
             if counterposition_ref not in contribution_set:
-                validate_version_qualified_ref(
-                    counterposition_ref, expected_types=("node", "edge")
+                _validate_stage1_semantic_refs(
+                    (counterposition_ref,), node_ids=node_ids, edge_ids=edge_ids
                 )
-        _validate_stage1_external_refs(
-            proposition.referenced_actor_refs, expected_types=("node",)
-        )
-        _validate_stage1_external_refs(
-            proposition.referenced_experiencer_refs, expected_types=("node",)
-        )
+        for ref in (
+            *proposition.referenced_actor_refs,
+            *proposition.referenced_experiencer_refs,
+        ):
+            ref_type, ref_id = _stage1_ref_parts(
+                ref,
+                expected_types=("node",),
+                expected_version=CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
+            )
+            if ref_type != "node" or ref_id not in node_ids:
+                raise CMEEStage1ContractError("stage1_actor_ref_missing")
         _require_local_subset(
             row.source_reception_act_refs,
             retained_acts,
@@ -1133,8 +1230,8 @@ def validate_stage1_projection(
             allow_empty=False,
         )
         referenced_acts.update(row.source_reception_act_refs)
-        _validate_stage1_external_refs(
-            row.basis_semantic_refs, expected_types=("node", "edge")
+        _validate_stage1_semantic_refs(
+            row.basis_semantic_refs, node_ids=node_ids, edge_ids=edge_ids
         )
         _validate_stage1_external_refs(
             row.value_principle_refs, expected_types=("policy",)
@@ -1184,17 +1281,16 @@ def validate_stage1_projection(
     if not subjective_floor <= subjective_count <= subjective_ceiling:
         raise CMEEStage1ContractError("stage1_subjective_depth_mismatch")
 
-    if parent_plan is not None:
-        if type(parent_plan) is not ExperiencePlan:
-            raise CMEEStage1ContractError("stage1_parent_plan_type_invalid")
-        if (
-            projection.parent_observation_duty_ref
-            != parent_plan.observation_duty_id
-            or projection.parent_reception_duty_ref != parent_plan.reception_duty_id
-            or projection.retained_reception_act_ids
-            != parent_plan.allowed_reception_act_ids
-        ):
-            raise CMEEStage1ContractError("stage1_parent_plan_projection_mismatch")
+    if type(parent_plan) is not ExperiencePlan:
+        raise CMEEStage1ContractError("stage1_parent_plan_type_invalid")
+    if (
+        projection.parent_observation_duty_ref
+        != parent_plan.observation_duty_id
+        or projection.parent_reception_duty_ref != parent_plan.reception_duty_id
+        or projection.retained_reception_act_ids
+        != parent_plan.allowed_reception_act_ids
+    ):
+        raise CMEEStage1ContractError("stage1_parent_plan_projection_mismatch")
 
     validate_stage1_identity(projection)
 
@@ -1203,9 +1299,13 @@ def validate_stage1_sentence_unit(
     unit: RealizedSentenceUnit,
     projection: EmlisStage1Projection,
     *,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
     prior_unit_ids: Sequence[str] = (),
 ) -> None:
-    validate_stage1_projection(projection)
+    validate_stage1_projection(
+        projection, grounded_graph=grounded_graph, parent_plan=parent_plan
+    )
     if type(unit) is not RealizedSentenceUnit:
         raise CMEEStage1ContractError("stage1_unit_type_invalid")
     _validate_stage1_immutable_shape(unit)
@@ -1213,32 +1313,6 @@ def validate_stage1_sentence_unit(
         raise CMEEStage1ContractError("stage1_unit_prior_ids_not_tuple")
     if any(type(frame) is not ClauseFrame for frame in unit.clause_frames):
         raise CMEEStage1ContractError("stage1_unit_clause_frame_type_invalid")
-    for frame in unit.clause_frames:
-        _validate_stage1_immutable_shape(frame)
-        validate_version_qualified_ref(frame.move_ref, expected_types=("move",))
-        validate_version_qualified_ref(
-            frame.reception_style_policy_ref, expected_types=("policy",)
-        )
-        if frame.topic_ref is not None:
-            validate_version_qualified_ref(
-                frame.topic_ref, expected_types=("node", "edge")
-            )
-        if frame.object_ref is not None:
-            validate_version_qualified_ref(
-                frame.object_ref, expected_types=("node", "edge")
-            )
-        _validate_stage1_external_refs(frame.actor_refs, expected_types=("node",))
-        _validate_stage1_external_refs(
-            frame.experiencer_refs, expected_types=("node",)
-        )
-        if (
-            any(type(binding) is not ArgumentBinding for binding in frame.argument_bindings)
-            or any(
-                type(binding.role) is not ArgumentRole
-                for binding in frame.argument_bindings
-            )
-        ):
-            raise CMEEStage1ContractError("stage1_unit_argument_binding_invalid")
     if unit.projection_ref != projection.projection_id:
         raise CMEEStage1ContractError("stage1_unit_foreign_projection")
     if unit.layer not in {"LAYER_1", "LAYER_2"}:
@@ -1252,6 +1326,24 @@ def validate_stage1_sentence_unit(
     ):
         raise CMEEStage1ContractError("stage1_unit_required_field_missing")
     validate_version_qualified_ref(unit.move_ref, expected_types=("move",))
+    node_ids = {row.node_id for row in grounded_graph.nodes}
+    edge_ids = {row.edge_id for row in grounded_graph.edges}
+    contribution_by_id = {
+        row.contribution_id: row for row in projection.observation_contributions
+    }
+    claim_by_id = {row.subjective_claim_id: row for row in projection.subjective_claims}
+    if unit.layer == "LAYER_1":
+        allowed_anchors = set(contribution_by_id)
+    elif unit.layer == "LAYER_2":
+        allowed_anchors = set(claim_by_id)
+    else:
+        allowed_anchors = set()
+    _require_local_subset(
+        unit.basis_anchor_refs,
+        allowed_anchors,
+        code="stage1_unit_basis_anchor_invalid",
+        allow_empty=False,
+    )
     if unit.discourse_link_to_prior_sentence is not None:
         prior_ref = unit.discourse_link_to_prior_sentence
         if (
@@ -1262,23 +1354,70 @@ def validate_stage1_sentence_unit(
             or prior_ref not in set(prior_unit_ids)
         ):
             raise CMEEStage1ContractError("stage1_unit_prior_ref_invalid")
-    local_anchor_set = {
-        *(row.contribution_id for row in projection.observation_contributions),
-        *(row.subjective_claim_id for row in projection.subjective_claims),
-    }
-    _require_local_subset(
-        unit.basis_anchor_refs,
-        local_anchor_set,
-        code="stage1_unit_basis_anchor_invalid",
-        allow_empty=False,
-    )
+    reachable_semantic_refs: set[str] = set()
+    if unit.layer == "LAYER_1":
+        for anchor_ref in unit.basis_anchor_refs:
+            contribution = contribution_by_id.get(anchor_ref)
+            if contribution is not None:
+                reachable_semantic_refs.update(contribution.semantic_refs)
+    elif unit.layer == "LAYER_2":
+        for anchor_ref in unit.basis_anchor_refs:
+            claim = claim_by_id.get(anchor_ref)
+            if claim is not None:
+                reachable_semantic_refs.update(claim.basis_semantic_refs)
+    for frame in unit.clause_frames:
+        _validate_stage1_immutable_shape(frame)
+        validate_version_qualified_ref(frame.move_ref, expected_types=("move",))
+        validate_version_qualified_ref(
+            frame.reception_style_policy_ref, expected_types=("policy",)
+        )
+        if frame.topic_ref is not None:
+            _validate_stage1_semantic_refs(
+                (frame.topic_ref,), node_ids=node_ids, edge_ids=edge_ids
+            )
+            if frame.topic_ref not in reachable_semantic_refs:
+                raise CMEEStage1ContractError("stage1_unit_semantic_ref_unreachable")
+        if frame.object_ref is not None:
+            _validate_stage1_semantic_refs(
+                (frame.object_ref,), node_ids=node_ids, edge_ids=edge_ids
+            )
+            if frame.object_ref not in reachable_semantic_refs:
+                raise CMEEStage1ContractError("stage1_unit_semantic_ref_unreachable")
+        for ref in (*frame.actor_refs, *frame.experiencer_refs):
+            ref_type, ref_id = _stage1_ref_parts(
+                ref,
+                expected_types=("node",),
+                expected_version=CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
+            )
+            if (
+                ref_type != "node"
+                or ref_id not in node_ids
+                or ref not in reachable_semantic_refs
+            ):
+                raise CMEEStage1ContractError("stage1_unit_semantic_ref_unreachable")
+        if (
+            any(type(binding) is not ArgumentBinding for binding in frame.argument_bindings)
+            or any(
+                type(binding.role) is not ArgumentRole
+                for binding in frame.argument_bindings
+            )
+        ):
+            raise CMEEStage1ContractError("stage1_unit_argument_binding_invalid")
+        for binding in frame.argument_bindings:
+            _validate_stage1_semantic_refs(
+                (binding.semantic_ref,), node_ids=node_ids, edge_ids=edge_ids
+            )
+            if binding.semantic_ref not in reachable_semantic_refs:
+                raise CMEEStage1ContractError("stage1_unit_semantic_ref_unreachable")
     text_scalar_length = len(unit.text)
     for binding in unit.realized_semantic_bindings:
         if type(binding) is not RealizedSemanticBinding:
             raise CMEEStage1ContractError("stage1_unit_binding_type_invalid")
-        validate_version_qualified_ref(
-            binding.semantic_ref, expected_types=("node", "edge")
+        _validate_stage1_semantic_refs(
+            (binding.semantic_ref,), node_ids=node_ids, edge_ids=edge_ids
         )
+        if binding.semantic_ref not in reachable_semantic_refs:
+            raise CMEEStage1ContractError("stage1_unit_semantic_ref_unreachable")
         if (
             type(binding.surface_scalar_start) is not int
             or type(binding.surface_scalar_end) is not int
@@ -1352,10 +1491,17 @@ class VisibleUnitTrace:
 def validate_stage1_trace_spine(
     trace_rows: Sequence[VisibleUnitTrace],
     projection: EmlisStage1Projection,
+    *,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
 ) -> None:
     """Validate the registered private Emlis trace specialization by role."""
 
-    validate_stage1_projection(projection)
+    validate_stage1_projection(
+        projection, grounded_graph=grounded_graph, parent_plan=parent_plan
+    )
+    graph_node_ids = {row.node_id for row in grounded_graph.nodes}
+    graph_edge_ids = {row.edge_id for row in grounded_graph.edges}
     rows = tuple(trace_rows)
     if any(type(row) is not VisibleUnitTrace for row in rows):
         raise CMEEStage1ContractError("stage1_trace_row_type_invalid")
@@ -1384,6 +1530,18 @@ def validate_stage1_trace_spine(
     subjective_claim_counts = {ref: 0 for ref in claims}
 
     for index, row in enumerate(rows):
+        for field_name in (
+            "meaning_node_ids",
+            "meaning_edge_ids",
+            "evidence_ids",
+            "constrained_by_owner_ids",
+        ):
+            refs = getattr(row, field_name)
+            if (
+                any(type(ref) is not str or not ref for ref in refs)
+                or len(refs) != len(set(refs))
+            ):
+                raise CMEEStage1ContractError("stage1_trace_base_ref_invalid")
         extension = row.emlis_stage1_extension
         if row.role == "UNKNOWN":
             if extension is not None:
@@ -1418,6 +1576,8 @@ def validate_stage1_trace_spine(
             raise CMEEStage1ContractError("stage1_trace_base_lineage_missing")
 
         if row.role == "OBSERVATION":
+            if row.duty_id != projection.parent_observation_duty_ref:
+                raise CMEEStage1ContractError("stage1_observation_trace_duty_mismatch")
             if (
                 extension.claim_domain
                 is not EmlisTraceClaimDomain.INTERPRETIVE_OBSERVATION
@@ -1453,10 +1613,11 @@ def validate_stage1_trace_spine(
                 raise CMEEStage1ContractError(
                     "stage1_observation_trace_candidate_unreachable"
                 )
-            reachable_semantic_ids = {
+            reachable_node_ids = {
                 _version_qualified_local_id(ref)
                 for contribution_ref in extension.contribution_refs
                 for ref in contributions[contribution_ref].semantic_refs
+                if ref.startswith("node:")
             } | {
                 _version_qualified_local_id(ref)
                 for candidate_ref in extension.interpretation_candidate_refs
@@ -1465,6 +1626,22 @@ def validate_stage1_trace_spine(
                     for candidate in projection.interpretation_candidates
                     if candidate.candidate_id == candidate_ref
                 ).semantic_refs
+                if ref.startswith("node:")
+            }
+            reachable_edge_ids = {
+                _version_qualified_local_id(ref)
+                for contribution_ref in extension.contribution_refs
+                for ref in contributions[contribution_ref].semantic_refs
+                if ref.startswith("edge:")
+            } | {
+                _version_qualified_local_id(ref)
+                for candidate_ref in extension.interpretation_candidate_refs
+                for ref in next(
+                    candidate
+                    for candidate in projection.interpretation_candidates
+                    if candidate.candidate_id == candidate_ref
+                ).semantic_refs
+                if ref.startswith("edge:")
             }
             reachable_evidence_ids = {
                 _version_qualified_local_id(ref)
@@ -1479,9 +1656,15 @@ def validate_stage1_trace_spine(
                     if candidate.candidate_id == candidate_ref
                 ).evidence_refs
             }
-            if not set((*row.meaning_node_ids, *row.meaning_edge_ids)).issubset(
-                reachable_semantic_ids
-            ) or not set(row.evidence_ids).issubset(reachable_evidence_ids):
+            if (
+                not set(row.meaning_node_ids).issubset(
+                    reachable_node_ids & graph_node_ids
+                )
+                or not set(row.meaning_edge_ids).issubset(
+                    reachable_edge_ids & graph_edge_ids
+                )
+                or not set(row.evidence_ids).issubset(reachable_evidence_ids)
+            ):
                 raise CMEEStage1ContractError(
                     "stage1_observation_trace_lineage_unreachable"
                 )
@@ -1489,6 +1672,8 @@ def validate_stage1_trace_spine(
                 observation_contribution_counts[contribution_ref] += 1
             continue
 
+        if row.duty_id != projection.parent_reception_duty_ref:
+            raise CMEEStage1ContractError("stage1_reception_trace_duty_mismatch")
         if (
             extension.claim_domain is not EmlisTraceClaimDomain.SUBJECTIVE_RESPONSE
             or extension.contribution_refs
@@ -1534,21 +1719,40 @@ def validate_stage1_trace_spine(
             raise CMEEStage1ContractError(
                 "stage1_reception_trace_basis_unreachable"
             )
-        reachable_semantic_ids = {
-            _version_qualified_local_id(ref) for ref in claim.basis_semantic_refs
+        reachable_node_ids = {
+            _version_qualified_local_id(ref)
+            for ref in claim.basis_semantic_refs
+            if ref.startswith("node:")
         } | {
             _version_qualified_local_id(ref)
             for contribution_ref in extension.basis_observation_contribution_refs
             for ref in contributions[contribution_ref].semantic_refs
+            if ref.startswith("node:")
+        }
+        reachable_edge_ids = {
+            _version_qualified_local_id(ref)
+            for ref in claim.basis_semantic_refs
+            if ref.startswith("edge:")
+        } | {
+            _version_qualified_local_id(ref)
+            for contribution_ref in extension.basis_observation_contribution_refs
+            for ref in contributions[contribution_ref].semantic_refs
+            if ref.startswith("edge:")
         }
         reachable_evidence_ids = {
             _version_qualified_local_id(ref)
             for contribution_ref in extension.basis_observation_contribution_refs
             for ref in contributions[contribution_ref].evidence_refs
         }
-        if not set((*row.meaning_node_ids, *row.meaning_edge_ids)).issubset(
-            reachable_semantic_ids
-        ) or not set(row.evidence_ids).issubset(reachable_evidence_ids):
+        if (
+            not set(row.meaning_node_ids).issubset(
+                reachable_node_ids & graph_node_ids
+            )
+            or not set(row.meaning_edge_ids).issubset(
+                reachable_edge_ids & graph_edge_ids
+            )
+            or not set(row.evidence_ids).issubset(reachable_evidence_ids)
+        ):
             raise CMEEStage1ContractError(
                 "stage1_reception_trace_lineage_unreachable"
             )
@@ -1668,6 +1872,7 @@ __all__ = [
     "ArgumentRole",
     "AttachmentAdmission",
     "CMEE_COMMON_GUARD_PROOF_VERSION",
+    "CMEE_GROUNDED_GRAPH_SCHEMA_VERSION",
     "CMEE_OBLIGATION_VERSION",
     "CMEE_OWNER_UNIVERSE_SCHEMA_VERSION",
     "CMEE_ROUTE_B_POLICY_VERSION",

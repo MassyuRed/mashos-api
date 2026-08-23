@@ -13,6 +13,7 @@ from cocolon_meaning_experience_engine.contracts import (
     ArgumentBinding,
     ArgumentRole,
     AttachmentAdmission,
+    CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
     CMEE_STAGE1_EMLIS_OWNER_REF,
     CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
     CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION,
@@ -24,11 +25,14 @@ from cocolon_meaning_experience_engine.contracts import (
     EmlisStage1Projection,
     EmlisSubjectiveClaim,
     EmlisTraceClaimDomain,
+    EpistemicState,
     ExperiencePlan,
+    GroundedMeaningGraph,
     InterpretationEpistemicState,
     InterpretationKind,
     MeaningFieldEntry,
     MeaningFieldSlot,
+    MeaningNode,
     ObservationContributionKind,
     ObservationDepthClass,
     OwnerClass,
@@ -122,12 +126,58 @@ def _identified(value: object, identity_field: str) -> object:
     return replace(value, **{identity_field: recompute_stage1_identity(value)})
 
 
+def _stage1_grounded_graph_fixture() -> GroundedMeaningGraph:
+    return GroundedMeaningGraph(
+        graph_id="grounded-1",
+        source_envelope_id="source-1",
+        nodes=(
+            MeaningNode(
+                node_id="state-1",
+                owner_id="owner-state-1",
+                node_kind="STATE",
+                grounding_kind="SOURCE_EXPLICIT",
+                value="状態",
+                epistemic_state=EpistemicState.SOURCE_EXPLICIT,
+                evidence_ids=("memo-1",),
+            ),
+            MeaningNode(
+                node_id="context-1",
+                owner_id="owner-context-1",
+                node_kind="CONTEXT",
+                grounding_kind="SOURCE_EXPLICIT",
+                value="文脈",
+                epistemic_state=EpistemicState.SOURCE_EXPLICIT,
+                evidence_ids=("memo-1",),
+            ),
+            MeaningNode(
+                node_id="other-1",
+                owner_id="owner-other-1",
+                node_kind="OTHER",
+                grounding_kind="SOURCE_EXPLICIT",
+                value="別対象",
+                epistemic_state=EpistemicState.SOURCE_EXPLICIT,
+                evidence_ids=("memo-1",),
+            ),
+        ),
+        edges=(),
+        owner_dispositions=(),
+        required_owner_refs=(),
+        active_optional_owner_refs=(),
+        source_version="source.v1",
+        obligation_version="obligation.v1",
+        owner_universe_digest="digest",
+    )
+
+
 def _stage1_projection_fixture() -> EmlisStage1Projection:
     schema = CMEE_STAGE1_RESPONSE_SCHEMA_VERSION
-    graph_ref = "grounded:grounded-1@graph.v1"
+    graph_ref = f"grounded:grounded-1@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
     observation_duty_ref = "observation-duty-1"
     reception_duty_ref = "reception-duty-1"
-    semantic_refs = ("node:state-1@graph.v1", "node:context-1@graph.v1")
+    semantic_refs = (
+        f"node:state-1@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}",
+        f"node:context-1@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}",
+    )
     evidence_refs = ("evidence:memo-1@source.v1",)
     candidate_1 = _identified(
         EmlisInterpretationCandidate(
@@ -283,12 +333,37 @@ def _stage1_projection_fixture() -> EmlisStage1Projection:
     )
 
 
+def _stage1_parent_plan_fixture(
+    projection: EmlisStage1Projection,
+) -> ExperiencePlan:
+    return ExperiencePlan(
+        plan_id="plan-1",
+        source_envelope_id="source-1",
+        source_version="source.v1",
+        obligation_version="obligation.v1",
+        owner_universe_digest="digest",
+        source_plan_version="plan.v1",
+        observation_duty_id=projection.parent_observation_duty_ref,
+        unknown_duty_id="unknown-duty-1",
+        reception_duty_id=projection.parent_reception_duty_ref,
+        reception_plan_digest="reception-digest",
+        allowed_reception_act_ids=projection.retained_reception_act_ids,
+        required_observation_owner_ids=(),
+        reception_target_owner_ids=(),
+        visible_owner_ids=(),
+        unresolved_owner_ids=(),
+        visible_unknown_owner_ids=(),
+        required_unknown_owner_ids=(),
+        visible_line_ids=(),
+    )
+
+
 def _stage1_sentence_unit_fixture(
     projection: EmlisStage1Projection,
 ) -> RealizedSentenceUnit:
     text = "見えた"
     binding = RealizedSemanticBinding(
-        semantic_ref="node:state-1@graph.v1",
+        semantic_ref=f"node:state-1@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}",
         clause_slot="predicate",
         surface_scalar_start=0,
         surface_scalar_end=len(text),
@@ -303,12 +378,13 @@ def _stage1_sentence_unit_fixture(
             ClauseFrame(
                 move_ref="move:observe@microgrammar.v1",
                 discourse_relation="OPEN",
-                topic_ref="node:state-1@graph.v1",
+                topic_ref=f"node:state-1@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}",
                 predicate_operator=SemanticOperator.PRESENT_STATE.value,
                 object_ref=None,
                 argument_bindings=(
                     ArgumentBinding(
-                        ArgumentRole.PRIMARY, "node:state-1@graph.v1"
+                        ArgumentRole.PRIMARY,
+                        f"node:state-1@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}",
                     ),
                 ),
                 qualifier_refs=(),
@@ -766,6 +842,8 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
 class CMEEStage1SpineContractsTest(unittest.TestCase):
     def test_exact_six_identities_recompute_and_reject_stale_tamper(self) -> None:
         projection = _stage1_projection_fixture()
+        grounded_graph = _stage1_grounded_graph_fixture()
+        parent_plan = _stage1_parent_plan_fixture(projection)
         unit = _stage1_sentence_unit_fixture(projection)
         exact_six = (
             projection.interpretation_candidates[0],
@@ -806,7 +884,11 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             ),
         )
         with self.assertRaisesRegex(CMEEStage1ContractError, "identity_mismatch"):
-            validate_stage1_projection(stale_projection)
+            validate_stage1_projection(
+                stale_projection,
+                grounded_graph=grounded_graph,
+                parent_plan=parent_plan,
+            )
 
     def test_canonical_json_key_order_is_invariant_but_semantic_order_changes_id(self) -> None:
         left = {"日本語": "見えた", "nested": {"b": 2, "a": 1}}
@@ -895,27 +977,11 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
 
     def test_projection_validates_depth_order_parent_and_single_plan_owner(self) -> None:
         projection = _stage1_projection_fixture()
-        parent = ExperiencePlan(
-            plan_id="plan-1",
-            source_envelope_id="source-1",
-            source_version="source.v1",
-            obligation_version="obligation.v1",
-            owner_universe_digest="digest",
-            source_plan_version="plan.v1",
-            observation_duty_id=projection.parent_observation_duty_ref,
-            unknown_duty_id="unknown-duty-1",
-            reception_duty_id=projection.parent_reception_duty_ref,
-            reception_plan_digest="reception-digest",
-            allowed_reception_act_ids=projection.retained_reception_act_ids,
-            required_observation_owner_ids=(),
-            reception_target_owner_ids=(),
-            visible_owner_ids=(),
-            unresolved_owner_ids=(),
-            visible_unknown_owner_ids=(),
-            required_unknown_owner_ids=(),
-            visible_line_ids=(),
+        grounded_graph = _stage1_grounded_graph_fixture()
+        parent = _stage1_parent_plan_fixture(projection)
+        validate_stage1_projection(
+            projection, grounded_graph=grounded_graph, parent_plan=parent
         )
-        validate_stage1_projection(projection, parent_plan=parent)
         self.assertNotIn("core_projection_ref", {row.name for row in fields(ExperiencePlan)})
 
         invalid_rows = (
@@ -953,12 +1019,16 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
         for tampered, code in invalid_rows:
             with self.subTest(code=code):
                 with self.assertRaisesRegex(CMEEStage1ContractError, code):
-                    validate_stage1_projection(tampered)
+                    validate_stage1_projection(
+                        tampered, grounded_graph=grounded_graph, parent_plan=parent
+                    )
 
     def test_subjective_refs_reject_policy_promotion_after_coordinated_rehash(
         self,
     ) -> None:
         projection = _stage1_projection_fixture()
+        grounded_graph = _stage1_grounded_graph_fixture()
+        parent_plan = _stage1_parent_plan_fixture(projection)
         claim = projection.subjective_claims[0]
         forged_claim = _identified(
             replace(
@@ -981,12 +1051,57 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             "projection_id",
         )
         with self.assertRaisesRegex(CMEEStage1ContractError, "kind_invalid"):
-            validate_stage1_projection(forged_projection)
+            validate_stage1_projection(
+                forged_projection,
+                grounded_graph=grounded_graph,
+                parent_plan=parent_plan,
+            )
+
+    def test_projection_resolves_semantic_refs_against_the_frozen_graph(self) -> None:
+        projection = _stage1_projection_fixture()
+        grounded_graph = _stage1_grounded_graph_fixture()
+        parent_plan = _stage1_parent_plan_fixture(projection)
+        meaning_field = projection.meaning_field
+        forged_entry = replace(
+            meaning_field.entries[0],
+            semantic_refs=(
+                f"node:foreign@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}",
+            ),
+        )
+        forged_field = _identified(
+            replace(
+                meaning_field,
+                meaning_field_id="",
+                entries=(forged_entry, *meaning_field.entries[1:]),
+            ),
+            "meaning_field_id",
+        )
+        forged_projection = _identified(
+            replace(
+                projection,
+                projection_id="",
+                meaning_field=forged_field,
+            ),
+            "projection_id",
+        )
+        with self.assertRaisesRegex(CMEEStage1ContractError, "semantic_ref_missing"):
+            validate_stage1_projection(
+                forged_projection,
+                grounded_graph=grounded_graph,
+                parent_plan=parent_plan,
+            )
 
     def test_sentence_unit_binds_projection_utf8_text_and_surface_digest(self) -> None:
         projection = _stage1_projection_fixture()
+        grounded_graph = _stage1_grounded_graph_fixture()
+        parent_plan = _stage1_parent_plan_fixture(projection)
         unit = _stage1_sentence_unit_fixture(projection)
-        validate_stage1_sentence_unit(unit, projection)
+        validate_stage1_sentence_unit(
+            unit,
+            projection,
+            grounded_graph=grounded_graph,
+            parent_plan=parent_plan,
+        )
 
         for tampered, code in (
             (replace(unit, projection_ref="projection-foreign"), "foreign_projection"),
@@ -1014,13 +1129,38 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                 ),
                 "prior_ref_invalid",
             ),
+            (
+                replace(
+                    unit,
+                    realized_semantic_bindings=(
+                        replace(
+                            unit.realized_semantic_bindings[0],
+                            semantic_ref=(
+                                f"node:other-1@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+                            ),
+                        ),
+                    ),
+                ),
+                "semantic_ref_unreachable",
+            ),
+            (
+                replace(unit, layer="LAYER_2"),
+                "basis_anchor_invalid",
+            ),
         ):
             with self.subTest(code=code):
                 with self.assertRaisesRegex(CMEEStage1ContractError, code):
-                    validate_stage1_sentence_unit(tampered, projection)
+                    validate_stage1_sentence_unit(
+                        tampered,
+                        projection,
+                        grounded_graph=grounded_graph,
+                        parent_plan=parent_plan,
+                    )
 
     def test_trace_spine_enforces_role_owner_reachability_and_exact_coverage(self) -> None:
         projection = _stage1_projection_fixture()
+        grounded_graph = _stage1_grounded_graph_fixture()
+        parent_plan = _stage1_parent_plan_fixture(projection)
         candidate = projection.interpretation_candidates[0]
         contribution = projection.observation_contributions[0]
         claim = projection.subjective_claims[0]
@@ -1102,7 +1242,12 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             ),
         )
         rows = (observation, unknown, reception)
-        validate_stage1_trace_spine(rows, projection)
+        validate_stage1_trace_spine(
+            rows,
+            projection,
+            grounded_graph=grounded_graph,
+            parent_plan=parent_plan,
+        )
 
         invalid_rows = (
             (
@@ -1143,6 +1288,26 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             ),
             (
                 (
+                    replace(observation, duty_id="other-duty"),
+                    unknown,
+                    reception,
+                ),
+                "duty_mismatch",
+            ),
+            (
+                (
+                    replace(
+                        observation,
+                        meaning_node_ids=(),
+                        meaning_edge_ids=("state-1",),
+                    ),
+                    unknown,
+                    reception,
+                ),
+                "lineage_unreachable",
+            ),
+            (
+                (
                     replace(
                         observation,
                         emlis_stage1_extension=replace(
@@ -1170,7 +1335,12 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
         for tampered, code in invalid_rows:
             with self.subTest(code=code):
                 with self.assertRaisesRegex(CMEEStage1ContractError, code):
-                    validate_stage1_trace_spine(tampered, projection)
+                    validate_stage1_trace_spine(
+                        tampered,
+                        projection,
+                        grounded_graph=grounded_graph,
+                        parent_plan=parent_plan,
+                    )
 
 
 if __name__ == "__main__":
