@@ -3,11 +3,15 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import io
 import inspect
 import json
+import re
+import tempfile
 import unittest
 from collections import Counter
 from dataclasses import fields, replace
+from pathlib import Path
 from unittest.mock import patch
 
 from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
@@ -123,6 +127,7 @@ from cocolon_meaning_experience_engine.source_kernel import (
     freeze_text_source,
     normalize_evidence_literal,
 )
+import tools.cmee_v1a_i1sx_candidate_run as candidate_run_module
 from tools.cmee_v1a_i1sx_candidate_run import EXACT8
 
 
@@ -564,6 +569,630 @@ def _stage4_exact8_fixture(index: int = 0):
 
 
 class CMEEV1AI1SXContractsTest(unittest.TestCase):
+    def test_step6_exact8_owner_authority_is_an_exact_positive_unresolved_partition(
+        self,
+    ) -> None:
+        positive_dispositions = {
+            RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
+            RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+        }
+        for case_id, memo, category, emotion, strength in EXACT8:
+            with self.subTest(case_id=case_id):
+                source, _grounded_plan, graph, parent_plan = _stage2_inputs(
+                    _request(
+                        record_id=f"step6-authority-{case_id.lower()}",
+                        memo=memo,
+                        category=category,
+                        emotion=emotion,
+                        strength=strength,
+                    )
+                )
+                owner_ids = tuple(
+                    row.meaning_owner_id for row in graph.owner_dispositions
+                )
+                expected_owner_ids = (
+                    *source.owner_universe.required_owner_refs,
+                    *source.owner_universe.active_optional_owner_refs,
+                )
+                expected_visible_owner_ids = tuple(
+                    row.meaning_owner_id
+                    for row in graph.owner_dispositions
+                    if row.route_b_disposition in positive_dispositions
+                )
+                expected_unresolved_owner_ids = tuple(
+                    row.meaning_owner_id
+                    for row in graph.owner_dispositions
+                    if row.route_b_disposition not in positive_dispositions
+                )
+
+                self.assertEqual(owner_ids, expected_owner_ids)
+                self.assertEqual(len(owner_ids), len(set(owner_ids)))
+                self.assertEqual(
+                    parent_plan.visible_owner_ids,
+                    expected_visible_owner_ids,
+                )
+                self.assertEqual(
+                    parent_plan.unresolved_owner_ids,
+                    expected_unresolved_owner_ids,
+                )
+                self.assertTrue(
+                    set(parent_plan.visible_owner_ids).isdisjoint(
+                        parent_plan.unresolved_owner_ids
+                    )
+                )
+                self.assertEqual(
+                    set(parent_plan.visible_owner_ids)
+                    | set(parent_plan.unresolved_owner_ids),
+                    set(owner_ids),
+                )
+                self.assertTrue(
+                    set(parent_plan.required_observation_owner_ids).issubset(
+                        parent_plan.visible_owner_ids
+                    )
+                )
+                self.assertTrue(
+                    all(
+                        bool(row.visible_claim_refs)
+                        == (row.route_b_disposition in positive_dispositions)
+                        for row in graph.owner_dispositions
+                    )
+                )
+
+    def test_step6_exact8_optional_emotion_authority_retains_only_optional_tail(
+        self,
+    ) -> None:
+        optional_case_ids: set[str] = set()
+        for case_id, memo, category, emotion, strength in EXACT8:
+            with self.subTest(case_id=case_id):
+                source, grounded_plan, graph, parent_plan = _stage2_inputs(
+                    _request(
+                        record_id=f"step6-optional-{case_id.lower()}",
+                        memo=memo,
+                        category=category,
+                        emotion=emotion,
+                        strength=strength,
+                    )
+                )
+                projection = build_stage1_semantic_projection(
+                    source=source,
+                    grounded_graph=graph,
+                    parent_plan=parent_plan,
+                    grounded_plan=grounded_plan,
+                )
+                emotion_obligation = next(
+                    row
+                    for row in source.owner_universe.obligations
+                    if row.obligation_kind == "EMOTION_CONTEXT"
+                )
+                emotion_disposition = next(
+                    row
+                    for row in graph.owner_dispositions
+                    if row.meaning_owner_id
+                    == emotion_obligation.meaning_owner_id
+                )
+                self.assertIs(emotion_obligation.owner_class, OwnerClass.ACTIVE_OPTIONAL)
+                self.assertIs(emotion_disposition.owner_class, OwnerClass.ACTIVE_OPTIONAL)
+                self.assertIs(
+                    emotion_disposition.route_b_disposition,
+                    RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
+                )
+                self.assertIs(
+                    emotion_disposition.visible_authority,
+                    VisibleAuthority.SOURCE_EXPLICIT,
+                )
+                self.assertTrue(emotion_disposition.visible_claim_refs)
+                self.assertIn(
+                    emotion_obligation.meaning_owner_id,
+                    parent_plan.visible_owner_ids,
+                )
+                self.assertNotIn(
+                    emotion_obligation.meaning_owner_id,
+                    parent_plan.unresolved_owner_ids,
+                )
+                self.assertNotIn(
+                    emotion_obligation.meaning_owner_id,
+                    parent_plan.required_observation_owner_ids,
+                )
+
+                claim_owner_by_id = {
+                    **{row.node_id: row.owner_id for row in graph.nodes},
+                    **{row.edge_id: row.owner_id for row in graph.edges},
+                }
+                optional_contributions = tuple(
+                    row
+                    for row in projection.observation_contributions
+                    if row.retention == "OPTIONAL"
+                )
+                self.assertLessEqual(len(optional_contributions), 1)
+                for contribution in optional_contributions:
+                    optional_case_ids.add(case_id)
+                    self.assertEqual(contribution.retention, "OPTIONAL")
+                    self.assertEqual(
+                        {
+                            claim_owner_by_id[
+                                ref.split(":", 1)[1].rsplit("@", 1)[0]
+                            ]
+                            for ref in contribution.semantic_refs
+                        },
+                        {emotion_obligation.meaning_owner_id},
+                    )
+
+        self.assertEqual(
+            optional_case_ids,
+            {"SX-01", "SX-02", "SX-03", "SX-05", "SX-08"},
+        )
+
+    def test_step6_coordinated_optional_owner_disposition_downgrade_is_rejected(
+        self,
+    ) -> None:
+        case_id, memo, category, emotion, strength = EXACT8[0]
+        source, grounded_plan, graph, parent_plan = _stage2_inputs(
+            _request(
+                record_id=f"step6-downgrade-{case_id.lower()}",
+                memo=memo,
+                category=category,
+                emotion=emotion,
+                strength=strength,
+            )
+        )
+        projection = build_stage1_semantic_projection(
+            source=source,
+            grounded_graph=graph,
+            parent_plan=parent_plan,
+            grounded_plan=grounded_plan,
+        )
+        validate_stage1_projection(
+            projection,
+            grounded_graph=graph,
+            parent_plan=parent_plan,
+        )
+        emotion_owner_id = next(
+            row.meaning_owner_id
+            for row in source.owner_universe.obligations
+            if row.obligation_kind == "EMOTION_CONTEXT"
+        )
+        downgraded_dispositions = tuple(
+            replace(
+                row,
+                visible_authority=VisibleAuthority.NONE,
+                route_b_disposition=RouteBDisposition.NOT_VISIBLE_UNRESOLVED,
+                visible_claim_refs=(),
+                reason_codes=("ATTACHMENT_UNRESOLVED",),
+            )
+            if row.meaning_owner_id == emotion_owner_id
+            else row
+            for row in graph.owner_dispositions
+        )
+        downgraded_graph = replace(
+            graph,
+            owner_dispositions=downgraded_dispositions,
+        )
+        positive_dispositions = {
+            RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
+            RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+        }
+        coordinated_parent_plan = replace(
+            parent_plan,
+            visible_owner_ids=tuple(
+                row.meaning_owner_id
+                for row in downgraded_dispositions
+                if row.route_b_disposition in positive_dispositions
+            ),
+            unresolved_owner_ids=tuple(
+                row.meaning_owner_id
+                for row in downgraded_dispositions
+                if row.route_b_disposition not in positive_dispositions
+            ),
+        )
+        self.assertNotIn(
+            emotion_owner_id,
+            coordinated_parent_plan.visible_owner_ids,
+        )
+        self.assertIn(
+            emotion_owner_id,
+            coordinated_parent_plan.unresolved_owner_ids,
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_candidate_visible_owner_disposition_mismatch",
+        ):
+            validate_stage1_projection(
+                projection,
+                grounded_graph=downgraded_graph,
+                parent_plan=coordinated_parent_plan,
+            )
+
+        outcome = MeaningExperienceEngine().generate(
+            _request(
+                record_id=f"step6-runner-downgrade-{case_id.lower()}",
+                memo=memo,
+                category=category,
+                emotion=emotion,
+                strength=strength,
+            )
+        )
+        self.assertEqual(outcome.status.value, "GENERATED", outcome.reason_codes)
+        self.assertIsNotNone(outcome.artifact)
+        self.assertIsNotNone(outcome.meaning_graph)
+        assert outcome.artifact is not None
+        assert outcome.meaning_graph is not None
+        runtime_used_claim_ids = {
+            *(
+                claim_id
+                for trace in outcome.artifact.trace
+                for claim_id in trace.meaning_node_ids
+            ),
+            *(
+                claim_id
+                for trace in outcome.artifact.trace
+                for claim_id in trace.meaning_edge_ids
+            ),
+        }
+        runtime_owner_id = next(
+            row.meaning_owner_id
+            for row in outcome.meaning_graph.owner_dispositions
+            if row.owner_class is OwnerClass.ACTIVE_OPTIONAL
+            and row.route_b_disposition in positive_dispositions
+            and set(row.visible_claim_refs).intersection(runtime_used_claim_ids)
+        )
+        runtime_dispositions = tuple(
+            replace(
+                row,
+                visible_authority=VisibleAuthority.NONE,
+                route_b_disposition=RouteBDisposition.NOT_VISIBLE_UNRESOLVED,
+                visible_claim_refs=(),
+                reason_codes=("ATTACHMENT_UNRESOLVED",),
+            )
+            if row.meaning_owner_id == runtime_owner_id
+            else row
+            for row in outcome.meaning_graph.owner_dispositions
+        )
+        runtime_plan = replace(
+            outcome.artifact.plan,
+            visible_owner_ids=tuple(
+                row.meaning_owner_id
+                for row in runtime_dispositions
+                if row.route_b_disposition in positive_dispositions
+            ),
+            unresolved_owner_ids=tuple(
+                row.meaning_owner_id
+                for row in runtime_dispositions
+                if row.route_b_disposition not in positive_dispositions
+            ),
+        )
+        self.assertFalse(
+            candidate_run_module._structural_trace_valid(
+                replace(
+                    outcome,
+                    meaning_graph=replace(
+                        outcome.meaning_graph,
+                        owner_dispositions=runtime_dispositions,
+                    ),
+                    artifact=replace(outcome.artifact, plan=runtime_plan),
+                )
+            )
+        )
+
+    def test_step6_runner_rejects_directional_trace_endpoint_reversal(self) -> None:
+        outcome = MeaningExperienceEngine().generate(
+            _request(
+                record_id="step6-runner-directional-trace",
+                memo="前は動いた。今は不安が残っている。",
+                category="生活",
+                emotion="不安",
+                strength="medium",
+            )
+        )
+        self.assertEqual(outcome.status.value, "GENERATED", outcome.reason_codes)
+        self.assertIsNotNone(outcome.artifact)
+        self.assertIsNotNone(outcome.meaning_graph)
+        assert outcome.artifact is not None
+        assert outcome.meaning_graph is not None
+        self.assertTrue(candidate_run_module._structural_trace_valid(outcome))
+
+        edge_by_id = {
+            row.edge_id: row for row in outcome.meaning_graph.edges
+        }
+        directional_index = next(
+            index
+            for index, trace in enumerate(outcome.artifact.trace)
+            if any(
+                edge_by_id[edge_id].relation == "shift_from_to"
+                for edge_id in trace.meaning_edge_ids
+            )
+        )
+        directional_trace = outcome.artifact.trace[directional_index]
+        self.assertEqual(len(directional_trace.meaning_node_ids), 2)
+        reversed_trace = replace(
+            directional_trace,
+            meaning_node_ids=tuple(reversed(directional_trace.meaning_node_ids)),
+        )
+        forged_traces = list(outcome.artifact.trace)
+        forged_traces[directional_index] = reversed_trace
+        self.assertFalse(
+            candidate_run_module._structural_trace_valid(
+                replace(
+                    outcome,
+                    artifact=replace(
+                        outcome.artifact,
+                        trace=tuple(forged_traces),
+                    ),
+                )
+            )
+        )
+
+    def test_step6_runner_rejects_noncanonical_route_b_row_fields(self) -> None:
+        case_id, memo, category, emotion, strength = EXACT8[0]
+        outcome = MeaningExperienceEngine().generate(
+            _request(
+                record_id=f"step6-runner-owner-shape-{case_id.lower()}",
+                memo=memo,
+                category=category,
+                emotion=emotion,
+                strength=strength,
+            )
+        )
+        self.assertEqual(outcome.status.value, "GENERATED", outcome.reason_codes)
+        self.assertIsNotNone(outcome.artifact)
+        self.assertIsNotNone(outcome.meaning_graph)
+        assert outcome.artifact is not None
+        assert outcome.meaning_graph is not None
+        self.assertTrue(candidate_run_module._structural_trace_valid(outcome))
+
+        positive = next(
+            row
+            for row in outcome.meaning_graph.owner_dispositions
+            if row.route_b_disposition
+            is RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
+        )
+        positive_mutations = (
+            replace(positive, visible_authority=VisibleAuthority.NONE),
+            replace(positive, provider_resolution=ProviderResolution.UNRESOLVED),
+            replace(positive, attachment_admission=AttachmentAdmission.UNRESOLVED),
+            replace(positive, reason_codes=("tampered",)),
+        )
+        for mutated in positive_mutations:
+            with self.subTest(field_shape=mutated):
+                dispositions = tuple(
+                    mutated if row.owner_id == positive.owner_id else row
+                    for row in outcome.meaning_graph.owner_dispositions
+                )
+                self.assertFalse(
+                    candidate_run_module._structural_trace_valid(
+                        replace(
+                            outcome,
+                            meaning_graph=replace(
+                                outcome.meaning_graph,
+                                owner_dispositions=dispositions,
+                            ),
+                        )
+                    )
+                )
+
+        nonvisible = next(
+            row
+            for row in outcome.meaning_graph.owner_dispositions
+            if row.route_b_disposition
+            is RouteBDisposition.NOT_VISIBLE_UNRESOLVED
+        )
+        owned_node = next(
+            row
+            for row in outcome.meaning_graph.nodes
+            if row.owner_id == nonvisible.owner_id
+        )
+        injected = replace(
+            nonvisible,
+            visible_claim_refs=(owned_node.node_id,),
+        )
+        injected_dispositions = tuple(
+            injected if row.owner_id == nonvisible.owner_id else row
+            for row in outcome.meaning_graph.owner_dispositions
+        )
+        self.assertFalse(
+            candidate_run_module._structural_trace_valid(
+                replace(
+                    outcome,
+                    meaning_graph=replace(
+                        outcome.meaning_graph,
+                        owner_dispositions=injected_dispositions,
+                    ),
+                )
+            )
+        )
+
+    def test_step6_private_output_boundary_rejects_before_runner_execution(
+        self,
+    ) -> None:
+        body_sentinel = "疲れている-private-body-sentinel"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory).resolve()
+            isolated_root = (temporary_root / "private-root").resolve()
+            checkout_overlap_root = (
+                candidate_run_module.CHECKOUT_ROOT / "private-test-root"
+            ).resolve()
+            invalid_targets = (
+                ("root", isolated_root, isolated_root),
+                (
+                    "outside",
+                    isolated_root,
+                    temporary_root / "outside" / f"{body_sentinel}.json",
+                ),
+                (
+                    "checkout-descendant",
+                    checkout_overlap_root,
+                    checkout_overlap_root / f"{body_sentinel}.json",
+                ),
+                (
+                    "checkout-exact",
+                    candidate_run_module.CHECKOUT_ROOT,
+                    candidate_run_module.CHECKOUT_ROOT
+                    / f"{body_sentinel}.json",
+                ),
+                (
+                    "checkout-ancestor",
+                    candidate_run_module.CHECKOUT_ROOT.parent,
+                    candidate_run_module.CHECKOUT_ROOT.parent
+                    / f"{body_sentinel}.json",
+                ),
+            )
+            for scenario, private_root, requested_target in invalid_targets:
+                with self.subTest(scenario=scenario):
+                    stderr = io.StringIO()
+                    with (
+                        patch.object(
+                            candidate_run_module,
+                            "PRIVATE_OUTPUT_ROOT",
+                            private_root,
+                        ),
+                        patch.object(
+                            candidate_run_module.sys,
+                            "argv",
+                            (
+                                "cmee-v1a-candidate-run",
+                                "--body-full-output",
+                                str(requested_target),
+                            ),
+                        ),
+                        patch.object(candidate_run_module.sys, "stderr", stderr),
+                        patch.object(
+                            candidate_run_module,
+                            "run",
+                            side_effect=AssertionError(
+                                "runner must not execute for an invalid target"
+                            ),
+                        ) as runner,
+                    ):
+                        with self.assertRaises(SystemExit) as raised:
+                            candidate_run_module.main()
+
+                    self.assertEqual(raised.exception.code, 2)
+                    runner.assert_not_called()
+                    error_text = stderr.getvalue()
+                    self.assertIn("private output", error_text)
+                    self.assertNotIn(str(private_root), error_text)
+                    self.assertNotIn(str(requested_target), error_text)
+                    self.assertNotIn(body_sentinel, error_text)
+                    self.assertTrue(
+                        all(memo not in error_text for _case_id, memo, *_ in EXACT8)
+                    )
+
+    def test_step6_private_output_accepts_only_an_isolated_descendant(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            private_root = (Path(temporary_directory) / "private-root").resolve()
+            requested_target = private_root / "nested" / "packet.json"
+            parser = candidate_run_module.argparse.ArgumentParser(add_help=False)
+            with patch.object(
+                candidate_run_module,
+                "PRIVATE_OUTPUT_ROOT",
+                private_root,
+            ):
+                self.assertEqual(
+                    candidate_run_module._private_output_target(
+                        parser,
+                        requested_target,
+                    ),
+                    requested_target.resolve(),
+                )
+
+    def test_step6_runner_body_free_tree_has_no_private_body_or_locator(self) -> None:
+        runtime_head = "a" * 40
+        design_head = "b" * 40
+        body_free, private_packet = candidate_run_module.run(
+            runtime_repo_head=runtime_head,
+            design_repo_head=design_head,
+        )
+
+        keys: list[str] = []
+
+        def collect_keys(value: object) -> None:
+            if type(value) is dict:
+                for key, child in value.items():
+                    keys.append(str(key))
+                    collect_keys(child)
+            elif type(value) in {list, tuple}:
+                for child in value:
+                    collect_keys(child)
+
+        collect_keys(body_free)
+        forbidden_private_keys = {
+            "memo",
+            "memo_action",
+            "synthetic_input_private",
+            "candidate_private",
+            "private_slot_id",
+            "private_body_full",
+            "observation",
+            "reception",
+            "raw_sha256",
+            "literal_sha256",
+            "envelope_id",
+            "graph_id",
+            "artifact_id",
+        }
+        self.assertTrue(forbidden_private_keys.isdisjoint(keys))
+        self.assertTrue(
+            all(
+                "digest" not in key.lower()
+                and "locator" not in key.lower()
+                and not key.lower().endswith("_sha256")
+                and not key.lower().endswith("_private")
+                for key in keys
+            )
+        )
+        self.assertFalse(body_free["private_text_published"])
+        mutation_registry = body_free["finite_mutation_set_body_free"]
+        self.assertFalse(mutation_registry["body_payload_present"])
+        self.assertFalse(mutation_registry["runner_executes_source_bodies"])
+
+        binding = private_packet["private_packet_binding"]
+        self.assertEqual(
+            binding["binding_version"],
+            "cocolon.cmee.stage1.private_packet_binding.v1",
+        )
+        self.assertEqual(binding["packet_id"], private_packet["packet_id"])
+        self.assertEqual(binding["runtime_repo_head"], runtime_head)
+        self.assertEqual(binding["design_repo_head"], design_head)
+        self.assertEqual(
+            binding["fixture_identity"]["fixture_order"],
+            [row[0] for row in EXACT8],
+        )
+        for digest in (
+            binding["fixture_identity"]["fixture_and_axes_sha256"],
+            binding["runner_identity"]["runner_sha256"],
+            binding["packet_binding_sha256"],
+        ):
+            self.assertRegex(digest, r"^[0-9a-f]{64}$")
+            self.assertNotIn(digest, json.dumps(body_free, sort_keys=True))
+        self.assertEqual(
+            binding["runner_identity"]["repo_relative_path"],
+            "ai/tools/cmee_v1a_i1sx_candidate_run.py",
+        )
+
+        serialized = json.dumps(body_free, ensure_ascii=False, sort_keys=True)
+        for _case_id, memo, _category, _emotion, _strength in EXACT8:
+            self.assertNotIn(memo, serialized)
+        for case in private_packet["cases"]:
+            private_input = case["synthetic_input_private"]
+            private_values: list[str] = []
+
+            def collect_private_values(value: object) -> None:
+                if type(value) is dict:
+                    for child in value.values():
+                        collect_private_values(child)
+                elif type(value) in {list, tuple}:
+                    for child in value:
+                        collect_private_values(child)
+                elif type(value) is str and value:
+                    private_values.append(value)
+
+            collect_private_values(private_input)
+            candidate_text = case["candidate_private"]
+            if candidate_text:
+                private_values.append(candidate_text)
+            self.assertTrue(
+                all(private_value not in serialized for private_value in private_values)
+            )
+
     def test_step5_compiler_facade_owns_projection_s8_and_s9_exactly_once(self) -> None:
         case_id, memo, category, emotion, strength = EXACT8[5]
         source, grounded_plan, graph, parent_plan = _stage2_inputs(
@@ -1952,7 +2581,7 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             for row in graph.nodes
             if row.epistemic_state is EpistemicState.SOURCE_EXPLICIT
             and row.grounding_kind in {"explicit", "user_stated_relation"}
-            and row.owner_id not in set(parent_plan.visible_owner_ids)
+            and row.owner_id in set(graph.active_optional_owner_refs)
         )
         renamed_node = replace(rename_target, node_id="attacker-node-id")
         renamed_graph = replace(
@@ -2296,7 +2925,10 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                 )
 
         source, grounded_plan, short_graph, short_parent = _stage2_inputs(
-            _request(record_id="stage2-required-overflow", memo="疲れた。")
+            _request(
+                record_id="stage2-required-overflow",
+                memo="疲れた。つらい。苦しい。",
+            )
         )
         with self.assertRaisesRegex(
             CMEEStage1ContractError, "stage1_required_candidate_overflow"
@@ -3316,7 +3948,7 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
         self.assertEqual(len(CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_BYTES), 9321)
         self.assertEqual(
             CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_SHA256,
-            "6850d05d22d0378cf5926ce8856e648253df43a468376ba08062246f6c54b966",
+            "5228a1814d26cbe0a19072804536dea5d7719d0b69a374c8a973f710c3a80459",
         )
         self.assertEqual(
             hashlib.sha256(
@@ -3332,7 +3964,26 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
         self.assertEqual(dict(sections["variant_policy"])["max_candidates"], 2)
         self.assertEqual(dict(sections["variant_policy"])["automatic_retry"], 0)
         self.assertEqual(dict(sections["s9_selection_policy"])["new_generation"], 0)
+        self.assertEqual(
+            dict(sections["role_anchor_policy"])["over_limit_selection"],
+            "semantic_boundary_or_stop",
+        )
         stage1_response_module._validate_microgrammar_inventory()
+        tampered_role_policy = dict(stage1_response_module._ROLE_ANCHOR_POLICY)
+        tampered_role_policy["over_limit_selection"] = "rightmost_grapheme_window"
+        for attribute, tampered in (
+            ("_ROLE_ANCHOR_POLICY", tampered_role_policy),
+            ("CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_SHA256", "0" * 64),
+        ):
+            with self.subTest(tampered_inventory_owner=attribute):
+                with (
+                    patch.object(stage1_response_module, attribute, tampered),
+                    self.assertRaisesRegex(
+                        CMEEStage1ContractError,
+                        "stage1_microgrammar_inventory_invalid",
+                    ),
+                ):
+                    stage1_response_module._validate_microgrammar_inventory()
 
         def recursively_immutable(value: object) -> bool:
             if type(value) is tuple:
@@ -3872,6 +4523,7 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
 
     def test_stage4_bounded_role_anchor_counter_and_connective_collision(self) -> None:
         for index in range(len(EXACT8)):
+            case_id, memo, _category, _emotion, _strength = EXACT8[index]
             _source, _plan, graph, _parent, _projection, candidate_set = (
                 _stage4_exact8_fixture(index)
             )
@@ -3879,6 +4531,13 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                 f"node:{row.node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}": row.value
                 for row in graph.nodes
             }
+            self.assertTrue(
+                all(
+                    len(row.value) <= 16
+                    for row in graph.nodes
+                    if row.grounding_kind in {"explicit", "user_stated_relation"}
+                )
+            )
             for candidate in candidate_set.candidates:
                 for unit in candidate:
                     for binding in unit.realized_semantic_bindings:
@@ -3891,7 +4550,49 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
                             binding.surface_scalar_start : binding.surface_scalar_end
                         ]
                         self.assertLessEqual(len(span), 16)
-                        self.assertIn(span, node_values[binding.semantic_ref])
+                        self.assertEqual(span, node_values[binding.semantic_ref])
+
+            compact_source = re.sub(r"\s+", "", memo).strip("、。！？!?「」『』 ")
+            admitted_values = tuple(
+                row.value
+                for row in graph.nodes
+                if row.grounding_kind in {"explicit", "user_stated_relation"}
+            )
+            if case_id == "SX-05":
+                self.assertTrue(
+                    any(
+                        value in compact_source
+                        and re.search(r"(?:られなく|れなく|できなく|動けなく)", value)
+                        for value in admitted_values
+                    ),
+                    "negative/inability source anchor was lost at the semantic boundary",
+                )
+            if case_id == "SX-08":
+                self.assertTrue(
+                    any(
+                        value in compact_source
+                        and re.search(r"(?:たら|だら|なら).+", value)
+                        for value in admitted_values
+                    ),
+                    "conditional action/change source anchor was lost at the semantic boundary",
+                )
+
+        over_limit_node = replace(graph.nodes[0], value="あ" * 17)
+        over_limit_graph = replace(
+            graph,
+            nodes=(over_limit_node, *graph.nodes[1:]),
+        )
+        over_limit_ref = (
+            f"node:{over_limit_node.node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_surface_binding_unavailable",
+        ):
+            stage1_response_module._source_bound_role_surface(
+                over_limit_ref,
+                over_limit_graph,
+            )
 
         source, grounded_plan, graph, parent = _stage2_inputs(
             _request(

@@ -27,6 +27,7 @@ if str(AI_INFERENCE) not in sys.path:
 from emlis_ai_current_input_bundle import build_emlis_current_input_bundle  # noqa: E402
 from cocolon_meaning_experience_engine import GenerationRequest, MeaningExperienceEngine  # noqa: E402
 from cocolon_meaning_experience_engine.contracts import (  # noqa: E402
+    AttachmentAdmission,
     CMEE_COMMON_GUARD_PROOF_VERSION,
     CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION,
     CMEE_TERMINAL_GENERATED_DISABLED,
@@ -38,8 +39,11 @@ from cocolon_meaning_experience_engine.contracts import (  # noqa: E402
     ExperiencePlan,
     GenerationArtifactBundle,
     GroundedMeaningGraph,
+    MeaningNode,
     OwnerClass,
+    ProviderResolution,
     RouteBDisposition,
+    VisibleAuthority,
     VisibleUnitTrace,
     VisibleUnknownUnit,
 )
@@ -95,6 +99,32 @@ EXACT8: tuple[tuple[str, str, str, str, str], ...] = (
     ),
 )
 
+STAGE1_KAREN_DERIVED_MUTATION_SET_ID = (
+    "STAGE1_KAREN_DERIVED_MUTATION_SET_V1"
+)
+STAGE1_KAREN_DERIVED_AFTER_PACKET_ID = (
+    "CMEE_STAGE1_KAREN_DERIVED_AFTER_EXACT8_20260823_V1"
+)
+STAGE1_KAREN_DERIVED_AFTER_PRIVATE_SLOT_ID = (
+    "PRIVATE_SLOT_AFTER_EXACT8_20260823_V1"
+)
+STAGE1_KAREN_DERIVED_MUTATION_SET_V1: tuple[
+    tuple[str, str, str], ...
+] = (
+    ("KDM-SE-01", "SEMANTIC_EQUIVALENCE_MUTATION", "REGISTER_INFLECTION"),
+    ("KDM-SE-02", "SEMANTIC_EQUIVALENCE_MUTATION", "LEXICAL_PARAPHRASE"),
+    ("KDM-SE-03", "SEMANTIC_EQUIVALENCE_MUTATION", "CLAUSE_ORDER"),
+    ("KDM-RC-01", "RELATION_CONTRAST_MUTATION", "TEMPORAL_ORDER"),
+    ("KDM-RC-02", "RELATION_CONTRAST_MUTATION", "COEXISTENCE_TENSION"),
+    ("KDM-RC-03", "RELATION_CONTRAST_MUTATION", "SEQUENCE_CAUSE"),
+    ("KDM-CB-01", "CLAIM_BOUNDARY_MUTATION", "NEGATION"),
+    ("KDM-CB-02", "CLAIM_BOUNDARY_MUTATION", "MODALITY"),
+    ("KDM-CB-03", "CLAIM_BOUNDARY_MUTATION", "EXPERIENCER"),
+    ("KDM-CB-04", "CLAIM_BOUNDARY_MUTATION", "MATERIAL_UNRELATED"),
+    ("KDM-SU-01", "SUBJECTIVITY_MUTATION", "SOURCE_STRENGTH"),
+    ("KDM-SU-02", "SUBJECTIVITY_MUTATION", "DISCOMFORT_PERSON_TARGET"),
+)
+
 PRODUCT_READ_AXES = (
     "PRIMARY_MEANING_RETAINED",
     "RELATION_DIRECTION_CORRECT",
@@ -112,6 +142,47 @@ PRODUCT_READ_AXES = (
 PRIVATE_OUTPUT_ROOT = Path(
     os.environ.get("CMEE_PRIVATE_OUTPUT_ROOT", "/tmp/cocolon-cmee-v1a-private")
 ).resolve()
+CHECKOUT_ROOT = AI_ROOT.parent.resolve()
+
+
+def _body_free_mutation_registry() -> dict[str, Any]:
+    expected_classes = (
+        ("SEMANTIC_EQUIVALENCE_MUTATION", 3),
+        ("RELATION_CONTRAST_MUTATION", 3),
+        ("CLAIM_BOUNDARY_MUTATION", 4),
+        ("SUBJECTIVITY_MUTATION", 2),
+    )
+    case_ids = tuple(row[0] for row in STAGE1_KAREN_DERIVED_MUTATION_SET_V1)
+    if (
+        len(STAGE1_KAREN_DERIVED_MUTATION_SET_V1) != 12
+        or len(case_ids) != len(set(case_ids))
+        or any(
+            sum(row[1] == class_name for row in STAGE1_KAREN_DERIVED_MUTATION_SET_V1)
+            != expected_count
+            for class_name, expected_count in expected_classes
+        )
+    ):
+        raise RuntimeError("stage1_mutation_registry_invalid")
+    return {
+        "set_id": STAGE1_KAREN_DERIVED_MUTATION_SET_ID,
+        "case_count": len(STAGE1_KAREN_DERIVED_MUTATION_SET_V1),
+        "body_payload_present": False,
+        "runner_executes_source_bodies": False,
+        "execution_owner": "current_and_new_tests",
+        "class_counts": {
+            class_name: expected_count
+            for class_name, expected_count in expected_classes
+        },
+        "cases": [
+            {
+                "case_id": case_id,
+                "mutation_class": mutation_class,
+                "mutation_operator": mutation_operator,
+            }
+            for case_id, mutation_class, mutation_operator
+            in STAGE1_KAREN_DERIVED_MUTATION_SET_V1
+        ],
+    }
 
 
 def _raw(case_id: str, memo: str, category: str, emotion: str, strength: str) -> dict[str, Any]:
@@ -138,6 +209,149 @@ def _valid_ref_tuple(value: object, *, allow_empty: bool = False) -> bool:
 
 def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _canonical_sha256(value: object) -> str:
+    return _sha256_text(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+
+
+def _private_packet_binding(
+    *,
+    runtime_repo_head: str,
+    design_repo_head: str,
+) -> dict[str, Any]:
+    """Bind one private materialization to both repos, fixture and runner."""
+
+    heads = (runtime_repo_head, design_repo_head)
+    if any(re.fullmatch(r"[0-9a-f]{40}", head) is None for head in heads):
+        raise ValueError("private packet repo head binding invalid")
+    fixture_identity = {
+        "fixture_order": [row[0] for row in EXACT8],
+        "fixture_and_axes_sha256": _canonical_sha256(
+            {
+                "exact8": EXACT8,
+                "product_read_axes": PRODUCT_READ_AXES,
+            }
+        ),
+    }
+    runner_identity = {
+        "repo_relative_path": str(Path(__file__).resolve().relative_to(CHECKOUT_ROOT)),
+        "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+    }
+    material = {
+        "binding_version": "cocolon.cmee.stage1.private_packet_binding.v1",
+        "packet_id": STAGE1_KAREN_DERIVED_AFTER_PACKET_ID,
+        "runtime_repo_head": runtime_repo_head,
+        "design_repo_head": design_repo_head,
+        "fixture_identity": fixture_identity,
+        "runner_identity": runner_identity,
+    }
+    return {
+        **material,
+        "packet_binding_sha256": _canonical_sha256(material),
+    }
+
+
+_STRICT_DIRECTIONAL_TRACE_RELATIONS = frozenset(
+    {
+        "temporal_before_after",
+        "shift_from_to",
+        "user_stated_cause",
+        "user_stated_result",
+        "attempt_and_block",
+        "action_supports_change",
+        "evaluation_about_event",
+        "self_evaluation_about_state",
+    }
+)
+
+
+def _route_b_dispositions_valid(graph: GroundedMeaningGraph) -> bool:
+    """Validate the exact disabled Route B row shapes used by the packet."""
+
+    nodes = {row.node_id: row for row in graph.nodes}
+    edges = {row.edge_id: row for row in graph.edges}
+    claims = {**nodes, **edges}
+    positive = {
+        RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
+        RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+    }
+    for row in graph.owner_dispositions:
+        refs = tuple(row.visible_claim_refs)
+        if not row.evidence_ids or len(row.evidence_ids) != len(set(row.evidence_ids)):
+            return False
+        if row.disposition in positive:
+            expected_fields = (
+                (
+                    ProviderResolution.MISSING_OR_INVALID,
+                    AttachmentAdmission.UNAVAILABLE,
+                    VisibleAuthority.SOURCE_EXPLICIT,
+                )
+                if row.disposition is RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
+                else (
+                    ProviderResolution.UNIQUE,
+                    AttachmentAdmission.PROVISIONAL_ONLY,
+                    VisibleAuthority.SUPPLEMENTAL_USER,
+                )
+            )
+            if (
+                (
+                    row.provider_resolution,
+                    row.attachment_admission,
+                    row.visible_authority,
+                )
+                != expected_fields
+                or not refs
+                or len(refs) != len(set(refs))
+                or row.target_unknown_ref is not None
+                or row.reason_codes
+            ):
+                return False
+            for claim_ref in refs:
+                claim = claims.get(claim_ref)
+                if (
+                    claim is None
+                    or claim.owner_id != row.owner_id
+                    or claim.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
+                    or not claim.evidence_ids
+                    or not set(claim.evidence_ids).issubset(set(row.evidence_ids))
+                ):
+                    return False
+        elif row.disposition is RouteBDisposition.UNKNOWN_PRESERVED_LIMITED:
+            target = nodes.get(row.target_unknown_ref or "")
+            if (
+                row.provider_resolution is not ProviderResolution.UNRESOLVED
+                or row.attachment_admission is not AttachmentAdmission.UNRESOLVED
+                or row.visible_authority is not VisibleAuthority.NONE
+                or row.target_unknown_ref is None
+                or refs != (row.target_unknown_ref,)
+                or type(target) is not MeaningNode
+                or target.owner_id != row.owner_id
+                or target.epistemic_state is not EpistemicState.UNKNOWN
+                or target.evidence_ids != row.evidence_ids
+                or row.reason_codes != ("ATTACHMENT_UNRESOLVED",)
+            ):
+                return False
+        elif row.disposition is RouteBDisposition.NOT_VISIBLE_UNRESOLVED:
+            if (
+                row.provider_resolution is not ProviderResolution.MISSING_OR_INVALID
+                or row.attachment_admission is not AttachmentAdmission.UNAVAILABLE
+                or row.visible_authority is not VisibleAuthority.NONE
+                or refs
+                or row.target_unknown_ref is not None
+                or row.reason_codes != ("ATTACHMENT_UNRESOLVED",)
+            ):
+                return False
+        else:
+            return False
+    return True
 
 
 def _structural_trace_valid(outcome: object) -> bool:
@@ -279,6 +493,8 @@ def _structural_trace_valid(outcome: object) -> bool:
     nodes = {row.node_id: row for row in graph.nodes}
     edges = {row.edge_id: row for row in graph.edges}
     disposition = {row.owner_id: row for row in graph.owner_dispositions}
+    if not _route_b_dispositions_valid(graph):
+        return False
     disposition_evidence_ids = {
         evidence_id
         for row in graph.owner_dispositions
@@ -288,6 +504,49 @@ def _structural_trace_valid(outcome: object) -> bool:
         RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
         RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
     }
+    for row in graph.owner_dispositions:
+        refs = tuple(row.visible_claim_refs)
+        if (
+            (row.disposition in positive_dispositions and not refs)
+            or len(refs) != len(set(refs))
+            or any(
+                (
+                    ref not in nodes
+                    or nodes[ref].owner_id != row.owner_id
+                    or (
+                        row.disposition in positive_dispositions
+                        and nodes[ref].epistemic_state
+                        is not EpistemicState.SOURCE_EXPLICIT
+                    )
+                )
+                and (
+                    ref not in edges
+                    or edges[ref].owner_id != row.owner_id
+                    or (
+                        row.disposition in positive_dispositions
+                        and edges[ref].epistemic_state
+                        is not EpistemicState.SOURCE_EXPLICIT
+                    )
+                )
+                for ref in refs
+            )
+        ):
+            return False
+    expected_visible_owner_ids = tuple(
+        row.owner_id
+        for row in graph.owner_dispositions
+        if row.disposition in positive_dispositions
+    )
+    expected_unresolved_owner_ids = tuple(
+        row.owner_id
+        for row in graph.owner_dispositions
+        if row.disposition not in positive_dispositions
+    )
+    if (
+        artifact.plan.visible_owner_ids != expected_visible_owner_ids
+        or artifact.plan.unresolved_owner_ids != expected_unresolved_owner_ids
+    ):
+        return False
     for unknown in unknown_traces:
         constrained_evidence_ids = {
             evidence_id
@@ -431,6 +690,9 @@ def _structural_trace_valid(outcome: object) -> bool:
             if (
                 node is None
                 or owner_disposition is None
+                or owner_disposition.disposition not in positive_dispositions
+                or node.owner_id not in set(artifact.plan.visible_owner_ids)
+                or node.node_id not in set(owner_disposition.visible_claim_refs)
                 or node.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
                 or node.grounding_kind not in {"explicit", "user_stated_relation"}
                 or not node.evidence_ids
@@ -443,12 +705,27 @@ def _structural_trace_valid(outcome: object) -> bool:
             if (
                 edge is None
                 or owner_disposition is None
+                or owner_disposition.disposition not in positive_dispositions
+                or edge.owner_id not in set(artifact.plan.visible_owner_ids)
+                or edge.edge_id not in set(owner_disposition.visible_claim_refs)
                 or edge.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
                 or edge.grounding_kind != "user_stated_relation"
                 or not edge.evidence_ids
             ):
                 return False
             semantic_evidence_ids.update(edge.evidence_ids)
+            if edge.relation in _STRICT_DIRECTIONAL_TRACE_RELATIONS:
+                try:
+                    source_position = trace.meaning_node_ids.index(
+                        edge.source_node_id
+                    )
+                    target_position = trace.meaning_node_ids.index(
+                        edge.target_node_id
+                    )
+                except ValueError:
+                    return False
+                if source_position >= target_position:
+                    return False
         if trace.role in {"OBSERVATION", "RECEPTION"} and set(
             trace.evidence_ids
         ) != semantic_evidence_ids:
@@ -570,8 +847,15 @@ def _structural_trace_valid(outcome: object) -> bool:
     return True
 
 
-def run() -> tuple[dict[str, Any], dict[str, Any]]:
+def run(
+    *,
+    runtime_repo_head: str | None = None,
+    design_repo_head: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    if (runtime_repo_head is None) != (design_repo_head is None):
+        raise ValueError("private packet repo head binding incomplete")
     engine = MeaningExperienceEngine()
+    mutation_registry = _body_free_mutation_registry()
     private_cases: list[dict[str, Any]] = []
     body_free_cases: list[dict[str, Any]] = []
     for case_id, memo, category, emotion, strength in EXACT8:
@@ -617,9 +901,19 @@ def run() -> tuple[dict[str, Any], dict[str, Any]]:
         else "EXACT8_GENERATION_INCOMPLETE_DISABLED"
     )
     full = {
-        "packet_id": "CMEE_V1A_I1SX_TEXT_GROUNDED_PRIVATE_PRODUCT_READ_EXACT8",
+        "packet_id": STAGE1_KAREN_DERIVED_AFTER_PACKET_ID,
+        "private_slot_id": STAGE1_KAREN_DERIVED_AFTER_PRIVATE_SLOT_ID,
         "private_body_full": True,
+        "private_packet_binding": (
+            _private_packet_binding(
+                runtime_repo_head=runtime_repo_head,
+                design_repo_head=design_repo_head,
+            )
+            if runtime_repo_head is not None and design_repo_head is not None
+            else {"binding_state": "UNMATERIALIZED"}
+        ),
         "candidate_state": candidate_state,
+        "finite_mutation_set_body_free": mutation_registry,
         "cases": private_cases,
         "candidate_evaluation_not_yet_accepted": {
             "structural_trace_valid_is_observation_only": False,
@@ -643,6 +937,7 @@ def run() -> tuple[dict[str, Any], dict[str, Any]]:
         ),
         "cases": body_free_cases,
         "candidate_state": candidate_state,
+        "finite_mutation_set_body_free": mutation_registry,
         "implementation_state": "DRAFT_WIP_DISABLED",
         "route_b_contract_complete": False,
         "candidate_ready": False,
@@ -660,20 +955,84 @@ def run() -> tuple[dict[str, Any], dict[str, Any]]:
     return body_free, full
 
 
+def _paths_overlap(left: Path, right: Path) -> bool:
+    return left == right or left in right.parents or right in left.parents
+
+
+def _private_output_target(
+    parser: argparse.ArgumentParser,
+    requested: Path,
+) -> Path:
+    """Resolve a private target that is disjoint from this checkout."""
+
+    root = PRIVATE_OUTPUT_ROOT.resolve()
+    checkout = CHECKOUT_ROOT.resolve()
+    target = requested.resolve()
+    if _paths_overlap(root, checkout):
+        parser.error("private output root is not isolated from the checkout")
+    if (
+        target == root
+        or root not in target.parents
+        or _paths_overlap(target, checkout)
+    ):
+        parser.error("private output target is not isolated")
+    return target
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--body-full-output", type=Path)
+    parser.add_argument("--runtime-repo-head")
+    parser.add_argument("--design-repo-head")
     args = parser.parse_args()
-    body_free, full = run()
+    target: Path | None = None
     if args.body_full_output is not None:
-        target = args.body_full_output.resolve()
-        if target == PRIVATE_OUTPUT_ROOT or PRIVATE_OUTPUT_ROOT not in target.parents:
-            parser.error(f"--body-full-output must be below {PRIVATE_OUTPUT_ROOT}")
-        target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        os.chmod(target.parent, 0o700)
-        with target.open("x", encoding="utf-8") as handle:
-            os.chmod(target, 0o600)
-            handle.write(json.dumps(full, ensure_ascii=False, indent=2) + "\n")
+        target = _private_output_target(parser, args.body_full_output)
+        if (
+            re.fullmatch(r"[0-9a-f]{40}", str(args.runtime_repo_head or ""))
+            is None
+            or re.fullmatch(r"[0-9a-f]{40}", str(args.design_repo_head or ""))
+            is None
+        ):
+            parser.error("private packet repo head binding invalid")
+    body_free, full = run(
+        runtime_repo_head=args.runtime_repo_head if target is not None else None,
+        design_repo_head=args.design_repo_head if target is not None else None,
+    )
+    if target is not None:
+        root = PRIVATE_OUTPUT_ROOT.resolve()
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if _paths_overlap(root, CHECKOUT_ROOT.resolve()):
+            parser.error("private output target is not isolated")
+        os.chmod(root, 0o700)
+        no_follow = getattr(os, "O_NOFOLLOW", 0)
+        directory = getattr(os, "O_DIRECTORY", 0)
+        relative_parts = target.relative_to(root).parts
+        directory_fd = os.open(root, os.O_RDONLY | directory | no_follow)
+        try:
+            for part in relative_parts[:-1]:
+                try:
+                    os.mkdir(part, mode=0o700, dir_fd=directory_fd)
+                except FileExistsError:
+                    pass
+                next_directory_fd = os.open(
+                    part,
+                    os.O_RDONLY | directory | no_follow,
+                    dir_fd=directory_fd,
+                )
+                os.close(directory_fd)
+                directory_fd = next_directory_fd
+                os.fchmod(directory_fd, 0o700)
+            output_fd = os.open(
+                relative_parts[-1],
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | no_follow,
+                0o600,
+                dir_fd=directory_fd,
+            )
+            with os.fdopen(output_fd, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps(full, ensure_ascii=False, indent=2) + "\n")
+        finally:
+            os.close(directory_fd)
     print(json.dumps(body_free, ensure_ascii=False, sort_keys=True))
     # Candidate generation gaps are reported, not hidden by fixture tuning.
     # A complete packet is not the same thing as a successful candidate run.

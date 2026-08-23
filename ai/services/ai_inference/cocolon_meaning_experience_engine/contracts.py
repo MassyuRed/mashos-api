@@ -1306,6 +1306,74 @@ def _stage1_graph_universe(
     return node_ids, edge_ids, evidence_ids
 
 
+def _stage1_positive_visible_claim_ids(
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
+) -> set[str]:
+    """Return claims with exact positive Route B visible authority."""
+
+    dispositions = tuple(grounded_graph.owner_dispositions)
+    if not dispositions:
+        # Small isolated contract fixtures predate Route B rows. Runtime
+        # projections always carry the complete owner denominator.
+        return {row.node_id for row in grounded_graph.nodes} | {
+            row.edge_id for row in grounded_graph.edges
+        }
+    owner_ids = tuple(row.meaning_owner_id for row in dispositions)
+    if (
+        len(owner_ids) != len(set(owner_ids))
+        or owner_ids
+        != (
+            *grounded_graph.required_owner_refs,
+            *grounded_graph.active_optional_owner_refs,
+        )
+    ):
+        raise CMEEStage1ContractError("stage1_owner_disposition_partition_invalid")
+    positive = {
+        RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
+        RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+    }
+    visible_owner_ids = tuple(
+        row.meaning_owner_id
+        for row in dispositions
+        if row.route_b_disposition in positive
+    )
+    unresolved_owner_ids = tuple(
+        row.meaning_owner_id
+        for row in dispositions
+        if row.route_b_disposition not in positive
+    )
+    if (
+        tuple(parent_plan.visible_owner_ids) != visible_owner_ids
+        or tuple(parent_plan.unresolved_owner_ids) != unresolved_owner_ids
+    ):
+        raise CMEEStage1ContractError("stage1_owner_disposition_partition_invalid")
+    claim_by_id = {
+        **{row.node_id: row for row in grounded_graph.nodes},
+        **{row.edge_id: row for row in grounded_graph.edges},
+    }
+    visible_claim_ids: set[str] = set()
+    for disposition in dispositions:
+        refs = tuple(disposition.visible_claim_refs)
+        if disposition.route_b_disposition in positive:
+            if not refs or len(refs) != len(set(refs)):
+                raise CMEEStage1ContractError(
+                    "stage1_candidate_visible_owner_disposition_mismatch"
+                )
+            for ref in refs:
+                claim = claim_by_id.get(ref)
+                if (
+                    claim is None
+                    or claim.owner_id != disposition.meaning_owner_id
+                    or claim.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
+                ):
+                    raise CMEEStage1ContractError(
+                        "stage1_candidate_visible_owner_disposition_mismatch"
+                    )
+            visible_claim_ids.update(refs)
+    return visible_claim_ids
+
+
 def _validate_stage1_semantic_refs(
     values: Sequence[str],
     *,
@@ -1650,33 +1718,59 @@ def _validate_stage1_relation_binding(
             ArgumentBinding(ArgumentRole.RIGHT, right),
         )
     elif candidate.candidate_kind is InterpretationKind.DIRECTION_UNDER_BURDEN:
-        source_shape_valid = (
+        source_direction_valid = (
             _STAGE1_DIRECTION_DIRECT_SHAPE in source_direct_shapes
             if source_direct_shapes
             else source_kind in _STAGE1_DIRECTION_NODE_KINDS
         )
-        target_shape_valid = (
+        target_direction_valid = (
+            _STAGE1_DIRECTION_DIRECT_SHAPE in target_direct_shapes
+            if target_direct_shapes
+            else target_kind in _STAGE1_DIRECTION_NODE_KINDS
+        )
+        source_burden_valid = (
+            _STAGE1_BURDEN_DIRECT_SHAPE in source_direct_shapes
+            if source_direct_shapes
+            else source_kind in _STAGE1_BURDEN_NODE_KINDS
+        )
+        target_burden_valid = (
             _STAGE1_BURDEN_DIRECT_SHAPE in target_direct_shapes
             if target_direct_shapes
             else target_kind in _STAGE1_BURDEN_NODE_KINDS
         )
-        if (
-            source_kind not in _STAGE1_DIRECTION_NODE_KINDS
-            or target_kind not in _STAGE1_BURDEN_NODE_KINDS
-            or not source_shape_valid
-            or not target_shape_valid
+        source_is_direction = (
+            source_kind in _STAGE1_DIRECTION_NODE_KINDS
+            and source_direction_valid
+        )
+        target_is_direction = (
+            target_kind in _STAGE1_DIRECTION_NODE_KINDS
+            and target_direction_valid
+        )
+        source_is_burden = (
+            source_kind in _STAGE1_BURDEN_NODE_KINDS
+            and source_burden_valid
+        )
+        target_is_burden = (
+            target_kind in _STAGE1_BURDEN_NODE_KINDS
+            and target_burden_valid
+        )
+        if not (
+            (source_is_direction and target_is_burden)
+            or (source_is_burden and target_is_direction)
         ):
             raise CMEEStage1ContractError(
                 "stage1_candidate_relation_binding_invalid"
             )
+        direction_ref = source_ref if source_is_direction else target_ref
+        burden_ref = source_ref if source_is_burden else target_ref
         expected_relation = (
             {"wish_and_constraint"}
             if candidate.relation_operator is RelationOperator.COEXISTS_WITH
             else {"preserves_despite", "attempt_and_block"}
         )
         expected_bindings = (
-            ArgumentBinding(ArgumentRole.LEFT, source_ref),
-            ArgumentBinding(ArgumentRole.RIGHT, target_ref),
+            ArgumentBinding(ArgumentRole.LEFT, direction_ref),
+            ArgumentBinding(ArgumentRole.RIGHT, burden_ref),
         )
     elif candidate.candidate_kind is InterpretationKind.ACTION_THEN_CHANGE_ONCE:
         source_shape_valid = (
@@ -2484,6 +2578,10 @@ def validate_stage1_projection(
     node_ids, edge_ids, evidence_ids = _stage1_graph_universe(
         projection, grounded_graph
     )
+    positive_visible_claim_ids = _stage1_positive_visible_claim_ids(
+        grounded_graph,
+        parent_plan,
+    )
     node_by_id = {row.node_id: row for row in grounded_graph.nodes}
     edge_by_id = {row.edge_id: row for row in grounded_graph.edges}
     for ref in (
@@ -2702,6 +2800,18 @@ def validate_stage1_projection(
         _validate_stage1_semantic_refs(
             row.relation_basis_refs, node_ids=set(), edge_ids=edge_ids
         )
+        referenced_claim_ids = {
+            _stage1_ref_parts(
+                ref,
+                expected_types=("node", "edge"),
+                expected_version=CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
+            )[1]
+            for ref in (*row.semantic_refs, *row.relation_basis_refs)
+        }
+        if not referenced_claim_ids.issubset(positive_visible_claim_ids):
+            raise CMEEStage1ContractError(
+                "stage1_candidate_visible_owner_disposition_mismatch"
+            )
         if any(
             binding.semantic_ref not in set(row.semantic_refs)
             for binding in row.argument_bindings

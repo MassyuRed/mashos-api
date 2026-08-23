@@ -71,7 +71,11 @@ from .contracts import (
     validate_stage1_trace_spine,
     validate_stage1_projection_artifact_ref,
 )
-from .emlis_stage1_response import compile_stage1_response
+from .emlis_stage1_response import (
+    CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE,
+    compile_stage1_response,
+    stage1_required_projection_nucleus_ids,
+)
 from .source_kernel import (
     AdmittedTextSource,
     build_source_owner_universe,
@@ -408,6 +412,20 @@ NEGATED_OR_RESOLVED_BURDEN_WINDOW_RE = re.compile(
     r"を感じずに済んだ|治った|おさまった|感じていない)|"
     r"疲れて(?:(?:い)?ない|いません))"
 )
+EXPLICIT_WHOLE_STATE_NEGATION_RE = re.compile(
+    r"(?:(?:不安|心配|疲れ|つらさ|苦しさ|しんどさ|悲しさ|怒り|怖さ|"
+    r"限界|痛み)[^。！？!?]{0,20}"
+    r"(?:ではな(?:い|かった)|じゃな(?:い|かった)|"
+    r"(?:は|が|も)な(?:い|かった)|"
+    r"してい(?:ない|なかった|ません(?:でした)?)|"
+    r"感じてい(?:ない|なかった|ません(?:でした)?)|"
+    r"てい(?:ない|なかった|ません(?:でした)?)|"
+    r"ではありません(?:でした)?|ありません(?:でした)?)|"
+    r"(?:つら|苦し|しんど|悲し|怖|痛)く(?:は|も)?"
+    r"(?:ない|なかった|ありません(?:でした)?)|"
+    r"(?:疲れ|怒っ|心配し)て(?:い(?:ない|なかった|ません(?:でした)?)|"
+    r"ない|なかった|ません(?:でした)?))$"
+)
 RESOLVED_DESIRE_RE = re.compile(
     r"[ぁ-んァ-ン一-龥ー]{1,24}たい(?:気持ち|願い)"
     r"(?:は|が)?(?:消えた|なくなった|薄れた|解消した|皆無(?:だ|です)|"
@@ -515,6 +533,11 @@ PAST_STATE_OR_DESIRE_MORPHOLOGY_RE = re.compile(
     r"[^。！？!?]{1,32}たい(?:気持ち|願い)(?:だった|でした|があった|がありました))"
 )
 CMEE_SOURCE_ANCHOR_LIMIT = 10
+CMEE_FROZEN_ROLE_MAX = int(
+    dict(dict(CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE)["role_anchor_policy"])[
+        "max_graphemes"
+    ]
+)
 CMEE_RECEPTION_MATERIAL_MODE = "limited_grounding"
 CMEE_POSITIVE_RECEPTION_ACTS = frozenset(
     {
@@ -1027,6 +1050,432 @@ def _owner_for_relation(source: AdmittedTextSource, relation: Any) -> str:
     return owners[0]
 
 
+def _cmee_tentative_state_core(text: str) -> str:
+    """Remove only the typed tentative-state shell from a source role."""
+
+    match = re.fullmatch(r"(.+?)感じがある", str(text or ""))
+    return match.group(1) if match else ""
+
+
+def _cmee_bounded_source_burden_role(text: str) -> str:
+    """Return one complete, exact source burden predicate when available."""
+
+    value = re.sub(r"\s+", "", str(text or "")).strip(
+        "、。！？!?「」『』 "
+    )
+    matches = tuple(
+        match.group(0)
+        for match in re.finditer(
+            r"(?:[ぁ-んァ-ン一-龥ー]{1,16}(?:られなくて|れなくて|"
+            r"できなくて|なくて)(?:疲れた|疲れました|つらい|苦しい|"
+            r"しんどい)|何も手につかない|手につかない|"
+            r"何もしたくない|限界が近い|動けない|できない|"
+            r"疲れている|疲れています|疲れた|疲れました|"
+            r"つらい|苦しい|しんどい|だるい|重い|不安|心配|"
+            r"迷惑(?:かもしれない)?|痛い)",
+            value,
+        )
+    )
+    return matches[-1] if matches else ""
+
+
+def _cmee_bounded_source_direction_role(text: str) -> str:
+    """Drop only a source object/topic prefix from one complete desire role."""
+
+    desire = _cmee_desire_phrase(text)
+    if not desire:
+        return ""
+    if len(desire) <= CMEE_FROZEN_ROLE_MAX:
+        bounded = desire
+    else:
+        bounded = ""
+    contextual = re.fullmatch(
+        r".+?(?:を|に|へ|では|には|なら)(?P<predicate>"
+        r"[ぁ-んァ-ン一-龥ー]{1,12}たい)",
+        desire,
+    )
+    if contextual:
+        predicate = str(contextual.group("predicate") or "")
+        if predicate and len(predicate) <= CMEE_FROZEN_ROLE_MAX:
+            bounded = predicate
+    return bounded
+
+
+def _cmee_exact_contrast_parts(text: str) -> tuple[str, str, str] | None:
+    """Return both exact source sides and their exact admitted connector."""
+
+    value = re.sub(r"\s+", "", str(text or "")).strip(
+        "、。！？!?「」『』 "
+    )
+    pair = _cmee_split_contrast(value)
+    if pair is None:
+        return None
+    left, right = pair
+    if not value.startswith(left) or not value.endswith(right):
+        return None
+    right_start = len(value) - len(right)
+    separator = value[len(left) : right_start]
+    if not left or not separator or not right:
+        return None
+    return left, separator, right
+
+
+def _cmee_frozen_lexical_role_surface(
+    nucleus: Any,
+    source_text: str,
+) -> str:
+    """Freeze one finite source-grounded semantic-role surface.
+
+    The only transformations are driven by canonical frame roles.  They
+    preserve the source chunks and admitted connector, or perform the bounded
+    Japanese topic-to-object inflection already used by the legacy semantic
+    desire helper.  No request, fixture, structured optional owner, or output
+    text participates in the decision.
+    """
+
+    value = re.sub(r"\s+", "", str(source_text or "")).strip(
+        "、。！？!?「」『』 "
+    )
+    if not value:
+        raise CMEEVerticalError("lexical_role_surface_missing")
+    frame = nucleus.semantic_frame
+    attributes = frozenset(frame.attribute_codes)
+    contrast = _cmee_exact_contrast_parts(value)
+
+    # Explicitly negated desire cannot be promoted to a retained direction.
+    if (
+        nucleus.kind == "wish"
+        or frame.modality in {"wish", "intention"}
+        or "semantic_role:retained_intention" in attributes
+    ) and NEGATED_DESIRE_RE.search(value):
+        raise CMEEVerticalError("lexical_role_negated_desire_conflict")
+
+    # The finite Stage 1 operator matrix has no general negated-state
+    # realization.  Refusal is representable by its registered modality
+    # wrapper; every other explicit negation fails closed before a positive
+    # burden/state predicate could reverse it.
+    if (
+        "operator:negation" in attributes
+        and EXPLICIT_WHOLE_STATE_NEGATION_RE.search(value)
+        and not (
+            frame.modality == "refusal"
+            and "operator:refusal" in attributes
+        )
+    ):
+        raise CMEEVerticalError("lexical_role_negation_unrepresentable")
+
+    # Discourse markers are owned by the admitted relation (or remain an
+    # unclaimed source-order marker).  They are not part of either endpoint's
+    # lexical role, so remove only a registered leading marker and retain the
+    # complete endpoint predicate.
+    if "operator:cause" in attributes:
+        candidate = re.sub(
+            r"^(?:そのため|だから|なので|その結果)[、,]?",
+            "",
+            value,
+            count=1,
+        )
+        if candidate and candidate != value:
+            return candidate
+    elif nucleus.kind in {"state", "reaction"}:
+        candidate = re.sub(
+            r"^(?:そのあと|その後)[、,]?",
+            "",
+            value,
+            count=1,
+        )
+        if candidate and candidate != value:
+            return candidate
+
+    # For a contrast-side burden, a non-person source topic is context rather
+    # than the lexical predicate.  Retaining the unique contiguous predicate
+    # avoids cross-binding when both endpoints repeat the same topic phrase.
+    if (
+        nucleus.kind in {"state", "reaction"}
+        and "semantic_role:contrast_before" in attributes
+    ):
+        topic_match = re.fullmatch(
+            rf"(?P<topic>{GENERIC_EXPERIENCER_SUBJECT_PATTERN})(?:が|は)"
+            r"(?P<predicate>.+)",
+            value,
+        )
+        if topic_match:
+            topic = str(topic_match.group("topic") or "")
+            predicate = str(topic_match.group("predicate") or "")
+            safe_topic = topic in SAFE_NONPERSON_TOPIC_EXACT or any(
+                pattern.fullmatch(topic)
+                for pattern in SAFE_NONPERSON_TOPIC_PATTERNS
+            )
+            if (
+                safe_topic
+                and predicate
+                and value.count(predicate) == 1
+                and len(predicate) <= CMEE_FROZEN_ROLE_MAX
+                and _cmee_has_current_burden(predicate)
+            ):
+                return predicate
+
+    # A typed past/present shift already realizes its time scope through the
+    # frozen microgrammar wrapper.  Remove only the matching leading temporal
+    # topic from its role surface; this avoids replaying the same full source
+    # clause in both the required temporal relation and its bounded direct
+    # contribution.  Contrast/change clauses keep their complete source role.
+    if (
+        nucleus.kind in {"state", "reaction"}
+        and "operator:shift" in attributes
+        and "operator:contrast" not in attributes
+    ):
+        candidate = value
+        if frame.time_scope == "past":
+            candidate = re.sub(
+                rf"^(?:{PAST_SCOPE_MARKER_PATTERN})(?:は|も|に)?",
+                "",
+                value,
+                count=1,
+            )
+        elif frame.time_scope == "present":
+            candidate = re.sub(
+                r"^(?:今日|今)(?:は|も|に)?",
+                "",
+                value,
+                count=1,
+            )
+        if (
+            candidate
+            and candidate != value
+            and len(candidate) <= CMEE_FROZEN_ROLE_MAX
+        ):
+            return candidate
+
+    # A direct PRESENT_CHANGE role keeps the source-stated conditional action
+    # and result together.  A leading typed temporal context may be removed
+    # only when the remaining complete ACTION -> CHANGE clause is a contiguous
+    # source substring within the registered bound.
+    if "operator:positive_change" in attributes:
+        change_parts = _cmee_change_parts(value)
+        if change_parts and contrast is not None:
+            before, _action, result = change_parts
+            left, separator, right = contrast
+            before_result = before + separator + result
+            if (
+                left.endswith(before)
+                and not _cmee_has_current_burden(before)
+                and len(before_result) <= CMEE_FROZEN_ROLE_MAX
+            ):
+                return before_result
+            candidate = right
+            if len(candidate) > CMEE_FROZEN_ROLE_MAX:
+                temporal_context = re.fullmatch(
+                    r".+?てから(?P<transition>.+?(?:たら|だら|なら).+)",
+                    candidate,
+                )
+                if temporal_context:
+                    candidate = str(temporal_context.group("transition") or "")
+            if (
+                candidate
+                and len(candidate) <= CMEE_FROZEN_ROLE_MAX
+                and re.fullmatch(r".+?(?:たら|だら|なら).+", candidate)
+            ):
+                return candidate
+
+    # A bounded counterposition targets the source-stated limiting conclusion,
+    # not a right-edge text fragment.  When the same nucleus also contains its
+    # asserted reason, retain the complete conclusion after the exact source
+    # causal connector.
+    if (
+        nucleus.kind == "self_evaluation"
+        and "operator:self_evaluation" in attributes
+        and len(value) > CMEE_FROZEN_ROLE_MAX
+    ):
+        conclusion_match = re.fullmatch(
+            r".+?(?:から|ので)[、,]?(?P<conclusion>.+)",
+            value,
+        )
+        if conclusion_match:
+            candidate = str(conclusion_match.group("conclusion") or "")
+            if candidate and len(candidate) <= CMEE_FROZEN_ROLE_MAX:
+                return candidate
+
+    # A long contrast role may bind one retained direction and one burden.
+    # Keep their exact source order and connector; if the full burden clause
+    # exceeds the bound, use only a complete source predicate rather than a
+    # grapheme window or a newly inflected summary.
+    if contrast is not None and len(value) > CMEE_FROZEN_ROLE_MAX:
+        left, separator, right = contrast
+        left_desire = _cmee_semantic_desire(nucleus, left)
+        right_desire = _cmee_semantic_desire(nucleus, right)
+        if bool(left_desire) != bool(right_desire):
+            direction = left_desire or right_desire
+            burden = right if left_desire else left
+            candidate = (
+                direction + separator + burden
+                if left_desire
+                else burden + separator + direction
+            )
+            if len(candidate) <= CMEE_FROZEN_ROLE_MAX:
+                return candidate
+            burden_role = _cmee_bounded_source_burden_role(burden)
+            candidate = (
+                direction + separator + burden_role
+                if left_desire
+                else burden_role + separator + direction
+            )
+            if (
+                burden_role
+                and candidate
+                and len(candidate) <= CMEE_FROZEN_ROLE_MAX
+            ):
+                return candidate
+            direction_role = _cmee_bounded_source_direction_role(direction)
+            candidate = (
+                direction_role + separator + burden_role
+                if left_desire
+                else burden_role + separator + direction_role
+            )
+            if (
+                direction_role
+                and burden_role
+                and len(candidate) <= CMEE_FROZEN_ROLE_MAX
+            ):
+                return candidate
+
+    # A source-stated retained direction with a residue is a bounded nominal
+    # role when its complete predicate would exceed the surface limit.  Every
+    # retained chunk is contiguous source text; the terminal residue predicate
+    # is carried by the typed PRESENT_RESIDUE/shift frame rather than cut.
+    if (
+        nucleus.kind == "wish"
+        and "semantic_role:retained_intention" in attributes
+        and len(value) > CMEE_FROZEN_ROLE_MAX
+    ):
+        residue_match = re.search(
+            r"(?P<direction>[ぁ-んァ-ン一-龥ー]{1,24}たい)"
+            r"(?P<wrapper>気持ち|願い)?(?P<separator>と|や)"
+            r"(?P<residue>[^、。！？!?]{1,16}?)(?:が|は)"
+            r"(?:残っている|残っています)$",
+            value,
+        )
+        if residue_match:
+            candidate = "".join(
+                str(residue_match.group(name) or "")
+                for name in ("direction", "wrapper", "separator", "residue")
+            )
+            if len(candidate) <= CMEE_FROZEN_ROLE_MAX:
+                return candidate
+
+        help_match = re.fullmatch(
+            r"(?P<burden>.+?)(?P<separator>で[、,]?)"
+            r"(?P<question>どうしたら(?:いい|よい)のか)"
+            r"(?:考えて(?:いる|います))?",
+            value,
+        )
+        if help_match:
+            burden_role = _cmee_bounded_source_burden_role(
+                str(help_match.group("burden") or "")
+            )
+            candidate = (
+                burden_role
+                + str(help_match.group("separator") or "")
+                + str(help_match.group("question") or "")
+            )
+            if (
+                burden_role
+                and len(candidate) <= CMEE_FROZEN_ROLE_MAX
+            ):
+                return candidate
+
+    # Embedded help seeking: retain every source chunk, but place the limiting
+    # clause before the retained intention so the fixed wish slot stays
+    # grammatical and neither side is lost.
+    if (
+        nucleus.kind == "wish"
+        and {
+            "operator:help_seeking",
+            "semantic_role:retained_intention",
+        }.issubset(attributes)
+        and contrast is not None
+    ):
+        left, separator, right = contrast
+        left_desire = _cmee_semantic_desire(nucleus, left)
+        right_desire = _cmee_semantic_desire(nucleus, right)
+        if bool(left_desire) != bool(right_desire):
+            candidate = right + separator + left if left_desire else value
+            if len(candidate) <= CMEE_FROZEN_ROLE_MAX:
+                return candidate
+
+    # A complete simple intention can use its finite sentence-object
+    # inflection.  Compound wishes are deliberately left untouched.
+    if (
+        nucleus.kind == "wish"
+        and "semantic_role:retained_intention" in attributes
+    ):
+        desire = _cmee_semantic_desire(nucleus, value)
+        reported = GENERIC_EXPERIENCER_REPORTED_DESIRE_RE.search(value)
+        first_person_report = bool(
+            reported is not None
+            and any(
+                str(reported.group("subject") or "").endswith(subject)
+                for subject in FIRST_PERSON_SUBJECTS
+            )
+        )
+        if desire and (desire == value or first_person_report):
+            candidate = _cmee_sentence_desire_phrase(desire)
+            if candidate and len(candidate) <= CMEE_FROZEN_ROLE_MAX:
+                return candidate
+
+    # Constraint: remove only the source's tentative-state shell.  The desire,
+    # exact connector, and complete burden core remain present; the typed
+    # feeling wrapper in Stage 1 carries the removed epistemic shell.
+    if (
+        nucleus.kind == "constraint"
+        and {
+            "detected_type:limit_signal",
+            "operator:constraint",
+        }.issubset(attributes)
+        and contrast is not None
+    ):
+        left, separator, right = contrast
+        left_desire = _cmee_semantic_desire(nucleus, left)
+        right_desire = _cmee_semantic_desire(nucleus, right)
+        if bool(left_desire) != bool(right_desire):
+            burden = right if left_desire else left
+            core = _cmee_tentative_state_core(burden)
+            if core and _cmee_has_current_burden(core):
+                candidate = (
+                    left + separator + core
+                    if left_desire
+                    else core + separator + right
+                )
+                if len(candidate) <= CMEE_FROZEN_ROLE_MAX:
+                    return candidate
+
+    # A long standalone burden can retain one complete punctuation-delimited
+    # source clause or registered burden predicate.  Relation-bearing roles
+    # are excluded because collapsing either endpoint would change meaning.
+    if (
+        nucleus.kind in {"state", "reaction", "constraint"}
+        and len(value) > CMEE_FROZEN_ROLE_MAX
+        and "operator:contrast" not in attributes
+        and "operator:positive_change" not in attributes
+    ):
+        complete_clauses = tuple(
+            clause
+            for clause in re.split(r"[、,]", value)
+            if clause
+            and len(clause) <= CMEE_FROZEN_ROLE_MAX
+            and _cmee_has_current_burden(clause)
+        )
+        candidate = (
+            complete_clauses[-1]
+            if complete_clauses
+            else _cmee_bounded_source_burden_role(value)
+        )
+        if candidate and len(candidate) <= CMEE_FROZEN_ROLE_MAX:
+            return candidate
+
+    return value
+
+
 def _build_graph(
     source: AdmittedTextSource,
     grounded_plan: Any,
@@ -1078,11 +1527,12 @@ def _build_graph(
             raise CMEEVerticalError("nucleus_evidence_binding_mismatch")
         node_id = _stable_id("mn", source.envelope.envelope_id, nucleus.nucleus_id)
         node_id_by_source[nucleus.nucleus_id] = node_id
-        value = "\n".join(
+        raw_value = "\n".join(
             str(getattr(span, "raw_text", "") or "")
             for span in source.evidence_spans
             if str(getattr(span, "span_id", "") or "") in set(nucleus.source_span_ids)
         )
+        value = _cmee_frozen_lexical_role_surface(nucleus, raw_value)
         nodes.append(
             MeaningNode(
                 node_id=node_id,
@@ -1094,8 +1544,12 @@ def _build_graph(
                 evidence_ids=evidence,
             )
         )
-        if is_visible:
-            visible_claims_by_owner.setdefault(owner, []).append(node_id)
+        # Every admitted direct source nucleus is eligible for the bounded
+        # request-local semantic pool.  Record that authority explicitly on
+        # its Route B owner instead of letting Stage 1 read a claim from a
+        # NOT_VISIBLE_UNRESOLVED owner.  Non-realized strength and unknown
+        # attachment nodes remain governed by their existing dispositions.
+        visible_claims_by_owner.setdefault(owner, []).append(node_id)
 
     edges: list[MeaningEdge] = []
     for relation in grounded_plan.relations:
@@ -1299,6 +1753,7 @@ def _planned_visible_source_ids(grounded_plan: Any) -> tuple[tuple[str, ...], tu
         for row_id in required_relations
     ):
         raise CMEEVerticalError("required_relation_visible_authority_unavailable")
+
     reception_targets = tuple(
         row_id
         for row_id in grounded_plan.response_plan.human_follow_target_ids
@@ -1407,21 +1862,19 @@ def _build_experience_plan(
         required_relation_ids,
         reception_target_ids,
     )
-    required_observation_owners = _ordered(
-        (
-            *(
-                _owner_for_nucleus(source, nucleus_index[row_id])
-                for row_id in required_nucleus_ids
-            ),
-            *(
-                _owner_for_relation(source, relation_index[row_id])
-                for row_id in required_relation_ids
-            ),
-        )
-    )
     reception_target_owners = _ordered(
         _owner_for_nucleus(source, nucleus_index[row_id])
         for row_id in reception_target_ids
+    )
+    required_owner_set = {
+        *graph.required_owner_refs,
+        *reception_target_owners,
+    }
+    required_observation_owners = tuple(
+        row.owner_id
+        for row in graph.owner_dispositions
+        if row.owner_id in required_owner_set
+        and row.disposition in positive_dispositions
     )
     if not set(required_observation_owners + reception_target_owners).issubset(set(visible)):
         raise CMEEVerticalError("experience_plan_visible_owner_mismatch")
@@ -1766,6 +2219,43 @@ def _cmee_assert_current_first_person_scope_supported(
     """Fail closed when Stage 1 cannot safely bind experiencer or time scope."""
 
     value = re.sub(r"\s+", "", str(text or ""))
+    explicit_whole_state_negation = EXPLICIT_WHOLE_STATE_NEGATION_RE.search(
+        value.strip("、。！？!?「」『』 ")
+    )
+    # Preserve the existing scope-classifier precedence for a negation that
+    # is itself inside an uncertainty, deontic, nonfactive, or historical
+    # construction.  The finite standalone noun/adjective/verb morphology
+    # family below is otherwise rejected with its role-specific reason before
+    # a positive state can be compiled.
+    legacy_scope_preempts_negation = bool(
+        any(
+            pattern.search(value)
+            for pattern in (
+                UNKNOWN_OR_INTERROGATIVE_STATE_OR_DESIRE_RE,
+                DEONTIC_STATE_OR_DESIRE_RE,
+                NONFACTIVE_STATE_OR_DESIRE_RE,
+                NOMINALIZED_PAST_STATE_RE,
+            )
+        )
+        or re.search(
+            r"(?:少しも|全く|まったく|全然|一切)"
+            r"(?:ない|なかった|ありません(?:でした)?)",
+            value,
+        )
+        or re.search(
+            r"(?:不安|心配|疲れ|つらさ|苦しさ|しんどさ|悲しさ|"
+            r"怒り|怖さ|限界|痛み)(?:は|が|を)?感じてい"
+            r"(?:ない|なかった|ません(?:でした)?)",
+            value,
+        )
+        or re.search(
+            r"(?:たら|だら|なら)[^。！？!?]{1,32}か(?:どうか)?"
+            r"(?:覚えていない|分からない|わからない)",
+            value,
+        )
+    )
+    if explicit_whole_state_negation and not legacy_scope_preempts_negation:
+        raise CMEEVerticalError("lexical_role_negation_unrepresentable")
     for pattern in (
         GENERIC_EXPERIENCER_APPEARANCE_RE,
         GENERIC_EXPERIENCER_REPORTED_DESIRE_RE,
@@ -2009,7 +2499,7 @@ def _cmee_change_parts(text: str) -> tuple[str, str, str] | None:
     if not contrast:
         return None
     before, after = contrast
-    transition = re.match(r"^(.+?)(?:たら|なら)(.+)$", after)
+    transition = re.match(r"^(.+?)(?:たら|だら|なら)(.+)$", after)
     if not transition:
         return None
     action_stem = transition.group(1).strip("、。 ")
@@ -2392,10 +2882,11 @@ def _cmee_stage1_reception_text(
             if contrast:
                 left, right = contrast
                 state_text = right if _cmee_desire_phrase(left) else left
-                tentative_state = re.sub(
-                    r"(.+?)感じがある$",
-                    r"\1と感じていること",
-                    state_text,
+                state_core = _cmee_tentative_state_core(state_text)
+                tentative_state = (
+                    f"{state_core}と感じていること"
+                    if state_core
+                    else state_text
                 )
             wish_prefix = f"{sentence_desire}という気持ちと、" if sentence_desire else ""
             if not wish_prefix:
@@ -3690,11 +4181,17 @@ def _realize_cmee_experience(
     nucleus_index = {row.nucleus_id: row for row in grounded_plan.nuclei}
     relation_index = {row.relation_id: row for row in grounded_plan.relations}
     required_owner_set = set(plan.required_observation_owner_ids)
-    required_nucleus_ids = tuple(
-        grounded_plan.coverage_requirements.required_nucleus_ids
-    )
-    required_relation_ids = tuple(
-        grounded_plan.coverage_requirements.required_relation_ids
+    try:
+        required_nucleus_ids = stage1_required_projection_nucleus_ids(
+            source=source,
+            grounded_graph=graph,
+            parent_plan=plan,
+            grounded_plan=grounded_plan,
+        )
+    except CMEEStage1ContractError:
+        raise CMEEVerticalError("stage1_projection_unavailable") from None
+    _planned_nucleus_ids, required_relation_ids, _planned_reception_ids = (
+        _planned_visible_source_ids(grounded_plan)
     )
     if any(
         _owner_for_nucleus(source, nucleus_index[row_id])
@@ -4338,6 +4835,41 @@ def validate_positive_realization_trace(
         RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
         RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
     }
+    disposition_claims = {
+        **{row.node_id: row for row in graph.nodes},
+        **{row.edge_id: row for row in graph.edges},
+    }
+    if any(
+        (row.disposition in positive and not row.visible_claim_refs)
+        or len(row.visible_claim_refs) != len(set(row.visible_claim_refs))
+        or any(
+            ref not in disposition_claims
+            or disposition_claims[ref].owner_id != row.owner_id
+            or (
+                row.disposition in positive
+                and disposition_claims[ref].epistemic_state
+                is not EpistemicState.SOURCE_EXPLICIT
+            )
+            for ref in row.visible_claim_refs
+        )
+        for row in graph.owner_dispositions
+    ):
+        raise CMEEVerticalError("route_b_visible_claim_authority_mismatch")
+    expected_visible_owners = tuple(
+        row.owner_id
+        for row in graph.owner_dispositions
+        if row.disposition in positive
+    )
+    expected_unresolved_owners = tuple(
+        row.owner_id
+        for row in graph.owner_dispositions
+        if row.disposition not in positive
+    )
+    if (
+        artifact.plan.visible_owner_ids != expected_visible_owners
+        or artifact.plan.unresolved_owner_ids != expected_unresolved_owners
+    ):
+        raise CMEEVerticalError("plan_owner_disposition_partition_mismatch")
     unresolved_required = tuple(
         row
         for row in graph.owner_dispositions
@@ -4576,6 +5108,9 @@ def validate_positive_realization_trace(
                 if (
                     node is None
                     or row is None
+                    or row.disposition not in positive
+                    or node.owner_id not in set(artifact.plan.visible_owner_ids)
+                    or node.node_id not in set(row.visible_claim_refs)
                     or node.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
                     or not node.evidence_ids
                 ):
@@ -4586,6 +5121,9 @@ def validate_positive_realization_trace(
                 if (
                     edge is None
                     or row is None
+                    or row.disposition not in positive
+                    or edge.owner_id not in set(artifact.plan.visible_owner_ids)
+                    or edge.edge_id not in set(row.visible_claim_refs)
                     or edge.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
                     or not edge.evidence_ids
                 ):

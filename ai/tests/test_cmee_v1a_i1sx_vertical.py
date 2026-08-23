@@ -14,6 +14,7 @@ from emlis_ai_grounded_observation_plan import build_grounded_observation_plan
 from cocolon_meaning_experience_engine import GenerationRequest, MeaningExperienceEngine
 import cocolon_meaning_experience_engine.emlis_v1a as emlis_v1a_module
 import cocolon_meaning_experience_engine.contracts as cmee_contracts_module
+import cocolon_meaning_experience_engine.emlis_stage1_response as stage1_response_module
 from cocolon_meaning_experience_engine.contracts import (
     AttachmentAdmission,
     CMEE_COMMON_GUARD_PROOF_VERSION,
@@ -41,6 +42,8 @@ from cocolon_meaning_experience_engine.emlis_v1a import (
 from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
 from tools.cmee_v1a_i1sx_candidate_run import (
     EXACT8,
+    STAGE1_KAREN_DERIVED_MUTATION_SET_V1,
+    _body_free_mutation_registry,
     _structural_trace_valid,
     run as run_exact8_candidate,
 )
@@ -267,6 +270,562 @@ def _build_with_composer_candidate_mutation(mutator, request=None):
         side_effect=mutate_result,
     ):
         return build_text_grounded_limited_artifact(source)
+
+
+_STEP6_MUTATION_CLASS_COUNTS = {
+    "SEMANTIC_EQUIVALENCE_MUTATION": 3,
+    "RELATION_CONTRAST_MUTATION": 3,
+    "CLAIM_BOUNDARY_MUTATION": 4,
+    "SUBJECTIVITY_MUTATION": 2,
+}
+
+_STEP6_WHOLE_STATE_NEGATION_VARIANTS = (
+    ("noun", "plain", "none", "不安ではない。"),
+    ("noun", "past", "none", "不安ではなかった。"),
+    ("noun", "polite", "none", "不安ではありません。"),
+    ("noun", "polite-past", "none", "不安ではありませんでした。"),
+    ("noun", "plain", "も", "疲れもない。"),
+    ("noun", "past", "も", "疲れもなかった。"),
+    ("noun", "polite", "も", "疲れもありません。"),
+    ("noun", "polite-past", "も", "疲れもありませんでした。"),
+    ("adjective", "plain", "は", "つらくはない。"),
+    ("adjective", "past", "は", "つらくはなかった。"),
+    ("adjective", "polite", "は", "つらくはありません。"),
+    ("adjective", "polite-past", "は", "つらくはありませんでした。"),
+    ("verb", "plain", "none", "疲れていない。"),
+    ("verb", "past", "none", "疲れていなかった。"),
+    ("verb", "polite", "none", "疲れていません。"),
+    ("verb", "polite-past", "none", "疲れていませんでした。"),
+)
+
+
+def _step6_mutation_requests(operator: str):
+    """Return the exact bounded request pair for one public mutation opcode.
+
+    Source bodies live only in this test-owned generator.  The public runner
+    registry remains an ASCII identity/class/opcode table and never invokes
+    this function.
+    """
+
+    request_pairs = {
+        "REGISTER_INFLECTION": (
+            {"memo": "今日は疲れている。"},
+            {"memo": "今日は疲れています。"},
+        ),
+        "LEXICAL_PARAPHRASE": (
+            {"memo": "体がだるい。"},
+            {"memo": "体が重く感じる。"},
+        ),
+        "CLAUSE_ORDER": (
+            {"memo": "体がだるい。少しつらい。"},
+            {"memo": "少しつらい。体がだるい。"},
+        ),
+        "TEMPORAL_ORDER": (
+            {
+                "memo": "前は動いた。今は不安が残っている。",
+                "category": "生活",
+            },
+            {
+                "memo": "今は不安が残っている。前は動いた。",
+                "category": "生活",
+            },
+        ),
+        "COEXISTENCE_TENSION": (
+            {
+                "memo": "疲れている。同時に。歩きたい。",
+                "category": "生活",
+            },
+            {
+                "memo": "疲れている。でも。歩きたい。",
+                "category": "生活",
+            },
+        ),
+        "SEQUENCE_CAUSE": (
+            {
+                "memo": "記録を書いた。そのあと、不安が残っている。",
+                "category": "生活",
+            },
+            {
+                "memo": "記録を書いた。そのため、不安が残っている。",
+                "category": "生活",
+            },
+        ),
+        "NEGATION": (
+            {"memo": "散歩したい。頼まれて歩いた。"},
+            {"memo": "散歩したいわけではなく、頼まれたから歩いた。"},
+        ),
+        "MODALITY": (
+            {"memo": "疲れている。"},
+            {"memo": "疲れているかもしれない。"},
+        ),
+        "EXPERIENCER": (
+            {"memo": "私は疲れている。"},
+            {"memo": "友達は疲れている。"},
+        ),
+        "MATERIAL_UNRELATED": (
+            {"memo": "体がだるい。", "category": "生活"},
+            {"memo": "体がだるい。記録を書いた。", "category": "生活"},
+        ),
+        "SOURCE_STRENGTH": (
+            {
+                "memo": "今日は仕事で疲れたけど、帰ってから少し散歩したら落ち着いた。",
+                "category": "生活",
+                "emotion": "平穏",
+                "strength": "weak",
+            },
+            {
+                "memo": "今日は仕事で疲れたけど、帰ってから少し散歩したら落ち着いた。",
+                "category": "生活",
+                "emotion": "平穏",
+                "strength": "strong",
+            },
+        ),
+        "DISCOMFORT_PERSON_TARGET": (
+            {"memo": "今日は疲れている。"},
+            None,
+        ),
+    }
+    before, after = request_pairs[operator]
+    stem = operator.lower().replace("_", "-")
+    return (
+        _request(record_id=f"step6-{stem}-before", **before),
+        (
+            _request(record_id=f"step6-{stem}-after", **after)
+            if after is not None
+            else None
+        ),
+    )
+
+
+def _step6_private_bodies() -> tuple[str, ...]:
+    bodies: list[str] = []
+    for _case_id, _mutation_class, operator in STAGE1_KAREN_DERIVED_MUTATION_SET_V1:
+        before, after = _step6_mutation_requests(operator)
+        for request in (before, after):
+            if request is None:
+                continue
+            memo = str(
+                request.current_input_bundle.raw_current_input.get("memo") or ""
+            )
+            if memo not in bodies:
+                bodies.append(memo)
+    return tuple(bodies)
+
+
+def _run_step6_mutation_request(request: GenerationRequest) -> dict[str, object]:
+    captured: dict[str, object] = {}
+    original_compiler = emlis_v1a_module.compile_stage1_response
+    original_common = emlis_v1a_module.compose_emlis_conversation_candidate
+    legacy_names = (
+        "_canonical_r4_observation_lines",
+        "_canonical_r4_tail_lines",
+        "_cmee_stage1_reception_text",
+        "realize_grounded_human_reception",
+    )
+
+    def capture_compile(*args, **kwargs):
+        captured.update(kwargs)
+        projection, selected_units = original_compiler(*args, **kwargs)
+        captured["projection"] = projection
+        captured["selected_units"] = selected_units
+        return projection, selected_units
+
+    legacy_patchers = [
+        patch.object(
+            emlis_v1a_module,
+            name,
+            wraps=getattr(emlis_v1a_module, name),
+        )
+        for name in legacy_names
+    ]
+    with (
+        patch.object(
+            emlis_v1a_module,
+            "compile_stage1_response",
+            side_effect=capture_compile,
+        ) as compiler,
+        patch.object(
+            emlis_v1a_module,
+            "compose_emlis_conversation_candidate",
+            wraps=original_common,
+        ) as common_guard_path,
+        legacy_patchers[0] as legacy_observation,
+        legacy_patchers[1] as legacy_tail,
+        legacy_patchers[2] as legacy_reception,
+        legacy_patchers[3] as legacy_reception_realizer,
+    ):
+        outcome = MeaningExperienceEngine().generate(request)
+    return {
+        "request": request,
+        "outcome": outcome,
+        "captured": captured,
+        "compiler_calls": compiler.call_count,
+        "composer_calls": common_guard_path.call_count,
+        "legacy_calls": (
+            legacy_observation.call_count,
+            legacy_tail.call_count,
+            legacy_reception.call_count,
+            legacy_reception_realizer.call_count,
+        ),
+    }
+
+
+def _enum_value(value: object) -> object:
+    return getattr(value, "value", value)
+
+
+def _step6_evidence_paths(captured: dict[str, object], evidence_ids) -> tuple:
+    source = captured["source"]
+    evidence_by_id = {row.evidence_id: row for row in source.evidence_refs}
+    normalized_ids = tuple(
+        (
+            evidence_id.split(":", 1)[1].split("@", 1)[0]
+            if evidence_id.startswith("evidence:")
+            else evidence_id
+        )
+        for evidence_id in evidence_ids
+    )
+    return tuple(
+        (
+            evidence_by_id[evidence_id].field_path,
+            evidence_by_id[evidence_id].element_index,
+        )
+        for evidence_id in normalized_ids
+    )
+
+
+def _step6_owner_shape(captured: dict[str, object], owner_id: str) -> tuple:
+    graph = captured["grounded_graph"]
+    row = next(
+        disposition
+        for disposition in graph.owner_dispositions
+        if disposition.owner_id == owner_id
+    )
+    return (
+        row.owner_class.value,
+        row.provider_resolution.value,
+        row.attachment_admission.value,
+        row.visible_authority.value,
+        row.disposition.value,
+        _step6_evidence_paths(captured, row.evidence_ids),
+        len(row.visible_claim_refs),
+        row.target_unknown_ref is not None,
+        row.reason_codes,
+    )
+
+
+def _step6_node_shape(captured: dict[str, object], node) -> tuple:
+    return (
+        node.node_kind,
+        node.grounding_kind,
+        node.epistemic_state.value,
+        _step6_owner_shape(captured, node.owner_id),
+        _step6_evidence_paths(captured, node.evidence_ids),
+    )
+
+
+def _step6_edge_shape(
+    captured: dict[str, object],
+    edge,
+    relation_aliases: dict[str, str] | None = None,
+) -> tuple:
+    graph = captured["grounded_graph"]
+    node_by_id = {row.node_id: row for row in graph.nodes}
+    relation = (relation_aliases or {}).get(edge.relation, edge.relation)
+    return (
+        relation,
+        _step6_node_shape(captured, node_by_id[edge.source_node_id]),
+        _step6_node_shape(captured, node_by_id[edge.target_node_id]),
+        edge.grounding_kind,
+        edge.epistemic_state.value,
+        _step6_owner_shape(captured, edge.owner_id),
+        _step6_evidence_paths(captured, edge.evidence_ids),
+    )
+
+
+def _step6_ref_shape(
+    captured: dict[str, object],
+    semantic_ref: str,
+    relation_aliases: dict[str, str] | None = None,
+) -> tuple:
+    graph = captured["grounded_graph"]
+    ref_kind, payload = semantic_ref.split(":", 1)
+    local_id = payload.split("@", 1)[0]
+    if ref_kind == "node":
+        node = next(row for row in graph.nodes if row.node_id == local_id)
+        return ("node", _step6_node_shape(captured, node))
+    if ref_kind == "edge":
+        edge = next(row for row in graph.edges if row.edge_id == local_id)
+        return (
+            "edge",
+            _step6_edge_shape(captured, edge, relation_aliases),
+        )
+    return (ref_kind, "EXTERNAL_REF")
+
+
+def _step6_candidate_shape(
+    captured: dict[str, object],
+    candidate,
+    relation_aliases: dict[str, str] | None = None,
+) -> tuple:
+    aliases = relation_aliases or {}
+    relation_operator = aliases.get(
+        candidate.relation_operator.value,
+        candidate.relation_operator.value,
+    )
+    candidate_kind = aliases.get(
+        candidate.candidate_kind.value,
+        candidate.candidate_kind.value,
+    )
+    graph = captured["grounded_graph"]
+    edge_by_id = {row.edge_id: row for row in graph.edges}
+    relation_basis = tuple(
+        _step6_edge_shape(
+            captured,
+            edge_by_id[ref.split(":", 1)[1].split("@", 1)[0]],
+            aliases,
+        )
+        for ref in candidate.relation_basis_refs
+    )
+    return (
+        candidate_kind,
+        candidate.claim_domain,
+        candidate.semantic_operator.value,
+        tuple(
+            (
+                binding.role.value,
+                _step6_ref_shape(captured, binding.semantic_ref, aliases),
+            )
+            for binding in candidate.argument_bindings
+        ),
+        relation_operator,
+        relation_basis,
+        aliases.get(candidate.derivation_rule_id, candidate.derivation_rule_id),
+        tuple(
+            _step6_ref_shape(captured, ref, aliases)
+            for ref in candidate.semantic_refs
+        ),
+        _step6_evidence_paths(captured, candidate.evidence_refs),
+        len(candidate.basis_candidate_refs),
+        candidate.epistemic_state.value,
+        candidate.required_qualifiers,
+        candidate.forbidden_promotions,
+    )
+
+
+def _step6_contribution_shape(
+    captured: dict[str, object],
+    contribution,
+    relation_aliases: dict[str, str] | None = None,
+) -> tuple:
+    aliases = relation_aliases or {}
+    projection = captured["projection"]
+    candidate_by_id = {
+        row.candidate_id: row for row in projection.interpretation_candidates
+    }
+    graph = captured["grounded_graph"]
+    edge_by_id = {row.edge_id: row for row in graph.edges}
+    return (
+        aliases.get(
+            contribution.contribution_kind.value,
+            contribution.contribution_kind.value,
+        ),
+        tuple(
+            _step6_candidate_shape(captured, candidate_by_id[ref], aliases)
+            for ref in contribution.interpretation_candidate_refs
+        ),
+        contribution.semantic_operator.value,
+        tuple(
+            (
+                binding.role.value,
+                _step6_ref_shape(captured, binding.semantic_ref, aliases),
+            )
+            for binding in contribution.argument_bindings
+        ),
+        aliases.get(
+            contribution.relation_operator.value,
+            contribution.relation_operator.value,
+        ),
+        tuple(
+            _step6_edge_shape(
+                captured,
+                edge_by_id[ref.split(":", 1)[1].split("@", 1)[0]],
+                aliases,
+            )
+            for ref in contribution.relation_basis_refs
+        ),
+        aliases.get(
+            contribution.derivation_rule_id,
+            contribution.derivation_rule_id,
+        ),
+        tuple(
+            _step6_ref_shape(captured, ref, aliases)
+            for ref in contribution.semantic_refs
+        ),
+        _step6_evidence_paths(captured, contribution.evidence_refs),
+        contribution.retention,
+        len(contribution.prerequisite_contribution_refs),
+        contribution.forbidden_operations,
+    )
+
+
+def _step6_claim_shape(
+    captured: dict[str, object],
+    claim,
+    *,
+    include_targets: bool,
+) -> tuple:
+    projection = captured["projection"]
+    contribution_by_id = {
+        row.contribution_id: row for row in projection.observation_contributions
+    }
+    proposition = claim.asserted_subjective_proposition
+
+    def contribution_shapes(refs) -> tuple:
+        return tuple(
+            _step6_contribution_shape(captured, contribution_by_id[ref])
+            for ref in refs
+        )
+
+    response_shapes = ()
+    if include_targets:
+        response_shapes = tuple(
+            (
+                _step6_contribution_shape(captured, contribution_by_id[ref])
+                if ref in contribution_by_id
+                else _step6_ref_shape(captured, ref)
+            )
+            for ref in proposition.response_object_refs
+        )
+    return (
+        claim.claim_domain,
+        claim.subjective_mode.value,
+        proposition.subjective_operator.value,
+        contribution_shapes(proposition.target_contribution_refs)
+        if include_targets
+        else len(proposition.target_contribution_refs),
+        response_shapes
+        if include_targets
+        else len(proposition.response_object_refs),
+        _enum_value(proposition.affect_category),
+        _enum_value(proposition.affect_intensity),
+        _enum_value(proposition.stance_operator),
+        proposition.counterposition_target_ref is not None,
+        len(proposition.referenced_actor_refs),
+        len(proposition.referenced_experiencer_refs),
+        proposition.addressee_role,
+        proposition.polarity,
+        proposition.modality,
+        contribution_shapes(claim.basis_observation_contribution_refs)
+        if include_targets
+        else len(claim.basis_observation_contribution_refs),
+        len(claim.basis_semantic_refs),
+        claim.source_reception_act_refs,
+        claim.value_principle_refs,
+        claim.user_fact_effect,
+        claim.forbidden_promotions,
+    )
+
+
+def _step6_projection_shape(
+    captured: dict[str, object],
+    *,
+    include_claim_targets: bool = True,
+) -> tuple:
+    graph = captured["grounded_graph"]
+    projection = captured["projection"]
+    return (
+        tuple(
+            sorted(
+                _step6_owner_shape(captured, row.owner_id)
+                for row in graph.owner_dispositions
+            )
+        ),
+        tuple(sorted(_step6_node_shape(captured, row) for row in graph.nodes)),
+        tuple(sorted(_step6_edge_shape(captured, row) for row in graph.edges)),
+        tuple(
+            sorted(
+                _step6_candidate_shape(captured, row)
+                for row in projection.interpretation_candidates
+            )
+        ),
+        tuple(
+            sorted(
+                _step6_contribution_shape(captured, row)
+                for row in projection.observation_contributions
+            )
+        ),
+        tuple(
+            sorted(
+                _step6_claim_shape(
+                    captured,
+                    row,
+                    include_targets=include_claim_targets,
+                )
+                for row in projection.subjective_claims
+            )
+        ),
+        tuple(
+            sorted(
+                (
+                    entry.slot.value,
+                    len(entry.interpretation_candidate_refs),
+                    len(entry.semantic_refs),
+                    len(entry.evidence_refs),
+                )
+                for entry in projection.meaning_field.entries
+            )
+        ),
+        len(projection.meaning_field.required_candidate_refs),
+        len(projection.meaning_field.material_unknown_refs),
+        projection.observation_depth_class.value,
+        projection.subjective_depth_class.value,
+        projection.temperature_class.value,
+        projection.reception_style_policy_ref,
+        len(projection.ordered_observation_refs),
+        len(projection.ordered_subjective_refs),
+    )
+
+
+def _step6_trace_spine(run: dict[str, object]) -> tuple:
+    captured = run["captured"]
+    outcome = run["outcome"]
+    graph = captured["grounded_graph"]
+    node_by_id = {row.node_id: row for row in graph.nodes}
+    edge_by_id = {row.edge_id: row for row in graph.edges}
+    artifact = outcome.artifact
+    assert artifact is not None
+    rows = []
+    for trace in artifact.trace:
+        extension = trace.emlis_stage1_extension
+        rows.append(
+            (
+                trace.role,
+                trace.duty_id,
+                trace.operation,
+                tuple(node_by_id[ref].node_kind for ref in trace.meaning_node_ids),
+                tuple(edge_by_id[ref].relation for ref in trace.meaning_edge_ids),
+                _step6_evidence_paths(captured, trace.evidence_ids),
+                len(trace.constrained_by_owner_ids),
+                (
+                    None
+                    if extension is None
+                    else (
+                        extension.claim_domain.value,
+                        len(extension.contribution_refs),
+                        len(extension.basis_trace_refs),
+                        len(extension.interpretation_candidate_refs),
+                        extension.subjective_claim_ref is not None,
+                        len(extension.basis_observation_contribution_refs),
+                        extension.value_principle_refs,
+                        extension.speaker_owner,
+                        extension.user_fact_effect,
+                        extension.composition_variant_id,
+                    )
+                ),
+            )
+        )
+    return tuple(rows)
 
 
 class CMEEV1AI1SXVerticalTest(unittest.TestCase):
@@ -1531,8 +2090,8 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             self.assertEqual(len(trace.meaning_edge_ids), 1)
             edge = edge_index[trace.meaning_edge_ids[0]]
             self.assertEqual(
-                trace.meaning_node_ids,
-                (edge.source_node_id, edge.target_node_id),
+                set(trace.meaning_node_ids),
+                {edge.source_node_id, edge.target_node_id},
             )
             self.assertEqual(trace.evidence_ids, edge.evidence_ids)
 
@@ -1600,9 +2159,9 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
 
         directional_request = _request(
             record_id="cmee-directional-relation",
-            memo="昨日は疲れていた。今日は少し落ち着いた。",
+            memo="昨日は記録を書いた。今は不安が残っている。",
             category="生活",
-            emotion="平穏",
+            emotion="不安",
         )
         (
             directional_source,
@@ -1618,9 +2177,21 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         )
         self.assertEqual(len(directional_line.binding.relation_ids), 1)
         self.assertIn("あと", directional_line.text)
-        self.assertIn("順序", directional_line.text)
         self.assertFalse("起点側" in directional_line.text)
         self.assertFalse("到達側" in directional_line.text)
+        directional_projection, _selected = _STAGE1_VALIDATION_CAPTURE[
+            directional_source.envelope.envelope_id
+        ]
+        temporal_candidates = tuple(
+            candidate
+            for candidate in directional_projection.interpretation_candidates
+            if candidate.relation_operator.value == "TEMPORALLY_PRECEDES"
+        )
+        self.assertEqual(len(temporal_candidates), 1)
+        self.assertEqual(
+            tuple(binding.role.value for binding in temporal_candidates[0].argument_bindings),
+            ("BEFORE", "AFTER"),
+        )
         reversed_directional = tuple(
             replace(
                 line,
@@ -1739,18 +2310,19 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 memo="この仕事がつらい。でも、この仕事が苦しい。",
             )
         )[3]
-        self.assertIn("つらさ", same_label_contrast.observation)
-        self.assertIn("苦しさ", same_label_contrast.observation)
+        self.assertIn("つらい", same_label_contrast.observation)
+        self.assertIn("苦しい", same_label_contrast.observation)
         self.assertNotIn("この順", same_label_contrast.observation)
 
         same_label_directional = _private_parts(
             _request(
                 record_id="cmee-same-label-directional",
-                memo="昨日は不安だった。今日は不安だ。",
+                memo="昨日は記録を書いた。今は不安が残っている。",
             )
         )[3]
         self.assertIn("あと", same_label_directional.observation)
-        self.assertIn("順序", same_label_directional.observation)
+        self.assertIn("記録", same_label_directional.observation)
+        self.assertIn("不安", same_label_directional.observation)
         self.assertFalse("起点側" in same_label_directional.observation)
         self.assertFalse("到達側" in same_label_directional.observation)
 
@@ -2332,7 +2904,16 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         self.assertEqual(bare.status.value, "GENERATED", bare.reason_codes)
         self.assertIsNotNone(bare.artifact)
         assert bare.artifact is not None
-        self.assertIn("散歩したいという願い", bare.artifact.reception)
+        self.assertIn("散歩したい", bare.artifact.reception)
+        self.assertIn("という願い", bare.artifact.reception)
+        self.assertLess(
+            bare.artifact.reception.index("散歩したい"),
+            bare.artifact.reception.index("今ここにある"),
+        )
+        self.assertLess(
+            bare.artifact.reception.index("今ここにある"),
+            bare.artifact.reception.index("という願い"),
+        )
         self.assertNotIn("私を散歩したい", bare.artifact.text)
 
         outcome = MeaningExperienceEngine().generate(
@@ -2344,7 +2925,8 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         )
         self.assertEqual(outcome.status.value, "GENERATED", outcome.reason_codes)
         assert outcome.artifact is not None
-        self.assertIn("散歩したいという願い", outcome.artifact.reception)
+        self.assertIn("散歩したい", outcome.artifact.reception)
+        self.assertIn("という願い", outcome.artifact.reception)
         self.assertNotIn("私を散歩したい", outcome.artifact.reception)
 
     def test_stage1_retained_intention_support_is_semantic_canonical_and_sealed(self) -> None:
@@ -2835,6 +3417,18 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         case_id, memo, category, emotion, strength = EXACT8[1]
         original_compiler = emlis_v1a_module.compile_stage1_response
         original_common = emlis_v1a_module.compose_emlis_conversation_candidate
+
+        def rejected_common_guard(*args, **kwargs):
+            candidate = original_common(*args, **kwargs)
+            return replace(
+                candidate,
+                comment_text="",
+                composer_source="unavailable",
+                status="unavailable",
+                ai_generated=False,
+                rejection_reasons=["forced_common_guard_rejection"],
+            )
+
         with (
             patch.object(
                 emlis_v1a_module,
@@ -2844,7 +3438,7 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             patch.object(
                 emlis_v1a_module,
                 "compose_emlis_conversation_candidate",
-                wraps=original_common,
+                side_effect=rejected_common_guard,
             ) as common_guard_path,
             patch.object(
                 emlis_v1a_module,
@@ -2899,13 +3493,19 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 memo=MATERIAL_UNKNOWN_MEMO,
             )
         )
-        self.assertEqual(material_unknown.status.value, "UNAVAILABLE")
+        self.assertEqual(material_unknown.status.value, "LIMITED")
         self.assertEqual(
             material_unknown.reason_codes,
-            ("stage1_projection_unavailable",),
+            ("text_grounded_source_explicit_limited",),
         )
-        self.assertIsNone(material_unknown.artifact)
-        self.assertFalse(_structural_trace_valid(material_unknown))
+        self.assertIsNotNone(material_unknown.artifact)
+        self.assertTrue(_structural_trace_valid(material_unknown))
+        assert material_unknown.artifact is not None
+        self.assertEqual(len(material_unknown.artifact.visible_unknowns), 1)
+        self.assertEqual(
+            tuple(row.role for row in material_unknown.artifact.trace),
+            ("OBSERVATION", "OBSERVATION", "UNKNOWN", "RECEPTION", "RECEPTION"),
+        )
 
         case_id, memo, category, emotion, strength = EXACT8[5]
         outcome = MeaningExperienceEngine().generate(
@@ -3083,23 +3683,1273 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         self.assertEqual(len(EXACT8), 8)
         self.assertEqual(body_free["case_count"], 8)
         self.assertEqual(body_free["limited_count"], 0)
-        self.assertEqual(body_free["artifact_count"], 5)
-        self.assertEqual(body_free["structural_trace_valid_count"], 5)
+        self.assertEqual(body_free["artifact_count"], 8)
+        self.assertEqual(body_free["generated_count"], 8)
+        self.assertEqual(body_free["structural_trace_valid_count"], 8)
         self.assertEqual(
             tuple(
                 row["case_id"]
                 for row in body_free["cases"]
                 if row["structural_trace_valid"]
             ),
-            ("SX-01", "SX-03", "SX-05", "SX-06", "SX-08"),
+            tuple(row[0] for row in EXACT8),
         )
         self.assertEqual(
             body_free["candidate_state"],
-            "EXACT8_GENERATION_INCOMPLETE_DISABLED",
+            "GENERATED_FOR_PRODUCT_READ_DISABLED",
         )
         self.assertFalse(body_free["product_read_eligible"])
         self.assertFalse(body_free["product_read_evaluated"])
         self.assertFalse(body_free["automatic_progression"])
+
+    def _assert_step6_generated(self, run: dict[str, object]) -> None:
+        outcome = run["outcome"]
+        captured = run["captured"]
+        self.assertEqual(outcome.status.value, "GENERATED", outcome.reason_codes)
+        self.assertIsNotNone(outcome.artifact)
+        self.assertIsNotNone(outcome.meaning_graph)
+        self.assertFalse(outcome.automatic_progression)
+        self.assertEqual(run["compiler_calls"], 1)
+        self.assertEqual(run["composer_calls"], 1)
+        self.assertEqual(run["legacy_calls"], (0, 0, 0, 0))
+        self.assertIn("projection", captured)
+        self.assertIn("selected_units", captured)
+        self.assertTrue(_structural_trace_valid(outcome))
+        cmee_contracts_module.validate_stage1_projection(
+            captured["projection"],
+            grounded_graph=captured["grounded_graph"],
+            parent_plan=captured["parent_plan"],
+        )
+        cmee_contracts_module.validate_stage1_trace_spine(
+            outcome.artifact.trace,
+            captured["projection"],
+            grounded_graph=captured["grounded_graph"],
+            parent_plan=outcome.artifact.plan,
+        )
+
+    def _assert_step6_unavailable(
+        self,
+        run: dict[str, object],
+        reason_code: str,
+        *,
+        compiler_calls: int,
+    ) -> None:
+        outcome = run["outcome"]
+        self.assertEqual(outcome.status.value, "UNAVAILABLE")
+        self.assertEqual(outcome.reason_codes, (reason_code,))
+        self.assertIsNone(outcome.artifact)
+        self.assertFalse(outcome.automatic_progression)
+        self.assertEqual(run["compiler_calls"], compiler_calls)
+        self.assertEqual(run["composer_calls"], 0)
+        self.assertEqual(run["legacy_calls"], (0, 0, 0, 0))
+
+    def test_step6_exact12_registry_is_body_free_ascii_and_test_executed(self) -> None:
+        with patch.object(
+            MeaningExperienceEngine,
+            "generate",
+            side_effect=AssertionError("body-free registry executed engine"),
+        ) as engine_path:
+            registry = _body_free_mutation_registry()
+        self.assertEqual(engine_path.call_count, 0)
+        self.assertEqual(registry["case_count"], 12)
+        self.assertFalse(registry["body_payload_present"])
+        self.assertFalse(registry["runner_executes_source_bodies"])
+        self.assertEqual(registry["execution_owner"], "current_and_new_tests")
+        self.assertEqual(registry["class_counts"], _STEP6_MUTATION_CLASS_COUNTS)
+        self.assertEqual(len(STAGE1_KAREN_DERIVED_MUTATION_SET_V1), 12)
+        self.assertEqual(
+            tuple(
+                (
+                    row["case_id"],
+                    row["mutation_class"],
+                    row["mutation_operator"],
+                )
+                for row in registry["cases"]
+            ),
+            STAGE1_KAREN_DERIVED_MUTATION_SET_V1,
+        )
+        self.assertEqual(
+            len({row[0] for row in STAGE1_KAREN_DERIVED_MUTATION_SET_V1}),
+            12,
+        )
+        self.assertEqual(
+            len({row[2] for row in STAGE1_KAREN_DERIVED_MUTATION_SET_V1}),
+            12,
+        )
+        for case_id, mutation_class, operator in STAGE1_KAREN_DERIVED_MUTATION_SET_V1:
+            with self.subTest(case_id=case_id):
+                self.assertTrue(
+                    all(ord(character) < 128 for character in case_id + mutation_class + operator)
+                )
+                self.assertRegex(case_id, r"^KDM-(?:SE|RC|CB|SU)-\d{2}$")
+        self.assertEqual(
+            {
+                mutation_class: sum(
+                    row[1] == mutation_class
+                    for row in STAGE1_KAREN_DERIVED_MUTATION_SET_V1
+                )
+                for mutation_class in _STEP6_MUTATION_CLASS_COUNTS
+            },
+            _STEP6_MUTATION_CLASS_COUNTS,
+        )
+
+        registry_source = inspect.getsource(_body_free_mutation_registry)
+        self.assertNotIn("engine.generate", registry_source)
+        self.assertNotIn("MeaningExperienceEngine", registry_source)
+        for body in _step6_private_bodies():
+            self.assertNotIn(body, registry_source)
+        production_source = "\n".join(
+            (
+                inspect.getsource(emlis_v1a_module),
+                inspect.getsource(stage1_response_module),
+                inspect.getsource(cmee_contracts_module),
+            )
+        )
+        for case_id, _mutation_class, _operator in STAGE1_KAREN_DERIVED_MUTATION_SET_V1:
+            self.assertNotIn(case_id, production_source)
+        for body in _step6_private_bodies():
+            self.assertNotIn(body, production_source)
+
+    def test_step6_semantic_equivalence_mutations_preserve_structured_invariants(
+        self,
+    ) -> None:
+        operators = tuple(
+            row[2]
+            for row in STAGE1_KAREN_DERIVED_MUTATION_SET_V1
+            if row[1] == "SEMANTIC_EQUIVALENCE_MUTATION"
+        )
+        self.assertEqual(
+            operators,
+            ("REGISTER_INFLECTION", "LEXICAL_PARAPHRASE", "CLAUSE_ORDER"),
+        )
+        for operator in operators:
+            with self.subTest(operator=operator):
+                before_request, after_request = _step6_mutation_requests(operator)
+                assert after_request is not None
+                before = _run_step6_mutation_request(before_request)
+                after = _run_step6_mutation_request(after_request)
+                self._assert_step6_generated(before)
+                self._assert_step6_generated(after)
+                self.assertEqual(
+                    _step6_projection_shape(
+                        before["captured"],
+                        include_claim_targets=True,
+                    ),
+                    _step6_projection_shape(
+                        after["captured"],
+                        include_claim_targets=True,
+                    ),
+                )
+                self.assertEqual(
+                    _step6_trace_spine(before),
+                    _step6_trace_spine(after),
+                )
+                for run in (before, after):
+                    projection = run["captured"]["projection"]
+                    semantic_keys = tuple(
+                        row.canonical_semantic_key
+                        for row in projection.observation_contributions
+                    )
+                    self.assertEqual(len(semantic_keys), len(set(semantic_keys)))
+
+        clause_before, clause_after = _step6_mutation_requests("CLAUSE_ORDER")
+        assert clause_after is not None
+        before_sentences = tuple(
+            row
+            for row in clause_before.current_input_bundle.thought_text.split("。")
+            if row
+        )
+        after_sentences = tuple(
+            row
+            for row in clause_after.current_input_bundle.thought_text.split("。")
+            if row
+        )
+        self.assertEqual(after_sentences, tuple(reversed(before_sentences)))
+
+    def test_step6_whole_state_negation_table_fails_closed_before_compilation(
+        self,
+    ) -> None:
+        expected_tenses = {"plain", "past", "polite", "polite-past"}
+        self.assertEqual(
+            {
+                tense
+                for morphology, tense, _particle, _memo
+                in _STEP6_WHOLE_STATE_NEGATION_VARIANTS
+                if morphology == "noun"
+            },
+            expected_tenses,
+        )
+        self.assertEqual(
+            {
+                tense
+                for morphology, tense, _particle, _memo
+                in _STEP6_WHOLE_STATE_NEGATION_VARIANTS
+                if morphology == "verb"
+            },
+            expected_tenses,
+        )
+        expected_groups = {
+            ("noun", "none"),
+            ("noun", "も"),
+            ("adjective", "は"),
+            ("verb", "none"),
+        }
+        self.assertEqual(
+            {
+                (morphology, particle)
+                for morphology, _tense, particle, _memo
+                in _STEP6_WHOLE_STATE_NEGATION_VARIANTS
+            },
+            expected_groups,
+        )
+        for group in expected_groups:
+            self.assertEqual(
+                {
+                    tense
+                    for morphology, tense, particle, _memo
+                    in _STEP6_WHOLE_STATE_NEGATION_VARIANTS
+                    if (morphology, particle) == group
+                },
+                expected_tenses,
+            )
+        self.assertEqual(
+            len(
+                {
+                    (morphology, tense, particle, memo)
+                    for morphology, tense, particle, memo
+                    in _STEP6_WHOLE_STATE_NEGATION_VARIANTS
+                }
+            ),
+            len(_STEP6_WHOLE_STATE_NEGATION_VARIANTS),
+        )
+        for index, (morphology, tense, particle, memo) in enumerate(
+            _STEP6_WHOLE_STATE_NEGATION_VARIANTS,
+            start=1,
+        ):
+            with self.subTest(
+                morphology=morphology,
+                tense=tense,
+                particle=particle,
+            ):
+                run = _run_step6_mutation_request(
+                    _request(record_id=f"step6-whole-negation-{index}", memo=memo)
+                )
+                self._assert_step6_unavailable(
+                    run,
+                    "lexical_role_negation_unrepresentable",
+                    compiler_calls=0,
+                )
+
+    def test_step6_relation_contrast_mutations_preserve_typed_direction_and_bounds(
+        self,
+    ) -> None:
+        operators = tuple(
+            row[2]
+            for row in STAGE1_KAREN_DERIVED_MUTATION_SET_V1
+            if row[1] == "RELATION_CONTRAST_MUTATION"
+        )
+        self.assertEqual(
+            operators,
+            ("TEMPORAL_ORDER", "COEXISTENCE_TENSION", "SEQUENCE_CAUSE"),
+        )
+
+        temporal_request, reversed_temporal_request = _step6_mutation_requests(
+            "TEMPORAL_ORDER"
+        )
+        assert reversed_temporal_request is not None
+        temporal = _run_step6_mutation_request(temporal_request)
+        reversed_temporal = _run_step6_mutation_request(reversed_temporal_request)
+        self._assert_step6_generated(temporal)
+        self._assert_step6_unavailable(
+            reversed_temporal,
+            "stage1_projection_unavailable",
+            compiler_calls=1,
+        )
+        temporal_capture = temporal["captured"]
+        temporal_projection = temporal_capture["projection"]
+        temporal_graph = temporal_capture["grounded_graph"]
+        temporal_candidates = tuple(
+            row
+            for row in temporal_projection.interpretation_candidates
+            if row.relation_operator.value == "TEMPORALLY_PRECEDES"
+        )
+        self.assertEqual(len(temporal_candidates), 1)
+        temporal_candidate = temporal_candidates[0]
+        self.assertEqual(temporal_candidate.candidate_kind.value, "RESIDUE_AFTER_EVENT")
+        self.assertEqual(temporal_candidate.semantic_operator.value, "PRESENT_RESIDUE")
+        self.assertEqual(
+            tuple(row.role.value for row in temporal_candidate.argument_bindings),
+            ("BEFORE", "AFTER"),
+        )
+        temporal_edges = tuple(
+            row for row in temporal_graph.edges if row.relation == "shift_from_to"
+        )
+        self.assertEqual(len(temporal_edges), 1)
+        temporal_edge = temporal_edges[0]
+        self.assertEqual(temporal_edge.grounding_kind, "user_stated_relation")
+        self.assertEqual(temporal_edge.epistemic_state.value, "SOURCE_EXPLICIT")
+
+        def local_ref(semantic_ref: str) -> str:
+            return semantic_ref.split(":", 1)[1].split("@", 1)[0]
+
+        self.assertEqual(
+            tuple(local_ref(row.semantic_ref) for row in temporal_candidate.argument_bindings),
+            (temporal_edge.source_node_id, temporal_edge.target_node_id),
+        )
+        temporal_node_by_id = {row.node_id: row for row in temporal_graph.nodes}
+        self.assertEqual(
+            (
+                temporal_node_by_id[temporal_edge.source_node_id].node_kind,
+                temporal_node_by_id[temporal_edge.target_node_id].node_kind,
+            ),
+            ("event", "reaction"),
+        )
+        self.assertIn("before_time_scope:past", temporal_candidate.required_qualifiers)
+        self.assertIn("after_time_scope:present", temporal_candidate.required_qualifiers)
+        temporal_relation_traces = tuple(
+            row
+            for row in temporal["outcome"].artifact.trace
+            if row.meaning_edge_ids
+        )
+        temporal_observation_relation_traces = tuple(
+            row for row in temporal_relation_traces if row.role == "OBSERVATION"
+        )
+        self.assertEqual(len(temporal_observation_relation_traces), 1)
+        self.assertTrue(
+            all(
+                row.meaning_edge_ids == (temporal_edge.edge_id,)
+                and set(row.meaning_node_ids)
+                == {temporal_edge.source_node_id, temporal_edge.target_node_id}
+                and row.evidence_ids == temporal_edge.evidence_ids
+                for row in temporal_relation_traces
+            )
+        )
+        self.assertFalse(
+            any(
+                row.relation_operator.value == "SOURCE_EXPLICIT_CAUSE"
+                for row in temporal_projection.interpretation_candidates
+            )
+        )
+
+        coexist_request, tension_request = _step6_mutation_requests(
+            "COEXISTENCE_TENSION"
+        )
+        assert tension_request is not None
+        coexist = _run_step6_mutation_request(coexist_request)
+        tension = _run_step6_mutation_request(tension_request)
+        self._assert_step6_generated(coexist)
+        self._assert_step6_generated(tension)
+        coexist_capture = coexist["captured"]
+        tension_capture = tension["captured"]
+        coexist_projection = coexist_capture["projection"]
+        tension_projection = tension_capture["projection"]
+        coexist_relation_candidates = tuple(
+            row
+            for row in coexist_projection.interpretation_candidates
+            if row.relation_operator.value != "NO_RELATION_CLAIM"
+        )
+        tension_relation_candidates = tuple(
+            row
+            for row in tension_projection.interpretation_candidates
+            if row.relation_operator.value != "NO_RELATION_CLAIM"
+        )
+        self.assertEqual(len(coexist_relation_candidates), 1)
+        self.assertEqual(len(tension_relation_candidates), 1)
+        self.assertEqual(
+            (
+                coexist_relation_candidates[0].candidate_kind.value,
+                coexist_relation_candidates[0].semantic_operator.value,
+                coexist_relation_candidates[0].relation_operator.value,
+            ),
+            ("COEXISTENCE", "SYNTHESIZE_RELATION", "COEXISTS_WITH"),
+        )
+        self.assertEqual(
+            (
+                tension_relation_candidates[0].candidate_kind.value,
+                tension_relation_candidates[0].semantic_operator.value,
+                tension_relation_candidates[0].relation_operator.value,
+            ),
+            ("TENSION", "SYNTHESIZE_RELATION", "TENSION_WITH"),
+        )
+        relation_aliases = {
+            "COEXISTENCE": "RELATION_KIND",
+            "TENSION": "RELATION_KIND",
+            "COEXISTS_WITH": "RELATION_OPERATOR",
+            "TENSION_WITH": "RELATION_OPERATOR",
+            "OBSERVE_COEXISTENCE": "RELATION_CONTRIBUTION",
+            "OBSERVE_TENSION": "RELATION_CONTRIBUTION",
+            "coexistence": "relation-edge",
+            "contrast": "relation-edge",
+            "cocolon.cmee.v1a.stage1.relation.coexistence.v1": "RELATION_RULE",
+            "cocolon.cmee.v1a.stage1.relation.contrast.v1": "RELATION_RULE",
+            "cocolon.cmee.v1a.stage1.layer1.observe_coexistence.v1": "CONTRIBUTION_RULE",
+            "cocolon.cmee.v1a.stage1.layer1.observe_tension.v1": "CONTRIBUTION_RULE",
+        }
+        self.assertEqual(
+            _step6_candidate_shape(
+                coexist_capture,
+                coexist_relation_candidates[0],
+                relation_aliases,
+            ),
+            _step6_candidate_shape(
+                tension_capture,
+                tension_relation_candidates[0],
+                relation_aliases,
+            ),
+        )
+        coexist_relation_contributions = tuple(
+            row
+            for row in coexist_projection.observation_contributions
+            if row.relation_operator.value != "NO_RELATION_CLAIM"
+        )
+        tension_relation_contributions = tuple(
+            row
+            for row in tension_projection.observation_contributions
+            if row.relation_operator.value != "NO_RELATION_CLAIM"
+        )
+        self.assertEqual(len(coexist_relation_contributions), 1)
+        self.assertEqual(len(tension_relation_contributions), 1)
+        self.assertEqual(
+            _step6_contribution_shape(
+                coexist_capture,
+                coexist_relation_contributions[0],
+                relation_aliases,
+            ),
+            _step6_contribution_shape(
+                tension_capture,
+                tension_relation_contributions[0],
+                relation_aliases,
+            ),
+        )
+        coexist_edges = coexist_capture["grounded_graph"].edges
+        tension_edges = tension_capture["grounded_graph"].edges
+        self.assertEqual(tuple(row.relation for row in coexist_edges), ("coexistence",))
+        self.assertEqual(tuple(row.relation for row in tension_edges), ("contrast",))
+        self.assertEqual(
+            _step6_edge_shape(coexist_capture, coexist_edges[0], relation_aliases),
+            _step6_edge_shape(tension_capture, tension_edges[0], relation_aliases),
+        )
+        self.assertEqual(
+            tuple(
+                sorted(
+                    _step6_candidate_shape(coexist_capture, row)
+                    for row in coexist_projection.interpretation_candidates
+                    if row.relation_operator.value == "NO_RELATION_CLAIM"
+                )
+            ),
+            tuple(
+                sorted(
+                    _step6_candidate_shape(tension_capture, row)
+                    for row in tension_projection.interpretation_candidates
+                    if row.relation_operator.value == "NO_RELATION_CLAIM"
+                )
+            ),
+        )
+        self.assertEqual(
+            (
+                coexist_projection.observation_depth_class,
+                coexist_projection.subjective_depth_class,
+                coexist_projection.temperature_class,
+            ),
+            (
+                tension_projection.observation_depth_class,
+                tension_projection.subjective_depth_class,
+                tension_projection.temperature_class,
+            ),
+        )
+
+        def relation_neutral_trace_spine(run: dict[str, object]) -> tuple:
+            return tuple(
+                (
+                    *row[:4],
+                    tuple("relation-edge" for _relation in row[4]),
+                    *row[5:],
+                )
+                for row in _step6_trace_spine(run)
+            )
+
+        self.assertEqual(
+            relation_neutral_trace_spine(coexist),
+            relation_neutral_trace_spine(tension),
+        )
+        self.assertFalse(
+            any(
+                row.relation == "user_stated_cause"
+                for row in (*coexist_edges, *tension_edges)
+            )
+        )
+
+        sequence_request, cause_request = _step6_mutation_requests("SEQUENCE_CAUSE")
+        assert cause_request is not None
+        sequence = _run_step6_mutation_request(sequence_request)
+        cause = _run_step6_mutation_request(cause_request)
+        self._assert_step6_generated(sequence)
+        self._assert_step6_generated(cause)
+        sequence_capture = sequence["captured"]
+        cause_capture = cause["captured"]
+        sequence_projection = sequence_capture["projection"]
+        cause_projection = cause_capture["projection"]
+        self.assertEqual(sequence_capture["grounded_graph"].edges, ())
+        self.assertFalse(
+            any(
+                row.relation_operator.value != "NO_RELATION_CLAIM"
+                for row in sequence_projection.interpretation_candidates
+            )
+        )
+        cause_edges = cause_capture["grounded_graph"].edges
+        self.assertEqual(len(cause_edges), 1)
+        self.assertEqual(
+            (
+                cause_edges[0].relation,
+                cause_edges[0].grounding_kind,
+                cause_edges[0].epistemic_state.value,
+            ),
+            ("user_stated_cause", "user_stated_relation", "SOURCE_EXPLICIT"),
+        )
+        cause_candidates = tuple(
+            row
+            for row in cause_projection.interpretation_candidates
+            if row.relation_operator.value == "SOURCE_EXPLICIT_CAUSE"
+        )
+        self.assertEqual(len(cause_candidates), 1)
+        self.assertEqual(cause_candidates[0].candidate_kind.value, "SOURCE_STATED_CAUSE")
+        self.assertEqual(
+            tuple(row.role.value for row in cause_candidates[0].argument_bindings),
+            ("CAUSE", "EFFECT"),
+        )
+        cause_contributions = tuple(
+            row
+            for row in cause_projection.observation_contributions
+            if row.relation_operator.value == "SOURCE_EXPLICIT_CAUSE"
+        )
+        self.assertEqual(len(cause_contributions), 1)
+        self.assertEqual(cause_contributions[0].contribution_kind.value, "OBSERVE_TIME_RELATION")
+
+        def without_visible_claim_cardinality(value):
+            if isinstance(value, tuple):
+                if (
+                    len(value) == 9
+                    and value[0] in {"REQUIRED", "ACTIVE_OPTIONAL"}
+                    and value[1] in {"RESOLVED", "UNRESOLVED", "MISSING_OR_INVALID"}
+                ):
+                    value = (*value[:6], *value[7:])
+                return tuple(without_visible_claim_cardinality(row) for row in value)
+            return value
+
+        self.assertEqual(
+            tuple(
+                sorted(
+                    without_visible_claim_cardinality(
+                        _step6_node_shape(sequence_capture, row)
+                    )
+                    for row in sequence_capture["grounded_graph"].nodes
+                )
+            ),
+            tuple(
+                sorted(
+                    without_visible_claim_cardinality(
+                        _step6_node_shape(cause_capture, row)
+                    )
+                    for row in cause_capture["grounded_graph"].nodes
+                )
+            ),
+        )
+        self.assertEqual(
+            sum(
+                len(row.visible_claim_refs)
+                for row in cause_capture["grounded_graph"].owner_dispositions
+            ),
+            sum(
+                len(row.visible_claim_refs)
+                for row in sequence_capture["grounded_graph"].owner_dispositions
+            )
+            + 1,
+        )
+        self.assertEqual(
+            tuple(
+                sorted(
+                    without_visible_claim_cardinality(
+                        _step6_candidate_shape(sequence_capture, row)
+                    )
+                    for row in sequence_projection.interpretation_candidates
+                )
+            ),
+            tuple(
+                sorted(
+                    without_visible_claim_cardinality(
+                        _step6_candidate_shape(cause_capture, row)
+                    )
+                    for row in cause_projection.interpretation_candidates
+                    if row.relation_operator.value == "NO_RELATION_CLAIM"
+                )
+            ),
+        )
+        self.assertEqual(
+            (
+                sequence_projection.observation_depth_class,
+                sequence_projection.subjective_depth_class,
+                sequence_projection.temperature_class,
+            ),
+            (
+                cause_projection.observation_depth_class,
+                cause_projection.subjective_depth_class,
+                cause_projection.temperature_class,
+            ),
+        )
+        sequence_relation_traces = tuple(
+            row
+            for row in sequence["outcome"].artifact.trace
+            if row.meaning_edge_ids
+        )
+        cause_relation_traces = tuple(
+            row for row in cause["outcome"].artifact.trace if row.meaning_edge_ids
+        )
+        self.assertEqual(sequence_relation_traces, ())
+        self.assertEqual(
+            len(tuple(row for row in cause_relation_traces if row.role == "OBSERVATION")),
+            1,
+        )
+        self.assertTrue(
+            all(
+                row.meaning_edge_ids == (cause_edges[0].edge_id,)
+                and set(row.meaning_node_ids)
+                == {cause_edges[0].source_node_id, cause_edges[0].target_node_id}
+                and row.evidence_ids == cause_edges[0].evidence_ids
+                for row in cause_relation_traces
+            )
+        )
+
+    def test_step6_claim_boundary_mutations_reject_or_preserve_exact_scope(
+        self,
+    ) -> None:
+        operators = tuple(
+            row[2]
+            for row in STAGE1_KAREN_DERIVED_MUTATION_SET_V1
+            if row[1] == "CLAIM_BOUNDARY_MUTATION"
+        )
+        self.assertEqual(
+            operators,
+            ("NEGATION", "MODALITY", "EXPERIENCER", "MATERIAL_UNRELATED"),
+        )
+
+        positive_request, negated_request = _step6_mutation_requests("NEGATION")
+        assert negated_request is not None
+        positive = _run_step6_mutation_request(positive_request)
+        negated = _run_step6_mutation_request(negated_request)
+        self._assert_step6_generated(positive)
+        self._assert_step6_unavailable(
+            negated,
+            "lexical_role_negated_desire_conflict",
+            compiler_calls=0,
+        )
+        positive_projection = positive["captured"]["projection"]
+        direction_candidates = tuple(
+            row
+            for row in positive_projection.interpretation_candidates
+            if row.semantic_operator.value == "PRESENT_DIRECTION"
+        )
+        self.assertEqual(len(direction_candidates), 1)
+        self.assertIn("polarity:positive", direction_candidates[0].required_qualifiers)
+        self.assertIn("modality:wish", direction_candidates[0].required_qualifiers)
+        self.assertEqual(
+            len(
+                tuple(
+                    row
+                    for row in positive_projection.observation_contributions
+                    if row.semantic_operator.value == "PRESENT_DIRECTION"
+                    and row.retention == "REQUIRED"
+                )
+            ),
+            1,
+        )
+        self.assertIsNone(negated["outcome"].meaning_graph)
+
+        fact_request, uncertain_request = _step6_mutation_requests("MODALITY")
+        assert uncertain_request is not None
+        fact = _run_step6_mutation_request(fact_request)
+        uncertain = _run_step6_mutation_request(uncertain_request)
+        self._assert_step6_generated(fact)
+        self._assert_step6_generated(uncertain)
+        fact_capture = fact["captured"]
+        uncertain_capture = uncertain["captured"]
+        fact_projection = fact_capture["projection"]
+        uncertain_projection = uncertain_capture["projection"]
+
+        def required_memo_burden_candidate(captured: dict[str, object]):
+            projection = captured["projection"]
+            rows = tuple(
+                row
+                for row in projection.interpretation_candidates
+                if row.semantic_operator.value == "PRESENT_BURDEN"
+                and _step6_evidence_paths(captured, row.evidence_refs)
+                == (("memo", -1),)
+            )
+            self.assertEqual(len(rows), 1)
+            return rows[0]
+
+        fact_burden = required_memo_burden_candidate(fact_capture)
+        uncertain_burden = required_memo_burden_candidate(uncertain_capture)
+        self.assertEqual(fact_burden.candidate_kind, uncertain_burden.candidate_kind)
+        self.assertEqual(fact_burden.semantic_operator, uncertain_burden.semantic_operator)
+        self.assertEqual(fact_burden.relation_operator, uncertain_burden.relation_operator)
+        self.assertEqual(
+            set(fact_burden.required_qualifiers)
+            - set(uncertain_burden.required_qualifiers),
+            {"modality:fact"},
+        )
+        self.assertEqual(
+            set(uncertain_burden.required_qualifiers)
+            - set(fact_burden.required_qualifiers),
+            {"modality:uncertain"},
+        )
+
+        self.assertEqual(
+            _step6_ref_shape(fact_capture, fact_burden.argument_bindings[0].semantic_ref),
+            _step6_ref_shape(
+                uncertain_capture,
+                uncertain_burden.argument_bindings[0].semantic_ref,
+            ),
+        )
+        self.assertEqual(fact_burden.argument_bindings[0].role.value, "PRIMARY")
+        self.assertEqual(uncertain_burden.argument_bindings[0].role.value, "PRIMARY")
+        self.assertEqual(
+            tuple(
+                sorted(
+                    _step6_owner_shape(fact_capture, row.owner_id)
+                    for row in fact_capture["grounded_graph"].owner_dispositions
+                )
+            ),
+            tuple(
+                sorted(
+                    _step6_owner_shape(uncertain_capture, row.owner_id)
+                    for row in uncertain_capture["grounded_graph"].owner_dispositions
+                )
+            ),
+        )
+        self.assertEqual(
+            tuple(
+                sorted(
+                    _step6_node_shape(fact_capture, row)
+                    for row in fact_capture["grounded_graph"].nodes
+                )
+            ),
+            tuple(
+                sorted(
+                    _step6_node_shape(uncertain_capture, row)
+                    for row in uncertain_capture["grounded_graph"].nodes
+                )
+            ),
+        )
+        self.assertEqual(
+            tuple(
+                sorted(
+                    _step6_candidate_shape(fact_capture, row)
+                    for row in fact_projection.interpretation_candidates
+                    if row is not fact_burden
+                )
+            ),
+            tuple(
+                sorted(
+                    _step6_candidate_shape(uncertain_capture, row)
+                    for row in uncertain_projection.interpretation_candidates
+                    if row is not uncertain_burden
+                )
+            ),
+        )
+        self.assertEqual(
+            tuple(
+                sorted(
+                    _step6_claim_shape(
+                        fact_capture,
+                        row,
+                        include_targets=False,
+                    )
+                    for row in fact_projection.subjective_claims
+                )
+            ),
+            tuple(
+                sorted(
+                    _step6_claim_shape(
+                        uncertain_capture,
+                        row,
+                        include_targets=False,
+                    )
+                    for row in uncertain_projection.subjective_claims
+                )
+            ),
+        )
+        self.assertEqual(
+            (
+                fact_projection.observation_depth_class,
+                fact_projection.subjective_depth_class,
+                fact_projection.temperature_class,
+                len(fact_projection.meaning_field.entries),
+                len(fact_projection.ordered_observation_refs),
+                len(fact_projection.ordered_subjective_refs),
+            ),
+            (
+                uncertain_projection.observation_depth_class,
+                uncertain_projection.subjective_depth_class,
+                uncertain_projection.temperature_class,
+                len(uncertain_projection.meaning_field.entries),
+                len(uncertain_projection.ordered_observation_refs),
+                len(uncertain_projection.ordered_subjective_refs),
+            ),
+        )
+        self.assertEqual(_step6_trace_spine(fact), _step6_trace_spine(uncertain))
+        fact_nuclei = tuple(
+            row
+            for row in fact_capture["grounded_plan"].nuclei
+            if row.retention == "required" and row.source_fields == ("memo",)
+        )
+        uncertain_nuclei = tuple(
+            row
+            for row in uncertain_capture["grounded_plan"].nuclei
+            if row.retention == "required" and row.source_fields == ("memo",)
+        )
+        self.assertEqual(len(fact_nuclei), 1)
+        self.assertEqual(len(uncertain_nuclei), 1)
+        fact_frame = fact_nuclei[0].semantic_frame
+        uncertain_frame = uncertain_nuclei[0].semantic_frame
+        self.assertEqual((fact_frame.modality, uncertain_frame.modality), ("fact", "uncertain"))
+        self.assertEqual(
+            set(uncertain_frame.attribute_codes) - set(fact_frame.attribute_codes),
+            {"operator:uncertainty", "semantic_role:limiting_unknown"},
+        )
+        self.assertEqual(
+            set(fact_frame.attribute_codes) - set(uncertain_frame.attribute_codes),
+            set(),
+        )
+        self.assertEqual(
+            replace(
+                uncertain_frame,
+                modality=fact_frame.modality,
+                attribute_codes=fact_frame.attribute_codes,
+            ),
+            fact_frame,
+        )
+        self.assertFalse(fact["outcome"].artifact.visible_unknowns)
+        self.assertFalse(uncertain["outcome"].artifact.visible_unknowns)
+        self.assertFalse(
+            any(
+                "future" in qualifier.lower()
+                for projection in (fact_projection, uncertain_projection)
+                for row in projection.interpretation_candidates
+                for qualifier in row.required_qualifiers
+            )
+        )
+
+        self_request, other_request = _step6_mutation_requests("EXPERIENCER")
+        assert other_request is not None
+        self_owned = _run_step6_mutation_request(self_request)
+        other_owned = _run_step6_mutation_request(other_request)
+        self._assert_step6_generated(self_owned)
+        self._assert_step6_unavailable(
+            other_owned,
+            "current_experiencer_or_time_scope_unsupported",
+            compiler_calls=0,
+        )
+        self.assertTrue(
+            all(
+                "actor:current_user" in row.required_qualifiers
+                for row in self_owned["captured"]["projection"].interpretation_candidates
+            )
+        )
+        self.assertIsNone(other_owned["outcome"].meaning_graph)
+        self.assertIsNone(other_owned["outcome"].artifact)
+
+        material_request, appended_request = _step6_mutation_requests(
+            "MATERIAL_UNRELATED"
+        )
+        assert appended_request is not None
+        material = _run_step6_mutation_request(material_request)
+        appended = _run_step6_mutation_request(appended_request)
+        self._assert_step6_generated(material)
+        self._assert_step6_generated(appended)
+        material_capture = material["captured"]
+        appended_capture = appended["captured"]
+
+        def finite_multiset_addition(before_rows, after_rows) -> tuple:
+            remaining = list(after_rows)
+            for row in before_rows:
+                self.assertIn(row, remaining)
+                remaining.remove(row)
+            return tuple(remaining)
+
+        def normalize_memo_owner_growth(value):
+            if isinstance(value, tuple):
+                if (
+                    len(value) == 9
+                    and value[0] == "REQUIRED"
+                    and value[5]
+                    and set(value[5]) == {("memo", -1)}
+                ):
+                    value = (*value[:5], (("memo", -1),), "MEMO_CLAIMS", *value[7:])
+                return tuple(normalize_memo_owner_growth(row) for row in value)
+            return value
+
+        material_memo_owners = tuple(
+            row
+            for row in material_capture["grounded_graph"].owner_dispositions
+            if set(_step6_evidence_paths(material_capture, row.evidence_ids))
+            == {("memo", -1)}
+            and row.owner_class.value == "REQUIRED"
+        )
+        appended_memo_owners = tuple(
+            row
+            for row in appended_capture["grounded_graph"].owner_dispositions
+            if set(_step6_evidence_paths(appended_capture, row.evidence_ids))
+            == {("memo", -1)}
+            and row.owner_class.value == "REQUIRED"
+        )
+        self.assertEqual(len(material_memo_owners), 1)
+        self.assertEqual(len(appended_memo_owners), 1)
+        self.assertEqual(
+            (
+                len(material_memo_owners[0].evidence_ids),
+                len(material_memo_owners[0].visible_claim_refs),
+            ),
+            (1, 1),
+        )
+        self.assertEqual(
+            (
+                len(appended_memo_owners[0].evidence_ids),
+                len(appended_memo_owners[0].visible_claim_refs),
+            ),
+            (2, 2),
+        )
+
+        material_memo_nodes = tuple(
+            normalize_memo_owner_growth(_step6_node_shape(material_capture, row))
+            for row in material_capture["grounded_graph"].nodes
+            if _step6_evidence_paths(material_capture, row.evidence_ids)
+            == (("memo", -1),)
+        )
+        appended_memo_nodes = tuple(
+            normalize_memo_owner_growth(_step6_node_shape(appended_capture, row))
+            for row in appended_capture["grounded_graph"].nodes
+            if _step6_evidence_paths(appended_capture, row.evidence_ids)
+            == (("memo", -1),)
+        )
+        added_nodes = finite_multiset_addition(
+            material_memo_nodes,
+            appended_memo_nodes,
+        )
+        self.assertEqual(len(added_nodes), 1)
+        self.assertEqual(added_nodes[0][0], "action")
+        material_memo_contributions = tuple(
+            normalize_memo_owner_growth(
+                _step6_contribution_shape(material_capture, row)
+            )
+            for row in material_capture["projection"].observation_contributions
+            if _step6_evidence_paths(material_capture, row.evidence_refs)
+            == (("memo", -1),)
+        )
+        appended_memo_contributions = tuple(
+            normalize_memo_owner_growth(
+                _step6_contribution_shape(appended_capture, row)
+            )
+            for row in appended_capture["projection"].observation_contributions
+            if _step6_evidence_paths(appended_capture, row.evidence_refs)
+            == (("memo", -1),)
+        )
+        added_contributions = finite_multiset_addition(
+            material_memo_contributions,
+            appended_memo_contributions,
+        )
+        self.assertEqual(len(added_contributions), 1)
+        added_contribution = next(
+            row
+            for row in appended_capture["projection"].observation_contributions
+            if row.semantic_operator.value == "PRESENT_ACTUAL_OUTPUT"
+        )
+        self.assertEqual(
+            (
+                added_contribution.contribution_kind.value,
+                added_contribution.semantic_operator.value,
+                added_contribution.relation_operator.value,
+                added_contribution.retention,
+            ),
+            (
+                "OBSERVE_ACTUAL_OUTPUT",
+                "PRESENT_ACTUAL_OUTPUT",
+                "NO_RELATION_CLAIM",
+                "REQUIRED",
+            ),
+        )
+        material_memo_trace = tuple(
+            row
+            for row in _step6_trace_spine(material)
+            if row[0] == "OBSERVATION" and row[5] == (("memo", -1),)
+        )
+        appended_memo_trace = tuple(
+            row
+            for row in _step6_trace_spine(appended)
+            if row[0] == "OBSERVATION" and row[5] == (("memo", -1),)
+        )
+        added_trace = finite_multiset_addition(
+            material_memo_trace,
+            appended_memo_trace,
+        )
+        self.assertEqual(len(added_trace), 1)
+        self.assertEqual(added_trace[0][3], ("action",))
+        for run in (material, appended):
+            projection = run["captured"]["projection"]
+            graph = run["captured"]["grounded_graph"]
+            self.assertEqual(graph.edges, ())
+            self.assertTrue(
+                all(
+                    row.relation_operator.value == "NO_RELATION_CLAIM"
+                    for row in projection.interpretation_candidates
+                )
+            )
+            self.assertFalse(
+                any(
+                    row.node_kind.lower()
+                    in {"personality", "diagnosis", "hidden_intent", "future"}
+                    for row in graph.nodes
+                )
+            )
+
+    def test_step6_subjectivity_mutations_preserve_strength_and_reject_person_target(
+        self,
+    ) -> None:
+        operators = tuple(
+            row[2]
+            for row in STAGE1_KAREN_DERIVED_MUTATION_SET_V1
+            if row[1] == "SUBJECTIVITY_MUTATION"
+        )
+        self.assertEqual(
+            operators,
+            ("SOURCE_STRENGTH", "DISCOMFORT_PERSON_TARGET"),
+        )
+
+        weak_request, strong_request = _step6_mutation_requests("SOURCE_STRENGTH")
+        assert strong_request is not None
+        weak = _run_step6_mutation_request(weak_request)
+        strong = _run_step6_mutation_request(strong_request)
+        self._assert_step6_generated(weak)
+        self._assert_step6_generated(strong)
+        weak_capture = weak["captured"]
+        strong_capture = strong["captured"]
+        weak_projection = weak_capture["projection"]
+        strong_projection = strong_capture["projection"]
+        self.assertEqual(
+            _step6_projection_shape(weak_capture),
+            _step6_projection_shape(strong_capture),
+        )
+        self.assertEqual(_step6_trace_spine(weak), _step6_trace_spine(strong))
+        self.assertEqual(
+            (
+                weak["outcome"].artifact.observation,
+                weak["outcome"].artifact.reception,
+                tuple(row.text for row in weak["outcome"].artifact.visible_unknowns),
+            ),
+            (
+                strong["outcome"].artifact.observation,
+                strong["outcome"].artifact.reception,
+                tuple(row.text for row in strong["outcome"].artifact.visible_unknowns),
+            ),
+        )
+        self.assertNotEqual(
+            weak_capture["source"].envelope.envelope_id,
+            strong_capture["source"].envelope.envelope_id,
+        )
+        self.assertNotEqual(
+            weak_capture["grounded_graph"].graph_id,
+            strong_capture["grounded_graph"].graph_id,
+        )
+        self.assertNotEqual(weak_projection.projection_id, strong_projection.projection_id)
+        self.assertNotEqual(
+            weak["outcome"].artifact.artifact_id,
+            strong["outcome"].artifact.artifact_id,
+        )
+        weak_raw = copy.deepcopy(weak_request.current_input_bundle.raw_current_input)
+        strong_raw = copy.deepcopy(strong_request.current_input_bundle.raw_current_input)
+        weak_raw["id"] = "REQUEST_ID"
+        strong_raw["id"] = "REQUEST_ID"
+        weak_raw["emotion_details"][0]["strength"] = "MUTATED_STRENGTH"
+        strong_raw["emotion_details"][0]["strength"] = "MUTATED_STRENGTH"
+        self.assertEqual(weak_raw, strong_raw)
+
+        def literal_hashes(captured: dict[str, object]) -> dict[tuple[str, int], str]:
+            return {
+                (row.field_path, row.element_index): row.literal_sha256
+                for row in captured["source"].evidence_refs
+            }
+
+        weak_hashes = literal_hashes(weak_capture)
+        strong_hashes = literal_hashes(strong_capture)
+        self.assertEqual(set(weak_hashes), set(strong_hashes))
+        self.assertEqual(
+            {
+                field
+                for field in weak_hashes
+                if weak_hashes[field] != strong_hashes[field]
+            },
+            {("emotion_details.0.strength", 0)},
+        )
+        self.assertEqual(
+            tuple(
+                (
+                    row.asserted_subjective_proposition.affect_category,
+                    row.asserted_subjective_proposition.affect_intensity,
+                    row.subjective_mode,
+                    row.user_fact_effect,
+                )
+                for row in weak_projection.subjective_claims
+            ),
+            tuple(
+                (
+                    row.asserted_subjective_proposition.affect_category,
+                    row.asserted_subjective_proposition.affect_intensity,
+                    row.subjective_mode,
+                    row.user_fact_effect,
+                )
+                for row in strong_projection.subjective_claims
+            ),
+        )
+
+        valid_request, no_second_request = _step6_mutation_requests(
+            "DISCOMFORT_PERSON_TARGET"
+        )
+        self.assertIsNone(no_second_request)
+        valid = _run_step6_mutation_request(valid_request)
+        self._assert_step6_generated(valid)
+        valid_capture = valid["captured"]
+        projection = valid_capture["projection"]
+        graph = valid_capture["grounded_graph"]
+        parent_plan = valid_capture["parent_plan"]
+        cmee_contracts_module.validate_stage1_projection(
+            projection,
+            grounded_graph=graph,
+            parent_plan=parent_plan,
+        )
+        affective_claims = tuple(
+            row
+            for row in projection.subjective_claims
+            if row.subjective_mode.value == "AFFECTIVE_RESPONSE"
+        )
+        self.assertEqual(len(affective_claims), 1)
+        original_claim = affective_claims[0]
+        original_proposition = original_claim.asserted_subjective_proposition
+        self.assertIsNotNone(original_proposition.affect_category)
+        self.assertNotEqual(
+            original_proposition.affect_category.value,
+            "DISCOMFORT",
+        )
+        self.assertTrue(original_proposition.response_object_refs)
+        node_by_id = {row.node_id: row for row in graph.nodes}
+
+        def response_node(ref: str):
+            ref_kind, payload = ref.split(":", 1)
+            self.assertEqual(ref_kind, "node")
+            return node_by_id[payload.split("@", 1)[0]]
+
+        response_nodes = tuple(
+            response_node(ref) for ref in original_proposition.response_object_refs
+        )
+        self.assertTrue(
+            all(row.node_kind not in {"event", "action", "change"} for row in response_nodes)
+        )
+        tampered_proposition = replace(
+            original_proposition,
+            affect_category=cmee_contracts_module.AffectCategory.DISCOMFORT,
+        )
+        tampered_claim = replace(
+            original_claim,
+            subjective_claim_id="",
+            asserted_subjective_proposition=tampered_proposition,
+        )
+        tampered_claim = replace(
+            tampered_claim,
+            subjective_claim_id=cmee_contracts_module.recompute_stage1_identity(
+                tampered_claim
+            ),
+        )
+        self.assertNotEqual(
+            tampered_claim.subjective_claim_id,
+            original_claim.subjective_claim_id,
+        )
+        self.assertEqual(
+            replace(
+                tampered_claim,
+                subjective_claim_id=original_claim.subjective_claim_id,
+                asserted_subjective_proposition=replace(
+                    tampered_proposition,
+                    affect_category=original_proposition.affect_category,
+                ),
+            ),
+            original_claim,
+        )
+        tampered_claims = tuple(
+            tampered_claim if row is original_claim else row
+            for row in projection.subjective_claims
+        )
+        tampered_order = tuple(
+            tampered_claim.subjective_claim_id
+            if ref == original_claim.subjective_claim_id
+            else ref
+            for ref in projection.ordered_subjective_refs
+        )
+        tampered_projection = replace(
+            projection,
+            projection_id="",
+            subjective_claims=tampered_claims,
+            ordered_subjective_refs=tampered_order,
+        )
+        tampered_projection = replace(
+            tampered_projection,
+            projection_id=cmee_contracts_module.recompute_stage1_identity(
+                tampered_projection
+            ),
+        )
+        self.assertNotEqual(tampered_projection.projection_id, projection.projection_id)
+        cmee_contracts_module.validate_stage1_identity(tampered_claim)
+        cmee_contracts_module.validate_stage1_identity(tampered_projection)
+        with (
+            patch.object(
+                emlis_v1a_module,
+                "compile_stage1_response",
+                side_effect=AssertionError("tamper validation compiled"),
+            ) as compiler,
+            patch.object(
+                emlis_v1a_module,
+                "compose_emlis_conversation_candidate",
+                side_effect=AssertionError("tamper validation composed"),
+            ) as composer,
+            patch.object(
+                stage1_response_module,
+                "build_stage1_realization_candidate_set",
+                side_effect=AssertionError("tamper validation realized"),
+            ) as realizer,
+            patch.object(
+                stage1_response_module,
+                "select_stage1_realization_candidate",
+                side_effect=AssertionError("tamper validation selected"),
+            ) as selector,
+        ):
+            with self.assertRaisesRegex(
+                cmee_contracts_module.CMEEStage1ContractError,
+                "^stage1_subjective_discomfort_target_invalid$",
+            ):
+                cmee_contracts_module.validate_stage1_projection(
+                    tampered_projection,
+                    grounded_graph=graph,
+                    parent_plan=parent_plan,
+                )
+        self.assertEqual(compiler.call_count, 0)
+        self.assertEqual(composer.call_count, 0)
+        self.assertEqual(realizer.call_count, 0)
+        self.assertEqual(selector.call_count, 0)
+        self.assertFalse(
+            any(
+                row.emlis_stage1_extension is not None
+                and row.emlis_stage1_extension.subjective_claim_ref
+                == tampered_claim.subjective_claim_id
+                for row in valid["outcome"].artifact.trace
+            )
+        )
 
     def test_coordinated_rehash_cannot_replace_source_semantics(self) -> None:
         source, graph, _plan, artifact, visible = _private_parts(_request())

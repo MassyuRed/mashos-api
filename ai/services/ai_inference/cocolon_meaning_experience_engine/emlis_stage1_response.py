@@ -342,7 +342,7 @@ CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE = (
         "role_anchor_policy",
         (
             ("max_graphemes", 16),
-            ("over_limit_selection", "rightmost_grapheme_window"),
+            ("over_limit_selection", "semantic_boundary_or_stop"),
             ("inserted_token_count", 0),
             ("full_value_replay_over_limit", False),
         ),
@@ -750,13 +750,9 @@ def _visible_claim_ids(
     visible_owners = set(parent_plan.visible_owner_ids)
     if not visible_owners:
         raise CMEEStage1ContractError("stage1_visible_source_empty")
-    # The legacy plan's visible-owner set resolves the sole duty owner, but it
-    # is not the Stage 1 semantic-pool denominator.  Every admitted graph row
-    # remains a possible request-local interpretation annotation.  Candidate
-    # construction below independently excludes UNKNOWN and non-admitted rows.
-    graph_claim_ids = {row.node_id for row in graph.nodes} | {
-        row.edge_id for row in graph.edges
-    }
+    graph_node_ids = {row.node_id for row in graph.nodes}
+    graph_edge_ids = {row.edge_id for row in graph.edges}
+    graph_claim_ids = graph_node_ids | graph_edge_ids
     if not graph.owner_dispositions:
         return graph_claim_ids
 
@@ -769,18 +765,22 @@ def _visible_claim_ids(
         RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
         RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
     }
+    visible_claim_ids: set[str] = set()
     for owner_id in visible_owners:
         row = disposition_by_owner.get(owner_id)
         if row is None or row.route_b_disposition not in positive:
             raise CMEEStage1ContractError("stage1_visible_owner_disposition_mismatch")
         if not set(row.visible_claim_refs).issubset(graph_claim_ids):
             raise CMEEStage1ContractError("stage1_visible_claim_ref_missing")
+        visible_claim_ids.update(row.visible_claim_refs)
     if any(
         not set(row.visible_claim_refs).issubset(graph_claim_ids)
         for row in graph.owner_dispositions
     ):
         raise CMEEStage1ContractError("stage1_visible_claim_ref_missing")
-    return graph_claim_ids
+    if not visible_claim_ids:
+        raise CMEEStage1ContractError("stage1_visible_source_empty")
+    return visible_claim_ids
 
 
 def _validate_canonical_semantic_inputs(
@@ -1037,6 +1037,38 @@ def _resolve_binding(
         parent_plan,
     )
     binding = _bind_grounded_plan(source, graph, grounded_plan)
+    node_by_id = {row.node_id: row for row in graph.nodes}
+    edge_by_id = {row.edge_id: row for row in graph.edges}
+    required_owners = set(parent_plan.required_observation_owner_ids)
+    required_edge_ids = frozenset(
+        binding.relation_to_edge[relation_id]
+        for relation_id in grounded_plan.coverage_requirements.required_relation_ids
+        if edge_by_id[binding.relation_to_edge[relation_id]].owner_id
+        in required_owners
+        and binding.relation_to_edge[relation_id] in visible_claim_ids
+    )
+    relation_covered_node_ids = {
+        endpoint
+        for edge_id in required_edge_ids
+        for endpoint in (
+            edge_by_id[edge_id].source_node_id,
+            edge_by_id[edge_id].target_node_id,
+        )
+    }
+    required_node_ids = frozenset(
+        binding.nucleus_to_node[nucleus_id]
+        for nucleus_id in grounded_plan.coverage_requirements.required_nucleus_ids
+        if node_by_id[binding.nucleus_to_node[nucleus_id]].owner_id
+        in required_owners
+        and binding.nucleus_to_node[nucleus_id] in visible_claim_ids
+        and binding.nucleus_to_node[nucleus_id]
+        not in relation_covered_node_ids
+    )
+    binding = replace(
+        binding,
+        required_node_ids=required_node_ids,
+        required_edge_ids=required_edge_ids,
+    )
     admitted_nodes = {
         row.node_id
         for row in graph.nodes
@@ -1062,9 +1094,6 @@ def _resolve_binding(
     }
     if not binding.required_node_ids.issubset(visible_nodes) or not binding.required_edge_ids.issubset(visible_edges):
         raise CMEEStage1ContractError("stage1_required_semantic_not_visible")
-    required_owners = set(parent_plan.required_observation_owner_ids)
-    node_by_id = {row.node_id: row for row in graph.nodes}
-    edge_by_id = {row.edge_id: row for row in graph.edges}
     required_semantic_owners = {
         *(node_by_id[row].owner_id for row in binding.required_node_ids),
         *(edge_by_id[row].owner_id for row in binding.required_edge_ids),
@@ -1072,6 +1101,42 @@ def _resolve_binding(
     if not required_owners.issubset(required_semantic_owners):
         raise CMEEStage1ContractError("stage1_required_owner_uncovered")
     return binding
+
+
+def stage1_required_projection_nucleus_ids(
+    *,
+    source: AdmittedTextSource,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
+    grounded_plan: GroundedObservationPlan,
+) -> tuple[str, ...]:
+    """Return the exact canonical nucleus coverage owned by Stage 1.
+
+    Required relations cover both endpoints. The ExperiencePlan's required
+    owner duty is the exact Stage 1 denominator; active-optional source owners
+    remain available for evidence but cannot silently become required output.
+    """
+
+    visible_claim_ids = _visible_claim_ids(grounded_graph, parent_plan)
+    binding = _resolve_binding(
+        grounded_graph,
+        parent_plan,
+        source=source,
+        grounded_plan=grounded_plan,
+        visible_claim_ids=visible_claim_ids,
+    )
+    edge_by_id = {row.edge_id: row for row in grounded_graph.edges}
+    required_node_ids = set(binding.required_node_ids)
+    for edge_id in binding.required_edge_ids:
+        edge = edge_by_id.get(edge_id)
+        if edge is None:
+            raise CMEEStage1ContractError("stage1_required_relation_unresolved")
+        required_node_ids.update((edge.source_node_id, edge.target_node_id))
+    return tuple(
+        nucleus.nucleus_id
+        for nucleus in grounded_plan.nuclei
+        if binding.nucleus_to_node.get(nucleus.nucleus_id) in required_node_ids
+    )
 
 
 def _qualifiers(meta: Optional[object], *, role: Optional[str] = None) -> tuple[str, ...]:
@@ -1259,7 +1324,13 @@ def _relation_shape(
     if relation == "contrast":
         return symmetric(InterpretationKind.TENSION, RelationOperator.TENSION_WITH)
     if relation in {"wish_and_constraint", "preserves_despite", "attempt_and_block"}:
+        direction: Optional[MeaningNode] = None
+        burden: Optional[MeaningNode] = None
         if _is_direction(source, source_meta) and _is_burden(target, target_meta):
+            direction, burden = source, target
+        elif _is_burden(source, source_meta) and _is_direction(target, target_meta):
+            direction, burden = target, source
+        if direction is not None and burden is not None:
             operator = (
                 RelationOperator.COEXISTS_WITH
                 if relation == "wish_and_constraint"
@@ -1270,8 +1341,14 @@ def _relation_shape(
                 SemanticOperator.SYNTHESIZE_RELATION,
                 operator,
                 (
-                    ArgumentBinding(ArgumentRole.LEFT, source_ref),
-                    ArgumentBinding(ArgumentRole.RIGHT, target_ref),
+                    ArgumentBinding(
+                        ArgumentRole.LEFT,
+                        _node_ref(direction.node_id),
+                    ),
+                    ArgumentBinding(
+                        ArgumentRole.RIGHT,
+                        _node_ref(burden.node_id),
+                    ),
                 ),
             )
         return None
@@ -1291,9 +1368,9 @@ def _relation_shape(
             ),
         )
     if relation in {"temporal_before_after", "shift_from_to"}:
-        if (
-            _enum_or_text(source.node_kind).lower() not in _EVENT_KINDS
-            or _enum_or_text(target.node_kind).lower() not in _RESIDUE_KINDS
+        if not (
+            _enum_or_text(source.node_kind).lower() in _EVENT_KINDS
+            and _enum_or_text(target.node_kind).lower() in _RESIDUE_KINDS
         ):
             return None
         return (
@@ -1415,6 +1492,12 @@ def _candidate_rows(
     grounded_plan: GroundedObservationPlan,
 ) -> tuple[_CandidateRow, ...]:
     _validate_graph_and_parent(graph, parent_plan)
+    _validate_canonical_semantic_inputs(
+        source,
+        grounded_plan,
+        graph,
+        parent_plan,
+    )
     visible_claim_ids = _visible_claim_ids(graph, parent_plan)
     binding = _resolve_binding(
         graph,
@@ -2762,8 +2845,68 @@ def build_stage1_semantic_projection(
 
 
 def _validate_microgrammar_inventory() -> None:
+    canonical_bytes = stage1_canonical_json_bytes(
+        CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE
+    )
+    canonical_sections = dict(CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE)
+    expected_observation_rows = {
+        (operator, relation): (primary, alternate, condition)
+        for operator, relation, _family, primary, alternate, condition
+        in canonical_sections["observation_operator_rows"]
+    }
+    expected_observation_families = {
+        (operator, relation): family
+        for operator, relation, family, _primary, _alternate, _condition
+        in canonical_sections["observation_operator_rows"]
+    }
+    expected_subjective_rows = {
+        (operator, detail): (primary, alternate)
+        for operator, detail, _family, primary, alternate
+        in canonical_sections["subjective_operator_rows"]
+    }
+    expected_subjective_families = {
+        (operator, detail): family
+        for operator, detail, family, _primary, _alternate
+        in canonical_sections["subjective_operator_rows"]
+    }
+    expected_operator_connectives = {
+        (layer, operator): family
+        for layer, operator, family
+        in canonical_sections["operator_connective_rows"]
+    }
     if (
-        _MICROGRAMMAR_SECTIONS.get("policy_id")
+        canonical_bytes != CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_BYTES
+        or hashlib.sha256(canonical_bytes).hexdigest()
+        != CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_SHA256
+        or _MICROGRAMMAR_SECTIONS != canonical_sections
+        or _OBSERVATION_PREDICATE_ROWS != expected_observation_rows
+        or _OBSERVATION_PREDICATE_FAMILIES
+        != expected_observation_families
+        or _SUBJECTIVE_PREDICATE_ROWS != expected_subjective_rows
+        or _SUBJECTIVE_PREDICATE_FAMILIES != expected_subjective_families
+        or _CONNECTIVE_FAMILIES
+        != dict(canonical_sections["connective_families"])
+        or _OPERATOR_CONNECTIVES != expected_operator_connectives
+        or _MODALITY_WRAPPERS
+        != dict(canonical_sections["modality_wrappers"])
+        or _TIME_WRAPPERS != dict(canonical_sections["time_wrappers"])
+        or _LAYER1_DIRECT_SLOTS
+        != dict(canonical_sections["layer1_direct_slots"])
+        or _LAYER1_RELATION_SLOTS
+        != dict(canonical_sections["layer1_relation_slots"])
+        or _LAYER2_CASE_PARTICLES
+        != dict(canonical_sections["layer2_case_particles"])
+        or _STRUCTURAL_TOKENS
+        != dict(canonical_sections["structural_tokens"])
+        or _TOPIC_SPEAKER_POLICY
+        != dict(canonical_sections["topic_speaker_policy"])
+        or _REFERENCE_MODE_POLICY
+        != dict(canonical_sections["reference_mode_policy"])
+        or _QUOTE_POLICY != dict(canonical_sections["quote_policy"])
+        or _ROLE_ANCHOR_POLICY
+        != dict(canonical_sections["role_anchor_policy"])
+        or _VARIANT_POLICY != dict(canonical_sections["variant_policy"])
+        or _MICROGRAMMAR_SECTIONS.get("policy_id")
         != CMEE_STAGE1_MICROGRAMMAR_POLICY_VERSION
         or _MICROGRAMMAR_SECTIONS.get("policy_ref")
         != CMEE_STAGE1_MICROGRAMMAR_POLICY_REF
@@ -3034,12 +3177,12 @@ def _source_bound_role_surface(
     if len(clusters) > max_graphemes:
         if (
             _ROLE_ANCHOR_POLICY.get("over_limit_selection")
-            != "rightmost_grapheme_window"
+            != "semantic_boundary_or_stop"
             or _ROLE_ANCHOR_POLICY.get("inserted_token_count") != 0
             or _ROLE_ANCHOR_POLICY.get("full_value_replay_over_limit") is not False
         ):
             raise CMEEStage1ContractError("stage1_role_anchor_policy_invalid")
-        value = "".join(clusters[-max_graphemes:])
+        raise CMEEStage1ContractError("stage1_surface_binding_unavailable")
     return value
 
 
@@ -3367,9 +3510,10 @@ def _subjective_object_ref(
     return node_refs[0]
 
 
-def _time_scope_for_semantic_ref(
+def _source_qualifier_for_semantic_ref(
     projection: EmlisStage1Projection,
     semantic_ref: str,
+    axis: str,
 ) -> str:
     values: list[str] = []
     for contribution in projection.observation_contributions:
@@ -3378,16 +3522,29 @@ def _time_scope_for_semantic_ref(
             if binding.semantic_ref != semantic_ref:
                 continue
             if contribution.relation_operator is RelationOperator.NO_RELATION_CLAIM:
-                value = _qualifier_value(candidate, "time_scope")
+                value = _qualifier_value(candidate, axis)
             else:
                 value = _qualifier_value(
-                    candidate, "time_scope", role=binding.role
+                    candidate, axis, role=binding.role
                 )
             if value not in values:
                 values.append(value)
     if len(values) != 1:
-        raise CMEEStage1ContractError("stage1_microgrammar_time_scope_ambiguous")
+        raise CMEEStage1ContractError(
+            f"stage1_microgrammar_{axis}_ambiguous"
+        )
     return values[0]
+
+
+def _time_scope_for_semantic_ref(
+    projection: EmlisStage1Projection,
+    semantic_ref: str,
+) -> str:
+    return _source_qualifier_for_semantic_ref(
+        projection,
+        semantic_ref,
+        "time_scope",
+    )
 
 
 def _reference_mode_for_claim(
@@ -3458,11 +3615,21 @@ def _subjective_surface_contract(
     )
     object_ref = _subjective_object_ref(projection, claim)
     reference_mode = _reference_mode_for_claim(projection, claim, object_ref)
+    source_modality = _source_qualifier_for_semantic_ref(
+        projection,
+        object_ref,
+        "modality",
+    )
     anchor = _source_bound_role_surface(object_ref, grounded_graph)
     time_scope = _time_scope_for_semantic_ref(projection, object_ref)
     time_wrapper = _TIME_WRAPPERS.get(time_scope)
-    modality_wrapper = _MODALITY_WRAPPERS.get(proposition.modality)
-    if time_wrapper is None or modality_wrapper is None:
+    source_modality_wrapper = _MODALITY_WRAPPERS.get(source_modality)
+    claim_modality_wrapper = _MODALITY_WRAPPERS.get(proposition.modality)
+    if (
+        time_wrapper is None
+        or source_modality_wrapper is None
+        or claim_modality_wrapper is None
+    ):
         raise CMEEStage1ContractError("stage1_microgrammar_inflection_missing")
     detail = ""
     if proposition.subjective_operator is SubjectiveOperator.TAKE_RELATIONAL_STANCE:
@@ -3500,8 +3667,22 @@ def _subjective_surface_contract(
     parts.append(_part(anchor, object_ref, "frame:0:object"))
     parts.append(_part(time_wrapper, object_ref, "frame:0:time"))
     parts.append(_part(particle, object_ref, "frame:0:case"))
-    if modality_wrapper:
-        parts.append(_part(modality_wrapper, object_ref, "frame:0:modality"))
+    if source_modality_wrapper:
+        parts.append(
+            _part(
+                source_modality_wrapper,
+                object_ref,
+                "frame:0:object_modality",
+            )
+        )
+    if claim_modality_wrapper and claim_modality_wrapper != source_modality_wrapper:
+        parts.append(
+            _part(
+                claim_modality_wrapper,
+                object_ref,
+                "frame:0:modality",
+            )
+        )
     parts.append(_part(predicate, object_ref, "frame:0:predicate"))
     parts.append(_part(_STRUCTURAL_TOKENS["terminal"], object_ref, "frame:0:terminal"))
     frame = ClauseFrame(
