@@ -843,3 +843,51 @@ AUTOMATIC_PROGRESSION = FALSE
 ```
 
 このterminal transition以後、第三generic correction、machine repair、fresh Step 3再実行、Step 4、formal exact8、Product Read、ready、merge、productionへ進まない。machine bug correctionはhuman counter外だが、human resultがcount=`2/2`で同時にterminalを成立させた後のautomatic correctionへ再利用しない。fresh explicit LEVEL_3 authorityなしにmachine repair、別route、new asset family、providerまたは再実装へ移らない。current canonical statusはCocolon v1/06 §36が所有する。
+
+## 25. Stage 1 additional correction Step 3 — bounded machine repair activation（2026-08-25）
+
+§24後、Mashは同一Route Aのcase-ID effectだけをgenericに修正し、共有counterを`2/2`に保持したnew identityでStep 3全体をfresh exact1回再実行するfresh explicit `LEVEL_3` authorityを与えた。canonical activation ownerはCocolon v1/06 §37であり、本節はruntime側のbody-free exact2 ownerである。
+
+```text
+AUTHORITY = FRESH_EXPLICIT_LEVEL_3
+AUTHORITY_SCOPE = SAME_ROUTE_MACHINE_REPAIR_ONLY
+REPAIR_CLASS = BOUNDED_MECHANICAL_REPAIR
+ACTIVATION_PREIMAGE_RUNTIME_HEAD = c664f6972d9ae384144f0c31a9971eeab27081b8
+ACTIVATION_PREIMAGE_DESIGN_HEAD = 95847fb8a3c432477704889917259a3ab9c4c8f5
+PREVIOUS_STEP3_EXECUTION_RUNTIME_HEAD = 31befaf6a4f825330c06ca97df045ebccf2f4f2d
+PREVIOUS_STEP3_EXECUTION_DESIGN_HEAD = 9f37ee343e8d6f11d49658d5560b0910b1ea2a23
+PREVIOUS_LANGUAGE_CORE_IDENTITY = 57f334c3c61e2ed590ae13f29481bc4824944a2bfc360a604a2a2a81cc95c193
+
+FAILURE_CLASS = RUNTIME_CASE_ID_EFFECT_ON_SEMANTIC_DIRECTION_AND_LAYOUT
+GENERIC_REPAIR_INVARIANT = CANONICAL_TYPED_SOURCE_ORDER_FOR_PLAIN_SYMMETRIC_ENDPOINTS
+CASE_OR_PHRASE_FAMILY_RULE = 0
+FINISHED_SENTENCE_ASSET = 0
+NEW_ENUM_AXIS_PATH_PROVIDER_DEPENDENCY = 0
+RAW_BODY = 0
+PRIVATE_INDIVIDUAL_DIGEST_PUBLICATION = 0
+PRIVATE_LOCATOR_PUBLICATION = 0
+
+COMMON_DEFECT_RETURN_COUNT = 2_OF_2_KEEP
+COMMON_DEFECT_RETURN_INCREMENT = 0
+COUNTER_RESET = 0
+MACHINE_BUG_INCREMENT = 0
+MACHINE_REPAIR_ATTEMPT_MAX = 1
+FRESH_STEP3_RERUN_MAX = 1
+THIRD_GENERIC_CORRECTION_ALLOWED = FALSE
+SECOND_MACHINE_REPAIR_ALLOWED = FALSE
+
+EARLY_ACTUAL_STATUS = NOT_RUN
+STAGE1_ADDITIONAL_CORRECTION_STEP3 = BOUNDED_MACHINE_REPAIR_IN_PROGRESS_DISABLED
+STEP4 = NOT_STARTED
+FORMAL_EXACT8 = NOT_RUN
+PRODUCT_READ_EVALUATED_FOR_THIS_UNIT = FALSE
+PRODUCT_PASS = NOT_DECLARED
+PRODUCT_CREDIT = 0
+TECHNICAL_CREDIT = 0
+CANDIDATE_READY = FALSE
+READY_OR_MERGE = 0
+PRODUCTION_EFFECT = 0
+AUTOMATIC_PROGRESSION = FALSE
+```
+
+runtime product-causal writeはexisting `emlis_stage1_response.py` / `contracts.py` exact2、regressionはexisting contract test exact1、language identity syncはexisting body-free runner exact1に限定する。repair failure、fresh Step 3 machine failure、human `COMMON_DEFECT` at count=`2/2`、`ROUTE_LEVEL_CEILING`のいずれでも追加修正せずSTOPする。全required CLEAR時だけ`LANGUAGE_VIABILITY_OBSERVED`をinternal observationとして記録し、Step 4へ進まない。
