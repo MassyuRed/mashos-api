@@ -33,6 +33,167 @@ CMEE_STAGE1_IDENTITY_ALGORITHM = (
 CMEE_STAGE1_EMLIS_OWNER_REF = (
     "owner:emlis@cocolon.cmee.v1a.emlis_stage1_response.v1"
 )
+# Step 1 freezes the final v2 identity values without relabelling the callable
+# v1 response route.  The active constants above, the v1 realizer registry and
+# the runner move together only at the atomic cutover owned by Step 5.
+CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY = (
+    (
+        "CMEE_STAGE1_RESPONSE_SCHEMA_VERSION",
+        "cocolon.cmee.v1a.emlis_stage1_response.v2",
+    ),
+    (
+        "CMEE_STAGE1_SUBJECTIVE_PROPOSITION_SCHEMA_VERSION",
+        "cocolon.cmee.v1a.emlis_subjective_proposition.v2",
+    ),
+    (
+        "CMEE_STAGE1_COMPOSITION_POLICY_VERSION",
+        "cocolon.emlis.stage1.discourse_composition.v1",
+    ),
+    (
+        "CMEE_STAGE1_NORMAL_FORM_VERSION",
+        "cocolon.cmee.v1a.emlis_stage1_normal_form.v1",
+    ),
+    (
+        "CMEE_STAGE1_CONSTRUCTION_GRAMMAR_POLICY_VERSION",
+        "cocolon.emlis.stage1.grounded_construction_grammar.v1",
+    ),
+    (
+        "CMEE_STAGE1_PROJECTION_PREIMAGE_REF_VERSION",
+        "cocolon.cmee.v1a.emlis_stage1_projection_preimage_ref.v1",
+    ),
+    (
+        "CMEE_STAGE1_SUBJECTIVE_BASIS_BINDING_REF_VERSION",
+        "cocolon.cmee.v1a.emlis_subjective_basis_binding_ref.v1",
+    ),
+    (
+        "CMEE_STAGE1_SOURCE_QUALIFIER_BINDING_REF_VERSION",
+        "cocolon.cmee.v1a.emlis_source_qualifier_binding_ref.v1",
+    ),
+    (
+        "CMEE_STAGE1_POLICY_BASIS_BINDING_REF_VERSION",
+        "cocolon.cmee.v1a.emlis_policy_basis_binding_ref.v1",
+    ),
+    (
+        "CMEE_STAGE1_POLICY_TARGET_KEY_VERSION",
+        "cocolon.cmee.v1a.emlis_policy_target_key.v1",
+    ),
+    (
+        "CMEE_STAGE1_POLICY_APPLICATION_ROW_ID_VERSION",
+        "cocolon.cmee.v1a.emlis_policy_application_row_id.v1",
+    ),
+    (
+        "CMEE_STAGE1_SUBJECTIVE_RESPONSIBILITY_REF_VERSION",
+        "cocolon.cmee.v1a.emlis_subjective_responsibility_ref.v1",
+    ),
+    (
+        "CMEE_STAGE1_SUBJECTIVE_OPPORTUNITY_KEY_VERSION",
+        "cocolon.cmee.v1a.emlis_subjective_opportunity_key.v1",
+    ),
+    (
+        "CMEE_STAGE1_ARC_DEPENDENCY_REF_VERSION",
+        "cocolon.cmee.v1a.emlis_arc_dependency_ref.v1",
+    ),
+    (
+        "CMEE_STAGE1_DISCOURSE_ARC_REF_VERSION",
+        "cocolon.cmee.v1a.emlis_stage1_discourse_arc_ref.v1",
+    ),
+    (
+        "CMEE_STAGE1_COMPOSITION_DUTY_REF_VERSION",
+        "cocolon.cmee.v1a.emlis_composition_duty_ref.v1",
+    ),
+    (
+        "CMEE_STAGE1_REFERENCE_STATE_REF_VERSION",
+        "cocolon.cmee.v1a.emlis_discourse_reference_state_ref.v2",
+    ),
+    (
+        "CMEE_STAGE1_CLAUSE_SCALAR_CONSTRAINT_REF_VERSION",
+        "cocolon.cmee.v1a.emlis_clause_scalar_constraint_ref.v1",
+    ),
+    (
+        "CMEE_STAGE1_CLAUSE_INTENT_ID_VERSION",
+        "cocolon.cmee.v1a.emlis_clause_intent_id.v1",
+    ),
+    (
+        "CMEE_STAGE1_CLAUSE_PLAN_ID_VERSION",
+        "cocolon.cmee.v1a.emlis_clause_plan_id.v1",
+    ),
+    (
+        "CMEE_STAGE1_RESPONSE_OBJECT_EXPRESSION_ID_VERSION",
+        "cocolon.cmee.v1a.emlis_response_object_expression_id.v1",
+    ),
+    (
+        "CMEE_STAGE1_PROFILE_EVIDENCE_REF_VERSION",
+        "cocolon.cmee.v1a.emlis_profile_evidence_ref.v1",
+    ),
+    (
+        "CMEE_STAGE1_SEALED_UNIT_PLAN_ROW_ID_VERSION",
+        "cocolon.cmee.v1a.emlis_sealed_unit_plan_row_id.v1",
+    ),
+    (
+        "CMEE_STAGE1_COMPOSITION_LAYOUT_ID_VERSION",
+        "cocolon.cmee.v1a.emlis_composition_layout_id.v1",
+    ),
+    (
+        "CMEE_STAGE1_ARTIFACT_COMPOSITION_CANDIDATE_ID_VERSION",
+        "cocolon.cmee.v1a.emlis_artifact_composition_candidate_id.v1",
+    ),
+    (
+        "CMEE_STAGE1_SELECTED_ARTIFACT_ID_VERSION",
+        "cocolon.cmee.v1a.emlis_selected_stage1_artifact_id.v1",
+    ),
+    (
+        "CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION",
+        "cocolon.cmee.v1a.emlis_stage1_positive_trace_extension.v2",
+    ),
+    (
+        "CMEE_STAGE1_EMLIS_OWNER_REF",
+        "owner:emlis@cocolon.cmee.v1a.emlis_stage1_response.v2",
+    ),
+)
+CMEE_STAGE1_ANTI_TEMPLATE_FORBIDDEN_REGISTRY_FIELDS = (
+    "case_id",
+    "case_family",
+    "fixture_id",
+    "exact8_id",
+    "raw_text",
+    "raw_pattern",
+    "source_regex",
+    "semantic_keyword",
+    "expected_text",
+    "finished_surface",
+    "finished_clause",
+    "finished_sentence",
+)
+CMEE_STAGE1_ANTI_TEMPLATE_FORBIDDEN_SELECTOR_INPUTS = (
+    "raw_source",
+    "raw_text",
+    "normalized_input",
+    "evidence_text",
+    "resolver",
+    "regex_result",
+    "case_id",
+    "fixture_id",
+    "fixture",
+    "exact8_id",
+    "source_phrase_family",
+    "semantic_domain_keyword",
+    "input_hash",
+)
+_CMEE_STAGE1_ANTI_TEMPLATE_ALLOWED_REGISTRY_FIELDS_ORDERED = (
+    "construction_id",
+    "argument_slots",
+    "role_order",
+    "valency",
+    "particle_rules",
+    "auxiliary_rules",
+    "relation_combinators",
+    "inflection_order",
+)
+_CMEE_STAGE1_ANTI_TEMPLATE_ALLOWED_SELECTOR_INPUTS_ORDERED = (
+    "grammatical_shape_key",
+    "predicate_valency",
+    "syntactic_orientation",
+)
 CMEE_TERMINAL_GENERATED_DISABLED = (
     "CMEE_V1A_I1SX_TEXT_GROUNDED_VERTICAL_WIP_DISABLED"
 )
@@ -230,6 +391,111 @@ class StanceOperator(str, Enum):
     PROTECT_USER_AGENCY = "PROTECT_USER_AGENCY"
     HOLD_UNFINISHED_OPEN = "HOLD_UNFINISHED_OPEN"
     WELCOME_BOUNDED_CHANGE = "WELCOME_BOUNDED_CHANGE"
+
+
+class SubjectiveContentKind(str, Enum):
+    AFFECT = "AFFECT"
+    APPRAISAL = "APPRAISAL"
+    MATERIAL_VALUE = "MATERIAL_VALUE"
+    RELATIONAL_POSITION = "RELATIONAL_POSITION"
+
+
+class SubjectiveAssertionModality(str, Enum):
+    EMLIS_FEELING = "EMLIS_FEELING"
+    EMLIS_APPRAISAL = "EMLIS_APPRAISAL"
+    EMLIS_VALUE_POSITION = "EMLIS_VALUE_POSITION"
+    EMLIS_RELATIONAL_INTENTION = "EMLIS_RELATIONAL_INTENTION"
+    EMLIS_BOUNDED_REFUSAL = "EMLIS_BOUNDED_REFUSAL"
+
+
+class SubjectiveBasisRole(str, Enum):
+    ELICITOR = "ELICITOR"
+    APPRAISED_OBJECT = "APPRAISED_OBJECT"
+    RELATION_LEFT = "RELATION_LEFT"
+    RELATION_RIGHT = "RELATION_RIGHT"
+    ACTION = "ACTION"
+    CHANGE = "CHANGE"
+    BEFORE = "BEFORE"
+    AFTER = "AFTER"
+    RESIDUE = "RESIDUE"
+    UNFINISHED = "UNFINISHED"
+    CHOICE_TARGET = "CHOICE_TARGET"
+
+
+class PolicyBasisOwnerKind(str, Enum):
+    CONTRIBUTION = "CONTRIBUTION"
+    MATERIAL_UNKNOWN = "MATERIAL_UNKNOWN"
+
+
+class PolicyBasisRole(str, Enum):
+    BURDEN_OR_RESIDUE = "BURDEN_OR_RESIDUE"
+    DIRECTION = "DIRECTION"
+    CHANGE_OR_ACTUAL_OUTPUT = "CHANGE_OR_ACTUAL_OUTPUT"
+    COEXISTENCE_OR_TENSION = "COEXISTENCE_OR_TENSION"
+    UNFINISHED = "UNFINISHED"
+    VISIBILITY_ACT_BASIS = "VISIBILITY_ACT_BASIS"
+    MATERIAL_UNKNOWN = "MATERIAL_UNKNOWN"
+
+
+class AppraisalDimension(str, Enum):
+    MATERIAL_WEIGHT = "MATERIAL_WEIGHT"
+    RELATIONAL_NONCOLLAPSE = "RELATIONAL_NONCOLLAPSE"
+    BOUNDED_CHANGE = "BOUNDED_CHANGE"
+    UNFINISHED_OPENNESS = "UNFINISHED_OPENNESS"
+    AGENCY_BOUNDARY = "AGENCY_BOUNDARY"
+
+
+class AppraisalOperation(str, Enum):
+    RECEIVE_AS_MATERIAL = "RECEIVE_AS_MATERIAL"
+    PRESERVE_BOTH_ENDPOINTS = "PRESERVE_BOTH_ENDPOINTS"
+    RECOGNIZE_AS_BOUNDED = "RECOGNIZE_AS_BOUNDED"
+    LEAVE_UNFINISHED = "LEAVE_UNFINISHED"
+    RESPECT_CHOICE = "RESPECT_CHOICE"
+
+
+class MaterialRisk(str, Enum):
+    MINIMIZATION = "MINIMIZATION"
+    WISH_TO_OBLIGATION = "WISH_TO_OBLIGATION"
+    NO_RESULT_TO_NO_VALUE = "NO_RESULT_TO_NO_VALUE"
+    SINGLE_EVENT_TO_IDENTITY = "SINGLE_EVENT_TO_IDENTITY"
+    BOUNDED_CHANGE_TO_UNIVERSAL_SOLUTION = (
+        "BOUNDED_CHANGE_TO_UNIVERSAL_SOLUTION"
+    )
+    ONE_SIDE_TO_TRUE_SELF = "ONE_SIDE_TO_TRUE_SELF"
+    POSSIBILITY_TO_FACT = "POSSIBILITY_TO_FACT"
+    REMOVE_USER_AGENCY = "REMOVE_USER_AGENCY"
+    UNKNOWN_TO_FALSE_UNDERSTANDING = "UNKNOWN_TO_FALSE_UNDERSTANDING"
+
+
+class RelationalPositionKind(str, Enum):
+    STANCE = "STANCE"
+    BOUNDED_COUNTERPOSITION = "BOUNDED_COUNTERPOSITION"
+
+
+class RelationalCommitment(str, Enum):
+    AFFIRM_SOURCE_BOUND_DIRECTION = "AFFIRM_SOURCE_BOUND_DIRECTION"
+    STAY_WITH = "STAY_WITH"
+    HOLD_OPEN = "HOLD_OPEN"
+    WELCOME_BOUNDED_CHANGE = "WELCOME_BOUNDED_CHANGE"
+    PROTECT_AGENCY = "PROTECT_AGENCY"
+    DECLINE_PROMOTION = "DECLINE_PROMOTION"
+
+
+class RelationalClosure(str, Enum):
+    NONE = "NONE"
+    BOUNDED = "BOUNDED"
+    OPEN = "OPEN"
+
+
+class SurfaceDerivationKind(str, Enum):
+    LITERAL_SUBSPAN = "LITERAL_SUBSPAN"
+    NORMALIZED_INFLECTION = "NORMALIZED_INFLECTION"
+    COMPOSITIONAL_JOIN = "COMPOSITIONAL_JOIN"
+    REGISTERED_EMLIS_LEXEME = "REGISTERED_EMLIS_LEXEME"
+    REGISTERED_PARTICIPANT_LEXEME = "REGISTERED_PARTICIPANT_LEXEME"
+    REGISTERED_STRUCTURAL_ASSET = "REGISTERED_STRUCTURAL_ASSET"
+    PROJECTED_RESPONSE_OBJECT = "PROJECTED_RESPONSE_OBJECT"
+    PROJECTED_FUNCTIONAL_ASSET = "PROJECTED_FUNCTIONAL_ASSET"
 
 
 CMEE_STAGE1_RECEPTION_ASSET_MAPPING_VERSION = (
@@ -610,6 +876,121 @@ class SubjectiveProposition:
 
 
 @dataclass(frozen=True, slots=True)
+class SubjectiveBasisBinding:
+    projection_preimage_ref: str
+    binding_ref: str
+    contribution_ref: str
+    semantic_ref: str
+    role: SubjectiveBasisRole
+
+
+@dataclass(frozen=True, slots=True)
+class SourceQualifierBinding:
+    projection_preimage_ref: str
+    source_qualifier_binding_ref: str
+    basis_binding_ref: str
+    source_candidate_ref: str
+    source_argument_role: Optional[ArgumentRole]
+    canonical_qualifier_codes: Tuple[str, str, str]
+    polarity: str
+    modality: str
+    time_scope: str
+
+
+@dataclass(frozen=True, slots=True)
+class PolicyBasisBinding:
+    projection_preimage_ref: str
+    binding_ref: str
+    owner_kind: PolicyBasisOwnerKind
+    owner_ref: str
+    role: PolicyBasisRole
+
+
+@dataclass(frozen=True, slots=True)
+class EmlisAffectContent:
+    category: AffectCategory
+    intensity: AffectIntensity
+    elicitor_bindings: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class EmlisAppraisalContent:
+    dimension: AppraisalDimension
+    operation: AppraisalOperation
+    appraised_bindings: Tuple[str, ...]
+    focal_relation_ref: Optional[str]
+    protected_bindings: Tuple[str, ...]
+    basis_contribution_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ValueApplication:
+    principle_ref: str
+    material_risk: MaterialRisk
+    policy_application_row_refs: Tuple[str, ...]
+    policy_basis_binding_refs: Tuple[str, ...]
+    protected_subjective_binding_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MaterialValueContent:
+    value_applications: Tuple[ValueApplication, ...]
+    target_bindings: Tuple[str, ...]
+    boundary_bindings: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class EmlisRelationalPosition:
+    relational_position_kind: RelationalPositionKind
+    stance_operator: StanceOperator
+    target_bindings: Tuple[str, ...]
+    boundary_bindings: Tuple[str, ...]
+    commitment: RelationalCommitment
+    closure: RelationalClosure
+
+
+@dataclass(frozen=True, slots=True)
+class SubjectivePropositionV2:
+    """Final request-local proposition contract, registered but not wired."""
+
+    schema_version: str
+    content_kind: SubjectiveContentKind
+    subjective_mode: SubjectiveMode
+    subjective_operator: SubjectiveOperator
+    target_contribution_refs: Tuple[str, ...]
+    primary_target_refs: Tuple[str, ...]
+    boundary_target_refs: Tuple[str, ...]
+    response_object_refs: Tuple[str, ...]
+    basis_binding_refs: Tuple[str, ...]
+    source_qualifier_binding_refs: Tuple[str, ...]
+    focal_relation_ref: Optional[str]
+    affect_content: Optional[EmlisAffectContent]
+    appraisal_content: Optional[EmlisAppraisalContent]
+    material_value_content: Optional[MaterialValueContent]
+    relational_position: Optional[EmlisRelationalPosition]
+    referenced_actor_refs: Tuple[str, ...]
+    referenced_experiencer_refs: Tuple[str, ...]
+    addressee_role: str
+    assertion_modality: SubjectiveAssertionModality
+    epistemic_scope: str
+
+
+@dataclass(frozen=True, slots=True)
+class SurfaceDerivation:
+    derivation_kind: SurfaceDerivationKind
+    source_or_claim_refs: Tuple[str, ...]
+    emlis_owner_ref: Optional[str]
+    relation_or_clause_plan_refs: Tuple[str, ...]
+    qualifier_refs: Tuple[str, ...]
+    response_object_expression_ref: Optional[str]
+    antecedent_unit_ref: Optional[str]
+    participant_role_ref: Optional[str]
+    evidence_refs: Tuple[str, ...]
+    rule_ref: str
+    input_scalar_ranges: Tuple[Tuple[int, int], ...]
+
+
+@dataclass(frozen=True, slots=True)
 class EmlisSubjectiveClaim:
     schema_version: str
     subjective_claim_id: str
@@ -760,6 +1141,43 @@ _STAGE1_TUPLE_FIELDS = {
         "referenced_actor_refs",
         "referenced_experiencer_refs",
     ),
+    SubjectiveBasisBinding: (),
+    SourceQualifierBinding: ("canonical_qualifier_codes",),
+    PolicyBasisBinding: (),
+    EmlisAffectContent: ("elicitor_bindings",),
+    EmlisAppraisalContent: (
+        "appraised_bindings",
+        "protected_bindings",
+        "basis_contribution_refs",
+    ),
+    ValueApplication: (
+        "policy_application_row_refs",
+        "policy_basis_binding_refs",
+        "protected_subjective_binding_refs",
+    ),
+    MaterialValueContent: (
+        "value_applications",
+        "target_bindings",
+        "boundary_bindings",
+    ),
+    EmlisRelationalPosition: ("target_bindings", "boundary_bindings"),
+    SubjectivePropositionV2: (
+        "target_contribution_refs",
+        "primary_target_refs",
+        "boundary_target_refs",
+        "response_object_refs",
+        "basis_binding_refs",
+        "source_qualifier_binding_refs",
+        "referenced_actor_refs",
+        "referenced_experiencer_refs",
+    ),
+    SurfaceDerivation: (
+        "source_or_claim_refs",
+        "relation_or_clause_plan_refs",
+        "qualifier_refs",
+        "evidence_refs",
+        "input_scalar_ranges",
+    ),
     EmlisSubjectiveClaim: (
         "basis_observation_contribution_refs",
         "basis_semantic_refs",
@@ -842,6 +1260,1177 @@ def stage1_canonical_json_bytes(value: Any) -> bytes:
         raise
     except (TypeError, ValueError):
         raise CMEEStage1ContractError("stage1_canonical_json_invalid") from None
+
+
+def validate_stage1_final_logical_id_registry() -> None:
+    """Validate the sole disabled registry frozen by correction Step 1."""
+
+    rows = CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY
+    if (
+        type(rows) is not tuple
+        or len(rows) != 28
+        or any(
+            type(row) is not tuple
+            or len(row) != 2
+            or type(row[0]) is not str
+            or not row[0]
+            or type(row[1]) is not str
+            or not row[1]
+            for row in rows
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_final_logical_id_registry_invalid"
+        )
+    names = tuple(row[0] for row in rows)
+    values = tuple(row[1] for row in rows)
+    if len(names) != len(set(names)) or len(values) != len(set(values)):
+        raise CMEEStage1ContractError(
+            "stage1_final_logical_id_registry_invalid"
+        )
+    response_version = _stage1_final_logical_identity(
+        "CMEE_STAGE1_RESPONSE_SCHEMA_VERSION"
+    )
+    if _stage1_final_logical_identity("CMEE_STAGE1_EMLIS_OWNER_REF") != (
+        f"owner:emlis@{response_version}"
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_final_logical_id_registry_invalid"
+        )
+
+
+def _stage1_final_logical_identity(name: str) -> str:
+    matches = tuple(
+        value
+        for registered_name, value in CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY
+        if registered_name == name
+    )
+    if len(matches) != 1:
+        raise CMEEStage1ContractError(
+            "stage1_final_logical_id_registry_invalid"
+        )
+    return matches[0]
+
+
+def _stage1_final_typed_identity(
+    logical_version_name: str,
+    identity_prefix: str,
+    material: tuple[Any, ...],
+) -> str:
+    if (
+        type(identity_prefix) is not str
+        or not identity_prefix
+        or type(material) is not tuple
+    ):
+        raise CMEEStage1ContractError("stage1_final_identity_input_invalid")
+    version = _stage1_final_logical_identity(logical_version_name)
+    digest = hashlib.sha256(
+        version.encode("utf-8")
+        + b"\0"
+        + stage1_canonical_json_bytes(material)
+    ).hexdigest()
+    return f"{identity_prefix}-{digest}"
+
+
+def _stage1_identity_string(value: object) -> bool:
+    return type(value) is str and bool(value) and not any(
+        char.isspace() for char in value
+    )
+
+
+def _stage1_exact_string_tuple(
+    value: object,
+    *,
+    allow_empty: bool,
+) -> tuple[str, ...]:
+    if (
+        type(value) is not tuple
+        or (not allow_empty and not value)
+        or any(not _stage1_identity_string(row) for row in value)
+        or len(value) != len(set(value))
+    ):
+        raise CMEEStage1ContractError("stage1_subjective_v2_cross_owner_invalid")
+    return value
+
+
+def _stage1_first_occurrence_union(*rows: Sequence[str]) -> tuple[str, ...]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for group in rows:
+        for value in group:
+            if value not in seen:
+                seen.add(value)
+                result.append(value)
+    return tuple(result)
+
+
+def _stage1_subjective_content_binding_tuple(
+    value: object,
+    *,
+    allow_empty: bool,
+) -> tuple[str, ...]:
+    try:
+        return _stage1_exact_string_tuple(value, allow_empty=allow_empty)
+    except CMEEStage1ContractError:
+        raise CMEEStage1ContractError("GENERIC_SUBJECTIVE_CONTENT_STOP") from None
+
+
+def project_stage1_projection_preimage_ref(
+    *,
+    grounded_graph_ref: str,
+    parent_observation_duty_ref: str,
+    parent_reception_duty_ref: str,
+    interpretation_candidate_ids: Tuple[str, ...],
+    meaning_field_id: str,
+    observation_contribution_ids: Tuple[str, ...],
+    retained_reception_act_ids: Tuple[str, ...],
+    observation_depth_class: ObservationDepthClass,
+    temperature_class: TemperatureClass,
+    reception_style_policy_ref: str,
+    emlis_value_policy_ref: str,
+) -> str:
+    scalar_values = (
+        grounded_graph_ref,
+        parent_observation_duty_ref,
+        parent_reception_duty_ref,
+        meaning_field_id,
+        reception_style_policy_ref,
+        emlis_value_policy_ref,
+    )
+    if any(not _stage1_identity_string(value) for value in scalar_values):
+        raise CMEEStage1ContractError("stage1_projection_preimage_invalid")
+    for values in (
+        interpretation_candidate_ids,
+        observation_contribution_ids,
+        retained_reception_act_ids,
+    ):
+        try:
+            _stage1_exact_string_tuple(values, allow_empty=False)
+        except CMEEStage1ContractError:
+            raise CMEEStage1ContractError(
+                "stage1_projection_preimage_invalid"
+            ) from None
+    if (
+        type(observation_depth_class) is not ObservationDepthClass
+        or type(temperature_class) is not TemperatureClass
+    ):
+        raise CMEEStage1ContractError("stage1_projection_preimage_invalid")
+    return _stage1_final_typed_identity(
+        "CMEE_STAGE1_PROJECTION_PREIMAGE_REF_VERSION",
+        "projection-preimage",
+        (
+            grounded_graph_ref,
+            parent_observation_duty_ref,
+            parent_reception_duty_ref,
+            interpretation_candidate_ids,
+            meaning_field_id,
+            observation_contribution_ids,
+            retained_reception_act_ids,
+            observation_depth_class,
+            temperature_class,
+            reception_style_policy_ref,
+            emlis_value_policy_ref,
+            _stage1_final_logical_identity(
+                "CMEE_STAGE1_RESPONSE_SCHEMA_VERSION"
+            ),
+            _stage1_final_logical_identity(
+                "CMEE_STAGE1_COMPOSITION_POLICY_VERSION"
+            ),
+        ),
+    )
+
+
+def project_stage1_subjective_basis_binding_ref(
+    *,
+    projection_preimage_ref: str,
+    contribution_ref: str,
+    semantic_ref: str,
+    role: SubjectiveBasisRole,
+) -> str:
+    if (
+        any(
+            not _stage1_identity_string(value)
+            for value in (
+                projection_preimage_ref,
+                contribution_ref,
+                semantic_ref,
+            )
+        )
+        or type(role) is not SubjectiveBasisRole
+    ):
+        raise CMEEStage1ContractError("stage1_subjective_basis_binding_invalid")
+    return _stage1_final_typed_identity(
+        "CMEE_STAGE1_SUBJECTIVE_BASIS_BINDING_REF_VERSION",
+        "subjective-basis-binding",
+        (projection_preimage_ref, contribution_ref, semantic_ref, role),
+    )
+
+
+def project_stage1_source_qualifier_binding_ref(
+    *,
+    projection_preimage_ref: str,
+    basis_binding_ref: str,
+    source_candidate_ref: str,
+    source_argument_role: Optional[ArgumentRole],
+    canonical_qualifier_codes: Tuple[str, ...],
+    polarity: str,
+    modality: str,
+    time_scope: str,
+) -> str:
+    scalar_values = (
+        projection_preimage_ref,
+        basis_binding_ref,
+        source_candidate_ref,
+        polarity,
+        modality,
+        time_scope,
+    )
+    if (
+        any(not _stage1_identity_string(value) for value in scalar_values)
+        or (
+            source_argument_role is not None
+            and type(source_argument_role) is not ArgumentRole
+        )
+        or type(canonical_qualifier_codes) is not tuple
+        or len(canonical_qualifier_codes) != 3
+        or any(
+            not _stage1_identity_string(value)
+            for value in canonical_qualifier_codes
+        )
+        or len(set(canonical_qualifier_codes)) != 3
+    ):
+        raise CMEEStage1ContractError("stage1_source_qualifier_binding_invalid")
+    role_prefix = (
+        ""
+        if source_argument_role is None
+        else f"{source_argument_role.value.lower()}_"
+    )
+    expected_qualifier_codes = (
+        f"{role_prefix}polarity:{polarity}",
+        f"{role_prefix}modality:{modality}",
+        f"{role_prefix}time_scope:{time_scope}",
+    )
+    if canonical_qualifier_codes != expected_qualifier_codes:
+        raise CMEEStage1ContractError("stage1_source_qualifier_binding_invalid")
+    return _stage1_final_typed_identity(
+        "CMEE_STAGE1_SOURCE_QUALIFIER_BINDING_REF_VERSION",
+        "source-qualifier-binding",
+        (
+            projection_preimage_ref,
+            basis_binding_ref,
+            source_candidate_ref,
+            source_argument_role,
+            canonical_qualifier_codes,
+            polarity,
+            modality,
+            time_scope,
+        ),
+    )
+
+
+def project_stage1_policy_basis_binding_ref(
+    *,
+    projection_preimage_ref: str,
+    owner_kind: PolicyBasisOwnerKind,
+    owner_ref: str,
+    role: PolicyBasisRole,
+) -> str:
+    if (
+        not _stage1_identity_string(projection_preimage_ref)
+        or type(owner_kind) is not PolicyBasisOwnerKind
+        or not _stage1_identity_string(owner_ref)
+        or type(role) is not PolicyBasisRole
+    ):
+        raise CMEEStage1ContractError("stage1_policy_basis_binding_invalid")
+    return _stage1_final_typed_identity(
+        "CMEE_STAGE1_POLICY_BASIS_BINDING_REF_VERSION",
+        "policy-basis-binding",
+        (projection_preimage_ref, owner_kind, owner_ref, role),
+    )
+
+
+_STAGE1_APPRAISAL_DERIVATION_EXACT5 = (
+    (AppraisalDimension.MATERIAL_WEIGHT, AppraisalOperation.RECEIVE_AS_MATERIAL),
+    (
+        AppraisalDimension.RELATIONAL_NONCOLLAPSE,
+        AppraisalOperation.PRESERVE_BOTH_ENDPOINTS,
+    ),
+    (
+        AppraisalDimension.BOUNDED_CHANGE,
+        AppraisalOperation.RECOGNIZE_AS_BOUNDED,
+    ),
+    (
+        AppraisalDimension.UNFINISHED_OPENNESS,
+        AppraisalOperation.LEAVE_UNFINISHED,
+    ),
+    (AppraisalDimension.AGENCY_BOUNDARY, AppraisalOperation.RESPECT_CHOICE),
+)
+_STAGE1_VALUE_RISK_DERIVATION_EXACT9 = tuple(
+    (principle_ref, risk)
+    for (_code, principle_ref), risk in zip(
+        CMEE_STAGE1_VALUE_PRINCIPLE_REFS,
+        (
+            MaterialRisk.MINIMIZATION,
+            MaterialRisk.WISH_TO_OBLIGATION,
+            MaterialRisk.NO_RESULT_TO_NO_VALUE,
+            MaterialRisk.SINGLE_EVENT_TO_IDENTITY,
+            MaterialRisk.BOUNDED_CHANGE_TO_UNIVERSAL_SOLUTION,
+            MaterialRisk.ONE_SIDE_TO_TRUE_SELF,
+            MaterialRisk.POSSIBILITY_TO_FACT,
+            MaterialRisk.REMOVE_USER_AGENCY,
+            MaterialRisk.UNKNOWN_TO_FALSE_UNDERSTANDING,
+        ),
+        strict=True,
+    )
+)
+_STAGE1_VALUE_VISIBLE_PRINCIPLE_REFS = tuple(
+    dict(CMEE_STAGE1_VALUE_PRINCIPLE_REFS)[code]
+    for code in ("V1", "V2", "V8")
+)
+
+
+def _stage1_subjective_v2_content_bindings(
+    proposition: SubjectivePropositionV2,
+) -> tuple[tuple[str, ...], tuple[str, ...], Optional[str]]:
+    if proposition.content_kind is SubjectiveContentKind.AFFECT:
+        content = proposition.affect_content
+        if (
+            type(content) is not EmlisAffectContent
+            or type(content.category) is not AffectCategory
+            or type(content.intensity) is not AffectIntensity
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_subjective_v2_derived_field_invalid"
+            )
+        bindings = _stage1_subjective_content_binding_tuple(
+            content.elicitor_bindings,
+            allow_empty=False,
+        )
+        return bindings, (), None
+    if proposition.content_kind is SubjectiveContentKind.APPRAISAL:
+        content = proposition.appraisal_content
+        if (
+            type(content) is not EmlisAppraisalContent
+            or type(content.dimension) is not AppraisalDimension
+            or type(content.operation) is not AppraisalOperation
+            or (content.dimension, content.operation)
+            not in _STAGE1_APPRAISAL_DERIVATION_EXACT5
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_subjective_v2_derived_field_invalid"
+            )
+        if (
+            content.dimension is AppraisalDimension.RELATIONAL_NONCOLLAPSE
+            and content.focal_relation_ref is None
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_subjective_v2_focal_relation_invalid"
+            )
+        primary = _stage1_subjective_content_binding_tuple(
+            content.appraised_bindings,
+            allow_empty=False,
+        )
+        protected = _stage1_subjective_content_binding_tuple(
+            content.protected_bindings,
+            allow_empty=True,
+        )
+        _stage1_exact_string_tuple(
+            content.basis_contribution_refs,
+            allow_empty=False,
+        )
+        boundary = tuple(value for value in protected if value not in set(primary))
+        return primary, boundary, content.focal_relation_ref
+    if proposition.content_kind is SubjectiveContentKind.MATERIAL_VALUE:
+        content = proposition.material_value_content
+        if type(content) is not MaterialValueContent:
+            raise CMEEStage1ContractError(
+                "stage1_subjective_v2_content_discriminant_invalid"
+            )
+        if not content.value_applications:
+            raise CMEEStage1ContractError("GENERIC_SUBJECTIVE_CONTENT_STOP")
+        primary = _stage1_subjective_content_binding_tuple(
+            content.target_bindings,
+            allow_empty=False,
+        )
+        if type(content.boundary_bindings) is not tuple or content.boundary_bindings:
+            raise CMEEStage1ContractError("stage1_subjective_v2_target_projection_invalid")
+        principle_order = tuple(ref for _code, ref in CMEE_STAGE1_VALUE_PRINCIPLE_REFS)
+        application_principles: list[str] = []
+        protected_rows: list[tuple[str, ...]] = []
+        if type(content.value_applications) is not tuple:
+            raise CMEEStage1ContractError("stage1_subjective_v2_content_discriminant_invalid")
+        for application in content.value_applications:
+            if (
+                type(application) is not ValueApplication
+                or application.principle_ref not in principle_order
+                or application.principle_ref
+                not in _STAGE1_VALUE_VISIBLE_PRINCIPLE_REFS
+                or type(application.material_risk) is not MaterialRisk
+                or (application.principle_ref, application.material_risk)
+                not in _STAGE1_VALUE_RISK_DERIVATION_EXACT9
+            ):
+                raise CMEEStage1ContractError(
+                    "stage1_subjective_v2_cross_owner_invalid"
+                )
+            _stage1_exact_string_tuple(
+                application.policy_application_row_refs,
+                allow_empty=False,
+            )
+            _stage1_exact_string_tuple(
+                application.policy_basis_binding_refs,
+                allow_empty=False,
+            )
+            protected_rows.append(
+                _stage1_exact_string_tuple(
+                    application.protected_subjective_binding_refs,
+                    allow_empty=False,
+                )
+            )
+            application_principles.append(application.principle_ref)
+        if (
+            len(application_principles) != len(set(application_principles))
+            or tuple(application_principles)
+            != tuple(
+                ref for ref in principle_order if ref in set(application_principles)
+            )
+            or _stage1_first_occurrence_union(*protected_rows) != primary
+        ):
+            raise CMEEStage1ContractError("stage1_subjective_v2_cross_owner_invalid")
+        return primary, (), proposition.focal_relation_ref
+    if proposition.content_kind is SubjectiveContentKind.RELATIONAL_POSITION:
+        content = proposition.relational_position
+        if (
+            type(content) is not EmlisRelationalPosition
+            or type(content.relational_position_kind) is not RelationalPositionKind
+            or type(content.stance_operator) is not StanceOperator
+            or type(content.commitment) is not RelationalCommitment
+            or type(content.closure) is not RelationalClosure
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_subjective_v2_derived_field_invalid"
+            )
+        primary = _stage1_subjective_content_binding_tuple(
+            content.target_bindings,
+            allow_empty=False,
+        )
+        boundary = _stage1_subjective_content_binding_tuple(
+            content.boundary_bindings,
+            allow_empty=(
+                content.relational_position_kind is RelationalPositionKind.STANCE
+            ),
+        )
+        is_counter = (
+            content.relational_position_kind
+            is RelationalPositionKind.BOUNDED_COUNTERPOSITION
+        )
+        if (
+            is_counter != (content.commitment is RelationalCommitment.DECLINE_PROMOTION)
+            or (is_counter and not boundary)
+            or (not is_counter and boundary)
+        ):
+            raise CMEEStage1ContractError("stage1_subjective_v2_derived_field_invalid")
+        return primary, boundary, proposition.focal_relation_ref
+    raise CMEEStage1ContractError("stage1_subjective_v2_content_discriminant_invalid")
+
+
+def validate_subjective_proposition_v2(
+    proposition: SubjectivePropositionV2,
+    *,
+    projection_preimage_ref: str,
+    basis_rows: Tuple[SubjectiveBasisBinding, ...],
+    qualifier_rows: Tuple[SourceQualifierBinding, ...],
+    expected_basis_rows: Tuple[SubjectiveBasisBinding, ...],
+    expected_qualifier_rows: Tuple[SourceQualifierBinding, ...],
+    policy_basis_rows: Tuple[PolicyBasisBinding, ...],
+    expected_policy_basis_rows: Tuple[PolicyBasisBinding, ...],
+    allowed_contribution_refs: Tuple[str, ...],
+    allowed_semantic_refs: Tuple[str, ...],
+    allowed_source_candidate_refs: Tuple[str, ...],
+    allowed_policy_application_row_refs: Tuple[str, ...],
+    admitted_relation_refs: Tuple[str, ...],
+    material_unknown_refs: Tuple[str, ...],
+    expected_actor_refs: Tuple[str, ...],
+    expected_experiencer_refs: Tuple[str, ...],
+    expected_focal_relation_ref: Optional[str],
+    owner_ref: str,
+    speaker_owner: str,
+    user_fact_effect: int,
+    forbidden_promotions: Tuple[str, ...],
+    expected_forbidden_promotions: Tuple[str, ...],
+) -> None:
+    """Validate the disabled final proposition and its minimum lineage spine.
+
+    Every ``expected_*`` and ``allowed_*`` argument is a mandatory frozen
+    phase-A authority output, never a caller-selected alternative.  Step 1
+    registers this unwired seam; the Step 2 sole projector must supply all of
+    these arguments from one phase-A snapshot before runtime use exists.
+    """
+
+    if type(proposition) is not SubjectivePropositionV2:
+        raise CMEEStage1ContractError("stage1_subjective_v2_type_invalid")
+    _validate_stage1_immutable_shape(proposition)
+    final_schema = _stage1_final_logical_identity(
+        "CMEE_STAGE1_SUBJECTIVE_PROPOSITION_SCHEMA_VERSION"
+    )
+    if proposition.schema_version != final_schema:
+        raise CMEEStage1ContractError("stage1_subjective_v2_schema_invalid")
+    contents = (
+        proposition.affect_content,
+        proposition.appraisal_content,
+        proposition.material_value_content,
+        proposition.relational_position,
+    )
+    content_types = (
+        EmlisAffectContent,
+        EmlisAppraisalContent,
+        MaterialValueContent,
+        EmlisRelationalPosition,
+    )
+    expected_content_index = tuple(SubjectiveContentKind).index(
+        proposition.content_kind
+    ) if type(proposition.content_kind) is SubjectiveContentKind else -1
+    if (
+        expected_content_index < 0
+        or sum(value is not None for value in contents) != 1
+        or type(contents[expected_content_index]) is not content_types[expected_content_index]
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_subjective_v2_content_discriminant_invalid"
+        )
+
+    relational_kind = (
+        proposition.relational_position.relational_position_kind
+        if proposition.relational_position is not None
+        else None
+    )
+    derived = {
+        SubjectiveContentKind.AFFECT: (
+            SubjectiveMode.AFFECTIVE_RESPONSE,
+            SubjectiveOperator.FEEL_TOWARD,
+            SubjectiveAssertionModality.EMLIS_FEELING,
+        ),
+        SubjectiveContentKind.APPRAISAL: (
+            SubjectiveMode.PERSONAL_APPRAISAL,
+            SubjectiveOperator.APPRAISE_AS_MATERIAL,
+            SubjectiveAssertionModality.EMLIS_APPRAISAL,
+        ),
+        SubjectiveContentKind.MATERIAL_VALUE: (
+            SubjectiveMode.VALUE_POSITION,
+            SubjectiveOperator.PROTECT_VALUE_BOUNDARY,
+            SubjectiveAssertionModality.EMLIS_VALUE_POSITION,
+        ),
+    }.get(proposition.content_kind)
+    if proposition.content_kind is SubjectiveContentKind.RELATIONAL_POSITION:
+        derived = (
+            (
+                SubjectiveMode.BOUNDED_COUNTERPOSITION,
+                SubjectiveOperator.COUNTER_SPECIFIC_PROMOTION,
+                SubjectiveAssertionModality.EMLIS_BOUNDED_REFUSAL,
+            )
+            if relational_kind is RelationalPositionKind.BOUNDED_COUNTERPOSITION
+            else (
+                SubjectiveMode.RELATIONAL_STANCE,
+                SubjectiveOperator.TAKE_RELATIONAL_STANCE,
+                SubjectiveAssertionModality.EMLIS_RELATIONAL_INTENTION,
+            )
+        )
+    if derived is None or (
+        proposition.subjective_mode,
+        proposition.subjective_operator,
+        proposition.assertion_modality,
+    ) != derived:
+        raise CMEEStage1ContractError("stage1_subjective_v2_derived_field_invalid")
+    if (
+        proposition.addressee_role != "USER"
+        or proposition.epistemic_scope != "REQUEST_LOCAL_EMLIS_SUBJECTIVITY"
+        or owner_ref
+        != _stage1_final_logical_identity("CMEE_STAGE1_EMLIS_OWNER_REF")
+        or speaker_owner != "EMLIS"
+        or type(user_fact_effect) is not int
+        or user_fact_effect != 0
+    ):
+        raise CMEEStage1ContractError("stage1_subjective_v2_cross_owner_invalid")
+    _stage1_exact_string_tuple(forbidden_promotions, allow_empty=False)
+    _stage1_exact_string_tuple(expected_forbidden_promotions, allow_empty=False)
+    generic_prefix_length = len(CMEE_STAGE1_SUBJECTIVE_FORBIDDEN_PROMOTIONS)
+    suppression_suffix = forbidden_promotions[generic_prefix_length:]
+    canonical_suppression_codes = tuple(
+        f"value-policy-suppression:{code}"
+        for code, _ref in CMEE_STAGE1_VALUE_PRINCIPLE_REFS
+    )
+    if (
+        forbidden_promotions[:generic_prefix_length]
+        != CMEE_STAGE1_SUBJECTIVE_FORBIDDEN_PROMOTIONS
+        or forbidden_promotions != expected_forbidden_promotions
+        or suppression_suffix
+        != tuple(
+            code
+            for code in canonical_suppression_codes
+            if code in set(suppression_suffix)
+        )
+    ):
+        raise CMEEStage1ContractError("stage1_subjective_v2_cross_owner_invalid")
+
+    for values, allow_empty in (
+        (allowed_contribution_refs, False),
+        (allowed_semantic_refs, False),
+        (allowed_source_candidate_refs, False),
+        (allowed_policy_application_row_refs, True),
+        (admitted_relation_refs, True),
+        (material_unknown_refs, True),
+        (expected_actor_refs, True),
+        (expected_experiencer_refs, True),
+    ):
+        _stage1_exact_string_tuple(values, allow_empty=allow_empty)
+    if not _stage1_identity_string(projection_preimage_ref):
+        raise CMEEStage1ContractError("stage1_subjective_v2_cross_owner_invalid")
+    if (
+        type(basis_rows) is not tuple
+        or any(type(row) is not SubjectiveBasisBinding for row in basis_rows)
+        or type(qualifier_rows) is not tuple
+        or any(type(row) is not SourceQualifierBinding for row in qualifier_rows)
+        or type(expected_basis_rows) is not tuple
+        or any(type(row) is not SubjectiveBasisBinding for row in expected_basis_rows)
+        or type(expected_qualifier_rows) is not tuple
+        or any(
+            type(row) is not SourceQualifierBinding
+            for row in expected_qualifier_rows
+        )
+        or type(policy_basis_rows) is not tuple
+        or any(type(row) is not PolicyBasisBinding for row in policy_basis_rows)
+        or type(expected_policy_basis_rows) is not tuple
+        or any(
+            type(row) is not PolicyBasisBinding
+            for row in expected_policy_basis_rows
+        )
+    ):
+        raise CMEEStage1ContractError("stage1_subjective_v2_cross_owner_invalid")
+    if not basis_rows or not expected_basis_rows:
+        raise CMEEStage1ContractError(
+            "stage1_subjective_v2_basis_exact_cover_invalid"
+        )
+    if not qualifier_rows or not expected_qualifier_rows:
+        raise CMEEStage1ContractError(
+            "stage1_subjective_v2_qualifier_exact_cover_invalid"
+        )
+    if basis_rows != expected_basis_rows:
+        raise CMEEStage1ContractError(
+            "stage1_subjective_v2_basis_exact_cover_invalid"
+        )
+    if qualifier_rows != expected_qualifier_rows:
+        raise CMEEStage1ContractError(
+            "stage1_subjective_v2_qualifier_exact_cover_invalid"
+        )
+    if policy_basis_rows != expected_policy_basis_rows:
+        raise CMEEStage1ContractError("stage1_policy_basis_binding_invalid")
+
+    basis_by_ref: dict[str, SubjectiveBasisBinding] = {}
+    for row in basis_rows:
+        if (
+            row.projection_preimage_ref != projection_preimage_ref
+            or row.contribution_ref not in set(allowed_contribution_refs)
+            or row.semantic_ref not in set(allowed_semantic_refs)
+            or row.binding_ref
+            != project_stage1_subjective_basis_binding_ref(
+                projection_preimage_ref=row.projection_preimage_ref,
+                contribution_ref=row.contribution_ref,
+                semantic_ref=row.semantic_ref,
+                role=row.role,
+            )
+            or row.binding_ref in basis_by_ref
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_subjective_v2_basis_exact_cover_invalid"
+            )
+        if (
+            row.contribution_ref in set(material_unknown_refs)
+            or row.semantic_ref in set(material_unknown_refs)
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_material_unknown_promotion_invalid"
+            )
+        basis_by_ref[row.binding_ref] = row
+
+    qualifier_by_basis: dict[str, SourceQualifierBinding] = {}
+    qualifier_ref_seen: set[str] = set()
+    for row in qualifier_rows:
+        if (
+            row.projection_preimage_ref != projection_preimage_ref
+            or row.basis_binding_ref not in basis_by_ref
+            or row.source_candidate_ref not in set(allowed_source_candidate_refs)
+            or row.source_qualifier_binding_ref
+            != project_stage1_source_qualifier_binding_ref(
+                projection_preimage_ref=row.projection_preimage_ref,
+                basis_binding_ref=row.basis_binding_ref,
+                source_candidate_ref=row.source_candidate_ref,
+                source_argument_role=row.source_argument_role,
+                canonical_qualifier_codes=row.canonical_qualifier_codes,
+                polarity=row.polarity,
+                modality=row.modality,
+                time_scope=row.time_scope,
+            )
+            or row.basis_binding_ref in qualifier_by_basis
+            or row.source_qualifier_binding_ref in qualifier_ref_seen
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_subjective_v2_qualifier_exact_cover_invalid"
+            )
+        qualifier_by_basis[row.basis_binding_ref] = row
+        qualifier_ref_seen.add(row.source_qualifier_binding_ref)
+
+    material_unknown_owner_refs: list[str] = []
+    policy_by_ref: dict[str, PolicyBasisBinding] = {}
+    for row in policy_basis_rows:
+        if (
+            row.projection_preimage_ref != projection_preimage_ref
+            or row.binding_ref
+            != project_stage1_policy_basis_binding_ref(
+                projection_preimage_ref=row.projection_preimage_ref,
+                owner_kind=row.owner_kind,
+                owner_ref=row.owner_ref,
+                role=row.role,
+            )
+            or row.binding_ref in policy_by_ref
+        ):
+            raise CMEEStage1ContractError("stage1_policy_basis_binding_invalid")
+        policy_by_ref[row.binding_ref] = row
+        if row.owner_kind is PolicyBasisOwnerKind.MATERIAL_UNKNOWN:
+            if (
+                row.role is not PolicyBasisRole.MATERIAL_UNKNOWN
+                or row.owner_ref not in set(material_unknown_refs)
+            ):
+                raise CMEEStage1ContractError(
+                    "stage1_material_unknown_promotion_invalid"
+                )
+            material_unknown_owner_refs.append(row.owner_ref)
+        elif (
+            row.role is PolicyBasisRole.MATERIAL_UNKNOWN
+            or row.owner_ref not in set(allowed_contribution_refs)
+        ):
+            raise CMEEStage1ContractError("stage1_policy_basis_binding_invalid")
+    if len(material_unknown_owner_refs) != len(set(material_unknown_owner_refs)):
+        raise CMEEStage1ContractError("stage1_material_unknown_promotion_invalid")
+
+    primary_binding_refs, boundary_binding_refs, nested_focal_relation_ref = (
+        _stage1_subjective_v2_content_bindings(proposition)
+    )
+    if proposition.material_value_content is not None:
+        policy_application_ref_seen: set[str] = set()
+        for application in proposition.material_value_content.value_applications:
+            if (
+                any(
+                    ref not in policy_by_ref
+                    or policy_by_ref[ref].owner_kind
+                    is not PolicyBasisOwnerKind.CONTRIBUTION
+                    for ref in application.policy_basis_binding_refs
+                )
+                or any(
+                    ref not in set(allowed_policy_application_row_refs)
+                    for ref in application.policy_application_row_refs
+                )
+                or any(
+                    ref not in basis_by_ref
+                    for ref in application.protected_subjective_binding_refs
+                )
+                or any(
+                    ref in policy_application_ref_seen
+                    for ref in application.policy_application_row_refs
+                )
+            ):
+                raise CMEEStage1ContractError(
+                    "stage1_subjective_v2_cross_owner_invalid"
+                )
+            policy_application_ref_seen.update(
+                application.policy_application_row_refs
+            )
+    if (
+        proposition.relational_position is not None
+        and proposition.relational_position.relational_position_kind
+        is RelationalPositionKind.BOUNDED_COUNTERPOSITION
+        and proposition.focal_relation_ref is None
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_subjective_v2_focal_relation_invalid"
+        )
+    all_content_binding_refs = _stage1_first_occurrence_union(
+        primary_binding_refs,
+        boundary_binding_refs,
+    )
+    if (
+        set(primary_binding_refs).intersection(boundary_binding_refs)
+        or any(ref not in basis_by_ref for ref in all_content_binding_refs)
+        or proposition.basis_binding_refs != all_content_binding_refs
+        or tuple(row.binding_ref for row in basis_rows) != all_content_binding_refs
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_subjective_v2_basis_exact_cover_invalid"
+        )
+    expected_qualifier_refs = tuple(
+        qualifier_by_basis[ref].source_qualifier_binding_ref
+        for ref in all_content_binding_refs
+        if ref in qualifier_by_basis
+    )
+    if (
+        len(qualifier_by_basis) != len(all_content_binding_refs)
+        or proposition.source_qualifier_binding_refs != expected_qualifier_refs
+        or tuple(row.source_qualifier_binding_ref for row in qualifier_rows)
+        != expected_qualifier_refs
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_subjective_v2_qualifier_exact_cover_invalid"
+        )
+    expected_primary_refs = _stage1_first_occurrence_union(
+        tuple(basis_by_ref[ref].semantic_ref for ref in primary_binding_refs)
+    )
+    expected_boundary_refs = _stage1_first_occurrence_union(
+        tuple(basis_by_ref[ref].semantic_ref for ref in boundary_binding_refs)
+    )
+    expected_contribution_refs = _stage1_first_occurrence_union(
+        tuple(
+            basis_by_ref[ref].contribution_ref
+            for ref in all_content_binding_refs
+        )
+    )
+    if (
+        not set(expected_primary_refs).isdisjoint(expected_boundary_refs)
+        or len(proposition.response_object_refs)
+        != len(set(proposition.response_object_refs))
+        or proposition.primary_target_refs != expected_primary_refs
+        or proposition.boundary_target_refs != expected_boundary_refs
+        or proposition.response_object_refs
+        != (*expected_primary_refs, *expected_boundary_refs)
+        or proposition.target_contribution_refs != expected_contribution_refs
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_subjective_v2_target_projection_invalid"
+        )
+    if proposition.content_kind is SubjectiveContentKind.APPRAISAL:
+        content = proposition.appraisal_content
+        if content is None or content.basis_contribution_refs != expected_contribution_refs:
+            raise CMEEStage1ContractError(
+                "stage1_subjective_v2_target_projection_invalid"
+            )
+    if (
+        proposition.focal_relation_ref != nested_focal_relation_ref
+        or proposition.focal_relation_ref != expected_focal_relation_ref
+        or (
+            proposition.focal_relation_ref is not None
+            and proposition.focal_relation_ref not in set(admitted_relation_refs)
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_subjective_v2_focal_relation_invalid"
+        )
+    if (
+        proposition.referenced_actor_refs != expected_actor_refs
+        or proposition.referenced_experiencer_refs != expected_experiencer_refs
+    ):
+        raise CMEEStage1ContractError("stage1_subjective_v2_cross_owner_invalid")
+
+
+def validate_surface_derivation(
+    derivation: SurfaceDerivation,
+    *,
+    registered_rule_refs_by_kind: Mapping[
+        tuple[SurfaceDerivationKind, Optional[str]],
+        Tuple[str, ...],
+    ],
+    response_object_mode: Optional[str] = None,
+) -> None:
+    """Validate the disabled exact8 derivation shape and frozen rule owner.
+
+    The registered mapping is the request-local frozen rule snapshot.  Concrete
+    source/evidence/span resolution belongs to the Step 2 projector and the
+    Step 4 sealed-plan tamper gate; this Step 1 seam has no runtime caller.
+    """
+
+    if type(derivation) is not SurfaceDerivation:
+        raise CMEEStage1ContractError("stage1_surface_derivation_type_invalid")
+    _validate_stage1_immutable_shape(derivation)
+    for values in (
+        derivation.source_or_claim_refs,
+        derivation.relation_or_clause_plan_refs,
+        derivation.qualifier_refs,
+        derivation.evidence_refs,
+    ):
+        _stage1_exact_string_tuple(values, allow_empty=True)
+    expected_rule_keys = {
+        *((kind, None) for kind in SurfaceDerivationKind if kind is not SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT),
+        (SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT, "EXPLICIT"),
+        (SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT, "COMPOSITE"),
+        (SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT, "ANAPHORIC"),
+    }
+    if (
+        not isinstance(registered_rule_refs_by_kind, Mapping)
+        or set(registered_rule_refs_by_kind) != expected_rule_keys
+    ):
+        raise CMEEStage1ContractError("stage1_surface_derivation_rule_invalid")
+    registered_rule_refs: list[str] = []
+    for rule_refs in registered_rule_refs_by_kind.values():
+        try:
+            exact_rule_refs = _stage1_exact_string_tuple(
+                rule_refs,
+                allow_empty=False,
+            )
+            for rule_ref in exact_rule_refs:
+                validate_version_qualified_ref(rule_ref, expected_types=("rule",))
+        except CMEEStage1ContractError:
+            raise CMEEStage1ContractError(
+                "stage1_surface_derivation_rule_invalid"
+            ) from None
+        registered_rule_refs.extend(exact_rule_refs)
+    if len(registered_rule_refs) != len(set(registered_rule_refs)):
+        raise CMEEStage1ContractError("stage1_surface_derivation_rule_invalid")
+    for value in (
+        derivation.emlis_owner_ref,
+        derivation.response_object_expression_ref,
+        derivation.antecedent_unit_ref,
+        derivation.participant_role_ref,
+    ):
+        if value is not None and not _stage1_identity_string(value):
+            raise CMEEStage1ContractError(
+                "stage1_surface_derivation_owner_invalid"
+            )
+    try:
+        validate_version_qualified_ref(derivation.rule_ref, expected_types=("rule",))
+    except CMEEStage1ContractError:
+        raise CMEEStage1ContractError("stage1_surface_derivation_rule_invalid") from None
+    rule_key = (
+        derivation.derivation_kind,
+        response_object_mode
+        if derivation.derivation_kind
+        is SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT
+        else None,
+    )
+    if derivation.rule_ref not in set(
+        registered_rule_refs_by_kind.get(rule_key, ())
+    ):
+        raise CMEEStage1ContractError("stage1_surface_derivation_rule_invalid")
+    ranges = derivation.input_scalar_ranges
+    if (
+        type(ranges) is not tuple
+        or any(
+            type(row) is not tuple
+            or len(row) != 2
+            or type(row[0]) is not int
+            or type(row[1]) is not int
+            or isinstance(row[0], bool)
+            or isinstance(row[1], bool)
+            or row[0] < 0
+            or row[1] <= row[0]
+            for row in ranges
+        )
+        or tuple(sorted(ranges)) != ranges
+        or len(ranges) != len(set(ranges))
+        or any(
+            left[1] > right[0]
+            for left, right in zip(ranges, ranges[1:])
+        )
+    ):
+        raise CMEEStage1ContractError("stage1_surface_derivation_range_invalid")
+
+    source_count = len(derivation.source_or_claim_refs)
+    relation_count = len(derivation.relation_or_clause_plan_refs)
+    qualifier_count = len(derivation.qualifier_refs)
+    evidence_count = len(derivation.evidence_refs)
+    range_count = len(ranges)
+    has_emlis = derivation.emlis_owner_ref is not None
+    has_response = derivation.response_object_expression_ref is not None
+    has_antecedent = derivation.antecedent_unit_ref is not None
+    has_participant = derivation.participant_role_ref is not None
+    kind = derivation.derivation_kind
+    if type(kind) is not SurfaceDerivationKind:
+        raise CMEEStage1ContractError("stage1_surface_derivation_type_invalid")
+    common_other_owner = (
+        relation_count
+        or qualifier_count
+        or has_emlis
+        or has_response
+        or has_antecedent
+        or has_participant
+    )
+    if kind in {
+        SurfaceDerivationKind.LITERAL_SUBSPAN,
+        SurfaceDerivationKind.NORMALIZED_INFLECTION,
+    }:
+        valid = source_count >= 1 and not common_other_owner and evidence_count >= 1 and range_count >= 1
+    elif kind is SurfaceDerivationKind.COMPOSITIONAL_JOIN:
+        valid = source_count >= 2 and not common_other_owner and evidence_count >= 1 and range_count >= 2
+    elif kind is SurfaceDerivationKind.REGISTERED_EMLIS_LEXEME:
+        expected_owner = _stage1_final_logical_identity("CMEE_STAGE1_EMLIS_OWNER_REF")
+        valid = (
+            (has_emlis != bool(source_count))
+            and (not has_emlis or derivation.emlis_owner_ref == expected_owner)
+            and not relation_count
+            and not qualifier_count
+            and not has_response
+            and not has_antecedent
+            and not has_participant
+            and evidence_count == 0
+            and range_count == 0
+        )
+    elif kind is SurfaceDerivationKind.REGISTERED_PARTICIPANT_LEXEME:
+        valid = (
+            derivation.participant_role_ref == "CURRENT_USER_ADDRESSEE"
+            and source_count == relation_count == qualifier_count == 0
+            and not has_emlis
+            and not has_response
+            and not has_antecedent
+            and evidence_count == range_count == 0
+        )
+    elif kind is SurfaceDerivationKind.REGISTERED_STRUCTURAL_ASSET:
+        valid = (
+            source_count == relation_count == qualifier_count == 0
+            and not has_emlis
+            and not has_response
+            and not has_antecedent
+            and not has_participant
+            and evidence_count == range_count == 0
+        )
+    elif kind is SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT:
+        valid = (
+            source_count >= 1
+            and relation_count <= 1
+            and qualifier_count == 0
+            and not has_emlis
+            and has_response
+            and not has_participant
+        )
+        if response_object_mode == "EXPLICIT":
+            valid = valid and not has_antecedent and evidence_count >= 1 and range_count >= 1
+        elif response_object_mode == "COMPOSITE":
+            valid = valid and not has_antecedent and evidence_count >= 1 and range_count >= 2
+        elif response_object_mode == "ANAPHORIC":
+            valid = valid and has_antecedent and evidence_count == range_count == 0
+        else:
+            valid = False
+    elif kind is SurfaceDerivationKind.PROJECTED_FUNCTIONAL_ASSET:
+        valid = (
+            bool(relation_count) != bool(qualifier_count)
+            and source_count == 0
+            and not has_emlis
+            and not has_response
+            and not has_antecedent
+            and not has_participant
+            and evidence_count == range_count == 0
+        )
+    else:
+        valid = False
+    if not valid:
+        raise CMEEStage1ContractError("stage1_surface_derivation_owner_invalid")
+
+
+def _stage1_normalized_contract_name(name: str) -> str:
+    with_word_boundaries = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
+    return re.sub(r"[^a-z0-9]+", "_", with_word_boundaries.lower()).strip("_")
+
+
+def validate_stage1_anti_template_registry_invariant(
+    registry_field_names: Tuple[str, ...],
+    selector_parameter_names: Tuple[str, ...] = (),
+) -> None:
+    if (
+        type(registry_field_names) is not tuple
+        or type(selector_parameter_names) is not tuple
+        or any(type(value) is not str or not value for value in registry_field_names)
+        or any(type(value) is not str or not value for value in selector_parameter_names)
+    ):
+        raise CMEEStage1ContractError("stage1_anti_template_registry_invalid")
+    forbidden_registry = set(CMEE_STAGE1_ANTI_TEMPLATE_FORBIDDEN_REGISTRY_FIELDS)
+    forbidden_selector = set(CMEE_STAGE1_ANTI_TEMPLATE_FORBIDDEN_SELECTOR_INPUTS)
+
+    def registry_forbidden(name: str) -> bool:
+        normalized = _stage1_normalized_contract_name(name)
+        forbidden_equivalent_names = {"opening", "terminal"}
+        return (
+            normalized in forbidden_registry
+            or normalized in forbidden_equivalent_names
+            or any(
+                marker in normalized
+                for marker in (
+                    "case_family",
+                    "case_specific",
+                    "fixture",
+                    "exact8",
+                    "raw_text",
+                    "raw_source",
+                    "raw_pattern",
+                    "source_regex",
+                    "evidence_text",
+                    "semantic_resolver",
+                    "case_id",
+                    "semantic_keyword",
+                    "expected_text",
+                    "normalized_source_input",
+                    "finished_surface",
+                    "finished_clause",
+                    "finished_sentence",
+                    "finished_connective",
+                    "connective_chain",
+                    "sentence_body",
+                    "full_sentence",
+                    "grounded_noun",
+                    "source_domain_noun",
+                    "sentence_template",
+                    "clause_template",
+                )
+            )
+        )
+
+    def selector_forbidden(name: str) -> bool:
+        normalized = _stage1_normalized_contract_name(name)
+        forbidden_equivalent_names = {
+            "content",
+            "prompt",
+            "utterance",
+        }
+        return (
+            normalized in forbidden_selector
+            or normalized in forbidden_equivalent_names
+            or any(
+                marker in normalized
+                for marker in (
+                    "raw_text",
+                    "raw_source",
+                    "raw_content",
+                    "raw_pattern",
+                    "source_regex",
+                    "regex_result",
+                    "evidence_text",
+                    "resolver",
+                    "semantic_resolver",
+                    "semantic_keyword",
+                    "case_id",
+                    "case_family",
+                    "fixture",
+                    "exact8",
+                    "input_hash",
+                    "input_digest",
+                    "expected_text",
+                    "finished_",
+                    "source_text",
+                    "source_string",
+                    "source_bytes",
+                    "request_text",
+                    "input_bytes",
+                    "normalized_source_input",
+                    "normalized_input",
+                    "normalized_text",
+                    "source_phrase_family",
+                    "semantic_domain_keyword",
+                )
+            )
+        )
+
+    if (
+        registry_field_names
+        != _CMEE_STAGE1_ANTI_TEMPLATE_ALLOWED_REGISTRY_FIELDS_ORDERED
+        or selector_parameter_names
+        != _CMEE_STAGE1_ANTI_TEMPLATE_ALLOWED_SELECTOR_INPUTS_ORDERED
+        or any(registry_forbidden(value) for value in registry_field_names)
+        or any(selector_forbidden(value) for value in selector_parameter_names)
+    ):
+        raise CMEEStage1ContractError("stage1_anti_template_registry_invalid")
 
 
 CMEE_STAGE1_RECEPTION_ASSET_MAPPING_DOCS_TUPLE = (
@@ -3827,6 +5416,8 @@ class EngineOutcome:
 __all__ = [
     "AffectCategory",
     "AffectIntensity",
+    "AppraisalDimension",
+    "AppraisalOperation",
     "ArgumentBinding",
     "ArgumentRole",
     "AttachmentAdmission",
@@ -3837,9 +5428,13 @@ __all__ = [
     "CMEE_ROUTE_B_POLICY_VERSION",
     "CMEE_SCHEMA_VERSION",
     "CMEE_SOURCE_CONTRACT_VERSION",
+    "CMEE_STAGE1_ANTI_TEMPLATE_FORBIDDEN_REGISTRY_FIELDS",
+    "CMEE_STAGE1_ANTI_TEMPLATE_FORBIDDEN_SELECTOR_INPUTS",
     "CMEE_STAGE1_EMLIS_OWNER_REF",
+    "CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY",
     "CMEE_STAGE1_IDENTITY_ALGORITHM",
     "CMEE_STAGE1_RESPONSE_SCHEMA_VERSION",
+    "CMEE_STAGE1_SUBJECTIVE_FORBIDDEN_PROMOTIONS",
     "CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION",
     "CMEE_TERMINAL_GENERATED_DISABLED",
     "CMEEStage1ContractError",
@@ -3848,7 +5443,10 @@ __all__ = [
     "CommonGuardResultProof",
     "CoreId",
     "EmlisInterpretationCandidate",
+    "EmlisAffectContent",
+    "EmlisAppraisalContent",
     "EmlisMeaningField",
+    "EmlisRelationalPosition",
     "EmlisStage1PositiveTraceExtension",
     "EmlisStage1Projection",
     "EmlisSubjectiveClaim",
@@ -3868,10 +5466,15 @@ __all__ = [
     "MeaningFieldSlot",
     "MeaningEdge",
     "MeaningNode",
+    "MaterialRisk",
+    "MaterialValueContent",
     "ObservationContributionKind",
     "ObservationDepthClass",
     "OwnerClass",
     "OwnerDisposition",
+    "PolicyBasisBinding",
+    "PolicyBasisOwnerKind",
+    "PolicyBasisRole",
     "PlannedObservationContribution",
     "ProductJob",
     "ProviderResolution",
@@ -3879,27 +5482,47 @@ __all__ = [
     "RealizedSentenceUnit",
     "RealizationCandidateSet",
     "RelationOperator",
+    "RelationalClosure",
+    "RelationalCommitment",
+    "RelationalPositionKind",
     "RouteBDisposition",
     "RouteBOwnerDisposition",
     "SemanticOperator",
     "SourceEnvelope",
+    "SourceQualifierBinding",
     "SourceOwnerObligation",
     "SourceOwnerUniverse",
     "StanceOperator",
+    "SubjectiveAssertionModality",
+    "SubjectiveBasisBinding",
+    "SubjectiveBasisRole",
+    "SubjectiveContentKind",
     "SubjectiveDepthClass",
     "SubjectiveMode",
     "SubjectiveOperator",
     "SubjectiveProposition",
+    "SubjectivePropositionV2",
+    "SurfaceDerivation",
+    "SurfaceDerivationKind",
     "TemperatureClass",
     "VisibleAuthority",
     "VisibleUnknownUnit",
     "VisibleUnitTrace",
+    "ValueApplication",
+    "project_stage1_policy_basis_binding_ref",
+    "project_stage1_projection_preimage_ref",
+    "project_stage1_source_qualifier_binding_ref",
+    "project_stage1_subjective_basis_binding_ref",
     "recompute_stage1_identity",
     "stage1_canonical_json_bytes",
+    "validate_stage1_anti_template_registry_invariant",
+    "validate_stage1_final_logical_id_registry",
     "validate_stage1_identity",
     "validate_stage1_local_ref_dag",
     "validate_stage1_projection",
     "validate_stage1_sentence_unit",
     "validate_stage1_trace_spine",
+    "validate_subjective_proposition_v2",
+    "validate_surface_derivation",
     "validate_version_qualified_ref",
 ]

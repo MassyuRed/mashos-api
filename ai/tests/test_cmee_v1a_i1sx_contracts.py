@@ -21,11 +21,16 @@ from cocolon_meaning_experience_engine import EngineStatus, GenerationRequest, M
 from cocolon_meaning_experience_engine.contracts import (
     AffectCategory,
     AffectIntensity,
+    AppraisalDimension,
+    AppraisalOperation,
     ArgumentBinding,
     ArgumentRole,
     AttachmentAdmission,
     CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
+    CMEE_STAGE1_ANTI_TEMPLATE_FORBIDDEN_REGISTRY_FIELDS,
+    CMEE_STAGE1_ANTI_TEMPLATE_FORBIDDEN_SELECTOR_INPUTS,
     CMEE_STAGE1_EMLIS_OWNER_REF,
+    CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY,
     CMEE_STAGE1_MICROGRAMMAR_POLICY_REF,
     CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7,
     CMEE_STAGE1_RECEPTION_ASSET_MAPPING_DOCS_BYTES,
@@ -34,12 +39,16 @@ from cocolon_meaning_experience_engine.contracts import (
     CMEE_STAGE1_RECEPTION_ASSET_MAPPING_VERSION,
     CMEE_STAGE1_RECEPTION_STANCE_MAPPING_EXACT5,
     CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+    CMEE_STAGE1_SUBJECTIVE_FORBIDDEN_PROMOTIONS,
     CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION,
     CMEE_STAGE1_VALUE_POLICY_REF,
     CMEEStage1ContractError,
     ClauseFrame,
+    EmlisAffectContent,
+    EmlisAppraisalContent,
     EmlisInterpretationCandidate,
     EmlisMeaningField,
+    EmlisRelationalPosition,
     EmlisStage1PositiveTraceExtension,
     EmlisStage1Projection,
     EmlisSubjectiveClaim,
@@ -53,40 +62,67 @@ from cocolon_meaning_experience_engine.contracts import (
     MeaningFieldSlot,
     MeaningEdge,
     MeaningNode,
+    MaterialRisk,
+    MaterialValueContent,
     ObservationContributionKind,
     ObservationDepthClass,
     OwnerClass,
+    PolicyBasisBinding,
+    PolicyBasisOwnerKind,
+    PolicyBasisRole,
     PlannedObservationContribution,
     ProviderResolution,
     RealizationCandidateSet,
     RealizedSemanticBinding,
     RealizedSentenceUnit,
     RelationOperator,
+    RelationalClosure,
+    RelationalCommitment,
+    RelationalPositionKind,
     RouteBDisposition,
     RouteBOwnerDisposition,
     SemanticOperator,
+    SourceQualifierBinding,
+    StanceOperator,
+    SubjectiveAssertionModality,
+    SubjectiveBasisBinding,
+    SubjectiveBasisRole,
+    SubjectiveContentKind,
     SubjectiveDepthClass,
     SubjectiveMode,
     SubjectiveOperator,
     SubjectiveProposition,
+    SubjectivePropositionV2,
+    SurfaceDerivation,
+    SurfaceDerivationKind,
     TemperatureClass,
     VisibleAuthority,
     VisibleUnitTrace,
+    ValueApplication,
+    project_stage1_policy_basis_binding_ref,
+    project_stage1_projection_preimage_ref,
+    project_stage1_source_qualifier_binding_ref,
+    project_stage1_subjective_basis_binding_ref,
     recompute_stage1_identity,
     stage1_canonical_json_bytes,
     stage1_projection_artifact_ref,
     stage1_subjective_forbidden_promotions,
     stage1_subjective_semantic_key,
     stage1_value_principle_ref,
+    validate_stage1_anti_template_registry_invariant,
+    validate_stage1_final_logical_id_registry,
     validate_stage1_identity,
     validate_stage1_local_ref_dag,
     validate_stage1_projection,
     validate_stage1_sentence_unit,
     validate_stage1_trace_spine,
+    validate_subjective_proposition_v2,
+    validate_surface_derivation,
     validate_version_qualified_ref,
 )
 import cocolon_meaning_experience_engine.emlis_stage1_response as stage1_response_module
 import cocolon_meaning_experience_engine.emlis_v1a as emlis_v1a_module
+import cocolon_meaning_experience_engine.contracts as contracts_module
 from cocolon_meaning_experience_engine.emlis_stage1_response import (
     CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_BYTES,
     CMEE_STAGE1_MICROGRAMMAR_INVENTORY_DOCS_SHA256,
@@ -5629,6 +5665,1920 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             baseline,
             semantic_shape("stage2-generalization-c", "medium"),
         )
+
+
+class CMEEStage1AdditionalCorrectionStep1ContractsTest(unittest.TestCase):
+    def _surface_rule_registry(
+        self,
+    ) -> dict[tuple[SurfaceDerivationKind, str | None], tuple[str, ...]]:
+        rows: dict[
+            tuple[SurfaceDerivationKind, str | None],
+            tuple[str, ...],
+        ] = {}
+        for kind in SurfaceDerivationKind:
+            if kind is SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT:
+                for mode in ("EXPLICIT", "COMPOSITE", "ANAPHORIC"):
+                    rows[(kind, mode)] = (
+                        f"rule:{kind.value.lower()}-{mode.lower()}"
+                        "@cocolon.cmee.surface.v1",
+                    )
+            else:
+                rows[(kind, None)] = (
+                    f"rule:{kind.value.lower()}@cocolon.cmee.surface.v1",
+                )
+        return rows
+
+    def _valid_subjective_v2(
+        self,
+        content_kind: SubjectiveContentKind,
+        *,
+        bounded_counterposition: bool = False,
+        material_unknown: bool = False,
+    ) -> tuple[SubjectivePropositionV2, dict[str, object]]:
+        projection_preimage_ref = project_stage1_projection_preimage_ref(
+            grounded_graph_ref="graph-1",
+            parent_observation_duty_ref="observation-duty-1",
+            parent_reception_duty_ref="reception-duty-1",
+            interpretation_candidate_ids=("candidate-1",),
+            meaning_field_id="meaning-field-1",
+            observation_contribution_ids=("contribution-1", "contribution-2"),
+            retained_reception_act_ids=("reception-act-1",),
+            observation_depth_class=ObservationDepthClass.FOCUSED,
+            temperature_class=TemperatureClass.STANDARD,
+            reception_style_policy_ref="policy:style@cocolon.style.v1",
+            emlis_value_policy_ref=CMEE_STAGE1_VALUE_POLICY_REF,
+        )
+        roles = {
+            SubjectiveContentKind.AFFECT: SubjectiveBasisRole.ELICITOR,
+            SubjectiveContentKind.APPRAISAL: SubjectiveBasisRole.APPRAISED_OBJECT,
+            SubjectiveContentKind.MATERIAL_VALUE: SubjectiveBasisRole.APPRAISED_OBJECT,
+            SubjectiveContentKind.RELATIONAL_POSITION: SubjectiveBasisRole.CHOICE_TARGET,
+        }
+        basis_specs = [
+            ("contribution-1", "semantic-1", roles[content_kind]),
+        ]
+        if bounded_counterposition:
+            basis_specs.append(
+                (
+                    "contribution-2",
+                    "semantic-2",
+                    SubjectiveBasisRole.APPRAISED_OBJECT,
+                )
+            )
+        basis_rows = tuple(
+            SubjectiveBasisBinding(
+                projection_preimage_ref=projection_preimage_ref,
+                binding_ref=project_stage1_subjective_basis_binding_ref(
+                    projection_preimage_ref=projection_preimage_ref,
+                    contribution_ref=contribution_ref,
+                    semantic_ref=semantic_ref,
+                    role=role,
+                ),
+                contribution_ref=contribution_ref,
+                semantic_ref=semantic_ref,
+                role=role,
+            )
+            for contribution_ref, semantic_ref, role in basis_specs
+        )
+        qualifier_codes = (
+            "polarity:POSITIVE",
+            "modality:ACTUAL",
+            "time_scope:CURRENT",
+        )
+        qualifier_rows = tuple(
+            SourceQualifierBinding(
+                projection_preimage_ref=projection_preimage_ref,
+                source_qualifier_binding_ref=(
+                    project_stage1_source_qualifier_binding_ref(
+                        projection_preimage_ref=projection_preimage_ref,
+                        basis_binding_ref=row.binding_ref,
+                        source_candidate_ref="candidate-1",
+                        source_argument_role=None,
+                        canonical_qualifier_codes=qualifier_codes,
+                        polarity="POSITIVE",
+                        modality="ACTUAL",
+                        time_scope="CURRENT",
+                    )
+                ),
+                basis_binding_ref=row.binding_ref,
+                source_candidate_ref="candidate-1",
+                source_argument_role=None,
+                canonical_qualifier_codes=qualifier_codes,
+                polarity="POSITIVE",
+                modality="ACTUAL",
+                time_scope="CURRENT",
+            )
+            for row in basis_rows
+        )
+
+        policy_basis_rows: list[PolicyBasisBinding] = []
+        if content_kind is SubjectiveContentKind.MATERIAL_VALUE:
+            policy_basis_rows.append(
+                PolicyBasisBinding(
+                    projection_preimage_ref=projection_preimage_ref,
+                    binding_ref=project_stage1_policy_basis_binding_ref(
+                        projection_preimage_ref=projection_preimage_ref,
+                        owner_kind=PolicyBasisOwnerKind.CONTRIBUTION,
+                        owner_ref="contribution-1",
+                        role=PolicyBasisRole.BURDEN_OR_RESIDUE,
+                    ),
+                    owner_kind=PolicyBasisOwnerKind.CONTRIBUTION,
+                    owner_ref="contribution-1",
+                    role=PolicyBasisRole.BURDEN_OR_RESIDUE,
+                )
+            )
+        material_unknown_refs: tuple[str, ...] = ()
+        if material_unknown:
+            material_unknown_refs = ("unknown-1",)
+            policy_basis_rows.append(
+                PolicyBasisBinding(
+                    projection_preimage_ref=projection_preimage_ref,
+                    binding_ref=project_stage1_policy_basis_binding_ref(
+                        projection_preimage_ref=projection_preimage_ref,
+                        owner_kind=PolicyBasisOwnerKind.MATERIAL_UNKNOWN,
+                        owner_ref="unknown-1",
+                        role=PolicyBasisRole.MATERIAL_UNKNOWN,
+                    ),
+                    owner_kind=PolicyBasisOwnerKind.MATERIAL_UNKNOWN,
+                    owner_ref="unknown-1",
+                    role=PolicyBasisRole.MATERIAL_UNKNOWN,
+                )
+            )
+
+        primary_bindings = (basis_rows[0].binding_ref,)
+        boundary_bindings = (
+            (basis_rows[1].binding_ref,)
+            if bounded_counterposition
+            else ()
+        )
+        affect_content = None
+        appraisal_content = None
+        material_value_content = None
+        relational_position = None
+        focal_relation_ref = None
+        if content_kind is SubjectiveContentKind.AFFECT:
+            affect_content = EmlisAffectContent(
+                category=AffectCategory.CONCERN,
+                intensity=AffectIntensity.QUIET,
+                elicitor_bindings=primary_bindings,
+            )
+            subjective_mode = SubjectiveMode.AFFECTIVE_RESPONSE
+            subjective_operator = SubjectiveOperator.FEEL_TOWARD
+            assertion_modality = SubjectiveAssertionModality.EMLIS_FEELING
+        elif content_kind is SubjectiveContentKind.APPRAISAL:
+            appraisal_content = EmlisAppraisalContent(
+                dimension=AppraisalDimension.MATERIAL_WEIGHT,
+                operation=AppraisalOperation.RECEIVE_AS_MATERIAL,
+                appraised_bindings=primary_bindings,
+                focal_relation_ref=None,
+                protected_bindings=(),
+                basis_contribution_refs=("contribution-1",),
+            )
+            subjective_mode = SubjectiveMode.PERSONAL_APPRAISAL
+            subjective_operator = SubjectiveOperator.APPRAISE_AS_MATERIAL
+            assertion_modality = SubjectiveAssertionModality.EMLIS_APPRAISAL
+        elif content_kind is SubjectiveContentKind.MATERIAL_VALUE:
+            material_value_content = MaterialValueContent(
+                value_applications=(
+                    ValueApplication(
+                        principle_ref=stage1_value_principle_ref("V1"),
+                        material_risk=MaterialRisk.MINIMIZATION,
+                        policy_application_row_refs=("policy-application-row-1",),
+                        policy_basis_binding_refs=(policy_basis_rows[0].binding_ref,),
+                        protected_subjective_binding_refs=primary_bindings,
+                    ),
+                ),
+                target_bindings=primary_bindings,
+                boundary_bindings=(),
+            )
+            subjective_mode = SubjectiveMode.VALUE_POSITION
+            subjective_operator = SubjectiveOperator.PROTECT_VALUE_BOUNDARY
+            assertion_modality = SubjectiveAssertionModality.EMLIS_VALUE_POSITION
+        else:
+            position_kind = (
+                RelationalPositionKind.BOUNDED_COUNTERPOSITION
+                if bounded_counterposition
+                else RelationalPositionKind.STANCE
+            )
+            commitment = (
+                RelationalCommitment.DECLINE_PROMOTION
+                if bounded_counterposition
+                else RelationalCommitment.STAY_WITH
+            )
+            relational_position = EmlisRelationalPosition(
+                relational_position_kind=position_kind,
+                stance_operator=StanceOperator.PROTECT_USER_AGENCY,
+                target_bindings=primary_bindings,
+                boundary_bindings=boundary_bindings,
+                commitment=commitment,
+                closure=(
+                    RelationalClosure.BOUNDED
+                    if bounded_counterposition
+                    else RelationalClosure.NONE
+                ),
+            )
+            if bounded_counterposition:
+                focal_relation_ref = "relation-1"
+                subjective_mode = SubjectiveMode.BOUNDED_COUNTERPOSITION
+                subjective_operator = SubjectiveOperator.COUNTER_SPECIFIC_PROMOTION
+                assertion_modality = (
+                    SubjectiveAssertionModality.EMLIS_BOUNDED_REFUSAL
+                )
+            else:
+                subjective_mode = SubjectiveMode.RELATIONAL_STANCE
+                subjective_operator = SubjectiveOperator.TAKE_RELATIONAL_STANCE
+                assertion_modality = (
+                    SubjectiveAssertionModality.EMLIS_RELATIONAL_INTENTION
+                )
+
+        all_bindings = (*primary_bindings, *boundary_bindings)
+        proposition = SubjectivePropositionV2(
+            schema_version=dict(CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY)[
+                "CMEE_STAGE1_SUBJECTIVE_PROPOSITION_SCHEMA_VERSION"
+            ],
+            content_kind=content_kind,
+            subjective_mode=subjective_mode,
+            subjective_operator=subjective_operator,
+            target_contribution_refs=tuple(
+                row.contribution_ref for row in basis_rows
+            ),
+            primary_target_refs=(basis_rows[0].semantic_ref,),
+            boundary_target_refs=tuple(
+                row.semantic_ref for row in basis_rows[1:]
+            ),
+            response_object_refs=tuple(row.semantic_ref for row in basis_rows),
+            basis_binding_refs=all_bindings,
+            source_qualifier_binding_refs=tuple(
+                row.source_qualifier_binding_ref for row in qualifier_rows
+            ),
+            focal_relation_ref=focal_relation_ref,
+            affect_content=affect_content,
+            appraisal_content=appraisal_content,
+            material_value_content=material_value_content,
+            relational_position=relational_position,
+            referenced_actor_refs=("actor-user",),
+            referenced_experiencer_refs=("experiencer-user",),
+            addressee_role="USER",
+            assertion_modality=assertion_modality,
+            epistemic_scope="REQUEST_LOCAL_EMLIS_SUBJECTIVITY",
+        )
+        expected_forbidden_promotions = (
+            *CMEE_STAGE1_SUBJECTIVE_FORBIDDEN_PROMOTIONS,
+            *(("value-policy-suppression:V9",) if material_unknown else ()),
+        )
+        kwargs: dict[str, object] = {
+            "projection_preimage_ref": projection_preimage_ref,
+            "basis_rows": basis_rows,
+            "qualifier_rows": qualifier_rows,
+            "expected_basis_rows": basis_rows,
+            "expected_qualifier_rows": qualifier_rows,
+            "policy_basis_rows": tuple(policy_basis_rows),
+            "expected_policy_basis_rows": tuple(policy_basis_rows),
+            "allowed_contribution_refs": (
+                "contribution-1",
+                "contribution-2",
+            ),
+            "allowed_semantic_refs": ("semantic-1", "semantic-2"),
+            "allowed_source_candidate_refs": ("candidate-1",),
+            "allowed_policy_application_row_refs": (
+                ("policy-application-row-1",)
+                if content_kind is SubjectiveContentKind.MATERIAL_VALUE
+                else ()
+            ),
+            "admitted_relation_refs": (
+                ("relation-1",) if bounded_counterposition else ()
+            ),
+            "material_unknown_refs": material_unknown_refs,
+            "expected_actor_refs": ("actor-user",),
+            "expected_experiencer_refs": ("experiencer-user",),
+            "expected_focal_relation_ref": focal_relation_ref,
+            "owner_ref": dict(CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY)[
+                "CMEE_STAGE1_EMLIS_OWNER_REF"
+            ],
+            "speaker_owner": "EMLIS",
+            "user_fact_effect": 0,
+            "forbidden_promotions": expected_forbidden_promotions,
+            "expected_forbidden_promotions": expected_forbidden_promotions,
+        }
+        return proposition, kwargs
+
+    def test_step1_final_logical_ids_are_exact_and_disabled(self) -> None:
+        expected = (
+            ("CMEE_STAGE1_RESPONSE_SCHEMA_VERSION", "cocolon.cmee.v1a.emlis_stage1_response.v2"),
+            ("CMEE_STAGE1_SUBJECTIVE_PROPOSITION_SCHEMA_VERSION", "cocolon.cmee.v1a.emlis_subjective_proposition.v2"),
+            ("CMEE_STAGE1_COMPOSITION_POLICY_VERSION", "cocolon.emlis.stage1.discourse_composition.v1"),
+            ("CMEE_STAGE1_NORMAL_FORM_VERSION", "cocolon.cmee.v1a.emlis_stage1_normal_form.v1"),
+            ("CMEE_STAGE1_CONSTRUCTION_GRAMMAR_POLICY_VERSION", "cocolon.emlis.stage1.grounded_construction_grammar.v1"),
+            ("CMEE_STAGE1_PROJECTION_PREIMAGE_REF_VERSION", "cocolon.cmee.v1a.emlis_stage1_projection_preimage_ref.v1"),
+            ("CMEE_STAGE1_SUBJECTIVE_BASIS_BINDING_REF_VERSION", "cocolon.cmee.v1a.emlis_subjective_basis_binding_ref.v1"),
+            ("CMEE_STAGE1_SOURCE_QUALIFIER_BINDING_REF_VERSION", "cocolon.cmee.v1a.emlis_source_qualifier_binding_ref.v1"),
+            ("CMEE_STAGE1_POLICY_BASIS_BINDING_REF_VERSION", "cocolon.cmee.v1a.emlis_policy_basis_binding_ref.v1"),
+            ("CMEE_STAGE1_POLICY_TARGET_KEY_VERSION", "cocolon.cmee.v1a.emlis_policy_target_key.v1"),
+            ("CMEE_STAGE1_POLICY_APPLICATION_ROW_ID_VERSION", "cocolon.cmee.v1a.emlis_policy_application_row_id.v1"),
+            ("CMEE_STAGE1_SUBJECTIVE_RESPONSIBILITY_REF_VERSION", "cocolon.cmee.v1a.emlis_subjective_responsibility_ref.v1"),
+            ("CMEE_STAGE1_SUBJECTIVE_OPPORTUNITY_KEY_VERSION", "cocolon.cmee.v1a.emlis_subjective_opportunity_key.v1"),
+            ("CMEE_STAGE1_ARC_DEPENDENCY_REF_VERSION", "cocolon.cmee.v1a.emlis_arc_dependency_ref.v1"),
+            ("CMEE_STAGE1_DISCOURSE_ARC_REF_VERSION", "cocolon.cmee.v1a.emlis_stage1_discourse_arc_ref.v1"),
+            ("CMEE_STAGE1_COMPOSITION_DUTY_REF_VERSION", "cocolon.cmee.v1a.emlis_composition_duty_ref.v1"),
+            ("CMEE_STAGE1_REFERENCE_STATE_REF_VERSION", "cocolon.cmee.v1a.emlis_discourse_reference_state_ref.v2"),
+            ("CMEE_STAGE1_CLAUSE_SCALAR_CONSTRAINT_REF_VERSION", "cocolon.cmee.v1a.emlis_clause_scalar_constraint_ref.v1"),
+            ("CMEE_STAGE1_CLAUSE_INTENT_ID_VERSION", "cocolon.cmee.v1a.emlis_clause_intent_id.v1"),
+            ("CMEE_STAGE1_CLAUSE_PLAN_ID_VERSION", "cocolon.cmee.v1a.emlis_clause_plan_id.v1"),
+            ("CMEE_STAGE1_RESPONSE_OBJECT_EXPRESSION_ID_VERSION", "cocolon.cmee.v1a.emlis_response_object_expression_id.v1"),
+            ("CMEE_STAGE1_PROFILE_EVIDENCE_REF_VERSION", "cocolon.cmee.v1a.emlis_profile_evidence_ref.v1"),
+            ("CMEE_STAGE1_SEALED_UNIT_PLAN_ROW_ID_VERSION", "cocolon.cmee.v1a.emlis_sealed_unit_plan_row_id.v1"),
+            ("CMEE_STAGE1_COMPOSITION_LAYOUT_ID_VERSION", "cocolon.cmee.v1a.emlis_composition_layout_id.v1"),
+            ("CMEE_STAGE1_ARTIFACT_COMPOSITION_CANDIDATE_ID_VERSION", "cocolon.cmee.v1a.emlis_artifact_composition_candidate_id.v1"),
+            ("CMEE_STAGE1_SELECTED_ARTIFACT_ID_VERSION", "cocolon.cmee.v1a.emlis_selected_stage1_artifact_id.v1"),
+            ("CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION", "cocolon.cmee.v1a.emlis_stage1_positive_trace_extension.v2"),
+            ("CMEE_STAGE1_EMLIS_OWNER_REF", "owner:emlis@cocolon.cmee.v1a.emlis_stage1_response.v2"),
+        )
+        self.assertEqual(CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY, expected)
+        validate_stage1_final_logical_id_registry()
+        self.assertEqual(
+            CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+            "cocolon.cmee.v1a.emlis_stage1_response.v1",
+        )
+        self.assertEqual(
+            CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION,
+            "cocolon.cmee.v1a.emlis_stage1_positive_trace_extension.v1",
+        )
+        self.assertEqual(
+            CMEE_STAGE1_EMLIS_OWNER_REF,
+            "owner:emlis@cocolon.cmee.v1a.emlis_stage1_response.v1",
+        )
+        self.assertTrue(
+            set(value for _name, value in expected).isdisjoint(
+                emlis_v1a_module.REALIZER_CONTRACT_IDS
+            )
+        )
+        self.assertNotIn(
+            dict(expected)["CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION"],
+            emlis_v1a_module.TRUST_POLICY_IDS,
+        )
+
+    def test_step1_minimum_lineage_id_preimages_are_field_sensitive(self) -> None:
+        projection_inputs: dict[str, object] = {
+            "grounded_graph_ref": "graph-1",
+            "parent_observation_duty_ref": "observation-duty-1",
+            "parent_reception_duty_ref": "reception-duty-1",
+            "interpretation_candidate_ids": ("candidate-1",),
+            "meaning_field_id": "meaning-field-1",
+            "observation_contribution_ids": ("contribution-1",),
+            "retained_reception_act_ids": ("act-1",),
+            "observation_depth_class": ObservationDepthClass.FOCUSED,
+            "temperature_class": TemperatureClass.STANDARD,
+            "reception_style_policy_ref": "policy:style@cocolon.style.v1",
+            "emlis_value_policy_ref": CMEE_STAGE1_VALUE_POLICY_REF,
+        }
+        projection_mutations = (
+            {"grounded_graph_ref": "graph-2"},
+            {"parent_observation_duty_ref": "observation-duty-2"},
+            {"parent_reception_duty_ref": "reception-duty-2"},
+            {"interpretation_candidate_ids": ("candidate-2",)},
+            {"meaning_field_id": "meaning-field-2"},
+            {"observation_contribution_ids": ("contribution-2",)},
+            {"retained_reception_act_ids": ("act-2",)},
+            {"observation_depth_class": ObservationDepthClass.LAYERED},
+            {"temperature_class": TemperatureClass.ELEVATED_NON_SAFETY},
+            {"reception_style_policy_ref": "policy:other@cocolon.style.v1"},
+            {
+                "emlis_value_policy_ref": (
+                    "policy:other@cocolon.emlis.stage1.value_policy.v1"
+                )
+            },
+        )
+        projection_refs = (
+            project_stage1_projection_preimage_ref(**projection_inputs),
+            *(
+                project_stage1_projection_preimage_ref(
+                    **{**projection_inputs, **mutation}
+                )
+                for mutation in projection_mutations
+            ),
+        )
+        self.assertEqual(len(projection_refs), len(set(projection_refs)))
+
+        projection_ref = projection_refs[0]
+        basis_inputs = {
+            "projection_preimage_ref": projection_ref,
+            "contribution_ref": "contribution-1",
+            "semantic_ref": "semantic-1",
+            "role": SubjectiveBasisRole.ELICITOR,
+        }
+        basis_refs = (
+            project_stage1_subjective_basis_binding_ref(**basis_inputs),
+            project_stage1_subjective_basis_binding_ref(
+                **{**basis_inputs, "projection_preimage_ref": projection_refs[1]}
+            ),
+            project_stage1_subjective_basis_binding_ref(
+                **{**basis_inputs, "contribution_ref": "contribution-2"}
+            ),
+            project_stage1_subjective_basis_binding_ref(
+                **{**basis_inputs, "semantic_ref": "semantic-2"}
+            ),
+            project_stage1_subjective_basis_binding_ref(
+                **{**basis_inputs, "role": SubjectiveBasisRole.APPRAISED_OBJECT}
+            ),
+        )
+        self.assertEqual(len(basis_refs), len(set(basis_refs)))
+
+        qualifier_inputs = {
+            "projection_preimage_ref": projection_ref,
+            "basis_binding_ref": basis_refs[0],
+            "source_candidate_ref": "candidate-1",
+            "source_argument_role": None,
+            "canonical_qualifier_codes": (
+                "polarity:POSITIVE", "modality:ACTUAL",
+                "time_scope:CURRENT",
+            ),
+            "polarity": "POSITIVE",
+            "modality": "ACTUAL",
+            "time_scope": "CURRENT",
+        }
+        qualifier_mutations = (
+            {"projection_preimage_ref": projection_refs[1]},
+            {"basis_binding_ref": basis_refs[1]},
+            {"source_candidate_ref": "candidate-2"},
+            {
+                "source_argument_role": ArgumentRole.LEFT,
+                "canonical_qualifier_codes": (
+                    "left_polarity:POSITIVE", "left_modality:ACTUAL",
+                    "left_time_scope:CURRENT",
+                ),
+            },
+            {
+                "canonical_qualifier_codes": (
+                    "polarity:NEGATIVE", "modality:ACTUAL",
+                    "time_scope:CURRENT",
+                ),
+                "polarity": "NEGATIVE",
+            },
+            {
+                "canonical_qualifier_codes": (
+                    "polarity:POSITIVE", "modality:POSSIBLE",
+                    "time_scope:CURRENT",
+                ),
+                "modality": "POSSIBLE",
+            },
+            {
+                "canonical_qualifier_codes": (
+                    "polarity:POSITIVE", "modality:ACTUAL",
+                    "time_scope:PAST",
+                ),
+                "time_scope": "PAST",
+            },
+        )
+        qualifier_refs = (
+            project_stage1_source_qualifier_binding_ref(**qualifier_inputs),
+            *(
+                project_stage1_source_qualifier_binding_ref(
+                    **{**qualifier_inputs, **mutation}
+                )
+                for mutation in qualifier_mutations
+            ),
+        )
+        self.assertEqual(len(qualifier_refs), len(set(qualifier_refs)))
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "source_qualifier_binding_invalid"
+        ):
+            project_stage1_source_qualifier_binding_ref(
+                **{
+                    **qualifier_inputs,
+                    "canonical_qualifier_codes": (
+                        "polarity:POSITIVE", "polarity:POSITIVE",
+                        "time_scope:CURRENT",
+                    ),
+                }
+            )
+
+        policy_inputs = {
+            "projection_preimage_ref": projection_ref,
+            "owner_kind": PolicyBasisOwnerKind.CONTRIBUTION,
+            "owner_ref": "contribution-1",
+            "role": PolicyBasisRole.BURDEN_OR_RESIDUE,
+        }
+        policy_refs = (
+            project_stage1_policy_basis_binding_ref(**policy_inputs),
+            project_stage1_policy_basis_binding_ref(
+                **{**policy_inputs, "projection_preimage_ref": projection_refs[1]}
+            ),
+            project_stage1_policy_basis_binding_ref(
+                **{
+                    **policy_inputs,
+                    "owner_kind": PolicyBasisOwnerKind.MATERIAL_UNKNOWN,
+                }
+            ),
+            project_stage1_policy_basis_binding_ref(
+                **{**policy_inputs, "owner_ref": "contribution-2"}
+            ),
+            project_stage1_policy_basis_binding_ref(
+                **{**policy_inputs, "role": PolicyBasisRole.DIRECTION}
+            ),
+        )
+        self.assertEqual(len(policy_refs), len(set(policy_refs)))
+
+    def test_step1_subjective_v2_fields_are_exact_and_not_aliased(self) -> None:
+        self.assertEqual(
+            tuple(row.name for row in fields(SubjectivePropositionV2)),
+            (
+                "schema_version", "content_kind", "subjective_mode",
+                "subjective_operator", "target_contribution_refs",
+                "primary_target_refs", "boundary_target_refs",
+                "response_object_refs", "basis_binding_refs",
+                "source_qualifier_binding_refs", "focal_relation_ref",
+                "affect_content", "appraisal_content", "material_value_content",
+                "relational_position", "referenced_actor_refs",
+                "referenced_experiencer_refs", "addressee_role",
+                "assertion_modality", "epistemic_scope",
+            ),
+        )
+        self.assertIsNot(SubjectiveProposition, SubjectivePropositionV2)
+        contracts_source = inspect.getsource(contracts_module)
+        for forbidden_declaration in (
+            "class SubjectiveMeaningArtifact",
+            "class ClauseFrameV2",
+            "class EmlisStage1PositiveTraceExtensionV2",
+            "SubjectiveProposition = SubjectivePropositionV2",
+        ):
+            self.assertNotIn(forbidden_declaration, contracts_source)
+        self.assertNotIn(
+            "SubjectivePropositionV2", inspect.getsource(stage1_response_module)
+        )
+        self.assertNotIn("SubjectivePropositionV2", inspect.getsource(emlis_v1a_module))
+
+    def test_step1_supporting_types_and_enums_are_literal_exact(self) -> None:
+        expected_fields = {
+            SubjectiveBasisBinding: (
+                "projection_preimage_ref", "binding_ref", "contribution_ref",
+                "semantic_ref", "role",
+            ),
+            SourceQualifierBinding: (
+                "projection_preimage_ref", "source_qualifier_binding_ref",
+                "basis_binding_ref", "source_candidate_ref",
+                "source_argument_role", "canonical_qualifier_codes",
+                "polarity", "modality", "time_scope",
+            ),
+            PolicyBasisBinding: (
+                "projection_preimage_ref", "binding_ref", "owner_kind",
+                "owner_ref", "role",
+            ),
+            EmlisAffectContent: (
+                "category", "intensity", "elicitor_bindings",
+            ),
+            EmlisAppraisalContent: (
+                "dimension", "operation", "appraised_bindings",
+                "focal_relation_ref", "protected_bindings",
+                "basis_contribution_refs",
+            ),
+            ValueApplication: (
+                "principle_ref", "material_risk",
+                "policy_application_row_refs", "policy_basis_binding_refs",
+                "protected_subjective_binding_refs",
+            ),
+            MaterialValueContent: (
+                "value_applications", "target_bindings", "boundary_bindings",
+            ),
+            EmlisRelationalPosition: (
+                "relational_position_kind", "stance_operator",
+                "target_bindings", "boundary_bindings", "commitment",
+                "closure",
+            ),
+            SurfaceDerivation: (
+                "derivation_kind", "source_or_claim_refs", "emlis_owner_ref",
+                "relation_or_clause_plan_refs", "qualifier_refs",
+                "response_object_expression_ref", "antecedent_unit_ref",
+                "participant_role_ref", "evidence_refs", "rule_ref",
+                "input_scalar_ranges",
+            ),
+        }
+        for contract_type, exact_fields in expected_fields.items():
+            with self.subTest(contract=contract_type.__name__):
+                self.assertEqual(
+                    tuple(row.name for row in fields(contract_type)),
+                    exact_fields,
+                )
+                self.assertTrue(contract_type.__dataclass_params__.frozen)
+                self.assertEqual(contract_type.__slots__, exact_fields)
+
+        expected_enum_values = {
+            SubjectiveContentKind: (
+                "AFFECT", "APPRAISAL", "MATERIAL_VALUE",
+                "RELATIONAL_POSITION",
+            ),
+            SubjectiveAssertionModality: (
+                "EMLIS_FEELING", "EMLIS_APPRAISAL", "EMLIS_VALUE_POSITION",
+                "EMLIS_RELATIONAL_INTENTION", "EMLIS_BOUNDED_REFUSAL",
+            ),
+            SubjectiveBasisRole: (
+                "ELICITOR", "APPRAISED_OBJECT", "RELATION_LEFT",
+                "RELATION_RIGHT", "ACTION", "CHANGE", "BEFORE", "AFTER",
+                "RESIDUE", "UNFINISHED", "CHOICE_TARGET",
+            ),
+            PolicyBasisOwnerKind: ("CONTRIBUTION", "MATERIAL_UNKNOWN"),
+            PolicyBasisRole: (
+                "BURDEN_OR_RESIDUE", "DIRECTION",
+                "CHANGE_OR_ACTUAL_OUTPUT", "COEXISTENCE_OR_TENSION",
+                "UNFINISHED", "VISIBILITY_ACT_BASIS", "MATERIAL_UNKNOWN",
+            ),
+            AppraisalDimension: (
+                "MATERIAL_WEIGHT", "RELATIONAL_NONCOLLAPSE", "BOUNDED_CHANGE",
+                "UNFINISHED_OPENNESS", "AGENCY_BOUNDARY",
+            ),
+            AppraisalOperation: (
+                "RECEIVE_AS_MATERIAL", "PRESERVE_BOTH_ENDPOINTS",
+                "RECOGNIZE_AS_BOUNDED", "LEAVE_UNFINISHED",
+                "RESPECT_CHOICE",
+            ),
+            MaterialRisk: (
+                "MINIMIZATION", "WISH_TO_OBLIGATION", "NO_RESULT_TO_NO_VALUE",
+                "SINGLE_EVENT_TO_IDENTITY",
+                "BOUNDED_CHANGE_TO_UNIVERSAL_SOLUTION",
+                "ONE_SIDE_TO_TRUE_SELF", "POSSIBILITY_TO_FACT",
+                "REMOVE_USER_AGENCY", "UNKNOWN_TO_FALSE_UNDERSTANDING",
+            ),
+            RelationalPositionKind: ("STANCE", "BOUNDED_COUNTERPOSITION"),
+            RelationalCommitment: (
+                "AFFIRM_SOURCE_BOUND_DIRECTION", "STAY_WITH", "HOLD_OPEN",
+                "WELCOME_BOUNDED_CHANGE", "PROTECT_AGENCY",
+                "DECLINE_PROMOTION",
+            ),
+            RelationalClosure: ("NONE", "BOUNDED", "OPEN"),
+            SurfaceDerivationKind: (
+                "LITERAL_SUBSPAN", "NORMALIZED_INFLECTION",
+                "COMPOSITIONAL_JOIN", "REGISTERED_EMLIS_LEXEME",
+                "REGISTERED_PARTICIPANT_LEXEME",
+                "REGISTERED_STRUCTURAL_ASSET", "PROJECTED_RESPONSE_OBJECT",
+                "PROJECTED_FUNCTIONAL_ASSET",
+            ),
+        }
+        for enum_type, exact_values in expected_enum_values.items():
+            with self.subTest(enum=enum_type.__name__):
+                self.assertEqual(tuple(enum_type.__members__), exact_values)
+                self.assertEqual(
+                    tuple(member.value for member in enum_type),
+                    exact_values,
+                )
+                self.assertEqual(len(enum_type.__members__), len(enum_type))
+
+    def test_step1_subjective_v2_exact_derivation_matrix_accepts(self) -> None:
+        cases = (
+            (SubjectiveContentKind.AFFECT, False),
+            (SubjectiveContentKind.APPRAISAL, False),
+            (SubjectiveContentKind.MATERIAL_VALUE, False),
+            (SubjectiveContentKind.RELATIONAL_POSITION, False),
+            (SubjectiveContentKind.RELATIONAL_POSITION, True),
+        )
+        for kind, counterposition in cases:
+            with self.subTest(kind=kind, counterposition=counterposition):
+                proposition, kwargs = self._valid_subjective_v2(
+                    kind,
+                    bounded_counterposition=counterposition,
+                )
+                validate_subjective_proposition_v2(proposition, **kwargs)
+
+    def test_step1_subjective_v2_rejects_union_and_derived_tamper(self) -> None:
+        proposition, kwargs = self._valid_subjective_v2(SubjectiveContentKind.AFFECT)
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "subjective_v2_schema_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                replace(proposition, schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION),
+                **kwargs,
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "content_discriminant_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                replace(proposition, affect_content=None),
+                **kwargs,
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "content_discriminant_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                replace(
+                    proposition,
+                    content_kind=SubjectiveContentKind.APPRAISAL,
+                ),
+                **kwargs,
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "content_discriminant_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                replace(
+                    proposition,
+                    appraisal_content=EmlisAppraisalContent(
+                        dimension=AppraisalDimension.MATERIAL_WEIGHT,
+                        operation=AppraisalOperation.RECEIVE_AS_MATERIAL,
+                        appraised_bindings=proposition.basis_binding_refs,
+                        focal_relation_ref=None,
+                        protected_bindings=(),
+                        basis_contribution_refs=proposition.target_contribution_refs,
+                    ),
+                ),
+                **kwargs,
+            )
+        for field_name, value in (
+            ("subjective_mode", SubjectiveMode.ATTENTION),
+            ("subjective_operator", SubjectiveOperator.ATTEND_TO),
+            (
+                "assertion_modality",
+                SubjectiveAssertionModality.EMLIS_APPRAISAL,
+            ),
+        ):
+            with self.subTest(field=field_name), self.assertRaisesRegex(
+                CMEEStage1ContractError, "derived_field_invalid"
+            ):
+                validate_subjective_proposition_v2(
+                    replace(proposition, **{field_name: value}),
+                    **kwargs,
+                )
+
+        counter, counter_kwargs = self._valid_subjective_v2(
+            SubjectiveContentKind.RELATIONAL_POSITION,
+            bounded_counterposition=True,
+        )
+        assert counter.relational_position is not None
+        for relational_mutation in (
+            replace(
+                counter.relational_position,
+                commitment=RelationalCommitment.STAY_WITH,
+            ),
+            replace(
+                counter.relational_position,
+                relational_position_kind=RelationalPositionKind.STANCE,
+            ),
+        ):
+            with self.subTest(
+                relational_mutation=relational_mutation
+            ), self.assertRaisesRegex(
+                CMEEStage1ContractError, "derived_field_invalid"
+            ):
+                validate_subjective_proposition_v2(
+                    replace(counter, relational_position=relational_mutation),
+                    **counter_kwargs,
+                )
+
+    def test_step1_subjective_v2_rejects_generic_content(self) -> None:
+        proposition, kwargs = self._valid_subjective_v2(SubjectiveContentKind.AFFECT)
+        assert proposition.affect_content is not None
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "GENERIC_SUBJECTIVE_CONTENT_STOP"
+        ):
+            validate_subjective_proposition_v2(
+                replace(
+                    proposition,
+                    affect_content=replace(
+                        proposition.affect_content,
+                        elicitor_bindings=(),
+                    ),
+                ),
+                **kwargs,
+            )
+        appraisal, appraisal_kwargs = self._valid_subjective_v2(
+            SubjectiveContentKind.APPRAISAL
+        )
+        material, material_kwargs = self._valid_subjective_v2(
+            SubjectiveContentKind.MATERIAL_VALUE
+        )
+        relational, relational_kwargs = self._valid_subjective_v2(
+            SubjectiveContentKind.RELATIONAL_POSITION
+        )
+        assert appraisal.appraisal_content is not None
+        assert material.material_value_content is not None
+        assert relational.relational_position is not None
+        generic_rows = (
+            (
+                replace(
+                    appraisal,
+                    appraisal_content=replace(
+                        appraisal.appraisal_content,
+                        appraised_bindings=(),
+                    ),
+                ),
+                appraisal_kwargs,
+            ),
+            (
+                replace(
+                    material,
+                    material_value_content=replace(
+                        material.material_value_content,
+                        value_applications=(),
+                    ),
+                ),
+                material_kwargs,
+            ),
+            (
+                replace(
+                    relational,
+                    relational_position=replace(
+                        relational.relational_position,
+                        target_bindings=(),
+                    ),
+                ),
+                relational_kwargs,
+            ),
+        )
+        for generic_proposition, generic_kwargs in generic_rows:
+            with self.subTest(kind=generic_proposition.content_kind), self.assertRaisesRegex(
+                CMEEStage1ContractError, "GENERIC_SUBJECTIVE_CONTENT_STOP"
+            ):
+                validate_subjective_proposition_v2(
+                    generic_proposition,
+                    **generic_kwargs,
+                )
+
+    def test_step1_subjective_v2_basis_and_qualifier_are_exact_cover(self) -> None:
+        proposition, kwargs = self._valid_subjective_v2(SubjectiveContentKind.AFFECT)
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "qualifier_exact_cover_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                proposition,
+                **{**kwargs, "qualifier_rows": ()},
+            )
+        qualifier = kwargs["qualifier_rows"][0]
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "qualifier_exact_cover_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                proposition,
+                **{
+                    **kwargs,
+                    "qualifier_rows": (replace(qualifier, modality="POSSIBLE"),),
+                },
+            )
+
+        rehashed_codes = (
+            "polarity:POSITIVE",
+            "modality:POSSIBLE",
+            "time_scope:CURRENT",
+        )
+        rehashed_qualifier = replace(
+            qualifier,
+            modality="POSSIBLE",
+            canonical_qualifier_codes=rehashed_codes,
+            source_qualifier_binding_ref=(
+                project_stage1_source_qualifier_binding_ref(
+                    projection_preimage_ref=qualifier.projection_preimage_ref,
+                    basis_binding_ref=qualifier.basis_binding_ref,
+                    source_candidate_ref=qualifier.source_candidate_ref,
+                    source_argument_role=qualifier.source_argument_role,
+                    canonical_qualifier_codes=rehashed_codes,
+                    polarity=qualifier.polarity,
+                    modality="POSSIBLE",
+                    time_scope=qualifier.time_scope,
+                )
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "qualifier_exact_cover_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                replace(
+                    proposition,
+                    source_qualifier_binding_refs=(
+                        rehashed_qualifier.source_qualifier_binding_ref,
+                    ),
+                ),
+                **{**kwargs, "qualifier_rows": (rehashed_qualifier,)},
+            )
+
+        basis = kwargs["basis_rows"][0]
+        cross_bound_basis = replace(
+            basis,
+            semantic_ref="semantic-2",
+            binding_ref=project_stage1_subjective_basis_binding_ref(
+                projection_preimage_ref=basis.projection_preimage_ref,
+                contribution_ref=basis.contribution_ref,
+                semantic_ref="semantic-2",
+                role=basis.role,
+            ),
+        )
+        cross_bound_qualifier = replace(
+            qualifier,
+            basis_binding_ref=cross_bound_basis.binding_ref,
+            source_qualifier_binding_ref=(
+                project_stage1_source_qualifier_binding_ref(
+                    projection_preimage_ref=qualifier.projection_preimage_ref,
+                    basis_binding_ref=cross_bound_basis.binding_ref,
+                    source_candidate_ref=qualifier.source_candidate_ref,
+                    source_argument_role=qualifier.source_argument_role,
+                    canonical_qualifier_codes=qualifier.canonical_qualifier_codes,
+                    polarity=qualifier.polarity,
+                    modality=qualifier.modality,
+                    time_scope=qualifier.time_scope,
+                )
+            ),
+        )
+        assert proposition.affect_content is not None
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "basis_exact_cover_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                replace(
+                    proposition,
+                    primary_target_refs=("semantic-2",),
+                    response_object_refs=("semantic-2",),
+                    basis_binding_refs=(cross_bound_basis.binding_ref,),
+                    source_qualifier_binding_refs=(
+                        cross_bound_qualifier.source_qualifier_binding_ref,
+                    ),
+                    affect_content=replace(
+                        proposition.affect_content,
+                        elicitor_bindings=(cross_bound_basis.binding_ref,),
+                    ),
+                ),
+                **{
+                    **kwargs,
+                    "basis_rows": (cross_bound_basis,),
+                    "qualifier_rows": (cross_bound_qualifier,),
+                },
+            )
+
+    def test_step1_subjective_v2_relation_qualifier_roles_are_exact(self) -> None:
+        proposition, kwargs = self._valid_subjective_v2(
+            SubjectiveContentKind.RELATIONAL_POSITION,
+            bounded_counterposition=True,
+        )
+        roles = (ArgumentRole.LEFT, ArgumentRole.RIGHT)
+        def relation_qualifier(
+            row: SourceQualifierBinding,
+            role: ArgumentRole,
+        ) -> SourceQualifierBinding:
+            qualifier_codes = (
+                f"{role.value.lower()}_polarity:{row.polarity}",
+                f"{role.value.lower()}_modality:{row.modality}",
+                f"{role.value.lower()}_time_scope:{row.time_scope}",
+            )
+            return replace(
+                row,
+                source_argument_role=role,
+                canonical_qualifier_codes=qualifier_codes,
+                source_qualifier_binding_ref=(
+                    project_stage1_source_qualifier_binding_ref(
+                        projection_preimage_ref=row.projection_preimage_ref,
+                        basis_binding_ref=row.basis_binding_ref,
+                        source_candidate_ref=row.source_candidate_ref,
+                        source_argument_role=role,
+                        canonical_qualifier_codes=qualifier_codes,
+                        polarity=row.polarity,
+                        modality=row.modality,
+                        time_scope=row.time_scope,
+                    )
+                ),
+            )
+        relation_qualifiers = tuple(
+            relation_qualifier(row, role)
+            for row, role in zip(kwargs["qualifier_rows"], roles, strict=True)
+        )
+        relation_proposition = replace(
+            proposition,
+            source_qualifier_binding_refs=tuple(
+                row.source_qualifier_binding_ref for row in relation_qualifiers
+            ),
+        )
+        validate_subjective_proposition_v2(
+            relation_proposition,
+            **{
+                **kwargs,
+                "qualifier_rows": relation_qualifiers,
+                "expected_qualifier_rows": relation_qualifiers,
+            },
+        )
+        first = relation_qualifiers[0]
+        swapped_codes = (
+            f"right_polarity:{first.polarity}",
+            f"right_modality:{first.modality}",
+            f"right_time_scope:{first.time_scope}",
+        )
+        swapped = replace(
+            first,
+            source_argument_role=ArgumentRole.RIGHT,
+            canonical_qualifier_codes=swapped_codes,
+            source_qualifier_binding_ref=project_stage1_source_qualifier_binding_ref(
+                projection_preimage_ref=first.projection_preimage_ref,
+                basis_binding_ref=first.basis_binding_ref,
+                source_candidate_ref=first.source_candidate_ref,
+                source_argument_role=ArgumentRole.RIGHT,
+                canonical_qualifier_codes=swapped_codes,
+                polarity=first.polarity,
+                modality=first.modality,
+                time_scope=first.time_scope,
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "qualifier_exact_cover_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                replace(
+                    relation_proposition,
+                    source_qualifier_binding_refs=(
+                        swapped.source_qualifier_binding_ref,
+                        relation_qualifiers[1].source_qualifier_binding_ref,
+                    ),
+                ),
+                **{
+                    **kwargs,
+                    "qualifier_rows": (swapped, relation_qualifiers[1]),
+                    "expected_qualifier_rows": relation_qualifiers,
+                },
+            )
+
+    def test_step1_subjective_v2_target_projection_is_exact(self) -> None:
+        proposition, kwargs = self._valid_subjective_v2(SubjectiveContentKind.AFFECT)
+        mutations = (
+            replace(proposition, target_contribution_refs=("contribution-2",)),
+            replace(proposition, primary_target_refs=("semantic-2",)),
+            replace(proposition, boundary_target_refs=("semantic-2",)),
+            replace(proposition, response_object_refs=("semantic-2",)),
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(
+                CMEEStage1ContractError, "target_projection_invalid"
+            ):
+                validate_subjective_proposition_v2(mutation, **kwargs)
+
+        relation, relation_kwargs = self._valid_subjective_v2(
+            SubjectiveContentKind.RELATIONAL_POSITION,
+            bounded_counterposition=True,
+        )
+        relation_basis = relation_kwargs["basis_rows"]
+        relation_qualifiers = relation_kwargs["qualifier_rows"]
+        duplicate_semantic_basis = replace(
+            relation_basis[1],
+            semantic_ref=relation_basis[0].semantic_ref,
+            binding_ref=project_stage1_subjective_basis_binding_ref(
+                projection_preimage_ref=relation_basis[1].projection_preimage_ref,
+                contribution_ref=relation_basis[1].contribution_ref,
+                semantic_ref=relation_basis[0].semantic_ref,
+                role=relation_basis[1].role,
+            ),
+        )
+        duplicate_semantic_qualifier = replace(
+            relation_qualifiers[1],
+            basis_binding_ref=duplicate_semantic_basis.binding_ref,
+            source_qualifier_binding_ref=project_stage1_source_qualifier_binding_ref(
+                projection_preimage_ref=relation_qualifiers[1].projection_preimage_ref,
+                basis_binding_ref=duplicate_semantic_basis.binding_ref,
+                source_candidate_ref=relation_qualifiers[1].source_candidate_ref,
+                source_argument_role=relation_qualifiers[1].source_argument_role,
+                canonical_qualifier_codes=relation_qualifiers[1].canonical_qualifier_codes,
+                polarity=relation_qualifiers[1].polarity,
+                modality=relation_qualifiers[1].modality,
+                time_scope=relation_qualifiers[1].time_scope,
+            ),
+        )
+        duplicate_basis_rows = (relation_basis[0], duplicate_semantic_basis)
+        duplicate_qualifier_rows = (
+            relation_qualifiers[0], duplicate_semantic_qualifier,
+        )
+        assert relation.relational_position is not None
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "target_projection_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                replace(
+                    relation,
+                    boundary_target_refs=(relation_basis[0].semantic_ref,),
+                    response_object_refs=(
+                        relation_basis[0].semantic_ref,
+                        relation_basis[0].semantic_ref,
+                    ),
+                    basis_binding_refs=(
+                        relation_basis[0].binding_ref,
+                        duplicate_semantic_basis.binding_ref,
+                    ),
+                    source_qualifier_binding_refs=(
+                        relation_qualifiers[0].source_qualifier_binding_ref,
+                        duplicate_semantic_qualifier.source_qualifier_binding_ref,
+                    ),
+                    relational_position=replace(
+                        relation.relational_position,
+                        boundary_bindings=(duplicate_semantic_basis.binding_ref,),
+                    ),
+                ),
+                **{
+                    **relation_kwargs,
+                    "basis_rows": duplicate_basis_rows,
+                    "expected_basis_rows": duplicate_basis_rows,
+                    "qualifier_rows": duplicate_qualifier_rows,
+                    "expected_qualifier_rows": duplicate_qualifier_rows,
+                },
+            )
+
+    def test_step1_subjective_v2_owner_and_safety_are_fail_closed(self) -> None:
+        proposition, kwargs = self._valid_subjective_v2(SubjectiveContentKind.AFFECT)
+        for patch_kwargs in (
+            {"owner_ref": CMEE_STAGE1_EMLIS_OWNER_REF},
+            {"speaker_owner": "USER"},
+            {"user_fact_effect": 1},
+            {"forbidden_promotions": ("generic-subjective-claim",)},
+            {
+                "forbidden_promotions": tuple(
+                    reversed(CMEE_STAGE1_SUBJECTIVE_FORBIDDEN_PROMOTIONS)
+                )
+            },
+            {
+                "forbidden_promotions": (
+                    *CMEE_STAGE1_SUBJECTIVE_FORBIDDEN_PROMOTIONS,
+                    "value-policy-suppression:V9",
+                )
+            },
+            {
+                "forbidden_promotions": (
+                    *CMEE_STAGE1_SUBJECTIVE_FORBIDDEN_PROMOTIONS,
+                    "value-policy-suppression:V10",
+                )
+            },
+        ):
+            with self.subTest(patch=patch_kwargs), self.assertRaisesRegex(
+                CMEEStage1ContractError, "cross_owner_invalid"
+            ):
+                validate_subjective_proposition_v2(
+                    proposition,
+                    **{**kwargs, **patch_kwargs},
+                )
+        for proposition_patch in (
+            {"referenced_actor_refs": ("foreign-actor",)},
+            {"referenced_experiencer_refs": ("foreign-experiencer",)},
+            {"addressee_role": "OTHER"},
+            {"epistemic_scope": "USER_FACT"},
+        ):
+            with self.subTest(patch=proposition_patch), self.assertRaisesRegex(
+                CMEEStage1ContractError, "cross_owner_invalid"
+            ):
+                validate_subjective_proposition_v2(
+                    replace(proposition, **proposition_patch),
+                    **kwargs,
+                )
+
+    def test_step1_material_unknown_is_policy_only(self) -> None:
+        proposition, kwargs = self._valid_subjective_v2(
+            SubjectiveContentKind.AFFECT,
+            material_unknown=True,
+        )
+        validate_subjective_proposition_v2(proposition, **kwargs)
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "cross_owner_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                proposition,
+                **{
+                    **kwargs,
+                    "forbidden_promotions": (
+                        CMEE_STAGE1_SUBJECTIVE_FORBIDDEN_PROMOTIONS
+                    ),
+                },
+            )
+        validate_subjective_proposition_v2(
+            proposition,
+            **{
+                **kwargs,
+                "policy_basis_rows": (),
+                "expected_policy_basis_rows": (),
+            },
+        )
+        basis = kwargs["basis_rows"][0]
+        promoted_ref = project_stage1_subjective_basis_binding_ref(
+            projection_preimage_ref=basis.projection_preimage_ref,
+            contribution_ref="unknown-1",
+            semantic_ref=basis.semantic_ref,
+            role=basis.role,
+        )
+        promoted_basis = replace(
+            basis,
+            binding_ref=promoted_ref,
+            contribution_ref="unknown-1",
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "material_unknown_promotion_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                proposition,
+                **{
+                    **kwargs,
+                    "basis_rows": (promoted_basis,),
+                    "expected_basis_rows": (promoted_basis,),
+                    "allowed_contribution_refs": ("contribution-1", "unknown-1"),
+                },
+            )
+
+    def test_step1_material_value_and_focal_relation_are_bound(self) -> None:
+        proposition, kwargs = self._valid_subjective_v2(
+            SubjectiveContentKind.MATERIAL_VALUE
+        )
+        validate_subjective_proposition_v2(proposition, **kwargs)
+        assert proposition.material_value_content is not None
+        application = proposition.material_value_content.value_applications[0]
+        original_policy_basis = kwargs["policy_basis_rows"][0]
+        rehashed_policy_basis = replace(
+            original_policy_basis,
+            role=PolicyBasisRole.DIRECTION,
+            binding_ref=project_stage1_policy_basis_binding_ref(
+                projection_preimage_ref=original_policy_basis.projection_preimage_ref,
+                owner_kind=original_policy_basis.owner_kind,
+                owner_ref=original_policy_basis.owner_ref,
+                role=PolicyBasisRole.DIRECTION,
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "policy_basis_binding_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                replace(
+                    proposition,
+                    material_value_content=replace(
+                        proposition.material_value_content,
+                        value_applications=(
+                            replace(
+                                application,
+                                policy_basis_binding_refs=(
+                                    rehashed_policy_basis.binding_ref,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+                **{**kwargs, "policy_basis_rows": (rehashed_policy_basis,)},
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "cross_owner_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                replace(
+                    proposition,
+                    material_value_content=replace(
+                        proposition.material_value_content,
+                        value_applications=(
+                            replace(
+                                application,
+                                policy_basis_binding_refs=("foreign-policy-basis",),
+                            ),
+                        ),
+                    ),
+                ),
+                **kwargs,
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "cross_owner_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                replace(
+                    proposition,
+                    material_value_content=replace(
+                        proposition.material_value_content,
+                        value_applications=(
+                            replace(
+                                application,
+                                principle_ref=stage1_value_principle_ref("V9"),
+                                material_risk=MaterialRisk.UNKNOWN_TO_FALSE_UNDERSTANDING,
+                            ),
+                        ),
+                    ),
+                ),
+                **kwargs,
+            )
+        shared_row_application = replace(
+            application,
+            principle_ref=stage1_value_principle_ref("V2"),
+            material_risk=MaterialRisk.WISH_TO_OBLIGATION,
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "cross_owner_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                replace(
+                    proposition,
+                    material_value_content=replace(
+                        proposition.material_value_content,
+                        value_applications=(application, shared_row_application),
+                    ),
+                ),
+                **kwargs,
+            )
+
+        unknown_proposition, unknown_kwargs = self._valid_subjective_v2(
+            SubjectiveContentKind.MATERIAL_VALUE,
+            material_unknown=True,
+        )
+        assert unknown_proposition.material_value_content is not None
+        unknown_application = (
+            unknown_proposition.material_value_content.value_applications[0]
+        )
+        unknown_policy_basis = unknown_kwargs["policy_basis_rows"][1]
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "cross_owner_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                replace(
+                    unknown_proposition,
+                    material_value_content=replace(
+                        unknown_proposition.material_value_content,
+                        value_applications=(
+                            replace(
+                                unknown_application,
+                                policy_basis_binding_refs=(
+                                    unknown_policy_basis.binding_ref,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+                **unknown_kwargs,
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "cross_owner_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                replace(
+                    proposition,
+                    material_value_content=replace(
+                        proposition.material_value_content,
+                        value_applications=(
+                            replace(
+                                application,
+                                policy_application_row_refs=("arbitrary-row",),
+                            ),
+                        ),
+                    ),
+                ),
+                **kwargs,
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "cross_owner_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                replace(
+                    proposition,
+                    material_value_content=replace(
+                        proposition.material_value_content,
+                        value_applications=(
+                            replace(
+                                application,
+                                material_risk=(
+                                    MaterialRisk.UNKNOWN_TO_FALSE_UNDERSTANDING
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+                **kwargs,
+            )
+        appraisal, appraisal_kwargs = self._valid_subjective_v2(
+            SubjectiveContentKind.APPRAISAL
+        )
+        assert appraisal.appraisal_content is not None
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "focal_relation_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                replace(
+                    appraisal,
+                    appraisal_content=replace(
+                        appraisal.appraisal_content,
+                        dimension=AppraisalDimension.RELATIONAL_NONCOLLAPSE,
+                        operation=AppraisalOperation.PRESERVE_BOTH_ENDPOINTS,
+                    ),
+                ),
+                **appraisal_kwargs,
+            )
+        counter, counter_kwargs = self._valid_subjective_v2(
+            SubjectiveContentKind.RELATIONAL_POSITION,
+            bounded_counterposition=True,
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError, "focal_relation_invalid"
+        ):
+            validate_subjective_proposition_v2(
+                replace(counter, focal_relation_ref=None),
+                **{**counter_kwargs, "expected_focal_relation_ref": None},
+            )
+
+    def test_step1_anti_template_registry_invariant(self) -> None:
+        self.assertEqual(
+            CMEE_STAGE1_ANTI_TEMPLATE_FORBIDDEN_REGISTRY_FIELDS,
+            (
+                "case_id", "case_family", "fixture_id", "exact8_id",
+                "raw_text", "raw_pattern", "source_regex",
+                "semantic_keyword", "expected_text", "finished_surface",
+                "finished_clause", "finished_sentence",
+            ),
+        )
+        self.assertEqual(
+            CMEE_STAGE1_ANTI_TEMPLATE_FORBIDDEN_SELECTOR_INPUTS,
+            (
+                "raw_source", "raw_text", "normalized_input",
+                "evidence_text", "resolver", "regex_result", "case_id",
+                "fixture_id", "fixture", "exact8_id",
+                "source_phrase_family", "semantic_domain_keyword",
+                "input_hash",
+            ),
+        )
+        safe_registry_fields = (
+            "construction_id",
+            "argument_slots",
+            "role_order",
+            "valency",
+            "particle_rules",
+            "auxiliary_rules",
+            "relation_combinators",
+            "inflection_order",
+        )
+        safe_selector_inputs = (
+            "grammatical_shape_key",
+            "predicate_valency",
+            "syntactic_orientation",
+        )
+        validate_stage1_anti_template_registry_invariant(
+            safe_registry_fields,
+            safe_selector_inputs,
+        )
+        malformed_exact_shapes = (
+            ((), ()),
+            (safe_registry_fields[:-1], safe_selector_inputs),
+            (
+                (safe_registry_fields[0], *safe_registry_fields[:-1]),
+                safe_selector_inputs,
+            ),
+            (tuple(reversed(safe_registry_fields)), safe_selector_inputs),
+            (
+                (
+                    "constructionId", "argumentSlots", "roleOrder",
+                    "valency", "particleRules", "auxiliaryRules",
+                    "relationCombinators", "inflectionOrder",
+                ),
+                safe_selector_inputs,
+            ),
+            (safe_registry_fields, safe_selector_inputs[:-1]),
+            (
+                safe_registry_fields,
+                (safe_selector_inputs[0], *safe_selector_inputs[:-1]),
+            ),
+            (safe_registry_fields, tuple(reversed(safe_selector_inputs))),
+            (
+                safe_registry_fields,
+                (
+                    "grammaticalShapeKey", "predicateValency",
+                    "syntacticOrientation",
+                ),
+            ),
+        )
+        for registry_fields, selector_inputs in malformed_exact_shapes:
+            with self.subTest(
+                registry_fields=registry_fields,
+                selector_inputs=selector_inputs,
+            ), self.assertRaisesRegex(
+                CMEEStage1ContractError, "anti_template_registry_invalid"
+            ):
+                validate_stage1_anti_template_registry_invariant(
+                    registry_fields,
+                    selector_inputs,
+                )
+        for unknown_registry, unknown_selector in (
+            ("opaque_payload", None),
+            (None, "opaque_selector_payload"),
+            ("reference_rule_id", None),
+            ("functional_rule_id", None),
+            (None, "artifact_composition_candidate_id"),
+            (None, "shared_variant_id"),
+        ):
+            with self.subTest(
+                unknown_registry=unknown_registry,
+                unknown_selector=unknown_selector,
+            ), self.assertRaisesRegex(
+                CMEEStage1ContractError, "anti_template_registry_invalid"
+            ):
+                validate_stage1_anti_template_registry_invariant(
+                    (
+                        (unknown_registry, *safe_registry_fields[1:])
+                        if unknown_registry
+                        else safe_registry_fields
+                    ),
+                    (
+                        (unknown_selector, *safe_selector_inputs[1:])
+                        if unknown_selector
+                        else safe_selector_inputs
+                    ),
+                )
+        for field_name in CMEE_STAGE1_ANTI_TEMPLATE_FORBIDDEN_REGISTRY_FIELDS:
+            with self.subTest(field=field_name), self.assertRaisesRegex(
+                CMEEStage1ContractError, "anti_template_registry_invalid"
+            ):
+                validate_stage1_anti_template_registry_invariant(
+                    (field_name, *safe_registry_fields[1:]),
+                    safe_selector_inputs,
+                )
+        for parameter_name in CMEE_STAGE1_ANTI_TEMPLATE_FORBIDDEN_SELECTOR_INPUTS:
+            with self.subTest(parameter=parameter_name), self.assertRaisesRegex(
+                CMEEStage1ContractError, "anti_template_registry_invalid"
+            ):
+                validate_stage1_anti_template_registry_invariant(
+                    safe_registry_fields,
+                    (parameter_name, *safe_selector_inputs[1:]),
+                )
+        for alias in (
+            "finishedSentenceTemplate",
+            "fixtureSelector",
+            "rawTextDigest",
+            "request_raw_source",
+            "source_evidence_text",
+            "semantic_resolver",
+            "test_case_id",
+            "normalized_source_input",
+            "opening",
+            "terminal",
+            "finished_connective_chain",
+            "sentence_body",
+            "source_domain_noun",
+            "case_specific_phrase",
+        ):
+            with self.subTest(alias=alias), self.assertRaisesRegex(
+                CMEEStage1ContractError, "anti_template_registry_invalid"
+            ):
+                validate_stage1_anti_template_registry_invariant(
+                    (alias, *safe_registry_fields[1:]),
+                    safe_selector_inputs,
+                )
+        for alias in (
+            "source_resolver",
+            "source_regex",
+            "raw_pattern",
+            "semantic_keyword",
+            "expected_text",
+            "finished_sentence",
+            "source_text",
+            "rawContent",
+            "normalized_text",
+            "source_string",
+            "input_digest",
+            "request_text",
+            "source_bytes",
+            "utterance",
+            "input_bytes",
+            "prompt",
+            "content",
+        ):
+            with self.subTest(selector_alias=alias), self.assertRaisesRegex(
+                CMEEStage1ContractError, "anti_template_registry_invalid"
+            ):
+                validate_stage1_anti_template_registry_invariant(
+                    safe_registry_fields,
+                    (alias, *safe_selector_inputs[1:]),
+                )
+
+    def test_step1_surface_derivation_exact8_accepts(self) -> None:
+        rule_registry = self._surface_rule_registry()
+        owner_ref = dict(CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY)[
+            "CMEE_STAGE1_EMLIS_OWNER_REF"
+        ]
+        empty = {
+            "source_or_claim_refs": (),
+            "emlis_owner_ref": None,
+            "relation_or_clause_plan_refs": (),
+            "qualifier_refs": (),
+            "response_object_expression_ref": None,
+            "antecedent_unit_ref": None,
+            "participant_role_ref": None,
+            "evidence_refs": (),
+            "rule_ref": "rule:surface@cocolon.cmee.surface.v1",
+            "input_scalar_ranges": (),
+        }
+        cases = (
+            (SurfaceDerivationKind.LITERAL_SUBSPAN, {"source_or_claim_refs": ("source-1",), "evidence_refs": ("evidence-1",), "input_scalar_ranges": ((0, 2),)}, None),
+            (SurfaceDerivationKind.NORMALIZED_INFLECTION, {"source_or_claim_refs": ("source-1",), "evidence_refs": ("evidence-1",), "input_scalar_ranges": ((0, 2),)}, None),
+            (SurfaceDerivationKind.COMPOSITIONAL_JOIN, {"source_or_claim_refs": ("source-1", "source-2"), "evidence_refs": ("evidence-1",), "input_scalar_ranges": ((0, 2), (3, 5))}, None),
+            (SurfaceDerivationKind.REGISTERED_EMLIS_LEXEME, {"emlis_owner_ref": owner_ref}, None),
+            (SurfaceDerivationKind.REGISTERED_PARTICIPANT_LEXEME, {"participant_role_ref": "CURRENT_USER_ADDRESSEE"}, None),
+            (SurfaceDerivationKind.REGISTERED_STRUCTURAL_ASSET, {}, None),
+            (SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT, {"source_or_claim_refs": ("source-1",), "response_object_expression_ref": "response-object-1", "evidence_refs": ("evidence-1",), "input_scalar_ranges": ((0, 2),)}, "EXPLICIT"),
+            (SurfaceDerivationKind.PROJECTED_FUNCTIONAL_ASSET, {"relation_or_clause_plan_refs": ("relation-1",)}, None),
+        )
+        for kind, delta, response_mode in cases:
+            with self.subTest(kind=kind):
+                derivation = SurfaceDerivation(
+                    derivation_kind=kind,
+                    **{
+                        **empty,
+                        "rule_ref": rule_registry[
+                            (
+                                kind,
+                                response_mode
+                                if kind
+                                is SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT
+                                else None,
+                            )
+                        ][0],
+                        **delta,
+                    },
+                )
+                validate_surface_derivation(
+                    derivation,
+                    registered_rule_refs_by_kind=rule_registry,
+                    response_object_mode=response_mode,
+                )
+        additional_rows = (
+            (
+                SurfaceDerivation(
+                    derivation_kind=SurfaceDerivationKind.REGISTERED_EMLIS_LEXEME,
+                    **{
+                        **empty,
+                        "rule_ref": rule_registry[
+                            (SurfaceDerivationKind.REGISTERED_EMLIS_LEXEME, None)
+                        ][0],
+                        "source_or_claim_refs": ("subjective-claim-1",),
+                    },
+                ),
+                None,
+            ),
+            (
+                SurfaceDerivation(
+                    derivation_kind=SurfaceDerivationKind.PROJECTED_FUNCTIONAL_ASSET,
+                    **{
+                        **empty,
+                        "rule_ref": rule_registry[
+                            (SurfaceDerivationKind.PROJECTED_FUNCTIONAL_ASSET, None)
+                        ][0],
+                        "qualifier_refs": ("qualifier-1",),
+                    },
+                ),
+                None,
+            ),
+            (
+                SurfaceDerivation(
+                    derivation_kind=SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT,
+                    **{
+                        **empty,
+                        "rule_ref": rule_registry[
+                            (
+                                SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT,
+                                "COMPOSITE",
+                            )
+                        ][0],
+                        "source_or_claim_refs": ("source-1", "source-2"),
+                        "relation_or_clause_plan_refs": ("relation-1",),
+                        "response_object_expression_ref": "response-object-2",
+                        "evidence_refs": ("evidence-1",),
+                        "input_scalar_ranges": ((0, 2), (3, 5)),
+                    },
+                ),
+                "COMPOSITE",
+            ),
+            (
+                SurfaceDerivation(
+                    derivation_kind=SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT,
+                    **{
+                        **empty,
+                        "rule_ref": rule_registry[
+                            (
+                                SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT,
+                                "ANAPHORIC",
+                            )
+                        ][0],
+                        "source_or_claim_refs": ("source-1",),
+                        "response_object_expression_ref": "response-object-3",
+                        "antecedent_unit_ref": "unit-1",
+                    },
+                ),
+                "ANAPHORIC",
+            ),
+        )
+        for derivation, response_mode in additional_rows:
+            validate_surface_derivation(
+                derivation,
+                registered_rule_refs_by_kind=rule_registry,
+                response_object_mode=response_mode,
+            )
+
+    def test_step1_surface_derivation_rejects_owner_range_and_rule_tamper(self) -> None:
+        rule_registry = self._surface_rule_registry()
+        base = SurfaceDerivation(
+            derivation_kind=SurfaceDerivationKind.LITERAL_SUBSPAN,
+            source_or_claim_refs=("source-1",),
+            emlis_owner_ref=None,
+            relation_or_clause_plan_refs=(),
+            qualifier_refs=(),
+            response_object_expression_ref=None,
+            antecedent_unit_ref=None,
+            participant_role_ref=None,
+            evidence_refs=("evidence-1",),
+            rule_ref=rule_registry[
+                (SurfaceDerivationKind.LITERAL_SUBSPAN, None)
+            ][0],
+            input_scalar_ranges=((0, 2),),
+        )
+        for mutated, code in (
+            (replace(base, emlis_owner_ref="owner:other@v1"), "owner_invalid"),
+            (replace(base, input_scalar_ranges=((2, 2),)), "range_invalid"),
+            (
+                replace(
+                    base,
+                    source_or_claim_refs=("source-1", "source-2"),
+                    input_scalar_ranges=((0, 3), (2, 5)),
+                    derivation_kind=SurfaceDerivationKind.COMPOSITIONAL_JOIN,
+                    rule_ref=rule_registry[
+                        (SurfaceDerivationKind.COMPOSITIONAL_JOIN, None)
+                    ][0],
+                ),
+                "range_invalid",
+            ),
+            (replace(base, rule_ref="unqualified-rule"), "rule_invalid"),
+            (replace(base, rule_ref="rule:evil@evil.v1"), "rule_invalid"),
+            (
+                replace(
+                    base,
+                    rule_ref=rule_registry[
+                        (SurfaceDerivationKind.REGISTERED_EMLIS_LEXEME, None)
+                    ][0],
+                ),
+                "rule_invalid",
+            ),
+            (
+                replace(
+                    base,
+                    derivation_kind=SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT,
+                    response_object_expression_ref="",
+                ),
+                "owner_invalid",
+            ),
+        ):
+            with self.subTest(code=code), self.assertRaisesRegex(
+                CMEEStage1ContractError, code
+            ):
+                validate_surface_derivation(
+                    mutated,
+                    registered_rule_refs_by_kind=rule_registry,
+                )
+
+        owner_ref = dict(CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY)[
+            "CMEE_STAGE1_EMLIS_OWNER_REF"
+        ]
+        emlis = replace(
+            base,
+            derivation_kind=SurfaceDerivationKind.REGISTERED_EMLIS_LEXEME,
+            source_or_claim_refs=(),
+            emlis_owner_ref=owner_ref,
+            evidence_refs=(),
+            input_scalar_ranges=(),
+            rule_ref=rule_registry[
+                (SurfaceDerivationKind.REGISTERED_EMLIS_LEXEME, None)
+            ][0],
+        )
+        participant = replace(
+            base,
+            derivation_kind=SurfaceDerivationKind.REGISTERED_PARTICIPANT_LEXEME,
+            source_or_claim_refs=(),
+            participant_role_ref="CURRENT_USER_ADDRESSEE",
+            evidence_refs=(),
+            input_scalar_ranges=(),
+            rule_ref=rule_registry[
+                (SurfaceDerivationKind.REGISTERED_PARTICIPANT_LEXEME, None)
+            ][0],
+        )
+        structural = replace(
+            base,
+            derivation_kind=SurfaceDerivationKind.REGISTERED_STRUCTURAL_ASSET,
+            source_or_claim_refs=(),
+            evidence_refs=(),
+            input_scalar_ranges=(),
+            rule_ref=rule_registry[
+                (SurfaceDerivationKind.REGISTERED_STRUCTURAL_ASSET, None)
+            ][0],
+        )
+        explicit_response = replace(
+            base,
+            derivation_kind=SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT,
+            response_object_expression_ref="response-object-1",
+            rule_ref=rule_registry[
+                (SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT, "EXPLICIT")
+            ][0],
+        )
+        anaphoric_response = replace(
+            explicit_response,
+            antecedent_unit_ref="unit-1",
+            evidence_refs=(),
+            input_scalar_ranges=(),
+            rule_ref=rule_registry[
+                (SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT, "ANAPHORIC")
+            ][0],
+        )
+        functional = replace(
+            base,
+            derivation_kind=SurfaceDerivationKind.PROJECTED_FUNCTIONAL_ASSET,
+            source_or_claim_refs=(),
+            relation_or_clause_plan_refs=("relation-1",),
+            evidence_refs=(),
+            input_scalar_ranges=(),
+            rule_ref=rule_registry[
+                (SurfaceDerivationKind.PROJECTED_FUNCTIONAL_ASSET, None)
+            ][0],
+        )
+        exact_matrix_tamper = (
+            (replace(base, evidence_refs=()), None, "owner_invalid"),
+            (replace(base, input_scalar_ranges=()), None, "owner_invalid"),
+            (
+                replace(
+                    base,
+                    derivation_kind=SurfaceDerivationKind.NORMALIZED_INFLECTION,
+                    evidence_refs=(),
+                    rule_ref=rule_registry[
+                        (SurfaceDerivationKind.NORMALIZED_INFLECTION, None)
+                    ][0],
+                ),
+                None,
+                "owner_invalid",
+            ),
+            (
+                replace(
+                    base,
+                    derivation_kind=SurfaceDerivationKind.COMPOSITIONAL_JOIN,
+                    source_or_claim_refs=("source-1", "source-2"),
+                    input_scalar_ranges=((0, 2),),
+                    rule_ref=rule_registry[
+                        (SurfaceDerivationKind.COMPOSITIONAL_JOIN, None)
+                    ][0],
+                ),
+                None,
+                "owner_invalid",
+            ),
+            (
+                replace(emlis, source_or_claim_refs=("claim-1",)),
+                None,
+                "owner_invalid",
+            ),
+            (replace(emlis, emlis_owner_ref=None), None, "owner_invalid"),
+            (
+                replace(participant, source_or_claim_refs=("source-1",)),
+                None,
+                "owner_invalid",
+            ),
+            (
+                replace(structural, source_or_claim_refs=("source-1",)),
+                None,
+                "owner_invalid",
+            ),
+            (
+                replace(explicit_response, response_object_expression_ref=None),
+                "EXPLICIT",
+                "owner_invalid",
+            ),
+            (
+                replace(explicit_response, antecedent_unit_ref="unit-1"),
+                "EXPLICIT",
+                "owner_invalid",
+            ),
+            (
+                replace(explicit_response, evidence_refs=()),
+                "EXPLICIT",
+                "owner_invalid",
+            ),
+            (
+                replace(
+                    explicit_response,
+                    rule_ref=rule_registry[
+                        (
+                            SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT,
+                            "COMPOSITE",
+                        )
+                    ][0],
+                ),
+                "COMPOSITE",
+                "owner_invalid",
+            ),
+            (
+                replace(anaphoric_response, antecedent_unit_ref=None),
+                "ANAPHORIC",
+                "owner_invalid",
+            ),
+            (
+                replace(
+                    anaphoric_response,
+                    evidence_refs=("evidence-1",),
+                    input_scalar_ranges=((0, 2),),
+                ),
+                "ANAPHORIC",
+                "owner_invalid",
+            ),
+            (explicit_response, "COMPOSITE", "rule_invalid"),
+            (
+                replace(functional, qualifier_refs=("qualifier-1",)),
+                None,
+                "owner_invalid",
+            ),
+        )
+        for mutated, response_mode, code in exact_matrix_tamper:
+            with self.subTest(
+                kind=mutated.derivation_kind,
+                response_mode=response_mode,
+                code=code,
+            ), self.assertRaisesRegex(CMEEStage1ContractError, code):
+                validate_surface_derivation(
+                    mutated,
+                    registered_rule_refs_by_kind=rule_registry,
+                    response_object_mode=response_mode,
+                )
 
 
 if __name__ == "__main__":
