@@ -176,6 +176,36 @@ from tools.cmee_v1a_i1sx_candidate_run import EXACT8
 
 
 SAMPLE_MEMO = "仕事が続いて疲れていて、朝から何も手につかない。"
+PUBLIC_NONSECRET_EARLY_STANDIN_EXACT4 = (
+    (
+        "tension",
+        "休みたい気持ちと、もう少し進めたい気持ちが同時にある。",
+        "生活",
+        "不安",
+        "medium",
+    ),
+    (
+        "temporal_change",
+        "音楽を聴いたら、少し落ち着いた。ただ、いつもそうなるとは思っていない。",
+        "生活",
+        "不安",
+        "medium",
+    ),
+    (
+        "help_seeking",
+        "少し話を聞いてほしいが、今声をかけてよいか迷っている。",
+        "生活",
+        "不安",
+        "medium",
+    ),
+    (
+        "unfinished",
+        "予定の話はした。でも、まだ迷いが残っていて、どうしたいかは分からない。",
+        "仕事",
+        "自己理解",
+        "medium",
+    ),
+)
 
 
 def _with_recomputed_evidence_id(row: object) -> object:
@@ -7958,6 +7988,626 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                         "REQUIRED",
                     )
 
+    def test_generic_affect_is_absorbed_by_same_target_specific_opportunity(
+        self,
+    ) -> None:
+        module = stage1_composition_module
+        known_rows = tuple(
+            (label, memo, "生活", "不安", "medium")
+            for label, memo, *_expected in self._KNOWN_EXACT4
+        )
+        grouped_rows = (
+            ("known", known_rows),
+            ("public_standin", PUBLIC_NONSECRET_EARLY_STANDIN_EXACT4),
+        )
+        affect_sentence_counts: dict[str, int] = {}
+        appraisal_claim_counts: dict[str, int] = {}
+        position_claim_counts: dict[str, int] = {}
+
+        for group, rows in grouped_rows:
+            affect_sentence_count = 0
+            appraisal_claim_count = 0
+            position_claim_count = 0
+            self.assertEqual(len(rows), 4)
+            for index, (label, memo, category, emotion, strength) in enumerate(
+                rows
+            ):
+                with self.subTest(group=group, structural_family=label):
+                    (
+                        _source,
+                        _grounded_plan,
+                        _graph,
+                        _parent_plan,
+                        projection,
+                        phase_a,
+                        meaning_plan,
+                        phase_b,
+                    ) = _final_stage1_composition_inputs(
+                        _request(
+                            record_id=(
+                                "cmee-i1sx-early-"
+                                + (
+                                    "known"
+                                    if group == "known"
+                                    else "withheld"
+                                )
+                                + f"-{index + 1:02d}"
+                            ),
+                            memo=memo,
+                            category=category,
+                            emotion=emotion,
+                            strength=strength,
+                        )
+                    )
+                    responsibilities = {
+                        row.responsibility_ref: row
+                        for row in meaning_plan.subjective_responsibility_rows
+                    }
+                    opportunities = {
+                        row.opportunity_key: row
+                        for row in meaning_plan.subjective_opportunity_rows
+                    }
+                    claims = tuple(meaning_plan.subjective_claim_rows)
+                    selected_keys = {
+                        row.selected_subjective_opportunity_key
+                        for row in claims
+                    }
+                    suppressions = tuple(
+                        meaning_plan.subjective_facet_suppression_rows
+                    )
+                    suppressed_keys = {
+                        row.suppressed_opportunity_key
+                        for row in suppressions
+                    }
+                    self.assertTrue(claims)
+                    self.assertEqual(
+                        selected_keys | suppressed_keys,
+                        set(opportunities),
+                    )
+                    self.assertTrue(selected_keys.isdisjoint(suppressed_keys))
+
+                    affect_opportunities = tuple(
+                        row
+                        for row in opportunities.values()
+                        if row.content_kind is SubjectiveContentKind.AFFECT
+                    )
+                    affect_claims = tuple(
+                        row
+                        for row in claims
+                        if row.asserted_subjective_proposition.content_kind
+                        is SubjectiveContentKind.AFFECT
+                    )
+                    self.assertEqual(len(affect_opportunities), 1)
+                    self.assertEqual(affect_claims, ())
+                    affect_opportunity = affect_opportunities[0]
+                    self.assertEqual(
+                        len(affect_opportunity.responsibility_refs),
+                        1,
+                    )
+                    affect_responsibility = responsibilities[
+                        affect_opportunity.responsibility_refs[0]
+                    ]
+                    self.assertIs(
+                        affect_responsibility.responsibility_kind,
+                        module.SubjectiveResponsibilityKind.AFFECTIVE_RESPONSE,
+                    )
+                    matching_suppressions = tuple(
+                        row
+                        for row in suppressions
+                        if row.suppressed_opportunity_key
+                        == affect_opportunity.opportunity_key
+                    )
+                    self.assertEqual(len(matching_suppressions), 1)
+                    suppression = matching_suppressions[0]
+                    self.assertIs(
+                        suppression.reason,
+                        module.SubjectiveFacetSuppressionReason.ABSORBED_ATTENTION,
+                    )
+                    self.assertIn(
+                        suppression.absorbed_by_selected_opportunity_key,
+                        selected_keys,
+                    )
+                    absorber = opportunities[
+                        suppression.absorbed_by_selected_opportunity_key
+                    ]
+                    self.assertIn(
+                        absorber.content_kind,
+                        {
+                            SubjectiveContentKind.APPRAISAL,
+                            SubjectiveContentKind.RELATIONAL_POSITION,
+                        },
+                    )
+                    absorber_claims = tuple(
+                        row
+                        for row in claims
+                        if row.selected_subjective_opportunity_key
+                        == absorber.opportunity_key
+                    )
+                    self.assertEqual(len(absorber_claims), 1)
+                    absorber_owner_refs = tuple(
+                        dict.fromkeys(
+                            owner_ref
+                            for responsibility_ref
+                            in absorber.responsibility_refs
+                            for owner_ref in responsibilities[
+                                responsibility_ref
+                            ].owner_component_refs
+                        )
+                    )
+                    self.assertEqual(
+                        absorber_owner_refs,
+                        affect_responsibility.owner_component_refs,
+                    )
+
+                    coverage_by_ref = {
+                        row.responsibility_ref: row
+                        for row in meaning_plan.responsibility_coverage_rows
+                    }
+                    self.assertEqual(
+                        set(coverage_by_ref),
+                        set(responsibilities),
+                    )
+                    self.assertEqual(
+                        coverage_by_ref[
+                            affect_responsibility.responsibility_ref
+                        ].covered_by_claim_refs,
+                        (),
+                    )
+                    self.assertEqual(
+                        coverage_by_ref[
+                            affect_responsibility.responsibility_ref
+                        ].reception_act_refs,
+                        affect_responsibility.retained_reception_act_refs,
+                    )
+                    for responsibility in responsibilities.values():
+                        expected_claim_refs = tuple(
+                            claim.subjective_claim_id
+                            for claim in claims
+                            if responsibility.responsibility_ref
+                            in claim.subjective_responsibility_refs
+                        )
+                        self.assertEqual(
+                            coverage_by_ref[
+                                responsibility.responsibility_ref
+                            ].covered_by_claim_refs,
+                            expected_claim_refs,
+                        )
+
+                    appraisal_claims = tuple(
+                        row
+                        for row in claims
+                        if row.asserted_subjective_proposition.content_kind
+                        is SubjectiveContentKind.APPRAISAL
+                    )
+                    position_claims = tuple(
+                        row
+                        for row in claims
+                        if row.asserted_subjective_proposition.content_kind
+                        is SubjectiveContentKind.RELATIONAL_POSITION
+                    )
+                    self.assertEqual(len(appraisal_claims), 1)
+                    appraisal_claim_count += len(appraisal_claims)
+                    position_claim_count += len(position_claims)
+                    position_opportunities = tuple(
+                        row
+                        for row in opportunities.values()
+                        if row.content_kind
+                        is SubjectiveContentKind.RELATIONAL_POSITION
+                    )
+                    self.assertEqual(
+                        {row.opportunity_key for row in position_opportunities},
+                        {
+                            row.selected_subjective_opportunity_key
+                            for row in position_claims
+                        },
+                    )
+
+                    qualifier_by_ref = {
+                        row.source_qualifier_binding_ref: row
+                        for row in meaning_plan.source_qualifier_binding_rows
+                    }
+                    contribution_refs = {
+                        row.contribution_id
+                        for row in projection.observation_contributions
+                    }
+                    self.assertEqual(
+                        phase_a.material_unknown_refs,
+                        projection.meaning_field.material_unknown_refs,
+                    )
+                    for claim in claims:
+                        proposition = claim.asserted_subjective_proposition
+                        self.assertEqual(
+                            claim.speaker_owner,
+                            module.CMEE_STAGE1_EMLIS_OWNER_REF,
+                        )
+                        self.assertEqual(proposition.addressee_role, "USER")
+                        self.assertEqual(proposition.referenced_actor_refs, ())
+                        self.assertEqual(
+                            proposition.referenced_experiencer_refs,
+                            (),
+                        )
+                        self.assertTrue(
+                            set(claim.basis_observation_contribution_refs)
+                            <= contribution_refs
+                        )
+                        self.assertTrue(
+                            proposition.source_qualifier_binding_refs
+                        )
+                        for qualifier_ref in (
+                            proposition.source_qualifier_binding_refs
+                        ):
+                            qualifier = qualifier_by_ref[qualifier_ref]
+                            self.assertTrue(qualifier.polarity)
+                            self.assertTrue(qualifier.modality)
+                            self.assertTrue(qualifier.time_scope)
+                        self.assertEqual(claim.user_fact_effect, 0)
+                        self.assertTrue(claim.forbidden_promotions)
+
+                    arc = module.project_stage1_discourse_arc(phase_b)
+                    duties = module._project_duties(phase_b, arc)
+                    case_affect_duties = sum(
+                        row.sentence_job is module.SentenceJob.FEEL_TOWARD_OBJECT
+                        for row in duties
+                    )
+                    self.assertEqual(case_affect_duties, 0)
+                    affect_sentence_count += case_affect_duties
+                    result = module.compose_stage1_from_projection(phase_b)
+                    self.assertTrue(
+                        1 <= len(result.ranked_candidates) <= 2
+                    )
+                    self.assertEqual(
+                        tuple(row.rank for row in result.ranked_candidates),
+                        tuple(range(1, len(result.ranked_candidates) + 1)),
+                    )
+                    self.assertGreaterEqual(
+                        result.internal_candidate_count,
+                        len(result.ranked_candidates),
+                    )
+                    for candidate in result.ranked_candidates:
+                        normalized = candidate.normalized_artifact
+                        repeated = module.normalize_to_normal_form(
+                            normalized,
+                            normalized.layout_preference_seed,
+                            phase_b,
+                        )
+                        self.assertEqual(
+                            module.canonical_normalized_bytes(normalized),
+                            module.canonical_normalized_bytes(repeated),
+                        )
+                        self.assertEqual(
+                            normalized.correctable_defect_rows,
+                            (),
+                        )
+                        realized_duties = tuple(
+                            duty_ref
+                            for unit in normalized.sentence_units
+                            for duty_ref in unit.duty_refs
+                        )
+                        self.assertEqual(
+                            set(realized_duties),
+                            set(normalized.required_duty_refs),
+                        )
+                        self.assertEqual(
+                            len(realized_duties),
+                            len(set(realized_duties)),
+                        )
+
+            affect_sentence_counts[group] = affect_sentence_count
+            appraisal_claim_counts[group] = appraisal_claim_count
+            position_claim_counts[group] = position_claim_count
+
+        self.assertEqual(affect_sentence_counts, {"known": 0, "public_standin": 0})
+        self.assertEqual(appraisal_claim_counts, {"known": 4, "public_standin": 4})
+        self.assertTrue(
+            all(count >= 1 for count in position_claim_counts.values())
+        )
+
+    def test_subjective_opportunity_partition_rejects_coordinated_tamper(
+        self,
+    ) -> None:
+        module = stage1_composition_module
+        *_, meaning_plan, _phase_b = self._known_inputs(3)
+        responsibilities = meaning_plan.subjective_responsibility_rows
+        opportunities = meaning_plan.subjective_opportunity_rows
+        claims = meaning_plan.subjective_claim_rows
+        coverage = meaning_plan.responsibility_coverage_rows
+        suppressions = meaning_plan.subjective_facet_suppression_rows
+        self.assertEqual(len(suppressions), 1)
+        suppression = suppressions[0]
+        opportunity_by_key = {
+            row.opportunity_key: row for row in opportunities
+        }
+        affect_opportunity = opportunity_by_key[
+            suppression.suppressed_opportunity_key
+        ]
+        absorber = opportunity_by_key[
+            suppression.absorbed_by_selected_opportunity_key
+        ]
+        appraisal_opportunity = next(
+            row
+            for row in opportunities
+            if row.content_kind is SubjectiveContentKind.APPRAISAL
+        )
+        absorber_claim = next(
+            row
+            for row in claims
+            if row.selected_subjective_opportunity_key
+            == absorber.opportunity_key
+        )
+        affect_responsibility_ref = affect_opportunity.responsibility_refs[0]
+        affect_responsibility = next(
+            row
+            for row in responsibilities
+            if row.responsibility_ref == affect_responsibility_ref
+        )
+        affect_coverage = next(
+            row
+            for row in coverage
+            if row.responsibility_ref == affect_responsibility_ref
+        )
+        module._validate_subjective_opportunity_partition(
+            responsibilities=responsibilities,
+            opportunities=opportunities,
+            claims=claims,
+            coverage=coverage,
+            suppressions=suppressions,
+        )
+
+        coordinated_opportunities = tuple(
+            replace(
+                row,
+                responsibility_refs=(
+                    *row.responsibility_refs,
+                    affect_responsibility_ref,
+                ),
+            )
+            if row.opportunity_key == absorber.opportunity_key
+            else row
+            for row in opportunities
+        )
+        coordinated_claims = tuple(
+            replace(
+                row,
+                subjective_responsibility_refs=(
+                    *row.subjective_responsibility_refs,
+                    affect_responsibility_ref,
+                ),
+            )
+            if row.subjective_claim_id == absorber_claim.subjective_claim_id
+            else row
+            for row in claims
+        )
+        coordinated_coverage = tuple(
+            replace(
+                row,
+                covered_by_claim_refs=(absorber_claim.subjective_claim_id,),
+            )
+            if row.responsibility_ref == affect_responsibility_ref
+            else row
+            for row in coverage
+        )
+        affect_target_refs = affect_responsibility.owner_component_refs
+        affect_basis_rows = tuple(
+            row
+            for row in meaning_plan.subjective_basis_binding_rows
+            if row.contribution_ref in set(affect_target_refs)
+        )
+        affect_basis_refs = tuple(row.binding_ref for row in affect_basis_rows)
+        affect_primary_refs = tuple(
+            dict.fromkeys(row.semantic_ref for row in affect_basis_rows)
+        )
+        affect_qualifier_refs = tuple(
+            row.source_qualifier_binding_ref
+            for row in meaning_plan.source_qualifier_binding_rows
+            if row.basis_binding_ref in set(affect_basis_refs)
+        )
+        selected_affect_proposition = SubjectivePropositionV2(
+            absorber_claim.asserted_subjective_proposition.schema_version,
+            SubjectiveContentKind.AFFECT,
+            SubjectiveMode.AFFECTIVE_RESPONSE,
+            SubjectiveOperator.FEEL_TOWARD,
+            affect_target_refs,
+            affect_primary_refs,
+            (),
+            affect_primary_refs,
+            affect_basis_refs,
+            affect_qualifier_refs,
+            None,
+            affect_opportunity.content,
+            None,
+            None,
+            None,
+            (),
+            (),
+            "USER",
+            SubjectiveAssertionModality.EMLIS_FEELING,
+            "REQUEST_LOCAL_EMLIS_SUBJECTIVITY",
+        )
+        selected_affect_claim = replace(
+            absorber_claim,
+            subjective_claim_id="subjective-claim:coordinated-affect",
+            subjective_responsibility_refs=(affect_responsibility_ref,),
+            selected_subjective_opportunity_key=(
+                affect_opportunity.opportunity_key
+            ),
+            asserted_subjective_proposition=selected_affect_proposition,
+            basis_observation_contribution_refs=affect_target_refs,
+            basis_semantic_refs=affect_primary_refs,
+            value_principle_refs=(),
+        )
+        selected_affect_coverage = tuple(
+            replace(
+                row,
+                covered_by_claim_refs=(
+                    selected_affect_claim.subjective_claim_id,
+                ),
+            )
+            if row.responsibility_ref == affect_responsibility_ref
+            else row
+            for row in coverage
+        )
+        orphan_ref = "subjective-responsibility:orphan"
+        orphan_responsibility = replace(
+            affect_responsibility,
+            responsibility_ref=orphan_ref,
+        )
+        orphan_coverage = replace(
+            affect_coverage,
+            responsibility_ref=orphan_ref,
+        )
+        invalid_partitions = (
+            (
+                "lower_precedence_absorber",
+                {
+                    "suppressions": (
+                        replace(
+                            suppression,
+                            absorbed_by_selected_opportunity_key=(
+                                appraisal_opportunity.opportunity_key
+                            ),
+                        ),
+                    )
+                },
+            ),
+            (
+                "selected_content_mismatch",
+                {
+                    "opportunities": tuple(
+                        replace(row, content=affect_opportunity.content)
+                        if row.opportunity_key == absorber.opportunity_key
+                        else row
+                        for row in opportunities
+                    )
+                },
+            ),
+            (
+                "suppressed_claim_zero_to_one",
+                {
+                    "opportunities": coordinated_opportunities,
+                    "claims": coordinated_claims,
+                    "coverage": coordinated_coverage,
+                },
+            ),
+            (
+                "generic_affect_selected_instead_of_suppressed",
+                {
+                    "claims": (*claims, selected_affect_claim),
+                    "coverage": selected_affect_coverage,
+                    "suppressions": (),
+                },
+            ),
+            (
+                "orphan_responsibility",
+                {
+                    "responsibilities": (
+                        *responsibilities,
+                        orphan_responsibility,
+                    ),
+                    "coverage": (*coverage, orphan_coverage),
+                },
+            ),
+            (
+                "empty_responsibility_refs",
+                {
+                    "opportunities": tuple(
+                        replace(row, responsibility_refs=())
+                        if row.opportunity_key
+                        == affect_opportunity.opportunity_key
+                        else row
+                        for row in opportunities
+                    )
+                },
+            ),
+            (
+                "duplicate_responsibility_refs",
+                {
+                    "opportunities": tuple(
+                        replace(
+                            row,
+                            responsibility_refs=(
+                                affect_responsibility_ref,
+                                affect_responsibility_ref,
+                            ),
+                        )
+                        if row.opportunity_key
+                        == affect_opportunity.opportunity_key
+                        else row
+                        for row in opportunities
+                    )
+                },
+            ),
+            (
+                "wrong_reason",
+                {
+                    "suppressions": (
+                        replace(
+                            suppression,
+                            reason=(
+                                module.SubjectiveFacetSuppressionReason.DUPLICATE
+                            ),
+                        ),
+                    )
+                },
+            ),
+            (
+                "missing_absorber",
+                {
+                    "suppressions": (
+                        replace(
+                            suppression,
+                            absorbed_by_selected_opportunity_key=None,
+                        ),
+                    )
+                },
+            ),
+            (
+                "foreign_absorber",
+                {
+                    "suppressions": (
+                        replace(
+                            suppression,
+                            absorbed_by_selected_opportunity_key=(
+                                "subjective-opportunity:foreign"
+                            ),
+                        ),
+                    )
+                },
+            ),
+            (
+                "suppressed_key_as_absorber",
+                {
+                    "suppressions": (
+                        replace(
+                            suppression,
+                            absorbed_by_selected_opportunity_key=(
+                                affect_opportunity.opportunity_key
+                            ),
+                        ),
+                    )
+                },
+            ),
+            ("missing_suppression", {"suppressions": ()}),
+            (
+                "duplicate_suppression",
+                {"suppressions": (suppression, suppression)},
+            ),
+        )
+        base = {
+            "responsibilities": responsibilities,
+            "opportunities": opportunities,
+            "claims": claims,
+            "coverage": coverage,
+            "suppressions": suppressions,
+        }
+        for label, changes in invalid_partitions:
+            with self.subTest(tamper=label), self.assertRaisesRegex(
+                module.Stage1CompositionError,
+                "SUBJECTIVE_OPPORTUNITY_PARTITION_STOP",
+            ):
+                module._validate_subjective_opportunity_partition(
+                    **{**base, **changes}
+                )
+
     def test_bounded_change_and_unfinished_open_claims_keep_typed_targets(self) -> None:
         (
             _b_source,
@@ -9168,36 +9818,7 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
     _DESIGN_HEAD = "b" * 40
     # Public, non-identifying synthetic stand-ins. These are contract inputs,
     # not withheld fixtures and not expected-output examples.
-    _PUBLIC_NONSECRET_STANDIN_EXACT4 = (
-        (
-            "tension",
-            "休みたい気持ちと、もう少し進めたい気持ちが同時にある。",
-            "生活",
-            "不安",
-            "medium",
-        ),
-        (
-            "temporal_change",
-            "音楽を聴いたら、少し落ち着いた。ただ、いつもそうなるとは思っていない。",
-            "生活",
-            "不安",
-            "medium",
-        ),
-        (
-            "help_seeking",
-            "少し話を聞いてほしいが、今声をかけてよいか迷っている。",
-            "生活",
-            "不安",
-            "medium",
-        ),
-        (
-            "unfinished",
-            "予定の話はした。でも、まだ迷いが残っていて、どうしたいかは分からない。",
-            "仕事",
-            "自己理解",
-            "medium",
-        ),
-    )
+    _PUBLIC_NONSECRET_STANDIN_EXACT4 = PUBLIC_NONSECRET_EARLY_STANDIN_EXACT4
 
     @staticmethod
     def _withheld_payload() -> dict[str, object]:

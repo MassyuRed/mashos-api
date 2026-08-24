@@ -13,7 +13,7 @@ from dataclasses import dataclass, fields
 from enum import Enum
 import hashlib
 from pathlib import Path
-from typing import Any, Iterable, Optional, Sequence, Tuple
+from typing import Any, Iterable, Mapping, Optional, Sequence, Tuple
 
 from .contracts import (
     AffectCategory,
@@ -1082,6 +1082,242 @@ def _selected_basis(
     return selected
 
 
+def _opportunity_owner_component_refs(
+    opportunity: SubjectiveOpportunityRow,
+    responsibility_by_ref: Mapping[str, SubjectiveResponsibilityRow],
+) -> Tuple[str, ...]:
+    rows = tuple(
+        responsibility_by_ref.get(ref)
+        for ref in opportunity.responsibility_refs
+    )
+    if not rows or any(row is None for row in rows):
+        raise Stage1CompositionError("SUBJECTIVE_OPPORTUNITY_PARTITION_STOP")
+    return _unique(
+        owner_ref
+        for row in rows
+        if row is not None
+        for owner_ref in row.owner_component_refs
+    )
+
+
+def _select_generic_affect_absorber(
+    *,
+    opportunities: Sequence[SubjectiveOpportunityRow],
+    responsibility_by_ref: Mapping[str, SubjectiveResponsibilityRow],
+    selected_opportunity_keys: set[str],
+    target_contribution_refs: Tuple[str, ...],
+) -> Optional[SubjectiveOpportunityRow]:
+    """Select the exact typed same-target absorber without row-order policy."""
+
+    for preferred_kind in (
+        SubjectiveContentKind.RELATIONAL_POSITION,
+        SubjectiveContentKind.APPRAISAL,
+    ):
+        matches = tuple(
+            row
+            for row in opportunities
+            if row.opportunity_key in selected_opportunity_keys
+            and row.content_kind is preferred_kind
+            and _opportunity_owner_component_refs(
+                row,
+                responsibility_by_ref,
+            )
+            == target_contribution_refs
+        )
+        if len(matches) > 1:
+            raise Stage1CompositionError(
+                "SUBJECTIVE_OPPORTUNITY_PARTITION_STOP"
+            )
+        if matches:
+            return matches[0]
+    return None
+
+
+def _validate_subjective_opportunity_partition(
+    *,
+    responsibilities: Sequence[SubjectiveResponsibilityRow],
+    opportunities: Sequence[SubjectiveOpportunityRow],
+    claims: Sequence[ProjectedSubjectiveClaim],
+    coverage: Sequence[ResponsibilityCoverageRow],
+    suppressions: Sequence[SubjectiveFacetSuppressionRow],
+) -> None:
+    responsibility_by_ref = {
+        row.responsibility_ref: row for row in responsibilities
+    }
+    opportunity_by_key = {row.opportunity_key: row for row in opportunities}
+    coverage_by_ref = {row.responsibility_ref: row for row in coverage}
+    selected_keys = tuple(
+        row.selected_subjective_opportunity_key for row in claims
+    )
+    suppressed_keys = tuple(
+        row.suppressed_opportunity_key for row in suppressions
+    )
+    flattened_responsibility_refs = tuple(
+        ref for row in opportunities for ref in row.responsibility_refs
+    )
+    if (
+        not claims
+        or len(responsibility_by_ref) != len(responsibilities)
+        or len(opportunity_by_key) != len(opportunities)
+        or len(coverage_by_ref) != len(coverage)
+        or set(coverage_by_ref) != set(responsibility_by_ref)
+        or len(selected_keys) != len(set(selected_keys))
+        or len(suppressed_keys) != len(set(suppressed_keys))
+        or set(selected_keys).intersection(suppressed_keys)
+        or set((*selected_keys, *suppressed_keys)) != set(opportunity_by_key)
+        or any(
+            type(row.responsibility_refs) is not tuple
+            or not row.responsibility_refs
+            or len(row.responsibility_refs)
+            != len(set(row.responsibility_refs))
+            or any(
+                ref not in responsibility_by_ref
+                for ref in row.responsibility_refs
+            )
+            for row in opportunities
+        )
+        or flattened_responsibility_refs
+        != tuple(row.responsibility_ref for row in responsibilities)
+    ):
+        raise Stage1CompositionError("SUBJECTIVE_OPPORTUNITY_PARTITION_STOP")
+
+    for claim in claims:
+        opportunity = opportunity_by_key.get(
+            claim.selected_subjective_opportunity_key
+        )
+        proposition = claim.asserted_subjective_proposition
+        selected_content = {
+            SubjectiveContentKind.AFFECT: proposition.affect_content,
+            SubjectiveContentKind.APPRAISAL: proposition.appraisal_content,
+            SubjectiveContentKind.MATERIAL_VALUE: (
+                proposition.material_value_content
+            ),
+            SubjectiveContentKind.RELATIONAL_POSITION: (
+                proposition.relational_position
+            ),
+        }.get(proposition.content_kind)
+        if (
+            opportunity is None
+            or claim.subjective_responsibility_refs
+            != opportunity.responsibility_refs
+            or any(
+                ref not in responsibility_by_ref
+                for ref in claim.subjective_responsibility_refs
+            )
+            or opportunity.content_kind is not proposition.content_kind
+            or opportunity.content != selected_content
+            or _opportunity_owner_component_refs(
+                opportunity,
+                responsibility_by_ref,
+            )
+            != proposition.target_contribution_refs
+            or proposition.target_contribution_refs
+            != claim.basis_observation_contribution_refs
+        ):
+            raise Stage1CompositionError(
+                "SUBJECTIVE_OPPORTUNITY_PARTITION_STOP"
+            )
+    for responsibility in responsibilities:
+        coverage_row = coverage_by_ref[responsibility.responsibility_ref]
+        expected_claim_refs = tuple(
+            claim.subjective_claim_id
+            for claim in claims
+            if responsibility.responsibility_ref
+            in claim.subjective_responsibility_refs
+        )
+        if (
+            coverage_row.reception_act_refs
+            != responsibility.retained_reception_act_refs
+            or coverage_row.covered_by_claim_refs != expected_claim_refs
+        ):
+            raise Stage1CompositionError(
+                "SUBJECTIVE_OPPORTUNITY_PARTITION_STOP"
+            )
+
+    suppression_by_key = {
+        row.suppressed_opportunity_key: row for row in suppressions
+    }
+    for affect_opportunity in (
+        row
+        for row in opportunities
+        if row.content_kind is SubjectiveContentKind.AFFECT
+    ):
+        expected_absorber = _select_generic_affect_absorber(
+            opportunities=opportunities,
+            responsibility_by_ref=responsibility_by_ref,
+            selected_opportunity_keys=set(selected_keys),
+            target_contribution_refs=_opportunity_owner_component_refs(
+                affect_opportunity,
+                responsibility_by_ref,
+            ),
+        )
+        suppression = suppression_by_key.get(
+            affect_opportunity.opportunity_key
+        )
+        if (
+            expected_absorber is not None
+            and (
+                affect_opportunity.opportunity_key in set(selected_keys)
+                or suppression is None
+                or suppression.absorbed_by_selected_opportunity_key
+                != expected_absorber.opportunity_key
+            )
+        ) or (
+            expected_absorber is None
+            and (
+                affect_opportunity.opportunity_key not in set(selected_keys)
+                or suppression is not None
+            )
+        ):
+            raise Stage1CompositionError(
+                "SUBJECTIVE_OPPORTUNITY_PARTITION_STOP"
+            )
+
+    for suppression in suppressions:
+        suppressed = opportunity_by_key[suppression.suppressed_opportunity_key]
+        absorber = opportunity_by_key.get(
+            suppression.absorbed_by_selected_opportunity_key or ""
+        )
+        expected_absorber = _select_generic_affect_absorber(
+            opportunities=opportunities,
+            responsibility_by_ref=responsibility_by_ref,
+            selected_opportunity_keys=set(selected_keys),
+            target_contribution_refs=_opportunity_owner_component_refs(
+                suppressed,
+                responsibility_by_ref,
+            ),
+        )
+        if (
+            suppression.reason
+            is not SubjectiveFacetSuppressionReason.ABSORBED_ATTENTION
+            or suppressed.content_kind is not SubjectiveContentKind.AFFECT
+            or absorber is None
+            or absorber.opportunity_key not in set(selected_keys)
+            or absorber.content_kind
+            not in {
+                SubjectiveContentKind.APPRAISAL,
+                SubjectiveContentKind.RELATIONAL_POSITION,
+            }
+            or expected_absorber is None
+            or absorber.opportunity_key != expected_absorber.opportunity_key
+            or _opportunity_owner_component_refs(
+                suppressed,
+                responsibility_by_ref,
+            )
+            != _opportunity_owner_component_refs(
+                absorber,
+                responsibility_by_ref,
+            )
+            or any(
+                coverage_by_ref[ref].covered_by_claim_refs
+                for ref in suppressed.responsibility_refs
+            )
+        ):
+            raise Stage1CompositionError(
+                "SUBJECTIVE_OPPORTUNITY_PARTITION_STOP"
+            )
+
+
 _RISK_BY_PRINCIPLE = dict(
     zip(
         (ref for _code, ref in CMEE_STAGE1_VALUE_PRINCIPLE_REFS),
@@ -1378,6 +1614,7 @@ def project_subjective_meaning_plan(
     opportunities: list[SubjectiveOpportunityRow] = []
     claims: list[ProjectedSubjectiveClaim] = []
     policy_applications: list[PolicyApplicationRow] = []
+    suppressions: list[SubjectiveFacetSuppressionRow] = []
     for index, (kind, content, contribution_refs) in enumerate(claim_specs):
         responsibility_kind = {
             SubjectiveContentKind.AFFECT: SubjectiveResponsibilityKind.AFFECTIVE_RESPONSE,
@@ -1411,6 +1648,28 @@ def project_subjective_meaning_plan(
                 else SubjectiveSpecificity.SINGLE_ROLE,
             )
         )
+        if kind is SubjectiveContentKind.AFFECT:
+            responsibility_by_ref = {
+                row.responsibility_ref: row for row in responsibilities
+            }
+            selected_keys = {
+                claim.selected_subjective_opportunity_key for claim in claims
+            }
+            absorber = _select_generic_affect_absorber(
+                opportunities=opportunities[:-1],
+                responsibility_by_ref=responsibility_by_ref,
+                selected_opportunity_keys=selected_keys,
+                target_contribution_refs=contribution_refs,
+            )
+            if absorber is not None:
+                suppressions.append(
+                    SubjectiveFacetSuppressionRow(
+                        opportunity_key,
+                        SubjectiveFacetSuppressionReason.ABSORBED_ATTENTION,
+                        absorber.opportunity_key,
+                    )
+                )
+                continue
         own_basis = _selected_basis(basis_rows, contribution_refs)
         own_qualifier_refs = tuple(
             row.source_qualifier_binding_ref
@@ -1605,6 +1864,13 @@ def project_subjective_meaning_plan(
         for claim in claims
         if claim.asserted_subjective_proposition.content_kind is not SubjectiveContentKind.AFFECT
     )
+    _validate_subjective_opportunity_partition(
+        responsibilities=responsibilities,
+        opportunities=opportunities,
+        claims=claims,
+        coverage=coverage,
+        suppressions=suppressions,
+    )
     return EmlisSubjectiveMeaningPlan(
         phase_A.projection_preimage_ref,
         tuple(claims),
@@ -1618,7 +1884,7 @@ def project_subjective_meaning_plan(
         tuple(qualifier_rows),
         tuple(policy_basis_rows),
         tuple(policy_applications),
-        (),
+        tuple(suppressions),
     )
 
 
