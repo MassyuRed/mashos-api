@@ -3141,11 +3141,19 @@ def _response_object_surface(
     return (lexeme.join(objects),)
 
 
-def _functional_surface_lexemes(plan: ClausePlan) -> Tuple[str, ...]:
+def _functional_surface_lexemes(
+    plan: ClausePlan,
+) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
+    if plan.scalar_surface_realization_rows != project_scalar_surface_realization_rows(
+        plan.clause_plan_ref,
+        plan.scalar_constraint_rows,
+    ):
+        raise Stage1CompositionError("STAGE1_SCALAR_MORPHOLOGY_NONUNIQUE_STOP")
     asset_by_id = {
         row.morphology_asset_id: row for row in SCALAR_MORPHOLOGY_ASSET_REGISTRY
     }
-    selected: list[str] = []
+    overt_qualifiers: list[str] = []
+    fused_predicate_prefixes: list[str] = []
     for realization in plan.scalar_surface_realization_rows:
         if realization.realization_mode in {
             ScalarSurfaceRealizationMode.UNMARKED_DEFAULT,
@@ -3153,10 +3161,35 @@ def _functional_surface_lexemes(plan: ClausePlan) -> Tuple[str, ...]:
         }:
             continue
         asset = asset_by_id.get(realization.registered_realization_rule_ref)
-        if asset is None:
+        if (
+            asset is None
+            or asset.scalar_axis is not realization.scalar_axis
+            or asset.realization_mode is not realization.realization_mode
+            or asset.realization_target_slot_ref
+            != realization.target_clause_slot_ref
+        ):
             raise Stage1CompositionError("STAGE1_SCALAR_MORPHOLOGY_NONUNIQUE_STOP")
-        selected.extend(asset.morphemes)
-    return _unique(selected)
+        if realization.realization_mode is ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART:
+            if (
+                realization.target_clause_slot_ref
+                != RegisteredFunctionalSlotRef.QUALIFIER.value
+            ):
+                raise Stage1CompositionError(
+                    "STAGE1_SCALAR_MORPHOLOGY_NONUNIQUE_STOP"
+                )
+            overt_qualifiers.extend(asset.morphemes)
+        elif realization.realization_mode is ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART:
+            if (
+                realization.target_clause_slot_ref
+                != RegisteredFunctionalSlotRef.PREDICATE_HEAD.value
+            ):
+                raise Stage1CompositionError(
+                    "STAGE1_SCALAR_MORPHOLOGY_NONUNIQUE_STOP"
+                )
+            fused_predicate_prefixes.extend(asset.morphemes)
+        else:
+            raise Stage1CompositionError("STAGE1_SCALAR_MORPHOLOGY_NONUNIQUE_STOP")
+    return _unique(overt_qualifiers), _unique(fused_predicate_prefixes)
 
 
 def _surface_for_plan(
@@ -3176,8 +3209,13 @@ def _surface_for_plan(
     objects = _response_object_surface(expression, owner, phase_B)
     comma = _structural_lexeme("structural:comma.v1")
     terminal = _structural_lexeme("structural:sentence.v1")
-    functional = _functional_surface_lexemes(plan)
-    predicate = comma.join((*functional, *expression_asset.predicate_lexemes))
+    overt_qualifiers, fused_predicate_prefixes = _functional_surface_lexemes(plan)
+    predicate_head = "".join(
+        (*fused_predicate_prefixes, expression_asset.predicate_lexemes[0])
+    )
+    predicate = comma.join(
+        (*overt_qualifiers, predicate_head, *expression_asset.predicate_lexemes[1:])
+    )
     particles = dict(construction.particle_rules)
     if plan.semantic_clause_kind is SemanticClauseKind.ADMITTED_RELATION:
         if len(expression.basis_semantic_refs) != 2:
@@ -3914,6 +3952,25 @@ def _project_post_normalization_defect_rows(
             defects[
                 CorrectableDefectKind.UNRESOLVED_OR_DISTANT_REFERENT
             ].add(expression.response_object_expression_ref)
+
+    invalid_scalar_plan_refs: list[str] = []
+    for plan in clause_plans:
+        try:
+            scalar_rows_are_exact = (
+                plan.scalar_surface_realization_rows
+                == project_scalar_surface_realization_rows(
+                    plan.clause_plan_ref,
+                    plan.scalar_constraint_rows,
+                )
+            )
+        except Stage1CompositionError:
+            scalar_rows_are_exact = False
+        if not scalar_rows_are_exact:
+            invalid_scalar_plan_refs.append(plan.clause_plan_ref)
+    if invalid_scalar_plan_refs:
+        defects[CorrectableDefectKind.RELATION_OR_CONNECTIVE_FIT].update(
+            invalid_scalar_plan_refs
+        )
 
     first_l2 = next(
         (index for index, unit in enumerate(units) if unit.layer == "LAYER_2"),

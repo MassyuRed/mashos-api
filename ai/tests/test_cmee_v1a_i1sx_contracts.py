@@ -8973,6 +8973,250 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         self.assertEqual(len(visible_bodies), 4)
         self.assertEqual(len(set(visible_bodies)), 4)
 
+    def test_scalar_surface_slots_bound_known_and_public_layer1_seams(self) -> None:
+        module = stage1_composition_module
+        grouped_rows = (
+            (
+                "known",
+                tuple(
+                    (label, memo, "生活", "不安", "medium")
+                    for label, memo, *_expected in self._KNOWN_EXACT4
+                ),
+            ),
+            ("public_standin", PUBLIC_NONSECRET_EARLY_STANDIN_EXACT4),
+        )
+        scalar_morphemes = {
+            morpheme
+            for asset in module.SCALAR_MORPHOLOGY_ASSET_REGISTRY
+            for morpheme in asset.morphemes
+        }
+        fused_plan = None
+        fused_row_index = None
+        fused_normalized = None
+        max_fused_predicate_prefix_count = 0
+
+        for group, rows in grouped_rows:
+            self.assertEqual(len(rows), 4)
+            for index, (label, memo, category, emotion, strength) in enumerate(
+                rows
+            ):
+                with self.subTest(group=group, structural_family=label):
+                    *_, phase_b = _final_stage1_composition_inputs(
+                        _request(
+                            record_id=(
+                                "cmee-i1sx-early-"
+                                + ("known" if group == "known" else "withheld")
+                                + f"-{index + 1:02d}"
+                            ),
+                            memo=memo,
+                            category=category,
+                            emotion=emotion,
+                            strength=strength,
+                        )
+                    )
+                    selected = module.compose_stage1_from_projection(
+                        phase_b
+                    ).selected_candidate
+                    normalized = selected.normalized_artifact
+                    duty_by_ref = {
+                        row.duty_ref: row
+                        for row in normalized.composition_duty_rows
+                    }
+                    expression_by_plan_ref = {
+                        row.clause_plan_ref: row
+                        for row in normalized.response_object_expression_rows
+                    }
+                    layer1_plans = tuple(
+                        row
+                        for row in normalized.clause_plan_rows
+                        if duty_by_ref[row.duty_ref].layer == "LAYER_1"
+                    )
+                    self.assertTrue(layer1_plans)
+                    case_max_scalar_segment_run = 0
+                    for plan in layer1_plans:
+                        self.assertEqual(
+                            plan.scalar_surface_realization_rows,
+                            module.project_scalar_surface_realization_rows(
+                                plan.clause_plan_ref,
+                                plan.scalar_constraint_rows,
+                            ),
+                        )
+                        duty = duty_by_ref[plan.duty_ref]
+                        expression = expression_by_plan_ref[
+                            plan.clause_plan_ref
+                        ]
+                        surface = module._surface_for_plan(
+                            duty,
+                            plan,
+                            expression,
+                            phase_b,
+                        )
+                        overt, fused = module._functional_surface_lexemes(plan)
+                        max_fused_predicate_prefix_count = max(
+                            max_fused_predicate_prefix_count,
+                            len(fused),
+                        )
+                        owner, _refs = module._duty_semantics(duty, phase_b)
+                        predicate_asset = module._expression_asset(
+                            duty,
+                            plan,
+                            owner,
+                        )
+                        expected_predicate_head = "".join(
+                            (*fused, predicate_asset.predicate_lexemes[0])
+                        )
+                        self.assertIn(expected_predicate_head, surface)
+                        self.assertTrue(
+                            all(f"{morpheme}、" not in surface for morpheme in fused)
+                        )
+                        self.assertTrue(
+                            all(morpheme in surface for morpheme in (*overt, *fused))
+                        )
+                        current_run = 0
+                        for segment in surface.removesuffix("。").split("、"):
+                            if segment in scalar_morphemes:
+                                current_run += 1
+                                case_max_scalar_segment_run = max(
+                                    case_max_scalar_segment_run,
+                                    current_run,
+                                )
+                            else:
+                                current_run = 0
+                        if fused and fused_plan is None:
+                            fused_plan = plan
+                            fused_normalized = normalized
+                            fused_row_index = next(
+                                row_index
+                                for row_index, realization in enumerate(
+                                    plan.scalar_surface_realization_rows
+                                )
+                                if realization.realization_mode
+                                is module.ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART
+                            )
+                    self.assertLessEqual(case_max_scalar_segment_run, 3)
+
+        self.assertIsNotNone(fused_plan)
+        self.assertIsNotNone(fused_row_index)
+        self.assertIsNotNone(fused_normalized)
+        self.assertGreaterEqual(max_fused_predicate_prefix_count, 2)
+        assert fused_plan is not None
+        assert fused_row_index is not None
+        assert fused_normalized is not None
+        tampered_rows = list(fused_plan.scalar_surface_realization_rows)
+        tampered_rows[fused_row_index] = replace(
+            tampered_rows[fused_row_index],
+            target_clause_slot_ref=module.RegisteredFunctionalSlotRef.QUALIFIER.value,
+        )
+        with self.assertRaisesRegex(
+            module.Stage1CompositionError,
+            "STAGE1_SCALAR_MORPHOLOGY_NONUNIQUE_STOP",
+        ):
+            module._functional_surface_lexemes(
+                replace(
+                    fused_plan,
+                    scalar_surface_realization_rows=tuple(tampered_rows),
+                )
+            )
+
+        original_rows = fused_plan.scalar_surface_realization_rows
+        alternate_index = None
+        alternate_asset = None
+        for row_index, realization in enumerate(original_rows):
+            candidates = tuple(
+                asset
+                for asset in module.SCALAR_MORPHOLOGY_ASSET_REGISTRY
+                if asset.scalar_axis is realization.scalar_axis
+                and asset.realization_mode is realization.realization_mode
+                and asset.realization_target_slot_ref
+                == realization.target_clause_slot_ref
+                and asset.morphology_asset_id
+                != realization.registered_realization_rule_ref
+            )
+            if candidates:
+                alternate_index = row_index
+                alternate_asset = candidates[0]
+                break
+        self.assertIsNotNone(alternate_index)
+        self.assertIsNotNone(alternate_asset)
+        assert alternate_index is not None
+        assert alternate_asset is not None
+        alternate_rows = list(original_rows)
+        alternate_rows[alternate_index] = replace(
+            alternate_rows[alternate_index],
+            registered_realization_rule_ref=alternate_asset.morphology_asset_id,
+        )
+        scalar_row_mutations = (
+            ("missing", original_rows[:fused_row_index] + original_rows[fused_row_index + 1 :]),
+            ("duplicate", (*original_rows, original_rows[fused_row_index])),
+            ("reversed", tuple(reversed(original_rows))),
+            ("same_axis_mode_slot_different_asset", tuple(alternate_rows)),
+        )
+
+        base_unit_index = next(
+            index
+            for index, unit in enumerate(fused_normalized.sentence_units)
+            if fused_plan.clause_plan_ref in unit.clause_plan_refs
+        )
+        base_unit = fused_normalized.sentence_units[base_unit_index]
+        co_tampered_text = base_unit.text.removesuffix("。") + "、。"
+        co_tampered_unit = replace(
+            base_unit,
+            text=co_tampered_text,
+            surface_text_sha256=hashlib.sha256(
+                co_tampered_text.encode("utf-8")
+            ).hexdigest(),
+        )
+        for mutation_name, mutated_rows in scalar_row_mutations:
+            with self.subTest(scalar_row_mutation=mutation_name):
+                mutated_plan = replace(
+                    fused_plan,
+                    scalar_surface_realization_rows=mutated_rows,
+                )
+                with self.assertRaisesRegex(
+                    module.Stage1CompositionError,
+                    "STAGE1_SCALAR_MORPHOLOGY_NONUNIQUE_STOP",
+                ):
+                    module._functional_surface_lexemes(mutated_plan)
+                mutated_plans = tuple(
+                    mutated_plan
+                    if row.clause_plan_ref == fused_plan.clause_plan_ref
+                    else row
+                    for row in fused_normalized.clause_plan_rows
+                )
+                mutated_units = tuple(
+                    co_tampered_unit if index == base_unit_index else unit
+                    for index, unit in enumerate(fused_normalized.sentence_units)
+                )
+                defects = module._project_post_normalization_defect_rows(
+                    arc=fused_normalized.discourse_arc,
+                    seed=fused_normalized.layout_preference_seed,
+                    duties=fused_normalized.composition_duty_rows,
+                    required_duty_refs=fused_normalized.required_duty_refs,
+                    suppressed_duty_rows=fused_normalized.suppressed_duty_rows,
+                    clause_plans=mutated_plans,
+                    expressions=fused_normalized.response_object_expression_rows,
+                    units=mutated_units,
+                )
+                self.assertTrue(
+                    any(
+                        row.defect_kind
+                        is module.CorrectableDefectKind.RELATION_OR_CONNECTIVE_FIT
+                        and fused_plan.clause_plan_ref in row.defect_owner_refs
+                        for row in defects
+                    )
+                )
+                with self.assertRaisesRegex(
+                    module.Stage1CompositionError,
+                    "RECOMPOSITION_NORMAL_FORM_UNPROVEN_STOP",
+                ):
+                    module.canonical_normalized_bytes(
+                        replace(
+                            fused_normalized,
+                            clause_plan_rows=mutated_plans,
+                            sentence_units=mutated_units,
+                        )
+                    )
+
     def test_source_scalar_uses_exact_normalized_raw_text_and_typed_finite_morphology(self) -> None:
         def source_expression_by_predicate_kind(
             phase_b: object,
