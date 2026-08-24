@@ -3000,9 +3000,32 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             for row in candidates
             if row.candidate_kind is InterpretationKind.TENSION
         )
+        binding = stage1_response_module._bind_grounded_plan(
+            source,
+            contrast_graph,
+            grounded_plan,
+        )
+        endpoint_node_ids = tuple(
+            stage1_response_module._local_ref(row.semantic_ref)
+            for row in contrast.argument_bindings
+        )
         self.assertEqual(
-            tuple(row.semantic_ref for row in contrast.argument_bindings),
-            tuple(sorted(contrast.semantic_refs)),
+            tuple(binding.source_order[node_id] for node_id in endpoint_node_ids),
+            tuple(
+                sorted(
+                    binding.source_order[node_id]
+                    for node_id in endpoint_node_ids
+                )
+            ),
+        )
+        graph_node_order = {
+            row.node_id: index for index, row in enumerate(contrast_graph.nodes)
+        }
+        self.assertEqual(
+            tuple(graph_node_order[node_id] for node_id in endpoint_node_ids),
+            tuple(
+                sorted(graph_node_order[node_id] for node_id in endpoint_node_ids)
+            ),
         )
         direction = next(
             row
@@ -3024,6 +3047,23 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
             (
                 direction_edge.source_node_id,
                 direction_edge.target_node_id,
+            ),
+        )
+        direction_shape = stage1_response_module._relation_shape(
+            direction_edge,
+            {row.node_id: row for row in contrast_graph.nodes},
+            binding,
+        )
+        self.assertEqual(
+            direction_shape,
+            stage1_response_module._relation_shape(
+                replace(
+                    direction_edge,
+                    source_node_id=direction_edge.target_node_id,
+                    target_node_id=direction_edge.source_node_id,
+                ),
+                {row.node_id: row for row in contrast_graph.nodes},
+                binding,
             ),
         )
         reversed_graph = replace(
@@ -3057,6 +3097,463 @@ class CMEEStage1SpineContractsTest(unittest.TestCase):
         )
         self.assertEqual(len(contributions), 2)
         self.assertIs(depth, ObservationDepthClass.LAYERED)
+
+    def test_plain_symmetric_relation_source_order_is_case_id_invariant(
+        self,
+    ) -> None:
+        request_tokens = (
+            "early-known-02",
+            "second-review-known-02",
+            "official-known-02",
+            "x",
+        )
+        temporal_memo = (
+            "散歩に出たら、少し落ち着いた。"
+            "ただ、いつもそうなるとは思っていない。"
+        )
+        semantic_shapes = []
+        endpoint_shapes = []
+        qualifier_shapes = []
+        arc_shapes = []
+        artifact_shapes = []
+        lexical_orientations = []
+        official_fixture = None
+
+        for request_token in request_tokens:
+            with self.subTest(request_token=request_token):
+                (
+                    source,
+                    grounded_plan,
+                    graph,
+                    parent_plan,
+                    projection,
+                    phase_a,
+                    _subjective_plan,
+                    phase_b,
+                ) = _final_stage1_composition_inputs(
+                    _request(record_id=request_token, memo=temporal_memo)
+                )
+                binding = stage1_response_module._bind_grounded_plan(
+                    source,
+                    graph,
+                    grounded_plan,
+                )
+                node_graph_order = {
+                    row.node_id: index for index, row in enumerate(graph.nodes)
+                }
+
+                def source_order(semantic_ref: str) -> int:
+                    return binding.source_order[
+                        stage1_response_module._local_ref(semantic_ref)
+                    ]
+
+                relation_candidates = tuple(
+                    row
+                    for row in projection.interpretation_candidates
+                    if row.relation_operator
+                    is not RelationOperator.NO_RELATION_CLAIM
+                )
+                tension = tuple(
+                    row
+                    for row in relation_candidates
+                    if row.candidate_kind is InterpretationKind.TENSION
+                )
+                action_change = tuple(
+                    row
+                    for row in relation_candidates
+                    if row.candidate_kind
+                    is InterpretationKind.ACTION_THEN_CHANGE_ONCE
+                )
+                self.assertEqual(len(tension), 1)
+                self.assertEqual(len(action_change), 1)
+                tension_row = tension[0]
+                action_change_row = action_change[0]
+                self.assertEqual(
+                    tuple(row.role for row in tension_row.argument_bindings),
+                    (ArgumentRole.LEFT, ArgumentRole.RIGHT),
+                )
+                self.assertEqual(
+                    tuple(
+                        source_order(row.semantic_ref)
+                        for row in tension_row.argument_bindings
+                    ),
+                    (1, 3),
+                )
+                self.assertEqual(
+                    tuple(row.role for row in action_change_row.argument_bindings),
+                    (ArgumentRole.ACTION, ArgumentRole.CHANGE),
+                )
+                self.assertEqual(
+                    tuple(
+                        source_order(row.semantic_ref)
+                        for row in action_change_row.argument_bindings
+                    ),
+                    (0, 1),
+                )
+                self.assertEqual(
+                    tuple(
+                        node_graph_order[
+                            stage1_response_module._local_ref(row.semantic_ref)
+                        ]
+                        for row in tension_row.argument_bindings
+                    ),
+                    tuple(
+                        source_order(row.semantic_ref)
+                        for row in tension_row.argument_bindings
+                    ),
+                )
+                lexical_orientations.append(
+                    tuple(
+                        row.semantic_ref for row in tension_row.argument_bindings
+                    )
+                    == tuple(sorted(tension_row.semantic_refs))
+                )
+
+                candidate_index = {
+                    row.candidate_id: index
+                    for index, row in enumerate(
+                        projection.interpretation_candidates
+                    )
+                }
+                semantic_shapes.append(
+                    tuple(
+                        (
+                            row.candidate_kind.value,
+                            row.semantic_operator.value,
+                            row.relation_operator.value,
+                            tuple(
+                                (
+                                    argument.role.value,
+                                    source_order(argument.semantic_ref),
+                                )
+                                for argument in row.argument_bindings
+                            ),
+                            tuple(source_order(ref) for ref in row.semantic_refs),
+                            row.derivation_rule_id,
+                            row.required_qualifiers,
+                            row.forbidden_promotions,
+                        )
+                        for row in projection.interpretation_candidates
+                    )
+                )
+                endpoint_shapes.append(
+                    tuple(
+                        (
+                            candidate_index[row.relation_candidate_ref],
+                            row.source_argument_role.value,
+                            source_order(row.source_semantic_ref),
+                            candidate_index[row.endpoint_grounded_candidate_ref],
+                        )
+                        for row in phase_a.relation_endpoint_grounded_candidate_ref_by_binding_key
+                    )
+                )
+                qualifier_shapes.append(
+                    tuple(
+                        (
+                            candidate_index[row.candidate_ref],
+                            row.qualifier_scope.value,
+                            (
+                                None
+                                if row.source_argument_role is None
+                                else row.source_argument_role.value
+                            ),
+                            (
+                                None
+                                if row.source_semantic_ref is None
+                                else source_order(row.source_semantic_ref)
+                            ),
+                            row.axis.value,
+                            row.value,
+                        )
+                        for row in phase_a.qualifier_value_by_candidate_scope_axis_key
+                    )
+                )
+
+                contribution_by_relation_ref = {
+                    row.relation_basis_refs[0]: row
+                    for row in projection.observation_contributions
+                    if row.relation_operator
+                    is not RelationOperator.NO_RELATION_CLAIM
+                }
+                arc = stage1_composition_module.project_stage1_discourse_arc(
+                    phase_b
+                )
+                admitted_directions = tuple(
+                    row
+                    for row in arc.dependency_rows
+                    if row.dependency_kind
+                    is stage1_composition_module.ArcDependencyKind.ADMITTED_RELATION_DIRECTION
+                )
+                arc_shape = tuple(
+                    (
+                        contribution_by_relation_ref[
+                            row.source_relation_ref
+                        ].relation_operator.value,
+                        source_order(row.predecessor_owner_ref),
+                        source_order(row.successor_owner_ref),
+                    )
+                    for row in admitted_directions
+                )
+                self.assertEqual(
+                    arc_shape,
+                    (
+                        (RelationOperator.TENSION_WITH.value, 1, 3),
+                        (RelationOperator.ACTION_PRECEDES_CHANGE.value, 0, 1),
+                    ),
+                )
+                arc_shapes.append(arc_shape)
+
+                result = stage1_composition_module.compose_stage1_from_projection(
+                    phase_b
+                )
+                ranked_shapes = []
+                for ranked in result.ranked_candidates:
+                    artifact = ranked.normalized_artifact
+                    clause_shapes = []
+                    for plan in artifact.clause_plan_rows:
+                        constraint_index = {
+                            row.clause_scalar_constraint_ref: index
+                            for index, row in enumerate(plan.scalar_constraint_rows)
+                        }
+                        scalar_rows = tuple(
+                            (
+                                row.clause_argument_role.value
+                                if row.clause_argument_role is not None
+                                else None,
+                                (
+                                    source_order(row.owner_ref)
+                                    if row.owner_ref.startswith("node:")
+                                    else "NON_NODE_OWNER"
+                                ),
+                                row.polarity,
+                                row.modality,
+                                row.time_scope,
+                            )
+                            for row in plan.scalar_constraint_rows
+                        )
+                        realization_rows = tuple(
+                            (
+                                constraint_index[
+                                    row.clause_scalar_constraint_ref
+                                ],
+                                row.scalar_axis.value,
+                                row.realization_mode.value,
+                                row.registered_realization_rule_ref,
+                                row.target_clause_slot_ref,
+                            )
+                            for row in plan.scalar_surface_realization_rows
+                        )
+                        clause_shapes.append(
+                            (
+                                plan.semantic_clause_kind.value,
+                                plan.predicate_valency.value,
+                                plan.grammatical_role_assignment_rule.value,
+                                plan.syntactic_orientation.value,
+                                scalar_rows,
+                                realization_rows,
+                            )
+                        )
+                    profile = ranked.discourse_preference_profile
+                    profile_shape = tuple(
+                        getattr(profile, field.name).value
+                        for field in fields(profile)[:-1]
+                    )
+                    ranked_shapes.append(
+                        (
+                            ranked.rank,
+                            ranked.shared_variant_id,
+                            tuple(
+                                (unit.layer, unit.text)
+                                for unit in ranked.sentence_units
+                            ),
+                            tuple(clause_shapes),
+                            tuple(
+                                row.defect_kind.value
+                                for row in artifact.correctable_defect_rows
+                            ),
+                            artifact.normal_form_version,
+                            artifact.normal_form_applied,
+                            tuple(
+                                row.value for row in artifact.normalization_phase_trace
+                            ),
+                            profile_shape,
+                        )
+                    )
+                    self.assertTrue(
+                        all(
+                            unit.surface_text_sha256
+                            == hashlib.sha256(unit.text.encode("utf-8")).hexdigest()
+                            for unit in ranked.sentence_units
+                        )
+                    )
+                artifact_shapes.append(
+                    (
+                        result.internal_candidate_count,
+                        tuple(ranked_shapes),
+                    )
+                )
+                if request_token == "official-known-02":
+                    official_fixture = (
+                        source,
+                        grounded_plan,
+                        graph,
+                        parent_plan,
+                        binding,
+                        tension_row,
+                    )
+
+        self.assertEqual(lexical_orientations, [True, True, False, True])
+        for rows in (
+            semantic_shapes,
+            endpoint_shapes,
+            qualifier_shapes,
+            arc_shapes,
+            artifact_shapes,
+        ):
+            self.assertEqual(len(set(rows)), 1)
+
+        self.assertIsNotNone(official_fixture)
+        assert official_fixture is not None
+        (
+            source,
+            grounded_plan,
+            graph,
+            parent_plan,
+            binding,
+            tension_row,
+        ) = official_fixture
+        edge_id = stage1_response_module._local_ref(
+            tension_row.relation_basis_refs[0]
+        )
+        edge = next(row for row in graph.edges if row.edge_id == edge_id)
+        node_by_id = {row.node_id: row for row in graph.nodes}
+        canonical_shape = stage1_response_module._relation_shape(
+            edge,
+            node_by_id,
+            binding,
+        )
+        self.assertEqual(
+            canonical_shape,
+            stage1_response_module._relation_shape(
+                replace(
+                    edge,
+                    source_node_id=edge.target_node_id,
+                    target_node_id=edge.source_node_id,
+                ),
+                dict(reversed(tuple(node_by_id.items()))),
+                binding,
+            ),
+        )
+        action_edge = next(
+            row for row in graph.edges if row.relation == "action_supports_change"
+        )
+        self.assertIsNotNone(
+            stage1_response_module._relation_shape(
+                action_edge,
+                node_by_id,
+                binding,
+            )
+        )
+        self.assertIsNone(
+            stage1_response_module._relation_shape(
+                replace(
+                    action_edge,
+                    source_node_id=action_edge.target_node_id,
+                    target_node_id=action_edge.source_node_id,
+                ),
+                node_by_id,
+                binding,
+            )
+        )
+
+        old_left, old_right = sorted(
+            (
+                stage1_response_module._node_ref(edge.source_node_id),
+                stage1_response_module._node_ref(edge.target_node_id),
+            )
+        )
+        old_shape = (
+            tension_row.candidate_kind,
+            tension_row.semantic_operator,
+            tension_row.relation_operator,
+            (
+                ArgumentBinding(ArgumentRole.LEFT, old_left),
+                ArgumentBinding(ArgumentRole.RIGHT, old_right),
+            ),
+        )
+        old_candidate = stage1_response_module._candidate_from_relation(
+            graph,
+            edge,
+            binding,
+            old_shape,
+        )
+        self.assertNotEqual(old_candidate, tension_row)
+        candidate_pool = build_interpretation_candidate_pool(
+            graph,
+            parent_plan,
+            source=source,
+            grounded_plan=grounded_plan,
+        )
+        canonical_pool_tension = next(
+            row
+            for row in candidate_pool
+            if row.candidate_kind is InterpretationKind.TENSION
+        )
+        tampered_pool = tuple(
+            old_candidate
+            if row.candidate_id == canonical_pool_tension.candidate_id
+            else row
+            for row in candidate_pool
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_candidate_pool_noncanonical",
+        ):
+            stage1_response_module.validate_interpretation_candidate_pool(
+                tampered_pool,
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+                source=source,
+                grounded_plan=grounded_plan,
+            )
+        node_source_order = {
+            row.node_id: index for index, row in enumerate(graph.nodes)
+        }
+        contracts_module._validate_stage1_relation_binding(
+            canonical_pool_tension,
+            edge_by_id={row.edge_id: row for row in graph.edges},
+            node_by_id=node_by_id,
+            node_source_order=node_source_order,
+            direct_shapes_by_node_ref={},
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_candidate_relation_binding_invalid",
+        ):
+            contracts_module._validate_stage1_relation_binding(
+                old_candidate,
+                edge_by_id={row.edge_id: row for row in graph.edges},
+                node_by_id=node_by_id,
+                node_source_order=node_source_order,
+                direct_shapes_by_node_ref={},
+            )
+
+        missing_source_order = dict(binding.source_order)
+        missing_source_order.pop(edge.target_node_id)
+        duplicate_source_order = dict(binding.source_order)
+        duplicate_source_order[edge.target_node_id] = duplicate_source_order[
+            edge.source_node_id
+        ]
+        for source_order_map in (missing_source_order, duplicate_source_order):
+            with self.assertRaisesRegex(
+                CMEEStage1ContractError,
+                "stage1_relation_direction_invalid",
+            ):
+                stage1_response_module._relation_shape(
+                    edge,
+                    node_by_id,
+                    replace(binding, source_order=source_order_map),
+                )
 
     def test_stage2_only_source_explicit_cause_can_be_promoted(self) -> None:
         source, grounded_plan, graph, parent_plan = _stage2_inputs(

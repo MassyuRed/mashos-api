@@ -3264,6 +3264,7 @@ def _validate_stage1_relation_binding(
     *,
     edge_by_id: Mapping[str, MeaningEdge],
     node_by_id: Mapping[str, MeaningNode],
+    node_source_order: Mapping[str, int],
     direct_shapes_by_node_ref: Mapping[
         str,
         frozenset[tuple[InterpretationKind, SemanticOperator]],
@@ -3294,14 +3295,26 @@ def _validate_stage1_relation_binding(
     expected_bindings: tuple[ArgumentBinding, ...]
     if candidate.candidate_kind is InterpretationKind.COEXISTENCE:
         expected_relation = {"coexistence"}
-        left, right = sorted((source_ref, target_ref))
+        left, right = tuple(
+            _stage1_node_ref(node_id)
+            for node_id in sorted(
+                (edge.source_node_id, edge.target_node_id),
+                key=node_source_order.__getitem__,
+            )
+        )
         expected_bindings = (
             ArgumentBinding(ArgumentRole.LEFT, left),
             ArgumentBinding(ArgumentRole.RIGHT, right),
         )
     elif candidate.candidate_kind is InterpretationKind.TENSION:
         expected_relation = {"contrast"}
-        left, right = sorted((source_ref, target_ref))
+        left, right = tuple(
+            _stage1_node_ref(node_id)
+            for node_id in sorted(
+                (edge.source_node_id, edge.target_node_id),
+                key=node_source_order.__getitem__,
+            )
+        )
         expected_bindings = (
             ArgumentBinding(ArgumentRole.LEFT, left),
             ArgumentBinding(ArgumentRole.RIGHT, right),
@@ -4177,6 +4190,9 @@ def validate_stage1_projection(
         parent_plan,
     )
     node_by_id = {row.node_id: row for row in grounded_graph.nodes}
+    node_source_order = {
+        row.node_id: index for index, row in enumerate(grounded_graph.nodes)
+    }
     edge_by_id = {row.edge_id: row for row in grounded_graph.edges}
     for ref in (
         projection.reception_style_policy_ref,
@@ -4455,6 +4471,7 @@ def validate_stage1_projection(
             row,
             edge_by_id=edge_by_id,
             node_by_id=node_by_id,
+            node_source_order=node_source_order,
             direct_shapes_by_node_ref=direct_shapes_by_node_ref,
         )
         if row.relation_operator is RelationOperator.NO_RELATION_CLAIM:

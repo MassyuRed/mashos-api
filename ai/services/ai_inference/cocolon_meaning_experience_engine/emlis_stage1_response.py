@@ -1791,7 +1791,18 @@ def _relation_shape(
         RelationOperator,
         tuple[ArgumentBinding, ...],
     ]:
-        left, right = sorted((source_ref, target_ref))
+        endpoint_rows = (
+            (binding.source_order.get(source.node_id), source_ref),
+            (binding.source_order.get(target.node_id), target_ref),
+        )
+        if (
+            any(type(order) is not int for order, _ref in endpoint_rows)
+            or endpoint_rows[0][0] == endpoint_rows[1][0]
+        ):
+            raise CMEEStage1ContractError("stage1_relation_direction_invalid")
+        left, right = tuple(
+            ref for _order, ref in sorted(endpoint_rows, key=lambda row: row[0])
+        )
         return (
             kind,
             SemanticOperator.SYNTHESIZE_RELATION,
