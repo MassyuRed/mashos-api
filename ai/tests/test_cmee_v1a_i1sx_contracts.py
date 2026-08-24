@@ -6,6 +6,7 @@ import hashlib
 import io
 import inspect
 import json
+import os
 import re
 import tempfile
 import unittest
@@ -9165,6 +9166,38 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
 class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
     _RUNTIME_HEAD = "a" * 40
     _DESIGN_HEAD = "b" * 40
+    # Public, non-identifying synthetic stand-ins. These are contract inputs,
+    # not withheld fixtures and not expected-output examples.
+    _PUBLIC_NONSECRET_STANDIN_EXACT4 = (
+        (
+            "tension",
+            "休みたい気持ちと、もう少し進めたい気持ちが同時にある。",
+            "生活",
+            "不安",
+            "medium",
+        ),
+        (
+            "temporal_change",
+            "音楽を聴いたら、少し落ち着いた。ただ、いつもそうなるとは思っていない。",
+            "生活",
+            "不安",
+            "medium",
+        ),
+        (
+            "help_seeking",
+            "少し話を聞いてほしいが、今声をかけてよいか迷っている。",
+            "生活",
+            "不安",
+            "medium",
+        ),
+        (
+            "unfinished",
+            "予定の話はした。でも、まだ迷いが残っていて、どうしたいかは分からない。",
+            "仕事",
+            "自己理解",
+            "medium",
+        ),
+    )
 
     @staticmethod
     def _withheld_payload() -> dict[str, object]:
@@ -9177,15 +9210,16 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             "cases": [
                 {
                     "structural_family": family,
-                    # A leading source whitespace creates a non-secret contract
-                    # input without tracking a withheld fixture body.
-                    "memo": f" {memo}",
+                    "memo": memo,
                     "category": category,
                     "emotion": emotion,
                     "strength": strength,
                 }
                 for family, memo, category, emotion, strength
-                in candidate_run_module.EARLY_KNOWN_EXACT4
+                in (
+                    CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest
+                    ._PUBLIC_NONSECRET_STANDIN_EXACT4
+                )
             ],
         }
 
@@ -9343,6 +9377,38 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             "CLEAR",
         )
 
+    def test_early_exact8_renormalizes_every_ranked_candidate(self) -> None:
+        original_normalize = (
+            stage1_composition_module.normalize_to_normal_form
+        )
+        with patch.object(
+            stage1_composition_module,
+            "normalize_to_normal_form",
+            wraps=original_normalize,
+        ) as normalizer:
+            _body_free, known_visible, private_packet = (
+                candidate_run_module.run_early_actual(
+                    withheld_private_payload=self._withheld_payload(),
+                    runtime_repo_head=self._RUNTIME_HEAD,
+                    design_repo_head=self._DESIGN_HEAD,
+                )
+            )
+
+        expected_rechecks = sum(
+            row["machine_invariant"]["ranked_candidate_count"]
+            for row in known_visible["cases"]
+        ) + sum(
+            row["machine_invariant_body_free"]["ranked_candidate_count"]
+            for row in private_packet["withheld_cases"]
+        )
+        normalized_rechecks = tuple(
+            call
+            for call in normalizer.call_args_list
+            if type(call.args[0]).__name__ == "NormalizedDraftArtifact"
+        )
+        self.assertEqual(len(normalized_rechecks), expected_rechecks)
+        self.assertGreaterEqual(expected_rechecks, 8)
+
     def test_withheld_exact4_private_schema_is_closed_and_identity_free(self) -> None:
         valid = self._withheld_payload()
 
@@ -9370,6 +9436,13 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             candidate_run_module.EARLY_KNOWN_EXACT4[0][1]
         )
         invalid_rows.append(duplicate_known)
+        whitespace_normalized_known = copied()
+        whitespace_normalized_known["cases"][0]["memo"] = (
+            " \t"
+            + candidate_run_module.EARLY_KNOWN_EXACT4[0][1]
+            + "\n "
+        )
+        invalid_rows.append(whitespace_normalized_known)
         invalid_strength = copied()
         invalid_strength["cases"][0]["strength"] = "extreme"
         invalid_rows.append(invalid_strength)
@@ -9382,6 +9455,18 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 "withheld early private input invalid",
             ):
                 candidate_run_module._validate_withheld_early_payload(invalid)
+
+        canonical_whitespace = lambda value: " ".join(value.split())
+        canonical_known = {
+            canonical_whitespace(row[1])
+            for row in candidate_run_module.EARLY_KNOWN_EXACT4
+        }
+        canonical_standins = {
+            canonical_whitespace(row["memo"])
+            for row in valid["cases"]
+        }
+        self.assertEqual(len(canonical_standins), 4)
+        self.assertTrue(canonical_known.isdisjoint(canonical_standins))
 
         with self.assertRaisesRegex(
             ValueError,
@@ -9481,6 +9566,141 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                         invalid,
                         body_free_machine_packet=self.body_free_packet,
                     )
+
+    def test_human_transition_rejects_fabricated_machine_packets(self) -> None:
+        withheld = self.body_free_packet["withheld_exact4_body_free"]
+        human_result = {
+            "schema_version": (
+                candidate_run_module.EARLY_HUMAN_READ_RESULT_SCHEMA_VERSION
+            ),
+            "packet_id": candidate_run_module.WITHHELD_EARLY_PACKET_ID,
+            "bounded_unit_id": candidate_run_module.EARLY_BOUNDED_UNIT_ID,
+            "runtime_repo_head": self._RUNTIME_HEAD,
+            "design_repo_head": self._DESIGN_HEAD,
+            "language_core_identity": (
+                candidate_run_module.STEP2_FROZEN_LANGUAGE_CORE_IDENTITY
+            ),
+            "withheld_set_digest": withheld["withheld_set_digest"],
+            "reviewed_known_count": 4,
+            "reviewed_withheld_count": 4,
+            "body_payload_present": False,
+            "early_human_read_result": "CLEAR",
+            "defect_class": None,
+            "cause_component": None,
+            "ceiling_reason": None,
+        }
+
+        def mutated(path: tuple[str, ...], value: object) -> dict[str, object]:
+            packet = json.loads(
+                json.dumps(self.body_free_packet, ensure_ascii=False)
+            )
+            cursor = packet
+            for key in path[:-1]:
+                cursor = cursor[key]
+            cursor[path[-1]] = value
+            return packet
+
+        invalid_packets = [
+            mutated(("unexpected",), False),
+            mutated(("known_exact4_body_free", "unexpected"), False),
+            mutated(("withheld_exact4_body_free", "unexpected"), False),
+            mutated(("schema_version",), "fabricated.schema"),
+            mutated(("packet_id",), "FABRICATED_PACKET"),
+            mutated(("bounded_unit_id",), "fabricated.unit"),
+            mutated(("runtime_repo_head",), "not-a-head"),
+            mutated(("design_repo_head",), "A" * 40),
+            mutated(("language_core_identity",), "0" * 64),
+            mutated(("early_human_read_result",), "CLEAR"),
+            mutated(("early_actual_status",), "LANGUAGE_VIABILITY_OBSERVED"),
+            mutated(("body_payload_present",), True),
+            mutated(("private_text_published",), True),
+            mutated(("known_exact4_body_free", "case_count"), 3),
+            mutated(
+                (
+                    "known_exact4_body_free",
+                    "structural_family_counts",
+                    "tension",
+                ),
+                True,
+            ),
+            mutated(
+                ("known_exact4_body_free", "material_alternate_case_count"),
+                0,
+            ),
+            mutated(("known_exact4_body_free", "body_payload_present"), True),
+            mutated(
+                ("withheld_exact4_body_free", "schema_version"),
+                "fabricated.schema",
+            ),
+            mutated(
+                ("withheld_exact4_body_free", "withheld_set_digest"),
+                "not-a-digest",
+            ),
+            mutated(
+                (
+                    "withheld_exact4_body_free",
+                    "structural_family_counts",
+                    "unfinished",
+                ),
+                2,
+            ),
+            mutated(
+                (
+                    "withheld_exact4_body_free",
+                    "material_alternate_case_count",
+                ),
+                0,
+            ),
+            mutated(
+                ("withheld_exact4_body_free", "machine_failure_classes"),
+                ["FabricatedFailure"],
+            ),
+            mutated(
+                ("withheld_exact4_body_free", "body_payload_present"),
+                True,
+            ),
+            mutated(
+                ("withheld_exact4_body_free", "private_text_published"),
+                True,
+            ),
+            mutated(
+                ("withheld_exact4_body_free", "ultra_withheld_body_access"),
+                1,
+            ),
+            mutated(
+                ("withheld_exact4_body_free", "candidate_ready"),
+                True,
+            ),
+        ]
+        for field in (
+            "actual_japanese_reached_count",
+            "machine_invariant_clear_count",
+        ):
+            invalid_packets.append(
+                mutated(("known_exact4_body_free", field), 3)
+            )
+        for field in (
+            "withheld_set_count",
+            "actual_japanese_reached_count",
+            "machine_invariant_clear_count",
+            "normal_form_phase_exact6_count",
+            "normal_form_defect_free_count",
+            "normalization_idempotent_count",
+            "required_duty_coverage_exact_count",
+        ):
+            invalid_packets.append(
+                mutated(("withheld_exact4_body_free", field), 3)
+            )
+
+        for index, invalid_packet in enumerate(invalid_packets):
+            with self.subTest(index=index), self.assertRaisesRegex(
+                ValueError,
+                "early human read machine binding invalid",
+            ):
+                candidate_run_module.validate_early_human_read_result(
+                    human_result,
+                    body_free_machine_packet=invalid_packet,
+                )
 
     def test_early_cli_stdout_is_body_free_and_known_body_is_explicit_output(
         self,
@@ -9624,6 +9844,175 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                     self.assertNotIn(str(private_output), error_text)
                     self.assertFalse(known_output.exists())
                     self.assertFalse(private_output.exists())
+
+    def test_private_input_dirfd_walk_rejects_symlink_and_bad_root_mode(
+        self,
+    ) -> None:
+        parser = candidate_run_module.argparse.ArgumentParser(add_help=False)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            base = Path(temporary_directory).resolve()
+            private_root = base / "private-root"
+            private_root.mkdir(mode=0o700)
+            private_root.chmod(0o700)
+            outside = base / "outside"
+            outside.mkdir(mode=0o700)
+            outside.chmod(0o700)
+            outside_input = outside / "input.json"
+            outside_input.write_text(
+                json.dumps(self._withheld_payload(), ensure_ascii=False),
+                encoding="utf-8",
+            )
+            outside_input.chmod(0o600)
+            (private_root / "intermediate").symlink_to(
+                outside,
+                target_is_directory=True,
+            )
+            lexical_target = private_root / "intermediate" / "input.json"
+            with patch.object(
+                candidate_run_module,
+                "PRIVATE_OUTPUT_ROOT",
+                private_root,
+            ):
+                target = candidate_run_module._private_input_target(
+                    parser,
+                    lexical_target,
+                )
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "withheld early private input invalid",
+                ):
+                    candidate_run_module._read_private_json(target)
+
+            private_root.chmod(0o750)
+            root_input = private_root / "root-mode-input.json"
+            root_input.write_text(
+                json.dumps(self._withheld_payload(), ensure_ascii=False),
+                encoding="utf-8",
+            )
+            root_input.chmod(0o600)
+            with patch.object(
+                candidate_run_module,
+                "PRIVATE_OUTPUT_ROOT",
+                private_root,
+            ):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "withheld early private input invalid",
+                ):
+                    candidate_run_module._read_private_json(root_input)
+
+    def test_private_input_single_fd_rejects_foreign_uid_and_hardlink(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            private_root = (Path(temporary_directory) / "private-root").resolve()
+            private_root.mkdir(mode=0o700)
+            private_root.chmod(0o700)
+            input_path = private_root / "input.json"
+            input_path.write_text(
+                json.dumps(self._withheld_payload(), ensure_ascii=False),
+                encoding="utf-8",
+            )
+            input_path.chmod(0o600)
+            original_fstat = candidate_run_module.os.fstat
+
+            def foreign_file_owner(file_descriptor: int) -> object:
+                file_stat = original_fstat(file_descriptor)
+                if candidate_run_module.stat.S_ISREG(file_stat.st_mode):
+                    return SimpleNamespace(
+                        st_mode=file_stat.st_mode,
+                        st_uid=file_stat.st_uid + 1,
+                        st_nlink=file_stat.st_nlink,
+                        st_size=file_stat.st_size,
+                    )
+                return file_stat
+
+            with (
+                patch.object(
+                    candidate_run_module,
+                    "PRIVATE_OUTPUT_ROOT",
+                    private_root,
+                ),
+                patch.object(
+                    candidate_run_module.os,
+                    "fstat",
+                    side_effect=foreign_file_owner,
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "withheld early private input invalid",
+                ):
+                    candidate_run_module._read_private_json(input_path)
+
+            hardlink_path = private_root / "hardlink.json"
+            os.link(input_path, hardlink_path)
+            with patch.object(
+                candidate_run_module,
+                "PRIVATE_OUTPUT_ROOT",
+                private_root,
+            ):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "withheld early private input invalid",
+                ):
+                    candidate_run_module._read_private_json(input_path)
+
+    def test_private_input_single_fd_is_stable_across_path_inode_swap(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            private_root = (Path(temporary_directory) / "private-root").resolve()
+            private_root.mkdir(mode=0o700)
+            private_root.chmod(0o700)
+            original_payload = self._withheld_payload()
+            replacement_payload = {"replacement": "PUBLIC_SWAP_SENTINEL"}
+            input_path = private_root / "input.json"
+            replacement_path = private_root / "replacement.json"
+            input_path.write_text(
+                json.dumps(original_payload, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            replacement_path.write_text(
+                json.dumps(replacement_payload, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            input_path.chmod(0o600)
+            replacement_path.chmod(0o600)
+            original_fstat = candidate_run_module.os.fstat
+            swap_complete = False
+
+            def swap_path_after_final_open(file_descriptor: int) -> object:
+                nonlocal swap_complete
+                file_stat = original_fstat(file_descriptor)
+                if (
+                    candidate_run_module.stat.S_ISREG(file_stat.st_mode)
+                    and not swap_complete
+                ):
+                    os.replace(replacement_path, input_path)
+                    swap_complete = True
+                return file_stat
+
+            with (
+                patch.object(
+                    candidate_run_module,
+                    "PRIVATE_OUTPUT_ROOT",
+                    private_root,
+                ),
+                patch.object(
+                    candidate_run_module.os,
+                    "fstat",
+                    side_effect=swap_path_after_final_open,
+                ),
+            ):
+                loaded = candidate_run_module._read_private_json(input_path)
+
+            self.assertTrue(swap_complete)
+            self.assertEqual(loaded, original_payload)
+            self.assertEqual(
+                json.loads(input_path.read_text(encoding="utf-8")),
+                replacement_payload,
+            )
 
     def test_early_existing_outputs_are_rejected_before_body_execution(
         self,

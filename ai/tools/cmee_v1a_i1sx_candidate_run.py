@@ -323,6 +323,10 @@ def _canonical_sha256(value: object) -> str:
     )
 
 
+def _canonical_whitespace_text(value: str) -> str:
+    return " ".join(value.split())
+
+
 def _validate_early_repo_heads(
     *,
     runtime_repo_head: str,
@@ -377,9 +381,14 @@ def _validate_withheld_early_payload(
     if tuple(row["structural_family"] for row in rows) != EARLY_STRUCTURAL_FAMILIES:
         raise ValueError("withheld early private input invalid")
     memos = tuple(row["memo"] for row in rows)
+    canonical_memos = tuple(_canonical_whitespace_text(memo) for memo in memos)
+    canonical_known_memos = {
+        _canonical_whitespace_text(row[1]) for row in EARLY_KNOWN_EXACT4
+    }
     if (
-        len(memos) != len(set(memos))
-        or set(memos).intersection(row[1] for row in EARLY_KNOWN_EXACT4)
+        any(not memo for memo in canonical_memos)
+        or len(canonical_memos) != len(set(canonical_memos))
+        or set(canonical_memos).intersection(canonical_known_memos)
     ):
         raise ValueError("withheld early private input invalid")
     return tuple(rows)
@@ -471,14 +480,20 @@ def _materialize_early_case(
         selected = result.selected_candidate
         units = selected.sentence_units
         selected_normalized = selected.normalized_artifact
-        repeated = stage1_composition.normalize_to_normal_form(
-            selected_normalized,
-            selected_normalized.layout_preference_seed,
-            phase_b,
+        renormalized_ranked = tuple(
+            stage1_composition.normalize_to_normal_form(
+                candidate.normalized_artifact,
+                candidate.normalized_artifact.layout_preference_seed,
+                phase_b,
+            )
+            for candidate in ranked
         )
-        idempotent = (
-            stage1_composition.canonical_normalized_bytes(selected_normalized)
+        idempotent = all(
+            stage1_composition.canonical_normalized_bytes(
+                candidate.normalized_artifact
+            )
             == stage1_composition.canonical_normalized_bytes(repeated)
+            for candidate, repeated in zip(ranked, renormalized_ranked)
         )
         realized_duties = tuple(ref for unit in units for ref in unit.duty_refs)
         required_coverage = (
@@ -780,6 +795,176 @@ def run_early_actual(
     return body_free_packet, known_visible, private_packet
 
 
+def _validate_early_body_free_machine_packet(
+    payload: object,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Fail closed on the complete fresh machine packet before human binding."""
+
+    top_keys = {
+        "schema_version",
+        "packet_id",
+        "bounded_unit_id",
+        "runtime_repo_head",
+        "design_repo_head",
+        "language_core_identity",
+        "known_exact4_body_free",
+        "withheld_exact4_body_free",
+        "early_human_read_result",
+        "early_actual_status",
+        "body_payload_present",
+        "private_text_published",
+    }
+    known_keys = {
+        "case_count",
+        "structural_family_counts",
+        "actual_japanese_reached_count",
+        "machine_invariant_clear_count",
+        "machine_invariant_result",
+        "material_alternate_case_count",
+        "body_payload_present",
+    }
+    withheld_keys = {
+        "schema_version",
+        "packet_id",
+        "bounded_unit_id",
+        "language_core_identity",
+        "withheld_set_count",
+        "structural_family_counts",
+        "withheld_set_digest",
+        "selection_frozen_before_first_after",
+        "synthetic_non_identifying_attested",
+        "actual_japanese_reached_count",
+        "machine_invariant_clear_count",
+        "normal_form_phase_exact6_count",
+        "normal_form_defect_free_count",
+        "normalization_idempotent_count",
+        "required_duty_coverage_exact_count",
+        "material_alternate_case_count",
+        "machine_failure_classes",
+        "machine_invariant_result",
+        "body_payload_present",
+        "private_text_published",
+        "body_full_readers",
+        "ultra_withheld_body_access",
+        "mash_withheld_body_access",
+        "formal_exact8_denominator_effect",
+        "product_acceptance_denominator_effect",
+        "numeric_score_or_pass_rate",
+        "product_credit",
+        "candidate_ready",
+        "production_effect",
+        "automatic_progression",
+    }
+    if type(payload) is not dict or set(payload) != top_keys:
+        raise ValueError("early human read machine binding invalid")
+    known = payload["known_exact4_body_free"]
+    withheld = payload["withheld_exact4_body_free"]
+    if (
+        type(known) is not dict
+        or set(known) != known_keys
+        or type(withheld) is not dict
+        or set(withheld) != withheld_keys
+    ):
+        raise ValueError("early human read machine binding invalid")
+
+    try:
+        fresh_identity = stage1_composition.compute_language_core_identity()
+    except Exception:
+        raise ValueError("early human read machine binding invalid") from None
+    family_counts = {family: 1 for family in EARLY_STRUCTURAL_FAMILIES}
+
+    def exact_int(value: object, expected: int) -> bool:
+        return type(value) is int and value == expected
+
+    def set_level_alternate_count(value: object) -> bool:
+        return type(value) is int and 1 <= value <= 4
+
+    def exact_family_counts(value: object) -> bool:
+        return (
+            type(value) is dict
+            and set(value) == set(family_counts)
+            and all(exact_int(value[family], 1) for family in family_counts)
+        )
+
+    known_exact4_fields = (
+        "case_count",
+        "actual_japanese_reached_count",
+        "machine_invariant_clear_count",
+    )
+    withheld_exact4_fields = (
+        "withheld_set_count",
+        "actual_japanese_reached_count",
+        "machine_invariant_clear_count",
+        "normal_form_phase_exact6_count",
+        "normal_form_defect_free_count",
+        "normalization_idempotent_count",
+        "required_duty_coverage_exact_count",
+    )
+    if (
+        payload["schema_version"] != EARLY_BODY_FREE_PACKET_SCHEMA_VERSION
+        or payload["packet_id"] != WITHHELD_EARLY_PACKET_ID
+        or payload["bounded_unit_id"] != EARLY_BOUNDED_UNIT_ID
+        or type(payload["runtime_repo_head"]) is not str
+        or re.fullmatch(r"[0-9a-f]{40}", payload["runtime_repo_head"])
+        is None
+        or type(payload["design_repo_head"]) is not str
+        or re.fullmatch(r"[0-9a-f]{40}", payload["design_repo_head"])
+        is None
+        or payload["language_core_identity"]
+        != fresh_identity
+        or fresh_identity != stage1_composition.LANGUAGE_CORE_IDENTITY
+        or fresh_identity != STEP2_FROZEN_LANGUAGE_CORE_IDENTITY
+        or payload["early_human_read_result"] != "NOT_RUN"
+        or payload["early_actual_status"] != "NOT_RUN"
+        or payload["body_payload_present"] is not False
+        or payload["private_text_published"] is not False
+        or not exact_family_counts(known["structural_family_counts"])
+        or any(not exact_int(known[field], 4) for field in known_exact4_fields)
+        or known["machine_invariant_result"] != "CLEAR"
+        or not set_level_alternate_count(known["material_alternate_case_count"])
+        or known["body_payload_present"] is not False
+        or withheld["schema_version"]
+        != EARLY_WITHHELD_BODY_FREE_SCHEMA_VERSION
+        or withheld["packet_id"] != WITHHELD_EARLY_PACKET_ID
+        or withheld["bounded_unit_id"] != EARLY_BOUNDED_UNIT_ID
+        or withheld["language_core_identity"] != fresh_identity
+        or not exact_family_counts(withheld["structural_family_counts"])
+        or any(
+            not exact_int(withheld[field], 4)
+            for field in withheld_exact4_fields
+        )
+        or type(withheld["withheld_set_digest"]) is not str
+        or re.fullmatch(r"[0-9a-f]{64}", withheld["withheld_set_digest"])
+        is None
+        or withheld["selection_frozen_before_first_after"] is not True
+        or withheld["synthetic_non_identifying_attested"] is not True
+        or not set_level_alternate_count(
+            withheld["material_alternate_case_count"]
+        )
+        or withheld["machine_failure_classes"] != []
+        or withheld["machine_invariant_result"] != "CLEAR"
+        or withheld["body_payload_present"] is not False
+        or withheld["private_text_published"] is not False
+        or withheld["body_full_readers"] != "PRO_ONLY"
+        or any(
+            not exact_int(withheld[field], 0)
+            for field in (
+                "ultra_withheld_body_access",
+                "mash_withheld_body_access",
+                "formal_exact8_denominator_effect",
+                "product_acceptance_denominator_effect",
+                "numeric_score_or_pass_rate",
+                "product_credit",
+                "production_effect",
+            )
+        )
+        or withheld["candidate_ready"] is not False
+        or withheld["automatic_progression"] is not False
+    ):
+        raise ValueError("early human read machine binding invalid")
+    return known, withheld
+
+
 def validate_early_human_read_result(
     payload: object,
     *,
@@ -803,14 +988,11 @@ def validate_early_human_read_result(
         "cause_component",
         "ceiling_reason",
     )
+    known, withheld = _validate_early_body_free_machine_packet(
+        body_free_machine_packet
+    )
     if type(payload) is not dict or set(payload) != set(expected_keys):
         raise ValueError("early human read result invalid")
-    if type(body_free_machine_packet) is not dict:
-        raise ValueError("early human read machine binding invalid")
-    known = body_free_machine_packet.get("known_exact4_body_free")
-    withheld = body_free_machine_packet.get("withheld_exact4_body_free")
-    if type(known) is not dict or type(withheld) is not dict:
-        raise ValueError("early human read machine binding invalid")
     machine_bindings = {
         "packet_id": body_free_machine_packet.get("packet_id"),
         "bounded_unit_id": body_free_machine_packet.get("bounded_unit_id"),
@@ -822,16 +1004,7 @@ def validate_early_human_read_result(
         "withheld_set_digest": withheld.get("withheld_set_digest"),
     }
     if (
-        body_free_machine_packet.get("schema_version")
-        != EARLY_BODY_FREE_PACKET_SCHEMA_VERSION
-        or body_free_machine_packet.get("packet_id")
-        != WITHHELD_EARLY_PACKET_ID
-        or body_free_machine_packet.get("body_payload_present") is not False
-        or known.get("case_count") != 4
-        or withheld.get("withheld_set_count") != 4
-        or known.get("machine_invariant_result") != "CLEAR"
-        or withheld.get("machine_invariant_result") != "CLEAR"
-        or any(payload[key] != value for key, value in machine_bindings.items())
+        any(payload[key] != value for key, value in machine_bindings.items())
         or payload["schema_version"] != EARLY_HUMAN_READ_RESULT_SCHEMA_VERSION
         or payload["reviewed_known_count"] != 4
         or payload["reviewed_withheld_count"] != 4
@@ -1626,25 +1799,16 @@ def _private_input_target(
     parser: argparse.ArgumentParser,
     requested: Path,
 ) -> Path:
-    """Resolve one regular, owner-only input below the isolated private root."""
+    """Lexically bind an input below the root without following any path."""
 
-    root = PRIVATE_OUTPUT_ROOT.resolve()
+    root = Path(os.path.abspath(os.fspath(PRIVATE_OUTPUT_ROOT)))
     checkout = CHECKOUT_ROOT.resolve()
-    if requested.is_symlink():
-        parser.error("private input target is not isolated")
-    try:
-        target = requested.resolve(strict=True)
-        target_stat = target.stat(follow_symlinks=False)
-    except OSError:
-        parser.error("private input target is unavailable")
+    target = Path(os.path.abspath(os.fspath(requested)))
     if (
         _paths_overlap(root, checkout)
         or target == root
         or root not in target.parents
         or _paths_overlap(target, checkout)
-        or not stat.S_ISREG(target_stat.st_mode)
-        or stat.S_IMODE(target_stat.st_mode) != 0o600
-        or not 0 < target_stat.st_size <= 64 * 1024
     ):
         parser.error("private input target is not isolated")
     return target
@@ -1666,23 +1830,94 @@ def _require_new_private_output_targets(
         parser.error("early actual private output target already exists")
 
 
-def _read_private_json(target: Path) -> object:
+def _open_directory_path_without_symlinks(target: Path) -> int:
+    """Open one absolute directory path component-by-component."""
+
     no_follow = getattr(os, "O_NOFOLLOW", 0)
-    file_fd = os.open(target, os.O_RDONLY | no_follow)
+    directory = getattr(os, "O_DIRECTORY", 0)
+    flags = os.O_RDONLY | directory | no_follow
+    directory_fd = os.open(target.anchor, flags)
     try:
+        for part in target.parts[1:]:
+            next_directory_fd = os.open(
+                part,
+                flags,
+                dir_fd=directory_fd,
+            )
+            os.close(directory_fd)
+            directory_fd = next_directory_fd
+        return directory_fd
+    except BaseException:
+        os.close(directory_fd)
+        raise
+
+
+def _read_private_json(target: Path) -> object:
+    """Open, validate and read a private input through one final inode fd."""
+
+    root = Path(os.path.abspath(os.fspath(PRIVATE_OUTPUT_ROOT)))
+    target = Path(os.path.abspath(os.fspath(target)))
+    try:
+        relative_parts = target.relative_to(root).parts
+    except ValueError:
+        raise ValueError("withheld early private input invalid") from None
+    no_follow = getattr(os, "O_NOFOLLOW", 0)
+    directory = getattr(os, "O_DIRECTORY", 0)
+    directory_flags = os.O_RDONLY | directory | no_follow
+    owner_uid = os.geteuid()
+    directory_fd = -1
+    file_fd = -1
+    try:
+        directory_fd = _open_directory_path_without_symlinks(root)
+        root_stat = os.fstat(directory_fd)
+        if (
+            not stat.S_ISDIR(root_stat.st_mode)
+            or stat.S_IMODE(root_stat.st_mode) != 0o700
+            or root_stat.st_uid != owner_uid
+        ):
+            raise ValueError("withheld early private input invalid")
+
+        for part in relative_parts[:-1]:
+            next_directory_fd = os.open(
+                part,
+                directory_flags,
+                dir_fd=directory_fd,
+            )
+            next_stat = os.fstat(next_directory_fd)
+            if (
+                not stat.S_ISDIR(next_stat.st_mode)
+                or stat.S_IMODE(next_stat.st_mode) != 0o700
+                or next_stat.st_uid != owner_uid
+            ):
+                os.close(next_directory_fd)
+                raise ValueError("withheld early private input invalid")
+            os.close(directory_fd)
+            directory_fd = next_directory_fd
+
+        file_fd = os.open(
+            relative_parts[-1],
+            os.O_RDONLY | no_follow,
+            dir_fd=directory_fd,
+        )
         file_stat = os.fstat(file_fd)
         if (
             not stat.S_ISREG(file_stat.st_mode)
             or stat.S_IMODE(file_stat.st_mode) != 0o600
+            or file_stat.st_uid != owner_uid
+            or file_stat.st_nlink != 1
             or not 0 < file_stat.st_size <= 64 * 1024
         ):
             raise ValueError("withheld early private input invalid")
         with os.fdopen(file_fd, "r", encoding="utf-8") as handle:
             file_fd = -1
             return json.load(handle)
+    except OSError:
+        raise ValueError("withheld early private input invalid") from None
     finally:
         if file_fd >= 0:
             os.close(file_fd)
+        if directory_fd >= 0:
+            os.close(directory_fd)
 
 
 def _write_private_json_exclusive(
@@ -1719,6 +1954,7 @@ def _write_private_json_exclusive(
             0o600,
             dir_fd=directory_fd,
         )
+        os.fchmod(output_fd, 0o600)
         with os.fdopen(output_fd, "w", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
     finally:
@@ -1836,6 +2072,7 @@ def main() -> int:
                 0o600,
                 dir_fd=directory_fd,
             )
+            os.fchmod(output_fd, 0o600)
             with os.fdopen(output_fd, "w", encoding="utf-8") as handle:
                 handle.write(json.dumps(full, ensure_ascii=False, indent=2) + "\n")
         finally:
