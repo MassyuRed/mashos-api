@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import sys
 from typing import Any, Mapping
 
@@ -25,7 +26,12 @@ if str(AI_INFERENCE) not in sys.path:
     sys.path.insert(0, str(AI_INFERENCE))
 
 from emlis_ai_current_input_bundle import build_emlis_current_input_bundle  # noqa: E402
+from emlis_ai_grounded_observation_plan import (  # noqa: E402
+    build_final_stage1_grounded_observation_plan,
+)
 from cocolon_meaning_experience_engine import GenerationRequest, MeaningExperienceEngine  # noqa: E402
+import cocolon_meaning_experience_engine.emlis_stage1_composition as stage1_composition  # noqa: E402
+import cocolon_meaning_experience_engine.emlis_stage1_response as stage1_response  # noqa: E402
 from cocolon_meaning_experience_engine.contracts import (  # noqa: E402
     AttachmentAdmission,
     CMEE_COMMON_GUARD_PROOF_VERSION,
@@ -54,8 +60,13 @@ from cocolon_meaning_experience_engine.emlis_v1a import (  # noqa: E402
     EXPECTED_COMMON_GUARD_IDS,
     REALIZER_CONTRACT_IDS,
     TRUST_POLICY_IDS,
+    _build_experience_plan,
+    _build_graph,
     _common_guard_proof_id,
+    _ordered,
+    _planned_visible_source_ids,
 )
+from cocolon_meaning_experience_engine.source_kernel import freeze_text_source  # noqa: E402
 
 
 EXACT8: tuple[tuple[str, str, str, str, str], ...] = (
@@ -97,6 +108,96 @@ EXACT8: tuple[tuple[str, str, str, str, str], ...] = (
         "平穏",
         "medium",
     ),
+)
+
+# Public-safe early inputs are review material, not expected-output fixtures.
+# Their family labels remain outside every production request and selector.
+EARLY_KNOWN_EXACT4: tuple[tuple[str, str, str, str, str], ...] = (
+    (
+        "tension",
+        "続けたい気持ちはある。でも、もうかなり無理をしている気もする。",
+        "生活",
+        "不安",
+        "medium",
+    ),
+    (
+        "temporal_change",
+        "散歩に出たら、少し落ち着いた。ただ、いつもそうなるとは思っていない。",
+        "生活",
+        "不安",
+        "medium",
+    ),
+    (
+        "help_seeking",
+        "相談したい。でも、迷惑かもしれないと思うと切り出せない。",
+        "生活",
+        "不安",
+        "medium",
+    ),
+    (
+        "unfinished",
+        "仕事の話はした。でも、まだ気持ちが残っていて、どうしたいかは分からない。",
+        "生活",
+        "不安",
+        "medium",
+    ),
+)
+EARLY_STRUCTURAL_FAMILIES = tuple(row[0] for row in EARLY_KNOWN_EXACT4)
+EARLY_WITHHELD_INPUT_SCHEMA_VERSION = (
+    "cocolon.cmee.stage1.withheld_early_input.v1"
+)
+EARLY_KNOWN_VISIBLE_SCHEMA_VERSION = (
+    "cocolon.cmee.stage1.known_early_actual_visible.v1"
+)
+EARLY_WITHHELD_BODY_FREE_SCHEMA_VERSION = (
+    "cocolon.cmee.stage1.withheld_early_machine_body_free.v1"
+)
+EARLY_BODY_FREE_PACKET_SCHEMA_VERSION = (
+    "cocolon.cmee.stage1.early_actual_body_free.v1"
+)
+EARLY_HUMAN_READ_RESULT_SCHEMA_VERSION = (
+    "cocolon.cmee.stage1.early_human_read_result.v1"
+)
+EARLY_PRIVATE_PACKET_SCHEMA_VERSION = (
+    "cocolon.cmee.stage1.withheld_early_private_packet.v1"
+)
+EARLY_BOUNDED_UNIT_ID = (
+    "cocolon.cmee.stage1.additional_correction.route_a.20260824.v1"
+)
+WITHHELD_EARLY_PACKET_ID = (
+    "CMEE_STAGE1_ADDITIONAL_CORRECTION_WITHHELD_EARLY_20260824_V1"
+)
+WITHHELD_EARLY_PRIVATE_SLOT_ID = (
+    "PRIVATE_SLOT_WITHHELD_EARLY_20260824_V1"
+)
+STEP2_FROZEN_LANGUAGE_CORE_IDENTITY = (
+    "b74ea2f448011c8a721ed0b08bca8caa5c794e3f07c149612030451015953ae9"
+)
+EARLY_HUMAN_READ_RESULTS = (
+    "CLEAR",
+    "COMMON_DEFECT",
+    "ROUTE_LEVEL_CEILING",
+)
+EARLY_COMMON_DEFECT_CAUSE_COMPONENTS = (
+    "SUBJECTIVE_MEANING_PLANNER",
+    "DISCOURSE_PLANNER",
+    "RESPONSE_OBJECT_EXPRESSION",
+    "GROUNDED_JAPANESE_COMPOSER",
+    "WHOLE_ARTIFACT_NORMALIZER",
+)
+EARLY_COMMON_DEFECT_CLASSES = (
+    "SURFACE_SEAM",
+    "SAME_FAMILY_CONCENTRATION",
+    "GENERIC_SUBJECTIVE_CONTENT",
+    "NON_IDIOMATIC_SURFACE",
+)
+EARLY_ROUTE_LEVEL_CEILING_REASONS = (
+    "CASE_OR_PHRASE_FAMILY_RULE_REQUIRED",
+    "FINISHED_SENTENCE_REQUIRED",
+    "NEW_ENUM_OR_AXIS_REQUIRED",
+    "NEW_ASSET_FAMILY_REQUIRED",
+    "LISTED_OUTSIDE_PATH_OR_PROVIDER_REQUIRED",
+    "TYPED_PROFILE_CANNOT_RESOLVE_IDIOMATICITY",
 )
 
 STAGE1_KAREN_DERIVED_MUTATION_SET_ID = (
@@ -220,6 +321,548 @@ def _canonical_sha256(value: object) -> str:
             separators=(",", ":"),
         )
     )
+
+
+def _validate_early_repo_heads(
+    *,
+    runtime_repo_head: str,
+    design_repo_head: str,
+) -> None:
+    if any(
+        re.fullmatch(r"[0-9a-f]{40}", head) is None
+        for head in (runtime_repo_head, design_repo_head)
+    ):
+        raise ValueError("early private packet repo head binding invalid")
+
+
+def _validate_withheld_early_payload(
+    payload: object,
+) -> tuple[dict[str, str], ...]:
+    """Validate the private exact4 without retaining any caller identity field."""
+
+    expected_root_keys = {
+        "schema_version",
+        "selection_frozen_before_first_after",
+        "synthetic_non_identifying",
+        "cases",
+    }
+    if type(payload) is not dict or set(payload) != expected_root_keys:
+        raise ValueError("withheld early private input invalid")
+    if (
+        payload["schema_version"] != EARLY_WITHHELD_INPUT_SCHEMA_VERSION
+        or payload["selection_frozen_before_first_after"] is not True
+        or payload["synthetic_non_identifying"] is not True
+        or type(payload["cases"]) is not list
+        or len(payload["cases"]) != len(EARLY_STRUCTURAL_FAMILIES)
+    ):
+        raise ValueError("withheld early private input invalid")
+
+    expected_case_keys = {
+        "structural_family",
+        "memo",
+        "category",
+        "emotion",
+        "strength",
+    }
+    rows: list[dict[str, str]] = []
+    for row in payload["cases"]:
+        if type(row) is not dict or set(row) != expected_case_keys:
+            raise ValueError("withheld early private input invalid")
+        if any(type(row[key]) is not str or not row[key] for key in expected_case_keys):
+            raise ValueError("withheld early private input invalid")
+        if row["strength"] not in {"weak", "medium", "strong"}:
+            raise ValueError("withheld early private input invalid")
+        rows.append({key: row[key] for key in expected_case_keys})
+
+    if tuple(row["structural_family"] for row in rows) != EARLY_STRUCTURAL_FAMILIES:
+        raise ValueError("withheld early private input invalid")
+    memos = tuple(row["memo"] for row in rows)
+    if (
+        len(memos) != len(set(memos))
+        or set(memos).intersection(row[1] for row in EARLY_KNOWN_EXACT4)
+    ):
+        raise ValueError("withheld early private input invalid")
+    return tuple(rows)
+
+
+def _early_case_failure_summary(error: Exception) -> dict[str, Any]:
+    return {
+        "actual_japanese_reached": False,
+        "phase_a_and_b_validated": False,
+        "subjective_claim_count": 0,
+        "internal_candidate_count": 0,
+        "ranked_candidate_count": 0,
+        "material_alternate_present": False,
+        "normal_form_phase_exact6": False,
+        "normal_form_defect_free": False,
+        "normalization_idempotent": False,
+        "required_duty_coverage_exact": False,
+        "language_core_identity_match": False,
+        "machine_invariant_clear": False,
+        "failure_class": type(error).__name__,
+    }
+
+
+def _materialize_early_case(
+    *,
+    request_token: str,
+    structural_family: str,
+    memo: str,
+    category: str,
+    emotion: str,
+    strength: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Run one case through the final Step 2 production call graph only."""
+
+    raw = _raw(request_token, memo, category, emotion, strength)
+    public_source = {
+        "memo": memo,
+        "category": category,
+        "emotion": emotion,
+        "strength": strength,
+    }
+    try:
+        request = GenerationRequest(
+            request_id=f"req-{request_token}",
+            current_input_bundle=build_emlis_current_input_bundle(raw),
+            expected_source_record_id=str(raw["id"]),
+        )
+        source = freeze_text_source(request)
+        grounded_plan = build_final_stage1_grounded_observation_plan(
+            source.normalized_current_input,
+            evidence_spans=source.evidence_spans,
+        )
+        required_nuclei, required_relations, reception_targets = (
+            _planned_visible_source_ids(grounded_plan)
+        )
+        graph = _build_graph(
+            source,
+            grounded_plan,
+            _ordered((*required_nuclei, *reception_targets)),
+            required_relations,
+        )
+        parent_plan = _build_experience_plan(
+            source,
+            graph,
+            grounded_plan,
+            required_nuclei,
+            required_relations,
+            reception_targets,
+        )
+        phase_a = stage1_response.build_subjective_planning_inputs(
+            source=source,
+            grounded_graph=graph,
+            parent_plan=parent_plan,
+            grounded_plan=grounded_plan,
+        )
+        subjective_plan = stage1_composition.project_subjective_meaning_plan(
+            phase_a
+        )
+        projection = stage1_response.seal_stage1_projection(
+            phase_a,
+            subjective_plan,
+        )
+        phase_b = stage1_response.build_surface_composition_inputs(
+            phase_a,
+            projection,
+        )
+        result = stage1_composition.compose_stage1_from_projection(phase_b)
+        ranked = result.ranked_candidates
+        selected = result.selected_candidate
+        units = selected.sentence_units
+        selected_normalized = selected.normalized_artifact
+        repeated = stage1_composition.normalize_to_normal_form(
+            selected_normalized,
+            selected_normalized.layout_preference_seed,
+            phase_b,
+        )
+        idempotent = (
+            stage1_composition.canonical_normalized_bytes(selected_normalized)
+            == stage1_composition.canonical_normalized_bytes(repeated)
+        )
+        realized_duties = tuple(ref for unit in units for ref in unit.duty_refs)
+        required_coverage = (
+            len(realized_duties) == len(set(realized_duties))
+            and set(realized_duties) == set(selected_normalized.required_duty_refs)
+        )
+        exact6 = all(
+            candidate.normalized_artifact.normalization_phase_trace
+            == tuple(stage1_composition.NormalFormPhase)
+            for candidate in ranked
+        )
+        defect_free = all(
+            candidate.normalized_artifact.correctable_defect_rows == ()
+            for candidate in ranked
+        )
+        japanese_reached = bool(units) and all(
+            unit.text.endswith("。")
+            and re.search(r"[ぁ-んァ-ヶ一-龯]", unit.text) is not None
+            for unit in units
+        )
+        identity_match = (
+            result.language_core_identity
+            == stage1_composition.LANGUAGE_CORE_IDENTITY
+            == STEP2_FROZEN_LANGUAGE_CORE_IDENTITY
+        )
+        ranked_count = len(ranked)
+        summary = {
+            "actual_japanese_reached": japanese_reached,
+            "phase_a_and_b_validated": True,
+            "subjective_claim_count": len(subjective_plan.subjective_claim_rows),
+            "internal_candidate_count": result.internal_candidate_count,
+            "ranked_candidate_count": ranked_count,
+            "material_alternate_present": (
+                result.internal_candidate_count >= 2 and ranked_count >= 2
+            ),
+            "normal_form_phase_exact6": exact6,
+            "normal_form_defect_free": defect_free,
+            "normalization_idempotent": idempotent,
+            "required_duty_coverage_exact": required_coverage,
+            "language_core_identity_match": identity_match,
+            "machine_invariant_clear": all(
+                (
+                    japanese_reached,
+                    bool(subjective_plan.subjective_claim_rows),
+                    result.internal_candidate_count >= ranked_count,
+                    1 <= ranked_count <= 2,
+                    tuple(row.rank for row in ranked)
+                    == tuple(range(1, ranked_count + 1)),
+                    selected.rank == 1,
+                    exact6,
+                    defect_free,
+                    idempotent,
+                    required_coverage,
+                    identity_match,
+                )
+            ),
+            "failure_class": None,
+        }
+        actual_japanese = "\n".join(unit.text for unit in units)
+    except Exception as error:  # The body-free surface never serializes repr(error).
+        summary = _early_case_failure_summary(error)
+        actual_japanese = ""
+
+    public_case = {
+        "structural_family": structural_family,
+        "synthetic_input": public_source,
+        "actual_japanese": actual_japanese,
+        "machine_invariant": summary,
+    }
+    private_case = {
+        "structural_family": structural_family,
+        "synthetic_input_private": raw,
+        "candidate_private": actual_japanese,
+        "machine_invariant_body_free": summary,
+    }
+    return public_case, private_case
+
+
+def _early_private_packet_binding(
+    *,
+    runtime_repo_head: str,
+    design_repo_head: str,
+    withheld_set_digest: str,
+) -> dict[str, Any]:
+    _validate_early_repo_heads(
+        runtime_repo_head=runtime_repo_head,
+        design_repo_head=design_repo_head,
+    )
+    material = {
+        "binding_version": "cocolon.cmee.stage1.withheld_early_binding.v1",
+        "packet_id": WITHHELD_EARLY_PACKET_ID,
+        "bounded_unit_id": EARLY_BOUNDED_UNIT_ID,
+        "runtime_repo_head": runtime_repo_head,
+        "design_repo_head": design_repo_head,
+        "language_core_identity": stage1_composition.LANGUAGE_CORE_IDENTITY,
+        "known_structural_families": EARLY_STRUCTURAL_FAMILIES,
+        "withheld_set_digest": withheld_set_digest,
+        "runner_identity": {
+            "repo_relative_path": str(
+                Path(__file__).resolve().relative_to(CHECKOUT_ROOT)
+            ),
+            "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        },
+    }
+    return {**material, "packet_binding_sha256": _canonical_sha256(material)}
+
+
+def run_early_actual(
+    *,
+    withheld_private_payload: object,
+    runtime_repo_head: str,
+    design_repo_head: str,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Materialize known exact4 plus private withheld exact4 through one core."""
+
+    _validate_early_repo_heads(
+        runtime_repo_head=runtime_repo_head,
+        design_repo_head=design_repo_head,
+    )
+    withheld_rows = _validate_withheld_early_payload(withheld_private_payload)
+    fresh_identity = stage1_composition.compute_language_core_identity()
+    if (
+        fresh_identity != stage1_composition.LANGUAGE_CORE_IDENTITY
+        or fresh_identity != STEP2_FROZEN_LANGUAGE_CORE_IDENTITY
+    ):
+        raise RuntimeError("early language core identity mismatch")
+
+    known_public_cases: list[dict[str, Any]] = []
+    known_private_cases: list[dict[str, Any]] = []
+    for index, (family, memo, category, emotion, strength) in enumerate(
+        EARLY_KNOWN_EXACT4,
+        start=1,
+    ):
+        public_case, private_case = _materialize_early_case(
+            request_token=f"early-known-{index:02d}",
+            structural_family=family,
+            memo=memo,
+            category=category,
+            emotion=emotion,
+            strength=strength,
+        )
+        known_public_cases.append(public_case)
+        known_private_cases.append(private_case)
+
+    withheld_set_digest = _canonical_sha256(
+        {
+            "schema_version": EARLY_WITHHELD_INPUT_SCHEMA_VERSION,
+            "selection_frozen_before_first_after": True,
+            "synthetic_non_identifying": True,
+            "cases": withheld_rows,
+        }
+    )
+    withheld_private_cases: list[dict[str, Any]] = []
+    withheld_summaries: list[dict[str, Any]] = []
+    for index, row in enumerate(withheld_rows, start=1):
+        _public_case, private_case = _materialize_early_case(
+            request_token=f"early-withheld-{index:02d}",
+            structural_family=row["structural_family"],
+            memo=row["memo"],
+            category=row["category"],
+            emotion=row["emotion"],
+            strength=row["strength"],
+        )
+        withheld_private_cases.append(private_case)
+        withheld_summaries.append(private_case["machine_invariant_body_free"])
+
+    known_summaries = [row["machine_invariant"] for row in known_public_cases]
+    known_clear_count = sum(row["machine_invariant_clear"] for row in known_summaries)
+    withheld_clear_count = sum(
+        row["machine_invariant_clear"] for row in withheld_summaries
+    )
+    family_counts = {
+        family: sum(row["structural_family"] == family for row in withheld_rows)
+        for family in EARLY_STRUCTURAL_FAMILIES
+    }
+    withheld_body_free = {
+        "schema_version": EARLY_WITHHELD_BODY_FREE_SCHEMA_VERSION,
+        "packet_id": WITHHELD_EARLY_PACKET_ID,
+        "bounded_unit_id": EARLY_BOUNDED_UNIT_ID,
+        "language_core_identity": fresh_identity,
+        "withheld_set_count": len(withheld_rows),
+        "structural_family_counts": family_counts,
+        "withheld_set_digest": withheld_set_digest,
+        "selection_frozen_before_first_after": True,
+        "synthetic_non_identifying_attested": True,
+        "actual_japanese_reached_count": sum(
+            row["actual_japanese_reached"] for row in withheld_summaries
+        ),
+        "machine_invariant_clear_count": withheld_clear_count,
+        "normal_form_phase_exact6_count": sum(
+            row["normal_form_phase_exact6"] for row in withheld_summaries
+        ),
+        "normal_form_defect_free_count": sum(
+            row["normal_form_defect_free"] for row in withheld_summaries
+        ),
+        "normalization_idempotent_count": sum(
+            row["normalization_idempotent"] for row in withheld_summaries
+        ),
+        "required_duty_coverage_exact_count": sum(
+            row["required_duty_coverage_exact"] for row in withheld_summaries
+        ),
+        "material_alternate_case_count": sum(
+            row["material_alternate_present"] for row in withheld_summaries
+        ),
+        "machine_failure_classes": sorted(
+            {
+                row["failure_class"]
+                for row in withheld_summaries
+                if row["failure_class"] is not None
+            }
+        ),
+        "machine_invariant_result": (
+            "CLEAR"
+            if withheld_clear_count == len(withheld_rows)
+            else "FAIL"
+        ),
+        "body_payload_present": False,
+        "private_text_published": False,
+        "body_full_readers": "PRO_ONLY",
+        "ultra_withheld_body_access": 0,
+        "mash_withheld_body_access": 0,
+        "formal_exact8_denominator_effect": 0,
+        "product_acceptance_denominator_effect": 0,
+        "numeric_score_or_pass_rate": 0,
+        "product_credit": 0,
+        "candidate_ready": False,
+        "production_effect": 0,
+        "automatic_progression": False,
+    }
+    known_visible = {
+        "schema_version": EARLY_KNOWN_VISIBLE_SCHEMA_VERSION,
+        "case_count": len(known_public_cases),
+        "structural_family_counts": {
+            family: sum(
+                row["structural_family"] == family for row in known_public_cases
+            )
+            for family in EARLY_STRUCTURAL_FAMILIES
+        },
+        "machine_invariant_clear_count": known_clear_count,
+        "machine_invariant_result": (
+            "CLEAR"
+            if known_clear_count == len(known_public_cases)
+            else "FAIL"
+        ),
+        "material_alternate_case_count": sum(
+            row["material_alternate_present"] for row in known_summaries
+        ),
+        "cases": known_public_cases,
+    }
+    known_body_free = {
+        "case_count": len(known_public_cases),
+        "structural_family_counts": known_visible["structural_family_counts"],
+        "actual_japanese_reached_count": sum(
+            row["actual_japanese_reached"] for row in known_summaries
+        ),
+        "machine_invariant_clear_count": known_clear_count,
+        "machine_invariant_result": known_visible["machine_invariant_result"],
+        "material_alternate_case_count": known_visible[
+            "material_alternate_case_count"
+        ],
+        "body_payload_present": False,
+    }
+    body_free_packet = {
+        "schema_version": EARLY_BODY_FREE_PACKET_SCHEMA_VERSION,
+        "packet_id": WITHHELD_EARLY_PACKET_ID,
+        "bounded_unit_id": EARLY_BOUNDED_UNIT_ID,
+        "runtime_repo_head": runtime_repo_head,
+        "design_repo_head": design_repo_head,
+        "language_core_identity": fresh_identity,
+        "known_exact4_body_free": known_body_free,
+        "withheld_exact4_body_free": withheld_body_free,
+        "early_human_read_result": "NOT_RUN",
+        "early_actual_status": "NOT_RUN",
+        "body_payload_present": False,
+        "private_text_published": False,
+    }
+    private_packet = {
+        "schema_version": EARLY_PRIVATE_PACKET_SCHEMA_VERSION,
+        "packet_id": WITHHELD_EARLY_PACKET_ID,
+        "private_slot_id": WITHHELD_EARLY_PRIVATE_SLOT_ID,
+        "private_body_full": True,
+        "private_packet_binding": _early_private_packet_binding(
+            runtime_repo_head=runtime_repo_head,
+            design_repo_head=design_repo_head,
+            withheld_set_digest=withheld_set_digest,
+        ),
+        "language_core_identity": fresh_identity,
+        "selection_frozen_before_first_after": True,
+        "known_cases": known_private_cases,
+        "withheld_cases": withheld_private_cases,
+        "human_language_viability_read": {
+            "body_full_readers": "PRO_ONLY",
+            "early_human_read_result": None,
+            "defect_class": None,
+            "cause_component": None,
+            "ceiling_reason": None,
+        },
+    }
+    return body_free_packet, known_visible, private_packet
+
+
+def validate_early_human_read_result(
+    payload: object,
+    *,
+    body_free_machine_packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate Pro's sole body-free human transition input exact1."""
+
+    expected_keys = (
+        "schema_version",
+        "packet_id",
+        "bounded_unit_id",
+        "runtime_repo_head",
+        "design_repo_head",
+        "language_core_identity",
+        "withheld_set_digest",
+        "reviewed_known_count",
+        "reviewed_withheld_count",
+        "body_payload_present",
+        "early_human_read_result",
+        "defect_class",
+        "cause_component",
+        "ceiling_reason",
+    )
+    if type(payload) is not dict or set(payload) != set(expected_keys):
+        raise ValueError("early human read result invalid")
+    if type(body_free_machine_packet) is not dict:
+        raise ValueError("early human read machine binding invalid")
+    known = body_free_machine_packet.get("known_exact4_body_free")
+    withheld = body_free_machine_packet.get("withheld_exact4_body_free")
+    if type(known) is not dict or type(withheld) is not dict:
+        raise ValueError("early human read machine binding invalid")
+    machine_bindings = {
+        "packet_id": body_free_machine_packet.get("packet_id"),
+        "bounded_unit_id": body_free_machine_packet.get("bounded_unit_id"),
+        "runtime_repo_head": body_free_machine_packet.get("runtime_repo_head"),
+        "design_repo_head": body_free_machine_packet.get("design_repo_head"),
+        "language_core_identity": body_free_machine_packet.get(
+            "language_core_identity"
+        ),
+        "withheld_set_digest": withheld.get("withheld_set_digest"),
+    }
+    if (
+        body_free_machine_packet.get("schema_version")
+        != EARLY_BODY_FREE_PACKET_SCHEMA_VERSION
+        or body_free_machine_packet.get("packet_id")
+        != WITHHELD_EARLY_PACKET_ID
+        or body_free_machine_packet.get("body_payload_present") is not False
+        or known.get("case_count") != 4
+        or withheld.get("withheld_set_count") != 4
+        or known.get("machine_invariant_result") != "CLEAR"
+        or withheld.get("machine_invariant_result") != "CLEAR"
+        or any(payload[key] != value for key, value in machine_bindings.items())
+        or payload["schema_version"] != EARLY_HUMAN_READ_RESULT_SCHEMA_VERSION
+        or payload["reviewed_known_count"] != 4
+        or payload["reviewed_withheld_count"] != 4
+        or payload["body_payload_present"] is not False
+        or payload["early_human_read_result"] not in EARLY_HUMAN_READ_RESULTS
+    ):
+        raise ValueError("early human read result invalid")
+
+    result = payload["early_human_read_result"]
+    defect_class = payload["defect_class"]
+    cause = payload["cause_component"]
+    ceiling = payload["ceiling_reason"]
+    if result == "CLEAR":
+        conditional_valid = (
+            defect_class is None and cause is None and ceiling is None
+        )
+    elif result == "COMMON_DEFECT":
+        conditional_valid = (
+            defect_class in EARLY_COMMON_DEFECT_CLASSES
+            and cause in EARLY_COMMON_DEFECT_CAUSE_COMPONENTS
+            and ceiling is None
+        )
+    else:
+        conditional_valid = (
+            defect_class is None
+            and cause is None
+            and ceiling in EARLY_ROUTE_LEVEL_CEILING_REASONS
+        )
+    if not conditional_valid:
+        raise ValueError("early human read result invalid")
+    return {key: payload[key] for key in expected_keys}
 
 
 def _private_packet_binding(
@@ -979,12 +1622,176 @@ def _private_output_target(
     return target
 
 
+def _private_input_target(
+    parser: argparse.ArgumentParser,
+    requested: Path,
+) -> Path:
+    """Resolve one regular, owner-only input below the isolated private root."""
+
+    root = PRIVATE_OUTPUT_ROOT.resolve()
+    checkout = CHECKOUT_ROOT.resolve()
+    if requested.is_symlink():
+        parser.error("private input target is not isolated")
+    try:
+        target = requested.resolve(strict=True)
+        target_stat = target.stat(follow_symlinks=False)
+    except OSError:
+        parser.error("private input target is unavailable")
+    if (
+        _paths_overlap(root, checkout)
+        or target == root
+        or root not in target.parents
+        or _paths_overlap(target, checkout)
+        or not stat.S_ISREG(target_stat.st_mode)
+        or stat.S_IMODE(target_stat.st_mode) != 0o600
+        or not 0 < target_stat.st_size <= 64 * 1024
+    ):
+        parser.error("private input target is not isolated")
+    return target
+
+
+def _require_new_private_output_targets(
+    parser: argparse.ArgumentParser,
+    targets: tuple[Path, ...],
+) -> None:
+    """Reject an already materialized early output before any body is read."""
+
+    for target in targets:
+        try:
+            target.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            parser.error("early actual private output target is unavailable")
+        parser.error("early actual private output target already exists")
+
+
+def _read_private_json(target: Path) -> object:
+    no_follow = getattr(os, "O_NOFOLLOW", 0)
+    file_fd = os.open(target, os.O_RDONLY | no_follow)
+    try:
+        file_stat = os.fstat(file_fd)
+        if (
+            not stat.S_ISREG(file_stat.st_mode)
+            or stat.S_IMODE(file_stat.st_mode) != 0o600
+            or not 0 < file_stat.st_size <= 64 * 1024
+        ):
+            raise ValueError("withheld early private input invalid")
+        with os.fdopen(file_fd, "r", encoding="utf-8") as handle:
+            file_fd = -1
+            return json.load(handle)
+    finally:
+        if file_fd >= 0:
+            os.close(file_fd)
+
+
+def _write_private_json_exclusive(
+    parser: argparse.ArgumentParser,
+    target: Path,
+    payload: Mapping[str, Any],
+) -> None:
+    root = PRIVATE_OUTPUT_ROOT.resolve()
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if _paths_overlap(root, CHECKOUT_ROOT.resolve()):
+        parser.error("private output target is not isolated")
+    os.chmod(root, 0o700)
+    no_follow = getattr(os, "O_NOFOLLOW", 0)
+    directory = getattr(os, "O_DIRECTORY", 0)
+    relative_parts = target.relative_to(root).parts
+    directory_fd = os.open(root, os.O_RDONLY | directory | no_follow)
+    try:
+        for part in relative_parts[:-1]:
+            try:
+                os.mkdir(part, mode=0o700, dir_fd=directory_fd)
+            except FileExistsError:
+                pass
+            next_directory_fd = os.open(
+                part,
+                os.O_RDONLY | directory | no_follow,
+                dir_fd=directory_fd,
+            )
+            os.close(directory_fd)
+            directory_fd = next_directory_fd
+            os.fchmod(directory_fd, 0o700)
+        output_fd = os.open(
+            relative_parts[-1],
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | no_follow,
+            0o600,
+            dir_fd=directory_fd,
+        )
+        with os.fdopen(output_fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    finally:
+        os.close(directory_fd)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--body-full-output", type=Path)
     parser.add_argument("--runtime-repo-head")
     parser.add_argument("--design-repo-head")
+    parser.add_argument("--early-actual", action="store_true")
+    parser.add_argument("--withheld-input", type=Path)
+    parser.add_argument("--known-visible-output", type=Path)
     args = parser.parse_args()
+    if args.early_actual:
+        if (
+            args.withheld_input is None
+            or args.known_visible_output is None
+            or args.body_full_output is None
+        ):
+            parser.error("early actual requires isolated input and exact2 output")
+        input_target = _private_input_target(parser, args.withheld_input)
+        known_output_target = _private_output_target(
+            parser,
+            args.known_visible_output,
+        )
+        private_output_target = _private_output_target(
+            parser,
+            args.body_full_output,
+        )
+        if len({input_target, known_output_target, private_output_target}) != 3:
+            parser.error("early actual input and exact2 output must be distinct")
+        _require_new_private_output_targets(
+            parser,
+            (known_output_target, private_output_target),
+        )
+        if (
+            re.fullmatch(r"[0-9a-f]{40}", str(args.runtime_repo_head or ""))
+            is None
+            or re.fullmatch(r"[0-9a-f]{40}", str(args.design_repo_head or ""))
+            is None
+        ):
+            parser.error("early private packet repo head binding invalid")
+        try:
+            withheld_payload = _read_private_json(input_target)
+            body_free_packet, known_visible, private_packet = run_early_actual(
+                withheld_private_payload=withheld_payload,
+                runtime_repo_head=args.runtime_repo_head,
+                design_repo_head=args.design_repo_head,
+            )
+            _write_private_json_exclusive(
+                parser,
+                known_output_target,
+                known_visible,
+            )
+            _write_private_json_exclusive(
+                parser,
+                private_output_target,
+                private_packet,
+            )
+        except (OSError, ValueError, RuntimeError, json.JSONDecodeError):
+            parser.error("early actual private materialization failed")
+        print(json.dumps(body_free_packet, ensure_ascii=False, sort_keys=True))
+        known_result = body_free_packet["known_exact4_body_free"][
+            "machine_invariant_result"
+        ]
+        withheld_result = body_free_packet["withheld_exact4_body_free"][
+            "machine_invariant_result"
+        ]
+        return 0 if known_result == withheld_result == "CLEAR" else 1
+    if args.withheld_input is not None or args.known_visible_output is not None:
+        parser.error("early-only input or output requires early actual mode")
     target: Path | None = None
     if args.body_full_output is not None:
         target = _private_output_target(parser, args.body_full_output)

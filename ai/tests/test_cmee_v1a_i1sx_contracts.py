@@ -9162,5 +9162,633 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         self.assertRegex(module.LANGUAGE_CORE_IDENTITY, r"^[0-9a-f]{64}$")
 
 
+class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
+    _RUNTIME_HEAD = "a" * 40
+    _DESIGN_HEAD = "b" * 40
+
+    @staticmethod
+    def _withheld_payload() -> dict[str, object]:
+        return {
+            "schema_version": (
+                candidate_run_module.EARLY_WITHHELD_INPUT_SCHEMA_VERSION
+            ),
+            "selection_frozen_before_first_after": True,
+            "synthetic_non_identifying": True,
+            "cases": [
+                {
+                    "structural_family": family,
+                    # A leading source whitespace creates a non-secret contract
+                    # input without tracking a withheld fixture body.
+                    "memo": f" {memo}",
+                    "category": category,
+                    "emotion": emotion,
+                    "strength": strength,
+                }
+                for family, memo, category, emotion, strength
+                in candidate_run_module.EARLY_KNOWN_EXACT4
+            ],
+        }
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        (
+            cls.body_free_packet,
+            cls.known_visible_packet,
+            cls.private_packet,
+        ) = candidate_run_module.run_early_actual(
+            withheld_private_payload=cls._withheld_payload(),
+            runtime_repo_head=cls._RUNTIME_HEAD,
+            design_repo_head=cls._DESIGN_HEAD,
+        )
+
+    def test_early_exact8_is_body_isolated_identity_bound_and_machine_clear(
+        self,
+    ) -> None:
+        body_free = self.body_free_packet
+        known = body_free["known_exact4_body_free"]
+        withheld = body_free["withheld_exact4_body_free"]
+        self.assertEqual(
+            body_free["schema_version"],
+            candidate_run_module.EARLY_BODY_FREE_PACKET_SCHEMA_VERSION,
+        )
+        self.assertEqual(
+            body_free["language_core_identity"],
+            candidate_run_module.STEP2_FROZEN_LANGUAGE_CORE_IDENTITY,
+        )
+        self.assertEqual(
+            stage1_composition_module.compute_language_core_identity(),
+            candidate_run_module.STEP2_FROZEN_LANGUAGE_CORE_IDENTITY,
+        )
+        for result in (known, withheld):
+            self.assertEqual(result["machine_invariant_result"], "CLEAR")
+            self.assertEqual(result["machine_invariant_clear_count"], 4)
+            self.assertEqual(result["actual_japanese_reached_count"], 4)
+            self.assertGreaterEqual(result["material_alternate_case_count"], 1)
+        self.assertEqual(withheld["normal_form_phase_exact6_count"], 4)
+        self.assertEqual(withheld["normal_form_defect_free_count"], 4)
+        self.assertEqual(withheld["normalization_idempotent_count"], 4)
+        self.assertEqual(withheld["required_duty_coverage_exact_count"], 4)
+        self.assertFalse(body_free["body_payload_present"])
+        self.assertFalse(body_free["private_text_published"])
+        self.assertEqual(body_free["early_human_read_result"], "NOT_RUN")
+        self.assertEqual(body_free["early_actual_status"], "NOT_RUN")
+
+        serialized = json.dumps(body_free, ensure_ascii=False, sort_keys=True)
+        forbidden_keys: list[str] = []
+
+        def collect_keys(value: object) -> None:
+            if type(value) is dict:
+                for key, child in value.items():
+                    forbidden_keys.append(str(key))
+                    collect_keys(child)
+            elif type(value) in {list, tuple}:
+                for child in value:
+                    collect_keys(child)
+
+        collect_keys(body_free)
+        self.assertTrue(
+            {
+                "memo",
+                "synthetic_input",
+                "synthetic_input_private",
+                "actual_japanese",
+                "candidate_private",
+                "private_slot_id",
+                "private_packet_binding",
+            }.isdisjoint(forbidden_keys)
+        )
+        self.assertEqual(
+            tuple(key for key in forbidden_keys if key.endswith("_digest")),
+            ("withheld_set_digest",),
+        )
+        self.assertTrue(all("locator" not in key.lower() for key in forbidden_keys))
+
+        private_values = [
+            str(row[key])
+            for row in self._withheld_payload()["cases"]
+            for key in ("memo", "category", "emotion", "strength")
+        ]
+        private_values.extend(
+            row["candidate_private"]
+            for row in self.private_packet["withheld_cases"]
+            if row["candidate_private"]
+        )
+        known_values = [
+            row["actual_japanese"]
+            for row in self.known_visible_packet["cases"]
+            if row["actual_japanese"]
+        ]
+        self.assertTrue(
+            all(value not in serialized for value in (*private_values, *known_values))
+        )
+        self.assertEqual(len(self.known_visible_packet["cases"]), 4)
+        self.assertTrue(all(known_values))
+        self.assertEqual(len(self.private_packet["withheld_cases"]), 4)
+
+    def test_early_exact8_calls_only_the_final_step2_production_chain(self) -> None:
+        original_phase_a = stage1_response_module.build_subjective_planning_inputs
+        original_compose = stage1_composition_module.compose_stage1_from_projection
+        with (
+            patch.object(
+                candidate_run_module.MeaningExperienceEngine,
+                "generate",
+                side_effect=AssertionError("active engine called by early harness"),
+            ) as active_engine,
+            patch.object(
+                stage1_response_module,
+                "compile_stage1_response",
+                side_effect=AssertionError("active v1 compiler called by early harness"),
+            ) as active_compiler,
+            patch.object(
+                stage1_response_module,
+                "build_stage1_semantic_projection",
+                side_effect=AssertionError("legacy projection called by early harness"),
+            ) as legacy_projection,
+            patch.object(
+                stage1_response_module,
+                "build_stage1_realization_candidate_set",
+                side_effect=AssertionError("legacy realization called by early harness"),
+            ) as legacy_realization,
+            patch.object(
+                stage1_response_module,
+                "build_subjective_planning_inputs",
+                wraps=original_phase_a,
+            ) as phase_a_builder,
+            patch.object(
+                stage1_composition_module,
+                "compose_stage1_from_projection",
+                wraps=original_compose,
+            ) as final_composer,
+        ):
+            body_free, _known_visible, _private = (
+                candidate_run_module.run_early_actual(
+                    withheld_private_payload=self._withheld_payload(),
+                    runtime_repo_head=self._RUNTIME_HEAD,
+                    design_repo_head=self._DESIGN_HEAD,
+                )
+            )
+        active_engine.assert_not_called()
+        active_compiler.assert_not_called()
+        legacy_projection.assert_not_called()
+        legacy_realization.assert_not_called()
+        self.assertEqual(phase_a_builder.call_count, 8)
+        self.assertEqual(final_composer.call_count, 8)
+        self.assertEqual(
+            body_free["known_exact4_body_free"]["machine_invariant_result"],
+            "CLEAR",
+        )
+        self.assertEqual(
+            body_free["withheld_exact4_body_free"]["machine_invariant_result"],
+            "CLEAR",
+        )
+
+    def test_withheld_exact4_private_schema_is_closed_and_identity_free(self) -> None:
+        valid = self._withheld_payload()
+
+        def copied() -> dict[str, object]:
+            return json.loads(json.dumps(valid, ensure_ascii=False))
+
+        invalid_rows: list[dict[str, object]] = []
+        extra_root = copied()
+        extra_root["profile"] = "forbidden"
+        invalid_rows.append(extra_root)
+        missing_attestation = copied()
+        del missing_attestation["synthetic_non_identifying"]
+        invalid_rows.append(missing_attestation)
+        reordered = copied()
+        reordered["cases"] = list(reversed(reordered["cases"]))
+        invalid_rows.append(reordered)
+        identifying = copied()
+        identifying["cases"][0]["user_id"] = "forbidden"
+        invalid_rows.append(identifying)
+        expected_text = copied()
+        expected_text["cases"][0]["expected_text"] = "forbidden"
+        invalid_rows.append(expected_text)
+        duplicate_known = copied()
+        duplicate_known["cases"][0]["memo"] = (
+            candidate_run_module.EARLY_KNOWN_EXACT4[0][1]
+        )
+        invalid_rows.append(duplicate_known)
+        invalid_strength = copied()
+        invalid_strength["cases"][0]["strength"] = "extreme"
+        invalid_rows.append(invalid_strength)
+        nonlist = copied()
+        nonlist["cases"] = tuple(nonlist["cases"])
+        invalid_rows.append(nonlist)
+        for invalid in invalid_rows:
+            with self.subTest(keys=tuple(invalid)), self.assertRaisesRegex(
+                ValueError,
+                "withheld early private input invalid",
+            ):
+                candidate_run_module._validate_withheld_early_payload(invalid)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "early private packet repo head binding invalid",
+        ):
+            candidate_run_module.run_early_actual(
+                withheld_private_payload=valid,
+                runtime_repo_head="not-a-head",
+                design_repo_head=self._DESIGN_HEAD,
+            )
+
+    def test_pro_body_free_human_result_is_exact_and_machine_bound(self) -> None:
+        withheld = self.body_free_packet["withheld_exact4_body_free"]
+        base = {
+            "schema_version": (
+                candidate_run_module.EARLY_HUMAN_READ_RESULT_SCHEMA_VERSION
+            ),
+            "packet_id": candidate_run_module.WITHHELD_EARLY_PACKET_ID,
+            "bounded_unit_id": candidate_run_module.EARLY_BOUNDED_UNIT_ID,
+            "runtime_repo_head": self._RUNTIME_HEAD,
+            "design_repo_head": self._DESIGN_HEAD,
+            "language_core_identity": (
+                candidate_run_module.STEP2_FROZEN_LANGUAGE_CORE_IDENTITY
+            ),
+            "withheld_set_digest": withheld["withheld_set_digest"],
+            "reviewed_known_count": 4,
+            "reviewed_withheld_count": 4,
+            "body_payload_present": False,
+            "early_human_read_result": "CLEAR",
+            "defect_class": None,
+            "cause_component": None,
+            "ceiling_reason": None,
+        }
+        validated = candidate_run_module.validate_early_human_read_result(
+            base,
+            body_free_machine_packet=self.body_free_packet,
+        )
+        self.assertEqual(validated, base)
+
+        for defect_class in candidate_run_module.EARLY_COMMON_DEFECT_CLASSES:
+            common = {
+                **base,
+                "early_human_read_result": "COMMON_DEFECT",
+                "defect_class": defect_class,
+                "cause_component": (
+                    candidate_run_module.EARLY_COMMON_DEFECT_CAUSE_COMPONENTS[0]
+                ),
+            }
+            self.assertEqual(
+                candidate_run_module.validate_early_human_read_result(
+                    common,
+                    body_free_machine_packet=self.body_free_packet,
+                ),
+                common,
+            )
+        for reason in candidate_run_module.EARLY_ROUTE_LEVEL_CEILING_REASONS:
+            ceiling = {
+                **base,
+                "early_human_read_result": "ROUTE_LEVEL_CEILING",
+                "ceiling_reason": reason,
+            }
+            self.assertEqual(
+                candidate_run_module.validate_early_human_read_result(
+                    ceiling,
+                    body_free_machine_packet=self.body_free_packet,
+                ),
+                ceiling,
+            )
+
+        invalid_rows = (
+            {**base, "runtime_repo_head": "c" * 40},
+            {**base, "withheld_set_digest": "0" * 64},
+            {**base, "reviewed_withheld_count": 3},
+            {**base, "body_payload_present": True},
+            {**base, "review_note": "free text is forbidden"},
+            {**base, "early_human_read_result": "PASS"},
+            {**base, "defect_class": "SURFACE_SEAM"},
+            {
+                **base,
+                "early_human_read_result": "COMMON_DEFECT",
+                "defect_class": "SURFACE_SEAM",
+                "cause_component": "CASE_PATCH",
+            },
+            {
+                **base,
+                "early_human_read_result": "ROUTE_LEVEL_CEILING",
+                "ceiling_reason": "NEW_SENTENCE",
+            },
+        )
+        for invalid in invalid_rows:
+            with self.subTest(result=invalid.get("early_human_read_result")):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "early human read result invalid",
+                ):
+                    candidate_run_module.validate_early_human_read_result(
+                        invalid,
+                        body_free_machine_packet=self.body_free_packet,
+                    )
+
+    def test_early_cli_stdout_is_body_free_and_known_body_is_explicit_output(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            private_root = (Path(temporary_directory) / "private-root").resolve()
+            private_root.mkdir(mode=0o700)
+            private_root.chmod(0o700)
+            input_path = private_root / "input.json"
+            input_path.write_text(
+                json.dumps(self._withheld_payload(), ensure_ascii=False),
+                encoding="utf-8",
+            )
+            input_path.chmod(0o600)
+            known_output = private_root / "known.json"
+            private_output = private_root / "private.json"
+            stdout = io.StringIO()
+            with (
+                patch.object(
+                    candidate_run_module,
+                    "PRIVATE_OUTPUT_ROOT",
+                    private_root,
+                ),
+                patch.object(
+                    candidate_run_module.sys,
+                    "argv",
+                    (
+                        "cmee-v1a-candidate-run",
+                        "--early-actual",
+                        "--withheld-input",
+                        str(input_path),
+                        "--known-visible-output",
+                        str(known_output),
+                        "--body-full-output",
+                        str(private_output),
+                        "--runtime-repo-head",
+                        self._RUNTIME_HEAD,
+                        "--design-repo-head",
+                        self._DESIGN_HEAD,
+                    ),
+                ),
+                patch.object(candidate_run_module.sys, "stdout", stdout),
+            ):
+                self.assertEqual(candidate_run_module.main(), 0)
+
+            body_free = json.loads(stdout.getvalue())
+            known = json.loads(known_output.read_text(encoding="utf-8"))
+            private = json.loads(private_output.read_text(encoding="utf-8"))
+            self.assertEqual(
+                body_free["known_exact4_body_free"]["machine_invariant_result"],
+                "CLEAR",
+            )
+            serialized = json.dumps(body_free, ensure_ascii=False, sort_keys=True)
+            for case in known["cases"]:
+                self.assertNotIn(case["synthetic_input"]["memo"], serialized)
+                self.assertNotIn(case["actual_japanese"], serialized)
+            for case in private["withheld_cases"]:
+                self.assertNotIn(case["synthetic_input_private"]["memo"], serialized)
+                self.assertNotIn(case["candidate_private"], serialized)
+            self.assertEqual(known_output.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(private_output.stat().st_mode & 0o777, 0o600)
+            self.assertNotIn(str(known_output), serialized)
+            self.assertNotIn(str(private_output), serialized)
+
+    def test_early_private_input_rejects_final_symlink_and_non_owner_mode(
+        self,
+    ) -> None:
+        body_sentinel = "PRIVATE_BODY_SENTINEL_DO_NOT_PRINT"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            private_root = (Path(temporary_directory) / "private-root").resolve()
+            private_root.mkdir(mode=0o700)
+            private_root.chmod(0o700)
+            valid_target = private_root / "valid-target.json"
+            valid_target.write_text(
+                json.dumps({"memo": body_sentinel}),
+                encoding="utf-8",
+            )
+            valid_target.chmod(0o600)
+            final_symlink = private_root / "final-symlink.json"
+            final_symlink.symlink_to(valid_target)
+            non_owner_mode = private_root / "non-owner-mode.json"
+            non_owner_mode.write_text(
+                json.dumps({"memo": body_sentinel}),
+                encoding="utf-8",
+            )
+            non_owner_mode.chmod(0o640)
+
+            for scenario, input_path in (
+                ("final_symlink", final_symlink),
+                ("mode_not_0600", non_owner_mode),
+            ):
+                with self.subTest(scenario=scenario):
+                    stdout = io.StringIO()
+                    stderr = io.StringIO()
+                    known_output = private_root / f"{scenario}-known.json"
+                    private_output = private_root / f"{scenario}-private.json"
+                    with (
+                        patch.object(
+                            candidate_run_module,
+                            "PRIVATE_OUTPUT_ROOT",
+                            private_root,
+                        ),
+                        patch.object(
+                            candidate_run_module.sys,
+                            "argv",
+                            (
+                                "cmee-v1a-candidate-run",
+                                "--early-actual",
+                                "--withheld-input",
+                                str(input_path),
+                                "--known-visible-output",
+                                str(known_output),
+                                "--body-full-output",
+                                str(private_output),
+                                "--runtime-repo-head",
+                                self._RUNTIME_HEAD,
+                                "--design-repo-head",
+                                self._DESIGN_HEAD,
+                            ),
+                        ),
+                        patch.object(candidate_run_module.sys, "stdout", stdout),
+                        patch.object(candidate_run_module.sys, "stderr", stderr),
+                        patch.object(
+                            candidate_run_module,
+                            "run_early_actual",
+                            side_effect=AssertionError(
+                                "early runner must not read an invalid input"
+                            ),
+                        ) as runner,
+                    ):
+                        with self.assertRaises(SystemExit) as raised:
+                            candidate_run_module.main()
+
+                    self.assertEqual(raised.exception.code, 2)
+                    runner.assert_not_called()
+                    self.assertEqual(stdout.getvalue(), "")
+                    error_text = stderr.getvalue()
+                    self.assertNotIn(body_sentinel, error_text)
+                    self.assertNotIn(str(input_path), error_text)
+                    self.assertNotIn(str(known_output), error_text)
+                    self.assertNotIn(str(private_output), error_text)
+                    self.assertFalse(known_output.exists())
+                    self.assertFalse(private_output.exists())
+
+    def test_early_existing_outputs_are_rejected_before_body_execution(
+        self,
+    ) -> None:
+        body_sentinel = "PRIVATE_BODY_SENTINEL_DO_NOT_PRINT"
+        output_sentinel = "EXISTING_OUTPUT_MUST_REMAIN_UNCHANGED"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            private_root = (Path(temporary_directory) / "private-root").resolve()
+            private_root.mkdir(mode=0o700)
+            private_root.chmod(0o700)
+            input_path = private_root / "input.json"
+            input_path.write_text(
+                json.dumps({"memo": body_sentinel}),
+                encoding="utf-8",
+            )
+            input_path.chmod(0o600)
+
+            for existing_kind in ("known", "private"):
+                with self.subTest(existing_kind=existing_kind):
+                    known_output = private_root / f"{existing_kind}-known.json"
+                    private_output = private_root / f"{existing_kind}-private.json"
+                    existing_output = (
+                        known_output
+                        if existing_kind == "known"
+                        else private_output
+                    )
+                    existing_output.write_text(output_sentinel, encoding="utf-8")
+                    existing_output.chmod(0o600)
+                    stdout = io.StringIO()
+                    stderr = io.StringIO()
+                    with (
+                        patch.object(
+                            candidate_run_module,
+                            "PRIVATE_OUTPUT_ROOT",
+                            private_root,
+                        ),
+                        patch.object(
+                            candidate_run_module.sys,
+                            "argv",
+                            (
+                                "cmee-v1a-candidate-run",
+                                "--early-actual",
+                                "--withheld-input",
+                                str(input_path),
+                                "--known-visible-output",
+                                str(known_output),
+                                "--body-full-output",
+                                str(private_output),
+                                "--runtime-repo-head",
+                                self._RUNTIME_HEAD,
+                                "--design-repo-head",
+                                self._DESIGN_HEAD,
+                            ),
+                        ),
+                        patch.object(candidate_run_module.sys, "stdout", stdout),
+                        patch.object(candidate_run_module.sys, "stderr", stderr),
+                        patch.object(
+                            candidate_run_module,
+                            "run_early_actual",
+                            side_effect=AssertionError(
+                                "early runner must not execute for an existing output"
+                            ),
+                        ) as runner,
+                    ):
+                        with self.assertRaises(SystemExit) as raised:
+                            candidate_run_module.main()
+
+                    self.assertEqual(raised.exception.code, 2)
+                    runner.assert_not_called()
+                    self.assertEqual(stdout.getvalue(), "")
+                    self.assertEqual(
+                        existing_output.read_text(encoding="utf-8"),
+                        output_sentinel,
+                    )
+                    other_output = (
+                        private_output
+                        if existing_kind == "known"
+                        else known_output
+                    )
+                    self.assertFalse(other_output.exists())
+                    error_text = stderr.getvalue()
+                    self.assertNotIn(body_sentinel, error_text)
+                    self.assertNotIn(output_sentinel, error_text)
+                    self.assertNotIn(str(input_path), error_text)
+                    self.assertNotIn(str(known_output), error_text)
+                    self.assertNotIn(str(private_output), error_text)
+
+    def test_early_output_writer_keeps_o_excl_for_both_packet_classes(
+        self,
+    ) -> None:
+        output_sentinel = "EXISTING_OUTPUT_MUST_REMAIN_UNCHANGED"
+        body_sentinel = "PRIVATE_BODY_SENTINEL_DO_NOT_PRINT"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            private_root = (Path(temporary_directory) / "private-root").resolve()
+            private_root.mkdir(mode=0o700)
+            private_root.chmod(0o700)
+            parser = candidate_run_module.argparse.ArgumentParser(add_help=False)
+            for packet_class in ("known", "private"):
+                with self.subTest(packet_class=packet_class):
+                    target = private_root / f"{packet_class}.json"
+                    target.write_text(output_sentinel, encoding="utf-8")
+                    target.chmod(0o600)
+                    stdout = io.StringIO()
+                    with (
+                        patch.object(
+                            candidate_run_module,
+                            "PRIVATE_OUTPUT_ROOT",
+                            private_root,
+                        ),
+                        patch.object(candidate_run_module.sys, "stdout", stdout),
+                    ):
+                        with self.assertRaises(FileExistsError):
+                            candidate_run_module._write_private_json_exclusive(
+                                parser,
+                                target,
+                                {"body": body_sentinel},
+                            )
+                    self.assertEqual(stdout.getvalue(), "")
+                    self.assertEqual(
+                        target.read_text(encoding="utf-8"),
+                        output_sentinel,
+                    )
+
+    def test_default_runner_body_free_shape_and_hash_remain_frozen(self) -> None:
+        body_free, _private_packet = candidate_run_module.run()
+        canonical = json.dumps(
+            body_free,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        self.assertEqual(
+            hashlib.sha256(canonical).hexdigest(),
+            "3ad729dfab52ff3c2977a089425ad88fa84bd4317e0879180390ad9ba7695f58",
+        )
+        self.assertEqual(
+            sorted(body_free),
+            [
+                "artifact_count",
+                "automatic_progression",
+                "candidate_ready",
+                "candidate_state",
+                "case_count",
+                "cases",
+                "cycle001_credit",
+                "exact8_acceptance_complete",
+                "finite_mutation_set_body_free",
+                "full_i1_credit",
+                "generated_count",
+                "implementation_state",
+                "l3i_credit",
+                "limited_count",
+                "material_unknown_case_count",
+                "observation_plus_bound_reception_trace_count",
+                "p0_credit",
+                "packet_id",
+                "private_text_published",
+                "product_read_eligible",
+                "product_read_evaluated",
+                "production_effect",
+                "route_b_contract_complete",
+                "structural_trace_valid_count",
+            ],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
