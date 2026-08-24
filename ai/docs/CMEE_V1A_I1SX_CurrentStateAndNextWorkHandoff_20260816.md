@@ -504,3 +504,169 @@ production / API / DB / RN / provider / dependency effect = 0
 current_authorized_next_action = MASH_PRODUCT_READ_ONLY
 automatic_progression = false
 ```
+
+## 21. Stage 1 additional correction Step 0 — durable implementation-decision handoff（2026-08-24）
+
+本sectionがadditional correctionのcurrent stateについて§20以前よりfreshである。Mashの2026-08-24 LEVEL_3指示はfinal body §13のStep 0だけを承認した。body-free implementation decision packetと本durable handoffのreceipt exact2を成立させ、Step 1、runtime、test、runner、canonical 02 / 05、current map同期へは進んでいない。
+
+### 21.1 Approved identity / cross-repository binding
+
+```text
+STEP0_DECISION_PACKET_ID = CMEE_STAGE1_ADDITIONAL_CORRECTION_STEP0_DECISION_PACKET_20260824_V1
+APPROVED_BOUNDED_UNIT_ID = cocolon.cmee.stage1.additional_correction.route_a.20260824.v1
+APPROVED_FINAL_BODY_DOCUMENT_ID = COCOLON_CMEE_STAGE1_ADDITIONAL_CORRECTION_ULTRA_FINAL_TECHNICAL_BODY_AND_JOINT_RECOMMENDATION_20260824
+APPROVED_FINAL_BODY_SHA256 = 1f02e566ddfaefcbfc99ba985e3ef8af5c8e15b8867215c994cda99fbdedff05
+APPROVED_FINAL_BODY_BYTES / LINES = 357275 / 4008
+PRO_FINAL_CONFIRMATION_SHA256 = ceef533a19d6ee2be75be06e8be74bc2fbefb7a7f0130050ffe2678903bef5bb
+PRO_FINAL_VERDICT = PASS / BLOCKER 0 / MAJOR 0 / MINOR 0
+
+REVIEWED_COCOLON_TECHNICAL_PREIMAGE = c0fb407e88aea5b8ba52aa25c9532adc0ff3a539
+FRESH_COCOLON_EXECUTION_PREIMAGE = ff80eaaf33950aa36318e05bfd6be8aa92aa9a52
+COCOLON_STEP0_CANONICAL_RECEIPT_COMMIT = d583d31cfdd777f78fb7948cdb45688594b5e114
+COCOLON_STEP0_CANONICAL_RECEIPT_BLOB = 3aa761881f4e10d577e460eabdc01ca18018dc66
+
+REVIEWED_MASHOS_TECHNICAL_PREIMAGE = b7865574ebe08c801f6a2c779daf9148159cf8b0
+FRESH_MASHOS_EXECUTION_PREIMAGE = b7865574ebe08c801f6a2c779daf9148159cf8b0
+FRESH_MASHOS_EXECUTION_TREE = e11cbff8ce8296bd587e0dcd0ea5b73af419feec
+MASHOS_STEP0_DURABLE_RECEIPT_COMMIT = THIS_COMMIT
+
+COCOLON_PR30_STATE = DRAFT / OPEN / UNMERGED
+MASHOS_PR3_STATE = DRAFT / OPEN / UNMERGED
+HEAD_FIXTURE_AXIS_PATH_ASSUMPTION_DRIFT = 0
+STEP0_STOP_CONDITION = NONE
+```
+
+Cocolonのreviewed preimageからfresh execution preimageまでの差分はapproved docs-only exact7だけである。mashos-apiはreviewed / fresh execution preimageが同一である。final bodyは添付、checkout、GitHubでbyte-exact一致した。
+
+### 21.2 Approved exact14 / Step 0 actual exact2
+
+final body §12のapproved path setはmashos-api exact8 + Cocolon exact6で閉じる。runtime exact8のStep 0 preimageは次である。
+
+| Approved mashos-api path | Step 0 preimage blob |
+|---|---|
+| `ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py` | `3d4425809b1e24c7f9dd5c2d6fd00038f20d4db2` |
+| `ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py` | `543a9c2a43f15fbb0e2e00e8f17a447696275d8b` |
+| `ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py` | `ABSENT_AT_PREIMAGE`（Step 2 approved new exact1） |
+| `ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py` | `47d6d155fcc034950174fcbe83b6c82192a100ae` |
+| `ai/tests/test_cmee_v1a_i1sx_contracts.py` | `edddca775d65d414e5d8aec17f892bf5a9942633` |
+| `ai/tests/test_cmee_v1a_i1sx_vertical.py` | `e41d1e7d69bf6668926059ff3f28cd40ec6ce144` |
+| `ai/tools/cmee_v1a_i1sx_candidate_run.py` | `34179934cf67eaecb19b3ec883dee4434ec86c28` |
+| `ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md` | `9d44eb7b04101d9bf5a184a7ec9c35bc661577ef` |
+
+Cocolon exact6のfull path / blob receiptはcanonical `v1/06` §31.2が所有する。`v1/01_shared_kernel_and_runtime_contracts.md`はexact14外のread-only ownerで、preimage blob `c543100ded1e24faef0b6f1c91c20869e7277c8d`から変更0である。
+
+```text
+STEP0_ACTUAL_CHANGED_PATHS = EXACT2
+  Cocolon_前提資料/designs/cmee/v1/06_implementation_order_migration_and_verification.md
+  ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md
+
+RUNTIME_PATH_EFFECT = EXACT1_HANDOFF_ONLY
+LISTED_PATH_EFFECT_OUTSIDE_STEP0_EXACT2 = 0
+STRUCTURE_MAP_DELTA_NONE = true
+RUNTIME_TEST_RUNNER_EFFECT = 0
+```
+
+### 21.3 Current machine / unchanged exact8 receipt
+
+Workのverified absolute Python entrypoint、`PYTHONPATH=services/ai_inference`でfresh再現したcurrent baselineは次である。
+
+```text
+CONTRACT_TESTS = 70 / 70 PASS
+VERTICAL_TESTS = 41 / 41 PASS
+COMBINED_TESTS = 111 / 111 PASS
+STEP5_ATOMIC_PROOF = 7 / 7 PASS
+FINITE_MUTATION = 12 / 12 PASS (3 / 3 / 4 / 2)
+UNKNOWN_SAFETY_UNSEEN = 6 / 6 PASS
+THREE_CORE_BOUNDARY = 5 / 5 PASS
+COMPILE_EXACT4 = PASS
+
+FORMAL_EXACT8_ORDER = SX-01..SX-08
+PRODUCT_READ_AXES = EXACT12
+FORMAL_EXACT8_AND_AXES_SHA256 = dbb2cb8aea5c32905e5b0d08f405b38b8e42da1081296d328bf096e4a3ea832f
+RUNNER_BLOB = 34179934cf67eaecb19b3ec883dee4434ec86c28
+RUNNER_FILE_SHA256 = 5bafe9798e9877452faab0619167a5ffb469f521045df3e4f2dadc7eff17767b
+ENGINE_ENTRYPOINT = MeaningExperienceEngine.generate EXACT1 PER CASE
+
+RUNNER_EXIT = 0
+CASE / GENERATED / ARTIFACT / STRUCTURAL_TRACE = 8 / 8 / 8 / 8
+OBSERVATION_AND_RECEPTION = 8 / 8
+LIMITED / VISIBLE_MATERIAL_UNKNOWN = 0 / 0
+candidate_state = GENERATED_FOR_PRODUCT_READ_DISABLED
+implementation_state = DRAFT_WIP_DISABLED
+candidate_ready = false
+product_read_eligible = false
+exact8_acceptance_complete = false
+automatic_progression = false
+```
+
+historical 47 / 47ではなく111 / 111がcurrent machine baselineである。この再現はmachine receiptだけで、Product / technical creditは0である。
+
+### 21.4 Private packet identity / common-defect counter
+
+```text
+FORMAL_BEFORE_PACKET_ID = CMEE_STAGE1_ADDITIONAL_CORRECTION_FORMAL_EXACT8_BEFORE_20260824_V1
+FORMAL_AFTER_PACKET_ID = CMEE_STAGE1_ADDITIONAL_CORRECTION_FORMAL_EXACT8_AFTER_20260824_V1
+WITHHELD_EARLY_PACKET_ID = CMEE_STAGE1_ADDITIONAL_CORRECTION_WITHHELD_EARLY_20260824_V1
+WITHHELD_FINAL_PACKET_ID = CMEE_STAGE1_ADDITIONAL_CORRECTION_WITHHELD_FINAL_20260824_V1
+
+FORMAL_BEFORE_PRIVATE_SLOT = PRIVATE_SLOT_FORMAL_EXACT8_BEFORE_20260824_V1
+FORMAL_AFTER_PRIVATE_SLOT = PRIVATE_SLOT_FORMAL_EXACT8_AFTER_20260824_V1
+WITHHELD_EARLY_PRIVATE_SLOT = PRIVATE_SLOT_WITHHELD_EARLY_20260824_V1
+WITHHELD_FINAL_PRIVATE_SLOT = PRIVATE_SLOT_WITHHELD_FINAL_20260824_V1
+
+PACKET_IDS_PAIRWISE_DISTINCT = true
+PRIVATE_SLOTS_PAIRWISE_DISTINCT = true
+HISTORICAL_CMEE_STAGE1_KAREN_DERIVED_AFTER_EXACT8_20260823_V2_REUSE = 0
+BODY_FULL_MATERIALIZED_BY_STEP0 = 0
+PRIVATE_BODY_DIGEST_LOCATOR_OWNER_IDENTITY_GITHUB_PUBLICATION = 0
+WITHHELD_BODY_FULL_READERS = PRO_ONLY
+ULTRA_WITHHELD_BODY_ACCESS = 0
+MASH_WITHHELD_BODY_ACCESS = 0
+
+COMMON_DEFECT_RETURN_COUNT = 0
+COMMON_DEFECT_RETURN_MAX = 2
+COMMON_DEFECT_RETURN_COUNT_OWNER_1 = COCOLON_V1_06_SECTION_31_BODY_FREE_DECISION_PACKET
+COMMON_DEFECT_RETURN_COUNT_OWNER_2 = THIS_HANDOFF_SECTION_21
+COMMON_DEFECT_RETURN_COUNT_SCOPE = cocolon.cmee.stage1.additional_correction.route_a.20260824.v1
+RUNTIME_REQUEST_STATE_EFFECT = 0
+RESET_WITHIN_SAME_UNIT = 0
+RESET_AFTER_LANGUAGE_CORE_IDENTITY_CHANGE = 0
+RESET_AUTHORITY = FRESH_EXPLICIT_LEVEL3_BOUNDED_UNIT_DECISION_ONLY
+COUNT_INCREMENT_ORIGIN = HUMAN_COMMON_DEFECT_AT_STEP3_OR_STEP7_ONLY
+MACHINE_BUG_INCREMENT = 0
+STEP0_INCREMENT = 0
+```
+
+counterはprocess-local memoryではなく、Cocolon §31 body-free decision packetと本handoffのexact2でdurableに保持する。approved later Step 3 / 7でhuman `COMMON_DEFECT` transitionが成立した場合だけcountを増やし、両receiptを同じtransitionへ同期する。
+
+### 21.5 Frozen assumptions / terminal
+
+```text
+SHARED_REALIZATION_CANDIDATE_ENVELOPE = EXACT1_TO_2_KEEP
+INTERNAL_CANDIDATE_CAP = EXACT32
+VISIBLE_UNIT_MAX_PER_LAYOUT = EXACT9
+FIRST_EARLY_ACTUAL_AT_COUNT0 = 48_TO_82_FOCUSED_ENGINEERING_HOURS_CUMULATIVE
+ROUTE_A_COMPLETION_RANGE = 100_TO_180_FOCUSED_ENGINEERING_HOURS
+ROUTE_A_EXTERNAL_SERVICE_COST = 0
+ROUTE_A_PER_REQUEST_PROVIDER_COST = 0
+NETWORK_EFFECT = 0
+NEW_DEPENDENCY_EFFECT = 0
+PRIVACY_BOUNDARY_EFFECT = 0
+PUBLIC_CALLABLE_API_DB_RN_PERSISTENCE_PRODUCTION_EFFECT = 0
+PATH_CAP_ESTIMATE_PROVIDER_REDECISION = 0
+MASH_INTERMEDIATE_MONITORING = 0
+
+STAGE1_ADDITIONAL_CORRECTION_STEP0 = COMPLETE
+PRIMARY_OUTCOME = BLOCKER_NARROWED
+PRODUCT_CREDIT = 0
+TECHNICAL_CREDIT = 0
+CANDIDATE_READY = FALSE
+PRODUCT_READ_EVALUATED_FOR_THIS_UNIT = FALSE
+EARLY_ACTUAL_STATUS = NOT_RUN
+STEP1 = NOT_STARTED
+CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_ADDITIONAL_CORRECTION_STEP0
+AUTOMATIC_PROGRESSION = FALSE
+STOP_AFTER_STEP0 = true
+```
+
+approved bytes / assumptions一致、baseline再現、private packet identity分離、counter owner生成は完了した。head / fixture / axis / path / assumption driftは0で、LEVEL_3 final candidateへ戻すSTOP条件は成立しなかった。今回のauthorityはStep 0で尽きる。
