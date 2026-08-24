@@ -3355,7 +3355,11 @@ def _validate_stage1_relation_binding(
         expected_relation = (
             {"wish_and_constraint"}
             if candidate.relation_operator is RelationOperator.COEXISTS_WITH
-            else {"preserves_despite", "attempt_and_block"}
+            else {
+                "preserves_despite",
+                "attempt_and_block",
+                "continuation_or_refusal",
+            }
         )
         expected_bindings = (
             ArgumentBinding(ArgumentRole.LEFT, direction_ref),
@@ -3758,6 +3762,7 @@ def _stage1_discomfort_target_is_allowed(
         in {
             "contrast",
             "wish_and_constraint",
+            "continuation_or_refusal",
             "unsupported_promotion_risk",
         }
     )

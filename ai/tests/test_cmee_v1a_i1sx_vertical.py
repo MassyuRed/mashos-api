@@ -15,6 +15,7 @@ from cocolon_meaning_experience_engine import GenerationRequest, MeaningExperien
 import cocolon_meaning_experience_engine.emlis_v1a as emlis_v1a_module
 import cocolon_meaning_experience_engine.contracts as cmee_contracts_module
 import cocolon_meaning_experience_engine.emlis_stage1_response as stage1_response_module
+import cocolon_meaning_experience_engine.emlis_stage1_composition as stage1_composition_module
 from cocolon_meaning_experience_engine.contracts import (
     AttachmentAdmission,
     CMEE_COMMON_GUARD_PROOF_VERSION,
@@ -5397,6 +5398,46 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             self.assertEqual(outcome.status.value, "SEPARATE_SAFETY")
             self.assertEqual(outcome.reason_codes, ("separate_safety_owner_required",))
             self.assertIsNone(outcome.artifact)
+
+    def test_final_stage1_composition_core_remains_disabled_and_publicly_isolated(
+        self,
+    ) -> None:
+        self.assertEqual(
+            cmee_contracts_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+            "cocolon.cmee.v1a.emlis_stage1_response.v1",
+        )
+        self.assertEqual(
+            stage1_composition_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+            "cocolon.cmee.v1a.emlis_stage1_response.v2",
+        )
+        patch_rows = tuple(
+            patch.object(
+                stage1_composition_module,
+                name,
+                side_effect=AssertionError(f"disabled final core called: {name}"),
+            )
+            for name in (
+                "project_subjective_meaning_plan",
+                "project_stage1_discourse_arc",
+                "compose_stage1_from_projection",
+                "normalize_to_normal_form",
+            )
+        )
+        mocks = []
+        try:
+            mocks = [row.start() for row in patch_rows]
+            outcome = MeaningExperienceEngine().generate(
+                _request(
+                    record_id="cmee-final-core-disabled",
+                    memo=REPRESENTATIVE_MEMO,
+                )
+            )
+        finally:
+            for row in reversed(patch_rows):
+                row.stop()
+        self.assertEqual(outcome.status.value, "GENERATED", outcome.reason_codes)
+        self.assertIsNotNone(outcome.artifact)
+        self.assertTrue(all(row.call_count == 0 for row in mocks))
 
 
 if __name__ == "__main__":

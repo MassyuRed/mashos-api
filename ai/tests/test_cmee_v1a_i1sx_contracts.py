@@ -16,7 +16,12 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
-from emlis_ai_grounded_observation_plan import build_grounded_observation_plan
+from emlis_ai_evidence_ledger_service import build_evidence_span_resolver
+from emlis_ai_grounded_observation_plan import (
+    build_final_stage1_grounded_observation_plan,
+    build_grounded_observation_plan,
+    validate_grounded_observation_plan,
+)
 from cocolon_meaning_experience_engine import EngineStatus, GenerationRequest, MeaningExperienceEngine
 from cocolon_meaning_experience_engine.contracts import (
     AffectCategory,
@@ -121,6 +126,7 @@ from cocolon_meaning_experience_engine.contracts import (
     validate_version_qualified_ref,
 )
 import cocolon_meaning_experience_engine.emlis_stage1_response as stage1_response_module
+import cocolon_meaning_experience_engine.emlis_stage1_composition as stage1_composition_module
 import cocolon_meaning_experience_engine.emlis_v1a as emlis_v1a_module
 import cocolon_meaning_experience_engine.contracts as contracts_module
 from cocolon_meaning_experience_engine.emlis_stage1_response import (
@@ -244,6 +250,60 @@ def _stage2_inputs(request: GenerationRequest):
         reception_targets,
     )
     return source, grounded_plan, graph, parent_plan
+
+
+def _final_stage1_composition_inputs(request: GenerationRequest):
+    """Build the disabled final Phase-A/Phase-B seam from frozen real inputs."""
+
+    source = freeze_text_source(request)
+    grounded_plan = build_final_stage1_grounded_observation_plan(
+        source.normalized_current_input,
+        evidence_spans=source.evidence_spans,
+    )
+    required_nuclei, required_relations, reception_targets = (
+        _planned_visible_source_ids(grounded_plan)
+    )
+    graph = _build_graph(
+        source,
+        grounded_plan,
+        _ordered((*required_nuclei, *reception_targets)),
+        required_relations,
+    )
+    parent_plan = _build_experience_plan(
+        source,
+        graph,
+        grounded_plan,
+        required_nuclei,
+        required_relations,
+        reception_targets,
+    )
+    phase_a = stage1_response_module.build_subjective_planning_inputs(
+        source=source,
+        grounded_graph=graph,
+        parent_plan=parent_plan,
+        grounded_plan=grounded_plan,
+    )
+    subjective_plan = stage1_composition_module.project_subjective_meaning_plan(
+        phase_a
+    )
+    final_projection = stage1_response_module.seal_stage1_projection(
+        phase_a,
+        subjective_plan,
+    )
+    phase_b = stage1_response_module.build_surface_composition_inputs(
+        phase_a,
+        final_projection,
+    )
+    return (
+        source,
+        grounded_plan,
+        graph,
+        parent_plan,
+        final_projection,
+        phase_a,
+        subjective_plan,
+        phase_b,
+    )
 
 
 def _identified(value: object, identity_field: str) -> object:
@@ -6202,9 +6262,15 @@ class CMEEStage1AdditionalCorrectionStep1ContractsTest(unittest.TestCase):
             "SubjectiveProposition = SubjectivePropositionV2",
         ):
             self.assertNotIn(forbidden_declaration, contracts_source)
-        self.assertNotIn(
-            "SubjectivePropositionV2", inspect.getsource(stage1_response_module)
-        )
+        for active_callable in (
+            build_stage1_semantic_projection,
+            stage1_response_module.compile_stage1_response,
+        ):
+            with self.subTest(active_callable=active_callable.__name__):
+                self.assertNotIn(
+                    "SubjectivePropositionV2",
+                    inspect.getsource(active_callable),
+                )
         self.assertNotIn("SubjectivePropositionV2", inspect.getsource(emlis_v1a_module))
 
     def test_step1_supporting_types_and_enums_are_literal_exact(self) -> None:
@@ -7579,6 +7645,1521 @@ class CMEEStage1AdditionalCorrectionStep1ContractsTest(unittest.TestCase):
                     registered_rule_refs_by_kind=rule_registry,
                     response_object_mode=response_mode,
                 )
+
+
+class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
+    _KNOWN_EXACT4 = (
+        (
+            "tension",
+            "続けたい気持ちはある。でも、もうかなり無理をしている気もする。",
+            "continuation_or_refusal",
+            ObservationContributionKind.OBSERVE_TENSION,
+            SemanticOperator.SYNTHESIZE_RELATION,
+            RelationOperator.TENSION_WITH,
+        ),
+        (
+            "temporal_change",
+            "散歩に出たら、少し落ち着いた。ただ、いつもそうなるとは思っていない。",
+            "action_supports_change",
+            ObservationContributionKind.OBSERVE_ACTION_THEN_CHANGE,
+            SemanticOperator.PRESENT_CHANGE,
+            RelationOperator.ACTION_PRECEDES_CHANGE,
+        ),
+        (
+            "help_seeking",
+            "相談したい。でも、迷惑かもしれないと思うと切り出せない。",
+            "wish_and_constraint",
+            ObservationContributionKind.OBSERVE_COEXISTENCE,
+            SemanticOperator.SYNTHESIZE_RELATION,
+            RelationOperator.COEXISTS_WITH,
+        ),
+        (
+            "unfinished",
+            "仕事の話はした。でも、まだ気持ちが残っていて、どうしたいかは分からない。",
+            "temporal_before_after",
+            ObservationContributionKind.PRESERVE_RESIDUE,
+            SemanticOperator.PRESENT_RESIDUE,
+            RelationOperator.TEMPORALLY_PRECEDES,
+        ),
+    )
+
+    def _known_inputs(self, index: int):
+        label, memo, *_expected = self._KNOWN_EXACT4[index]
+        return _final_stage1_composition_inputs(
+            _request(record_id=f"stage2-final-{label}", memo=memo)
+        )
+
+    def test_final_job_topology_and_anti_template_registry_are_closed(self) -> None:
+        source_path = Path(inspect.getsourcefile(stage1_composition_module) or "")
+        tree = ast.parse(source_path.read_text(encoding="utf-8"))
+        function_names = {
+            row.name
+            for row in tree.body
+            if isinstance(row, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        self.assertTrue(
+            {
+                "project_subjective_meaning_plan",
+                "project_stage1_discourse_arc",
+                "compose_stage1_from_projection",
+                "normalize_to_normal_form",
+                "derive_discourse_preference_profile",
+            }.issubset(function_names)
+        )
+        self.assertTrue(
+            {
+                "plan_subjective_meaning",
+                "plan_stage1_discourse",
+                "compose_stage1_draft",
+                "rank_stage1_drafts",
+            }.isdisjoint(function_names)
+        )
+        self.assertEqual(
+            tuple(
+                inspect.signature(
+                    stage1_response_module.build_subjective_planning_inputs
+                ).parameters
+            ),
+            ("source", "grounded_graph", "parent_plan", "grounded_plan"),
+        )
+        self.assertEqual(
+            tuple(
+                inspect.signature(
+                    stage1_response_module.seal_stage1_projection
+                ).parameters
+            ),
+            ("phase_A", "meaning_plan"),
+        )
+        self.assertEqual(
+            tuple(
+                inspect.signature(
+                    stage1_response_module.build_surface_composition_inputs
+                ).parameters
+            ),
+            ("phase_A", "final_projection"),
+        )
+        local_imports = {
+            row.module
+            for row in tree.body
+            if isinstance(row, ast.ImportFrom) and row.level
+        }
+        self.assertEqual(local_imports, {"contracts"})
+        self.assertFalse(
+            any(
+                isinstance(row, ast.Import)
+                and any(alias.name == "random" for alias in row.names)
+                for row in tree.body
+            )
+        )
+        self.assertTrue(
+            all(
+                token not in name.lower()
+                for name in function_names
+                for token in ("retry", "legacy", "fallback", "case_id")
+            )
+        )
+        module_source = source_path.read_text(encoding="utf-8")
+        self.assertTrue(
+            all(memo not in module_source for _label, memo, *_ in self._KNOWN_EXACT4)
+        )
+
+        construction_fields = tuple(
+            row.name for row in fields(stage1_composition_module.ConstructionSpec)
+        )
+        self.assertEqual(len(construction_fields), 8)
+        self.assertTrue(
+            set(construction_fields).isdisjoint(
+                CMEE_STAGE1_ANTI_TEMPLATE_FORBIDDEN_REGISTRY_FIELDS
+            )
+        )
+        self.assertEqual(
+            len(
+                {
+                    row.construction_id
+                    for row in stage1_composition_module.CONSTRUCTION_REGISTRY
+                }
+            ),
+            len(stage1_composition_module.CONSTRUCTION_REGISTRY),
+        )
+        self.assertEqual(
+            tuple(inspect.signature(
+                stage1_composition_module.select_eligible_constructions
+            ).parameters),
+            (
+                "grammatical_shape_key",
+                "predicate_valency",
+                "syntactic_orientation",
+            ),
+        )
+        validate_stage1_anti_template_registry_invariant(
+            construction_fields,
+            tuple(
+                inspect.signature(
+                    stage1_composition_module.select_eligible_constructions
+                ).parameters
+            ),
+        )
+        stage1_composition_module.validate_language_core_registry_invariant()
+        self.assertEqual(
+            {
+                row.relation_operator
+                for row in stage1_composition_module.RELATION_MORPHOLOGY_ASSET_REGISTRY
+            },
+            set(RelationOperator) - {RelationOperator.NO_RELATION_CLAIM},
+        )
+        self.assertEqual(
+            {
+                row.scalar_axis
+                for row in stage1_composition_module.SCALAR_MORPHOLOGY_ASSET_REGISTRY
+            },
+            set(stage1_composition_module.ClauseScalarAxis),
+        )
+        self.assertTrue(
+            all(
+                "。" not in token
+                for row in stage1_composition_module.EXPRESSION_ASSET_REGISTRY
+                for token in row.predicate_lexemes
+            )
+        )
+        exact_enum_counts = {
+            stage1_composition_module.SentenceJob: 8,
+            stage1_composition_module.DutySuppressionReason: 3,
+            stage1_composition_module.SubjectiveFacetSuppressionReason: 3,
+            stage1_composition_module.CorrectableDefectKind: 8,
+            stage1_composition_module.ResponseObjectExpressionMode: 3,
+            stage1_composition_module.ArcDependencyKind: 5,
+            stage1_composition_module.SubjectiveResponsibilityKind: 4,
+            stage1_composition_module.SubjectiveSpecificity: 3,
+            stage1_composition_module.ProfileEvidenceField: 8,
+            stage1_composition_module.ProfileEvidenceRuleKind: 8,
+            stage1_composition_module.PredicateValency: 4,
+            stage1_composition_module.ClauseArgumentRole: 11,
+            stage1_composition_module.ClauseScalarAxis: 3,
+            stage1_composition_module.NormalFormPhase: 6,
+        }
+        for enum_type, expected_count in exact_enum_counts.items():
+            with self.subTest(enum=enum_type.__name__):
+                self.assertEqual(len(enum_type), expected_count)
+
+    def test_known_exact4_upstream_typed_semantics_reach_projection(self) -> None:
+        for index, (
+            label,
+            _memo,
+            upstream_relation,
+            contribution_kind,
+            semantic_operator,
+            relation_operator,
+        ) in enumerate(self._KNOWN_EXACT4):
+            with self.subTest(known_structure=label):
+                (
+                    _source,
+                    grounded_plan,
+                    _graph,
+                    _parent_plan,
+                    projection,
+                    _phase_a,
+                    _subjective_plan,
+                    _phase_b,
+                ) = self._known_inputs(index)
+                resolver = build_evidence_span_resolver(
+                    _source.evidence_spans,
+                    current_input=_source.normalized_current_input,
+                )
+                self.assertEqual(
+                    validate_grounded_observation_plan(
+                        grounded_plan,
+                        resolver,
+                    ),
+                    (),
+                )
+                relation_rows = tuple(
+                    row
+                    for row in grounded_plan.relations
+                    if row.type == upstream_relation
+                )
+                self.assertEqual(len(relation_rows), 1)
+                contribution_rows = tuple(
+                    row
+                    for row in projection.observation_contributions
+                    if row.contribution_kind is contribution_kind
+                    and row.semantic_operator is semantic_operator
+                    and row.relation_operator is relation_operator
+                )
+                self.assertEqual(len(contribution_rows), 1)
+                self.assertEqual(contribution_rows[0].retention, "REQUIRED")
+
+                if label in {"tension", "help_seeking"}:
+                    self.assertTrue(
+                        any(row.kind == "wish" for row in grounded_plan.nuclei)
+                    )
+                    self.assertTrue(
+                        any(
+                            row.kind == "constraint"
+                            for row in grounded_plan.nuclei
+                        )
+                    )
+                    self.assertEqual(
+                        tuple(
+                            binding.role
+                            for binding in contribution_rows[0].argument_bindings
+                        ),
+                        (ArgumentRole.LEFT, ArgumentRole.RIGHT),
+                    )
+                elif label == "temporal_change":
+                    action = next(
+                        row for row in grounded_plan.nuclei if row.kind == "action"
+                    )
+                    change = next(
+                        row for row in grounded_plan.nuclei if row.kind == "change"
+                    )
+                    self.assertEqual(action.source_span_ids, change.source_span_ids)
+                    self.assertEqual(
+                        tuple(
+                            binding.role
+                            for binding in contribution_rows[0].argument_bindings
+                        ),
+                        (ArgumentRole.ACTION, ArgumentRole.CHANGE),
+                    )
+                else:
+                    residue = next(
+                        row
+                        for row in grounded_plan.nuclei
+                        if row.semantic_frame.predicate_kind == "residue"
+                    )
+                    unfinished = next(
+                        row
+                        for row in grounded_plan.nuclei
+                        if row.semantic_frame.predicate_kind == "unfinished"
+                    )
+                    self.assertEqual(
+                        residue.source_span_ids,
+                        unfinished.source_span_ids,
+                    )
+                    relation = relation_rows[0]
+                    self.assertEqual(relation.to_nucleus_id, residue.nucleus_id)
+                    self.assertNotIn(
+                        unfinished.nucleus_id,
+                        (relation.from_nucleus_id, relation.to_nucleus_id),
+                    )
+                    unfinished_contributions = tuple(
+                        row
+                        for row in projection.observation_contributions
+                        if row.contribution_kind
+                        is ObservationContributionKind.PRESERVE_UNFINISHED
+                        and row.semantic_operator
+                        is SemanticOperator.PRESENT_UNFINISHED
+                        and row.relation_operator
+                        is RelationOperator.NO_RELATION_CLAIM
+                    )
+                    self.assertEqual(len(unfinished_contributions), 1)
+                    self.assertEqual(
+                        unfinished_contributions[0].retention,
+                        "REQUIRED",
+                    )
+
+    def test_bounded_change_and_unfinished_open_claims_keep_typed_targets(self) -> None:
+        (
+            _b_source,
+            _b_grounded_plan,
+            _b_graph,
+            _b_parent_plan,
+            b_projection,
+            _b_phase_a,
+            b_subjective_plan,
+            _b_phase_b,
+        ) = self._known_inputs(1)
+        action_change = next(
+            row
+            for row in b_projection.observation_contributions
+            if row.contribution_kind
+            is ObservationContributionKind.OBSERVE_ACTION_THEN_CHANGE
+            and row.semantic_operator is SemanticOperator.PRESENT_CHANGE
+            and row.relation_operator is RelationOperator.ACTION_PRECEDES_CHANGE
+        )
+        caveat_tension = next(
+            row
+            for row in b_projection.observation_contributions
+            if row.contribution_kind is ObservationContributionKind.OBSERVE_TENSION
+            and row.relation_operator is RelationOperator.TENSION_WITH
+        )
+        action_change_ref_by_role = {
+            binding.role: binding.semantic_ref
+            for binding in action_change.argument_bindings
+        }
+        action_change_refs = tuple(
+            action_change_ref_by_role[role]
+            for role in (ArgumentRole.ACTION, ArgumentRole.CHANGE)
+        )
+        bounded_change_claims = tuple(
+            row
+            for row in b_subjective_plan.subjective_claim_rows
+            if row.asserted_subjective_proposition.content_kind
+            is SubjectiveContentKind.APPRAISAL
+            and row.asserted_subjective_proposition.appraisal_content is not None
+            and row.asserted_subjective_proposition.appraisal_content.dimension
+            is AppraisalDimension.BOUNDED_CHANGE
+        )
+        self.assertEqual(len(bounded_change_claims), 1)
+        bounded_change_claim = bounded_change_claims[0]
+        bounded_change_proposition = (
+            bounded_change_claim.asserted_subjective_proposition
+        )
+        self.assertEqual(action_change.semantic_refs, action_change_refs)
+        self.assertEqual(
+            bounded_change_proposition.target_contribution_refs,
+            (action_change.contribution_id,),
+        )
+        self.assertEqual(
+            bounded_change_claim.basis_observation_contribution_refs,
+            (action_change.contribution_id,),
+        )
+        self.assertEqual(
+            bounded_change_proposition.response_object_refs,
+            action_change_refs,
+        )
+        self.assertEqual(
+            bounded_change_proposition.focal_relation_ref,
+            action_change.relation_basis_refs[0],
+        )
+        self.assertNotEqual(
+            bounded_change_proposition.response_object_refs,
+            caveat_tension.semantic_refs,
+        )
+        self.assertNotIn(
+            caveat_tension.contribution_id,
+            bounded_change_proposition.target_contribution_refs,
+        )
+        self.assertNotEqual(
+            bounded_change_proposition.focal_relation_ref,
+            caveat_tension.relation_basis_refs[0],
+        )
+
+        (
+            _d_source,
+            _d_grounded_plan,
+            _d_graph,
+            _d_parent_plan,
+            d_projection,
+            _d_phase_a,
+            d_subjective_plan,
+            d_phase_b,
+        ) = self._known_inputs(3)
+        unfinished_contributions = tuple(
+            row
+            for row in d_projection.observation_contributions
+            if row.contribution_kind
+            is ObservationContributionKind.PRESERVE_UNFINISHED
+            and row.semantic_operator is SemanticOperator.PRESENT_UNFINISHED
+            and row.relation_operator is RelationOperator.NO_RELATION_CLAIM
+        )
+        self.assertEqual(len(unfinished_contributions), 1)
+        unfinished = unfinished_contributions[0]
+        self.assertEqual(unfinished.relation_basis_refs, ())
+        self.assertEqual(len(unfinished.semantic_refs), 1)
+        unfinished_ref = unfinished.semantic_refs[0]
+
+        unfinished_appraisals = tuple(
+            row
+            for row in d_subjective_plan.subjective_claim_rows
+            if row.asserted_subjective_proposition.content_kind
+            is SubjectiveContentKind.APPRAISAL
+            and row.asserted_subjective_proposition.appraisal_content is not None
+            and row.asserted_subjective_proposition.appraisal_content.dimension
+            is AppraisalDimension.UNFINISHED_OPENNESS
+        )
+        open_positions = tuple(
+            row
+            for row in d_subjective_plan.subjective_claim_rows
+            if row.asserted_subjective_proposition.content_kind
+            is SubjectiveContentKind.RELATIONAL_POSITION
+            and row.asserted_subjective_proposition.relational_position is not None
+            and row.asserted_subjective_proposition.relational_position.closure
+            is RelationalClosure.OPEN
+        )
+        self.assertEqual(len(unfinished_appraisals), 1)
+        self.assertEqual(len(open_positions), 1)
+        unfinished_appraisal = unfinished_appraisals[0]
+        open_position = open_positions[0]
+        for claim in (unfinished_appraisal, open_position):
+            proposition = claim.asserted_subjective_proposition
+            with self.subTest(content_kind=proposition.content_kind.value):
+                self.assertEqual(
+                    proposition.target_contribution_refs,
+                    (unfinished.contribution_id,),
+                )
+                self.assertEqual(
+                    claim.basis_observation_contribution_refs,
+                    (unfinished.contribution_id,),
+                )
+                self.assertEqual(proposition.primary_target_refs, (unfinished_ref,))
+                self.assertEqual(proposition.response_object_refs, (unfinished_ref,))
+        open_position_content = (
+            open_position.asserted_subjective_proposition.relational_position
+        )
+        self.assertIsNotNone(open_position_content)
+        self.assertIs(
+            open_position_content.commitment,
+            RelationalCommitment.HOLD_OPEN,
+        )
+        self.assertIs(open_position_content.closure, RelationalClosure.OPEN)
+
+        arc = stage1_composition_module.project_stage1_discourse_arc(d_phase_b)
+        self.assertIn(unfinished.contribution_id, arc.unresolved_or_residue_refs)
+        self.assertEqual(
+            arc.terminal_owner_refs,
+            (open_position.subjective_claim_id,),
+        )
+        self.assertEqual(arc.layer2_response_target_refs, (unfinished_ref,))
+
+    def test_known_exact4_relation_direction_and_relation_basis_are_exact(self) -> None:
+        module = stage1_composition_module
+        for index, (label, _memo, *_expected) in enumerate(self._KNOWN_EXACT4):
+            with self.subTest(known_structure=label):
+                *_, phase_b = self._known_inputs(index)
+                relation_contributions = tuple(
+                    row
+                    for row in phase_b.projection.observation_contributions
+                    if row.relation_operator
+                    is not RelationOperator.NO_RELATION_CLAIM
+                )
+                self.assertTrue(relation_contributions)
+                arc = module.project_stage1_discourse_arc(phase_b)
+                direction_rows = tuple(
+                    row
+                    for row in arc.dependency_rows
+                    if row.dependency_kind
+                    is module.ArcDependencyKind.ADMITTED_RELATION_DIRECTION
+                )
+                self.assertEqual(
+                    len(direction_rows),
+                    len(relation_contributions),
+                )
+                self.assertTrue(
+                    all(
+                        (row.source_relation_ref is not None)
+                        == (
+                            row.dependency_kind
+                            is module.ArcDependencyKind.ADMITTED_RELATION_DIRECTION
+                        )
+                        for row in arc.dependency_rows
+                    )
+                )
+
+                for contribution in relation_contributions:
+                    with self.subTest(
+                        known_structure=label,
+                        relation_operator=contribution.relation_operator.value,
+                    ):
+                        self.assertEqual(len(contribution.relation_basis_refs), 1)
+                        relation_ref = contribution.relation_basis_refs[0]
+                        matching_directions = tuple(
+                            row
+                            for row in direction_rows
+                            if row.source_relation_ref == relation_ref
+                        )
+                        self.assertEqual(len(matching_directions), 1)
+                        direction = matching_directions[0]
+                        expected_roles = module._ORDERED_RELATION_ARGUMENT_ROLES[
+                            contribution.relation_operator
+                        ]
+                        self.assertEqual(
+                            tuple(
+                                binding.role
+                                for binding in contribution.argument_bindings
+                            ),
+                            expected_roles,
+                        )
+                        expected_endpoints = tuple(
+                            binding.semantic_ref
+                            for binding in contribution.argument_bindings
+                        )
+                        self.assertEqual(
+                            module._ordered_relation_endpoint_refs(contribution),
+                            expected_endpoints,
+                        )
+                        self.assertEqual(
+                            (
+                                direction.predecessor_owner_ref,
+                                direction.successor_owner_ref,
+                            ),
+                            expected_endpoints,
+                        )
+                        self.assertEqual(direction.source_relation_ref, relation_ref)
+
+                        truncated = replace(
+                            contribution,
+                            relation_basis_refs=(
+                                contribution.relation_basis_refs[:-1]
+                            ),
+                        )
+                        with self.assertRaisesRegex(
+                            module.Stage1CompositionError,
+                            "STAGE1_RELATION_CARDINALITY_STOP",
+                        ):
+                            module._ordered_relation_endpoint_refs(truncated)
+
+    def test_known_exact4_final_api_generates_source_bound_actual_japanese(self) -> None:
+        visible_bodies = []
+        for index, (label, _memo, *_expected) in enumerate(self._KNOWN_EXACT4):
+            with self.subTest(known_structure=label):
+                (
+                    _source,
+                    _grounded_plan,
+                    graph,
+                    _parent_plan,
+                    _projection,
+                    _phase_a,
+                    subjective_plan,
+                    phase_b,
+                ) = self._known_inputs(index)
+                self.assertTrue(subjective_plan.subjective_claim_rows)
+                result = stage1_composition_module.compose_stage1_from_projection(
+                    phase_b
+                )
+                units = result.selected_candidate.sentence_units
+                layer1 = tuple(row for row in units if row.layer == "LAYER_1")
+                layer2 = tuple(row for row in units if row.layer == "LAYER_2")
+                self.assertTrue(1 <= len(layer1) <= 5)
+                self.assertTrue(1 <= len(layer2) <= 4)
+                self.assertTrue(2 <= len(units) <= 9)
+                self.assertTrue(all(row.text.endswith("。") for row in units))
+                self.assertTrue(
+                    all(re.search(r"[ぁ-んァ-ヶ一-龯]", row.text) for row in units)
+                )
+                clause_plan_by_ref = {
+                    row.clause_plan_ref: row
+                    for row in result.selected_candidate.normalized_artifact.clause_plan_rows
+                }
+                layer2_plans = tuple(
+                    clause_plan_by_ref[ref]
+                    for unit in layer2
+                    for ref in unit.clause_plan_refs
+                )
+                self.assertTrue(layer2_plans)
+                self.assertTrue(
+                    all(
+                        row.syntactic_orientation
+                        is stage1_composition_module.SyntacticOrientation.EMLIS_SUBJECT
+                        and row.speaker_requirement
+                        in {
+                            stage1_composition_module.SpeakerRequirement.EMLIS_EXPLICIT_REQUIRED,
+                            stage1_composition_module.SpeakerRequirement.EMLIS_ZERO_ALLOWED,
+                        }
+                        for row in layer2_plans
+                    )
+                )
+                self.assertTrue(any("Emlis" in row.text for row in layer2))
+                graph_node_ids = {row.node_id for row in graph.nodes}
+                self.assertTrue(all(unit.basis_anchor_refs for unit in units))
+                self.assertTrue(
+                    all(
+                        ref.split(":", 1)[1].split("@", 1)[0]
+                        in graph_node_ids
+                        for unit in units
+                        for ref in unit.basis_anchor_refs
+                    )
+                )
+                compact_source = re.sub(
+                    r"\s+",
+                    "",
+                    str(_source.normalized_current_input.get("memo", "")),
+                )
+                quoted_source_fragments = tuple(
+                    re.sub(r"\s+", "", value)
+                    for unit in layer1
+                    for value in re.findall(r"「([^」]+)」", unit.text)
+                )
+                def source_bound_or_registered_finite_form(value: str) -> bool:
+                    if value in compact_source:
+                        return True
+                    return any(
+                        value.endswith(finite_terminal)
+                        and (
+                            value[: -len(finite_terminal)] + source_terminal
+                        ) in compact_source
+                        for asset in stage1_composition_module.SOURCE_SCALAR_MORPHOLOGY_ASSET_REGISTRY
+                        for source_terminal, finite_terminal in asset.terminal_rewrites
+                    )
+
+                self.assertGreaterEqual(
+                    len(quoted_source_fragments),
+                    len(layer1),
+                )
+                self.assertTrue(
+                    all(
+                        source_bound_or_registered_finite_form(value)
+                        for value in quoted_source_fragments
+                    )
+                )
+                if label == "temporal_change":
+                    self.assertIn("散歩に出た", quoted_source_fragments)
+                    self.assertNotIn("散歩に出", quoted_source_fragments)
+                elif label == "unfinished":
+                    self.assertIn(
+                        "まだ気持ちが残っている",
+                        quoted_source_fragments,
+                    )
+                    self.assertNotIn(
+                        "まだ気持ちが残っていて",
+                        quoted_source_fragments,
+                    )
+                normalized = result.selected_candidate.normalized_artifact
+                realized_duties = tuple(
+                    ref for unit in units for ref in unit.duty_refs
+                )
+                self.assertEqual(len(realized_duties), len(set(realized_duties)))
+                self.assertEqual(
+                    set(realized_duties),
+                    set(normalized.required_duty_refs),
+                )
+                relation_duties = {
+                    row.duty_ref
+                    for row in normalized.composition_duty_rows
+                    if row.relation_refs and row.retention == "REQUIRED"
+                }
+                self.assertTrue(relation_duties.issubset(set(realized_duties)))
+                visible_bodies.append(tuple(row.text for row in units))
+        self.assertEqual(len(visible_bodies), 4)
+        self.assertEqual(len(set(visible_bodies)), 4)
+
+    def test_source_scalar_uses_exact_normalized_raw_text_and_typed_finite_morphology(self) -> None:
+        def source_expression_by_predicate_kind(
+            phase_b: object,
+            predicate_kind: str,
+        ) -> tuple[str, object, str]:
+            candidate_by_ref = {
+                row.candidate_id: row
+                for row in phase_b.projection.interpretation_candidates
+            }
+            frame_rows = tuple(
+                row
+                for row in phase_b.resolved_grounded_frame_by_candidate_ref
+                if row.grounded_frame.predicate_kind == predicate_kind
+                and any(
+                    code.startswith("surface_scalar_range:")
+                    for code in row.grounded_frame.attribute_codes
+                )
+            )
+            self.assertEqual(len(frame_rows), 1)
+            frame_row = frame_rows[0]
+            candidate = candidate_by_ref[frame_row.candidate_ref]
+            primary_refs = tuple(
+                binding.semantic_ref
+                for binding in candidate.argument_bindings
+                if binding.role is ArgumentRole.PRIMARY
+            )
+            self.assertEqual(len(primary_refs), 1)
+            return (
+                stage1_composition_module._source_expression(
+                    primary_refs[0],
+                    phase_b,
+                    frame_row.grounded_frame,
+                ),
+                frame_row,
+                primary_refs[0],
+            )
+
+        *_, b_phase_b = self._known_inputs(1)
+        b_action, b_action_row, b_action_ref = source_expression_by_predicate_kind(
+            b_phase_b,
+            "action",
+        )
+        self.assertEqual(b_action, "「散歩に出た」ということ")
+
+        *_, d_phase_b = self._known_inputs(3)
+        d_residue, _d_residue_row, _d_residue_ref = (
+            source_expression_by_predicate_kind(d_phase_b, "residue")
+        )
+        self.assertEqual(d_residue, "「まだ気持ちが残っている」ということ")
+        self.assertNotIn("残っていて", d_residue)
+
+        *_, spaced_phase_b = _final_stage1_composition_inputs(
+            _request(
+                record_id="stage2-source-scalar-whitespace",
+                memo=(
+                    "椅子に\u3000  座ったら、少し落ち着いた。"
+                    "ただ、いつもそうなるとは思っていない。"
+                ),
+            )
+        )
+        spaced_action, _spaced_row, _spaced_ref = (
+            source_expression_by_predicate_kind(spaced_phase_b, "action")
+        )
+        self.assertEqual(spaced_action, "「椅子に 座った」ということ")
+
+        source_marker = "surface_scalar_source:normalized_raw_text"
+        invalid_marker_sets = (
+            (),
+            ("surface_scalar_source:graph_node_value",),
+            (source_marker, source_marker),
+        )
+        original_codes = tuple(b_action_row.grounded_frame.attribute_codes)
+        codes_without_source_marker = tuple(
+            code
+            for code in original_codes
+            if not code.startswith("surface_scalar_source:")
+        )
+        for source_markers in invalid_marker_sets:
+            with self.subTest(source_markers=source_markers):
+                tampered_frame = replace(
+                    b_action_row.grounded_frame,
+                    attribute_codes=(*codes_without_source_marker, *source_markers),
+                )
+                tampered_phase_b = replace(
+                    b_phase_b,
+                    resolved_grounded_frame_by_candidate_ref=tuple(
+                        replace(row, grounded_frame=tampered_frame)
+                        if row.candidate_ref == b_action_row.candidate_ref
+                        else row
+                        for row in b_phase_b.resolved_grounded_frame_by_candidate_ref
+                    ),
+                )
+                with self.assertRaisesRegex(
+                    stage1_composition_module.Stage1CompositionError,
+                    "STAGE1_SOURCE_SCALAR_RANGE_STOP",
+                ):
+                    stage1_composition_module._source_expression(
+                        b_action_ref,
+                        tampered_phase_b,
+                        tampered_frame,
+                    )
+
+        self.assertEqual(
+            {
+                row.predicate_kind
+                for row in stage1_composition_module.SOURCE_SCALAR_MORPHOLOGY_ASSET_REGISTRY
+            },
+            {"action", "change", "residue", "unfinished"},
+        )
+        stage1_composition_module.validate_language_core_registry_invariant()
+
+    def test_exact6_normalizer_is_single_pass_idempotent_and_defect_free(self) -> None:
+        *_, phase_b = self._known_inputs(3)
+        original_normalizer = stage1_composition_module.normalize_to_normal_form
+        with patch.object(
+            stage1_composition_module,
+            "normalize_to_normal_form",
+            wraps=original_normalizer,
+        ) as normalizer:
+            result = stage1_composition_module.compose_stage1_from_projection(
+                phase_b
+            )
+        self.assertEqual(normalizer.call_count, result.internal_candidate_count)
+        representative = result.ranked_candidates[0].normalized_artifact
+        with self.assertRaisesRegex(
+            stage1_composition_module.Stage1CompositionError,
+            "RECOMPOSITION_NORMAL_FORM_INPUT_STOP",
+        ):
+            original_normalizer(
+                SimpleNamespace(
+                    projection_ref=representative.projection_ref,
+                    layout_preference_seed=representative.layout_preference_seed,
+                ),
+                representative.layout_preference_seed,
+                phase_b,
+            )
+        for candidate in result.ranked_candidates:
+            with self.subTest(rank=candidate.rank):
+                first = candidate.normalized_artifact
+                second = original_normalizer(
+                    first,
+                    first.layout_preference_seed,
+                    phase_b,
+                )
+                self.assertEqual(
+                    stage1_composition_module.canonical_normalized_bytes(first),
+                    stage1_composition_module.canonical_normalized_bytes(second),
+                )
+                self.assertEqual(
+                    first.normalization_phase_trace,
+                    tuple(stage1_composition_module.NormalFormPhase),
+                )
+                self.assertEqual(len(first.normalization_phase_trace), 6)
+                self.assertEqual(first.correctable_defect_rows, ())
+                self.assertEqual(second.correctable_defect_rows, ())
+                self.assertEqual(first.full_duty_refs, second.full_duty_refs)
+                self.assertEqual(first.required_duty_refs, second.required_duty_refs)
+                self.assertEqual(
+                    first.suppressed_duty_rows,
+                    second.suppressed_duty_rows,
+                )
+                self.assertEqual(first.sentence_units, second.sentence_units)
+                self.assertTrue(
+                    all(
+                        row.surface_text_sha256
+                        == hashlib.sha256(row.text.encode("utf-8")).hexdigest()
+                        for row in first.sentence_units
+                    )
+                )
+                self.assertEqual(
+                    first.response_object_expression_rows,
+                    second.response_object_expression_rows,
+                )
+
+    def test_normalized_tamper_is_rejected_with_corresponding_typed_defect(self) -> None:
+        module = stage1_composition_module
+        *_, phase_b = self._known_inputs(3)
+        normalized = module.compose_stage1_from_projection(
+            phase_b
+        ).selected_candidate.normalized_artifact
+
+        def project_defects(artifact: object):
+            return module._project_post_normalization_defect_rows(
+                arc=artifact.discourse_arc,
+                seed=artifact.layout_preference_seed,
+                duties=artifact.composition_duty_rows,
+                required_duty_refs=artifact.required_duty_refs,
+                suppressed_duty_rows=artifact.suppressed_duty_rows,
+                clause_plans=artifact.clause_plan_rows,
+                expressions=artifact.response_object_expression_rows,
+                units=artifact.sentence_units,
+            )
+
+        self.assertEqual(project_defects(normalized), ())
+        first_duty_ref = normalized.sentence_units[0].duty_refs[0]
+        self.assertNotEqual(
+            first_duty_ref,
+            normalized.layout_preference_seed.terminal_duty_ref,
+        )
+        terminal_tamper = replace(
+            normalized,
+            layout_preference_seed=replace(
+                normalized.layout_preference_seed,
+                terminal_duty_ref=first_duty_ref,
+            ),
+        )
+        required_duty_tamper = replace(
+            normalized,
+            required_duty_refs=normalized.required_duty_refs[:-1],
+        )
+
+        anaphoric_index = next(
+            index
+            for index, row in enumerate(
+                normalized.response_object_expression_rows
+            )
+            if row.expression_mode
+            is module.ResponseObjectExpressionMode.ANAPHORIC
+        )
+        anaphoric = normalized.response_object_expression_rows[anaphoric_index]
+        antecedent_tamper = replace(
+            normalized,
+            response_object_expression_rows=tuple(
+                replace(row, antecedent_unit_ref=row.unit_ref)
+                if index == anaphoric_index
+                else row
+                for index, row in enumerate(
+                    normalized.response_object_expression_rows
+                )
+            ),
+        )
+        grounded_dependency_index = next(
+            index
+            for index, row in enumerate(normalized.discourse_arc.dependency_rows)
+            if row.dependency_kind
+            is module.ArcDependencyKind.GROUNDED_BEFORE_SUBJECTIVE
+            and row.successor_owner_ref
+            not in normalized.discourse_arc.terminal_owner_refs
+        )
+        grounded_dependency = normalized.discourse_arc.dependency_rows[
+            grounded_dependency_index
+        ]
+        terminal_owner_ref = normalized.discourse_arc.terminal_owner_refs[0]
+        self.assertNotEqual(
+            grounded_dependency.predecessor_owner_ref,
+            terminal_owner_ref,
+        )
+        dependency_tamper = replace(
+            normalized,
+            discourse_arc=replace(
+                normalized.discourse_arc,
+                dependency_rows=tuple(
+                    replace(row, predecessor_owner_ref=terminal_owner_ref)
+                    if index == grounded_dependency_index
+                    else row
+                    for index, row in enumerate(
+                        normalized.discourse_arc.dependency_rows
+                    )
+                ),
+            ),
+        )
+        surface_tamper = replace(
+            normalized,
+            sentence_units=(
+                replace(normalized.sentence_units[0], text="改ざん。"),
+                *normalized.sentence_units[1:],
+            ),
+        )
+
+        cases = (
+            (
+                "terminal",
+                terminal_tamper,
+                module.CorrectableDefectKind.TERMINAL_FIT,
+            ),
+            (
+                "required-duty",
+                required_duty_tamper,
+                module.CorrectableDefectKind.NONMATERIAL_OR_DUPLICATE_DUTY,
+            ),
+            (
+                "antecedent",
+                antecedent_tamper,
+                module.CorrectableDefectKind.UNRESOLVED_OR_DISTANT_REFERENT,
+            ),
+            (
+                "dependency",
+                dependency_tamper,
+                module.CorrectableDefectKind.DEPENDENCY_OR_INFORMATION_ORDER,
+            ),
+            (
+                "surface-seal",
+                surface_tamper,
+                module.CorrectableDefectKind.TERMINAL_FIT,
+            ),
+        )
+        for label, tampered, expected_kind in cases:
+            with self.subTest(tamper=label):
+                defects = project_defects(tampered)
+                matching = tuple(
+                    row for row in defects if row.defect_kind is expected_kind
+                )
+                self.assertEqual(len(matching), 1)
+                self.assertTrue(matching[0].defect_owner_refs)
+                with self.assertRaisesRegex(
+                    module.Stage1CompositionError,
+                    "RECOMPOSITION_NORMAL_FORM_UNPROVEN_STOP",
+                ):
+                    module.canonical_normalized_bytes(tampered)
+                with self.assertRaisesRegex(
+                    module.Stage1CompositionError,
+                    "STAGE1_PROFILE_INPUT_STOP",
+                ):
+                    module.derive_discourse_preference_profile(tampered)
+
+        reordered_units = replace(
+            normalized,
+            sentence_units=tuple(reversed(normalized.sentence_units)),
+        )
+        with self.assertRaisesRegex(
+            module.Stage1CompositionError,
+            "STAGE1_PROFILE_INPUT_STOP",
+        ):
+            module.derive_discourse_preference_profile(reordered_units)
+
+    def test_material_alternate_runs_final_profile_and_global_rank_path(self) -> None:
+        *_, phase_b = self._known_inputs(1)
+        arc = stage1_composition_module.project_stage1_discourse_arc(phase_b)
+        duties = stage1_composition_module._project_duties(phase_b, arc)
+        seeds = stage1_composition_module._layout_seeds(duties, arc)
+        self.assertTrue(2 <= len(seeds) <= 32)
+        exact5_dimension_values = tuple(
+            {
+                stage1_canonical_json_bytes(getattr(seed, field_name))
+                for seed in seeds
+            }
+            for field_name in (
+                "opening_duty_ref",
+                "layer1_group_rows",
+                "layer2_group_rows",
+                "subjective_progression_duty_refs",
+                "terminal_duty_ref",
+            )
+        )
+        exact5_dimension_counts = tuple(
+            len(values) for values in exact5_dimension_values
+        )
+        self.assertTrue(
+            all(1 <= count <= 2 for count in exact5_dimension_counts)
+        )
+        self.assertIn(2, exact5_dimension_counts)
+        original_normalizer = stage1_composition_module.normalize_to_normal_form
+        original_profile_projector = (
+            stage1_composition_module._derive_discourse_preference_profile_with_frozen_applicability
+        )
+        original_applicability_projector = (
+            stage1_composition_module._derive_profile_applicability_mask
+        )
+        with patch.object(
+            stage1_composition_module,
+            "normalize_to_normal_form",
+            wraps=original_normalizer,
+        ) as normalizer, patch.object(
+            stage1_composition_module,
+            "_derive_discourse_preference_profile_with_frozen_applicability",
+            wraps=original_profile_projector,
+        ) as profile_projector:
+            with patch.object(
+                stage1_composition_module,
+                "_derive_profile_applicability_mask",
+                wraps=original_applicability_projector,
+            ) as applicability_projector:
+                result = (
+                    stage1_composition_module.compose_stage1_from_projection(
+                        phase_b
+                    )
+                )
+        self.assertGreaterEqual(result.internal_candidate_count, 2)
+        self.assertEqual(normalizer.call_count, result.internal_candidate_count)
+        self.assertGreaterEqual(normalizer.call_count, 2)
+        self.assertGreaterEqual(profile_projector.call_count, 2)
+        self.assertEqual(applicability_projector.call_count, 1)
+        self.assertEqual(
+            tuple(
+                inspect.signature(
+                    stage1_composition_module.derive_discourse_preference_profile
+                ).parameters
+            ),
+            ("normalized_artifact",),
+        )
+        with self.assertRaises(TypeError):
+            stage1_composition_module.derive_discourse_preference_profile(
+                result.ranked_candidates[0].normalized_artifact,
+                applicability_mask=(True, False, *(True for _ in range(6))),
+            )
+        self.assertEqual(len(result.ranked_candidates), 2)
+        self.assertEqual(
+            tuple(row.rank for row in result.ranked_candidates),
+            (1, 2),
+        )
+        self.assertEqual(result.selected_candidate, result.ranked_candidates[0])
+        self.assertEqual(result.selected_candidate.rank, 1)
+        self.assertEqual(
+            len({row.composition_signature for row in result.ranked_candidates}),
+            len(result.ranked_candidates),
+        )
+        visible_keys = tuple(
+            stage1_composition_module._visible_key(row.normalized_artifact)
+            for row in result.ranked_candidates
+        )
+        self.assertEqual(len(visible_keys), 2)
+        self.assertEqual(len(set(visible_keys)), 2)
+        preserved_seed_partitions = []
+        for candidate in result.ranked_candidates:
+            normalized = candidate.normalized_artifact
+            seed = normalized.layout_preference_seed
+            normalized_groups = tuple(
+                stage1_composition_module.DutyGroupRow(unit.duty_refs)
+                for unit in normalized.sentence_units
+            )
+            expected_groups = (
+                *seed.layer1_group_rows,
+                *seed.layer2_group_rows,
+            )
+            self.assertEqual(normalized_groups, expected_groups)
+            self.assertEqual(
+                tuple(
+                    ref
+                    for unit in normalized.sentence_units
+                    if unit.layer == "LAYER_2"
+                    for ref in unit.duty_refs
+                ),
+                seed.subjective_progression_duty_refs,
+            )
+            preserved_seed_partitions.append(
+                tuple(group.ordered_duty_refs for group in expected_groups)
+            )
+        self.assertEqual(len(set(preserved_seed_partitions)), 2)
+        self.assertTrue(
+            all(
+                len(row.discourse_preference_profile.profile_evidence_rows) == 8
+                and row.normalized_artifact.correctable_defect_rows == ()
+                for row in result.ranked_candidates
+            )
+        )
+
+        profile_field_names = stage1_composition_module.PROFILE_RULE_REGISTRY
+        not_applicable_masks = tuple(
+            tuple(
+                getattr(candidate.discourse_preference_profile, field_name)
+                is stage1_composition_module.ProfileFit.NOT_APPLICABLE
+                for field_name in profile_field_names
+            )
+            for candidate in result.ranked_candidates
+        )
+        self.assertEqual(len(set(not_applicable_masks)), 1)
+        self.assertFalse(any(not_applicable_masks[0]))
+        invalid_na_profile = replace(
+            result.ranked_candidates[0].discourse_preference_profile,
+            subjective_sequence_fit=(
+                stage1_composition_module.ProfileFit.NOT_APPLICABLE
+            ),
+        )
+        with self.assertRaisesRegex(
+            stage1_composition_module.Stage1CompositionError,
+            "STAGE1_PROFILE_APPLICABILITY_STOP",
+        ):
+            stage1_composition_module._profile_key(invalid_na_profile)
+
+        sentence_load_evidence = tuple(
+            next(
+                row
+                for row in candidate.discourse_preference_profile.profile_evidence_rows
+                if row.profile_field
+                is stage1_composition_module.ProfileEvidenceField.SENTENCE_LOAD
+            )
+            for candidate in result.ranked_candidates
+        )
+        self.assertEqual(
+            {row.result for row in sentence_load_evidence},
+            {
+                stage1_composition_module.ProfileFit.ARC_ALIGNED,
+                stage1_composition_module.ProfileFit.PERMITTED,
+            },
+        )
+        self.assertEqual(
+            len(
+                {
+                    stage1_canonical_json_bytes(row)
+                    for row in sentence_load_evidence
+                }
+            ),
+            2,
+        )
+
+        fit_rank = {
+            stage1_composition_module.ProfileFit.ARC_ALIGNED: 0,
+            stage1_composition_module.ProfileFit.PERMITTED: 1,
+        }
+        for candidate, not_applicable_mask in zip(
+            result.ranked_candidates,
+            not_applicable_masks,
+            strict=True,
+        ):
+            profile = candidate.discourse_preference_profile
+            expected_profile_key = tuple(
+                fit_rank[getattr(profile, field_name)]
+                for field_name, excluded in zip(
+                    profile_field_names,
+                    not_applicable_mask,
+                    strict=True,
+                )
+                if not excluded
+            )
+            self.assertEqual(
+                stage1_composition_module._profile_key(profile),
+                expected_profile_key,
+            )
+            self.assertEqual(
+                len(expected_profile_key),
+                len(profile_field_names) - sum(not_applicable_mask),
+            )
+        profile_fields = stage1_composition_module.PROFILE_RULE_REGISTRY
+        rank_keys = tuple(
+            (
+                tuple(
+                    fit_rank[getattr(row.discourse_preference_profile, field)]
+                    for field in profile_fields
+                    if getattr(row.discourse_preference_profile, field)
+                    is not stage1_composition_module.ProfileFit.NOT_APPLICABLE
+                ),
+                row.composition_signature,
+            )
+            for row in result.ranked_candidates
+        )
+        self.assertEqual(rank_keys, tuple(sorted(rank_keys)))
+
+    def test_language_core_identity_is_independent_exact16_framed_digest(self) -> None:
+        module = stage1_composition_module
+        repository_root = Path(__file__).resolve().parents[2]
+        exact16_names = (
+            "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
+            "ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py",
+            "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py",
+            "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py",
+            "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
+            "ai/services/ai_inference/cocolon_text_generation_core/composer.py",
+            "ai/services/ai_inference/cocolon_text_generation_core/adapters/emlis_observation_composer.py",
+            "language_core_contract_manifest",
+            "construction_registry",
+            "emlis_expression_assets",
+            "response_object_reference_assets",
+            "functional_surface_assets",
+            "participant_lexeme_assets",
+            "structural_surface_assets",
+            "policy_and_enum_manifest",
+            "normal_form_and_profile_manifest",
+        )
+        payloads = module.language_core_identity_payloads(repository_root)
+        self.assertEqual(tuple(name for name, _payload in payloads), exact16_names)
+        self.assertEqual(len({name for name, _payload in payloads}), 16)
+        for path, payload in payloads[:7]:
+            self.assertEqual(payload, (repository_root / path).read_bytes())
+
+        expected_contract_names = (
+            "EmlisSubjectiveClaim", "SubjectiveBasisBinding",
+            "SourceQualifierBinding", "PolicyBasisBinding",
+            "EmlisAffectContent", "EmlisAppraisalContent",
+            "EmlisRelationalPosition", "RowRefFreeValueApplication",
+            "RowRefFreeMaterialValueContent", "RowRefFreeSubjectivePropositionV2",
+            "SubjectiveClaimDraft", "MaterialValueContent", "ValueApplication",
+            "Stage1PolicyFeatureVector", "PolicyApplicationSeed",
+            "PolicyApplicationRow", "SubjectivePropositionV2",
+            "EmlisStage1Projection", "Stage1SubjectivePlanningInputs",
+            "Stage1SurfaceCompositionInputs", "EmlisSubjectiveMeaningPlan",
+            "SubjectiveResponsibilityRow", "SubjectiveOpportunityRow",
+            "SubjectiveFacetSuppressionRow", "Stage1DiscourseArcView",
+            "ArcDependencyRow", "CompositionDutyView", "DutySuppressionRow",
+            "ClaimSuppressionRow", "DiscourseReferenceStateRow", "ClauseIntent",
+            "ClauseSourceBindingCoverage", "ClauseScalarConstraintRow",
+            "ScalarSurfaceCoverageKey", "ScalarSurfaceRealizationRow",
+            "ClauseSubjectBinding", "ClauseArgumentSlotBinding", "ClausePlan",
+            "ResponseObjectExpression", "SurfacePartPlan",
+            "SurfaceProjectionContext", "ClauseFrame", "RealizedSentenceUnit",
+            "LayoutPreferenceSeed", "DutyGroupRow", "EmlisCompositionLayout",
+            "CorrectableDefectRow", "DraftArtifact", "NormalizedDraftArtifact",
+            "SealedCompositionPlan", "SealedUnitPlanRow",
+            "RankableNormalizedMember", "ArtifactCompositionCandidate",
+            "DiscoursePreferenceProfile", "ProfileEvidenceRow",
+            "GrammaticalShapeKey", "SurfaceDerivation",
+            "RealizedSurfaceBindingV2", "EmlisStage1PositiveTraceExtensionV2",
+        )
+        contract_manifest = dict(module._contract_manifest())
+        descriptors = contract_manifest["logical_contract_descriptors"]
+        self.assertEqual(contract_manifest["logical_contract_count"], 59)
+        self.assertEqual(
+            tuple(dict(row)["type_name"] for row in descriptors),
+            expected_contract_names,
+        )
+        expected_descriptor_keys = (
+            "type_name", "logical_version", "serialization_boundary", "fields",
+            "conditional_constraints", "derivation",
+        )
+        expected_field_keys = (
+            "field_name", "logical_type", "cardinality", "default",
+            "conditional_constraints", "derivation",
+        )
+        for descriptor in descriptors:
+            descriptor_map = dict(descriptor)
+            self.assertEqual(tuple(descriptor_map), expected_descriptor_keys)
+            self.assertTrue(descriptor_map["fields"])
+            field_names = []
+            for field_descriptor in descriptor_map["fields"]:
+                field_map = dict(field_descriptor)
+                self.assertEqual(tuple(field_map), expected_field_keys)
+                self.assertEqual(field_map["default"], "NO_IMPLICIT_DEFAULT")
+                self.assertTrue(field_map["cardinality"])
+                field_names.append(field_map["field_name"])
+            self.assertEqual(len(field_names), len(set(field_names)))
+        self.assertEqual(len(module.LANGUAGE_CORE_CONTENT_DERIVATION_ROWS), 5)
+        expected_concrete_descriptors = (
+            ("ProjectedSubjectiveClaim", ("schema_version", "subjective_claim_id", "parent_duty_ref", "speaker_owner", "claim_domain", "subjective_responsibility_refs", "selected_subjective_opportunity_key", "asserted_subjective_proposition", "basis_observation_contribution_refs", "basis_semantic_refs", "source_reception_act_refs", "value_principle_refs", "user_fact_effect", "forbidden_promotions")),
+            ("CandidateFrameRow", ("candidate_ref", "grounded_frame")),
+            ("RelationEndpointCandidateRow", ("relation_candidate_ref", "source_argument_role", "source_semantic_ref", "endpoint_grounded_candidate_ref")),
+            ("QualifierValueRow", ("candidate_ref", "qualifier_scope", "source_argument_role", "source_semantic_ref", "axis", "value")),
+            ("RetainedReceptionActRow", ("act_ref", "reception_act", "basis_contribution_refs")),
+            ("ComposedSentenceUnit", ("unit_ref", "layer", "duty_refs", "sentence_job_refs", "basis_anchor_refs", "clause_plan_refs", "text", "surface_text_sha256")),
+            ("Stage1CompositionResult", ("language_core_identity", "discourse_arc", "internal_candidate_count", "ranked_candidates", "selected_candidate")),
+            ("SourceScalarMorphologyAssetSpec", ("morphology_asset_id", "predicate_kind", "required_attribute_codes", "terminal_rewrites", "preserved_finite_terminals")),
+        )
+        self.assertEqual(
+            module.LANGUAGE_CORE_CONCRETE_BINDING_DESCRIPTORS,
+            expected_concrete_descriptors,
+        )
+        for type_name, expected_field_names in expected_concrete_descriptors:
+            self.assertEqual(
+                tuple(field.name for field in fields(getattr(module, type_name))),
+                expected_field_names,
+            )
+        module._validate_concrete_binding_descriptors()
+        self.assertEqual(
+            module.FUNCTIONAL_ASSET_REGISTRY[-1],
+            module.SOURCE_SCALAR_MORPHOLOGY_ASSET_REGISTRY,
+        )
+
+        expected_enum_name_counts = (
+            ("SubjectiveResponsibilityKind", 4), ("SubjectiveSpecificity", 3),
+            ("SubjectiveFacetSuppressionReason", 3), ("ArcDependencyKind", 5),
+            ("SentenceJob", 8), ("DutySuppressionReason", 3),
+            ("ResponseObjectExpressionMode", 3), ("GroundedPredicateKind", 14),
+            ("RelationOperator", 6), ("ArgumentRole", 10),
+            ("ClauseArgumentRole", 11), ("QualifierLookupScope", 2),
+            ("SemanticClauseKind", 3), ("SubjectivePredicationKind", 5),
+            ("PredicateValency", 4), ("ClauseScalarConstraintOwnerKind", 2),
+            ("ClauseScalarAxis", 3), ("ScalarSurfaceRealizationMode", 4),
+            ("GrammaticalRoleAssignmentRule", 4), ("SyntacticOrientation", 5),
+            ("SpeakerRequirement", 3), ("SubjectOriginKind", 3),
+            ("SubjectRealizationMode", 2), ("ActiveReferentEstablishmentKind", 4),
+            ("SpeakerResolutionStatus", 2), ("SurfaceDerivationKind", 8),
+            ("SurfaceBindingKind", 8), ("CorrectableDefectKind", 8),
+            ("NormalFormPhase", 6), ("ProfileFit", 3),
+            ("ProfileEvidenceField", 8), ("ProfileEvidenceRuleKind", 8),
+            ("RegisteredFunctionalSlotRef", 2), ("SubjectiveContentKind", 4),
+            ("SubjectiveMode", 6), ("SubjectiveOperator", 6),
+            ("SubjectiveAssertionModality", 5), ("SubjectiveBasisRole", 11),
+            ("PolicyBasisOwnerKind", 2), ("PolicyBasisRole", 7),
+            ("MaterialRisk", 9), ("RelationalPositionKind", 2),
+            ("RelationalCommitment", 6), ("RelationalClosure", 3),
+        )
+        self.assertEqual(
+            tuple((name, len(values)) for name, values in module.LANGUAGE_CORE_CLOSED_ENUM_MANIFEST),
+            expected_enum_name_counts,
+        )
+        self.assertEqual(
+            tuple(name for name, _fields in module.LANGUAGE_CORE_REF_PREIMAGE_MANIFEST),
+            (
+                "projection_preimage_ref", "subjective_basis_binding_ref",
+                "source_qualifier_binding_ref", "policy_basis_binding_ref",
+                "subjective_responsibility_ref", "subjective_opportunity_key",
+                "arc_dependency_ref", "stage1_discourse_arc_ref",
+                "composition_duty_ref", "reference_state_ref",
+                "affected_claim_policy_target_key", "policy_application_row_ref",
+                "clause_scalar_constraint_ref", "clause_intent_ref",
+                "clause_plan_ref", "response_object_expression_ref",
+                "profile_evidence_ref", "unit_ref", "composition_layout_id",
+                "candidate_id", "selected_stage1_artifact_ref",
+            ),
+        )
+        self.assertEqual(len(module.LANGUAGE_CORE_LAYOUT_SEED_EXACT5_RULES), 5)
+        self.assertEqual(len(module.LANGUAGE_CORE_NORMAL_FORM_EXACT6_RULES), 6)
+        self.assertEqual(
+            tuple(
+                (row[0], row[1], row[3])
+                for row in module.LANGUAGE_CORE_PROFILE_EXACT8_RULES
+            ),
+            (
+                ("INFORMATION_FLOW", "ARC_DEPENDENCY", "REQUIRED_APPLICABLE"),
+                ("CONCRETE_BEFORE_ABSTRACT", "CONCRETE_INTRODUCTION", "POOL_GLOBAL_OPTIONAL"),
+                ("SENTENCE_LOAD", "PREDICATION_LOAD", "REQUIRED_APPLICABLE"),
+                ("TOPIC_TRANSITION", "TOPIC_STATE", "REQUIRED_APPLICABLE"),
+                ("REFERENT_CONTINUITY", "REFERENT_STATE", "REQUIRED_APPLICABLE"),
+                ("RELATION_REALIZATION", "RELATION_REALIZATION", "REQUIRED_APPLICABLE"),
+                ("SUBJECTIVE_SEQUENCE", "SUBJECTIVE_DEPENDENCY", "REQUIRED_APPLICABLE"),
+                ("TERMINAL", "TERMINAL_DUTY", "REQUIRED_APPLICABLE"),
+            ),
+        )
+        self.assertEqual(
+            Counter(row[3] for row in module.LANGUAGE_CORE_PROFILE_EXACT8_RULES),
+            Counter({"REQUIRED_APPLICABLE": 7, "POOL_GLOBAL_OPTIONAL": 1}),
+        )
+        self.assertEqual(len(module.LANGUAGE_CORE_STAGE_A_B_RULES), 3)
+
+        suppression_features = (
+            "PRESENT_BURDEN", "PRESENT_RESIDUE", "OBSERVE_BURDEN",
+            "PRESERVE_RESIDUE", "PRESENT_DIRECTION", "PRESENT_CHANGE",
+            "PRESENT_ACTUAL_OUTPUT", "COEXISTS_WITH", "TENSION_WITH",
+            "PRESENT_UNFINISHED", "PRESERVE_UNFINISHED", "material_unknown",
+            "actual_output_retention_required",
+        )
+        visibility_features = (*suppression_features[:11], suppression_features[12])
+        acts = (
+            "stay_with_current_burden", "honor_concrete_effort",
+            "protect_retained_intention", "recognize_lived_change",
+            "hold_help_seeking", "bounded_counter_self_denial",
+            "respect_words_placed",
+        )
+        principle_refs = tuple(
+            (code, f"policy:{code}@cocolon.emlis.stage1.value_policy.v1")
+            for code in ("V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9")
+        )
+
+        def vectors(width: int) -> tuple[tuple[bool, ...], ...]:
+            return tuple(
+                tuple(
+                    bool((integer >> (width - position - 1)) & 1)
+                    for position in range(width)
+                )
+                for integer in range(1 << width)
+            )
+
+        def suppression_codes(bits: tuple[bool, ...]) -> tuple[str, ...]:
+            selected = set()
+            if any(bits[index] for index in (0, 1, 2, 3)):
+                selected.add("V1")
+            if bits[4]:
+                selected.update(("V2", "V8"))
+            if bits[5] or bits[6]:
+                selected.update(("V4", "V5"))
+            if bits[7] or bits[8]:
+                selected.add("V6")
+            if bits[9] or bits[10]:
+                selected.update(("V3", "V7", "V9"))
+            if bits[11]:
+                selected.add("V9")
+            return tuple(code for code, _ref in principle_refs if code in selected)
+
+        def visible_refs(bits: tuple[bool, ...], act: str) -> tuple[str, ...]:
+            if act == "bounded_counter_self_denial":
+                codes = {"V1", "V8"}
+            elif act == "protect_retained_intention" and bits[4] and (
+                bits[0] or bits[7] or bits[8]
+            ):
+                codes = {"V2", "V8"}
+            elif act == "hold_help_seeking" and bits[6] and bits[11]:
+                codes = {"V8"}
+            else:
+                codes = set()
+            return tuple(ref for code, ref in principle_refs if code in codes)
+
+        suppression_rows = tuple(
+            (bits, suppression_codes(bits)) for bits in vectors(13)
+        )
+        visibility_rows = tuple(
+            (bits, act, visible_refs(bits, act))
+            for bits in vectors(12)
+            for act in acts
+        )
+        self.assertEqual(len(suppression_rows), 8192)
+        self.assertEqual(len(visibility_rows), 28672)
+        independent_policy_payload = (
+            (
+                ("schema_version", "cocolon.cmee.v1a.stage1_policy_behavior_matrix.v1"),
+                ("suppression_feature_fields", suppression_features),
+                ("visibility_feature_fields", visibility_features),
+                ("boolean_iteration_order", ("FALSE", "TRUE")),
+                ("reception_act_order", acts),
+            ),
+            ("suppression_rows", suppression_rows),
+            ("visibility_rows", visibility_rows),
+        )
+        independent_policy_digest = hashlib.sha256(
+            stage1_canonical_json_bytes(independent_policy_payload)
+        ).hexdigest()
+        self.assertEqual(
+            independent_policy_digest,
+            "3cd429305e05f41e13fed60c14f24e7060c25c011da20dbf9ef159c05c751327",
+        )
+        self.assertEqual(independent_policy_digest, module.POLICY_BEHAVIOR_DIGEST)
+        self.assertEqual(independent_policy_digest, module.recompute_policy_behavior_digest())
+        self.assertEqual(
+            module.recompute_policy_behavior_digest(),
+            module.recompute_policy_behavior_digest(),
+        )
+        with patch.object(module, "POLICY_BEHAVIOR_DIGEST", "0" * 64):
+            with self.assertRaisesRegex(
+                module.Stage1CompositionError,
+                "LANGUAGE_CORE_POLICY_BEHAVIOR_DIGEST_STOP",
+            ):
+                module.language_core_identity_payloads(repository_root)
+
+        expected_owner_paths = exact16_names[:7]
+        self.assertEqual(
+            tuple(path for path, _names in module.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST),
+            expected_owner_paths,
+        )
+        for path, callable_names in module.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST:
+            tree = ast.parse((repository_root / path).read_text(encoding="utf-8"))
+            top_level_functions = {
+                node.name
+                for node in tree.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            }
+            self.assertTrue(set(callable_names).issubset(top_level_functions))
+
+        framed = bytearray(b"COCOLON_CMEE_STAGE1_LANGUAGE_CORE_IDENTITY_V1\x00")
+        for name, payload in payloads:
+            name_bytes = name.encode("utf-8")
+            framed.extend(len(name_bytes).to_bytes(8, "big"))
+            framed.extend(name_bytes)
+            framed.extend(len(payload).to_bytes(8, "big"))
+            framed.extend(payload)
+        independent_identity = hashlib.sha256(framed).hexdigest()
+        self.assertEqual(independent_identity, module.LANGUAGE_CORE_IDENTITY)
+        self.assertEqual(
+            independent_identity,
+            module.compute_language_core_identity(repository_root),
+        )
+        self.assertRegex(module.LANGUAGE_CORE_IDENTITY, r"^[0-9a-f]{64}$")
 
 
 if __name__ == "__main__":

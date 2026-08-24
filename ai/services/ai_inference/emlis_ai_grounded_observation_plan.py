@@ -58,6 +58,9 @@ GROUND_OBSERVATION_PLAN_ADAPTER_VERSION: Final = "cocolon.emlis.grounded_observa
 GROUND_OBSERVATION_PLAN_GENERATION_PATH: Final = "grounded_observation_plan_canonical_v1"
 GROUND_OBSERVATION_PLAN_SEMANTIC_VERSION: Final = "cocolon.emlis.grounded_semantics.i2.v3"
 GROUND_HUMAN_RECEPTION_PLAN_SCHEMA_VERSION: Final = "cocolon.emlis.grounded_human_reception_plan.v2"
+FINAL_STAGE1_GROUNDED_PROJECTION_VERSION: Final = (
+    "cocolon.emlis.final_stage1_grounded_projection.v1"
+)
 
 EvidenceId = str
 NucleusId = str
@@ -271,6 +274,31 @@ _SELF_EVALUATION_RE: Final = re.compile(
 )
 _VALUE_RE: Final = re.compile(r"(?:大切|大事|価値|意味がある|守りたい|好まし|望まし|良(?:い|く)|いい)")
 _ACTION_RE: Final = re.compile(r"(?:行動|記録|メモ|書き|書いた|見て|見た|作った|試した|調べた|残した)")
+_ACTION_CHANGE_LINK_RE: Final = re.compile(
+    r"(?:たら|だら|てから|でから|た後(?:に)?|たあと(?:に)?)[、,]\s*"
+)
+_ACTION_ARGUMENT_STEM_RE: Final = re.compile(
+    r"(?:を|に|へ|で|から|と|まで)(?P<predicate>[^、,.!?！？]{1,28})$"
+)
+_NON_ACTION_CONDITION_END_RE: Final = re.compile(
+    r"(?:だっ|であっ|になっ|くなっ|でい|にい|にあっ)$"
+)
+_OBSERVED_PAST_OUTCOME_RE: Final = re.compile(
+    r"(?:た|ました|だった|でした)$"
+)
+_EXPLICIT_PERFECTIVE_END_RE: Final = re.compile(
+    r"(?:た|(?:ん|い)だ|ていた|でいた|ました|だった|でした)$"
+)
+_PRESENT_RESIDUE_RE: Final = re.compile(
+    r"(?:(?:まだ|今も|なお).{0,32}(?:残(?:って|る|り|った)|続(?:いて|く)|消えず)|"
+    r"(?:残(?:って|る|り|った)|続(?:いて|く)).{0,12}(?:いる|ある))"
+)
+_OPEN_UNFINISHED_RE: Final = re.compile(
+    r"(?:(?:どう|何|どちら|どっち|いつ|どこ|誰).{0,32}"
+    r"(?:分からない|わからない|決められない|決めきれない)|"
+    r"(?:まだ|今も).{0,32}(?:分からない|わからない|未定|決められない|決めきれない)|"
+    r"(?:未定|途中|決めきれない|結論は出ていない))"
+)
 _CONTRAST_RE: Final = re.compile(r"(?:でも|だけど|けれど|けど|一方|なのに|ただ|とはいえ)")
 _COEXISTENCE_RE: Final = re.compile(r"(?:同時に|両方|どっちも|抱えたまま)")
 _CAUSE_RE: Final = re.compile(r"(?:ので|ため|ことで|からこそ|だからこそ)")
@@ -643,6 +671,21 @@ class _ClauseSignals:
     modality: Literal["fact", "feeling", "wish", "possibility", "uncertain", "refusal", "intention"]
     time_scope: str
     operator_codes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _TypedNucleusProjection:
+    """One source-bound predicate owner projected from a compound span."""
+
+    nucleus_suffix: str
+    kind: NucleusKind
+    predicate_kind: str
+    polarity: Literal["positive", "negative", "mixed", "neutral"]
+    modality: Literal["fact", "feeling", "wish", "possibility", "uncertain", "refusal", "intention"]
+    time_scope: str
+    scalar_start: int
+    scalar_end: int
+    attribute_codes: tuple[str, ...]
 
 
 def _clean(value: Any) -> str:
@@ -1591,6 +1634,245 @@ def _semantic_frame_for_span(
             )
         ),
     )
+
+
+def _typed_nucleus_projections_for_span(
+    span: EvidenceSpan,
+    *,
+    base_frame: GroundedSemanticFrame,
+) -> tuple[_TypedNucleusProjection, ...]:
+    """Project compound Japanese predicate structure without new Evidence.
+
+    The Evidence Ledger deliberately preserves punctuation-sized spans, so a
+    single real ``sN`` can contain two separately asserted predicates.  This
+    projector creates semantic owners only when Japanese morphology states a
+    closed structural link.  It never compares a complete input string and it
+    never manufactures a source span or surface sentence.
+    """
+
+    source_field = _clean(getattr(span, "source_field", ""))
+    if source_field not in _TEXT_SOURCE_FIELDS:
+        return ()
+    text = _clean(getattr(span, "raw_text", ""))
+
+    def projection_codes(
+        scalar_start: int,
+        scalar_end: int,
+        *codes: str,
+    ) -> tuple[str, ...]:
+        provenance = tuple(
+            code
+            for code in base_frame.attribute_codes
+            if code.startswith(
+                (
+                    "semantic_analyzer:",
+                    "detected_type:",
+                    "source_claim:",
+                )
+            )
+        )
+        return tuple(
+            _dedupe(
+                (
+                    *provenance,
+                    f"surface_scalar_range:{scalar_start}:{scalar_end}",
+                    "surface_scalar_source:normalized_raw_text",
+                    *codes,
+                )
+            )
+        )
+
+    def trimmed_range(start: int, end: int) -> tuple[int, int]:
+        while start < end and text[start] in " \t\r\n、,。．.!！?？":
+            start += 1
+        while start < end and text[end - 1] in " \t\r\n、,。．.!！?？":
+            end -= 1
+        return start, end
+
+    def structurally_performed_action(fragment: str) -> bool:
+        argument_match = _ACTION_ARGUMENT_STEM_RE.search(fragment)
+        if argument_match is None or _NON_ACTION_CONDITION_END_RE.search(fragment):
+            return False
+        predicate = argument_match.group("predicate")
+        # These are inflected existential/copular auxiliaries, not a bank of
+        # permitted action verbs.  All other verb stems remain open, which is
+        # why unseen 座っ/浴び/つけ are admitted by the same rule.
+        if re.fullmatch(r"(?:い|あ(?:り|っ)?|なっ)", predicate):
+            return False
+        if re.search(r"(?:は|が|も)", predicate):
+            return False
+        fragment_operators = set(
+            _operator_codes_for_text(fragment, source_field=source_field)
+        )
+        return not bool(
+            fragment_operators
+            & {
+                "operator:constraint",
+                "operator:refusal",
+                "operator:uncertainty",
+                "operator:wish",
+            }
+        ) and not bool(_FEELING_RE.search(fragment) or _NEGATION_RE.search(fragment))
+
+    action_change_link = _ACTION_CHANGE_LINK_RE.search(text)
+    if action_change_link is not None:
+        action_start, action_end = trimmed_range(0, action_change_link.start())
+        # Keep semantic action detection on the pre-link fragment, while the
+        # source-bound surface scalar retains the linker's leading inflection
+        # (た/だ/て/で).  This closes the quoted action as a Japanese past/te
+        # form without admitting the conditional/sequence connective itself.
+        surface_action_end = action_change_link.start() + 1
+        if text[action_change_link.start() : surface_action_end] not in {
+            "た",
+            "だ",
+            "て",
+            "で",
+        }:
+            return ()
+        change_start, change_end = trimmed_range(action_change_link.end(), len(text))
+        action_text = text[action_start:action_end]
+        change_text = text[change_start:change_end]
+        change_operators = set(
+            _operator_codes_for_text(change_text, source_field=source_field)
+        )
+        performed_action = structurally_performed_action(action_text)
+        observed_change = bool(
+            (_POSITIVE_CHANGE_RE.search(change_text) or _CHANGE_RE.search(change_text))
+            and _OBSERVED_PAST_OUTCOME_RE.search(change_text)
+            and "operator:uncertainty" not in change_operators
+            and "operator:wish" not in change_operators
+            and "operator:refusal" not in change_operators
+        )
+        if action_text and performed_action and observed_change:
+            change_codes = [
+                "operator:change",
+                "operator:bounded_change",
+                "semantic_role:current_change",
+                "semantic_role:span_relation_endpoint",
+                "semantic_role:compound_reception_coowned_nonprimary",
+                "semantic_dependency:action_before_change",
+            ]
+            if _POSITIVE_CHANGE_RE.search(change_text):
+                change_codes.append("operator:positive_change")
+            return (
+                _TypedNucleusProjection(
+                    nucleus_suffix="",
+                    kind="action",
+                    predicate_kind="action",
+                    polarity="neutral",
+                    modality="fact",
+                    time_scope="past",
+                    scalar_start=action_start,
+                    scalar_end=surface_action_end,
+                    attribute_codes=projection_codes(
+                        action_start,
+                        surface_action_end,
+                        "operator:action",
+                        "operator:performed_action",
+                        "semantic_role:concrete_action",
+                        "semantic_dependency:action_before_change",
+                    ),
+                ),
+                _TypedNucleusProjection(
+                    nucleus_suffix=":change",
+                    kind="change",
+                    predicate_kind="change",
+                    polarity="positive" if _POSITIVE_CHANGE_RE.search(change_text) else "neutral",
+                    modality=(
+                        "feeling"
+                        if _FEELING_RE.search(change_text)
+                        else "fact"
+                    ),
+                    time_scope="past",
+                    scalar_start=change_start,
+                    scalar_end=change_end,
+                    attribute_codes=projection_codes(
+                        change_start,
+                        change_end,
+                        *change_codes,
+                    ),
+                ),
+            )
+
+    residue_match = _PRESENT_RESIDUE_RE.search(text)
+    unfinished_match = _OPEN_UNFINISHED_RE.search(text)
+    if (
+        residue_match is not None
+        and unfinished_match is not None
+        and residue_match.start() <= unfinished_match.start()
+    ):
+        unfinished_anchor = next(
+            (
+                match
+                for match in re.finditer(
+                    r"(?:どう|何|どちら|どっち|いつ|どこ|誰|まだ|今も|未定|途中|結論)",
+                    text,
+                )
+                if match.start() >= residue_match.end()
+            ),
+            None,
+        )
+        unfinished_clause_start = (
+            unfinished_anchor.start()
+            if unfinished_anchor is not None
+            else unfinished_match.start()
+        )
+        separator = max(
+            text.rfind("、", residue_match.start(), unfinished_clause_start + 1),
+            text.rfind(",", residue_match.start(), unfinished_clause_start + 1),
+        )
+        residue_end_seed = separator if separator >= 0 else unfinished_clause_start
+        unfinished_start_seed = (
+            separator + 1 if separator >= 0 else unfinished_clause_start
+        )
+        residue_start, residue_end = trimmed_range(
+            residue_match.start(), residue_end_seed
+        )
+        unfinished_start, unfinished_end = trimmed_range(
+            unfinished_start_seed, len(text)
+        )
+        if residue_start >= residue_end or unfinished_start >= unfinished_end:
+            return ()
+        return (
+            _TypedNucleusProjection(
+                nucleus_suffix="",
+                kind="reaction",
+                predicate_kind="residue",
+                polarity="neutral",
+                modality="feeling" if _FEELING_RE.search(text) else "fact",
+                time_scope="present",
+                scalar_start=residue_start,
+                scalar_end=residue_end,
+                attribute_codes=projection_codes(
+                    residue_start,
+                    residue_end,
+                    "operator:residue",
+                    "semantic_role:present_residue",
+                    "semantic_role:span_relation_endpoint",
+                    "semantic_dependency:event_before_residue",
+                ),
+            ),
+            _TypedNucleusProjection(
+                nucleus_suffix=":unfinished",
+                kind="uncertainty",
+                predicate_kind="unfinished",
+                polarity="neutral",
+                modality="uncertain",
+                time_scope="present",
+                scalar_start=unfinished_start,
+                scalar_end=unfinished_end,
+                attribute_codes=projection_codes(
+                    unfinished_start,
+                    unfinished_end,
+                    "operator:uncertainty",
+                    "operator:unfinished",
+                    "semantic_role:present_unfinished",
+                    "semantic_role:compound_reception_coowned_nonprimary",
+                    "semantic_dependency:residue_before_unfinished",
+                ),
+            ),
+        )
+    return ()
 
 
 def _priority_for_nucleus(span: EvidenceSpan, retention: Retention, kind: NucleusKind) -> float:
@@ -2699,6 +2981,8 @@ def _reception_opportunity_families_for_nucleus(
 
     attributes = set(nucleus.semantic_frame.attribute_codes)
     has_text_source = any(field in _TEXT_SOURCE_FIELDS for field in nucleus.source_fields)
+    if "semantic_role:compound_reception_coowned_nonprimary" in attributes:
+        return ()
     if "operator:help_seeking" in attributes:
         return (
             "help_seeking",
@@ -4717,6 +5001,483 @@ def build_grounded_observation_plan(
     return plan
 
 
+def _final_stage1_source_text_by_span(
+    evidence_spans: Sequence[EvidenceSpan],
+) -> dict[str, str]:
+    return {
+        _clean(getattr(span, "span_id", "")): _clean(
+            getattr(span, "raw_text", "")
+        )
+        for span in evidence_spans
+        if _clean(getattr(span, "span_id", ""))
+    }
+
+
+def _final_stage1_relation_source_text(
+    relation: GroundedSemanticRelation,
+    source_text_by_span: Mapping[str, str],
+) -> str:
+    return " ".join(
+        source_text_by_span.get(span_id, "")
+        for span_id in relation.source_span_ids
+        if source_text_by_span.get(span_id, "")
+    )
+
+
+def _final_stage1_has_contrast_marker_between(
+    left: GroundedSemanticNucleus,
+    right: GroundedSemanticNucleus,
+    evidence_spans: Sequence[EvidenceSpan],
+) -> bool:
+    endpoint_ids = (*left.source_span_ids, *right.source_span_ids)
+    endpoint_numbers = tuple(_span_number(span_id) for span_id in endpoint_ids)
+    if not endpoint_numbers:
+        return False
+    lower = min(endpoint_numbers)
+    upper = max(endpoint_numbers)
+    endpoint_fields = set((*left.source_fields, *right.source_fields))
+    return any(
+        lower <= _span_number(_clean(getattr(span, "span_id", ""))) <= upper
+        and _clean(getattr(span, "source_field", "")) in endpoint_fields
+        and bool(_CONTRAST_RE.search(_clean(getattr(span, "raw_text", ""))))
+        for span in evidence_spans
+    )
+
+
+def _final_stage1_direction_under_burden(
+    left: GroundedSemanticNucleus,
+    right: GroundedSemanticNucleus,
+) -> bool:
+    left_codes = set(left.semantic_frame.attribute_codes)
+    right_codes = set(right.semantic_frame.attribute_codes)
+    direction = bool(
+        left.kind == "wish"
+        or left.semantic_frame.modality in {"wish", "intention"}
+        or left_codes
+        & {
+            "operator:wish",
+            "operator:continuation",
+            "semantic_role:retained_intention",
+        }
+    )
+    burden = bool(
+        right.kind in {"constraint", "reaction", "state", "uncertainty"}
+        and (
+            right.semantic_frame.polarity == "negative"
+            or right.semantic_frame.modality in {"feeling", "refusal", "uncertain"}
+            or right_codes
+            & {
+                "operator:constraint",
+                "operator:refusal",
+                "operator:feeling",
+                "semantic_role:burden",
+                "semantic_role:protective_or_limiting_refusal",
+            }
+        )
+    )
+    continuation_or_refusal = bool(
+        "operator:continuation" in left_codes
+        or "operator:refusal" in right_codes
+    )
+    return direction and burden and continuation_or_refusal
+
+
+def _final_stage1_completed_or_past_owner(
+    nucleus: GroundedSemanticNucleus,
+    source_text_by_span: Mapping[str, str],
+) -> bool:
+    if nucleus.kind not in {"event", "action", "change"}:
+        return False
+    codes = set(nucleus.semantic_frame.attribute_codes)
+    if nucleus.semantic_frame.time_scope in {
+        "future",
+        "present_to_future",
+    } or codes & {
+        "operator:wish",
+        "operator:continuation",
+        "operator:uncertainty",
+        "operator:refusal",
+    }:
+        return False
+    source_text = " ".join(
+        source_text_by_span.get(span_id, "")
+        for span_id in nucleus.source_span_ids
+    ).strip(" 、,。．.!！?？")
+    return bool(
+        nucleus.semantic_frame.time_scope in {"past", "past_to_present"}
+        or _EXPLICIT_PERFECTIVE_END_RE.search(source_text)
+    )
+
+
+def _final_stage1_typed_nuclei(
+    plan: GroundedObservationPlan,
+    evidence_spans: Sequence[EvidenceSpan],
+) -> tuple[tuple[GroundedSemanticNucleus, ...], tuple[tuple[str, str, str], ...]]:
+    span_index = {
+        _clean(getattr(span, "span_id", "")): span
+        for span in evidence_spans
+        if _clean(getattr(span, "span_id", ""))
+    }
+    result: list[GroundedSemanticNucleus] = []
+    compound_dependencies: list[tuple[str, str, str]] = []
+    for nucleus in plan.nuclei:
+        span = (
+            span_index.get(nucleus.source_span_ids[0])
+            if len(nucleus.source_span_ids) == 1
+            else None
+        )
+        projections = (
+            _typed_nucleus_projections_for_span(
+                span,
+                base_frame=nucleus.semantic_frame,
+            )
+            if span is not None
+            else ()
+        )
+        if not projections:
+            result.append(nucleus)
+            continue
+        projected_ids: list[str] = []
+        for projection in projections:
+            projected_id = f"{nucleus.nucleus_id}{projection.nucleus_suffix}"
+            projected_ids.append(projected_id)
+            result.append(
+                replace(
+                    nucleus,
+                    nucleus_id=projected_id,
+                    kind=projection.kind,
+                    semantic_frame=replace(
+                        nucleus.semantic_frame,
+                        predicate_kind=projection.predicate_kind,
+                        polarity=projection.polarity,
+                        modality=projection.modality,
+                        time_scope=projection.time_scope,
+                        attribute_codes=projection.attribute_codes,
+                    ),
+                    grounding_kind="explicit",
+                    priority=_priority_for_nucleus(
+                        span,
+                        nucleus.retention,
+                        projection.kind,
+                    ),
+                    allowed_claim_scope="explicit_current_input",
+                )
+            )
+        if len(projected_ids) == 2:
+            dependency = (
+                "action_supports_change"
+                if projections[0].kind == "action"
+                and projections[1].kind == "change"
+                else "residue_and_unfinished"
+            )
+            compound_dependencies.append(
+                (dependency, projected_ids[0], projected_ids[1])
+            )
+    return tuple(result), tuple(compound_dependencies)
+
+
+def _final_stage1_typed_relations(
+    plan: GroundedObservationPlan,
+    nuclei: Sequence[GroundedSemanticNucleus],
+    compound_dependencies: Sequence[tuple[str, str, str]],
+    evidence_spans: Sequence[EvidenceSpan],
+) -> tuple[
+    tuple[GroundedSemanticRelation, ...],
+    tuple[GroundedSemanticNucleus, ...],
+]:
+    nucleus_index = {item.nucleus_id: item for item in nuclei}
+    source_text_by_span = _final_stage1_source_text_by_span(evidence_spans)
+    material_result_by_compound_action_owner = {
+        action_id: change_id
+        for dependency, action_id, change_id in compound_dependencies
+        if dependency == "action_supports_change"
+    }
+    rows: list[GroundedSemanticRelation] = []
+
+    for relation in plan.relations:
+        # An existing outgoing relation from a compound action+change span was
+        # originally owned by the unsplit span.  After the typed split, its
+        # material result owner is the change child; the action owner remains
+        # reserved for the newly projected action_supports_change dependency.
+        relation_from_nucleus_id = (
+            material_result_by_compound_action_owner.get(
+                relation.from_nucleus_id,
+                relation.from_nucleus_id,
+            )
+            if relation.type != "action_supports_change"
+            else relation.from_nucleus_id
+        )
+        left = nucleus_index.get(relation_from_nucleus_id)
+        right = nucleus_index.get(relation.to_nucleus_id)
+        if left is None or right is None:
+            continue
+        source_text = _final_stage1_relation_source_text(
+            relation,
+            source_text_by_span,
+        )
+        explicit_contrast = bool(
+            _CONTRAST_RE.search(source_text)
+            or _final_stage1_has_contrast_marker_between(
+                left,
+                right,
+                evidence_spans,
+            )
+        )
+        direction_under_burden = bool(
+            explicit_contrast
+            and _final_stage1_direction_under_burden(left, right)
+        )
+        relation_type: RelationKind = relation.type
+        if direction_under_burden:
+            relation_type = "continuation_or_refusal"
+            left = replace(
+                left,
+                semantic_frame=replace(
+                    left.semantic_frame,
+                    attribute_codes=tuple(
+                        _dedupe(
+                            (
+                                *left.semantic_frame.attribute_codes,
+                                "semantic_role:direction_under_burden_direction",
+                            )
+                        )
+                    ),
+                ),
+            )
+            right = replace(
+                right,
+                semantic_frame=replace(
+                    right.semantic_frame,
+                    attribute_codes=tuple(
+                        _dedupe(
+                            (
+                                *right.semantic_frame.attribute_codes,
+                                "semantic_role:direction_under_burden_burden",
+                            )
+                        )
+                    ),
+                ),
+            )
+            nucleus_index[left.nucleus_id] = left
+            nucleus_index[right.nucleus_id] = right
+        elif relation_type == "continuation_or_refusal":
+            relation_type = "contrast" if explicit_contrast else "uncertain_connection"
+
+        right_codes = set(right.semantic_frame.attribute_codes)
+        completed_or_past_left = _final_stage1_completed_or_past_owner(
+            left,
+            source_text_by_span,
+        )
+        if "operator:residue" in right_codes and completed_or_past_left:
+            relation_type = "temporal_before_after"
+        elif (
+            relation_type == "temporal_before_after"
+            and not completed_or_past_left
+        ):
+            relation_type = (
+                "contrast" if explicit_contrast else "uncertain_connection"
+            )
+
+        rows.append(
+            replace(
+                relation,
+                type=relation_type,
+                from_nucleus_id=relation_from_nucleus_id,
+                grounding_kind=(
+                    "user_stated_relation"
+                    if relation_type
+                    in {
+                        "continuation_or_refusal",
+                        "temporal_before_after",
+                    }
+                    else relation.grounding_kind
+                ),
+            )
+        )
+
+    for dependency, left_id, right_id in compound_dependencies:
+        if dependency != "action_supports_change":
+            continue
+        left = nucleus_index[left_id]
+        right = nucleus_index[right_id]
+        rows.append(
+            GroundedSemanticRelation(
+                relation_id="",
+                type="action_supports_change",
+                from_nucleus_id=left_id,
+                to_nucleus_id=right_id,
+                source_span_ids=left.source_span_ids,
+                grounding_kind="user_stated_relation",
+                certainty=min(left.certainty, right.certainty),
+                retention=_relation_retention(
+                    left_id,
+                    right_id,
+                    nucleus_index,
+                    relation_type="action_supports_change",
+                    grounding_kind="user_stated_relation",
+                ),
+                source_relation_ids=(
+                    "typed_projection:perfective_action_before_bounded_change",
+                ),
+                source_meaning_arc_keys=(
+                    "compound_span:action_before_change",
+                ),
+            )
+        )
+
+    return (
+        tuple(
+            replace(row, relation_id=f"relation:r{index}")
+            for index, row in enumerate(rows, start=1)
+        ),
+        tuple(nucleus_index.get(row.nucleus_id, row) for row in nuclei),
+    )
+
+
+def project_final_stage1_grounded_observation_plan(
+    plan: GroundedObservationPlan,
+    *,
+    evidence_spans: Sequence[EvidenceSpan],
+    safety_decision: EmlisSafetyTriageDecision,
+    resolver: EvidenceSpanResolver | None = None,
+) -> GroundedObservationPlan:
+    """Project final Stage-1 typed owners without changing the active plan.
+
+    This is the sole final-language-core upstream seam.  It projects only
+    source-bounded predicate owners and relations; it is not a viability mode,
+    does not render text, and is never called by the current public reply path.
+    """
+
+    projected_nuclei, compound_dependencies = _final_stage1_typed_nuclei(
+        plan,
+        evidence_spans,
+    )
+    relations, nuclei = _final_stage1_typed_relations(
+        plan,
+        projected_nuclei,
+        compound_dependencies,
+        evidence_spans,
+    )
+    complexity = _semantic_complexity(
+        nuclei=nuclei,
+        relations=relations,
+        meaning_artifacts=_MeaningArtifacts(),
+    )
+    if plan.input_profile.semantic_complexity == "long_arc":
+        complexity = "long_arc"
+    response_plan, coverage, surface_policy, safety_policy = (
+        _build_response_and_policies(
+            nuclei=nuclei,
+            relations=relations,
+            safety_decision=safety_decision,
+            complexity=complexity,
+            material_quality=plan.input_profile.material_quality,
+        )
+    )
+    projected = replace(
+        plan,
+        input_profile=replace(
+            plan.input_profile,
+            semantic_complexity=complexity,
+            nucleus_count=len(nuclei),
+            relation_count=len(relations),
+        ),
+        nuclei=nuclei,
+        relations=relations,
+        response_plan=response_plan,
+        coverage_requirements=coverage,
+        surface_policy=surface_policy,
+        safety_policy=safety_policy,
+        referenced_evidence_span_ids=_all_plan_evidence_ids(
+            nuclei,
+            relations,
+            plan.unknown_boundaries,
+        ),
+        source_contracts=tuple(
+            _dedupe(
+                (
+                    *plan.source_contracts,
+                    FINAL_STAGE1_GROUNDED_PROJECTION_VERSION,
+                )
+            )
+        ),
+    )
+    effective_resolver = resolver or build_evidence_span_resolver(
+        evidence_spans
+    )
+    issues = validate_grounded_observation_plan(projected, effective_resolver)
+    if issues:
+        raise GroundedObservationPlanError(
+            "invalid_final_stage1_grounded_projection:" + ",".join(issues)
+        )
+    return projected
+
+
+def build_final_stage1_grounded_observation_plan(
+    current_input: Mapping[str, Any] | None,
+    *,
+    evidence_spans: Sequence[EvidenceSpan] | None = None,
+    reports: Sequence[PerspectiveReport] | None = None,
+    board: PerspectiveBoard | None = None,
+    graph: ObservationGraph | None = None,
+    meaning_blocks: Sequence[InputMeaningBlock] | None = None,
+    coverage_plan: MeaningCoveragePlan | None = None,
+    whole_input_meaning_arc: WholeInputMeaningArc | None = None,
+    retention_plan: MajorMeaningRetentionPlan | None = None,
+    safety_decision: EmlisSafetyTriageDecision | None = None,
+) -> GroundedObservationPlan:
+    """Build the registered-disabled final Stage-1 typed grounding plan."""
+
+    normalized = normalize_emlis_current_input(current_input or {})
+    span_list = tuple(
+        evidence_spans
+        if evidence_spans is not None
+        else build_evidence_ledger(normalized)
+    )
+    resolver = build_evidence_span_resolver(
+        span_list,
+        current_input=normalized,
+    )
+    report_list = tuple(
+        reports if reports is not None else run_perspective_observers(span_list)
+    )
+    perspective_board = board or build_perspective_board(
+        evidence_spans=span_list,
+        reports=report_list,
+    )
+    observation_graph = graph or integrate_perspective_board(
+        board=perspective_board
+    )
+    base_triage = safety_decision or build_emlis_safety_triage_decision(
+        current_input=normalized,
+        graph=observation_graph,
+        evidence_spans=span_list,
+    )
+    triage = _canonicalize_safety_decision(
+        base_triage,
+        span_list,
+        authoritative_self_denial=safety_decision is not None,
+    )
+    active_plan = build_grounded_observation_plan(
+        normalized,
+        evidence_spans=span_list,
+        reports=report_list,
+        board=perspective_board,
+        graph=observation_graph,
+        meaning_blocks=meaning_blocks,
+        coverage_plan=coverage_plan,
+        whole_input_meaning_arc=whole_input_meaning_arc,
+        retention_plan=retention_plan,
+        safety_decision=safety_decision,
+    )
+    return project_final_stage1_grounded_observation_plan(
+        active_plan,
+        evidence_spans=span_list,
+        safety_decision=triage,
+        resolver=resolver,
+    )
+
+
 # Transitional import compatibility for I1-I4 structural tests and internal
 # callers.  Both names resolve to the same canonical builder; there is no
 # second generation path or shadow implementation after I5.
@@ -4729,6 +5490,7 @@ __all__ = [
     "GROUND_OBSERVATION_PLAN_GENERATION_PATH",
     "GROUND_OBSERVATION_PLAN_SEMANTIC_VERSION",
     "GROUND_HUMAN_RECEPTION_PLAN_SCHEMA_VERSION",
+    "FINAL_STAGE1_GROUNDED_PROJECTION_VERSION",
     "GroundedReceptionAct",
     "GroundedFollowElement",
     "GroundedReceptionStance",
@@ -4766,6 +5528,8 @@ __all__ = [
     "build_grounded_human_reception_plan",
     "build_grounded_observation_plan",
     "build_grounded_observation_plan_shadow",
+    "project_final_stage1_grounded_observation_plan",
+    "build_final_stage1_grounded_observation_plan",
     "validate_grounded_human_reception_plan",
     "validate_grounded_observation_plan",
 ]
