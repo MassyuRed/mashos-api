@@ -9142,6 +9142,64 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 ("本を読んだ", "記録を残した"),
                 "contrast",
             ),
+            (
+                "不安だったが、少し落ち着いた。",
+                ("reaction", "change"),
+                ("不安だった", "少し落ち着いた"),
+                "contrast",
+            ),
+            (
+                "大事だが、相談したい。",
+                ("value", "wish"),
+                ("大事だ", "相談したい"),
+                "contrast",
+            ),
+            (
+                "レシピを書いたが、公開するかはまだ決めきれない。",
+                ("action", "uncertainty"),
+                ("レシピを書いた", "公開するかはまだ決めきれない"),
+                "contrast",
+            ),
+            (
+                "海辺で過ごしたい願いが膨らんでいるけれど、"
+                "予定を変更してよいか分からない。",
+                ("wish", "uncertainty"),
+                (
+                    "海辺で過ごしたい願いが膨らんでいる",
+                    "予定を変更してよいか分からない",
+                ),
+                "contrast",
+            ),
+            (
+                "私はメモを書いたけれど、まだ決めきれない。",
+                ("action", "uncertainty"),
+                ("私はメモを書いた", "まだ決めきれない"),
+                "contrast",
+            ),
+            (
+                "できないことを相談したいけれど、今は難しい。",
+                ("wish", "constraint"),
+                ("できないことを相談したい", "今は難しい"),
+                "wish_and_constraint",
+            ),
+            (
+                "続けたくない気持ちを相談したいけれど、今は難しい。",
+                ("wish", "constraint"),
+                ("続けたくない気持ちを相談したい", "今は難しい"),
+                "wish_and_constraint",
+            ),
+            (
+                "変わらないことを相談したいけれど、今は難しい。",
+                ("wish", "constraint"),
+                ("変わらないことを相談したい", "今は難しい"),
+                "wish_and_constraint",
+            ),
+            (
+                "自信がないことを相談したいけれど、今は難しい。",
+                ("wish", "constraint"),
+                ("自信がないことを相談したい", "今は難しい"),
+                "wish_and_constraint",
+            ),
         )
         for index, (memo, expected_kinds, expected_fragments, relation_type) in enumerate(
             public_cases,
@@ -9222,6 +9280,39 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
 
         for index, memo in enumerate(
             (
+                "相談したくないけれど、今は難しい。",
+                "相談したいわけではないけれど、今は難しい。",
+            ),
+            start=1,
+        ):
+            with self.subTest(terminal_wish_denial=index):
+                source = freeze_text_source(
+                    _request(
+                        record_id=f"stage2-terminal-wish-denial-{index}",
+                        memo=memo,
+                    )
+                )
+                grounded_plan = build_final_stage1_grounded_observation_plan(
+                    source.normalized_current_input,
+                    evidence_spans=source.evidence_spans,
+                )
+                typed = tuple(
+                    row
+                    for row in grounded_plan.nuclei
+                    if "semantic_role:generic_relation_fragment"
+                    in row.semantic_frame.attribute_codes
+                )
+                self.assertFalse(
+                    any(
+                        row.kind == "wish"
+                        and "semantic_role:retained_intention"
+                        in row.semantic_frame.attribute_codes
+                        for row in typed
+                    )
+                )
+
+        for index, memo in enumerate(
+            (
                 "相談したいけれど、不安な本を読んだ。",
                 "相談したいけれど、変わった本を読んだ。",
                 "相談したいことを記録したけれど、不安を感じている。",
@@ -9283,6 +9374,8 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 "雨でしたけれど、不安でした。",
                 "必要でしたけれど、不安でした。",
                 "予定になりましたけれど、不安でした。",
+                "弟が、相談したい。",
+                "庭を眺めたい願いが、今はない。",
             ),
             start=1,
         ):
@@ -9330,7 +9423,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     _parent_plan,
                     _projection,
                     _phase_a,
-                    _subjective_plan,
+                    subjective_plan,
                     phase_b,
                 ) = _final_stage1_composition_inputs(
                     _request(
@@ -9388,6 +9481,30 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     self.assertEqual(
                         reception_endpoint_ids,
                         relation_endpoint_ids,
+                    )
+                if memo == "まだ決めきれないけれど、相談したい。":
+                    appraisal_claims = tuple(
+                        claim.asserted_subjective_proposition
+                        for claim in subjective_plan.subjective_claim_rows
+                        if claim.asserted_subjective_proposition.content_kind
+                        is SubjectiveContentKind.APPRAISAL
+                    )
+                    self.assertEqual(len(appraisal_claims), 1)
+                    self.assertIsNotNone(
+                        appraisal_claims[0].appraisal_content
+                    )
+                    assert appraisal_claims[0].appraisal_content is not None
+                    self.assertIs(
+                        appraisal_claims[0].appraisal_content.dimension,
+                        AppraisalDimension.RELATIONAL_NONCOLLAPSE,
+                    )
+                    self.assertEqual(
+                        len(appraisal_claims[0].response_object_refs),
+                        2,
+                    )
+                    self.assertEqual(
+                        len(set(appraisal_claims[0].response_object_refs)),
+                        2,
                     )
                 result = stage1_composition_module.compose_stage1_from_projection(
                     phase_b

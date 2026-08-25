@@ -1488,3 +1488,71 @@ AUTOMATIC_PROGRESSION = FALSE
 ```
 
 new runtime / design headsを固定した後だけ、same frozen private exact4からfresh exact8を一回materializeする。known body-fullはUltra technical / Pro language、withheld body-fullはProだけが読み、output exact2をreview直後に削除する。success exact3がすべて`CLEAR`なら同じapproved unit内で`EARLY_ACTUAL_STATUS=LANGUAGE_VIABILITY_OBSERVED`へ遷移し、formal Product Read、Step 4、ready、mergeまたはproductionへ自動進行しない。
+
+## 36. Step 3 finite endpoint proof and generic noncollapse repair（2026-08-25）
+
+§35 activation headsのfresh early actualはknown / withheld machine invariantがともに`CLEAR_4_OF_4`、known language viabilityも`CLEAR_4_OF_4`であったが、withheld Pro exact1は`COMMON_DEFECT / GENERIC_SUBJECTIVE_CONTENT / SUBJECTIVE_MEANING_PLANNER`となった。body-free aggregate first-failing gateは`CONNECTOR_ADMISSION=2/4`、`ENDPOINT_CLASSIFIER_OR_ENDPOINT_FINAL=2/4`で、signatureは`GENERIC_CONTRAST_FINITE_ENDPOINT_PROOF_GAP_V1`。private body、locator、語彙、per-case分類はPro外へ出していない。
+
+generic `が`は文字列で一律拒否せず、left endpointがexisting finite predicate tailを証明し、両endpoint profileがexact1ずつ成立する場合だけcontrast connectiveとして受理する。bare nominal、wish nominalだけのleft、third-party owner、group / quote、top-level link 0 / 2+は引き続き拒否する。terminal affirmative wishは、object / quoted content内のnegation、refusal、constraint、feeling、uncertainty、change、valueより後ろのfinite wish predicateをprimaryに選び、embedded operatorをchild frameへ漏らさない。terminal wish denialはwishへ昇格しない。`私`を含むだけの一般記述をself evaluationへ誤分類せず、actual evaluative predicateを必須にした。
+
+source-explicit generic exact2 TENSION / COEXISTS contributionは、endpoint-local unfinished dutyより先に`RELATIONAL_NONCOLLAPSE`へbindする。proofはrelation candidate exact1、semantic refs exact2、endpoint frame exact2、`semantic_role:generic_relation_fragment` exact2のみで、source text、case id、familyまたはexpected sentenceを参照しない。new axis / enum / asset / dependency / routeは0。meaning、source、owner、polarity、modality、time、unknown、safety authorityは増やさない。
+
+```text
+AUTHORITY = MASH_CURRENT_EXPLICIT_ROUTE_A_ONLY_STEP3_COMPLETION
+PREIMAGE_RUNTIME_HEAD = c18e1e21170c34c93a316a9f6f95fa594e24b625
+PREIMAGE_DESIGN_HEAD = 3fbf7021cd2d058b86a25ff29af54c3639fb6988
+PREIMAGE_LANGUAGE_CORE_IDENTITY = f5c67079ae329d9a9e1c567ee25c6210a59a05ae766eef2bf1b751c11b746dcf
+PREIMAGE_BODY_FREE_MACHINE_PACKET_FILE_SHA256 = 21f3ebebf1af10fc5da7db33db990612b40b0c6bfda3adddd749728d219af0fe
+PREIMAGE_PRO_RESULT_FILE_SHA256 = 4ec921071f4bd91a2b72129a65383ee507ff5c7478ea5ff39d5ab804f5e055fc
+PREIMAGE_KNOWN_VISIBLE_PACKET_FILE_SHA256 = c6c2237cd61d3794c268ca4514f238dc93a8faff574d65c093bf1801b6f98c8c
+PREIMAGE_PRIVATE_PACKET_BINDING_SHA256 = 3404c52c877740e0478c51ce9b4488a69ee8ea092c857749104d239adaaa9315
+PREIMAGE_PRO_RESULT = COMMON_DEFECT
+PREIMAGE_DEFECT_CLASS = GENERIC_SUBJECTIVE_CONTENT
+PREIMAGE_CAUSE_COMPONENT = SUBJECTIVE_MEANING_PLANNER
+PREIMAGE_CEILING_REASON = NONE
+PREIMAGE_FAILURE_SIGNATURE = GENERIC_CONTRAST_FINITE_ENDPOINT_PROOF_GAP_V1
+PREIMAGE_FIRST_FAILING_CONNECTOR_ADMISSION = 2_OF_4
+PREIMAGE_FIRST_FAILING_ENDPOINT_CLASSIFIER_OR_FINAL = 2_OF_4
+
+FINITE_GA_ADMISSION = EXACT2_PROFILES_AND_LEFT_FINITE_ENDPOINT_PROOF
+BARE_NOMINAL_GA_AUTHORITY = 0
+TERMINAL_AFFIRMATIVE_WISH_PRIORITY = BEFORE_EMBEDDED_CONTENT_OPERATORS
+EMBEDDED_OPERATOR_CHILD_FRAME_LEAK = 0
+TERMINAL_WISH_DENIAL_PROMOTION = 0
+SELF_EVALUATION = EXPLICIT_EVALUATIVE_PREDICATE_REQUIRED
+GENERIC_RELATION_SUBJECTIVE_PRIORITY = RELATIONAL_NONCOLLAPSE_BEFORE_ENDPOINT_LOCAL_UNFINISHED
+CASE_ID_FAMILY_RAW_FIXTURE_EXPECTED_SENTENCE_SELECTOR = 0
+NEW_PATH_ASSET_ENUM_AXIS_DEPENDENCY_ROUTE = 0
+
+LANGUAGE_CORE_IDENTITY = 8e903ebec1ef4de2f646a824fae675eebcc16b9333b6ce7064d9702a6b28d59d
+RUNNER_SHA256 = e6770d1cd8ed47c948d9aef68a6dc9cd1335fdfe505e14a7cd80f3ba1e9476cb
+STEP2_COMPOSITION_TESTS = 19_OF_19_PASS
+STEP3_EARLY_HARNESS_TESTS = 17_OF_17_PASS
+CONTRACT_TESTS = 123_OF_123_PASS
+VERTICAL_TESTS = 42_OF_42_PASS
+COMBINED_TESTS = 165_OF_165_PASS
+COMPILEALL = PASS
+INDEPENDENT_TECHNICAL_AUDIT = CLEAR_BLOCKER_0_MAJOR_0
+GENERIC_KIND_PAIR_MATRIX = CLEAR_81_OF_81
+FINITE_GA_MATRIX = CLEAR_9_OF_9
+NOMINAL_GA_NEGATIVE = CLEAR_3_OF_3
+PUBLIC_ADVERSARIAL_NEGATIVE = CLEAR_22_OF_22
+
+PREIMAGE_EARLY_ACTUAL_RUN / RETRY / RERUN = 1 / 0 / 0
+PREIMAGE_FRESH_OUTPUT_CREATED / DELETED / REMAINING = 2 / 2 / 0
+PREIMAGE_NETWORK / EXTERNAL_AI / PROVIDER / BODY_SEND / COST = 0 / 0 / 0 / 0 / 0
+FROZEN_PRIVATE_INPUT_RETAINED = 1
+COMMON_DEFECT_RETURN_COUNT = 2_OF_2_KEEP
+COUNTER_RESET / COUNTER_INCREMENT = 0 / 0
+SOLE_ROUTE = ROUTE_A_PROVIDERLESS_EXACT1_ONLY
+PUBLIC_API / DB / RN / PRODUCTION_EFFECT = 0 / 0 / 0 / 0
+EARLY_ACTUAL_STATUS = NOT_RUN_PENDING_FINITE_ENDPOINT_ACTIVATION_HEADS
+STEP3 = ROUTE_A_FINITE_ENDPOINT_REPAIR_VERIFIED_PENDING_FRESH_ACTUAL
+FORMAL_EXACT8 = NOT_RUN
+PRODUCT_READ_EVALUATED = FALSE
+CANDIDATE_READY = FALSE
+STEP4 = NOT_STARTED
+AUTOMATIC_PROGRESSION = FALSE
+```
+
+new activation headsを固定した後だけsame frozen private exact4をfresh materializeする。reader / cleanup / exact3 success境界は§35から変更しない。

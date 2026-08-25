@@ -298,7 +298,9 @@ _CHANGE_RE: Final = re.compile(
     r"できるよう|出来るよう|(?:ら|れ)れるよう|改善|進歩)"
 )
 _SELF_EVALUATION_RE: Final = re.compile(
-    r"(?:自分|私).{0,24}(?:だ|と思|感じ|弱|悪|傷つ|遅|中途半端|だめ|ダメ|責任|比べ)"
+    r"(?:自分|私).{0,24}(?:弱(?:い|く)|悪(?:い|く)|傷つ|遅(?:い|く)|"
+    r"中途半端|駄目|だめ|ダメ|責任(?:がある|を感じ)|比べ(?:て|る)|"
+    r"役に立たない|価値.{0,5}(?:ない|無い)|何もできない|なにもできない)"
 )
 _VALUE_RE: Final = re.compile(r"(?:大切|大事|価値|意味がある|守りたい|好まし|望まし|良(?:い|く)|いい)")
 _ACTION_RE: Final = re.compile(r"(?:行動|記録|メモ|書き|書いた|見て|見た|作った|試した|調べた|残した)")
@@ -1795,12 +1797,13 @@ def _typed_nucleus_projections_for_span(
         # ``今日は弟が…`` and ``今の妹の…`` cannot borrow current-user
         # ownership from their temporal prefix.
         temporal_prefix = re.compile(
-            r"^(?:(?:今日|今|現在)(?:は|も|の)?|この記録では?|"
+            r"^(?:(?:今日|昨日|明日|今|現在|午前|午後|夕方|朝|昼|夜|"
+            r"以前|これまで)(?:は|も|の|には)?|この記録では?|"
             r"少しずつ|まだ)[、,\s]*"
         )
         owner_marker = re.compile(
             r"^(?P<owner>[^\s、,。.!！?？]{1,24}?)"
-            r"(?:にとって|には|は|が|も|の)"
+            r"(?P<marker>にとって|には|は|が|も|の)"
         )
         attribution_prefix = re.compile(
             r"^(?P<owner>[^\s、,。.!！?？]{1,24}?)"
@@ -1827,10 +1830,81 @@ def _typed_nucleus_projections_for_span(
             leading_owner = owner_marker.match(owner_scope)
             if leading_owner is None:
                 break
-            if (
-                _SELF_REFERENCE_RE.fullmatch(leading_owner.group("owner"))
-                is None
-            ):
+            owner = leading_owner.group("owner")
+            marker = leading_owner.group("marker")
+            if _SELF_REFERENCE_RE.fullmatch(owner) is None:
+                marker_start = leading_owner.start("marker")
+                operator_patterns = (
+                    _WISH_RE,
+                    _CONSTRAINT_RE,
+                    _RELATION_UNCERTAINTY_RE,
+                    _UNCERTAIN_RE,
+                    _REFUSAL_RE,
+                    _CHANGE_RE,
+                    _FEELING_RE,
+                    _VALUE_RE,
+                    _OPEN_UNFINISHED_RE,
+                )
+                marker_is_inside_operator = any(
+                    match.start() <= marker_start < match.end()
+                    for pattern in operator_patterns
+                    for match in pattern.finditer(owner_scope)
+                )
+                remainder = owner_scope[leading_owner.end() :]
+                semantic_subject_complete = bool(
+                    any(
+                        match.end() == len(owner)
+                        for pattern in operator_patterns
+                        for match in pattern.finditer(owner)
+                    )
+                    or re.search(
+                        r"(?:たい|ほしい|欲しい)(?:気持ち|願い)$",
+                        owner,
+                    )
+                )
+                owner_is_complete_semantic_subject = bool(
+                    marker in {"は", "が", "も"}
+                    and semantic_subject_complete
+                    and re.fullmatch(
+                        r"[^、,.!?！？]{1,32}"
+                        r"(?:る|う|い|た|ない|なかった|ます|ました|"
+                        r"だ|です|だった|でした)",
+                        remainder,
+                    )
+                    is not None
+                )
+                epistemic_content_topic = bool(
+                    marker in {"は", "も"}
+                    and owner.endswith("か")
+                    and any(
+                        match.end() == len(remainder)
+                        for pattern in (
+                            _RELATION_UNCERTAINTY_RE,
+                            _UNCERTAIN_RE,
+                            _OPEN_UNFINISHED_RE,
+                        )
+                        for match in pattern.finditer(remainder)
+                    )
+                )
+                genitive_object_argument = bool(
+                    marker == "の"
+                    and re.match(
+                        r"^[^、,.!?！？]{1,24}(?:を|へ|に|と)",
+                        remainder,
+                    )
+                )
+                # A marker inside an already-frozen terminal operator (for
+                # example 気がする / 意味がある), or a complete semantic
+                # content subject followed by an exact finite carrier, is not
+                # evidence of a third-party owner.  The operator/end boundary
+                # is grammatical; no noun, case or phrase-family list is used.
+                if (
+                    marker_is_inside_operator
+                    or owner_is_complete_semantic_subject
+                    or epistemic_content_topic
+                    or genitive_object_argument
+                ):
+                    break
                 return False
             owner_scope = owner_scope[leading_owner.end() :]
         # A later explicit speaker remains the authority for an attributed
@@ -1847,10 +1921,10 @@ def _typed_nucleus_projections_for_span(
                 return False
         return True
 
-    def affirmative_wish(fragment: str) -> bool:
+    def affirmative_wish_proof(fragment: str) -> tuple[bool, bool]:
         top_level_fragment = _top_level_text(fragment)
         if top_level_fragment is None:
-            return False
+            return False, False
         top_level_fragment = top_level_fragment.strip()
         operators = set(
             _operator_codes_for_text(
@@ -1862,19 +1936,54 @@ def _typed_nucleus_projections_for_span(
         # real desiderative must never license another endpoint's nominal
         # simile merely because both share one EvidenceSpan.
         wish = "operator:wish" in operators
-        endpoint_final = bool(
+        finite_wish = bool(
             _FINITE_WISH_CLAUSE_END_RE.search(top_level_fragment)
             or re.search(
+                r"(?:たい|ほしい|欲しい)(?:と)?思"
+                r"(?:う|っている|っていた|っています|っていました|"
+                r"います|いました)(?:の(?:だ|です)|ん(?:だ|です))?$",
+                top_level_fragment,
+            )
+            or re.search(
+                r"(?:たい|ほしい|欲しい)(?:気持ち|願い)(?:は|が|も)"
+                r"[^、,.!?！？]{1,32}"
+                r"(?:る|う|い|た|ない|なかった|ます|ました|"
+                r"だ|です|だった|でした)$",
+                top_level_fragment,
+            )
+        )
+        nominal_wish = bool(
+            re.search(
                 r"(?:たい|ほしい|欲しい)(?:気持ち|願い)$",
                 top_level_fragment,
             )
         )
-        return bool(
-            wish
-            and endpoint_final
-            and owner_scope_is_bound(top_level_fragment)
-            and not operators & {"operator:negation", "operator:refusal"}
+        terminal_wish_denial = bool(
+            re.search(
+                r"(?:たい|ほしい|欲しい)(?:気持ち|願い|わけ)"
+                r"(?:は|が|も|では|じゃ)?"
+                r"(?:ない|なかった|ありません|ありませんでした)$",
+                top_level_fragment,
+            )
+            or re.search(
+                r"(?:たい|ほしい|欲しい)(?:と)?思"
+                r"(?:わない|っていない|っていなかった|いません)$",
+                top_level_fragment,
+            )
         )
+        positive = bool(
+            wish
+            and (finite_wish or nominal_wish)
+            and owner_scope_is_bound(top_level_fragment)
+            and not terminal_wish_denial
+        )
+        # A bare 気持ち/願い nominal is a valid endpoint beside an explicit
+        # non-ga connective, but it is not a finite left clause that can prove
+        # conjunctive が.  The second return value preserves that distinction.
+        return positive, bool(positive and finite_wish)
+
+    def affirmative_wish(fragment: str) -> bool:
+        return affirmative_wish_proof(fragment)[0]
 
     def ambiguous_m_row_nominal_state(fragment: str) -> bool:
         """Admit an ambiguous ``…みたい気持ち/願い`` without wish promotion.
@@ -2382,6 +2491,7 @@ def _typed_nucleus_projections_for_span(
                 "intention",
             ],
             tuple[str, ...],
+            bool,
         ] | None:
             """Resolve one contrast endpoint from frozen, fragment-local axes.
 
@@ -2414,6 +2524,10 @@ def _typed_nucleus_projections_for_span(
             # promoted to a positive wish endpoint.
             if "operator:self_evaluation" in operators:
                 return None
+
+            positive_wish, finite_wish_endpoint = affirmative_wish_proof(
+                top_level_fragment
+            )
 
             def endpoint_final_match(
                 *patterns: re.Pattern[str],
@@ -2464,22 +2578,28 @@ def _typed_nucleus_projections_for_span(
             )
             feeling_final = endpoint_final_match(_FEELING_RE)
             value_final = endpoint_final_match(_VALUE_RE)
-            # An operator embedded in a noun modifier is not the endpoint
-            # predicate.  Likewise ``迷っていない`` cancels the uncertainty
-            # operator itself, while ``言えない気がする`` keeps a final
-            # uncertainty whose content happens to be negative.
-            if constraint_occurs and constraint_final is None:
-                return None
-            if uncertainty_occurs and uncertainty_final is None and not unfinished:
-                return None
-            if "operator:refusal" in operators and refusal_final is None:
-                return None
-            if "operator:change" in operators and change_final is None:
-                return None
-            if "operator:feeling" in operators and feeling_final is None:
-                return None
-            if "operator:value" in operators and value_final is None:
-                return None
+            # Choose the primary terminal predicate before rejecting earlier
+            # semantic material.  A finite affirmative wish may legitimately
+            # contain a feeling noun or an epistemic host; those subordinate
+            # operators must not veto the wish endpoint.  Non-wish endpoints,
+            # and action in particular, retain the strict modifier guards.
+            if not positive_wish:
+                if constraint_occurs and constraint_final is None:
+                    return None
+                if (
+                    uncertainty_occurs
+                    and uncertainty_final is None
+                    and not unfinished
+                ):
+                    return None
+                if "operator:refusal" in operators and refusal_final is None:
+                    return None
+                if "operator:change" in operators and change_final is None:
+                    return None
+                if "operator:feeling" in operators and feeling_final is None:
+                    return None
+                if "operator:value" in operators and value_final is None:
+                    return None
             if (
                 negated
                 and uncertainty_final is not None
@@ -2492,7 +2612,6 @@ def _typed_nucleus_projections_for_span(
                 uncertainty_final is not None
                 or unfinished
             )
-            positive_wish = affirmative_wish(top_level_fragment)
             performed_action = structurally_performed_action(
                 top_level_fragment
             )
@@ -2517,12 +2636,21 @@ def _typed_nucleus_projections_for_span(
                 "intention",
             ]
             role_codes: tuple[str, ...]
+            finite_endpoint_proven: bool
+            finite_predicate_tail = bool(
+                re.search(
+                    r"(?:る|う|い|た|ない|なかった|ます|ました|"
+                    r"だ|です|だった|でした)$",
+                    top_level_fragment,
+                )
+            )
             if positive_wish:
                 kind = "wish"
                 predicate_kind = "wish"
                 polarity = "positive"
                 modality = "wish"
                 role_codes = ("semantic_role:retained_intention",)
+                finite_endpoint_proven = finite_wish_endpoint
             elif unfinished:
                 kind = "uncertainty"
                 predicate_kind = "unfinished"
@@ -2533,18 +2661,21 @@ def _typed_nucleus_projections_for_span(
                     "semantic_role:present_unfinished",
                     "semantic_role:burden",
                 )
+                finite_endpoint_proven = finite_predicate_tail
             elif constraint_final is not None:
                 kind = "constraint"
                 predicate_kind = "constraint"
                 polarity = "negative" if negated else "neutral"
                 modality = "uncertain" if uncertain else "possibility"
                 role_codes = ("semantic_role:burden",)
+                finite_endpoint_proven = finite_predicate_tail
             elif uncertain:
                 kind = "uncertainty"
                 predicate_kind = "uncertainty"
                 polarity = "negative" if negated else "neutral"
                 modality = "uncertain"
                 role_codes = ("semantic_role:burden",)
+                finite_endpoint_proven = finite_predicate_tail
             elif refused and refusal_final is not None:
                 kind = "state"
                 predicate_kind = "refusal"
@@ -2554,6 +2685,7 @@ def _typed_nucleus_projections_for_span(
                     "semantic_role:protective_or_limiting_refusal",
                     "semantic_role:burden",
                 )
+                finite_endpoint_proven = finite_predicate_tail
             elif change_final is not None:
                 kind = "change"
                 predicate_kind = "change"
@@ -2570,18 +2702,21 @@ def _typed_nucleus_projections_for_span(
                     else "fact"
                 )
                 role_codes = ("semantic_role:current_change",)
+                finite_endpoint_proven = finite_predicate_tail
             elif feeling_final is not None:
                 kind = "reaction"
                 predicate_kind = "feeling"
                 polarity = "negative"
                 modality = "feeling"
                 role_codes = ("semantic_role:burden",)
+                finite_endpoint_proven = finite_predicate_tail
             elif value_final is not None:
                 kind = "value"
                 predicate_kind = "value"
                 polarity = "positive"
                 modality = "fact"
                 role_codes = ("semantic_role:explicit_evaluation",)
+                finite_endpoint_proven = finite_predicate_tail
             elif (
                 (performed_action or "operator:action" in operators)
                 and _EXPLICIT_PERFECTIVE_END_RE.search(
@@ -2606,6 +2741,7 @@ def _typed_nucleus_projections_for_span(
                 polarity = "neutral"
                 modality = "fact"
                 role_codes = ("semantic_role:concrete_action",)
+                finite_endpoint_proven = finite_predicate_tail
             else:
                 return None
 
@@ -2617,6 +2753,19 @@ def _typed_nucleus_projections_for_span(
                 )
                 if code != "operator:contrast"
                 and (code != "operator:wish" or positive_wish)
+                and not (
+                    positive_wish
+                    and code in {
+                        "operator:negation",
+                        "operator:refusal",
+                        "operator:constraint",
+                        "operator:feeling",
+                        "operator:uncertainty",
+                        "operator:change",
+                        "operator:positive_change",
+                        "operator:value",
+                    }
+                )
             )
             return (
                 kind,
@@ -2624,6 +2773,7 @@ def _typed_nucleus_projections_for_span(
                 polarity,
                 modality,
                 tuple(_dedupe((*local_operator_codes, *role_codes))),
+                finite_endpoint_proven,
             )
 
         # The specialized branch above intentionally covers its narrow finite
@@ -2636,21 +2786,37 @@ def _typed_nucleus_projections_for_span(
             and text[link.start() : link.end()] == link.group(0)
             and owner_scope_is_bound(left_text)
             and owner_scope_is_bound(right_text)
-            # Generic ``が、`` cannot prove clause-connective use against a
-            # nominative particle.  Its only admitted form remains the finite
-            # wish/constraint recognizer above; the generic fallback rejects
-            # every remaining ``が、`` shape.
-            and not link.group(0).startswith("が")
         ):
             left_profile = generic_contrast_endpoint_profile(left_text)
             right_profile = generic_contrast_endpoint_profile(right_text)
-            if left_profile is not None and right_profile is not None:
-                left_kind, left_predicate, left_polarity, left_modality, left_codes = (
-                    left_profile
+            generic_ga_admitted = bool(
+                left_profile is not None
+                and (
+                    not link.group(0).startswith("が")
+                    or left_profile[5]
                 )
-                right_kind, right_predicate, right_polarity, right_modality, right_codes = (
-                    right_profile
-                )
+            )
+            if (
+                left_profile is not None
+                and right_profile is not None
+                and generic_ga_admitted
+            ):
+                (
+                    left_kind,
+                    left_predicate,
+                    left_polarity,
+                    left_modality,
+                    left_codes,
+                    _left_finite,
+                ) = left_profile
+                (
+                    right_kind,
+                    right_predicate,
+                    right_polarity,
+                    right_modality,
+                    right_codes,
+                    _right_finite,
+                ) = right_profile
                 burden_kinds = {
                     "constraint",
                 }

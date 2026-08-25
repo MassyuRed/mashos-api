@@ -1467,6 +1467,60 @@ def project_subjective_meaning_plan(
         if row.relation_operator
         in {RelationOperator.COEXISTS_WITH, RelationOperator.TENSION_WITH}
     )
+
+    def is_generic_exact2_noncollapse(
+        contribution: Optional[PlannedObservationContribution],
+    ) -> bool:
+        """Prove a source-fragment relation before endpoint-local focus.
+
+        An unfinished or burden endpoint may also own a valid local duty.  It
+        must not hide the source-explicit relation when both of that relation's
+        exact endpoints were projected by the generic typed-fragment grammar.
+        This proof uses only Phase-A bindings and frame markers; it does not
+        inspect source text, case ids or phrase families.
+        """
+
+        if (
+            contribution is None
+            or len(contribution.semantic_refs) != 2
+            or len(set(contribution.semantic_refs)) != 2
+        ):
+            return False
+        relation_candidate_ref = contribution_candidate.get(
+            contribution.contribution_id
+        )
+        endpoint_rows = tuple(
+            row
+            for row in phase_A.relation_endpoint_grounded_candidate_ref_by_binding_key
+            if row.relation_candidate_ref == relation_candidate_ref
+        )
+        if (
+            len(endpoint_rows) != 2
+            or len({row.source_semantic_ref for row in endpoint_rows}) != 2
+            or {row.source_semantic_ref for row in endpoint_rows}
+            != set(contribution.semantic_refs)
+        ):
+            return False
+        frame_by_candidate_ref = {
+            row.candidate_ref: row.grounded_frame
+            for row in phase_A.resolved_grounded_frame_by_candidate_ref
+        }
+        endpoint_frames = tuple(
+            frame_by_candidate_ref.get(row.endpoint_grounded_candidate_ref)
+            for row in endpoint_rows
+        )
+        return bool(
+            all(frame is not None for frame in endpoint_frames)
+            and all(
+                "semantic_role:generic_relation_fragment"
+                in tuple(getattr(frame, "attribute_codes", ()))
+                for frame in endpoint_frames
+            )
+        )
+
+    generic_noncollapse = (
+        noncollapse if is_generic_exact2_noncollapse(noncollapse) else None
+    )
     open_unfinished = unique_material_owner(
         row
         for row in contributions
@@ -1499,7 +1553,8 @@ def project_subjective_meaning_plan(
         if row.semantic_operator is SemanticOperator.PRESENT_BURDEN
     )
     focus = (
-        open_unfinished
+        generic_noncollapse
+        or open_unfinished
         or action_change
         or noncollapse
         or residue
