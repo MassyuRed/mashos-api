@@ -2519,9 +2519,13 @@ SOURCE_SCALAR_MORPHOLOGY_ASSET_REGISTRY = (
 
 
 RESPONSE_OBJECT_ASSET_REGISTRY = (
-    (ResponseObjectExpressionMode.EXPLICIT.value, "", False),
-    (ResponseObjectExpressionMode.COMPOSITE.value, "と", False),
-    (ResponseObjectExpressionMode.ANAPHORIC.value, "そのこと", True),
+    (ResponseObjectExpressionMode.EXPLICIT.value, ("",), False),
+    (ResponseObjectExpressionMode.COMPOSITE.value, ("と",), False),
+    (
+        ResponseObjectExpressionMode.ANAPHORIC.value,
+        ("そのこと", "その両方"),
+        True,
+    ),
 )
 FUNCTIONAL_ASSET_REGISTRY = (
     tuple(slot.value for slot in RegisteredFunctionalSlotRef),
@@ -3115,13 +3119,26 @@ def _response_object_surface(
     )
     if len(asset_rows) != 1:
         raise Stage1CompositionError("STAGE1_RESPONSE_OBJECT_ASSET_STOP")
-    _mode, lexeme, antecedent_required = asset_rows[0]
+    _mode, lexemes, antecedent_required = asset_rows[0]
+    if (
+        type(lexemes) is not tuple
+        or not lexemes
+        or any(type(lexeme) is not str for lexeme in lexemes)
+    ):
+        raise Stage1CompositionError("STAGE1_RESPONSE_OBJECT_ASSET_STOP")
     if expression.expression_mode is ResponseObjectExpressionMode.ANAPHORIC:
-        if not antecedent_required or expression.antecedent_unit_ref is None:
+        if (
+            not antecedent_required
+            or expression.antecedent_unit_ref is None
+            or len(lexemes) != 2
+        ):
             raise Stage1CompositionError("STAGE1_RESPONSE_ANTECEDENT_STOP")
-        return (lexeme,)
+        return (lexemes[0] if len(expression.basis_semantic_refs) == 1 else lexemes[1],)
     if antecedent_required or expression.antecedent_unit_ref is not None:
         raise Stage1CompositionError("STAGE1_RESPONSE_ANTECEDENT_STOP")
+    if len(lexemes) != 1:
+        raise Stage1CompositionError("STAGE1_RESPONSE_OBJECT_ASSET_STOP")
+    lexeme = lexemes[0]
     objects = tuple(
         _source_expression(
             ref,
@@ -3883,7 +3900,7 @@ def _normal_form_phase_reference_antecedent_recalculation(
 ) -> Tuple[Tuple[ResponseObjectExpression, ...], Tuple[ComposedSentenceUnit, ...]]:
     expressions: list[ResponseObjectExpression] = []
     units: list[ComposedSentenceUnit] = []
-    antecedent_by_refs: dict[Tuple[str, ...], str] = {}
+    antecedent_by_refs: dict[Tuple[str, ...], Tuple[str, str, int]] = {}
     for index, group in enumerate(groups):
         duties = tuple(duty_by_ref[ref] for ref in group.ordered_duty_refs)
         layer = duties[0].layer
@@ -3908,12 +3925,15 @@ def _normal_form_phase_reference_antecedent_recalculation(
             plan = plan_by_duty[duty.duty_ref]
             if (
                 prior is not None
+                and prior[1] == layer
+                and prior[2] < index
+                and (prior[2] == index - 1 or len(refs) > 1)
                 and not duty.relation_refs
                 and plan.predicate_valency
                 is not PredicateValency.TRIADIC_ACTOR_TARGET_BOUNDARY
             ):
                 mode = ResponseObjectExpressionMode.ANAPHORIC
-                antecedent = prior
+                antecedent = prior[0]
             else:
                 mode = (
                     ResponseObjectExpressionMode.COMPOSITE
@@ -3935,7 +3955,7 @@ def _normal_form_phase_reference_antecedent_recalculation(
             )
             expressions.append(expression)
             if mode is not ResponseObjectExpressionMode.ANAPHORIC:
-                antecedent_by_refs[refs] = unit_ref
+                antecedent_by_refs[refs] = (unit_ref, layer, index)
     return tuple(expressions), tuple(units)
 
 
