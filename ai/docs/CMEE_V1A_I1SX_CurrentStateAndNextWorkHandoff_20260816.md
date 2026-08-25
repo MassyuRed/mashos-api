@@ -1702,6 +1702,7 @@ AUTOMATIC_PROGRESSION = FALSE
 
 new activation heads固定後にだけsame frozen private exact4をfresh materializeする。known body-fullはUltra technical / Pro language、withheld body-fullはPro exact1だけが読み、fresh output exact2をreview直後に削除する。success exact3がすべて`CLEAR`の場合だけ`EARLY_ACTUAL_STATUS=LANGUAGE_VIABILITY_OBSERVED`へ遷移し、formal Product Read、Step 4、ready、mergeまたはproductionへ自動進行しない。
 
+
 ## 39. Step 3 bounded finite-host and owner-boundary completion（2026-08-26）
 
 §38 activation headsへbindしたfresh early actual exact1はknown / withheld machine invariant `CLEAR_4_OF_4 / CLEAR_4_OF_4`、known Pro language viability `CLEAR_4_OF_4`だったが、withheld Pro exact1はaggregate viable `1/4`、non-clear `3/4`の`COMMON_DEFECT / GENERIC_SUBJECTIVE_CONTENT / SUBJECTIVE_MEANING_PLANNER`だった。body-free first-failing categoryは引き続き`ENDPOINT_FINITE_CLASSIFICATION`であり、connector candidate検出後にendpoint exact2をadmitできず、whole span appraisalへ残ることが共通原因だった。relation noncollapse、ranking、surface realizationまたはRoute A ceilingはroot causeではない。private body、locator、語彙、case順序またはper-case detailはPro外へ出していない。
@@ -1780,3 +1781,89 @@ AUTOMATIC_PROGRESSION = FALSE
 ```
 
 new activation heads固定後にだけsame frozen private exact4をfresh materializeする。known body-fullはUltra technical / Pro language、withheld body-fullはPro exact1だけが読み、fresh output exact2をreview直後に削除する。success exact3がすべて`CLEAR`の場合だけ`EARLY_ACTUAL_STATUS=LANGUAGE_VIABILITY_OBSERVED`へ遷移し、formal Product Read、Step 4、ready、mergeまたはproductionへ自動進行しない。
+
+## 40. Step 3.2 independent public audit、bounded correction、activation freeze（2026-08-26）
+
+Mashのcurrent explicit Step 3.2 completion指示により、§39のruntime exact5とCocolon canonical v1/06をfreshに固定してindependent public auditを行った。最初のauditは、self-owned finite hostがlater third-party owner / arbitrary lexical hostを飲むowner-boundary bypass、current source bytesとrunner frozen `LANGUAGE_CORE_IDENTITY`の不一致、Step 2 public composition classの6 failure/errorを検出したため、旧`d05a072... / f77ab432...` pairをfreezeせずSTOPした。
+
+修正は同じbounded finite-host / owner-boundary delta内だけで行った。self marker後のhostを句末活用だけで認めず、先頭のexisting frozen operatorとdirect typed carrier、またはexisting nominal actionとexact existence hostへ限定した。nested uncertainty、registered te-form desiderative、paired m-rowは既存grammar proofへ接続し、m-row pair成立時もleft owner proofを必須にした。uncertain role-local carrierはinput / case selectorではなくregistered fused particleの接続として閉じた。独立postimage auditはfocus/topic/attribution/experiencer/malformed m-row、later-owner self host、composite unfinished host、inflected pseudo-nominal、te-form / nested uncertainty owner negativeをadversarialに確認し、Blocker / Major / Minor=`0 / 0 / 0`でCLEARとした。
+
+本節のruntime checkpoint commitとCocolon canonical v1/06 §53のdesign checkpoint commitが両方remote postverifyされた時点をStep 3.2 completionとする。actual 40-hex activation pairの最終ownerはcanonical v1/06 §53であり、本節はself-SHA circularityを避けるためruntime側を`THIS_STEP3_2_RUNTIME_CHECKPOINT_COMMIT`として固定する。Step 3.3 private actual、formal exact8、Step 4またはProduct Readは開始しない。
+
+```text
+AUTHORITY = MASH_CURRENT_EXPLICIT_STEP3_2_COMPLETION_20260826
+CHECKPOINT_ID = 3.2
+CHECKPOINT_STATE = COMPLETE_ON_RUNTIME_AND_CANONICAL_06_REMOTE_POSTVERIFY
+CURRENT_MACRO_STEP = 3
+STEP3_COMPLETE = FALSE
+LAST_COMPLETED_CHECKPOINT = 3.2_ON_EXACT2_REMOTE_POSTVERIFY
+CURRENT_RESUME_CHECKPOINT = 3.3_NOT_STARTED
+AUTOMATIC_MACRO_PROGRESSION = FALSE
+
+AUDITED_PREIMAGE_RUNTIME_HEAD = d05a07224194e1f5a505c5fbca231ce16c792fdd
+AUDITED_PREIMAGE_DESIGN_HEAD = f77ab4323128037496eb0aee0266be207f542e3a
+RUNTIME_ACTIVATION_REF = THIS_STEP3_2_RUNTIME_CHECKPOINT_COMMIT
+DESIGN_ACTIVATION_REF = COCOLON_CANONICAL_V1_06_SECTION_53_COMMIT
+CANONICAL_ACTIVATION_PAIR_OWNER = COCOLON_V1_06_SECTION_53
+
+INDEPENDENT_PUBLIC_AUDIT = CLEAR
+AUDIT_BLOCKER / MAJOR / MINOR = 0 / 0 / 0
+INITIAL_AUDIT_BLOCKER_ROOTS = 3_RESOLVED_WITHIN_SAME_BOUNDED_DELTA
+PRIVATE_BODY_FULL_ACCESS_OR_INFERENCE = 0
+NEW_AXIS / ENUM / ASSET / DEPENDENCY / ROUTE = 0 / 0 / 0 / 0 / 0
+CASE_ID / PRIVATE_TERM / STRUCTURAL_FAMILY / EXPECTED_SENTENCE_SELECTOR = 0 / 0 / 0 / 0
+
+RUNTIME_CHECKPOINT_CHANGED_PATHS_FROM_D05A = EXACT5
+  ai/services/ai_inference/emlis_ai_grounded_observation_plan.py
+  ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py
+  ai/tests/test_cmee_v1a_i1sx_contracts.py
+  ai/tools/cmee_v1a_i1sx_candidate_run.py
+  ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md
+COCOLON_CHECKPOINT_CHANGED_PATHS_FROM_F77A = EXACT1
+  Cocolon_前提資料/designs/cmee/v1/06_implementation_order_migration_and_verification.md
+STRUCTURE_MAP_DELTA = NONE
+STRUCTURE_MAP_DELTA_REASON = CHECKPOINT_RECEIPT_ONLY_NO_PRODUCT_OWNER_ENTRYPOINT_API_DB_RN_LIFECYCLE_CHANGE
+
+LANGUAGE_CORE_IDENTITY = 27c4fd3577cd3e35330dddea410a8bf526bb738edff5fc2319c36745525e5ec1
+RUNNER_PATH = ai/tools/cmee_v1a_i1sx_candidate_run.py
+RUNNER_SHA256 = e5c5bd2f153b59cb3bfe2cf4ccc67545d9a43c62eff8ae9833dd915b5b82dfb0
+STEP2_PUBLIC_COMPOSITION_TESTS = 19_OF_19_PASS
+STEP3_PUBLIC_SYNTHETIC_EARLY_HARNESS_TESTS = 17_OF_17_PASS
+CONTRACT_AND_VERTICAL_COMBINED_TESTS = 165_OF_165_PASS
+COMPILEALL = PASS
+DIFF_CHECK = PASS
+REAL_PRIVATE_EARLY_ACTUAL_TESTS = NOT_RUN
+
+EARLY_WITHHELD_INPUT_SCHEMA_VERSION = cocolon.cmee.stage1.withheld_early_input.v1
+EARLY_KNOWN_VISIBLE_SCHEMA_VERSION = cocolon.cmee.stage1.known_early_actual_visible.v1
+EARLY_WITHHELD_BODY_FREE_SCHEMA_VERSION = cocolon.cmee.stage1.withheld_early_machine_body_free.v1
+EARLY_BODY_FREE_PACKET_SCHEMA_VERSION = cocolon.cmee.stage1.early_actual_body_free.v2
+EARLY_HUMAN_READ_RESULT_SCHEMA_VERSION = cocolon.cmee.stage1.early_human_read_result.v1
+EARLY_ULTRA_KNOWN_TECHNICAL_RESULT_SCHEMA_VERSION = cocolon.cmee.stage1.early_ultra_known_technical_result.v1
+EARLY_ACTUAL_FINAL_BODY_FREE_SCHEMA_VERSION = cocolon.cmee.stage1.early_actual_final_body_free.v1
+EARLY_PRIVATE_PACKET_SCHEMA_VERSION = cocolon.cmee.stage1.withheld_early_private_packet.v1
+EARLY_BOUNDED_UNIT_ID = cocolon.cmee.stage1.additional_correction.route_a.20260824.v1
+WITHHELD_EARLY_PACKET_ID = CMEE_STAGE1_ADDITIONAL_CORRECTION_WITHHELD_EARLY_20260824_V1
+WITHHELD_EARLY_PRIVATE_SLOT_ID = PRIVATE_SLOT_WITHHELD_EARLY_20260824_V1
+FROZEN_RETAINED_WITHHELD_SET_DIGEST = 5f31461625397bd22746dcdad8c8d68f7f6c7d2e56c1dc62e177664ae365c59d
+CURRENT_MACHINE / KNOWN / PRO / PRIVATE_BINDING_DIGESTS = NOT_CREATED_UNTIL_STEP3_3
+FROZEN_PRIVATE_INPUT_RETAINED = 1
+PRIVATE_BODY / LOCATOR / PER_CASE_DIGEST / EXPECTED_SENTENCE_PUBLICATION = 0 / 0 / 0 / 0
+
+COMMON_DEFECT_RETURN_COUNT = 2_OF_2_KEEP
+COUNTER_RESET / COUNTER_INCREMENT = 0 / 0
+SOLE_ROUTE = ROUTE_A_PROVIDERLESS_EXACT1_ONLY
+NETWORK / EXTERNAL_AI / PROVIDER / BODY_SEND / COST = 0 / 0 / 0 / 0 / 0
+PUBLIC_API / DB / RN / PRODUCTION_EFFECT = 0 / 0 / 0 / 0
+EARLY_ACTUAL_STATUS = NOT_RUN
+FORMAL_EXACT8 = NOT_RUN
+PRODUCT_READ_EVALUATED = FALSE
+CANDIDATE_READY = FALSE
+STEP4 = NOT_STARTED
+
+PRIMARY_OUTCOME = TECHNICAL_CREDIT
+TECHNICAL_CREDIT = REUSABLE_BOUNDED_PUBLIC_CORRECTION_AND_ACTIVATION_FREEZE
+PRODUCT_CREDIT = 0
+UNFINISHED_EXACT_ACTION = CHECKPOINT_3_3_FRESH_PRIVATE_EXACT4_EXACT1_RUN_ON_FROZEN_PAIR
+NEXT_CHECKPOINT = 3.3_NOT_STARTED
+```
