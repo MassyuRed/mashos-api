@@ -11032,6 +11032,113 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         ):
             module.derive_discourse_preference_profile(reordered_units)
 
+    def test_subjective_relation_expression_foreign_ref_tamper_fails_closed(
+        self,
+    ) -> None:
+        module = stage1_composition_module
+        *_, phase_b = self._known_inputs(0)
+        normalized = module.compose_stage1_from_projection(
+            phase_b
+        ).selected_candidate.normalized_artifact
+        duty_by_ref = {
+            row.duty_ref: row
+            for row in normalized.composition_duty_rows
+        }
+        plan_by_ref = {
+            row.clause_plan_ref: row
+            for row in normalized.clause_plan_rows
+        }
+
+        selected = None
+        for index, expression in enumerate(
+            normalized.response_object_expression_rows
+        ):
+            plan = plan_by_ref[expression.clause_plan_ref]
+            duty = duty_by_ref[plan.duty_ref]
+            if duty.layer != "LAYER_2":
+                continue
+            owner, _owner_refs = module._duty_semantics(duty, phase_b)
+            proposition = module._prop(owner)
+            if (
+                proposition.content_kind
+                is SubjectiveContentKind.APPRAISAL
+                and proposition.appraisal_content is not None
+                and proposition.appraisal_content.dimension
+                is module.AppraisalDimension.RELATIONAL_NONCOLLAPSE
+            ):
+                selected = (
+                    index,
+                    expression,
+                    plan,
+                    duty,
+                    proposition,
+                )
+                break
+        self.assertIsNotNone(selected)
+        assert selected is not None
+        index, expression, plan, duty, proposition = selected
+
+        direct_primary_refs = tuple(
+            binding.semantic_ref
+            for candidate in phase_b.projection.interpretation_candidates
+            if candidate.relation_operator
+            is RelationOperator.NO_RELATION_CLAIM
+            for binding in candidate.argument_bindings
+            if binding.role is ArgumentRole.PRIMARY
+        )
+        foreign_ref = next(
+            ref
+            for ref in direct_primary_refs
+            if ref not in proposition.response_object_refs
+            and direct_primary_refs.count(ref) == 1
+        )
+        tampered_expression = replace(
+            expression,
+            basis_semantic_refs=(
+                expression.basis_semantic_refs[0],
+                foreign_ref,
+            ),
+        )
+        with self.assertRaisesRegex(
+            module.Stage1CompositionError,
+            "STAGE1_SUBJECTIVE_RESPONSE_OBJECT_CLOSURE_STOP",
+        ):
+            module._surface_for_plan(
+                duty,
+                plan,
+                tampered_expression,
+                phase_b,
+            )
+
+        tampered_artifact = replace(
+            normalized,
+            response_object_expression_rows=tuple(
+                tampered_expression if row_index == index else row
+                for row_index, row in enumerate(
+                    normalized.response_object_expression_rows
+                )
+            ),
+        )
+        defects = module._project_post_normalization_defect_rows(
+            arc=tampered_artifact.discourse_arc,
+            seed=tampered_artifact.layout_preference_seed,
+            duties=tampered_artifact.composition_duty_rows,
+            required_duty_refs=tampered_artifact.required_duty_refs,
+            suppressed_duty_rows=tampered_artifact.suppressed_duty_rows,
+            clause_plans=tampered_artifact.clause_plan_rows,
+            expressions=tampered_artifact.response_object_expression_rows,
+            units=tampered_artifact.sentence_units,
+        )
+        self.assertEqual(
+            tuple(row.defect_kind for row in defects),
+            (module.CorrectableDefectKind.UNRESOLVED_OR_DISTANT_REFERENT,),
+        )
+        with self.assertRaisesRegex(
+            module.Stage1CompositionError,
+            "RECOMPOSITION_NORMAL_FORM_UNPROVEN_STOP",
+        ):
+            module.canonical_normalized_bytes(tampered_artifact)
+
     def test_material_alternate_runs_final_profile_and_global_rank_path(self) -> None:
         *_, phase_b = self._known_inputs(1)
         arc = stage1_composition_module.project_stage1_discourse_arc(phase_b)

@@ -3484,6 +3484,32 @@ def _generic_relation_fragment_response_object(
     return quoted if quoted.endswith(("気持ち」", "願い」")) else None
 
 
+def _subjective_noncollapse_relation_owner(
+    proposition: SubjectivePropositionV2,
+    phase_B: Stage1SurfaceCompositionInputs,
+) -> Optional[PlannedObservationContribution]:
+    """Resolve one typed noncollapse owner for the proposition's exact2 refs."""
+
+    response_refs = tuple(proposition.response_object_refs)
+    if len(response_refs) != 2 or len(set(response_refs)) != 2:
+        return None
+    rows = tuple(
+        row
+        for row in phase_B.projection.observation_contributions
+        if row.contribution_id in set(proposition.target_contribution_refs)
+        and row.relation_operator
+        in {RelationOperator.COEXISTS_WITH, RelationOperator.TENSION_WITH}
+        and _ordered_relation_endpoint_refs(row) == response_refs
+        and (
+            proposition.content_kind
+            is not SubjectiveContentKind.APPRAISAL
+            or row.relation_basis_refs
+            == (proposition.focal_relation_ref,)
+        )
+    )
+    return rows[0] if len(rows) == 1 else None
+
+
 def _surface_for_plan(
     duty: CompositionDutyView,
     plan: ClausePlan,
@@ -3707,6 +3733,21 @@ def _surface_for_plan(
         )
     object_surface = objects[0]
     if plan.semantic_clause_kind is SemanticClauseKind.SUBJECTIVE_PREDICATE:
+        proposition = _prop(owner)
+        expected_response_refs = _unique(
+            (
+                *proposition.response_object_refs,
+                *proposition.boundary_target_refs,
+            )
+        )
+        if (
+            duty.response_object_refs != expected_response_refs
+            or expression.basis_semantic_refs != expected_response_refs
+            or expression.relation_refs != duty.relation_refs
+        ):
+            raise Stage1CompositionError(
+                "STAGE1_SUBJECTIVE_RESPONSE_OBJECT_CLOSURE_STOP"
+            )
         generic_object_surface = _generic_relation_fragment_response_object(
             expression,
             object_surface,
@@ -3749,7 +3790,11 @@ def _surface_for_plan(
                 for frame in relation_endpoint_frames
             )
         )
-        proposition = _prop(owner)
+        noncollapse_relation_owner = (
+            _subjective_noncollapse_relation_owner(proposition, phase_B)
+            if relation_endpoint_exact2
+            else None
+        )
         if (
             relation_endpoint_exact2
             and proposition.content_kind is SubjectiveContentKind.APPRAISAL
@@ -3759,6 +3804,10 @@ def _surface_for_plan(
             and proposition.appraisal_content.operation
             is AppraisalOperation.PRESERVE_BOTH_ENDPOINTS
         ):
+            if noncollapse_relation_owner is None:
+                raise Stage1CompositionError(
+                    "STAGE1_SUBJECTIVE_RELATION_OBJECT_CLOSURE_STOP"
+                )
             left_object, right_object = tuple(
                 _source_expression(ref, phase_B, frame)
                 for ref, frame in zip(
@@ -3784,6 +3833,7 @@ def _surface_for_plan(
             and proposition.content_kind
             is SubjectiveContentKind.MATERIAL_VALUE
             and proposition.material_value_content is not None
+            and noncollapse_relation_owner is not None
             and {
                 MaterialRisk.WISH_TO_OBLIGATION,
                 MaterialRisk.REMOVE_USER_AGENCY,
@@ -4787,14 +4837,27 @@ def _project_post_normalization_defect_rows(
                 CorrectableDefectKind.UNRESOLVED_OR_DISTANT_REFERENT
             ].add(expression.response_object_expression_ref)
             continue
+        duty = duty_by_ref.get(plan.duty_ref)
+        binding_is_exact = bool(
+            duty is not None
+            and expression.basis_semantic_refs
+            == duty.response_object_refs
+            and expression.relation_refs == duty.relation_refs
+        )
         if expression.expression_mode is ResponseObjectExpressionMode.ANAPHORIC:
             antecedent_index = unit_index_by_ref.get(
                 expression.antecedent_unit_ref or ""
             )
-            valid = antecedent_index is not None and antecedent_index < own_index
+            valid = bool(
+                binding_is_exact
+                and antecedent_index is not None
+                and antecedent_index < own_index
+            )
         else:
-            valid = expression.antecedent_unit_ref is None and bool(
-                expression.basis_semantic_refs
+            valid = bool(
+                binding_is_exact
+                and expression.antecedent_unit_ref is None
+                and expression.basis_semantic_refs
             )
         if not valid:
             defects[

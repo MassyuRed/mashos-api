@@ -1358,3 +1358,58 @@ AUTOMATIC_PROGRESSION = FALSE
 ```
 
 repair activation headsを固定した後だけ、同じfrozen private input exact4をfresh outputへ一回materializeする。known body-fullはUltra technical / Pro language、withheld body-fullはProだけが読み、success exact3をbody-free finalizerへ渡す。private output exact2はread後削除し、Step 3 closure後もformal Product Read、Step 4、ready、mergeまたはproductionへ自動進行しない。
+
+## 34. Fail-closed exact2 relation proof and superseding reactivation（2026-08-25）
+
+§33 activation後、private resultを受領する前の独立technical auditで、subjective special surfaceが`basis_semantic_refs`のcardinality exact2だけを見ており、duty / proposition refsおよびadmitted relation ownerとのexact一致をsurface単体では証明していないことを検出した。foreign direct refを混入したpublic adversarial expressionがsurfaceへ到達できたため、§33 headsのresult acceptanceを0としてprivate作業を中断し、このheadsをsupersedeする。
+
+correctionは全subjective expressionについて、expression basis refs = duty response refs = proposition response refs + boundary refs、expression relation refs = duty relation refsをexact順序で要求する。post-normalization defect projectorにも同じbinding equalityを追加し、tampered normalized artifactは`UNRESOLVED_OR_DISTANT_REFERENT`からcanonical serializationをfail-closedする。
+
+RELATIONAL_NONCOLLAPSE appraisal / material-value special surfaceは、proposition target contributions内のadmitted `COEXISTS_WITH | TENSION_WITH` owner exact1、そのordered endpoint refs exact2とresponse refsのexact一致を必須にする。appraisalはさらにfocal relation refとowner relation basis exact1を一致させる。V2 / V8 risk pairまたはexact2 cardinalityだけからrelationを推論しない。
+
+```text
+SUPERSEDED_RUNTIME_HEAD = 27c9f02ba3fb059cbf46c62efe86399daec7f985
+SUPERSEDED_DESIGN_HEAD = ffcb74d3481392d695524f07f5af89f9e23e1ad2
+SUPERSEDED_LANGUAGE_CORE_IDENTITY = ce57ab185a2b2e099569391aea72230f880f56607c45dfa30b976ae80da63329
+SUPERSEDED_RESULT_ACCEPTED = 0
+SUPERSEDED_MATERIALIZATION_COUNT = 1
+SUPERSEDED_KNOWN_BODY_READ / WITHHELD_BODY_READ = 1 / 0
+SUPERSEDED_PRO_RESULT_CREATED = 0
+SUPERSEDED_BODY_FULL_OUTPUT_CREATED / DELETED / REMAINING = 2 / 2 / 0
+FROZEN_PRIVATE_INPUT_RETAINED = 1
+
+SUBJECTIVE_EXPRESSION_BINDING = EXPRESSION_DUTY_PROPOSITION_EXACT_ORDERED_EQUALITY
+SUBJECTIVE_RELATION_PROOF = ADMITTED_NONCOLLAPSE_OWNER_EXACT1
+ORDERED_RELATION_ENDPOINTS = EXACT2_EQUAL_RESPONSE_REFS
+APPRAISAL_FOCAL_RELATION = EXACT1_EQUAL_OWNER_RELATION_BASIS
+RISK_PAIR_OR_CARDINALITY_ONLY_RELATION_INFERENCE = 0
+FOREIGN_DIRECT_REF_SURFACE = FAIL_CLOSED
+FOREIGN_DIRECT_REF_NORMALIZED_ARTIFACT = FAIL_CLOSED
+CASE_ID_FAMILY_RAW_FIXTURE_EXPECTED_SENTENCE_SELECTOR = 0
+NEW_ASSET_FAMILY_ENUM_AXIS_DEPENDENCY_ROUTE = 0
+
+LANGUAGE_CORE_IDENTITY = 70fef2e11548d544714783a86fdb9036cf455bb63f6308b00cadfbf13676ff59
+RUNNER_SHA256 = 3beb8c83d14106d825ea81d2cf690e01140c8d38e4390d7c0a493699576e5a6e
+STEP2_COMPOSITION_TESTS = 17_OF_17_PASS
+STEP3_EARLY_HARNESS_TESTS = 17_OF_17_PASS
+CONTRACT_TESTS = 121_OF_121_PASS
+VERTICAL_TESTS = 42_OF_42_PASS
+COMBINED_TESTS = 163_OF_163_PASS
+COMPILEALL = PASS
+INDEPENDENT_TECHNICAL_AUDIT = CLEAR_BLOCKER_0_MAJOR_0
+
+COMMON_DEFECT_RETURN_COUNT_BEFORE / AFTER = 2_OF_2 / 2_OF_2
+COUNTER_RESET / COUNTER_INCREMENT = 0 / 0
+SOLE_ROUTE = ROUTE_A_PROVIDERLESS_EXACT1_ONLY
+EXTERNAL_AI / PROVIDER / NETWORK / EXTERNAL_BODY_SEND / COST = 0 / 0 / 0 / 0 / 0
+PUBLIC_API / DB / RN / PRODUCTION_EFFECT = 0 / 0 / 0 / 0
+EARLY_ACTUAL_STATUS = NOT_RUN_PENDING_FAIL_CLOSED_ACTIVATION_HEADS
+STEP3 = ROUTE_A_FAIL_CLOSED_REPAIR_VERIFIED_PENDING_FRESH_ACTUAL
+FORMAL_EXACT8 = NOT_RUN
+PRODUCT_READ_EVALUATED = FALSE
+CANDIDATE_READY = FALSE
+STEP4 = NOT_STARTED
+AUTOMATIC_PROGRESSION = FALSE
+```
+
+new activation heads確定後だけ、same frozen private exact4からfresh exact8を一回materializeする。本文reader境界とoutput削除条件は§33から変更しない。
