@@ -9278,6 +9278,127 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     all(fragment in actual_japanese for fragment in expected_fragments)
                 )
 
+        hosted_endpoint_cases = (
+            ("不安を感じているのです", "reaction"),
+            ("迷っているんです", "uncertainty"),
+            ("少し変わっていたのだ", "change"),
+            ("相談しているのです", "state"),
+            ("大事なのです", "value"),
+            ("不安であるのだ", "reaction"),
+            ("不安ではあるのだ", "reaction"),
+            ("難しいのである", "constraint"),
+            ("不安を感じることがある", "reaction"),
+            ("大事なことがある", "value"),
+            ("相談したいと思うことがある", "uncertainty"),
+            ("難しいことがある", "constraint"),
+            ("迷うことがある", "uncertainty"),
+            ("少し変わることがある", "change"),
+            ("相談することがある", "state"),
+            ("決められないことがある", "state"),
+            ("不安なままだ", "reaction"),
+            ("大事なままでした", "value"),
+            ("相談したい気持ちのままだ", "wish"),
+            ("難しいままだ", "constraint"),
+            ("迷っているままだ", "uncertainty"),
+            ("少し変わったままだ", "change"),
+            ("相談したままだ", "state"),
+            ("未定のままだ", "state"),
+            ("不安が残っている", "reaction"),
+            ("価値が残っている", "value"),
+            ("相談したい気持ちは続いている", "wish"),
+            ("制約が残っている", "constraint"),
+            ("迷いが残っている", "uncertainty"),
+            ("改善は続いている", "change"),
+            ("相談は続いている", "state"),
+            ("未定は続いている", "state"),
+            ("相談する", "state"),
+            ("相談し始めている", "state"),
+            ("少し変わり始めている", "change"),
+            ("不安を感じてきている", "reaction"),
+            ("迷ってしまっている", "uncertainty"),
+            ("相談できている", "state"),
+            ("相談できる", "state"),
+            ("不安だと思ってきた", "uncertainty"),
+            ("相談したいんだ", "wish"),
+            ("難しかったりする", "constraint"),
+            ("私は不安を感じている", "reaction"),
+            ("相談したい気持ちは私が記録した", "wish"),
+            ("相談したい気持ちは自分の記録にある", "wish"),
+            ("まだ決めていないのです", "state"),
+            ("相談したいと感じることがある", "wish"),
+            ("相談したいと私は感じている", "wish"),
+            ("不安だと私は感じている", "reaction"),
+            ("不安が少し残っている", "reaction"),
+            ("迷いが少し残っている", "uncertainty"),
+            ("相談したい気持ちが少しある", "wish"),
+            ("不安はずっと残っている", "reaction"),
+            ("不安は私こそ感じている", "reaction"),
+            ("私は 不安が残っている", "reaction"),
+            ("今は 不安が残っている", "reaction"),
+            ("不安を感じ続けてきた", "reaction"),
+            ("難しいと思い続けてきた", "uncertainty"),
+            ("相談したいと思い続けてきた", "wish"),
+            ("少し変わり続けてきた", "change"),
+        )
+        for index, (left_fragment, expected_left_kind) in enumerate(
+            hosted_endpoint_cases,
+            start=1,
+        ):
+            with self.subTest(public_hosted_endpoint=index):
+                right_fragment = (
+                    "今は難しい"
+                    if "相談したい" in left_fragment
+                    else "相談したい"
+                )
+                (
+                    _source,
+                    grounded_plan,
+                    _graph,
+                    _parent_plan,
+                    _projection,
+                    _phase_a,
+                    _subjective_plan,
+                    phase_b,
+                ) = _final_stage1_composition_inputs(
+                    _request(
+                        record_id=f"stage2-hosted-endpoint-{index}",
+                        memo=(
+                            f"{left_fragment}けれど、"
+                            f"{right_fragment}。"
+                        ),
+                    )
+                )
+                typed = tuple(
+                    row
+                    for row in grounded_plan.nuclei
+                    if "semantic_role:generic_relation_fragment"
+                    in row.semantic_frame.attribute_codes
+                )
+                self.assertEqual(len(typed), 2)
+                self.assertEqual(typed[0].kind, expected_left_kind)
+                self.assertEqual(
+                    typed[1].kind,
+                    "constraint"
+                    if right_fragment == "今は難しい"
+                    else "wish",
+                )
+                relation_rows = tuple(
+                    row
+                    for row in grounded_plan.relations
+                    if row.source_relation_ids
+                    == ("typed_projection:top_level_connective",)
+                )
+                self.assertEqual(len(relation_rows), 1)
+                result = stage1_composition_module.compose_stage1_from_projection(
+                    phase_b
+                )
+                actual_japanese = "\n".join(
+                    unit.text
+                    for unit in result.selected_candidate.sentence_units
+                )
+                self.assertIn(left_fragment, actual_japanese)
+                self.assertIn(right_fragment, actual_japanese)
+
         for index, memo in enumerate(
             (
                 "相談したくないけれど、今は難しい。",
@@ -9334,6 +9455,83 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 "不安とはいえない。",
                 "不安だったが相談したいが難しい。",
                 "不安だったけれど、相談したいが難しい。",
+                "不安がる弟が落ち着いたけれど、相談したい。",
+                "不安が弟には続いているけれど、相談したい。",
+                "弟に不安が続いているけれど、相談したい。",
+                "あに不安が続いているけれど、相談したい。",
+                "弟の中に不安が続いているけれど、相談したい。",
+                "弟から不安が続いているけれど、相談したい。",
+                "弟と不安が続いているけれど、相談したい。",
+                "不安は弟こそ感じているけれど、相談したい。",
+                "不安は弟しか感じていないけれど、相談したい。",
+                "不安は弟だけ感じているけれど、相談したい。",
+                "不安は弟まで感じているけれど、相談したい。",
+                "不安は弟さえ感じているけれど、相談したい。",
+                "相談したい願いが続く人を見たけれど、難しい。",
+                "相談したい気持ちがある本を読んだけれど、難しい。",
+                "相談したい気持ちは弟が記録したけれど、難しい。",
+                "相談したい気持ちは弟の記録にあるけれど、難しい。",
+                "相談したい気持ちは弟にしかないけれど、難しい。",
+                f"{'あ' * 25}が落ち着いたけれど、相談したい。",
+                "不安を感じることがあるらしいけれど、相談したい。",
+                "不安を感じることがあるとのことだけれど、相談したい。",
+                "不安を感じることがある記録を読んだけれど、相談したい。",
+                "不安を感じることがあると言われたけれど、相談したい。",
+                "不安を感じることがあることがあるけれど、相談したい。",
+                "不安なまま本を読んだけれど、相談したい。",
+                "不安なままらしいけれど、相談したい。",
+                "不安なままだとのことだけれど、相談したい。",
+                "不安なままにされたけれど、相談したい。",
+                "弟は不安なままだけれど、相談したい。",
+                "不安なままのままだけれど、相談したい。",
+                "不安ことがあるけれど、相談したい。",
+                "相談ことがあるけれど、難しい。",
+                "不安ままだけれど、相談したい。",
+                "難しいのままだけれど、相談したい。",
+                "相談し始めている人を見たけれど、難しい。",
+                "弟 が不安を感じているけれど、相談したい。",
+                "弟　が不安を感じているけれど、相談したい。",
+                "弟って不安を感じているけれど、相談したい。",
+                "弟なら不安を感じているけれど、相談したい。",
+                "弟として不安を感じているけれど、相談したい。",
+                "弟なんて強く不安を感じているけれど、相談したい。",
+                "弟なんぞ強く不安を感じているけれど、相談したい。",
+                "弟自身不安を感じているけれど、相談したい。",
+                "弟本人不安を感じているけれど、相談したい。",
+                "不安だと弟こそ強く感じているけれど、相談したい。",
+                "相談したいと弟こそ強く感じているけれど、難しい。",
+                "相談したいと感じることはないけれど、難しい。",
+                "難しいことはないけれど、相談したい。",
+                "難しいことがないけれど、相談したい。",
+                "難しいことはありませんけれど、相談したい。",
+                "難しいことはありませんでしたけれど、相談したい。",
+                "難しいことがあるのに備えて、相談したい。",
+                "迷うことがあるのに備えて、相談先を決めたい。",
+                "難しいことがあるのに備えて相談したい。",
+                "難しいことがあるのに備えつつ相談したい。",
+                "難しいことがあるのに備えるべく相談したい。",
+                "難しいことがあるのに対応し相談したい。",
+                "不安できるけれど、相談したい。",
+                "不安りするけれど、相談したい。",
+                "難しいするけれど、相談したい。",
+                "不安することがあるけれど、相談したい。",
+                "大事りするけれど、相談したい。",
+                "難しいし始めているけれど、相談したい。",
+                "不安続けてきたけれど、相談したい。",
+                "大事続けてきたけれど、相談したい。",
+                "不安だことがあるけれど、相談したい。",
+                "大事ですことがあるけれど、相談したい。",
+                "制約でしたことがあるけれど、相談したい。",
+                "未定だことがあるけれど、相談したい。",
+                "不安だままだけれど、相談したい。",
+                "大事ですままだけれど、相談したい。",
+                "不安だのですけれど、相談したい。",
+                "大事でしたのですけれど、相談したい。",
+                "弟 不安が残っているけれど、相談したい。",
+                "弟　不安が残っているけれど、相談したい。",
+                "弟不安が残っているけれど、相談したい。",
+                "弟 迷いが残っているけれど、相談したい。",
+                "弟 難しいことがあるけれど、相談したい。",
             ),
             start=1,
         ):

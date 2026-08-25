@@ -284,18 +284,31 @@ _FINITE_WISH_CLAUSE_END_RE: Final = re.compile(
     r"(?:たい|ほしい|欲しい)(?:気持ち|願い)"
     r"(?:だ|です|だった|でした)|"
     r"(?:たい|ほしい|欲しい)(?:と|とは)?思"
-    r"(?:う|っている|っていた|っています|っていました|います|いました)|"
+    r"(?:う|っている|っていた|っています|っていました|"
+    r"ってき(?:た|ます|ました|ません|ませんでした|"
+    r"ている|ていた|ています|ていました)|"
+    r"い(?:始め|続け|終え)(?:る|た|ている|ていた|"
+    r"てき(?:た|ます|ました|ません|ませんでした|"
+    r"ている|ていた|ています|ていました)|"
+    r"ます|ました)|"
+    r"います|いました)|"
     r"願(?:う|っている)|つもり(?:だ|です))"
-    r"(?:の(?:だ|です))?$"
+    r"(?:(?:の|ん)(?:だ|です|だった|でした))?$"
 )
 _REFUSAL_RE: Final = re.compile(
     r"(?:(?:し|続け)たく(?:ない|ありません)|やめたい|終わらせたい|投げ出したい|"
-    r"つもり(?:は|が)?ない|拒|嫌だ|このまま(?:では|じゃ)いけない)"
+    r"つもり(?:は|が)?ない|拒否|拒|嫌だ|このまま(?:では|じゃ)いけない)"
 )
 _UNCERTAIN_RE: Final = re.compile(
     r"(?:気がする|かもしれ|"
     r"(?:と|とは)思(?:う|った|います|いました|"
-    r"って(?:いる|いた|います|いました))|"
+    r"って(?:いる|いた|います|いました)|"
+    r"ってき(?:た|ます|ました|ません|ませんでした|"
+    r"ている|ていた|ています|ていました)|"
+    r"い(?:始め|続け|終え)(?:る|た|ている|ていた|"
+    r"てき(?:た|ます|ました|ません|ませんでした|"
+    r"ている|ていた|ています|ていました)|"
+    r"ます|ました))|"
     r"こうかな|かな(?=[、。,.!！?？\s]|$)|憶測|わからない|分からない|不明)"
 )
 _CONSTRAINT_RE: Final = re.compile(
@@ -303,12 +316,15 @@ _CONSTRAINT_RE: Final = re.compile(
     r"難し(?:い|かった|く(?:ない|なかった|ありません(?:でした)?))|"
     r"無理|制約|限界|しかない|せざるを得|取れなく|作れない)"
 )
-_NEGATED_CONSTRAINT_CANCELLATION_RE: Final = re.compile(
+_NEGATED_CONSTRAINT_CANCELLATION_INNER_RE: Final = re.compile(
     r"(?:"
     r"難し(?:くない|くなかった|くありません(?:でした)?)|"
     r"(?:無理|制約|限界)(?:は|では|じゃ)?"
     r"(?:ない|なかった|ありません(?:でした)?)"
-    r")$"
+    r")"
+)
+_NEGATED_CONSTRAINT_CANCELLATION_RE: Final = re.compile(
+    _NEGATED_CONSTRAINT_CANCELLATION_INNER_RE.pattern + r"$"
 )
 _CHANGE_RE: Final = re.compile(
     r"(?:になった|なって|くなった|変わ|減った|増えた|戻った|進んだ|進めた|"
@@ -320,7 +336,7 @@ _SELF_EVALUATION_RE: Final = re.compile(
     r"役に立たない|価値.{0,5}(?:ない|無い)|何もできない|なにもできない)"
 )
 _VALUE_RE: Final = re.compile(r"(?:大切|大事|価値|意味がある|守りたい|好まし|望まし|良(?:い|く)|いい)")
-_ACTION_RE: Final = re.compile(r"(?:行動|記録|メモ|書き|書いた|見て|見た|作った|試した|調べた|残した)")
+_ACTION_RE: Final = re.compile(r"(?:行動|記録|メモ|決め|書き|書いた|見て|見た|作った|試した|調べた|残した)")
 _ACTION_CHANGE_LINK_RE: Final = re.compile(
     r"(?:たら|だら|てから|でから|た後(?:に)?|たあと(?:に)?)[、,]\s*"
 )
@@ -338,7 +354,8 @@ _EXPLICIT_PERFECTIVE_END_RE: Final = re.compile(
 )
 _PRESENT_RESIDUE_RE: Final = re.compile(
     r"(?:(?:まだ|今も|なお).{0,32}(?:残(?:って|る|り|った)|続(?:いて|く)|消えず)|"
-    r"(?:残(?:って|る|り|った)|続(?:いて|く)).{0,12}(?:いる|ある))"
+    r"(?:残(?:って|る|り|った)|続(?:いて|く)).{0,12}"
+    r"(?:いる|いた|います|いました|ある|あった|あります|ありました))"
 )
 _OPEN_UNFINISHED_RE: Final = re.compile(
     r"(?:(?:どう|何|どちら|どっち|いつ|どこ|誰).{0,32}"
@@ -347,7 +364,8 @@ _OPEN_UNFINISHED_RE: Final = re.compile(
     r"(?:まだ|今も).{0,32}(?:分からない|わからない|分かりません|"
     r"わかりません|未定|決められない|決められません|"
     r"決めきれない|決めきれません)|"
-    r"(?:未定|途中|決めきれない|"
+    r"(?:未定|途中|決められない|決められません|"
+    r"決めきれない|決めきれません|"
     r"結論(?:は|が)出て(?:いない|いなかった|いません(?:でした)?)))"
 )
 _CONTRAST_RE: Final = re.compile(
@@ -403,7 +421,19 @@ _FINITE_ENDPOINT_CARRIER_RE: Final = re.compile(
     r"(?:だ|です|だった|でした)(?:の|ん)(?:だ|です|だった|でした)|"
     r"(?:な)?(?:の|ん)(?:だ|です|だった|でした)|"
     r"(?:だ|です|だった|でした|である|であった)|"
-    r"(?:始め|続け|終え)(?:る|た|ている|ていた|ます|ました)|"
+    r"(?:し|り|き|ぎ|ち|に|び|み|い)?"
+    r"(?:始め|続け|終え)(?:る|た|ている|ていた|"
+    r"ています|ていました|てしま(?:う|った|っている|っていた)|"
+    r"ます|ました)|"
+    r"(?:て|で)き(?:た|ている|ていた|ています|ていました)|"
+    r"(?:て|で)しま(?:う|った|っている|っていた|"
+    r"います|いました)|"
+    r"しま(?:う|った|っている|っていた|"
+    r"います|いました)|"
+    r"でき(?:る|た|ている|ていた|ます|ました|"
+    r"ない|なかった|ません|ませんでした)|"
+    r"する|"
+    r"りする|"
     r"し(?:たい(?:です|でした)?|たかった(?:です)?|たくない|たくなかった|"
     r"たくありません(?:でした)?|ます|ました|ません|ませんでした)|"
     r"(?:し)?(?:い(?:です)?|かった(?:です)?|"
@@ -417,6 +447,170 @@ _FINITE_ENDPOINT_CARRIER_RE: Final = re.compile(
     r"いません|いませんでした)|"
     r"(?:る|う|い|た|だ|ます|ました|ません|ませんでした|ない|なかった)"
     r")"
+)
+# Attachment classes are intentionally morphological rather than lexical
+# continuations.  A carrier is admitted only when the frozen operator that
+# precedes it supplies the matching Japanese conjugation class.
+_FINITE_TE_AUXILIARY_CARRIER_RE: Final = re.compile(
+    r"(?:"
+    r"(?:いる|いた|いない|いなかった|います|いました|"
+    r"いません|いませんでした)|"
+    r"き(?:た|ます|ました|ません|ませんでした|"
+    r"て(?:いる|いた|います|いました))|"
+    r"こ(?:ない|なかった)|"
+    r"しま(?:う|った|います|いました|"
+    r"いません|いませんでした|"
+    r"って(?:いる|いた|います|いました))"
+    r")"
+)
+_FINITE_ASPECT_HOST_SOURCE: Final = (
+    r"(?:始め|続け|終え)"
+    r"(?:る|た|ない|なかった|ます|ました|ません|ませんでした|"
+    r"て(?:いる|いた|いない|いなかった|います|いました|"
+    r"いません|いませんでした|こない|こなかった|"
+    r"き(?:た|ます|ました|ません|ませんでした|"
+    r"ている|ていた|ています|ていました)|"
+    r"しま(?:う|った|います|いました|"
+    r"いません|いませんでした|"
+    r"っている|っていた)))"
+)
+_FINITE_TSUTSU_HOST_SOURCE: Final = (
+    r"つつ(?:ある|あった|あります|ありました)"
+)
+_FINITE_ICHIDAN_CARRIER_RE: Final = re.compile(
+    r"(?:る|た|ない|なかった|ます|ました|ません|ませんでした|"
+    r"て(?:(?:は|も)?(?:いる|いた|いない|いなかった|います|いました|"
+    r"いません|いませんでした)|こ(?:ない|なかった)|き(?:た|ます|ました|ません|"
+    r"ませんでした|ている|ていた|ています|ていました)|"
+    r"しま(?:う|った|っている|っていた|います|いました))|"
+    + _FINITE_ASPECT_HOST_SOURCE
+    + r"|"
+    + _FINITE_TSUTSU_HOST_SOURCE
+    + r")"
+)
+_FINITE_SAHEN_CARRIER_RE: Final = re.compile(
+    r"(?:"
+    r"する|した|しない|しなかった|します|しました|しません|しませんでした|"
+    r"したい(?:です|でした)?|したかった(?:です)?|"
+    r"したく(?:ない|なかった|ありません(?:でした)?)|"
+    r"して(?:いる|いた|いない|いなかった|います|いました|"
+    r"いません|いませんでした|こ(?:ない|なかった)|き(?:た|ます|ました|ません|"
+    r"ませんでした|ている|ていた|ています|ていました)|"
+    r"しま(?:う|った|っている|っていた|います|いました))|"
+    r"し" + _FINITE_ASPECT_HOST_SOURCE + r"|"
+    r"し" + _FINITE_TSUTSU_HOST_SOURCE + r"|"
+    r"でき(?:る|た|ない|なかった|ます|ました|ません|ませんでした|"
+    r"て(?:いる|いた|います|いました))"
+    r")"
+)
+_FINITE_SURU_RENYOKEI_CARRIER_RE: Final = re.compile(
+    r"(?:た|ない|なかった|ます|ました|ません|ませんでした|"
+    r"て(?:いる|いた|いない|いなかった|います|いました|"
+    r"いません|いませんでした|き(?:た|ます|ました)|"
+    r"しま(?:う|った|っている|っていた))|"
+    + _FINITE_ASPECT_HOST_SOURCE
+    + r"|"
+    + _FINITE_TSUTSU_HOST_SOURCE
+    + r")"
+)
+_FINITE_GODAN_R_CARRIER_RE: Final = re.compile(
+    r"(?:る|った|ら(?:ない|なかった)|り(?:ます|ました|ません|ませんでした)|"
+    r"って(?:いる|いた|いない|いなかった|います|いました|"
+    r"いません|いませんでした|こ(?:ない|なかった)|き(?:た|ます|ました|ません|"
+    r"ませんでした|ている|ていた|ています|ていました)|"
+    r"しま(?:う|った|っている|っていた|います|いました))|"
+    r"り" + _FINITE_ASPECT_HOST_SOURCE + r"|"
+    r"り" + _FINITE_TSUTSU_HOST_SOURCE + r")"
+)
+_FINITE_GODAN_W_CARRIER_RE: Final = re.compile(
+    r"(?:う|った|わ(?:ない|なかった)|い(?:ます|ました|ません|ませんでした)|"
+    r"って(?:いる|いた|いない|いなかった|います|いました|"
+    r"いません|いませんでした|こ(?:ない|なかった)|き(?:た|ます|ました|ません|"
+    r"ませんでした|ている|ていた|ています|ていました)|"
+    r"しま(?:う|った|っている|っていた|います|いました))|"
+    r"い" + _FINITE_ASPECT_HOST_SOURCE + r"|"
+    r"い" + _FINITE_TSUTSU_HOST_SOURCE + r")"
+)
+_FINITE_GODAN_K_CARRIER_RE: Final = re.compile(
+    r"(?:く|いた|か(?:ない|なかった)|き(?:ます|ました|ません|ませんでした)|"
+    r"いて(?:いる|いた|いない|いなかった|います|いました|"
+    r"いません|いませんでした|こ(?:ない|なかった)|き(?:た|ます|ました|ません|"
+    r"ませんでした|ている|ていた|ています|ていました)|"
+    r"しま(?:う|った|っている|っていた|います|いました))|"
+    r"き" + _FINITE_ASPECT_HOST_SOURCE + r"|"
+    r"き" + _FINITE_TSUTSU_HOST_SOURCE + r")"
+)
+_FINITE_GODAN_B_CARRIER_RE: Final = re.compile(
+    r"(?:ぶ|んだ|ば(?:ない|なかった)|"
+    r"び(?:ます|ました|ません|ませんでした)|"
+    r"んで(?:いる|いた|いない|いなかった|います|いました|"
+    r"いません|いませんでした|き(?:た|ます|ました)|"
+    r"こ(?:ない|なかった))|"
+    r"び" + _FINITE_ASPECT_HOST_SOURCE + r"|"
+    r"び" + _FINITE_TSUTSU_HOST_SOURCE + r")"
+)
+_FINITE_GODAN_S_CARRIER_RE: Final = re.compile(
+    r"(?:す|した|さ(?:ない|なかった)|"
+    r"し(?:ます|ました|ません|ませんでした)|"
+    r"して(?:いる|いた|いない|いなかった|います|いました|"
+    r"いません|いませんでした|き(?:た|ます|ました)|"
+    r"こ(?:ない|なかった))|"
+    r"し" + _FINITE_ASPECT_HOST_SOURCE + r"|"
+    r"し" + _FINITE_TSUTSU_HOST_SOURCE + r")"
+)
+_FINITE_GODAN_M_CARRIER_RE: Final = re.compile(
+    r"(?:む|んだ|ま(?:ない|なかった)|"
+    r"み(?:ます|ました|ません|ませんでした)|"
+    r"んで(?:いる|いた|いない|いなかった|います|いました|"
+    r"いません|いませんでした|き(?:た|ます|ました)|"
+    r"こ(?:ない|なかった))|"
+    r"み" + _FINITE_ASPECT_HOST_SOURCE + r"|"
+    r"み" + _FINITE_TSUTSU_HOST_SOURCE + r")"
+)
+_FINITE_I_ADJECTIVE_CARRIER_RE: Final = re.compile(
+    r"(?:い(?:です)?|かった(?:です)?|"
+    r"く(?:ない|なかった|ありません(?:でした)?))"
+)
+_FINITE_SHII_ADJECTIVE_CARRIER_RE: Final = re.compile(
+    r"(?:しい(?:です)?|しかった(?:です)?|"
+    r"しく(?:ない|なかった|ありません(?:でした)?))"
+)
+_FINITE_COPULAR_CARRIER_RE: Final = re.compile(
+    r"(?:だ|です|だった|でした|である|であった|"
+    r"で(?:は|も)?(?:ある|あった|ない|なかった|あります|ありました|"
+    r"ありません|ありませんでした)|"
+    r"じゃ(?:ある|あった|ない|なかった|ありません|ありませんでした))"
+)
+_FINITE_ENDPOINT_EXPLANATORY_RE: Final = re.compile(
+    r"(?P<base>.*?)(?P<link>の|ん)(?:だ|です|だった|でした|"
+    r"である|であった)$"
+)
+_FINITE_ENDPOINT_EXISTENCE_RE: Final = re.compile(
+    r"(?:ある|あった|あります|ありました|"
+    r"ない|なかった|ありません|ありませんでした)"
+)
+_FINITE_ENDPOINT_RESIDUE_HOST_RE: Final = re.compile(
+    r"(?P<base>.*?)(?P<link>な|の)?まま"
+    r"(?:だ|です|だった|でした|である|であった|"
+    r"でいる|でいた|でいます|でいました)$"
+)
+_FINITE_SEMANTIC_SUBJECT_HOST_RE: Final = re.compile(
+    r"(?:(?:まだ|今も|なお)[、,\s]*)?"
+    r"(?:(?:少し(?:だけ|ずつ)?|やや|ずっと|強く)[、,\s]*)?"
+    r"(?:"
+    r"残(?:る|った|って(?:いる|いた|います|いました))|"
+    r"続(?:く|いた|いて(?:いる|いた|います|いました))|"
+    r"高まって(?:いる|いた|います|いました)|"
+    r"強まって(?:いる|いた|います|いました)|"
+    r"膨らんで(?:いる|いた|います|いました)|"
+    r"募って(?:いる|いた|います|いました)|"
+    r"消えず(?:に)?(?:いる|いた|います|いました)"
+    r"|ない|なかった|ありません|ありませんでした"
+    r")"
+)
+_FINITE_WISH_EXISTENCE_HOST_RE: Final = re.compile(
+    r"(?:(?:少し(?:だけ|ずつ)?|やや|ずっと|強く)[、,\s]*)?"
+    r"(?:ある|あった|あります|ありました)"
 )
 _FINITE_ENDPOINT_TERMINAL_RE: Final = re.compile(
     r"(?:"
@@ -463,6 +657,15 @@ _EXPLICIT_SHIFT_TO_RE: Final = re.compile(
     r"(?:今は|現在は|これから|今後|次は|ようになった|くなった|になった|減った|増えた)"
 )
 _SELF_REFERENCE_RE: Final = re.compile(r"(?:自分|私|わたし|僕|ぼく|俺|おれ)")
+_OWNER_FOCUS_PARTICLE_SOURCE: Final = (
+    r"(?:ぐらい|くらい|ばかり|なんて|なんぞ|だって|"
+    r"こそ|しか|だけ|まで|さえ|すら|なんか|など|"
+    r"のみ|きり|ほど|とか|なり|だの|やら|自身|本人)"
+)
+_OWNER_TOPIC_PARTICLE_SOURCE: Final = (
+    r"(?:として(?:は)?|なら(?:ば)?|って|"
+    r"に関して(?:は)?|において(?:は)?)"
+)
 _SELF_DENIAL_PREDICATE_RE: Final = re.compile(
     r"(?:嫌い|きらい|価値.{0,5}(?:ない|無い)|最低(?!でも|限)|クズ|駄目|だめ|ダメ(?!ージ)|"
     r"悪い|責め|追い込|傷つけ|許せない|好きになれない|役に立たない|"
@@ -872,6 +1075,953 @@ def _finite_endpoint_terminal_shape(fragment: str) -> bool:
     )
 
 
+def _operator_surface_is_finite(
+    operator_surface: str,
+    operator_pattern: re.Pattern[str] | None,
+) -> bool:
+    """Prove that the frozen match itself is a complete finite predicate."""
+
+    if not operator_surface or operator_pattern is None:
+        return False
+    if operator_pattern is _FEELING_RE:
+        return operator_surface == "重い"
+    if operator_pattern is _HELP_SEEKING_RE:
+        return False
+    if operator_pattern is _CHANGE_RE:
+        return bool(
+            re.fullmatch(
+                r"(?:になった|くなった|減った|増えた|戻った|進んだ|進めた)",
+                operator_surface,
+            )
+        )
+    if operator_pattern is _RELATION_UNCERTAINTY_RE:
+        return bool(
+            re.fullmatch(r"(?:迷う|よいか|いいか|べきか)", operator_surface)
+        )
+    if operator_pattern is _CONSTRAINT_RE:
+        return bool(
+            re.fullmatch(
+                r"(?:できない|出来ない|"
+                r"難し(?:い|かった|く(?:ない|なかった|"
+                r"ありません(?:でした)?))|"
+                r"しかない|作れない)",
+                operator_surface,
+            )
+        )
+    if operator_pattern is _UNCERTAIN_RE:
+        return bool(
+            re.fullmatch(
+                r"(?:気がする|(?:と|とは)思(?:う|った|います|いました|"
+                r"って(?:いる|いた|います|いました)|"
+                r"ってき(?:た|ます|ました|ません|ませんでした|"
+                r"ている|ていた|ています|ていました)|"
+                r"い(?:始め|続け|終え)(?:る|た|ている|ていた|"
+                r"てき(?:た|ます|ました|ません|ませんでした|"
+                r"ている|ていた|ています|ていました)|"
+                r"ます|ました))|"
+                r"こうかな|かな|わからない|分からない)",
+                operator_surface,
+            )
+        )
+    if operator_pattern is _VALUE_RE:
+        return bool(
+            re.fullmatch(
+                r"(?:意味がある|守りたい|良い|いい)",
+                operator_surface,
+            )
+        )
+    if operator_pattern is _OPEN_UNFINISHED_RE:
+        return not operator_surface.endswith(("未定", "途中")) and bool(
+            _finite_endpoint_terminal_shape(operator_surface)
+        )
+    if operator_pattern is _CONTINUATION_RE:
+        return operator_surface.endswith(("続いた", "続く"))
+    if operator_pattern is _NEGATION_RE:
+        return operator_surface.endswith(
+            ("ない", "なかった", "ません")
+        )
+    if operator_pattern is _POSITIVE_CHANGE_RE:
+        return bool(_finite_endpoint_terminal_shape(operator_surface))
+    return bool(_finite_endpoint_terminal_shape(operator_surface))
+
+
+def _operator_supports_explanatory_na(
+    operator_surface: str,
+    operator_pattern: re.Pattern[str] | None,
+) -> bool:
+    """Admit copular explanatory ``なのだ`` for a frozen nominal."""
+
+    if operator_pattern is _FEELING_RE:
+        return operator_surface in {"気持ち", "不安", "もやもや"}
+    if operator_pattern is _VALUE_RE:
+        return operator_surface in {"大切", "大事", "価値"}
+    if operator_pattern is _CONSTRAINT_RE:
+        return operator_surface in {"無理", "制約", "限界"}
+    if operator_pattern is _RELATION_UNCERTAINTY_RE:
+        return operator_surface == "迷い"
+    if operator_pattern is _UNCERTAIN_RE:
+        return operator_surface in {"憶測", "不明"}
+    if operator_pattern is _OPEN_UNFINISHED_RE:
+        return operator_surface.endswith(("未定", "途中"))
+    if operator_pattern is _WISH_RE:
+        return operator_surface.endswith(("気持ち", "願い", "つもり"))
+    if operator_pattern is _POSITIVE_CHANGE_RE:
+        return operator_surface in {"安心", "平穏", "幸せ", "達成"}
+    if operator_pattern is _NEGATION_RE:
+        return operator_surface in {"無理", "だめ", "ダメ"}
+    return False
+
+
+def _operator_supports_occurrence_na(
+    operator_surface: str,
+    operator_pattern: re.Pattern[str] | None,
+) -> bool:
+    """Admit adnominal ``なこと`` only for na-adjectival operators."""
+
+    if operator_pattern is _FEELING_RE:
+        return operator_surface in {"不安", "もやもや"}
+    if operator_pattern is _VALUE_RE:
+        return operator_surface in {"大切", "大事"}
+    if operator_pattern is _CONSTRAINT_RE:
+        return operator_surface == "無理"
+    if operator_pattern is _OPEN_UNFINISHED_RE:
+        return operator_surface.endswith("未定")
+    if operator_pattern is _POSITIVE_CHANGE_RE:
+        return operator_surface in {"安心", "平穏", "幸せ"}
+    if operator_pattern is _NEGATION_RE:
+        return operator_surface in {"無理", "だめ", "ダメ"}
+    return False
+
+
+def _operator_supports_residue_link(
+    operator_surface: str,
+    operator_pattern: re.Pattern[str] | None,
+    link: str,
+) -> bool:
+    """Prove the operator-specific ``な/のまま`` attachment class."""
+
+    if link == "な":
+        return _operator_supports_occurrence_na(
+            operator_surface,
+            operator_pattern,
+        )
+    if link != "の":
+        return False
+    if operator_pattern is _FEELING_RE:
+        return operator_surface in {"気持ち", "不安", "もやもや"}
+    if operator_pattern is _VALUE_RE:
+        return operator_surface in {"価値"}
+    if operator_pattern is _CONSTRAINT_RE:
+        return operator_surface in {"制約", "限界"}
+    if operator_pattern is _RELATION_UNCERTAINTY_RE:
+        return operator_surface == "迷い"
+    if operator_pattern is _UNCERTAIN_RE:
+        return operator_surface in {"憶測", "不明"}
+    if operator_pattern is _OPEN_UNFINISHED_RE:
+        return operator_surface.endswith(("未定", "途中"))
+    if operator_pattern is _WISH_RE:
+        return operator_surface.endswith(("気持ち", "願い", "つもり"))
+    return False
+
+
+def _operator_supports_semantic_subject(
+    operator_surface: str,
+    operator_pattern: re.Pattern[str] | None,
+) -> bool:
+    """Prove that a frozen surface can head ``が/は/も + finite host``."""
+
+    if operator_pattern is _FEELING_RE:
+        return operator_surface in {"気持ち", "不安", "もやもや"}
+    if operator_pattern is _VALUE_RE:
+        return operator_surface == "価値"
+    if operator_pattern is _CONSTRAINT_RE:
+        return operator_surface in {"制約", "限界"}
+    if operator_pattern is _RELATION_UNCERTAINTY_RE:
+        return operator_surface == "迷い"
+    if operator_pattern is _UNCERTAIN_RE:
+        return operator_surface == "憶測"
+    if operator_pattern is _OPEN_UNFINISHED_RE:
+        return operator_surface.endswith(("未定", "途中"))
+    if operator_pattern is _WISH_RE:
+        return operator_surface.endswith(("気持ち", "願い"))
+    if operator_pattern is _CHANGE_RE:
+        return operator_surface in {"改善", "進歩"}
+    if operator_pattern is _HELP_SEEKING_RE:
+        return operator_surface in {"相談", "面談", "受診", "診察", "予約"}
+    if operator_pattern is _POSITIVE_CHANGE_RE:
+        return operator_surface in {"安心", "平穏", "幸せ", "達成"}
+    return False
+
+
+def _direct_finite_carrier_shape(
+    carrier: str,
+    *,
+    operator_surface: str,
+    operator_pattern: re.Pattern[str] | None,
+) -> bool:
+    """Prove a carrier compatible with the matched operator conjugation."""
+
+    if not carrier:
+        return False
+    operator_is_finite = _operator_surface_is_finite(
+        operator_surface,
+        operator_pattern,
+    )
+    if operator_is_finite:
+        if operator_surface.endswith(("い", "かった")) and carrier == "です":
+            return True
+        return bool(
+            operator_surface.endswith(("た", "だ"))
+            and carrier == "りする"
+        )
+    if operator_surface.endswith(("て", "で")):
+        return _FINITE_TE_AUXILIARY_CARRIER_RE.fullmatch(carrier) is not None
+    if _FINITE_COPULAR_CARRIER_RE.fullmatch(carrier) is not None:
+        return _operator_supports_explanatory_na(
+            operator_surface,
+            operator_pattern,
+        )
+    if operator_pattern is _HELP_SEEKING_RE:
+        if operator_surface.endswith("求め"):
+            return _FINITE_ICHIDAN_CARRIER_RE.fullmatch(carrier) is not None
+        if operator_surface.endswith("もら"):
+            return _FINITE_GODAN_W_CARRIER_RE.fullmatch(carrier) is not None
+        if operator_surface.endswith(("口", "先")):
+            return False
+        return _FINITE_SAHEN_CARRIER_RE.fullmatch(carrier) is not None
+    if operator_pattern is _ACTION_RE:
+        if operator_surface == "決め":
+            return _FINITE_ICHIDAN_CARRIER_RE.fullmatch(carrier) is not None
+        return bool(
+            operator_surface in {"行動", "記録", "メモ"}
+            and _FINITE_SAHEN_CARRIER_RE.fullmatch(carrier) is not None
+        )
+    if operator_pattern is _CHANGE_RE:
+        if operator_surface.endswith("変わ"):
+            return _FINITE_GODAN_R_CARRIER_RE.fullmatch(carrier) is not None
+        if operator_surface in {"改善", "進歩"}:
+            return _FINITE_SAHEN_CARRIER_RE.fullmatch(carrier) is not None
+        return False
+    if operator_pattern is _FEELING_RE:
+        if operator_surface.endswith("感じ"):
+            return _FINITE_ICHIDAN_CARRIER_RE.fullmatch(carrier) is not None
+        if operator_surface.endswith("落ち着"):
+            return _FINITE_GODAN_K_CARRIER_RE.fullmatch(carrier) is not None
+        if operator_surface.endswith("焦"):
+            return _FINITE_GODAN_R_CARRIER_RE.fullmatch(carrier) is not None
+        if operator_surface.endswith(("苦し", "悲し")):
+            return bool(
+                _FINITE_GODAN_M_CARRIER_RE.fullmatch(carrier)
+                or _FINITE_I_ADJECTIVE_CARRIER_RE.fullmatch(carrier)
+            )
+        if _operator_supports_explanatory_na(
+            operator_surface,
+            operator_pattern,
+        ):
+            return False
+        if operator_surface in {"寂", "嬉", "うれ"}:
+            return (
+                _FINITE_SHII_ADJECTIVE_CARRIER_RE.fullmatch(carrier)
+                is not None
+            )
+        return _FINITE_I_ADJECTIVE_CARRIER_RE.fullmatch(carrier) is not None
+    if operator_pattern is _RELATION_UNCERTAINTY_RE:
+        if operator_surface.endswith("迷い"):
+            return re.fullmatch(
+                r"(?:ます|ました|ません|ませんでした|"
+                + _FINITE_ASPECT_HOST_SOURCE
+                + r")",
+                carrier,
+            ) is not None
+        if operator_surface.endswith("ためら"):
+            return _FINITE_GODAN_W_CARRIER_RE.fullmatch(carrier) is not None
+        if operator_surface.endswith("気がし"):
+            return (
+                _FINITE_SURU_RENYOKEI_CARRIER_RE.fullmatch(carrier)
+                is not None
+            )
+        if operator_surface.endswith("自信がな"):
+            return _FINITE_I_ADJECTIVE_CARRIER_RE.fullmatch(carrier) is not None
+        return False
+    if operator_pattern is _UNCERTAIN_RE:
+        return bool(
+            operator_surface.endswith("かもしれ")
+            and re.fullmatch(
+                r"(?:ない|なかった|ません|ませんでした)",
+                carrier,
+            )
+            is not None
+        )
+    if operator_pattern is _WISH_RE:
+        return bool(
+            operator_surface.endswith("願")
+            and _FINITE_GODAN_W_CARRIER_RE.fullmatch(carrier) is not None
+        )
+    if operator_pattern is _VALUE_RE:
+        if operator_surface == "良く":
+            return re.fullmatch(
+                r"(?:ない|なかった|ありません(?:でした)?)",
+                carrier,
+            ) is not None
+        return bool(
+            operator_surface in {"好まし", "望まし"}
+            and _FINITE_I_ADJECTIVE_CARRIER_RE.fullmatch(carrier) is not None
+        )
+    if operator_pattern is _POSITIVE_CHANGE_RE:
+        if operator_surface in {"嬉", "うれ"}:
+            return (
+                _FINITE_SHII_ADJECTIVE_CARRIER_RE.fullmatch(carrier)
+                is not None
+            )
+        if operator_surface in {"安心", "達成"}:
+            return _FINITE_SAHEN_CARRIER_RE.fullmatch(carrier) is not None
+        if operator_surface == "喜び":
+            return re.fullmatch(
+                r"(?:ます|ました|ません|ませんでした|"
+                + _FINITE_ASPECT_HOST_SOURCE
+                + r")",
+                carrier,
+            ) is not None
+        if operator_surface.endswith("ようにな"):
+            return _FINITE_GODAN_R_CARRIER_RE.fullmatch(carrier) is not None
+        return False
+    if operator_pattern is _CONTINUATION_RE:
+        if operator_surface.endswith("続け"):
+            return _FINITE_ICHIDAN_CARRIER_RE.fullmatch(carrier) is not None
+        if operator_surface.endswith("繰り返"):
+            return _FINITE_GODAN_S_CARRIER_RE.fullmatch(carrier) is not None
+        return False
+    if operator_pattern is _REFUSAL_RE:
+        if operator_surface == "拒否":
+            return _FINITE_SAHEN_CARRIER_RE.fullmatch(carrier) is not None
+        return bool(
+            operator_surface == "拒"
+            and _FINITE_GODAN_M_CARRIER_RE.fullmatch(carrier) is not None
+        )
+    if operator_pattern is _CONSTRAINT_RE:
+        return bool(
+            operator_surface.endswith("得")
+            and _FINITE_ICHIDAN_CARRIER_RE.fullmatch(carrier) is not None
+        )
+    return False
+
+
+def _adnominal_finite_carrier_shape(
+    carrier: str,
+    *,
+    operator_surface: str,
+    operator_pattern: re.Pattern[str] | None,
+) -> bool:
+    """Prove a direct carrier that may grammatically precede a wrapper."""
+
+    if re.search(
+        r"(?:です|でした|ます|ました|ません|ませんでした)$",
+        carrier,
+    ) or carrier == "だ":
+        return False
+    return _direct_finite_carrier_shape(
+        carrier,
+        operator_surface=operator_surface,
+        operator_pattern=operator_pattern,
+    )
+
+
+def _finite_endpoint_carrier_shape(
+    carrier: str,
+    *,
+    operator_surface: str = "",
+    operator_pattern: re.Pattern[str] | None = None,
+) -> bool:
+    """Prove a bounded carrier after an existing frozen operator.
+
+    The proof has fixed depth: direct inflection, optional explanatory
+    wrapper, or one grammatical host (occurrence, residue, semantic subject).
+    It never recurses and never accepts an arbitrary predicate between the
+    frozen operator and the finite endpoint.
+    """
+
+    value = carrier.strip()
+    if not value or value != carrier or re.search(r"[、,.!?！？]", value):
+        return False
+    operator_is_finite = _operator_surface_is_finite(
+        operator_surface,
+        operator_pattern,
+    )
+
+    explanatory = _FINITE_ENDPOINT_EXPLANATORY_RE.fullmatch(value)
+    if explanatory is not None:
+        base = explanatory.group("base")
+        if (
+            (not base and operator_is_finite)
+            or (
+                base == "な"
+                and _operator_supports_explanatory_na(
+                    operator_surface,
+                    operator_pattern,
+                )
+            )
+            or _adnominal_finite_carrier_shape(
+                base,
+                operator_surface=operator_surface,
+                operator_pattern=operator_pattern,
+            )
+        ):
+            return True
+
+    if _direct_finite_carrier_shape(
+        value,
+        operator_surface=operator_surface,
+        operator_pattern=operator_pattern,
+    ):
+        return True
+
+    occurrence = re.fullmatch(
+        r"(?P<base>.*?)こと(?:は|が|も)?"
+        r"(?P<host>ある|あった|あります|ありました|"
+        r"ない|なかった|ありません|ありませんでした)"
+        r"(?P<explain>(?:の|ん)(?:だ|です|だった|でした))?",
+        value,
+    )
+    if occurrence is not None:
+        base = occurrence.group("base")
+        if (
+            (not base and operator_is_finite)
+            or (
+                base == "な"
+                and _operator_supports_occurrence_na(
+                    operator_surface,
+                    operator_pattern,
+                )
+            )
+            or _adnominal_finite_carrier_shape(
+                base,
+                operator_surface=operator_surface,
+                operator_pattern=operator_pattern,
+            )
+        ):
+            return True
+
+    residue = _FINITE_ENDPOINT_RESIDUE_HOST_RE.fullmatch(value)
+    if residue is not None:
+        base = residue.group("base")
+        link = residue.group("link")
+        if (
+            (not base and not link and operator_is_finite)
+            or (
+                not base
+                and bool(link)
+                and _operator_supports_residue_link(
+                    operator_surface,
+                    operator_pattern,
+                    link,
+                )
+            )
+            or (
+                bool(base)
+                and not link
+                and _adnominal_finite_carrier_shape(
+                    base,
+                    operator_surface=operator_surface,
+                    operator_pattern=operator_pattern,
+                )
+            )
+        ):
+            return True
+
+    semantic_subject = re.fullmatch(
+        r"(?:は|が|も)(?P<host>.+)",
+        value,
+    )
+    subject_capable = _operator_supports_semantic_subject(
+        operator_surface,
+        operator_pattern,
+    )
+    if subject_capable and _self_owned_finite_host_shape(value):
+        return True
+    return bool(
+        semantic_subject is not None
+        and subject_capable
+        and (
+            _FINITE_SEMANTIC_SUBJECT_HOST_RE.fullmatch(
+                semantic_subject.group("host")
+            )
+            is not None
+            or (
+                operator_surface.endswith(("気持ち", "願い"))
+                and _FINITE_WISH_EXISTENCE_HOST_RE.fullmatch(
+                    semantic_subject.group("host")
+                )
+                is not None
+            )
+        )
+    )
+
+
+def _self_owned_finite_host_shape(carrier: str) -> bool:
+    """Allow a semantic content topic only when its later owner is self."""
+
+    self_host = re.fullmatch(
+        r"(?:は|が|も|の)"
+        r"(?:自分|私|わたし|僕|ぼく|俺|おれ)"
+        r"(?:"
+        r"にとって|には|は|が|も|の|"
+        + _OWNER_FOCUS_PARTICLE_SOURCE
+        + r"(?:は|が|も)?|"
+        + _OWNER_TOPIC_PARTICLE_SOURCE
+        + r")(?P<host>.+)",
+        carrier,
+    )
+    return bool(
+        self_host is not None
+        and _finite_endpoint_terminal_shape(self_host.group("host"))
+    )
+
+
+_FINITE_OPERATOR_PATTERNS: Final = (
+    _WISH_RE,
+    _CONSTRAINT_RE,
+    _RELATION_UNCERTAINTY_RE,
+    _UNCERTAIN_RE,
+    _REFUSAL_RE,
+    _CHANGE_RE,
+    _POSITIVE_CHANGE_RE,
+    _FEELING_RE,
+    _VALUE_RE,
+    _HELP_SEEKING_RE,
+    _OPEN_UNFINISHED_RE,
+    _NEGATION_RE,
+    _CONTINUATION_RE,
+    _ACTION_RE,
+)
+_BOUNDED_OPERATOR_PREFIX_RE: Final = re.compile(
+    r"^(?:"
+    r"(?:自分|私|わたし|僕|ぼく|俺|おれ)"
+    r"(?:にとって|には|は|が|も|の)|"
+    r"(?:今日|昨日|明日|今|現在|今朝|午前|午後|夕方|"
+    r"朝|昼|夜|以前|これまで)(?:は|も|の|には)?|"
+    r"この記録では?|"
+    r"もう少し|少し(?:だけ|ずつ)?|やや|ずっと|強く|まだ|なお"
+    r")[、,\s]*"
+)
+
+
+def _operator_match_has_finite_closure(
+    fragment: str,
+    operator_pattern: re.Pattern[str],
+    match: re.Match[str],
+) -> bool:
+    """Close a selected operator by its own finite form or typed carrier."""
+
+    tail = fragment[match.end() :]
+    if not tail:
+        return _operator_surface_is_finite(match.group(0), operator_pattern)
+    return _finite_endpoint_carrier_shape(
+        tail,
+        operator_surface=match.group(0),
+        operator_pattern=operator_pattern,
+    )
+
+
+def _strip_bounded_operator_prefix(value: str) -> str:
+    """Remove only frozen self/time/intensity prefixes, at fixed depth."""
+
+    remainder = value
+    for _index in range(4):
+        match = _BOUNDED_OPERATOR_PREFIX_RE.match(remainder)
+        if match is None or match.end() == 0:
+            break
+        remainder = remainder[match.end() :]
+    return remainder
+
+
+def _semantic_content_is_bounded(value: str, *, require_finite: bool) -> bool:
+    """Prove one local semantic argument without lending it an opaque owner."""
+
+    visible = _top_level_text(value)
+    if visible is None:
+        return False
+    content = _strip_bounded_operator_prefix(visible.strip())
+    if (
+        not content
+        or re.search(r"[、,.!?！？\s]", content)
+        or re.fullmatch(r"[ぁ-んァ-ヶ一-鿿々〆〇ー]+", content)
+        is None
+    ):
+        return False
+    matches = tuple(
+        (pattern, match)
+        for pattern in _FINITE_OPERATOR_PATTERNS
+        for match in pattern.finditer(content)
+    )
+    if not matches:
+        return not require_finite
+    if not require_finite:
+        for pattern, match in matches:
+            if not _operator_match_left_context_is_bounded(
+                content,
+                pattern,
+                match,
+                depth=1,
+            ):
+                continue
+            if (
+                match.end() == len(content)
+                or _operator_match_has_finite_closure(
+                    content,
+                    pattern,
+                    match,
+                )
+            ):
+                return True
+            nominalizer = re.search(
+                r"(?:こと|気持ち|願い|わけ)$",
+                content,
+            )
+            if nominalizer is not None:
+                adnominal = content[: nominalizer.start()]
+                if (
+                    match.end() <= len(adnominal)
+                    and _operator_match_has_finite_closure(
+                        adnominal,
+                        pattern,
+                        match,
+                    )
+                ):
+                    return True
+        return False
+    return any(
+        _operator_match_left_context_is_bounded(
+            content,
+            pattern,
+            match,
+            depth=1,
+        )
+        and _operator_match_has_finite_closure(content, pattern, match)
+        for pattern, match in matches
+    )
+
+
+def _operator_match_left_context_is_bounded(
+    fragment: str,
+    operator_pattern: re.Pattern[str],
+    match: re.Match[str],
+    *,
+    depth: int = 0,
+) -> bool:
+    """Prove the selected endpoint's left context at fixed depth."""
+
+    if match.start() == 0:
+        return True
+    prefix = fragment[: match.start()]
+    unbound_prefix = _strip_bounded_operator_prefix(prefix)
+    if not unbound_prefix:
+        return True
+    if re.fullmatch(
+        r"[ぁ-んァ-ヶ一-鿿々〆〇ー]+",
+        unbound_prefix,
+    ) is None:
+        return False
+    if (
+        operator_pattern is _NEGATION_RE
+        and prefix.endswith(("てい", "でい"))
+    ):
+        positive_candidate = prefix + "る"
+        frozen_positive = _last_finite_operator_match(
+            positive_candidate,
+            *(
+                pattern
+                for pattern in _FINITE_OPERATOR_PATTERNS
+                if pattern is not _NEGATION_RE
+            ),
+        )
+        if frozen_positive is not None:
+            return True
+        return False
+    if match.group(0).startswith(("と", "とは")):
+        return _semantic_content_is_bounded(prefix, require_finite=True)
+    explicit_self_experiential = re.fullmatch(
+        r"(?P<content>.+?)(?:と|とは)"
+        r"(?:自分|私|わたし|僕|ぼく|俺|おれ)"
+        r"(?:にとって|には|は|が|も|"
+        + _OWNER_FOCUS_PARTICLE_SOURCE
+        + r"(?:は|が|も)?)",
+        prefix,
+    )
+    if explicit_self_experiential is not None:
+        return _semantic_content_is_bounded(
+            explicit_self_experiential.group("content"),
+            require_finite=True,
+        )
+    if (
+        prefix.endswith(("を", "と"))
+        and (
+            (
+                operator_pattern is _FEELING_RE
+                and match.group(0).endswith("感じ")
+            )
+            or operator_pattern in {_HELP_SEEKING_RE, _ACTION_RE}
+        )
+    ):
+        return _semantic_content_is_bounded(
+            prefix[:-1],
+            require_finite=False,
+        )
+    if (
+        operator_pattern is _OPEN_UNFINISHED_RE
+        and prefix.endswith("かは")
+    ):
+        question_clause = prefix[:-2]
+        return bool(
+            _last_finite_operator_match(
+                question_clause,
+                *_FINITE_OPERATOR_PATTERNS,
+            )
+            is not None
+            or re.fullmatch(
+                r"[ぁ-んァ-ヶ一-鿿々〆〇ー]+する",
+                question_clause,
+            )
+            is not None
+        )
+    if (
+        depth == 0
+        and operator_pattern is _UNCERTAIN_RE
+        and prefix.endswith("か")
+    ):
+        return any(
+            relation_match.end() == len(prefix)
+            and _operator_match_left_context_is_bounded(
+                prefix,
+                _RELATION_UNCERTAINTY_RE,
+                relation_match,
+                depth=1,
+            )
+            for relation_match in _RELATION_UNCERTAINTY_RE.finditer(prefix)
+        )
+    if (
+        operator_pattern is _RELATION_UNCERTAINTY_RE
+        and prefix.endswith(("て", "で"))
+    ):
+        action_core = _strip_bounded_operator_prefix(prefix[:-1])
+        case_matches = tuple(
+            re.finditer(r"を|に|へ|で|から|まで", action_core)
+        )
+        bounded_case_predicate = False
+        if case_matches:
+            last_case = case_matches[-1]
+            argument = action_core[: last_case.start()]
+            predicate_stem = action_core[last_case.end() :]
+            bounded_case_predicate = bool(
+                argument
+                and predicate_stem
+                and _semantic_content_is_bounded(
+                    argument,
+                    require_finite=False,
+                )
+                and re.search(
+                    r"(?:[いきぎしじちぢにびぴみりっん]|"
+                    r"[えけげせぜてでねへべぺめれ])$",
+                    predicate_stem,
+                )
+                is not None
+            )
+        return bool(
+            bounded_case_predicate
+            or (
+                re.fullmatch(
+                    r"[一-鿿々〆〇]{1,4}し",
+                    action_core,
+                )
+                is not None
+                and not any(
+                    embedded.start() != 0
+                    for pattern in _FINITE_OPERATOR_PATTERNS
+                    for embedded in pattern.finditer(action_core)
+                )
+            )
+        )
+    if operator_pattern is _WISH_RE:
+        prior_matches = tuple(
+            (pattern, prior_match)
+            for pattern in _FINITE_OPERATOR_PATTERNS
+            if pattern is not _WISH_RE
+            for prior_match in pattern.finditer(prefix)
+        )
+        if match.group(0) == "願" and prefix.endswith("を"):
+            return _semantic_content_is_bounded(
+                prefix[:-1],
+                require_finite=False,
+            )
+        action_host = _ACTION_ARGUMENT_STEM_RE.search(prefix)
+        if action_host is not None:
+            predicate_stem = action_host.group("predicate")
+            desiderative_surface = match.group(0)
+            return bool(
+                action_host.start() > 0
+                and action_host.end() == len(prefix)
+                and _semantic_content_is_bounded(
+                    prefix[: action_host.start()],
+                    require_finite=False,
+                )
+                and re.search(
+                    r"(?:は|が|も)",
+                    predicate_stem,
+                )
+                is None
+                and (
+                    (
+                        desiderative_surface.startswith("したい")
+                        and re.search(r"[一-鿿々〆〇]", predicate_stem)
+                    )
+                    or (
+                        desiderative_surface in {"ほしい", "欲しい"}
+                        and predicate_stem.endswith(("て", "で"))
+                    )
+                    or (
+                        not desiderative_surface.startswith("したい")
+                        and desiderative_surface not in {"ほしい", "欲しい"}
+                        and re.search(
+                            r"[いきぎしじちぢにびぴみり"
+                            r"えけげせぜてでねへべぺめれ]$",
+                            predicate_stem,
+                        )
+                        is not None
+                    )
+                )
+            )
+        if prior_matches:
+            if any(
+                prior_match.end() == len(prefix)
+                and _operator_match_left_context_is_bounded(
+                    prefix,
+                    prior_pattern,
+                    prior_match,
+                    depth=depth + 1,
+                )
+                and _direct_finite_carrier_shape(
+                    match.group(0),
+                    operator_surface=prior_match.group(0),
+                    operator_pattern=prior_pattern,
+                )
+                for prior_pattern, prior_match in prior_matches
+            ):
+                return True
+            return False
+        return bool(
+            re.fullmatch(
+                r"(?:[一-鿿々〆〇]|"
+                r"[一-鿿々〆〇][ぁ-んァ-ヶー]+)",
+                unbound_prefix,
+            )
+        )
+    if (
+        operator_pattern in {_CHANGE_RE, _POSITIVE_CHANGE_RE}
+        and prefix.endswith("よう")
+    ):
+        return _semantic_content_is_bounded(
+            prefix[:-2],
+            require_finite=False,
+        )
+    return False
+
+
+def _bounded_nominal_wish_endpoint(fragment: str) -> bool:
+    """Prove a desiderative nominal plus one frozen finite subject host."""
+
+    nominal_host = re.search(
+        r"(?P<desiderative>.*?(?:したい|なりたい|ほしい|欲しい|たい))"
+        r"(?P<nominal>気持ち|願い)"
+        r"(?P<carrier>(?:(?:は|が|も|の).+|"
+        r"だ|です|だった|でした))$",
+        fragment,
+    )
+    if nominal_host is None:
+        return False
+    desiderative = nominal_host.group("desiderative")
+    operator = desiderative + nominal_host.group("nominal")
+    carrier = nominal_host.group("carrier")
+    wish_matches = tuple(
+        wish_match
+        for wish_match in _WISH_RE.finditer(desiderative)
+        if wish_match.end() == len(desiderative)
+    )
+    return bool(
+        wish_matches
+        and any(
+            _operator_match_left_context_is_bounded(
+                desiderative,
+                _WISH_RE,
+                wish_match,
+            )
+            for wish_match in wish_matches
+        )
+        and (
+            _finite_endpoint_carrier_shape(
+                carrier,
+                operator_surface=operator,
+                operator_pattern=_WISH_RE,
+            )
+            or _self_owned_finite_host_shape(carrier)
+        )
+    )
+
+
+def _bounded_bare_wish_nominal(fragment: str) -> bool:
+    """Prove an exact desiderative ``気持ち/願い`` relation endpoint."""
+
+    nominal = re.fullmatch(
+        r"(?P<desiderative>.+?(?:したい|なりたい|ほしい|欲しい|たい))"
+        r"(?:気持ち|願い)",
+        fragment,
+    )
+    if nominal is None:
+        return False
+    desiderative = nominal.group("desiderative")
+    return any(
+        wish_match.end() == len(desiderative)
+        and _operator_match_left_context_is_bounded(
+            desiderative,
+            _WISH_RE,
+            wish_match,
+        )
+        for wish_match in _WISH_RE.finditer(desiderative)
+    )
+
+
+def _bounded_ambiguous_nominal_state(fragment: str) -> bool:
+    """Keep the existing m-row/simile ambiguity as a neutral nominal only."""
+
+    core = _strip_bounded_operator_prefix(fragment)
+    return bool(
+        core
+        and re.fullmatch(
+            r"[ぁ-んァ-ヶ一-鿿々〆〇ー]+"
+            r"(?<![てで])みたい(?:気持ち|願い)",
+            core,
+        )
+        is not None
+    )
+
+
+def _bounded_structural_action_endpoint(fragment: str) -> bool:
+    """Prove an owner-local open action by case frame plus perfective tail."""
+
+    visible = _top_level_text(fragment)
+    if visible is None:
+        return False
+    value = _strip_bounded_operator_prefix(visible.strip())
+    argument_match = _ACTION_ARGUMENT_STEM_RE.search(value)
+    return bool(
+        value
+        and argument_match is not None
+        and argument_match.start() > 0
+        and argument_match.end() == len(value)
+        and _EXPLICIT_PERFECTIVE_END_RE.search(value) is not None
+        and re.search(r"[、,.!?！？\s]", value) is None
+        and re.search(r"(?:は|が|も)", argument_match.group("predicate")) is None
+    )
+
+
 def _last_finite_operator_match(
     fragment: str,
     *patterns: re.Pattern[str],
@@ -888,13 +2038,8 @@ def _last_finite_operator_match(
         match
         for pattern in patterns
         for match in pattern.finditer(value)
-        if (
-            not value[match.end() :]
-            or _FINITE_ENDPOINT_CARRIER_RE.fullmatch(
-                value[match.end() :]
-            )
-            is not None
-        )
+        if _operator_match_left_context_is_bounded(value, pattern, match)
+        and _operator_match_has_finite_closure(value, pattern, match)
     )
     return max(matches, key=lambda match: (match.end(), match.start())) if matches else None
 
@@ -1925,26 +3070,149 @@ def _typed_nucleus_projections_for_span(
         temporal_prefix = re.compile(
             r"^(?:(?:今日|昨日|明日|今|現在|午前|午後|夕方|朝|昼|夜|"
             r"以前|これまで)(?:は|も|の|には)?|この記録では?|"
-            r"少しずつ|まだ)[、,\s]*"
+            r"少し(?:だけ|ずつ)?|やや|ずっと|強く|まだ)[、,\s]*"
         )
         owner_marker = re.compile(
-            r"^(?P<owner>[^\s、,。.!！?？]{1,24}?)"
+            r"^(?P<owner>[^\s、,。.!！?？]+?)"
+            r"[ \t\u3000]*"
             r"(?P<marker>にとって|には|は|が|も|の)"
         )
         attribution_prefix = re.compile(
-            r"^(?P<owner>[^\s、,。.!！?？]{1,24}?)"
-            r"(?:(?:に|から)[^\s、,。.!！?？]{1,12}?"
+            r"^(?P<owner>[^\s、,。.!！?？]+?)"
+            r"[ \t\u3000]*"
+            r"(?:(?:に|から)[^\s、,。.!！?？]+?"
             r"(?:ると|れば|ますと)|いわく|曰く)"
         )
+        leading_case_owner = re.compile(
+            r"^(?P<owner>[^\s、,。.!！?？]+?)"
+            r"[ \t\u3000]*"
+            r"(?P<marker>から|に|と)(?P<remainder>.+)$"
+        )
+        leading_focus_owner = re.compile(
+            r"^(?P<owner>[^\s、,。.!！?？]+?)"
+            r"[ \t\u3000]*"
+            r"(?P<marker>"
+            + _OWNER_FOCUS_PARTICLE_SOURCE
+            + r")"
+            r"(?:は|が|も)?(?P<remainder>.+)$"
+        )
+        leading_topic_owner = re.compile(
+            r"^(?P<owner>[^\s、,。.!！?？]+?)"
+            r"[ \t\u3000]*"
+            r"(?P<marker>"
+            + _OWNER_TOPIC_PARTICLE_SOURCE
+            + r")"
+            r"(?P<remainder>.+)$"
+        )
+        operator_patterns = _FINITE_OPERATOR_PATTERNS
+
+        def operator_left_context_is_bounded(
+            fragment: str,
+            operator_pattern: re.Pattern[str],
+            match: re.Match[str],
+        ) -> bool:
+            """Allow only a frozen semantic object before a predicate anchor."""
+            return _operator_match_left_context_is_bounded(
+                fragment,
+                operator_pattern,
+                match,
+            )
+
+        def finite_owned_operator_matches(
+            fragment: str,
+        ) -> tuple[tuple[re.Pattern[str], re.Match[str]], ...]:
+            return tuple(
+                (pattern, match)
+                for pattern in operator_patterns
+                for match in pattern.finditer(fragment)
+                if operator_left_context_is_bounded(
+                    fragment,
+                    pattern,
+                    match,
+                )
+                and _operator_match_has_finite_closure(
+                    fragment,
+                    pattern,
+                    match,
+                )
+            )
+        explicit_self_content_host = re.compile(
+            r"^(?P<content>.+?)(?:とは|と)"
+            r"(?P<owner>自分|私|わたし|僕|ぼく|俺|おれ)"
+            r"(?:にとって|には|は|が|も|"
+            + _OWNER_FOCUS_PARTICLE_SOURCE
+            + r"(?:は|が|も)?)"
+            r"(?P<host>.+)$"
+        )
+
+        def self_experiential_host_is_bounded(host: str) -> bool:
+            host_core = re.sub(
+                r"^(?:強く|少し|やや|ずっと)[、,\s]*",
+                "",
+                host,
+                count=1,
+            )
+            feeling_host = _last_finite_operator_match(
+                host_core,
+                _FEELING_RE,
+            )
+            epistemic_host = _last_finite_operator_match(
+                "と" + host_core,
+                _UNCERTAIN_RE,
+            )
+            return bool(
+                (
+                    feeling_host is not None
+                    and feeling_host.start() == 0
+                )
+                or (
+                    epistemic_host is not None
+                    and epistemic_host.start() == 0
+                )
+            )
+        # Whitespace is an owner boundary, not disposable formatting.  Only
+        # whitespace immediately consumed with a proven prefix/particle may
+        # be removed; an opaque token before an operator fails closed.
         owner_scope = top_level_fragment
+        attribution_scope = owner_scope
         # Consume only a chain of explicit self owners and bounded temporal
         # prefixes.  Any subsequent grammatical owner/beneficiary remains a
         # third-party authority and makes the projection ineligible.
         while True:
+            owner_scope = owner_scope.lstrip(" \t\u3000")
             previous_owner_scope = owner_scope
-            owner_scope = temporal_prefix.sub("", owner_scope)
+            if not any(
+                pattern.match(owner_scope) is not None
+                for pattern in operator_patterns
+            ):
+                owner_scope = temporal_prefix.sub("", owner_scope)
             if owner_scope != previous_owner_scope:
                 continue
+            explicit_content_host = explicit_self_content_host.match(
+                owner_scope
+            )
+            if explicit_content_host is not None:
+                content = explicit_content_host.group("content")
+                content_is_complete = bool(
+                    any(
+                        match.end() == len(content)
+                        for pattern in operator_patterns
+                        for match in pattern.finditer(content)
+                    )
+                    or _last_finite_operator_match(
+                        content,
+                        *operator_patterns,
+                    )
+                    is not None
+                )
+                if (
+                    content_is_complete
+                    and self_experiential_host_is_bounded(
+                        explicit_content_host.group("host")
+                    )
+                ):
+                    owner_scope = ""
+                    continue
             leading_attribution = attribution_prefix.match(owner_scope)
             if leading_attribution is not None:
                 if (
@@ -1954,55 +3222,183 @@ def _typed_nucleus_projections_for_span(
                     is None
                 ):
                     return False
-                owner_scope = owner_scope[leading_attribution.end() :]
+                owner_scope = owner_scope[
+                    leading_attribution.end() :
+                ].lstrip(" \t\u3000")
                 continue
             leading_owner = owner_marker.match(owner_scope)
+            case_owner = leading_case_owner.match(owner_scope)
+            focus_owner = leading_focus_owner.match(owner_scope)
+            topic_owner = leading_topic_owner.match(owner_scope)
+            for marked_owner in (focus_owner, topic_owner):
+                if (
+                    marked_owner is not None
+                    and any(
+                        pattern.search(marked_owner.group("remainder"))
+                        is not None
+                        for pattern in operator_patterns
+                    )
+                    and (
+                        leading_owner is None
+                        or marked_owner.start("marker")
+                        < leading_owner.start("marker")
+                    )
+                ):
+                    if (
+                        _SELF_REFERENCE_RE.fullmatch(
+                            marked_owner.group("owner")
+                        )
+                        is None
+                    ):
+                        return False
+                    owner_scope = marked_owner.group("remainder").lstrip(
+                        " \t\u3000"
+                    )
+                    break
+            else:
+                marked_owner = None
+            if marked_owner is not None:
+                continue
+            if (
+                case_owner is not None
+                and not any(
+                    match.start()
+                    <= case_owner.start("marker")
+                    < match.end()
+                    for pattern in operator_patterns
+                    for match in pattern.finditer(owner_scope)
+                )
+                and any(
+                    pattern.match(case_owner.group("remainder"))
+                    is not None
+                    for pattern in operator_patterns
+                )
+                and (
+                    leading_owner is None
+                    or case_owner.start("marker")
+                    < leading_owner.start("marker")
+                )
+            ):
+                content_owner = case_owner.group("owner")
+                content_is_complete = bool(
+                    any(
+                        match.end() == len(content_owner)
+                        for pattern in operator_patterns
+                        for match in pattern.finditer(content_owner)
+                    )
+                    or _last_finite_operator_match(
+                        content_owner,
+                        *operator_patterns,
+                    )
+                    is not None
+                )
+                semantic_content_bridge = bool(
+                    case_owner.group("marker") == "と"
+                    and content_is_complete
+                    and self_experiential_host_is_bounded(
+                        case_owner.group("remainder")
+                    )
+                )
+                if semantic_content_bridge:
+                    owner_scope = ""
+                    continue
+                if (
+                    _SELF_REFERENCE_RE.fullmatch(case_owner.group("owner"))
+                    is None
+                ):
+                    return False
+                owner_scope = case_owner.group("remainder").lstrip(
+                    " \t\u3000"
+                )
+                continue
             if leading_owner is None:
+                if (
+                    owner_scope
+                    and not finite_owned_operator_matches(owner_scope)
+                    and not _bounded_nominal_wish_endpoint(owner_scope)
+                    and not _bounded_bare_wish_nominal(owner_scope)
+                    and not _bounded_ambiguous_nominal_state(owner_scope)
+                    and not _bounded_structural_action_endpoint(owner_scope)
+                ):
+                    return False
                 break
             owner = leading_owner.group("owner")
             marker = leading_owner.group("marker")
             if _SELF_REFERENCE_RE.fullmatch(owner) is None:
                 marker_start = leading_owner.start("marker")
-                operator_patterns = (
-                    _WISH_RE,
-                    _CONSTRAINT_RE,
-                    _RELATION_UNCERTAINTY_RE,
-                    _UNCERTAIN_RE,
-                    _REFUSAL_RE,
-                    _CHANGE_RE,
-                    _FEELING_RE,
-                    _VALUE_RE,
-                    _OPEN_UNFINISHED_RE,
-                )
                 marker_is_inside_operator = any(
-                    match.start() <= marker_start < match.end()
+                    operator_left_context_is_bounded(
+                        owner_scope,
+                        pattern,
+                        match,
+                    )
+                    and match.start() <= marker_start < match.end()
                     for pattern in operator_patterns
                     for match in pattern.finditer(owner_scope)
                 )
                 remainder = owner_scope[leading_owner.end() :]
-                semantic_subject_complete = bool(
+                owned_terminal_matches = finite_owned_operator_matches(
+                    owner_scope
+                )
+                owned_scope_is_complete = any(
+                    match.start() == 0 and match.end() == len(owner_scope)
+                    for _pattern, match in owned_terminal_matches
+                )
+                bounded_terminal_carrier = bool(
                     any(
-                        match.end() == len(owner)
+                        match.end() <= marker_start
+                        for _pattern, match in owned_terminal_matches
+                    )
+                )
+                semantic_subject_operator = next(
+                    (
+                        (pattern, match)
                         for pattern in operator_patterns
                         for match in pattern.finditer(owner)
-                    )
-                    or (
-                        _finite_endpoint_terminal_shape(owner)
-                        and _last_finite_operator_match(
+                        if match.end() == len(owner)
+                        and operator_left_context_is_bounded(
                             owner,
-                            *operator_patterns,
+                            pattern,
+                            match,
                         )
-                        is not None
-                    )
-                    or re.search(
+                    ),
+                    None,
+                )
+                special_wish_subject = bool(
+                    re.search(
                         r"(?:たい|ほしい|欲しい)(?:気持ち|願い)$",
                         owner,
                     )
                 )
+                semantic_subject_complete = bool(
+                    semantic_subject_operator is not None
+                    or special_wish_subject
+                )
                 owner_is_complete_semantic_subject = bool(
                     marker in {"は", "が", "も"}
                     and semantic_subject_complete
-                    and _finite_endpoint_terminal_shape(remainder)
+                    and (
+                        _finite_endpoint_carrier_shape(
+                            marker + remainder,
+                            operator_surface=(
+                                owner
+                                if special_wish_subject
+                                else semantic_subject_operator[1].group(0)
+                                if semantic_subject_operator is not None
+                                else ""
+                            ),
+                            operator_pattern=(
+                                _WISH_RE
+                                if special_wish_subject
+                                else semantic_subject_operator[0]
+                                if semantic_subject_operator is not None
+                                else None
+                            ),
+                        )
+                        or _self_owned_finite_host_shape(
+                            marker + remainder
+                        )
+                    )
                 )
                 epistemic_content_topic = bool(
                     marker in {"は", "も"}
@@ -2036,13 +3432,6 @@ def _typed_nucleus_projections_for_span(
                         )
                     )
                 )
-                genitive_object_argument = bool(
-                    marker == "の"
-                    and re.match(
-                        r"^[^、,.!?！？]{1,24}(?:を|へ|に|と)",
-                        remainder,
-                    )
-                )
                 predicate_auxiliary_particle = bool(
                     (
                         marker == "の"
@@ -2057,21 +3446,38 @@ def _typed_nucleus_projections_for_span(
                                 )
                             )
                         )
-                        and re.fullmatch(
-                            r"(?:だ|です|だった|でした)",
-                            remainder,
+                        and (
+                            semantic_subject_operator is not None
+                            or special_wish_subject
                         )
-                        is not None
+                        and _finite_endpoint_carrier_shape(
+                            marker + remainder,
+                            operator_surface=(
+                                owner
+                                if special_wish_subject
+                                else semantic_subject_operator[1].group(0)
+                            ),
+                            operator_pattern=(
+                                _WISH_RE
+                                if special_wish_subject
+                                else semantic_subject_operator[0]
+                            ),
+                        )
                     )
                     or (
                         marker == "は"
                         and owner.endswith(("て", "で"))
                         and any(
-                            match.end() == len(owner) - 1
+                            match.start() == 0
+                            and match.end() == len(owner) - 1
+                            and _direct_finite_carrier_shape(
+                                remainder,
+                                operator_surface=match.group(0),
+                                operator_pattern=pattern,
+                            )
                             for pattern in operator_patterns
                             for match in pattern.finditer(owner[:-1])
                         )
-                        and _finite_endpoint_terminal_shape(remainder)
                     )
                 )
                 # A marker inside an already-frozen terminal operator (for
@@ -2081,20 +3487,38 @@ def _typed_nucleus_projections_for_span(
                 # is grammatical; no noun, case or phrase-family list is used.
                 if (
                     marker_is_inside_operator
+                    or bounded_terminal_carrier
                     or owner_is_complete_semantic_subject
                     or epistemic_content_topic
-                    or genitive_object_argument
                     or predicate_auxiliary_particle
                 ):
-                    break
+                    # The marker is grammatical, but the remaining predicate
+                    # can still introduce an explicit non-self subject or
+                    # experiencer.  Consume the protected prefix and continue
+                    # scanning to the end; an early break would lend the
+                    # current user to a later owner.
+                    owner_scope = (
+                        ""
+                        if (
+                            bounded_terminal_carrier
+                            or owned_scope_is_complete
+                            or owner_is_complete_semantic_subject
+                            or epistemic_content_topic
+                            or predicate_auxiliary_particle
+                        )
+                        else remainder
+                    )
+                    continue
                 return False
-            owner_scope = owner_scope[leading_owner.end() :]
+            owner_scope = owner_scope[leading_owner.end() :].lstrip(
+                " \t\u3000、,"
+            )
         # A later explicit speaker remains the authority for an attributed
         # predicate even when the fragment begins with an ownerless state.
         for attributed_owner in re.finditer(
-            r"(?:と|って)(?P<owner>[^\s、,。.!！?？]{1,24}?)"
+            r"(?:と|って)(?P<owner>[^\s、,。.!！?？]+?)"
             r"(?:は|が|も)(?=(?:言|話|語|述べ|書|記録|考|思|感じ|判断|決め))",
-            owner_scope,
+            attribution_scope,
         ):
             if (
                 _SELF_REFERENCE_RE.fullmatch(attributed_owner.group("owner"))
@@ -2118,8 +3542,58 @@ def _typed_nucleus_projections_for_span(
         # real desiderative must never license another endpoint's nominal
         # simile merely because both share one EvidenceSpan.
         wish = "operator:wish" in operators
+        nominal_host = re.search(
+            r"(?:たい|ほしい|欲しい)(?:気持ち|願い)"
+            r"(?P<carrier>(?:は|が|も|の).+)$",
+            top_level_fragment,
+        )
+        explicit_self_wish_host = re.search(
+            (
+                r"(?:たい|ほしい|欲しい)(?:とは|と)"
+                r"(?:自分|私|わたし|僕|ぼく|俺|おれ)"
+                r"(?:にとって|には|は|が|も|"
+                + _OWNER_FOCUS_PARTICLE_SOURCE
+                + r"(?:は|が|も)?)"
+                r"(?:(?:強く|少し|やや|ずっと)[、,\s]*)?"
+                r"感じ(?:る|た|ている|ていた|ています|ていました)"
+                r"(?:こと(?:は|が|も)?"
+                r"(?:ある|あった|あります|ありました))?"
+                r"(?:(?:の|ん)(?:だ|です))?$"
+            ),
+            top_level_fragment,
+        )
+        bounded_nominal_host = bool(
+            nominal_host is not None
+            and (
+                _finite_endpoint_carrier_shape(
+                    nominal_host.group("carrier"),
+                    operator_surface=top_level_fragment[
+                        : nominal_host.start("carrier")
+                    ],
+                    operator_pattern=_WISH_RE,
+                )
+                or re.fullmatch(
+                    r"(?:は|が|も)"
+                    r"(?:(?:少し(?:だけ|ずつ)?|やや|ずっと|強く)[、,\s]*)?"
+                    r"(?:ある|あった|あります|ありました)",
+                    nominal_host.group("carrier"),
+                )
+                is not None
+                or _self_owned_finite_host_shape(
+                    nominal_host.group("carrier")
+                )
+            )
+        )
+        shared_finite_wish = bool(
+            _last_finite_operator_match(
+                top_level_fragment,
+                _WISH_RE,
+            )
+            is not None
+        )
         finite_wish = bool(
-            _FINITE_WISH_CLAUSE_END_RE.search(top_level_fragment)
+            shared_finite_wish
+            or _FINITE_WISH_CLAUSE_END_RE.search(top_level_fragment)
             or re.search(
                 r"(?:たい|ほしい|欲しい)(?:と|とは)?思"
                 r"(?:う|っている|っていた|っています|っていました|"
@@ -2127,12 +3601,15 @@ def _typed_nucleus_projections_for_span(
                 top_level_fragment,
             )
             or re.search(
-                r"(?:たい|ほしい|欲しい)(?:気持ち|願い)(?:は|が|も)"
-                r"[^、,.!?！？]{1,32}"
-                r"(?:る|う|い|た|ない|なかった|ます|ました|"
-                r"だ|です|だった|でした)$",
+                r"(?:たい|ほしい|欲しい)(?:と|とは)?感じ"
+                r"(?:る|た|ている|ていた|ています|ていました)"
+                r"(?:こと(?:は|が|も)?"
+                r"(?:ある|あった|あります|ありました))?"
+                r"(?:(?:の|ん)(?:だ|です))?$",
                 top_level_fragment,
             )
+            or bounded_nominal_host
+            or explicit_self_wish_host is not None
         )
         nominal_wish = bool(
             re.search(
@@ -2207,8 +3684,6 @@ def _typed_nucleus_projections_for_span(
 
         if (
             not left_fragment.endswith("みたい")
-            or not owner_scope_is_bound(left_fragment)
-            or not owner_scope_is_bound(right_fragment)
         ):
             return False
         temporal_prefix = re.compile(
@@ -2222,6 +3697,7 @@ def _typed_nucleus_projections_for_span(
         if (
             not stem
             or re.fullmatch(r"[ぁ-んァ-ヶ一-龯々〆ヵヶー]+", stem) is None
+            or re.search(r"(?:は|が|も|の)", stem) is not None
             or (
                 len(stem) == 1
                 and re.fullmatch(r"[一-龯々〆ヵヶ]", stem) is None
@@ -2541,6 +4017,13 @@ def _typed_nucleus_projections_for_span(
         right_start, right_end = trimmed_range(link.end(), len(text))
         left_text = text[left_start:left_end]
         right_text = text[right_start:right_end]
+        # Plain ``のに`` is structurally ambiguous between a concessive and
+        # nominalizer+case (purpose/use) construction.  Route A has no
+        # argument-selection axis that can prove that distinction, so this
+        # generic splitter fails closed.  ``なのに`` remains an unambiguous
+        # top-level concessive and is handled by the common exact2 proof.
+        if link.group(0).lstrip().startswith("のに"):
+            return ()
         paired_m_row_wish = m_row_desiderative_constraint_pair(
             left_text,
             right_text,
@@ -2557,6 +4040,19 @@ def _typed_nucleus_projections_for_span(
         if right_top_level is None:
             return ()
         right_top_level = right_top_level.strip()
+        connector_group = link.group(0).lstrip()
+        connector_nominal_mode = (
+            "na"
+            if connector_group.startswith("なのに")
+            else "ellipsis"
+            if (
+                re.search(r"[、,]", text[left_end : link.start()])
+                and connector_group.startswith(
+                    ("でも", "ただ", "とはいえ", "一方")
+                )
+            )
+            else ""
+        )
         right_operators = set(
             _operator_codes_for_text(
                 right_top_level,
@@ -2712,10 +4208,40 @@ def _typed_nucleus_projections_for_span(
             if top_level_fragment is None:
                 return None
             top_level_fragment = top_level_fragment.strip()
+            connector_nominal_endpoint = next(
+                (
+                    (pattern, match)
+                    for pattern in _FINITE_OPERATOR_PATTERNS
+                    for match in pattern.finditer(top_level_fragment)
+                    if fragment.strip() == left_text.strip()
+                    and match.start() == 0
+                    and match.end() == len(top_level_fragment)
+                    and (
+                        (
+                            connector_nominal_mode == "na"
+                            and _operator_supports_occurrence_na(
+                                match.group(0),
+                                pattern,
+                            )
+                        )
+                        or (
+                            connector_nominal_mode == "ellipsis"
+                            and _operator_supports_explanatory_na(
+                                match.group(0),
+                                pattern,
+                            )
+                        )
+                    )
+                ),
+                None,
+            )
             if (
                 not top_level_fragment
                 or top_level_fragment != fragment.strip()
-                or not owner_scope_is_bound(top_level_fragment)
+                or (
+                    connector_nominal_endpoint is None
+                    and not owner_scope_is_bound(top_level_fragment)
+                )
             ):
                 return None
             operators = set(
@@ -2766,11 +4292,38 @@ def _typed_nucleus_projections_for_span(
 
             negated = "operator:negation" in operators
             refused = "operator:refusal" in operators
-            constraint_cancelled = bool(
-                _NEGATED_CONSTRAINT_CANCELLATION_RE.search(
+            cancellation_matches = tuple(
+                _NEGATED_CONSTRAINT_CANCELLATION_INNER_RE.finditer(
                     top_level_fragment
                 )
             )
+            constraint_cancelled = any(
+                (
+                    not top_level_fragment[match.end() :]
+                    or _finite_endpoint_carrier_shape(
+                        top_level_fragment[match.end() :],
+                        operator_surface=match.group(0),
+                        operator_pattern=_CONSTRAINT_RE,
+                    )
+                )
+                for match in cancellation_matches
+            )
+            if not constraint_cancelled:
+                wrapped_constraint = _last_finite_operator_match(
+                    top_level_fragment,
+                    _CONSTRAINT_RE,
+                )
+                constraint_cancelled = bool(
+                    wrapped_constraint is not None
+                    and re.fullmatch(
+                        r"(?:な)?こと(?:は|が|も)?"
+                        r"(?:ない|なかった|ありません|"
+                        r"ありませんでした)"
+                        r"(?:(?:の|ん)(?:だ|です|だった|でした))?",
+                        top_level_fragment[wrapped_constraint.end() :],
+                    )
+                    is not None
+                )
             unfinished_matches = tuple(
                 _OPEN_UNFINISHED_RE.finditer(top_level_fragment)
             )
@@ -2787,6 +4340,12 @@ def _typed_nucleus_projections_for_span(
                 if constraint_cancelled
                 else endpoint_final_match(_CONSTRAINT_RE)
             )
+            if (
+                constraint_final is None
+                and connector_nominal_endpoint is not None
+                and connector_nominal_endpoint[0] is _CONSTRAINT_RE
+            ):
+                constraint_final = connector_nominal_endpoint[1]
             uncertainty_occurs = bool(
                 "operator:uncertainty" in operators
                 or _RELATION_UNCERTAINTY_RE.search(top_level_fragment)
@@ -2795,16 +4354,36 @@ def _typed_nucleus_projections_for_span(
                 _RELATION_UNCERTAINTY_RE,
                 _UNCERTAIN_RE,
             )
+            if (
+                uncertainty_final is None
+                and connector_nominal_endpoint is not None
+                and connector_nominal_endpoint[0]
+                in {_RELATION_UNCERTAINTY_RE, _UNCERTAIN_RE}
+            ):
+                uncertainty_final = connector_nominal_endpoint[1]
             terminal_uncertainty_primary = uncertainty_final is not None
             refusal_final = endpoint_final_match(_REFUSAL_RE)
             change_final = endpoint_final_match(
                 _POSITIVE_CHANGE_RE,
                 _CHANGE_RE,
             )
+            if (
+                change_final is None
+                and connector_nominal_endpoint is not None
+                and connector_nominal_endpoint[0]
+                in {_POSITIVE_CHANGE_RE, _CHANGE_RE}
+            ):
+                change_final = connector_nominal_endpoint[1]
             positive_change_final = endpoint_final_match(
                 _POSITIVE_CHANGE_RE
             )
             feeling_final = endpoint_final_match(_FEELING_RE)
+            if (
+                feeling_final is None
+                and connector_nominal_endpoint is not None
+                and connector_nominal_endpoint[0] is _FEELING_RE
+            ):
+                feeling_final = connector_nominal_endpoint[1]
             if feeling_final is None:
                 # A frozen feeling used as the complete semantic subject of
                 # an immediately following finite continuation predicate is
@@ -2832,6 +4411,13 @@ def _typed_nucleus_projections_for_span(
             value_final = (
                 None if negated else endpoint_final_match(_VALUE_RE)
             )
+            if (
+                value_final is None
+                and not negated
+                and connector_nominal_endpoint is not None
+                and connector_nominal_endpoint[0] is _VALUE_RE
+            ):
+                value_final = connector_nominal_endpoint[1]
             passive_perfective = bool(
                 re.search(
                     r"[かがさざただなばぱまらわ]れ"
@@ -2854,10 +4440,43 @@ def _typed_nucleus_projections_for_span(
                 *((_CONTINUATION_RE,) if "operator:continuation" in operators else ()),
                 *((_OPEN_UNFINISHED_RE,) if _OPEN_UNFINISHED_RE.search(top_level_fragment) else ()),
             )
-            generic_finite_state_match = _last_finite_operator_match(
-                top_level_fragment,
-                *generic_finite_patterns,
+            generic_finite_state_matches = tuple(
+                match
+                for pattern in generic_finite_patterns
+                for match in pattern.finditer(top_level_fragment)
+                if (
+                    match.start() == 0
+                    or (
+                        pattern is _NEGATION_RE
+                        and top_level_fragment[: match.start()].endswith(
+                            ("てい", "でい")
+                        )
+                    )
+                )
+                and _operator_match_has_finite_closure(
+                    top_level_fragment,
+                    pattern,
+                    match,
+                )
             )
+            generic_finite_state_match = (
+                max(
+                    generic_finite_state_matches,
+                    key=lambda match: match.end(),
+                )
+                if generic_finite_state_matches
+                else None
+            )
+            if generic_finite_state_match is None and constraint_cancelled:
+                generic_finite_state_match = next(
+                    (
+                        match
+                        for match in cancellation_matches
+                        if match.start() == 0
+                        and match.end() == len(top_level_fragment)
+                    ),
+                    None,
+                )
             generic_finite_state_proven = bool(
                 generic_finite_state_match is not None
                 and not passive_perfective
@@ -2936,12 +4555,18 @@ def _typed_nucleus_projections_for_span(
             role_codes: tuple[str, ...]
             finite_endpoint_proven: bool
             generic_finite_state_selected = False
-            finite_clause_proven = _finite_endpoint_terminal_shape(
-                top_level_fragment
+            finite_clause_proven = bool(
+                connector_nominal_endpoint is not None
+                or _finite_endpoint_terminal_shape(top_level_fragment)
             )
             terminal_negation = _last_finite_operator_match(
                 top_level_fragment,
                 _NEGATION_RE,
+            )
+            terminal_negation_proven = bool(
+                terminal_negation is not None
+                or constraint_cancelled
+                or (negated and generic_finite_state_proven)
             )
             if positive_wish:
                 kind = "wish"
@@ -3031,6 +4656,7 @@ def _typed_nucleus_projections_for_span(
                 "operator:value",
                 "operator:change",
                 "operator:positive_change",
+                "operator:help_seeking",
                 "operator:refusal",
                 "operator:negation",
                 "operator:self_evaluation",
@@ -3045,7 +4671,7 @@ def _typed_nucleus_projections_for_span(
                 kind = "state"
                 predicate_kind = "state"
                 polarity = (
-                    "negative" if terminal_negation is not None else "neutral"
+                    "negative" if terminal_negation_proven else "neutral"
                 )
                 modality = "fact"
                 role_codes = ()
@@ -3057,7 +4683,7 @@ def _typed_nucleus_projections_for_span(
             if generic_finite_state_selected:
                 local_operator_codes = (
                     ("operator:negation",)
-                    if terminal_negation is not None
+                    if terminal_negation_proven
                     else ()
                 )
             else:
@@ -3093,6 +4719,7 @@ def _typed_nucleus_projections_for_span(
                             "operator:change",
                             "operator:positive_change",
                             "operator:value",
+                            "operator:continuation",
                         }
                     )
                 )
@@ -3158,11 +4785,6 @@ def _typed_nucleus_projections_for_span(
                 nested_right = top_level_fragment[
                     nested_right_start:nested_right_end
                 ]
-                if not (
-                    owner_scope_is_bound(nested_left)
-                    and owner_scope_is_bound(nested_right)
-                ):
-                    continue
                 nested_left_profile = generic_contrast_endpoint_profile(
                     nested_left
                 )
@@ -3255,11 +4877,6 @@ def _typed_nucleus_projections_for_span(
             candidate_right_text = text[
                 candidate_right_start:candidate_right_end
             ]
-            if not (
-                owner_scope_is_bound(candidate_left_text)
-                and owner_scope_is_bound(candidate_right_text)
-            ):
-                continue
             candidate_left_profile = generic_contrast_endpoint_profile(
                 candidate_left_text
             )

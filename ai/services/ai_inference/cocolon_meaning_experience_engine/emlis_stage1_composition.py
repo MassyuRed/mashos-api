@@ -3500,8 +3500,18 @@ def _generic_relation_fragment_clause(
                 else "ということがあり",
             )
         )
-    if modality == "uncertain" and carrier == "不確かさも残り":
-        return "".join((endpoint_object, "には不確かさが残り"))
+    if modality == "uncertain" and carrier:
+        # ``carrier`` is already the unique role-local serialization of the
+        # registered modality/time/polarity axes.  Join every registered
+        # combination uniformly instead of re-enumerating particular input
+        # or time-scope cases here.
+        return "".join(
+            (
+                endpoint_object,
+                "は" if carrier.startswith("今も不確かなまま") else "には",
+                carrier,
+            )
+        )
     if (
         str(getattr(frame, "predicate_kind", "")) == "constraint"
         and modality == "possibility"
