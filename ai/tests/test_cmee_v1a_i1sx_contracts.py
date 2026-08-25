@@ -8506,10 +8506,9 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 (
                     "「休みたい気持ち」があり",
                     "「もう少し進めたい気持ち」があり",
-                    "どちらか一方に絞らず",
+                    "どちらか一方だけにせず受け止めたいです",
                 ),
                 (
-                    "気持ち」ということ",
                     "選べる向き",
                     "決めつけたり義務に変えたりせず",
                 ),
@@ -8523,8 +8522,8 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 (
                     "「少し話を聞いてほしい」という願いがあり",
                     "「今声をかけてよいか迷っている」ということには不確かさが残り",
-                    "どちらか一方に絞らず",
-                    "決めつけたり義務に変えたりせず",
+                    "どちらか一方だけにせず受け止めたいです",
+                    "義務や決めつけに変えず",
                 ),
                 ("不確かさも残り", "選べる向き"),
             ),
@@ -9425,8 +9424,9 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
 
         self.assertEqual(affect_sentence_counts, {"known": 0, "public_standin": 0})
         self.assertEqual(appraisal_claim_counts, {"known": 4, "public_standin": 4})
-        self.assertTrue(
-            all(count >= 1 for count in position_claim_counts.values())
+        self.assertEqual(
+            position_claim_counts,
+            {"known": 1, "public_standin": 1},
         )
 
     def test_subjective_opportunity_partition_rejects_coordinated_tamper(
@@ -9991,6 +9991,21 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     phase_b,
                 ) = self._known_inputs(index)
                 self.assertTrue(subjective_plan.subjective_claim_rows)
+                if label in {"tension", "help_seeking"}:
+                    content_kinds = tuple(
+                        row.asserted_subjective_proposition.content_kind
+                        for row in subjective_plan.subjective_claim_rows
+                    )
+                    self.assertEqual(
+                        content_kinds.count(SubjectiveContentKind.APPRAISAL),
+                        1,
+                    )
+                    self.assertEqual(
+                        content_kinds.count(
+                            SubjectiveContentKind.RELATIONAL_POSITION
+                        ),
+                        0,
+                    )
                 result = stage1_composition_module.compose_stage1_from_projection(
                     phase_b
                 )
@@ -10542,6 +10557,14 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     row.unit_ref: index
                     for index, row in enumerate(normalized.sentence_units)
                 }
+                duty_by_ref = {
+                    row.duty_ref: row
+                    for row in normalized.composition_duty_rows
+                }
+                plan_by_ref = {
+                    row.clause_plan_ref: row
+                    for row in normalized.clause_plan_rows
+                }
                 for expression in normalized.response_object_expression_rows:
                     unit = unit_by_ref[expression.unit_ref]
                     if (
@@ -10576,7 +10599,30 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                             )
                         else:
                             plural_anaphora += 1
-                            self.assertIn("その両方", unit.text)
+                            if "その両方" not in unit.text:
+                                plan = plan_by_ref[expression.clause_plan_ref]
+                                owner, _owner_refs = module._duty_semantics(
+                                    duty_by_ref[plan.duty_ref],
+                                    phase_b,
+                                )
+                                source_objects = tuple(
+                                    module._source_expression(
+                                        ref,
+                                        phase_b,
+                                        module._frame_for_semantic_ref(
+                                            owner,
+                                            ref,
+                                            phase_b,
+                                        ),
+                                    )
+                                    for ref in expression.basis_semantic_refs
+                                )
+                                self.assertTrue(
+                                    all(
+                                        value in unit.text
+                                        for value in source_objects
+                                    )
+                                )
                             self.assertNotIn("そのことを", unit.text)
         self.assertGreaterEqual(singular_anaphora, 1)
         self.assertGreaterEqual(plural_anaphora, 1)

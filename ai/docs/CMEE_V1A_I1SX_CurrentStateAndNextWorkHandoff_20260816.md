@@ -1303,3 +1303,58 @@ AUTOMATIC_PROGRESSION = FALSE
 ```
 
 runtime / design activation headsを固定後、同じfrozen private input exact4からfresh exclusive output exact2を一回だけ生成する。known public-safe exact4はUltra technical / Pro language、withheld exact4はPro body-fullだけが読み、success exact3をbody-free finalizerへ渡す。private body / locatorはGitHub、docs、UltraまたはMashへ公開せず、output exact2はreview後に削除する。成功しても`LANGUAGE_VIABILITY_OBSERVED`は同一approved unit内のinternal observationだけであり、formal Product Read、Step 4、ready、mergeまたはproductionへ自動進行しない。
+
+## 33. Route A subjective planner deconcentration and Step 3 fresh reactivation（2026-08-25）
+
+§32 activation headsにbindしたfresh early actualでは、known / withheld machine invariantはともに`CLEAR_4_OF_4`であったが、Pro exact1は`COMMON_DEFECT / GENERIC_SUBJECTIVE_CONTENT / SUBJECTIVE_MEANING_PLANNER`を返した。typed noncollapse relationが同じendpoint exact2をすでに保持しているにもかかわらず、direction-only `PROTECT_USER_AGENCY` positionが別claimとして残り、Layer 2の主観文が同一targetへ集中していた。ceiling理由はなく、private本文、locatorまたはper-case digestはPro外へ出していない。
+
+repairは、noncollapse semantic refs exact2 / distinct、direction refs exact1 / subset、relation endpoint rows exact2、source semantic ref set exact一致、endpoint candidate refs distinct、resolved frame exact2を満たす場合だけ、direction-only positionをnoncollapse appraisalへ吸収する。value principleの有無、case ID、structural family、raw textまたはexpected sentenceを条件にしない。noncollapse appraisalは同じexact2 source expressionsを明示し、直後のmaterial-valueはexisting immediate exact2 anaphorだけを使うため、意味分担を保持しながら全文反復を除く。unfinished open position、action→change、residue→unfinishedは変更しない。
+
+```text
+AUTHORITY = MASH_CURRENT_EXPLICIT_ROUTE_A_ONLY_STEP3_COMPLETION
+PREIMAGE_RUNTIME_HEAD = 3ef41262f4411de2e2da0b6a392461299f46446b
+PREIMAGE_DESIGN_HEAD = 9f18267f1ab460dc8e379498f9723b435781fc21
+PREIMAGE_LANGUAGE_CORE_IDENTITY = b8665662e80bda7350825dc925dabf21f6a6ad233a2aa0d6fe83ecd4bac0aa8e
+PREIMAGE_BODY_FREE_MACHINE_PACKET_SHA256 = c55e3e7b447c30a87c80ce3d40fc9f9a149850755b54b4d880eff6975601faea
+PREIMAGE_PRO_RESULT_SHA256 = 70262579b8b5b13cbc1af1958915471abf1e3370dc2d10d401fe3f5815c310d1
+PREIMAGE_KNOWN_VISIBLE_PACKET_SHA256 = f9442be86176f354d24879492aa52559dee57659542301b475a3ce6f20f6b094
+PREIMAGE_PRO_RESULT = COMMON_DEFECT
+PREIMAGE_DEFECT_CLASS = GENERIC_SUBJECTIVE_CONTENT
+PREIMAGE_CAUSE_COMPONENT = SUBJECTIVE_MEANING_PLANNER
+PREIMAGE_CEILING_REASON = NONE
+
+GENERIC_REPAIR = TYPED_SAME_TARGET_POSITION_ABSORPTION_AND_EXACT2_REFERENCE_CONTINUITY
+NONCOLLAPSE_ENDPOINTS = EXACT2_DISTINCT
+DIRECTION_ENDPOINTS = EXACT1_SUBSET
+RELATION_ENDPOINT_BINDING = EXACT2_SOURCE_SET_MATCH
+REDUNDANT_PROTECT_USER_AGENCY_POSITION = ABSORBED
+NONCOLLAPSE_APPRAISAL = SOURCE_BOUND_EXACT2
+FOLLOWING_MATERIAL_VALUE = IMMEDIATE_ANAPHORIC_EXACT2
+UNFINISHED_OPEN_POSITION = UNCHANGED
+CASE_ID_FAMILY_RAW_FIXTURE_EXPECTED_SENTENCE_SELECTOR = 0
+NEW_ASSET_FAMILY_ENUM_AXIS_DEPENDENCY_ROUTE = 0
+SOURCE_MEANING_OWNER_POLARITY_MODALITY_TIME_UNKNOWN_SAFETY_AUTHORITY_DELTA = 0
+
+LANGUAGE_CORE_IDENTITY = ce57ab185a2b2e099569391aea72230f880f56607c45dfa30b976ae80da63329
+RUNNER_SHA256 = 7697491c0bfeb5d3cf8e8dd8c6cfbb635f595e635687effde2c391d98e8de276
+STEP2_COMPOSITION_TESTS = 16_OF_16_PASS
+STEP3_EARLY_HARNESS_TESTS = 17_OF_17_PASS
+CONTRACT_TESTS = 120_OF_120_PASS
+VERTICAL_TESTS = 42_OF_42_PASS
+COMBINED_TESTS = 162_OF_162_PASS
+
+COMMON_DEFECT_RETURN_COUNT_BEFORE / AFTER = 2_OF_2 / 2_OF_2
+COUNTER_RESET / COUNTER_INCREMENT = 0 / 0
+SOLE_ROUTE = ROUTE_A_PROVIDERLESS_EXACT1_ONLY
+EXTERNAL_AI / PROVIDER / NETWORK / EXTERNAL_BODY_SEND / COST = 0 / 0 / 0 / 0 / 0
+PUBLIC_API / DB / RN / PRODUCTION_EFFECT = 0 / 0 / 0 / 0
+EARLY_ACTUAL_STATUS = NOT_RUN_PENDING_REPAIR_ACTIVATION_HEADS
+STEP3 = ROUTE_A_SUBJECTIVE_PLANNER_REPAIR_VERIFIED_PENDING_FRESH_ACTUAL
+FORMAL_EXACT8 = NOT_RUN
+PRODUCT_READ_EVALUATED = FALSE
+CANDIDATE_READY = FALSE
+STEP4 = NOT_STARTED
+AUTOMATIC_PROGRESSION = FALSE
+```
+
+repair activation headsを固定した後だけ、同じfrozen private input exact4をfresh outputへ一回materializeする。known body-fullはUltra technical / Pro language、withheld body-fullはProだけが読み、success exact3をbody-free finalizerへ渡す。private output exact2はread後削除し、Step 3 closure後もformal Product Read、Step 4、ready、mergeまたはproductionへ自動進行しない。

@@ -1602,7 +1602,11 @@ def project_subjective_meaning_plan(
         )
     visible_principles = list(_unique(visible_principles))
 
-    absorb_generic_relation_position = False
+    # A direction-only agency stance adds no new target when the admitted
+    # noncollapse relation already preserves the same exact two endpoints.
+    # The proof is entirely typed and request-local; no phrase or case family
+    # participates in the decision.
+    absorb_relation_position = False
     if (
         position_spec is not None
         and direction is not None
@@ -1611,24 +1615,21 @@ def project_subjective_meaning_plan(
         and appraisal.operation is AppraisalOperation.PRESERVE_BOTH_ENDPOINTS
         and position_spec[1].stance_operator
         is StanceOperator.PROTECT_USER_AGENCY
+        and len(noncollapse.semantic_refs) == 2
+        and len(set(noncollapse.semantic_refs)) == 2
+        and len(direction.semantic_refs) == 1
         and set(direction.semantic_refs).issubset(noncollapse.semantic_refs)
-        and {
-            MaterialRisk.WISH_TO_OBLIGATION,
-            MaterialRisk.REMOVE_USER_AGENCY,
-        }.issubset(
-            {
-                _RISK_BY_PRINCIPLE[principle]
-                for principle in visible_principles
-            }
-        )
     ):
         relation_candidate_ref = contribution_candidate.get(
             noncollapse.contribution_id
         )
-        endpoint_candidate_refs = tuple(
-            row.endpoint_grounded_candidate_ref
+        endpoint_rows = tuple(
+            row
             for row in phase_A.relation_endpoint_grounded_candidate_ref_by_binding_key
             if row.relation_candidate_ref == relation_candidate_ref
+        )
+        endpoint_candidate_refs = tuple(
+            row.endpoint_grounded_candidate_ref for row in endpoint_rows
         )
         frame_by_candidate_ref = {
             row.candidate_ref: row.grounded_frame
@@ -1638,17 +1639,26 @@ def project_subjective_meaning_plan(
             frame_by_candidate_ref.get(ref)
             for ref in endpoint_candidate_refs
         )
-        absorb_generic_relation_position = bool(
-            len(endpoint_candidate_refs) == 2
+        absorb_relation_position = bool(
+            len(endpoint_rows) == 2
             and len(set(endpoint_candidate_refs)) == 2
-            and all(
-                frame is not None
-                and "semantic_role:generic_relation_fragment"
-                in tuple(getattr(frame, "attribute_codes", ()))
-                for frame in endpoint_frames
+            and len(
+                {
+                    row.source_semantic_ref
+                    for row in endpoint_rows
+                }
+            )
+            == 2
+            and {
+                row.source_semantic_ref for row in endpoint_rows
+            }
+            == set(noncollapse.semantic_refs)
+            and all(frame is not None for frame in endpoint_frames)
+            and set(direction.semantic_refs).issubset(
+                {row.source_semantic_ref for row in endpoint_rows}
             )
         )
-    if position_spec is not None and not absorb_generic_relation_position:
+    if position_spec is not None and not absorb_relation_position:
         claim_specs.append(position_spec)
 
     affect_category = (
@@ -3722,21 +3732,26 @@ def _surface_for_plan(
                 "".join(expression_asset.predicate_lexemes),
             )
         )
-        generic_relation_frames = tuple(
+        relation_endpoint_frames = tuple(
             _frame_for_semantic_ref(owner, ref, phase_B)
             for ref in expression.basis_semantic_refs
         )
+        relation_endpoint_exact2 = bool(
+            len(expression.basis_semantic_refs) == 2
+            and len(set(expression.basis_semantic_refs)) == 2
+            and len(relation_endpoint_frames) == 2
+        )
         generic_relation_exact2 = bool(
-            len(generic_relation_frames) == 2
+            relation_endpoint_exact2
             and all(
                 "semantic_role:generic_relation_fragment"
                 in tuple(getattr(frame, "attribute_codes", ()))
-                for frame in generic_relation_frames
+                for frame in relation_endpoint_frames
             )
         )
         proposition = _prop(owner)
         if (
-            generic_relation_exact2
+            relation_endpoint_exact2
             and proposition.content_kind is SubjectiveContentKind.APPRAISAL
             and proposition.appraisal_content is not None
             and proposition.appraisal_content.dimension
@@ -3744,18 +3759,28 @@ def _surface_for_plan(
             and proposition.appraisal_content.operation
             is AppraisalOperation.PRESERVE_BOTH_ENDPOINTS
         ):
+            left_object, right_object = tuple(
+                _source_expression(ref, phase_B, frame)
+                for ref, frame in zip(
+                    expression.basis_semantic_refs,
+                    relation_endpoint_frames,
+                    strict=True,
+                )
+            )
             return "".join(
                 (
                     emlis_subject,
                     comma if emlis_subject else "",
-                    "どちらか一方に絞らず",
-                    comma,
-                    "その両方を大切に受け止めたいです",
+                    left_object,
+                    "と",
+                    right_object,
+                    "を",
+                    "どちらか一方だけにせず受け止めたいです",
                     terminal,
                 )
             )
         if (
-            generic_relation_exact2
+            relation_endpoint_exact2
             and proposition.content_kind
             is SubjectiveContentKind.MATERIAL_VALUE
             and proposition.material_value_content is not None
@@ -3769,15 +3794,33 @@ def _surface_for_plan(
                 }
             )
         ):
+            # The appraisal immediately before this value claim names the
+            # same exact2 source endpoints.  Reuse the already-proven
+            # anaphoric object when available so the policy boundary remains
+            # visible without repeating both source fragments verbatim.
+            value_object = object_surface
+            if (
+                expression.expression_mode
+                is not ResponseObjectExpressionMode.ANAPHORIC
+            ):
+                left_object, right_object = tuple(
+                    _source_expression(ref, phase_B, frame)
+                    for ref, frame in zip(
+                        expression.basis_semantic_refs,
+                        relation_endpoint_frames,
+                        strict=True,
+                    )
+                )
+                value_object = "".join((left_object, "と", right_object))
             return "".join(
                 (
                     emlis_subject,
                     comma if emlis_subject else "",
-                    "その両方を",
+                    value_object,
+                    "を",
+                    "義務や決めつけに変えず",
                     comma,
-                    "決めつけたり義務に変えたりせず",
-                    comma,
-                    "大切にしたいです",
+                    "そのまま大切にしたいです",
                     terminal,
                 )
             )
