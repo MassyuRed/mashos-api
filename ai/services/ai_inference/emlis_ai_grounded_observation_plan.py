@@ -228,6 +228,30 @@ _ROLE_KIND_HINTS: Final[tuple[tuple[frozenset[str], NucleusKind], ...]] = (
     (frozenset({"value", "value_or_strength", "relief_source", "small_change_value"}), "value"),
 )
 _RETENTION_RANK: Final = {"optional": 0, "should": 1, "required": 2}
+_RELATION_GROUP_DELIMITERS: Final[dict[str, str]] = {
+    "「": "」",
+    "『": "』",
+    "“": "”",
+    "‘": "’",
+    "（": "）",
+    "(": ")",
+    "［": "］",
+    "[": "]",
+    "【": "】",
+    "｛": "｝",
+    "{": "}",
+    "＜": "＞",
+    "<": ">",
+    "〈": "〉",
+    "《": "》",
+    "〔": "〕",
+    "〝": "〟",
+    "〖": "〗",
+    "〘": "〙",
+    "〚": "〛",
+    "｟": "｠",
+}
+_RELATION_SYMMETRIC_DELIMITERS: Final[frozenset[str]] = frozenset({'"'})
 
 
 _NEGATION_RE: Final = re.compile(
@@ -254,6 +278,10 @@ _SOURCE_METAPHOR_RE: Final = re.compile(
 )
 _WISH_RE: Final = re.compile(
     r"(?:したい|なりたい|していきたい|過ごしていきたい|ほしい|欲しい|願|つもり|たい(?:って|と|気持ち|と思|[、,\s]|$)|たらいい)"
+)
+_FINITE_WISH_CLAUSE_END_RE: Final = re.compile(
+    r"(?:たい|ほしい|欲しい|願(?:う|っている)|つもり(?:だ|です)|"
+    r"たいと思う)(?:の(?:だ|です))?$"
 )
 _REFUSAL_RE: Final = re.compile(
     r"(?:したくない|続けたくない|やめたい|終わらせたい|投げ出したい|"
@@ -301,6 +329,16 @@ _OPEN_UNFINISHED_RE: Final = re.compile(
 )
 _CONTRAST_RE: Final = re.compile(r"(?:でも|だけど|けれど|けど|一方|なのに|ただ|とはいえ)")
 _COEXISTENCE_RE: Final = re.compile(r"(?:同時に|両方|どっちも|抱えたまま)")
+_TOP_LEVEL_CONTRAST_LINK_RE: Final = re.compile(
+    r"(?:一方で|のに|けれども?|けど)(?:[、,]\s*)?|が[、,]\s*"
+)
+_TOP_LEVEL_COORDINATE_LINK_RE: Final = re.compile(r"と[、,]\s*")
+_COEXISTENCE_TAIL_RE: Final = re.compile(
+    r"(?:が|は|を)?(?:同時に|両方|どっちも)(?:ある|いる|残っている)$"
+)
+_RELATION_UNCERTAINTY_RE: Final = re.compile(
+    r"(?:迷(?:って|い|う)|ためら|自信がな|よいか|いいか|べきか|気がし)"
+)
 _CAUSE_RE: Final = re.compile(r"(?:ので|ため|ことで|からこそ|だからこそ)")
 _RESULT_RE: Final = re.compile(r"(?:その結果|だから|になった|減った|増えた|できた|出来た|ようになった)")
 _SHIFT_RE: Final = re.compile(
@@ -686,10 +724,51 @@ class _TypedNucleusProjection:
     scalar_start: int
     scalar_end: int
     attribute_codes: tuple[str, ...]
+    relation_kind: RelationKind | None = None
+    grounding_kind: GroundingKind = "explicit"
 
 
 def _clean(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "").replace("\u3000", " ")).strip()
+
+
+def _top_level_text(text: str) -> str | None:
+    """Mask grouped text without changing offsets; malformed nesting fails."""
+
+    expected_closers: list[str] = []
+    visible: list[str] = []
+    closing_delimiters = set(_RELATION_GROUP_DELIMITERS.values())
+    for character in text:
+        depth = len(expected_closers)
+        delimiter = False
+        if character in _RELATION_SYMMETRIC_DELIMITERS:
+            delimiter = True
+            if expected_closers and expected_closers[-1] == character:
+                expected_closers.pop()
+            else:
+                expected_closers.append(character)
+        elif character in _RELATION_GROUP_DELIMITERS:
+            delimiter = True
+            expected_closers.append(_RELATION_GROUP_DELIMITERS[character])
+        elif character in closing_delimiters:
+            delimiter = True
+            if not expected_closers or expected_closers[-1] != character:
+                return None
+            expected_closers.pop()
+        visible.append(character if depth == 0 and not delimiter else " ")
+    return None if expected_closers else "".join(visible)
+
+
+def _top_level_pattern_matches(
+    text: str,
+    pattern: re.Pattern[str],
+) -> tuple[re.Match[str], ...]:
+    """Return matches outside quotes/brackets; malformed nesting fails closed."""
+
+    visible = _top_level_text(text)
+    if visible is None:
+        return ()
+    return tuple(pattern.finditer(visible))
 
 
 def _dedupe(values: Iterable[Any]) -> list[str]:
@@ -1682,12 +1761,172 @@ def _typed_nucleus_projections_for_span(
             )
         )
 
+    def relation_fragment_codes(
+        scalar_start: int,
+        scalar_end: int,
+        *codes: str,
+    ) -> tuple[str, ...]:
+        return tuple(
+            (
+                f"source_fragment_scalar_range:{scalar_start}:{scalar_end}"
+                if code.startswith("surface_scalar_range:")
+                else "source_fragment_scalar_source:normalized_raw_text"
+                if code == "surface_scalar_source:normalized_raw_text"
+                else code
+            )
+            for code in projection_codes(scalar_start, scalar_end, *codes)
+            if not code.startswith("detected_type:")
+        )
+
     def trimmed_range(start: int, end: int) -> tuple[int, int]:
         while start < end and text[start] in " \t\r\n、,。．.!！?？":
             start += 1
         while start < end and text[end - 1] in " \t\r\n、,。．.!！?？":
             end -= 1
         return start, end
+
+    def owner_scope_is_bound(fragment: str) -> bool:
+        top_level_fragment = _top_level_text(fragment)
+        if top_level_fragment is None:
+            return False
+        top_level_fragment = top_level_fragment.strip()
+        # A bounded time adverb is not an owner.  Remove it before checking
+        # the grammatical subject/possessor so that forms such as
+        # ``今日は弟が…`` and ``今の妹の…`` cannot borrow current-user
+        # ownership from their temporal prefix.
+        temporal_prefix = re.compile(
+            r"^(?:(?:今日|今|現在)(?:は|も|の)?|この記録では?|"
+            r"少しずつ|まだ)[、,\s]*"
+        )
+        owner_marker = re.compile(
+            r"^(?P<owner>[^\s、,。.!！?？]{1,24}?)"
+            r"(?:にとって|には|は|が|も|の)"
+        )
+        owner_scope = top_level_fragment
+        # Consume only a chain of explicit self owners and bounded temporal
+        # prefixes.  Any subsequent grammatical owner/beneficiary remains a
+        # third-party authority and makes the projection ineligible.
+        while True:
+            owner_scope = temporal_prefix.sub("", owner_scope)
+            leading_owner = owner_marker.match(owner_scope)
+            if leading_owner is None:
+                break
+            if (
+                _SELF_REFERENCE_RE.fullmatch(leading_owner.group("owner"))
+                is None
+            ):
+                return False
+            owner_scope = owner_scope[leading_owner.end() :]
+        # A later explicit speaker remains the authority for an attributed
+        # predicate even when the fragment begins with an ownerless state.
+        for attributed_owner in re.finditer(
+            r"(?:と|って)(?P<owner>[^\s、,。.!！?？]{1,24}?)"
+            r"(?:は|が|も)(?=(?:言|話|語|述べ|書|記録|考|思|感じ|判断|決め))",
+            owner_scope,
+        ):
+            if (
+                _SELF_REFERENCE_RE.fullmatch(attributed_owner.group("owner"))
+                is None
+            ):
+                return False
+        return True
+
+    def affirmative_wish(fragment: str) -> bool:
+        top_level_fragment = _top_level_text(fragment)
+        if top_level_fragment is None:
+            return False
+        top_level_fragment = top_level_fragment.strip()
+        operators = set(
+            _operator_codes_for_text(
+                top_level_fragment,
+                source_field=source_field,
+            )
+        )
+        # Wish authority is fragment-local.  In particular, one endpoint's
+        # real desiderative must never license another endpoint's nominal
+        # simile merely because both share one EvidenceSpan.
+        wish = "operator:wish" in operators
+        endpoint_final = bool(
+            _FINITE_WISH_CLAUSE_END_RE.search(top_level_fragment)
+            or re.search(
+                r"(?:たい|ほしい|欲しい)(?:気持ち|願い)$",
+                top_level_fragment,
+            )
+        )
+        return bool(
+            wish
+            and endpoint_final
+            and owner_scope_is_bound(top_level_fragment)
+            and not operators & {"operator:negation", "operator:refusal"}
+        )
+
+    def ambiguous_m_row_nominal_state(fragment: str) -> bool:
+        """Admit an ambiguous ``…みたい気持ち/願い`` without wish promotion.
+
+        Orthography alone cannot distinguish an m-row desiderative from a
+        nominal simile.  The exact nominal source can still be retained as an
+        explicit neutral state when a separately proven wish endpoint and an
+        explicit coexistence connective establish the relation.
+        """
+
+        top_level_fragment = _top_level_text(fragment)
+        if top_level_fragment is None:
+            return False
+        top_level_fragment = top_level_fragment.strip()
+        operators = set(
+            _operator_codes_for_text(
+                top_level_fragment,
+                source_field=source_field,
+            )
+        )
+        return bool(
+            re.search(r"(?<![てで])みたい(?:気持ち|願い)$", top_level_fragment)
+            and owner_scope_is_bound(top_level_fragment)
+            and not operators & {"operator:negation", "operator:refusal"}
+        )
+
+    def m_row_desiderative_constraint_pair(
+        left_fragment: str,
+        right_fragment: str,
+    ) -> bool:
+        """Resolve ambiguous hiragana ``みたい`` from its paired inflection.
+
+        A bare ``Nみたい`` is a simile and remains excluded.  A m-row verb's
+        desiderative and potential-negative forms expose the same source stem
+        (for example ``休みたい`` / ``休めない``).  Requiring that exact
+        cross-clause stem evidence avoids a word list and fails closed when
+        the spelling alone is ambiguous.
+        """
+
+        if (
+            not left_fragment.endswith("みたい")
+            or not owner_scope_is_bound(left_fragment)
+            or not owner_scope_is_bound(right_fragment)
+        ):
+            return False
+        temporal_prefix = re.compile(
+            r"^(?:今日(?:は|も)?|今は|現在は?|この記録では?|少しずつ|まだ)[、,\s]*"
+        )
+        stem = temporal_prefix.sub(
+            "",
+            left_fragment[: -len("みたい")],
+        )
+        right_core = temporal_prefix.sub("", right_fragment)
+        if (
+            not stem
+            or re.fullmatch(r"[ぁ-んァ-ヶ一-龯々〆ヵヶー]+", stem) is None
+            or (
+                len(stem) == 1
+                and re.fullmatch(r"[一-龯々〆ヵヶ]", stem) is None
+            )
+        ):
+            return False
+        return bool(
+            re.fullmatch(
+                rf"{re.escape(stem)}め(?:ない|なかった|なく|ません|ず|ぬ)",
+                right_core,
+            )
+        )
 
     def structurally_performed_action(fragment: str) -> bool:
         argument_match = _ACTION_ARGUMENT_STEM_RE.search(fragment)
@@ -1872,6 +2111,239 @@ def _typed_nucleus_projections_for_span(
                 ),
             ),
         )
+
+    coordinate_links = _top_level_pattern_matches(
+        text,
+        _TOP_LEVEL_COORDINATE_LINK_RE,
+    )
+    contrast_links = _top_level_pattern_matches(
+        text,
+        _TOP_LEVEL_CONTRAST_LINK_RE,
+    )
+    top_level_relation_link_count = len(coordinate_links) + len(contrast_links)
+    coexistence_tails = _top_level_pattern_matches(
+        text,
+        _COEXISTENCE_TAIL_RE,
+    )
+    coexistence_tail = (
+        coexistence_tails[0] if len(coexistence_tails) == 1 else None
+    )
+    if (
+        top_level_relation_link_count == 1
+        and len(coordinate_links) == 1
+        and coexistence_tail is not None
+    ):
+        link = coordinate_links[0]
+        left_start, left_end = trimmed_range(0, link.start())
+        right_start, right_end = trimmed_range(
+            link.end(), coexistence_tail.start()
+        )
+        left_text = text[left_start:left_end]
+        right_text = text[right_start:right_end]
+        left_wish = affirmative_wish(left_text)
+        right_wish = affirmative_wish(right_text)
+        left_state = ambiguous_m_row_nominal_state(left_text)
+        right_state = ambiguous_m_row_nominal_state(right_text)
+        if (
+            left_start < left_end <= link.start()
+            and link.end() <= right_start < right_end
+            and (left_wish or right_wish)
+            and (left_wish or left_state)
+            and (right_wish or right_state)
+        ):
+            dependency = "semantic_dependency:top_level_coexistence"
+            common_codes = (
+                "operator:coexistence",
+                "semantic_role:span_relation_endpoint",
+                "semantic_role:generic_relation_fragment",
+                dependency,
+            )
+            left_codes = (
+                *(("operator:wish", "semantic_role:retained_intention") if left_wish else ()),
+                *common_codes,
+                *(
+                    ("semantic_role:compound_reception_coowned_nonprimary",)
+                    if left_state
+                    else ()
+                ),
+            )
+            right_codes = (
+                *(("operator:wish", "semantic_role:retained_intention") if right_wish else ()),
+                *common_codes,
+                *(
+                    ("semantic_role:compound_reception_coowned_nonprimary",)
+                    if right_state or (left_wish and right_wish)
+                    else ()
+                ),
+            )
+            return (
+                _TypedNucleusProjection(
+                    nucleus_suffix="",
+                    kind="wish" if left_wish else "state",
+                    predicate_kind="wish" if left_wish else "state",
+                    polarity="positive" if left_wish else "neutral",
+                    modality="wish" if left_wish else "fact",
+                    time_scope=_time_scope_for_text(left_text),
+                    scalar_start=left_start,
+                    scalar_end=left_end,
+                    attribute_codes=relation_fragment_codes(
+                        left_start,
+                        left_end,
+                        *left_codes,
+                    ),
+                    relation_kind="coexistence",
+                ),
+                _TypedNucleusProjection(
+                    nucleus_suffix=":coexisting",
+                    kind="wish" if right_wish else "state",
+                    predicate_kind="wish" if right_wish else "state",
+                    polarity="positive" if right_wish else "neutral",
+                    modality="wish" if right_wish else "fact",
+                    time_scope=_time_scope_for_text(right_text),
+                    scalar_start=right_start,
+                    scalar_end=right_end,
+                    attribute_codes=relation_fragment_codes(
+                        right_start,
+                        right_end,
+                        *right_codes,
+                    ),
+                    relation_kind="coexistence",
+                    grounding_kind="user_stated_relation",
+                ),
+            )
+
+    if top_level_relation_link_count == 1 and len(contrast_links) == 1:
+        link = contrast_links[0]
+        left_start, left_end = trimmed_range(0, link.start())
+        right_start, right_end = trimmed_range(link.end(), len(text))
+        left_text = text[left_start:left_end]
+        right_text = text[right_start:right_end]
+        paired_m_row_wish = m_row_desiderative_constraint_pair(
+            left_text,
+            right_text,
+        )
+        left_wish = affirmative_wish(left_text) or paired_m_row_wish
+        # 「が、」 is clause-level only after a finite wish predicate.  A
+        # nominal subject such as 「…気持ちが、」 must not become contrast.
+        conjunctive_ga_is_finite = bool(
+            not link.group(0).startswith("が")
+            or _FINITE_WISH_CLAUSE_END_RE.search(left_text)
+            or paired_m_row_wish
+        )
+        right_top_level = _top_level_text(right_text)
+        if right_top_level is None:
+            return ()
+        right_top_level = right_top_level.strip()
+        right_operators = set(
+            _operator_codes_for_text(
+                right_top_level,
+                source_field=source_field,
+            )
+        )
+        right_uncertain = bool(
+            "operator:uncertainty" in right_operators
+            or _RELATION_UNCERTAINTY_RE.search(right_top_level)
+        )
+
+        def operator_is_endpoint_final(*patterns: re.Pattern[str]) -> bool:
+            """Require a frozen operator plus only finite inflectional tail."""
+
+            return any(
+                re.fullmatch(
+                    r"(?:って|いて|んで)?(?:いる|いた|います|いました)?"
+                    r"(?:い|る|う|ない)?(?:の(?:だ|です)|ん(?:だ|です))?",
+                    right_top_level[match.end() :],
+                )
+                is not None
+                for pattern in patterns
+                for match in pattern.finditer(right_top_level)
+            )
+
+        right_constraint_final = operator_is_endpoint_final(_CONSTRAINT_RE)
+        right_uncertainty_final = operator_is_endpoint_final(
+            _RELATION_UNCERTAINTY_RE,
+            _UNCERTAIN_RE,
+        )
+        right_negated = "operator:negation" in right_operators
+        right_constrained = bool(
+            paired_m_row_wish
+            or (
+                not right_negated
+                and (
+                    (
+                        "operator:constraint" in right_operators
+                        and right_constraint_final
+                    )
+                    or (right_uncertain and right_uncertainty_final)
+                )
+            )
+        )
+        if (
+            left_start < left_end <= link.start()
+            and link.end() <= right_start < right_end
+            and left_wish
+            and conjunctive_ga_is_finite
+            and owner_scope_is_bound(right_top_level)
+            and right_constrained
+        ):
+            dependency = "semantic_dependency:top_level_wish_constraint"
+            left_codes = (
+                "operator:wish",
+                "semantic_role:retained_intention",
+                "semantic_role:span_relation_endpoint",
+                "semantic_role:generic_relation_fragment",
+                dependency,
+            )
+            right_codes = [
+                "operator:constraint",
+                "semantic_role:burden",
+                "semantic_role:span_relation_endpoint",
+                "semantic_role:generic_relation_fragment",
+                "semantic_role:compound_reception_coowned_nonprimary",
+                dependency,
+            ]
+            if right_uncertain:
+                right_codes.append("operator:uncertainty")
+            if right_negated:
+                right_codes.append("operator:negation")
+            return (
+                _TypedNucleusProjection(
+                    nucleus_suffix="",
+                    kind="wish",
+                    predicate_kind="wish",
+                    polarity="positive",
+                    modality="wish",
+                    time_scope=_time_scope_for_text(left_text),
+                    scalar_start=left_start,
+                    scalar_end=left_end,
+                    attribute_codes=relation_fragment_codes(
+                        left_start,
+                        left_end,
+                        *left_codes,
+                    ),
+                    relation_kind="wish_and_constraint",
+                ),
+                _TypedNucleusProjection(
+                    nucleus_suffix=":constraint",
+                    kind="constraint",
+                    predicate_kind="constraint",
+                    polarity=(
+                        "negative"
+                        if right_negated
+                        else "neutral"
+                    ),
+                    modality="uncertain" if right_uncertain else "possibility",
+                    time_scope=_time_scope_for_text(right_text),
+                    scalar_start=right_start,
+                    scalar_end=right_end,
+                    attribute_codes=relation_fragment_codes(
+                        right_start,
+                        right_end,
+                        *right_codes,
+                    ),
+                    relation_kind="wish_and_constraint",
+                ),
+            )
     return ()
 
 
@@ -5131,7 +5603,7 @@ def _final_stage1_typed_nuclei(
                 span,
                 base_frame=nucleus.semantic_frame,
             )
-            if span is not None
+            if span is not None and nucleus.kind != "self_evaluation"
             else ()
         )
         if not projections:
@@ -5154,7 +5626,7 @@ def _final_stage1_typed_nuclei(
                         time_scope=projection.time_scope,
                         attribute_codes=projection.attribute_codes,
                     ),
-                    grounding_kind="explicit",
+                    grounding_kind=projection.grounding_kind,
                     priority=_priority_for_nucleus(
                         span,
                         nucleus.retention,
@@ -5164,12 +5636,27 @@ def _final_stage1_typed_nuclei(
                 )
             )
         if len(projected_ids) == 2:
-            dependency = (
-                "action_supports_change"
-                if projections[0].kind == "action"
+            if (
+                projections[0].kind == "action"
                 and projections[1].kind == "change"
-                else "residue_and_unfinished"
-            )
+            ):
+                dependency = "action_supports_change"
+            elif (
+                projections[0].predicate_kind == "residue"
+                and projections[1].predicate_kind == "unfinished"
+            ):
+                dependency = "residue_and_unfinished"
+            else:
+                relation_kinds = {
+                    projection.relation_kind
+                    for projection in projections
+                    if projection.relation_kind is not None
+                }
+                if len(relation_kinds) != 1:
+                    raise GroundedObservationPlanError(
+                        "typed_projection_relation_binding_invalid"
+                    )
+                dependency = next(iter(relation_kinds))
             compound_dependencies.append(
                 (dependency, projected_ids[0], projected_ids[1])
             )
@@ -5296,14 +5783,33 @@ def _final_stage1_typed_relations(
         )
 
     for dependency, left_id, right_id in compound_dependencies:
-        if dependency != "action_supports_change":
+        if dependency == "residue_and_unfinished":
             continue
         left = nucleus_index[left_id]
         right = nucleus_index[right_id]
+        relation_type: RelationKind = dependency  # type: ignore[assignment]
+        if relation_type not in {
+            "action_supports_change",
+            "coexistence",
+            "wish_and_constraint",
+        }:
+            raise GroundedObservationPlanError(
+                "typed_projection_relation_binding_invalid"
+            )
+        source_relation_id = (
+            "typed_projection:perfective_action_before_bounded_change"
+            if relation_type == "action_supports_change"
+            else "typed_projection:top_level_connective"
+        )
+        source_arc_key = (
+            "compound_span:action_before_change"
+            if relation_type == "action_supports_change"
+            else "compound_span:top_level_relation"
+        )
         rows.append(
             GroundedSemanticRelation(
                 relation_id="",
-                type="action_supports_change",
+                type=relation_type,
                 from_nucleus_id=left_id,
                 to_nucleus_id=right_id,
                 source_span_ids=left.source_span_ids,
@@ -5313,15 +5819,11 @@ def _final_stage1_typed_relations(
                     left_id,
                     right_id,
                     nucleus_index,
-                    relation_type="action_supports_change",
+                    relation_type=relation_type,
                     grounding_kind="user_stated_relation",
                 ),
-                source_relation_ids=(
-                    "typed_projection:perfective_action_before_bounded_change",
-                ),
-                source_meaning_arc_keys=(
-                    "compound_span:action_before_change",
-                ),
+                source_relation_ids=(source_relation_id,),
+                source_meaning_arc_keys=(source_arc_key,),
             )
         )
 

@@ -1379,6 +1379,70 @@ def _owner_for_relation(source: AdmittedTextSource, relation: Any) -> str:
     return owners[0]
 
 
+def _cmee_typed_relation_fragment_value(
+    nucleus: Any,
+    raw_value: str,
+) -> str | None:
+    """Return an exact source slice only for the new typed relation child."""
+
+    attributes = tuple(getattr(nucleus.semantic_frame, "attribute_codes", ()))
+    scalar_rows = tuple(
+        code
+        for code in attributes
+        if isinstance(code, str)
+        and code.startswith("source_fragment_scalar_range:")
+    )
+    source_rows = tuple(
+        code
+        for code in attributes
+        if isinstance(code, str)
+        and code.startswith("source_fragment_scalar_source:")
+    )
+    legacy_scalar_rows = tuple(
+        code
+        for code in attributes
+        if isinstance(code, str)
+        and code.startswith(
+            ("surface_scalar_range:", "surface_scalar_source:")
+        )
+    )
+    marker_rows = tuple(
+        code
+        for code in attributes
+        if code == "semantic_role:generic_relation_fragment"
+    )
+    if not marker_rows:
+        if scalar_rows or source_rows:
+            raise CMEEVerticalError("typed_fragment_scalar_range_invalid")
+        return None
+    if (
+        len(marker_rows) != 1
+        or len(scalar_rows) != 1
+        or source_rows
+        != ("source_fragment_scalar_source:normalized_raw_text",)
+        or legacy_scalar_rows
+    ):
+        raise CMEEVerticalError("typed_fragment_scalar_range_invalid")
+    parts = scalar_rows[0].split(":")
+    if len(parts) != 3:
+        raise CMEEVerticalError("typed_fragment_scalar_range_invalid")
+    try:
+        start, end = int(parts[1]), int(parts[2])
+    except (IndexError, ValueError):
+        raise CMEEVerticalError("typed_fragment_scalar_range_invalid") from None
+    normalized = re.sub(
+        r"\s+",
+        " ",
+        str(raw_value or "").replace("\u3000", " "),
+    ).strip()
+    if not (0 <= start < end <= len(normalized)):
+        raise CMEEVerticalError("typed_fragment_scalar_range_invalid")
+    fragment = normalized[start:end]
+    if not fragment or fragment != fragment.strip():
+        raise CMEEVerticalError("typed_fragment_scalar_range_invalid")
+    return fragment
+
+
 def _cmee_tentative_state_core(text: str) -> str:
     """Remove only the typed tentative-state shell from a source role."""
 
@@ -1904,7 +1968,15 @@ def _build_graph(
             for span in source.evidence_spans
             if str(getattr(span, "span_id", "") or "") in set(nucleus.source_span_ids)
         )
-        value = _cmee_frozen_lexical_role_surface(nucleus, raw_value)
+        typed_fragment = _cmee_typed_relation_fragment_value(
+            nucleus,
+            raw_value,
+        )
+        value = (
+            typed_fragment
+            if typed_fragment is not None
+            else _cmee_frozen_lexical_role_surface(nucleus, raw_value)
+        )
         nodes.append(
             MeaningNode(
                 node_id=node_id,

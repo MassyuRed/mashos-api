@@ -1566,6 +1566,9 @@ def project_subjective_meaning_plan(
         )
     claim_specs.append((SubjectiveContentKind.APPRAISAL, appraisal, (focus.contribution_id,)))
 
+    position_spec: Optional[
+        tuple[SubjectiveContentKind, Any, tuple[str, ...]]
+    ] = None
     if unfinished or direction:
         target = unfinished or direction
         stance_basis = _selected_basis(basis_rows, (target.contribution_id,))
@@ -1577,7 +1580,11 @@ def project_subjective_meaning_plan(
             RelationalCommitment.HOLD_OPEN if unfinished else RelationalCommitment.PROTECT_AGENCY,
             RelationalClosure.OPEN if unfinished else RelationalClosure.BOUNDED,
         )
-        claim_specs.append((SubjectiveContentKind.RELATIONAL_POSITION, position, (target.contribution_id,)))
+        position_spec = (
+            SubjectiveContentKind.RELATIONAL_POSITION,
+            position,
+            (target.contribution_id,),
+        )
 
     visible_principles: list[str] = []
     for act in phase_A.retained_reception_act_rows:
@@ -1594,6 +1601,55 @@ def project_subjective_meaning_plan(
             )
         )
     visible_principles = list(_unique(visible_principles))
+
+    absorb_generic_relation_position = False
+    if (
+        position_spec is not None
+        and direction is not None
+        and noncollapse is not None
+        and appraisal.dimension is AppraisalDimension.RELATIONAL_NONCOLLAPSE
+        and appraisal.operation is AppraisalOperation.PRESERVE_BOTH_ENDPOINTS
+        and position_spec[1].stance_operator
+        is StanceOperator.PROTECT_USER_AGENCY
+        and set(direction.semantic_refs).issubset(noncollapse.semantic_refs)
+        and {
+            MaterialRisk.WISH_TO_OBLIGATION,
+            MaterialRisk.REMOVE_USER_AGENCY,
+        }.issubset(
+            {
+                _RISK_BY_PRINCIPLE[principle]
+                for principle in visible_principles
+            }
+        )
+    ):
+        relation_candidate_ref = contribution_candidate.get(
+            noncollapse.contribution_id
+        )
+        endpoint_candidate_refs = tuple(
+            row.endpoint_grounded_candidate_ref
+            for row in phase_A.relation_endpoint_grounded_candidate_ref_by_binding_key
+            if row.relation_candidate_ref == relation_candidate_ref
+        )
+        frame_by_candidate_ref = {
+            row.candidate_ref: row.grounded_frame
+            for row in phase_A.resolved_grounded_frame_by_candidate_ref
+        }
+        endpoint_frames = tuple(
+            frame_by_candidate_ref.get(ref)
+            for ref in endpoint_candidate_refs
+        )
+        absorb_generic_relation_position = bool(
+            len(endpoint_candidate_refs) == 2
+            and len(set(endpoint_candidate_refs)) == 2
+            and all(
+                frame is not None
+                and "semantic_role:generic_relation_fragment"
+                in tuple(getattr(frame, "attribute_codes", ()))
+                for frame in endpoint_frames
+            )
+        )
+    if position_spec is not None and not absorb_generic_relation_position:
+        claim_specs.append(position_spec)
 
     affect_category = (
         AffectCategory.RELIEF
@@ -3336,6 +3392,88 @@ def _relation_endpoint_particle(carrier: str) -> str:
     return "は"
 
 
+def _generic_relation_fragment_clause(
+    endpoint_object: str,
+    carrier: str,
+    frame: Any,
+) -> Optional[str]:
+    """Join a typed source fragment to its role-local scalar carrier.
+
+    The final grounding projection marks only exact source slices admitted as
+    local relation endpoints.  This branch may adjust their nominalizer and
+    particle, but it never chooses a relation, endpoint, or semantic scalar.
+    """
+
+    attributes = tuple(getattr(frame, "attribute_codes", ()))
+    if "semantic_role:generic_relation_fragment" not in attributes:
+        return None
+    quoted = _quoted_source_object(endpoint_object)
+    modality = str(getattr(frame, "modality", ""))
+    polarity = str(getattr(frame, "polarity", ""))
+    if modality == "wish" and polarity == "positive":
+        continuing = carrier.endswith("今も残り")
+        if quoted.endswith(("気持ち」", "願い」")):
+            return "".join(
+                (quoted, "が今も残り" if continuing else "があり")
+            )
+        return "".join(
+            (
+                quoted,
+                "という願いが今も残り" if continuing else "という願いがあり",
+            )
+        )
+    if (
+        str(getattr(frame, "predicate_kind", "")) == "state"
+        and modality == "fact"
+        and polarity == "neutral"
+        and quoted.endswith(("気持ち」", "願い」"))
+    ):
+        return "".join((quoted, "があり"))
+    if modality == "uncertain" and carrier == "不確かさも残り":
+        return "".join((endpoint_object, "には不確かさが残り"))
+    if (
+        str(getattr(frame, "predicate_kind", "")) == "constraint"
+        and modality == "possibility"
+    ):
+        return "".join((quoted, "という制約があり"))
+    if carrier and (
+        polarity == "negative" or modality == "possibility"
+    ):
+        return "".join((endpoint_object, "には", carrier))
+    return None
+
+
+def _generic_relation_fragment_response_object(
+    expression: ResponseObjectExpression,
+    object_surface: str,
+    owner: Any,
+    phase_B: Stage1SurfaceCompositionInputs,
+) -> Optional[str]:
+    """Drop only a redundant nominalizer from an admitted nominal wish.
+
+    The response-object identity, its scalar axes and its source slice are
+    already fixed upstream.  This is therefore a grammatical join over the
+    generic relation-fragment marker, not a lexical or case-family choice.
+    """
+
+    if (
+        expression.expression_mode is not ResponseObjectExpressionMode.EXPLICIT
+        or len(expression.basis_semantic_refs) != 1
+    ):
+        return None
+    semantic_ref = expression.basis_semantic_refs[0]
+    frame = _frame_for_semantic_ref(owner, semantic_ref, phase_B)
+    if (
+        "semantic_role:generic_relation_fragment"
+        not in tuple(getattr(frame, "attribute_codes", ()))
+        or str(getattr(frame, "modality", "")) != "wish"
+        or str(getattr(frame, "polarity", "")) != "positive"
+    ):
+        return None
+    quoted = _quoted_source_object(object_surface)
+    return quoted if quoted.endswith(("気持ち」", "願い」")) else None
+
+
 def _surface_for_plan(
     duty: CompositionDutyView,
     plan: ClausePlan,
@@ -3375,13 +3513,17 @@ def _surface_for_plan(
         if len(relation_rows) != 1:
             raise Stage1CompositionError("STAGE1_RELATION_MORPHOLOGY_STOP")
         relation = relation_rows[0]
-        endpoint_objects = tuple(
-            _source_expression(
-                ref,
-                phase_B,
-                _frame_for_semantic_ref(owner, ref, phase_B),
-            )
+        endpoint_frames = tuple(
+            _frame_for_semantic_ref(owner, ref, phase_B)
             for ref in expression.basis_semantic_refs
+        )
+        endpoint_objects = tuple(
+            _source_expression(ref, phase_B, frame)
+            for ref, frame in zip(
+                expression.basis_semantic_refs,
+                endpoint_frames,
+                strict=True,
+            )
         )
         scalar_by_role = _functional_surface_lexemes_by_role(plan)
         endpoint_roles = _unique(
@@ -3403,6 +3545,28 @@ def _surface_for_plan(
             RelationOperator.TEMPORALLY_PRECEDES,
             RelationOperator.ACTION_PRECEDES_CHANGE,
         }:
+            right_attributes = tuple(
+                getattr(endpoint_frames[1], "attribute_codes", ())
+            )
+            source_visible_action_residue = bool(
+                owner.semantic_operator is SemanticOperator.PRESENT_RESIDUE
+                and "operator:residue" in right_attributes
+                and any(
+                    code.startswith("surface_scalar_range:")
+                    for code in right_attributes
+                )
+            )
+            if source_visible_action_residue:
+                return "".join(
+                    (
+                        endpoint_objects[0],
+                        "のあとにも",
+                        comma,
+                        _quoted_source_object(endpoint_objects[1]),
+                        "という状態があります",
+                        terminal,
+                    )
+                )
             left_clause = (
                 "".join(
                     (
@@ -3438,40 +3602,64 @@ def _surface_for_plan(
             RelationOperator.COEXISTS_WITH,
             RelationOperator.TENSION_WITH,
         } and (left_carrier or right_carrier):
+            generic_endpoint_flags = tuple(
+                "semantic_role:generic_relation_fragment"
+                in tuple(getattr(frame, "attribute_codes", ()))
+                for frame in endpoint_frames
+            )
+            if any(generic_endpoint_flags) and not all(generic_endpoint_flags):
+                raise Stage1CompositionError(
+                    "STAGE1_GENERIC_RELATION_FRAGMENT_CARDINALITY_STOP"
+                )
+
+            def endpoint_clause(index: int, carrier: str) -> str:
+                generic = _generic_relation_fragment_clause(
+                    endpoint_objects[index],
+                    carrier,
+                    endpoint_frames[index],
+                )
+                if generic is not None:
+                    return generic
+                if all(generic_endpoint_flags):
+                    raise Stage1CompositionError(
+                        "STAGE1_GENERIC_RELATION_FRAGMENT_SCALAR_STOP"
+                    )
+                return "".join(
+                    (
+                        endpoint_objects[index],
+                        (
+                            "には"
+                            if "が" in carrier
+                            else "は"
+                            if carrier
+                            else "が"
+                        ),
+                        carrier or "あり",
+                    )
+                )
+
             endpoint_clauses = (
-                "".join(
-                    (
-                        endpoint_objects[0],
-                        (
-                            "には"
-                            if "が" in left_carrier
-                            else "は"
-                            if left_carrier
-                            else "が"
-                        ),
-                        left_carrier or "あり",
+                endpoint_clause(0, left_carrier),
+                endpoint_clause(1, right_carrier),
+            )
+            relation_predicate_lexemes = tuple(
+                value
+                for value in expression_asset.predicate_lexemes
+                if not (
+                    all(generic_endpoint_flags)
+                    and value == "今もあり"
+                    and any(
+                        clause.endswith(("があり", "が残り"))
+                        for clause in endpoint_clauses
                     )
-                ),
-                "".join(
-                    (
-                        endpoint_objects[1],
-                        (
-                            "には"
-                            if "が" in right_carrier
-                            else "は"
-                            if right_carrier
-                            else "が"
-                        ),
-                        right_carrier or "あり",
-                    )
-                ),
+                )
             )
             return "".join(
                 (
                     comma.join(
                         (
                             *endpoint_clauses,
-                            *expression_asset.predicate_lexemes,
+                            *relation_predicate_lexemes,
                         )
                     ),
                     terminal,
@@ -3509,6 +3697,14 @@ def _surface_for_plan(
         )
     object_surface = objects[0]
     if plan.semantic_clause_kind is SemanticClauseKind.SUBJECTIVE_PREDICATE:
+        generic_object_surface = _generic_relation_fragment_response_object(
+            expression,
+            object_surface,
+            owner,
+            phase_B,
+        )
+        if generic_object_surface is not None:
+            object_surface = generic_object_surface
         emlis_subject = (
             "".join(
                 (
@@ -3526,6 +3722,65 @@ def _surface_for_plan(
                 "".join(expression_asset.predicate_lexemes),
             )
         )
+        generic_relation_frames = tuple(
+            _frame_for_semantic_ref(owner, ref, phase_B)
+            for ref in expression.basis_semantic_refs
+        )
+        generic_relation_exact2 = bool(
+            len(generic_relation_frames) == 2
+            and all(
+                "semantic_role:generic_relation_fragment"
+                in tuple(getattr(frame, "attribute_codes", ()))
+                for frame in generic_relation_frames
+            )
+        )
+        proposition = _prop(owner)
+        if (
+            generic_relation_exact2
+            and proposition.content_kind is SubjectiveContentKind.APPRAISAL
+            and proposition.appraisal_content is not None
+            and proposition.appraisal_content.dimension
+            is AppraisalDimension.RELATIONAL_NONCOLLAPSE
+            and proposition.appraisal_content.operation
+            is AppraisalOperation.PRESERVE_BOTH_ENDPOINTS
+        ):
+            return "".join(
+                (
+                    emlis_subject,
+                    comma if emlis_subject else "",
+                    "どちらか一方に絞らず",
+                    comma,
+                    "その両方を大切に受け止めたいです",
+                    terminal,
+                )
+            )
+        if (
+            generic_relation_exact2
+            and proposition.content_kind
+            is SubjectiveContentKind.MATERIAL_VALUE
+            and proposition.material_value_content is not None
+            and {
+                MaterialRisk.WISH_TO_OBLIGATION,
+                MaterialRisk.REMOVE_USER_AGENCY,
+            }.issubset(
+                {
+                    application.material_risk
+                    for application in proposition.material_value_content.value_applications
+                }
+            )
+        ):
+            return "".join(
+                (
+                    emlis_subject,
+                    comma if emlis_subject else "",
+                    "その両方を",
+                    comma,
+                    "決めつけたり義務に変えたりせず",
+                    comma,
+                    "大切にしたいです",
+                    terminal,
+                )
+            )
         if plan.predicate_valency is PredicateValency.TRIADIC_ACTOR_TARGET_BOUNDARY:
             if (
                 expression.expression_mode
@@ -3563,6 +3818,36 @@ def _surface_for_plan(
                 terminal,
             )
         )
+    if (
+        duty.sentence_job is SentenceJob.PRESERVE_RESIDUE_OR_UNFINISHED
+        and len(expression.basis_semantic_refs) == 1
+    ):
+        source_frame = _frame_for_semantic_ref(
+            owner,
+            expression.basis_semantic_refs[0],
+            phase_B,
+        )
+        source_attributes = tuple(
+            getattr(source_frame, "attribute_codes", ())
+        )
+        if (
+            "operator:uncertainty" in source_attributes
+            and "operator:unfinished" in source_attributes
+            and str(getattr(source_frame, "modality", "")) == "uncertain"
+            and any(
+                code.startswith("surface_scalar_range:")
+                for code in source_attributes
+            )
+        ):
+            return "".join(
+                (
+                    object_surface,
+                    particles[ClauseArgumentRole.SUBJECT],
+                    comma,
+                    "".join(expression_asset.predicate_lexemes),
+                    terminal,
+                )
+            )
     return "".join(
         (
             object_surface,

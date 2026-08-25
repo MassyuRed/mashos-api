@@ -18,6 +18,7 @@ from unittest.mock import patch
 
 from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
 from emlis_ai_evidence_ledger_service import build_evidence_span_resolver
+import emlis_ai_grounded_observation_plan as grounded_plan_module
 from emlis_ai_grounded_observation_plan import (
     build_final_stage1_grounded_observation_plan,
     build_grounded_observation_plan,
@@ -8492,6 +8493,628 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                         "REQUIRED",
                     )
 
+    def test_public_generic_relation_recognizer_is_bounded_and_preserves_priority(
+        self,
+    ) -> None:
+        public_cases = (
+            (
+                PUBLIC_NONSECRET_EARLY_STANDIN_EXACT4[0],
+                ("state", "wish"),
+                ("explicit", "user_stated_relation"),
+                ("休みたい気持ち", "もう少し進めたい気持ち"),
+                "coexistence",
+                (
+                    "「休みたい気持ち」があり",
+                    "「もう少し進めたい気持ち」があり",
+                    "どちらか一方に絞らず",
+                ),
+                (
+                    "気持ち」ということ",
+                    "選べる向き",
+                    "決めつけたり義務に変えたりせず",
+                ),
+            ),
+            (
+                PUBLIC_NONSECRET_EARLY_STANDIN_EXACT4[2],
+                ("wish", "constraint"),
+                ("explicit", "explicit"),
+                ("少し話を聞いてほしい", "今声をかけてよいか迷っている"),
+                "wish_and_constraint",
+                (
+                    "「少し話を聞いてほしい」という願いがあり",
+                    "「今声をかけてよいか迷っている」ということには不確かさが残り",
+                    "どちらか一方に絞らず",
+                    "決めつけたり義務に変えたりせず",
+                ),
+                ("不確かさも残り", "選べる向き"),
+            ),
+        )
+        recognizer_source = inspect.getsource(
+            grounded_plan_module._typed_nucleus_projections_for_span
+        )
+        self.assertEqual(
+            tuple(
+                inspect.signature(
+                    grounded_plan_module._typed_nucleus_projections_for_span
+                ).parameters
+            ),
+            ("span", "base_frame"),
+        )
+        self.assertTrue(
+            all(
+                forbidden not in recognizer_source
+                for forbidden in (
+                    "case_id",
+                    "structural_family",
+                    *(row[1] for row in PUBLIC_NONSECRET_EARLY_STANDIN_EXACT4),
+                )
+            )
+        )
+
+        for (
+            label,
+            memo,
+            category,
+            emotion,
+            strength,
+        ), expected_kinds, expected_groundings, expected_values, expected_relation, expected_surface, rejected_surface in (
+            public_cases
+        ):
+            with self.subTest(public_structure=label):
+                (
+                    source,
+                    grounded_plan,
+                    graph,
+                    _parent_plan,
+                    _projection,
+                    _phase_a,
+                    subjective_plan,
+                    phase_b,
+                ) = _final_stage1_composition_inputs(
+                    _request(
+                        record_id=f"stage2-public-relation-{label}",
+                        memo=memo,
+                        category=category,
+                        emotion=emotion,
+                        strength=strength,
+                    )
+                )
+                typed = tuple(
+                    row
+                    for row in grounded_plan.nuclei
+                    if "semantic_role:generic_relation_fragment"
+                    in row.semantic_frame.attribute_codes
+                )
+                self.assertEqual(len(typed), 2)
+                self.assertEqual(tuple(row.kind for row in typed), expected_kinds)
+                self.assertEqual(
+                    tuple(row.grounding_kind for row in typed),
+                    expected_groundings,
+                )
+                self.assertEqual(len({row.source_span_ids for row in typed}), 1)
+                self.assertEqual(len(typed[0].source_span_ids), 1)
+
+                source_span = next(
+                    row
+                    for row in source.evidence_spans
+                    if row.span_id == typed[0].source_span_ids[0]
+                )
+                normalized_source = re.sub(
+                    r"\s+",
+                    " ",
+                    str(source_span.raw_text or "").replace("\u3000", " "),
+                ).strip()
+                actual_values: list[str] = []
+                typed_node_ids: list[str] = []
+                for row in typed:
+                    scalar_rows = tuple(
+                        code
+                        for code in row.semantic_frame.attribute_codes
+                        if code.startswith("source_fragment_scalar_range:")
+                    )
+                    self.assertEqual(len(scalar_rows), 1)
+                    self.assertIn(
+                        "source_fragment_scalar_source:normalized_raw_text",
+                        row.semantic_frame.attribute_codes,
+                    )
+                    self.assertFalse(
+                        any(
+                            code.startswith("surface_scalar_range:")
+                            for code in row.semantic_frame.attribute_codes
+                        )
+                    )
+                    _prefix, start_text, end_text = scalar_rows[0].rsplit(":", 2)
+                    start, end = int(start_text), int(end_text)
+                    actual_values.append(normalized_source[start:end])
+                    typed_node_ids.append(
+                        emlis_v1a_module._stable_id(
+                            "mn",
+                            source.envelope.envelope_id,
+                            row.nucleus_id,
+                        )
+                    )
+                self.assertEqual(tuple(actual_values), expected_values)
+
+                graph_nodes = {row.node_id: row for row in graph.nodes}
+                self.assertEqual(
+                    tuple(graph_nodes[node_id].value for node_id in typed_node_ids),
+                    expected_values,
+                )
+                relations = tuple(
+                    row
+                    for row in grounded_plan.relations
+                    if row.source_relation_ids
+                    == ("typed_projection:top_level_connective",)
+                )
+                self.assertEqual(len(relations), 1)
+                relation = relations[0]
+                self.assertEqual(relation.type, expected_relation)
+                self.assertEqual(
+                    (relation.from_nucleus_id, relation.to_nucleus_id),
+                    tuple(row.nucleus_id for row in typed),
+                )
+                graph_edges = tuple(
+                    row for row in graph.edges if row.relation == expected_relation
+                )
+                self.assertEqual(len(graph_edges), 1)
+                self.assertEqual(
+                    (
+                        graph_edges[0].source_node_id,
+                        graph_edges[0].target_node_id,
+                    ),
+                    tuple(typed_node_ids),
+                )
+                result = stage1_composition_module.compose_stage1_from_projection(
+                    phase_b
+                )
+                actual_japanese = "\n".join(
+                    unit.text for unit in result.selected_candidate.sentence_units
+                )
+                self.assertTrue(
+                    all(value in actual_japanese for value in expected_surface)
+                )
+                self.assertTrue(
+                    all(value not in actual_japanese for value in rejected_surface)
+                )
+                self.assertEqual(
+                    tuple(
+                        claim.asserted_subjective_proposition.content_kind
+                        for claim in subjective_plan.subjective_claim_rows
+                    ),
+                    (
+                        (SubjectiveContentKind.APPRAISAL,)
+                        if label == "tension"
+                        else (
+                            SubjectiveContentKind.APPRAISAL,
+                            SubjectiveContentKind.MATERIAL_VALUE,
+                        )
+                    ),
+                )
+
+                tampered_codes = tuple(
+                    f"{code}:tamper"
+                    if code.startswith("source_fragment_scalar_range:")
+                    else code
+                    for code in typed[0].semantic_frame.attribute_codes
+                )
+                tampered_nucleus = replace(
+                    typed[0],
+                    semantic_frame=replace(
+                        typed[0].semantic_frame,
+                        attribute_codes=tampered_codes,
+                    ),
+                )
+                with self.assertRaisesRegex(
+                    emlis_v1a_module.CMEEVerticalError,
+                    "typed_fragment_scalar_range_invalid",
+                ):
+                    emlis_v1a_module._cmee_typed_relation_fragment_value(
+                        tampered_nucleus,
+                        normalized_source,
+                    )
+                stripped_marker_nucleus = replace(
+                    typed[0],
+                    semantic_frame=replace(
+                        typed[0].semantic_frame,
+                        attribute_codes=tuple(
+                            code
+                            for code in typed[0].semantic_frame.attribute_codes
+                            if code
+                            != "semantic_role:generic_relation_fragment"
+                        ),
+                    ),
+                )
+                with self.assertRaisesRegex(
+                    emlis_v1a_module.CMEEVerticalError,
+                    "typed_fragment_scalar_range_invalid",
+                ):
+                    emlis_v1a_module._cmee_typed_relation_fragment_value(
+                        stripped_marker_nucleus,
+                        normalized_source,
+                    )
+                duplicate_marker_nucleus = replace(
+                    typed[0],
+                    semantic_frame=replace(
+                        typed[0].semantic_frame,
+                        attribute_codes=(
+                            *typed[0].semantic_frame.attribute_codes,
+                            "semantic_role:generic_relation_fragment",
+                        ),
+                    ),
+                )
+                with self.assertRaisesRegex(
+                    emlis_v1a_module.CMEEVerticalError,
+                    "typed_fragment_scalar_range_invalid",
+                ):
+                    emlis_v1a_module._cmee_typed_relation_fragment_value(
+                        duplicate_marker_nucleus,
+                        normalized_source,
+                    )
+                legacy_collision_nucleus = replace(
+                    typed[0],
+                    semantic_frame=replace(
+                        typed[0].semantic_frame,
+                        attribute_codes=(
+                            *typed[0].semantic_frame.attribute_codes,
+                            "surface_scalar_range:0:1",
+                            "surface_scalar_source:normalized_raw_text",
+                        ),
+                    ),
+                )
+                with self.assertRaisesRegex(
+                    emlis_v1a_module.CMEEVerticalError,
+                    "typed_fragment_scalar_range_invalid",
+                ):
+                    emlis_v1a_module._cmee_typed_relation_fragment_value(
+                        legacy_collision_nucleus,
+                        normalized_source,
+                    )
+
+        negative_cases = (
+            "「休みたいが、今声をかけてよいか迷っている」と記録した。",
+            "（休みたいが、今声をかけてよいか迷っている）と書いた。",
+            '"休みたいが、今声をかけてよいか迷っている"と記録した。',
+            "休みたいが、進めたいが、まだ迷っている。",
+            "休みたいが、進めたい気持ちと、戻りたい気持ちが同時にある。",
+            "花みたい気持ちと、雪みたい気持ちが同時にある。",
+            "花みたいが、今は決まっていない。",
+            "休みたい気持ちはないが、今声をかけてよいか迷っている。",
+            "少し話を聞いてほしい気持ちが、今はない。",
+            "弟は休みたいが、今は休めない。",
+            "休みたいが、「今は休めない」と記録した。",
+            "休みたいが、弟は休めない。",
+            "話したいが、弟は話せない。",
+            "相談したいが、「今は難しい」と記録した。",
+            "話を聞いてほしい人と、相談してほしい人が同時にいる。",
+            "弟の休みたい気持ちと、妹の進めたい気持ちが同時にある。",
+            "今日の弟の休みたい気持ちと、今日の妹の進めたい気持ちが同時にある。",
+            "今日は弟が休みたい願いと、今は妹が進めたい願いが同時にある。",
+            "今の弟の休みたい気持ちと、今の妹の進めたい気持ちが同時にある。",
+            "今は弟の休みたい気持ちと、今は妹の進めたい気持ちが同時にある。",
+            "弟も休みたい気持ちと、妹も進めたい気持ちが同時にある。",
+            "彼女も相談したいが、今は難しい。",
+            "相談したいが、今は難しいと弟が言った。",
+            "相談したいが、今は弟にとって難しい。",
+            "相談したいが、今は弟には難しい。",
+            "相談したいが、私は弟には難しい。",
+            "相談したいが、私は弟にとって難しい。",
+            "相談したいが、私は弟の都合が難しい。",
+            "私は弟の休みたい気持ちと、私は妹の進めたい気持ちが同時にある。",
+            "少し話を聞いてほしいが、今声をかけてよいか迷っていない。",
+            "相談したいが、ためらっていない。",
+            "相談したいが、今は難しくない。",
+            "相談したいが、難しい本を読んだ。",
+            "相談したいが、迷っている弟を待った。",
+            "相談したいが、今は難しい本を読んでいる。",
+            "相談したいが、できない理由を調べた。",
+            "相談したいが、無理な計画を見直した。",
+            "〈休みたいが、今声をかけてよいか迷っている〉と記録した。",
+            "《休みたいが、今声をかけてよいか迷っている》と記録した。",
+            "〔休みたいが、今声をかけてよいか迷っている〕と記録した。",
+            "〝休みたいが、今声をかけてよいか迷っている〟と記録した。",
+        )
+        for index, memo in enumerate(negative_cases, start=1):
+            with self.subTest(negative_shape=index):
+                source = freeze_text_source(
+                    _request(
+                        record_id=f"stage2-relation-negative-{index}",
+                        memo=memo,
+                    )
+                )
+                grounded_plan = build_final_stage1_grounded_observation_plan(
+                    source.normalized_current_input,
+                    evidence_spans=source.evidence_spans,
+                )
+                self.assertFalse(
+                    any(
+                        "semantic_role:generic_relation_fragment"
+                        in row.semantic_frame.attribute_codes
+                        for row in grounded_plan.nuclei
+                    )
+                )
+
+        mixed_ambiguity_cases = (
+            (
+                "花みたい気持ちと、進めたい気持ちが同時にある。",
+                ("state", "wish"),
+                0,
+            ),
+            (
+                "進めたい気持ちと、花みたい気持ちが同時にある。",
+                ("wish", "state"),
+                1,
+            ),
+            (
+                "鉛みたい気持ちと、相談してほしい願いが同時にある。",
+                ("state", "wish"),
+                0,
+            ),
+        )
+        for index, (memo, expected_kinds, neutral_index) in enumerate(
+            mixed_ambiguity_cases,
+            start=1,
+        ):
+            with self.subTest(mixed_ambiguity=index):
+                (
+                    _source,
+                    grounded_plan,
+                    _graph,
+                    _parent_plan,
+                    _projection,
+                    _phase_a,
+                    _subjective_plan,
+                    phase_b,
+                ) = _final_stage1_composition_inputs(
+                    _request(
+                        record_id=f"stage2-relation-mixed-ambiguity-{index}",
+                        memo=memo,
+                    )
+                )
+                typed = tuple(
+                    row
+                    for row in grounded_plan.nuclei
+                    if "semantic_role:generic_relation_fragment"
+                    in row.semantic_frame.attribute_codes
+                )
+                self.assertEqual(tuple(row.kind for row in typed), expected_kinds)
+                neutral = typed[neutral_index]
+                self.assertEqual(
+                    (
+                        neutral.semantic_frame.predicate_kind,
+                        neutral.semantic_frame.polarity,
+                        neutral.semantic_frame.modality,
+                    ),
+                    ("state", "neutral", "fact"),
+                )
+                self.assertNotIn(
+                    "operator:wish",
+                    neutral.semantic_frame.attribute_codes,
+                )
+                self.assertNotIn(
+                    "semantic_role:retained_intention",
+                    neutral.semantic_frame.attribute_codes,
+                )
+                self.assertIn(
+                    "semantic_role:compound_reception_coowned_nonprimary",
+                    neutral.semantic_frame.attribute_codes,
+                )
+                self.assertNotIn(
+                    "semantic_role:compound_reception_coowned_nonprimary",
+                    typed[1 - neutral_index].semantic_frame.attribute_codes,
+                )
+                relations = tuple(
+                    row
+                    for row in grounded_plan.relations
+                    if row.source_relation_ids
+                    == ("typed_projection:top_level_connective",)
+                )
+                self.assertEqual(len(relations), 1)
+                self.assertEqual(relations[0].type, "coexistence")
+                result = stage1_composition_module.compose_stage1_from_projection(
+                    phase_b
+                )
+                actual_japanese = "\n".join(
+                    unit.text for unit in result.selected_candidate.sentence_units
+                )
+                self.assertIn("みたい", actual_japanese)
+
+        for index, memo in enumerate(
+            (
+                "話を聞いてほしいが、私は駄目だと思う。",
+                "話したいが、自分なんて役に立たない。",
+            ),
+            start=1,
+        ):
+            with self.subTest(self_denial_priority=index):
+                (
+                    _source,
+                    grounded_plan,
+                    _graph,
+                    _parent_plan,
+                    _projection,
+                    _phase_a,
+                    _subjective_plan,
+                    phase_b,
+                ) = _final_stage1_composition_inputs(
+                    _request(
+                        record_id=f"stage2-relation-self-denial-{index}",
+                        memo=memo,
+                    )
+                )
+                self.assertFalse(
+                    any(
+                        "semantic_role:generic_relation_fragment"
+                        in row.semantic_frame.attribute_codes
+                        for row in grounded_plan.nuclei
+                        if row.kind == "self_evaluation"
+                    )
+                )
+                result = stage1_composition_module.compose_stage1_from_projection(
+                    phase_b
+                )
+                self.assertTrue(result.selected_candidate.sentence_units)
+                self.assertFalse(
+                    any(
+                        "typed_projection:top_level_connective"
+                        in row.source_relation_ids
+                        for row in grounded_plan.relations
+                    )
+                )
+
+        for index, (memo, expected_constraint_surface) in enumerate(
+            (
+                ("休みたいが、今は休めない。", "制約があり"),
+                ("飲みたいが、今は飲めない。", "制約があり"),
+                ("読みたいが、今は読めない。", "制約があり"),
+                (
+                    "穏やかに過ごせることを願っているけれど、今は難しい。",
+                    "制約があり",
+                ),
+            ),
+            start=1,
+        ):
+            with self.subTest(m_row_desiderative=index):
+                (
+                    _source,
+                    grounded_plan,
+                    _graph,
+                    _parent_plan,
+                    _projection,
+                    _phase_a,
+                    _subjective_plan,
+                    phase_b,
+                ) = _final_stage1_composition_inputs(
+                    _request(
+                        record_id=f"stage2-relation-m-row-{index}",
+                        memo=memo,
+                    )
+                )
+                typed = tuple(
+                    row
+                    for row in grounded_plan.nuclei
+                    if "semantic_role:generic_relation_fragment"
+                    in row.semantic_frame.attribute_codes
+                )
+                self.assertEqual(len(typed), 2)
+                self.assertEqual(
+                    tuple(row.kind for row in typed),
+                    ("wish", "constraint"),
+                )
+                relations = tuple(
+                    row
+                    for row in grounded_plan.relations
+                    if row.type == "wish_and_constraint"
+                    and row.source_relation_ids
+                    == ("typed_projection:top_level_connective",)
+                )
+                self.assertEqual(len(relations), 1)
+                result = stage1_composition_module.compose_stage1_from_projection(
+                    phase_b
+                )
+                actual_japanese = "\n".join(
+                    unit.text for unit in result.selected_candidate.sentence_units
+                )
+                self.assertIn(expected_constraint_surface, actual_japanese)
+                self.assertNotIn("今もあり", actual_japanese)
+
+        priority_cases = (
+            (
+                PUBLIC_NONSECRET_EARLY_STANDIN_EXACT4[1],
+                ("action", "change"),
+                "action_supports_change",
+            ),
+            (
+                PUBLIC_NONSECRET_EARLY_STANDIN_EXACT4[3],
+                ("residue", "unfinished"),
+                None,
+            ),
+        )
+        for (label, memo, category, emotion, strength), predicates, relation in (
+            priority_cases
+        ):
+            with self.subTest(public_structure=label):
+                (
+                    _source,
+                    grounded_plan,
+                    _graph,
+                    _parent_plan,
+                    _projection,
+                    _phase_a,
+                    _subjective_plan,
+                    phase_b,
+                ) = _final_stage1_composition_inputs(
+                    _request(
+                        record_id=f"stage2-public-priority-{label}",
+                        memo=memo,
+                        category=category,
+                        emotion=emotion,
+                        strength=strength,
+                    )
+                )
+                self.assertFalse(
+                    any(
+                        "semantic_role:generic_relation_fragment"
+                        in row.semantic_frame.attribute_codes
+                        for row in grounded_plan.nuclei
+                    )
+                )
+                projected = tuple(
+                    row
+                    for row in grounded_plan.nuclei
+                    if row.semantic_frame.predicate_kind in predicates
+                    and any(
+                        code.startswith("surface_scalar_range:")
+                        for code in row.semantic_frame.attribute_codes
+                    )
+                )
+                self.assertEqual(
+                    tuple(row.semantic_frame.predicate_kind for row in projected),
+                    predicates,
+                )
+                self.assertEqual(len({row.source_span_ids for row in projected}), 1)
+                self.assertFalse(
+                    any(
+                        code.startswith("source_fragment_scalar_range:")
+                        for row in projected
+                        for code in row.semantic_frame.attribute_codes
+                    )
+                )
+                self.assertFalse(
+                    any(
+                        "typed_projection:top_level_connective"
+                        in row.source_relation_ids
+                        for row in grounded_plan.relations
+                    )
+                )
+                if relation is not None:
+                    relation_rows = tuple(
+                        row
+                        for row in grounded_plan.relations
+                        if row.type == relation
+                    )
+                    self.assertEqual(len(relation_rows), 1)
+                if label == "unfinished":
+                    result = (
+                        stage1_composition_module.compose_stage1_from_projection(
+                            phase_b
+                        )
+                    )
+                    actual_japanese = "\n".join(
+                        unit.text
+                        for unit in result.selected_candidate.sentence_units
+                    )
+                    self.assertIn(
+                        "「予定の話はした」ということのあとにも、"
+                        "「まだ迷いが残っている」という状態があります。",
+                        actual_japanese,
+                    )
+                    self.assertIn(
+                        "「どうしたいかは分からない」ということは、"
+                        "まだ閉じていないものとして残っています。",
+                        actual_japanese,
+                    )
+                    self.assertNotIn("今も不確かなまま", actual_japanese)
+
     def test_generic_affect_is_absorbed_by_same_target_specific_opportunity(
         self,
     ) -> None:
@@ -9561,21 +10184,74 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                             plan,
                             owner,
                         )
-                        self.assertTrue(
-                            all(
-                                carrier in surface
-                                for carrier in (
-                                    *overt,
-                                    *fused,
-                                    *(
-                                        ()
-                                        if duty.sentence_job
-                                        is module.SentenceJob.TRACE_CHANGE_OR_SEQUENCE
-                                        else predicate_asset.predicate_lexemes
-                                    ),
-                                )
+                        frames = tuple(
+                            module._frame_for_semantic_ref(owner, ref, phase_b)
+                            for ref in expression.basis_semantic_refs
+                        )
+                        generic_relation_exact2 = bool(
+                            len(frames) == 2
+                            and all(
+                                "semantic_role:generic_relation_fragment"
+                                in frame.attribute_codes
+                                for frame in frames
                             )
                         )
+                        source_visible_residue_relation = bool(
+                            duty.sentence_job
+                            is module.SentenceJob.TRACE_CHANGE_OR_SEQUENCE
+                            and owner.semantic_operator
+                            is SemanticOperator.PRESENT_RESIDUE
+                            and len(frames) == 2
+                            and "operator:residue"
+                            in frames[1].attribute_codes
+                            and any(
+                                code.startswith("surface_scalar_range:")
+                                for code in frames[1].attribute_codes
+                            )
+                        )
+                        source_visible_unfinished = bool(
+                            duty.sentence_job
+                            is module.SentenceJob.PRESERVE_RESIDUE_OR_UNFINISHED
+                            and len(frames) == 1
+                            and "operator:uncertainty"
+                            in frames[0].attribute_codes
+                            and "operator:unfinished"
+                            in frames[0].attribute_codes
+                        )
+                        if generic_relation_exact2:
+                            self.assertTrue(
+                                all(
+                                    lexeme in surface
+                                    for lexeme in predicate_asset.predicate_lexemes
+                                )
+                            )
+                        elif source_visible_residue_relation:
+                            self.assertIn("のあとにも", surface)
+                            self.assertIn("という状態があります", surface)
+                        elif source_visible_unfinished:
+                            self.assertIn(
+                                "".join(predicate_asset.predicate_lexemes),
+                                surface,
+                            )
+                            self.assertTrue(
+                                all(carrier not in surface for carrier in overt)
+                            )
+                        else:
+                            self.assertTrue(
+                                all(
+                                    carrier in surface
+                                    for carrier in (
+                                        *overt,
+                                        *fused,
+                                        *(
+                                            ()
+                                            if duty.sentence_job
+                                            is module.SentenceJob.TRACE_CHANGE_OR_SEQUENCE
+                                            else predicate_asset.predicate_lexemes
+                                        ),
+                                    )
+                                )
+                            )
                         if (
                             plan.semantic_clause_kind
                             is module.SemanticClauseKind.ADMITTED_RELATION
@@ -9607,41 +10283,64 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                                 )
                                 for ref in expression.basis_semantic_refs
                             )
+                            visible_endpoint_surfaces = (
+                                tuple(
+                                    module._quoted_source_object(value)
+                                    for value in endpoint_surfaces
+                                )
+                                if generic_relation_exact2
+                                else (
+                                    endpoint_surfaces[0],
+                                    module._quoted_source_object(
+                                        endpoint_surfaces[1]
+                                    ),
+                                )
+                                if source_visible_residue_relation
+                                else endpoint_surfaces
+                            )
                             left_endpoint_index = surface.index(
-                                endpoint_surfaces[0]
+                                visible_endpoint_surfaces[0]
                             )
                             right_endpoint_index = surface.index(
-                                endpoint_surfaces[1],
-                                left_endpoint_index + len(endpoint_surfaces[0]),
+                                visible_endpoint_surfaces[1],
+                                left_endpoint_index
+                                + len(visible_endpoint_surfaces[0]),
                             )
-                            for endpoint_index, (
-                                _role,
-                                role_overt,
-                                role_fused,
-                            ) in zip(
-                                (left_endpoint_index, right_endpoint_index),
-                                role_local_carriers,
+                            if not (
+                                generic_relation_exact2
+                                or source_visible_residue_relation
                             ):
-                                carrier = module._structural_lexeme(
-                                    "structural:comma.v1"
-                                ).join((*role_overt, *role_fused))
-                                if not carrier:
-                                    continue
-                                carrier_index = surface.index(
-                                    carrier,
-                                    endpoint_index,
-                                )
-                                self.assertGreater(carrier_index, endpoint_index)
-                                if endpoint_index == left_endpoint_index:
-                                    self.assertLess(
-                                        carrier_index,
-                                        right_endpoint_index,
+                                for endpoint_index, (
+                                    _role,
+                                    role_overt,
+                                    role_fused,
+                                ) in zip(
+                                    (left_endpoint_index, right_endpoint_index),
+                                    role_local_carriers,
+                                ):
+                                    carrier = module._structural_lexeme(
+                                        "structural:comma.v1"
+                                    ).join((*role_overt, *role_fused))
+                                    if not carrier:
+                                        continue
+                                    carrier_index = surface.index(
+                                        carrier,
+                                        endpoint_index,
                                     )
-                                else:
                                     self.assertGreater(
                                         carrier_index,
-                                        right_endpoint_index,
+                                        endpoint_index,
                                     )
+                                    if endpoint_index == left_endpoint_index:
+                                        self.assertLess(
+                                            carrier_index,
+                                            right_endpoint_index,
+                                        )
+                                    else:
+                                        self.assertGreater(
+                                            carrier_index,
+                                            right_endpoint_index,
+                                        )
                         if (
                             plan.semantic_clause_kind
                             is not module.SemanticClauseKind.ADMITTED_RELATION

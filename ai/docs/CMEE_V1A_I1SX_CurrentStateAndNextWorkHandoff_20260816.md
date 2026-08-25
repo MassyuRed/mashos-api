@@ -1239,3 +1239,67 @@ AUTOMATIC_PROGRESSION = FALSE
 ```
 
 final exact3は`CLEAR / CLEAR / ROUTE_LEVEL_CEILING`であり、`LANGUAGE_VIABILITY_OBSERVED`へ遷移しない。これはknown language coreと全machine invariantが閉じた一方、frozen withheldに必要なlanguage recognitionがcurrent Route A grammarの上限外であることを示す。今回のscopeでは追加path / rule / asset / fixtureを増やさず、Draft / open / unmergedを維持する。
+
+## 32. Route A generic relation recognition extension and final Step 3 reactivation（2026-08-25）
+
+§31後、Mashはexternal AI / Route Bを明確に禁止し、Route AだけでStep 3を完了まで進めるよう再指示した。このcurrent instructionを、§31のceiling terminalより新しいRoute A implementation authorityとして適用する。`COMMON_DEFECT_RETURN_COUNT=2/2`はresetも増分もせず保持する。
+
+correctionはcase / phrase-family tableではなく、existing source grammarへ一つのbounded recognizerを追加する。quote / bracket depth 0にあるtop-level connective exact1だけを対象とし、coexistenceはfragment-localに証明できるwish exact1..2と、必要な場合だけm-row表記上曖昧なnominal endpoint exact0..1をexact source scalar rangeへbindする。曖昧endpointは`state / fact / neutral`のまま保持し、wish / retained-intentionへ昇格しない。contrastはaffirmative wishとclause-final source-explicit constraint exact1ずつをbindする。明示された第三者owner / beneficiary / attribution、引用内部、nested / malformed grouping、multiple link、relative nominal、negated wish / uncertainty / constraint、modifier内operator、simile-only exact2はfail-closedとする。existing self-evaluation safety owner、action→changeおよびresidue→unfinished projectorは先順位のまま変えない。
+
+composerは`semantic_role:generic_relation_fragment` exact2だけをrole-local scalar carrierへ接続し、partial markerまたはunsupported scalarはSTOPする。sourceに既に可視なresidue / unfinished scalarは同axis carrierより優先する。generic relationのLayer 2では、RELATIONAL_NONCOLLAPSE / PRESERVE_BOTH_ENDPOINTS、WISH_TO_OBLIGATION、REMOVE_USER_AGENCYおよびexact2 endpoint coverageがそろう場合だけ重複するPROTECT_USER_AGENCY positionをsemantic subsetとして吸収し、noncollapseとanti-obligationを自然なJapaneseへlinearizeする。meaning / source / owner / polarity / modality / time / unknown / safety authorityは増やさない。
+
+```text
+AUTHORITY = MASH_CURRENT_EXPLICIT_ROUTE_A_ONLY_STEP3_COMPLETION
+PREVIOUS_TERMINAL = ROUTE_LEVEL_CEILING_STOP
+SOLE_ROUTE = ROUTE_A_PROVIDERLESS_EXACT1_ONLY
+GENERIC_EXTENSION = TOP_LEVEL_CONNECTIVE_TYPED_SOURCE_FRAGMENT_RECOGNIZER
+CONNECTIVE_CARDINALITY = EXACT1
+GENERIC_ENDPOINT_CARDINALITY = EXACT2
+COEXISTENCE_WISH_AUTHORITY = FRAGMENT_LOCAL_EXACT1_TO_2
+AMBIGUOUS_M_ROW_ENDPOINT = STATE_FACT_NEUTRAL_EXACT0_TO_1 / WISH_PROMOTION_0
+SOURCE_FRAGMENT_BINDING = NORMALIZED_RAW_TEXT_EXACT_SCALAR_RANGE
+OWNER_GATE = IMPLICIT_OR_CURRENT_USER_ONLY_AFTER_TEMPORAL_PREFIX_STRIP
+GROUPED_OR_QUOTED_OPERATOR_AUTHORITY = 0
+PARTIAL_MARKER_FALLBACK = 0
+NEGATED_OR_NONFINITE_RIGHT_OPERATOR_AUTHORITY = 0
+ACTION_CHANGE_AND_RESIDUE_UNFINISHED_PRIORITY = UNCHANGED
+
+GENERIC_SURFACE_JOIN = ROLE_LOCAL_EXISTING_SCALAR_AXES
+GENERIC_POSITION_ABSORPTION = EXACT_SEMANTIC_SUBSET_ONLY
+SOURCE_VISIBLE_SCALAR_PRIORITY = SOURCE_SLICE_OVER_MATCHING_CARRIER
+CASE_ID_FAMILY_RAW_FIXTURE_EXPECTED_SENTENCE_SELECTOR = 0
+NEW_ASSET_FAMILY_ENUM_GRAMMATICAL_AXIS_DEPENDENCY_ROUTE = 0
+SOURCE_MEANING_OWNER_SAFETY_AUTHORITY_DELTA = 0
+
+RUNTIME_CHANGED_PATHS = EXACT6
+  ai/services/ai_inference/emlis_ai_grounded_observation_plan.py
+  ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py
+  ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py
+  ai/tests/test_cmee_v1a_i1sx_contracts.py
+  ai/tools/cmee_v1a_i1sx_candidate_run.py
+  ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md
+DESIGN_CHANGED_PATHS = EXACT1
+  Cocolon_前提資料/designs/cmee/v1/06_implementation_order_migration_and_verification.md
+
+LANGUAGE_CORE_IDENTITY = b8665662e80bda7350825dc925dabf21f6a6ad233a2aa0d6fe83ecd4bac0aa8e
+PUBLIC_GENERIC_STANDIN_PRO_LANGUAGE_READ = CLEAR_4_OF_4
+CONTRACT_TESTS = 120_OF_120_PASS
+VERTICAL_TESTS = 42_OF_42_PASS
+COMBINED_TESTS = 162_OF_162_PASS
+STEP2_COMPOSITION_TESTS = 16_OF_16_PASS
+COMPILEALL = PASS
+
+COMMON_DEFECT_RETURN_COUNT_BEFORE / AFTER = 2_OF_2 / 2_OF_2
+COUNTER_RESET / COUNTER_INCREMENT = 0 / 0
+EXTERNAL_AI / PROVIDER / NETWORK / EXTERNAL_BODY_SEND / COST = 0 / 0 / 0 / 0 / 0
+PUBLIC_API / DB / RN / PRODUCTION_EFFECT = 0 / 0 / 0 / 0
+EARLY_ACTUAL_STATUS = NOT_RUN_PENDING_REACTIVATED_HEADS
+STEP3 = ROUTE_A_GENERIC_RECOGNITION_VERIFIED_PENDING_FRESH_ACTUAL
+FORMAL_EXACT8 = NOT_RUN
+PRODUCT_READ_EVALUATED = FALSE
+CANDIDATE_READY = FALSE
+STEP4 = NOT_STARTED
+AUTOMATIC_PROGRESSION = FALSE
+```
+
+runtime / design activation headsを固定後、同じfrozen private input exact4からfresh exclusive output exact2を一回だけ生成する。known public-safe exact4はUltra technical / Pro language、withheld exact4はPro body-fullだけが読み、success exact3をbody-free finalizerへ渡す。private body / locatorはGitHub、docs、UltraまたはMashへ公開せず、output exact2はreview後に削除する。成功しても`LANGUAGE_VIABILITY_OBSERVED`は同一approved unit内のinternal observationだけであり、formal Product Read、Step 4、ready、mergeまたはproductionへ自動進行しない。
