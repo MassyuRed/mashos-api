@@ -9567,7 +9567,12 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                                 for carrier in (
                                     *overt,
                                     *fused,
-                                    *predicate_asset.predicate_lexemes,
+                                    *(
+                                        ()
+                                        if duty.sentence_job
+                                        is module.SentenceJob.TRACE_CHANGE_OR_SEQUENCE
+                                        else predicate_asset.predicate_lexemes
+                                    ),
                                 )
                             )
                         )
@@ -9818,12 +9823,13 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                         )
                     )
 
-    def test_subjective_layer_transition_reestablishes_relation_objects_and_bounds_anaphora(
+    def test_subjective_layer_transition_uses_only_exact_immediate_antecedents_and_preserves_cardinality(
         self,
     ) -> None:
         module = stage1_composition_module
         singular_anaphora = 0
         plural_anaphora = 0
+        cross_layer_anaphora = 0
         for case_index in range(len(self._KNOWN_EXACT4)):
             with self.subTest(case_index=case_index):
                 *_, phase_b = self._known_inputs(case_index)
@@ -9837,25 +9843,8 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     row.unit_ref: index
                     for index, row in enumerate(normalized.sentence_units)
                 }
-                layer1_refs = {
-                    row.basis_semantic_refs
-                    for row in normalized.response_object_expression_rows
-                    if unit_by_ref[row.unit_ref].layer == "LAYER_1"
-                }
-                seen_layer2_refs: set[tuple[str, ...]] = set()
                 for expression in normalized.response_object_expression_rows:
                     unit = unit_by_ref[expression.unit_ref]
-                    if unit.layer == "LAYER_2":
-                        if (
-                            expression.basis_semantic_refs in layer1_refs
-                            and expression.basis_semantic_refs
-                            not in seen_layer2_refs
-                        ):
-                            self.assertIsNot(
-                                expression.expression_mode,
-                                module.ResponseObjectExpressionMode.ANAPHORIC,
-                            )
-                        seen_layer2_refs.add(expression.basis_semantic_refs)
                     if (
                         expression.expression_mode
                         is module.ResponseObjectExpressionMode.ANAPHORIC
@@ -9863,11 +9852,22 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                         antecedent = unit_by_ref[
                             expression.antecedent_unit_ref
                         ]
-                        self.assertEqual(antecedent.layer, unit.layer)
                         self.assertLess(
                             unit_index[antecedent.unit_ref],
                             unit_index[unit.unit_ref],
                         )
+                        if antecedent.layer != unit.layer:
+                            cross_layer_anaphora += 1
+                            self.assertEqual(antecedent.layer, "LAYER_1")
+                            self.assertEqual(unit.layer, "LAYER_2")
+                            self.assertEqual(
+                                unit_index[antecedent.unit_ref] + 1,
+                                unit_index[unit.unit_ref],
+                            )
+                            self.assertEqual(
+                                antecedent.basis_anchor_refs,
+                                expression.basis_semantic_refs,
+                            )
                         if len(expression.basis_semantic_refs) == 1:
                             singular_anaphora += 1
                             self.assertIn("そのこと", unit.text)
@@ -9881,6 +9881,86 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                             self.assertNotIn("そのことを", unit.text)
         self.assertGreaterEqual(singular_anaphora, 1)
         self.assertGreaterEqual(plural_anaphora, 1)
+        self.assertGreaterEqual(cross_layer_anaphora, 1)
+
+    def test_shared_endpoint_relation_chain_is_grouped_without_surface_repetition_or_meta_tail(
+        self,
+    ) -> None:
+        module = stage1_composition_module
+        *_, phase_b = self._known_inputs(1)
+        result = module.compose_stage1_from_projection(phase_b)
+        selected = result.selected_candidate
+        normalized = selected.normalized_artifact
+        layer1_units = tuple(
+            row for row in normalized.sentence_units if row.layer == "LAYER_1"
+        )
+        self.assertEqual(len(layer1_units), 1)
+        chain_unit = layer1_units[0]
+        self.assertEqual(len(chain_unit.duty_refs), 2)
+        duty_by_ref = {
+            row.duty_ref: row for row in normalized.composition_duty_rows
+        }
+        plan_by_duty = {
+            row.duty_ref: row for row in normalized.clause_plan_rows
+        }
+        self.assertIsNotNone(
+            module._shared_endpoint_relation_chain(
+                chain_unit.duty_refs,
+                duty_by_ref,
+                plan_by_duty,
+            )
+        )
+        expression_by_plan = {
+            row.clause_plan_ref: row
+            for row in normalized.response_object_expression_rows
+        }
+        for duty_ref in chain_unit.duty_refs:
+            duty = duty_by_ref[duty_ref]
+            plan = plan_by_duty[duty_ref]
+            self.assertEqual(len(duty.relation_refs), 1)
+            self.assertIs(
+                plan.semantic_clause_kind,
+                module.SemanticClauseKind.ADMITTED_RELATION,
+            )
+            self.assertIs(
+                expression_by_plan[plan.clause_plan_ref].expression_mode,
+                module.ResponseObjectExpressionMode.COMPOSITE,
+            )
+        self.assertEqual(chain_unit.text.count("「少し落ち着いた」"), 1)
+        self.assertNotIn("その順序のまま", chain_unit.text)
+        self.assertNotIn("表れています", chain_unit.text)
+        self.assertIn("留保も残っています", chain_unit.text)
+        self.assertIs(
+            selected.discourse_preference_profile.sentence_load_fit,
+            module.ProfileFit.ARC_ALIGNED,
+        )
+        self.assertTrue(
+            any(
+                row.discourse_preference_profile.sentence_load_fit
+                is module.ProfileFit.PERMITTED
+                for row in result.ranked_candidates[1:]
+            )
+        )
+        self.assertEqual(
+            module.normalize_to_normal_form(
+                normalized,
+                normalized.layout_preference_seed,
+                phase_b,
+            ),
+            normalized,
+        )
+
+        for case_index in range(len(self._KNOWN_EXACT4)):
+            *_, known_phase_b = self._known_inputs(case_index)
+            text = "\n".join(
+                unit.text
+                for unit in module.compose_stage1_from_projection(
+                    known_phase_b
+                ).selected_candidate.normalized_artifact.sentence_units
+            )
+            self.assertNotIn("受け取っています", text)
+            self.assertNotIn("を、", text)
+            self.assertEqual(text.count("Emlisは"), 1)
 
     def test_source_scalar_uses_exact_normalized_raw_text_and_typed_finite_morphology(self) -> None:
         def source_expression_by_predicate_kind(
