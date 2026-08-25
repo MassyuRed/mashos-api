@@ -1802,12 +1802,28 @@ def _typed_nucleus_projections_for_span(
             r"^(?P<owner>[^\s、,。.!！?？]{1,24}?)"
             r"(?:にとって|には|は|が|も|の)"
         )
+        attribution_prefix = re.compile(
+            r"^(?P<owner>[^\s、,。.!！?？]{1,24}?)"
+            r"(?:(?:に|から)[^\s、,。.!！?？]{1,12}?"
+            r"(?:ると|れば|ますと)|いわく|曰く)"
+        )
         owner_scope = top_level_fragment
         # Consume only a chain of explicit self owners and bounded temporal
         # prefixes.  Any subsequent grammatical owner/beneficiary remains a
         # third-party authority and makes the projection ineligible.
         while True:
             owner_scope = temporal_prefix.sub("", owner_scope)
+            leading_attribution = attribution_prefix.match(owner_scope)
+            if leading_attribution is not None:
+                if (
+                    _SELF_REFERENCE_RE.fullmatch(
+                        leading_attribution.group("owner")
+                    )
+                    is None
+                ):
+                    return False
+                owner_scope = owner_scope[leading_attribution.end() :]
+                continue
             leading_owner = owner_marker.match(owner_scope)
             if leading_owner is None:
                 break
@@ -1936,7 +1952,12 @@ def _typed_nucleus_projections_for_span(
         # These are inflected existential/copular auxiliaries, not a bank of
         # permitted action verbs.  All other verb stems remain open, which is
         # why unseen 座っ/浴び/つけ are admitted by the same rule.
-        if re.fullmatch(r"(?:い|あ(?:り|っ)?|なっ)", predicate):
+        if re.fullmatch(
+            r"(?:い(?:る|た|ました)?|"
+            r"あ(?:る|り(?:ました)?|っ(?:た)?)?|"
+            r"な(?:る|り(?:ました)?|っ(?:た)?)|した)",
+            predicate,
+        ):
             return False
         if re.search(r"(?:は|が|も)", predicate):
             return False
@@ -2344,6 +2365,344 @@ def _typed_nucleus_projections_for_span(
                     relation_kind="wish_and_constraint",
                 ),
             )
+
+        def generic_contrast_endpoint_profile(
+            fragment: str,
+        ) -> tuple[
+            NucleusKind,
+            str,
+            Literal["positive", "negative", "mixed", "neutral"],
+            Literal[
+                "fact",
+                "feeling",
+                "wish",
+                "possibility",
+                "uncertain",
+                "refusal",
+                "intention",
+            ],
+            tuple[str, ...],
+        ] | None:
+            """Resolve one contrast endpoint from frozen, fragment-local axes.
+
+            This is deliberately a final generic fallback.  The higher-priority
+            action/change, residue/unfinished, coexistence, and finite
+            wish/constraint recognizers above retain their existing decisions.
+            A fallback endpoint is admitted only when its own source slice has
+            current-user ownership and at least one already-frozen grammatical
+            operator.  Whole-span operators are never copied into a child.
+            """
+
+            top_level_fragment = _top_level_text(fragment)
+            if top_level_fragment is None:
+                return None
+            top_level_fragment = top_level_fragment.strip()
+            if (
+                not top_level_fragment
+                or top_level_fragment != fragment.strip()
+                or not owner_scope_is_bound(top_level_fragment)
+            ):
+                return None
+            operators = set(
+                _operator_codes_for_text(
+                    top_level_fragment,
+                    source_field=source_field,
+                )
+            )
+            # Safety-owned self evaluation must keep its existing unsplit
+            # priority.  A desiderative that is locally negated/refused is not
+            # promoted to a positive wish endpoint.
+            if "operator:self_evaluation" in operators:
+                return None
+
+            def endpoint_final_match(
+                *patterns: re.Pattern[str],
+            ) -> re.Match[str] | None:
+                matches = tuple(
+                    match
+                    for pattern in patterns
+                    for match in pattern.finditer(top_level_fragment)
+                    if re.fullmatch(
+                        r"(?:って|いて|んで|て|で)?"
+                        r"(?:いる|いた|います|いました)?"
+                        r"(?:い|かった|くない|くなかった|る|う|ない|なかった)?"
+                        r"(?:(?:は|が|も)(?:ある|いる|残っている|続いている)|"
+                        r"(?:だ|です|だった|でした))?"
+                        r"(?:の(?:だ|です)|ん(?:だ|です))?",
+                        top_level_fragment[match.end() :],
+                    )
+                    is not None
+                )
+                return matches[-1] if matches else None
+
+            negated = "operator:negation" in operators
+            refused = "operator:refusal" in operators
+            unfinished_matches = tuple(
+                _OPEN_UNFINISHED_RE.finditer(top_level_fragment)
+            )
+            unfinished = bool(
+                len(unfinished_matches) == 1
+                and unfinished_matches[0].end() == len(top_level_fragment)
+            )
+            constraint_occurs = "operator:constraint" in operators
+            constraint_final = endpoint_final_match(_CONSTRAINT_RE)
+            uncertainty_occurs = bool(
+                "operator:uncertainty" in operators
+                or _RELATION_UNCERTAINTY_RE.search(top_level_fragment)
+            )
+            uncertainty_final = endpoint_final_match(
+                _RELATION_UNCERTAINTY_RE,
+                _UNCERTAIN_RE,
+            )
+            refusal_final = endpoint_final_match(_REFUSAL_RE)
+            change_final = endpoint_final_match(
+                _POSITIVE_CHANGE_RE,
+                _CHANGE_RE,
+            )
+            positive_change_final = endpoint_final_match(
+                _POSITIVE_CHANGE_RE
+            )
+            feeling_final = endpoint_final_match(_FEELING_RE)
+            value_final = endpoint_final_match(_VALUE_RE)
+            # An operator embedded in a noun modifier is not the endpoint
+            # predicate.  Likewise ``迷っていない`` cancels the uncertainty
+            # operator itself, while ``言えない気がする`` keeps a final
+            # uncertainty whose content happens to be negative.
+            if constraint_occurs and constraint_final is None:
+                return None
+            if uncertainty_occurs and uncertainty_final is None and not unfinished:
+                return None
+            if "operator:refusal" in operators and refusal_final is None:
+                return None
+            if "operator:change" in operators and change_final is None:
+                return None
+            if "operator:feeling" in operators and feeling_final is None:
+                return None
+            if "operator:value" in operators and value_final is None:
+                return None
+            if (
+                negated
+                and uncertainty_final is not None
+                and _NEGATION_RE.search(
+                    top_level_fragment[uncertainty_final.end() :]
+                )
+            ):
+                return None
+            uncertain = bool(
+                uncertainty_final is not None
+                or unfinished
+            )
+            positive_wish = affirmative_wish(top_level_fragment)
+            performed_action = structurally_performed_action(
+                top_level_fragment
+            )
+            passive_perfective = bool(
+                re.search(
+                    r"[かがさざただなばぱまらわ]れ"
+                    r"(?:た|ました|て(?:いた|いました))$",
+                    top_level_fragment,
+                )
+            )
+
+            kind: NucleusKind
+            predicate_kind: str
+            polarity: Literal["positive", "negative", "mixed", "neutral"]
+            modality: Literal[
+                "fact",
+                "feeling",
+                "wish",
+                "possibility",
+                "uncertain",
+                "refusal",
+                "intention",
+            ]
+            role_codes: tuple[str, ...]
+            if positive_wish:
+                kind = "wish"
+                predicate_kind = "wish"
+                polarity = "positive"
+                modality = "wish"
+                role_codes = ("semantic_role:retained_intention",)
+            elif unfinished:
+                kind = "uncertainty"
+                predicate_kind = "unfinished"
+                polarity = "negative" if negated else "neutral"
+                modality = "uncertain"
+                role_codes = (
+                    "operator:unfinished",
+                    "semantic_role:present_unfinished",
+                    "semantic_role:burden",
+                )
+            elif constraint_final is not None:
+                kind = "constraint"
+                predicate_kind = "constraint"
+                polarity = "negative" if negated else "neutral"
+                modality = "uncertain" if uncertain else "possibility"
+                role_codes = ("semantic_role:burden",)
+            elif uncertain:
+                kind = "uncertainty"
+                predicate_kind = "uncertainty"
+                polarity = "negative" if negated else "neutral"
+                modality = "uncertain"
+                role_codes = ("semantic_role:burden",)
+            elif refused and refusal_final is not None:
+                kind = "state"
+                predicate_kind = "refusal"
+                polarity = "negative"
+                modality = "refusal"
+                role_codes = (
+                    "semantic_role:protective_or_limiting_refusal",
+                    "semantic_role:burden",
+                )
+            elif change_final is not None:
+                kind = "change"
+                predicate_kind = "change"
+                polarity = (
+                    "negative"
+                    if negated
+                    else "positive"
+                    if positive_change_final is not None
+                    else "neutral"
+                )
+                modality = (
+                    "feeling"
+                    if "operator:feeling" in operators
+                    else "fact"
+                )
+                role_codes = ("semantic_role:current_change",)
+            elif feeling_final is not None:
+                kind = "reaction"
+                predicate_kind = "feeling"
+                polarity = "negative"
+                modality = "feeling"
+                role_codes = ("semantic_role:burden",)
+            elif value_final is not None:
+                kind = "value"
+                predicate_kind = "value"
+                polarity = "positive"
+                modality = "fact"
+                role_codes = ("semantic_role:explicit_evaluation",)
+            elif (
+                (performed_action or "operator:action" in operators)
+                and _EXPLICIT_PERFECTIVE_END_RE.search(
+                    top_level_fragment
+                )
+                is not None
+                and not passive_perfective
+            ) and not operators & {
+                "operator:wish",
+                "operator:constraint",
+                "operator:uncertainty",
+                "operator:feeling",
+                "operator:value",
+                "operator:change",
+                "operator:positive_change",
+                "operator:refusal",
+                "operator:negation",
+                "operator:self_evaluation",
+            }:
+                kind = "action"
+                predicate_kind = "action"
+                polarity = "neutral"
+                modality = "fact"
+                role_codes = ("semantic_role:concrete_action",)
+            else:
+                return None
+
+            local_operator_codes = tuple(
+                code
+                for code in _operator_codes_for_text(
+                    top_level_fragment,
+                    source_field=source_field,
+                )
+                if code != "operator:contrast"
+                and (code != "operator:wish" or positive_wish)
+            )
+            return (
+                kind,
+                predicate_kind,
+                polarity,
+                modality,
+                tuple(_dedupe((*local_operator_codes, *role_codes))),
+            )
+
+        # The specialized branch above intentionally covers its narrow finite
+        # wish/constraint shape first.  Other exact-one top-level contrasts may
+        # still be projected when both endpoint profiles are independently
+        # proven by the same frozen grammar and owner guards.
+        if (
+            left_start < left_end <= link.start()
+            and link.end() <= right_start < right_end
+            and text[link.start() : link.end()] == link.group(0)
+            and owner_scope_is_bound(left_text)
+            and owner_scope_is_bound(right_text)
+            # Generic ``が、`` cannot prove clause-connective use against a
+            # nominative particle.  Its only admitted form remains the finite
+            # wish/constraint recognizer above; the generic fallback rejects
+            # every remaining ``が、`` shape.
+            and not link.group(0).startswith("が")
+        ):
+            left_profile = generic_contrast_endpoint_profile(left_text)
+            right_profile = generic_contrast_endpoint_profile(right_text)
+            if left_profile is not None and right_profile is not None:
+                left_kind, left_predicate, left_polarity, left_modality, left_codes = (
+                    left_profile
+                )
+                right_kind, right_predicate, right_polarity, right_modality, right_codes = (
+                    right_profile
+                )
+                burden_kinds = {
+                    "constraint",
+                }
+                if (
+                    (left_kind == "wish" and right_kind in burden_kinds)
+                    or (right_kind == "wish" and left_kind in burden_kinds)
+                ):
+                    relation_kind: RelationKind = "wish_and_constraint"
+                else:
+                    relation_kind = "contrast"
+                common_codes = (
+                    "semantic_role:span_relation_endpoint",
+                    "semantic_role:generic_relation_fragment",
+                )
+                return (
+                    _TypedNucleusProjection(
+                        nucleus_suffix="",
+                        kind=left_kind,
+                        predicate_kind=left_predicate,
+                        polarity=left_polarity,
+                        modality=left_modality,
+                        time_scope=_time_scope_for_text(left_text),
+                        scalar_start=left_start,
+                        scalar_end=left_end,
+                        attribute_codes=relation_fragment_codes(
+                            left_start,
+                            left_end,
+                            *left_codes,
+                            *common_codes,
+                        ),
+                        relation_kind=relation_kind,
+                    ),
+                    _TypedNucleusProjection(
+                        nucleus_suffix=":contrasting",
+                        kind=right_kind,
+                        predicate_kind=right_predicate,
+                        polarity=right_polarity,
+                        modality=right_modality,
+                        time_scope=_time_scope_for_text(right_text),
+                        scalar_start=right_start,
+                        scalar_end=right_end,
+                        attribute_codes=relation_fragment_codes(
+                            right_start,
+                            right_end,
+                            *right_codes,
+                            *common_codes,
+                            "semantic_role:compound_reception_coowned_nonprimary",
+                        ),
+                        relation_kind=relation_kind,
+                        grounding_kind="user_stated_relation",
+                    ),
+                )
     return ()
 
 
@@ -5636,7 +5995,18 @@ def _final_stage1_typed_nuclei(
                 )
             )
         if len(projected_ids) == 2:
-            if (
+            relation_kinds = {
+                projection.relation_kind
+                for projection in projections
+                if projection.relation_kind is not None
+            }
+            if relation_kinds:
+                if len(relation_kinds) != 1:
+                    raise GroundedObservationPlanError(
+                        "typed_projection_relation_binding_invalid"
+                    )
+                dependency = next(iter(relation_kinds))
+            elif (
                 projections[0].kind == "action"
                 and projections[1].kind == "change"
             ):
@@ -5647,16 +6017,9 @@ def _final_stage1_typed_nuclei(
             ):
                 dependency = "residue_and_unfinished"
             else:
-                relation_kinds = {
-                    projection.relation_kind
-                    for projection in projections
-                    if projection.relation_kind is not None
-                }
-                if len(relation_kinds) != 1:
-                    raise GroundedObservationPlanError(
-                        "typed_projection_relation_binding_invalid"
-                    )
-                dependency = next(iter(relation_kinds))
+                raise GroundedObservationPlanError(
+                    "typed_projection_relation_binding_invalid"
+                )
             compound_dependencies.append(
                 (dependency, projected_ids[0], projected_ids[1])
             )
@@ -5791,6 +6154,8 @@ def _final_stage1_typed_relations(
         if relation_type not in {
             "action_supports_change",
             "coexistence",
+            "contrast",
+            "preserves_despite",
             "wish_and_constraint",
         }:
             raise GroundedObservationPlanError(

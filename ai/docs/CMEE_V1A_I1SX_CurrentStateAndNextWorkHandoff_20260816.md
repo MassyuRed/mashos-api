@@ -1413,3 +1413,78 @@ AUTOMATIC_PROGRESSION = FALSE
 ```
 
 new activation heads確定後だけ、same frozen private exact4からfresh exact8を一回materializeする。本文reader境界とoutput削除条件は§33から変更しない。
+
+## 35. Step 3 whole-node fallthrough diagnosis and generic contrast repair（2026-08-25）
+
+§34 activation headsへbindしたfresh early actualはknown / withheld machine invariantがともに`CLEAR_4_OF_4`であった。一方、Pro exact1は`COMMON_DEFECT / GENERIC_SUBJECTIVE_CONTENT / SUBJECTIVE_MEANING_PLANNER`を返した。body-free failure signatureは`TOP_LEVEL_RELATION_WHOLE_FALLTHROUGH`であり、top-level contrast exact1を持つsource spanがspecialized wish+constraint shape以外ではtyped childへ分かれず、relation-bearing whole span exact1のまま残る。同じ既存axis上のendpointを個別にprojectできないため、後段のappraisal / agency dutyがwhole ownerへ集中していた。withheldへの影響はaggregate `4/4`で、本文、locator、per-case情報はPro外へ出していない。
+
+repairはaction→change、residue→unfinished、coexistence、finite wish→constraintの既存優先順位を保持したまま、その後段にexact1 top-level contrastのgeneric fallbackを追加する。両source sliceがnonempty / ordered / nonoverlapで、grouped / quoted maskがなく、current-user owner guardを通り、既存wish / constraint / uncertainty / refusal / unfinished / feeling / change / value / action operatorのendpoint-final predicateをそれぞれ独立に証明できる場合だけexact2 childを作る。childは同じEvidence exact1と`normalized_raw_text`のexact scalar rangeへbindし、whole-span operatorを継承しない。関係はexisting `wish_and_constraint`または`contrast`だけへ閉じ、source connective exact1を`typed_projection:top_level_connective`としてbindする。
+
+quoted report、malformed / nested grouping、link cardinality 0 / 2+、third-party owner / structural attribution、negated wish promotion、cancelled uncertainty / constraint、modifier内operator、negation-only state、unresolved mixed axesはfail-closedとする。generic `が、`は主格助詞との区別をcurrent axesだけで閉じられないため全拒否し、specialized finite wish→constraintだけを既存先順位で残す。generic actionはexplicit perfective exact1とactive voiceを必須とし、目的 / 用途の`のに`、passive / passive-progressive、existential / copular / naru auxiliary finite formをactionへ昇格しない。generic fact endpointのsurface joinはsource-bound response objectとexisting role-local scalar carrierだけを接続する。
+
+独立public auditで、generic relation kindがaction→change heuristicに上書きされる問題と、exact2 relationから再構成したhuman reception Moveのaggregate supportをCMEE bridgeが拒否する問題もactivation前に検出した。explicit `relation_kind`をcompound heuristicより先にbindし、human reception supportはsame-span typed relation exact1・endpoint exact2・generic fragment marker exact2・target/support disjointを満たす場合だけ受理する。Move act / polarity compatibilityはaggregate targetではなく各source-bound Move targetで検証する。pair whitelist、case familyまたはraw text selectorは使わず、意味、source、owner、polarity、modality、time、unknownまたはsafety authorityを追加しない。public synthetic exact4、modifier / report adversarial、およびdownstream pair exact14をfixture外のgrammar regressionとして追加した。
+
+```text
+AUTHORITY = MASH_CURRENT_EXPLICIT_ROUTE_A_ONLY_STEP3_COMPLETION
+PREIMAGE_RUNTIME_HEAD = c92dab04a5bbf258710820db1ed6bfdc84a6a711
+PREIMAGE_DESIGN_HEAD = ce1bc884c869e4f91dd97cfcf3786c2d6f714c93
+PREIMAGE_LANGUAGE_CORE_IDENTITY = 70fef2e11548d544714783a86fdb9036cf455bb63f6308b00cadfbf13676ff59
+PREIMAGE_BODY_FREE_MACHINE_PACKET_FILE_SHA256 = 8496c410238182733989715746e77adaf017ce1c2e477686d38a4b84866ee88c
+PREIMAGE_PRO_RESULT_FILE_SHA256 = 551727c51d727cb82cc9bddede724c63dedf0fbe3dc9acafc5d3ce18b429043c
+PREIMAGE_KNOWN_VISIBLE_PACKET_FILE_SHA256 = c6c2237cd61d3794c268ca4514f238dc93a8faff574d65c093bf1801b6f98c8c
+PREIMAGE_PRIVATE_PACKET_BINDING_SHA256 = acd9aafe875e615c2af097cd2d9e220a3f283181433d087f4d472e5522f79f5f
+PREIMAGE_PRO_RESULT = COMMON_DEFECT
+PREIMAGE_DEFECT_CLASS = GENERIC_SUBJECTIVE_CONTENT
+PREIMAGE_CAUSE_COMPONENT = SUBJECTIVE_MEANING_PLANNER
+PREIMAGE_CEILING_REASON = NONE
+WITHHELD_AFFECTED_AGGREGATE = 4_OF_4
+
+GENERIC_REPAIR = TOP_LEVEL_RELATION_WHOLE_FALLTHROUGH_TO_EXACT2_TYPED_ENDPOINTS
+SPECIALIZED_RECOGNIZER_PRIORITY = UNCHANGED
+TOP_LEVEL_CONTRAST_CARDINALITY = EXACT1
+GENERIC_ENDPOINT_CARDINALITY = EXACT2
+ENDPOINT_OPERATOR_AUTHORITY = FRAGMENT_LOCAL_AND_ENDPOINT_FINAL_ONLY
+SOURCE_FRAGMENT_BINDING = NORMALIZED_RAW_TEXT_EXACT_SCALAR_RANGE
+GROUPED_QUOTED_OR_ATTRIBUTED_AUTHORITY = 0
+MODIFIER_OR_CANCELLED_OPERATOR_AUTHORITY = 0
+WHOLE_SPAN_OPERATOR_INHERITANCE = 0
+RELATION_KIND_DELTA = EXISTING_CONTRAST_OR_WISH_AND_CONSTRAINT_ONLY
+EXPLICIT_RELATION_KIND_PRIORITY = BEFORE_ACTION_CHANGE_HEURISTIC
+GENERIC_FACT_SURFACE_JOIN = SOURCE_OBJECT_PLUS_EXISTING_ROLE_LOCAL_CARRIER
+GENERIC_RECEPTION_SUPPORT = SAME_SPAN_TYPED_RELATION_EXACT1_ENDPOINT_EXACT2_ONLY
+GENERIC_RECEPTION_MOVE_VALIDATION = MOVE_LOCAL_TARGET_AND_POLARITY
+CASE_ID_FAMILY_RAW_FIXTURE_EXPECTED_SENTENCE_SELECTOR = 0
+NEW_PATH_ASSET_ENUM_AXIS_DEPENDENCY_ROUTE = 0
+SOURCE_MEANING_OWNER_POLARITY_MODALITY_TIME_UNKNOWN_SAFETY_AUTHORITY_DELTA = 0
+
+LANGUAGE_CORE_IDENTITY = f5c67079ae329d9a9e1c567ee25c6210a59a05ae766eef2bf1b751c11b746dcf
+RUNNER_SHA256 = 30bf7588f6ce6db01aacd5242e9369c0d072e1232456c1ec190eaeba96358bbc
+STEP2_COMPOSITION_TESTS = 19_OF_19_PASS
+STEP3_EARLY_HARNESS_TESTS = 17_OF_17_PASS
+CONTRACT_TESTS = 123_OF_123_PASS
+VERTICAL_TESTS = 42_OF_42_PASS
+COMBINED_TESTS = 165_OF_165_PASS
+COMPILEALL = PASS
+INDEPENDENT_TECHNICAL_AUDIT = CLEAR_BLOCKER_0_MAJOR_0
+ORDERED_GENERIC_KIND_PAIR_MATRIX = CLEAR_81_OF_81
+CONNECTOR_VARIANT_MATRIX = CLEAR_16_OF_16
+OWNER_EXISTENTIAL_COPULAR_PASSIVE_ADVERSARIAL = PROJECTION_0
+
+PREIMAGE_EARLY_ACTUAL_RUN / RETRY / RERUN = 1 / 0 / 0
+PREIMAGE_FRESH_OUTPUT_CREATED / DELETED / REMAINING = 2 / 2 / 0
+PREIMAGE_NETWORK / EXTERNAL_AI / PROVIDER / BODY_SEND / COST = 0 / 0 / 0 / 0 / 0
+FROZEN_PRIVATE_INPUT_RETAINED = 1
+COMMON_DEFECT_RETURN_COUNT_BEFORE / AFTER = 2_OF_2 / 2_OF_2
+COUNTER_RESET / COUNTER_INCREMENT = 0 / 0
+SOLE_ROUTE = ROUTE_A_PROVIDERLESS_EXACT1_ONLY
+PUBLIC_API / DB / RN / PRODUCTION_EFFECT = 0 / 0 / 0 / 0
+EARLY_ACTUAL_STATUS = NOT_RUN_PENDING_GENERIC_CONTRAST_ACTIVATION_HEADS
+STEP3 = ROUTE_A_GENERIC_CONTRAST_REPAIR_VERIFIED_PENDING_FRESH_ACTUAL
+FORMAL_EXACT8 = NOT_RUN
+PRODUCT_READ_EVALUATED = FALSE
+CANDIDATE_READY = FALSE
+STEP4 = NOT_STARTED
+AUTOMATIC_PROGRESSION = FALSE
+```
+
+new runtime / design headsを固定した後だけ、same frozen private exact4からfresh exact8を一回materializeする。known body-fullはUltra technical / Pro language、withheld body-fullはProだけが読み、output exact2をreview直後に削除する。success exact3がすべて`CLEAR`なら同じapproved unit内で`EARLY_ACTUAL_STATUS=LANGUAGE_VIABILITY_OBSERVED`へ遷移し、formal Product Read、Step 4、ready、mergeまたはproductionへ自動進行しない。

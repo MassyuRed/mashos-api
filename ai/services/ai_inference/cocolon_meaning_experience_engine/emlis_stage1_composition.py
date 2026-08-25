@@ -3446,6 +3446,22 @@ def _generic_relation_fragment_clause(
         and modality == "possibility"
     ):
         return "".join((quoted, "という制約があり"))
+    if (
+        polarity in {"neutral", "positive"}
+        and str(getattr(frame, "predicate_kind", ""))
+        in {"action", "change", "value"}
+    ):
+        return (
+            "".join(
+                (
+                    endpoint_object,
+                    _relation_endpoint_particle(carrier),
+                    carrier,
+                )
+            )
+            if carrier
+            else "".join((endpoint_object, "があり"))
+        )
     if carrier and (
         polarity == "negative" or modality == "possibility"
     ):

@@ -2400,6 +2400,122 @@ def _cmee_semantic_reception_plan(grounded_plan: Any, resolver: Any) -> Any:
     # the request-local observation support as evidence for that content so
     # Stage 1 can keep desire, current action, and result separate.
     semantic_support_ids: tuple[str, ...] = ()
+    generic_relation_support_bound = False
+    initial_support_ids = tuple(reception_plan.support_nucleus_ids)
+    if initial_support_ids:
+        selected_relation_endpoint_ids = _ordered(
+            (
+                *reception_plan.target_nucleus_ids,
+                *initial_support_ids,
+            )
+        )
+        selected_relation_endpoint_set = frozenset(
+            selected_relation_endpoint_ids
+        )
+        typed_relation_rows = tuple(
+            relation
+            for relation in grounded_plan.relations
+            if relation.source_relation_ids
+            == ("typed_projection:top_level_connective",)
+            and frozenset(
+                (
+                    relation.from_nucleus_id,
+                    relation.to_nucleus_id,
+                )
+            )
+            == selected_relation_endpoint_set
+        )
+        selected_relation_nuclei = tuple(
+            nucleus_index[row_id]
+            for row_id in selected_relation_endpoint_ids
+            if row_id in nucleus_index
+        )
+        # A generic exact2 relation is already a source-bound semantic unit.
+        # Its second endpoint may therefore support the selected reception
+        # move without becoming new evidence or a family-specific bridge.
+        # All other support shapes retain the pre-existing fail-closed check.
+        if (
+            len(initial_support_ids) == 1
+            and len(selected_relation_endpoint_ids) == 2
+            and len(typed_relation_rows) == 1
+            and len(selected_relation_nuclei) == 2
+            and len(
+                {
+                    tuple(row.source_span_ids)
+                    for row in selected_relation_nuclei
+                }
+            )
+            == 1
+            and all(
+                "semantic_role:generic_relation_fragment"
+                in set(row.semantic_frame.attribute_codes)
+                for row in selected_relation_nuclei
+            )
+        ):
+            semantic_support_ids = initial_support_ids
+            generic_relation_support_bound = True
+            move_endpoint_set = {
+                row_id
+                for move in reception_plan.moves
+                for row_id in (
+                    *move.target_nucleus_ids,
+                    *move.support_nucleus_ids,
+                )
+            }
+            # A single burden Move may have been selected from the support
+            # endpoint while the stable public follow target is the other
+            # endpoint.  Retarget that exact-one opportunity without changing
+            # its act; multi-Move plans already cover both relation endpoints.
+            if not set(reception_plan.target_nucleus_ids).issubset(
+                move_endpoint_set
+            ):
+                if (
+                    len(reception_plan.moves) != 1
+                    or len(reception_plan.opportunities) != 1
+                ):
+                    raise CMEEVerticalError(
+                        "bound_human_reception_relation_support_invalid"
+                    )
+                selected_evidence_set = {
+                    source_span_id
+                    for row_id in selected_relation_endpoint_ids
+                    for source_span_id in nucleus_index[row_id].source_span_ids
+                }
+                selected_evidence_ids = tuple(
+                    source_span_id
+                    for source_span_id in resolver.span_ids
+                    if source_span_id in selected_evidence_set
+                )
+                selected_source_field_count = len(
+                    {
+                        field
+                        for row_id in selected_relation_endpoint_ids
+                        for field in nucleus_index[row_id].source_fields
+                    }
+                )
+                reception_plan = replace(
+                    reception_plan,
+                    opportunities=tuple(
+                        replace(
+                            opportunity,
+                            target_nucleus_ids=reception_plan.target_nucleus_ids,
+                            support_nucleus_ids=semantic_support_ids,
+                            source_evidence_span_ids=selected_evidence_ids,
+                            source_field_count=selected_source_field_count,
+                        )
+                        for opportunity in reception_plan.opportunities
+                    ),
+                    moves=tuple(
+                        replace(
+                            move,
+                            target_nucleus_ids=reception_plan.target_nucleus_ids,
+                            support_nucleus_ids=semantic_support_ids,
+                            source_evidence_span_ids=selected_evidence_ids,
+                        )
+                        for move in reception_plan.moves
+                    ),
+                    source_evidence_span_ids=selected_evidence_ids,
+                )
     initial_acts = _ordered(move.reception_act for move in reception_plan.moves)
     target_has_value_operator = any(
         "operator:value" in set(nucleus_index[row_id].semantic_frame.attribute_codes)
@@ -2499,7 +2615,20 @@ def _cmee_semantic_reception_plan(grounded_plan: Any, resolver: Any) -> Any:
         raise CMEEVerticalError("bound_human_reception_source_evidence_mismatch")
     if not reception_plan.moves:
         raise CMEEVerticalError("bound_human_reception_move_missing")
-    if any(
+    if generic_relation_support_bound:
+        move_endpoint_ids = {
+            row_id
+            for move in reception_plan.moves
+            for row_id in (
+                *move.target_nucleus_ids,
+                *move.support_nucleus_ids,
+            )
+        }
+        if move_endpoint_ids != set(selected_nucleus_ids):
+            raise CMEEVerticalError(
+                "bound_human_reception_move_binding_mismatch"
+            )
+    elif any(
         move.target_nucleus_ids != reception_plan.target_nucleus_ids
         or move.support_nucleus_ids != reception_plan.support_nucleus_ids
         or move.source_evidence_span_ids != reception_plan.source_evidence_span_ids
@@ -2518,18 +2647,11 @@ def _cmee_semantic_reception_plan(grounded_plan: Any, resolver: Any) -> Any:
     if plan_issues:
         raise CMEEVerticalError("bound_human_reception_plan_invalid")
 
-    target_polarities = {
-        str(nucleus_index[row_id].semantic_frame.polarity)
-        for row_id in reception_plan.target_nucleus_ids
-    }
-    act_ids = _ordered(move.reception_act for move in reception_plan.moves)
-    if target_polarities == {"positive"} and CMEE_BURDEN_RECEPTION_ACTS.intersection(act_ids):
-        raise CMEEVerticalError("bound_human_reception_positive_burden_promotion")
-    target_nuclei = tuple(
-        nucleus_index[row_id] for row_id in reception_plan.target_nucleus_ids
-    )
-    for act_id in CMEE_POSITIVE_RECEPTION_ACTS.intersection(act_ids):
-        compatible = any(
+    def positive_act_is_compatible(
+        act_id: str,
+        target_nuclei: Sequence[Any],
+    ) -> bool:
+        return any(
             (
                 act_id == "protect_retained_intention"
                 and (
@@ -2562,7 +2684,49 @@ def _cmee_semantic_reception_plan(grounded_plan: Any, resolver: Any) -> Any:
             )
             for nucleus in target_nuclei
         )
-        if not compatible:
+
+    if generic_relation_support_bound:
+        for move in reception_plan.moves:
+            move_target_nuclei = tuple(
+                nucleus_index[row_id]
+                for row_id in move.target_nucleus_ids
+            )
+            move_target_polarities = {
+                str(nucleus.semantic_frame.polarity)
+                for nucleus in move_target_nuclei
+            }
+            if (
+                move_target_polarities == {"positive"}
+                and move.reception_act in CMEE_BURDEN_RECEPTION_ACTS
+            ):
+                raise CMEEVerticalError(
+                    "bound_human_reception_positive_burden_promotion"
+                )
+            if (
+                move.reception_act in CMEE_POSITIVE_RECEPTION_ACTS
+                and not positive_act_is_compatible(
+                    move.reception_act,
+                    move_target_nuclei,
+                )
+            ):
+                raise CMEEVerticalError(
+                    "bound_human_reception_target_act_semantic_mismatch"
+                )
+    else:
+        target_polarities = {
+            str(nucleus_index[row_id].semantic_frame.polarity)
+            for row_id in reception_plan.target_nucleus_ids
+        }
+        act_ids = _ordered(move.reception_act for move in reception_plan.moves)
+        if target_polarities == {"positive"} and CMEE_BURDEN_RECEPTION_ACTS.intersection(act_ids):
+            raise CMEEVerticalError("bound_human_reception_positive_burden_promotion")
+        target_nuclei = tuple(
+            nucleus_index[row_id]
+            for row_id in reception_plan.target_nucleus_ids
+        )
+        for act_id in CMEE_POSITIVE_RECEPTION_ACTS.intersection(act_ids):
+            if positive_act_is_compatible(act_id, target_nuclei):
+                continue
             raise CMEEVerticalError(
                 "bound_human_reception_target_act_semantic_mismatch"
             )

@@ -9114,6 +9114,286 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     )
                     self.assertNotIn("今も不確かなまま", actual_japanese)
 
+    def test_public_generic_contrast_fallback_is_endpoint_final_and_source_bound(
+        self,
+    ) -> None:
+        public_cases = (
+            (
+                "相談したいけれど、不安を感じている。",
+                ("wish", "reaction"),
+                ("相談したい", "不安を感じている"),
+                "contrast",
+            ),
+            (
+                "不安だったけれど、少し落ち着いた。",
+                ("reaction", "change"),
+                ("不安だった", "少し落ち着いた"),
+                "contrast",
+            ),
+            (
+                "メモを書いたけれど、まだ決めきれない。",
+                ("action", "uncertainty"),
+                ("メモを書いた", "まだ決めきれない"),
+                "contrast",
+            ),
+            (
+                "本を読んだけれど、記録を残した。",
+                ("action", "action"),
+                ("本を読んだ", "記録を残した"),
+                "contrast",
+            ),
+        )
+        for index, (memo, expected_kinds, expected_fragments, relation_type) in enumerate(
+            public_cases,
+            start=1,
+        ):
+            with self.subTest(public_generic_contrast=index):
+                (
+                    source,
+                    grounded_plan,
+                    _graph,
+                    _parent_plan,
+                    _projection,
+                    _phase_a,
+                    _subjective_plan,
+                    phase_b,
+                ) = _final_stage1_composition_inputs(
+                    _request(
+                        record_id=f"stage2-generic-contrast-{index}",
+                        memo=memo,
+                    )
+                )
+                typed = tuple(
+                    row
+                    for row in grounded_plan.nuclei
+                    if "semantic_role:generic_relation_fragment"
+                    in row.semantic_frame.attribute_codes
+                )
+                self.assertEqual(len(typed), 2)
+                self.assertEqual(tuple(row.kind for row in typed), expected_kinds)
+                self.assertEqual(len({row.source_span_ids for row in typed}), 1)
+                source_span = next(
+                    row
+                    for row in source.evidence_spans
+                    if row.span_id == typed[0].source_span_ids[0]
+                )
+                normalized_source = re.sub(
+                    r"\s+",
+                    " ",
+                    str(source_span.raw_text or "").replace("\u3000", " "),
+                ).strip()
+                actual_fragments: list[str] = []
+                for row in typed:
+                    scalar_rows = tuple(
+                        code
+                        for code in row.semantic_frame.attribute_codes
+                        if code.startswith("source_fragment_scalar_range:")
+                    )
+                    self.assertEqual(len(scalar_rows), 1)
+                    _prefix, start_text, end_text = scalar_rows[0].rsplit(":", 2)
+                    actual_fragments.append(
+                        normalized_source[int(start_text) : int(end_text)]
+                    )
+                self.assertEqual(tuple(actual_fragments), expected_fragments)
+                relation_rows = tuple(
+                    row
+                    for row in grounded_plan.relations
+                    if row.source_relation_ids
+                    == ("typed_projection:top_level_connective",)
+                )
+                self.assertEqual(len(relation_rows), 1)
+                self.assertEqual(relation_rows[0].type, relation_type)
+                self.assertEqual(
+                    (
+                        relation_rows[0].from_nucleus_id,
+                        relation_rows[0].to_nucleus_id,
+                    ),
+                    tuple(row.nucleus_id for row in typed),
+                )
+                result = stage1_composition_module.compose_stage1_from_projection(
+                    phase_b
+                )
+                actual_japanese = "\n".join(
+                    unit.text for unit in result.selected_candidate.sentence_units
+                )
+                self.assertTrue(
+                    all(fragment in actual_japanese for fragment in expected_fragments)
+                )
+
+        for index, memo in enumerate(
+            (
+                "相談したいけれど、不安な本を読んだ。",
+                "相談したいけれど、変わった本を読んだ。",
+                "相談したいことを記録したけれど、不安を感じている。",
+                "どうしたいか分からない理由を話したけれど、不安を感じている。",
+            ),
+            start=1,
+        ):
+            with self.subTest(public_generic_contrast_fail_closed=index):
+                source = freeze_text_source(
+                    _request(
+                        record_id=f"stage2-generic-contrast-negative-{index}",
+                        memo=memo,
+                    )
+                )
+                grounded_plan = build_final_stage1_grounded_observation_plan(
+                    source.normalized_current_input,
+                    evidence_spans=source.evidence_spans,
+                )
+                self.assertFalse(
+                    any(
+                        "semantic_role:generic_relation_fragment"
+                        in row.semantic_frame.attribute_codes
+                        for row in grounded_plan.nuclei
+                    )
+                )
+
+    def test_public_generic_contrast_fallback_closes_downstream_exact2_relation(
+        self,
+    ) -> None:
+        for index, memo in enumerate(
+            (
+                "不安が、少し落ち着いた。",
+                "価値が、少し増えた。",
+                "制約が、少し減った。",
+                "本を読むのに、メモを書いた。",
+                "予定を決めるのに、不安を感じている。",
+                "机にあったけれど、不安だった。",
+                "部屋にいたけれど、不安だった。",
+                "静かであったけれど、不安だった。",
+                "弟によれば不安だったけれど、相談したい。",
+                "弟によると不安だったけれど、相談したい。",
+                "弟から見ると不安だったけれど、相談したい。",
+                "先生いわく難しいけれど、相談したい。",
+                "弟からすると不安だったけれど、相談したい。",
+                "弟からすれば不安だったけれど、相談したい。",
+                "弟に言わせれば不安だったけれど、相談したい。",
+                "弟によりますと不安だったけれど、相談したい。",
+                "先生から宿題を出されたけれど、不安だった。",
+                "先生に叱られたけれど、不安だった。",
+                "先生に叱られていたけれど、不安だった。",
+                "先生に叱られていましたけれど、不安でした。",
+                "先生から宿題を出されていたけれど、不安だった。",
+                "雨に降られていたけれど、不安だった。",
+                "机にありましたけれど、不安でした。",
+                "部屋にいましたけれど、不安でした。",
+                "静かでありましたけれど、不安でした。",
+                "静かでしたけれど、不安でした。",
+                "元気でしたけれど、不安でした。",
+                "雨でしたけれど、不安でした。",
+                "必要でしたけれど、不安でした。",
+                "予定になりましたけれど、不安でした。",
+            ),
+            start=1,
+        ):
+            with self.subTest(non_contrast_shape=index):
+                source = freeze_text_source(
+                    _request(
+                        record_id=f"stage2-generic-non-contrast-{index}",
+                        memo=memo,
+                    )
+                )
+                grounded_plan = build_final_stage1_grounded_observation_plan(
+                    source.normalized_current_input,
+                    evidence_spans=source.evidence_spans,
+                )
+                self.assertFalse(
+                    any(
+                        "semantic_role:generic_relation_fragment"
+                        in row.semantic_frame.attribute_codes
+                        for row in grounded_plan.nuclei
+                    )
+                )
+
+        supported_pairs = (
+            "相談したいけれど、続けたくない。",
+            "続けたくないけれど、相談したい。",
+            "迷っているけれど、相談したい。",
+            "まだ決めきれないけれど、相談したい。",
+            "不安だったけれど、できない。",
+            "少し落ち着いたけれど、相談したい。",
+            "少し落ち着いたけれど、メモを書いた。",
+            "メモを書いたけれど、相談したい。",
+            "大事だけれど、相談したい。",
+            "大事だけれど、メモを書いた。",
+            "迷っているけれど、できない。",
+            "続けたくないけれど、できない。",
+            "まだ決めきれないけれど、できない。",
+            "メモを書いたけれど、少し落ち着いた。",
+        )
+        for index, memo in enumerate(supported_pairs, start=1):
+            with self.subTest(downstream_exact2_relation=index):
+                (
+                    source,
+                    grounded_plan,
+                    _graph,
+                    _parent_plan,
+                    _projection,
+                    _phase_a,
+                    _subjective_plan,
+                    phase_b,
+                ) = _final_stage1_composition_inputs(
+                    _request(
+                        record_id=f"stage2-generic-downstream-{index}",
+                        memo=memo,
+                    )
+                )
+                typed = tuple(
+                    row
+                    for row in grounded_plan.nuclei
+                    if "semantic_role:generic_relation_fragment"
+                    in row.semantic_frame.attribute_codes
+                )
+                self.assertEqual(len(typed), 2)
+                relation_rows = tuple(
+                    row
+                    for row in grounded_plan.relations
+                    if row.source_relation_ids
+                    == ("typed_projection:top_level_connective",)
+                )
+                self.assertEqual(len(relation_rows), 1)
+                if memo == "メモを書いたけれど、少し落ち着いた。":
+                    self.assertEqual(relation_rows[0].type, "contrast")
+                    self.assertFalse(
+                        any(
+                            row.type == "action_supports_change"
+                            for row in grounded_plan.relations
+                        )
+                    )
+                resolver = build_evidence_span_resolver(
+                    source.evidence_spans,
+                    current_input=source.normalized_current_input,
+                )
+                reception_plan = emlis_v1a_module._cmee_semantic_reception_plan(
+                    grounded_plan,
+                    resolver,
+                )
+                reception_endpoint_ids = {
+                    nucleus_id
+                    for move in reception_plan.moves
+                    for nucleus_id in (
+                        *move.target_nucleus_ids,
+                        *move.support_nucleus_ids,
+                    )
+                }
+                relation_endpoint_ids = {
+                    relation_rows[0].from_nucleus_id,
+                    relation_rows[0].to_nucleus_id,
+                }
+                self.assertTrue(reception_endpoint_ids)
+                self.assertTrue(
+                    reception_endpoint_ids.issubset(relation_endpoint_ids)
+                )
+                if 5 <= index <= 13:
+                    self.assertEqual(
+                        reception_endpoint_ids,
+                        relation_endpoint_ids,
+                    )
+                result = stage1_composition_module.compose_stage1_from_projection(
+                    phase_b
+                )
+                self.assertTrue(result.selected_candidate.sentence_units)
+
     def test_generic_affect_is_absorbed_by_same_target_specific_opportunity(
         self,
     ) -> None:
