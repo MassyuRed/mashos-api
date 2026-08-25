@@ -3505,6 +3505,12 @@ def _generic_relation_fragment_clause(
         # registered modality/time/polarity axes.  Join every registered
         # combination uniformly instead of re-enumerating particular input
         # or time-scope cases here.
+        if carrier == "不確かさも残り":
+            # The fused carrier's ``も`` is role-local before attachment.
+            # Once the source endpoint supplies ``には``, realize the
+            # carrier's grammatical subject with ``が`` rather than stacking
+            # two topic particles.
+            return "".join((endpoint_object, "には不確かさが残り"))
         return "".join(
             (
                 endpoint_object,
