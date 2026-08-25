@@ -241,7 +241,7 @@ class OwnerClass(str, Enum):
     ACTIVE_OPTIONAL = "ACTIVE_OPTIONAL"
 
 
-class ProviderResolution(str, Enum):
+class ResolverResolution(str, Enum):
     UNIQUE = "UNIQUE"
     AMBIGUOUS = "AMBIGUOUS"
     UNRESOLVED = "UNRESOLVED"
@@ -2725,7 +2725,7 @@ class SourceOwnerResolution:
 
     meaning_owner_id: str
     owner_class: OwnerClass
-    provider_resolution: ProviderResolution
+    resolver_resolution: ResolverResolution
     attachment_admission: AttachmentAdmission
     visible_authority: VisibleAuthority
     source_owner_disposition: SourceOwnerDisposition
@@ -5500,7 +5500,7 @@ __all__ = [
     "PolicyBasisRole",
     "PlannedObservationContribution",
     "ProductJob",
-    "ProviderResolution",
+    "ResolverResolution",
     "RealizedSemanticBinding",
     "RealizedSentenceUnit",
     "RealizationCandidateSet",

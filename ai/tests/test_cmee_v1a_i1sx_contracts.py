@@ -77,7 +77,7 @@ from cocolon_meaning_experience_engine.contracts import (
     PolicyBasisOwnerKind,
     PolicyBasisRole,
     PlannedObservationContribution,
-    ProviderResolution,
+    ResolverResolution,
     RealizationCandidateSet,
     RealizedSemanticBinding,
     RealizedSentenceUnit,
@@ -1140,7 +1140,7 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
         )
         positive_mutations = (
             replace(positive, visible_authority=VisibleAuthority.NONE),
-            replace(positive, provider_resolution=ProviderResolution.UNRESOLVED),
+            replace(positive, resolver_resolution=ResolverResolution.UNRESOLVED),
             replace(positive, attachment_admission=AttachmentAdmission.UNRESOLVED),
             replace(positive, reason_codes=("tampered",)),
         )
@@ -1789,7 +1789,7 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
             (
                 "meaning_owner_id",
                 "owner_class",
-                "provider_resolution",
+                "resolver_resolution",
                 "attachment_admission",
                 "visible_authority",
                 "source_owner_disposition",
@@ -1801,7 +1801,7 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
         )
         self.assertEqual({row.value for row in OwnerClass}, {"REQUIRED", "ACTIVE_OPTIONAL"})
         self.assertEqual(
-            {row.value for row in ProviderResolution},
+            {row.value for row in ResolverResolution},
             {"UNIQUE", "AMBIGUOUS", "UNRESOLVED", "MISSING_OR_INVALID"},
         )
         self.assertEqual(

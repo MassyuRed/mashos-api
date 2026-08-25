@@ -23,7 +23,7 @@ from cocolon_meaning_experience_engine.contracts import (
     CommonGuardResultProof,
     EpistemicState,
     OwnerClass,
-    ProviderResolution,
+    ResolverResolution,
     SourceOwnerDisposition,
     VisibleAuthority,
 )
@@ -504,7 +504,7 @@ def _step6_owner_shape(captured: dict[str, object], owner_id: str) -> tuple:
     )
     return (
         row.owner_class.value,
-        row.provider_resolution.value,
+        row.resolver_resolution.value,
         row.attachment_admission.value,
         row.visible_authority.value,
         row.disposition.value,
@@ -1460,8 +1460,8 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             self.assertEqual(row.evidence_refs, obligation.evidence_refs)
             if obligation.obligation_kind == "STRUCTURED_CONTEXT_ATTACHMENT":
                 self.assertEqual(
-                    row.provider_resolution,
-                    ProviderResolution.MISSING_OR_INVALID,
+                    row.resolver_resolution,
+                    ResolverResolution.MISSING_OR_INVALID,
                 )
                 self.assertEqual(row.attachment_admission, AttachmentAdmission.UNAVAILABLE)
                 self.assertEqual(
@@ -1477,8 +1477,8 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 is SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
             ):
                 self.assertEqual(
-                    row.provider_resolution,
-                    ProviderResolution.MISSING_OR_INVALID,
+                    row.resolver_resolution,
+                    ResolverResolution.MISSING_OR_INVALID,
                 )
                 self.assertEqual(row.attachment_admission, AttachmentAdmission.UNAVAILABLE)
                 self.assertEqual(row.visible_authority, VisibleAuthority.SOURCE_EXPLICIT)
@@ -1487,8 +1487,8 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 self.assertEqual(row.reason_codes, ())
             else:
                 self.assertEqual(
-                    row.provider_resolution,
-                    ProviderResolution.MISSING_OR_INVALID,
+                    row.resolver_resolution,
+                    ResolverResolution.MISSING_OR_INVALID,
                 )
                 self.assertEqual(row.attachment_admission, AttachmentAdmission.UNAVAILABLE)
                 self.assertEqual(
@@ -1543,9 +1543,9 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         foreign_evidence = other_source.evidence_refs[0].evidence_id
         field_mutations = {
             "owner_class": replace(positive, owner_class=OwnerClass.ACTIVE_OPTIONAL),
-            "provider_resolution": replace(
+            "resolver_resolution": replace(
                 positive,
-                provider_resolution=ProviderResolution.UNRESOLVED,
+                resolver_resolution=ResolverResolution.UNRESOLVED,
             ),
             "attachment_admission": replace(
                 positive,

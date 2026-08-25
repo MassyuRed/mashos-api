@@ -122,7 +122,7 @@ exact8 failure split: 0。
 
 original exact8の入力はrunner内が正本です。R4ではfixture、8件denominator、評価軸、disabled flagsを変更していません。R1のUNKNOWN contractと旧comparatorの矛盾を解くため、MashがR4限定で明示承認したrole-aware structural comparator correctionだけを行いました。この例外を将来のprotected comparator変更へのstanding delegationとして扱ってはいけません。
 
-R3 verificationはimplementation commit `a170bab1f62e5314f6889d23ed36915fe78b185f`のproduction/test exact3に対して実施しました。private proof ownerとして`cocolon.cmee.v1a.common_guard_proof.v1`を追加し、outer CMEE schema、source contract v2、frame grammar、source-owner policy、obligation、owner-universe schemaは据え置いています。independent contract/adversarial reviewは宣言済みLevel-2 threat boundary内でGREEN、blocker 0です。original exact8 runnerはbyte変更0です。
+R3 verificationはimplementation commit `a170bab1f62e5314f6889d23ed36915fe78b185f`のproduction/test exact3に対して実施しました。private proof ownerとして`cocolon.cmee.v1a.common_guard_proof.v1`を追加し、outer CMEE schema、source contract v2、frame grammar、当時のacceptance-policy literal identity、obligation、owner-universe schemaは当時のbytes上で据え置かれました。当時のliteral identityはGit historyだけが所有し、本handoffは過去commitへ現行名を遡及適用しません。現行のroute-neutral source-owner identityは§27だけが所有します。independent contract/adversarial reviewは宣言済みLevel-2 threat boundary内でGREEN、blocker 0です。original exact8 runnerはbyte変更0です。
 
 R4 verificationはimplementation commit `dbd03256d93dd28e2a2703c8c754742d9a89ec3c`のimplementation/test/runner exact3に対して実施しました。`emlis_v1a.py`内のprivate plan-bound realizer、既存vertical mutation tests、明示承認されたrunner comparator以外は変更していません。common core、contracts、engine、source kernel、dependency、fixture、denominator、評価軸、public ingressは変更0です。independent contract/adversarial/product-scope reviewはGREEN、blocker 0です。
 
@@ -996,7 +996,7 @@ SOURCE_OWNER_POLICY_VERSION = cocolon.cmee.v1a.source_owner_resolution.v2
 SOURCE_OWNER_NAMING_MIGRATION = COMPLETE_VERIFIED
 SOURCE_OWNER_SEMANTIC_BEHAVIOR_CHANGE = 0
 SOURCE_OWNER_COMPAT_ROUTE_ALIAS = 0
-LANGUAGE_CORE_IDENTITY_AFTER_SOURCE_OWNER_NEUTRALIZATION = f53e16d76a000aa5caca39aa8d9f2dccce8f6016a1379f5b3614d154b8fe19e4
+LANGUAGE_CORE_IDENTITY_AFTER_SOURCE_OWNER_NEUTRALIZATION = 3158e2bb597ab4f4be92931fef9548d9b73dfd16f7c4432acded4c3f101a8918
 CONTRACT_AND_VERTICAL_TESTS = 156_OF_156_PASS
 TARGETED_HASH_TEST = 1_OF_1_PASS
 COMPILEALL_EXACT4 = PASS

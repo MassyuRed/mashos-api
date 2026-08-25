@@ -47,7 +47,7 @@ from cocolon_meaning_experience_engine.contracts import (  # noqa: E402
     GroundedMeaningGraph,
     MeaningNode,
     OwnerClass,
-    ProviderResolution,
+    ResolverResolution,
     SourceOwnerDisposition,
     VisibleAuthority,
     VisibleUnitTrace,
@@ -171,7 +171,7 @@ WITHHELD_EARLY_PRIVATE_SLOT_ID = (
     "PRIVATE_SLOT_WITHHELD_EARLY_20260824_V1"
 )
 STEP2_FROZEN_LANGUAGE_CORE_IDENTITY = (
-    "f53e16d76a000aa5caca39aa8d9f2dccce8f6016a1379f5b3614d154b8fe19e4"
+    "3158e2bb597ab4f4be92931fef9548d9b73dfd16f7c4432acded4c3f101a8918"
 )
 EARLY_HUMAN_READ_RESULTS = (
     "CLEAR",
@@ -196,7 +196,7 @@ EARLY_ROUTE_LEVEL_CEILING_REASONS = (
     "FINISHED_SENTENCE_REQUIRED",
     "NEW_ENUM_OR_AXIS_REQUIRED",
     "NEW_ASSET_FAMILY_REQUIRED",
-    "LISTED_OUTSIDE_PATH_OR_PROVIDER_REQUIRED",
+    "LISTED_OUTSIDE_PATH_OR_EXTERNAL_DEPENDENCY_REQUIRED",
     "TYPED_PROFILE_CANNOT_RESOLVE_IDIOMATICITY",
 )
 
@@ -1106,21 +1106,21 @@ def _source_owner_dispositions_valid(graph: GroundedMeaningGraph) -> bool:
         if row.disposition in positive:
             expected_fields = (
                 (
-                    ProviderResolution.MISSING_OR_INVALID,
+                    ResolverResolution.MISSING_OR_INVALID,
                     AttachmentAdmission.UNAVAILABLE,
                     VisibleAuthority.SOURCE_EXPLICIT,
                 )
                 if row.disposition
                 is SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
                 else (
-                    ProviderResolution.UNIQUE,
+                    ResolverResolution.UNIQUE,
                     AttachmentAdmission.PROVISIONAL_ONLY,
                     VisibleAuthority.SUPPLEMENTAL_USER,
                 )
             )
             if (
                 (
-                    row.provider_resolution,
+                    row.resolver_resolution,
                     row.attachment_admission,
                     row.visible_authority,
                 )
@@ -1147,7 +1147,7 @@ def _source_owner_dispositions_valid(graph: GroundedMeaningGraph) -> bool:
         ):
             target = nodes.get(row.target_unknown_ref or "")
             if (
-                row.provider_resolution is not ProviderResolution.UNRESOLVED
+                row.resolver_resolution is not ResolverResolution.UNRESOLVED
                 or row.attachment_admission is not AttachmentAdmission.UNRESOLVED
                 or row.visible_authority is not VisibleAuthority.NONE
                 or row.target_unknown_ref is None
@@ -1164,7 +1164,8 @@ def _source_owner_dispositions_valid(graph: GroundedMeaningGraph) -> bool:
             is SourceOwnerDisposition.NOT_VISIBLE_UNRESOLVED
         ):
             if (
-                row.provider_resolution is not ProviderResolution.MISSING_OR_INVALID
+                row.resolver_resolution
+                is not ResolverResolution.MISSING_OR_INVALID
                 or row.attachment_admission is not AttachmentAdmission.UNAVAILABLE
                 or row.visible_authority is not VisibleAuthority.NONE
                 or refs

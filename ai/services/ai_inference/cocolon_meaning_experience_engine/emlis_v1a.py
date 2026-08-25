@@ -60,7 +60,7 @@ from .contracts import (
     MeaningNode,
     OwnerClass,
     OwnerDisposition,
-    ProviderResolution,
+    ResolverResolution,
     SourceOwnerDisposition,
     RealizedSentenceUnit,
     VisibleAuthority,
@@ -631,9 +631,9 @@ TRUST_POLICY_IDS = (
 )
 SOURCE_OWNER_REASON_CODES = frozenset(
     {
-        "PROVIDER_IDENTITY_MISMATCH",
+        "RESOLVER_IDENTITY_MISMATCH",
         "RESOURCE_LOCK_MISMATCH",
-        "PROVIDER_OUTPUT_INVALID",
+        "RESOLVER_OUTPUT_INVALID",
         "REQUIRED_OWNER_MISSING",
         "ATTACHMENT_AMBIGUOUS",
         "ATTACHMENT_UNRESOLVED",
@@ -895,7 +895,7 @@ def _graph_id(
             (
                 row.meaning_owner_id,
                 row.owner_class.value,
-                row.provider_resolution.value,
+                row.resolver_resolution.value,
                 row.attachment_admission.value,
                 row.visible_authority.value,
                 row.source_owner_disposition.value,
@@ -2019,7 +2019,7 @@ def _build_graph(
                     OwnerDisposition(
                         meaning_owner_id=owner_id,
                         owner_class=obligation.owner_class,
-                        provider_resolution=ProviderResolution.UNRESOLVED,
+                        resolver_resolution=ResolverResolution.UNRESOLVED,
                         attachment_admission=AttachmentAdmission.UNRESOLVED,
                         visible_authority=VisibleAuthority.NONE,
                         source_owner_disposition=(
@@ -2036,7 +2036,7 @@ def _build_graph(
                 OwnerDisposition(
                     meaning_owner_id=owner_id,
                     owner_class=obligation.owner_class,
-                    provider_resolution=ProviderResolution.MISSING_OR_INVALID,
+                    resolver_resolution=ResolverResolution.MISSING_OR_INVALID,
                     attachment_admission=AttachmentAdmission.UNAVAILABLE,
                     visible_authority=VisibleAuthority.NONE,
                     source_owner_disposition=(
@@ -2053,7 +2053,7 @@ def _build_graph(
                 OwnerDisposition(
                     meaning_owner_id=owner_id,
                     owner_class=obligation.owner_class,
-                    provider_resolution=ProviderResolution.MISSING_OR_INVALID,
+                    resolver_resolution=ResolverResolution.MISSING_OR_INVALID,
                     attachment_admission=AttachmentAdmission.UNAVAILABLE,
                     visible_authority=VisibleAuthority.SOURCE_EXPLICIT,
                     source_owner_disposition=(
@@ -2070,7 +2070,7 @@ def _build_graph(
                 OwnerDisposition(
                     meaning_owner_id=owner_id,
                     owner_class=obligation.owner_class,
-                    provider_resolution=ProviderResolution.MISSING_OR_INVALID,
+                    resolver_resolution=ResolverResolution.MISSING_OR_INVALID,
                     attachment_admission=AttachmentAdmission.UNAVAILABLE,
                     visible_authority=VisibleAuthority.NONE,
                     source_owner_disposition=(
@@ -4919,7 +4919,7 @@ def _validate_source_owner_graph_contract(
         ):
             raise CMEEVerticalError("source_owner_cross_source_evidence")
         if (
-            row.provider_resolution is ProviderResolution.MISSING_OR_INVALID
+            row.resolver_resolution is ResolverResolution.MISSING_OR_INVALID
             and row.attachment_admission is not AttachmentAdmission.UNAVAILABLE
         ):
             raise CMEEVerticalError("source_owner_resolver_admission_mismatch")
@@ -4957,7 +4957,7 @@ def _validate_source_owner_graph_contract(
         ):
             target = claim_by_id.get(row.target_unknown_ref or "")
             if (
-                row.provider_resolution is not ProviderResolution.UNRESOLVED
+                row.resolver_resolution is not ResolverResolution.UNRESOLVED
                 or row.attachment_admission is not AttachmentAdmission.UNRESOLVED
                 or row.visible_authority is not VisibleAuthority.NONE
                 or row.target_unknown_ref is None
@@ -4977,7 +4977,8 @@ def _validate_source_owner_graph_contract(
             is SourceOwnerDisposition.NOT_VISIBLE_UNRESOLVED
         ):
             if (
-                row.provider_resolution is not ProviderResolution.MISSING_OR_INVALID
+                row.resolver_resolution
+                is not ResolverResolution.MISSING_OR_INVALID
                 or row.attachment_admission is not AttachmentAdmission.UNAVAILABLE
                 or row.visible_authority is not VisibleAuthority.NONE
                 or row.visible_claim_refs
