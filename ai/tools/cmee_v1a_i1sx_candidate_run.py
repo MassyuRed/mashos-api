@@ -153,10 +153,16 @@ EARLY_WITHHELD_BODY_FREE_SCHEMA_VERSION = (
     "cocolon.cmee.stage1.withheld_early_machine_body_free.v1"
 )
 EARLY_BODY_FREE_PACKET_SCHEMA_VERSION = (
-    "cocolon.cmee.stage1.early_actual_body_free.v1"
+    "cocolon.cmee.stage1.early_actual_body_free.v2"
 )
 EARLY_HUMAN_READ_RESULT_SCHEMA_VERSION = (
     "cocolon.cmee.stage1.early_human_read_result.v1"
+)
+EARLY_ULTRA_KNOWN_TECHNICAL_RESULT_SCHEMA_VERSION = (
+    "cocolon.cmee.stage1.early_ultra_known_technical_result.v1"
+)
+EARLY_ACTUAL_FINAL_BODY_FREE_SCHEMA_VERSION = (
+    "cocolon.cmee.stage1.early_actual_final_body_free.v1"
 )
 EARLY_PRIVATE_PACKET_SCHEMA_VERSION = (
     "cocolon.cmee.stage1.withheld_early_private_packet.v1"
@@ -171,12 +177,16 @@ WITHHELD_EARLY_PRIVATE_SLOT_ID = (
     "PRIVATE_SLOT_WITHHELD_EARLY_20260824_V1"
 )
 STEP2_FROZEN_LANGUAGE_CORE_IDENTITY = (
-    "3158e2bb597ab4f4be92931fef9548d9b73dfd16f7c4432acded4c3f101a8918"
+    "21aa234369b467b377f595c972487bb3b036cf47ebc605efb9a0f301a2c1d99a"
 )
 EARLY_HUMAN_READ_RESULTS = (
     "CLEAR",
     "COMMON_DEFECT",
     "ROUTE_LEVEL_CEILING",
+)
+EARLY_ULTRA_KNOWN_TECHNICAL_RESULTS = (
+    "CLEAR",
+    "NOT_CLEAR",
 )
 EARLY_COMMON_DEFECT_CAUSE_COMPONENTS = (
     "SUBJECTIVE_MEANING_PLANNER",
@@ -754,6 +764,7 @@ def run_early_actual(
         "material_alternate_case_count": known_visible[
             "material_alternate_case_count"
         ],
+        "known_visible_packet_sha256": _canonical_sha256(known_visible),
         "body_payload_present": False,
     }
     body_free_packet = {
@@ -821,6 +832,7 @@ def _validate_early_body_free_machine_packet(
         "machine_invariant_clear_count",
         "machine_invariant_result",
         "material_alternate_case_count",
+        "known_visible_packet_sha256",
         "body_payload_present",
     }
     withheld_keys = {
@@ -922,6 +934,11 @@ def _validate_early_body_free_machine_packet(
         or any(not exact_int(known[field], 4) for field in known_exact4_fields)
         or known["machine_invariant_result"] != "CLEAR"
         or not set_level_alternate_count(known["material_alternate_case_count"])
+        or type(known["known_visible_packet_sha256"]) is not str
+        or re.fullmatch(
+            r"[0-9a-f]{64}", known["known_visible_packet_sha256"]
+        )
+        is None
         or known["body_payload_present"] is not False
         or withheld["schema_version"]
         != EARLY_WITHHELD_BODY_FREE_SCHEMA_VERSION
@@ -1036,6 +1053,118 @@ def validate_early_human_read_result(
     if not conditional_valid:
         raise ValueError("early human read result invalid")
     return {key: payload[key] for key in expected_keys}
+
+
+def validate_ultra_known_technical_result(
+    payload: object,
+    *,
+    body_free_machine_packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate Ultra's body-free technical result for known exact4."""
+
+    expected_keys = (
+        "schema_version",
+        "packet_id",
+        "bounded_unit_id",
+        "runtime_repo_head",
+        "design_repo_head",
+        "language_core_identity",
+        "known_visible_packet_sha256",
+        "body_free_machine_packet_sha256",
+        "reviewed_known_count",
+        "body_payload_present",
+        "ultra_known_technical_invariant",
+    )
+    _validate_early_body_free_machine_packet(body_free_machine_packet)
+    if type(payload) is not dict or set(payload) != set(expected_keys):
+        raise ValueError("early Ultra known technical result invalid")
+    machine_bindings = {
+        "packet_id": body_free_machine_packet.get("packet_id"),
+        "bounded_unit_id": body_free_machine_packet.get("bounded_unit_id"),
+        "runtime_repo_head": body_free_machine_packet.get("runtime_repo_head"),
+        "design_repo_head": body_free_machine_packet.get("design_repo_head"),
+        "language_core_identity": body_free_machine_packet.get(
+            "language_core_identity"
+        ),
+        "known_visible_packet_sha256": body_free_machine_packet.get(
+            "known_exact4_body_free", {}
+        ).get("known_visible_packet_sha256"),
+        "body_free_machine_packet_sha256": _canonical_sha256(
+            body_free_machine_packet
+        ),
+    }
+    if (
+        any(payload[key] != value for key, value in machine_bindings.items())
+        or payload["schema_version"]
+        != EARLY_ULTRA_KNOWN_TECHNICAL_RESULT_SCHEMA_VERSION
+        or payload["reviewed_known_count"] != 4
+        or payload["body_payload_present"] is not False
+        or payload["ultra_known_technical_invariant"]
+        not in EARLY_ULTRA_KNOWN_TECHNICAL_RESULTS
+    ):
+        raise ValueError("early Ultra known technical result invalid")
+    return {key: payload[key] for key in expected_keys}
+
+
+def finalize_early_actual_body_free(
+    *,
+    body_free_machine_packet: Mapping[str, Any],
+    pro_human_read_result: object,
+    ultra_known_technical_result: object,
+) -> dict[str, Any]:
+    """Create a separate body-free receipt from the Step 3 exact3 results."""
+
+    _known, withheld = _validate_early_body_free_machine_packet(
+        body_free_machine_packet
+    )
+    pro = validate_early_human_read_result(
+        pro_human_read_result,
+        body_free_machine_packet=body_free_machine_packet,
+    )
+    ultra = validate_ultra_known_technical_result(
+        ultra_known_technical_result,
+        body_free_machine_packet=body_free_machine_packet,
+    )
+    pro_result = pro["early_human_read_result"]
+    ultra_result = ultra["ultra_known_technical_invariant"]
+    withheld_result = withheld["machine_invariant_result"]
+    all_three_clear = (
+        pro_result == ultra_result == withheld_result == "CLEAR"
+    )
+    return {
+        "schema_version": EARLY_ACTUAL_FINAL_BODY_FREE_SCHEMA_VERSION,
+        "packet_id": body_free_machine_packet["packet_id"],
+        "bounded_unit_id": body_free_machine_packet["bounded_unit_id"],
+        "runtime_repo_head": body_free_machine_packet["runtime_repo_head"],
+        "design_repo_head": body_free_machine_packet["design_repo_head"],
+        "language_core_identity": body_free_machine_packet[
+            "language_core_identity"
+        ],
+        "withheld_set_digest": withheld["withheld_set_digest"],
+        "known_visible_packet_sha256": ultra[
+            "known_visible_packet_sha256"
+        ],
+        "body_free_machine_packet_sha256": ultra[
+            "body_free_machine_packet_sha256"
+        ],
+        "pro_human_read_result_sha256": _canonical_sha256(pro),
+        "ultra_known_technical_result_sha256": _canonical_sha256(ultra),
+        "pro_body_free_early_human_read_result": pro_result,
+        "ultra_known_technical_invariant": ultra_result,
+        "withheld_body_free_machine_invariant": withheld_result,
+        "all_three_clear": all_three_clear,
+        "early_actual_status": (
+            "LANGUAGE_VIABILITY_OBSERVED" if all_three_clear else "NOT_RUN"
+        ),
+        "body_payload_present": False,
+        "private_text_published": False,
+        "formal_exact8": "NOT_RUN",
+        "product_read_evaluated": False,
+        "product_credit": 0,
+        "candidate_ready": False,
+        "production_effect": 0,
+        "automatic_progression": False,
+    }
 
 
 def _private_packet_binding(
@@ -1969,15 +2098,76 @@ def _write_private_json_exclusive(
         os.close(directory_fd)
 
 
+def _read_body_free_json(
+    parser: argparse.ArgumentParser,
+    target: Path,
+) -> object:
+    """Read a bounded body-free finalization input without echoing content."""
+
+    try:
+        file_stat = target.stat()
+        if (
+            not stat.S_ISREG(file_stat.st_mode)
+            or not 0 < file_stat.st_size <= 64 * 1024
+        ):
+            parser.error("early finalization body-free input invalid")
+        with target.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        parser.error("early finalization body-free input invalid")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--body-full-output", type=Path)
     parser.add_argument("--runtime-repo-head")
     parser.add_argument("--design-repo-head")
     parser.add_argument("--early-actual", action="store_true")
+    parser.add_argument("--finalize-early-actual", action="store_true")
     parser.add_argument("--withheld-input", type=Path)
     parser.add_argument("--known-visible-output", type=Path)
+    parser.add_argument("--early-machine-body-free-input", type=Path)
+    parser.add_argument("--early-pro-body-free-input", type=Path)
+    parser.add_argument("--early-ultra-body-free-input", type=Path)
     args = parser.parse_args()
+    finalizer_inputs = (
+        args.early_machine_body_free_input,
+        args.early_pro_body_free_input,
+        args.early_ultra_body_free_input,
+    )
+    if args.finalize_early_actual:
+        if (
+            any(target is None for target in finalizer_inputs)
+            or args.early_actual
+            or args.body_full_output is not None
+            or args.withheld_input is not None
+            or args.known_visible_output is not None
+            or args.runtime_repo_head is not None
+            or args.design_repo_head is not None
+        ):
+            parser.error("early finalization requires body-free input exact3")
+        try:
+            machine_packet, pro_result, ultra_result = (
+                _read_body_free_json(parser, target)
+                for target in finalizer_inputs
+                if target is not None
+            )
+            receipt = finalize_early_actual_body_free(
+                body_free_machine_packet=machine_packet,
+                pro_human_read_result=pro_result,
+                ultra_known_technical_result=ultra_result,
+            )
+        except ValueError:
+            parser.error("early finalization binding invalid")
+        print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
+        return (
+            0
+            if receipt["early_actual_status"]
+            == "LANGUAGE_VIABILITY_OBSERVED"
+            else 1
+        )
+    if any(target is not None for target in finalizer_inputs):
+        parser.error("early finalization inputs require finalization mode")
     if args.early_actual:
         if (
             args.withheld_input is None
