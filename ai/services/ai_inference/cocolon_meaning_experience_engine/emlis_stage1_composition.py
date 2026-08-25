@@ -2443,11 +2443,11 @@ EXPRESSION_ASSET_REGISTRY = (
     ExpressionAssetSpec("expression:relation-sequence.v1", SentenceJob.TRACE_CHANGE_OR_SEQUENCE, SemanticClauseKind.ADMITTED_RELATION, "sequence", ("その順序のまま", "表れています"), (PredicateValency.DYADIC_RELATION_ENDPOINTS,)),
     ExpressionAssetSpec("expression:preserve-unfinished.v1", SentenceJob.PRESERVE_RESIDUE_OR_UNFINISHED, SemanticClauseKind.GROUNDED_PREDICATE, "unfinished", ("まだ閉じていないものとして", "残っています"), (PredicateValency.MONADIC_ARGUMENT,)),
     ExpressionAssetSpec("expression:emlis-affect.v1", SentenceJob.FEEL_TOWARD_OBJECT, SemanticClauseKind.SUBJECTIVE_PREDICATE, "affect", ("静かに", "気にかけています"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
-    ExpressionAssetSpec("expression:emlis-appraisal-material.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-material", ("軽く扱わずに", "受け取っています"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
-    ExpressionAssetSpec("expression:emlis-appraisal-noncollapse.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-noncollapse", ("どちらも残して", "受け取っています"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
-    ExpressionAssetSpec("expression:emlis-appraisal-change.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-change", ("今回の変化として", "受け取っています"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
-    ExpressionAssetSpec("expression:emlis-appraisal-unfinished.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-unfinished", ("結論を急がずに", "受け取っています"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
-    ExpressionAssetSpec("expression:emlis-appraisal-agency.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-agency", ("選べる向きを守って", "受け取っています"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
+    ExpressionAssetSpec("expression:emlis-appraisal-material.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-material", ("軽く扱えないものとして", "受け止めたいです"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
+    ExpressionAssetSpec("expression:emlis-appraisal-noncollapse.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-noncollapse", ("どちらか一方に決めず", "大切に受け止めたいです"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
+    ExpressionAssetSpec("expression:emlis-appraisal-change.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-change", ("今回起きた変化として", "大切に受け止めたいです"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
+    ExpressionAssetSpec("expression:emlis-appraisal-unfinished.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-unfinished", ("まだ結論にしなくてよいものとして", "受け止めたいです"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
+    ExpressionAssetSpec("expression:emlis-appraisal-agency.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-agency", ("本人が選べる向きとして", "大切に受け止めたいです"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
     ExpressionAssetSpec("expression:emlis-value.v1", SentenceJob.TAKE_MATERIAL_POSITION, SemanticClauseKind.SUBJECTIVE_PREDICATE, "material-value", ("決めつけに変えず", "大切にしたいです"), (PredicateValency.DYADIC_ACTOR_TARGET, PredicateValency.TRIADIC_ACTOR_TARGET_BOUNDARY)),
     ExpressionAssetSpec("expression:emlis-position.v1", SentenceJob.TAKE_MATERIAL_POSITION, SemanticClauseKind.SUBJECTIVE_PREDICATE, "position", ("選べる向きとして", "尊重したいです"), (PredicateValency.DYADIC_ACTOR_TARGET, PredicateValency.TRIADIC_ACTOR_TARGET_BOUNDARY)),
     ExpressionAssetSpec("expression:emlis-open-position.v1", SentenceJob.STAY_WITH_UNFINISHED, SemanticClauseKind.SUBJECTIVE_PREDICATE, "open-position", ("急いで閉じず", "一緒に置いていたいです"), (PredicateValency.DYADIC_ACTOR_TARGET, PredicateValency.TRIADIC_ACTOR_TARGET_BOUNDARY)),
@@ -3304,11 +3304,45 @@ def _functional_surface_lexemes(
     )
 
 
+def _finite_relation_carrier(value: str) -> str:
+    """Close one existing role-local scalar carrier without changing its axis."""
+
+    suffixes = (
+        ("起きており", "起きています"),
+        ("があり", "があります"),
+        ("が残り", "が残っています"),
+        ("今も続き", "今も続いています"),
+        ("今もあり", "今もあります"),
+        ("不確かなまま", "不確かなままです"),
+    )
+    matches = tuple(
+        (source, target)
+        for source, target in suffixes
+        if value.endswith(source)
+    )
+    if len(matches) != 1:
+        raise Stage1CompositionError("STAGE1_SCALAR_MORPHOLOGY_NONUNIQUE_STOP")
+    source, target = matches[0]
+    return value[: -len(source)] + target
+
+
+def _relation_endpoint_particle(carrier: str) -> str:
+    if carrier.startswith("すでに起き"):
+        return "が"
+    if carrier == "今もあり":
+        return "が"
+    if "が" in carrier:
+        return "には"
+    return "は"
+
+
 def _surface_for_plan(
     duty: CompositionDutyView,
     plan: ClausePlan,
     expression: ResponseObjectExpression,
     phase_B: Stage1SurfaceCompositionInputs,
+    *,
+    emlis_subject_visible: bool = True,
 ) -> str:
     owner, _refs = _duty_semantics(duty, phase_B)
     construction_rows = tuple(
@@ -3365,6 +3399,41 @@ def _surface_for_plan(
         }
         left_carrier = carrier_by_role[endpoint_roles[0]]
         right_carrier = carrier_by_role[endpoint_roles[1]]
+        if owner.relation_operator in {
+            RelationOperator.TEMPORALLY_PRECEDES,
+            RelationOperator.ACTION_PRECEDES_CHANGE,
+        }:
+            left_clause = (
+                "".join(
+                    (
+                        endpoint_objects[0],
+                        _relation_endpoint_particle(left_carrier),
+                        left_carrier,
+                    )
+                )
+                if left_carrier
+                else "".join((endpoint_objects[0], relation.left_particle))
+            )
+            right_clause = (
+                "".join(
+                    (
+                        endpoint_objects[1],
+                        _relation_endpoint_particle(right_carrier),
+                        _finite_relation_carrier(right_carrier),
+                    )
+                )
+                if right_carrier
+                else "".join((endpoint_objects[1], "が続いています"))
+            )
+            return "".join(
+                (
+                    left_clause,
+                    comma,
+                    "そのあとに" if left_carrier else "",
+                    right_clause,
+                    terminal,
+                )
+            )
         if owner.relation_operator in {
             RelationOperator.COEXISTS_WITH,
             RelationOperator.TENSION_WITH,
@@ -3440,6 +3509,16 @@ def _surface_for_plan(
         )
     object_surface = objects[0]
     if plan.semantic_clause_kind is SemanticClauseKind.SUBJECTIVE_PREDICATE:
+        emlis_subject = (
+            "".join(
+                (
+                    _participant_lexeme(CMEE_STAGE1_EMLIS_OWNER_REF),
+                    particles[ClauseArgumentRole.SUBJECT],
+                )
+            )
+            if emlis_subject_visible
+            else ""
+        )
         subjective_predicate = comma.join(
             (
                 *overt_qualifiers,
@@ -3466,24 +3545,20 @@ def _surface_for_plan(
             )
             return "".join(
                 (
-                    _participant_lexeme(CMEE_STAGE1_EMLIS_OWNER_REF),
-                    particles[ClauseArgumentRole.SUBJECT],
+                    emlis_subject,
                     primary_surface,
                     particles[ClauseArgumentRole.PRIMARY_OBJECT],
                     boundary_surface,
                     particles[ClauseArgumentRole.SECONDARY_OBJECT],
-                    comma,
                     subjective_predicate,
                     terminal,
                 )
             )
         return "".join(
             (
-                _participant_lexeme(CMEE_STAGE1_EMLIS_OWNER_REF),
-                particles[ClauseArgumentRole.SUBJECT],
+                emlis_subject,
                 object_surface,
                 particles[ClauseArgumentRole.PRIMARY_OBJECT],
-                comma,
                 subjective_predicate,
                 terminal,
             )
@@ -3900,20 +3975,25 @@ def _normal_form_phase_reference_antecedent_recalculation(
 ) -> Tuple[Tuple[ResponseObjectExpression, ...], Tuple[ComposedSentenceUnit, ...]]:
     expressions: list[ResponseObjectExpression] = []
     units: list[ComposedSentenceUnit] = []
-    antecedent_by_refs: dict[Tuple[str, ...], Tuple[str, str, int]] = {}
+    antecedent_by_refs: dict[
+        Tuple[str, ...], Tuple[str, str, int, Tuple[str, ...]]
+    ] = {}
     for index, group in enumerate(groups):
         duties = tuple(duty_by_ref[ref] for ref in group.ordered_duty_refs)
         layer = duties[0].layer
         if any(row.layer != layer for row in duties):
             raise Stage1CompositionError("STAGE1_LAYOUT_LAYER_MIX_STOP")
         unit_ref = _ref("sealed-unit", (arc.arc_ref, index, group))
+        unit_anchor_refs = _unique(
+            ref for row in duties for ref in row.response_object_refs
+        )
         units.append(
             ComposedSentenceUnit(
                 unit_ref,
                 layer,
                 group.ordered_duty_refs,
                 tuple(row.sentence_job.value for row in duties),
-                _unique(ref for row in duties for ref in row.response_object_refs),
+                unit_anchor_refs,
                 tuple(plan_by_duty[ref].clause_plan_ref for ref in group.ordered_duty_refs),
                 "",
                 "",
@@ -3923,11 +4003,22 @@ def _normal_form_phase_reference_antecedent_recalculation(
             refs = duty.response_object_refs
             prior = antecedent_by_refs.get(refs)
             plan = plan_by_duty[duty.duty_ref]
-            if (
+            same_layer_prior = (
                 prior is not None
                 and prior[1] == layer
                 and prior[2] < index
                 and (prior[2] == index - 1 or len(refs) > 1)
+            )
+            exact_immediate_layer_transition = (
+                prior is not None
+                and prior[1] == "LAYER_1"
+                and layer == "LAYER_2"
+                and prior[2] == index - 1
+                and prior[3] == refs
+            )
+            if (
+                prior is not None
+                and (same_layer_prior or exact_immediate_layer_transition)
                 and not duty.relation_refs
                 and plan.predicate_valency
                 is not PredicateValency.TRIADIC_ACTOR_TARGET_BOUNDARY
@@ -3954,8 +4045,12 @@ def _normal_form_phase_reference_antecedent_recalculation(
                 antecedent,
             )
             expressions.append(expression)
-            if mode is not ResponseObjectExpressionMode.ANAPHORIC:
-                antecedent_by_refs[refs] = (unit_ref, layer, index)
+            antecedent_by_refs[refs] = (
+                unit_ref,
+                layer,
+                index,
+                unit_anchor_refs,
+            )
     return tuple(expressions), tuple(units)
 
 
@@ -3986,6 +4081,203 @@ def _normal_form_phase_topic_speaker_connective_terminal(
         raise Stage1CompositionError("RECOMPOSITION_TERMINAL_OR_TOPIC_STOP")
 
 
+def _shared_endpoint_relation_chain(
+    duty_refs: Tuple[str, ...],
+    duty_by_ref: dict[str, CompositionDutyView],
+    plan_by_duty: dict[str, ClausePlan],
+) -> Optional[Tuple[CompositionDutyView, CompositionDutyView]]:
+    """Recognize an existing exact2 relation group with one typed shared endpoint."""
+
+    if len(duty_refs) != 2:
+        return None
+    first = duty_by_ref.get(duty_refs[0])
+    second = duty_by_ref.get(duty_refs[1])
+    if (
+        first is None
+        or second is None
+        or first.layer != second.layer
+        or first.layer != "LAYER_1"
+        or first.sentence_job is not SentenceJob.TRACE_CHANGE_OR_SEQUENCE
+        or second.sentence_job
+        is not SentenceJob.RELATE_COEXISTING_OR_TENSION
+        or len(first.relation_refs) != 1
+        or len(second.relation_refs) != 1
+        or len(first.response_object_refs) != 2
+        or len(second.response_object_refs) != 2
+        or first.response_object_refs[1] != second.response_object_refs[0]
+        or len(
+            set(first.response_object_refs).union(second.response_object_refs)
+        )
+        != 3
+    ):
+        return None
+    first_plan = plan_by_duty.get(first.duty_ref)
+    second_plan = plan_by_duty.get(second.duty_ref)
+    if (
+        first_plan is None
+        or second_plan is None
+        or first_plan.semantic_clause_kind
+        is not SemanticClauseKind.ADMITTED_RELATION
+        or second_plan.semantic_clause_kind
+        is not SemanticClauseKind.ADMITTED_RELATION
+        or first_plan.predicate_valency
+        is not PredicateValency.DYADIC_RELATION_ENDPOINTS
+        or second_plan.predicate_valency
+        is not PredicateValency.DYADIC_RELATION_ENDPOINTS
+    ):
+        return None
+    shared_ref = first.response_object_refs[1]
+    first_shared = tuple(
+        row for row in first_plan.scalar_constraint_rows if row.owner_ref == shared_ref
+    )
+    second_shared = tuple(
+        row for row in second_plan.scalar_constraint_rows if row.owner_ref == shared_ref
+    )
+    if (
+        len(first_shared) != 1
+        or len(second_shared) != 1
+        or (
+            first_shared[0].polarity,
+            first_shared[0].modality,
+            first_shared[0].time_scope,
+        )
+        != (
+            second_shared[0].polarity,
+            second_shared[0].modality,
+            second_shared[0].time_scope,
+        )
+    ):
+        return None
+    return first, second
+
+
+def _quoted_source_object(value: str) -> str:
+    nominalizer = _structural_lexeme("structural:nominalizer.v1")
+    if not value.endswith(nominalizer):
+        raise Stage1CompositionError("STAGE1_SOURCE_EXPRESSION_STOP")
+    return value[: -len(nominalizer)]
+
+
+def _shared_endpoint_conjunct(value: str, carrier: str) -> str:
+    if carrier == "すでに実感があり":
+        return "".join((_quoted_source_object(value), "という実感があり"))
+    if carrier == "今も実感があり":
+        return "".join((_quoted_source_object(value), "という実感が今もあり"))
+    if not carrier:
+        return "".join((value, "が続き"))
+    return "".join((value, _relation_endpoint_particle(carrier), carrier))
+
+
+def _new_endpoint_followup(
+    value: str,
+    constraint: ClauseScalarConstraintRow,
+) -> str:
+    if constraint.modality == "wish":
+        nominal = "願い"
+    elif constraint.modality == "feeling":
+        nominal = "実感"
+    elif constraint.modality == "uncertain":
+        nominal = "迷い"
+    elif constraint.polarity == "negative" or constraint.modality == "possibility":
+        nominal = "留保"
+    else:
+        nominal = "こと"
+    return "".join(
+        (
+            _quoted_source_object(value),
+            "という",
+            nominal,
+            "も残っています",
+        )
+    )
+
+
+def _shared_endpoint_relation_chain_surface(
+    chain: Tuple[CompositionDutyView, CompositionDutyView],
+    plan_by_duty: dict[str, ClausePlan],
+    expression_by_plan: dict[str, ResponseObjectExpression],
+    phase_B: Stage1SurfaceCompositionInputs,
+) -> str:
+    first, second = chain
+    first_plan = plan_by_duty[first.duty_ref]
+    second_plan = plan_by_duty[second.duty_ref]
+    first_expression = expression_by_plan[first_plan.clause_plan_ref]
+    second_expression = expression_by_plan[second_plan.clause_plan_ref]
+    if (
+        first_expression.expression_mode
+        is not ResponseObjectExpressionMode.COMPOSITE
+        or second_expression.expression_mode
+        is not ResponseObjectExpressionMode.COMPOSITE
+        or first_expression.basis_semantic_refs != first.response_object_refs
+        or second_expression.basis_semantic_refs != second.response_object_refs
+    ):
+        raise Stage1CompositionError("STAGE1_RELATION_ENDPOINT_CLOSURE_STOP")
+    first_owner, _ = _duty_semantics(first, phase_B)
+    second_owner, _ = _duty_semantics(second, phase_B)
+    if (
+        first_owner.relation_operator
+        not in {
+            RelationOperator.TEMPORALLY_PRECEDES,
+            RelationOperator.ACTION_PRECEDES_CHANGE,
+        }
+        or second_owner.relation_operator
+        not in {RelationOperator.COEXISTS_WITH, RelationOperator.TENSION_WITH}
+    ):
+        raise Stage1CompositionError("STAGE1_RELATION_ENDPOINT_CLOSURE_STOP")
+    first_objects = tuple(
+        _source_expression(
+            ref,
+            phase_B,
+            _frame_for_semantic_ref(first_owner, ref, phase_B),
+        )
+        for ref in first.response_object_refs
+    )
+    final_ref = second.response_object_refs[1]
+    final_object = _source_expression(
+        final_ref,
+        phase_B,
+        _frame_for_semantic_ref(second_owner, final_ref, phase_B),
+    )
+    first_carriers = _functional_surface_lexemes_by_role(first_plan)
+    if len(first_carriers) != 2:
+        raise Stage1CompositionError("STAGE1_RELATION_ROLE_STOP")
+    left_carrier = "、".join((*first_carriers[0][1], *first_carriers[0][2]))
+    shared_carrier = "、".join((*first_carriers[1][1], *first_carriers[1][2]))
+    final_constraints = tuple(
+        row for row in second_plan.scalar_constraint_rows if row.owner_ref == final_ref
+    )
+    if len(final_constraints) != 1:
+        raise Stage1CompositionError("STAGE1_RELATION_ROLE_STOP")
+    left_surface = (
+        "".join(
+            (
+                first_objects[0],
+                _relation_endpoint_particle(left_carrier),
+                left_carrier,
+                "、そのあとに",
+            )
+        )
+        if left_carrier
+        else "".join((first_objects[0], "のあとに"))
+    )
+    relation_connective = (
+        "ただ"
+        if second_owner.relation_operator is RelationOperator.TENSION_WITH
+        else "同時に"
+    )
+    return "".join(
+        (
+            left_surface,
+            _shared_endpoint_conjunct(first_objects[1], shared_carrier),
+            "、",
+            relation_connective,
+            "、",
+            _new_endpoint_followup(final_object, final_constraints[0]),
+            _structural_lexeme("structural:sentence.v1"),
+        )
+    )
+
+
 def _normal_form_phase_expression_selection_final_linearization(
     units: Tuple[ComposedSentenceUnit, ...],
     expressions: Tuple[ResponseObjectExpression, ...],
@@ -3999,16 +4291,45 @@ def _normal_form_phase_expression_selection_final_linearization(
     terminal = _structural_lexeme("structural:sentence.v1")
     joiner = _structural_lexeme("structural:sentence-join.v1")
     output: list[ComposedSentenceUnit] = []
+    emlis_subject_established = False
     for unit in units:
-        surfaces = tuple(
-            _surface_for_plan(
-                duty_by_ref[ref],
-                plan_by_duty[ref],
-                expression_by_plan[plan_by_duty[ref].clause_plan_ref],
-                phase_B,
-            )
-            for ref in unit.duty_refs
+        chain = _shared_endpoint_relation_chain(
+            unit.duty_refs,
+            duty_by_ref,
+            plan_by_duty,
         )
+        if chain is not None:
+            surfaces = (
+                _shared_endpoint_relation_chain_surface(
+                    chain,
+                    plan_by_duty,
+                    expression_by_plan,
+                    phase_B,
+                ),
+            )
+        else:
+            projected_surfaces: list[str] = []
+            for ref in unit.duty_refs:
+                duty = duty_by_ref[ref]
+                plan = plan_by_duty[ref]
+                subject_visible = True
+                if duty.layer == "LAYER_2":
+                    subject_visible = (
+                        not emlis_subject_established
+                        or plan.speaker_requirement
+                        is SpeakerRequirement.EMLIS_EXPLICIT_REQUIRED
+                    )
+                    emlis_subject_established = True
+                projected_surfaces.append(
+                    _surface_for_plan(
+                        duty,
+                        plan,
+                        expression_by_plan[plan.clause_plan_ref],
+                        phase_B,
+                        emlis_subject_visible=subject_visible,
+                    )
+                )
+            surfaces = tuple(projected_surfaces)
         text = joiner.join(surface.removesuffix(terminal) for surface in surfaces) + terminal
         if not text.endswith(terminal) or text.count(terminal) < 1:
             raise Stage1CompositionError("RECOMPOSITION_FINAL_LINEARIZATION_STOP")
@@ -4478,6 +4799,37 @@ def _derive_discourse_preference_profile_with_frozen_applicability(
         return min(predecessor_indexes) <= min(successor_indexes)
 
     group_sizes = tuple(len(unit.duty_refs) for unit in units)
+    available_relation_chains = {
+        (first.duty_ref, second.duty_ref)
+        for first in normalized_artifact.composition_duty_rows
+        for second in normalized_artifact.composition_duty_rows
+        if _shared_endpoint_relation_chain(
+            (first.duty_ref, second.duty_ref),
+            duty_by_ref,
+            plan_by_duty,
+        )
+        is not None
+    }
+    grouped_relation_chains = {
+        unit.duty_refs
+        for unit in units
+        if _shared_endpoint_relation_chain(
+            unit.duty_refs,
+            duty_by_ref,
+            plan_by_duty,
+        )
+        is not None
+    }
+    sentence_load_aligned = (
+        all(size == 1 for size in group_sizes)
+        if not available_relation_chains
+        else grouped_relation_chains == available_relation_chains
+        and all(
+            len(unit.duty_refs) == 1
+            or unit.duty_refs in grouped_relation_chains
+            for unit in units
+        )
+    )
     aligned_order = all(
         dependency_is_aligned(row) for row in arc.dependency_rows
     )
@@ -4584,7 +4936,7 @@ def _derive_discourse_preference_profile_with_frozen_applicability(
     observed = (
         aligned_order,
         concrete_before_abstract,
-        all(size == 1 for size in group_sizes),
+        sentence_load_aligned,
         l1_before_l2
         and units[0].duty_refs[0]
         == normalized_artifact.layout_preference_seed.opening_duty_ref,
