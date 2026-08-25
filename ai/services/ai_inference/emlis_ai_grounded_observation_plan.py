@@ -1571,9 +1571,54 @@ def _self_owned_finite_host_shape(carrier: str) -> bool:
         + r")(?P<host>.+)",
         carrier,
     )
+    if self_host is None:
+        return False
+    host = self_host.group("host")
+    if not _finite_endpoint_terminal_shape(host):
+        return False
+
+    # A self marker proves only the owner, not an arbitrary predicate that
+    # follows it.  Close the host through one already-frozen operator and its
+    # direct inflectional carrier.  Keeping the proof direct also prevents a
+    # second, later owner from borrowing the self marker through recursion.
+    direct_operator_host = any(
+        match.start() == 0
+        and (
+            (
+                match.end() == len(host)
+                and _operator_surface_is_finite(match.group(0), pattern)
+            )
+            or _direct_finite_carrier_shape(
+                host[match.end() :],
+                operator_surface=match.group(0),
+                operator_pattern=pattern,
+            )
+        )
+        for pattern in _FINITE_OPERATOR_PATTERNS
+        if pattern is not _OPEN_UNFINISHED_RE
+        for match in pattern.finditer(host)
+    )
+    if direct_operator_host:
+        return True
+
+    # Source-local record/memo existence is the one non-predicative host
+    # already admitted by the public matrix.  Its noun must itself be a
+    # frozen action surface; a free lexical noun or later owner is rejected.
+    action_existence = re.fullmatch(
+        r"(?P<action>[^\s、,。.!！?？]+?)(?:に|には|にも)"
+        r"(?:ある|あった|あります|ありました|"
+        r"ない|なかった|ありません|ありませんでした)",
+        host,
+    )
     return bool(
-        self_host is not None
-        and _finite_endpoint_terminal_shape(self_host.group("host"))
+        action_existence is not None
+        and _ACTION_RE.fullmatch(action_existence.group("action"))
+        is not None
+        and re.fullmatch(
+            r"[一-鿿々〆〇ァ-ヶー]+",
+            action_existence.group("action"),
+        )
+        is not None
     )
 
 
@@ -1785,7 +1830,7 @@ def _operator_match_left_context_is_bounded(
         )
     if (
         depth == 0
-        and operator_pattern is _UNCERTAIN_RE
+        and operator_pattern in {_UNCERTAIN_RE, _RELATION_UNCERTAINTY_RE}
         and prefix.endswith("か")
     ):
         return any(
@@ -1889,6 +1934,37 @@ def _operator_match_left_context_is_bounded(
                     )
                 )
             )
+        if match.group(0) in {"ほしい", "欲しい"}:
+            # A registered operator may supply an exact te-form complement
+            # to desiderative ``ほしい`` (for example 相談 + して + ほしい).
+            # Reuse the operator's own conjugation proof by closing that
+            # te-form with ``いる``; no free verb or phrase-family list is
+            # introduced here.
+            if any(
+                _operator_match_left_context_is_bounded(
+                    prefix,
+                    prior_pattern,
+                    prior_match,
+                    depth=depth + 1,
+                )
+                and (
+                    (
+                        prior_match.end() == len(prefix)
+                        and prior_match.group(0).endswith(("て", "で"))
+                    )
+                    or (
+                        prior_match.end() < len(prefix)
+                        and prefix[prior_match.end() :].endswith(("て", "で"))
+                        and _direct_finite_carrier_shape(
+                            prefix[prior_match.end() :] + "いる",
+                            operator_surface=prior_match.group(0),
+                            operator_pattern=prior_pattern,
+                        )
+                    )
+                )
+                for prior_pattern, prior_match in prior_matches
+            ):
+                return True
         if prior_matches:
             if any(
                 prior_match.end() == len(prefix)
@@ -4114,7 +4190,13 @@ def _typed_nucleus_projections_for_span(
             and link.end() <= right_start < right_end
             and left_wish
             and conjunctive_ga_is_finite
-            and owner_scope_is_bound(right_top_level)
+            and (
+                owner_scope_is_bound(right_top_level)
+                or (
+                    paired_m_row_wish
+                    and owner_scope_is_bound(left_text)
+                )
+            )
             and right_constrained
         ):
             dependency = "semantic_dependency:top_level_wish_constraint"
