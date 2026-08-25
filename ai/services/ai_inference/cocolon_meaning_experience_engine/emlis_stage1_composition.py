@@ -2449,14 +2449,14 @@ EXPRESSION_ASSET_REGISTRY = (
     ExpressionAssetSpec("expression:emlis-appraisal-unfinished.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-unfinished", ("結論を急がずに", "受け取っています"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
     ExpressionAssetSpec("expression:emlis-appraisal-agency.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-agency", ("選べる向きを守って", "受け取っています"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
     ExpressionAssetSpec("expression:emlis-value.v1", SentenceJob.TAKE_MATERIAL_POSITION, SemanticClauseKind.SUBJECTIVE_PREDICATE, "material-value", ("決めつけに変えず", "大切にしたいです"), (PredicateValency.DYADIC_ACTOR_TARGET, PredicateValency.TRIADIC_ACTOR_TARGET_BOUNDARY)),
-    ExpressionAssetSpec("expression:emlis-position.v1", SentenceJob.TAKE_MATERIAL_POSITION, SemanticClauseKind.SUBJECTIVE_PREDICATE, "position", ("選べる向きとして", "大切にしたいです"), (PredicateValency.DYADIC_ACTOR_TARGET, PredicateValency.TRIADIC_ACTOR_TARGET_BOUNDARY)),
+    ExpressionAssetSpec("expression:emlis-position.v1", SentenceJob.TAKE_MATERIAL_POSITION, SemanticClauseKind.SUBJECTIVE_PREDICATE, "position", ("選べる向きとして", "尊重したいです"), (PredicateValency.DYADIC_ACTOR_TARGET, PredicateValency.TRIADIC_ACTOR_TARGET_BOUNDARY)),
     ExpressionAssetSpec("expression:emlis-open-position.v1", SentenceJob.STAY_WITH_UNFINISHED, SemanticClauseKind.SUBJECTIVE_PREDICATE, "open-position", ("急いで閉じず", "一緒に置いていたいです"), (PredicateValency.DYADIC_ACTOR_TARGET, PredicateValency.TRIADIC_ACTOR_TARGET_BOUNDARY)),
 )
 
 
 RELATION_MORPHOLOGY_ASSET_REGISTRY = (
-    RelationMorphologyAssetSpec("relation-morphology:coexistence.v1", RelationOperator.COEXISTS_WITH, "と", "、", "は"),
-    RelationMorphologyAssetSpec("relation-morphology:tension.v1", RelationOperator.TENSION_WITH, "と", "、", "は"),
+    RelationMorphologyAssetSpec("relation-morphology:coexistence.v1", RelationOperator.COEXISTS_WITH, "と", "", "は"),
+    RelationMorphologyAssetSpec("relation-morphology:tension.v1", RelationOperator.TENSION_WITH, "と", "", "は"),
     RelationMorphologyAssetSpec("relation-morphology:temporal.v1", RelationOperator.TEMPORALLY_PRECEDES, "のあとに", "、", "が"),
     RelationMorphologyAssetSpec("relation-morphology:action-change.v1", RelationOperator.ACTION_PRECEDES_CHANGE, "のあとに", "、", "が"),
     RelationMorphologyAssetSpec("relation-morphology:explicit-cause.v1", RelationOperator.SOURCE_EXPLICIT_CAUSE, "によって", "、", "が"),
@@ -2464,22 +2464,22 @@ RELATION_MORPHOLOGY_ASSET_REGISTRY = (
 
 
 SCALAR_MORPHOLOGY_ASSET_REGISTRY = (
-    ScalarMorphologyAssetSpec("scalar:polarity:negative:fused.v1", ClauseScalarAxis.POLARITY, ("negative",), ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART, RegisteredFunctionalSlotRef.PREDICATE_HEAD.value, ("否定を含む範囲で",)),
-    ScalarMorphologyAssetSpec("scalar:modality:refusal:fused.v1", ClauseScalarAxis.MODALITY, ("refusal",), ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART, RegisteredFunctionalSlotRef.PREDICATE_HEAD.value, ("拒みたい向きを残して",)),
-    ScalarMorphologyAssetSpec("scalar:modality:uncertain:fused.v1", ClauseScalarAxis.MODALITY, ("uncertain",), ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART, RegisteredFunctionalSlotRef.PREDICATE_HEAD.value, ("不確かさを残して",)),
-    ScalarMorphologyAssetSpec("scalar:time:continuing:fused.v1", ClauseScalarAxis.TIME_SCOPE, ("continuing",), ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART, RegisteredFunctionalSlotRef.PREDICATE_HEAD.value, ("続いているものとして",)),
-    ScalarMorphologyAssetSpec("scalar:time:one-time:fused.v1", ClauseScalarAxis.TIME_SCOPE, ("one_time",), ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART, RegisteredFunctionalSlotRef.PREDICATE_HEAD.value, ("今回のこととして",)),
-    ScalarMorphologyAssetSpec("scalar:time:past-present:fused.v1", ClauseScalarAxis.TIME_SCOPE, ("past_to_present",), ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART, RegisteredFunctionalSlotRef.PREDICATE_HEAD.value, ("前から今へ残るものとして",)),
-    ScalarMorphologyAssetSpec("scalar:polarity:mixed:overt.v1", ClauseScalarAxis.POLARITY, ("mixed",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("相反する向きを含んだまま",)),
-    ScalarMorphologyAssetSpec("scalar:polarity:positive:overt.v1", ClauseScalarAxis.POLARITY, ("positive",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("肯定的な向きとして",)),
-    ScalarMorphologyAssetSpec("scalar:modality:wish:overt.v1", ClauseScalarAxis.MODALITY, ("wish",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("願いとして",)),
-    ScalarMorphologyAssetSpec("scalar:modality:possibility:overt.v1", ClauseScalarAxis.MODALITY, ("possibility",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("可能性の範囲で",)),
-    ScalarMorphologyAssetSpec("scalar:modality:intention:overt.v1", ClauseScalarAxis.MODALITY, ("intention",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("意図として",)),
-    ScalarMorphologyAssetSpec("scalar:modality:feeling:overt.v1", ClauseScalarAxis.MODALITY, ("feeling",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("感じられていることとして",)),
-    ScalarMorphologyAssetSpec("scalar:time:past:overt.v1", ClauseScalarAxis.TIME_SCOPE, ("past",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("すでにあったこととして",)),
-    ScalarMorphologyAssetSpec("scalar:time:present:overt.v1", ClauseScalarAxis.TIME_SCOPE, ("present",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("今もあることとして",)),
-    ScalarMorphologyAssetSpec("scalar:time:future:overt.v1", ClauseScalarAxis.TIME_SCOPE, ("future",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("これからの向きとして",)),
-    ScalarMorphologyAssetSpec("scalar:time:present-future:overt.v1", ClauseScalarAxis.TIME_SCOPE, ("present_to_future",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("今から先へ続く向きとして",)),
+    ScalarMorphologyAssetSpec("scalar:polarity:negative:fused.v1", ClauseScalarAxis.POLARITY, ("negative",), ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART, RegisteredFunctionalSlotRef.PREDICATE_HEAD.value, ("否定の含みもあり",)),
+    ScalarMorphologyAssetSpec("scalar:modality:refusal:fused.v1", ClauseScalarAxis.MODALITY, ("refusal",), ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART, RegisteredFunctionalSlotRef.PREDICATE_HEAD.value, ("拒みたい気持ちも残り",)),
+    ScalarMorphologyAssetSpec("scalar:modality:uncertain:fused.v1", ClauseScalarAxis.MODALITY, ("uncertain",), ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART, RegisteredFunctionalSlotRef.PREDICATE_HEAD.value, ("不確かさも残り",)),
+    ScalarMorphologyAssetSpec("scalar:time:continuing:fused.v1", ClauseScalarAxis.TIME_SCOPE, ("continuing",), ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART, RegisteredFunctionalSlotRef.PREDICATE_HEAD.value, ("今も続き",)),
+    ScalarMorphologyAssetSpec("scalar:time:one-time:fused.v1", ClauseScalarAxis.TIME_SCOPE, ("one_time",), ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART, RegisteredFunctionalSlotRef.PREDICATE_HEAD.value, ("今回に限られ",)),
+    ScalarMorphologyAssetSpec("scalar:time:past-present:fused.v1", ClauseScalarAxis.TIME_SCOPE, ("past_to_present",), ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART, RegisteredFunctionalSlotRef.PREDICATE_HEAD.value, ("前から今へ続き",)),
+    ScalarMorphologyAssetSpec("scalar:polarity:mixed:overt.v1", ClauseScalarAxis.POLARITY, ("mixed",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("相反する向きを含み",)),
+    ScalarMorphologyAssetSpec("scalar:polarity:positive:overt.v1", ClauseScalarAxis.POLARITY, ("positive",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("肯定の向きがあり",)),
+    ScalarMorphologyAssetSpec("scalar:modality:wish:overt.v1", ClauseScalarAxis.MODALITY, ("wish",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("願いがあり",)),
+    ScalarMorphologyAssetSpec("scalar:modality:possibility:overt.v1", ClauseScalarAxis.MODALITY, ("possibility",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("可能性も残り",)),
+    ScalarMorphologyAssetSpec("scalar:modality:intention:overt.v1", ClauseScalarAxis.MODALITY, ("intention",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("意図があり",)),
+    ScalarMorphologyAssetSpec("scalar:modality:feeling:overt.v1", ClauseScalarAxis.MODALITY, ("feeling",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("そう感じられ",)),
+    ScalarMorphologyAssetSpec("scalar:time:past:overt.v1", ClauseScalarAxis.TIME_SCOPE, ("past",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("すでに起きており",)),
+    ScalarMorphologyAssetSpec("scalar:time:present:overt.v1", ClauseScalarAxis.TIME_SCOPE, ("present",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("今もあり",)),
+    ScalarMorphologyAssetSpec("scalar:time:future:overt.v1", ClauseScalarAxis.TIME_SCOPE, ("future",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("これからに向かい",)),
+    ScalarMorphologyAssetSpec("scalar:time:present-future:overt.v1", ClauseScalarAxis.TIME_SCOPE, ("present_to_future",), ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART, RegisteredFunctionalSlotRef.QUALIFIER.value, ("今から先へ続き",)),
     ScalarMorphologyAssetSpec("scalar:polarity:neutral:unmarked.v1", ClauseScalarAxis.POLARITY, ("neutral", "source_bounded"), ScalarSurfaceRealizationMode.UNMARKED_DEFAULT, None, ()),
     ScalarMorphologyAssetSpec("scalar:modality:fact:unmarked.v1", ClauseScalarAxis.MODALITY, ("fact", "emlis_subjective", "source_bounded"), ScalarSurfaceRealizationMode.UNMARKED_DEFAULT, None, ()),
     ScalarMorphologyAssetSpec("scalar:time:current:unmarked.v1", ClauseScalarAxis.TIME_SCOPE, ("current_input", "source_bounded"), ScalarSurfaceRealizationMode.UNMARKED_DEFAULT, None, ()),
@@ -3141,9 +3141,16 @@ def _response_object_surface(
     return (lexeme.join(objects),)
 
 
-def _functional_surface_lexemes(
+def _functional_surface_lexemes_by_role(
     plan: ClausePlan,
-) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
+) -> Tuple[
+    Tuple[
+        Optional[ClauseArgumentRole],
+        Tuple[str, ...],
+        Tuple[str, ...],
+    ],
+    ...,
+]:
     if plan.scalar_surface_realization_rows != project_scalar_surface_realization_rows(
         plan.clause_plan_ref,
         plan.scalar_constraint_rows,
@@ -3152,9 +3159,38 @@ def _functional_surface_lexemes(
     asset_by_id = {
         row.morphology_asset_id: row for row in SCALAR_MORPHOLOGY_ASSET_REGISTRY
     }
-    overt_qualifiers: list[str] = []
-    fused_predicate_prefixes: list[str] = []
+    constraint_by_ref = {
+        row.clause_scalar_constraint_ref: row for row in plan.scalar_constraint_rows
+    }
+    role_order = _unique(
+        row.clause_argument_role for row in plan.scalar_constraint_rows
+    )
+    scalar_values_by_role: dict[
+        Optional[ClauseArgumentRole], set[tuple[ClauseScalarAxis, str]]
+    ] = {role: set() for role in role_order}
+    overt_by_role: dict[Optional[ClauseArgumentRole], list[str]] = {
+        role: [] for role in role_order
+    }
+    fused_by_role: dict[Optional[ClauseArgumentRole], list[str]] = {
+        role: [] for role in role_order
+    }
     for realization in plan.scalar_surface_realization_rows:
+        constraint = constraint_by_ref.get(realization.clause_scalar_constraint_ref)
+        if constraint is None:
+            raise Stage1CompositionError("STAGE1_SCALAR_MORPHOLOGY_NONUNIQUE_STOP")
+        role = constraint.clause_argument_role
+        if role not in scalar_values_by_role:
+            raise Stage1CompositionError("STAGE1_SCALAR_MORPHOLOGY_NONUNIQUE_STOP")
+        scalar_values_by_role[role].add(
+            (
+                realization.scalar_axis,
+                {
+                    ClauseScalarAxis.POLARITY: constraint.polarity,
+                    ClauseScalarAxis.MODALITY: constraint.modality,
+                    ClauseScalarAxis.TIME_SCOPE: constraint.time_scope,
+                }[realization.scalar_axis],
+            )
+        )
         if realization.realization_mode in {
             ScalarSurfaceRealizationMode.UNMARKED_DEFAULT,
             ScalarSurfaceRealizationMode.SEMANTIC_PROVENANCE_ONLY,
@@ -3177,7 +3213,7 @@ def _functional_surface_lexemes(
                 raise Stage1CompositionError(
                     "STAGE1_SCALAR_MORPHOLOGY_NONUNIQUE_STOP"
                 )
-            overt_qualifiers.extend(asset.morphemes)
+            overt_by_role[role].extend(asset.morphemes)
         elif realization.realization_mode is ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART:
             if (
                 realization.target_clause_slot_ref
@@ -3186,10 +3222,69 @@ def _functional_surface_lexemes(
                 raise Stage1CompositionError(
                     "STAGE1_SCALAR_MORPHOLOGY_NONUNIQUE_STOP"
                 )
-            fused_predicate_prefixes.extend(asset.morphemes)
+            fused_by_role[role].extend(asset.morphemes)
         else:
             raise Stage1CompositionError("STAGE1_SCALAR_MORPHOLOGY_NONUNIQUE_STOP")
-    return _unique(overt_qualifiers), _unique(fused_predicate_prefixes)
+
+    # Each visible carrier stays with its existing grammatical role.  This
+    # prevents a relation's LEFT/RIGHT or BEFORE/AFTER scalar rows from being
+    # serialized as one semantic-label list with an ambiguous host.  The
+    # combinations below use only frozen grammatical axes; no case id, raw
+    # text, fixture family or expected sentence participates in the decision.
+    result: list[
+        Tuple[Optional[ClauseArgumentRole], Tuple[str, ...], Tuple[str, ...]]
+    ] = []
+    for role in role_order:
+        scalar_values = scalar_values_by_role[role]
+        polarity = {
+            value
+            for axis, value in scalar_values
+            if axis is ClauseScalarAxis.POLARITY
+        }
+        modality = {
+            value
+            for axis, value in scalar_values
+            if axis is ClauseScalarAxis.MODALITY
+        }
+        time_scope = {
+            value
+            for axis, value in scalar_values
+            if axis is ClauseScalarAxis.TIME_SCOPE
+        }
+        if "positive" in polarity and "wish" in modality:
+            carrier = (
+                "前を向く願いが今も残り"
+                if "continuing" in time_scope
+                else "前を向く願いがあり"
+            )
+            overt, fused = (carrier,), ()
+        elif "negative" in polarity and "possibility" in modality:
+            overt, fused = ("否定の含みと可能性があり",), ()
+        elif "negative" in polarity and "uncertain" in modality:
+            overt, fused = ("不確かさと否定の含みが残り",), ()
+        elif "feeling" in modality and "past" in time_scope:
+            overt, fused = ("すでに実感があり",), ()
+        elif "feeling" in modality and "present" in time_scope:
+            overt, fused = ("今も実感があり",), ()
+        elif "negative" in polarity:
+            overt, fused = ("否定の含みがあり",), ()
+        elif "uncertain" in modality and "present" in time_scope:
+            overt, fused = ("今も不確かなまま",), ()
+        else:
+            overt = _unique(overt_by_role[role])
+            fused = _unique(fused_by_role[role])
+        result.append((role, overt, fused))
+    return tuple(result)
+
+
+def _functional_surface_lexemes(
+    plan: ClausePlan,
+) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
+    by_role = _functional_surface_lexemes_by_role(plan)
+    return (
+        _unique(morpheme for _role, overt, _fused in by_role for morpheme in overt),
+        _unique(morpheme for _role, _overt, fused in by_role for morpheme in fused),
+    )
 
 
 def _surface_for_plan(
@@ -3210,11 +3305,12 @@ def _surface_for_plan(
     comma = _structural_lexeme("structural:comma.v1")
     terminal = _structural_lexeme("structural:sentence.v1")
     overt_qualifiers, fused_predicate_prefixes = _functional_surface_lexemes(plan)
-    predicate_head = "".join(
-        (*fused_predicate_prefixes, expression_asset.predicate_lexemes[0])
-    )
     predicate = comma.join(
-        (*overt_qualifiers, predicate_head, *expression_asset.predicate_lexemes[1:])
+        (
+            *overt_qualifiers,
+            *fused_predicate_prefixes,
+            *expression_asset.predicate_lexemes,
+        )
     )
     particles = dict(construction.particle_rules)
     if plan.semantic_clause_kind is SemanticClauseKind.ADMITTED_RELATION:
@@ -3236,20 +3332,104 @@ def _surface_for_plan(
             )
             for ref in expression.basis_semantic_refs
         )
+        scalar_by_role = _functional_surface_lexemes_by_role(plan)
+        endpoint_roles = _unique(
+            row.clause_argument_role for row in plan.scalar_constraint_rows
+        )
+        if (
+            len(endpoint_roles) != 2
+            or tuple(role for role, _overt, _fused in scalar_by_role)
+            != endpoint_roles
+        ):
+            raise Stage1CompositionError("STAGE1_RELATION_ROLE_STOP")
+        carrier_by_role = {
+            role: comma.join((*overt, *fused))
+            for role, overt, fused in scalar_by_role
+        }
+        left_carrier = carrier_by_role[endpoint_roles[0]]
+        right_carrier = carrier_by_role[endpoint_roles[1]]
+        if owner.relation_operator in {
+            RelationOperator.COEXISTS_WITH,
+            RelationOperator.TENSION_WITH,
+        } and (left_carrier or right_carrier):
+            endpoint_clauses = (
+                "".join(
+                    (
+                        endpoint_objects[0],
+                        (
+                            "には"
+                            if "が" in left_carrier
+                            else "は"
+                            if left_carrier
+                            else "が"
+                        ),
+                        left_carrier or "あり",
+                    )
+                ),
+                "".join(
+                    (
+                        endpoint_objects[1],
+                        (
+                            "には"
+                            if "が" in right_carrier
+                            else "は"
+                            if right_carrier
+                            else "が"
+                        ),
+                        right_carrier or "あり",
+                    )
+                ),
+            )
+            return "".join(
+                (
+                    comma.join(
+                        (
+                            *endpoint_clauses,
+                            *expression_asset.predicate_lexemes,
+                        )
+                    ),
+                    terminal,
+                )
+            )
+        relation_left = (
+            "".join(
+                (
+                    endpoint_objects[0],
+                    "が",
+                    left_carrier,
+                    comma,
+                    "そのこと",
+                    relation.left_particle,
+                )
+            )
+            if left_carrier
+            else "".join((endpoint_objects[0], relation.left_particle))
+        )
         return "".join(
             (
-                endpoint_objects[0],
-                relation.left_particle,
+                relation_left,
                 relation.connective,
                 endpoint_objects[1],
-                relation.right_particle,
-                comma,
-                predicate,
+                (
+                    "には"
+                    if "が" in right_carrier
+                    else relation.right_particle
+                ),
+                right_carrier,
+                comma if right_carrier else "",
+                comma.join(expression_asset.predicate_lexemes),
                 terminal,
             )
         )
     object_surface = objects[0]
     if plan.semantic_clause_kind is SemanticClauseKind.SUBJECTIVE_PREDICATE:
+        subjective_predicate = comma.join(
+            (
+                *overt_qualifiers,
+                *fused_predicate_prefixes,
+                "".join(expression_asset.predicate_lexemes),
+            )
+        )
         if plan.predicate_valency is PredicateValency.TRIADIC_ACTOR_TARGET_BOUNDARY:
             if (
                 expression.expression_mode
@@ -3271,12 +3451,12 @@ def _surface_for_plan(
                 (
                     _participant_lexeme(CMEE_STAGE1_EMLIS_OWNER_REF),
                     particles[ClauseArgumentRole.SUBJECT],
-                    comma,
                     primary_surface,
                     particles[ClauseArgumentRole.PRIMARY_OBJECT],
                     boundary_surface,
                     particles[ClauseArgumentRole.SECONDARY_OBJECT],
-                    predicate,
+                    comma,
+                    subjective_predicate,
                     terminal,
                 )
             )
@@ -3284,10 +3464,10 @@ def _surface_for_plan(
             (
                 _participant_lexeme(CMEE_STAGE1_EMLIS_OWNER_REF),
                 particles[ClauseArgumentRole.SUBJECT],
-                comma,
                 object_surface,
                 particles[ClauseArgumentRole.PRIMARY_OBJECT],
-                predicate,
+                comma,
+                subjective_predicate,
                 terminal,
             )
         )
@@ -3295,7 +3475,6 @@ def _surface_for_plan(
         (
             object_surface,
             particles[ClauseArgumentRole.SUBJECT],
-            comma,
             predicate,
             terminal,
         )
