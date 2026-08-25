@@ -21,8 +21,8 @@ class MeaningExperienceEngine:
 
     The callable is deliberately disconnected from API and production routing.
     It accepts only the Emlis offline-candidate job. A narrowly supported input
-    can produce a private implementation-proof artifact, but this WIP is not a
-    Route-B-complete or Product-Read-eligible candidate.
+    can produce a private implementation-proof artifact, but this WIP is not
+    Product-Read-eligible or candidate-ready.
     """
 
     def generate(self, request: GenerationRequest) -> EngineOutcome:

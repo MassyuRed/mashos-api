@@ -264,8 +264,8 @@ _NON_NEGATING_CONTRAST_RE: Final = re.compile(
 _SIMILE_NOT_WISH_RE: Final = re.compile(r"(?<![てで])みたい")
 _POSITIVE_CHANGE_RE: Final = re.compile(
     r"(?:できた|出来た|(?:ら|れ)れるようにな|ようになった|くなった|になった|"
-    r"増えた|減った|戻った|進んだ|進めた|改善した|落ち着いた|楽になった|"
-    r"嬉|うれ|喜び|安心|平穏|幸せ|達成)"
+    r"増えた|減った|戻った|進んだ|進めた|改善した|楽になった|"
+    r"嬉|うれ|喜び|安心|平穏|幸せ|達成|落ち着(?:いた|いてきた))"
 )
 _FEELING_RE: Final = re.compile(
     r"(?:感じ|気持ち|悲し|不安|だる|しんど|つら|辛|焦|もやもや|怖|寂|苦し|嬉|うれ|落ち着|重い)"
@@ -277,14 +277,19 @@ _SOURCE_METAPHOR_RE: Final = re.compile(
     r"(?:鉛|石|重り|圧力|圧迫|締め付け|押し潰|沈む|霧|棘|刺さる|穴が空|空洞)"
 )
 _WISH_RE: Final = re.compile(
-    r"(?:したい|なりたい|していきたい|過ごしていきたい|ほしい|欲しい|願|つもり|たい(?:って|と|気持ち|と思|[、,\s]|$)|たらいい)"
+    r"(?:したい|なりたい|していきたい|過ごしていきたい|ほしい|欲しい|願|つもり|たい(?:って|と|気持ち|と思|です|でした|[、,\s]|$)|たらいい)"
 )
 _FINITE_WISH_CLAUSE_END_RE: Final = re.compile(
-    r"(?:たい|ほしい|欲しい|願(?:う|っている)|つもり(?:だ|です)|"
-    r"たいと思う)(?:の(?:だ|です))?$"
+    r"(?:(?:たい|ほしい|欲しい)(?:です|でした)?|"
+    r"(?:たい|ほしい|欲しい)(?:気持ち|願い)"
+    r"(?:だ|です|だった|でした)|"
+    r"(?:たい|ほしい|欲しい)(?:と|とは)?思"
+    r"(?:う|っている|っていた|っています|っていました|います|いました)|"
+    r"願(?:う|っている)|つもり(?:だ|です))"
+    r"(?:の(?:だ|です))?$"
 )
 _REFUSAL_RE: Final = re.compile(
-    r"(?:したくない|続けたくない|やめたい|終わらせたい|投げ出したい|"
+    r"(?:(?:し|続け)たく(?:ない|ありません)|やめたい|終わらせたい|投げ出したい|"
     r"つもり(?:は|が)?ない|拒|嫌だ|このまま(?:では|じゃ)いけない)"
 )
 _UNCERTAIN_RE: Final = re.compile(
@@ -325,8 +330,11 @@ _PRESENT_RESIDUE_RE: Final = re.compile(
 )
 _OPEN_UNFINISHED_RE: Final = re.compile(
     r"(?:(?:どう|何|どちら|どっち|いつ|どこ|誰).{0,32}"
-    r"(?:分からない|わからない|決められない|決めきれない)|"
-    r"(?:まだ|今も).{0,32}(?:分からない|わからない|未定|決められない|決めきれない)|"
+    r"(?:分からない|わからない|分かりません|わかりません|"
+    r"決められない|決められません|決めきれない|決めきれません)|"
+    r"(?:まだ|今も).{0,32}(?:分からない|わからない|分かりません|"
+    r"わかりません|未定|決められない|決められません|"
+    r"決めきれない|決めきれません)|"
     r"(?:未定|途中|決めきれない|結論は出ていない))"
 )
 _CONTRAST_RE: Final = re.compile(r"(?:でも|だけど|けれど|けど|一方|なのに|ただ|とはいえ)")
@@ -334,6 +342,7 @@ _COEXISTENCE_RE: Final = re.compile(r"(?:同時に|両方|どっちも|抱えた
 _TOP_LEVEL_CONTRAST_LINK_RE: Final = re.compile(
     r"(?:一方で|のに|けれども?|けど)(?:[、,]\s*)?|が[、,]\s*"
 )
+_TOP_LEVEL_BARE_GA_LINK_RE: Final = re.compile(r"が(?![、,])")
 _TOP_LEVEL_COORDINATE_LINK_RE: Final = re.compile(r"と[、,]\s*")
 _COEXISTENCE_TAIL_RE: Final = re.compile(
     r"(?:が|は|を)?(?:同時に|両方|どっちも)(?:ある|いる|残っている)$"
@@ -341,7 +350,7 @@ _COEXISTENCE_TAIL_RE: Final = re.compile(
 _RELATION_UNCERTAINTY_RE: Final = re.compile(
     r"(?:迷(?:って|い|う)|ためら|自信がな|よいか|いいか|べきか|気がし)"
 )
-_CAUSE_RE: Final = re.compile(r"(?:ので|ため|ことで|からこそ|だからこそ)")
+_CAUSE_RE: Final = re.compile(r"(?:ので(?!す)|ため|ことで|からこそ|だからこそ)")
 _RESULT_RE: Final = re.compile(r"(?:その結果|だから|になった|減った|増えた|できた|出来た|ようになった)")
 _SHIFT_RE: Final = re.compile(
     r"(?:今までは|これまでは|以前は|前は|今は|現在は|昨日|今日|より|"
@@ -1815,7 +1824,10 @@ def _typed_nucleus_projections_for_span(
         # prefixes.  Any subsequent grammatical owner/beneficiary remains a
         # third-party authority and makes the projection ineligible.
         while True:
+            previous_owner_scope = owner_scope
             owner_scope = temporal_prefix.sub("", owner_scope)
+            if owner_scope != previous_owner_scope:
+                continue
             leading_attribution = attribution_prefix.match(owner_scope)
             if leading_attribution is not None:
                 if (
@@ -1875,15 +1887,34 @@ def _typed_nucleus_projections_for_span(
                 )
                 epistemic_content_topic = bool(
                     marker in {"は", "も"}
-                    and owner.endswith("か")
-                    and any(
-                        match.end() == len(remainder)
-                        for pattern in (
-                            _RELATION_UNCERTAINTY_RE,
-                            _UNCERTAIN_RE,
-                            _OPEN_UNFINISHED_RE,
+                    and (
+                        (
+                            owner.endswith("か")
+                            and any(
+                                match.end() == len(remainder)
+                                for pattern in (
+                                    _RELATION_UNCERTAINTY_RE,
+                                    _UNCERTAIN_RE,
+                                    _OPEN_UNFINISHED_RE,
+                                )
+                                for match in pattern.finditer(remainder)
+                            )
                         )
-                        for match in pattern.finditer(remainder)
+                        or (
+                            owner.endswith("と")
+                            and any(
+                                match.end() <= len(owner) - 1
+                                for pattern in operator_patterns
+                                for match in pattern.finditer(owner[:-1])
+                            )
+                            and re.fullmatch(
+                                r"思(?:う|っている|っていた|っています|"
+                                r"っていました|います|いました)"
+                                r"(?:の(?:だ|です)|ん(?:だ|です))?",
+                                remainder,
+                            )
+                            is not None
+                        )
                     )
                 )
                 genitive_object_argument = bool(
@@ -1891,6 +1922,42 @@ def _typed_nucleus_projections_for_span(
                     and re.match(
                         r"^[^、,.!?！？]{1,24}(?:を|へ|に|と)",
                         remainder,
+                    )
+                )
+                predicate_auxiliary_particle = bool(
+                    (
+                        marker == "の"
+                        and (
+                            semantic_subject_complete
+                            or (
+                                owner.endswith("な")
+                                and any(
+                                    match.end() == len(owner) - 1
+                                    for pattern in operator_patterns
+                                    for match in pattern.finditer(owner[:-1])
+                                )
+                            )
+                        )
+                        and re.fullmatch(
+                            r"(?:だ|です|だった|でした)",
+                            remainder,
+                        )
+                        is not None
+                    )
+                    or (
+                        marker == "は"
+                        and owner.endswith(("て", "で"))
+                        and any(
+                            match.end() == len(owner) - 1
+                            for pattern in operator_patterns
+                            for match in pattern.finditer(owner[:-1])
+                        )
+                        and re.fullmatch(
+                            r"(?:いる|いた|います|いました|ある|あった|"
+                            r"あります|ありました)",
+                            remainder,
+                        )
+                        is not None
                     )
                 )
                 # A marker inside an already-frozen terminal operator (for
@@ -1903,6 +1970,7 @@ def _typed_nucleus_projections_for_span(
                     or owner_is_complete_semantic_subject
                     or epistemic_content_topic
                     or genitive_object_argument
+                    or predicate_auxiliary_particle
                 ):
                     break
                 return False
@@ -1939,7 +2007,7 @@ def _typed_nucleus_projections_for_span(
         finite_wish = bool(
             _FINITE_WISH_CLAUSE_END_RE.search(top_level_fragment)
             or re.search(
-                r"(?:たい|ほしい|欲しい)(?:と)?思"
+                r"(?:たい|ほしい|欲しい)(?:と|とは)?思"
                 r"(?:う|っている|っていた|っています|っていました|"
                 r"います|いました)(?:の(?:だ|です)|ん(?:だ|です))?$",
                 top_level_fragment,
@@ -1966,7 +2034,7 @@ def _typed_nucleus_projections_for_span(
                 top_level_fragment,
             )
             or re.search(
-                r"(?:たい|ほしい|欲しい)(?:と)?思"
+                r"(?:たい|ほしい|欲しい)(?:と|とは)?思"
                 r"(?:わない|っていない|っていなかった|いません)$",
                 top_level_fragment,
             )
@@ -2250,6 +2318,10 @@ def _typed_nucleus_projections_for_span(
         text,
         _TOP_LEVEL_CONTRAST_LINK_RE,
     )
+    bare_ga_links = _top_level_pattern_matches(
+        text,
+        _TOP_LEVEL_BARE_GA_LINK_RE,
+    )
     top_level_relation_link_count = len(coordinate_links) + len(contrast_links)
     coexistence_tails = _top_level_pattern_matches(
         text,
@@ -2342,8 +2414,15 @@ def _typed_nucleus_projections_for_span(
                 ),
             )
 
-    if top_level_relation_link_count == 1 and len(contrast_links) == 1:
-        link = contrast_links[0]
+    generic_contrast_links = (
+        contrast_links
+        if top_level_relation_link_count == 1 and len(contrast_links) == 1
+        else bare_ga_links
+        if not coordinate_links and not contrast_links and bare_ga_links
+        else ()
+    )
+    if generic_contrast_links:
+        link = generic_contrast_links[0]
         left_start, left_end = trimmed_range(0, link.start())
         right_start, right_end = trimmed_range(link.end(), len(text))
         left_text = text[left_start:left_end]
@@ -2409,7 +2488,8 @@ def _typed_nucleus_projections_for_span(
             )
         )
         if (
-            left_start < left_end <= link.start()
+            len(generic_contrast_links) == 1
+            and left_start < left_end <= link.start()
             and link.end() <= right_start < right_end
             and left_wish
             and conjunctive_ga_is_finite
@@ -2528,6 +2608,28 @@ def _typed_nucleus_projections_for_span(
             positive_wish, finite_wish_endpoint = affirmative_wish_proof(
                 top_level_fragment
             )
+            locally_denied_wish = bool(
+                re.search(
+                    r"(?:たい|ほしい|欲しい)(?:気持ち|願い|わけ)"
+                    r"(?:は|が|も|では|じゃ)?"
+                    r"(?:ない|なかった|ありません|ありませんでした)$",
+                    top_level_fragment,
+                )
+                or re.search(
+                    r"(?:たい|ほしい|欲しい)(?:と|とは)?思"
+                    r"(?:わない|っていない|っていなかった|いません)$",
+                    top_level_fragment,
+                )
+            )
+            if (
+                locally_denied_wish
+                or (
+                    not positive_wish
+                    and "operator:wish" in operators
+                    and operators & {"operator:negation", "operator:refusal"}
+                )
+            ):
+                return None
 
             def endpoint_final_match(
                 *patterns: re.Pattern[str],
@@ -2538,10 +2640,16 @@ def _typed_nucleus_projections_for_span(
                     for match in pattern.finditer(top_level_fragment)
                     if re.fullmatch(
                         r"(?:って|いて|んで|て|で)?"
-                        r"(?:いる|いた|います|いました)?"
-                        r"(?:い|かった|くない|くなかった|る|う|ない|なかった)?"
+                        r"(?:は)?"
+                        r"(?:いる|いた|います|いました|ある|あった|"
+                        r"あります|ありました|きた|きました)?"
+                        r"(?:い|かった|くない|くなかった|る|う|た|った|"
+                        r"[いきぎしじちぢにびぴみりえけげせぜてでねべぺめれ]?"
+                        r"(?:ます|ました|ません|ませんでした)|"
+                        r"(?:[わかがさざただなばぱまら])?"
+                        r"(?:ない|なかった))?"
                         r"(?:(?:は|が|も)(?:ある|いる|残っている|続いている)|"
-                        r"(?:だ|です|だった|でした))?"
+                        r"(?:なの)?(?:だ|です|だった|でした))?"
                         r"(?:の(?:だ|です)|ん(?:だ|です))?",
                         top_level_fragment[match.end() :],
                     )
@@ -2568,6 +2676,7 @@ def _typed_nucleus_projections_for_span(
                 _RELATION_UNCERTAINTY_RE,
                 _UNCERTAIN_RE,
             )
+            terminal_uncertainty_primary = uncertainty_final is not None
             refusal_final = endpoint_final_match(_REFUSAL_RE)
             change_final = endpoint_final_match(
                 _POSITIVE_CHANGE_RE,
@@ -2583,7 +2692,7 @@ def _typed_nucleus_projections_for_span(
             # contain a feeling noun or an epistemic host; those subordinate
             # operators must not veto the wish endpoint.  Non-wish endpoints,
             # and action in particular, retain the strict modifier guards.
-            if not positive_wish:
+            if not positive_wish and not terminal_uncertainty_primary:
                 if constraint_occurs and constraint_final is None:
                     return None
                 if (
@@ -2640,6 +2749,7 @@ def _typed_nucleus_projections_for_span(
             finite_predicate_tail = bool(
                 re.search(
                     r"(?:る|う|い|た|ない|なかった|ます|ました|"
+                    r"ません|ませんでした|"
                     r"だ|です|だった|でした)$",
                     top_level_fragment,
                 )
@@ -2766,6 +2876,19 @@ def _typed_nucleus_projections_for_span(
                         "operator:value",
                     }
                 )
+                and not (
+                    terminal_uncertainty_primary
+                    and code in {
+                        "operator:wish",
+                        "operator:negation",
+                        "operator:refusal",
+                        "operator:constraint",
+                        "operator:feeling",
+                        "operator:change",
+                        "operator:positive_change",
+                        "operator:value",
+                    }
+                )
             )
             return (
                 kind,
@@ -2776,99 +2899,271 @@ def _typed_nucleus_projections_for_span(
                 finite_endpoint_proven,
             )
 
-        # The specialized branch above intentionally covers its narrow finite
-        # wish/constraint shape first.  Other exact-one top-level contrasts may
-        # still be projected when both endpoint profiles are independently
-        # proven by the same frozen grammar and owner guards.
-        if (
-            left_start < left_end <= link.start()
-            and link.end() <= right_start < right_end
-            and text[link.start() : link.end()] == link.group(0)
-            and owner_scope_is_bound(left_text)
-            and owner_scope_is_bound(right_text)
-        ):
-            left_profile = generic_contrast_endpoint_profile(left_text)
-            right_profile = generic_contrast_endpoint_profile(right_text)
-            generic_ga_admitted = bool(
-                left_profile is not None
-                and (
-                    not link.group(0).startswith("が")
-                    or left_profile[5]
+        def fragment_has_admitted_contrast(fragment: str) -> bool:
+            """Reject an outer candidate that would hide another true link."""
+
+            top_level_fragment = _top_level_text(fragment)
+            if top_level_fragment is None:
+                return False
+            nested_links = (
+                *_top_level_pattern_matches(
+                    top_level_fragment,
+                    _TOP_LEVEL_CONTRAST_LINK_RE,
+                ),
+                *_top_level_pattern_matches(
+                    top_level_fragment,
+                    _TOP_LEVEL_BARE_GA_LINK_RE,
+                ),
+            )
+
+            def nested_trimmed_range(start: int, end: int) -> tuple[int, int]:
+                while (
+                    start < end
+                    and top_level_fragment[start] in " \t\r\n、,。．.!！?？"
+                ):
+                    start += 1
+                while (
+                    start < end
+                    and top_level_fragment[end - 1]
+                    in " \t\r\n、,。．.!！?？"
+                ):
+                    end -= 1
+                return start, end
+
+            for nested_link in nested_links:
+                nested_left_start, nested_left_end = nested_trimmed_range(
+                    0,
+                    nested_link.start(),
                 )
+                nested_right_start, nested_right_end = nested_trimmed_range(
+                    nested_link.end(),
+                    len(top_level_fragment),
+                )
+                if not (
+                    nested_left_start < nested_left_end <= nested_link.start()
+                    and nested_link.end()
+                    <= nested_right_start
+                    < nested_right_end
+                ):
+                    continue
+                nested_left = top_level_fragment[
+                    nested_left_start:nested_left_end
+                ]
+                nested_right = top_level_fragment[
+                    nested_right_start:nested_right_end
+                ]
+                if not (
+                    owner_scope_is_bound(nested_left)
+                    and owner_scope_is_bound(nested_right)
+                ):
+                    continue
+                nested_left_profile = generic_contrast_endpoint_profile(
+                    nested_left
+                )
+                nested_right_profile = generic_contrast_endpoint_profile(
+                    nested_right
+                )
+                if (
+                    nested_left_profile is not None
+                    and nested_right_profile is not None
+                    and (
+                        not nested_link.group(0).startswith("が")
+                        or nested_left_profile[5]
+                    )
+                ):
+                    return True
+            return False
+
+        # The specialized branch above intentionally covers its narrow finite
+        # wish/constraint shape first.  For the generic fallback, raw ``が``
+        # occurrences are only candidates: exact2 independently proven
+        # endpoint profiles plus a finite left-clause proof admit a link.  This
+        # keeps a nominative particle out of the relation count while allowing
+        # one comma-less conjunctive link even when another raw ``が`` occurs
+        # inside an endpoint.
+        admitted_contrasts: list[
+            tuple[
+                int,
+                int,
+                int,
+                int,
+                str,
+                str,
+                tuple[
+                    NucleusKind,
+                    str,
+                    Literal["positive", "negative", "mixed", "neutral"],
+                    Literal[
+                        "fact",
+                        "feeling",
+                        "wish",
+                        "possibility",
+                        "uncertain",
+                        "refusal",
+                        "intention",
+                    ],
+                    tuple[str, ...],
+                    bool,
+                ],
+                tuple[
+                    NucleusKind,
+                    str,
+                    Literal["positive", "negative", "mixed", "neutral"],
+                    Literal[
+                        "fact",
+                        "feeling",
+                        "wish",
+                        "possibility",
+                        "uncertain",
+                        "refusal",
+                        "intention",
+                    ],
+                    tuple[str, ...],
+                    bool,
+                ],
+            ]
+        ] = []
+        for candidate_link in generic_contrast_links:
+            candidate_left_start, candidate_left_end = trimmed_range(
+                0,
+                candidate_link.start(),
+            )
+            candidate_right_start, candidate_right_end = trimmed_range(
+                candidate_link.end(),
+                len(text),
+            )
+            if not (
+                candidate_left_start
+                < candidate_left_end
+                <= candidate_link.start()
+                and candidate_link.end()
+                <= candidate_right_start
+                < candidate_right_end
+                and text[candidate_link.start() : candidate_link.end()]
+                == candidate_link.group(0)
+            ):
+                continue
+            candidate_left_text = text[
+                candidate_left_start:candidate_left_end
+            ]
+            candidate_right_text = text[
+                candidate_right_start:candidate_right_end
+            ]
+            if not (
+                owner_scope_is_bound(candidate_left_text)
+                and owner_scope_is_bound(candidate_right_text)
+            ):
+                continue
+            candidate_left_profile = generic_contrast_endpoint_profile(
+                candidate_left_text
+            )
+            candidate_right_profile = generic_contrast_endpoint_profile(
+                candidate_right_text
             )
             if (
-                left_profile is not None
-                and right_profile is not None
-                and generic_ga_admitted
+                candidate_left_profile is None
+                or candidate_right_profile is None
+                or (
+                    candidate_link.group(0).startswith("が")
+                    and not candidate_left_profile[5]
+                )
             ):
+                continue
+            if fragment_has_admitted_contrast(
+                candidate_left_text
+            ) or fragment_has_admitted_contrast(candidate_right_text):
+                continue
+            admitted_contrasts.append(
                 (
-                    left_kind,
-                    left_predicate,
-                    left_polarity,
-                    left_modality,
-                    left_codes,
-                    _left_finite,
-                ) = left_profile
-                (
-                    right_kind,
-                    right_predicate,
-                    right_polarity,
-                    right_modality,
-                    right_codes,
-                    _right_finite,
-                ) = right_profile
-                burden_kinds = {
-                    "constraint",
-                }
-                if (
-                    (left_kind == "wish" and right_kind in burden_kinds)
-                    or (right_kind == "wish" and left_kind in burden_kinds)
-                ):
-                    relation_kind: RelationKind = "wish_and_constraint"
-                else:
-                    relation_kind = "contrast"
-                common_codes = (
-                    "semantic_role:span_relation_endpoint",
-                    "semantic_role:generic_relation_fragment",
+                    candidate_left_start,
+                    candidate_left_end,
+                    candidate_right_start,
+                    candidate_right_end,
+                    candidate_left_text,
+                    candidate_right_text,
+                    candidate_left_profile,
+                    candidate_right_profile,
                 )
-                return (
-                    _TypedNucleusProjection(
-                        nucleus_suffix="",
-                        kind=left_kind,
-                        predicate_kind=left_predicate,
-                        polarity=left_polarity,
-                        modality=left_modality,
-                        time_scope=_time_scope_for_text(left_text),
-                        scalar_start=left_start,
-                        scalar_end=left_end,
-                        attribute_codes=relation_fragment_codes(
-                            left_start,
-                            left_end,
-                            *left_codes,
-                            *common_codes,
-                        ),
-                        relation_kind=relation_kind,
+            )
+        if len(admitted_contrasts) == 1:
+            (
+                left_start,
+                left_end,
+                right_start,
+                right_end,
+                left_text,
+                right_text,
+                left_profile,
+                right_profile,
+            ) = admitted_contrasts[0]
+            (
+                left_kind,
+                left_predicate,
+                left_polarity,
+                left_modality,
+                left_codes,
+                _left_finite,
+            ) = left_profile
+            (
+                right_kind,
+                right_predicate,
+                right_polarity,
+                right_modality,
+                right_codes,
+                _right_finite,
+            ) = right_profile
+            burden_kinds = {
+                "constraint",
+            }
+            if (
+                (left_kind == "wish" and right_kind in burden_kinds)
+                or (right_kind == "wish" and left_kind in burden_kinds)
+            ):
+                relation_kind: RelationKind = "wish_and_constraint"
+            else:
+                relation_kind = "contrast"
+            common_codes = (
+                "semantic_role:span_relation_endpoint",
+                "semantic_role:generic_relation_fragment",
+            )
+            return (
+                _TypedNucleusProjection(
+                    nucleus_suffix="",
+                    kind=left_kind,
+                    predicate_kind=left_predicate,
+                    polarity=left_polarity,
+                    modality=left_modality,
+                    time_scope=_time_scope_for_text(left_text),
+                    scalar_start=left_start,
+                    scalar_end=left_end,
+                    attribute_codes=relation_fragment_codes(
+                        left_start,
+                        left_end,
+                        *left_codes,
+                        *common_codes,
                     ),
-                    _TypedNucleusProjection(
-                        nucleus_suffix=":contrasting",
-                        kind=right_kind,
-                        predicate_kind=right_predicate,
-                        polarity=right_polarity,
-                        modality=right_modality,
-                        time_scope=_time_scope_for_text(right_text),
-                        scalar_start=right_start,
-                        scalar_end=right_end,
-                        attribute_codes=relation_fragment_codes(
-                            right_start,
-                            right_end,
-                            *right_codes,
-                            *common_codes,
-                            "semantic_role:compound_reception_coowned_nonprimary",
-                        ),
-                        relation_kind=relation_kind,
-                        grounding_kind="user_stated_relation",
+                    relation_kind=relation_kind,
+                ),
+                _TypedNucleusProjection(
+                    nucleus_suffix=":contrasting",
+                    kind=right_kind,
+                    predicate_kind=right_predicate,
+                    polarity=right_polarity,
+                    modality=right_modality,
+                    time_scope=_time_scope_for_text(right_text),
+                    scalar_start=right_start,
+                    scalar_end=right_end,
+                    attribute_codes=relation_fragment_codes(
+                        right_start,
+                        right_end,
+                        *right_codes,
+                        *common_codes,
+                        "semantic_role:compound_reception_coowned_nonprimary",
                     ),
-                )
+                    relation_kind=relation_kind,
+                    grounding_kind="user_stated_relation",
+                ),
+            )
     return ()
 
 

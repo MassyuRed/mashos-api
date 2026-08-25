@@ -9317,6 +9317,8 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 "相談したいけれど、変わった本を読んだ。",
                 "相談したいことを記録したけれど、不安を感じている。",
                 "どうしたいか分からない理由を話したけれど、不安を感じている。",
+                "不安だったが相談したいが難しい。",
+                "不安だったけれど、相談したいが難しい。",
             ),
             start=1,
         ):
@@ -9376,6 +9378,11 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 "予定になりましたけれど、不安でした。",
                 "弟が、相談したい。",
                 "庭を眺めたい願いが、今はない。",
+                "「落ち着かなかったが少し楽になった」と記録した。",
+                "落ち着かなかったが少し楽になったがまだ決めきれない。",
+                "弟は落ち着かなかったが少し楽になった。",
+                "今朝は弟が落ち着かなかったが少し楽になった。",
+                "庭を眺めたい願いが今はない。",
             ),
             start=1,
         ):
@@ -9413,6 +9420,29 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             "続けたくないけれど、できない。",
             "まだ決めきれないけれど、できない。",
             "メモを書いたけれど、少し落ち着いた。",
+            "海辺で過ごしたい気持ちが強まっているけれど、予定を変更してよいか分からない。",
+            "落ち着かなかったが、少し楽になった。",
+            "レシピを書いたが、公開するかはまだ決めきれない。",
+            "展示を見てほしい気持ちが高まっているが公開してよいか分からない。",
+            "落ち着かなかったが少し楽になった。",
+            "レシピを書いたが公開するかはまだ決めきれない。",
+            "今朝は落ち着かなかったが少し楽になった。",
+            "落ち着きませんでしたが少し楽になった。",
+            "海辺で過ごしたいですけれど、予定を変更してよいか分からない。",
+            "海辺で過ごしたい気持ちですけれど、予定を変更してよいか分からない。",
+            "展示を見てほしいとは思っていますけれど、公開してよいか分からない。",
+            "不安を感じたが、相談したい。",
+            "不安を感じてはいるが、相談したい。",
+            "不安であるが、相談したい。",
+            "不安ではあるが、相談したい。",
+            "不安なのだが、相談したい。",
+            "不安だと思うが、相談したい。",
+            "難しいと思うが、相談したい。",
+            "少し変わったが、相談したい。",
+            "少し落ち着いてきたが、相談したい。",
+            "まだ決めきれませんが、相談したい。",
+            "続けたくありませんが、相談したい。",
+            "相談したいのですが、難しい。",
         )
         for index, memo in enumerate(supported_pairs, start=1):
             with self.subTest(downstream_exact2_relation=index):
@@ -9453,6 +9483,51 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                             for row in grounded_plan.relations
                         )
                     )
+                if memo == (
+                    "海辺で過ごしたい気持ちが強まっているけれど、"
+                    "予定を変更してよいか分からない。"
+                ):
+                    self.assertEqual(
+                        tuple(row.kind for row in typed),
+                        ("wish", "uncertainty"),
+                    )
+                    self.assertEqual(
+                        relation_rows[0].type,
+                        "contrast",
+                    )
+                if memo in {
+                    "落ち着かなかったが、少し楽になった。",
+                    "落ち着かなかったが少し楽になった。",
+                    "今朝は落ち着かなかったが少し楽になった。",
+                    "落ち着きませんでしたが少し楽になった。",
+                }:
+                    self.assertEqual(
+                        tuple(row.kind for row in typed),
+                        ("reaction", "change"),
+                    )
+                    self.assertEqual(
+                        relation_rows[0].type,
+                        "contrast",
+                    )
+                if memo in {
+                    "海辺で過ごしたいですけれど、予定を変更してよいか分からない。",
+                    "海辺で過ごしたい気持ちですけれど、予定を変更してよいか分からない。",
+                    "展示を見てほしいとは思っていますけれど、公開してよいか分からない。",
+                }:
+                    self.assertEqual(
+                        tuple(row.kind for row in typed),
+                        ("wish", "uncertainty"),
+                    )
+                    self.assertEqual(relation_rows[0].type, "contrast")
+                if memo in {
+                    "レシピを書いたが、公開するかはまだ決めきれない。",
+                    "レシピを書いたが公開するかはまだ決めきれない。",
+                }:
+                    self.assertEqual(
+                        tuple(row.kind for row in typed),
+                        ("action", "uncertainty"),
+                    )
+                    self.assertEqual(relation_rows[0].type, "contrast")
                 resolver = build_evidence_span_resolver(
                     source.evidence_spans,
                     current_input=source.normalized_current_input,

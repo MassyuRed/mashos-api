@@ -1024,7 +1024,7 @@ AUTOMATIC_PROGRESSION = FALSE
 
 ## 28. Route A Step 3 completion work-unit activation（2026-08-25）
 
-§27後、Mashは外部AIと代替routeを明確に拒否したうえで、providerless Route Aだけを用いてStep 3を完了まで進め、実在する問題だけを報告するよう明示した。本節は、そのcurrent instructionを§26 / §27の追加修正禁止より新しい実装authorityとして適用する。return counterは`2/2`のまま保持し、reset・増分・Route B・external provider・Step 4への進行は行わない。
+§27後、Mashは外部AIと代替routeを明確に拒否したうえで、providerless Route Aだけを用いてStep 3を完了まで進め、実在する問題だけを報告するよう明示した。本節は、そのcurrent instructionを§26 / §27の追加修正禁止より新しい実装authorityとして適用する。return counterは`2/2`のまま保持し、reset・増分・alternate route・external provider・Step 4への進行は行わない。
 
 今回のproduct-causal repairは、existing composerがtyped scalar rowsをrole横断のlabel列へ平坦化していた共通原因だけを修正する。既存`clause_argument_role`ごとにpolarity / modality / timeをcoalesceし、relation endpointへ直接係らせる。接続語の重複、subject/object particle seamおよび同一対象のReception concentrationも、existing grammatical axes / duty / basis / targetだけで解消する。case ID、family、raw text、fixture、expected sentenceをselectorにせず、新しいsentence bank、asset family、enum、axis、dependencyまたはrouteを追加しない。
 
@@ -1242,7 +1242,7 @@ final exact3は`CLEAR / CLEAR / ROUTE_LEVEL_CEILING`であり、`LANGUAGE_VIABIL
 
 ## 32. Route A generic relation recognition extension and final Step 3 reactivation（2026-08-25）
 
-§31後、Mashはexternal AI / Route Bを明確に禁止し、Route AだけでStep 3を完了まで進めるよう再指示した。このcurrent instructionを、§31のceiling terminalより新しいRoute A implementation authorityとして適用する。`COMMON_DEFECT_RETURN_COUNT=2/2`はresetも増分もせず保持する。
+§31後、Mashはexternal AI / alternate routeを明確に禁止し、Route AだけでStep 3を完了まで進めるよう再指示した。このcurrent instructionを、§31のceiling terminalより新しいRoute A implementation authorityとして適用する。`COMMON_DEFECT_RETURN_COUNT=2/2`はresetも増分もせず保持する。
 
 correctionはcase / phrase-family tableではなく、existing source grammarへ一つのbounded recognizerを追加する。quote / bracket depth 0にあるtop-level connective exact1だけを対象とし、coexistenceはfragment-localに証明できるwish exact1..2と、必要な場合だけm-row表記上曖昧なnominal endpoint exact0..1をexact source scalar rangeへbindする。曖昧endpointは`state / fact / neutral`のまま保持し、wish / retained-intentionへ昇格しない。contrastはaffirmative wishとclause-final source-explicit constraint exact1ずつをbindする。明示された第三者owner / beneficiary / attribution、引用内部、nested / malformed grouping、multiple link、relative nominal、negated wish / uncertainty / constraint、modifier内operator、simile-only exact2はfail-closedとする。existing self-evaluation safety owner、action→changeおよびresidue→unfinished projectorは先順位のまま変えない。
 
@@ -1556,3 +1556,73 @@ AUTOMATIC_PROGRESSION = FALSE
 ```
 
 new activation headsを固定した後だけsame frozen private exact4をfresh materializeする。reader / cleanup / exact3 success境界は§35から変更しない。
+
+## 37. Step 3 admitted-connective and finite-host completion（2026-08-25）
+
+§36 activation headsのfresh early actualは、known / withheld machine invariantがともに`CLEAR_4_OF_4`、known Pro language viabilityも`CLEAR_4_OF_4`であった。一方、withheld Pro exact1はaggregate viable `1/4`、non-clear `3/4`で、`COMMON_DEFECT / GENERIC_SUBJECTIVE_CONTENT / SUBJECTIVE_MEANING_PLANNER`となった。route-level ceilingはなく、body-free causeはgeneric finite endpoint / connective admissionが一部で未成立のためrelation-bearing spanがwhole-nodeに残り、endpoint dutiesとappraisalが集中することだった。private body、locator、語彙またはper-case detailはPro外へ出していない。
+
+修正はfrozen grammatical axes内のgeneric proofだけである。raw `が`をrelation countへ入れず、各top-level candidateについてowner-bound endpoint profile exact2とleft finite endpoint proofを個別に作り、admitted candidate exact1の場合だけcontrastへ分割する。nominative `が`、bare nominal、third-party owner、quote / group、admitted link 0 / 2+は閉じる。negative finite inflection tail、連続bounded temporal prefix、polite wish、wish nominal copular、source-bound epistemic `とは` hostを同じ既存operator軸の有限活用として扱う。case id、private語彙、phrase-family rule、expected sentence、new asset / enum / dependency / routeは0である。
+
+```text
+AUTHORITY = MASH_CURRENT_EXPLICIT_ROUTE_A_ONLY_STEP3_COMPLETION
+PREIMAGE_RUNTIME_HEAD = d625c576b606ec939228642de596f8384fde8123
+PREIMAGE_DESIGN_HEAD = d0244467248ff5e7816bc00780d5bd02281c5bcb
+PREIMAGE_LANGUAGE_CORE_IDENTITY = 8e903ebec1ef4de2f646a824fae675eebcc16b9333b6ce7064d9702a6b28d59d
+PREIMAGE_RUNNER_SHA256 = e6770d1cd8ed47c948d9aef68a6dc9cd1335fdfe505e14a7cd80f3ba1e9476cb
+PREIMAGE_BODY_FREE_MACHINE_PACKET_FILE_SHA256 = ca614291e8e446172013ee3ebaaa7f5ecfc2c937c41c2942add0cdaec90c605a
+PREIMAGE_BODY_FREE_MACHINE_PACKET_CANONICAL_SHA256 = 2b1ea58d09e2dcbc0b472aefb6829be245463ca3068ef6216506fef15118da08
+PREIMAGE_PRO_RESULT_FILE_SHA256 = eb8f29b9f81d6c158d4440ee7e18bdacd4d6d54616e41490ebf800bc08a5bcbe
+PREIMAGE_PRO_RESULT_CANONICAL_SHA256 = e3b41d3016856665732d14eb968be56c490aa94a149d54dd9ecde4eddf7aeecb
+PREIMAGE_KNOWN_VISIBLE_PACKET_FILE_SHA256 = c6c2237cd61d3794c268ca4514f238dc93a8faff574d65c093bf1801b6f98c8c
+PREIMAGE_KNOWN_VISIBLE_PACKET_CANONICAL_SHA256 = cb6e0a1cc8624f681787a1b59dcffead893cacf10c5eecafeb86723e8cef9160
+PREIMAGE_PRIVATE_PACKET_BINDING_SHA256 = 85b668cb28ab406c902aa34381658d176e122a0722d3bbf92babfadff6dce9f1
+PREIMAGE_MACHINE_KNOWN / WITHHELD = CLEAR_4_OF_4 / CLEAR_4_OF_4
+PREIMAGE_PRO_KNOWN / WITHHELD = CLEAR_4_OF_4 / COMMON_DEFECT_1_OF_4_VIABLE
+PREIMAGE_DEFECT_CLASS = GENERIC_SUBJECTIVE_CONTENT
+PREIMAGE_CAUSE_COMPONENT = SUBJECTIVE_MEANING_PLANNER
+PREIMAGE_CEILING_REASON = NONE
+
+ADMITTED_BARE_GA = EXACT1_FROM_ENDPOINT_PROFILE_EXACT2_AND_LEFT_FINITE_PROOF
+RAW_GA_RELATION_AUTHORITY = 0
+NEGATIVE_FINITE_INFLECTION = EXISTING_AXIS_GRAMMAR_ONLY
+BOUNDED_TEMPORAL_PREFIX = ITERATIVE_EXACT_PREFIX_CONSUMPTION
+POLITE_WISH_NOMINAL_COPULAR_EPISTEMIC_HOST = EXISTING_WISH_AXIS_ONLY
+CASE_ID_PRIVATE_TERM_PHRASE_FAMILY_EXPECTED_SENTENCE_RULE = 0
+NEW_ASSET_ENUM_DEPENDENCY_ROUTE = 0
+
+RUNTIME_CHANGED_PATHS_FROM_PREIMAGE = EXACT5
+  ai/services/ai_inference/emlis_ai_grounded_observation_plan.py
+  ai/services/ai_inference/cocolon_meaning_experience_engine/engine.py
+  ai/tests/test_cmee_v1a_i1sx_contracts.py
+  ai/tools/cmee_v1a_i1sx_candidate_run.py
+  ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md
+DESIGN_CHANGED_PATHS = EXACT1
+  Cocolon_前提資料/designs/cmee/v1/06_implementation_order_migration_and_verification.md
+
+LANGUAGE_CORE_IDENTITY = 41619312c76f3640fcde089e45c4287819374624e6ba05df11909ae8a327d718
+RUNNER_SHA256 = a06964e5bba4c30c87186e026cb4288ae17397f36f56d0579d6d03273873075b
+STEP2_COMPOSITION_TESTS = 19_OF_19_PASS
+STEP3_EARLY_HARNESS_TESTS = 17_OF_17_PASS
+CONTRACT_TESTS = 123_OF_123_PASS
+VERTICAL_TESTS = 42_OF_42_PASS
+COMBINED_TESTS = 165_OF_165_PASS
+COMPILEALL = PASS
+
+PREIMAGE_EARLY_ACTUAL_RUN / RETRY / RERUN = 1 / 0 / 0
+PREIMAGE_FRESH_OUTPUT_CREATED / DELETED / REMAINING = 2 / 2 / 0
+PREIMAGE_NETWORK / EXTERNAL_AI / PROVIDER / BODY_SEND / COST = 0 / 0 / 0 / 0 / 0
+FROZEN_PRIVATE_INPUT_RETAINED = 1
+COMMON_DEFECT_RETURN_COUNT = 2_OF_2_KEEP
+COUNTER_RESET / COUNTER_INCREMENT = 0 / 0
+SOLE_ROUTE = ROUTE_A_PROVIDERLESS_EXACT1_ONLY
+PUBLIC_API / DB / RN / PRODUCTION_EFFECT = 0 / 0 / 0 / 0
+EARLY_ACTUAL_STATUS = NOT_RUN_PENDING_ADMITTED_CONNECTIVE_ACTIVATION_HEADS
+STEP3 = ROUTE_A_GENERIC_FINITE_HOST_REPAIR_VERIFIED_PENDING_FRESH_ACTUAL
+FORMAL_EXACT8 = NOT_RUN
+PRODUCT_READ_EVALUATED = FALSE
+CANDIDATE_READY = FALSE
+STEP4 = NOT_STARTED
+AUTOMATIC_PROGRESSION = FALSE
+```
+
+new activation headsを固定した後だけsame frozen private exact4をfresh materializeする。known body-fullはUltra technical / Pro language、withheld body-fullはPro exact1だけが読み、output exact2はreview直後に削除する。success exact3がすべて`CLEAR`なら`EARLY_ACTUAL_STATUS=LANGUAGE_VIABILITY_OBSERVED`へ遷移し、formal Product Read、Step 4、ready、mergeまたはproductionへ自動進行しない。
