@@ -1177,3 +1177,65 @@ AUTOMATIC_PROGRESSION = FALSE
 ```
 
 final corrected activation headsを固定した後、同じfrozen private input exact4をfresh exclusive outputへexact1回だけmaterializeする。knownはUltra technical / Pro language、withheldはPro body-fullだけが読み、success exact3をbody-free finalizerへ渡す。private output exact2はread後削除し、Step 3 closure以外へ自動進行しない。
+
+## 31. Step 3 final early actual — Route A language ceiling terminal（2026-08-25）
+
+§30のfinal corrected headsへbindしたfresh early actual exact1を実行した。known exact4はmachine `CLEAR_4_OF_4`、Pro language `CLEAR_4_OF_4`、Ultra technical invariant `CLEAR`であり、shared-endpoint repetition、sequence meta tail、Layer 2 speaker concentrationは閉じた。withheld exact4もmachine / normal-form / duty invariantは`CLEAR_4_OF_4`である。
+
+ただし、withheld body-fullを読むPro exact1は`ROUTE_LEVEL_CEILING / CASE_OR_PHRASE_FAMILY_RULE_REQUIRED`を返した。withheldではrelation-bearing contentがtyped endpoint exact2にならず、source-bound proposition全体の引用とgeneric appraisalへ残る。frozen structural familyをselectorにせず解消するにはcomposition前のraw Japaneseから接続・対比・時系列・未完了をphrase familyとして新規認識する必要があり、frozen grammatical axes内のgeneric seam / concentration correctionではない。§13 transitionに従い、追加repair、case rule、asset proliferationまたは再実行を行わず即時terminalとする。
+
+```text
+FINAL_ACTUAL_RUNTIME_HEAD = 350b336f332a5703f0f366da6bc6165acdcbeb7a
+FINAL_ACTUAL_DESIGN_HEAD = 4dbf733a539d848790baf545559608e9cf3d2059
+FINAL_LANGUAGE_CORE_IDENTITY = b8ac6a74a05a108744b164bd3492bac34bfa1e0bd16b42a566dc9d78eab3e409
+PACKET_ID = CMEE_STAGE1_ADDITIONAL_CORRECTION_WITHHELD_EARLY_20260824_V1
+BOUNDED_UNIT_ID = cocolon.cmee.stage1.additional_correction.route_a.20260824.v1
+KNOWN_VISIBLE_PACKET_SHA256 = 177a0024affad8742a4bb3d380f446879c911273b88a5826966ff0c0a05e77db
+BODY_FREE_MACHINE_PACKET_SHA256 = 3857ca122a07b3c0128602aad596d7b32791f83d20388d52f1c864d24e6a094e
+PRIVATE_PACKET_BINDING_SHA256 = 3d1bb1c0b4fb9f232d69f641616f271756474bb64f8415e7547ba88ab94874e1
+RUNNER_SHA256 = 793ca6c2bb13c4fef6b8eaa5e873642c148dd10eafd321f0aa017cd1ed5246d3
+PRO_BODY_FREE_RESULT_SHA256 = f9ffd8a26824dfd754e9bc488e870e477a2605a5395f3e08d6c2325dac674a7a
+ULTRA_KNOWN_TECHNICAL_RESULT_SHA256 = bf248af64d690817d63fc9e9a7192ded176a448c6c069d335d830abdd0e123d8
+FINAL_BODY_FREE_RECEIPT_SHA256 = 384a4adbac2758c9aeeb17212977233c440911bb14ad256d22cc519cd8d08f09
+
+KNOWN_MACHINE_INVARIANT = CLEAR_4_OF_4
+KNOWN_PRO_LANGUAGE_RESULT = CLEAR_4_OF_4
+ULTRA_KNOWN_TECHNICAL_INVARIANT = CLEAR
+WITHHELD_MACHINE_INVARIANT = CLEAR_4_OF_4
+PRO_BODY_FREE_EARLY_HUMAN_READ_RESULT = ROUTE_LEVEL_CEILING
+CEILING_REASON = CASE_OR_PHRASE_FAMILY_RULE_REQUIRED
+ALL_THREE_CLEAR = FALSE
+EARLY_ACTUAL_STATUS = NOT_RUN
+STAGE1_ADDITIONAL_CORRECTION_STEP3 = ROUTE_LEVEL_CEILING_STOP
+
+CONTRACT_TESTS = 119_OF_119_PASS
+VERTICAL_TESTS = 42_OF_42_PASS
+COMBINED_TESTS = 161_OF_161_PASS
+COMPILEALL = PASS
+
+FINAL_RUN_EARLY_ACTUAL_CALL_COUNT = 1
+FINAL_RUN_FRESH_MATERIALIZATION_COUNT = 1
+FINAL_RUN_RETRY / RERUN = 0 / 0
+FINAL_RUN_KNOWN / WITHHELD_ACTUAL_JAPANESE = 4 / 4
+FINAL_RUN_FRESH_OUTPUT_CREATED / DELETED / REMAINING = 2 / 2 / 0
+FROZEN_PRIVATE_INPUT_RETAINED = 1
+PRIVATE_BODY_LOCATOR_PER_CASE_DIGEST_DISCLOSED = 0 / 0 / 0
+ULTRA_WITHHELD_BODY_ACCESS / MASH_WITHHELD_BODY_ACCESS = 0 / 0
+
+COMMON_DEFECT_RETURN_COUNT_BEFORE / AFTER = 2_OF_2 / 2_OF_2
+COUNTER_RESET / COUNTER_INCREMENT = 0 / 0
+SOLE_ROUTE = ROUTE_A_PROVIDERLESS_EXACT1_ONLY
+EXTERNAL_AI / PROVIDER / NETWORK / BODY_SEND / COST = 0 / 0 / 0 / 0 / 0
+PUBLIC_API / DB / RN / PRODUCTION_EFFECT = 0 / 0 / 0 / 0
+
+FORMAL_EXACT8 = NOT_RUN
+PRODUCT_READ_EVALUATED = FALSE
+PRODUCT_PASS = NOT_DECLARED
+PRODUCT_CREDIT / TECHNICAL_CREDIT = 0 / 0
+CANDIDATE_READY = FALSE
+STEP4 = NOT_STARTED
+READY_OR_MERGE = 0
+AUTOMATIC_PROGRESSION = FALSE
+```
+
+final exact3は`CLEAR / CLEAR / ROUTE_LEVEL_CEILING`であり、`LANGUAGE_VIABILITY_OBSERVED`へ遷移しない。これはknown language coreと全machine invariantが閉じた一方、frozen withheldに必要なlanguage recognitionがcurrent Route A grammarの上限外であることを示す。今回のscopeでは追加path / rule / asset / fixtureを増やさず、Draft / open / unmergedを維持する。
