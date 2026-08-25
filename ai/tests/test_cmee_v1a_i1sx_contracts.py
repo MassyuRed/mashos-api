@@ -9818,6 +9818,70 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                         )
                     )
 
+    def test_subjective_layer_transition_reestablishes_relation_objects_and_bounds_anaphora(
+        self,
+    ) -> None:
+        module = stage1_composition_module
+        singular_anaphora = 0
+        plural_anaphora = 0
+        for case_index in range(len(self._KNOWN_EXACT4)):
+            with self.subTest(case_index=case_index):
+                *_, phase_b = self._known_inputs(case_index)
+                normalized = module.compose_stage1_from_projection(
+                    phase_b
+                ).selected_candidate.normalized_artifact
+                unit_by_ref = {
+                    row.unit_ref: row for row in normalized.sentence_units
+                }
+                unit_index = {
+                    row.unit_ref: index
+                    for index, row in enumerate(normalized.sentence_units)
+                }
+                layer1_refs = {
+                    row.basis_semantic_refs
+                    for row in normalized.response_object_expression_rows
+                    if unit_by_ref[row.unit_ref].layer == "LAYER_1"
+                }
+                seen_layer2_refs: set[tuple[str, ...]] = set()
+                for expression in normalized.response_object_expression_rows:
+                    unit = unit_by_ref[expression.unit_ref]
+                    if unit.layer == "LAYER_2":
+                        if (
+                            expression.basis_semantic_refs in layer1_refs
+                            and expression.basis_semantic_refs
+                            not in seen_layer2_refs
+                        ):
+                            self.assertIsNot(
+                                expression.expression_mode,
+                                module.ResponseObjectExpressionMode.ANAPHORIC,
+                            )
+                        seen_layer2_refs.add(expression.basis_semantic_refs)
+                    if (
+                        expression.expression_mode
+                        is module.ResponseObjectExpressionMode.ANAPHORIC
+                    ):
+                        antecedent = unit_by_ref[
+                            expression.antecedent_unit_ref
+                        ]
+                        self.assertEqual(antecedent.layer, unit.layer)
+                        self.assertLess(
+                            unit_index[antecedent.unit_ref],
+                            unit_index[unit.unit_ref],
+                        )
+                        if len(expression.basis_semantic_refs) == 1:
+                            singular_anaphora += 1
+                            self.assertIn("そのこと", unit.text)
+                            self.assertEqual(
+                                unit_index[antecedent.unit_ref] + 1,
+                                unit_index[unit.unit_ref],
+                            )
+                        else:
+                            plural_anaphora += 1
+                            self.assertIn("その両方", unit.text)
+                            self.assertNotIn("そのことを", unit.text)
+        self.assertGreaterEqual(singular_anaphora, 1)
+        self.assertGreaterEqual(plural_anaphora, 1)
+
     def test_source_scalar_uses_exact_normalized_raw_text_and_typed_finite_morphology(self) -> None:
         def source_expression_by_predicate_kind(
             phase_b: object,
