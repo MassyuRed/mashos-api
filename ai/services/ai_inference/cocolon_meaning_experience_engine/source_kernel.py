@@ -280,7 +280,7 @@ def build_source_owner_universe(
     envelope: SourceEnvelope,
     evidence_refs: Tuple[EvidenceRef, ...],
 ) -> SourceOwnerUniverse:
-    """Freeze the Route B denominator without consulting a meaning provider.
+    """Freeze the source-owner denominator without consulting a resolver.
 
     Canonical thought/action obligations are required. Emotion aliases are
     one active context owner rather than duplicate meaning owners. The

@@ -17,7 +17,7 @@ from typing import Any, Mapping, Optional, Sequence, Tuple
 
 
 CMEE_SCHEMA_VERSION = "cocolon.cmee.v1a.i1sx.material_unknown.v2"
-CMEE_ROUTE_B_POLICY_VERSION = "cocolon.cmee.v1a.acceptance.route_b.v1"
+CMEE_SOURCE_OWNER_POLICY_VERSION = "cocolon.cmee.v1a.source_owner_resolution.v2"
 CMEE_SOURCE_CONTRACT_VERSION = "cocolon.cmee.emlis.current_input.text_grounded.v2"
 CMEE_OBLIGATION_VERSION = "cocolon.cmee.emlis.i1sx.owner_obligation.v1"
 CMEE_OWNER_UNIVERSE_SCHEMA_VERSION = "cocolon.cmee.v1a.owner_universe.v1"
@@ -225,8 +225,8 @@ class EpistemicState(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
-class RouteBDisposition(str, Enum):
-    """Exact Route B owner disposition set from the CMEE V1 contract."""
+class SourceOwnerDisposition(str, Enum):
+    """Exact source-owner disposition set from the CMEE V1 contract."""
 
     SOURCE_EXPLICIT_VISIBLE = "SOURCE_EXPLICIT_VISIBLE"
     SUPPLEMENTAL_USER_VISIBLE = "SUPPLEMENTAL_USER_VISIBLE"
@@ -2720,39 +2720,38 @@ class SourceOwnerUniverse:
 
 
 @dataclass(frozen=True, slots=True)
-class RouteBOwnerDisposition:
-    """Complete exact-one Route B disposition for one meaning owner."""
+class SourceOwnerResolution:
+    """Complete exact-one source-owner resolution for one meaning owner."""
 
     meaning_owner_id: str
     owner_class: OwnerClass
     provider_resolution: ProviderResolution
     attachment_admission: AttachmentAdmission
     visible_authority: VisibleAuthority
-    route_b_disposition: RouteBDisposition
+    source_owner_disposition: SourceOwnerDisposition
     visible_claim_refs: Tuple[str, ...]
     evidence_refs: Tuple[str, ...]
     target_unknown_ref: Optional[str]
     reason_codes: Tuple[str, ...]
 
-    # Compatibility aliases are intentionally read-only. The disabled exact8
-    # runner remains byte-identical while the private R1 contract uses the
-    # approved Route B field names above.
+    # Compatibility accessors remain read-only while the disabled exact8
+    # runner consumes the source-owner contract fields above.
     @property
     def owner_id(self) -> str:
         return self.meaning_owner_id
 
     @property
-    def disposition(self) -> RouteBDisposition:
-        return self.route_b_disposition
+    def disposition(self) -> SourceOwnerDisposition:
+        return self.source_owner_disposition
 
     @property
     def evidence_ids(self) -> Tuple[str, ...]:
         return self.evidence_refs
 
 
-# Read-only compatibility name for the byte-identical disabled exact8 runner
-# and the already-open PR's first vertical implementation.
-OwnerDisposition = RouteBOwnerDisposition
+# Neutral read-only shorthand used by the disabled exact8 runner and the
+# already-open PR's first vertical implementation.
+OwnerDisposition = SourceOwnerResolution
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -2899,11 +2898,11 @@ def _stage1_positive_visible_claim_ids(
     grounded_graph: GroundedMeaningGraph,
     parent_plan: ExperiencePlan,
 ) -> set[str]:
-    """Return claims with exact positive Route B visible authority."""
+    """Return claims with exact positive source-owner visible authority."""
 
     dispositions = tuple(grounded_graph.owner_dispositions)
     if not dispositions:
-        # Small isolated contract fixtures predate Route B rows. Runtime
+        # Small isolated contract fixtures predate source-owner rows. Runtime
         # projections always carry the complete owner denominator.
         return {row.node_id for row in grounded_graph.nodes} | {
             row.edge_id for row in grounded_graph.edges
@@ -2919,18 +2918,18 @@ def _stage1_positive_visible_claim_ids(
     ):
         raise CMEEStage1ContractError("stage1_owner_disposition_partition_invalid")
     positive = {
-        RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
-        RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+        SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
+        SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE,
     }
     visible_owner_ids = tuple(
         row.meaning_owner_id
         for row in dispositions
-        if row.route_b_disposition in positive
+        if row.source_owner_disposition in positive
     )
     unresolved_owner_ids = tuple(
         row.meaning_owner_id
         for row in dispositions
-        if row.route_b_disposition not in positive
+        if row.source_owner_disposition not in positive
     )
     if (
         tuple(parent_plan.visible_owner_ids) != visible_owner_ids
@@ -2944,7 +2943,7 @@ def _stage1_positive_visible_claim_ids(
     visible_claim_ids: set[str] = set()
     for disposition in dispositions:
         refs = tuple(disposition.visible_claim_refs)
-        if disposition.route_b_disposition in positive:
+        if disposition.source_owner_disposition in positive:
             if not refs or len(refs) != len(set(refs)):
                 raise CMEEStage1ContractError(
                     "stage1_candidate_visible_owner_disposition_mismatch"
@@ -3604,8 +3603,8 @@ def _stage1_expected_material_unknown_refs(
         node = node_by_id.get(str(target or ""))
         if (
             disposition is None
-            or disposition.route_b_disposition
-            is not RouteBDisposition.UNKNOWN_PRESERVED_LIMITED
+            or disposition.source_owner_disposition
+            is not SourceOwnerDisposition.UNKNOWN_PRESERVED_LIMITED
             or type(target) is not str
             or not target
             or disposition.visible_claim_refs != (target,)
@@ -5380,19 +5379,19 @@ class EngineOutcome:
     terminal_state: str = ""
     automatic_progression: bool = False
     schema_version: str = CMEE_SCHEMA_VERSION
-    route_policy_version: str = CMEE_ROUTE_B_POLICY_VERSION
+    source_owner_policy_version: str = CMEE_SOURCE_OWNER_POLICY_VERSION
 
     def as_body_free(self) -> Mapping[str, Any]:
         graph = self.meaning_graph
         artifact = self.artifact
         dispositions = tuple(graph.owner_dispositions) if graph else ()
         visible = {
-            RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
-            RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+            SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
+            SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE,
         }
         return {
             "schema_version": self.schema_version,
-            "route_policy_version": self.route_policy_version,
+            "source_owner_policy_version": self.source_owner_policy_version,
             "core_id": CoreId.EMLIS_AI.value,
             "product_job": ProductJob.OBSERVE_AND_CLARIFY.value,
             "execution_mode": ExecutionMode.OFFLINE_CANDIDATE.value,
@@ -5402,13 +5401,15 @@ class EngineOutcome:
             "meaning_node_count": len(graph.nodes) if graph else 0,
             "meaning_edge_count": len(graph.edges) if graph else 0,
             "required_active_owner_count": len(dispositions),
-            "visible_owner_count": sum(row.route_b_disposition in visible for row in dispositions),
+            "visible_owner_count": sum(
+                row.source_owner_disposition in visible for row in dispositions
+            ),
             "unresolved_owner_count": sum(
-                row.route_b_disposition not in visible for row in dispositions
+                row.source_owner_disposition not in visible for row in dispositions
             ),
             "unresolved_required_owner_count": sum(
                 row.owner_class is OwnerClass.REQUIRED
-                and row.route_b_disposition not in visible
+                and row.source_owner_disposition not in visible
                 for row in dispositions
             ),
             "visible_unit_trace_count": len(artifact.trace) if artifact else 0,
@@ -5420,7 +5421,7 @@ class EngineOutcome:
             "reception_unit_count": sum(row.role == "RECEPTION" for row in artifact.trace) if artifact else 0,
             "artifact_present": artifact is not None,
             "implementation_state": "DRAFT_WIP_DISABLED",
-            "route_b_contract_complete": False,
+            "source_owner_contract_complete": False,
             "candidate_ready": False,
             "product_read_eligible": False,
             "exact8_acceptance_complete": False,
@@ -5447,7 +5448,7 @@ __all__ = [
     "CMEE_GROUNDED_GRAPH_SCHEMA_VERSION",
     "CMEE_OBLIGATION_VERSION",
     "CMEE_OWNER_UNIVERSE_SCHEMA_VERSION",
-    "CMEE_ROUTE_B_POLICY_VERSION",
+    "CMEE_SOURCE_OWNER_POLICY_VERSION",
     "CMEE_SCHEMA_VERSION",
     "CMEE_SOURCE_CONTRACT_VERSION",
     "CMEE_STAGE1_ANTI_TEMPLATE_FORBIDDEN_REGISTRY_FIELDS",
@@ -5507,8 +5508,8 @@ __all__ = [
     "RelationalClosure",
     "RelationalCommitment",
     "RelationalPositionKind",
-    "RouteBDisposition",
-    "RouteBOwnerDisposition",
+    "SourceOwnerDisposition",
+    "SourceOwnerResolution",
     "SemanticOperator",
     "SourceEnvelope",
     "SourceQualifierBinding",

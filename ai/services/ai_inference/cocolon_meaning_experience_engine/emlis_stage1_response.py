@@ -84,7 +84,7 @@ from .contracts import (
     RealizedSemanticBinding,
     RealizedSentenceUnit,
     RelationOperator,
-    RouteBDisposition,
+    SourceOwnerDisposition,
     SemanticOperator,
     StanceOperator,
     SubjectiveDepthClass,
@@ -1217,13 +1217,13 @@ def _visible_claim_ids(
     if len(disposition_by_owner) != len(graph.owner_dispositions):
         raise CMEEStage1ContractError("stage1_owner_disposition_duplicate")
     positive = {
-        RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
-        RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+        SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
+        SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE,
     }
     visible_claim_ids: set[str] = set()
     for owner_id in visible_owners:
         row = disposition_by_owner.get(owner_id)
-        if row is None or row.route_b_disposition not in positive:
+        if row is None or row.source_owner_disposition not in positive:
             raise CMEEStage1ContractError("stage1_visible_owner_disposition_mismatch")
         if not set(row.visible_claim_refs).issubset(graph_claim_ids):
             raise CMEEStage1ContractError("stage1_visible_claim_ref_missing")
@@ -2259,8 +2259,8 @@ def _material_unknown_refs(
         node = node_by_id.get(str(target or ""))
         if (
             row is None
-            or row.route_b_disposition
-            is not RouteBDisposition.UNKNOWN_PRESERVED_LIMITED
+            or row.source_owner_disposition
+            is not SourceOwnerDisposition.UNKNOWN_PRESERVED_LIMITED
             or type(target) is not str
             or not target
             or row.visible_claim_refs != (target,)

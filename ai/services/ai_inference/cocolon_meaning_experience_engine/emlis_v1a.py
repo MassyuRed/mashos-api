@@ -61,7 +61,7 @@ from .contracts import (
     OwnerClass,
     OwnerDisposition,
     ProviderResolution,
-    RouteBDisposition,
+    SourceOwnerDisposition,
     RealizedSentenceUnit,
     VisibleAuthority,
     VisibleUnknownUnit,
@@ -626,10 +626,10 @@ COMMON_GUARD_STABILIZATION_PHASE = "step15_common_core_stabilization"
 COMMON_GUARD_STABILIZATION_CORE_ID = "emlis"
 TRUST_POLICY_IDS = (
     *tuple(sorted(EXPECTED_COMMON_GUARDS)),
-    "cocolon.cmee.route_b.positive_realization_trace.v1",
+    "cocolon.cmee.source_owner.positive_realization_trace.v2",
     CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION,
 )
-ROUTE_B_REASON_CODES = frozenset(
+SOURCE_OWNER_REASON_CODES = frozenset(
     {
         "PROVIDER_IDENTITY_MISMATCH",
         "RESOURCE_LOCK_MISMATCH",
@@ -898,7 +898,7 @@ def _graph_id(
                 row.provider_resolution.value,
                 row.attachment_admission.value,
                 row.visible_authority.value,
-                row.route_b_disposition.value,
+                row.source_owner_disposition.value,
                 "visible_claim_refs",
                 *row.visible_claim_refs,
                 "evidence_refs",
@@ -1918,7 +1918,7 @@ def _build_graph(
         )
         # Every admitted direct source nucleus is eligible for the bounded
         # request-local semantic pool.  Record that authority explicitly on
-        # its Route B owner instead of letting Stage 1 read a claim from a
+        # its source owner instead of letting Stage 1 read a claim from a
         # NOT_VISIBLE_UNRESOLVED owner.  Non-realized strength and unknown
         # attachment nodes remain governed by their existing dispositions.
         visible_claims_by_owner.setdefault(owner, []).append(node_id)
@@ -1929,7 +1929,8 @@ def _build_graph(
         if relation.grounding_kind not in ADMISSIBLE_RELATION_GROUNDING:
             if is_visible:
                 raise CMEEVerticalError("provisional_relation_visible_authority_forbidden")
-            # Route B keeps provisional provider/legacy proposals outside the
+            # The source-owner boundary keeps provisional resolver/legacy
+            # proposals outside the
             # grounded graph; absence does not create a post-plan owner.
             continue
         owner = _owner_for_relation(source, relation)
@@ -2021,8 +2022,8 @@ def _build_graph(
                         provider_resolution=ProviderResolution.UNRESOLVED,
                         attachment_admission=AttachmentAdmission.UNRESOLVED,
                         visible_authority=VisibleAuthority.NONE,
-                        route_b_disposition=(
-                            RouteBDisposition.UNKNOWN_PRESERVED_LIMITED
+                        source_owner_disposition=(
+                            SourceOwnerDisposition.UNKNOWN_PRESERVED_LIMITED
                         ),
                         visible_claim_refs=(unknown_node_id,),
                         evidence_refs=obligation.evidence_refs,
@@ -2038,7 +2039,9 @@ def _build_graph(
                     provider_resolution=ProviderResolution.MISSING_OR_INVALID,
                     attachment_admission=AttachmentAdmission.UNAVAILABLE,
                     visible_authority=VisibleAuthority.NONE,
-                    route_b_disposition=RouteBDisposition.NOT_VISIBLE_UNRESOLVED,
+                    source_owner_disposition=(
+                        SourceOwnerDisposition.NOT_VISIBLE_UNRESOLVED
+                    ),
                     visible_claim_refs=(),
                     evidence_refs=obligation.evidence_refs,
                     target_unknown_ref=None,
@@ -2053,7 +2056,9 @@ def _build_graph(
                     provider_resolution=ProviderResolution.MISSING_OR_INVALID,
                     attachment_admission=AttachmentAdmission.UNAVAILABLE,
                     visible_authority=VisibleAuthority.SOURCE_EXPLICIT,
-                    route_b_disposition=RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
+                    source_owner_disposition=(
+                        SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
+                    ),
                     visible_claim_refs=visible_claim_refs,
                     evidence_refs=obligation.evidence_refs,
                     target_unknown_ref=None,
@@ -2068,7 +2073,9 @@ def _build_graph(
                     provider_resolution=ProviderResolution.MISSING_OR_INVALID,
                     attachment_admission=AttachmentAdmission.UNAVAILABLE,
                     visible_authority=VisibleAuthority.NONE,
-                    route_b_disposition=RouteBDisposition.NOT_VISIBLE_UNRESOLVED,
+                    source_owner_disposition=(
+                        SourceOwnerDisposition.NOT_VISIBLE_UNRESOLVED
+                    ),
                     visible_claim_refs=(),
                     evidence_refs=obligation.evidence_refs,
                     target_unknown_ref=None,
@@ -2082,7 +2089,7 @@ def _build_graph(
         + source.owner_universe.active_optional_owner_refs
     )
     if owner_refs != expected_owner_refs or len(owner_refs) != len(set(owner_refs)):
-        raise CMEEVerticalError("route_b_owner_duplicate")
+        raise CMEEVerticalError("source_owner_duplicate")
     owner_digest = source.owner_universe.owner_universe_digest
     graph_id = _graph_id(
         source.envelope.envelope_id,
@@ -2104,7 +2111,7 @@ def _build_graph(
         owner_universe_digest=owner_digest,
     )
     if tuple(row.owner_id for row in graph.owner_dispositions) != expected_owner_refs:
-        raise CMEEVerticalError("route_b_owner_denominator_mismatch")
+        raise CMEEVerticalError("source_owner_denominator_mismatch")
     return graph
 
 
@@ -2194,8 +2201,8 @@ def _build_experience_plan(
     nucleus_index = {row.nucleus_id: row for row in grounded_plan.nuclei}
     relation_index = {row.relation_id: row for row in grounded_plan.relations}
     positive_dispositions = {
-        RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
-        RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+        SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
+        SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE,
     }
     visible = tuple(
         row.owner_id
@@ -2219,7 +2226,7 @@ def _build_experience_plan(
         if source.owner_obligation(row.owner_id).obligation_kind
         == "STRUCTURED_CONTEXT_ATTACHMENT"
         and (
-            row.disposition is RouteBDisposition.UNKNOWN_PRESERVED_LIMITED
+            row.disposition is SourceOwnerDisposition.UNKNOWN_PRESERVED_LIMITED
             or row in unresolved_required
         )
     )
@@ -4843,7 +4850,7 @@ def _trace_for_lines(
     return tuple(traces)
 
 
-def _validate_route_b_graph_contract(
+def _validate_source_owner_graph_contract(
     source: AdmittedTextSource,
     graph: GroundedMeaningGraph,
 ) -> None:
@@ -4865,12 +4872,12 @@ def _validate_route_b_graph_contract(
         or set(required).intersection(credit)
         or set(active).intersection(credit)
     ):
-        raise CMEEVerticalError("route_b_owner_partition_invalid")
+        raise CMEEVerticalError("source_owner_partition_invalid")
     expected_owners = required + active
     rows = graph.owner_dispositions
     actual_owners = tuple(row.meaning_owner_id for row in rows)
     if actual_owners != expected_owners or len(actual_owners) != len(set(actual_owners)):
-        raise CMEEVerticalError("route_b_owner_denominator_mismatch")
+        raise CMEEVerticalError("source_owner_denominator_mismatch")
     if (
         graph.source_envelope_id != universe.source_envelope_id
         or graph.required_owner_refs != required
@@ -4879,7 +4886,7 @@ def _validate_route_b_graph_contract(
         or graph.obligation_version != universe.obligation_version
         or graph.owner_universe_digest != universe.owner_universe_digest
     ):
-        raise CMEEVerticalError("route_b_owner_universe_binding_mismatch")
+        raise CMEEVerticalError("source_owner_universe_binding_mismatch")
 
     obligation_by_owner = {
         row.meaning_owner_id: row for row in universe.obligations
@@ -4890,35 +4897,38 @@ def _validate_route_b_graph_contract(
         **{row.edge_id: row for row in graph.edges},
     }
     positive = {
-        RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
-        RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+        SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
+        SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE,
     }
     for row in rows:
         obligation = obligation_by_owner.get(row.meaning_owner_id)
         if obligation is None or row.owner_class is not obligation.owner_class:
-            raise CMEEVerticalError("route_b_owner_class_mismatch")
+            raise CMEEVerticalError("source_owner_class_mismatch")
         if row.evidence_refs != obligation.evidence_refs or not row.evidence_refs:
-            raise CMEEVerticalError("route_b_owner_evidence_mismatch")
-        if any(reason_code not in ROUTE_B_REASON_CODES for reason_code in row.reason_codes):
-            raise CMEEVerticalError("route_b_reason_code_invalid")
+            raise CMEEVerticalError("source_owner_evidence_mismatch")
+        if any(
+            reason_code not in SOURCE_OWNER_REASON_CODES
+            for reason_code in row.reason_codes
+        ):
+            raise CMEEVerticalError("source_owner_reason_code_invalid")
         if any(
             evidence_id not in evidence_by_id
             or evidence_by_id[evidence_id].source_envelope_id
             != source.envelope.envelope_id
             for evidence_id in row.evidence_refs
         ):
-            raise CMEEVerticalError("route_b_owner_cross_source_evidence")
+            raise CMEEVerticalError("source_owner_cross_source_evidence")
         if (
             row.provider_resolution is ProviderResolution.MISSING_OR_INVALID
             and row.attachment_admission is not AttachmentAdmission.UNAVAILABLE
         ):
-            raise CMEEVerticalError("route_b_provider_admission_mismatch")
+            raise CMEEVerticalError("source_owner_resolver_admission_mismatch")
 
-        if row.route_b_disposition in positive:
+        if row.source_owner_disposition in positive:
             expected_authority = (
                 VisibleAuthority.SOURCE_EXPLICIT
-                if row.route_b_disposition
-                is RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
+                if row.source_owner_disposition
+                is SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
                 else VisibleAuthority.SUPPLEMENTAL_USER
             )
             if (
@@ -4927,7 +4937,9 @@ def _validate_route_b_graph_contract(
                 or row.target_unknown_ref is not None
                 or row.reason_codes
             ):
-                raise CMEEVerticalError("route_b_positive_visible_field_mismatch")
+                raise CMEEVerticalError(
+                    "source_owner_positive_visible_field_mismatch"
+                )
             for claim_ref in row.visible_claim_refs:
                 claim = claim_by_id.get(claim_ref)
                 if (
@@ -4936,8 +4948,13 @@ def _validate_route_b_graph_contract(
                     or claim.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
                     or not set(claim.evidence_ids).issubset(set(row.evidence_refs))
                 ):
-                    raise CMEEVerticalError("route_b_positive_visible_claim_mismatch")
-        elif row.route_b_disposition is RouteBDisposition.UNKNOWN_PRESERVED_LIMITED:
+                    raise CMEEVerticalError(
+                        "source_owner_positive_visible_claim_mismatch"
+                    )
+        elif (
+            row.source_owner_disposition
+            is SourceOwnerDisposition.UNKNOWN_PRESERVED_LIMITED
+        ):
             target = claim_by_id.get(row.target_unknown_ref or "")
             if (
                 row.provider_resolution is not ProviderResolution.UNRESOLVED
@@ -4952,8 +4969,13 @@ def _validate_route_b_graph_contract(
                 or obligation.obligation_kind != "STRUCTURED_CONTEXT_ATTACHMENT"
                 or row.reason_codes != ("ATTACHMENT_UNRESOLVED",)
             ):
-                raise CMEEVerticalError("route_b_visible_unknown_field_mismatch")
-        elif row.route_b_disposition is RouteBDisposition.NOT_VISIBLE_UNRESOLVED:
+                raise CMEEVerticalError(
+                    "source_owner_visible_unknown_field_mismatch"
+                )
+        elif (
+            row.source_owner_disposition
+            is SourceOwnerDisposition.NOT_VISIBLE_UNRESOLVED
+        ):
             if (
                 row.provider_resolution is not ProviderResolution.MISSING_OR_INVALID
                 or row.attachment_admission is not AttachmentAdmission.UNAVAILABLE
@@ -4962,9 +4984,11 @@ def _validate_route_b_graph_contract(
                 or row.target_unknown_ref is not None
                 or row.reason_codes != ("ATTACHMENT_UNRESOLVED",)
             ):
-                raise CMEEVerticalError("route_b_nonvisible_field_mismatch")
+                raise CMEEVerticalError("source_owner_nonvisible_field_mismatch")
         else:
-            raise CMEEVerticalError("route_b_disposition_unsupported_in_limited")
+            raise CMEEVerticalError(
+                "source_owner_disposition_unsupported_in_limited"
+            )
 
     expected_owner_set = set(expected_owners)
     if any(row.owner_id not in expected_owner_set for row in (*graph.nodes, *graph.edges)):
@@ -5076,7 +5100,7 @@ def validate_positive_realization_trace(
     projection: EmlisStage1Projection,
     selected_units: Sequence[RealizedSentenceUnit],
 ) -> None:
-    _validate_route_b_graph_contract(source, graph)
+    _validate_source_owner_graph_contract(source, graph)
     canonical_resolver = build_evidence_span_resolver(
         source.evidence_spans,
         current_input=source.normalized_current_input,
@@ -5156,7 +5180,7 @@ def validate_positive_realization_trace(
     owners = tuple(row.owner_id for row in graph.owner_dispositions)
     expected_owners = graph.required_owner_refs + graph.active_optional_owner_refs
     if owners != expected_owners or len(owners) != len(set(owners)):
-        raise CMEEVerticalError("route_b_owner_denominator_mismatch")
+        raise CMEEVerticalError("source_owner_denominator_mismatch")
     if graph.graph_id != _graph_id(
         source.envelope.envelope_id,
         graph.owner_universe_digest,
@@ -5202,8 +5226,8 @@ def validate_positive_realization_trace(
     if set(artifact.plan.visible_owner_ids + artifact.plan.unresolved_owner_ids) != set(owners):
         raise CMEEVerticalError("plan_owner_partition_mismatch")
     positive = {
-        RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
-        RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+        SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
+        SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE,
     }
     disposition_claims = {
         **{row.node_id: row for row in graph.nodes},
@@ -5224,7 +5248,7 @@ def validate_positive_realization_trace(
         )
         for row in graph.owner_dispositions
     ):
-        raise CMEEVerticalError("route_b_visible_claim_authority_mismatch")
+        raise CMEEVerticalError("source_owner_visible_claim_authority_mismatch")
     expected_visible_owners = tuple(
         row.owner_id
         for row in graph.owner_dispositions
@@ -5251,7 +5275,7 @@ def validate_positive_realization_trace(
         if source.owner_obligation(row.owner_id).obligation_kind
         == "STRUCTURED_CONTEXT_ATTACHMENT"
         and (
-            row.disposition is RouteBDisposition.UNKNOWN_PRESERVED_LIMITED
+            row.disposition is SourceOwnerDisposition.UNKNOWN_PRESERVED_LIMITED
             or row in unresolved_required
         )
     )

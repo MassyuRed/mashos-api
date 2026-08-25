@@ -48,7 +48,7 @@ from cocolon_meaning_experience_engine.contracts import (  # noqa: E402
     MeaningNode,
     OwnerClass,
     ProviderResolution,
-    RouteBDisposition,
+    SourceOwnerDisposition,
     VisibleAuthority,
     VisibleUnitTrace,
     VisibleUnknownUnit,
@@ -171,7 +171,7 @@ WITHHELD_EARLY_PRIVATE_SLOT_ID = (
     "PRIVATE_SLOT_WITHHELD_EARLY_20260824_V1"
 )
 STEP2_FROZEN_LANGUAGE_CORE_IDENTITY = (
-    "0594859670308ee200445818420d5f3f9277d7616f700332341bdb4908bf6d76"
+    "f53e16d76a000aa5caca39aa8d9f2dccce8f6016a1379f5b3614d154b8fe19e4"
 )
 EARLY_HUMAN_READ_RESULTS = (
     "CLEAR",
@@ -1089,15 +1089,15 @@ _STRICT_DIRECTIONAL_TRACE_RELATIONS = frozenset(
 )
 
 
-def _route_b_dispositions_valid(graph: GroundedMeaningGraph) -> bool:
-    """Validate the exact disabled Route B row shapes used by the packet."""
+def _source_owner_dispositions_valid(graph: GroundedMeaningGraph) -> bool:
+    """Validate the exact disabled source-owner rows used by the packet."""
 
     nodes = {row.node_id: row for row in graph.nodes}
     edges = {row.edge_id: row for row in graph.edges}
     claims = {**nodes, **edges}
     positive = {
-        RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
-        RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+        SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
+        SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE,
     }
     for row in graph.owner_dispositions:
         refs = tuple(row.visible_claim_refs)
@@ -1110,7 +1110,8 @@ def _route_b_dispositions_valid(graph: GroundedMeaningGraph) -> bool:
                     AttachmentAdmission.UNAVAILABLE,
                     VisibleAuthority.SOURCE_EXPLICIT,
                 )
-                if row.disposition is RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
+                if row.disposition
+                is SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
                 else (
                     ProviderResolution.UNIQUE,
                     AttachmentAdmission.PROVISIONAL_ONLY,
@@ -1140,7 +1141,10 @@ def _route_b_dispositions_valid(graph: GroundedMeaningGraph) -> bool:
                     or not set(claim.evidence_ids).issubset(set(row.evidence_ids))
                 ):
                     return False
-        elif row.disposition is RouteBDisposition.UNKNOWN_PRESERVED_LIMITED:
+        elif (
+            row.disposition
+            is SourceOwnerDisposition.UNKNOWN_PRESERVED_LIMITED
+        ):
             target = nodes.get(row.target_unknown_ref or "")
             if (
                 row.provider_resolution is not ProviderResolution.UNRESOLVED
@@ -1155,7 +1159,10 @@ def _route_b_dispositions_valid(graph: GroundedMeaningGraph) -> bool:
                 or row.reason_codes != ("ATTACHMENT_UNRESOLVED",)
             ):
                 return False
-        elif row.disposition is RouteBDisposition.NOT_VISIBLE_UNRESOLVED:
+        elif (
+            row.disposition
+            is SourceOwnerDisposition.NOT_VISIBLE_UNRESOLVED
+        ):
             if (
                 row.provider_resolution is not ProviderResolution.MISSING_OR_INVALID
                 or row.attachment_admission is not AttachmentAdmission.UNAVAILABLE
@@ -1309,7 +1316,7 @@ def _structural_trace_valid(outcome: object) -> bool:
     nodes = {row.node_id: row for row in graph.nodes}
     edges = {row.edge_id: row for row in graph.edges}
     disposition = {row.owner_id: row for row in graph.owner_dispositions}
-    if not _route_b_dispositions_valid(graph):
+    if not _source_owner_dispositions_valid(graph):
         return False
     disposition_evidence_ids = {
         evidence_id
@@ -1317,8 +1324,8 @@ def _structural_trace_valid(outcome: object) -> bool:
         for evidence_id in row.evidence_ids
     }
     positive_dispositions = {
-        RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
-        RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+        SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
+        SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE,
     }
     for row in graph.owner_dispositions:
         refs = tuple(row.visible_claim_refs)
@@ -1392,7 +1399,7 @@ def _structural_trace_valid(outcome: object) -> bool:
             )
             or any(
                 disposition[owner_id].disposition
-                is not RouteBDisposition.UNKNOWN_PRESERVED_LIMITED
+                is not SourceOwnerDisposition.UNKNOWN_PRESERVED_LIMITED
                 and (
                     disposition[owner_id].owner_class is not OwnerClass.REQUIRED
                     or disposition[owner_id].disposition in positive_dispositions
@@ -1755,7 +1762,7 @@ def run(
         "candidate_state": candidate_state,
         "finite_mutation_set_body_free": mutation_registry,
         "implementation_state": "DRAFT_WIP_DISABLED",
-        "route_b_contract_complete": False,
+        "source_owner_contract_complete": False,
         "candidate_ready": False,
         "product_read_eligible": False,
         "exact8_acceptance_complete": False,

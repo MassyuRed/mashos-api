@@ -24,7 +24,7 @@ from cocolon_meaning_experience_engine.contracts import (
     EpistemicState,
     OwnerClass,
     ProviderResolution,
-    RouteBDisposition,
+    SourceOwnerDisposition,
     VisibleAuthority,
 )
 from cocolon_meaning_experience_engine.emlis_v1a import (
@@ -859,10 +859,10 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             row.owner_id
             for row in graph.owner_dispositions
             if row.owner_class is OwnerClass.ACTIVE_OPTIONAL
-            and row.route_b_disposition
+            and row.source_owner_disposition
             not in {
-                RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
-                RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+                SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
+                SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE,
             }
         }
         self.assertTrue(unresolved_optional_owner_ids)
@@ -1426,7 +1426,7 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 self.assertNotIn(edge.edge_id, visible_edges)
                 self.assertEqual(
                     disposition[edge.owner_id],
-                    RouteBDisposition.UNKNOWN_PRESERVED_LIMITED,
+                    SourceOwnerDisposition.UNKNOWN_PRESERVED_LIMITED,
                 )
             if edge.edge_id in visible_edges:
                 self.assertEqual(edge.grounding_kind, "user_stated_relation")
@@ -1437,10 +1437,10 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         self.assertEqual(strength_node.epistemic_state, EpistemicState.SOURCE_EXPLICIT)
         self.assertEqual(
             disposition[strength_node.owner_id],
-            RouteBDisposition.NOT_VISIBLE_UNRESOLVED,
+            SourceOwnerDisposition.NOT_VISIBLE_UNRESOLVED,
         )
 
-    def test_complete_route_b_rows_keep_nonmaterial_unknown_internal(self) -> None:
+    def test_complete_source_owner_rows_keep_nonmaterial_unknown_internal(self) -> None:
         source, graph, _plan, artifact, _visible = _private_parts(_request())
         universe = source.owner_universe
         obligations = {
@@ -1465,14 +1465,17 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 )
                 self.assertEqual(row.attachment_admission, AttachmentAdmission.UNAVAILABLE)
                 self.assertEqual(
-                    row.route_b_disposition,
-                    RouteBDisposition.NOT_VISIBLE_UNRESOLVED,
+                    row.source_owner_disposition,
+                    SourceOwnerDisposition.NOT_VISIBLE_UNRESOLVED,
                 )
                 self.assertEqual(row.visible_authority, VisibleAuthority.NONE)
                 self.assertEqual(row.visible_claim_refs, ())
                 self.assertIsNone(row.target_unknown_ref)
                 self.assertEqual(row.reason_codes, ("ATTACHMENT_UNRESOLVED",))
-            elif row.route_b_disposition is RouteBDisposition.SOURCE_EXPLICIT_VISIBLE:
+            elif (
+                row.source_owner_disposition
+                is SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
+            ):
                 self.assertEqual(
                     row.provider_resolution,
                     ProviderResolution.MISSING_OR_INVALID,
@@ -1488,7 +1491,10 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                     ProviderResolution.MISSING_OR_INVALID,
                 )
                 self.assertEqual(row.attachment_admission, AttachmentAdmission.UNAVAILABLE)
-                self.assertEqual(row.route_b_disposition, RouteBDisposition.NOT_VISIBLE_UNRESOLVED)
+                self.assertEqual(
+                    row.source_owner_disposition,
+                    SourceOwnerDisposition.NOT_VISIBLE_UNRESOLVED,
+                )
                 self.assertEqual(row.visible_authority, VisibleAuthority.NONE)
                 self.assertEqual(row.visible_claim_refs, ())
                 self.assertEqual(row.reason_codes, ("ATTACHMENT_UNRESOLVED",))
@@ -1502,10 +1508,10 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 row.meaning_owner_id
                 for row in graph.owner_dispositions
                 if row.owner_class is OwnerClass.REQUIRED
-                and row.route_b_disposition
+                and row.source_owner_disposition
                 not in {
-                    RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
-                    RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+                    SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
+                    SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE,
                 }
             },
             set(artifact.plan.required_unknown_owner_ids),
@@ -1522,12 +1528,15 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             OwnerClass.ACTIVE_OPTIONAL,
         )
 
-    def test_route_b_owner_and_disposition_mutations_are_rejected(self) -> None:
+    def test_source_owner_and_disposition_mutations_are_rejected(self) -> None:
         source, graph, _plan, artifact, visible = _private_parts(_request())
         positive_index = next(
             index
             for index, row in enumerate(graph.owner_dispositions)
-            if row.route_b_disposition is RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
+            if (
+                row.source_owner_disposition
+                is SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
+            )
         )
         positive = graph.owner_dispositions[positive_index]
         other_source = freeze_text_source(_request(record_id="cmee-foreign"))
@@ -1546,9 +1555,11 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 positive,
                 visible_authority=VisibleAuthority.NONE,
             ),
-            "route_b_disposition": replace(
+            "source_owner_disposition": replace(
                 positive,
-                route_b_disposition=RouteBDisposition.NOT_VISIBLE_UNRESOLVED,
+                source_owner_disposition=(
+                    SourceOwnerDisposition.NOT_VISIBLE_UNRESOLVED
+                ),
             ),
             "visible_claim_refs": replace(positive, visible_claim_refs=()),
             "evidence_refs": replace(positive, evidence_refs=(foreign_evidence,)),
@@ -1880,12 +1891,15 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             index
             for index, row in enumerate(rows)
             if row.owner_class is OwnerClass.REQUIRED
-            and row.route_b_disposition is RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
+            and row.source_owner_disposition
+            is SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
         )
         rows[required_visible_index] = replace(
             rows[required_visible_index],
             visible_authority=VisibleAuthority.NONE,
-            route_b_disposition=RouteBDisposition.NOT_VISIBLE_UNRESOLVED,
+            source_owner_disposition=(
+                SourceOwnerDisposition.NOT_VISIBLE_UNRESOLVED
+            ),
             visible_claim_refs=(),
             target_unknown_ref=None,
             reason_codes=("ATTACHMENT_UNRESOLVED",),
@@ -2778,10 +2792,10 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                     row.owner_id
                     for row in graph.owner_dispositions
                     if row.owner_class is OwnerClass.ACTIVE_OPTIONAL
-                    and row.route_b_disposition
+                    and row.source_owner_disposition
                     not in {
-                        RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
-                        RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+                        SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
+                        SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE,
                     }
                 }
                 self.assertTrue(unresolved_optional_owner_ids)

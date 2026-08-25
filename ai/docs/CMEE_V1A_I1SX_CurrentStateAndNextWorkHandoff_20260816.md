@@ -36,7 +36,7 @@
 - resume head: PR #3 の、この文書を含む current remote head
 - expected PR state after this terminal reflection: Draft / open / unmerged、ahead 11 / behind 0、changed paths exact10
 - design reference: `MassyuRed/Cocolon` Draft PR #30, head `cb63098d4dde1c5f7235e55f4af4b8e02f3be7fa`
-- Route B policy identity: `cocolon.cmee.v1a.acceptance.route_b.v1`
+- Source-owner policy identity: `cocolon.cmee.v1a.source_owner_resolution.v2`
 - Product Read body-free receipt: `ai/docs/CMEE_V1A_I1SX_PrivateHumanProductRead_BodyFree_Receipt_20260816.json`
 
 `Cocolon` PR #30 の architecture/meaning-sovereignty contract は設計参照です。ただし同PR内の `implementation_state=NOT_STARTED` と実装未承認の記録は、その後のMashによるCMEE構築指示と `mashos-api` PR #3 より前の lifecycle snapshot です。以後の disabled WIP 実装の現在地は PR #3 とこの文書が所有します。これは PR #30 の設計を上書きせず、P0、L3-I、production、Product Read、Cycle001 の承認も作りません。
@@ -55,7 +55,7 @@ PR #3 は、docs/schemaだけではなく、次の callable vertical を実コ�
 - callable mode: `EMLIS_AI / OBSERVE_AND_CLARIFY / OFFLINE_CANDIDATE`
 - supported bounded smoke input: `LIMITED` へ到達
 - terminal: `CMEE_V1A_I1SX_TEXT_GROUNDED_VERTICAL_WIP_DISABLED`
-- Route B contract complete: false
+- Source-owner contract complete: false
 - candidate ready: false
 - Product Read eligible/evaluated: true / true
 - exact8 acceptance complete: false
@@ -70,7 +70,7 @@ PR #3 は、docs/schemaだけではなく、次の callable vertical を実コ�
 - candidate state: `GENERATED_FOR_PRODUCT_READ_DISABLED_PRODUCT_FAIL`
 - primary outcome: `BLOCKER_NARROWED`
 
-これは「R4までのmachine structural prerequisiteはGREENだが、private human Product Readで商品品質FAILとなったdisabled実装土台」です。machine 8/8は維持されていますが、入力固有の観測、自然さ、非テンプレ感、読まれた感の商品受入には到達していません。Route B全体完了、candidate ready、exact8 acceptance、Product credit、P0、L3-I、full I1、production readiness、Cycle001のcreditは0です。
+これは「R4までのmachine structural prerequisiteはGREENだが、private human Product Readで商品品質FAILとなったdisabled実装土台」です。machine 8/8は維持されていますが、入力固有の観測、自然さ、非テンプレ感、読まれた感の商品受入には到達していません。source-owner contract全体完了、candidate ready、exact8 acceptance、Product credit、P0、L3-I、full I1、production readiness、Cycle001のcreditは0です。
 
 ## 3. 実装済み exact8
 
@@ -105,7 +105,7 @@ unit testのsynthetic smoke sourceは次です。
 }
 ```
 
-このbounded sourceは `LIMITED`、Observation exact1+、evidence-bound visible unknown exact1、Reception exact1、positive traceを生成します。visible unknownはsource側でpre-plan固定した`STRUCTURED_CONTEXT_ATTACHMENT` ownerとその全evidenceへbindされ、positive meaning claimには使われません。R1/R2/R3/R4 closureの証拠ですが、Route B全体完了やProduct Read合格の証拠として扱ってはいけません。
+このbounded sourceは `LIMITED`、Observation exact1+、evidence-bound visible unknown exact1、Reception exact1、positive traceを生成します。visible unknownはsource側でpre-plan固定した`STRUCTURED_CONTEXT_ATTACHMENT` ownerとその全evidenceへbindされ、positive meaning claimには使われません。R1/R2/R3/R4 closureの証拠ですが、source-owner contract全体完了やProduct Read合格の証拠として扱ってはいけません。
 
 ### 4.2 Verification snapshot
 
@@ -122,7 +122,7 @@ exact8 failure split: 0。
 
 original exact8の入力はrunner内が正本です。R4ではfixture、8件denominator、評価軸、disabled flagsを変更していません。R1のUNKNOWN contractと旧comparatorの矛盾を解くため、MashがR4限定で明示承認したrole-aware structural comparator correctionだけを行いました。この例外を将来のprotected comparator変更へのstanding delegationとして扱ってはいけません。
 
-R3 verificationはimplementation commit `a170bab1f62e5314f6889d23ed36915fe78b185f`のproduction/test exact3に対して実施しました。private proof ownerとして`cocolon.cmee.v1a.common_guard_proof.v1`を追加し、outer CMEE schema、source contract v2、frame grammar、Route B policy、obligation、owner-universe schemaは据え置いています。independent contract/adversarial reviewは宣言済みLevel-2 threat boundary内でGREEN、blocker 0です。original exact8 runnerはbyte変更0です。
+R3 verificationはimplementation commit `a170bab1f62e5314f6889d23ed36915fe78b185f`のproduction/test exact3に対して実施しました。private proof ownerとして`cocolon.cmee.v1a.common_guard_proof.v1`を追加し、outer CMEE schema、source contract v2、frame grammar、source-owner policy、obligation、owner-universe schemaは据え置いています。independent contract/adversarial reviewは宣言済みLevel-2 threat boundary内でGREEN、blocker 0です。original exact8 runnerはbyte変更0です。
 
 R4 verificationはimplementation commit `dbd03256d93dd28e2a2703c8c754742d9a89ec3c`のimplementation/test/runner exact3に対して実施しました。`emlis_v1a.py`内のprivate plan-bound realizer、既存vertical mutation tests、明示承認されたrunner comparator以外は変更していません。common core、contracts、engine、source kernel、dependency、fixture、denominator、評価軸、public ingressは変更0です。independent contract/adversarial/product-scope reviewはGREEN、blocker 0です。
 
@@ -142,10 +142,10 @@ runner comparatorはoutcome-onlyで、runnerからprivate implementationへ直�
 
 ## 5. 未完了blocker
 
-### B1. Route B denominator/disposition authority — `CLOSED_BY_R1`
+### B1. Source-owner denominator/disposition authority — `CLOSED_BY_R1`
 
 - source adapterがlegacy grounded plan/providerより前にsource-bound owner universe `U` を固定します。
-- required/active owner全件にapproved exact fieldsのRoute B disposition rowがexact1あり、`D=U`、順序、重複0、partition、digestをsourceから再計算して検証します。
+- required/active owner全件にapproved exact fieldsのsource-owner disposition rowがexact1あり、`D=U`、順序、重複0、partition、digestをsourceから再計算して検証します。
 - graph、plan、全trace、visible unknown unitは同じsource envelope/version、obligation version、owner universe digestへbindされます。
 - provider未実行のownerは`MISSING_OR_INVALID / UNAVAILABLE`として保持し、provider結果を捏造しません。
 
@@ -164,7 +164,7 @@ runner comparatorはoutcome-onlyで、runnerからprivate implementationへ直�
 - repeated equal substring、double-space、tab、単一/連続U+3000、emojiを含むraw↔normalized mappingを再現し、whitespace normalizationはledger surface equivalence比較だけに限定します。raw bytes、digest、locator authorityはnormalizeしません。
 - `category.0`をmemo segmentへredirectしてbounds/digests/evidence IDを全再計算するmutation、同一emotion literalのsource-span交換、別occurrenceのscalar/byte混線をrejectします。
 - SourceEnvelope IDはrecord/role/schema/source-contract/encoding/label ID+digest/raw SHAのclosed canonical identityから再計算します。record/schema/label metadata swap、field-frame/raw-JSON不一致、noncanonical label、identity swapをfail closedします。
-- R1のowner universe、Route B rows、visible unknown、graph/plan/trace binding、body-free privacy、no-fallback境界は維持されています。
+- R1のowner universe、source-owner rows、visible unknown、graph/plan/trace binding、body-free privacy、no-fallback境界は維持されています。
 
 ### B4. Common-guard proof sealing — `CLOSED_BY_R3`
 
@@ -199,10 +199,10 @@ runner comparatorはoutcome-onlyで、runnerからprivate implementationへ直�
 3. final Observationを既存common exact5へexact1回通し、R3 proof、all binding aliases、artifact、全traceとのcanonical bindingを維持した。
 4. original exact8のfixture、8件denominator、評価軸、disabled flagsを不変のまま、`LIMITED / artifact / structural trace` 8/8、exit 0へ到達した。
 5. 38/38 CMEE、5/5 boundary、compileall、diff-check、independent contract/adversarial/product-scope reviewをGREENで閉じた。
-6. R1 Route B/visible unknown、R2 locator/envelope identity、R3 §4.3 proof boundary、privacy/no-fallbackを維持した。
+6. R1 source-owner/visible unknown、R2 locator/envelope identity、R3 §4.3 proof boundary、privacy/no-fallbackを維持した。
 7. runner correctionはMashのR4限定明示承認に基づくoutcome-only role-aware comparatorであり、protected comparator変更の一般的な先例を作らない。
 
-Product Readは再実行せず、このcandidateを受入・ready・mergeしません。次に商品を進めるには、body-free FAILを入力とした一つのbounded correctionについて、別のMash明示承認が必要です。この文書更新時点ではcorrection未承認であり、STOPします。machine 8/8からProduct credit、candidate ready、Route B complete、P0、L3-I、full I1、Cycle001、productionへ自動進行してはいけません。
+Product Readは再実行せず、このcandidateを受入・ready・mergeしません。次に商品を進めるには、body-free FAILを入力とした一つのbounded correctionについて、別のMash明示承認が必要です。この文書更新時点ではcorrection未承認であり、STOPします。machine 8/8からProduct credit、candidate ready、source-owner contract complete、P0、L3-I、full I1、Cycle001、productionへ自動進行してはいけません。
 
 R4 implementationのmethod/contract変更は既存delegation内の`LEVEL_2`、protected runner comparator correctionはMashの明示的なR4限定exceptionにより許可されました。成果分類は`TECHNICAL_CREDIT`で、`PRODUCT_CREDIT=0`です。R4 implementationは既存implementation/test/runner exact3、このclosureはhandoff exact1だけを変更し、common core、contracts、engine、source kernel、public API、DB、RN、dependency、production effectは0です。
 
@@ -966,3 +966,58 @@ AUTOMATIC_PROGRESSION = FALSE
 ```
 
 machine blockerは修復済みだが、human CLEARが成立しないためStep 3は通過していない。第三composer correction、二回目machine repair、Step 4、formal exact8、Product Read、ready、merge、productionへ進まず、このauthorityはterminal receiptで消費済みである。
+
+## 27. Mash providerless Route A only decision and source-owner neutralization（2026-08-25）
+
+本節は、外部生成AI案を破棄してproviderless Route Aだけを許容するMashのcurrent明示決定をruntime側へ固定し、§26以前のfuture-route表現をsupersedeする。過去の実行factは保持するが、破棄されたexternal decision packet、provider候補、remote composerまたは別routeをcurrent / future authorityとして再利用しない。
+
+既存runtimeにexternal generative AI implementation、remote provider client、network callまたは追加dependencyは存在しなかった。今回のcode差分は、既存source / owner semantic contractをroute-neutral nameへ移し、behaviorを変えずに外部routeと誤認できる名称を除くことだけである。
+
+```text
+AUTHORITY = MASH_EXPLICIT_PROVIDERLESS_ROUTE_A_ONLY
+ROUTE_SELECTION = PROVIDERLESS_ROUTE_A_EXACT1_ONLY
+ROUTE_A_IMPLEMENTATION_KIND = LOCAL_DETERMINISTIC_LANGUAGE_CORE_ONLY
+
+EXTERNAL_DECISION_PACKET = VOID_REMOVED_NOT_ADOPTED
+EXTERNAL_ROUTE_IMPLEMENTATION = ABSENT
+EXTERNAL_GENERATIVE_AI = FORBIDDEN
+EXTERNAL_GENERATIVE_AI_COMPOSER = FORBIDDEN
+REMOTE_PROVIDER = FORBIDDEN
+REMOTE_MODEL = FORBIDDEN
+PROVIDER_FALLBACK = 0
+PROVIDER_CALL = 0
+NETWORK_EFFECT = 0
+EXTERNAL_BODY_SEND = 0
+NEW_DEPENDENCY_EFFECT = 0
+EXTERNAL_COST = 0
+EXTERNAL_OPERATOR = NOT_APPLICABLE
+
+SOURCE_OWNER_POLICY_VERSION = cocolon.cmee.v1a.source_owner_resolution.v2
+SOURCE_OWNER_NAMING_MIGRATION = COMPLETE_VERIFIED
+SOURCE_OWNER_SEMANTIC_BEHAVIOR_CHANGE = 0
+SOURCE_OWNER_COMPAT_ROUTE_ALIAS = 0
+LANGUAGE_CORE_IDENTITY_AFTER_SOURCE_OWNER_NEUTRALIZATION = f53e16d76a000aa5caca39aa8d9f2dccce8f6016a1379f5b3614d154b8fe19e4
+CONTRACT_AND_VERTICAL_TESTS = 156_OF_156_PASS
+TARGETED_HASH_TEST = 1_OF_1_PASS
+COMPILEALL_EXACT4 = PASS
+
+ROUTE_A_STEP3_TERMINAL = COMMON_DEFECT_RETURN_BUDGET_EXHAUSTED_STOP
+COMMON_DEFECT_RETURN_COUNT = 2_OF_2_KEEP
+COUNTER_RESET = 0
+EARLY_ACTUAL_STATUS = NOT_RUN
+LANGUAGE_VIABILITY_OBSERVED = NOT_DECLARED
+STEP3_RERUN_AUTHORITY = NONE
+ADDITIONAL_CORRECTION_AUTHORITY = NONE
+FORMAL_EXACT8 = NOT_RUN
+PRODUCT_READ_EVALUATED_FOR_THIS_UNIT = FALSE
+PRODUCT_PASS = NOT_DECLARED
+PRODUCT_CREDIT = 0
+TECHNICAL_CREDIT = 0
+CANDIDATE_READY = FALSE
+READY_OR_MERGE = 0
+PRODUCTION_EFFECT = 0
+CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE
+AUTOMATIC_PROGRESSION = FALSE
+```
+
+この決定はRoute Aの第三generic correction、counter reset、Step 3再実行、formal exact8、Product Read、Step 4、ready、mergeまたはproductionを承認しない。今回のsource-owner neutralizationとbody-free verificationを閉じた後は自動進行せずSTOPする。

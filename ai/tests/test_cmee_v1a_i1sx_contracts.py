@@ -85,8 +85,8 @@ from cocolon_meaning_experience_engine.contracts import (
     RelationalClosure,
     RelationalCommitment,
     RelationalPositionKind,
-    RouteBDisposition,
-    RouteBOwnerDisposition,
+    SourceOwnerDisposition,
+    SourceOwnerResolution,
     SemanticOperator,
     SourceQualifierBinding,
     StanceOperator,
@@ -701,8 +701,8 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
         self,
     ) -> None:
         positive_dispositions = {
-            RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
-            RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+            SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
+            SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE,
         }
         for case_id, memo, category, emotion, strength in EXACT8:
             with self.subTest(case_id=case_id):
@@ -725,12 +725,12 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
                 expected_visible_owner_ids = tuple(
                     row.meaning_owner_id
                     for row in graph.owner_dispositions
-                    if row.route_b_disposition in positive_dispositions
+                    if row.source_owner_disposition in positive_dispositions
                 )
                 expected_unresolved_owner_ids = tuple(
                     row.meaning_owner_id
                     for row in graph.owner_dispositions
-                    if row.route_b_disposition not in positive_dispositions
+                    if row.source_owner_disposition not in positive_dispositions
                 )
 
                 self.assertEqual(owner_ids, expected_owner_ids)
@@ -761,7 +761,10 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
                 self.assertTrue(
                     all(
                         bool(row.visible_claim_refs)
-                        == (row.route_b_disposition in positive_dispositions)
+                        == (
+                            row.source_owner_disposition
+                            in positive_dispositions
+                        )
                         for row in graph.owner_dispositions
                     )
                 )
@@ -801,8 +804,8 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
                 self.assertIs(emotion_obligation.owner_class, OwnerClass.ACTIVE_OPTIONAL)
                 self.assertIs(emotion_disposition.owner_class, OwnerClass.ACTIVE_OPTIONAL)
                 self.assertIs(
-                    emotion_disposition.route_b_disposition,
-                    RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
+                    emotion_disposition.source_owner_disposition,
+                    SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
                 )
                 self.assertIs(
                     emotion_disposition.visible_authority,
@@ -926,7 +929,9 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
             replace(
                 row,
                 visible_authority=VisibleAuthority.NONE,
-                route_b_disposition=RouteBDisposition.NOT_VISIBLE_UNRESOLVED,
+                source_owner_disposition=(
+                    SourceOwnerDisposition.NOT_VISIBLE_UNRESOLVED
+                ),
                 visible_claim_refs=(),
                 reason_codes=("ATTACHMENT_UNRESOLVED",),
             )
@@ -939,20 +944,20 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
             owner_dispositions=downgraded_dispositions,
         )
         positive_dispositions = {
-            RouteBDisposition.SOURCE_EXPLICIT_VISIBLE,
-            RouteBDisposition.SUPPLEMENTAL_USER_VISIBLE,
+            SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
+            SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE,
         }
         coordinated_parent_plan = replace(
             parent_plan,
             visible_owner_ids=tuple(
                 row.meaning_owner_id
                 for row in downgraded_dispositions
-                if row.route_b_disposition in positive_dispositions
+                if row.source_owner_disposition in positive_dispositions
             ),
             unresolved_owner_ids=tuple(
                 row.meaning_owner_id
                 for row in downgraded_dispositions
-                if row.route_b_disposition not in positive_dispositions
+                if row.source_owner_disposition not in positive_dispositions
             ),
         )
         self.assertNotIn(
@@ -1003,7 +1008,7 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
             row
             for row in outcome.meaning_graph.owner_dispositions
             if row.owner_class is OwnerClass.ACTIVE_OPTIONAL
-            and row.route_b_disposition in positive_dispositions
+            and row.source_owner_disposition in positive_dispositions
         )
         self.assertTrue(optional_visible_dispositions)
         self.assertTrue(
@@ -1016,7 +1021,7 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
             row.meaning_owner_id
             for row in outcome.meaning_graph.owner_dispositions
             if row.owner_class is OwnerClass.REQUIRED
-            and row.route_b_disposition in positive_dispositions
+            and row.source_owner_disposition in positive_dispositions
             and set(row.visible_claim_refs).intersection(runtime_used_claim_ids)
         )
         self.assertEqual(len(runtime_owner_ids), 1)
@@ -1025,7 +1030,9 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
             replace(
                 row,
                 visible_authority=VisibleAuthority.NONE,
-                route_b_disposition=RouteBDisposition.NOT_VISIBLE_UNRESOLVED,
+                source_owner_disposition=(
+                    SourceOwnerDisposition.NOT_VISIBLE_UNRESOLVED
+                ),
                 visible_claim_refs=(),
                 reason_codes=("ATTACHMENT_UNRESOLVED",),
             )
@@ -1038,12 +1045,12 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
             visible_owner_ids=tuple(
                 row.meaning_owner_id
                 for row in runtime_dispositions
-                if row.route_b_disposition in positive_dispositions
+                if row.source_owner_disposition in positive_dispositions
             ),
             unresolved_owner_ids=tuple(
                 row.meaning_owner_id
                 for row in runtime_dispositions
-                if row.route_b_disposition not in positive_dispositions
+                if row.source_owner_disposition not in positive_dispositions
             ),
         )
         self.assertFalse(
@@ -1107,7 +1114,7 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
             )
         )
 
-    def test_step6_runner_rejects_noncanonical_route_b_row_fields(self) -> None:
+    def test_step6_runner_rejects_noncanonical_source_owner_row_fields(self) -> None:
         case_id, memo, category, emotion, strength = EXACT8[0]
         outcome = MeaningExperienceEngine().generate(
             _request(
@@ -1128,8 +1135,8 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
         positive = next(
             row
             for row in outcome.meaning_graph.owner_dispositions
-            if row.route_b_disposition
-            is RouteBDisposition.SOURCE_EXPLICIT_VISIBLE
+            if row.source_owner_disposition
+            is SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
         )
         positive_mutations = (
             replace(positive, visible_authority=VisibleAuthority.NONE),
@@ -1158,8 +1165,8 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
         nonvisible = next(
             row
             for row in outcome.meaning_graph.owner_dispositions
-            if row.route_b_disposition
-            is RouteBDisposition.NOT_VISIBLE_UNRESOLVED
+            if row.source_owner_disposition
+            is SourceOwnerDisposition.NOT_VISIBLE_UNRESOLVED
         )
         owned_node = next(
             row
@@ -1534,7 +1541,7 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
         )
         self.assertFalse(report["product_read_evaluated"])
         self.assertEqual(report["implementation_state"], "DRAFT_WIP_DISABLED")
-        self.assertFalse(report["route_b_contract_complete"])
+        self.assertFalse(report["source_owner_contract_complete"])
         self.assertFalse(report["candidate_ready"])
         self.assertFalse(report["product_read_eligible"])
         self.assertFalse(report["exact8_acceptance_complete"])
@@ -1763,9 +1770,9 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
         with self.assertRaisesRegex(SourceAdmissionError, "source_envelope_identity"):
             build_source_owner_universe(coordinated_envelope, coordinated_refs)
 
-    def test_route_b_disposition_contract_is_exact_six(self) -> None:
+    def test_source_owner_disposition_contract_is_exact_six(self) -> None:
         self.assertEqual(
-            {row.value for row in RouteBDisposition},
+            {row.value for row in SourceOwnerDisposition},
             {
                 "SOURCE_EXPLICIT_VISIBLE",
                 "SUPPLEMENTAL_USER_VISIBLE",
@@ -1776,16 +1783,16 @@ class CMEEV1AI1SXContractsTest(unittest.TestCase):
             },
         )
 
-    def test_route_b_owner_disposition_has_the_complete_approved_shape(self) -> None:
+    def test_source_owner_resolution_has_the_complete_approved_shape(self) -> None:
         self.assertEqual(
-            tuple(row.name for row in fields(RouteBOwnerDisposition)),
+            tuple(row.name for row in fields(SourceOwnerResolution)),
             (
                 "meaning_owner_id",
                 "owner_class",
                 "provider_resolution",
                 "attachment_admission",
                 "visible_authority",
-                "route_b_disposition",
+                "source_owner_disposition",
                 "visible_claim_refs",
                 "evidence_refs",
                 "target_unknown_ref",
@@ -11508,7 +11515,7 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
         ).encode("utf-8")
         self.assertEqual(
             hashlib.sha256(canonical).hexdigest(),
-            "3ad729dfab52ff3c2977a089425ad88fa84bd4317e0879180390ad9ba7695f58",
+            "bc671ab7edfcc49616bc90647ae1637ebd29ac855e2bd61fd45df203321b6139",
         )
         self.assertEqual(
             sorted(body_free),
@@ -11535,7 +11542,7 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 "product_read_eligible",
                 "product_read_evaluated",
                 "production_effect",
-                "route_b_contract_complete",
+                "source_owner_contract_complete",
                 "structural_trace_valid_count",
             ],
         )
