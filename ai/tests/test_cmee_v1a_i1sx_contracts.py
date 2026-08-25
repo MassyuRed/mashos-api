@@ -9497,7 +9497,6 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         fused_plan = None
         fused_row_index = None
         fused_normalized = None
-        max_fused_predicate_prefix_count = 0
 
         for group, rows in grouped_rows:
             self.assertEqual(len(rows), 4)
@@ -9556,26 +9555,116 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                             phase_b,
                         )
                         overt, fused = module._functional_surface_lexemes(plan)
-                        max_fused_predicate_prefix_count = max(
-                            max_fused_predicate_prefix_count,
-                            len(fused),
-                        )
                         owner, _refs = module._duty_semantics(duty, phase_b)
                         predicate_asset = module._expression_asset(
                             duty,
                             plan,
                             owner,
                         )
-                        expected_predicate_head = "".join(
-                            (*fused, predicate_asset.predicate_lexemes[0])
-                        )
-                        self.assertIn(expected_predicate_head, surface)
                         self.assertTrue(
-                            all(f"{morpheme}、" not in surface for morpheme in fused)
+                            all(
+                                carrier in surface
+                                for carrier in (
+                                    *overt,
+                                    *fused,
+                                    *predicate_asset.predicate_lexemes,
+                                )
+                            )
                         )
-                        self.assertTrue(
-                            all(morpheme in surface for morpheme in (*overt, *fused))
-                        )
+                        if (
+                            plan.semantic_clause_kind
+                            is module.SemanticClauseKind.ADMITTED_RELATION
+                        ):
+                            role_local_carriers = (
+                                module._functional_surface_lexemes_by_role(plan)
+                            )
+                            endpoint_roles = module._unique(
+                                row.clause_argument_role
+                                for row in plan.scalar_constraint_rows
+                            )
+                            self.assertEqual(
+                                tuple(
+                                    role
+                                    for role, _overt, _fused
+                                    in role_local_carriers
+                                ),
+                                endpoint_roles,
+                            )
+                            endpoint_surfaces = tuple(
+                                module._source_expression(
+                                    ref,
+                                    phase_b,
+                                    module._frame_for_semantic_ref(
+                                        owner,
+                                        ref,
+                                        phase_b,
+                                    ),
+                                )
+                                for ref in expression.basis_semantic_refs
+                            )
+                            left_endpoint_index = surface.index(
+                                endpoint_surfaces[0]
+                            )
+                            right_endpoint_index = surface.index(
+                                endpoint_surfaces[1],
+                                left_endpoint_index + len(endpoint_surfaces[0]),
+                            )
+                            for endpoint_index, (
+                                _role,
+                                role_overt,
+                                role_fused,
+                            ) in zip(
+                                (left_endpoint_index, right_endpoint_index),
+                                role_local_carriers,
+                            ):
+                                carrier = module._structural_lexeme(
+                                    "structural:comma.v1"
+                                ).join((*role_overt, *role_fused))
+                                if not carrier:
+                                    continue
+                                carrier_index = surface.index(
+                                    carrier,
+                                    endpoint_index,
+                                )
+                                self.assertGreater(carrier_index, endpoint_index)
+                                if endpoint_index == left_endpoint_index:
+                                    self.assertLess(
+                                        carrier_index,
+                                        right_endpoint_index,
+                                    )
+                                else:
+                                    self.assertGreater(
+                                        carrier_index,
+                                        right_endpoint_index,
+                                    )
+                        if (
+                            plan.semantic_clause_kind
+                            is not module.SemanticClauseKind.ADMITTED_RELATION
+                        ):
+                            construction = next(
+                                row
+                                for row in module.CONSTRUCTION_REGISTRY
+                                if row.construction_id == plan.construction_id
+                            )
+                            particles = dict(construction.particle_rules)
+                            if (
+                                plan.semantic_clause_kind
+                                is module.SemanticClauseKind.SUBJECTIVE_PREDICATE
+                            ):
+                                subject_carrier = module._participant_lexeme(
+                                    module.CMEE_STAGE1_EMLIS_OWNER_REF
+                                )
+                            else:
+                                subject_carrier = module._response_object_surface(
+                                    expression,
+                                    owner,
+                                    phase_b,
+                                )[0]
+                            self.assertIn(
+                                subject_carrier
+                                + particles[module.ClauseArgumentRole.SUBJECT],
+                                surface,
+                            )
                         current_run = 0
                         for segment in surface.removesuffix("。").split("、"):
                             if segment in scalar_morphemes:
@@ -9586,7 +9675,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                                 )
                             else:
                                 current_run = 0
-                        if fused and fused_plan is None:
+                        if (overt or fused) and fused_plan is None:
                             fused_plan = plan
                             fused_normalized = normalized
                             fused_row_index = next(
@@ -9595,21 +9684,29 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                                     plan.scalar_surface_realization_rows
                                 )
                                 if realization.realization_mode
-                                is module.ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART
+                                in {
+                                    module.ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART,
+                                    module.ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART,
+                                }
                             )
-                    self.assertLessEqual(case_max_scalar_segment_run, 3)
+                    self.assertLessEqual(case_max_scalar_segment_run, 1)
 
         self.assertIsNotNone(fused_plan)
         self.assertIsNotNone(fused_row_index)
         self.assertIsNotNone(fused_normalized)
-        self.assertGreaterEqual(max_fused_predicate_prefix_count, 2)
         assert fused_plan is not None
         assert fused_row_index is not None
         assert fused_normalized is not None
         tampered_rows = list(fused_plan.scalar_surface_realization_rows)
+        original_mode = tampered_rows[fused_row_index].realization_mode
         tampered_rows[fused_row_index] = replace(
             tampered_rows[fused_row_index],
-            target_clause_slot_ref=module.RegisteredFunctionalSlotRef.QUALIFIER.value,
+            target_clause_slot_ref=(
+                module.RegisteredFunctionalSlotRef.QUALIFIER.value
+                if original_mode
+                is module.ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART
+                else module.RegisteredFunctionalSlotRef.PREDICATE_HEAD.value
+            ),
         )
         with self.assertRaisesRegex(
             module.Stage1CompositionError,
@@ -10605,6 +10702,69 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             design_repo_head=cls._DESIGN_HEAD,
         )
 
+    def _pro_human_result(
+        self,
+        result: str = "CLEAR",
+    ) -> dict[str, object]:
+        defect_class = None
+        cause_component = None
+        if result == "COMMON_DEFECT":
+            defect_class = "SURFACE_SEAM"
+            cause_component = "GROUNDED_JAPANESE_COMPOSER"
+        return {
+            "schema_version": (
+                candidate_run_module.EARLY_HUMAN_READ_RESULT_SCHEMA_VERSION
+            ),
+            "packet_id": candidate_run_module.WITHHELD_EARLY_PACKET_ID,
+            "bounded_unit_id": candidate_run_module.EARLY_BOUNDED_UNIT_ID,
+            "runtime_repo_head": self._RUNTIME_HEAD,
+            "design_repo_head": self._DESIGN_HEAD,
+            "language_core_identity": (
+                candidate_run_module.STEP2_FROZEN_LANGUAGE_CORE_IDENTITY
+            ),
+            "withheld_set_digest": self.body_free_packet[
+                "withheld_exact4_body_free"
+            ]["withheld_set_digest"],
+            "reviewed_known_count": 4,
+            "reviewed_withheld_count": 4,
+            "body_payload_present": False,
+            "early_human_read_result": result,
+            "defect_class": defect_class,
+            "cause_component": cause_component,
+            "ceiling_reason": None,
+        }
+
+    def _ultra_known_result(
+        self,
+        result: str = "CLEAR",
+    ) -> dict[str, object]:
+        return {
+            "schema_version": (
+                candidate_run_module
+                .EARLY_ULTRA_KNOWN_TECHNICAL_RESULT_SCHEMA_VERSION
+            ),
+            "packet_id": candidate_run_module.WITHHELD_EARLY_PACKET_ID,
+            "bounded_unit_id": candidate_run_module.EARLY_BOUNDED_UNIT_ID,
+            "runtime_repo_head": self._RUNTIME_HEAD,
+            "design_repo_head": self._DESIGN_HEAD,
+            "language_core_identity": (
+                candidate_run_module.STEP2_FROZEN_LANGUAGE_CORE_IDENTITY
+            ),
+            "known_visible_packet_sha256": (
+                candidate_run_module._canonical_sha256(
+                    self.known_visible_packet
+                )
+            ),
+            "body_free_machine_packet_sha256": (
+                candidate_run_module._canonical_sha256(
+                    self.body_free_packet
+                )
+            ),
+            "reviewed_known_count": 4,
+            "body_payload_present": False,
+            "ultra_known_technical_invariant": result,
+        }
+
     def test_early_exact8_is_body_isolated_identity_bound_and_machine_clear(
         self,
     ) -> None:
@@ -10936,6 +11096,233 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                         body_free_machine_packet=self.body_free_packet,
                     )
 
+    def test_ultra_known_technical_result_is_exact_and_machine_bound(
+        self,
+    ) -> None:
+        for result in candidate_run_module.EARLY_ULTRA_KNOWN_TECHNICAL_RESULTS:
+            payload = self._ultra_known_result(result)
+            self.assertEqual(
+                candidate_run_module.validate_ultra_known_technical_result(
+                    payload,
+                    body_free_machine_packet=self.body_free_packet,
+                ),
+                payload,
+            )
+
+        valid = self._ultra_known_result()
+        invalid_rows = (
+            {**valid, "runtime_repo_head": "c" * 40},
+            {**valid, "known_visible_packet_sha256": "not-a-digest"},
+            {**valid, "known_visible_packet_sha256": "0" * 64},
+            {**valid, "body_free_machine_packet_sha256": "0" * 64},
+            {**valid, "reviewed_known_count": 3},
+            {**valid, "body_payload_present": True},
+            {**valid, "ultra_known_technical_invariant": "PASS"},
+            {**valid, "technical_note": "free text is forbidden"},
+        )
+        for index, invalid in enumerate(invalid_rows):
+            with self.subTest(index=index), self.assertRaisesRegex(
+                ValueError,
+                "early Ultra known technical result invalid",
+            ):
+                candidate_run_module.validate_ultra_known_technical_result(
+                    invalid,
+                    body_free_machine_packet=self.body_free_packet,
+                )
+
+    def test_exact3_body_free_finalizer_observes_only_all_clear(self) -> None:
+        machine_before = json.loads(
+            json.dumps(self.body_free_packet, ensure_ascii=False)
+        )
+        pro_clear = self._pro_human_result()
+        ultra_clear = self._ultra_known_result()
+        receipt = candidate_run_module.finalize_early_actual_body_free(
+            body_free_machine_packet=self.body_free_packet,
+            pro_human_read_result=pro_clear,
+            ultra_known_technical_result=ultra_clear,
+        )
+
+        self.assertEqual(
+            receipt["schema_version"],
+            candidate_run_module.EARLY_ACTUAL_FINAL_BODY_FREE_SCHEMA_VERSION,
+        )
+        self.assertEqual(
+            receipt["early_actual_status"],
+            "LANGUAGE_VIABILITY_OBSERVED",
+        )
+        self.assertTrue(receipt["all_three_clear"])
+        self.assertEqual(
+            receipt["pro_body_free_early_human_read_result"], "CLEAR"
+        )
+        self.assertEqual(
+            receipt["ultra_known_technical_invariant"], "CLEAR"
+        )
+        self.assertEqual(
+            receipt["withheld_body_free_machine_invariant"], "CLEAR"
+        )
+        self.assertEqual(
+            receipt["known_visible_packet_sha256"],
+            ultra_clear["known_visible_packet_sha256"],
+        )
+        self.assertEqual(
+            receipt["body_free_machine_packet_sha256"],
+            candidate_run_module._canonical_sha256(self.body_free_packet),
+        )
+        self.assertEqual(
+            receipt["pro_human_read_result_sha256"],
+            candidate_run_module._canonical_sha256(pro_clear),
+        )
+        self.assertEqual(
+            receipt["ultra_known_technical_result_sha256"],
+            candidate_run_module._canonical_sha256(ultra_clear),
+        )
+        self.assertFalse(receipt["body_payload_present"])
+        self.assertFalse(receipt["private_text_published"])
+        self.assertEqual(receipt["formal_exact8"], "NOT_RUN")
+        self.assertFalse(receipt["product_read_evaluated"])
+        self.assertEqual(receipt["product_credit"], 0)
+        self.assertFalse(receipt["candidate_ready"])
+        self.assertEqual(receipt["production_effect"], 0)
+        self.assertFalse(receipt["automatic_progression"])
+        self.assertEqual(self.body_free_packet, machine_before)
+
+        for pro, ultra in (
+            (self._pro_human_result("COMMON_DEFECT"), ultra_clear),
+            (pro_clear, self._ultra_known_result("NOT_CLEAR")),
+        ):
+            with self.subTest(
+                pro=pro["early_human_read_result"],
+                ultra=ultra["ultra_known_technical_invariant"],
+            ):
+                nonclear = (
+                    candidate_run_module.finalize_early_actual_body_free(
+                        body_free_machine_packet=self.body_free_packet,
+                        pro_human_read_result=pro,
+                        ultra_known_technical_result=ultra,
+                    )
+                )
+                self.assertFalse(nonclear["all_three_clear"])
+                self.assertEqual(nonclear["early_actual_status"], "NOT_RUN")
+
+        tampered_machine = json.loads(
+            json.dumps(self.body_free_packet, ensure_ascii=False)
+        )
+        tampered_machine["known_exact4_body_free"][
+            "known_visible_packet_sha256"
+        ] = "0" * 64
+        with self.assertRaisesRegex(
+            ValueError,
+            "early Ultra known technical result invalid",
+        ):
+            candidate_run_module.finalize_early_actual_body_free(
+                body_free_machine_packet=tampered_machine,
+                pro_human_read_result=pro_clear,
+                ultra_known_technical_result=ultra_clear,
+            )
+
+    def test_exact3_finalizer_cli_clear_nonclear_and_invalid_drift(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            machine_path = root / "machine.json"
+            pro_path = root / "pro.json"
+            ultra_path = root / "ultra.json"
+            machine_path.write_text(
+                json.dumps(self.body_free_packet, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            def invoke(
+                pro: dict[str, object],
+                ultra: dict[str, object],
+            ) -> tuple[int, str]:
+                pro_path.write_text(
+                    json.dumps(pro, ensure_ascii=False), encoding="utf-8"
+                )
+                ultra_path.write_text(
+                    json.dumps(ultra, ensure_ascii=False), encoding="utf-8"
+                )
+                stdout = io.StringIO()
+                with (
+                    patch.object(
+                        candidate_run_module.sys,
+                        "argv",
+                        (
+                            "cmee-v1a-candidate-run",
+                            "--finalize-early-actual",
+                            "--early-machine-body-free-input",
+                            str(machine_path),
+                            "--early-pro-body-free-input",
+                            str(pro_path),
+                            "--early-ultra-body-free-input",
+                            str(ultra_path),
+                        ),
+                    ),
+                    patch.object(candidate_run_module.sys, "stdout", stdout),
+                ):
+                    result = candidate_run_module.main()
+                return result, stdout.getvalue()
+
+            clear_code, clear_stdout = invoke(
+                self._pro_human_result(), self._ultra_known_result()
+            )
+            self.assertEqual(clear_code, 0)
+            self.assertEqual(
+                json.loads(clear_stdout)["early_actual_status"],
+                "LANGUAGE_VIABILITY_OBSERVED",
+            )
+
+            nonclear_code, nonclear_stdout = invoke(
+                self._pro_human_result("COMMON_DEFECT"),
+                self._ultra_known_result(),
+            )
+            self.assertEqual(nonclear_code, 1)
+            self.assertEqual(
+                json.loads(nonclear_stdout)["early_actual_status"],
+                "NOT_RUN",
+            )
+
+            invalid_ultra = {
+                **self._ultra_known_result(),
+                "body_free_machine_packet_sha256": "0" * 64,
+            }
+            pro_path.write_text(
+                json.dumps(self._pro_human_result(), ensure_ascii=False),
+                encoding="utf-8",
+            )
+            ultra_path.write_text(
+                json.dumps(invalid_ultra, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with (
+                patch.object(
+                    candidate_run_module.sys,
+                    "argv",
+                    (
+                        "cmee-v1a-candidate-run",
+                        "--finalize-early-actual",
+                        "--early-machine-body-free-input",
+                        str(machine_path),
+                        "--early-pro-body-free-input",
+                        str(pro_path),
+                        "--early-ultra-body-free-input",
+                        str(ultra_path),
+                    ),
+                ),
+                patch.object(candidate_run_module.sys, "stdout", stdout),
+                patch.object(candidate_run_module.sys, "stderr", stderr),
+            ):
+                with self.assertRaises(SystemExit) as raised:
+                    candidate_run_module.main()
+            self.assertEqual(raised.exception.code, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn(
+                "early finalization binding invalid", stderr.getvalue()
+            )
+
     def test_human_transition_rejects_fabricated_machine_packets(self) -> None:
         withheld = self.body_free_packet["withheld_exact4_body_free"]
         human_result = {
@@ -10997,6 +11384,13 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 0,
             ),
             mutated(("known_exact4_body_free", "body_payload_present"), True),
+            mutated(
+                (
+                    "known_exact4_body_free",
+                    "known_visible_packet_sha256",
+                ),
+                "not-a-digest",
+            ),
             mutated(
                 ("withheld_exact4_body_free", "schema_version"),
                 "fabricated.schema",
