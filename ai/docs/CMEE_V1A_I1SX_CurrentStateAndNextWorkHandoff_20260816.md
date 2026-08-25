@@ -1069,3 +1069,50 @@ AUTOMATIC_PROGRESSION = FALSE
 ```
 
 activation commitsでruntime / design headを確定した後、そのheadsへbindしたfresh early actual exact1を実行する。known public-safe exact4はUltra technical exact1とPro language exact1、repo-outside withheld exact4はPro body-full exact1だけが読む。final transitionはrunnerのseparate body-free receiptでexact3から純粋導出し、成功してもinternal language viability observationに限定する。
+
+## 29. First early actual diagnosis and generic discourse-reference correction（2026-08-25）
+
+§28のactivation headへbindしたfirst early actualでは、known / withheld machine invariantはともに`CLEAR_4_OF_4`であったが、Pro body-full exact1は`COMMON_DEFECT / GENERIC_SUBJECTIVE_CONTENT / DISCOURSE_PLANNER`を返した。Layer 2の最初のsubjective responseがLayer 1のrelation-bearing endpointを再提示せず、genericな単数anaphorへ縮退して同一targetへconcentrateする共通欠陥である。case rule、case ID selector、new asset、new grammatical axisまたはroute-level変更を必要としないため、Mashのcurrent Route A Step 3 completion instruction内でexisting normal-form reference calculationだけをgenericに修正する。
+
+correctionは、anaphoric antecedentをsame layerのprior unitに限定し、単一refはimmediately-prior exact ref、複合refはsame-layer exact ref setだけを許す。Layer transition後の最初のsubjective unitはsource-bound explicit / composite objectを再提示し、後続の単一対象は`そのこと`、複数対象は`その両方`としてcardinalityを保持する。source / owner / polarity / modality / time / unknown / safety、existing duty / basis / target、typed source orderおよびmeaningは変更しない。
+
+```text
+AUTHORITY = MASH_CURRENT_EXPLICIT_ROUTE_A_STEP3_COMPLETION_CONTINUATION
+FIRST_EARLY_ACTUAL_RUNTIME_HEAD = 8cdb92c7cafa79503d21bd409c1e55093d206985
+FIRST_EARLY_ACTUAL_DESIGN_HEAD = ff15a48a415a1f26cf00736169d8e3966ff85cbb
+FIRST_EARLY_ACTUAL_LANGUAGE_CORE_IDENTITY = 21aa234369b467b377f595c972487bb3b036cf47ebc605efb9a0f301a2c1d99a
+FIRST_KNOWN_VISIBLE_PACKET_SHA256 = c5ac27f0a7a94f47b179484512cf78955d6909d548d4a64b45ec1da4bba2be0d
+FIRST_WITHHELD_SET_DIGEST = 5f31461625397bd22746dcdad8c8d68f7f6c7d2e56c1dc62e177664ae365c59d
+FIRST_KNOWN_MACHINE_INVARIANT = CLEAR_4_OF_4
+FIRST_WITHHELD_MACHINE_INVARIANT = CLEAR_4_OF_4
+FIRST_PRO_BODY_FREE_RESULT = COMMON_DEFECT
+FIRST_BODY_FREE_DEFECT_CLASS = GENERIC_SUBJECTIVE_CONTENT
+FIRST_CAUSE_COMPONENT = DISCOURSE_PLANNER
+FIRST_CEILING_REASON = NONE
+
+GENERIC_CORRECTION = LAYER_LOCAL_ANTECEDENT_AND_CARDINALITY_PRESERVING_OBJECT_REFERENCE
+CASE_ID_FAMILY_RAW_FIXTURE_EXPECTED_SENTENCE_SELECTOR = 0
+NEW_ASSET_RULE_ENUM_GRAMMATICAL_AXIS_DEPENDENCY_ROUTE = 0
+SOURCE_MEANING_OWNER_SAFETY_CHANGE = 0
+CORRECTED_LANGUAGE_CORE_IDENTITY = 2f33ad8f8dd9d7a6d34f57519abaaa569a406fec96a3b936ca23baf8808104c3
+
+CONTRACT_TESTS = 118_OF_118_PASS
+VERTICAL_TESTS = 42_OF_42_PASS
+COMBINED_TESTS = 160_OF_160_PASS
+STEP3_TARGETED_TESTS = 19_OF_19_PASS
+COMPILEALL = PASS
+
+COMMON_DEFECT_RETURN_COUNT_BEFORE = 2_OF_2
+COMMON_DEFECT_RETURN_COUNT_AFTER = 2_OF_2
+COUNTER_RESET / COUNTER_INCREMENT = 0 / 0
+ROUTE = ROUTE_A_PROVIDERLESS_EXACT1_ONLY
+EXTERNAL_AI / PROVIDER / NETWORK / BODY_SEND / COST = 0 / 0 / 0 / 0 / 0
+EARLY_ACTUAL_STATUS = NOT_RUN_PENDING_CORRECTED_HEAD_ACTIVATION
+STEP3 = GENERIC_DISCOURSE_REFERENCE_CORRECTION_VERIFIED_PENDING_FRESH_ACTUAL
+FORMAL_EXACT8 = NOT_RUN
+PRODUCT_READ_EVALUATED = FALSE
+STEP4 = NOT_STARTED
+AUTOMATIC_PROGRESSION = FALSE
+```
+
+このsectionはfirst early actualのbody-free diagnosisを履歴として保持し、§28の`EARLY_ACTUAL_ATTEMPT_MAX=1`をcurrent completion instruction内の診断後generic correctionについてsupersedeする。private body / locatorはruntime docs、design docs、GitHub、UltraまたはMashへ公開せず、corrected activation headsへbindしたfresh exact8だけをsame Route A coreから生成してsuccess exact3を再評価する。
