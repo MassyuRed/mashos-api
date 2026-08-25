@@ -1626,3 +1626,78 @@ AUTOMATIC_PROGRESSION = FALSE
 ```
 
 new activation headsを固定した後だけsame frozen private exact4をfresh materializeする。known body-fullはUltra technical / Pro language、withheld body-fullはPro exact1だけが読み、output exact2はreview直後に削除する。success exact3がすべて`CLEAR`なら`EARLY_ACTUAL_STATUS=LANGUAGE_VIABILITY_OBSERVED`へ遷移し、formal Product Read、Step 4、ready、mergeまたはproductionへ自動進行しない。
+
+## 38. Step 3 shared finite-carrier and connector grammar repair（2026-08-25）
+
+§37 activation headsへbindしたfresh early actual exact1はknown / withheld machine invariant `CLEAR_4_OF_4 / CLEAR_4_OF_4`、known Pro language viability `CLEAR_4_OF_4`だったが、withheld Pro exact1はaggregate viable `1/4`、non-clear `3/4`の`COMMON_DEFECT / GENERIC_SUBJECTIVE_CONTENT / SUBJECTIVE_MEANING_PLANNER`だった。body-free first-failing categoryは`ENDPOINT_FINITE_CLASSIFICATION`で、connector candidate detectionは成立していた。non-clearは同じ`RELATION_BEARING_SPAN -> EXACT2_ENDPOINT_PROFILE_NOT_ADMITTED -> WHOLE_SPAN_SUBJECTIVE_APPRAISAL`であり、relation noncollapse、rankingまたはsurfaceはroot causeではない。private body、locator、語彙、case順序またはper-case detailはPro外へ出していない。
+
+修正は、owner binding、specialized endpoint-final判定、generic fallbackに重複していたfinite regexを、balanced top-level fragmentと既存frozen operator anchorへbindしたsingle finite-carrier proofへ統合する。plain / past / polite / negative、copular / explanatory、bounded aspectを同じ活用文法で閉じる。existing operator kindをterminalに証明できる場合は従来kindを優先し、semantic operatorを増やさずfinite hostだけを証明できる場合はexisting neutral `state / state / fact`へ落とす。generic state childへembedded feeling / wish / constraint / value / action codeを転記せず、terminal negationだけをnegative polarityへbindする。
+
+arbitrary host predicate、report / hearsay、third-party attribution、self evaluation、passive、existential-only、modifier / case-particle residue、purpose `のに`、locally denied wish、nested / malformed group、admitted link 0 / 2+は引き続きfail-closedとする。top-level connectorはlongest matchへ統一し、`けども`のright scalar leakを閉じ、既存contrast registry内のsame-span explicit markerを同じexact1 candidate pathへ通す。case id、private term、phrase-family expected sentence、new axis / enum / asset / dependency / routeは0である。
+
+```text
+AUTHORITY = MASH_CURRENT_EXPLICIT_ROUTE_A_ONLY_STEP3_COMPLETION
+PREIMAGE_RUNTIME_HEAD = 396643fd7574f1ce3bee7d63624ccbaf855a0fa6
+PREIMAGE_DESIGN_HEAD = ca4500baa559a2c0c8fb67a074430cdd748c938f
+PREIMAGE_LANGUAGE_CORE_IDENTITY = 41619312c76f3640fcde089e45c4287819374624e6ba05df11909ae8a327d718
+PREIMAGE_MACHINE_PACKET_FILE_SHA256 = b23d07b21c57899234f6a543efe832d1181dedafe49e4f6c269d8b832d537a94
+PREIMAGE_MACHINE_PACKET_CANONICAL_SHA256 = f99bba68e62395e1343d6ffd8b545a6284c6c2472f9f85f824f323aa833139ea
+PREIMAGE_PRO_RESULT_FILE_SHA256 = eb2050e567bba7e5817cf0f3f2c937979e63149bcc215df58e1c4c3f9a30acd9
+PREIMAGE_PRO_RESULT_CANONICAL_SHA256 = 863b24d38babff3ce0d0905a3715b00dc501dcc858da37be9c71e8687eeb212b
+PREIMAGE_KNOWN_VISIBLE_FILE_SHA256 = c6c2237cd61d3794c268ca4514f238dc93a8faff574d65c093bf1801b6f98c8c
+PREIMAGE_KNOWN_VISIBLE_CANONICAL_SHA256 = cb6e0a1cc8624f681787a1b59dcffead893cacf10c5eecafeb86723e8cef9160
+PREIMAGE_PRIVATE_PACKET_BINDING_SHA256 = e2799ed4ae8f35ed100f37e1d4e1a766f2fba659281c72323670089b2e052637
+PREIMAGE_MACHINE_KNOWN / WITHHELD = CLEAR_4_OF_4 / CLEAR_4_OF_4
+PREIMAGE_PRO_KNOWN / WITHHELD = CLEAR_4_OF_4 / COMMON_DEFECT_1_OF_4_VIABLE
+PREIMAGE_FIRST_FAILING_CATEGORY = ENDPOINT_FINITE_CLASSIFICATION
+
+FINITE_PROOF = SINGLE_SHARED_FROZEN_OPERATOR_CARRIER_GRAMMAR
+GENERIC_UNKNOWN_HOST_AUTHORITY = 0
+GENERIC_FINITE_STATE = EXISTING_STATE_STATE_FACT_ONLY
+GENERIC_CHILD_EMBEDDED_OPERATOR_COPY = 0
+TERMINAL_NEGATION_POLARITY_ONLY = 1
+CONNECTOR_MATCH = LONGEST_EXPLICIT_TOP_LEVEL_EXACT1
+CASE_ID_PRIVATE_TERM_PHRASE_FAMILY_EXPECTED_SENTENCE_RULE = 0
+NEW_AXIS_ENUM_ASSET_DEPENDENCY_ROUTE = 0
+
+RUNTIME_CHANGED_PATHS_FROM_PREIMAGE = EXACT5
+  ai/services/ai_inference/emlis_ai_grounded_observation_plan.py
+  ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py
+  ai/tests/test_cmee_v1a_i1sx_contracts.py
+  ai/tools/cmee_v1a_i1sx_candidate_run.py
+  ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md
+DESIGN_CHANGED_PATHS = EXACT1
+  Cocolon_前提資料/designs/cmee/v1/06_implementation_order_migration_and_verification.md
+
+LANGUAGE_CORE_IDENTITY = 94a55c8226454f3850fe265b02590f1de762e71518d890d31299f6d34a631b72
+RUNNER_SHA256 = 49e872a571d4b760329c73495925af5fbc8245af01c4e1889d007968befd961a
+STEP2_COMPOSITION_TESTS = 19_OF_19_PASS
+STEP3_EARLY_HARNESS_TESTS = 17_OF_17_PASS
+CONTRACT_TESTS = 123_OF_123_PASS
+VERTICAL_TESTS = 42_OF_42_PASS
+COMBINED_TESTS = 165_OF_165_PASS
+COMPILEALL = PASS
+INDEPENDENT_PUBLIC_AUDIT = CLEAR_BLOCKER_0_MAJOR_0
+PUBLIC_FINITE_MORPHOLOGY = CLEAR_110_OF_110
+PUBLIC_CONNECTOR_STRUCTURAL_SPLIT = CLEAR_18_OF_18_ADMITTED
+PUBLIC_CONNECTOR_SCALAR_LEAK = 0
+PUBLIC_NEGATIVE_MATRIX = CLEAR_51_OF_51
+
+PREIMAGE_EARLY_ACTUAL_RUN / RETRY / RERUN = 1 / 0 / 0
+PREIMAGE_FRESH_OUTPUT_CREATED / DELETED / REMAINING = 2 / 2 / 0
+PREIMAGE_NETWORK / EXTERNAL_AI / PROVIDER / BODY_SEND / COST = 0 / 0 / 0 / 0 / 0
+FROZEN_PRIVATE_INPUT_RETAINED = 1
+COMMON_DEFECT_RETURN_COUNT = 2_OF_2_KEEP
+COUNTER_RESET / COUNTER_INCREMENT = 0 / 0
+SOLE_ROUTE = ROUTE_A_PROVIDERLESS_EXACT1_ONLY
+PUBLIC_API / DB / RN / PRODUCTION_EFFECT = 0 / 0 / 0 / 0
+EARLY_ACTUAL_STATUS = NOT_RUN_PENDING_SHARED_FINITE_ACTIVATION_HEADS
+STEP3 = ROUTE_A_SHARED_FINITE_REPAIR_VERIFIED_PENDING_FRESH_ACTUAL
+FORMAL_EXACT8 = NOT_RUN
+PRODUCT_READ_EVALUATED = FALSE
+CANDIDATE_READY = FALSE
+STEP4 = NOT_STARTED
+AUTOMATIC_PROGRESSION = FALSE
+```
+
+new activation heads固定後にだけsame frozen private exact4をfresh materializeする。known body-fullはUltra technical / Pro language、withheld body-fullはPro exact1だけが読み、fresh output exact2をreview直後に削除する。success exact3がすべて`CLEAR`の場合だけ`EARLY_ACTUAL_STATUS=LANGUAGE_VIABILITY_OBSERVED`へ遷移し、formal Product Read、Step 4、ready、mergeまたはproductionへ自動進行しない。

@@ -3491,9 +3491,15 @@ def _generic_relation_fragment_clause(
         str(getattr(frame, "predicate_kind", "")) == "state"
         and modality == "fact"
         and polarity == "neutral"
-        and quoted.endswith(("気持ち」", "願い」"))
     ):
-        return "".join((quoted, "があり"))
+        return "".join(
+            (
+                quoted,
+                "があり"
+                if quoted.endswith(("気持ち」", "願い」"))
+                else "ということがあり",
+            )
+        )
     if modality == "uncertain" and carrier == "不確かさも残り":
         return "".join((endpoint_object, "には不確かさが残り"))
     if (

@@ -293,10 +293,22 @@ _REFUSAL_RE: Final = re.compile(
     r"つもり(?:は|が)?ない|拒|嫌だ|このまま(?:では|じゃ)いけない)"
 )
 _UNCERTAIN_RE: Final = re.compile(
-    r"(?:気がする|かもしれ|と思う|こうかな|かな(?=[、。,.!！?？\s]|$)|憶測|わからない|分からない|不明)"
+    r"(?:気がする|かもしれ|"
+    r"(?:と|とは)思(?:う|った|います|いました|"
+    r"って(?:いる|いた|います|いました))|"
+    r"こうかな|かな(?=[、。,.!！?？\s]|$)|憶測|わからない|分からない|不明)"
 )
 _CONSTRAINT_RE: Final = re.compile(
-    r"(?:なければ|ないと|できない|出来ない|難しい|無理|制約|限界|しかない|せざるを得|取れなく|作れない)"
+    r"(?:なければ|ないと|できない|出来ない|"
+    r"難し(?:い|かった|く(?:ない|なかった|ありません(?:でした)?))|"
+    r"無理|制約|限界|しかない|せざるを得|取れなく|作れない)"
+)
+_NEGATED_CONSTRAINT_CANCELLATION_RE: Final = re.compile(
+    r"(?:"
+    r"難し(?:くない|くなかった|くありません(?:でした)?)|"
+    r"(?:無理|制約|限界)(?:は|では|じゃ)?"
+    r"(?:ない|なかった|ありません(?:でした)?)"
+    r")$"
 )
 _CHANGE_RE: Final = re.compile(
     r"(?:になった|なって|くなった|変わ|減った|増えた|戻った|進んだ|進めた|"
@@ -335,12 +347,22 @@ _OPEN_UNFINISHED_RE: Final = re.compile(
     r"(?:まだ|今も).{0,32}(?:分からない|わからない|分かりません|"
     r"わかりません|未定|決められない|決められません|"
     r"決めきれない|決めきれません)|"
-    r"(?:未定|途中|決めきれない|結論は出ていない))"
+    r"(?:未定|途中|決めきれない|"
+    r"結論(?:は|が)出て(?:いない|いなかった|いません(?:でした)?)))"
 )
-_CONTRAST_RE: Final = re.compile(r"(?:でも|だけど|けれど|けど|一方|なのに|ただ|とはいえ)")
+_CONTRAST_RE: Final = re.compile(
+    r"(?:それでも|でも|だけど|けれど|けど|"
+    r"一方(?:で|(?=[、,\s]|$))|なのに|ただ(?!し)|"
+    r"とはいえ(?!な(?:い|かった|く)|ません(?:でした)?))"
+)
 _COEXISTENCE_RE: Final = re.compile(r"(?:同時に|両方|どっちも|抱えたまま)")
 _TOP_LEVEL_CONTRAST_LINK_RE: Final = re.compile(
-    r"(?:一方で|のに|けれども?|けど)(?:[、,]\s*)?|が[、,]\s*"
+    r"(?:なのに|のに|けれども?|けども?|"
+    r"とはいえ(?!な(?:い|かった|く)|ません(?:でした)?)|"
+    r"一方(?:で|(?=[、,\s]|$)))(?:[、,]\s*)?|"
+    r"が[、,]\s*|"
+    r"(?<=[、,。.!！?？\s])(?:それでも|でも|ただ(?!し))"
+    r"(?:[、,]\s*)?"
 )
 _TOP_LEVEL_BARE_GA_LINK_RE: Final = re.compile(r"が(?![、,])")
 _TOP_LEVEL_COORDINATE_LINK_RE: Final = re.compile(r"と[、,]\s*")
@@ -350,15 +372,68 @@ _COEXISTENCE_TAIL_RE: Final = re.compile(
 _RELATION_UNCERTAINTY_RE: Final = re.compile(
     r"(?:迷(?:って|い|う)|ためら|自信がな|よいか|いいか|べきか|気がし)"
 )
+_NEGATED_RELATION_UNCERTAINTY_CANCELLATION_RE: Final = re.compile(
+    r"(?:迷|ためら)(?:"
+    r"わ(?:ない|なかった|ず|ぬ)|"
+    r"って(?:いない|いなかった|いません(?:でした)?)"
+    r")$"
+)
 _CAUSE_RE: Final = re.compile(r"(?:ので(?!す)|ため|ことで|からこそ|だからこそ)")
 _RESULT_RE: Final = re.compile(r"(?:その結果|だから|になった|減った|増えた|できた|出来た|ようになった)")
 _SHIFT_RE: Final = re.compile(
     r"(?:今までは|これまでは|以前は|前は|今は|現在は|昨日|今日|より|"
     r"になった|くなった|変わ|減った|増えた|戻った|ようになった|進歩)"
 )
-_CONTINUATION_RE: Final = re.compile(r"(?:続け|繰り返|ずっと)")
+_CONTINUATION_RE: Final = re.compile(
+    r"(?:続(?:け|いて|いた|く)|繰り返|ずっと)"
+)
+
+# One shared finite-carrier grammar is used by owner binding, specialized
+# endpoint-final checks, and the generic relation fallback.  It deliberately
+# describes only inflectional material after an already frozen operator.  It
+# does not admit an arbitrary host predicate or a noun/case-particle residue.
+_FINITE_ENDPOINT_CARRIER_RE: Final = re.compile(
+    r"(?:"
+    r"(?:っ|い|し|き|ぎ)?(?:て|で)(?:は|も)?(?:いる|いた|きた|"
+    r"いない|いなかった|います|"
+    r"いました|いません|いませんでした|ある|あった|ない|なかった|"
+    r"あります|ありました|ありません|ありませんでした)|"
+    r"(?:で(?:は|も)?|じゃ)(?:ある|あった|ない|なかった|あります|"
+    r"ありました|ありません|ありませんでした)|"
+    r"(?:だ|です|だった|でした)(?:の|ん)(?:だ|です|だった|でした)|"
+    r"(?:な)?(?:の|ん)(?:だ|です|だった|でした)|"
+    r"(?:だ|です|だった|でした|である|であった)|"
+    r"(?:始め|続け|終え)(?:る|た|ている|ていた|ます|ました)|"
+    r"し(?:たい(?:です|でした)?|たかった(?:です)?|たくない|たくなかった|"
+    r"たくありません(?:でした)?|ます|ました|ません|ませんでした)|"
+    r"(?:し)?(?:い(?:です)?|かった(?:です)?|"
+    r"く(?:ない|なかった|ありません(?:でした)?))|"
+    r"(?:き|ぎ|し|ち|に|び|み|り|い)?つつ(?:ある|あった|あります|ありました)|"
+    r"(?:っ|ん|い|し|き|ぎ)(?:た|だ)|"
+    r"(?:か|が|さ|た|な|ば|ま|ら|わ)(?:ない|なかった|なく)|"
+    r"(?:き|ぎ|し|ち|に|び|み|り|い)"
+    r"(?:ます|ました|ません|ませんでした)|"
+    r"(?:いる|いた|いない|いなかった|います|いました|"
+    r"いません|いませんでした)|"
+    r"(?:る|う|い|た|だ|ます|ました|ません|ませんでした|ない|なかった)"
+    r")"
+)
+_FINITE_ENDPOINT_TERMINAL_RE: Final = re.compile(
+    r"(?:"
+    r"(?:て|で)(?:は|も)?(?:いる|いた|いない|いなかった|います|"
+    r"いました|いません|いませんでした|ある|あった|ない|なかった|"
+    r"あります|ありました|ありません|ありませんでした)|"
+    r"(?:で(?:は|も)?|じゃ)(?:ある|あった|ない|なかった|あります|"
+    r"ありました|ありません|ありませんでした)|"
+    r"(?:な)?(?:の|ん)(?:だ|です|だった|でした)|"
+    r"(?:る|う|く|ぐ|す|つ|ぬ|ぶ|む|い|た|だ|ます|ました|"
+    r"ません|ませんでした|ない|なかった|だ|です|だった|でした)"
+    r")$"
+)
 _LEADING_CONTRAST_RE: Final = re.compile(
-    r"^(?:それでも|けれども?|でも|だけど|一方で|ただ|とはいえ|なのに)"
+    r"^(?:それでも|けれども?|でも|だけど|"
+    r"一方(?:で|(?=[、,\s]|$))|ただ(?!し)|"
+    r"とはいえ(?!な(?:い|かった|く)|ません(?:でした)?)|なのに)"
 )
 _BOUNDARY_CAUSE_RE: Final = re.compile(r"(?:ので|ため|ことで|からこそ|だからこそ)[、,]?$")
 _BOUNDARY_RESULT_RE: Final = re.compile(r"^(?:その結果|結果として|そのため|だから)")
@@ -780,6 +855,48 @@ def _top_level_pattern_matches(
     if visible is None:
         return ()
     return tuple(pattern.finditer(visible))
+
+
+def _finite_endpoint_terminal_shape(fragment: str) -> bool:
+    """Prove one balanced, punctuation-free finite clause tail."""
+
+    visible = _top_level_text(fragment)
+    if visible is None:
+        return False
+    value = visible.strip()
+    return bool(
+        value
+        and value == fragment.strip()
+        and re.search(r"[、,.!?！？]", value) is None
+        and _FINITE_ENDPOINT_TERMINAL_RE.search(value) is not None
+    )
+
+
+def _last_finite_operator_match(
+    fragment: str,
+    *patterns: re.Pattern[str],
+) -> re.Match[str] | None:
+    """Return the last frozen operator closed by only finite carriers."""
+
+    visible = _top_level_text(fragment)
+    if visible is None:
+        return None
+    value = visible.strip()
+    if not value or value != fragment.strip():
+        return None
+    matches = tuple(
+        match
+        for pattern in patterns
+        for match in pattern.finditer(value)
+        if (
+            not value[match.end() :]
+            or _FINITE_ENDPOINT_CARRIER_RE.fullmatch(
+                value[match.end() :]
+            )
+            is not None
+        )
+    )
+    return max(matches, key=lambda match: (match.end(), match.start())) if matches else None
 
 
 def _dedupe(values: Iterable[Any]) -> list[str]:
@@ -1869,6 +1986,14 @@ def _typed_nucleus_projections_for_span(
                         for pattern in operator_patterns
                         for match in pattern.finditer(owner)
                     )
+                    or (
+                        _finite_endpoint_terminal_shape(owner)
+                        and _last_finite_operator_match(
+                            owner,
+                            *operator_patterns,
+                        )
+                        is not None
+                    )
                     or re.search(
                         r"(?:たい|ほしい|欲しい)(?:気持ち|願い)$",
                         owner,
@@ -1877,13 +2002,7 @@ def _typed_nucleus_projections_for_span(
                 owner_is_complete_semantic_subject = bool(
                     marker in {"は", "が", "も"}
                     and semantic_subject_complete
-                    and re.fullmatch(
-                        r"[^、,.!?！？]{1,32}"
-                        r"(?:る|う|い|た|ない|なかった|ます|ました|"
-                        r"だ|です|だった|でした)",
-                        remainder,
-                    )
-                    is not None
+                    and _finite_endpoint_terminal_shape(remainder)
                 )
                 epistemic_content_topic = bool(
                     marker in {"は", "も"}
@@ -1952,12 +2071,7 @@ def _typed_nucleus_projections_for_span(
                             for pattern in operator_patterns
                             for match in pattern.finditer(owner[:-1])
                         )
-                        and re.fullmatch(
-                            r"(?:いる|いた|います|いました|ある|あった|"
-                            r"あります|ありました)",
-                            remainder,
-                        )
-                        is not None
+                        and _finite_endpoint_terminal_shape(remainder)
                     )
                 )
                 # A marker inside an already-frozen terminal operator (for
@@ -2457,15 +2571,9 @@ def _typed_nucleus_projections_for_span(
         def operator_is_endpoint_final(*patterns: re.Pattern[str]) -> bool:
             """Require a frozen operator plus only finite inflectional tail."""
 
-            return any(
-                re.fullmatch(
-                    r"(?:って|いて|んで)?(?:いる|いた|います|いました)?"
-                    r"(?:い|る|う|ない)?(?:の(?:だ|です)|ん(?:だ|です))?",
-                    right_top_level[match.end() :],
-                )
+            return (
+                _last_finite_operator_match(right_top_level, *patterns)
                 is not None
-                for pattern in patterns
-                for match in pattern.finditer(right_top_level)
             )
 
         right_constraint_final = operator_is_endpoint_final(_CONSTRAINT_RE)
@@ -2487,6 +2595,23 @@ def _typed_nucleus_projections_for_span(
                 )
             )
         )
+        # A left-hand wish cannot turn a terminally cancelled burden into a
+        # live wish/constraint tension.  Preserve the frozen fail-closed
+        # boundary for negated uncertainty and cancelled constraint; the
+        # reverse order remains eligible for the neutral generic-state path.
+        if (
+            left_wish
+            and right_negated
+            and (
+                _NEGATED_CONSTRAINT_CANCELLATION_RE.search(
+                    right_top_level
+                )
+                or _NEGATED_RELATION_UNCERTAINTY_CANCELLATION_RE.search(
+                    right_top_level
+                )
+            )
+        ):
+            return ()
         if (
             len(generic_contrast_links) == 1
             and left_start < left_end <= link.start()
@@ -2634,31 +2759,18 @@ def _typed_nucleus_projections_for_span(
             def endpoint_final_match(
                 *patterns: re.Pattern[str],
             ) -> re.Match[str] | None:
-                matches = tuple(
-                    match
-                    for pattern in patterns
-                    for match in pattern.finditer(top_level_fragment)
-                    if re.fullmatch(
-                        r"(?:って|いて|んで|て|で)?"
-                        r"(?:は)?"
-                        r"(?:いる|いた|います|いました|ある|あった|"
-                        r"あります|ありました|きた|きました)?"
-                        r"(?:い|かった|くない|くなかった|る|う|た|った|"
-                        r"[いきぎしじちぢにびぴみりえけげせぜてでねべぺめれ]?"
-                        r"(?:ます|ました|ません|ませんでした)|"
-                        r"(?:[わかがさざただなばぱまら])?"
-                        r"(?:ない|なかった))?"
-                        r"(?:(?:は|が|も)(?:ある|いる|残っている|続いている)|"
-                        r"(?:なの)?(?:だ|です|だった|でした))?"
-                        r"(?:の(?:だ|です)|ん(?:だ|です))?",
-                        top_level_fragment[match.end() :],
-                    )
-                    is not None
+                return _last_finite_operator_match(
+                    top_level_fragment,
+                    *patterns,
                 )
-                return matches[-1] if matches else None
 
             negated = "operator:negation" in operators
             refused = "operator:refusal" in operators
+            constraint_cancelled = bool(
+                _NEGATED_CONSTRAINT_CANCELLATION_RE.search(
+                    top_level_fragment
+                )
+            )
             unfinished_matches = tuple(
                 _OPEN_UNFINISHED_RE.finditer(top_level_fragment)
             )
@@ -2666,8 +2778,15 @@ def _typed_nucleus_projections_for_span(
                 len(unfinished_matches) == 1
                 and unfinished_matches[0].end() == len(top_level_fragment)
             )
-            constraint_occurs = "operator:constraint" in operators
-            constraint_final = endpoint_final_match(_CONSTRAINT_RE)
+            constraint_occurs = bool(
+                "operator:constraint" in operators
+                and not constraint_cancelled
+            )
+            constraint_final = (
+                None
+                if constraint_cancelled
+                else endpoint_final_match(_CONSTRAINT_RE)
+            )
             uncertainty_occurs = bool(
                 "operator:uncertainty" in operators
                 or _RELATION_UNCERTAINTY_RE.search(top_level_fragment)
@@ -2686,28 +2805,105 @@ def _typed_nucleus_projections_for_span(
                 _POSITIVE_CHANGE_RE
             )
             feeling_final = endpoint_final_match(_FEELING_RE)
-            value_final = endpoint_final_match(_VALUE_RE)
+            if feeling_final is None:
+                # A frozen feeling used as the complete semantic subject of
+                # an immediately following finite continuation predicate is
+                # still the asserted experience endpoint.  Requiring exact
+                # ``が`` adjacency avoids promoting a modifier such as
+                # ``不安の記録が続いている``.
+                feeling_final = next(
+                    (
+                        match
+                        for match in _FEELING_RE.finditer(
+                            top_level_fragment
+                        )
+                        if top_level_fragment[match.end() :].startswith("が")
+                        and (
+                            continuation_match := _last_finite_operator_match(
+                                top_level_fragment[match.end() + 1 :],
+                                _CONTINUATION_RE,
+                            )
+                        )
+                        is not None
+                        and continuation_match.start() == 0
+                    ),
+                    None,
+                )
+            value_final = (
+                None if negated else endpoint_final_match(_VALUE_RE)
+            )
+            passive_perfective = bool(
+                re.search(
+                    r"[かがさざただなばぱまらわ]れ"
+                    r"(?:た|ました|て(?:いた|いました))$",
+                    top_level_fragment,
+                )
+            )
+            generic_finite_patterns = (
+                *((_POSITIVE_CHANGE_RE,) if "operator:positive_change" in operators else ()),
+                *((_FEELING_RE,) if "operator:feeling" in operators else ()),
+                *((_WISH_RE,) if "operator:wish" in operators else ()),
+                *((_REFUSAL_RE,) if "operator:refusal" in operators else ()),
+                *((_UNCERTAIN_RE,) if "operator:uncertainty" in operators else ()),
+                *((_RELATION_UNCERTAINTY_RE,) if _RELATION_UNCERTAINTY_RE.search(top_level_fragment) else ()),
+                *((_CONSTRAINT_RE,) if constraint_occurs else ()),
+                *((_CHANGE_RE,) if "operator:change" in operators else ()),
+                *((_VALUE_RE,) if "operator:value" in operators else ()),
+                *((_HELP_SEEKING_RE,) if "operator:help_seeking" in operators else ()),
+                *((_NEGATION_RE,) if "operator:negation" in operators else ()),
+                *((_CONTINUATION_RE,) if "operator:continuation" in operators else ()),
+                *((_OPEN_UNFINISHED_RE,) if _OPEN_UNFINISHED_RE.search(top_level_fragment) else ()),
+            )
+            generic_finite_state_match = _last_finite_operator_match(
+                top_level_fragment,
+                *generic_finite_patterns,
+            )
+            generic_finite_state_proven = bool(
+                generic_finite_state_match is not None
+                and not passive_perfective
+            )
             # Choose the primary terminal predicate before rejecting earlier
             # semantic material.  A finite affirmative wish may legitimately
             # contain a feeling noun or an epistemic host; those subordinate
             # operators must not veto the wish endpoint.  Non-wish endpoints,
             # and action in particular, retain the strict modifier guards.
             if not positive_wish and not terminal_uncertainty_primary:
-                if constraint_occurs and constraint_final is None:
+                if (
+                    constraint_occurs
+                    and constraint_final is None
+                    and not generic_finite_state_proven
+                ):
                     return None
                 if (
                     uncertainty_occurs
                     and uncertainty_final is None
                     and not unfinished
+                    and not generic_finite_state_proven
                 ):
                     return None
-                if "operator:refusal" in operators and refusal_final is None:
+                if (
+                    "operator:refusal" in operators
+                    and refusal_final is None
+                    and not generic_finite_state_proven
+                ):
                     return None
-                if "operator:change" in operators and change_final is None:
+                if (
+                    "operator:change" in operators
+                    and change_final is None
+                    and not generic_finite_state_proven
+                ):
                     return None
-                if "operator:feeling" in operators and feeling_final is None:
+                if (
+                    "operator:feeling" in operators
+                    and feeling_final is None
+                    and not generic_finite_state_proven
+                ):
                     return None
-                if "operator:value" in operators and value_final is None:
+                if (
+                    "operator:value" in operators
+                    and value_final is None
+                    and not generic_finite_state_proven
+                ):
                     return None
             if (
                 negated
@@ -2724,13 +2920,6 @@ def _typed_nucleus_projections_for_span(
             performed_action = structurally_performed_action(
                 top_level_fragment
             )
-            passive_perfective = bool(
-                re.search(
-                    r"[かがさざただなばぱまらわ]れ"
-                    r"(?:た|ました|て(?:いた|いました))$",
-                    top_level_fragment,
-                )
-            )
 
             kind: NucleusKind
             predicate_kind: str
@@ -2746,13 +2935,13 @@ def _typed_nucleus_projections_for_span(
             ]
             role_codes: tuple[str, ...]
             finite_endpoint_proven: bool
-            finite_predicate_tail = bool(
-                re.search(
-                    r"(?:る|う|い|た|ない|なかった|ます|ました|"
-                    r"ません|ませんでした|"
-                    r"だ|です|だった|でした)$",
-                    top_level_fragment,
-                )
+            generic_finite_state_selected = False
+            finite_clause_proven = _finite_endpoint_terminal_shape(
+                top_level_fragment
+            )
+            terminal_negation = _last_finite_operator_match(
+                top_level_fragment,
+                _NEGATION_RE,
             )
             if positive_wish:
                 kind = "wish"
@@ -2771,21 +2960,21 @@ def _typed_nucleus_projections_for_span(
                     "semantic_role:present_unfinished",
                     "semantic_role:burden",
                 )
-                finite_endpoint_proven = finite_predicate_tail
+                finite_endpoint_proven = finite_clause_proven
             elif constraint_final is not None:
                 kind = "constraint"
                 predicate_kind = "constraint"
                 polarity = "negative" if negated else "neutral"
                 modality = "uncertain" if uncertain else "possibility"
                 role_codes = ("semantic_role:burden",)
-                finite_endpoint_proven = finite_predicate_tail
+                finite_endpoint_proven = finite_clause_proven
             elif uncertain:
                 kind = "uncertainty"
                 predicate_kind = "uncertainty"
                 polarity = "negative" if negated else "neutral"
                 modality = "uncertain"
                 role_codes = ("semantic_role:burden",)
-                finite_endpoint_proven = finite_predicate_tail
+                finite_endpoint_proven = finite_clause_proven
             elif refused and refusal_final is not None:
                 kind = "state"
                 predicate_kind = "refusal"
@@ -2795,7 +2984,7 @@ def _typed_nucleus_projections_for_span(
                     "semantic_role:protective_or_limiting_refusal",
                     "semantic_role:burden",
                 )
-                finite_endpoint_proven = finite_predicate_tail
+                finite_endpoint_proven = finite_clause_proven
             elif change_final is not None:
                 kind = "change"
                 predicate_kind = "change"
@@ -2812,21 +3001,21 @@ def _typed_nucleus_projections_for_span(
                     else "fact"
                 )
                 role_codes = ("semantic_role:current_change",)
-                finite_endpoint_proven = finite_predicate_tail
+                finite_endpoint_proven = finite_clause_proven
             elif feeling_final is not None:
                 kind = "reaction"
                 predicate_kind = "feeling"
                 polarity = "negative"
                 modality = "feeling"
                 role_codes = ("semantic_role:burden",)
-                finite_endpoint_proven = finite_predicate_tail
+                finite_endpoint_proven = finite_clause_proven
             elif value_final is not None:
                 kind = "value"
                 predicate_kind = "value"
                 polarity = "positive"
                 modality = "fact"
                 role_codes = ("semantic_role:explicit_evaluation",)
-                finite_endpoint_proven = finite_predicate_tail
+                finite_endpoint_proven = finite_clause_proven
             elif (
                 (performed_action or "operator:action" in operators)
                 and _EXPLICIT_PERFECTIVE_END_RE.search(
@@ -2851,45 +3040,62 @@ def _typed_nucleus_projections_for_span(
                 polarity = "neutral"
                 modality = "fact"
                 role_codes = ("semantic_role:concrete_action",)
-                finite_endpoint_proven = finite_predicate_tail
+                finite_endpoint_proven = finite_clause_proven
+            elif generic_finite_state_proven:
+                kind = "state"
+                predicate_kind = "state"
+                polarity = (
+                    "negative" if terminal_negation is not None else "neutral"
+                )
+                modality = "fact"
+                role_codes = ()
+                finite_endpoint_proven = finite_clause_proven
+                generic_finite_state_selected = True
             else:
                 return None
 
-            local_operator_codes = tuple(
-                code
-                for code in _operator_codes_for_text(
-                    top_level_fragment,
-                    source_field=source_field,
+            if generic_finite_state_selected:
+                local_operator_codes = (
+                    ("operator:negation",)
+                    if terminal_negation is not None
+                    else ()
                 )
-                if code != "operator:contrast"
-                and (code != "operator:wish" or positive_wish)
-                and not (
-                    positive_wish
-                    and code in {
-                        "operator:negation",
-                        "operator:refusal",
-                        "operator:constraint",
-                        "operator:feeling",
-                        "operator:uncertainty",
-                        "operator:change",
-                        "operator:positive_change",
-                        "operator:value",
-                    }
+            else:
+                local_operator_codes = tuple(
+                    code
+                    for code in _operator_codes_for_text(
+                        top_level_fragment,
+                        source_field=source_field,
+                    )
+                    if code != "operator:contrast"
+                    and (code != "operator:wish" or positive_wish)
+                    and not (
+                        positive_wish
+                        and code in {
+                            "operator:negation",
+                            "operator:refusal",
+                            "operator:constraint",
+                            "operator:feeling",
+                            "operator:uncertainty",
+                            "operator:change",
+                            "operator:positive_change",
+                            "operator:value",
+                        }
+                    )
+                    and not (
+                        terminal_uncertainty_primary
+                        and code in {
+                            "operator:wish",
+                            "operator:negation",
+                            "operator:refusal",
+                            "operator:constraint",
+                            "operator:feeling",
+                            "operator:change",
+                            "operator:positive_change",
+                            "operator:value",
+                        }
+                    )
                 )
-                and not (
-                    terminal_uncertainty_primary
-                    and code in {
-                        "operator:wish",
-                        "operator:negation",
-                        "operator:refusal",
-                        "operator:constraint",
-                        "operator:feeling",
-                        "operator:change",
-                        "operator:positive_change",
-                        "operator:value",
-                    }
-                )
-            )
             return (
                 kind,
                 predicate_kind,

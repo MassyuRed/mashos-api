@@ -9317,6 +9317,21 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 "相談したいけれど、変わった本を読んだ。",
                 "相談したいことを記録したけれど、不安を感じている。",
                 "どうしたいか分からない理由を話したけれど、不安を感じている。",
+                "不安だと聞いたけれど、相談したい。",
+                "疲れていると聞いているけれど、相談したい。",
+                "散歩したいと聞いたけれど、相談したい。",
+                "不安だと言っていたけれど、相談したい。",
+                "不安だと思う本を読んだけれど、相談したい。",
+                "不安そうだったけれど、相談したい。",
+                "不安らしいけれど、相談したい。",
+                "不安みたいだけど、相談したい。",
+                "つらいようだけど、相談したい。",
+                "不安っぽいけれど、相談したい。",
+                "不安げだけど、相談したい。",
+                "不安だそうですけれど、相談したい。",
+                "不安だった、ただし相談したい。",
+                "不安だった、一方的に相談したい。",
+                "不安とはいえない。",
                 "不安だったが相談したいが難しい。",
                 "不安だったけれど、相談したいが難しい。",
             ),
@@ -9338,6 +9353,13 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                         "semantic_role:generic_relation_fragment"
                         in row.semantic_frame.attribute_codes
                         for row in grounded_plan.nuclei
+                    )
+                )
+                self.assertFalse(
+                    any(
+                        row.source_relation_ids
+                        == ("typed_projection:top_level_connective",)
+                        for row in grounded_plan.relations
                     )
                 )
 
@@ -9443,7 +9465,276 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             "まだ決めきれませんが、相談したい。",
             "続けたくありませんが、相談したい。",
             "相談したいのですが、難しい。",
+            "不安ではないけれど、相談したい。",
+            "不安を感じてはいないけれど、相談したい。",
+            "不安だと思っていますけれど、相談したい。",
+            "不安だと思いましたけれど、相談したい。",
+            "相談したかったけれど、難しい。",
+            "まだ決めていませんけれど、相談したい。",
+            "不安なんですが、相談したい。",
+            "不安だったのだが、相談したい。",
+            "不安なのに、相談したい。",
+            "不安、でも相談したい。",
+            "不安、ただ、相談したい。",
+            "不安、とはいえ相談したい。",
+            "不安、一方、相談したい。",
+            "不安なんだけど、相談したい。",
+            "不安だけども、相談したい。",
+            "不安を感じ始めたけれど、相談したい。",
+            "不安が続いているけれど、相談したい。",
+            "難しくないけれど、相談したい。",
+            "難しくなかったけれど、相談したい。",
+            "難しくありませんけれど、相談したい。",
+            "難しくありませんでしたけれど、相談したい。",
+            "結論は出ていませんけれど、相談したい。",
+            "不安だった一方で相談したい。",
+            "不安だった一方、相談したい。",
+            "不安だとはいえ相談したい。",
+            "大事ではないけれど、相談したい。",
+            "価値がないけれど、相談したい。",
+            "無理ではないけれど、相談したい。",
+            "制約はないけれど、相談したい。",
+            "つらかったけれど、相談したい。",
+            "つらいですけれど、相談したい。",
+            "つらかったですけれど、相談したい。",
+            "少し変わっているけれど、相談したい。",
+            "少し変わっていたけれど、相談したい。",
+            "少し変わってきたけれど、相談したい。",
+            "少し落ち着きつつあるけれど、相談したい。",
+            "相談したかったですけれど、難しい。",
+            "不安、ただ相談したい。",
         )
+        finite_host_expected = {
+            "不安を感じたが、相談したい。": (
+                ("reaction", "wish"),
+                ("feeling", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+            "不安を感じてはいるが、相談したい。": (
+                ("reaction", "wish"),
+                ("feeling", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+            "不安であるが、相談したい。": (
+                ("reaction", "wish"),
+                ("feeling", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+            "不安ではあるが、相談したい。": (
+                ("reaction", "wish"),
+                ("feeling", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+            "不安なのだが、相談したい。": (
+                ("reaction", "wish"),
+                ("feeling", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+            "不安だと思うが、相談したい。": (
+                ("uncertainty", "wish"),
+                ("uncertainty", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+            "難しいと思うが、相談したい。": (
+                ("uncertainty", "wish"),
+                ("uncertainty", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+            "少し変わったが、相談したい。": (
+                ("change", "wish"),
+                ("change", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+            "少し落ち着いてきたが、相談したい。": (
+                ("change", "wish"),
+                ("change", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+            "まだ決めきれませんが、相談したい。": (
+                ("uncertainty", "wish"),
+                ("unfinished", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+            "続けたくありませんが、相談したい。": (
+                ("state", "wish"),
+                ("refusal", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+            "相談したいのですが、難しい。": (
+                ("wish", "constraint"),
+                ("wish", "constraint"),
+                "wish_and_constraint",
+                ObservationContributionKind.OBSERVE_COEXISTENCE,
+                RelationOperator.COEXISTS_WITH,
+            ),
+            "不安ではないけれど、相談したい。": (
+                ("reaction", "wish"),
+                ("feeling", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+            "不安を感じてはいないけれど、相談したい。": (
+                ("reaction", "wish"),
+                ("feeling", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+            "不安だと思っていますけれど、相談したい。": (
+                ("uncertainty", "wish"),
+                ("uncertainty", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+            "不安だと思いましたけれど、相談したい。": (
+                ("uncertainty", "wish"),
+                ("uncertainty", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+            "相談したかったけれど、難しい。": (
+                ("state", "constraint"),
+                ("state", "constraint"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+            "まだ決めていませんけれど、相談したい。": (
+                ("state", "wish"),
+                ("state", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+            "不安なんですが、相談したい。": (
+                ("reaction", "wish"),
+                ("feeling", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+            "不安だったのだが、相談したい。": (
+                ("reaction", "wish"),
+                ("feeling", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            ),
+        }
+        for connector_memo in (
+            "不安なのに、相談したい。",
+            "不安、でも相談したい。",
+            "不安、ただ、相談したい。",
+            "不安、とはいえ相談したい。",
+            "不安、一方、相談したい。",
+            "不安なんだけど、相談したい。",
+            "不安だけども、相談したい。",
+            "不安、ただ相談したい。",
+        ):
+            finite_host_expected[connector_memo] = (
+                ("reaction", "wish"),
+                ("feeling", "wish"),
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            )
+        for finite_memo, expected_kinds, expected_predicates in (
+            (
+                "不安を感じ始めたけれど、相談したい。",
+                ("reaction", "wish"),
+                ("feeling", "wish"),
+            ),
+            (
+                "不安が続いているけれど、相談したい。",
+                ("reaction", "wish"),
+                ("feeling", "wish"),
+            ),
+            *(
+                (memo, ("state", "wish"), ("state", "wish"))
+                for memo in (
+                    "難しくないけれど、相談したい。",
+                    "難しくなかったけれど、相談したい。",
+                    "難しくありませんけれど、相談したい。",
+                    "難しくありませんでしたけれど、相談したい。",
+                    "無理ではないけれど、相談したい。",
+                    "制約はないけれど、相談したい。",
+                )
+            ),
+            (
+                "結論は出ていませんけれど、相談したい。",
+                ("uncertainty", "wish"),
+                ("unfinished", "wish"),
+            ),
+            *(
+                (memo, ("reaction", "wish"), ("feeling", "wish"))
+                for memo in (
+                    "不安だった一方で相談したい。",
+                    "不安だった一方、相談したい。",
+                    "不安だとはいえ相談したい。",
+                )
+            ),
+            *(
+                (memo, ("state", "wish"), ("state", "wish"))
+                for memo in (
+                    "大事ではないけれど、相談したい。",
+                    "価値がないけれど、相談したい。",
+                )
+            ),
+            *(
+                (memo, ("reaction", "wish"), ("feeling", "wish"))
+                for memo in (
+                    "つらかったけれど、相談したい。",
+                    "つらいですけれど、相談したい。",
+                    "つらかったですけれど、相談したい。",
+                    "少し落ち着きつつあるけれど、相談したい。",
+                )
+            ),
+            *(
+                (memo, ("change", "wish"), ("change", "wish"))
+                for memo in (
+                    "少し変わっているけれど、相談したい。",
+                    "少し変わっていたけれど、相談したい。",
+                    "少し変わってきたけれど、相談したい。",
+                )
+            ),
+            (
+                "相談したかったですけれど、難しい。",
+                ("state", "constraint"),
+                ("state", "constraint"),
+            ),
+        ):
+            finite_host_expected[finite_memo] = (
+                expected_kinds,
+                expected_predicates,
+                "contrast",
+                ObservationContributionKind.OBSERVE_TENSION,
+                RelationOperator.TENSION_WITH,
+            )
         for index, memo in enumerate(supported_pairs, start=1):
             with self.subTest(downstream_exact2_relation=index):
                 (
@@ -9451,7 +9742,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     grounded_plan,
                     _graph,
                     _parent_plan,
-                    _projection,
+                    projection,
                     _phase_a,
                     subjective_plan,
                     phase_b,
@@ -9475,6 +9766,93 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     == ("typed_projection:top_level_connective",)
                 )
                 self.assertEqual(len(relation_rows), 1)
+                finite_host_contract = finite_host_expected.get(memo)
+                finite_host_relation_contribution = None
+                if finite_host_contract is not None:
+                    (
+                        expected_kinds,
+                        expected_predicates,
+                        expected_relation_type,
+                        expected_contribution_kind,
+                        expected_relation_operator,
+                    ) = finite_host_contract
+                    self.assertEqual(
+                        tuple(row.kind for row in typed),
+                        expected_kinds,
+                    )
+                    self.assertEqual(
+                        tuple(
+                            row.semantic_frame.predicate_kind for row in typed
+                        ),
+                        expected_predicates,
+                    )
+                    self.assertEqual(
+                        relation_rows[0].type,
+                        expected_relation_type,
+                    )
+                    relation_contributions = tuple(
+                        row
+                        for row in projection.observation_contributions
+                        if row.relation_operator
+                        is not RelationOperator.NO_RELATION_CLAIM
+                    )
+                    self.assertEqual(len(relation_contributions), 1)
+                    finite_host_relation_contribution = relation_contributions[0]
+                    self.assertIs(
+                        finite_host_relation_contribution.contribution_kind,
+                        expected_contribution_kind,
+                    )
+                    self.assertIs(
+                        finite_host_relation_contribution.semantic_operator,
+                        SemanticOperator.SYNTHESIZE_RELATION,
+                    )
+                    self.assertIs(
+                        finite_host_relation_contribution.relation_operator,
+                        expected_relation_operator,
+                    )
+                    self.assertEqual(
+                        len(finite_host_relation_contribution.semantic_refs),
+                        2,
+                    )
+                    self.assertEqual(
+                        len(
+                            set(
+                                finite_host_relation_contribution.semantic_refs
+                            )
+                        ),
+                        2,
+                    )
+                if memo in {
+                    "難しくないけれど、相談したい。",
+                    "難しくなかったけれど、相談したい。",
+                    "難しくありませんけれど、相談したい。",
+                    "難しくありませんでしたけれど、相談したい。",
+                    "大事ではないけれど、相談したい。",
+                    "価値がないけれど、相談したい。",
+                    "無理ではないけれど、相談したい。",
+                    "制約はないけれど、相談したい。",
+                }:
+                    self.assertEqual(typed[0].kind, "state")
+                    self.assertEqual(
+                        typed[0].semantic_frame.predicate_kind,
+                        "state",
+                    )
+                    self.assertEqual(
+                        typed[0].semantic_frame.polarity,
+                        "negative",
+                    )
+                    self.assertEqual(
+                        typed[0].semantic_frame.modality,
+                        "fact",
+                    )
+                    self.assertEqual(
+                        tuple(
+                            code
+                            for code in typed[0].semantic_frame.attribute_codes
+                            if code.startswith("operator:")
+                        ),
+                        ("operator:negation",),
+                    )
                 if memo == "メモを書いたけれど、少し落ち着いた。":
                     self.assertEqual(relation_rows[0].type, "contrast")
                     self.assertFalse(
@@ -9581,10 +9959,79 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                         len(set(appraisal_claims[0].response_object_refs)),
                         2,
                     )
+                if finite_host_relation_contribution is not None:
+                    finite_host_appraisals = tuple(
+                        claim.asserted_subjective_proposition
+                        for claim in subjective_plan.subjective_claim_rows
+                        if claim.asserted_subjective_proposition.content_kind
+                        is SubjectiveContentKind.APPRAISAL
+                    )
+                    self.assertEqual(len(finite_host_appraisals), 1)
+                    self.assertEqual(
+                        finite_host_appraisals[0].response_object_refs,
+                        finite_host_relation_contribution.semantic_refs,
+                    )
+                    self.assertEqual(
+                        finite_host_appraisals[0].focal_relation_ref,
+                        finite_host_relation_contribution.relation_basis_refs[0],
+                    )
                 result = stage1_composition_module.compose_stage1_from_projection(
                     phase_b
                 )
                 self.assertTrue(result.selected_candidate.sentence_units)
+                if finite_host_relation_contribution is not None:
+                    source_span = next(
+                        row
+                        for row in source.evidence_spans
+                        if row.span_id == typed[0].source_span_ids[0]
+                    )
+                    normalized_source = re.sub(
+                        r"\s+",
+                        " ",
+                        str(source_span.raw_text or "").replace("\u3000", " "),
+                    ).strip()
+                    finite_host_fragments = []
+                    for row in typed:
+                        scalar_rows = tuple(
+                            code
+                            for code in row.semantic_frame.attribute_codes
+                            if code.startswith(
+                                "source_fragment_scalar_range:"
+                            )
+                        )
+                        self.assertEqual(len(scalar_rows), 1)
+                        _prefix, start_text, end_text = scalar_rows[0].rsplit(
+                            ":", 2
+                        )
+                        finite_host_fragments.append(
+                            normalized_source[
+                                int(start_text) : int(end_text)
+                            ]
+                        )
+                    actual_japanese = "\n".join(
+                        unit.text
+                        for unit in result.selected_candidate.sentence_units
+                    )
+                    self.assertTrue(
+                        all(
+                            fragment in actual_japanese
+                            for fragment in finite_host_fragments
+                        )
+                    )
+                    if memo in {
+                        "大事ではないけれど、相談したい。",
+                        "価値がないけれど、相談したい。",
+                    }:
+                        self.assertNotIn("肯定の向きがあり", actual_japanese)
+                    if memo in {
+                        "難しくないけれど、相談したい。",
+                        "難しくなかったけれど、相談したい。",
+                        "難しくありませんけれど、相談したい。",
+                        "難しくありませんでしたけれど、相談したい。",
+                        "無理ではないけれど、相談したい。",
+                        "制約はないけれど、相談したい。",
+                    }:
+                        self.assertNotIn("制約があり", actual_japanese)
 
     def test_generic_affect_is_absorbed_by_same_target_specific_opportunity(
         self,
