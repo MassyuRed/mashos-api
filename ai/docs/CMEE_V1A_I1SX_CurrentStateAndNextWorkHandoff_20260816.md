@@ -1867,3 +1867,118 @@ PRODUCT_CREDIT = 0
 UNFINISHED_EXACT_ACTION = CHECKPOINT_3_3_FRESH_PRIVATE_EXACT4_EXACT1_RUN_ON_FROZEN_PAIR
 NEXT_CHECKPOINT = 3.3_NOT_STARTED
 ```
+
+## 41. Step 3.2 forward-resumability repair / successor-ready closure（2026-08-26）
+
+§40のpublic audit / bounded correctionは保持するが、`FROZEN_PRIVATE_INPUT_RETAINED=1`にはdurable owner / fresh readback proofがなく、§40のStep 3.2 completion claimは無効だった。旧withheld exact4はStep 0 Library envelope候補exact3からもlossless recoveryできず、Step 3.3を一度も実行しないまま`SUPERSEDED_BODY_UNAVAILABLE`とした。旧bodyを推測して「同じ4件」とはしない。
+
+new synthetic non-identifying exact4をnew generation V2へ固定し、user-owned nonpublic ChatGPT Libraryへ実bytes保存した。別fresh rootへのmaterializeでschema / exact4 / family各1 / raw SHA / canonical set digest、0700 directory / 0600 regular file / current owner / nlink 1 / no symlinkを一致確認し、local copyは削除した。Library physical file ID / version / URL、本文、per-case detail / digest、expected sentenceは本handoff、GitHub、public ZIP、chatへ出さない。
+
+全Step監査では、Step 3 / 7 private masterとreader-specific auxiliary、全named STOPのartifact disposition、transition decision-before-cleanup、Step 6 benchmark attempt、Ultra / Pro / Mashのnonrepeatable read attempt、Step 9 presentation / verdict immediate receipt、Step 4 identity loopも検出した。runnerは、旧sequential exact2 + stdout-only経路を廃止し、clean runtime activation / frozen input / dual identity / fixed attemptをirreversible marker前に照合した後だけ、known / withheld / body-free machineのfixed-name exact3をsame-filesystem stagingから`renameat2(RENAME_NOREPLACE)`でatomic commitする。machine nonclearもexact3を保存してexit 1とし、parallel / crash / second-write / precommit failureは既存slotを上書き・retryせずnamed terminalにする。current executable contractはCocolon final body §13.1–§13.13とcanonical v1/06 §54であり、旧§40 / v1/06 §53の相違を上書きする。
+
+committed exact3はcanonical JSON exact1のprivate review masterへlossless seal / fresh validateできる。validatorはmaster framingだけでなく、decoded known / private / machine packetのclosed nested schema、case count / order / family、frozen known rows、withheld V2 canonical set digest、known-visible / private / machine cross-bindingを再計算し、nested値を変更して全外側digestをcoherent rehashしたmasterもrejectする。body-free master receiptはoperation、`reader=PRO_ONLY`、`lifecycle=DELETE_AT_STEP3_7_AFTER_STEP3_6_DECISION_POSTVERIFY`、source run / retry / rerun exact countersを持つ。known-only auxiliaryはvalidated masterからだけ再構成し、Ultra-only / fresh-materialization / transition cleanupをbindする。Pro / Ultra / finalizerはfresh master / auxiliary receiptとsame activation / dual identitiesへexact bindし、finalizerはmachine / master / auxiliary / Ultra / Pro exact5だけを受け入れる。
+
+```text
+AUTHORITY = MASH_CURRENT_EXPLICIT_ALL_STEP_DESIGN_REPAIR_AND_STEP3_2_COMPLETION_20260826
+INVALIDATED_PRIOR_CHECKPOINT = SECTION_40_STEP3_2_COMPLETION_CLAIM_ONLY
+VALID_PRIOR_PUBLIC_AUDIT_AND_CORRECTION = RETAINED
+
+OLD_PRIVATE_PACKET_ID = CMEE_STAGE1_ADDITIONAL_CORRECTION_WITHHELD_EARLY_20260824_V1
+OLD_PRIVATE_SLOT_ID = PRIVATE_SLOT_WITHHELD_EARLY_20260824_V1
+OLD_PRIVATE_SET_DIGEST = 5f31461625397bd22746dcdad8c8d68f7f6c7d2e56c1dc62e177664ae365c59d
+OLD_PRIVATE_SET_STATE = SUPERSEDED_BODY_UNAVAILABLE_WITHOUT_STEP3_3_EXECUTION
+OLD_FROZEN_PRIVATE_INPUT_RETAINED_CLAIM = FALSE
+OLD_PACKET_SLOT_REUSE = 0
+
+NEW_PRIVATE_PACKET_GENERATION = V2
+NEW_PRIVATE_PACKET_ID = CMEE_STAGE1_WITHHELD_EARLY_DURABLE_20260826_V2
+NEW_PRIVATE_SLOT_ID = PRIVATE_SLOT_WITHHELD_EARLY_DURABLE_20260826_V2
+PRIVATE_DURABLE_OWNER_CLASS = CHATGPT_LIBRARY_USER_OWNED_NONPUBLIC
+PRIVATE_DURABLE_OWNER_ALIAS = Cocolon_CMEE_Stage1_WithheldExact4_DurableInput_20260826.json
+PRIVATE_DURABLE_PHYSICAL_ID_VERSION_URL_PUBLICATION = 0
+PRIVATE_INPUT_SCHEMA_VERSION = cocolon.cmee.stage1.withheld_early_input.v1
+PRIVATE_INPUT_COUNT = 4
+PRIVATE_INPUT_FAMILY_COUNTS = TENSION_1_TEMPORAL_CHANGE_1_HELP_SEEKING_1_UNFINISHED_1
+PRIVATE_INPUT_RAW_SHA256 = af718e82a6d9ed4e476f6d6b85f297272eef4790e1809cb6566d427e1f588a57
+PRIVATE_INPUT_CANONICAL_SET_DIGEST = 489dcf8763ff95893fd67030422e5af24f391d5f9594b899486749da3dbcc6a7
+PRIVATE_LIBRARY_CREATE = SUCCEEDED
+PRIVATE_LIBRARY_FRESH_MATERIALIZE_AND_READBACK = PASS
+LOCAL_PRIVATE_INPUT_COPIES_REMAINING = 0
+
+LANGUAGE_CORE_IDENTITY = ab4a6b5612a3912e9789ef1cc0983ce4f37a0e0657b76f49b430b1baea8755a2
+STAGE1_RUNTIME_INTEGRATION_IDENTITY = 49da471397d19828b4a2e8326f76d4309e7d36a716221a1a91e1959f4b44a91d
+RUNNER_SHA256 = fa80a5d77bfbfaa9ce34ec06b5494fff4b844e4d86a7a649714dae889b5a8d00
+RUNTIME_ACTIVATION_HEAD = THIS_STEP3_2_REPAIR_RUNTIME_CHECKPOINT_COMMIT
+DESIGN_ACTIVATION_HEAD = COCOLON_CANONICAL_V1_06_SECTION_54_COMMIT
+ACTIVATION_PAIR_OWNER = CURRENT_PR3_AND_PR30_RECEIPTS
+
+STEP2_COMPOSITION_TESTS = 20_OF_20_PASS
+STEP3_PUBLIC_SYNTHETIC_EARLY_HARNESS = 34_OF_34_PASS
+CONTRACT_TESTS = 141_OF_141_PASS
+VERTICAL_TESTS = 42_OF_42_PASS
+COMBINED_TESTS = 183_OF_183_PASS
+COMPILEALL = PASS
+DIFF_CHECK = PASS
+PRIVATE_ACTUAL_RUN / RETRY / RERUN = 0 / 0 / 0
+
+EARLY_WITHHELD_INPUT_SCHEMA_VERSION = cocolon.cmee.stage1.withheld_early_input.v1
+EARLY_WITHHELD_BODY_FREE_SCHEMA_VERSION = cocolon.cmee.stage1.withheld_early_machine_body_free.v2
+EARLY_BODY_FREE_PACKET_SCHEMA_VERSION = cocolon.cmee.stage1.early_actual_body_free.v4
+EARLY_HUMAN_READ_RESULT_SCHEMA_VERSION = cocolon.cmee.stage1.early_human_read_result.v4
+EARLY_ULTRA_RESULT_SCHEMA_VERSION = cocolon.cmee.stage1.early_ultra_known_technical_result.v5
+EARLY_FINAL_RECEIPT_SCHEMA_VERSION = cocolon.cmee.stage1.early_actual_final_body_free.v6
+EARLY_PRO_REVIEW_ATTEMPT_ID / READ / REREAD = EARLY_PRO_COMBINED_READ_ATTEMPT_01 / 1 / 0
+EARLY_ULTRA_REVIEW_ATTEMPT_ID / READ / REREAD = EARLY_ULTRA_KNOWN_READ_ATTEMPT_01 / 1 / 0
+EARLY_PRIVATE_PACKET_AND_BINDING_GENERATION = V2
+EARLY_RUN_EXACT3_SCHEMA_VERSION = cocolon.cmee.stage1.early_actual_run_exact3.v1
+EARLY_PRIVATE_REVIEW_MASTER_SCHEMA_VERSION = cocolon.cmee.stage1.private_review_output_master.v1
+EARLY_PRIVATE_REVIEW_MASTER_RECEIPT_SCHEMA_VERSION = cocolon.cmee.stage1.private_review_output_master_receipt.v1
+EARLY_PRIVATE_REVIEW_MASTER_READER = PRO_ONLY
+EARLY_PRIVATE_REVIEW_MASTER_LIFECYCLE = DELETE_AT_STEP3_7_AFTER_STEP3_6_DECISION_POSTVERIFY
+EARLY_KNOWN_REVIEW_AUXILIARY_SCHEMA_VERSION = cocolon.cmee.stage1.early_known_review_auxiliary.v1
+EARLY_KNOWN_REVIEW_AUXILIARY_RECEIPT_SCHEMA_VERSION = cocolon.cmee.stage1.early_known_review_auxiliary_receipt.v1
+EARLY_ACTUAL_ATTEMPT_ID = CMEE_STAGE1_STEP3_3_ATTEMPT_01
+EARLY_RUN_COMMIT = FIXED_STAGING_TO_FIXED_FINAL_RENAMEAT2_NOREPLACE
+RUNTIME_HEAD_AND_TRACKED_TREE_PREFLIGHT = REQUIRED_CLEAN
+DESIGN_HEAD_VERIFICATION = EXTERNAL_PR_PREFLIGHT_ATTESTATION
+MACHINE_NONCLEAR_EXACT3_DURABLE = REQUIRED
+PARALLEL_OR_CRASH_OR_PARTIAL_WRITE_RETRY = 0
+PRIVATE_REVIEW_DURABLE_FIRST_OWNER = SINGLE_LIBRARY_MASTER_EXACT3
+
+PUBLIC_BYTES_REMOTE_POSTVERIFIED = TRUE
+NONRECOMPUTABLE_INPUTS_DURABLE = TRUE
+DURABLE_OWNER_AND_RETRIEVAL_PROOF_VERIFIED = TRUE
+NEXT_SESSION_DRY_ACQUIRE_AND_DIGEST_VERIFY = PASS
+REQUIRED_ARTIFACT_ONLY_IN_SCRATCH_OR_TMP = FALSE
+SESSION_LIBRARY_CHECKPOINT_READBACK = PASS
+
+STEP3_2 = COMPLETE_SUCCESSOR_READY_REMOTE_POSTVERIFIED
+CURRENT_RESUME_CHECKPOINT = 3.3A_NOT_STARTED
+CURRENT_RESUME_WORK = STEP3_3A_FRESH_LIBRARY_ACQUIRE_AND_ATTEMPT_PREFLIGHT_ONLY
+STEP3_3B_ACTUAL_BLOCKED_UNTIL_3_3A_REMOTE_POSTVERIFIED = TRUE
+STEP3_COMPLETE = FALSE
+EARLY_ACTUAL_STATUS = NOT_RUN_ON_CURRENT_STEP3_2_REPAIR_ACTIVATION_PAIR
+FORMAL_EXACT8 = NOT_RUN
+PRODUCT_READ_EVALUATED = FALSE
+CANDIDATE_READY = FALSE
+STEP4 = NOT_STARTED
+COMMON_DEFECT_RETURN_COUNT = 2_OF_2_KEEP
+COUNTER_RESET / COUNTER_INCREMENT = 0 / 0
+NETWORK / EXTERNAL_AI / PROVIDER / BODY_SEND / COST = 0 / 0 / 0 / 0 / 0
+PUBLIC_API / DB / RN / PRODUCTION_EFFECT = 0 / 0 / 0 / 0
+PRIMARY_OUTCOME = ADMINISTRATIVE_FORWARD_RESUMABILITY_REPAIR_WITH_MINIMAL_DISABLED_IDENTITY_AND_TRANSACTION_FIX
+TECHNICAL_CREDIT = 0
+PRODUCT_CREDIT = 0
+AUTOMATIC_PROGRESSION = FALSE
+```
+
+次sessionは次のexact orderだけを行う。
+
+1. PR #3 / #30のcurrent receiptとactivation pairをfresh取得する。
+2. Libraryで`Cocolon_CMEE_Stage1_WithheldExact4_DurableInput_20260826.json`をtitle検索し、別fresh rootへmaterializeする。
+3. 本文をpublic出力せずschema / count / family / raw SHA / canonical set digestとfile boundaryを照合する。不一致・取得不能なら`DURABLE_PRIVATE_INPUT_UNAVAILABLE_STOP`で、別4件を生成しない。
+4. runtime checkout HEAD / tracked tree clean、current/frozen dual identity、same raw SHA / canonical set digest、`renameat2(RENAME_NOREPLACE)` capabilityをactual marker前に確認する。design headはPR #30のexternal preflightで照合する。
+5. fixed `CMEE_STAGE1_STEP3_3_ATTEMPT_01`、そのID由来のexclusive staging / final slot、fixed-name transactional exact3、single Library master slot、known-only auxiliary aliasを3.3a receiptとして両repoへremote postverifyする。
+6. 3.3a completion後だけfixed staging markerをatomic exclusive作成してfresh exact1 actual runへ進む。CLEAR / machine nonclearともexact3をatomic no-replace commitし、parallel / crash / partial writeは`RUN_RESULT_UNKNOWN_TERMINAL / RETRY=0`とする。
+7. 同じprotected orchestration内でlocal exact3をsingle nonpublic Library masterへ最初に保存・fresh readbackし、body-free machine receiptを両repoへpostverifyする。auxiliary lossはmasterから再構成し、actualを再実行しない。§41作成時点のactual run / retry / rerunは0である。
+8. machine CLEAR時だけ3.4aへ進む。machine nonclearは3.3d / common Fでterminal receipt後に全private artifactをretain / cleanup / unknown quarantineへ分類し、3.4a以降 / actual rerunを0にする。
