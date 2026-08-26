@@ -2255,3 +2255,64 @@ NEXT_CHECKPOINT = STEP3_4A_REQUIRES_FRESH_MASH_AUTHORITY
 ```
 
 このreceiptはmachine CLEARとStep 3.3 completionだけを記録する。human Product Read、known-only auxiliary、Step 3.4以降、formal exact8、candidate-ready、technical / Product creditを主張せず、自動進行しない。
+
+## 45. Step 3.4a known exact4 auxiliary completion（2026-08-26）
+
+Mashのcurrent explicit authorityにより、validated private review masterからfixed schema / kind / aliasのknown exact4 auxiliaryを固定runnerで派生した。auxiliaryはnonpublic durable ownerへ保存し、masterとauxiliaryを別のowner-only rootへbyte-blindにfresh materializeして再検証した。最終body-free receiptのoperationは`VALIDATED_FRESH_MATERIALIZATION`であり、auxiliary SHA / master SHA / known packet SHAの三者bindingはPASSした。master / withheld bodyのhuman readは0、Ultra readは0、actual rerunは0である。
+
+```text
+AUTHORITY = MASH_CURRENT_EXPLICIT_STEP3_4A_COMPLETION_20260826
+CHECKPOINT_ID = CMEE_STAGE1_STEP3_4A
+ENTRY_RUNTIME_HEAD = 7b7e3e4f2b3e93bbe311baae483c07f386f140f1
+ENTRY_DESIGN_HEAD = daeab552afba61bfb9863126f376de06865d9267
+RUNTIME_ACTIVATION_HEAD = 3d6f3499190f1465e57cdb102e1937d095cdd457
+DESIGN_ACTIVATION_HEAD = f46159ec204e3bf4b204896d1e39947d58d872c2
+RUNTIME_OUTCOME_RECEIPT_HEAD = PENDING_THIS_COMMIT
+DESIGN_OUTCOME_RECEIPT_HEAD = PENDING_COCOLON_COMMIT
+
+schema_version = cocolon.cmee.stage1.early_known_review_auxiliary_receipt.v1
+operation = VALIDATED_FRESH_MATERIALIZATION
+auxiliary_alias = Cocolon_CMEE_Stage1_EarlyKnownReviewAuxiliary_CMEE_STAGE1_STEP3_3_ATTEMPT_01.json
+auxiliary_kind = EARLY_KNOWN_VISIBLE_EXACT4
+early_attempt_id = CMEE_STAGE1_STEP3_3_ATTEMPT_01
+private_review_master_sha256 = 97f6afc5e086a8ca5cae1158c41b7cbb96a514d31000a08e3d72917dc6a8f5f1
+known_visible_packet_sha256 = cb6e0a1cc8624f681787a1b59dcffead893cacf10c5eecafeb86723e8cef9160
+early_known_review_auxiliary_sha256 = 1f485af6f538a75d046474fbf7eeaf63f14d966c97c65667e95ab33c92f33098
+reader = ULTRA_ONLY
+lifecycle = DELETE_AFTER_STEP3_6_TRANSITION
+body_payload_present = false
+private_text_published = false
+source_actual_run_count = 1
+source_actual_retry_count = 0
+source_actual_rerun_count = 0
+seal_or_validation_actual_run_invoked = false
+
+PRIVATE_REVIEW_MASTER_FRESH_MATERIALIZATION = PASS
+AUXILIARY_DURABLE_SAVE = PASS
+AUXILIARY_LIBRARY_FRESH_READBACK = PASS
+AUXILIARY_THREE_SHA_BINDING = PASS
+MASTER_BODY_HUMAN_READ / WITHHELD_BODY_HUMAN_READ / ULTRA_READ = 0 / 0 / 0
+STEP3_4A_ACTUAL_RUN / RETRY / RERUN = 0 / 0 / 0
+EXTERNAL_AI / PROVIDER / PRIVATE_BODY_SEND / EXTERNAL_COST = 0 / 0 / 0 / 0
+SOURCE_CHANGE / TEST_CHANGE / RUNNER_CHANGE = 0 / 0 / 0
+TARGETED_STEP3_4A_HARNESS = 1_OF_1_PASS
+PUBLIC_API / DB / RN / PRODUCTION_EFFECT = 0 / 0 / 0 / 0
+STRUCTURE_MAP_DELTA = NONE
+DURABLE_PRIVATE_MASTER_DISPOSITION = RETAIN_UNTIL_DECLARED_LIFECYCLE
+DURABLE_KNOWN_AUXILIARY_DISPOSITION = RETAIN_THROUGH_STEP3_6_THEN_DELETE
+UNCLASSIFIED_PRIVATE_ARTIFACT = 0
+
+CHECKPOINT_STATE = STEP3_4A_COMPLETE_PENDING_PAIRED_DESIGN_REMOTE_POSTVERIFY_AND_PUBLIC_SESSION_BUNDLE_READBACK
+STEP3_4A = COMPLETE
+STEP3_4B = NOT_STARTED
+FORMAL_EXACT8 = NOT_RUN
+PRODUCT_READ_EVALUATED = FALSE
+CANDIDATE_READY = FALSE
+TECHNICAL_CREDIT / PRODUCT_CREDIT = 0 / 0
+AUTOMATIC_RETRY / AUTOMATIC_PROGRESSION = 0 / 0
+CURRENT_AUTHORITY_EXHAUSTED_AFTER_STEP3_4A = TRUE
+PUBLIC_SESSION_BUNDLE = PENDING_AFTER_DUAL_REPO_REMOTE_POSTVERIFY
+NEXT_CHECKPOINT = STEP3_4B_REQUIRES_FRESH_MASH_AUTHORITY
+```
+
+このreceiptはknown exact4 auxiliaryの生成・durable save・fresh materialization検証だけを記録する。auxiliary本文、master / withheld本文、per-case値、member raw bytes / size / base64、physical Library locatorはGitHubへ公開していない。Step 3.4bのUltra exact-one read、human Product Read、formal exact8、candidate-ready、technical / Product creditを主張せず、自動進行しない。
