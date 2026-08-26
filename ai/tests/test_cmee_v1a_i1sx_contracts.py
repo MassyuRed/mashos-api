@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import ast
+import base64
+import errno
 import hashlib
 import io
 import inspect
@@ -14,6 +16,7 @@ from collections import Counter
 from dataclasses import fields, replace
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Mapping
 from unittest.mock import patch
 
 from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
@@ -12491,7 +12494,9 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         )
         self.assertEqual(rank_keys, tuple(sorted(rank_keys)))
 
-    def test_language_core_identity_is_independent_exact16_framed_digest(self) -> None:
+    def test_runtime_integration_identity_is_independent_exact16_framed_digest(
+        self,
+    ) -> None:
         module = stage1_composition_module
         repository_root = Path(__file__).resolve().parents[2]
         exact16_names = (
@@ -12512,7 +12517,9 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             "policy_and_enum_manifest",
             "normal_form_and_profile_manifest",
         )
-        payloads = module.language_core_identity_payloads(repository_root)
+        payloads = module.stage1_runtime_integration_identity_payloads(
+            repository_root
+        )
         self.assertEqual(tuple(name for name, _payload in payloads), exact16_names)
         self.assertEqual(len({name for name, _payload in payloads}), 16)
         for path, payload in payloads[:7]:
@@ -12786,12 +12793,126 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             framed.extend(len(payload).to_bytes(8, "big"))
             framed.extend(payload)
         independent_identity = hashlib.sha256(framed).hexdigest()
+        self.assertEqual(
+            independent_identity,
+            module.STAGE1_RUNTIME_INTEGRATION_IDENTITY,
+        )
+        self.assertEqual(
+            independent_identity,
+            module.compute_stage1_runtime_integration_identity(repository_root),
+        )
+        self.assertRegex(
+            module.STAGE1_RUNTIME_INTEGRATION_IDENTITY,
+            r"^[0-9a-f]{64}$",
+        )
+
+    def test_language_core_identity_is_transitive_owner_ast_and_step4_isolated(
+        self,
+    ) -> None:
+        module = stage1_composition_module
+        repository_root = Path(__file__).resolve().parents[2]
+        source_paths = (
+            module._COMPOSITION_PATH,
+            *module.LANGUAGE_CORE_EXTERNAL_PATHS,
+        )
+        expected_names = (
+            *(f"language_core_source_owner_ast:{path}" for path in source_paths),
+            "language_core_contract_manifest",
+            "construction_registry",
+            "emlis_expression_assets",
+            "response_object_reference_assets",
+            "functional_surface_assets",
+            "participant_lexeme_assets",
+            "structural_surface_assets",
+            "policy_and_enum_manifest",
+            "normal_form_and_profile_manifest",
+        )
+        payloads = module.language_core_identity_payloads(repository_root)
+        self.assertEqual(tuple(name for name, _payload in payloads), expected_names)
+        self.assertEqual(len(payloads), 16)
+        self.assertEqual(len({name for name, _payload in payloads}), 16)
+
+        seed_by_path = dict(module.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST)
+        for (name, payload), path in zip(payloads[:7], source_paths):
+            self.assertEqual(name, f"language_core_source_owner_ast:{path}")
+            projected = dict(json.loads(payload))
+            self.assertEqual(
+                projected["schema_version"],
+                module._LANGUAGE_CORE_SOURCE_OWNER_SCHEMA_VERSION,
+            )
+            self.assertEqual(projected["relative_path"], path)
+            self.assertEqual(
+                tuple(projected["seed_owner_names"]),
+                seed_by_path[path],
+            )
+            selected_names = {
+                bound_name
+                for row in projected["selected_declarations"]
+                for bound_name in dict(row)["bound_names"]
+            }
+            self.assertTrue(set(seed_by_path[path]).issubset(selected_names))
+            self.assertTrue(projected["selected_declarations"])
+
+        framed = bytearray(b"COCOLON_CMEE_STAGE1_LANGUAGE_CORE_IDENTITY_V2\x00")
+        for name, payload in payloads:
+            name_bytes = name.encode("utf-8")
+            framed.extend(len(name_bytes).to_bytes(8, "big"))
+            framed.extend(name_bytes)
+            framed.extend(len(payload).to_bytes(8, "big"))
+            framed.extend(payload)
+        independent_identity = hashlib.sha256(framed).hexdigest()
         self.assertEqual(independent_identity, module.LANGUAGE_CORE_IDENTITY)
         self.assertEqual(
             independent_identity,
             module.compute_language_core_identity(repository_root),
         )
         self.assertRegex(module.LANGUAGE_CORE_IDENTITY, r"^[0-9a-f]{64}$")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_root = Path(temporary)
+            for relative_path in source_paths:
+                target = temporary_root / relative_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((repository_root / relative_path).read_bytes())
+
+            step4_only_path = temporary_root / module.LANGUAGE_CORE_EXTERNAL_PATHS[0]
+            step4_only_path.write_text(
+                step4_only_path.read_text(encoding="utf-8")
+                + "\n\ndef _step4_only_unrelated_state_owner():\n"
+                + "    return 'STEP4_ONLY'\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                module.compute_language_core_identity(temporary_root),
+                module.LANGUAGE_CORE_IDENTITY,
+            )
+            self.assertNotEqual(
+                module.compute_stage1_runtime_integration_identity(
+                    temporary_root
+                ),
+                module.STAGE1_RUNTIME_INTEGRATION_IDENTITY,
+            )
+
+            composition_path = temporary_root / module._COMPOSITION_PATH
+            composition_source = composition_path.read_text(encoding="utf-8")
+            self.assertEqual(composition_source.count("enumerate(ordered[:2])"), 1)
+            composition_path.write_text(
+                composition_source.replace(
+                    "enumerate(ordered[:2])",
+                    "enumerate(ordered[:1])",
+                ),
+                encoding="utf-8",
+            )
+            self.assertNotEqual(
+                module.compute_language_core_identity(temporary_root),
+                module.LANGUAGE_CORE_IDENTITY,
+            )
+            self.assertNotEqual(
+                module.compute_stage1_runtime_integration_identity(
+                    temporary_root
+                ),
+                module.STAGE1_RUNTIME_INTEGRATION_IDENTITY,
+            )
 
 
 class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
@@ -12828,15 +12949,101 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         super().setUpClass()
+        standin_payload = cls._withheld_payload()
+        cls._STANDIN_RAW_TEXT = json.dumps(
+            standin_payload,
+            ensure_ascii=False,
+        )
+        cls._STANDIN_RAW_SHA256 = hashlib.sha256(
+            cls._STANDIN_RAW_TEXT.encode("utf-8")
+        ).hexdigest()
+        cls._STANDIN_SET_DIGEST = candidate_run_module._canonical_sha256(
+            standin_payload
+        )
+        cls._frozen_input_patchers = (
+            patch.object(
+                candidate_run_module,
+                "EARLY_FROZEN_WITHHELD_INPUT_RAW_SHA256",
+                cls._STANDIN_RAW_SHA256,
+            ),
+            patch.object(
+                candidate_run_module,
+                "EARLY_FROZEN_WITHHELD_SET_DIGEST",
+                cls._STANDIN_SET_DIGEST,
+            ),
+        )
+        for patcher in cls._frozen_input_patchers:
+            patcher.start()
         (
             cls.body_free_packet,
             cls.known_visible_packet,
             cls.private_packet,
         ) = candidate_run_module.run_early_actual(
-            withheld_private_payload=cls._withheld_payload(),
+            withheld_private_payload=standin_payload,
+            withheld_input_raw_sha256=cls._STANDIN_RAW_SHA256,
+            early_attempt_id=candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
             runtime_repo_head=cls._RUNTIME_HEAD,
             design_repo_head=cls._DESIGN_HEAD,
         )
+        cls.exact3_member_bytes = {
+            candidate_run_module.EARLY_RUN_KNOWN_VISIBLE_FILENAME: (
+                candidate_run_module._pretty_json_bytes(
+                    cls.known_visible_packet
+                )
+            ),
+            candidate_run_module.EARLY_RUN_PRIVATE_PACKET_FILENAME: (
+                candidate_run_module._pretty_json_bytes(cls.private_packet)
+            ),
+            candidate_run_module.EARLY_RUN_BODY_FREE_MACHINE_FILENAME: (
+                candidate_run_module._pretty_json_bytes(cls.body_free_packet)
+            ),
+        }
+        cls.private_review_master_bytes = (
+            candidate_run_module.build_early_private_review_master_bytes(
+                cls.exact3_member_bytes
+            )
+        )
+        cls.private_review_master_sha256 = hashlib.sha256(
+            cls.private_review_master_bytes
+        ).hexdigest()
+        (
+            cls.private_review_master_receipt,
+            reconstructed,
+        ) = candidate_run_module.validate_early_private_review_master_bytes(
+            cls.private_review_master_bytes,
+            expected_master_sha256=cls.private_review_master_sha256,
+        )
+        if reconstructed != cls.exact3_member_bytes:
+            raise AssertionError("private review master reconstruction drift")
+        cls.known_review_auxiliary_bytes = (
+            candidate_run_module.build_early_known_review_auxiliary_bytes(
+                master_bytes=cls.private_review_master_bytes,
+                private_review_master_receipt=(
+                    cls.private_review_master_receipt
+                ),
+            )
+        )
+        cls.known_review_auxiliary_sha256 = hashlib.sha256(
+            cls.known_review_auxiliary_bytes
+        ).hexdigest()
+        cls.known_review_auxiliary_receipt = (
+            candidate_run_module.validate_early_known_review_auxiliary_bytes(
+                cls.known_review_auxiliary_bytes,
+                expected_auxiliary_sha256=(
+                    cls.known_review_auxiliary_sha256
+                ),
+                master_bytes=cls.private_review_master_bytes,
+                private_review_master_receipt=(
+                    cls.private_review_master_receipt
+                ),
+            )
+        )
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        for patcher in reversed(cls._frozen_input_patchers):
+            patcher.stop()
+        super().tearDownClass()
 
     def _pro_human_result(
         self,
@@ -12853,14 +13060,38 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             ),
             "packet_id": candidate_run_module.WITHHELD_EARLY_PACKET_ID,
             "bounded_unit_id": candidate_run_module.EARLY_BOUNDED_UNIT_ID,
+            "early_attempt_id": candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+            "review_attempt_id": (
+                candidate_run_module.EARLY_PRO_COMBINED_READ_ATTEMPT_ID
+            ),
+            "read_count": 1,
+            "reread_count": 0,
             "runtime_repo_head": self._RUNTIME_HEAD,
             "design_repo_head": self._DESIGN_HEAD,
             "language_core_identity": (
                 candidate_run_module.STEP2_FROZEN_LANGUAGE_CORE_IDENTITY
             ),
+            "stage1_runtime_integration_identity": (
+                candidate_run_module
+                .STEP3_FROZEN_STAGE1_RUNTIME_INTEGRATION_IDENTITY
+            ),
+            "withheld_input_raw_sha256": (
+                candidate_run_module.EARLY_FROZEN_WITHHELD_INPUT_RAW_SHA256
+            ),
             "withheld_set_digest": self.body_free_packet[
                 "withheld_exact4_body_free"
             ]["withheld_set_digest"],
+            "private_packet_sha256": self.body_free_packet[
+                "private_packet_sha256"
+            ],
+            "body_free_machine_packet_sha256": (
+                candidate_run_module._canonical_sha256(
+                    self.body_free_packet
+                )
+            ),
+            "private_review_master_sha256": (
+                self.private_review_master_sha256
+            ),
             "reviewed_known_count": 4,
             "reviewed_withheld_count": 4,
             "body_payload_present": False,
@@ -12881,10 +13112,26 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             ),
             "packet_id": candidate_run_module.WITHHELD_EARLY_PACKET_ID,
             "bounded_unit_id": candidate_run_module.EARLY_BOUNDED_UNIT_ID,
+            "early_attempt_id": candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+            "review_attempt_id": (
+                candidate_run_module.EARLY_ULTRA_KNOWN_READ_ATTEMPT_ID
+            ),
+            "read_count": 1,
+            "reread_count": 0,
             "runtime_repo_head": self._RUNTIME_HEAD,
             "design_repo_head": self._DESIGN_HEAD,
             "language_core_identity": (
                 candidate_run_module.STEP2_FROZEN_LANGUAGE_CORE_IDENTITY
+            ),
+            "stage1_runtime_integration_identity": (
+                candidate_run_module
+                .STEP3_FROZEN_STAGE1_RUNTIME_INTEGRATION_IDENTITY
+            ),
+            "withheld_input_raw_sha256": (
+                candidate_run_module.EARLY_FROZEN_WITHHELD_INPUT_RAW_SHA256
+            ),
+            "withheld_set_digest": (
+                candidate_run_module.EARLY_FROZEN_WITHHELD_SET_DIGEST
             ),
             "known_visible_packet_sha256": (
                 candidate_run_module._canonical_sha256(
@@ -12896,10 +13143,29 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                     self.body_free_packet
                 )
             ),
+            "private_review_master_sha256": (
+                self.private_review_master_sha256
+            ),
+            "early_known_review_auxiliary_sha256": (
+                self.known_review_auxiliary_sha256
+            ),
             "reviewed_known_count": 4,
             "body_payload_present": False,
             "ultra_known_technical_invariant": result,
         }
+
+    def _materialize_exact3(self, private_root: Path) -> Path:
+        run_target = (
+            private_root
+            / candidate_run_module.EARLY_ACTUAL_RUN_DIRECTORY_NAME
+        )
+        run_target.mkdir(mode=0o700)
+        run_target.chmod(0o700)
+        for filename, raw in self.exact3_member_bytes.items():
+            member = run_target / filename
+            member.write_bytes(raw)
+            member.chmod(0o600)
+        return run_target
 
     def test_early_exact8_is_body_isolated_identity_bound_and_machine_clear(
         self,
@@ -12916,8 +13182,39 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             candidate_run_module.STEP2_FROZEN_LANGUAGE_CORE_IDENTITY,
         )
         self.assertEqual(
+            body_free["early_attempt_id"],
+            candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+        )
+        self.assertEqual(
+            body_free["stage1_runtime_integration_identity"],
+            candidate_run_module
+            .STEP3_FROZEN_STAGE1_RUNTIME_INTEGRATION_IDENTITY,
+        )
+        self.assertEqual(
             stage1_composition_module.compute_language_core_identity(),
             candidate_run_module.STEP2_FROZEN_LANGUAGE_CORE_IDENTITY,
+        )
+        self.assertEqual(
+            stage1_composition_module.compute_stage1_runtime_integration_identity(),
+            candidate_run_module.STEP3_FROZEN_STAGE1_RUNTIME_INTEGRATION_IDENTITY,
+        )
+        self.assertEqual(
+            withheld["stage1_runtime_integration_identity"],
+            body_free["stage1_runtime_integration_identity"],
+        )
+        self.assertEqual(
+            self.private_packet["stage1_runtime_integration_identity"],
+            body_free["stage1_runtime_integration_identity"],
+        )
+        self.assertEqual(
+            self.private_packet["private_packet_binding"][
+                "stage1_runtime_integration_identity"
+            ],
+            body_free["stage1_runtime_integration_identity"],
+        )
+        self.assertEqual(
+            body_free["private_packet_sha256"],
+            candidate_run_module._canonical_sha256(self.private_packet),
         )
         for result in (known, withheld):
             self.assertEqual(result["machine_invariant_result"], "CLEAR")
@@ -12931,7 +13228,10 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
         self.assertFalse(body_free["body_payload_present"])
         self.assertFalse(body_free["private_text_published"])
         self.assertEqual(body_free["early_human_read_result"], "NOT_RUN")
-        self.assertEqual(body_free["early_actual_status"], "NOT_RUN")
+        self.assertEqual(
+            body_free["early_actual_status"],
+            candidate_run_module.EARLY_MACHINE_ACTUAL_COMPLETED_STATUS,
+        )
 
         serialized = json.dumps(body_free, ensure_ascii=False, sort_keys=True)
         forbidden_keys: list[str] = []
@@ -12959,7 +13259,7 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
         )
         self.assertEqual(
             tuple(key for key in forbidden_keys if key.endswith("_digest")),
-            ("withheld_set_digest",),
+            ("withheld_set_digest", "withheld_set_digest"),
         )
         self.assertTrue(all("locator" not in key.lower() for key in forbidden_keys))
 
@@ -12984,6 +13284,28 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
         self.assertEqual(len(self.known_visible_packet["cases"]), 4)
         self.assertTrue(all(known_values))
         self.assertEqual(len(self.private_packet["withheld_cases"]), 4)
+
+    def test_early_run_fails_closed_on_runtime_integration_identity_drift(
+        self,
+    ) -> None:
+        with patch.object(
+            candidate_run_module,
+            "STEP3_FROZEN_STAGE1_RUNTIME_INTEGRATION_IDENTITY",
+            "0" * 64,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "early frozen runtime identity mismatch",
+            ):
+                candidate_run_module.run_early_actual(
+                    withheld_private_payload=self._withheld_payload(),
+                    withheld_input_raw_sha256=self._STANDIN_RAW_SHA256,
+                    early_attempt_id=(
+                        candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID
+                    ),
+                    runtime_repo_head=self._RUNTIME_HEAD,
+                    design_repo_head=self._DESIGN_HEAD,
+                )
 
     def test_early_exact8_calls_only_the_final_step2_production_chain(self) -> None:
         original_phase_a = stage1_response_module.build_subjective_planning_inputs
@@ -13023,6 +13345,10 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             body_free, _known_visible, _private = (
                 candidate_run_module.run_early_actual(
                     withheld_private_payload=self._withheld_payload(),
+                    withheld_input_raw_sha256=self._STANDIN_RAW_SHA256,
+                    early_attempt_id=(
+                        candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID
+                    ),
                     runtime_repo_head=self._RUNTIME_HEAD,
                     design_repo_head=self._DESIGN_HEAD,
                 )
@@ -13054,6 +13380,10 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             _body_free, known_visible, private_packet = (
                 candidate_run_module.run_early_actual(
                     withheld_private_payload=self._withheld_payload(),
+                    withheld_input_raw_sha256=self._STANDIN_RAW_SHA256,
+                    early_attempt_id=(
+                        candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID
+                    ),
                     runtime_repo_head=self._RUNTIME_HEAD,
                     design_repo_head=self._DESIGN_HEAD,
                 )
@@ -13139,6 +13469,8 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
         ):
             candidate_run_module.run_early_actual(
                 withheld_private_payload=valid,
+                withheld_input_raw_sha256=self._STANDIN_RAW_SHA256,
+                early_attempt_id=candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
                 runtime_repo_head="not-a-head",
                 design_repo_head=self._DESIGN_HEAD,
             )
@@ -13151,12 +13483,36 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             ),
             "packet_id": candidate_run_module.WITHHELD_EARLY_PACKET_ID,
             "bounded_unit_id": candidate_run_module.EARLY_BOUNDED_UNIT_ID,
+            "early_attempt_id": candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+            "review_attempt_id": (
+                candidate_run_module.EARLY_PRO_COMBINED_READ_ATTEMPT_ID
+            ),
+            "read_count": 1,
+            "reread_count": 0,
             "runtime_repo_head": self._RUNTIME_HEAD,
             "design_repo_head": self._DESIGN_HEAD,
             "language_core_identity": (
                 candidate_run_module.STEP2_FROZEN_LANGUAGE_CORE_IDENTITY
             ),
+            "stage1_runtime_integration_identity": (
+                candidate_run_module
+                .STEP3_FROZEN_STAGE1_RUNTIME_INTEGRATION_IDENTITY
+            ),
+            "withheld_input_raw_sha256": (
+                candidate_run_module.EARLY_FROZEN_WITHHELD_INPUT_RAW_SHA256
+            ),
             "withheld_set_digest": withheld["withheld_set_digest"],
+            "private_packet_sha256": self.body_free_packet[
+                "private_packet_sha256"
+            ],
+            "body_free_machine_packet_sha256": (
+                candidate_run_module._canonical_sha256(
+                    self.body_free_packet
+                )
+            ),
+            "private_review_master_sha256": (
+                self.private_review_master_sha256
+            ),
             "reviewed_known_count": 4,
             "reviewed_withheld_count": 4,
             "body_payload_present": False,
@@ -13168,6 +13524,9 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
         validated = candidate_run_module.validate_early_human_read_result(
             base,
             body_free_machine_packet=self.body_free_packet,
+            private_review_master_receipt=(
+                self.private_review_master_receipt
+            ),
         )
         self.assertEqual(validated, base)
 
@@ -13184,6 +13543,9 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 candidate_run_module.validate_early_human_read_result(
                     common,
                     body_free_machine_packet=self.body_free_packet,
+                    private_review_master_receipt=(
+                        self.private_review_master_receipt
+                    ),
                 ),
                 common,
             )
@@ -13197,13 +13559,26 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 candidate_run_module.validate_early_human_read_result(
                     ceiling,
                     body_free_machine_packet=self.body_free_packet,
+                    private_review_master_receipt=(
+                        self.private_review_master_receipt
+                    ),
                 ),
                 ceiling,
             )
 
         invalid_rows = (
+            {**base, "early_attempt_id": "CMEE_STAGE1_STEP3_3_ATTEMPT_02"},
+            {**base, "review_attempt_id": "EARLY_PRO_COMBINED_READ_ATTEMPT_02"},
+            {**base, "read_count": 0},
+            {**base, "read_count": True},
+            {**base, "reread_count": 1},
             {**base, "runtime_repo_head": "c" * 40},
+            {**base, "stage1_runtime_integration_identity": "0" * 64},
+            {**base, "withheld_input_raw_sha256": "0" * 64},
             {**base, "withheld_set_digest": "0" * 64},
+            {**base, "private_packet_sha256": "0" * 64},
+            {**base, "body_free_machine_packet_sha256": "0" * 64},
+            {**base, "private_review_master_sha256": "0" * 64},
             {**base, "reviewed_withheld_count": 3},
             {**base, "body_payload_present": True},
             {**base, "review_note": "free text is forbidden"},
@@ -13230,6 +13605,9 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                     candidate_run_module.validate_early_human_read_result(
                         invalid,
                         body_free_machine_packet=self.body_free_packet,
+                        private_review_master_receipt=(
+                            self.private_review_master_receipt
+                        ),
                     )
 
     def test_ultra_known_technical_result_is_exact_and_machine_bound(
@@ -13241,16 +13619,32 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 candidate_run_module.validate_ultra_known_technical_result(
                     payload,
                     body_free_machine_packet=self.body_free_packet,
+                    private_review_master_receipt=(
+                        self.private_review_master_receipt
+                    ),
+                    early_known_review_auxiliary_receipt=(
+                        self.known_review_auxiliary_receipt
+                    ),
                 ),
                 payload,
             )
 
         valid = self._ultra_known_result()
         invalid_rows = (
+            {**valid, "early_attempt_id": "CMEE_STAGE1_STEP3_3_ATTEMPT_02"},
+            {**valid, "review_attempt_id": "EARLY_ULTRA_KNOWN_READ_ATTEMPT_02"},
+            {**valid, "read_count": 0},
+            {**valid, "read_count": True},
+            {**valid, "reread_count": 1},
             {**valid, "runtime_repo_head": "c" * 40},
+            {**valid, "stage1_runtime_integration_identity": "0" * 64},
+            {**valid, "withheld_input_raw_sha256": "0" * 64},
+            {**valid, "withheld_set_digest": "0" * 64},
             {**valid, "known_visible_packet_sha256": "not-a-digest"},
             {**valid, "known_visible_packet_sha256": "0" * 64},
             {**valid, "body_free_machine_packet_sha256": "0" * 64},
+            {**valid, "private_review_master_sha256": "0" * 64},
+            {**valid, "early_known_review_auxiliary_sha256": "0" * 64},
             {**valid, "reviewed_known_count": 3},
             {**valid, "body_payload_present": True},
             {**valid, "ultra_known_technical_invariant": "PASS"},
@@ -13264,6 +13658,611 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 candidate_run_module.validate_ultra_known_technical_result(
                     invalid,
                     body_free_machine_packet=self.body_free_packet,
+                    private_review_master_receipt=(
+                        self.private_review_master_receipt
+                    ),
+                    early_known_review_auxiliary_receipt=(
+                        self.known_review_auxiliary_receipt
+                    ),
+                )
+
+    def test_private_review_master_is_canonical_reconstructable_and_tamper_closed(
+        self,
+    ) -> None:
+        master = json.loads(self.private_review_master_bytes.decode("utf-8"))
+        self.assertEqual(
+            master["schema_version"],
+            candidate_run_module.EARLY_PRIVATE_REVIEW_MASTER_SCHEMA_VERSION,
+        )
+        self.assertEqual(
+            master["master_alias"],
+            candidate_run_module.EARLY_PRIVATE_REVIEW_MASTER_ALIAS,
+        )
+        self.assertEqual(
+            master["master_kind"],
+            candidate_run_module.EARLY_PRIVATE_REVIEW_MASTER_KIND,
+        )
+        self.assertEqual(
+            master["member_order"],
+            list(candidate_run_module.EARLY_RUN_EXACT3_FILENAMES),
+        )
+        self.assertEqual(
+            self.private_review_master_bytes,
+            candidate_run_module._canonical_json_line_bytes(master),
+        )
+        for member in master["members"]:
+            self.assertEqual(member["media_type"], "application/json")
+            raw = base64.b64decode(member["raw_base64"], validate=True)
+            self.assertEqual(member["byte_size"], len(raw))
+            self.assertEqual(
+                member["sha256"], hashlib.sha256(raw).hexdigest()
+            )
+
+        receipt = self.private_review_master_receipt
+        receipt_text = json.dumps(receipt, sort_keys=True)
+        self.assertNotIn("master_byte_size", receipt)
+        self.assertNotIn("member_receipts", receipt)
+        self.assertNotIn("raw_base64", receipt_text)
+        self.assertNotIn("byte_size", receipt_text)
+        self.assertEqual(receipt["exact3_member_count"], 3)
+        self.assertEqual(receipt["source_actual_run_count"], 1)
+        self.assertEqual(receipt["source_actual_retry_count"], 0)
+        self.assertEqual(receipt["source_actual_rerun_count"], 0)
+        self.assertFalse(receipt["seal_or_validation_actual_run_invoked"])
+        self.assertEqual(receipt["reader"], "PRO_ONLY")
+        self.assertEqual(
+            receipt["lifecycle"],
+            "DELETE_AT_STEP3_7_AFTER_STEP3_6_DECISION_POSTVERIFY",
+        )
+        self.assertEqual(
+            receipt["body_free_machine_packet_sha256"],
+            candidate_run_module._canonical_sha256(self.body_free_packet),
+        )
+
+        tampered_masters = []
+        wrong_kind = json.loads(json.dumps(master))
+        wrong_kind["master_kind"] = "WRONG_KIND"
+        tampered_masters.append(wrong_kind)
+        wrong_order = json.loads(json.dumps(master))
+        wrong_order["member_order"] = list(reversed(wrong_order["member_order"]))
+        tampered_masters.append(wrong_order)
+        wrong_media = json.loads(json.dumps(master))
+        wrong_media["members"][0]["media_type"] = "text/plain"
+        tampered_masters.append(wrong_media)
+        wrong_base64 = json.loads(json.dumps(master))
+        wrong_base64["members"][1]["raw_base64"] = "e30="
+        tampered_masters.append(wrong_base64)
+        extra_field = json.loads(json.dumps(master))
+        extra_field["unexpected"] = False
+        tampered_masters.append(extra_field)
+        for index, tampered in enumerate(tampered_masters):
+            raw = candidate_run_module._canonical_json_line_bytes(tampered)
+            with self.subTest(index=index), self.assertRaisesRegex(
+                ValueError,
+                "early private review master invalid",
+            ):
+                candidate_run_module.validate_early_private_review_master_bytes(
+                    raw,
+                    expected_master_sha256=hashlib.sha256(raw).hexdigest(),
+                )
+
+    def test_known_visible_full_validator_rejects_rehashed_malformed_member(
+        self,
+    ) -> None:
+        malformed_rows = []
+        extra_case_field = json.loads(
+            json.dumps(self.known_visible_packet, ensure_ascii=False)
+        )
+        extra_case_field["cases"][0]["unexpected"] = False
+        malformed_rows.append(extra_case_field)
+        wrong_body_type = json.loads(
+            json.dumps(self.known_visible_packet, ensure_ascii=False)
+        )
+        wrong_body_type["cases"][0]["actual_japanese"] = ["not", "text"]
+        malformed_rows.append(wrong_body_type)
+        changed_frozen_input = json.loads(
+            json.dumps(self.known_visible_packet, ensure_ascii=False)
+        )
+        changed_frozen_input["cases"][0]["synthetic_input"]["memo"] += "改変"
+        malformed_rows.append(changed_frozen_input)
+        wrong_invariant_type = json.loads(
+            json.dumps(self.known_visible_packet, ensure_ascii=False)
+        )
+        wrong_invariant_type["cases"][0]["machine_invariant"][
+            "machine_invariant_clear"
+        ] = 1
+        malformed_rows.append(wrong_invariant_type)
+
+        for index, malformed in enumerate(malformed_rows):
+            machine = json.loads(
+                json.dumps(self.body_free_packet, ensure_ascii=False)
+            )
+            machine["known_exact4_body_free"][
+                "known_visible_packet_sha256"
+            ] = candidate_run_module._canonical_sha256(malformed)
+            with self.subTest(index=index), self.assertRaisesRegex(
+                ValueError,
+                "early known visible packet invalid",
+            ):
+                candidate_run_module._validate_early_exact3_payloads(
+                    body_free_machine_packet=machine,
+                    known_visible_packet=malformed,
+                    private_packet=self.private_packet,
+                )
+
+            member_bytes = {
+                candidate_run_module.EARLY_RUN_KNOWN_VISIBLE_FILENAME: (
+                    candidate_run_module._pretty_json_bytes(malformed)
+                ),
+                candidate_run_module.EARLY_RUN_PRIVATE_PACKET_FILENAME: (
+                    self.exact3_member_bytes[
+                        candidate_run_module.EARLY_RUN_PRIVATE_PACKET_FILENAME
+                    ]
+                ),
+                candidate_run_module.EARLY_RUN_BODY_FREE_MACHINE_FILENAME: (
+                    candidate_run_module._pretty_json_bytes(machine)
+                ),
+            }
+            with self.subTest(index=index, path="master"), self.assertRaisesRegex(
+                ValueError,
+                "early known visible packet invalid",
+            ):
+                candidate_run_module.build_early_private_review_master_bytes(
+                    member_bytes
+                )
+
+    def test_private_full_validator_rejects_coherently_rehashed_nested_tamper(
+        self,
+    ) -> None:
+        malformed_packets = []
+        changed_withheld = json.loads(
+            json.dumps(self.private_packet, ensure_ascii=False)
+        )
+        changed_withheld["withheld_cases"][0][
+            "synthetic_input_private"
+        ]["memo"] += "改変"
+        malformed_packets.append(changed_withheld)
+        changed_known_candidate = json.loads(
+            json.dumps(self.private_packet, ensure_ascii=False)
+        )
+        changed_known_candidate["known_cases"][0]["candidate_private"] += (
+            "改変。"
+        )
+        malformed_packets.append(changed_known_candidate)
+        extra_nested_key = json.loads(
+            json.dumps(self.private_packet, ensure_ascii=False)
+        )
+        extra_nested_key["withheld_cases"][0]["unexpected"] = False
+        malformed_packets.append(extra_nested_key)
+        wrong_summary_type = json.loads(
+            json.dumps(self.private_packet, ensure_ascii=False)
+        )
+        wrong_summary_type["withheld_cases"][0][
+            "machine_invariant_body_free"
+        ]["machine_invariant_clear"] = 1
+        malformed_packets.append(wrong_summary_type)
+
+        for index, malformed in enumerate(malformed_packets):
+            machine = json.loads(
+                json.dumps(self.body_free_packet, ensure_ascii=False)
+            )
+            machine["private_packet_sha256"] = (
+                candidate_run_module._canonical_sha256(malformed)
+            )
+            with self.subTest(index=index), self.assertRaisesRegex(
+                ValueError,
+                "early private packet (nested body|binding) invalid",
+            ):
+                candidate_run_module._validate_early_exact3_payloads(
+                    body_free_machine_packet=machine,
+                    known_visible_packet=self.known_visible_packet,
+                    private_packet=malformed,
+                )
+
+            member_bytes = {
+                candidate_run_module.EARLY_RUN_KNOWN_VISIBLE_FILENAME: (
+                    self.exact3_member_bytes[
+                        candidate_run_module.EARLY_RUN_KNOWN_VISIBLE_FILENAME
+                    ]
+                ),
+                candidate_run_module.EARLY_RUN_PRIVATE_PACKET_FILENAME: (
+                    candidate_run_module._pretty_json_bytes(malformed)
+                ),
+                candidate_run_module.EARLY_RUN_BODY_FREE_MACHINE_FILENAME: (
+                    candidate_run_module._pretty_json_bytes(machine)
+                ),
+            }
+            with self.subTest(index=index, path="master"), self.assertRaisesRegex(
+                ValueError,
+                "early private packet (nested body|binding) invalid",
+            ):
+                candidate_run_module.build_early_private_review_master_bytes(
+                    member_bytes
+                )
+
+    def test_private_review_master_receipt_is_fresh_and_generation_bound(
+        self,
+    ) -> None:
+        validated = (
+            candidate_run_module.validate_early_private_review_master_receipt(
+                self.private_review_master_receipt,
+                body_free_machine_packet=self.body_free_packet,
+            )
+        )
+        self.assertEqual(validated, self.private_review_master_receipt)
+        self.assertEqual(validated["reader"], "PRO_ONLY")
+        self.assertEqual(
+            validated["lifecycle"],
+            "DELETE_AT_STEP3_7_AFTER_STEP3_6_DECISION_POSTVERIFY",
+        )
+        invalid_receipts = []
+        for field, value in (
+            ("early_attempt_id", "CMEE_STAGE1_STEP3_3_ATTEMPT_02"),
+            ("runtime_repo_head", "c" * 40),
+            ("language_core_identity", "0" * 64),
+            ("withheld_input_raw_sha256", "0" * 64),
+            ("withheld_set_digest", "0" * 64),
+            ("known_visible_packet_sha256", "0" * 64),
+            ("private_packet_sha256", "0" * 64),
+            ("body_free_machine_packet_sha256", "0" * 64),
+            ("exact3_member_count", 2),
+            ("source_actual_run_count", 0),
+            ("seal_or_validation_actual_run_invoked", True),
+            ("reader", "ULTRA_ONLY"),
+            ("lifecycle", "DELETE_TOO_EARLY"),
+        ):
+            invalid_receipts.append(
+                {**self.private_review_master_receipt, field: value}
+            )
+        invalid_receipts.append(
+            {**self.private_review_master_receipt, "unexpected": False}
+        )
+        for index, invalid in enumerate(invalid_receipts):
+            with self.subTest(index=index), self.assertRaisesRegex(
+                ValueError,
+                "early private review master receipt invalid",
+            ):
+                candidate_run_module.validate_early_private_review_master_receipt(
+                    invalid,
+                    body_free_machine_packet=self.body_free_packet,
+                )
+
+        local_seal_receipt = {
+            **self.private_review_master_receipt,
+            "operation": "SEALED_NEW",
+        }
+        with self.assertRaisesRegex(
+            ValueError,
+            "early human read result invalid",
+        ):
+            candidate_run_module.validate_early_human_read_result(
+                self._pro_human_result(),
+                body_free_machine_packet=self.body_free_packet,
+                private_review_master_receipt=local_seal_receipt,
+            )
+
+        mixed_receipt = {
+            **self.private_review_master_receipt,
+            "private_review_master_sha256": "0" * 64,
+        }
+        with self.assertRaisesRegex(
+            ValueError,
+            "early (known review auxiliary receipt|human read result|final result generation binding) invalid",
+        ):
+            candidate_run_module.finalize_early_actual_body_free(
+                body_free_machine_packet=self.body_free_packet,
+                private_review_master_receipt=mixed_receipt,
+                early_known_review_auxiliary_receipt=(
+                    self.known_review_auxiliary_receipt
+                ),
+                pro_human_read_result=self._pro_human_result(),
+                ultra_known_technical_result=self._ultra_known_result(),
+            )
+
+    def test_private_review_master_cli_seals_validates_and_reads_owner_only(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            private_root = (Path(temporary_directory) / "private-root").resolve()
+            private_root.mkdir(mode=0o700)
+            private_root.chmod(0o700)
+            run_target = self._materialize_exact3(private_root)
+            master_target = (
+                private_root
+                / candidate_run_module.EARLY_PRIVATE_REVIEW_MASTER_ALIAS
+            )
+
+            def invoke(arguments: tuple[str, ...]) -> tuple[int, dict[str, object]]:
+                stdout = io.StringIO()
+                with (
+                    patch.object(
+                        candidate_run_module,
+                        "PRIVATE_OUTPUT_ROOT",
+                        private_root,
+                    ),
+                    patch.object(
+                        candidate_run_module.sys,
+                        "argv",
+                        ("cmee-v1a-candidate-run", *arguments),
+                    ),
+                    patch.object(candidate_run_module.sys, "stdout", stdout),
+                    patch.object(
+                        candidate_run_module,
+                        "run_early_actual",
+                        side_effect=AssertionError("actual must not rerun"),
+                    ) as actual,
+                ):
+                    code = candidate_run_module.main()
+                actual.assert_not_called()
+                return code, json.loads(stdout.getvalue())
+
+            seal_args = (
+                "--seal-early-private-review-master",
+                "--early-attempt-id",
+                candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+                "--early-run-output-dir",
+                str(run_target),
+                "--early-private-review-master",
+                str(master_target),
+            )
+            code, sealed = invoke(seal_args)
+            self.assertEqual(code, 0)
+            self.assertEqual(sealed["operation"], "SEALED_NEW")
+            self.assertEqual(master_target.read_bytes(), self.private_review_master_bytes)
+            self.assertEqual(master_target.stat().st_mode & 0o777, 0o600)
+            _code, sealed_again = invoke(seal_args)
+            self.assertEqual(
+                sealed_again["operation"], "SEALED_IDENTICAL_EXISTING"
+            )
+
+            validate_args = (
+                "--validate-early-private-review-master",
+                "--early-attempt-id",
+                candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+                "--early-private-review-master",
+                str(master_target),
+                "--expected-private-review-master-sha256",
+                self.private_review_master_sha256,
+            )
+            _code, fresh = invoke(validate_args)
+            self.assertEqual(
+                fresh["operation"], "VALIDATED_FRESH_MATERIALIZATION"
+            )
+            self.assertEqual(fresh, self.private_review_master_receipt)
+
+            master_target.chmod(0o640)
+            with (
+                patch.object(
+                    candidate_run_module,
+                    "PRIVATE_OUTPUT_ROOT",
+                    private_root,
+                ),
+                self.assertRaisesRegex(
+                    ValueError,
+                    "early private review master path invalid",
+                ),
+            ):
+                candidate_run_module._read_private_review_master_file(
+                    master_target
+                )
+            master_target.chmod(0o600)
+            hardlink = private_root / "master-hardlink.json"
+            os.link(master_target, hardlink)
+            with (
+                patch.object(
+                    candidate_run_module,
+                    "PRIVATE_OUTPUT_ROOT",
+                    private_root,
+                ),
+                self.assertRaisesRegex(
+                    ValueError,
+                    "early private review master path invalid",
+                ),
+            ):
+                candidate_run_module._read_private_review_master_file(
+                    master_target
+                )
+            hardlink.unlink()
+
+    def test_known_review_auxiliary_cli_is_master_derived_and_body_free(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            private_root = (Path(temporary_directory) / "private-root").resolve()
+            private_root.mkdir(mode=0o700)
+            private_root.chmod(0o700)
+            master_target = (
+                private_root
+                / candidate_run_module.EARLY_PRIVATE_REVIEW_MASTER_ALIAS
+            )
+            master_target.write_bytes(self.private_review_master_bytes)
+            master_target.chmod(0o600)
+            master_receipt_path = Path(temporary_directory) / "master-receipt.json"
+            master_receipt_path.write_text(
+                json.dumps(self.private_review_master_receipt),
+                encoding="utf-8",
+            )
+            auxiliary_target = (
+                private_root
+                / candidate_run_module.EARLY_KNOWN_REVIEW_AUXILIARY_ALIAS
+            )
+
+            def invoke(arguments: tuple[str, ...]) -> tuple[int, dict[str, object]]:
+                stdout = io.StringIO()
+                with (
+                    patch.object(
+                        candidate_run_module,
+                        "PRIVATE_OUTPUT_ROOT",
+                        private_root,
+                    ),
+                    patch.object(
+                        candidate_run_module.sys,
+                        "argv",
+                        ("cmee-v1a-candidate-run", *arguments),
+                    ),
+                    patch.object(candidate_run_module.sys, "stdout", stdout),
+                    patch.object(
+                        candidate_run_module,
+                        "run_early_actual",
+                        side_effect=AssertionError("actual must not rerun"),
+                    ) as actual,
+                ):
+                    code = candidate_run_module.main()
+                actual.assert_not_called()
+                return code, json.loads(stdout.getvalue())
+
+            common_args = (
+                "--early-attempt-id",
+                candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+                "--early-private-review-master",
+                str(master_target),
+                "--early-master-body-free-input",
+                str(master_receipt_path),
+                "--early-known-review-auxiliary",
+                str(auxiliary_target),
+            )
+            code, sealed = invoke(
+                ("--seal-early-known-review-auxiliary", *common_args)
+            )
+            self.assertEqual(code, 0)
+            self.assertEqual(sealed["operation"], "SEALED_NEW")
+            self.assertEqual(sealed["reader"], "ULTRA_ONLY")
+            self.assertEqual(
+                sealed["lifecycle"], "DELETE_AFTER_STEP3_6_TRANSITION"
+            )
+            self.assertFalse(sealed["body_payload_present"])
+            self.assertEqual(sealed["source_actual_run_count"], 1)
+            self.assertEqual(sealed["source_actual_retry_count"], 0)
+            self.assertEqual(sealed["source_actual_rerun_count"], 0)
+            self.assertFalse(
+                sealed["seal_or_validation_actual_run_invoked"]
+            )
+            self.assertEqual(
+                auxiliary_target.read_bytes(),
+                self.known_review_auxiliary_bytes,
+            )
+            self.assertEqual(auxiliary_target.stat().st_mode & 0o777, 0o600)
+            serialized_receipt = json.dumps(sealed, ensure_ascii=False)
+            self.assertNotIn("known_visible_payload", serialized_receipt)
+            for case in self.known_visible_packet["cases"]:
+                self.assertNotIn(case["actual_japanese"], serialized_receipt)
+
+            _code, sealed_again = invoke(
+                ("--seal-early-known-review-auxiliary", *common_args)
+            )
+            self.assertEqual(
+                sealed_again["operation"], "SEALED_IDENTICAL_EXISTING"
+            )
+            _code, fresh = invoke(
+                (
+                    "--validate-early-known-review-auxiliary",
+                    *common_args,
+                    "--expected-early-known-review-auxiliary-sha256",
+                    self.known_review_auxiliary_sha256,
+                )
+            )
+            self.assertEqual(
+                fresh["operation"], "VALIDATED_FRESH_MATERIALIZATION"
+            )
+            self.assertEqual(
+                fresh["early_known_review_auxiliary_sha256"],
+                self.known_review_auxiliary_sha256,
+            )
+            self.assertEqual(
+                candidate_run_module.validate_early_known_review_auxiliary_receipt(
+                    fresh,
+                    body_free_machine_packet=self.body_free_packet,
+                    private_review_master_receipt=(
+                        self.private_review_master_receipt
+                    ),
+                ),
+                fresh,
+            )
+            with self.assertRaisesRegex(
+                ValueError,
+                "early Ultra known technical result invalid",
+            ):
+                candidate_run_module.validate_ultra_known_technical_result(
+                    self._ultra_known_result(),
+                    body_free_machine_packet=self.body_free_packet,
+                    private_review_master_receipt=(
+                        self.private_review_master_receipt
+                    ),
+                    early_known_review_auxiliary_receipt=sealed,
+                )
+            mixed_auxiliary_receipt = {
+                **fresh,
+                "early_known_review_auxiliary_sha256": "0" * 64,
+            }
+            with self.assertRaisesRegex(
+                ValueError,
+                "early Ultra known technical result invalid",
+            ):
+                candidate_run_module.validate_ultra_known_technical_result(
+                    self._ultra_known_result(),
+                    body_free_machine_packet=self.body_free_packet,
+                    private_review_master_receipt=(
+                        self.private_review_master_receipt
+                    ),
+                    early_known_review_auxiliary_receipt=(
+                        mixed_auxiliary_receipt
+                    ),
+                )
+
+            auxiliary_target.chmod(0o640)
+            with (
+                patch.object(
+                    candidate_run_module,
+                    "PRIVATE_OUTPUT_ROOT",
+                    private_root,
+                ),
+                self.assertRaisesRegex(
+                    ValueError,
+                    "early known review auxiliary path invalid",
+                ),
+            ):
+                candidate_run_module._read_early_known_review_auxiliary_file(
+                    auxiliary_target
+                )
+            auxiliary_target.chmod(0o600)
+            auxiliary_hardlink = private_root / "auxiliary-hardlink.json"
+            os.link(auxiliary_target, auxiliary_hardlink)
+            with (
+                patch.object(
+                    candidate_run_module,
+                    "PRIVATE_OUTPUT_ROOT",
+                    private_root,
+                ),
+                self.assertRaisesRegex(
+                    ValueError,
+                    "early known review auxiliary path invalid",
+                ),
+            ):
+                candidate_run_module._read_early_known_review_auxiliary_file(
+                    auxiliary_target
+                )
+            auxiliary_hardlink.unlink()
+
+            tampered = json.loads(
+                self.known_review_auxiliary_bytes.decode("utf-8")
+            )
+            tampered["known_visible_payload"]["case_count"] = 3
+            tampered_bytes = candidate_run_module._canonical_json_line_bytes(
+                tampered
+            )
+            with self.assertRaisesRegex(
+                ValueError,
+                "early known review auxiliary invalid",
+            ):
+                candidate_run_module.validate_early_known_review_auxiliary_bytes(
+                    tampered_bytes,
+                    expected_auxiliary_sha256=hashlib.sha256(
+                        tampered_bytes
+                    ).hexdigest(),
+                    master_bytes=self.private_review_master_bytes,
+                    private_review_master_receipt=(
+                        self.private_review_master_receipt
+                    ),
                 )
 
     def test_exact3_body_free_finalizer_observes_only_all_clear(self) -> None:
@@ -13274,6 +14273,12 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
         ultra_clear = self._ultra_known_result()
         receipt = candidate_run_module.finalize_early_actual_body_free(
             body_free_machine_packet=self.body_free_packet,
+            private_review_master_receipt=(
+                self.private_review_master_receipt
+            ),
+            early_known_review_auxiliary_receipt=(
+                self.known_review_auxiliary_receipt
+            ),
             pro_human_read_result=pro_clear,
             ultra_known_technical_result=ultra_clear,
         )
@@ -13287,6 +14292,23 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             "LANGUAGE_VIABILITY_OBSERVED",
         )
         self.assertTrue(receipt["all_three_clear"])
+        self.assertEqual(
+            receipt["early_attempt_id"],
+            candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+        )
+        self.assertEqual(
+            receipt["stage1_runtime_integration_identity"],
+            candidate_run_module
+            .STEP3_FROZEN_STAGE1_RUNTIME_INTEGRATION_IDENTITY,
+        )
+        self.assertEqual(
+            receipt["withheld_input_raw_sha256"],
+            candidate_run_module.EARLY_FROZEN_WITHHELD_INPUT_RAW_SHA256,
+        )
+        self.assertEqual(
+            receipt["withheld_set_digest"],
+            candidate_run_module.EARLY_FROZEN_WITHHELD_SET_DIGEST,
+        )
         self.assertEqual(
             receipt["pro_body_free_early_human_read_result"], "CLEAR"
         )
@@ -13304,6 +14326,45 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             receipt["body_free_machine_packet_sha256"],
             candidate_run_module._canonical_sha256(self.body_free_packet),
         )
+        self.assertEqual(
+            receipt["private_packet_sha256"],
+            candidate_run_module._canonical_sha256(self.private_packet),
+        )
+        self.assertEqual(
+            receipt["private_review_master_sha256"],
+            self.private_review_master_sha256,
+        )
+        self.assertEqual(
+            receipt["private_review_master_receipt_sha256"],
+            candidate_run_module._canonical_sha256(
+                self.private_review_master_receipt
+            ),
+        )
+        self.assertEqual(
+            receipt["early_known_review_auxiliary_sha256"],
+            self.known_review_auxiliary_sha256,
+        )
+        self.assertEqual(
+            receipt["early_known_review_auxiliary_receipt_sha256"],
+            candidate_run_module._canonical_sha256(
+                self.known_review_auxiliary_receipt
+            ),
+        )
+        self.assertEqual(receipt["source_actual_run_count"], 1)
+        self.assertEqual(receipt["source_actual_retry_count"], 0)
+        self.assertEqual(receipt["source_actual_rerun_count"], 0)
+        self.assertEqual(
+            receipt["pro_review_attempt_id"],
+            candidate_run_module.EARLY_PRO_COMBINED_READ_ATTEMPT_ID,
+        )
+        self.assertEqual(receipt["pro_read_count"], 1)
+        self.assertEqual(receipt["pro_reread_count"], 0)
+        self.assertEqual(
+            receipt["ultra_review_attempt_id"],
+            candidate_run_module.EARLY_ULTRA_KNOWN_READ_ATTEMPT_ID,
+        )
+        self.assertEqual(receipt["ultra_read_count"], 1)
+        self.assertEqual(receipt["ultra_reread_count"], 0)
         self.assertEqual(
             receipt["pro_human_read_result_sha256"],
             candidate_run_module._canonical_sha256(pro_clear),
@@ -13333,12 +14394,64 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 nonclear = (
                     candidate_run_module.finalize_early_actual_body_free(
                         body_free_machine_packet=self.body_free_packet,
+                        private_review_master_receipt=(
+                            self.private_review_master_receipt
+                        ),
+                        early_known_review_auxiliary_receipt=(
+                            self.known_review_auxiliary_receipt
+                        ),
                         pro_human_read_result=pro,
                         ultra_known_technical_result=ultra,
                     )
                 )
                 self.assertFalse(nonclear["all_three_clear"])
-                self.assertEqual(nonclear["early_actual_status"], "NOT_RUN")
+                self.assertEqual(
+                    nonclear["early_actual_status"],
+                    candidate_run_module.EARLY_ACTUAL_REVIEWED_NONCLEAR_STATUS,
+                )
+
+        for field, value in (
+            ("review_attempt_id", "EARLY_PRO_COMBINED_READ_ATTEMPT_02"),
+            ("read_count", 0),
+            ("reread_count", 1),
+        ):
+            with self.subTest(reader="Pro", field=field), self.assertRaisesRegex(
+                ValueError,
+                "early human read result invalid",
+            ):
+                candidate_run_module.finalize_early_actual_body_free(
+                    body_free_machine_packet=self.body_free_packet,
+                    private_review_master_receipt=(
+                        self.private_review_master_receipt
+                    ),
+                    early_known_review_auxiliary_receipt=(
+                        self.known_review_auxiliary_receipt
+                    ),
+                    pro_human_read_result={**pro_clear, field: value},
+                    ultra_known_technical_result=ultra_clear,
+                )
+        for field, value in (
+            ("review_attempt_id", "EARLY_ULTRA_KNOWN_READ_ATTEMPT_02"),
+            ("read_count", 0),
+            ("reread_count", 1),
+        ):
+            with self.subTest(
+                reader="Ultra", field=field
+            ), self.assertRaisesRegex(
+                ValueError,
+                "early Ultra known technical result invalid",
+            ):
+                candidate_run_module.finalize_early_actual_body_free(
+                    body_free_machine_packet=self.body_free_packet,
+                    private_review_master_receipt=(
+                        self.private_review_master_receipt
+                    ),
+                    early_known_review_auxiliary_receipt=(
+                        self.known_review_auxiliary_receipt
+                    ),
+                    pro_human_read_result=pro_clear,
+                    ultra_known_technical_result={**ultra_clear, field: value},
+                )
 
         tampered_machine = json.loads(
             json.dumps(self.body_free_packet, ensure_ascii=False)
@@ -13348,24 +14461,46 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
         ] = "0" * 64
         with self.assertRaisesRegex(
             ValueError,
-            "early Ultra known technical result invalid",
+            "early (private review master receipt|human read result|Ultra known technical result) invalid",
         ):
             candidate_run_module.finalize_early_actual_body_free(
                 body_free_machine_packet=tampered_machine,
+                private_review_master_receipt=(
+                    self.private_review_master_receipt
+                ),
+                early_known_review_auxiliary_receipt=(
+                    self.known_review_auxiliary_receipt
+                ),
                 pro_human_read_result=pro_clear,
                 ultra_known_technical_result=ultra_clear,
             )
 
-    def test_exact3_finalizer_cli_clear_nonclear_and_invalid_drift(
+    def test_exact5_finalizer_cli_clear_nonclear_and_invalid_drift(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             machine_path = root / "machine.json"
+            master_receipt_path = root / "master-receipt.json"
+            auxiliary_receipt_path = root / "auxiliary-receipt.json"
             pro_path = root / "pro.json"
             ultra_path = root / "ultra.json"
             machine_path.write_text(
                 json.dumps(self.body_free_packet, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            master_receipt_path.write_text(
+                json.dumps(
+                    self.private_review_master_receipt,
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            auxiliary_receipt_path.write_text(
+                json.dumps(
+                    self.known_review_auxiliary_receipt,
+                    ensure_ascii=False,
+                ),
                 encoding="utf-8",
             )
 
@@ -13389,6 +14524,10 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                             "--finalize-early-actual",
                             "--early-machine-body-free-input",
                             str(machine_path),
+                            "--early-master-body-free-input",
+                            str(master_receipt_path),
+                            "--early-known-auxiliary-body-free-input",
+                            str(auxiliary_receipt_path),
                             "--early-pro-body-free-input",
                             str(pro_path),
                             "--early-ultra-body-free-input",
@@ -13416,7 +14555,7 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             self.assertEqual(nonclear_code, 1)
             self.assertEqual(
                 json.loads(nonclear_stdout)["early_actual_status"],
-                "NOT_RUN",
+                candidate_run_module.EARLY_ACTUAL_REVIEWED_NONCLEAR_STATUS,
             )
 
             invalid_ultra = {
@@ -13442,6 +14581,10 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                         "--finalize-early-actual",
                         "--early-machine-body-free-input",
                         str(machine_path),
+                        "--early-master-body-free-input",
+                        str(master_receipt_path),
+                        "--early-known-auxiliary-body-free-input",
+                        str(auxiliary_receipt_path),
                         "--early-pro-body-free-input",
                         str(pro_path),
                         "--early-ultra-body-free-input",
@@ -13467,12 +14610,36 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             ),
             "packet_id": candidate_run_module.WITHHELD_EARLY_PACKET_ID,
             "bounded_unit_id": candidate_run_module.EARLY_BOUNDED_UNIT_ID,
+            "early_attempt_id": candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+            "review_attempt_id": (
+                candidate_run_module.EARLY_PRO_COMBINED_READ_ATTEMPT_ID
+            ),
+            "read_count": 1,
+            "reread_count": 0,
             "runtime_repo_head": self._RUNTIME_HEAD,
             "design_repo_head": self._DESIGN_HEAD,
             "language_core_identity": (
                 candidate_run_module.STEP2_FROZEN_LANGUAGE_CORE_IDENTITY
             ),
+            "stage1_runtime_integration_identity": (
+                candidate_run_module
+                .STEP3_FROZEN_STAGE1_RUNTIME_INTEGRATION_IDENTITY
+            ),
+            "withheld_input_raw_sha256": (
+                candidate_run_module.EARLY_FROZEN_WITHHELD_INPUT_RAW_SHA256
+            ),
             "withheld_set_digest": withheld["withheld_set_digest"],
+            "private_packet_sha256": self.body_free_packet[
+                "private_packet_sha256"
+            ],
+            "body_free_machine_packet_sha256": (
+                candidate_run_module._canonical_sha256(
+                    self.body_free_packet
+                )
+            ),
+            "private_review_master_sha256": (
+                self.private_review_master_sha256
+            ),
             "reviewed_known_count": 4,
             "reviewed_withheld_count": 4,
             "body_payload_present": False,
@@ -13499,9 +14666,14 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             mutated(("schema_version",), "fabricated.schema"),
             mutated(("packet_id",), "FABRICATED_PACKET"),
             mutated(("bounded_unit_id",), "fabricated.unit"),
+            mutated(("early_attempt_id",), "CMEE_STAGE1_STEP3_3_ATTEMPT_02"),
             mutated(("runtime_repo_head",), "not-a-head"),
             mutated(("design_repo_head",), "A" * 40),
             mutated(("language_core_identity",), "0" * 64),
+            mutated(("stage1_runtime_integration_identity",), "0" * 64),
+            mutated(("withheld_input_raw_sha256",), "0" * 64),
+            mutated(("withheld_set_digest",), "0" * 64),
+            mutated(("private_packet_sha256",), "not-a-digest"),
             mutated(("early_human_read_result",), "CLEAR"),
             mutated(("early_actual_status",), "LANGUAGE_VIABILITY_OBSERVED"),
             mutated(("body_payload_present",), True),
@@ -13530,6 +14702,17 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             mutated(
                 ("withheld_exact4_body_free", "schema_version"),
                 "fabricated.schema",
+            ),
+            mutated(
+                (
+                    "withheld_exact4_body_free",
+                    "stage1_runtime_integration_identity",
+                ),
+                "0" * 64,
+            ),
+            mutated(
+                ("withheld_exact4_body_free", "withheld_input_raw_sha256"),
+                "0" * 64,
             ),
             mutated(
                 ("withheld_exact4_body_free", "withheld_set_digest"),
@@ -13599,6 +14782,9 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 candidate_run_module.validate_early_human_read_result(
                     human_result,
                     body_free_machine_packet=invalid_packet,
+                    private_review_master_receipt=(
+                        self.private_review_master_receipt
+                    ),
                 )
 
     def test_early_cli_stdout_is_body_free_and_known_body_is_explicit_output(
@@ -13614,14 +14800,20 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 encoding="utf-8",
             )
             input_path.chmod(0o600)
-            known_output = private_root / "known.json"
-            private_output = private_root / "private.json"
+            run_output = (
+                private_root
+                / candidate_run_module.EARLY_ACTUAL_RUN_DIRECTORY_NAME
+            )
             stdout = io.StringIO()
             with (
                 patch.object(
                     candidate_run_module,
                     "PRIVATE_OUTPUT_ROOT",
                     private_root,
+                ),
+                patch.object(
+                    candidate_run_module,
+                    "_validate_early_runtime_checkout",
                 ),
                 patch.object(
                     candidate_run_module.sys,
@@ -13631,10 +14823,10 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                         "--early-actual",
                         "--withheld-input",
                         str(input_path),
-                        "--known-visible-output",
-                        str(known_output),
-                        "--body-full-output",
-                        str(private_output),
+                        "--early-attempt-id",
+                        candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+                        "--early-run-output-dir",
+                        str(run_output),
                         "--runtime-repo-head",
                         self._RUNTIME_HEAD,
                         "--design-repo-head",
@@ -13646,8 +14838,26 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 self.assertEqual(candidate_run_module.main(), 0)
 
             body_free = json.loads(stdout.getvalue())
+            known_output = (
+                run_output / candidate_run_module.EARLY_RUN_KNOWN_VISIBLE_FILENAME
+            )
+            private_output = (
+                run_output / candidate_run_module.EARLY_RUN_PRIVATE_PACKET_FILENAME
+            )
+            machine_output = (
+                run_output
+                / candidate_run_module.EARLY_RUN_BODY_FREE_MACHINE_FILENAME
+            )
             known = json.loads(known_output.read_text(encoding="utf-8"))
             private = json.loads(private_output.read_text(encoding="utf-8"))
+            committed_machine = json.loads(
+                machine_output.read_text(encoding="utf-8")
+            )
+            self.assertEqual(committed_machine, body_free)
+            self.assertEqual(
+                tuple(sorted(path.name for path in run_output.iterdir())),
+                tuple(sorted(candidate_run_module.EARLY_RUN_EXACT3_FILENAMES)),
+            )
             self.assertEqual(
                 body_free["known_exact4_body_free"]["machine_invariant_result"],
                 "CLEAR",
@@ -13661,6 +14871,8 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 self.assertNotIn(case["candidate_private"], serialized)
             self.assertEqual(known_output.stat().st_mode & 0o777, 0o600)
             self.assertEqual(private_output.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(machine_output.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(run_output.stat().st_mode & 0o777, 0o700)
             self.assertNotIn(str(known_output), serialized)
             self.assertNotIn(str(private_output), serialized)
 
@@ -13694,13 +14906,19 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 with self.subTest(scenario=scenario):
                     stdout = io.StringIO()
                     stderr = io.StringIO()
-                    known_output = private_root / f"{scenario}-known.json"
-                    private_output = private_root / f"{scenario}-private.json"
+                    run_output = (
+                        private_root
+                        / candidate_run_module.EARLY_ACTUAL_RUN_DIRECTORY_NAME
+                    )
                     with (
                         patch.object(
                             candidate_run_module,
                             "PRIVATE_OUTPUT_ROOT",
                             private_root,
+                        ),
+                        patch.object(
+                            candidate_run_module,
+                            "_validate_early_runtime_checkout",
                         ),
                         patch.object(
                             candidate_run_module.sys,
@@ -13710,10 +14928,10 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                                 "--early-actual",
                                 "--withheld-input",
                                 str(input_path),
-                                "--known-visible-output",
-                                str(known_output),
-                                "--body-full-output",
-                                str(private_output),
+                                "--early-attempt-id",
+                                candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+                                "--early-run-output-dir",
+                                str(run_output),
                                 "--runtime-repo-head",
                                 self._RUNTIME_HEAD,
                                 "--design-repo-head",
@@ -13739,10 +14957,8 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                     error_text = stderr.getvalue()
                     self.assertNotIn(body_sentinel, error_text)
                     self.assertNotIn(str(input_path), error_text)
-                    self.assertNotIn(str(known_output), error_text)
-                    self.assertNotIn(str(private_output), error_text)
-                    self.assertFalse(known_output.exists())
-                    self.assertFalse(private_output.exists())
+                    self.assertNotIn(str(run_output), error_text)
+                    self.assertFalse(run_output.exists())
 
     def test_private_input_dirfd_walk_rejects_symlink_and_bad_root_mode(
         self,
@@ -13904,10 +15120,24 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                     side_effect=swap_path_after_final_open,
                 ),
             ):
-                loaded = candidate_run_module._read_private_json(input_path)
+                (
+                    loaded,
+                    loaded_raw_sha256,
+                ) = candidate_run_module._read_private_json_and_raw_sha256(
+                    input_path
+                )
 
             self.assertTrue(swap_complete)
             self.assertEqual(loaded, original_payload)
+            self.assertEqual(
+                loaded_raw_sha256,
+                hashlib.sha256(
+                    json.dumps(
+                        original_payload,
+                        ensure_ascii=False,
+                    ).encode("utf-8")
+                ).hexdigest(),
+            )
             self.assertEqual(
                 json.loads(input_path.read_text(encoding="utf-8")),
                 replacement_payload,
@@ -13929,17 +15159,21 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             )
             input_path.chmod(0o600)
 
-            for existing_kind in ("known", "private"):
+            for existing_kind in ("file", "directory"):
                 with self.subTest(existing_kind=existing_kind):
-                    known_output = private_root / f"{existing_kind}-known.json"
-                    private_output = private_root / f"{existing_kind}-private.json"
-                    existing_output = (
-                        known_output
-                        if existing_kind == "known"
-                        else private_output
+                    run_output = (
+                        private_root
+                        / candidate_run_module.EARLY_ACTUAL_RUN_DIRECTORY_NAME
                     )
-                    existing_output.write_text(output_sentinel, encoding="utf-8")
-                    existing_output.chmod(0o600)
+                    if existing_kind == "file":
+                        run_output.write_text(output_sentinel, encoding="utf-8")
+                        run_output.chmod(0o600)
+                    else:
+                        run_output.mkdir(mode=0o700)
+                        (run_output / "sentinel").write_text(
+                            output_sentinel,
+                            encoding="utf-8",
+                        )
                     stdout = io.StringIO()
                     stderr = io.StringIO()
                     with (
@@ -13956,10 +15190,10 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                                 "--early-actual",
                                 "--withheld-input",
                                 str(input_path),
-                                "--known-visible-output",
-                                str(known_output),
-                                "--body-full-output",
-                                str(private_output),
+                                "--early-attempt-id",
+                                candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+                                "--early-run-output-dir",
+                                str(run_output),
                                 "--runtime-repo-head",
                                 self._RUNTIME_HEAD,
                                 "--design-repo-head",
@@ -13982,22 +15216,704 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                     self.assertEqual(raised.exception.code, 2)
                     runner.assert_not_called()
                     self.assertEqual(stdout.getvalue(), "")
-                    self.assertEqual(
-                        existing_output.read_text(encoding="utf-8"),
-                        output_sentinel,
-                    )
-                    other_output = (
-                        private_output
-                        if existing_kind == "known"
-                        else known_output
-                    )
-                    self.assertFalse(other_output.exists())
+                    if existing_kind == "file":
+                        self.assertEqual(
+                            run_output.read_text(encoding="utf-8"),
+                            output_sentinel,
+                        )
+                    else:
+                        self.assertEqual(
+                            (run_output / "sentinel").read_text(
+                                encoding="utf-8"
+                            ),
+                            output_sentinel,
+                        )
                     error_text = stderr.getvalue()
                     self.assertNotIn(body_sentinel, error_text)
                     self.assertNotIn(output_sentinel, error_text)
                     self.assertNotIn(str(input_path), error_text)
-                    self.assertNotIn(str(known_output), error_text)
-                    self.assertNotIn(str(private_output), error_text)
+                    self.assertNotIn(str(run_output), error_text)
+                    if existing_kind == "file":
+                        run_output.unlink()
+                    else:
+                        (run_output / "sentinel").unlink()
+                        run_output.rmdir()
+
+    def test_frozen_wrong_valid_set_stops_before_attempt_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            private_root = (Path(temporary_directory) / "private-root").resolve()
+            private_root.mkdir(mode=0o700)
+            private_root.chmod(0o700)
+            wrong_payload = self._withheld_payload()
+            wrong_payload["cases"][0]["memo"] += "別の合成文。"
+            input_path = private_root / "input.json"
+            input_path.write_text(
+                json.dumps(wrong_payload, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            input_path.chmod(0o600)
+            run_output = (
+                private_root
+                / candidate_run_module.EARLY_ACTUAL_RUN_DIRECTORY_NAME
+            )
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with (
+                patch.object(
+                    candidate_run_module,
+                    "PRIVATE_OUTPUT_ROOT",
+                    private_root,
+                ),
+                patch.object(
+                    candidate_run_module,
+                    "_validate_early_runtime_checkout",
+                ),
+                patch.object(
+                    candidate_run_module.sys,
+                    "argv",
+                    (
+                        "cmee-v1a-candidate-run",
+                        "--early-actual",
+                        "--withheld-input",
+                        str(input_path),
+                        "--early-attempt-id",
+                        candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+                        "--early-run-output-dir",
+                        str(run_output),
+                        "--runtime-repo-head",
+                        self._RUNTIME_HEAD,
+                        "--design-repo-head",
+                        self._DESIGN_HEAD,
+                    ),
+                ),
+                patch.object(candidate_run_module.sys, "stdout", stdout),
+                patch.object(candidate_run_module.sys, "stderr", stderr),
+                patch.object(
+                    candidate_run_module,
+                    "run_early_actual",
+                    side_effect=AssertionError("wrong frozen set reached engine"),
+                ) as runner,
+            ):
+                with self.assertRaises(SystemExit) as raised:
+                    candidate_run_module.main()
+            self.assertEqual(raised.exception.code, 2)
+            runner.assert_not_called()
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn("private preflight failed", stderr.getvalue())
+            self.assertFalse(run_output.exists())
+            self.assertFalse(
+                (private_root / candidate_run_module.EARLY_ACTUAL_STAGING_DIRECTORY_NAME).exists()
+            )
+
+    def test_attempt_id_derives_one_exact_output_slot_before_input_read(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            private_root = (Path(temporary_directory) / "private-root").resolve()
+            private_root.mkdir(mode=0o700)
+            private_root.chmod(0o700)
+            expected_input = private_root / "input.json"
+            for attempt_id, target in (
+                (
+                    "CMEE_STAGE1_STEP3_3_ATTEMPT_02",
+                    private_root
+                    / candidate_run_module.EARLY_ACTUAL_RUN_DIRECTORY_NAME,
+                ),
+                (
+                    candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+                    private_root / "different-output-slot",
+                ),
+            ):
+                stdout = io.StringIO()
+                stderr = io.StringIO()
+                with (
+                    patch.object(
+                        candidate_run_module,
+                        "PRIVATE_OUTPUT_ROOT",
+                        private_root,
+                    ),
+                    patch.object(
+                        candidate_run_module.sys,
+                        "argv",
+                        (
+                            "cmee-v1a-candidate-run",
+                            "--early-actual",
+                            "--withheld-input",
+                            str(expected_input),
+                            "--early-attempt-id",
+                            attempt_id,
+                            "--early-run-output-dir",
+                            str(target),
+                            "--runtime-repo-head",
+                            self._RUNTIME_HEAD,
+                            "--design-repo-head",
+                            self._DESIGN_HEAD,
+                        ),
+                    ),
+                    patch.object(candidate_run_module.sys, "stdout", stdout),
+                    patch.object(candidate_run_module.sys, "stderr", stderr),
+                    patch.object(
+                        candidate_run_module,
+                        "_read_private_json_and_raw_sha256",
+                        side_effect=AssertionError("invalid attempt read body"),
+                    ) as reader,
+                ):
+                    with self.assertRaises(SystemExit) as raised:
+                        candidate_run_module.main()
+                self.assertEqual(raised.exception.code, 2)
+                reader.assert_not_called()
+                self.assertEqual(stdout.getvalue(), "")
+                self.assertFalse(target.exists())
+
+    def test_runtime_checkout_preflight_binds_head_and_clean_tracked_tree(
+        self,
+    ) -> None:
+        clean_head = SimpleNamespace(
+            returncode=0,
+            stdout=f"{self._RUNTIME_HEAD}\n",
+            stderr="",
+        )
+        clean_status = SimpleNamespace(returncode=0, stdout="", stderr="")
+        with patch.object(
+            candidate_run_module.subprocess,
+            "run",
+            side_effect=(clean_head, clean_status),
+        ) as command:
+            candidate_run_module._validate_early_runtime_checkout(
+                self._RUNTIME_HEAD
+            )
+        self.assertEqual(command.call_count, 2)
+        self.assertEqual(
+            command.call_args_list[0].args[0],
+            ("git", "rev-parse", "--verify", "HEAD"),
+        )
+        self.assertEqual(
+            command.call_args_list[1].args[0],
+            (
+                "git",
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=no",
+            ),
+        )
+
+        for head, status in (
+            (
+                SimpleNamespace(
+                    returncode=0,
+                    stdout=f"{'c' * 40}\n",
+                    stderr="",
+                ),
+                clean_status,
+            ),
+            (
+                clean_head,
+                SimpleNamespace(
+                    returncode=0,
+                    stdout=" M ai/tools/cmee_v1a_i1sx_candidate_run.py\n",
+                    stderr="",
+                ),
+            ),
+        ):
+            with (
+                patch.object(
+                    candidate_run_module.subprocess,
+                    "run",
+                    side_effect=(head, status),
+                ),
+                self.assertRaisesRegex(
+                    ValueError,
+                    "runtime checkout preflight invalid",
+                ),
+            ):
+                candidate_run_module._validate_early_runtime_checkout(
+                    self._RUNTIME_HEAD
+                )
+
+    def test_runtime_checkout_failure_stops_before_private_input_read(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            private_root = (Path(temporary_directory) / "private-root").resolve()
+            private_root.mkdir(mode=0o700)
+            private_root.chmod(0o700)
+            input_path = private_root / "input.json"
+            target = (
+                private_root
+                / candidate_run_module.EARLY_ACTUAL_RUN_DIRECTORY_NAME
+            )
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with (
+                patch.object(candidate_run_module, "PRIVATE_OUTPUT_ROOT", private_root),
+                patch.object(
+                    candidate_run_module,
+                    "_validate_early_runtime_checkout",
+                    side_effect=ValueError(
+                        "early runtime checkout preflight invalid"
+                    ),
+                ),
+                patch.object(
+                    candidate_run_module,
+                    "_read_private_json_and_raw_sha256",
+                    side_effect=AssertionError("dirty checkout read private body"),
+                ) as reader,
+                patch.object(
+                    candidate_run_module.sys,
+                    "argv",
+                    (
+                        "cmee-v1a-candidate-run",
+                        "--early-actual",
+                        "--withheld-input",
+                        str(input_path),
+                        "--early-attempt-id",
+                        candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+                        "--early-run-output-dir",
+                        str(target),
+                        "--runtime-repo-head",
+                        self._RUNTIME_HEAD,
+                        "--design-repo-head",
+                        self._DESIGN_HEAD,
+                    ),
+                ),
+                patch.object(candidate_run_module.sys, "stdout", stdout),
+                patch.object(candidate_run_module.sys, "stderr", stderr),
+            ):
+                with self.assertRaises(SystemExit) as raised:
+                    candidate_run_module.main()
+            self.assertEqual(raised.exception.code, 2)
+            reader.assert_not_called()
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertFalse(target.exists())
+            self.assertFalse(
+                (private_root / candidate_run_module.EARLY_ACTUAL_STAGING_DIRECTORY_NAME).exists()
+            )
+
+    def test_identity_and_transaction_capability_fail_before_generation(
+        self,
+    ) -> None:
+        for failure_kind in ("identity", "renameat2"):
+            with self.subTest(failure_kind=failure_kind), tempfile.TemporaryDirectory() as temporary_directory:
+                private_root = (
+                    Path(temporary_directory) / "private-root"
+                ).resolve()
+                private_root.mkdir(mode=0o700)
+                private_root.chmod(0o700)
+                input_path = private_root / "input.json"
+                input_path.write_text(self._STANDIN_RAW_TEXT, encoding="utf-8")
+                input_path.chmod(0o600)
+                target = (
+                    private_root
+                    / candidate_run_module.EARLY_ACTUAL_RUN_DIRECTORY_NAME
+                )
+                stdout = io.StringIO()
+                stderr = io.StringIO()
+                identity_effect = (
+                    RuntimeError("early frozen runtime identity mismatch")
+                    if failure_kind == "identity"
+                    else None
+                )
+                capability_effect = (
+                    OSError("atomic no-replace directory rename unavailable")
+                    if failure_kind == "renameat2"
+                    else None
+                )
+                with (
+                    patch.object(
+                        candidate_run_module,
+                        "PRIVATE_OUTPUT_ROOT",
+                        private_root,
+                    ),
+                    patch.object(
+                        candidate_run_module,
+                        "_validate_early_runtime_checkout",
+                    ),
+                    patch.object(
+                        candidate_run_module,
+                        "_current_frozen_early_identity_pair",
+                        side_effect=identity_effect,
+                        return_value=(
+                            candidate_run_module
+                            .STEP2_FROZEN_LANGUAGE_CORE_IDENTITY,
+                            candidate_run_module
+                            .STEP3_FROZEN_STAGE1_RUNTIME_INTEGRATION_IDENTITY,
+                        ),
+                    ),
+                    patch.object(
+                        candidate_run_module,
+                        "_preflight_rename_directory_noreplace",
+                        side_effect=capability_effect,
+                    ),
+                    patch.object(
+                        candidate_run_module,
+                        "run_early_actual",
+                        side_effect=AssertionError(
+                            "deterministic preflight failure reached generation"
+                        ),
+                    ) as runner,
+                    patch.object(
+                        candidate_run_module.sys,
+                        "argv",
+                        (
+                            "cmee-v1a-candidate-run",
+                            "--early-actual",
+                            "--withheld-input",
+                            str(input_path),
+                            "--early-attempt-id",
+                            candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+                            "--early-run-output-dir",
+                            str(target),
+                            "--runtime-repo-head",
+                            self._RUNTIME_HEAD,
+                            "--design-repo-head",
+                            self._DESIGN_HEAD,
+                        ),
+                    ),
+                    patch.object(candidate_run_module.sys, "stdout", stdout),
+                    patch.object(candidate_run_module.sys, "stderr", stderr),
+                ):
+                    with self.assertRaises(SystemExit) as raised:
+                        candidate_run_module.main()
+                self.assertEqual(raised.exception.code, 2)
+                runner.assert_not_called()
+                self.assertEqual(stdout.getvalue(), "")
+                self.assertFalse(target.exists())
+                self.assertFalse(
+                    (
+                        private_root
+                        / candidate_run_module
+                        .EARLY_ACTUAL_STAGING_DIRECTORY_NAME
+                    ).exists()
+                )
+
+    def test_fixed_attempt_marker_is_exclusive_and_stale_is_terminal(
+        self,
+    ) -> None:
+        parser = candidate_run_module.argparse.ArgumentParser(add_help=False)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            private_root = (Path(temporary_directory) / "private-root").resolve()
+            private_root.mkdir(mode=0o700)
+            private_root.chmod(0o700)
+            target = (
+                private_root
+                / candidate_run_module.EARLY_ACTUAL_RUN_DIRECTORY_NAME
+            )
+            with patch.object(
+                candidate_run_module,
+                "PRIVATE_OUTPUT_ROOT",
+                private_root,
+            ):
+                transaction = candidate_run_module._prepare_early_run_exact3(
+                    parser,
+                    target,
+                )
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "RUN_RESULT_UNKNOWN_TERMINAL",
+                ):
+                    candidate_run_module._prepare_early_run_exact3(
+                        parser,
+                        target,
+                    )
+                candidate_run_module._close_early_run_exact3_transaction(
+                    transaction
+                )
+            marker = (
+                private_root
+                / candidate_run_module.EARLY_ACTUAL_STAGING_DIRECTORY_NAME
+            )
+            self.assertTrue(marker.is_dir())
+            self.assertFalse(target.exists())
+            marker.rmdir()
+
+    def test_rename_noreplace_preserves_both_directories_on_collision(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory).resolve()
+            source = root / "source"
+            target = root / "target"
+            source.mkdir()
+            target.mkdir()
+            parent_fd = os.open(
+                root,
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+            )
+            try:
+                with self.assertRaises(OSError) as raised:
+                    candidate_run_module._rename_directory_noreplace(
+                        parent_fd,
+                        source.name,
+                        target.name,
+                    )
+                self.assertEqual(raised.exception.errno, errno.EEXIST)
+            finally:
+                os.close(parent_fd)
+            self.assertTrue(source.is_dir())
+            self.assertTrue(target.is_dir())
+
+    def test_second_member_failure_leaves_no_final_and_blocks_retry(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            private_root = (Path(temporary_directory) / "private-root").resolve()
+            private_root.mkdir(mode=0o700)
+            private_root.chmod(0o700)
+            input_path = private_root / "input.json"
+            input_path.write_text(self._STANDIN_RAW_TEXT, encoding="utf-8")
+            input_path.chmod(0o600)
+            run_output = (
+                private_root
+                / candidate_run_module.EARLY_ACTUAL_RUN_DIRECTORY_NAME
+            )
+            argv = (
+                "cmee-v1a-candidate-run",
+                "--early-actual",
+                "--withheld-input",
+                str(input_path),
+                "--early-attempt-id",
+                candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+                "--early-run-output-dir",
+                str(run_output),
+                "--runtime-repo-head",
+                self._RUNTIME_HEAD,
+                "--design-repo-head",
+                self._DESIGN_HEAD,
+            )
+            original_writer = (
+                candidate_run_module._write_early_run_member_exclusive
+            )
+            write_count = 0
+
+            def fail_second_member(
+                directory_fd: int,
+                filename: str,
+                payload: Mapping[str, object],
+            ) -> None:
+                nonlocal write_count
+                write_count += 1
+                if write_count == 2:
+                    raise OSError("injected second-member failure")
+                original_writer(directory_fd, filename, payload)
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with (
+                patch.object(candidate_run_module, "PRIVATE_OUTPUT_ROOT", private_root),
+                patch.object(candidate_run_module, "_validate_early_runtime_checkout"),
+                patch.object(candidate_run_module.sys, "argv", argv),
+                patch.object(candidate_run_module.sys, "stdout", stdout),
+                patch.object(candidate_run_module.sys, "stderr", stderr),
+                patch.object(
+                    candidate_run_module,
+                    "run_early_actual",
+                    return_value=(
+                        self.body_free_packet,
+                        self.known_visible_packet,
+                        self.private_packet,
+                    ),
+                ),
+                patch.object(
+                    candidate_run_module,
+                    "_write_early_run_member_exclusive",
+                    side_effect=fail_second_member,
+                ),
+            ):
+                with self.assertRaises(SystemExit) as raised:
+                    candidate_run_module.main()
+            self.assertEqual(raised.exception.code, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn("RUN_RESULT_UNKNOWN_TERMINAL", stderr.getvalue())
+            self.assertFalse(run_output.exists())
+            marker = (
+                private_root
+                / candidate_run_module.EARLY_ACTUAL_STAGING_DIRECTORY_NAME
+            )
+            self.assertTrue(marker.is_dir())
+            self.assertEqual(
+                tuple(path.name for path in marker.iterdir()),
+                (candidate_run_module.EARLY_RUN_KNOWN_VISIBLE_FILENAME,),
+            )
+            self.assertFalse((private_root / "known.json").exists())
+            self.assertFalse((private_root / "private.json").exists())
+
+            second_stdout = io.StringIO()
+            second_stderr = io.StringIO()
+            with (
+                patch.object(candidate_run_module, "PRIVATE_OUTPUT_ROOT", private_root),
+                patch.object(candidate_run_module, "_validate_early_runtime_checkout"),
+                patch.object(candidate_run_module.sys, "argv", argv),
+                patch.object(candidate_run_module.sys, "stdout", second_stdout),
+                patch.object(candidate_run_module.sys, "stderr", second_stderr),
+                patch.object(
+                    candidate_run_module,
+                    "run_early_actual",
+                    side_effect=AssertionError("terminal attempt retried"),
+                ) as runner,
+            ):
+                with self.assertRaises(SystemExit) as second_raised:
+                    candidate_run_module.main()
+            self.assertEqual(second_raised.exception.code, 2)
+            runner.assert_not_called()
+            self.assertEqual(second_stdout.getvalue(), "")
+            self.assertIn(
+                "RUN_RESULT_UNKNOWN_TERMINAL",
+                second_stderr.getvalue(),
+            )
+            (marker / candidate_run_module.EARLY_RUN_KNOWN_VISIBLE_FILENAME).unlink()
+            marker.rmdir()
+
+    def test_precommit_rename_failure_retains_complete_terminal_stage(
+        self,
+    ) -> None:
+        parser = candidate_run_module.argparse.ArgumentParser(add_help=False)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            private_root = (Path(temporary_directory) / "private-root").resolve()
+            private_root.mkdir(mode=0o700)
+            private_root.chmod(0o700)
+            target = (
+                private_root
+                / candidate_run_module.EARLY_ACTUAL_RUN_DIRECTORY_NAME
+            )
+            with patch.object(
+                candidate_run_module,
+                "PRIVATE_OUTPUT_ROOT",
+                private_root,
+            ):
+                transaction = candidate_run_module._prepare_early_run_exact3(
+                    parser,
+                    target,
+                )
+                with (
+                    patch.object(
+                        candidate_run_module,
+                        "_rename_directory_noreplace",
+                        side_effect=OSError("injected precommit rename failure"),
+                    ),
+                    self.assertRaises(OSError),
+                ):
+                    candidate_run_module._commit_early_run_exact3(
+                        transaction,
+                        target,
+                        body_free_machine_packet=self.body_free_packet,
+                        known_visible_packet=self.known_visible_packet,
+                        private_packet=self.private_packet,
+                    )
+            marker = (
+                private_root
+                / candidate_run_module.EARLY_ACTUAL_STAGING_DIRECTORY_NAME
+            )
+            self.assertFalse(target.exists())
+            self.assertEqual(
+                tuple(sorted(path.name for path in marker.iterdir())),
+                tuple(sorted(candidate_run_module.EARLY_RUN_EXACT3_FILENAMES)),
+            )
+            for filename in candidate_run_module.EARLY_RUN_EXACT3_FILENAMES:
+                (marker / filename).unlink()
+            marker.rmdir()
+
+    def test_machine_nonclear_is_atomically_committed_and_not_retryable(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            private_root = (Path(temporary_directory) / "private-root").resolve()
+            private_root.mkdir(mode=0o700)
+            private_root.chmod(0o700)
+            input_path = private_root / "input.json"
+            input_path.write_text(self._STANDIN_RAW_TEXT, encoding="utf-8")
+            input_path.chmod(0o600)
+            run_output = (
+                private_root
+                / candidate_run_module.EARLY_ACTUAL_RUN_DIRECTORY_NAME
+            )
+            known = json.loads(
+                json.dumps(self.known_visible_packet, ensure_ascii=False)
+            )
+            machine = json.loads(
+                json.dumps(self.body_free_packet, ensure_ascii=False)
+            )
+            private = json.loads(
+                json.dumps(self.private_packet, ensure_ascii=False)
+            )
+            known["cases"][0]["machine_invariant"][
+                "normal_form_defect_free"
+            ] = False
+            known["cases"][0]["machine_invariant"][
+                "machine_invariant_clear"
+            ] = False
+            private["known_cases"][0]["machine_invariant_body_free"][
+                "normal_form_defect_free"
+            ] = False
+            private["known_cases"][0]["machine_invariant_body_free"][
+                "machine_invariant_clear"
+            ] = False
+            known["machine_invariant_clear_count"] = 3
+            known["machine_invariant_result"] = "FAIL"
+            machine["known_exact4_body_free"][
+                "machine_invariant_clear_count"
+            ] = 3
+            machine["known_exact4_body_free"]["machine_invariant_result"] = (
+                "FAIL"
+            )
+            machine["early_actual_status"] = (
+                candidate_run_module.EARLY_MACHINE_ACTUAL_NONCLEAR_STATUS
+            )
+            machine["known_exact4_body_free"][
+                "known_visible_packet_sha256"
+            ] = candidate_run_module._canonical_sha256(known)
+            machine["private_packet_sha256"] = (
+                candidate_run_module._canonical_sha256(private)
+            )
+            stdout = io.StringIO()
+            with (
+                patch.object(candidate_run_module, "PRIVATE_OUTPUT_ROOT", private_root),
+                patch.object(candidate_run_module, "_validate_early_runtime_checkout"),
+                patch.object(
+                    candidate_run_module.sys,
+                    "argv",
+                    (
+                        "cmee-v1a-candidate-run",
+                        "--early-actual",
+                        "--withheld-input",
+                        str(input_path),
+                        "--early-attempt-id",
+                        candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+                        "--early-run-output-dir",
+                        str(run_output),
+                        "--runtime-repo-head",
+                        self._RUNTIME_HEAD,
+                        "--design-repo-head",
+                        self._DESIGN_HEAD,
+                    ),
+                ),
+                patch.object(candidate_run_module.sys, "stdout", stdout),
+                patch.object(
+                    candidate_run_module,
+                    "run_early_actual",
+                    return_value=(machine, known, private),
+                ),
+            ):
+                self.assertEqual(candidate_run_module.main(), 1)
+            self.assertEqual(json.loads(stdout.getvalue()), machine)
+            self.assertTrue(run_output.is_dir())
+            self.assertEqual(
+                tuple(sorted(path.name for path in run_output.iterdir())),
+                tuple(sorted(candidate_run_module.EARLY_RUN_EXACT3_FILENAMES)),
+            )
+            committed = json.loads(
+                (
+                    run_output
+                    / candidate_run_module.EARLY_RUN_BODY_FREE_MACHINE_FILENAME
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                committed["known_exact4_body_free"]["machine_invariant_result"],
+                "FAIL",
+            )
+            self.assertEqual(
+                committed["early_actual_status"],
+                candidate_run_module.EARLY_MACHINE_ACTUAL_NONCLEAR_STATUS,
+            )
 
     def test_early_output_writer_keeps_o_excl_for_both_packet_classes(
         self,
