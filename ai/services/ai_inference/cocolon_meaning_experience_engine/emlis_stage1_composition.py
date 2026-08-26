@@ -11,6 +11,7 @@ alternate compatibility realizer.
 
 from dataclasses import dataclass, fields
 from enum import Enum
+import ast
 import hashlib
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Sequence, Tuple
@@ -6406,8 +6407,10 @@ def _validate_product_causal_owner_manifest(
                 raise Stage1CompositionError("LANGUAGE_CORE_DEPENDENCY_SCOPE_STOP")
 
 
-def language_core_identity_payloads(repository_root: Optional[Path] = None) -> Tuple[Tuple[str, bytes], ...]:
-    """Return the ordered exact-16 whole-file/manifest identity payloads."""
+def stage1_runtime_integration_identity_payloads(
+    repository_root: Optional[Path] = None,
+) -> Tuple[Tuple[str, bytes], ...]:
+    """Return the broad exact-16 whole-file/manifest integration payloads."""
 
     root = repository_root or Path(__file__).resolve().parents[4]
     file_paths = (_COMPOSITION_PATH, *LANGUAGE_CORE_EXTERNAL_PATHS)
@@ -6505,13 +6508,280 @@ def language_core_identity_payloads(repository_root: Optional[Path] = None) -> T
     )
     result = (*frozen_file_payloads, *manifests)
     if len(result) != 16:
+        raise Stage1CompositionError(
+            "STAGE1_RUNTIME_INTEGRATION_IDENTITY_PAYLOAD_COUNT_STOP"
+        )
+    return tuple(result)
+
+
+_LANGUAGE_CORE_NONBEHAVIOR_IDENTITY_BINDINGS = frozenset(
+    {"LANGUAGE_CORE_IDENTITY", "STAGE1_RUNTIME_INTEGRATION_IDENTITY"}
+)
+_LANGUAGE_CORE_SOURCE_OWNER_SCHEMA_VERSION = (
+    "cocolon.cmee.v1a.stage1_language_core_source_owner_ast.v1"
+)
+
+
+def _module_name_from_language_core_path(relative_path: str) -> str:
+    prefix = "ai/services/ai_inference/"
+    if not relative_path.startswith(prefix) or not relative_path.endswith(".py"):
+        raise Stage1CompositionError("LANGUAGE_CORE_DEPENDENCY_SCOPE_STOP")
+    return relative_path[len(prefix) : -3].replace("/", ".")
+
+
+def _language_core_source_owner_payloads(
+    repository_root: Optional[Path] = None,
+) -> Tuple[Tuple[str, bytes], ...]:
+    """Project the transitive AST closure of the declared Step-2 owners.
+
+    The closure includes only declarations and import bindings reached from
+    the explicit planner/composer/normalizer/ranker owner seeds.  Formatting,
+    comments and unrelated later-step declarations are excluded, while every
+    referenced same-module declaration and every referenced declaration in
+    the other admitted owner modules is included fail closed.
+    """
+
+    root = repository_root or Path(__file__).resolve().parents[4]
+    owner_seed_by_path = dict(LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST)
+    expected_paths = (_COMPOSITION_PATH, *LANGUAGE_CORE_EXTERNAL_PATHS)
+    if tuple(owner_seed_by_path) != expected_paths:
+        raise Stage1CompositionError("LANGUAGE_CORE_DEPENDENCY_SCOPE_STOP")
+
+    module_name_by_path = {
+        path: _module_name_from_language_core_path(path)
+        for path in expected_paths
+    }
+    path_by_module_name = {
+        module_name: path for path, module_name in module_name_by_path.items()
+    }
+    trees: dict[str, ast.Module] = {}
+    declarations: dict[str, dict[str, ast.AST]] = {}
+    bound_names_by_node: dict[str, dict[ast.AST, tuple[str, ...]]] = {}
+    imports: dict[str, dict[str, tuple[Any, ...]]] = {}
+
+    def target_names(target: ast.AST) -> tuple[str, ...]:
+        if isinstance(target, ast.Name):
+            return (target.id,)
+        if isinstance(target, (ast.Tuple, ast.List)):
+            return tuple(
+                name
+                for child in target.elts
+                for name in target_names(child)
+            )
+        return ()
+
+    for relative_path in expected_paths:
+        path = root / relative_path
+        if not path.is_file():
+            raise Stage1CompositionError("LANGUAGE_CORE_DEPENDENCY_SCOPE_STOP")
+        try:
+            tree = ast.parse(path.read_bytes(), filename=relative_path)
+        except (OSError, SyntaxError, ValueError):
+            raise Stage1CompositionError(
+                "LANGUAGE_CORE_SOURCE_OWNER_PARSE_STOP"
+            ) from None
+        trees[relative_path] = tree
+        declaration_by_name: dict[str, ast.AST] = {}
+        names_by_node: dict[ast.AST, tuple[str, ...]] = {}
+        import_by_name: dict[str, tuple[Any, ...]] = {}
+        for node in tree.body:
+            names: tuple[str, ...] = ()
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names = (node.name,)
+            elif isinstance(node, ast.Assign):
+                names = tuple(
+                    name
+                    for target in node.targets
+                    for name in target_names(target)
+                )
+            elif isinstance(node, ast.AnnAssign):
+                names = target_names(node.target)
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    bound_name = alias.asname or alias.name.split(".", 1)[0]
+                    if bound_name in import_by_name or bound_name in declaration_by_name:
+                        raise Stage1CompositionError(
+                            "LANGUAGE_CORE_SOURCE_OWNER_BINDING_STOP"
+                        )
+                    import_by_name[bound_name] = (
+                        "IMPORT",
+                        alias.name,
+                        alias.asname or "",
+                    )
+            elif isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    bound_name = alias.asname or alias.name
+                    if bound_name in import_by_name or bound_name in declaration_by_name:
+                        raise Stage1CompositionError(
+                            "LANGUAGE_CORE_SOURCE_OWNER_BINDING_STOP"
+                        )
+                    import_by_name[bound_name] = (
+                        "IMPORT_FROM",
+                        node.level,
+                        node.module or "",
+                        alias.name,
+                        alias.asname or "",
+                    )
+            if names:
+                if len(names) != len(set(names)):
+                    raise Stage1CompositionError(
+                        "LANGUAGE_CORE_SOURCE_OWNER_BINDING_STOP"
+                    )
+                for name in names:
+                    if name in declaration_by_name or name in import_by_name:
+                        raise Stage1CompositionError(
+                            "LANGUAGE_CORE_SOURCE_OWNER_BINDING_STOP"
+                        )
+                    declaration_by_name[name] = node
+                names_by_node[node] = tuple(sorted(names))
+        declarations[relative_path] = declaration_by_name
+        bound_names_by_node[relative_path] = names_by_node
+        imports[relative_path] = import_by_name
+
+    selected_nodes = {path: set() for path in expected_paths}
+    selected_imports = {path: set() for path in expected_paths}
+    queue = [
+        (path, owner_name, True)
+        for path, owner_names in LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
+        for owner_name in owner_names
+    ]
+    seen: set[tuple[str, str]] = set()
+
+    def resolve_import_target(
+        current_path: str,
+        descriptor: tuple[Any, ...],
+    ) -> tuple[Optional[str], Optional[str]]:
+        current_module = module_name_by_path[current_path]
+        if descriptor[0] == "IMPORT":
+            target_path = path_by_module_name.get(str(descriptor[1]))
+            return target_path, None
+        _kind, level, module, imported_name, _asname = descriptor
+        if level:
+            current_parts = current_module.split(".")
+            if level > len(current_parts):
+                return None, None
+            base_parts = current_parts[:-level]
+            module_parts = str(module).split(".") if module else []
+            target_module = ".".join((*base_parts, *module_parts))
+        else:
+            target_module = str(module)
+        target_path = path_by_module_name.get(target_module)
+        if target_path is not None:
+            return target_path, str(imported_name)
+        if not module:
+            submodule = ".".join(
+                (*current_module.split(".")[:-1], str(imported_name))
+            )
+            target_path = path_by_module_name.get(submodule)
+            if target_path is not None:
+                return target_path, None
+        return None, None
+
+    while queue:
+        relative_path, name, required_seed = queue.pop()
+        key = (relative_path, name)
+        if key in seen or name in _LANGUAGE_CORE_NONBEHAVIOR_IDENTITY_BINDINGS:
+            continue
+        seen.add(key)
+        node = declarations[relative_path].get(name)
+        if node is not None:
+            selected_nodes[relative_path].add(node)
+            for referenced in {
+                child.id
+                for child in ast.walk(node)
+                if isinstance(child, ast.Name)
+                and isinstance(child.ctx, ast.Load)
+            }:
+                if (
+                    referenced in declarations[relative_path]
+                    or referenced in imports[relative_path]
+                ):
+                    queue.append((relative_path, referenced, False))
+            for child in ast.walk(node):
+                if not (
+                    isinstance(child, ast.Attribute)
+                    and isinstance(child.value, ast.Name)
+                ):
+                    continue
+                descriptor = imports[relative_path].get(child.value.id)
+                if descriptor is None or descriptor[0] != "IMPORT":
+                    continue
+                target_path, _target_name = resolve_import_target(
+                    relative_path, descriptor
+                )
+                if target_path is not None:
+                    queue.append((target_path, child.attr, False))
+            continue
+        descriptor = imports[relative_path].get(name)
+        if descriptor is not None:
+            selected_imports[relative_path].add(name)
+            target_path, target_name = resolve_import_target(
+                relative_path, descriptor
+            )
+            if target_path is not None and target_name is not None:
+                queue.append((target_path, target_name, False))
+            continue
+        if required_seed:
+            raise Stage1CompositionError("LANGUAGE_CORE_SOURCE_OWNER_SEED_STOP")
+
+    payloads: list[tuple[str, bytes]] = []
+    for relative_path in expected_paths:
+        selected_node_rows = tuple(
+            (
+                ("bound_names", bound_names_by_node[relative_path][node]),
+                (
+                    "canonical_ast",
+                    ast.dump(node, annotate_fields=True, include_attributes=False),
+                ),
+            )
+            for node in sorted(
+                selected_nodes[relative_path],
+                key=lambda item: bound_names_by_node[relative_path][item],
+            )
+        )
+        if not selected_node_rows:
+            raise Stage1CompositionError("LANGUAGE_CORE_SOURCE_OWNER_SEED_STOP")
+        selected_import_rows = tuple(
+            (("bound_name", name), ("binding", imports[relative_path][name]))
+            for name in sorted(selected_imports[relative_path])
+        )
+        owner_payload = (
+            ("schema_version", _LANGUAGE_CORE_SOURCE_OWNER_SCHEMA_VERSION),
+            ("relative_path", relative_path),
+            ("seed_owner_names", owner_seed_by_path[relative_path]),
+            ("selected_import_bindings", selected_import_rows),
+            ("selected_declarations", selected_node_rows),
+        )
+        payloads.append(
+            (
+                f"language_core_source_owner_ast:{relative_path}",
+                stage1_canonical_json_bytes(owner_payload),
+            )
+        )
+    return tuple(payloads)
+
+
+def language_core_identity_payloads(
+    repository_root: Optional[Path] = None,
+) -> Tuple[Tuple[str, bytes], ...]:
+    """Return Step-2 behavior owners plus their closed manifest payloads."""
+
+    integration_payloads = stage1_runtime_integration_identity_payloads(
+        repository_root
+    )
+    source_owner_payloads = _language_core_source_owner_payloads(repository_root)
+    result = (*source_owner_payloads, *integration_payloads[7:])
+    if len(result) != 16:
         raise Stage1CompositionError("LANGUAGE_CORE_IDENTITY_PAYLOAD_COUNT_STOP")
     return tuple(result)
 
 
-def compute_language_core_identity(repository_root: Optional[Path] = None) -> str:
-    material = bytearray(b"COCOLON_CMEE_STAGE1_LANGUAGE_CORE_IDENTITY_V1\x00")
-    for name, payload in language_core_identity_payloads(repository_root):
+def _compute_framed_identity(
+    domain: bytes,
+    payloads: Tuple[Tuple[str, bytes], ...],
+) -> str:
+    material = bytearray(domain)
+    for name, payload in payloads:
         name_bytes = name.encode("utf-8")
         material.extend(len(name_bytes).to_bytes(8, "big"))
         material.extend(name_bytes)
@@ -6520,7 +6790,26 @@ def compute_language_core_identity(repository_root: Optional[Path] = None) -> st
     return hashlib.sha256(material).hexdigest()
 
 
+def compute_stage1_runtime_integration_identity(
+    repository_root: Optional[Path] = None,
+) -> str:
+    return _compute_framed_identity(
+        b"COCOLON_CMEE_STAGE1_LANGUAGE_CORE_IDENTITY_V1\x00",
+        stage1_runtime_integration_identity_payloads(repository_root),
+    )
+
+
+def compute_language_core_identity(repository_root: Optional[Path] = None) -> str:
+    return _compute_framed_identity(
+        b"COCOLON_CMEE_STAGE1_LANGUAGE_CORE_IDENTITY_V2\x00",
+        language_core_identity_payloads(repository_root),
+    )
+
+
 validate_language_core_registry_invariant()
+STAGE1_RUNTIME_INTEGRATION_IDENTITY = (
+    compute_stage1_runtime_integration_identity()
+)
 LANGUAGE_CORE_IDENTITY = compute_language_core_identity()
 
 
@@ -6533,6 +6822,7 @@ __all__ = (
     "DiscoursePreferenceProfile",
     "EmlisSubjectiveMeaningPlan",
     "LANGUAGE_CORE_IDENTITY",
+    "STAGE1_RUNTIME_INTEGRATION_IDENTITY",
     "LayoutPreferenceSeed",
     "NormalFormPhase",
     "NormalizedDraftArtifact",
@@ -6550,6 +6840,7 @@ __all__ = (
     "canonical_normalized_bytes",
     "compose_stage1_from_projection",
     "compute_language_core_identity",
+    "compute_stage1_runtime_integration_identity",
     "derive_discourse_preference_profile",
     "language_core_identity_payloads",
     "normalize_to_normal_form",
@@ -6557,5 +6848,6 @@ __all__ = (
     "project_stage1_discourse_arc",
     "project_subjective_meaning_plan",
     "select_eligible_constructions",
+    "stage1_runtime_integration_identity_payloads",
     "validate_language_core_registry_invariant",
 )
