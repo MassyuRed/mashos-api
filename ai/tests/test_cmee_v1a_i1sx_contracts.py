@@ -16208,5 +16208,745 @@ class CMEERouteAV2I01DisabledRegistryContractsTest(unittest.TestCase):
         )
 
 
+class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
+    _TERMINAL_BY_CLASS = {
+        contracts_module.SourceFinalTerminalClass.ABSENT: "",
+        contracts_module.SourceFinalTerminalClass.PERIOD: "。",
+        contracts_module.SourceFinalTerminalClass.QUESTION: "？",
+        contracts_module.SourceFinalTerminalClass.EXCLAMATION: "！",
+    }
+    _QUOTE_BY_TOPOLOGY = {
+        contracts_module.SourceQuoteTopology.NONE: "",
+        contracts_module.SourceQuoteTopology.BALANCED_KAGI_ONLY: "「内」",
+        contracts_module.SourceQuoteTopology.BALANCED_NIJUKAGI_ONLY: "『内』",
+        contracts_module.SourceQuoteTopology.BALANCED_MIXED: "「内『奥』」",
+    }
+    _LINE_BREAK_BY_SHAPE = {
+        contracts_module.SourceLineBreakShape.NONE: "",
+        contracts_module.SourceLineBreakShape.LF_ONLY: "\n",
+        contracts_module.SourceLineBreakShape.CRLF_ONLY: "\r\n",
+    }
+
+    def _payload_for_shape(
+        self,
+        *,
+        sentence_shape: object,
+        terminal_class: object,
+        quote_topology: object,
+        line_break_shape: object,
+        variant: str = "前",
+    ) -> bytes:
+        quote = self._QUOTE_BY_TOPOLOGY[quote_topology]
+        line_break = self._LINE_BREAK_BY_SHAPE[line_break_shape]
+        if sentence_shape is contracts_module.SourceSentenceShape.MULTI_SENTENCE:
+            text = f"{variant}{line_break}{quote}。後"
+        else:
+            text = f"{variant}{line_break}{quote}後"
+        return (text + self._TERMINAL_BY_CLASS[terminal_class]).encode("utf-8")
+
+    def _source_leaf_fixture(
+        self,
+        *,
+        tag: str,
+        payload_utf8: bytes,
+        extent: object = contracts_module.SourceLeafExtent.FULL_EVIDENCE_LITERAL,
+        sentence_shape: object = contracts_module.SourceSentenceShape.ONE_SENTENCE,
+        terminal_class: object = contracts_module.SourceFinalTerminalClass.ABSENT,
+        quote_topology: object = contracts_module.SourceQuoteTopology.NONE,
+        line_break_shape: object = contracts_module.SourceLineBreakShape.NONE,
+        certify: bool = True,
+    ) -> tuple[object, tuple[tuple[str, bytes], ...], tuple[tuple[str, str, int, int], ...], tuple[tuple[str, str, int, int], ...]]:
+        envelope_ref = f"source-envelope:{tag}"
+        evidence_ref = f"evidence:{tag}"
+        semantic_ref = f"semantic:{tag}"
+        if extent is contracts_module.SourceLeafExtent.CERTIFIED_LITERAL_SUBSPAN:
+            raw_utf8 = b"x" + payload_utf8 + b"y"
+            start = 1
+            end = 1 + len(payload_utf8)
+            evidence_range = (0, len(raw_utf8))
+            certified = (
+                ((evidence_ref, envelope_ref, start, end),)
+                if certify
+                else ()
+            )
+        else:
+            raw_utf8 = payload_utf8
+            start = 0
+            end = len(payload_utf8)
+            evidence_range = (start, end)
+            certified = ()
+        derivation = SurfaceDerivation(
+            derivation_kind=SurfaceDerivationKind.LITERAL_SUBSPAN,
+            source_or_claim_refs=(semantic_ref,),
+            emlis_owner_ref=None,
+            relation_or_clause_plan_refs=(f"source-group-owner:{tag}",),
+            qualifier_refs=(),
+            response_object_expression_ref=None,
+            antecedent_unit_ref=None,
+            participant_role_ref=None,
+            evidence_refs=(evidence_ref,),
+            rule_ref="route-a-public-typed-source-fixture.v2",
+            input_scalar_ranges=((0, max(1, len(payload_utf8))),),
+        )
+        leaf = contracts_module.SourceLeafToken(
+            leaf_ref=f"source-leaf:{tag}",
+            semantic_ref=semantic_ref,
+            source_envelope_ref=envelope_ref,
+            evidence_ref=evidence_ref,
+            extent=extent,
+            raw_utf8_start=start,
+            raw_utf8_end=end,
+            payload_utf8=payload_utf8,
+            sentence_shape=sentence_shape,
+            final_terminal_class=terminal_class,
+            quote_topology=quote_topology,
+            line_break_shape=line_break_shape,
+            derivation=derivation,
+        )
+        evidence = ((evidence_ref, envelope_ref, *evidence_range),)
+        return leaf, ((envelope_ref, raw_utf8),), evidence, certified
+
+    def _project_group(
+        self,
+        *,
+        tag: str,
+        fixtures: tuple[tuple[object, tuple[tuple[str, bytes], ...], tuple[tuple[str, str, int, int], ...], tuple[tuple[str, str, int, int], ...]], ...],
+        cardinality: object,
+    ) -> tuple[object, tuple[object, ...]]:
+        leaves = tuple(row[0] for row in fixtures)
+        group = stage1_composition_module.project_source_leaf_group(
+            group_ref=f"source-group:{tag}",
+            cardinality=cardinality,
+            source_leaves=leaves,
+            source_envelope_bindings=tuple(
+                binding for row in fixtures for binding in row[1]
+            ),
+            evidence_literal_bindings=tuple(
+                binding for row in fixtures for binding in row[2]
+            ),
+            certified_subspan_bindings=tuple(
+                binding for row in fixtures for binding in row[3]
+            ),
+        )
+        return group, leaves
+
+    def _frame(self, frame_id: str) -> object:
+        return next(
+            row
+            for row in stage1_composition_module.V2_JAPANESE_CASE_FRAME_REGISTRY
+            if row.frame_id == frame_id
+        )
+
+    def _case_frame_key(self, frame: object) -> object:
+        sense = next(
+            row
+            for row in stage1_composition_module.V2_PREDICATE_SENSE_REGISTRY
+            if row.sense_id == frame.sense_ref
+        )
+        morphology = next(
+            row
+            for row in stage1_composition_module.V2_MATRIX_MORPHOLOGY_PARADIGM_REGISTRY
+            if row.frame_ref == frame.frame_id
+        )
+        semantic_clause_kind = stage1_composition_module.SemanticClauseKind(
+            sense.semantic_clause_kind
+        )
+        content_kind, predication_kind = (
+            stage1_composition_module._v2_subjective_kind_for_sense(
+                sense.sense_id
+            )
+        )
+        is_subjective = (
+            semantic_clause_kind
+            is stage1_composition_module.SemanticClauseKind.SUBJECTIVE_PREDICATE
+        )
+        is_grounded = (
+            semantic_clause_kind
+            is stage1_composition_module.SemanticClauseKind.GROUNDED_PREDICATE
+        )
+        return stage1_composition_module.JapaneseCaseFrameKey(
+            sentence_job=stage1_composition_module.SentenceJob(
+                sense.sentence_job
+            ),
+            semantic_clause_kind=semantic_clause_kind,
+            subjective_content_kind=content_kind if is_subjective else None,
+            subjective_predication_kind=(
+                predication_kind if is_subjective else None
+            ),
+            subjective_semantic_sense=(
+                sense.semantic_sense if is_subjective else None
+            ),
+            grounded_predicate_kind=(
+                sense.semantic_sense if is_grounded else None
+            ),
+            required_argument_roles=tuple(
+                stage1_composition_module.ClauseArgumentRole(role)
+                for role in frame.slot_roles
+            ),
+            admitted_relation_operator=(
+                stage1_composition_module._v2_relation_operator_for_frame(
+                    frame.frame_id
+                )
+            ),
+            polarity=morphology.polarity,
+            modality=morphology.modal,
+            time_scope=morphology.aspect_time,
+            speaker_requirement=(
+                stage1_composition_module.SpeakerRequirement.EMLIS_EXPLICIT_REQUIRED
+                if is_subjective
+                else stage1_composition_module.SpeakerRequirement.GROUNDED_NARRATION
+            ),
+            zero_subject_eligibility=frame.zero_policy,
+            complement_requirement=frame.complement_rule_ref,
+        )
+
+    def _slot_bindings(self, frame: object) -> tuple[tuple[object, str, tuple[str, ...]], ...]:
+        return tuple(
+            (
+                stage1_composition_module.ClauseArgumentRole(role),
+                f"semantic-slot:{frame.frame_id}:{role}",
+                (f"provenance:{frame.frame_id}:{role}",),
+            )
+            for role in frame.slot_roles
+        )
+
+    def test_route_a_illegal_morphosyntactic_join_stops_before_rank(self) -> None:
+        frame = self._frame("F18")
+        incomplete = self._slot_bindings(frame)[:-1]
+        rank_spy = patch.object(
+            stage1_composition_module,
+            "derive_discourse_preference_profile",
+        )
+        with rank_spy as mocked_rank:
+            with self.assertRaisesRegex(
+                stage1_composition_module.Stage1CompositionError,
+                "STAGE1_REQUIRED_ARGUMENT_SLOT_NONUNIQUE_STOP",
+            ):
+                stage1_composition_module.project_argument_realization_plan(
+                    frame=frame,
+                    slot_bindings=incomplete,
+                )
+            fixture = self._source_leaf_fixture(
+                tag="illegal-pair",
+                payload_utf8="境界".encode("utf-8"),
+            )
+            with self.assertRaisesRegex(
+                stage1_composition_module.Stage1CompositionError,
+                "STAGE1_SOURCE_PAIR_CARDINALITY_STOP",
+            ):
+                self._project_group(
+                    tag="illegal-pair",
+                    fixtures=(fixture,),
+                    cardinality=contracts_module.SourceLeafCardinality.ORDERED_EXACT2,
+                )
+            particle_registry = (
+                *stage1_composition_module.V2_CASE_PARTICLE_REGISTRY,
+                stage1_composition_module.V2_CASE_PARTICLE_REGISTRY[0],
+            )
+            with (
+                patch.object(
+                    stage1_composition_module,
+                    "V2_CASE_PARTICLE_REGISTRY",
+                    particle_registry,
+                ),
+                patch.object(
+                    stage1_composition_module,
+                    "validate_v2_grammar_inventory",
+                ),
+                self.assertRaisesRegex(
+                    stage1_composition_module.Stage1CompositionError,
+                    "STAGE1_CASE_PARTICLE_OWNER_NONUNIQUE_STOP",
+                ),
+            ):
+                stage1_composition_module.project_argument_realization_plan(
+                    frame=self._frame("F01"),
+                    slot_bindings=self._slot_bindings(self._frame("F01")),
+                )
+            mocked_rank.assert_not_called()
+
+    def test_route_a_shape_preserving_source_mutations_preserve_functional_scaffold(self) -> None:
+        frame = self._frame("F02")
+        key = self._case_frame_key(frame)
+        selected_frame = stage1_composition_module.select_case_frame(key)
+        selected_head = stage1_composition_module.select_atomic_predicate_head(
+            selected_frame
+        )
+        fixtures = tuple(
+            self._source_leaf_fixture(
+                tag=f"shape-{index}",
+                payload_utf8=self._payload_for_shape(
+                    sentence_shape=contracts_module.SourceSentenceShape.ONE_SENTENCE,
+                    terminal_class=contracts_module.SourceFinalTerminalClass.PERIOD,
+                    quote_topology=contracts_module.SourceQuoteTopology.NONE,
+                    line_break_shape=contracts_module.SourceLineBreakShape.NONE,
+                    variant=variant,
+                ),
+                terminal_class=contracts_module.SourceFinalTerminalClass.PERIOD,
+            )
+            for index, variant in enumerate(("甲", "乙"), start=1)
+        )
+        plans = []
+        for index, fixture in enumerate(fixtures, start=1):
+            group, leaves = self._project_group(
+                tag=f"shape-{index}",
+                fixtures=(fixture,),
+                cardinality=contracts_module.SourceLeafCardinality.EXACT1,
+            )
+            plans.append(
+                stage1_composition_module.select_source_complement_plan(
+                    group=group,
+                    source_leaves=leaves,
+                    frame=selected_frame,
+                )
+            )
+        self.assertNotEqual(fixtures[0][0].payload_utf8, fixtures[1][0].payload_utf8)
+        self.assertEqual(selected_frame.frame_id, "F02")
+        self.assertEqual(selected_head.head_id, "H02")
+        self.assertEqual(
+            tuple(
+                (
+                    plan.mode,
+                    plan.complement_rule_ref,
+                    plan.quote_delimiter_refs,
+                    plan.classifier_ref,
+                    plan.coordinator_ref,
+                    plan.case_slot_ref,
+                )
+                for plan in plans
+            ),
+            (
+                (
+                    contracts_module.SourceRealizationMode.CLASSIFIED_CONTENT,
+                    "C05",
+                    ("QD01",),
+                    "CL01",
+                    None,
+                    "SUBJECT",
+                ),
+            )
+            * 2,
+        )
+
+    def test_route_a_semantic_role_mutations_change_only_licensed_grammar_slots(self) -> None:
+        stage1_composition_module.validate_v2_grammar_inventory()
+        wrong_particle = {
+            "が": "を",
+            "は": "を",
+            "を": "が",
+            "と": "を",
+            "のあとに": "によって",
+            "によって": "のあとに",
+            "から": "に",
+            "に": "から",
+        }
+        mutation_count = 0
+        with patch.object(
+            stage1_composition_module,
+            "derive_discourse_preference_profile",
+        ) as mocked_rank:
+            for rule_index, rule in enumerate(
+                stage1_composition_module.V2_CASE_PARTICLE_REGISTRY
+            ):
+                for variant_index, variant in enumerate(rule.surface_variants):
+                    mutations = []
+                    dropped = list(rule.surface_variants)
+                    dropped.pop(variant_index)
+                    mutations.append(tuple(dropped))
+                    duplicated = list(rule.surface_variants)
+                    duplicated.insert(variant_index, variant)
+                    mutations.append(tuple(duplicated))
+                    swapped = list(rule.surface_variants)
+                    swapped[variant_index] = replace(
+                        variant,
+                        atomic_surface=wrong_particle[variant.atomic_surface],
+                    )
+                    mutations.append(tuple(swapped))
+                    for mutated_variants in mutations:
+                        registry = list(
+                            stage1_composition_module.V2_CASE_PARTICLE_REGISTRY
+                        )
+                        registry[rule_index] = replace(
+                            rule,
+                            surface_variants=mutated_variants,
+                        )
+                        with (
+                            patch.object(
+                                stage1_composition_module,
+                                "V2_CASE_PARTICLE_REGISTRY",
+                                tuple(registry),
+                            ),
+                            self.assertRaisesRegex(
+                                stage1_composition_module.Stage1CompositionError,
+                                "GRAMMAR_INVENTORY_TYPED_PROJECTION_DRIFT_STOP",
+                            ),
+                        ):
+                            stage1_composition_module.validate_v2_grammar_inventory()
+                        mutation_count += 1
+
+            with patch.object(
+                stage1_composition_module,
+                "validate_v2_grammar_inventory",
+            ):
+                for frame in stage1_composition_module.V2_JAPANESE_CASE_FRAME_REGISTRY:
+                    bindings = self._slot_bindings(frame)
+                    for slot_index in range(len(bindings)):
+                        with self.assertRaisesRegex(
+                            stage1_composition_module.Stage1CompositionError,
+                            "STAGE1_REQUIRED_ARGUMENT_SLOT_NONUNIQUE_STOP",
+                        ):
+                            stage1_composition_module.project_argument_realization_plan(
+                                frame=frame,
+                                slot_bindings=(
+                                    *bindings[:slot_index],
+                                    *bindings[slot_index + 1 :],
+                                ),
+                            )
+                        mutation_count += 1
+
+            complement_cycle = {
+                f"C{index:02d}": f"C{index + 1:02d}"
+                for index in range(2, 9)
+            }
+            complement_cycle["C09"] = "C02"
+            for license_index, license_row in enumerate(
+                stage1_composition_module.V2_SENSE_COMPLEMENT_LICENSE_REGISTRY
+            ):
+                registry = list(
+                    stage1_composition_module.V2_SENSE_COMPLEMENT_LICENSE_REGISTRY
+                )
+                registry[license_index] = replace(
+                    license_row,
+                    complement_rule_ref=complement_cycle[
+                        license_row.complement_rule_ref
+                    ],
+                )
+                with (
+                    patch.object(
+                        stage1_composition_module,
+                        "V2_SENSE_COMPLEMENT_LICENSE_REGISTRY",
+                        tuple(registry),
+                    ),
+                    self.assertRaisesRegex(
+                        stage1_composition_module.Stage1CompositionError,
+                        "GRAMMAR_INVENTORY_TYPED_PROJECTION_DRIFT_STOP",
+                    ),
+                ):
+                    stage1_composition_module.validate_v2_grammar_inventory()
+                mutation_count += 1
+            mocked_rank.assert_not_called()
+        self.assertEqual(mutation_count, 59 * 3 + 42 + 22)
+        self.assertEqual(mutation_count, 241)
+
+    def test_route_a_source_leaf_modes_preserve_bytes_and_ownership(self) -> None:
+        self.assertEqual(
+            len(stage1_composition_module.V2_SOURCE_PRIMITIVE_BOUNDARY_ROWS),
+            192,
+        )
+        self.assertEqual(
+            len(stage1_composition_module.V2_SOURCE_GROUP_CARDINALITY_ROWS),
+            2,
+        )
+        self.assertEqual(
+            len(stage1_composition_module.V2_SOURCE_MODE_CARDINALITY_ROWS),
+            10,
+        )
+        self.assertEqual(
+            len(stage1_composition_module.V2_SOURCE_QUOTE_DELIMITER_BOUNDARY_ROWS),
+            4,
+        )
+        self.assertEqual(
+            len(stage1_composition_module.V2_SOURCE_BOUNDARY_ROWS),
+            208,
+        )
+        self.assertEqual(stage1_composition_module.V2_SOURCE_BOUNDARY_ROW_COUNT, 208)
+
+        primitive_count = 0
+        for (
+            extent,
+            sentence_shape,
+            terminal_class,
+            quote_topology,
+            line_break_shape,
+        ) in stage1_composition_module.V2_SOURCE_PRIMITIVE_BOUNDARY_ROWS:
+            tag = f"primitive-{primitive_count:03d}"
+            payload = self._payload_for_shape(
+                sentence_shape=sentence_shape,
+                terminal_class=terminal_class,
+                quote_topology=quote_topology,
+                line_break_shape=line_break_shape,
+            )
+            fixture = self._source_leaf_fixture(
+                tag=tag,
+                payload_utf8=payload,
+                extent=extent,
+                sentence_shape=sentence_shape,
+                terminal_class=terminal_class,
+                quote_topology=quote_topology,
+                line_break_shape=line_break_shape,
+            )
+            group, leaves = self._project_group(
+                tag=tag,
+                fixtures=(fixture,),
+                cardinality=contracts_module.SourceLeafCardinality.EXACT1,
+            )
+            self.assertEqual(group.ordered_leaf_refs, (leaves[0].leaf_ref,))
+            self.assertEqual(leaves[0].payload_utf8, payload)
+            self.assertNotIn(payload.decode("utf-8"), repr(leaves[0]))
+            primitive_count += 1
+        self.assertEqual(primitive_count, 192)
+
+        exact1 = self._source_leaf_fixture(
+            tag="mode-exact1",
+            payload_utf8="対象。".encode("utf-8"),
+            terminal_class=contracts_module.SourceFinalTerminalClass.PERIOD,
+        )
+        exact2 = (
+            self._source_leaf_fixture(
+                tag="mode-exact2-a",
+                payload_utf8="甲".encode("utf-8"),
+            ),
+            self._source_leaf_fixture(
+                tag="mode-exact2-b",
+                payload_utf8="乙\r\n後".encode("utf-8"),
+                line_break_shape=contracts_module.SourceLineBreakShape.CRLF_ONLY,
+            ),
+        )
+        mode_cases = (
+            ("F11", (exact1,), contracts_module.SourceLeafCardinality.EXACT1, contracts_module.SourceRealizationMode.QUOTE_COMPLEMENT),
+            ("F01", (exact1,), contracts_module.SourceLeafCardinality.EXACT1, contracts_module.SourceRealizationMode.CONTENT_NOMINAL),
+            ("F02", (exact1,), contracts_module.SourceLeafCardinality.EXACT1, contracts_module.SourceRealizationMode.CLASSIFIED_CONTENT),
+            ("F05", exact2, contracts_module.SourceLeafCardinality.ORDERED_EXACT2, contracts_module.SourceRealizationMode.COORDINATED_EXACT2),
+            ("F18", exact2, contracts_module.SourceLeafCardinality.ORDERED_EXACT2, contracts_module.SourceRealizationMode.BOUNDARY_SPLIT_EXACT2),
+        )
+        actual_modes = []
+        for index, (frame_id, fixtures, cardinality, expected_mode) in enumerate(
+            mode_cases,
+            start=1,
+        ):
+            group, leaves = self._project_group(
+                tag=f"mode-{index}",
+                fixtures=fixtures,
+                cardinality=cardinality,
+            )
+            plan = stage1_composition_module.select_source_complement_plan(
+                group=group,
+                source_leaves=leaves,
+                frame=self._frame(frame_id),
+            )
+            self.assertIs(plan.mode, expected_mode)
+            self.assertEqual(len(plan.quote_delimiter_refs), len(leaves))
+            self.assertEqual(
+                tuple(leaf.payload_utf8 for leaf in leaves),
+                tuple(fixture[0].payload_utf8 for fixture in fixtures),
+            )
+            actual_modes.append(plan.mode)
+        self.assertEqual(set(actual_modes), set(contracts_module.SourceRealizationMode))
+
+        mixed = self._source_leaf_fixture(
+            tag="mixed-delimiter",
+            payload_utf8="前「内『奥』」後".encode("utf-8"),
+            quote_topology=contracts_module.SourceQuoteTopology.BALANCED_MIXED,
+        )
+        mixed_group, mixed_leaves = self._project_group(
+            tag="mixed-delimiter",
+            fixtures=(mixed,),
+            cardinality=contracts_module.SourceLeafCardinality.EXACT1,
+        )
+        with self.assertRaisesRegex(
+            stage1_composition_module.Stage1CompositionError,
+            "SOURCE_OUTER_DELIMITER_UNAVAILABLE_STOP",
+        ):
+            stage1_composition_module.select_source_complement_plan(
+                group=mixed_group,
+                source_leaves=mixed_leaves,
+                frame=self._frame("F01"),
+            )
+
+        invalid_cases = (
+            (
+                self._source_leaf_fixture(
+                    tag="unbalanced",
+                    payload_utf8="前「内後".encode("utf-8"),
+                    quote_topology=contracts_module.SourceQuoteTopology.BALANCED_KAGI_ONLY,
+                ),
+                "STAGE1_SOURCE_QUOTE_UNBALANCED_STOP",
+            ),
+            (
+                self._source_leaf_fixture(
+                    tag="lone-cr",
+                    payload_utf8=b"a\rb",
+                    line_break_shape=contracts_module.SourceLineBreakShape.CRLF_ONLY,
+                ),
+                "STAGE1_SOURCE_LINEBREAK_UNSUPPORTED_STOP",
+            ),
+            (
+                self._source_leaf_fixture(
+                    tag="mixed-newline",
+                    payload_utf8=b"a\r\nb\nc",
+                    line_break_shape=contracts_module.SourceLineBreakShape.CRLF_ONLY,
+                ),
+                "STAGE1_SOURCE_LINEBREAK_UNSUPPORTED_STOP",
+            ),
+            (
+                self._source_leaf_fixture(
+                    tag="invalid-utf8",
+                    payload_utf8=b"\xff",
+                ),
+                "STAGE1_SOURCE_LEAF_UTF8_MISMATCH_STOP",
+            ),
+            (
+                self._source_leaf_fixture(
+                    tag="uncertified",
+                    payload_utf8=b"subspan",
+                    extent=contracts_module.SourceLeafExtent.CERTIFIED_LITERAL_SUBSPAN,
+                    certify=False,
+                ),
+                "STAGE1_SOURCE_LITERAL_SUBSPAN_UNCERTIFIED_STOP",
+            ),
+        )
+        for fixture, expected_stop in invalid_cases:
+            with self.assertRaisesRegex(
+                stage1_composition_module.Stage1CompositionError,
+                expected_stop,
+            ):
+                self._project_group(
+                    tag=f"invalid-{expected_stop}",
+                    fixtures=(fixture,),
+                    cardinality=contracts_module.SourceLeafCardinality.EXACT1,
+                )
+        third = self._source_leaf_fixture(
+            tag="mode-exact2-c",
+            payload_utf8=b"third",
+        )
+        for fixtures in ((exact2[0],), (*exact2, third)):
+            with self.assertRaisesRegex(
+                stage1_composition_module.Stage1CompositionError,
+                "STAGE1_SOURCE_PAIR_CARDINALITY_STOP",
+            ):
+                self._project_group(
+                    tag="invalid-pair-count",
+                    fixtures=fixtures,
+                    cardinality=contracts_module.SourceLeafCardinality.ORDERED_EXACT2,
+                )
+
+    def test_route_a_frame_and_atomic_head_selection_are_distinct_and_total(self) -> None:
+        frame_selector = stage1_composition_module.select_case_frame
+        head_selector = stage1_composition_module.select_atomic_predicate_head
+        selected_frames = []
+        selected_heads = []
+        argument_plans = []
+        with (
+            patch.object(
+                stage1_composition_module,
+                "select_case_frame",
+                wraps=frame_selector,
+            ) as frame_spy,
+            patch.object(
+                stage1_composition_module,
+                "select_atomic_predicate_head",
+                wraps=head_selector,
+            ) as head_spy,
+        ):
+            for expected_frame in stage1_composition_module.V2_JAPANESE_CASE_FRAME_REGISTRY:
+                selected_frame = stage1_composition_module.select_case_frame(
+                    self._case_frame_key(expected_frame)
+                )
+                selected_head = stage1_composition_module.select_atomic_predicate_head(
+                    selected_frame
+                )
+                plans = stage1_composition_module.project_argument_realization_plan(
+                    frame=selected_frame,
+                    slot_bindings=self._slot_bindings(selected_frame),
+                )
+                self.assertEqual(selected_frame, expected_frame)
+                self.assertEqual(selected_head.frame_ref, selected_frame.frame_id)
+                self.assertEqual(
+                    tuple(plan.slot_role for plan in plans),
+                    selected_frame.slot_roles,
+                )
+                selected_frames.append(selected_frame.frame_id)
+                selected_heads.append(selected_head.head_id)
+                argument_plans.extend(plans)
+            self.assertEqual(frame_spy.call_count, 22)
+            self.assertEqual(head_spy.call_count, 22)
+        self.assertEqual(len(set(selected_frames)), 22)
+        self.assertEqual(len(set(selected_heads)), 22)
+        self.assertEqual(len(argument_plans), 42)
+        self.assertEqual(
+            len({plan.particle_rule_ref for plan in argument_plans}),
+            42,
+        )
+
+        key_fields = tuple(
+            field.name
+            for field in fields(stage1_composition_module.JapaneseCaseFrameKey)
+        )
+        self.assertEqual(
+            set(key_fields)
+            & {
+                "raw_source",
+                "source_shape",
+                "rendered_surface",
+                "output_history",
+                "case_id",
+                "fixture_id",
+                "expected_text",
+            },
+            set(),
+        )
+        first_frame = stage1_composition_module.V2_JAPANESE_CASE_FRAME_REGISTRY[0]
+        with (
+            patch.object(
+                stage1_composition_module,
+                "V2_JAPANESE_CASE_FRAME_REGISTRY",
+                (
+                    *stage1_composition_module.V2_JAPANESE_CASE_FRAME_REGISTRY,
+                    first_frame,
+                ),
+            ),
+            patch.object(
+                stage1_composition_module,
+                "validate_v2_grammar_inventory",
+            ),
+            self.assertRaisesRegex(
+                stage1_composition_module.Stage1CompositionError,
+                "STAGE1_JAPANESE_CASE_FRAME_NONUNIQUE_STOP",
+            ),
+        ):
+            frame_selector(self._case_frame_key(first_frame))
+        first_head = stage1_composition_module.V2_ATOMIC_PREDICATE_HEAD_REGISTRY[0]
+        with (
+            patch.object(
+                stage1_composition_module,
+                "V2_ATOMIC_PREDICATE_HEAD_REGISTRY",
+                (
+                    *stage1_composition_module.V2_ATOMIC_PREDICATE_HEAD_REGISTRY,
+                    first_head,
+                ),
+            ),
+            patch.object(
+                stage1_composition_module,
+                "validate_v2_grammar_inventory",
+            ),
+            self.assertRaisesRegex(
+                stage1_composition_module.Stage1CompositionError,
+                "STAGE1_ATOMIC_PREDICATE_HEAD_NONUNIQUE_STOP",
+            ),
+        ):
+            head_selector(first_frame)
+        owner_roots = dict(
+            stage1_composition_module.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
+        )[stage1_composition_module._COMPOSITION_PATH]
+        self.assertTrue(
+            {
+                "project_source_leaf_group",
+                "select_source_complement_plan",
+                "select_case_frame",
+                "select_atomic_predicate_head",
+                "project_argument_realization_plan",
+            }.issubset(owner_roots)
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
