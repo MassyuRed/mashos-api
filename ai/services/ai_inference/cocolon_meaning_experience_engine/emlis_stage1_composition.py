@@ -23,12 +23,17 @@ from .contracts import (
     AppraisalOperation,
     ArgumentBinding,
     ArgumentRole,
+    AtomicPredicateHeadSpec,
+    CaseParticleRule,
+    CaseParticleSurfaceVariant,
     ClauseFrame,
+    ClauseLinkRule,
     CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
     CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY,
     CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7,
     CMEE_STAGE1_SUBJECTIVE_FORBIDDEN_PROMOTIONS,
     CMEE_STAGE1_VALUE_PRINCIPLE_REFS,
+    ComplementRuleSpec,
     EmlisAffectContent,
     EmlisAppraisalContent,
     EmlisInterpretationCandidate,
@@ -36,6 +41,11 @@ from .contracts import (
     EmlisRelationalPosition,
     EmlisStage1Projection,
     EmlisSubjectiveClaim,
+    InflectionClassSpec,
+    JapaneseCaseFrameSpec,
+    JapaneseLocalPreferenceRule,
+    LexicalFamilySpec,
+    MatrixMorphologyParadigmSpec,
     MaterialRisk,
     MaterialValueContent,
     MeaningFieldEntry,
@@ -44,14 +54,29 @@ from .contracts import (
     PolicyBasisBinding,
     PolicyBasisOwnerKind,
     PolicyBasisRole,
+    PredicateSenseFrameLicense,
+    PredicateSenseSpec,
     RelationOperator,
+    ReferenceZeroTopicRule,
     RealizedSemanticBinding,
     RealizedSentenceUnit,
     RelationalClosure,
     RelationalCommitment,
     RelationalPositionKind,
     SemanticOperator,
+    SenseComplementLicense,
+    SourceClassifierSpec,
+    SourceFinalTerminalClass,
+    SourceFunctionalModifierSpec,
+    SourceFunctionalTokenSpec,
+    SourceLeafCardinality,
+    SourceLeafExtent,
+    SourceLineBreakShape,
     SourceQualifierBinding,
+    SourceQuoteDelimiterRule,
+    SourceQuoteTopology,
+    SourceRealizationMode,
+    SourceSentenceShape,
     StanceOperator,
     SubjectiveAssertionModality,
     SubjectiveBasisBinding,
@@ -90,6 +115,928 @@ CMEE_STAGE1_EMLIS_OWNER_REF = _FINAL_ID["CMEE_STAGE1_EMLIS_OWNER_REF"]
 
 class Stage1CompositionError(ValueError):
     """Named fail-closed stop in the disabled final Stage 1 core."""
+
+# I01 registration only: no active facade reads this inventory and none of the
+# rows contain request data or a completed user-visible phrase.
+V2_GRAMMAR_INVENTORY_SHA256 = (
+    "f071244e28baa5a824067ebfddf273bc4ad8f967d90ed5bd0bf9b9862a68a802"
+)
+V2_GRAMMAR_INVENTORY_BYTE_COUNT = 13_811
+V2_GRAMMAR_INVENTORY_ROW_COUNT = 232
+V2_GRAMMAR_INVENTORY = """SENSE|S01|OBSERVE_CENTER|GROUNDED_PREDICATE|center|F01
+SENSE|S02|OBSERVE_CENTER|GROUNDED_PREDICATE|direction|F02
+SENSE|S03|OBSERVE_CENTER|GROUNDED_PREDICATE|burden|F03
+SENSE|S04|OBSERVE_CENTER|GROUNDED_PREDICATE|bounded-change|F04
+SENSE|S05|RELATE_COEXISTING_OR_TENSION|ADMITTED_RELATION|coexistence|F05
+SENSE|S06|RELATE_COEXISTING_OR_TENSION|ADMITTED_RELATION|tension|F06
+SENSE|S07|TRACE_CHANGE_OR_SEQUENCE|ADMITTED_RELATION|sequence|F07,F08,F09
+SENSE|S08|PRESERVE_RESIDUE_OR_UNFINISHED|GROUNDED_PREDICATE|unfinished|F10
+SENSE|S09|FEEL_TOWARD_OBJECT|SUBJECTIVE_PREDICATE|affect|F11
+SENSE|S10|CONSIDER_MATERIAL_MEANING|SUBJECTIVE_PREDICATE|appraisal-material|F12
+SENSE|S11|CONSIDER_MATERIAL_MEANING|SUBJECTIVE_PREDICATE|appraisal-noncollapse|F13
+SENSE|S12|CONSIDER_MATERIAL_MEANING|SUBJECTIVE_PREDICATE|appraisal-change|F14
+SENSE|S13|CONSIDER_MATERIAL_MEANING|SUBJECTIVE_PREDICATE|appraisal-unfinished|F15
+SENSE|S14|CONSIDER_MATERIAL_MEANING|SUBJECTIVE_PREDICATE|appraisal-agency|F16
+SENSE|S15|TAKE_MATERIAL_POSITION|SUBJECTIVE_PREDICATE|material-value|F17,F18
+SENSE|S16|TAKE_MATERIAL_POSITION|SUBJECTIVE_PREDICATE|position|F19,F20
+SENSE|S17|STAY_WITH_UNFINISHED|SUBJECTIVE_PREDICATE|open-position|F21,F22
+FRAME|F01|S01|GROUNDED_CENTER_MONADIC|SUBJECT|required|C03|TOPIC_CONDITIONAL|ZERO_FORBIDDEN|H01|MP01|NONE
+FRAME|F02|S02|GROUNDED_DIRECTION_MONADIC|SUBJECT|required|C05|TOPIC_CONDITIONAL|ZERO_FORBIDDEN|H02|MP02|NONE
+FRAME|F03|S03|GROUNDED_BURDEN_MONADIC|SUBJECT|required|C05|TOPIC_CONDITIONAL|ZERO_FORBIDDEN|H03|MP03|NONE
+FRAME|F04|S04|GROUNDED_CHANGE_MONADIC|SUBJECT|required|C05|TOPIC_CONDITIONAL|ZERO_FORBIDDEN|H04|MP04|NONE
+FRAME|F05|S05|RELATION_COEXISTENCE|LEFT_ENDPOINT,RIGHT_ENDPOINT|required|required|C07|TOPIC_FORBIDDEN|ZERO_FORBIDDEN|H05|MP05|NONE
+FRAME|F06|S06|RELATION_TENSION|LEFT_ENDPOINT,RIGHT_ENDPOINT|required|required|C07|TOPIC_FORBIDDEN|ZERO_FORBIDDEN|H06|MP06|NONE
+FRAME|F07|S07|RELATION_TEMPORAL|BEFORE_EVENT,AFTER_EVENT|required|required|C07|TOPIC_FORBIDDEN|ZERO_FORBIDDEN|H07|MP07|NONE
+FRAME|F08|S07|RELATION_ACTION_CHANGE|ACTION_EVENT,CHANGE_EVENT|required|required|C07|TOPIC_FORBIDDEN|ZERO_FORBIDDEN|H08|MP08|NONE
+FRAME|F09|S07|RELATION_EXPLICIT_CAUSE|CAUSE_EVENT,EFFECT_EVENT|required|required|C07|TOPIC_FORBIDDEN|ZERO_FORBIDDEN|H09|MP09|NONE
+FRAME|F10|S08|GROUNDED_UNFINISHED_MONADIC|SUBJECT|required|C05|TOPIC_CONDITIONAL|ZERO_FORBIDDEN|H10|MP10|NONE
+FRAME|F11|S09|SUBJECTIVE_AFFECT_DYADIC|SUBJECT,PRIMARY_OBJECT|required|required|C02|TOPIC_CONDITIONAL|EMLIS_ZERO_CONDITIONAL|H11|MP11|NONE
+FRAME|F12|S10|SUBJECTIVE_APPRAISAL_MATERIAL_DYADIC|SUBJECT,PRIMARY_OBJECT|required|required|C04|TOPIC_CONDITIONAL|EMLIS_ZERO_CONDITIONAL|H12|MP12|NONE
+FRAME|F13|S11|SUBJECTIVE_NONCOLLAPSE_DYADIC|SUBJECT,PRIMARY_OBJECT|required|required|C08|TOPIC_CONDITIONAL|EMLIS_ZERO_CONDITIONAL|H13|MP13|FM01
+FRAME|F14|S12|SUBJECTIVE_CHANGE_DYADIC|SUBJECT,PRIMARY_OBJECT|required|required|C06|TOPIC_CONDITIONAL|EMLIS_ZERO_CONDITIONAL|H14|MP14|NONE
+FRAME|F15|S13|SUBJECTIVE_UNFINISHED_DYADIC|SUBJECT,PRIMARY_OBJECT|required|required|C02|TOPIC_CONDITIONAL|EMLIS_ZERO_CONDITIONAL|H15|MP15|FM02
+FRAME|F16|S14|SUBJECTIVE_AGENCY_DYADIC|SUBJECT,PRIMARY_OBJECT|required|required|C06|TOPIC_CONDITIONAL|EMLIS_ZERO_CONDITIONAL|H16|MP16|NONE
+FRAME|F17|S15|SUBJECTIVE_VALUE_DYADIC|SUBJECT,PRIMARY_OBJECT|required|required|C04|TOPIC_CONDITIONAL|EMLIS_ZERO_CONDITIONAL|H17|MP17|NONE
+FRAME|F18|S15|SUBJECTIVE_VALUE_BOUNDARY_TRIADIC|SUBJECT,PRIMARY_OBJECT,SECONDARY_OBJECT|required|required|required|C09|TOPIC_CONDITIONAL|EMLIS_ZERO_CONDITIONAL|H18|MP18|NONE
+FRAME|F19|S16|SUBJECTIVE_POSITION_DYADIC|SUBJECT,PRIMARY_OBJECT|required|required|C06|TOPIC_CONDITIONAL|EMLIS_ZERO_CONDITIONAL|H19|MP19|NONE
+FRAME|F20|S16|SUBJECTIVE_POSITION_BOUNDARY_TRIADIC|SUBJECT,PRIMARY_OBJECT,SECONDARY_OBJECT|required|required|required|C09|TOPIC_CONDITIONAL|EMLIS_ZERO_CONDITIONAL|H20|MP20|NONE
+FRAME|F21|S17|SUBJECTIVE_OPEN_DYADIC|SUBJECT,PRIMARY_OBJECT|required|required|C02|TOPIC_CONDITIONAL|EMLIS_ZERO_CONDITIONAL|H21|MP21|FM03
+FRAME|F22|S17|SUBJECTIVE_OPEN_BOUNDARY_TRIADIC|SUBJECT,PRIMARY_OBJECT,SECONDARY_OBJECT|required|required|required|C09|TOPIC_CONDITIONAL|EMLIS_ZERO_CONDITIONAL|H22|MP22|NONE
+HEAD|H01|F01|中心+LEXICALIZED_に+なる|IC03|LF01
+HEAD|H02|F02|見える|IC01|LF02
+HEAD|H03|F03|残る|IC03|LF03
+HEAD|H04|F04|見+られる|IC01|LF21
+HEAD|H05|F05|並ぶ|IC04|LF05
+HEAD|H06|F06|せめぎ+合う|IC05|LF06
+HEAD|H07|F07|続く|IC02|LF07
+HEAD|H08|F08|起こる|IC03|LF04
+HEAD|H09|F09|生じる|IC01|LF08
+HEAD|H10|F10|ある|IC03|LF09
+HEAD|H11|F11|気+LEXICALIZED_に+かける|IC01|LF10
+HEAD|H12|F12|受け+止める|IC01|LF11
+HEAD|H13|F13|まとめる|IC01|LF12
+HEAD|H14|F14|見+届ける|IC01|LF13
+HEAD|H15|F15|結論づける|IC01|LF14
+HEAD|H16|F16|尊重+する|IC06|LF15
+HEAD|H17|F17|大切+LEXICALIZED_に+する|IC06|LF16
+HEAD|H18|F18|守る|IC03|LF17
+HEAD|H19|F19|見+守る|IC03|LF18
+HEAD|H20|F20|固定+する|IC06|LF19
+HEAD|H21|F21|断定+する|IC06|LF22
+HEAD|H22|F22|限定+する|IC06|LF20
+LEXICAL_FAMILY|LF01|中心+LEXICALIZED_に+なる
+LEXICAL_FAMILY|LF02|見える
+LEXICAL_FAMILY|LF03|残る
+LEXICAL_FAMILY|LF04|起こる
+LEXICAL_FAMILY|LF05|並ぶ
+LEXICAL_FAMILY|LF06|せめぎ+合う
+LEXICAL_FAMILY|LF07|続く
+LEXICAL_FAMILY|LF08|生じる
+LEXICAL_FAMILY|LF09|ある
+LEXICAL_FAMILY|LF10|気+LEXICALIZED_に+かける
+LEXICAL_FAMILY|LF11|受け+止める
+LEXICAL_FAMILY|LF12|まとめる
+LEXICAL_FAMILY|LF13|見+届ける
+LEXICAL_FAMILY|LF14|結論づける
+LEXICAL_FAMILY|LF15|尊重+する
+LEXICAL_FAMILY|LF16|大切+LEXICALIZED_に+する
+LEXICAL_FAMILY|LF17|守る
+LEXICAL_FAMILY|LF18|見+守る
+LEXICAL_FAMILY|LF19|固定+する
+LEXICAL_FAMILY|LF20|限定+する
+LEXICAL_FAMILY|LF21|見+られる
+LEXICAL_FAMILY|LF22|断定+する
+COMPLEMENT|C02|QUOTE_COMPLEMENT|EXACT1|PRIMARY_OBJECT|OUTER_QUOTES,FRAME_MARKER
+COMPLEMENT|C03|CONTENT_NOMINAL|EXACT1|MONADIC_SUBJECT|OUTER_QUOTES,SF01,SF02
+COMPLEMENT|C04|CONTENT_NOMINAL|EXACT1|PRIMARY_OBJECT|OUTER_QUOTES,SF01,SF02
+COMPLEMENT|C05|CLASSIFIED_CONTENT|EXACT1|MONADIC_SUBJECT|OUTER_QUOTES,SF01,CLASSIFIER_EXACT1
+COMPLEMENT|C06|CLASSIFIED_CONTENT|EXACT1|PRIMARY_OBJECT|OUTER_QUOTES,SF01,CLASSIFIER_EXACT1
+COMPLEMENT|C07|COORDINATED_EXACT2|ORDERED_EXACT2|PAIRED_ENDPOINTS|FRAME_PARTICLES,COORDINATOR_ZERO
+COMPLEMENT|C08|COORDINATED_EXACT2|ORDERED_EXACT2|PRIMARY_OBJECT|OUTER_QUOTES,SF03
+COMPLEMENT|C09|BOUNDARY_SPLIT_EXACT2|ORDERED_EXACT2|PRIMARY_OBJECT,SECONDARY_OBJECT|OUTER_QUOTES,FRAME_PARTICLES,COORDINATOR_ZERO
+SENSE_COMPLEMENT|SC01|S01|F01|C03|NONE
+SENSE_COMPLEMENT|SC02|S02|F02|C05|CL01
+SENSE_COMPLEMENT|SC03|S03|F03|C05|CL02
+SENSE_COMPLEMENT|SC04|S04|F04|C05|CL03
+SENSE_COMPLEMENT|SC05|S05|F05|C07|NONE
+SENSE_COMPLEMENT|SC06|S06|F06|C07|NONE
+SENSE_COMPLEMENT|SC07|S07|F07|C07|NONE
+SENSE_COMPLEMENT|SC08|S07|F08|C07|NONE
+SENSE_COMPLEMENT|SC09|S07|F09|C07|NONE
+SENSE_COMPLEMENT|SC10|S08|F10|C05|CL05
+SENSE_COMPLEMENT|SC11|S09|F11|C02|NONE
+SENSE_COMPLEMENT|SC12|S10|F12|C04|NONE
+SENSE_COMPLEMENT|SC13|S11|F13|C08|NONE
+SENSE_COMPLEMENT|SC14|S12|F14|C06|CL03
+SENSE_COMPLEMENT|SC15|S13|F15|C02|NONE
+SENSE_COMPLEMENT|SC16|S14|F16|C06|CL04
+SENSE_COMPLEMENT|SC17|S15|F17|C04|NONE
+SENSE_COMPLEMENT|SC18|S15|F18|C09|NONE
+SENSE_COMPLEMENT|SC19|S16|F19|C06|CL04
+SENSE_COMPLEMENT|SC20|S16|F20|C09|NONE
+SENSE_COMPLEMENT|SC21|S17|F21|C02|NONE
+SENSE_COMPLEMENT|SC22|S17|F22|C09|NONE
+SOURCE_MODE|SM01|QUOTE_COMPLEMENT
+SOURCE_MODE|SM02|CONTENT_NOMINAL
+SOURCE_MODE|SM03|CLASSIFIED_CONTENT
+SOURCE_MODE|SM04|COORDINATED_EXACT2
+SOURCE_MODE|SM05|BOUNDARY_SPLIT_EXACT2
+CLASSIFIER|CL01|direction|方向性
+CLASSIFIER|CL02|burden|負担
+CLASSIFIER|CL03|bounded-change|変化
+CLASSIFIER|CL04|agency-or-position|選択
+CLASSIFIER|CL05|preserved-point|点
+SOURCE_TOKEN|SF01|NOMINAL_ATTRIBUTIVE|という
+SOURCE_TOKEN|SF02|CONTENT_HEAD|内容
+SOURCE_TOKEN|SF03|PAIR_COORDINATOR|と
+MODIFIER|FM01|F13|AFTER_PRIMARY_OBJECT_BEFORE_HEAD|一つに
+MODIFIER|FM02|F15|AFTER_SUBJECT_BEFORE_PRIMARY_OBJECT|今すぐ
+MODIFIER|FM03|F21|AFTER_SUBJECT_BEFORE_PRIMARY_OBJECT|ここで
+QUOTE_DELIMITER|QD01|NONE|KAGI_OUTER
+QUOTE_DELIMITER|QD02|BALANCED_KAGI_ONLY|NIJUKAGI_OUTER
+QUOTE_DELIMITER|QD03|BALANCED_NIJUKAGI_ONLY|KAGI_OUTER
+QUOTE_DELIMITER|QD04|BALANCED_MIXED|STOP
+PARTICLE|P01|F01|SUBJECT|BASE_が|TOPIC_は
+PARTICLE|P02|F02|SUBJECT|BASE_が|TOPIC_は
+PARTICLE|P03|F03|SUBJECT|BASE_が|TOPIC_は
+PARTICLE|P04|F04|SUBJECT|BASE_が|TOPIC_は
+PARTICLE|P05|F10|SUBJECT|BASE_が|TOPIC_は
+PARTICLE|P06|F05|LEFT_ENDPOINT|FIXED_と
+PARTICLE|P07|F05|RIGHT_ENDPOINT|FIXED_が
+PARTICLE|P08|F06|LEFT_ENDPOINT|FIXED_と
+PARTICLE|P09|F06|RIGHT_ENDPOINT|FIXED_が
+PARTICLE|P10|F07|BEFORE_EVENT|FIXED_のあとに
+PARTICLE|P11|F07|AFTER_EVENT|FIXED_が
+PARTICLE|P12|F08|ACTION_EVENT|FIXED_のあとに
+PARTICLE|P13|F08|CHANGE_EVENT|FIXED_が
+PARTICLE|P14|F09|CAUSE_EVENT|FIXED_によって
+PARTICLE|P15|F09|EFFECT_EVENT|FIXED_が
+PARTICLE|P16|F11|SUBJECT|BASE_が|TOPIC_は
+PARTICLE|P17|F11|PRIMARY_OBJECT|FIXED_を
+PARTICLE|P18|F12|SUBJECT|BASE_が|TOPIC_は
+PARTICLE|P19|F12|PRIMARY_OBJECT|FIXED_を
+PARTICLE|P20|F13|SUBJECT|BASE_が|TOPIC_は
+PARTICLE|P21|F13|PRIMARY_OBJECT|FIXED_を
+PARTICLE|P22|F14|SUBJECT|BASE_が|TOPIC_は
+PARTICLE|P23|F14|PRIMARY_OBJECT|FIXED_を
+PARTICLE|P24|F15|SUBJECT|BASE_が|TOPIC_は
+PARTICLE|P25|F15|PRIMARY_OBJECT|FIXED_と
+PARTICLE|P26|F16|SUBJECT|BASE_が|TOPIC_は
+PARTICLE|P27|F16|PRIMARY_OBJECT|FIXED_を
+PARTICLE|P28|F17|SUBJECT|BASE_が|TOPIC_は
+PARTICLE|P29|F17|PRIMARY_OBJECT|FIXED_を
+PARTICLE|P30|F19|SUBJECT|BASE_が|TOPIC_は
+PARTICLE|P31|F19|PRIMARY_OBJECT|FIXED_を
+PARTICLE|P32|F21|SUBJECT|BASE_が|TOPIC_は
+PARTICLE|P33|F21|PRIMARY_OBJECT|FIXED_と
+PARTICLE|P34|F18|SUBJECT|BASE_が|TOPIC_は
+PARTICLE|P35|F18|PRIMARY_OBJECT|FIXED_を
+PARTICLE|P36|F18|SECONDARY_OBJECT|FIXED_から
+PARTICLE|P37|F20|SUBJECT|BASE_が|TOPIC_は
+PARTICLE|P38|F20|PRIMARY_OBJECT|FIXED_を
+PARTICLE|P39|F20|SECONDARY_OBJECT|FIXED_に
+PARTICLE|P40|F22|SUBJECT|BASE_が|TOPIC_は
+PARTICLE|P41|F22|PRIMARY_OBJECT|FIXED_を
+PARTICLE|P42|F22|SECONDARY_OBJECT|FIXED_に
+INFLECTION_CLASS|IC01|ICHIDAN_RU
+INFLECTION_CLASS|IC02|GODAN_KU
+INFLECTION_CLASS|IC03|GODAN_RU
+INFLECTION_CLASS|IC04|GODAN_BU
+INFLECTION_CLASS|IC05|GODAN_U
+INFLECTION_CLASS|IC06|SAHEN_SURU
+MORPHOLOGY|MP01|F01|RESULTATIVE_STATE|POSITIVE|GROUNDED_ASSERTION|POLITE|ONBIN_TE_IRU_MASU|PERIOD
+MORPHOLOGY|MP02|F02|NONPAST_STATIVE|POSITIVE|GROUNDED_ASSERTION|POLITE|STEM_MASU|PERIOD
+MORPHOLOGY|MP03|F03|RESULTATIVE_STATE|POSITIVE|GROUNDED_ASSERTION|POLITE|ONBIN_TE_IRU_MASU|PERIOD
+MORPHOLOGY|MP04|F04|NONPAST_STATIVE|POSITIVE|GROUNDED_ASSERTION|POLITE|STEM_MASU|PERIOD
+MORPHOLOGY|MP05|F05|PROGRESSIVE_STATE|POSITIVE|GROUNDED_ASSERTION|POLITE|ONBIN_DE_IRU_MASU|PERIOD
+MORPHOLOGY|MP06|F06|PROGRESSIVE_STATE|POSITIVE|GROUNDED_ASSERTION|POLITE|ONBIN_TE_IRU_MASU|PERIOD
+MORPHOLOGY|MP07|F07|PROGRESSIVE_STATE|POSITIVE|GROUNDED_ASSERTION|POLITE|ONBIN_ITE_IRU_MASU|PERIOD
+MORPHOLOGY|MP08|F08|RESULTATIVE_STATE|POSITIVE|GROUNDED_ASSERTION|POLITE|ONBIN_TE_IRU_MASU|PERIOD
+MORPHOLOGY|MP09|F09|RESULTATIVE_STATE|POSITIVE|GROUNDED_ASSERTION|POLITE|STEM_TE_IRU_MASU|PERIOD
+MORPHOLOGY|MP10|F10|NONPAST_STATIVE|POSITIVE|GROUNDED_ASSERTION|POLITE|STEM_MASU|PERIOD
+MORPHOLOGY|MP11|F11|PROGRESSIVE_STATE|POSITIVE|EMLIS_FEELING|POLITE|STEM_TE_IRU_MASU|PERIOD
+MORPHOLOGY|MP12|F12|NONPAST|POSITIVE|EMLIS_VOLITIONAL|POLITE|STEM_TAI_DESU|PERIOD
+MORPHOLOGY|MP13|F13|NONPAST|NEGATIVE|EMLIS_BOUNDED_REFUSAL|POLITE|STEM_TAKU_ARIMASEN|PERIOD
+MORPHOLOGY|MP14|F14|NONPAST|POSITIVE|EMLIS_VOLITIONAL|POLITE|STEM_TAI_DESU|PERIOD
+MORPHOLOGY|MP15|F15|NONPAST|NEGATIVE|EMLIS_BOUNDED_REFUSAL|POLITE|STEM_TAKU_ARIMASEN|PERIOD
+MORPHOLOGY|MP16|F16|NONPAST|POSITIVE|EMLIS_VOLITIONAL|POLITE|SAHEN_SHI_TAI_DESU|PERIOD
+MORPHOLOGY|MP17|F17|NONPAST|POSITIVE|EMLIS_VOLITIONAL|POLITE|SAHEN_SHI_TAI_DESU|PERIOD
+MORPHOLOGY|MP18|F18|NONPAST|POSITIVE|EMLIS_VOLITIONAL|POLITE|STEM_TAI_DESU|PERIOD
+MORPHOLOGY|MP19|F19|NONPAST|POSITIVE|EMLIS_VOLITIONAL|POLITE|STEM_TAI_DESU|PERIOD
+MORPHOLOGY|MP20|F20|NONPAST|NEGATIVE|EMLIS_BOUNDED_REFUSAL|POLITE|SAHEN_SHI_TAKU_ARIMASEN|PERIOD
+MORPHOLOGY|MP21|F21|NONPAST|NEGATIVE|EMLIS_BOUNDED_REFUSAL|POLITE|SAHEN_SHI_TAKU_ARIMASEN|PERIOD
+MORPHOLOGY|MP22|F22|NONPAST|NEGATIVE|EMLIS_BOUNDED_REFUSAL|POLITE|SAHEN_SHI_TAKU_ARIMASEN|PERIOD
+LINK|L01|COEXISTS_WITH|FRAME_INTERNAL|F05|ZERO_EXTERNAL
+LINK|L02|TENSION_WITH|FRAME_INTERNAL|F06|ZERO_EXTERNAL
+LINK|L03|TEMPORALLY_PRECEDES|FRAME_INTERNAL|F07|ZERO_EXTERNAL
+LINK|L04|ACTION_PRECEDES_CHANGE|FRAME_INTERNAL|F08|ZERO_EXTERNAL
+LINK|L05|SOURCE_EXPLICIT_CAUSE|FRAME_INTERNAL|F09|ZERO_EXTERNAL
+LINK|L06|TEMPORALLY_PRECEDES|SENTENCE_INITIAL|registered:そのあと|INTERNAL_ZERO
+LINK|L07|ACTION_PRECEDES_CHANGE|SENTENCE_INITIAL|registered:その後|INTERNAL_ZERO
+LINK|L08|SOURCE_EXPLICIT_CAUSE|SENTENCE_INITIAL|registered:そのため|INTERNAL_ZERO
+LINK|L09|NO_RELATION_CLAIM|SENTENCE_INITIAL_ADDITIVE|registered:また|INDEPENDENT_TOPIC_ONLY
+LINK|L10|ANY_ADMITTED_RELATION|ZERO|registered:empty|RELATION_ALREADY_OWNED
+REFERENCE|R01|FIRST_MENTION|FULL_EXPRESSION
+REFERENCE|R02|AMBIGUOUS_ANTECEDENT|FULL_EXPRESSION
+REFERENCE|R03|SINGULAR_ANTECEDENT_EXACT1|SINGULAR_ANAPHOR
+REFERENCE|R04|ORDERED_PAIR_PREVIOUS_EXACT2|PAIR_ANAPHOR
+REFERENCE|R05|EMLIS_FIRST_OR_RESTART|EXPLICIT_SUBJECT
+REFERENCE|R06|EMLIS_SAME_SPEAKER_CHAIN|ZERO_SUBJECT
+REFERENCE|R07|EMLIS_AFTER_COUNTERPOSITION|EXPLICIT_SUBJECT
+REFERENCE|R08|INTRODUCED_TOPIC|TOPIC_HA
+REFERENCE|R09|ADMITTED_CONTRAST|TOPIC_HA
+REFERENCE|R10|FIRST_NONCONTRAST|BASE_CASE
+REFERENCE|R11|REQUIRED_RELATION_ENDPOINT|EXPLICIT_ENDPOINT
+REFERENCE|R12|REFERENCE_REPAIR|FULL_EXPRESSION_NO_FORK
+PREFERENCE|J01|EXPLICIT_REFERENT_REPEAT
+PREFERENCE|J02|TOPIC_STACK
+PREFERENCE|J03|QUOTE_OR_NOMINALIZER_LOAD
+PREFERENCE|J04|CONNECTIVE_REPEAT
+PREFERENCE|J05|EXPLICIT_EMLIS_SUBJECT_REPEAT
+PREFERENCE|J06|CLAUSE_LOAD
+PREFERENCE|J07|REFERENCE_DISTANCE
+"""
+V2_GRAMMAR_INVENTORY_ROWS = tuple(
+    tuple(line.split("|")) for line in V2_GRAMMAR_INVENTORY.splitlines()
+)
+V2_GRAMMAR_INVENTORY_EXACT_COUNTS = (
+    ("SENSE", 17),
+    ("FRAME", 22),
+    ("HEAD", 22),
+    ("LEXICAL_FAMILY", 22),
+    ("COMPLEMENT", 8),
+    ("SENSE_COMPLEMENT", 22),
+    ("SOURCE_MODE", 5),
+    ("CLASSIFIER", 5),
+    ("SOURCE_TOKEN", 3),
+    ("MODIFIER", 3),
+    ("QUOTE_DELIMITER", 4),
+    ("PARTICLE", 42),
+    ("INFLECTION_CLASS", 6),
+    ("MORPHOLOGY", 22),
+    ("LINK", 10),
+    ("REFERENCE", 12),
+    ("PREFERENCE", 7),
+)
+
+
+def _validate_v2_grammar_inventory_literal() -> None:
+    """Reject literal drift before any typed enum or row constructor runs."""
+
+    payload = V2_GRAMMAR_INVENTORY.encode("utf-8")
+    actual_counts = tuple(
+        (kind, sum(row[0] == kind for row in V2_GRAMMAR_INVENTORY_ROWS))
+        for kind, _count in V2_GRAMMAR_INVENTORY_EXACT_COUNTS
+    )
+    if (
+        len(payload) != V2_GRAMMAR_INVENTORY_BYTE_COUNT
+        or hashlib.sha256(payload).hexdigest() != V2_GRAMMAR_INVENTORY_SHA256
+        or len(V2_GRAMMAR_INVENTORY_ROWS) != V2_GRAMMAR_INVENTORY_ROW_COUNT
+        or not V2_GRAMMAR_INVENTORY.endswith("\n")
+        or V2_GRAMMAR_INVENTORY.endswith("\n\n")
+        or "\r" in V2_GRAMMAR_INVENTORY
+        or actual_counts != V2_GRAMMAR_INVENTORY_EXACT_COUNTS
+    ):
+        raise Stage1CompositionError("GRAMMAR_INVENTORY_MANIFEST_DRIFT_STOP")
+
+
+_validate_v2_grammar_inventory_literal()
+
+
+def _v2_inventory_rows(kind: str) -> Tuple[Tuple[str, ...], ...]:
+    return tuple(row for row in V2_GRAMMAR_INVENTORY_ROWS if row[0] == kind)
+
+
+def _v2_optional_ref(value: str) -> Optional[str]:
+    return None if value == "NONE" else value
+
+
+def _v2_split_refs(value: str) -> Tuple[str, ...]:
+    return tuple(value.split(","))
+
+
+def _v2_case_frame(row: Tuple[str, ...]) -> JapaneseCaseFrameSpec:
+    slot_roles = _v2_split_refs(row[4])
+    tail = 5 + len(slot_roles)
+    return JapaneseCaseFrameSpec(
+        frame_id=row[1],
+        sense_ref=row[2],
+        frame_kind=row[3],
+        slot_roles=slot_roles,
+        slot_requirements=tuple(row[5:tail]),
+        complement_rule_ref=row[tail],
+        topic_policy=row[tail + 1],
+        zero_policy=row[tail + 2],
+        atomic_head_ref=row[tail + 3],
+        morphology_ref=row[tail + 4],
+        modifier_ref=_v2_optional_ref(row[tail + 5]),
+    )
+
+
+V2_PREDICATE_SENSE_REGISTRY = tuple(
+    PredicateSenseSpec(
+        sense_id=row[1],
+        sentence_job=row[2],
+        semantic_clause_kind=row[3],
+        semantic_sense=row[4],
+        frame_license_refs=_v2_split_refs(row[5]),
+    )
+    for row in _v2_inventory_rows("SENSE")
+)
+V2_PREDICATE_SENSE_FRAME_LICENSE_REGISTRY = tuple(
+    PredicateSenseFrameLicense(sense_ref=row.sense_id, frame_ref=frame_ref)
+    for row in V2_PREDICATE_SENSE_REGISTRY
+    for frame_ref in row.frame_license_refs
+)
+V2_JAPANESE_CASE_FRAME_REGISTRY = tuple(
+    _v2_case_frame(row) for row in _v2_inventory_rows("FRAME")
+)
+V2_ATOMIC_PREDICATE_HEAD_REGISTRY = tuple(
+    AtomicPredicateHeadSpec(
+        head_id=row[1],
+        frame_ref=row[2],
+        atomic_parts=tuple(row[3].split("+")),
+        inflection_class_ref=row[4],
+        lexical_family_ref=row[5],
+    )
+    for row in _v2_inventory_rows("HEAD")
+)
+V2_LEXICAL_FAMILY_REGISTRY = tuple(
+    LexicalFamilySpec(
+        lexical_family_id=row[1],
+        atomic_parts=tuple(row[2].split("+")),
+    )
+    for row in _v2_inventory_rows("LEXICAL_FAMILY")
+)
+V2_COMPLEMENT_RULE_REGISTRY = tuple(
+    ComplementRuleSpec(
+        complement_rule_id=row[1],
+        mode=SourceRealizationMode(row[2]),
+        cardinality=SourceLeafCardinality(row[3]),
+        slot_roles=_v2_split_refs(row[4]),
+        structural_asset_refs=_v2_split_refs(row[5]),
+    )
+    for row in _v2_inventory_rows("COMPLEMENT")
+)
+V2_SENSE_COMPLEMENT_LICENSE_REGISTRY = tuple(
+    SenseComplementLicense(
+        license_id=row[1],
+        sense_ref=row[2],
+        frame_ref=row[3],
+        complement_rule_ref=row[4],
+        classifier_ref=_v2_optional_ref(row[5]),
+    )
+    for row in _v2_inventory_rows("SENSE_COMPLEMENT")
+)
+V2_SOURCE_REALIZATION_MODE_REGISTRY = tuple(
+    SourceRealizationMode(row[2]) for row in _v2_inventory_rows("SOURCE_MODE")
+)
+V2_SOURCE_CLASSIFIER_REGISTRY = tuple(
+    SourceClassifierSpec(
+        classifier_id=row[1],
+        classifier_kind=row[2],
+        atomic_surface=row[3],
+    )
+    for row in _v2_inventory_rows("CLASSIFIER")
+)
+V2_SOURCE_FUNCTIONAL_TOKEN_REGISTRY = tuple(
+    SourceFunctionalTokenSpec(
+        token_id=row[1],
+        token_kind=row[2],
+        atomic_surface=row[3],
+    )
+    for row in _v2_inventory_rows("SOURCE_TOKEN")
+)
+V2_SOURCE_FUNCTIONAL_MODIFIER_REGISTRY = tuple(
+    SourceFunctionalModifierSpec(
+        modifier_id=row[1],
+        frame_ref=row[2],
+        placement=row[3],
+        atomic_surface=row[4],
+    )
+    for row in _v2_inventory_rows("MODIFIER")
+)
+V2_SOURCE_QUOTE_DELIMITER_REGISTRY = tuple(
+    SourceQuoteDelimiterRule(
+        delimiter_rule_id=row[1],
+        source_quote_topology=SourceQuoteTopology(row[2]),
+        outer_delimiter_kind=row[3],
+    )
+    for row in _v2_inventory_rows("QUOTE_DELIMITER")
+)
+V2_CASE_PARTICLE_REGISTRY = tuple(
+    CaseParticleRule(
+        particle_rule_id=row[1],
+        frame_ref=row[2],
+        slot_role=row[3],
+        surface_variants=tuple(
+            CaseParticleSurfaceVariant(*variant.split("_", 1))
+            for variant in row[4:]
+        ),
+    )
+    for row in _v2_inventory_rows("PARTICLE")
+)
+V2_INFLECTION_CLASS_REGISTRY = tuple(
+    InflectionClassSpec(
+        inflection_class_id=row[1],
+        inflection_class=row[2],
+    )
+    for row in _v2_inventory_rows("INFLECTION_CLASS")
+)
+V2_MATRIX_MORPHOLOGY_PARADIGM_REGISTRY = tuple(
+    MatrixMorphologyParadigmSpec(
+        morphology_id=row[1],
+        frame_ref=row[2],
+        aspect_time=row[3],
+        polarity=row[4],
+        modal=row[5],
+        politeness=row[6],
+        inflection_recipe=row[7],
+        terminal_class=row[8],
+    )
+    for row in _v2_inventory_rows("MORPHOLOGY")
+)
+V2_CLAUSE_LINK_REGISTRY = tuple(
+    ClauseLinkRule(
+        link_rule_id=row[1],
+        relation_kind=row[2],
+        placement=row[3],
+        token_ref=row[4],
+        internal_relation_policy=row[5],
+    )
+    for row in _v2_inventory_rows("LINK")
+)
+V2_REFERENCE_ZERO_TOPIC_REGISTRY = tuple(
+    ReferenceZeroTopicRule(
+        reference_rule_id=row[1],
+        discourse_condition=row[2],
+        realization_kind=row[3],
+    )
+    for row in _v2_inventory_rows("REFERENCE")
+)
+V2_JAPANESE_LOCAL_PREFERENCE_REGISTRY = tuple(
+    JapaneseLocalPreferenceRule(
+        preference_rule_id=row[1],
+        preference_kind=row[2],
+    )
+    for row in _v2_inventory_rows("PREFERENCE")
+)
+
+
+def _v2_typed_inventory_rows() -> Tuple[Tuple[str, ...], ...]:
+    """Reverse-project every typed row to the canonical literal field order."""
+
+    rows: list[Tuple[str, ...]] = []
+    rows.extend(
+        (
+            "SENSE",
+            row.sense_id,
+            row.sentence_job,
+            row.semantic_clause_kind,
+            row.semantic_sense,
+            ",".join(row.frame_license_refs),
+        )
+        for row in V2_PREDICATE_SENSE_REGISTRY
+    )
+    rows.extend(
+        (
+            "FRAME",
+            row.frame_id,
+            row.sense_ref,
+            row.frame_kind,
+            ",".join(row.slot_roles),
+            *row.slot_requirements,
+            row.complement_rule_ref,
+            row.topic_policy,
+            row.zero_policy,
+            row.atomic_head_ref,
+            row.morphology_ref,
+            row.modifier_ref or "NONE",
+        )
+        for row in V2_JAPANESE_CASE_FRAME_REGISTRY
+    )
+    rows.extend(
+        (
+            "HEAD",
+            row.head_id,
+            row.frame_ref,
+            "+".join(row.atomic_parts),
+            row.inflection_class_ref,
+            row.lexical_family_ref,
+        )
+        for row in V2_ATOMIC_PREDICATE_HEAD_REGISTRY
+    )
+    rows.extend(
+        (
+            "LEXICAL_FAMILY",
+            row.lexical_family_id,
+            "+".join(row.atomic_parts),
+        )
+        for row in V2_LEXICAL_FAMILY_REGISTRY
+    )
+    rows.extend(
+        (
+            "COMPLEMENT",
+            row.complement_rule_id,
+            row.mode.value,
+            row.cardinality.value,
+            ",".join(row.slot_roles),
+            ",".join(row.structural_asset_refs),
+        )
+        for row in V2_COMPLEMENT_RULE_REGISTRY
+    )
+    rows.extend(
+        (
+            "SENSE_COMPLEMENT",
+            row.license_id,
+            row.sense_ref,
+            row.frame_ref,
+            row.complement_rule_ref,
+            row.classifier_ref or "NONE",
+        )
+        for row in V2_SENSE_COMPLEMENT_LICENSE_REGISTRY
+    )
+    rows.extend(
+        ("SOURCE_MODE", f"SM{index:02d}", mode.value)
+        for index, mode in enumerate(
+            V2_SOURCE_REALIZATION_MODE_REGISTRY,
+            start=1,
+        )
+    )
+    rows.extend(
+        (
+            "CLASSIFIER",
+            row.classifier_id,
+            row.classifier_kind,
+            row.atomic_surface,
+        )
+        for row in V2_SOURCE_CLASSIFIER_REGISTRY
+    )
+    rows.extend(
+        ("SOURCE_TOKEN", row.token_id, row.token_kind, row.atomic_surface)
+        for row in V2_SOURCE_FUNCTIONAL_TOKEN_REGISTRY
+    )
+    rows.extend(
+        (
+            "MODIFIER",
+            row.modifier_id,
+            row.frame_ref,
+            row.placement,
+            row.atomic_surface,
+        )
+        for row in V2_SOURCE_FUNCTIONAL_MODIFIER_REGISTRY
+    )
+    rows.extend(
+        (
+            "QUOTE_DELIMITER",
+            row.delimiter_rule_id,
+            row.source_quote_topology.value,
+            row.outer_delimiter_kind,
+        )
+        for row in V2_SOURCE_QUOTE_DELIMITER_REGISTRY
+    )
+    rows.extend(
+        (
+            "PARTICLE",
+            row.particle_rule_id,
+            row.frame_ref,
+            row.slot_role,
+            *(
+                f"{variant.variant_kind}_{variant.atomic_surface}"
+                for variant in row.surface_variants
+            ),
+        )
+        for row in V2_CASE_PARTICLE_REGISTRY
+    )
+    rows.extend(
+        (
+            "INFLECTION_CLASS",
+            row.inflection_class_id,
+            row.inflection_class,
+        )
+        for row in V2_INFLECTION_CLASS_REGISTRY
+    )
+    rows.extend(
+        (
+            "MORPHOLOGY",
+            row.morphology_id,
+            row.frame_ref,
+            row.aspect_time,
+            row.polarity,
+            row.modal,
+            row.politeness,
+            row.inflection_recipe,
+            row.terminal_class,
+        )
+        for row in V2_MATRIX_MORPHOLOGY_PARADIGM_REGISTRY
+    )
+    rows.extend(
+        (
+            "LINK",
+            row.link_rule_id,
+            row.relation_kind,
+            row.placement,
+            row.token_ref,
+            row.internal_relation_policy,
+        )
+        for row in V2_CLAUSE_LINK_REGISTRY
+    )
+    rows.extend(
+        (
+            "REFERENCE",
+            row.reference_rule_id,
+            row.discourse_condition,
+            row.realization_kind,
+        )
+        for row in V2_REFERENCE_ZERO_TOPIC_REGISTRY
+    )
+    rows.extend(
+        ("PREFERENCE", row.preference_rule_id, row.preference_kind)
+        for row in V2_JAPANESE_LOCAL_PREFERENCE_REGISTRY
+    )
+    return tuple(rows)
+
+
+_V2_REGISTRY_TYPES = (
+    PredicateSenseSpec,
+    PredicateSenseFrameLicense,
+    JapaneseCaseFrameSpec,
+    AtomicPredicateHeadSpec,
+    LexicalFamilySpec,
+    ComplementRuleSpec,
+    SenseComplementLicense,
+    SourceClassifierSpec,
+    SourceFunctionalTokenSpec,
+    SourceFunctionalModifierSpec,
+    SourceQuoteDelimiterRule,
+    CaseParticleRule,
+    CaseParticleSurfaceVariant,
+    InflectionClassSpec,
+    MatrixMorphologyParadigmSpec,
+    ClauseLinkRule,
+    ReferenceZeroTopicRule,
+    JapaneseLocalPreferenceRule,
+)
+
+
+def _v2_unique(values: Tuple[str, ...], stop: str) -> frozenset[str]:
+    if len(values) != len(set(values)):
+        raise Stage1CompositionError(stop)
+    return frozenset(values)
+
+
+def validate_v2_grammar_inventory() -> None:
+    """Fail closed on any drift in the registered, disabled Route-A v2 surface."""
+
+    _validate_v2_grammar_inventory_literal()
+    if _v2_typed_inventory_rows() != V2_GRAMMAR_INVENTORY_ROWS:
+        raise Stage1CompositionError(
+            "GRAMMAR_INVENTORY_TYPED_PROJECTION_DRIFT_STOP"
+        )
+
+    closed_enum_values = (
+        (
+            SourceLeafExtent,
+            ("FULL_EVIDENCE_LITERAL", "CERTIFIED_LITERAL_SUBSPAN"),
+        ),
+        (SourceLeafCardinality, ("EXACT1", "ORDERED_EXACT2")),
+        (SourceSentenceShape, ("ONE_SENTENCE", "MULTI_SENTENCE")),
+        (
+            SourceFinalTerminalClass,
+            ("ABSENT", "PERIOD", "QUESTION", "EXCLAMATION"),
+        ),
+        (
+            SourceQuoteTopology,
+            (
+                "NONE",
+                "BALANCED_KAGI_ONLY",
+                "BALANCED_NIJUKAGI_ONLY",
+                "BALANCED_MIXED",
+            ),
+        ),
+        (SourceLineBreakShape, ("NONE", "LF_ONLY", "CRLF_ONLY")),
+        (
+            SourceRealizationMode,
+            (
+                "QUOTE_COMPLEMENT",
+                "CONTENT_NOMINAL",
+                "CLASSIFIED_CONTENT",
+                "COORDINATED_EXACT2",
+                "BOUNDARY_SPLIT_EXACT2",
+            ),
+        ),
+    )
+    if any(
+        tuple(member.value for member in enum_type) != expected
+        for enum_type, expected in closed_enum_values
+    ):
+        raise Stage1CompositionError("GRAMMAR_INVENTORY_CLOSED_ENUM_STOP")
+
+    senses = _v2_unique(
+        tuple(row.sense_id for row in V2_PREDICATE_SENSE_REGISTRY),
+        "GRAMMAR_INVENTORY_SENSE_NONUNIQUE_STOP",
+    )
+    frames = _v2_unique(
+        tuple(row.frame_id for row in V2_JAPANESE_CASE_FRAME_REGISTRY),
+        "GRAMMAR_INVENTORY_FRAME_NONUNIQUE_STOP",
+    )
+    heads = _v2_unique(
+        tuple(row.head_id for row in V2_ATOMIC_PREDICATE_HEAD_REGISTRY),
+        "GRAMMAR_INVENTORY_HEAD_NONUNIQUE_STOP",
+    )
+    lexical_families = _v2_unique(
+        tuple(row.lexical_family_id for row in V2_LEXICAL_FAMILY_REGISTRY),
+        "GRAMMAR_INVENTORY_LEXICAL_FAMILY_NONUNIQUE_STOP",
+    )
+    complements = _v2_unique(
+        tuple(row.complement_rule_id for row in V2_COMPLEMENT_RULE_REGISTRY),
+        "GRAMMAR_INVENTORY_COMPLEMENT_NONUNIQUE_STOP",
+    )
+    classifiers = _v2_unique(
+        tuple(row.classifier_id for row in V2_SOURCE_CLASSIFIER_REGISTRY),
+        "GRAMMAR_INVENTORY_CLASSIFIER_NONUNIQUE_STOP",
+    )
+    functional_tokens = _v2_unique(
+        tuple(row.token_id for row in V2_SOURCE_FUNCTIONAL_TOKEN_REGISTRY),
+        "GRAMMAR_INVENTORY_SOURCE_TOKEN_NONUNIQUE_STOP",
+    )
+    modifiers = _v2_unique(
+        tuple(row.modifier_id for row in V2_SOURCE_FUNCTIONAL_MODIFIER_REGISTRY),
+        "GRAMMAR_INVENTORY_MODIFIER_NONUNIQUE_STOP",
+    )
+    inflection_classes = _v2_unique(
+        tuple(row.inflection_class_id for row in V2_INFLECTION_CLASS_REGISTRY),
+        "GRAMMAR_INVENTORY_INFLECTION_NONUNIQUE_STOP",
+    )
+    morphologies = _v2_unique(
+        tuple(row.morphology_id for row in V2_MATRIX_MORPHOLOGY_PARADIGM_REGISTRY),
+        "GRAMMAR_INVENTORY_MORPHOLOGY_NONUNIQUE_STOP",
+    )
+    _v2_unique(
+        tuple(row.license_id for row in V2_SENSE_COMPLEMENT_LICENSE_REGISTRY),
+        "GRAMMAR_INVENTORY_SENSE_COMPLEMENT_NONUNIQUE_STOP",
+    )
+    _v2_unique(
+        tuple(row.delimiter_rule_id for row in V2_SOURCE_QUOTE_DELIMITER_REGISTRY),
+        "GRAMMAR_INVENTORY_DELIMITER_NONUNIQUE_STOP",
+    )
+    _v2_unique(
+        tuple(row.particle_rule_id for row in V2_CASE_PARTICLE_REGISTRY),
+        "GRAMMAR_INVENTORY_PARTICLE_NONUNIQUE_STOP",
+    )
+    _v2_unique(
+        tuple(row.link_rule_id for row in V2_CLAUSE_LINK_REGISTRY),
+        "GRAMMAR_INVENTORY_LINK_NONUNIQUE_STOP",
+    )
+    _v2_unique(
+        tuple(row.reference_rule_id for row in V2_REFERENCE_ZERO_TOPIC_REGISTRY),
+        "GRAMMAR_INVENTORY_REFERENCE_NONUNIQUE_STOP",
+    )
+    _v2_unique(
+        tuple(row.preference_rule_id for row in V2_JAPANESE_LOCAL_PREFERENCE_REGISTRY),
+        "GRAMMAR_INVENTORY_PREFERENCE_NONUNIQUE_STOP",
+    )
+
+    licensed_pairs = tuple(
+        (row.sense_ref, row.frame_ref)
+        for row in V2_PREDICATE_SENSE_FRAME_LICENSE_REGISTRY
+    )
+    frame_pairs = tuple(
+        (row.sense_ref, row.frame_id) for row in V2_JAPANESE_CASE_FRAME_REGISTRY
+    )
+    if (
+        len(licensed_pairs) != 22
+        or len(set(licensed_pairs)) != 22
+        or frozenset(licensed_pairs) != frozenset(frame_pairs)
+        or any(row.sense_ref not in senses for row in V2_JAPANESE_CASE_FRAME_REGISTRY)
+    ):
+        raise Stage1CompositionError("GRAMMAR_INVENTORY_SENSE_FRAME_COVER_STOP")
+
+    head_by_frame = {
+        row.frame_ref: row for row in V2_ATOMIC_PREDICATE_HEAD_REGISTRY
+    }
+    morphology_by_frame = {
+        row.frame_ref: row for row in V2_MATRIX_MORPHOLOGY_PARADIGM_REGISTRY
+    }
+    complement_by_frame = {
+        row.frame_ref: row for row in V2_SENSE_COMPLEMENT_LICENSE_REGISTRY
+    }
+    modifier_by_frame = {
+        row.frame_ref: row for row in V2_SOURCE_FUNCTIONAL_MODIFIER_REGISTRY
+    }
+    particles_by_frame_slot = {
+        (row.frame_ref, row.slot_role): row for row in V2_CASE_PARTICLE_REGISTRY
+    }
+    if (
+        len(head_by_frame) != len(V2_ATOMIC_PREDICATE_HEAD_REGISTRY)
+        or len(morphology_by_frame) != len(V2_MATRIX_MORPHOLOGY_PARADIGM_REGISTRY)
+        or len(complement_by_frame) != len(V2_SENSE_COMPLEMENT_LICENSE_REGISTRY)
+        or len(modifier_by_frame) != len(V2_SOURCE_FUNCTIONAL_MODIFIER_REGISTRY)
+        or len(particles_by_frame_slot) != len(V2_CASE_PARTICLE_REGISTRY)
+    ):
+        raise Stage1CompositionError("GRAMMAR_INVENTORY_OWNER_NONUNIQUE_STOP")
+
+    for frame in V2_JAPANESE_CASE_FRAME_REGISTRY:
+        head = head_by_frame.get(frame.frame_id)
+        morphology = morphology_by_frame.get(frame.frame_id)
+        complement = complement_by_frame.get(frame.frame_id)
+        frame_particle_slots = frozenset(
+            slot
+            for (frame_ref, slot), _row in particles_by_frame_slot.items()
+            if frame_ref == frame.frame_id
+        )
+        if (
+            len(frame.slot_roles) != len(frame.slot_requirements)
+            or any(requirement != "required" for requirement in frame.slot_requirements)
+            or frame_particle_slots != frozenset(frame.slot_roles)
+            or head is None
+            or head.head_id != frame.atomic_head_ref
+            or head.lexical_family_ref not in lexical_families
+            or head.inflection_class_ref not in inflection_classes
+            or morphology is None
+            or morphology.morphology_id != frame.morphology_ref
+            or complement is None
+            or complement.sense_ref != frame.sense_ref
+            or complement.complement_rule_ref != frame.complement_rule_ref
+            or frame.complement_rule_ref not in complements
+            or (
+                complement.classifier_ref is not None
+                and complement.classifier_ref not in classifiers
+            )
+            or (
+                frame.modifier_ref is None
+                and frame.frame_id in modifier_by_frame
+            )
+            or (
+                frame.modifier_ref is not None
+                and (
+                    frame.modifier_ref not in modifiers
+                    or modifier_by_frame.get(frame.frame_id) is None
+                    or modifier_by_frame[frame.frame_id].modifier_id
+                    != frame.modifier_ref
+                )
+            )
+        ):
+            raise Stage1CompositionError("GRAMMAR_INVENTORY_FRAME_TOTALITY_STOP")
+
+    referenced_assets = frozenset(
+        asset_ref
+        for row in V2_COMPLEMENT_RULE_REGISTRY
+        for asset_ref in row.structural_asset_refs
+        if asset_ref.startswith("SF")
+    )
+    if (
+        {row.mode for row in V2_COMPLEMENT_RULE_REGISTRY}
+        != set(SourceRealizationMode)
+        or tuple(V2_SOURCE_REALIZATION_MODE_REGISTRY)
+        != tuple(SourceRealizationMode)
+        or set(row.source_quote_topology for row in V2_SOURCE_QUOTE_DELIMITER_REGISTRY)
+        != set(SourceQuoteTopology)
+        or set(row.complement_rule_ref for row in V2_JAPANESE_CASE_FRAME_REGISTRY)
+        != complements
+        or set(row.head_id for row in V2_ATOMIC_PREDICATE_HEAD_REGISTRY) != heads
+        or set(row.lexical_family_ref for row in V2_ATOMIC_PREDICATE_HEAD_REGISTRY)
+        != lexical_families
+        or set(row.inflection_class_ref for row in V2_ATOMIC_PREDICATE_HEAD_REGISTRY)
+        != inflection_classes
+        or set(row.morphology_ref for row in V2_JAPANESE_CASE_FRAME_REGISTRY)
+        != morphologies
+        or set(
+            row.modifier_ref
+            for row in V2_JAPANESE_CASE_FRAME_REGISTRY
+            if row.modifier_ref is not None
+        )
+        != modifiers
+        or set(
+            row.classifier_ref
+            for row in V2_SENSE_COMPLEMENT_LICENSE_REGISTRY
+            if row.classifier_ref is not None
+        )
+        != classifiers
+        or referenced_assets != functional_tokens
+        or sum(
+            len(row.surface_variants) for row in V2_CASE_PARTICLE_REGISTRY
+        )
+        != 59
+    ):
+        raise Stage1CompositionError("GRAMMAR_INVENTORY_ORPHAN_STOP")
+
+    registry_field_names = tuple(
+        field.name
+        for registry_type in _V2_REGISTRY_TYPES
+        for field in fields(registry_type)
+    )
+    validate_stage1_anti_template_registry_invariant(
+        registry_field_names,
+        (
+            "typed_intent",
+            "admitted_relation",
+            "argument_roles",
+            "typed_discourse_state",
+        ),
+        V2_GRAMMAR_INVENTORY_ROWS,
+    )
+
 
 
 class QualifierLookupScope(str, Enum):
@@ -6806,6 +7753,7 @@ def compute_language_core_identity(repository_root: Optional[Path] = None) -> st
     )
 
 
+validate_v2_grammar_inventory()
 validate_language_core_registry_invariant()
 STAGE1_RUNTIME_INTEGRATION_IDENTITY = (
     compute_stage1_runtime_integration_identity()
@@ -6837,6 +7785,30 @@ __all__ = (
     "Stage1CompositionResult",
     "Stage1SubjectivePlanningInputs",
     "Stage1SurfaceCompositionInputs",
+    "V2_ATOMIC_PREDICATE_HEAD_REGISTRY",
+    "V2_CASE_PARTICLE_REGISTRY",
+    "V2_CLAUSE_LINK_REGISTRY",
+    "V2_COMPLEMENT_RULE_REGISTRY",
+    "V2_GRAMMAR_INVENTORY",
+    "V2_GRAMMAR_INVENTORY_BYTE_COUNT",
+    "V2_GRAMMAR_INVENTORY_EXACT_COUNTS",
+    "V2_GRAMMAR_INVENTORY_ROW_COUNT",
+    "V2_GRAMMAR_INVENTORY_ROWS",
+    "V2_GRAMMAR_INVENTORY_SHA256",
+    "V2_INFLECTION_CLASS_REGISTRY",
+    "V2_JAPANESE_CASE_FRAME_REGISTRY",
+    "V2_JAPANESE_LOCAL_PREFERENCE_REGISTRY",
+    "V2_LEXICAL_FAMILY_REGISTRY",
+    "V2_MATRIX_MORPHOLOGY_PARADIGM_REGISTRY",
+    "V2_PREDICATE_SENSE_FRAME_LICENSE_REGISTRY",
+    "V2_PREDICATE_SENSE_REGISTRY",
+    "V2_REFERENCE_ZERO_TOPIC_REGISTRY",
+    "V2_SENSE_COMPLEMENT_LICENSE_REGISTRY",
+    "V2_SOURCE_CLASSIFIER_REGISTRY",
+    "V2_SOURCE_FUNCTIONAL_MODIFIER_REGISTRY",
+    "V2_SOURCE_FUNCTIONAL_TOKEN_REGISTRY",
+    "V2_SOURCE_QUOTE_DELIMITER_REGISTRY",
+    "V2_SOURCE_REALIZATION_MODE_REGISTRY",
     "canonical_normalized_bytes",
     "compose_stage1_from_projection",
     "compute_language_core_identity",
@@ -6850,4 +7822,5 @@ __all__ = (
     "select_eligible_constructions",
     "stage1_runtime_integration_identity_payloads",
     "validate_language_core_registry_invariant",
+    "validate_v2_grammar_inventory",
 )

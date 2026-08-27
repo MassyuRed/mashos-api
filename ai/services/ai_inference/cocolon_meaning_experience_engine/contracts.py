@@ -47,15 +47,15 @@ CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY = (
     ),
     (
         "CMEE_STAGE1_COMPOSITION_POLICY_VERSION",
-        "cocolon.emlis.stage1.discourse_composition.v1",
+        "cocolon.emlis.stage1.discourse_composition.v2",
     ),
     (
         "CMEE_STAGE1_NORMAL_FORM_VERSION",
-        "cocolon.cmee.v1a.emlis_stage1_normal_form.v1",
+        "cocolon.cmee.v1a.emlis_stage1_normal_form.v2",
     ),
     (
         "CMEE_STAGE1_CONSTRUCTION_GRAMMAR_POLICY_VERSION",
-        "cocolon.emlis.stage1.grounded_construction_grammar.v1",
+        "cocolon.emlis.stage1.grounded_construction_grammar.v2",
     ),
     (
         "CMEE_STAGE1_PROJECTION_PREIMAGE_REF_VERSION",
@@ -496,6 +496,49 @@ class SurfaceDerivationKind(str, Enum):
     REGISTERED_STRUCTURAL_ASSET = "REGISTERED_STRUCTURAL_ASSET"
     PROJECTED_RESPONSE_OBJECT = "PROJECTED_RESPONSE_OBJECT"
     PROJECTED_FUNCTIONAL_ASSET = "PROJECTED_FUNCTIONAL_ASSET"
+
+
+class SourceLeafExtent(str, Enum):
+    FULL_EVIDENCE_LITERAL = "FULL_EVIDENCE_LITERAL"
+    CERTIFIED_LITERAL_SUBSPAN = "CERTIFIED_LITERAL_SUBSPAN"
+
+
+class SourceLeafCardinality(str, Enum):
+    EXACT1 = "EXACT1"
+    ORDERED_EXACT2 = "ORDERED_EXACT2"
+
+
+class SourceSentenceShape(str, Enum):
+    ONE_SENTENCE = "ONE_SENTENCE"
+    MULTI_SENTENCE = "MULTI_SENTENCE"
+
+
+class SourceFinalTerminalClass(str, Enum):
+    ABSENT = "ABSENT"
+    PERIOD = "PERIOD"
+    QUESTION = "QUESTION"
+    EXCLAMATION = "EXCLAMATION"
+
+
+class SourceQuoteTopology(str, Enum):
+    NONE = "NONE"
+    BALANCED_KAGI_ONLY = "BALANCED_KAGI_ONLY"
+    BALANCED_NIJUKAGI_ONLY = "BALANCED_NIJUKAGI_ONLY"
+    BALANCED_MIXED = "BALANCED_MIXED"
+
+
+class SourceLineBreakShape(str, Enum):
+    NONE = "NONE"
+    LF_ONLY = "LF_ONLY"
+    CRLF_ONLY = "CRLF_ONLY"
+
+
+class SourceRealizationMode(str, Enum):
+    QUOTE_COMPLEMENT = "QUOTE_COMPLEMENT"
+    CONTENT_NOMINAL = "CONTENT_NOMINAL"
+    CLASSIFIED_CONTENT = "CLASSIFIED_CONTENT"
+    COORDINATED_EXACT2 = "COORDINATED_EXACT2"
+    BOUNDARY_SPLIT_EXACT2 = "BOUNDARY_SPLIT_EXACT2"
 
 
 CMEE_STAGE1_RECEPTION_ASSET_MAPPING_VERSION = (
@@ -988,6 +1031,261 @@ class SurfaceDerivation:
     evidence_refs: Tuple[str, ...]
     rule_ref: str
     input_scalar_ranges: Tuple[Tuple[int, int], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class GroundedExpressionPlan:
+    plan_ref: str
+    semantic_refs: Tuple[str, ...]
+    predicate_kind: str
+    source_scope_refs: Tuple[str, ...]
+    matrix_scope_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PredicateSenseSpec:
+    sense_id: str
+    sentence_job: str
+    semantic_clause_kind: str
+    semantic_sense: str
+    frame_license_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PredicateSenseFrameLicense:
+    sense_ref: str
+    frame_ref: str
+
+
+@dataclass(frozen=True, slots=True)
+class JapaneseCaseFrameSpec:
+    frame_id: str
+    sense_ref: str
+    frame_kind: str
+    slot_roles: Tuple[str, ...]
+    slot_requirements: Tuple[str, ...]
+    complement_rule_ref: str
+    topic_policy: str
+    zero_policy: str
+    atomic_head_ref: str
+    morphology_ref: str
+    modifier_ref: Optional[str]
+
+
+@dataclass(frozen=True, slots=True)
+class SourceLeafToken:
+    leaf_ref: str
+    semantic_ref: str
+    source_envelope_ref: str
+    evidence_ref: str
+    extent: SourceLeafExtent
+    raw_utf8_start: int
+    raw_utf8_end: int
+    payload_utf8: bytes = field(repr=False)
+    sentence_shape: SourceSentenceShape
+    final_terminal_class: SourceFinalTerminalClass
+    quote_topology: SourceQuoteTopology
+    line_break_shape: SourceLineBreakShape
+    derivation: SurfaceDerivation
+
+
+@dataclass(frozen=True, slots=True)
+class SourceLeafGroup:
+    group_ref: str
+    cardinality: SourceLeafCardinality
+    ordered_leaf_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SourceComplementPlan:
+    mode: SourceRealizationMode
+    group_ref: str
+    complement_rule_ref: str
+    quote_delimiter_refs: Tuple[str, ...]
+    classifier_ref: Optional[str]
+    coordinator_ref: Optional[str]
+    case_slot_ref: str
+
+
+@dataclass(frozen=True, slots=True)
+class ArgumentRealizationPlan:
+    plan_ref: str
+    frame_ref: str
+    slot_role: str
+    semantic_ref: str
+    particle_rule_ref: str
+    provenance_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DiscourseReferenceStateRow:
+    state_ref: str
+    antecedent_refs: Tuple[str, ...]
+    competitor_refs: Tuple[str, ...]
+    focus_ref: Optional[str]
+    speaker_ref: Optional[str]
+    establishment_proof_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ClauseLinkPlan:
+    link_plan_ref: str
+    admitted_relation_ref: str
+    placement: str
+    token_owner_ref: str
+
+
+@dataclass(frozen=True, slots=True)
+class PredicateMorphologyPlan:
+    plan_ref: str
+    head_ref: str
+    aspect_time: str
+    polarity: str
+    modal: str
+    politeness: str
+    terminal_order: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class JapaneseClauseIR:
+    clause_ir_ref: str
+    argument_plans: Tuple[ArgumentRealizationPlan, ...]
+    source_complement_plan_ref: Optional[str]
+    reference_state_ref: Optional[str]
+    link_plan_ref: Optional[str]
+    morphology_plan_ref: str
+    semantic_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class LinearizedJapaneseClause:
+    clause_ref: str
+    text: str = field(repr=False)
+    clause_frames: Tuple["ClauseFrame", ...] = ()
+    realized_semantic_bindings: Tuple["RealizedSemanticBinding", ...] = ()
+    surface_derivations: Tuple[SurfaceDerivation, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class JapaneseLocalPreferenceProfile:
+    profile_ref: str
+    comparison_rows: Tuple[Tuple[str, int], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AtomicPredicateHeadSpec:
+    head_id: str
+    frame_ref: str
+    atomic_parts: Tuple[str, ...]
+    inflection_class_ref: str
+    lexical_family_ref: str
+
+
+@dataclass(frozen=True, slots=True)
+class LexicalFamilySpec:
+    lexical_family_id: str
+    atomic_parts: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ComplementRuleSpec:
+    complement_rule_id: str
+    mode: SourceRealizationMode
+    cardinality: SourceLeafCardinality
+    slot_roles: Tuple[str, ...]
+    structural_asset_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SenseComplementLicense:
+    license_id: str
+    sense_ref: str
+    frame_ref: str
+    complement_rule_ref: str
+    classifier_ref: Optional[str]
+
+
+@dataclass(frozen=True, slots=True)
+class SourceClassifierSpec:
+    classifier_id: str
+    classifier_kind: str
+    atomic_surface: str
+
+
+@dataclass(frozen=True, slots=True)
+class SourceFunctionalTokenSpec:
+    token_id: str
+    token_kind: str
+    atomic_surface: str
+
+
+@dataclass(frozen=True, slots=True)
+class SourceFunctionalModifierSpec:
+    modifier_id: str
+    frame_ref: str
+    placement: str
+    atomic_surface: str
+
+
+@dataclass(frozen=True, slots=True)
+class SourceQuoteDelimiterRule:
+    delimiter_rule_id: str
+    source_quote_topology: SourceQuoteTopology
+    outer_delimiter_kind: str
+
+
+@dataclass(frozen=True, slots=True)
+class CaseParticleSurfaceVariant:
+    variant_kind: str
+    atomic_surface: str
+
+
+@dataclass(frozen=True, slots=True)
+class CaseParticleRule:
+    particle_rule_id: str
+    frame_ref: str
+    slot_role: str
+    surface_variants: Tuple[CaseParticleSurfaceVariant, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class InflectionClassSpec:
+    inflection_class_id: str
+    inflection_class: str
+
+
+@dataclass(frozen=True, slots=True)
+class MatrixMorphologyParadigmSpec:
+    morphology_id: str
+    frame_ref: str
+    aspect_time: str
+    polarity: str
+    modal: str
+    politeness: str
+    inflection_recipe: str
+    terminal_class: str
+
+
+@dataclass(frozen=True, slots=True)
+class ClauseLinkRule:
+    link_rule_id: str
+    relation_kind: str
+    placement: str
+    token_ref: str
+    internal_relation_policy: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceZeroTopicRule:
+    reference_rule_id: str
+    discourse_condition: str
+    realization_kind: str
+
+
+@dataclass(frozen=True, slots=True)
+class JapaneseLocalPreferenceRule:
+    preference_rule_id: str
+    preference_kind: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -2328,12 +2626,20 @@ def _stage1_normalized_contract_name(name: str) -> str:
 def validate_stage1_anti_template_registry_invariant(
     registry_field_names: Tuple[str, ...],
     selector_parameter_names: Tuple[str, ...] = (),
+    registry_value_rows: Tuple[Tuple[str, ...], ...] = (),
 ) -> None:
     if (
         type(registry_field_names) is not tuple
         or type(selector_parameter_names) is not tuple
+        or type(registry_value_rows) is not tuple
         or any(type(value) is not str or not value for value in registry_field_names)
         or any(type(value) is not str or not value for value in selector_parameter_names)
+        or any(
+            type(row) is not tuple
+            or not row
+            or any(type(value) is not str or not value for value in row)
+            for row in registry_value_rows
+        )
     ):
         raise CMEEStage1ContractError("stage1_anti_template_registry_invalid")
     forbidden_registry = set(CMEE_STAGE1_ANTI_TEMPLATE_FORBIDDEN_REGISTRY_FIELDS)
@@ -2422,13 +2728,58 @@ def validate_stage1_anti_template_registry_invariant(
             )
         )
 
+    def registry_value_forbidden(value: str) -> bool:
+        normalized = _stage1_normalized_contract_name(value)
+        return (
+            any(mark in value for mark in ("。", "！", "？", "\n", "\r"))
+            or any(
+                marker in normalized
+                for marker in (
+                    "raw_text",
+                    "raw_source",
+                    "suffix",
+                    "substring",
+                    "regex",
+                    "source_suffix",
+                    "source_substring",
+                    "source_regex",
+                    "regex_result",
+                    "case_id",
+                    "case_family",
+                    "fixture_id",
+                    "fixture_family",
+                    "input_hash",
+                    "input_digest",
+                    "expected_text",
+                    "finished_phrase",
+                    "finished_clause",
+                    "finished_sentence",
+                    "finished_surface",
+                    "prior_output",
+                    "human_verdict",
+                    "private_body_identity",
+                )
+            )
+        )
+
     if (
-        registry_field_names
-        != _CMEE_STAGE1_ANTI_TEMPLATE_ALLOWED_REGISTRY_FIELDS_ORDERED
-        or selector_parameter_names
-        != _CMEE_STAGE1_ANTI_TEMPLATE_ALLOWED_SELECTOR_INPUTS_ORDERED
+        (
+            not registry_value_rows
+            and registry_field_names
+            != _CMEE_STAGE1_ANTI_TEMPLATE_ALLOWED_REGISTRY_FIELDS_ORDERED
+        )
+        or (
+            not registry_value_rows
+            and selector_parameter_names
+            != _CMEE_STAGE1_ANTI_TEMPLATE_ALLOWED_SELECTOR_INPUTS_ORDERED
+        )
         or any(registry_forbidden(value) for value in registry_field_names)
         or any(selector_forbidden(value) for value in selector_parameter_names)
+        or any(
+            registry_value_forbidden(value)
+            for row in registry_value_rows
+            for value in row
+        )
     ):
         raise CMEEStage1ContractError("stage1_anti_template_registry_invalid")
 
@@ -5439,11 +5790,15 @@ class EngineOutcome:
 __all__ = [
     "AffectCategory",
     "AffectIntensity",
+    "ArgumentRealizationPlan",
     "AppraisalDimension",
     "AppraisalOperation",
     "ArgumentBinding",
     "ArgumentRole",
     "AttachmentAdmission",
+    "AtomicPredicateHeadSpec",
+    "CaseParticleRule",
+    "CaseParticleSurfaceVariant",
     "CMEE_COMMON_GUARD_PROOF_VERSION",
     "CMEE_GROUNDED_GRAPH_SCHEMA_VERSION",
     "CMEE_OBLIGATION_VERSION",
@@ -5462,6 +5817,9 @@ __all__ = [
     "CMEE_TERMINAL_GENERATED_DISABLED",
     "CMEEStage1ContractError",
     "ClauseFrame",
+    "ClauseLinkPlan",
+    "ClauseLinkRule",
+    "ComplementRuleSpec",
     "CommonGuardProof",
     "CommonGuardResultProof",
     "CoreId",
@@ -5482,9 +5840,18 @@ __all__ = [
     "ExperiencePlan",
     "GenerationArtifactBundle",
     "GenerationRequest",
+    "GroundedExpressionPlan",
     "GroundedMeaningGraph",
+    "InflectionClassSpec",
     "InterpretationEpistemicState",
     "InterpretationKind",
+    "JapaneseCaseFrameSpec",
+    "JapaneseClauseIR",
+    "JapaneseLocalPreferenceProfile",
+    "JapaneseLocalPreferenceRule",
+    "LexicalFamilySpec",
+    "LinearizedJapaneseClause",
+    "MatrixMorphologyParadigmSpec",
     "MeaningFieldEntry",
     "MeaningFieldSlot",
     "MeaningEdge",
@@ -5499,11 +5866,15 @@ __all__ = [
     "PolicyBasisOwnerKind",
     "PolicyBasisRole",
     "PlannedObservationContribution",
+    "PredicateMorphologyPlan",
+    "PredicateSenseFrameLicense",
+    "PredicateSenseSpec",
     "ProductJob",
     "ResolverResolution",
     "RealizedSemanticBinding",
     "RealizedSentenceUnit",
     "RealizationCandidateSet",
+    "ReferenceZeroTopicRule",
     "RelationOperator",
     "RelationalClosure",
     "RelationalCommitment",
@@ -5512,7 +5883,23 @@ __all__ = [
     "SourceOwnerResolution",
     "SemanticOperator",
     "SourceEnvelope",
+    "SourceClassifierSpec",
+    "SourceComplementPlan",
+    "SourceFinalTerminalClass",
+    "SourceFunctionalModifierSpec",
+    "SourceFunctionalTokenSpec",
+    "SourceLeafCardinality",
+    "SourceLeafExtent",
+    "SourceLeafGroup",
+    "SourceLeafToken",
+    "SourceLineBreakShape",
     "SourceQualifierBinding",
+    "SourceQuoteDelimiterRule",
+    "SourceQuoteTopology",
+    "SourceRealizationMode",
+    "SourceSentenceShape",
+    "SenseComplementLicense",
+    "DiscourseReferenceStateRow",
     "SourceOwnerObligation",
     "SourceOwnerUniverse",
     "StanceOperator",

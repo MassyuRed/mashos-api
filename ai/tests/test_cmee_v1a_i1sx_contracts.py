@@ -6565,9 +6565,9 @@ class CMEEStage1AdditionalCorrectionStep1ContractsTest(unittest.TestCase):
         expected = (
             ("CMEE_STAGE1_RESPONSE_SCHEMA_VERSION", "cocolon.cmee.v1a.emlis_stage1_response.v2"),
             ("CMEE_STAGE1_SUBJECTIVE_PROPOSITION_SCHEMA_VERSION", "cocolon.cmee.v1a.emlis_subjective_proposition.v2"),
-            ("CMEE_STAGE1_COMPOSITION_POLICY_VERSION", "cocolon.emlis.stage1.discourse_composition.v1"),
-            ("CMEE_STAGE1_NORMAL_FORM_VERSION", "cocolon.cmee.v1a.emlis_stage1_normal_form.v1"),
-            ("CMEE_STAGE1_CONSTRUCTION_GRAMMAR_POLICY_VERSION", "cocolon.emlis.stage1.grounded_construction_grammar.v1"),
+            ("CMEE_STAGE1_COMPOSITION_POLICY_VERSION", "cocolon.emlis.stage1.discourse_composition.v2"),
+            ("CMEE_STAGE1_NORMAL_FORM_VERSION", "cocolon.cmee.v1a.emlis_stage1_normal_form.v2"),
+            ("CMEE_STAGE1_CONSTRUCTION_GRAMMAR_POLICY_VERSION", "cocolon.emlis.stage1.grounded_construction_grammar.v2"),
             ("CMEE_STAGE1_PROJECTION_PREIMAGE_REF_VERSION", "cocolon.cmee.v1a.emlis_stage1_projection_preimage_ref.v1"),
             ("CMEE_STAGE1_SUBJECTIVE_BASIS_BINDING_REF_VERSION", "cocolon.cmee.v1a.emlis_subjective_basis_binding_ref.v1"),
             ("CMEE_STAGE1_SOURCE_QUALIFIER_BINDING_REF_VERSION", "cocolon.cmee.v1a.emlis_source_qualifier_binding_ref.v1"),
@@ -15991,6 +15991,220 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 "source_owner_contract_complete",
                 "structural_trace_valid_count",
             ],
+        )
+
+
+class CMEERouteAV2I01DisabledRegistryContractsTest(unittest.TestCase):
+    def test_route_a_registered_surface_assembly_is_morphosyntactically_closed(
+        self,
+    ) -> None:
+        stage1_composition_module.validate_v2_grammar_inventory()
+        inventory = stage1_composition_module.V2_GRAMMAR_INVENTORY
+        self.assertEqual(len(inventory.encode("utf-8")), 13_811)
+        self.assertEqual(
+            hashlib.sha256(inventory.encode("utf-8")).hexdigest(),
+            "f071244e28baa5a824067ebfddf273bc4ad8f967d90ed5bd0bf9b9862a68a802",
+        )
+        self.assertEqual(
+            len(stage1_composition_module.V2_GRAMMAR_INVENTORY_ROWS),
+            232,
+        )
+        expected_counts = (
+            17,
+            22,
+            22,
+            22,
+            22,
+            8,
+            22,
+            5,
+            5,
+            3,
+            3,
+            4,
+            42,
+            59,
+            6,
+            22,
+            10,
+            12,
+            7,
+        )
+        actual_counts = (
+            len(stage1_composition_module.V2_PREDICATE_SENSE_REGISTRY),
+            len(stage1_composition_module.V2_JAPANESE_CASE_FRAME_REGISTRY),
+            len(
+                stage1_composition_module.V2_PREDICATE_SENSE_FRAME_LICENSE_REGISTRY
+            ),
+            len(stage1_composition_module.V2_ATOMIC_PREDICATE_HEAD_REGISTRY),
+            len(stage1_composition_module.V2_LEXICAL_FAMILY_REGISTRY),
+            len(stage1_composition_module.V2_COMPLEMENT_RULE_REGISTRY),
+            len(stage1_composition_module.V2_SENSE_COMPLEMENT_LICENSE_REGISTRY),
+            len(stage1_composition_module.V2_SOURCE_REALIZATION_MODE_REGISTRY),
+            len(stage1_composition_module.V2_SOURCE_CLASSIFIER_REGISTRY),
+            len(stage1_composition_module.V2_SOURCE_FUNCTIONAL_TOKEN_REGISTRY),
+            len(stage1_composition_module.V2_SOURCE_FUNCTIONAL_MODIFIER_REGISTRY),
+            len(stage1_composition_module.V2_SOURCE_QUOTE_DELIMITER_REGISTRY),
+            len(stage1_composition_module.V2_CASE_PARTICLE_REGISTRY),
+            sum(
+                len(row.surface_variants)
+                for row in stage1_composition_module.V2_CASE_PARTICLE_REGISTRY
+            ),
+            len(stage1_composition_module.V2_INFLECTION_CLASS_REGISTRY),
+            len(
+                stage1_composition_module.V2_MATRIX_MORPHOLOGY_PARADIGM_REGISTRY
+            ),
+            len(stage1_composition_module.V2_CLAUSE_LINK_REGISTRY),
+            len(stage1_composition_module.V2_REFERENCE_ZERO_TOPIC_REGISTRY),
+            len(stage1_composition_module.V2_JAPANESE_LOCAL_PREFERENCE_REGISTRY),
+        )
+        self.assertEqual(actual_counts, expected_counts)
+        self.assertNotIn(
+            "C01",
+            {
+                row.complement_rule_id
+                for row in stage1_composition_module.V2_COMPLEMENT_RULE_REGISTRY
+            },
+        )
+        self.assertIn(
+            "CL05",
+            {
+                row.classifier_id
+                for row in stage1_composition_module.V2_SOURCE_CLASSIFIER_REGISTRY
+            },
+        )
+        mutated_links = (
+            replace(
+                stage1_composition_module.V2_CLAUSE_LINK_REGISTRY[0],
+                token_ref="registered:tampered",
+            ),
+            *stage1_composition_module.V2_CLAUSE_LINK_REGISTRY[1:],
+        )
+        with (
+            patch.object(
+                stage1_composition_module,
+                "V2_CLAUSE_LINK_REGISTRY",
+                mutated_links,
+            ),
+            self.assertRaisesRegex(
+                stage1_composition_module.Stage1CompositionError,
+                "GRAMMAR_INVENTORY_TYPED_PROJECTION_DRIFT_STOP",
+            ),
+        ):
+            stage1_composition_module.validate_v2_grammar_inventory()
+        self._assert_route_a_registered_private_type_shapes_are_closed()
+        self._assert_route_a_registered_anti_template_values_fail_closed()
+        self._assert_route_a_registered_version_seeds_do_not_activate_v2_facade()
+
+    def _assert_route_a_registered_private_type_shapes_are_closed(self) -> None:
+        expected_type_names = (
+            "GroundedExpressionPlan",
+            "PredicateSenseSpec",
+            "JapaneseCaseFrameSpec",
+            "SourceLeafToken",
+            "SourceLeafGroup",
+            "SourceComplementPlan",
+            "ArgumentRealizationPlan",
+            "DiscourseReferenceStateRow",
+            "ClauseLinkPlan",
+            "PredicateMorphologyPlan",
+            "JapaneseClauseIR",
+            "LinearizedJapaneseClause",
+            "JapaneseLocalPreferenceProfile",
+            "AtomicPredicateHeadSpec",
+            "LexicalFamilySpec",
+            "ComplementRuleSpec",
+            "SenseComplementLicense",
+            "SourceClassifierSpec",
+            "SourceFunctionalTokenSpec",
+            "SourceFunctionalModifierSpec",
+            "SourceQuoteDelimiterRule",
+            "CaseParticleRule",
+            "CaseParticleSurfaceVariant",
+            "InflectionClassSpec",
+            "MatrixMorphologyParadigmSpec",
+            "ClauseLinkRule",
+            "ReferenceZeroTopicRule",
+            "JapaneseLocalPreferenceRule",
+        )
+        self.assertTrue(
+            all(
+                hasattr(getattr(contracts_module, name), "__dataclass_fields__")
+                for name in expected_type_names
+            )
+        )
+        source_leaf_fields = fields(contracts_module.SourceLeafToken)
+        self.assertEqual(
+            tuple(field.name for field in source_leaf_fields),
+            (
+                "leaf_ref",
+                "semantic_ref",
+                "source_envelope_ref",
+                "evidence_ref",
+                "extent",
+                "raw_utf8_start",
+                "raw_utf8_end",
+                "payload_utf8",
+                "sentence_shape",
+                "final_terminal_class",
+                "quote_topology",
+                "line_break_shape",
+                "derivation",
+            ),
+        )
+        self.assertFalse(next(
+            field.repr for field in source_leaf_fields if field.name == "payload_utf8"
+        ))
+        enum_counts = (
+            len(contracts_module.SourceLeafExtent),
+            len(contracts_module.SourceLeafCardinality),
+            len(contracts_module.SourceSentenceShape),
+            len(contracts_module.SourceFinalTerminalClass),
+            len(contracts_module.SourceQuoteTopology),
+            len(contracts_module.SourceLineBreakShape),
+            len(contracts_module.SourceRealizationMode),
+        )
+        self.assertEqual(enum_counts, (2, 2, 2, 4, 4, 3, 5))
+
+    def _assert_route_a_registered_anti_template_values_fail_closed(self) -> None:
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_anti_template_registry_invalid",
+        ):
+            validate_stage1_anti_template_registry_invariant(
+                tuple(
+                    field.name for field in fields(contracts_module.PredicateSenseSpec)
+                ),
+                ("typed_intent",),
+                (("SENSE", "S99", "finished_sentence"),),
+            )
+
+    def _assert_route_a_registered_version_seeds_do_not_activate_v2_facade(
+        self,
+    ) -> None:
+        final_ids = dict(CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY)
+        self.assertEqual(
+            final_ids["CMEE_STAGE1_COMPOSITION_POLICY_VERSION"],
+            "cocolon.emlis.stage1.discourse_composition.v2",
+        )
+        self.assertEqual(
+            final_ids["CMEE_STAGE1_NORMAL_FORM_VERSION"],
+            "cocolon.cmee.v1a.emlis_stage1_normal_form.v2",
+        )
+        self.assertEqual(
+            final_ids["CMEE_STAGE1_CONSTRUCTION_GRAMMAR_POLICY_VERSION"],
+            "cocolon.emlis.stage1.grounded_construction_grammar.v2",
+        )
+        self.assertEqual(
+            CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+            "cocolon.cmee.v1a.emlis_stage1_response.v1",
+        )
+        active_source = inspect.getsource(
+            stage1_response_module.compile_stage1_response
+        ).encode("utf-8").removesuffix(b"\n")
+        self.assertEqual(
+            hashlib.sha256(active_source).hexdigest(),
+            "127858adb26813f83111f5b6fb0ec8116ad46d371ed9a91d8b60a48157976515",
         )
 
 
