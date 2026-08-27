@@ -13,6 +13,7 @@ import re
 import tempfile
 import unittest
 from collections import Counter
+from contextlib import ExitStack
 from dataclasses import fields, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -8506,15 +8507,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 ("explicit", "user_stated_relation"),
                 ("休みたい気持ち", "もう少し進めたい気持ち"),
                 "coexistence",
-                (
-                    "「休みたい気持ち」があり",
-                    "「もう少し進めたい気持ち」があり",
-                    "どちらか一方だけにせず受け止めたいです",
-                ),
-                (
-                    "選べる向き",
-                    "決めつけたり義務に変えたりせず",
-                ),
+                ("F05", "F13"),
             ),
             (
                 PUBLIC_NONSECRET_EARLY_STANDIN_EXACT4[2],
@@ -8522,13 +8515,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 ("explicit", "explicit"),
                 ("少し話を聞いてほしい", "今声をかけてよいか迷っている"),
                 "wish_and_constraint",
-                (
-                    "「少し話を聞いてほしい」という願いがあり",
-                    "「今声をかけてよいか迷っている」ということには不確かさが残り",
-                    "どちらか一方だけにせず受け止めたいです",
-                    "義務や決めつけに変えず",
-                ),
-                ("不確かさも残り", "選べる向き"),
+                ("F05", "F13", "F17"),
             ),
         )
         recognizer_source = inspect.getsource(
@@ -8559,7 +8546,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             category,
             emotion,
             strength,
-        ), expected_kinds, expected_groundings, expected_values, expected_relation, expected_surface, rejected_surface in (
+        ), expected_kinds, expected_groundings, expected_values, expected_relation, expected_frame_refs in (
             public_cases
         ):
             with self.subTest(public_structure=label):
@@ -8669,15 +8656,75 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 result = stage1_composition_module.compose_stage1_from_projection(
                     phase_b
                 )
+                normalized = result.selected_candidate.normalized_artifact
+                self.assertEqual(
+                    tuple(row.frame.frame_id for row in normalized.v2_clause_rows),
+                    expected_frame_refs,
+                )
+                relation_clause = normalized.v2_clause_rows[0]
+                self.assertEqual(
+                    (relation_clause.frame.frame_id, relation_clause.head.head_id),
+                    ("F05", "H05"),
+                )
+                self.assertIs(
+                    relation_clause.source_group.cardinality,
+                    contracts_module.SourceLeafCardinality.ORDERED_EXACT2,
+                )
+                self.assertEqual(
+                    tuple(
+                        leaf.payload_utf8.decode("utf-8", "strict")
+                        for leaf in relation_clause.source_leaves
+                    ),
+                    expected_values,
+                )
+                self.assertEqual(
+                    tuple(
+                        leaf.semantic_ref for leaf in relation_clause.source_leaves
+                    ),
+                    relation_clause.reference_state.response_object_expression.basis_semantic_refs,
+                )
+                self.assertIn(
+                    "reference-rule:R11",
+                    relation_clause.reference_state.object_state.establishment_proof_refs,
+                )
+                r04_rows = tuple(
+                    row
+                    for row in normalized.v2_clause_rows
+                    if "reference-rule:R04"
+                    in row.reference_state.object_state.establishment_proof_refs
+                )
+                self.assertEqual(len(r04_rows), 1)
+                r04_expression = r04_rows[0].reference_state.response_object_expression
+                self.assertIs(
+                    r04_expression.expression_mode,
+                    stage1_composition_module.ResponseObjectExpressionMode.ANAPHORIC,
+                )
+                self.assertEqual(
+                    r04_expression.basis_semantic_refs,
+                    tuple(leaf.semantic_ref for leaf in relation_clause.source_leaves),
+                )
+                unit_index_by_ref = {
+                    unit.unit_ref: index
+                    for index, unit in enumerate(normalized.sentence_units)
+                }
+                self.assertEqual(
+                    unit_index_by_ref[r04_expression.antecedent_unit_ref] + 1,
+                    unit_index_by_ref[r04_expression.unit_ref],
+                )
+                self.assertTrue(
+                    any(
+                        derivation.derivation_kind
+                        is SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT
+                        for derivation in r04_rows[0].linearized_clause.surface_derivations
+                    )
+                )
                 actual_japanese = "\n".join(
                     unit.text for unit in result.selected_candidate.sentence_units
                 )
                 self.assertTrue(
-                    all(value in actual_japanese for value in expected_surface)
+                    all(value in actual_japanese for value in expected_values)
                 )
-                self.assertTrue(
-                    all(value not in actual_japanese for value in rejected_surface)
-                )
+                self.assertIn("その両方", actual_japanese)
                 self.assertEqual(
                     tuple(
                         claim.asserted_subjective_proposition.content_kind
@@ -8979,15 +9026,12 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     )
                 )
 
-        for index, (memo, expected_constraint_surface) in enumerate(
+        for index, memo in enumerate(
             (
-                ("休みたいが、今は休めない。", "制約があり"),
-                ("飲みたいが、今は飲めない。", "制約があり"),
-                ("読みたいが、今は読めない。", "制約があり"),
-                (
-                    "穏やかに過ごせることを願っているけれど、今は難しい。",
-                    "制約があり",
-                ),
+                "休みたいが、今は休めない。",
+                "飲みたいが、今は飲めない。",
+                "読みたいが、今は読めない。",
+                "穏やかに過ごせることを願っているけれど、今は難しい。",
             ),
             start=1,
         ):
@@ -9029,10 +9073,56 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 result = stage1_composition_module.compose_stage1_from_projection(
                     phase_b
                 )
+                normalized = result.selected_candidate.normalized_artifact
+                relation_rows = tuple(
+                    row
+                    for row in normalized.v2_clause_rows
+                    if row.frame.frame_id == "F05"
+                )
+                self.assertEqual(len(relation_rows), 1)
+                relation_row = relation_rows[0]
+                self.assertEqual(relation_row.head.head_id, "H05")
+                self.assertIs(
+                    relation_row.source_group.cardinality,
+                    contracts_module.SourceLeafCardinality.ORDERED_EXACT2,
+                )
+                source_span = next(
+                    span
+                    for span in _source.evidence_spans
+                    if span.span_id == typed[0].source_span_ids[0]
+                )
+                normalized_source = re.sub(
+                    r"\s+",
+                    " ",
+                    str(source_span.raw_text or "").replace("\u3000", " "),
+                ).strip()
+                expected_payloads = tuple(
+                    emlis_v1a_module._cmee_typed_relation_fragment_value(
+                        row, normalized_source
+                    )
+                    for row in typed
+                )
+                self.assertEqual(
+                    tuple(
+                        leaf.payload_utf8.decode("utf-8", "strict")
+                        for leaf in relation_row.source_leaves
+                    ),
+                    expected_payloads,
+                )
+                r04_rows = tuple(
+                    row
+                    for row in normalized.v2_clause_rows
+                    if "reference-rule:R04"
+                    in row.reference_state.object_state.establishment_proof_refs
+                )
+                self.assertEqual(len(r04_rows), 1)
                 actual_japanese = "\n".join(
                     unit.text for unit in result.selected_candidate.sentence_units
                 )
-                self.assertIn(expected_constraint_surface, actual_japanese)
+                self.assertTrue(
+                    all(value in actual_japanese for value in expected_payloads)
+                )
+                self.assertIn("その両方", actual_japanese)
                 self.assertNotIn("今もあり", actual_japanese)
 
         priority_cases = (
@@ -9117,19 +9207,71 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                             phase_b
                         )
                     )
+                    normalized = result.selected_candidate.normalized_artifact
+                    self.assertEqual(
+                        tuple(
+                            (row.frame.frame_id, row.head.head_id)
+                            for row in normalized.v2_clause_rows
+                        ),
+                        (
+                            ("F07", "H07"),
+                            ("F10", "H10"),
+                            ("F15", "H15"),
+                            ("F21", "H21"),
+                        ),
+                    )
+                    self.assertEqual(
+                        tuple(
+                            tuple(
+                                leaf.payload_utf8.decode("utf-8", "strict")
+                                for leaf in row.source_leaves
+                            )
+                            for row in normalized.v2_clause_rows
+                        ),
+                        (
+                            ("予定の話はした", "まだ迷いが残っていて"),
+                            ("どうしたいかは分からない",),
+                            ("どうしたいかは分からない",),
+                            ("どうしたいかは分からない",),
+                        ),
+                    )
+                    self.assertIs(
+                        normalized.v2_clause_rows[0].source_group.cardinality,
+                        contracts_module.SourceLeafCardinality.ORDERED_EXACT2,
+                    )
+                    self.assertTrue(
+                        all(
+                            row.source_group.cardinality
+                            is contracts_module.SourceLeafCardinality.EXACT1
+                            for row in normalized.v2_clause_rows[1:]
+                        )
+                    )
+                    self.assertIn(
+                        "reference-rule:R11",
+                        normalized.v2_clause_rows[0].reference_state.object_state.establishment_proof_refs,
+                    )
+                    self.assertIn(
+                        "reference-rule:R01",
+                        normalized.v2_clause_rows[1].reference_state.object_state.establishment_proof_refs,
+                    )
+                    self.assertTrue(
+                        all(
+                            "reference-rule:R12"
+                            in row.reference_state.object_state.establishment_proof_refs
+                            for row in normalized.v2_clause_rows[2:]
+                        )
+                    )
                     actual_japanese = "\n".join(
                         unit.text
                         for unit in result.selected_candidate.sentence_units
                     )
-                    self.assertIn(
-                        "「予定の話はした」ということのあとにも、"
-                        "「まだ迷いが残っている」という状態があります。",
-                        actual_japanese,
-                    )
-                    self.assertIn(
-                        "「どうしたいかは分からない」ということは、"
-                        "まだ閉じていないものとして残っています。",
-                        actual_japanese,
+                    self.assertTrue(
+                        all(
+                            leaf.payload_utf8.decode("utf-8", "strict")
+                            in actual_japanese
+                            for row in normalized.v2_clause_rows
+                            for leaf in row.source_leaves
+                        )
                     )
                     self.assertNotIn("今も不確かなまま", actual_japanese)
 
@@ -11024,11 +11166,32 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         )
         self.assertIs(open_position_content.closure, RelationalClosure.OPEN)
 
+        sealed_open_positions = tuple(
+            row
+            for row in d_projection.subjective_claims
+            if row.asserted_subjective_proposition.content_kind
+            is SubjectiveContentKind.RELATIONAL_POSITION
+            and row.asserted_subjective_proposition.relational_position
+            is not None
+            and row.asserted_subjective_proposition.relational_position.closure
+            is RelationalClosure.OPEN
+        )
+        self.assertEqual(len(sealed_open_positions), 1)
+        sealed_open_position = sealed_open_positions[0]
+        self.assertEqual(
+            sealed_open_position.selected_subjective_opportunity_key,
+            open_position.selected_subjective_opportunity_key,
+        )
+        self.assertNotEqual(
+            sealed_open_position.subjective_claim_id,
+            open_position.subjective_claim_id,
+        )
+
         arc = stage1_composition_module.project_stage1_discourse_arc(d_phase_b)
         self.assertIn(unfinished.contribution_id, arc.unresolved_or_residue_refs)
         self.assertEqual(
             arc.terminal_owner_refs,
-            (open_position.subjective_claim_id,),
+            (sealed_open_position.subjective_claim_id,),
         )
         self.assertEqual(arc.layer2_response_target_refs, (unfinished_ref,))
 
@@ -11232,14 +11395,66 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     self.assertNotIn("散歩に出", quoted_source_fragments)
                 elif label == "unfinished":
                     self.assertIn(
-                        "まだ気持ちが残っている",
-                        quoted_source_fragments,
-                    )
-                    self.assertNotIn(
                         "まだ気持ちが残っていて",
                         quoted_source_fragments,
                     )
+                    self.assertNotIn(
+                        "まだ気持ちが残っている",
+                        quoted_source_fragments,
+                    )
                 normalized = result.selected_candidate.normalized_artifact
+                self.assertEqual(
+                    tuple(row.duty_ref for row in normalized.v2_clause_rows),
+                    normalized.required_duty_refs,
+                )
+                self.assertTrue(
+                    all(
+                        leaf.payload_utf8
+                        == _source.envelope.raw_utf8[
+                            leaf.raw_utf8_start : leaf.raw_utf8_end
+                        ]
+                        for row in normalized.v2_clause_rows
+                        for leaf in row.source_leaves
+                    )
+                )
+                for unit in units:
+                    unit_clause_rows = tuple(
+                        row
+                        for row in normalized.v2_clause_rows
+                        if row.unit_ref == unit.unit_ref
+                    )
+                    self.assertEqual(
+                        tuple(row.duty_ref for row in unit_clause_rows),
+                        unit.duty_refs,
+                    )
+                    self.assertEqual(
+                        len(unit.clause_frames),
+                        len(unit_clause_rows),
+                    )
+                    self.assertEqual(
+                        len(unit.realized_semantic_bindings),
+                        len(unit.surface_derivations),
+                    )
+                    self.assertTrue(
+                        all(
+                            getattr(unit, field_name)
+                            for field_name in (
+                                "frame_refs",
+                                "atomic_head_refs",
+                                "lexical_family_refs",
+                                "source_group_refs",
+                                "reference_state_refs",
+                                "link_plan_refs",
+                                "morphology_plan_refs",
+                                "clause_ir_refs",
+                            )
+                        )
+                    )
+                    cursor = 0
+                    for binding in unit.realized_semantic_bindings:
+                        self.assertEqual(binding.surface_scalar_start, cursor)
+                        cursor = binding.surface_scalar_end
+                    self.assertEqual(cursor, len(unit.text))
                 realized_duties = tuple(
                     ref for unit in units for ref in unit.duty_refs
                 )
@@ -11685,6 +11900,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
     ) -> None:
         module = stage1_composition_module
         singular_anaphora = 0
+        singular_explicit = 0
         plural_anaphora = 0
         cross_layer_anaphora = 0
         for case_index in range(len(self._KNOWN_EXACT4)):
@@ -11708,8 +11924,15 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     row.clause_plan_ref: row
                     for row in normalized.clause_plan_rows
                 }
+                clause_by_expression_ref = {
+                    row.reference_state.response_object_expression.response_object_expression_ref: row
+                    for row in normalized.v2_clause_rows
+                }
                 for expression in normalized.response_object_expression_rows:
                     unit = unit_by_ref[expression.unit_ref]
+                    clause_row = clause_by_expression_ref[
+                        expression.response_object_expression_ref
+                    ]
                     if (
                         expression.expression_mode
                         is module.ResponseObjectExpressionMode.ANAPHORIC
@@ -11736,38 +11959,33 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                         if len(expression.basis_semantic_refs) == 1:
                             singular_anaphora += 1
                             self.assertIn("そのこと", unit.text)
+                            self.assertIn(
+                                "reference-rule:R03",
+                                clause_row.reference_state.object_state.establishment_proof_refs,
+                            )
                             self.assertEqual(
                                 unit_index[antecedent.unit_ref] + 1,
                                 unit_index[unit.unit_ref],
                             )
                         else:
                             plural_anaphora += 1
-                            if "その両方" not in unit.text:
-                                plan = plan_by_ref[expression.clause_plan_ref]
-                                owner, _owner_refs = module._duty_semantics(
-                                    duty_by_ref[plan.duty_ref],
-                                    phase_b,
-                                )
-                                source_objects = tuple(
-                                    module._source_expression(
-                                        ref,
-                                        phase_b,
-                                        module._frame_for_semantic_ref(
-                                            owner,
-                                            ref,
-                                            phase_b,
-                                        ),
-                                    )
-                                    for ref in expression.basis_semantic_refs
-                                )
-                                self.assertTrue(
-                                    all(
-                                        value in unit.text
-                                        for value in source_objects
-                                    )
-                                )
+                            self.assertIn("その両方", unit.text)
+                            self.assertIn(
+                                "reference-rule:R04",
+                                clause_row.reference_state.object_state.establishment_proof_refs,
+                            )
                             self.assertNotIn("そのことを", unit.text)
-        self.assertGreaterEqual(singular_anaphora, 1)
+                    elif len(expression.basis_semantic_refs) == 1:
+                        singular_explicit += 1
+                        self.assertEqual(len(clause_row.source_leaves), 1)
+                        self.assertIn(
+                            clause_row.source_leaves[0].payload_utf8.decode(
+                                "utf-8", "strict"
+                            ),
+                            unit.text,
+                        )
+        self.assertEqual(singular_anaphora, 0)
+        self.assertGreaterEqual(singular_explicit, 1)
         self.assertGreaterEqual(plural_anaphora, 1)
         self.assertGreaterEqual(cross_layer_anaphora, 1)
 
@@ -11785,6 +12003,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         self.assertEqual(len(layer1_units), 1)
         chain_unit = layer1_units[0]
         self.assertEqual(len(chain_unit.duty_refs), 2)
+        chain_duty_refs = chain_unit.duty_refs
         duty_by_ref = {
             row.duty_ref: row for row in normalized.composition_duty_rows
         }
@@ -11792,8 +12011,8 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             row.duty_ref: row for row in normalized.clause_plan_rows
         }
         self.assertIsNotNone(
-            module._shared_endpoint_relation_chain(
-                chain_unit.duty_refs,
+            module._v2_shared_endpoint_relation_chain(
+                chain_duty_refs,
                 duty_by_ref,
                 plan_by_duty,
             )
@@ -11802,7 +12021,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             row.clause_plan_ref: row
             for row in normalized.response_object_expression_rows
         }
-        for duty_ref in chain_unit.duty_refs:
+        for duty_ref in chain_duty_refs:
             duty = duty_by_ref[duty_ref]
             plan = plan_by_duty[duty_ref]
             self.assertEqual(len(duty.relation_refs), 1)
@@ -11814,20 +12033,26 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 expression_by_plan[plan.clause_plan_ref].expression_mode,
                 module.ResponseObjectExpressionMode.COMPOSITE,
             )
-        self.assertEqual(chain_unit.text.count("「少し落ち着いた」"), 1)
-        self.assertNotIn("その順序のまま", chain_unit.text)
-        self.assertNotIn("表れています", chain_unit.text)
-        self.assertIn("留保も残っています", chain_unit.text)
+        layer1_text = chain_unit.text
+        self.assertEqual(layer1_text.count("「少し落ち着いた」"), 2)
+        self.assertNotIn("その順序のまま", layer1_text)
+        self.assertNotIn("表れています", layer1_text)
         self.assertIs(
             selected.discourse_preference_profile.sentence_load_fit,
             module.ProfileFit.ARC_ALIGNED,
         )
-        self.assertTrue(
-            any(
-                row.discourse_preference_profile.sentence_load_fit
-                is module.ProfileFit.PERMITTED
-                for row in result.ranked_candidates[1:]
+        singleton_alternates = tuple(
+            row
+            for row in result.ranked_candidates[1:]
+            if all(
+                len(unit.duty_refs) == 1
+                for unit in row.normalized_artifact.sentence_units
             )
+        )
+        self.assertEqual(len(singleton_alternates), 1)
+        self.assertIs(
+            singleton_alternates[0].discourse_preference_profile.sentence_load_fit,
+            module.ProfileFit.PERMITTED,
         )
         self.assertEqual(
             module.normalize_to_normal_form(
@@ -12026,7 +12251,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
 
     def test_normalized_tamper_is_rejected_with_corresponding_typed_defect(self) -> None:
         module = stage1_composition_module
-        *_, phase_b = self._known_inputs(3)
+        *_, phase_b = self._known_inputs(0)
         normalized = module.compose_stage1_from_projection(
             phase_b
         ).selected_candidate.normalized_artifact
@@ -12092,17 +12317,20 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         grounded_dependency = normalized.discourse_arc.dependency_rows[
             grounded_dependency_index
         ]
-        terminal_owner_ref = normalized.discourse_arc.terminal_owner_refs[0]
         self.assertNotEqual(
             grounded_dependency.predecessor_owner_ref,
-            terminal_owner_ref,
+            grounded_dependency.successor_owner_ref,
         )
         dependency_tamper = replace(
             normalized,
             discourse_arc=replace(
                 normalized.discourse_arc,
                 dependency_rows=tuple(
-                    replace(row, predecessor_owner_ref=terminal_owner_ref)
+                    replace(
+                        row,
+                        predecessor_owner_ref=row.successor_owner_ref,
+                        successor_owner_ref=row.predecessor_owner_ref,
+                    )
                     if index == grounded_dependency_index
                     else row
                     for index, row in enumerate(
@@ -12287,7 +12515,13 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         arc = stage1_composition_module.project_stage1_discourse_arc(phase_b)
         duties = stage1_composition_module._project_duties(phase_b, arc)
         seeds = stage1_composition_module._layout_seeds(duties, arc)
-        self.assertTrue(2 <= len(seeds) <= 32)
+        self.assertTrue(
+            2
+            <= len(seeds)
+            <= dict(stage1_composition_module.V2_CANDIDATE_AXIS_MAXIMA)[
+                "LAYOUT_GROUPING"
+            ]
+        )
         exact5_dimension_values = tuple(
             {
                 stage1_canonical_json_bytes(getattr(seed, field_name))
@@ -12315,6 +12549,9 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         original_applicability_projector = (
             stage1_composition_module._derive_profile_applicability_mask
         )
+        original_local_profile_projector = (
+            stage1_composition_module.derive_japanese_local_preference_profile
+        )
         with patch.object(
             stage1_composition_module,
             "normalize_to_normal_form",
@@ -12328,7 +12565,11 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 stage1_composition_module,
                 "_derive_profile_applicability_mask",
                 wraps=original_applicability_projector,
-            ) as applicability_projector:
+            ) as applicability_projector, patch.object(
+                stage1_composition_module,
+                "derive_japanese_local_preference_profile",
+                wraps=original_local_profile_projector,
+            ) as local_profile_projector:
                 result = (
                     stage1_composition_module.compose_stage1_from_projection(
                         phase_b
@@ -12338,6 +12579,10 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         self.assertEqual(normalizer.call_count, result.internal_candidate_count)
         self.assertGreaterEqual(normalizer.call_count, 2)
         self.assertGreaterEqual(profile_projector.call_count, 2)
+        self.assertEqual(
+            local_profile_projector.call_count,
+            result.internal_candidate_count,
+        )
         self.assertEqual(applicability_projector.call_count, 1)
         self.assertEqual(
             tuple(
@@ -12479,20 +12724,62 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 len(expected_profile_key),
                 len(profile_field_names) - sum(not_applicable_mask),
             )
-        profile_fields = stage1_composition_module.PROFILE_RULE_REGISTRY
         rank_keys = tuple(
             (
-                tuple(
-                    fit_rank[getattr(row.discourse_preference_profile, field)]
-                    for field in profile_fields
-                    if getattr(row.discourse_preference_profile, field)
-                    is not stage1_composition_module.ProfileFit.NOT_APPLICABLE
+                stage1_composition_module._profile_key(
+                    row.discourse_preference_profile
                 ),
-                row.composition_signature,
+                stage1_composition_module._japanese_local_profile_key(
+                    row.japanese_local_preference_profile
+                ),
             )
             for row in result.ranked_candidates
         )
         self.assertEqual(rank_keys, tuple(sorted(rank_keys)))
+        self.assertEqual(len(rank_keys), len(set(rank_keys)))
+
+        first, second = result.ranked_candidates
+        self.assertNotEqual(
+            stage1_composition_module._visible_key(first.normalized_artifact),
+            stage1_composition_module._visible_key(second.normalized_artifact),
+        )
+        with self.assertRaisesRegex(
+            stage1_composition_module.Stage1CompositionError,
+            "IDIOMATIC_PREFERENCE_NONUNIQUE_STOP",
+        ):
+            stage1_composition_module._rank_v2_profiled_members(
+                (
+                    (
+                        first.normalized_artifact,
+                        first.discourse_preference_profile,
+                        first.japanese_local_preference_profile,
+                        first.composition_signature,
+                    ),
+                    (
+                        second.normalized_artifact,
+                        first.discourse_preference_profile,
+                        first.japanese_local_preference_profile,
+                        second.composition_signature,
+                    ),
+                )
+            )
+
+        over_bound_seeds = tuple(
+            replace(
+                seeds[0],
+                opening_duty_ref=f"candidate-bound-owner:{index}",
+            )
+            for index in range(5)
+        )
+        with patch.object(
+            stage1_composition_module,
+            "_layout_seeds",
+            return_value=over_bound_seeds,
+        ), self.assertRaisesRegex(
+            stage1_composition_module.Stage1CompositionError,
+            "CANDIDATE_BOUND_STOP",
+        ):
+            stage1_composition_module.compose_stage1_from_projection(phase_b)
 
     def test_runtime_integration_identity_is_independent_exact16_framed_digest(
         self,
@@ -12508,14 +12795,14 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             "ai/services/ai_inference/cocolon_text_generation_core/composer.py",
             "ai/services/ai_inference/cocolon_text_generation_core/adapters/emlis_observation_composer.py",
             "language_core_contract_manifest",
-            "construction_registry",
-            "emlis_expression_assets",
-            "response_object_reference_assets",
-            "functional_surface_assets",
-            "participant_lexeme_assets",
-            "structural_surface_assets",
-            "policy_and_enum_manifest",
+            "case_frame_and_particle_manifest",
+            "predicate_sense_and_atomic_head_manifest",
+            "source_complement_reference_manifest",
+            "morphology_link_functional_manifest",
+            "participant_structural_manifest",
+            "policy_and_closed_enum_manifest",
             "normal_form_and_profile_manifest",
+            "product_causal_owner_and_registry_digests_manifest",
         )
         payloads = module.stage1_runtime_integration_identity_payloads(
             repository_root
@@ -12539,7 +12826,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             "SubjectiveResponsibilityRow", "SubjectiveOpportunityRow",
             "SubjectiveFacetSuppressionRow", "Stage1DiscourseArcView",
             "ArcDependencyRow", "CompositionDutyView", "DutySuppressionRow",
-            "ClaimSuppressionRow", "DiscourseReferenceStateRow", "ClauseIntent",
+            "ClaimSuppressionRow", "V2ClauseReferenceStateBundle", "ClauseIntent",
             "ClauseSourceBindingCoverage", "ClauseScalarConstraintRow",
             "ScalarSurfaceCoverageKey", "ScalarSurfaceRealizationRow",
             "ClauseSubjectBinding", "ClauseArgumentSlotBinding", "ClausePlan",
@@ -12587,7 +12874,33 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             ("RelationEndpointCandidateRow", ("relation_candidate_ref", "source_argument_role", "source_semantic_ref", "endpoint_grounded_candidate_ref")),
             ("QualifierValueRow", ("candidate_ref", "qualifier_scope", "source_argument_role", "source_semantic_ref", "axis", "value")),
             ("RetainedReceptionActRow", ("act_ref", "reception_act", "basis_contribution_refs")),
-            ("ComposedSentenceUnit", ("unit_ref", "layer", "duty_refs", "sentence_job_refs", "basis_anchor_refs", "clause_plan_refs", "text", "surface_text_sha256")),
+            (
+                "ComposedSentenceUnit",
+                (
+                    "unit_ref", "layer", "duty_refs", "sentence_job_refs",
+                    "basis_anchor_refs", "clause_plan_refs", "text",
+                    "surface_text_sha256", "clause_frames",
+                    "realized_semantic_bindings", "surface_derivations",
+                    "frame_refs", "atomic_head_refs", "lexical_family_refs",
+                    "source_group_refs", "reference_state_refs",
+                    "link_plan_refs", "morphology_plan_refs",
+                    "clause_ir_refs",
+                ),
+            ),
+            (
+                "V2ClauseReferenceStateBundle",
+                (
+                    "state_ref", "subject_state", "object_state",
+                    "response_object_expression",
+                ),
+            ),
+            (
+                "V2ReferenceSurfaceSpec",
+                (
+                    "surface_ref", "reference_rule_ref", "atomic_surface",
+                    "source_cardinality", "licensed_frame_refs",
+                ),
+            ),
             ("Stage1CompositionResult", ("language_core_identity", "discourse_arc", "internal_candidate_count", "ranked_candidates", "selected_candidate")),
             ("SourceScalarMorphologyAssetSpec", ("morphology_asset_id", "predicate_kind", "required_attribute_codes", "terminal_rewrites", "preserved_finite_terminals")),
         )
@@ -12621,7 +12934,8 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             ("SubjectRealizationMode", 2), ("ActiveReferentEstablishmentKind", 4),
             ("SpeakerResolutionStatus", 2), ("SurfaceDerivationKind", 8),
             ("SurfaceBindingKind", 8), ("CorrectableDefectKind", 8),
-            ("NormalFormPhase", 6), ("ProfileFit", 3),
+            ("NormalFormPhase", 6), ("NormalFormRepairKind", 4),
+            ("ProfileFit", 3),
             ("ProfileEvidenceField", 8), ("ProfileEvidenceRuleKind", 8),
             ("RegisteredFunctionalSlotRef", 2), ("SubjectiveContentKind", 4),
             ("SubjectiveMode", 6), ("SubjectiveOperator", 6),
@@ -12776,14 +13090,57 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             tuple(path for path, _names in module.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST),
             expected_owner_paths,
         )
+        behavior_roots = module.N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT28
+        self.assertEqual(
+            tuple(path for path, _names in behavior_roots),
+            (
+                module.LANGUAGE_CORE_EXTERNAL_PATHS[0],
+                module._COMPOSITION_PATH,
+                module.LANGUAGE_CORE_EXTERNAL_PATHS[1],
+                module.LANGUAGE_CORE_EXTERNAL_PATHS[2],
+            ),
+        )
+        self.assertEqual(
+            tuple(len(names) for _path, names in behavior_roots),
+            (2, 15, 5, 6),
+        )
+        self.assertEqual(sum(len(names) for _path, names in behavior_roots), 28)
+        self.assertEqual(
+            dict(behavior_roots)[module.LANGUAGE_CORE_EXTERNAL_PATHS[2]],
+            (
+                "_stage1_runtime_contract",
+                "_build_stage1_grounded_observation_plan_for_schema",
+                "_realize_cmee_experience",
+                "_trace_for_lines",
+                "validate_positive_realization_trace",
+                "_build_text_grounded_limited_artifact_for_schema",
+            ),
+        )
         for path, callable_names in module.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST:
             tree = ast.parse((repository_root / path).read_text(encoding="utf-8"))
-            top_level_functions = {
-                node.name
-                for node in tree.body
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            }
-            self.assertTrue(set(callable_names).issubset(top_level_functions))
+            top_level_bound_names = []
+            for node in tree.body:
+                if isinstance(
+                    node,
+                    (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef),
+                ):
+                    top_level_bound_names.append(node.name)
+                elif isinstance(node, ast.Assign):
+                    top_level_bound_names.extend(
+                        target.id
+                        for target in node.targets
+                        if isinstance(target, ast.Name)
+                    )
+                elif isinstance(node, ast.AnnAssign) and isinstance(
+                    node.target, ast.Name
+                ):
+                    top_level_bound_names.append(node.target.id)
+            self.assertTrue(
+                all(
+                    top_level_bound_names.count(name) == 1
+                    for name in callable_names
+                )
+            )
 
         framed = bytearray(b"COCOLON_CMEE_STAGE1_LANGUAGE_CORE_IDENTITY_V1\x00")
         for name, payload in payloads:
@@ -12818,14 +13175,14 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         expected_names = (
             *(f"language_core_source_owner_ast:{path}" for path in source_paths),
             "language_core_contract_manifest",
-            "construction_registry",
-            "emlis_expression_assets",
-            "response_object_reference_assets",
-            "functional_surface_assets",
-            "participant_lexeme_assets",
-            "structural_surface_assets",
-            "policy_and_enum_manifest",
+            "case_frame_and_particle_manifest",
+            "predicate_sense_and_atomic_head_manifest",
+            "source_complement_reference_manifest",
+            "morphology_link_functional_manifest",
+            "participant_structural_manifest",
+            "policy_and_closed_enum_manifest",
             "normal_form_and_profile_manifest",
+            "product_causal_owner_and_registry_digests_manifest",
         )
         payloads = module.language_core_identity_payloads(repository_root)
         self.assertEqual(tuple(name for name, _payload in payloads), expected_names)
@@ -12895,11 +13252,15 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
 
             composition_path = temporary_root / module._COMPOSITION_PATH
             composition_source = composition_path.read_text(encoding="utf-8")
-            self.assertEqual(composition_source.count("enumerate(ordered[:2])"), 1)
+            mutation_anchor = "STAGE1_ATOMIC_HEAD_MORPHOLOGY_INCOMPATIBLE_STOP"
+            mutated_anchor = (
+                "STAGE1_ATOMIC_HEAD_MORPHOLOGY_INCOMPATIBLE_IDENTITY_PROBE_STOP"
+            )
+            self.assertEqual(composition_source.count(mutation_anchor), 1)
             composition_path.write_text(
                 composition_source.replace(
-                    "enumerate(ordered[:2])",
-                    "enumerate(ordered[:1])",
+                    mutation_anchor,
+                    mutated_anchor,
                 ),
                 encoding="utf-8",
             )
@@ -12913,6 +13274,1104 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 ),
                 module.STAGE1_RUNTIME_INTEGRATION_IDENTITY,
             )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_root = Path(temporary)
+            for relative_path in source_paths:
+                target = temporary_root / relative_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((repository_root / relative_path).read_bytes())
+
+            m08_path = temporary_root / module.LANGUAGE_CORE_EXTERNAL_PATHS[2]
+            m08_source = m08_path.read_text(encoding="utf-8")
+            mutation_anchor = "stage1_v2_canonical_compilation_mismatch"
+            mutated_anchor = (
+                "stage1_v2_canonical_compilation_identity_probe_mismatch"
+            )
+            self.assertEqual(m08_source.count(mutation_anchor), 1)
+            m08_path.write_text(
+                m08_source.replace(mutation_anchor, mutated_anchor),
+                encoding="utf-8",
+            )
+            self.assertNotEqual(
+                module.compute_language_core_identity(temporary_root),
+                module.LANGUAGE_CORE_IDENTITY,
+            )
+            self.assertNotEqual(
+                module.compute_stage1_runtime_integration_identity(
+                    temporary_root
+                ),
+                module.STAGE1_RUNTIME_INTEGRATION_IDENTITY,
+            )
+
+    def test_route_a_normal_form_preserves_grammar_plan_and_is_idempotent(
+        self,
+    ) -> None:
+        module = stage1_composition_module
+        sx06 = next(row for row in EXACT8 if row[0] == "SX-06")
+        *_, phase_b = _final_stage1_composition_inputs(
+            _request(
+                record_id="stage2-final-sx06-determinism-a",
+                memo=sx06[1],
+                category=sx06[2],
+                emotion=sx06[3],
+                strength=sx06[4],
+            )
+        )
+        *_, phase_b_other = self._known_inputs(1)
+        expected_legacy_seam_symbols = (
+            "_source_expression",
+            "_source_scalar_finite_form",
+            "_normalize_source_scalar_text",
+            "_source_scalar_text",
+            "_functional_surface_lexemes_by_role",
+            "_functional_surface_lexemes",
+            "_finite_relation_carrier",
+            "_relation_endpoint_particle",
+            "_generic_relation_fragment_clause",
+            "_generic_relation_fragment_response_object",
+            "_quoted_source_object",
+            "_shared_endpoint_conjunct",
+            "_new_endpoint_followup",
+            "_shared_endpoint_relation_chain",
+            "_shared_endpoint_relation_chain_surface",
+            "_surface_for_plan",
+            "_normal_form_phase_topic_speaker_connective_terminal",
+            "_normal_form_phase_expression_selection_final_linearization",
+        )
+        self.assertEqual(
+            module.LEGACY_COMPOSITION_SEAM_SYMBOL_SET_EXACT18,
+            expected_legacy_seam_symbols,
+        )
+        self.assertEqual(len(set(expected_legacy_seam_symbols)), 18)
+        with ExitStack() as stack:
+            legacy_seam_mocks = {
+                name: stack.enter_context(
+                    patch.object(
+                        module,
+                        name,
+                        side_effect=AssertionError(
+                            f"legacy composition seam reached: {name}"
+                        ),
+                    )
+                )
+                for name in expected_legacy_seam_symbols
+            }
+            ir_builder = stack.enter_context(
+                patch.object(
+                    module,
+                    "build_japanese_clause_ir",
+                    wraps=module.build_japanese_clause_ir,
+                )
+            )
+            sole_linearizer = stack.enter_context(
+                patch.object(
+                    module,
+                    "linearize_japanese_clause",
+                    wraps=module.linearize_japanese_clause,
+                )
+            )
+            result = module.compose_stage1_from_projection(phase_b)
+            intervening = module.compose_stage1_from_projection(phase_b_other)
+            repeated_result = module.compose_stage1_from_projection(phase_b)
+        for legacy_seam in legacy_seam_mocks.values():
+            legacy_seam.assert_not_called()
+        self.assertGreater(ir_builder.call_count, 0)
+        self.assertGreater(sole_linearizer.call_count, 0)
+
+        def candidate_state(composition_result: object) -> tuple[object, ...]:
+            return tuple(
+                (
+                    row.rank,
+                    module.canonical_normalized_bytes(
+                        row.normalized_artifact
+                    ),
+                    row.discourse_preference_profile,
+                    row.japanese_local_preference_profile,
+                    module._visible_key(row.normalized_artifact),
+                )
+                for row in composition_result.ranked_candidates
+            )
+
+        self.assertEqual(candidate_state(result), candidate_state(repeated_result))
+        self.assertNotEqual(candidate_state(result), candidate_state(intervening))
+        arc = module.project_stage1_discourse_arc(phase_b)
+        duties = module._project_duties(phase_b, arc)
+        original_layout_seeds = module._layout_seeds(duties, arc)
+        self.assertGreaterEqual(len(original_layout_seeds), 2)
+        with patch.object(
+            module,
+            "_layout_seeds",
+            return_value=tuple(reversed(original_layout_seeds)),
+        ):
+            reversed_seed_result = module.compose_stage1_from_projection(
+                phase_b
+            )
+        self.assertEqual(
+            candidate_state(result),
+            candidate_state(reversed_seed_result),
+        )
+        self.assertEqual(
+            result.selected_candidate.rank,
+            reversed_seed_result.selected_candidate.rank,
+        )
+
+        self.assertTrue(1 <= result.internal_candidate_count <= 16)
+        self.assertTrue(1 <= len(result.ranked_candidates) <= 2)
+        self.assertEqual(
+            module.V2_CANDIDATE_AXIS_MAXIMA,
+            (
+                ("LAYOUT_GROUPING", 4),
+                ("MENTION_POLICY", 2),
+                ("LINK_PLACEMENT", 2),
+                ("PREDICATE_HEAD", 1),
+            ),
+        )
+        self.assertEqual(module.V2_INTERNAL_CANDIDATE_LIMIT, 16)
+        self.assertEqual(module.V2_EMITTED_CANDIDATE_LIMIT, 2)
+        self.assertEqual(
+            tuple(row.rank for row in result.ranked_candidates),
+            tuple(range(1, len(result.ranked_candidates) + 1)),
+        )
+        self.assertEqual(
+            tuple(row.preference_rule_id for row in module.V2_JAPANESE_LOCAL_PREFERENCE_REGISTRY),
+            tuple(f"J{index:02d}" for index in range(1, 8)),
+        )
+        self.assertEqual(
+            tuple(row.value for row in module.NormalFormRepairKind),
+            (
+                "AMBIGUOUS_ANAPHOR_TO_FULL_EXPRESSION",
+                "OVERLOADED_EXACT2_CLAUSE_UNIT_SPLIT",
+                "REDUNDANT_CONNECTIVE_REMOVAL",
+                "LICENSED_TOPIC_ALTERNANT_TO_BASE_CASE",
+            ),
+        )
+
+        for candidate in result.ranked_candidates:
+            with self.subTest(rank=candidate.rank):
+                normalized = candidate.normalized_artifact
+                local_profile = candidate.japanese_local_preference_profile
+                self.assertEqual(
+                    tuple(rule_ref for rule_ref, _value in local_profile.comparison_rows),
+                    tuple(f"J{index:02d}" for index in range(1, 8)),
+                )
+                self.assertTrue(
+                    all(
+                        type(value) is int and value >= 0
+                        for _rule_ref, value in local_profile.comparison_rows
+                    )
+                )
+                repeated = module.normalize_to_normal_form(
+                    normalized,
+                    normalized.layout_preference_seed,
+                    phase_b,
+                )
+                self.assertEqual(
+                    normalized.normalization_phase_trace,
+                    tuple(module.NormalFormPhase),
+                )
+                self.assertEqual(len(normalized.normalization_phase_trace), 6)
+                self.assertEqual(normalized.correctable_defect_rows, ())
+                self.assertTrue(normalized.v2_clause_rows)
+                self.assertEqual(
+                    normalized.v2_clause_rows,
+                    repeated.v2_clause_rows,
+                )
+                self.assertEqual(
+                    normalized.repair_trace_rows,
+                    repeated.repair_trace_rows,
+                )
+                self.assertEqual(
+                    normalized.repair_defect_tuple,
+                    repeated.repair_defect_tuple,
+                )
+                self.assertEqual(normalized.repair_defect_tuple, (0, 0, 0, 0))
+                self.assertEqual(
+                    len(
+                        {
+                            row.repair_kind
+                            for row in normalized.repair_trace_rows
+                        }
+                    ),
+                    len(normalized.repair_trace_rows),
+                )
+                self.assertTrue(
+                    all(
+                        row.repair_kind in tuple(module.NormalFormRepairKind)
+                        and module._normal_form_repair_defect_tuple_strictly_decreases(
+                            row.defect_tuple_before,
+                            row.defect_tuple_after,
+                        )
+                        and row.repaired_owner_refs
+                        for row in normalized.repair_trace_rows
+                    )
+                )
+                nonmonotone_tuple = (0, 1, 0, 0)
+                nonmonotone = replace(
+                    normalized,
+                    repair_trace_rows=(
+                        module.NormalFormRepairTraceRow(
+                            repair_kind=(
+                                module.NormalFormRepairKind
+                                .OVERLOADED_EXACT2_CLAUSE_UNIT_SPLIT
+                            ),
+                            defect_tuple_before=nonmonotone_tuple,
+                            defect_tuple_after=nonmonotone_tuple,
+                            repaired_owner_refs=(
+                                normalized.required_duty_refs[0],
+                            ),
+                        ),
+                    ),
+                    repair_defect_tuple=nonmonotone_tuple,
+                )
+                with self.assertRaisesRegex(
+                    module.Stage1CompositionError,
+                    "RECOMPOSITION_REPAIR_NONMONOTONE_STOP",
+                ):
+                    module.canonical_normalized_bytes(nonmonotone)
+                self.assertEqual(
+                    module.canonical_normalized_bytes(normalized),
+                    module.canonical_normalized_bytes(repeated),
+                )
+                self.assertEqual(
+                    tuple(
+                        (
+                            unit.duty_refs,
+                            unit.sentence_job_refs,
+                            unit.basis_anchor_refs,
+                            unit.clause_plan_refs,
+                            unit.surface_text_sha256,
+                        )
+                        for unit in normalized.sentence_units
+                    ),
+                    tuple(
+                        (
+                            unit.duty_refs,
+                            unit.sentence_job_refs,
+                            unit.basis_anchor_refs,
+                            unit.clause_plan_refs,
+                            unit.surface_text_sha256,
+                        )
+                        for unit in repeated.sentence_units
+                    ),
+                )
+                rows_by_unit = {
+                    unit.unit_ref: tuple(
+                        row
+                        for row in normalized.v2_clause_rows
+                        if row.unit_ref == unit.unit_ref
+                    )
+                    for unit in normalized.sentence_units
+                }
+                for unit in normalized.sentence_units:
+                    rows = rows_by_unit[unit.unit_ref]
+                    self.assertEqual(
+                        tuple(row.duty_ref for row in rows),
+                        unit.duty_refs,
+                    )
+                    self.assertEqual(
+                        tuple(row.frame.frame_id for row in rows),
+                        unit.frame_refs,
+                    )
+                    self.assertEqual(
+                        tuple(row.head.head_id for row in rows),
+                        unit.atomic_head_refs,
+                    )
+                    self.assertEqual(
+                        tuple(row.head.lexical_family_ref for row in rows),
+                        unit.lexical_family_refs,
+                    )
+                    self.assertEqual(
+                        tuple(row.source_group.group_ref for row in rows),
+                        unit.source_group_refs,
+                    )
+                    self.assertEqual(
+                        tuple(row.reference_state.state_ref for row in rows),
+                        unit.reference_state_refs,
+                    )
+                    self.assertEqual(
+                        tuple(row.link_plan.link_plan_ref for row in rows),
+                        unit.link_plan_refs,
+                    )
+                    self.assertEqual(
+                        tuple(row.morphology_plan.plan_ref for row in rows),
+                        unit.morphology_plan_refs,
+                    )
+                    self.assertEqual(
+                        tuple(row.clause_ir.clause_ir_ref for row in rows),
+                        unit.clause_ir_refs,
+                    )
+                    self.assertEqual(
+                        tuple(
+                            frame
+                            for row in rows
+                            for frame in row.linearized_clause.clause_frames
+                        ),
+                        unit.clause_frames,
+                    )
+                    self.assertEqual(
+                        tuple(
+                            binding
+                            for row in rows
+                            for binding in row.linearized_clause.realized_semantic_bindings
+                        ),
+                        unit.realized_semantic_bindings,
+                    )
+                    self.assertEqual(
+                        tuple(
+                            derivation
+                            for row in rows
+                            for derivation in row.linearized_clause.surface_derivations
+                        ),
+                        unit.surface_derivations,
+                    )
+                    cursor = 0
+                    for binding in unit.realized_semantic_bindings:
+                        self.assertEqual(binding.surface_scalar_start, cursor)
+                        self.assertGreater(
+                            binding.surface_scalar_end,
+                            binding.surface_scalar_start,
+                        )
+                        cursor = binding.surface_scalar_end
+                    self.assertEqual(cursor, len(unit.text))
+
+    def test_route_a_activation_changes_only_facade_and_runtime_identity(
+        self,
+    ) -> None:
+        module = stage1_composition_module
+        response_path = Path(inspect.getsourcefile(stage1_response_module) or "")
+        response_source = response_path.read_text(encoding="utf-8")
+        response_tree = ast.parse(response_source)
+        function_rows = tuple(
+            row
+            for row in response_tree.body
+            if isinstance(row, (ast.FunctionDef, ast.AsyncFunctionDef))
+        )
+        function_names = tuple(row.name for row in function_rows)
+        helper_names = (
+            "_adapt_v2_composed_units_to_realized_units",
+            "_compile_stage1_response_v2_candidate",
+        )
+        self.assertEqual(
+            tuple(function_names.count(name) for name in helper_names),
+            (1, 1),
+        )
+        self.assertTrue(
+            set(helper_names).isdisjoint(stage1_response_module.__all__)
+        )
+        self.assertEqual(
+            tuple(
+                tuple(
+                    inspect.signature(
+                        getattr(stage1_response_module, name)
+                    ).parameters
+                )
+                for name in helper_names
+            ),
+            (
+                ("projection", "candidate", "grounded_graph", "parent_plan"),
+                ("source", "grounded_graph", "parent_plan", "grounded_plan"),
+            ),
+        )
+
+        active_source = inspect.getsource(
+            stage1_response_module.compile_stage1_response
+        ).encode("utf-8").removesuffix(b"\n")
+        self.assertEqual(
+            hashlib.sha256(active_source).hexdigest(),
+            "127858adb26813f83111f5b6fb0ec8116ad46d371ed9a91d8b60a48157976515",
+        )
+        active_node = next(
+            row for row in function_rows if row.name == "compile_stage1_response"
+        )
+        self.assertTrue(
+            set(helper_names).isdisjoint(
+                child.id
+                for child in ast.walk(active_node)
+                if isinstance(child, ast.Name)
+            )
+        )
+        helper_node = next(
+            row
+            for row in function_rows
+            if row.name == "_compile_stage1_response_v2_candidate"
+        )
+
+        def call_label(call: ast.Call) -> str:
+            if isinstance(call.func, ast.Name):
+                return call.func.id
+            if (
+                isinstance(call.func, ast.Attribute)
+                and isinstance(call.func.value, ast.Name)
+            ):
+                return f"{call.func.value.id}.{call.func.attr}"
+            return ""
+
+        self.assertEqual(
+            tuple(
+                call_label(row)
+                for row in ast.walk(helper_node)
+                if isinstance(row, ast.Call)
+            ),
+            (
+                "build_subjective_planning_inputs",
+                "composition.project_subjective_meaning_plan",
+                "seal_stage1_projection",
+                "build_surface_composition_inputs",
+                "composition.compose_stage1_from_projection",
+                "_adapt_v2_composed_units_to_realized_units",
+            ),
+        )
+
+        repository_root = Path(__file__).resolve().parents[2]
+        source_paths = (
+            module._COMPOSITION_PATH,
+            *module.LANGUAGE_CORE_EXTERNAL_PATHS,
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_root = Path(temporary)
+            for relative_path in source_paths:
+                target = temporary_root / relative_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((repository_root / relative_path).read_bytes())
+
+            response_relative = module.LANGUAGE_CORE_EXTERNAL_PATHS[1]
+            temporary_response_path = temporary_root / response_relative
+            temporary_response_source = temporary_response_path.read_text(
+                encoding="utf-8"
+            )
+            temporary_tree = ast.parse(temporary_response_source)
+            temporary_active = next(
+                row
+                for row in temporary_tree.body
+                if isinstance(row, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and row.name == "compile_stage1_response"
+            )
+            temporary_lines = temporary_response_source.splitlines(keepends=True)
+            active_segment = "".join(
+                temporary_lines[
+                    temporary_active.lineno - 1 : temporary_active.end_lineno
+                ]
+            )
+            signature_ast_before = (
+                ast.dump(temporary_active.args, include_attributes=False),
+                ast.dump(temporary_active.returns, include_attributes=False),
+                tuple(
+                    ast.dump(row, include_attributes=False)
+                    for row in temporary_active.decorator_list
+                ),
+            )
+            delegate_return = ast.parse(
+                "return _compile_stage1_response_v2_candidate("
+                "source=source, grounded_graph=grounded_graph, "
+                "parent_plan=parent_plan, grounded_plan=grounded_plan)"
+            ).body[0]
+            self.assertIsInstance(delegate_return, ast.Return)
+            temporary_active.body = [delegate_return]
+            signature_ast_after = (
+                ast.dump(temporary_active.args, include_attributes=False),
+                ast.dump(temporary_active.returns, include_attributes=False),
+                tuple(
+                    ast.dump(row, include_attributes=False)
+                    for row in temporary_active.decorator_list
+                ),
+            )
+            self.assertEqual(signature_ast_after, signature_ast_before)
+            activated_segment = ast.unparse(temporary_active) + "\n"
+            self.assertEqual(temporary_response_source.count(active_segment), 1)
+            temporary_response_path.write_text(
+                temporary_response_source.replace(
+                    active_segment,
+                    activated_segment,
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            self.assertNotEqual(
+                module.compute_language_core_identity(temporary_root),
+                module.LANGUAGE_CORE_IDENTITY,
+            )
+            self.assertNotEqual(
+                module.compute_stage1_runtime_integration_identity(
+                    temporary_root
+                ),
+                module.STAGE1_RUNTIME_INTEGRATION_IDENTITY,
+            )
+
+        known_inputs = tuple(self._known_inputs(index) for index in range(4))
+        with ExitStack() as stack:
+            legacy_composition_seams = {
+                name: stack.enter_context(
+                    patch.object(
+                        module,
+                        name,
+                        side_effect=AssertionError(
+                            f"legacy composition seam reached: {name}"
+                        ),
+                    )
+                )
+                for name in module.LEGACY_COMPOSITION_SEAM_SYMBOL_SET_EXACT18
+            }
+            active_facade = stack.enter_context(
+                patch.object(
+                    stage1_response_module,
+                    "compile_stage1_response",
+                    side_effect=AssertionError("active facade reached"),
+                )
+            )
+            legacy_projection = stack.enter_context(
+                patch.object(
+                    stage1_response_module,
+                    "build_stage1_semantic_projection",
+                    side_effect=AssertionError("legacy projection reached"),
+                )
+            )
+            legacy_realization = stack.enter_context(
+                patch.object(
+                    stage1_response_module,
+                    "build_stage1_realization_candidate_set",
+                    side_effect=AssertionError("legacy realization reached"),
+                )
+            )
+            legacy_selector = stack.enter_context(
+                patch.object(
+                    stage1_response_module,
+                    "select_stage1_realization_candidate",
+                    side_effect=AssertionError("legacy selector reached"),
+                )
+            )
+            helper_results = tuple(
+                stage1_response_module._compile_stage1_response_v2_candidate(
+                    source=inputs[0],
+                    grounded_plan=inputs[1],
+                    grounded_graph=inputs[2],
+                    parent_plan=inputs[3],
+                )
+                for inputs in known_inputs
+            )
+        active_facade.assert_not_called()
+        legacy_projection.assert_not_called()
+        legacy_realization.assert_not_called()
+        legacy_selector.assert_not_called()
+        for legacy_seam in legacy_composition_seams.values():
+            legacy_seam.assert_not_called()
+        self.assertEqual(len(helper_results), 4)
+        for inputs, (projection, realized_units) in zip(
+            known_inputs,
+            helper_results,
+            strict=True,
+        ):
+            self.assertEqual(
+                projection.schema_version,
+                module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+            )
+            self.assertTrue(realized_units)
+            self.assertTrue(
+                all(
+                    row.projection_ref == projection.projection_id
+                    and row.composition_variant_id == "01-primary"
+                    for row in realized_units
+                )
+            )
+            contracts_module.validate_stage1_projection(
+                projection,
+                grounded_graph=inputs[2],
+                parent_plan=inputs[3],
+            )
+            prior_unit_ids: list[str] = []
+            for unit in realized_units:
+                contracts_module.validate_stage1_sentence_unit(
+                    unit,
+                    projection,
+                    grounded_graph=inputs[2],
+                    parent_plan=inputs[3],
+                    prior_unit_ids=tuple(prior_unit_ids),
+                )
+                prior_unit_ids.append(unit.unit_id)
+
+    def test_i04_design_correction_v1_v2_validator_and_artifact_dispatch(
+        self,
+    ) -> None:
+        v1_schema = contracts_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+        v2_schema = contracts_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+        v1_projection = _stage1_projection_fixture()
+        v1_graph = _stage1_grounded_graph_fixture()
+        v1_parent = _stage1_parent_plan_fixture(v1_projection)
+        v1_unit = _stage1_sentence_unit_fixture(v1_projection)
+        contracts_module.validate_stage1_projection(
+            v1_projection,
+            grounded_graph=v1_graph,
+            parent_plan=v1_parent,
+        )
+        contracts_module.validate_stage1_sentence_unit(
+            v1_unit,
+            v1_projection,
+            grounded_graph=v1_graph,
+            parent_plan=v1_parent,
+        )
+        v1_ref = contracts_module.stage1_projection_artifact_ref(
+            v1_projection
+        )
+        self.assertTrue(v1_ref.endswith(f"@{v1_schema}"))
+        contracts_module.validate_stage1_projection_artifact_ref(
+            v1_ref,
+            expected_schema_version=v1_schema,
+        )
+
+        ignored_v2_projection_field = replace(
+            v1_projection,
+            projection_preimage_ref="v1-identity-preimage-exclusion-proof",
+        )
+        self.assertEqual(
+            recompute_stage1_identity(ignored_v2_projection_field),
+            v1_projection.projection_id,
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_microgrammar_policy_ref_invalid",
+        ):
+            contracts_module.validate_stage1_projection(
+                ignored_v2_projection_field,
+                grounded_graph=v1_graph,
+                parent_plan=v1_parent,
+            )
+        ignored_v2_claim_fields = replace(
+            v1_projection.subjective_claims[0],
+            subjective_responsibility_refs=(
+                "v1-identity-responsibility-exclusion-proof",
+            ),
+            selected_subjective_opportunity_key=(
+                "v1-identity-opportunity-exclusion-proof"
+            ),
+        )
+        self.assertEqual(
+            recompute_stage1_identity(ignored_v2_claim_fields),
+            v1_projection.subjective_claims[0].subjective_claim_id,
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_subjective_type_invalid",
+        ):
+            contracts_module.validate_stage1_projection(
+                replace(
+                    v1_projection,
+                    subjective_claims=(ignored_v2_claim_fields,),
+                ),
+                grounded_graph=v1_graph,
+                parent_plan=v1_parent,
+            )
+        synthetic_seal = contracts_module.Stage1V2UnitSeal(
+            covered_duty_refs=("duty:v2-only",),
+            sentence_job_refs=("job:v2-only",),
+            source_reception_act_refs=(),
+            composition_candidate_ref="candidate:v2-only",
+            composition_layout_ref="layout:v2-only",
+            selected_stage1_artifact_ref="artifact:v2-only",
+        )
+        v1_unit_with_ignored_identity_seal = replace(
+            v1_unit,
+            v2_trace_seal=synthetic_seal,
+        )
+        self.assertEqual(
+            recompute_stage1_identity(v1_unit_with_ignored_identity_seal),
+            v1_unit.unit_id,
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_unit_v2_seal_cross_version",
+        ):
+            contracts_module.validate_stage1_sentence_unit(
+                v1_unit_with_ignored_identity_seal,
+                v1_projection,
+                grounded_graph=v1_graph,
+                parent_plan=v1_parent,
+            )
+
+        inputs = self._known_inputs(0)
+        v2_projection, v2_units = (
+            stage1_response_module._compile_stage1_response_v2_candidate(
+                source=inputs[0],
+                grounded_plan=inputs[1],
+                grounded_graph=inputs[2],
+                parent_plan=inputs[3],
+            )
+        )
+        contracts_module.validate_stage1_projection(
+            v2_projection,
+            grounded_graph=inputs[2],
+            parent_plan=inputs[3],
+        )
+        self.assertEqual(v2_projection.schema_version, v2_schema)
+        self.assertTrue(v2_units)
+        prior_unit_ids: list[str] = []
+        for unit in v2_units:
+            contracts_module.validate_stage1_sentence_unit(
+                unit,
+                v2_projection,
+                grounded_graph=inputs[2],
+                parent_plan=inputs[3],
+                prior_unit_ids=tuple(prior_unit_ids),
+            )
+            prior_unit_ids.append(unit.unit_id)
+        v2_ref = contracts_module.stage1_projection_artifact_ref(
+            v2_projection
+        )
+        self.assertTrue(v2_ref.endswith(f"@{v2_schema}"))
+        contracts_module.validate_stage1_projection_artifact_ref(
+            v2_ref,
+            expected_schema_version=v2_schema,
+        )
+        for value, wrong_schema in (
+            (v1_ref, v2_schema),
+            (v2_ref, v1_schema),
+            (
+                v2_ref.rsplit("@", 1)[0]
+                + "@cocolon.cmee.unknown.stage1.v9",
+                None,
+            ),
+        ):
+            with self.assertRaisesRegex(
+                CMEEStage1ContractError,
+                "stage1_projection_artifact_ref_invalid",
+            ):
+                contracts_module.validate_stage1_projection_artifact_ref(
+                    value,
+                    expected_schema_version=wrong_schema,
+                )
+
+        unknown_projection = _identified(
+            replace(
+                v2_projection,
+                schema_version="cocolon.cmee.unknown.stage1.v9",
+                projection_id="",
+            ),
+            "projection_id",
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_projection_schema_version_invalid",
+        ):
+            contracts_module.validate_stage1_projection(
+                unknown_projection,
+                grounded_graph=inputs[2],
+                parent_plan=inputs[3],
+            )
+        mixed_projection = replace(
+            v2_projection,
+            meaning_field=replace(
+                v2_projection.meaning_field,
+                schema_version=v2_schema,
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_child_schema_version_mismatch",
+        ):
+            contracts_module.validate_stage1_projection(
+                mixed_projection,
+                grounded_graph=inputs[2],
+                parent_plan=inputs[3],
+            )
+        coordinated_preimage_tamper = _identified(
+            replace(
+                v2_projection,
+                projection_id="",
+                projection_preimage_ref="preimage:coordinated-rehash",
+            ),
+            "projection_id",
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_projection_v2_preimage_invalid",
+        ):
+            contracts_module.validate_stage1_projection(
+                coordinated_preimage_tamper,
+                grounded_graph=inputs[2],
+                parent_plan=inputs[3],
+            )
+        first_v2_unit = v2_units[0]
+        self.assertIsNotNone(first_v2_unit.v2_trace_seal)
+        assert first_v2_unit.v2_trace_seal is not None
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_unit_v2_seal_missing",
+        ):
+            contracts_module.validate_stage1_sentence_unit(
+                replace(first_v2_unit, v2_trace_seal=None),
+                v2_projection,
+                grounded_graph=inputs[2],
+                parent_plan=inputs[3],
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "stage1_unit_v2_seal_invalid",
+        ):
+            contracts_module.validate_stage1_sentence_unit(
+                replace(
+                    first_v2_unit,
+                    v2_trace_seal=replace(
+                        first_v2_unit.v2_trace_seal,
+                        composition_candidate_ref="",
+                    ),
+                ),
+                v2_projection,
+                grounded_graph=inputs[2],
+                parent_plan=inputs[3],
+            )
+
+    def test_i04_design_correction_r03_r04_reach_production_surface_derivation(
+        self,
+    ) -> None:
+        direct_inputs = _final_stage1_composition_inputs(
+            _request(
+                record_id="i04-reference-r03-direct",
+                memo="朝から何も手につかない。",
+            )
+        )
+        pair_inputs = self._known_inputs(0)
+        reached: set[str] = set()
+        expected_surface_by_rule = {
+            row.reference_rule_ref: row.atomic_surface
+            for row in (
+                stage1_composition_module
+                .V2_REFERENCE_SURFACE_REGISTRY_EXACT2
+            )
+        }
+        self.assertEqual(
+            expected_surface_by_rule,
+            {"R03": "そのこと", "R04": "その両方"},
+        )
+
+        for label, inputs in (
+            ("R03", direct_inputs),
+            ("R04", pair_inputs),
+        ):
+            with self.subTest(expected_rule=label):
+                result = (
+                    stage1_composition_module
+                    .compose_stage1_from_projection(inputs[7])
+                )
+                normalized = result.selected_candidate.normalized_artifact
+                unit_index_by_ref = {
+                    unit.unit_ref: index
+                    for index, unit in enumerate(normalized.sentence_units)
+                }
+                for row in normalized.v2_clause_rows:
+                    bundle = row.reference_state
+                    self.assertIsInstance(
+                        bundle,
+                        stage1_composition_module
+                        .V2ClauseReferenceStateBundle,
+                    )
+                    object_rule_ids = {
+                        rule.reference_rule_id
+                        for rule in (
+                            stage1_composition_module
+                            ._v2_reference_rows_from_state(
+                                bundle.object_state
+                            )
+                        )
+                    }
+                    anaphor_rules = object_rule_ids & {"R03", "R04"}
+                    if not anaphor_rules:
+                        continue
+                    self.assertEqual(len(anaphor_rules), 1)
+                    rule_id = next(iter(anaphor_rules))
+                    reached.add(rule_id)
+                    expression = bundle.response_object_expression
+                    self.assertIs(
+                        expression.expression_mode,
+                        stage1_composition_module
+                        .ResponseObjectExpressionMode.ANAPHORIC,
+                    )
+                    expected_cardinality = 1 if rule_id == "R03" else 2
+                    self.assertEqual(
+                        len(expression.basis_semantic_refs),
+                        expected_cardinality,
+                    )
+                    self.assertEqual(
+                        bundle.object_state.antecedent_refs,
+                        expression.basis_semantic_refs,
+                    )
+                    if rule_id == "R03":
+                        self.assertEqual(
+                            bundle.object_state.focus_ref,
+                            expression.basis_semantic_refs[0],
+                        )
+                    else:
+                        self.assertIsNone(bundle.object_state.focus_ref)
+                    self.assertEqual(
+                        unit_index_by_ref[row.unit_ref]
+                        - unit_index_by_ref[
+                            expression.antecedent_unit_ref
+                        ],
+                        1,
+                    )
+                    self.assertIsNotNone(bundle.subject_state)
+                    subject_rule_ids = {
+                        rule.reference_rule_id
+                        for rule in (
+                            stage1_composition_module
+                            ._v2_reference_rows_from_state(
+                                bundle.subject_state
+                            )
+                        )
+                    }
+                    self.assertEqual(
+                        len(subject_rule_ids & {"R05", "R06", "R07"}),
+                        1,
+                    )
+                    self.assertEqual(
+                        len(subject_rule_ids & {"R08", "R09", "R10"}),
+                        1,
+                    )
+                    derivation_pairs = tuple(
+                        (binding, derivation)
+                        for binding, derivation in zip(
+                            row.linearized_clause.realized_semantic_bindings,
+                            row.linearized_clause.surface_derivations,
+                            strict=True,
+                        )
+                        if derivation.derivation_kind
+                        is SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT
+                    )
+                    self.assertEqual(len(derivation_pairs), 1)
+                    binding, derivation = derivation_pairs[0]
+                    self.assertEqual(
+                        row.linearized_clause.text[
+                            binding.surface_scalar_start :
+                            binding.surface_scalar_end
+                        ],
+                        expected_surface_by_rule[rule_id],
+                    )
+                    self.assertEqual(
+                        derivation.source_or_claim_refs,
+                        expression.basis_semantic_refs,
+                    )
+                    self.assertEqual(
+                        derivation.response_object_expression_ref,
+                        expression.response_object_expression_ref,
+                    )
+                    self.assertEqual(
+                        derivation.antecedent_unit_ref,
+                        expression.antecedent_unit_ref,
+                    )
+                    self.assertEqual(derivation.evidence_refs, ())
+                    self.assertEqual(derivation.input_scalar_ranges, ())
+                    self.assertEqual(
+                        derivation.rule_ref,
+                        (
+                            "rule:projected-response-object-anaphoric"
+                            "@cocolon.cmee.surface.v2"
+                        ),
+                    )
+                self.assertIn(label, reached)
+        self.assertEqual(reached, {"R03", "R04"})
+
+    def test_i04_design_correction_source_explicit_cause_composer_adapter(
+        self,
+    ) -> None:
+        inputs = _final_stage1_composition_inputs(
+            _request(
+                record_id="i04-source-explicit-cause-composer",
+                memo="仕事が続いた。そのため、疲れている。",
+            )
+        )
+        result = stage1_composition_module.compose_stage1_from_projection(
+            inputs[7]
+        )
+        cause_rows = tuple(
+            row
+            for row in result.selected_candidate.normalized_artifact.v2_clause_rows
+            if row.frame.frame_id == "F09"
+        )
+        self.assertEqual(len(cause_rows), 1)
+        cause_row = cause_rows[0]
+        self.assertEqual(
+            cause_row.source_group.cardinality,
+            contracts_module.SourceLeafCardinality.ORDERED_EXACT2,
+        )
+        self.assertEqual(
+            tuple(leaf.semantic_ref for leaf in cause_row.source_leaves),
+            tuple(
+                binding.semantic_ref
+                for binding in cause_row.argument_plans
+            ),
+        )
+        self.assertEqual(
+            tuple(
+                binding.role.value
+                for binding in cause_row.linearized_clause.clause_frames[0]
+                .argument_bindings
+            ),
+            ("CAUSE", "EFFECT"),
+        )
+        link_rule = (
+            stage1_composition_module._v2_validate_link_plan_for_frame(
+                cause_row.frame,
+                cause_row.link_plan,
+            )
+        )
+        self.assertEqual(link_rule.link_rule_id, "L05")
+        self.assertIs(
+            cause_row.link_plan.placement,
+            stage1_composition_module.ClauseLinkPlacement.FRAME_INTERNAL,
+        )
+        self.assertEqual(
+            {
+                rule.reference_rule_id
+                for rule in (
+                    stage1_composition_module
+                    ._v2_reference_rows_from_state(
+                        cause_row.reference_state.object_state
+                    )
+                )
+            },
+            {"R11"},
+        )
+        self.assertIsNone(cause_row.reference_state.subject_state)
+        self.assertIs(
+            cause_row.reference_state.response_object_expression.expression_mode,
+            stage1_composition_module.ResponseObjectExpressionMode.COMPOSITE,
+        )
+        for leaf in cause_row.source_leaves:
+            self.assertIn(
+                leaf.payload_utf8.decode("utf-8"),
+                cause_row.linearized_clause.text,
+            )
+
+        projection, units = (
+            stage1_response_module._compile_stage1_response_v2_candidate(
+                source=inputs[0],
+                grounded_plan=inputs[1],
+                grounded_graph=inputs[2],
+                parent_plan=inputs[3],
+            )
+        )
+        self.assertEqual(projection, inputs[4])
+        cause_units = tuple(
+            unit
+            for unit in units
+            if unit.v2_trace_seal is not None
+            and cause_row.duty_ref
+            in unit.v2_trace_seal.covered_duty_refs
+        )
+        self.assertEqual(len(cause_units), 1)
+        contracts_module.validate_stage1_projection(
+            projection,
+            grounded_graph=inputs[2],
+            parent_plan=inputs[3],
+        )
+        prior_unit_ids: list[str] = []
+        for unit in units:
+            contracts_module.validate_stage1_sentence_unit(
+                unit,
+                projection,
+                grounded_graph=inputs[2],
+                parent_plan=inputs[3],
+                prior_unit_ids=tuple(prior_unit_ids),
+            )
+            prior_unit_ids.append(unit.unit_id)
 
 
 class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
@@ -12970,6 +14429,16 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 candidate_run_module,
                 "EARLY_FROZEN_WITHHELD_SET_DIGEST",
                 cls._STANDIN_SET_DIGEST,
+            ),
+            patch.object(
+                candidate_run_module,
+                "STEP2_FROZEN_LANGUAGE_CORE_IDENTITY",
+                stage1_composition_module.LANGUAGE_CORE_IDENTITY,
+            ),
+            patch.object(
+                candidate_run_module,
+                "STEP3_FROZEN_STAGE1_RUNTIME_INTEGRATION_IDENTITY",
+                stage1_composition_module.STAGE1_RUNTIME_INTEGRATION_IDENTITY,
             ),
         )
         for patcher in cls._frozen_input_patchers:
@@ -13225,6 +14694,12 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
         self.assertEqual(withheld["normal_form_defect_free_count"], 4)
         self.assertEqual(withheld["normalization_idempotent_count"], 4)
         self.assertEqual(withheld["required_duty_coverage_exact_count"], 4)
+        self.assertEqual(withheld["formal_exact8_denominator_effect"], 0)
+        self.assertEqual(withheld["product_acceptance_denominator_effect"], 0)
+        self.assertEqual(withheld["product_credit"], 0)
+        self.assertEqual(withheld["production_effect"], 0)
+        self.assertFalse(withheld["candidate_ready"])
+        self.assertFalse(withheld["automatic_progression"])
         self.assertFalse(body_free["body_payload_present"])
         self.assertFalse(body_free["private_text_published"])
         self.assertEqual(body_free["early_human_read_result"], "NOT_RUN")
@@ -13310,6 +14785,8 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
     def test_early_exact8_calls_only_the_final_step2_production_chain(self) -> None:
         original_phase_a = stage1_response_module.build_subjective_planning_inputs
         original_compose = stage1_composition_module.compose_stage1_from_projection
+        original_ir_builder = stage1_composition_module.build_japanese_clause_ir
+        original_linearizer = stage1_composition_module.linearize_japanese_clause
         with (
             patch.object(
                 candidate_run_module.MeaningExperienceEngine,
@@ -13333,6 +14810,25 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             ) as legacy_realization,
             patch.object(
                 stage1_response_module,
+                "select_stage1_realization_candidate",
+                side_effect=AssertionError("legacy selector called by early harness"),
+            ) as legacy_selector,
+            patch.object(
+                stage1_response_module,
+                "_compile_stage1_response_v2_candidate",
+                side_effect=AssertionError(
+                    "preactivated facade called by early harness"
+                ),
+            ) as preactivated_facade,
+            patch.object(
+                stage1_composition_module,
+                "_surface_for_plan",
+                side_effect=AssertionError(
+                    "legacy surface assembler called by early harness"
+                ),
+            ) as legacy_surface,
+            patch.object(
+                stage1_response_module,
                 "build_subjective_planning_inputs",
                 wraps=original_phase_a,
             ) as phase_a_builder,
@@ -13341,6 +14837,16 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 "compose_stage1_from_projection",
                 wraps=original_compose,
             ) as final_composer,
+            patch.object(
+                stage1_composition_module,
+                "build_japanese_clause_ir",
+                wraps=original_ir_builder,
+            ) as ir_builder,
+            patch.object(
+                stage1_composition_module,
+                "linearize_japanese_clause",
+                wraps=original_linearizer,
+            ) as sole_linearizer,
         ):
             body_free, _known_visible, _private = (
                 candidate_run_module.run_early_actual(
@@ -13357,8 +14863,13 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
         active_compiler.assert_not_called()
         legacy_projection.assert_not_called()
         legacy_realization.assert_not_called()
+        legacy_selector.assert_not_called()
+        preactivated_facade.assert_not_called()
+        legacy_surface.assert_not_called()
         self.assertEqual(phase_a_builder.call_count, 8)
         self.assertEqual(final_composer.call_count, 8)
+        self.assertGreater(ir_builder.call_count, 0)
+        self.assertGreater(sole_linearizer.call_count, 0)
         self.assertEqual(
             body_free["known_exact4_body_free"]["machine_invariant_result"],
             "CLEAR",
@@ -16494,8 +18005,37 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
         relation = stage1_composition_module._v2_relation_operator_for_frame(
             frame.frame_id
         )
+        source_refs = tuple(
+            plan.semantic_ref
+            for plan in argument_plans
+            if not (
+                frame.zero_policy == "EMLIS_ZERO_CONDITIONAL"
+                and plan.slot_role == "SUBJECT"
+            )
+        )
+        expression = stage1_composition_module.ResponseObjectExpression(
+            response_object_expression_ref=(
+                f"response-object-expression:{frame.frame_id}"
+            ),
+            clause_plan_ref=f"clause-plan:{frame.frame_id}",
+            unit_ref=f"unit:{frame.frame_id}",
+            basis_semantic_refs=source_refs,
+            relation_refs=(
+                (f"relation:{relation.value}",)
+                if relation is not RelationOperator.NO_RELATION_CLAIM
+                else ()
+            ),
+            expression_mode=(
+                stage1_composition_module.ResponseObjectExpressionMode.COMPOSITE
+                if len(source_refs) > 1
+                or relation is not RelationOperator.NO_RELATION_CLAIM
+                else stage1_composition_module.ResponseObjectExpressionMode.EXPLICIT
+            ),
+            antecedent_unit_ref=None,
+        )
+        subject_state = None
         if frame.zero_policy == "EMLIS_ZERO_CONDITIONAL":
-            reference_state = stage1_composition_module.project_reference_state(
+            subject_state = stage1_composition_module.project_reference_state(
                 state_ref=f"reference-state:{frame.frame_id}",
                 decision_kind=stage1_composition_module.ReferenceDecisionKind.EMLIS_SUBJECT,
                 referent_refs=(stage1_composition_module.CMEE_STAGE1_EMLIS_OWNER_REF,),
@@ -16504,19 +18044,28 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
                 first_or_restart=True,
                 introduced_topic=True,
             )
-        elif relation is not RelationOperator.NO_RELATION_CLAIM:
-            reference_state = stage1_composition_module.project_reference_state(
+        if relation is not RelationOperator.NO_RELATION_CLAIM:
+            object_state = stage1_composition_module.project_reference_state(
                 state_ref=f"reference-state:{frame.frame_id}",
                 decision_kind=stage1_composition_module.ReferenceDecisionKind.REQUIRED_RELATION_ENDPOINT,
-                referent_refs=tuple(plan.semantic_ref for plan in argument_plans),
+                referent_refs=source_refs,
             )
         else:
-            reference_state = stage1_composition_module.project_reference_state(
-                state_ref=f"reference-state:{frame.frame_id}",
+            object_state = stage1_composition_module.project_reference_state(
+                state_ref=f"reference-object-state:{frame.frame_id}",
                 decision_kind=stage1_composition_module.ReferenceDecisionKind.REFERENT,
-                referent_refs=(argument_plans[0].semantic_ref,),
-                focus_ref=argument_plans[0].semantic_ref,
+                referent_refs=source_refs,
+                focus_ref=source_refs[0],
             )
+        reference_state = stage1_composition_module.V2ClauseReferenceStateBundle(
+            state_ref=stage1_composition_module._ref(
+                "reference-state-bundle-v2",
+                (subject_state, object_state, expression),
+            ),
+            subject_state=subject_state,
+            object_state=object_state,
+            response_object_expression=expression,
+        )
         link_plan = stage1_composition_module.project_clause_link_plan(
             link_plan_ref=f"link-plan:{frame.frame_id}",
             admitted_relation_ref=f"relation:{relation.value}",
@@ -17524,7 +19073,7 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
         (
             zero_head,
             zero_arguments,
-            _explicit_reference,
+            explicit_reference,
             zero_link,
             zero_morphology,
             _explicit_clause,
@@ -17534,12 +19083,27 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
             leaves=zero_leaves,
             source_plan=zero_source_plan,
         )
-        zero_reference = stage1_composition_module.project_reference_state(
+        zero_subject_reference = stage1_composition_module.project_reference_state(
             state_ref="reference-state:F11:zero",
             decision_kind=stage1_composition_module.ReferenceDecisionKind.EMLIS_SUBJECT,
             referent_refs=(stage1_composition_module.CMEE_STAGE1_EMLIS_OWNER_REF,),
             speaker_ref=stage1_composition_module.CMEE_STAGE1_EMLIS_OWNER_REF,
             same_speaker_chain=True,
+        )
+        zero_reference = stage1_composition_module.V2ClauseReferenceStateBundle(
+            state_ref=stage1_composition_module._ref(
+                "reference-state-bundle-v2",
+                (
+                    zero_subject_reference,
+                    explicit_reference.object_state,
+                    explicit_reference.response_object_expression,
+                ),
+            ),
+            subject_state=zero_subject_reference,
+            object_state=explicit_reference.object_state,
+            response_object_expression=(
+                explicit_reference.response_object_expression
+            ),
         )
         zero_ir = stage1_composition_module.build_japanese_clause_ir(
             frame=zero_frame,

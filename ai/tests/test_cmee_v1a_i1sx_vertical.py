@@ -42,6 +42,7 @@ from cocolon_meaning_experience_engine.emlis_v1a import (
 )
 from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
 from tools.cmee_v1a_i1sx_candidate_run import (
+    EARLY_KNOWN_EXACT4,
     EXACT8,
     STAGE1_KAREN_DERIVED_MUTATION_SET_V1,
     _body_free_mutation_registry,
@@ -117,6 +118,45 @@ def _private_parts(request: GenerationRequest):
 
 
 _STAGE1_VALIDATION_CAPTURE: dict[str, tuple[object, object]] = {}
+
+
+def _assert_common_guard_proof_honesty(
+    test_case: unittest.TestCase,
+    artifact: object,
+    *,
+    typed_admission_expected: bool,
+) -> None:
+    proof = artifact.common_guard_proof
+    test_case.assertEqual(
+        tuple(row.guard_id for row in proof.guard_results),
+        EXPECTED_COMMON_GUARD_IDS,
+    )
+    test_case.assertTrue(all(row.passed is True for row in proof.guard_results))
+    if typed_admission_expected:
+        test_case.assertEqual(len(proof.typed_admission_refs), 1)
+        test_case.assertRegex(
+            proof.typed_admission_refs[0],
+            (
+                r"^typed-source-quotation:[0-9a-f]{64}@"
+                + re.escape(
+                    emlis_v1a_module
+                    ._STAGE1_V2_TYPED_DERIVATION_ECHO_ADMISSION_POLICY
+                )
+                + r"$"
+            ),
+        )
+    else:
+        test_case.assertEqual(proof.typed_admission_refs, ())
+    for index, row in enumerate(proof.guard_results):
+        if typed_admission_expected and index == 1:
+            test_case.assertIs(row.raw_passed, False)
+            test_case.assertEqual(
+                row.disposition,
+                "TYPED_SOURCE_QUOTATION_ADMITTED",
+            )
+        else:
+            test_case.assertIsNone(row.raw_passed)
+            test_case.assertEqual(row.disposition, "DIRECT")
 
 
 def validate_positive_realization_trace(source, graph, artifact, safe_lines):
@@ -5413,9 +5453,603 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             self.assertEqual(outcome.reason_codes, ("separate_safety_owner_required",))
             self.assertIsNone(outcome.artifact)
 
+    def test_i04_design_correction_private_v2_known4_artifact_trace_dispatch(
+        self,
+    ) -> None:
+        v1_schema = (
+            cmee_contracts_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+        )
+        v2_schema = (
+            cmee_contracts_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+        )
+        trace_v2_schema = (
+            cmee_contracts_module
+            .CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V2
+        )
+        owner_v2 = cmee_contracts_module.CMEE_STAGE1_EMLIS_OWNER_REF_V2
+
+        for label, memo, category, emotion, strength in EARLY_KNOWN_EXACT4:
+            with self.subTest(case=label):
+                source = freeze_text_source(
+                    _request(
+                        record_id=f"i04-v2-{label}",
+                        memo=memo,
+                        category=category,
+                        emotion=emotion,
+                        strength=strength,
+                    )
+                )
+                captured: dict[str, object] = {}
+
+                def compile_v2(**kwargs):
+                    projection, units = (
+                        stage1_response_module
+                        ._compile_stage1_response_v2_candidate(**kwargs)
+                    )
+                    captured["projection"] = projection
+                    captured["units"] = units
+                    captured["grounded_plan"] = kwargs["grounded_plan"]
+                    return projection, units
+
+                graph, _plan, artifact = (
+                    emlis_v1a_module
+                    ._build_text_grounded_limited_artifact_for_schema(
+                        source,
+                        stage1_response_schema_version=v2_schema,
+                        stage1_compiler=compile_v2,
+                    )
+                )
+                projection = captured["projection"]
+                units = captured["units"]
+                self.assertEqual(projection.schema_version, v2_schema)
+                self.assertTrue(units)
+                cmee_contracts_module.validate_stage1_projection(
+                    projection,
+                    grounded_graph=graph,
+                    parent_plan=artifact.plan,
+                )
+                projection_ref = (
+                    cmee_contracts_module.stage1_projection_artifact_ref(
+                        projection
+                    )
+                )
+                self.assertTrue(projection_ref.endswith(f"@{v2_schema}"))
+                cmee_contracts_module.validate_stage1_projection_artifact_ref(
+                    projection_ref,
+                    expected_schema_version=v2_schema,
+                )
+                self.assertEqual(
+                    artifact.realizer_contract_ids,
+                    emlis_v1a_module._stage1_runtime_contract(v2_schema)[2],
+                )
+                self.assertEqual(
+                    artifact.trust_policy_ids,
+                    emlis_v1a_module._stage1_trust_policy_ids(v2_schema),
+                )
+                _assert_common_guard_proof_honesty(
+                    self,
+                    artifact,
+                    typed_admission_expected=(
+                        label in {"tension", "help_seeking"}
+                    ),
+                )
+                positive_rows = tuple(
+                    row
+                    for row in artifact.trace
+                    if row.role in {"OBSERVATION", "RECEPTION"}
+                )
+                self.assertEqual(len(positive_rows), len(units))
+                prior_unit_ids: list[str] = []
+                selected_refs: set[str] = set()
+                candidate_refs: set[str] = set()
+                layout_refs: set[str] = set()
+                for trace_row, unit in zip(
+                    positive_rows,
+                    units,
+                    strict=True,
+                ):
+                    cmee_contracts_module.validate_stage1_sentence_unit(
+                        unit,
+                        projection,
+                        grounded_graph=graph,
+                        parent_plan=artifact.plan,
+                        prior_unit_ids=tuple(prior_unit_ids),
+                    )
+                    prior_unit_ids.append(unit.unit_id)
+                    seal = unit.v2_trace_seal
+                    self.assertIsInstance(
+                        seal,
+                        cmee_contracts_module.Stage1V2UnitSeal,
+                    )
+                    assert seal is not None
+                    extension = trace_row.emlis_stage1_extension
+                    self.assertIsNotNone(extension)
+                    assert extension is not None
+                    self.assertEqual(extension.schema_version, trace_v2_schema)
+                    self.assertEqual(extension.owner_ref, owner_v2)
+                    self.assertEqual(
+                        (
+                            extension.covered_duty_refs,
+                            extension.sentence_job_refs,
+                            extension.source_reception_act_refs,
+                            extension.composition_candidate_ref,
+                            extension.composition_layout_ref,
+                            extension.selected_stage1_artifact_ref,
+                        ),
+                        (
+                            seal.covered_duty_refs,
+                            seal.sentence_job_refs,
+                            seal.source_reception_act_refs,
+                            seal.composition_candidate_ref,
+                            seal.composition_layout_ref,
+                            seal.selected_stage1_artifact_ref,
+                        ),
+                    )
+                    self.assertEqual(
+                        len(seal.covered_duty_refs),
+                        len(seal.sentence_job_refs),
+                    )
+                    if unit.layer == "LAYER_1":
+                        self.assertEqual(trace_row.role, "OBSERVATION")
+                        self.assertEqual(extension.subjective_claim_refs, ())
+                        self.assertEqual(seal.source_reception_act_refs, ())
+                    else:
+                        self.assertEqual(trace_row.role, "RECEPTION")
+                        self.assertIsNone(extension.subjective_claim_ref)
+                        self.assertEqual(
+                            extension.subjective_claim_refs,
+                            unit.basis_anchor_refs,
+                        )
+                        self.assertTrue(seal.source_reception_act_refs)
+                    selected_refs.add(seal.selected_stage1_artifact_ref)
+                    candidate_refs.add(seal.composition_candidate_ref)
+                    layout_refs.add(seal.composition_layout_ref)
+                self.assertEqual(len(selected_refs), 1)
+                self.assertEqual(len(candidate_refs), 1)
+                self.assertEqual(len(layout_refs), 1)
+                cmee_contracts_module.validate_stage1_trace_spine(
+                    artifact.trace,
+                    projection,
+                    grounded_graph=graph,
+                    parent_plan=artifact.plan,
+                )
+                if label == "tension":
+                    positive_indexes = tuple(
+                        index
+                        for index, row in enumerate(artifact.trace)
+                        if row.role in {"OBSERVATION", "RECEPTION"}
+                    )
+                    observation_index = next(
+                        index
+                        for index in positive_indexes
+                        if artifact.trace[index].role == "OBSERVATION"
+                    )
+                    reception_index = next(
+                        index
+                        for index in positive_indexes
+                        if artifact.trace[index].role == "RECEPTION"
+                    )
+
+                    def replace_trace_extension(
+                        trace_rows,
+                        row_index,
+                        **changes,
+                    ):
+                        rows = list(trace_rows)
+                        extension = rows[row_index].emlis_stage1_extension
+                        assert extension is not None
+                        rows[row_index] = replace(
+                            rows[row_index],
+                            emlis_stage1_extension=replace(
+                                extension,
+                                **changes,
+                            ),
+                        )
+                        return tuple(rows)
+
+                    trace_dispatch_tamper = replace_trace_extension(
+                        artifact.trace,
+                        observation_index,
+                        schema_version=(
+                            cmee_contracts_module
+                            .CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V1
+                        ),
+                    )
+                    with self.assertRaisesRegex(
+                        cmee_contracts_module.CMEEStage1ContractError,
+                        "stage1_trace_extension_version_invalid",
+                    ):
+                        cmee_contracts_module.validate_stage1_trace_spine(
+                            trace_dispatch_tamper,
+                            projection,
+                            grounded_graph=graph,
+                            parent_plan=artifact.plan,
+                        )
+
+                    reception_extension = (
+                        artifact.trace[reception_index]
+                        .emlis_stage1_extension
+                    )
+                    assert reception_extension is not None
+                    singular_claim_tamper = replace_trace_extension(
+                        artifact.trace,
+                        reception_index,
+                        subjective_claim_ref=(
+                            reception_extension.subjective_claim_refs[0]
+                        ),
+                    )
+                    with self.assertRaisesRegex(
+                        cmee_contracts_module.CMEEStage1ContractError,
+                        "stage1_reception_trace_domain_invalid",
+                    ):
+                        cmee_contracts_module.validate_stage1_trace_spine(
+                            singular_claim_tamper,
+                            projection,
+                            grounded_graph=graph,
+                            parent_plan=artifact.plan,
+                        )
+
+                    source_act_tamper = replace_trace_extension(
+                        artifact.trace,
+                        reception_index,
+                        source_reception_act_refs=(),
+                    )
+                    with self.assertRaisesRegex(
+                        cmee_contracts_module.CMEEStage1ContractError,
+                        "stage1_reception_trace_claim_mismatch",
+                    ):
+                        cmee_contracts_module.validate_stage1_trace_spine(
+                            source_act_tamper,
+                            projection,
+                            grounded_graph=graph,
+                            parent_plan=artifact.plan,
+                        )
+
+                    first_extension = (
+                        artifact.trace[positive_indexes[0]]
+                        .emlis_stage1_extension
+                    )
+                    assert first_extension is not None
+                    duplicate_duty_tamper = replace_trace_extension(
+                        artifact.trace,
+                        positive_indexes[1],
+                        covered_duty_refs=first_extension.covered_duty_refs,
+                    )
+                    with self.assertRaisesRegex(
+                        cmee_contracts_module.CMEEStage1ContractError,
+                        "stage1_trace_v2_seal_invalid",
+                    ):
+                        cmee_contracts_module.validate_stage1_trace_spine(
+                            duplicate_duty_tamper,
+                            projection,
+                            grounded_graph=graph,
+                            parent_plan=artifact.plan,
+                        )
+
+                    mismatched_seal_trace = artifact.trace
+                    for row_index in positive_indexes:
+                        mismatched_seal_trace = replace_trace_extension(
+                            mismatched_seal_trace,
+                            row_index,
+                            composition_candidate_ref=(
+                                "composition-candidate:i04-trace-tamper"
+                            ),
+                        )
+                    cmee_contracts_module.validate_stage1_trace_spine(
+                        mismatched_seal_trace,
+                        projection,
+                        grounded_graph=graph,
+                        parent_plan=artifact.plan,
+                    )
+                    observation_lines, reception_lines = (
+                        emlis_v1a_module._stage1_visible_lines(
+                            source,
+                            graph,
+                            captured["grounded_plan"],
+                            projection,
+                            units,
+                        )
+                    )
+                    safe_lines = (
+                        *observation_lines,
+                        *emlis_v1a_module._stage1_unknown_lines(
+                            source,
+                            artifact.plan,
+                        ),
+                        *reception_lines,
+                    )
+                    with self.assertRaisesRegex(
+                        CMEEVerticalError,
+                        "stage1_trace_unit_seal_mismatch",
+                    ):
+                        _runtime_validate_positive_realization_trace(
+                            source,
+                            graph,
+                            replace(
+                                artifact,
+                                trace=mismatched_seal_trace,
+                            ),
+                            safe_lines,
+                            projection=projection,
+                            selected_units=units,
+                        )
+
+                    coordinated_candidate_ref = (
+                        "composition-candidate:i04-coordinated-tamper"
+                    )
+                    coordinated_units = tuple(
+                        replace(
+                            unit,
+                            v2_trace_seal=replace(
+                                unit.v2_trace_seal,
+                                composition_candidate_ref=(
+                                    coordinated_candidate_ref
+                                ),
+                            ),
+                        )
+                        for unit in units
+                    )
+                    coordinated_trace = artifact.trace
+                    for row_index in positive_indexes:
+                        coordinated_trace = replace_trace_extension(
+                            coordinated_trace,
+                            row_index,
+                            composition_candidate_ref=(
+                                coordinated_candidate_ref
+                            ),
+                        )
+                    with self.assertRaisesRegex(
+                        CMEEVerticalError,
+                        "stage1_v2_canonical_compilation_mismatch",
+                    ):
+                        _runtime_validate_positive_realization_trace(
+                            source,
+                            graph,
+                            replace(
+                                artifact,
+                                trace=coordinated_trace,
+                            ),
+                            safe_lines,
+                            projection=projection,
+                            selected_units=coordinated_units,
+                        )
+
+        (
+            active_source,
+            active_graph,
+            active_plan,
+            active_artifact,
+            _active_visible,
+        ) = _private_parts(
+            _request(
+                record_id="i04-v1-identity-unchanged",
+                memo=REPRESENTATIVE_MEMO,
+            )
+        )
+        active_projection, _active_units = _STAGE1_VALIDATION_CAPTURE[
+            active_source.envelope.envelope_id
+        ]
+        self.assertEqual(
+            active_projection.schema_version,
+            v1_schema,
+        )
+        self.assertEqual(
+            active_artifact.realizer_contract_ids,
+            emlis_v1a_module.REALIZER_CONTRACT_IDS,
+        )
+        self.assertEqual(
+            active_artifact.trust_policy_ids,
+            emlis_v1a_module.TRUST_POLICY_IDS,
+        )
+        _assert_common_guard_proof_honesty(
+            self,
+            active_artifact,
+            typed_admission_expected=False,
+        )
+        active_extensions = tuple(
+            row.emlis_stage1_extension
+            for row in active_artifact.trace
+            if row.role in {"OBSERVATION", "RECEPTION"}
+        )
+        self.assertTrue(active_extensions)
+        self.assertTrue(
+            all(
+                extension is not None
+                and extension.schema_version
+                == cmee_contracts_module
+                .CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V1
+                and extension.owner_ref
+                == cmee_contracts_module.CMEE_STAGE1_EMLIS_OWNER_REF_V1
+                and extension.subjective_claim_refs == ()
+                and extension.covered_duty_refs == ()
+                and extension.sentence_job_refs == ()
+                and extension.source_reception_act_refs == ()
+                and extension.composition_candidate_ref == ""
+                and extension.composition_layout_ref == ""
+                and extension.selected_stage1_artifact_ref == ""
+                for extension in active_extensions
+            )
+        )
+        cmee_contracts_module.validate_stage1_trace_spine(
+            active_artifact.trace,
+            active_projection,
+            grounded_graph=active_graph,
+            parent_plan=active_plan,
+        )
+        active_positive_index = next(
+            index
+            for index, row in enumerate(active_artifact.trace)
+            if row.role in {"OBSERVATION", "RECEPTION"}
+        )
+        active_rows = list(active_artifact.trace)
+        active_extension = (
+            active_rows[active_positive_index].emlis_stage1_extension
+        )
+        assert active_extension is not None
+        active_rows[active_positive_index] = replace(
+            active_rows[active_positive_index],
+            emlis_stage1_extension=replace(
+                active_extension,
+                covered_duty_refs=("duty:i04-cross-version",),
+            ),
+        )
+        with self.assertRaisesRegex(
+            cmee_contracts_module.CMEEStage1ContractError,
+            "stage1_trace_extension_cross_version",
+        ):
+            cmee_contracts_module.validate_stage1_trace_spine(
+                tuple(active_rows),
+                active_projection,
+                grounded_graph=active_graph,
+                parent_plan=active_plan,
+            )
+        with self.assertRaisesRegex(
+            CMEEVerticalError,
+            "stage1_response_schema_version_invalid",
+        ):
+            emlis_v1a_module._build_text_grounded_limited_artifact_for_schema(
+                active_source,
+                stage1_response_schema_version="cocolon.cmee.unknown.v9",
+                stage1_compiler=(
+                    stage1_response_module
+                    ._compile_stage1_response_v2_candidate
+                ),
+            )
+
+        def replay_legacy_v1_compiler(**_kwargs):
+            return active_projection, _active_units
+
+        with self.assertRaisesRegex(
+            CMEEVerticalError,
+            "stage1_compiler_schema_version_mismatch",
+        ):
+            emlis_v1a_module._build_text_grounded_limited_artifact_for_schema(
+                active_source,
+                stage1_response_schema_version=v2_schema,
+                stage1_compiler=replay_legacy_v1_compiler,
+            )
+        self.assertEqual(
+            cmee_contracts_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+            v1_schema,
+        )
+
+    def test_i04_design_correction_source_explicit_cause_reaches_v2_trace(
+        self,
+    ) -> None:
+        source = freeze_text_source(
+            _request(
+                record_id="i04-v2-source-explicit-cause",
+                memo="仕事が続いた。そのため、疲れている。",
+            )
+        )
+        captured: dict[str, object] = {}
+
+        def compile_v2(**kwargs):
+            projection, units = (
+                stage1_response_module
+                ._compile_stage1_response_v2_candidate(**kwargs)
+            )
+            captured["projection"] = projection
+            captured["units"] = units
+            return projection, units
+
+        graph, _plan, artifact = (
+            emlis_v1a_module._build_text_grounded_limited_artifact_for_schema(
+                source,
+                stage1_response_schema_version=(
+                    cmee_contracts_module
+                    .CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+                ),
+                stage1_compiler=compile_v2,
+            )
+        )
+        projection = captured["projection"]
+        units = captured["units"]
+        cause_candidates = tuple(
+            row
+            for row in projection.interpretation_candidates
+            if row.relation_operator.value == "SOURCE_EXPLICIT_CAUSE"
+        )
+        cause_contributions = tuple(
+            row
+            for row in projection.observation_contributions
+            if row.relation_operator.value == "SOURCE_EXPLICIT_CAUSE"
+        )
+        cause_edges = tuple(
+            row for row in graph.edges if row.relation == "user_stated_cause"
+        )
+        self.assertEqual(len(cause_candidates), 1)
+        self.assertEqual(len(cause_contributions), 1)
+        self.assertEqual(len(cause_edges), 1)
+        self.assertEqual(
+            tuple(row.role.value for row in cause_candidates[0].argument_bindings),
+            ("CAUSE", "EFFECT"),
+        )
+        cause_units = tuple(
+            unit
+            for unit in units
+            if cause_contributions[0].contribution_id
+            in unit.basis_anchor_refs
+        )
+        self.assertEqual(len(cause_units), 1)
+        self.assertTrue(
+            any(
+                tuple(binding.role.value for binding in frame.argument_bindings)
+                == ("CAUSE", "EFFECT")
+                for frame in cause_units[0].clause_frames
+            )
+        )
+        cause_trace_rows = tuple(
+            row
+            for row in artifact.trace
+            if cause_edges[0].edge_id in row.meaning_edge_ids
+        )
+        self.assertTrue(cause_trace_rows)
+        observation_cause_trace = next(
+            row for row in cause_trace_rows if row.role == "OBSERVATION"
+        )
+        extension = observation_cause_trace.emlis_stage1_extension
+        self.assertIsNotNone(extension)
+        assert extension is not None
+        self.assertEqual(
+            extension.contribution_refs,
+            cause_units[0].basis_anchor_refs,
+        )
+        self.assertIn(
+            cause_contributions[0].contribution_id,
+            extension.contribution_refs,
+        )
+        self.assertEqual(
+            len(extension.contribution_refs),
+            len(set(extension.contribution_refs)),
+        )
+        _assert_common_guard_proof_honesty(
+            self,
+            artifact,
+            typed_admission_expected=True,
+        )
+        self.assertTrue(extension.covered_duty_refs)
+        self.assertTrue(extension.composition_candidate_ref)
+        self.assertTrue(extension.composition_layout_ref)
+        self.assertTrue(extension.selected_stage1_artifact_ref)
+        cmee_contracts_module.validate_stage1_trace_spine(
+            artifact.trace,
+            projection,
+            grounded_graph=graph,
+            parent_plan=artifact.plan,
+        )
+
     def test_final_stage1_composition_core_remains_disabled_and_publicly_isolated(
         self,
     ) -> None:
+        self.assertEqual(
+            tuple(
+                inspect.signature(
+                    build_text_grounded_limited_artifact
+                ).parameters
+            ),
+            ("source",),
+        )
         self.assertEqual(
             cmee_contracts_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
             "cocolon.cmee.v1a.emlis_stage1_response.v1",
@@ -5437,6 +6071,23 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 "normalize_to_normal_form",
             )
         )
+        patch_rows += tuple(
+            patch.object(
+                stage1_response_module,
+                name,
+                side_effect=AssertionError(
+                    f"preactivated v2 response helper called: {name}"
+                ),
+            )
+            for name in (
+                "_adapt_v2_composed_units_to_realized_units",
+                "_compile_stage1_response_v2_candidate",
+            )
+        )
+        active_compile_source = inspect.getsource(
+            stage1_response_module.compile_stage1_response
+        )
+        self.assertNotIn("_compile_stage1_response_v2_candidate", active_compile_source)
         mocks = []
         try:
             mocks = [row.start() for row in patch_rows]

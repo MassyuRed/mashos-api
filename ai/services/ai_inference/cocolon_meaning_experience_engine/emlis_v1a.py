@@ -3,6 +3,7 @@ from __future__ import annotations
 
 """Emlis V1-A text-grounded graph, plan, realization and trace sealer."""
 
+import copy
 from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
@@ -16,6 +17,8 @@ from emlis_ai_grounded_human_reception import (
     validate_grounded_human_reception_surface,
 )
 from emlis_ai_grounded_observation_plan import (
+    FINAL_STAGE1_GROUNDED_PROJECTION_VERSION,
+    build_final_stage1_grounded_observation_plan,
     build_grounded_human_reception_plan,
     build_grounded_observation_plan,
     validate_grounded_human_reception_plan,
@@ -44,8 +47,14 @@ from .contracts import (
     AttachmentAdmission,
     CMEE_COMMON_GUARD_PROOF_VERSION,
     CMEE_STAGE1_EMLIS_OWNER_REF,
+    CMEE_STAGE1_EMLIS_OWNER_REF_V1,
+    CMEE_STAGE1_EMLIS_OWNER_REF_V2,
     CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+    CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1,
+    CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
     CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION,
+    CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V1,
+    CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V2,
     CMEEStage1ContractError,
     CommonGuardProof,
     CommonGuardResultProof,
@@ -62,6 +71,7 @@ from .contracts import (
     OwnerDisposition,
     ResolverResolution,
     SourceOwnerDisposition,
+    Stage1V2UnitSeal,
     RealizedSentenceUnit,
     VisibleAuthority,
     VisibleUnknownUnit,
@@ -73,6 +83,7 @@ from .contracts import (
 )
 from .emlis_stage1_response import (
     CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE,
+    _compile_stage1_response_v2_candidate,
     compile_stage1_response,
     stage1_required_projection_nucleus_ids,
 )
@@ -94,6 +105,91 @@ REALIZER_CONTRACT_IDS = (
     "cocolon.cmee.emlis.plan_bound_grounded_surface_adapter.v2",
     CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
 )
+_STAGE1_REALIZER_ADAPTER_CONTRACT_ID = REALIZER_CONTRACT_IDS[0]
+_STAGE1_V2_TYPED_DERIVATION_ECHO_ADMISSION_POLICY = (
+    "cocolon.cmee.emlis.typed_derivation_echo_admission.v1"
+)
+
+
+def _stage1_runtime_contract(
+    schema_version: str,
+) -> tuple[str, str, tuple[str, str]]:
+    """Resolve one exact private runtime contract without version fallback."""
+
+    if schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1:
+        return (
+            CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V1,
+            CMEE_STAGE1_EMLIS_OWNER_REF_V1,
+            (
+                _STAGE1_REALIZER_ADAPTER_CONTRACT_ID,
+                CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1,
+            ),
+        )
+    if schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2:
+        return (
+            CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V2,
+            CMEE_STAGE1_EMLIS_OWNER_REF_V2,
+            (
+                _STAGE1_REALIZER_ADAPTER_CONTRACT_ID,
+                CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
+            ),
+        )
+    raise CMEEVerticalError("stage1_response_schema_version_invalid")
+
+
+def _stage1_trust_policy_ids(schema_version: str) -> tuple[str, ...]:
+    """Bind the artifact policy registry to the selected trace generation."""
+
+    trace_schema_version, _owner_ref, _realizer_ids = (
+        _stage1_runtime_contract(schema_version)
+    )
+    common_ids = (
+        *tuple(sorted(EXPECTED_COMMON_GUARDS)),
+        "cocolon.cmee.source_owner.positive_realization_trace.v2",
+    )
+    if schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1:
+        return (*common_ids, trace_schema_version)
+    return (
+        *common_ids,
+        _STAGE1_V2_TYPED_DERIVATION_ECHO_ADMISSION_POLICY,
+        trace_schema_version,
+    )
+
+
+def _stage1_schema_from_projection_artifact_ref(value: str) -> str:
+    """Read only the exact registered schema suffix from one private ref."""
+
+    if type(value) is not str or value.count("@") != 1:
+        raise CMEEVerticalError("stage1_projection_artifact_ref_invalid")
+    schema_version = value.rsplit("@", 1)[1]
+    _stage1_runtime_contract(schema_version)
+    return schema_version
+
+
+def _build_stage1_grounded_observation_plan_for_schema(
+    source: AdmittedTextSource,
+    *,
+    schema_version: str,
+) -> Any:
+    """Build the one grounded-plan generation selected by the schema tag."""
+
+    _stage1_runtime_contract(schema_version)
+    builder = (
+        build_grounded_observation_plan
+        if schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+        else build_final_stage1_grounded_observation_plan
+    )
+    grounded_plan = builder(
+        source.normalized_current_input,
+        evidence_spans=source.evidence_spans,
+    )
+    contracts = tuple(getattr(grounded_plan, "source_contracts", ()))
+    has_final_projection = FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in contracts
+    if has_final_projection is not (
+        schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+    ):
+        raise CMEEVerticalError("stage1_grounded_plan_schema_mismatch")
+    return grounded_plan
 ADMISSIBLE_NUCLEUS_GROUNDING = frozenset({"explicit", "user_stated_relation"})
 ADMISSIBLE_RELATION_GROUNDING = frozenset({"user_stated_relation"})
 NEGATIVE_RECEPTION_RE = re.compile(r"(?:負荷|苦しさ|つらさ|負担|痛み|しんどさ)")
@@ -703,6 +799,7 @@ class _CommonGuardSealMaterial:
     common_shapes_ready: bool
     stabilization_guard_names: tuple[str, ...]
     issue_codes: tuple[str, ...]
+    typed_admission_refs: tuple[str, ...] = ()
 
 
 def _sha256_text(value: str) -> str:
@@ -711,6 +808,89 @@ def _sha256_text(value: str) -> str:
 
 def _stable_id(prefix: str, *values: str) -> str:
     return f"{prefix}-{_sha256_text('|'.join(values))[:24]}"
+
+
+def _stage1_v2_typed_admission_ref_from_core_meta(
+    core_meta: Mapping[str, Any],
+) -> str | None:
+    """Validate the body-free admission digest retained in private core meta."""
+
+    key = "stage1_v2_typed_derivation_admission"
+    detail = core_meta.get(key)
+    if detail is None:
+        return None
+    preimage = detail.get("digest_preimage") if type(detail) is dict else None
+    typed_admission_ref = (
+        detail.get("typed_admission_ref") if type(detail) is dict else None
+    )
+    expected_preimage_keys = {
+        "policy_id",
+        "typed_derivation_ref",
+        "original_rejection_reasons",
+        "original_quality_flags",
+        "raw_echo_ratio",
+        "raw_quote_ratio",
+        "raw_quote_hit_digests",
+        "evidence_digest",
+        "surface_digest",
+    }
+    if (
+        type(detail) is not dict
+        or set(detail) != {"typed_admission_ref", "digest_preimage"}
+        or type(preimage) is not dict
+        or set(preimage) != expected_preimage_keys
+        or preimage.get("policy_id")
+        != _STAGE1_V2_TYPED_DERIVATION_ECHO_ADMISSION_POLICY
+        or re.fullmatch(
+            r"stage1-v2-typed-derivation-[0-9a-f]{64}",
+            str(preimage.get("typed_derivation_ref") or ""),
+        )
+        is None
+        or type(preimage.get("original_rejection_reasons")) is not list
+        or not preimage.get("original_rejection_reasons")
+        or len(preimage.get("original_rejection_reasons"))
+        != len(set(preimage.get("original_rejection_reasons")))
+        or not set(preimage.get("original_rejection_reasons")).issubset(
+            {"raw_input_echo", "excessive_raw_quote"}
+        )
+        or tuple(preimage.get("original_quality_flags") or ())
+        != (
+            "template_echo_failed",
+            "core_text_composer_rejected",
+            "guard_rejected",
+        )
+        or type(preimage.get("raw_echo_ratio")) not in {int, float}
+        or type(preimage.get("raw_quote_ratio")) not in {int, float}
+        or type(preimage.get("raw_quote_hit_digests")) is not list
+        or any(
+            re.fullmatch(r"[0-9a-f]{64}", str(value or "")) is None
+            for value in preimage.get("raw_quote_hit_digests")
+        )
+        or re.fullmatch(
+            r"[0-9a-f]{64}", str(preimage.get("evidence_digest") or "")
+        )
+        is None
+        or re.fullmatch(
+            r"[0-9a-f]{64}", str(preimage.get("surface_digest") or "")
+        )
+        is None
+    ):
+        raise CMEEVerticalError("stage1_v2_typed_admission_invalid")
+    digest = _sha256_text(
+        json.dumps(
+            preimage,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+    expected_ref = (
+        f"typed-source-quotation:{digest}"
+        f"@{_STAGE1_V2_TYPED_DERIVATION_ECHO_ADMISSION_POLICY}"
+    )
+    if typed_admission_ref != expected_ref:
+        raise CMEEVerticalError("stage1_v2_typed_admission_invalid")
+    return expected_ref
 
 
 def _extract_common_guard_seal(
@@ -723,6 +903,9 @@ def _extract_common_guard_seal(
     raw_rows = result_meta.get("guard_results") if type(result_meta) is dict else None
     if type(raw_rows) is not list or len(raw_rows) != len(EXPECTED_COMMON_GUARD_IDS):
         raise CMEEVerticalError("plan_bound_observation_guard_result_shape_mismatch")
+    typed_admission_ref = _stage1_v2_typed_admission_ref_from_core_meta(
+        core_meta
+    )
 
     guard_results: list[CommonGuardResultProof] = []
     for expected_guard_id, raw_row in zip(
@@ -743,7 +926,24 @@ def _extract_common_guard_seal(
             or raw_row.get("rejection_reasons") != []
         ):
             raise CMEEVerticalError("plan_bound_observation_guard_result_mismatch")
-        guard_results.append(CommonGuardResultProof(guard_id=guard_id, passed=passed))
+        guard_results.append(
+            CommonGuardResultProof(
+                guard_id=guard_id,
+                passed=passed,
+                raw_passed=(
+                    False
+                    if typed_admission_ref is not None
+                    and expected_guard_id == EXPECTED_COMMON_GUARD_IDS[1]
+                    else None
+                ),
+                disposition=(
+                    "TYPED_SOURCE_QUOTATION_ADMITTED"
+                    if typed_admission_ref is not None
+                    and expected_guard_id == EXPECTED_COMMON_GUARD_IDS[1]
+                    else "DIRECT"
+                ),
+            )
+        )
 
     combined = result_meta.get("combined_guard_result")
     combined_meta = combined.get("meta") if type(combined) is dict else None
@@ -761,6 +961,29 @@ def _extract_common_guard_seal(
         or len(combined_guard_rows) != len(EXPECTED_COMMON_GUARD_IDS)
         or any(type(row) is not dict for row in combined_guard_rows)
         or combined_guard_rows != raw_rows
+        or (
+            typed_admission_ref is not None
+            and (
+                result_meta.get(
+                    "stage1_v2_typed_derivation_admission"
+                )
+                != core_meta.get(
+                    "stage1_v2_typed_derivation_admission"
+                )
+                or combined_meta.get(
+                    "stage1_v2_typed_derivation_admission"
+                )
+                != core_meta.get(
+                    "stage1_v2_typed_derivation_admission"
+                )
+                or raw_rows[1].get("meta", {}).get(
+                    "stage1_v2_typed_derivation_admission"
+                )
+                != core_meta.get(
+                    "stage1_v2_typed_derivation_admission"
+                )
+            )
+        )
     ):
         raise CMEEVerticalError("plan_bound_observation_combined_guard_mismatch")
 
@@ -807,6 +1030,11 @@ def _extract_common_guard_seal(
         common_shapes_ready=True,
         stabilization_guard_names=EXPECTED_COMMON_GUARD_IDS,
         issue_codes=(),
+        typed_admission_refs=(
+            (typed_admission_ref,)
+            if typed_admission_ref is not None
+            else ()
+        ),
     )
 
 
@@ -824,17 +1052,19 @@ def _common_guard_proof_id(
     common_shapes_ready: bool,
     stabilization_guard_names: Sequence[str],
     issue_codes: Sequence[str],
+    typed_admission_refs: Sequence[str] = (),
 ) -> str:
+    guard_result_material = [
+        {"guard_id": row.guard_id, "passed": row.passed}
+        for row in guard_results
+    ]
     material = {
         "schema_version": CMEE_COMMON_GUARD_PROOF_VERSION,
         "source_envelope_id": source_envelope_id,
         "graph_id": graph_id,
         "plan_id": plan_id,
         "guarded_observation_units": [list(row) for row in guarded_observation_units],
-        "guard_results": [
-            {"guard_id": row.guard_id, "passed": row.passed}
-            for row in guard_results
-        ],
+        "guard_results": guard_result_material,
         "stabilization": {
             "report_name": stabilization_report_name,
             "phase": stabilization_phase,
@@ -845,6 +1075,17 @@ def _common_guard_proof_id(
             "issue_codes": list(issue_codes),
         },
     }
+    if typed_admission_refs:
+        material["guard_results"] = [
+            {
+                "guard_id": row.guard_id,
+                "passed": row.passed,
+                "raw_passed": row.raw_passed,
+                "disposition": row.disposition,
+            }
+            for row in guard_results
+        ]
+        material["typed_admission_refs"] = list(typed_admission_refs)
     canonical = json.dumps(
         material,
         ensure_ascii=False,
@@ -986,24 +1227,32 @@ def _artifact_id(
     emlis_stage1_projection_ref: str | None = None,
 ) -> str:
     stage1_identity_parts: tuple[str, ...] = ()
+    stage1_schema_version = CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
     if emlis_stage1_projection_ref is not None:
         try:
-            validate_stage1_projection_artifact_ref(
+            stage1_schema_version = _stage1_schema_from_projection_artifact_ref(
                 emlis_stage1_projection_ref
+            )
+            validate_stage1_projection_artifact_ref(
+                emlis_stage1_projection_ref,
+                expected_schema_version=stage1_schema_version,
             )
         except Exception:
             raise CMEEVerticalError(
                 "stage1_projection_artifact_ref_invalid"
             ) from None
         stage1_identity_parts = (emlis_stage1_projection_ref,)
+    _trace_schema_version, _owner_ref, realizer_contract_ids = (
+        _stage1_runtime_contract(stage1_schema_version)
+    )
     return _stable_id(
         "artifact",
         source_envelope_id,
         graph_id,
         plan_id,
         common_guard_proof_id,
-        *REALIZER_CONTRACT_IDS,
-        *TRUST_POLICY_IDS,
+        *realizer_contract_ids,
+        *_stage1_trust_policy_ids(stage1_schema_version),
         _sha256_text(observation),
         *(_sha256_text(row) for row in visible_unknowns),
         _sha256_text(reception),
@@ -1038,6 +1287,7 @@ def _build_common_guard_proof(
         common_shapes_ready=material.common_shapes_ready,
         stabilization_guard_names=material.stabilization_guard_names,
         issue_codes=material.issue_codes,
+        typed_admission_refs=material.typed_admission_refs,
     )
     return CommonGuardProof(
         schema_version=CMEE_COMMON_GUARD_PROOF_VERSION,
@@ -1054,6 +1304,7 @@ def _build_common_guard_proof(
         common_shapes_ready=material.common_shapes_ready,
         stabilization_guard_names=material.stabilization_guard_names,
         issue_codes=material.issue_codes,
+        typed_admission_refs=material.typed_admission_refs,
     )
 
 
@@ -2827,13 +3078,72 @@ def _cmee_has_current_burden(text: str) -> bool:
     )
 
 
+def _stage1_v2_typed_unfinished_scope_supported(grounded_plan: Any) -> bool:
+    """Accept only final-plan current-user unfinished predicates as scoped."""
+
+    if FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in tuple(
+        getattr(grounded_plan, "source_contracts", ())
+    ):
+        return False
+    typed_candidates = tuple(
+        nucleus
+        for nucleus in tuple(getattr(grounded_plan, "nuclei", ()))
+        if (
+            str(getattr(nucleus, "kind", "")) == "uncertainty"
+            or str(
+                getattr(
+                    getattr(nucleus, "semantic_frame", None),
+                    "predicate_kind",
+                    "",
+                )
+            )
+            == "unfinished"
+            or "operator:unfinished"
+            in set(
+                getattr(
+                    getattr(nucleus, "semantic_frame", None),
+                    "attribute_codes",
+                    (),
+                )
+            )
+        )
+    )
+    required_codes = {
+        "operator:uncertainty",
+        "operator:unfinished",
+        "semantic_role:present_unfinished",
+    }
+    return bool(typed_candidates) and all(
+        str(getattr(nucleus, "kind", "")) == "uncertainty"
+        and bool(tuple(getattr(nucleus, "source_span_ids", ())))
+        and str(getattr(nucleus, "grounding_kind", "")) == "explicit"
+        and str(getattr(nucleus.semantic_frame, "actor", "")) == "current_user"
+        and str(getattr(nucleus.semantic_frame, "predicate_kind", ""))
+        == "unfinished"
+        and str(getattr(nucleus.semantic_frame, "modality", "")) == "uncertain"
+        and str(getattr(nucleus.semantic_frame, "time_scope", "")) == "present"
+        and required_codes.issubset(
+            set(getattr(nucleus.semantic_frame, "attribute_codes", ()))
+        )
+        for nucleus in typed_candidates
+    )
+
+
 def _cmee_assert_current_first_person_scope_supported(
     text: str,
     grounded_plan: Any,
+    *,
+    stage1_response_schema_version: str = CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1,
 ) -> None:
     """Fail closed when Stage 1 cannot safely bind experiencer or time scope."""
 
+    _stage1_runtime_contract(stage1_response_schema_version)
     value = re.sub(r"\s+", "", str(text or ""))
+    typed_v2_unfinished_scope = (
+        stage1_response_schema_version
+        == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+        and _stage1_v2_typed_unfinished_scope_supported(grounded_plan)
+    )
     explicit_whole_state_negation = EXPLICIT_WHOLE_STATE_NEGATION_RE.search(
         value.strip("、。！？!?「」『』 ")
     )
@@ -2906,49 +3216,61 @@ def _cmee_assert_current_first_person_scope_supported(
                         safe_pattern.fullmatch(subject)
                         for safe_pattern in SAFE_NONPERSON_TOPIC_PATTERNS
                     )
+                    or (
+                        typed_v2_unfinished_scope
+                        and subject == "まだ気持ち"
+                        and match.group(0).endswith("どうしたい")
+                    )
                 )
             ):
                 continue
             raise CMEEVerticalError(
                 "current_experiencer_or_time_scope_unsupported"
             )
-    if any(
-        pattern.search(value)
-        for pattern in (
-            OTHER_EXPERIENCER_BURDEN_REPORT_RE,
-            OTHER_EXPERIENCER_BURDEN_RE,
-            OTHER_EXPERIENCER_DESIRE_RE,
-            QUOTED_OTHER_REPORT_RE,
-            REPORTED_EXTERNAL_APPEARANCE_RE,
-            UNBOUND_EPISTEMIC_STATE_OR_DESIRE_RE,
-            UNBOUND_REPORTED_STATE_OR_DESIRE_RE,
-            UNBOUND_REPORT_OR_EPISTEMIC_WINDOW_RE,
-            DIRECT_UNCERTAIN_STATE_OR_DESIRE_RE,
-            EXTERNAL_ASCRIPTION_RE,
-            CONDITIONAL_STATE_OR_DESIRE_RE,
+    scope_forbidden_patterns = (
+        OTHER_EXPERIENCER_BURDEN_REPORT_RE,
+        OTHER_EXPERIENCER_BURDEN_RE,
+        OTHER_EXPERIENCER_DESIRE_RE,
+        QUOTED_OTHER_REPORT_RE,
+        REPORTED_EXTERNAL_APPEARANCE_RE,
+        UNBOUND_EPISTEMIC_STATE_OR_DESIRE_RE,
+        UNBOUND_REPORTED_STATE_OR_DESIRE_RE,
+        UNBOUND_REPORT_OR_EPISTEMIC_WINDOW_RE,
+        DIRECT_UNCERTAIN_STATE_OR_DESIRE_RE,
+        EXTERNAL_ASCRIPTION_RE,
+        CONDITIONAL_STATE_OR_DESIRE_RE,
+        UNKNOWN_OR_INTERROGATIVE_STATE_OR_DESIRE_RE,
+        FUTURE_OR_POTENTIAL_STATE_RE,
+        RETRACTED_STATE_OR_DESIRE_RE,
+        SEMANTIC_NEGATION_STATE_OR_DESIRE_RE,
+        NOMINALIZED_PAST_STATE_RE,
+        METALINGUISTIC_STATE_OR_DESIRE_MENTION_RE,
+        GENERIC_PROPOSITION_RE,
+        DIRECTIVE_STATE_OR_DESIRE_RE,
+        DIRECT_QUESTION_STATE_OR_DESIRE_RE,
+        NONFACTIVE_STATE_OR_DESIRE_RE,
+        DEONTIC_STATE_OR_DESIRE_RE,
+        EMPTY_CLASS_DESIRE_RE,
+        LEXICAL_FALSE_CUE_RE,
+        NEGATED_DESIDERATIVE_BURDEN_RE,
+        HABITUAL_OR_DISPOSITIONAL_STATE_RE,
+        NONEXPERIENTIAL_STATE_THEME_RE,
+        NEGATED_OR_RESOLVED_BURDEN_WINDOW_RE,
+        RESOLVED_DESIRE_RE,
+        FUTURE_HYPOTHETICAL_BURDEN_RE,
+        FUTURE_HYPOTHETICAL_DESIRE_RE,
+        PAST_DESIRE_WITH_CURRENT_SCOPE_RE,
+    )
+    matched_scope_patterns = tuple(
+        pattern for pattern in scope_forbidden_patterns if pattern.search(value)
+    )
+    typed_v2_unfinished = (
+        typed_v2_unfinished_scope
+        and matched_scope_patterns == (
             UNKNOWN_OR_INTERROGATIVE_STATE_OR_DESIRE_RE,
-            FUTURE_OR_POTENTIAL_STATE_RE,
-            RETRACTED_STATE_OR_DESIRE_RE,
-            SEMANTIC_NEGATION_STATE_OR_DESIRE_RE,
-            NOMINALIZED_PAST_STATE_RE,
-            METALINGUISTIC_STATE_OR_DESIRE_MENTION_RE,
-            GENERIC_PROPOSITION_RE,
-            DIRECTIVE_STATE_OR_DESIRE_RE,
-            DIRECT_QUESTION_STATE_OR_DESIRE_RE,
-            NONFACTIVE_STATE_OR_DESIRE_RE,
-            DEONTIC_STATE_OR_DESIRE_RE,
-            EMPTY_CLASS_DESIRE_RE,
-            LEXICAL_FALSE_CUE_RE,
-            NEGATED_DESIDERATIVE_BURDEN_RE,
-            HABITUAL_OR_DISPOSITIONAL_STATE_RE,
-            NONEXPERIENTIAL_STATE_THEME_RE,
-            NEGATED_OR_RESOLVED_BURDEN_WINDOW_RE,
-            RESOLVED_DESIRE_RE,
-            FUTURE_HYPOTHETICAL_BURDEN_RE,
-            FUTURE_HYPOTHETICAL_DESIRE_RE,
-            PAST_DESIRE_WITH_CURRENT_SCOPE_RE,
         )
-    ):
+    )
+    if matched_scope_patterns and not typed_v2_unfinished:
         raise CMEEVerticalError("current_experiencer_or_time_scope_unsupported")
     change_parts = _cmee_change_parts(value)
     change_result = change_parts[2] if change_parts else ""
@@ -3914,6 +4236,39 @@ def _stage1_local_ref_id(value: str, *, expected_kind: str) -> str:
     return local_id
 
 
+def _stage1_v2_unit_seal(unit: RealizedSentenceUnit) -> Stage1V2UnitSeal:
+    """Require the exact private provenance carried by one v2 unit."""
+
+    seal = unit.v2_trace_seal
+    if type(seal) is not Stage1V2UnitSeal:
+        raise CMEEVerticalError("stage1_v2_unit_trace_seal_invalid")
+    tuple_fields = (
+        seal.covered_duty_refs,
+        seal.sentence_job_refs,
+        seal.source_reception_act_refs,
+    )
+    if (
+        any(type(refs) is not tuple for refs in tuple_fields)
+        or not seal.covered_duty_refs
+        or not seal.sentence_job_refs
+        or any(
+            any(type(ref) is not str or not ref for ref in refs)
+            or len(refs) != len(set(refs))
+            for refs in tuple_fields
+        )
+        or any(
+            type(ref) is not str or not ref
+            for ref in (
+                seal.composition_candidate_ref,
+                seal.composition_layout_ref,
+                seal.selected_stage1_artifact_ref,
+            )
+        )
+    ):
+        raise CMEEVerticalError("stage1_v2_unit_trace_seal_invalid")
+    return seal
+
+
 def _stage1_line_for_unit(
     source: AdmittedTextSource,
     graph: GroundedMeaningGraph,
@@ -3925,24 +4280,44 @@ def _stage1_line_for_unit(
 ) -> _CMEEVisibleLine:
     """Map one selected compiler unit to the existing private line envelope."""
 
-    if len(unit.basis_anchor_refs) != 1:
-        raise CMEEVerticalError("stage1_visible_anchor_invalid")
-    anchor_ref = unit.basis_anchor_refs[0]
-    if unit.layer == "LAYER_1":
-        anchor = next(
-            (
-                row
-                for row in projection.observation_contributions
-                if row.contribution_id == anchor_ref
-            ),
-            None,
+    schema_version = projection.schema_version
+    _stage1_runtime_contract(schema_version)
+    if (
+        type(unit.basis_anchor_refs) is not tuple
+        or not unit.basis_anchor_refs
+        or len(unit.basis_anchor_refs) != len(set(unit.basis_anchor_refs))
+        or (
+            schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+            and len(unit.basis_anchor_refs) != 1
         )
-        if anchor is None:
+    ):
+        raise CMEEVerticalError("stage1_visible_anchor_invalid")
+    if schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1:
+        if unit.v2_trace_seal is not None:
+            raise CMEEVerticalError("stage1_v2_unit_trace_seal_invalid")
+    else:
+        _stage1_v2_unit_seal(unit)
+    if unit.layer == "LAYER_1":
+        contribution_by_id = {
+            row.contribution_id: row
+            for row in projection.observation_contributions
+        }
+        anchors = tuple(
+            contribution_by_id.get(anchor_ref)
+            for anchor_ref in unit.basis_anchor_refs
+        )
+        if any(anchor is None for anchor in anchors):
             raise CMEEVerticalError("stage1_visible_anchor_invalid")
         semantic_refs = _ordered(
             (
-                *anchor.semantic_refs,
-                *anchor.relation_basis_refs,
+                *(
+                    ref
+                    for anchor in anchors
+                    for ref in (
+                        *anchor.semantic_refs,
+                        *anchor.relation_basis_refs,
+                    )
+                ),
                 *(row.semantic_ref for row in unit.realized_semantic_bindings),
             )
         )
@@ -3950,19 +4325,22 @@ def _stage1_line_for_unit(
         sentence_id = f"cmee:observation:{ordinal}"
         claim_scope = "cmee_stage1_interpretive_observation"
     elif unit.layer == "LAYER_2":
-        anchor = next(
-            (
-                row
-                for row in projection.subjective_claims
-                if row.subjective_claim_id == anchor_ref
-            ),
-            None,
+        claim_by_id = {
+            row.subjective_claim_id: row
+            for row in projection.subjective_claims
+        }
+        anchors = tuple(
+            claim_by_id.get(anchor_ref) for anchor_ref in unit.basis_anchor_refs
         )
-        if anchor is None:
+        if any(anchor is None for anchor in anchors):
             raise CMEEVerticalError("stage1_visible_anchor_invalid")
         semantic_refs = _ordered(
             (
-                *anchor.basis_semantic_refs,
+                *(
+                    ref
+                    for anchor in anchors
+                    for ref in anchor.basis_semantic_refs
+                ),
                 *(row.semantic_ref for row in unit.realized_semantic_bindings),
             )
         )
@@ -4096,8 +4474,313 @@ def _stage1_visible_lines(
     return observation_lines, reception_lines
 
 
+def _stage1_v2_typed_derivation_admission_ref(
+    projection: EmlisStage1Projection,
+    selected_units: Sequence[RealizedSentenceUnit],
+    observation_lines: Sequence[_CMEEVisibleLine],
+    *,
+    graph: GroundedMeaningGraph,
+    plan: ExperiencePlan,
+    grounded_plan: Any,
+) -> str:
+    """Seal the exact final-plan derivation eligible for echo-only admission."""
+
+    if (
+        projection.schema_version != CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+        or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION
+        not in tuple(getattr(grounded_plan, "source_contracts", ()))
+    ):
+        raise CMEEVerticalError("stage1_v2_typed_derivation_invalid")
+    try:
+        projection_ref = stage1_projection_artifact_ref(projection)
+        validate_stage1_projection_artifact_ref(
+            projection_ref,
+            expected_schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
+        )
+    except CMEEStage1ContractError:
+        raise CMEEVerticalError("stage1_v2_typed_derivation_invalid") from None
+
+    units = tuple(selected_units)
+    observation_units = tuple(
+        unit for unit in units if unit.layer == "LAYER_1"
+    )
+    reception_units = tuple(
+        unit for unit in units if unit.layer == "LAYER_2"
+    )
+    lines = tuple(observation_lines)
+    if (
+        not observation_units
+        or not reception_units
+        or units != (*observation_units, *reception_units)
+        or len(lines) != len(observation_units)
+        or any(
+            line.text != unit.text
+            or line.binding.line_role != "cmee_observation"
+            or not line.binding.evidence_span_ids
+            or not (line.binding.nucleus_ids or line.binding.relation_ids)
+            for line, unit in zip(lines, observation_units, strict=True)
+        )
+    ):
+        raise CMEEVerticalError("stage1_v2_typed_derivation_invalid")
+
+    prior_unit_ids: list[str] = []
+    seal_rows: list[tuple[Any, ...]] = []
+    covered_duty_refs: list[str] = []
+    for unit in units:
+        try:
+            validate_stage1_sentence_unit(
+                unit,
+                projection,
+                grounded_graph=graph,
+                parent_plan=plan,
+                prior_unit_ids=tuple(prior_unit_ids),
+            )
+        except CMEEStage1ContractError:
+            raise CMEEVerticalError(
+                "stage1_v2_typed_derivation_invalid"
+            ) from None
+        prior_unit_ids.append(unit.unit_id)
+        seal = _stage1_v2_unit_seal(unit)
+        covered_duty_refs.extend(seal.covered_duty_refs)
+        seal_rows.append(
+            (
+                unit.unit_id,
+                unit.layer,
+                unit.basis_anchor_refs,
+                unit.composition_variant_id,
+                seal.covered_duty_refs,
+                seal.sentence_job_refs,
+                seal.source_reception_act_refs,
+                seal.composition_candidate_ref,
+                seal.composition_layout_ref,
+                seal.selected_stage1_artifact_ref,
+            )
+        )
+
+    flattened_observation_refs = tuple(
+        ref for unit in observation_units for ref in unit.basis_anchor_refs
+    )
+    flattened_subjective_refs = tuple(
+        ref for unit in reception_units for ref in unit.basis_anchor_refs
+    )
+    if (
+        len(flattened_observation_refs)
+        != len(set(flattened_observation_refs))
+        or not set(flattened_observation_refs).issubset(
+            set(projection.ordered_observation_refs)
+        )
+        or len(flattened_subjective_refs)
+        != len(set(flattened_subjective_refs))
+        or not set(flattened_subjective_refs).issubset(
+            set(projection.ordered_subjective_refs)
+        )
+        or len(covered_duty_refs) != len(set(covered_duty_refs))
+        or any(
+            len({row[index] for row in seal_rows}) != 1
+            for index in (3, 7, 8, 9)
+        )
+    ):
+        raise CMEEVerticalError("stage1_v2_typed_derivation_invalid")
+
+    material = (
+        projection_ref,
+        graph.graph_id,
+        plan.plan_id,
+        FINAL_STAGE1_GROUNDED_PROJECTION_VERSION,
+        tuple(seal_rows),
+        tuple(
+            (
+                line.sentence_id,
+                _sha256_text(line.text),
+                line.binding.nucleus_ids,
+                line.binding.relation_ids,
+                line.binding.evidence_span_ids,
+            )
+            for line in lines
+        ),
+    )
+    digest = _sha256_text(
+        json.dumps(
+            material,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+    )
+    return f"stage1-v2-typed-derivation-{digest}"
+
+
 def _cmee_core_phrase_unit_id(source_span_id: str) -> str:
     return f"cmee-phrase:{source_span_id}"
+
+
+def _stage1_v2_composer_binding_lines(
+    source: AdmittedTextSource,
+    graph: GroundedMeaningGraph,
+    grounded_plan: Any,
+    observation_lines: Sequence[_CMEEVisibleLine],
+    selected_units: Sequence[RealizedSentenceUnit],
+) -> tuple[_CMEEVisibleLine, ...]:
+    """Project grouped v2 units to exact per-clause common-core bindings."""
+
+    lines = tuple(observation_lines)
+    units = tuple(row for row in selected_units if row.layer == "LAYER_1")
+    if len(lines) != len(units):
+        raise CMEEVerticalError("stage1_v2_core_binding_unit_mismatch")
+    node_by_id = {row.node_id: row for row in graph.nodes}
+    edge_by_id = {row.edge_id: row for row in graph.edges}
+    source_node_id = {
+        _stable_id("mn", source.envelope.envelope_id, row.nucleus_id): row.nucleus_id
+        for row in grounded_plan.nuclei
+    }
+    source_edge_id = {
+        _stable_id("me", source.envelope.envelope_id, row.relation_id): row.relation_id
+        for row in grounded_plan.relations
+    }
+    relation_by_id = {
+        row.relation_id: row for row in grounded_plan.relations
+    }
+    expanded: list[_CMEEVisibleLine] = []
+    for line, unit in zip(lines, units, strict=True):
+        canonical_sentences = split_sentences(
+            line.text,
+            skip_greeting=False,
+        )
+        if len(canonical_sentences) == 1:
+            if len(line.binding.relation_ids) > 1:
+                raise CMEEVerticalError(
+                    "stage1_v2_core_binding_relation_cardinality_mismatch"
+                )
+            expanded.append(line)
+            continue
+        if (
+            len(canonical_sentences) != len(unit.clause_frames)
+            or any(type(value) is not str or not value for value in canonical_sentences)
+        ):
+            raise CMEEVerticalError(
+                "stage1_v2_core_binding_clause_cardinality_mismatch"
+            )
+
+        grouped_nucleus_ids: list[str] = []
+        grouped_relation_ids: list[str] = []
+        grouped_evidence_span_ids: list[str] = []
+        for ordinal, (sentence, frame) in enumerate(
+            zip(canonical_sentences, unit.clause_frames, strict=True),
+            start=1,
+        ):
+            semantic_refs = _ordered(
+                (
+                    *((frame.topic_ref,) if frame.topic_ref is not None else ()),
+                    *((frame.object_ref,) if frame.object_ref is not None else ()),
+                    *(row.semantic_ref for row in frame.argument_bindings),
+                    *frame.actor_refs,
+                    *frame.experiencer_refs,
+                )
+            )
+            node_ids = {
+                _stage1_local_ref_id(ref, expected_kind="node")
+                for ref in semantic_refs
+                if ref.startswith("node:")
+            }
+            relation_ids: tuple[str, ...] = ()
+            discourse_ref = frame.discourse_relation
+            if type(discourse_ref) is not str or not discourse_ref:
+                raise CMEEVerticalError(
+                    "stage1_v2_core_binding_relation_invalid"
+                )
+            if discourse_ref.startswith("edge:"):
+                edge_id = _stage1_local_ref_id(
+                    discourse_ref,
+                    expected_kind="edge",
+                )
+                source_relation_id = source_edge_id.get(edge_id)
+                if source_relation_id is None:
+                    raise CMEEVerticalError(
+                        "stage1_v2_core_binding_relation_invalid"
+                    )
+                relation_ids = (source_relation_id,)
+            elif not discourse_ref.startswith("relation:none:"):
+                raise CMEEVerticalError(
+                    "stage1_v2_core_binding_relation_invalid"
+                )
+            if not node_ids.issubset(node_by_id):
+                raise CMEEVerticalError(
+                    "stage1_v2_core_binding_semantic_ref_invalid"
+                )
+            nucleus_id_set = {
+                source_node_id[node_id]
+                for node_id in node_ids
+                if node_id in source_node_id
+            }
+            if len(nucleus_id_set) != len(node_ids):
+                raise CMEEVerticalError(
+                    "stage1_v2_core_binding_semantic_ref_invalid"
+                )
+            nucleus_id_set.update(
+                endpoint
+                for relation_id in relation_ids
+                for endpoint in (
+                    relation_by_id[relation_id].from_nucleus_id,
+                    relation_by_id[relation_id].to_nucleus_id,
+                )
+            )
+            nucleus_ids = tuple(
+                row.nucleus_id
+                for row in grounded_plan.nuclei
+                if row.nucleus_id in nucleus_id_set
+            )
+            edge_ids = {
+                _stable_id(
+                    "me",
+                    source.envelope.envelope_id,
+                    relation_id,
+                )
+                for relation_id in relation_ids
+            }
+            evidence_ids = {
+                evidence_id
+                for node_id in node_ids
+                for evidence_id in node_by_id[node_id].evidence_ids
+            }
+            evidence_ids.update(
+                evidence_id
+                for edge_id in edge_ids
+                for evidence_id in edge_by_id[edge_id].evidence_ids
+            )
+            evidence_span_ids = tuple(
+                row.source_span_id
+                for row in source.evidence_refs
+                if row.evidence_id in evidence_ids
+            )
+            if not nucleus_ids or not evidence_span_ids:
+                raise CMEEVerticalError(
+                    "stage1_v2_core_binding_lineage_missing"
+                )
+            grouped_nucleus_ids.extend(nucleus_ids)
+            grouped_relation_ids.extend(relation_ids)
+            grouped_evidence_span_ids.extend(evidence_span_ids)
+            expanded.append(
+                _CMEEVisibleLine(
+                    sentence_id=f"{line.sentence_id}:clause:{ordinal}",
+                    text=sentence,
+                    binding=_CMEEVisibleBinding(
+                        line_role=line.binding.line_role,
+                        nucleus_ids=nucleus_ids,
+                        relation_ids=relation_ids,
+                        evidence_span_ids=evidence_span_ids,
+                        claim_scope=line.binding.claim_scope,
+                        required=line.binding.required,
+                    ),
+                )
+            )
+        if (
+            _ordered(grouped_nucleus_ids) != line.binding.nucleus_ids
+            or len(grouped_relation_ids) != len(set(grouped_relation_ids))
+            or set(grouped_relation_ids) != set(line.binding.relation_ids)
+            or set(grouped_evidence_span_ids)
+            != set(line.binding.evidence_span_ids)
+        ):
+            raise CMEEVerticalError("stage1_v2_core_binding_cover_mismatch")
+    return tuple(expanded)
 
 
 def _cmee_core_relation_type(line: _CMEEVisibleLine, grounded_plan: Any) -> str:
@@ -4240,6 +4923,243 @@ def _cmee_binding_aliases(meta: Mapping[str, Any]) -> tuple[Any, ...]:
     return tuple(aliases)
 
 
+def _stage1_v2_echo_only_admitted_core_meta(
+    core_meta: Mapping[str, Any],
+    *,
+    admission_ref: str,
+    canonical_text: str,
+    used_evidence_span_ids: Sequence[str],
+    evidence_digest: str,
+) -> dict[str, Any] | None:
+    """Admit only an otherwise-clear v2 typed derivation echo rejection."""
+
+    allowed_reasons = {"raw_input_echo", "excessive_raw_quote"}
+    expected_quality_flags = (
+        "template_echo_failed",
+        "core_text_composer_rejected",
+        "guard_rejected",
+    )
+    normalized_canonical_text = re.sub(
+        r"\s+",
+        " ",
+        str(canonical_text or "").replace("\r", " ").replace("\n", " "),
+    ).strip(" \t\r\n　、,。.!！?？『』\"'")
+    expected_evidence_ids = tuple(used_evidence_span_ids)
+    if (
+        type(core_meta) is not dict
+        or not admission_ref.startswith("stage1-v2-typed-derivation-")
+        or type(canonical_text) is not str
+        or not canonical_text
+        or re.fullmatch(r"[0-9a-f]{64}", evidence_digest) is None
+        or core_meta.get("core_id") != "emlis"
+        or core_meta.get("status") != "rejected"
+        or type(core_meta.get("passed")) is not bool
+        or core_meta.get("passed") is not False
+        or core_meta.get("text_length") != len(normalized_canonical_text)
+        or tuple(core_meta.get("quality_flags") or ())
+        != expected_quality_flags
+        or type(core_meta.get("used_evidence_span_ids")) is not list
+        or len(core_meta.get("used_evidence_span_ids"))
+        != len(set(core_meta.get("used_evidence_span_ids")))
+        or set(core_meta.get("used_evidence_span_ids"))
+        != set(expected_evidence_ids)
+    ):
+        return None
+    rejection_reasons = tuple(core_meta.get("rejection_reasons") or ())
+    if (
+        not rejection_reasons
+        or len(rejection_reasons) != len(set(rejection_reasons))
+        or not set(rejection_reasons).issubset(allowed_reasons)
+    ):
+        return None
+
+    result = core_meta.get("result")
+    result_meta = result.get("meta") if type(result) is dict else None
+    raw_rows = (
+        result_meta.get("guard_results")
+        if type(result_meta) is dict
+        else None
+    )
+    combined = (
+        result_meta.get("combined_guard_result")
+        if type(result_meta) is dict
+        else None
+    )
+    combined_meta = combined.get("meta") if type(combined) is dict else None
+    combined_rows = (
+        combined_meta.get("guard_results")
+        if type(combined_meta) is dict
+        else None
+    )
+    guarded_candidate = (
+        result_meta.get("candidate")
+        if type(result_meta) is dict
+        else None
+    )
+    if (
+        type(result) is not dict
+        or result.get("status") != "rejected"
+        or result.get("used_evidence_span_ids") != []
+        or tuple(result.get("quality_flags") or ())
+        != expected_quality_flags
+        or tuple(result.get("rejection_reasons") or ())
+        != rejection_reasons
+        or type(result_meta) is not dict
+        or type(raw_rows) is not list
+        or len(raw_rows) != len(EXPECTED_COMMON_GUARD_IDS)
+        or type(combined) is not dict
+        or combined.get("guard_name") != "combined_text_generation_guards"
+        or type(combined.get("passed")) is not bool
+        or combined.get("passed") is not False
+        or tuple(combined.get("quality_flags") or ())
+        != ("template_echo_failed",)
+        or tuple(combined.get("rejection_reasons") or ())
+        != rejection_reasons
+        or type(combined_rows) is not list
+        or combined_rows != raw_rows
+        or type(guarded_candidate) is not dict
+        or guarded_candidate.get("text_length")
+        != len(normalized_canonical_text)
+        or type(guarded_candidate.get("used_evidence_span_ids")) is not list
+        or len(guarded_candidate.get("used_evidence_span_ids"))
+        != len(set(guarded_candidate.get("used_evidence_span_ids")))
+        or set(guarded_candidate.get("used_evidence_span_ids"))
+        != set(expected_evidence_ids)
+        or guarded_candidate.get("coverage_scope") != "cmee_required_plan"
+        or type(
+            result_meta.get("declared_used_evidence_span_ids")
+        ) is not list
+        or len(result_meta.get("declared_used_evidence_span_ids"))
+        != len(set(result_meta.get("declared_used_evidence_span_ids")))
+        or set(result_meta.get("declared_used_evidence_span_ids"))
+        != set(expected_evidence_ids)
+    ):
+        return None
+
+    for index, (expected_guard_id, raw_row) in enumerate(
+        zip(EXPECTED_COMMON_GUARD_IDS, raw_rows, strict=True)
+    ):
+        expected_passed = index != 1
+        if (
+            type(raw_row) is not dict
+            or raw_row.get("guard_name") != expected_guard_id
+            or type(raw_row.get("passed")) is not bool
+            or raw_row.get("passed") is not expected_passed
+            or (
+                index != 1
+                and (
+                    raw_row.get("quality_flags") != []
+                    or raw_row.get("rejection_reasons") != []
+                )
+            )
+        ):
+            return None
+    template_row = raw_rows[1]
+    template_meta = template_row.get("meta")
+    if (
+        tuple(template_row.get("quality_flags") or ())
+        != ("template_echo_failed",)
+        or tuple(template_row.get("rejection_reasons") or ())
+        != rejection_reasons
+        or type(template_meta) is not dict
+        or type(template_meta.get("raw_echo_ratio")) not in {int, float}
+        or type(template_meta.get("raw_quote_ratio")) not in {int, float}
+        or type(template_meta.get("previous_similarity")) not in {int, float}
+        or template_meta.get("previous_similarity") >= 0.72
+        or type(template_meta.get("raw_quote_hits")) is not list
+        or any(
+            type(value) is not str or not value
+            for value in template_meta.get("raw_quote_hits")
+        )
+        or (
+            "raw_input_echo" in rejection_reasons
+            and template_meta.get("raw_echo_ratio") < 0.82
+        )
+        or (
+            "excessive_raw_quote" in rejection_reasons
+            and not template_meta.get("raw_quote_hits")
+        )
+        or template_meta.get("limited_surface_repetition_score") != 0.0
+        or template_meta.get("repeated_limited_surface_patterns") != []
+        or template_meta.get("repeated_sentence_pattern_score") != 0.0
+        or template_meta.get("piece_preserves_source_claims") is not False
+        or template_meta.get("analysis_report_observation") is not False
+    ):
+        return None
+
+    admitted = copy.deepcopy(dict(core_meta))
+    admitted_result = admitted["result"]
+    admitted_result_meta = admitted_result["meta"]
+    admitted_rows = admitted_result_meta["guard_results"]
+    admission_preimage = {
+        "policy_id": _STAGE1_V2_TYPED_DERIVATION_ECHO_ADMISSION_POLICY,
+        "typed_derivation_ref": admission_ref,
+        "original_rejection_reasons": list(rejection_reasons),
+        "original_quality_flags": list(expected_quality_flags),
+        "raw_echo_ratio": template_meta["raw_echo_ratio"],
+        "raw_quote_ratio": template_meta["raw_quote_ratio"],
+        "raw_quote_hit_digests": [
+            _sha256_text(value)
+            for value in template_meta["raw_quote_hits"]
+        ],
+        "evidence_digest": evidence_digest,
+        "surface_digest": _sha256_text(canonical_text),
+    }
+    admission_digest = _sha256_text(
+        json.dumps(
+            admission_preimage,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+    typed_admission_ref = (
+        f"typed-source-quotation:{admission_digest}"
+        f"@{_STAGE1_V2_TYPED_DERIVATION_ECHO_ADMISSION_POLICY}"
+    )
+    admission_detail = {
+        "typed_admission_ref": typed_admission_ref,
+        "digest_preimage": admission_preimage,
+    }
+    admitted_template_row = admitted_rows[1]
+    admitted_template_row["passed"] = True
+    admitted_template_row["quality_flags"] = []
+    admitted_template_row["rejection_reasons"] = []
+    admitted_template_row["meta"] = {
+        **admitted_template_row["meta"],
+        "stage1_v2_typed_derivation_admission": admission_detail,
+    }
+    admitted_combined = admitted_result_meta["combined_guard_result"]
+    admitted_combined["passed"] = True
+    admitted_combined["quality_flags"] = []
+    admitted_combined["rejection_reasons"] = []
+    admitted_combined["meta"]["guard_results"] = copy.deepcopy(
+        admitted_rows
+    )
+    admitted_combined["meta"][
+        "stage1_v2_typed_derivation_admission"
+    ] = admission_detail
+    admitted_result_meta[
+        "stage1_v2_typed_derivation_admission"
+    ] = admission_detail
+    admitted_result["status"] = "generated"
+    admitted_evidence_ids = list(
+        admitted_result_meta["declared_used_evidence_span_ids"]
+    )
+    admitted_result["used_evidence_span_ids"] = admitted_evidence_ids
+    admitted_result["coverage_scope"] = "cmee_required_plan"
+    admitted_result["quality_flags"] = []
+    admitted_result["rejection_reasons"] = []
+    admitted["status"] = "generated"
+    admitted["passed"] = True
+    admitted["used_evidence_span_ids"] = admitted_evidence_ids
+    admitted["coverage_scope"] = "cmee_required_plan"
+    admitted["quality_flags"] = []
+    admitted["rejection_reasons"] = []
+    admitted["stage1_v2_typed_derivation_admission"] = admission_detail
+    return admitted
+
+
 class _CMEER4PlanBoundComposerClient:
     """One-shot adapter from canonical CMEE duties to the unchanged common core."""
 
@@ -4247,9 +5167,22 @@ class _CMEER4PlanBoundComposerClient:
         self,
         observation_lines: Sequence[_CMEEVisibleLine],
         grounded_plan: Any,
+        *,
+        composer_binding_lines: Sequence[_CMEEVisibleLine] | None = None,
+        typed_derivation_admission_ref: str | None = None,
     ) -> None:
         self._observation_lines = tuple(observation_lines)
+        self._composer_binding_lines = (
+            self._observation_lines
+            if composer_binding_lines is None
+            else tuple(composer_binding_lines)
+        )
+        if not self._composer_binding_lines:
+            raise CMEEVerticalError("plan_bound_observation_binding_missing")
         self._grounded_plan = grounded_plan
+        self._typed_derivation_admission_ref = (
+            typed_derivation_admission_ref
+        )
 
     def generate(self, payload: Any) -> dict[str, Any]:
         if type(payload) is not dict:
@@ -4298,7 +5231,7 @@ class _CMEER4PlanBoundComposerClient:
         )
         binding_rows = [
             _cmee_composer_binding_row(line, self._grounded_plan)
-            for line in self._observation_lines
+            for line in self._composer_binding_lines
         ]
         guard_binding_rows = [
             _cmee_guard_binding_projection(row) for row in binding_rows
@@ -4405,6 +5338,45 @@ class _CMEER4PlanBoundComposerClient:
         if evaluation.passed:
             return attach_core_evaluation_meta(response, evaluation)
         core_meta = evaluation.as_meta()
+        if self._typed_derivation_admission_ref is not None:
+            evidence_digest = _sha256_text(
+                json.dumps(
+                    tuple(
+                        (
+                            source_span_id,
+                            _sha256_text(
+                                str(
+                                    evidence_by_id[source_span_id].get(
+                                        "raw_text"
+                                    )
+                                    or ""
+                                )
+                            ),
+                        )
+                        for source_span_id in used_evidence_ids
+                    ),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            )
+            admitted_core_meta = _stage1_v2_echo_only_admitted_core_meta(
+                core_meta,
+                admission_ref=self._typed_derivation_admission_ref,
+                canonical_text=str(response["comment_text"]),
+                used_evidence_span_ids=used_evidence_ids,
+                evidence_digest=evidence_digest,
+            )
+            if admitted_core_meta is not None:
+                admitted_response = dict(response)
+                admitted_composer_meta = dict(composer_meta)
+                admitted_composer_meta[
+                    "text_generation_core"
+                ] = admitted_core_meta
+                admitted_composer_meta[
+                    "core_text_generation"
+                ] = admitted_core_meta
+                admitted_response["composer_meta"] = admitted_composer_meta
+                return admitted_response
         return {
             "composer_source": "unavailable",
             "status": "unavailable",
@@ -4545,14 +5517,25 @@ def _realize_cmee_experience(
     graph: GroundedMeaningGraph,
     plan: ExperiencePlan,
     grounded_plan: Any,
+    *,
+    stage1_response_schema_version: str = CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1,
+    stage1_compiler: Any = None,
 ) -> tuple[
     tuple[_CMEEVisibleLine, ...],
     _CommonGuardSealMaterial,
     EmlisStage1Projection,
     tuple[RealizedSentenceUnit, ...],
 ]:
+    _stage1_runtime_contract(stage1_response_schema_version)
+    compiler = (
+        compile_stage1_response
+        if stage1_compiler is None
+        else stage1_compiler
+    )
+    if not callable(compiler):
+        raise CMEEVerticalError("stage1_compiler_invalid")
     try:
-        projection, selected_units = compile_stage1_response(
+        projection, selected_units = compiler(
             source=source,
             grounded_graph=graph,
             parent_plan=plan,
@@ -4565,6 +5548,11 @@ def _realize_cmee_experience(
             else "stage1_projection_unavailable"
         )
         raise CMEEVerticalError(reason_code) from None
+    if (
+        type(projection) is not EmlisStage1Projection
+        or projection.schema_version != stage1_response_schema_version
+    ):
+        raise CMEEVerticalError("stage1_compiler_schema_version_mismatch")
     canonical_observation_lines, reception_lines = _stage1_visible_lines(
         source,
         graph,
@@ -4572,9 +5560,34 @@ def _realize_cmee_experience(
         projection,
         selected_units,
     )
+    typed_derivation_admission_ref = (
+        _stage1_v2_typed_derivation_admission_ref(
+            projection,
+            selected_units,
+            canonical_observation_lines,
+            graph=graph,
+            plan=plan,
+            grounded_plan=grounded_plan,
+        )
+        if stage1_response_schema_version
+        == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+        else None
+    )
+    composer_binding_lines = (
+        canonical_observation_lines
+        if stage1_response_schema_version
+        == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+        else _stage1_v2_composer_binding_lines(
+            source,
+            graph,
+            grounded_plan,
+            canonical_observation_lines,
+            selected_units,
+        )
+    )
     expected_binding_rows = [
         _cmee_composer_binding_row(line, grounded_plan)
-        for line in canonical_observation_lines
+        for line in composer_binding_lines
     ]
     expected_core_binding_rows = [
         _cmee_core_binding_projection(row) for row in expected_binding_rows
@@ -4594,6 +5607,10 @@ def _realize_cmee_experience(
         composer_client=_CMEER4PlanBoundComposerClient(
             canonical_observation_lines,
             grounded_plan,
+            composer_binding_lines=composer_binding_lines,
+            typed_derivation_admission_ref=(
+                typed_derivation_admission_ref
+            ),
         ),
         trace_id=_stable_id("composer", source.envelope.envelope_id, plan.plan_id),
         limited_observation_scope=scope,
@@ -4853,6 +5870,8 @@ def _validate_reception_semantic_compatibility(
     visible_lines: Sequence[Any],
     projection: EmlisStage1Projection,
 ) -> None:
+    schema_version = projection.schema_version
+    _stage1_runtime_contract(schema_version)
     lines = tuple(visible_lines)
     roles = tuple(
         "OBSERVATION"
@@ -4876,12 +5895,20 @@ def _validate_reception_semantic_compatibility(
         projection.subjective_depth_class.value,
         (0, 0),
     )
+    anchor_cardinality_valid = (
+        observation_count == len(projection.ordered_observation_refs)
+        and reception_count == len(projection.ordered_subjective_refs)
+        if schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+        else (
+            observation_count <= len(projection.ordered_observation_refs)
+            and reception_count <= len(projection.ordered_subjective_refs)
+        )
+    )
     if (
         not 1 <= observation_count <= 5
         or not 0 <= unknown_count <= 1
         or not reception_floor <= reception_count <= reception_ceiling
-        or observation_count != len(projection.ordered_observation_refs)
-        or reception_count != len(projection.ordered_subjective_refs)
+        or not anchor_cardinality_valid
         or roles
         != (
             *("OBSERVATION" for _ in range(observation_count)),
@@ -4933,10 +5960,20 @@ def _trace_for_lines(
     projection: EmlisStage1Projection,
     selected_units: Sequence[RealizedSentenceUnit],
 ) -> tuple[VisibleUnitTrace, ...]:
+    schema_version = projection.schema_version
+    trace_schema_version, owner_ref, _realizer_contract_ids = (
+        _stage1_runtime_contract(schema_version)
+    )
     node_ids = {row.node_id for row in graph.nodes}
     edge_ids = {row.edge_id for row in graph.edges}
     ref_by_span = {row.source_span_id: row for row in source.evidence_refs}
     units = tuple(selected_units)
+    if schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1:
+        if any(unit.v2_trace_seal is not None for unit in units):
+            raise CMEEVerticalError("stage1_v2_unit_trace_seal_invalid")
+    else:
+        for unit in units:
+            _stage1_v2_unit_seal(unit)
     variants = {row.composition_variant_id for row in units}
     if len(variants) != 1:
         raise CMEEVerticalError("stage1_trace_variant_mismatch")
@@ -4997,21 +6034,35 @@ def _trace_for_lines(
                 unit = next(observation_units)
             except StopIteration:
                 raise CMEEVerticalError("stage1_trace_unit_coverage_mismatch") from None
-            if len(unit.basis_anchor_refs) != 1:
+            contribution_refs = unit.basis_anchor_refs
+            if (
+                not contribution_refs
+                or len(contribution_refs) != len(set(contribution_refs))
+                or (
+                    schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+                    and len(contribution_refs) != 1
+                )
+            ):
                 raise CMEEVerticalError("stage1_trace_unit_anchor_invalid")
-            contribution_ref = unit.basis_anchor_refs[0]
-            contribution = contribution_by_id.get(contribution_ref)
-            if contribution is None:
+            contributions = tuple(
+                contribution_by_id.get(ref) for ref in contribution_refs
+            )
+            if any(row is None for row in contributions) or any(
+                ref in contribution_trace_refs for ref in contribution_refs
+            ):
                 raise CMEEVerticalError("stage1_trace_unit_anchor_invalid")
-            contribution_trace_refs[contribution_ref] = visible_unit_id
-            extension = EmlisStage1PositiveTraceExtension(
-                schema_version=CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION,
+            for contribution_ref in contribution_refs:
+                contribution_trace_refs[contribution_ref] = visible_unit_id
+            extension_base = dict(
+                schema_version=trace_schema_version,
                 claim_domain=EmlisTraceClaimDomain.INTERPRETIVE_OBSERVATION,
-                owner_ref=CMEE_STAGE1_EMLIS_OWNER_REF,
-                contribution_refs=(contribution_ref,),
+                owner_ref=owner_ref,
+                contribution_refs=contribution_refs,
                 basis_trace_refs=(),
-                interpretation_candidate_refs=(
-                    contribution.interpretation_candidate_refs
+                interpretation_candidate_refs=_ordered(
+                    ref
+                    for contribution in contributions
+                    for ref in contribution.interpretation_candidate_refs
                 ),
                 subjective_claim_ref=None,
                 basis_observation_contribution_refs=(),
@@ -5020,39 +6071,89 @@ def _trace_for_lines(
                 user_fact_effect=0,
                 composition_variant_id=composition_variant_id,
             )
+            if schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1:
+                extension = EmlisStage1PositiveTraceExtension(**extension_base)
+            else:
+                seal = _stage1_v2_unit_seal(unit)
+                extension = EmlisStage1PositiveTraceExtension(
+                    **extension_base,
+                    subjective_claim_refs=(),
+                    covered_duty_refs=seal.covered_duty_refs,
+                    sentence_job_refs=seal.sentence_job_refs,
+                    source_reception_act_refs=seal.source_reception_act_refs,
+                    composition_candidate_ref=seal.composition_candidate_ref,
+                    composition_layout_ref=seal.composition_layout_ref,
+                    selected_stage1_artifact_ref=(
+                        seal.selected_stage1_artifact_ref
+                    ),
+                )
         elif role == "RECEPTION":
             try:
                 unit = next(reception_units)
             except StopIteration:
                 raise CMEEVerticalError("stage1_trace_unit_coverage_mismatch") from None
-            if len(unit.basis_anchor_refs) != 1:
+            claim_refs = unit.basis_anchor_refs
+            if (
+                not claim_refs
+                or len(claim_refs) != len(set(claim_refs))
+                or (
+                    schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+                    and len(claim_refs) != 1
+                )
+            ):
                 raise CMEEVerticalError("stage1_trace_unit_anchor_invalid")
-            claim_ref = unit.basis_anchor_refs[0]
-            claim = claim_by_id.get(claim_ref)
-            if claim is None or any(
-                ref not in contribution_trace_refs
+            claims = tuple(claim_by_id.get(ref) for ref in claim_refs)
+            if any(claim is None for claim in claims):
+                raise CMEEVerticalError("stage1_trace_unit_anchor_invalid")
+            basis_observation_refs = _ordered(
+                ref
+                for claim in claims
                 for ref in claim.basis_observation_contribution_refs
+            )
+            if any(
+                ref not in contribution_trace_refs
+                for ref in basis_observation_refs
             ):
                 raise CMEEVerticalError("stage1_trace_reception_basis_missing")
-            extension = EmlisStage1PositiveTraceExtension(
-                schema_version=CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION,
+            extension_base = dict(
+                schema_version=trace_schema_version,
                 claim_domain=EmlisTraceClaimDomain.SUBJECTIVE_RESPONSE,
-                owner_ref=CMEE_STAGE1_EMLIS_OWNER_REF,
+                owner_ref=owner_ref,
                 contribution_refs=(),
-                basis_trace_refs=tuple(
+                basis_trace_refs=_ordered(
                     contribution_trace_refs[ref]
-                    for ref in claim.basis_observation_contribution_refs
+                    for ref in basis_observation_refs
                 ),
                 interpretation_candidate_refs=(),
-                subjective_claim_ref=claim_ref,
-                basis_observation_contribution_refs=(
-                    claim.basis_observation_contribution_refs
+                subjective_claim_ref=(
+                    claim_refs[0]
+                    if schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+                    else None
                 ),
-                value_principle_refs=claim.value_principle_refs,
+                basis_observation_contribution_refs=basis_observation_refs,
+                value_principle_refs=_ordered(
+                    ref for claim in claims for ref in claim.value_principle_refs
+                ),
                 speaker_owner="EMLIS",
                 user_fact_effect=0,
                 composition_variant_id=composition_variant_id,
             )
+            if schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1:
+                extension = EmlisStage1PositiveTraceExtension(**extension_base)
+            else:
+                seal = _stage1_v2_unit_seal(unit)
+                extension = EmlisStage1PositiveTraceExtension(
+                    **extension_base,
+                    subjective_claim_refs=claim_refs,
+                    covered_duty_refs=seal.covered_duty_refs,
+                    sentence_job_refs=seal.sentence_job_refs,
+                    source_reception_act_refs=seal.source_reception_act_refs,
+                    composition_candidate_ref=seal.composition_candidate_ref,
+                    composition_layout_ref=seal.composition_layout_ref,
+                    selected_stage1_artifact_ref=(
+                        seal.selected_stage1_artifact_ref
+                    ),
+                )
         traces.append(
             VisibleUnitTrace(
                 visible_unit_id=visible_unit_id,
@@ -5237,6 +6338,8 @@ def _validate_common_guard_proof(
     graph: GroundedMeaningGraph,
     artifact: GenerationArtifactBundle,
     safe_lines: Sequence[Any],
+    *,
+    stage1_response_schema_version: str,
 ) -> None:
     """Independently verify the sealed one-shot guard proof and its bindings."""
 
@@ -5274,17 +6377,72 @@ def _validate_common_guard_proof(
         EXPECTED_COMMON_GUARD_IDS
     ):
         raise CMEEVerticalError("common_guard_proof_result_shape_mismatch")
-    for expected_guard_id, row in zip(
+    if (
+        type(proof.typed_admission_refs) is not tuple
+        or any(type(value) is not str for value in proof.typed_admission_refs)
+    ):
+        raise CMEEVerticalError("common_guard_proof_typed_admission_mismatch")
+    typed_admission_ref = (
+        proof.typed_admission_refs[0]
+        if len(proof.typed_admission_refs) == 1
+        else None
+    )
+    if proof.typed_admission_refs and (
+        typed_admission_ref is None
+        or stage1_response_schema_version
+        != CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+        or re.fullmatch(
+            (
+                r"typed-source-quotation:[0-9a-f]{64}@"
+                + re.escape(
+                    _STAGE1_V2_TYPED_DERIVATION_ECHO_ADMISSION_POLICY
+                )
+            ),
+            typed_admission_ref,
+        )
+        is None
+    ):
+        raise CMEEVerticalError("common_guard_proof_typed_admission_mismatch")
+    if typed_admission_ref is not None:
+        positive_extensions = tuple(
+            row.emlis_stage1_extension
+            for row in artifact.trace
+            if row.role in {"OBSERVATION", "RECEPTION"}
+        )
+        if not positive_extensions or any(
+            type(extension) is not EmlisStage1PositiveTraceExtension
+            or extension.schema_version
+            != CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V2
+            or extension.owner_ref != CMEE_STAGE1_EMLIS_OWNER_REF_V2
+            for extension in positive_extensions
+        ):
+            raise CMEEVerticalError(
+                "common_guard_proof_typed_admission_trace_mismatch"
+            )
+    for ordinal, (expected_guard_id, row) in enumerate(zip(
         EXPECTED_COMMON_GUARD_IDS,
         proof.guard_results,
         strict=True,
-    ):
+    )):
+        expected_raw_passed = (
+            False
+            if typed_admission_ref is not None and ordinal == 1
+            else None
+        )
+        expected_disposition = (
+            "TYPED_SOURCE_QUOTATION_ADMITTED"
+            if typed_admission_ref is not None and ordinal == 1
+            else "DIRECT"
+        )
         if (
             type(row) is not CommonGuardResultProof
             or type(row.guard_id) is not str
             or row.guard_id != expected_guard_id
             or type(row.passed) is not bool
             or row.passed is not True
+            or row.raw_passed is not expected_raw_passed
+            or type(row.disposition) is not str
+            or row.disposition != expected_disposition
         ):
             raise CMEEVerticalError("common_guard_proof_result_mismatch")
 
@@ -5317,6 +6475,7 @@ def _validate_common_guard_proof(
         common_shapes_ready=proof.common_shapes_ready,
         stabilization_guard_names=proof.stabilization_guard_names,
         issue_codes=proof.issue_codes,
+        typed_admission_refs=proof.typed_admission_refs,
     )
     if proof.proof_id != expected_proof_id:
         raise CMEEVerticalError("common_guard_proof_identity_mismatch")
@@ -5337,14 +6496,20 @@ def validate_positive_realization_trace(
     projection: EmlisStage1Projection,
     selected_units: Sequence[RealizedSentenceUnit],
 ) -> None:
+    if type(projection) is not EmlisStage1Projection:
+        raise CMEEVerticalError("stage1_projection_schema_version_invalid")
+    schema_version = projection.schema_version
+    _trace_schema_version, _owner_ref, realizer_contract_ids = (
+        _stage1_runtime_contract(schema_version)
+    )
     _validate_source_owner_graph_contract(source, graph)
     canonical_resolver = build_evidence_span_resolver(
         source.evidence_spans,
         current_input=source.normalized_current_input,
     )
-    canonical_grounded_plan = build_grounded_observation_plan(
-        source.normalized_current_input,
-        evidence_spans=source.evidence_spans,
+    canonical_grounded_plan = _build_stage1_grounded_observation_plan_for_schema(
+        source,
+        schema_version=schema_version,
     )
     if validate_grounded_observation_plan(canonical_grounded_plan, canonical_resolver):
         raise CMEEVerticalError("canonical_grounded_meaning_plan_invalid")
@@ -5368,6 +6533,29 @@ def validate_positive_realization_trace(
         canonical_reception_targets,
     )
     units = tuple(selected_units)
+    if schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2:
+        try:
+            canonical_projection, canonical_units = (
+                _compile_stage1_response_v2_candidate(
+                    source=source,
+                    grounded_graph=canonical_graph,
+                    parent_plan=canonical_plan,
+                    grounded_plan=canonical_grounded_plan,
+                )
+            )
+        except CMEEStage1ContractError:
+            raise CMEEVerticalError(
+                "stage1_v2_canonical_compilation_unavailable"
+            ) from None
+        if (
+            type(canonical_projection) is not EmlisStage1Projection
+            or type(canonical_units) is not tuple
+            or projection != canonical_projection
+            or units != canonical_units
+        ):
+            raise CMEEVerticalError(
+                "stage1_v2_canonical_compilation_mismatch"
+            )
     prior_unit_ids: list[str] = []
     for unit in units:
         try:
@@ -5446,11 +6634,17 @@ def validate_positive_realization_trace(
     )
     if plan_binding != expected_binding:
         raise CMEEVerticalError("experience_plan_universe_binding_mismatch")
-    if artifact.realizer_contract_ids != REALIZER_CONTRACT_IDS:
+    if artifact.realizer_contract_ids != realizer_contract_ids:
         raise CMEEVerticalError("realizer_contract_identity_mismatch")
-    if artifact.trust_policy_ids != TRUST_POLICY_IDS:
+    if artifact.trust_policy_ids != _stage1_trust_policy_ids(schema_version):
         raise CMEEVerticalError("trust_policy_identity_mismatch")
-    _validate_common_guard_proof(source, graph, artifact, safe_lines)
+    _validate_common_guard_proof(
+        source,
+        graph,
+        artifact,
+        safe_lines,
+        stage1_response_schema_version=schema_version,
+    )
     if artifact.plan.plan_id != _plan_id(
         source.envelope.envelope_id,
         graph.graph_id,
@@ -5542,6 +6736,39 @@ def validate_positive_realization_trace(
     observation_role_count = line_roles.count("cmee_observation")
     unknown_role_count = line_roles.count("cmee_unknown")
     reception_role_count = line_roles.count("human_follow")
+    flattened_observation_anchors = tuple(
+        ref
+        for unit in units
+        if unit.layer == "LAYER_1"
+        for ref in unit.basis_anchor_refs
+    )
+    flattened_subjective_anchors = tuple(
+        ref
+        for unit in units
+        if unit.layer == "LAYER_2"
+        for ref in unit.basis_anchor_refs
+    )
+    role_anchor_cardinality_valid = (
+        observation_role_count == len(projection.ordered_observation_refs)
+        and reception_role_count == len(projection.ordered_subjective_refs)
+        if schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+        else (
+            observation_role_count
+            == sum(unit.layer == "LAYER_1" for unit in units)
+            and reception_role_count
+            == sum(unit.layer == "LAYER_2" for unit in units)
+            and len(flattened_observation_anchors)
+            == len(set(flattened_observation_anchors))
+            and set(flattened_observation_anchors).issubset(
+                set(projection.ordered_observation_refs)
+            )
+            and len(flattened_subjective_anchors)
+            == len(set(flattened_subjective_anchors))
+            and set(flattened_subjective_anchors).issubset(
+                set(projection.ordered_subjective_refs)
+            )
+        )
+    )
     if (
         line_roles
         != (
@@ -5549,8 +6776,7 @@ def validate_positive_realization_trace(
             *("cmee_unknown" for _ in range(unknown_role_count)),
             *("human_follow" for _ in range(reception_role_count)),
         )
-        or observation_role_count != len(projection.ordered_observation_refs)
-        or reception_role_count != len(projection.ordered_subjective_refs)
+        or not role_anchor_cardinality_valid
         or unknown_role_count > 1
         or bool(unknown_role_count)
         != bool(artifact.plan.visible_unknown_owner_ids)
@@ -5583,17 +6809,35 @@ def validate_positive_realization_trace(
         raise CMEEVerticalError("stage1_trace_unit_coverage_mismatch")
     for trace_row, unit in zip(positive_trace_rows, units, strict=True):
         extension = trace_row.emlis_stage1_extension
-        if extension is None or len(unit.basis_anchor_refs) != 1:
+        anchor_refs = unit.basis_anchor_refs
+        if (
+            extension is None
+            or not anchor_refs
+            or len(anchor_refs) != len(set(anchor_refs))
+            or (
+                schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+                and len(anchor_refs) != 1
+            )
+        ):
             raise CMEEVerticalError("stage1_trace_unit_anchor_mismatch")
-        anchor_ref = unit.basis_anchor_refs[0]
+        reception_claim_binding_valid = (
+            extension.subjective_claim_ref == anchor_refs[0]
+            and not extension.subjective_claim_refs
+            if schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+            else (
+                extension.subjective_claim_ref is None
+                and extension.subjective_claim_refs == anchor_refs
+            )
+        )
         if (
             extension.composition_variant_id != unit.composition_variant_id
             or (
                 unit.layer == "LAYER_1"
                 and (
                     trace_row.role != "OBSERVATION"
-                    or extension.contribution_refs != (anchor_ref,)
+                    or extension.contribution_refs != anchor_refs
                     or extension.subjective_claim_ref is not None
+                    or extension.subjective_claim_refs
                 )
             )
             or (
@@ -5601,12 +6845,60 @@ def validate_positive_realization_trace(
                 and (
                     trace_row.role != "RECEPTION"
                     or extension.contribution_refs
-                    or extension.subjective_claim_ref != anchor_ref
+                    or not reception_claim_binding_valid
                 )
             )
             or unit.layer not in {"LAYER_1", "LAYER_2"}
         ):
             raise CMEEVerticalError("stage1_trace_unit_anchor_mismatch")
+        extension_seal = (
+            extension.covered_duty_refs,
+            extension.sentence_job_refs,
+            extension.source_reception_act_refs,
+            extension.composition_candidate_ref,
+            extension.composition_layout_ref,
+            extension.selected_stage1_artifact_ref,
+        )
+        if schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1:
+            if unit.v2_trace_seal is not None or extension_seal != (
+                (),
+                (),
+                (),
+                "",
+                "",
+                "",
+            ):
+                raise CMEEVerticalError("stage1_trace_unit_seal_mismatch")
+        else:
+            seal = _stage1_v2_unit_seal(unit)
+            if extension_seal != (
+                seal.covered_duty_refs,
+                seal.sentence_job_refs,
+                seal.source_reception_act_refs,
+                seal.composition_candidate_ref,
+                seal.composition_layout_ref,
+                seal.selected_stage1_artifact_ref,
+            ):
+                raise CMEEVerticalError("stage1_trace_unit_seal_mismatch")
+
+    canonical_trace = _trace_for_lines(
+        source,
+        graph,
+        artifact.plan,
+        canonical_safe_lines,
+        artifact.common_guard_proof.proof_id,
+        projection,
+        units,
+    )
+    canonical_positive_extensions = tuple(
+        row.emlis_stage1_extension
+        for row in canonical_trace
+        if row.role in {"OBSERVATION", "RECEPTION"}
+    )
+    if tuple(
+        row.emlis_stage1_extension for row in positive_trace_rows
+    ) != canonical_positive_extensions:
+        raise CMEEVerticalError("stage1_positive_trace_canonical_mismatch")
 
     unknown_lines = tuple(
         line for line in safe_lines if line.binding.line_role == "cmee_unknown"
@@ -5846,16 +7138,24 @@ def validate_positive_realization_trace(
         raise CMEEVerticalError("artifact_identity_mismatch")
 
 
-def build_text_grounded_limited_artifact(
+def _build_text_grounded_limited_artifact_for_schema(
     source: AdmittedTextSource,
+    *,
+    stage1_response_schema_version: str,
+    stage1_compiler: Any,
 ) -> tuple[GroundedMeaningGraph, ExperiencePlan, GenerationArtifactBundle]:
+    _trace_schema_version, _owner_ref, realizer_contract_ids = (
+        _stage1_runtime_contract(stage1_response_schema_version)
+    )
+    if not callable(stage1_compiler):
+        raise CMEEVerticalError("stage1_compiler_invalid")
     resolver = build_evidence_span_resolver(
         source.evidence_spans,
         current_input=source.normalized_current_input,
     )
-    grounded_plan = build_grounded_observation_plan(
-        source.normalized_current_input,
-        evidence_spans=source.evidence_spans,
+    grounded_plan = _build_stage1_grounded_observation_plan_for_schema(
+        source,
+        schema_version=stage1_response_schema_version,
     )
     if grounded_plan.input_profile.material_quality in {"labels_only_limited", "empty"}:
         raise CMEEVerticalError("text_grounded_material_unavailable")
@@ -5870,6 +7170,7 @@ def build_text_grounded_limited_artifact(
             if str(source.normalized_current_input.get(field_path, "") or "").strip()
         ),
         grounded_plan,
+        stage1_response_schema_version=stage1_response_schema_version,
     )
 
     required_nucleus_ids, required_relation_ids, reception_target_ids = (
@@ -5900,6 +7201,8 @@ def build_text_grounded_limited_artifact(
         graph,
         plan,
         grounded_plan,
+        stage1_response_schema_version=stage1_response_schema_version,
+        stage1_compiler=stage1_compiler,
     )
     plan = _bind_plan_to_visible_lines(source, graph, plan, safe_lines)
     observation = "\n".join(
@@ -5955,8 +7258,10 @@ def build_text_grounded_limited_artifact(
                 stage1_projection
             ),
         ),
-        realizer_contract_ids=REALIZER_CONTRACT_IDS,
-        trust_policy_ids=TRUST_POLICY_IDS,
+        realizer_contract_ids=realizer_contract_ids,
+        trust_policy_ids=_stage1_trust_policy_ids(
+            stage1_response_schema_version
+        ),
         common_guard_proof=common_guard_proof,
         observation=observation,
         reception=reception,
@@ -5973,6 +7278,18 @@ def build_text_grounded_limited_artifact(
         selected_units=selected_units,
     )
     return graph, plan, artifact
+
+
+def build_text_grounded_limited_artifact(
+    source: AdmittedTextSource,
+) -> tuple[GroundedMeaningGraph, ExperiencePlan, GenerationArtifactBundle]:
+    """Build the active v1 artifact through the immutable public facade."""
+
+    return _build_text_grounded_limited_artifact_for_schema(
+        source,
+        stage1_response_schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1,
+        stage1_compiler=compile_stage1_response,
+    )
 
 
 __all__ = [
