@@ -16209,6 +16209,33 @@ class CMEERouteAV2I01DisabledRegistryContractsTest(unittest.TestCase):
 
 
 class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
+    _BASE_SURFACE_SKELETON_EXACT22 = (
+        "「〈X〉」という内容が中心になっています。",
+        "「〈X〉」という方向性が見えます。",
+        "「〈X〉」という負担が残っています。",
+        "「〈X〉」という変化が見られます。",
+        "「〈X〉」と「〈Y〉」が並んでいます。",
+        "「〈X〉」と「〈Y〉」がせめぎ合っています。",
+        "「〈X〉」のあとに「〈Y〉」が続いています。",
+        "「〈X〉」のあとに「〈Y〉」が起こっています。",
+        "「〈X〉」によって「〈Y〉」が生じています。",
+        "「〈X〉」という点があります。",
+        "Emlisは「〈X〉」を気にかけています。",
+        "Emlisは「〈X〉」という内容を受け止めたいです。",
+        "Emlisは「〈X〉」と「〈Y〉」を一つにまとめたくありません。",
+        "Emlisは「〈X〉」という変化を見届けたいです。",
+        "Emlisは今すぐ「〈X〉」と結論づけたくありません。",
+        "Emlisは「〈X〉」という選択を尊重したいです。",
+        "Emlisは「〈X〉」という内容を大切にしたいです。",
+        "Emlisは「〈X〉」を「〈Y〉」から守りたいです。",
+        "Emlisは「〈X〉」という選択を見守りたいです。",
+        "Emlisは「〈X〉」を「〈Y〉」に固定したくありません。",
+        "Emlisはここで「〈X〉」と断定したくありません。",
+        "Emlisは「〈X〉」を「〈Y〉」に限定したくありません。",
+    )
+    _BASE_SURFACE_SKELETON_SHA256 = (
+        "cba16357cec9cd37c8da16e9727aeea5a961c8e413c2f97469161c5a03a5f03b"
+    )
     _TERMINAL_BY_CLASS = {
         contracts_module.SourceFinalTerminalClass.ABSENT: "",
         contracts_module.SourceFinalTerminalClass.PERIOD: "。",
@@ -16275,6 +16302,15 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
             end = len(payload_utf8)
             evidence_range = (start, end)
             certified = ()
+        try:
+            payload_scalar_length = len(payload_utf8.decode("utf-8", "strict"))
+        except UnicodeDecodeError:
+            payload_scalar_length = 1
+        input_scalar_start = (
+            1
+            if extent is contracts_module.SourceLeafExtent.CERTIFIED_LITERAL_SUBSPAN
+            else 0
+        )
         derivation = SurfaceDerivation(
             derivation_kind=SurfaceDerivationKind.LITERAL_SUBSPAN,
             source_or_claim_refs=(semantic_ref,),
@@ -16286,7 +16322,10 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
             participant_role_ref=None,
             evidence_refs=(evidence_ref,),
             rule_ref="route-a-public-typed-source-fixture.v2",
-            input_scalar_ranges=((0, max(1, len(payload_utf8))),),
+            input_scalar_ranges=((
+                input_scalar_start,
+                input_scalar_start + max(1, payload_scalar_length),
+            ),),
         )
         leaf = contracts_module.SourceLeafToken(
             leaf_ref=f"source-leaf:{tag}",
@@ -16410,6 +16449,155 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
             for role in frame.slot_roles
         )
 
+    def _project_i03_clause(
+        self,
+        *,
+        frame: object,
+        group: object,
+        leaves: tuple[object, ...],
+        source_plan: object,
+    ) -> tuple[object, object, object, object, object, object]:
+        head = stage1_composition_module.select_atomic_predicate_head(frame)
+        source_rule = next(
+            row
+            for row in stage1_composition_module.V2_COMPLEMENT_RULE_REGISTRY
+            if row.complement_rule_id == source_plan.complement_rule_ref
+        )
+        source_slots = stage1_composition_module._v2_complement_case_slots(
+            source_rule,
+            frame,
+        )
+        semantic_by_slot: dict[str, str] = {}
+        if source_rule.complement_rule_id in {"C07", "C09"}:
+            semantic_by_slot.update(
+                (slot, leaf.semantic_ref)
+                for slot, leaf in zip(source_slots, leaves)
+            )
+        elif source_rule.complement_rule_id == "C08":
+            semantic_by_slot[source_slots[0]] = f"semantic-composite:{group.group_ref}"
+        else:
+            semantic_by_slot[source_slots[0]] = leaves[0].semantic_ref
+        if frame.zero_policy == "EMLIS_ZERO_CONDITIONAL":
+            semantic_by_slot["SUBJECT"] = stage1_composition_module.CMEE_STAGE1_EMLIS_OWNER_REF
+        slot_bindings = tuple(
+            (
+                stage1_composition_module.ClauseArgumentRole(role),
+                semantic_by_slot[role],
+                (f"provenance:{frame.frame_id}:{role}",),
+            )
+            for role in frame.slot_roles
+        )
+        argument_plans = stage1_composition_module.project_argument_realization_plan(
+            frame=frame,
+            slot_bindings=slot_bindings,
+        )
+        relation = stage1_composition_module._v2_relation_operator_for_frame(
+            frame.frame_id
+        )
+        if frame.zero_policy == "EMLIS_ZERO_CONDITIONAL":
+            reference_state = stage1_composition_module.project_reference_state(
+                state_ref=f"reference-state:{frame.frame_id}",
+                decision_kind=stage1_composition_module.ReferenceDecisionKind.EMLIS_SUBJECT,
+                referent_refs=(stage1_composition_module.CMEE_STAGE1_EMLIS_OWNER_REF,),
+                focus_ref=stage1_composition_module.CMEE_STAGE1_EMLIS_OWNER_REF,
+                speaker_ref=stage1_composition_module.CMEE_STAGE1_EMLIS_OWNER_REF,
+                first_or_restart=True,
+                introduced_topic=True,
+            )
+        elif relation is not RelationOperator.NO_RELATION_CLAIM:
+            reference_state = stage1_composition_module.project_reference_state(
+                state_ref=f"reference-state:{frame.frame_id}",
+                decision_kind=stage1_composition_module.ReferenceDecisionKind.REQUIRED_RELATION_ENDPOINT,
+                referent_refs=tuple(plan.semantic_ref for plan in argument_plans),
+            )
+        else:
+            reference_state = stage1_composition_module.project_reference_state(
+                state_ref=f"reference-state:{frame.frame_id}",
+                decision_kind=stage1_composition_module.ReferenceDecisionKind.REFERENT,
+                referent_refs=(argument_plans[0].semantic_ref,),
+                focus_ref=argument_plans[0].semantic_ref,
+            )
+        link_plan = stage1_composition_module.project_clause_link_plan(
+            link_plan_ref=f"link-plan:{frame.frame_id}",
+            admitted_relation_ref=f"relation:{relation.value}",
+            admitted_relation=relation,
+            placement=(
+                stage1_composition_module.ClauseLinkPlacement.FRAME_INTERNAL
+                if relation is not RelationOperator.NO_RELATION_CLAIM
+                else stage1_composition_module.ClauseLinkPlacement.ZERO
+            ),
+            frame=frame,
+        )
+        morphology_plan = stage1_composition_module.project_predicate_morphology_plan(
+            frame=frame,
+            head=head,
+        )
+        clause_ir = stage1_composition_module.build_japanese_clause_ir(
+            frame=frame,
+            head=head,
+            argument_plans=argument_plans,
+            source_complement_plan=source_plan,
+            reference_state=reference_state,
+            link_plan=link_plan,
+            morphology_plan=morphology_plan,
+        )
+        clause = stage1_composition_module.linearize_japanese_clause(
+            clause_ir=clause_ir,
+            frame=frame,
+            head=head,
+            group=group,
+            source_leaves=leaves,
+            source_complement_plan=source_plan,
+            reference_state=reference_state,
+            link_plan=link_plan,
+            morphology_plan=morphology_plan,
+        )
+        return (
+            head,
+            argument_plans,
+            reference_state,
+            link_plan,
+            morphology_plan,
+            clause,
+        )
+
+    def _linearized_skeleton_clause(self, frame_id: str) -> object:
+        frame = self._frame(frame_id)
+        source_rule = next(
+            row
+            for row in stage1_composition_module.V2_COMPLEMENT_RULE_REGISTRY
+            if row.complement_rule_id == frame.complement_rule_ref
+        )
+        payloads = (
+            ("〈X〉",)
+            if source_rule.cardinality
+            is contracts_module.SourceLeafCardinality.EXACT1
+            else ("〈X〉", "〈Y〉")
+        )
+        fixtures = tuple(
+            self._source_leaf_fixture(
+                tag=f"skeleton-{frame_id}-{index}",
+                payload_utf8=payload.encode("utf-8"),
+            )
+            for index, payload in enumerate(payloads, start=1)
+        )
+        group, leaves = self._project_group(
+            tag=f"skeleton-{frame_id}",
+            fixtures=fixtures,
+            cardinality=source_rule.cardinality,
+        )
+        source_plan = stage1_composition_module.select_source_complement_plan(
+            group=group,
+            source_leaves=leaves,
+            frame=frame,
+        )
+        return self._project_i03_clause(
+            frame=frame,
+            group=group,
+            leaves=leaves,
+            source_plan=source_plan,
+        )[-1]
+
     def test_route_a_illegal_morphosyntactic_join_stops_before_rank(self) -> None:
         frame = self._frame("F18")
         incomplete = self._slot_bindings(frame)[:-1]
@@ -16417,7 +16605,12 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
             stage1_composition_module,
             "derive_discourse_preference_profile",
         )
-        with rank_spy as mocked_rank:
+        linearizer_spy = patch.object(
+            stage1_composition_module,
+            "linearize_japanese_clause",
+            wraps=stage1_composition_module.linearize_japanese_clause,
+        )
+        with rank_spy as mocked_rank, linearizer_spy as mocked_linearizer:
             with self.assertRaisesRegex(
                 stage1_composition_module.Stage1CompositionError,
                 "STAGE1_REQUIRED_ARGUMENT_SLOT_NONUNIQUE_STOP",
@@ -16462,7 +16655,61 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
                     frame=self._frame("F01"),
                     slot_bindings=self._slot_bindings(self._frame("F01")),
                 )
+            with self.assertRaisesRegex(
+                stage1_composition_module.Stage1CompositionError,
+                "STAGE1_REFERENCE_STATE_NONUNIQUE_STOP",
+            ):
+                stage1_composition_module.project_reference_state(
+                    state_ref="reference-state:invalid",
+                    decision_kind=stage1_composition_module.ReferenceDecisionKind.EMLIS_SUBJECT,
+                    referent_refs=(stage1_composition_module.CMEE_STAGE1_EMLIS_OWNER_REF,),
+                    speaker_ref=stage1_composition_module.CMEE_STAGE1_EMLIS_OWNER_REF,
+                )
+            with self.assertRaisesRegex(
+                stage1_composition_module.Stage1CompositionError,
+                "STAGE1_CLAUSE_LINK_NONUNIQUE_STOP",
+            ):
+                stage1_composition_module.project_clause_link_plan(
+                    link_plan_ref="link-plan:invalid-first",
+                    admitted_relation_ref="relation:temporal",
+                    admitted_relation=RelationOperator.TEMPORALLY_PRECEDES,
+                    placement=stage1_composition_module.ClauseLinkPlacement.SENTENCE_INITIAL,
+                    frame=self._frame("F01"),
+                    is_first_sentence=True,
+                )
+            morphology_frame = self._frame("F01")
+            morphology_head = stage1_composition_module.select_atomic_predicate_head(
+                morphology_frame
+            )
+            duplicate_morphology = next(
+                row
+                for row in stage1_composition_module.V2_MATRIX_MORPHOLOGY_PARADIGM_REGISTRY
+                if row.frame_ref == morphology_frame.frame_id
+            )
+            with (
+                patch.object(
+                    stage1_composition_module,
+                    "V2_MATRIX_MORPHOLOGY_PARADIGM_REGISTRY",
+                    (
+                        *stage1_composition_module.V2_MATRIX_MORPHOLOGY_PARADIGM_REGISTRY,
+                        duplicate_morphology,
+                    ),
+                ),
+                patch.object(
+                    stage1_composition_module,
+                    "validate_v2_grammar_inventory",
+                ),
+                self.assertRaisesRegex(
+                    stage1_composition_module.Stage1CompositionError,
+                    "STAGE1_MATRIX_MORPHOLOGY_NONUNIQUE_STOP",
+                ),
+            ):
+                stage1_composition_module.project_predicate_morphology_plan(
+                    frame=morphology_frame,
+                    head=morphology_head,
+                )
             mocked_rank.assert_not_called()
+            mocked_linearizer.assert_not_called()
 
     def test_route_a_shape_preserving_source_mutations_preserve_functional_scaffold(self) -> None:
         frame = self._frame("F02")
@@ -16486,18 +16733,26 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
             for index, variant in enumerate(("甲", "乙"), start=1)
         )
         plans = []
+        linearized = []
         for index, fixture in enumerate(fixtures, start=1):
             group, leaves = self._project_group(
                 tag=f"shape-{index}",
                 fixtures=(fixture,),
                 cardinality=contracts_module.SourceLeafCardinality.EXACT1,
             )
-            plans.append(
-                stage1_composition_module.select_source_complement_plan(
-                    group=group,
-                    source_leaves=leaves,
+            plan = stage1_composition_module.select_source_complement_plan(
+                group=group,
+                source_leaves=leaves,
+                frame=selected_frame,
+            )
+            plans.append(plan)
+            linearized.append(
+                self._project_i03_clause(
                     frame=selected_frame,
-                )
+                    group=group,
+                    leaves=leaves,
+                    source_plan=plan,
+                )[-1]
             )
         self.assertNotEqual(fixtures[0][0].payload_utf8, fixtures[1][0].payload_utf8)
         self.assertEqual(selected_frame.frame_id, "F02")
@@ -16526,9 +16781,48 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
             )
             * 2,
         )
+        self.assertNotEqual(linearized[0].text, linearized[1].text)
+        self.assertEqual(
+            linearized[0].text.replace("甲", "PLACEHOLDER"),
+            linearized[1].text.replace("乙", "PLACEHOLDER"),
+        )
+        self.assertEqual(
+            tuple(
+                binding.clause_slot
+                for binding in linearized[0].realized_semantic_bindings
+                if binding.semantic_ref.startswith(("SF", "CL", "P"))
+            ),
+            tuple(
+                binding.clause_slot
+                for binding in linearized[1].realized_semantic_bindings
+                if binding.semantic_ref.startswith(("SF", "CL", "P"))
+            ),
+        )
 
     def test_route_a_semantic_role_mutations_change_only_licensed_grammar_slots(self) -> None:
         stage1_composition_module.validate_v2_grammar_inventory()
+        self.assertEqual(
+            len(stage1_composition_module.V2_MUTATION_CASE_REGISTRY),
+            stage1_composition_module.V2_MUTATION_CASE_COUNT,
+        )
+        self.assertEqual(stage1_composition_module.V2_MUTATION_CASE_COUNT, 273)
+        self.assertEqual(
+            Counter(
+                row[1]
+                for row in stage1_composition_module.V2_MUTATION_CASE_REGISTRY
+            ),
+            Counter(
+                {
+                    "PARTICLE_DROP": 59,
+                    "PARTICLE_DUPLICATE": 59,
+                    "PARTICLE_WRONG_SWAP": 59,
+                    "REQUIRED_SLOT_DROP": 42,
+                    "COMPLEMENT_SWAP": 22,
+                    "FINITE_TO_CONTINUATIVE": 22,
+                    "ILLEGAL_CONNECTIVE": 10,
+                }
+            ),
+        )
         wrong_particle = {
             "が": "を",
             "は": "を",
@@ -16540,10 +16834,17 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
             "に": "から",
         }
         mutation_count = 0
-        with patch.object(
-            stage1_composition_module,
-            "derive_discourse_preference_profile",
-        ) as mocked_rank:
+        with (
+            patch.object(
+                stage1_composition_module,
+                "derive_discourse_preference_profile",
+            ) as mocked_rank,
+            patch.object(
+                stage1_composition_module,
+                "linearize_japanese_clause",
+                wraps=stage1_composition_module.linearize_japanese_clause,
+            ) as mocked_linearizer,
+        ):
             for rule_index, rule in enumerate(
                 stage1_composition_module.V2_CASE_PARTICLE_REGISTRY
             ):
@@ -16633,9 +16934,70 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
                 ):
                     stage1_composition_module.validate_v2_grammar_inventory()
                 mutation_count += 1
+            continuative_target = dict(
+                stage1_composition_module.V2_CONTINUATIVE_WRONG_TARGET
+            )
+            for morphology_index, morphology in enumerate(
+                stage1_composition_module.V2_MATRIX_MORPHOLOGY_PARADIGM_REGISTRY
+            ):
+                registry = list(
+                    stage1_composition_module.V2_MATRIX_MORPHOLOGY_PARADIGM_REGISTRY
+                )
+                registry[morphology_index] = replace(
+                    morphology,
+                    inflection_recipe=continuative_target[
+                        morphology.inflection_recipe
+                    ],
+                    politeness="NONFINITE",
+                    terminal_class="NONE",
+                )
+                with (
+                    patch.object(
+                        stage1_composition_module,
+                        "V2_MATRIX_MORPHOLOGY_PARADIGM_REGISTRY",
+                        tuple(registry),
+                    ),
+                    self.assertRaisesRegex(
+                        stage1_composition_module.Stage1CompositionError,
+                        "GRAMMAR_INVENTORY_TYPED_PROJECTION_DRIFT_STOP",
+                    ),
+                ):
+                    stage1_composition_module.validate_v2_grammar_inventory()
+                mutation_count += 1
+            link_target = dict(stage1_composition_module.V2_LINK_WRONG_TARGET)
+            link_by_ref = {
+                row.link_rule_id: row
+                for row in stage1_composition_module.V2_CLAUSE_LINK_REGISTRY
+            }
+            for link_index, link in enumerate(
+                stage1_composition_module.V2_CLAUSE_LINK_REGISTRY
+            ):
+                wrong = link_by_ref[link_target[link.link_rule_id]]
+                registry = list(stage1_composition_module.V2_CLAUSE_LINK_REGISTRY)
+                registry[link_index] = replace(
+                    link,
+                    relation_kind=wrong.relation_kind,
+                    placement=wrong.placement,
+                    token_ref=wrong.token_ref,
+                    internal_relation_policy=wrong.internal_relation_policy,
+                )
+                with (
+                    patch.object(
+                        stage1_composition_module,
+                        "V2_CLAUSE_LINK_REGISTRY",
+                        tuple(registry),
+                    ),
+                    self.assertRaisesRegex(
+                        stage1_composition_module.Stage1CompositionError,
+                        "GRAMMAR_INVENTORY_TYPED_PROJECTION_DRIFT_STOP",
+                    ),
+                ):
+                    stage1_composition_module.validate_v2_grammar_inventory()
+                mutation_count += 1
             mocked_rank.assert_not_called()
-        self.assertEqual(mutation_count, 59 * 3 + 42 + 22)
-        self.assertEqual(mutation_count, 241)
+            mocked_linearizer.assert_not_called()
+        self.assertEqual(mutation_count, 59 * 3 + 42 + 22 + 22 + 10)
+        self.assertEqual(mutation_count, 273)
 
     def test_route_a_source_leaf_modes_preserve_bytes_and_ownership(self) -> None:
         self.assertEqual(
@@ -16738,6 +17100,36 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
             self.assertEqual(
                 tuple(leaf.payload_utf8 for leaf in leaves),
                 tuple(fixture[0].payload_utf8 for fixture in fixtures),
+            )
+            clause = self._project_i03_clause(
+                frame=self._frame(frame_id),
+                group=group,
+                leaves=leaves,
+                source_plan=plan,
+            )[-1]
+            for leaf in leaves:
+                self.assertIn(
+                    leaf.payload_utf8.decode("utf-8", "strict"),
+                    clause.text,
+                )
+            self.assertTrue(clause.text.endswith("。"))
+            self.assertEqual(
+                clause.realized_semantic_bindings[-1].semantic_ref,
+                "MATRIX_TERMINAL_PERIOD",
+            )
+            self.assertEqual(
+                clause.realized_semantic_bindings[-1].surface_scalar_end,
+                len(clause.text),
+            )
+            self.assertEqual(
+                len(
+                    tuple(
+                        binding
+                        for binding in clause.realized_semantic_bindings
+                        if binding.semantic_ref.endswith((":OPEN", ":CLOSE"))
+                    )
+                ),
+                len(leaves) * 2,
             )
             actual_modes.append(plan.mode)
         self.assertEqual(set(actual_modes), set(contracts_module.SourceRealizationMode))
@@ -16877,6 +17269,325 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
             42,
         )
 
+        skeleton_clauses = tuple(
+            self._linearized_skeleton_clause(f"F{index:02d}")
+            for index in range(1, 23)
+        )
+        skeleton = tuple(clause.text for clause in skeleton_clauses)
+        self.assertEqual(skeleton, self._BASE_SURFACE_SKELETON_EXACT22)
+        skeleton_payload = "".join(
+            f"SURFACE_SKELETON|F{index:02d}|{surface}\n"
+            for index, surface in enumerate(skeleton, start=1)
+        ).encode("utf-8")
+        self.assertEqual(
+            hashlib.sha256(skeleton_payload).hexdigest(),
+            self._BASE_SURFACE_SKELETON_SHA256,
+        )
+        for clause in skeleton_clauses:
+            self.assertEqual(len(clause.clause_frames), 1)
+            self.assertEqual(
+                len(clause.realized_semantic_bindings),
+                len(clause.surface_derivations),
+            )
+            self.assertEqual(
+                tuple(
+                    (
+                        binding.surface_scalar_start,
+                        binding.surface_scalar_end,
+                    )
+                    for binding in clause.realized_semantic_bindings
+                ),
+                tuple(
+                    (
+                        0
+                        if index == 0
+                        else clause.realized_semantic_bindings[index - 1].surface_scalar_end,
+                        binding.surface_scalar_end,
+                    )
+                    for index, binding in enumerate(
+                        clause.realized_semantic_bindings
+                    )
+                ),
+            )
+            self.assertEqual(
+                clause.realized_semantic_bindings[-1].surface_scalar_end,
+                len(clause.text),
+            )
+            self.assertEqual(
+                clause.realized_semantic_bindings[-1].semantic_ref,
+                "MATRIX_TERMINAL_PERIOD",
+            )
+
+        reference_states = (
+            stage1_composition_module.project_reference_state(
+                state_ref="reference:R01",
+                decision_kind=stage1_composition_module.ReferenceDecisionKind.REFERENT,
+                referent_refs=("referent:a",),
+            ),
+            stage1_composition_module.project_reference_state(
+                state_ref="reference:R02",
+                decision_kind=stage1_composition_module.ReferenceDecisionKind.REFERENT,
+                referent_refs=("referent:a",),
+                antecedent_refs=("referent:a",),
+                competitor_refs=("referent:b",),
+            ),
+            stage1_composition_module.project_reference_state(
+                state_ref="reference:R03",
+                decision_kind=stage1_composition_module.ReferenceDecisionKind.REFERENT,
+                referent_refs=("referent:a",),
+                antecedent_refs=("referent:a",),
+                focus_ref="referent:a",
+            ),
+            stage1_composition_module.project_reference_state(
+                state_ref="reference:R04",
+                decision_kind=stage1_composition_module.ReferenceDecisionKind.REFERENT,
+                referent_refs=("referent:a", "referent:b"),
+                antecedent_refs=("referent:a", "referent:b"),
+                previous_ordered_pair_refs=("referent:a", "referent:b"),
+            ),
+            stage1_composition_module.project_reference_state(
+                state_ref="reference:R05-R08",
+                decision_kind=stage1_composition_module.ReferenceDecisionKind.EMLIS_SUBJECT,
+                referent_refs=(stage1_composition_module.CMEE_STAGE1_EMLIS_OWNER_REF,),
+                focus_ref=stage1_composition_module.CMEE_STAGE1_EMLIS_OWNER_REF,
+                speaker_ref=stage1_composition_module.CMEE_STAGE1_EMLIS_OWNER_REF,
+                first_or_restart=True,
+                introduced_topic=True,
+            ),
+            stage1_composition_module.project_reference_state(
+                state_ref="reference:R06-R10",
+                decision_kind=stage1_composition_module.ReferenceDecisionKind.EMLIS_SUBJECT,
+                referent_refs=(stage1_composition_module.CMEE_STAGE1_EMLIS_OWNER_REF,),
+                speaker_ref=stage1_composition_module.CMEE_STAGE1_EMLIS_OWNER_REF,
+                same_speaker_chain=True,
+            ),
+            stage1_composition_module.project_reference_state(
+                state_ref="reference:R07-R09",
+                decision_kind=stage1_composition_module.ReferenceDecisionKind.EMLIS_SUBJECT,
+                referent_refs=(stage1_composition_module.CMEE_STAGE1_EMLIS_OWNER_REF,),
+                speaker_ref=stage1_composition_module.CMEE_STAGE1_EMLIS_OWNER_REF,
+                after_counterposition=True,
+                admitted_contrast=True,
+            ),
+            stage1_composition_module.project_reference_state(
+                state_ref="reference:R11",
+                decision_kind=stage1_composition_module.ReferenceDecisionKind.REQUIRED_RELATION_ENDPOINT,
+                referent_refs=("referent:a", "referent:b"),
+            ),
+            stage1_composition_module.project_reference_state(
+                state_ref="reference:R12",
+                decision_kind=stage1_composition_module.ReferenceDecisionKind.REFERENT,
+                referent_refs=("referent:a",),
+                antecedent_refs=("referent:a",),
+                competitor_refs=("referent:b",),
+                reference_repair=True,
+            ),
+        )
+        self.assertEqual(
+            {
+                proof.removeprefix("reference-rule:")
+                for state in reference_states
+                for proof in state.establishment_proof_refs
+                if proof.startswith("reference-rule:")
+            },
+            {f"R{index:02d}" for index in range(1, 13)},
+        )
+
+        link_plans = [
+            stage1_composition_module.project_clause_link_plan(
+                link_plan_ref=f"link:internal:F{index:02d}",
+                admitted_relation_ref=f"relation:F{index:02d}",
+                admitted_relation=stage1_composition_module._v2_relation_operator_for_frame(
+                    f"F{index:02d}"
+                ),
+                placement=stage1_composition_module.ClauseLinkPlacement.FRAME_INTERNAL,
+                frame=self._frame(f"F{index:02d}"),
+            )
+            for index in range(5, 10)
+        ]
+        for relation in (
+            RelationOperator.TEMPORALLY_PRECEDES,
+            RelationOperator.ACTION_PRECEDES_CHANGE,
+            RelationOperator.SOURCE_EXPLICIT_CAUSE,
+        ):
+            link_plans.append(
+                stage1_composition_module.project_clause_link_plan(
+                    link_plan_ref=f"link:external:{relation.value}",
+                    admitted_relation_ref=f"relation:{relation.value}",
+                    admitted_relation=relation,
+                    placement=stage1_composition_module.ClauseLinkPlacement.SENTENCE_INITIAL,
+                    frame=self._frame("F01"),
+                )
+            )
+        link_plans.extend(
+            (
+                stage1_composition_module.project_clause_link_plan(
+                    link_plan_ref="link:additive",
+                    admitted_relation_ref="relation:none-additive",
+                    admitted_relation=RelationOperator.NO_RELATION_CLAIM,
+                    placement=stage1_composition_module.ClauseLinkPlacement.SENTENCE_INITIAL_ADDITIVE,
+                    frame=self._frame("F01"),
+                    independent_topic=True,
+                ),
+                stage1_composition_module.project_clause_link_plan(
+                    link_plan_ref="link:zero",
+                    admitted_relation_ref="relation:none",
+                    admitted_relation=RelationOperator.NO_RELATION_CLAIM,
+                    placement=stage1_composition_module.ClauseLinkPlacement.ZERO,
+                    frame=self._frame("F01"),
+                ),
+            )
+        )
+        self.assertEqual(
+            {
+                next(
+                    row.link_rule_id
+                    for row in stage1_composition_module.V2_CLAUSE_LINK_REGISTRY
+                    if row.placement == plan.placement
+                    and row.token_ref == plan.token_owner_ref
+                )
+                for plan in link_plans
+            },
+            {f"L{index:02d}" for index in range(1, 11)},
+        )
+
+        external_frame = self._frame("F01")
+        external_fixture = self._source_leaf_fixture(
+            tag="external-link-linearization",
+            payload_utf8="〈X〉".encode("utf-8"),
+        )
+        external_group, external_leaves = self._project_group(
+            tag="external-link-linearization",
+            fixtures=(external_fixture,),
+            cardinality=contracts_module.SourceLeafCardinality.EXACT1,
+        )
+        external_source_plan = stage1_composition_module.select_source_complement_plan(
+            group=external_group,
+            source_leaves=external_leaves,
+            frame=external_frame,
+        )
+        (
+            external_head,
+            external_arguments,
+            external_reference,
+            _external_zero_link,
+            external_morphology,
+            _external_baseline_clause,
+        ) = self._project_i03_clause(
+            frame=external_frame,
+            group=external_group,
+            leaves=external_leaves,
+            source_plan=external_source_plan,
+        )
+        for plan in link_plans[5:9]:
+            clause_ir = stage1_composition_module.build_japanese_clause_ir(
+                frame=external_frame,
+                head=external_head,
+                argument_plans=external_arguments,
+                source_complement_plan=external_source_plan,
+                reference_state=external_reference,
+                link_plan=plan,
+                morphology_plan=external_morphology,
+            )
+            clause = stage1_composition_module.linearize_japanese_clause(
+                clause_ir=clause_ir,
+                frame=external_frame,
+                head=external_head,
+                group=external_group,
+                source_leaves=external_leaves,
+                source_complement_plan=external_source_plan,
+                reference_state=external_reference,
+                link_plan=plan,
+                morphology_plan=external_morphology,
+            )
+            self.assertTrue(
+                clause.text.startswith(
+                    plan.token_owner_ref.removeprefix("registered:") + "、"
+                )
+            )
+
+        zero_frame = self._frame("F11")
+        zero_fixture = self._source_leaf_fixture(
+            tag="zero-emlis-subject",
+            payload_utf8="〈X〉".encode("utf-8"),
+        )
+        zero_group, zero_leaves = self._project_group(
+            tag="zero-emlis-subject",
+            fixtures=(zero_fixture,),
+            cardinality=contracts_module.SourceLeafCardinality.EXACT1,
+        )
+        zero_source_plan = stage1_composition_module.select_source_complement_plan(
+            group=zero_group,
+            source_leaves=zero_leaves,
+            frame=zero_frame,
+        )
+        (
+            zero_head,
+            zero_arguments,
+            _explicit_reference,
+            zero_link,
+            zero_morphology,
+            _explicit_clause,
+        ) = self._project_i03_clause(
+            frame=zero_frame,
+            group=zero_group,
+            leaves=zero_leaves,
+            source_plan=zero_source_plan,
+        )
+        zero_reference = stage1_composition_module.project_reference_state(
+            state_ref="reference-state:F11:zero",
+            decision_kind=stage1_composition_module.ReferenceDecisionKind.EMLIS_SUBJECT,
+            referent_refs=(stage1_composition_module.CMEE_STAGE1_EMLIS_OWNER_REF,),
+            speaker_ref=stage1_composition_module.CMEE_STAGE1_EMLIS_OWNER_REF,
+            same_speaker_chain=True,
+        )
+        zero_ir = stage1_composition_module.build_japanese_clause_ir(
+            frame=zero_frame,
+            head=zero_head,
+            argument_plans=zero_arguments,
+            source_complement_plan=zero_source_plan,
+            reference_state=zero_reference,
+            link_plan=zero_link,
+            morphology_plan=zero_morphology,
+        )
+        zero_clause = stage1_composition_module.linearize_japanese_clause(
+            clause_ir=zero_ir,
+            frame=zero_frame,
+            head=zero_head,
+            group=zero_group,
+            source_leaves=zero_leaves,
+            source_complement_plan=zero_source_plan,
+            reference_state=zero_reference,
+            link_plan=zero_link,
+            morphology_plan=zero_morphology,
+        )
+        self.assertNotIn("Emlis", zero_clause.text)
+        self.assertTrue(zero_clause.text.startswith("「〈X〉」を"))
+
+        derivation_rules = {
+            **{
+                (kind, None): (
+                    f"rule:{kind.value.lower().replace('_', '-')}"
+                    "@cocolon.cmee.surface.v2",
+                )
+                for kind in SurfaceDerivationKind
+                if kind is not SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT
+            },
+            **{
+                (SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT, mode): (
+                    f"rule:projected-response-object-{mode.lower()}"
+                    "@cocolon.cmee.surface.v2",
+                )
+                for mode in ("EXPLICIT", "COMPOSITE", "ANAPHORIC")
+            },
+        }
+        for clause in (*skeleton_clauses, zero_clause):
+            for derivation in clause.surface_derivations:
+                validate_surface_derivation(
+                    derivation,
+                    registered_rule_refs_by_kind=derivation_rules,
+                )
+
         key_fields = tuple(
             field.name
             for field in fields(stage1_composition_module.JapaneseCaseFrameKey)
@@ -16944,6 +17655,11 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
                 "select_case_frame",
                 "select_atomic_predicate_head",
                 "project_argument_realization_plan",
+                "project_reference_state",
+                "project_clause_link_plan",
+                "project_predicate_morphology_plan",
+                "build_japanese_clause_ir",
+                "linearize_japanese_clause",
             }.issubset(owner_roots)
         )
 
