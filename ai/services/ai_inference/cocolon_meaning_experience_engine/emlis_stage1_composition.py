@@ -22,6 +22,7 @@ from .contracts import (
     AppraisalDimension,
     AppraisalOperation,
     ArgumentBinding,
+    ArgumentRealizationPlan,
     ArgumentRole,
     AtomicPredicateHeadSpec,
     CaseParticleRule,
@@ -69,9 +70,12 @@ from .contracts import (
     SourceFinalTerminalClass,
     SourceFunctionalModifierSpec,
     SourceFunctionalTokenSpec,
+    SourceLeafGroup,
     SourceLeafCardinality,
     SourceLeafExtent,
+    SourceLeafToken,
     SourceLineBreakShape,
+    SourceComplementPlan,
     SourceQualifierBinding,
     SourceQuoteDelimiterRule,
     SourceQuoteTopology,
@@ -86,6 +90,7 @@ from .contracts import (
     SubjectiveOperator,
     SubjectivePropositionV2,
     SurfaceDerivation,
+    SurfaceDerivationKind,
     ValueApplication,
     _stage1_material_visible_value_refs,
     project_stage1_policy_basis_binding_ref,
@@ -582,6 +587,70 @@ V2_JAPANESE_LOCAL_PREFERENCE_REGISTRY = tuple(
     for row in _v2_inventory_rows("PREFERENCE")
 )
 
+# The source boundary is a closed public-typed verification table.  Payload
+# bytes are never stored here: the table enumerates only the shape predicate,
+# group cardinality, mode/cardinality compatibility, and delimiter ownership.
+V2_SOURCE_PRIMITIVE_BOUNDARY_ROWS = tuple(
+    (
+        extent,
+        sentence_shape,
+        terminal_class,
+        quote_topology,
+        line_break_shape,
+    )
+    for extent in SourceLeafExtent
+    for sentence_shape in SourceSentenceShape
+    for terminal_class in SourceFinalTerminalClass
+    for quote_topology in SourceQuoteTopology
+    for line_break_shape in SourceLineBreakShape
+)
+V2_SOURCE_GROUP_CARDINALITY_ROWS = tuple(SourceLeafCardinality)
+V2_SOURCE_MODE_CARDINALITY_ROWS = tuple(
+    (
+        mode,
+        cardinality,
+        (
+            cardinality is SourceLeafCardinality.EXACT1
+            if mode
+            in {
+                SourceRealizationMode.QUOTE_COMPLEMENT,
+                SourceRealizationMode.CONTENT_NOMINAL,
+                SourceRealizationMode.CLASSIFIED_CONTENT,
+            }
+            else cardinality is SourceLeafCardinality.ORDERED_EXACT2
+        ),
+    )
+    for mode in SourceRealizationMode
+    for cardinality in SourceLeafCardinality
+)
+V2_SOURCE_QUOTE_DELIMITER_BOUNDARY_ROWS = tuple(
+    (
+        row.source_quote_topology,
+        row.delimiter_rule_id,
+        row.outer_delimiter_kind,
+    )
+    for row in V2_SOURCE_QUOTE_DELIMITER_REGISTRY
+)
+V2_SOURCE_BOUNDARY_ROWS = (
+    *(
+        ("PRIMITIVE", *row)
+        for row in V2_SOURCE_PRIMITIVE_BOUNDARY_ROWS
+    ),
+    *(
+        ("GROUP_CARDINALITY", row)
+        for row in V2_SOURCE_GROUP_CARDINALITY_ROWS
+    ),
+    *(
+        ("MODE_CARDINALITY", *row)
+        for row in V2_SOURCE_MODE_CARDINALITY_ROWS
+    ),
+    *(
+        ("QUOTE_DELIMITER", *row)
+        for row in V2_SOURCE_QUOTE_DELIMITER_BOUNDARY_ROWS
+    ),
+)
+V2_SOURCE_BOUNDARY_ROW_COUNT = 208
+
 
 def _v2_typed_inventory_rows() -> Tuple[Tuple[str, ...], ...]:
     """Reverse-project every typed row to the canonical literal field order."""
@@ -1021,6 +1090,43 @@ def validate_v2_grammar_inventory() -> None:
     ):
         raise Stage1CompositionError("GRAMMAR_INVENTORY_ORPHAN_STOP")
 
+    expected_mode_cardinality = {
+        SourceRealizationMode.QUOTE_COMPLEMENT:
+            SourceLeafCardinality.EXACT1,
+        SourceRealizationMode.CONTENT_NOMINAL:
+            SourceLeafCardinality.EXACT1,
+        SourceRealizationMode.CLASSIFIED_CONTENT:
+            SourceLeafCardinality.EXACT1,
+        SourceRealizationMode.COORDINATED_EXACT2:
+            SourceLeafCardinality.ORDERED_EXACT2,
+        SourceRealizationMode.BOUNDARY_SPLIT_EXACT2:
+            SourceLeafCardinality.ORDERED_EXACT2,
+    }
+    if (
+        len(V2_SOURCE_PRIMITIVE_BOUNDARY_ROWS) != 192
+        or len(set(V2_SOURCE_PRIMITIVE_BOUNDARY_ROWS)) != 192
+        or V2_SOURCE_GROUP_CARDINALITY_ROWS != tuple(SourceLeafCardinality)
+        or len(V2_SOURCE_MODE_CARDINALITY_ROWS) != 10
+        or len(set(V2_SOURCE_MODE_CARDINALITY_ROWS)) != 10
+        or any(
+            licensed
+            is not (expected_mode_cardinality[mode] is cardinality)
+            for mode, cardinality, licensed in V2_SOURCE_MODE_CARDINALITY_ROWS
+        )
+        or V2_SOURCE_QUOTE_DELIMITER_BOUNDARY_ROWS
+        != tuple(
+            (
+                row.source_quote_topology,
+                row.delimiter_rule_id,
+                row.outer_delimiter_kind,
+            )
+            for row in V2_SOURCE_QUOTE_DELIMITER_REGISTRY
+        )
+        or len(V2_SOURCE_BOUNDARY_ROWS) != V2_SOURCE_BOUNDARY_ROW_COUNT
+        or V2_SOURCE_BOUNDARY_ROW_COUNT != 208
+    ):
+        raise Stage1CompositionError("GRAMMAR_INVENTORY_SOURCE_BOUNDARY_STOP")
+
     registry_field_names = tuple(
         field.name
         for registry_type in _V2_REGISTRY_TYPES
@@ -1129,6 +1235,26 @@ class SpeakerRequirement(str, Enum):
     GROUNDED_NARRATION = "GROUNDED_NARRATION"
     EMLIS_EXPLICIT_REQUIRED = "EMLIS_EXPLICIT_REQUIRED"
     EMLIS_ZERO_ALLOWED = "EMLIS_ZERO_ALLOWED"
+
+
+@dataclass(frozen=True, slots=True)
+class JapaneseCaseFrameKey:
+    """Typed semantic key for the disabled Route-A v2 frame selector."""
+
+    sentence_job: SentenceJob
+    semantic_clause_kind: SemanticClauseKind
+    subjective_content_kind: Optional[SubjectiveContentKind]
+    subjective_predication_kind: Optional[SubjectivePredicationKind]
+    subjective_semantic_sense: Optional[str]
+    grounded_predicate_kind: Optional[str]
+    required_argument_roles: Tuple[ClauseArgumentRole, ...]
+    admitted_relation_operator: RelationOperator
+    polarity: str
+    modality: str
+    time_scope: str
+    speaker_requirement: SpeakerRequirement
+    zero_subject_eligibility: str
+    complement_requirement: str
 
 
 class ScalarSurfaceRealizationMode(str, Enum):
@@ -1650,6 +1776,793 @@ def _ref(prefix: str, value: Any) -> str:
 
 def _unique(values: Iterable[str]) -> Tuple[str, ...]:
     return tuple(dict.fromkeys(values))
+
+
+_V2_SOURCE_TERMINAL_CLASS_BY_CODEPOINT = (
+    ("。", SourceFinalTerminalClass.PERIOD),
+    ("．", SourceFinalTerminalClass.PERIOD),
+    (".", SourceFinalTerminalClass.PERIOD),
+    ("!", SourceFinalTerminalClass.EXCLAMATION),
+    ("！", SourceFinalTerminalClass.EXCLAMATION),
+    ("?", SourceFinalTerminalClass.QUESTION),
+    ("？", SourceFinalTerminalClass.QUESTION),
+)
+_V2_RELATION_OPERATOR_BY_FRAME_REF = (
+    ("F05", RelationOperator.COEXISTS_WITH),
+    ("F06", RelationOperator.TENSION_WITH),
+    ("F07", RelationOperator.TEMPORALLY_PRECEDES),
+    ("F08", RelationOperator.ACTION_PRECEDES_CHANGE),
+    ("F09", RelationOperator.SOURCE_EXPLICIT_CAUSE),
+)
+_V2_SUBJECTIVE_KIND_BY_SENSE_REF = (
+    (
+        "S09",
+        SubjectiveContentKind.AFFECT,
+        SubjectivePredicationKind.AFFECT,
+    ),
+    *(
+        (
+            f"S{index:02d}",
+            SubjectiveContentKind.APPRAISAL,
+            SubjectivePredicationKind.APPRAISAL,
+        )
+        for index in range(10, 15)
+    ),
+    (
+        "S15",
+        SubjectiveContentKind.MATERIAL_VALUE,
+        SubjectivePredicationKind.MATERIAL_VALUE,
+    ),
+    (
+        "S16",
+        SubjectiveContentKind.RELATIONAL_POSITION,
+        SubjectivePredicationKind.RELATIONAL_STANCE,
+    ),
+    (
+        "S17",
+        SubjectiveContentKind.RELATIONAL_POSITION,
+        SubjectivePredicationKind.BOUNDED_COUNTERPOSITION,
+    ),
+)
+
+
+def _v2_exact1(rows: Sequence[Any], stop: str) -> Any:
+    result = tuple(rows)
+    if len(result) != 1:
+        raise Stage1CompositionError(stop)
+    return result[0]
+
+
+def _v2_source_quote_witness(
+    text: str,
+) -> Tuple[SourceQuoteTopology, Tuple[int, ...]]:
+    stack: list[str] = []
+    seen_kagi = False
+    seen_nijukagi = False
+    outer_terminal_positions: list[int] = []
+    open_to_close = {"「": "」", "『": "』"}
+    for index, codepoint in enumerate(text):
+        if codepoint in open_to_close:
+            stack.append(open_to_close[codepoint])
+            seen_kagi = seen_kagi or codepoint == "「"
+            seen_nijukagi = seen_nijukagi or codepoint == "『"
+            continue
+        if codepoint in {"」", "』"}:
+            if not stack or stack.pop() != codepoint:
+                raise Stage1CompositionError(
+                    "STAGE1_SOURCE_QUOTE_UNBALANCED_STOP"
+                )
+            continue
+        if not stack and codepoint in dict(
+            _V2_SOURCE_TERMINAL_CLASS_BY_CODEPOINT
+        ):
+            outer_terminal_positions.append(index)
+    if stack:
+        raise Stage1CompositionError("STAGE1_SOURCE_QUOTE_UNBALANCED_STOP")
+    if seen_kagi and seen_nijukagi:
+        topology = SourceQuoteTopology.BALANCED_MIXED
+    elif seen_kagi:
+        topology = SourceQuoteTopology.BALANCED_KAGI_ONLY
+    elif seen_nijukagi:
+        topology = SourceQuoteTopology.BALANCED_NIJUKAGI_ONLY
+    else:
+        topology = SourceQuoteTopology.NONE
+    return topology, tuple(outer_terminal_positions)
+
+
+def _v2_source_line_break_witness(text: str) -> SourceLineBreakShape:
+    if "\r" not in text:
+        return (
+            SourceLineBreakShape.LF_ONLY
+            if "\n" in text
+            else SourceLineBreakShape.NONE
+        )
+    index = 0
+    crlf_count = 0
+    while index < len(text):
+        if text[index] == "\r":
+            if index + 1 >= len(text) or text[index + 1] != "\n":
+                raise Stage1CompositionError(
+                    "STAGE1_SOURCE_LINEBREAK_UNSUPPORTED_STOP"
+                )
+            crlf_count += 1
+            index += 2
+            continue
+        if text[index] == "\n":
+            raise Stage1CompositionError(
+                "STAGE1_SOURCE_LINEBREAK_UNSUPPORTED_STOP"
+            )
+        index += 1
+    if crlf_count == 0:
+        raise Stage1CompositionError(
+            "STAGE1_SOURCE_LINEBREAK_UNSUPPORTED_STOP"
+        )
+    return SourceLineBreakShape.CRLF_ONLY
+
+
+def _validate_v2_source_leaf(
+    leaf: SourceLeafToken,
+    source_envelope_bindings: Sequence[Tuple[str, bytes]],
+    evidence_literal_bindings: Sequence[Tuple[str, str, int, int]],
+    certified_subspan_bindings: Sequence[Tuple[str, str, int, int]],
+) -> None:
+    if (
+        type(leaf) is not SourceLeafToken
+        or not leaf.leaf_ref
+        or not leaf.semantic_ref
+        or not leaf.source_envelope_ref
+        or not leaf.evidence_ref
+        or type(leaf.raw_utf8_start) is not int
+        or type(leaf.raw_utf8_end) is not int
+        or type(leaf.payload_utf8) is not bytes
+    ):
+        raise Stage1CompositionError(
+            "STAGE1_SOURCE_LEAF_BINDING_NONUNIQUE_STOP"
+        )
+    if any(
+        type(row) is not tuple or len(row) != 2
+        for row in source_envelope_bindings
+    ):
+        raise Stage1CompositionError(
+            "STAGE1_SOURCE_LEAF_BINDING_NONUNIQUE_STOP"
+        )
+    matching_raw_bindings = tuple(
+        row
+        for row in source_envelope_bindings
+        if row[0] == leaf.source_envelope_ref
+    )
+    if any(type(row[1]) is not bytes for row in matching_raw_bindings):
+        raise Stage1CompositionError(
+            "STAGE1_SOURCE_LEAF_BINDING_NONUNIQUE_STOP"
+        )
+    raw_rows = tuple(row[1] for row in matching_raw_bindings)
+    raw_utf8 = _v2_exact1(
+        raw_rows,
+        "STAGE1_SOURCE_LEAF_BINDING_NONUNIQUE_STOP",
+    )
+    if not (
+        0 <= leaf.raw_utf8_start < leaf.raw_utf8_end <= len(raw_utf8)
+    ):
+        raise Stage1CompositionError("STAGE1_SOURCE_LEAF_UTF8_MISMATCH_STOP")
+    if (
+        raw_utf8[leaf.raw_utf8_start : leaf.raw_utf8_end]
+        != leaf.payload_utf8
+    ):
+        raise Stage1CompositionError("STAGE1_SOURCE_LEAF_UTF8_MISMATCH_STOP")
+    try:
+        text = leaf.payload_utf8.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        raise Stage1CompositionError(
+            "STAGE1_SOURCE_LEAF_UTF8_MISMATCH_STOP"
+        ) from None
+    if not text or text.encode("utf-8") != leaf.payload_utf8:
+        raise Stage1CompositionError("STAGE1_SOURCE_LEAF_UTF8_MISMATCH_STOP")
+
+    if any(
+        type(row) is not tuple or len(row) != 4
+        for row in evidence_literal_bindings
+    ):
+        raise Stage1CompositionError(
+            "STAGE1_SOURCE_LEAF_BINDING_NONUNIQUE_STOP"
+        )
+    matching_evidence_bindings = tuple(
+        row
+        for row in evidence_literal_bindings
+        if row[0] == leaf.evidence_ref
+        and row[1] == leaf.source_envelope_ref
+    )
+    if any(
+        type(row[2]) is not int or type(row[3]) is not int
+        for row in matching_evidence_bindings
+    ):
+        raise Stage1CompositionError(
+            "STAGE1_SOURCE_LEAF_BINDING_NONUNIQUE_STOP"
+        )
+    evidence_rows = tuple(
+        (row[2], row[3]) for row in matching_evidence_bindings
+    )
+    evidence_start, evidence_end = _v2_exact1(
+        evidence_rows,
+        "STAGE1_SOURCE_LEAF_BINDING_NONUNIQUE_STOP",
+    )
+    if not (0 <= evidence_start < evidence_end <= len(raw_utf8)):
+        raise Stage1CompositionError(
+            "STAGE1_SOURCE_LEAF_BINDING_NONUNIQUE_STOP"
+        )
+    if leaf.extent is SourceLeafExtent.FULL_EVIDENCE_LITERAL:
+        if (leaf.raw_utf8_start, leaf.raw_utf8_end) != (
+            evidence_start,
+            evidence_end,
+        ):
+            raise Stage1CompositionError(
+                "STAGE1_SOURCE_LEAF_BINDING_NONUNIQUE_STOP"
+            )
+    elif leaf.extent is SourceLeafExtent.CERTIFIED_LITERAL_SUBSPAN:
+        if any(
+            type(row) is not tuple
+            or len(row) != 4
+            or type(row[2]) is not int
+            or type(row[3]) is not int
+            for row in certified_subspan_bindings
+        ):
+            raise Stage1CompositionError(
+                "STAGE1_SOURCE_LITERAL_SUBSPAN_UNCERTIFIED_STOP"
+            )
+        certified_rows = tuple(
+            (utf8_start, utf8_end)
+            for evidence_ref, envelope_ref, utf8_start, utf8_end
+            in certified_subspan_bindings
+            if evidence_ref == leaf.evidence_ref
+            and envelope_ref == leaf.source_envelope_ref
+            and utf8_start == leaf.raw_utf8_start
+            and utf8_end == leaf.raw_utf8_end
+        )
+        if (
+            len(certified_rows) != 1
+            or not (
+                evidence_start
+                <= leaf.raw_utf8_start
+                < leaf.raw_utf8_end
+                <= evidence_end
+            )
+        ):
+            raise Stage1CompositionError(
+                "STAGE1_SOURCE_LITERAL_SUBSPAN_UNCERTIFIED_STOP"
+            )
+    else:
+        raise Stage1CompositionError(
+            "STAGE1_SOURCE_LEAF_SHAPE_UNSUPPORTED_STOP"
+        )
+
+    quote_topology, outer_terminal_positions = _v2_source_quote_witness(text)
+    line_break_shape = _v2_source_line_break_witness(text)
+    terminal_class = dict(_V2_SOURCE_TERMINAL_CLASS_BY_CODEPOINT).get(
+        text[-1],
+        SourceFinalTerminalClass.ABSENT,
+    )
+    sentence_shape = (
+        SourceSentenceShape.MULTI_SENTENCE
+        if any(
+            text[position + 1 :].strip()
+            for position in outer_terminal_positions
+            if position < len(text) - 1
+        )
+        else SourceSentenceShape.ONE_SENTENCE
+    )
+    if (
+        quote_topology is not leaf.quote_topology
+        or line_break_shape is not leaf.line_break_shape
+        or terminal_class is not leaf.final_terminal_class
+        or sentence_shape is not leaf.sentence_shape
+    ):
+        raise Stage1CompositionError(
+            "STAGE1_SOURCE_LEAF_SHAPE_UNSUPPORTED_STOP"
+        )
+    if (
+        type(leaf.derivation) is not SurfaceDerivation
+        or leaf.derivation.derivation_kind
+        is not SurfaceDerivationKind.LITERAL_SUBSPAN
+        or leaf.derivation.source_or_claim_refs.count(leaf.semantic_ref) != 1
+        or leaf.derivation.evidence_refs.count(leaf.evidence_ref) != 1
+    ):
+        raise Stage1CompositionError(
+            "STAGE1_SOURCE_LEAF_BINDING_NONUNIQUE_STOP"
+        )
+
+
+def _validate_v2_source_group_cardinality(
+    cardinality: SourceLeafCardinality,
+    source_leaves: Sequence[SourceLeafToken],
+) -> Tuple[str, ...]:
+    leaves = tuple(source_leaves)
+    expected_count = (
+        1 if cardinality is SourceLeafCardinality.EXACT1 else 2
+        if cardinality is SourceLeafCardinality.ORDERED_EXACT2 else 0
+    )
+    leaf_refs = tuple(
+        leaf.leaf_ref if type(leaf) is SourceLeafToken else ""
+        for leaf in leaves
+    )
+    if (
+        type(cardinality) is not SourceLeafCardinality
+        or expected_count == 0
+        or len(leaves) != expected_count
+        or not all(leaf_refs)
+        or len(set(leaf_refs)) != len(leaf_refs)
+    ):
+        raise Stage1CompositionError("STAGE1_SOURCE_PAIR_CARDINALITY_STOP")
+    return leaf_refs
+
+
+def project_source_leaf_group(
+    *,
+    group_ref: str,
+    cardinality: SourceLeafCardinality,
+    source_leaves: Sequence[SourceLeafToken],
+    source_envelope_bindings: Sequence[Tuple[str, bytes]],
+    evidence_literal_bindings: Sequence[Tuple[str, str, int, int]],
+    certified_subspan_bindings: Sequence[Tuple[str, str, int, int]] = (),
+) -> SourceLeafGroup:
+    """Validate opaque literal ownership and freeze ordered source refs."""
+
+    validate_v2_grammar_inventory()
+    if not group_ref:
+        raise Stage1CompositionError(
+            "STAGE1_SOURCE_LEAF_BINDING_NONUNIQUE_STOP"
+        )
+    leaves = tuple(source_leaves)
+    leaf_refs = _validate_v2_source_group_cardinality(cardinality, leaves)
+    for leaf in leaves:
+        _validate_v2_source_leaf(
+            leaf,
+            source_envelope_bindings,
+            evidence_literal_bindings,
+            certified_subspan_bindings,
+        )
+    return SourceLeafGroup(
+        group_ref=group_ref,
+        cardinality=cardinality,
+        ordered_leaf_refs=leaf_refs,
+    )
+
+
+def _validate_v2_projected_group_members(
+    group: SourceLeafGroup,
+    source_leaves: Sequence[SourceLeafToken],
+) -> Tuple[SourceLeafToken, ...]:
+    if type(group) is not SourceLeafGroup or not group.group_ref:
+        raise Stage1CompositionError("STAGE1_SOURCE_PAIR_CARDINALITY_STOP")
+    leaves = tuple(source_leaves)
+    leaf_refs = _validate_v2_source_group_cardinality(
+        group.cardinality,
+        leaves,
+    )
+    if group.ordered_leaf_refs != leaf_refs:
+        raise Stage1CompositionError("STAGE1_SOURCE_PAIR_CARDINALITY_STOP")
+    return leaves
+
+
+def _v2_complement_case_slots(
+    rule: ComplementRuleSpec,
+    frame: JapaneseCaseFrameSpec,
+) -> Tuple[str, ...]:
+    if rule.slot_roles == ("MONADIC_SUBJECT",):
+        slots = ("SUBJECT",)
+    elif rule.slot_roles == ("PAIRED_ENDPOINTS",):
+        slots = frame.slot_roles
+    else:
+        slots = rule.slot_roles
+    if (
+        not slots
+        or any(slot not in frame.slot_roles for slot in slots)
+        or (
+            rule.cardinality is SourceLeafCardinality.ORDERED_EXACT2
+            and rule.complement_rule_id in {"C07", "C09"}
+            and len(slots) != 2
+        )
+    ):
+        raise Stage1CompositionError(
+            "STAGE1_SOURCE_COMPLEMENT_NONUNIQUE_STOP"
+        )
+    return slots
+
+
+def select_source_complement_plan(
+    *,
+    group: SourceLeafGroup,
+    source_leaves: Sequence[SourceLeafToken],
+    frame: JapaneseCaseFrameSpec,
+) -> SourceComplementPlan:
+    """Select the licensed complement without reading source payload text."""
+
+    validate_v2_grammar_inventory()
+    frame = _v2_exact1(
+        tuple(
+            row
+            for row in V2_JAPANESE_CASE_FRAME_REGISTRY
+            if row == frame
+        ),
+        "STAGE1_JAPANESE_CASE_FRAME_NONUNIQUE_STOP",
+    )
+    leaves = _validate_v2_projected_group_members(group, source_leaves)
+    license_row = _v2_exact1(
+        tuple(
+            row
+            for row in V2_SENSE_COMPLEMENT_LICENSE_REGISTRY
+            if row.sense_ref == frame.sense_ref
+            and row.frame_ref == frame.frame_id
+            and row.complement_rule_ref == frame.complement_rule_ref
+        ),
+        "STAGE1_SOURCE_COMPLEMENT_NONUNIQUE_STOP",
+    )
+    rule = _v2_exact1(
+        tuple(
+            row
+            for row in V2_COMPLEMENT_RULE_REGISTRY
+            if row.complement_rule_id == license_row.complement_rule_ref
+        ),
+        "STAGE1_SOURCE_COMPLEMENT_NONUNIQUE_STOP",
+    )
+    compatibility = _v2_exact1(
+        tuple(
+            licensed
+            for mode, cardinality, licensed
+            in V2_SOURCE_MODE_CARDINALITY_ROWS
+            if mode is rule.mode and cardinality is group.cardinality
+        ),
+        "STAGE1_SOURCE_COMPLEMENT_NONUNIQUE_STOP",
+    )
+    if not compatibility or rule.cardinality is not group.cardinality:
+        raise Stage1CompositionError("STAGE1_SOURCE_PAIR_CARDINALITY_STOP")
+
+    delimiter_refs: list[str] = []
+    for leaf in leaves:
+        delimiter = _v2_exact1(
+            tuple(
+                row
+                for row in V2_SOURCE_QUOTE_DELIMITER_REGISTRY
+                if row.source_quote_topology is leaf.quote_topology
+            ),
+            "STAGE1_SOURCE_COMPLEMENT_NONUNIQUE_STOP",
+        )
+        if delimiter.outer_delimiter_kind == "STOP":
+            raise Stage1CompositionError(
+                "SOURCE_OUTER_DELIMITER_UNAVAILABLE_STOP"
+            )
+        delimiter_refs.append(delimiter.delimiter_rule_id)
+
+    classifier_ref: Optional[str] = None
+    expects_classifier = "CLASSIFIER_EXACT1" in rule.structural_asset_refs
+    if expects_classifier:
+        classifier = _v2_exact1(
+            tuple(
+                row
+                for row in V2_SOURCE_CLASSIFIER_REGISTRY
+                if row.classifier_id == license_row.classifier_ref
+            ),
+            "STAGE1_SOURCE_CLASSIFIER_NONUNIQUE_STOP",
+        )
+        classifier_ref = classifier.classifier_id
+    elif license_row.classifier_ref is not None:
+        raise Stage1CompositionError(
+            "STAGE1_SOURCE_CLASSIFIER_NONUNIQUE_STOP"
+        )
+
+    coordinator_ref: Optional[str] = None
+    if "SF03" in rule.structural_asset_refs:
+        coordinator = _v2_exact1(
+            tuple(
+                row
+                for row in V2_SOURCE_FUNCTIONAL_TOKEN_REGISTRY
+                if row.token_id == "SF03"
+            ),
+            "STAGE1_SOURCE_COMPLEMENT_NONUNIQUE_STOP",
+        )
+        coordinator_ref = coordinator.token_id
+    case_slots = _v2_complement_case_slots(rule, frame)
+    return SourceComplementPlan(
+        mode=rule.mode,
+        group_ref=group.group_ref,
+        complement_rule_ref=rule.complement_rule_id,
+        quote_delimiter_refs=tuple(delimiter_refs),
+        classifier_ref=classifier_ref,
+        coordinator_ref=coordinator_ref,
+        case_slot_ref=",".join(case_slots),
+    )
+
+
+def _v2_relation_operator_for_frame(frame_ref: str) -> RelationOperator:
+    return dict(_V2_RELATION_OPERATOR_BY_FRAME_REF).get(
+        frame_ref,
+        RelationOperator.NO_RELATION_CLAIM,
+    )
+
+
+def _v2_subjective_kind_for_sense(
+    sense_ref: str,
+) -> Tuple[Optional[SubjectiveContentKind], Optional[SubjectivePredicationKind]]:
+    rows = tuple(
+        (content_kind, predication_kind)
+        for ref, content_kind, predication_kind
+        in _V2_SUBJECTIVE_KIND_BY_SENSE_REF
+        if ref == sense_ref
+    )
+    if not rows:
+        return None, None
+    return _v2_exact1(
+        rows,
+        "STAGE1_JAPANESE_CASE_FRAME_NONUNIQUE_STOP",
+    )
+
+
+def select_case_frame(intent: JapaneseCaseFrameKey) -> JapaneseCaseFrameSpec:
+    """Return the sole licensed case frame for an existing typed intent."""
+
+    validate_v2_grammar_inventory()
+    if (
+        type(intent) is not JapaneseCaseFrameKey
+        or type(intent.sentence_job) is not SentenceJob
+        or type(intent.semantic_clause_kind) is not SemanticClauseKind
+        or (
+            intent.subjective_content_kind is not None
+            and type(intent.subjective_content_kind) is not SubjectiveContentKind
+        )
+        or (
+            intent.subjective_predication_kind is not None
+            and type(intent.subjective_predication_kind)
+            is not SubjectivePredicationKind
+        )
+        or (
+            intent.subjective_semantic_sense is not None
+            and (
+                type(intent.subjective_semantic_sense) is not str
+                or not intent.subjective_semantic_sense
+            )
+        )
+        or (
+            intent.grounded_predicate_kind is not None
+            and (
+                type(intent.grounded_predicate_kind) is not str
+                or not intent.grounded_predicate_kind
+            )
+        )
+        or type(intent.required_argument_roles) is not tuple
+        or not intent.required_argument_roles
+        or any(
+            type(role) is not ClauseArgumentRole
+            for role in intent.required_argument_roles
+        )
+        or len(set(intent.required_argument_roles))
+        != len(intent.required_argument_roles)
+        or type(intent.admitted_relation_operator) is not RelationOperator
+        or type(intent.polarity) is not str
+        or not intent.polarity
+        or type(intent.modality) is not str
+        or not intent.modality
+        or type(intent.time_scope) is not str
+        or not intent.time_scope
+        or type(intent.speaker_requirement) is not SpeakerRequirement
+        or type(intent.zero_subject_eligibility) is not str
+        or not intent.zero_subject_eligibility
+        or type(intent.complement_requirement) is not str
+        or not intent.complement_requirement
+    ):
+        raise Stage1CompositionError(
+            "STAGE1_JAPANESE_CASE_FRAME_NONUNIQUE_STOP"
+        )
+    sense_rows: list[PredicateSenseSpec] = []
+    for sense in V2_PREDICATE_SENSE_REGISTRY:
+        if (
+            sense.sentence_job != intent.sentence_job.value
+            or sense.semantic_clause_kind != intent.semantic_clause_kind.value
+        ):
+            continue
+        expected_content, expected_predication = (
+            _v2_subjective_kind_for_sense(sense.sense_id)
+        )
+        if intent.semantic_clause_kind is SemanticClauseKind.SUBJECTIVE_PREDICATE:
+            matches_kind = (
+                intent.subjective_content_kind is expected_content
+                and intent.subjective_predication_kind is expected_predication
+                and intent.subjective_semantic_sense == sense.semantic_sense
+                and intent.grounded_predicate_kind is None
+            )
+        elif intent.semantic_clause_kind is SemanticClauseKind.GROUNDED_PREDICATE:
+            matches_kind = (
+                intent.subjective_content_kind is None
+                and intent.subjective_predication_kind is None
+                and intent.subjective_semantic_sense is None
+                and intent.grounded_predicate_kind == sense.semantic_sense
+            )
+        else:
+            matches_kind = (
+                intent.subjective_content_kind is None
+                and intent.subjective_predication_kind is None
+                and intent.subjective_semantic_sense is None
+                and intent.grounded_predicate_kind is None
+            )
+        if matches_kind:
+            sense_rows.append(sense)
+
+    candidate_frames: list[JapaneseCaseFrameSpec] = []
+    morphology_by_frame = {
+        row.frame_ref: row for row in V2_MATRIX_MORPHOLOGY_PARADIGM_REGISTRY
+    }
+    for sense in sense_rows:
+        for frame in V2_JAPANESE_CASE_FRAME_REGISTRY:
+            morphology = morphology_by_frame.get(frame.frame_id)
+            if (
+                frame.sense_ref != sense.sense_id
+                or frame.frame_id not in sense.frame_license_refs
+                or tuple(
+                    ClauseArgumentRole(slot) for slot in frame.slot_roles
+                )
+                != intent.required_argument_roles
+                or _v2_relation_operator_for_frame(frame.frame_id)
+                is not intent.admitted_relation_operator
+                or morphology is None
+                or morphology.polarity != intent.polarity
+                or morphology.modal != intent.modality
+                or morphology.aspect_time != intent.time_scope
+                or frame.zero_policy != intent.zero_subject_eligibility
+                or frame.complement_rule_ref != intent.complement_requirement
+            ):
+                continue
+            if intent.semantic_clause_kind is SemanticClauseKind.SUBJECTIVE_PREDICATE:
+                speaker_matches = intent.speaker_requirement in {
+                    SpeakerRequirement.EMLIS_EXPLICIT_REQUIRED,
+                    SpeakerRequirement.EMLIS_ZERO_ALLOWED,
+                }
+            else:
+                speaker_matches = (
+                    intent.speaker_requirement
+                    is SpeakerRequirement.GROUNDED_NARRATION
+                )
+            if speaker_matches:
+                candidate_frames.append(frame)
+    return _v2_exact1(
+        candidate_frames,
+        "STAGE1_JAPANESE_CASE_FRAME_NONUNIQUE_STOP",
+    )
+
+
+def select_atomic_predicate_head(
+    frame: JapaneseCaseFrameSpec,
+) -> AtomicPredicateHeadSpec:
+    """Select a head only after frame ownership has been fixed."""
+
+    validate_v2_grammar_inventory()
+    frame = _v2_exact1(
+        tuple(
+            row
+            for row in V2_JAPANESE_CASE_FRAME_REGISTRY
+            if row == frame
+        ),
+        "STAGE1_JAPANESE_CASE_FRAME_NONUNIQUE_STOP",
+    )
+    head = _v2_exact1(
+        tuple(
+            row
+            for row in V2_ATOMIC_PREDICATE_HEAD_REGISTRY
+            if row.frame_ref == frame.frame_id
+            and row.head_id == frame.atomic_head_ref
+        ),
+        "STAGE1_ATOMIC_PREDICATE_HEAD_NONUNIQUE_STOP",
+    )
+    inflection_rows = tuple(
+        row
+        for row in V2_INFLECTION_CLASS_REGISTRY
+        if row.inflection_class_id == head.inflection_class_ref
+    )
+    morphology_rows = tuple(
+        row
+        for row in V2_MATRIX_MORPHOLOGY_PARADIGM_REGISTRY
+        if row.frame_ref == frame.frame_id
+        and row.morphology_id == frame.morphology_ref
+    )
+    lexical_family_rows = tuple(
+        row
+        for row in V2_LEXICAL_FAMILY_REGISTRY
+        if row.lexical_family_id == head.lexical_family_ref
+        and row.atomic_parts == head.atomic_parts
+    )
+    if (
+        len(inflection_rows) != 1
+        or len(morphology_rows) != 1
+        or len(lexical_family_rows) != 1
+    ):
+        raise Stage1CompositionError(
+            "STAGE1_ATOMIC_HEAD_MORPHOLOGY_INCOMPATIBLE_STOP"
+        )
+    return head
+
+
+def project_argument_realization_plan(
+    *,
+    frame: JapaneseCaseFrameSpec,
+    slot_bindings: Sequence[
+        Tuple[ClauseArgumentRole, str, Tuple[str, ...]]
+    ],
+) -> Tuple[ArgumentRealizationPlan, ...]:
+    """Bind each required frame slot to one semantic and particle owner."""
+
+    validate_v2_grammar_inventory()
+    registered_frame = _v2_exact1(
+        tuple(
+            row
+            for row in V2_JAPANESE_CASE_FRAME_REGISTRY
+            if row == frame
+        ),
+        "STAGE1_JAPANESE_CASE_FRAME_NONUNIQUE_STOP",
+    )
+    expected_roles = tuple(
+        ClauseArgumentRole(slot) for slot in registered_frame.slot_roles
+    )
+    bindings = tuple(slot_bindings)
+    if any(
+        type(binding) is not tuple
+        or len(binding) != 3
+        or type(binding[0]) is not ClauseArgumentRole
+        or not binding[1]
+        or type(binding[2]) is not tuple
+        or not binding[2]
+        or not all(binding[2])
+        or len(set(binding[2])) != len(binding[2])
+        for binding in bindings
+    ):
+        raise Stage1CompositionError(
+            "STAGE1_REQUIRED_ARGUMENT_SLOT_NONUNIQUE_STOP"
+        )
+    bound_roles = tuple(binding[0] for binding in bindings)
+    if (
+        len(bound_roles) != len(set(bound_roles))
+        or set(bound_roles) != set(expected_roles)
+        or len(bound_roles) != len(expected_roles)
+    ):
+        raise Stage1CompositionError(
+            "STAGE1_REQUIRED_ARGUMENT_SLOT_NONUNIQUE_STOP"
+        )
+    binding_by_role = {binding[0]: binding for binding in bindings}
+    plans: list[ArgumentRealizationPlan] = []
+    for role in expected_roles:
+        _role, semantic_ref, provenance_refs = binding_by_role[role]
+        particle = _v2_exact1(
+            tuple(
+                row
+                for row in V2_CASE_PARTICLE_REGISTRY
+                if row.frame_ref == registered_frame.frame_id
+                and row.slot_role == role.value
+            ),
+            "STAGE1_CASE_PARTICLE_OWNER_NONUNIQUE_STOP",
+        )
+        if (
+            not particle.surface_variants
+            or len(particle.surface_variants)
+            != len(set(particle.surface_variants))
+        ):
+            raise Stage1CompositionError(
+                "STAGE1_CASE_PARTICLE_OWNER_NONUNIQUE_STOP"
+            )
+        plans.append(
+            ArgumentRealizationPlan(
+                plan_ref=_ref(
+                    "argument-realization-plan-v2",
+                    (
+                        registered_frame.frame_id,
+                        role.value,
+                        semantic_ref,
+                        particle.particle_rule_id,
+                        provenance_refs,
+                    ),
+                ),
+                frame_ref=registered_frame.frame_id,
+                slot_role=role.value,
+                semantic_ref=semantic_ref,
+                particle_rule_ref=particle.particle_rule_id,
+                provenance_refs=provenance_refs,
+            )
+        )
+    return tuple(plans)
 
 
 def _projection_ref(projection: Any) -> str:
@@ -7325,7 +8238,7 @@ LANGUAGE_CORE_STAGE_A_B_RULES = (
 )
 
 LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST = (
-    (_COMPOSITION_PATH, ("project_subjective_meaning_plan", "project_stage1_discourse_arc", "compose_stage1_from_projection", "normalize_to_normal_form", "derive_discourse_preference_profile", "_derive_discourse_preference_profile_with_frozen_applicability")),
+    (_COMPOSITION_PATH, ("project_source_leaf_group", "select_source_complement_plan", "select_case_frame", "select_atomic_predicate_head", "project_argument_realization_plan", "project_subjective_meaning_plan", "project_stage1_discourse_arc", "compose_stage1_from_projection", "normalize_to_normal_form", "derive_discourse_preference_profile", "_derive_discourse_preference_profile_with_frozen_applicability")),
     (LANGUAGE_CORE_EXTERNAL_PATHS[0], ("stage1_canonical_json_bytes", "stage1_subjective_forbidden_promotions", "_stage1_material_visible_value_refs", "project_stage1_projection_preimage_ref", "project_stage1_subjective_basis_binding_ref", "project_stage1_source_qualifier_binding_ref", "project_stage1_policy_basis_binding_ref", "validate_stage1_projection", "validate_stage1_sentence_unit")),
     (LANGUAGE_CORE_EXTERNAL_PATHS[1], ("project_direct_argument_bindings", "_candidate_from_direct", "_candidate_for_contribution", "resolve_candidate_for_contribution", "_qualifier_value", "resolve_qualifier_value", "build_subjective_planning_inputs", "seal_stage1_projection", "build_surface_composition_inputs")),
     (LANGUAGE_CORE_EXTERNAL_PATHS[2], ("_ordered", "_planned_visible_source_ids", "_build_graph", "_build_experience_plan")),
@@ -7769,6 +8682,7 @@ __all__ = (
     "CorrectableDefectKind",
     "DiscoursePreferenceProfile",
     "EmlisSubjectiveMeaningPlan",
+    "JapaneseCaseFrameKey",
     "LANGUAGE_CORE_IDENTITY",
     "STAGE1_RUNTIME_INTEGRATION_IDENTITY",
     "LayoutPreferenceSeed",
@@ -7809,6 +8723,12 @@ __all__ = (
     "V2_SOURCE_FUNCTIONAL_TOKEN_REGISTRY",
     "V2_SOURCE_QUOTE_DELIMITER_REGISTRY",
     "V2_SOURCE_REALIZATION_MODE_REGISTRY",
+    "V2_SOURCE_BOUNDARY_ROW_COUNT",
+    "V2_SOURCE_BOUNDARY_ROWS",
+    "V2_SOURCE_GROUP_CARDINALITY_ROWS",
+    "V2_SOURCE_MODE_CARDINALITY_ROWS",
+    "V2_SOURCE_PRIMITIVE_BOUNDARY_ROWS",
+    "V2_SOURCE_QUOTE_DELIMITER_BOUNDARY_ROWS",
     "canonical_normalized_bytes",
     "compose_stage1_from_projection",
     "compute_language_core_identity",
@@ -7817,9 +8737,14 @@ __all__ = (
     "language_core_identity_payloads",
     "normalize_to_normal_form",
     "project_scalar_surface_realization_rows",
+    "project_argument_realization_plan",
+    "project_source_leaf_group",
     "project_stage1_discourse_arc",
     "project_subjective_meaning_plan",
     "select_eligible_constructions",
+    "select_atomic_predicate_head",
+    "select_case_frame",
+    "select_source_complement_plan",
     "stage1_runtime_integration_identity_payloads",
     "validate_language_core_registry_invariant",
     "validate_v2_grammar_inventory",
