@@ -432,6 +432,11 @@ _GRAMMAR_CATALOG: dict[str, Any] = {
         "exact_opportunity_target_nucleus_set_required": True,
         "visible_typed_local_referent_required": True,
         "semantic_head_unique_candidate_injection_forbidden": True,
+        "action_lifecycle_authority": (
+            "exact_antecedent_nucleus_anchor_binding"
+        ),
+        "support_lifecycle_projection_forbidden": True,
+        "mixed_exact_target_lifecycles": "undetermined",
         "purpose_negation_scope_correction": {
             "concrete_action_evidence_required": True,
             "main_predicate_progressive_required": True,
@@ -2349,6 +2354,14 @@ def _temporal_referent_is_open(
     return True
 
 
+_CLOSED_EXPLICIT_UNKNOWN_TYPE_BY_DIMENSION: Final[Mapping[str, str]] = {
+    "EXPLICIT_CAUSE_UNKNOWN": "cause",
+    "EXPLICIT_UNVERBALIZED_UNKNOWN": "omitted_referent",
+    "EXPLICIT_TEMPORAL_REFERENT_UNKNOWN": "omitted_referent",
+    "EXPLICIT_REFERENT_UNKNOWN": "omitted_referent",
+}
+
+
 def _frozen_unknown_type(
     dimension_code: str,
     source_text: str,
@@ -2356,6 +2369,9 @@ def _frozen_unknown_type(
     contextual_text: str = "",
 ) -> str | None:
     code = dimension_code.upper()
+    closed_type = _CLOSED_EXPLICIT_UNKNOWN_TYPE_BY_DIMENSION.get(code)
+    if closed_type is not None:
+        return closed_type
     if "CAUSE" in code or "REASON" in code or "MOTIVE" in code:
         return (
             "cause"
@@ -2784,6 +2800,11 @@ def _source_unknowns(
                 + str(projection["action_text"])
             ),
         )
+        closed_explicit_type = (
+            _CLOSED_EXPLICIT_UNKNOWN_TYPE_BY_DIMENSION.get(
+                str(source.dimension_code).upper()
+            )
+        )
         if unknown_type == "relation" and not (
             _exact_relation_unknown_endpoint_set(
                 affected, snapshot.relations
@@ -2806,38 +2827,41 @@ def _source_unknowns(
             raise Step11SemanticOverlayError(
                 "STEP11_OVERLAY_REQUIRED_UNKNOWN_UNCLASSIFIED"
             )
-        matching_anchor_ids = tuple(
-            anchor_id
-            for anchor_id in candidate_anchor_ids
-            if unknown_type
-            in _explicit_unknown_types(anchor_by_id[anchor_id].text)
-        )
-        target_ranges = tuple(
-            anchor_by_id[anchor_id]
-            for anchor_id in candidate_anchor_ids
-            if anchor_id in anchor_by_id
-        )
-        grammar_anchor_ids = tuple(
-            row.anchor_id
-            for row in anchors
-            if row.role == "unknown"
-            and row.source_slot in slots
-            and unknown_type in _explicit_unknown_types(row.text)
-            and (
-                not target_ranges
-                or any(
-                    row.source_slot == target.source_slot
-                    and row.start < target.end
-                    and target.start < row.end
-                    for target in target_ranges
+        if closed_explicit_type is not None:
+            bound_source_anchor_ids = candidate_anchor_ids[:1]
+        else:
+            matching_anchor_ids = tuple(
+                anchor_id
+                for anchor_id in candidate_anchor_ids
+                if unknown_type
+                in _explicit_unknown_types(anchor_by_id[anchor_id].text)
+            )
+            target_ranges = tuple(
+                anchor_by_id[anchor_id]
+                for anchor_id in candidate_anchor_ids
+                if anchor_id in anchor_by_id
+            )
+            grammar_anchor_ids = tuple(
+                row.anchor_id
+                for row in anchors
+                if row.role == "unknown"
+                and row.source_slot in slots
+                and unknown_type in _explicit_unknown_types(row.text)
+                and (
+                    not target_ranges
+                    or any(
+                        row.source_slot == target.source_slot
+                        and row.start < target.end
+                        and target.start < row.end
+                        for target in target_ranges
+                    )
                 )
             )
-        )
-        bound_source_anchor_ids = (
-            grammar_anchor_ids[:1]
-            or matching_anchor_ids[:1]
-            or candidate_anchor_ids[:1]
-        )
+            bound_source_anchor_ids = (
+                grammar_anchor_ids[:1]
+                or matching_anchor_ids[:1]
+                or candidate_anchor_ids[:1]
+            )
         (
             decision_state,
             context_nucleus_ids,
@@ -3400,6 +3424,7 @@ def _reception_antecedent_bindings(
     discourse_plan: Mapping[str, Any],
     source_snapshot: Any,
     projection: Mapping[str, Any],
+    nucleus_anchor_bindings: Sequence[Step11NucleusAnchorBinding],
 ) -> tuple[Step11ReceptionAntecedentBinding, ...]:
     """Resolve visible reception owners from source authority, not proximity.
 
@@ -3407,9 +3432,9 @@ def _reception_antecedent_bindings(
     that obligation merely intersected an opportunity target.  rc0022 keeps
     the legacy target as lineage, independently resolves the exact opportunity
     owner, and records every local referent that must be visible in the body.
-    A narrowly bounded adapter also recovers a concrete, progressive main
-    action when an upstream purpose-clause negation was allowed to overwrite
-    the main predicate lifecycle.
+    A narrowly bounded adapter may add a concrete progressive action as
+    support, but Reception lifecycle remains owned only by the exact
+    antecedent nucleus bindings and is never promoted from that support.
     """
 
     nodes = discourse_plan.get("nodes")
@@ -3449,6 +3474,14 @@ def _reception_antecedent_bindings(
     if len(nucleus_by_id) != len(nuclei):
         raise Step11SemanticOverlayError(
             "STEP11_OVERLAY_RECEPTION_SOURCE_AUTHORITY_INVALID"
+        )
+    realization_status_by_nucleus = {
+        row.nucleus_id: row.realization_status
+        for row in nucleus_anchor_bindings
+    }
+    if len(realization_status_by_nucleus) != len(nucleus_anchor_bindings):
+        raise Step11SemanticOverlayError(
+            "STEP11_OVERLAY_RECEPTION_LIFECYCLE_AUTHORITY_INVALID"
         )
 
     def exact_owner_ids(
@@ -3520,16 +3553,23 @@ def _reception_antecedent_bindings(
     def action_lifecycle_for(
         nucleus_ids: Sequence[str],
     ) -> str:
-        statuses = {
-            _nucleus_realization_status(
-                nucleus_by_id[nucleus_id], (action_text,)
-            )
+        action_nucleus_ids = tuple(
+            nucleus_id
             for nucleus_id in nucleus_ids
             if nucleus_id in nucleus_by_id
             and getattr(nucleus_by_id[nucleus_id], "kind", None)
             == "action"
-            and "memo_action"
-            in getattr(nucleus_by_id[nucleus_id], "source_fields", ())
+        )
+        if any(
+            nucleus_id not in realization_status_by_nucleus
+            for nucleus_id in action_nucleus_ids
+        ):
+            raise Step11SemanticOverlayError(
+                "STEP11_OVERLAY_RECEPTION_LIFECYCLE_AUTHORITY_INVALID"
+            )
+        statuses = {
+            realization_status_by_nucleus[nucleus_id]
+            for nucleus_id in action_nucleus_ids
         }
         if not statuses:
             return "not_applicable"
@@ -3537,9 +3577,9 @@ def _reception_antecedent_bindings(
 
     def corrected_action_support(
         primary_nucleus_ids: Sequence[str],
-    ) -> tuple[tuple[str, ...], tuple[str, ...], str, str]:
+    ) -> tuple[tuple[str, ...], tuple[str, ...], str]:
         if not eligible_action_nucleus_ids:
-            return (), (), "none", "not_applicable"
+            return (), (), "none"
         candidates = tuple(
             obligation_id
             for obligation_id in sorted(active_obligation_ids)
@@ -3558,13 +3598,13 @@ def _reception_antecedent_bindings(
                 "STEP11_OVERLAY_RECEPTION_ACTION_OWNER_AMBIGUOUS"
             )
         if not candidates:
-            return (), (), "none", "not_applicable"
+            return (), (), "none"
         obligation_id = candidates[0]
         action_nucleus_ids = tuple(
             obligations_by_id[obligation_id].get("nucleus_ids", [])
         )
         if set(action_nucleus_ids) <= set(primary_nucleus_ids):
-            return (), (), "none", "reported_ongoing"
+            return (), (), "none"
         support_role = (
             "legacy_purpose_negation_scope_corrected_action"
             if purpose_negation_scope_correction
@@ -3574,7 +3614,6 @@ def _reception_antecedent_bindings(
             (obligation_id,),
             action_nucleus_ids,
             support_role,
-            "reported_ongoing",
         )
 
     result: list[Step11ReceptionAntecedentBinding] = []
@@ -3697,7 +3736,6 @@ def _reception_antecedent_bindings(
         support_ids: tuple[str, ...] = ()
         support_nucleus_ids: tuple[str, ...] = ()
         support_role = "none"
-        action_lifecycle = "not_applicable"
         if opportunity is not None and opportunity.support_nucleus_ids:
             support_ids = exact_owner_ids(
                 opportunity.support_nucleus_ids,
@@ -3724,12 +3762,8 @@ def _reception_antecedent_bindings(
                 support_ids,
                 support_nucleus_ids,
                 support_role,
-                action_lifecycle,
             ) = corrected_action_support(antecedent_nucleus_ids)
-        if action_lifecycle == "not_applicable":
-            action_lifecycle = action_lifecycle_for(
-                (*antecedent_nucleus_ids, *support_nucleus_ids)
-            )
+        action_lifecycle = action_lifecycle_for(antecedent_nucleus_ids)
         support_nodes = tuple(
             nodes_by_obligation.get(obligation_id)
             for obligation_id in support_ids
@@ -4106,6 +4140,7 @@ def _build_overlay(
         discourse_plan=discourse_plan,
         source_snapshot=inventory_result.source_snapshot,
         projection=projection,
+        nucleus_anchor_bindings=nucleus_anchor_bindings,
     )
     relations = _overlay_relations(
         inventory_result,

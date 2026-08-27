@@ -182,7 +182,13 @@ _UNVERBALIZED_RE: Final = re.compile(
 _COMPARATIVE_UNCERTAINTY_RE: Final = re.compile(
     r"(?:別の選択|ほうがよかった|方がよかった|選ばなかったほう|選ばなかった方)"
 )
+_OPEN_DECISION_RE: Final = re.compile(
+    r"(?:決められない|判断できない|選べない|迷(?:う|って|い))"
+)
 _UNSPECIFIED_RETURN_RE: Final = re.compile(r"帰ってから")
+_RETURN_LOCATION_RE: Final = re.compile(
+    r"(?:家|部屋|職場|学校|店|会場|場所|実家|旅行|外)\s*(?:に|へ)?帰ってから"
+)
 _PAST_SIGNAL_RE: Final = re.compile(r"(?:かった|だった|した|なった|決めた|帰った)")
 _CURRENT_SIGNAL_RE: Final = re.compile(r"(?:今日|今|ずっと|まだ|現在|朝から)")
 _FUTURE_SIGNAL_RE: Final = re.compile(
@@ -258,6 +264,58 @@ class GroundedExplicitUnknownWitness:
     dimension: str
     affected_unit_ids: tuple[str, ...]
     required: bool
+
+
+_OpenSlotDimension = Literal[
+    "explicit_cause_unknown",
+    "explicit_unverbalized_unknown",
+    "explicit_choice_decision_unknown",
+    "explicit_temporal_referent_unknown",
+    "explicit_referent_unknown",
+]
+_OpenSlotArgumentCompleteness = Literal[
+    "not_applicable",
+    "complete",
+    "referent_open",
+]
+_OpenSlotResolutionBasis = Literal[
+    "exact_parent_governor",
+    "exact_semantic_unit",
+    "exact_required_user_stated_relation_antecedent",
+    "exact_required_temporal_relation_antecedent",
+    "exact_required_semantic_link_antecedent",
+    "exact_response_governor",
+]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class _GroundedFormalSourceParse:
+    """Closed, body-free projection of the existing source grammar."""
+
+    source_span_id: str
+    cause_marker_range: tuple[int, int] | None
+    unverbalized_marker_range: tuple[int, int] | None
+    decision_marker_range: tuple[int, int] | None
+    temporal_marker_range: tuple[int, int] | None
+    completion_argument_completeness: _OpenSlotArgumentCompleteness
+    completion_marker_range: tuple[int, int] | None
+    body_free: bool = True
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class _GroundedOpenSlotMarker:
+    """Private body-free marker resolved before public unknown materialisation."""
+
+    marker_id: str
+    source_span_id: str
+    dimension: _OpenSlotDimension
+    governor_nucleus_id: str
+    antecedent_nucleus_ids: tuple[str, ...]
+    affected_unit_ids: tuple[str, ...]
+    argument_completeness: _OpenSlotArgumentCompleteness
+    resolution_basis: _OpenSlotResolutionBasis
+    required: bool
+    body_free: bool = True
 
 
 @dataclass(frozen=True)
@@ -971,86 +1029,527 @@ def _semantic_decomposition(
     return tuple(units), (link,)
 
 
+def _formal_source_parse(
+    source_span_id: str,
+    text: str,
+) -> _GroundedFormalSourceParse:
+    """Project the established grammar once; retain no source bytes."""
+
+    cause = _EXPLICIT_WHY_RE.search(text)
+    if cause is None and "なんとなく" in text:
+        cause_start = text.index("なんとなく")
+        cause_range = (cause_start, cause_start + len("なんとなく"))
+    else:
+        cause_range = cause.span() if cause is not None else None
+    decision_candidates = tuple(
+        row
+        for row in (
+            _COMPARATIVE_UNCERTAINTY_RE.search(text),
+            _OPEN_DECISION_RE.search(text),
+        )
+        if row is not None
+    )
+    decision = (
+        min(decision_candidates, key=lambda row: (row.start(), row.end()))
+        if decision_candidates
+        else None
+    )
+    temporal = _UNSPECIFIED_RETURN_RE.search(text)
+    if temporal is not None and _RETURN_LOCATION_RE.search(text) is not None:
+        temporal = None
+    completion = _COMPLETION_RE.search(text)
+    if completion is None:
+        completeness: _OpenSlotArgumentCompleteness = "not_applicable"
+    else:
+        completion_subjects, completion_objects = _completion_argument_roles(text)
+        completion_topics = _anchors(_TOPIC_ANCHOR_RE, text)
+        completeness = (
+            "referent_open"
+            if not completion_subjects
+            and not completion_objects
+            and not completion_topics
+            and _is_closed_omitted_completion_fragment(text)
+            else "complete"
+        )
+    return _GroundedFormalSourceParse(
+        source_span_id=source_span_id,
+        cause_marker_range=cause_range,
+        unverbalized_marker_range=(
+            match.span() if (match := _UNVERBALIZED_RE.search(text)) else None
+        ),
+        decision_marker_range=(decision.span() if decision is not None else None),
+        temporal_marker_range=(temporal.span() if temporal is not None else None),
+        completion_argument_completeness=completeness,
+        completion_marker_range=(
+            completion.span() if completion is not None else None
+        ),
+        body_free=True,
+    )
+
+
+def _expanded_owner_ids(
+    nucleus_id: str,
+    units_by_parent: Mapping[str, tuple[GroundedSemanticUnitWitness, ...]],
+) -> tuple[str, ...]:
+    return tuple(
+        row.unit_id for row in units_by_parent.get(nucleus_id, ())
+    ) or (nucleus_id,)
+
+
+def _exact_marker_owner_ids(
+    *,
+    parent_nucleus_id: str,
+    source_span_id: str,
+    marker_range: tuple[int, int],
+    units_by_parent: Mapping[str, tuple[GroundedSemanticUnitWitness, ...]],
+) -> tuple[tuple[str, ...], _OpenSlotResolutionBasis]:
+    units = units_by_parent.get(parent_nucleus_id, ())
+    if not units:
+        return (parent_nucleus_id,), "exact_parent_governor"
+    start, end = marker_range
+    candidates = tuple(
+        row.unit_id
+        for row in units
+        if row.source_span_id == source_span_id
+        and row.start_index <= start
+        and end <= row.end_index
+    )
+    if len(candidates) != 1:
+        raise GroundedSemanticRestatementError(
+            "SEMANTIC_RESTATEMENT_OPEN_SLOT_AMBIGUOUS"
+        )
+    return candidates, "exact_semantic_unit"
+
+
+def _exact_user_stated_antecedent(
+    *,
+    plan: GroundedObservationPlan,
+    parent_nucleus_id: str,
+    source_span_id: str,
+    units_by_parent: Mapping[str, tuple[GroundedSemanticUnitWitness, ...]],
+) -> tuple[str, tuple[str, ...]] | None:
+    required_relation_ids = frozenset(
+        plan.coverage_requirements.required_relation_ids
+    )
+    candidates = tuple(
+        row
+        for row in plan.relations
+        if row.relation_id in required_relation_ids
+        and row.grounding_kind == "user_stated_relation"
+        and row.to_nucleus_id == parent_nucleus_id
+        and source_span_id in row.source_span_ids
+    )
+    if len(candidates) > 1:
+        raise GroundedSemanticRestatementError(
+            "SEMANTIC_RESTATEMENT_OPEN_SLOT_AMBIGUOUS"
+        )
+    if not candidates:
+        return None
+    relation = candidates[0]
+    return relation.from_nucleus_id, _expanded_owner_ids(
+        relation.from_nucleus_id,
+        units_by_parent,
+    )
+
+
+def _has_required_target_relation(
+    *,
+    plan: GroundedObservationPlan,
+    parent_nucleus_id: str,
+    source_span_id: str,
+) -> bool:
+    required_relation_ids = frozenset(
+        plan.coverage_requirements.required_relation_ids
+    )
+    return any(
+        row.relation_id in required_relation_ids
+        and row.to_nucleus_id == parent_nucleus_id
+        and source_span_id in row.source_span_ids
+        for row in plan.relations
+    )
+
+
+def _exact_semantic_link_antecedent(
+    *,
+    marker_owner_ids: Sequence[str],
+    source_span_id: str,
+    semantic_links: Sequence[GroundedSemanticLinkWitness],
+    relation_type: SemanticLinkType | None = None,
+) -> tuple[str, ...] | None:
+    if len(marker_owner_ids) != 1:
+        return None
+    target_id = marker_owner_ids[0]
+    candidates = tuple(
+        row
+        for row in semantic_links
+        if row.required is True
+        and row.source_span_id == source_span_id
+        and row.to_unit_id == target_id
+        and (relation_type is None or row.relation_type == relation_type)
+    )
+    if len(candidates) > 1:
+        raise GroundedSemanticRestatementError(
+            "SEMANTIC_RESTATEMENT_OPEN_SLOT_AMBIGUOUS"
+        )
+    return (candidates[0].from_unit_id,) if candidates else None
+
+
+def _exact_temporal_antecedent(
+    *,
+    plan: GroundedObservationPlan,
+    parent_nucleus_id: str,
+    source_span_id: str,
+    marker_owner_ids: Sequence[str],
+    units_by_parent: Mapping[str, tuple[GroundedSemanticUnitWitness, ...]],
+    semantic_links: Sequence[GroundedSemanticLinkWitness],
+) -> tuple[
+    str,
+    tuple[str, ...],
+    _OpenSlotResolutionBasis,
+] | None:
+    required_relation_ids = frozenset(
+        plan.coverage_requirements.required_relation_ids
+    )
+    plan_candidates = tuple(
+        row
+        for row in plan.relations
+        if row.relation_id in required_relation_ids
+        and row.type == "temporal_before_after"
+        and row.to_nucleus_id == parent_nucleus_id
+        and source_span_id in row.source_span_ids
+    )
+    semantic_candidates = tuple(
+        row
+        for row in semantic_links
+        if row.required is True
+        and row.relation_type == "precedes"
+        and row.source_span_id == source_span_id
+        and len(marker_owner_ids) == 1
+        and row.to_unit_id == marker_owner_ids[0]
+    )
+    if len(plan_candidates) + len(semantic_candidates) > 1:
+        raise GroundedSemanticRestatementError(
+            "SEMANTIC_RESTATEMENT_OPEN_SLOT_AMBIGUOUS"
+        )
+    if plan_candidates:
+        relation = plan_candidates[0]
+        return (
+            relation.from_nucleus_id,
+            _expanded_owner_ids(relation.from_nucleus_id, units_by_parent),
+            "exact_required_temporal_relation_antecedent",
+        )
+    if semantic_candidates:
+        link = semantic_candidates[0]
+        return (
+            parent_nucleus_id,
+            (link.from_unit_id,),
+            "exact_required_semantic_link_antecedent",
+        )
+    return None
+
+
+def _completion_open_slot_markers(
+    *,
+    plan: GroundedObservationPlan,
+    formal_by_parent: Mapping[str, _GroundedFormalSourceParse],
+    relations: Sequence[GroundedSemanticRestatementRelationWitness],
+    units_by_parent: Mapping[str, tuple[GroundedSemanticUnitWitness, ...]],
+) -> tuple[_GroundedOpenSlotMarker, ...]:
+    open_parent_ids = tuple(
+        sorted(
+            parent_id
+            for parent_id, parsed in formal_by_parent.items()
+            if parsed.completion_argument_completeness == "referent_open"
+        )
+    )
+    if not open_parent_ids:
+        return ()
+    components = tuple(
+        frozenset(row.semantic_restatement_unit_nucleus_ids)
+        for row in relations
+        if row.endpoint_semantic_relation == "semantic_restatement"
+        and row.semantic_restatement_unit_nucleus_ids
+    )
+    grouped: dict[tuple[str, ...], list[str]] = {}
+    for parent_id in open_parent_ids:
+        memberships = tuple(
+            component for component in components if parent_id in component
+        )
+        if len(memberships) > 1:
+            raise GroundedSemanticRestatementError(
+                "SEMANTIC_RESTATEMENT_OPEN_SLOT_AMBIGUOUS"
+            )
+        key = tuple(sorted(memberships[0])) if memberships else (parent_id,)
+        grouped.setdefault(key, []).append(parent_id)
+
+    reception_plan = plan.response_plan.human_reception_plan
+    authority_sets = tuple(
+        frozenset(values)
+        for values in (
+            plan.response_plan.primary_nucleus_ids,
+            plan.response_plan.human_follow_target_ids,
+            tuple(
+                nucleus_id
+                for move in (
+                    reception_plan.moves if reception_plan is not None else ()
+                )
+                if move.required is True
+                for nucleus_id in move.target_nucleus_ids
+            ),
+        )
+        if values
+    )
+    result: list[_GroundedOpenSlotMarker] = []
+    for component_key in sorted(grouped):
+        candidates = tuple(sorted(grouped[component_key]))
+        if len(candidates) == 1:
+            governor_id = candidates[0]
+            basis: _OpenSlotResolutionBasis = "exact_parent_governor"
+        else:
+            scoped_authorities = tuple(
+                values & set(candidates)
+                for values in authority_sets
+                if values & set(candidates)
+            )
+            exact = (
+                set.intersection(*(set(values) for values in scoped_authorities))
+                if scoped_authorities
+                else set()
+            )
+            if len(exact) != 1:
+                raise GroundedSemanticRestatementError(
+                    "SEMANTIC_RESTATEMENT_OPEN_SLOT_AMBIGUOUS"
+                )
+            governor_id = next(iter(exact))
+            basis = "exact_response_governor"
+        parsed = formal_by_parent[governor_id]
+        affected_ids = _expanded_owner_ids(governor_id, units_by_parent)
+        identity = {
+            "adapter_version": GROUND_SEMANTIC_RESTATEMENT_ADAPTER_VERSION,
+            "source_span_id": parsed.source_span_id,
+            "dimension": "explicit_referent_unknown",
+            "affected_unit_ids": list(affected_ids),
+        }
+        result.append(
+            _GroundedOpenSlotMarker(
+                marker_id="open_slot:m" + artifact_sha256(identity)[:24],
+                source_span_id=parsed.source_span_id,
+                dimension="explicit_referent_unknown",
+                governor_nucleus_id=governor_id,
+                antecedent_nucleus_ids=(),
+                affected_unit_ids=affected_ids,
+                argument_completeness="referent_open",
+                resolution_basis=basis,
+                required=True,
+                body_free=True,
+            )
+        )
+    return tuple(result)
+
+
 def _explicit_unknown_witnesses(
     plan: GroundedObservationPlan,
     spans: Sequence[Any],
     units: Sequence[GroundedSemanticUnitWitness],
+    relations: Sequence[GroundedSemanticRestatementRelationWitness],
+    semantic_links: Sequence[GroundedSemanticLinkWitness],
 ) -> tuple[GroundedExplicitUnknownWitness, ...]:
-    """Extract source-explicit unknowns without consulting fixture metadata."""
+    """Resolve source-explicit open slots through typed upstream authority."""
 
-    unit_by_parent: dict[str, list[GroundedSemanticUnitWitness]] = {}
+    units_by_parent: dict[str, tuple[GroundedSemanticUnitWitness, ...]] = {}
     for unit in units:
-        unit_by_parent.setdefault(unit.parent_nucleus_id, []).append(unit)
+        units_by_parent[unit.parent_nucleus_id] = (
+            *units_by_parent.get(unit.parent_nucleus_id, ()),
+            unit,
+        )
     required = frozenset(plan.coverage_requirements.required_nucleus_ids)
     span_by_id = {str(getattr(row, "span_id", "")): row for row in spans}
-    rows: list[GroundedExplicitUnknownWitness] = []
-
-    def append(
-        *, dimension: str, source_span_id: str, affected_ids: Sequence[str]
-    ) -> None:
-        identity = {
-            "adapter_version": GROUND_SEMANTIC_RESTATEMENT_ADAPTER_VERSION,
-            "source_span_id": source_span_id,
-            "dimension": dimension,
-            "affected_unit_ids": list(affected_ids),
-        }
-        rows.append(
-            GroundedExplicitUnknownWitness(
-                unknown_id="semantic_unknown:u" + artifact_sha256(identity)[:24],
-                source_span_id=source_span_id,
-                dimension=dimension,
-                affected_unit_ids=tuple(affected_ids),
-                required=True,
-            )
-        )
-
-    for parent in plan.nuclei:
-        if (
-            parent.nucleus_id not in required
-            or not set(parent.source_fields) <= _TEXT_SOURCE_FIELDS
-            or len(parent.source_span_ids) != 1
-        ):
-            continue
+    parent_by_id = {
+        row.nucleus_id: row
+        for row in plan.nuclei
+        if row.nucleus_id in required
+        and set(row.source_fields) <= _TEXT_SOURCE_FIELDS
+        and len(row.source_span_ids) == 1
+    }
+    formal_by_parent: dict[str, _GroundedFormalSourceParse] = {}
+    for parent_id, parent in parent_by_id.items():
         span_id = parent.source_span_ids[0]
         span = span_by_id.get(span_id)
         if span is None:
             continue
-        text = str(getattr(span, "raw_text", ""))
-        targets = tuple(
-            row.unit_id for row in unit_by_parent.get(parent.nucleus_id, [])
-        ) or (parent.nucleus_id,)
-        consequence = targets[-1:]
-        if _EXPLICIT_WHY_RE.search(text) or "なんとなく" in text:
-            append(
+        formal_by_parent[parent_id] = _formal_source_parse(
+            span_id,
+            str(getattr(span, "raw_text", "")),
+        )
+
+    markers: list[_GroundedOpenSlotMarker] = []
+
+    def append_marker(
+        *,
+        dimension: _OpenSlotDimension,
+        source_span_id: str,
+        governor_nucleus_id: str,
+        antecedent_nucleus_ids: Sequence[str],
+        affected_unit_ids: Sequence[str],
+        argument_completeness: _OpenSlotArgumentCompleteness,
+        resolution_basis: _OpenSlotResolutionBasis,
+    ) -> None:
+        affected = tuple(dict.fromkeys(affected_unit_ids))
+        if not affected:
+            raise GroundedSemanticRestatementError(
+                "SEMANTIC_RESTATEMENT_OPEN_SLOT_UNRESOLVED"
+            )
+        identity = {
+            "adapter_version": GROUND_SEMANTIC_RESTATEMENT_ADAPTER_VERSION,
+            "source_span_id": source_span_id,
+            "dimension": dimension,
+            "affected_unit_ids": list(affected),
+        }
+        markers.append(
+            _GroundedOpenSlotMarker(
+                marker_id="open_slot:m" + artifact_sha256(identity)[:24],
+                source_span_id=source_span_id,
+                dimension=dimension,
+                governor_nucleus_id=governor_nucleus_id,
+                antecedent_nucleus_ids=tuple(
+                    dict.fromkeys(antecedent_nucleus_ids)
+                ),
+                affected_unit_ids=affected,
+                argument_completeness=argument_completeness,
+                resolution_basis=resolution_basis,
+                required=True,
+                body_free=True,
+            )
+        )
+
+    for parent_id in sorted(formal_by_parent):
+        parsed = formal_by_parent[parent_id]
+        all_parent_owners = _expanded_owner_ids(parent_id, units_by_parent)
+        if parsed.cause_marker_range is not None:
+            append_marker(
                 dimension="explicit_cause_unknown",
-                source_span_id=span_id,
-                affected_ids=targets,
+                source_span_id=parsed.source_span_id,
+                governor_nucleus_id=parent_id,
+                antecedent_nucleus_ids=(),
+                affected_unit_ids=all_parent_owners,
+                argument_completeness="not_applicable",
+                resolution_basis="exact_parent_governor",
             )
-        if _UNVERBALIZED_RE.search(text):
-            append(
+        if parsed.unverbalized_marker_range is not None:
+            exact_user_relation = _exact_user_stated_antecedent(
+                plan=plan,
+                parent_nucleus_id=parent_id,
+                source_span_id=parsed.source_span_id,
+                units_by_parent=units_by_parent,
+            )
+            if exact_user_relation is not None:
+                antecedent_id, affected_ids = exact_user_relation
+                basis = "exact_required_user_stated_relation_antecedent"
+                antecedent_ids = (antecedent_id,)
+            elif _has_required_target_relation(
+                plan=plan,
+                parent_nucleus_id=parent_id,
+                source_span_id=parsed.source_span_id,
+            ):
+                # A required relation is already the owner authority.  If it
+                # is not an exact user-stated link, the marker may not fall
+                # back to source order or to the containing parent.
+                continue
+            else:
+                direct_ids, direct_basis = _exact_marker_owner_ids(
+                    parent_nucleus_id=parent_id,
+                    source_span_id=parsed.source_span_id,
+                    marker_range=parsed.unverbalized_marker_range,
+                    units_by_parent=units_by_parent,
+                )
+                semantic_antecedent = _exact_semantic_link_antecedent(
+                    marker_owner_ids=direct_ids,
+                    source_span_id=parsed.source_span_id,
+                    semantic_links=semantic_links,
+                )
+                affected_ids = semantic_antecedent or direct_ids
+                basis = (
+                    "exact_required_semantic_link_antecedent"
+                    if semantic_antecedent is not None
+                    else direct_basis
+                )
+                antecedent_ids = semantic_antecedent or ()
+            append_marker(
                 dimension="explicit_unverbalized_unknown",
-                source_span_id=span_id,
-                affected_ids=consequence,
+                source_span_id=parsed.source_span_id,
+                governor_nucleus_id=parent_id,
+                antecedent_nucleus_ids=antecedent_ids,
+                affected_unit_ids=affected_ids,
+                argument_completeness="not_applicable",
+                resolution_basis=basis,
             )
-        if _COMPARATIVE_UNCERTAINTY_RE.search(text) or re.search(
-            r"(?:決められない|判断できない|選べない|迷(?:う|って|い))", text
-        ):
-            append(
+        if parsed.decision_marker_range is not None:
+            affected_ids, basis = _exact_marker_owner_ids(
+                parent_nucleus_id=parent_id,
+                source_span_id=parsed.source_span_id,
+                marker_range=parsed.decision_marker_range,
+                units_by_parent=units_by_parent,
+            )
+            append_marker(
                 dimension="explicit_choice_decision_unknown",
-                source_span_id=span_id,
-                affected_ids=consequence,
+                source_span_id=parsed.source_span_id,
+                governor_nucleus_id=parent_id,
+                antecedent_nucleus_ids=(),
+                affected_unit_ids=affected_ids,
+                argument_completeness="not_applicable",
+                resolution_basis=basis,
             )
-        if _UNSPECIFIED_RETURN_RE.search(text) and not re.search(
-            r"(?:家|部屋|職場|学校|店|会場|場所|実家|旅行|外)\s*(?:に|へ)?帰ってから",
-            text,
-        ):
-            append(
-                dimension="explicit_temporal_referent_unknown",
-                source_span_id=span_id,
-                affected_ids=targets,
+        if parsed.temporal_marker_range is not None:
+            marker_owner_ids, _direct_basis = _exact_marker_owner_ids(
+                parent_nucleus_id=parent_id,
+                source_span_id=parsed.source_span_id,
+                marker_range=parsed.temporal_marker_range,
+                units_by_parent=units_by_parent,
             )
-    unique = {row.unknown_id: row for row in rows}
-    return tuple(unique[key] for key in sorted(unique))
+            temporal = _exact_temporal_antecedent(
+                plan=plan,
+                parent_nucleus_id=parent_id,
+                source_span_id=parsed.source_span_id,
+                marker_owner_ids=marker_owner_ids,
+                units_by_parent=units_by_parent,
+                semantic_links=semantic_links,
+            )
+            if temporal is not None:
+                antecedent_id, affected_ids, basis = temporal
+                append_marker(
+                    dimension="explicit_temporal_referent_unknown",
+                    source_span_id=parsed.source_span_id,
+                    governor_nucleus_id=parent_id,
+                    antecedent_nucleus_ids=(antecedent_id,),
+                    affected_unit_ids=affected_ids,
+                    argument_completeness="referent_open",
+                    resolution_basis=basis,
+                )
+
+    markers.extend(
+        _completion_open_slot_markers(
+            plan=plan,
+            formal_by_parent=formal_by_parent,
+            relations=relations,
+            units_by_parent=units_by_parent,
+        )
+    )
+    unique_markers = {row.marker_id: row for row in markers}
+    result = tuple(
+        GroundedExplicitUnknownWitness(
+            unknown_id="semantic_unknown:u" + row.marker_id.removeprefix(
+                "open_slot:m"
+            ),
+            source_span_id=row.source_span_id,
+            dimension=row.dimension,
+            affected_unit_ids=row.affected_unit_ids,
+            required=row.required,
+        )
+        for row in (
+            unique_markers[key] for key in sorted(unique_markers)
+        )
+    )
+    return tuple(sorted(result, key=lambda row: row.unknown_id))
 
 
 def _witness_sha256(
@@ -1100,7 +1599,11 @@ def build_grounded_semantic_restatement_witness(
     relations = _relation_witnesses(plan, spans)
     semantic_units, semantic_links = _semantic_decomposition(plan, spans)
     explicit_unknowns = _explicit_unknown_witnesses(
-        plan, spans, semantic_units
+        plan,
+        spans,
+        semantic_units,
+        relations,
+        semantic_links,
     )
     return GroundedSemanticRestatementWitness(
         schema_version=GROUND_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA,

@@ -244,6 +244,20 @@ def test_rc0028_e0b_catalog_breaks_known_body_only_collisions() -> None:
     )
 
 
+def test_rc0028_e0b_referent_unknown_reuses_neutral_limit_grammar() -> None:
+    module = _load_module(
+        _EXPERIMENT_CATALOG_MODULE,
+        expected_code="STEP11_RC0028_EXPERIMENT_CATALOG_REQUIRED",
+    )
+    catalog = getattr(module, _EXPERIMENT_CATALOG_ATTRIBUTE)
+    assert catalog["unknown_surface_tokens"][
+        "explicit_referent_unknown"
+    ] == catalog["role_position_surface_tokens"]["unknown_or_limit:limit"]
+    assert module.validate_step11_rc0028_experiment_surface_catalog(
+        catalog
+    ) == ()
+
+
 @pytest.mark.parametrize(
     "contract",
     _CLOSURE_CONTRACTS,

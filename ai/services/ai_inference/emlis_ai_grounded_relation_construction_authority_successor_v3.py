@@ -81,6 +81,7 @@ _EXPLICIT_UNKNOWN_DIMENSIONS: Final = frozenset(
         "explicit_unverbalized_unknown",
         "explicit_choice_decision_unknown",
         "explicit_temporal_referent_unknown",
+        "explicit_referent_unknown",
     }
 )
 _LEXICAL_ROLE_KINDS: Final = frozenset(
