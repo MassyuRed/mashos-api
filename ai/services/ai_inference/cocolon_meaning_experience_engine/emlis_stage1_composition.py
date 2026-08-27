@@ -12308,7 +12308,25 @@ def _language_core_source_owner_payloads(
     root = repository_root or Path(__file__).resolve().parents[4]
     owner_seed_by_path = dict(LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST)
     expected_paths = (_COMPOSITION_PATH, *LANGUAGE_CORE_EXTERNAL_PATHS)
+    activation_owner_exclusions = frozenset(
+        {
+            (
+                LANGUAGE_CORE_EXTERNAL_PATHS[1],
+                "compile_stage1_response",
+            ),
+            (
+                LANGUAGE_CORE_EXTERNAL_PATHS[2],
+                "build_text_grounded_limited_artifact",
+            ),
+        }
+    )
     if tuple(owner_seed_by_path) != expected_paths:
+        raise Stage1CompositionError("LANGUAGE_CORE_DEPENDENCY_SCOPE_STOP")
+    if any(
+        (relative_path, owner_name) in activation_owner_exclusions
+        for relative_path, owner_names in LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
+        for owner_name in owner_names
+    ):
         raise Stage1CompositionError("LANGUAGE_CORE_DEPENDENCY_SCOPE_STOP")
 
     module_name_by_path = {
@@ -12444,7 +12462,11 @@ def _language_core_source_owner_payloads(
     while queue:
         relative_path, name, required_seed = queue.pop()
         key = (relative_path, name)
-        if key in seen or name in _LANGUAGE_CORE_NONBEHAVIOR_IDENTITY_BINDINGS:
+        if (
+            key in seen
+            or name in _LANGUAGE_CORE_NONBEHAVIOR_IDENTITY_BINDINGS
+            or key in activation_owner_exclusions
+        ):
             continue
         seen.add(key)
         node = declarations[relative_path].get(name)

@@ -12811,6 +12811,49 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         self.assertEqual(len({name for name, _payload in payloads}), 16)
         for path, payload in payloads[:7]:
             self.assertEqual(payload, (repository_root / path).read_bytes())
+        runtime_payload_sha256_exact16 = tuple(
+            (name, hashlib.sha256(payload).hexdigest())
+            for name, payload in payloads
+        )
+        self.assertEqual(
+            runtime_payload_sha256_exact16,
+            (
+                (exact16_names[0], "a0d243595ad95d434bac88d6a08ddfc356f4ec6e19799dd3c5c58ec3a1ec3ada"),
+                (exact16_names[1], "239533f7514fb516185aebc61ebfb076c3fe24aaffca8d78cca734e8dc203777"),
+                (exact16_names[2], "b6d64dc15fc93d4a3e99d608778fa32cc462af3efb24e52f9d703aafa40f7a75"),
+                (exact16_names[3], "c907af7a059f802120b3e494a88651015a14d45c5e272ab1f9d3f1e9bfa8d06f"),
+                (exact16_names[4], "efb08a5f49d6c3452a8f2332c9d45cebcb5e91ed2c8e8c41fa5a06b3faa4fadd"),
+                (exact16_names[5], "e524111597d75599b0550b271a3df464df4d468aec28e608ab4586b7840da1f0"),
+                (exact16_names[6], "3ca31fbcf0ad9c93bdd4d267a3ef2000ce79b8d702bd7188f020eb11d5bd593c"),
+                (exact16_names[7], "01a0727258de897242262ef5d05851a040bc8b4c4694c7126d744e85c0de66e0"),
+                (exact16_names[8], "838767e83ab7f34e955bab4ed5e9efd07e238a6a74c5024ea644e70af1cd3cf1"),
+                (exact16_names[9], "7db3d6c83e24a364e701af35c84ec68b7f36ff24acbe5c6f2b9020dfbbc96774"),
+                (exact16_names[10], "b60f13b6f253cfb94d759d8b0ade9d3ea6c7fd6786a964886cf02037ab2d4d40"),
+                (exact16_names[11], "9a0b927f1a8239024a2d97351277412fed65e1975408de1328411ac2e1ae2ea9"),
+                (exact16_names[12], "cee6c2989896f8e3f3642f98a354ea294d34b05eff81a2322fcb94ce9fc9abba"),
+                (exact16_names[13], "ed64aa5ca1e92121f4098bfc7c855646c904ff6d4d599d31edb1522fdaf7f973"),
+                (exact16_names[14], "3c14b8eb9e5cd8ff5410ffc7c1a0d3558784a75f8c355c272904dc650dd50ff7"),
+                (exact16_names[15], "805deae2406958a3ea3a3d9aaaeecd4a186489c50c2b8edd82101943f3789e04"),
+            ),
+        )
+        self.assertEqual(
+            hashlib.sha256(
+                stage1_canonical_json_bytes(runtime_payload_sha256_exact16)
+            ).hexdigest(),
+            "b805414fe4a630670916a8ff7e8c99ccbb9889f3cc94f19cd1f40860ea50401a",
+        )
+        runtime_payload_name_sha256_byte_count_exact16 = tuple(
+            (name, hashlib.sha256(payload).hexdigest(), len(payload))
+            for name, payload in payloads
+        )
+        self.assertEqual(
+            hashlib.sha256(
+                stage1_canonical_json_bytes(
+                    runtime_payload_name_sha256_byte_count_exact16
+                )
+            ).hexdigest(),
+            "fdf5f722513485b9f8e9718512915eb12d76f03b05ec94bc9180826cdacfb726",
+        )
 
         expected_contract_names = (
             "EmlisSubjectiveClaim", "SubjectiveBasisBinding",
@@ -13158,6 +13201,10 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             independent_identity,
             module.compute_stage1_runtime_integration_identity(repository_root),
         )
+        self.assertEqual(
+            independent_identity,
+            "8f9eb006847beb24446cacb64228c70ef7852a2e7cc364913e6876a99a9f8e3d",
+        )
         self.assertRegex(
             module.STAGE1_RUNTIME_INTEGRATION_IDENTITY,
             r"^[0-9a-f]{64}$",
@@ -13188,8 +13235,54 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         self.assertEqual(tuple(name for name, _payload in payloads), expected_names)
         self.assertEqual(len(payloads), 16)
         self.assertEqual(len({name for name, _payload in payloads}), 16)
+        language_payload_sha256_exact16 = tuple(
+            (name, hashlib.sha256(payload).hexdigest())
+            for name, payload in payloads
+        )
+        self.assertEqual(
+            language_payload_sha256_exact16,
+            (
+                (expected_names[0], "94830072dd48f9cda3ca4b80838dd04138890a23acc0f348973ff5cffe95c6d2"),
+                (expected_names[1], "48a312c9019aaa4d8ffb150163c57f8bf6c28028f16afd190eca1b55aa31cb01"),
+                (expected_names[2], "0224e2578b2544e2f4f0b4a87a446927a5d64c7d14a5e0a10738b8c55fa3c7d3"),
+                (expected_names[3], "8c6ed267db55cc87751d3f75fc39eb7678224266595c175b5d216518d004e8ca"),
+                (expected_names[4], "2fd50144fb65e9ff7d3dfd163c71f6ac6691e04d608ae70d6082d93ef577da07"),
+                (expected_names[5], "8b6c361506f5efe3d508a8ea0685524baa2c092fb149fa04718242afaf524e43"),
+                (expected_names[6], "19ec812e35ecbb70661c66156cd6609e2dc813016b7358f290db04cab09de64f"),
+                (expected_names[7], "01a0727258de897242262ef5d05851a040bc8b4c4694c7126d744e85c0de66e0"),
+                (expected_names[8], "838767e83ab7f34e955bab4ed5e9efd07e238a6a74c5024ea644e70af1cd3cf1"),
+                (expected_names[9], "7db3d6c83e24a364e701af35c84ec68b7f36ff24acbe5c6f2b9020dfbbc96774"),
+                (expected_names[10], "b60f13b6f253cfb94d759d8b0ade9d3ea6c7fd6786a964886cf02037ab2d4d40"),
+                (expected_names[11], "9a0b927f1a8239024a2d97351277412fed65e1975408de1328411ac2e1ae2ea9"),
+                (expected_names[12], "cee6c2989896f8e3f3642f98a354ea294d34b05eff81a2322fcb94ce9fc9abba"),
+                (expected_names[13], "ed64aa5ca1e92121f4098bfc7c855646c904ff6d4d599d31edb1522fdaf7f973"),
+                (expected_names[14], "3c14b8eb9e5cd8ff5410ffc7c1a0d3558784a75f8c355c272904dc650dd50ff7"),
+                (expected_names[15], "805deae2406958a3ea3a3d9aaaeecd4a186489c50c2b8edd82101943f3789e04"),
+            ),
+        )
+        self.assertEqual(
+            hashlib.sha256(
+                stage1_canonical_json_bytes(language_payload_sha256_exact16)
+            ).hexdigest(),
+            "84ed3600b5bbf0becfa2aa6e6fe02ba3293dd6f2f8ddae1288cef19d58b71e55",
+        )
+        language_payload_name_sha256_byte_count_exact16 = tuple(
+            (name, hashlib.sha256(payload).hexdigest(), len(payload))
+            for name, payload in payloads
+        )
+        self.assertEqual(
+            hashlib.sha256(
+                stage1_canonical_json_bytes(
+                    language_payload_name_sha256_byte_count_exact16
+                )
+            ).hexdigest(),
+            "f29ab019e5bb1d36617157a5f141c9c11adf8f52109e16665364573fe613e565",
+        )
 
         seed_by_path = dict(module.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST)
+        selected_declaration_counts = []
+        selected_import_counts = []
+        source_owner_symbol_rows = []
         for (name, payload), path in zip(payloads[:7], source_paths):
             self.assertEqual(name, f"language_core_source_owner_ast:{path}")
             projected = dict(json.loads(payload))
@@ -13202,13 +13295,82 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 tuple(projected["seed_owner_names"]),
                 seed_by_path[path],
             )
-            selected_names = {
+            selected_declaration_names = tuple(
                 bound_name
                 for row in projected["selected_declarations"]
                 for bound_name in dict(row)["bound_names"]
-            }
+            )
+            selected_import_names = tuple(
+                dict(row)["bound_name"]
+                for row in projected["selected_import_bindings"]
+            )
+            selected_names = set(selected_declaration_names)
             self.assertTrue(set(seed_by_path[path]).issubset(selected_names))
             self.assertTrue(projected["selected_declarations"])
+            selected_declaration_counts.append(len(selected_names))
+            selected_import_counts.append(
+                len(projected["selected_import_bindings"])
+            )
+            source_owner_symbol_rows.append(
+                (path, selected_declaration_names, selected_import_names)
+            )
+            activation_owner = {
+                module.LANGUAGE_CORE_EXTERNAL_PATHS[1]: (
+                    "compile_stage1_response"
+                ),
+                module.LANGUAGE_CORE_EXTERNAL_PATHS[2]: (
+                    "build_text_grounded_limited_artifact"
+                ),
+            }.get(path)
+            if activation_owner is not None:
+                self.assertNotIn(activation_owner, selected_names)
+
+        self.assertEqual(
+            tuple(selected_declaration_counts),
+            (260, 238, 97, 180, 251, 5, 39),
+        )
+        self.assertEqual(
+            tuple(selected_import_counts),
+            (99, 14, 91, 70, 36, 25, 19),
+        )
+        self.assertEqual(sum(selected_declaration_counts), 1070)
+        self.assertEqual(sum(selected_import_counts), 354)
+        self.assertEqual(
+            hashlib.sha256(
+                stage1_canonical_json_bytes(tuple(source_owner_symbol_rows))
+            ).hexdigest(),
+            "c3baf89b8810fc71c4468aa0f00262fc2626febccb12f9bece049cdd6ba85e58",
+        )
+        activation_owner_exact2 = (
+            (
+                module.LANGUAGE_CORE_EXTERNAL_PATHS[1],
+                "compile_stage1_response",
+            ),
+            (
+                module.LANGUAGE_CORE_EXTERNAL_PATHS[2],
+                "build_text_grounded_limited_artifact",
+            ),
+        )
+        self.assertEqual(
+            hashlib.sha256(
+                stage1_canonical_json_bytes(activation_owner_exact2)
+            ).hexdigest(),
+            "1eb7baf3fcc2673f0d73ecf1663f140baa955967a4e3066e54913b978f9d9e79",
+        )
+        self.assertEqual(
+            hashlib.sha256(
+                stage1_canonical_json_bytes(language_payload_sha256_exact16[:7])
+            ).hexdigest(),
+            "257385e0c1b20075dca6891c74a970c43b1294edb65ce3631c2e9e1b40112570",
+        )
+        self.assertEqual(
+            hashlib.sha256(
+                stage1_canonical_json_bytes(
+                    language_payload_name_sha256_byte_count_exact16[:7]
+                )
+            ).hexdigest(),
+            "4c959b6ba61ff5135417e91d296d0291e4e246183040c3f639afab9d8694dbfe",
+        )
 
         framed = bytearray(b"COCOLON_CMEE_STAGE1_LANGUAGE_CORE_IDENTITY_V2\x00")
         for name, payload in payloads:
@@ -13224,6 +13386,44 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             module.compute_language_core_identity(repository_root),
         )
         self.assertRegex(module.LANGUAGE_CORE_IDENTITY, r"^[0-9a-f]{64}$")
+        self.assertEqual(
+            independent_identity,
+            "fc337cc7712d461d594dd8ec45ec46da10939a8d18dedc3fc4cf9246fe6a5f3d",
+        )
+        self.assertEqual(
+            hashlib.sha256(
+                stage1_canonical_json_bytes(
+                    module.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
+                )
+            ).hexdigest(),
+            "c499a7b048dac5afc6e81fc7b44564c25d110b1c4d1e86b8507015133e81de3c",
+        )
+        self.assertEqual(
+            hashlib.sha256(
+                stage1_canonical_json_bytes(
+                    module.N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT28
+                )
+            ).hexdigest(),
+            "e2484757b2e834ea27febec130cacff36deb2df9ddc15a66f25f38708aec0606",
+        )
+        self.assertEqual(
+            module.N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5,
+            (
+                "LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST",
+                "_validate_product_causal_owner_manifest",
+                "stage1_runtime_integration_identity_payloads",
+                "_language_core_source_owner_payloads",
+                "language_core_identity_payloads",
+            ),
+        )
+        self.assertEqual(
+            hashlib.sha256(
+                stage1_canonical_json_bytes(
+                    module.N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5
+                )
+            ).hexdigest(),
+            "1df267709164af1ce8e3ee443eddad14c83efa132bb1cf87492ab8cccf9f9c27",
+        )
 
         with tempfile.TemporaryDirectory() as temporary:
             temporary_root = Path(temporary)
@@ -13691,6 +13891,41 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 if isinstance(child, ast.Name)
             )
         )
+        active_ast = ast.dump(
+            active_node,
+            annotate_fields=True,
+            include_attributes=False,
+        ).encode("utf-8")
+        self.assertEqual(
+            hashlib.sha256(active_ast).hexdigest(),
+            "ebdf3a8ab86537572c0ce7e9db89aae6c7bdd2f0c945d2d0e79de637a3364f47",
+        )
+        runtime_resolver_source = inspect.getsource(
+            emlis_v1a_module.build_text_grounded_limited_artifact
+        ).encode("utf-8").removesuffix(b"\n")
+        runtime_resolver_node = ast.parse(runtime_resolver_source).body[0]
+        self.assertEqual(
+            hashlib.sha256(runtime_resolver_source).hexdigest(),
+            "01d90162491957690f354758d7f67f4a521cdcb71b23d7e50312d81cb3bce1a7",
+        )
+        self.assertEqual(
+            hashlib.sha256(
+                ast.dump(
+                    runtime_resolver_node,
+                    annotate_fields=True,
+                    include_attributes=False,
+                ).encode("utf-8")
+            ).hexdigest(),
+            "c1d3ab041f2bef909773ecf3c396e15153b334f41c9c85d5b45212a93fd99bcb",
+        )
+        self.assertIn(
+            "CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1",
+            {
+                child.id
+                for child in ast.walk(runtime_resolver_node)
+                if isinstance(child, ast.Name)
+            },
+        )
         helper_node = next(
             row
             for row in function_rows
@@ -13787,7 +14022,118 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            self.assertNotEqual(
+            temporary_runtime_path = (
+                temporary_root / module.LANGUAGE_CORE_EXTERNAL_PATHS[2]
+            )
+            temporary_runtime_source = temporary_runtime_path.read_text(
+                encoding="utf-8"
+            )
+            temporary_runtime_tree = ast.parse(temporary_runtime_source)
+            temporary_runtime_resolver = next(
+                row
+                for row in temporary_runtime_tree.body
+                if isinstance(row, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and row.name == "build_text_grounded_limited_artifact"
+            )
+            runtime_lines = temporary_runtime_source.splitlines(keepends=True)
+            runtime_segment = "".join(
+                runtime_lines[
+                    temporary_runtime_resolver.lineno - 1 :
+                    temporary_runtime_resolver.end_lineno
+                ]
+            )
+            runtime_signature_before = (
+                ast.dump(
+                    temporary_runtime_resolver.args,
+                    include_attributes=False,
+                ),
+                ast.dump(
+                    temporary_runtime_resolver.returns,
+                    include_attributes=False,
+                ),
+                tuple(
+                    ast.dump(row, include_attributes=False)
+                    for row in temporary_runtime_resolver.decorator_list
+                ),
+            )
+            activated_runtime_return = ast.parse(
+                "return _build_text_grounded_limited_artifact_for_schema("
+                "source, stage1_response_schema_version="
+                "CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2, "
+                "stage1_compiler=compile_stage1_response)"
+            ).body[0]
+            self.assertIsInstance(activated_runtime_return, ast.Return)
+            temporary_runtime_resolver.body = [activated_runtime_return]
+            runtime_signature_after = (
+                ast.dump(
+                    temporary_runtime_resolver.args,
+                    include_attributes=False,
+                ),
+                ast.dump(
+                    temporary_runtime_resolver.returns,
+                    include_attributes=False,
+                ),
+                tuple(
+                    ast.dump(row, include_attributes=False)
+                    for row in temporary_runtime_resolver.decorator_list
+                ),
+            )
+            self.assertEqual(runtime_signature_after, runtime_signature_before)
+            activated_runtime_segment = (
+                ast.unparse(temporary_runtime_resolver) + "\n"
+            )
+            self.assertEqual(temporary_runtime_source.count(runtime_segment), 1)
+            temporary_runtime_path.write_text(
+                temporary_runtime_source.replace(
+                    runtime_segment,
+                    activated_runtime_segment,
+                    1,
+                ),
+                encoding="utf-8",
+            )
+
+            def changed_top_level_symbols(
+                before_source: str,
+                after_source: str,
+            ) -> tuple[str, ...]:
+                def symbol_rows(source: str) -> dict[str, str]:
+                    rows = {}
+                    for row in ast.parse(source).body:
+                        if isinstance(
+                            row,
+                            (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef),
+                        ):
+                            rows[row.name] = ast.dump(
+                                row,
+                                include_attributes=False,
+                            )
+                    return rows
+
+                before_rows = symbol_rows(before_source)
+                after_rows = symbol_rows(after_source)
+                return tuple(
+                    sorted(
+                        name
+                        for name in set(before_rows) | set(after_rows)
+                        if before_rows.get(name) != after_rows.get(name)
+                    )
+                )
+
+            self.assertEqual(
+                changed_top_level_symbols(
+                    temporary_response_source,
+                    temporary_response_path.read_text(encoding="utf-8"),
+                ),
+                ("compile_stage1_response",),
+            )
+            self.assertEqual(
+                changed_top_level_symbols(
+                    temporary_runtime_source,
+                    temporary_runtime_path.read_text(encoding="utf-8"),
+                ),
+                ("build_text_grounded_limited_artifact",),
+            )
+            self.assertEqual(
                 module.compute_language_core_identity(temporary_root),
                 module.LANGUAGE_CORE_IDENTITY,
             )
@@ -14430,16 +14776,6 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 "EARLY_FROZEN_WITHHELD_SET_DIGEST",
                 cls._STANDIN_SET_DIGEST,
             ),
-            patch.object(
-                candidate_run_module,
-                "STEP2_FROZEN_LANGUAGE_CORE_IDENTITY",
-                stage1_composition_module.LANGUAGE_CORE_IDENTITY,
-            ),
-            patch.object(
-                candidate_run_module,
-                "STEP3_FROZEN_STAGE1_RUNTIME_INTEGRATION_IDENTITY",
-                stage1_composition_module.STAGE1_RUNTIME_INTEGRATION_IDENTITY,
-            ),
         )
         for patcher in cls._frozen_input_patchers:
             patcher.start()
@@ -14643,6 +14979,68 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
         known = body_free["known_exact4_body_free"]
         withheld = body_free["withheld_exact4_body_free"]
         self.assertEqual(
+            candidate_run_module._current_frozen_early_identity_pair(),
+            (
+                candidate_run_module.N3_LANGUAGE_CORE_IDENTITY,
+                candidate_run_module.N3_RUNTIME_INTEGRATION_IDENTITY,
+            ),
+        )
+        self.assertEqual(
+            candidate_run_module.N3_LANGUAGE_CORE_IDENTITY,
+            "fc337cc7712d461d594dd8ec45ec46da10939a8d18dedc3fc4cf9246fe6a5f3d",
+        )
+        self.assertEqual(
+            candidate_run_module.N3_RUNTIME_INTEGRATION_IDENTITY,
+            "8f9eb006847beb24446cacb64228c70ef7852a2e7cc364913e6876a99a9f8e3d",
+        )
+        self.assertEqual(
+            candidate_run_module._canonical_sha256(
+                candidate_run_module
+                .N3_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT16
+            ),
+            candidate_run_module.N3_LANGUAGE_PAYLOAD_TUPLE_SHA256,
+        )
+        self.assertEqual(
+            candidate_run_module._canonical_sha256(
+                candidate_run_module
+                .N3_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT16
+            ),
+            candidate_run_module.N3_RUNTIME_PAYLOAD_TUPLE_SHA256,
+        )
+        self.assertEqual(
+            candidate_run_module.EARLY_BOUNDED_UNIT_ID,
+            "cocolon.cmee.stage1.route_a.typed_japanese_case_frame_realizer.20260826.v1",
+        )
+        self.assertEqual(
+            candidate_run_module.WITHHELD_EARLY_PACKET_ID,
+            "SUCCESSOR_EARLY_LANGUAGE_SET_EXACT8",
+        )
+        self.assertEqual(
+            candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+            "SUCCESSOR_EARLY_LANGUAGE_ATTEMPT_01",
+        )
+        self.assertEqual(
+            candidate_run_module.EARLY_ULTRA_KNOWN_READ_ATTEMPT_ID,
+            "SUCCESSOR_EARLY_ULTRA_KNOWN_READ_ATTEMPT_01",
+        )
+        self.assertEqual(
+            candidate_run_module.EARLY_PRO_COMBINED_READ_ATTEMPT_ID,
+            "SUCCESSOR_EARLY_PRO_COMBINED_READ_ATTEMPT_01",
+        )
+        predecessor = dict(
+            candidate_run_module.PREDECESSOR_EARLY_NONREUSE_RECORD
+        )
+        self.assertEqual(
+            predecessor["attempt_id"],
+            "CMEE_STAGE1_STEP3_3_ATTEMPT_01",
+        )
+        self.assertEqual(predecessor["correction_counter"], "2_OF_2_IMMUTABLE")
+        self.assertFalse(predecessor["attempt_output_read_reuse_allowed"])
+        self.assertNotEqual(
+            predecessor["attempt_id"],
+            candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
+        )
+        self.assertEqual(
             body_free["schema_version"],
             candidate_run_module.EARLY_BODY_FREE_PACKET_SCHEMA_VERSION,
         )
@@ -14765,7 +15163,7 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
     ) -> None:
         with patch.object(
             candidate_run_module,
-            "STEP3_FROZEN_STAGE1_RUNTIME_INTEGRATION_IDENTITY",
+            "N3_RUNTIME_INTEGRATION_IDENTITY",
             "0" * 64,
         ):
             with self.assertRaisesRegex(
@@ -15223,7 +15621,7 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
         self.assertEqual(receipt["reader"], "PRO_ONLY")
         self.assertEqual(
             receipt["lifecycle"],
-            "DELETE_AT_STEP3_7_AFTER_STEP3_6_DECISION_POSTVERIFY",
+            "DELETE_AFTER_I08_DECISION_DUAL_REMOTE_POSTVERIFY",
         )
         self.assertEqual(
             receipt["body_free_machine_packet_sha256"],
@@ -15404,7 +15802,7 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
         self.assertEqual(validated["reader"], "PRO_ONLY")
         self.assertEqual(
             validated["lifecycle"],
-            "DELETE_AT_STEP3_7_AFTER_STEP3_6_DECISION_POSTVERIFY",
+            "DELETE_AFTER_I08_DECISION_DUAL_REMOTE_POSTVERIFY",
         )
         invalid_receipts = []
         for field, value in (
@@ -15639,7 +16037,8 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             self.assertEqual(sealed["operation"], "SEALED_NEW")
             self.assertEqual(sealed["reader"], "ULTRA_ONLY")
             self.assertEqual(
-                sealed["lifecycle"], "DELETE_AFTER_STEP3_6_TRANSITION"
+                sealed["lifecycle"],
+                "DELETE_AFTER_I08_DECISION_DUAL_REMOTE_POSTVERIFY",
             )
             self.assertFalse(sealed["body_payload_present"])
             self.assertEqual(sealed["source_actual_run_count"], 1)
@@ -16826,7 +17225,7 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             expected_input = private_root / "input.json"
             for attempt_id, target in (
                 (
-                    "CMEE_STAGE1_STEP3_3_ATTEMPT_02",
+                    "CMEE_STAGE1_STEP3_3_ATTEMPT_01",
                     private_root
                     / candidate_run_module.EARLY_ACTUAL_RUN_DIRECTORY_NAME,
                 ),

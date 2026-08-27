@@ -200,17 +200,19 @@ EARLY_RUN_EXACT3_FILENAMES = (
     EARLY_RUN_BODY_FREE_MACHINE_FILENAME,
 )
 EARLY_BOUNDED_UNIT_ID = (
-    "cocolon.cmee.stage1.additional_correction.route_a.20260824.v1"
+    "cocolon.cmee.stage1.route_a.typed_japanese_case_frame_realizer.20260826.v1"
 )
-WITHHELD_EARLY_PACKET_ID = (
-    "CMEE_STAGE1_WITHHELD_EARLY_DURABLE_20260826_V2"
-)
+WITHHELD_EARLY_PACKET_ID = "SUCCESSOR_EARLY_LANGUAGE_SET_EXACT8"
 WITHHELD_EARLY_PRIVATE_SLOT_ID = (
-    "PRIVATE_SLOT_WITHHELD_EARLY_DURABLE_20260826_V2"
+    "PRIVATE_SLOT_SUCCESSOR_EARLY_LANGUAGE_SET_EXACT8"
 )
-EARLY_ACTUAL_ATTEMPT_ID = "CMEE_STAGE1_STEP3_3_ATTEMPT_01"
-EARLY_PRO_COMBINED_READ_ATTEMPT_ID = "EARLY_PRO_COMBINED_READ_ATTEMPT_01"
-EARLY_ULTRA_KNOWN_READ_ATTEMPT_ID = "EARLY_ULTRA_KNOWN_READ_ATTEMPT_01"
+EARLY_ACTUAL_ATTEMPT_ID = "SUCCESSOR_EARLY_LANGUAGE_ATTEMPT_01"
+EARLY_PRO_COMBINED_READ_ATTEMPT_ID = (
+    "SUCCESSOR_EARLY_PRO_COMBINED_READ_ATTEMPT_01"
+)
+EARLY_ULTRA_KNOWN_READ_ATTEMPT_ID = (
+    "SUCCESSOR_EARLY_ULTRA_KNOWN_READ_ATTEMPT_01"
+)
 EARLY_ACTUAL_RUN_DIRECTORY_NAME = EARLY_ACTUAL_ATTEMPT_ID
 EARLY_ACTUAL_STAGING_DIRECTORY_NAME = (
     f".{EARLY_ACTUAL_RUN_DIRECTORY_NAME}.staging"
@@ -223,7 +225,7 @@ EARLY_PRIVATE_REVIEW_MASTER_KIND = "EARLY_ACTUAL_EXACT3"
 EARLY_PRIVATE_REVIEW_MASTER_MEMBER_MEDIA_TYPE = "application/json"
 EARLY_PRIVATE_REVIEW_MASTER_READER = "PRO_ONLY"
 EARLY_PRIVATE_REVIEW_MASTER_LIFECYCLE = (
-    "DELETE_AT_STEP3_7_AFTER_STEP3_6_DECISION_POSTVERIFY"
+    "DELETE_AFTER_I08_DECISION_DUAL_REMOTE_POSTVERIFY"
 )
 EARLY_KNOWN_REVIEW_AUXILIARY_SCHEMA_VERSION = (
     "cocolon.cmee.stage1.early_known_review_auxiliary.v1"
@@ -238,7 +240,7 @@ EARLY_KNOWN_REVIEW_AUXILIARY_ALIAS = (
 )
 EARLY_KNOWN_REVIEW_AUXILIARY_READER = "ULTRA_ONLY"
 EARLY_KNOWN_REVIEW_AUXILIARY_LIFECYCLE = (
-    "DELETE_AFTER_STEP3_6_TRANSITION"
+    "DELETE_AFTER_I08_DECISION_DUAL_REMOTE_POSTVERIFY"
 )
 EARLY_MACHINE_ACTUAL_COMPLETED_STATUS = (
     "EARLY_ACTUAL_MACHINE_COMPLETED_PENDING_REVIEW"
@@ -247,11 +249,110 @@ EARLY_MACHINE_ACTUAL_NONCLEAR_STATUS = "EARLY_ACTUAL_MACHINE_NONCLEAR_STOP"
 EARLY_ACTUAL_REVIEWED_NONCLEAR_STATUS = (
     "EARLY_ACTUAL_REVIEWED_NONCLEAR_PENDING_TRANSITION"
 )
-STEP2_FROZEN_LANGUAGE_CORE_IDENTITY = (
-    "ab4a6b5612a3912e9789ef1cc0983ce4f37a0e0657b76f49b430b1baea8755a2"
+N3_LANGUAGE_CORE_IDENTITY = (
+    "fc337cc7712d461d594dd8ec45ec46da10939a8d18dedc3fc4cf9246fe6a5f3d"
 )
+N3_RUNTIME_INTEGRATION_IDENTITY = (
+    "8f9eb006847beb24446cacb64228c70ef7852a2e7cc364913e6876a99a9f8e3d"
+)
+# Compatibility names remain public to the existing body-free serializers;
+# they resolve only to the current N3 snapshot and never to predecessor bytes.
+STEP2_FROZEN_LANGUAGE_CORE_IDENTITY = N3_LANGUAGE_CORE_IDENTITY
 STEP3_FROZEN_STAGE1_RUNTIME_INTEGRATION_IDENTITY = (
-    "49da471397d19828b4a2e8326f76d4309e7d36a716221a1a91e1959f4b44a91d"
+    N3_RUNTIME_INTEGRATION_IDENTITY
+)
+PREDECESSOR_EARLY_NONREUSE_RECORD = (
+    ("schema_version", "cocolon.cmee.stage1.predecessor_nonreuse.v1"),
+    (
+        "bounded_unit_id",
+        "cocolon.cmee.stage1.additional_correction.route_a.20260824.v1",
+    ),
+    ("packet_id", "CMEE_STAGE1_WITHHELD_EARLY_DURABLE_20260826_V2"),
+    ("private_slot_id", "PRIVATE_SLOT_WITHHELD_EARLY_DURABLE_20260826_V2"),
+    ("attempt_id", "CMEE_STAGE1_STEP3_3_ATTEMPT_01"),
+    ("pro_read_attempt_id", "EARLY_PRO_COMBINED_READ_ATTEMPT_01"),
+    ("ultra_read_attempt_id", "EARLY_ULTRA_KNOWN_READ_ATTEMPT_01"),
+    ("runtime_activation_head", "3d6f3499190f1465e57cdb102e1937d095cdd457"),
+    ("design_activation_head", "f46159ec204e3bf4b204896d1e39947d58d872c2"),
+    (
+        "language_core_identity",
+        "ab4a6b5612a3912e9789ef1cc0983ce4f37a0e0657b76f49b430b1baea8755a2",
+    ),
+    (
+        "runtime_integration_identity",
+        "49da471397d19828b4a2e8326f76d4309e7d36a716221a1a91e1959f4b44a91d",
+    ),
+    ("run_retry_rerun", (1, 0, 0)),
+    ("machine_known_withheld", ("CLEAR", "CLEAR")),
+    ("ultra_result", "NOT_CLEAR"),
+    ("pro_result", "COMMON_DEFECT"),
+    ("terminal", "COMMON_DEFECT_RETURN_BUDGET_EXHAUSTED_STOP"),
+    ("correction_counter", "2_OF_2_IMMUTABLE"),
+    ("attempt_output_read_reuse_allowed", False),
+)
+N3_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT16 = (
+    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "94830072dd48f9cda3ca4b80838dd04138890a23acc0f348973ff5cffe95c6d2", 1133688),
+    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py", "48a312c9019aaa4d8ffb150163c57f8bf6c28028f16afd190eca1b55aa31cb01", 767466),
+    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py", "0224e2578b2544e2f4f0b4a87a446927a5d64c7d14a5e0a10738b8c55fa3c7d3", 442538),
+    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py", "8c6ed267db55cc87751d3f75fc39eb7678224266595c175b5d216518d004e8ca", 712544),
+    ("language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_plan.py", "2fd50144fb65e9ff7d3dfd163c71f6ac6691e04d608ae70d6082d93ef577da07", 900661),
+    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_text_generation_core/composer.py", "8b6c361506f5efe3d508a8ea0685524baa2c092fb149fa04718242afaf524e43", 21822),
+    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_text_generation_core/adapters/emlis_observation_composer.py", "19ec812e35ecbb70661c66156cd6609e2dc813016b7358f290db04cab09de64f", 90077),
+    ("language_core_contract_manifest", "01a0727258de897242262ef5d05851a040bc8b4c4694c7126d744e85c0de66e0", 183448),
+    ("case_frame_and_particle_manifest", "838767e83ab7f34e955bab4ed5e9efd07e238a6a74c5024ea644e70af1cd3cf1", 14076),
+    ("predicate_sense_and_atomic_head_manifest", "7db3d6c83e24a364e701af35c84ec68b7f36ff24acbe5c6f2b9020dfbbc96774", 8097),
+    ("source_complement_reference_manifest", "b60f13b6f253cfb94d759d8b0ade9d3ea6c7fd6786a964886cf02037ab2d4d40", 25759),
+    ("morphology_link_functional_manifest", "9a0b927f1a8239024a2d97351277412fed65e1975408de1328411ac2e1ae2ea9", 7408),
+    ("participant_structural_manifest", "cee6c2989896f8e3f3642f98a354ea294d34b05eff81a2322fcb94ce9fc9abba", 774),
+    ("policy_and_closed_enum_manifest", "ed64aa5ca1e92121f4098bfc7c855646c904ff6d4d599d31edb1522fdaf7f973", 20889),
+    ("normal_form_and_profile_manifest", "3c14b8eb9e5cd8ff5410ffc7c1a0d3558784a75f8c355c272904dc650dd50ff7", 4055),
+    ("product_causal_owner_and_registry_digests_manifest", "805deae2406958a3ea3a3d9aaaeecd4a186489c50c2b8edd82101943f3789e04", 5956),
+)
+N3_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT16 = (
+    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "a0d243595ad95d434bac88d6a08ddfc356f4ec6e19799dd3c5c58ec3a1ec3ada", 523147),
+    ("ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py", "239533f7514fb516185aebc61ebfb076c3fe24aaffca8d78cca734e8dc203777", 284967),
+    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py", "b6d64dc15fc93d4a3e99d608778fa32cc462af3efb24e52f9d703aafa40f7a75", 325262),
+    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py", "c907af7a059f802120b3e494a88651015a14d45c5e272ab1f9d3f1e9bfa8d06f", 293740),
+    ("ai/services/ai_inference/emlis_ai_grounded_observation_plan.py", "efb08a5f49d6c3452a8f2332c9d45cebcb5e91ed2c8e8c41fa5a06b3faa4fadd", 352379),
+    ("ai/services/ai_inference/cocolon_text_generation_core/composer.py", "e524111597d75599b0550b271a3df464df4d468aec28e608ab4586b7840da1f0", 8179),
+    ("ai/services/ai_inference/cocolon_text_generation_core/adapters/emlis_observation_composer.py", "3ca31fbcf0ad9c93bdd4d267a3ef2000ce79b8d702bd7188f020eb11d5bd593c", 25495),
+    *N3_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT16[7:],
+)
+N3_LANGUAGE_PAYLOAD_TUPLE_SHA256 = (
+    "f29ab019e5bb1d36617157a5f141c9c11adf8f52109e16665364573fe613e565"
+)
+N3_RUNTIME_PAYLOAD_TUPLE_SHA256 = (
+    "fdf5f722513485b9f8e9718512915eb12d76f03b05ec94bc9180826cdacfb726"
+)
+N3_SOURCE_OWNER_PAYLOAD_EXACT7_TUPLE_SHA256 = (
+    "4c959b6ba61ff5135417e91d296d0291e4e246183040c3f639afab9d8694dbfe"
+)
+N3_SOURCE_OWNER_SYMBOL_SET_SHA256 = (
+    "c3baf89b8810fc71c4468aa0f00262fc2626febccb12f9bece049cdd6ba85e58"
+)
+N3_SOURCE_OWNER_DECLARATION_COUNTS_EXACT7 = (260, 238, 97, 180, 251, 5, 39)
+N3_SOURCE_OWNER_IMPORT_COUNTS_EXACT7 = (99, 14, 91, 70, 36, 25, 19)
+N3_PRODUCT_CAUSAL_OWNER_MANIFEST_SHA256 = (
+    "c499a7b048dac5afc6e81fc7b44564c25d110b1c4d1e86b8507015133e81de3c"
+)
+N3_BEHAVIOR_ROOT_EXACT28_SHA256 = (
+    "e2484757b2e834ea27febec130cacff36deb2df9ddc15a66f25f38708aec0606"
+)
+N3_IDENTITY_INFRASTRUCTURE_EXACT5_SHA256 = (
+    "1df267709164af1ce8e3ee443eddad14c83efa132bb1cf87492ab8cccf9f9c27"
+)
+N4_ACTIVATION_OWNER_SYMBOL_SET_EXACT2 = (
+    (
+        "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py",
+        "compile_stage1_response",
+    ),
+    (
+        "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py",
+        "build_text_grounded_limited_artifact",
+    ),
+)
+N4_ACTIVATION_OWNER_SYMBOL_SET_EXACT2_SHA256 = (
+    "1eb7baf3fcc2673f0d73ecf1663f140baa955967a4e3066e54913b978f9d9e79"
 )
 EARLY_HUMAN_READ_RESULTS = (
     "CLEAR",
@@ -688,7 +789,7 @@ def _materialize_early_case(
         identity_match = (
             result.language_core_identity
             == stage1_composition.LANGUAGE_CORE_IDENTITY
-            == STEP2_FROZEN_LANGUAGE_CORE_IDENTITY
+            == N3_LANGUAGE_CORE_IDENTITY
         )
         ranked_count = len(ranked)
         summary = {
@@ -781,20 +882,102 @@ def _early_private_packet_binding(
     return {**material, "packet_binding_sha256": _canonical_sha256(material)}
 
 
-def _current_frozen_early_identity_pair() -> tuple[str, str]:
-    """Return the live exact pair only when module and frozen values agree."""
+def _identity_payload_proof_rows(
+    payloads: tuple[tuple[str, bytes], ...],
+) -> tuple[tuple[str, str, int], ...]:
+    return tuple(
+        (name, hashlib.sha256(payload).hexdigest(), len(payload))
+        for name, payload in payloads
+    )
 
+
+def _source_owner_symbol_proof(
+    language_payloads: tuple[tuple[str, bytes], ...],
+) -> tuple[tuple[int, ...], tuple[int, ...], str]:
+    symbol_rows = []
+    declaration_counts = []
+    import_counts = []
+    for _name, payload in language_payloads[:7]:
+        try:
+            projected = dict(json.loads(payload))
+            relative_path = projected["relative_path"]
+            declaration_names = tuple(
+                bound_name
+                for row in projected["selected_declarations"]
+                for bound_name in dict(row)["bound_names"]
+            )
+            import_names = tuple(
+                dict(row)["bound_name"]
+                for row in projected["selected_import_bindings"]
+            )
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            raise RuntimeError("early frozen owner symbol proof mismatch") from None
+        symbol_rows.append(
+            (relative_path, declaration_names, import_names)
+        )
+        declaration_counts.append(len(declaration_names))
+        import_counts.append(len(import_names))
+    return (
+        tuple(declaration_counts),
+        tuple(import_counts),
+        _canonical_sha256(tuple(symbol_rows)),
+    )
+
+
+def _current_frozen_early_identity_pair() -> tuple[str, str]:
+    """Return the exact N3 pair only after the full I05 proof matches."""
+
+    language_payloads = stage1_composition.language_core_identity_payloads()
+    runtime_payloads = (
+        stage1_composition.stage1_runtime_integration_identity_payloads()
+    )
+    language_payload_rows = _identity_payload_proof_rows(language_payloads)
+    runtime_payload_rows = _identity_payload_proof_rows(runtime_payloads)
+    (
+        declaration_counts,
+        import_counts,
+        source_owner_symbol_set_sha256,
+    ) = _source_owner_symbol_proof(language_payloads)
     language_core_identity = stage1_composition.compute_language_core_identity()
     stage1_runtime_integration_identity = (
         stage1_composition.compute_stage1_runtime_integration_identity()
     )
     if (
-        language_core_identity != stage1_composition.LANGUAGE_CORE_IDENTITY
-        or language_core_identity != STEP2_FROZEN_LANGUAGE_CORE_IDENTITY
+        language_payload_rows
+        != N3_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT16
+        or runtime_payload_rows
+        != N3_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT16
+        or _canonical_sha256(language_payload_rows)
+        != N3_LANGUAGE_PAYLOAD_TUPLE_SHA256
+        or _canonical_sha256(runtime_payload_rows)
+        != N3_RUNTIME_PAYLOAD_TUPLE_SHA256
+        or _canonical_sha256(language_payload_rows[:7])
+        != N3_SOURCE_OWNER_PAYLOAD_EXACT7_TUPLE_SHA256
+        or declaration_counts
+        != N3_SOURCE_OWNER_DECLARATION_COUNTS_EXACT7
+        or import_counts != N3_SOURCE_OWNER_IMPORT_COUNTS_EXACT7
+        or source_owner_symbol_set_sha256
+        != N3_SOURCE_OWNER_SYMBOL_SET_SHA256
+        or _canonical_sha256(
+            stage1_composition.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
+        )
+        != N3_PRODUCT_CAUSAL_OWNER_MANIFEST_SHA256
+        or _canonical_sha256(
+            stage1_composition.N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT28
+        )
+        != N3_BEHAVIOR_ROOT_EXACT28_SHA256
+        or _canonical_sha256(
+            stage1_composition.N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5
+        )
+        != N3_IDENTITY_INFRASTRUCTURE_EXACT5_SHA256
+        or _canonical_sha256(N4_ACTIVATION_OWNER_SYMBOL_SET_EXACT2)
+        != N4_ACTIVATION_OWNER_SYMBOL_SET_EXACT2_SHA256
+        or language_core_identity != stage1_composition.LANGUAGE_CORE_IDENTITY
+        or language_core_identity != N3_LANGUAGE_CORE_IDENTITY
         or stage1_runtime_integration_identity
         != stage1_composition.STAGE1_RUNTIME_INTEGRATION_IDENTITY
         or stage1_runtime_integration_identity
-        != STEP3_FROZEN_STAGE1_RUNTIME_INTEGRATION_IDENTITY
+        != N3_RUNTIME_INTEGRATION_IDENTITY
     ):
         raise RuntimeError("early frozen runtime identity mismatch")
     return language_core_identity, stage1_runtime_integration_identity
