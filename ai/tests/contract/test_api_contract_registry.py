@@ -138,16 +138,24 @@ def _clean_subprocess_route_map():
     service_root = root / "services" / "ai_inference"
     script = """
 import json
-from fastapi.routing import APIRoute
 import app as app_module
 
 routes = {}
-for route in app_module.app.router.routes:
-    if not isinstance(route, APIRoute):
-        continue
-    for method in route.methods or set():
-        if method in {"GET", "POST", "PATCH", "DELETE"}:
-            routes[f"{method} {route.path}"] = route.response_model is not None
+for path, path_item in app_module.app.openapi().get("paths", {}).items():
+    for method in {"get", "post", "patch", "delete"}:
+        operation = path_item.get(method)
+        if not isinstance(operation, dict):
+            continue
+        has_response_schema = any(
+            str(status).startswith("2")
+            and isinstance(response, dict)
+            and any(
+                isinstance(media_type, dict) and bool(media_type.get("schema"))
+                for media_type in response.get("content", {}).values()
+            )
+            for status, response in operation.get("responses", {}).items()
+        )
+        routes[f"{method.upper()} {path}"] = has_response_schema
 print(json.dumps(routes, sort_keys=True))
 """
     env = os.environ.copy()
