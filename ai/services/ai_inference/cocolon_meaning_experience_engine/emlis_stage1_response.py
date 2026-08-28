@@ -45,6 +45,7 @@ from emlis_ai_safety_triage import (
 from .contracts import (
     AffectCategory,
     AffectIntensity,
+    AllowedReceptionOpportunityEnvelope,
     ArgumentBinding,
     ArgumentRole,
     CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
@@ -75,6 +76,7 @@ from .contracts import (
     ExperiencePlan,
     GenerationRequest,
     GroundedMeaningGraph,
+    PreMeaningGroundedInputs,
     InterpretationEpistemicState,
     InterpretationKind,
     MeaningEdge,
@@ -107,6 +109,8 @@ from .contracts import (
     PolicyApplicationRow,
     TemperatureClass,
     project_stage1_projection_preimage_ref,
+    project_premeaning_source_qualifier_rows,
+    project_premeaning_source_relation_rows,
     recompute_stage1_identity,
     stage1_projection_artifact_ref,
     stage1_canonical_json_bytes,
@@ -115,6 +119,8 @@ from .contracts import (
     stage1_subjective_semantic_key,
     stage1_value_principle_ref,
     validate_stage1_identity,
+    validate_foreground_scope_derivation,
+    validate_premeaning_grounded_inputs,
     validate_stage1_projection,
     validate_stage1_sentence_unit,
     validate_surface_derivation,
@@ -124,6 +130,12 @@ from .source_kernel import (
     build_source_owner_universe,
     freeze_text_source,
     validate_evidence_refs,
+)
+from .emlis_input_specific_meaning import (
+    ForegroundScopeDispositionCode,
+    derive_foreground_scope_closed,
+    derive_grounded_situation_view,
+    foreground_scope_disposition,
 )
 
 if TYPE_CHECKING:
@@ -1255,12 +1267,71 @@ def _visible_claim_ids(
     return visible_claim_ids
 
 
+_PREMEANING_PARENT_SEMANTIC_FIELDS = (
+    "source_envelope_id",
+    "source_version",
+    "obligation_version",
+    "owner_universe_digest",
+    "observation_duty_id",
+    "unknown_duty_id",
+    "required_observation_owner_ids",
+    "visible_owner_ids",
+    "unresolved_owner_ids",
+    "visible_unknown_owner_ids",
+    "required_unknown_owner_ids",
+)
+
+_PREMEANING_GROUNDED_PLAN_SEMANTIC_FIELDS = (
+    "schema_version",
+    "adapter_version",
+    "generation_path",
+    "input_profile",
+    "nuclei",
+    "relations",
+    "unknown_boundaries",
+    "evidence_ledger_validation",
+    "referenced_evidence_span_ids",
+    "source_contracts",
+)
+
+_PREMEANING_COVERAGE_SEMANTIC_FIELDS = (
+    "required_nucleus_ids",
+    "required_relation_ids",
+    "all_required_nuclei_must_be_covered",
+    "all_required_relations_must_be_covered",
+    "all_sentence_evidence_ids_must_resolve",
+    "label_only_allowed_only_without_text_nuclei",
+)
+
+
+def _premeaning_grounded_plan_semantic_identity(
+    grounded_plan: GroundedObservationPlan,
+) -> tuple[object, ...]:
+    """Project only source/meaning fields; Reception and surface stay absent."""
+
+    if type(grounded_plan) is not GroundedObservationPlan:
+        raise CMEEStage1ContractError(
+            "stage1_grounded_observation_plan_required"
+        )
+    coverage = grounded_plan.coverage_requirements
+    return (
+        *(getattr(grounded_plan, name) for name in (
+            _PREMEANING_GROUNDED_PLAN_SEMANTIC_FIELDS
+        )),
+        *(getattr(coverage, name) for name in (
+            _PREMEANING_COVERAGE_SEMANTIC_FIELDS
+        )),
+    )
+
+
 def _validate_canonical_semantic_inputs(
     source: AdmittedTextSource,
     grounded_plan: GroundedObservationPlan,
     graph: GroundedMeaningGraph,
     parent_plan: ExperiencePlan,
-) -> None:
+    *,
+    delivery_blind_parent: bool = False,
+) -> tuple[GroundedObservationPlan, ExperiencePlan]:
     """Require the exact frozen-source/canonical-plan path used by Step 1."""
 
     if type(source) is not AdmittedTextSource:
@@ -1296,17 +1367,42 @@ def _validate_canonical_semantic_inputs(
             expected_source.evidence_spans,
             current_input=expected_source.normalized_current_input,
         )
-        issues = validate_grounded_observation_plan(grounded_plan, resolver)
         expected_active_plan = build_grounded_observation_plan(
             expected_source.normalized_current_input,
             evidence_spans=expected_source.evidence_spans,
         )
-        if grounded_plan == expected_active_plan:
-            expected_plan = expected_active_plan
-        else:
-            expected_plan = build_final_stage1_grounded_observation_plan(
+        if delivery_blind_parent:
+            expected_final_plan = build_final_stage1_grounded_observation_plan(
                 expected_source.normalized_current_input,
                 evidence_spans=expected_source.evidence_spans,
+            )
+            actual_semantic_identity = (
+                _premeaning_grounded_plan_semantic_identity(grounded_plan)
+            )
+            matching_plans = tuple(
+                value
+                for value in (expected_active_plan, expected_final_plan)
+                if _premeaning_grounded_plan_semantic_identity(value)
+                == actual_semantic_identity
+            )
+            if len(matching_plans) != 1:
+                raise ValueError("semantic_grounded_plan_noncanonical")
+            expected_plan = matching_plans[0]
+            issues = validate_grounded_observation_plan(
+                expected_plan,
+                resolver,
+            )
+        else:
+            if grounded_plan == expected_active_plan:
+                expected_plan = expected_active_plan
+            else:
+                expected_plan = build_final_stage1_grounded_observation_plan(
+                    expected_source.normalized_current_input,
+                    evidence_spans=expected_source.evidence_spans,
+                )
+            issues = validate_grounded_observation_plan(
+                grounded_plan,
+                resolver,
             )
         # Local import avoids making the existing Step 1 implementation depend
         # on this disabled Step 2 module during module initialization.
@@ -1338,12 +1434,27 @@ def _validate_canonical_semantic_inputs(
         raise CMEEStage1ContractError("stage1_source_evidence_unreachable") from None
     if source != expected_source or source.owner_universe != expected_universe:
         raise CMEEStage1ContractError("stage1_source_evidence_unreachable")
-    if issues or grounded_plan != expected_plan:
+    grounded_plan_matches = (
+        _premeaning_grounded_plan_semantic_identity(grounded_plan)
+        == _premeaning_grounded_plan_semantic_identity(expected_plan)
+        if delivery_blind_parent
+        else grounded_plan == expected_plan
+    )
+    if issues or not grounded_plan_matches:
         raise CMEEStage1ContractError("stage1_grounded_observation_plan_noncanonical")
     if graph != expected_graph:
         raise CMEEStage1ContractError("stage1_grounded_graph_noncanonical")
-    if parent_plan != expected_parent:
+    if delivery_blind_parent:
+        parent_matches = type(parent_plan) is ExperiencePlan and all(
+            getattr(parent_plan, field_name)
+            == getattr(expected_parent, field_name)
+            for field_name in _PREMEANING_PARENT_SEMANTIC_FIELDS
+        )
+    else:
+        parent_matches = parent_plan == expected_parent
+    if not parent_matches:
         raise CMEEStage1ContractError("stage1_parent_plan_noncanonical")
+    return expected_plan, expected_parent
 
 
 def _source_evidence_ids(
@@ -2074,6 +2185,8 @@ def _candidate_from_relation(
         RelationOperator,
         tuple[ArgumentBinding, ...],
     ],
+    *,
+    stage1_response_schema_version: str = CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
 ) -> EmlisInterpretationCandidate:
     kind, semantic_operator, relation_operator, arguments = shape
     node_by_id = {row.node_id: row for row in graph.nodes}
@@ -2210,7 +2323,13 @@ def _candidate_rows(
                     "stage1_interpretation_matrix_invalid"
                 )
             continue
-        candidate = _candidate_from_relation(graph, edge, binding, shape)
+        candidate = _candidate_from_relation(
+            graph,
+            edge,
+            binding,
+            shape,
+            stage1_response_schema_version=stage1_response_schema_version,
+        )
         rows.append(
             _CandidateRow(
                 candidate=candidate,
@@ -3626,6 +3745,173 @@ def _final_stage1_candidate_closure(
     return tuple(rows)
 
 
+def build_premeaning_grounded_inputs(
+    *,
+    source: AdmittedTextSource,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
+    grounded_plan: GroundedObservationPlan,
+) -> PreMeaningGroundedInputs:
+    """Build the sole Reception-free semantic closure used by IM01."""
+
+    canonical_grounded_plan, canonical_parent_plan = (
+        _validate_canonical_semantic_inputs(
+            source,
+            grounded_plan,
+            grounded_graph,
+            parent_plan,
+            delivery_blind_parent=True,
+        )
+    )
+    if FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in tuple(
+        getattr(canonical_grounded_plan, "source_contracts", ())
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_final_grounded_observation_plan_required"
+        )
+    (
+        candidates,
+        meaning_field,
+        contributions,
+        ordered_observation_refs,
+        observation_depth,
+    ) = build_layer1_semantics(
+        source=source,
+        grounded_graph=grounded_graph,
+        parent_plan=canonical_parent_plan,
+        grounded_plan=canonical_grounded_plan,
+        stage1_response_schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
+    )
+    premeaning_inputs = PreMeaningGroundedInputs(
+        schema_version="1.0",
+        stage1_response_schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
+        grounded_graph=grounded_graph,
+        grounded_graph_ref=_graph_ref(grounded_graph),
+        parent_observation_duty_ref=(
+            canonical_parent_plan.observation_duty_id
+        ),
+        interpretation_candidate_rows=candidates,
+        meaning_field=meaning_field,
+        observation_contribution_rows=contributions,
+        ordered_observation_refs=ordered_observation_refs,
+        material_unknown_refs=meaning_field.material_unknown_refs,
+        observation_depth_class=observation_depth,
+        source_qualifier_rows=project_premeaning_source_qualifier_rows(
+            source=source,
+            grounded_plan=canonical_grounded_plan,
+            grounded_graph=grounded_graph,
+            parent_plan=canonical_parent_plan,
+        ),
+        source_relation_rows=project_premeaning_source_relation_rows(
+            source=source,
+            grounded_plan=canonical_grounded_plan,
+            grounded_graph=grounded_graph,
+            parent_plan=canonical_parent_plan,
+            stage1_response_schema_version=(
+                CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+            ),
+        ),
+    )
+    validate_premeaning_grounded_inputs(
+        premeaning_inputs,
+        source=source,
+        grounded_plan=grounded_plan,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+    )
+    return premeaning_inputs
+
+
+def build_allowed_reception_opportunity_envelope(
+    *,
+    source: AdmittedTextSource,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
+    grounded_plan: GroundedObservationPlan,
+) -> AllowedReceptionOpportunityEnvelope:
+    """Project only parent-allowed acts and grounded safety boundaries."""
+
+    _validate_canonical_semantic_inputs(
+        source,
+        grounded_plan,
+        grounded_graph,
+        parent_plan,
+    )
+    retained_act_ids = tuple(parent_plan.allowed_reception_act_ids)
+    safety_boundary_codes = tuple(
+        grounded_plan.safety_policy.required_boundary_codes
+    )
+    envelope = AllowedReceptionOpportunityEnvelope(
+        schema_version="1.0",
+        source_envelope_id=source.envelope.envelope_id,
+        parent_reception_duty_ref=parent_plan.reception_duty_id,
+        allowed_reception_act_ids=retained_act_ids,
+        safety_boundary_codes=safety_boundary_codes,
+    )
+    validate_allowed_reception_opportunity_envelope(
+        envelope,
+        source=source,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+        grounded_plan=grounded_plan,
+    )
+    return envelope
+
+
+def validate_allowed_reception_opportunity_envelope(
+    envelope: AllowedReceptionOpportunityEnvelope,
+    *,
+    source: AdmittedTextSource,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
+    grounded_plan: GroundedObservationPlan,
+) -> None:
+    """Bind the opportunity-only envelope to its upstream owners."""
+
+    _validate_canonical_semantic_inputs(
+        source,
+        grounded_plan,
+        grounded_graph,
+        parent_plan,
+    )
+    if (
+        type(envelope) is not AllowedReceptionOpportunityEnvelope
+        or envelope.schema_version != "1.0"
+        or type(envelope.allowed_reception_act_ids) is not tuple
+        or type(envelope.safety_boundary_codes) is not tuple
+        or not envelope.allowed_reception_act_ids
+        or len(envelope.allowed_reception_act_ids)
+        != len(set(envelope.allowed_reception_act_ids))
+        or len(envelope.safety_boundary_codes)
+        != len(set(envelope.safety_boundary_codes))
+        or any(
+            type(value) is not str or not value
+            for value in (
+                *envelope.allowed_reception_act_ids,
+                *envelope.safety_boundary_codes,
+            )
+        )
+        or envelope.source_envelope_id != source.envelope.envelope_id
+        or envelope.parent_reception_duty_ref
+        != parent_plan.reception_duty_id
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_allowed_reception_envelope_invalid"
+        )
+    expected_act_ids = tuple(parent_plan.allowed_reception_act_ids)
+    expected_safety_boundary_codes = tuple(
+        grounded_plan.safety_policy.required_boundary_codes
+    )
+    if (
+        envelope.allowed_reception_act_ids != expected_act_ids
+        or envelope.safety_boundary_codes
+        != expected_safety_boundary_codes
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_allowed_reception_envelope_noncanonical"
+        )
+
+
 def build_subjective_planning_inputs(
     *,
     source: AdmittedTextSource,
@@ -3637,46 +3923,71 @@ def build_subjective_planning_inputs(
 
     from . import emlis_stage1_composition as composition
 
-    _validate_canonical_semantic_inputs(
-        source,
-        grounded_plan,
-        grounded_graph,
-        parent_plan,
-    )
-    if FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in tuple(
-        getattr(grounded_plan, "source_contracts", ())
-    ):
-        raise CMEEStage1ContractError(
-            "stage1_final_grounded_observation_plan_required"
-        )
-    (
-        candidates,
-        meaning_field,
-        contributions,
-        _ordered_observation_refs,
-        observation_depth,
-    ) = build_layer1_semantics(
+    premeaning_inputs = build_premeaning_grounded_inputs(
         source=source,
         grounded_graph=grounded_graph,
         parent_plan=parent_plan,
         grounded_plan=grounded_plan,
-        stage1_response_schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
     )
+    grounded_situation_view = derive_grounded_situation_view(
+        premeaning_inputs
+    )
+    foreground_scope_derivation = derive_foreground_scope_closed(
+        grounded_situation_view
+    )
+    validate_foreground_scope_derivation(
+        foreground_scope_derivation,
+        basis_rows=grounded_situation_view.basis_rows,
+        premeaning_inputs=premeaning_inputs,
+        source=source,
+        grounded_plan=grounded_plan,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+    )
+    scope_disposition = foreground_scope_disposition(
+        foreground_scope_derivation
+    )
+    if (
+        scope_disposition.code
+        is ForegroundScopeDispositionCode.STRUCTURE_INSUFFICIENT_STOP
+    ):
+        raise CMEEStage1ContractError(
+            ForegroundScopeDispositionCode.STRUCTURE_INSUFFICIENT_STOP.value
+        )
+
     candidates = _final_stage1_candidate_closure(
         source=source,
         grounded_graph=grounded_graph,
         grounded_plan=grounded_plan,
-        candidate_rows=candidates,
+        candidate_rows=premeaning_inputs.interpretation_candidate_rows,
         stage1_response_schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
     )
+    meaning_field = premeaning_inputs.meaning_field
+    contributions = premeaning_inputs.observation_contribution_rows
+    observation_depth = premeaning_inputs.observation_depth_class
+
+    # Only the upstream opportunity envelope exists at the meaning boundary.
+    # The concrete legacy Reception plan is bound after scope disposition.
+    allowed_reception_envelope = (
+        build_allowed_reception_opportunity_envelope(
+            source=source,
+            grounded_graph=grounded_graph,
+            parent_plan=parent_plan,
+            grounded_plan=grounded_plan,
+        )
+    )
+    retained_act_ids = allowed_reception_envelope.allowed_reception_act_ids
     reception_plan = _semantic_reception_asset(
         source=source,
         grounded_plan=grounded_plan,
     )
-    retained_act_ids = _ordered(
-        str(move.reception_act) for move in reception_plan.moves
+    validate_reception_asset_mapping(
+        reception_plan,
+        grounded_plan=grounded_plan,
     )
-    if retained_act_ids != parent_plan.allowed_reception_act_ids:
+    if _ordered(
+        str(move.reception_act) for move in reception_plan.moves
+    ) != retained_act_ids:
         raise CMEEStage1ContractError("stage1_reception_parent_act_mismatch")
     plan_binding = _bind_grounded_plan(
         source,
@@ -3751,6 +4062,13 @@ def build_subjective_planning_inputs(
         grounded_graph=grounded_graph,
         grounded_plan=grounded_plan,
         parent_plan=parent_plan,
+        premeaning_inputs=premeaning_inputs,
+        grounded_situation_view=grounded_situation_view,
+        foreground_scope_derivation=foreground_scope_derivation,
+        foreground_scope_disposition=scope_disposition,
+        allowed_reception_opportunity_envelope=(
+            allowed_reception_envelope
+        ),
         projection_preimage_ref=projection_preimage_ref,
         interpretation_candidate_rows=candidates,
         meaning_field=meaning_field,
@@ -8527,8 +8845,10 @@ __all__ = [
     "OBSERVATION_SEMANTIC_KEY_VERSION",
     "UtterancePhase",
     "build_emlis_meaning_field",
+    "build_allowed_reception_opportunity_envelope",
     "build_interpretation_candidate_pool",
     "build_layer1_semantics",
+    "build_premeaning_grounded_inputs",
     "build_subjective_planning_inputs",
     "build_surface_composition_inputs",
     "build_stage1_semantic_projection",
@@ -8549,5 +8869,6 @@ __all__ = [
     "validate_interpretation_candidate_pool",
     "validate_layer1_observation_plan",
     "validate_layer2_subjective_plan",
+    "validate_allowed_reception_opportunity_envelope",
     "validate_reception_asset_mapping",
 ]

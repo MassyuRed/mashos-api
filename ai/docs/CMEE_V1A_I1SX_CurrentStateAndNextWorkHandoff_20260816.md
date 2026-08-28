@@ -4196,3 +4196,56 @@ NEXT_DEPENDENCY = IM01
 IM01_START_AUTHORITY = FRESH_MASH_EXPLICIT_START_REQUIRED
 CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_IM00
 ```
+
+---
+
+## Emlis input-specific meaning decision / IM01 integration gate（2026-08-28）
+
+Mashのfresh explicit authorityは、IM00のdual remote-postverified headsだけをpreimageとして、final design §17のIM01統合修正とformal pytest exact1を許可した。authority前のlocal途中差分は完了creditではなく、先行diagnostic pytestはfailed closed/no-creditである。actual source／testとの整合を静的に確認し、pre-meaning grounded inputs／allowed Reception envelopeの型分離、typed Grounded Viewから`derive_foreground_scope_closed()`への実接続、および旧IM00 fixtureの新型移行をすべて完了してからだけformal pytestを実行する。
+
+最初のformal launcherはisolated Pythonからrepository `ai` rootを外した`COMMAND_CONSTRUCTION_ERROR`によりcollection 0でclosed/no-creditとなった。Mashのfresh `BOUNDED_MECHANICAL_REPAIR` authority exact1により、target／denominator／comparator／input identity／runtimeを変えずlauncherだけをexact1修復し、同じGateをexact1再実行した結果は`25 passed`でGREENである。
+
+```text
+CHECKPOINT_SCHEMA = CMEE_EMLIS_INPUT_SPECIFIC_MEANING_CHECKPOINT_V1
+CHECKPOINT_ID = CMEE_EMLIS_INPUT_SPECIFIC_MEANING_IM01_SCOPE_DERIVATION_20260828_V1
+IMPLEMENTATION_STEP = IM01
+STEP_STATE = COMPLETE_NONTERMINAL_CHECKPOINT
+AUTHORITY = MASH_FRESH_IM01_INTEGRATION_AND_FORMAL_PYTEST_EXACT1_20260828
+
+REPOSITORY = MassyuRed/mashos-api
+PULL_REQUEST = 3
+BRANCH = agent/cmee-v1a-i1sx-source-explicit-20260815
+RUNTIME_PRE_HEAD = 2c607f001e3524de67c6c276d0140c1b8b464584_REMOTE_POSTVERIFIED
+DESIGN_PRE_HEAD = ac1ccfce52374abad122cb6b82f99b0760c01d6f_REMOTE_POSTVERIFIED
+RUNTIME_FINAL_HEAD = THIS_COMMIT_RESOLVED_BY_FRESH_REMOTE_POSTVERIFY
+ALLOWED_RUNTIME_CHANGED_PATHS_EXACT6 = contracts.py,emlis_input_specific_meaning.py,emlis_stage1_response.py,emlis_stage1_composition.py,test_cmee_v1a_i1sx_contracts.py,CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md
+
+PRIOR_DIAGNOSTIC_PYTEST = FAILED_CLOSED_NO_CREDIT
+PRIOR_DIAGNOSTIC_EVIDENCE_REUSE / COMPLETION_CREDIT = 0 / 0
+CURRENT_LOCAL_INTERIM_DIFF_COMPLETION_CREDIT = 0
+IM00_FIXTURE_MIGRATION_BEFORE_FORMAL_PYTEST = COMPLETE
+POST_AUTHORITY_PREINTEGRATION_TEST_EXECUTION = 0
+FORMAL_PYTEST_AUTHORITY = FRESH_MASH_EXPLICIT_EXACT1
+ORIGINAL_FORMAL_PYTEST_ALLOWED_INVOCATION / RETRY / RERUN = 1 / 0 / 0
+ORIGINAL_FORMAL_PYTEST_RESULT = COMMAND_CONSTRUCTION_ERROR_TOOLS_IMPORT_COLLECTION_0_CLOSED_NO_CREDIT
+BOUNDED_MECHANICAL_REPAIR_AUTHORITY = MASH_FRESH_LAUNCHER_REPAIR_EXACT1_AND_SAME_GATE_RERUN_EXACT1_20260828
+LAUNCHER_REPAIR / SAME_GATE_FRESH_RERUN = 1 / 1
+SAME_GATE_TARGET_SELECTORS / DENOMINATOR = EXACT8 / 25
+TARGET_DENOMINATOR_COMPARATOR_INPUT_IDENTITY_RUNTIME_CHANGE = 0 / 0 / 0 / 0 / 0
+FORMAL_PYTEST_TERMINAL_RESULT = GREEN_PASS_25_OF_25_WITH_1_WARNING_IN_33_98S
+SECOND_FAILURE_STOP_TRIGGERED = false
+OTHER_REPOSITORY_CODE_EXECUTION = 0
+STATIC_GIT_DIFF_CHECK = PASS
+FULL_PUBLIC_REGRESSION = DEFERRED_TO_IM07_NOT_CLAIMED_AT_IM01
+
+WRITE_GATE = FORMAL_PYTEST_GREEN_SATISFIED
+PRODUCT_CREDIT / TECHNICAL_CREDIT = 0 / 0
+PRODUCT_READ / CANDIDATE_ACCEPTANCE / IM02 / ACTIVATION / I09 / PRODUCTION / MERGE = 0 / 0 / 0 / 0 / 0 / 0 / 0
+AUTOMATIC_RETRY / AUTOMATIC_PROGRESSION = 0 / 0
+NEXT_DEPENDENCY = IM02
+CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_IM01
+```
+
+IM01は、Reception-freeな`PreMeaningGroundedInputs`からexact5 basisとobject別compatibility exact10を持つ`GroundedSituationView`を作り、closed deriverへ実接続する。compatible source-connected rowsはID／hash／列挙順で選ばずcanonical set unionする。typed conflictは`LIMITED_COMPETING_MATERIAL_READINGS`、safe object exact1以上で必要structureが欠ける場合は`LIMITED_STRUCTURE_INSUFFICIENT`、safe foreground object exact0の場合だけ`STRUCTURE_INSUFFICIENT_STOP`へ閉じる。Allowed Reception envelopeはscope derivationとzero-object判定の後にだけ構築し、Reception、affect、stance、style、temperature、subjective mode、surface、fixture、ID／hash／列挙順からscopeへのbackflowは0とする。
+
+Required Difference、counterfactual mutation、WholeReadingConsequence actual issuerはIM02、operation applicabilityはIM03、Bounded LIMITED ReceptionはIM04のownerに留保する。本authorityではIM02、activation、I09、productionへ進まず、formal failure時はworktreeを追加修正せずremote preimageを保持してSTOPする。

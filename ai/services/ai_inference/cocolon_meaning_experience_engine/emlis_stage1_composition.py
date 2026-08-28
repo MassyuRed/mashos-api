@@ -19,6 +19,7 @@ from typing import Any, Iterable, Mapping, Optional, Sequence, Tuple
 from .contracts import (
     AffectCategory,
     AffectIntensity,
+    AllowedReceptionOpportunityEnvelope,
     AppraisalDimension,
     AppraisalOperation,
     ArgumentBinding,
@@ -35,6 +36,7 @@ from .contracts import (
     CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7,
     CMEE_STAGE1_SUBJECTIVE_FORBIDDEN_PROMOTIONS,
     CMEE_STAGE1_VALUE_PRINCIPLE_REFS,
+    CMEEStage1ContractError,
     ComplementRuleSpec,
     DiscourseReferenceStateRow,
     EmlisAffectContent,
@@ -57,6 +59,8 @@ from .contracts import (
     MeaningFieldEntry,
     ObservationContributionKind,
     PlannedObservationContribution,
+    PreMeaningGroundedInputs,
+    ForegroundScopeDerivation,
     PolicyBasisBinding,
     PolicyBasisOwnerKind,
     PolicyBasisRole,
@@ -110,6 +114,15 @@ from .contracts import (
     stage1_subjective_forbidden_promotions,
     validate_stage1_anti_template_registry_invariant,
     validate_stage1_identity,
+    validate_premeaning_grounded_inputs,
+)
+from .emlis_input_specific_meaning import (
+    ForegroundScopeDisposition,
+    ForegroundScopeDispositionCode,
+    GroundedSituationView,
+    derive_foreground_scope_closed,
+    derive_grounded_situation_view,
+    foreground_scope_disposition,
 )
 
 
@@ -1629,6 +1642,13 @@ class Stage1SubjectivePlanningInputs:
     grounded_graph: Any
     grounded_plan: Any
     parent_plan: Any
+    premeaning_inputs: PreMeaningGroundedInputs
+    grounded_situation_view: GroundedSituationView
+    foreground_scope_derivation: ForegroundScopeDerivation
+    foreground_scope_disposition: ForegroundScopeDisposition
+    allowed_reception_opportunity_envelope: (
+        AllowedReceptionOpportunityEnvelope
+    )
     projection_preimage_ref: str
     interpretation_candidate_rows: Tuple[EmlisInterpretationCandidate, ...]
     meaning_field: Any
@@ -4645,6 +4665,75 @@ def _validate_phase_lineage(value: Any, *, projection: Any) -> None:
 
 def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
     _validate_registry_snapshots(phase_A)
+    premeaning_inputs = phase_A.premeaning_inputs
+    envelope = phase_A.allowed_reception_opportunity_envelope
+    if (
+        type(premeaning_inputs) is not PreMeaningGroundedInputs
+        or type(envelope) is not AllowedReceptionOpportunityEnvelope
+    ):
+        raise Stage1CompositionError(
+            "STAGE1_PREMEANING_RECEPTION_SPLIT_STOP"
+        )
+    try:
+        validate_premeaning_grounded_inputs(
+            premeaning_inputs,
+            source=phase_A.admitted_source,
+            grounded_plan=phase_A.grounded_plan,
+            grounded_graph=phase_A.grounded_graph,
+            parent_plan=phase_A.parent_plan,
+        )
+        from .emlis_stage1_response import (
+            validate_allowed_reception_opportunity_envelope,
+        )
+
+        validate_allowed_reception_opportunity_envelope(
+            envelope,
+            source=phase_A.admitted_source,
+            grounded_graph=phase_A.grounded_graph,
+            parent_plan=phase_A.parent_plan,
+            grounded_plan=phase_A.grounded_plan,
+        )
+        expected_grounded_view = derive_grounded_situation_view(
+            premeaning_inputs
+        )
+        expected_scope_derivation = derive_foreground_scope_closed(
+            expected_grounded_view
+        )
+        expected_scope_disposition = foreground_scope_disposition(
+            expected_scope_derivation
+        )
+    except CMEEStage1ContractError:
+        raise Stage1CompositionError(
+            "STAGE1_PREMEANING_RECEPTION_SPLIT_STOP"
+        ) from None
+    if (
+        premeaning_inputs.grounded_graph is not phase_A.grounded_graph
+        or premeaning_inputs.meaning_field != phase_A.meaning_field
+        or premeaning_inputs.observation_contribution_rows
+        != phase_A.observation_contribution_rows
+        or premeaning_inputs.material_unknown_refs
+        != phase_A.material_unknown_refs
+        or premeaning_inputs.observation_depth_class
+        is not phase_A.observation_depth_class
+        or type(phase_A.grounded_situation_view)
+        is not GroundedSituationView
+        or phase_A.grounded_situation_view != expected_grounded_view
+        or type(phase_A.foreground_scope_derivation)
+        is not ForegroundScopeDerivation
+        or phase_A.foreground_scope_derivation
+        != expected_scope_derivation
+        or type(phase_A.foreground_scope_disposition)
+        is not ForegroundScopeDisposition
+        or phase_A.foreground_scope_disposition
+        != expected_scope_disposition
+        or envelope.source_envelope_id
+        != phase_A.parent_plan.source_envelope_id
+        or envelope.parent_reception_duty_ref
+        != phase_A.parent_plan.reception_duty_id
+    ):
+        raise Stage1CompositionError(
+            "STAGE1_PREMEANING_RECEPTION_SPLIT_STOP"
+        )
     projection_view = type(
         "_PhaseAProjectionClosure",
         (),
@@ -4665,6 +4754,10 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
     retained_act_refs = tuple(
         row.act_ref for row in phase_A.retained_reception_act_rows
     )
+    premeaning_candidate_ids = {
+        row.candidate_id
+        for row in premeaning_inputs.interpretation_candidate_rows
+    }
     if (
         not phase_A.projection_preimage_ref
         or not candidate_ids
@@ -4679,6 +4772,8 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
         or len(retained_act_refs) != len(set(retained_act_refs))
         or retained_act_refs
         != tuple(getattr(phase_A.parent_plan, "allowed_reception_act_ids", ()))
+        or retained_act_refs != envelope.allowed_reception_act_ids
+        or not premeaning_candidate_ids.issubset(candidate_ids)
     ):
         raise Stage1CompositionError("STAGE1_CONTRIBUTION_CANDIDATE_CLOSURE_STOP")
     if any(
@@ -4696,8 +4791,6 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
         endpoint_rows=phase_A.relation_endpoint_grounded_candidate_ref_by_binding_key,
         qualifier_rows=phase_A.qualifier_value_by_candidate_scope_axis_key,
     )
-
-
 def _validate_phase_B(phase_B: Stage1SurfaceCompositionInputs) -> None:
     _validate_registry_snapshots(phase_B)
     _validate_phase_lineage(phase_B, projection=phase_B.projection)
@@ -5054,6 +5147,16 @@ def project_subjective_meaning_plan(
     if type(phase_A) is not Stage1SubjectivePlanningInputs:
         raise Stage1CompositionError("STAGE1_COMPOSITION_PHASE_A_TYPE_STOP")
     _validate_phase_A(phase_A)
+    # LIMITED is a valid IM01 Phase-A outcome.  Until IM04/IM05 add the
+    # bounded-LIMITED Reception and tagged projector, the legacy selected-
+    # meaning projector must fail closed instead of consuming that outcome.
+    if (
+        phase_A.foreground_scope_disposition.code
+        is not ForegroundScopeDispositionCode.AVAILABLE
+    ):
+        raise Stage1CompositionError(
+            phase_A.foreground_scope_disposition.code.value
+        )
     contributions = phase_A.observation_contribution_rows
     candidates = {row.candidate_id: row for row in phase_A.interpretation_candidate_rows}
     contribution_candidate = dict(phase_A.contribution_to_candidate_ref_map)
@@ -11441,6 +11544,7 @@ LANGUAGE_CORE_EXTERNAL_PATHS = (
     "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
     "ai/services/ai_inference/cocolon_text_generation_core/composer.py",
     "ai/services/ai_inference/cocolon_text_generation_core/adapters/emlis_observation_composer.py",
+    "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
 )
 _COMPOSITION_PATH = "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py"
 
@@ -11549,7 +11653,7 @@ _LOGICAL_CONTRACT_FIELD_SPECS = (
     ("PolicyApplicationRow", "policy-row-v1", "policy_application_row_ref=exact1 affected_claim_policy_target_key=exact1 application_kind=exact1 principle_ref=exact1 material_risk=exact1 policy_basis_binding_refs=1..N material_risk_evidence_refs=1..N protected_subjective_binding_refs=0..N affected_claim_ref=exact1 source_reception_act_ref=0..1 act_basis_contribution_refs=0..N disposition=exact1 visible_claim_ref=0..1", ("SUPPRESSION_OR_VISIBILITY_DISCRIMINATED", "POST_CLAIM_REFS_EXCLUDED_FROM_ROW_ID"), "POLICY_ROW_PROJECTOR"),
     ("SubjectivePropositionV2", "proposition-v2", "schema_version=exact1 content_kind=exact1 subjective_mode=exact1 subjective_operator=exact1 target_contribution_refs=1..N primary_target_refs=1..N boundary_target_refs=0..N response_object_refs=1..N basis_binding_refs=1..N source_qualifier_binding_refs=1..N focal_relation_ref=0..1 affect_content=0..1 appraisal_content=0..1 material_value_content=0..1 relational_position=0..1 referenced_actor_refs=0..N referenced_experiencer_refs=0..N addressee_role=exact1 assertion_modality=exact1 epistemic_scope=exact1", ("CONTENT_DISCRIMINANT_EXACT1", "MODE_OPERATOR_MODALITY_TOTAL_DERIVATION"), "FINAL_PROPOSITION_PROJECTOR"),
     ("EmlisStage1Projection", "response-v2", "schema_version=exact1 projection_id=exact1 projection_preimage_ref=exact1 grounded_graph_ref=exact1 parent_observation_duty_ref=exact1 parent_reception_duty_ref=exact1 interpretation_candidates=1..N meaning_field=exact1 observation_contributions=1..N subjective_claims=1..4 ordered_observation_refs=1..N ordered_subjective_refs=1..4 retained_reception_act_ids=1..N observation_depth_class=exact1 subjective_depth_class=exact1 temperature_class=exact1 reception_style_policy_ref=exact1 emlis_value_policy_ref=exact1 composition_policy_ref=exact1 low_level_grammar_policy_ref=exact1 subjective_responsibility_rows=1..N subjective_opportunity_rows=1..N subjective_facet_suppression_rows=0..N subjective_basis_binding_rows=1..N source_qualifier_binding_rows=1..N policy_basis_binding_rows=0..N policy_application_rows=0..N", ("FULL_ROW_TABLE_EXACT_COVER", "SUBJECTIVE_DEPTH_POST_CLAIM_ONLY"), "FINAL_PROJECTION_SEAL"),
-    ("Stage1SubjectivePlanningInputs", "phase-a-v1", "admitted_source=exact1 grounded_graph=exact1 grounded_plan=exact1 parent_plan=exact1 projection_preimage_ref=exact1 interpretation_candidate_rows=1..N meaning_field=exact1 observation_contribution_rows=1..N retained_reception_act_rows=1..N material_unknown_refs=0..N observation_depth_class=exact1 temperature_class=exact1 reception_style_policy_ref=exact1 emlis_value_policy_ref=exact1 contribution_to_candidate_ref_map=1..N resolved_grounded_frame_by_candidate_ref=1..N relation_endpoint_grounded_candidate_ref_by_binding_key=0..N qualifier_value_by_candidate_scope_axis_key=1..N construction_registry_snapshot=exact1 expression_asset_registry_snapshot=exact1 response_object_registry_snapshot=exact1 functional_asset_registry_snapshot=exact1 participant_asset_registry_snapshot=exact1 structural_asset_registry_snapshot=exact1 profile_rule_registry_snapshot=exact1", ("FINAL_SUBJECTIVE_OUTPUT_EXACT0", "FULL_DOMAIN_FROZEN_MAPS"), "RESPONSE_PHASE_A_ADAPTER"),
+    ("Stage1SubjectivePlanningInputs", "phase-a-v2", "admitted_source=exact1 grounded_graph=exact1 grounded_plan=exact1 parent_plan=exact1 premeaning_inputs=exact1 grounded_situation_view=exact1 foreground_scope_derivation=exact1 foreground_scope_disposition=exact1 allowed_reception_opportunity_envelope=exact1 projection_preimage_ref=exact1 interpretation_candidate_rows=1..N meaning_field=exact1 observation_contribution_rows=1..N retained_reception_act_rows=1..N material_unknown_refs=0..N observation_depth_class=exact1 temperature_class=exact1 reception_style_policy_ref=exact1 emlis_value_policy_ref=exact1 contribution_to_candidate_ref_map=1..N resolved_grounded_frame_by_candidate_ref=1..N relation_endpoint_grounded_candidate_ref_by_binding_key=0..N qualifier_value_by_candidate_scope_axis_key=1..N construction_registry_snapshot=exact1 expression_asset_registry_snapshot=exact1 response_object_registry_snapshot=exact1 functional_asset_registry_snapshot=exact1 participant_asset_registry_snapshot=exact1 structural_asset_registry_snapshot=exact1 profile_rule_registry_snapshot=exact1", ("PREMEANING_RECEPTION_TYPE_SPLIT", "FOREGROUND_SCOPE_DERIVED_BEFORE_RECEPTION", "FINAL_SUBJECTIVE_OUTPUT_EXACT0", "FULL_DOMAIN_FROZEN_MAPS"), "RESPONSE_PHASE_A_ADAPTER"),
     ("Stage1SurfaceCompositionInputs", "phase-b-v1", "admitted_source=exact1 grounded_graph=exact1 grounded_plan=exact1 parent_plan=exact1 projection=exact1 resolved_grounded_frame_by_candidate_ref=1..N relation_endpoint_grounded_candidate_ref_by_binding_key=0..N qualifier_value_by_candidate_scope_axis_key=1..N addressee_deictic_context=exact1 section_speaker_owner_ref=0..1 construction_registry_snapshot=exact1 expression_asset_registry_snapshot=exact1 response_object_registry_snapshot=exact1 functional_asset_registry_snapshot=exact1 participant_asset_registry_snapshot=exact1 structural_asset_registry_snapshot=exact1 profile_rule_registry_snapshot=exact1", ("PHASE_A_BYTES_EXACT_MATCH", "FINAL_PROJECTION_EXACT1"), "RESPONSE_PHASE_B_ADAPTER"),
     ("EmlisSubjectiveMeaningPlan", "meaning-plan-v1", "projection_preimage_ref=exact1 subjective_claim_rows=1..4 thought_support_status=exact1 content_bearing_thought_claim_refs=0..N retained_reception_act_refs=1..N subjective_responsibility_rows=1..N subjective_opportunity_rows=1..N responsibility_coverage_rows=1..N subjective_basis_binding_rows=1..N source_qualifier_binding_rows=1..N policy_basis_binding_rows=0..N policy_application_rows=0..N subjective_facet_suppression_rows=0..N", ("REQUEST_LOCAL_VIEW_NOT_ARTIFACT", "OPPORTUNITY_PARTITION_EXACT_COVER"), "SUBJECTIVE_MEANING_PROJECTOR"),
     ("SubjectiveResponsibilityRow", "responsibility-v1", "responsibility_ref=exact1 responsibility_kind=exact1 owner_component_refs=1..N retained_reception_act_refs=1..N", ("CLOSED_EXACT4_KIND",), "RESPONSIBILITY_PROJECTOR"),
@@ -11894,7 +11998,7 @@ LANGUAGE_CORE_STAGE_A_B_RULES = (
     ("RESOURCE_ENVELOPE", "LAYOUT4_X_MENTION2_X_LINK2_X_HEAD1", "INTERNAL_1_TO_16_NO_TRUNCATION", "EMITTED_1_TO_2"),
 )
 
-N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT28 = (
+N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT31 = (
     (LANGUAGE_CORE_EXTERNAL_PATHS[0], (
         "CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY",
         "validate_stage1_anti_template_registry_invariant",
@@ -11931,6 +12035,18 @@ N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT28 = (
         "validate_positive_realization_trace",
         "_build_text_grounded_limited_artifact_for_schema",
     )),
+    (LANGUAGE_CORE_EXTERNAL_PATHS[6], (
+        "derive_grounded_situation_view",
+        "derive_foreground_scope_closed",
+        "foreground_scope_disposition",
+    )),
+)
+# The disabled historical N3 runner still reads the frozen exact28 symbol to
+# prove its own immutable terminal identity before it reports the expected
+# source drift.  Keep that tuple as a compatibility view; IM01's new exact3
+# meaning-owner roots are present only in the exact31 current identity.
+N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT28 = (
+    N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT31[:-1]
 )
 N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5 = (
     "LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST",
@@ -11978,6 +12094,11 @@ LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST = (
     (LANGUAGE_CORE_EXTERNAL_PATHS[3], ("build_grounded_observation_plan", "build_final_stage1_grounded_observation_plan", "validate_grounded_observation_plan")),
     (LANGUAGE_CORE_EXTERNAL_PATHS[4], ("generate_core_text",)),
     (LANGUAGE_CORE_EXTERNAL_PATHS[5], ("build_emlis_observation_core_payload", "evaluate_emlis_observation_candidate")),
+    (LANGUAGE_CORE_EXTERNAL_PATHS[6], (
+        "derive_grounded_situation_view",
+        "derive_foreground_scope_closed",
+        "foreground_scope_disposition",
+    )),
 )
 
 
@@ -11985,7 +12106,7 @@ def _validate_product_causal_owner_manifest(
     file_payloads: tuple[tuple[str, bytes], ...]
 ) -> None:
     expected_paths = (_COMPOSITION_PATH, *LANGUAGE_CORE_EXTERNAL_PATHS)
-    expected_seed_cardinalities = (18, 10, 11, 10, 3, 1, 2)
+    expected_seed_cardinalities = (18, 10, 11, 10, 3, 1, 2, 3)
     if (
         tuple(
             path for path, _names in LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
@@ -11996,23 +12117,24 @@ def _validate_product_causal_owner_manifest(
             for _path, names in LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
         )
         != expected_seed_cardinalities
-        or tuple(path for path, _names in N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT28)
+        or tuple(path for path, _names in N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT31)
         != (
             LANGUAGE_CORE_EXTERNAL_PATHS[0],
             _COMPOSITION_PATH,
             LANGUAGE_CORE_EXTERNAL_PATHS[1],
             LANGUAGE_CORE_EXTERNAL_PATHS[2],
+            LANGUAGE_CORE_EXTERNAL_PATHS[6],
         )
         or tuple(
             len(names)
-            for _path, names in N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT28
+            for _path, names in N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT31
         )
-        != (2, 15, 5, 6)
+        != (2, 15, 5, 6, 3)
         or sum(
             len(names)
-            for _path, names in N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT28
+            for _path, names in N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT31
         )
-        != 28
+        != 31
         or len(N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5) != 5
         or len(set(N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5))
         != 5
@@ -12054,7 +12176,7 @@ def _validate_product_causal_owner_manifest(
 def stage1_runtime_integration_identity_payloads(
     repository_root: Optional[Path] = None,
 ) -> Tuple[Tuple[str, bytes], ...]:
-    """Return the broad exact-16 whole-file/manifest integration payloads."""
+    """Return the broad exact-17 whole-file/manifest integration payloads."""
 
     root = repository_root or Path(__file__).resolve().parents[4]
     file_paths = (_COMPOSITION_PATH, *LANGUAGE_CORE_EXTERNAL_PATHS)
@@ -12209,7 +12331,7 @@ def stage1_runtime_integration_identity_payloads(
             "cocolon.cmee.v1a.stage1_product_causal_owner_and_registry_digests.v3",
         ),
         ("product_causal_owner_manifest", LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST),
-        ("n2_behavior_root_exact28", N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT28),
+        ("n2_behavior_root_exact31", N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT31),
         (
             "n2_identity_infrastructure_exact5",
             N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5,
@@ -12271,7 +12393,7 @@ def stage1_runtime_integration_identity_payloads(
         ("product_causal_owner_and_registry_digests_manifest", stage1_canonical_json_bytes(product_causal_owner_and_registry_digests_manifest)),
     )
     result = (*frozen_file_payloads, *manifests)
-    if len(result) != 16:
+    if len(result) != 17:
         raise Stage1CompositionError(
             "STAGE1_RUNTIME_INTEGRATION_IDENTITY_PAYLOAD_COUNT_STOP"
         )
@@ -12556,8 +12678,8 @@ def language_core_identity_payloads(
         repository_root
     )
     source_owner_payloads = _language_core_source_owner_payloads(repository_root)
-    result = (*source_owner_payloads, *integration_payloads[7:])
-    if len(result) != 16:
+    result = (*source_owner_payloads, *integration_payloads[8:])
+    if len(result) != 17:
         raise Stage1CompositionError("LANGUAGE_CORE_IDENTITY_PAYLOAD_COUNT_STOP")
     return tuple(result)
 

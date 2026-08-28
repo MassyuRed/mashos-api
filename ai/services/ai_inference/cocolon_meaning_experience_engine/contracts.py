@@ -385,6 +385,82 @@ class ForegroundScopeRelationKind(str, Enum):
     CORRECTION = "correction"
 
 
+_FOREGROUND_SCOPE_RELATION_KIND_BY_SOURCE_RELATION = {
+    "contrast": ForegroundScopeRelationKind.CONTRAST,
+    "coexistence": ForegroundScopeRelationKind.COEXISTENCE,
+    "continuation": ForegroundScopeRelationKind.CONTINUATION,
+    "correction": ForegroundScopeRelationKind.CORRECTION,
+}
+_FOREGROUND_SCOPE_RELATION_KIND_BY_TYPED_SOURCE_RELATION = {
+    (
+        "wish_and_constraint",
+        RelationOperator.COEXISTS_WITH,
+    ): ForegroundScopeRelationKind.COEXISTENCE,
+    (
+        "continuation_or_refusal",
+        RelationOperator.TENSION_WITH,
+    ): ForegroundScopeRelationKind.CONTRAST,
+    (
+        "preserves_despite",
+        RelationOperator.TENSION_WITH,
+    ): ForegroundScopeRelationKind.CONTRAST,
+    (
+        "attempt_and_block",
+        RelationOperator.TENSION_WITH,
+    ): ForegroundScopeRelationKind.CONTRAST,
+    (
+        "action_supports_change",
+        RelationOperator.ACTION_PRECEDES_CHANGE,
+    ): ForegroundScopeRelationKind.CONTINUATION,
+    (
+        "temporal_before_after",
+        RelationOperator.TEMPORALLY_PRECEDES,
+    ): ForegroundScopeRelationKind.CONTINUATION,
+    (
+        "shift_from_to",
+        RelationOperator.TEMPORALLY_PRECEDES,
+    ): ForegroundScopeRelationKind.CONTINUATION,
+}
+
+
+def project_foreground_scope_relation_kind(
+    source_relation: str,
+    *,
+    relation_operators: Sequence[RelationOperator] = (),
+) -> Optional[ForegroundScopeRelationKind]:
+    """Project a source relation into the closed exact4 scope vocabulary.
+
+    Literal exact4 source relations are sufficient.  A legacy Stage-1
+    relation is admitted only when its source-bound endpoint shape has a
+    unique typed operator proving its exact4 role.  Cause/result,
+    evaluation, uncertain connection, and other relations are deliberately
+    not promoted into a scope-compatibility proof.
+    """
+
+    if type(source_relation) is not str:
+        return None
+    direct = _FOREGROUND_SCOPE_RELATION_KIND_BY_SOURCE_RELATION.get(
+        source_relation
+    )
+    if direct is not None:
+        return direct
+    if type(relation_operators) is not tuple or any(
+        type(value) is not RelationOperator for value in relation_operators
+    ):
+        return None
+    projected = {
+        value
+        for relation_operator in relation_operators
+        for value in (
+            _FOREGROUND_SCOPE_RELATION_KIND_BY_TYPED_SOURCE_RELATION.get(
+                (source_relation, relation_operator)
+            ),
+        )
+        if value is not None
+    }
+    return next(iter(projected)) if len(projected) == 1 else None
+
+
 class ForegroundScopeCompatibilityAxis(str, Enum):
     OWNER = "owner"
     WORLD = "world"
@@ -992,6 +1068,52 @@ class EmlisMeaningField:
 
 
 @dataclass(frozen=True, slots=True)
+class GroundedSourceQualifierRow:
+    """Source-owned qualifier projection available before subjective planning."""
+
+    node_ref: str
+    qualifier_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class GroundedSourceRelationRow:
+    """Cap-free exact4 relation projection available before meaning selection."""
+
+    relation_ref: str
+    relation_kind: ForegroundScopeRelationKind
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PreMeaningGroundedInputs:
+    """Sanitized semantic closure; Reception-side data is intentionally absent."""
+
+    schema_version: str
+    stage1_response_schema_version: str
+    grounded_graph: GroundedMeaningGraph
+    grounded_graph_ref: str
+    parent_observation_duty_ref: str
+    interpretation_candidate_rows: Tuple[EmlisInterpretationCandidate, ...]
+    meaning_field: EmlisMeaningField
+    observation_contribution_rows: Tuple[PlannedObservationContribution, ...]
+    ordered_observation_refs: Tuple[str, ...]
+    material_unknown_refs: Tuple[str, ...]
+    observation_depth_class: ObservationDepthClass
+    source_qualifier_rows: Tuple[GroundedSourceQualifierRow, ...]
+    source_relation_rows: Tuple[GroundedSourceRelationRow, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AllowedReceptionOpportunityEnvelope:
+    """Post-scope Reception opportunity data; it cannot select meaning."""
+
+    schema_version: str
+    source_envelope_id: str
+    parent_reception_duty_ref: str
+    allowed_reception_act_ids: Tuple[str, ...]
+    safety_boundary_codes: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ForegroundScopeBasisRow:
     """One source-connected, non-ranking basis for Foreground Scope."""
 
@@ -1013,6 +1135,24 @@ class ForegroundScopeBasisRow:
     modality_refs: Tuple[str, ...]
     polarity_refs: Tuple[str, ...]
     scope_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ForegroundScopeObjectCompatibilityRow:
+    """Per-object exact10 slots used before any canonical scope union."""
+
+    schema_version: str
+    scope_object_ref: str
+    owner_refs: Tuple[str, ...]
+    world_refs: Tuple[str, ...]
+    epistemic_state_refs: Tuple[str, ...]
+    time_refs: Tuple[str, ...]
+    aspect_refs: Tuple[str, ...]
+    modality_refs: Tuple[str, ...]
+    polarity_refs: Tuple[str, ...]
+    scope_refs: Tuple[str, ...]
+    required_qualifier_refs: Tuple[str, ...]
+    material_unknown_refs: Tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1707,6 +1847,19 @@ _STAGE1_TUPLE_FIELDS = {
         "required_candidate_refs",
         "material_unknown_refs",
     ),
+    GroundedSourceQualifierRow: ("qualifier_refs",),
+    PreMeaningGroundedInputs: (
+        "interpretation_candidate_rows",
+        "observation_contribution_rows",
+        "ordered_observation_refs",
+        "material_unknown_refs",
+        "source_qualifier_rows",
+        "source_relation_rows",
+    ),
+    AllowedReceptionOpportunityEnvelope: (
+        "allowed_reception_act_ids",
+        "safety_boundary_codes",
+    ),
     ForegroundScopeBasisRow: (
         "scope_object_refs",
         "source_object_refs",
@@ -1724,6 +1877,18 @@ _STAGE1_TUPLE_FIELDS = {
         "modality_refs",
         "polarity_refs",
         "scope_refs",
+    ),
+    ForegroundScopeObjectCompatibilityRow: (
+        "owner_refs",
+        "world_refs",
+        "epistemic_state_refs",
+        "time_refs",
+        "aspect_refs",
+        "modality_refs",
+        "polarity_refs",
+        "scope_refs",
+        "required_qualifier_refs",
+        "material_unknown_refs",
     ),
     ForegroundScope: (
         "integrated_scope_object_refs",
@@ -3922,7 +4087,14 @@ _QUALIFIER_PREFIXES = (
     *(
         f"{role.value.lower()}_{axis}:"
         for role in ArgumentRole
-        for axis in ("actor", "polarity", "modality", "time_scope")
+        for axis in (
+            "actor",
+            "world",
+            "aspect",
+            "polarity",
+            "modality",
+            "time_scope",
+        )
     ),
 )
 _SEMANTIC_SIGNATURE_PREFIXES_BY_FIELD = {
@@ -4952,6 +5124,8 @@ def _foreground_source_qualifiers_by_node_ref(
         node_qualifiers[_graph_object_ref(node)] = (
             "epistemic:provisional_interpretation",
             f"actor:{actor}",
+            "world:unknown",
+            "aspect:unknown",
             f"polarity:{polarity}",
             f"modality:{modality}",
             f"time_scope:{time_scope}",
@@ -4962,6 +5136,18 @@ def _foreground_source_qualifiers_by_node_ref(
             "foreground_scope_source_semantic_plan_binding_invalid"
         )
     return node_qualifiers
+
+
+def _foreground_candidate_required_qualifiers(
+    source_qualifiers: Sequence[str],
+) -> Tuple[str, ...]:
+    """Keep compatibility-only world/aspect out of Layer-1 identity."""
+
+    return tuple(
+        value
+        for value in source_qualifiers
+        if not value.startswith(("world:", "aspect:"))
+    )
 
 
 _FOREGROUND_CANDIDATE_FORBIDDEN_PROMOTIONS_EXACT6 = (
@@ -5009,6 +5195,8 @@ _FOREGROUND_RETENTION_PRIORITY = {"required": 0, "should": 1, "optional": 2}
 def _foreground_direct_shape(
     node: MeaningNode,
     nucleus: object,
+    *,
+    stage1_response_schema_version: str,
 ) -> Tuple[InterpretationKind, SemanticOperator]:
     """Derive the exact current Layer-1 direct shape from source metadata."""
 
@@ -5023,6 +5211,67 @@ def _foreground_direct_shape(
         for value in getattr(frame, "attribute_codes", ())
         if _foreground_enum_text(value)
     )
+    if stage1_response_schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2:
+        if kind in _FOREGROUND_DIRECTION_KINDS:
+            return (
+                InterpretationKind.DIRECT_DIRECTION,
+                SemanticOperator.PRESENT_DIRECTION,
+            )
+        if kind in _FOREGROUND_CHANGE_KINDS:
+            return (
+                InterpretationKind.DIRECT_STATE,
+                SemanticOperator.PRESENT_CHANGE,
+            )
+        if kind in _FOREGROUND_UNFINISHED_KINDS:
+            return (
+                InterpretationKind.UNFINISHED,
+                SemanticOperator.PRESENT_UNFINISHED,
+            )
+        if kind in _FOREGROUND_BURDEN_KINDS:
+            return (
+                InterpretationKind.DIRECT_STATE,
+                SemanticOperator.PRESENT_BURDEN,
+            )
+        if kind in _FOREGROUND_ACTION_KINDS:
+            return (
+                InterpretationKind.DIRECT_STATE,
+                SemanticOperator.PRESENT_ACTUAL_OUTPUT,
+            )
+        metadata_burden = (
+            predicate == "constraint"
+            or "operator:constraint" in attribute_codes
+            or "detected_type:limit_signal" in attribute_codes
+            or "detected_type:fear" in attribute_codes
+            or any(
+                value.startswith("source_claim:pressure.")
+                for value in attribute_codes
+            )
+        )
+        if kind == "reaction":
+            if (
+                predicate == "change"
+                or "operator:change" in attribute_codes
+                or "operator:positive_change" in attribute_codes
+            ):
+                return (
+                    InterpretationKind.DIRECT_STATE,
+                    SemanticOperator.PRESENT_CHANGE,
+                )
+            if metadata_burden:
+                return (
+                    InterpretationKind.DIRECT_STATE,
+                    SemanticOperator.PRESENT_BURDEN,
+                )
+        elif kind == "state" and metadata_burden:
+            return (
+                InterpretationKind.DIRECT_STATE,
+                SemanticOperator.PRESENT_BURDEN,
+            )
+        return InterpretationKind.DIRECT_STATE, SemanticOperator.PRESENT_STATE
+    if stage1_response_schema_version != CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1:
+        raise CMEEStage1ContractError(
+            "foreground_scope_meaning_projection_noncanonical"
+        )
     if (
         kind in _FOREGROUND_DIRECTION_KINDS
         or modality in {"wish", "intention"}
@@ -5097,6 +5346,7 @@ def _foreground_relation_shape(
     node_by_ref: Mapping[str, MeaningNode],
     node_meta_by_ref: Mapping[str, object],
     source_order_by_ref: Mapping[str, int],
+    stage1_response_schema_version: str,
 ) -> Optional[
     Tuple[
         InterpretationKind,
@@ -5110,10 +5360,14 @@ def _foreground_relation_shape(
     source_node = node_by_ref[source_ref]
     target_node = node_by_ref[target_ref]
     source_shape = _foreground_direct_shape(
-        source_node, node_meta_by_ref[source_ref]
+        source_node,
+        node_meta_by_ref[source_ref],
+        stage1_response_schema_version=stage1_response_schema_version,
     )
     target_shape = _foreground_direct_shape(
-        target_node, node_meta_by_ref[target_ref]
+        target_node,
+        node_meta_by_ref[target_ref],
+        stage1_response_schema_version=stage1_response_schema_version,
     )
     relation_kind = _foreground_enum_text(getattr(relation, "type", ""))
 
@@ -5251,6 +5505,7 @@ def _foreground_expected_layer1(
     grounded_graph: GroundedMeaningGraph,
     parent_plan: ExperiencePlan,
     source_qualifiers_by_node_ref: Mapping[str, Tuple[str, ...]],
+    stage1_response_schema_version: str = CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
 ) -> Tuple[
     Tuple[EmlisInterpretationCandidate, ...],
     EmlisMeaningField,
@@ -5289,6 +5544,9 @@ def _foreground_expected_layer1(
             node_by_ref=node_by_ref,
             node_meta_by_ref=node_meta_by_ref,
             source_order_by_ref=source_order_by_ref,
+            stage1_response_schema_version=(
+                stage1_response_schema_version
+            ),
         )
         if shape is None:
             if required:
@@ -5314,9 +5572,9 @@ def _foreground_expected_layer1(
         )
         qualifiers = ["epistemic:provisional_interpretation"]
         for argument in arguments:
-            source_qualifiers = source_qualifiers_by_node_ref[
-                argument.semantic_ref
-            ]
+            source_qualifiers = _foreground_candidate_required_qualifiers(
+                source_qualifiers_by_node_ref[argument.semantic_ref]
+            )
             role_prefix = f"{argument.role.value.lower()}_"
             qualifiers.extend(
                 f"{role_prefix}{value}" for value in source_qualifiers[1:]
@@ -5377,7 +5635,11 @@ def _foreground_expected_layer1(
         required = node_ref in required_node_refs
         nucleus = node_meta_by_ref[node_ref]
         candidate_kind, semantic_operator = _foreground_direct_shape(
-            node, nucleus
+            node,
+            nucleus,
+            stage1_response_schema_version=(
+                stage1_response_schema_version
+            ),
         )
         candidate = EmlisInterpretationCandidate(
             schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
@@ -5403,7 +5665,11 @@ def _foreground_expected_layer1(
             epistemic_state=(
                 InterpretationEpistemicState.PROVISIONAL_INTERPRETATION
             ),
-            required_qualifiers=source_qualifiers_by_node_ref[node_ref],
+            required_qualifiers=(
+                _foreground_candidate_required_qualifiers(
+                    source_qualifiers_by_node_ref[node_ref]
+                )
+            ),
             forbidden_promotions=(
                 _FOREGROUND_CANDIDATE_FORBIDDEN_PROMOTIONS_EXACT6
             ),
@@ -5590,18 +5856,117 @@ def _foreground_expected_layer1(
     )
 
 
-def _validate_foreground_meaning_projection(
+def project_premeaning_source_qualifier_rows(
     *,
     source: object,
     grounded_plan: object,
     grounded_graph: GroundedMeaningGraph,
     parent_plan: ExperiencePlan,
-    stage1_projection: EmlisStage1Projection,
-) -> None:
-    """Compare only the canonical pre-meaning/Layer-1 projection fields."""
+) -> Tuple[GroundedSourceQualifierRow, ...]:
+    """Project the canonical source-owned qualifier closure once."""
 
-    if type(stage1_projection) is not EmlisStage1Projection:
-        raise CMEEStage1ContractError("foreground_scope_projection_invalid")
+    qualifiers_by_node_ref = _foreground_source_qualifiers_by_node_ref(
+        source=source,
+        grounded_plan=grounded_plan,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+    )
+    return tuple(
+        GroundedSourceQualifierRow(node_ref=ref, qualifier_refs=qualifiers)
+        for ref, qualifiers in sorted(qualifiers_by_node_ref.items())
+    )
+
+
+def project_premeaning_source_relation_rows(
+    *,
+    source: object,
+    grounded_plan: object,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
+    stage1_response_schema_version: str = CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+) -> Tuple[GroundedSourceRelationRow, ...]:
+    """Project source relations before Layer-1 pool ordering or caps."""
+
+    if stage1_response_schema_version not in {
+        CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1,
+        CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
+    }:
+        raise CMEEStage1ContractError(
+            "premeaning_response_schema_invalid"
+        )
+    binding = _foreground_plan_graph_binding(
+        source=source,
+        grounded_plan=grounded_plan,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+    )
+    node_by_ref = binding["node_by_ref"]
+    node_meta_by_ref = binding["node_meta_by_ref"]
+    edge_meta_by_ref = binding["edge_meta_by_ref"]
+    source_order_by_ref = binding["source_order_by_ref"]
+    rows: list[GroundedSourceRelationRow] = []
+    for edge in grounded_graph.edges:
+        relation_ref = _graph_object_ref(edge)
+        relation_meta = edge_meta_by_ref.get(relation_ref)
+        if relation_meta is None:
+            continue
+        relation_kind = project_foreground_scope_relation_kind(
+            edge.relation
+        )
+        if relation_kind is None:
+            shape = _foreground_relation_shape(
+                edge=edge,
+                relation=relation_meta,
+                node_by_ref=node_by_ref,
+                node_meta_by_ref=node_meta_by_ref,
+                source_order_by_ref=source_order_by_ref,
+                stage1_response_schema_version=(
+                    stage1_response_schema_version
+                ),
+            )
+            if shape is None:
+                continue
+            relation_kind = project_foreground_scope_relation_kind(
+                edge.relation,
+                relation_operators=(shape[2],),
+            )
+        if relation_kind is None:
+            continue
+        rows.append(
+            GroundedSourceRelationRow(
+                relation_ref=relation_ref,
+                relation_kind=relation_kind,
+            )
+        )
+    return tuple(
+        sorted(
+            rows,
+            key=lambda row: (row.relation_ref, row.relation_kind.value),
+        )
+    )
+
+
+def validate_premeaning_grounded_inputs(
+    premeaning_inputs: PreMeaningGroundedInputs,
+    *,
+    source: object,
+    grounded_plan: object,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
+) -> None:
+    """Bind a Reception-free semantic closure to the actual typed source."""
+
+    if type(premeaning_inputs) is not PreMeaningGroundedInputs:
+        raise CMEEStage1ContractError("premeaning_grounded_inputs_invalid")
+    if premeaning_inputs.schema_version != "1.0":
+        raise CMEEStage1ContractError("premeaning_schema_version_invalid")
+    if premeaning_inputs.stage1_response_schema_version not in {
+        CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1,
+        CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
+    }:
+        raise CMEEStage1ContractError("premeaning_response_schema_invalid")
+    if premeaning_inputs.grounded_graph is not grounded_graph:
+        raise CMEEStage1ContractError("premeaning_grounded_graph_identity_mismatch")
     _validate_foreground_canonical_source_inputs(
         source=source,
         grounded_plan=grounded_plan,
@@ -5628,25 +5993,46 @@ def _validate_foreground_meaning_projection(
         grounded_graph=grounded_graph,
         parent_plan=parent_plan,
         source_qualifiers_by_node_ref=source_qualifiers_by_node_ref,
+        stage1_response_schema_version=(
+            premeaning_inputs.stage1_response_schema_version
+        ),
     )
     expected_graph_ref = (
         f"grounded:{grounded_graph.graph_id}"
         f"@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
     )
+    expected_qualifier_rows = project_premeaning_source_qualifier_rows(
+        source=source,
+        grounded_plan=grounded_plan,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+    )
+    expected_relation_rows = project_premeaning_source_relation_rows(
+        source=source,
+        grounded_plan=grounded_plan,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+        stage1_response_schema_version=(
+            premeaning_inputs.stage1_response_schema_version
+        ),
+    )
     meaning_projection_fields_match = (
-        stage1_projection.schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION
-        and stage1_projection.grounded_graph_ref == expected_graph_ref
-        and stage1_projection.parent_observation_duty_ref
+        premeaning_inputs.grounded_graph_ref == expected_graph_ref
+        and premeaning_inputs.parent_observation_duty_ref
         == parent_plan.observation_duty_id
-        and stage1_projection.interpretation_candidates
+        and premeaning_inputs.interpretation_candidate_rows
         == expected_candidates
-        and stage1_projection.meaning_field == expected_meaning_field
-        and stage1_projection.observation_contributions
+        and premeaning_inputs.meaning_field == expected_meaning_field
+        and premeaning_inputs.observation_contribution_rows
         == expected_contributions
-        and stage1_projection.ordered_observation_refs
+        and premeaning_inputs.ordered_observation_refs
         == expected_ordered_observation_refs
-        and stage1_projection.observation_depth_class
+        and premeaning_inputs.observation_depth_class
         is expected_observation_depth
+        and premeaning_inputs.material_unknown_refs
+        == expected_meaning_field.material_unknown_refs
+        and premeaning_inputs.source_qualifier_rows == expected_qualifier_rows
+        and premeaning_inputs.source_relation_rows == expected_relation_rows
     )
     if not meaning_projection_fields_match:
         raise CMEEStage1ContractError(
@@ -5654,12 +6040,12 @@ def _validate_foreground_meaning_projection(
         )
 
 
-def _validate_projection_source_qualifiers(
+def _validate_premeaning_source_qualifiers(
     *,
-    stage1_projection: EmlisStage1Projection,
+    interpretation_candidate_rows: Sequence[EmlisInterpretationCandidate],
     source_qualifiers_by_node_ref: Mapping[str, Tuple[str, ...]],
 ) -> None:
-    for candidate in stage1_projection.interpretation_candidates:
+    for candidate in interpretation_candidate_rows:
         if candidate.relation_operator is RelationOperator.NO_RELATION_CLAIM:
             semantic_refs = tuple(dict.fromkeys(candidate.semantic_refs))
             if (
@@ -5669,7 +6055,9 @@ def _validate_projection_source_qualifiers(
                 raise CMEEStage1ContractError(
                     "foreground_scope_projection_qualifier_source_mismatch"
                 )
-            expected = source_qualifiers_by_node_ref[semantic_refs[0]]
+            expected = _foreground_candidate_required_qualifiers(
+                source_qualifiers_by_node_ref[semantic_refs[0]]
+            )
         else:
             expected_values = ["epistemic:provisional_interpretation"]
             for binding in candidate.argument_bindings:
@@ -5680,6 +6068,9 @@ def _validate_projection_source_qualifiers(
                     raise CMEEStage1ContractError(
                         "foreground_scope_projection_qualifier_source_mismatch"
                     )
+                qualifiers = _foreground_candidate_required_qualifiers(
+                    qualifiers
+                )
                 role_prefix = f"{binding.role.value.lower()}_"
                 expected_values.extend(
                     f"{role_prefix}{value}" for value in qualifiers[1:]
@@ -5767,10 +6158,10 @@ def foreground_scope_basis_row_ref(row: ForegroundScopeBasisRow) -> str:
 def validate_foreground_scope_basis_row(
     row: ForegroundScopeBasisRow,
     *,
+    premeaning_inputs: PreMeaningGroundedInputs,
     source: object,
     grounded_plan: object,
     grounded_graph: GroundedMeaningGraph,
-    stage1_projection: EmlisStage1Projection,
     parent_plan: ExperiencePlan,
 ) -> None:
     """Validate a basis by deriving provenance from actual typed owners."""
@@ -5778,8 +6169,13 @@ def validate_foreground_scope_basis_row(
     _validate_foreground_scope_basis_shape(row)
     if type(grounded_graph) is not GroundedMeaningGraph:
         raise CMEEStage1ContractError("foreground_scope_grounded_graph_invalid")
-    if type(stage1_projection) is not EmlisStage1Projection:
-        raise CMEEStage1ContractError("foreground_scope_projection_invalid")
+    validate_premeaning_grounded_inputs(
+        premeaning_inputs,
+        source=source,
+        grounded_plan=grounded_plan,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+    )
     source_qualifiers_by_node_ref = (
         _foreground_source_qualifiers_by_node_ref(
             source=source,
@@ -5788,22 +6184,17 @@ def validate_foreground_scope_basis_row(
             parent_plan=parent_plan,
         )
     )
-    _validate_projection_source_qualifiers(
-        stage1_projection=stage1_projection,
+    _validate_premeaning_source_qualifiers(
+        interpretation_candidate_rows=(
+            premeaning_inputs.interpretation_candidate_rows
+        ),
         source_qualifiers_by_node_ref=source_qualifiers_by_node_ref,
-    )
-    _validate_foreground_meaning_projection(
-        source=source,
-        grounded_plan=grounded_plan,
-        grounded_graph=grounded_graph,
-        parent_plan=parent_plan,
-        stage1_projection=stage1_projection,
     )
     expected_graph_ref = (
         f"grounded:{grounded_graph.graph_id}"
         f"@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
     )
-    if stage1_projection.grounded_graph_ref != expected_graph_ref:
+    if premeaning_inputs.grounded_graph_ref != expected_graph_ref:
         raise CMEEStage1ContractError(
             "foreground_scope_projection_graph_ref_mismatch"
         )
@@ -5831,7 +6222,7 @@ def validate_foreground_scope_basis_row(
     expected_source_objects: Optional[set[str]] = None
     contributions = {
         value.contribution_id: value
-        for value in stage1_projection.observation_contributions
+        for value in premeaning_inputs.observation_contribution_rows
     }
     dedicated_fields = {
         "layer1_required_object_refs": row.layer1_required_object_refs,
@@ -5969,15 +6360,17 @@ def validate_foreground_scope_basis_row(
             raise CMEEStage1ContractError(
                 "foreground_scope_basis_source_connected_relation_not_source_explicit"
             )
-        try:
-            tuple(
-                ForegroundScopeRelationKind(value.relation)
-                for value in selected_edges
-            )
-        except ValueError:
+        if any(
+            _graph_object_ref(value)
+            not in {
+                relation_row.relation_ref
+                for relation_row in premeaning_inputs.source_relation_rows
+            }
+            for value in selected_edges
+        ):
             raise CMEEStage1ContractError(
                 "foreground_scope_basis_source_connected_relation_kind_invalid"
-            ) from None
+            )
         if any(
             values
             for name, values in dedicated_fields.items()
@@ -6033,7 +6426,7 @@ def validate_foreground_scope_basis_row(
                 )
             qualifier_candidate_matches = tuple(
                 candidate
-                for candidate in stage1_projection.interpretation_candidates
+                for candidate in premeaning_inputs.interpretation_candidate_rows
                 if set(candidate.semantic_refs) == set(row.source_object_refs)
                 and set(candidate.required_qualifiers)
                 == set(row.required_qualifier_refs)
@@ -6138,13 +6531,21 @@ def validate_foreground_scope_basis_row(
         for qualifier in source_qualifiers_by_node_ref.get(ref, ())
     }
     compatibility_sources = {
-        "world_refs": set(),
+        "world_refs": {
+            value
+            for value in source_qualifier_universe
+            if value.startswith("world:")
+        },
         "time_refs": {
             value
             for value in source_qualifier_universe
             if value.startswith(("time:", "time_scope:"))
         },
-        "aspect_refs": set(),
+        "aspect_refs": {
+            value
+            for value in source_qualifier_universe
+            if value.startswith("aspect:")
+        },
         "modality_refs": {
             value
             for value in source_qualifier_universe
@@ -6192,10 +6593,10 @@ def validate_foreground_scope(
     scope: ForegroundScope,
     *,
     basis_rows: Sequence[ForegroundScopeBasisRow],
+    premeaning_inputs: PreMeaningGroundedInputs,
     source: object,
     grounded_plan: object,
     grounded_graph: GroundedMeaningGraph,
-    stage1_projection: EmlisStage1Projection,
     parent_plan: ExperiencePlan,
 ) -> None:
     if type(scope) is not ForegroundScope:
@@ -6213,18 +6614,23 @@ def validate_foreground_scope(
                 "source_evidence_refs",
             },
         )
-    rows = tuple(basis_rows)
-    if len(rows) != 1:
+    if type(basis_rows) is not tuple:
         raise CMEEStage1ContractError(
-            "foreground_scope_im00_multi_basis_union_deferred"
+            "foreground_scope_basis_rows_tuple_required"
         )
+    rows = basis_rows
+    if not rows:
+        raise CMEEStage1ContractError("foreground_scope_basis_rows_empty")
+    row_refs = tuple(foreground_scope_basis_row_ref(row) for row in rows)
+    if len(row_refs) != len(set(row_refs)):
+        raise CMEEStage1ContractError("foreground_scope_basis_rows_duplicate")
     for row in rows:
         validate_foreground_scope_basis_row(
             row,
+            premeaning_inputs=premeaning_inputs,
             source=source,
             grounded_plan=grounded_plan,
             grounded_graph=grounded_graph,
-            stage1_projection=stage1_projection,
             parent_plan=parent_plan,
         )
     expected = {
@@ -6258,10 +6664,10 @@ def validate_foreground_scope_derivation(
     derivation: ForegroundScopeDerivation,
     *,
     basis_rows: Sequence[ForegroundScopeBasisRow],
+    premeaning_inputs: PreMeaningGroundedInputs,
     source: object,
     grounded_plan: object,
     grounded_graph: GroundedMeaningGraph,
-    stage1_projection: EmlisStage1Projection,
     parent_plan: ExperiencePlan,
 ) -> None:
     if type(derivation) is not ForegroundScopeDerivation:
@@ -6278,30 +6684,76 @@ def validate_foreground_scope_derivation(
             getattr(derivation, field_name),
             code=f"foreground_scope_derivation_{field_name}_noncanonical",
         )
-    state = derivation.state
-    if state is not ForegroundScopeDerivationState.FOREGROUND_SCOPE_AVAILABLE:
+    if type(basis_rows) is not tuple:
         raise CMEEStage1ContractError(
-            "foreground_scope_nonavailable_derivation_deferred_to_im01"
+            "foreground_scope_basis_rows_tuple_required"
+        )
+    rows = basis_rows
+    state = derivation.state
+    for row in rows:
+        validate_foreground_scope_basis_row(
+            row,
+            premeaning_inputs=premeaning_inputs,
+            source=source,
+            grounded_plan=grounded_plan,
+            grounded_graph=grounded_graph,
+            parent_plan=parent_plan,
         )
     if type(derivation.foreground_scope) is ForegroundScope:
         validate_foreground_scope(
             derivation.foreground_scope,
-            basis_rows=basis_rows,
+            basis_rows=rows,
+            premeaning_inputs=premeaning_inputs,
             source=source,
             grounded_plan=grounded_plan,
             grounded_graph=grounded_graph,
-            stage1_projection=stage1_projection,
             parent_plan=parent_plan,
         )
-    valid = (
-        type(derivation.foreground_scope) is ForegroundScope
-        and derivation.retained_foreground_source_object_refs
-        == derivation.foreground_scope.integrated_scope_object_refs
-        and not derivation.unresolved_scope_refs
-        and not derivation.missing_structure_refs
-        and derivation.derivation_evidence_refs
-        == derivation.foreground_scope.source_evidence_refs
+    retained = tuple(
+        sorted({ref for row in rows for ref in row.scope_object_refs})
     )
+    evidence = tuple(
+        sorted({ref for row in rows for ref in row.source_evidence_refs})
+    )
+    if state is ForegroundScopeDerivationState.FOREGROUND_SCOPE_AVAILABLE:
+        valid = (
+            type(derivation.foreground_scope) is ForegroundScope
+            and derivation.retained_foreground_source_object_refs == retained
+            and derivation.retained_foreground_source_object_refs
+            == derivation.foreground_scope.integrated_scope_object_refs
+            and not derivation.unresolved_scope_refs
+            and not derivation.missing_structure_refs
+            and derivation.derivation_evidence_refs == evidence
+            and derivation.derivation_evidence_refs
+            == derivation.foreground_scope.source_evidence_refs
+        )
+    elif state is ForegroundScopeDerivationState.COMPETING_MATERIAL_SCOPES:
+        valid = (
+            derivation.foreground_scope is None
+            and bool(retained)
+            and derivation.retained_foreground_source_object_refs == retained
+            and bool(derivation.unresolved_scope_refs)
+            and not derivation.missing_structure_refs
+            and derivation.derivation_evidence_refs == evidence
+        )
+    elif state is ForegroundScopeDerivationState.FOREGROUND_SCOPE_STRUCTURE_INSUFFICIENT:
+        valid = (
+            derivation.foreground_scope is None
+            and bool(retained)
+            and derivation.retained_foreground_source_object_refs == retained
+            and not derivation.unresolved_scope_refs
+            and bool(derivation.missing_structure_refs)
+            and derivation.derivation_evidence_refs == evidence
+        )
+    else:
+        valid = (
+            derivation.foreground_scope is None
+            and not rows
+            and not derivation.retained_foreground_source_object_refs
+            and not derivation.unresolved_scope_refs
+            and not derivation.missing_structure_refs
+            and not derivation.derivation_evidence_refs
+        )
     if not valid:
         raise CMEEStage1ContractError(
             "foreground_scope_derivation_state_cardinality_mismatch"
@@ -6422,7 +6874,7 @@ def _meaning_semantic_signature_profiles(
     source: object,
     grounded_plan: object,
     grounded_graph: GroundedMeaningGraph,
-    stage1_projection: EmlisStage1Projection,
+    premeaning_inputs: PreMeaningGroundedInputs,
     parent_plan: ExperiencePlan,
 ) -> Tuple[
     Tuple[
@@ -6447,8 +6899,10 @@ def _meaning_semantic_signature_profiles(
             parent_plan=parent_plan,
         )
     )
-    _validate_projection_source_qualifiers(
-        stage1_projection=stage1_projection,
+    _validate_premeaning_source_qualifiers(
+        interpretation_candidate_rows=(
+            premeaning_inputs.interpretation_candidate_rows
+        ),
         source_qualifiers_by_node_ref=source_qualifiers_by_node_ref,
     )
     scoped_node_refs = {
@@ -6488,7 +6942,7 @@ def _meaning_semantic_signature_profiles(
     )
     connected_candidates = tuple(
         candidate
-        for candidate in stage1_projection.interpretation_candidates
+        for candidate in premeaning_inputs.interpretation_candidate_rows
         if candidate.semantic_refs
         and set(candidate.semantic_refs).issubset(scoped_node_refs)
         and set(candidate.relation_basis_refs).issubset(
@@ -6564,11 +7018,16 @@ def _meaning_semantic_signature_profiles(
             resolution_keys.add("resolution:unresolved")
             qualifier_keys.add("qualifier:unknown_preserved")
         relation_keys = {
-            f"relation:{edge_by_ref[ref].relation}"
+            f"relation:{relation_kind.value}"
             for ref in candidate.relation_basis_refs
             if ref in edge_by_ref
-            and edge_by_ref[ref].relation
-            in {value.value for value in ForegroundScopeRelationKind}
+            for relation_kind in (
+                project_foreground_scope_relation_kind(
+                    edge_by_ref[ref].relation,
+                    relation_operators=(candidate.relation_operator,),
+                ),
+            )
+            if relation_kind is not None
         }
         first_binding = candidate.argument_bindings[0]
         profile = {
@@ -6621,7 +7080,7 @@ def validate_meaning_semantic_signature(
     source: object,
     grounded_plan: object,
     grounded_graph: GroundedMeaningGraph,
-    stage1_projection: EmlisStage1Projection,
+    premeaning_inputs: PreMeaningGroundedInputs,
     parent_plan: ExperiencePlan,
 ) -> None:
     if type(signature) is not MeaningSemanticSignature:
@@ -6641,7 +7100,7 @@ def validate_meaning_semantic_signature(
         source=source,
         grounded_plan=grounded_plan,
         grounded_graph=grounded_graph,
-        stage1_projection=stage1_projection,
+        premeaning_inputs=premeaning_inputs,
         parent_plan=parent_plan,
     )
     profiles = _meaning_semantic_signature_profiles(
@@ -6649,7 +7108,7 @@ def validate_meaning_semantic_signature(
         source=source,
         grounded_plan=grounded_plan,
         grounded_graph=grounded_graph,
-        stage1_projection=stage1_projection,
+        premeaning_inputs=premeaning_inputs,
         parent_plan=parent_plan,
     )
     for field_name, prefixes in _SEMANTIC_SIGNATURE_PREFIXES_BY_FIELD.items():
@@ -6718,7 +7177,14 @@ def _meaning_qualifier_parts(
     if not value.startswith("qualifier:") or "=" not in value:
         return None
     body, qualifier_value = value.removeprefix("qualifier:").split("=", 1)
-    axes = {"actor", "modality", "polarity", "time_scope"}
+    axes = {
+        "actor",
+        "world",
+        "aspect",
+        "modality",
+        "polarity",
+        "time_scope",
+    }
     if body in axes:
         return None, body, qualifier_value
     for role in ArgumentRole:
@@ -7016,7 +7482,7 @@ def _validate_counterfactual_meaning_semantic_signature(
     source: object,
     grounded_plan: object,
     grounded_graph: GroundedMeaningGraph,
-    stage1_projection: EmlisStage1Projection,
+    premeaning_inputs: PreMeaningGroundedInputs,
     parent_plan: ExperiencePlan,
 ) -> None:
     """Validate one code-gated mutation without widening baseline meaning."""
@@ -7031,7 +7497,7 @@ def _validate_counterfactual_meaning_semantic_signature(
         "source": source,
         "grounded_plan": grounded_plan,
         "grounded_graph": grounded_graph,
-        "stage1_projection": stage1_projection,
+        "premeaning_inputs": premeaning_inputs,
         "parent_plan": parent_plan,
     }
     validate_meaning_semantic_signature(
@@ -7058,7 +7524,7 @@ def _validate_counterfactual_meaning_semantic_signature(
         source=source,
         grounded_plan=grounded_plan,
         grounded_graph=grounded_graph,
-        stage1_projection=stage1_projection,
+        premeaning_inputs=premeaning_inputs,
         parent_plan=parent_plan,
     )
     registry = {
@@ -7435,7 +7901,7 @@ def _validate_whole_reading_context(
     source: object,
     grounded_plan: object,
     grounded_graph: GroundedMeaningGraph,
-    stage1_projection: EmlisStage1Projection,
+    premeaning_inputs: PreMeaningGroundedInputs,
     parent_plan: ExperiencePlan,
 ) -> None:
     if type(context) is not WholeReadingConsequenceValidationContext:
@@ -7453,7 +7919,7 @@ def _validate_whole_reading_context(
         source=source,
         grounded_plan=grounded_plan,
         grounded_graph=grounded_graph,
-        stage1_projection=stage1_projection,
+        premeaning_inputs=premeaning_inputs,
         parent_plan=parent_plan,
     )
     validate_version_qualified_ref(
@@ -7501,7 +7967,7 @@ def _validate_whole_reading_context(
         "source": source,
         "grounded_plan": grounded_plan,
         "grounded_graph": grounded_graph,
-        "stage1_projection": stage1_projection,
+        "premeaning_inputs": premeaning_inputs,
         "parent_plan": parent_plan,
     }
     validate_meaning_semantic_signature(
@@ -7528,7 +7994,7 @@ def validate_whole_reading_consequence_row(
     source: object,
     grounded_plan: object,
     grounded_graph: GroundedMeaningGraph,
-    stage1_projection: EmlisStage1Projection,
+    premeaning_inputs: PreMeaningGroundedInputs,
     parent_plan: ExperiencePlan,
 ) -> None:
     """Bind a closed whole-reading delta to typed IM00 provenance owners."""
@@ -7565,7 +8031,7 @@ def validate_whole_reading_consequence_row(
         source=source,
         grounded_plan=grounded_plan,
         grounded_graph=grounded_graph,
-        stage1_projection=stage1_projection,
+        premeaning_inputs=premeaning_inputs,
         parent_plan=parent_plan,
     )
     if row.consequence_id != whole_reading_consequence_id(row):
@@ -11308,6 +11774,7 @@ __all__ = [
     "AppraisalOperation",
     "ArgumentBinding",
     "ArgumentRole",
+    "AllowedReceptionOpportunityEnvelope",
     "AttachmentAdmission",
     "AtomicPredicateHeadSpec",
     "CaseParticleRule",
@@ -11363,11 +11830,14 @@ __all__ = [
     "ForegroundScopeCompatibilityAxis",
     "ForegroundScopeDerivation",
     "ForegroundScopeDerivationState",
+    "ForegroundScopeObjectCompatibilityRow",
     "ForegroundScopeRelationKind",
     "GenerationArtifactBundle",
     "GenerationRequest",
     "GroundedExpressionPlan",
     "GroundedMeaningGraph",
+    "GroundedSourceQualifierRow",
+    "GroundedSourceRelationRow",
     "InflectionClassSpec",
     "InterpretationEpistemicState",
     "InterpretationKind",
@@ -11396,6 +11866,7 @@ __all__ = [
     "PolicyBasisRole",
     "PolicyApplicationRow",
     "PlannedObservationContribution",
+    "PreMeaningGroundedInputs",
     "PredicateMorphologyPlan",
     "PredicateSenseFrameLicense",
     "PredicateSenseSpec",
@@ -11461,6 +11932,9 @@ __all__ = [
     "WholeReadingConsequenceValidationContext",
     "foreground_scope_basis_row_ref",
     "foreground_scope_id",
+    "project_foreground_scope_relation_kind",
+    "project_premeaning_source_qualifier_rows",
+    "project_premeaning_source_relation_rows",
     "project_stage1_policy_basis_binding_ref",
     "project_stage1_projection_preimage_ref",
     "project_stage1_source_qualifier_binding_ref",
@@ -11482,6 +11956,7 @@ __all__ = [
     "validate_foreground_scope",
     "validate_foreground_scope_basis_row",
     "validate_foreground_scope_derivation",
+    "validate_premeaning_grounded_inputs",
     "validate_meaning_semantic_signature",
     "validate_subjective_proposition_v2",
     "validate_surface_derivation",

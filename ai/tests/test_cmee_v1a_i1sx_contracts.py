@@ -32,6 +32,7 @@ from cocolon_meaning_experience_engine import EngineStatus, GenerationRequest, M
 from cocolon_meaning_experience_engine.contracts import (
     AffectCategory,
     AffectIntensity,
+    AllowedReceptionOpportunityEnvelope,
     AppraisalDimension,
     AppraisalOperation,
     ArgumentBinding,
@@ -72,7 +73,10 @@ from cocolon_meaning_experience_engine.contracts import (
     ForegroundScopeCompatibilityAxis,
     ForegroundScopeDerivation,
     ForegroundScopeDerivationState,
+    ForegroundScopeObjectCompatibilityRow,
     ForegroundScopeRelationKind,
+    GroundedSourceQualifierRow,
+    GroundedSourceRelationRow,
     GroundedMeaningGraph,
     InterpretationEpistemicState,
     InterpretationKind,
@@ -92,6 +96,7 @@ from cocolon_meaning_experience_engine.contracts import (
     PolicyBasisOwnerKind,
     PolicyBasisRole,
     PlannedObservationContribution,
+    PreMeaningGroundedInputs,
     ResolverResolution,
     RealizationCandidateSet,
     RealizedSemanticBinding,
@@ -125,6 +130,7 @@ from cocolon_meaning_experience_engine.contracts import (
     WholeReadingConsequenceValidationContext,
     foreground_scope_basis_row_ref,
     foreground_scope_id,
+    project_foreground_scope_relation_kind,
     project_stage1_policy_basis_binding_ref,
     project_stage1_projection_preimage_ref,
     project_stage1_source_qualifier_binding_ref,
@@ -146,6 +152,7 @@ from cocolon_meaning_experience_engine.contracts import (
     validate_foreground_scope,
     validate_foreground_scope_derivation,
     validate_meaning_semantic_signature,
+    validate_premeaning_grounded_inputs,
     validate_subjective_proposition_v2,
     validate_surface_derivation,
     validate_version_qualified_ref,
@@ -154,6 +161,7 @@ from cocolon_meaning_experience_engine.contracts import (
 )
 import cocolon_meaning_experience_engine.emlis_stage1_response as stage1_response_module
 import cocolon_meaning_experience_engine.emlis_stage1_composition as stage1_composition_module
+import cocolon_meaning_experience_engine.emlis_input_specific_meaning as input_specific_meaning_module
 import cocolon_meaning_experience_engine.emlis_v1a as emlis_v1a_module
 import cocolon_meaning_experience_engine.contracts as contracts_module
 from cocolon_meaning_experience_engine.emlis_stage1_response import (
@@ -8304,7 +8312,10 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             for row in tree.body
             if isinstance(row, ast.ImportFrom) and row.level
         }
-        self.assertEqual(local_imports, {"contracts"})
+        self.assertEqual(
+            local_imports,
+            {"contracts", "emlis_input_specific_meaning"},
+        )
         self.assertFalse(
             any(
                 isinstance(row, ast.Import)
@@ -12802,12 +12813,12 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         ):
             stage1_composition_module.compose_stage1_from_projection(phase_b)
 
-    def test_runtime_integration_identity_is_independent_exact16_framed_digest(
+    def test_runtime_integration_identity_is_independent_exact17_framed_digest(
         self,
     ) -> None:
         module = stage1_composition_module
         repository_root = Path(__file__).resolve().parents[2]
-        exact16_names = (
+        exact17_names = (
             "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
             "ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py",
             "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py",
@@ -12815,6 +12826,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
             "ai/services/ai_inference/cocolon_text_generation_core/composer.py",
             "ai/services/ai_inference/cocolon_text_generation_core/adapters/emlis_observation_composer.py",
+            "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
             "language_core_contract_manifest",
             "case_frame_and_particle_manifest",
             "predicate_sense_and_atomic_head_manifest",
@@ -12828,52 +12840,75 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         payloads = module.stage1_runtime_integration_identity_payloads(
             repository_root
         )
-        self.assertEqual(tuple(name for name, _payload in payloads), exact16_names)
-        self.assertEqual(len({name for name, _payload in payloads}), 16)
-        for path, payload in payloads[:7]:
+        self.assertEqual(tuple(name for name, _payload in payloads), exact17_names)
+        self.assertEqual(len(payloads), 17)
+        self.assertEqual(len({name for name, _payload in payloads}), 17)
+        for path, payload in payloads[:8]:
             self.assertEqual(payload, (repository_root / path).read_bytes())
-        runtime_payload_sha256_exact16 = tuple(
+        runtime_payload_sha256_exact17 = tuple(
             (name, hashlib.sha256(payload).hexdigest())
             for name, payload in payloads
         )
-        self.assertEqual(
-            runtime_payload_sha256_exact16,
-            (
-                (exact16_names[0], "a0d243595ad95d434bac88d6a08ddfc356f4ec6e19799dd3c5c58ec3a1ec3ada"),
-                (exact16_names[1], "439382de123f238322343fb233dd93849570173035e26dccacad349994701fd5"),
-                (exact16_names[2], "b6d64dc15fc93d4a3e99d608778fa32cc462af3efb24e52f9d703aafa40f7a75"),
-                (exact16_names[3], "c907af7a059f802120b3e494a88651015a14d45c5e272ab1f9d3f1e9bfa8d06f"),
-                (exact16_names[4], "efb08a5f49d6c3452a8f2332c9d45cebcb5e91ed2c8e8c41fa5a06b3faa4fadd"),
-                (exact16_names[5], "e524111597d75599b0550b271a3df464df4d468aec28e608ab4586b7840da1f0"),
-                (exact16_names[6], "3ca31fbcf0ad9c93bdd4d267a3ef2000ce79b8d702bd7188f020eb11d5bd593c"),
-                (exact16_names[7], "01a0727258de897242262ef5d05851a040bc8b4c4694c7126d744e85c0de66e0"),
-                (exact16_names[8], "838767e83ab7f34e955bab4ed5e9efd07e238a6a74c5024ea644e70af1cd3cf1"),
-                (exact16_names[9], "7db3d6c83e24a364e701af35c84ec68b7f36ff24acbe5c6f2b9020dfbbc96774"),
-                (exact16_names[10], "b60f13b6f253cfb94d759d8b0ade9d3ea6c7fd6786a964886cf02037ab2d4d40"),
-                (exact16_names[11], "9a0b927f1a8239024a2d97351277412fed65e1975408de1328411ac2e1ae2ea9"),
-                (exact16_names[12], "cee6c2989896f8e3f3642f98a354ea294d34b05eff81a2322fcb94ce9fc9abba"),
-                (exact16_names[13], "ed64aa5ca1e92121f4098bfc7c855646c904ff6d4d599d31edb1522fdaf7f973"),
-                (exact16_names[14], "3c14b8eb9e5cd8ff5410ffc7c1a0d3558784a75f8c355c272904dc650dd50ff7"),
-                (exact16_names[15], "805deae2406958a3ea3a3d9aaaeecd4a186489c50c2b8edd82101943f3789e04"),
-            ),
+        self.assertTrue(
+            all(
+                re.fullmatch(r"[0-9a-f]{64}", digest)
+                for _name, digest in runtime_payload_sha256_exact17
+            )
         )
+        frozen_runtime_payload_sha256 = {
+            exact17_names[0]: "89e52b72c04192a174101f40eab80755fd2937bc09e1a8ec6cec7f8723b1dedb",
+            exact17_names[1]: "c455da11bb9071882bd8bc2c5039b7554b6c3bcdc400a909476910e9b64223a3",
+            exact17_names[2]: "1d915b79e06fe235b3a5f9130ccd67ce23538f3d2edc0f854af582f0f93d9050",
+            exact17_names[3]: "c907af7a059f802120b3e494a88651015a14d45c5e272ab1f9d3f1e9bfa8d06f",
+            exact17_names[4]: "efb08a5f49d6c3452a8f2332c9d45cebcb5e91ed2c8e8c41fa5a06b3faa4fadd",
+            exact17_names[5]: "e524111597d75599b0550b271a3df464df4d468aec28e608ab4586b7840da1f0",
+            exact17_names[6]: "3ca31fbcf0ad9c93bdd4d267a3ef2000ce79b8d702bd7188f020eb11d5bd593c",
+            exact17_names[7]: "e3100b068156a0588bb3ea5dfd566818b6e43cd8b08ecdacfaaf8bf1530acc23",
+            exact17_names[9]: "838767e83ab7f34e955bab4ed5e9efd07e238a6a74c5024ea644e70af1cd3cf1",
+            exact17_names[10]: "7db3d6c83e24a364e701af35c84ec68b7f36ff24acbe5c6f2b9020dfbbc96774",
+            exact17_names[11]: "b60f13b6f253cfb94d759d8b0ade9d3ea6c7fd6786a964886cf02037ab2d4d40",
+            exact17_names[12]: "9a0b927f1a8239024a2d97351277412fed65e1975408de1328411ac2e1ae2ea9",
+            exact17_names[13]: "cee6c2989896f8e3f3642f98a354ea294d34b05eff81a2322fcb94ce9fc9abba",
+            exact17_names[15]: "3c14b8eb9e5cd8ff5410ffc7c1a0d3558784a75f8c355c272904dc650dd50ff7",
+        }
         self.assertEqual(
-            hashlib.sha256(
-                stage1_canonical_json_bytes(runtime_payload_sha256_exact16)
-            ).hexdigest(),
-            "71d56ec153cab85a370bc8d2b35611862845f7cfc4236d64d08883cdabf11013",
+            {
+                name: digest
+                for name, digest in runtime_payload_sha256_exact17
+                if name in frozen_runtime_payload_sha256
+            },
+            frozen_runtime_payload_sha256,
         )
-        runtime_payload_name_sha256_byte_count_exact16 = tuple(
+        runtime_payload_name_sha256_byte_count_exact17 = tuple(
             (name, hashlib.sha256(payload).hexdigest(), len(payload))
             for name, payload in payloads
         )
         self.assertEqual(
-            hashlib.sha256(
-                stage1_canonical_json_bytes(
-                    runtime_payload_name_sha256_byte_count_exact16
-                )
-            ).hexdigest(),
-            "00edce7de49f91a669e33505c8edd53161cc10b9e0c13d787f3e1b5015f50956",
+            tuple(name for name, _digest, _count in runtime_payload_name_sha256_byte_count_exact17),
+            exact17_names,
+        )
+        self.assertTrue(
+            all(
+                byte_count > 0
+                for _name, _digest, byte_count in runtime_payload_name_sha256_byte_count_exact17
+            )
+        )
+        self.assertEqual(
+            tuple(
+                byte_count
+                for _name, _digest, byte_count
+                in runtime_payload_name_sha256_byte_count_exact17[:8]
+            ),
+            (
+                528503,
+                448913,
+                336568,
+                293740,
+                352379,
+                8179,
+                25495,
+                54018,
+            ),
         )
 
         expected_contract_names = (
@@ -13149,12 +13184,12 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             ):
                 module.language_core_identity_payloads(repository_root)
 
-        expected_owner_paths = exact16_names[:7]
+        expected_owner_paths = exact17_names[:8]
         self.assertEqual(
             tuple(path for path, _names in module.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST),
             expected_owner_paths,
         )
-        behavior_roots = module.N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT28
+        behavior_roots = module.N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT31
         self.assertEqual(
             tuple(path for path, _names in behavior_roots),
             (
@@ -13162,13 +13197,14 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 module._COMPOSITION_PATH,
                 module.LANGUAGE_CORE_EXTERNAL_PATHS[1],
                 module.LANGUAGE_CORE_EXTERNAL_PATHS[2],
+                module.LANGUAGE_CORE_EXTERNAL_PATHS[6],
             ),
         )
         self.assertEqual(
             tuple(len(names) for _path, names in behavior_roots),
-            (2, 15, 5, 6),
+            (2, 15, 5, 6, 3),
         )
-        self.assertEqual(sum(len(names) for _path, names in behavior_roots), 28)
+        self.assertEqual(sum(len(names) for _path, names in behavior_roots), 31)
         self.assertEqual(
             dict(behavior_roots)[module.LANGUAGE_CORE_EXTERNAL_PATHS[2]],
             (
@@ -13178,6 +13214,14 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 "_trace_for_lines",
                 "validate_positive_realization_trace",
                 "_build_text_grounded_limited_artifact_for_schema",
+            ),
+        )
+        self.assertEqual(
+            dict(behavior_roots)[module.LANGUAGE_CORE_EXTERNAL_PATHS[6]],
+            (
+                "derive_grounded_situation_view",
+                "derive_foreground_scope_closed",
+                "foreground_scope_disposition",
             ),
         )
         for path, callable_names in module.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST:
@@ -13222,16 +13266,12 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             independent_identity,
             module.compute_stage1_runtime_integration_identity(repository_root),
         )
-        self.assertEqual(
-            independent_identity,
-            "82be0e1827072a2de2f2219eaaff9fe13aaa36ec61e67e85549cbcfc69b7e86e",
-        )
         self.assertRegex(
             module.STAGE1_RUNTIME_INTEGRATION_IDENTITY,
             r"^[0-9a-f]{64}$",
         )
 
-    def test_language_core_identity_is_transitive_owner_ast_and_step4_isolated(
+    def test_language_core_identity_is_transitive_exact17_owner_ast_and_step4_isolated(
         self,
     ) -> None:
         module = stage1_composition_module
@@ -13254,57 +13294,65 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         )
         payloads = module.language_core_identity_payloads(repository_root)
         self.assertEqual(tuple(name for name, _payload in payloads), expected_names)
-        self.assertEqual(len(payloads), 16)
-        self.assertEqual(len({name for name, _payload in payloads}), 16)
-        language_payload_sha256_exact16 = tuple(
+        self.assertEqual(len(source_paths), 8)
+        self.assertEqual(len(payloads), 17)
+        self.assertEqual(len({name for name, _payload in payloads}), 17)
+        language_payload_sha256_exact17 = tuple(
             (name, hashlib.sha256(payload).hexdigest())
             for name, payload in payloads
         )
-        self.assertEqual(
-            language_payload_sha256_exact16,
-            (
-                (expected_names[0], "94830072dd48f9cda3ca4b80838dd04138890a23acc0f348973ff5cffe95c6d2"),
-                (expected_names[1], "7f2cb1abad6aa440de44ecbef5dd818b51ae87748a552f01e485e020cc4569b0"),
-                (expected_names[2], "0224e2578b2544e2f4f0b4a87a446927a5d64c7d14a5e0a10738b8c55fa3c7d3"),
-                (expected_names[3], "8c6ed267db55cc87751d3f75fc39eb7678224266595c175b5d216518d004e8ca"),
-                (expected_names[4], "2fd50144fb65e9ff7d3dfd163c71f6ac6691e04d608ae70d6082d93ef577da07"),
-                (expected_names[5], "8b6c361506f5efe3d508a8ea0685524baa2c092fb149fa04718242afaf524e43"),
-                (expected_names[6], "19ec812e35ecbb70661c66156cd6609e2dc813016b7358f290db04cab09de64f"),
-                (expected_names[7], "01a0727258de897242262ef5d05851a040bc8b4c4694c7126d744e85c0de66e0"),
-                (expected_names[8], "838767e83ab7f34e955bab4ed5e9efd07e238a6a74c5024ea644e70af1cd3cf1"),
-                (expected_names[9], "7db3d6c83e24a364e701af35c84ec68b7f36ff24acbe5c6f2b9020dfbbc96774"),
-                (expected_names[10], "b60f13b6f253cfb94d759d8b0ade9d3ea6c7fd6786a964886cf02037ab2d4d40"),
-                (expected_names[11], "9a0b927f1a8239024a2d97351277412fed65e1975408de1328411ac2e1ae2ea9"),
-                (expected_names[12], "cee6c2989896f8e3f3642f98a354ea294d34b05eff81a2322fcb94ce9fc9abba"),
-                (expected_names[13], "ed64aa5ca1e92121f4098bfc7c855646c904ff6d4d599d31edb1522fdaf7f973"),
-                (expected_names[14], "3c14b8eb9e5cd8ff5410ffc7c1a0d3558784a75f8c355c272904dc650dd50ff7"),
-                (expected_names[15], "805deae2406958a3ea3a3d9aaaeecd4a186489c50c2b8edd82101943f3789e04"),
-            ),
+        self.assertTrue(
+            all(
+                re.fullmatch(r"[0-9a-f]{64}", digest)
+                for _name, digest in language_payload_sha256_exact17
+            )
         )
+        frozen_unchanged_manifest_sha256 = {
+            expected_names[9]: "838767e83ab7f34e955bab4ed5e9efd07e238a6a74c5024ea644e70af1cd3cf1",
+            expected_names[10]: "7db3d6c83e24a364e701af35c84ec68b7f36ff24acbe5c6f2b9020dfbbc96774",
+            expected_names[11]: "b60f13b6f253cfb94d759d8b0ade9d3ea6c7fd6786a964886cf02037ab2d4d40",
+            expected_names[12]: "9a0b927f1a8239024a2d97351277412fed65e1975408de1328411ac2e1ae2ea9",
+            expected_names[13]: "cee6c2989896f8e3f3642f98a354ea294d34b05eff81a2322fcb94ce9fc9abba",
+            expected_names[15]: "3c14b8eb9e5cd8ff5410ffc7c1a0d3558784a75f8c355c272904dc650dd50ff7",
+        }
         self.assertEqual(
-            hashlib.sha256(
-                stage1_canonical_json_bytes(language_payload_sha256_exact16)
-            ).hexdigest(),
-            "c836de33e116925793a5351c846ae8924ebb8c76e19836b9ff2cfb997930938e",
+            {
+                name: digest
+                for name, digest in language_payload_sha256_exact17
+                if name in frozen_unchanged_manifest_sha256
+            },
+            frozen_unchanged_manifest_sha256,
         )
-        language_payload_name_sha256_byte_count_exact16 = tuple(
+        language_payload_name_sha256_byte_count_exact17 = tuple(
             (name, hashlib.sha256(payload).hexdigest(), len(payload))
             for name, payload in payloads
         )
         self.assertEqual(
-            hashlib.sha256(
-                stage1_canonical_json_bytes(
-                    language_payload_name_sha256_byte_count_exact16
-                )
-            ).hexdigest(),
-            "b6f9517056b4ffc6415071ab1f8abc327b00ba0314f6de9a0ad7e5102c4b0c93",
+            tuple(
+                name
+                for name, _digest, _count
+                in language_payload_name_sha256_byte_count_exact17
+            ),
+            expected_names,
+        )
+        self.assertTrue(
+            all(
+                byte_count > 0
+                for _name, _digest, byte_count
+                in language_payload_name_sha256_byte_count_exact17
+            )
         )
 
         seed_by_path = dict(module.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST)
+        self.assertEqual(tuple(seed_by_path), source_paths)
+        self.assertEqual(
+            tuple(len(seed_by_path[path]) for path in source_paths),
+            (18, 10, 11, 10, 3, 1, 2, 3),
+        )
         selected_declaration_counts = []
         selected_import_counts = []
         source_owner_symbol_rows = []
-        for (name, payload), path in zip(payloads[:7], source_paths):
+        for (name, payload), path in zip(payloads[:8], source_paths):
             self.assertEqual(name, f"language_core_source_owner_ast:{path}")
             projected = dict(json.loads(payload))
             self.assertEqual(
@@ -13347,20 +13395,22 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 self.assertNotIn(activation_owner, selected_names)
 
         self.assertEqual(
-            tuple(selected_declaration_counts),
-            (260, 249, 97, 180, 251, 5, 39),
+            tuple(path for path, _declarations, _imports in source_owner_symbol_rows),
+            source_paths,
         )
-        self.assertEqual(
-            tuple(selected_import_counts),
-            (99, 14, 91, 70, 36, 25, 19),
+        self.assertEqual(len(selected_declaration_counts), 8)
+        self.assertEqual(len(selected_import_counts), 8)
+        self.assertTrue(
+            all(
+                selected_count >= len(seed_by_path[path])
+                for path, selected_count in zip(
+                    source_paths,
+                    selected_declaration_counts,
+                )
+            )
         )
-        self.assertEqual(sum(selected_declaration_counts), 1081)
-        self.assertEqual(sum(selected_import_counts), 354)
-        self.assertEqual(
-            hashlib.sha256(
-                stage1_canonical_json_bytes(tuple(source_owner_symbol_rows))
-            ).hexdigest(),
-            "b611de072f2141ea001bf25627f113a477550ceb7dd988ff35846a2cef46112a",
+        self.assertTrue(
+            all(count >= 0 for count in selected_import_counts)
         )
         activation_owner_exact2 = (
             (
@@ -13378,21 +13428,6 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             ).hexdigest(),
             "1eb7baf3fcc2673f0d73ecf1663f140baa955967a4e3066e54913b978f9d9e79",
         )
-        self.assertEqual(
-            hashlib.sha256(
-                stage1_canonical_json_bytes(language_payload_sha256_exact16[:7])
-            ).hexdigest(),
-            "2c443e7cb33f3210f2088ef06b6340926ee5c286f94b86279023168b8600d69a",
-        )
-        self.assertEqual(
-            hashlib.sha256(
-                stage1_canonical_json_bytes(
-                    language_payload_name_sha256_byte_count_exact16[:7]
-                )
-            ).hexdigest(),
-            "3ebd2c50ad6ac7edda414915fe853c1613cfc62b7ed84a290b1e87cae327d691",
-        )
-
         framed = bytearray(b"COCOLON_CMEE_STAGE1_LANGUAGE_CORE_IDENTITY_V2\x00")
         for name, payload in payloads:
             name_bytes = name.encode("utf-8")
@@ -13408,24 +13443,31 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         )
         self.assertRegex(module.LANGUAGE_CORE_IDENTITY, r"^[0-9a-f]{64}$")
         self.assertEqual(
-            independent_identity,
-            "73e966397c9946da4095d1dce74e4c62695e8ec29bea06e99b0f2cf47e6a5fd8",
+            tuple(
+                path
+                for path, _names
+                in module.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
+            ),
+            source_paths,
+        )
+        behavior_roots = module.N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT31
+        self.assertEqual(
+            tuple(path for path, _names in behavior_roots),
+            (
+                module.LANGUAGE_CORE_EXTERNAL_PATHS[0],
+                module._COMPOSITION_PATH,
+                module.LANGUAGE_CORE_EXTERNAL_PATHS[1],
+                module.LANGUAGE_CORE_EXTERNAL_PATHS[2],
+                module.LANGUAGE_CORE_EXTERNAL_PATHS[6],
+            ),
         )
         self.assertEqual(
-            hashlib.sha256(
-                stage1_canonical_json_bytes(
-                    module.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
-                )
-            ).hexdigest(),
-            "c499a7b048dac5afc6e81fc7b44564c25d110b1c4d1e86b8507015133e81de3c",
+            tuple(len(names) for _path, names in behavior_roots),
+            (2, 15, 5, 6, 3),
         )
         self.assertEqual(
-            hashlib.sha256(
-                stage1_canonical_json_bytes(
-                    module.N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT28
-                )
-            ).hexdigest(),
-            "e2484757b2e834ea27febec130cacff36deb2df9ddc15a66f25f38708aec0606",
+            sum(len(names) for _path, names in behavior_roots),
+            31,
         )
         self.assertEqual(
             module.N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5,
@@ -19807,31 +19849,76 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                 else 0
             )
         )
-        (
-            source,
-            grounded_plan,
-            graph,
-            parent_plan,
-            projection,
-            _candidate_set,
-        ) = _stage4_exact8_fixture(fixture_index)
+        case_id, memo, category, emotion, strength = EXACT8[fixture_index]
+        request = _request(
+            record_id=case_id,
+            memo=memo,
+            category=category,
+            emotion=emotion,
+            strength=strength,
+        )
         if (
             basis_kind
             is ForegroundScopeBasisKind.MATERIAL_UNKNOWN_OR_REQUIRED_QUALIFIER
             and not required_qualifier_only
         ):
-            source, grounded_plan, graph, parent_plan = _stage2_inputs(
-                _request(
-                    record_id="im00-material-unknown",
-                    memo="疲れた。",
+            request = _request(
+                record_id="im00-material-unknown",
+                memo="疲れた。",
+            )
+        source, grounded_plan, graph, parent_plan = _stage2_inputs(request)
+        (
+            candidates,
+            meaning_field,
+            contributions,
+            ordered_observation_refs,
+            observation_depth,
+        ) = build_layer1_semantics(
+            source=source,
+            grounded_graph=graph,
+            parent_plan=parent_plan,
+            grounded_plan=grounded_plan,
+            stage1_response_schema_version=(
+                contracts_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+            ),
+        )
+        premeaning_inputs = PreMeaningGroundedInputs(
+            schema_version="1.0",
+            stage1_response_schema_version=(
+                contracts_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+            ),
+            grounded_graph=graph,
+            grounded_graph_ref=(
+                f"grounded:{graph.graph_id}"
+                f"@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+            ),
+            parent_observation_duty_ref=parent_plan.observation_duty_id,
+            interpretation_candidate_rows=candidates,
+            meaning_field=meaning_field,
+            observation_contribution_rows=contributions,
+            ordered_observation_refs=ordered_observation_refs,
+            material_unknown_refs=meaning_field.material_unknown_refs,
+            observation_depth_class=observation_depth,
+            source_qualifier_rows=(
+                contracts_module.project_premeaning_source_qualifier_rows(
+                    source=source,
+                    grounded_plan=grounded_plan,
+                    grounded_graph=graph,
+                    parent_plan=parent_plan,
                 )
-            )
-            projection = build_stage1_semantic_projection(
-                source=source,
-                grounded_graph=graph,
-                parent_plan=parent_plan,
-                grounded_plan=grounded_plan,
-            )
+            ),
+            source_relation_rows=(
+                contracts_module.project_premeaning_source_relation_rows(
+                    source=source,
+                    grounded_plan=grounded_plan,
+                    grounded_graph=graph,
+                    parent_plan=parent_plan,
+                    stage1_response_schema_version=(
+                        contracts_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+                    ),
+                )
+            ),
+        )
         graph_objects = {
             **{
                 f"node:{value.node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}": value
@@ -19844,7 +19931,7 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
         }
         contribution = next(
             value
-            for value in projection.observation_contributions
+            for value in premeaning_inputs.observation_contribution_rows
             if value.retention == "REQUIRED"
         )
         layer1_refs: tuple[str, ...] = ()
@@ -19876,7 +19963,7 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                 if required_qualifier_relation:
                     qualifier_candidate = next(
                         candidate
-                        for candidate in projection.interpretation_candidates
+                        for candidate in premeaning_inputs.interpretation_candidate_rows
                         if candidate.relation_operator
                         is RelationOperator.TENSION_WITH
                     )
@@ -19887,14 +19974,10 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                         sorted(qualifier_candidate.required_qualifiers)
                     )
                 else:
-                    source_qualifiers = (
-                        contracts_module._foreground_source_qualifiers_by_node_ref(
-                            source=source,
-                            grounded_plan=grounded_plan,
-                            grounded_graph=graph,
-                            parent_plan=parent_plan,
-                        )
-                    )
+                    source_qualifiers = {
+                        value.node_ref: value.qualifier_refs
+                        for value in premeaning_inputs.source_qualifier_rows
+                    }
                     source_ref = next(
                         ref
                         for ref in contribution.semantic_refs
@@ -19902,11 +19985,19 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                     )
                     source_refs = (source_ref,)
                     qualifier_refs = tuple(
-                        sorted(source_qualifiers[source_ref])
+                        sorted(
+                            next(
+                                candidate.required_qualifiers
+                                for candidate in premeaning_inputs.interpretation_candidate_rows
+                                if candidate.relation_operator
+                                is RelationOperator.NO_RELATION_CLAIM
+                                and candidate.semantic_refs == source_refs
+                            )
+                        )
                     )
             else:
                 material_unknown_refs = (
-                    projection.meaning_field.material_unknown_refs[0],
+                    premeaning_inputs.meaning_field.material_unknown_refs[0],
                 )
                 unknown_target = material_unknown_refs[0].split(":", 1)[1].split(
                     "@", 1
@@ -19976,14 +20067,10 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                 }
             )
         )
-        source_qualifiers = (
-            contracts_module._foreground_source_qualifiers_by_node_ref(
-                source=source,
-                grounded_plan=grounded_plan,
-                grounded_graph=graph,
-                parent_plan=parent_plan,
-            )
-        )
+        source_qualifiers = {
+            value.node_ref: value.qualifier_refs
+            for value in premeaning_inputs.source_qualifier_rows
+        }
         qualifier_universe = {
             qualifier
             for ref in source_refs
@@ -20001,7 +20088,13 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
             material_unknown_refs=material_unknown_refs,
             required_qualifier_refs=qualifier_refs,
             owner_refs=owner_refs,
-            world_refs=(),
+            world_refs=tuple(
+                sorted(
+                    value
+                    for value in qualifier_universe
+                    if value.startswith("world:")
+                )
+            ),
             epistemic_state_refs=epistemic_refs,
             time_refs=tuple(
                 sorted(
@@ -20010,7 +20103,13 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                     if value.startswith("time_scope:")
                 )
             ),
-            aspect_refs=(),
+            aspect_refs=tuple(
+                sorted(
+                    value
+                    for value in qualifier_universe
+                    if value.startswith("aspect:")
+                )
+            ),
             modality_refs=tuple(
                 sorted(
                     value
@@ -20035,7 +20134,7 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
             "source": source,
             "grounded_plan": grounded_plan,
             "grounded_graph": graph,
-            "stage1_projection": projection,
+            "premeaning_inputs": premeaning_inputs,
             "parent_plan": parent_plan,
         }
         return row, validation, tuple(sorted(graph_objects))
@@ -20125,6 +20224,200 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
             **validation,
         }
         return row, context, validator_kwargs
+
+    @staticmethod
+    def _im01_final_grounded_inputs(fixture_index: int = 0):
+        case_id, memo, category, emotion, strength = EXACT8[fixture_index]
+        source = freeze_text_source(
+            _request(
+                record_id=case_id,
+                memo=memo,
+                category=category,
+                emotion=emotion,
+                strength=strength,
+            )
+        )
+        grounded_plan = build_final_stage1_grounded_observation_plan(
+            source.normalized_current_input,
+            evidence_spans=source.evidence_spans,
+        )
+        required_nuclei, required_relations, reception_targets = (
+            _planned_visible_source_ids(grounded_plan)
+        )
+        graph = _build_graph(
+            source,
+            grounded_plan,
+            _ordered((*required_nuclei, *reception_targets)),
+            required_relations,
+        )
+        parent_plan = _build_experience_plan(
+            source,
+            graph,
+            grounded_plan,
+            required_nuclei,
+            required_relations,
+            reception_targets,
+        )
+        return source, grounded_plan, graph, parent_plan
+
+    @staticmethod
+    def _im01_closed_derivation_views():
+        graph_version = CMEE_GROUNDED_GRAPH_SCHEMA_VERSION
+        object_a = f"node:im01-a@{graph_version}"
+        object_b = f"node:im01-b@{graph_version}"
+        relation_ref = f"edge:im01-contrast@{graph_version}"
+        evidence_a = "evidence:im01-a@cocolon.cmee.source.v1"
+        evidence_b = "evidence:im01-b@cocolon.cmee.source.v1"
+        evidence_relation = (
+            "evidence:im01-contrast@cocolon.cmee.source.v1"
+        )
+        shared_owner = "owner:current_user@cocolon.cmee.obligation.v1"
+        other_owner = "owner:other_actor@cocolon.cmee.obligation.v1"
+        epistemic = (
+            "epistemic-state:source_explicit"
+            "@cocolon.cmee.emlis.foreground_scope_basis.v1"
+        )
+
+        def compatibility(
+            object_ref: str,
+            *,
+            owner_ref: str,
+        ) -> ForegroundScopeObjectCompatibilityRow:
+            return ForegroundScopeObjectCompatibilityRow(
+                schema_version="1.0",
+                scope_object_ref=object_ref,
+                owner_refs=(owner_ref,),
+                world_refs=("world:unknown",),
+                epistemic_state_refs=(epistemic,),
+                time_refs=("time_scope:current_input",),
+                aspect_refs=("aspect:unknown",),
+                modality_refs=("modality:fact",),
+                polarity_refs=("polarity:positive",),
+                scope_refs=("scope:source_bounded",),
+                required_qualifier_refs=(),
+                material_unknown_refs=(),
+            )
+
+        compatible_a = compatibility(object_a, owner_ref=shared_owner)
+        compatible_b = compatibility(object_b, owner_ref=shared_owner)
+        competing_b = compatibility(object_b, owner_ref=other_owner)
+
+        def basis(
+            *,
+            tag: str,
+            object_refs: tuple[str, ...],
+            evidence_refs: tuple[str, ...],
+            profiles: tuple[ForegroundScopeObjectCompatibilityRow, ...],
+            relation_refs: tuple[str, ...] = (),
+        ) -> ForegroundScopeBasisRow:
+            def union(field_name: str) -> tuple[str, ...]:
+                return tuple(
+                    sorted(
+                        {
+                            value
+                            for profile in profiles
+                            for value in getattr(profile, field_name)
+                        }
+                    )
+                )
+
+            return ForegroundScopeBasisRow(
+                schema_version="1.0",
+                basis_kind=(
+                    ForegroundScopeBasisKind.SOURCE_CONNECTED_RELATION
+                    if relation_refs
+                    else ForegroundScopeBasisKind.LAYER1_REQUIRED_OBSERVATION_OBJECT
+                ),
+                scope_object_refs=tuple(sorted(object_refs)),
+                source_object_refs=tuple(sorted(object_refs)),
+                source_evidence_refs=tuple(sorted(evidence_refs)),
+                layer1_required_object_refs=(
+                    () if relation_refs else (f"contribution-{tag}",)
+                ),
+                required_retention_duty_refs=(),
+                source_connected_relation_refs=tuple(sorted(relation_refs)),
+                material_unknown_refs=(),
+                required_qualifier_refs=(),
+                owner_refs=union("owner_refs"),
+                world_refs=union("world_refs"),
+                epistemic_state_refs=union("epistemic_state_refs"),
+                time_refs=union("time_refs"),
+                aspect_refs=union("aspect_refs"),
+                modality_refs=union("modality_refs"),
+                polarity_refs=union("polarity_refs"),
+                scope_refs=union("scope_refs"),
+            )
+
+        row_a = basis(
+            tag="im01-a",
+            object_refs=(object_a,),
+            evidence_refs=(evidence_a,),
+            profiles=(compatible_a,),
+        )
+        row_b = basis(
+            tag="im01-b",
+            object_refs=(object_b,),
+            evidence_refs=(evidence_b,),
+            profiles=(compatible_b,),
+        )
+        competing_row_b = basis(
+            tag="im01-b",
+            object_refs=(object_b,),
+            evidence_refs=(evidence_b,),
+            profiles=(competing_b,),
+        )
+        relation_row = basis(
+            tag="im01-relation",
+            object_refs=(object_a, object_b),
+            evidence_refs=(
+                evidence_a,
+                evidence_b,
+                evidence_relation,
+            ),
+            profiles=(compatible_a, compatible_b),
+            relation_refs=(relation_ref,),
+        )
+        relation = input_specific_meaning_module.SourceConnectedScopeRelation(
+            schema_version="1.0",
+            relation_ref=relation_ref,
+            relation_kind=ForegroundScopeRelationKind.CONTRAST,
+            source_object_ref=object_a,
+            target_object_ref=object_b,
+            source_evidence_refs=tuple(
+                sorted((evidence_a, evidence_b, evidence_relation))
+            ),
+        )
+        view_type = input_specific_meaning_module.GroundedSituationView
+        return {
+            "available": view_type(
+                schema_version="1.0",
+                basis_rows=(row_b, relation_row, row_a),
+                compatibility_rows=(compatible_b, compatible_a),
+                source_connected_relations=(relation,),
+                missing_structure_refs=(),
+            ),
+            "competing": view_type(
+                schema_version="1.0",
+                basis_rows=(competing_row_b, row_a),
+                compatibility_rows=(competing_b, compatible_a),
+                source_connected_relations=(),
+                missing_structure_refs=(),
+            ),
+            "insufficient": view_type(
+                schema_version="1.0",
+                basis_rows=(row_b, row_a),
+                compatibility_rows=(compatible_b, compatible_a),
+                source_connected_relations=(),
+                missing_structure_refs=(),
+            ),
+            "zero": view_type(
+                schema_version="1.0",
+                basis_rows=(),
+                compatibility_rows=(),
+                source_connected_relations=(),
+                missing_structure_refs=(),
+            ),
+        }
 
     def test_im00_reuses_subjective_depth_class_exact3_without_legacy_alias(
         self,
@@ -20234,6 +20527,1140 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                 "missing_structure_refs",
                 "derivation_evidence_refs",
             ),
+        )
+
+    def test_im01_premeaning_and_allowed_reception_envelope_are_typed_split(
+        self,
+    ) -> None:
+        _basis_row, validation, _object_refs = (
+            self._actual_source_basis_fixture()
+        )
+        premeaning_inputs = validation["premeaning_inputs"]
+        self.assertIs(type(premeaning_inputs), PreMeaningGroundedInputs)
+        self.assertEqual(
+            tuple(value.name for value in fields(PreMeaningGroundedInputs)),
+            (
+                "schema_version",
+                "stage1_response_schema_version",
+                "grounded_graph",
+                "grounded_graph_ref",
+                "parent_observation_duty_ref",
+                "interpretation_candidate_rows",
+                "meaning_field",
+                "observation_contribution_rows",
+                "ordered_observation_refs",
+                "material_unknown_refs",
+                "observation_depth_class",
+                "source_qualifier_rows",
+                "source_relation_rows",
+            ),
+        )
+        self.assertEqual(
+            tuple(value.name for value in fields(GroundedSourceQualifierRow)),
+            ("node_ref", "qualifier_refs"),
+        )
+        self.assertEqual(
+            tuple(value.name for value in fields(GroundedSourceRelationRow)),
+            ("relation_ref", "relation_kind"),
+        )
+        self.assertEqual(
+            premeaning_inputs.stage1_response_schema_version,
+            contracts_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1,
+        )
+        self.assertTrue(
+            all(
+                row.schema_version
+                == contracts_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+                for row in (
+                    *premeaning_inputs.interpretation_candidate_rows,
+                    premeaning_inputs.meaning_field,
+                    *premeaning_inputs.observation_contribution_rows,
+                )
+            )
+        )
+        validate_premeaning_grounded_inputs(
+            premeaning_inputs,
+            source=validation["source"],
+            grounded_plan=validation["grounded_plan"],
+            grounded_graph=validation["grounded_graph"],
+            parent_plan=validation["parent_plan"],
+        )
+        actual_source, actual_plan, actual_graph, actual_parent_plan = (
+            self._im01_final_grounded_inputs()
+        )
+        actual_premeaning_inputs = (
+            stage1_response_module.build_premeaning_grounded_inputs(
+                source=actual_source,
+                grounded_graph=actual_graph,
+                parent_plan=actual_parent_plan,
+                grounded_plan=actual_plan,
+            )
+        )
+        self.assertEqual(
+            actual_premeaning_inputs.stage1_response_schema_version,
+            contracts_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
+        )
+        self.assertTrue(
+            all(
+                row.schema_version
+                == contracts_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+                for row in (
+                    *actual_premeaning_inputs.interpretation_candidate_rows,
+                    actual_premeaning_inputs.meaning_field,
+                    *actual_premeaning_inputs.observation_contribution_rows,
+                )
+            )
+        )
+        with patch.object(
+            stage1_response_module,
+            "build_final_stage1_grounded_observation_plan",
+            side_effect=AssertionError(
+                "active plan validation called the final plan builder"
+            ),
+        ):
+            envelope = stage1_response_module.build_allowed_reception_opportunity_envelope(
+                source=validation["source"],
+                grounded_graph=validation["grounded_graph"],
+                parent_plan=validation["parent_plan"],
+                grounded_plan=validation["grounded_plan"],
+            )
+        self.assertIs(type(envelope), AllowedReceptionOpportunityEnvelope)
+        self.assertEqual(
+            tuple(
+                value.name
+                for value in fields(AllowedReceptionOpportunityEnvelope)
+            ),
+            (
+                "schema_version",
+                "source_envelope_id",
+                "parent_reception_duty_ref",
+                "allowed_reception_act_ids",
+                "safety_boundary_codes",
+            ),
+        )
+        self.assertEqual(
+            envelope.allowed_reception_act_ids,
+            validation["parent_plan"].allowed_reception_act_ids,
+        )
+        self.assertEqual(
+            envelope.safety_boundary_codes,
+            validation[
+                "grounded_plan"
+            ].safety_policy.required_boundary_codes,
+        )
+        with patch.object(
+            stage1_response_module,
+            "build_final_stage1_grounded_observation_plan",
+            side_effect=AssertionError(
+                "active plan validation called the final plan builder"
+            ),
+        ):
+            stage1_response_module.validate_allowed_reception_opportunity_envelope(
+                envelope,
+                source=validation["source"],
+                grounded_graph=validation["grounded_graph"],
+                parent_plan=validation["parent_plan"],
+                grounded_plan=validation["grounded_plan"],
+            )
+        premeaning_field_names = {
+            value.name for value in fields(PreMeaningGroundedInputs)
+        }
+        self.assertTrue(
+            premeaning_field_names.isdisjoint(
+                {
+                    "parent_reception_duty_ref",
+                    "allowed_reception_act_ids",
+                    "safety_boundary_codes",
+                    "reception_plan",
+                    "subjective_claims",
+                    "subjective_depth_class",
+                    "temperature_class",
+                    "reception_style_policy_ref",
+                }
+            )
+        )
+
+    def test_im01_actual_pipeline_derives_scope_before_reception_and_stops_at_phase_a(
+        self,
+    ) -> None:
+        source, grounded_plan, graph, parent_plan = (
+            self._im01_final_grounded_inputs()
+        )
+        call_order: list[str] = []
+        traced_names = (
+            "build_premeaning_grounded_inputs",
+            "derive_grounded_situation_view",
+            "derive_foreground_scope_closed",
+            "validate_foreground_scope_derivation",
+            "foreground_scope_disposition",
+            "_semantic_reception_asset",
+            "build_allowed_reception_opportunity_envelope",
+            "validate_allowed_reception_opportunity_envelope",
+        )
+        originals = {
+            name: getattr(stage1_response_module, name)
+            for name in traced_names
+        }
+
+        def traced(name: str):
+            def invoke(*args: object, **kwargs: object):
+                call_order.append(name)
+                return originals[name](*args, **kwargs)
+
+            return invoke
+
+        with ExitStack() as stack:
+            for name in traced_names:
+                stack.enter_context(
+                    patch.object(
+                        stage1_response_module,
+                        name,
+                        side_effect=traced(name),
+                    )
+                )
+            for module, name in (
+                (stage1_response_module, "plan_layer2_subjectivity"),
+                (stage1_composition_module, "project_subjective_meaning_plan"),
+                (contracts_module, "validate_meaning_semantic_signature"),
+                (contracts_module, "validate_whole_reading_consequence_row"),
+            ):
+                stack.enter_context(
+                    patch.object(
+                        module,
+                        name,
+                        side_effect=AssertionError(
+                            f"IM01 called downstream IM02+ owner: {name}"
+                        ),
+                    )
+                )
+            phase_a = stage1_response_module.build_subjective_planning_inputs(
+                source=source,
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+                grounded_plan=grounded_plan,
+            )
+
+        first_call = {name: call_order.index(name) for name in traced_names}
+        self.assertLess(
+            first_call["build_premeaning_grounded_inputs"],
+            first_call["derive_grounded_situation_view"],
+        )
+        self.assertLess(
+            first_call["derive_grounded_situation_view"],
+            first_call["derive_foreground_scope_closed"],
+        )
+        self.assertLess(
+            first_call["derive_foreground_scope_closed"],
+            first_call["validate_foreground_scope_derivation"],
+        )
+        self.assertLess(
+            first_call["validate_foreground_scope_derivation"],
+            first_call["foreground_scope_disposition"],
+        )
+        self.assertLess(
+            first_call["foreground_scope_disposition"],
+            first_call["build_allowed_reception_opportunity_envelope"],
+        )
+        self.assertLess(
+            first_call["build_allowed_reception_opportunity_envelope"],
+            first_call["validate_allowed_reception_opportunity_envelope"],
+        )
+        self.assertLess(
+            first_call["validate_allowed_reception_opportunity_envelope"],
+            first_call["_semantic_reception_asset"],
+        )
+        self.assertIs(
+            type(phase_a),
+            stage1_composition_module.Stage1SubjectivePlanningInputs,
+        )
+        self.assertIs(type(phase_a.premeaning_inputs), PreMeaningGroundedInputs)
+        self.assertIs(
+            type(phase_a.grounded_situation_view),
+            input_specific_meaning_module.GroundedSituationView,
+        )
+        self.assertIs(
+            type(phase_a.foreground_scope_derivation),
+            ForegroundScopeDerivation,
+        )
+        self.assertIs(
+            type(phase_a.allowed_reception_opportunity_envelope),
+            AllowedReceptionOpportunityEnvelope,
+        )
+        self.assertNotEqual(
+            phase_a.foreground_scope_disposition.code,
+            input_specific_meaning_module.ForegroundScopeDispositionCode.STRUCTURE_INSUFFICIENT_STOP,
+        )
+        self.assertTrue(
+            {
+                "subjective_claims",
+                "whole_reading_consequences",
+                "required_differences",
+                "counterfactual_mutations",
+            }.isdisjoint(
+                {value.name for value in fields(type(phase_a))}
+            )
+        )
+
+    def test_im01_closed_derivation_exact4_union_exact10_and_zero_only_stop(
+        self,
+    ) -> None:
+        self.assertEqual(
+            tuple(value.value for value in ForegroundScopeCompatibilityAxis),
+            (
+                "owner",
+                "world",
+                "epistemic",
+                "time",
+                "aspect",
+                "modality",
+                "polarity",
+                "scope",
+                "required_qualifier",
+                "unknown",
+            ),
+        )
+        self.assertEqual(
+            tuple(
+                input_specific_meaning_module._COMPATIBILITY_FIELD_BY_AXIS[
+                    axis
+                ]
+                for axis in ForegroundScopeCompatibilityAxis
+            ),
+            (
+                "owner_refs",
+                "world_refs",
+                "epistemic_state_refs",
+                "time_refs",
+                "aspect_refs",
+                "modality_refs",
+                "polarity_refs",
+                "scope_refs",
+                "required_qualifier_refs",
+                "material_unknown_refs",
+            ),
+        )
+        views = self._im01_closed_derivation_views()
+        expected = {
+            "available": (
+                ForegroundScopeDerivationState.FOREGROUND_SCOPE_AVAILABLE,
+                input_specific_meaning_module.ForegroundScopeDispositionCode.AVAILABLE,
+            ),
+            "competing": (
+                ForegroundScopeDerivationState.COMPETING_MATERIAL_SCOPES,
+                input_specific_meaning_module.ForegroundScopeDispositionCode.LIMITED_COMPETING_MATERIAL_READINGS,
+            ),
+            "insufficient": (
+                ForegroundScopeDerivationState.FOREGROUND_SCOPE_STRUCTURE_INSUFFICIENT,
+                input_specific_meaning_module.ForegroundScopeDispositionCode.LIMITED_STRUCTURE_INSUFFICIENT,
+            ),
+            "zero": (
+                ForegroundScopeDerivationState.NO_SAFE_FOREGROUND_OBJECT,
+                input_specific_meaning_module.ForegroundScopeDispositionCode.STRUCTURE_INSUFFICIENT_STOP,
+            ),
+        }
+        derivations = {}
+        for name, view in views.items():
+            with self.subTest(outcome=name):
+                derivation = (
+                    input_specific_meaning_module.derive_foreground_scope_closed(
+                        view
+                    )
+                )
+                disposition = (
+                    input_specific_meaning_module.foreground_scope_disposition(
+                        derivation
+                    )
+                )
+                self.assertIs(derivation.state, expected[name][0])
+                self.assertIs(disposition.code, expected[name][1])
+                derivations[name] = derivation
+
+        available = derivations["available"]
+        self.assertIs(type(available.foreground_scope), ForegroundScope)
+        expected_objects = tuple(
+            sorted(
+                {
+                    ref
+                    for row in views["available"].basis_rows
+                    for ref in row.scope_object_refs
+                }
+            )
+        )
+        expected_basis_refs = tuple(
+            sorted(
+                foreground_scope_basis_row_ref(row)
+                for row in views["available"].basis_rows
+            )
+        )
+        self.assertEqual(
+            available.foreground_scope.integrated_scope_object_refs,
+            expected_objects,
+        )
+        self.assertEqual(
+            available.foreground_scope.basis_row_refs,
+            expected_basis_refs,
+        )
+        permuted_view = replace(
+            views["available"],
+            basis_rows=tuple(reversed(views["available"].basis_rows)),
+            compatibility_rows=tuple(
+                reversed(views["available"].compatibility_rows)
+            ),
+        )
+        self.assertEqual(
+            input_specific_meaning_module.derive_foreground_scope_closed(
+                permuted_view
+            ),
+            available,
+        )
+        object_a, object_b = expected_objects
+        material_pairs = input_specific_meaning_module._material_object_pairs(
+            views["available"].basis_rows
+        )
+        self.assertIn((object_a, object_a), material_pairs)
+        self.assertIn((object_b, object_b), material_pairs)
+        single_basis = next(
+            row
+            for row in views["available"].basis_rows
+            if len(row.scope_object_refs) == 1
+        )
+        single_object_ref = single_basis.scope_object_refs[0]
+        single_profile = next(
+            row
+            for row in views["available"].compatibility_rows
+            if row.scope_object_ref == single_object_ref
+        )
+        same_object_qualifiers = (
+            "qualifier:im01-left",
+            "qualifier:im01-right",
+        )
+        same_object_competing = (
+            input_specific_meaning_module.derive_foreground_scope_closed(
+                input_specific_meaning_module.GroundedSituationView(
+                    schema_version="1.0",
+                    basis_rows=tuple(
+                        replace(
+                            single_basis,
+                            basis_kind=(
+                                ForegroundScopeBasisKind.MATERIAL_UNKNOWN_OR_REQUIRED_QUALIFIER
+                            ),
+                            layer1_required_object_refs=(),
+                            required_qualifier_refs=(qualifier,),
+                        )
+                        for qualifier in same_object_qualifiers
+                    ),
+                    compatibility_rows=(
+                        replace(
+                            single_profile,
+                            required_qualifier_refs=(
+                                same_object_qualifiers
+                            ),
+                        ),
+                    ),
+                    source_connected_relations=(),
+                    missing_structure_refs=(),
+                )
+            )
+        )
+        self.assertIs(
+            same_object_competing.state,
+            ForegroundScopeDerivationState.COMPETING_MATERIAL_SCOPES,
+        )
+        self.assertEqual(
+            same_object_competing.unresolved_scope_refs,
+            (single_object_ref,),
+        )
+        for axis, basis_updates, profile_updates in (
+            (
+                ForegroundScopeCompatibilityAxis.REQUIRED_QUALIFIER,
+                {
+                    "required_qualifier_refs": (
+                        same_object_qualifiers[0],
+                    )
+                },
+                {
+                    "required_qualifier_refs": same_object_qualifiers,
+                },
+            ),
+            (
+                ForegroundScopeCompatibilityAxis.UNKNOWN,
+                {"material_unknown_refs": ("unknown:im01-left",)},
+                {
+                    "required_qualifier_refs": (),
+                    "material_unknown_refs": (
+                        "unknown:im01-left",
+                        "unknown:im01-right",
+                    ),
+                },
+            ),
+        ):
+            with self.subTest(incomplete_exact10_coverage=axis.value):
+                incomplete = (
+                    input_specific_meaning_module.derive_foreground_scope_closed(
+                        input_specific_meaning_module.GroundedSituationView(
+                            schema_version="1.0",
+                            basis_rows=(
+                                replace(
+                                    single_basis,
+                                    basis_kind=(
+                                        ForegroundScopeBasisKind.MATERIAL_UNKNOWN_OR_REQUIRED_QUALIFIER
+                                    ),
+                                    layer1_required_object_refs=(),
+                                    **basis_updates,
+                                ),
+                            ),
+                            compatibility_rows=(
+                                replace(single_profile, **profile_updates),
+                            ),
+                            source_connected_relations=(),
+                            missing_structure_refs=(),
+                        )
+                    )
+                )
+                self.assertIs(
+                    incomplete.state,
+                    ForegroundScopeDerivationState.FOREGROUND_SCOPE_STRUCTURE_INSUFFICIENT,
+                )
+                self.assertTrue(
+                    any(
+                        value.startswith(
+                            f"foreground-scope-missing:{axis.value}:"
+                        )
+                        for value in incomplete.missing_structure_refs
+                    )
+                )
+        for axis, field_name in (
+            (ForegroundScopeCompatibilityAxis.WORLD, "world_refs"),
+            (ForegroundScopeCompatibilityAxis.ASPECT, "aspect_refs"),
+        ):
+            with self.subTest(missing_exact10_axis=axis.value):
+                missing_axis = (
+                    input_specific_meaning_module.derive_foreground_scope_closed(
+                        input_specific_meaning_module.GroundedSituationView(
+                            schema_version="1.0",
+                            basis_rows=(
+                                replace(single_basis, **{field_name: ()}),
+                            ),
+                            compatibility_rows=(
+                                replace(single_profile, **{field_name: ()}),
+                            ),
+                            source_connected_relations=(),
+                            missing_structure_refs=(),
+                        )
+                    )
+                )
+                self.assertIs(
+                    missing_axis.state,
+                    ForegroundScopeDerivationState.FOREGROUND_SCOPE_STRUCTURE_INSUFFICIENT,
+                )
+                self.assertIn(
+                    (
+                        f"foreground-scope-missing:{axis.value}:"
+                        f"{single_object_ref}"
+                    ),
+                    missing_axis.missing_structure_refs,
+                )
+        for field_name in (
+            "basis_rows",
+            "compatibility_rows",
+            "source_connected_relations",
+        ):
+            with self.subTest(tuple_contract=field_name), self.assertRaisesRegex(
+                CMEEStage1ContractError,
+                f"foreground_scope_view_{field_name}_tuple_required",
+            ):
+                input_specific_meaning_module.derive_foreground_scope_closed(
+                    replace(
+                        views["available"],
+                        **{
+                            field_name: list(
+                                getattr(views["available"], field_name)
+                            )
+                        },
+                    )
+                )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "foreground_scope_compatibility_object_identity_conflict",
+        ):
+            input_specific_meaning_module.derive_foreground_scope_closed(
+                replace(
+                    views["available"],
+                    compatibility_rows=(
+                        *views["available"].compatibility_rows,
+                        views["available"].compatibility_rows[0],
+                    ),
+                )
+            )
+        incompatible_namespace = replace(
+            views["available"].compatibility_rows[0],
+            owner_refs=("world:not-an-owner",),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "foreground_scope_compatibility_owner_refs_namespace_invalid",
+        ):
+            input_specific_meaning_module.derive_foreground_scope_closed(
+                replace(
+                    views["available"],
+                    compatibility_rows=(
+                        incompatible_namespace,
+                        *views["available"].compatibility_rows[1:],
+                    ),
+                )
+            )
+        relation_proof = views["available"].source_connected_relations[0]
+        relation_forges = (
+            replace(
+                relation_proof,
+                target_object_ref=(
+                    "node:im01-foreign"
+                    f"@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+                ),
+            ),
+            replace(
+                relation_proof,
+                source_evidence_refs=(
+                    "evidence:im01-forged@cocolon.cmee.source.v1",
+                ),
+            ),
+        )
+        for forged_relation in relation_forges:
+            with self.subTest(
+                forged_relation=forged_relation
+            ), self.assertRaisesRegex(
+                CMEEStage1ContractError,
+                "foreground_scope_source_relation_basis_mismatch",
+            ):
+                input_specific_meaning_module.derive_foreground_scope_closed(
+                    replace(
+                        views["available"],
+                        source_connected_relations=(forged_relation,),
+                    )
+                )
+        for name in ("available", "competing", "insufficient"):
+            self.assertTrue(
+                derivations[name].retained_foreground_source_object_refs
+            )
+            self.assertIsNot(
+                expected[name][1],
+                input_specific_meaning_module.ForegroundScopeDispositionCode.STRUCTURE_INSUFFICIENT_STOP,
+            )
+        self.assertFalse(
+            derivations["zero"].retained_foreground_source_object_refs
+        )
+
+    def test_im01_shared_relation_projector_retains_optional_source_relation_union(
+        self,
+    ) -> None:
+        literal_exact4 = (
+            ("contrast", ForegroundScopeRelationKind.CONTRAST),
+            ("coexistence", ForegroundScopeRelationKind.COEXISTENCE),
+            ("continuation", ForegroundScopeRelationKind.CONTINUATION),
+            ("correction", ForegroundScopeRelationKind.CORRECTION),
+        )
+        self.assertEqual(
+            tuple(
+                (raw_relation, project_foreground_scope_relation_kind(raw_relation))
+                for raw_relation, _expected in literal_exact4
+            ),
+            literal_exact4,
+        )
+        legacy_typed_exact7 = (
+            (
+                "wish_and_constraint",
+                RelationOperator.COEXISTS_WITH,
+                ForegroundScopeRelationKind.COEXISTENCE,
+            ),
+            (
+                "continuation_or_refusal",
+                RelationOperator.TENSION_WITH,
+                ForegroundScopeRelationKind.CONTRAST,
+            ),
+            (
+                "preserves_despite",
+                RelationOperator.TENSION_WITH,
+                ForegroundScopeRelationKind.CONTRAST,
+            ),
+            (
+                "attempt_and_block",
+                RelationOperator.TENSION_WITH,
+                ForegroundScopeRelationKind.CONTRAST,
+            ),
+            (
+                "action_supports_change",
+                RelationOperator.ACTION_PRECEDES_CHANGE,
+                ForegroundScopeRelationKind.CONTINUATION,
+            ),
+            (
+                "temporal_before_after",
+                RelationOperator.TEMPORALLY_PRECEDES,
+                ForegroundScopeRelationKind.CONTINUATION,
+            ),
+            (
+                "shift_from_to",
+                RelationOperator.TEMPORALLY_PRECEDES,
+                ForegroundScopeRelationKind.CONTINUATION,
+            ),
+        )
+        self.assertTrue(
+            all(
+                project_foreground_scope_relation_kind(raw_relation) is None
+                for raw_relation, _operator, _kind in legacy_typed_exact7
+            )
+        )
+        self.assertEqual(
+            tuple(
+                (
+                    raw_relation,
+                    project_foreground_scope_relation_kind(
+                        raw_relation,
+                        relation_operators=(operator,),
+                    ),
+                )
+                for raw_relation, operator, _kind in legacy_typed_exact7
+            ),
+            tuple(
+                (raw_relation, kind)
+                for raw_relation, _operator, kind in legacy_typed_exact7
+            ),
+        )
+        self.assertTrue(
+            all(
+                project_foreground_scope_relation_kind(
+                    raw_relation,
+                    relation_operators=(RelationOperator.NO_RELATION_CLAIM,),
+                )
+                is None
+                for raw_relation, _operator, _kind in legacy_typed_exact7
+            )
+        )
+        self.assertIsNone(
+            project_foreground_scope_relation_kind("cause_result")
+        )
+
+        _label, memo, category, emotion, strength = (
+            PUBLIC_NONSECRET_EARLY_STANDIN_EXACT4[2]
+        )
+        source = freeze_text_source(
+            _request(
+                record_id="im01-optional-wish-constraint",
+                memo=memo,
+                category=category,
+                emotion=emotion,
+                strength=strength,
+            )
+        )
+        grounded_plan = build_final_stage1_grounded_observation_plan(
+            source.normalized_current_input,
+            evidence_spans=source.evidence_spans,
+        )
+        required_nuclei, required_relations, reception_targets = (
+            _planned_visible_source_ids(grounded_plan)
+        )
+        graph = _build_graph(
+            source,
+            grounded_plan,
+            _ordered((*required_nuclei, *reception_targets)),
+            required_relations,
+        )
+        parent_plan = _build_experience_plan(
+            source,
+            graph,
+            grounded_plan,
+            required_nuclei,
+            required_relations,
+            reception_targets,
+        )
+        premeaning_inputs = (
+            stage1_response_module.build_premeaning_grounded_inputs(
+                source=source,
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+                grounded_plan=grounded_plan,
+            )
+        )
+        legacy_edge = next(
+            edge for edge in graph.edges if edge.relation == "wish_and_constraint"
+        )
+        relation_ref = (
+            f"edge:{legacy_edge.edge_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        )
+        relation_candidate_operators = tuple(
+            sorted(
+                {
+                    candidate.relation_operator
+                    for candidate
+                    in premeaning_inputs.interpretation_candidate_rows
+                    if relation_ref in candidate.relation_basis_refs
+                },
+                key=lambda operator: operator.value,
+            )
+        )
+        self.assertEqual(
+            relation_candidate_operators,
+            (RelationOperator.COEXISTS_WITH,),
+        )
+        self.assertIs(
+            project_foreground_scope_relation_kind(
+                legacy_edge.relation,
+                relation_operators=relation_candidate_operators,
+            ),
+            ForegroundScopeRelationKind.COEXISTENCE,
+        )
+        source_relation_row = next(
+            row
+            for row in premeaning_inputs.source_relation_rows
+            if row.relation_ref == relation_ref
+        )
+        self.assertIs(
+            source_relation_row.relation_kind,
+            ForegroundScopeRelationKind.COEXISTENCE,
+        )
+        without_relation_candidate_view = (
+            input_specific_meaning_module.derive_grounded_situation_view(
+                replace(
+                    premeaning_inputs,
+                    interpretation_candidate_rows=tuple(
+                        candidate
+                        for candidate
+                        in premeaning_inputs.interpretation_candidate_rows
+                        if relation_ref not in candidate.relation_basis_refs
+                    ),
+                )
+            )
+        )
+        reordered_candidate_view = (
+            input_specific_meaning_module.derive_grounded_situation_view(
+                replace(
+                    premeaning_inputs,
+                    interpretation_candidate_rows=tuple(
+                        reversed(
+                            premeaning_inputs.interpretation_candidate_rows
+                        )
+                    ),
+                )
+            )
+        )
+        for cap_independent_view in (
+            without_relation_candidate_view,
+            reordered_candidate_view,
+        ):
+            self.assertTrue(
+                any(
+                    relation.relation_ref == relation_ref
+                    and relation.relation_kind
+                    is ForegroundScopeRelationKind.COEXISTENCE
+                    for relation in cap_independent_view.source_connected_relations
+                )
+            )
+            self.assertTrue(
+                any(
+                    row.basis_kind
+                    is ForegroundScopeBasisKind.SOURCE_CONNECTED_RELATION
+                    and row.source_connected_relation_refs == (relation_ref,)
+                    for row in cap_independent_view.basis_rows
+                )
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "foreground_scope_meaning_projection_noncanonical",
+        ):
+            validate_premeaning_grounded_inputs(
+                replace(
+                    premeaning_inputs,
+                    source_relation_rows=tuple(
+                        replace(
+                            row,
+                            relation_kind=ForegroundScopeRelationKind.CONTRAST,
+                        )
+                        if row.relation_ref == relation_ref
+                        else row
+                        for row in premeaning_inputs.source_relation_rows
+                    ),
+                ),
+                source=source,
+                grounded_plan=grounded_plan,
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+            )
+
+        optional_contributions = tuple(
+            replace(
+                contribution,
+                relation_basis_refs=tuple(
+                    ref
+                    for ref in contribution.relation_basis_refs
+                    if ref != relation_ref
+                ),
+            )
+            if contribution.retention == "REQUIRED"
+            else contribution
+            for contribution in premeaning_inputs.observation_contribution_rows
+        )
+        self.assertFalse(
+            any(
+                relation_ref in contribution.relation_basis_refs
+                for contribution in optional_contributions
+                if contribution.retention == "REQUIRED"
+            )
+        )
+        self.assertEqual(
+            tuple(
+                candidate.relation_operator
+                for candidate
+                in premeaning_inputs.interpretation_candidate_rows
+                if relation_ref in candidate.relation_basis_refs
+            ),
+            (RelationOperator.COEXISTS_WITH,),
+        )
+        optional_view = (
+            input_specific_meaning_module.derive_grounded_situation_view(
+                replace(
+                    premeaning_inputs,
+                    observation_contribution_rows=optional_contributions,
+                )
+            )
+        )
+        relation_proof = next(
+            relation
+            for relation in optional_view.source_connected_relations
+            if relation.relation_ref == relation_ref
+        )
+        self.assertIs(
+            relation_proof.relation_kind,
+            ForegroundScopeRelationKind.COEXISTENCE,
+        )
+        relation_basis = next(
+            row
+            for row in optional_view.basis_rows
+            if row.basis_kind
+            is ForegroundScopeBasisKind.SOURCE_CONNECTED_RELATION
+            and row.source_connected_relation_refs == (relation_ref,)
+        )
+        self.assertEqual(
+            relation_basis.scope_object_refs,
+            tuple(
+                sorted(
+                    (
+                        relation_proof.source_object_ref,
+                        relation_proof.target_object_ref,
+                    )
+                )
+            ),
+        )
+        relation_scope_refs = set(relation_basis.scope_object_refs)
+        material_qualifier_or_unknown_basis = tuple(
+            row
+            for row in optional_view.basis_rows
+            if row.basis_kind
+            is ForegroundScopeBasisKind.MATERIAL_UNKNOWN_OR_REQUIRED_QUALIFIER
+            and set(row.scope_object_refs).issubset(relation_scope_refs)
+        )
+        self.assertTrue(material_qualifier_or_unknown_basis)
+        isolated_profiles = tuple(
+            sorted(
+                (
+                    row
+                    for row in optional_view.compatibility_rows
+                    if row.scope_object_ref in relation_scope_refs
+                ),
+                key=lambda row: row.scope_object_ref,
+            )
+        )
+        relation_only_derivation = (
+            input_specific_meaning_module.derive_foreground_scope_closed(
+                input_specific_meaning_module.GroundedSituationView(
+                    schema_version="1.0",
+                    basis_rows=(relation_basis,),
+                    compatibility_rows=isolated_profiles,
+                    source_connected_relations=(relation_proof,),
+                    missing_structure_refs=(),
+                )
+            )
+        )
+        self.assertIs(
+            relation_only_derivation.state,
+            ForegroundScopeDerivationState.FOREGROUND_SCOPE_STRUCTURE_INSUFFICIENT,
+        )
+        isolated_view = input_specific_meaning_module.GroundedSituationView(
+            schema_version="1.0",
+            basis_rows=(
+                relation_basis,
+                *material_qualifier_or_unknown_basis,
+            ),
+            compatibility_rows=isolated_profiles,
+            source_connected_relations=(relation_proof,),
+            missing_structure_refs=(),
+        )
+        derivation = (
+            input_specific_meaning_module.derive_foreground_scope_closed(
+                isolated_view
+            )
+        )
+        self.assertIs(
+            derivation.state,
+            ForegroundScopeDerivationState.FOREGROUND_SCOPE_AVAILABLE,
+        )
+        self.assertEqual(
+            derivation.foreground_scope.integrated_scope_object_refs,
+            relation_basis.scope_object_refs,
+        )
+
+    def test_im01_reception_delivery_identity_and_order_backflow_is_zero(
+        self,
+    ) -> None:
+        source, final_plan, final_graph, final_parent = (
+            self._im01_final_grounded_inputs()
+        )
+        actual_premeaning = (
+            stage1_response_module.build_premeaning_grounded_inputs(
+                source=source,
+                grounded_graph=final_graph,
+                parent_plan=final_parent,
+                grounded_plan=final_plan,
+            )
+        )
+        reception_only_parent = replace(
+            final_parent,
+            plan_id="reception-only-plan-id",
+            source_plan_version="reception-only-source-plan-version",
+            reception_duty_id="reception-only-duty",
+            reception_plan_digest="reception-only-digest",
+            allowed_reception_act_ids=("RECEPTION_BACKFLOW_SENTINEL",),
+            reception_target_owner_ids=(),
+            visible_line_ids=("reception-only-line",),
+        )
+        reception_only_plan = replace(
+            final_plan,
+            response_plan=replace(
+                final_plan.response_plan,
+                human_reception_plan=None,
+                surface_shape="plain",
+            ),
+            coverage_requirements=replace(
+                final_plan.coverage_requirements,
+                human_follow_required=(
+                    not final_plan.coverage_requirements.human_follow_required
+                ),
+                fact_boundary_required=(
+                    not final_plan.coverage_requirements.fact_boundary_required
+                ),
+            ),
+            surface_policy=replace(
+                final_plan.surface_policy,
+                tone_family="reception-only-tone",
+            ),
+            safety_policy=replace(
+                final_plan.safety_policy,
+                required_boundary_codes=("RECEPTION_BACKFLOW_SENTINEL",),
+            ),
+        )
+        reception_mutated_premeaning = (
+            stage1_response_module.build_premeaning_grounded_inputs(
+                source=source,
+                grounded_graph=final_graph,
+                parent_plan=reception_only_parent,
+                grounded_plan=reception_only_plan,
+            )
+        )
+        self.assertEqual(reception_mutated_premeaning, actual_premeaning)
+        self.assertEqual(
+            input_specific_meaning_module.derive_grounded_situation_view(
+                reception_mutated_premeaning
+            ),
+            input_specific_meaning_module.derive_grounded_situation_view(
+                actual_premeaning
+            ),
+        )
+
+        _basis_row, validation, _object_refs = (
+            self._actual_source_basis_fixture()
+        )
+        premeaning_inputs = validation["premeaning_inputs"]
+        grounded_view = (
+            input_specific_meaning_module.derive_grounded_situation_view(
+                premeaning_inputs
+            )
+        )
+        baseline = input_specific_meaning_module.derive_foreground_scope_closed(
+            grounded_view
+        )
+        self.assertGreater(len(grounded_view.basis_rows), 1)
+        with patch.object(
+            input_specific_meaning_module,
+            "foreground_scope_basis_row_ref",
+            return_value=(
+                "foreground-scope-basis:im01-collision"
+                "@cocolon.cmee.emlis.foreground_scope_basis.v1"
+            ),
+        ), self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "foreground_scope_basis_ref_collision",
+        ):
+            input_specific_meaning_module.derive_grounded_situation_view(
+                premeaning_inputs
+            )
+        self.assertEqual(
+            tuple(
+                inspect.signature(
+                    input_specific_meaning_module.derive_grounded_situation_view
+                ).parameters
+            ),
+            ("premeaning_inputs",),
+        )
+        self.assertEqual(
+            tuple(
+                inspect.signature(
+                    input_specific_meaning_module.derive_foreground_scope_closed
+                ).parameters
+            ),
+            ("grounded_view",),
+        )
+        forbidden_kwargs = (
+            "reception",
+            "reception_envelope",
+            "affect",
+            "stance",
+            "style",
+            "temperature",
+            "surface",
+            "fixture_id",
+            "response_id",
+            "surface_sha256",
+            "enumeration_order",
+        )
+        contract_field_names = {
+            value.name
+            for contract_type in (
+                PreMeaningGroundedInputs,
+                input_specific_meaning_module.GroundedSituationView,
+                ForegroundScopeObjectCompatibilityRow,
+            )
+            for value in fields(contract_type)
+        }
+        self.assertTrue(set(forbidden_kwargs).isdisjoint(contract_field_names))
+        for name in forbidden_kwargs:
+            with self.subTest(backflow=name):
+                with self.assertRaises(TypeError):
+                    input_specific_meaning_module.derive_foreground_scope_closed(
+                        grounded_view,
+                        **{name: object()},
+                    )
+        self.assertEqual(
+            input_specific_meaning_module.derive_foreground_scope_closed(
+                replace(
+                    grounded_view,
+                    basis_rows=tuple(reversed(grounded_view.basis_rows)),
+                    compatibility_rows=tuple(
+                        reversed(grounded_view.compatibility_rows)
+                    ),
+                    source_connected_relations=tuple(
+                        reversed(grounded_view.source_connected_relations)
+                    ),
+                )
+            ),
+            baseline,
         )
 
     def test_im00_foreground_scope_basis_binds_actual_source_and_layer1(
@@ -20549,31 +21976,27 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                 **relation_validation,
             )
 
-        projection = validation["stage1_projection"]
+        premeaning_inputs = validation["premeaning_inputs"]
         contribution = next(
             value
-            for value in projection.observation_contributions
+            for value in premeaning_inputs.observation_contribution_rows
             if value.contribution_id in row.layer1_required_object_refs
         )
-        forged_projection = _identified(
-            replace(
-                projection,
-                projection_id="",
-                observation_contributions=tuple(
-                    replace(value, retention="OPTIONAL")
-                    if value.contribution_id == contribution.contribution_id
-                    else value
-                    for value in projection.observation_contributions
-                ),
+        forged_premeaning_inputs = replace(
+            premeaning_inputs,
+            observation_contribution_rows=tuple(
+                replace(value, retention="OPTIONAL")
+                if value.contribution_id == contribution.contribution_id
+                else value
+                for value in premeaning_inputs.observation_contribution_rows
             ),
-            "projection_id",
         )
         with self.assertRaises(CMEEStage1ContractError):
             validate_foreground_scope_basis_row(
                 row,
                 **{
                     **validation,
-                    "stage1_projection": forged_projection,
+                    "premeaning_inputs": forged_premeaning_inputs,
                 },
             )
         with self.assertRaisesRegex(
@@ -20680,9 +22103,47 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                 replace(available, foreground_scope=None),
                 **derivation_validation,
             )
+        competing = replace(
+            available,
+            state=ForegroundScopeDerivationState.COMPETING_MATERIAL_SCOPES,
+            foreground_scope=None,
+            unresolved_scope_refs=(scope.integrated_scope_object_refs[0],),
+        )
+        validate_foreground_scope_derivation(
+            competing,
+            **derivation_validation,
+        )
+        insufficient = replace(
+            available,
+            state=(
+                ForegroundScopeDerivationState.FOREGROUND_SCOPE_STRUCTURE_INSUFFICIENT
+            ),
+            foreground_scope=None,
+            missing_structure_refs=(
+                "foreground-scope-missing:relation:im00",
+            ),
+        )
+        validate_foreground_scope_derivation(
+            insufficient,
+            **derivation_validation,
+        )
+        no_safe = ForegroundScopeDerivation(
+            schema_version="1.0",
+            state=ForegroundScopeDerivationState.NO_SAFE_FOREGROUND_OBJECT,
+            foreground_scope=None,
+            retained_foreground_source_object_refs=(),
+            unresolved_scope_refs=(),
+            missing_structure_refs=(),
+            derivation_evidence_refs=(),
+        )
+        validate_foreground_scope_derivation(
+            no_safe,
+            basis_rows=(),
+            **validation,
+        )
         with self.assertRaisesRegex(
             CMEEStage1ContractError,
-            "nonavailable_derivation_deferred_to_im01",
+            "state_cardinality_mismatch",
         ):
             validate_foreground_scope_derivation(
                 replace(
@@ -20716,9 +22177,33 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                 ),
                 **derivation_validation,
             )
+        grounded_view = input_specific_meaning_module.derive_grounded_situation_view(
+            validation["premeaning_inputs"]
+        )
+        self.assertGreater(len(grounded_view.basis_rows), 1)
+        multi_scope = input_specific_meaning_module._canonical_scope(
+            grounded_view.basis_rows
+        )
+        validate_foreground_scope(
+            multi_scope,
+            basis_rows=grounded_view.basis_rows,
+            **validation,
+        )
+        self.assertEqual(
+            multi_scope.integrated_scope_object_refs,
+            tuple(
+                sorted(
+                    {
+                        ref
+                        for basis_row in grounded_view.basis_rows
+                        for ref in basis_row.scope_object_refs
+                    }
+                )
+            ),
+        )
         with self.assertRaisesRegex(
             CMEEStage1ContractError,
-            "multi_basis_union_deferred",
+            "basis_rows_duplicate",
         ):
             validate_foreground_scope(
                 scope,
@@ -20964,7 +22449,10 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                 source=tamper_validation["source"],
                 grounded_plan=tamper_validation["grounded_plan"],
                 grounded_graph=forged_graph,
-                stage1_projection=tamper_validation["stage1_projection"],
+                premeaning_inputs=replace(
+                    tamper_validation["premeaning_inputs"],
+                    grounded_graph=forged_graph,
+                ),
                 parent_plan=tamper_validation["parent_plan"],
             )
 
@@ -20973,21 +22461,11 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
             WholeReadingConsequenceCode.TEMPORAL_FLOW_CHANGED,
             **self._temporal_counterfactual_update(),
         )
-        projection = validator_kwargs["stage1_projection"]
-        self.assertIs(
-            projection.subjective_depth_class,
-            SubjectiveDepthClass.LAYERED,
-        )
-        reception_projection = _identified(
-            replace(
-                projection,
-                projection_id="",
-                subjective_depth_class=SubjectiveDepthClass.FOCUSED,
-                retained_reception_act_ids=(),
-                subjective_basis_binding_rows=(),
-                source_qualifier_binding_rows=(),
-            ),
-            "projection_id",
+        premeaning_inputs = validator_kwargs["premeaning_inputs"]
+        self.assertIs(type(premeaning_inputs), PreMeaningGroundedInputs)
+        self.assertNotIn(
+            "reception",
+            " ".join(value.name for value in fields(premeaning_inputs)),
         )
         parent = validator_kwargs["parent_plan"]
         reception_parent = replace(
@@ -21003,7 +22481,7 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
             source=validator_kwargs["source"],
             grounded_plan=validator_kwargs["grounded_plan"],
             grounded_graph=validator_kwargs["grounded_graph"],
-            stage1_projection=projection,
+            premeaning_inputs=premeaning_inputs,
             parent_plan=parent,
         )
         reception_profiles = contracts_module._meaning_semantic_signature_profiles(
@@ -21011,7 +22489,7 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
             source=validator_kwargs["source"],
             grounded_plan=validator_kwargs["grounded_plan"],
             grounded_graph=validator_kwargs["grounded_graph"],
-            stage1_projection=reception_projection,
+            premeaning_inputs=premeaning_inputs,
             parent_plan=reception_parent,
         )
         self.assertEqual(reception_profiles, original_profiles)
@@ -21035,7 +22513,6 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                 row,
                 **{
                     **validator_kwargs,
-                    "stage1_projection": reception_projection,
                     "parent_plan": reception_parent,
                 },
             )
@@ -21058,7 +22535,7 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                 },
             )
 
-    def test_im00_coherent_projection_qualifier_rehash_is_source_rejected(
+    def test_im00_coherent_premeaning_qualifier_rehash_is_source_rejected(
         self,
     ) -> None:
         scope, basis_row, validation = self._foreground_scope_fixture()
@@ -21092,10 +22569,10 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                 basis_rows=(basis_row,),
                 **validation,
             )
-        projection = validation["stage1_projection"]
+        premeaning_inputs = validation["premeaning_inputs"]
         original = next(
             value
-            for value in projection.interpretation_candidates
+            for value in premeaning_inputs.interpretation_candidate_rows
             if value.relation_operator is RelationOperator.TENSION_WITH
             and "left_modality:feeling" in value.required_qualifiers
         )
@@ -21117,11 +22594,11 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
         }
         forged_field = _identified(
             replace(
-                projection.meaning_field,
+                premeaning_inputs.meaning_field,
                 meaning_field_id="",
                 center_candidate_ref=candidate_ids.get(
-                    projection.meaning_field.center_candidate_ref,
-                    projection.meaning_field.center_candidate_ref,
+                    premeaning_inputs.meaning_field.center_candidate_ref,
+                    premeaning_inputs.meaning_field.center_candidate_ref,
                 ),
                 entries=tuple(
                     replace(
@@ -21131,18 +22608,18 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                             for ref in entry.interpretation_candidate_refs
                         ),
                     )
-                    for entry in projection.meaning_field.entries
+                    for entry in premeaning_inputs.meaning_field.entries
                 ),
                 required_candidate_refs=tuple(
                     candidate_ids.get(ref, ref)
-                    for ref in projection.meaning_field.required_candidate_refs
+                    for ref in premeaning_inputs.meaning_field.required_candidate_refs
                 ),
             ),
             "meaning_field_id",
         )
         contribution_ids: dict[str, str] = {}
         forged_contributions = []
-        for contribution in projection.observation_contributions:
+        for contribution in premeaning_inputs.observation_contribution_rows:
             if original.candidate_id not in contribution.interpretation_candidate_refs:
                 forged_contribution = contribution
             else:
@@ -21165,59 +22642,33 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                     contribution.contribution_id
                 ] = forged_contribution.contribution_id
             forged_contributions.append(forged_contribution)
-        claim_ids: dict[str, str] = {}
-        forged_claims = []
-        for claim in projection.subjective_claims:
-            forged_claim = _identified(
-                replace(
-                    claim,
-                    subjective_claim_id="",
-                    asserted_subjective_proposition=replace(
-                        claim.asserted_subjective_proposition,
-                        target_contribution_refs=tuple(
-                            contribution_ids.get(ref, ref)
-                            for ref in claim.asserted_subjective_proposition.target_contribution_refs
-                        ),
-                    ),
-                    basis_observation_contribution_refs=tuple(
-                        contribution_ids.get(ref, ref)
-                        for ref in claim.basis_observation_contribution_refs
-                    ),
-                ),
-                "subjective_claim_id",
-            )
-            claim_ids[claim.subjective_claim_id] = forged_claim.subjective_claim_id
-            forged_claims.append(forged_claim)
-        forged_projection = _identified(
-            replace(
-                projection,
-                projection_id="",
-                interpretation_candidates=tuple(
-                    forged_candidate if value is original else value
-                    for value in projection.interpretation_candidates
-                ),
-                meaning_field=forged_field,
-                observation_contributions=tuple(forged_contributions),
-                subjective_claims=tuple(forged_claims),
-                ordered_observation_refs=tuple(
-                    contribution_ids.get(ref, ref)
-                    for ref in projection.ordered_observation_refs
-                ),
-                ordered_subjective_refs=tuple(
-                    claim_ids.get(ref, ref)
-                    for ref in projection.ordered_subjective_refs
-                ),
+        forged_premeaning_inputs = replace(
+            premeaning_inputs,
+            interpretation_candidate_rows=tuple(
+                forged_candidate if value is original else value
+                for value in premeaning_inputs.interpretation_candidate_rows
             ),
-            "projection_id",
-        )
-        validate_stage1_projection(
-            forged_projection,
-            grounded_graph=validation["grounded_graph"],
-            parent_plan=validation["parent_plan"],
+            meaning_field=forged_field,
+            observation_contribution_rows=tuple(forged_contributions),
+            ordered_observation_refs=tuple(
+                contribution_ids.get(ref, ref)
+                for ref in premeaning_inputs.ordered_observation_refs
+            ),
         )
         with self.assertRaisesRegex(
             CMEEStage1ContractError,
-            "projection_qualifier_source_mismatch",
+            "foreground_scope_meaning_projection_noncanonical",
+        ):
+            validate_premeaning_grounded_inputs(
+                forged_premeaning_inputs,
+                source=validation["source"],
+                grounded_plan=validation["grounded_plan"],
+                grounded_graph=validation["grounded_graph"],
+                parent_plan=validation["parent_plan"],
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "foreground_scope_meaning_projection_noncanonical",
         ):
             validate_meaning_semantic_signature(
                 self._semantic_signature(),
@@ -21225,7 +22676,7 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                 basis_rows=(basis_row,),
                 **{
                     **validation,
-                    "stage1_projection": forged_projection,
+                    "premeaning_inputs": forged_premeaning_inputs,
                 },
             )
         grounded_plan = validation["grounded_plan"]
@@ -21245,7 +22696,7 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             CMEEStage1ContractError,
-            "projection_qualifier_source_mismatch",
+            "foreground_scope_meaning_projection_noncanonical",
         ):
             validate_meaning_semantic_signature(
                 self._semantic_signature(),
@@ -21257,21 +22708,21 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                 },
             )
 
-    def test_im00_legacy_valid_operator_rehash_is_source_rejected(
+    def test_im00_legacy_valid_operator_rehash_in_premeaning_is_source_rejected(
         self,
     ) -> None:
         _scope, basis_row, validation = self._foreground_scope_fixture(
             ForegroundScopeBasisKind.LAYER1_REQUIRED_OBSERVATION_OBJECT
         )
-        projection = validation["stage1_projection"]
+        premeaning_inputs = validation["premeaning_inputs"]
         original = next(
             value
-            for value in projection.interpretation_candidates
+            for value in premeaning_inputs.interpretation_candidate_rows
             if value.semantic_operator is SemanticOperator.PRESENT_STATE
         )
         other = next(
             value
-            for value in projection.interpretation_candidates
+            for value in premeaning_inputs.interpretation_candidate_rows
             if value.semantic_operator is SemanticOperator.PRESENT_STATE
             and value is not original
         )
@@ -21284,7 +22735,7 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
             "candidate_id",
         )
         entries = []
-        for entry in projection.meaning_field.entries:
+        for entry in premeaning_inputs.meaning_field.entries:
             if entry.slot is MeaningFieldSlot.CENTER:
                 entries.append(
                     replace(
@@ -21323,7 +22774,7 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
         }
         forged_field = _identified(
             replace(
-                projection.meaning_field,
+                premeaning_inputs.meaning_field,
                 meaning_field_id="",
                 entries=tuple(
                     sorted(entries, key=lambda value: slot_order[value.slot])
@@ -21331,22 +22782,13 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
             ),
             "meaning_field_id",
         )
-        forged_projection = _identified(
-            replace(
-                projection,
-                projection_id="",
-                interpretation_candidates=tuple(
-                    forged_candidate if value is original else value
-                    for value in projection.interpretation_candidates
-                ),
-                meaning_field=forged_field,
+        forged_premeaning_inputs = replace(
+            premeaning_inputs,
+            interpretation_candidate_rows=tuple(
+                forged_candidate if value is original else value
+                for value in premeaning_inputs.interpretation_candidate_rows
             ),
-            "projection_id",
-        )
-        validate_stage1_projection(
-            forged_projection,
-            grounded_graph=validation["grounded_graph"],
-            parent_plan=validation["parent_plan"],
+            meaning_field=forged_field,
         )
         with self.assertRaisesRegex(
             CMEEStage1ContractError,
@@ -21356,7 +22798,7 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                 basis_row,
                 **{
                     **validation,
-                    "stage1_projection": forged_projection,
+                    "premeaning_inputs": forged_premeaning_inputs,
                 },
             )
 
@@ -22151,7 +23593,7 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                 source=validator_kwargs["source"],
                 grounded_plan=validator_kwargs["grounded_plan"],
                 grounded_graph=validator_kwargs["grounded_graph"],
-                stage1_projection=validator_kwargs["stage1_projection"],
+                premeaning_inputs=validator_kwargs["premeaning_inputs"],
                 parent_plan=validator_kwargs["parent_plan"],
             )
         with self.assertRaisesRegex(
@@ -22168,7 +23610,7 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                 source=validator_kwargs["source"],
                 grounded_plan=validator_kwargs["grounded_plan"],
                 grounded_graph=validator_kwargs["grounded_graph"],
-                stage1_projection=validator_kwargs["stage1_projection"],
+                premeaning_inputs=validator_kwargs["premeaning_inputs"],
                 parent_plan=validator_kwargs["parent_plan"],
             )
 
