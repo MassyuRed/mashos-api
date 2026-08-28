@@ -66,11 +66,21 @@ from cocolon_meaning_experience_engine.contracts import (
     EmlisTraceClaimDomain,
     EpistemicState,
     ExperiencePlan,
+    ForegroundScope,
+    ForegroundScopeBasisKind,
+    ForegroundScopeBasisRow,
+    ForegroundScopeCompatibilityAxis,
+    ForegroundScopeDerivation,
+    ForegroundScopeDerivationState,
+    ForegroundScopeRelationKind,
     GroundedMeaningGraph,
     InterpretationEpistemicState,
     InterpretationKind,
     MeaningFieldEntry,
     MeaningFieldSlot,
+    MeaningComponentSemanticKey,
+    MeaningReadingOperation,
+    MeaningSemanticSignature,
     MeaningEdge,
     MeaningNode,
     MaterialRisk,
@@ -110,6 +120,11 @@ from cocolon_meaning_experience_engine.contracts import (
     VisibleAuthority,
     VisibleUnitTrace,
     ValueApplication,
+    WholeReadingConsequenceCode,
+    WholeReadingConsequenceRow,
+    WholeReadingConsequenceValidationContext,
+    foreground_scope_basis_row_ref,
+    foreground_scope_id,
     project_stage1_policy_basis_binding_ref,
     project_stage1_projection_preimage_ref,
     project_stage1_source_qualifier_binding_ref,
@@ -127,9 +142,15 @@ from cocolon_meaning_experience_engine.contracts import (
     validate_stage1_projection,
     validate_stage1_sentence_unit,
     validate_stage1_trace_spine,
+    validate_foreground_scope_basis_row,
+    validate_foreground_scope,
+    validate_foreground_scope_derivation,
+    validate_meaning_semantic_signature,
     validate_subjective_proposition_v2,
     validate_surface_derivation,
     validate_version_qualified_ref,
+    validate_whole_reading_consequence_row,
+    whole_reading_consequence_id,
 )
 import cocolon_meaning_experience_engine.emlis_stage1_response as stage1_response_module
 import cocolon_meaning_experience_engine.emlis_stage1_composition as stage1_composition_module
@@ -12819,7 +12840,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             runtime_payload_sha256_exact16,
             (
                 (exact16_names[0], "a0d243595ad95d434bac88d6a08ddfc356f4ec6e19799dd3c5c58ec3a1ec3ada"),
-                (exact16_names[1], "239533f7514fb516185aebc61ebfb076c3fe24aaffca8d78cca734e8dc203777"),
+                (exact16_names[1], "439382de123f238322343fb233dd93849570173035e26dccacad349994701fd5"),
                 (exact16_names[2], "b6d64dc15fc93d4a3e99d608778fa32cc462af3efb24e52f9d703aafa40f7a75"),
                 (exact16_names[3], "c907af7a059f802120b3e494a88651015a14d45c5e272ab1f9d3f1e9bfa8d06f"),
                 (exact16_names[4], "efb08a5f49d6c3452a8f2332c9d45cebcb5e91ed2c8e8c41fa5a06b3faa4fadd"),
@@ -12840,7 +12861,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             hashlib.sha256(
                 stage1_canonical_json_bytes(runtime_payload_sha256_exact16)
             ).hexdigest(),
-            "b805414fe4a630670916a8ff7e8c99ccbb9889f3cc94f19cd1f40860ea50401a",
+            "71d56ec153cab85a370bc8d2b35611862845f7cfc4236d64d08883cdabf11013",
         )
         runtime_payload_name_sha256_byte_count_exact16 = tuple(
             (name, hashlib.sha256(payload).hexdigest(), len(payload))
@@ -12852,7 +12873,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     runtime_payload_name_sha256_byte_count_exact16
                 )
             ).hexdigest(),
-            "fdf5f722513485b9f8e9718512915eb12d76f03b05ec94bc9180826cdacfb726",
+            "00edce7de49f91a669e33505c8edd53161cc10b9e0c13d787f3e1b5015f50956",
         )
 
         expected_contract_names = (
@@ -13203,7 +13224,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         )
         self.assertEqual(
             independent_identity,
-            "8f9eb006847beb24446cacb64228c70ef7852a2e7cc364913e6876a99a9f8e3d",
+            "82be0e1827072a2de2f2219eaaff9fe13aaa36ec61e67e85549cbcfc69b7e86e",
         )
         self.assertRegex(
             module.STAGE1_RUNTIME_INTEGRATION_IDENTITY,
@@ -13243,7 +13264,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             language_payload_sha256_exact16,
             (
                 (expected_names[0], "94830072dd48f9cda3ca4b80838dd04138890a23acc0f348973ff5cffe95c6d2"),
-                (expected_names[1], "48a312c9019aaa4d8ffb150163c57f8bf6c28028f16afd190eca1b55aa31cb01"),
+                (expected_names[1], "7f2cb1abad6aa440de44ecbef5dd818b51ae87748a552f01e485e020cc4569b0"),
                 (expected_names[2], "0224e2578b2544e2f4f0b4a87a446927a5d64c7d14a5e0a10738b8c55fa3c7d3"),
                 (expected_names[3], "8c6ed267db55cc87751d3f75fc39eb7678224266595c175b5d216518d004e8ca"),
                 (expected_names[4], "2fd50144fb65e9ff7d3dfd163c71f6ac6691e04d608ae70d6082d93ef577da07"),
@@ -13264,7 +13285,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             hashlib.sha256(
                 stage1_canonical_json_bytes(language_payload_sha256_exact16)
             ).hexdigest(),
-            "84ed3600b5bbf0becfa2aa6e6fe02ba3293dd6f2f8ddae1288cef19d58b71e55",
+            "c836de33e116925793a5351c846ae8924ebb8c76e19836b9ff2cfb997930938e",
         )
         language_payload_name_sha256_byte_count_exact16 = tuple(
             (name, hashlib.sha256(payload).hexdigest(), len(payload))
@@ -13276,7 +13297,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     language_payload_name_sha256_byte_count_exact16
                 )
             ).hexdigest(),
-            "f29ab019e5bb1d36617157a5f141c9c11adf8f52109e16665364573fe613e565",
+            "b6f9517056b4ffc6415071ab1f8abc327b00ba0314f6de9a0ad7e5102c4b0c93",
         )
 
         seed_by_path = dict(module.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST)
@@ -13327,19 +13348,19 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
 
         self.assertEqual(
             tuple(selected_declaration_counts),
-            (260, 238, 97, 180, 251, 5, 39),
+            (260, 249, 97, 180, 251, 5, 39),
         )
         self.assertEqual(
             tuple(selected_import_counts),
             (99, 14, 91, 70, 36, 25, 19),
         )
-        self.assertEqual(sum(selected_declaration_counts), 1070)
+        self.assertEqual(sum(selected_declaration_counts), 1081)
         self.assertEqual(sum(selected_import_counts), 354)
         self.assertEqual(
             hashlib.sha256(
                 stage1_canonical_json_bytes(tuple(source_owner_symbol_rows))
             ).hexdigest(),
-            "c3baf89b8810fc71c4468aa0f00262fc2626febccb12f9bece049cdd6ba85e58",
+            "b611de072f2141ea001bf25627f113a477550ceb7dd988ff35846a2cef46112a",
         )
         activation_owner_exact2 = (
             (
@@ -13361,7 +13382,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             hashlib.sha256(
                 stage1_canonical_json_bytes(language_payload_sha256_exact16[:7])
             ).hexdigest(),
-            "257385e0c1b20075dca6891c74a970c43b1294edb65ce3631c2e9e1b40112570",
+            "2c443e7cb33f3210f2088ef06b6340926ee5c286f94b86279023168b8600d69a",
         )
         self.assertEqual(
             hashlib.sha256(
@@ -13369,7 +13390,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     language_payload_name_sha256_byte_count_exact16[:7]
                 )
             ).hexdigest(),
-            "4c959b6ba61ff5135417e91d296d0291e4e246183040c3f639afab9d8694dbfe",
+            "3ebd2c50ad6ac7edda414915fe853c1613cfc62b7ed84a290b1e87cae327d691",
         )
 
         framed = bytearray(b"COCOLON_CMEE_STAGE1_LANGUAGE_CORE_IDENTITY_V2\x00")
@@ -13388,7 +13409,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         self.assertRegex(module.LANGUAGE_CORE_IDENTITY, r"^[0-9a-f]{64}$")
         self.assertEqual(
             independent_identity,
-            "fc337cc7712d461d594dd8ec45ec46da10939a8d18dedc3fc4cf9246fe6a5f3d",
+            "73e966397c9946da4095d1dce74e4c62695e8ec29bea06e99b0f2cf47e6a5fd8",
         )
         self.assertEqual(
             hashlib.sha256(
@@ -19693,6 +19714,2463 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
                 "linearize_japanese_clause",
             }.issubset(owner_roots)
         )
+
+
+class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
+    @staticmethod
+    def _semantic_signature(**updates: object) -> MeaningSemanticSignature:
+        component_keys = (
+            MeaningComponentSemanticKey(
+                typed_predicate_key="predicate:synthesize_relation",
+                semantic_kind_key="semantic-kind:reaction",
+                owner_key="owner:current_user",
+                scope_key="scope:source_bounded",
+                role_key="role:left",
+            ),
+            MeaningComponentSemanticKey(
+                typed_predicate_key="predicate:synthesize_relation",
+                semantic_kind_key="semantic-kind:wish",
+                owner_key="owner:current_user",
+                scope_key="scope:source_bounded",
+                role_key="role:right",
+            ),
+        )
+        signature = MeaningSemanticSignature(
+            schema_version="1.0",
+            reading_operation=MeaningReadingOperation.HOLD_RELATION,
+            input_center_keys=("center:reaction",),
+            component_role_keys=("role:left", "role:right"),
+            relation_direction_keys=("relation:contrast",),
+            epistemic_state_keys=("epistemic:source_explicit",),
+            temporal_state_keys=("time:continuing", "time:current_input"),
+            resolution_treatment_keys=(),
+            world_or_owner_distinction_keys=("owner:current_user",),
+            modality_polarity_or_limitation_keys=(
+                "modality:feeling",
+                "modality:wish",
+                "polarity:negative",
+                "polarity:positive",
+                "scope:bounded",
+            ),
+            episodicity_boundary_keys=(),
+            qualifier_keys=(
+                "qualifier:epistemic=provisional_interpretation",
+                "qualifier:left_actor=current_user",
+                "qualifier:left_modality=feeling",
+                "qualifier:left_polarity=negative",
+                "qualifier:left_time_scope=current_input",
+                "qualifier:not_generalized",
+                "qualifier:right_actor=current_user",
+                "qualifier:right_modality=wish",
+                "qualifier:right_polarity=positive",
+                "qualifier:right_time_scope=continuing",
+            ),
+            component_semantic_keys=component_keys,
+        )
+        return replace(signature, **updates)
+
+    @classmethod
+    def _temporal_counterfactual_update(cls) -> dict[str, object]:
+        baseline = cls._semantic_signature()
+        return {
+            "temporal_state_keys": ("time:continuing", "time:future"),
+            "qualifier_keys": tuple(
+                sorted(
+                    "qualifier:left_time_scope=future"
+                    if value == "qualifier:left_time_scope=current_input"
+                    else value
+                    for value in baseline.qualifier_keys
+                )
+            ),
+        }
+
+    @staticmethod
+    def _actual_source_basis_fixture(
+        basis_kind: ForegroundScopeBasisKind = (
+            ForegroundScopeBasisKind.LAYER1_REQUIRED_OBSERVATION_OBJECT
+        ),
+        *,
+        fixture_index_override: int | None = None,
+        required_qualifier_only: bool = False,
+        required_qualifier_relation: bool = False,
+    ):
+        fixture_index = (
+            fixture_index_override
+            if fixture_index_override is not None
+            else (
+                6
+                if (
+                    basis_kind
+                    is ForegroundScopeBasisKind.SOURCE_CONNECTED_RELATION
+                    or required_qualifier_relation
+                )
+                else 0
+            )
+        )
+        (
+            source,
+            grounded_plan,
+            graph,
+            parent_plan,
+            projection,
+            _candidate_set,
+        ) = _stage4_exact8_fixture(fixture_index)
+        if (
+            basis_kind
+            is ForegroundScopeBasisKind.MATERIAL_UNKNOWN_OR_REQUIRED_QUALIFIER
+            and not required_qualifier_only
+        ):
+            source, grounded_plan, graph, parent_plan = _stage2_inputs(
+                _request(
+                    record_id="im00-material-unknown",
+                    memo="疲れた。",
+                )
+            )
+            projection = build_stage1_semantic_projection(
+                source=source,
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+                grounded_plan=grounded_plan,
+            )
+        graph_objects = {
+            **{
+                f"node:{value.node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}": value
+                for value in graph.nodes
+            },
+            **{
+                f"edge:{value.edge_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}": value
+                for value in graph.edges
+            },
+        }
+        contribution = next(
+            value
+            for value in projection.observation_contributions
+            if value.retention == "REQUIRED"
+        )
+        layer1_refs: tuple[str, ...] = ()
+        retention_refs: tuple[str, ...] = ()
+        relation_refs: tuple[str, ...] = ()
+        qualifier_refs: tuple[str, ...] = ()
+        material_unknown_refs: tuple[str, ...] = ()
+        extra_evidence_objects: tuple[object, ...] = ()
+
+        if basis_kind is ForegroundScopeBasisKind.SOURCE_CONNECTED_RELATION:
+            edge = next(value for value in graph.edges if value.relation == "contrast")
+            relation_ref = (
+                f"edge:{edge.edge_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+            )
+            source_refs = tuple(
+                sorted(
+                    f"node:{value.node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+                    for value in graph.nodes
+                    if value.node_id in {edge.source_node_id, edge.target_node_id}
+                )
+            )
+            relation_refs = (relation_ref,)
+            extra_evidence_objects = (edge,)
+        elif (
+            basis_kind
+            is ForegroundScopeBasisKind.MATERIAL_UNKNOWN_OR_REQUIRED_QUALIFIER
+        ):
+            if required_qualifier_only:
+                if required_qualifier_relation:
+                    qualifier_candidate = next(
+                        candidate
+                        for candidate in projection.interpretation_candidates
+                        if candidate.relation_operator
+                        is RelationOperator.TENSION_WITH
+                    )
+                    source_refs = tuple(
+                        sorted(qualifier_candidate.semantic_refs)
+                    )
+                    qualifier_refs = tuple(
+                        sorted(qualifier_candidate.required_qualifiers)
+                    )
+                else:
+                    source_qualifiers = (
+                        contracts_module._foreground_source_qualifiers_by_node_ref(
+                            source=source,
+                            grounded_plan=grounded_plan,
+                            grounded_graph=graph,
+                            parent_plan=parent_plan,
+                        )
+                    )
+                    source_ref = next(
+                        ref
+                        for ref in contribution.semantic_refs
+                        if ref in source_qualifiers
+                    )
+                    source_refs = (source_ref,)
+                    qualifier_refs = tuple(
+                        sorted(source_qualifiers[source_ref])
+                    )
+            else:
+                material_unknown_refs = (
+                    projection.meaning_field.material_unknown_refs[0],
+                )
+                unknown_target = material_unknown_refs[0].split(":", 1)[1].split(
+                    "@", 1
+                )[0]
+                unknown_source_ref = (
+                    f"node:{unknown_target}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+                )
+                source_refs = (unknown_source_ref,)
+        elif basis_kind is ForegroundScopeBasisKind.SOURCE_EXPLICIT_TARGET_TOPIC_OR_SCOPE:
+            required_owner_ids = set(graph.required_owner_refs)
+            required_visible_claim_ids = {
+                claim_id
+                for disposition in graph.owner_dispositions
+                if disposition.meaning_owner_id in required_owner_ids
+                for claim_id in disposition.visible_claim_refs
+            }
+            source_refs = tuple(
+                sorted(
+                    {
+                        ref
+                        for ref, value in graph_objects.items()
+                        if type(value) is MeaningNode
+                        and value.owner_id in required_owner_ids
+                        and value.node_id in required_visible_claim_ids
+                    }
+                )
+            )
+        else:
+            source_refs = tuple(sorted(contribution.semantic_refs))
+            if (
+                basis_kind
+                is ForegroundScopeBasisKind.LAYER1_REQUIRED_OBSERVATION_OBJECT
+            ):
+                layer1_refs = (contribution.contribution_id,)
+            else:
+                retention_refs = (contribution.parent_duty_ref,)
+
+        source_objects = tuple(graph_objects[ref] for ref in source_refs)
+        evidence_refs = tuple(
+            sorted(
+                {
+                    f"evidence:{evidence_id}@{graph.source_version}"
+                    for value in (*source_objects, *extra_evidence_objects)
+                    for evidence_id in value.evidence_ids
+                }
+            )
+        )
+        if basis_kind in {
+            ForegroundScopeBasisKind.LAYER1_REQUIRED_OBSERVATION_OBJECT,
+            ForegroundScopeBasisKind.EXISTING_REQUIRED_RETENTION_DUTY,
+        }:
+            evidence_refs = tuple(sorted(contribution.evidence_refs))
+        owner_refs = tuple(
+            sorted(
+                {
+                    f"owner:{value.owner_id}@{graph.obligation_version}"
+                    for value in source_objects
+                }
+            )
+        )
+        epistemic_refs = tuple(
+            sorted(
+                {
+                    f"epistemic-state:{value.epistemic_state.value.lower()}"
+                    "@cocolon.cmee.emlis.foreground_scope_basis.v1"
+                    for value in source_objects
+                }
+            )
+        )
+        source_qualifiers = (
+            contracts_module._foreground_source_qualifiers_by_node_ref(
+                source=source,
+                grounded_plan=grounded_plan,
+                grounded_graph=graph,
+                parent_plan=parent_plan,
+            )
+        )
+        qualifier_universe = {
+            qualifier
+            for ref in source_refs
+            for qualifier in source_qualifiers.get(ref, ())
+        }
+        row = ForegroundScopeBasisRow(
+            schema_version="1.0",
+            basis_kind=basis_kind,
+            scope_object_refs=source_refs,
+            source_object_refs=source_refs,
+            source_evidence_refs=evidence_refs,
+            layer1_required_object_refs=layer1_refs,
+            required_retention_duty_refs=retention_refs,
+            source_connected_relation_refs=relation_refs,
+            material_unknown_refs=material_unknown_refs,
+            required_qualifier_refs=qualifier_refs,
+            owner_refs=owner_refs,
+            world_refs=(),
+            epistemic_state_refs=epistemic_refs,
+            time_refs=tuple(
+                sorted(
+                    value
+                    for value in qualifier_universe
+                    if value.startswith("time_scope:")
+                )
+            ),
+            aspect_refs=(),
+            modality_refs=tuple(
+                sorted(
+                    value
+                    for value in qualifier_universe
+                    if value.startswith("modality:")
+                )
+            ),
+            polarity_refs=tuple(
+                sorted(
+                    value
+                    for value in qualifier_universe
+                    if value.startswith("polarity:")
+                )
+            ),
+            scope_refs=(
+                ("scope:source_bounded",)
+                if any(ref in source_qualifiers for ref in source_refs)
+                else ()
+            ),
+        )
+        validation = {
+            "source": source,
+            "grounded_plan": grounded_plan,
+            "grounded_graph": graph,
+            "stage1_projection": projection,
+            "parent_plan": parent_plan,
+        }
+        return row, validation, tuple(sorted(graph_objects))
+
+    @classmethod
+    def _foreground_scope_fixture(
+        cls,
+        basis_kind: ForegroundScopeBasisKind = (
+            ForegroundScopeBasisKind.SOURCE_CONNECTED_RELATION
+        ),
+        *,
+        fixture_index_override: int | None = None,
+    ):
+        row, validation, _object_refs = cls._actual_source_basis_fixture(
+            basis_kind,
+            fixture_index_override=fixture_index_override,
+        )
+        scope = ForegroundScope(
+            schema_version="1.0",
+            scope_id=(
+                "foreground-scope:pending"
+                "@cocolon.cmee.emlis.foreground_scope.v1"
+            ),
+            integrated_scope_object_refs=row.scope_object_refs,
+            basis_row_refs=(foreground_scope_basis_row_ref(row),),
+            source_connected_relation_refs=row.source_connected_relation_refs,
+            required_retention_duty_refs=row.required_retention_duty_refs,
+            material_unknown_refs=row.material_unknown_refs,
+            required_qualifier_refs=row.required_qualifier_refs,
+            source_evidence_refs=row.source_evidence_refs,
+        )
+        scope = replace(scope, scope_id=foreground_scope_id(scope))
+        validate_foreground_scope(scope, basis_rows=(row,), **validation)
+        return scope, row, validation
+
+    @classmethod
+    def _whole_reading_fixture(
+        cls,
+        consequence_code: WholeReadingConsequenceCode,
+        *,
+        baseline_override: MeaningSemanticSignature | None = None,
+        basis_kind: ForegroundScopeBasisKind = (
+            ForegroundScopeBasisKind.SOURCE_CONNECTED_RELATION
+        ),
+        fixture_index_override: int | None = None,
+        **signature_update: object,
+    ):
+        scope, basis_row, validation = cls._foreground_scope_fixture(
+            basis_kind,
+            fixture_index_override=fixture_index_override,
+        )
+        baseline = baseline_override or cls._semantic_signature()
+        mutated = replace(baseline, **signature_update)
+        context = WholeReadingConsequenceValidationContext(
+            schema_version="1.0",
+            foreground_scope=scope,
+            required_difference_ref=(
+                "required-difference:diff-1"
+                "@cocolon.cmee.emlis.required_difference.v1"
+            ),
+            source_evidence_refs=scope.source_evidence_refs,
+            counterfactual_mutation_ref=(
+                "counterfactual-mutation:diff-1-remove"
+                "@cocolon.cmee.emlis.counterfactual_mutation.v1"
+            ),
+            baseline_semantic_signature=baseline,
+            mutated_semantic_signature=mutated,
+        )
+        row = WholeReadingConsequenceRow(
+            schema_version="1.0",
+            consequence_id=(
+                "whole-reading-consequence:pending"
+                "@cocolon.cmee.emlis.whole_reading_consequence.v1"
+            ),
+            consequence_code=consequence_code,
+            foreground_scope_ref=scope.scope_id,
+            required_difference_ref=context.required_difference_ref,
+            source_evidence_refs=context.source_evidence_refs,
+            counterfactual_mutation_ref=context.counterfactual_mutation_ref,
+            baseline_semantic_signature=baseline,
+            mutated_semantic_signature=mutated,
+        )
+        row = replace(row, consequence_id=whole_reading_consequence_id(row))
+        validator_kwargs = {
+            "binding_context": context,
+            "foreground_scope_basis_rows": (basis_row,),
+            **validation,
+        }
+        return row, context, validator_kwargs
+
+    def test_im00_reuses_subjective_depth_class_exact3_without_legacy_alias(
+        self,
+    ) -> None:
+        self.assertEqual(
+            tuple(row.value for row in SubjectiveDepthClass),
+            ("FOCUSED", "LAYERED", "DENSE"),
+        )
+        self.assertFalse(hasattr(contracts_module, "SubjectiveDepth"))
+
+    def test_im00_foreground_scope_closed_types_match_final_design(self) -> None:
+        self.assertEqual(
+            tuple(row.value for row in ForegroundScopeBasisKind),
+            (
+                "SOURCE_EXPLICIT_TARGET_TOPIC_OR_SCOPE",
+                "LAYER1_REQUIRED_OBSERVATION_OBJECT",
+                "EXISTING_REQUIRED_RETENTION_DUTY",
+                "SOURCE_CONNECTED_RELATION",
+                "MATERIAL_UNKNOWN_OR_REQUIRED_QUALIFIER",
+            ),
+        )
+        self.assertEqual(
+            tuple(row.value for row in ForegroundScopeRelationKind),
+            ("contrast", "coexistence", "continuation", "correction"),
+        )
+        self.assertEqual(
+            tuple(row.value for row in ForegroundScopeCompatibilityAxis),
+            (
+                "owner",
+                "world",
+                "epistemic",
+                "time",
+                "aspect",
+                "modality",
+                "polarity",
+                "scope",
+                "required_qualifier",
+                "unknown",
+            ),
+        )
+        self.assertEqual(
+            tuple(row.value for row in ForegroundScopeDerivationState),
+            (
+                "FOREGROUND_SCOPE_AVAILABLE",
+                "COMPETING_MATERIAL_SCOPES",
+                "FOREGROUND_SCOPE_STRUCTURE_INSUFFICIENT",
+                "NO_SAFE_FOREGROUND_OBJECT",
+            ),
+        )
+        self.assertEqual(
+            tuple(row.value for row in MeaningReadingOperation),
+            (
+                "KEEP_DISTINCT",
+                "HOLD_RELATION",
+                "TRACK_TRANSITION",
+                "NOTICE_PERSISTENCE",
+                "RECOGNIZE_BOUNDED_ACTUALITY",
+                "HOLD_UNRESOLVED",
+                "HOLD_QUALIFIED_EVENT_STATE",
+            ),
+        )
+        self.assertEqual(
+            tuple(row.name for row in fields(ForegroundScopeBasisRow)),
+            (
+                "schema_version",
+                "basis_kind",
+                "scope_object_refs",
+                "source_object_refs",
+                "source_evidence_refs",
+                "layer1_required_object_refs",
+                "required_retention_duty_refs",
+                "source_connected_relation_refs",
+                "material_unknown_refs",
+                "required_qualifier_refs",
+                "owner_refs",
+                "world_refs",
+                "epistemic_state_refs",
+                "time_refs",
+                "aspect_refs",
+                "modality_refs",
+                "polarity_refs",
+                "scope_refs",
+            ),
+        )
+        self.assertEqual(
+            tuple(row.name for row in fields(ForegroundScope)),
+            (
+                "schema_version",
+                "scope_id",
+                "integrated_scope_object_refs",
+                "basis_row_refs",
+                "source_connected_relation_refs",
+                "required_retention_duty_refs",
+                "material_unknown_refs",
+                "required_qualifier_refs",
+                "source_evidence_refs",
+            ),
+        )
+        self.assertEqual(
+            tuple(row.name for row in fields(ForegroundScopeDerivation)),
+            (
+                "schema_version",
+                "state",
+                "foreground_scope",
+                "retained_foreground_source_object_refs",
+                "unresolved_scope_refs",
+                "missing_structure_refs",
+                "derivation_evidence_refs",
+            ),
+        )
+
+    def test_im00_foreground_scope_basis_binds_actual_source_and_layer1(
+        self,
+    ) -> None:
+        for fixture_index in range(8):
+            with self.subTest(exact8_fixture=fixture_index):
+                exact8_row, exact8_validation, _object_refs = (
+                    self._actual_source_basis_fixture(
+                        ForegroundScopeBasisKind.LAYER1_REQUIRED_OBSERVATION_OBJECT,
+                        fixture_index_override=fixture_index,
+                    )
+                )
+                validate_foreground_scope_basis_row(
+                    exact8_row,
+                    **exact8_validation,
+                )
+        for basis_kind in ForegroundScopeBasisKind:
+            with self.subTest(basis_kind=basis_kind.value):
+                row, validation, _object_refs = (
+                    self._actual_source_basis_fixture(basis_kind)
+                )
+                validate_foreground_scope_basis_row(row, **validation)
+                first_ref = foreground_scope_basis_row_ref(row)
+                self.assertEqual(
+                    first_ref,
+                    foreground_scope_basis_row_ref(row),
+                )
+                validate_version_qualified_ref(
+                    first_ref,
+                    expected_types=("foreground-scope-basis",),
+                )
+
+        qualifier_row, qualifier_validation, _object_refs = (
+            self._actual_source_basis_fixture(
+                ForegroundScopeBasisKind.MATERIAL_UNKNOWN_OR_REQUIRED_QUALIFIER,
+                required_qualifier_only=True,
+            )
+        )
+        validate_foreground_scope_basis_row(
+            qualifier_row,
+            **qualifier_validation,
+        )
+        self.assertFalse(qualifier_row.material_unknown_refs)
+        self.assertEqual(len(qualifier_row.required_qualifier_refs), 5)
+        relation_qualifier_row, relation_qualifier_validation, _object_refs = (
+            self._actual_source_basis_fixture(
+                ForegroundScopeBasisKind.MATERIAL_UNKNOWN_OR_REQUIRED_QUALIFIER,
+                required_qualifier_only=True,
+                required_qualifier_relation=True,
+            )
+        )
+        validate_foreground_scope_basis_row(
+            relation_qualifier_row,
+            **relation_qualifier_validation,
+        )
+        self.assertTrue(
+            any(
+                value.startswith("left_modality:")
+                for value in relation_qualifier_row.required_qualifier_refs
+            )
+        )
+
+        rich_source_row, rich_source_validation, _object_refs = (
+            self._actual_source_basis_fixture(
+                ForegroundScopeBasisKind.SOURCE_EXPLICIT_TARGET_TOPIC_OR_SCOPE,
+                fixture_index_override=6,
+            )
+        )
+        validate_foreground_scope_basis_row(
+            rich_source_row,
+            **rich_source_validation,
+        )
+        self.assertTrue(
+            all(
+                ref.startswith("node:")
+                for ref in rich_source_row.source_object_refs
+            )
+        )
+        self.assertTrue(rich_source_validation["grounded_graph"].edges)
+
+        relation_row, _validation, _object_refs = (
+            self._actual_source_basis_fixture(
+                ForegroundScopeBasisKind.SOURCE_CONNECTED_RELATION
+            )
+        )
+        self.assertGreaterEqual(len(relation_row.source_object_refs), 2)
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "source_object_refs_noncanonical",
+        ):
+            foreground_scope_basis_row_ref(
+                replace(
+                    relation_row,
+                    source_object_refs=tuple(
+                        reversed(relation_row.source_object_refs)
+                    ),
+                )
+            )
+
+    def test_im00_foreground_scope_basis_rejects_unbound_or_wrong_kind(
+        self,
+    ) -> None:
+        row, validation, object_refs = self._actual_source_basis_fixture()
+        source = validation["source"]
+        forged_source = replace(
+            source,
+            envelope=replace(
+                source.envelope,
+                raw_utf8=source.envelope.raw_utf8 + b"im00-tail-tamper",
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "source_evidence_unreachable",
+        ):
+            validate_foreground_scope_basis_row(
+                row,
+                **{
+                    **validation,
+                    "source": forged_source,
+                },
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "foreground_scope_basis_layer1_required_object_missing",
+        ):
+            validate_foreground_scope_basis_row(
+                replace(row, layer1_required_object_refs=()),
+                **validation,
+            )
+        foreign_ref = (
+            f"node:foreign@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "foreground_scope_basis_source_object_refs_unbound",
+        ):
+            validate_foreground_scope_basis_row(
+                replace(row, source_object_refs=(foreign_ref,)),
+                **validation,
+            )
+        with self.assertRaises(CMEEStage1ContractError):
+            validate_foreground_scope_basis_row(
+                replace(
+                    row,
+                    basis_kind=ForegroundScopeBasisKind.SOURCE_CONNECTED_RELATION,
+                    layer1_required_object_refs=(),
+                    source_connected_relation_refs=("edge:relation@v1",),
+                ),
+                **validation,
+            )
+
+        source_row, source_validation, source_object_refs = (
+            self._actual_source_basis_fixture(
+                ForegroundScopeBasisKind.SOURCE_EXPLICIT_TARGET_TOPIC_OR_SCOPE
+            )
+        )
+        source_graph = source_validation["grounded_graph"]
+        incidental_ref = next(
+            ref
+            for ref in source_object_refs
+            if ref.startswith("node:") and ref not in source_row.source_object_refs
+        )
+        incidental_id = incidental_ref.split(":", 1)[1].split("@", 1)[0]
+        incidental_node = next(
+            value
+            for value in source_graph.nodes
+            if value.node_id == incidental_id
+        )
+        coherent_incidental = replace(
+            source_row,
+            scope_object_refs=(incidental_ref,),
+            source_object_refs=(incidental_ref,),
+            source_evidence_refs=tuple(
+                sorted(
+                    f"evidence:{value}@{source_graph.source_version}"
+                    for value in incidental_node.evidence_ids
+                )
+            ),
+            owner_refs=(
+                f"owner:{incidental_node.owner_id}"
+                f"@{source_graph.obligation_version}",
+            ),
+            epistemic_state_refs=(
+                f"epistemic-state:{incidental_node.epistemic_state.value.lower()}"
+                "@cocolon.cmee.emlis.foreground_scope_basis.v1",
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "source_object_reachability_mismatch",
+        ):
+            validate_foreground_scope_basis_row(
+                coherent_incidental,
+                **source_validation,
+            )
+
+        unknown_row, unknown_validation, unknown_object_refs = (
+            self._actual_source_basis_fixture(
+                ForegroundScopeBasisKind.MATERIAL_UNKNOWN_OR_REQUIRED_QUALIFIER
+            )
+        )
+        unknown_graph = unknown_validation["grounded_graph"]
+        unknown_target = unknown_row.material_unknown_refs[0].split(":", 1)[
+            1
+        ].split("@", 1)[0]
+        unknown_source_ref = (
+            f"node:{unknown_target}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        )
+        foreign_unknown_ref = next(
+            ref
+            for ref in unknown_object_refs
+            if ref.startswith("node:")
+            and ref not in unknown_row.source_object_refs
+        )
+        forged_unknown_source_refs = tuple(
+            sorted(
+                {
+                    *(
+                        ref
+                        for ref in unknown_row.source_object_refs
+                        if ref != unknown_source_ref
+                    ),
+                    foreign_unknown_ref,
+                }
+            )
+        )
+        unknown_nodes = {
+            f"node:{value.node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}": value
+            for value in unknown_graph.nodes
+        }
+        forged_unknown_objects = tuple(
+            unknown_nodes[ref] for ref in forged_unknown_source_refs
+        )
+        coherent_foreign_unknown = replace(
+            unknown_row,
+            scope_object_refs=forged_unknown_source_refs,
+            source_object_refs=forged_unknown_source_refs,
+            source_evidence_refs=tuple(
+                sorted(
+                    {
+                        f"evidence:{evidence_id}@{unknown_graph.source_version}"
+                        for value in forged_unknown_objects
+                        for evidence_id in value.evidence_ids
+                    }
+                )
+            ),
+            owner_refs=tuple(
+                sorted(
+                    {
+                        f"owner:{value.owner_id}"
+                        f"@{unknown_graph.obligation_version}"
+                        for value in forged_unknown_objects
+                    }
+                )
+            ),
+            epistemic_state_refs=tuple(
+                sorted(
+                    {
+                        f"epistemic-state:{value.epistemic_state.value.lower()}"
+                        "@cocolon.cmee.emlis.foreground_scope_basis.v1"
+                        for value in forged_unknown_objects
+                    }
+                )
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "source_object_reachability_mismatch",
+        ):
+            validate_foreground_scope_basis_row(
+                coherent_foreign_unknown,
+                **unknown_validation,
+            )
+        qualifier_row, qualifier_validation, _object_refs = (
+            self._actual_source_basis_fixture(
+                ForegroundScopeBasisKind.MATERIAL_UNKNOWN_OR_REQUIRED_QUALIFIER,
+                required_qualifier_only=True,
+            )
+        )
+        forged_qualifiers = tuple(
+            sorted(
+                "modality:fact" if value.startswith("modality:") else value
+                for value in qualifier_row.required_qualifier_refs
+            )
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "required_qualifier_source_mismatch",
+        ):
+            validate_foreground_scope_basis_row(
+                replace(
+                    qualifier_row,
+                    required_qualifier_refs=forged_qualifiers,
+                ),
+                **qualifier_validation,
+            )
+        relation_row, relation_validation, _relation_object_refs = (
+            self._actual_source_basis_fixture(
+                ForegroundScopeBasisKind.SOURCE_CONNECTED_RELATION
+            )
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "scope_object_reachability_mismatch",
+        ):
+            validate_foreground_scope_basis_row(
+                replace(
+                    relation_row,
+                    scope_object_refs=(relation_row.scope_object_refs[0],),
+                ),
+                **relation_validation,
+            )
+
+        projection = validation["stage1_projection"]
+        contribution = next(
+            value
+            for value in projection.observation_contributions
+            if value.contribution_id in row.layer1_required_object_refs
+        )
+        forged_projection = _identified(
+            replace(
+                projection,
+                projection_id="",
+                observation_contributions=tuple(
+                    replace(value, retention="OPTIONAL")
+                    if value.contribution_id == contribution.contribution_id
+                    else value
+                    for value in projection.observation_contributions
+                ),
+            ),
+            "projection_id",
+        )
+        with self.assertRaises(CMEEStage1ContractError):
+            validate_foreground_scope_basis_row(
+                row,
+                **{
+                    **validation,
+                    "stage1_projection": forged_projection,
+                },
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "foreground_scope_basis_unknown_or_qualifier_missing",
+        ):
+            validate_foreground_scope_basis_row(
+                replace(
+                    row,
+                    basis_kind=(
+                        ForegroundScopeBasisKind.MATERIAL_UNKNOWN_OR_REQUIRED_QUALIFIER
+                    ),
+                    layer1_required_object_refs=(),
+                ),
+                **validation,
+            )
+
+        graph = validation["grounded_graph"]
+        other_ref = next(
+            ref
+            for ref in object_refs
+            if ref.startswith("node:") and ref not in row.source_object_refs
+        )
+        other_id = other_ref.split(":", 1)[1].split("@", 1)[0]
+        other_node = next(value for value in graph.nodes if value.node_id == other_id)
+        coherent_unrelated = replace(
+            row,
+            scope_object_refs=(other_ref,),
+            source_object_refs=(other_ref,),
+            source_evidence_refs=tuple(
+                sorted(
+                    f"evidence:{value}@{graph.source_version}"
+                    for value in other_node.evidence_ids
+                )
+            ),
+            owner_refs=(
+                f"owner:{other_node.owner_id}@{graph.obligation_version}",
+            ),
+            epistemic_state_refs=(
+                f"epistemic-state:{other_node.epistemic_state.value.lower()}"
+                "@cocolon.cmee.emlis.foreground_scope_basis.v1",
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "source_object_reachability_mismatch",
+        ):
+            validate_foreground_scope_basis_row(
+                coherent_unrelated,
+                **validation,
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "source_evidence_reachability_mismatch",
+        ):
+            validate_foreground_scope_basis_row(
+                replace(
+                    row,
+                    source_evidence_refs=coherent_unrelated.source_evidence_refs,
+                ),
+                **validation,
+            )
+        with self.assertRaises(CMEEStage1ContractError):
+            validate_foreground_scope_basis_row(
+                replace(
+                    row,
+                    scope_object_refs=("reception:attention@v1",),
+                    source_object_refs=("reception:attention@v1",),
+                ),
+                **validation,
+            )
+
+    def test_im00_foreground_scope_and_derivation_state_invariants(self) -> None:
+        scope, row, validation = self._foreground_scope_fixture()
+        validate_foreground_scope(
+            scope,
+            basis_rows=(row,),
+            **validation,
+        )
+        available = ForegroundScopeDerivation(
+            schema_version="1.0",
+            state=ForegroundScopeDerivationState.FOREGROUND_SCOPE_AVAILABLE,
+            foreground_scope=scope,
+            retained_foreground_source_object_refs=(
+                scope.integrated_scope_object_refs
+            ),
+            unresolved_scope_refs=(),
+            missing_structure_refs=(),
+            derivation_evidence_refs=scope.source_evidence_refs,
+        )
+        derivation_validation = {
+            "basis_rows": (row,),
+            **validation,
+        }
+        validate_foreground_scope_derivation(
+            available,
+            **derivation_validation,
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "state_cardinality_mismatch",
+        ):
+            validate_foreground_scope_derivation(
+                replace(available, foreground_scope=None),
+                **derivation_validation,
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "nonavailable_derivation_deferred_to_im01",
+        ):
+            validate_foreground_scope_derivation(
+                replace(
+                    available,
+                    state=ForegroundScopeDerivationState.NO_SAFE_FOREGROUND_OBJECT,
+                    foreground_scope=None,
+                ),
+                **derivation_validation,
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "foreground_scope_id_mismatch",
+        ):
+            validate_foreground_scope_derivation(
+                replace(
+                    available,
+                    foreground_scope=replace(scope, scope_id="foreign"),
+                ),
+                **derivation_validation,
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "state_cardinality_mismatch",
+        ):
+            validate_foreground_scope_derivation(
+                replace(
+                    available,
+                    retained_foreground_source_object_refs=(
+                        "node:foreign@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+                    ),
+                ),
+                **derivation_validation,
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "multi_basis_union_deferred",
+        ):
+            validate_foreground_scope(
+                scope,
+                basis_rows=(row, row),
+                **validation,
+            )
+
+    def test_im00_scope_and_consequence_have_zero_reception_backflow(self) -> None:
+        contract_types = (
+            ForegroundScopeBasisRow,
+            ForegroundScope,
+            ForegroundScopeDerivation,
+            MeaningComponentSemanticKey,
+            MeaningSemanticSignature,
+            WholeReadingConsequenceRow,
+            WholeReadingConsequenceValidationContext,
+        )
+        forbidden_type_tokens = (
+            "Reception",
+            "Affect",
+            "Stance",
+            "Style",
+            "Temperature",
+            "SubjectiveMode",
+        )
+        forbidden_field_tokens = {
+            "score",
+            "priority",
+            "surface",
+            "raw_text",
+            "token_position",
+            "fixture_id",
+            "case_id",
+        }
+        for contract_type in contract_types:
+            field_rows = fields(contract_type)
+            self.assertTrue(
+                forbidden_field_tokens.isdisjoint(
+                    {row.name for row in field_rows}
+                )
+            )
+            annotation_text = " ".join(str(row.type) for row in field_rows)
+            self.assertFalse(
+                any(token in annotation_text for token in forbidden_type_tokens)
+            )
+        validator_text = "\n".join(
+            inspect.getsource(function)
+            for function in (
+                validate_foreground_scope_basis_row,
+                validate_whole_reading_consequence_row,
+            )
+        )
+        self.assertFalse(
+            any(token in validator_text for token in forbidden_type_tokens)
+        )
+        for source_module in (
+            stage1_response_module,
+            stage1_composition_module,
+            emlis_v1a_module,
+        ):
+            source_text = inspect.getsource(source_module)
+            self.assertNotIn("ForegroundScopeBasisRow", source_text)
+            self.assertNotIn("WholeReadingConsequenceRow", source_text)
+
+        scope, basis_row, validation = self._foreground_scope_fixture()
+        baseline = self._semantic_signature()
+        signature_validation = {
+            "foreground_scope": scope,
+            "basis_rows": (basis_row,),
+            **validation,
+        }
+        for forbidden_key in (
+            "reception:attention",
+            "affect:concern",
+            "stance:near",
+            "style:warm",
+            "temperature:high",
+            "surface:rain",
+            "token:first",
+            "hash:deadbeef",
+            "enumeration:first",
+            "internal:selector",
+            "Reception:attention",
+        ):
+            with self.subTest(forbidden_key=forbidden_key):
+                with self.assertRaises(CMEEStage1ContractError):
+                    validate_meaning_semantic_signature(
+                        replace(
+                            baseline,
+                            input_center_keys=(forbidden_key,),
+                        ),
+                        **signature_validation,
+                    )
+        for field_name, laundered_key in (
+            ("input_center_keys", "center:surface_rain"),
+            ("component_role_keys", "role:protect_user_agency"),
+            ("qualifier_keys", "qualifier:reception_attention"),
+            ("temporal_state_keys", "time:fixture_sx01"),
+            ("resolution_treatment_keys", "resolution:sha256_deadbeef"),
+        ):
+            with self.subTest(field_name=field_name, key=laundered_key):
+                with self.assertRaisesRegex(
+                    CMEEStage1ContractError,
+                    "source_exact_cover_mismatch",
+                ):
+                    validate_meaning_semantic_signature(
+                        replace(baseline, **{field_name: (laundered_key,)}),
+                        **signature_validation,
+                    )
+        for laundered_component in (
+            replace(
+                baseline.component_semantic_keys[0],
+                typed_predicate_key="predicate:bounded_counter_self_denial",
+            ),
+            replace(
+                baseline.component_semantic_keys[0],
+                semantic_kind_key="semantic-kind:reception",
+            ),
+            replace(
+                baseline.component_semantic_keys[0],
+                owner_key="owner:internal_selector",
+            ),
+            replace(
+                baseline.component_semantic_keys[0],
+                scope_key="scope:response",
+            ),
+            replace(
+                baseline.component_semantic_keys[0],
+                role_key="role:affect",
+            ),
+        ):
+            with self.subTest(component=laundered_component):
+                with self.assertRaisesRegex(
+                    CMEEStage1ContractError,
+                    "source_exact_cover_mismatch",
+                ):
+                    validate_meaning_semantic_signature(
+                        replace(
+                            baseline,
+                            component_semantic_keys=(laundered_component,),
+                        ),
+                        **signature_validation,
+                    )
+
+        tamper_scope, tamper_basis, tamper_validation = (
+            self._foreground_scope_fixture(
+                ForegroundScopeBasisKind.SOURCE_EXPLICIT_TARGET_TOPIC_OR_SCOPE,
+                fixture_index_override=3,
+            )
+        )
+        tamper_graph = tamper_validation["grounded_graph"]
+        state_node = next(
+            value
+            for value in tamper_graph.nodes
+            if value.node_kind == "state"
+            and (
+                f"node:{value.node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+                in tamper_scope.integrated_scope_object_refs
+            )
+        )
+        forged_graph = replace(
+            tamper_graph,
+            nodes=tuple(
+                replace(value, node_kind="reception")
+                if value.node_id == state_node.node_id
+                else value
+                for value in tamper_graph.nodes
+            ),
+        )
+        forged_component = MeaningComponentSemanticKey(
+            typed_predicate_key="predicate:present_state",
+            semantic_kind_key="semantic-kind:reception",
+            owner_key="owner:source_owner",
+            scope_key="scope:current_input",
+            role_key="role:primary",
+        )
+        forged_baseline = MeaningSemanticSignature(
+            schema_version="1.0",
+            reading_operation=(
+                MeaningReadingOperation.HOLD_QUALIFIED_EVENT_STATE
+            ),
+            input_center_keys=("center:reception",),
+            component_role_keys=("role:primary",),
+            relation_direction_keys=(),
+            epistemic_state_keys=("epistemic:source_explicit",),
+            temporal_state_keys=(),
+            resolution_treatment_keys=(),
+            world_or_owner_distinction_keys=("owner:source_owner",),
+            modality_polarity_or_limitation_keys=(),
+            episodicity_boundary_keys=(),
+            qualifier_keys=(),
+            component_semantic_keys=(forged_component,),
+        )
+        forged_mutated = replace(
+            forged_baseline,
+            resolution_treatment_keys=("resolution:resolved",),
+        )
+        forged_context = WholeReadingConsequenceValidationContext(
+            schema_version="1.0",
+            foreground_scope=tamper_scope,
+            required_difference_ref=(
+                "required-difference:node-kind-tamper"
+                "@cocolon.cmee.emlis.required_difference.v1"
+            ),
+            source_evidence_refs=tamper_scope.source_evidence_refs,
+            counterfactual_mutation_ref=(
+                "counterfactual-mutation:node-kind-tamper"
+                "@cocolon.cmee.emlis.counterfactual_mutation.v1"
+            ),
+            baseline_semantic_signature=forged_baseline,
+            mutated_semantic_signature=forged_mutated,
+        )
+        forged_row = WholeReadingConsequenceRow(
+            schema_version="1.0",
+            consequence_id=(
+                "whole-reading-consequence:pending"
+                "@cocolon.cmee.emlis.whole_reading_consequence.v1"
+            ),
+            consequence_code=(
+                WholeReadingConsequenceCode.RESOLUTION_TREATMENT_CHANGED
+            ),
+            foreground_scope_ref=tamper_scope.scope_id,
+            required_difference_ref=forged_context.required_difference_ref,
+            source_evidence_refs=forged_context.source_evidence_refs,
+            counterfactual_mutation_ref=(
+                forged_context.counterfactual_mutation_ref
+            ),
+            baseline_semantic_signature=forged_baseline,
+            mutated_semantic_signature=forged_mutated,
+        )
+        forged_row = replace(
+            forged_row,
+            consequence_id=whole_reading_consequence_id(forged_row),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "foreground_scope_grounded_graph_noncanonical",
+        ):
+            validate_whole_reading_consequence_row(
+                forged_row,
+                binding_context=forged_context,
+                foreground_scope_basis_rows=(tamper_basis,),
+                source=tamper_validation["source"],
+                grounded_plan=tamper_validation["grounded_plan"],
+                grounded_graph=forged_graph,
+                stage1_projection=tamper_validation["stage1_projection"],
+                parent_plan=tamper_validation["parent_plan"],
+            )
+
+    def test_im00_reception_only_values_are_semantically_invariant(self) -> None:
+        row, context, validator_kwargs = self._whole_reading_fixture(
+            WholeReadingConsequenceCode.TEMPORAL_FLOW_CHANGED,
+            **self._temporal_counterfactual_update(),
+        )
+        projection = validator_kwargs["stage1_projection"]
+        self.assertIs(
+            projection.subjective_depth_class,
+            SubjectiveDepthClass.LAYERED,
+        )
+        reception_projection = _identified(
+            replace(
+                projection,
+                projection_id="",
+                subjective_depth_class=SubjectiveDepthClass.FOCUSED,
+                retained_reception_act_ids=(),
+                subjective_basis_binding_rows=(),
+                source_qualifier_binding_rows=(),
+            ),
+            "projection_id",
+        )
+        parent = validator_kwargs["parent_plan"]
+        reception_parent = replace(
+            parent,
+            reception_duty_id="RECEPTION_ONLY_VARIANT",
+            reception_plan_digest="reception-only-variant",
+            allowed_reception_act_ids=(),
+            reception_target_owner_ids=(),
+            visible_line_ids=("sentence:reception-only-variant",),
+        )
+        original_profiles = contracts_module._meaning_semantic_signature_profiles(
+            foreground_scope=context.foreground_scope,
+            source=validator_kwargs["source"],
+            grounded_plan=validator_kwargs["grounded_plan"],
+            grounded_graph=validator_kwargs["grounded_graph"],
+            stage1_projection=projection,
+            parent_plan=parent,
+        )
+        reception_profiles = contracts_module._meaning_semantic_signature_profiles(
+            foreground_scope=context.foreground_scope,
+            source=validator_kwargs["source"],
+            grounded_plan=validator_kwargs["grounded_plan"],
+            grounded_graph=validator_kwargs["grounded_graph"],
+            stage1_projection=reception_projection,
+            parent_plan=reception_parent,
+        )
+        self.assertEqual(reception_profiles, original_profiles)
+        with ExitStack() as forbidden_calls:
+            for module, name in (
+                (emlis_v1a_module, "_planned_visible_source_ids"),
+                (emlis_v1a_module, "_build_experience_plan"),
+                (emlis_v1a_module, "_reception_plan_contract"),
+                (stage1_response_module, "build_layer1_semantics"),
+            ):
+                forbidden_calls.enter_context(
+                    patch.object(
+                        module,
+                        name,
+                        side_effect=AssertionError(
+                            f"IM00 called forbidden delivery owner: {name}"
+                        ),
+                    )
+                )
+            validate_whole_reading_consequence_row(
+                row,
+                **{
+                    **validator_kwargs,
+                    "stage1_projection": reception_projection,
+                    "parent_plan": reception_parent,
+                },
+            )
+
+        duck_parent = SimpleNamespace(
+            **{
+                value.name: getattr(parent, value.name)
+                for value in fields(ExperiencePlan)
+            }
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "parent_plan_type_invalid",
+        ):
+            validate_whole_reading_consequence_row(
+                row,
+                **{
+                    **validator_kwargs,
+                    "parent_plan": duck_parent,
+                },
+            )
+
+    def test_im00_coherent_projection_qualifier_rehash_is_source_rejected(
+        self,
+    ) -> None:
+        scope, basis_row, validation = self._foreground_scope_fixture()
+        baseline = self._semantic_signature()
+        forged_signature = replace(
+            baseline,
+            modality_polarity_or_limitation_keys=tuple(
+                sorted(
+                    "modality:fact"
+                    if value == "modality:feeling"
+                    else value
+                    for value in baseline.modality_polarity_or_limitation_keys
+                )
+            ),
+            qualifier_keys=tuple(
+                sorted(
+                    "qualifier:left_modality=fact"
+                    if value == "qualifier:left_modality=feeling"
+                    else value
+                    for value in baseline.qualifier_keys
+                )
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "source_exact_cover_mismatch",
+        ):
+            validate_meaning_semantic_signature(
+                forged_signature,
+                foreground_scope=scope,
+                basis_rows=(basis_row,),
+                **validation,
+            )
+        projection = validation["stage1_projection"]
+        original = next(
+            value
+            for value in projection.interpretation_candidates
+            if value.relation_operator is RelationOperator.TENSION_WITH
+            and "left_modality:feeling" in value.required_qualifiers
+        )
+        forged_candidate = _identified(
+            replace(
+                original,
+                candidate_id="",
+                required_qualifiers=tuple(
+                    "left_modality:fact"
+                    if value == "left_modality:feeling"
+                    else value
+                    for value in original.required_qualifiers
+                ),
+            ),
+            "candidate_id",
+        )
+        candidate_ids = {
+            original.candidate_id: forged_candidate.candidate_id,
+        }
+        forged_field = _identified(
+            replace(
+                projection.meaning_field,
+                meaning_field_id="",
+                center_candidate_ref=candidate_ids.get(
+                    projection.meaning_field.center_candidate_ref,
+                    projection.meaning_field.center_candidate_ref,
+                ),
+                entries=tuple(
+                    replace(
+                        entry,
+                        interpretation_candidate_refs=tuple(
+                            candidate_ids.get(ref, ref)
+                            for ref in entry.interpretation_candidate_refs
+                        ),
+                    )
+                    for entry in projection.meaning_field.entries
+                ),
+                required_candidate_refs=tuple(
+                    candidate_ids.get(ref, ref)
+                    for ref in projection.meaning_field.required_candidate_refs
+                ),
+            ),
+            "meaning_field_id",
+        )
+        contribution_ids: dict[str, str] = {}
+        forged_contributions = []
+        for contribution in projection.observation_contributions:
+            if original.candidate_id not in contribution.interpretation_candidate_refs:
+                forged_contribution = contribution
+            else:
+                forged_contribution = _identified(
+                    replace(
+                        contribution,
+                        contribution_id="",
+                        interpretation_candidate_refs=(
+                            forged_candidate.candidate_id,
+                        ),
+                        canonical_semantic_key=(
+                            contracts_module._stage2_observation_semantic_key(
+                                forged_candidate
+                            )
+                        ),
+                    ),
+                    "contribution_id",
+                )
+                contribution_ids[
+                    contribution.contribution_id
+                ] = forged_contribution.contribution_id
+            forged_contributions.append(forged_contribution)
+        claim_ids: dict[str, str] = {}
+        forged_claims = []
+        for claim in projection.subjective_claims:
+            forged_claim = _identified(
+                replace(
+                    claim,
+                    subjective_claim_id="",
+                    asserted_subjective_proposition=replace(
+                        claim.asserted_subjective_proposition,
+                        target_contribution_refs=tuple(
+                            contribution_ids.get(ref, ref)
+                            for ref in claim.asserted_subjective_proposition.target_contribution_refs
+                        ),
+                    ),
+                    basis_observation_contribution_refs=tuple(
+                        contribution_ids.get(ref, ref)
+                        for ref in claim.basis_observation_contribution_refs
+                    ),
+                ),
+                "subjective_claim_id",
+            )
+            claim_ids[claim.subjective_claim_id] = forged_claim.subjective_claim_id
+            forged_claims.append(forged_claim)
+        forged_projection = _identified(
+            replace(
+                projection,
+                projection_id="",
+                interpretation_candidates=tuple(
+                    forged_candidate if value is original else value
+                    for value in projection.interpretation_candidates
+                ),
+                meaning_field=forged_field,
+                observation_contributions=tuple(forged_contributions),
+                subjective_claims=tuple(forged_claims),
+                ordered_observation_refs=tuple(
+                    contribution_ids.get(ref, ref)
+                    for ref in projection.ordered_observation_refs
+                ),
+                ordered_subjective_refs=tuple(
+                    claim_ids.get(ref, ref)
+                    for ref in projection.ordered_subjective_refs
+                ),
+            ),
+            "projection_id",
+        )
+        validate_stage1_projection(
+            forged_projection,
+            grounded_graph=validation["grounded_graph"],
+            parent_plan=validation["parent_plan"],
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "projection_qualifier_source_mismatch",
+        ):
+            validate_meaning_semantic_signature(
+                self._semantic_signature(),
+                foreground_scope=scope,
+                basis_rows=(basis_row,),
+                **{
+                    **validation,
+                    "stage1_projection": forged_projection,
+                },
+            )
+        grounded_plan = validation["grounded_plan"]
+        first_nucleus = grounded_plan.nuclei[0]
+        forged_plan = replace(
+            grounded_plan,
+            nuclei=(
+                replace(
+                    first_nucleus,
+                    semantic_frame=replace(
+                        first_nucleus.semantic_frame,
+                        modality="fact",
+                    ),
+                ),
+                *grounded_plan.nuclei[1:],
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "projection_qualifier_source_mismatch",
+        ):
+            validate_meaning_semantic_signature(
+                self._semantic_signature(),
+                foreground_scope=scope,
+                basis_rows=(basis_row,),
+                **{
+                    **validation,
+                    "grounded_plan": forged_plan,
+                },
+            )
+
+    def test_im00_legacy_valid_operator_rehash_is_source_rejected(
+        self,
+    ) -> None:
+        _scope, basis_row, validation = self._foreground_scope_fixture(
+            ForegroundScopeBasisKind.LAYER1_REQUIRED_OBSERVATION_OBJECT
+        )
+        projection = validation["stage1_projection"]
+        original = next(
+            value
+            for value in projection.interpretation_candidates
+            if value.semantic_operator is SemanticOperator.PRESENT_STATE
+        )
+        other = next(
+            value
+            for value in projection.interpretation_candidates
+            if value.semantic_operator is SemanticOperator.PRESENT_STATE
+            and value is not original
+        )
+        forged_candidate = _identified(
+            replace(
+                original,
+                candidate_id="",
+                semantic_operator=SemanticOperator.PRESENT_BURDEN,
+            ),
+            "candidate_id",
+        )
+        entries = []
+        for entry in projection.meaning_field.entries:
+            if entry.slot is MeaningFieldSlot.CENTER:
+                entries.append(
+                    replace(
+                        entry,
+                        interpretation_candidate_refs=(other.candidate_id,),
+                        semantic_refs=other.semantic_refs,
+                        evidence_refs=other.evidence_refs,
+                    )
+                )
+            else:
+                entries.append(entry)
+        entries.append(
+            MeaningFieldEntry(
+                slot=MeaningFieldSlot.BURDEN,
+                interpretation_candidate_refs=(forged_candidate.candidate_id,),
+                semantic_refs=forged_candidate.semantic_refs,
+                evidence_refs=forged_candidate.evidence_refs,
+            )
+        )
+        slot_order = {
+            slot: index
+            for index, slot in enumerate(
+                (
+                    MeaningFieldSlot.CENTER,
+                    MeaningFieldSlot.TENSION,
+                    MeaningFieldSlot.COEXISTENCE,
+                    MeaningFieldSlot.CHANGE,
+                    MeaningFieldSlot.TIME_RELATION,
+                    MeaningFieldSlot.DIRECTION,
+                    MeaningFieldSlot.BURDEN,
+                    MeaningFieldSlot.OUTPUT,
+                    MeaningFieldSlot.RESIDUE,
+                    MeaningFieldSlot.UNFINISHED,
+                )
+            )
+        }
+        forged_field = _identified(
+            replace(
+                projection.meaning_field,
+                meaning_field_id="",
+                entries=tuple(
+                    sorted(entries, key=lambda value: slot_order[value.slot])
+                ),
+            ),
+            "meaning_field_id",
+        )
+        forged_projection = _identified(
+            replace(
+                projection,
+                projection_id="",
+                interpretation_candidates=tuple(
+                    forged_candidate if value is original else value
+                    for value in projection.interpretation_candidates
+                ),
+                meaning_field=forged_field,
+            ),
+            "projection_id",
+        )
+        validate_stage1_projection(
+            forged_projection,
+            grounded_graph=validation["grounded_graph"],
+            parent_plan=validation["parent_plan"],
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "foreground_scope_meaning_projection_noncanonical",
+        ):
+            validate_foreground_scope_basis_row(
+                basis_row,
+                **{
+                    **validation,
+                    "stage1_projection": forged_projection,
+                },
+            )
+
+    def test_im00_operation_seam_and_counterfactual_shapes_are_closed(
+        self,
+    ) -> None:
+        scope, basis_row, validation = self._foreground_scope_fixture()
+        baseline = self._semantic_signature()
+        signature_validation = {
+            "foreground_scope": scope,
+            "basis_rows": (basis_row,),
+            **validation,
+        }
+        for operation in MeaningReadingOperation:
+            with self.subTest(operation=operation.value):
+                validate_meaning_semantic_signature(
+                    replace(baseline, reading_operation=operation),
+                    **signature_validation,
+                )
+
+        operation_row, operation_context, operation_kwargs = (
+            self._whole_reading_fixture(
+                WholeReadingConsequenceCode.TEMPORAL_FLOW_CHANGED,
+                **self._temporal_counterfactual_update(),
+            )
+        )
+        changed_operation = replace(
+            operation_context.mutated_semantic_signature,
+            reading_operation=MeaningReadingOperation.HOLD_UNRESOLVED,
+        )
+        changed_operation_context = replace(
+            operation_context,
+            mutated_semantic_signature=changed_operation,
+        )
+        changed_operation_row = replace(
+            operation_row,
+            consequence_id="",
+            mutated_semantic_signature=changed_operation,
+        )
+        changed_operation_row = replace(
+            changed_operation_row,
+            consequence_id=whole_reading_consequence_id(
+                changed_operation_row
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "counterfactual_axis_mismatch",
+        ):
+            validate_whole_reading_consequence_row(
+                changed_operation_row,
+                **{
+                    **operation_kwargs,
+                    "binding_context": changed_operation_context,
+                },
+            )
+
+        left_component, right_component = baseline.component_semantic_keys
+        left_qualifiers = tuple(
+            value
+            for value in baseline.qualifier_keys
+            if not value.startswith("qualifier:right_")
+        )
+        left_updates = {
+            "component_role_keys": ("role:left",),
+            "relation_direction_keys": (),
+            "temporal_state_keys": ("time:current_input",),
+            "modality_polarity_or_limitation_keys": (
+                "modality:feeling",
+                "polarity:negative",
+                "scope:bounded",
+            ),
+            "qualifier_keys": left_qualifiers,
+            "component_semantic_keys": (left_component,),
+        }
+        endpoint_row, _context, endpoint_kwargs = self._whole_reading_fixture(
+            WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED,
+            **left_updates,
+        )
+        validate_whole_reading_consequence_row(
+            endpoint_row,
+            **endpoint_kwargs,
+        )
+        dangling_row, _context, dangling_kwargs = self._whole_reading_fixture(
+            WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED,
+            **{
+                **left_updates,
+                "relation_direction_keys": ("relation:contrast",),
+            },
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "relation_endpoint_cardinality_unbound",
+        ):
+            validate_whole_reading_consequence_row(
+                dangling_row,
+                **dangling_kwargs,
+            )
+
+        right_qualifiers = tuple(
+            value
+            for value in baseline.qualifier_keys
+            if not value.startswith("qualifier:left_")
+        )
+        centered_drop_row, _context, centered_drop_kwargs = (
+            self._whole_reading_fixture(
+                WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED,
+                component_role_keys=("role:right",),
+                relation_direction_keys=(),
+                temporal_state_keys=("time:continuing",),
+                modality_polarity_or_limitation_keys=(
+                    "modality:wish",
+                    "polarity:positive",
+                    "scope:bounded",
+                ),
+                qualifier_keys=right_qualifiers,
+                component_semantic_keys=(right_component,),
+            )
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "center_component_unbound",
+        ):
+            validate_whole_reading_consequence_row(
+                centered_drop_row,
+                **centered_drop_kwargs,
+            )
+
+        role_swap = {"role:left": "role:right", "role:right": "role:left"}
+        swapped_components = tuple(
+            sorted(
+                (
+                    replace(
+                        value,
+                        role_key=role_swap[value.role_key],
+                    )
+                    for value in baseline.component_semantic_keys
+                ),
+                key=stage1_canonical_json_bytes,
+            )
+        )
+        swapped_qualifiers = tuple(
+            sorted(
+                (
+                    "qualifier:right_"
+                    + value.removeprefix("qualifier:left_")
+                    if value.startswith("qualifier:left_")
+                    else "qualifier:left_"
+                    + value.removeprefix("qualifier:right_")
+                    if value.startswith("qualifier:right_")
+                    else value
+                )
+                for value in baseline.qualifier_keys
+            )
+        )
+        swap_row, _context, swap_kwargs = self._whole_reading_fixture(
+            WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED,
+            qualifier_keys=swapped_qualifiers,
+            component_semantic_keys=swapped_components,
+        )
+        validate_whole_reading_consequence_row(swap_row, **swap_kwargs)
+        for updates in (
+            {
+                "qualifier_keys": baseline.qualifier_keys,
+                "component_semantic_keys": swapped_components,
+            },
+            {
+                "qualifier_keys": swapped_qualifiers,
+                "component_semantic_keys": swapped_components,
+                "relation_direction_keys": ("relation:coexistence",),
+            },
+            {
+                "relation_direction_keys": ("relation:coexistence",),
+                "temporal_state_keys": ("time:future",),
+            },
+            {
+                "relation_direction_keys": ("relation:coexistence",),
+                "modality_polarity_or_limitation_keys": (
+                    "modality:possibility",
+                ),
+            },
+        ):
+            row, _context, validator_kwargs = self._whole_reading_fixture(
+                WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED,
+                **updates,
+            )
+            with self.assertRaisesRegex(
+                CMEEStage1ContractError,
+                "counterfactual_axis_mismatch",
+            ):
+                validate_whole_reading_consequence_row(
+                    row,
+                    **validator_kwargs,
+                )
+
+        owner_components = list(baseline.component_semantic_keys)
+        owner_components[0] = replace(
+            owner_components[0],
+            owner_key="owner:other_actor",
+        )
+        owner_components_tuple = tuple(
+            sorted(owner_components, key=stage1_canonical_json_bytes)
+        )
+        owner_qualifiers = tuple(
+            sorted(
+                "qualifier:left_actor=other_actor"
+                if value == "qualifier:left_actor=current_user"
+                else value
+                for value in baseline.qualifier_keys
+            )
+        )
+        owner_updates = {
+            "world_or_owner_distinction_keys": (
+                "owner:current_user",
+                "owner:other_actor",
+            ),
+            "qualifier_keys": owner_qualifiers,
+            "component_semantic_keys": owner_components_tuple,
+        }
+        owner_row, _context, owner_kwargs = self._whole_reading_fixture(
+            WholeReadingConsequenceCode.WORLD_OR_OWNER_DISTINCTION_CHANGED,
+            **owner_updates,
+        )
+        validate_whole_reading_consequence_row(owner_row, **owner_kwargs)
+        same_kind_components = tuple(
+            sorted(
+                (
+                    left_component,
+                    replace(
+                        right_component,
+                        typed_predicate_key=left_component.typed_predicate_key,
+                        semantic_kind_key=left_component.semantic_kind_key,
+                        scope_key=left_component.scope_key,
+                    ),
+                ),
+                key=stage1_canonical_json_bytes,
+            )
+        )
+        same_kind_mutated = tuple(
+            sorted(
+                (
+                    replace(value, owner_key="owner:other_actor")
+                    for value in same_kind_components
+                ),
+                key=stage1_canonical_json_bytes,
+            )
+        )
+        self.assertIsNone(
+            contracts_module._meaning_owner_substituted_qualifiers(
+                baseline.qualifier_keys,
+                baseline_components=same_kind_components,
+                mutated_components=same_kind_mutated,
+            )
+        )
+        stale_owner_row, _context, stale_owner_kwargs = (
+            self._whole_reading_fixture(
+                WholeReadingConsequenceCode.WORLD_OR_OWNER_DISTINCTION_CHANGED,
+                **{
+                    **owner_updates,
+                    "qualifier_keys": baseline.qualifier_keys,
+                },
+            )
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "counterfactual_axis_mismatch",
+        ):
+            validate_whole_reading_consequence_row(
+                stale_owner_row,
+                **stale_owner_kwargs,
+            )
+
+        multi_delta_cases = (
+            (
+                WholeReadingConsequenceCode.INPUT_CENTER_CHANGED,
+                {
+                    "input_center_keys": (
+                        "center:reaction",
+                        "center:wish",
+                    )
+                },
+            ),
+            (
+                WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED,
+                {
+                    "relation_direction_keys": (
+                        "relation:coexistence",
+                        "relation:continuation",
+                    )
+                },
+            ),
+            (
+                WholeReadingConsequenceCode.RESOLUTION_TREATMENT_CHANGED,
+                {
+                    "resolution_treatment_keys": (
+                        "resolution:resolved",
+                        "resolution:unresolved",
+                    )
+                },
+            ),
+            (
+                WholeReadingConsequenceCode.WORLD_OR_OWNER_DISTINCTION_CHANGED,
+                {
+                    "world_or_owner_distinction_keys": (
+                        "owner:current_user",
+                        "world:external",
+                        "world:unknown",
+                    )
+                },
+            ),
+            (
+                WholeReadingConsequenceCode.EPISODICITY_BOUNDARY_CHANGED,
+                {
+                    "episodicity_boundary_keys": (
+                        "episodicity:general_pattern",
+                        "episodicity:one_off",
+                    )
+                },
+            ),
+        )
+        for code, updates in multi_delta_cases:
+            with self.subTest(multi_delta_code=code.value):
+                multi_row, _context, multi_kwargs = (
+                    self._whole_reading_fixture(code, **updates)
+                )
+                with self.assertRaisesRegex(
+                    CMEEStage1ContractError,
+                    "counterfactual_axis_mismatch",
+                ):
+                    validate_whole_reading_consequence_row(
+                        multi_row,
+                        **multi_kwargs,
+                    )
+
+    def test_im00_qualified_event_counterfactuals_are_source_coherent(
+        self,
+    ) -> None:
+        basis_kind = (
+            ForegroundScopeBasisKind.SOURCE_EXPLICIT_TARGET_TOPIC_OR_SCOPE
+        )
+        scope, _basis_row, validation = self._foreground_scope_fixture(
+            basis_kind,
+            fixture_index_override=0,
+        )
+        profiles = contracts_module._meaning_semantic_signature_profiles(
+            foreground_scope=scope,
+            **validation,
+        )
+        self.assertEqual(len(profiles), 1)
+        profile, components = profiles[0]
+        baseline = MeaningSemanticSignature(
+            schema_version="1.0",
+            reading_operation=(
+                MeaningReadingOperation.HOLD_QUALIFIED_EVENT_STATE
+            ),
+            component_semantic_keys=components,
+            **profile,
+        )
+        temporal_qualifiers = tuple(
+            sorted(
+                "qualifier:time_scope=future"
+                if value == "qualifier:time_scope=current_input"
+                else value
+                for value in baseline.qualifier_keys
+            )
+        )
+        modality_qualifiers = tuple(
+            sorted(
+                "qualifier:modality=possibility"
+                if value == "qualifier:modality=wish"
+                else value
+                for value in baseline.qualifier_keys
+            )
+        )
+        owner_qualifiers = tuple(
+            sorted(
+                "qualifier:actor=other_actor"
+                if value == "qualifier:actor=current_user"
+                else value
+                for value in baseline.qualifier_keys
+            )
+        )
+        owner_components = tuple(
+            sorted(
+                (
+                    replace(value, owner_key="owner:other_actor")
+                    for value in baseline.component_semantic_keys
+                ),
+                key=stage1_canonical_json_bytes,
+            )
+        )
+        cases = (
+            (
+                WholeReadingConsequenceCode.TEMPORAL_FLOW_CHANGED,
+                {
+                    "temporal_state_keys": ("time:future",),
+                    "qualifier_keys": temporal_qualifiers,
+                },
+            ),
+            (
+                WholeReadingConsequenceCode.MODALITY_POLARITY_OR_LIMITATION_CHANGED,
+                {
+                    "modality_polarity_or_limitation_keys": (
+                        "modality:possibility",
+                        "polarity:positive",
+                        "scope:bounded",
+                    ),
+                    "qualifier_keys": modality_qualifiers,
+                },
+            ),
+            (
+                WholeReadingConsequenceCode.WORLD_OR_OWNER_DISTINCTION_CHANGED,
+                {
+                    "world_or_owner_distinction_keys": (
+                        "owner:other_actor",
+                    ),
+                    "qualifier_keys": owner_qualifiers,
+                    "component_semantic_keys": owner_components,
+                },
+            ),
+        )
+        for code, updates in cases:
+            with self.subTest(code=code.value):
+                row, _context, validator_kwargs = (
+                    self._whole_reading_fixture(
+                        code,
+                        baseline_override=baseline,
+                        basis_kind=basis_kind,
+                        fixture_index_override=0,
+                        **updates,
+                    )
+                )
+                validate_whole_reading_consequence_row(
+                    row,
+                    **validator_kwargs,
+                )
+
+        stale_owner_row, _context, stale_owner_kwargs = (
+            self._whole_reading_fixture(
+                WholeReadingConsequenceCode.WORLD_OR_OWNER_DISTINCTION_CHANGED,
+                baseline_override=baseline,
+                basis_kind=basis_kind,
+                fixture_index_override=0,
+                world_or_owner_distinction_keys=("owner:other_actor",),
+                component_semantic_keys=owner_components,
+            )
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "counterfactual_axis_mismatch",
+        ):
+            validate_whole_reading_consequence_row(
+                stale_owner_row,
+                **stale_owner_kwargs,
+            )
+
+    def test_im00_whole_reading_consequence_exact7_and_row_binding(
+        self,
+    ) -> None:
+        self.assertEqual(
+            tuple(row.value for row in WholeReadingConsequenceCode),
+            (
+                "INPUT_CENTER_CHANGED",
+                "RELATION_STRUCTURE_CHANGED",
+                "TEMPORAL_FLOW_CHANGED",
+                "RESOLUTION_TREATMENT_CHANGED",
+                "WORLD_OR_OWNER_DISTINCTION_CHANGED",
+                "MODALITY_POLARITY_OR_LIMITATION_CHANGED",
+                "EPISODICITY_BOUNDARY_CHANGED",
+            ),
+        )
+        self.assertEqual(
+            tuple(row.name for row in fields(WholeReadingConsequenceRow)),
+            (
+                "schema_version",
+                "consequence_id",
+                "consequence_code",
+                "foreground_scope_ref",
+                "required_difference_ref",
+                "source_evidence_refs",
+                "counterfactual_mutation_ref",
+                "baseline_semantic_signature",
+                "mutated_semantic_signature",
+            ),
+        )
+        baseline = self._semantic_signature()
+        modality_qualifiers = tuple(
+            sorted(
+                "qualifier:left_modality=possibility"
+                if value == "qualifier:left_modality=feeling"
+                else value
+                for value in baseline.qualifier_keys
+            )
+        )
+        modality_summary = tuple(
+            sorted(
+                {
+                    *(
+                        value
+                        for value in baseline.modality_polarity_or_limitation_keys
+                        if value != "modality:feeling"
+                    ),
+                    "modality:possibility",
+                }
+            )
+        )
+        changes = {
+            WholeReadingConsequenceCode.INPUT_CENTER_CHANGED: {
+                "input_center_keys": ("center:wish",),
+            },
+            WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED: {
+                "relation_direction_keys": ("relation:coexistence",),
+            },
+            WholeReadingConsequenceCode.TEMPORAL_FLOW_CHANGED: {
+                **self._temporal_counterfactual_update(),
+            },
+            WholeReadingConsequenceCode.RESOLUTION_TREATMENT_CHANGED: {
+                "resolution_treatment_keys": ("resolution:resolved",),
+            },
+            WholeReadingConsequenceCode.WORLD_OR_OWNER_DISTINCTION_CHANGED: {
+                "world_or_owner_distinction_keys": (
+                    "owner:current_user",
+                    "world:external",
+                ),
+            },
+            WholeReadingConsequenceCode.MODALITY_POLARITY_OR_LIMITATION_CHANGED: {
+                "modality_polarity_or_limitation_keys": modality_summary,
+                "qualifier_keys": modality_qualifiers,
+            },
+            WholeReadingConsequenceCode.EPISODICITY_BOUNDARY_CHANGED: {
+                "episodicity_boundary_keys": ("episodicity:general_pattern",),
+                "qualifier_keys": tuple(
+                    value
+                    for value in baseline.qualifier_keys
+                    if value != "qualifier:not_generalized"
+                ),
+            },
+        }
+        for code, update in changes.items():
+            with self.subTest(code=code.value):
+                row, _context, validator_kwargs = self._whole_reading_fixture(
+                    code,
+                    **update,
+                )
+                validate_whole_reading_consequence_row(
+                    row,
+                    **validator_kwargs,
+                )
+        stale_episodicity_row, _context, stale_episodicity_kwargs = (
+            self._whole_reading_fixture(
+                WholeReadingConsequenceCode.EPISODICITY_BOUNDARY_CHANGED,
+                episodicity_boundary_keys=("episodicity:general_pattern",),
+            )
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "counterfactual_axis_mismatch",
+        ):
+            validate_whole_reading_consequence_row(
+                stale_episodicity_row,
+                **stale_episodicity_kwargs,
+            )
+        qualifier_row, _context, qualifier_validation = (
+            self._whole_reading_fixture(
+                WholeReadingConsequenceCode.MODALITY_POLARITY_OR_LIMITATION_CHANGED,
+                qualifier_keys=tuple(
+                    value
+                    for value in baseline.qualifier_keys
+                    if value != "qualifier:not_generalized"
+                ),
+            )
+        )
+        validate_whole_reading_consequence_row(
+            qualifier_row,
+            **qualifier_validation,
+        )
+
+    def test_im00_whole_reading_row_rejects_wrong_axis_unbound_and_free_text(
+        self,
+    ) -> None:
+        outside_scope_center_row, _context, outside_scope_validation = (
+            self._whole_reading_fixture(
+                WholeReadingConsequenceCode.INPUT_CENTER_CHANGED,
+                input_center_keys=("center:event",),
+            )
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "input_center_keys_counterfactual_unbound",
+        ):
+            validate_whole_reading_consequence_row(
+                outside_scope_center_row,
+                **outside_scope_validation,
+            )
+
+        baseline = self._semantic_signature()
+        retained_component = baseline.component_semantic_keys[0]
+        retained_qualifiers = tuple(
+            value
+            for value in baseline.qualifier_keys
+            if not value.startswith("qualifier:right_")
+        )
+        role_drop_row, _role_drop_context, role_drop_validation = (
+            self._whole_reading_fixture(
+                WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED,
+                component_role_keys=("role:right",),
+                relation_direction_keys=(),
+                temporal_state_keys=("time:current_input",),
+                modality_polarity_or_limitation_keys=(
+                    "modality:feeling",
+                    "polarity:negative",
+                    "scope:bounded",
+                ),
+                qualifier_keys=retained_qualifiers,
+                component_semantic_keys=(retained_component,),
+            )
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "component_role_unbound",
+        ):
+            validate_whole_reading_consequence_row(
+                role_drop_row,
+                **role_drop_validation,
+            )
+
+        row, _context, validator_kwargs = self._whole_reading_fixture(
+            WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED,
+            temporal_state_keys=("time:future",),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "counterfactual_axis_mismatch",
+        ):
+            validate_whole_reading_consequence_row(
+                row,
+                **validator_kwargs,
+            )
+
+        row, context, validator_kwargs = self._whole_reading_fixture(
+            WholeReadingConsequenceCode.TEMPORAL_FLOW_CHANGED,
+            **self._temporal_counterfactual_update(),
+        )
+
+        def reseal(value: WholeReadingConsequenceRow):
+            return replace(
+                value,
+                consequence_id=whole_reading_consequence_id(value),
+            )
+
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "whole_reading_consequence_foreground_scope_ref_unbound",
+        ):
+            validate_whole_reading_consequence_row(
+                reseal(
+                    replace(
+                        row,
+                        foreground_scope_ref=(
+                            "foreground-scope:foreign"
+                            "@cocolon.cmee.emlis.foreground_scope.v1"
+                        ),
+                    )
+                ),
+                **validator_kwargs,
+            )
+        for field_name, foreign_ref, error_code in (
+            (
+                "required_difference_ref",
+                (
+                    "required-difference:foreign"
+                    "@cocolon.cmee.emlis.required_difference.v1"
+                ),
+                "required_difference_ref_unbound",
+            ),
+            (
+                "counterfactual_mutation_ref",
+                (
+                    "counterfactual-mutation:foreign"
+                    "@cocolon.cmee.emlis.counterfactual_mutation.v1"
+                ),
+                "mutation_ref_unbound",
+            ),
+            (
+                "source_evidence_refs",
+                (
+                    f"evidence:foreign@{validator_kwargs['grounded_graph'].source_version}",
+                ),
+                "source_evidence_refs_unbound",
+            ),
+        ):
+            with self.subTest(field_name=field_name):
+                with self.assertRaisesRegex(CMEEStage1ContractError, error_code):
+                    validate_whole_reading_consequence_row(
+                        reseal(replace(row, **{field_name: foreign_ref})),
+                        **validator_kwargs,
+                    )
+
+        foreign_evidence = (
+            f"evidence:foreign@{validator_kwargs['grounded_graph'].source_version}",
+        )
+        forged_context = replace(
+            context,
+            source_evidence_refs=foreign_evidence,
+        )
+        forged_row = reseal(
+            replace(row, source_evidence_refs=foreign_evidence)
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "context_evidence_unbound",
+        ):
+            validate_whole_reading_consequence_row(
+                forged_row,
+                **{
+                    **validator_kwargs,
+                    "binding_context": forged_context,
+                },
+            )
+
+        reception_difference = (
+            "reception:attention@cocolon.cmee.emlis.required_difference.v1"
+        )
+        with self.assertRaises(CMEEStage1ContractError):
+            validate_whole_reading_consequence_row(
+                reseal(
+                    replace(
+                        row,
+                        required_difference_ref=reception_difference,
+                    )
+                ),
+                **{
+                    **validator_kwargs,
+                    "binding_context": replace(
+                        context,
+                        required_difference_ref=reception_difference,
+                    ),
+                },
+            )
+
+        poisoned_component = replace(
+            context.baseline_semantic_signature.component_semantic_keys[0],
+            typed_predicate_key="predicate:bounded_counter_self_denial",
+            semantic_kind_key="semantic-kind:reception",
+            owner_key="owner:internal_selector",
+            scope_key="scope:response",
+            role_key="role:affect",
+        )
+        poisoned_baseline = replace(
+            context.baseline_semantic_signature,
+            component_semantic_keys=(poisoned_component,),
+        )
+        poisoned_mutated = replace(
+            context.mutated_semantic_signature,
+            component_semantic_keys=(poisoned_component,),
+        )
+        poisoned_context = replace(
+            context,
+            baseline_semantic_signature=poisoned_baseline,
+            mutated_semantic_signature=poisoned_mutated,
+        )
+        poisoned_row = reseal(
+            replace(
+                row,
+                baseline_semantic_signature=poisoned_baseline,
+                mutated_semantic_signature=poisoned_mutated,
+            )
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "source_exact_cover_mismatch",
+        ):
+            validate_whole_reading_consequence_row(
+                poisoned_row,
+                **{
+                    **validator_kwargs,
+                    "binding_context": poisoned_context,
+                },
+            )
+
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "meaning_semantic_signature_input_center_keys_invalid",
+        ):
+            validate_meaning_semantic_signature(
+                replace(
+                    context.baseline_semantic_signature,
+                    input_center_keys=("center:日本語",),
+                ),
+                foreground_scope=context.foreground_scope,
+                basis_rows=validator_kwargs["foreground_scope_basis_rows"],
+                source=validator_kwargs["source"],
+                grounded_plan=validator_kwargs["grounded_plan"],
+                grounded_graph=validator_kwargs["grounded_graph"],
+                stage1_projection=validator_kwargs["stage1_projection"],
+                parent_plan=validator_kwargs["parent_plan"],
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "meaning_component_semantic_key_type_invalid",
+        ):
+            validate_meaning_semantic_signature(
+                replace(
+                    context.baseline_semantic_signature,
+                    component_semantic_keys=("node:local-id",),
+                ),
+                foreground_scope=context.foreground_scope,
+                basis_rows=validator_kwargs["foreground_scope_basis_rows"],
+                source=validator_kwargs["source"],
+                grounded_plan=validator_kwargs["grounded_plan"],
+                grounded_graph=validator_kwargs["grounded_graph"],
+                stage1_projection=validator_kwargs["stage1_projection"],
+                parent_plan=validator_kwargs["parent_plan"],
+            )
 
 
 if __name__ == "__main__":

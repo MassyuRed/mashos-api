@@ -4109,3 +4109,90 @@ SAFE_SESSION_SWITCH = false_until_full_fresh_sibling_cleanup_proof_dual_remote_p
 ```
 
 final decision pairのdual remote postverify後、fresh unitのactive input・private master・known-only auxiliaryをLibrary Trashへ移動し、明示allowlistのローカル作業コピーを削除してremaining 0を検証した。Library Trashは復元可能であり物理消去は主張しない。machineとUltraがCLEARでもProがCOMMON_DEFECTのためI09条件は成立せず、本cleanup proof pairのdual remote postverify後は自動進行せずfresh authority decisionを待つ。
+
+---
+
+## Emlis input-specific meaning decision / IM00 contract checkpoint（2026-08-28）
+
+Mashのfresh Level 3 Route A providerless-only指示により、final design §17のIM00 exact1だけを実装した。これはIM00–IM09のnonseparable bounded unit内のsession checkpointであり、独立したProduct成果、technical creditまたはterminal completionではない。旧Route A v2 fresh siblingのterminalとcommon-defect return counter 2/2はimmutableであり、本checkpointは第三generic correction、retry、rerunまたはcounter resetではない。
+
+```text
+CHECKPOINT_SCHEMA = CMEE_EMLIS_INPUT_SPECIFIC_MEANING_CHECKPOINT_V1
+CHECKPOINT_ID = CMEE_EMLIS_INPUT_SPECIFIC_MEANING_IM00_CONTRACT_20260828_V1
+FINAL_DESIGN_ID = Cocolon_CMEE_Stage1_Emlis_InputSpecificMeaningDecision_KarenDesigned_FinalTechnicalDesignAndImplementationOrder_20260828
+FINAL_DESIGN_SHA256 = 9690c3f027608825406df7bd5d3b51cb6834b20e07e36bf837b1e309b2daef18
+IMPLEMENTATION_STEP = IM00
+STEP_STATE = COMPLETE_NONTERMINAL_CHECKPOINT
+AUTHORITY = MASH_FRESH_LEVEL_3_ROUTE_A_PROVIDERLESS_ONLY_IM00_EXPLICIT_START_20260828
+
+REPOSITORY = MassyuRed/mashos-api
+PULL_REQUEST = 3
+BRANCH = agent/cmee-v1a-i1sx-source-explicit-20260815
+PRE_HEAD = 4da981d69fe00e2798cf84fb68b10b239dc41c77
+FINAL_HEAD = THIS_COMMIT_RESOLVED_BY_FRESH_REMOTE_POSTVERIFY
+OTHER_REPO_PRE_HEAD = 2ad23a8d441cbab4d9eff27bae5ad0fe452beddd
+ALLOWED_RUNTIME_CHANGED_PATHS_EXACT3 = contracts.py,test_cmee_v1a_i1sx_contracts.py,CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md
+ACTUAL_RUNTIME_CHANGED_PATHS_EXACT3 = contracts.py,test_cmee_v1a_i1sx_contracts.py,CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md
+
+PRODUCT_CREDIT / TECHNICAL_CREDIT = 0 / 0
+PRODUCT_READ / CANDIDATE_ACCEPTANCE / ACTIVATION = 0 / 0 / 0
+AUTOMATIC_RETRY / AUTOMATIC_PROGRESSION = 0 / 0
+```
+
+IM00はcore-private contractへ次を実装した。
+
+- 既存の`SubjectiveDepthClass` exact3を再利用し、別名型を作らない。
+- Foreground Scope basis exact5、source-connected relation exact4、compatibility axis exact10、derivation state exact4をclosed enumにした。
+- `ForegroundScopeBasisRow`、`ForegroundScope`、`ForegroundScopeDerivation`と、actual source／Layer 1へbindするcanonical validatorを実装した。
+- `MeaningReadingOperation` exact7はtyped seamだけを実装し、operation applicability／enumerationはIM03へ留保した。
+- `WholeReadingConsequenceCode` exact7、content-bearing `MeaningSemanticSignature`、validation context、row identity／validatorを実装した。Required Differenceとcounterfactual mutationのactual issuerはIM02へ留保した。
+
+IM00のupstream trust boundaryは、typed `GroundedObservationPlan`／`GroundedMeaningGraph`をGrounded View authorityとして受ける位置である。admitted sourceはsource ownerのfreeze／evidence／owner validatorを通し、plan、graph、Layer 1 candidate、MeaningField、contribution、projectionの意味側構造をlocal deterministicに照合する。contracts内でprivate raw parserまたはGrounded View semantic parserを複製せず、response／Reception builderも呼ばない。actual Grounded Viewから`derive_foreground_scope_closed()`へのpipeline接続、compatible canonical union、material competing LIMITED、zero-object-only STOPはIM01へ留保した。
+
+Reception act、allowed envelope、affect、stance、style、temperature、subjective binding row、visible line、surface、fixture、ID／hash／列挙順からForeground Scopeまたはwhole-reading validationへの逆流は0である。Reception-only fieldsを変更してもmeaning-side semantic profileとrow validationは不変であり、delivery owner call reachabilityも0である。`emlis_stage1_response.py`、`emlis_stage1_composition.py`、`emlis_v1a.py`、vertical test、candidate runnerとproduction routeは変更していない。
+
+private BEFOREはowner-private exact8 body-full artifact exact1として固定した。public GitHubにはbody-free receiptだけを記録する。
+
+```text
+PRIVATE_BEFORE_OWNER_ALIAS = SUBJECTIVE_MEANING_PLANNER_IM00_BEFORE_EXACT8_OWNER_PRIVATE_20260828_V1
+PRIVATE_BEFORE_COUNT = 8
+PRIVATE_BEFORE_INPUT_SET_SHA256 = b75ee427956fe01019b696b370e78de5f916fd92159fdeb9649281f7f83c59b6
+PRIVATE_BEFORE_AXES_SHA256 = 704926ef6a3a94f77bb1c1b75012fdbff5625136fa1e337df6d0f36b558515fa
+PRIVATE_BEFORE_PACKET_SHA256 = 2efbfd007dc3497a931b1737d78ecf54731abac7e541cf63e32a37366d4f10c4
+PRIVATE_BEFORE_PACKET_BYTES / MODE / NLINK = 17028 / 0600 / 1
+PRIVATE_BEFORE_READBACK = PASS
+PRIVATE_BODY / PER_CASE_VALUE / RAW_INPUT_PUBLICATION = 0 / 0 / 0
+```
+
+検証結果は次のとおりである。
+
+```text
+FOCUSED_IM00_CONTRACT_SUITE = PASS_13_OF_13
+CURRENT_RUNTIME_AND_LANGUAGE_IDENTITY_TESTS = PASS_2_OF_2
+COMBINED_TARGETED = PASS_15_OF_15
+THREE_CORE_BOUNDARY = PASS_5_OF_5
+COMPILEALL / GIT_DIFF_CHECK = PASS / PASS
+CONTRACTS_SHA256 = 439382de123f238322343fb233dd93849570173035e26dccacad349994701fd5
+TESTS_SHA256 = 1cfeb5f9ea06abffeebad00a65629d7325849b278ececc831f6e19df24c66cf7
+LANGUAGE_CORE_IDENTITY = 73e966397c9946da4095d1dce74e4c62695e8ec29bea06e99b0f2cf47e6a5fd8
+STAGE1_RUNTIME_INTEGRATION_IDENTITY = 82be0e1827072a2de2f2219eaaff9fe13aaa36ec61e67e85549cbcfc69b7e86e
+RECEPTION_BACKFLOW_REACHABILITY = 0
+PERMISSION_OUTSIDE_ALLOWLIST = 0
+
+HISTORICAL_N3_RUNNER_IDENTITY = FROZEN_UNCHANGED
+NONREQUIRED_FULL_DISCOVERY_PROBE = EXPECTED_HISTORICAL_N3_IDENTITY_SEAL_STOP_AFTER_175_OTHER_TESTS_PASS
+FULL_PUBLIC_REGRESSION = DEFERRED_TO_IM07_NOT_CLAIMED_AT_IM00
+PERSISTED_RUNNER_IDENTITY_REBIND / TEST_SKIP / GUARD_BYPASS = 0 / 0 / 0
+DISCARDED_PROCESS_ONLY_COMPATIBILITY_PROBE = INTERRUPTED_UNCLAIMED_NO_FILE_EFFECT
+```
+
+default full discoveryで得た`early frozen runtime identity mismatch`は、意図的に変更した`contracts.py`を旧N3 sealが検出した正常なfail-closedである。旧N3定数を新IM00 bytesへ遡及更新すると旧terminal evidenceを改変するため行わない。final design §17でfull public regressionのownerはIM07、IM00の完了条件はactual sourceへbindしたfocused contract testである。このcheckpointはfull regression GREENを主張しない。
+
+System Context PR #37、public API、DB、RN、persistence、provider、network inference、fallback、external cost、production activation、ready、mergeへのeffectは0である。依存順上の次checkpointはIM01で正しいが、IM01は今回authorityから自動開始しない。
+
+```text
+IM01_EXECUTION = NOT_STARTED
+NEXT_DEPENDENCY = IM01
+IM01_START_AUTHORITY = FRESH_MASH_EXPLICIT_START_REQUIRED
+CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_IM00
+```

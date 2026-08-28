@@ -11,7 +11,13 @@ import hashlib
 import hmac
 import json
 import re
-from dataclasses import dataclass, field, fields as dataclass_fields, is_dataclass
+from dataclasses import (
+    dataclass,
+    field,
+    fields as dataclass_fields,
+    is_dataclass,
+    replace,
+)
 from enum import Enum
 from typing import Any, Mapping, Optional, Sequence, Tuple
 
@@ -354,6 +360,75 @@ class SubjectiveDepthClass(str, Enum):
     FOCUSED = "FOCUSED"
     LAYERED = "LAYERED"
     DENSE = "DENSE"
+
+
+class ForegroundScopeBasisKind(str, Enum):
+    SOURCE_EXPLICIT_TARGET_TOPIC_OR_SCOPE = (
+        "SOURCE_EXPLICIT_TARGET_TOPIC_OR_SCOPE"
+    )
+    LAYER1_REQUIRED_OBSERVATION_OBJECT = (
+        "LAYER1_REQUIRED_OBSERVATION_OBJECT"
+    )
+    EXISTING_REQUIRED_RETENTION_DUTY = (
+        "EXISTING_REQUIRED_RETENTION_DUTY"
+    )
+    SOURCE_CONNECTED_RELATION = "SOURCE_CONNECTED_RELATION"
+    MATERIAL_UNKNOWN_OR_REQUIRED_QUALIFIER = (
+        "MATERIAL_UNKNOWN_OR_REQUIRED_QUALIFIER"
+    )
+
+
+class ForegroundScopeRelationKind(str, Enum):
+    CONTRAST = "contrast"
+    COEXISTENCE = "coexistence"
+    CONTINUATION = "continuation"
+    CORRECTION = "correction"
+
+
+class ForegroundScopeCompatibilityAxis(str, Enum):
+    OWNER = "owner"
+    WORLD = "world"
+    EPISTEMIC = "epistemic"
+    TIME = "time"
+    ASPECT = "aspect"
+    MODALITY = "modality"
+    POLARITY = "polarity"
+    SCOPE = "scope"
+    REQUIRED_QUALIFIER = "required_qualifier"
+    UNKNOWN = "unknown"
+
+
+class ForegroundScopeDerivationState(str, Enum):
+    FOREGROUND_SCOPE_AVAILABLE = "FOREGROUND_SCOPE_AVAILABLE"
+    COMPETING_MATERIAL_SCOPES = "COMPETING_MATERIAL_SCOPES"
+    FOREGROUND_SCOPE_STRUCTURE_INSUFFICIENT = (
+        "FOREGROUND_SCOPE_STRUCTURE_INSUFFICIENT"
+    )
+    NO_SAFE_FOREGROUND_OBJECT = "NO_SAFE_FOREGROUND_OBJECT"
+
+
+class WholeReadingConsequenceCode(str, Enum):
+    INPUT_CENTER_CHANGED = "INPUT_CENTER_CHANGED"
+    RELATION_STRUCTURE_CHANGED = "RELATION_STRUCTURE_CHANGED"
+    TEMPORAL_FLOW_CHANGED = "TEMPORAL_FLOW_CHANGED"
+    RESOLUTION_TREATMENT_CHANGED = "RESOLUTION_TREATMENT_CHANGED"
+    WORLD_OR_OWNER_DISTINCTION_CHANGED = (
+        "WORLD_OR_OWNER_DISTINCTION_CHANGED"
+    )
+    MODALITY_POLARITY_OR_LIMITATION_CHANGED = (
+        "MODALITY_POLARITY_OR_LIMITATION_CHANGED"
+    )
+    EPISODICITY_BOUNDARY_CHANGED = "EPISODICITY_BOUNDARY_CHANGED"
+
+
+class MeaningReadingOperation(str, Enum):
+    KEEP_DISTINCT = "KEEP_DISTINCT"
+    HOLD_RELATION = "HOLD_RELATION"
+    TRACK_TRANSITION = "TRACK_TRANSITION"
+    NOTICE_PERSISTENCE = "NOTICE_PERSISTENCE"
+    RECOGNIZE_BOUNDED_ACTUALITY = "RECOGNIZE_BOUNDED_ACTUALITY"
+    HOLD_UNRESOLVED = "HOLD_UNRESOLVED"
+    HOLD_QUALIFIED_EVENT_STATE = "HOLD_QUALIFIED_EVENT_STATE"
 
 
 class ObservationContributionKind(str, Enum):
@@ -914,6 +989,108 @@ class EmlisMeaningField:
     entries: Tuple[MeaningFieldEntry, ...]
     required_candidate_refs: Tuple[str, ...]
     material_unknown_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ForegroundScopeBasisRow:
+    """One source-connected, non-ranking basis for Foreground Scope."""
+
+    schema_version: str
+    basis_kind: ForegroundScopeBasisKind
+    scope_object_refs: Tuple[str, ...]
+    source_object_refs: Tuple[str, ...]
+    source_evidence_refs: Tuple[str, ...]
+    layer1_required_object_refs: Tuple[str, ...]
+    required_retention_duty_refs: Tuple[str, ...]
+    source_connected_relation_refs: Tuple[str, ...]
+    material_unknown_refs: Tuple[str, ...]
+    required_qualifier_refs: Tuple[str, ...]
+    owner_refs: Tuple[str, ...]
+    world_refs: Tuple[str, ...]
+    epistemic_state_refs: Tuple[str, ...]
+    time_refs: Tuple[str, ...]
+    aspect_refs: Tuple[str, ...]
+    modality_refs: Tuple[str, ...]
+    polarity_refs: Tuple[str, ...]
+    scope_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ForegroundScope:
+    schema_version: str
+    scope_id: str
+    integrated_scope_object_refs: Tuple[str, ...]
+    basis_row_refs: Tuple[str, ...]
+    source_connected_relation_refs: Tuple[str, ...]
+    required_retention_duty_refs: Tuple[str, ...]
+    material_unknown_refs: Tuple[str, ...]
+    required_qualifier_refs: Tuple[str, ...]
+    source_evidence_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ForegroundScopeDerivation:
+    schema_version: str
+    state: ForegroundScopeDerivationState
+    foreground_scope: Optional[ForegroundScope]
+    retained_foreground_source_object_refs: Tuple[str, ...]
+    unresolved_scope_refs: Tuple[str, ...]
+    missing_structure_refs: Tuple[str, ...]
+    derivation_evidence_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MeaningComponentSemanticKey:
+    typed_predicate_key: str
+    semantic_kind_key: str
+    owner_key: str
+    scope_key: str
+    role_key: str
+
+
+@dataclass(frozen=True, slots=True)
+class MeaningSemanticSignature:
+    """Canonical, content-bearing structure; never raw text or local IDs."""
+
+    schema_version: str
+    reading_operation: MeaningReadingOperation
+    input_center_keys: Tuple[str, ...]
+    component_role_keys: Tuple[str, ...]
+    relation_direction_keys: Tuple[str, ...]
+    epistemic_state_keys: Tuple[str, ...]
+    temporal_state_keys: Tuple[str, ...]
+    resolution_treatment_keys: Tuple[str, ...]
+    world_or_owner_distinction_keys: Tuple[str, ...]
+    modality_polarity_or_limitation_keys: Tuple[str, ...]
+    episodicity_boundary_keys: Tuple[str, ...]
+    qualifier_keys: Tuple[str, ...]
+    component_semantic_keys: Tuple[MeaningComponentSemanticKey, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class WholeReadingConsequenceValidationContext:
+    """IM00 binding seam; the actual difference issuer is implemented in IM02."""
+
+    schema_version: str
+    foreground_scope: ForegroundScope
+    required_difference_ref: str
+    source_evidence_refs: Tuple[str, ...]
+    counterfactual_mutation_ref: str
+    baseline_semantic_signature: MeaningSemanticSignature
+    mutated_semantic_signature: MeaningSemanticSignature
+
+
+@dataclass(frozen=True, slots=True)
+class WholeReadingConsequenceRow:
+    schema_version: str
+    consequence_id: str
+    consequence_code: WholeReadingConsequenceCode
+    foreground_scope_ref: str
+    required_difference_ref: str
+    source_evidence_refs: Tuple[str, ...]
+    counterfactual_mutation_ref: str
+    baseline_semantic_signature: MeaningSemanticSignature
+    mutated_semantic_signature: MeaningSemanticSignature
 
 
 @dataclass(frozen=True, slots=True)
@@ -1530,6 +1707,55 @@ _STAGE1_TUPLE_FIELDS = {
         "required_candidate_refs",
         "material_unknown_refs",
     ),
+    ForegroundScopeBasisRow: (
+        "scope_object_refs",
+        "source_object_refs",
+        "source_evidence_refs",
+        "layer1_required_object_refs",
+        "required_retention_duty_refs",
+        "source_connected_relation_refs",
+        "material_unknown_refs",
+        "required_qualifier_refs",
+        "owner_refs",
+        "world_refs",
+        "epistemic_state_refs",
+        "time_refs",
+        "aspect_refs",
+        "modality_refs",
+        "polarity_refs",
+        "scope_refs",
+    ),
+    ForegroundScope: (
+        "integrated_scope_object_refs",
+        "basis_row_refs",
+        "source_connected_relation_refs",
+        "required_retention_duty_refs",
+        "material_unknown_refs",
+        "required_qualifier_refs",
+        "source_evidence_refs",
+    ),
+    ForegroundScopeDerivation: (
+        "retained_foreground_source_object_refs",
+        "unresolved_scope_refs",
+        "missing_structure_refs",
+        "derivation_evidence_refs",
+    ),
+    MeaningComponentSemanticKey: (),
+    MeaningSemanticSignature: (
+        "input_center_keys",
+        "component_role_keys",
+        "relation_direction_keys",
+        "epistemic_state_keys",
+        "temporal_state_keys",
+        "resolution_treatment_keys",
+        "world_or_owner_distinction_keys",
+        "modality_polarity_or_limitation_keys",
+        "episodicity_boundary_keys",
+        "qualifier_keys",
+        "component_semantic_keys",
+    ),
+    WholeReadingConsequenceValidationContext: ("source_evidence_refs",),
+    WholeReadingConsequenceRow: ("source_evidence_refs",),
     PlannedObservationContribution: (
         "interpretation_candidate_refs",
         "argument_bindings",
@@ -3635,6 +3861,3761 @@ def _validate_stage1_evidence_refs(
         )
         if ref_id not in evidence_ids:
             raise CMEEStage1ContractError("stage1_evidence_ref_missing")
+
+
+_FOREGROUND_SCOPE_SCHEMA_VERSION = "1.0"
+_FOREGROUND_SCOPE_BASIS_REF_VERSION = (
+    "cocolon.cmee.emlis.foreground_scope_basis.v1"
+)
+_FOREGROUND_SCOPE_REF_VERSION = "cocolon.cmee.emlis.foreground_scope.v1"
+_REQUIRED_DIFFERENCE_REF_VERSION = (
+    "cocolon.cmee.emlis.required_difference.v1"
+)
+_COUNTERFACTUAL_MUTATION_REF_VERSION = (
+    "cocolon.cmee.emlis.counterfactual_mutation.v1"
+)
+_WHOLE_READING_CONSEQUENCE_REF_VERSION = (
+    "cocolon.cmee.emlis.whole_reading_consequence.v1"
+)
+_CANONICAL_TYPED_KEY_RE = re.compile(
+    r"^[A-Za-z][A-Za-z0-9_-]*:[A-Za-z0-9][A-Za-z0-9._/@|=+\-]*$"
+)
+_FOREGROUND_SCOPE_TUPLE_FIELDS = (
+    "scope_object_refs",
+    "source_object_refs",
+    "source_evidence_refs",
+    "layer1_required_object_refs",
+    "required_retention_duty_refs",
+    "source_connected_relation_refs",
+    "material_unknown_refs",
+    "required_qualifier_refs",
+    "owner_refs",
+    "world_refs",
+    "epistemic_state_refs",
+    "time_refs",
+    "aspect_refs",
+    "modality_refs",
+    "polarity_refs",
+    "scope_refs",
+)
+_FOREGROUND_SCOPE_COMPATIBILITY_FIELD_PREFIXES = {
+    "owner_refs": ("owner:",),
+    "world_refs": ("world:",),
+    "epistemic_state_refs": ("epistemic:", "epistemic-state:"),
+    "time_refs": ("time:", "time_scope:"),
+    "aspect_refs": ("aspect:",),
+    "modality_refs": ("modality:",),
+    "polarity_refs": ("polarity:",),
+    "scope_refs": ("scope:",),
+}
+_QUALIFIER_PREFIXES = (
+    "actor:",
+    "aspect:",
+    "epistemic:",
+    "modality:",
+    "polarity:",
+    "qualifier:",
+    "scope:",
+    "time:",
+    "time_scope:",
+    "world:",
+    *(
+        f"{role.value.lower()}_{axis}:"
+        for role in ArgumentRole
+        for axis in ("actor", "polarity", "modality", "time_scope")
+    ),
+)
+_SEMANTIC_SIGNATURE_PREFIXES_BY_FIELD = {
+    "input_center_keys": ("center:",),
+    "component_role_keys": ("role:",),
+    "relation_direction_keys": ("direction:", "relation:"),
+    "epistemic_state_keys": ("epistemic:",),
+    "temporal_state_keys": ("temporal:", "time:"),
+    "resolution_treatment_keys": ("resolution:",),
+    "world_or_owner_distinction_keys": ("owner:", "world:"),
+    "modality_polarity_or_limitation_keys": (
+        "limitation:",
+        "modality:",
+        "polarity:",
+        "scope:",
+    ),
+    "episodicity_boundary_keys": ("episodicity:",),
+    "qualifier_keys": ("qualifier:",),
+}
+_GROUNDED_MEANING_NODE_KIND_EXACT14 = frozenset(
+    {
+        "event",
+        "state",
+        "reaction",
+        "wish",
+        "constraint",
+        "action",
+        "change",
+        "self_evaluation",
+        "value",
+        "uncertainty",
+        "conclusion",
+        "other_explicit",
+        "STRUCTURED_EMOTION_STRENGTH",
+        "STRUCTURED_CONTEXT_ATTACHMENT_RELATION",
+    }
+)
+_WHOLE_READING_SIGNATURE_FIELDS_BY_CODE = {
+    WholeReadingConsequenceCode.INPUT_CENTER_CHANGED: (
+        "input_center_keys",
+    ),
+    WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED: (
+        "component_role_keys",
+        "relation_direction_keys",
+        "component_semantic_keys",
+    ),
+    WholeReadingConsequenceCode.TEMPORAL_FLOW_CHANGED: (
+        "temporal_state_keys",
+    ),
+    WholeReadingConsequenceCode.RESOLUTION_TREATMENT_CHANGED: (
+        "resolution_treatment_keys",
+    ),
+    WholeReadingConsequenceCode.WORLD_OR_OWNER_DISTINCTION_CHANGED: (
+        "world_or_owner_distinction_keys",
+        "component_semantic_keys",
+    ),
+    WholeReadingConsequenceCode.MODALITY_POLARITY_OR_LIMITATION_CHANGED: (
+        "modality_polarity_or_limitation_keys",
+        "qualifier_keys",
+    ),
+    WholeReadingConsequenceCode.EPISODICITY_BOUNDARY_CHANGED: (
+        "episodicity_boundary_keys",
+        "qualifier_keys",
+    ),
+}
+
+
+def _require_canonical_string_set(
+    values: Sequence[str],
+    *,
+    code: str,
+    allow_empty: bool = True,
+) -> Tuple[str, ...]:
+    refs = tuple(values)
+    if (
+        (not allow_empty and not refs)
+        or any(type(ref) is not str or not ref for ref in refs)
+        or len(refs) != len(set(refs))
+        or refs != tuple(sorted(refs))
+    ):
+        raise CMEEStage1ContractError(code)
+    return refs
+
+
+def _validate_typed_key(
+    value: object,
+    *,
+    allowed_prefixes: Sequence[str],
+    code: str,
+) -> None:
+    if (
+        type(value) is not str
+        or _CANONICAL_TYPED_KEY_RE.fullmatch(value) is None
+        or not value.startswith(tuple(allowed_prefixes))
+    ):
+        raise CMEEStage1ContractError(code)
+
+
+def _graph_object_ref(row: object) -> str:
+    if type(row) is MeaningNode:
+        return f"node:{row.node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+    if type(row) is MeaningEdge:
+        return f"edge:{row.edge_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+    raise CMEEStage1ContractError("foreground_scope_graph_object_type_invalid")
+
+
+def _graph_evidence_refs(row: object, *, source_version: str) -> Tuple[str, ...]:
+    values = tuple(
+        sorted(f"evidence:{value}@{source_version}" for value in row.evidence_ids)
+    )
+    return values
+
+
+_FOREGROUND_SOURCE_NUCLEUS_GROUNDING_EXACT2 = frozenset(
+    {"explicit", "user_stated_relation"}
+)
+_FOREGROUND_SOURCE_OWNER_OBLIGATION_KINDS_EXACT5 = frozenset(
+    {
+        "THOUGHT_MEANING",
+        "ACTION_MEANING",
+        "EMOTION_CONTEXT",
+        "CATEGORY_CONTEXT",
+        "EMOTION_STRENGTH_CONTEXT",
+    }
+)
+_FOREGROUND_SOURCE_ACTOR_VALUES = frozenset({"current_user"})
+_FOREGROUND_SOURCE_POLARITY_VALUES = frozenset(
+    {"positive", "negative", "mixed", "neutral"}
+)
+_FOREGROUND_SOURCE_MODALITY_VALUES = frozenset(
+    {
+        "fact",
+        "feeling",
+        "wish",
+        "possibility",
+        "uncertain",
+        "refusal",
+        "intention",
+    }
+)
+_FOREGROUND_SOURCE_TIME_SCOPE_VALUES = frozenset(
+    {
+        "past",
+        "present",
+        "future",
+        "past_to_present",
+        "present_to_future",
+        "continuing",
+        "current_input",
+    }
+)
+
+
+def _foreground_enum_text(value: object) -> str:
+    return str(value.value) if isinstance(value, Enum) else str(value)
+
+
+_FOREGROUND_ADMITTED_NUCLEUS_GROUNDING_EXACT2 = frozenset(
+    {"explicit", "user_stated_relation"}
+)
+_FOREGROUND_ADMITTED_RELATION_GROUNDING_EXACT1 = frozenset(
+    {"user_stated_relation"}
+)
+_FOREGROUND_OBSERVATION_DUTY_ID = (
+    "OBSERVE_SOURCE_EXPLICIT_CURRENT_MEANING"
+)
+_FOREGROUND_UNKNOWN_DUTY_ID = "PRESERVE_EVIDENCE_BOUND_UNKNOWN"
+
+
+def _foreground_stable_id(prefix: str, *values: str) -> str:
+    digest = hashlib.sha256("|".join(values).encode("utf-8")).hexdigest()
+    return f"{prefix}-{digest[:24]}"
+
+
+def _foreground_graph_id(graph: GroundedMeaningGraph) -> str:
+    """Recompute the existing graph identity without importing its owner."""
+
+    node_parts = tuple(
+        "\x1f".join(
+            (
+                row.node_id,
+                row.owner_id,
+                row.node_kind,
+                row.grounding_kind,
+                hashlib.sha256(row.value.encode("utf-8")).hexdigest(),
+                row.epistemic_state.value,
+                *row.evidence_ids,
+            )
+        )
+        for row in graph.nodes
+    )
+    edge_parts = tuple(
+        "\x1f".join(
+            (
+                row.edge_id,
+                row.owner_id,
+                row.relation,
+                row.source_node_id,
+                row.target_node_id,
+                row.grounding_kind,
+                row.epistemic_state.value,
+                *row.evidence_ids,
+            )
+        )
+        for row in graph.edges
+    )
+    disposition_parts = tuple(
+        "\x1f".join(
+            (
+                row.meaning_owner_id,
+                row.owner_class.value,
+                row.resolver_resolution.value,
+                row.attachment_admission.value,
+                row.visible_authority.value,
+                row.source_owner_disposition.value,
+                "visible_claim_refs",
+                *row.visible_claim_refs,
+                "evidence_refs",
+                *row.evidence_refs,
+                "target_unknown_ref",
+                row.target_unknown_ref or "",
+                "reason_codes",
+                *row.reason_codes,
+            )
+        )
+        for row in graph.owner_dispositions
+    )
+    return _foreground_stable_id(
+        "graph",
+        graph.source_envelope_id,
+        graph.owner_universe_digest,
+        *node_parts,
+        *edge_parts,
+        *disposition_parts,
+    )
+
+
+def _foreground_external_type_is(value: object, name: str) -> bool:
+    """Match one frozen upstream contract type without importing its module."""
+
+    value_type = type(value)
+    return (
+        value_type.__module__ == "emlis_ai_grounded_observation_plan"
+        and value_type.__name__ == name
+    )
+
+
+def _foreground_source_evidence_ids(
+    source: object,
+    source_span_ids: Sequence[str],
+) -> Tuple[str, ...]:
+    span_ids = tuple(source_span_ids)
+    if (
+        not span_ids
+        or any(type(value) is not str or not value for value in span_ids)
+        or len(span_ids) != len(set(span_ids))
+    ):
+        raise CMEEStage1ContractError(
+            "foreground_scope_source_semantic_plan_binding_invalid"
+        )
+    try:
+        refs = tuple(source.evidence_ref(value) for value in span_ids)
+    except Exception:
+        raise CMEEStage1ContractError(
+            "foreground_scope_source_semantic_plan_binding_invalid"
+        ) from None
+    evidence_ids = tuple(getattr(value, "evidence_id", "") for value in refs)
+    if any(type(value) is not str or not value for value in evidence_ids):
+        raise CMEEStage1ContractError(
+            "foreground_scope_source_semantic_plan_binding_invalid"
+        )
+    return evidence_ids
+
+
+def _foreground_source_owner_id(
+    source: object,
+    source_span_ids: Sequence[str],
+) -> str:
+    try:
+        owner_ids = tuple(
+            dict.fromkeys(
+                source.meaning_owner_for_span(value)
+                for value in source_span_ids
+            )
+        )
+    except Exception:
+        raise CMEEStage1ContractError(
+            "foreground_scope_source_semantic_plan_binding_invalid"
+        ) from None
+    if len(owner_ids) != 1 or type(owner_ids[0]) is not str:
+        raise CMEEStage1ContractError(
+            "foreground_scope_source_semantic_plan_binding_invalid"
+        )
+    return owner_ids[0]
+
+
+def _foreground_plan_graph_binding(
+    *,
+    source: object,
+    grounded_plan: object,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
+) -> Mapping[str, object]:
+    """Validate and expose only the source/meaning projection of Step 1."""
+
+    if not _foreground_external_type_is(
+        grounded_plan, "GroundedObservationPlan"
+    ):
+        raise CMEEStage1ContractError(
+            "foreground_scope_grounded_observation_plan_required"
+        )
+    if type(grounded_graph) is not GroundedMeaningGraph:
+        raise CMEEStage1ContractError(
+            "foreground_scope_grounded_graph_invalid"
+        )
+    if type(parent_plan) is not ExperiencePlan:
+        raise CMEEStage1ContractError(
+            "foreground_scope_parent_plan_type_invalid"
+        )
+
+    nuclei = getattr(grounded_plan, "nuclei", None)
+    relations = getattr(grounded_plan, "relations", None)
+    coverage = getattr(grounded_plan, "coverage_requirements", None)
+    if (
+        type(nuclei) is not tuple
+        or type(relations) is not tuple
+        or not _foreground_external_type_is(
+            coverage, "GroundedCoverageRequirements"
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "foreground_scope_grounded_observation_plan_noncanonical"
+        )
+    required_nucleus_ids = getattr(coverage, "required_nucleus_ids", None)
+    required_relation_ids = getattr(coverage, "required_relation_ids", None)
+    if (
+        type(required_nucleus_ids) is not tuple
+        or not required_nucleus_ids
+        or type(required_relation_ids) is not tuple
+        or len(required_nucleus_ids) != len(set(required_nucleus_ids))
+        or len(required_relation_ids) != len(set(required_relation_ids))
+    ):
+        raise CMEEStage1ContractError(
+            "foreground_scope_grounded_observation_plan_noncanonical"
+        )
+    evidence_ref_by_span = {
+        getattr(value, "source_span_id", None): value
+        for value in getattr(source, "evidence_refs", ())
+    }
+    if (
+        None in evidence_ref_by_span
+        or len(evidence_ref_by_span)
+        != len(getattr(source, "evidence_refs", ()))
+    ):
+        raise CMEEStage1ContractError(
+            "foreground_scope_source_semantic_plan_binding_invalid"
+        )
+
+    nucleus_by_id: dict[str, object] = {}
+    node_meta_by_ref: dict[str, object] = {}
+    node_id_by_nucleus_id: dict[str, str] = {}
+    source_order_by_ref: dict[str, int] = {}
+    expected_plan_nodes: list[MeaningNode] = []
+    for index, nucleus in enumerate(nuclei):
+        if not _foreground_external_type_is(
+            nucleus, "GroundedSemanticNucleus"
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_grounded_observation_plan_noncanonical"
+            )
+        nucleus_id = getattr(nucleus, "nucleus_id", None)
+        node_kind = _foreground_enum_text(getattr(nucleus, "kind", ""))
+        grounding = _foreground_enum_text(
+            getattr(nucleus, "grounding_kind", "")
+        )
+        span_ids = getattr(nucleus, "source_span_ids", None)
+        frame = getattr(nucleus, "semantic_frame", None)
+        if (
+            type(nucleus_id) is not str
+            or not nucleus_id
+            or nucleus_id in nucleus_by_id
+            or node_kind not in _GROUNDED_MEANING_NODE_KIND_EXACT14
+            or type(span_ids) is not tuple
+            or not _foreground_external_type_is(frame, "GroundedSemanticFrame")
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_grounded_observation_plan_noncanonical"
+            )
+        nucleus_by_id[nucleus_id] = nucleus
+        if grounding not in _FOREGROUND_ADMITTED_NUCLEUS_GROUNDING_EXACT2:
+            continue
+        evidence_ids = _foreground_source_evidence_ids(source, span_ids)
+        owner_id = _foreground_source_owner_id(source, span_ids)
+        node_id = _foreground_stable_id(
+            "mn", source.envelope.envelope_id, nucleus_id
+        )
+        matches = tuple(
+            value
+            for value in grounded_graph.nodes
+            if value.node_id == node_id
+        )
+        if len(matches) != 1:
+            raise CMEEStage1ContractError(
+                "foreground_scope_grounded_graph_noncanonical"
+            )
+        node = matches[0]
+        if (
+            node.owner_id != owner_id
+            or node.node_kind != node_kind
+            or node.grounding_kind != grounding
+            or type(node.value) is not str
+            or not node.value
+            or node.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
+            or node.evidence_ids != evidence_ids
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_grounded_graph_noncanonical"
+            )
+        expected_plan_nodes.append(node)
+        node_id_by_nucleus_id[nucleus_id] = node_id
+        node_ref = _graph_object_ref(node)
+        node_meta_by_ref[node_ref] = nucleus
+        source_order_by_ref[node_ref] = index
+
+    if any(
+        value not in node_id_by_nucleus_id for value in required_nucleus_ids
+    ):
+        raise CMEEStage1ContractError(
+            "foreground_scope_grounded_observation_plan_noncanonical"
+        )
+
+    relation_by_id: dict[str, object] = {}
+    edge_meta_by_ref: dict[str, object] = {}
+    edge_id_by_relation_id: dict[str, str] = {}
+    expected_edges: list[MeaningEdge] = []
+    for index, relation in enumerate(relations):
+        if not _foreground_external_type_is(
+            relation, "GroundedSemanticRelation"
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_grounded_observation_plan_noncanonical"
+            )
+        relation_id = getattr(relation, "relation_id", None)
+        relation_kind = _foreground_enum_text(getattr(relation, "type", ""))
+        grounding = _foreground_enum_text(
+            getattr(relation, "grounding_kind", "")
+        )
+        from_id = getattr(relation, "from_nucleus_id", None)
+        to_id = getattr(relation, "to_nucleus_id", None)
+        span_ids = getattr(relation, "source_span_ids", None)
+        if (
+            type(relation_id) is not str
+            or not relation_id
+            or relation_id in relation_by_id
+            or type(relation_kind) is not str
+            or not relation_kind
+            or type(span_ids) is not tuple
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_grounded_observation_plan_noncanonical"
+            )
+        relation_by_id[relation_id] = relation
+        if grounding not in _FOREGROUND_ADMITTED_RELATION_GROUNDING_EXACT1:
+            continue
+        if (
+            from_id not in node_id_by_nucleus_id
+            or to_id not in node_id_by_nucleus_id
+            or from_id == to_id
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_grounded_observation_plan_noncanonical"
+            )
+        evidence_ids = _foreground_source_evidence_ids(source, span_ids)
+        owner_id = _foreground_source_owner_id(source, span_ids)
+        edge_id = _foreground_stable_id(
+            "me", source.envelope.envelope_id, relation_id
+        )
+        expected = MeaningEdge(
+            edge_id=edge_id,
+            owner_id=owner_id,
+            relation=relation_kind,
+            source_node_id=node_id_by_nucleus_id[from_id],
+            target_node_id=node_id_by_nucleus_id[to_id],
+            grounding_kind=grounding,
+            epistemic_state=EpistemicState.SOURCE_EXPLICIT,
+            evidence_ids=evidence_ids,
+        )
+        matches = tuple(
+            value
+            for value in grounded_graph.edges
+            if value.edge_id == edge_id
+        )
+        if matches != (expected,):
+            raise CMEEStage1ContractError(
+                "foreground_scope_grounded_graph_noncanonical"
+            )
+        expected_edges.append(expected)
+        edge_id_by_relation_id[relation_id] = edge_id
+        edge_ref = _graph_object_ref(expected)
+        edge_meta_by_ref[edge_ref] = relation
+        source_order_by_ref[edge_ref] = len(nuclei) + index
+
+    if any(
+        value not in edge_id_by_relation_id for value in required_relation_ids
+    ):
+        raise CMEEStage1ContractError(
+            "foreground_scope_grounded_observation_plan_noncanonical"
+        )
+
+    required_nucleus_set = set(required_nucleus_ids)
+    required_relation_set = set(required_relation_ids)
+    selected_span_ids = {
+        span_id
+        for nucleus_id, nucleus in nucleus_by_id.items()
+        if nucleus_id in required_nucleus_set
+        for span_id in getattr(nucleus, "source_span_ids", ())
+    }
+    selected_span_ids.update(
+        span_id
+        for relation_id, relation in relation_by_id.items()
+        if relation_id in required_relation_set
+        for span_id in getattr(relation, "source_span_ids", ())
+    )
+    selected_field_paths = {
+        getattr(evidence_ref_by_span[value], "field_path", "")
+        for value in selected_span_ids
+        if value in evidence_ref_by_span
+    }
+    attachment_is_material = bool(
+        selected_field_paths.intersection({"memo", "memo_action"})
+        and any(
+            value not in {"memo", "memo_action"}
+            for value in selected_field_paths
+        )
+    )
+
+    try:
+        strength_ref = source.evidence_ref("structured:emotion_strength")
+        strength_owner = source.meaning_owner_for_span(
+            "structured:emotion_strength"
+        )
+        attachment_obligation = source.attachment_unknown_obligation()
+    except Exception:
+        raise CMEEStage1ContractError(
+            "foreground_scope_source_semantic_plan_binding_invalid"
+        ) from None
+    strength_node = MeaningNode(
+        node_id=_foreground_stable_id(
+            "mn", source.envelope.envelope_id, strength_owner
+        ),
+        owner_id=strength_owner,
+        node_kind="STRUCTURED_EMOTION_STRENGTH",
+        grounding_kind="source_explicit_not_realized",
+        value=source.strength,
+        epistemic_state=EpistemicState.SOURCE_EXPLICIT,
+        evidence_ids=(strength_ref.evidence_id,),
+    )
+    unknown_node: Optional[MeaningNode] = None
+    if attachment_is_material:
+        unknown_node_id = _foreground_stable_id(
+            "mn",
+            source.envelope.envelope_id,
+            attachment_obligation.meaning_owner_id,
+            "structured_attachment_unknown",
+        )
+        unknown_node = MeaningNode(
+            node_id=unknown_node_id,
+            owner_id=attachment_obligation.meaning_owner_id,
+            node_kind="STRUCTURED_CONTEXT_ATTACHMENT_RELATION",
+            grounding_kind="unresolved_attachment_relation",
+            value="",
+            epistemic_state=EpistemicState.UNKNOWN,
+            evidence_ids=attachment_obligation.evidence_refs,
+        )
+
+    visible_claims_by_owner: dict[str, list[str]] = {}
+    for node in expected_plan_nodes:
+        visible_claims_by_owner.setdefault(node.owner_id, []).append(
+            node.node_id
+        )
+    for relation_id in required_relation_ids:
+        edge_id = edge_id_by_relation_id[relation_id]
+        edge = next(value for value in expected_edges if value.edge_id == edge_id)
+        visible_claims_by_owner.setdefault(edge.owner_id, []).append(edge.edge_id)
+
+    expected_dispositions: list[OwnerDisposition] = []
+    for obligation in source.owner_universe.obligations:
+        owner_id = obligation.meaning_owner_id
+        visible_claim_refs = tuple(visible_claims_by_owner.get(owner_id, ()))
+        if obligation.obligation_kind == "STRUCTURED_CONTEXT_ATTACHMENT":
+            if unknown_node is not None:
+                expected_dispositions.append(
+                    OwnerDisposition(
+                        meaning_owner_id=owner_id,
+                        owner_class=obligation.owner_class,
+                        resolver_resolution=ResolverResolution.UNRESOLVED,
+                        attachment_admission=AttachmentAdmission.UNRESOLVED,
+                        visible_authority=VisibleAuthority.NONE,
+                        source_owner_disposition=(
+                            SourceOwnerDisposition.UNKNOWN_PRESERVED_LIMITED
+                        ),
+                        visible_claim_refs=(unknown_node.node_id,),
+                        evidence_refs=obligation.evidence_refs,
+                        target_unknown_ref=unknown_node.node_id,
+                        reason_codes=("ATTACHMENT_UNRESOLVED",),
+                    )
+                )
+            else:
+                expected_dispositions.append(
+                    OwnerDisposition(
+                        meaning_owner_id=owner_id,
+                        owner_class=obligation.owner_class,
+                        resolver_resolution=(
+                            ResolverResolution.MISSING_OR_INVALID
+                        ),
+                        attachment_admission=AttachmentAdmission.UNAVAILABLE,
+                        visible_authority=VisibleAuthority.NONE,
+                        source_owner_disposition=(
+                            SourceOwnerDisposition.NOT_VISIBLE_UNRESOLVED
+                        ),
+                        visible_claim_refs=(),
+                        evidence_refs=obligation.evidence_refs,
+                        target_unknown_ref=None,
+                        reason_codes=("ATTACHMENT_UNRESOLVED",),
+                    )
+                )
+        elif visible_claim_refs:
+            expected_dispositions.append(
+                OwnerDisposition(
+                    meaning_owner_id=owner_id,
+                    owner_class=obligation.owner_class,
+                    resolver_resolution=ResolverResolution.MISSING_OR_INVALID,
+                    attachment_admission=AttachmentAdmission.UNAVAILABLE,
+                    visible_authority=VisibleAuthority.SOURCE_EXPLICIT,
+                    source_owner_disposition=(
+                        SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
+                    ),
+                    visible_claim_refs=visible_claim_refs,
+                    evidence_refs=obligation.evidence_refs,
+                    target_unknown_ref=None,
+                    reason_codes=(),
+                )
+            )
+        else:
+            expected_dispositions.append(
+                OwnerDisposition(
+                    meaning_owner_id=owner_id,
+                    owner_class=obligation.owner_class,
+                    resolver_resolution=ResolverResolution.MISSING_OR_INVALID,
+                    attachment_admission=AttachmentAdmission.UNAVAILABLE,
+                    visible_authority=VisibleAuthority.NONE,
+                    source_owner_disposition=(
+                        SourceOwnerDisposition.NOT_VISIBLE_UNRESOLVED
+                    ),
+                    visible_claim_refs=(),
+                    evidence_refs=obligation.evidence_refs,
+                    target_unknown_ref=None,
+                    reason_codes=("ATTACHMENT_UNRESOLVED",),
+                )
+            )
+
+    expected_nodes = (
+        *expected_plan_nodes,
+        strength_node,
+        *((unknown_node,) if unknown_node is not None else ()),
+    )
+    if (
+        grounded_graph.nodes != expected_nodes
+        or grounded_graph.edges != tuple(expected_edges)
+        or grounded_graph.owner_dispositions
+        != tuple(expected_dispositions)
+        or grounded_graph.source_envelope_id != source.envelope.envelope_id
+        or grounded_graph.required_owner_refs
+        != source.owner_universe.required_owner_refs
+        or grounded_graph.active_optional_owner_refs
+        != source.owner_universe.active_optional_owner_refs
+        or grounded_graph.source_version != source.owner_universe.source_version
+        or grounded_graph.obligation_version
+        != source.owner_universe.obligation_version
+        or grounded_graph.owner_universe_digest
+        != source.owner_universe.owner_universe_digest
+        or grounded_graph.graph_id != _foreground_graph_id(grounded_graph)
+    ):
+        raise CMEEStage1ContractError(
+            "foreground_scope_grounded_graph_noncanonical"
+        )
+
+    positive = {
+        SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
+        SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE,
+    }
+    visible_owner_ids = tuple(
+        value.meaning_owner_id
+        for value in expected_dispositions
+        if value.source_owner_disposition in positive
+    )
+    unresolved_owner_ids = tuple(
+        value.meaning_owner_id
+        for value in expected_dispositions
+        if value.source_owner_disposition not in positive
+    )
+    unresolved_required = tuple(
+        value
+        for value in expected_dispositions
+        if value.owner_class is OwnerClass.REQUIRED
+        and value.source_owner_disposition not in positive
+    )
+    visible_unknown_owner_ids = tuple(
+        value.meaning_owner_id
+        for value in expected_dispositions
+        if (
+            value.meaning_owner_id
+            == attachment_obligation.meaning_owner_id
+            and (
+                value.source_owner_disposition
+                is SourceOwnerDisposition.UNKNOWN_PRESERVED_LIMITED
+                or value in unresolved_required
+            )
+        )
+    )
+    required_unknown_owner_ids = tuple(
+        value.meaning_owner_id for value in unresolved_required
+    )
+    required_observation_owner_ids = tuple(
+        value.meaning_owner_id
+        for value in expected_dispositions
+        if value.meaning_owner_id in set(grounded_graph.required_owner_refs)
+        and value.source_owner_disposition in positive
+    )
+    meaning_parent_fields = {
+        "source_envelope_id": source.envelope.envelope_id,
+        "source_version": grounded_graph.source_version,
+        "obligation_version": grounded_graph.obligation_version,
+        "owner_universe_digest": grounded_graph.owner_universe_digest,
+        "observation_duty_id": _FOREGROUND_OBSERVATION_DUTY_ID,
+        "unknown_duty_id": _FOREGROUND_UNKNOWN_DUTY_ID,
+        "required_observation_owner_ids": required_observation_owner_ids,
+        "visible_owner_ids": visible_owner_ids,
+        "unresolved_owner_ids": unresolved_owner_ids,
+        "visible_unknown_owner_ids": visible_unknown_owner_ids,
+        "required_unknown_owner_ids": required_unknown_owner_ids,
+    }
+    if any(
+        getattr(parent_plan, field_name) != expected
+        for field_name, expected in meaning_parent_fields.items()
+    ):
+        raise CMEEStage1ContractError(
+            "foreground_scope_parent_plan_noncanonical"
+        )
+
+    visible_object_ids = {
+        claim_id
+        for disposition in expected_dispositions
+        if disposition.meaning_owner_id in set(visible_owner_ids)
+        for claim_id in disposition.visible_claim_refs
+    }
+    visible_object_refs = {
+        ref
+        for ref in (*node_meta_by_ref, *edge_meta_by_ref)
+        if ref.split(":", 1)[1].split("@", 1)[0] in visible_object_ids
+    }
+    edge_by_ref = {
+        _graph_object_ref(value): value for value in expected_edges
+    }
+    node_by_ref = {
+        _graph_object_ref(value): value for value in expected_plan_nodes
+    }
+    required_edge_refs = {
+        _graph_object_ref(
+            next(
+                value
+                for value in expected_edges
+                if value.edge_id == edge_id_by_relation_id[relation_id]
+            )
+        )
+        for relation_id in required_relation_ids
+        if (
+            next(
+                value
+                for value in expected_edges
+                if value.edge_id == edge_id_by_relation_id[relation_id]
+            ).owner_id
+            in set(required_observation_owner_ids)
+        )
+    }
+    relation_covered_node_ids = {
+        endpoint
+        for edge_ref in required_edge_refs
+        for endpoint in (
+            edge_by_ref[edge_ref].source_node_id,
+            edge_by_ref[edge_ref].target_node_id,
+        )
+    }
+    required_node_refs = {
+        _graph_object_ref(
+            next(
+                value
+                for value in expected_plan_nodes
+                if value.node_id == node_id_by_nucleus_id[nucleus_id]
+            )
+        )
+        for nucleus_id in required_nucleus_ids
+        if (
+            node_id_by_nucleus_id[nucleus_id]
+            not in relation_covered_node_ids
+            and next(
+                value
+                for value in expected_plan_nodes
+                if value.node_id == node_id_by_nucleus_id[nucleus_id]
+            ).owner_id
+            in set(required_observation_owner_ids)
+        )
+    }
+    if (
+        not required_node_refs | required_edge_refs
+        or not required_node_refs.issubset(visible_object_refs)
+        or not required_edge_refs.issubset(visible_object_refs)
+    ):
+        raise CMEEStage1ContractError(
+            "foreground_scope_grounded_observation_plan_noncanonical"
+        )
+    return {
+        "node_meta_by_ref": node_meta_by_ref,
+        "edge_meta_by_ref": edge_meta_by_ref,
+        "node_by_ref": node_by_ref,
+        "edge_by_ref": edge_by_ref,
+        "source_order_by_ref": source_order_by_ref,
+        "visible_object_refs": frozenset(visible_object_refs),
+        "required_node_refs": frozenset(required_node_refs),
+        "required_edge_refs": frozenset(required_edge_refs),
+    }
+
+
+def _validate_foreground_canonical_source_inputs(
+    *,
+    source: object,
+    grounded_plan: object,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
+) -> Tuple[object, object, GroundedMeaningGraph, ExperiencePlan]:
+    """Validate the frozen source and its delivery-blind meaning projection."""
+
+    if type(parent_plan) is not ExperiencePlan:
+        raise CMEEStage1ContractError(
+            "foreground_scope_parent_plan_type_invalid"
+        )
+
+    from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+    from .source_kernel import (
+        AdmittedTextSource,
+        build_source_owner_universe,
+        freeze_text_source,
+        validate_evidence_refs,
+    )
+
+    if type(source) is not AdmittedTextSource:
+        raise CMEEStage1ContractError(
+            "foreground_scope_admitted_text_source_required"
+        )
+    try:
+        expected_source = freeze_text_source(
+            GenerationRequest(
+                request_id="im00-source-revalidation",
+                current_input_bundle=build_emlis_current_input_bundle(
+                    source.normalized_current_input
+                ),
+                expected_source_record_id=source.envelope.source_record_id,
+            )
+        )
+        validate_evidence_refs(source.envelope, source.evidence_refs)
+        expected_universe = build_source_owner_universe(
+            source.envelope,
+            source.evidence_refs,
+        )
+    except CMEEStage1ContractError:
+        raise
+    except Exception:
+        raise CMEEStage1ContractError(
+            "foreground_scope_source_evidence_unreachable"
+        ) from None
+    if source != expected_source or source.owner_universe != expected_universe:
+        raise CMEEStage1ContractError(
+            "foreground_scope_source_evidence_unreachable"
+        )
+    _foreground_plan_graph_binding(
+        source=expected_source,
+        grounded_plan=grounded_plan,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+    )
+    return expected_source, grounded_plan, grounded_graph, parent_plan
+
+
+def _foreground_source_qualifiers_by_node_ref(
+    *,
+    source: object,
+    grounded_plan: object,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
+) -> Mapping[str, Tuple[str, ...]]:
+    """Bind source semantic frames to graph nodes without importing owners.
+
+    ``source_kernel`` imports this module, so this core-private IM00 seam uses
+    the frozen source/plan structural contract instead of importing that
+    higher layer back into ``contracts.py``.  Every binding is still exact:
+    envelope, owner universe, span evidence, owner, kind and grounding must
+    reach one graph node.
+    """
+
+    _validate_foreground_canonical_source_inputs(
+        source=source,
+        grounded_plan=grounded_plan,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+    )
+    envelope = getattr(source, "envelope", None)
+    owner_universe = getattr(source, "owner_universe", None)
+    evidence_refs = getattr(source, "evidence_refs", None)
+    nuclei = getattr(grounded_plan, "nuclei", None)
+    obligations = getattr(owner_universe, "obligations", None)
+    if (
+        envelope is None
+        or owner_universe is None
+        or type(evidence_refs) is not tuple
+        or type(nuclei) is not tuple
+        or type(obligations) is not tuple
+        or getattr(envelope, "envelope_id", None)
+        != grounded_graph.source_envelope_id
+        or getattr(owner_universe, "source_envelope_id", None)
+        != grounded_graph.source_envelope_id
+        or getattr(owner_universe, "source_version", None)
+        != grounded_graph.source_version
+        or getattr(owner_universe, "obligation_version", None)
+        != grounded_graph.obligation_version
+        or getattr(owner_universe, "owner_universe_digest", None)
+        != grounded_graph.owner_universe_digest
+    ):
+        raise CMEEStage1ContractError(
+            "foreground_scope_source_semantic_plan_binding_invalid"
+        )
+    evidence_by_span = {
+        getattr(value, "source_span_id", None): getattr(
+            value, "evidence_id", None
+        )
+        for value in evidence_refs
+    }
+    if (
+        None in evidence_by_span
+        or None in evidence_by_span.values()
+        or len(evidence_by_span) != len(evidence_refs)
+    ):
+        raise CMEEStage1ContractError(
+            "foreground_scope_source_semantic_plan_binding_invalid"
+        )
+
+    node_qualifiers: dict[str, Tuple[str, ...]] = {}
+    used_node_ids: set[str] = set()
+    for nucleus in nuclei:
+        grounding = _foreground_enum_text(
+            getattr(nucleus, "grounding_kind", "")
+        )
+        if grounding not in _FOREGROUND_SOURCE_NUCLEUS_GROUNDING_EXACT2:
+            continue
+        kind = _foreground_enum_text(getattr(nucleus, "kind", ""))
+        span_ids = getattr(nucleus, "source_span_ids", None)
+        frame = getattr(nucleus, "semantic_frame", None)
+        if (
+            not kind
+            or type(span_ids) is not tuple
+            or not span_ids
+            or any(span_id not in evidence_by_span for span_id in span_ids)
+            or frame is None
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_source_semantic_plan_binding_invalid"
+            )
+        owner_matches = {
+            getattr(value, "meaning_owner_id", None)
+            for value in obligations
+            if getattr(value, "obligation_kind", None)
+            in _FOREGROUND_SOURCE_OWNER_OBLIGATION_KINDS_EXACT5
+            and set(span_ids).issubset(
+                set(getattr(value, "source_span_ids", ()))
+            )
+        }
+        if len(owner_matches) != 1 or None in owner_matches:
+            raise CMEEStage1ContractError(
+                "foreground_scope_source_semantic_plan_binding_invalid"
+            )
+        owner_id = next(iter(owner_matches))
+        expected_evidence_ids = tuple(
+            evidence_by_span[span_id] for span_id in span_ids
+        )
+        matches = tuple(
+            value
+            for value in grounded_graph.nodes
+            if value.node_id not in used_node_ids
+            and value.owner_id == owner_id
+            and _foreground_enum_text(value.node_kind) == kind
+            and _foreground_enum_text(value.grounding_kind) == grounding
+            and value.evidence_ids == expected_evidence_ids
+            and value.epistemic_state is EpistemicState.SOURCE_EXPLICIT
+        )
+        if len(matches) != 1:
+            raise CMEEStage1ContractError(
+                "foreground_scope_source_semantic_plan_binding_invalid"
+            )
+        actor = _foreground_enum_text(getattr(frame, "actor", ""))
+        polarity = _foreground_enum_text(getattr(frame, "polarity", ""))
+        modality = _foreground_enum_text(getattr(frame, "modality", ""))
+        time_scope = _foreground_enum_text(
+            getattr(frame, "time_scope", "")
+        )
+        degree = _foreground_enum_text(getattr(frame, "degree", ""))
+        if (
+            actor not in _FOREGROUND_SOURCE_ACTOR_VALUES
+            or polarity not in _FOREGROUND_SOURCE_POLARITY_VALUES
+            or modality not in _FOREGROUND_SOURCE_MODALITY_VALUES
+            or time_scope not in _FOREGROUND_SOURCE_TIME_SCOPE_VALUES
+            or degree != "source_bounded"
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_source_qualifier_value_invalid"
+            )
+        node = matches[0]
+        used_node_ids.add(node.node_id)
+        node_qualifiers[_graph_object_ref(node)] = (
+            "epistemic:provisional_interpretation",
+            f"actor:{actor}",
+            f"polarity:{polarity}",
+            f"modality:{modality}",
+            f"time_scope:{time_scope}",
+        )
+
+    if not node_qualifiers:
+        raise CMEEStage1ContractError(
+            "foreground_scope_source_semantic_plan_binding_invalid"
+        )
+    return node_qualifiers
+
+
+_FOREGROUND_CANDIDATE_FORBIDDEN_PROMOTIONS_EXACT6 = (
+    "unsupported-cause",
+    "personality-promotion",
+    "hidden-intent-promotion",
+    "diagnosis-promotion",
+    "future-guarantee",
+    "unknown-as-interpretation",
+)
+_FOREGROUND_OBSERVATION_FORBIDDEN_OPERATIONS_EXACT6 = (
+    "invent-cause",
+    "invent-personality",
+    "invent-hidden-intent",
+    "invent-diagnosis",
+    "promote-unknown",
+    "complete-unfinished-meaning",
+)
+_FOREGROUND_DIRECTION_KINDS = frozenset(
+    {"wish", "direction", "desire", "intention", "goal", "help_seeking"}
+)
+_FOREGROUND_BURDEN_KINDS = frozenset(
+    {"constraint", "burden", "fatigue", "anxiety", "hesitation", "block"}
+)
+_FOREGROUND_ACTION_KINDS = frozenset({"action", "attempt"})
+_FOREGROUND_CHANGE_KINDS = frozenset({"change", "bounded_change"})
+_FOREGROUND_EVENT_KINDS = frozenset({"event", "action", "change"})
+_FOREGROUND_RESIDUE_KINDS = frozenset(
+    {"reaction", "residue", "lingering_state", "unfinished", "uncertainty"}
+)
+_FOREGROUND_UNFINISHED_KINDS = frozenset(
+    {"uncertainty", "unfinished", "open_question"}
+)
+_FOREGROUND_OPERATOR_PRIORITY = {
+    RelationOperator.TENSION_WITH: 0,
+    RelationOperator.COEXISTS_WITH: 1,
+    RelationOperator.ACTION_PRECEDES_CHANGE: 2,
+    RelationOperator.TEMPORALLY_PRECEDES: 3,
+    RelationOperator.SOURCE_EXPLICIT_CAUSE: 4,
+    RelationOperator.NO_RELATION_CLAIM: 5,
+}
+_FOREGROUND_RETENTION_PRIORITY = {"required": 0, "should": 1, "optional": 2}
+
+
+def _foreground_direct_shape(
+    node: MeaningNode,
+    nucleus: object,
+) -> Tuple[InterpretationKind, SemanticOperator]:
+    """Derive the exact current Layer-1 direct shape from source metadata."""
+
+    kind = _foreground_enum_text(node.node_kind).lower()
+    frame = getattr(nucleus, "semantic_frame", None)
+    modality = _foreground_enum_text(getattr(frame, "modality", "")).lower()
+    predicate = _foreground_enum_text(
+        getattr(frame, "predicate_kind", "")
+    ).lower()
+    attribute_codes = frozenset(
+        _foreground_enum_text(value)
+        for value in getattr(frame, "attribute_codes", ())
+        if _foreground_enum_text(value)
+    )
+    if (
+        kind in _FOREGROUND_DIRECTION_KINDS
+        or modality in {"wish", "intention"}
+        or predicate == "wish"
+    ):
+        return (
+            InterpretationKind.DIRECT_DIRECTION,
+            SemanticOperator.PRESENT_DIRECTION,
+        )
+    if (
+        kind in _FOREGROUND_CHANGE_KINDS
+        or predicate == "change"
+        or "operator:change" in attribute_codes
+        or "operator:positive_change" in attribute_codes
+    ):
+        return InterpretationKind.DIRECT_STATE, SemanticOperator.PRESENT_CHANGE
+    if (
+        kind in _FOREGROUND_UNFINISHED_KINDS
+        or predicate == "unfinished"
+        or "operator:unfinished" in attribute_codes
+    ):
+        return InterpretationKind.UNFINISHED, SemanticOperator.PRESENT_UNFINISHED
+    if (
+        kind in _FOREGROUND_BURDEN_KINDS
+        or predicate == "constraint"
+        or "operator:constraint" in attribute_codes
+        or "detected_type:limit_signal" in attribute_codes
+        or "detected_type:fear" in attribute_codes
+        or any(
+            value.startswith("source_claim:pressure.")
+            for value in attribute_codes
+        )
+    ):
+        return InterpretationKind.DIRECT_STATE, SemanticOperator.PRESENT_BURDEN
+    if (
+        kind in _FOREGROUND_ACTION_KINDS
+        or predicate == "action"
+        or "operator:action" in attribute_codes
+    ):
+        return (
+            InterpretationKind.DIRECT_STATE,
+            SemanticOperator.PRESENT_ACTUAL_OUTPUT,
+        )
+    if modality == "uncertain" or "operator:uncertainty" in attribute_codes:
+        return InterpretationKind.UNFINISHED, SemanticOperator.PRESENT_UNFINISHED
+    return InterpretationKind.DIRECT_STATE, SemanticOperator.PRESENT_STATE
+
+
+def _foreground_direct_argument_bindings(
+    semantic_ref: str,
+    nucleus: object,
+) -> Tuple[ArgumentBinding, ...]:
+    frame = getattr(nucleus, "semantic_frame", None)
+    actor = _foreground_enum_text(getattr(frame, "actor", "")).lower()
+    modality = _foreground_enum_text(getattr(frame, "modality", "")).lower()
+    values = [ArgumentBinding(ArgumentRole.PRIMARY, semantic_ref)]
+    if actor in {"current_user", "user"} and modality in {
+        "feeling",
+        "wish",
+        "intention",
+        "refusal",
+        "uncertain",
+    }:
+        values.append(ArgumentBinding(ArgumentRole.EXPERIENCER, semantic_ref))
+    return tuple(values)
+
+
+def _foreground_relation_shape(
+    *,
+    edge: MeaningEdge,
+    relation: object,
+    node_by_ref: Mapping[str, MeaningNode],
+    node_meta_by_ref: Mapping[str, object],
+    source_order_by_ref: Mapping[str, int],
+) -> Optional[
+    Tuple[
+        InterpretationKind,
+        SemanticOperator,
+        RelationOperator,
+        Tuple[ArgumentBinding, ...],
+    ]
+]:
+    source_ref = _stage1_node_ref(edge.source_node_id)
+    target_ref = _stage1_node_ref(edge.target_node_id)
+    source_node = node_by_ref[source_ref]
+    target_node = node_by_ref[target_ref]
+    source_shape = _foreground_direct_shape(
+        source_node, node_meta_by_ref[source_ref]
+    )
+    target_shape = _foreground_direct_shape(
+        target_node, node_meta_by_ref[target_ref]
+    )
+    relation_kind = _foreground_enum_text(getattr(relation, "type", ""))
+
+    def symmetric(
+        candidate_kind: InterpretationKind,
+        relation_operator: RelationOperator,
+    ) -> Tuple[
+        InterpretationKind,
+        SemanticOperator,
+        RelationOperator,
+        Tuple[ArgumentBinding, ...],
+    ]:
+        ordered_refs = tuple(
+            sorted(
+                (source_ref, target_ref),
+                key=source_order_by_ref.__getitem__,
+            )
+        )
+        if (
+            len(ordered_refs) != 2
+            or source_order_by_ref[source_ref]
+            == source_order_by_ref[target_ref]
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_meaning_projection_noncanonical"
+            )
+        return (
+            candidate_kind,
+            SemanticOperator.SYNTHESIZE_RELATION,
+            relation_operator,
+            (
+                ArgumentBinding(ArgumentRole.LEFT, ordered_refs[0]),
+                ArgumentBinding(ArgumentRole.RIGHT, ordered_refs[1]),
+            ),
+        )
+
+    if relation_kind == "coexistence":
+        return symmetric(
+            InterpretationKind.COEXISTENCE,
+            RelationOperator.COEXISTS_WITH,
+        )
+    if relation_kind == "contrast":
+        return symmetric(
+            InterpretationKind.TENSION,
+            RelationOperator.TENSION_WITH,
+        )
+    if relation_kind in {
+        "wish_and_constraint",
+        "preserves_despite",
+        "attempt_and_block",
+        "continuation_or_refusal",
+    }:
+        direction_ref: Optional[str] = None
+        burden_ref: Optional[str] = None
+        if (
+            source_shape[0] is InterpretationKind.DIRECT_DIRECTION
+            and target_shape[1] is SemanticOperator.PRESENT_BURDEN
+        ):
+            direction_ref, burden_ref = source_ref, target_ref
+        elif (
+            source_shape[1] is SemanticOperator.PRESENT_BURDEN
+            and target_shape[0] is InterpretationKind.DIRECT_DIRECTION
+        ):
+            direction_ref, burden_ref = target_ref, source_ref
+        if direction_ref is None or burden_ref is None:
+            return None
+        operator = (
+            RelationOperator.COEXISTS_WITH
+            if relation_kind == "wish_and_constraint"
+            else RelationOperator.TENSION_WITH
+        )
+        return (
+            InterpretationKind.DIRECTION_UNDER_BURDEN,
+            SemanticOperator.SYNTHESIZE_RELATION,
+            operator,
+            (
+                ArgumentBinding(ArgumentRole.LEFT, direction_ref),
+                ArgumentBinding(ArgumentRole.RIGHT, burden_ref),
+            ),
+        )
+    if relation_kind == "action_supports_change":
+        if (
+            source_node.node_kind.lower() not in _FOREGROUND_ACTION_KINDS
+            or target_node.node_kind.lower() not in _FOREGROUND_CHANGE_KINDS
+        ):
+            return None
+        return (
+            InterpretationKind.ACTION_THEN_CHANGE_ONCE,
+            SemanticOperator.PRESENT_CHANGE,
+            RelationOperator.ACTION_PRECEDES_CHANGE,
+            (
+                ArgumentBinding(ArgumentRole.ACTION, source_ref),
+                ArgumentBinding(ArgumentRole.CHANGE, target_ref),
+            ),
+        )
+    if relation_kind in {"temporal_before_after", "shift_from_to"}:
+        if (
+            source_node.node_kind.lower() not in _FOREGROUND_EVENT_KINDS
+            or target_node.node_kind.lower() not in _FOREGROUND_RESIDUE_KINDS
+        ):
+            return None
+        return (
+            InterpretationKind.RESIDUE_AFTER_EVENT,
+            SemanticOperator.PRESENT_RESIDUE,
+            RelationOperator.TEMPORALLY_PRECEDES,
+            (
+                ArgumentBinding(ArgumentRole.BEFORE, source_ref),
+                ArgumentBinding(ArgumentRole.AFTER, target_ref),
+            ),
+        )
+    if relation_kind == "user_stated_cause":
+        return (
+            InterpretationKind.SOURCE_STATED_CAUSE,
+            SemanticOperator.SYNTHESIZE_RELATION,
+            RelationOperator.SOURCE_EXPLICIT_CAUSE,
+            (
+                ArgumentBinding(ArgumentRole.CAUSE, source_ref),
+                ArgumentBinding(ArgumentRole.EFFECT, target_ref),
+            ),
+        )
+    return None
+
+
+def _foreground_identified(value: object, identity_field: str) -> object:
+    return replace(
+        value,
+        **{identity_field: recompute_stage1_identity(value)},
+    )
+
+
+def _foreground_expected_layer1(
+    *,
+    source: object,
+    grounded_plan: object,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
+    source_qualifiers_by_node_ref: Mapping[str, Tuple[str, ...]],
+) -> Tuple[
+    Tuple[EmlisInterpretationCandidate, ...],
+    EmlisMeaningField,
+    Tuple[PlannedObservationContribution, ...],
+    Tuple[str, ...],
+    ObservationDepthClass,
+]:
+    binding = _foreground_plan_graph_binding(
+        source=source,
+        grounded_plan=grounded_plan,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+    )
+    node_meta_by_ref = binding["node_meta_by_ref"]
+    edge_meta_by_ref = binding["edge_meta_by_ref"]
+    node_by_ref = binding["node_by_ref"]
+    edge_by_ref = binding["edge_by_ref"]
+    source_order_by_ref = binding["source_order_by_ref"]
+    visible_object_refs = binding["visible_object_refs"]
+    required_node_refs = binding["required_node_refs"]
+    required_edge_refs = binding["required_edge_refs"]
+    obligation_kind_by_owner = {
+        value.meaning_owner_id: value.obligation_kind
+        for value in source.owner_universe.obligations
+    }
+
+    candidate_rows: list[tuple[object, ...]] = []
+    for edge in grounded_graph.edges:
+        edge_ref = _graph_object_ref(edge)
+        if edge_ref not in visible_object_refs:
+            continue
+        required = edge_ref in required_edge_refs
+        shape = _foreground_relation_shape(
+            edge=edge,
+            relation=edge_meta_by_ref[edge_ref],
+            node_by_ref=node_by_ref,
+            node_meta_by_ref=node_meta_by_ref,
+            source_order_by_ref=source_order_by_ref,
+        )
+        if shape is None:
+            if required:
+                raise CMEEStage1ContractError(
+                    "foreground_scope_meaning_projection_noncanonical"
+                )
+            continue
+        candidate_kind, semantic_operator, relation_operator, arguments = shape
+        semantic_refs = tuple(value.semantic_ref for value in arguments)
+        evidence_ids = tuple(
+            dict.fromkeys(
+                (
+                    *(
+                        evidence_id
+                        for semantic_ref in semantic_refs
+                        for evidence_id in node_by_ref[
+                            semantic_ref
+                        ].evidence_ids
+                    ),
+                    *edge.evidence_ids,
+                )
+            )
+        )
+        qualifiers = ["epistemic:provisional_interpretation"]
+        for argument in arguments:
+            source_qualifiers = source_qualifiers_by_node_ref[
+                argument.semantic_ref
+            ]
+            role_prefix = f"{argument.role.value.lower()}_"
+            qualifiers.extend(
+                f"{role_prefix}{value}" for value in source_qualifiers[1:]
+            )
+        relation_meta = edge_meta_by_ref[edge_ref]
+        candidate = EmlisInterpretationCandidate(
+            schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+            candidate_id="",
+            candidate_kind=candidate_kind,
+            claim_domain=EmlisTraceClaimDomain.INTERPRETIVE_OBSERVATION.value,
+            semantic_operator=semantic_operator,
+            argument_bindings=arguments,
+            relation_operator=relation_operator,
+            relation_basis_refs=(edge_ref,),
+            derivation_rule_id=(
+                "cocolon.cmee.v1a.stage1.relation."
+                f"{_foreground_enum_text(getattr(relation_meta, 'type', '')).lower()}.v1"
+            ),
+            semantic_refs=semantic_refs,
+            evidence_refs=tuple(
+                f"evidence:{value}@{grounded_graph.source_version}"
+                for value in evidence_ids
+            ),
+            basis_candidate_refs=(),
+            epistemic_state=(
+                InterpretationEpistemicState.PROVISIONAL_INTERPRETATION
+            ),
+            required_qualifiers=tuple(qualifiers),
+            forbidden_promotions=(
+                _FOREGROUND_CANDIDATE_FORBIDDEN_PROMOTIONS_EXACT6
+            ),
+        )
+        candidate = _foreground_identified(candidate, "candidate_id")
+        retention = _foreground_enum_text(
+            getattr(relation_meta, "retention", "")
+        ).lower()
+        if retention not in _FOREGROUND_RETENTION_PRIORITY or (
+            required and retention != "required"
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_meaning_projection_noncanonical"
+            )
+        candidate_rows.append(
+            (
+                candidate,
+                required,
+                True,
+                obligation_kind_by_owner[edge.owner_id],
+                _FOREGROUND_RETENTION_PRIORITY[retention],
+                source_order_by_ref[edge_ref],
+            )
+        )
+
+    for node in grounded_graph.nodes:
+        node_ref = _graph_object_ref(node)
+        if node_ref not in visible_object_refs or node_ref not in node_meta_by_ref:
+            continue
+        required = node_ref in required_node_refs
+        nucleus = node_meta_by_ref[node_ref]
+        candidate_kind, semantic_operator = _foreground_direct_shape(
+            node, nucleus
+        )
+        candidate = EmlisInterpretationCandidate(
+            schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+            candidate_id="",
+            candidate_kind=candidate_kind,
+            claim_domain=EmlisTraceClaimDomain.INTERPRETIVE_OBSERVATION.value,
+            semantic_operator=semantic_operator,
+            argument_bindings=_foreground_direct_argument_bindings(
+                node_ref, nucleus
+            ),
+            relation_operator=RelationOperator.NO_RELATION_CLAIM,
+            relation_basis_refs=(),
+            derivation_rule_id=(
+                "cocolon.cmee.v1a.stage1.direct."
+                f"{candidate_kind.value.lower()}.v1"
+            ),
+            semantic_refs=(node_ref,),
+            evidence_refs=tuple(
+                f"evidence:{value}@{grounded_graph.source_version}"
+                for value in node.evidence_ids
+            ),
+            basis_candidate_refs=(),
+            epistemic_state=(
+                InterpretationEpistemicState.PROVISIONAL_INTERPRETATION
+            ),
+            required_qualifiers=source_qualifiers_by_node_ref[node_ref],
+            forbidden_promotions=(
+                _FOREGROUND_CANDIDATE_FORBIDDEN_PROMOTIONS_EXACT6
+            ),
+        )
+        candidate = _foreground_identified(candidate, "candidate_id")
+        retention = _foreground_enum_text(
+            getattr(nucleus, "retention", "")
+        ).lower()
+        if retention not in _FOREGROUND_RETENTION_PRIORITY or (
+            required and retention != "required"
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_meaning_projection_noncanonical"
+            )
+        candidate_rows.append(
+            (
+                candidate,
+                required,
+                False,
+                obligation_kind_by_owner[node.owner_id],
+                _FOREGROUND_RETENTION_PRIORITY[retention],
+                source_order_by_ref[node_ref],
+            )
+        )
+
+    candidate_rows.sort(
+        key=lambda value: (
+            0 if value[1] else 1,
+            0 if value[2] else 1,
+            value[4],
+            value[5],
+            _FOREGROUND_OPERATOR_PRIORITY[value[0].relation_operator],
+            value[0].semantic_refs,
+            value[0].candidate_id,
+        )
+    )
+    selected_rows: list[tuple[object, ...]] = []
+    kind_counts: dict[InterpretationKind, int] = {}
+    for value in candidate_rows:
+        candidate = value[0]
+        count = kind_counts.get(candidate.candidate_kind, 0)
+        if count >= _STAGE1_INTERPRETATION_CANDIDATE_KIND_CAP:
+            if value[1]:
+                raise CMEEStage1ContractError(
+                    "foreground_scope_meaning_projection_noncanonical"
+                )
+            continue
+        selected_rows.append(value)
+        kind_counts[candidate.candidate_kind] = count + 1
+    if len(selected_rows) > 16:
+        if any(value[1] for value in selected_rows[16:]):
+            raise CMEEStage1ContractError(
+                "foreground_scope_meaning_projection_noncanonical"
+            )
+        selected_rows = selected_rows[:16]
+    if not selected_rows or not any(value[1] for value in selected_rows):
+        raise CMEEStage1ContractError(
+            "foreground_scope_meaning_projection_noncanonical"
+        )
+    candidates = tuple(value[0] for value in selected_rows)
+    required_candidate_refs = tuple(
+        value[0].candidate_id for value in selected_rows if value[1]
+    )
+
+    grouped: dict[MeaningFieldSlot, list[EmlisInterpretationCandidate]] = {}
+    for candidate in candidates:
+        grouped.setdefault(
+            _stage1_meaning_field_slot_for_candidate(candidate), []
+        ).append(candidate)
+    entries = tuple(
+        MeaningFieldEntry(
+            slot=slot,
+            interpretation_candidate_refs=tuple(
+                value.candidate_id for value in grouped[slot]
+            ),
+            semantic_refs=_stage1_ordered_unique(
+                tuple(
+                    ref
+                    for value in grouped[slot]
+                    for ref in value.semantic_refs
+                )
+            ),
+            evidence_refs=_stage1_ordered_unique(
+                tuple(
+                    ref
+                    for value in grouped[slot]
+                    for ref in value.evidence_refs
+                )
+            ),
+        )
+        for slot in _STAGE1_MEANING_SLOT_ORDER
+        if grouped.get(slot)
+    )
+    disposition_by_owner = {
+        value.meaning_owner_id: value
+        for value in grounded_graph.owner_dispositions
+    }
+    material_unknown_refs = tuple(
+        f"unknown:{disposition_by_owner[owner_id].target_unknown_ref}"
+        f"@{grounded_graph.obligation_version}"
+        for owner_id in parent_plan.visible_unknown_owner_ids
+    )
+    meaning_field = EmlisMeaningField(
+        schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+        meaning_field_id="",
+        grounded_graph_ref=(
+            f"grounded:{grounded_graph.graph_id}"
+            f"@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        ),
+        center_candidate_ref=required_candidate_refs[0],
+        entries=entries,
+        required_candidate_refs=required_candidate_refs,
+        material_unknown_refs=material_unknown_refs,
+    )
+    meaning_field = _foreground_identified(
+        meaning_field, "meaning_field_id"
+    )
+
+    required_rows = [value for value in selected_rows if value[1]]
+    structured_context_kinds = {
+        "EMOTION_CONTEXT",
+        "CATEGORY_CONTEXT",
+        "EMOTION_STRENGTH_CONTEXT",
+        "STRUCTURED_CONTEXT_ATTACHMENT",
+    }
+    optional_rows = [
+        value
+        for value in selected_rows
+        if not value[1] and value[3] not in structured_context_kinds
+    ]
+    contribution_rows = [
+        *required_rows,
+        *(optional_rows[:1] if len(required_rows) == 1 else []),
+    ]
+    contributions: list[PlannedObservationContribution] = []
+    for value in contribution_rows:
+        candidate = value[0]
+        contribution_kind = _stage1_contribution_kind_for_candidate(candidate)
+        contribution = PlannedObservationContribution(
+            schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+            contribution_id="",
+            parent_duty_ref=parent_plan.observation_duty_id,
+            contribution_kind=contribution_kind,
+            interpretation_candidate_refs=(candidate.candidate_id,),
+            semantic_operator=candidate.semantic_operator,
+            argument_bindings=candidate.argument_bindings,
+            relation_operator=candidate.relation_operator,
+            relation_basis_refs=candidate.relation_basis_refs,
+            derivation_rule_id=(
+                "cocolon.cmee.v1a.stage1.layer1."
+                f"{contribution_kind.value.lower()}.v1"
+            ),
+            semantic_refs=candidate.semantic_refs,
+            evidence_refs=candidate.evidence_refs,
+            retention="REQUIRED" if value[1] else "OPTIONAL",
+            semantic_key_version=_STAGE2_OBSERVATION_SEMANTIC_KEY_VERSION,
+            canonical_semantic_key=_stage2_observation_semantic_key(candidate),
+            prerequisite_contribution_refs=(),
+            forbidden_operations=(
+                _FOREGROUND_OBSERVATION_FORBIDDEN_OPERATIONS_EXACT6
+            ),
+        )
+        contributions.append(
+            _foreground_identified(contribution, "contribution_id")
+        )
+    contribution_tuple = tuple(contributions)
+    count = len(contribution_tuple)
+    if count == 1:
+        depth = ObservationDepthClass.FOCUSED
+    elif 2 <= count <= 3:
+        depth = ObservationDepthClass.LAYERED
+    elif 4 <= count <= _STAGE1_LAYER1_OBSERVATION_CAP:
+        depth = ObservationDepthClass.DENSE
+    else:
+        raise CMEEStage1ContractError(
+            "foreground_scope_meaning_projection_noncanonical"
+        )
+    return (
+        candidates,
+        meaning_field,
+        contribution_tuple,
+        tuple(value.contribution_id for value in contribution_tuple),
+        depth,
+    )
+
+
+def _validate_foreground_meaning_projection(
+    *,
+    source: object,
+    grounded_plan: object,
+    grounded_graph: GroundedMeaningGraph,
+    parent_plan: ExperiencePlan,
+    stage1_projection: EmlisStage1Projection,
+) -> None:
+    """Compare only the canonical pre-meaning/Layer-1 projection fields."""
+
+    if type(stage1_projection) is not EmlisStage1Projection:
+        raise CMEEStage1ContractError("foreground_scope_projection_invalid")
+    _validate_foreground_canonical_source_inputs(
+        source=source,
+        grounded_plan=grounded_plan,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+    )
+    source_qualifiers_by_node_ref = (
+        _foreground_source_qualifiers_by_node_ref(
+            source=source,
+            grounded_plan=grounded_plan,
+            grounded_graph=grounded_graph,
+            parent_plan=parent_plan,
+        )
+    )
+    (
+        expected_candidates,
+        expected_meaning_field,
+        expected_contributions,
+        expected_ordered_observation_refs,
+        expected_observation_depth,
+    ) = _foreground_expected_layer1(
+        source=source,
+        grounded_plan=grounded_plan,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+        source_qualifiers_by_node_ref=source_qualifiers_by_node_ref,
+    )
+    expected_graph_ref = (
+        f"grounded:{grounded_graph.graph_id}"
+        f"@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+    )
+    meaning_projection_fields_match = (
+        stage1_projection.schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION
+        and stage1_projection.grounded_graph_ref == expected_graph_ref
+        and stage1_projection.parent_observation_duty_ref
+        == parent_plan.observation_duty_id
+        and stage1_projection.interpretation_candidates
+        == expected_candidates
+        and stage1_projection.meaning_field == expected_meaning_field
+        and stage1_projection.observation_contributions
+        == expected_contributions
+        and stage1_projection.ordered_observation_refs
+        == expected_ordered_observation_refs
+        and stage1_projection.observation_depth_class
+        is expected_observation_depth
+    )
+    if not meaning_projection_fields_match:
+        raise CMEEStage1ContractError(
+            "foreground_scope_meaning_projection_noncanonical"
+        )
+
+
+def _validate_projection_source_qualifiers(
+    *,
+    stage1_projection: EmlisStage1Projection,
+    source_qualifiers_by_node_ref: Mapping[str, Tuple[str, ...]],
+) -> None:
+    for candidate in stage1_projection.interpretation_candidates:
+        if candidate.relation_operator is RelationOperator.NO_RELATION_CLAIM:
+            semantic_refs = tuple(dict.fromkeys(candidate.semantic_refs))
+            if (
+                len(semantic_refs) != 1
+                or semantic_refs[0] not in source_qualifiers_by_node_ref
+            ):
+                raise CMEEStage1ContractError(
+                    "foreground_scope_projection_qualifier_source_mismatch"
+                )
+            expected = source_qualifiers_by_node_ref[semantic_refs[0]]
+        else:
+            expected_values = ["epistemic:provisional_interpretation"]
+            for binding in candidate.argument_bindings:
+                qualifiers = source_qualifiers_by_node_ref.get(
+                    binding.semantic_ref
+                )
+                if qualifiers is None:
+                    raise CMEEStage1ContractError(
+                        "foreground_scope_projection_qualifier_source_mismatch"
+                    )
+                role_prefix = f"{binding.role.value.lower()}_"
+                expected_values.extend(
+                    f"{role_prefix}{value}" for value in qualifiers[1:]
+                )
+            expected = tuple(expected_values)
+        if candidate.required_qualifiers != expected:
+            raise CMEEStage1ContractError(
+                "foreground_scope_projection_qualifier_source_mismatch"
+            )
+
+
+def _validate_foreground_scope_basis_shape(
+    row: ForegroundScopeBasisRow,
+) -> None:
+    if type(row) is not ForegroundScopeBasisRow:
+        raise CMEEStage1ContractError("foreground_scope_basis_row_type_invalid")
+    _validate_stage1_immutable_shape(row)
+    if row.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION:
+        raise CMEEStage1ContractError(
+            "foreground_scope_basis_schema_version_invalid"
+        )
+    if type(row.basis_kind) is not ForegroundScopeBasisKind:
+        raise CMEEStage1ContractError("foreground_scope_basis_kind_invalid")
+    for field_name in _FOREGROUND_SCOPE_TUPLE_FIELDS:
+        _require_canonical_string_set(
+            getattr(row, field_name),
+            code=f"foreground_scope_basis_{field_name}_noncanonical",
+            allow_empty=field_name not in {
+                "scope_object_refs",
+                "source_object_refs",
+                "source_evidence_refs",
+            },
+        )
+    for field_name in ("scope_object_refs", "source_object_refs"):
+        for ref in getattr(row, field_name):
+            validate_version_qualified_ref(
+                ref,
+                expected_types=("node", "edge"),
+            )
+    for ref in row.source_evidence_refs:
+        validate_version_qualified_ref(ref, expected_types=("evidence",))
+    if any(
+        not ref.startswith("contribution-")
+        for ref in row.layer1_required_object_refs
+    ):
+        raise CMEEStage1ContractError(
+            "foreground_scope_basis_layer1_ref_namespace_invalid"
+        )
+    for ref in row.source_connected_relation_refs:
+        validate_version_qualified_ref(ref, expected_types=("edge",))
+    for ref in row.material_unknown_refs:
+        _validate_typed_key(
+            ref,
+            allowed_prefixes=("unknown:",),
+            code="foreground_scope_basis_unknown_ref_namespace_invalid",
+        )
+    for ref in row.required_qualifier_refs:
+        _validate_typed_key(
+            ref,
+            allowed_prefixes=_QUALIFIER_PREFIXES,
+            code="foreground_scope_basis_qualifier_ref_namespace_invalid",
+        )
+    for field_name, prefixes in (
+        _FOREGROUND_SCOPE_COMPATIBILITY_FIELD_PREFIXES.items()
+    ):
+        for ref in getattr(row, field_name):
+            _validate_typed_key(
+                ref,
+                allowed_prefixes=prefixes,
+                code=f"foreground_scope_basis_{field_name}_namespace_invalid",
+            )
+
+
+def foreground_scope_basis_row_ref(row: ForegroundScopeBasisRow) -> str:
+    """Return a trace-only canonical ref; callers must never rank by it."""
+
+    _validate_foreground_scope_basis_shape(row)
+    digest = hashlib.sha256(stage1_canonical_json_bytes(row)).hexdigest()
+    return (
+        f"foreground-scope-basis:{digest}"
+        f"@{_FOREGROUND_SCOPE_BASIS_REF_VERSION}"
+    )
+
+
+def validate_foreground_scope_basis_row(
+    row: ForegroundScopeBasisRow,
+    *,
+    source: object,
+    grounded_plan: object,
+    grounded_graph: GroundedMeaningGraph,
+    stage1_projection: EmlisStage1Projection,
+    parent_plan: ExperiencePlan,
+) -> None:
+    """Validate a basis by deriving provenance from actual typed owners."""
+
+    _validate_foreground_scope_basis_shape(row)
+    if type(grounded_graph) is not GroundedMeaningGraph:
+        raise CMEEStage1ContractError("foreground_scope_grounded_graph_invalid")
+    if type(stage1_projection) is not EmlisStage1Projection:
+        raise CMEEStage1ContractError("foreground_scope_projection_invalid")
+    source_qualifiers_by_node_ref = (
+        _foreground_source_qualifiers_by_node_ref(
+            source=source,
+            grounded_plan=grounded_plan,
+            grounded_graph=grounded_graph,
+            parent_plan=parent_plan,
+        )
+    )
+    _validate_projection_source_qualifiers(
+        stage1_projection=stage1_projection,
+        source_qualifiers_by_node_ref=source_qualifiers_by_node_ref,
+    )
+    _validate_foreground_meaning_projection(
+        source=source,
+        grounded_plan=grounded_plan,
+        grounded_graph=grounded_graph,
+        parent_plan=parent_plan,
+        stage1_projection=stage1_projection,
+    )
+    expected_graph_ref = (
+        f"grounded:{grounded_graph.graph_id}"
+        f"@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+    )
+    if stage1_projection.grounded_graph_ref != expected_graph_ref:
+        raise CMEEStage1ContractError(
+            "foreground_scope_projection_graph_ref_mismatch"
+        )
+
+    graph_objects = {
+        **{_graph_object_ref(value): value for value in grounded_graph.nodes},
+        **{_graph_object_ref(value): value for value in grounded_graph.edges},
+    }
+    if any(ref not in graph_objects for ref in row.source_object_refs):
+        raise CMEEStage1ContractError(
+            "foreground_scope_basis_source_object_refs_unbound"
+        )
+    if not set(row.scope_object_refs).issubset(row.source_object_refs):
+        raise CMEEStage1ContractError(
+            "foreground_scope_basis_scope_object_refs_unbound"
+        )
+    expected_evidence = {
+        evidence_ref
+        for ref in row.source_object_refs
+        for evidence_ref in _graph_evidence_refs(
+            graph_objects[ref],
+            source_version=grounded_graph.source_version,
+        )
+    }
+    expected_source_objects: Optional[set[str]] = None
+    contributions = {
+        value.contribution_id: value
+        for value in stage1_projection.observation_contributions
+    }
+    dedicated_fields = {
+        "layer1_required_object_refs": row.layer1_required_object_refs,
+        "required_retention_duty_refs": row.required_retention_duty_refs,
+        "source_connected_relation_refs": row.source_connected_relation_refs,
+        "material_unknown_refs": row.material_unknown_refs,
+        "required_qualifier_refs": row.required_qualifier_refs,
+    }
+
+    if row.basis_kind is ForegroundScopeBasisKind.SOURCE_EXPLICIT_TARGET_TOPIC_OR_SCOPE:
+        if any(dedicated_fields.values()):
+            raise CMEEStage1ContractError(
+                "foreground_scope_basis_source_explicit_mixed_basis_invalid"
+            )
+        required_owner_ids = set(grounded_graph.required_owner_refs)
+        required_visible_claim_ids = {
+            claim_id
+            for disposition in grounded_graph.owner_dispositions
+            if disposition.meaning_owner_id in required_owner_ids
+            and disposition.owner_class is OwnerClass.REQUIRED
+            and disposition.visible_authority
+            is VisibleAuthority.SOURCE_EXPLICIT
+            and disposition.source_owner_disposition
+            is SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
+            for claim_id in disposition.visible_claim_refs
+        }
+        target_topic_scope_refs = {
+            ref
+            for ref, value in graph_objects.items()
+            if type(value) is MeaningNode
+            and value.owner_id in required_owner_ids
+            and value.node_id in required_visible_claim_ids
+        }
+        expected_source_objects = target_topic_scope_refs
+        if (
+            not expected_source_objects
+            or any(
+                type(graph_objects.get(ref)) is not MeaningNode
+                or graph_objects[ref].epistemic_state
+                is not EpistemicState.SOURCE_EXPLICIT
+                for ref in expected_source_objects
+            )
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_basis_source_explicit_target_role_unbound"
+            )
+    elif row.basis_kind is ForegroundScopeBasisKind.LAYER1_REQUIRED_OBSERVATION_OBJECT:
+        if not row.layer1_required_object_refs:
+            raise CMEEStage1ContractError(
+                "foreground_scope_basis_layer1_required_object_missing"
+            )
+        if any(
+            ref not in contributions or contributions[ref].retention != "REQUIRED"
+            for ref in row.layer1_required_object_refs
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_basis_layer1_required_object_unbound"
+            )
+        if any(
+            values
+            for name, values in dedicated_fields.items()
+            if name != "layer1_required_object_refs"
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_basis_layer1_mixed_basis_invalid"
+            )
+        selected = tuple(
+            contributions[ref] for ref in row.layer1_required_object_refs
+        )
+        expected_source_objects = {
+            source_ref for value in selected for source_ref in value.semantic_refs
+        }
+        expected_evidence = {
+            evidence_ref for value in selected for evidence_ref in value.evidence_refs
+        }
+    elif row.basis_kind is ForegroundScopeBasisKind.EXISTING_REQUIRED_RETENTION_DUTY:
+        if not row.required_retention_duty_refs:
+            raise CMEEStage1ContractError(
+                "foreground_scope_basis_retention_duty_missing"
+            )
+        selected = tuple(
+            value
+            for value in contributions.values()
+            if value.retention == "REQUIRED"
+            and value.parent_duty_ref in row.required_retention_duty_refs
+        )
+        if not selected or {
+            value.parent_duty_ref for value in selected
+        } != set(row.required_retention_duty_refs):
+            raise CMEEStage1ContractError(
+                "foreground_scope_basis_retention_duty_unbound"
+            )
+        if any(
+            values
+            for name, values in dedicated_fields.items()
+            if name != "required_retention_duty_refs"
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_basis_retention_mixed_basis_invalid"
+            )
+        expected_source_objects = {
+            source_ref for value in selected for source_ref in value.semantic_refs
+        }
+        expected_evidence = {
+            evidence_ref for value in selected for evidence_ref in value.evidence_refs
+        }
+    elif row.basis_kind is ForegroundScopeBasisKind.SOURCE_CONNECTED_RELATION:
+        if not row.source_connected_relation_refs:
+            raise CMEEStage1ContractError(
+                "foreground_scope_basis_source_connected_relation_missing"
+            )
+        selected_edges = tuple(
+            graph_objects.get(ref) for ref in row.source_connected_relation_refs
+        )
+        if any(type(value) is not MeaningEdge for value in selected_edges):
+            raise CMEEStage1ContractError(
+                "foreground_scope_basis_source_connected_relation_unbound"
+            )
+        if any(
+            value.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
+            or _foreground_enum_text(value.grounding_kind)
+            != "user_stated_relation"
+            or not value.evidence_ids
+            or not any(
+                disposition.meaning_owner_id == value.owner_id
+                and disposition.visible_authority
+                is VisibleAuthority.SOURCE_EXPLICIT
+                and disposition.source_owner_disposition
+                is SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
+                and value.edge_id in disposition.visible_claim_refs
+                for disposition in grounded_graph.owner_dispositions
+            )
+            for value in selected_edges
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_basis_source_connected_relation_not_source_explicit"
+            )
+        try:
+            tuple(
+                ForegroundScopeRelationKind(value.relation)
+                for value in selected_edges
+            )
+        except ValueError:
+            raise CMEEStage1ContractError(
+                "foreground_scope_basis_source_connected_relation_kind_invalid"
+            ) from None
+        if any(
+            values
+            for name, values in dedicated_fields.items()
+            if name != "source_connected_relation_refs"
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_basis_relation_mixed_basis_invalid"
+            )
+        expected_source_objects = {
+            _graph_object_ref(node)
+            for edge in selected_edges
+            for node in grounded_graph.nodes
+            if node.node_id in {edge.source_node_id, edge.target_node_id}
+        }
+        if len(expected_source_objects) < 2:
+            raise CMEEStage1ContractError(
+                "foreground_scope_basis_relation_endpoint_missing"
+            )
+        expected_evidence = {
+            evidence_ref
+            for value in (
+                *selected_edges,
+                *(graph_objects[ref] for ref in expected_source_objects),
+            )
+            for evidence_ref in _graph_evidence_refs(
+                value,
+                source_version=grounded_graph.source_version,
+            )
+        }
+    else:
+        material_unknown_arm = bool(row.material_unknown_refs)
+        required_qualifier_arm = bool(row.required_qualifier_refs)
+        if material_unknown_arm == required_qualifier_arm:
+            raise CMEEStage1ContractError(
+                "foreground_scope_basis_unknown_or_qualifier_missing"
+            )
+        if (
+            row.layer1_required_object_refs
+            or row.required_retention_duty_refs
+            or row.source_connected_relation_refs
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_basis_unknown_or_qualifier_mixed_basis_invalid"
+            )
+        if required_qualifier_arm:
+            if any(
+                type(graph_objects.get(ref)) is not MeaningNode
+                or ref not in source_qualifiers_by_node_ref
+                for ref in row.source_object_refs
+            ):
+                raise CMEEStage1ContractError(
+                    "foreground_scope_basis_required_qualifier_source_missing"
+                )
+            qualifier_candidate_matches = tuple(
+                candidate
+                for candidate in stage1_projection.interpretation_candidates
+                if set(candidate.semantic_refs) == set(row.source_object_refs)
+                and set(candidate.required_qualifiers)
+                == set(row.required_qualifier_refs)
+            )
+            if not qualifier_candidate_matches:
+                raise CMEEStage1ContractError(
+                    "foreground_scope_basis_required_qualifier_source_mismatch"
+                )
+            expected_source_objects = set(row.source_object_refs)
+            expected_evidence = {
+                evidence_ref
+                for ref in expected_source_objects
+                for evidence_ref in _graph_evidence_refs(
+                    graph_objects[ref],
+                    source_version=grounded_graph.source_version,
+                )
+            }
+        else:
+            expected_material_unknown_refs = set(
+                _stage1_expected_material_unknown_refs(
+                    grounded_graph,
+                    parent_plan,
+                )
+            )
+            if not set(row.material_unknown_refs).issubset(
+                expected_material_unknown_refs
+            ):
+                raise CMEEStage1ContractError(
+                    "foreground_scope_basis_material_unknown_unbound"
+                )
+            unknown_source_objects = {
+                (
+                    f"node:{disposition.target_unknown_ref}"
+                    f"@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+                )
+                for disposition in grounded_graph.owner_dispositions
+                if (
+                    disposition.target_unknown_ref is not None
+                    and (
+                        f"unknown:{disposition.target_unknown_ref}"
+                        f"@{grounded_graph.obligation_version}"
+                    )
+                    in row.material_unknown_refs
+                )
+            }
+            expected_source_objects = unknown_source_objects
+            if not expected_source_objects:
+                raise CMEEStage1ContractError(
+                    "foreground_scope_basis_unknown_or_qualifier_source_missing"
+                )
+            expected_evidence = {
+                evidence_ref
+                for ref in expected_source_objects
+                for evidence_ref in _graph_evidence_refs(
+                    graph_objects[ref],
+                    source_version=grounded_graph.source_version,
+                )
+            }
+
+    if expected_source_objects is not None and set(row.source_object_refs) != expected_source_objects:
+        raise CMEEStage1ContractError(
+            "foreground_scope_basis_source_object_reachability_mismatch"
+        )
+    if expected_source_objects is not None and set(row.scope_object_refs) != expected_source_objects:
+        raise CMEEStage1ContractError(
+            "foreground_scope_basis_scope_object_reachability_mismatch"
+        )
+    if set(row.source_evidence_refs) != expected_evidence:
+        raise CMEEStage1ContractError(
+            "foreground_scope_basis_source_evidence_reachability_mismatch"
+        )
+
+    expected_owner_refs = tuple(
+        sorted(
+            {
+                f"owner:{graph_objects[ref].owner_id}"
+                f"@{grounded_graph.obligation_version}"
+                for ref in row.source_object_refs
+            }
+        )
+    )
+    if row.owner_refs != expected_owner_refs:
+        raise CMEEStage1ContractError(
+            "foreground_scope_basis_owner_refs_unbound"
+        )
+    expected_epistemic_refs = tuple(
+        sorted(
+            {
+                f"epistemic-state:{graph_objects[ref].epistemic_state.value.lower()}"
+                f"@{_FOREGROUND_SCOPE_BASIS_REF_VERSION}"
+                for ref in row.source_object_refs
+            }
+        )
+    )
+    if row.epistemic_state_refs != expected_epistemic_refs:
+        raise CMEEStage1ContractError(
+            "foreground_scope_basis_epistemic_state_refs_unbound"
+        )
+    source_qualifier_universe = {
+        qualifier
+        for ref in row.source_object_refs
+        for qualifier in source_qualifiers_by_node_ref.get(ref, ())
+    }
+    compatibility_sources = {
+        "world_refs": set(),
+        "time_refs": {
+            value
+            for value in source_qualifier_universe
+            if value.startswith(("time:", "time_scope:"))
+        },
+        "aspect_refs": set(),
+        "modality_refs": {
+            value
+            for value in source_qualifier_universe
+            if value.startswith("modality:")
+        },
+        "polarity_refs": {
+            value
+            for value in source_qualifier_universe
+            if value.startswith("polarity:")
+        },
+        "scope_refs": (
+            {"scope:source_bounded"}
+            if any(
+                ref in source_qualifiers_by_node_ref
+                for ref in row.source_object_refs
+            )
+            else set()
+        ),
+    }
+    for field_name, expected in compatibility_sources.items():
+        if set(getattr(row, field_name)) != expected:
+            raise CMEEStage1ContractError(
+                f"foreground_scope_basis_{field_name}_unbound"
+            )
+
+
+def _foreground_scope_identity_payload(scope: ForegroundScope) -> Mapping[str, Any]:
+    return {
+        row.name: getattr(scope, row.name)
+        for row in dataclass_fields(scope)
+        if row.name != "scope_id"
+    }
+
+
+def foreground_scope_id(scope: ForegroundScope) -> str:
+    if type(scope) is not ForegroundScope:
+        raise CMEEStage1ContractError("foreground_scope_type_invalid")
+    digest = hashlib.sha256(
+        stage1_canonical_json_bytes(_foreground_scope_identity_payload(scope))
+    ).hexdigest()
+    return f"foreground-scope:{digest}@{_FOREGROUND_SCOPE_REF_VERSION}"
+
+
+def validate_foreground_scope(
+    scope: ForegroundScope,
+    *,
+    basis_rows: Sequence[ForegroundScopeBasisRow],
+    source: object,
+    grounded_plan: object,
+    grounded_graph: GroundedMeaningGraph,
+    stage1_projection: EmlisStage1Projection,
+    parent_plan: ExperiencePlan,
+) -> None:
+    if type(scope) is not ForegroundScope:
+        raise CMEEStage1ContractError("foreground_scope_type_invalid")
+    _validate_stage1_immutable_shape(scope)
+    if scope.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION:
+        raise CMEEStage1ContractError("foreground_scope_schema_version_invalid")
+    for field_name in _STAGE1_TUPLE_FIELDS[ForegroundScope]:
+        _require_canonical_string_set(
+            getattr(scope, field_name),
+            code=f"foreground_scope_{field_name}_noncanonical",
+            allow_empty=field_name not in {
+                "integrated_scope_object_refs",
+                "basis_row_refs",
+                "source_evidence_refs",
+            },
+        )
+    rows = tuple(basis_rows)
+    if len(rows) != 1:
+        raise CMEEStage1ContractError(
+            "foreground_scope_im00_multi_basis_union_deferred"
+        )
+    for row in rows:
+        validate_foreground_scope_basis_row(
+            row,
+            source=source,
+            grounded_plan=grounded_plan,
+            grounded_graph=grounded_graph,
+            stage1_projection=stage1_projection,
+            parent_plan=parent_plan,
+        )
+    expected = {
+        "integrated_scope_object_refs": tuple(
+            sorted({ref for row in rows for ref in row.scope_object_refs})
+        ),
+        "basis_row_refs": tuple(sorted(foreground_scope_basis_row_ref(row) for row in rows)),
+        "source_connected_relation_refs": tuple(
+            sorted({ref for row in rows for ref in row.source_connected_relation_refs})
+        ),
+        "required_retention_duty_refs": tuple(
+            sorted({ref for row in rows for ref in row.required_retention_duty_refs})
+        ),
+        "material_unknown_refs": tuple(
+            sorted({ref for row in rows for ref in row.material_unknown_refs})
+        ),
+        "required_qualifier_refs": tuple(
+            sorted({ref for row in rows for ref in row.required_qualifier_refs})
+        ),
+        "source_evidence_refs": tuple(
+            sorted({ref for row in rows for ref in row.source_evidence_refs})
+        ),
+    }
+    if any(getattr(scope, name) != values for name, values in expected.items()):
+        raise CMEEStage1ContractError("foreground_scope_canonical_union_mismatch")
+    if scope.scope_id != foreground_scope_id(scope):
+        raise CMEEStage1ContractError("foreground_scope_id_mismatch")
+
+
+def validate_foreground_scope_derivation(
+    derivation: ForegroundScopeDerivation,
+    *,
+    basis_rows: Sequence[ForegroundScopeBasisRow],
+    source: object,
+    grounded_plan: object,
+    grounded_graph: GroundedMeaningGraph,
+    stage1_projection: EmlisStage1Projection,
+    parent_plan: ExperiencePlan,
+) -> None:
+    if type(derivation) is not ForegroundScopeDerivation:
+        raise CMEEStage1ContractError("foreground_scope_derivation_type_invalid")
+    _validate_stage1_immutable_shape(derivation)
+    if derivation.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION:
+        raise CMEEStage1ContractError(
+            "foreground_scope_derivation_schema_version_invalid"
+        )
+    if type(derivation.state) is not ForegroundScopeDerivationState:
+        raise CMEEStage1ContractError("foreground_scope_derivation_state_invalid")
+    for field_name in _STAGE1_TUPLE_FIELDS[ForegroundScopeDerivation]:
+        _require_canonical_string_set(
+            getattr(derivation, field_name),
+            code=f"foreground_scope_derivation_{field_name}_noncanonical",
+        )
+    state = derivation.state
+    if state is not ForegroundScopeDerivationState.FOREGROUND_SCOPE_AVAILABLE:
+        raise CMEEStage1ContractError(
+            "foreground_scope_nonavailable_derivation_deferred_to_im01"
+        )
+    if type(derivation.foreground_scope) is ForegroundScope:
+        validate_foreground_scope(
+            derivation.foreground_scope,
+            basis_rows=basis_rows,
+            source=source,
+            grounded_plan=grounded_plan,
+            grounded_graph=grounded_graph,
+            stage1_projection=stage1_projection,
+            parent_plan=parent_plan,
+        )
+    valid = (
+        type(derivation.foreground_scope) is ForegroundScope
+        and derivation.retained_foreground_source_object_refs
+        == derivation.foreground_scope.integrated_scope_object_refs
+        and not derivation.unresolved_scope_refs
+        and not derivation.missing_structure_refs
+        and derivation.derivation_evidence_refs
+        == derivation.foreground_scope.source_evidence_refs
+    )
+    if not valid:
+        raise CMEEStage1ContractError(
+            "foreground_scope_derivation_state_cardinality_mismatch"
+        )
+
+
+def _validate_meaning_component_semantic_key(
+    value: MeaningComponentSemanticKey,
+) -> None:
+    if type(value) is not MeaningComponentSemanticKey:
+        raise CMEEStage1ContractError(
+            "meaning_component_semantic_key_type_invalid"
+        )
+    _validate_stage1_immutable_shape(value)
+    for field_name, prefixes in (
+        ("typed_predicate_key", ("predicate:",)),
+        ("semantic_kind_key", ("semantic-kind:",)),
+        ("owner_key", ("owner:",)),
+        ("scope_key", ("scope:",)),
+        ("role_key", ("role:",)),
+    ):
+        _validate_typed_key(
+            getattr(value, field_name),
+            allowed_prefixes=prefixes,
+            code=f"meaning_component_semantic_key_{field_name}_invalid",
+        )
+
+
+_MEANING_SIGNATURE_FIXED_KEYS_BY_FIELD = {
+    "relation_direction_keys": frozenset(
+        f"relation:{value.value}" for value in ForegroundScopeRelationKind
+    ),
+    "temporal_state_keys": frozenset(
+        f"time:{value}" for value in _FOREGROUND_SOURCE_TIME_SCOPE_VALUES
+    ),
+    "resolution_treatment_keys": frozenset(
+        {"resolution:resolved", "resolution:unresolved"}
+    ),
+    "world_or_owner_distinction_keys": frozenset(
+        {
+            "owner:other_actor",
+            "owner:unknown",
+            "world:internal",
+            "world:external",
+            "world:relationship",
+            "world:unknown",
+        }
+    ),
+    "modality_polarity_or_limitation_keys": frozenset(
+        {
+            "limitation:not_generalized",
+            *(f"modality:{value}" for value in _FOREGROUND_SOURCE_MODALITY_VALUES),
+            *(f"polarity:{value}" for value in _FOREGROUND_SOURCE_POLARITY_VALUES),
+            "scope:bounded",
+        }
+    ),
+    "episodicity_boundary_keys": frozenset(
+        {"episodicity:general_pattern", "episodicity:one_off"}
+    ),
+    "qualifier_keys": frozenset(
+        {"qualifier:not_generalized", "qualifier:unknown_preserved"}
+    ),
+}
+_MEANING_SIGNATURE_COUNTERFACTUAL_KEYS_BY_CODE = {
+    WholeReadingConsequenceCode.INPUT_CENTER_CHANGED: {
+        "input_center_keys": frozenset(),
+    },
+    WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED: {
+        "component_role_keys": frozenset(),
+        "relation_direction_keys": (
+            _MEANING_SIGNATURE_FIXED_KEYS_BY_FIELD[
+                "relation_direction_keys"
+            ]
+        ),
+    },
+    WholeReadingConsequenceCode.TEMPORAL_FLOW_CHANGED: {
+        "temporal_state_keys": (
+            _MEANING_SIGNATURE_FIXED_KEYS_BY_FIELD["temporal_state_keys"]
+        ),
+    },
+    WholeReadingConsequenceCode.RESOLUTION_TREATMENT_CHANGED: {
+        "resolution_treatment_keys": (
+            _MEANING_SIGNATURE_FIXED_KEYS_BY_FIELD[
+                "resolution_treatment_keys"
+            ]
+        ),
+    },
+    WholeReadingConsequenceCode.WORLD_OR_OWNER_DISTINCTION_CHANGED: {
+        "world_or_owner_distinction_keys": (
+            _MEANING_SIGNATURE_FIXED_KEYS_BY_FIELD[
+                "world_or_owner_distinction_keys"
+            ]
+        ),
+    },
+    WholeReadingConsequenceCode.MODALITY_POLARITY_OR_LIMITATION_CHANGED: {
+        "modality_polarity_or_limitation_keys": (
+            _MEANING_SIGNATURE_FIXED_KEYS_BY_FIELD[
+                "modality_polarity_or_limitation_keys"
+            ]
+        ),
+        "qualifier_keys": _MEANING_SIGNATURE_FIXED_KEYS_BY_FIELD[
+            "qualifier_keys"
+        ],
+    },
+    WholeReadingConsequenceCode.EPISODICITY_BOUNDARY_CHANGED: {
+        "episodicity_boundary_keys": (
+            _MEANING_SIGNATURE_FIXED_KEYS_BY_FIELD[
+                "episodicity_boundary_keys"
+            ]
+        ),
+    },
+}
+
+
+def _meaning_semantic_signature_profiles(
+    *,
+    foreground_scope: ForegroundScope,
+    source: object,
+    grounded_plan: object,
+    grounded_graph: GroundedMeaningGraph,
+    stage1_projection: EmlisStage1Projection,
+    parent_plan: ExperiencePlan,
+) -> Tuple[
+    Tuple[
+        Mapping[str, Tuple[str, ...]],
+        Tuple[MeaningComponentSemanticKey, ...],
+    ],
+    ...,
+]:
+    """Build candidate-exact semantic profiles from canonical source frames."""
+
+    node_by_ref = {
+        _graph_object_ref(value): value for value in grounded_graph.nodes
+    }
+    edge_by_ref = {
+        _graph_object_ref(value): value for value in grounded_graph.edges
+    }
+    source_qualifiers_by_node_ref = (
+        _foreground_source_qualifiers_by_node_ref(
+            source=source,
+            grounded_plan=grounded_plan,
+            grounded_graph=grounded_graph,
+            parent_plan=parent_plan,
+        )
+    )
+    _validate_projection_source_qualifiers(
+        stage1_projection=stage1_projection,
+        source_qualifiers_by_node_ref=source_qualifiers_by_node_ref,
+    )
+    scoped_node_refs = {
+        ref
+        for ref in foreground_scope.integrated_scope_object_refs
+        if ref in node_by_ref
+    }
+    for ref in foreground_scope.source_connected_relation_refs:
+        edge = next(
+            (
+                value
+                for value in grounded_graph.edges
+                if _graph_object_ref(value) == ref
+            ),
+            None,
+        )
+        if edge is not None:
+            scoped_node_refs.update(
+                candidate_ref
+                for candidate_ref, node in node_by_ref.items()
+                if node.node_id in {edge.source_node_id, edge.target_node_id}
+            )
+    if not scoped_node_refs:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_scope_node_missing"
+        )
+    if any(
+        node_by_ref[ref].node_kind not in _GROUNDED_MEANING_NODE_KIND_EXACT14
+        for ref in scoped_node_refs
+    ):
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_node_kind_invalid"
+        )
+
+    expected_relation_refs = set(
+        foreground_scope.source_connected_relation_refs
+    )
+    connected_candidates = tuple(
+        candidate
+        for candidate in stage1_projection.interpretation_candidates
+        if candidate.semantic_refs
+        and set(candidate.semantic_refs).issubset(scoped_node_refs)
+        and set(candidate.relation_basis_refs).issubset(
+            expected_relation_refs
+        )
+    )
+    profiles: list[
+        tuple[
+            Mapping[str, Tuple[str, ...]],
+            Tuple[MeaningComponentSemanticKey, ...],
+        ]
+    ] = []
+    for candidate in connected_candidates:
+        components: set[MeaningComponentSemanticKey] = set()
+        temporal_keys: set[str] = set()
+        modality_keys: set[str] = {"scope:bounded"}
+        owner_keys: set[str] = set()
+        for binding in candidate.argument_bindings:
+            qualifiers = source_qualifiers_by_node_ref.get(
+                binding.semantic_ref
+            )
+            if qualifiers is None:
+                raise CMEEStage1ContractError(
+                    "meaning_semantic_signature_source_qualifier_missing"
+                )
+            qualifier_values = dict(
+                value.split(":", 1) for value in qualifiers[1:]
+            )
+            node = node_by_ref[binding.semantic_ref]
+            role_key = f"role:{binding.role.value.lower()}"
+            owner_key = f"owner:{qualifier_values['actor']}"
+            owner_keys.add(owner_key)
+            temporal_keys.add(f"time:{qualifier_values['time_scope']}")
+            modality_keys.update(
+                {
+                    f"modality:{qualifier_values['modality']}",
+                    f"polarity:{qualifier_values['polarity']}",
+                }
+            )
+            components.add(
+                MeaningComponentSemanticKey(
+                    typed_predicate_key=(
+                        "predicate:"
+                        f"{candidate.semantic_operator.value.lower()}"
+                    ),
+                    semantic_kind_key=(
+                        f"semantic-kind:{node.node_kind.lower()}"
+                    ),
+                    owner_key=owner_key,
+                    scope_key="scope:source_bounded",
+                    role_key=role_key,
+                )
+            )
+        if not components:
+            continue
+        canonical_components = tuple(
+            sorted(components, key=stage1_canonical_json_bytes)
+        )
+        material_unknown_present = bool(
+            foreground_scope.material_unknown_refs
+        )
+        world_or_owner_keys = set(owner_keys)
+        resolution_keys: set[str] = set()
+        qualifier_keys = {
+            "qualifier:not_generalized",
+            *(
+                f"qualifier:{value.replace(':', '=', 1)}"
+                for value in candidate.required_qualifiers
+            ),
+        }
+        if material_unknown_present:
+            world_or_owner_keys.add("world:unknown")
+            resolution_keys.add("resolution:unresolved")
+            qualifier_keys.add("qualifier:unknown_preserved")
+        relation_keys = {
+            f"relation:{edge_by_ref[ref].relation}"
+            for ref in candidate.relation_basis_refs
+            if ref in edge_by_ref
+            and edge_by_ref[ref].relation
+            in {value.value for value in ForegroundScopeRelationKind}
+        }
+        first_binding = candidate.argument_bindings[0]
+        profile = {
+            "input_center_keys": (
+                f"center:{node_by_ref[first_binding.semantic_ref].node_kind.lower()}",
+            ),
+            "component_role_keys": tuple(
+                sorted({value.role_key for value in canonical_components})
+            ),
+            "relation_direction_keys": tuple(sorted(relation_keys)),
+            "epistemic_state_keys": tuple(
+                sorted(
+                    {
+                        f"epistemic:{node_by_ref[ref].epistemic_state.value.lower()}"
+                        for ref in candidate.semantic_refs
+                    }
+                )
+            ),
+            "temporal_state_keys": tuple(sorted(temporal_keys)),
+            "resolution_treatment_keys": tuple(
+                sorted(resolution_keys)
+            ),
+            "world_or_owner_distinction_keys": tuple(
+                sorted(world_or_owner_keys)
+            ),
+            "modality_polarity_or_limitation_keys": tuple(
+                sorted(modality_keys)
+            ),
+            "episodicity_boundary_keys": (),
+            "qualifier_keys": tuple(sorted(qualifier_keys)),
+        }
+        candidate_profile = (
+            profile,
+            canonical_components,
+        )
+        if candidate_profile not in profiles:
+            profiles.append(candidate_profile)
+    if not profiles:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_source_component_missing"
+        )
+    return tuple(profiles)
+
+
+def validate_meaning_semantic_signature(
+    signature: MeaningSemanticSignature,
+    *,
+    foreground_scope: ForegroundScope,
+    basis_rows: Sequence[ForegroundScopeBasisRow],
+    source: object,
+    grounded_plan: object,
+    grounded_graph: GroundedMeaningGraph,
+    stage1_projection: EmlisStage1Projection,
+    parent_plan: ExperiencePlan,
+) -> None:
+    if type(signature) is not MeaningSemanticSignature:
+        raise CMEEStage1ContractError("meaning_semantic_signature_type_invalid")
+    _validate_stage1_immutable_shape(signature)
+    if signature.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_schema_version_invalid"
+        )
+    if type(signature.reading_operation) is not MeaningReadingOperation:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_reading_operation_invalid"
+        )
+    validate_foreground_scope(
+        foreground_scope,
+        basis_rows=basis_rows,
+        source=source,
+        grounded_plan=grounded_plan,
+        grounded_graph=grounded_graph,
+        stage1_projection=stage1_projection,
+        parent_plan=parent_plan,
+    )
+    profiles = _meaning_semantic_signature_profiles(
+        foreground_scope=foreground_scope,
+        source=source,
+        grounded_plan=grounded_plan,
+        grounded_graph=grounded_graph,
+        stage1_projection=stage1_projection,
+        parent_plan=parent_plan,
+    )
+    for field_name, prefixes in _SEMANTIC_SIGNATURE_PREFIXES_BY_FIELD.items():
+        values = _require_canonical_string_set(
+            getattr(signature, field_name),
+            code=f"meaning_semantic_signature_{field_name}_noncanonical",
+        )
+        for value in values:
+            _validate_typed_key(
+                value,
+                allowed_prefixes=prefixes,
+                code=f"meaning_semantic_signature_{field_name}_invalid",
+            )
+    components = signature.component_semantic_keys
+    if (
+        len(components) != len(set(components))
+        or components
+        != tuple(sorted(components, key=stage1_canonical_json_bytes))
+    ):
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_component_semantic_keys_noncanonical"
+        )
+    for value in components:
+        _validate_meaning_component_semantic_key(value)
+    matching_profiles = tuple(
+        profile
+        for profile in profiles
+        if components == profile[1]
+        and all(
+            getattr(signature, field_name) == profile[0][field_name]
+            for field_name in _SEMANTIC_SIGNATURE_PREFIXES_BY_FIELD
+        )
+    )
+    if len(matching_profiles) != 1:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_source_exact_cover_mismatch"
+        )
+    expected_component_role_keys = tuple(
+        sorted({value.role_key for value in components})
+    )
+    if signature.component_role_keys != expected_component_role_keys:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_component_role_unbound"
+        )
+    expected_component_owner_keys = tuple(
+        sorted({value.owner_key for value in components})
+    )
+    signature_owner_keys = tuple(
+        value
+        for value in signature.world_or_owner_distinction_keys
+        if value.startswith("owner:")
+    )
+    if signature_owner_keys != expected_component_owner_keys:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_component_owner_unbound"
+        )
+    if not signature.input_center_keys or not components:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_content_bearing_keys_missing"
+        )
+
+
+def _meaning_qualifier_parts(
+    value: str,
+) -> Optional[tuple[Optional[str], str, str]]:
+    if not value.startswith("qualifier:") or "=" not in value:
+        return None
+    body, qualifier_value = value.removeprefix("qualifier:").split("=", 1)
+    axes = {"actor", "modality", "polarity", "time_scope"}
+    if body in axes:
+        return None, body, qualifier_value
+    for role in ArgumentRole:
+        role_key = role.value.lower()
+        prefix = f"{role_key}_"
+        if body.startswith(prefix):
+            axis = body.removeprefix(prefix)
+            if axis in axes:
+                return role_key, axis, qualifier_value
+    return None
+
+
+def _meaning_role_qualifier_parts(
+    value: str,
+) -> Optional[tuple[str, str, str]]:
+    parts = _meaning_qualifier_parts(value)
+    if parts is None or parts[0] is None:
+        return None
+    role, axis, qualifier_value = parts
+    return role, axis, qualifier_value
+
+
+def _meaning_relation_qualifiers_for_roles(
+    qualifier_keys: Sequence[str],
+    *,
+    retained_roles: set[str],
+) -> Tuple[str, ...]:
+    return tuple(
+        sorted(
+            value
+            for value in qualifier_keys
+            if (
+                (parts := _meaning_role_qualifier_parts(value)) is None
+                or parts[0] in retained_roles
+            )
+        )
+    )
+
+
+def _meaning_relation_role_swapped_qualifiers(
+    qualifier_keys: Sequence[str],
+) -> Tuple[str, ...]:
+    role_swap = {"left": "right", "right": "left"}
+    swapped: list[str] = []
+    for value in qualifier_keys:
+        parts = _meaning_role_qualifier_parts(value)
+        if parts is None or parts[0] not in role_swap:
+            swapped.append(value)
+            continue
+        role, axis, qualifier_value = parts
+        swapped.append(
+            f"qualifier:{role_swap[role]}_{axis}={qualifier_value}"
+        )
+    return tuple(sorted(swapped))
+
+
+def _meaning_endpoint_retained_summaries(
+    baseline: MeaningSemanticSignature,
+    retained_qualifiers: Sequence[str],
+) -> tuple[Tuple[str, ...], Tuple[str, ...]]:
+    baseline_parts = tuple(
+        parts
+        for value in baseline.qualifier_keys
+        if (parts := _meaning_role_qualifier_parts(value)) is not None
+    )
+    retained_parts = tuple(
+        parts
+        for value in retained_qualifiers
+        if (parts := _meaning_role_qualifier_parts(value)) is not None
+    )
+    temporal = set(baseline.temporal_state_keys)
+    temporal.difference_update(
+        f"time:{value}" for _role, axis, value in baseline_parts
+        if axis == "time_scope"
+    )
+    temporal.update(
+        f"time:{value}" for _role, axis, value in retained_parts
+        if axis == "time_scope"
+    )
+    modality = set(baseline.modality_polarity_or_limitation_keys)
+    modality.difference_update(
+        f"{axis}:{value}" for _role, axis, value in baseline_parts
+        if axis in {"modality", "polarity"}
+    )
+    modality.update(
+        f"{axis}:{value}" for _role, axis, value in retained_parts
+        if axis in {"modality", "polarity"}
+    )
+    return tuple(sorted(temporal)), tuple(sorted(modality))
+
+
+def _meaning_owner_substituted_qualifiers(
+    qualifier_keys: Sequence[str],
+    *,
+    baseline_components: Sequence[MeaningComponentSemanticKey],
+    mutated_components: Sequence[MeaningComponentSemanticKey],
+) -> Optional[Tuple[str, ...]]:
+    def component_shape(
+        value: MeaningComponentSemanticKey,
+    ) -> tuple[str, str, str, str]:
+        return (
+            value.typed_predicate_key,
+            value.semantic_kind_key,
+            value.scope_key,
+            value.role_key,
+        )
+
+    def semantic_group(
+        shape: tuple[str, str, str, str],
+    ) -> tuple[str, str, str]:
+        return shape[:3]
+
+    baseline_owner_by_shape = {
+        component_shape(value): value.owner_key.removeprefix("owner:")
+        for value in baseline_components
+    }
+    mutated_owner_by_shape = {
+        component_shape(value): value.owner_key.removeprefix("owner:")
+        for value in mutated_components
+    }
+    if set(mutated_owner_by_shape) != set(baseline_owner_by_shape):
+        return None
+    changed_shapes = {
+        shape
+        for shape, owner in baseline_owner_by_shape.items()
+        if mutated_owner_by_shape[shape] != owner
+    }
+    changed_groups = {semantic_group(shape) for shape in changed_shapes}
+    if len(changed_groups) != 1:
+        return None
+    has_unscoped_actor_qualifier = any(
+        parts is not None and parts[:2] == (None, "actor")
+        for value in qualifier_keys
+        if (parts := _meaning_qualifier_parts(value)) is not None
+    )
+    if len(changed_shapes) != 1 and not has_unscoped_actor_qualifier:
+        return None
+    changed_group = next(iter(changed_groups))
+    changed_roles = {
+        shape[3].removeprefix("role:") for shape in changed_shapes
+    }
+    mutated_owner_by_role: dict[str, str] = {}
+    for shape in changed_shapes:
+        role = shape[3].removeprefix("role:")
+        owner = mutated_owner_by_shape[shape]
+        if (
+            role in mutated_owner_by_role
+            and mutated_owner_by_role[role] != owner
+        ):
+            return None
+        mutated_owner_by_role[role] = owner
+    group_shapes = {
+        shape
+        for shape in baseline_owner_by_shape
+        if semantic_group(shape) == changed_group
+    }
+    group_new_owners = {
+        mutated_owner_by_shape[shape] for shape in group_shapes
+    }
+    changed_qualifier_roles: set[str] = set()
+    unscoped_actor_covered = False
+    expected: list[str] = []
+    for value in qualifier_keys:
+        parts = _meaning_qualifier_parts(value)
+        if (
+            parts is not None
+            and parts[0] is not None
+            and parts[1] == "actor"
+            and parts[0] in changed_roles
+        ):
+            role, axis, _owner = parts
+            expected.append(
+                f"qualifier:{role}_{axis}={mutated_owner_by_role[role]}"
+            )
+            changed_qualifier_roles.add(role)
+        elif (
+            parts is not None
+            and parts[0] is None
+            and parts[1] == "actor"
+            and changed_shapes == group_shapes
+            and len(group_new_owners) == 1
+        ):
+            expected.append(
+                f"qualifier:actor={next(iter(group_new_owners))}"
+            )
+            unscoped_actor_covered = True
+        else:
+            expected.append(value)
+    if not (
+        changed_qualifier_roles == changed_roles
+        or (unscoped_actor_covered and not changed_qualifier_roles)
+    ):
+        return None
+    return tuple(sorted(expected))
+
+
+def _meaning_modality_qualifier_mutation_is_coherent(
+    baseline: MeaningSemanticSignature,
+    mutated: MeaningSemanticSignature,
+) -> bool:
+    baseline_qualifiers = set(baseline.qualifier_keys)
+    mutated_qualifiers = set(mutated.qualifier_keys)
+    removed = baseline_qualifiers - mutated_qualifiers
+    added = mutated_qualifiers - baseline_qualifiers
+    if len(removed) == len(added) == 1:
+        removed_parts = _meaning_qualifier_parts(next(iter(removed)))
+        added_parts = _meaning_qualifier_parts(next(iter(added)))
+        if (
+            removed_parts is not None
+            and added_parts is not None
+            and removed_parts[:2] == added_parts[:2]
+            and removed_parts[1] in {"modality", "polarity"}
+        ):
+            _role, axis, old_value = removed_parts
+            _new_role, _new_axis, new_value = added_parts
+            closed_values = (
+                _FOREGROUND_SOURCE_MODALITY_VALUES
+                if axis == "modality"
+                else _FOREGROUND_SOURCE_POLARITY_VALUES
+            )
+            if new_value not in closed_values or new_value == old_value:
+                return False
+            expected_summary = set(
+                baseline.modality_polarity_or_limitation_keys
+            )
+            old_key = f"{axis}:{old_value}"
+            old_still_used = any(
+                (parts := _meaning_qualifier_parts(value)) is not None
+                and parts[1:] == (axis, old_value)
+                for value in mutated_qualifiers
+            )
+            if not old_still_used:
+                expected_summary.discard(old_key)
+            expected_summary.add(f"{axis}:{new_value}")
+            return mutated.modality_polarity_or_limitation_keys == tuple(
+                sorted(expected_summary)
+            )
+    fixed_qualifiers = {"qualifier:not_generalized"}
+    if (
+        len(removed) + len(added) == 1
+        and (removed | added).issubset(fixed_qualifiers)
+    ):
+        return (
+            mutated.modality_polarity_or_limitation_keys
+            == baseline.modality_polarity_or_limitation_keys
+        )
+    return False
+
+
+def _meaning_temporal_qualifier_mutation_is_coherent(
+    baseline: MeaningSemanticSignature,
+    mutated: MeaningSemanticSignature,
+) -> bool:
+    baseline_qualifiers = set(baseline.qualifier_keys)
+    mutated_qualifiers = set(mutated.qualifier_keys)
+    removed = baseline_qualifiers - mutated_qualifiers
+    added = mutated_qualifiers - baseline_qualifiers
+    if len(removed) != 1 or len(added) != 1:
+        return False
+    removed_parts = _meaning_qualifier_parts(next(iter(removed)))
+    added_parts = _meaning_qualifier_parts(next(iter(added)))
+    if (
+        removed_parts is None
+        or added_parts is None
+        or removed_parts[:2] != added_parts[:2]
+        or removed_parts[1] != "time_scope"
+    ):
+        return False
+    _role, _axis, old_value = removed_parts
+    _new_role, _new_axis, new_value = added_parts
+    if (
+        new_value not in _FOREGROUND_SOURCE_TIME_SCOPE_VALUES
+        or new_value == old_value
+    ):
+        return False
+    expected_summary = set(baseline.temporal_state_keys)
+    old_still_used = any(
+        (parts := _meaning_qualifier_parts(value)) is not None
+        and parts[1:] == ("time_scope", old_value)
+        for value in mutated_qualifiers
+    )
+    if not old_still_used:
+        expected_summary.discard(f"time:{old_value}")
+    expected_summary.add(f"time:{new_value}")
+    return mutated.temporal_state_keys == tuple(sorted(expected_summary))
+
+
+def _validate_counterfactual_meaning_semantic_signature(
+    signature: MeaningSemanticSignature,
+    *,
+    baseline_semantic_signature: MeaningSemanticSignature,
+    consequence_code: WholeReadingConsequenceCode,
+    foreground_scope: ForegroundScope,
+    basis_rows: Sequence[ForegroundScopeBasisRow],
+    source: object,
+    grounded_plan: object,
+    grounded_graph: GroundedMeaningGraph,
+    stage1_projection: EmlisStage1Projection,
+    parent_plan: ExperiencePlan,
+) -> None:
+    """Validate one code-gated mutation without widening baseline meaning."""
+
+    if type(consequence_code) is not WholeReadingConsequenceCode:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_counterfactual_code_invalid"
+        )
+    source_validation = {
+        "foreground_scope": foreground_scope,
+        "basis_rows": basis_rows,
+        "source": source,
+        "grounded_plan": grounded_plan,
+        "grounded_graph": grounded_graph,
+        "stage1_projection": stage1_projection,
+        "parent_plan": parent_plan,
+    }
+    validate_meaning_semantic_signature(
+        baseline_semantic_signature,
+        **source_validation,
+    )
+    if type(signature) is not MeaningSemanticSignature:
+        raise CMEEStage1ContractError("meaning_semantic_signature_type_invalid")
+    _validate_stage1_immutable_shape(signature)
+    if signature.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_schema_version_invalid"
+        )
+    if (
+        type(signature.reading_operation) is not MeaningReadingOperation
+        or signature.reading_operation
+        is not baseline_semantic_signature.reading_operation
+    ):
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_counterfactual_axis_mismatch"
+        )
+    profiles = _meaning_semantic_signature_profiles(
+        foreground_scope=foreground_scope,
+        source=source,
+        grounded_plan=grounded_plan,
+        grounded_graph=grounded_graph,
+        stage1_projection=stage1_projection,
+        parent_plan=parent_plan,
+    )
+    registry = {
+        field_name: frozenset(
+            value
+            for profile, _components in profiles
+            for value in profile[field_name]
+        )
+        for field_name in _SEMANTIC_SIGNATURE_PREFIXES_BY_FIELD
+    }
+    scoped_node_by_ref = {
+        _graph_object_ref(value): value for value in grounded_graph.nodes
+    }
+    registry["input_center_keys"] = frozenset(
+        {
+            *registry["input_center_keys"],
+            *(
+                f"center:{scoped_node_by_ref[ref].node_kind.lower()}"
+                for ref in foreground_scope.integrated_scope_object_refs
+                if ref in scoped_node_by_ref
+            ),
+        }
+    )
+    counterfactual_registry = (
+        _MEANING_SIGNATURE_COUNTERFACTUAL_KEYS_BY_CODE[consequence_code]
+    )
+    correlated_delta_fields = {
+        "qualifier_keys",
+        *(
+            {
+                "temporal_state_keys",
+                "modality_polarity_or_limitation_keys",
+            }
+            if consequence_code
+            is WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED
+            else set()
+        ),
+    }
+    qualifier_is_correlated_delta = consequence_code in {
+        WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED,
+        WholeReadingConsequenceCode.TEMPORAL_FLOW_CHANGED,
+        WholeReadingConsequenceCode.WORLD_OR_OWNER_DISTINCTION_CHANGED,
+        WholeReadingConsequenceCode.MODALITY_POLARITY_OR_LIMITATION_CHANGED,
+        WholeReadingConsequenceCode.EPISODICITY_BOUNDARY_CHANGED,
+    }
+    for field_name, prefixes in _SEMANTIC_SIGNATURE_PREFIXES_BY_FIELD.items():
+        values = _require_canonical_string_set(
+            getattr(signature, field_name),
+            code=f"meaning_semantic_signature_{field_name}_noncanonical",
+        )
+        for value in values:
+            _validate_typed_key(
+                value,
+                allowed_prefixes=prefixes,
+                code=f"meaning_semantic_signature_{field_name}_invalid",
+            )
+        if (
+            field_name not in counterfactual_registry
+            and not (
+                field_name in correlated_delta_fields
+                and qualifier_is_correlated_delta
+            )
+            and values != getattr(baseline_semantic_signature, field_name)
+        ):
+            raise CMEEStage1ContractError(
+                "meaning_semantic_signature_counterfactual_axis_mismatch"
+            )
+        allowed_values = set(registry[field_name]) | set(
+            counterfactual_registry.get(field_name, ())
+        )
+        if (
+            not (
+                field_name in correlated_delta_fields
+                and qualifier_is_correlated_delta
+            )
+            and not set(values).issubset(allowed_values)
+        ):
+            raise CMEEStage1ContractError(
+                f"meaning_semantic_signature_{field_name}_counterfactual_unbound"
+            )
+    components = signature.component_semantic_keys
+    if (
+        len(components) != len(set(components))
+        or components
+        != tuple(sorted(components, key=stage1_canonical_json_bytes))
+    ):
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_component_semantic_keys_noncanonical"
+        )
+    for value in components:
+        _validate_meaning_component_semantic_key(value)
+    baseline_components = baseline_semantic_signature.component_semantic_keys
+    component_mutation_valid = components == baseline_components
+    if consequence_code is WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED:
+        role_swap = {"role:left": "role:right", "role:right": "role:left"}
+        swapped_components = tuple(
+            sorted(
+                (
+                    replace(
+                        value,
+                        role_key=role_swap.get(value.role_key, value.role_key),
+                    )
+                    for value in baseline_components
+                ),
+                key=stage1_canonical_json_bytes,
+            )
+        )
+        relation_kind_only = (
+            components == baseline_components
+            and len(baseline_semantic_signature.relation_direction_keys) == 1
+            and len(signature.relation_direction_keys) == 1
+            and signature.component_role_keys
+            == baseline_semantic_signature.component_role_keys
+            and signature.qualifier_keys
+            == baseline_semantic_signature.qualifier_keys
+            and signature.temporal_state_keys
+            == baseline_semantic_signature.temporal_state_keys
+            and signature.modality_polarity_or_limitation_keys
+            == baseline_semantic_signature.modality_polarity_or_limitation_keys
+            and signature.relation_direction_keys
+            != baseline_semantic_signature.relation_direction_keys
+        )
+        role_swap_only = (
+            components == swapped_components
+            and components != baseline_components
+            and signature.relation_direction_keys
+            == baseline_semantic_signature.relation_direction_keys
+            and signature.qualifier_keys
+            == _meaning_relation_role_swapped_qualifiers(
+                baseline_semantic_signature.qualifier_keys
+            )
+            and signature.temporal_state_keys
+            == baseline_semantic_signature.temporal_state_keys
+            and signature.modality_polarity_or_limitation_keys
+            == baseline_semantic_signature.modality_polarity_or_limitation_keys
+        )
+        removed_components = set(baseline_components) - set(components)
+        retained_roles = {
+            value.role_key.removeprefix("role:") for value in components
+        }
+        retained_qualifiers = _meaning_relation_qualifiers_for_roles(
+            baseline_semantic_signature.qualifier_keys,
+            retained_roles=retained_roles,
+        )
+        retained_temporal, retained_modality = (
+            _meaning_endpoint_retained_summaries(
+                baseline_semantic_signature,
+                retained_qualifiers,
+            )
+        )
+        endpoint_delete_only = (
+            bool(components)
+            and set(components).issubset(set(baseline_components))
+            and len(removed_components) == 1
+            and signature.qualifier_keys == retained_qualifiers
+            and signature.temporal_state_keys == retained_temporal
+            and signature.modality_polarity_or_limitation_keys
+            == retained_modality
+            and (
+                signature.relation_direction_keys
+                == baseline_semantic_signature.relation_direction_keys
+                or (
+                    len(components) < 2 or len(retained_roles) < 2
+                )
+                and signature.relation_direction_keys == ()
+            )
+        )
+        component_mutation_valid = (
+            relation_kind_only or role_swap_only or endpoint_delete_only
+        )
+    elif consequence_code is WholeReadingConsequenceCode.INPUT_CENTER_CHANGED:
+        component_mutation_valid = (
+            components == baseline_components
+            and len(signature.input_center_keys) == 1
+        )
+    elif consequence_code is WholeReadingConsequenceCode.WORLD_OR_OWNER_DISTINCTION_CHANGED:
+        def component_owner_shape(
+            value: MeaningComponentSemanticKey,
+        ) -> tuple[str, str, str, str]:
+            return (
+                value.typed_predicate_key,
+                value.semantic_kind_key,
+                value.scope_key,
+                value.role_key,
+            )
+
+        baseline_by_shape = {
+            component_owner_shape(value): value.owner_key
+            for value in baseline_components
+        }
+        mutated_by_shape = {
+            component_owner_shape(value): value.owner_key
+            for value in components
+        }
+        closed_owner_keys = {
+            *baseline_by_shape.values(),
+            "owner:other_actor",
+            "owner:unknown",
+        }
+        changed_owner_shapes = {
+            shape
+            for shape, owner in baseline_by_shape.items()
+            if mutated_by_shape.get(shape) != owner
+        }
+        changed_owner_groups = {
+            shape[:3] for shape in changed_owner_shapes
+        }
+        expected_owner_qualifiers = _meaning_owner_substituted_qualifiers(
+            baseline_semantic_signature.qualifier_keys,
+            baseline_components=baseline_components,
+            mutated_components=components,
+        )
+        owner_substitution_only = (
+            len(baseline_by_shape) == len(baseline_components)
+            and len(mutated_by_shape) == len(components)
+            and set(mutated_by_shape) == set(baseline_by_shape)
+            and set(mutated_by_shape.values()).issubset(closed_owner_keys)
+            and len(changed_owner_groups) == 1
+            and expected_owner_qualifiers is not None
+            and signature.qualifier_keys == expected_owner_qualifiers
+            and tuple(
+                value
+                for value in signature.world_or_owner_distinction_keys
+                if value.startswith("world:")
+            )
+            == tuple(
+                value
+                for value in baseline_semantic_signature.world_or_owner_distinction_keys
+                if value.startswith("world:")
+            )
+        )
+        world_substitution_only = (
+            components == baseline_components
+            and signature.qualifier_keys
+            == baseline_semantic_signature.qualifier_keys
+            and tuple(
+                value
+                for value in signature.world_or_owner_distinction_keys
+                if value.startswith("owner:")
+            )
+            == tuple(
+                value
+                for value in baseline_semantic_signature.world_or_owner_distinction_keys
+                if value.startswith("owner:")
+            )
+            and signature.world_or_owner_distinction_keys
+            != baseline_semantic_signature.world_or_owner_distinction_keys
+            and len(
+                tuple(
+                    value
+                    for value in signature.world_or_owner_distinction_keys
+                    if value.startswith("world:")
+                )
+            )
+            <= 1
+        )
+        component_mutation_valid = owner_substitution_only or world_substitution_only
+    elif consequence_code is WholeReadingConsequenceCode.TEMPORAL_FLOW_CHANGED:
+        component_mutation_valid = (
+            components == baseline_components
+            and _meaning_temporal_qualifier_mutation_is_coherent(
+                baseline_semantic_signature,
+                signature,
+            )
+        )
+    elif (
+        consequence_code
+        is WholeReadingConsequenceCode.MODALITY_POLARITY_OR_LIMITATION_CHANGED
+    ):
+        component_mutation_valid = (
+            components == baseline_components
+            and _meaning_modality_qualifier_mutation_is_coherent(
+                baseline_semantic_signature,
+                signature,
+            )
+        )
+    elif consequence_code is WholeReadingConsequenceCode.RESOLUTION_TREATMENT_CHANGED:
+        component_mutation_valid = (
+            components == baseline_components
+            and len(signature.resolution_treatment_keys) == 1
+        )
+    elif consequence_code is WholeReadingConsequenceCode.EPISODICITY_BOUNDARY_CHANGED:
+        episodicity = signature.episodicity_boundary_keys
+        expected_qualifiers = baseline_semantic_signature.qualifier_keys
+        if episodicity == ("episodicity:general_pattern",):
+            expected_qualifiers = tuple(
+                value
+                for value in expected_qualifiers
+                if value != "qualifier:not_generalized"
+            )
+        component_mutation_valid = (
+            components == baseline_components
+            and len(episodicity) == 1
+            and signature.qualifier_keys == expected_qualifiers
+        )
+    if not component_mutation_valid:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_counterfactual_axis_mismatch"
+        )
+    expected_component_role_keys = tuple(
+        sorted({value.role_key for value in components})
+    )
+    if signature.component_role_keys != expected_component_role_keys:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_component_role_unbound"
+        )
+    expected_component_owner_keys = tuple(
+        sorted({value.owner_key for value in components})
+    )
+    signature_owner_keys = tuple(
+        value
+        for value in signature.world_or_owner_distinction_keys
+        if value.startswith("owner:")
+    )
+    if signature_owner_keys != expected_component_owner_keys:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_component_owner_unbound"
+        )
+    component_semantic_kinds = {
+        value.semantic_kind_key.removeprefix("semantic-kind:")
+        for value in components
+    }
+    center_semantic_kinds = {
+        value.removeprefix("center:")
+        for value in signature.input_center_keys
+    }
+    if not center_semantic_kinds.issubset(component_semantic_kinds):
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_center_component_unbound"
+        )
+    if signature.relation_direction_keys and (
+        len(components) < 2 or len(expected_component_role_keys) < 2
+    ):
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_relation_endpoint_cardinality_unbound"
+        )
+    if not signature.input_center_keys or not components:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_content_bearing_keys_missing"
+        )
+
+
+def _whole_reading_consequence_identity_payload(
+    row: WholeReadingConsequenceRow,
+) -> Mapping[str, Any]:
+    return {
+        value.name: getattr(row, value.name)
+        for value in dataclass_fields(row)
+        if value.name != "consequence_id"
+    }
+
+
+def whole_reading_consequence_id(row: WholeReadingConsequenceRow) -> str:
+    if type(row) is not WholeReadingConsequenceRow:
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_row_type_invalid"
+        )
+    digest = hashlib.sha256(
+        stage1_canonical_json_bytes(
+            _whole_reading_consequence_identity_payload(row)
+        )
+    ).hexdigest()
+    return (
+        f"whole-reading-consequence:{digest}"
+        f"@{_WHOLE_READING_CONSEQUENCE_REF_VERSION}"
+    )
+
+
+def _validate_whole_reading_context(
+    context: WholeReadingConsequenceValidationContext,
+    *,
+    consequence_code: WholeReadingConsequenceCode,
+    basis_rows: Sequence[ForegroundScopeBasisRow],
+    source: object,
+    grounded_plan: object,
+    grounded_graph: GroundedMeaningGraph,
+    stage1_projection: EmlisStage1Projection,
+    parent_plan: ExperiencePlan,
+) -> None:
+    if type(context) is not WholeReadingConsequenceValidationContext:
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_context_type_invalid"
+        )
+    _validate_stage1_immutable_shape(context)
+    if context.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION:
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_context_schema_version_invalid"
+        )
+    validate_foreground_scope(
+        context.foreground_scope,
+        basis_rows=basis_rows,
+        source=source,
+        grounded_plan=grounded_plan,
+        grounded_graph=grounded_graph,
+        stage1_projection=stage1_projection,
+        parent_plan=parent_plan,
+    )
+    validate_version_qualified_ref(
+        context.required_difference_ref,
+        expected_types=("required-difference",),
+    )
+    validate_version_qualified_ref(
+        context.counterfactual_mutation_ref,
+        expected_types=("counterfactual-mutation",),
+    )
+    if not context.required_difference_ref.endswith(
+        f"@{_REQUIRED_DIFFERENCE_REF_VERSION}"
+    ):
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_required_difference_version_invalid"
+        )
+    if not context.counterfactual_mutation_ref.endswith(
+        f"@{_COUNTERFACTUAL_MUTATION_REF_VERSION}"
+    ):
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_mutation_version_invalid"
+        )
+    evidence = _require_canonical_string_set(
+        context.source_evidence_refs,
+        code="whole_reading_consequence_context_evidence_noncanonical",
+        allow_empty=False,
+    )
+    graph_evidence = {
+        ref
+        for value in (*grounded_graph.nodes, *grounded_graph.edges)
+        for ref in _graph_evidence_refs(
+            value,
+            source_version=grounded_graph.source_version,
+        )
+    }
+    if not set(evidence).issubset(graph_evidence) or not set(evidence).issubset(
+        context.foreground_scope.source_evidence_refs
+    ):
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_context_evidence_unbound"
+        )
+    signature_validation = {
+        "foreground_scope": context.foreground_scope,
+        "basis_rows": basis_rows,
+        "source": source,
+        "grounded_plan": grounded_plan,
+        "grounded_graph": grounded_graph,
+        "stage1_projection": stage1_projection,
+        "parent_plan": parent_plan,
+    }
+    validate_meaning_semantic_signature(
+        context.baseline_semantic_signature,
+        **signature_validation,
+    )
+    _validate_counterfactual_meaning_semantic_signature(
+        context.mutated_semantic_signature,
+        baseline_semantic_signature=context.baseline_semantic_signature,
+        consequence_code=consequence_code,
+        **signature_validation,
+    )
+    if context.baseline_semantic_signature == context.mutated_semantic_signature:
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_semantic_change_missing"
+        )
+
+
+def validate_whole_reading_consequence_row(
+    row: WholeReadingConsequenceRow,
+    *,
+    binding_context: WholeReadingConsequenceValidationContext,
+    foreground_scope_basis_rows: Sequence[ForegroundScopeBasisRow],
+    source: object,
+    grounded_plan: object,
+    grounded_graph: GroundedMeaningGraph,
+    stage1_projection: EmlisStage1Projection,
+    parent_plan: ExperiencePlan,
+) -> None:
+    """Bind a closed whole-reading delta to typed IM00 provenance owners."""
+
+    if type(row) is not WholeReadingConsequenceRow:
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_row_type_invalid"
+        )
+    _validate_stage1_immutable_shape(row)
+    if row.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION:
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_schema_version_invalid"
+        )
+    if type(row.consequence_code) is not WholeReadingConsequenceCode:
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_code_invalid"
+        )
+    _require_canonical_string_set(
+        row.source_evidence_refs,
+        code="whole_reading_consequence_source_evidence_refs_noncanonical",
+        allow_empty=False,
+    )
+    for ref, expected_type in (
+        (row.consequence_id, "whole-reading-consequence"),
+        (row.foreground_scope_ref, "foreground-scope"),
+        (row.required_difference_ref, "required-difference"),
+        (row.counterfactual_mutation_ref, "counterfactual-mutation"),
+    ):
+        validate_version_qualified_ref(ref, expected_types=(expected_type,))
+    _validate_whole_reading_context(
+        binding_context,
+        consequence_code=row.consequence_code,
+        basis_rows=foreground_scope_basis_rows,
+        source=source,
+        grounded_plan=grounded_plan,
+        grounded_graph=grounded_graph,
+        stage1_projection=stage1_projection,
+        parent_plan=parent_plan,
+    )
+    if row.consequence_id != whole_reading_consequence_id(row):
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_id_mismatch"
+        )
+    if row.foreground_scope_ref != binding_context.foreground_scope.scope_id:
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_foreground_scope_ref_unbound"
+        )
+    if row.required_difference_ref != binding_context.required_difference_ref:
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_required_difference_ref_unbound"
+        )
+    if row.source_evidence_refs != binding_context.source_evidence_refs:
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_source_evidence_refs_unbound"
+        )
+    if (
+        row.counterfactual_mutation_ref
+        != binding_context.counterfactual_mutation_ref
+    ):
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_mutation_ref_unbound"
+        )
+    if (
+        row.baseline_semantic_signature
+        != binding_context.baseline_semantic_signature
+    ):
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_baseline_signature_unbound"
+        )
+    if (
+        row.mutated_semantic_signature
+        != binding_context.mutated_semantic_signature
+    ):
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_mutated_signature_unbound"
+        )
+    changed_fields = _WHOLE_READING_SIGNATURE_FIELDS_BY_CODE[
+        row.consequence_code
+    ]
+    if not any(
+        getattr(row.baseline_semantic_signature, field_name)
+        != getattr(row.mutated_semantic_signature, field_name)
+        for field_name in changed_fields
+    ):
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_code_change_mismatch"
+        )
 
 
 _STAGE1_INTERPRETATION_CANDIDATE_KIND_CAP = 2
@@ -7376,6 +11357,13 @@ __all__ = [
     "EvidenceRef",
     "ExecutionMode",
     "ExperiencePlan",
+    "ForegroundScope",
+    "ForegroundScopeBasisKind",
+    "ForegroundScopeBasisRow",
+    "ForegroundScopeCompatibilityAxis",
+    "ForegroundScopeDerivation",
+    "ForegroundScopeDerivationState",
+    "ForegroundScopeRelationKind",
     "GenerationArtifactBundle",
     "GenerationRequest",
     "GroundedExpressionPlan",
@@ -7392,6 +11380,9 @@ __all__ = [
     "MatrixMorphologyParadigmSpec",
     "MeaningFieldEntry",
     "MeaningFieldSlot",
+    "MeaningComponentSemanticKey",
+    "MeaningReadingOperation",
+    "MeaningSemanticSignature",
     "MeaningEdge",
     "MeaningNode",
     "MaterialRisk",
@@ -7465,6 +11456,11 @@ __all__ = [
     "VisibleUnknownUnit",
     "VisibleUnitTrace",
     "ValueApplication",
+    "WholeReadingConsequenceCode",
+    "WholeReadingConsequenceRow",
+    "WholeReadingConsequenceValidationContext",
+    "foreground_scope_basis_row_ref",
+    "foreground_scope_id",
     "project_stage1_policy_basis_binding_ref",
     "project_stage1_projection_preimage_ref",
     "project_stage1_source_qualifier_binding_ref",
@@ -7483,7 +11479,13 @@ __all__ = [
     "validate_stage1_projection_artifact_ref",
     "validate_stage1_sentence_unit",
     "validate_stage1_trace_spine",
+    "validate_foreground_scope",
+    "validate_foreground_scope_basis_row",
+    "validate_foreground_scope_derivation",
+    "validate_meaning_semantic_signature",
     "validate_subjective_proposition_v2",
     "validate_surface_derivation",
     "validate_version_qualified_ref",
+    "validate_whole_reading_consequence_row",
+    "whole_reading_consequence_id",
 ]
