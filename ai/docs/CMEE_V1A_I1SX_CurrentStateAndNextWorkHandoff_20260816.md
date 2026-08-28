@@ -4249,3 +4249,51 @@ CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_IM01
 IM01は、Reception-freeな`PreMeaningGroundedInputs`からexact5 basisとobject別compatibility exact10を持つ`GroundedSituationView`を作り、closed deriverへ実接続する。compatible source-connected rowsはID／hash／列挙順で選ばずcanonical set unionする。typed conflictは`LIMITED_COMPETING_MATERIAL_READINGS`、safe object exact1以上で必要structureが欠ける場合は`LIMITED_STRUCTURE_INSUFFICIENT`、safe foreground object exact0の場合だけ`STRUCTURE_INSUFFICIENT_STOP`へ閉じる。Allowed Reception envelopeはscope derivationとzero-object判定の後にだけ構築し、Reception、affect、stance、style、temperature、subjective mode、surface、fixture、ID／hash／列挙順からscopeへのbackflowは0とする。
 
 Required Difference、counterfactual mutation、WholeReadingConsequence actual issuerはIM02、operation applicabilityはIM03、Bounded LIMITED ReceptionはIM04のownerに留保する。本authorityではIM02、activation、I09、productionへ進まず、formal failure時はworktreeを追加修正せずremote preimageを保持してSTOPする。
+
+---
+
+## Emlis input-specific meaning decision / IM02 Difference Requirements（2026-08-28）
+
+Mashのfresh explicit complete-to-finish authorityにより、final design §17のIM02 Difference Requirementsを実装し、同一Gateの最終実行を`32 passed`でGREENにした。途中のformal historyは、最初のisolated launcherが`fastapi`不足によりpre-collectionでclosed、以後の同一Gateが順に`28/32`、`24/32`、`25/32`、最終`32/32`である。途中結果へ完了creditを与えず、後続の明示authority下で修正と最終Gateを完了した。
+
+```text
+CHECKPOINT_SCHEMA = CMEE_EMLIS_INPUT_SPECIFIC_MEANING_CHECKPOINT_V1
+CHECKPOINT_ID = CMEE_EMLIS_INPUT_SPECIFIC_MEANING_IM02_DIFFERENCE_REQUIREMENTS_20260828_V1
+IMPLEMENTATION_STEP = IM02
+STEP_STATE = COMPLETE_NONTERMINAL_CHECKPOINT
+AUTHORITY = MASH_FRESH_IM02_COMPLETE_TO_FINISH_20260828
+
+REPOSITORY = MassyuRed/mashos-api
+PULL_REQUEST = 3
+BRANCH = agent/cmee-v1a-i1sx-source-explicit-20260815
+RUNTIME_FINAL_HEAD = THIS_COMMIT_RESOLVED_BY_FRESH_REMOTE_POSTVERIFY
+PR_STATE_AT_CHECKPOINT_WRITE = DRAFT_OPEN_UNMERGED_PENDING_PUSH
+
+FORMAL_PYTEST_HISTORY = PRECOLLECTION_MISSING_FASTAPI_THEN_28_OF_32_THEN_24_OF_32_THEN_25_OF_32_THEN_32_OF_32
+FORMAL_PYTEST_FINAL_SELECTORS / DENOMINATOR = EXACT9 / 32
+FORMAL_PYTEST_TERMINAL_RESULT = GREEN_PASS_32_OF_32
+TARGETED_IM02_CORRECTION = GREEN_PASS_7_OF_7
+STATIC_GIT_DIFF_CHECK = PASS
+FULL_PUBLIC_REGRESSION = DEFERRED_TO_IM07_NOT_CLAIMED_AT_IM02
+
+PRODUCT_CREDIT / TECHNICAL_CREDIT = 0 / 0
+PRODUCT_READ / CANDIDATE_ACCEPTANCE / ACTIVATION = 0 / 0 / 0
+IM03 / I09 / PRODUCTION / MERGE = 0 / 0 / 0 / 0
+AUTOMATIC_RETRY / AUTOMATIC_PROGRESSION = 0 / 0
+```
+
+IM02は、closedなDifference Config、Observed Difference、Required Difference、counterfactual Mutation、Difference Bundle、およびWholeReadingConsequence actual issuerを実装した。binary pairはactual directionへbindし、endpoint／owner／world mutationは対象と置換結果をexactに検証する。TIMEを含むclosed mapping、local semantic signatureの固定membership、wholeのsemantic order、bundle adjacency parityをcanonicalに照合し、ID／hash／列挙順による意味決定を行わない。
+
+response側はReception構築前にpre-Reception meaning artifactを保持し、composition側はそのartifactからDifference Requirementsをexactに再導出して一致を要求する。runtime integration identityはexact17 framed digestで固定した。Reception act、allowed envelope、affect、stance、style、temperature、subjective binding、visible surfaceからDifference RequirementsまたはWholeReadingConsequenceへのbackflowは0である。
+
+public API、DB、RN、persistence、provider、network inference、fallback、external cost、production activationへのeffectは0である。IM03のoperation applicability、IM04以後、I09、production、mergeは開始していない。依存順上の次checkpointはIM03である。
+
+```text
+RECEPTION_BACKFLOW_REACHABILITY = 0
+PUBLIC_API / DB / RN / PERSISTENCE = 0 / 0 / 0 / 0
+PROVIDER / NETWORK / FALLBACK / EXTERNAL_COST = 0 / 0 / 0 / 0
+IM03_EXECUTION = NOT_STARTED
+ACTIVATION / I09 / PRODUCTION / MERGE = NOT_STARTED / NOT_STARTED / NOT_STARTED / NOT_STARTED
+NEXT_DEPENDENCY = IM03
+CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_IM02
+```

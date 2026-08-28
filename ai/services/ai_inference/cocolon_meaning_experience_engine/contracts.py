@@ -483,6 +483,72 @@ class ForegroundScopeDerivationState(str, Enum):
     NO_SAFE_FOREGROUND_OBJECT = "NO_SAFE_FOREGROUND_OBJECT"
 
 
+class DifferenceConfigurationDerivationState(str, Enum):
+    CONFIGURATION_SET_AVAILABLE = "CONFIGURATION_SET_AVAILABLE"
+    THIN_NO_SAFE_CONFIGURATION = "THIN_NO_SAFE_CONFIGURATION"
+    UPSTREAM_STRUCTURE_INSUFFICIENT = "UPSTREAM_STRUCTURE_INSUFFICIENT"
+    NO_FOREGROUND_OBJECT = "NO_FOREGROUND_OBJECT"
+
+
+class RequirementBundleDerivationState(str, Enum):
+    BUNDLE_SET_AVAILABLE = "BUNDLE_SET_AVAILABLE"
+    NO_REQUIRED_DIFFERENCE = "NO_REQUIRED_DIFFERENCE"
+    UPSTREAM_STRUCTURE_INSUFFICIENT = "UPSTREAM_STRUCTURE_INSUFFICIENT"
+
+
+class DifferenceAxis(str, Enum):
+    INTENTION_VS_OUTPUT = "INTENTION_VS_OUTPUT"
+    INTERNAL_VS_EXTERNAL = "INTERNAL_VS_EXTERNAL"
+    BEFORE_VS_AFTER = "BEFORE_VS_AFTER"
+    HISTORY_VS_PATTERN_VS_POSSIBILITY = (
+        "HISTORY_VS_PATTERN_VS_POSSIBILITY"
+    )
+    WISH_VS_CONSTRAINT = "WISH_VS_CONSTRAINT"
+    ACTION_VS_RESIDUE = "ACTION_VS_RESIDUE"
+    CHANGE_VS_GENERALIZATION = "CHANGE_VS_GENERALIZATION"
+    FACT_VS_INTERPRETATION = "FACT_VS_INTERPRETATION"
+    RESOLVED_VS_UNRESOLVED = "RESOLVED_VS_UNRESOLVED"
+    ENDPOINT_A_VS_ENDPOINT_B = "ENDPOINT_A_VS_ENDPOINT_B"
+
+
+class ObservedDistinctionDerivationKind(str, Enum):
+    BINARY_ENDPOINT_AND_DIRECTION = "BINARY_ENDPOINT_AND_DIRECTION"
+    QUALIFIED_PREDICATE_OWNER_MODIFIER = (
+        "QUALIFIED_PREDICATE_OWNER_MODIFIER"
+    )
+    TYPED_AXIS_CONTRAST = "TYPED_AXIS_CONTRAST"
+    BOUND_QUALIFIER = "BOUND_QUALIFIER"
+    BOUND_MATERIAL_UNKNOWN = "BOUND_MATERIAL_UNKNOWN"
+
+
+class DifferenceInvariantCode(str, Enum):
+    ENDPOINT_COLLAPSE = "ENDPOINT_COLLAPSE"
+    DIRECTION_REVERSAL = "DIRECTION_REVERSAL"
+    WORLD_COLLAPSE = "WORLD_COLLAPSE"
+    ROLE_COLLAPSE = "ROLE_COLLAPSE"
+    TEMPORAL_COLLAPSE = "TEMPORAL_COLLAPSE"
+    POLARITY_REVERSAL = "POLARITY_REVERSAL"
+    MODALITY_PROMOTION = "MODALITY_PROMOTION"
+    UNKNOWN_ERASURE = "UNKNOWN_ERASURE"
+    EXPLICIT_LIMIT_ERASURE = "EXPLICIT_LIMIT_ERASURE"
+    REQUIRED_RETENTION_ERASURE = "REQUIRED_RETENTION_ERASURE"
+
+
+class CounterfactualMutationKind(str, Enum):
+    DELETE_ENDPOINT = "DELETE_ENDPOINT"
+    SWAP_ENDPOINTS = "SWAP_ENDPOINTS"
+    DELETE_PREDICATE = "DELETE_PREDICATE"
+    DELETE_OWNER = "DELETE_OWNER"
+    REPLACE_WORLD = "REPLACE_WORLD"
+    REPLACE_ROLE = "REPLACE_ROLE"
+    REPLACE_TIME = "REPLACE_TIME"
+    DELETE_MODALITY = "DELETE_MODALITY"
+    DELETE_ASPECT = "DELETE_ASPECT"
+    DELETE_SCOPE = "DELETE_SCOPE"
+    DELETE_QUALIFIER = "DELETE_QUALIFIER"
+    PROMOTE_UNKNOWN = "PROMOTE_UNKNOWN"
+
+
 class WholeReadingConsequenceCode(str, Enum):
     INPUT_CENTER_CHANGED = "INPUT_CENTER_CHANGED"
     RELATION_STRUCTURE_CHANGED = "RELATION_STRUCTURE_CHANGED"
@@ -1177,6 +1243,138 @@ class ForegroundScopeDerivation:
     unresolved_scope_refs: Tuple[str, ...]
     missing_structure_refs: Tuple[str, ...]
     derivation_evidence_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RelationDirectionRow:
+    schema_version: str
+    relation_ref: str
+    relation_kind: ForegroundScopeRelationKind
+    source_endpoint_ref: str
+    target_endpoint_ref: str
+
+
+@dataclass(frozen=True, slots=True)
+class RelationalConfiguration:
+    schema_version: str
+    configuration_id: str
+    endpoint_component_refs: Tuple[str, ...]
+    relation_path_refs: Tuple[str, ...]
+    direction_rows: Tuple[RelationDirectionRow, ...]
+    source_qualifier_refs: Tuple[str, ...]
+    source_evidence_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class QualifiedEventStateConfiguration:
+    schema_version: str
+    configuration_id: str
+    predicate_ref: str
+    owner_ref: str
+    modality_refs: Tuple[str, ...]
+    time_refs: Tuple[str, ...]
+    aspect_refs: Tuple[str, ...]
+    scope_refs: Tuple[str, ...]
+    qualifier_refs: Tuple[str, ...]
+    source_evidence_refs: Tuple[str, ...]
+
+
+DifferenceConfiguration = (
+    RelationalConfiguration | QualifiedEventStateConfiguration
+)
+
+
+@dataclass(frozen=True, slots=True)
+class DifferenceConfigurationSet:
+    schema_version: str
+    foreground_scope_ref: str
+    configuration_refs: Tuple[str, ...]
+    source_evidence_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DifferenceConfigurationDerivation:
+    schema_version: str
+    state: DifferenceConfigurationDerivationState
+    configuration_set: Optional[DifferenceConfigurationSet]
+    foreground_source_object_refs: Tuple[str, ...]
+    missing_structure_refs: Tuple[str, ...]
+    derivation_evidence_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ObservedDistinctionRow:
+    schema_version: str
+    distinction_id: str
+    configuration_ref: str
+    derivation_kind: ObservedDistinctionDerivationKind
+    axis: DifferenceAxis
+    contrasted_component_refs: Tuple[str, ...]
+    source_qualifier_refs: Tuple[str, ...]
+    source_evidence_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CounterfactualMutationRow:
+    schema_version: str
+    mutation_id: str
+    mutation_kind: CounterfactualMutationKind
+    observed_distinction_ref: str
+    target_component_refs: Tuple[str, ...]
+    replacement_refs: Tuple[str, ...]
+    source_evidence_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RequiredDifferenceRow:
+    schema_version: str
+    difference_id: str
+    observed_distinction_ref: str
+    invariant_codes: Tuple[DifferenceInvariantCode, ...]
+    retention_duty_refs: Tuple[str, ...]
+    counterfactual_mutation_ref: str
+
+
+@dataclass(frozen=True, slots=True)
+class RequirementBundle:
+    schema_version: str
+    bundle_id: str
+    foreground_scope_ref: str
+    anchor_configuration_ref: str
+    adjacent_configuration_refs: Tuple[str, ...]
+    required_difference_refs: Tuple[str, ...]
+    retention_duty_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RequirementBundleSet:
+    schema_version: str
+    foreground_scope_ref: str
+    bundle_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RequirementBundleDerivation:
+    schema_version: str
+    state: RequirementBundleDerivationState
+    bundle_set: Optional[RequirementBundleSet]
+    missing_structure_refs: Tuple[str, ...]
+    derivation_evidence_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class InputSpecificMeaningStructure:
+    """Closed IM02 result; no Reception, ranking, or surface input exists."""
+
+    schema_version: str
+    difference_configuration_derivation: DifferenceConfigurationDerivation
+    configurations: Tuple[DifferenceConfiguration, ...]
+    observed_distinction_rows: Tuple[ObservedDistinctionRow, ...]
+    counterfactual_mutation_rows: Tuple[CounterfactualMutationRow, ...]
+    required_difference_rows: Tuple[RequiredDifferenceRow, ...]
+    requirement_bundle_derivation: RequirementBundleDerivation
+    requirement_bundles: Tuple[RequirementBundle, ...]
+    whole_reading_consequence_rows: Tuple[WholeReadingConsequenceRow, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1904,6 +2102,63 @@ _STAGE1_TUPLE_FIELDS = {
         "unresolved_scope_refs",
         "missing_structure_refs",
         "derivation_evidence_refs",
+    ),
+    RelationDirectionRow: (),
+    RelationalConfiguration: (
+        "endpoint_component_refs",
+        "relation_path_refs",
+        "direction_rows",
+        "source_qualifier_refs",
+        "source_evidence_refs",
+    ),
+    QualifiedEventStateConfiguration: (
+        "modality_refs",
+        "time_refs",
+        "aspect_refs",
+        "scope_refs",
+        "qualifier_refs",
+        "source_evidence_refs",
+    ),
+    DifferenceConfigurationSet: (
+        "configuration_refs",
+        "source_evidence_refs",
+    ),
+    DifferenceConfigurationDerivation: (
+        "foreground_source_object_refs",
+        "missing_structure_refs",
+        "derivation_evidence_refs",
+    ),
+    ObservedDistinctionRow: (
+        "contrasted_component_refs",
+        "source_qualifier_refs",
+        "source_evidence_refs",
+    ),
+    CounterfactualMutationRow: (
+        "target_component_refs",
+        "replacement_refs",
+        "source_evidence_refs",
+    ),
+    RequiredDifferenceRow: (
+        "invariant_codes",
+        "retention_duty_refs",
+    ),
+    RequirementBundle: (
+        "adjacent_configuration_refs",
+        "required_difference_refs",
+        "retention_duty_refs",
+    ),
+    RequirementBundleSet: ("bundle_refs",),
+    RequirementBundleDerivation: (
+        "missing_structure_refs",
+        "derivation_evidence_refs",
+    ),
+    InputSpecificMeaningStructure: (
+        "configurations",
+        "observed_distinction_rows",
+        "counterfactual_mutation_rows",
+        "required_difference_rows",
+        "requirement_bundles",
+        "whole_reading_consequence_rows",
     ),
     MeaningComponentSemanticKey: (),
     MeaningSemanticSignature: (
@@ -4038,6 +4293,15 @@ _REQUIRED_DIFFERENCE_REF_VERSION = (
 )
 _COUNTERFACTUAL_MUTATION_REF_VERSION = (
     "cocolon.cmee.emlis.counterfactual_mutation.v1"
+)
+_DIFFERENCE_CONFIGURATION_REF_VERSION = (
+    "cocolon.cmee.emlis.difference_configuration.v1"
+)
+_OBSERVED_DISTINCTION_REF_VERSION = (
+    "cocolon.cmee.emlis.observed_distinction.v1"
+)
+_REQUIREMENT_BUNDLE_REF_VERSION = (
+    "cocolon.cmee.emlis.requirement_bundle.v1"
 )
 _WHOLE_READING_CONSEQUENCE_REF_VERSION = (
     "cocolon.cmee.emlis.whole_reading_consequence.v1"
@@ -6346,15 +6610,6 @@ def validate_foreground_scope_basis_row(
             or _foreground_enum_text(value.grounding_kind)
             != "user_stated_relation"
             or not value.evidence_ids
-            or not any(
-                disposition.meaning_owner_id == value.owner_id
-                and disposition.visible_authority
-                is VisibleAuthority.SOURCE_EXPLICIT
-                and disposition.source_owner_disposition
-                is SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
-                and value.edge_id in disposition.visible_claim_refs
-                for disposition in grounded_graph.owner_dispositions
-            )
             for value in selected_edges
         ):
             raise CMEEStage1ContractError(
@@ -6760,6 +7015,1944 @@ def validate_foreground_scope_derivation(
         )
 
 
+def _im02_owned_ref(
+    value: object,
+    *,
+    identity_field: str,
+    ref_type: str,
+    ref_version: str,
+) -> str:
+    if not is_dataclass(value):
+        raise CMEEStage1ContractError("input_specific_meaning_row_type_invalid")
+    payload = {
+        row.name: getattr(value, row.name)
+        for row in dataclass_fields(value)
+        if row.name != identity_field
+    }
+    digest = hashlib.sha256(stage1_canonical_json_bytes(payload)).hexdigest()
+    return f"{ref_type}:{digest}@{ref_version}"
+
+
+def difference_configuration_id(
+    configuration: DifferenceConfiguration,
+) -> str:
+    if type(configuration) not in {
+        RelationalConfiguration,
+        QualifiedEventStateConfiguration,
+    }:
+        raise CMEEStage1ContractError(
+            "difference_configuration_type_invalid"
+        )
+    return _im02_owned_ref(
+        configuration,
+        identity_field="configuration_id",
+        ref_type="difference-configuration",
+        ref_version=_DIFFERENCE_CONFIGURATION_REF_VERSION,
+    )
+
+
+def observed_distinction_id(row: ObservedDistinctionRow) -> str:
+    if type(row) is not ObservedDistinctionRow:
+        raise CMEEStage1ContractError("observed_distinction_type_invalid")
+    return _im02_owned_ref(
+        row,
+        identity_field="distinction_id",
+        ref_type="observed-distinction",
+        ref_version=_OBSERVED_DISTINCTION_REF_VERSION,
+    )
+
+
+def counterfactual_mutation_id(row: CounterfactualMutationRow) -> str:
+    if type(row) is not CounterfactualMutationRow:
+        raise CMEEStage1ContractError(
+            "counterfactual_mutation_type_invalid"
+        )
+    return _im02_owned_ref(
+        row,
+        identity_field="mutation_id",
+        ref_type="counterfactual-mutation",
+        ref_version=_COUNTERFACTUAL_MUTATION_REF_VERSION,
+    )
+
+
+def required_difference_id(row: RequiredDifferenceRow) -> str:
+    if type(row) is not RequiredDifferenceRow:
+        raise CMEEStage1ContractError("required_difference_type_invalid")
+    return _im02_owned_ref(
+        row,
+        identity_field="difference_id",
+        ref_type="required-difference",
+        ref_version=_REQUIRED_DIFFERENCE_REF_VERSION,
+    )
+
+
+def requirement_bundle_id(row: RequirementBundle) -> str:
+    if type(row) is not RequirementBundle:
+        raise CMEEStage1ContractError("requirement_bundle_type_invalid")
+    return _im02_owned_ref(
+        row,
+        identity_field="bundle_id",
+        ref_type="requirement-bundle",
+        ref_version=_REQUIREMENT_BUNDLE_REF_VERSION,
+    )
+
+
+def _require_im02_owned_ref(
+    value: str,
+    *,
+    ref_type: str,
+    ref_version: str,
+    code: str,
+) -> None:
+    try:
+        validate_version_qualified_ref(value, expected_types=(ref_type,))
+    except CMEEStage1ContractError:
+        raise CMEEStage1ContractError(code) from None
+    if not value.endswith(f"@{ref_version}"):
+        raise CMEEStage1ContractError(code)
+
+
+def _require_im02_ordered_rows(
+    values: Sequence[object],
+    *,
+    code: str,
+) -> tuple[object, ...]:
+    rows = tuple(values)
+    if type(values) is not tuple or any(
+        type(row) is not RelationDirectionRow for row in rows
+    ):
+        raise CMEEStage1ContractError(code)
+    direction_key = lambda row: (
+        row.relation_kind.value,
+        row.source_endpoint_ref,
+        row.target_endpoint_ref,
+        row.relation_ref,
+    )
+    if rows != tuple(sorted(rows, key=direction_key)):
+        raise CMEEStage1ContractError(code)
+    if len({stage1_canonical_json_bytes(row) for row in rows}) != len(rows):
+        raise CMEEStage1ContractError(code)
+    return rows
+
+
+def _require_im02_positional_refs(
+    values: Sequence[str],
+    *,
+    code: str,
+    allow_empty: bool,
+) -> tuple[str, ...]:
+    refs = tuple(values)
+    if (
+        type(values) is not tuple
+        or (not allow_empty and not refs)
+        or any(type(ref) is not str or not ref for ref in refs)
+        or len(refs) != len(set(refs))
+    ):
+        raise CMEEStage1ContractError(code)
+    return refs
+
+
+def _difference_configuration_contract_sort_key(
+    configuration: DifferenceConfiguration,
+) -> tuple[object, ...]:
+    if type(configuration) is RelationalConfiguration:
+        return (
+            "relational",
+            configuration.endpoint_component_refs,
+            configuration.relation_path_refs,
+            tuple(
+                (
+                    row.relation_kind.value,
+                    row.source_endpoint_ref,
+                    row.target_endpoint_ref,
+                    row.relation_ref,
+                )
+                for row in configuration.direction_rows
+            ),
+            configuration.source_qualifier_refs,
+            configuration.source_evidence_refs,
+        )
+    if type(configuration) is QualifiedEventStateConfiguration:
+        return (
+            "qualified-event-state",
+            configuration.predicate_ref,
+            configuration.owner_ref,
+            configuration.modality_refs,
+            configuration.time_refs,
+            configuration.aspect_refs,
+            configuration.scope_refs,
+            configuration.qualifier_refs,
+            configuration.source_evidence_refs,
+        )
+    raise CMEEStage1ContractError("difference_configuration_type_invalid")
+
+
+def _validate_relation_direction_row(
+    row: RelationDirectionRow,
+    *,
+    endpoint_refs: Sequence[str],
+    relation_path_refs: Sequence[str],
+) -> None:
+    if type(row) is not RelationDirectionRow:
+        raise CMEEStage1ContractError(
+            "difference_configuration_direction_type_invalid"
+        )
+    _validate_stage1_immutable_shape(row)
+    if (
+        row.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION
+        or type(row.relation_kind) is not ForegroundScopeRelationKind
+    ):
+        raise CMEEStage1ContractError(
+            "difference_configuration_direction_shape_invalid"
+        )
+    validate_version_qualified_ref(row.relation_ref, expected_types=("edge",))
+    for ref in (row.source_endpoint_ref, row.target_endpoint_ref):
+        validate_version_qualified_ref(ref, expected_types=("node",))
+    if (
+        row.relation_ref not in set(relation_path_refs)
+        or row.source_endpoint_ref not in set(endpoint_refs)
+        or row.target_endpoint_ref not in set(endpoint_refs)
+        or row.source_endpoint_ref == row.target_endpoint_ref
+    ):
+        raise CMEEStage1ContractError(
+            "difference_configuration_direction_unbound"
+        )
+
+
+def validate_difference_configuration(
+    configuration: DifferenceConfiguration,
+) -> None:
+    if type(configuration) not in {
+        RelationalConfiguration,
+        QualifiedEventStateConfiguration,
+    }:
+        raise CMEEStage1ContractError(
+            "difference_configuration_type_invalid"
+        )
+    _validate_stage1_immutable_shape(configuration)
+    if configuration.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION:
+        raise CMEEStage1ContractError(
+            "difference_configuration_schema_version_invalid"
+        )
+    _require_im02_owned_ref(
+        configuration.configuration_id,
+        ref_type="difference-configuration",
+        ref_version=_DIFFERENCE_CONFIGURATION_REF_VERSION,
+        code="difference_configuration_id_invalid",
+    )
+    if configuration.configuration_id != difference_configuration_id(
+        configuration
+    ):
+        raise CMEEStage1ContractError("difference_configuration_id_mismatch")
+    evidence = _require_canonical_string_set(
+        configuration.source_evidence_refs,
+        code="difference_configuration_source_evidence_noncanonical",
+        allow_empty=False,
+    )
+    for ref in evidence:
+        validate_version_qualified_ref(ref, expected_types=("evidence",))
+    if type(configuration) is RelationalConfiguration:
+        endpoints = _require_canonical_string_set(
+            configuration.endpoint_component_refs,
+            code="relational_configuration_endpoints_noncanonical",
+            allow_empty=False,
+        )
+        if not 2 <= len(endpoints) <= 5:
+            raise CMEEStage1ContractError(
+                "relational_configuration_endpoint_cardinality_invalid"
+            )
+        for ref in endpoints:
+            validate_version_qualified_ref(ref, expected_types=("node",))
+        relation_paths = _require_canonical_string_set(
+            configuration.relation_path_refs,
+            code="relational_configuration_relation_paths_noncanonical",
+            allow_empty=False,
+        )
+        for ref in relation_paths:
+            validate_version_qualified_ref(ref, expected_types=("edge",))
+        direction_rows = _require_im02_ordered_rows(
+            configuration.direction_rows,
+            code="relational_configuration_direction_rows_noncanonical",
+        )
+        if not direction_rows:
+            raise CMEEStage1ContractError(
+                "relational_configuration_direction_rows_empty"
+            )
+        for row in direction_rows:
+            _validate_relation_direction_row(
+                row,
+                endpoint_refs=endpoints,
+                relation_path_refs=relation_paths,
+            )
+        if {row.relation_ref for row in direction_rows} != set(
+            relation_paths
+        ):
+            raise CMEEStage1ContractError(
+                "relational_configuration_direction_path_coverage_invalid"
+            )
+        qualifiers = _require_canonical_string_set(
+            configuration.source_qualifier_refs,
+            code="relational_configuration_qualifiers_noncanonical",
+        )
+    else:
+        for ref, ref_type in (
+            (configuration.predicate_ref, "node"),
+        ):
+            validate_version_qualified_ref(ref, expected_types=(ref_type,))
+        _validate_typed_key(
+            configuration.owner_ref,
+            allowed_prefixes=("owner:",),
+            code="qualified_configuration_owner_ref_invalid",
+        )
+        typed_fields = {
+            "modality_refs": ("modality:",),
+            "time_refs": ("time:", "time_scope:"),
+            "aspect_refs": ("aspect:",),
+            "scope_refs": ("scope:",),
+            "qualifier_refs": (
+                *_QUALIFIER_PREFIXES,
+                "epistemic-state:",
+                "unknown:",
+            ),
+        }
+        for field_name, prefixes in typed_fields.items():
+            values = _require_canonical_string_set(
+                getattr(configuration, field_name),
+                code=f"qualified_configuration_{field_name}_noncanonical",
+            )
+            for value in values:
+                _validate_typed_key(
+                    value,
+                    allowed_prefixes=prefixes,
+                    code=f"qualified_configuration_{field_name}_invalid",
+                )
+        if not any(getattr(configuration, name) for name in typed_fields):
+            raise CMEEStage1ContractError(
+                "qualified_configuration_modifier_missing"
+            )
+        qualifiers = configuration.qualifier_refs
+    for value in qualifiers:
+        _validate_typed_key(
+            value,
+            allowed_prefixes=(
+                *_QUALIFIER_PREFIXES,
+                "epistemic-state:",
+                "unknown:",
+            ),
+            code="difference_configuration_qualifier_invalid",
+        )
+
+
+def validate_difference_configuration_derivation(
+    derivation: DifferenceConfigurationDerivation,
+    *,
+    configurations: Sequence[DifferenceConfiguration],
+    foreground_scope_derivation: ForegroundScopeDerivation,
+) -> None:
+    if type(derivation) is not DifferenceConfigurationDerivation:
+        raise CMEEStage1ContractError(
+            "difference_configuration_derivation_type_invalid"
+        )
+    _validate_stage1_immutable_shape(derivation)
+    if (
+        derivation.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION
+        or type(derivation.state)
+        is not DifferenceConfigurationDerivationState
+        or type(foreground_scope_derivation) is not ForegroundScopeDerivation
+    ):
+        raise CMEEStage1ContractError(
+            "difference_configuration_derivation_shape_invalid"
+        )
+    rows = tuple(configurations)
+    if type(configurations) is not tuple:
+        raise CMEEStage1ContractError(
+            "difference_configurations_tuple_required"
+        )
+    for row in rows:
+        validate_difference_configuration(row)
+    config_refs = tuple(row.configuration_id for row in rows)
+    if (
+        len(config_refs) != len(set(config_refs))
+        or rows
+        != tuple(sorted(rows, key=_difference_configuration_contract_sort_key))
+        or len(rows) > 5
+    ):
+        raise CMEEStage1ContractError(
+            "difference_configurations_noncanonical"
+        )
+    for field_name in _STAGE1_TUPLE_FIELDS[DifferenceConfigurationDerivation]:
+        _require_canonical_string_set(
+            getattr(derivation, field_name),
+            code=f"difference_configuration_derivation_{field_name}_noncanonical",
+        )
+    state = derivation.state
+    scope = foreground_scope_derivation.foreground_scope
+    if type(derivation.configuration_set) is DifferenceConfigurationSet:
+        config_set = derivation.configuration_set
+        _validate_stage1_immutable_shape(config_set)
+        if config_set.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION:
+            raise CMEEStage1ContractError(
+                "difference_configuration_set_schema_version_invalid"
+            )
+        _require_im02_positional_refs(
+            config_set.configuration_refs,
+            code="difference_configuration_set_configuration_refs_noncanonical",
+            allow_empty=False,
+        )
+        _require_canonical_string_set(
+            config_set.source_evidence_refs,
+            code="difference_configuration_set_source_evidence_refs_noncanonical",
+            allow_empty=False,
+        )
+        _require_im02_owned_ref(
+            config_set.foreground_scope_ref,
+            ref_type="foreground-scope",
+            ref_version=_FOREGROUND_SCOPE_REF_VERSION,
+            code="difference_configuration_set_scope_ref_invalid",
+        )
+        expected_evidence = tuple(
+            sorted(
+                {
+                    ref
+                    for configuration in rows
+                    for ref in configuration.source_evidence_refs
+                }
+            )
+        )
+        if type(scope) is ForegroundScope:
+            scope_objects = set(scope.integrated_scope_object_refs)
+            scope_relations = set(scope.source_connected_relation_refs)
+            scope_evidence = set(scope.source_evidence_refs)
+            configuration_scope_valid = all(
+                set(configuration.source_evidence_refs).issubset(
+                    scope_evidence
+                )
+                and (
+                    (
+                        type(configuration) is RelationalConfiguration
+                        and set(
+                            configuration.endpoint_component_refs
+                        ).issubset(scope_objects)
+                        and set(configuration.relation_path_refs).issubset(
+                            scope_relations
+                        )
+                    )
+                    or (
+                        type(configuration)
+                        is QualifiedEventStateConfiguration
+                        and configuration.predicate_ref in scope_objects
+                    )
+                )
+                for configuration in rows
+            )
+        else:
+            configuration_scope_valid = False
+        set_valid = (
+            bool(rows)
+            and 1 <= len(rows) <= 5
+            and config_set.configuration_refs == config_refs
+            and config_set.source_evidence_refs == expected_evidence
+            and type(scope) is ForegroundScope
+            and config_set.foreground_scope_ref == scope.scope_id
+            and configuration_scope_valid
+        )
+    else:
+        set_valid = derivation.configuration_set is None
+    foreground_refs = (
+        foreground_scope_derivation.retained_foreground_source_object_refs
+    )
+    if state is DifferenceConfigurationDerivationState.CONFIGURATION_SET_AVAILABLE:
+        valid = (
+            set_valid
+            and type(derivation.configuration_set)
+            is DifferenceConfigurationSet
+            and derivation.foreground_source_object_refs == foreground_refs
+            and not derivation.missing_structure_refs
+            and derivation.derivation_evidence_refs
+            == derivation.configuration_set.source_evidence_refs
+        )
+    elif state is DifferenceConfigurationDerivationState.THIN_NO_SAFE_CONFIGURATION:
+        valid = (
+            set_valid
+            and not rows
+            and bool(foreground_refs)
+            and derivation.foreground_source_object_refs == foreground_refs
+            and not derivation.missing_structure_refs
+            and not derivation.derivation_evidence_refs
+        )
+    elif state is DifferenceConfigurationDerivationState.UPSTREAM_STRUCTURE_INSUFFICIENT:
+        valid = (
+            set_valid
+            and not rows
+            and bool(foreground_refs)
+            and derivation.foreground_source_object_refs == foreground_refs
+            and bool(derivation.missing_structure_refs)
+            and derivation.derivation_evidence_refs
+            == foreground_scope_derivation.derivation_evidence_refs
+        )
+    else:
+        valid = (
+            set_valid
+            and not rows
+            and not foreground_refs
+            and not derivation.foreground_source_object_refs
+            and not derivation.missing_structure_refs
+            and not derivation.derivation_evidence_refs
+        )
+    if not valid:
+        raise CMEEStage1ContractError(
+            "difference_configuration_derivation_state_cardinality_mismatch"
+        )
+
+
+def validate_observed_distinction_row(
+    row: ObservedDistinctionRow,
+    *,
+    configuration: DifferenceConfiguration,
+) -> None:
+    if type(row) is not ObservedDistinctionRow:
+        raise CMEEStage1ContractError("observed_distinction_type_invalid")
+    _validate_stage1_immutable_shape(row)
+    validate_difference_configuration(configuration)
+    if (
+        row.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION
+        or type(row.derivation_kind)
+        is not ObservedDistinctionDerivationKind
+        or type(row.axis) is not DifferenceAxis
+        or row.configuration_ref != configuration.configuration_id
+    ):
+        raise CMEEStage1ContractError("observed_distinction_shape_invalid")
+    _require_im02_owned_ref(
+        row.distinction_id,
+        ref_type="observed-distinction",
+        ref_version=_OBSERVED_DISTINCTION_REF_VERSION,
+        code="observed_distinction_id_invalid",
+    )
+    if row.distinction_id != observed_distinction_id(row):
+        raise CMEEStage1ContractError("observed_distinction_id_mismatch")
+    contrasted = _require_canonical_string_set(
+        row.contrasted_component_refs,
+        code="observed_distinction_components_noncanonical",
+        allow_empty=False,
+    )
+    qualifiers = _require_canonical_string_set(
+        row.source_qualifier_refs,
+        code="observed_distinction_qualifiers_noncanonical",
+    )
+    evidence = _require_canonical_string_set(
+        row.source_evidence_refs,
+        code="observed_distinction_evidence_noncanonical",
+        allow_empty=False,
+    )
+    if not set(evidence).issubset(configuration.source_evidence_refs):
+        raise CMEEStage1ContractError("observed_distinction_evidence_unbound")
+    config_qualifiers = (
+        configuration.source_qualifier_refs
+        if type(configuration) is RelationalConfiguration
+        else (
+            *configuration.modality_refs,
+            *configuration.time_refs,
+            *configuration.aspect_refs,
+            *configuration.scope_refs,
+            *configuration.qualifier_refs,
+        )
+    )
+    if not set(qualifiers).issubset(config_qualifiers):
+        raise CMEEStage1ContractError(
+            "observed_distinction_qualifier_unbound"
+        )
+    kind = row.derivation_kind
+    if kind is ObservedDistinctionDerivationKind.BINARY_ENDPOINT_AND_DIRECTION:
+        kind_valid = (
+            type(configuration) is RelationalConfiguration
+            and len(contrasted) == 2
+            and set(contrasted).issubset(
+                configuration.endpoint_component_refs
+            )
+            and any(
+                {
+                    direction.source_endpoint_ref,
+                    direction.target_endpoint_ref,
+                }
+                == set(contrasted)
+                for direction in configuration.direction_rows
+            )
+        )
+    elif kind is ObservedDistinctionDerivationKind.QUALIFIED_PREDICATE_OWNER_MODIFIER:
+        kind_valid = (
+            type(configuration) is QualifiedEventStateConfiguration
+            and {configuration.predicate_ref, configuration.owner_ref}.issubset(
+                contrasted
+            )
+            and bool(config_qualifiers)
+        )
+    elif kind is ObservedDistinctionDerivationKind.BOUND_QUALIFIER:
+        kind_valid = bool(qualifiers)
+    elif kind is ObservedDistinctionDerivationKind.BOUND_MATERIAL_UNKNOWN:
+        kind_valid = bool(qualifiers) and all(
+            value.startswith("unknown:") for value in qualifiers
+        )
+    else:
+        kind_valid = len(contrasted) >= 2
+    if not kind_valid:
+        raise CMEEStage1ContractError(
+            "observed_distinction_derivation_kind_unbound"
+        )
+
+
+_MUTATION_ALLOWED_INVARIANTS = {
+    CounterfactualMutationKind.DELETE_ENDPOINT: frozenset(
+        {
+            DifferenceInvariantCode.ENDPOINT_COLLAPSE,
+            DifferenceInvariantCode.REQUIRED_RETENTION_ERASURE,
+        }
+    ),
+    CounterfactualMutationKind.SWAP_ENDPOINTS: frozenset(
+        {
+            DifferenceInvariantCode.DIRECTION_REVERSAL,
+            DifferenceInvariantCode.REQUIRED_RETENTION_ERASURE,
+        }
+    ),
+    CounterfactualMutationKind.DELETE_PREDICATE: frozenset(
+        {
+            DifferenceInvariantCode.ENDPOINT_COLLAPSE,
+            DifferenceInvariantCode.REQUIRED_RETENTION_ERASURE,
+        }
+    ),
+    CounterfactualMutationKind.DELETE_OWNER: frozenset(
+        {
+            DifferenceInvariantCode.ROLE_COLLAPSE,
+            DifferenceInvariantCode.REQUIRED_RETENTION_ERASURE,
+        }
+    ),
+    CounterfactualMutationKind.REPLACE_WORLD: frozenset(
+        {
+            DifferenceInvariantCode.WORLD_COLLAPSE,
+            DifferenceInvariantCode.REQUIRED_RETENTION_ERASURE,
+        }
+    ),
+    CounterfactualMutationKind.REPLACE_ROLE: frozenset(
+        {
+            DifferenceInvariantCode.ROLE_COLLAPSE,
+            DifferenceInvariantCode.REQUIRED_RETENTION_ERASURE,
+        }
+    ),
+    CounterfactualMutationKind.REPLACE_TIME: frozenset(
+        {
+            DifferenceInvariantCode.TEMPORAL_COLLAPSE,
+            DifferenceInvariantCode.REQUIRED_RETENTION_ERASURE,
+        }
+    ),
+    CounterfactualMutationKind.DELETE_MODALITY: frozenset(
+        {
+            DifferenceInvariantCode.MODALITY_PROMOTION,
+            DifferenceInvariantCode.EXPLICIT_LIMIT_ERASURE,
+            DifferenceInvariantCode.REQUIRED_RETENTION_ERASURE,
+        }
+    ),
+    CounterfactualMutationKind.DELETE_ASPECT: frozenset(
+        {
+            DifferenceInvariantCode.TEMPORAL_COLLAPSE,
+            DifferenceInvariantCode.EXPLICIT_LIMIT_ERASURE,
+            DifferenceInvariantCode.REQUIRED_RETENTION_ERASURE,
+        }
+    ),
+    CounterfactualMutationKind.DELETE_SCOPE: frozenset(
+        {
+            DifferenceInvariantCode.EXPLICIT_LIMIT_ERASURE,
+            DifferenceInvariantCode.REQUIRED_RETENTION_ERASURE,
+        }
+    ),
+    CounterfactualMutationKind.DELETE_QUALIFIER: frozenset(
+        {
+            DifferenceInvariantCode.POLARITY_REVERSAL,
+            DifferenceInvariantCode.MODALITY_PROMOTION,
+            DifferenceInvariantCode.TEMPORAL_COLLAPSE,
+            DifferenceInvariantCode.EXPLICIT_LIMIT_ERASURE,
+            DifferenceInvariantCode.REQUIRED_RETENTION_ERASURE,
+        }
+    ),
+    CounterfactualMutationKind.PROMOTE_UNKNOWN: frozenset(
+        {
+            DifferenceInvariantCode.UNKNOWN_ERASURE,
+            DifferenceInvariantCode.REQUIRED_RETENTION_ERASURE,
+        }
+    ),
+}
+
+
+def validate_counterfactual_mutation_local_shape(
+    row: CounterfactualMutationRow,
+) -> None:
+    """Validate the closed exact12 mutation without external provenance."""
+
+    if type(row) is not CounterfactualMutationRow:
+        raise CMEEStage1ContractError(
+            "counterfactual_mutation_type_invalid"
+        )
+    _validate_stage1_immutable_shape(row)
+    if (
+        row.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION
+        or type(row.mutation_kind) is not CounterfactualMutationKind
+    ):
+        raise CMEEStage1ContractError(
+            "counterfactual_mutation_shape_invalid"
+        )
+    _require_im02_owned_ref(
+        row.observed_distinction_ref,
+        ref_type="observed-distinction",
+        ref_version=_OBSERVED_DISTINCTION_REF_VERSION,
+        code="counterfactual_mutation_observed_ref_invalid",
+    )
+    _require_im02_owned_ref(
+        row.mutation_id,
+        ref_type="counterfactual-mutation",
+        ref_version=_COUNTERFACTUAL_MUTATION_REF_VERSION,
+        code="counterfactual_mutation_id_invalid",
+    )
+    if row.mutation_id != counterfactual_mutation_id(row):
+        raise CMEEStage1ContractError("counterfactual_mutation_id_mismatch")
+    targets = _require_im02_positional_refs(
+        row.target_component_refs,
+        code="counterfactual_mutation_targets_invalid",
+        allow_empty=False,
+    )
+    replacements = _require_im02_positional_refs(
+        row.replacement_refs,
+        code="counterfactual_mutation_replacements_invalid",
+        allow_empty=True,
+    )
+    evidence = _require_canonical_string_set(
+        row.source_evidence_refs,
+        code="counterfactual_mutation_evidence_noncanonical",
+        allow_empty=False,
+    )
+    for ref in evidence:
+        validate_version_qualified_ref(ref, expected_types=("evidence",))
+
+    delete_kinds = {
+        CounterfactualMutationKind.DELETE_ENDPOINT,
+        CounterfactualMutationKind.DELETE_PREDICATE,
+        CounterfactualMutationKind.DELETE_OWNER,
+        CounterfactualMutationKind.DELETE_MODALITY,
+        CounterfactualMutationKind.DELETE_ASPECT,
+        CounterfactualMutationKind.DELETE_SCOPE,
+        CounterfactualMutationKind.DELETE_QUALIFIER,
+    }
+    kind = row.mutation_kind
+    if kind in delete_kinds:
+        valid = len(targets) == 1 and not replacements
+    elif kind is CounterfactualMutationKind.SWAP_ENDPOINTS:
+        valid = (
+            len(targets) == len(replacements) == 2
+            and replacements == tuple(reversed(targets))
+        )
+    elif kind is CounterfactualMutationKind.PROMOTE_UNKNOWN:
+        valid = (
+            len(targets) == len(replacements) == 1
+            and targets[0].startswith("unknown:")
+            and replacements == ("resolution:resolved",)
+        )
+    elif kind is CounterfactualMutationKind.REPLACE_WORLD:
+        closed_worlds = {
+            "world:internal",
+            "world:external",
+            "world:relationship",
+            "world:unknown",
+        }
+        valid = (
+            len(targets) == len(replacements) == 1
+            and targets[0] in closed_worlds
+            and replacements[0] in closed_worlds
+            and targets != replacements
+        )
+    elif kind is CounterfactualMutationKind.REPLACE_TIME:
+        if len(targets) == len(replacements) == 1:
+            target_prefix, _, target_value = targets[0].partition(":")
+            replacement_prefix, _, replacement_value = (
+                replacements[0].partition(":")
+            )
+            closed_replacements = {
+                "past": "future",
+                "present": "future",
+                "future": "past",
+                "past_to_present": "present_to_future",
+                "present_to_future": "past_to_present",
+                "continuing": "future",
+                "current_input": "future",
+            }
+            valid = (
+                target_prefix in {"time", "time_scope"}
+                and replacement_prefix == target_prefix
+                and target_value in _FOREGROUND_SOURCE_TIME_SCOPE_VALUES
+                and replacement_value
+                in _FOREGROUND_SOURCE_TIME_SCOPE_VALUES
+                and closed_replacements.get(target_value)
+                == replacement_value
+            )
+        else:
+            valid = False
+    elif kind is CounterfactualMutationKind.REPLACE_ROLE:
+        valid = (
+            len(targets) == len(replacements) == 1
+            and targets[0] in {"role:left", "role:right"}
+            and replacements[0] in {"role:left", "role:right"}
+            and targets != replacements
+        )
+    else:
+        valid = False
+    if not valid:
+        raise CMEEStage1ContractError(
+            "counterfactual_mutation_cardinality_invalid"
+        )
+    if kind in {
+        CounterfactualMutationKind.DELETE_ENDPOINT,
+        CounterfactualMutationKind.DELETE_PREDICATE,
+        CounterfactualMutationKind.SWAP_ENDPOINTS,
+    }:
+        try:
+            for ref in (*targets, *replacements):
+                validate_version_qualified_ref(
+                    ref,
+                    expected_types=("node",),
+                )
+        except CMEEStage1ContractError:
+            raise CMEEStage1ContractError(
+                "counterfactual_mutation_target_namespace_invalid"
+            ) from None
+    elif kind is CounterfactualMutationKind.DELETE_OWNER:
+        _validate_typed_key(
+            targets[0],
+            allowed_prefixes=("owner:",),
+            code="counterfactual_mutation_target_namespace_invalid",
+        )
+    elif kind is CounterfactualMutationKind.DELETE_MODALITY:
+        _validate_typed_key(
+            targets[0],
+            allowed_prefixes=("modality:",),
+            code="counterfactual_mutation_target_namespace_invalid",
+        )
+    elif kind is CounterfactualMutationKind.DELETE_ASPECT:
+        _validate_typed_key(
+            targets[0],
+            allowed_prefixes=("aspect:",),
+            code="counterfactual_mutation_target_namespace_invalid",
+        )
+    elif kind is CounterfactualMutationKind.DELETE_SCOPE:
+        _validate_typed_key(
+            targets[0],
+            allowed_prefixes=("scope:",),
+            code="counterfactual_mutation_target_namespace_invalid",
+        )
+    elif kind is CounterfactualMutationKind.DELETE_QUALIFIER:
+        _validate_typed_key(
+            targets[0],
+            allowed_prefixes=(
+                "qualifier:",
+                "polarity:",
+                "epistemic:",
+                "epistemic-state:",
+                "world:",
+                "time:",
+                "time_scope:",
+            ),
+            code="counterfactual_mutation_target_namespace_invalid",
+        )
+    elif kind is CounterfactualMutationKind.PROMOTE_UNKNOWN:
+        _validate_typed_key(
+            targets[0],
+            allowed_prefixes=("unknown:",),
+            code="counterfactual_mutation_target_namespace_invalid",
+        )
+
+
+def validate_counterfactual_mutation_row(
+    row: CounterfactualMutationRow,
+    *,
+    observed_distinction: ObservedDistinctionRow,
+    configuration: DifferenceConfiguration,
+) -> None:
+    validate_counterfactual_mutation_local_shape(row)
+    validate_observed_distinction_row(
+        observed_distinction,
+        configuration=configuration,
+    )
+    if row.observed_distinction_ref != observed_distinction.distinction_id:
+        raise CMEEStage1ContractError(
+            "counterfactual_mutation_shape_invalid"
+        )
+    targets = row.target_component_refs
+    replacements = row.replacement_refs
+    evidence = row.source_evidence_refs
+    if evidence != observed_distinction.source_evidence_refs:
+        raise CMEEStage1ContractError(
+            "counterfactual_mutation_evidence_unbound"
+        )
+    if type(configuration) is RelationalConfiguration:
+        configuration_qualifiers = set(configuration.source_qualifier_refs)
+    else:
+        configuration_qualifiers = {
+            *configuration.modality_refs,
+            *configuration.time_refs,
+            *configuration.aspect_refs,
+            *configuration.scope_refs,
+            *configuration.qualifier_refs,
+        }
+    kind = row.mutation_kind
+    if kind is CounterfactualMutationKind.DELETE_ENDPOINT:
+        target_valid = (
+            type(configuration) is RelationalConfiguration
+            and targets[0] in configuration.endpoint_component_refs
+        )
+    elif kind is CounterfactualMutationKind.SWAP_ENDPOINTS:
+        target_valid = (
+            type(configuration) is RelationalConfiguration
+            and set(targets).issubset(configuration.endpoint_component_refs)
+            and any(
+                direction.source_endpoint_ref == targets[0]
+                and direction.target_endpoint_ref == targets[1]
+                and direction.relation_kind
+                in {
+                    ForegroundScopeRelationKind.CONTINUATION,
+                    ForegroundScopeRelationKind.CORRECTION,
+                }
+                for direction in configuration.direction_rows
+            )
+        )
+    elif kind is CounterfactualMutationKind.DELETE_PREDICATE:
+        target_valid = (
+            type(configuration) is QualifiedEventStateConfiguration
+            and targets == (configuration.predicate_ref,)
+        )
+    elif kind is CounterfactualMutationKind.DELETE_OWNER:
+        target_valid = (
+            type(configuration) is QualifiedEventStateConfiguration
+            and targets == (configuration.owner_ref,)
+        )
+    elif kind is CounterfactualMutationKind.REPLACE_WORLD:
+        target_valid = (
+            targets[0] in configuration_qualifiers
+            and targets[0].startswith("world:")
+            and replacements[0].startswith("world:")
+            and replacements[0]
+            in {
+                "world:internal",
+                "world:external",
+                "world:relationship",
+                "world:unknown",
+            }
+        )
+    elif kind is CounterfactualMutationKind.REPLACE_TIME:
+        target_valid = (
+            targets[0] in configuration_qualifiers
+            and targets[0].startswith(("time:", "time_scope:"))
+            and replacements[0].startswith(("time:", "time_scope:"))
+            and targets[0].split(":", 1)[0]
+            == replacements[0].split(":", 1)[0]
+        )
+    elif kind is CounterfactualMutationKind.REPLACE_ROLE:
+        target_valid = (
+            type(configuration) is RelationalConfiguration
+            and {targets[0], replacements[0]}
+            == {"role:left", "role:right"}
+        )
+    elif kind is CounterfactualMutationKind.PROMOTE_UNKNOWN:
+        target_valid = (
+            targets[0] in configuration_qualifiers
+            and targets[0].startswith("unknown:")
+            and replacements == ("resolution:resolved",)
+        )
+    elif kind is CounterfactualMutationKind.DELETE_MODALITY:
+        target_valid = (
+            targets[0] in configuration_qualifiers
+            and targets[0].startswith("modality:")
+        )
+    elif kind is CounterfactualMutationKind.DELETE_ASPECT:
+        target_valid = (
+            targets[0] in configuration_qualifiers
+            and targets[0].startswith("aspect:")
+        )
+    elif kind is CounterfactualMutationKind.DELETE_SCOPE:
+        target_valid = (
+            targets[0] in configuration_qualifiers
+            and targets[0].startswith("scope:")
+        )
+    elif kind is CounterfactualMutationKind.DELETE_QUALIFIER:
+        target_valid = (
+            targets[0] in configuration_qualifiers
+            and targets[0].startswith(
+                (
+                    "qualifier:",
+                    "polarity:",
+                    "epistemic:",
+                    "epistemic-state:",
+                    "world:",
+                    "time:",
+                    "time_scope:",
+                )
+            )
+        )
+    else:
+        target_valid = False
+    if not target_valid:
+        raise CMEEStage1ContractError(
+            "counterfactual_mutation_target_unbound"
+        )
+
+
+def validate_required_difference_row(
+    row: RequiredDifferenceRow,
+    *,
+    observed_distinction: ObservedDistinctionRow,
+    mutation: CounterfactualMutationRow,
+    configuration: DifferenceConfiguration,
+) -> None:
+    if type(row) is not RequiredDifferenceRow:
+        raise CMEEStage1ContractError("required_difference_type_invalid")
+    _validate_stage1_immutable_shape(row)
+    validate_counterfactual_mutation_row(
+        mutation,
+        observed_distinction=observed_distinction,
+        configuration=configuration,
+    )
+    if (
+        row.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION
+        or row.observed_distinction_ref != observed_distinction.distinction_id
+        or row.counterfactual_mutation_ref != mutation.mutation_id
+    ):
+        raise CMEEStage1ContractError("required_difference_shape_invalid")
+    _require_im02_owned_ref(
+        row.difference_id,
+        ref_type="required-difference",
+        ref_version=_REQUIRED_DIFFERENCE_REF_VERSION,
+        code="required_difference_id_invalid",
+    )
+    if row.difference_id != required_difference_id(row):
+        raise CMEEStage1ContractError("required_difference_id_mismatch")
+    invariants = tuple(row.invariant_codes)
+    if (
+        type(row.invariant_codes) is not tuple
+        or not invariants
+        or any(
+            type(value) is not DifferenceInvariantCode
+            for value in invariants
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "required_difference_invariants_invalid"
+        )
+    expected_invariant_order = tuple(
+        value for value in DifferenceInvariantCode if value in set(invariants)
+    )
+    if (
+        invariants != expected_invariant_order
+        or not set(invariants).issubset(
+            _MUTATION_ALLOWED_INVARIANTS[mutation.mutation_kind]
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "required_difference_invariants_invalid"
+        )
+    retention = _require_canonical_string_set(
+        row.retention_duty_refs,
+        code="required_difference_retention_refs_noncanonical",
+    )
+    retains_required = (
+        DifferenceInvariantCode.REQUIRED_RETENTION_ERASURE in invariants
+    )
+    if bool(retention) != retains_required or any(
+        any(
+            forbidden in ref.lower()
+            for forbidden in (
+                "reception",
+                "style",
+                "temperature",
+                "affect",
+                "value-policy",
+            )
+        )
+        for ref in retention
+    ):
+        raise CMEEStage1ContractError(
+            "required_difference_retention_owner_invalid"
+        )
+
+
+def _configuration_connection_keys(
+    configuration: DifferenceConfiguration,
+) -> tuple[set[str], set[str]]:
+    if type(configuration) is RelationalConfiguration:
+        return (
+            set(configuration.endpoint_component_refs),
+            set(configuration.relation_path_refs),
+        )
+    return (
+        {configuration.predicate_ref},
+        set(),
+    )
+
+
+def validate_requirement_bundle_derivation(
+    derivation: RequirementBundleDerivation,
+    *,
+    bundles: Sequence[RequirementBundle],
+    configurations: Sequence[DifferenceConfiguration],
+    required_differences: Sequence[RequiredDifferenceRow],
+    difference_configuration_derivation: DifferenceConfigurationDerivation,
+) -> None:
+    if type(derivation) is not RequirementBundleDerivation:
+        raise CMEEStage1ContractError(
+            "requirement_bundle_derivation_type_invalid"
+        )
+    _validate_stage1_immutable_shape(derivation)
+    if (
+        derivation.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION
+        or type(derivation.state) is not RequirementBundleDerivationState
+    ):
+        raise CMEEStage1ContractError(
+            "requirement_bundle_derivation_shape_invalid"
+        )
+    rows = tuple(bundles)
+    configs = tuple(configurations)
+    required = tuple(required_differences)
+    if any(type(values) is not tuple for values in (bundles, configurations, required_differences)):
+        raise CMEEStage1ContractError("requirement_bundle_inputs_tuple_required")
+    config_by_ref = {row.configuration_id: row for row in configs}
+    configuration_order = {
+        row.configuration_id: index for index, row in enumerate(configs)
+    }
+    required_by_ref = {row.difference_id: row for row in required}
+    for field_name in _STAGE1_TUPLE_FIELDS[RequirementBundleDerivation]:
+        _require_canonical_string_set(
+            getattr(derivation, field_name),
+            code=f"requirement_bundle_derivation_{field_name}_noncanonical",
+        )
+    bundle_refs: list[str] = []
+    scope_ref = (
+        difference_configuration_derivation.configuration_set.foreground_scope_ref
+        if type(difference_configuration_derivation.configuration_set)
+        is DifferenceConfigurationSet
+        else None
+    )
+    for row in rows:
+        if type(row) is not RequirementBundle:
+            raise CMEEStage1ContractError("requirement_bundle_type_invalid")
+        _validate_stage1_immutable_shape(row)
+        if row.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION:
+            raise CMEEStage1ContractError(
+                "requirement_bundle_schema_version_invalid"
+            )
+        _require_im02_owned_ref(
+            row.bundle_id,
+            ref_type="requirement-bundle",
+            ref_version=_REQUIREMENT_BUNDLE_REF_VERSION,
+            code="requirement_bundle_id_invalid",
+        )
+        if row.bundle_id != requirement_bundle_id(row):
+            raise CMEEStage1ContractError("requirement_bundle_id_mismatch")
+        if row.foreground_scope_ref != scope_ref:
+            raise CMEEStage1ContractError("requirement_bundle_scope_unbound")
+        if row.anchor_configuration_ref not in config_by_ref:
+            raise CMEEStage1ContractError("requirement_bundle_anchor_unbound")
+        adjacent = _require_canonical_string_set(
+            row.adjacent_configuration_refs,
+            code="requirement_bundle_adjacent_noncanonical",
+        )
+        if (
+            len(adjacent) > 4
+            or row.anchor_configuration_ref in adjacent
+            or not set(adjacent).issubset(config_by_ref)
+        ):
+            raise CMEEStage1ContractError(
+                "requirement_bundle_adjacent_invalid"
+            )
+        required_refs = _require_canonical_string_set(
+            row.required_difference_refs,
+            code="requirement_bundle_required_noncanonical",
+            allow_empty=False,
+        )
+        if not set(required_refs).issubset(required_by_ref):
+            raise CMEEStage1ContractError(
+                "requirement_bundle_required_unbound"
+            )
+        _require_canonical_string_set(
+            row.retention_duty_refs,
+            code="requirement_bundle_retention_noncanonical",
+        )
+        anchor_objects, anchor_paths = _configuration_connection_keys(
+            config_by_ref[row.anchor_configuration_ref]
+        )
+        for adjacent_ref in adjacent:
+            adjacent_objects, adjacent_paths = _configuration_connection_keys(
+                config_by_ref[adjacent_ref]
+            )
+            if not (
+                anchor_objects & adjacent_objects
+                or anchor_paths & adjacent_paths
+            ):
+                raise CMEEStage1ContractError(
+                    "requirement_bundle_adjacent_not_source_connected"
+                )
+        bundle_refs.append(row.bundle_id)
+    ordered_rows = tuple(
+        sorted(
+            rows,
+            key=lambda row: (
+                configuration_order[row.anchor_configuration_ref],
+                tuple(
+                    configuration_order[ref]
+                    for ref in row.adjacent_configuration_refs
+                ),
+                row.required_difference_refs,
+                row.retention_duty_refs,
+            ),
+        )
+    )
+    if (
+        len(bundle_refs) != len(set(bundle_refs))
+        or rows != ordered_rows
+        or len(rows) > 5
+    ):
+        raise CMEEStage1ContractError("requirement_bundles_noncanonical")
+    if type(derivation.bundle_set) is RequirementBundleSet:
+        bundle_set = derivation.bundle_set
+        _validate_stage1_immutable_shape(bundle_set)
+        _require_im02_owned_ref(
+            bundle_set.foreground_scope_ref,
+            ref_type="foreground-scope",
+            ref_version=_FOREGROUND_SCOPE_REF_VERSION,
+            code="requirement_bundle_set_scope_ref_invalid",
+        )
+        set_valid = (
+            bundle_set.schema_version == _FOREGROUND_SCOPE_SCHEMA_VERSION
+            and bundle_set.foreground_scope_ref == scope_ref
+            and bundle_set.bundle_refs == tuple(bundle_refs)
+            and bool(rows)
+            and 1 <= len(rows) <= 5
+        )
+        _require_im02_positional_refs(
+            bundle_set.bundle_refs,
+            code="requirement_bundle_set_refs_noncanonical",
+            allow_empty=False,
+        )
+    else:
+        set_valid = derivation.bundle_set is None
+    evidence_valid = (
+        derivation.derivation_evidence_refs
+        == difference_configuration_derivation.derivation_evidence_refs
+    )
+    if derivation.state is RequirementBundleDerivationState.BUNDLE_SET_AVAILABLE:
+        valid = (
+            set_valid
+            and evidence_valid
+            and type(derivation.bundle_set) is RequirementBundleSet
+            and bool(required)
+            and not derivation.missing_structure_refs
+        )
+    elif derivation.state is RequirementBundleDerivationState.NO_REQUIRED_DIFFERENCE:
+        valid = (
+            set_valid
+            and evidence_valid
+            and not rows
+            and not required
+            and difference_configuration_derivation.state
+            is DifferenceConfigurationDerivationState.CONFIGURATION_SET_AVAILABLE
+            and not derivation.missing_structure_refs
+        )
+    else:
+        valid = (
+            set_valid
+            and evidence_valid
+            and not rows
+            and difference_configuration_derivation.state
+            is not DifferenceConfigurationDerivationState.CONFIGURATION_SET_AVAILABLE
+            and bool(derivation.missing_structure_refs)
+        )
+    if not valid:
+        raise CMEEStage1ContractError(
+            "requirement_bundle_derivation_state_cardinality_mismatch"
+        )
+
+
+def _im02_component_sort_key(
+    value: MeaningComponentSemanticKey,
+) -> bytes:
+    return stage1_canonical_json_bytes(value)
+
+
+def _im02_canonical_components(
+    values: Sequence[MeaningComponentSemanticKey],
+) -> tuple[MeaningComponentSemanticKey, ...]:
+    return tuple(sorted(set(values), key=_im02_component_sort_key))
+
+
+def _im02_role_qualifier_parts(
+    value: str,
+) -> Optional[tuple[str, str, str]]:
+    if not value.startswith("qualifier:") or "=" not in value:
+        return None
+    key, qualifier_value = value.removeprefix("qualifier:").split("=", 1)
+    for role in ("left", "right", "subject", "object", "target"):
+        prefix = f"{role}_"
+        if key.startswith(prefix):
+            return role, key.removeprefix(prefix), qualifier_value
+    return None
+
+
+def _im02_qualifiers_for_roles(
+    qualifier_keys: Sequence[str],
+    roles: set[str],
+) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            {
+                value
+                for value in qualifier_keys
+                if (
+                    (parts := _im02_role_qualifier_parts(value)) is None
+                    or parts[0] in roles
+                )
+            }
+        )
+    )
+
+
+def _im02_summaries_for_role_qualifiers(
+    baseline: MeaningSemanticSignature,
+    qualifier_keys: Sequence[str],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    baseline_parts = tuple(
+        parts
+        for value in baseline.qualifier_keys
+        if (parts := _im02_role_qualifier_parts(value)) is not None
+    )
+    retained_parts = tuple(
+        parts
+        for value in qualifier_keys
+        if (parts := _im02_role_qualifier_parts(value)) is not None
+    )
+    temporal = set(baseline.temporal_state_keys)
+    temporal.difference_update(
+        f"time:{value}"
+        for _role, axis, value in baseline_parts
+        if axis == "time_scope"
+    )
+    temporal.update(
+        f"time:{value}"
+        for _role, axis, value in retained_parts
+        if axis == "time_scope"
+    )
+    modality = set(baseline.modality_polarity_or_limitation_keys)
+    modality.difference_update(
+        f"{axis}:{value}"
+        for _role, axis, value in baseline_parts
+        if axis in {"modality", "polarity"}
+    )
+    modality.update(
+        f"{axis}:{value}"
+        for _role, axis, value in retained_parts
+        if axis in {"modality", "polarity"}
+    )
+    return tuple(sorted(temporal)), tuple(sorted(modality))
+
+
+def _im02_apply_closed_counterfactual(
+    baseline: MeaningSemanticSignature,
+    mutation: CounterfactualMutationRow,
+) -> MeaningSemanticSignature:
+    kind = mutation.mutation_kind
+    if kind is CounterfactualMutationKind.SWAP_ENDPOINTS:
+        role_swap = {"role:left": "role:right", "role:right": "role:left"}
+        components = _im02_canonical_components(
+            tuple(
+                replace(
+                    value,
+                    role_key=role_swap.get(value.role_key, value.role_key),
+                )
+                for value in baseline.component_semantic_keys
+            )
+        )
+        qualifier_role_swap = {"left": "right", "right": "left"}
+        qualifiers: set[str] = set()
+        for value in baseline.qualifier_keys:
+            parts = _im02_role_qualifier_parts(value)
+            if parts is None or parts[0] not in qualifier_role_swap:
+                qualifiers.add(value)
+                continue
+            role, axis, qualifier_value = parts
+            qualifiers.add(
+                f"qualifier:{qualifier_role_swap[role]}_{axis}={qualifier_value}"
+            )
+        return replace(
+            baseline,
+            component_role_keys=tuple(
+                sorted({value.role_key for value in components})
+            ),
+            qualifier_keys=tuple(sorted(qualifiers)),
+            component_semantic_keys=components,
+        )
+    if kind is CounterfactualMutationKind.DELETE_ENDPOINT:
+        if (
+            len(mutation.target_component_refs) != 1
+            or len(baseline.component_semantic_keys) < 2
+        ):
+            return baseline
+        candidates = tuple(
+            value
+            for value in baseline.component_semantic_keys
+            if value.role_key == "role:right"
+        )
+        if len(candidates) != 1:
+            return baseline
+        removed = candidates[0]
+        components = tuple(
+            value
+            for value in baseline.component_semantic_keys
+            if value is not removed
+        )
+        center_kinds = {
+            value.removeprefix("center:")
+            for value in baseline.input_center_keys
+        }
+        remaining_kinds = {
+            value.semantic_kind_key.removeprefix("semantic-kind:")
+            for value in components
+        }
+        if not center_kinds.issubset(remaining_kinds):
+            return baseline
+        roles = {
+            value.role_key.removeprefix("role:") for value in components
+        }
+        qualifiers = _im02_qualifiers_for_roles(
+            baseline.qualifier_keys, roles
+        )
+        temporal, modality = _im02_summaries_for_role_qualifiers(
+            baseline, qualifiers
+        )
+        return replace(
+            baseline,
+            component_role_keys=tuple(
+                sorted({value.role_key for value in components})
+            ),
+            relation_direction_keys=(
+                baseline.relation_direction_keys
+                if len(components) >= 2 and len(roles) >= 2
+                else ()
+            ),
+            temporal_state_keys=temporal,
+            modality_polarity_or_limitation_keys=modality,
+            qualifier_keys=qualifiers,
+            component_semantic_keys=components,
+        )
+    if kind is CounterfactualMutationKind.REPLACE_ROLE:
+        if (
+            len(mutation.target_component_refs) != 1
+            or len(mutation.replacement_refs) != 1
+        ):
+            return baseline
+        target_role = mutation.target_component_refs[0]
+        replacement_role = mutation.replacement_refs[0]
+        if (
+            not target_role.startswith("role:")
+            or not replacement_role.startswith("role:")
+            or target_role
+            not in {
+                value.role_key
+                for value in baseline.component_semantic_keys
+            }
+        ):
+            return baseline
+        components = _im02_canonical_components(
+            tuple(
+                replace(value, role_key=replacement_role)
+                if value.role_key == target_role
+                else value
+                for value in baseline.component_semantic_keys
+            )
+        )
+        target_name = target_role.removeprefix("role:")
+        replacement_name = replacement_role.removeprefix("role:")
+        qualifiers: set[str] = set()
+        for value in baseline.qualifier_keys:
+            parts = _im02_role_qualifier_parts(value)
+            if parts is None or parts[0] != target_name:
+                qualifiers.add(value)
+                continue
+            _role, axis, qualifier_value = parts
+            qualifiers.add(
+                f"qualifier:{replacement_name}_{axis}={qualifier_value}"
+            )
+        qualifier_tuple = tuple(sorted(qualifiers))
+        temporal, modality = _im02_summaries_for_role_qualifiers(
+            baseline, qualifier_tuple
+        )
+        return replace(
+            baseline,
+            component_role_keys=tuple(
+                sorted({value.role_key for value in components})
+            ),
+            relation_direction_keys=(
+                baseline.relation_direction_keys
+                if len(components) >= 2
+                and len({value.role_key for value in components}) >= 2
+                else ()
+            ),
+            temporal_state_keys=temporal,
+            modality_polarity_or_limitation_keys=modality,
+            qualifier_keys=qualifier_tuple,
+            component_semantic_keys=components,
+        )
+    if kind is CounterfactualMutationKind.DELETE_OWNER:
+        if len(mutation.target_component_refs) != 1:
+            return baseline
+        target_owner = mutation.target_component_refs[0].split("@", 1)[0]
+        owners = {
+            value.owner_key for value in baseline.component_semantic_keys
+        }
+        if target_owner not in owners or target_owner == "owner:unknown":
+            return baseline
+        affected_roles = {
+            value.role_key.removeprefix("role:")
+            for value in baseline.component_semantic_keys
+            if value.owner_key == target_owner
+        }
+        components = _im02_canonical_components(
+            tuple(
+                replace(value, owner_key="owner:unknown")
+                if value.owner_key == target_owner
+                else value
+                for value in baseline.component_semantic_keys
+            )
+        )
+        qualifiers: set[str] = set()
+        for value in baseline.qualifier_keys:
+            parts = _im02_role_qualifier_parts(value)
+            if (
+                parts is not None
+                and parts[0] in affected_roles
+                and parts[1] == "actor"
+            ):
+                qualifiers.add(f"qualifier:{parts[0]}_actor=unknown")
+            else:
+                qualifiers.add(value)
+        worlds = {
+            value
+            for value in baseline.world_or_owner_distinction_keys
+            if value.startswith("world:")
+        }
+        worlds.update(value.owner_key for value in components)
+        return replace(
+            baseline,
+            world_or_owner_distinction_keys=tuple(sorted(worlds)),
+            qualifier_keys=tuple(sorted(qualifiers)),
+            component_semantic_keys=components,
+        )
+    if kind is CounterfactualMutationKind.REPLACE_WORLD:
+        target = mutation.target_component_refs[0]
+        replacement_value = mutation.replacement_refs[0]
+        worlds = set(baseline.world_or_owner_distinction_keys)
+        if target not in worlds:
+            return baseline
+        worlds.remove(target)
+        worlds.add(replacement_value)
+        return replace(
+            baseline,
+            world_or_owner_distinction_keys=tuple(sorted(worlds)),
+        )
+    if kind is CounterfactualMutationKind.REPLACE_TIME:
+        target = mutation.target_component_refs[0].replace(
+            "time_scope:", "time:"
+        )
+        replacement_value = mutation.replacement_refs[0].replace(
+            "time_scope:", "time:"
+        )
+        temporal = set(baseline.temporal_state_keys)
+        if target not in temporal:
+            return baseline
+        temporal.remove(target)
+        temporal.add(replacement_value)
+        target_value = target.removeprefix("time:")
+        replacement_time = replacement_value.removeprefix("time:")
+        qualifiers = tuple(
+            sorted(
+                {
+                    (
+                        f"qualifier:{parts[0]}_time_scope={replacement_time}"
+                        if (
+                            (
+                                parts := _im02_role_qualifier_parts(value)
+                            )
+                            is not None
+                            and parts[1] == "time_scope"
+                            and parts[2] == target_value
+                        )
+                        else value
+                    )
+                    for value in baseline.qualifier_keys
+                }
+            )
+        )
+        return replace(
+            baseline,
+            temporal_state_keys=tuple(sorted(temporal)),
+            qualifier_keys=qualifiers,
+        )
+    if kind is CounterfactualMutationKind.PROMOTE_UNKNOWN:
+        if baseline.resolution_treatment_keys != (
+            "resolution:unresolved",
+        ):
+            return baseline
+        return replace(
+            baseline,
+            resolution_treatment_keys=("resolution:resolved",),
+        )
+    # Predicate/modality/aspect/scope/qualifier deletion is not safely
+    # representable by the current exact7 signature.  IM02 must issue no row.
+    return baseline
+
+
+_IM02_CONSEQUENCE_CODE_BY_MUTATION = {
+    CounterfactualMutationKind.DELETE_ENDPOINT: (
+        WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED
+    ),
+    CounterfactualMutationKind.SWAP_ENDPOINTS: (
+        WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED
+    ),
+    CounterfactualMutationKind.REPLACE_ROLE: (
+        WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED
+    ),
+    CounterfactualMutationKind.REPLACE_TIME: (
+        WholeReadingConsequenceCode.TEMPORAL_FLOW_CHANGED
+    ),
+    CounterfactualMutationKind.DELETE_OWNER: (
+        WholeReadingConsequenceCode.WORLD_OR_OWNER_DISTINCTION_CHANGED
+    ),
+    CounterfactualMutationKind.REPLACE_WORLD: (
+        WholeReadingConsequenceCode.WORLD_OR_OWNER_DISTINCTION_CHANGED
+    ),
+    CounterfactualMutationKind.PROMOTE_UNKNOWN: (
+        WholeReadingConsequenceCode.RESOLUTION_TREATMENT_CHANGED
+    ),
+}
+
+
+def validate_input_specific_meaning_structure(
+    structure: InputSpecificMeaningStructure,
+    *,
+    foreground_scope_derivation: ForegroundScopeDerivation,
+) -> None:
+    """Revalidate the closed IM02 graph without any Reception-side input."""
+
+    if type(structure) is not InputSpecificMeaningStructure:
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_structure_type_invalid"
+        )
+    _validate_stage1_immutable_shape(structure)
+    if structure.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION:
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_structure_schema_version_invalid"
+        )
+    validate_difference_configuration_derivation(
+        structure.difference_configuration_derivation,
+        configurations=structure.configurations,
+        foreground_scope_derivation=foreground_scope_derivation,
+    )
+    config_by_ref = {
+        row.configuration_id: row for row in structure.configurations
+    }
+    configuration_order = {
+        row.configuration_id: index
+        for index, row in enumerate(structure.configurations)
+    }
+    observed_by_ref: dict[str, ObservedDistinctionRow] = {}
+    for row in structure.observed_distinction_rows:
+        configuration = config_by_ref.get(row.configuration_ref)
+        if configuration is None:
+            raise CMEEStage1ContractError(
+                "observed_distinction_configuration_unbound"
+            )
+        validate_observed_distinction_row(row, configuration=configuration)
+        if row.distinction_id in observed_by_ref:
+            raise CMEEStage1ContractError(
+                "observed_distinction_identity_duplicate"
+            )
+        observed_by_ref[row.distinction_id] = row
+    observed_kind_order = {
+        value: index
+        for index, value in enumerate(ObservedDistinctionDerivationKind)
+    }
+    difference_axis_order = {
+        value: index for index, value in enumerate(DifferenceAxis)
+    }
+    observed_ordered = tuple(
+        sorted(
+            structure.observed_distinction_rows,
+            key=lambda row: (
+                configuration_order[row.configuration_ref],
+                observed_kind_order[row.derivation_kind],
+                difference_axis_order[row.axis],
+                row.contrasted_component_refs,
+                row.source_qualifier_refs,
+                row.source_evidence_refs,
+            ),
+        )
+    )
+    if structure.observed_distinction_rows != observed_ordered:
+        raise CMEEStage1ContractError("observed_distinctions_noncanonical")
+    observed_order = {
+        row.distinction_id: index
+        for index, row in enumerate(structure.observed_distinction_rows)
+    }
+    mutation_by_ref: dict[str, CounterfactualMutationRow] = {}
+    for row in structure.counterfactual_mutation_rows:
+        observed = observed_by_ref.get(row.observed_distinction_ref)
+        if observed is None:
+            raise CMEEStage1ContractError(
+                "counterfactual_mutation_observed_unbound"
+            )
+        configuration = config_by_ref[observed.configuration_ref]
+        validate_counterfactual_mutation_row(
+            row,
+            observed_distinction=observed,
+            configuration=configuration,
+        )
+        if row.mutation_id in mutation_by_ref:
+            raise CMEEStage1ContractError(
+                "counterfactual_mutation_identity_duplicate"
+            )
+        mutation_by_ref[row.mutation_id] = row
+    mutation_kind_order = {
+        value: index for index, value in enumerate(CounterfactualMutationKind)
+    }
+    mutation_ordered = tuple(
+        sorted(
+            structure.counterfactual_mutation_rows,
+            key=lambda row: (
+                observed_order[row.observed_distinction_ref],
+                mutation_kind_order[row.mutation_kind],
+                row.target_component_refs,
+                row.replacement_refs,
+                row.source_evidence_refs,
+            ),
+        )
+    )
+    if structure.counterfactual_mutation_rows != mutation_ordered:
+        raise CMEEStage1ContractError(
+            "counterfactual_mutations_noncanonical"
+        )
+    required_by_ref: dict[str, RequiredDifferenceRow] = {}
+    required_configuration_by_ref: dict[str, str] = {}
+    for row in structure.required_difference_rows:
+        observed = observed_by_ref.get(row.observed_distinction_ref)
+        mutation = mutation_by_ref.get(row.counterfactual_mutation_ref)
+        if observed is None or mutation is None:
+            raise CMEEStage1ContractError(
+                "required_difference_provenance_unbound"
+            )
+        configuration = config_by_ref[observed.configuration_ref]
+        validate_required_difference_row(
+            row,
+            observed_distinction=observed,
+            mutation=mutation,
+            configuration=configuration,
+        )
+        if row.difference_id in required_by_ref:
+            raise CMEEStage1ContractError(
+                "required_difference_identity_duplicate"
+            )
+        required_by_ref[row.difference_id] = row
+        required_configuration_by_ref[row.difference_id] = (
+            observed.configuration_ref
+        )
+    required_ordered = tuple(
+        sorted(
+            structure.required_difference_rows,
+            key=lambda row: (
+                observed_order[row.observed_distinction_ref],
+                tuple(value.value for value in row.invariant_codes),
+                row.retention_duty_refs,
+            ),
+        )
+    )
+    if structure.required_difference_rows != required_ordered:
+        raise CMEEStage1ContractError("required_differences_noncanonical")
+    owned_mutation_refs = tuple(
+        row.counterfactual_mutation_ref
+        for row in structure.required_difference_rows
+    )
+    if (
+        len(owned_mutation_refs) != len(set(owned_mutation_refs))
+        or set(owned_mutation_refs) != set(mutation_by_ref)
+    ):
+        raise CMEEStage1ContractError(
+            "counterfactual_mutation_ownership_invalid"
+        )
+    validate_requirement_bundle_derivation(
+        structure.requirement_bundle_derivation,
+        bundles=structure.requirement_bundles,
+        configurations=structure.configurations,
+        required_differences=structure.required_difference_rows,
+        difference_configuration_derivation=(
+            structure.difference_configuration_derivation
+        ),
+    )
+    covered_required: set[str] = set()
+    for bundle in structure.requirement_bundles:
+        allowed_configuration_refs = {
+            bundle.anchor_configuration_ref,
+            *bundle.adjacent_configuration_refs,
+        }
+        for required_ref in bundle.required_difference_refs:
+            if required_configuration_by_ref.get(required_ref) not in (
+                allowed_configuration_refs
+            ):
+                raise CMEEStage1ContractError(
+                    "requirement_bundle_required_configuration_unbound"
+                )
+            covered_required.add(required_ref)
+        required_configs = {
+            required_configuration_by_ref[ref]
+            for ref in bundle.required_difference_refs
+        }
+        if (
+            bundle.anchor_configuration_ref not in required_configs
+            or not set(bundle.adjacent_configuration_refs).issubset(
+                required_configs
+            )
+        ):
+            raise CMEEStage1ContractError(
+                "requirement_bundle_optional_configuration_admitted"
+            )
+        expected_retention = tuple(
+            sorted(
+                {
+                    ref
+                    for required_ref in bundle.required_difference_refs
+                    for ref in required_by_ref[required_ref].retention_duty_refs
+                }
+            )
+        )
+        if bundle.retention_duty_refs != expected_retention:
+            raise CMEEStage1ContractError(
+                "requirement_bundle_retention_union_mismatch"
+            )
+    if structure.requirement_bundles and covered_required != set(
+        required_by_ref
+    ):
+        raise CMEEStage1ContractError(
+            "requirement_bundle_required_coverage_invalid"
+        )
+    scope = foreground_scope_derivation.foreground_scope
+    if type(scope) is ForegroundScope:
+        scope_retention_refs = set(scope.required_retention_duty_refs)
+        if any(
+            ref not in scope_retention_refs
+            and not ref.startswith("contribution-")
+            for required in structure.required_difference_rows
+            for ref in required.retention_duty_refs
+        ):
+            raise CMEEStage1ContractError(
+                "required_difference_retention_owner_unbound"
+            )
+    consequence_ids: list[str] = []
+    for row in structure.whole_reading_consequence_rows:
+        if type(row) is not WholeReadingConsequenceRow:
+            raise CMEEStage1ContractError(
+                "whole_reading_consequence_row_type_invalid"
+            )
+        _validate_stage1_immutable_shape(row)
+        required = required_by_ref.get(row.required_difference_ref)
+        mutation = mutation_by_ref.get(row.counterfactual_mutation_ref)
+        if (
+            type(row.baseline_semantic_signature)
+            is not MeaningSemanticSignature
+            or type(row.mutated_semantic_signature)
+            is not MeaningSemanticSignature
+            or mutation is None
+        ):
+            raise CMEEStage1ContractError(
+                "whole_reading_consequence_im02_signature_invalid"
+            )
+        validate_meaning_semantic_signature_local_shape(
+            row.baseline_semantic_signature
+        )
+        validate_meaning_semantic_signature_local_shape(
+            row.mutated_semantic_signature
+        )
+        expected_mutated = _im02_apply_closed_counterfactual(
+            row.baseline_semantic_signature,
+            mutation,
+        )
+        expected_code = _IM02_CONSEQUENCE_CODE_BY_MUTATION.get(
+            mutation.mutation_kind
+        )
+        if (
+            row.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION
+            or type(row.consequence_code) is not WholeReadingConsequenceCode
+            or type(scope) is not ForegroundScope
+            or row.foreground_scope_ref != scope.scope_id
+            or required is None
+            or row.counterfactual_mutation_ref
+            != required.counterfactual_mutation_ref
+            or row.source_evidence_refs
+            != observed_by_ref[
+                required.observed_distinction_ref
+            ].source_evidence_refs
+            or row.consequence_id != whole_reading_consequence_id(row)
+            or row.baseline_semantic_signature
+            == row.mutated_semantic_signature
+            or expected_mutated == row.baseline_semantic_signature
+            or row.mutated_semantic_signature != expected_mutated
+            or row.consequence_code is not expected_code
+        ):
+            raise CMEEStage1ContractError(
+                "whole_reading_consequence_im02_binding_invalid"
+            )
+        changed_fields = _WHOLE_READING_SIGNATURE_FIELDS_BY_CODE[
+            row.consequence_code
+        ]
+        if not any(
+            getattr(row.baseline_semantic_signature, name)
+            != getattr(row.mutated_semantic_signature, name)
+            for name in changed_fields
+        ):
+            raise CMEEStage1ContractError(
+                "whole_reading_consequence_im02_delta_missing"
+            )
+        consequence_ids.append(row.consequence_id)
+    required_semantic_order = {
+        row.difference_id: index
+        for index, row in enumerate(structure.required_difference_rows)
+    }
+    consequence_code_order = {
+        value: index
+        for index, value in enumerate(WholeReadingConsequenceCode)
+    }
+    semantic_consequence_order = tuple(
+        sorted(
+            structure.whole_reading_consequence_rows,
+            key=lambda row: (
+                required_semantic_order[row.required_difference_ref],
+                consequence_code_order[row.consequence_code],
+                stage1_canonical_json_bytes(
+                    row.baseline_semantic_signature
+                ),
+                stage1_canonical_json_bytes(
+                    row.mutated_semantic_signature
+                ),
+            ),
+        )
+    )
+    if (
+        len(consequence_ids) != len(set(consequence_ids))
+        or structure.whole_reading_consequence_rows
+        != semantic_consequence_order
+    ):
+        raise CMEEStage1ContractError(
+            "whole_reading_consequences_noncanonical"
+        )
+
+
 def _validate_meaning_component_semantic_key(
     value: MeaningComponentSemanticKey,
 ) -> None:
@@ -6999,7 +9192,7 @@ def _meaning_semantic_signature_profiles(
         if not components:
             continue
         canonical_components = tuple(
-            sorted(components, key=stage1_canonical_json_bytes)
+            sorted(components, key=_im02_component_sort_key)
         )
         material_unknown_present = bool(
             foreground_scope.material_unknown_refs
@@ -7072,6 +9265,146 @@ def _meaning_semantic_signature_profiles(
     return tuple(profiles)
 
 
+def validate_meaning_semantic_signature_local_shape(
+    signature: MeaningSemanticSignature,
+) -> None:
+    """Validate content-bearing signature shape without source provenance."""
+
+    if type(signature) is not MeaningSemanticSignature:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_type_invalid"
+        )
+    _validate_stage1_immutable_shape(signature)
+    if signature.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_schema_version_invalid"
+        )
+    if type(signature.reading_operation) is not MeaningReadingOperation:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_reading_operation_invalid"
+        )
+    for field_name, prefixes in _SEMANTIC_SIGNATURE_PREFIXES_BY_FIELD.items():
+        values = _require_canonical_string_set(
+            getattr(signature, field_name),
+            code=f"meaning_semantic_signature_{field_name}_noncanonical",
+        )
+        for value in values:
+            _validate_typed_key(
+                value,
+                allowed_prefixes=prefixes,
+                code=f"meaning_semantic_signature_{field_name}_invalid",
+            )
+    closed_epistemic_keys = {
+        *(f"epistemic:{value.value.lower()}" for value in EpistemicState),
+        "epistemic:provisional_interpretation",
+    }
+    closed_fields = {
+        "relation_direction_keys": (
+            _MEANING_SIGNATURE_FIXED_KEYS_BY_FIELD[
+                "relation_direction_keys"
+            ]
+        ),
+        "epistemic_state_keys": closed_epistemic_keys,
+        "temporal_state_keys": _MEANING_SIGNATURE_FIXED_KEYS_BY_FIELD[
+            "temporal_state_keys"
+        ],
+        "resolution_treatment_keys": (
+            _MEANING_SIGNATURE_FIXED_KEYS_BY_FIELD[
+                "resolution_treatment_keys"
+            ]
+        ),
+        "modality_polarity_or_limitation_keys": (
+            _MEANING_SIGNATURE_FIXED_KEYS_BY_FIELD[
+                "modality_polarity_or_limitation_keys"
+            ]
+        ),
+        "episodicity_boundary_keys": (
+            _MEANING_SIGNATURE_FIXED_KEYS_BY_FIELD[
+                "episodicity_boundary_keys"
+            ]
+        ),
+    }
+    for field_name, allowed_values in closed_fields.items():
+        if not set(getattr(signature, field_name)).issubset(allowed_values):
+            raise CMEEStage1ContractError(
+                f"meaning_semantic_signature_{field_name}_invalid"
+            )
+    closed_world_keys = {
+        value
+        for value in _MEANING_SIGNATURE_FIXED_KEYS_BY_FIELD[
+            "world_or_owner_distinction_keys"
+        ]
+        if value.startswith("world:")
+    }
+    if not {
+        value
+        for value in signature.world_or_owner_distinction_keys
+        if value.startswith("world:")
+    }.issubset(closed_world_keys):
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_world_or_owner_distinction_keys_invalid"
+        )
+    components = signature.component_semantic_keys
+    if (
+        not components
+        or len(components) != len(set(components))
+        or components
+        != tuple(sorted(components, key=_im02_component_sort_key))
+    ):
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_component_semantic_keys_noncanonical"
+        )
+    for value in components:
+        _validate_meaning_component_semantic_key(value)
+    expected_component_role_keys = tuple(
+        sorted({value.role_key for value in components})
+    )
+    closed_role_keys = {
+        f"role:{value.value.lower()}" for value in ArgumentRole
+    }
+    if (
+        signature.component_role_keys != expected_component_role_keys
+        or not set(signature.component_role_keys).issubset(closed_role_keys)
+    ):
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_component_role_unbound"
+        )
+    expected_component_owner_keys = tuple(
+        sorted({value.owner_key for value in components})
+    )
+    signature_owner_keys = tuple(
+        value
+        for value in signature.world_or_owner_distinction_keys
+        if value.startswith("owner:")
+    )
+    if signature_owner_keys != expected_component_owner_keys:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_component_owner_unbound"
+        )
+    if not signature.input_center_keys:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_content_bearing_keys_missing"
+        )
+    component_semantic_kinds = {
+        value.semantic_kind_key.removeprefix("semantic-kind:")
+        for value in components
+    }
+    center_semantic_kinds = {
+        value.removeprefix("center:")
+        for value in signature.input_center_keys
+    }
+    if not center_semantic_kinds.issubset(component_semantic_kinds):
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_center_component_unbound"
+        )
+    if signature.relation_direction_keys and (
+        len(components) < 2 or len(expected_component_role_keys) < 2
+    ):
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_relation_endpoint_cardinality_unbound"
+        )
+
+
 def validate_meaning_semantic_signature(
     signature: MeaningSemanticSignature,
     *,
@@ -7084,7 +9417,9 @@ def validate_meaning_semantic_signature(
     parent_plan: ExperiencePlan,
 ) -> None:
     if type(signature) is not MeaningSemanticSignature:
-        raise CMEEStage1ContractError("meaning_semantic_signature_type_invalid")
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_type_invalid"
+        )
     _validate_stage1_immutable_shape(signature)
     if signature.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION:
         raise CMEEStage1ContractError(
@@ -7126,7 +9461,7 @@ def validate_meaning_semantic_signature(
     if (
         len(components) != len(set(components))
         or components
-        != tuple(sorted(components, key=stage1_canonical_json_bytes))
+        != tuple(sorted(components, key=_im02_component_sort_key))
     ):
         raise CMEEStage1ContractError(
             "meaning_semantic_signature_component_semantic_keys_noncanonical"
@@ -7146,6 +9481,7 @@ def validate_meaning_semantic_signature(
         raise CMEEStage1ContractError(
             "meaning_semantic_signature_source_exact_cover_mismatch"
         )
+    validate_meaning_semantic_signature_local_shape(signature)
     expected_component_role_keys = tuple(
         sorted({value.role_key for value in components})
     )
@@ -7491,6 +9827,19 @@ def _validate_counterfactual_meaning_semantic_signature(
         raise CMEEStage1ContractError(
             "meaning_semantic_signature_counterfactual_code_invalid"
         )
+    if type(signature) is not MeaningSemanticSignature:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_type_invalid"
+        )
+    _validate_stage1_immutable_shape(signature)
+    if signature.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_schema_version_invalid"
+        )
+    if type(signature.reading_operation) is not MeaningReadingOperation:
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_reading_operation_invalid"
+        )
     source_validation = {
         "foreground_scope": foreground_scope,
         "basis_rows": basis_rows,
@@ -7504,13 +9853,6 @@ def _validate_counterfactual_meaning_semantic_signature(
         baseline_semantic_signature,
         **source_validation,
     )
-    if type(signature) is not MeaningSemanticSignature:
-        raise CMEEStage1ContractError("meaning_semantic_signature_type_invalid")
-    _validate_stage1_immutable_shape(signature)
-    if signature.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION:
-        raise CMEEStage1ContractError(
-            "meaning_semantic_signature_schema_version_invalid"
-        )
     if (
         type(signature.reading_operation) is not MeaningReadingOperation
         or signature.reading_operation
@@ -7609,7 +9951,7 @@ def _validate_counterfactual_meaning_semantic_signature(
     if (
         len(components) != len(set(components))
         or components
-        != tuple(sorted(components, key=stage1_canonical_json_bytes))
+        != tuple(sorted(components, key=_im02_component_sort_key))
     ):
         raise CMEEStage1ContractError(
             "meaning_semantic_signature_component_semantic_keys_noncanonical"
@@ -7629,7 +9971,7 @@ def _validate_counterfactual_meaning_semantic_signature(
                     )
                     for value in baseline_components
                 ),
-                key=stage1_canonical_json_bytes,
+                key=_im02_component_sort_key,
             )
         )
         relation_kind_only = (
@@ -7865,6 +10207,7 @@ def _validate_counterfactual_meaning_semantic_signature(
         raise CMEEStage1ContractError(
             "meaning_semantic_signature_content_bearing_keys_missing"
         )
+    validate_meaning_semantic_signature_local_shape(signature)
 
 
 def _whole_reading_consequence_identity_payload(
@@ -11809,6 +14152,14 @@ __all__ = [
     "CommonGuardProof",
     "CommonGuardResultProof",
     "CoreId",
+    "CounterfactualMutationKind",
+    "CounterfactualMutationRow",
+    "DifferenceAxis",
+    "DifferenceConfiguration",
+    "DifferenceConfigurationDerivation",
+    "DifferenceConfigurationDerivationState",
+    "DifferenceConfigurationSet",
+    "DifferenceInvariantCode",
     "EmlisInterpretationCandidate",
     "EmlisAffectContent",
     "EmlisAppraisalContent",
@@ -11841,6 +14192,7 @@ __all__ = [
     "InflectionClassSpec",
     "InterpretationEpistemicState",
     "InterpretationKind",
+    "InputSpecificMeaningStructure",
     "JapaneseCaseFrameSpec",
     "JapaneseClauseIR",
     "JapaneseLocalPreferenceProfile",
@@ -11859,6 +14211,8 @@ __all__ = [
     "MaterialValueContent",
     "ObservationContributionKind",
     "ObservationDepthClass",
+    "ObservedDistinctionDerivationKind",
+    "ObservedDistinctionRow",
     "OwnerClass",
     "OwnerDisposition",
     "PolicyBasisBinding",
@@ -11875,11 +14229,19 @@ __all__ = [
     "RealizedSemanticBinding",
     "RealizedSentenceUnit",
     "RealizationCandidateSet",
+    "RelationDirectionRow",
     "ReferenceZeroTopicRule",
     "RelationOperator",
     "RelationalClosure",
     "RelationalCommitment",
     "RelationalPositionKind",
+    "RelationalConfiguration",
+    "QualifiedEventStateConfiguration",
+    "RequiredDifferenceRow",
+    "RequirementBundle",
+    "RequirementBundleDerivation",
+    "RequirementBundleDerivationState",
+    "RequirementBundleSet",
     "SourceOwnerDisposition",
     "SourceOwnerResolution",
     "SemanticOperator",
@@ -11930,8 +14292,11 @@ __all__ = [
     "WholeReadingConsequenceCode",
     "WholeReadingConsequenceRow",
     "WholeReadingConsequenceValidationContext",
+    "counterfactual_mutation_id",
+    "difference_configuration_id",
     "foreground_scope_basis_row_ref",
     "foreground_scope_id",
+    "observed_distinction_id",
     "project_foreground_scope_relation_kind",
     "project_premeaning_source_qualifier_rows",
     "project_premeaning_source_relation_rows",
@@ -11942,6 +14307,8 @@ __all__ = [
     "project_stage1_subjective_opportunity_key",
     "project_stage1_subjective_responsibility_ref",
     "recompute_stage1_identity",
+    "required_difference_id",
+    "requirement_bundle_id",
     "stage1_policy_application_order_key",
     "stage1_projection_artifact_ref",
     "stage1_canonical_json_bytes",
@@ -11956,8 +14323,17 @@ __all__ = [
     "validate_foreground_scope",
     "validate_foreground_scope_basis_row",
     "validate_foreground_scope_derivation",
+    "validate_counterfactual_mutation_row",
+    "validate_counterfactual_mutation_local_shape",
+    "validate_difference_configuration",
+    "validate_difference_configuration_derivation",
+    "validate_input_specific_meaning_structure",
     "validate_premeaning_grounded_inputs",
     "validate_meaning_semantic_signature",
+    "validate_meaning_semantic_signature_local_shape",
+    "validate_observed_distinction_row",
+    "validate_required_difference_row",
+    "validate_requirement_bundle_derivation",
     "validate_subjective_proposition_v2",
     "validate_surface_derivation",
     "validate_version_qualified_ref",

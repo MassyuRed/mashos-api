@@ -76,6 +76,7 @@ from .contracts import (
     ExperiencePlan,
     GenerationRequest,
     GroundedMeaningGraph,
+    InputSpecificMeaningStructure,
     PreMeaningGroundedInputs,
     InterpretationEpistemicState,
     InterpretationKind,
@@ -120,6 +121,7 @@ from .contracts import (
     stage1_value_principle_ref,
     validate_stage1_identity,
     validate_foreground_scope_derivation,
+    validate_input_specific_meaning_structure,
     validate_premeaning_grounded_inputs,
     validate_stage1_projection,
     validate_stage1_sentence_unit,
@@ -135,6 +137,7 @@ from .emlis_input_specific_meaning import (
     ForegroundScopeDispositionCode,
     derive_foreground_scope_closed,
     derive_grounded_situation_view,
+    derive_input_specific_meaning_structure,
     foreground_scope_disposition,
 )
 
@@ -3955,6 +3958,20 @@ def build_subjective_planning_inputs(
             ForegroundScopeDispositionCode.STRUCTURE_INSUFFICIENT_STOP.value
         )
 
+    # IM02 remains on the pre-Reception side of the type boundary.  Its
+    # complete source-grounded structure is frozen before the allowed
+    # opportunity envelope, concrete acts, style, or temperature are read.
+    input_specific_meaning_structure: InputSpecificMeaningStructure = (
+        derive_input_specific_meaning_structure(
+            grounded_situation_view,
+            foreground_scope_derivation,
+        )
+    )
+    validate_input_specific_meaning_structure(
+        input_specific_meaning_structure,
+        foreground_scope_derivation=foreground_scope_derivation,
+    )
+
     candidates = _final_stage1_candidate_closure(
         source=source,
         grounded_graph=grounded_graph,
@@ -4066,6 +4083,9 @@ def build_subjective_planning_inputs(
         grounded_situation_view=grounded_situation_view,
         foreground_scope_derivation=foreground_scope_derivation,
         foreground_scope_disposition=scope_disposition,
+        input_specific_meaning_structure=(
+            input_specific_meaning_structure
+        ),
         allowed_reception_opportunity_envelope=(
             allowed_reception_envelope
         ),

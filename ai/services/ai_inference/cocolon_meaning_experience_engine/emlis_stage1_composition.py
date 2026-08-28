@@ -47,6 +47,7 @@ from .contracts import (
     EmlisStage1Projection,
     EmlisSubjectiveClaim,
     InflectionClassSpec,
+    InputSpecificMeaningStructure,
     JapaneseClauseIR,
     JapaneseCaseFrameSpec,
     JapaneseLocalPreferenceProfile,
@@ -114,6 +115,7 @@ from .contracts import (
     stage1_subjective_forbidden_promotions,
     validate_stage1_anti_template_registry_invariant,
     validate_stage1_identity,
+    validate_input_specific_meaning_structure,
     validate_premeaning_grounded_inputs,
 )
 from .emlis_input_specific_meaning import (
@@ -122,6 +124,7 @@ from .emlis_input_specific_meaning import (
     GroundedSituationView,
     derive_foreground_scope_closed,
     derive_grounded_situation_view,
+    derive_input_specific_meaning_structure,
     foreground_scope_disposition,
 )
 
@@ -1646,6 +1649,7 @@ class Stage1SubjectivePlanningInputs:
     grounded_situation_view: GroundedSituationView
     foreground_scope_derivation: ForegroundScopeDerivation
     foreground_scope_disposition: ForegroundScopeDisposition
+    input_specific_meaning_structure: InputSpecificMeaningStructure
     allowed_reception_opportunity_envelope: (
         AllowedReceptionOpportunityEnvelope
     )
@@ -4706,6 +4710,21 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
         raise Stage1CompositionError(
             "STAGE1_PREMEANING_RECEPTION_SPLIT_STOP"
         ) from None
+    try:
+        expected_input_specific_meaning_structure = (
+            derive_input_specific_meaning_structure(
+                expected_grounded_view,
+                expected_scope_derivation,
+            )
+        )
+        validate_input_specific_meaning_structure(
+            phase_A.input_specific_meaning_structure,
+            foreground_scope_derivation=expected_scope_derivation,
+        )
+    except CMEEStage1ContractError:
+        raise Stage1CompositionError(
+            "STAGE1_INPUT_SPECIFIC_MEANING_STRUCTURE_STOP"
+        ) from None
     if (
         premeaning_inputs.grounded_graph is not phase_A.grounded_graph
         or premeaning_inputs.meaning_field != phase_A.meaning_field
@@ -4726,6 +4745,10 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
         is not ForegroundScopeDisposition
         or phase_A.foreground_scope_disposition
         != expected_scope_disposition
+        or type(phase_A.input_specific_meaning_structure)
+        is not InputSpecificMeaningStructure
+        or phase_A.input_specific_meaning_structure
+        != expected_input_specific_meaning_structure
         or envelope.source_envelope_id
         != phase_A.parent_plan.source_envelope_id
         or envelope.parent_reception_duty_ref
@@ -11653,7 +11676,7 @@ _LOGICAL_CONTRACT_FIELD_SPECS = (
     ("PolicyApplicationRow", "policy-row-v1", "policy_application_row_ref=exact1 affected_claim_policy_target_key=exact1 application_kind=exact1 principle_ref=exact1 material_risk=exact1 policy_basis_binding_refs=1..N material_risk_evidence_refs=1..N protected_subjective_binding_refs=0..N affected_claim_ref=exact1 source_reception_act_ref=0..1 act_basis_contribution_refs=0..N disposition=exact1 visible_claim_ref=0..1", ("SUPPRESSION_OR_VISIBILITY_DISCRIMINATED", "POST_CLAIM_REFS_EXCLUDED_FROM_ROW_ID"), "POLICY_ROW_PROJECTOR"),
     ("SubjectivePropositionV2", "proposition-v2", "schema_version=exact1 content_kind=exact1 subjective_mode=exact1 subjective_operator=exact1 target_contribution_refs=1..N primary_target_refs=1..N boundary_target_refs=0..N response_object_refs=1..N basis_binding_refs=1..N source_qualifier_binding_refs=1..N focal_relation_ref=0..1 affect_content=0..1 appraisal_content=0..1 material_value_content=0..1 relational_position=0..1 referenced_actor_refs=0..N referenced_experiencer_refs=0..N addressee_role=exact1 assertion_modality=exact1 epistemic_scope=exact1", ("CONTENT_DISCRIMINANT_EXACT1", "MODE_OPERATOR_MODALITY_TOTAL_DERIVATION"), "FINAL_PROPOSITION_PROJECTOR"),
     ("EmlisStage1Projection", "response-v2", "schema_version=exact1 projection_id=exact1 projection_preimage_ref=exact1 grounded_graph_ref=exact1 parent_observation_duty_ref=exact1 parent_reception_duty_ref=exact1 interpretation_candidates=1..N meaning_field=exact1 observation_contributions=1..N subjective_claims=1..4 ordered_observation_refs=1..N ordered_subjective_refs=1..4 retained_reception_act_ids=1..N observation_depth_class=exact1 subjective_depth_class=exact1 temperature_class=exact1 reception_style_policy_ref=exact1 emlis_value_policy_ref=exact1 composition_policy_ref=exact1 low_level_grammar_policy_ref=exact1 subjective_responsibility_rows=1..N subjective_opportunity_rows=1..N subjective_facet_suppression_rows=0..N subjective_basis_binding_rows=1..N source_qualifier_binding_rows=1..N policy_basis_binding_rows=0..N policy_application_rows=0..N", ("FULL_ROW_TABLE_EXACT_COVER", "SUBJECTIVE_DEPTH_POST_CLAIM_ONLY"), "FINAL_PROJECTION_SEAL"),
-    ("Stage1SubjectivePlanningInputs", "phase-a-v2", "admitted_source=exact1 grounded_graph=exact1 grounded_plan=exact1 parent_plan=exact1 premeaning_inputs=exact1 grounded_situation_view=exact1 foreground_scope_derivation=exact1 foreground_scope_disposition=exact1 allowed_reception_opportunity_envelope=exact1 projection_preimage_ref=exact1 interpretation_candidate_rows=1..N meaning_field=exact1 observation_contribution_rows=1..N retained_reception_act_rows=1..N material_unknown_refs=0..N observation_depth_class=exact1 temperature_class=exact1 reception_style_policy_ref=exact1 emlis_value_policy_ref=exact1 contribution_to_candidate_ref_map=1..N resolved_grounded_frame_by_candidate_ref=1..N relation_endpoint_grounded_candidate_ref_by_binding_key=0..N qualifier_value_by_candidate_scope_axis_key=1..N construction_registry_snapshot=exact1 expression_asset_registry_snapshot=exact1 response_object_registry_snapshot=exact1 functional_asset_registry_snapshot=exact1 participant_asset_registry_snapshot=exact1 structural_asset_registry_snapshot=exact1 profile_rule_registry_snapshot=exact1", ("PREMEANING_RECEPTION_TYPE_SPLIT", "FOREGROUND_SCOPE_DERIVED_BEFORE_RECEPTION", "FINAL_SUBJECTIVE_OUTPUT_EXACT0", "FULL_DOMAIN_FROZEN_MAPS"), "RESPONSE_PHASE_A_ADAPTER"),
+    ("Stage1SubjectivePlanningInputs", "phase-a-v2", "admitted_source=exact1 grounded_graph=exact1 grounded_plan=exact1 parent_plan=exact1 premeaning_inputs=exact1 grounded_situation_view=exact1 foreground_scope_derivation=exact1 foreground_scope_disposition=exact1 input_specific_meaning_structure=exact1 allowed_reception_opportunity_envelope=exact1 projection_preimage_ref=exact1 interpretation_candidate_rows=1..N meaning_field=exact1 observation_contribution_rows=1..N retained_reception_act_rows=1..N material_unknown_refs=0..N observation_depth_class=exact1 temperature_class=exact1 reception_style_policy_ref=exact1 emlis_value_policy_ref=exact1 contribution_to_candidate_ref_map=1..N resolved_grounded_frame_by_candidate_ref=1..N relation_endpoint_grounded_candidate_ref_by_binding_key=0..N qualifier_value_by_candidate_scope_axis_key=1..N construction_registry_snapshot=exact1 expression_asset_registry_snapshot=exact1 response_object_registry_snapshot=exact1 functional_asset_registry_snapshot=exact1 participant_asset_registry_snapshot=exact1 structural_asset_registry_snapshot=exact1 profile_rule_registry_snapshot=exact1", ("PREMEANING_RECEPTION_TYPE_SPLIT", "FOREGROUND_SCOPE_DERIVED_BEFORE_RECEPTION", "IM02_STRUCTURE_DERIVED_BEFORE_RECEPTION", "FINAL_SUBJECTIVE_OUTPUT_EXACT0", "FULL_DOMAIN_FROZEN_MAPS"), "RESPONSE_PHASE_A_ADAPTER"),
     ("Stage1SurfaceCompositionInputs", "phase-b-v1", "admitted_source=exact1 grounded_graph=exact1 grounded_plan=exact1 parent_plan=exact1 projection=exact1 resolved_grounded_frame_by_candidate_ref=1..N relation_endpoint_grounded_candidate_ref_by_binding_key=0..N qualifier_value_by_candidate_scope_axis_key=1..N addressee_deictic_context=exact1 section_speaker_owner_ref=0..1 construction_registry_snapshot=exact1 expression_asset_registry_snapshot=exact1 response_object_registry_snapshot=exact1 functional_asset_registry_snapshot=exact1 participant_asset_registry_snapshot=exact1 structural_asset_registry_snapshot=exact1 profile_rule_registry_snapshot=exact1", ("PHASE_A_BYTES_EXACT_MATCH", "FINAL_PROJECTION_EXACT1"), "RESPONSE_PHASE_B_ADAPTER"),
     ("EmlisSubjectiveMeaningPlan", "meaning-plan-v1", "projection_preimage_ref=exact1 subjective_claim_rows=1..4 thought_support_status=exact1 content_bearing_thought_claim_refs=0..N retained_reception_act_refs=1..N subjective_responsibility_rows=1..N subjective_opportunity_rows=1..N responsibility_coverage_rows=1..N subjective_basis_binding_rows=1..N source_qualifier_binding_rows=1..N policy_basis_binding_rows=0..N policy_application_rows=0..N subjective_facet_suppression_rows=0..N", ("REQUEST_LOCAL_VIEW_NOT_ARTIFACT", "OPPORTUNITY_PARTITION_EXACT_COVER"), "SUBJECTIVE_MEANING_PROJECTOR"),
     ("SubjectiveResponsibilityRow", "responsibility-v1", "responsibility_ref=exact1 responsibility_kind=exact1 owner_component_refs=1..N retained_reception_act_refs=1..N", ("CLOSED_EXACT4_KIND",), "RESPONSIBILITY_PROJECTOR"),
@@ -11998,7 +12021,7 @@ LANGUAGE_CORE_STAGE_A_B_RULES = (
     ("RESOURCE_ENVELOPE", "LAYOUT4_X_MENTION2_X_LINK2_X_HEAD1", "INTERNAL_1_TO_16_NO_TRUNCATION", "EMITTED_1_TO_2"),
 )
 
-N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT31 = (
+N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34 = (
     (LANGUAGE_CORE_EXTERNAL_PATHS[0], (
         "CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY",
         "validate_stage1_anti_template_registry_invariant",
@@ -12039,14 +12062,17 @@ N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT31 = (
         "derive_grounded_situation_view",
         "derive_foreground_scope_closed",
         "foreground_scope_disposition",
+        "derive_difference_configuration_set",
+        "derive_requirement_bundle_set",
+        "issue_whole_reading_consequence_row",
     )),
 )
 # The disabled historical N3 runner still reads the frozen exact28 symbol to
 # prove its own immutable terminal identity before it reports the expected
-# source drift.  Keep that tuple as a compatibility view; IM01's new exact3
-# meaning-owner roots are present only in the exact31 current identity.
+# source drift.  Keep that tuple as a compatibility view; the IM01 roots and
+# IM02's new exact3 meaning-owner roots live only in the exact34 identity.
 N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT28 = (
-    N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT31[:-1]
+    N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34[:-1]
 )
 N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5 = (
     "LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST",
@@ -12098,6 +12124,9 @@ LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST = (
         "derive_grounded_situation_view",
         "derive_foreground_scope_closed",
         "foreground_scope_disposition",
+        "derive_difference_configuration_set",
+        "derive_requirement_bundle_set",
+        "issue_whole_reading_consequence_row",
     )),
 )
 
@@ -12106,7 +12135,7 @@ def _validate_product_causal_owner_manifest(
     file_payloads: tuple[tuple[str, bytes], ...]
 ) -> None:
     expected_paths = (_COMPOSITION_PATH, *LANGUAGE_CORE_EXTERNAL_PATHS)
-    expected_seed_cardinalities = (18, 10, 11, 10, 3, 1, 2, 3)
+    expected_seed_cardinalities = (18, 10, 11, 10, 3, 1, 2, 6)
     if (
         tuple(
             path for path, _names in LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
@@ -12117,7 +12146,7 @@ def _validate_product_causal_owner_manifest(
             for _path, names in LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
         )
         != expected_seed_cardinalities
-        or tuple(path for path, _names in N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT31)
+        or tuple(path for path, _names in N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34)
         != (
             LANGUAGE_CORE_EXTERNAL_PATHS[0],
             _COMPOSITION_PATH,
@@ -12127,14 +12156,14 @@ def _validate_product_causal_owner_manifest(
         )
         or tuple(
             len(names)
-            for _path, names in N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT31
+            for _path, names in N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34
         )
-        != (2, 15, 5, 6, 3)
+        != (2, 15, 5, 6, 6)
         or sum(
             len(names)
-            for _path, names in N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT31
+            for _path, names in N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34
         )
-        != 31
+        != 34
         or len(N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5) != 5
         or len(set(N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5))
         != 5
@@ -12331,7 +12360,7 @@ def stage1_runtime_integration_identity_payloads(
             "cocolon.cmee.v1a.stage1_product_causal_owner_and_registry_digests.v3",
         ),
         ("product_causal_owner_manifest", LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST),
-        ("n2_behavior_root_exact31", N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT31),
+        ("n2_behavior_root_exact34", N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34),
         (
             "n2_identity_infrastructure_exact5",
             N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5,

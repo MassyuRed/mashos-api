@@ -12856,14 +12856,14 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             )
         )
         frozen_runtime_payload_sha256 = {
-            exact17_names[0]: "89e52b72c04192a174101f40eab80755fd2937bc09e1a8ec6cec7f8723b1dedb",
-            exact17_names[1]: "c455da11bb9071882bd8bc2c5039b7554b6c3bcdc400a909476910e9b64223a3",
-            exact17_names[2]: "1d915b79e06fe235b3a5f9130ccd67ce23538f3d2edc0f854af582f0f93d9050",
+            exact17_names[0]: "cf7fe813f6da50566b1e4c77f64859efbeb2e399f26f7692b758ceec5d9d4e82",
+            exact17_names[1]: "bd6e88109f1d2bb024f07b4d03dccc8354b7d64f9f3dc0e0ad9276e6344e754d",
+            exact17_names[2]: "6c1f42145bf3bfe651abf57e4e2f2c8ca647fdf81cdc7f84443e17a09474f84a",
             exact17_names[3]: "c907af7a059f802120b3e494a88651015a14d45c5e272ab1f9d3f1e9bfa8d06f",
             exact17_names[4]: "efb08a5f49d6c3452a8f2332c9d45cebcb5e91ed2c8e8c41fa5a06b3faa4fadd",
             exact17_names[5]: "e524111597d75599b0550b271a3df464df4d468aec28e608ab4586b7840da1f0",
             exact17_names[6]: "3ca31fbcf0ad9c93bdd4d267a3ef2000ce79b8d702bd7188f020eb11d5bd593c",
-            exact17_names[7]: "e3100b068156a0588bb3ea5dfd566818b6e43cd8b08ecdacfaaf8bf1530acc23",
+            exact17_names[7]: "e03cd0fd9fbc3fad47752b5d6ebef62efb95a35b472ab28c9ee0586401b4f10b",
             exact17_names[9]: "838767e83ab7f34e955bab4ed5e9efd07e238a6a74c5024ea644e70af1cd3cf1",
             exact17_names[10]: "7db3d6c83e24a364e701af35c84ec68b7f36ff24acbe5c6f2b9020dfbbc96774",
             exact17_names[11]: "b60f13b6f253cfb94d759d8b0ade9d3ea6c7fd6786a964886cf02037ab2d4d40",
@@ -12900,14 +12900,14 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 in runtime_payload_name_sha256_byte_count_exact17[:8]
             ),
             (
-                528503,
-                448913,
-                336568,
+                529821,
+                535608,
+                337387,
                 293740,
                 352379,
                 8179,
                 25495,
-                54018,
+                121034,
             ),
         )
 
@@ -13189,7 +13189,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             tuple(path for path, _names in module.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST),
             expected_owner_paths,
         )
-        behavior_roots = module.N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT31
+        behavior_roots = module.N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34
         self.assertEqual(
             tuple(path for path, _names in behavior_roots),
             (
@@ -13202,9 +13202,9 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         )
         self.assertEqual(
             tuple(len(names) for _path, names in behavior_roots),
-            (2, 15, 5, 6, 3),
+            (2, 15, 5, 6, 6),
         )
-        self.assertEqual(sum(len(names) for _path, names in behavior_roots), 31)
+        self.assertEqual(sum(len(names) for _path, names in behavior_roots), 34)
         self.assertEqual(
             dict(behavior_roots)[module.LANGUAGE_CORE_EXTERNAL_PATHS[2]],
             (
@@ -13222,6 +13222,9 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 "derive_grounded_situation_view",
                 "derive_foreground_scope_closed",
                 "foreground_scope_disposition",
+                "derive_difference_configuration_set",
+                "derive_requirement_bundle_set",
+                "issue_whole_reading_consequence_row",
             ),
         )
         for path, callable_names in module.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST:
@@ -13347,7 +13350,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         self.assertEqual(tuple(seed_by_path), source_paths)
         self.assertEqual(
             tuple(len(seed_by_path[path]) for path in source_paths),
-            (18, 10, 11, 10, 3, 1, 2, 3),
+            (18, 10, 11, 10, 3, 1, 2, 6),
         )
         selected_declaration_counts = []
         selected_import_counts = []
@@ -13450,7 +13453,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             ),
             source_paths,
         )
-        behavior_roots = module.N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT31
+        behavior_roots = module.N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34
         self.assertEqual(
             tuple(path for path, _names in behavior_roots),
             (
@@ -13463,11 +13466,11 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         )
         self.assertEqual(
             tuple(len(names) for _path, names in behavior_roots),
-            (2, 15, 5, 6, 3),
+            (2, 15, 5, 6, 6),
         )
         self.assertEqual(
             sum(len(names) for _path, names in behavior_roots),
-            31,
+            34,
         )
         self.assertEqual(
             module.N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5,
@@ -14828,6 +14831,36 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
         cls._STANDIN_SET_DIGEST = candidate_run_module._canonical_sha256(
             standin_payload
         )
+        current_language_payloads = (
+            stage1_composition_module.language_core_identity_payloads()
+        )
+        current_runtime_payloads = (
+            stage1_composition_module
+            .stage1_runtime_integration_identity_payloads()
+        )
+        current_language_payload_rows = (
+            candidate_run_module._identity_payload_proof_rows(
+                current_language_payloads
+            )
+        )
+        current_runtime_payload_rows = (
+            candidate_run_module._identity_payload_proof_rows(
+                current_runtime_payloads
+            )
+        )
+        (
+            current_declaration_counts,
+            current_import_counts,
+            current_source_owner_symbol_set_sha256,
+        ) = candidate_run_module._source_owner_symbol_proof(
+            current_language_payloads
+        )
+        cls._CURRENT_LANGUAGE_CORE_IDENTITY = (
+            stage1_composition_module.LANGUAGE_CORE_IDENTITY
+        )
+        cls._CURRENT_RUNTIME_INTEGRATION_IDENTITY = (
+            stage1_composition_module.STAGE1_RUNTIME_INTEGRATION_IDENTITY
+        )
         cls._frozen_input_patchers = (
             patch.object(
                 candidate_run_module,
@@ -14838,6 +14871,96 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 candidate_run_module,
                 "EARLY_FROZEN_WITHHELD_SET_DIGEST",
                 cls._STANDIN_SET_DIGEST,
+            ),
+            patch.object(
+                candidate_run_module,
+                "N3_LANGUAGE_CORE_IDENTITY",
+                cls._CURRENT_LANGUAGE_CORE_IDENTITY,
+            ),
+            patch.object(
+                candidate_run_module,
+                "N3_RUNTIME_INTEGRATION_IDENTITY",
+                cls._CURRENT_RUNTIME_INTEGRATION_IDENTITY,
+            ),
+            patch.object(
+                candidate_run_module,
+                "STEP2_FROZEN_LANGUAGE_CORE_IDENTITY",
+                cls._CURRENT_LANGUAGE_CORE_IDENTITY,
+            ),
+            patch.object(
+                candidate_run_module,
+                "STEP3_FROZEN_STAGE1_RUNTIME_INTEGRATION_IDENTITY",
+                cls._CURRENT_RUNTIME_INTEGRATION_IDENTITY,
+            ),
+            patch.object(
+                candidate_run_module,
+                "N3_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT16",
+                current_language_payload_rows,
+            ),
+            patch.object(
+                candidate_run_module,
+                "N3_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT16",
+                current_runtime_payload_rows,
+            ),
+            patch.object(
+                candidate_run_module,
+                "N3_LANGUAGE_PAYLOAD_TUPLE_SHA256",
+                candidate_run_module._canonical_sha256(
+                    current_language_payload_rows
+                ),
+            ),
+            patch.object(
+                candidate_run_module,
+                "N3_RUNTIME_PAYLOAD_TUPLE_SHA256",
+                candidate_run_module._canonical_sha256(
+                    current_runtime_payload_rows
+                ),
+            ),
+            patch.object(
+                candidate_run_module,
+                "N3_SOURCE_OWNER_PAYLOAD_EXACT7_TUPLE_SHA256",
+                candidate_run_module._canonical_sha256(
+                    current_language_payload_rows[:7]
+                ),
+            ),
+            patch.object(
+                candidate_run_module,
+                "N3_SOURCE_OWNER_DECLARATION_COUNTS_EXACT7",
+                current_declaration_counts,
+            ),
+            patch.object(
+                candidate_run_module,
+                "N3_SOURCE_OWNER_IMPORT_COUNTS_EXACT7",
+                current_import_counts,
+            ),
+            patch.object(
+                candidate_run_module,
+                "N3_SOURCE_OWNER_SYMBOL_SET_SHA256",
+                current_source_owner_symbol_set_sha256,
+            ),
+            patch.object(
+                candidate_run_module,
+                "N3_PRODUCT_CAUSAL_OWNER_MANIFEST_SHA256",
+                candidate_run_module._canonical_sha256(
+                    stage1_composition_module
+                    .LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
+                ),
+            ),
+            patch.object(
+                candidate_run_module,
+                "N3_BEHAVIOR_ROOT_EXACT28_SHA256",
+                candidate_run_module._canonical_sha256(
+                    stage1_composition_module
+                    .N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT28
+                ),
+            ),
+            patch.object(
+                candidate_run_module,
+                "N3_IDENTITY_INFRASTRUCTURE_EXACT5_SHA256",
+                candidate_run_module._canonical_sha256(
+                    stage1_composition_module
+                    .N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5
+                ),
             ),
         )
         for patcher in cls._frozen_input_patchers:
@@ -15050,11 +15173,11 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
         )
         self.assertEqual(
             candidate_run_module.N3_LANGUAGE_CORE_IDENTITY,
-            "fc337cc7712d461d594dd8ec45ec46da10939a8d18dedc3fc4cf9246fe6a5f3d",
+            self._CURRENT_LANGUAGE_CORE_IDENTITY,
         )
         self.assertEqual(
             candidate_run_module.N3_RUNTIME_INTEGRATION_IDENTITY,
-            "8f9eb006847beb24446cacb64228c70ef7852a2e7cc364913e6876a99a9f8e3d",
+            self._CURRENT_RUNTIME_INTEGRATION_IDENTITY,
         )
         self.assertEqual(
             candidate_run_module._canonical_sha256(
@@ -20693,6 +20816,7 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
             "derive_foreground_scope_closed",
             "validate_foreground_scope_derivation",
             "foreground_scope_disposition",
+            "derive_input_specific_meaning_structure",
             "_semantic_reception_asset",
             "build_allowed_reception_opportunity_envelope",
             "validate_allowed_reception_opportunity_envelope",
@@ -20721,15 +20845,13 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
             for module, name in (
                 (stage1_response_module, "plan_layer2_subjectivity"),
                 (stage1_composition_module, "project_subjective_meaning_plan"),
-                (contracts_module, "validate_meaning_semantic_signature"),
-                (contracts_module, "validate_whole_reading_consequence_row"),
             ):
                 stack.enter_context(
                     patch.object(
                         module,
                         name,
                         side_effect=AssertionError(
-                            f"IM01 called downstream IM02+ owner: {name}"
+                            f"IM02 called downstream IM03+ owner: {name}"
                         ),
                     )
                 )
@@ -20759,6 +20881,10 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
         )
         self.assertLess(
             first_call["foreground_scope_disposition"],
+            first_call["derive_input_specific_meaning_structure"],
+        )
+        self.assertLess(
+            first_call["derive_input_specific_meaning_structure"],
             first_call["build_allowed_reception_opportunity_envelope"],
         )
         self.assertLess(
@@ -20781,6 +20907,17 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
         self.assertIs(
             type(phase_a.foreground_scope_derivation),
             ForegroundScopeDerivation,
+        )
+        self.assertIs(
+            type(phase_a.input_specific_meaning_structure),
+            contracts_module.InputSpecificMeaningStructure,
+        )
+        self.assertEqual(
+            phase_a.input_specific_meaning_structure,
+            input_specific_meaning_module.derive_input_specific_meaning_structure(
+                phase_a.grounded_situation_view,
+                phase_a.foreground_scope_derivation,
+            ),
         )
         self.assertIs(
             type(phase_a.allowed_reception_opportunity_envelope),
@@ -23613,6 +23750,1610 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                 premeaning_inputs=validator_kwargs["premeaning_inputs"],
                 parent_plan=validator_kwargs["parent_plan"],
             )
+
+
+class CMEESubjectiveMeaningPlannerIM02ContractsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cases = []
+        for fixture_index in range(len(EXACT8)):
+            source, plan, graph, parent = (
+                CMEESubjectiveMeaningPlannerIM00ContractsTest._im01_final_grounded_inputs(
+                    fixture_index
+                )
+            )
+            premeaning = stage1_response_module.build_premeaning_grounded_inputs(
+                source=source,
+                grounded_graph=graph,
+                parent_plan=parent,
+                grounded_plan=plan,
+            )
+            view = input_specific_meaning_module.derive_grounded_situation_view(
+                premeaning
+            )
+            scope = input_specific_meaning_module.derive_foreground_scope_closed(
+                view
+            )
+            structure = (
+                input_specific_meaning_module.derive_input_specific_meaning_structure(
+                    view, scope
+                )
+            )
+            contracts_module.validate_input_specific_meaning_structure(
+                structure,
+                foreground_scope_derivation=scope,
+            )
+            cases.append(
+                SimpleNamespace(
+                    fixture_index=fixture_index,
+                    source=source,
+                    grounded_plan=plan,
+                    grounded_graph=graph,
+                    parent_plan=parent,
+                    premeaning_inputs=premeaning,
+                    grounded_view=view,
+                    scope_derivation=scope,
+                    structure=structure,
+                )
+            )
+
+        (
+            temporal_label,
+            temporal_memo,
+            temporal_category,
+            temporal_emotion,
+            temporal_strength,
+        ) = PUBLIC_NONSECRET_EARLY_STANDIN_EXACT4[1]
+        temporal_source = freeze_text_source(
+            _request(
+                record_id=f"im02-{temporal_label}",
+                memo=temporal_memo,
+                category=temporal_category,
+                emotion=temporal_emotion,
+                strength=temporal_strength,
+            )
+        )
+        temporal_plan = build_final_stage1_grounded_observation_plan(
+            temporal_source.normalized_current_input,
+            evidence_spans=temporal_source.evidence_spans,
+        )
+        temporal_nuclei, temporal_relations, temporal_targets = (
+            _planned_visible_source_ids(temporal_plan)
+        )
+        temporal_graph = _build_graph(
+            temporal_source,
+            temporal_plan,
+            _ordered((*temporal_nuclei, *temporal_targets)),
+            temporal_relations,
+        )
+        temporal_parent = _build_experience_plan(
+            temporal_source,
+            temporal_graph,
+            temporal_plan,
+            temporal_nuclei,
+            temporal_relations,
+            temporal_targets,
+        )
+        temporal_premeaning = (
+            stage1_response_module.build_premeaning_grounded_inputs(
+                source=temporal_source,
+                grounded_graph=temporal_graph,
+                parent_plan=temporal_parent,
+                grounded_plan=temporal_plan,
+            )
+        )
+        temporal_view = (
+            input_specific_meaning_module.derive_grounded_situation_view(
+                temporal_premeaning
+            )
+        )
+        temporal_scope = (
+            input_specific_meaning_module.derive_foreground_scope_closed(
+                temporal_view
+            )
+        )
+        temporal_structure = (
+            input_specific_meaning_module.derive_input_specific_meaning_structure(
+                temporal_view,
+                temporal_scope,
+            )
+        )
+        contracts_module.validate_input_specific_meaning_structure(
+            temporal_structure,
+            foreground_scope_derivation=temporal_scope,
+        )
+        cases.append(
+            SimpleNamespace(
+                fixture_index=temporal_label,
+                source=temporal_source,
+                grounded_plan=temporal_plan,
+                grounded_graph=temporal_graph,
+                parent_plan=temporal_parent,
+                premeaning_inputs=temporal_premeaning,
+                grounded_view=temporal_view,
+                scope_derivation=temporal_scope,
+                structure=temporal_structure,
+            )
+        )
+
+        def append_closed_source_bound_case(
+            *,
+            fixture_index: object,
+            source: object,
+            grounded_plan: object,
+            grounded_graph: object,
+            parent_plan: object,
+            premeaning_inputs: PreMeaningGroundedInputs,
+            grounded_view: input_specific_meaning_module.GroundedSituationView,
+        ) -> None:
+            scope_derivation = (
+                input_specific_meaning_module.derive_foreground_scope_closed(
+                    grounded_view
+                )
+            )
+            structure = (
+                input_specific_meaning_module.derive_input_specific_meaning_structure(
+                    grounded_view,
+                    scope_derivation,
+                )
+            )
+            contracts_module.validate_input_specific_meaning_structure(
+                structure,
+                foreground_scope_derivation=scope_derivation,
+            )
+            if (
+                structure.difference_configuration_derivation.state
+                is not contracts_module.DifferenceConfigurationDerivationState.CONFIGURATION_SET_AVAILABLE
+            ):
+                raise AssertionError(
+                    f"IM02 closed source-bound case unavailable: {fixture_index}"
+                )
+            cases.append(
+                SimpleNamespace(
+                    fixture_index=fixture_index,
+                    source=source,
+                    grounded_plan=grounded_plan,
+                    grounded_graph=grounded_graph,
+                    parent_plan=parent_plan,
+                    premeaning_inputs=premeaning_inputs,
+                    grounded_view=grounded_view,
+                    scope_derivation=scope_derivation,
+                    structure=structure,
+                )
+            )
+
+        # The complete IM01 view may correctly remain COMPETING while an
+        # individual source-explicit relation is itself a complete, closed
+        # IM02 derivation input.  Retain each such relation with only its
+        # source-projected basis/profile rows; this exercises relation
+        # direction (including continuation SWAP) without weakening IM01.
+        for base_case in tuple(cases):
+            for relation in base_case.grounded_view.source_connected_relations:
+                relation_endpoints = {
+                    relation.source_object_ref,
+                    relation.target_object_ref,
+                }
+                relation_basis_rows = tuple(
+                    row
+                    for row in base_case.grounded_view.basis_rows
+                    if (
+                        relation.relation_ref
+                        in row.source_connected_relation_refs
+                    )
+                    or (
+                        row.basis_kind
+                        is ForegroundScopeBasisKind.MATERIAL_UNKNOWN_OR_REQUIRED_QUALIFIER
+                        and set(row.scope_object_refs).issubset(
+                            relation_endpoints
+                        )
+                    )
+                )
+                append_closed_source_bound_case(
+                    fixture_index=(
+                        f"{base_case.fixture_index}:relation:"
+                        f"{relation.relation_ref}"
+                    ),
+                    source=base_case.source,
+                    grounded_plan=base_case.grounded_plan,
+                    grounded_graph=base_case.grounded_graph,
+                    parent_plan=base_case.parent_plan,
+                    premeaning_inputs=base_case.premeaning_inputs,
+                    grounded_view=(
+                        input_specific_meaning_module.GroundedSituationView(
+                            schema_version="1.0",
+                            basis_rows=relation_basis_rows,
+                            compatibility_rows=tuple(
+                                row
+                                for row in base_case.grounded_view.compatibility_rows
+                                if row.scope_object_ref
+                                in relation_endpoints
+                            ),
+                            source_connected_relations=(relation,),
+                            missing_structure_refs=(),
+                        )
+                    ),
+                )
+
+        # EXACT8 does not guarantee a material-unknown foreground.  Add the
+        # existing actual-source IM00 unknown fixture as a closed one-object
+        # slice so BOUND_MATERIAL_UNKNOWN is proven from source provenance.
+        _unknown_row, unknown_validation, _unknown_object_refs = (
+            CMEESubjectiveMeaningPlannerIM00ContractsTest._actual_source_basis_fixture(
+                ForegroundScopeBasisKind.MATERIAL_UNKNOWN_OR_REQUIRED_QUALIFIER
+            )
+        )
+        unknown_premeaning = unknown_validation["premeaning_inputs"]
+        unknown_full_view = (
+            input_specific_meaning_module.derive_grounded_situation_view(
+                unknown_premeaning
+            )
+        )
+        unknown_basis_rows = tuple(
+            row
+            for row in unknown_full_view.basis_rows
+            if row.material_unknown_refs
+        )
+        if not unknown_basis_rows:
+            raise AssertionError("IM02 source-bound material unknown case missing")
+        unknown_basis_row = unknown_basis_rows[0]
+        unknown_profile = next(
+            row
+            for row in unknown_full_view.compatibility_rows
+            if row.scope_object_ref
+            in set(unknown_basis_row.scope_object_refs)
+        )
+        unknown_configuration = (
+            contracts_module.QualifiedEventStateConfiguration(
+                schema_version="1.0",
+                configuration_id=(
+                    "difference-configuration:pending"
+                    "@cocolon.cmee.emlis.difference_configuration.v1"
+                ),
+                predicate_ref=unknown_profile.scope_object_ref,
+                owner_ref=unknown_profile.owner_refs[0],
+                modality_refs=unknown_profile.modality_refs,
+                time_refs=unknown_profile.time_refs,
+                aspect_refs=unknown_profile.aspect_refs,
+                scope_refs=unknown_profile.scope_refs,
+                qualifier_refs=(
+                    input_specific_meaning_module._profile_source_qualifiers(
+                        unknown_profile
+                    )
+                ),
+                source_evidence_refs=(
+                    unknown_basis_row.source_evidence_refs
+                ),
+            )
+        )
+        unknown_configuration = replace(
+            unknown_configuration,
+            configuration_id=contracts_module.difference_configuration_id(
+                unknown_configuration
+            ),
+        )
+        contracts_module.validate_difference_configuration(
+            unknown_configuration
+        )
+        cls.material_unknown_observed_rows = (
+            input_specific_meaning_module._derive_observed_distinctions(
+                unknown_full_view,
+                (unknown_configuration,),
+            )
+        )
+        for row in cls.material_unknown_observed_rows:
+            contracts_module.validate_observed_distinction_row(
+                row,
+                configuration=unknown_configuration,
+            )
+        cls.actual_cases = tuple(cases)
+        cls.available_cases = tuple(
+            case
+            for case in cls.actual_cases
+            if case.structure.difference_configuration_derivation.state
+            is contracts_module.DifferenceConfigurationDerivationState.CONFIGURATION_SET_AVAILABLE
+        )
+        if not cls.available_cases:
+            raise AssertionError("IM02 actual configuration case missing")
+
+    def test_im02_closed_types_exact_sets_and_zero_reception_backflow(
+        self,
+    ) -> None:
+        expected_values = {
+            contracts_module.DifferenceConfigurationDerivationState: (
+                "CONFIGURATION_SET_AVAILABLE",
+                "THIN_NO_SAFE_CONFIGURATION",
+                "UPSTREAM_STRUCTURE_INSUFFICIENT",
+                "NO_FOREGROUND_OBJECT",
+            ),
+            contracts_module.RequirementBundleDerivationState: (
+                "BUNDLE_SET_AVAILABLE",
+                "NO_REQUIRED_DIFFERENCE",
+                "UPSTREAM_STRUCTURE_INSUFFICIENT",
+            ),
+            contracts_module.DifferenceAxis: (
+                "INTENTION_VS_OUTPUT",
+                "INTERNAL_VS_EXTERNAL",
+                "BEFORE_VS_AFTER",
+                "HISTORY_VS_PATTERN_VS_POSSIBILITY",
+                "WISH_VS_CONSTRAINT",
+                "ACTION_VS_RESIDUE",
+                "CHANGE_VS_GENERALIZATION",
+                "FACT_VS_INTERPRETATION",
+                "RESOLVED_VS_UNRESOLVED",
+                "ENDPOINT_A_VS_ENDPOINT_B",
+            ),
+            contracts_module.ObservedDistinctionDerivationKind: (
+                "BINARY_ENDPOINT_AND_DIRECTION",
+                "QUALIFIED_PREDICATE_OWNER_MODIFIER",
+                "TYPED_AXIS_CONTRAST",
+                "BOUND_QUALIFIER",
+                "BOUND_MATERIAL_UNKNOWN",
+            ),
+            contracts_module.DifferenceInvariantCode: (
+                "ENDPOINT_COLLAPSE",
+                "DIRECTION_REVERSAL",
+                "WORLD_COLLAPSE",
+                "ROLE_COLLAPSE",
+                "TEMPORAL_COLLAPSE",
+                "POLARITY_REVERSAL",
+                "MODALITY_PROMOTION",
+                "UNKNOWN_ERASURE",
+                "EXPLICIT_LIMIT_ERASURE",
+                "REQUIRED_RETENTION_ERASURE",
+            ),
+            contracts_module.CounterfactualMutationKind: (
+                "DELETE_ENDPOINT",
+                "SWAP_ENDPOINTS",
+                "DELETE_PREDICATE",
+                "DELETE_OWNER",
+                "REPLACE_WORLD",
+                "REPLACE_ROLE",
+                "REPLACE_TIME",
+                "DELETE_MODALITY",
+                "DELETE_ASPECT",
+                "DELETE_SCOPE",
+                "DELETE_QUALIFIER",
+                "PROMOTE_UNKNOWN",
+            ),
+            WholeReadingConsequenceCode: (
+                "INPUT_CENTER_CHANGED",
+                "RELATION_STRUCTURE_CHANGED",
+                "TEMPORAL_FLOW_CHANGED",
+                "RESOLUTION_TREATMENT_CHANGED",
+                "WORLD_OR_OWNER_DISTINCTION_CHANGED",
+                "MODALITY_POLARITY_OR_LIMITATION_CHANGED",
+                "EPISODICITY_BOUNDARY_CHANGED",
+            ),
+        }
+        for enum_type, expected in expected_values.items():
+            with self.subTest(enum_type=enum_type.__name__):
+                self.assertEqual(
+                    tuple(value.value for value in enum_type), expected
+                )
+
+        expected_fields = {
+            contracts_module.RelationDirectionRow: (
+                "schema_version",
+                "relation_ref",
+                "relation_kind",
+                "source_endpoint_ref",
+                "target_endpoint_ref",
+            ),
+            contracts_module.RelationalConfiguration: (
+                "schema_version",
+                "configuration_id",
+                "endpoint_component_refs",
+                "relation_path_refs",
+                "direction_rows",
+                "source_qualifier_refs",
+                "source_evidence_refs",
+            ),
+            contracts_module.QualifiedEventStateConfiguration: (
+                "schema_version",
+                "configuration_id",
+                "predicate_ref",
+                "owner_ref",
+                "modality_refs",
+                "time_refs",
+                "aspect_refs",
+                "scope_refs",
+                "qualifier_refs",
+                "source_evidence_refs",
+            ),
+            contracts_module.DifferenceConfigurationSet: (
+                "schema_version",
+                "foreground_scope_ref",
+                "configuration_refs",
+                "source_evidence_refs",
+            ),
+            contracts_module.DifferenceConfigurationDerivation: (
+                "schema_version",
+                "state",
+                "configuration_set",
+                "foreground_source_object_refs",
+                "missing_structure_refs",
+                "derivation_evidence_refs",
+            ),
+            contracts_module.ObservedDistinctionRow: (
+                "schema_version",
+                "distinction_id",
+                "configuration_ref",
+                "derivation_kind",
+                "axis",
+                "contrasted_component_refs",
+                "source_qualifier_refs",
+                "source_evidence_refs",
+            ),
+            contracts_module.CounterfactualMutationRow: (
+                "schema_version",
+                "mutation_id",
+                "mutation_kind",
+                "observed_distinction_ref",
+                "target_component_refs",
+                "replacement_refs",
+                "source_evidence_refs",
+            ),
+            contracts_module.RequiredDifferenceRow: (
+                "schema_version",
+                "difference_id",
+                "observed_distinction_ref",
+                "invariant_codes",
+                "retention_duty_refs",
+                "counterfactual_mutation_ref",
+            ),
+            contracts_module.RequirementBundle: (
+                "schema_version",
+                "bundle_id",
+                "foreground_scope_ref",
+                "anchor_configuration_ref",
+                "adjacent_configuration_refs",
+                "required_difference_refs",
+                "retention_duty_refs",
+            ),
+            contracts_module.RequirementBundleSet: (
+                "schema_version",
+                "foreground_scope_ref",
+                "bundle_refs",
+            ),
+            contracts_module.RequirementBundleDerivation: (
+                "schema_version",
+                "state",
+                "bundle_set",
+                "missing_structure_refs",
+                "derivation_evidence_refs",
+            ),
+            contracts_module.InputSpecificMeaningStructure: (
+                "schema_version",
+                "difference_configuration_derivation",
+                "configurations",
+                "observed_distinction_rows",
+                "counterfactual_mutation_rows",
+                "required_difference_rows",
+                "requirement_bundle_derivation",
+                "requirement_bundles",
+                "whole_reading_consequence_rows",
+            ),
+        }
+        forbidden = (
+            "reception",
+            "affect",
+            "stance",
+            "style",
+            "temperature",
+            "score",
+            "priority",
+            "surface",
+            "raw_text",
+            "fixture_id",
+            "case_id",
+            "expected_text",
+        )
+        for contract_type, expected in expected_fields.items():
+            contract_fields = fields(contract_type)
+            self.assertEqual(
+                tuple(value.name for value in contract_fields), expected
+            )
+            field_surface = " ".join(
+                (
+                    *(value.name.lower() for value in contract_fields),
+                    *(str(value.type).lower() for value in contract_fields),
+                )
+            )
+            self.assertFalse(any(value in field_surface for value in forbidden))
+
+    def test_im02_actual_source_bound_configurations_cover_exact5_origins(
+        self,
+    ) -> None:
+        actual_origins = {
+            row.derivation_kind
+            for case in self.actual_cases
+            for row in case.structure.observed_distinction_rows
+        }
+        actual_origins.update(
+            row.derivation_kind
+            for row in self.material_unknown_observed_rows
+        )
+        self.assertEqual(
+            actual_origins,
+            set(contracts_module.ObservedDistinctionDerivationKind),
+        )
+        for case in self.actual_cases:
+            structure = case.structure
+            derivation = structure.difference_configuration_derivation
+            contracts_module.validate_input_specific_meaning_structure(
+                structure,
+                foreground_scope_derivation=case.scope_derivation,
+            )
+            if (
+                derivation.state
+                is not contracts_module.DifferenceConfigurationDerivationState.CONFIGURATION_SET_AVAILABLE
+            ):
+                self.assertEqual(structure.configurations, ())
+                continue
+            self.assertTrue(1 <= len(structure.configurations) <= 5)
+            self.assertEqual(
+                derivation.configuration_set.configuration_refs,
+                tuple(row.configuration_id for row in structure.configurations),
+            )
+            configuration_by_ref = {
+                row.configuration_id: row for row in structure.configurations
+            }
+            for configuration in structure.configurations:
+                self.assertTrue(configuration.source_evidence_refs)
+                self.assertTrue(
+                    set(configuration.source_evidence_refs).issubset(
+                        case.scope_derivation.foreground_scope.source_evidence_refs
+                    )
+                )
+                if type(configuration) is contracts_module.RelationalConfiguration:
+                    self.assertTrue(
+                        2 <= len(configuration.endpoint_component_refs) <= 5
+                    )
+                    self.assertEqual(
+                        {row.relation_ref for row in configuration.direction_rows},
+                        set(configuration.relation_path_refs),
+                    )
+                else:
+                    self.assertTrue(configuration.predicate_ref)
+                    self.assertTrue(configuration.owner_ref)
+                    self.assertTrue(
+                        any(
+                            (
+                                configuration.modality_refs,
+                                configuration.time_refs,
+                                configuration.aspect_refs,
+                                configuration.scope_refs,
+                                configuration.qualifier_refs,
+                            )
+                        )
+                    )
+            for observed in structure.observed_distinction_rows:
+                contracts_module.validate_observed_distinction_row(
+                    observed,
+                    configuration=configuration_by_ref[
+                        observed.configuration_ref
+                    ],
+                )
+
+    def test_im02_exact4_configuration_states_are_derived_fail_closed(
+        self,
+    ) -> None:
+        available_case = self.available_cases[0]
+        empty_view = input_specific_meaning_module.GroundedSituationView(
+            schema_version="1.0",
+            basis_rows=(),
+            compatibility_rows=(),
+            source_connected_relations=(),
+            missing_structure_refs=(),
+        )
+        no_scope = input_specific_meaning_module.derive_foreground_scope_closed(
+            empty_view
+        )
+        no_foreground, no_rows = (
+            input_specific_meaning_module.derive_difference_configuration_set(
+                empty_view, no_scope
+            )
+        )
+        self.assertIs(
+            no_foreground.state,
+            contracts_module.DifferenceConfigurationDerivationState.NO_FOREGROUND_OBJECT,
+        )
+        self.assertEqual(no_rows, ())
+
+        upstream_view = replace(
+            available_case.grounded_view,
+            missing_structure_refs=(
+                "foreground-scope-missing:im02-actual-structure",
+            ),
+        )
+        upstream_scope = (
+            input_specific_meaning_module.derive_foreground_scope_closed(
+                upstream_view
+            )
+        )
+        upstream, upstream_rows = (
+            input_specific_meaning_module.derive_difference_configuration_set(
+                upstream_view, upstream_scope
+            )
+        )
+        self.assertIs(
+            upstream.state,
+            contracts_module.DifferenceConfigurationDerivationState.UPSTREAM_STRUCTURE_INSUFFICIENT,
+        )
+        self.assertTrue(upstream.missing_structure_refs)
+        self.assertEqual(upstream_rows, ())
+
+        thin_view = replace(
+            available_case.grounded_view,
+            compatibility_rows=tuple(
+                replace(
+                    row,
+                    world_refs=(),
+                    epistemic_state_refs=(),
+                    time_refs=(),
+                    aspect_refs=(),
+                    modality_refs=(),
+                    polarity_refs=(),
+                    scope_refs=(),
+                    required_qualifier_refs=(),
+                    material_unknown_refs=(),
+                )
+                for row in available_case.grounded_view.compatibility_rows
+            ),
+            source_connected_relations=(),
+        )
+        thin, thin_rows = (
+            input_specific_meaning_module.derive_difference_configuration_set(
+                thin_view, available_case.scope_derivation
+            )
+        )
+        self.assertIs(
+            thin.state,
+            contracts_module.DifferenceConfigurationDerivationState.THIN_NO_SAFE_CONFIGURATION,
+        )
+        self.assertEqual(thin_rows, ())
+        contracts_module.validate_difference_configuration_derivation(
+            thin,
+            configurations=thin_rows,
+            foreground_scope_derivation=available_case.scope_derivation,
+        )
+
+    def test_im02_required_differences_own_exact_one_closed_mutation(
+        self,
+    ) -> None:
+        for case in self.available_cases:
+            structure = case.structure
+            observed = {
+                row.distinction_id: row
+                for row in structure.observed_distinction_rows
+            }
+            mutations = {
+                row.mutation_id: row
+                for row in structure.counterfactual_mutation_rows
+            }
+            self.assertEqual(
+                len(structure.required_difference_rows), len(mutations)
+            )
+            for required in structure.required_difference_rows:
+                self.assertIn(required.observed_distinction_ref, observed)
+                mutation = mutations[required.counterfactual_mutation_ref]
+                self.assertEqual(
+                    mutation.observed_distinction_ref,
+                    required.observed_distinction_ref,
+                )
+                self.assertTrue(required.invariant_codes)
+                self.assertIs(
+                    type(mutation.mutation_kind),
+                    contracts_module.CounterfactualMutationKind,
+                )
+                self.assertTrue(mutation.target_component_refs)
+                if (
+                    mutation.mutation_kind
+                    is contracts_module.CounterfactualMutationKind.SWAP_ENDPOINTS
+                ):
+                    self.assertEqual(
+                        mutation.replacement_refs,
+                        tuple(reversed(mutation.target_component_refs)),
+                    )
+                elif mutation.mutation_kind in {
+                    contracts_module.CounterfactualMutationKind.REPLACE_WORLD,
+                    contracts_module.CounterfactualMutationKind.REPLACE_ROLE,
+                    contracts_module.CounterfactualMutationKind.REPLACE_TIME,
+                    contracts_module.CounterfactualMutationKind.PROMOTE_UNKNOWN,
+                }:
+                    self.assertEqual(len(mutation.replacement_refs), 1)
+
+        endpoint_a = f"node:im02-a@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        endpoint_b = f"node:im02-b@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        endpoint_c = f"node:im02-c@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        relation_ab = f"edge:im02-ba@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        relation_bc = f"edge:im02-bc@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        evidence_ab = "evidence:im02-ba@cocolon.cmee.source.v1"
+        evidence_bc = "evidence:im02-bc@cocolon.cmee.source.v1"
+        multi_endpoint = contracts_module.RelationalConfiguration(
+            schema_version="1.0",
+            configuration_id=(
+                "difference-configuration:pending"
+                "@cocolon.cmee.emlis.difference_configuration.v1"
+            ),
+            endpoint_component_refs=(endpoint_a, endpoint_b, endpoint_c),
+            relation_path_refs=(relation_ab, relation_bc),
+            direction_rows=(
+                contracts_module.RelationDirectionRow(
+                    schema_version="1.0",
+                    relation_ref=relation_ab,
+                    relation_kind=ForegroundScopeRelationKind.CONTRAST,
+                    source_endpoint_ref=endpoint_b,
+                    target_endpoint_ref=endpoint_a,
+                ),
+                contracts_module.RelationDirectionRow(
+                    schema_version="1.0",
+                    relation_ref=relation_bc,
+                    relation_kind=ForegroundScopeRelationKind.CONTRAST,
+                    source_endpoint_ref=endpoint_b,
+                    target_endpoint_ref=endpoint_c,
+                ),
+            ),
+            source_qualifier_refs=(),
+            source_evidence_refs=(evidence_ab, evidence_bc),
+        )
+        multi_endpoint = replace(
+            multi_endpoint,
+            configuration_id=contracts_module.difference_configuration_id(
+                multi_endpoint
+            ),
+        )
+
+        def binary_observed(
+            contrasted: tuple[str, str],
+        ) -> contracts_module.ObservedDistinctionRow:
+            value = contracts_module.ObservedDistinctionRow(
+                schema_version="1.0",
+                distinction_id=(
+                    "observed-distinction:pending"
+                    "@cocolon.cmee.emlis.observed_distinction.v1"
+                ),
+                configuration_ref=multi_endpoint.configuration_id,
+                derivation_kind=(
+                    contracts_module.ObservedDistinctionDerivationKind.BINARY_ENDPOINT_AND_DIRECTION
+                ),
+                axis=contracts_module.DifferenceAxis.ENDPOINT_A_VS_ENDPOINT_B,
+                contrasted_component_refs=tuple(sorted(contrasted)),
+                source_qualifier_refs=(),
+                source_evidence_refs=(evidence_ab, evidence_bc),
+            )
+            return replace(
+                value,
+                distinction_id=contracts_module.observed_distinction_id(
+                    value
+                ),
+            )
+
+        admitted_pair = binary_observed((endpoint_a, endpoint_b))
+        contracts_module.validate_observed_distinction_row(
+            admitted_pair,
+            configuration=multi_endpoint,
+        )
+        with self.assertRaises(CMEEStage1ContractError):
+            contracts_module.validate_observed_distinction_row(
+                binary_observed((endpoint_a, endpoint_c)),
+                configuration=multi_endpoint,
+            )
+        mutation_kind, targets, replacements, _invariants = (
+            input_specific_meaning_module._mutation_spec(
+                admitted_pair,
+                multi_endpoint,
+            )
+        )
+        self.assertIs(
+            mutation_kind,
+            contracts_module.CounterfactualMutationKind.DELETE_ENDPOINT,
+        )
+        self.assertEqual(targets, (endpoint_a,))
+        self.assertEqual(replacements, ())
+
+        baseline = (
+            CMEESubjectiveMeaningPlannerIM00ContractsTest._semantic_signature()
+        )
+        owner_components = tuple(
+            sorted(
+                (
+                    baseline.component_semantic_keys[0],
+                    replace(
+                        baseline.component_semantic_keys[1],
+                        owner_key="owner:other_actor",
+                    ),
+                ),
+                key=stage1_canonical_json_bytes,
+            )
+        )
+        owner_baseline = replace(
+            baseline,
+            world_or_owner_distinction_keys=(
+                "owner:current_user",
+                "owner:other_actor",
+            ),
+            qualifier_keys=tuple(
+                sorted(
+                    "qualifier:right_actor=other_actor"
+                    if value == "qualifier:right_actor=current_user"
+                    else value
+                    for value in baseline.qualifier_keys
+                )
+            ),
+            component_semantic_keys=owner_components,
+        )
+        owner_mutation = contracts_module.CounterfactualMutationRow(
+            schema_version="1.0",
+            mutation_id=(
+                "counterfactual-mutation:delete-owner-target"
+                "@cocolon.cmee.emlis.counterfactual_mutation.v1"
+            ),
+            mutation_kind=(
+                contracts_module.CounterfactualMutationKind.DELETE_OWNER
+            ),
+            observed_distinction_ref=admitted_pair.distinction_id,
+            target_component_refs=("owner:other_actor",),
+            replacement_refs=(),
+            source_evidence_refs=(evidence_ab,),
+        )
+        owner_mutation = replace(
+            owner_mutation,
+            mutation_id=contracts_module.counterfactual_mutation_id(
+                owner_mutation
+            ),
+        )
+        owner_mutated = (
+            input_specific_meaning_module.apply_counterfactual_mutation(
+                owner_baseline,
+                owner_mutation,
+            )
+        )
+        self.assertEqual(
+            {
+                value.role_key: value.owner_key
+                for value in owner_mutated.component_semantic_keys
+            },
+            {
+                "role:left": "owner:current_user",
+                "role:right": "owner:unknown",
+            },
+        )
+        self.assertIn(
+            "qualifier:left_actor=current_user",
+            owner_mutated.qualifier_keys,
+        )
+        self.assertIn(
+            "qualifier:right_actor=unknown",
+            owner_mutated.qualifier_keys,
+        )
+        self.assertNotIn(
+            "qualifier:right_actor=other_actor",
+            owner_mutated.qualifier_keys,
+        )
+
+        forgery_case = next(
+            case
+            for case in self.available_cases
+            if case.structure.required_difference_rows
+        )
+        required = forgery_case.structure.required_difference_rows[0]
+        forged_required = replace(
+            required,
+            counterfactual_mutation_ref=(
+                "counterfactual-mutation:foreign"
+                "@cocolon.cmee.emlis.counterfactual_mutation.v1"
+            ),
+        )
+        forged = replace(
+            forgery_case.structure,
+            required_difference_rows=(
+                forged_required,
+                *forgery_case.structure.required_difference_rows[1:],
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "required_difference_provenance_unbound",
+        ):
+            contracts_module.validate_input_specific_meaning_structure(
+                forged,
+                foreground_scope_derivation=forgery_case.scope_derivation,
+            )
+
+    def test_im02_requirement_bundles_exclude_optional_and_shared_evidence(
+        self,
+    ) -> None:
+        for case in self.available_cases:
+            structure = case.structure
+            required_configuration = {
+                observed.configuration_ref
+                for required in structure.required_difference_rows
+                for observed in structure.observed_distinction_rows
+                if observed.distinction_id
+                == required.observed_distinction_ref
+            }
+            for bundle in structure.requirement_bundles:
+                self.assertTrue(1 <= len(bundle.required_difference_refs))
+                self.assertTrue(len(bundle.adjacent_configuration_refs) <= 4)
+                self.assertNotIn(
+                    bundle.anchor_configuration_ref,
+                    bundle.adjacent_configuration_refs,
+                )
+                self.assertTrue(
+                    set(bundle.adjacent_configuration_refs).issubset(
+                        required_configuration
+                    )
+                )
+        case = self.available_cases[0]
+        anchor = case.structure.configurations[0]
+        if type(anchor) is contracts_module.RelationalConfiguration:
+            owner_ref = case.grounded_view.compatibility_rows[0].owner_refs[0]
+        else:
+            owner_ref = anchor.owner_ref
+        source_ref = (
+            f"node:im02-optional@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        )
+        optional = contracts_module.QualifiedEventStateConfiguration(
+            schema_version="1.0",
+            configuration_id=(
+                "difference-configuration:pending"
+                "@cocolon.cmee.emlis.difference_configuration.v1"
+            ),
+            predicate_ref=source_ref,
+            owner_ref=owner_ref,
+            modality_refs=("modality:possibility",),
+            time_refs=("time:disconnected",),
+            aspect_refs=("aspect:state",),
+            scope_refs=("scope:source_bounded",),
+            qualifier_refs=("modality:possibility",),
+            source_evidence_refs=anchor.source_evidence_refs,
+        )
+        optional = replace(
+            optional,
+            configuration_id=contracts_module.difference_configuration_id(
+                optional
+            ),
+        )
+        self.assertFalse(
+            input_specific_meaning_module._configurations_are_source_connected(
+                anchor,
+                optional,
+                replace(case.grounded_view, source_connected_relations=()),
+            )
+        )
+        anchor_object = (
+            anchor.endpoint_component_refs[0]
+            if type(anchor) is contracts_module.RelationalConfiguration
+            else anchor.predicate_ref
+        )
+        external_bridge = (
+            input_specific_meaning_module.SourceConnectedScopeRelation(
+                schema_version="1.0",
+                relation_ref=(
+                    f"edge:im02-external-bridge"
+                    f"@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+                ),
+                relation_kind=ForegroundScopeRelationKind.CONTINUATION,
+                source_object_ref=anchor_object,
+                target_object_ref=optional.predicate_ref,
+                source_evidence_refs=anchor.source_evidence_refs,
+            )
+        )
+        self.assertFalse(
+            input_specific_meaning_module._configurations_are_source_connected(
+                anchor,
+                optional,
+                replace(
+                    case.grounded_view,
+                    source_connected_relations=(external_bridge,),
+                ),
+            )
+        )
+        shared_object_optional = replace(
+            optional,
+            predicate_ref=anchor_object,
+        )
+        self.assertTrue(
+            input_specific_meaning_module._configurations_are_source_connected(
+                anchor,
+                shared_object_optional,
+                replace(case.grounded_view, source_connected_relations=()),
+            )
+        )
+        relational_anchor = next(
+            configuration
+            for actual_case in self.actual_cases
+            for configuration in actual_case.structure.configurations
+            if type(configuration) is contracts_module.RelationalConfiguration
+        )
+        shared_path_peer = replace(
+            relational_anchor,
+            endpoint_component_refs=(
+                f"node:im02-path-peer-a"
+                f"@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}",
+                f"node:im02-path-peer-b"
+                f"@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}",
+            ),
+        )
+        self.assertTrue(
+            input_specific_meaning_module._configurations_are_source_connected(
+                relational_anchor,
+                shared_path_peer,
+                replace(case.grounded_view, source_connected_relations=()),
+            )
+        )
+
+    def test_im02_whole_reading_issuer_binds_owned_mutation_exactly(
+        self,
+    ) -> None:
+        directional = next(
+            (case, required, mutation)
+            for case in self.actual_cases
+            for required in case.structure.required_difference_rows
+            for mutation in case.structure.counterfactual_mutation_rows
+            if mutation.mutation_id == required.counterfactual_mutation_ref
+            and mutation.mutation_kind
+            is contracts_module.CounterfactualMutationKind.SWAP_ENDPOINTS
+        )
+        case, required, mutation = directional
+        baseline = (
+            CMEESubjectiveMeaningPlannerIM00ContractsTest._semantic_signature()
+        )
+        row = input_specific_meaning_module.issue_whole_reading_consequence_row(
+            foreground_scope=case.scope_derivation.foreground_scope,
+            required_difference=required,
+            counterfactual_mutation=mutation,
+            baseline_semantic_signature=baseline,
+        )
+        self.assertIs(type(row), WholeReadingConsequenceRow)
+        self.assertIs(
+            row.consequence_code,
+            WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED,
+        )
+        self.assertEqual(row.required_difference_ref, required.difference_id)
+        self.assertEqual(row.counterfactual_mutation_ref, mutation.mutation_id)
+        self.assertEqual(row.baseline_semantic_signature, baseline)
+        self.assertEqual(
+            row.mutated_semantic_signature,
+            input_specific_meaning_module.apply_counterfactual_mutation(
+                baseline, mutation
+            ),
+        )
+        structure_with_row = replace(
+            case.structure,
+            whole_reading_consequence_rows=(row,),
+        )
+        contracts_module.validate_input_specific_meaning_structure(
+            structure_with_row,
+            foreground_scope_derivation=case.scope_derivation,
+        )
+        forged_baseline_schema = replace(
+            baseline,
+            schema_version="forged",
+        )
+        with self.assertRaises(CMEEStage1ContractError):
+            input_specific_meaning_module.apply_counterfactual_mutation(
+                forged_baseline_schema,
+                mutation,
+            )
+        forged_schema_row = replace(
+            row,
+            baseline_semantic_signature=forged_baseline_schema,
+        )
+        forged_schema_row = replace(
+            forged_schema_row,
+            consequence_id=whole_reading_consequence_id(
+                forged_schema_row
+            ),
+        )
+        with self.assertRaises(CMEEStage1ContractError):
+            contracts_module.validate_input_specific_meaning_structure(
+                replace(
+                    case.structure,
+                    whole_reading_consequence_rows=(forged_schema_row,),
+                ),
+                foreground_scope_derivation=case.scope_derivation,
+            )
+        forged_mutated = replace(
+            row.mutated_semantic_signature,
+            resolution_treatment_keys=("resolution:resolved",),
+        )
+        forged_aggregate_row = replace(
+            row,
+            mutated_semantic_signature=forged_mutated,
+        )
+        forged_aggregate_row = replace(
+            forged_aggregate_row,
+            consequence_id=whole_reading_consequence_id(
+                forged_aggregate_row
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "whole_reading_consequence_im02_binding_invalid",
+        ):
+            contracts_module.validate_input_specific_meaning_structure(
+                replace(
+                    case.structure,
+                    whole_reading_consequence_rows=(
+                        forged_aggregate_row,
+                    ),
+                ),
+                foreground_scope_derivation=case.scope_derivation,
+            )
+
+        unrepresentable = replace(
+            mutation,
+            mutation_id=(
+                "counterfactual-mutation:pending"
+                "@cocolon.cmee.emlis.counterfactual_mutation.v1"
+            ),
+            mutation_kind=(
+                contracts_module.CounterfactualMutationKind.DELETE_PREDICATE
+            ),
+            target_component_refs=(mutation.target_component_refs[0],),
+            replacement_refs=(),
+        )
+        unrepresentable = replace(
+            unrepresentable,
+            mutation_id=contracts_module.counterfactual_mutation_id(
+                unrepresentable
+            ),
+        )
+        unrepresentable_required = replace(
+            required,
+            difference_id=(
+                "required-difference:pending"
+                "@cocolon.cmee.emlis.required_difference.v1"
+            ),
+            counterfactual_mutation_ref=unrepresentable.mutation_id,
+        )
+        unrepresentable_required = replace(
+            unrepresentable_required,
+            difference_id=contracts_module.required_difference_id(
+                unrepresentable_required
+            ),
+        )
+        self.assertIsNone(
+            input_specific_meaning_module.issue_whole_reading_consequence_row(
+                foreground_scope=case.scope_derivation.foreground_scope,
+                required_difference=unrepresentable_required,
+                counterfactual_mutation=unrepresentable,
+                baseline_semantic_signature=baseline,
+            )
+        )
+
+        def mutation_for(
+            kind: contracts_module.CounterfactualMutationKind,
+            target: tuple[str, ...],
+            replacement_refs: tuple[str, ...],
+        ):
+            value = replace(
+                mutation,
+                mutation_id=(
+                    "counterfactual-mutation:pending"
+                    "@cocolon.cmee.emlis.counterfactual_mutation.v1"
+                ),
+                mutation_kind=kind,
+                target_component_refs=target,
+                replacement_refs=replacement_refs,
+            )
+            return replace(
+                value,
+                mutation_id=contracts_module.counterfactual_mutation_id(value),
+            )
+
+        def required_for_mutation(
+            value: contracts_module.CounterfactualMutationRow,
+        ) -> contracts_module.RequiredDifferenceRow:
+            bound = replace(
+                required,
+                difference_id=(
+                    "required-difference:pending"
+                    "@cocolon.cmee.emlis.required_difference.v1"
+                ),
+                counterfactual_mutation_ref=value.mutation_id,
+            )
+            return replace(
+                bound,
+                difference_id=contracts_module.required_difference_id(bound),
+            )
+
+        swap_targets = mutation.target_component_refs
+        malformed_mutations = (
+            mutation_for(
+                contracts_module.CounterfactualMutationKind.SWAP_ENDPOINTS,
+                (swap_targets[0],),
+                (swap_targets[1],),
+            ),
+            mutation_for(
+                contracts_module.CounterfactualMutationKind.SWAP_ENDPOINTS,
+                swap_targets,
+                swap_targets,
+            ),
+            mutation_for(
+                contracts_module.CounterfactualMutationKind.PROMOTE_UNKNOWN,
+                ("unknown:material",),
+                ("resolution:invented",),
+            ),
+            mutation_for(
+                contracts_module.CounterfactualMutationKind.REPLACE_WORLD,
+                ("world:internal",),
+                ("world:invented",),
+            ),
+            mutation_for(
+                contracts_module.CounterfactualMutationKind.REPLACE_TIME,
+                ("time:current_input",),
+                ("time:invented",),
+            ),
+            mutation_for(
+                contracts_module.CounterfactualMutationKind.REPLACE_ROLE,
+                ("role:right",),
+                ("role:invented",),
+            ),
+        )
+        for malformed in malformed_mutations:
+            with self.subTest(
+                malformed_mutation=malformed.mutation_kind.value,
+                targets=malformed.target_component_refs,
+                replacements=malformed.replacement_refs,
+            ):
+                with self.assertRaises(CMEEStage1ContractError):
+                    input_specific_meaning_module.apply_counterfactual_mutation(
+                        baseline,
+                        malformed,
+                    )
+                with self.assertRaises(CMEEStage1ContractError):
+                    input_specific_meaning_module.issue_whole_reading_consequence_row(
+                        foreground_scope=(
+                            case.scope_derivation.foreground_scope
+                        ),
+                        required_difference=required_for_mutation(malformed),
+                        counterfactual_mutation=malformed,
+                        baseline_semantic_signature=baseline,
+                    )
+
+        world_baseline = replace(
+            baseline,
+            world_or_owner_distinction_keys=(
+                "owner:current_user",
+                "world:internal",
+            ),
+        )
+        world_mutated = (
+            input_specific_meaning_module.apply_counterfactual_mutation(
+                world_baseline,
+                mutation_for(
+                    contracts_module.CounterfactualMutationKind.REPLACE_WORLD,
+                    ("world:internal",),
+                    ("world:external",),
+                ),
+            )
+        )
+        self.assertEqual(
+            world_mutated.world_or_owner_distinction_keys,
+            ("owner:current_user", "world:external"),
+        )
+        absent_world_mutation = mutation_for(
+            contracts_module.CounterfactualMutationKind.REPLACE_WORLD,
+            ("world:relationship",),
+            ("world:external",),
+        )
+        self.assertEqual(
+            input_specific_meaning_module.apply_counterfactual_mutation(
+                world_baseline,
+                absent_world_mutation,
+            ),
+            world_baseline,
+        )
+        absent_world_required = replace(
+            required,
+            difference_id=(
+                "required-difference:pending"
+                "@cocolon.cmee.emlis.required_difference.v1"
+            ),
+            counterfactual_mutation_ref=absent_world_mutation.mutation_id,
+        )
+        absent_world_required = replace(
+            absent_world_required,
+            difference_id=contracts_module.required_difference_id(
+                absent_world_required
+            ),
+        )
+        self.assertIsNone(
+            input_specific_meaning_module.issue_whole_reading_consequence_row(
+                foreground_scope=case.scope_derivation.foreground_scope,
+                required_difference=absent_world_required,
+                counterfactual_mutation=absent_world_mutation,
+                baseline_semantic_signature=world_baseline,
+            )
+        )
+        role_mutated = (
+            input_specific_meaning_module.apply_counterfactual_mutation(
+                baseline,
+                mutation_for(
+                    contracts_module.CounterfactualMutationKind.REPLACE_ROLE,
+                    ("role:right",),
+                    ("role:left",),
+                ),
+            )
+        )
+        self.assertEqual(role_mutated.component_role_keys, ("role:left",))
+        self.assertEqual(
+            {value.role_key for value in role_mutated.component_semantic_keys},
+            {"role:left"},
+        )
+        unknown_baseline = replace(
+            baseline,
+            resolution_treatment_keys=("resolution:unresolved",),
+        )
+        unknown_mutated = (
+            input_specific_meaning_module.apply_counterfactual_mutation(
+                unknown_baseline,
+                mutation_for(
+                    contracts_module.CounterfactualMutationKind.PROMOTE_UNKNOWN,
+                    ("unknown:material",),
+                    ("resolution:resolved",),
+                ),
+            )
+        )
+        self.assertEqual(
+            unknown_mutated.resolution_treatment_keys,
+            ("resolution:resolved",),
+        )
+        qualifier_mutation = mutation_for(
+            contracts_module.CounterfactualMutationKind.DELETE_QUALIFIER,
+            ("qualifier:not_generalized",),
+            (),
+        )
+        qualifier_required = replace(
+            required,
+            difference_id=(
+                "required-difference:pending"
+                "@cocolon.cmee.emlis.required_difference.v1"
+            ),
+            counterfactual_mutation_ref=qualifier_mutation.mutation_id,
+        )
+        qualifier_required = replace(
+            qualifier_required,
+            difference_id=contracts_module.required_difference_id(
+                qualifier_required
+            ),
+        )
+        self.assertEqual(
+            input_specific_meaning_module.apply_counterfactual_mutation(
+                baseline,
+                qualifier_mutation,
+            ),
+            baseline,
+        )
+        self.assertIsNone(
+            input_specific_meaning_module.issue_whole_reading_consequence_row(
+                foreground_scope=case.scope_derivation.foreground_scope,
+                required_difference=qualifier_required,
+                counterfactual_mutation=qualifier_mutation,
+                baseline_semantic_signature=baseline,
+            )
+        )
+
+        def baseline_for_mutation(
+            value: contracts_module.CounterfactualMutationRow,
+        ) -> MeaningSemanticSignature:
+            candidate = baseline
+            if (
+                value.mutation_kind
+                is contracts_module.CounterfactualMutationKind.REPLACE_WORLD
+            ):
+                candidate = replace(
+                    candidate,
+                    world_or_owner_distinction_keys=tuple(
+                        sorted(
+                            {
+                                *candidate.world_or_owner_distinction_keys,
+                                value.target_component_refs[0],
+                            }
+                        )
+                    ),
+                )
+            elif (
+                value.mutation_kind
+                is contracts_module.CounterfactualMutationKind.REPLACE_TIME
+            ):
+                target_time = value.target_component_refs[0].replace(
+                    "time_scope:", "time:"
+                )
+                candidate = replace(
+                    candidate,
+                    temporal_state_keys=tuple(
+                        sorted({*candidate.temporal_state_keys, target_time})
+                    ),
+                )
+            elif (
+                value.mutation_kind
+                is contracts_module.CounterfactualMutationKind.PROMOTE_UNKNOWN
+            ):
+                candidate = replace(
+                    candidate,
+                    resolution_treatment_keys=("resolution:unresolved",),
+                )
+            elif (
+                value.mutation_kind
+                is contracts_module.CounterfactualMutationKind.DELETE_OWNER
+            ):
+                target_owner = value.target_component_refs[0].split("@", 1)[0]
+                candidate = replace(
+                    candidate,
+                    world_or_owner_distinction_keys=(target_owner,),
+                    component_semantic_keys=tuple(
+                        sorted(
+                            (
+                                replace(
+                                    component,
+                                    owner_key=target_owner,
+                                )
+                                for component in candidate.component_semantic_keys
+                            ),
+                            key=stage1_canonical_json_bytes,
+                        )
+                    ),
+                )
+            return candidate
+
+        semantic_order_fixture = None
+        for order_case in self.actual_cases:
+            mutation_by_ref = {
+                value.mutation_id: value
+                for value in order_case.structure.counterfactual_mutation_rows
+            }
+            issued_rows = []
+            for order_required in order_case.structure.required_difference_rows:
+                order_mutation = mutation_by_ref[
+                    order_required.counterfactual_mutation_ref
+                ]
+                order_row = (
+                    input_specific_meaning_module.issue_whole_reading_consequence_row(
+                        foreground_scope=(
+                            order_case.scope_derivation.foreground_scope
+                        ),
+                        required_difference=order_required,
+                        counterfactual_mutation=order_mutation,
+                        baseline_semantic_signature=baseline_for_mutation(
+                            order_mutation
+                        ),
+                    )
+                )
+                if order_row is not None:
+                    issued_rows.append(order_row)
+            issued_tuple = tuple(issued_rows)
+            issued_ids = tuple(
+                value.consequence_id for value in issued_tuple
+            )
+            if len(issued_tuple) >= 2 and issued_ids != tuple(
+                sorted(issued_ids)
+            ):
+                semantic_order_fixture = (order_case, issued_tuple)
+                break
+        self.assertIsNotNone(semantic_order_fixture)
+        order_case, semantic_rows = semantic_order_fixture
+        required_order = {
+            value.difference_id: index
+            for index, value in enumerate(
+                order_case.structure.required_difference_rows
+            )
+        }
+        self.assertEqual(
+            semantic_rows,
+            tuple(
+                sorted(
+                    semantic_rows,
+                    key=lambda value: required_order[
+                        value.required_difference_ref
+                    ],
+                )
+            ),
+        )
+        self.assertNotEqual(
+            tuple(value.consequence_id for value in semantic_rows),
+            tuple(
+                sorted(value.consequence_id for value in semantic_rows)
+            ),
+        )
+        contracts_module.validate_input_specific_meaning_structure(
+            replace(
+                order_case.structure,
+                whole_reading_consequence_rows=semantic_rows,
+            ),
+            foreground_scope_derivation=order_case.scope_derivation,
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "whole_reading_consequences_noncanonical",
+        ):
+            contracts_module.validate_input_specific_meaning_structure(
+                replace(
+                    order_case.structure,
+                    whole_reading_consequence_rows=tuple(
+                        reversed(semantic_rows)
+                    ),
+                ),
+                foreground_scope_derivation=order_case.scope_derivation,
+            )
+
+        valid_row, context, validator_kwargs = (
+            CMEESubjectiveMeaningPlannerIM00ContractsTest._whole_reading_fixture(
+                WholeReadingConsequenceCode.TEMPORAL_FLOW_CHANGED,
+                **CMEESubjectiveMeaningPlannerIM00ContractsTest._temporal_counterfactual_update(),
+            )
+        )
+        same_code_wrong_delta = replace(
+            valid_row.mutated_semantic_signature,
+            resolution_treatment_keys=("resolution:resolved",),
+        )
+        forged_context = replace(
+            context,
+            mutated_semantic_signature=same_code_wrong_delta,
+        )
+        forged_row = replace(
+            valid_row,
+            mutated_semantic_signature=same_code_wrong_delta,
+        )
+        forged_row = replace(
+            forged_row,
+            consequence_id=whole_reading_consequence_id(forged_row),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "counterfactual_axis_mismatch",
+        ):
+            validate_whole_reading_consequence_row(
+                forged_row,
+                **{
+                    **validator_kwargs,
+                    "binding_context": forged_context,
+                },
+            )
+
+    def test_im02_response_stores_and_composition_revalidates_aggregate(
+        self,
+    ) -> None:
+        case = self.available_cases[0]
+        phase_a = stage1_response_module.build_subjective_planning_inputs(
+            source=case.source,
+            grounded_graph=case.grounded_graph,
+            parent_plan=case.parent_plan,
+            grounded_plan=case.grounded_plan,
+        )
+        expected = (
+            input_specific_meaning_module.derive_input_specific_meaning_structure(
+                phase_a.grounded_situation_view,
+                phase_a.foreground_scope_derivation,
+            )
+        )
+        self.assertEqual(phase_a.input_specific_meaning_structure, expected)
+        original = (
+            stage1_composition_module.derive_input_specific_meaning_structure
+        )
+        with patch.object(
+            stage1_composition_module,
+            "derive_input_specific_meaning_structure",
+            wraps=original,
+        ) as rederive:
+            stage1_composition_module._validate_phase_A(phase_a)
+        self.assertEqual(rederive.call_count, 1)
+
+        forged = replace(
+            phase_a,
+            input_specific_meaning_structure=replace(
+                phase_a.input_specific_meaning_structure,
+                schema_version="forged",
+            ),
+        )
+        with self.assertRaisesRegex(
+            stage1_composition_module.Stage1CompositionError,
+            "STAGE1_INPUT_SPECIFIC_MEANING_STRUCTURE_STOP",
+        ):
+            stage1_composition_module.project_subjective_meaning_plan(forged)
 
 
 if __name__ == "__main__":
