@@ -200,18 +200,23 @@ EARLY_RUN_EXACT3_FILENAMES = (
     EARLY_RUN_BODY_FREE_MACHINE_FILENAME,
 )
 EARLY_BOUNDED_UNIT_ID = (
-    "cocolon.cmee.stage1.route_a.typed_japanese_case_frame_realizer.20260826.v1"
+    "cocolon.cmee.stage1.route_a.typed_japanese.case_frame_realizer."
+    "clear_alignment.20260827.v1"
 )
-WITHHELD_EARLY_PACKET_ID = "SUCCESSOR_EARLY_LANGUAGE_SET_EXACT8"
+WITHHELD_EARLY_PACKET_ID = (
+    "SUCCESSOR_EARLY_LANGUAGE_CLEAR_ALIGNMENT_SET_EXACT8"
+)
 WITHHELD_EARLY_PRIVATE_SLOT_ID = (
-    "PRIVATE_SLOT_SUCCESSOR_EARLY_LANGUAGE_SET_EXACT8"
+    "PRIVATE_SLOT_SUCCESSOR_EARLY_LANGUAGE_CLEAR_ALIGNMENT_SET_EXACT8"
 )
-EARLY_ACTUAL_ATTEMPT_ID = "SUCCESSOR_EARLY_LANGUAGE_ATTEMPT_01"
+EARLY_ACTUAL_ATTEMPT_ID = (
+    "SUCCESSOR_EARLY_LANGUAGE_CLEAR_ALIGNMENT_ATTEMPT_01"
+)
 EARLY_PRO_COMBINED_READ_ATTEMPT_ID = (
-    "SUCCESSOR_EARLY_PRO_COMBINED_READ_ATTEMPT_01"
+    "SUCCESSOR_EARLY_LANGUAGE_CLEAR_ALIGNMENT_PRO_COMBINED_READ_ATTEMPT_01"
 )
 EARLY_ULTRA_KNOWN_READ_ATTEMPT_ID = (
-    "SUCCESSOR_EARLY_ULTRA_KNOWN_READ_ATTEMPT_01"
+    "SUCCESSOR_EARLY_LANGUAGE_CLEAR_ALIGNMENT_ULTRA_KNOWN_READ_ATTEMPT_01"
 )
 EARLY_ACTUAL_RUN_DIRECTORY_NAME = EARLY_ACTUAL_ATTEMPT_ID
 EARLY_ACTUAL_STAGING_DIRECTORY_NAME = (
@@ -983,6 +988,46 @@ def _current_frozen_early_identity_pair() -> tuple[str, str]:
     return language_core_identity, stage1_runtime_integration_identity
 
 
+def _early_exact8_machine_is_clear(
+    known: Mapping[str, Any],
+    withheld: Mapping[str, Any],
+) -> bool:
+    """Apply the sole exact8 machine CLEAR predicate.
+
+    Material alternate counts remain bounded diagnostics.  They do not
+    participate in CLEAR and no alternate is generated merely to satisfy
+    this aggregate gate.
+    """
+
+    known_exact4_fields = (
+        "case_count",
+        "actual_japanese_reached_count",
+        "machine_invariant_clear_count",
+    )
+    withheld_exact4_fields = (
+        "withheld_set_count",
+        "actual_japanese_reached_count",
+        "machine_invariant_clear_count",
+        "normal_form_phase_exact6_count",
+        "normal_form_defect_free_count",
+        "normalization_idempotent_count",
+        "required_duty_coverage_exact_count",
+    )
+    return (
+        all(
+            type(known.get(field)) is int and known[field] == 4
+            for field in known_exact4_fields
+        )
+        and known.get("machine_invariant_result") == "CLEAR"
+        and all(
+            type(withheld.get(field)) is int and withheld[field] == 4
+            for field in withheld_exact4_fields
+        )
+        and withheld.get("machine_failure_classes") == []
+        and withheld.get("machine_invariant_result") == "CLEAR"
+    )
+
+
 def run_early_actual(
     *,
     withheld_private_payload: object,
@@ -1218,9 +1263,10 @@ def run_early_actual(
         "early_human_read_result": "NOT_RUN",
         "early_actual_status": (
             EARLY_MACHINE_ACTUAL_COMPLETED_STATUS
-            if known_body_free["machine_invariant_result"]
-            == withheld_body_free["machine_invariant_result"]
-            == "CLEAR"
+            if _early_exact8_machine_is_clear(
+                known_body_free,
+                withheld_body_free,
+            )
             else EARLY_MACHINE_ACTUAL_NONCLEAR_STATUS
         ),
         "body_payload_present": False,
@@ -1982,9 +2028,6 @@ def _validate_early_body_free_machine_packet(
     def exact_int(value: object, expected: int) -> bool:
         return type(value) is int and value == expected
 
-    def set_level_alternate_count(value: object) -> bool:
-        return type(value) is int and 1 <= value <= 4
-
     def bounded_count(value: object) -> bool:
         return type(value) is int and 0 <= value <= 4
 
@@ -2034,9 +2077,7 @@ def _validate_early_body_free_machine_packet(
         or payload["early_actual_status"]
         != (
             EARLY_MACHINE_ACTUAL_COMPLETED_STATUS
-            if known["machine_invariant_result"]
-            == withheld["machine_invariant_result"]
-            == "CLEAR"
+            if _early_exact8_machine_is_clear(known, withheld)
             else EARLY_MACHINE_ACTUAL_NONCLEAR_STATUS
         )
         or payload["body_payload_present"] is not False
@@ -2121,20 +2162,7 @@ def _validate_early_body_free_machine_packet(
         or withheld["automatic_progression"] is not False
     ):
         raise ValueError("early human read machine binding invalid")
-    if require_clear and (
-        any(not exact_int(known[field], 4) for field in known_bounded_fields)
-        or not set_level_alternate_count(known["material_alternate_case_count"])
-        or known["machine_invariant_result"] != "CLEAR"
-        or any(
-            not exact_int(withheld[field], 4)
-            for field in withheld_bounded_fields
-        )
-        or not set_level_alternate_count(
-            withheld["material_alternate_case_count"]
-        )
-        or withheld["machine_failure_classes"] != []
-        or withheld["machine_invariant_result"] != "CLEAR"
-    ):
+    if require_clear and not _early_exact8_machine_is_clear(known, withheld):
         raise ValueError("early human read machine binding invalid")
     return known, withheld
 
@@ -5066,13 +5094,14 @@ def main() -> int:
                 "early actual RUN_RESULT_UNKNOWN_TERMINAL; retry prohibited"
             )
         print(json.dumps(body_free_packet, ensure_ascii=False, sort_keys=True))
-        known_result = body_free_packet["known_exact4_body_free"][
-            "machine_invariant_result"
-        ]
-        withheld_result = body_free_packet["withheld_exact4_body_free"][
-            "machine_invariant_result"
-        ]
-        return 0 if known_result == withheld_result == "CLEAR" else 1
+        return (
+            0
+            if _early_exact8_machine_is_clear(
+                body_free_packet["known_exact4_body_free"],
+                body_free_packet["withheld_exact4_body_free"],
+            )
+            else 1
+        )
     if (
         args.withheld_input is not None
         or args.known_visible_output is not None

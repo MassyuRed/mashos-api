@@ -15009,23 +15009,30 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
         )
         self.assertEqual(
             candidate_run_module.EARLY_BOUNDED_UNIT_ID,
-            "cocolon.cmee.stage1.route_a.typed_japanese_case_frame_realizer.20260826.v1",
+            "cocolon.cmee.stage1.route_a.typed_japanese.case_frame_realizer."
+            "clear_alignment.20260827.v1",
         )
         self.assertEqual(
             candidate_run_module.WITHHELD_EARLY_PACKET_ID,
-            "SUCCESSOR_EARLY_LANGUAGE_SET_EXACT8",
+            "SUCCESSOR_EARLY_LANGUAGE_CLEAR_ALIGNMENT_SET_EXACT8",
+        )
+        self.assertEqual(
+            candidate_run_module.WITHHELD_EARLY_PRIVATE_SLOT_ID,
+            "PRIVATE_SLOT_SUCCESSOR_EARLY_LANGUAGE_CLEAR_ALIGNMENT_SET_EXACT8",
         )
         self.assertEqual(
             candidate_run_module.EARLY_ACTUAL_ATTEMPT_ID,
-            "SUCCESSOR_EARLY_LANGUAGE_ATTEMPT_01",
+            "SUCCESSOR_EARLY_LANGUAGE_CLEAR_ALIGNMENT_ATTEMPT_01",
         )
         self.assertEqual(
             candidate_run_module.EARLY_ULTRA_KNOWN_READ_ATTEMPT_ID,
-            "SUCCESSOR_EARLY_ULTRA_KNOWN_READ_ATTEMPT_01",
+            "SUCCESSOR_EARLY_LANGUAGE_CLEAR_ALIGNMENT_"
+            "ULTRA_KNOWN_READ_ATTEMPT_01",
         )
         self.assertEqual(
             candidate_run_module.EARLY_PRO_COMBINED_READ_ATTEMPT_ID,
-            "SUCCESSOR_EARLY_PRO_COMBINED_READ_ATTEMPT_01",
+            "SUCCESSOR_EARLY_LANGUAGE_CLEAR_ALIGNMENT_"
+            "PRO_COMBINED_READ_ATTEMPT_01",
         )
         predecessor = dict(
             candidate_run_module.PREDECESSOR_EARLY_NONREUSE_RECORD
@@ -15087,7 +15094,12 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             self.assertEqual(result["machine_invariant_result"], "CLEAR")
             self.assertEqual(result["machine_invariant_clear_count"], 4)
             self.assertEqual(result["actual_japanese_reached_count"], 4)
-            self.assertGreaterEqual(result["material_alternate_case_count"], 1)
+            self.assertIs(
+                type(result["material_alternate_case_count"]),
+                int,
+            )
+            self.assertGreaterEqual(result["material_alternate_case_count"], 0)
+            self.assertLessEqual(result["material_alternate_case_count"], 4)
         self.assertEqual(withheld["normal_form_phase_exact6_count"], 4)
         self.assertEqual(withheld["normal_form_defect_free_count"], 4)
         self.assertEqual(withheld["normalization_idempotent_count"], 4)
@@ -16569,6 +16581,27 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             cursor[path[-1]] = value
             return packet
 
+        zero_alternate_packet = json.loads(
+            json.dumps(self.body_free_packet, ensure_ascii=False)
+        )
+        zero_alternate_packet["known_exact4_body_free"][
+            "material_alternate_case_count"
+        ] = 0
+        zero_alternate_packet["withheld_exact4_body_free"][
+            "material_alternate_case_count"
+        ] = 0
+        known, withheld_zero = (
+            candidate_run_module._validate_early_body_free_machine_packet(
+                zero_alternate_packet
+            )
+        )
+        self.assertTrue(
+            candidate_run_module._early_exact8_machine_is_clear(
+                known,
+                withheld_zero,
+            )
+        )
+
         invalid_packets = [
             mutated(("unexpected",), False),
             mutated(("known_exact4_body_free", "unexpected"), False),
@@ -16599,7 +16632,7 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             ),
             mutated(
                 ("known_exact4_body_free", "material_alternate_case_count"),
-                0,
+                -1,
             ),
             mutated(("known_exact4_body_free", "body_payload_present"), True),
             mutated(
@@ -16641,7 +16674,7 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                     "withheld_exact4_body_free",
                     "material_alternate_case_count",
                 ),
-                0,
+                5,
             ),
             mutated(
                 ("withheld_exact4_body_free", "machine_failure_classes"),
@@ -16697,7 +16730,7 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                     ),
                 )
 
-    def test_early_cli_stdout_is_body_free_and_known_body_is_explicit_output(
+    def test_early_cli_zero_alternate_is_clear_and_atomically_committed(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -16715,6 +16748,21 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 / candidate_run_module.EARLY_ACTUAL_RUN_DIRECTORY_NAME
             )
             stdout = io.StringIO()
+            compose = (
+                candidate_run_module.stage1_composition
+                .compose_stage1_from_projection
+            )
+
+            def compose_without_material_alternate(projection: object) -> object:
+                result = compose(projection)
+                selected = result.ranked_candidates[0]
+                return replace(
+                    result,
+                    internal_candidate_count=1,
+                    ranked_candidates=(selected,),
+                    selected_candidate=selected,
+                )
+
             with (
                 patch.object(
                     candidate_run_module,
@@ -16724,6 +16772,11 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
                 patch.object(
                     candidate_run_module,
                     "_validate_early_runtime_checkout",
+                ),
+                patch.object(
+                    candidate_run_module.stage1_composition,
+                    "compose_stage1_from_projection",
+                    side_effect=compose_without_material_alternate,
                 ),
                 patch.object(
                     candidate_run_module.sys,
@@ -16771,6 +16824,21 @@ class CMEEStage1AdditionalCorrectionStep3EarlyHarnessTest(unittest.TestCase):
             self.assertEqual(
                 body_free["known_exact4_body_free"]["machine_invariant_result"],
                 "CLEAR",
+            )
+            self.assertEqual(
+                body_free["known_exact4_body_free"][
+                    "material_alternate_case_count"
+                ],
+                0,
+            )
+            self.assertEqual(
+                body_free["withheld_exact4_body_free"][
+                    "material_alternate_case_count"
+                ],
+                0,
+            )
+            candidate_run_module._validate_early_body_free_machine_packet(
+                body_free
             )
             serialized = json.dumps(body_free, ensure_ascii=False, sort_keys=True)
             for case in known["cases"]:
