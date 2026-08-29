@@ -34,12 +34,14 @@ from .contracts import (
     ClauseLinkRule,
     CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
     CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY,
+    CMEE_STAGE1_MEANING_BOUND_SUBJECTIVE_PROJECTION_SCHEMA_VERSION,
     CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7,
     CMEE_STAGE1_SUBJECTIVE_FORBIDDEN_PROMOTIONS,
     CMEE_STAGE1_VALUE_PRINCIPLE_REFS,
     CMEEStage1ContractError,
     ComplementRuleSpec,
     DiscourseReferenceStateRow,
+    DifferenceInvariantCode,
     EmlisAffectContent,
     EmlisAppraisalContent,
     EmlisInterpretationCandidate,
@@ -49,6 +51,8 @@ from .contracts import (
     EmlisSubjectiveClaim,
     InflectionClassSpec,
     InputSpecificMeaningStructure,
+    LimitedMeaningOutcome,
+    LimitedMeaningVisibleCausalTraceRow,
     JapaneseClauseIR,
     JapaneseCaseFrameSpec,
     JapaneseLocalPreferenceProfile,
@@ -65,6 +69,7 @@ from .contracts import (
     PlannedObservationContribution,
     PreMeaningGroundedInputs,
     ReadingConsequence,
+    ReceptionVisibleCausalTraceRow,
     ForegroundScopeDerivation,
     PolicyBasisBinding,
     PolicyBasisOwnerKind,
@@ -104,7 +109,10 @@ from .contracts import (
     SubjectiveMode,
     SubjectiveOperator,
     SubjectivePropositionV2,
+    SubjectiveProjectionBranch,
     SealedEmlisProvisionalReading,
+    SelectedEmlisProvisionalReading,
+    SelectedMeaningVisibleCausalTraceRow,
     SubjectiveResponsibilityKind,
     SubjectiveSpecificity,
     SurfaceDerivation,
@@ -114,13 +122,22 @@ from .contracts import (
     project_stage1_policy_basis_binding_ref,
     project_stage1_projection_preimage_ref,
     project_stage1_subjective_opportunity_key,
+    project_stage1_subjective_projection_seal_ref,
     project_stage1_subjective_responsibility_ref,
+    recompute_stage1_identity,
     project_stage1_source_qualifier_binding_ref,
     project_stage1_subjective_basis_binding_ref,
+    project_stage1_tagged_projection_ref,
+    bounded_limited_reception_id,
+    limited_meaning_outcome_id,
+    meaning_bound_reception_id,
+    subjective_proposition_v2_id,
     stage1_canonical_json_bytes,
+    stage1_policy_application_order_key,
     stage1_subjective_forbidden_promotions,
     validate_stage1_anti_template_registry_invariant,
     validate_stage1_identity,
+    validate_stage1_projection,
     validate_foreground_scope_derivation,
     validate_input_specific_meaning_structure,
     validate_stage1_post_selection_reception_records,
@@ -1702,7 +1719,71 @@ class Stage1SubjectivePlanningInputs:
 
 
 @dataclass(frozen=True, slots=True)
+class _ProjectionCommonAuthority:
+    """Branch-neutral, validation-only authority for tagged projection."""
+
+    grounded_situation_view: GroundedSituationView
+    foreground_scope_derivation: ForegroundScopeDerivation
+    input_specific_meaning_structure: InputSpecificMeaningStructure
+    admitted_source: Any
+    grounded_graph: Any
+    grounded_plan: Any
+    grounded_graph_ref: str
+    parent_plan: Any
+    allowed_reception_opportunity_envelope: (
+        AllowedReceptionOpportunityEnvelope
+    )
+    parent_observation_duty_ref: str
+    projection_preimage_ref: str
+    projection_seal_ref: str
+    parent_reception_duty_ref: str
+    meaning_field_id: str
+    observation_depth_class: Any
+    temperature_class: Any
+    reception_style_policy_ref: str
+    emlis_value_policy_ref: str
+    interpretation_candidate_rows: Tuple[EmlisInterpretationCandidate, ...]
+    observation_contribution_rows: Tuple[PlannedObservationContribution, ...]
+    retained_reception_act_rows: Tuple[RetainedReceptionActRow, ...]
+    material_unknown_refs: Tuple[str, ...]
+    contribution_to_candidate_ref_map: Tuple[Tuple[str, str], ...]
+    qualifier_value_by_candidate_scope_axis_key: Tuple[
+        QualifierValueRow, ...
+    ]
+
+
+@dataclass(frozen=True, slots=True)
+class SelectedReadingProjectionInputs:
+    """NORMAL-only input; every post-selection record is the carried object."""
+
+    common: _ProjectionCommonAuthority
+    selected_reading: SelectedEmlisProvisionalReading
+    reading_consequence_records: Tuple[ReadingConsequence, ...]
+    sealed_reading_records: Tuple[SealedEmlisProvisionalReading, ...]
+    reception_proposition_records: Tuple[
+        MeaningBoundReceptionProposition, ...
+    ]
+    reception_set_records: Tuple[MeaningBoundReceptionSet, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class LimitedProjectionInputs:
+    """LIMITED-only input; deliberately has no selected-reading field."""
+
+    common: _ProjectionCommonAuthority
+    limited_outcome: LimitedMeaningOutcome
+    bounded_reception_records: Tuple[BoundedLimitedReception, ...]
+    subjective_proposition_records: Tuple[SubjectivePropositionV2, ...]
+
+
+SubjectiveProjectionInputs = (
+    SelectedReadingProjectionInputs | LimitedProjectionInputs
+)
+
+
+@dataclass(frozen=True, slots=True)
 class Stage1SurfaceCompositionInputs:
+    phase_A_authority: Stage1SubjectivePlanningInputs
     admitted_source: Any
     grounded_graph: Any
     grounded_plan: Any
@@ -1787,6 +1868,17 @@ class ProjectedSubjectiveClaim:
 @dataclass(frozen=True, slots=True)
 class EmlisSubjectiveMeaningPlan:
     projection_preimage_ref: str
+    projection_seal_ref: str
+    projection_branch: SubjectiveProjectionBranch
+    tagged_projection_ref: str
+    meaning_visible_causal_trace_rows: Tuple[
+        SelectedMeaningVisibleCausalTraceRow
+        | LimitedMeaningVisibleCausalTraceRow,
+        ...,
+    ]
+    reception_visible_causal_trace_rows: Tuple[
+        ReceptionVisibleCausalTraceRow, ...
+    ]
     subjective_claim_rows: Tuple[ProjectedSubjectiveClaim, ...]
     thought_support_status: str
     content_bearing_thought_claim_refs: Tuple[str, ...]
@@ -2133,6 +2225,7 @@ class Stage1CompositionResult:
     internal_candidate_count: int
     ranked_candidates: Tuple[ArtifactCompositionCandidate, ...]
     selected_candidate: ArtifactCompositionCandidate
+    validated_visible_causal_trace_seal_ref: str
 
 
 def _ref(prefix: str, value: Any) -> str:
@@ -4981,9 +5074,73 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
         qualifier_rows=phase_A.qualifier_value_by_candidate_scope_axis_key,
     )
 def _validate_phase_B(phase_B: Stage1SurfaceCompositionInputs) -> None:
+    authority = getattr(phase_B, "phase_A_authority", None)
+    if type(authority) is not Stage1SubjectivePlanningInputs:
+        raise Stage1CompositionError(
+            "STAGE1_FINAL_PROJECTION_CLOSURE_STOP"
+        )
+    _validate_phase_A(authority)
     _validate_registry_snapshots(phase_B)
     _validate_phase_lineage(phase_B, projection=phase_B.projection)
     _projection_ref(phase_B.projection)
+    try:
+        validate_stage1_projection(
+            phase_B.projection,
+            grounded_graph=phase_B.grounded_graph,
+            parent_plan=phase_B.parent_plan,
+        )
+    except CMEEStage1ContractError:
+        raise Stage1CompositionError(
+            "STAGE1_FINAL_PROJECTION_CLOSURE_STOP"
+        ) from None
+    try:
+        from . import emlis_stage1_response as response
+
+        response._validate_meaning_plan_carrier_trace(
+            authority,
+            phase_B.projection,
+        )
+    except CMEEStage1ContractError:
+        raise Stage1CompositionError(
+            "STAGE1_FINAL_PROJECTION_CLOSURE_STOP"
+        ) from None
+    expected_addressee_deictic_context = bool(
+        {
+            str(getattr(row.grounded_frame, "actor", "")).lower()
+            for row in authority.resolved_grounded_frame_by_candidate_ref
+        }.intersection({"current_user", "user"})
+    )
+    if (
+        phase_B.admitted_source is not authority.admitted_source
+        or phase_B.grounded_graph is not authority.grounded_graph
+        or phase_B.grounded_plan is not authority.grounded_plan
+        or phase_B.parent_plan is not authority.parent_plan
+        or phase_B.resolved_grounded_frame_by_candidate_ref
+        is not authority.resolved_grounded_frame_by_candidate_ref
+        or phase_B.relation_endpoint_grounded_candidate_ref_by_binding_key
+        is not authority.relation_endpoint_grounded_candidate_ref_by_binding_key
+        or phase_B.qualifier_value_by_candidate_scope_axis_key
+        is not authority.qualifier_value_by_candidate_scope_axis_key
+        or phase_B.construction_registry_snapshot
+        is not authority.construction_registry_snapshot
+        or phase_B.expression_asset_registry_snapshot
+        is not authority.expression_asset_registry_snapshot
+        or phase_B.response_object_registry_snapshot
+        is not authority.response_object_registry_snapshot
+        or phase_B.functional_asset_registry_snapshot
+        is not authority.functional_asset_registry_snapshot
+        or phase_B.participant_asset_registry_snapshot
+        is not authority.participant_asset_registry_snapshot
+        or phase_B.structural_asset_registry_snapshot
+        is not authority.structural_asset_registry_snapshot
+        or phase_B.profile_rule_registry_snapshot
+        is not authority.profile_rule_registry_snapshot
+        or phase_B.addressee_deictic_context
+        is not expected_addressee_deictic_context
+    ):
+        raise Stage1CompositionError(
+            "STAGE1_FINAL_PROJECTION_CLOSURE_STOP"
+        )
     if type(phase_B.addressee_deictic_context) is not bool:
         raise Stage1CompositionError("STAGE1_COMPOSITION_DEICTIC_CONTEXT_STOP")
     claims = _claims(phase_B.projection)
@@ -5044,7 +5201,7 @@ def _basis_role(row: PlannedObservationContribution, role: ArgumentRole) -> Subj
 
 
 def _qualifier_lookup(
-    phase_A: Stage1SubjectivePlanningInputs,
+    authority: _ProjectionCommonAuthority,
     candidate: EmlisInterpretationCandidate,
     binding: Any,
 ) -> Tuple[str, str, str, Optional[ArgumentRole]]:
@@ -5060,7 +5217,7 @@ def _qualifier_lookup(
     for axis in ClauseScalarAxis:
         rows = tuple(
             row
-            for row in phase_A.qualifier_value_by_candidate_scope_axis_key
+            for row in authority.qualifier_value_by_candidate_scope_axis_key
             if row.candidate_ref == candidate.candidate_id
             and row.qualifier_scope is scope
             and row.source_argument_role is role
@@ -5328,67 +5485,76 @@ _RISK_BY_PRINCIPLE = dict(
 )
 
 
-def project_subjective_meaning_plan(
-    phase_A: Stage1SubjectivePlanningInputs,
-) -> EmlisSubjectiveMeaningPlan:
-    """Sole Phase-A projector for request-local Emlis subjective meaning."""
+def _projection_binding_rows(
+    authority: _ProjectionCommonAuthority,
+) -> tuple[
+    tuple[SubjectiveBasisBinding, ...],
+    tuple[SourceQualifierBinding, ...],
+    tuple[PolicyBasisBinding, ...],
+]:
+    """Project only base-bound rows; never derive or select meaning."""
 
-    if type(phase_A) is not Stage1SubjectivePlanningInputs:
-        raise Stage1CompositionError("STAGE1_COMPOSITION_PHASE_A_TYPE_STOP")
-    _validate_phase_A(phase_A)
-    # LIMITED is a valid IM01 Phase-A outcome.  Until IM04/IM05 add the
-    # bounded-LIMITED Reception and tagged projector, the legacy selected-
-    # meaning projector must fail closed instead of consuming that outcome.
-    if (
-        phase_A.foreground_scope_disposition.code
-        is not ForegroundScopeDispositionCode.AVAILABLE
-    ):
+    contributions = authority.observation_contribution_rows
+    candidates = {
+        row.candidate_id: row
+        for row in authority.interpretation_candidate_rows
+    }
+    contribution_candidate = dict(
+        authority.contribution_to_candidate_ref_map
+    )
+    if set(contribution_candidate) != {
+        row.contribution_id for row in contributions
+    }:
         raise Stage1CompositionError(
-            phase_A.foreground_scope_disposition.code.value
+            "STAGE1_CONTRIBUTION_CANDIDATE_CLOSURE_STOP"
         )
-    contributions = phase_A.observation_contribution_rows
-    candidates = {row.candidate_id: row for row in phase_A.interpretation_candidate_rows}
-    contribution_candidate = dict(phase_A.contribution_to_candidate_ref_map)
-    if set(contribution_candidate) != {row.contribution_id for row in contributions}:
-        raise Stage1CompositionError("STAGE1_CONTRIBUTION_CANDIDATE_CLOSURE_STOP")
+
     basis_rows: list[SubjectiveBasisBinding] = []
     qualifier_rows: list[SourceQualifierBinding] = []
     for contribution in contributions:
-        candidate = candidates.get(contribution_candidate[contribution.contribution_id])
+        candidate = candidates.get(
+            contribution_candidate[contribution.contribution_id]
+        )
         if candidate is None:
-            raise Stage1CompositionError("STAGE1_CONTRIBUTION_CANDIDATE_CLOSURE_STOP")
+            raise Stage1CompositionError(
+                "STAGE1_CONTRIBUTION_CANDIDATE_CLOSURE_STOP"
+            )
         for binding in candidate.argument_bindings:
             if binding.role is ArgumentRole.EXPERIENCER:
                 continue
             role = _basis_role(contribution, binding.role)
             basis_ref = project_stage1_subjective_basis_binding_ref(
-                projection_preimage_ref=phase_A.projection_preimage_ref,
+                projection_preimage_ref=authority.projection_preimage_ref,
                 contribution_ref=contribution.contribution_id,
                 semantic_ref=binding.semantic_ref,
                 role=role,
             )
             basis = SubjectiveBasisBinding(
-                phase_A.projection_preimage_ref,
+                authority.projection_preimage_ref,
                 basis_ref,
                 contribution.contribution_id,
                 binding.semantic_ref,
                 role,
             )
-            polarity, modality, time_scope, qualifier_role = _qualifier_lookup(
-                phase_A, candidate, binding
+            polarity, modality, time_scope, qualifier_role = (
+                _qualifier_lookup(authority, candidate, binding)
             )
-            prefix = "" if qualifier_role is None else f"{qualifier_role.value.lower()}_"
-            codes = (
+            prefix = (
+                ""
+                if qualifier_role is None
+                else f"{qualifier_role.value.lower()}_"
+            )
+            qualifier_codes = (
                 f"{prefix}polarity:{polarity}",
                 f"{prefix}modality:{modality}",
                 f"{prefix}time_scope:{time_scope}",
             )
             qualifier_ref = project_stage1_source_qualifier_binding_ref(
-                projection_preimage_ref=phase_A.projection_preimage_ref,
+                projection_preimage_ref=authority.projection_preimage_ref,
                 basis_binding_ref=basis_ref,
                 source_candidate_ref=candidate.candidate_id,
                 source_argument_role=qualifier_role,
-                canonical_qualifier_codes=codes,
+                canonical_qualifier_codes=qualifier_codes,
                 polarity=polarity,
                 modality=modality,
                 time_scope=time_scope,
@@ -5396,622 +5562,295 @@ def project_subjective_meaning_plan(
             basis_rows.append(basis)
             qualifier_rows.append(
                 SourceQualifierBinding(
-                    phase_A.projection_preimage_ref,
+                    authority.projection_preimage_ref,
                     qualifier_ref,
                     basis_ref,
                     candidate.candidate_id,
                     qualifier_role,
-                    codes,
+                    qualifier_codes,
                     polarity,
                     modality,
                     time_scope,
                 )
             )
-    if not basis_rows:
-        raise Stage1CompositionError("GENERIC_SUBJECTIVE_CONTENT_STOP")
-    act_refs = tuple(row.act_ref for row in phase_A.retained_reception_act_rows)
-    act_codes = tuple(row.reception_act for row in phase_A.retained_reception_act_rows)
-    allowed_acts = {row.reception_act for row in CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7}
-    if not act_refs or len(set(act_refs)) != len(act_refs) or not set(act_codes) <= allowed_acts:
-        raise Stage1CompositionError("STAGE1_RECEPTION_ACT_CLOSURE_STOP")
+    if not basis_rows or len(basis_rows) != len(qualifier_rows):
+        raise Stage1CompositionError(
+            "MEANING_REALIZATION_CAPABILITY_GAP"
+        )
 
     policy_basis_rows: list[PolicyBasisBinding] = []
     for contribution in contributions:
-        if contribution.semantic_operator in {SemanticOperator.PRESENT_BURDEN, SemanticOperator.PRESENT_RESIDUE}:
+        if contribution.semantic_operator in {
+            SemanticOperator.PRESENT_BURDEN,
+            SemanticOperator.PRESENT_RESIDUE,
+        }:
             role = PolicyBasisRole.BURDEN_OR_RESIDUE
         elif contribution.semantic_operator is SemanticOperator.PRESENT_DIRECTION:
             role = PolicyBasisRole.DIRECTION
-        elif contribution.semantic_operator in {SemanticOperator.PRESENT_CHANGE, SemanticOperator.PRESENT_ACTUAL_OUTPUT}:
+        elif contribution.semantic_operator in {
+            SemanticOperator.PRESENT_CHANGE,
+            SemanticOperator.PRESENT_ACTUAL_OUTPUT,
+        }:
             role = PolicyBasisRole.CHANGE_OR_ACTUAL_OUTPUT
-        elif contribution.semantic_operator is SemanticOperator.PRESENT_UNFINISHED:
+        elif (
+            contribution.semantic_operator
+            is SemanticOperator.PRESENT_UNFINISHED
+        ):
             role = PolicyBasisRole.UNFINISHED
         else:
             role = PolicyBasisRole.COEXISTENCE_OR_TENSION
-        ref = project_stage1_policy_basis_binding_ref(
-            projection_preimage_ref=phase_A.projection_preimage_ref,
+        binding_ref = project_stage1_policy_basis_binding_ref(
+            projection_preimage_ref=authority.projection_preimage_ref,
             owner_kind=PolicyBasisOwnerKind.CONTRIBUTION,
             owner_ref=contribution.contribution_id,
             role=role,
         )
         policy_basis_rows.append(
             PolicyBasisBinding(
-                phase_A.projection_preimage_ref,
-                ref,
+                authority.projection_preimage_ref,
+                binding_ref,
                 PolicyBasisOwnerKind.CONTRIBUTION,
                 contribution.contribution_id,
                 role,
             )
         )
-    for unknown_ref in phase_A.material_unknown_refs:
-        ref = project_stage1_policy_basis_binding_ref(
-            projection_preimage_ref=phase_A.projection_preimage_ref,
+    for unknown_ref in authority.material_unknown_refs:
+        binding_ref = project_stage1_policy_basis_binding_ref(
+            projection_preimage_ref=authority.projection_preimage_ref,
             owner_kind=PolicyBasisOwnerKind.MATERIAL_UNKNOWN,
             owner_ref=unknown_ref,
             role=PolicyBasisRole.MATERIAL_UNKNOWN,
         )
         policy_basis_rows.append(
             PolicyBasisBinding(
-                phase_A.projection_preimage_ref,
-                ref,
+                authority.projection_preimage_ref,
+                binding_ref,
                 PolicyBasisOwnerKind.MATERIAL_UNKNOWN,
                 unknown_ref,
                 PolicyBasisRole.MATERIAL_UNKNOWN,
             )
         )
+    return tuple(basis_rows), tuple(qualifier_rows), tuple(policy_basis_rows)
 
-    def unique_material_owner(
-        rows: Iterable[PlannedObservationContribution],
-    ) -> Optional[PlannedObservationContribution]:
-        selected = tuple(rows)
-        if len(selected) > 1:
-            raise Stage1CompositionError("SUBJECTIVE_MEANING_NONUNIQUE_STOP")
-        return selected[0] if selected else None
 
-    action_change = unique_material_owner(
-        row
-        for row in contributions
-        if row.relation_operator is RelationOperator.ACTION_PRECEDES_CHANGE
+def _normal_reception_operator(
+    proposition: MeaningBoundReceptionProposition,
+) -> SubjectiveOperator:
+    rows = tuple(
+        operator
+        for mapping in CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7
+        if mapping.reception_act == proposition.reception_function
+        for mode, operator in mapping.eligible_mode_operator_pairs
+        if mode is proposition.subjective_mode
     )
-    explicit_cause = unique_material_owner(
-        row
-        for row in contributions
-        if row.relation_operator is RelationOperator.SOURCE_EXPLICIT_CAUSE
-    )
-    noncollapse = unique_material_owner(
+    if len(rows) != 1:
+        raise Stage1CompositionError(
+            "MEANING_REALIZATION_CAPABILITY_GAP"
+        )
+    return rows[0]
+
+
+def _normal_reception_appraisal(
+    *,
+    proposition: MeaningBoundReceptionProposition,
+    contributions: tuple[PlannedObservationContribution, ...],
+    basis_rows: tuple[SubjectiveBasisBinding, ...],
+) -> EmlisAppraisalContent:
+    """Derive one act-local appraisal without whole-input focus priority."""
+
+    relation_rows = tuple(
         row
         for row in contributions
         if row.relation_operator
-        in {RelationOperator.COEXISTS_WITH, RelationOperator.TENSION_WITH}
-    )
-
-    def is_generic_exact2_noncollapse(
-        contribution: Optional[PlannedObservationContribution],
-    ) -> bool:
-        """Prove a source-fragment relation before endpoint-local focus.
-
-        An unfinished or burden endpoint may also own a valid local duty.  It
-        must not hide the source-explicit relation when both of that relation's
-        exact endpoints were projected by the generic typed-fragment grammar.
-        This proof uses only Phase-A bindings and frame markers; it does not
-        inspect source text, case ids or phrase families.
-        """
-
-        if (
-            contribution is None
-            or len(contribution.semantic_refs) != 2
-            or len(set(contribution.semantic_refs)) != 2
-        ):
-            return False
-        relation_candidate_ref = contribution_candidate.get(
-            contribution.contribution_id
-        )
-        endpoint_rows = tuple(
-            row
-            for row in phase_A.relation_endpoint_grounded_candidate_ref_by_binding_key
-            if row.relation_candidate_ref == relation_candidate_ref
-        )
-        if (
-            len(endpoint_rows) != 2
-            or len({row.source_semantic_ref for row in endpoint_rows}) != 2
-            or {row.source_semantic_ref for row in endpoint_rows}
-            != set(contribution.semantic_refs)
-        ):
-            return False
-        frame_by_candidate_ref = {
-            row.candidate_ref: row.grounded_frame
-            for row in phase_A.resolved_grounded_frame_by_candidate_ref
+        in {
+            RelationOperator.COEXISTS_WITH,
+            RelationOperator.TENSION_WITH,
         }
-        endpoint_frames = tuple(
-            frame_by_candidate_ref.get(row.endpoint_grounded_candidate_ref)
-            for row in endpoint_rows
-        )
-        return bool(
-            all(frame is not None for frame in endpoint_frames)
-            and all(
-                "semantic_role:generic_relation_fragment"
-                in tuple(getattr(frame, "attribute_codes", ()))
-                for frame in endpoint_frames
-            )
-        )
-
-    generic_noncollapse = (
-        noncollapse if is_generic_exact2_noncollapse(noncollapse) else None
     )
-    open_unfinished = unique_material_owner(
-        row
-        for row in contributions
-        if row.semantic_operator is SemanticOperator.PRESENT_UNFINISHED
+    unfinished = any(
+        row.semantic_operator
+        in {
+            SemanticOperator.PRESENT_RESIDUE,
+            SemanticOperator.PRESENT_UNFINISHED,
+        }
         or row.contribution_kind
-        is ObservationContributionKind.PRESERVE_UNFINISHED
-    )
-    residue = unique_material_owner(
-        row
+        in {
+            ObservationContributionKind.PRESERVE_RESIDUE,
+            ObservationContributionKind.PRESERVE_UNFINISHED,
+        }
         for row in contributions
-        if row.semantic_operator is SemanticOperator.PRESENT_RESIDUE
-        or row.contribution_kind is ObservationContributionKind.PRESERVE_RESIDUE
     )
-    unfinished = open_unfinished or residue
-    direction = unique_material_owner(
-        row
-        for row in contributions
-        if row.semantic_operator is SemanticOperator.PRESENT_DIRECTION
-    )
-    change = unique_material_owner(
-        row
-        for row in contributions
-        if row.semantic_operator
-        in {SemanticOperator.PRESENT_CHANGE, SemanticOperator.PRESENT_ACTUAL_OUTPUT}
-        and row is not action_change
-    )
-    burden = unique_material_owner(
-        row
-        for row in contributions
-        if row.semantic_operator is SemanticOperator.PRESENT_BURDEN
-    )
-    center = unique_material_owner(
-        row
-        for row in contributions
-        if row.relation_operator is RelationOperator.NO_RELATION_CLAIM
-        and row.contribution_kind is ObservationContributionKind.OBSERVE_CENTER
-    )
-    focus = (
-        generic_noncollapse
-        or explicit_cause
-        or open_unfinished
-        or action_change
-        or noncollapse
-        or residue
-        or direction
-        or change
-        or burden
-        or center
-    )
-    if focus is None:
-        raise Stage1CompositionError("GENERIC_SUBJECTIVE_CONTENT_STOP")
-    selected_basis = _selected_basis(basis_rows, (focus.contribution_id,))
-    primary_refs = _unique(row.semantic_ref for row in selected_basis)
-    focal_relation_ref = (
-        focus.relation_basis_refs[0]
-        if focus.relation_operator is not RelationOperator.NO_RELATION_CLAIM
-        and focus.relation_basis_refs
-        else None
-    )
-
-    claim_specs: list[tuple[SubjectiveContentKind, Any, tuple[str, ...]]] = []
-    if focus is noncollapse:
-        appraisal = EmlisAppraisalContent(
-            AppraisalDimension.RELATIONAL_NONCOLLAPSE,
-            AppraisalOperation.PRESERVE_BOTH_ENDPOINTS,
-            tuple(row.binding_ref for row in selected_basis),
-            focal_relation_ref,
-            (),
-            (focus.contribution_id,),
-        )
-    elif focus is open_unfinished or focus is residue:
-        appraisal = EmlisAppraisalContent(
-            AppraisalDimension.UNFINISHED_OPENNESS,
-            AppraisalOperation.LEAVE_UNFINISHED,
-            tuple(row.binding_ref for row in selected_basis),
-            focal_relation_ref,
-            (),
-            (focus.contribution_id,),
-        )
-    elif focus is action_change or focus is change:
-        appraisal = EmlisAppraisalContent(
-            AppraisalDimension.BOUNDED_CHANGE,
-            AppraisalOperation.RECOGNIZE_AS_BOUNDED,
-            tuple(row.binding_ref for row in selected_basis),
-            focal_relation_ref,
-            (),
-            (focus.contribution_id,),
-        )
-    elif direction:
-        appraisal = EmlisAppraisalContent(
-            AppraisalDimension.AGENCY_BOUNDARY,
-            AppraisalOperation.RESPECT_CHOICE,
-            tuple(row.binding_ref for row in selected_basis),
-            focal_relation_ref,
-            (),
-            (focus.contribution_id,),
-        )
-    else:
-        appraisal = EmlisAppraisalContent(
-            AppraisalDimension.MATERIAL_WEIGHT,
-            AppraisalOperation.RECEIVE_AS_MATERIAL,
-            tuple(row.binding_ref for row in selected_basis),
-            focal_relation_ref,
-            (),
-            (focus.contribution_id,),
-        )
-    claim_specs.append((SubjectiveContentKind.APPRAISAL, appraisal, (focus.contribution_id,)))
-
-    position_spec: Optional[
-        tuple[SubjectiveContentKind, Any, tuple[str, ...]]
-    ] = None
-    if unfinished or direction:
-        target = unfinished or direction
-        stance_basis = _selected_basis(basis_rows, (target.contribution_id,))
-        position = EmlisRelationalPosition(
-            RelationalPositionKind.STANCE,
-            StanceOperator.HOLD_UNFINISHED_OPEN if unfinished else StanceOperator.PROTECT_USER_AGENCY,
-            tuple(row.binding_ref for row in stance_basis),
-            (),
-            RelationalCommitment.HOLD_OPEN if unfinished else RelationalCommitment.PROTECT_AGENCY,
-            RelationalClosure.OPEN if unfinished else RelationalClosure.BOUNDED,
-        )
-        position_spec = (
-            SubjectiveContentKind.RELATIONAL_POSITION,
-            position,
-            (target.contribution_id,),
-        )
-
-    visible_principles: list[str] = []
-    for act in phase_A.retained_reception_act_rows:
-        act_contributions = tuple(
-            row
+    bounded_change = (
+        proposition.reception_function == "recognize_lived_change"
+        and any(
+            row.semantic_operator is SemanticOperator.PRESENT_CHANGE
             for row in contributions
-            if not act.basis_contribution_refs
-            or row.contribution_id in set(act.basis_contribution_refs)
         )
-        visible_principles.extend(
-            _stage1_material_visible_value_refs(
-                reception_act=act.reception_act,
-                contributions=act_contributions,
-            )
-        )
-    visible_principles = list(_unique(visible_principles))
-
-    # A direction-only agency stance adds no new target when the admitted
-    # noncollapse relation already preserves the same exact two endpoints.
-    # The proof is entirely typed and request-local; no phrase or case family
-    # participates in the decision.
-    absorb_relation_position = False
-    if (
-        position_spec is not None
-        and direction is not None
-        and noncollapse is not None
-        and appraisal.dimension is AppraisalDimension.RELATIONAL_NONCOLLAPSE
-        and appraisal.operation is AppraisalOperation.PRESERVE_BOTH_ENDPOINTS
-        and position_spec[1].stance_operator
-        is StanceOperator.PROTECT_USER_AGENCY
-        and len(noncollapse.semantic_refs) == 2
-        and len(set(noncollapse.semantic_refs)) == 2
-        and len(direction.semantic_refs) == 1
-        and set(direction.semantic_refs).issubset(noncollapse.semantic_refs)
-    ):
-        relation_candidate_ref = contribution_candidate.get(
-            noncollapse.contribution_id
-        )
-        endpoint_rows = tuple(
-            row
-            for row in phase_A.relation_endpoint_grounded_candidate_ref_by_binding_key
-            if row.relation_candidate_ref == relation_candidate_ref
-        )
-        endpoint_candidate_refs = tuple(
-            row.endpoint_grounded_candidate_ref for row in endpoint_rows
-        )
-        frame_by_candidate_ref = {
-            row.candidate_ref: row.grounded_frame
-            for row in phase_A.resolved_grounded_frame_by_candidate_ref
-        }
-        endpoint_frames = tuple(
-            frame_by_candidate_ref.get(ref)
-            for ref in endpoint_candidate_refs
-        )
-        absorb_relation_position = bool(
-            len(endpoint_rows) == 2
-            and len(set(endpoint_candidate_refs)) == 2
-            and len(
-                {
-                    row.source_semantic_ref
-                    for row in endpoint_rows
-                }
-            )
-            == 2
-            and {
-                row.source_semantic_ref for row in endpoint_rows
-            }
-            == set(noncollapse.semantic_refs)
-            and all(frame is not None for frame in endpoint_frames)
-            and set(direction.semantic_refs).issubset(
-                {row.source_semantic_ref for row in endpoint_rows}
-            )
-        )
-    if position_spec is not None and not absorb_relation_position:
-        claim_specs.append(position_spec)
-
-    affect_category = (
-        AffectCategory.RELIEF
-        if change
-        else AffectCategory.RESPECT
-        if direction or "honor_concrete_effort" in act_codes or "respect_words_placed" in act_codes
-        else AffectCategory.CONCERN
     )
-    affect = EmlisAffectContent(
-        affect_category,
-        AffectIntensity.QUIET,
-        tuple(row.binding_ref for row in selected_basis),
+    agency = (
+        proposition.reception_function == "protect_retained_intention"
+        and any(
+            row.semantic_operator is SemanticOperator.PRESENT_DIRECTION
+            for row in contributions
+        )
     )
-    claim_specs.append((SubjectiveContentKind.AFFECT, affect, (focus.contribution_id,)))
-    claim_specs = claim_specs[:4]
-
-    responsibilities: list[SubjectiveResponsibilityRow] = []
-    opportunities: list[SubjectiveOpportunityRow] = []
-    claims: list[ProjectedSubjectiveClaim] = []
-    policy_applications: list[PolicyApplicationRow] = []
-    suppressions: list[SubjectiveFacetSuppressionRow] = []
-    for index, (kind, content, contribution_refs) in enumerate(claim_specs):
-        responsibility_kind = {
-            SubjectiveContentKind.AFFECT: SubjectiveResponsibilityKind.AFFECTIVE_RESPONSE,
-            SubjectiveContentKind.APPRAISAL: SubjectiveResponsibilityKind.MATERIAL_APPRAISAL,
-            SubjectiveContentKind.MATERIAL_VALUE: SubjectiveResponsibilityKind.POLICY_VISIBLE_VALUE,
-            SubjectiveContentKind.RELATIONAL_POSITION: SubjectiveResponsibilityKind.RELATIONAL_POSITION,
-        }[kind]
-        specificity_key = (
-            SubjectiveSpecificity.RELATION_BOUND_MULTI_ROLE
-            if focal_relation_ref
-            else SubjectiveSpecificity.MULTI_ROLE
-            if len(primary_refs) > 1
-            else SubjectiveSpecificity.SINGLE_ROLE
+    material = proposition.reception_function in {
+        "stay_with_current_burden",
+        "honor_concrete_effort",
+        "respect_words_placed",
+    }
+    matched = sum(
+        (
+            bool(relation_rows),
+            unfinished,
+            bounded_change,
+            agency,
+            material,
         )
-        responsibility_ref = project_stage1_subjective_responsibility_ref(
-            projection_preimage_ref=phase_A.projection_preimage_ref,
-            responsibility_kind=responsibility_kind,
-            owner_component_refs=contribution_refs,
-            retained_reception_act_refs=act_refs,
-        )
-        opportunity_key = project_stage1_subjective_opportunity_key(
-            projection_preimage_ref=phase_A.projection_preimage_ref,
-            responsibility_refs=(responsibility_ref,),
-            content_kind=kind,
-            row_ref_free_discriminated_content=content,
-            specificity_key=specificity_key,
-        )
-        responsibilities.append(
-            SubjectiveResponsibilityRow(
-                responsibility_ref, responsibility_kind, contribution_refs, act_refs
-            )
-        )
-        opportunities.append(
-            SubjectiveOpportunityRow(
-                opportunity_key,
-                (responsibility_ref,),
-                kind,
-                content,
-                specificity_key,
-            )
-        )
-        if kind is SubjectiveContentKind.AFFECT:
-            responsibility_by_ref = {
-                row.responsibility_ref: row for row in responsibilities
-            }
-            selected_keys = {
-                claim.selected_subjective_opportunity_key for claim in claims
-            }
-            absorber = _select_generic_affect_absorber(
-                opportunities=opportunities[:-1],
-                responsibility_by_ref=responsibility_by_ref,
-                selected_opportunity_keys=selected_keys,
-                target_contribution_refs=contribution_refs,
-            )
-            if absorber is not None:
-                suppressions.append(
-                    SubjectiveFacetSuppressionRow(
-                        opportunity_key,
-                        SubjectiveFacetSuppressionReason.ABSORBED_ATTENTION,
-                        absorber.opportunity_key,
-                    )
-                )
-                continue
-        own_basis = _selected_basis(basis_rows, contribution_refs)
-        own_qualifier_refs = tuple(
-            row.source_qualifier_binding_ref
-            for row in qualifier_rows
-            if row.basis_binding_ref in {basis.binding_ref for basis in own_basis}
-        )
-        own_primary = _unique(row.semantic_ref for row in own_basis)
-        relation_position = content if kind is SubjectiveContentKind.RELATIONAL_POSITION else None
-        proposition = SubjectivePropositionV2(
-            CMEE_STAGE1_SUBJECTIVE_PROPOSITION_SCHEMA_VERSION,
-            kind,
-            {
-                SubjectiveContentKind.AFFECT: SubjectiveMode.AFFECTIVE_RESPONSE,
-                SubjectiveContentKind.APPRAISAL: SubjectiveMode.PERSONAL_APPRAISAL,
-                SubjectiveContentKind.MATERIAL_VALUE: SubjectiveMode.VALUE_POSITION,
-                SubjectiveContentKind.RELATIONAL_POSITION: SubjectiveMode.RELATIONAL_STANCE,
-            }[kind],
-            {
-                SubjectiveContentKind.AFFECT: SubjectiveOperator.FEEL_TOWARD,
-                SubjectiveContentKind.APPRAISAL: SubjectiveOperator.APPRAISE_AS_MATERIAL,
-                SubjectiveContentKind.MATERIAL_VALUE: SubjectiveOperator.PROTECT_VALUE_BOUNDARY,
-                SubjectiveContentKind.RELATIONAL_POSITION: SubjectiveOperator.TAKE_RELATIONAL_STANCE,
-            }[kind],
-            contribution_refs,
-            own_primary,
-            (),
-            own_primary,
-            tuple(row.binding_ref for row in own_basis),
-            own_qualifier_refs,
-            focal_relation_ref if kind is SubjectiveContentKind.APPRAISAL else None,
-            content if kind is SubjectiveContentKind.AFFECT else None,
-            content if kind is SubjectiveContentKind.APPRAISAL else None,
-            content if kind is SubjectiveContentKind.MATERIAL_VALUE else None,
-            relation_position,
-            (),
-            (),
-            "USER",
-            {
-                SubjectiveContentKind.AFFECT: SubjectiveAssertionModality.EMLIS_FEELING,
-                SubjectiveContentKind.APPRAISAL: SubjectiveAssertionModality.EMLIS_APPRAISAL,
-                SubjectiveContentKind.MATERIAL_VALUE: SubjectiveAssertionModality.EMLIS_VALUE_POSITION,
-                SubjectiveContentKind.RELATIONAL_POSITION: SubjectiveAssertionModality.EMLIS_RELATIONAL_INTENTION,
-            }[kind],
-            "REQUEST_LOCAL_EMLIS_SUBJECTIVITY",
-        )
-        forbidden = stage1_subjective_forbidden_promotions(
-            tuple(row for row in contributions if row.contribution_id in set(contribution_refs)),
-            material_unknown_refs=phase_A.material_unknown_refs,
-        )
-        claim_id = _ref(
-            "subjective-claim",
-            (
-                phase_A.projection_preimage_ref,
-                CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
-                phase_A.parent_plan.reception_duty_id,
-                CMEE_STAGE1_EMLIS_OWNER_REF,
-                "EMLIS_SUBJECTIVE_RESPONSE",
-                (responsibility_ref,),
-                opportunity_key,
-                proposition,
-                contribution_refs,
-                own_primary,
-                act_refs,
-                (),
-                0,
-                forbidden,
-            ),
-        )
-        claims.append(
-            ProjectedSubjectiveClaim(
-                CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
-                claim_id,
-                phase_A.parent_plan.reception_duty_id,
-                CMEE_STAGE1_EMLIS_OWNER_REF,
-                "EMLIS_SUBJECTIVE_RESPONSE",
-                (responsibility_ref,),
-                opportunity_key,
-                proposition,
-                contribution_refs,
-                own_primary,
-                act_refs,
-                (),
-                0,
-                forbidden,
-            )
+    )
+    if matched != 1:
+        raise Stage1CompositionError(
+            "MEANING_REALIZATION_CAPABILITY_GAP"
         )
 
-    # Material visibility becomes its own content-bearing claim only when the
-    # current policy returns a concrete visible principle and budget remains.
-    if visible_principles and len(claims) < 4:
-        own_basis = tuple(basis_rows)
-        policy_refs = tuple(
-            row.binding_ref
-            for row in policy_basis_rows
-            if row.owner_kind is PolicyBasisOwnerKind.CONTRIBUTION
-        )
-        application_ref_by_principle = {
-            ref: _ref(
-                "policy-application",
-                (
-                    phase_A.projection_preimage_ref,
-                    "VISIBILITY",
-                    ref,
-                    policy_refs,
-                    tuple(row.binding_ref for row in own_basis),
-                ),
+    focal_relation_ref: Optional[str] = None
+    if relation_rows:
+        if (
+            len(relation_rows) != 1
+            or len(relation_rows[0].relation_basis_refs) != 1
+        ):
+            raise Stage1CompositionError(
+                "MEANING_REALIZATION_CAPABILITY_GAP"
             )
-            for ref in visible_principles
-        }
-        applications = tuple(
-            ValueApplication(
-                ref,
-                _RISK_BY_PRINCIPLE[ref],
-                (application_ref_by_principle[ref],),
-                policy_refs,
-                tuple(row.binding_ref for row in own_basis),
-            )
-            for ref in visible_principles
-        )
-        value_content = MaterialValueContent(
-            applications, tuple(row.binding_ref for row in own_basis), ()
-        )
-        value_owner_refs = tuple(row.contribution_id for row in contributions)
-        responsibility_ref = project_stage1_subjective_responsibility_ref(
-            projection_preimage_ref=phase_A.projection_preimage_ref,
-            responsibility_kind=SubjectiveResponsibilityKind.POLICY_VISIBLE_VALUE,
-            owner_component_refs=value_owner_refs,
-            retained_reception_act_refs=act_refs,
-        )
-        opportunity_key = project_stage1_subjective_opportunity_key(
-            projection_preimage_ref=phase_A.projection_preimage_ref,
-            responsibility_refs=(responsibility_ref,),
-            content_kind=SubjectiveContentKind.MATERIAL_VALUE,
-            row_ref_free_discriminated_content=value_content,
-            specificity_key=SubjectiveSpecificity.MULTI_ROLE,
-        )
-        proposition = SubjectivePropositionV2(
-            CMEE_STAGE1_SUBJECTIVE_PROPOSITION_SCHEMA_VERSION,
-            SubjectiveContentKind.MATERIAL_VALUE,
-            SubjectiveMode.VALUE_POSITION,
-            SubjectiveOperator.PROTECT_VALUE_BOUNDARY,
-            _unique(row.contribution_ref for row in own_basis),
-            _unique(row.semantic_ref for row in own_basis),
-            (),
-            _unique(row.semantic_ref for row in own_basis),
-            tuple(row.binding_ref for row in own_basis),
-            tuple(row.source_qualifier_binding_ref for row in qualifier_rows),
-            None,
-            None,
-            None,
-            value_content,
-            None,
-            (),
-            (),
-            "USER",
-            SubjectiveAssertionModality.EMLIS_VALUE_POSITION,
-            "REQUEST_LOCAL_EMLIS_SUBJECTIVITY",
-        )
-        forbidden = stage1_subjective_forbidden_promotions(contributions, material_unknown_refs=phase_A.material_unknown_refs)
-        value_contribution_refs = _unique(
-            row.contribution_ref for row in own_basis
-        )
-        value_semantic_refs = _unique(row.semantic_ref for row in own_basis)
-        claim_id = _ref(
-            "subjective-claim",
-            (
-                phase_A.projection_preimage_ref,
-                CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
-                phase_A.parent_plan.reception_duty_id,
-                CMEE_STAGE1_EMLIS_OWNER_REF,
-                "EMLIS_SUBJECTIVE_RESPONSE",
-                (responsibility_ref,),
-                opportunity_key,
-                proposition,
-                value_contribution_refs,
-                value_semantic_refs,
-                act_refs,
-                tuple(visible_principles),
-                0,
-                forbidden,
-            ),
-        )
-        responsibilities.append(SubjectiveResponsibilityRow(responsibility_ref, SubjectiveResponsibilityKind.POLICY_VISIBLE_VALUE, value_owner_refs, act_refs))
-        opportunities.append(SubjectiveOpportunityRow(opportunity_key, (responsibility_ref,), SubjectiveContentKind.MATERIAL_VALUE, value_content, SubjectiveSpecificity.MULTI_ROLE))
-        claims.append(ProjectedSubjectiveClaim(CMEE_STAGE1_RESPONSE_SCHEMA_VERSION, claim_id, phase_A.parent_plan.reception_duty_id, CMEE_STAGE1_EMLIS_OWNER_REF, "EMLIS_SUBJECTIVE_RESPONSE", (responsibility_ref,), opportunity_key, proposition, value_contribution_refs, value_semantic_refs, act_refs, tuple(visible_principles), 0, forbidden))
-        for principle in visible_principles:
-            row_ref = application_ref_by_principle[principle]
-            policy_applications.append(PolicyApplicationRow(row_ref, "VISIBILITY", principle, _RISK_BY_PRINCIPLE[principle], policy_refs, claim_id, claim_id))
+        dimension = AppraisalDimension.RELATIONAL_NONCOLLAPSE
+        operation = AppraisalOperation.PRESERVE_BOTH_ENDPOINTS
+        focal_relation_ref = relation_rows[0].relation_basis_refs[0]
+    elif unfinished:
+        dimension = AppraisalDimension.UNFINISHED_OPENNESS
+        operation = AppraisalOperation.LEAVE_UNFINISHED
+    elif bounded_change:
+        dimension = AppraisalDimension.BOUNDED_CHANGE
+        operation = AppraisalOperation.RECOGNIZE_AS_BOUNDED
+    elif agency:
+        dimension = AppraisalDimension.AGENCY_BOUNDARY
+        operation = AppraisalOperation.RESPECT_CHOICE
+    else:
+        dimension = AppraisalDimension.MATERIAL_WEIGHT
+        operation = AppraisalOperation.RECEIVE_AS_MATERIAL
+    return EmlisAppraisalContent(
+        dimension,
+        operation,
+        tuple(row.binding_ref for row in basis_rows),
+        focal_relation_ref,
+        (),
+        tuple(row.contribution_id for row in contributions),
+    )
 
+
+def _normal_reception_position(
+    *,
+    proposition: MeaningBoundReceptionProposition,
+    basis_rows: tuple[SubjectiveBasisBinding, ...],
+) -> EmlisRelationalPosition:
+    if proposition.optional_stance is not None:
+        return proposition.optional_stance
+    if proposition.reception_function == "protect_retained_intention":
+        operator = StanceOperator.PROTECT_USER_AGENCY
+        commitment = RelationalCommitment.PROTECT_AGENCY
+        closure = RelationalClosure.BOUNDED
+    elif proposition.reception_function == "hold_help_seeking":
+        operator = StanceOperator.STAY_WITH_SPECIFIC_OBJECT
+        commitment = RelationalCommitment.STAY_WITH
+        closure = RelationalClosure.NONE
+    else:
+        raise Stage1CompositionError(
+            "MEANING_REALIZATION_CAPABILITY_GAP"
+        )
+    return EmlisRelationalPosition(
+        RelationalPositionKind.STANCE,
+        operator,
+        tuple(row.binding_ref for row in basis_rows),
+        (),
+        commitment,
+        closure,
+    )
+
+
+def _projected_claim_identity(
+    *,
+    proposition: SubjectivePropositionV2,
+    parent_duty_ref: str,
+    responsibility_ref: str,
+    opportunity_key: str,
+    contribution_refs: tuple[str, ...],
+    semantic_refs: tuple[str, ...],
+    act_refs: tuple[str, ...],
+    value_principle_refs: tuple[str, ...],
+    forbidden_promotions: tuple[str, ...],
+) -> str:
+    return recompute_stage1_identity(
+        EmlisSubjectiveClaim(
+            schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+            subjective_claim_id="",
+            parent_duty_ref=parent_duty_ref,
+            speaker_owner="EMLIS",
+            claim_domain="EMLIS_SUBJECTIVE_RESPONSE",
+            subjective_mode=proposition.subjective_mode,
+            asserted_subjective_proposition=proposition,
+            basis_observation_contribution_refs=contribution_refs,
+            basis_semantic_refs=semantic_refs,
+            source_reception_act_refs=act_refs,
+            value_principle_refs=value_principle_refs,
+            user_fact_effect=0,
+            forbidden_promotions=forbidden_promotions,
+            subjective_responsibility_refs=(responsibility_ref,),
+            selected_subjective_opportunity_key=opportunity_key,
+        )
+    )
+
+
+def _finalize_subjective_meaning_plan(
+    *,
+    authority: _ProjectionCommonAuthority,
+    branch: SubjectiveProjectionBranch,
+    claims: list[ProjectedSubjectiveClaim],
+    responsibilities: list[SubjectiveResponsibilityRow],
+    opportunities: list[SubjectiveOpportunityRow],
+    basis_rows: tuple[SubjectiveBasisBinding, ...],
+    qualifier_rows: tuple[SourceQualifierBinding, ...],
+    policy_basis_rows: tuple[PolicyBasisBinding, ...],
+    policy_application_rows: list[PolicyApplicationRow],
+    meaning_trace_rows: tuple[
+        SelectedMeaningVisibleCausalTraceRow
+        | LimitedMeaningVisibleCausalTraceRow,
+        ...,
+    ],
+    reception_trace_rows: tuple[ReceptionVisibleCausalTraceRow, ...],
+) -> EmlisSubjectiveMeaningPlan:
+    canonical_responsibilities = tuple(
+        sorted(responsibilities, key=lambda row: row.responsibility_ref)
+    )
+    canonical_opportunities = tuple(
+        sorted(opportunities, key=lambda row: row.opportunity_key)
+    )
+    canonical_basis_rows = tuple(
+        sorted(basis_rows, key=lambda row: row.binding_ref)
+    )
+    canonical_qualifier_rows = tuple(
+        sorted(
+            qualifier_rows,
+            key=lambda row: row.source_qualifier_binding_ref,
+        )
+    )
+    canonical_policy_basis_rows = tuple(
+        sorted(policy_basis_rows, key=lambda row: row.binding_ref)
+    )
+    canonical_policy_application_rows = tuple(
+        sorted(
+            policy_application_rows,
+            key=stage1_policy_application_order_key,
+        )
+    )
     coverage = tuple(
         ResponsibilityCoverageRow(
             row.responsibility_ref,
@@ -6019,37 +5858,1015 @@ def project_subjective_meaning_plan(
             tuple(
                 claim.subjective_claim_id
                 for claim in claims
-                if row.responsibility_ref in claim.subjective_responsibility_refs
+                if row.responsibility_ref
+                in claim.subjective_responsibility_refs
             ),
         )
-        for row in responsibilities
+        for row in canonical_responsibilities
     )
-    thought_refs = tuple(
-        claim.subjective_claim_id
-        for claim in claims
-        if claim.asserted_subjective_proposition.content_kind is not SubjectiveContentKind.AFFECT
-    )
+    suppressions: tuple[SubjectiveFacetSuppressionRow, ...] = ()
     _validate_subjective_opportunity_partition(
-        responsibilities=responsibilities,
-        opportunities=opportunities,
+        responsibilities=canonical_responsibilities,
+        opportunities=canonical_opportunities,
         claims=claims,
         coverage=coverage,
         suppressions=suppressions,
     )
+    thought_refs = tuple(
+        claim.subjective_claim_id
+        for claim in claims
+        if claim.asserted_subjective_proposition.content_kind
+        is not SubjectiveContentKind.AFFECT
+    )
+    tagged_ref = project_stage1_tagged_projection_ref(
+        projection_branch=branch,
+        projection_seal_ref=authority.projection_seal_ref,
+        meaning_visible_causal_trace_rows=meaning_trace_rows,
+        reception_visible_causal_trace_rows=reception_trace_rows,
+    )
     return EmlisSubjectiveMeaningPlan(
-        phase_A.projection_preimage_ref,
-        tuple(claims),
-        "SUPPORTED" if thought_refs else "NOT_SUPPORTED",
-        thought_refs,
-        act_refs,
-        tuple(responsibilities),
-        tuple(opportunities),
-        coverage,
-        tuple(basis_rows),
-        tuple(qualifier_rows),
-        tuple(policy_basis_rows),
-        tuple(policy_applications),
-        tuple(suppressions),
+        projection_preimage_ref=authority.projection_preimage_ref,
+        projection_seal_ref=authority.projection_seal_ref,
+        projection_branch=branch,
+        tagged_projection_ref=tagged_ref,
+        meaning_visible_causal_trace_rows=meaning_trace_rows,
+        reception_visible_causal_trace_rows=reception_trace_rows,
+        subjective_claim_rows=tuple(claims),
+        thought_support_status=(
+            "SUPPORTED" if thought_refs else "NOT_SUPPORTED"
+        ),
+        content_bearing_thought_claim_refs=thought_refs,
+        retained_reception_act_refs=tuple(
+            row.act_ref for row in authority.retained_reception_act_rows
+        ),
+        subjective_responsibility_rows=canonical_responsibilities,
+        subjective_opportunity_rows=canonical_opportunities,
+        responsibility_coverage_rows=coverage,
+        subjective_basis_binding_rows=canonical_basis_rows,
+        source_qualifier_binding_rows=canonical_qualifier_rows,
+        policy_basis_binding_rows=canonical_policy_basis_rows,
+        policy_application_rows=canonical_policy_application_rows,
+        subjective_facet_suppression_rows=suppressions,
+    )
+
+
+def _validate_tagged_projection_inputs(
+    inputs: SubjectiveProjectionInputs,
+) -> _ProjectionCommonAuthority:
+    """Close a direct branch call against the sealed post-selection carrier."""
+
+    if type(inputs) not in {
+        SelectedReadingProjectionInputs,
+        LimitedProjectionInputs,
+    } or type(inputs.common) is not _ProjectionCommonAuthority:
+        raise Stage1CompositionError(
+            "STAGE1_TAGGED_PROJECTION_INPUT_TYPE_STOP"
+        )
+    authority = inputs.common
+    try:
+        from .emlis_stage1_response import (
+            validate_allowed_reception_opportunity_envelope,
+        )
+
+        validate_allowed_reception_opportunity_envelope(
+            authority.allowed_reception_opportunity_envelope,
+            source=authority.admitted_source,
+            grounded_graph=authority.grounded_graph,
+            parent_plan=authority.parent_plan,
+            grounded_plan=authority.grounded_plan,
+        )
+    except CMEEStage1ContractError:
+        raise Stage1CompositionError(
+            "STAGE1_PROJECTION_PREIMAGE_CLOSURE_STOP"
+        ) from None
+    if (
+        authority.grounded_graph_ref
+        != (
+            f"grounded:{getattr(authority.grounded_graph, 'graph_id', '')}"
+            f"@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        )
+        or authority.parent_observation_duty_ref
+        != getattr(authority.parent_plan, "observation_duty_id", None)
+        or authority.parent_reception_duty_ref
+        != getattr(authority.parent_plan, "reception_duty_id", None)
+        or tuple(
+            row.act_ref for row in authority.retained_reception_act_rows
+        )
+        != tuple(
+            getattr(authority.parent_plan, "allowed_reception_act_ids", ())
+        )
+    ):
+        raise Stage1CompositionError(
+            "STAGE1_PROJECTION_PREIMAGE_CLOSURE_STOP"
+        )
+    outcome = (
+        authority.input_specific_meaning_structure.meaning_decision_outcome
+    )
+    if type(inputs) is SelectedReadingProjectionInputs:
+        if (
+            type(outcome) is not SelectedEmlisProvisionalReading
+            or inputs.selected_reading is not outcome
+            or type(inputs.reading_consequence_records) is not tuple
+            or len(inputs.reading_consequence_records) != 1
+            or type(inputs.reading_consequence_records[0])
+            is not ReadingConsequence
+            or type(inputs.sealed_reading_records) is not tuple
+            or len(inputs.sealed_reading_records) != 1
+            or type(inputs.sealed_reading_records[0])
+            is not SealedEmlisProvisionalReading
+            or type(inputs.reception_proposition_records) is not tuple
+            or not 1 <= len(inputs.reception_proposition_records) <= 4
+            or any(
+                type(row) is not MeaningBoundReceptionProposition
+                for row in inputs.reception_proposition_records
+            )
+            or type(inputs.reception_set_records) is not tuple
+            or len(inputs.reception_set_records) != 1
+            or type(inputs.reception_set_records[0])
+            is not MeaningBoundReceptionSet
+        ):
+            raise Stage1CompositionError(
+                "STAGE1_SELECTED_PROJECTION_INPUT_CLOSURE_STOP"
+            )
+        records = (
+            inputs.reading_consequence_records,
+            inputs.sealed_reading_records,
+            inputs.reception_proposition_records,
+            inputs.reception_set_records,
+            (),
+            (),
+        )
+    else:
+        if (
+            type(outcome) is not LimitedMeaningOutcome
+            or inputs.limited_outcome is not outcome
+            or type(inputs.bounded_reception_records) is not tuple
+            or len(inputs.bounded_reception_records) != 1
+            or type(inputs.bounded_reception_records[0])
+            is not BoundedLimitedReception
+            or type(inputs.subjective_proposition_records) is not tuple
+            or len(inputs.subjective_proposition_records) != 1
+            or type(inputs.subjective_proposition_records[0])
+            is not SubjectivePropositionV2
+        ):
+            raise Stage1CompositionError(
+                "STAGE1_LIMITED_PROJECTION_INPUT_CLOSURE_STOP"
+            )
+        records = (
+            (),
+            (),
+            (),
+            (),
+            inputs.bounded_reception_records,
+            inputs.subjective_proposition_records,
+        )
+    try:
+        validate_input_specific_meaning_structure(
+            authority.input_specific_meaning_structure,
+            grounded_view=authority.grounded_situation_view,
+            foreground_scope_derivation=(
+                authority.foreground_scope_derivation
+            ),
+        )
+        validate_stage1_post_selection_reception_records(
+            input_specific_meaning_structure=(
+                authority.input_specific_meaning_structure
+            ),
+            projection_preimage_ref=authority.projection_preimage_ref,
+            reading_consequence_records=records[0],
+            sealed_emlis_provisional_reading_records=records[1],
+            meaning_bound_reception_proposition_records=records[2],
+            meaning_bound_reception_set_records=records[3],
+            bounded_limited_reception_records=records[4],
+            bounded_limited_subjective_proposition_records=records[5],
+            projection_seal_ref=authority.projection_seal_ref,
+            retained_reception_act_rows=(
+                authority.retained_reception_act_rows
+            ),
+            observation_contribution_rows=(
+                authority.observation_contribution_rows
+            ),
+            interpretation_candidate_rows=(
+                authority.interpretation_candidate_rows
+            ),
+            contribution_to_candidate_ref_map=(
+                authority.contribution_to_candidate_ref_map
+            ),
+            qualifier_value_rows=(
+                authority.qualifier_value_by_candidate_scope_axis_key
+            ),
+            material_unknown_refs=authority.material_unknown_refs,
+        )
+        expected_seal_ref = project_stage1_subjective_projection_seal_ref(
+            authority.projection_preimage_ref,
+            meaning_decision_outcome=outcome,
+            reading_consequence_records=records[0],
+            sealed_emlis_provisional_reading_records=records[1],
+            meaning_bound_reception_proposition_records=records[2],
+            meaning_bound_reception_set_records=records[3],
+            bounded_limited_reception_records=records[4],
+            bounded_limited_subjective_proposition_records=records[5],
+            whole_reading_consequence_rows=(
+                authority.input_specific_meaning_structure
+                .whole_reading_consequence_rows
+            ),
+        )
+        expected_preimage_ref = project_stage1_projection_preimage_ref(
+            grounded_graph_ref=authority.grounded_graph_ref,
+            parent_observation_duty_ref=(
+                authority.parent_observation_duty_ref
+            ),
+            parent_reception_duty_ref=(
+                authority.parent_reception_duty_ref
+            ),
+            interpretation_candidate_ids=tuple(
+                row.candidate_id
+                for row in authority.interpretation_candidate_rows
+            ),
+            meaning_field_id=authority.meaning_field_id,
+            observation_contribution_ids=tuple(
+                row.contribution_id
+                for row in authority.observation_contribution_rows
+            ),
+            retained_reception_act_ids=tuple(
+                row.act_ref for row in authority.retained_reception_act_rows
+            ),
+            observation_depth_class=authority.observation_depth_class,
+            temperature_class=authority.temperature_class,
+            reception_style_policy_ref=(
+                authority.reception_style_policy_ref
+            ),
+            emlis_value_policy_ref=authority.emlis_value_policy_ref,
+        )
+    except (AttributeError, TypeError, CMEEStage1ContractError):
+        raise Stage1CompositionError(
+            "STAGE1_INPUT_SPECIFIC_MEANING_STRUCTURE_STOP"
+        ) from None
+    if expected_preimage_ref != authority.projection_preimage_ref:
+        raise Stage1CompositionError(
+            "STAGE1_PROJECTION_PREIMAGE_CLOSURE_STOP"
+        )
+    if expected_seal_ref != authority.projection_seal_ref:
+        raise Stage1CompositionError(
+            "STAGE1_TAGGED_PROJECTION_SEAL_CLOSURE_STOP"
+        )
+    return authority
+
+
+def project_selected_reading_plan_candidate(
+    inputs: SelectedReadingProjectionInputs,
+) -> EmlisSubjectiveMeaningPlan:
+    """Project the carried NORMAL reading and Reception without reselection."""
+
+    if type(inputs) is not SelectedReadingProjectionInputs:
+        raise Stage1CompositionError(
+            "STAGE1_SELECTED_PROJECTION_INPUT_TYPE_STOP"
+        )
+    authority = _validate_tagged_projection_inputs(inputs)
+    sealed_reading = inputs.sealed_reading_records[0]
+    basis_rows, qualifier_rows, policy_basis_rows = (
+        _projection_binding_rows(authority)
+    )
+    candidate_rows = tuple(
+        row
+        for row in authority.input_specific_meaning_structure.candidate_records
+        if row.candidate_id == inputs.selected_reading.selected_candidate_ref
+    )
+    evidence_rows = (
+        ()
+        if len(candidate_rows) != 1
+        else tuple(
+            row
+            for row in (
+                authority.input_specific_meaning_structure
+                .input_specificity_evidence_records
+            )
+            if row.candidate_ref == candidate_rows[0].candidate_id
+        )
+    )
+    required_difference_by_ref = {
+        row.difference_id: row
+        for row in (
+            authority.input_specific_meaning_structure.required_difference_rows
+        )
+    }
+    evidence_difference_refs = (
+        ()
+        if len(evidence_rows) != 1
+        else evidence_rows[0].required_difference_refs
+    )
+    if (
+        len(candidate_rows) != 1
+        or len(evidence_rows) != 1
+        or len(required_difference_by_ref)
+        != len(
+            authority.input_specific_meaning_structure.required_difference_rows
+        )
+        or len(evidence_difference_refs) != len(set(evidence_difference_refs))
+        or set(evidence_difference_refs) != set(required_difference_by_ref)
+    ):
+        raise Stage1CompositionError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        )
+    candidate = candidate_rows[0]
+    contribution_by_id = {
+        row.contribution_id: row
+        for row in authority.observation_contribution_rows
+    }
+    retained_by_act = {
+        row.reception_act: row
+        for row in authority.retained_reception_act_rows
+    }
+    if len(retained_by_act) != len(authority.retained_reception_act_rows):
+        raise Stage1CompositionError(
+            "STAGE1_RECEPTION_ACT_CLOSURE_STOP"
+        )
+
+    responsibilities: list[SubjectiveResponsibilityRow] = []
+    opportunities: list[SubjectiveOpportunityRow] = []
+    claims: list[ProjectedSubjectiveClaim] = []
+    policy_applications: list[PolicyApplicationRow] = []
+    reception_traces: list[ReceptionVisibleCausalTraceRow] = []
+    for source_reception in inputs.reception_proposition_records:
+        retained = retained_by_act.get(source_reception.reception_function)
+        contribution_refs = (
+            ()
+            if retained is None
+            else retained.basis_contribution_refs
+        )
+        if (
+            retained is None
+            or not contribution_refs
+            or not set(contribution_refs).issubset(
+                set(candidate.basis_contribution_refs)
+            )
+            or any(ref not in contribution_by_id for ref in contribution_refs)
+        ):
+            raise Stage1CompositionError(
+                "MEANING_REALIZATION_CAPABILITY_GAP"
+            )
+        contributions = tuple(
+            contribution_by_id[ref] for ref in contribution_refs
+        )
+        own_basis = _selected_basis(basis_rows, contribution_refs)
+        own_basis_refs = tuple(row.binding_ref for row in own_basis)
+        own_basis_ref_set = set(own_basis_refs)
+        own_qualifiers = tuple(
+            row
+            for row in qualifier_rows
+            if row.basis_binding_ref in own_basis_ref_set
+        )
+        own_semantic_refs = _unique(
+            row.semantic_ref for row in own_basis
+        )
+        operator = _normal_reception_operator(source_reception)
+        value_refs: tuple[str, ...] = ()
+        pending_policy_rows: tuple[
+            tuple[str, str, MaterialRisk, tuple[str, ...]], ...
+        ] = ()
+
+        if source_reception.subjective_mode in {
+            SubjectiveMode.ATTENTION,
+            SubjectiveMode.PERSONAL_APPRAISAL,
+        }:
+            content_kind = SubjectiveContentKind.APPRAISAL
+            content = _normal_reception_appraisal(
+                proposition=source_reception,
+                contributions=contributions,
+                basis_rows=own_basis,
+            )
+            affect_content = None
+            appraisal_content = content
+            material_value_content = None
+            relational_position = None
+            focal_relation_ref = content.focal_relation_ref
+        elif (
+            source_reception.subjective_mode
+            is SubjectiveMode.AFFECTIVE_RESPONSE
+        ):
+            content_kind = SubjectiveContentKind.AFFECT
+            content = source_reception.optional_affect
+            if (
+                type(content) is not EmlisAffectContent
+                or content.elicitor_bindings != own_basis_refs
+            ):
+                raise Stage1CompositionError(
+                    "MEANING_REALIZATION_CAPABILITY_GAP"
+                )
+            affect_content = content
+            appraisal_content = None
+            material_value_content = None
+            relational_position = None
+            focal_relation_ref = None
+        elif (
+            source_reception.subjective_mode
+            is SubjectiveMode.RELATIONAL_STANCE
+        ):
+            content_kind = SubjectiveContentKind.RELATIONAL_POSITION
+            content = _normal_reception_position(
+                proposition=source_reception,
+                basis_rows=own_basis,
+            )
+            affect_content = None
+            appraisal_content = None
+            material_value_content = None
+            relational_position = content
+            focal_relation_ref = None
+        elif (
+            source_reception.subjective_mode
+            is SubjectiveMode.VALUE_POSITION
+        ):
+            content_kind = SubjectiveContentKind.MATERIAL_VALUE
+            value_refs = _stage1_material_visible_value_refs(
+                reception_act=source_reception.reception_function,
+                contributions=contributions,
+            )
+            relevant_policy_refs = tuple(
+                row.binding_ref
+                for row in policy_basis_rows
+                if row.owner_kind is PolicyBasisOwnerKind.CONTRIBUTION
+                and row.owner_ref in set(contribution_refs)
+            )
+            if not value_refs or not relevant_policy_refs:
+                raise Stage1CompositionError(
+                    "MEANING_REALIZATION_CAPABILITY_GAP"
+                )
+            pending = []
+            applications = []
+            for principle_ref in value_refs:
+                application_ref = _ref(
+                    "policy-application",
+                    (
+                        authority.projection_seal_ref,
+                        source_reception.reception_id,
+                        principle_ref,
+                        relevant_policy_refs,
+                        own_basis_refs,
+                    ),
+                )
+                risk = _RISK_BY_PRINCIPLE[principle_ref]
+                pending.append(
+                    (
+                        application_ref,
+                        principle_ref,
+                        risk,
+                        relevant_policy_refs,
+                    )
+                )
+                applications.append(
+                    ValueApplication(
+                        principle_ref,
+                        risk,
+                        (application_ref,),
+                        relevant_policy_refs,
+                        own_basis_refs,
+                    )
+                )
+            pending_policy_rows = tuple(pending)
+            content = MaterialValueContent(
+                tuple(applications), own_basis_refs, ()
+            )
+            affect_content = None
+            appraisal_content = None
+            material_value_content = content
+            relational_position = None
+            focal_relation_ref = None
+        else:
+            raise Stage1CompositionError(
+                "MEANING_REALIZATION_CAPABILITY_GAP"
+            )
+
+        proposition = SubjectivePropositionV2(
+            CMEE_STAGE1_MEANING_BOUND_SUBJECTIVE_PROJECTION_SCHEMA_VERSION,
+            content_kind,
+            source_reception.subjective_mode,
+            operator,
+            contribution_refs,
+            own_semantic_refs,
+            (),
+            own_semantic_refs,
+            own_basis_refs,
+            tuple(
+                row.source_qualifier_binding_ref
+                for row in own_qualifiers
+            ),
+            focal_relation_ref,
+            affect_content,
+            appraisal_content,
+            material_value_content,
+            relational_position,
+            (),
+            (),
+            "USER",
+            source_reception.subjective_assertion_modality,
+            "REQUEST_LOCAL_EMLIS_SUBJECTIVITY",
+        )
+        act_refs = (retained.act_ref,)
+        responsibility_ref = project_stage1_subjective_responsibility_ref(
+            projection_preimage_ref=authority.projection_preimage_ref,
+            responsibility_kind=source_reception.responsibility_kind,
+            owner_component_refs=contribution_refs,
+            retained_reception_act_refs=act_refs,
+        )
+        specificity = (
+            SubjectiveSpecificity.RELATION_BOUND_MULTI_ROLE
+            if focal_relation_ref is not None
+            else SubjectiveSpecificity.MULTI_ROLE
+            if len(own_semantic_refs) > 1
+            else SubjectiveSpecificity.SINGLE_ROLE
+        )
+        opportunity_key = project_stage1_subjective_opportunity_key(
+            projection_preimage_ref=authority.projection_preimage_ref,
+            responsibility_refs=(responsibility_ref,),
+            content_kind=content_kind,
+            row_ref_free_discriminated_content=content,
+            specificity_key=specificity,
+        )
+        forbidden = stage1_subjective_forbidden_promotions(
+            contributions,
+            material_unknown_refs=authority.material_unknown_refs,
+        )
+        claim_id = _projected_claim_identity(
+            proposition=proposition,
+            parent_duty_ref=authority.parent_reception_duty_ref,
+            responsibility_ref=responsibility_ref,
+            opportunity_key=opportunity_key,
+            contribution_refs=contribution_refs,
+            semantic_refs=own_semantic_refs,
+            act_refs=act_refs,
+            value_principle_refs=value_refs,
+            forbidden_promotions=forbidden,
+        )
+        responsibilities.append(
+            SubjectiveResponsibilityRow(
+                responsibility_ref,
+                source_reception.responsibility_kind,
+                contribution_refs,
+                act_refs,
+            )
+        )
+        opportunities.append(
+            SubjectiveOpportunityRow(
+                opportunity_key,
+                (responsibility_ref,),
+                content_kind,
+                content,
+                specificity,
+            )
+        )
+        claims.append(
+            ProjectedSubjectiveClaim(
+                CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+                claim_id,
+                authority.parent_reception_duty_ref,
+                CMEE_STAGE1_EMLIS_OWNER_REF,
+                "EMLIS_SUBJECTIVE_RESPONSE",
+                (responsibility_ref,),
+                opportunity_key,
+                proposition,
+                contribution_refs,
+                own_semantic_refs,
+                act_refs,
+                value_refs,
+                0,
+                forbidden,
+            )
+        )
+        for (
+            application_ref,
+            principle_ref,
+            risk,
+            relevant_policy_refs,
+        ) in pending_policy_rows:
+            policy_applications.append(
+                PolicyApplicationRow(
+                    application_ref,
+                    "VISIBILITY",
+                    principle_ref,
+                    risk,
+                    relevant_policy_refs,
+                    claim_id,
+                    claim_id,
+                )
+            )
+        reception_traces.append(
+            ReceptionVisibleCausalTraceRow(
+                branch=SubjectiveProjectionBranch.NORMAL,
+                meaning_outcome_ref=inputs.selected_reading.reading_id,
+                reading_consequence_ref=(
+                    sealed_reading.reading_consequence_ref
+                ),
+                reception_record_ref=source_reception.reception_id,
+                projected_claim_ref=claim_id,
+                layer1_contribution_refs=contribution_refs,
+                response_object_refs=source_reception.response_object_refs,
+                projected_response_object_refs=own_semantic_refs,
+                preserved_difference_refs=(
+                    source_reception.preserved_difference_refs
+                ),
+            )
+        )
+
+    observed_by_ref = {
+        row.distinction_id: row
+        for row in (
+            authority.input_specific_meaning_structure.observed_distinction_rows
+        )
+    }
+    if len(observed_by_ref) != len(
+        authority.input_specific_meaning_structure.observed_distinction_rows
+    ):
+        raise Stage1CompositionError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        )
+    meaning_trace_values: list[SelectedMeaningVisibleCausalTraceRow] = []
+    for difference_ref in evidence_difference_refs:
+        difference = required_difference_by_ref[difference_ref]
+        observed = observed_by_ref.get(difference.observed_distinction_ref)
+        if (
+            observed is None
+            or observed.configuration_ref
+            not in set(candidate.basis_configuration_refs)
+        ):
+            raise Stage1CompositionError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        direct_refs = tuple(
+            ref
+            for ref in candidate.basis_contribution_refs
+            if ref in set(difference.retention_duty_refs)
+        )
+        component_refs = set(observed.contrasted_component_refs)
+        semantic_match_refs = tuple(
+            ref
+            for ref in candidate.basis_contribution_refs
+            if ref in contribution_by_id
+            and component_refs.intersection(
+                {
+                    *contribution_by_id[ref].semantic_refs,
+                    *contribution_by_id[ref].relation_basis_refs,
+                    *(
+                        binding.semantic_ref
+                        for binding in contribution_by_id[ref].argument_bindings
+                    ),
+                }
+            )
+        )
+        layer1_refs = (
+            direct_refs
+            if direct_refs
+            else semantic_match_refs
+            if semantic_match_refs
+            else candidate.basis_contribution_refs
+            if len(candidate.basis_contribution_refs) == 1
+            else ()
+        )
+        if not layer1_refs:
+            raise Stage1CompositionError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        meaning_trace_values.append(
+            SelectedMeaningVisibleCausalTraceRow(
+                required_difference_ref=difference_ref,
+                selected_reading_ref=inputs.selected_reading.reading_id,
+                configuration_ref=observed.configuration_ref,
+                configuration_component_refs=(
+                    observed.contrasted_component_refs
+                ),
+                source_qualifier_refs=observed.source_qualifier_refs,
+                invariant_codes=difference.invariant_codes,
+                layer1_contribution_refs=layer1_refs,
+            )
+        )
+    meaning_traces = tuple(meaning_trace_values)
+    return _finalize_subjective_meaning_plan(
+        authority=authority,
+        branch=SubjectiveProjectionBranch.NORMAL,
+        claims=claims,
+        responsibilities=responsibilities,
+        opportunities=opportunities,
+        basis_rows=basis_rows,
+        qualifier_rows=qualifier_rows,
+        policy_basis_rows=policy_basis_rows,
+        policy_application_rows=policy_applications,
+        meaning_trace_rows=meaning_traces,
+        reception_trace_rows=tuple(reception_traces),
+    )
+
+
+def project_limited_subjective_plan_candidate(
+    inputs: LimitedProjectionInputs,
+) -> EmlisSubjectiveMeaningPlan:
+    """Project the carried LIMITED proposition without a selected reading."""
+
+    if type(inputs) is not LimitedProjectionInputs:
+        raise Stage1CompositionError(
+            "STAGE1_LIMITED_PROJECTION_INPUT_TYPE_STOP"
+        )
+    authority = _validate_tagged_projection_inputs(inputs)
+    basis_rows, qualifier_rows, policy_basis_rows = (
+        _projection_binding_rows(authority)
+    )
+    bounded_reception = inputs.bounded_reception_records[0]
+    proposition = inputs.subjective_proposition_records[0]
+    contribution_refs = proposition.target_contribution_refs
+    contribution_by_id = {
+        row.contribution_id: row
+        for row in authority.observation_contribution_rows
+    }
+    if (
+        not contribution_refs
+        or any(ref not in contribution_by_id for ref in contribution_refs)
+    ):
+        raise Stage1CompositionError(
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+        )
+    contributions = tuple(
+        contribution_by_id[ref] for ref in contribution_refs
+    )
+    content = {
+        SubjectiveContentKind.AFFECT: proposition.affect_content,
+        SubjectiveContentKind.APPRAISAL: proposition.appraisal_content,
+        SubjectiveContentKind.MATERIAL_VALUE: (
+            proposition.material_value_content
+        ),
+        SubjectiveContentKind.RELATIONAL_POSITION: (
+            proposition.relational_position
+        ),
+    }.get(proposition.content_kind)
+    responsibility_kind = {
+        SubjectiveContentKind.AFFECT: (
+            SubjectiveResponsibilityKind.AFFECTIVE_RESPONSE
+        ),
+        SubjectiveContentKind.APPRAISAL: (
+            SubjectiveResponsibilityKind.MATERIAL_APPRAISAL
+        ),
+        SubjectiveContentKind.MATERIAL_VALUE: (
+            SubjectiveResponsibilityKind.POLICY_VISIBLE_VALUE
+        ),
+        SubjectiveContentKind.RELATIONAL_POSITION: (
+            SubjectiveResponsibilityKind.RELATIONAL_POSITION
+        ),
+    }.get(proposition.content_kind)
+    if content is None or responsibility_kind is None:
+        raise Stage1CompositionError(
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+        )
+
+    matching_act_rows = tuple(
+        row
+        for row in authority.retained_reception_act_rows
+        for mapping in CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7
+        if mapping.reception_act == row.reception_act
+        and (
+            proposition.subjective_mode,
+            proposition.subjective_operator,
+        )
+        in mapping.eligible_mode_operator_pairs
+        and len(row.basis_contribution_refs) == len(contribution_refs)
+        and set(row.basis_contribution_refs) == set(contribution_refs)
+        and set(row.basis_contribution_refs).issubset(
+            set(bounded_reception.bound_layer1_contribution_refs)
+        )
+    )
+    if len(matching_act_rows) != 1:
+        raise Stage1CompositionError(
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+        )
+    act_refs = (matching_act_rows[0].act_ref,)
+    responsibility_ref = project_stage1_subjective_responsibility_ref(
+        projection_preimage_ref=authority.projection_preimage_ref,
+        responsibility_kind=responsibility_kind,
+        owner_component_refs=contribution_refs,
+        retained_reception_act_refs=act_refs,
+    )
+    specificity = (
+        SubjectiveSpecificity.MULTI_ROLE
+        if len(proposition.response_object_refs) > 1
+        else SubjectiveSpecificity.SINGLE_ROLE
+    )
+    opportunity_key = project_stage1_subjective_opportunity_key(
+        projection_preimage_ref=authority.projection_preimage_ref,
+        responsibility_refs=(responsibility_ref,),
+        content_kind=proposition.content_kind,
+        row_ref_free_discriminated_content=content,
+        specificity_key=specificity,
+    )
+    forbidden = stage1_subjective_forbidden_promotions(
+        contributions,
+        material_unknown_refs=authority.material_unknown_refs,
+    )
+    claim_id = _projected_claim_identity(
+        proposition=proposition,
+        parent_duty_ref=authority.parent_reception_duty_ref,
+        responsibility_ref=responsibility_ref,
+        opportunity_key=opportunity_key,
+        contribution_refs=contribution_refs,
+        semantic_refs=proposition.response_object_refs,
+        act_refs=act_refs,
+        value_principle_refs=(),
+        forbidden_promotions=forbidden,
+    )
+    responsibilities = [
+        SubjectiveResponsibilityRow(
+            responsibility_ref,
+            responsibility_kind,
+            contribution_refs,
+            act_refs,
+        )
+    ]
+    opportunities = [
+        SubjectiveOpportunityRow(
+            opportunity_key,
+            (responsibility_ref,),
+            proposition.content_kind,
+            content,
+            specificity,
+        )
+    ]
+    claims = [
+        ProjectedSubjectiveClaim(
+            CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+            claim_id,
+            authority.parent_reception_duty_ref,
+            CMEE_STAGE1_EMLIS_OWNER_REF,
+            "EMLIS_SUBJECTIVE_RESPONSE",
+            (responsibility_ref,),
+            opportunity_key,
+            proposition,
+            contribution_refs,
+            proposition.response_object_refs,
+            act_refs,
+            (),
+            0,
+            forbidden,
+        )
+    ]
+    outcome_ref = limited_meaning_outcome_id(inputs.limited_outcome)
+    bounded_ref = bounded_limited_reception_id(
+        bounded_reception,
+        limited_outcome=inputs.limited_outcome,
+        subjective_proposition=proposition,
+    )
+    meaning_traces = tuple(
+        LimitedMeaningVisibleCausalTraceRow(
+            limited_outcome_ref=outcome_ref,
+            source_object_ref=source_object_ref,
+            layer1_contribution_refs=tuple(
+                contribution_ref
+                for contribution_ref in (
+                    bounded_reception.bound_layer1_contribution_refs
+                )
+                if source_object_ref
+                in {
+                    *contribution_by_id[
+                        contribution_ref
+                    ].semantic_refs,
+                    *contribution_by_id[
+                        contribution_ref
+                    ].relation_basis_refs,
+                    *(
+                        binding.semantic_ref
+                        for binding in contribution_by_id[
+                            contribution_ref
+                        ].argument_bindings
+                    ),
+                }
+            ),
+        )
+        for source_object_ref in (
+            bounded_reception.foreground_source_object_refs
+        )
+    )
+    if any(not row.layer1_contribution_refs for row in meaning_traces):
+        raise Stage1CompositionError(
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+        )
+    reception_traces = (
+        ReceptionVisibleCausalTraceRow(
+            branch=SubjectiveProjectionBranch.LIMITED,
+            meaning_outcome_ref=outcome_ref,
+            reading_consequence_ref=None,
+            reception_record_ref=bounded_ref,
+            projected_claim_ref=claim_id,
+            layer1_contribution_refs=contribution_refs,
+            response_object_refs=(
+                bounded_reception.foreground_source_object_refs
+            ),
+            projected_response_object_refs=proposition.response_object_refs,
+            preserved_difference_refs=(),
+        ),
+    )
+    return _finalize_subjective_meaning_plan(
+        authority=authority,
+        branch=SubjectiveProjectionBranch.LIMITED,
+        claims=claims,
+        responsibilities=responsibilities,
+        opportunities=opportunities,
+        basis_rows=basis_rows,
+        qualifier_rows=qualifier_rows,
+        policy_basis_rows=policy_basis_rows,
+        policy_application_rows=[],
+        meaning_trace_rows=meaning_traces,
+        reception_trace_rows=reception_traces,
+    )
+
+
+def _projection_common_authority(
+    phase_A: Stage1SubjectivePlanningInputs,
+) -> _ProjectionCommonAuthority:
+    """Remove branch-specific records before invoking a dedicated projector."""
+
+    return _ProjectionCommonAuthority(
+        grounded_situation_view=phase_A.grounded_situation_view,
+        foreground_scope_derivation=phase_A.foreground_scope_derivation,
+        input_specific_meaning_structure=(
+            phase_A.input_specific_meaning_structure
+        ),
+        admitted_source=phase_A.admitted_source,
+        grounded_graph=phase_A.grounded_graph,
+        grounded_plan=phase_A.grounded_plan,
+        grounded_graph_ref=(
+            f"grounded:{getattr(phase_A.grounded_graph, 'graph_id', '')}"
+            f"@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        ),
+        parent_plan=phase_A.parent_plan,
+        allowed_reception_opportunity_envelope=(
+            phase_A.allowed_reception_opportunity_envelope
+        ),
+        parent_observation_duty_ref=(
+            phase_A.parent_plan.observation_duty_id
+        ),
+        projection_preimage_ref=phase_A.projection_preimage_ref,
+        projection_seal_ref=phase_A.projection_seal_ref,
+        parent_reception_duty_ref=phase_A.parent_plan.reception_duty_id,
+        meaning_field_id=phase_A.meaning_field.meaning_field_id,
+        observation_depth_class=phase_A.observation_depth_class,
+        temperature_class=phase_A.temperature_class,
+        reception_style_policy_ref=phase_A.reception_style_policy_ref,
+        emlis_value_policy_ref=phase_A.emlis_value_policy_ref,
+        interpretation_candidate_rows=phase_A.interpretation_candidate_rows,
+        observation_contribution_rows=phase_A.observation_contribution_rows,
+        retained_reception_act_rows=phase_A.retained_reception_act_rows,
+        material_unknown_refs=phase_A.material_unknown_refs,
+        contribution_to_candidate_ref_map=(
+            phase_A.contribution_to_candidate_ref_map
+        ),
+        qualifier_value_by_candidate_scope_axis_key=(
+            phase_A.qualifier_value_by_candidate_scope_axis_key
+        ),
+    )
+
+
+def project_subjective_meaning_plan(
+    phase_A: Stage1SubjectivePlanningInputs,
+) -> EmlisSubjectiveMeaningPlan:
+    """Exhaustively dispatch an already sealed NORMAL or LIMITED outcome."""
+
+    if type(phase_A) is not Stage1SubjectivePlanningInputs:
+        raise Stage1CompositionError(
+            "STAGE1_COMPOSITION_PHASE_A_TYPE_STOP"
+        )
+    _validate_phase_A(phase_A)
+    outcome = (
+        phase_A.input_specific_meaning_structure.meaning_decision_outcome
+    )
+    common = _projection_common_authority(phase_A)
+    if type(outcome) is SelectedEmlisProvisionalReading:
+        return project_selected_reading_plan_candidate(
+            SelectedReadingProjectionInputs(
+                common=common,
+                selected_reading=outcome,
+                reading_consequence_records=(
+                    phase_A.reading_consequence_records
+                ),
+                sealed_reading_records=(
+                    phase_A.sealed_emlis_provisional_reading_records
+                ),
+                reception_proposition_records=(
+                    phase_A.meaning_bound_reception_proposition_records
+                ),
+                reception_set_records=(
+                    phase_A.meaning_bound_reception_set_records
+                ),
+            )
+        )
+    if type(outcome) is LimitedMeaningOutcome:
+        return project_limited_subjective_plan_candidate(
+            LimitedProjectionInputs(
+                common=common,
+                limited_outcome=outcome,
+                bounded_reception_records=(
+                    phase_A.bounded_limited_reception_records
+                ),
+                subjective_proposition_records=(
+                    phase_A
+                    .bounded_limited_subjective_proposition_records
+                ),
+            )
+        )
+    raise Stage1CompositionError(
+        "STAGE1_PROJECTION_BRANCH_NOT_EXHAUSTIVE_STOP"
     )
 
 
@@ -11422,6 +12239,637 @@ def _rank_v2_profiled_members(
     )
 
 
+def validate_postrealizer_visible_causal_trace(
+    phase_B: Stage1SurfaceCompositionInputs,
+    candidate: ArtifactCompositionCandidate,
+) -> str:
+    """Resolve projection requirements to actual case-frame surface units."""
+
+    if (
+        type(phase_B) is not Stage1SurfaceCompositionInputs
+        or type(candidate) is not ArtifactCompositionCandidate
+        or candidate.sentence_units
+        != candidate.normalized_artifact.sentence_units
+    ):
+        raise Stage1CompositionError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        )
+    projection = phase_B.projection
+    artifact = candidate.normalized_artifact
+    try:
+        _validate_phase_B(phase_B)
+        expected_projection_ref = _projection_ref(projection)
+        _validate_v2_normalized_grammar_seal(artifact)
+        expected_candidate_ref = _artifact_composition_candidate_ref(
+            artifact,
+            candidate.discourse_preference_profile,
+            candidate.composition_signature,
+        )
+        expected_discourse_profile = derive_discourse_preference_profile(
+            artifact
+        )
+        expected_local_profile = derive_japanese_local_preference_profile(
+            artifact
+        )
+    except Stage1CompositionError as exc:
+        raise Stage1CompositionError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        ) from exc
+    if (
+        candidate.artifact_composition_candidate_id != expected_candidate_ref
+        or type(candidate.rank) is not int
+        or isinstance(candidate.rank, bool)
+        or candidate.rank != 1
+        or candidate.shared_variant_id != "01-primary"
+        or candidate.discourse_preference_profile
+        != expected_discourse_profile
+        or candidate.japanese_local_preference_profile
+        != expected_local_profile
+    ):
+        raise Stage1CompositionError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        )
+    duties = artifact.composition_duty_rows
+    units = candidate.sentence_units
+    duty_by_ref = {row.duty_ref: row for row in duties}
+    contribution_by_ref = {
+        row.contribution_id: row
+        for row in projection.observation_contributions
+    }
+    clause_rows_by_duty = {
+        row.duty_ref: row for row in artifact.v2_clause_rows
+    }
+    clause_plan_by_duty = {
+        row.duty_ref: row for row in artifact.clause_plan_rows
+    }
+    if (
+        artifact.projection_ref != expected_projection_ref
+        or artifact.discourse_arc.projection_ref != expected_projection_ref
+        or any(
+            duty.projection_ref != expected_projection_ref
+            for duty in duties
+        )
+        or len(duty_by_ref) != len(duties)
+        or set(duty_by_ref) != set(artifact.full_duty_refs)
+        or len(clause_rows_by_duty) != len(artifact.v2_clause_rows)
+        or set(clause_rows_by_duty) != set(artifact.required_duty_refs)
+        or len(clause_plan_by_duty) != len(artifact.clause_plan_rows)
+        or set(clause_plan_by_duty) != set(artifact.required_duty_refs)
+    ):
+        raise Stage1CompositionError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        )
+
+    def typed_unit_for_duty(
+        duty_ref: str,
+    ) -> tuple[ComposedSentenceUnit, V2ClauseRealizationRow, ClauseFrame]:
+        matches = tuple(
+            unit for unit in units if duty_ref in set(unit.duty_refs)
+        )
+        clause_row = clause_rows_by_duty.get(duty_ref)
+        if len(matches) != 1 or clause_row is None:
+            raise Stage1CompositionError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        unit = matches[0]
+        frame_matches = tuple(
+            frame
+            for frame in unit.clause_frames
+            if frame.move_ref == clause_row.clause_ir.clause_ir_ref
+            and frame.predicate_operator == clause_row.head.head_id
+        )
+        functional_rows = tuple(
+            row
+            for row in unit.surface_derivations
+            if row.derivation_kind
+            is SurfaceDerivationKind.PROJECTED_FUNCTIONAL_ASSET
+            and row.relation_or_clause_plan_refs
+        )
+        if (
+            clause_row.unit_ref != unit.unit_ref
+            or len(frame_matches) != 1
+            or not unit.clause_frames
+            or clause_row.frame.frame_id not in set(unit.frame_refs)
+            or clause_row.head.head_id not in set(unit.atomic_head_refs)
+            or clause_row.source_group.group_ref
+            not in set(unit.source_group_refs)
+            or clause_row.clause_ir.clause_ir_ref
+            not in set(unit.clause_ir_refs)
+            or not unit.surface_derivations
+            or not functional_rows
+        ):
+            raise Stage1CompositionError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        return unit, clause_row, frame_matches[0]
+
+    layer1_units_by_contribution: dict[str, ComposedSentenceUnit] = {}
+    for trace in projection.meaning_visible_causal_trace_rows:
+        if type(trace) is SelectedMeaningVisibleCausalTraceRow:
+            configuration_component_refs = set(
+                trace.configuration_component_refs
+            )
+        elif type(trace) is LimitedMeaningVisibleCausalTraceRow:
+            configuration_component_refs = {trace.source_object_ref}
+        else:
+            raise Stage1CompositionError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        for contribution_ref in trace.layer1_contribution_refs:
+            contribution = contribution_by_ref.get(contribution_ref)
+            matching_duties = tuple(
+                duty
+                for duty in duties
+                if duty.layer == "LAYER_1"
+                and contribution_ref in set(duty.basis_projection_refs)
+            )
+            if contribution is None or len(matching_duties) != 1:
+                raise Stage1CompositionError(
+                    "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                )
+            duty = matching_duties[0]
+            unit, clause_row, frame = typed_unit_for_duty(
+                duty.duty_ref
+            )
+            try:
+                (
+                    expected_owner,
+                    _expected_all_source_refs,
+                    expected_case_frame,
+                    expected_source_refs,
+                ) = _v2_source_binding_for_duty(duty, phase_B)
+                expected_head = select_atomic_predicate_head(
+                    expected_case_frame
+                )
+            except Stage1CompositionError as exc:
+                raise Stage1CompositionError(
+                    "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                ) from exc
+            frame_semantic_refs = {
+                binding.semantic_ref for binding in frame.argument_bindings
+            }
+            ordered_frame_semantic_refs = tuple(
+                binding.semantic_ref for binding in frame.argument_bindings
+            )
+            relation_is_typed = (
+                contribution.relation_operator
+                is not RelationOperator.NO_RELATION_CLAIM
+                and _v2_relation_operator_for_frame(
+                    clause_row.frame.frame_id
+                )
+                is contribution.relation_operator
+                and ordered_frame_semantic_refs == expected_source_refs
+            )
+            predicate_is_typed = (
+                expected_owner is contribution
+                and clause_row.frame == expected_case_frame
+                and clause_row.head == expected_head
+                and clause_row.head.frame_ref == clause_row.frame.frame_id
+                and clause_row.frame.atomic_head_ref
+                == clause_row.head.head_id
+                and frame.predicate_operator == clause_row.head.head_id
+                and set(expected_source_refs).issubset(
+                    frame_semantic_refs
+                )
+            )
+            plan = clause_plan_by_duty[duty.duty_ref]
+            if type(trace) is SelectedMeaningVisibleCausalTraceRow:
+                direct_visible_qualifier_refs = {
+                    *frame.qualifier_refs,
+                    *(
+                        ref
+                        for derivation in unit.surface_derivations
+                        for ref in derivation.qualifier_refs
+                    ),
+                }
+                derivation_owner_refs = {
+                    *direct_visible_qualifier_refs,
+                    *(
+                        ref
+                        for derivation in unit.surface_derivations
+                        for ref in derivation.relation_or_clause_plan_refs
+                    ),
+                }
+                visible_qualifier_refs = set(
+                    direct_visible_qualifier_refs
+                )
+                scalar_owner_refs: set[str] = set()
+                for constraint in plan.scalar_constraint_rows:
+                    if constraint.owner_ref not in configuration_component_refs:
+                        continue
+                    scalar_rows = tuple(
+                        row
+                        for row in plan.scalar_surface_realization_rows
+                        if row.clause_scalar_constraint_ref
+                        == constraint.clause_scalar_constraint_ref
+                    )
+                    if {
+                        row.scalar_axis for row in scalar_rows
+                    } != set(ClauseScalarAxis):
+                        raise Stage1CompositionError(
+                            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                        )
+                    scalar_owner_refs.add(constraint.owner_ref)
+                    scalar_value_by_axis = {
+                        ClauseScalarAxis.POLARITY: constraint.polarity,
+                        ClauseScalarAxis.MODALITY: constraint.modality,
+                        ClauseScalarAxis.TIME_SCOPE: constraint.time_scope,
+                    }
+                    visible_qualifier_refs.update(
+                        f"{row.scalar_axis.value.lower()}:"
+                        f"{scalar_value_by_axis[row.scalar_axis]}"
+                        for row in scalar_rows
+                        if row.realization_mode
+                        in {
+                            ScalarSurfaceRealizationMode.OVERT_FUNCTIONAL_PART,
+                            ScalarSurfaceRealizationMode.FUSED_IN_REGISTERED_PART,
+                        }
+                        and row.registered_realization_rule_ref
+                        in derivation_owner_refs
+                    )
+                typed_component_refs = {
+                    *frame_semantic_refs,
+                    *scalar_owner_refs,
+                }
+                component_exact_cover = configuration_component_refs.issubset(
+                    typed_component_refs
+                )
+                trace_qualifier_refs = set(trace.source_qualifier_refs)
+
+                def visible_qualifier(prefix: str) -> bool:
+                    return any(
+                        ref.startswith(prefix)
+                        and ref in visible_qualifier_refs
+                        for ref in trace_qualifier_refs
+                    )
+
+                ordered_relation_refs = tuple(
+                    binding.semantic_ref
+                    for binding in contribution.argument_bindings
+                )
+                relation_topology_exact = (
+                    relation_is_typed
+                    and len(ordered_relation_refs) == 2
+                    and ordered_relation_refs == expected_source_refs
+                    and len(set(ordered_frame_semantic_refs)) == 2
+                )
+                role_topology_exact = (
+                    len(ordered_relation_refs) == 2
+                    and len(
+                        {
+                            binding.role
+                            for binding in contribution.argument_bindings
+                        }
+                    )
+                    == 2
+                    and ordered_relation_refs == ordered_frame_semantic_refs
+                )
+                direction_exact = relation_topology_exact
+                unknown_visible = any(
+                    ref.startswith("unknown:")
+                    and ref in typed_component_refs
+                    for ref in configuration_component_refs
+                ) or any(
+                    ref.endswith(":unknown")
+                    and ref in direct_visible_qualifier_refs
+                    for ref in trace_qualifier_refs
+                )
+                explicit_limit_visible = any(
+                    ref.startswith(
+                        ("scope:", "epistemic:", "limit:", "bounded:")
+                    )
+                    and ref in direct_visible_qualifier_refs
+                    for ref in trace_qualifier_refs
+                )
+                invariant_witness = {
+                    DifferenceInvariantCode.ENDPOINT_COLLAPSE: (
+                        relation_topology_exact
+                        and configuration_component_refs.issubset(
+                            frame_semantic_refs
+                        )
+                    ),
+                    DifferenceInvariantCode.DIRECTION_REVERSAL: (
+                        direction_exact
+                    ),
+                    DifferenceInvariantCode.WORLD_COLLAPSE: (
+                        visible_qualifier("world:")
+                    ),
+                    DifferenceInvariantCode.ROLE_COLLAPSE: (
+                        role_topology_exact
+                    ),
+                    DifferenceInvariantCode.TEMPORAL_COLLAPSE: (
+                        visible_qualifier("time_scope:")
+                    ),
+                    DifferenceInvariantCode.POLARITY_REVERSAL: (
+                        visible_qualifier("polarity:")
+                    ),
+                    DifferenceInvariantCode.MODALITY_PROMOTION: (
+                        visible_qualifier("modality:")
+                    ),
+                    DifferenceInvariantCode.UNKNOWN_ERASURE: (
+                        unknown_visible
+                    ),
+                    DifferenceInvariantCode.EXPLICIT_LIMIT_ERASURE: (
+                        explicit_limit_visible
+                    ),
+                    DifferenceInvariantCode.REQUIRED_RETENTION_ERASURE: (
+                        getattr(
+                            contribution.retention,
+                            "value",
+                            contribution.retention,
+                        )
+                        == "REQUIRED"
+                        and getattr(duty.retention, "value", duty.retention)
+                        == "REQUIRED"
+                        and component_exact_cover
+                    ),
+                }
+                meaning_is_typed = (
+                    set(invariant_witness) == set(DifferenceInvariantCode)
+                    and bool(trace.invariant_codes)
+                    and all(
+                        invariant_witness[code]
+                        for code in trace.invariant_codes
+                    )
+                )
+            else:
+                meaning_is_typed = (
+                    relation_is_typed
+                    or configuration_component_refs.issubset(
+                        frame_semantic_refs
+                    )
+                )
+            if (
+                unit.layer != "LAYER_1"
+                or not predicate_is_typed
+                or not meaning_is_typed
+            ):
+                raise Stage1CompositionError(
+                    "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                )
+            prior = layer1_units_by_contribution.get(contribution_ref)
+            if prior is not None and prior.unit_ref != unit.unit_ref:
+                raise Stage1CompositionError(
+                    "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                )
+            layer1_units_by_contribution[contribution_ref] = unit
+
+    claims = {
+        row.subjective_claim_id: row for row in projection.subjective_claims
+    }
+    unit_by_ref = {row.unit_ref: row for row in units}
+    expression_rows_by_unit: dict[str, tuple[ResponseObjectExpression, ...]] = {
+        unit.unit_ref: tuple(
+            row
+            for row in artifact.response_object_expression_rows
+            if row.unit_ref == unit.unit_ref
+        )
+        for unit in units
+    }
+
+    def antecedent_reaches_layer1(
+        unit_ref: str,
+        allowed_layer1_refs: set[str],
+        seen: set[str],
+    ) -> bool:
+        if unit_ref in allowed_layer1_refs:
+            return True
+        unit = unit_by_ref.get(unit_ref)
+        if unit is None or unit_ref in seen or unit.layer != "LAYER_2":
+            return False
+        next_seen = {*seen, unit_ref}
+        return any(
+            row.antecedent_unit_ref is not None
+            and antecedent_reaches_layer1(
+                row.antecedent_unit_ref,
+                allowed_layer1_refs,
+                next_seen,
+            )
+            for row in expression_rows_by_unit.get(unit_ref, ())
+        )
+
+    def antecedent_visible_semantic_refs(
+        unit_ref: str,
+        allowed_layer1_refs: set[str],
+        seen: set[str],
+    ) -> set[str]:
+        unit = unit_by_ref.get(unit_ref)
+        if unit is None or unit_ref in seen:
+            return set()
+        if unit_ref in allowed_layer1_refs and unit.layer == "LAYER_1":
+            return {
+                *unit.basis_anchor_refs,
+                *(
+                    binding.semantic_ref
+                    for frame in unit.clause_frames
+                    for binding in frame.argument_bindings
+                ),
+                *(
+                    ref
+                    for row in unit.surface_derivations
+                    if row.derivation_kind
+                    is SurfaceDerivationKind.LITERAL_SUBSPAN
+                    for ref in row.source_or_claim_refs
+                ),
+            }
+        if unit.layer != "LAYER_2":
+            return set()
+        next_seen = {*seen, unit_ref}
+        return {
+            ref
+            for row in expression_rows_by_unit.get(unit_ref, ())
+            if row.antecedent_unit_ref is not None
+            for ref in antecedent_visible_semantic_refs(
+                row.antecedent_unit_ref,
+                allowed_layer1_refs,
+                next_seen,
+            )
+        }
+
+    layer2_witness_rows: list[
+        tuple[str, str, str, tuple[str, ...]]
+    ] = []
+    for trace in projection.reception_visible_causal_trace_rows:
+        claim = claims.get(trace.projected_claim_ref)
+        matching_duties = tuple(
+            duty
+            for duty in duties
+            if duty.layer == "LAYER_2"
+            and duty.basis_projection_refs == (trace.projected_claim_ref,)
+        )
+        if (
+            claim is None
+            or len(matching_duties) != 1
+            or claim.basis_observation_contribution_refs
+            != trace.layer1_contribution_refs
+            or not matching_duties[0].response_object_refs
+            or matching_duties[0].response_object_refs
+            != trace.projected_response_object_refs
+            or any(
+                ref not in layer1_units_by_contribution
+                for ref in trace.layer1_contribution_refs
+            )
+        ):
+            raise Stage1CompositionError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        duty = matching_duties[0]
+        unit, clause_row, frame = typed_unit_for_duty(duty.duty_ref)
+        try:
+            (
+                expected_owner,
+                _expected_all_source_refs,
+                expected_case_frame,
+                expected_source_refs,
+            ) = _v2_source_binding_for_duty(duty, phase_B)
+            expected_head = select_atomic_predicate_head(
+                expected_case_frame
+            )
+        except Stage1CompositionError as exc:
+            raise Stage1CompositionError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            ) from exc
+        plan = clause_plan_by_duty[duty.duty_ref]
+        expressions = tuple(
+            row
+            for row in expression_rows_by_unit.get(unit.unit_ref, ())
+            if row.clause_plan_ref == plan.clause_plan_ref
+        )
+        emlis_rows = tuple(
+            row
+            for row in unit.surface_derivations
+            if row.derivation_kind
+            is SurfaceDerivationKind.REGISTERED_EMLIS_LEXEME
+            and row.emlis_owner_ref == CMEE_STAGE1_EMLIS_OWNER_REF
+        )
+        if (
+            unit.layer != "LAYER_2"
+            or expected_owner is not claim
+            or clause_row.frame != expected_case_frame
+            or clause_row.head != expected_head
+            or not set(expected_source_refs).issubset(
+                {
+                    binding.semantic_ref
+                    for binding in frame.argument_bindings
+                }
+            )
+            or len(expressions) != 1
+            or not set(expressions[0].basis_semantic_refs).issubset(
+                set(trace.projected_response_object_refs)
+            )
+            or not expressions[0].basis_semantic_refs
+            or not emlis_rows
+            or frame.predicate_operator != clause_row.head.head_id
+        ):
+            raise Stage1CompositionError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        expression = expressions[0]
+        projected_objects = tuple(
+            row
+            for row in unit.surface_derivations
+            if row.derivation_kind
+            is SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT
+        )
+        allowed_layer1_refs = {
+            layer1_units_by_contribution[ref].unit_ref
+            for ref in trace.layer1_contribution_refs
+        }
+        if expression.expression_mode is ResponseObjectExpressionMode.ANAPHORIC:
+            matching_projected = tuple(
+                row
+                for row in projected_objects
+                if row.response_object_expression_ref
+                == expression.response_object_expression_ref
+                and row.antecedent_unit_ref
+                == expression.antecedent_unit_ref
+            )
+            antecedent_visible_refs = (
+                set()
+                if expression.antecedent_unit_ref is None
+                else antecedent_visible_semantic_refs(
+                    expression.antecedent_unit_ref,
+                    allowed_layer1_refs,
+                    set(),
+                )
+            )
+            response_visible = bool(
+                len(matching_projected) == 1
+                and expression.antecedent_unit_ref is not None
+                and matching_projected[0].source_or_claim_refs
+                == expression.basis_semantic_refs
+                and antecedent_reaches_layer1(
+                    expression.antecedent_unit_ref,
+                    allowed_layer1_refs,
+                    set(),
+                )
+                and set(trace.projected_response_object_refs).issubset(
+                    antecedent_visible_refs
+                )
+            )
+            visible_response_refs = antecedent_visible_refs.intersection(
+                trace.projected_response_object_refs
+            )
+        else:
+            literal_refs = {
+                ref
+                for row in unit.surface_derivations
+                if row.derivation_kind
+                is SurfaceDerivationKind.LITERAL_SUBSPAN
+                for ref in row.source_or_claim_refs
+            }
+            response_visible = (
+                expression.antecedent_unit_ref is None
+                and expression.basis_semantic_refs
+                == trace.projected_response_object_refs
+                and set(expression.basis_semantic_refs).issubset(literal_refs)
+            )
+            visible_response_refs = literal_refs.intersection(
+                trace.projected_response_object_refs
+            )
+        if not response_visible:
+            raise Stage1CompositionError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        layer2_witness_rows.append(
+            (
+                trace.projected_claim_ref,
+                unit.unit_ref,
+                expression.response_object_expression_ref,
+                tuple(
+                    ref
+                    for ref in trace.projected_response_object_refs
+                    if ref in visible_response_refs
+                ),
+            )
+        )
+
+    if not layer2_witness_rows:
+        raise Stage1CompositionError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        )
+    return _ref(
+        "postrealizer-visible-causal-trace-seal",
+        (
+            projection.tagged_projection_ref,
+            projection.projection_seal_ref,
+            candidate.artifact_composition_candidate_id,
+            tuple(
+                sorted(
+                    (
+                        ref,
+                        unit.unit_ref,
+                    )
+                    for ref, unit in (
+                        layer1_units_by_contribution.items()
+                    )
+                )
+            ),
+            tuple(layer2_witness_rows),
+        ),
+    )
+
+
 def compose_stage1_from_projection(
     phase_B: Stage1SurfaceCompositionInputs,
 ) -> Stage1CompositionResult:
@@ -11508,12 +12956,16 @@ def compose_stage1_from_projection(
         raise Stage1CompositionError("NO_VALID_SURFACE")
     if len(candidates) > V2_EMITTED_CANDIDATE_LIMIT:
         raise Stage1CompositionError("CANDIDATE_BOUND_STOP")
+    visible_trace_seal_ref = validate_postrealizer_visible_causal_trace(
+        phase_B, candidates[0]
+    )
     return Stage1CompositionResult(
         LANGUAGE_CORE_IDENTITY,
         arc,
         len(stage_a),
         candidates,
         candidates[0],
+        visible_trace_seal_ref,
     )
 
 
@@ -11820,7 +13272,7 @@ def _logical_contract_descriptor(
     )
 
 
-# This literal exact-64 inventory is deliberately independent of dataclass
+# This literal exact-69 inventory is deliberately independent of dataclass
 # introspection.  Logical Step-4 types which are not runtime-active in Step 2
 # are still frozen here with their complete approved field order/cardinality.
 _LOGICAL_CONTRACT_FIELD_SPECS = (
@@ -11841,15 +13293,15 @@ _LOGICAL_CONTRACT_FIELD_SPECS = (
     ("PolicyApplicationSeed", "policy-seed-v1", "affected_claim_draft_handle=exact1 application_kind=exact1 principle_ref=exact1 material_risk=exact1 policy_basis_binding_refs=1..N material_risk_evidence_refs=1..N protected_subjective_binding_refs=0..N source_reception_act_ref=0..1 act_basis_contribution_refs=0..N disposition=exact1", ("BODY_FREE_PRE_ID",), "POLICY_SEED_PROJECTOR"),
     ("PolicyApplicationRow", "policy-row-v1", "policy_application_row_ref=exact1 affected_claim_policy_target_key=exact1 application_kind=exact1 principle_ref=exact1 material_risk=exact1 policy_basis_binding_refs=1..N material_risk_evidence_refs=1..N protected_subjective_binding_refs=0..N affected_claim_ref=exact1 source_reception_act_ref=0..1 act_basis_contribution_refs=0..N disposition=exact1 visible_claim_ref=0..1", ("SUPPRESSION_OR_VISIBILITY_DISCRIMINATED", "POST_CLAIM_REFS_EXCLUDED_FROM_ROW_ID"), "POLICY_ROW_PROJECTOR"),
     ("SubjectivePropositionV2", "proposition-v2", "schema_version=exact1 content_kind=exact1 subjective_mode=exact1 subjective_operator=exact1 target_contribution_refs=1..N primary_target_refs=1..N boundary_target_refs=0..N response_object_refs=1..N basis_binding_refs=1..N source_qualifier_binding_refs=1..N focal_relation_ref=0..1 affect_content=0..1 appraisal_content=0..1 material_value_content=0..1 relational_position=0..1 referenced_actor_refs=0..N referenced_experiencer_refs=0..N addressee_role=exact1 assertion_modality=exact1 epistemic_scope=exact1", ("CONTENT_DISCRIMINANT_EXACT1", "MODE_OPERATOR_MODALITY_TOTAL_DERIVATION"), "FINAL_PROPOSITION_PROJECTOR"),
-    ("EmlisStage1Projection", "response-v2", "schema_version=exact1 projection_id=exact1 projection_preimage_ref=exact1 grounded_graph_ref=exact1 parent_observation_duty_ref=exact1 parent_reception_duty_ref=exact1 interpretation_candidates=1..N meaning_field=exact1 observation_contributions=1..N subjective_claims=1..4 ordered_observation_refs=1..N ordered_subjective_refs=1..4 retained_reception_act_ids=1..N observation_depth_class=exact1 subjective_depth_class=exact1 temperature_class=exact1 reception_style_policy_ref=exact1 emlis_value_policy_ref=exact1 composition_policy_ref=exact1 low_level_grammar_policy_ref=exact1 subjective_responsibility_rows=1..N subjective_opportunity_rows=1..N subjective_facet_suppression_rows=0..N subjective_basis_binding_rows=1..N source_qualifier_binding_rows=1..N policy_basis_binding_rows=0..N policy_application_rows=0..N", ("FULL_ROW_TABLE_EXACT_COVER", "SUBJECTIVE_DEPTH_POST_CLAIM_ONLY"), "FINAL_PROJECTION_SEAL"),
+    ("EmlisStage1Projection", "response-v2", "schema_version=exact1 projection_id=exact1 projection_preimage_ref=exact1 projection_seal_ref=exact1 projection_branch=exact1 tagged_projection_ref=exact1 meaning_visible_causal_trace_rows=1..N reception_visible_causal_trace_rows=1..4 grounded_graph_ref=exact1 parent_observation_duty_ref=exact1 parent_reception_duty_ref=exact1 interpretation_candidates=1..N meaning_field=exact1 observation_contributions=1..N subjective_claims=1..4 ordered_observation_refs=1..N ordered_subjective_refs=1..4 retained_reception_act_ids=1..N observation_depth_class=exact1 subjective_depth_class=exact1 temperature_class=exact1 reception_style_policy_ref=exact1 emlis_value_policy_ref=exact1 composition_policy_ref=exact1 low_level_grammar_policy_ref=exact1 subjective_responsibility_rows=1..N subjective_opportunity_rows=1..N subjective_facet_suppression_rows=0..N subjective_basis_binding_rows=1..N source_qualifier_binding_rows=1..N policy_basis_binding_rows=0..N policy_application_rows=0..N", ("FULL_ROW_TABLE_EXACT_COVER", "SUBJECTIVE_DEPTH_POST_CLAIM_ONLY", "FINAL_POST_SELECTION_SEAL_BOUND"), "FINAL_PROJECTION_SEAL"),
     ("ReadingConsequence", "meaning-consequence-v1", "selected_reading_ref=exact1 input_specificity_evidence_ref=exact1 whole_reading_consequence_refs=1..N changed_whole_reading_codes=1..N response_consequence_requirement_codes=exact4 source_constraint_refs=1..N", ("POST_SELECTION_ONLY", "NO_RECEPTION_FIELDS"), "INPUT_SPECIFIC_MEANING_OWNER"),
     ("SealedEmlisProvisionalReading", "sealed-reading-v1", "selected_reading_ref=exact1 reading_consequence_ref=exact1", ("FULL_RECORD_REF_CLOSURE",), "POST_SELECTION_RESPONSE_ADAPTER"),
     ("MeaningBoundReceptionProposition", "meaning-reception-v1", "schema_version=exact1 reception_id=exact1 selected_reading_ref=exact1 reception_function=exact1 responsibility_kind=exact1 subjective_mode=exact1 contribution_kind=exact1 response_object_refs=1..N preserved_difference_refs=1..N optional_affect=0..1 optional_stance=0..1 reading_status=exact1 subjective_assertion_modality=exact1", ("AFFIRMATIVE_OR_COUNTERPOSITION", "SELECTED_READING_EXACT_BIND"), "POST_SELECTION_RESPONSE_ADAPTER"),
     ("MeaningBoundReceptionSet", "meaning-reception-set-v1", "schema_version=exact1 selected_reading_ref=exact1 reading_consequence_ref=exact1 subjective_depth=exact1 proposition_refs=1..4 affirmative_contribution_refs=1..4 optional_counterposition_refs=0..3", ("DISJOINT_UNION_EXACT_COVER", "SUBJECTIVE_DEPTH_CARDINALITY"), "POST_SELECTION_RESPONSE_ADAPTER"),
     ("BoundedLimitedReception", "bounded-limited-reception-v1", "schema_version=exact1 limited_outcome_ref=exact1 bound_layer1_contribution_refs=1..N foreground_source_object_refs=1..N retained_qualifier_refs=0..N subjective_depth=FOCUSED proposition_ref=exact1 contribution_kind=AFFIRMATIVE_RECEPTION_CONTRIBUTION", ("NO_FAKE_SELECTED_READING", "SOURCE_BOUND_EXACT1"), "POST_SELECTION_RESPONSE_ADAPTER"),
     ("Stage1SubjectivePlanningInputs", "phase-a-v2", "admitted_source=exact1 grounded_graph=exact1 grounded_plan=exact1 parent_plan=exact1 premeaning_inputs=exact1 grounded_situation_view=exact1 foreground_scope_derivation=exact1 foreground_scope_disposition=exact1 input_specific_meaning_structure=exact1 allowed_reception_opportunity_envelope=exact1 projection_preimage_ref=exact1 reading_consequence_records=0..1 sealed_emlis_provisional_reading_records=0..1 meaning_bound_reception_proposition_records=0..4 meaning_bound_reception_set_records=0..1 bounded_limited_reception_records=0..1 bounded_limited_subjective_proposition_records=0..1 projection_seal_ref=exact1 interpretation_candidate_rows=1..N meaning_field=exact1 observation_contribution_rows=1..N retained_reception_act_rows=1..N material_unknown_refs=0..N observation_depth_class=exact1 temperature_class=exact1 reception_style_policy_ref=exact1 emlis_value_policy_ref=exact1 contribution_to_candidate_ref_map=1..N resolved_grounded_frame_by_candidate_ref=1..N relation_endpoint_grounded_candidate_ref_by_binding_key=0..N qualifier_value_by_candidate_scope_axis_key=1..N construction_registry_snapshot=exact1 expression_asset_registry_snapshot=exact1 response_object_registry_snapshot=exact1 functional_asset_registry_snapshot=exact1 participant_asset_registry_snapshot=exact1 structural_asset_registry_snapshot=exact1 profile_rule_registry_snapshot=exact1", ("PREMEANING_RECEPTION_TYPE_SPLIT", "FOREGROUND_SCOPE_DERIVED_BEFORE_RECEPTION", "IM02_STRUCTURE_DERIVED_BEFORE_RECEPTION", "IM04_BRANCH_CARDINALITY_EXACT", "FULL_DOMAIN_FROZEN_MAPS"), "RESPONSE_PHASE_A_ADAPTER"),
-    ("Stage1SurfaceCompositionInputs", "phase-b-v1", "admitted_source=exact1 grounded_graph=exact1 grounded_plan=exact1 parent_plan=exact1 projection=exact1 resolved_grounded_frame_by_candidate_ref=1..N relation_endpoint_grounded_candidate_ref_by_binding_key=0..N qualifier_value_by_candidate_scope_axis_key=1..N addressee_deictic_context=exact1 section_speaker_owner_ref=0..1 construction_registry_snapshot=exact1 expression_asset_registry_snapshot=exact1 response_object_registry_snapshot=exact1 functional_asset_registry_snapshot=exact1 participant_asset_registry_snapshot=exact1 structural_asset_registry_snapshot=exact1 profile_rule_registry_snapshot=exact1", ("PHASE_A_BYTES_EXACT_MATCH", "FINAL_PROJECTION_EXACT1"), "RESPONSE_PHASE_B_ADAPTER"),
-    ("EmlisSubjectiveMeaningPlan", "meaning-plan-v1", "projection_preimage_ref=exact1 subjective_claim_rows=1..4 thought_support_status=exact1 content_bearing_thought_claim_refs=0..N retained_reception_act_refs=1..N subjective_responsibility_rows=1..N subjective_opportunity_rows=1..N responsibility_coverage_rows=1..N subjective_basis_binding_rows=1..N source_qualifier_binding_rows=1..N policy_basis_binding_rows=0..N policy_application_rows=0..N subjective_facet_suppression_rows=0..N", ("REQUEST_LOCAL_VIEW_NOT_ARTIFACT", "OPPORTUNITY_PARTITION_EXACT_COVER"), "SUBJECTIVE_MEANING_PROJECTOR"),
+    ("Stage1SurfaceCompositionInputs", "phase-b-v1", "phase_A_authority=exact1 admitted_source=exact1 grounded_graph=exact1 grounded_plan=exact1 parent_plan=exact1 projection=exact1 resolved_grounded_frame_by_candidate_ref=1..N relation_endpoint_grounded_candidate_ref_by_binding_key=0..N qualifier_value_by_candidate_scope_axis_key=1..N addressee_deictic_context=exact1 section_speaker_owner_ref=0..1 construction_registry_snapshot=exact1 expression_asset_registry_snapshot=exact1 response_object_registry_snapshot=exact1 functional_asset_registry_snapshot=exact1 participant_asset_registry_snapshot=exact1 structural_asset_registry_snapshot=exact1 profile_rule_registry_snapshot=exact1", ("PHASE_A_BYTES_EXACT_MATCH", "FINAL_PROJECTION_EXACT1", "PHASE_A_EXACT38_AUTHORITY"), "RESPONSE_PHASE_B_ADAPTER"),
+    ("EmlisSubjectiveMeaningPlan", "meaning-plan-v1", "projection_preimage_ref=exact1 projection_seal_ref=exact1 projection_branch=exact1 tagged_projection_ref=exact1 meaning_visible_causal_trace_rows=1..N reception_visible_causal_trace_rows=1..4 subjective_claim_rows=1..4 thought_support_status=exact1 content_bearing_thought_claim_refs=0..N retained_reception_act_refs=1..N subjective_responsibility_rows=1..N subjective_opportunity_rows=1..N responsibility_coverage_rows=1..N subjective_basis_binding_rows=1..N source_qualifier_binding_rows=1..N policy_basis_binding_rows=0..N policy_application_rows=0..N subjective_facet_suppression_rows=0..N", ("REQUEST_LOCAL_VIEW_NOT_ARTIFACT", "OPPORTUNITY_PARTITION_EXACT_COVER", "NORMAL_LIMITED_EXHAUSTIVE_TAG"), "SUBJECTIVE_MEANING_PROJECTOR"),
     ("SubjectiveResponsibilityRow", "responsibility-v1", "responsibility_ref=exact1 responsibility_kind=exact1 owner_component_refs=1..N retained_reception_act_refs=1..N", ("CLOSED_EXACT4_KIND",), "RESPONSIBILITY_PROJECTOR"),
     ("SubjectiveOpportunityRow", "opportunity-v1", "opportunity_key=exact1 responsibility_refs=1..N content_kind=exact1 content=exact1 specificity_key=exact1", ("ROW_REF_FREE_CONTENT",), "OPPORTUNITY_ENUMERATOR"),
     ("SubjectiveFacetSuppressionRow", "facet-suppression-v1", "suppressed_opportunity_key=exact1 reason=exact1 absorbed_by_selected_opportunity_key=0..1", ("NONMATERIAL_HAS_NO_ABSORBER",), "NONSELECTED_OPPORTUNITY_PARTITION"),
@@ -11881,17 +13333,23 @@ _LOGICAL_CONTRACT_FIELD_SPECS = (
     ("SealedCompositionPlan", "sealed-plan-v1", "projection_ref=exact1 composition_layout_id=exact1 discourse_arc=exact1 layout_preference_seed=exact1 composition_duty_rows=1..N full_duty_refs=1..N required_duty_refs=1..N suppressed_duty_rows=0..N suppressed_claim_rows=0..N clause_intent_rows=1..N clause_plan_rows=1..N reference_state_rows=1..N response_object_expression_rows=0..N unit_plan_rows=2..9 surface_part_plan_rows_by_unit=2..9", ("BOTTOM_UP_REPROJECTABLE",), "SEALED_PLAN_PROJECTOR"),
     ("SealedUnitPlanRow", "sealed-unit-v1", "unit_ref=exact1 covered_duty_refs=1..N sentence_job_refs=1..N clause_plan_refs=1..N", ("ORDERED_PLAN_CONCATENATION",), "SEALED_UNIT_PROJECTOR"),
     ("RankableNormalizedMember", "rank-member-v1", "candidate_id=exact1 projection_ref=exact1 composition_signature=exact1 sealed_plan=exact1 clause_frame_rows_by_unit=2..9 realized_surface_binding_rows_by_unit=2..9 normal_form_version=exact1 normal_form_applied=exact_true correctable_defect_rows=exact0 discourse_preference_profile=exact1 canonical_normalized_bytes_sha256=exact1", ("NO_SHARED_VARIANT_OR_REALIZED_UNIT",), "RANKABLE_MEMBER_PROJECTOR"),
-    ("ArtifactCompositionCandidate", "candidate-v1", "candidate_id=exact1 projection_ref=exact1 composition_signature=exact1 shared_variant_id=exact1 sealed_plan=exact1 sentence_units=2..9 normal_form_version=exact1 normal_form_applied=exact_true correctable_defect_rows=exact0 discourse_preference_profile=exact1", ("EMITTED_EXACT1_TO_2",), "EMITTED_CANDIDATE_PROJECTOR"),
+    ("ArtifactCompositionCandidate", "candidate-v1", "candidate_id=exact1 projection_ref=exact1 composition_signature=exact1 rank=exact1 shared_variant_id=exact1 sealed_plan=exact1 sentence_units=2..9 normal_form_version=exact1 normal_form_applied=exact_true correctable_defect_rows=exact0 discourse_preference_profile=exact1 japanese_local_preference_profile=exact1", ("EMITTED_EXACT1_TO_2", "SELECTED_RANK1_PRIMARY_VARIANT"), "EMITTED_CANDIDATE_PROJECTOR"),
     ("DiscoursePreferenceProfile", "profile-v1", "information_flow_fit=exact1 concrete_before_abstract_fit=exact1 sentence_load_fit=exact1 topic_transition_fit=exact1 referent_continuity_fit=exact1 relation_realization_fit=exact1 subjective_sequence_fit=exact1 terminal_fit=exact1 profile_evidence_rows=8..N", ("EXACT8_TOTAL_REDUCER",), "PROFILE_PROJECTOR"),
     ("ProfileEvidenceRow", "profile-v1", "profile_evidence_ref=exact1 profile_field=exact1 rule_kind=exact1 evidence_owner_refs=1..N preferred_form_ref=exact1 observed_form_ref=exact1 result=exact1", ("FIELD_RULE_EXACT_PAIR",), "PROFILE_EVIDENCE_PROJECTOR"),
     ("GrammaticalShapeKey", "grammar-v1", "semantic_clause_kind=exact1 sentence_job=exact1 required_argument_roles=1..N grammatical_role_assignment_rule=exact1 predicate_valency=exact1 admitted_relation_operator=exact1 scalar_shape_rows=1..N syntactic_orientation=exact1", ("NO_RAW_TEXT_OR_CASE_ID",), "GRAMMATICAL_SHAPE_PROJECTOR"),
     ("SurfaceDerivation", "response-v2", "derivation_kind=exact1 source_or_claim_refs=0..N emlis_owner_ref=0..1 relation_or_clause_plan_refs=0..N qualifier_refs=0..N response_object_expression_ref=0..1 antecedent_unit_ref=0..1 participant_role_ref=0..1 evidence_refs=0..N rule_ref=exact1 input_scalar_ranges=0..N", ("EXACT8_KIND_OWNER_UNION",), "SURFACE_DERIVATION_PROJECTOR"),
     ("RealizedSurfaceBindingV2", "response-v2", "unit_ref=exact1 clause_plan_ref=exact1 binding_kind=exact1 source_semantic_refs=0..N subjective_claim_refs=0..N emlis_owner_ref=0..1 relation_or_clause_plan_refs=0..N qualifier_refs=0..N scalar_surface_coverage_keys=0..N response_object_expression_ref=0..1 participant_role_ref=0..1 structural_rule_ref=0..1 clause_slot_ref=exact1 surface_scalar_start=exact1 surface_scalar_end=exact1 surface_span_sha256=exact1 surface_derivation=exact1", ("EXACT8_BINDING_OWNER_UNION", "TEXT_SCALAR_EXACT_COVER"), "SURFACE_BINDING_PROJECTOR"),
     ("EmlisStage1PositiveTraceExtensionV2", "trace-v2", "schema_version=exact1 claim_domain=exact1 owner_ref=exact1 contribution_refs=0..N subjective_claim_refs=0..N basis_trace_refs=0..N interpretation_candidate_refs=0..N basis_observation_contribution_refs=0..N covered_duty_refs=1..N sentence_job_refs=1..N source_reception_act_refs=0..N value_principle_refs=0..N speaker_owner=0..1 user_fact_effect=exact0 composition_variant_id=exact1 composition_candidate_ref=exact1 composition_layout_ref=exact1 selected_stage1_artifact_ref=exact1", ("VISIBLE_UNIT_TRACE_EXACT_COPY",), "POSITIVE_TRACE_PROJECTOR"),
+    ("SelectedMeaningVisibleCausalTraceRow", "visible-causal-trace-v1", "required_difference_ref=exact1 selected_reading_ref=exact1 configuration_ref=exact1 configuration_component_refs=1..N source_qualifier_refs=1..N invariant_codes=1..N layer1_contribution_refs=1..N", ("REQUIRED_DIFFERENCE_TO_ACTUAL_LAYER1",), "TAGGED_PROJECTION_TRACE_PROJECTOR"),
+    ("LimitedMeaningVisibleCausalTraceRow", "visible-causal-trace-v1", "limited_outcome_ref=exact1 source_object_ref=exact1 layer1_contribution_refs=1..N", ("NO_FAKE_SELECTED_READING",), "TAGGED_PROJECTION_TRACE_PROJECTOR"),
+    ("ReceptionVisibleCausalTraceRow", "visible-causal-trace-v1", "branch=exact1 meaning_outcome_ref=exact1 reading_consequence_ref=0..1 reception_record_ref=exact1 projected_claim_ref=exact1 layer1_contribution_refs=1..N response_object_refs=1..N projected_response_object_refs=1..N preserved_difference_refs=0..N", ("MEANING_AND_RECEPTION_TO_ACTUAL_LAYER2",), "TAGGED_PROJECTION_TRACE_PROJECTOR"),
+    ("SelectedReadingProjectionInputs", "tagged-projection-input-v1", "common=exact1 selected_reading=exact1 reading_consequence_records=exact1 sealed_reading_records=exact1 reception_proposition_records=1..4 reception_set_records=exact1", ("NORMAL_BRANCH_ONLY", "CARRIED_RECORD_OBJECTS_ONLY"), "TAGGED_PROJECTION_DISPATCH"),
+    ("LimitedProjectionInputs", "tagged-projection-input-v1", "common=exact1 limited_outcome=exact1 bounded_reception_records=exact1 subjective_proposition_records=exact1", ("LIMITED_BRANCH_ONLY", "SELECTED_READING_FIELDS_EXACT0"), "TAGGED_PROJECTION_DISPATCH"),
 )
 
 LANGUAGE_CORE_CONTENT_DERIVATION_ROWS = (
     ("AFFECT", "AFFECTIVE_RESPONSE", "FEEL_TOWARD", "EMLIS_FEELING"),
+    ("APPRAISAL:ATTENTION", "ATTENTION", "ATTEND_TO", "EMLIS_APPRAISAL"),
     ("APPRAISAL", "PERSONAL_APPRAISAL", "APPRAISE_AS_MATERIAL", "EMLIS_APPRAISAL"),
     ("MATERIAL_VALUE", "VALUE_POSITION", "PROTECT_VALUE_BOUNDARY", "EMLIS_VALUE_POSITION"),
     ("RELATIONAL_POSITION:STANCE", "RELATIONAL_STANCE", "TAKE_RELATIONAL_STANCE", "EMLIS_RELATIONAL_INTENTION"),
@@ -11907,7 +13365,7 @@ LANGUAGE_CORE_CONCRETE_BINDING_DESCRIPTORS = (
     ("ComposedSentenceUnit", ("unit_ref", "layer", "duty_refs", "sentence_job_refs", "basis_anchor_refs", "clause_plan_refs", "text", "surface_text_sha256", "clause_frames", "realized_semantic_bindings", "surface_derivations", "frame_refs", "atomic_head_refs", "lexical_family_refs", "source_group_refs", "reference_state_refs", "link_plan_refs", "morphology_plan_refs", "clause_ir_refs")),
     ("V2ClauseReferenceStateBundle", ("state_ref", "subject_state", "object_state", "response_object_expression")),
     ("V2ReferenceSurfaceSpec", ("surface_ref", "reference_rule_ref", "atomic_surface", "source_cardinality", "licensed_frame_refs")),
-    ("Stage1CompositionResult", ("language_core_identity", "discourse_arc", "internal_candidate_count", "ranked_candidates", "selected_candidate")),
+    ("Stage1CompositionResult", ("language_core_identity", "discourse_arc", "internal_candidate_count", "ranked_candidates", "selected_candidate", "validated_visible_causal_trace_seal_ref")),
     ("SourceScalarMorphologyAssetSpec", ("morphology_asset_id", "predicate_kind", "required_attribute_codes", "terminal_rewrites", "preserved_finite_terminals")),
 )
 
@@ -11929,11 +13387,11 @@ def _contract_manifest() -> tuple[Any, ...]:
         _logical_contract_descriptor(*row)
         for row in _LOGICAL_CONTRACT_FIELD_SPECS
     )
-    if len(descriptors) != 64 or len({row[0][1] for row in descriptors}) != 64:
+    if len(descriptors) != 69 or len({row[0][1] for row in descriptors}) != 69:
         raise Stage1CompositionError("LANGUAGE_CORE_CONTRACT_DESCRIPTOR_STOP")
     return (
         ("schema_version", _CONTRACT_MANIFEST_SCHEMA_VERSION),
-        ("logical_contract_count", 64),
+        ("logical_contract_count", 69),
         ("logical_contract_descriptors", descriptors),
         ("content_kind_derivation_rows", LANGUAGE_CORE_CONTENT_DERIVATION_ROWS),
         ("concrete_runtime_binding_descriptors", LANGUAGE_CORE_CONCRETE_BINDING_DESCRIPTORS),
@@ -11994,6 +13452,7 @@ LANGUAGE_CORE_CLOSED_ENUM_MANIFEST = (
     ("RelationalPositionKind", ("STANCE", "BOUNDED_COUNTERPOSITION")),
     ("RelationalCommitment", ("AFFIRM_SOURCE_BOUND_DIRECTION", "STAY_WITH", "HOLD_OPEN", "WELCOME_BOUNDED_CHANGE", "PROTECT_AGENCY", "DECLINE_PROMOTION")),
     ("RelationalClosure", ("NONE", "BOUNDED", "OPEN")),
+    ("SubjectiveProjectionBranch", ("NORMAL", "LIMITED")),
 )
 
 
@@ -12139,7 +13598,8 @@ LANGUAGE_CORE_REF_PREIMAGE_MANIFEST = (
     ("unit_ref", ("CMEE_STAGE1_SEALED_UNIT_PLAN_ROW_ID_VERSION", "canonical_covered_duty_refs", "ordered_unique_sentence_job_refs", "ordered_clause_plan_refs")),
     ("composition_layout_id", ("CMEE_STAGE1_COMPOSITION_LAYOUT_ID_VERSION", "projection_ref", "ordered_subjective_claim_ids", "canonical_full_stage1_discourse_arc", "canonical_layout_preference_seed", "canonical_full_duty_refs", "canonical_required_duty_refs", "canonical_suppressed_duty_rows", "canonical_suppressed_claim_rows", "ordered_full_reference_state_rows", "ordered_sealed_unit_plan_rows", "ordered_full_response_object_expression_rows")),
     ("candidate_id", ("CMEE_STAGE1_ARTIFACT_COMPOSITION_CANDIDATE_ID_VERSION", "projection_ref", "composition_layout_id", "canonical_composition_signature", "CMEE_STAGE1_NORMAL_FORM_VERSION", "sha256_canonical_normalized_bytes", "canonical_discourse_preference_profile")),
-    ("selected_stage1_artifact_ref", ("CMEE_STAGE1_SELECTED_ARTIFACT_ID_VERSION", "stage1_projection_artifact_ref", "candidate_id", "shared_variant_id", "ordered_realized_sentence_unit_ids", "CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION")),
+    ("selected_stage1_artifact_ref", ("CMEE_STAGE1_SELECTED_ARTIFACT_ID_VERSION", "stage1_projection_artifact_ref", "projection_seal_ref", "candidate_id", "shared_variant_id", "ordered_realized_sentence_unit_ids", "validated_visible_causal_trace_seal_ref", "CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION")),
+    ("tagged_projection_ref", ("CMEE_STAGE1_TAGGED_SUBJECTIVE_PROJECTION_REF_VERSION", "projection_branch", "projection_seal_ref", "canonical_full_meaning_visible_causal_trace_rows", "canonical_full_reception_visible_causal_trace_rows")),
 )
 
 LANGUAGE_CORE_GENERATION_ORDER_RULES = (

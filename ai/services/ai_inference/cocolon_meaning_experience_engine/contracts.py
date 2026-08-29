@@ -36,6 +36,12 @@ CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2 = (
     "cocolon.cmee.v1a.emlis_stage1_response.v2"
 )
 CMEE_STAGE1_RESPONSE_SCHEMA_VERSION = CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+CMEE_STAGE1_MEANING_BOUND_SUBJECTIVE_PROJECTION_SCHEMA_VERSION = (
+    "cocolon.cmee.v1a.emlis_meaning_bound_subjective_projection.v1"
+)
+CMEE_STAGE1_TAGGED_SUBJECTIVE_PROJECTION_REF_VERSION = (
+    "cocolon.cmee.emlis.tagged_subjective_projection.v1"
+)
 CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V1 = (
     "cocolon.cmee.v1a.emlis_stage1_positive_trace_extension.v1"
 )
@@ -170,6 +176,14 @@ CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY = (
     (
         "CMEE_STAGE1_EMLIS_OWNER_REF",
         "owner:emlis@cocolon.cmee.v1a.emlis_stage1_response.v2",
+    ),
+    (
+        "CMEE_STAGE1_MEANING_BOUND_SUBJECTIVE_PROJECTION_SCHEMA_VERSION",
+        "cocolon.cmee.v1a.emlis_meaning_bound_subjective_projection.v1",
+    ),
+    (
+        "CMEE_STAGE1_TAGGED_SUBJECTIVE_PROJECTION_REF_VERSION",
+        "cocolon.cmee.emlis.tagged_subjective_projection.v1",
     ),
 )
 CMEE_STAGE1_ANTI_TEMPLATE_FORBIDDEN_REGISTRY_FIELDS = (
@@ -705,6 +719,13 @@ class SubjectiveSpecificity(str, Enum):
     RELATION_BOUND_MULTI_ROLE = "RELATION_BOUND_MULTI_ROLE"
     MULTI_ROLE = "MULTI_ROLE"
     SINGLE_ROLE = "SINGLE_ROLE"
+
+
+class SubjectiveProjectionBranch(str, Enum):
+    """Closed post-selection projection branch; LIMITED never aliases NORMAL."""
+
+    NORMAL = "NORMAL"
+    LIMITED = "LIMITED"
 
 
 class SubjectiveFacetSuppressionReason(str, Enum):
@@ -1850,6 +1871,49 @@ class BoundedLimitedReception:
 
 
 @dataclass(frozen=True, slots=True)
+class SelectedMeaningVisibleCausalTraceRow:
+    """Required-difference lineage retained for a NORMAL visible Layer 1."""
+
+    required_difference_ref: str
+    selected_reading_ref: str
+    configuration_ref: str
+    configuration_component_refs: Tuple[str, ...]
+    source_qualifier_refs: Tuple[str, ...]
+    invariant_codes: Tuple[DifferenceInvariantCode, ...]
+    layer1_contribution_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class LimitedMeaningVisibleCausalTraceRow:
+    """Source-object lineage retained without inventing a selected reading."""
+
+    limited_outcome_ref: str
+    source_object_ref: str
+    layer1_contribution_refs: Tuple[str, ...]
+
+
+MeaningVisibleCausalTraceRow = (
+    SelectedMeaningVisibleCausalTraceRow
+    | LimitedMeaningVisibleCausalTraceRow
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ReceptionVisibleCausalTraceRow:
+    """Meaning/Reception-to-private-claim lineage required by Layer 2."""
+
+    branch: SubjectiveProjectionBranch
+    meaning_outcome_ref: str
+    reading_consequence_ref: Optional[str]
+    reception_record_ref: str
+    projected_claim_ref: str
+    layer1_contribution_refs: Tuple[str, ...]
+    response_object_refs: Tuple[str, ...]
+    projected_response_object_refs: Tuple[str, ...]
+    preserved_difference_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class SubjectivePropositionV2:
     """Final request-local proposition contract, registered but not wired."""
 
@@ -2185,6 +2249,15 @@ class EmlisStage1Projection:
     emlis_value_policy_ref: str
     emlis_microgrammar_policy_ref: str
     projection_preimage_ref: str = ""
+    projection_seal_ref: str = ""
+    projection_branch: Optional[SubjectiveProjectionBranch] = None
+    tagged_projection_ref: str = ""
+    meaning_visible_causal_trace_rows: Tuple[
+        MeaningVisibleCausalTraceRow, ...
+    ] = ()
+    reception_visible_causal_trace_rows: Tuple[
+        ReceptionVisibleCausalTraceRow, ...
+    ] = ()
     composition_policy_ref: str = ""
     low_level_grammar_policy_ref: str = ""
     subjective_responsibility_rows: Tuple[
@@ -2575,6 +2648,19 @@ _STAGE1_TUPLE_FIELDS = {
         "foreground_source_object_refs",
         "retained_qualifier_refs",
     ),
+    SelectedMeaningVisibleCausalTraceRow: (
+        "configuration_component_refs",
+        "source_qualifier_refs",
+        "invariant_codes",
+        "layer1_contribution_refs",
+    ),
+    LimitedMeaningVisibleCausalTraceRow: ("layer1_contribution_refs",),
+    ReceptionVisibleCausalTraceRow: (
+        "layer1_contribution_refs",
+        "response_object_refs",
+        "projected_response_object_refs",
+        "preserved_difference_refs",
+    ),
     SubjectivePropositionV2: (
         "target_contribution_refs",
         "primary_target_refs",
@@ -2607,6 +2693,8 @@ _STAGE1_TUPLE_FIELDS = {
         "ordered_observation_refs",
         "ordered_subjective_refs",
         "retained_reception_act_ids",
+        "meaning_visible_causal_trace_rows",
+        "reception_visible_causal_trace_rows",
         "subjective_responsibility_rows",
         "subjective_opportunity_rows",
         "subjective_facet_suppression_rows",
@@ -2699,7 +2787,7 @@ def validate_stage1_final_logical_id_registry() -> None:
     rows = CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY
     if (
         type(rows) is not tuple
-        or len(rows) != 28
+        or len(rows) != 30
         or any(
             type(row) is not tuple
             or len(row) != 2
@@ -3274,7 +3362,20 @@ def validate_subjective_proposition_v2(
     final_schema = _stage1_final_logical_identity(
         "CMEE_STAGE1_SUBJECTIVE_PROPOSITION_SCHEMA_VERSION"
     )
-    if proposition.schema_version != final_schema:
+    meaning_bound_projection_schema = _stage1_final_logical_identity(
+        "CMEE_STAGE1_MEANING_BOUND_SUBJECTIVE_PROJECTION_SCHEMA_VERSION"
+    )
+    if (
+        meaning_bound_projection_schema
+        != CMEE_STAGE1_MEANING_BOUND_SUBJECTIVE_PROJECTION_SCHEMA_VERSION
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_final_logical_id_registry_invalid"
+        )
+    if proposition.schema_version not in {
+        final_schema,
+        meaning_bound_projection_schema,
+    }:
         raise CMEEStage1ContractError("stage1_subjective_v2_schema_invalid")
     contents = (
         proposition.affect_content,
@@ -3322,6 +3423,21 @@ def validate_subjective_proposition_v2(
             SubjectiveAssertionModality.EMLIS_VALUE_POSITION,
         ),
     }.get(proposition.content_kind)
+    if (
+        proposition.schema_version == meaning_bound_projection_schema
+        and proposition.content_kind is SubjectiveContentKind.APPRAISAL
+        and proposition.subjective_mode is SubjectiveMode.ATTENTION
+    ):
+        derived = (
+            SubjectiveMode.ATTENTION,
+            SubjectiveOperator.ATTEND_TO,
+            SubjectiveAssertionModality.EMLIS_APPRAISAL,
+        )
+    elif (
+        proposition.content_kind is SubjectiveContentKind.APPRAISAL
+        and proposition.subjective_mode is SubjectiveMode.ATTENTION
+    ):
+        derived = None
     if proposition.content_kind is SubjectiveContentKind.RELATIONAL_POSITION:
         derived = (
             (
@@ -4111,6 +4227,15 @@ def _stage1_identity_material(value: object) -> tuple[str, Mapping[str, Any]]:
             material = {
                 **material,
                 "projection_preimage_ref": value.projection_preimage_ref,
+                "projection_seal_ref": value.projection_seal_ref,
+                "projection_branch": value.projection_branch,
+                "tagged_projection_ref": value.tagged_projection_ref,
+                "meaning_visible_causal_trace_rows": (
+                    value.meaning_visible_causal_trace_rows
+                ),
+                "reception_visible_causal_trace_rows": (
+                    value.reception_visible_causal_trace_rows
+                ),
                 "subjective_claims": value.subjective_claims,
                 "composition_policy_ref": value.composition_policy_ref,
                 "low_level_grammar_policy_ref": (
@@ -14133,6 +14258,65 @@ def project_stage1_subjective_projection_seal_ref(
     )
 
 
+def project_stage1_tagged_projection_ref(
+    *,
+    projection_branch: SubjectiveProjectionBranch,
+    projection_seal_ref: str,
+    meaning_visible_causal_trace_rows: Sequence[
+        MeaningVisibleCausalTraceRow
+    ],
+    reception_visible_causal_trace_rows: Sequence[
+        ReceptionVisibleCausalTraceRow
+    ],
+) -> str:
+    """Bind the exhaustive branch and both causal spines to the final seal."""
+
+    meaning_rows = tuple(meaning_visible_causal_trace_rows)
+    reception_rows = tuple(reception_visible_causal_trace_rows)
+    if (
+        type(projection_branch) is not SubjectiveProjectionBranch
+        or not _stage1_identity_string(projection_seal_ref)
+        or not meaning_rows
+        or not reception_rows
+        or any(
+            type(row)
+            not in {
+                SelectedMeaningVisibleCausalTraceRow,
+                LimitedMeaningVisibleCausalTraceRow,
+            }
+            for row in meaning_rows
+        )
+        or any(
+            type(row) is not ReceptionVisibleCausalTraceRow
+            for row in reception_rows
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_tagged_projection_identity_input_invalid"
+        )
+    digest = hashlib.sha256(
+        stage1_canonical_json_bytes(
+            (
+                projection_branch,
+                projection_seal_ref,
+                meaning_rows,
+                reception_rows,
+            )
+        )
+    ).hexdigest()
+    version = _stage1_final_logical_identity(
+        "CMEE_STAGE1_TAGGED_SUBJECTIVE_PROJECTION_REF_VERSION"
+    )
+    if version != CMEE_STAGE1_TAGGED_SUBJECTIVE_PROJECTION_REF_VERSION:
+        raise CMEEStage1ContractError(
+            "stage1_final_logical_id_registry_invalid"
+        )
+    return (
+        f"tagged-subjective-projection:{digest}"
+        f"@{version}"
+    )
+
+
 def validate_stage1_post_selection_reception_records(
     *,
     input_specific_meaning_structure: InputSpecificMeaningStructure,
@@ -16134,6 +16318,236 @@ def _stage1_v2_content_binding_refs(content: object) -> tuple[str, ...]:
     )
 
 
+def _validate_stage1_projection_causal_trace(
+    projection: EmlisStage1Projection,
+) -> None:
+    """Validate the private NORMAL/LIMITED trace carried by final identity."""
+
+    branch = projection.projection_branch
+    meaning_rows = projection.meaning_visible_causal_trace_rows
+    reception_rows = projection.reception_visible_causal_trace_rows
+    contribution_by_ref = {
+        row.contribution_id: row
+        for row in projection.observation_contributions
+    }
+    contribution_refs = set(contribution_by_ref)
+    claim_by_ref = {
+        row.subjective_claim_id: row for row in projection.subjective_claims
+    }
+    claim_refs = set(claim_by_ref)
+    if (
+        type(branch) is not SubjectiveProjectionBranch
+        or not re.fullmatch(
+            r"stage1-subjective-projection-seal:[0-9a-f]{64}"
+            r"@cocolon\.emlis\.stage1\.subjective_projection_seal\.v1",
+            projection.projection_seal_ref,
+        )
+        or projection.tagged_projection_ref
+        != project_stage1_tagged_projection_ref(
+            projection_branch=branch,
+            projection_seal_ref=projection.projection_seal_ref,
+            meaning_visible_causal_trace_rows=meaning_rows,
+            reception_visible_causal_trace_rows=reception_rows,
+        )
+        or tuple(row.projected_claim_ref for row in reception_rows)
+        != projection.ordered_subjective_refs
+        or set(row.projected_claim_ref for row in reception_rows) != claim_refs
+        or len(reception_rows) != len(claim_refs)
+        or any(
+            type(row.branch) is not SubjectiveProjectionBranch
+            or row.branch is not branch
+            or not _stage1_identity_string(row.meaning_outcome_ref)
+            or not _stage1_identity_string(row.reception_record_ref)
+            or not row.layer1_contribution_refs
+            or not set(row.layer1_contribution_refs).issubset(
+                contribution_refs
+            )
+            or not row.response_object_refs
+            or len(row.response_object_refs)
+            != len(set(row.response_object_refs))
+            or not row.projected_response_object_refs
+            or len(row.projected_response_object_refs)
+            != len(set(row.projected_response_object_refs))
+            or not set(row.projected_response_object_refs).issubset(
+                set(row.response_object_refs)
+            )
+            or len(row.preserved_difference_refs)
+            != len(set(row.preserved_difference_refs))
+            for row in reception_rows
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        )
+    for row in reception_rows:
+        claim = claim_by_ref.get(row.projected_claim_ref)
+        if (
+            claim is None
+            or row.layer1_contribution_refs
+            != claim.basis_observation_contribution_refs
+            or row.projected_response_object_refs
+            != claim.asserted_subjective_proposition.response_object_refs
+        ):
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+
+    if branch is SubjectiveProjectionBranch.NORMAL:
+        meaning_difference_refs = tuple(
+            getattr(row, "required_difference_ref", "")
+            for row in meaning_rows
+        )
+        configuration_refs = {
+            getattr(row, "configuration_ref", "") for row in meaning_rows
+        }
+        if (
+            any(
+                type(row) is not SelectedMeaningVisibleCausalTraceRow
+                for row in meaning_rows
+            )
+            or not meaning_rows
+            or len(
+                {row.required_difference_ref for row in meaning_rows}
+            )
+            != len(meaning_rows)
+            or len({row.selected_reading_ref for row in meaning_rows}) != 1
+            or any(
+                not _stage1_identity_string(row.required_difference_ref)
+                or not _stage1_identity_string(row.selected_reading_ref)
+                or not _stage1_identity_string(row.configuration_ref)
+                or not row.configuration_component_refs
+                or len(row.configuration_component_refs)
+                != len(set(row.configuration_component_refs))
+                or any(
+                    not _stage1_identity_string(ref)
+                    for ref in row.configuration_component_refs
+                )
+                or len(row.source_qualifier_refs)
+                != len(set(row.source_qualifier_refs))
+                or any(
+                    not _stage1_identity_string(ref)
+                    for ref in row.source_qualifier_refs
+                )
+                or any(
+                    type(code) is not DifferenceInvariantCode
+                    for code in row.invariant_codes
+                )
+                or not row.invariant_codes
+                or not row.layer1_contribution_refs
+                or not set(row.layer1_contribution_refs).issubset(
+                    contribution_refs
+                )
+                for row in meaning_rows
+            )
+            or any(
+                row.reading_consequence_ref is None
+                or not row.preserved_difference_refs
+                or set(row.preserved_difference_refs)
+                != set(meaning_difference_refs)
+                or row.meaning_outcome_ref
+                != meaning_rows[0].selected_reading_ref
+                or set(row.response_object_refs)
+                != (
+                    set(row.projected_response_object_refs)
+                    | configuration_refs
+                )
+                for row in reception_rows
+            )
+        ):
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        basis_by_ref = {
+            row.binding_ref: row
+            for row in projection.subjective_basis_binding_rows
+        }
+        for row in meaning_rows:
+            relevant_basis_rows = tuple(
+                basis
+                for basis in basis_by_ref.values()
+                if basis.contribution_ref in set(
+                    row.layer1_contribution_refs
+                )
+            )
+            required_qualifier_codes = {
+                code
+                for qualifier in projection.source_qualifier_binding_rows
+                if qualifier.basis_binding_ref in basis_by_ref
+                and basis_by_ref[
+                    qualifier.basis_binding_ref
+                ].contribution_ref
+                in set(row.layer1_contribution_refs)
+                for code in qualifier.canonical_qualifier_codes
+            }
+            if (
+                not relevant_basis_rows
+                or not set(row.configuration_component_refs).intersection(
+                    basis.semantic_ref for basis in relevant_basis_rows
+                )
+                or not required_qualifier_codes
+                or not required_qualifier_codes.issubset(
+                    set(row.source_qualifier_refs)
+                )
+            ):
+                raise CMEEStage1ContractError(
+                    "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                )
+    elif branch is SubjectiveProjectionBranch.LIMITED:
+        meaning_source_object_refs = tuple(
+            getattr(row, "source_object_ref", "") for row in meaning_rows
+        )
+        if (
+            any(
+                type(row) is not LimitedMeaningVisibleCausalTraceRow
+                for row in meaning_rows
+            )
+            or not meaning_rows
+            or len(reception_rows) != 1
+            or len({row.source_object_ref for row in meaning_rows})
+            != len(meaning_rows)
+            or len({row.limited_outcome_ref for row in meaning_rows}) != 1
+            or any(
+                not _stage1_identity_string(row.source_object_ref)
+                or not row.layer1_contribution_refs
+                or not set(row.layer1_contribution_refs).issubset(
+                    contribution_refs
+                )
+                or any(
+                    row.source_object_ref
+                    not in {
+                        *contribution_by_ref[
+                            contribution_ref
+                        ].semantic_refs,
+                        *contribution_by_ref[
+                            contribution_ref
+                        ].relation_basis_refs,
+                        *(
+                            binding.semantic_ref
+                            for binding in contribution_by_ref[
+                                contribution_ref
+                            ].argument_bindings
+                        ),
+                    }
+                    for contribution_ref in row.layer1_contribution_refs
+                )
+                for row in meaning_rows
+            )
+            or reception_rows[0].reading_consequence_ref is not None
+            or reception_rows[0].preserved_difference_refs
+            or set(reception_rows[0].response_object_refs)
+            != set(meaning_source_object_refs)
+            or reception_rows[0].meaning_outcome_ref
+            != meaning_rows[0].limited_outcome_ref
+        ):
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+    else:
+        raise CMEEStage1ContractError(
+            "stage1_projection_branch_not_exhaustive"
+        )
+
+
 def _validate_stage1_projection_v2_subjective_spine(
     projection: EmlisStage1Projection,
     *,
@@ -16165,6 +16579,7 @@ def _validate_stage1_projection_v2_subjective_spine(
         raise CMEEStage1ContractError(
             "stage1_projection_v2_preimage_invalid"
         )
+    _validate_stage1_projection_causal_trace(projection)
 
     responsibilities = projection.subjective_responsibility_rows
     opportunities = projection.subjective_opportunity_rows
@@ -16807,6 +17222,11 @@ def validate_stage1_projection(
         projection.emlis_microgrammar_policy_ref
         != CMEE_STAGE1_MICROGRAMMAR_POLICY_REF
         or projection.projection_preimage_ref
+        or projection.projection_seal_ref
+        or projection.projection_branch is not None
+        or projection.tagged_projection_ref
+        or projection.meaning_visible_causal_trace_rows
+        or projection.reception_visible_causal_trace_rows
         or projection.composition_policy_ref
         or projection.low_level_grammar_policy_ref
         or projection.subjective_responsibility_rows
@@ -18605,6 +19025,8 @@ __all__ = [
     "CMEE_STAGE1_EMLIS_OWNER_REF_V2",
     "CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY",
     "CMEE_STAGE1_IDENTITY_ALGORITHM",
+    "CMEE_STAGE1_MEANING_BOUND_SUBJECTIVE_PROJECTION_SCHEMA_VERSION",
+    "CMEE_STAGE1_TAGGED_SUBJECTIVE_PROJECTION_REF_VERSION",
     "CMEE_STAGE1_RESPONSE_SCHEMA_VERSION",
     "CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1",
     "CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2",
@@ -18691,6 +19113,7 @@ __all__ = [
     "MaterialValueContent",
     "LimitedMeaningOutcome",
     "LimitedMeaningOutcomeState",
+    "LimitedMeaningVisibleCausalTraceRow",
     "MutationApplicationSpec",
     "MUTATION_APPLICATION_SPEC",
     "ObservationContributionKind",
@@ -18708,6 +19131,7 @@ __all__ = [
     "ReadingConsequence",
     "ReceptionContributionKind",
     "ReceptionFunction",
+    "ReceptionVisibleCausalTraceRow",
     "PredicateMorphologyPlan",
     "PredicateSenseFrameLicense",
     "PredicateSenseSpec",
@@ -18732,6 +19156,7 @@ __all__ = [
     "SourceOwnerDisposition",
     "SourceOwnerResolution",
     "SelectedEmlisProvisionalReading",
+    "SelectedMeaningVisibleCausalTraceRow",
     "SealedEmlisProvisionalReading",
     "SemanticOperator",
     "SourceEnvelope",
@@ -18772,6 +19197,7 @@ __all__ = [
     "ResponseConsequenceRequirementCode",
     "RelationalStance",
     "SubjectiveSpecificity",
+    "SubjectiveProjectionBranch",
     "Stage1V2UnitSeal",
     "SurfaceDerivation",
     "SurfaceDerivationKind",
@@ -18807,6 +19233,7 @@ __all__ = [
     "project_stage1_policy_basis_binding_ref",
     "project_stage1_projection_preimage_ref",
     "project_stage1_subjective_projection_seal_ref",
+    "project_stage1_tagged_projection_ref",
     "project_stage1_source_qualifier_binding_ref",
     "project_stage1_subjective_basis_binding_ref",
     "project_stage1_subjective_opportunity_key",

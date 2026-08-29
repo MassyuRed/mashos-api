@@ -82,6 +82,7 @@ from .contracts import (
     GenerationRequest,
     GroundedMeaningGraph,
     InputSpecificMeaningStructure,
+    LimitedMeaningVisibleCausalTraceRow,
     LimitedMeaningOutcome,
     MeaningBoundReceptionProposition,
     MeaningBoundReceptionSet,
@@ -104,6 +105,8 @@ from .contracts import (
     RelationalPositionKind,
     SourceOwnerDisposition,
     SelectedEmlisProvisionalReading,
+    SelectedMeaningVisibleCausalTraceRow,
+    ReceptionVisibleCausalTraceRow,
     Stage1V2UnitSeal,
     SurfaceDerivationKind,
     SemanticOperator,
@@ -117,6 +120,7 @@ from .contracts import (
     SubjectiveOpportunityRow,
     SubjectiveProposition,
     SubjectivePropositionV2,
+    SubjectiveProjectionBranch,
     SubjectiveResponsibilityKind,
     SubjectiveResponsibilityRow,
     SubjectiveSpecificity,
@@ -128,6 +132,7 @@ from .contracts import (
     limited_meaning_outcome_id,
     meaning_bound_reception_id,
     project_stage1_subjective_projection_seal_ref,
+    project_stage1_tagged_projection_ref,
     project_stage1_projection_preimage_ref,
     project_premeaning_source_qualifier_rows,
     project_premeaning_source_relation_rows,
@@ -4748,6 +4753,919 @@ def _final_subjective_depth(claim_count: int) -> SubjectiveDepthClass:
     raise CMEEStage1ContractError("stage1_subjective_depth_unrealizable")
 
 
+def _stage1_projected_claim_rows(value: object) -> tuple[object, ...]:
+    """Read the one claim tuple shared by the plan and final projection."""
+
+    rows = getattr(value, "subjective_claim_rows", None)
+    if rows is None:
+        rows = getattr(value, "subjective_claims", None)
+    if type(rows) is not tuple or not 1 <= len(rows) <= 4:
+        raise CMEEStage1ContractError(
+            "stage1_final_meaning_plan_noncanonical"
+        )
+    return rows
+
+
+def _stage1_projected_content(
+    proposition: SubjectivePropositionV2,
+) -> object:
+    content = {
+        SubjectiveContentKind.AFFECT: proposition.affect_content,
+        SubjectiveContentKind.APPRAISAL: proposition.appraisal_content,
+        SubjectiveContentKind.MATERIAL_VALUE: (
+            proposition.material_value_content
+        ),
+        SubjectiveContentKind.RELATIONAL_POSITION: (
+            proposition.relational_position
+        ),
+    }.get(proposition.content_kind)
+    if content is None:
+        raise CMEEStage1ContractError(
+            "stage1_final_meaning_plan_noncanonical"
+        )
+    return content
+
+
+def _validate_meaning_plan_vertical_binding(
+    phase_A: "Stage1SubjectivePlanningInputs",
+    meaning_plan: object,
+) -> None:
+    """Bind every projected claim to its exact sealed Phase-A source."""
+
+    from . import emlis_stage1_composition as composition
+
+    is_unsealed_plan = hasattr(meaning_plan, "subjective_claim_rows")
+    claims = _stage1_projected_claim_rows(meaning_plan)
+    claim_by_ref = {
+        getattr(row, "subjective_claim_id", ""): row for row in claims
+    }
+    responsibilities = getattr(
+        meaning_plan,
+        "subjective_responsibility_rows",
+        None,
+    )
+    opportunities = getattr(
+        meaning_plan,
+        "subjective_opportunity_rows",
+        None,
+    )
+    basis_rows = getattr(
+        meaning_plan,
+        "subjective_basis_binding_rows",
+        None,
+    )
+    qualifier_rows = getattr(
+        meaning_plan,
+        "source_qualifier_binding_rows",
+        None,
+    )
+    policy_basis_rows = getattr(
+        meaning_plan,
+        "policy_basis_binding_rows",
+        None,
+    )
+    policy_application_rows = getattr(
+        meaning_plan,
+        "policy_application_rows",
+        None,
+    )
+    if (
+        len(claim_by_ref) != len(claims)
+        or "" in claim_by_ref
+        or any(
+            type(rows) is not tuple
+            for rows in (
+                responsibilities,
+                opportunities,
+                basis_rows,
+                qualifier_rows,
+                policy_basis_rows,
+                policy_application_rows,
+            )
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_final_meaning_plan_noncanonical"
+        )
+    responsibility_by_ref = {
+        row.responsibility_ref: row for row in responsibilities
+    }
+    opportunity_by_key = {
+        row.opportunity_key: row for row in opportunities
+    }
+    if (
+        len(responsibility_by_ref) != len(responsibilities)
+        or len(opportunity_by_key) != len(opportunities)
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_final_meaning_plan_noncanonical"
+        )
+
+    try:
+        expected_basis, expected_qualifiers, expected_policy_basis = (
+            composition._projection_binding_rows(
+                composition._projection_common_authority(phase_A)
+            )
+        )
+    except composition.Stage1CompositionError:
+        raise CMEEStage1ContractError(
+            "stage1_final_meaning_plan_noncanonical"
+        ) from None
+    canonical_basis = tuple(
+        sorted(expected_basis, key=lambda row: row.binding_ref)
+    )
+    canonical_qualifiers = tuple(
+        sorted(
+            expected_qualifiers,
+            key=lambda row: row.source_qualifier_binding_ref,
+        )
+    )
+    canonical_policy_basis = tuple(
+        sorted(expected_policy_basis, key=lambda row: row.binding_ref)
+    )
+    if (
+        basis_rows != canonical_basis
+        or qualifier_rows != canonical_qualifiers
+        or policy_basis_rows != canonical_policy_basis
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_final_meaning_plan_noncanonical"
+        )
+
+    contribution_by_ref = {
+        row.contribution_id: row
+        for row in phase_A.observation_contribution_rows
+    }
+    reception_rows = meaning_plan.reception_visible_causal_trace_rows
+    if (
+        type(reception_rows) is not tuple
+        or tuple(row.projected_claim_ref for row in reception_rows)
+        != tuple(claim_by_ref)
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_final_meaning_plan_noncanonical"
+        )
+
+    expected_policy_applications: list[object] = []
+
+    def require_claim_spine(
+        *,
+        claim: object,
+        proposition: SubjectivePropositionV2,
+        responsibility_kind: SubjectiveResponsibilityKind,
+        contribution_refs: tuple[str, ...],
+        semantic_refs: tuple[str, ...],
+        act_refs: tuple[str, ...],
+        value_refs: tuple[str, ...],
+        specificity: SubjectiveSpecificity,
+        content: object,
+    ) -> None:
+        responsibility_ref = (
+            composition.project_stage1_subjective_responsibility_ref(
+                projection_preimage_ref=phase_A.projection_preimage_ref,
+                responsibility_kind=responsibility_kind,
+                owner_component_refs=contribution_refs,
+                retained_reception_act_refs=act_refs,
+            )
+        )
+        responsibility = responsibility_by_ref.get(responsibility_ref)
+        opportunity_key = composition.project_stage1_subjective_opportunity_key(
+            projection_preimage_ref=phase_A.projection_preimage_ref,
+            responsibility_refs=(responsibility_ref,),
+            content_kind=proposition.content_kind,
+            row_ref_free_discriminated_content=content,
+            specificity_key=specificity,
+        )
+        opportunity = opportunity_by_key.get(opportunity_key)
+        contributions = tuple(
+            contribution_by_ref[ref] for ref in contribution_refs
+        )
+        forbidden = stage1_subjective_forbidden_promotions(
+            contributions,
+            material_unknown_refs=phase_A.material_unknown_refs,
+        )
+        expected_claim_id = composition._projected_claim_identity(
+            proposition=proposition,
+            parent_duty_ref=phase_A.parent_plan.reception_duty_id,
+            responsibility_ref=responsibility_ref,
+            opportunity_key=opportunity_key,
+            contribution_refs=contribution_refs,
+            semantic_refs=semantic_refs,
+            act_refs=act_refs,
+            value_principle_refs=value_refs,
+            forbidden_promotions=forbidden,
+        )
+        if (
+            responsibility is None
+            or responsibility.responsibility_kind
+            is not responsibility_kind
+            or responsibility.owner_component_refs != contribution_refs
+            or responsibility.retained_reception_act_refs != act_refs
+            or opportunity is None
+            or opportunity.responsibility_refs != (responsibility_ref,)
+            or opportunity.content_kind is not proposition.content_kind
+            or opportunity.content != content
+            or opportunity.specificity_key is not specificity
+            or getattr(claim, "subjective_claim_id", None)
+            != expected_claim_id
+            or getattr(claim, "parent_duty_ref", None)
+            != phase_A.parent_plan.reception_duty_id
+            or getattr(claim, "speaker_owner", None)
+            != (
+                composition.CMEE_STAGE1_EMLIS_OWNER_REF
+                if is_unsealed_plan
+                else "EMLIS"
+            )
+            or getattr(claim, "claim_domain", None)
+            != "EMLIS_SUBJECTIVE_RESPONSE"
+            or getattr(claim, "subjective_responsibility_refs", None)
+            != (responsibility_ref,)
+            or getattr(
+                claim,
+                "selected_subjective_opportunity_key",
+                None,
+            )
+            != opportunity_key
+            or getattr(
+                claim,
+                "basis_observation_contribution_refs",
+                None,
+            )
+            != contribution_refs
+            or getattr(claim, "basis_semantic_refs", None) != semantic_refs
+            or getattr(claim, "source_reception_act_refs", None) != act_refs
+            or getattr(claim, "value_principle_refs", None) != value_refs
+            or getattr(claim, "user_fact_effect", None) != 0
+            or type(getattr(claim, "user_fact_effect", None)) is not int
+            or getattr(claim, "forbidden_promotions", None) != forbidden
+            or getattr(claim, "asserted_subjective_proposition", None)
+            is not proposition
+            or getattr(claim, "subjective_mode", proposition.subjective_mode)
+            is not proposition.subjective_mode
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_final_meaning_plan_noncanonical"
+            )
+
+    outcome = (
+        phase_A.input_specific_meaning_structure.meaning_decision_outcome
+    )
+    if type(outcome) is SelectedEmlisProvisionalReading:
+        sources = phase_A.meaning_bound_reception_proposition_records
+        if len(sources) != len(reception_rows) or len(sources) != len(claims):
+            raise CMEEStage1ContractError(
+                "stage1_final_meaning_plan_noncanonical"
+            )
+        for trace, source in zip(reception_rows, sources, strict=True):
+            claim = claim_by_ref.get(trace.projected_claim_ref)
+            retained = tuple(
+                row
+                for row in phase_A.retained_reception_act_rows
+                if row.reception_act == source.reception_function
+            )
+            if claim is None or len(retained) != 1:
+                raise CMEEStage1ContractError(
+                    "stage1_final_meaning_plan_noncanonical"
+                )
+            contribution_refs = retained[0].basis_contribution_refs
+            if (
+                trace.layer1_contribution_refs != contribution_refs
+                or any(
+                    ref not in contribution_by_ref for ref in contribution_refs
+                )
+            ):
+                raise CMEEStage1ContractError(
+                    "stage1_final_meaning_plan_noncanonical"
+                )
+            contributions = tuple(
+                contribution_by_ref[ref] for ref in contribution_refs
+            )
+            own_basis = tuple(
+                row
+                for row in expected_basis
+                if row.contribution_ref in set(contribution_refs)
+            )
+            own_basis_refs = tuple(row.binding_ref for row in own_basis)
+            own_basis_ref_set = set(own_basis_refs)
+            own_qualifiers = tuple(
+                row
+                for row in expected_qualifiers
+                if row.basis_binding_ref in own_basis_ref_set
+            )
+            own_semantic_refs = composition._unique(
+                row.semantic_ref for row in own_basis
+            )
+            operator = composition._normal_reception_operator(source)
+            value_refs: tuple[str, ...] = ()
+            if source.subjective_mode in {
+                SubjectiveMode.ATTENTION,
+                SubjectiveMode.PERSONAL_APPRAISAL,
+            }:
+                content_kind = SubjectiveContentKind.APPRAISAL
+                content = composition._normal_reception_appraisal(
+                    proposition=source,
+                    contributions=contributions,
+                    basis_rows=own_basis,
+                )
+                focal_relation_ref = content.focal_relation_ref
+                content_fields = (None, content, None, None)
+            elif source.subjective_mode is SubjectiveMode.AFFECTIVE_RESPONSE:
+                content_kind = SubjectiveContentKind.AFFECT
+                content = source.optional_affect
+                focal_relation_ref = None
+                content_fields = (content, None, None, None)
+            elif source.subjective_mode is SubjectiveMode.RELATIONAL_STANCE:
+                content_kind = SubjectiveContentKind.RELATIONAL_POSITION
+                content = composition._normal_reception_position(
+                    proposition=source,
+                    basis_rows=own_basis,
+                )
+                focal_relation_ref = None
+                content_fields = (None, None, None, content)
+            elif source.subjective_mode is SubjectiveMode.VALUE_POSITION:
+                content_kind = SubjectiveContentKind.MATERIAL_VALUE
+                value_refs = composition._stage1_material_visible_value_refs(
+                    reception_act=source.reception_function,
+                    contributions=contributions,
+                )
+                relevant_policy_refs = tuple(
+                    row.binding_ref
+                    for row in expected_policy_basis
+                    if row.owner_kind
+                    is composition.PolicyBasisOwnerKind.CONTRIBUTION
+                    and row.owner_ref in set(contribution_refs)
+                )
+                applications = []
+                for principle_ref in value_refs:
+                    application_ref = composition._ref(
+                        "policy-application",
+                        (
+                            phase_A.projection_seal_ref,
+                            source.reception_id,
+                            principle_ref,
+                            relevant_policy_refs,
+                            own_basis_refs,
+                        ),
+                    )
+                    risk = composition._RISK_BY_PRINCIPLE[principle_ref]
+                    applications.append(
+                        composition.ValueApplication(
+                            principle_ref,
+                            risk,
+                            (application_ref,),
+                            relevant_policy_refs,
+                            own_basis_refs,
+                        )
+                    )
+                    expected_policy_applications.append(
+                        PolicyApplicationRow(
+                            application_ref,
+                            "VISIBILITY",
+                            principle_ref,
+                            risk,
+                            relevant_policy_refs,
+                            trace.projected_claim_ref,
+                            trace.projected_claim_ref,
+                        )
+                    )
+                content = composition.MaterialValueContent(
+                    tuple(applications),
+                    own_basis_refs,
+                    (),
+                )
+                focal_relation_ref = None
+                content_fields = (None, None, content, None)
+            else:
+                raise CMEEStage1ContractError(
+                    "stage1_final_meaning_plan_noncanonical"
+                )
+            expected_proposition = SubjectivePropositionV2(
+                composition.CMEE_STAGE1_MEANING_BOUND_SUBJECTIVE_PROJECTION_SCHEMA_VERSION,
+                content_kind,
+                source.subjective_mode,
+                operator,
+                contribution_refs,
+                own_semantic_refs,
+                (),
+                own_semantic_refs,
+                own_basis_refs,
+                tuple(
+                    row.source_qualifier_binding_ref
+                    for row in own_qualifiers
+                ),
+                focal_relation_ref,
+                *content_fields,
+                (),
+                (),
+                "USER",
+                source.subjective_assertion_modality,
+                "REQUEST_LOCAL_EMLIS_SUBJECTIVITY",
+            )
+            actual_proposition = getattr(
+                claim,
+                "asserted_subjective_proposition",
+                None,
+            )
+            if (
+                actual_proposition != expected_proposition
+                or trace.reception_record_ref
+                != meaning_bound_reception_id(source)
+                or trace.projected_response_object_refs
+                != own_semantic_refs
+            ):
+                raise CMEEStage1ContractError(
+                    "stage1_final_meaning_plan_noncanonical"
+                )
+            require_claim_spine(
+                claim=claim,
+                proposition=actual_proposition,
+                responsibility_kind=source.responsibility_kind,
+                contribution_refs=contribution_refs,
+                semantic_refs=own_semantic_refs,
+                act_refs=(retained[0].act_ref,),
+                value_refs=value_refs,
+                specificity=(
+                    SubjectiveSpecificity.RELATION_BOUND_MULTI_ROLE
+                    if focal_relation_ref is not None
+                    else SubjectiveSpecificity.MULTI_ROLE
+                    if len(own_semantic_refs) > 1
+                    else SubjectiveSpecificity.SINGLE_ROLE
+                ),
+                content=content,
+            )
+    elif type(outcome) is LimitedMeaningOutcome:
+        sources = phase_A.bounded_limited_subjective_proposition_records
+        bounded = phase_A.bounded_limited_reception_records
+        if (
+            len(sources) != 1
+            or len(bounded) != 1
+            or len(reception_rows) != 1
+            or len(claims) != 1
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_final_meaning_plan_noncanonical"
+            )
+        source = sources[0]
+        trace = reception_rows[0]
+        claim = claim_by_ref.get(trace.projected_claim_ref)
+        content = _stage1_projected_content(source)
+        responsibility_kind = {
+            SubjectiveContentKind.AFFECT: (
+                SubjectiveResponsibilityKind.AFFECTIVE_RESPONSE
+            ),
+            SubjectiveContentKind.APPRAISAL: (
+                SubjectiveResponsibilityKind.MATERIAL_APPRAISAL
+            ),
+            SubjectiveContentKind.MATERIAL_VALUE: (
+                SubjectiveResponsibilityKind.POLICY_VISIBLE_VALUE
+            ),
+            SubjectiveContentKind.RELATIONAL_POSITION: (
+                SubjectiveResponsibilityKind.RELATIONAL_POSITION
+            ),
+        }.get(source.content_kind)
+        contribution_refs = source.target_contribution_refs
+        matching_act_rows = tuple(
+            row
+            for row in phase_A.retained_reception_act_rows
+            for mapping in CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7
+            if mapping.reception_act == row.reception_act
+            and (
+                source.subjective_mode,
+                source.subjective_operator,
+            )
+            in mapping.eligible_mode_operator_pairs
+            and len(row.basis_contribution_refs) == len(contribution_refs)
+            and set(row.basis_contribution_refs) == set(contribution_refs)
+            and set(row.basis_contribution_refs).issubset(
+                set(bounded[0].bound_layer1_contribution_refs)
+            )
+        )
+        if (
+            claim is None
+            or responsibility_kind is None
+            or getattr(claim, "asserted_subjective_proposition", None)
+            is not source
+            or len(matching_act_rows) != 1
+            or trace.layer1_contribution_refs != contribution_refs
+            or trace.projected_response_object_refs
+            != source.response_object_refs
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_final_meaning_plan_noncanonical"
+            )
+        require_claim_spine(
+            claim=claim,
+            proposition=source,
+            responsibility_kind=responsibility_kind,
+            contribution_refs=contribution_refs,
+            semantic_refs=source.response_object_refs,
+            act_refs=(matching_act_rows[0].act_ref,),
+            value_refs=(),
+            specificity=(
+                SubjectiveSpecificity.MULTI_ROLE
+                if len(source.response_object_refs) > 1
+                else SubjectiveSpecificity.SINGLE_ROLE
+            ),
+            content=content,
+        )
+    else:
+        raise CMEEStage1ContractError(
+            "stage1_final_meaning_plan_noncanonical"
+        )
+
+    application_key = lambda row: (
+        row.policy_application_row_ref,
+        row.application_kind,
+        row.principle_ref,
+        row.material_risk,
+        row.policy_basis_binding_refs,
+        row.affected_claim_ref,
+        row.visible_claim_ref,
+    )
+    if tuple(map(application_key, policy_application_rows)) != tuple(
+        map(
+            application_key,
+            sorted(
+                expected_policy_applications,
+                key=stage1_policy_application_order_key,
+            ),
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_final_meaning_plan_noncanonical"
+        )
+
+
+def _validate_meaning_plan_carrier_trace(
+    phase_A: "Stage1SubjectivePlanningInputs",
+    meaning_plan: "EmlisSubjectiveMeaningPlan",
+) -> None:
+    """Resolve plan trace rows to carried B/C records without reprojecting."""
+
+    _validate_meaning_plan_vertical_binding(phase_A, meaning_plan)
+    structure = phase_A.input_specific_meaning_structure
+    outcome = structure.meaning_decision_outcome
+    meaning_rows = meaning_plan.meaning_visible_causal_trace_rows
+    reception_rows = meaning_plan.reception_visible_causal_trace_rows
+    if type(outcome) is SelectedEmlisProvisionalReading:
+        candidates = tuple(
+            row
+            for row in structure.candidate_records
+            if row.candidate_id == outcome.selected_candidate_ref
+        )
+        evidence = tuple(
+            row
+            for row in structure.input_specificity_evidence_records
+            if len(candidates) == 1
+            and row.candidate_ref == candidates[0].candidate_id
+        )
+        required_by_ref = {
+            row.difference_id: row for row in structure.required_difference_rows
+        }
+        observed_by_ref = {
+            row.distinction_id: row
+            for row in structure.observed_distinction_rows
+        }
+        propositions = phase_A.meaning_bound_reception_proposition_records
+        sealed = phase_A.sealed_emlis_provisional_reading_records
+        if (
+            meaning_plan.projection_branch
+            is not SubjectiveProjectionBranch.NORMAL
+            or len(candidates) != 1
+            or len(evidence) != 1
+            or len(sealed) != 1
+            or tuple(
+                getattr(row, "required_difference_ref", "")
+                for row in meaning_rows
+            )
+            != evidence[0].required_difference_refs
+            or len(reception_rows) != len(propositions)
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_final_meaning_plan_noncanonical"
+            )
+        for row in meaning_rows:
+            difference = required_by_ref.get(
+                getattr(row, "required_difference_ref", "")
+            )
+            observed = (
+                None
+                if difference is None
+                else observed_by_ref.get(difference.observed_distinction_ref)
+            )
+            if (
+                type(row) is not SelectedMeaningVisibleCausalTraceRow
+                or difference is None
+                or observed is None
+                or row.selected_reading_ref != outcome.reading_id
+                or row.configuration_ref != observed.configuration_ref
+                or row.configuration_component_refs
+                != observed.contrasted_component_refs
+                or row.source_qualifier_refs != observed.source_qualifier_refs
+                or row.invariant_codes != difference.invariant_codes
+            ):
+                raise CMEEStage1ContractError(
+                    "stage1_final_meaning_plan_noncanonical"
+                )
+        for row, proposition in zip(
+            reception_rows, propositions, strict=True
+        ):
+            if (
+                type(row) is not ReceptionVisibleCausalTraceRow
+                or row.branch is not SubjectiveProjectionBranch.NORMAL
+                or row.meaning_outcome_ref != outcome.reading_id
+                or row.reading_consequence_ref
+                != sealed[0].reading_consequence_ref
+                or row.reception_record_ref
+                != meaning_bound_reception_id(proposition)
+                or row.response_object_refs
+                != proposition.response_object_refs
+                or row.preserved_difference_refs
+                != proposition.preserved_difference_refs
+            ):
+                raise CMEEStage1ContractError(
+                    "stage1_final_meaning_plan_noncanonical"
+                )
+        return
+
+    if type(outcome) is LimitedMeaningOutcome:
+        bounded = phase_A.bounded_limited_reception_records
+        propositions = (
+            phase_A.bounded_limited_subjective_proposition_records
+        )
+        if (
+            meaning_plan.projection_branch
+            is not SubjectiveProjectionBranch.LIMITED
+            or len(bounded) != 1
+            or len(propositions) != 1
+            or len(reception_rows) != 1
+            or tuple(
+                getattr(row, "source_object_ref", "")
+                for row in meaning_rows
+            )
+            != bounded[0].foreground_source_object_refs
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_final_meaning_plan_noncanonical"
+            )
+        outcome_ref = limited_meaning_outcome_id(outcome)
+        contribution_by_ref = {
+            row.contribution_id: row
+            for row in phase_A.observation_contribution_rows
+        }
+        for row in meaning_rows:
+            expected_layer1_refs = tuple(
+                contribution_ref
+                for contribution_ref in (
+                    bounded[0].bound_layer1_contribution_refs
+                )
+                if contribution_ref in contribution_by_ref
+                and getattr(row, "source_object_ref", "")
+                in {
+                    *contribution_by_ref[
+                        contribution_ref
+                    ].semantic_refs,
+                    *contribution_by_ref[
+                        contribution_ref
+                    ].relation_basis_refs,
+                    *(
+                        binding.semantic_ref
+                        for binding in contribution_by_ref[
+                            contribution_ref
+                        ].argument_bindings
+                    ),
+                }
+            )
+            if (
+                type(row) is not LimitedMeaningVisibleCausalTraceRow
+                or row.limited_outcome_ref != outcome_ref
+                or not expected_layer1_refs
+                or row.layer1_contribution_refs != expected_layer1_refs
+            ):
+                raise CMEEStage1ContractError(
+                    "stage1_final_meaning_plan_noncanonical"
+                )
+        reception = reception_rows[0]
+        if (
+            type(reception) is not ReceptionVisibleCausalTraceRow
+            or reception.branch is not SubjectiveProjectionBranch.LIMITED
+            or reception.meaning_outcome_ref != outcome_ref
+            or reception.reading_consequence_ref is not None
+            or reception.reception_record_ref
+            != bounded_limited_reception_id(
+                bounded[0],
+                limited_outcome=outcome,
+                subjective_proposition=propositions[0],
+            )
+            or reception.response_object_refs
+            != bounded[0].foreground_source_object_refs
+            or reception.preserved_difference_refs
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_final_meaning_plan_noncanonical"
+            )
+        return
+    raise CMEEStage1ContractError("stage1_final_meaning_plan_noncanonical")
+
+
+def _validate_meaning_plan_integrity(
+    phase_A: "Stage1SubjectivePlanningInputs",
+    meaning_plan: "EmlisSubjectiveMeaningPlan",
+    *,
+    composition: Any,
+) -> None:
+    """Reject every plan field that the final projection would normalize."""
+
+    tuple_field_names = (
+        "meaning_visible_causal_trace_rows",
+        "reception_visible_causal_trace_rows",
+        "subjective_claim_rows",
+        "content_bearing_thought_claim_refs",
+        "retained_reception_act_refs",
+        "subjective_responsibility_rows",
+        "subjective_opportunity_rows",
+        "responsibility_coverage_rows",
+        "subjective_basis_binding_rows",
+        "source_qualifier_binding_rows",
+        "policy_basis_binding_rows",
+        "policy_application_rows",
+        "subjective_facet_suppression_rows",
+    )
+    if any(
+        type(getattr(meaning_plan, field_name, None)) is not tuple
+        for field_name in tuple_field_names
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_final_meaning_plan_noncanonical"
+        )
+    claims = meaning_plan.subjective_claim_rows
+    responsibilities = meaning_plan.subjective_responsibility_rows
+    opportunities = meaning_plan.subjective_opportunity_rows
+    coverage = meaning_plan.responsibility_coverage_rows
+    suppressions = meaning_plan.subjective_facet_suppression_rows
+    if (
+        not 1 <= len(claims) <= 4
+        or any(
+            type(row) is not composition.ProjectedSubjectiveClaim
+            for row in claims
+        )
+        or any(
+            type(row) is not composition.SubjectiveResponsibilityRow
+            for row in responsibilities
+        )
+        or any(
+            type(row) is not composition.SubjectiveOpportunityRow
+            for row in opportunities
+        )
+        or any(
+            type(row) is not composition.ResponsibilityCoverageRow
+            for row in coverage
+        )
+        or any(
+            type(row) is not composition.SubjectiveFacetSuppressionRow
+            for row in suppressions
+        )
+        or any(
+            type(row) is not composition.SubjectiveBasisBinding
+            for row in meaning_plan.subjective_basis_binding_rows
+        )
+        or any(
+            type(row) is not composition.SourceQualifierBinding
+            for row in meaning_plan.source_qualifier_binding_rows
+        )
+        or any(
+            type(row) is not composition.PolicyBasisBinding
+            for row in meaning_plan.policy_basis_binding_rows
+        )
+        or any(
+            type(row) is not composition.PolicyApplicationRow
+            for row in meaning_plan.policy_application_rows
+        )
+        or responsibilities
+        != tuple(sorted(responsibilities, key=lambda row: row.responsibility_ref))
+        or opportunities
+        != tuple(sorted(opportunities, key=lambda row: row.opportunity_key))
+        or coverage
+        != tuple(sorted(coverage, key=lambda row: row.responsibility_ref))
+        or suppressions
+        != tuple(
+            sorted(
+                suppressions,
+                key=lambda row: row.suppressed_opportunity_key,
+            )
+        )
+        or meaning_plan.subjective_basis_binding_rows
+        != tuple(
+            sorted(
+                meaning_plan.subjective_basis_binding_rows,
+                key=lambda row: row.binding_ref,
+            )
+        )
+        or meaning_plan.source_qualifier_binding_rows
+        != tuple(
+            sorted(
+                meaning_plan.source_qualifier_binding_rows,
+                key=lambda row: row.source_qualifier_binding_ref,
+            )
+        )
+        or meaning_plan.policy_basis_binding_rows
+        != tuple(
+            sorted(
+                meaning_plan.policy_basis_binding_rows,
+                key=lambda row: row.binding_ref,
+            )
+        )
+        or meaning_plan.policy_application_rows
+        != tuple(
+            sorted(
+                meaning_plan.policy_application_rows,
+                key=stage1_policy_application_order_key,
+            )
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_final_meaning_plan_noncanonical"
+        )
+    try:
+        composition._validate_subjective_opportunity_partition(
+            responsibilities=responsibilities,
+            opportunities=opportunities,
+            claims=claims,
+            coverage=coverage,
+            suppressions=suppressions,
+        )
+    except composition.Stage1CompositionError:
+        raise CMEEStage1ContractError(
+            "stage1_final_meaning_plan_noncanonical"
+        ) from None
+
+    expected_thought_refs = tuple(
+        claim.subjective_claim_id
+        for claim in claims
+        if claim.asserted_subjective_proposition.content_kind
+        is not SubjectiveContentKind.AFFECT
+    )
+    expected_retained_act_refs = tuple(
+        row.act_ref for row in phase_A.retained_reception_act_rows
+    )
+    if (
+        meaning_plan.thought_support_status
+        != ("SUPPORTED" if expected_thought_refs else "NOT_SUPPORTED")
+        or meaning_plan.content_bearing_thought_claim_refs
+        != expected_thought_refs
+        or meaning_plan.retained_reception_act_refs
+        != expected_retained_act_refs
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_final_meaning_plan_noncanonical"
+        )
+
+    seen_claim_refs: set[str] = set()
+    for claim in claims:
+        proposition = claim.asserted_subjective_proposition
+        if (
+            claim.schema_version
+            != composition.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION
+            or claim.parent_duty_ref
+            != phase_A.parent_plan.reception_duty_id
+            or claim.speaker_owner
+            != composition.CMEE_STAGE1_EMLIS_OWNER_REF
+            or claim.claim_domain != "EMLIS_SUBJECTIVE_RESPONSE"
+            or type(proposition) is not SubjectivePropositionV2
+            or type(claim.user_fact_effect) is not int
+            or claim.user_fact_effect != 0
+            or claim.subjective_claim_id in seen_claim_refs
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_final_meaning_plan_noncanonical"
+            )
+        final_claim = EmlisSubjectiveClaim(
+            schema_version=claim.schema_version,
+            subjective_claim_id=claim.subjective_claim_id,
+            parent_duty_ref=claim.parent_duty_ref,
+            speaker_owner="EMLIS",
+            claim_domain=claim.claim_domain,
+            subjective_mode=proposition.subjective_mode,
+            asserted_subjective_proposition=proposition,
+            basis_observation_contribution_refs=(
+                claim.basis_observation_contribution_refs
+            ),
+            basis_semantic_refs=claim.basis_semantic_refs,
+            source_reception_act_refs=claim.source_reception_act_refs,
+            value_principle_refs=claim.value_principle_refs,
+            user_fact_effect=claim.user_fact_effect,
+            forbidden_promotions=claim.forbidden_promotions,
+            subjective_responsibility_refs=(
+                claim.subjective_responsibility_refs
+            ),
+            selected_subjective_opportunity_key=(
+                claim.selected_subjective_opportunity_key
+            ),
+        )
+        validate_stage1_identity(final_claim)
+        seen_claim_refs.add(claim.subjective_claim_id)
+
+
 def seal_stage1_projection(
     phase_A: "Stage1SubjectivePlanningInputs",
     meaning_plan: "EmlisSubjectiveMeaningPlan",
@@ -4760,10 +5678,36 @@ def seal_stage1_projection(
         raise CMEEStage1ContractError("stage1_final_phase_a_type_invalid")
     if type(meaning_plan) is not composition.EmlisSubjectiveMeaningPlan:
         raise CMEEStage1ContractError("stage1_final_meaning_plan_type_invalid")
-    expected_plan = composition.project_subjective_meaning_plan(phase_A)
-    if meaning_plan != expected_plan:
-        raise CMEEStage1ContractError("stage1_final_meaning_plan_noncanonical")
+    try:
+        composition._validate_phase_A(phase_A)
+    except composition.Stage1CompositionError:
+        raise CMEEStage1ContractError(
+            "stage1_final_phase_a_noncanonical"
+        ) from None
+    _validate_meaning_plan_carrier_trace(phase_A, meaning_plan)
+    _validate_meaning_plan_integrity(
+        phase_A,
+        meaning_plan,
+        composition=composition,
+    )
     if meaning_plan.projection_preimage_ref != phase_A.projection_preimage_ref:
+        raise CMEEStage1ContractError("stage1_final_meaning_plan_noncanonical")
+    if (
+        meaning_plan.projection_seal_ref != phase_A.projection_seal_ref
+        or type(meaning_plan.projection_branch)
+        is not SubjectiveProjectionBranch
+        or meaning_plan.tagged_projection_ref
+        != project_stage1_tagged_projection_ref(
+            projection_branch=meaning_plan.projection_branch,
+            projection_seal_ref=meaning_plan.projection_seal_ref,
+            meaning_visible_causal_trace_rows=(
+                meaning_plan.meaning_visible_causal_trace_rows
+            ),
+            reception_visible_causal_trace_rows=(
+                meaning_plan.reception_visible_causal_trace_rows
+            ),
+        )
+    ):
         raise CMEEStage1ContractError("stage1_final_meaning_plan_noncanonical")
     projected_claims = tuple(meaning_plan.subjective_claim_rows)
     if (
@@ -4941,6 +5885,15 @@ def seal_stage1_projection(
         emlis_value_policy_ref=phase_A.emlis_value_policy_ref,
         emlis_microgrammar_policy_ref="",
         projection_preimage_ref=phase_A.projection_preimage_ref,
+        projection_seal_ref=meaning_plan.projection_seal_ref,
+        projection_branch=meaning_plan.projection_branch,
+        tagged_projection_ref=meaning_plan.tagged_projection_ref,
+        meaning_visible_causal_trace_rows=(
+            meaning_plan.meaning_visible_causal_trace_rows
+        ),
+        reception_visible_causal_trace_rows=(
+            meaning_plan.reception_visible_causal_trace_rows
+        ),
         composition_policy_ref=composition_policy_ref,
         low_level_grammar_policy_ref=grammar_policy_ref,
         subjective_responsibility_rows=responsibility_rows,
@@ -4988,9 +5941,45 @@ def build_surface_composition_inputs(
         raise CMEEStage1ContractError("stage1_final_phase_a_type_invalid")
     if type(final_projection) is not EmlisStage1Projection:
         raise CMEEStage1ContractError("stage1_final_projection_type_invalid")
-    expected_meaning = composition.project_subjective_meaning_plan(phase_A)
-    expected_projection = seal_stage1_projection(phase_A, expected_meaning)
-    if final_projection != expected_projection:
+    try:
+        composition._validate_phase_A(phase_A)
+    except composition.Stage1CompositionError:
+        raise CMEEStage1ContractError(
+            "stage1_final_phase_a_noncanonical"
+        ) from None
+    validate_stage1_identity(final_projection)
+    validate_stage1_projection(
+        final_projection,
+        grounded_graph=phase_A.grounded_graph,
+        parent_plan=phase_A.parent_plan,
+    )
+    _validate_meaning_plan_carrier_trace(phase_A, final_projection)
+    expected_branch = (
+        SubjectiveProjectionBranch.NORMAL
+        if type(
+            phase_A.input_specific_meaning_structure.meaning_decision_outcome
+        )
+        is SelectedEmlisProvisionalReading
+        else SubjectiveProjectionBranch.LIMITED
+    )
+    if (
+        final_projection.projection_preimage_ref
+        != phase_A.projection_preimage_ref
+        or final_projection.projection_seal_ref
+        != phase_A.projection_seal_ref
+        or final_projection.projection_branch is not expected_branch
+        or final_projection.interpretation_candidates
+        != phase_A.interpretation_candidate_rows
+        or final_projection.meaning_field != phase_A.meaning_field
+        or final_projection.observation_contributions
+        != phase_A.observation_contribution_rows
+        or final_projection.retained_reception_act_ids
+        != tuple(row.act_ref for row in phase_A.retained_reception_act_rows)
+        or final_projection.parent_observation_duty_ref
+        != phase_A.parent_plan.observation_duty_id
+        or final_projection.parent_reception_duty_ref
+        != phase_A.parent_plan.reception_duty_id
+    ):
         raise CMEEStage1ContractError("stage1_final_projection_noncanonical")
     participant_values = {
         _enum_or_text(getattr(row.grounded_frame, "actor", "")).lower()
@@ -5005,6 +5994,7 @@ def build_surface_composition_inputs(
         else None
     )
     return composition.Stage1SurfaceCompositionInputs(
+        phase_A_authority=phase_A,
         admitted_source=phase_A.admitted_source,
         grounded_graph=phase_A.grounded_graph,
         grounded_plan=phase_A.grounded_plan,
@@ -8726,6 +9716,7 @@ def _selected_stage1_v2_artifact_ref(
     projection: EmlisStage1Projection,
     candidate: "ArtifactCompositionCandidate",
     realized_units: tuple[RealizedSentenceUnit, ...],
+    validated_visible_causal_trace_seal_ref: str,
 ) -> str:
     """Bind one selected v2 candidate to the immutable visible unit IDs."""
 
@@ -8748,10 +9739,19 @@ def _selected_stage1_v2_artifact_ref(
         or type(candidate) is not composition.ArtifactCompositionCandidate
         or type(candidate.artifact_composition_candidate_id) is not str
         or not candidate.artifact_composition_candidate_id
+        or type(candidate.rank) is not int
+        or isinstance(candidate.rank, bool)
+        or candidate.rank != 1
         or type(candidate.shared_variant_id) is not str
-        or not candidate.shared_variant_id
+        or candidate.shared_variant_id != "01-primary"
+        or type(candidate.normalized_artifact)
+        is not composition.NormalizedDraftArtifact
         or type(realized_units) is not tuple
         or not realized_units
+        or not re.fullmatch(
+            r"postrealizer-visible-causal-trace-seal-[0-9a-f]{64}",
+            validated_visible_causal_trace_seal_ref,
+        )
         or any(type(row) is not RealizedSentenceUnit for row in realized_units)
         or any(
             type(unit_id) is not str or not unit_id
@@ -8765,11 +9765,46 @@ def _selected_stage1_v2_artifact_ref(
         )
     ):
         raise CMEEStage1ContractError("stage1_v2_selected_artifact_invalid")
+    try:
+        expected_candidate_ref = (
+            composition._artifact_composition_candidate_ref(
+                candidate.normalized_artifact,
+                candidate.discourse_preference_profile,
+                candidate.composition_signature,
+            )
+        )
+        expected_discourse_profile = (
+            composition.derive_discourse_preference_profile(
+                candidate.normalized_artifact
+            )
+        )
+        expected_local_profile = (
+            composition.derive_japanese_local_preference_profile(
+                candidate.normalized_artifact
+            )
+        )
+    except composition.Stage1CompositionError:
+        raise CMEEStage1ContractError(
+            "stage1_v2_selected_artifact_invalid"
+        ) from None
+    if (
+        candidate.artifact_composition_candidate_id
+        != expected_candidate_ref
+        or candidate.discourse_preference_profile
+        != expected_discourse_profile
+        or candidate.japanese_local_preference_profile
+        != expected_local_profile
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_v2_selected_artifact_invalid"
+        )
     material = (
         stage1_projection_artifact_ref(projection),
+        projection.projection_seal_ref,
         candidate.artifact_composition_candidate_id,
         candidate.shared_variant_id,
         ordered_unit_ids,
+        validated_visible_causal_trace_seal_ref,
         trace_schema_version,
     )
     digest = hashlib.sha256(
@@ -8784,6 +9819,7 @@ def _adapt_v2_composed_units_to_realized_units(
     *,
     projection: EmlisStage1Projection,
     candidate: "ArtifactCompositionCandidate",
+    validated_visible_causal_trace_seal_ref: str,
     grounded_graph: GroundedMeaningGraph,
     parent_plan: ExperiencePlan,
 ) -> tuple[RealizedSentenceUnit, ...]:
@@ -8915,6 +9951,12 @@ def _adapt_v2_composed_units_to_realized_units(
             candidate.discourse_preference_profile,
             candidate.composition_signature,
         )
+        expected_discourse_profile = (
+            composition.derive_discourse_preference_profile(artifact)
+        )
+        expected_local_profile = (
+            composition.derive_japanese_local_preference_profile(artifact)
+        )
     except composition.Stage1CompositionError:
         raise CMEEStage1ContractError(
             "stage1_v2_adapter_candidate_invalid"
@@ -8923,6 +9965,11 @@ def _adapt_v2_composed_units_to_realized_units(
         composition_candidate_ref != expected_candidate_ref
         or type(composition_layout_ref) is not str
         or not composition_layout_ref
+        or candidate.shared_variant_id != "01-primary"
+        or candidate.discourse_preference_profile
+        != expected_discourse_profile
+        or candidate.japanese_local_preference_profile
+        != expected_local_profile
     ):
         raise CMEEStage1ContractError("stage1_v2_adapter_candidate_invalid")
 
@@ -9380,6 +10427,9 @@ def _adapt_v2_composed_units_to_realized_units(
         projection=projection,
         candidate=candidate,
         realized_units=base_units,
+        validated_visible_causal_trace_seal_ref=(
+            validated_visible_causal_trace_seal_ref
+        ),
     )
     sealed_units = tuple(
         replace(
@@ -9437,6 +10487,9 @@ def _compile_stage1_response_v2_candidate(
     selected_units = _adapt_v2_composed_units_to_realized_units(
         projection=projection,
         candidate=composition_result.selected_candidate,
+        validated_visible_causal_trace_seal_ref=(
+            composition_result.validated_visible_causal_trace_seal_ref
+        ),
         grounded_graph=grounded_graph,
         parent_plan=parent_plan,
     )
