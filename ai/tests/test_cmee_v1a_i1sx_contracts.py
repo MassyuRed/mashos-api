@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from collections import Counter
 from contextlib import ExitStack
-from dataclasses import fields, replace
+from dataclasses import MISSING, fields, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Mapping
@@ -23781,6 +23781,7 @@ class CMEESubjectiveMeaningPlannerIM02ContractsTest(unittest.TestCase):
             )
             contracts_module.validate_input_specific_meaning_structure(
                 structure,
+                grounded_view=view,
                 foreground_scope_derivation=scope,
             )
             cases.append(
@@ -23860,6 +23861,7 @@ class CMEESubjectiveMeaningPlannerIM02ContractsTest(unittest.TestCase):
         )
         contracts_module.validate_input_specific_meaning_structure(
             temporal_structure,
+            grounded_view=temporal_view,
             foreground_scope_derivation=temporal_scope,
         )
         cases.append(
@@ -23899,6 +23901,7 @@ class CMEESubjectiveMeaningPlannerIM02ContractsTest(unittest.TestCase):
             )
             contracts_module.validate_input_specific_meaning_structure(
                 structure,
+                grounded_view=grounded_view,
                 foreground_scope_derivation=scope_derivation,
             )
             if (
@@ -23970,6 +23973,15 @@ class CMEESubjectiveMeaningPlannerIM02ContractsTest(unittest.TestCase):
                             ),
                             source_connected_relations=(relation,),
                             missing_structure_refs=(),
+                            semantic_interpretation_projections=tuple(
+                                projection
+                                for projection in base_case.grounded_view.semantic_interpretation_projections
+                                if any(
+                                    row.source_object_ref
+                                    in relation_endpoints
+                                    for row in projection.component_rows
+                                )
+                            ),
                         )
                     ),
                 )
@@ -24232,6 +24244,9 @@ class CMEESubjectiveMeaningPlannerIM02ContractsTest(unittest.TestCase):
                 "requirement_bundle_derivation",
                 "requirement_bundles",
                 "whole_reading_consequence_rows",
+                "candidate_records",
+                "input_specificity_evidence_records",
+                "meaning_decision_outcome",
             ),
         }
         forbidden = (
@@ -24282,6 +24297,7 @@ class CMEESubjectiveMeaningPlannerIM02ContractsTest(unittest.TestCase):
             derivation = structure.difference_configuration_derivation
             contracts_module.validate_input_specific_meaning_structure(
                 structure,
+                grounded_view=case.grounded_view,
                 foreground_scope_derivation=case.scope_derivation,
             )
             if (
@@ -24658,6 +24674,7 @@ class CMEESubjectiveMeaningPlannerIM02ContractsTest(unittest.TestCase):
         ):
             contracts_module.validate_input_specific_meaning_structure(
                 forged,
+                grounded_view=forgery_case.grounded_view,
                 foreground_scope_derivation=forgery_case.scope_derivation,
             )
 
@@ -24824,10 +24841,15 @@ class CMEESubjectiveMeaningPlannerIM02ContractsTest(unittest.TestCase):
             case.structure,
             whole_reading_consequence_rows=(row,),
         )
-        contracts_module.validate_input_specific_meaning_structure(
-            structure_with_row,
-            foreground_scope_derivation=case.scope_derivation,
-        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "whole_reading_consequences_candidate_order_invalid",
+        ):
+            contracts_module.validate_input_specific_meaning_structure(
+                structure_with_row,
+                grounded_view=case.grounded_view,
+                foreground_scope_derivation=case.scope_derivation,
+            )
         forged_baseline_schema = replace(
             baseline,
             schema_version="forged",
@@ -24853,6 +24875,7 @@ class CMEESubjectiveMeaningPlannerIM02ContractsTest(unittest.TestCase):
                     case.structure,
                     whole_reading_consequence_rows=(forged_schema_row,),
                 ),
+                grounded_view=case.grounded_view,
                 foreground_scope_derivation=case.scope_derivation,
             )
         forged_mutated = replace(
@@ -24880,6 +24903,7 @@ class CMEESubjectiveMeaningPlannerIM02ContractsTest(unittest.TestCase):
                         forged_aggregate_row,
                     ),
                 ),
+                grounded_view=case.grounded_view,
                 foreground_scope_derivation=case.scope_derivation,
             )
 
@@ -25040,13 +25064,14 @@ class CMEESubjectiveMeaningPlannerIM02ContractsTest(unittest.TestCase):
             ("world:relationship",),
             ("world:external",),
         )
-        self.assertEqual(
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "mutation_target_absent_candidate_invalid",
+        ):
             input_specific_meaning_module.apply_counterfactual_mutation(
                 world_baseline,
                 absent_world_mutation,
-            ),
-            world_baseline,
-        )
+            )
         absent_world_required = replace(
             required,
             difference_id=(
@@ -25093,7 +25118,7 @@ class CMEESubjectiveMeaningPlannerIM02ContractsTest(unittest.TestCase):
                 unknown_baseline,
                 mutation_for(
                     contracts_module.CounterfactualMutationKind.PROMOTE_UNKNOWN,
-                    ("unknown:material",),
+                    ("resolution:unresolved",),
                     ("resolution:resolved",),
                 ),
             )
@@ -25121,20 +25146,28 @@ class CMEESubjectiveMeaningPlannerIM02ContractsTest(unittest.TestCase):
                 qualifier_required
             ),
         )
-        self.assertEqual(
+        qualifier_mutated = (
             input_specific_meaning_module.apply_counterfactual_mutation(
-                baseline,
-                qualifier_mutation,
-            ),
-            baseline,
+                baseline, qualifier_mutation
+            )
         )
-        self.assertIsNone(
+        self.assertNotEqual(qualifier_mutated, baseline)
+        self.assertNotIn(
+            "qualifier:not_generalized",
+            qualifier_mutated.qualifier_keys,
+        )
+        qualifier_row = (
             input_specific_meaning_module.issue_whole_reading_consequence_row(
                 foreground_scope=case.scope_derivation.foreground_scope,
                 required_difference=qualifier_required,
                 counterfactual_mutation=qualifier_mutation,
                 baseline_semantic_signature=baseline,
             )
+        )
+        self.assertIs(type(qualifier_row), WholeReadingConsequenceRow)
+        self.assertIs(
+            qualifier_row.consequence_code,
+            WholeReadingConsequenceCode.EPISODICITY_BOUNDARY_CHANGED,
         )
 
         def baseline_for_mutation(
@@ -25259,16 +25292,21 @@ class CMEESubjectiveMeaningPlannerIM02ContractsTest(unittest.TestCase):
                 sorted(value.consequence_id for value in semantic_rows)
             ),
         )
-        contracts_module.validate_input_specific_meaning_structure(
-            replace(
-                order_case.structure,
-                whole_reading_consequence_rows=semantic_rows,
-            ),
-            foreground_scope_derivation=order_case.scope_derivation,
-        )
         with self.assertRaisesRegex(
             CMEEStage1ContractError,
-            "whole_reading_consequences_noncanonical",
+            "whole_reading_consequences_candidate_order_invalid",
+        ):
+            contracts_module.validate_input_specific_meaning_structure(
+                replace(
+                    order_case.structure,
+                    whole_reading_consequence_rows=semantic_rows,
+                ),
+                grounded_view=order_case.grounded_view,
+                foreground_scope_derivation=order_case.scope_derivation,
+            )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "whole_reading_consequences_candidate_order_invalid",
         ):
             contracts_module.validate_input_specific_meaning_structure(
                 replace(
@@ -25277,6 +25315,7 @@ class CMEESubjectiveMeaningPlannerIM02ContractsTest(unittest.TestCase):
                         reversed(semantic_rows)
                     ),
                 ),
+                grounded_view=order_case.grounded_view,
                 foreground_scope_derivation=order_case.scope_derivation,
             )
 
@@ -25331,16 +25370,27 @@ class CMEESubjectiveMeaningPlannerIM02ContractsTest(unittest.TestCase):
             )
         )
         self.assertEqual(phase_a.input_specific_meaning_structure, expected)
-        original = (
-            stage1_composition_module.derive_input_specific_meaning_structure
-        )
-        with patch.object(
-            stage1_composition_module,
+        derive_names = (
+            "derive_grounded_situation_view",
+            "derive_foreground_scope_closed",
+            "foreground_scope_disposition",
             "derive_input_specific_meaning_structure",
-            wraps=original,
-        ) as rederive:
+        )
+        with ExitStack() as stack:
+            derive_spies = tuple(
+                stack.enter_context(
+                    patch.object(
+                        input_specific_meaning_module,
+                        name,
+                        side_effect=AssertionError(
+                            "composition_must_not_rederive_phase_a"
+                        ),
+                    )
+                )
+                for name in derive_names
+            )
             stage1_composition_module._validate_phase_A(phase_a)
-        self.assertEqual(rederive.call_count, 1)
+        self.assertTrue(all(value.call_count == 0 for value in derive_spies))
 
         forged = replace(
             phase_a,
@@ -25354,6 +25404,935 @@ class CMEESubjectiveMeaningPlannerIM02ContractsTest(unittest.TestCase):
             "STAGE1_INPUT_SPECIFIC_MEANING_STRUCTURE_STOP",
         ):
             stage1_composition_module.project_subjective_meaning_plan(forged)
+
+
+class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
+    unittest.TestCase
+):
+    @classmethod
+    def setUpClass(cls) -> None:
+        owner = CMEESubjectiveMeaningPlannerIM02ContractsTest
+        if not hasattr(owner, "actual_cases"):
+            owner.setUpClass()
+        cls.actual_cases = owner.actual_cases
+        cls.normal_case = next(
+            case
+            for case in cls.actual_cases
+            if type(case.structure.meaning_decision_outcome)
+            is contracts_module.SelectedEmlisProvisionalReading
+        )
+        cls.limited_case = next(
+            case
+            for case in cls.actual_cases
+            if type(case.structure.meaning_decision_outcome)
+            is contracts_module.LimitedMeaningOutcome
+            and not case.structure.candidate_records
+        )
+        cls.mutation_template = next(
+            mutation
+            for case in cls.actual_cases
+            for mutation in case.structure.counterfactual_mutation_rows
+        )
+
+    @classmethod
+    def _mutation(
+        cls,
+        kind: contracts_module.CounterfactualMutationKind,
+        target_refs: tuple[str, ...],
+        replacement_refs: tuple[str, ...] = (),
+    ) -> contracts_module.CounterfactualMutationRow:
+        value = replace(
+            cls.mutation_template,
+            mutation_id=(
+                "counterfactual-mutation:pending"
+                "@cocolon.cmee.emlis.counterfactual_mutation.v1"
+            ),
+            mutation_kind=kind,
+            target_component_refs=target_refs,
+            replacement_refs=replacement_refs,
+        )
+        return replace(
+            value,
+            mutation_id=contracts_module.counterfactual_mutation_id(value),
+        )
+
+    @classmethod
+    def _mutation_matrix(cls):
+        baseline = (
+            CMEESubjectiveMeaningPlannerIM00ContractsTest._semantic_signature()
+        )
+        node_a = f"node:im03-a@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        node_b = f"node:im03-b@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        single = replace(
+            baseline,
+            component_role_keys=("role:left",),
+            relation_direction_keys=(),
+            component_semantic_keys=(baseline.component_semantic_keys[0],),
+        )
+        world = replace(
+            baseline,
+            world_or_owner_distinction_keys=(
+                "owner:current_user",
+                "world:internal",
+            ),
+        )
+        aspect = replace(
+            baseline,
+            episodicity_boundary_keys=("episodicity:one_off",),
+        )
+        unresolved = replace(
+            baseline,
+            resolution_treatment_keys=("resolution:unresolved",),
+        )
+        return (
+            (
+                baseline,
+                cls._mutation(
+                    contracts_module.CounterfactualMutationKind.DELETE_ENDPOINT,
+                    (node_b,),
+                ),
+            ),
+            (
+                baseline,
+                cls._mutation(
+                    contracts_module.CounterfactualMutationKind.SWAP_ENDPOINTS,
+                    (node_a, node_b),
+                    (node_b, node_a),
+                ),
+            ),
+            (
+                single,
+                cls._mutation(
+                    contracts_module.CounterfactualMutationKind.DELETE_PREDICATE,
+                    (node_a,),
+                ),
+            ),
+            (
+                single,
+                cls._mutation(
+                    contracts_module.CounterfactualMutationKind.DELETE_OWNER,
+                    ("owner:current_user",),
+                ),
+            ),
+            (
+                world,
+                cls._mutation(
+                    contracts_module.CounterfactualMutationKind.REPLACE_WORLD,
+                    ("world:internal",),
+                    ("world:external",),
+                ),
+            ),
+            (
+                baseline,
+                cls._mutation(
+                    contracts_module.CounterfactualMutationKind.REPLACE_ROLE,
+                    ("role:right",),
+                    ("role:left",),
+                ),
+            ),
+            (
+                baseline,
+                cls._mutation(
+                    contracts_module.CounterfactualMutationKind.REPLACE_TIME,
+                    ("time:current_input",),
+                    ("time:future",),
+                ),
+            ),
+            (
+                baseline,
+                cls._mutation(
+                    contracts_module.CounterfactualMutationKind.DELETE_MODALITY,
+                    ("modality:feeling",),
+                ),
+            ),
+            (
+                aspect,
+                cls._mutation(
+                    contracts_module.CounterfactualMutationKind.DELETE_ASPECT,
+                    ("aspect:one_off",),
+                ),
+            ),
+            (
+                single,
+                cls._mutation(
+                    contracts_module.CounterfactualMutationKind.DELETE_SCOPE,
+                    ("scope:source_bounded",),
+                ),
+            ),
+            (
+                baseline,
+                cls._mutation(
+                    contracts_module.CounterfactualMutationKind.DELETE_QUALIFIER,
+                    ("qualifier:not_generalized",),
+                ),
+            ),
+            (
+                unresolved,
+                cls._mutation(
+                    contracts_module.CounterfactualMutationKind.PROMOTE_UNKNOWN,
+                    ("resolution:unresolved",),
+                    ("resolution:resolved",),
+                ),
+            ),
+        )
+
+    def test_im03_forward_carrier_v1_1_required_exact12_and_v1_0_runtime_rejected(
+        self,
+    ) -> None:
+        structure = self.normal_case.structure
+        root_fields = fields(contracts_module.InputSpecificMeaningStructure)
+        self.assertEqual(len(root_fields), 12)
+        self.assertEqual(
+            tuple(value.name for value in root_fields),
+            (
+                "schema_version",
+                "difference_configuration_derivation",
+                "configurations",
+                "observed_distinction_rows",
+                "counterfactual_mutation_rows",
+                "required_difference_rows",
+                "requirement_bundle_derivation",
+                "requirement_bundles",
+                "whole_reading_consequence_rows",
+                "candidate_records",
+                "input_specificity_evidence_records",
+                "meaning_decision_outcome",
+            ),
+        )
+        self.assertEqual(structure.schema_version, "1.1")
+        self.assertTrue(
+            all(
+                value.default is MISSING
+                and value.default_factory is MISSING
+                for value in root_fields
+            )
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "input_specific_meaning_structure_schema_version_invalid",
+        ):
+            contracts_module.validate_input_specific_meaning_structure(
+                replace(structure, schema_version="1.0"),
+                grounded_view=self.normal_case.grounded_view,
+                foreground_scope_derivation=self.normal_case.scope_derivation,
+            )
+        self.assertEqual(
+            candidate_run_module._current_im03_working_identity_pair(),
+            (
+                candidate_run_module.IM03_WORKING_LANGUAGE_CORE_IDENTITY,
+                candidate_run_module.IM03_WORKING_RUNTIME_INTEGRATION_IDENTITY,
+            ),
+        )
+        self.assertEqual(
+            len(
+                candidate_run_module.IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT17
+            ),
+            17,
+        )
+        self.assertEqual(
+            len(
+                candidate_run_module.IM03_WORKING_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT17
+            ),
+            17,
+        )
+        self.assertEqual(
+            len(
+                candidate_run_module.N3_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT16
+            ),
+            16,
+        )
+        self.assertEqual(
+            len(
+                candidate_run_module.N3_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT16
+            ),
+            16,
+        )
+
+    def test_im03_candidate_evidence_outcome_closed_types_and_full_core_identity(
+        self,
+    ) -> None:
+        self.assertEqual(
+            tuple(
+                value.value
+                for value in contracts_module.BasisEpistemicTier
+            ),
+            ("SOURCE_EXPLICIT", "RULE_ADMITTED_PROVISIONAL"),
+        )
+        self.assertEqual(len(fields(contracts_module.InputSpecificMeaningCandidate)), 21)
+        self.assertEqual(len(fields(contracts_module.InputSpecificityEvidence)), 5)
+        self.assertEqual(len(fields(contracts_module.SelectedEmlisProvisionalReading)), 14)
+        self.assertEqual(len(fields(contracts_module.LimitedMeaningOutcome)), 10)
+        candidate = self.normal_case.structure.candidate_records[0]
+        evidence = self.normal_case.structure.input_specificity_evidence_records[0]
+        signature = contracts_module.recompute_input_specific_meaning_candidate_signature(
+            candidate,
+            grounded_view=self.normal_case.grounded_view,
+        )
+        self.assertEqual(signature, candidate.semantic_signature)
+        self.assertEqual(
+            candidate.candidate_id,
+            contracts_module.input_specific_meaning_candidate_id(
+                candidate,
+                recomputed_semantic_signature=signature,
+            ),
+        )
+        rows = tuple(
+            row
+            for ref in evidence.whole_reading_consequence_refs
+            for row in self.normal_case.structure.whole_reading_consequence_rows
+            if row.consequence_id == ref
+        )
+        self.assertEqual(
+            candidate.input_specificity_evidence_ref,
+            contracts_module.input_specificity_evidence_id(
+                evidence,
+                whole_reading_consequence_rows=rows,
+            ),
+        )
+
+    def test_im03_exact12_mutations_bind_exact_one_target_delta_and_consequence(
+        self,
+    ) -> None:
+        self.assertEqual(len(contracts_module.MUTATION_APPLICATION_SPEC), 12)
+        self.assertEqual(
+            tuple(
+                value.name
+                for value in fields(contracts_module.MutationApplicationSpec)
+            ),
+            (
+                "mutation_kind",
+                "target_owner_domain",
+                "target_cardinality",
+                "directly_changed_signature_fields",
+                "derived_recomputed_signature_fields",
+                "required_unchanged_signature_fields",
+                "replacement_or_deletion_rule",
+                "whole_reading_consequence_code",
+            ),
+        )
+        self.assertEqual(
+            tuple(value.mutation_kind for value in contracts_module.MUTATION_APPLICATION_SPEC),
+            tuple(contracts_module.CounterfactualMutationKind),
+        )
+        mutable_fields = {
+            value.name
+            for value in fields(contracts_module.MeaningSemanticSignature)
+            if value.name != "schema_version"
+        }
+        for spec in contracts_module.MUTATION_APPLICATION_SPEC:
+            direct = set(spec.directly_changed_signature_fields)
+            derived = set(spec.derived_recomputed_signature_fields)
+            unchanged = set(spec.required_unchanged_signature_fields)
+            self.assertFalse(direct & derived)
+            self.assertFalse((direct | derived) & unchanged)
+            self.assertEqual(direct | derived | unchanged, mutable_fields)
+        for baseline, mutation in self._mutation_matrix():
+            with self.subTest(kind=mutation.mutation_kind.value):
+                mutated = input_specific_meaning_module._apply_counterfactual_mutation_with_spec(
+                    baseline, mutation
+                )
+                self.assertNotEqual(mutated, baseline)
+                code = contracts_module.validate_mutation_signature_delta(
+                    mutation=mutation,
+                    baseline_semantic_signature=baseline,
+                    mutated_semantic_signature=mutated,
+                )
+                self.assertIs(
+                    code,
+                    contracts_module.resolve_mutation_application_spec(
+                        mutation
+                    ).whole_reading_consequence_code,
+                )
+        baseline, mutation = self._mutation_matrix()[0]
+        mutated = input_specific_meaning_module.apply_counterfactual_mutation(
+            baseline,
+            mutation,
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "mutation_application_unlisted_field_delta",
+        ):
+            contracts_module.validate_mutation_signature_delta(
+                mutation=mutation,
+                baseline_semantic_signature=baseline,
+                mutated_semantic_signature=replace(
+                    mutated,
+                    reading_operation=(
+                        contracts_module.MeaningReadingOperation.KEEP_DISTINCT
+                    ),
+                ),
+            )
+
+    def test_im03_mutation_target_absent_is_candidate_invalid_and_ambiguous_or_noop_is_implementation_red(
+        self,
+    ) -> None:
+        baseline = (
+            CMEESubjectiveMeaningPlannerIM00ContractsTest._semantic_signature()
+        )
+        single = replace(
+            baseline,
+            component_role_keys=("role:left",),
+            relation_direction_keys=(),
+            component_semantic_keys=(baseline.component_semantic_keys[0],),
+        )
+        node_a = f"node:im03-a@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        node_b = f"node:im03-b@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        node_missing = (
+            f"node:im03-missing@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        )
+        source_component_refs = (node_a, node_b)
+        absent_exact12 = (
+            (
+                baseline,
+                self._mutation(
+                    contracts_module.CounterfactualMutationKind.DELETE_ENDPOINT,
+                    (node_missing,),
+                ),
+                source_component_refs,
+            ),
+            (
+                baseline,
+                self._mutation(
+                    contracts_module.CounterfactualMutationKind.SWAP_ENDPOINTS,
+                    (node_a, node_missing),
+                    (node_missing, node_a),
+                ),
+                source_component_refs,
+            ),
+            (
+                baseline,
+                self._mutation(
+                    contracts_module.CounterfactualMutationKind.DELETE_PREDICATE,
+                    (node_missing,),
+                ),
+                source_component_refs,
+            ),
+            (
+                baseline,
+                self._mutation(
+                    contracts_module.CounterfactualMutationKind.DELETE_OWNER,
+                    ("owner:other",),
+                ),
+                None,
+            ),
+            (
+                baseline,
+                self._mutation(
+                    contracts_module.CounterfactualMutationKind.REPLACE_WORLD,
+                    ("world:relationship",),
+                    ("world:external",),
+                ),
+                None,
+            ),
+            (
+                single,
+                self._mutation(
+                    contracts_module.CounterfactualMutationKind.REPLACE_ROLE,
+                    ("role:right",),
+                    ("role:left",),
+                ),
+                None,
+            ),
+            (
+                baseline,
+                self._mutation(
+                    contracts_module.CounterfactualMutationKind.REPLACE_TIME,
+                    ("time:past",),
+                    ("time:future",),
+                ),
+                None,
+            ),
+            (
+                baseline,
+                self._mutation(
+                    contracts_module.CounterfactualMutationKind.DELETE_MODALITY,
+                    ("modality:possibility",),
+                ),
+                None,
+            ),
+            (
+                baseline,
+                self._mutation(
+                    contracts_module.CounterfactualMutationKind.DELETE_ASPECT,
+                    ("aspect:state",),
+                ),
+                None,
+            ),
+            (
+                single,
+                self._mutation(
+                    contracts_module.CounterfactualMutationKind.DELETE_SCOPE,
+                    ("scope:other",),
+                ),
+                None,
+            ),
+            (
+                baseline,
+                self._mutation(
+                    contracts_module.CounterfactualMutationKind.DELETE_QUALIFIER,
+                    ("polarity:neutral",),
+                ),
+                None,
+            ),
+            (
+                baseline,
+                self._mutation(
+                    contracts_module.CounterfactualMutationKind.PROMOTE_UNKNOWN,
+                    ("resolution:unresolved",),
+                    ("resolution:resolved",),
+                ),
+                None,
+            ),
+        )
+        self.assertEqual(
+            tuple(
+                value.mutation_kind
+                for _base, value, _source_refs in absent_exact12
+            ),
+            tuple(contracts_module.CounterfactualMutationKind),
+        )
+        for absent_baseline, mutation, source_refs in absent_exact12:
+            with self.subTest(absent_kind=mutation.mutation_kind.value):
+                with self.assertRaisesRegex(
+                    CMEEStage1ContractError,
+                    "mutation_target_absent_candidate_invalid",
+                ):
+                    input_specific_meaning_module.apply_counterfactual_mutation(
+                        absent_baseline,
+                        mutation,
+                        source_component_refs=source_refs,
+                    )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "mutation_target_ambiguous_red",
+        ):
+            input_specific_meaning_module.apply_counterfactual_mutation(
+                baseline,
+                self._mutation(
+                    contracts_module.CounterfactualMutationKind.DELETE_SCOPE,
+                    ("scope:source_bounded",),
+                ),
+            )
+        absent_scope = replace(
+            baseline,
+            component_semantic_keys=tuple(
+                replace(value, scope_key="scope:absent")
+                for value in baseline.component_semantic_keys
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "meaning_semantic_signature_scope_absent_forbidden",
+        ):
+            input_specific_meaning_module.apply_counterfactual_mutation(
+                absent_scope,
+                self._mutation(
+                    contracts_module.CounterfactualMutationKind.DELETE_SCOPE,
+                    ("scope:absent",),
+                ),
+            )
+        single_unknown = replace(
+            baseline,
+            component_role_keys=("role:left",),
+            relation_direction_keys=(),
+            world_or_owner_distinction_keys=("owner:unknown",),
+            component_semantic_keys=(
+                replace(
+                    baseline.component_semantic_keys[0],
+                    owner_key="owner:unknown",
+                ),
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "mutation_application_noop_red",
+        ):
+            input_specific_meaning_module.apply_counterfactual_mutation(
+                single_unknown,
+                self._mutation(
+                    contracts_module.CounterfactualMutationKind.DELETE_OWNER,
+                    ("owner:unknown",),
+                ),
+            )
+        ambiguous_qualifier = replace(
+            baseline,
+            qualifier_keys=(
+                *baseline.qualifier_keys,
+                "qualifier:subject_polarity=negative",
+            ),
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "mutation_target_ambiguous_red",
+        ):
+            input_specific_meaning_module.apply_counterfactual_mutation(
+                ambiguous_qualifier,
+                self._mutation(
+                    contracts_module.CounterfactualMutationKind.DELETE_QUALIFIER,
+                    ("polarity:negative",),
+                ),
+            )
+
+    def test_im03_material_basis_provenance_exact_cover_and_weakest_tier(
+        self,
+    ) -> None:
+        candidate = self.normal_case.structure.candidate_records[0]
+        expected_keys = (
+            tuple(
+                (contracts_module.BasisProvenanceKind.RELATION_BRIDGE, ref)
+                for ref in candidate.relation_path_refs
+            )
+            + tuple(
+                (
+                    contracts_module.BasisProvenanceKind.QUALIFIED_EVENT_STATE,
+                    ref,
+                )
+                for ref in candidate.qualified_event_state_refs
+            )
+        )
+        self.assertEqual(
+            tuple(
+                (value.basis_kind, value.basis_ref)
+                for value in candidate.basis_provenance_rows
+            ),
+            expected_keys,
+        )
+        expected_tier = (
+            contracts_module.BasisEpistemicTier.RULE_ADMITTED_PROVISIONAL
+            if any(
+                row.basis_epistemic_tier
+                is contracts_module.BasisEpistemicTier.RULE_ADMITTED_PROVISIONAL
+                for row in candidate.basis_provenance_rows
+            )
+            else contracts_module.BasisEpistemicTier.SOURCE_EXPLICIT
+        )
+        self.assertIs(candidate.basis_epistemic_tier, expected_tier)
+
+    def test_im03_full_required_difference_row_coverage_and_evidence_back_binding(
+        self,
+    ) -> None:
+        structure = self.normal_case.structure
+        rows = {
+            value.consequence_id: value
+            for value in structure.whole_reading_consequence_rows
+        }
+        self.assertEqual(
+            tuple(value.candidate_ref for value in structure.input_specificity_evidence_records),
+            tuple(value.candidate_id for value in structure.candidate_records),
+        )
+        for candidate, evidence in zip(
+            structure.candidate_records,
+            structure.input_specificity_evidence_records,
+        ):
+            source_rows = (
+                contracts_module.input_specific_meaning_candidate_source_component_rows(
+                    candidate,
+                    grounded_view=self.normal_case.grounded_view,
+                )
+            )
+            source_refs = tuple(
+                row.source_object_ref for row in source_rows
+            )
+            self.assertEqual(
+                evidence.required_difference_refs,
+                candidate.preserved_difference_refs,
+            )
+            self.assertEqual(
+                tuple(
+                    rows[ref].required_difference_ref
+                    for ref in evidence.whole_reading_consequence_refs
+                ),
+                candidate.preserved_difference_refs,
+            )
+            for consequence_ref in evidence.whole_reading_consequence_refs:
+                consequence = rows[consequence_ref]
+                mutation = next(
+                    value
+                    for value in structure.counterfactual_mutation_rows
+                    if value.mutation_id
+                    == consequence.counterfactual_mutation_ref
+                )
+                self.assertEqual(
+                    consequence.mutated_semantic_signature,
+                    contracts_module.apply_meaning_signature_mutation(
+                        candidate.semantic_signature,
+                        mutation,
+                        source_component_refs=source_refs,
+                        source_component_rows=source_rows,
+                    ),
+                )
+        forged_evidence = replace(
+            structure.input_specificity_evidence_records[0],
+            whole_reading_consequence_refs=(),
+        )
+        with self.assertRaises(CMEEStage1ContractError):
+            contracts_module.validate_input_specific_meaning_structure(
+                replace(
+                    structure,
+                    input_specificity_evidence_records=(forged_evidence,),
+                ),
+                grounded_view=self.normal_case.grounded_view,
+                foreground_scope_derivation=self.normal_case.scope_derivation,
+            )
+
+    def test_im03_full_core_dedupe_preserves_distinct_provenance_tier_unknown_and_qualifier(
+        self,
+    ) -> None:
+        structure = self.normal_case.structure
+        candidate = structure.candidate_records[0]
+        evidence = structure.input_specificity_evidence_records[0]
+        rows = structure.whole_reading_consequence_rows
+        duplicate_records = (
+            (candidate, evidence, rows),
+            (candidate, evidence, rows),
+        )
+        self.assertEqual(
+            len(
+                input_specific_meaning_module._seal_and_dedupe_candidate_records(
+                    duplicate_records
+                )
+            ),
+            1,
+        )
+        alternate_tier = (
+            contracts_module.BasisEpistemicTier.SOURCE_EXPLICIT
+            if candidate.basis_epistemic_tier
+            is contracts_module.BasisEpistemicTier.RULE_ADMITTED_PROVISIONAL
+            else contracts_module.BasisEpistemicTier.RULE_ADMITTED_PROVISIONAL
+        )
+        shared_row_candidate = replace(
+            candidate,
+            candidate_id="input-specific-meaning-candidate:pending",
+            basis_epistemic_tier=alternate_tier,
+            input_specificity_evidence_ref=(
+                "input-specificity-evidence:pending"
+            ),
+        )
+        shared_row_candidate = replace(
+            shared_row_candidate,
+            candidate_id=contracts_module.input_specific_meaning_candidate_id(
+                shared_row_candidate,
+                recomputed_semantic_signature=(
+                    shared_row_candidate.semantic_signature
+                ),
+            ),
+        )
+        shared_row_evidence = replace(
+            evidence,
+            candidate_ref=shared_row_candidate.candidate_id,
+        )
+        shared_row_candidate = replace(
+            shared_row_candidate,
+            input_specificity_evidence_ref=(
+                contracts_module.input_specificity_evidence_id(
+                    shared_row_evidence,
+                    whole_reading_consequence_rows=rows,
+                )
+            ),
+        )
+        distinct_core_records = (
+            (candidate, evidence, rows),
+            (shared_row_candidate, shared_row_evidence, rows),
+        )
+        self.assertEqual(
+            len(
+                input_specific_meaning_module._seal_and_dedupe_candidate_records(
+                    distinct_core_records
+                )
+            ),
+            2,
+        )
+        self.assertEqual(
+            input_specific_meaning_module._dedupe_whole_reading_consequence_rows(
+                distinct_core_records
+            ),
+            rows,
+        )
+        variants = (
+            replace(
+                candidate,
+                basis_epistemic_tier=(
+                    contracts_module.BasisEpistemicTier.SOURCE_EXPLICIT
+                    if candidate.basis_epistemic_tier
+                    is contracts_module.BasisEpistemicTier.RULE_ADMITTED_PROVISIONAL
+                    else contracts_module.BasisEpistemicTier.RULE_ADMITTED_PROVISIONAL
+                ),
+            ),
+            replace(candidate, material_unknown_refs=("unknown:im03",)),
+            replace(candidate, source_qualifier_refs=("polarity:negative",)),
+        )
+        core_ids = {
+            contracts_module.input_specific_meaning_candidate_id(
+                value,
+                recomputed_semantic_signature=candidate.semantic_signature,
+            )
+            for value in (candidate, *variants)
+        }
+        self.assertEqual(len(core_ids), 4)
+        divergent = replace(candidate, emlis_reading_status="DIVERGED")
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "input_specific_meaning_same_core_payload_diverged",
+        ):
+            input_specific_meaning_module._seal_and_dedupe_candidate_records(
+                (
+                    (candidate, evidence, rows),
+                    (
+                        replace(
+                            divergent,
+                            candidate_id=candidate.candidate_id,
+                        ),
+                        evidence,
+                        rows,
+                    ),
+                )
+            )
+
+    def test_im03_hard_valid_selection_and_all_invalid_closed_disposition(
+        self,
+    ) -> None:
+        normal = self.normal_case.structure
+        bundle = normal.requirement_bundles[0]
+        configuration_by_ref = {
+            value.configuration_id: value
+            for value in normal.configurations
+        }
+        owned_configuration_refs = (
+            bundle.anchor_configuration_ref,
+            *bundle.adjacent_configuration_refs,
+        )
+        seeds = input_specific_meaning_module._material_binding_seed_partition(
+            grounded_view=self.normal_case.grounded_view,
+            configurations=tuple(
+                configuration_by_ref[ref]
+                for ref in owned_configuration_refs
+            ),
+        )
+        self.assertEqual(
+            tuple(
+                value.configuration_id
+                for seed in seeds
+                for value in seed
+            ),
+            owned_configuration_refs,
+        )
+        self.assertEqual(
+            len(input_specific_meaning_module._enumerate_candidate_lanes(seeds)),
+            14 * max(1, len(seeds)),
+        )
+        material_vertices = tuple(
+            (
+                contracts_module.BasisProvenanceKind.RELATION_BRIDGE,
+                ref,
+                configuration.configuration_id,
+            )
+            for configuration in (
+                configuration_by_ref[ref]
+                for ref in owned_configuration_refs
+            )
+            if type(configuration) is contracts_module.RelationalConfiguration
+            for ref in configuration.relation_path_refs
+        ) + tuple(
+            (
+                contracts_module.BasisProvenanceKind.QUALIFIED_EVENT_STATE,
+                configuration.configuration_id,
+                configuration.configuration_id,
+            )
+            for configuration in (
+                configuration_by_ref[ref]
+                for ref in owned_configuration_refs
+            )
+            if type(configuration)
+            is contracts_module.QualifiedEventStateConfiguration
+        )
+        seeded_vertices = tuple(
+            vertex
+            for seed in seeds
+            for configuration in seed
+            for vertex in material_vertices
+            if vertex[2] == configuration.configuration_id
+        )
+        self.assertEqual(seeded_vertices, material_vertices)
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "input_specific_meaning_candidate_projection_capability_red",
+        ):
+            input_specific_meaning_module.derive_input_specific_meaning_structure(
+                replace(
+                    self.normal_case.grounded_view,
+                    semantic_interpretation_projections=(),
+                ),
+                self.normal_case.scope_derivation,
+            )
+        self.assertIs(
+            type(normal.meaning_decision_outcome),
+            contracts_module.SelectedEmlisProvisionalReading,
+        )
+        limited = self.limited_case.structure.meaning_decision_outcome
+        self.assertIs(type(limited), contracts_module.LimitedMeaningOutcome)
+        self.assertIn(
+            limited.derivation_state_ref,
+            {
+                "COMPETING_MATERIAL_SCOPES",
+                "UPSTREAM_STRUCTURE_INSUFFICIENT",
+                "NO_REQUIRED_DIFFERENCE",
+                "ALL_DRAFTS_SOURCE_GROUNDED_HARD_INVALID",
+            },
+        )
+        candidate = normal.candidate_records[0]
+        evidence = normal.input_specificity_evidence_records[0]
+        competitor = replace(
+            candidate,
+            candidate_id=f"{candidate.candidate_id}:competitor",
+            semantic_signature=replace(
+                candidate.semantic_signature,
+                reading_operation=contracts_module.MeaningReadingOperation.KEEP_DISTINCT,
+            ),
+        )
+        competitor_evidence = replace(
+            evidence,
+            candidate_ref=competitor.candidate_id,
+        )
+        self.assertIsNone(
+            input_specific_meaning_module.select_input_specific_meaning(
+                candidates=(candidate, competitor),
+                evidence_records=(evidence, competitor_evidence),
+            )
+        )
+
+    def test_im03_sealed_trace_exact3_excludes_hard_invalid_and_recomputes_identity(
+        self,
+    ) -> None:
+        structure = self.normal_case.structure
+        outcome = structure.meaning_decision_outcome
+        self.assertIs(
+            type(outcome),
+            contracts_module.SelectedEmlisProvisionalReading,
+        )
+        self.assertEqual(len(fields(contracts_module.MeaningDecisionTrace)), 2)
+        self.assertEqual(len(fields(contracts_module.MeaningDecisionTraceRow)), 4)
+        self.assertEqual(
+            tuple(value.value for value in contracts_module.MeaningDecisionTraceKind),
+            ("SELECTED", "NONSELECTED_VALID", "LIMITED_BASIS"),
+        )
+        self.assertNotIn(
+            "HARD_INVALID",
+            stage1_canonical_json_bytes(outcome.decision_trace).decode("utf-8"),
+        )
+        self.assertEqual(
+            outcome.reading_id,
+            contracts_module.selected_emlis_provisional_reading_id(outcome),
+        )
+        forged = replace(
+            outcome,
+            selection_reason_codes=(contracts_module.MeaningDecisionReasonCode.SEL00,),
+        )
+        with self.assertRaises(CMEEStage1ContractError):
+            contracts_module.validate_input_specific_meaning_structure(
+                replace(structure, meaning_decision_outcome=forged),
+                grounded_view=self.normal_case.grounded_view,
+                foreground_scope_derivation=self.normal_case.scope_derivation,
+            )
 
 
 if __name__ == "__main__":

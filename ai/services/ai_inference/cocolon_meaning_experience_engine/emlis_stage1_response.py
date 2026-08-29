@@ -3958,7 +3958,7 @@ def build_subjective_planning_inputs(
             ForegroundScopeDispositionCode.STRUCTURE_INSUFFICIENT_STOP.value
         )
 
-    # IM02 remains on the pre-Reception side of the type boundary.  Its
+    # IM03 remains on the pre-Reception side of the type boundary.  Its
     # complete source-grounded structure is frozen before the allowed
     # opportunity envelope, concrete acts, style, or temperature are read.
     input_specific_meaning_structure: InputSpecificMeaningStructure = (
@@ -3969,6 +3969,7 @@ def build_subjective_planning_inputs(
     )
     validate_input_specific_meaning_structure(
         input_specific_meaning_structure,
+        grounded_view=grounded_situation_view,
         foreground_scope_derivation=foreground_scope_derivation,
     )
 

@@ -19,7 +19,7 @@ from dataclasses import (
     replace,
 )
 from enum import Enum
-from typing import Any, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
 
 
 CMEE_SCHEMA_VERSION = "cocolon.cmee.v1a.i1sx.material_unknown.v2"
@@ -571,6 +571,45 @@ class MeaningReadingOperation(str, Enum):
     RECOGNIZE_BOUNDED_ACTUALITY = "RECOGNIZE_BOUNDED_ACTUALITY"
     HOLD_UNRESOLVED = "HOLD_UNRESOLVED"
     HOLD_QUALIFIED_EVENT_STATE = "HOLD_QUALIFIED_EVENT_STATE"
+
+
+class BasisProvenanceKind(str, Enum):
+    RELATION_BRIDGE = "RELATION_BRIDGE"
+    QUALIFIED_EVENT_STATE = "QUALIFIED_EVENT_STATE"
+
+
+class BasisEpistemicTier(str, Enum):
+    SOURCE_EXPLICIT = "SOURCE_EXPLICIT"
+    RULE_ADMITTED_PROVISIONAL = "RULE_ADMITTED_PROVISIONAL"
+
+
+class MeaningDecisionTraceKind(str, Enum):
+    SELECTED = "SELECTED"
+    NONSELECTED_VALID = "NONSELECTED_VALID"
+    LIMITED_BASIS = "LIMITED_BASIS"
+
+
+class MeaningDecisionReasonCode(str, Enum):
+    SEL00 = "SEL00_BASIS_PROVENANCE_TIER"
+    SEL01 = "SEL01_BUNDLE_SATISFACTION"
+    SEL02 = "SEL02_REQUIRED_RETENTION_PRESERVATION"
+    SEL03 = "SEL03_BUNDLE_CONNECTIVITY"
+    SEL04 = "SEL04_EPISTEMIC_CONSERVATISM"
+    SEL05 = "SEL05_CONTRASTIVE_SEMANTIC_NECESSITY"
+    SEL06 = "SEL06_MINIMAL_SUFFICIENCY"
+    LIM01 = "LIM01_NO_SAFE_INPUT_SPECIFIC_CONFIGURATION"
+    LIM02 = "LIM02_STRUCTURE_INSUFFICIENT"
+    LIM03 = "LIM03_COMPETING_MATERIAL_READINGS"
+
+
+class LimitedMeaningOutcomeState(str, Enum):
+    LIMITED_NO_SAFE_INPUT_SPECIFIC_CONFIGURATION = (
+        "LIMITED_NO_SAFE_INPUT_SPECIFIC_CONFIGURATION"
+    )
+    LIMITED_STRUCTURE_INSUFFICIENT = "LIMITED_STRUCTURE_INSUFFICIENT"
+    LIMITED_COMPETING_MATERIAL_READINGS = (
+        "LIMITED_COMPETING_MATERIAL_READINGS"
+    )
 
 
 class ObservationContributionKind(str, Enum):
@@ -1149,6 +1188,46 @@ class GroundedSourceRelationRow:
     relation_kind: ForegroundScopeRelationKind
 
 
+@dataclass(frozen=True, slots=True)
+class GroundedSemanticComponentProjection:
+    """Source-owned semantic leaves retained for IM03 recomputation."""
+
+    schema_version: str
+    source_object_ref: str
+    source_declaration_rank: int
+    typed_predicate_key: str
+    semantic_kind_key: str
+    owner_key: str
+    scope_key: str
+    role_key: str
+    epistemic_state_key: str
+    temporal_state_key: str
+    modality_key: str
+    polarity_key: str
+    qualifier_refs: Tuple[str, ...]
+    source_evidence_refs: Tuple[str, ...]
+    material_unknown_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class GroundedInterpretationProjection:
+    """Safe source projection used to rebuild, never store, a signature."""
+
+    schema_version: str
+    interpretation_candidate_ref: str
+    source_declaration_rank: int
+    candidate_kind: InterpretationKind
+    semantic_operator: SemanticOperator
+    relation_operator: RelationOperator
+    component_rows: Tuple[GroundedSemanticComponentProjection, ...]
+    relation_path_refs: Tuple[str, ...]
+    source_evidence_refs: Tuple[str, ...]
+    basis_contribution_refs: Tuple[str, ...]
+    approved_derivation_refs: Tuple[str, ...]
+    required_qualifier_refs: Tuple[str, ...]
+    forbidden_promotion_codes: Tuple[str, ...]
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class PreMeaningGroundedInputs:
     """Sanitized semantic closure; Reception-side data is intentionally absent."""
@@ -1326,6 +1405,18 @@ class CounterfactualMutationRow:
 
 
 @dataclass(frozen=True, slots=True)
+class MutationApplicationSpec:
+    mutation_kind: CounterfactualMutationKind
+    target_owner_domain: str
+    target_cardinality: int
+    directly_changed_signature_fields: Tuple[str, ...]
+    derived_recomputed_signature_fields: Tuple[str, ...]
+    required_unchanged_signature_fields: Tuple[str, ...]
+    replacement_or_deletion_rule: str
+    whole_reading_consequence_code: WholeReadingConsequenceCode
+
+
+@dataclass(frozen=True, slots=True)
 class RequiredDifferenceRow:
     schema_version: str
     difference_id: str
@@ -1363,8 +1454,103 @@ class RequirementBundleDerivation:
 
 
 @dataclass(frozen=True, slots=True)
+class BasisProvenanceRow:
+    schema_version: str
+    basis_kind: BasisProvenanceKind
+    basis_ref: str
+    basis_epistemic_tier: BasisEpistemicTier
+    source_evidence_refs: Tuple[str, ...]
+    approved_derivation_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class InputSpecificMeaningCandidate:
+    schema_version: str
+    candidate_id: str
+    reading_operation: MeaningReadingOperation
+    basis_contribution_refs: Tuple[str, ...]
+    basis_configuration_refs: Tuple[str, ...]
+    requirement_bundle_refs: Tuple[str, ...]
+    primary_component_refs: Tuple[str, ...]
+    relation_path_refs: Tuple[str, ...]
+    qualified_event_state_refs: Tuple[str, ...]
+    basis_provenance_rows: Tuple[BasisProvenanceRow, ...]
+    basis_epistemic_tier: BasisEpistemicTier
+    basis_derivation_refs: Tuple[str, ...]
+    source_qualifier_refs: Tuple[str, ...]
+    preserved_difference_refs: Tuple[str, ...]
+    material_unknown_refs: Tuple[str, ...]
+    forbidden_promotion_codes: Tuple[str, ...]
+    forbidden_semantic_collapse_refs: Tuple[str, ...]
+    semantic_loss_codes: Tuple[DifferenceInvariantCode, ...]
+    input_specificity_evidence_ref: str
+    emlis_reading_status: str
+    semantic_signature: MeaningSemanticSignature
+
+
+@dataclass(frozen=True, slots=True)
+class InputSpecificityEvidence:
+    candidate_ref: str
+    foreground_scope_ref: str
+    required_difference_refs: Tuple[str, ...]
+    discriminative_necessity_refs: Tuple[str, ...]
+    whole_reading_consequence_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MeaningDecisionTraceRow:
+    trace_kind: MeaningDecisionTraceKind
+    subject_ref: str
+    reason_codes: Tuple[MeaningDecisionReasonCode, ...]
+    source_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MeaningDecisionTrace:
+    schema_version: str
+    rows: Tuple[MeaningDecisionTraceRow, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SelectedEmlisProvisionalReading:
+    schema_version: str
+    reading_id: str
+    selected_candidate_ref: str
+    primary_reading_focus_ref: str
+    supporting_facet_refs: Tuple[str, ...]
+    reading_component_refs: Tuple[str, ...]
+    reading_relation_refs: Tuple[str, ...]
+    qualified_event_state_refs: Tuple[str, ...]
+    basis_provenance_rows: Tuple[BasisProvenanceRow, ...]
+    basis_epistemic_tier: BasisEpistemicTier
+    reading_status: str
+    unresolved_alternative_refs: Tuple[str, ...]
+    selection_reason_codes: Tuple[MeaningDecisionReasonCode, ...]
+    decision_trace: MeaningDecisionTrace
+
+
+@dataclass(frozen=True, slots=True)
+class LimitedMeaningOutcome:
+    schema_version: str
+    outcome_state: LimitedMeaningOutcomeState
+    retained_layer1_refs: Tuple[str, ...]
+    foreground_source_object_refs: Tuple[str, ...]
+    retained_qualifier_refs: Tuple[str, ...]
+    unresolved_alternative_refs: Tuple[str, ...]
+    derivation_state_ref: str
+    product_acceptance_eligible: bool
+    outcome_reason_codes: Tuple[MeaningDecisionReasonCode, ...]
+    decision_trace: MeaningDecisionTrace
+
+
+MeaningDecisionOutcome = (
+    SelectedEmlisProvisionalReading | LimitedMeaningOutcome
+)
+
+
+@dataclass(frozen=True, slots=True)
 class InputSpecificMeaningStructure:
-    """Closed IM02 result; no Reception, ranking, or surface input exists."""
+    """Closed IM03 result; no Reception or surface input exists."""
 
     schema_version: str
     difference_configuration_derivation: DifferenceConfigurationDerivation
@@ -1375,6 +1561,9 @@ class InputSpecificMeaningStructure:
     requirement_bundle_derivation: RequirementBundleDerivation
     requirement_bundles: Tuple[RequirementBundle, ...]
     whole_reading_consequence_rows: Tuple[WholeReadingConsequenceRow, ...]
+    candidate_records: Tuple[InputSpecificMeaningCandidate, ...]
+    input_specificity_evidence_records: Tuple[InputSpecificityEvidence, ...]
+    meaning_decision_outcome: MeaningDecisionOutcome
 
 
 @dataclass(frozen=True, slots=True)
@@ -2046,6 +2235,20 @@ _STAGE1_TUPLE_FIELDS = {
         "material_unknown_refs",
     ),
     GroundedSourceQualifierRow: ("qualifier_refs",),
+    GroundedSemanticComponentProjection: (
+        "qualifier_refs",
+        "source_evidence_refs",
+        "material_unknown_refs",
+    ),
+    GroundedInterpretationProjection: (
+        "component_rows",
+        "relation_path_refs",
+        "source_evidence_refs",
+        "basis_contribution_refs",
+        "approved_derivation_refs",
+        "required_qualifier_refs",
+        "forbidden_promotion_codes",
+    ),
     PreMeaningGroundedInputs: (
         "interpretation_candidate_rows",
         "observation_contribution_rows",
@@ -2138,6 +2341,11 @@ _STAGE1_TUPLE_FIELDS = {
         "replacement_refs",
         "source_evidence_refs",
     ),
+    MutationApplicationSpec: (
+        "directly_changed_signature_fields",
+        "derived_recomputed_signature_fields",
+        "required_unchanged_signature_fields",
+    ),
     RequiredDifferenceRow: (
         "invariant_codes",
         "retention_duty_refs",
@@ -2152,6 +2360,49 @@ _STAGE1_TUPLE_FIELDS = {
         "missing_structure_refs",
         "derivation_evidence_refs",
     ),
+    BasisProvenanceRow: (
+        "source_evidence_refs",
+        "approved_derivation_refs",
+    ),
+    InputSpecificMeaningCandidate: (
+        "basis_contribution_refs",
+        "basis_configuration_refs",
+        "requirement_bundle_refs",
+        "primary_component_refs",
+        "relation_path_refs",
+        "qualified_event_state_refs",
+        "basis_provenance_rows",
+        "basis_derivation_refs",
+        "source_qualifier_refs",
+        "preserved_difference_refs",
+        "material_unknown_refs",
+        "forbidden_promotion_codes",
+        "forbidden_semantic_collapse_refs",
+        "semantic_loss_codes",
+    ),
+    InputSpecificityEvidence: (
+        "required_difference_refs",
+        "discriminative_necessity_refs",
+        "whole_reading_consequence_refs",
+    ),
+    MeaningDecisionTraceRow: ("reason_codes", "source_refs"),
+    MeaningDecisionTrace: ("rows",),
+    SelectedEmlisProvisionalReading: (
+        "supporting_facet_refs",
+        "reading_component_refs",
+        "reading_relation_refs",
+        "qualified_event_state_refs",
+        "basis_provenance_rows",
+        "unresolved_alternative_refs",
+        "selection_reason_codes",
+    ),
+    LimitedMeaningOutcome: (
+        "retained_layer1_refs",
+        "foreground_source_object_refs",
+        "retained_qualifier_refs",
+        "unresolved_alternative_refs",
+        "outcome_reason_codes",
+    ),
     InputSpecificMeaningStructure: (
         "configurations",
         "observed_distinction_rows",
@@ -2159,6 +2410,8 @@ _STAGE1_TUPLE_FIELDS = {
         "required_difference_rows",
         "requirement_bundles",
         "whole_reading_consequence_rows",
+        "candidate_records",
+        "input_specificity_evidence_records",
     ),
     MeaningComponentSemanticKey: (),
     MeaningSemanticSignature: (
@@ -4284,6 +4537,7 @@ def _validate_stage1_evidence_refs(
 
 
 _FOREGROUND_SCOPE_SCHEMA_VERSION = "1.0"
+_INPUT_SPECIFIC_MEANING_STRUCTURE_SCHEMA_VERSION = "1.1"
 _FOREGROUND_SCOPE_BASIS_REF_VERSION = (
     "cocolon.cmee.emlis.foreground_scope_basis.v1"
 )
@@ -4305,6 +4559,18 @@ _REQUIREMENT_BUNDLE_REF_VERSION = (
 )
 _WHOLE_READING_CONSEQUENCE_REF_VERSION = (
     "cocolon.cmee.emlis.whole_reading_consequence.v1"
+)
+_INPUT_SPECIFIC_MEANING_CANDIDATE_REF_VERSION = (
+    "cocolon.cmee.emlis.input_specific_meaning_candidate.v1"
+)
+_INPUT_SPECIFICITY_EVIDENCE_REF_VERSION = (
+    "cocolon.cmee.emlis.input_specificity_evidence.v1"
+)
+_SELECTED_EMLIS_PROVISIONAL_READING_REF_VERSION = (
+    "cocolon.cmee.emlis.selected_emlis_provisional_reading.v1"
+)
+_LIMITED_MEANING_OUTCOME_REF_VERSION = (
+    "cocolon.cmee.emlis.limited_meaning_outcome.v1"
 )
 _CANONICAL_TYPED_KEY_RE = re.compile(
     r"^[A-Za-z][A-Za-z0-9_-]*:[A-Za-z0-9][A-Za-z0-9._/@|=+\-]*$"
@@ -7680,6 +7946,265 @@ _MUTATION_ALLOWED_INVARIANTS = {
     ),
 }
 
+_MEANING_SIGNATURE_MUTABLE_FIELDS_EXACT12 = tuple(
+    value.name
+    for value in dataclass_fields(MeaningSemanticSignature)
+    if value.name != "schema_version"
+)
+
+_MUTATION_SPEC_ROWS = {
+    CounterfactualMutationKind.DELETE_ENDPOINT: (
+        "bound_endpoint_component",
+        1,
+        ("component_semantic_keys",),
+        (
+            "input_center_keys",
+            "component_role_keys",
+            "relation_direction_keys",
+            "epistemic_state_keys",
+            "temporal_state_keys",
+            "resolution_treatment_keys",
+            "world_or_owner_distinction_keys",
+            "modality_polarity_or_limitation_keys",
+            "episodicity_boundary_keys",
+            "qualifier_keys",
+        ),
+        "delete_endpoint_and_rebuild_owned_summaries",
+        WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED,
+    ),
+    CounterfactualMutationKind.SWAP_ENDPOINTS: (
+        "bound_endpoint_pair",
+        2,
+        ("component_semantic_keys",),
+        ("component_role_keys", "relation_direction_keys", "qualifier_keys"),
+        "atomic_role_and_role_qualifier_swap",
+        WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED,
+    ),
+    CounterfactualMutationKind.DELETE_PREDICATE: (
+        "typed_predicate_component",
+        1,
+        ("component_semantic_keys",),
+        (
+            "input_center_keys",
+            "component_role_keys",
+            "relation_direction_keys",
+            "epistemic_state_keys",
+            "temporal_state_keys",
+            "resolution_treatment_keys",
+            "world_or_owner_distinction_keys",
+            "modality_polarity_or_limitation_keys",
+            "episodicity_boundary_keys",
+            "qualifier_keys",
+        ),
+        "delete_predicate_component_and_rebuild_owned_summaries",
+        WholeReadingConsequenceCode.INPUT_CENTER_CHANGED,
+    ),
+    CounterfactualMutationKind.DELETE_OWNER: (
+        "owner_bearing_component",
+        1,
+        ("component_semantic_keys",),
+        ("input_center_keys", "world_or_owner_distinction_keys", "qualifier_keys"),
+        "replace_owner_with_literal_unknown",
+        WholeReadingConsequenceCode.WORLD_OR_OWNER_DISTINCTION_CHANGED,
+    ),
+    CounterfactualMutationKind.REPLACE_WORLD: (
+        "bound_world_key",
+        1,
+        ("world_or_owner_distinction_keys",),
+        ("component_semantic_keys", "qualifier_keys"),
+        "replace_world_from_closed_source_row",
+        WholeReadingConsequenceCode.WORLD_OR_OWNER_DISTINCTION_CHANGED,
+    ),
+    CounterfactualMutationKind.REPLACE_ROLE: (
+        "bound_role_component",
+        1,
+        ("component_semantic_keys",),
+        (
+            "component_role_keys",
+            "relation_direction_keys",
+            "temporal_state_keys",
+            "modality_polarity_or_limitation_keys",
+            "qualifier_keys",
+        ),
+        "replace_role_from_closed_pair",
+        WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED,
+    ),
+    CounterfactualMutationKind.REPLACE_TIME: (
+        "bound_time_key",
+        1,
+        ("temporal_state_keys",),
+        ("qualifier_keys", "episodicity_boundary_keys"),
+        "replace_time_from_closed_source_row",
+        WholeReadingConsequenceCode.TEMPORAL_FLOW_CHANGED,
+    ),
+    CounterfactualMutationKind.DELETE_MODALITY: (
+        "bound_modality_qualifier",
+        1,
+        ("modality_polarity_or_limitation_keys",),
+        ("epistemic_state_keys", "qualifier_keys"),
+        "delete_modality_and_same_owner_summary",
+        WholeReadingConsequenceCode.MODALITY_POLARITY_OR_LIMITATION_CHANGED,
+    ),
+    CounterfactualMutationKind.DELETE_ASPECT: (
+        "bound_aspect_qualifier",
+        1,
+        ("episodicity_boundary_keys",),
+        ("temporal_state_keys", "qualifier_keys"),
+        "delete_aspect_and_same_owner_summary",
+        WholeReadingConsequenceCode.EPISODICITY_BOUNDARY_CHANGED,
+    ),
+    CounterfactualMutationKind.DELETE_SCOPE: (
+        "bound_scope_or_limit_leaf",
+        1,
+        ("component_semantic_keys",),
+        ("modality_polarity_or_limitation_keys", "qualifier_keys"),
+        "delete_explicit_scope_leaf",
+        WholeReadingConsequenceCode.MODALITY_POLARITY_OR_LIMITATION_CHANGED,
+    ),
+    CounterfactualMutationKind.PROMOTE_UNKNOWN: (
+        "resolution_unresolved",
+        1,
+        ("resolution_treatment_keys",),
+        (),
+        "replace_unresolved_with_resolved",
+        WholeReadingConsequenceCode.RESOLUTION_TREATMENT_CHANGED,
+    ),
+}
+
+
+def _mutation_application_spec(
+    *,
+    mutation_kind: CounterfactualMutationKind,
+    target_owner_domain: str,
+    target_cardinality: int,
+    directly_changed_signature_fields: Tuple[str, ...],
+    derived_recomputed_signature_fields: Tuple[str, ...],
+    replacement_or_deletion_rule: str,
+    whole_reading_consequence_code: WholeReadingConsequenceCode,
+) -> MutationApplicationSpec:
+    changed = {
+        *directly_changed_signature_fields,
+        *derived_recomputed_signature_fields,
+    }
+    if (
+        set(directly_changed_signature_fields).intersection(
+            derived_recomputed_signature_fields
+        )
+        or not changed.issubset(_MEANING_SIGNATURE_MUTABLE_FIELDS_EXACT12)
+    ):
+        raise CMEEStage1ContractError("mutation_application_spec_invalid")
+    unchanged = tuple(
+        field_name
+        for field_name in _MEANING_SIGNATURE_MUTABLE_FIELDS_EXACT12
+        if field_name not in changed
+    )
+    return MutationApplicationSpec(
+        mutation_kind=mutation_kind,
+        target_owner_domain=target_owner_domain,
+        target_cardinality=target_cardinality,
+        directly_changed_signature_fields=directly_changed_signature_fields,
+        derived_recomputed_signature_fields=derived_recomputed_signature_fields,
+        required_unchanged_signature_fields=unchanged,
+        replacement_or_deletion_rule=replacement_or_deletion_rule,
+        whole_reading_consequence_code=whole_reading_consequence_code,
+    )
+
+
+def _delete_qualifier_application_spec(target: str) -> MutationApplicationSpec:
+    role_axis = re.fullmatch(
+        r"qualifier:(left|right|subject|object|target)_(time_scope|modality|polarity)=([A-Za-z0-9._/+\-]+)",
+        target,
+    )
+    if target.startswith("polarity:") and target.count(":") == 1:
+        derived = ("modality_polarity_or_limitation_keys",)
+        code = WholeReadingConsequenceCode.MODALITY_POLARITY_OR_LIMITATION_CHANGED
+        domain = "polarity_qualifier"
+    elif target.startswith(("epistemic:", "epistemic-state:")) and target.count(":") == 1:
+        derived = ("epistemic_state_keys",)
+        code = WholeReadingConsequenceCode.RESOLUTION_TREATMENT_CHANGED
+        domain = "epistemic_qualifier"
+    elif target == "qualifier:not_generalized":
+        derived = ("episodicity_boundary_keys",)
+        code = WholeReadingConsequenceCode.EPISODICITY_BOUNDARY_CHANGED
+        domain = "not_generalized_qualifier"
+    elif role_axis is not None:
+        axis = role_axis.group(2)
+        if axis == "time_scope":
+            derived = ("temporal_state_keys", "episodicity_boundary_keys")
+            code = WholeReadingConsequenceCode.TEMPORAL_FLOW_CHANGED
+        elif axis == "modality":
+            derived = (
+                "epistemic_state_keys",
+                "modality_polarity_or_limitation_keys",
+            )
+            code = WholeReadingConsequenceCode.MODALITY_POLARITY_OR_LIMITATION_CHANGED
+        else:
+            derived = ("modality_polarity_or_limitation_keys",)
+            code = WholeReadingConsequenceCode.MODALITY_POLARITY_OR_LIMITATION_CHANGED
+        domain = f"role_{axis}_qualifier"
+    else:
+        raise CMEEStage1ContractError(
+            "counterfactual_mutation_target_namespace_invalid"
+        )
+    return _mutation_application_spec(
+        mutation_kind=CounterfactualMutationKind.DELETE_QUALIFIER,
+        target_owner_domain=domain,
+        target_cardinality=1,
+        directly_changed_signature_fields=("qualifier_keys",),
+        derived_recomputed_signature_fields=derived,
+        replacement_or_deletion_rule="delete_exact_owned_qualifier",
+        whole_reading_consequence_code=code,
+    )
+
+
+def resolve_mutation_application_spec(
+    mutation: CounterfactualMutationRow,
+) -> MutationApplicationSpec:
+    if type(mutation) is not CounterfactualMutationRow:
+        raise CMEEStage1ContractError("counterfactual_mutation_type_invalid")
+    kind = mutation.mutation_kind
+    if kind is CounterfactualMutationKind.DELETE_QUALIFIER:
+        if len(mutation.target_component_refs) != 1:
+            raise CMEEStage1ContractError(
+                "counterfactual_mutation_cardinality_invalid"
+            )
+        return _delete_qualifier_application_spec(
+            mutation.target_component_refs[0]
+        )
+    row = _MUTATION_SPEC_ROWS.get(kind)
+    if row is None:
+        raise CMEEStage1ContractError("mutation_application_spec_not_closed")
+    return _mutation_application_spec(
+        mutation_kind=kind,
+        target_owner_domain=row[0],
+        target_cardinality=row[1],
+        directly_changed_signature_fields=row[2],
+        derived_recomputed_signature_fields=row[3],
+        replacement_or_deletion_rule=row[4],
+        whole_reading_consequence_code=row[5],
+    )
+
+
+if set(_MUTATION_SPEC_ROWS) | {CounterfactualMutationKind.DELETE_QUALIFIER} != set(
+    CounterfactualMutationKind
+):
+    raise RuntimeError("mutation_application_spec_registry_not_exact12")
+
+MUTATION_APPLICATION_SPEC = tuple(
+    _delete_qualifier_application_spec("qualifier:not_generalized")
+    if kind is CounterfactualMutationKind.DELETE_QUALIFIER
+    else _mutation_application_spec(
+        mutation_kind=kind,
+        target_owner_domain=_MUTATION_SPEC_ROWS[kind][0],
+        target_cardinality=_MUTATION_SPEC_ROWS[kind][1],
+        directly_changed_signature_fields=_MUTATION_SPEC_ROWS[kind][2],
+        derived_recomputed_signature_fields=_MUTATION_SPEC_ROWS[kind][3],
+        replacement_or_deletion_rule=_MUTATION_SPEC_ROWS[kind][4],
+        whole_reading_consequence_code=_MUTATION_SPEC_ROWS[kind][5],
+    )
+    for kind in CounterfactualMutationKind
+)
+
 
 def validate_counterfactual_mutation_local_shape(
     row: CounterfactualMutationRow,
@@ -7750,7 +8275,7 @@ def validate_counterfactual_mutation_local_shape(
     elif kind is CounterfactualMutationKind.PROMOTE_UNKNOWN:
         valid = (
             len(targets) == len(replacements) == 1
-            and targets[0].startswith("unknown:")
+            and targets == ("resolution:unresolved",)
             and replacements == ("resolution:resolved",)
         )
     elif kind is CounterfactualMutationKind.REPLACE_WORLD:
@@ -7845,23 +8370,11 @@ def validate_counterfactual_mutation_local_shape(
             code="counterfactual_mutation_target_namespace_invalid",
         )
     elif kind is CounterfactualMutationKind.DELETE_QUALIFIER:
-        _validate_typed_key(
-            targets[0],
-            allowed_prefixes=(
-                "qualifier:",
-                "polarity:",
-                "epistemic:",
-                "epistemic-state:",
-                "world:",
-                "time:",
-                "time_scope:",
-            ),
-            code="counterfactual_mutation_target_namespace_invalid",
-        )
+        resolve_mutation_application_spec(row)
     elif kind is CounterfactualMutationKind.PROMOTE_UNKNOWN:
         _validate_typed_key(
             targets[0],
-            allowed_prefixes=("unknown:",),
+            allowed_prefixes=("resolution:",),
             code="counterfactual_mutation_target_namespace_invalid",
         )
 
@@ -7958,8 +8471,11 @@ def validate_counterfactual_mutation_row(
         )
     elif kind is CounterfactualMutationKind.PROMOTE_UNKNOWN:
         target_valid = (
-            targets[0] in configuration_qualifiers
-            and targets[0].startswith("unknown:")
+            targets == ("resolution:unresolved",)
+            and any(
+                value.startswith("unknown:")
+                for value in configuration_qualifiers
+            )
             and replacements == ("resolution:resolved",)
         )
     elif kind is CounterfactualMutationKind.DELETE_MODALITY:
@@ -7980,17 +8496,8 @@ def validate_counterfactual_mutation_row(
     elif kind is CounterfactualMutationKind.DELETE_QUALIFIER:
         target_valid = (
             targets[0] in configuration_qualifiers
-            and targets[0].startswith(
-                (
-                    "qualifier:",
-                    "polarity:",
-                    "epistemic:",
-                    "epistemic-state:",
-                    "world:",
-                    "time:",
-                    "time_scope:",
-                )
-            )
+            and resolve_mutation_application_spec(row).mutation_kind
+            is CounterfactualMutationKind.DELETE_QUALIFIER
         )
     else:
         target_valid = False
@@ -8283,7 +8790,7 @@ def _im02_component_sort_key(
 def _im02_canonical_components(
     values: Sequence[MeaningComponentSemanticKey],
 ) -> tuple[MeaningComponentSemanticKey, ...]:
-    return tuple(sorted(set(values), key=_im02_component_sort_key))
+    return tuple(dict.fromkeys(values))
 
 
 def _im02_role_qualifier_parts(
@@ -8304,15 +8811,13 @@ def _im02_qualifiers_for_roles(
     roles: set[str],
 ) -> tuple[str, ...]:
     return tuple(
-        sorted(
-            {
-                value
-                for value in qualifier_keys
-                if (
-                    (parts := _im02_role_qualifier_parts(value)) is None
-                    or parts[0] in roles
-                )
-            }
+        dict.fromkeys(
+            value
+            for value in qualifier_keys
+            if (
+                (parts := _im02_role_qualifier_parts(value)) is None
+                or parts[0] in roles
+            )
         )
     )
 
@@ -8331,324 +8836,2637 @@ def _im02_summaries_for_role_qualifiers(
         for value in qualifier_keys
         if (parts := _im02_role_qualifier_parts(value)) is not None
     )
-    temporal = set(baseline.temporal_state_keys)
-    temporal.difference_update(
+    removed_temporal = {
         f"time:{value}"
         for _role, axis, value in baseline_parts
         if axis == "time_scope"
-    )
-    temporal.update(
+    }
+    added_temporal = tuple(
         f"time:{value}"
         for _role, axis, value in retained_parts
         if axis == "time_scope"
     )
-    modality = set(baseline.modality_polarity_or_limitation_keys)
-    modality.difference_update(
+    temporal = tuple(
+        dict.fromkeys(
+            (
+                *(
+                    value
+                    for value in baseline.temporal_state_keys
+                    if value not in removed_temporal
+                ),
+                *added_temporal,
+            )
+        )
+    )
+    removed_modality = {
         f"{axis}:{value}"
         for _role, axis, value in baseline_parts
         if axis in {"modality", "polarity"}
-    )
-    modality.update(
+    }
+    added_modality = tuple(
         f"{axis}:{value}"
         for _role, axis, value in retained_parts
         if axis in {"modality", "polarity"}
     )
-    return tuple(sorted(temporal)), tuple(sorted(modality))
+    modality = tuple(
+        dict.fromkeys(
+            (
+                *(
+                    value
+                    for value in baseline.modality_polarity_or_limitation_keys
+                    if value not in removed_modality
+                ),
+                *added_modality,
+            )
+        )
+    )
+    return temporal, modality
+
+
+def _mutation_result_local_shape(
+    signature: MeaningSemanticSignature,
+    *,
+    mutation: CounterfactualMutationRow,
+    baseline: MeaningSemanticSignature,
+) -> None:
+    if (
+        type(signature) is not MeaningSemanticSignature
+        or signature.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION
+        or type(signature.reading_operation) is not MeaningReadingOperation
+    ):
+        raise CMEEStage1ContractError(
+            "meaning_semantic_signature_mutation_result_invalid"
+        )
+    _validate_stage1_immutable_shape(signature)
+    for field_name in _MEANING_SIGNATURE_MUTABLE_FIELDS_EXACT12:
+        value = getattr(signature, field_name)
+        if field_name == "reading_operation":
+            continue
+        if type(value) is not tuple:
+            raise CMEEStage1ContractError(
+                "meaning_semantic_signature_mutation_result_invalid"
+            )
+    content_fields = tuple(
+        field_name
+        for field_name in _MEANING_SIGNATURE_MUTABLE_FIELDS_EXACT12
+        if field_name != "reading_operation"
+    )
+    if all(not getattr(signature, field_name) for field_name in content_fields):
+        predicate_owners = {
+            (
+                value.typed_predicate_key,
+                value.semantic_kind_key,
+                value.owner_key,
+                value.scope_key,
+            )
+            for value in baseline.component_semantic_keys
+        }
+        if not (
+            mutation.mutation_kind is CounterfactualMutationKind.DELETE_PREDICATE
+            and len(predicate_owners) == 1
+        ):
+            raise CMEEStage1ContractError(
+                "meaning_semantic_signature_mutation_empty_not_allowed"
+            )
+        return
+    if mutation.mutation_kind is CounterfactualMutationKind.DELETE_SCOPE:
+        absent = tuple(
+            value
+            for value in signature.component_semantic_keys
+            if value.scope_key == "scope:absent"
+        )
+        if len(absent) != 1:
+            raise CMEEStage1ContractError(
+                "meaning_semantic_signature_scope_absent_cardinality_invalid"
+            )
+        restored = replace(
+            signature,
+            component_semantic_keys=tuple(
+                replace(value, scope_key=mutation.target_component_refs[0])
+                if value.scope_key == "scope:absent"
+                else value
+                for value in signature.component_semantic_keys
+            ),
+        )
+        validate_meaning_semantic_signature_local_shape(restored)
+        return
+    validate_meaning_semantic_signature_local_shape(signature)
+
+
+def validate_mutation_signature_delta(
+    *,
+    mutation: CounterfactualMutationRow,
+    baseline_semantic_signature: MeaningSemanticSignature,
+    mutated_semantic_signature: MeaningSemanticSignature,
+    source_component_refs: Sequence[str] | None = None,
+    source_component_rows: Sequence[
+        GroundedSemanticComponentProjection
+    ] | None = None,
+    _verify_exact_result: bool = True,
+) -> WholeReadingConsequenceCode:
+    spec = resolve_mutation_application_spec(mutation)
+    validate_counterfactual_mutation_local_shape(mutation)
+    validate_meaning_semantic_signature_local_shape(
+        baseline_semantic_signature
+    )
+    _mutation_result_local_shape(
+        mutated_semantic_signature,
+        mutation=mutation,
+        baseline=baseline_semantic_signature,
+    )
+    if (
+        mutated_semantic_signature.schema_version
+        != baseline_semantic_signature.schema_version
+        or mutated_semantic_signature.reading_operation
+        is not baseline_semantic_signature.reading_operation
+    ):
+        raise CMEEStage1ContractError(
+            "mutation_application_unlisted_field_delta"
+        )
+    changed = {
+        field_name
+        for field_name in _MEANING_SIGNATURE_MUTABLE_FIELDS_EXACT12
+        if getattr(baseline_semantic_signature, field_name)
+        != getattr(mutated_semantic_signature, field_name)
+    }
+    direct = set(spec.directly_changed_signature_fields)
+    allowed = direct | set(spec.derived_recomputed_signature_fields)
+    if not changed.intersection(direct):
+        raise CMEEStage1ContractError("mutation_application_noop_red")
+    if not changed.issubset(allowed) or any(
+        getattr(baseline_semantic_signature, field_name)
+        != getattr(mutated_semantic_signature, field_name)
+        for field_name in spec.required_unchanged_signature_fields
+    ):
+        raise CMEEStage1ContractError(
+            "mutation_application_unlisted_field_delta"
+        )
+    if _verify_exact_result:
+        expected = apply_meaning_signature_mutation(
+            baseline_semantic_signature,
+            mutation,
+            source_component_refs=source_component_refs,
+            source_component_rows=source_component_rows,
+            _validate_delta=False,
+        )
+        if mutated_semantic_signature != expected:
+            raise CMEEStage1ContractError(
+                "mutation_application_result_mismatch_red"
+            )
+    return spec.whole_reading_consequence_code
+
+
+def _meaning_signature_mutation_target_present(
+    baseline: MeaningSemanticSignature,
+    mutation: CounterfactualMutationRow,
+    *,
+    source_component_refs: Sequence[str] | None = None,
+) -> bool:
+    kind = mutation.mutation_kind
+    target = mutation.target_component_refs[0]
+    components = baseline.component_semantic_keys
+    if source_component_refs is not None and kind in {
+        CounterfactualMutationKind.DELETE_ENDPOINT,
+        CounterfactualMutationKind.SWAP_ENDPOINTS,
+        CounterfactualMutationKind.DELETE_PREDICATE,
+    }:
+        refs = tuple(source_component_refs)
+        if (
+            len(refs) != len(components)
+            or any(type(value) is not str or not value for value in refs)
+        ):
+            raise CMEEStage1ContractError(
+                "mutation_source_component_binding_invalid"
+            )
+        expected = 2 if kind is CounterfactualMutationKind.SWAP_ENDPOINTS else 1
+        matches = tuple(ref for ref in mutation.target_component_refs if ref in refs)
+        if len(matches) != expected:
+            return False
+        if kind is not CounterfactualMutationKind.DELETE_PREDICATE and any(
+            refs.count(ref) != 1 for ref in mutation.target_component_refs
+        ):
+            raise CMEEStage1ContractError("mutation_target_ambiguous_red")
+    if kind is CounterfactualMutationKind.SWAP_ENDPOINTS:
+        if source_component_refs is not None:
+            return all(ref in source_component_refs for ref in mutation.target_component_refs)
+        return {"role:left", "role:right"}.issubset(
+            {value.role_key for value in components}
+        )
+    if kind is CounterfactualMutationKind.DELETE_ENDPOINT:
+        if source_component_refs is not None:
+            return target in source_component_refs
+        return any(value.role_key == "role:right" for value in components)
+    if kind is CounterfactualMutationKind.DELETE_PREDICATE:
+        if source_component_refs is not None:
+            return target in source_component_refs
+        return len(components) == 1
+    if kind is CounterfactualMutationKind.DELETE_OWNER:
+        normalized = target.split("@", 1)[0]
+        return any(value.owner_key == normalized for value in components)
+    if kind is CounterfactualMutationKind.REPLACE_WORLD:
+        return target in baseline.world_or_owner_distinction_keys
+    if kind is CounterfactualMutationKind.REPLACE_ROLE:
+        return any(value.role_key == target for value in components)
+    if kind is CounterfactualMutationKind.REPLACE_TIME:
+        return target.replace("time_scope:", "time:") in (
+            baseline.temporal_state_keys
+        )
+    if kind is CounterfactualMutationKind.DELETE_MODALITY:
+        return target in baseline.modality_polarity_or_limitation_keys
+    if kind is CounterfactualMutationKind.DELETE_ASPECT:
+        return (
+            f"episodicity:{target.removeprefix('aspect:')}"
+            in baseline.episodicity_boundary_keys
+        )
+    if kind is CounterfactualMutationKind.DELETE_SCOPE:
+        return any(value.scope_key == target for value in components)
+    if kind is CounterfactualMutationKind.DELETE_QUALIFIER:
+        if target in baseline.qualifier_keys:
+            return True
+        if target.startswith(("polarity:", "epistemic:", "epistemic-state:")):
+            axis, body = target.split(":", 1)
+            qualifier_axis = "epistemic" if axis.startswith("epistemic") else axis
+            return any(
+                value.endswith(f"_{qualifier_axis}={body}")
+                or value == f"qualifier:{axis}={body}"
+                for value in baseline.qualifier_keys
+            )
+        return False
+    return baseline.resolution_treatment_keys == ("resolution:unresolved",)
+
+
+def _rebuild_signature_from_grounded_component_rows(
+    baseline: MeaningSemanticSignature,
+    rows: Sequence[GroundedSemanticComponentProjection],
+) -> MeaningSemanticSignature:
+    """Rebuild every source-owned signature summary in declaration order."""
+
+    values = tuple(rows)
+    components: list[MeaningComponentSemanticKey] = []
+    component_owner_by_key: dict[MeaningComponentSemanticKey, str] = {}
+    temporal: list[str] = []
+    epistemic: list[str] = []
+    owners: list[str] = []
+    worlds: list[str] = []
+    modality: list[str] = []
+    episodicity: list[str] = []
+    qualifiers: list[str] = []
+    if any(row.scope_key != "scope:absent" for row in values):
+        modality.append("scope:bounded")
+    for row in values:
+        component = MeaningComponentSemanticKey(
+            typed_predicate_key=row.typed_predicate_key,
+            semantic_kind_key=row.semantic_kind_key,
+            owner_key=row.owner_key,
+            scope_key=row.scope_key,
+            role_key=row.role_key,
+        )
+        prior_owner = component_owner_by_key.get(component)
+        if prior_owner is not None and prior_owner != row.source_object_ref:
+            raise CMEEStage1ContractError(
+                "mutation_material_semantic_collapse_candidate_invalid"
+            )
+        component_owner_by_key[component] = row.source_object_ref
+        if component not in components:
+            components.append(component)
+        for value, target in (
+            (row.temporal_state_key, temporal),
+            (row.epistemic_state_key, epistemic),
+            (row.owner_key, owners),
+            (row.modality_key, modality),
+            (row.polarity_key, modality),
+        ):
+            if value and value not in target:
+                target.append(value)
+        role = row.role_key.removeprefix("role:")
+        for qualifier in row.qualifier_refs:
+            if ":" not in qualifier:
+                raise CMEEStage1ContractError(
+                    "mutation_source_component_qualifier_invalid"
+                )
+            axis, body = qualifier.split(":", 1)
+            if axis == "world":
+                world = f"world:{body}"
+                if world not in worlds:
+                    worlds.append(world)
+            elif axis == "aspect" and body == "one_off":
+                if "episodicity:one_off" not in episodicity:
+                    episodicity.append("episodicity:one_off")
+            if axis in {"actor", "time_scope", "modality", "polarity"}:
+                bound = f"qualifier:{role}_{axis}={body}"
+            elif qualifier.startswith("qualifier:"):
+                bound = qualifier
+            else:
+                continue
+            if bound not in qualifiers:
+                qualifiers.append(bound)
+    if episodicity and "qualifier:not_generalized" not in qualifiers:
+        qualifiers.append("qualifier:not_generalized")
+    material_unknown_refs = tuple(
+        dict.fromkeys(
+            ref
+            for row in values
+            for ref in row.material_unknown_refs
+        )
+    )
+    resolution = ("resolution:unresolved",) if material_unknown_refs else ()
+    if material_unknown_refs:
+        if "world:unknown" not in worlds:
+            worlds.append("world:unknown")
+        if "qualifier:unknown_preserved" not in qualifiers:
+            qualifiers.append("qualifier:unknown_preserved")
+    roles = tuple(dict.fromkeys(value.role_key for value in components))
+    relation_keys = (
+        baseline.relation_direction_keys
+        if len(components) >= 2 and len(roles) >= 2
+        else ()
+    )
+    return MeaningSemanticSignature(
+        schema_version=baseline.schema_version,
+        reading_operation=baseline.reading_operation,
+        input_center_keys=(
+            (
+                "center:"
+                f"{values[0].semantic_kind_key.removeprefix('semantic-kind:')}"
+            ),
+        ) if values else (),
+        component_role_keys=roles,
+        relation_direction_keys=relation_keys,
+        epistemic_state_keys=tuple(epistemic),
+        temporal_state_keys=tuple(temporal),
+        resolution_treatment_keys=resolution,
+        world_or_owner_distinction_keys=tuple(
+            dict.fromkeys((*owners, *worlds))
+        ),
+        modality_polarity_or_limitation_keys=tuple(modality),
+        episodicity_boundary_keys=tuple(episodicity),
+        qualifier_keys=tuple(qualifiers),
+        component_semantic_keys=tuple(components),
+    )
+
+
+def _replace_projection_qualifier(
+    row: GroundedSemanticComponentProjection,
+    *,
+    axis: str,
+    value: str | None,
+) -> GroundedSemanticComponentProjection:
+    retained: list[str] = []
+    replaced = False
+    for qualifier in row.qualifier_refs:
+        if qualifier.startswith(f"{axis}:"):
+            if value is not None and not replaced:
+                retained.append(f"{axis}:{value}")
+            replaced = True
+            continue
+        retained.append(qualifier)
+    if value is not None and not replaced:
+        retained.append(f"{axis}:{value}")
+    return replace(row, qualifier_refs=tuple(dict.fromkeys(retained)))
+
+
+def _grounded_material_leaf_owner_sets(
+    rows: Sequence[GroundedSemanticComponentProjection],
+) -> dict[tuple[str, str], set[str]]:
+    result: dict[tuple[str, str], set[str]] = {}
+    for row in rows:
+        component = MeaningComponentSemanticKey(
+            typed_predicate_key=row.typed_predicate_key,
+            semantic_kind_key=row.semantic_kind_key,
+            owner_key=row.owner_key,
+            scope_key=row.scope_key,
+            role_key=row.role_key,
+        )
+        leaves = (
+            ("component", stage1_canonical_json_bytes(component).hex()),
+            ("owner", row.owner_key),
+            ("scope", row.scope_key),
+            ("role", row.role_key),
+            ("epistemic", row.epistemic_state_key),
+            ("time", row.temporal_state_key),
+            ("modality", row.modality_key),
+            ("polarity", row.polarity_key),
+            *tuple(
+                (f"qualifier:{value.split(':', 1)[0]}", value)
+                for value in row.qualifier_refs
+                if ":" in value
+            ),
+        )
+        for axis, value in leaves:
+            if value:
+                result.setdefault((axis, value), set()).add(
+                    row.source_object_ref
+                )
+    return result
+
+
+def _mutation_introduces_material_leaf_collapse(
+    before: Sequence[GroundedSemanticComponentProjection],
+    after: Sequence[GroundedSemanticComponentProjection],
+) -> bool:
+    before_sets = _grounded_material_leaf_owner_sets(before)
+    after_sets = _grounded_material_leaf_owner_sets(after)
+    before_groups_by_axis: dict[str, list[set[str]]] = {}
+    for (axis, _value), owners in before_sets.items():
+        before_groups_by_axis.setdefault(axis, []).append(owners)
+    return any(
+        len(owners) > 1
+        and not any(
+            owners.issubset(prior_owners)
+            for prior_owners in before_groups_by_axis.get(axis, ())
+        )
+        for (axis, _value), owners in after_sets.items()
+    )
+
+
+def _apply_meaning_signature_mutation_from_source_rows(
+    baseline: MeaningSemanticSignature,
+    mutation: CounterfactualMutationRow,
+    *,
+    source_component_rows: Sequence[GroundedSemanticComponentProjection],
+    _validate_delta: bool,
+) -> MeaningSemanticSignature:
+    original_rows = tuple(source_component_rows)
+    rows = list(original_rows)
+    if (
+        not rows
+        or any(type(row) is not GroundedSemanticComponentProjection for row in rows)
+    ):
+        raise CMEEStage1ContractError(
+            "mutation_source_component_binding_invalid"
+        )
+    kind = mutation.mutation_kind
+    target = mutation.target_component_refs[0]
+
+    def matching_indexes(
+        predicate: Callable[[GroundedSemanticComponentProjection], bool],
+        *,
+        require_unique_source_binding: bool = False,
+    ) -> tuple[int, ...]:
+        indexes = tuple(index for index, row in enumerate(rows) if predicate(row))
+        if not indexes:
+            raise CMEEStage1ContractError(
+                "mutation_target_absent_candidate_invalid"
+            )
+        if require_unique_source_binding and len(
+            {
+                rows[index].source_object_ref
+                for index in indexes
+            }
+        ) != 1:
+            raise CMEEStage1ContractError("mutation_target_ambiguous_red")
+        return indexes
+
+    if kind is CounterfactualMutationKind.DELETE_ENDPOINT:
+        indexes = matching_indexes(
+            lambda row: row.source_object_ref == target,
+            require_unique_source_binding=True,
+        )
+        rows = [
+            row for index, row in enumerate(rows) if index not in indexes
+        ]
+    elif kind is CounterfactualMutationKind.SWAP_ENDPOINTS:
+        if len(mutation.target_component_refs) != 2:
+            raise CMEEStage1ContractError(
+                "counterfactual_mutation_cardinality_invalid"
+            )
+        left_indexes = matching_indexes(
+            lambda row: row.source_object_ref
+            == mutation.target_component_refs[0],
+            require_unique_source_binding=True,
+        )
+        right_indexes = matching_indexes(
+            lambda row: row.source_object_ref
+            == mutation.target_component_refs[1],
+            require_unique_source_binding=True,
+        )
+        left_roles = {rows[index].role_key for index in left_indexes}
+        right_roles = {rows[index].role_key for index in right_indexes}
+        if len(left_roles) != 1 or len(right_roles) != 1:
+            raise CMEEStage1ContractError("mutation_target_ambiguous_red")
+        left_role = next(iter(left_roles))
+        right_role = next(iter(right_roles))
+        for index in left_indexes:
+            rows[index] = replace(rows[index], role_key=right_role)
+        for index in right_indexes:
+            rows[index] = replace(rows[index], role_key=left_role)
+    elif kind is CounterfactualMutationKind.DELETE_PREDICATE:
+        indexes = tuple(
+            index for index, row in enumerate(rows)
+            if row.source_object_ref == target
+        )
+        if not indexes:
+            raise CMEEStage1ContractError(
+                "mutation_target_absent_candidate_invalid"
+            )
+        rows = [row for row in rows if row.source_object_ref != target]
+    elif kind is CounterfactualMutationKind.DELETE_OWNER:
+        normalized = target.split("@", 1)[0]
+        indexes = matching_indexes(
+            lambda row: row.owner_key == normalized,
+            require_unique_source_binding=True,
+        )
+        for index in indexes:
+            rows[index] = _replace_projection_qualifier(
+                replace(rows[index], owner_key="owner:unknown"),
+                axis="actor",
+                value="unknown",
+            )
+    elif kind is CounterfactualMutationKind.REPLACE_WORLD:
+        indexes = matching_indexes(
+            lambda row: target in row.qualifier_refs,
+            require_unique_source_binding=True,
+        )
+        for index in indexes:
+            rows[index] = _replace_projection_qualifier(
+                rows[index],
+                axis="world",
+                value=mutation.replacement_refs[0].removeprefix("world:"),
+            )
+    elif kind is CounterfactualMutationKind.REPLACE_ROLE:
+        indexes = matching_indexes(
+            lambda row: row.role_key == target,
+            require_unique_source_binding=True,
+        )
+        for index in indexes:
+            rows[index] = replace(
+                rows[index], role_key=mutation.replacement_refs[0]
+            )
+    elif kind is CounterfactualMutationKind.REPLACE_TIME:
+        normalized = target.replace("time_scope:", "time:")
+        replacement_time = mutation.replacement_refs[0].replace(
+            "time_scope:", "time:"
+        )
+        indexes = matching_indexes(
+            lambda row: row.temporal_state_key == normalized,
+            require_unique_source_binding=True,
+        )
+        for index in indexes:
+            rows[index] = _replace_projection_qualifier(
+                replace(rows[index], temporal_state_key=replacement_time),
+                axis="time_scope",
+                value=replacement_time.removeprefix("time:"),
+            )
+    elif kind is CounterfactualMutationKind.DELETE_MODALITY:
+        indexes = matching_indexes(
+            lambda row: row.modality_key == target,
+            require_unique_source_binding=True,
+        )
+        for index in indexes:
+            rows[index] = _replace_projection_qualifier(
+                replace(rows[index], modality_key=""),
+                axis="modality",
+                value=None,
+            )
+    elif kind is CounterfactualMutationKind.DELETE_ASPECT:
+        indexes = matching_indexes(
+            lambda row: target in row.qualifier_refs,
+            require_unique_source_binding=True,
+        )
+        for index in indexes:
+            rows[index] = _replace_projection_qualifier(
+                rows[index], axis="aspect", value=None
+            )
+    elif kind is CounterfactualMutationKind.DELETE_SCOPE:
+        indexes = matching_indexes(
+            lambda row: row.scope_key == target,
+            require_unique_source_binding=True,
+        )
+        for index in indexes:
+            rows[index] = _replace_projection_qualifier(
+                replace(rows[index], scope_key="scope:absent"),
+                axis="scope",
+                value=None,
+            )
+    elif kind is CounterfactualMutationKind.DELETE_QUALIFIER:
+        role_parts = _im02_role_qualifier_parts(target)
+        if role_parts is not None:
+            role, axis, value = role_parts
+            indexes = matching_indexes(
+                lambda row: row.role_key == f"role:{role}"
+                and (
+                    (axis == "time_scope" and row.temporal_state_key == f"time:{value}")
+                    or (axis == "modality" and row.modality_key == f"modality:{value}")
+                    or (axis == "polarity" and row.polarity_key == f"polarity:{value}")
+                ),
+                require_unique_source_binding=True,
+            )
+        elif target == "qualifier:not_generalized":
+            axis, value = "aspect", "one_off"
+            indexes = matching_indexes(
+                lambda row: f"aspect:{value}" in row.qualifier_refs,
+                require_unique_source_binding=True,
+            )
+        else:
+            target_axis, value = target.split(":", 1)
+            axis = "epistemic" if target_axis.startswith("epistemic") else target_axis
+            indexes = matching_indexes(
+                lambda row: (
+                    axis == "polarity" and row.polarity_key == f"polarity:{value}"
+                ) or (
+                    axis == "epistemic"
+                    and row.epistemic_state_key
+                    in {f"epistemic:{value}", f"epistemic-state:{value}"}
+                ),
+                require_unique_source_binding=True,
+            )
+        for index in indexes:
+            row = rows[index]
+            replacements: dict[str, str] = {}
+            if axis == "time_scope":
+                replacements["temporal_state_key"] = ""
+            elif axis == "modality":
+                replacements["modality_key"] = ""
+            elif axis == "polarity":
+                replacements["polarity_key"] = ""
+            elif axis == "epistemic":
+                replacements["epistemic_state_key"] = ""
+            rows[index] = _replace_projection_qualifier(
+                replace(row, **replacements),
+                axis=axis,
+                value=None,
+            )
+    elif kind is not CounterfactualMutationKind.PROMOTE_UNKNOWN:
+        raise CMEEStage1ContractError("mutation_application_spec_not_closed")
+    elif baseline.resolution_treatment_keys != ("resolution:unresolved",):
+        raise CMEEStage1ContractError(
+            "mutation_target_absent_candidate_invalid"
+        )
+    if _mutation_introduces_material_leaf_collapse(original_rows, rows):
+        raise CMEEStage1ContractError(
+            "mutation_material_semantic_collapse_candidate_invalid"
+        )
+    result = _rebuild_signature_from_grounded_component_rows(baseline, rows)
+    if kind is CounterfactualMutationKind.PROMOTE_UNKNOWN:
+        result = replace(
+            result,
+            resolution_treatment_keys=("resolution:resolved",),
+        )
+    if _validate_delta:
+        validate_mutation_signature_delta(
+            mutation=mutation,
+            baseline_semantic_signature=baseline,
+            mutated_semantic_signature=result,
+            source_component_refs=tuple(
+                row.source_object_ref for row in source_component_rows
+            ),
+            source_component_rows=source_component_rows,
+        )
+    return result
+
+
+def apply_meaning_signature_mutation(
+    baseline: MeaningSemanticSignature,
+    mutation: CounterfactualMutationRow,
+    *,
+    source_component_refs: Sequence[str] | None = None,
+    source_component_rows: Sequence[GroundedSemanticComponentProjection] | None = None,
+    _validate_delta: bool = True,
+) -> MeaningSemanticSignature:
+    """Apply the shared closed exact12 mutation contract."""
+
+    validate_meaning_semantic_signature_local_shape(baseline)
+    validate_counterfactual_mutation_local_shape(mutation)
+    if source_component_rows is not None:
+        rows = tuple(source_component_rows)
+        row_refs = tuple(row.source_object_ref for row in rows)
+        if source_component_refs is not None and tuple(source_component_refs) != row_refs:
+            raise CMEEStage1ContractError(
+                "mutation_source_component_binding_invalid"
+            )
+        return _apply_meaning_signature_mutation_from_source_rows(
+            baseline,
+            mutation,
+            source_component_rows=rows,
+            _validate_delta=_validate_delta,
+        )
+    if not _meaning_signature_mutation_target_present(
+        baseline,
+        mutation,
+        source_component_refs=source_component_refs,
+    ):
+        raise CMEEStage1ContractError(
+            "mutation_target_absent_candidate_invalid"
+        )
+    kind = mutation.mutation_kind
+    target = mutation.target_component_refs[0]
+    result = baseline
+    if kind is CounterfactualMutationKind.SWAP_ENDPOINTS:
+        role_swap = {"role:left": "role:right", "role:right": "role:left"}
+        if source_component_refs is not None:
+            component_index = {
+                ref: index for index, ref in enumerate(source_component_refs)
+            }
+            left_index = component_index[mutation.target_component_refs[0]]
+            right_index = component_index[mutation.target_component_refs[1]]
+            left_role = baseline.component_semantic_keys[left_index].role_key
+            right_role = baseline.component_semantic_keys[right_index].role_key
+            role_swap = {left_role: right_role, right_role: left_role}
+        transformed_components = tuple(
+            replace(value, role_key=role_swap.get(value.role_key, value.role_key))
+            for value in baseline.component_semantic_keys
+        )
+        if len(transformed_components) != len(set(transformed_components)):
+            raise CMEEStage1ContractError(
+                "mutation_material_semantic_collapse_candidate_invalid"
+            )
+        components = _im02_canonical_components(transformed_components)
+        qualifier_role_swap = {"left": "right", "right": "left"}
+        qualifiers = tuple(
+            dict.fromkeys(
+                (
+                    f"qualifier:{qualifier_role_swap[parts[0]]}_{parts[1]}={parts[2]}"
+                    if (
+                        (parts := _im02_role_qualifier_parts(value)) is not None
+                        and parts[0] in qualifier_role_swap
+                    )
+                    else value
+                )
+                for value in baseline.qualifier_keys
+            )
+        )
+        result = replace(
+            baseline,
+            component_role_keys=tuple(dict.fromkeys(value.role_key for value in components)),
+            qualifier_keys=qualifiers,
+            component_semantic_keys=components,
+        )
+    elif kind is CounterfactualMutationKind.DELETE_ENDPOINT:
+        matches = (
+            (
+                baseline.component_semantic_keys[
+                    tuple(source_component_refs).index(target)
+                ],
+            )
+            if source_component_refs is not None
+            else tuple(
+                value for value in baseline.component_semantic_keys
+                if value.role_key == "role:right"
+            )
+        )
+        if len(matches) > 1:
+            raise CMEEStage1ContractError("mutation_target_ambiguous_red")
+        if len(matches) == 1:
+            components = tuple(
+                value for value in baseline.component_semantic_keys
+                if value != matches[0]
+            )
+            roles = {value.role_key.removeprefix("role:") for value in components}
+            qualifiers = _im02_qualifiers_for_roles(baseline.qualifier_keys, roles)
+            temporal, modality = _im02_summaries_for_role_qualifiers(
+                baseline, qualifiers
+            )
+            centers = tuple(
+                value for value in baseline.input_center_keys
+                if value.removeprefix("center:") in {
+                    component.semantic_kind_key.removeprefix("semantic-kind:")
+                    for component in components
+                }
+            )
+            owners = tuple(dict.fromkeys(value.owner_key for value in components))
+            worlds = tuple(
+                value for value in baseline.world_or_owner_distinction_keys
+                if value.startswith("world:")
+            )
+            result = replace(
+                baseline,
+                input_center_keys=centers,
+                component_role_keys=tuple(dict.fromkeys(value.role_key for value in components)),
+                relation_direction_keys=(
+                    baseline.relation_direction_keys
+                    if len(components) >= 2 and len(roles) >= 2 else ()
+                ),
+                temporal_state_keys=temporal,
+                world_or_owner_distinction_keys=tuple(dict.fromkeys((*owners, *worlds))),
+                modality_polarity_or_limitation_keys=modality,
+                qualifier_keys=qualifiers,
+                component_semantic_keys=components,
+            )
+    elif kind is CounterfactualMutationKind.DELETE_PREDICATE:
+        matches = (
+            tuple(
+                value
+                for value, ref in zip(
+                    baseline.component_semantic_keys,
+                    source_component_refs,
+                )
+                if ref == target
+            )
+            if source_component_refs is not None
+            else tuple(
+                value for value in baseline.component_semantic_keys
+                if len(baseline.component_semantic_keys) == 1
+            )
+        )
+        if matches:
+            components = tuple(
+                value
+                for value in baseline.component_semantic_keys
+                if value not in matches
+            )
+            if not components:
+                result = replace(
+                    baseline,
+                    input_center_keys=(), component_role_keys=(),
+                    relation_direction_keys=(), epistemic_state_keys=(),
+                    temporal_state_keys=(), resolution_treatment_keys=(),
+                    world_or_owner_distinction_keys=(),
+                    modality_polarity_or_limitation_keys=(),
+                    episodicity_boundary_keys=(), qualifier_keys=(),
+                    component_semantic_keys=(),
+                )
+            else:
+                roles = {
+                    value.role_key.removeprefix("role:") for value in components
+                }
+                qualifiers = _im02_qualifiers_for_roles(
+                    baseline.qualifier_keys, roles
+                )
+                temporal, modality = _im02_summaries_for_role_qualifiers(
+                    baseline, qualifiers
+                )
+                semantic_kinds = {
+                    value.semantic_kind_key.removeprefix("semantic-kind:")
+                    for value in components
+                }
+                result = replace(
+                    baseline,
+                    input_center_keys=tuple(
+                        value
+                        for value in baseline.input_center_keys
+                        if value.removeprefix("center:") in semantic_kinds
+                    ),
+                    component_role_keys=tuple(
+                        dict.fromkeys(value.role_key for value in components)
+                    ),
+                    relation_direction_keys=(
+                        baseline.relation_direction_keys
+                        if len(components) >= 2 and len(roles) >= 2
+                        else ()
+                    ),
+                    temporal_state_keys=temporal,
+                    world_or_owner_distinction_keys=tuple(
+                        dict.fromkeys(
+                            (
+                                *(
+                                    value
+                                    for value in baseline.world_or_owner_distinction_keys
+                                    if value.startswith("world:")
+                                ),
+                                *(value.owner_key for value in components),
+                            )
+                        )
+                    ),
+                    modality_polarity_or_limitation_keys=modality,
+                    qualifier_keys=qualifiers,
+                    component_semantic_keys=components,
+                )
+    elif kind is CounterfactualMutationKind.DELETE_OWNER:
+        normalized = target.split("@", 1)[0]
+        matches = tuple(
+            value for value in baseline.component_semantic_keys
+            if value.owner_key == normalized
+        )
+        if len(matches) > 1:
+            raise CMEEStage1ContractError("mutation_target_ambiguous_red")
+        if matches and normalized != "owner:unknown":
+            transformed_components = tuple(
+                replace(value, owner_key="owner:unknown")
+                if value.owner_key == normalized else value
+                for value in baseline.component_semantic_keys
+            )
+            if len(transformed_components) != len(set(transformed_components)):
+                raise CMEEStage1ContractError(
+                    "mutation_material_semantic_collapse_candidate_invalid"
+                )
+            components = _im02_canonical_components(transformed_components)
+            affected_roles = {
+                value.role_key.removeprefix("role:") for value in matches
+            }
+            qualifiers = tuple(
+                dict.fromkeys(
+                    (
+                        f"qualifier:{parts[0]}_actor=unknown"
+                        if (
+                            (parts := _im02_role_qualifier_parts(value)) is not None
+                            and parts[0] in affected_roles and parts[1] == "actor"
+                        ) else value
+                    )
+                    for value in baseline.qualifier_keys
+                )
+            )
+            worlds = tuple(
+                value for value in baseline.world_or_owner_distinction_keys
+                if value.startswith("world:")
+            )
+            result = replace(
+                baseline,
+                world_or_owner_distinction_keys=tuple(
+                    dict.fromkeys((*(v.owner_key for v in components), *worlds))
+                ),
+                qualifier_keys=qualifiers,
+                component_semantic_keys=components,
+            )
+    elif kind is CounterfactualMutationKind.REPLACE_WORLD:
+        values = list(baseline.world_or_owner_distinction_keys)
+        if target in values:
+            values[values.index(target)] = mutation.replacement_refs[0]
+            if len(values) != len(set(values)):
+                raise CMEEStage1ContractError(
+                    "mutation_material_semantic_collapse_candidate_invalid"
+                )
+            result = replace(
+                baseline,
+                world_or_owner_distinction_keys=tuple(dict.fromkeys(values)),
+                qualifier_keys=tuple(
+                    dict.fromkeys(
+                        mutation.replacement_refs[0]
+                        if value == target else value
+                        for value in baseline.qualifier_keys
+                    )
+                ),
+            )
+    elif kind is CounterfactualMutationKind.REPLACE_ROLE:
+        replacement_role = mutation.replacement_refs[0]
+        matches = tuple(
+            value for value in baseline.component_semantic_keys
+            if value.role_key == target
+        )
+        if len(matches) > 1:
+            raise CMEEStage1ContractError("mutation_target_ambiguous_red")
+        if len(matches) == 1:
+            transformed_components = tuple(
+                replace(value, role_key=replacement_role)
+                if value == matches[0] else value
+                for value in baseline.component_semantic_keys
+            )
+            if len(transformed_components) != len(set(transformed_components)):
+                raise CMEEStage1ContractError(
+                    "mutation_material_semantic_collapse_candidate_invalid"
+                )
+            components = _im02_canonical_components(transformed_components)
+            target_name = target.removeprefix("role:")
+            replacement_name = replacement_role.removeprefix("role:")
+            qualifiers = tuple(
+                dict.fromkeys(
+                    (
+                        f"qualifier:{replacement_name}_{parts[1]}={parts[2]}"
+                        if (
+                            (parts := _im02_role_qualifier_parts(value)) is not None
+                            and parts[0] == target_name
+                        ) else value
+                    )
+                    for value in baseline.qualifier_keys
+                )
+            )
+            temporal, modality = _im02_summaries_for_role_qualifiers(baseline, qualifiers)
+            result = replace(
+                baseline,
+                component_role_keys=tuple(dict.fromkeys(value.role_key for value in components)),
+                relation_direction_keys=(
+                    baseline.relation_direction_keys
+                    if len({value.role_key for value in components}) >= 2 else ()
+                ),
+                temporal_state_keys=temporal,
+                modality_polarity_or_limitation_keys=modality,
+                qualifier_keys=qualifiers,
+                component_semantic_keys=components,
+            )
+    elif kind is CounterfactualMutationKind.REPLACE_TIME:
+        normalized = target.replace("time_scope:", "time:")
+        replacement_time = mutation.replacement_refs[0].replace("time_scope:", "time:")
+        if normalized in baseline.temporal_state_keys:
+            matching_qualifiers = tuple(
+                value
+                for value in baseline.qualifier_keys
+                if (
+                    (parts := _im02_role_qualifier_parts(value)) is not None
+                    and parts[1] == "time_scope"
+                    and parts[2] == normalized.removeprefix("time:")
+                )
+            )
+            if len(matching_qualifiers) > 1:
+                raise CMEEStage1ContractError("mutation_target_ambiguous_red")
+            transformed_temporal = tuple(
+                replacement_time if value == normalized else value
+                for value in baseline.temporal_state_keys
+            )
+            if len(transformed_temporal) != len(set(transformed_temporal)):
+                raise CMEEStage1ContractError(
+                    "mutation_material_semantic_collapse_candidate_invalid"
+                )
+            result = replace(
+                baseline,
+                temporal_state_keys=tuple(
+                    dict.fromkeys(
+                        transformed_temporal
+                    )
+                ),
+                qualifier_keys=tuple(
+                    dict.fromkeys(
+                        (
+                            f"qualifier:{parts[0]}_time_scope={replacement_time.removeprefix('time:')}"
+                            if (
+                                (parts := _im02_role_qualifier_parts(value)) is not None
+                                and parts[1] == "time_scope"
+                                and parts[2] == normalized.removeprefix("time:")
+                            ) else value
+                        )
+                        for value in baseline.qualifier_keys
+                    )
+                ),
+            )
+    elif kind is CounterfactualMutationKind.DELETE_MODALITY:
+        if target in baseline.modality_polarity_or_limitation_keys:
+            body = target.removeprefix("modality:")
+            matching_qualifiers = tuple(
+                value
+                for value in baseline.qualifier_keys
+                if value.endswith(f"_modality={body}")
+            )
+            if len(matching_qualifiers) > 1:
+                raise CMEEStage1ContractError("mutation_target_ambiguous_red")
+            result = replace(
+                baseline,
+                modality_polarity_or_limitation_keys=tuple(
+                    value for value in baseline.modality_polarity_or_limitation_keys
+                    if value != target
+                ),
+                qualifier_keys=tuple(
+                    value for value in baseline.qualifier_keys
+                    if not value.endswith(f"_modality={body}")
+                ),
+            )
+    elif kind is CounterfactualMutationKind.DELETE_ASPECT:
+        episodicity = f"episodicity:{target.removeprefix('aspect:')}"
+        if episodicity in baseline.episodicity_boundary_keys:
+            body = target.removeprefix("aspect:")
+            matching_qualifiers = tuple(
+                value
+                for value in baseline.qualifier_keys
+                if value.endswith(f"_aspect={body}")
+            )
+            if len(matching_qualifiers) > 1:
+                raise CMEEStage1ContractError("mutation_target_ambiguous_red")
+            result = replace(
+                baseline,
+                temporal_state_keys=tuple(
+                    value for value in baseline.temporal_state_keys
+                    if value != f"time:{body}"
+                ),
+                episodicity_boundary_keys=tuple(
+                    value for value in baseline.episodicity_boundary_keys
+                    if value != episodicity
+                ),
+                qualifier_keys=tuple(
+                    value for value in baseline.qualifier_keys
+                    if not value.endswith(f"_aspect={body}")
+                    and not (
+                        target == "aspect:one_off"
+                        and value == "qualifier:not_generalized"
+                    )
+                ),
+            )
+    elif kind is CounterfactualMutationKind.DELETE_SCOPE:
+        matches = tuple(
+            value for value in baseline.component_semantic_keys
+            if value.scope_key == target
+        )
+        if len(matches) > 1:
+            raise CMEEStage1ContractError("mutation_target_ambiguous_red")
+        if len(matches) == 1:
+            components = _im02_canonical_components(
+                tuple(
+                    replace(value, scope_key="scope:absent")
+                    if value == matches[0] else value
+                    for value in baseline.component_semantic_keys
+                )
+            )
+            result = replace(
+                baseline,
+                modality_polarity_or_limitation_keys=tuple(
+                    value
+                    for value in baseline.modality_polarity_or_limitation_keys
+                    if value != target
+                    and not (
+                        value == "scope:bounded"
+                        and all(
+                            component.scope_key == "scope:absent"
+                            for component in components
+                        )
+                    )
+                ),
+                qualifier_keys=tuple(
+                    value for value in baseline.qualifier_keys
+                    if value != target and not value.endswith(f"_scope={target.removeprefix('scope:')}")
+                ),
+                component_semantic_keys=components,
+            )
+    elif kind is CounterfactualMutationKind.DELETE_QUALIFIER:
+        qualifiers = list(baseline.qualifier_keys)
+        summary_updates: dict[str, Tuple[str, ...]] = {}
+        removed = False
+        if target in qualifiers:
+            qualifiers.remove(target)
+            removed = True
+        role_parts = _im02_role_qualifier_parts(target)
+        if role_parts is not None and target in baseline.qualifier_keys:
+            axis, value = role_parts[1], role_parts[2]
+        elif target.startswith(("polarity:", "epistemic:", "epistemic-state:")):
+            axis, value = target.split(":", 1)
+            matching = tuple(
+                item for item in qualifiers
+                if item.endswith(f"_{'epistemic' if axis.startswith('epistemic') else axis}={value}")
+                or item == f"qualifier:{axis}={value}"
+            )
+            if len(matching) > 1:
+                raise CMEEStage1ContractError("mutation_target_ambiguous_red")
+            if matching:
+                qualifiers = [item for item in qualifiers if item not in matching]
+                removed = True
+        else:
+            axis, value = "", ""
+        if target == "qualifier:not_generalized":
+            summary_updates["episodicity_boundary_keys"] = tuple(
+                value for value in baseline.episodicity_boundary_keys
+                if value != "episodicity:one_off"
+            )
+        elif axis == "time_scope":
+            summary_updates["temporal_state_keys"] = tuple(
+                item for item in baseline.temporal_state_keys
+                if item != f"time:{value}"
+            )
+        elif axis == "modality":
+            summary_updates["modality_polarity_or_limitation_keys"] = tuple(
+                item for item in baseline.modality_polarity_or_limitation_keys
+                if item != f"modality:{value}"
+            )
+        elif axis == "polarity":
+            summary_updates["modality_polarity_or_limitation_keys"] = tuple(
+                item for item in baseline.modality_polarity_or_limitation_keys
+                if item != f"polarity:{value}"
+            )
+        elif axis.startswith("epistemic"):
+            summary_updates["epistemic_state_keys"] = tuple(
+                item for item in baseline.epistemic_state_keys
+                if item not in {f"epistemic:{value}", f"epistemic-state:{value}"}
+            )
+        if removed:
+            result = replace(baseline, qualifier_keys=tuple(qualifiers), **summary_updates)
+    elif kind is CounterfactualMutationKind.PROMOTE_UNKNOWN:
+        if baseline.resolution_treatment_keys == ("resolution:unresolved",):
+            result = replace(
+                baseline,
+                resolution_treatment_keys=("resolution:resolved",),
+            )
+    if _validate_delta:
+        validate_mutation_signature_delta(
+            mutation=mutation,
+            baseline_semantic_signature=baseline,
+            mutated_semantic_signature=result,
+            source_component_refs=source_component_refs,
+            source_component_rows=None,
+        )
+    return result
 
 
 def _im02_apply_closed_counterfactual(
     baseline: MeaningSemanticSignature,
     mutation: CounterfactualMutationRow,
 ) -> MeaningSemanticSignature:
-    kind = mutation.mutation_kind
-    if kind is CounterfactualMutationKind.SWAP_ENDPOINTS:
-        role_swap = {"role:left": "role:right", "role:right": "role:left"}
-        components = _im02_canonical_components(
-            tuple(
-                replace(
-                    value,
-                    role_key=role_swap.get(value.role_key, value.role_key),
-                )
-                for value in baseline.component_semantic_keys
-            )
-        )
-        qualifier_role_swap = {"left": "right", "right": "left"}
-        qualifiers: set[str] = set()
-        for value in baseline.qualifier_keys:
-            parts = _im02_role_qualifier_parts(value)
-            if parts is None or parts[0] not in qualifier_role_swap:
-                qualifiers.add(value)
-                continue
-            role, axis, qualifier_value = parts
-            qualifiers.add(
-                f"qualifier:{qualifier_role_swap[role]}_{axis}={qualifier_value}"
-            )
-        return replace(
-            baseline,
-            component_role_keys=tuple(
-                sorted({value.role_key for value in components})
-            ),
-            qualifier_keys=tuple(sorted(qualifiers)),
-            component_semantic_keys=components,
-        )
-    if kind is CounterfactualMutationKind.DELETE_ENDPOINT:
-        if (
-            len(mutation.target_component_refs) != 1
-            or len(baseline.component_semantic_keys) < 2
-        ):
-            return baseline
-        candidates = tuple(
-            value
-            for value in baseline.component_semantic_keys
-            if value.role_key == "role:right"
-        )
-        if len(candidates) != 1:
-            return baseline
-        removed = candidates[0]
-        components = tuple(
-            value
-            for value in baseline.component_semantic_keys
-            if value is not removed
-        )
-        center_kinds = {
-            value.removeprefix("center:")
-            for value in baseline.input_center_keys
-        }
-        remaining_kinds = {
-            value.semantic_kind_key.removeprefix("semantic-kind:")
-            for value in components
-        }
-        if not center_kinds.issubset(remaining_kinds):
-            return baseline
-        roles = {
-            value.role_key.removeprefix("role:") for value in components
-        }
-        qualifiers = _im02_qualifiers_for_roles(
-            baseline.qualifier_keys, roles
-        )
-        temporal, modality = _im02_summaries_for_role_qualifiers(
-            baseline, qualifiers
-        )
-        return replace(
-            baseline,
-            component_role_keys=tuple(
-                sorted({value.role_key for value in components})
-            ),
-            relation_direction_keys=(
-                baseline.relation_direction_keys
-                if len(components) >= 2 and len(roles) >= 2
-                else ()
-            ),
-            temporal_state_keys=temporal,
-            modality_polarity_or_limitation_keys=modality,
-            qualifier_keys=qualifiers,
-            component_semantic_keys=components,
-        )
-    if kind is CounterfactualMutationKind.REPLACE_ROLE:
-        if (
-            len(mutation.target_component_refs) != 1
-            or len(mutation.replacement_refs) != 1
-        ):
-            return baseline
-        target_role = mutation.target_component_refs[0]
-        replacement_role = mutation.replacement_refs[0]
-        if (
-            not target_role.startswith("role:")
-            or not replacement_role.startswith("role:")
-            or target_role
-            not in {
-                value.role_key
-                for value in baseline.component_semantic_keys
-            }
-        ):
-            return baseline
-        components = _im02_canonical_components(
-            tuple(
-                replace(value, role_key=replacement_role)
-                if value.role_key == target_role
-                else value
-                for value in baseline.component_semantic_keys
-            )
-        )
-        target_name = target_role.removeprefix("role:")
-        replacement_name = replacement_role.removeprefix("role:")
-        qualifiers: set[str] = set()
-        for value in baseline.qualifier_keys:
-            parts = _im02_role_qualifier_parts(value)
-            if parts is None or parts[0] != target_name:
-                qualifiers.add(value)
-                continue
-            _role, axis, qualifier_value = parts
-            qualifiers.add(
-                f"qualifier:{replacement_name}_{axis}={qualifier_value}"
-            )
-        qualifier_tuple = tuple(sorted(qualifiers))
-        temporal, modality = _im02_summaries_for_role_qualifiers(
-            baseline, qualifier_tuple
-        )
-        return replace(
-            baseline,
-            component_role_keys=tuple(
-                sorted({value.role_key for value in components})
-            ),
-            relation_direction_keys=(
-                baseline.relation_direction_keys
-                if len(components) >= 2
-                and len({value.role_key for value in components}) >= 2
-                else ()
-            ),
-            temporal_state_keys=temporal,
-            modality_polarity_or_limitation_keys=modality,
-            qualifier_keys=qualifier_tuple,
-            component_semantic_keys=components,
-        )
-    if kind is CounterfactualMutationKind.DELETE_OWNER:
-        if len(mutation.target_component_refs) != 1:
-            return baseline
-        target_owner = mutation.target_component_refs[0].split("@", 1)[0]
-        owners = {
-            value.owner_key for value in baseline.component_semantic_keys
-        }
-        if target_owner not in owners or target_owner == "owner:unknown":
-            return baseline
-        affected_roles = {
-            value.role_key.removeprefix("role:")
-            for value in baseline.component_semantic_keys
-            if value.owner_key == target_owner
-        }
-        components = _im02_canonical_components(
-            tuple(
-                replace(value, owner_key="owner:unknown")
-                if value.owner_key == target_owner
-                else value
-                for value in baseline.component_semantic_keys
-            )
-        )
-        qualifiers: set[str] = set()
-        for value in baseline.qualifier_keys:
-            parts = _im02_role_qualifier_parts(value)
-            if (
-                parts is not None
-                and parts[0] in affected_roles
-                and parts[1] == "actor"
-            ):
-                qualifiers.add(f"qualifier:{parts[0]}_actor=unknown")
-            else:
-                qualifiers.add(value)
-        worlds = {
-            value
-            for value in baseline.world_or_owner_distinction_keys
-            if value.startswith("world:")
-        }
-        worlds.update(value.owner_key for value in components)
-        return replace(
-            baseline,
-            world_or_owner_distinction_keys=tuple(sorted(worlds)),
-            qualifier_keys=tuple(sorted(qualifiers)),
-            component_semantic_keys=components,
-        )
-    if kind is CounterfactualMutationKind.REPLACE_WORLD:
-        target = mutation.target_component_refs[0]
-        replacement_value = mutation.replacement_refs[0]
-        worlds = set(baseline.world_or_owner_distinction_keys)
-        if target not in worlds:
-            return baseline
-        worlds.remove(target)
-        worlds.add(replacement_value)
-        return replace(
-            baseline,
-            world_or_owner_distinction_keys=tuple(sorted(worlds)),
-        )
-    if kind is CounterfactualMutationKind.REPLACE_TIME:
-        target = mutation.target_component_refs[0].replace(
-            "time_scope:", "time:"
-        )
-        replacement_value = mutation.replacement_refs[0].replace(
-            "time_scope:", "time:"
-        )
-        temporal = set(baseline.temporal_state_keys)
-        if target not in temporal:
-            return baseline
-        temporal.remove(target)
-        temporal.add(replacement_value)
-        target_value = target.removeprefix("time:")
-        replacement_time = replacement_value.removeprefix("time:")
-        qualifiers = tuple(
-            sorted(
-                {
-                    (
-                        f"qualifier:{parts[0]}_time_scope={replacement_time}"
-                        if (
-                            (
-                                parts := _im02_role_qualifier_parts(value)
-                            )
-                            is not None
-                            and parts[1] == "time_scope"
-                            and parts[2] == target_value
-                        )
-                        else value
-                    )
-                    for value in baseline.qualifier_keys
-                }
-            )
-        )
-        return replace(
-            baseline,
-            temporal_state_keys=tuple(sorted(temporal)),
-            qualifier_keys=qualifiers,
-        )
-    if kind is CounterfactualMutationKind.PROMOTE_UNKNOWN:
-        if baseline.resolution_treatment_keys != (
-            "resolution:unresolved",
-        ):
-            return baseline
-        return replace(
-            baseline,
-            resolution_treatment_keys=("resolution:resolved",),
-        )
-    # Predicate/modality/aspect/scope/qualifier deletion is not safely
-    # representable by the current exact7 signature.  IM02 must issue no row.
-    return baseline
+    # IM03 closes the historical IM02 no-op lanes through the shared exact12
+    # mutation resolver.  Keep this private name as the aggregate validator's
+    # compatibility seam; it must not retain a second implementation.
+    return apply_meaning_signature_mutation(baseline, mutation)
 
 
-_IM02_CONSEQUENCE_CODE_BY_MUTATION = {
-    CounterfactualMutationKind.DELETE_ENDPOINT: (
-        WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED
-    ),
-    CounterfactualMutationKind.SWAP_ENDPOINTS: (
-        WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED
-    ),
-    CounterfactualMutationKind.REPLACE_ROLE: (
-        WholeReadingConsequenceCode.RELATION_STRUCTURE_CHANGED
-    ),
-    CounterfactualMutationKind.REPLACE_TIME: (
-        WholeReadingConsequenceCode.TEMPORAL_FLOW_CHANGED
-    ),
-    CounterfactualMutationKind.DELETE_OWNER: (
-        WholeReadingConsequenceCode.WORLD_OR_OWNER_DISTINCTION_CHANGED
-    ),
-    CounterfactualMutationKind.REPLACE_WORLD: (
-        WholeReadingConsequenceCode.WORLD_OR_OWNER_DISTINCTION_CHANGED
-    ),
-    CounterfactualMutationKind.PROMOTE_UNKNOWN: (
-        WholeReadingConsequenceCode.RESOLUTION_TREATMENT_CHANGED
-    ),
+
+_MEANING_DECISION_TRACE_KIND_ORDER = {
+    value: index for index, value in enumerate(MeaningDecisionTraceKind)
 }
+_MEANING_DECISION_REASON_CODE_ORDER = {
+    value: index for index, value in enumerate(MeaningDecisionReasonCode)
+}
+
+
+def _projection_qualifier_parts(value: str) -> tuple[str, str] | None:
+    if type(value) is not str or ":" not in value:
+        return None
+    axis, body = value.split(":", 1)
+    if not axis or not body:
+        return None
+    return axis, body
+
+
+def input_specific_meaning_candidate_source_component_rows(
+    candidate: InputSpecificMeaningCandidate,
+    *,
+    grounded_view: object,
+) -> Tuple[GroundedSemanticComponentProjection, ...]:
+    """Resolve signature-aligned rows from source declaration ranks."""
+
+    projections = getattr(
+        grounded_view, "semantic_interpretation_projections", None
+    )
+    if type(projections) is not tuple:
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_source_projection_missing"
+        )
+    rows = tuple(
+        row
+        for projection in projections
+        if type(projection) is GroundedInterpretationProjection
+        and projection.interpretation_candidate_ref
+        in candidate.basis_derivation_refs
+        for row in projection.component_rows
+        if row.source_object_ref in candidate.primary_component_refs
+    )
+    ordered = tuple(sorted(rows, key=lambda row: row.source_declaration_rank))
+    component_ref_pairs: list[
+        tuple[MeaningComponentSemanticKey, str, GroundedSemanticComponentProjection]
+    ] = []
+    for row in ordered:
+        component = MeaningComponentSemanticKey(
+            typed_predicate_key=row.typed_predicate_key,
+            semantic_kind_key=row.semantic_kind_key,
+            owner_key=row.owner_key,
+            scope_key=row.scope_key,
+            role_key=row.role_key,
+        )
+        pair_key = (component, row.source_object_ref)
+        if not any(
+            (prior_component, prior_ref) == pair_key
+            for prior_component, prior_ref, _prior_row in component_ref_pairs
+        ):
+            component_ref_pairs.append(
+                (component, row.source_object_ref, row)
+            )
+    refs = tuple(ref for _component, ref, _row in component_ref_pairs)
+    if set(refs) != set(candidate.primary_component_refs):
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_source_component_exact_cover_invalid"
+        )
+    return tuple(row for _component, _ref, row in component_ref_pairs)
+
+
+def input_specific_meaning_candidate_source_component_refs(
+    candidate: InputSpecificMeaningCandidate,
+    *,
+    grounded_view: object,
+) -> Tuple[str, ...]:
+    """Resolve the signature component order from source declaration ranks."""
+
+    return tuple(
+        row.source_object_ref
+        for row in input_specific_meaning_candidate_source_component_rows(
+            candidate,
+            grounded_view=grounded_view,
+        )
+    )
+
+
+def recompute_input_specific_meaning_candidate_signature(
+    candidate: InputSpecificMeaningCandidate,
+    *,
+    grounded_view: object,
+) -> MeaningSemanticSignature:
+    """Rebuild an IM03 signature from safe source-leaf projections."""
+
+    projections = getattr(
+        grounded_view, "semantic_interpretation_projections", None
+    )
+    relations = getattr(grounded_view, "source_connected_relations", None)
+    if type(projections) is not tuple or type(relations) is not tuple:
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_source_projection_missing"
+        )
+    selected_projections = tuple(
+        projection
+        for projection in projections
+        if type(projection) is GroundedInterpretationProjection
+        and projection.interpretation_candidate_ref
+        in candidate.basis_derivation_refs
+    )
+    if not selected_projections:
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_source_projection_unbound"
+        )
+    component_rows = tuple(
+        row
+        for projection in selected_projections
+        for row in projection.component_rows
+        if row.source_object_ref in candidate.primary_component_refs
+    )
+    if not component_rows:
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_source_component_missing"
+        )
+    projected_refs = tuple(
+        dict.fromkeys(row.source_object_ref for row in component_rows)
+    )
+    if (
+        set(projected_refs) != set(candidate.primary_component_refs)
+    ):
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_source_component_exact_cover_invalid"
+        )
+    component_rows = tuple(
+        sorted(
+            component_rows,
+            key=lambda row: row.source_declaration_rank,
+        )
+    )
+    components: list[MeaningComponentSemanticKey] = []
+    role_bound_qualifiers: list[str] = []
+    temporal: list[str] = []
+    modality: list[str] = ["scope:bounded"]
+    epistemic: list[str] = []
+    owners: list[str] = []
+    worlds: list[str] = []
+    episodicity: list[str] = []
+    for row in component_rows:
+        component = MeaningComponentSemanticKey(
+            typed_predicate_key=row.typed_predicate_key,
+            semantic_kind_key=row.semantic_kind_key,
+            owner_key=row.owner_key,
+            scope_key=row.scope_key,
+            role_key=row.role_key,
+        )
+        if component not in components:
+            components.append(component)
+        for value in (
+            row.temporal_state_key,
+            row.modality_key,
+            row.polarity_key,
+            row.epistemic_state_key,
+            row.owner_key,
+        ):
+            target = (
+                temporal
+                if value.startswith("time:")
+                else epistemic
+                if value.startswith("epistemic:")
+                else owners
+                if value.startswith("owner:")
+                else modality
+            )
+            if value not in target:
+                target.append(value)
+        role = row.role_key.removeprefix("role:")
+        for qualifier in row.qualifier_refs:
+            parts = _projection_qualifier_parts(qualifier)
+            if parts is None:
+                raise CMEEStage1ContractError(
+                    "input_specific_meaning_source_qualifier_invalid"
+                )
+            axis, body = parts
+            if axis == "world":
+                world_key = f"world:{body}"
+                if world_key not in worlds:
+                    worlds.append(world_key)
+            if axis == "aspect" and body == "one_off":
+                if "episodicity:one_off" not in episodicity:
+                    episodicity.append("episodicity:one_off")
+            if axis in {"actor", "time_scope", "modality", "polarity"}:
+                bound = f"qualifier:{role}_{axis}={body}"
+            elif qualifier.startswith("qualifier:"):
+                bound = qualifier
+            else:
+                continue
+            if bound not in role_bound_qualifiers:
+                role_bound_qualifiers.append(bound)
+    if episodicity and "qualifier:not_generalized" not in role_bound_qualifiers:
+        role_bound_qualifiers.append("qualifier:not_generalized")
+    resolution: list[str] = []
+    source_material_unknown_refs = tuple(
+        dict.fromkeys(
+            ref
+            for row in component_rows
+            for ref in row.material_unknown_refs
+        )
+    )
+    if candidate.material_unknown_refs != source_material_unknown_refs:
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_source_unknown_binding_invalid"
+        )
+    if source_material_unknown_refs:
+        resolution.append("resolution:unresolved")
+        if "world:unknown" not in worlds:
+            worlds.append("world:unknown")
+        if "qualifier:unknown_preserved" not in role_bound_qualifiers:
+            role_bound_qualifiers.append("qualifier:unknown_preserved")
+    relation_kind_by_ref = {
+        row.relation_ref: row.relation_kind
+        for row in relations
+        if hasattr(row, "relation_ref") and hasattr(row, "relation_kind")
+    }
+    if any(ref not in relation_kind_by_ref for ref in candidate.relation_path_refs):
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_source_relation_unbound"
+        )
+    relation_keys = tuple(
+        dict.fromkeys(
+            f"relation:{relation_kind_by_ref[ref].value}"
+            for ref in candidate.relation_path_refs
+        )
+    )
+    primary_ref = candidate.primary_component_refs[0]
+    primary_row = next(
+        row for row in component_rows if row.source_object_ref == primary_ref
+    )
+    signature = MeaningSemanticSignature(
+        schema_version=_FOREGROUND_SCOPE_SCHEMA_VERSION,
+        reading_operation=candidate.reading_operation,
+        input_center_keys=(
+            f"center:{primary_row.semantic_kind_key.removeprefix('semantic-kind:')}",
+        ),
+        component_role_keys=tuple(
+            dict.fromkeys(value.role_key for value in components)
+        ),
+        relation_direction_keys=relation_keys,
+        epistemic_state_keys=tuple(dict.fromkeys(epistemic)),
+        temporal_state_keys=tuple(dict.fromkeys(temporal)),
+        resolution_treatment_keys=tuple(dict.fromkeys(resolution)),
+        world_or_owner_distinction_keys=tuple(
+            dict.fromkeys((*owners, *worlds))
+        ),
+        modality_polarity_or_limitation_keys=tuple(
+            dict.fromkeys(modality)
+        ),
+        episodicity_boundary_keys=tuple(dict.fromkeys(episodicity)),
+        qualifier_keys=tuple(dict.fromkeys(role_bound_qualifiers)),
+        component_semantic_keys=tuple(components),
+    )
+    validate_meaning_semantic_signature_local_shape(signature)
+    return signature
+
+
+def input_specific_meaning_candidate_dominates(
+    candidate: InputSpecificMeaningCandidate,
+    other: InputSpecificMeaningCandidate,
+) -> bool:
+    """Return the closed componentwise minimal-sufficiency relation."""
+
+    if (
+        type(candidate) is not InputSpecificMeaningCandidate
+        or type(other) is not InputSpecificMeaningCandidate
+        or candidate.semantic_signature != other.semantic_signature
+    ):
+        return False
+    tier_rank = {
+        BasisEpistemicTier.SOURCE_EXPLICIT: 1,
+        BasisEpistemicTier.RULE_ADMITTED_PROVISIONAL: 0,
+    }
+    candidate_rows = {
+        (row.basis_kind, row.basis_ref): row
+        for row in candidate.basis_provenance_rows
+    }
+    other_rows = {
+        (row.basis_kind, row.basis_ref): row
+        for row in other.basis_provenance_rows
+    }
+    if (
+        len(candidate_rows) != len(candidate.basis_provenance_rows)
+        or len(other_rows) != len(other.basis_provenance_rows)
+    ):
+        return False
+    provenance_no_worse = all(
+        key in candidate_rows
+        and set(candidate_rows[key].source_evidence_refs).issuperset(
+            row.source_evidence_refs
+        )
+        and set(candidate_rows[key].approved_derivation_refs).issuperset(
+            row.approved_derivation_refs
+        )
+        for key, row in other_rows.items()
+    )
+    if set(candidate_rows) - set(other_rows):
+        provenance_no_worse = False
+    provenance_strict = provenance_no_worse and any(
+        set(candidate_rows[key].source_evidence_refs)
+        > set(row.source_evidence_refs)
+        or set(candidate_rows[key].approved_derivation_refs)
+        > set(row.approved_derivation_refs)
+        for key, row in other_rows.items()
+    )
+    no_worse = (
+        tier_rank[candidate.basis_epistemic_tier]
+        >= tier_rank[other.basis_epistemic_tier]
+        and set(candidate.preserved_difference_refs).issuperset(
+            other.preserved_difference_refs
+        )
+        and set(candidate.material_unknown_refs).issubset(
+            other.material_unknown_refs
+        )
+        and set(candidate.forbidden_promotion_codes).issubset(
+            other.forbidden_promotion_codes
+        )
+        and set(candidate.forbidden_semantic_collapse_refs).issubset(
+            other.forbidden_semantic_collapse_refs
+        )
+        and provenance_no_worse
+    )
+    strict = (
+        tier_rank[candidate.basis_epistemic_tier]
+        > tier_rank[other.basis_epistemic_tier]
+        or set(candidate.preserved_difference_refs)
+        > set(other.preserved_difference_refs)
+        or set(candidate.material_unknown_refs)
+        < set(other.material_unknown_refs)
+        or set(candidate.forbidden_promotion_codes)
+        < set(other.forbidden_promotion_codes)
+        or set(candidate.forbidden_semantic_collapse_refs)
+        < set(other.forbidden_semantic_collapse_refs)
+        or provenance_strict
+    )
+    return no_worse and strict
+
+
+def meaning_selection_assessment_refs(
+    candidates: Sequence[InputSpecificMeaningCandidate],
+) -> tuple[Tuple[str, ...], Tuple[str, ...]]:
+    """Return tier-admitted and componentwise-nondominated refs in order."""
+
+    values = tuple(candidates)
+    if any(type(value) is not InputSpecificMeaningCandidate for value in values):
+        raise CMEEStage1ContractError(
+            "meaning_selection_assessment_candidate_invalid"
+        )
+    bundle_groups: dict[Tuple[str, ...], list[InputSpecificMeaningCandidate]] = {}
+    for candidate in values:
+        bundle_groups.setdefault(candidate.requirement_bundle_refs, []).append(
+            candidate
+        )
+    admitted: list[InputSpecificMeaningCandidate] = []
+    for group in bundle_groups.values():
+        explicit = tuple(
+            value
+            for value in group
+            if value.basis_epistemic_tier
+            is BasisEpistemicTier.SOURCE_EXPLICIT
+        )
+        admitted.extend(explicit or group)
+    admitted_values = tuple(admitted)
+    nondominated = tuple(
+        candidate
+        for candidate in admitted_values
+        if not any(
+            input_specific_meaning_candidate_dominates(other, candidate)
+            for other in admitted_values
+            if other is not candidate
+        )
+    )
+    return (
+        tuple(value.candidate_id for value in admitted_values),
+        tuple(value.candidate_id for value in nondominated),
+    )
+
+
+def meaning_decision_candidate_reason_codes(
+    candidate: InputSpecificMeaningCandidate,
+    evidence: InputSpecificityEvidence,
+    *,
+    candidates: Sequence[InputSpecificMeaningCandidate],
+    selected: bool,
+) -> Tuple[MeaningDecisionReasonCode, ...]:
+    """Project the closed trace assessment from sealed candidate facts."""
+
+    if (
+        type(candidate) is not InputSpecificMeaningCandidate
+        or type(evidence) is not InputSpecificityEvidence
+        or type(selected) is not bool
+        or evidence.candidate_ref != candidate.candidate_id
+    ):
+        raise CMEEStage1ContractError(
+            "meaning_decision_trace_assessment_input_invalid"
+        )
+    tier_admitted_refs, nondominated_refs = meaning_selection_assessment_refs(
+        candidates
+    )
+    admitted: set[MeaningDecisionReasonCode] = set()
+    if candidate.candidate_id in tier_admitted_refs:
+        admitted.add(MeaningDecisionReasonCode.SEL00)
+    if (
+        evidence.required_difference_refs
+        == candidate.preserved_difference_refs
+    ):
+        admitted.add(MeaningDecisionReasonCode.SEL01)
+    if (
+        candidate.preserved_difference_refs
+        and evidence.discriminative_necessity_refs
+        == candidate.preserved_difference_refs
+    ):
+        admitted.add(MeaningDecisionReasonCode.SEL02)
+    if candidate.relation_path_refs or candidate.qualified_event_state_refs:
+        admitted.add(MeaningDecisionReasonCode.SEL03)
+    if (
+        candidate.candidate_id in nondominated_refs
+        and
+        bool(candidate.material_unknown_refs)
+        is (
+            "resolution:unresolved"
+            in candidate.semantic_signature.resolution_treatment_keys
+        )
+        and not candidate.semantic_loss_codes
+    ):
+        admitted.add(MeaningDecisionReasonCode.SEL04)
+    if (
+        evidence.whole_reading_consequence_refs
+        and evidence.discriminative_necessity_refs
+        == candidate.preserved_difference_refs
+    ):
+        admitted.add(MeaningDecisionReasonCode.SEL05)
+    if selected and candidate.candidate_id in nondominated_refs:
+        admitted.add(MeaningDecisionReasonCode.SEL06)
+    return tuple(
+        value
+        for value in MeaningDecisionReasonCode
+        if value in admitted and value.name.startswith("SEL")
+    )
+
+
+def _validate_meaning_decision_trace(
+    trace: MeaningDecisionTrace,
+    *,
+    candidate_order: Mapping[str, int],
+    limited_subject_ref: str | None,
+) -> None:
+    if (
+        type(trace) is not MeaningDecisionTrace
+        or trace.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION
+        or type(trace.rows) is not tuple
+        or not trace.rows
+    ):
+        raise CMEEStage1ContractError("meaning_decision_trace_invalid")
+    seen: set[MeaningDecisionTraceRow] = set()
+    seen_kind_subjects: set[tuple[MeaningDecisionTraceKind, str]] = set()
+    prior_key: tuple[object, ...] | None = None
+    for row in trace.rows:
+        if (
+            type(row) is not MeaningDecisionTraceRow
+            or type(row.trace_kind) is not MeaningDecisionTraceKind
+            or type(row.subject_ref) is not str
+            or not row.subject_ref
+            or type(row.reason_codes) is not tuple
+            or not row.reason_codes
+            or any(
+                type(value) is not MeaningDecisionReasonCode
+                for value in row.reason_codes
+            )
+            or row.reason_codes
+            != tuple(
+                sorted(
+                    set(row.reason_codes),
+                    key=_MEANING_DECISION_REASON_CODE_ORDER.__getitem__,
+                )
+            )
+            or type(row.source_refs) is not tuple
+            or not row.source_refs
+            or len(row.source_refs) != len(set(row.source_refs))
+            or any(type(value) is not str or not value for value in row.source_refs)
+        ):
+            raise CMEEStage1ContractError("meaning_decision_trace_row_invalid")
+        if row.trace_kind is MeaningDecisionTraceKind.LIMITED_BASIS:
+            if (
+                row.subject_ref != limited_subject_ref
+                or len(row.reason_codes) != 1
+                or row.reason_codes[0]
+                not in {
+                    MeaningDecisionReasonCode.LIM01,
+                    MeaningDecisionReasonCode.LIM02,
+                    MeaningDecisionReasonCode.LIM03,
+                }
+            ):
+                raise CMEEStage1ContractError(
+                    "meaning_decision_trace_limited_binding_invalid"
+                )
+            subject_rank = len(candidate_order) + 3
+        else:
+            if (
+                row.subject_ref not in candidate_order
+                or any(value.name.startswith("LIM") for value in row.reason_codes)
+                or not all(value.name.startswith("SEL") for value in row.reason_codes)
+            ):
+                raise CMEEStage1ContractError(
+                    "meaning_decision_trace_candidate_binding_invalid"
+                )
+            subject_rank = candidate_order[row.subject_ref]
+        key = (
+            _MEANING_DECISION_TRACE_KIND_ORDER[row.trace_kind],
+            subject_rank,
+        )
+        kind_subject = (row.trace_kind, row.subject_ref)
+        if (
+            row in seen
+            or kind_subject in seen_kind_subjects
+            or (prior_key is not None and key < prior_key)
+        ):
+            raise CMEEStage1ContractError(
+                "meaning_decision_trace_noncanonical"
+            )
+        seen.add(row)
+        seen_kind_subjects.add(kind_subject)
+        prior_key = key
+
+
+def _validate_input_specific_meaning_im03(
+    structure: InputSpecificMeaningStructure,
+    *,
+    grounded_view: object,
+    foreground_scope_derivation: ForegroundScopeDerivation,
+) -> None:
+    candidates = structure.candidate_records
+    evidence_records = structure.input_specificity_evidence_records
+    if type(candidates) is not tuple or type(evidence_records) is not tuple:
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_im03_tuple_required"
+        )
+    config_by_ref = {
+        value.configuration_id: value for value in structure.configurations
+    }
+    bundle_by_ref = {
+        value.bundle_id: value for value in structure.requirement_bundles
+    }
+    required_by_ref = {
+        value.difference_id: value
+        for value in structure.required_difference_rows
+    }
+    mutation_by_ref = {
+        value.mutation_id: value
+        for value in structure.counterfactual_mutation_rows
+    }
+    consequence_by_ref = {
+        value.consequence_id: value
+        for value in structure.whole_reading_consequence_rows
+    }
+    if len(consequence_by_ref) != len(structure.whole_reading_consequence_rows):
+        raise CMEEStage1ContractError(
+            "whole_reading_consequence_identity_duplicate"
+        )
+    scope = foreground_scope_derivation.foreground_scope
+    projections = getattr(
+        grounded_view, "semantic_interpretation_projections", None
+    )
+    source_relations = getattr(grounded_view, "source_connected_relations", None)
+    if type(projections) is not tuple or type(source_relations) is not tuple:
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_source_projection_missing"
+        )
+    projection_by_ref = {
+        value.interpretation_candidate_ref: value
+        for value in projections
+        if type(value) is GroundedInterpretationProjection
+    }
+    if len(projection_by_ref) != len(projections):
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_source_projection_duplicate"
+        )
+    source_relation_by_ref = {
+        value.relation_ref: value for value in source_relations
+    }
+    if len(source_relation_by_ref) != len(source_relations):
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_source_relation_duplicate"
+        )
+    carrier_bundle_refs = tuple(value.bundle_id for value in structure.requirement_bundles)
+    candidate_by_ref: dict[str, InputSpecificMeaningCandidate] = {}
+    recomputed_signatures: dict[str, MeaningSemanticSignature] = {}
+    for candidate in candidates:
+        if (
+            type(candidate) is not InputSpecificMeaningCandidate
+            or candidate.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION
+            or type(candidate.reading_operation) is not MeaningReadingOperation
+            or type(candidate.basis_epistemic_tier) is not BasisEpistemicTier
+            or candidate.emlis_reading_status != "EMLIS_PROVISIONAL_READING"
+            or not (1 <= len(candidate.basis_configuration_refs) <= 5)
+            or not (1 <= len(candidate.requirement_bundle_refs) <= 5)
+            or not (1 <= len(candidate.primary_component_refs) <= 5)
+            or candidate.semantic_loss_codes
+            or candidate.candidate_id in candidate_by_ref
+        ):
+            raise CMEEStage1ContractError(
+                "input_specific_meaning_candidate_shape_invalid"
+            )
+        for field_name in _STAGE1_TUPLE_FIELDS[InputSpecificMeaningCandidate]:
+            if type(getattr(candidate, field_name)) is not tuple:
+                raise CMEEStage1ContractError(
+                    "input_specific_meaning_candidate_tuple_invalid"
+                )
+        expected_bundle_refs = tuple(
+            ref for ref in carrier_bundle_refs if ref in candidate.requirement_bundle_refs
+        )
+        if (
+            candidate.requirement_bundle_refs != expected_bundle_refs
+            or len(candidate.requirement_bundle_refs)
+            != len(set(candidate.requirement_bundle_refs))
+            or not set(candidate.requirement_bundle_refs).issubset(bundle_by_ref)
+            or len(candidate.basis_configuration_refs)
+            != len(set(candidate.basis_configuration_refs))
+            or not set(candidate.basis_configuration_refs).issubset(config_by_ref)
+        ):
+            raise CMEEStage1ContractError(
+                "input_specific_meaning_candidate_owner_unbound"
+            )
+        owned_configuration_refs = tuple(
+            dict.fromkeys(
+                ref
+                for bundle_ref in candidate.requirement_bundle_refs
+                for ref in (
+                    bundle_by_ref[bundle_ref].anchor_configuration_ref,
+                    *bundle_by_ref[bundle_ref].adjacent_configuration_refs,
+                )
+            )
+        )
+        if candidate.basis_configuration_refs != tuple(
+            ref for ref in owned_configuration_refs if ref in candidate.basis_configuration_refs
+        ):
+            raise CMEEStage1ContractError(
+                "input_specific_meaning_candidate_configuration_order_invalid"
+            )
+        owned_required = tuple(
+            ref
+            for bundle in structure.requirement_bundles
+            if bundle.bundle_id in candidate.requirement_bundle_refs
+            for ref in bundle.required_difference_refs
+        )
+        owned_required = tuple(dict.fromkeys(owned_required))
+        if candidate.preserved_difference_refs != owned_required:
+            raise CMEEStage1ContractError(
+                "input_specific_meaning_candidate_difference_coverage_invalid"
+            )
+        owned_configurations = tuple(
+            config_by_ref[ref] for ref in candidate.basis_configuration_refs
+        )
+        expected_primary_members = tuple(
+            dict.fromkeys(
+                ref
+                for configuration in owned_configurations
+                for ref in (
+                    configuration.endpoint_component_refs
+                    if type(configuration) is RelationalConfiguration
+                    else (configuration.predicate_ref,)
+                )
+            )
+        )
+        expected_relation_refs = tuple(
+            dict.fromkeys(
+                ref
+                for configuration in owned_configurations
+                if type(configuration) is RelationalConfiguration
+                for ref in configuration.relation_path_refs
+            )
+        )
+        expected_qualified_refs = tuple(
+            configuration.configuration_id
+            for configuration in owned_configurations
+            if type(configuration) is QualifiedEventStateConfiguration
+        )
+        if (
+            candidate.relation_path_refs != expected_relation_refs
+            or candidate.qualified_event_state_refs != expected_qualified_refs
+            or any(ref not in source_relation_by_ref for ref in expected_relation_refs)
+        ):
+            raise CMEEStage1ContractError(
+                "input_specific_meaning_candidate_source_binding_invalid"
+            )
+        material_relation_refs = {
+            ref
+            for configuration in owned_configurations
+            if type(configuration) is RelationalConfiguration
+            for ref in configuration.relation_path_refs
+        }
+        qualified_object_refs = {
+            configuration.predicate_ref
+            for configuration in owned_configurations
+            if type(configuration) is QualifiedEventStateConfiguration
+        }
+        selected_projections = tuple(
+            projection
+            for projection in projections
+            if (
+                (
+                    bool(projection.relation_path_refs)
+                    and set(projection.relation_path_refs).issubset(
+                        material_relation_refs
+                    )
+                    and {
+                        row.source_object_ref
+                        for row in projection.component_rows
+                    }.issubset(set(expected_primary_members))
+                )
+                or (
+                    not projection.relation_path_refs
+                    and any(
+                        row.source_object_ref in qualified_object_refs
+                        for row in projection.component_rows
+                    )
+                )
+            )
+        )
+        selected_projection_refs = tuple(
+            projection.interpretation_candidate_ref
+            for projection in selected_projections
+        )
+        approved_derivation_refs = tuple(
+            dict.fromkeys(
+                ref
+                for projection in selected_projections
+                for ref in projection.approved_derivation_refs
+            )
+        )
+        expected_basis_derivation_refs = tuple(
+            dict.fromkeys((*selected_projection_refs, *approved_derivation_refs))
+        )
+        source_rank_by_ref: dict[str, int] = {}
+        for projection in selected_projections:
+            for row in projection.component_rows:
+                if row.source_object_ref not in expected_primary_members:
+                    continue
+                prior_rank = source_rank_by_ref.get(row.source_object_ref)
+                if (
+                    prior_rank is not None
+                    and prior_rank != row.source_declaration_rank
+                ):
+                    raise CMEEStage1ContractError(
+                        "input_specific_meaning_source_rank_conflict"
+                    )
+                source_rank_by_ref[row.source_object_ref] = (
+                    row.source_declaration_rank
+                )
+        if (
+            set(source_rank_by_ref) != set(expected_primary_members)
+            or len(set(source_rank_by_ref.values()))
+            != len(source_rank_by_ref)
+        ):
+            raise CMEEStage1ContractError(
+                "input_specific_meaning_source_rank_cover_invalid"
+            )
+        expected_primary_refs = tuple(
+            sorted(
+                expected_primary_members,
+                key=source_rank_by_ref.__getitem__,
+            )
+        )
+        projected_component_refs = {
+            row.source_object_ref
+            for projection in selected_projections
+            for row in projection.component_rows
+        }
+        component_owner_by_key: dict[MeaningComponentSemanticKey, str] = {}
+        component_collapse = False
+        for projection in selected_projections:
+            for row in projection.component_rows:
+                if row.source_object_ref not in expected_primary_refs:
+                    continue
+                component_key = MeaningComponentSemanticKey(
+                    typed_predicate_key=row.typed_predicate_key,
+                    semantic_kind_key=row.semantic_kind_key,
+                    owner_key=row.owner_key,
+                    scope_key=row.scope_key,
+                    role_key=row.role_key,
+                )
+                prior_owner = component_owner_by_key.get(component_key)
+                if (
+                    prior_owner is not None
+                    and prior_owner != row.source_object_ref
+                ):
+                    component_collapse = True
+                component_owner_by_key[component_key] = row.source_object_ref
+        if (
+            not selected_projections
+            or candidate.primary_component_refs != expected_primary_refs
+            or candidate.basis_derivation_refs != expected_basis_derivation_refs
+            or not set(candidate.primary_component_refs).issubset(projected_component_refs)
+            or component_collapse
+        ):
+            raise CMEEStage1ContractError(
+                "input_specific_meaning_candidate_derivation_binding_invalid"
+            )
+        expected_contribution_refs = tuple(
+            dict.fromkeys(
+                ref
+                for projection in selected_projections
+                for ref in projection.basis_contribution_refs
+            )
+        )
+        expected_qualifier_refs = tuple(
+            dict.fromkeys(
+                ref
+                for configuration in owned_configurations
+                for ref in (
+                    configuration.source_qualifier_refs
+                    if type(configuration) is RelationalConfiguration
+                    else tuple(
+                        dict.fromkeys(
+                            (
+                                *configuration.modality_refs,
+                                *configuration.time_refs,
+                                *configuration.aspect_refs,
+                                *configuration.scope_refs,
+                                *configuration.qualifier_refs,
+                            )
+                        )
+                    )
+                )
+            )
+        )
+        expected_forbidden_promotions = tuple(
+            dict.fromkeys(
+                ref
+                for projection in selected_projections
+                for ref in projection.forbidden_promotion_codes
+            )
+        )
+        expected_forbidden_collapse_refs = tuple(
+            dict.fromkeys(
+                ref
+                for required_ref in candidate.preserved_difference_refs
+                for required in (required_by_ref[required_ref],)
+                for mutation in (
+                    mutation_by_ref[required.counterfactual_mutation_ref],
+                )
+                if mutation.mutation_kind
+                is not CounterfactualMutationKind.PROMOTE_UNKNOWN
+                for ref in mutation.target_component_refs
+            )
+        )
+        if (
+            candidate.basis_contribution_refs != expected_contribution_refs
+            or candidate.source_qualifier_refs != expected_qualifier_refs
+            or candidate.material_unknown_refs
+            != (scope.material_unknown_refs if type(scope) is ForegroundScope else ())
+            or candidate.forbidden_promotion_codes
+            != expected_forbidden_promotions
+            or candidate.forbidden_semantic_collapse_refs
+            != expected_forbidden_collapse_refs
+        ):
+            raise CMEEStage1ContractError(
+                "input_specific_meaning_candidate_material_binding_invalid"
+            )
+        provenance_keys = tuple(
+            (row.basis_kind, row.basis_ref)
+            for row in candidate.basis_provenance_rows
+        )
+        expected_keys = (
+            tuple(
+                (BasisProvenanceKind.RELATION_BRIDGE, ref)
+                for ref in candidate.relation_path_refs
+            )
+            + tuple(
+                (BasisProvenanceKind.QUALIFIED_EVENT_STATE, ref)
+                for ref in candidate.qualified_event_state_refs
+            )
+        )
+        if provenance_keys != expected_keys or len(provenance_keys) != len(
+            set(provenance_keys)
+        ):
+            raise CMEEStage1ContractError(
+                "input_specific_meaning_basis_provenance_cover_invalid"
+            )
+        expected_provenance_rows: list[BasisProvenanceRow] = []
+        for ref in candidate.relation_path_refs:
+            relation = source_relation_by_ref[ref]
+            expected_provenance_rows.append(
+                BasisProvenanceRow(
+                    schema_version=_FOREGROUND_SCOPE_SCHEMA_VERSION,
+                    basis_kind=BasisProvenanceKind.RELATION_BRIDGE,
+                    basis_ref=ref,
+                    basis_epistemic_tier=BasisEpistemicTier.SOURCE_EXPLICIT,
+                    source_evidence_refs=relation.source_evidence_refs,
+                    approved_derivation_refs=(),
+                )
+            )
+        for ref in candidate.qualified_event_state_refs:
+            configuration = config_by_ref[ref]
+            matching_projections = tuple(
+                projection
+                for projection in selected_projections
+                if any(
+                    row.source_object_ref == configuration.predicate_ref
+                    for row in projection.component_rows
+                )
+            )
+            derivation_refs = tuple(
+                dict.fromkeys(
+                    derivation_ref
+                    for projection in matching_projections
+                    for derivation_ref in projection.approved_derivation_refs
+                )
+            )
+            if not derivation_refs:
+                raise CMEEStage1ContractError(
+                    "input_specific_meaning_qualified_provenance_unbound"
+                )
+            expected_provenance_rows.append(
+                BasisProvenanceRow(
+                    schema_version=_FOREGROUND_SCOPE_SCHEMA_VERSION,
+                    basis_kind=BasisProvenanceKind.QUALIFIED_EVENT_STATE,
+                    basis_ref=ref,
+                    basis_epistemic_tier=(
+                        BasisEpistemicTier.RULE_ADMITTED_PROVISIONAL
+                    ),
+                    source_evidence_refs=configuration.source_evidence_refs,
+                    approved_derivation_refs=derivation_refs,
+                )
+            )
+        if candidate.basis_provenance_rows != tuple(expected_provenance_rows):
+            raise CMEEStage1ContractError(
+                "input_specific_meaning_basis_provenance_source_mismatch"
+            )
+        for row in candidate.basis_provenance_rows:
+            if (
+                type(row) is not BasisProvenanceRow
+                or row.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION
+                or type(row.basis_kind) is not BasisProvenanceKind
+                or type(row.basis_epistemic_tier) is not BasisEpistemicTier
+                or type(row.source_evidence_refs) is not tuple
+                or not row.source_evidence_refs
+                or len(row.source_evidence_refs)
+                != len(set(row.source_evidence_refs))
+                or type(row.approved_derivation_refs) is not tuple
+                or (
+                    row.basis_epistemic_tier
+                    is BasisEpistemicTier.SOURCE_EXPLICIT
+                    and row.approved_derivation_refs
+                )
+                or (
+                    row.basis_epistemic_tier
+                    is BasisEpistemicTier.RULE_ADMITTED_PROVISIONAL
+                    and not row.approved_derivation_refs
+                )
+            ):
+                raise CMEEStage1ContractError(
+                    "input_specific_meaning_basis_provenance_invalid"
+                )
+        weakest = (
+            BasisEpistemicTier.RULE_ADMITTED_PROVISIONAL
+            if any(
+                row.basis_epistemic_tier
+                is BasisEpistemicTier.RULE_ADMITTED_PROVISIONAL
+                for row in candidate.basis_provenance_rows
+            )
+            else BasisEpistemicTier.SOURCE_EXPLICIT
+        )
+        if candidate.basis_epistemic_tier is not weakest:
+            raise CMEEStage1ContractError(
+                "input_specific_meaning_candidate_tier_mismatch"
+            )
+        recomputed = recompute_input_specific_meaning_candidate_signature(
+            candidate,
+            grounded_view=grounded_view,
+        )
+        if (
+            candidate.semantic_signature != recomputed
+            or candidate.candidate_id
+            != input_specific_meaning_candidate_id(
+                candidate,
+                recomputed_semantic_signature=recomputed,
+            )
+        ):
+            raise CMEEStage1ContractError(
+                "input_specific_meaning_candidate_identity_mismatch"
+            )
+        candidate_by_ref[candidate.candidate_id] = candidate
+        recomputed_signatures[candidate.candidate_id] = recomputed
+    expected_candidate_order = tuple(
+        sorted(
+            candidates,
+            key=lambda value: (
+                stage1_canonical_json_bytes(
+                    recomputed_signatures[value.candidate_id]
+                ),
+                stage1_canonical_json_bytes(
+                    input_specific_meaning_candidate_core_payload(
+                        value,
+                        recomputed_semantic_signature=(
+                            recomputed_signatures[value.candidate_id]
+                        ),
+                    )
+                ),
+            ),
+        )
+    )
+    if candidates != expected_candidate_order:
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_candidates_noncanonical"
+        )
+    declared_consequence_refs = set(consequence_by_ref)
+    referenced_consequence_refs = {
+        ref
+        for evidence in evidence_records
+        if type(evidence) is InputSpecificityEvidence
+        and type(evidence.whole_reading_consequence_refs) is tuple
+        for ref in evidence.whole_reading_consequence_refs
+    }
+    if not referenced_consequence_refs.issubset(declared_consequence_refs):
+        raise CMEEStage1ContractError(
+            "whole_reading_consequences_candidate_order_invalid"
+        )
+    evidence_by_candidate: dict[str, InputSpecificityEvidence] = {}
+    for evidence in evidence_records:
+        if (
+            type(evidence) is not InputSpecificityEvidence
+            or evidence.candidate_ref not in candidate_by_ref
+            or evidence.candidate_ref in evidence_by_candidate
+            or type(scope) is not ForegroundScope
+            or evidence.foreground_scope_ref != scope.scope_id
+            or type(evidence.required_difference_refs) is not tuple
+            or type(evidence.discriminative_necessity_refs) is not tuple
+            or type(evidence.whole_reading_consequence_refs) is not tuple
+        ):
+            raise CMEEStage1ContractError(
+                "input_specificity_evidence_shape_invalid"
+            )
+        candidate = candidate_by_ref[evidence.candidate_ref]
+        if (
+            evidence.required_difference_refs
+            != candidate.preserved_difference_refs
+            or evidence.discriminative_necessity_refs
+            != candidate.preserved_difference_refs
+            or len(evidence.whole_reading_consequence_refs)
+            != len(evidence.required_difference_refs)
+            or not evidence.whole_reading_consequence_refs
+        ):
+            raise CMEEStage1ContractError(
+                "input_specificity_evidence_coverage_invalid"
+            )
+        candidate_source_rows = (
+            input_specific_meaning_candidate_source_component_rows(
+                candidate,
+                grounded_view=grounded_view,
+            )
+        )
+        candidate_source_refs = tuple(
+            row.source_object_ref for row in candidate_source_rows
+        )
+        rows: list[WholeReadingConsequenceRow] = []
+        for required_ref, consequence_ref in zip(
+            evidence.required_difference_refs,
+            evidence.whole_reading_consequence_refs,
+        ):
+            row = consequence_by_ref.get(consequence_ref)
+            if (
+                row is None
+                or row.required_difference_ref != required_ref
+                or row.baseline_semantic_signature
+                != candidate.semantic_signature
+                or required_ref not in required_by_ref
+            ):
+                raise CMEEStage1ContractError(
+                    "input_specificity_evidence_row_binding_invalid"
+                )
+            mutation = mutation_by_ref.get(
+                required_by_ref[required_ref].counterfactual_mutation_ref
+            )
+            if (
+                mutation is None
+                or row.mutated_semantic_signature
+                != apply_meaning_signature_mutation(
+                    candidate.semantic_signature,
+                    mutation,
+                    source_component_refs=candidate_source_refs,
+                    source_component_rows=candidate_source_rows,
+                )
+            ):
+                raise CMEEStage1ContractError(
+                    "input_specificity_evidence_mutation_binding_invalid"
+                )
+            rows.append(row)
+        if candidate.input_specificity_evidence_ref != input_specificity_evidence_id(
+            evidence,
+            whole_reading_consequence_rows=rows,
+        ):
+            raise CMEEStage1ContractError(
+                "input_specificity_evidence_identity_mismatch"
+            )
+        evidence_by_candidate[evidence.candidate_ref] = evidence
+    if (
+        set(evidence_by_candidate) != set(candidate_by_ref)
+        or tuple(value.candidate_ref for value in evidence_records)
+        != tuple(value.candidate_id for value in candidates)
+    ):
+        raise CMEEStage1ContractError(
+            "input_specificity_evidence_reverse_binding_invalid"
+        )
+    expected_rows: list[WholeReadingConsequenceRow] = []
+    seen_row_refs: set[str] = set()
+    for candidate in candidates:
+        evidence = evidence_by_candidate[candidate.candidate_id]
+        for ref in evidence.whole_reading_consequence_refs:
+            if ref not in seen_row_refs:
+                expected_rows.append(consequence_by_ref[ref])
+                seen_row_refs.add(ref)
+    if tuple(expected_rows) != structure.whole_reading_consequence_rows:
+        raise CMEEStage1ContractError(
+            "whole_reading_consequences_candidate_order_invalid"
+        )
+
+    def expected_candidate_trace_source_refs(
+        candidate: InputSpecificMeaningCandidate,
+    ) -> Tuple[str, ...]:
+        evidence = evidence_by_candidate[candidate.candidate_id]
+        interpretation_refs = tuple(
+            ref
+            for ref in candidate.basis_derivation_refs
+            if ref.startswith(("interpretation-candidate:", "candidate:"))
+        )
+        approved_derivation_refs = tuple(
+            ref
+            for ref in candidate.basis_derivation_refs
+            if ref not in interpretation_refs
+        )
+        return tuple(
+            dict.fromkeys(
+                (
+                    *candidate.basis_contribution_refs,
+                    *candidate.relation_path_refs,
+                    *interpretation_refs,
+                    *candidate.source_qualifier_refs,
+                    *candidate.material_unknown_refs,
+                    *approved_derivation_refs,
+                    *candidate.primary_component_refs,
+                    evidence.foreground_scope_ref,
+                    *candidate.basis_configuration_refs,
+                    *candidate.requirement_bundle_refs,
+                    *candidate.preserved_difference_refs,
+                    *(
+                        consequence_by_ref[ref].counterfactual_mutation_ref
+                        for ref in evidence.whole_reading_consequence_refs
+                    ),
+                    *evidence.whole_reading_consequence_refs,
+                )
+            )
+        )
+
+    outcome = structure.meaning_decision_outcome
+    candidate_order = {
+        value.candidate_id: index for index, value in enumerate(candidates)
+    }
+    if type(outcome) is SelectedEmlisProvisionalReading:
+        selected = candidate_by_ref.get(outcome.selected_candidate_ref)
+        if selected is None:
+            raise CMEEStage1ContractError(
+                "selected_emlis_reading_candidate_unbound"
+            )
+        _validate_meaning_decision_trace(
+            outcome.decision_trace,
+            candidate_order=candidate_order,
+            limited_subject_ref=None,
+        )
+        selected_rows = tuple(
+            row
+            for row in outcome.decision_trace.rows
+            if row.trace_kind is MeaningDecisionTraceKind.SELECTED
+        )
+        nonselected_rows = tuple(
+            row
+            for row in outcome.decision_trace.rows
+            if row.trace_kind is MeaningDecisionTraceKind.NONSELECTED_VALID
+        )
+        limited_rows = tuple(
+            row
+            for row in outcome.decision_trace.rows
+            if row.trace_kind is MeaningDecisionTraceKind.LIMITED_BASIS
+        )
+        if (
+            outcome.schema_version
+            != _INPUT_SPECIFIC_MEANING_STRUCTURE_SCHEMA_VERSION
+            or len(selected_rows) != 1
+            or limited_rows
+            or len(nonselected_rows) != len(candidates) - 1
+            or selected_rows[0].subject_ref != selected.candidate_id
+            or {row.subject_ref for row in nonselected_rows}
+            != set(candidate_by_ref) - {selected.candidate_id}
+            or outcome.primary_reading_focus_ref
+            != selected.primary_component_refs[0]
+            or outcome.supporting_facet_refs
+            != selected.primary_component_refs[1:]
+            or outcome.reading_component_refs
+            != selected.primary_component_refs
+            or outcome.reading_relation_refs != selected.relation_path_refs
+            or outcome.qualified_event_state_refs
+            != selected.qualified_event_state_refs
+            or outcome.basis_provenance_rows
+            != selected.basis_provenance_rows
+            or outcome.basis_epistemic_tier
+            is not selected.basis_epistemic_tier
+            or outcome.reading_status != selected.emlis_reading_status
+            or outcome.unresolved_alternative_refs
+            != selected.material_unknown_refs
+            or outcome.selection_reason_codes
+            != selected_rows[0].reason_codes
+            or selected_rows[0].reason_codes
+            != meaning_decision_candidate_reason_codes(
+                selected,
+                evidence_by_candidate[selected.candidate_id],
+                candidates=candidates,
+                selected=True,
+            )
+            or outcome.reading_id
+            != selected_emlis_provisional_reading_id(outcome)
+            or any(
+                row.source_refs
+                != expected_candidate_trace_source_refs(
+                    candidate_by_ref[row.subject_ref]
+                )
+                for row in (*selected_rows, *nonselected_rows)
+            )
+            or any(
+                row.reason_codes
+                != meaning_decision_candidate_reason_codes(
+                    candidate_by_ref[row.subject_ref],
+                    evidence_by_candidate[row.subject_ref],
+                    candidates=candidates,
+                    selected=False,
+                )
+                for row in nonselected_rows
+            )
+        ):
+            raise CMEEStage1ContractError(
+                "selected_emlis_reading_projection_invalid"
+            )
+    elif type(outcome) is LimitedMeaningOutcome:
+        _validate_meaning_decision_trace(
+            outcome.decision_trace,
+            candidate_order=candidate_order,
+            limited_subject_ref=outcome.derivation_state_ref,
+        )
+        limited_rows = tuple(
+            row
+            for row in outcome.decision_trace.rows
+            if row.trace_kind is MeaningDecisionTraceKind.LIMITED_BASIS
+        )
+        nonselected_rows = tuple(
+            row
+            for row in outcome.decision_trace.rows
+            if row.trace_kind is MeaningDecisionTraceKind.NONSELECTED_VALID
+        )
+        expected_limited_code = {
+            LimitedMeaningOutcomeState.LIMITED_NO_SAFE_INPUT_SPECIFIC_CONFIGURATION: MeaningDecisionReasonCode.LIM01,
+            LimitedMeaningOutcomeState.LIMITED_STRUCTURE_INSUFFICIENT: MeaningDecisionReasonCode.LIM02,
+            LimitedMeaningOutcomeState.LIMITED_COMPETING_MATERIAL_READINGS: MeaningDecisionReasonCode.LIM03,
+        }.get(outcome.outcome_state)
+        downstream_competing = (
+            outcome.outcome_state
+            is LimitedMeaningOutcomeState.LIMITED_COMPETING_MATERIAL_READINGS
+            and outcome.derivation_state_ref
+            == "LIMITED_COMPETING_MATERIAL_READINGS"
+        )
+        allowed_derivation_states = {
+            LimitedMeaningOutcomeState.LIMITED_NO_SAFE_INPUT_SPECIFIC_CONFIGURATION: {
+                "THIN_NO_SAFE_CONFIGURATION",
+                "NO_REQUIRED_DIFFERENCE",
+                "ALL_DRAFTS_SOURCE_GROUNDED_HARD_INVALID",
+            },
+            LimitedMeaningOutcomeState.LIMITED_STRUCTURE_INSUFFICIENT: {
+                "UPSTREAM_STRUCTURE_INSUFFICIENT",
+            },
+            LimitedMeaningOutcomeState.LIMITED_COMPETING_MATERIAL_READINGS: {
+                "COMPETING_MATERIAL_SCOPES",
+                "LIMITED_COMPETING_MATERIAL_READINGS",
+            },
+        }
+        selected_rows = tuple(
+            row
+            for row in outcome.decision_trace.rows
+            if row.trace_kind is MeaningDecisionTraceKind.SELECTED
+        )
+        grounded_basis_rows = getattr(grounded_view, "basis_rows", ())
+        basis_by_ref = {
+            foreground_scope_basis_row_ref(row): row
+            for row in grounded_basis_rows
+            if type(row) is ForegroundScopeBasisRow
+        }
+        if type(scope) is ForegroundScope and any(
+            ref not in basis_by_ref for ref in scope.basis_row_refs
+        ):
+            raise CMEEStage1ContractError(
+                "limited_meaning_outcome_basis_unbound"
+            )
+        expected_retained_layer1_refs = (
+            tuple(
+                dict.fromkeys(
+                    ref
+                    for basis_ref in scope.basis_row_refs
+                    for ref in basis_by_ref[basis_ref].layer1_required_object_refs
+                )
+            )
+            if type(scope) is ForegroundScope
+            else ()
+        )
+        expected_foreground_source_object_refs = (
+            scope.integrated_scope_object_refs
+            if type(scope) is ForegroundScope
+            else foreground_scope_derivation.retained_foreground_source_object_refs
+        )
+        expected_retained_qualifier_refs = (
+            scope.required_qualifier_refs
+            if type(scope) is ForegroundScope
+            else ()
+        )
+        expected_unresolved_alternative_refs = (
+            scope.material_unknown_refs
+            if type(scope) is ForegroundScope
+            else foreground_scope_derivation.unresolved_scope_refs
+        )
+        expected_limited_source_refs = tuple(
+            dict.fromkeys(
+                (
+                    *foreground_scope_derivation.derivation_evidence_refs,
+                    *foreground_scope_derivation.retained_foreground_source_object_refs,
+                    *foreground_scope_derivation.unresolved_scope_refs,
+                    *foreground_scope_derivation.missing_structure_refs,
+                    *(
+                        ref
+                        for candidate in candidates
+                        for ref in candidate.primary_component_refs
+                    ),
+                )
+            )
+        ) or (outcome.derivation_state_ref,)
+        if (
+            outcome.schema_version
+            != _INPUT_SPECIFIC_MEANING_STRUCTURE_SCHEMA_VERSION
+            or expected_limited_code is None
+            or len(limited_rows) != 1
+            or selected_rows
+            or outcome.derivation_state_ref
+            not in allowed_derivation_states[outcome.outcome_state]
+            or limited_rows[0].reason_codes != (expected_limited_code,)
+            or limited_rows[0].source_refs != expected_limited_source_refs
+            or outcome.outcome_reason_codes != (expected_limited_code,)
+            or outcome.retained_layer1_refs != expected_retained_layer1_refs
+            or outcome.foreground_source_object_refs
+            != expected_foreground_source_object_refs
+            or not outcome.foreground_source_object_refs
+            or outcome.retained_qualifier_refs
+            != expected_retained_qualifier_refs
+            or outcome.unresolved_alternative_refs
+            != expected_unresolved_alternative_refs
+            or outcome.product_acceptance_eligible
+            is not (
+                outcome.outcome_state
+                is not LimitedMeaningOutcomeState.LIMITED_STRUCTURE_INSUFFICIENT
+            )
+            or (
+                downstream_competing
+                and (
+                    len(candidates) < 2
+                    or len(nonselected_rows) != len(candidates)
+                    or {row.subject_ref for row in nonselected_rows}
+                    != set(candidate_by_ref)
+                    or any(
+                        row.source_refs
+                        != expected_candidate_trace_source_refs(
+                            candidate_by_ref[row.subject_ref]
+                        )
+                        for row in nonselected_rows
+                    )
+                    or any(
+                        row.reason_codes
+                        != meaning_decision_candidate_reason_codes(
+                            candidate_by_ref[row.subject_ref],
+                            evidence_by_candidate[row.subject_ref],
+                            candidates=candidates,
+                            selected=False,
+                        )
+                        for row in nonselected_rows
+                    )
+                )
+            )
+            or (
+                not downstream_competing
+                and (
+                    candidates
+                    or evidence_records
+                    or structure.whole_reading_consequence_rows
+                    or nonselected_rows
+                )
+            )
+        ):
+            raise CMEEStage1ContractError(
+                "limited_meaning_outcome_binding_invalid"
+            )
+    else:
+        raise CMEEStage1ContractError(
+            "meaning_decision_outcome_type_invalid"
+        )
 
 
 def validate_input_specific_meaning_structure(
     structure: InputSpecificMeaningStructure,
     *,
+    grounded_view: object,
     foreground_scope_derivation: ForegroundScopeDerivation,
 ) -> None:
-    """Revalidate the closed IM02 graph without any Reception-side input."""
+    """Revalidate the closed IM03 graph without any Reception-side input."""
 
     if type(structure) is not InputSpecificMeaningStructure:
         raise CMEEStage1ContractError(
             "input_specific_meaning_structure_type_invalid"
         )
     _validate_stage1_immutable_shape(structure)
-    if structure.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION:
+    if structure.schema_version != _INPUT_SPECIFIC_MEANING_STRUCTURE_SCHEMA_VERSION:
         raise CMEEStage1ContractError(
             "input_specific_meaning_structure_schema_version_invalid"
         )
@@ -8876,16 +11694,25 @@ def validate_input_specific_meaning_structure(
         validate_meaning_semantic_signature_local_shape(
             row.baseline_semantic_signature
         )
-        validate_meaning_semantic_signature_local_shape(
-            row.mutated_semantic_signature
+        _mutation_result_local_shape(
+            row.mutated_semantic_signature,
+            mutation=mutation,
+            baseline=row.baseline_semantic_signature,
         )
-        expected_mutated = _im02_apply_closed_counterfactual(
-            row.baseline_semantic_signature,
-            mutation,
-        )
-        expected_code = _IM02_CONSEQUENCE_CODE_BY_MUTATION.get(
-            mutation.mutation_kind
-        )
+        try:
+            validate_mutation_signature_delta(
+                mutation=mutation,
+                baseline_semantic_signature=row.baseline_semantic_signature,
+                mutated_semantic_signature=row.mutated_semantic_signature,
+                _verify_exact_result=False,
+            )
+        except CMEEStage1ContractError:
+            raise CMEEStage1ContractError(
+                "whole_reading_consequence_im02_binding_invalid"
+            ) from None
+        expected_code = resolve_mutation_application_spec(
+            mutation
+        ).whole_reading_consequence_code
         if (
             row.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION
             or type(row.consequence_code) is not WholeReadingConsequenceCode
@@ -8901,8 +11728,6 @@ def validate_input_specific_meaning_structure(
             or row.consequence_id != whole_reading_consequence_id(row)
             or row.baseline_semantic_signature
             == row.mutated_semantic_signature
-            or expected_mutated == row.baseline_semantic_signature
-            or row.mutated_semantic_signature != expected_mutated
             or row.consequence_code is not expected_code
         ):
             raise CMEEStage1ContractError(
@@ -8943,14 +11768,15 @@ def validate_input_specific_meaning_structure(
             ),
         )
     )
-    if (
-        len(consequence_ids) != len(set(consequence_ids))
-        or structure.whole_reading_consequence_rows
-        != semantic_consequence_order
-    ):
+    if len(consequence_ids) != len(set(consequence_ids)):
         raise CMEEStage1ContractError(
             "whole_reading_consequences_noncanonical"
         )
+    _validate_input_specific_meaning_im03(
+        structure,
+        grounded_view=grounded_view,
+        foreground_scope_derivation=foreground_scope_derivation,
+    )
 
 
 def _validate_meaning_component_semantic_key(
@@ -9284,10 +12110,15 @@ def validate_meaning_semantic_signature_local_shape(
             "meaning_semantic_signature_reading_operation_invalid"
         )
     for field_name, prefixes in _SEMANTIC_SIGNATURE_PREFIXES_BY_FIELD.items():
-        values = _require_canonical_string_set(
-            getattr(signature, field_name),
-            code=f"meaning_semantic_signature_{field_name}_noncanonical",
-        )
+        values = getattr(signature, field_name)
+        if (
+            type(values) is not tuple
+            or len(values) != len(set(values))
+            or any(type(value) is not str or not value for value in values)
+        ):
+            raise CMEEStage1ContractError(
+                f"meaning_semantic_signature_{field_name}_noncanonical"
+            )
         for value in values:
             _validate_typed_key(
                 value,
@@ -9348,16 +12179,18 @@ def validate_meaning_semantic_signature_local_shape(
     if (
         not components
         or len(components) != len(set(components))
-        or components
-        != tuple(sorted(components, key=_im02_component_sort_key))
     ):
         raise CMEEStage1ContractError(
             "meaning_semantic_signature_component_semantic_keys_noncanonical"
         )
     for value in components:
         _validate_meaning_component_semantic_key(value)
+        if value.scope_key == "scope:absent":
+            raise CMEEStage1ContractError(
+                "meaning_semantic_signature_scope_absent_forbidden"
+            )
     expected_component_role_keys = tuple(
-        sorted({value.role_key for value in components})
+        dict.fromkeys(value.role_key for value in components)
     )
     closed_role_keys = {
         f"role:{value.value.lower()}" for value in ArgumentRole
@@ -9370,7 +12203,7 @@ def validate_meaning_semantic_signature_local_shape(
             "meaning_semantic_signature_component_role_unbound"
         )
     expected_component_owner_keys = tuple(
-        sorted({value.owner_key for value in components})
+        dict.fromkeys(value.owner_key for value in components)
     )
     signature_owner_keys = tuple(
         value
@@ -10218,6 +13051,117 @@ def _whole_reading_consequence_identity_payload(
         for value in dataclass_fields(row)
         if value.name != "consequence_id"
     }
+
+
+def input_specific_meaning_candidate_core_payload(
+    candidate: InputSpecificMeaningCandidate,
+    *,
+    recomputed_semantic_signature: MeaningSemanticSignature,
+) -> Mapping[str, Any]:
+    """Return the non-circular exact19 candidate core preimage."""
+
+    if type(candidate) is not InputSpecificMeaningCandidate:
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_candidate_type_invalid"
+        )
+    if type(recomputed_semantic_signature) is not MeaningSemanticSignature:
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_candidate_signature_invalid"
+        )
+    payload = {
+        value.name: getattr(candidate, value.name)
+        for value in dataclass_fields(candidate)
+        if value.name
+        not in {
+            "candidate_id",
+            "input_specificity_evidence_ref",
+            "semantic_signature",
+        }
+    }
+    payload["semantic_signature"] = recomputed_semantic_signature
+    if len(payload) != 19:
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_candidate_core_not_exact19"
+        )
+    return payload
+
+
+def input_specific_meaning_candidate_id(
+    candidate: InputSpecificMeaningCandidate,
+    *,
+    recomputed_semantic_signature: MeaningSemanticSignature,
+) -> str:
+    digest = hashlib.sha256(
+        stage1_canonical_json_bytes(
+            input_specific_meaning_candidate_core_payload(
+                candidate,
+                recomputed_semantic_signature=recomputed_semantic_signature,
+            )
+        )
+    ).hexdigest()
+    return (
+        f"input-specific-meaning-candidate:{digest}"
+        f"@{_INPUT_SPECIFIC_MEANING_CANDIDATE_REF_VERSION}"
+    )
+
+
+def input_specificity_evidence_id(
+    evidence: InputSpecificityEvidence,
+    *,
+    whole_reading_consequence_rows: Sequence[
+        WholeReadingConsequenceRow
+    ],
+) -> str:
+    if type(evidence) is not InputSpecificityEvidence:
+        raise CMEEStage1ContractError(
+            "input_specificity_evidence_type_invalid"
+        )
+    rows = tuple(whole_reading_consequence_rows)
+    if any(type(row) is not WholeReadingConsequenceRow for row in rows):
+        raise CMEEStage1ContractError(
+            "input_specificity_evidence_row_type_invalid"
+        )
+    payload = {
+        value.name: getattr(evidence, value.name)
+        for value in dataclass_fields(evidence)
+    }
+    payload["resolved_whole_reading_consequence_rows"] = rows
+    digest = hashlib.sha256(stage1_canonical_json_bytes(payload)).hexdigest()
+    return (
+        f"input-specificity-evidence:{digest}"
+        f"@{_INPUT_SPECIFICITY_EVIDENCE_REF_VERSION}"
+    )
+
+
+def selected_emlis_provisional_reading_id(
+    reading: SelectedEmlisProvisionalReading,
+) -> str:
+    if type(reading) is not SelectedEmlisProvisionalReading:
+        raise CMEEStage1ContractError(
+            "selected_emlis_provisional_reading_type_invalid"
+        )
+    payload = {
+        value.name: getattr(reading, value.name)
+        for value in dataclass_fields(reading)
+        if value.name != "reading_id"
+    }
+    digest = hashlib.sha256(stage1_canonical_json_bytes(payload)).hexdigest()
+    return (
+        f"selected-emlis-provisional-reading:{digest}"
+        f"@{_SELECTED_EMLIS_PROVISIONAL_READING_REF_VERSION}"
+    )
+
+
+def limited_meaning_outcome_id(outcome: LimitedMeaningOutcome) -> str:
+    if type(outcome) is not LimitedMeaningOutcome:
+        raise CMEEStage1ContractError(
+            "limited_meaning_outcome_type_invalid"
+        )
+    digest = hashlib.sha256(stage1_canonical_json_bytes(outcome)).hexdigest()
+    return (
+        f"limited-meaning-outcome:{digest}"
+        f"@{_LIMITED_MEANING_OUTCOME_REF_VERSION}"
+    )
 
 
 def whole_reading_consequence_id(row: WholeReadingConsequenceRow) -> str:
@@ -14120,6 +17064,9 @@ __all__ = [
     "AllowedReceptionOpportunityEnvelope",
     "AttachmentAdmission",
     "AtomicPredicateHeadSpec",
+    "BasisEpistemicTier",
+    "BasisProvenanceKind",
+    "BasisProvenanceRow",
     "CaseParticleRule",
     "CaseParticleSurfaceVariant",
     "CMEE_COMMON_GUARD_PROOF_VERSION",
@@ -14187,12 +17134,16 @@ __all__ = [
     "GenerationRequest",
     "GroundedExpressionPlan",
     "GroundedMeaningGraph",
+    "GroundedInterpretationProjection",
+    "GroundedSemanticComponentProjection",
     "GroundedSourceQualifierRow",
     "GroundedSourceRelationRow",
     "InflectionClassSpec",
     "InterpretationEpistemicState",
     "InterpretationKind",
     "InputSpecificMeaningStructure",
+    "InputSpecificMeaningCandidate",
+    "InputSpecificityEvidence",
     "JapaneseCaseFrameSpec",
     "JapaneseClauseIR",
     "JapaneseLocalPreferenceProfile",
@@ -14203,12 +17154,21 @@ __all__ = [
     "MeaningFieldEntry",
     "MeaningFieldSlot",
     "MeaningComponentSemanticKey",
+    "MeaningDecisionOutcome",
+    "MeaningDecisionReasonCode",
+    "MeaningDecisionTrace",
+    "MeaningDecisionTraceKind",
+    "MeaningDecisionTraceRow",
     "MeaningReadingOperation",
     "MeaningSemanticSignature",
     "MeaningEdge",
     "MeaningNode",
     "MaterialRisk",
     "MaterialValueContent",
+    "LimitedMeaningOutcome",
+    "LimitedMeaningOutcomeState",
+    "MutationApplicationSpec",
+    "MUTATION_APPLICATION_SPEC",
     "ObservationContributionKind",
     "ObservationDepthClass",
     "ObservedDistinctionDerivationKind",
@@ -14244,6 +17204,7 @@ __all__ = [
     "RequirementBundleSet",
     "SourceOwnerDisposition",
     "SourceOwnerResolution",
+    "SelectedEmlisProvisionalReading",
     "SemanticOperator",
     "SourceEnvelope",
     "SourceClassifierSpec",
@@ -14292,10 +17253,20 @@ __all__ = [
     "WholeReadingConsequenceCode",
     "WholeReadingConsequenceRow",
     "WholeReadingConsequenceValidationContext",
+    "apply_meaning_signature_mutation",
     "counterfactual_mutation_id",
     "difference_configuration_id",
     "foreground_scope_basis_row_ref",
     "foreground_scope_id",
+    "input_specific_meaning_candidate_core_payload",
+    "input_specific_meaning_candidate_dominates",
+    "input_specific_meaning_candidate_id",
+    "input_specific_meaning_candidate_source_component_rows",
+    "input_specific_meaning_candidate_source_component_refs",
+    "input_specificity_evidence_id",
+    "limited_meaning_outcome_id",
+    "meaning_decision_candidate_reason_codes",
+    "meaning_selection_assessment_refs",
     "observed_distinction_id",
     "project_foreground_scope_relation_kind",
     "project_premeaning_source_qualifier_rows",
@@ -14306,12 +17277,15 @@ __all__ = [
     "project_stage1_subjective_basis_binding_ref",
     "project_stage1_subjective_opportunity_key",
     "project_stage1_subjective_responsibility_ref",
+    "recompute_input_specific_meaning_candidate_signature",
     "recompute_stage1_identity",
     "required_difference_id",
+    "resolve_mutation_application_spec",
     "requirement_bundle_id",
     "stage1_policy_application_order_key",
     "stage1_projection_artifact_ref",
     "stage1_canonical_json_bytes",
+    "selected_emlis_provisional_reading_id",
     "validate_stage1_anti_template_registry_invariant",
     "validate_stage1_final_logical_id_registry",
     "validate_stage1_identity",
@@ -14331,6 +17305,7 @@ __all__ = [
     "validate_premeaning_grounded_inputs",
     "validate_meaning_semantic_signature",
     "validate_meaning_semantic_signature_local_shape",
+    "validate_mutation_signature_delta",
     "validate_observed_distinction_row",
     "validate_required_difference_row",
     "validate_requirement_bundle_derivation",

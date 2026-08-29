@@ -115,6 +115,7 @@ from .contracts import (
     stage1_subjective_forbidden_promotions,
     validate_stage1_anti_template_registry_invariant,
     validate_stage1_identity,
+    validate_foreground_scope_derivation,
     validate_input_specific_meaning_structure,
     validate_premeaning_grounded_inputs,
 )
@@ -122,10 +123,8 @@ from .emlis_input_specific_meaning import (
     ForegroundScopeDisposition,
     ForegroundScopeDispositionCode,
     GroundedSituationView,
-    derive_foreground_scope_closed,
-    derive_grounded_situation_view,
-    derive_input_specific_meaning_structure,
-    foreground_scope_disposition,
+    validate_foreground_scope_disposition,
+    validate_grounded_situation_view,
 )
 
 
@@ -4697,29 +4696,35 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
             parent_plan=phase_A.parent_plan,
             grounded_plan=phase_A.grounded_plan,
         )
-        expected_grounded_view = derive_grounded_situation_view(
-            premeaning_inputs
+        validate_grounded_situation_view(
+            phase_A.grounded_situation_view,
+            premeaning_inputs,
+            phase_A.grounded_graph,
         )
-        expected_scope_derivation = derive_foreground_scope_closed(
-            expected_grounded_view
+        validate_foreground_scope_derivation(
+            phase_A.foreground_scope_derivation,
+            basis_rows=phase_A.grounded_situation_view.basis_rows,
+            premeaning_inputs=premeaning_inputs,
+            source=phase_A.admitted_source,
+            grounded_plan=phase_A.grounded_plan,
+            grounded_graph=phase_A.grounded_graph,
+            parent_plan=phase_A.parent_plan,
         )
-        expected_scope_disposition = foreground_scope_disposition(
-            expected_scope_derivation
+        validate_foreground_scope_disposition(
+            phase_A.foreground_scope_disposition,
+            phase_A.foreground_scope_derivation,
         )
     except CMEEStage1ContractError:
         raise Stage1CompositionError(
             "STAGE1_PREMEANING_RECEPTION_SPLIT_STOP"
         ) from None
     try:
-        expected_input_specific_meaning_structure = (
-            derive_input_specific_meaning_structure(
-                expected_grounded_view,
-                expected_scope_derivation,
-            )
-        )
         validate_input_specific_meaning_structure(
             phase_A.input_specific_meaning_structure,
-            foreground_scope_derivation=expected_scope_derivation,
+            grounded_view=phase_A.grounded_situation_view,
+            foreground_scope_derivation=(
+                phase_A.foreground_scope_derivation
+            ),
         )
     except CMEEStage1ContractError:
         raise Stage1CompositionError(
@@ -4736,19 +4741,12 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
         is not phase_A.observation_depth_class
         or type(phase_A.grounded_situation_view)
         is not GroundedSituationView
-        or phase_A.grounded_situation_view != expected_grounded_view
         or type(phase_A.foreground_scope_derivation)
         is not ForegroundScopeDerivation
-        or phase_A.foreground_scope_derivation
-        != expected_scope_derivation
         or type(phase_A.foreground_scope_disposition)
         is not ForegroundScopeDisposition
-        or phase_A.foreground_scope_disposition
-        != expected_scope_disposition
         or type(phase_A.input_specific_meaning_structure)
         is not InputSpecificMeaningStructure
-        or phase_A.input_specific_meaning_structure
-        != expected_input_specific_meaning_structure
         or envelope.source_envelope_id
         != phase_A.parent_plan.source_envelope_id
         or envelope.parent_reception_duty_ref
@@ -12067,6 +12065,16 @@ N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34 = (
         "issue_whole_reading_consequence_row",
     )),
 )
+IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT35 = (
+    *N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34[:-1],
+    (
+        LANGUAGE_CORE_EXTERNAL_PATHS[6],
+        (
+            *N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34[-1][1],
+            "derive_input_specific_meaning_structure",
+        ),
+    ),
+)
 # The disabled historical N3 runner still reads the frozen exact28 symbol to
 # prove its own immutable terminal identity before it reports the expected
 # source drift.  Keep that tuple as a compatibility view; the IM01 roots and
@@ -12127,6 +12135,7 @@ LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST = (
         "derive_difference_configuration_set",
         "derive_requirement_bundle_set",
         "issue_whole_reading_consequence_row",
+        "derive_input_specific_meaning_structure",
     )),
 )
 
@@ -12135,7 +12144,7 @@ def _validate_product_causal_owner_manifest(
     file_payloads: tuple[tuple[str, bytes], ...]
 ) -> None:
     expected_paths = (_COMPOSITION_PATH, *LANGUAGE_CORE_EXTERNAL_PATHS)
-    expected_seed_cardinalities = (18, 10, 11, 10, 3, 1, 2, 6)
+    expected_seed_cardinalities = (18, 10, 11, 10, 3, 1, 2, 7)
     if (
         tuple(
             path for path, _names in LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
@@ -12146,7 +12155,7 @@ def _validate_product_causal_owner_manifest(
             for _path, names in LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
         )
         != expected_seed_cardinalities
-        or tuple(path for path, _names in N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34)
+        or tuple(path for path, _names in IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT35)
         != (
             LANGUAGE_CORE_EXTERNAL_PATHS[0],
             _COMPOSITION_PATH,
@@ -12156,14 +12165,14 @@ def _validate_product_causal_owner_manifest(
         )
         or tuple(
             len(names)
-            for _path, names in N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34
+            for _path, names in IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT35
         )
-        != (2, 15, 5, 6, 6)
+        != (2, 15, 5, 6, 7)
         or sum(
             len(names)
-            for _path, names in N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34
+            for _path, names in IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT35
         )
-        != 34
+        != 35
         or len(N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5) != 5
         or len(set(N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5))
         != 5
@@ -12360,7 +12369,7 @@ def stage1_runtime_integration_identity_payloads(
             "cocolon.cmee.v1a.stage1_product_causal_owner_and_registry_digests.v3",
         ),
         ("product_causal_owner_manifest", LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST),
-        ("n2_behavior_root_exact34", N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34),
+        ("im03_behavior_root_exact35", IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT35),
         (
             "n2_identity_infrastructure_exact5",
             N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5,
@@ -12761,6 +12770,7 @@ __all__ = (
     "DiscoursePreferenceProfile",
     "EmlisSubjectiveMeaningPlan",
     "JapaneseCaseFrameKey",
+    "IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT35",
     "LANGUAGE_CORE_IDENTITY",
     "STAGE1_RUNTIME_INTEGRATION_IDENTITY",
     "LayoutPreferenceSeed",
