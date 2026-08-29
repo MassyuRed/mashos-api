@@ -46,6 +46,8 @@ from .contracts import (
     AffectCategory,
     AffectIntensity,
     AllowedReceptionOpportunityEnvelope,
+    AppraisalDimension,
+    AppraisalOperation,
     ArgumentBinding,
     ArgumentRole,
     CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
@@ -66,8 +68,10 @@ from .contracts import (
     CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
     CMEE_STAGE1_VALUE_POLICY_REF,
     CMEEStage1ContractError,
+    BoundedLimitedReception,
     ClauseFrame,
     EmlisInterpretationCandidate,
+    EmlisAppraisalContent,
     EmlisMeaningField,
     EmlisStage1Projection,
     EmlisSubjectiveClaim,
@@ -77,6 +81,9 @@ from .contracts import (
     GenerationRequest,
     GroundedMeaningGraph,
     InputSpecificMeaningStructure,
+    LimitedMeaningOutcome,
+    MeaningBoundReceptionProposition,
+    MeaningBoundReceptionSet,
     PreMeaningGroundedInputs,
     InterpretationEpistemicState,
     InterpretationKind,
@@ -92,11 +99,14 @@ from .contracts import (
     RealizedSentenceUnit,
     RelationOperator,
     SourceOwnerDisposition,
+    SelectedEmlisProvisionalReading,
     Stage1V2UnitSeal,
     SurfaceDerivationKind,
     SemanticOperator,
     StanceOperator,
     SubjectiveDepthClass,
+    SubjectiveAssertionModality,
+    SubjectiveContentKind,
     SubjectiveFacetSuppressionReason,
     SubjectiveMode,
     SubjectiveOperator,
@@ -109,6 +119,10 @@ from .contracts import (
     SubjectiveFacetSuppressionRow,
     PolicyApplicationRow,
     TemperatureClass,
+    bounded_limited_reception_id,
+    limited_meaning_outcome_id,
+    meaning_bound_reception_id,
+    project_stage1_subjective_projection_seal_ref,
     project_stage1_projection_preimage_ref,
     project_premeaning_source_qualifier_rows,
     project_premeaning_source_relation_rows,
@@ -119,6 +133,8 @@ from .contracts import (
     stage1_subjective_forbidden_promotions,
     stage1_subjective_semantic_key,
     stage1_value_principle_ref,
+    subjective_proposition_v2_id,
+    validate_stage1_post_selection_reception_records,
     validate_stage1_identity,
     validate_foreground_scope_derivation,
     validate_input_specific_meaning_structure,
@@ -138,6 +154,8 @@ from .emlis_input_specific_meaning import (
     derive_foreground_scope_closed,
     derive_grounded_situation_view,
     derive_input_specific_meaning_structure,
+    derive_reading_consequence,
+    derive_sealed_emlis_provisional_reading,
     foreground_scope_disposition,
 )
 
@@ -3915,6 +3933,248 @@ def validate_allowed_reception_opportunity_envelope(
         )
 
 
+def build_stage1_post_selection_reception_records(
+    *,
+    input_specific_meaning_structure: InputSpecificMeaningStructure,
+    projection_preimage_ref: str,
+    retained_reception_act_rows: Sequence[Any],
+    observation_contribution_rows: Sequence[PlannedObservationContribution],
+) -> tuple[
+    Tuple[Any, ...],
+    Tuple[Any, ...],
+    Tuple[Any, ...],
+    Tuple[Any, ...],
+    Tuple[Any, ...],
+    Tuple[Any, ...],
+    str,
+]:
+    """Construct IM04 records exactly once after the IM03 outcome is sealed."""
+
+    structure = input_specific_meaning_structure
+    if type(structure) is not InputSpecificMeaningStructure:
+        raise CMEEStage1ContractError(
+            "stage1_post_selection_structure_type_invalid"
+        )
+    retained_rows = tuple(retained_reception_act_rows)
+    contributions = tuple(observation_contribution_rows)
+    allowed_acts = tuple(row.reception_act for row in retained_rows)
+    contribution_refs = tuple(row.contribution_id for row in contributions)
+    if (
+        not projection_preimage_ref
+        or not retained_rows
+        or not contributions
+        or len(allowed_acts) != len(set(allowed_acts))
+        or len(contribution_refs) != len(set(contribution_refs))
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_post_selection_authority_invalid"
+        )
+    outcome = structure.meaning_decision_outcome
+    if type(outcome) is SelectedEmlisProvisionalReading:
+        candidate_rows = tuple(
+            row
+            for row in structure.candidate_records
+            if row.candidate_id == outcome.selected_candidate_ref
+        )
+        if len(candidate_rows) != 1:
+            raise CMEEStage1ContractError(
+                "stage1_post_selection_selected_candidate_missing"
+            )
+        candidate = candidate_rows[0]
+        consequence = derive_reading_consequence(structure)
+        sealed_reading = derive_sealed_emlis_provisional_reading(
+            structure, consequence
+        )
+        response_object_refs = tuple(
+            dict.fromkeys(
+                (
+                    outcome.primary_reading_focus_ref,
+                    *outcome.supporting_facet_refs,
+                    *outcome.reading_component_refs,
+                    *outcome.reading_relation_refs,
+                    *outcome.qualified_event_state_refs,
+                )
+            )
+        )
+        candidate_basis_refs = set(candidate.basis_contribution_refs)
+        bound_rows = tuple(
+            row
+            for row in retained_rows
+            if row.reception_act != "bounded_counter_self_denial"
+            and candidate_basis_refs.intersection(row.basis_contribution_refs)
+        )
+        if not bound_rows:
+            raise CMEEStage1ContractError(
+                "MEANING_RECEPTION_CAPABILITY_GAP"
+            )
+        bound_rows = bound_rows[:4]
+        proposition_records: list[MeaningBoundReceptionProposition] = []
+        for row in bound_rows:
+            proposition = MeaningBoundReceptionProposition(
+                schema_version="1.1",
+                reception_id="",
+                selected_reading_ref=outcome.reading_id,
+                reception_function=row.reception_act,
+                responsibility_kind=(
+                    SubjectiveResponsibilityKind.MATERIAL_APPRAISAL
+                ),
+                subjective_mode=SubjectiveMode.ATTENTION,
+                contribution_kind=(
+                    "AFFIRMATIVE_RECEPTION_CONTRIBUTION"
+                ),
+                response_object_refs=response_object_refs,
+                preserved_difference_refs=(
+                    candidate.preserved_difference_refs
+                ),
+                optional_affect=None,
+                optional_stance=None,
+                reading_status="EMLIS_PROVISIONAL_READING",
+                subjective_assertion_modality=(
+                    SubjectiveAssertionModality.EMLIS_APPRAISAL
+                ),
+            )
+            proposition_records.append(
+                replace(
+                    proposition,
+                    reception_id=meaning_bound_reception_id(proposition),
+                )
+            )
+        propositions = tuple(proposition_records)
+        proposition_refs = tuple(row.reception_id for row in propositions)
+        count = len(propositions)
+        depth = (
+            SubjectiveDepthClass.FOCUSED
+            if count == 1
+            else SubjectiveDepthClass.LAYERED
+            if count <= 3
+            else SubjectiveDepthClass.DENSE
+        )
+        reception_set = MeaningBoundReceptionSet(
+            schema_version="1.1",
+            selected_reading_ref=outcome.reading_id,
+            reading_consequence_ref=sealed_reading.reading_consequence_ref,
+            subjective_depth=depth,
+            proposition_refs=proposition_refs,
+            affirmative_contribution_refs=proposition_refs,
+            optional_counterposition_refs=(),
+        )
+        consequence_records: Tuple[Any, ...] = (consequence,)
+        sealed_records: Tuple[Any, ...] = (sealed_reading,)
+        proposition_tuple: Tuple[Any, ...] = propositions
+        reception_set_records: Tuple[Any, ...] = (reception_set,)
+        bounded_records: Tuple[Any, ...] = ()
+        bounded_proposition_records: Tuple[Any, ...] = ()
+    elif type(outcome) is LimitedMeaningOutcome:
+        if (
+            not outcome.retained_layer1_refs
+            or not outcome.foreground_source_object_refs
+            or not set(outcome.retained_layer1_refs).issubset(
+                contribution_refs
+            )
+        ):
+            raise CMEEStage1ContractError(
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+            )
+        appraisal = EmlisAppraisalContent(
+            AppraisalDimension.MATERIAL_WEIGHT,
+            AppraisalOperation.RECEIVE_AS_MATERIAL,
+            outcome.foreground_source_object_refs,
+            None,
+            (),
+            outcome.retained_layer1_refs,
+        )
+        subjective_proposition = SubjectivePropositionV2(
+            dict(CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY)[
+                "CMEE_STAGE1_SUBJECTIVE_PROPOSITION_SCHEMA_VERSION"
+            ],
+            SubjectiveContentKind.APPRAISAL,
+            SubjectiveMode.PERSONAL_APPRAISAL,
+            SubjectiveOperator.APPRAISE_AS_MATERIAL,
+            outcome.retained_layer1_refs,
+            outcome.foreground_source_object_refs,
+            (),
+            outcome.foreground_source_object_refs,
+            outcome.retained_layer1_refs,
+            outcome.retained_qualifier_refs,
+            None,
+            None,
+            appraisal,
+            None,
+            None,
+            (),
+            (),
+            "USER",
+            SubjectiveAssertionModality.EMLIS_APPRAISAL,
+            "REQUEST_LOCAL_EMLIS_SUBJECTIVITY",
+        )
+        bounded = BoundedLimitedReception(
+            schema_version="1.1",
+            limited_outcome_ref=limited_meaning_outcome_id(outcome),
+            bound_layer1_contribution_refs=outcome.retained_layer1_refs,
+            foreground_source_object_refs=(
+                outcome.foreground_source_object_refs
+            ),
+            retained_qualifier_refs=outcome.retained_qualifier_refs,
+            subjective_depth=SubjectiveDepthClass.FOCUSED,
+            proposition_ref=subjective_proposition_v2_id(
+                subjective_proposition
+            ),
+            contribution_kind="AFFIRMATIVE_RECEPTION_CONTRIBUTION",
+        )
+        bounded_limited_reception_id(
+            bounded,
+            limited_outcome=outcome,
+            subjective_proposition=subjective_proposition,
+        )
+        consequence_records = ()
+        sealed_records = ()
+        proposition_tuple = ()
+        reception_set_records = ()
+        bounded_records = (bounded,)
+        bounded_proposition_records = (subjective_proposition,)
+    else:
+        raise CMEEStage1ContractError(
+            "stage1_post_selection_outcome_type_invalid"
+        )
+    projection_seal_ref = project_stage1_subjective_projection_seal_ref(
+        projection_preimage_ref,
+        meaning_decision_outcome=outcome,
+        reading_consequence_records=consequence_records,
+        sealed_emlis_provisional_reading_records=sealed_records,
+        meaning_bound_reception_proposition_records=proposition_tuple,
+        meaning_bound_reception_set_records=reception_set_records,
+        bounded_limited_reception_records=bounded_records,
+        bounded_limited_subjective_proposition_records=(
+            bounded_proposition_records
+        ),
+        whole_reading_consequence_rows=structure.whole_reading_consequence_rows,
+    )
+    validate_stage1_post_selection_reception_records(
+        input_specific_meaning_structure=structure,
+        projection_preimage_ref=projection_preimage_ref,
+        reading_consequence_records=consequence_records,
+        sealed_emlis_provisional_reading_records=sealed_records,
+        meaning_bound_reception_proposition_records=proposition_tuple,
+        meaning_bound_reception_set_records=reception_set_records,
+        bounded_limited_reception_records=bounded_records,
+        bounded_limited_subjective_proposition_records=(
+            bounded_proposition_records
+        ),
+        projection_seal_ref=projection_seal_ref,
+        allowed_reception_act_ids=allowed_acts,
+        observation_contribution_refs=contribution_refs,
+    )
+    return (
+        consequence_records,
+        sealed_records,
+        proposition_tuple,
+        reception_set_records,
+        bounded_records,
+        bounded_proposition_records,
+        projection_seal_ref,
+    )
+
+
 def build_subjective_planning_inputs(
     *,
     source: AdmittedTextSource,
@@ -4075,6 +4335,20 @@ def build_subjective_planning_inputs(
         reception_style_policy_ref=style_ref,
         emlis_value_policy_ref=CMEE_STAGE1_VALUE_POLICY_REF,
     )
+    (
+        reading_consequence_records,
+        sealed_emlis_provisional_reading_records,
+        meaning_bound_reception_proposition_records,
+        meaning_bound_reception_set_records,
+        bounded_limited_reception_records,
+        bounded_limited_subjective_proposition_records,
+        projection_seal_ref,
+    ) = build_stage1_post_selection_reception_records(
+        input_specific_meaning_structure=input_specific_meaning_structure,
+        projection_preimage_ref=projection_preimage_ref,
+        retained_reception_act_rows=tuple(retained_rows),
+        observation_contribution_rows=contributions,
+    )
     return composition.Stage1SubjectivePlanningInputs(
         admitted_source=source,
         grounded_graph=grounded_graph,
@@ -4091,6 +4365,23 @@ def build_subjective_planning_inputs(
             allowed_reception_envelope
         ),
         projection_preimage_ref=projection_preimage_ref,
+        reading_consequence_records=reading_consequence_records,
+        sealed_emlis_provisional_reading_records=(
+            sealed_emlis_provisional_reading_records
+        ),
+        meaning_bound_reception_proposition_records=(
+            meaning_bound_reception_proposition_records
+        ),
+        meaning_bound_reception_set_records=(
+            meaning_bound_reception_set_records
+        ),
+        bounded_limited_reception_records=(
+            bounded_limited_reception_records
+        ),
+        bounded_limited_subjective_proposition_records=(
+            bounded_limited_subjective_proposition_records
+        ),
+        projection_seal_ref=projection_seal_ref,
         interpretation_candidate_rows=candidates,
         meaning_field=meaning_field,
         observation_contribution_rows=contributions,
@@ -8873,6 +9164,7 @@ __all__ = [
     "build_subjective_planning_inputs",
     "build_surface_composition_inputs",
     "build_stage1_semantic_projection",
+    "build_stage1_post_selection_reception_records",
     "build_stage1_realization_candidate_set",
     "compile_stage1_response",
     "classify_affect_intensity",

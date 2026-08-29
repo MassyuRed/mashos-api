@@ -26,6 +26,7 @@ from .contracts import (
     BasisProvenanceKind,
     BasisProvenanceRow,
     CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
+    CMEE_READING_CONSEQUENCE_REQUIREMENT_CODES_EXACT4,
     CMEEStage1ContractError,
     CounterfactualMutationKind,
     CounterfactualMutationRow,
@@ -67,6 +68,7 @@ from .contracts import (
     ObservedDistinctionRow,
     OwnerClass,
     PreMeaningGroundedInputs,
+    ReadingConsequence,
     QualifiedEventStateConfiguration,
     RelationDirectionRow,
     RelationalConfiguration,
@@ -76,6 +78,7 @@ from .contracts import (
     RequirementBundleDerivationState,
     RequirementBundleSet,
     SelectedEmlisProvisionalReading,
+    SealedEmlisProvisionalReading,
     SourceOwnerDisposition,
     VisibleAuthority,
     WholeReadingConsequenceCode,
@@ -91,6 +94,8 @@ from .contracts import (
     input_specific_meaning_candidate_source_component_rows,
     input_specific_meaning_candidate_source_component_refs,
     input_specificity_evidence_id,
+    reading_consequence_id,
+    reading_consequence_source_constraint_refs,
     meaning_decision_candidate_reason_codes,
     meaning_selection_assessment_refs,
     recompute_input_specific_meaning_candidate_signature,
@@ -4705,14 +4710,19 @@ def _limited_meaning_outcome(
         foreground_scope_basis_row_ref(row): row
         for row in grounded_view.basis_rows
     }
-    retained_layer1_refs = (
-        _stable_unique(
-            ref
-            for basis_ref in scope.basis_row_refs
-            for ref in basis_by_ref[basis_ref].layer1_required_object_refs
+    retained_source_refs = set(
+        foreground_scope_derivation.retained_foreground_source_object_refs
+    )
+    retained_layer1_refs = _stable_unique(
+        ref
+        for row in (
+            tuple(basis_by_ref[basis_ref] for basis_ref in scope.basis_row_refs)
+            if type(scope) is ForegroundScope
+            else grounded_view.basis_rows
         )
         if type(scope) is ForegroundScope
-        else ()
+        or retained_source_refs.intersection(row.source_object_refs)
+        for ref in row.layer1_required_object_refs
     )
     return LimitedMeaningOutcome(
         schema_version=_ROOT_SCHEMA_VERSION,
@@ -4740,6 +4750,118 @@ def _limited_meaning_outcome(
         ),
         outcome_reason_codes=(reason_code,),
         decision_trace=trace,
+    )
+
+
+def derive_reading_consequence(
+    structure: InputSpecificMeaningStructure,
+) -> ReadingConsequence:
+    """Derive the sole post-selection consequence without Reception input."""
+
+    if type(structure) is not InputSpecificMeaningStructure:
+        raise CMEEStage1ContractError("reading_consequence_structure_invalid")
+    selected = structure.meaning_decision_outcome
+    if type(selected) is not SelectedEmlisProvisionalReading:
+        raise CMEEStage1ContractError("reading_consequence_selected_missing")
+    candidates = tuple(
+        row
+        for row in structure.candidate_records
+        if row.candidate_id == selected.selected_candidate_ref
+    )
+    if len(candidates) != 1:
+        raise CMEEStage1ContractError(
+            "reading_consequence_candidate_closure_invalid"
+        )
+    candidate = candidates[0]
+    whole_by_ref = {
+        row.consequence_id: row for row in structure.whole_reading_consequence_rows
+    }
+    if len(whole_by_ref) != len(structure.whole_reading_consequence_rows):
+        raise CMEEStage1ContractError(
+            "reading_consequence_whole_row_duplicate"
+        )
+    evidence_records: list[InputSpecificityEvidence] = []
+    for evidence in structure.input_specificity_evidence_records:
+        try:
+            resolved_rows = tuple(
+                whole_by_ref[ref]
+                for ref in evidence.whole_reading_consequence_refs
+            )
+        except KeyError:
+            raise CMEEStage1ContractError(
+                "reading_consequence_whole_row_foreign"
+            ) from None
+        if input_specificity_evidence_id(
+            evidence,
+            whole_reading_consequence_rows=resolved_rows,
+        ) == candidate.input_specificity_evidence_ref:
+            evidence_records.append(evidence)
+    if len(evidence_records) != 1:
+        raise CMEEStage1ContractError(
+            "reading_consequence_evidence_closure_invalid"
+        )
+    evidence = evidence_records[0]
+    resolved_rows = tuple(
+        whole_by_ref[ref] for ref in evidence.whole_reading_consequence_refs
+    )
+    changed_codes = tuple(
+        code
+        for code in WholeReadingConsequenceCode
+        if code in {row.consequence_code for row in resolved_rows}
+    )
+    if not changed_codes:
+        raise CMEEStage1ContractError(
+            "MEANING_RESPONSE_CONSEQUENCE_GAP"
+        )
+    return ReadingConsequence(
+        selected_reading_ref=selected.reading_id,
+        input_specificity_evidence_ref=(
+            candidate.input_specificity_evidence_ref
+        ),
+        whole_reading_consequence_refs=(
+            evidence.whole_reading_consequence_refs
+        ),
+        changed_whole_reading_codes=changed_codes,
+        response_consequence_requirement_codes=(
+            CMEE_READING_CONSEQUENCE_REQUIREMENT_CODES_EXACT4
+        ),
+        source_constraint_refs=(
+            reading_consequence_source_constraint_refs(candidate)
+        ),
+    )
+
+
+def derive_sealed_emlis_provisional_reading(
+    structure: InputSpecificMeaningStructure,
+    consequence: ReadingConsequence,
+) -> SealedEmlisProvisionalReading:
+    """Bind one already-selected reading to its semantic consequence."""
+
+    selected = structure.meaning_decision_outcome
+    if (
+        type(selected) is not SelectedEmlisProvisionalReading
+        or type(consequence) is not ReadingConsequence
+        or consequence.selected_reading_ref != selected.reading_id
+    ):
+        raise CMEEStage1ContractError("sealed_reading_input_invalid")
+    whole_by_ref = {
+        row.consequence_id: row for row in structure.whole_reading_consequence_rows
+    }
+    try:
+        resolved_rows = tuple(
+            whole_by_ref[ref]
+            for ref in consequence.whole_reading_consequence_refs
+        )
+    except KeyError:
+        raise CMEEStage1ContractError(
+            "sealed_reading_whole_row_foreign"
+        ) from None
+    return SealedEmlisProvisionalReading(
+        selected_reading_ref=selected.reading_id,
+        reading_consequence_ref=reading_consequence_id(
+            consequence,
+            whole_reading_consequence_rows=resolved_rows,
+        ),
     )
 
 
@@ -5086,6 +5208,8 @@ __all__ = (
     "derive_foreground_scope_closed",
     "derive_grounded_situation_view",
     "derive_input_specific_meaning_structure",
+    "derive_reading_consequence",
+    "derive_sealed_emlis_provisional_reading",
     "derive_requirement_bundle_set",
     "foreground_scope_disposition",
     "issue_whole_reading_consequence_row",

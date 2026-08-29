@@ -19,7 +19,7 @@ from dataclasses import (
     replace,
 )
 from enum import Enum
-from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Literal, Mapping, Optional, Sequence, Tuple
 
 
 CMEE_SCHEMA_VERSION = "cocolon.cmee.v1a.i1sx.material_unknown.v2"
@@ -1621,6 +1621,24 @@ class WholeReadingConsequenceRow:
 
 
 @dataclass(frozen=True, slots=True)
+class ReadingConsequence:
+    """Post-selection semantic consequence; it contains no Reception choice."""
+
+    selected_reading_ref: str
+    input_specificity_evidence_ref: str
+    whole_reading_consequence_refs: Tuple[str, ...]
+    changed_whole_reading_codes: Tuple[WholeReadingConsequenceCode, ...]
+    response_consequence_requirement_codes: Tuple[str, ...]
+    source_constraint_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SealedEmlisProvisionalReading:
+    selected_reading_ref: str
+    reading_consequence_ref: str
+
+
+@dataclass(frozen=True, slots=True)
 class PlannedObservationContribution:
     schema_version: str
     contribution_id: str
@@ -1764,6 +1782,69 @@ class EmlisRelationalPosition:
     boundary_bindings: Tuple[str, ...]
     commitment: RelationalCommitment
     closure: RelationalClosure
+
+
+ReceptionFunction = Literal[
+    "stay_with_current_burden",
+    "honor_concrete_effort",
+    "protect_retained_intention",
+    "recognize_lived_change",
+    "hold_help_seeking",
+    "bounded_counter_self_denial",
+    "respect_words_placed",
+]
+AffectContent = EmlisAffectContent
+RelationalStance = EmlisRelationalPosition
+ResponseConsequenceRequirementCode = Literal[
+    "AFFIRMATIVE_RECEPTION_REQUIRED",
+    "READING_BINDING_REQUIRED",
+    "PRESERVED_DIFFERENCE_REQUIRED",
+    "VISIBLE_CAUSAL_TRACE_REQUIRED",
+]
+ReceptionContributionKind = Literal[
+    "AFFIRMATIVE_RECEPTION_CONTRIBUTION",
+    "BOUNDED_COUNTERPOSITION",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class MeaningBoundReceptionProposition:
+    schema_version: str
+    reception_id: str
+    selected_reading_ref: str
+    reception_function: ReceptionFunction
+    responsibility_kind: SubjectiveResponsibilityKind
+    subjective_mode: SubjectiveMode
+    contribution_kind: ReceptionContributionKind
+    response_object_refs: Tuple[str, ...]
+    preserved_difference_refs: Tuple[str, ...]
+    optional_affect: Optional[AffectContent]
+    optional_stance: Optional[RelationalStance]
+    reading_status: str
+    subjective_assertion_modality: SubjectiveAssertionModality
+
+
+@dataclass(frozen=True, slots=True)
+class MeaningBoundReceptionSet:
+    schema_version: str
+    selected_reading_ref: str
+    reading_consequence_ref: str
+    subjective_depth: SubjectiveDepthClass
+    proposition_refs: Tuple[str, ...]
+    affirmative_contribution_refs: Tuple[str, ...]
+    optional_counterposition_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class BoundedLimitedReception:
+    schema_version: str
+    limited_outcome_ref: str
+    bound_layer1_contribution_refs: Tuple[str, ...]
+    foreground_source_object_refs: Tuple[str, ...]
+    retained_qualifier_refs: Tuple[str, ...]
+    subjective_depth: SubjectiveDepthClass
+    proposition_ref: str
+    contribution_kind: ReceptionContributionKind
 
 
 @dataclass(frozen=True, slots=True)
@@ -2429,6 +2510,13 @@ _STAGE1_TUPLE_FIELDS = {
     ),
     WholeReadingConsequenceValidationContext: ("source_evidence_refs",),
     WholeReadingConsequenceRow: ("source_evidence_refs",),
+    ReadingConsequence: (
+        "whole_reading_consequence_refs",
+        "changed_whole_reading_codes",
+        "response_consequence_requirement_codes",
+        "source_constraint_refs",
+    ),
+    SealedEmlisProvisionalReading: (),
     PlannedObservationContribution: (
         "interpretation_candidate_refs",
         "argument_bindings",
@@ -2471,6 +2559,20 @@ _STAGE1_TUPLE_FIELDS = {
         "boundary_bindings",
     ),
     EmlisRelationalPosition: ("target_bindings", "boundary_bindings"),
+    MeaningBoundReceptionProposition: (
+        "response_object_refs",
+        "preserved_difference_refs",
+    ),
+    MeaningBoundReceptionSet: (
+        "proposition_refs",
+        "affirmative_contribution_refs",
+        "optional_counterposition_refs",
+    ),
+    BoundedLimitedReception: (
+        "bound_layer1_contribution_refs",
+        "foreground_source_object_refs",
+        "retained_qualifier_refs",
+    ),
     SubjectivePropositionV2: (
         "target_contribution_refs",
         "primary_target_refs",
@@ -4571,6 +4673,33 @@ _SELECTED_EMLIS_PROVISIONAL_READING_REF_VERSION = (
 )
 _LIMITED_MEANING_OUTCOME_REF_VERSION = (
     "cocolon.cmee.emlis.limited_meaning_outcome.v1"
+)
+_READING_CONSEQUENCE_REF_VERSION = (
+    "cocolon.cmee.emlis.reading_consequence.v1"
+)
+_MEANING_BOUND_RECEPTION_REF_VERSION = (
+    "cocolon.cmee.emlis.meaning_bound_reception.v1"
+)
+_SUBJECTIVE_PROPOSITION_V2_REF_VERSION = (
+    "cocolon.emlis.stage1.subjective_proposition.v2"
+)
+_SEALED_EMLIS_PROVISIONAL_READING_REF_VERSION = (
+    "cocolon.cmee.emlis.sealed_reading.v1"
+)
+_MEANING_BOUND_RECEPTION_SET_REF_VERSION = (
+    "cocolon.cmee.emlis.meaning_bound_reception_set.v1"
+)
+_BOUNDED_LIMITED_RECEPTION_REF_VERSION = (
+    "cocolon.cmee.emlis.bounded_limited_reception.v1"
+)
+_STAGE1_SUBJECTIVE_PROJECTION_SEAL_REF_VERSION = (
+    "cocolon.emlis.stage1.subjective_projection_seal.v1"
+)
+CMEE_READING_CONSEQUENCE_REQUIREMENT_CODES_EXACT4 = (
+    "AFFIRMATIVE_RECEPTION_REQUIRED",
+    "READING_BINDING_REQUIRED",
+    "PRESERVED_DIFFERENCE_REQUIRED",
+    "VISIBLE_CAUSAL_TRACE_REQUIRED",
 )
 _CANONICAL_TYPED_KEY_RE = re.compile(
     r"^[A-Za-z][A-Za-z0-9_-]*:[A-Za-z0-9][A-Za-z0-9._/@|=+\-]*$"
@@ -11343,16 +11472,24 @@ def _validate_input_specific_meaning_im03(
             raise CMEEStage1ContractError(
                 "limited_meaning_outcome_basis_unbound"
             )
-        expected_retained_layer1_refs = (
-            tuple(
-                dict.fromkeys(
-                    ref
-                    for basis_ref in scope.basis_row_refs
-                    for ref in basis_by_ref[basis_ref].layer1_required_object_refs
+        retained_source_refs = set(
+            foreground_scope_derivation.retained_foreground_source_object_refs
+        )
+        expected_retained_layer1_refs = tuple(
+            dict.fromkeys(
+                ref
+                for row in (
+                    tuple(
+                        basis_by_ref[basis_ref]
+                        for basis_ref in scope.basis_row_refs
+                    )
+                    if type(scope) is ForegroundScope
+                    else grounded_basis_rows
                 )
+                if type(scope) is ForegroundScope
+                or retained_source_refs.intersection(row.source_object_refs)
+                for ref in row.layer1_required_object_refs
             )
-            if type(scope) is ForegroundScope
-            else ()
         )
         expected_foreground_source_object_refs = (
             scope.integrated_scope_object_refs
@@ -13162,6 +13299,647 @@ def limited_meaning_outcome_id(outcome: LimitedMeaningOutcome) -> str:
         f"limited-meaning-outcome:{digest}"
         f"@{_LIMITED_MEANING_OUTCOME_REF_VERSION}"
     )
+
+
+def reading_consequence_id(
+    value: ReadingConsequence,
+    *,
+    whole_reading_consequence_rows: Sequence[WholeReadingConsequenceRow],
+) -> str:
+    if type(value) is not ReadingConsequence:
+        raise CMEEStage1ContractError("reading_consequence_type_invalid")
+    rows = tuple(whole_reading_consequence_rows)
+    if (
+        any(type(row) is not WholeReadingConsequenceRow for row in rows)
+        or tuple(row.consequence_id for row in rows)
+        != value.whole_reading_consequence_refs
+    ):
+        raise CMEEStage1ContractError("reading_consequence_row_closure_invalid")
+    payload = {
+        field.name: getattr(value, field.name)
+        for field in dataclass_fields(value)
+    }
+    payload["resolved_whole_reading_consequence_rows"] = rows
+    digest = hashlib.sha256(stage1_canonical_json_bytes(payload)).hexdigest()
+    return (
+        f"reading-consequence:{digest}"
+        f"@{_READING_CONSEQUENCE_REF_VERSION}"
+    )
+
+
+def meaning_bound_reception_id(
+    value: MeaningBoundReceptionProposition,
+) -> str:
+    if type(value) is not MeaningBoundReceptionProposition:
+        raise CMEEStage1ContractError(
+            "meaning_bound_reception_type_invalid"
+        )
+    payload = {
+        field.name: getattr(value, field.name)
+        for field in dataclass_fields(value)
+        if field.name != "reception_id"
+    }
+    digest = hashlib.sha256(stage1_canonical_json_bytes(payload)).hexdigest()
+    return (
+        f"meaning-bound-reception:{digest}"
+        f"@{_MEANING_BOUND_RECEPTION_REF_VERSION}"
+    )
+
+
+def subjective_proposition_v2_id(value: SubjectivePropositionV2) -> str:
+    if type(value) is not SubjectivePropositionV2:
+        raise CMEEStage1ContractError(
+            "subjective_proposition_v2_identity_type_invalid"
+        )
+    digest = hashlib.sha256(stage1_canonical_json_bytes(value)).hexdigest()
+    return (
+        f"subjective-proposition-v2:{digest}"
+        f"@{_SUBJECTIVE_PROPOSITION_V2_REF_VERSION}"
+    )
+
+
+def sealed_emlis_provisional_reading_id(
+    value: SealedEmlisProvisionalReading,
+    *,
+    selected_reading: SelectedEmlisProvisionalReading,
+    reading_consequence: ReadingConsequence,
+    whole_reading_consequence_rows: Sequence[WholeReadingConsequenceRow],
+) -> str:
+    if (
+        type(value) is not SealedEmlisProvisionalReading
+        or type(selected_reading) is not SelectedEmlisProvisionalReading
+        or type(reading_consequence) is not ReadingConsequence
+        or value.selected_reading_ref != selected_reading.reading_id
+        or value.reading_consequence_ref
+        != reading_consequence_id(
+            reading_consequence,
+            whole_reading_consequence_rows=whole_reading_consequence_rows,
+        )
+    ):
+        raise CMEEStage1ContractError("sealed_reading_closure_invalid")
+    payload = {
+        "sealed_reading": value,
+        "resolved_selected_reading": selected_reading,
+        "resolved_reading_consequence": reading_consequence,
+        "resolved_whole_reading_consequence_rows": tuple(
+            whole_reading_consequence_rows
+        ),
+    }
+    digest = hashlib.sha256(stage1_canonical_json_bytes(payload)).hexdigest()
+    return (
+        f"sealed-emlis-provisional-reading:{digest}"
+        f"@{_SEALED_EMLIS_PROVISIONAL_READING_REF_VERSION}"
+    )
+
+
+def meaning_bound_reception_set_id(
+    value: MeaningBoundReceptionSet,
+    *,
+    proposition_records: Sequence[MeaningBoundReceptionProposition],
+) -> str:
+    if type(value) is not MeaningBoundReceptionSet:
+        raise CMEEStage1ContractError(
+            "meaning_bound_reception_set_type_invalid"
+        )
+    rows = tuple(proposition_records)
+    if (
+        any(type(row) is not MeaningBoundReceptionProposition for row in rows)
+        or tuple(row.reception_id for row in rows) != value.proposition_refs
+    ):
+        raise CMEEStage1ContractError(
+            "meaning_bound_reception_set_closure_invalid"
+        )
+    payload = {
+        "reception_set": value,
+        "resolved_proposition_records": rows,
+    }
+    digest = hashlib.sha256(stage1_canonical_json_bytes(payload)).hexdigest()
+    return (
+        f"meaning-bound-reception-set:{digest}"
+        f"@{_MEANING_BOUND_RECEPTION_SET_REF_VERSION}"
+    )
+
+
+def bounded_limited_reception_id(
+    value: BoundedLimitedReception,
+    *,
+    limited_outcome: LimitedMeaningOutcome,
+    subjective_proposition: SubjectivePropositionV2,
+) -> str:
+    if (
+        type(value) is not BoundedLimitedReception
+        or type(limited_outcome) is not LimitedMeaningOutcome
+        or type(subjective_proposition) is not SubjectivePropositionV2
+        or value.limited_outcome_ref != limited_meaning_outcome_id(limited_outcome)
+        or value.proposition_ref
+        != subjective_proposition_v2_id(subjective_proposition)
+    ):
+        raise CMEEStage1ContractError(
+            "bounded_limited_reception_closure_invalid"
+        )
+    payload = {
+        "bounded_limited_reception": value,
+        "resolved_limited_outcome": limited_outcome,
+        "resolved_subjective_proposition": subjective_proposition,
+    }
+    digest = hashlib.sha256(stage1_canonical_json_bytes(payload)).hexdigest()
+    return (
+        f"bounded-limited-reception:{digest}"
+        f"@{_BOUNDED_LIMITED_RECEPTION_REF_VERSION}"
+    )
+
+
+def reading_consequence_source_constraint_refs(
+    candidate: InputSpecificMeaningCandidate,
+) -> tuple[str, ...]:
+    if type(candidate) is not InputSpecificMeaningCandidate:
+        raise CMEEStage1ContractError(
+            "reading_consequence_candidate_type_invalid"
+        )
+    refs = tuple(
+        dict.fromkeys(
+            (
+                *candidate.basis_contribution_refs,
+                *candidate.primary_component_refs,
+                *candidate.relation_path_refs,
+                *candidate.qualified_event_state_refs,
+                *candidate.source_qualifier_refs,
+                *candidate.preserved_difference_refs,
+                *candidate.material_unknown_refs,
+            )
+        )
+    )
+    if not refs:
+        raise CMEEStage1ContractError(
+            "reading_consequence_source_constraint_missing"
+        )
+    return refs
+
+
+def project_stage1_subjective_projection_seal_ref(
+    projection_preimage_ref: str,
+    *,
+    meaning_decision_outcome: MeaningDecisionOutcome,
+    reading_consequence_records: Sequence[ReadingConsequence],
+    sealed_emlis_provisional_reading_records: Sequence[
+        SealedEmlisProvisionalReading
+    ],
+    meaning_bound_reception_proposition_records: Sequence[
+        MeaningBoundReceptionProposition
+    ],
+    meaning_bound_reception_set_records: Sequence[MeaningBoundReceptionSet],
+    bounded_limited_reception_records: Sequence[BoundedLimitedReception],
+    bounded_limited_subjective_proposition_records: Sequence[
+        SubjectivePropositionV2
+    ],
+    whole_reading_consequence_rows: Sequence[WholeReadingConsequenceRow],
+) -> str:
+    if not _stage1_identity_string(projection_preimage_ref):
+        raise CMEEStage1ContractError("stage1_projection_seal_base_invalid")
+    consequences = tuple(reading_consequence_records)
+    sealed = tuple(sealed_emlis_provisional_reading_records)
+    propositions = tuple(meaning_bound_reception_proposition_records)
+    sets = tuple(meaning_bound_reception_set_records)
+    limited = tuple(bounded_limited_reception_records)
+    limited_propositions = tuple(
+        bounded_limited_subjective_proposition_records
+    )
+    whole_rows = tuple(whole_reading_consequence_rows)
+    if type(meaning_decision_outcome) is SelectedEmlisProvisionalReading:
+        if (
+            len(consequences) != 1
+            or len(sealed) != 1
+            or not 1 <= len(propositions) <= 4
+            or len(sets) != 1
+            or limited
+            or limited_propositions
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_projection_seal_branch_cardinality_invalid"
+            )
+        consequence = consequences[0]
+        resolved_whole_rows = tuple(
+            row
+            for ref in consequence.whole_reading_consequence_refs
+            for row in whole_rows
+            if row.consequence_id == ref
+        )
+        consequence_ref = reading_consequence_id(
+            consequence,
+            whole_reading_consequence_rows=resolved_whole_rows,
+        )
+        sealed_ref = sealed_emlis_provisional_reading_id(
+            sealed[0],
+            selected_reading=meaning_decision_outcome,
+            reading_consequence=consequence,
+            whole_reading_consequence_rows=resolved_whole_rows,
+        )
+        proposition_refs = tuple(
+            meaning_bound_reception_id(row) for row in propositions
+        )
+        set_ref = meaning_bound_reception_set_id(
+            sets[0], proposition_records=propositions
+        )
+        branch_extension: tuple[Any, ...] = (
+            "NORMAL",
+            meaning_decision_outcome.reading_id,
+            sealed_ref,
+            consequence_ref,
+            proposition_refs,
+            set_ref,
+        )
+        resolved_rows = resolved_whole_rows
+    elif type(meaning_decision_outcome) is LimitedMeaningOutcome:
+        if (
+            consequences
+            or sealed
+            or propositions
+            or sets
+            or len(limited) != 1
+            or len(limited_propositions) != 1
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_projection_seal_branch_cardinality_invalid"
+            )
+        subjective_ref = subjective_proposition_v2_id(
+            limited_propositions[0]
+        )
+        bounded_ref = bounded_limited_reception_id(
+            limited[0],
+            limited_outcome=meaning_decision_outcome,
+            subjective_proposition=limited_propositions[0],
+        )
+        branch_extension = (
+            "LIMITED",
+            limited_meaning_outcome_id(meaning_decision_outcome),
+            subjective_ref,
+            bounded_ref,
+        )
+        resolved_rows = ()
+    else:
+        raise CMEEStage1ContractError(
+            "stage1_projection_seal_outcome_type_invalid"
+        )
+    payload = (
+        projection_preimage_ref,
+        branch_extension,
+        meaning_decision_outcome,
+        consequences,
+        sealed,
+        propositions,
+        sets,
+        limited,
+        limited_propositions,
+        resolved_rows,
+    )
+    digest = hashlib.sha256(stage1_canonical_json_bytes(payload)).hexdigest()
+    return (
+        f"stage1-subjective-projection-seal:{digest}"
+        f"@{_STAGE1_SUBJECTIVE_PROJECTION_SEAL_REF_VERSION}"
+    )
+
+
+def validate_stage1_post_selection_reception_records(
+    *,
+    input_specific_meaning_structure: InputSpecificMeaningStructure,
+    projection_preimage_ref: str,
+    reading_consequence_records: object,
+    sealed_emlis_provisional_reading_records: object,
+    meaning_bound_reception_proposition_records: object,
+    meaning_bound_reception_set_records: object,
+    bounded_limited_reception_records: object,
+    bounded_limited_subjective_proposition_records: object,
+    projection_seal_ref: str,
+    allowed_reception_act_ids: Sequence[str],
+    observation_contribution_refs: Sequence[str],
+) -> None:
+    """Validate the carried IM04 closure without deriving or selecting."""
+
+    if type(input_specific_meaning_structure) is not InputSpecificMeaningStructure:
+        raise CMEEStage1ContractError(
+            "stage1_post_selection_structure_type_invalid"
+        )
+    tuple_values = (
+        reading_consequence_records,
+        sealed_emlis_provisional_reading_records,
+        meaning_bound_reception_proposition_records,
+        meaning_bound_reception_set_records,
+        bounded_limited_reception_records,
+        bounded_limited_subjective_proposition_records,
+    )
+    if any(type(value) is not tuple for value in tuple_values):
+        raise CMEEStage1ContractError(
+            "stage1_post_selection_record_tuple_invalid"
+        )
+    (
+        consequences,
+        sealed,
+        propositions,
+        sets,
+        limited,
+        limited_propositions,
+    ) = tuple_values
+    allowed_acts = tuple(allowed_reception_act_ids)
+    contribution_refs = tuple(observation_contribution_refs)
+    if (
+        not allowed_acts
+        or len(allowed_acts) != len(set(allowed_acts))
+        or not set(allowed_acts).issubset(
+            {row.reception_act for row in CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7}
+        )
+        or not contribution_refs
+        or len(contribution_refs) != len(set(contribution_refs))
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_post_selection_authority_invalid"
+        )
+    outcome = input_specific_meaning_structure.meaning_decision_outcome
+    whole_rows_by_ref = {
+        row.consequence_id: row
+        for row in input_specific_meaning_structure.whole_reading_consequence_rows
+    }
+    if len(whole_rows_by_ref) != len(
+        input_specific_meaning_structure.whole_reading_consequence_rows
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_post_selection_whole_row_duplicate"
+        )
+    if type(outcome) is SelectedEmlisProvisionalReading:
+        if (
+            len(consequences) != 1
+            or len(sealed) != 1
+            or not 1 <= len(propositions) <= 4
+            or len(sets) != 1
+            or limited
+            or limited_propositions
+            or any(type(row) is not ReadingConsequence for row in consequences)
+            or any(
+                type(row) is not SealedEmlisProvisionalReading for row in sealed
+            )
+            or any(
+                type(row) is not MeaningBoundReceptionProposition
+                for row in propositions
+            )
+            or any(type(row) is not MeaningBoundReceptionSet for row in sets)
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_post_selection_normal_cardinality_invalid"
+            )
+        candidate_rows = tuple(
+            row
+            for row in input_specific_meaning_structure.candidate_records
+            if row.candidate_id == outcome.selected_candidate_ref
+        )
+        if len(candidate_rows) != 1:
+            raise CMEEStage1ContractError(
+                "stage1_post_selection_selected_candidate_missing"
+            )
+        candidate = candidate_rows[0]
+        evidence_rows = tuple(
+            row
+            for row in input_specific_meaning_structure.input_specificity_evidence_records
+            if input_specificity_evidence_id(
+                row,
+                whole_reading_consequence_rows=tuple(
+                    whole_rows_by_ref[ref]
+                    for ref in row.whole_reading_consequence_refs
+                    if ref in whole_rows_by_ref
+                ),
+            )
+            == candidate.input_specificity_evidence_ref
+        )
+        if len(evidence_rows) != 1:
+            raise CMEEStage1ContractError(
+                "stage1_post_selection_evidence_missing"
+            )
+        evidence = evidence_rows[0]
+        consequence = consequences[0]
+        try:
+            resolved_whole_rows = tuple(
+                whole_rows_by_ref[ref]
+                for ref in consequence.whole_reading_consequence_refs
+            )
+        except KeyError:
+            raise CMEEStage1ContractError(
+                "stage1_post_selection_whole_row_foreign"
+            ) from None
+        expected_codes = tuple(
+            code
+            for code in WholeReadingConsequenceCode
+            if code in {row.consequence_code for row in resolved_whole_rows}
+        )
+        if (
+            consequence.selected_reading_ref != outcome.reading_id
+            or consequence.input_specificity_evidence_ref
+            != candidate.input_specificity_evidence_ref
+            or consequence.whole_reading_consequence_refs
+            != evidence.whole_reading_consequence_refs
+            or consequence.changed_whole_reading_codes != expected_codes
+            or consequence.response_consequence_requirement_codes
+            != CMEE_READING_CONSEQUENCE_REQUIREMENT_CODES_EXACT4
+            or consequence.source_constraint_refs
+            != reading_consequence_source_constraint_refs(candidate)
+        ):
+            raise CMEEStage1ContractError(
+                "reading_consequence_binding_invalid"
+            )
+        consequence_ref = reading_consequence_id(
+            consequence,
+            whole_reading_consequence_rows=resolved_whole_rows,
+        )
+        if (
+            sealed[0].selected_reading_ref != outcome.reading_id
+            or sealed[0].reading_consequence_ref != consequence_ref
+        ):
+            raise CMEEStage1ContractError("sealed_reading_binding_invalid")
+        sealed_emlis_provisional_reading_id(
+            sealed[0],
+            selected_reading=outcome,
+            reading_consequence=consequence,
+            whole_reading_consequence_rows=resolved_whole_rows,
+        )
+        response_domain = set(
+            (
+                outcome.primary_reading_focus_ref,
+                *outcome.supporting_facet_refs,
+                *outcome.reading_component_refs,
+                *outcome.reading_relation_refs,
+                *outcome.qualified_event_state_refs,
+            )
+        )
+        proposition_refs: list[str] = []
+        for proposition in propositions:
+            _validate_stage1_immutable_shape(proposition)
+            if (
+                proposition.schema_version != _INPUT_SPECIFIC_MEANING_STRUCTURE_SCHEMA_VERSION
+                or proposition.selected_reading_ref != outcome.reading_id
+                or proposition.reception_function not in set(allowed_acts)
+                or type(proposition.responsibility_kind)
+                is not SubjectiveResponsibilityKind
+                or type(proposition.subjective_mode) is not SubjectiveMode
+                or proposition.contribution_kind
+                not in {
+                    "AFFIRMATIVE_RECEPTION_CONTRIBUTION",
+                    "BOUNDED_COUNTERPOSITION",
+                }
+                or (
+                    proposition.subjective_mode
+                    is SubjectiveMode.BOUNDED_COUNTERPOSITION
+                )
+                != (
+                    proposition.contribution_kind == "BOUNDED_COUNTERPOSITION"
+                )
+                or not proposition.response_object_refs
+                or len(proposition.response_object_refs)
+                != len(set(proposition.response_object_refs))
+                or not set(proposition.response_object_refs).issubset(
+                    response_domain
+                )
+                or proposition.preserved_difference_refs
+                != candidate.preserved_difference_refs
+                or proposition.optional_affect is not None
+                and type(proposition.optional_affect) is not EmlisAffectContent
+                or proposition.optional_stance is not None
+                and type(proposition.optional_stance)
+                is not EmlisRelationalPosition
+                or proposition.reading_status != "EMLIS_PROVISIONAL_READING"
+                or type(proposition.subjective_assertion_modality)
+                is not SubjectiveAssertionModality
+                or proposition.reception_id
+                != meaning_bound_reception_id(proposition)
+            ):
+                raise CMEEStage1ContractError(
+                    "meaning_bound_reception_binding_invalid"
+                )
+            proposition_refs.append(proposition.reception_id)
+        if len(proposition_refs) != len(set(proposition_refs)):
+            raise CMEEStage1ContractError(
+                "meaning_bound_reception_identity_duplicate"
+            )
+        reception_set = sets[0]
+        _validate_stage1_immutable_shape(reception_set)
+        affirmative_refs = tuple(
+            row.reception_id
+            for row in propositions
+            if row.contribution_kind == "AFFIRMATIVE_RECEPTION_CONTRIBUTION"
+        )
+        counter_refs = tuple(
+            row.reception_id
+            for row in propositions
+            if row.contribution_kind == "BOUNDED_COUNTERPOSITION"
+        )
+        depth_count_valid = {
+            SubjectiveDepthClass.FOCUSED: len(propositions) == 1,
+            SubjectiveDepthClass.LAYERED: 2 <= len(propositions) <= 3,
+            SubjectiveDepthClass.DENSE: 3 <= len(propositions) <= 4,
+        }.get(reception_set.subjective_depth, False)
+        if (
+            reception_set.schema_version
+            != _INPUT_SPECIFIC_MEANING_STRUCTURE_SCHEMA_VERSION
+            or reception_set.selected_reading_ref != outcome.reading_id
+            or reception_set.reading_consequence_ref != consequence_ref
+            or not depth_count_valid
+            or reception_set.proposition_refs != tuple(proposition_refs)
+            or reception_set.affirmative_contribution_refs != affirmative_refs
+            or reception_set.optional_counterposition_refs != counter_refs
+            or not affirmative_refs
+            or set(affirmative_refs).intersection(counter_refs)
+            or set((*affirmative_refs, *counter_refs))
+            != set(proposition_refs)
+        ):
+            raise CMEEStage1ContractError(
+                "meaning_bound_reception_partition_invalid"
+            )
+        meaning_bound_reception_set_id(
+            reception_set, proposition_records=propositions
+        )
+    elif type(outcome) is LimitedMeaningOutcome:
+        if (
+            consequences
+            or sealed
+            or propositions
+            or sets
+            or len(limited) != 1
+            or len(limited_propositions) != 1
+            or type(limited[0]) is not BoundedLimitedReception
+            or type(limited_propositions[0]) is not SubjectivePropositionV2
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_post_selection_limited_cardinality_invalid"
+            )
+        proposition = limited_propositions[0]
+        bounded = limited[0]
+        _validate_stage1_immutable_shape(proposition)
+        _validate_stage1_immutable_shape(bounded)
+        final_subjective_schema = _stage1_final_logical_identity(
+            "CMEE_STAGE1_SUBJECTIVE_PROPOSITION_SCHEMA_VERSION"
+        )
+        if (
+            not outcome.retained_layer1_refs
+            or not outcome.foreground_source_object_refs
+            or not set(outcome.retained_layer1_refs).issubset(
+                contribution_refs
+            )
+            or proposition.schema_version != final_subjective_schema
+            or proposition.content_kind is not SubjectiveContentKind.APPRAISAL
+            or proposition.subjective_mode
+            is not SubjectiveMode.PERSONAL_APPRAISAL
+            or proposition.subjective_operator
+            is not SubjectiveOperator.APPRAISE_AS_MATERIAL
+            or proposition.target_contribution_refs
+            != outcome.retained_layer1_refs
+            or proposition.primary_target_refs
+            != outcome.foreground_source_object_refs
+            or proposition.response_object_refs
+            != outcome.foreground_source_object_refs
+            or proposition.source_qualifier_binding_refs
+            != outcome.retained_qualifier_refs
+            or type(proposition.appraisal_content) is not EmlisAppraisalContent
+            or proposition.affect_content is not None
+            or proposition.material_value_content is not None
+            or proposition.relational_position is not None
+            or proposition.assertion_modality
+            is not SubjectiveAssertionModality.EMLIS_APPRAISAL
+            or bounded.schema_version
+            != _INPUT_SPECIFIC_MEANING_STRUCTURE_SCHEMA_VERSION
+            or bounded.limited_outcome_ref != limited_meaning_outcome_id(outcome)
+            or bounded.bound_layer1_contribution_refs
+            != outcome.retained_layer1_refs
+            or bounded.foreground_source_object_refs
+            != outcome.foreground_source_object_refs
+            or bounded.retained_qualifier_refs != outcome.retained_qualifier_refs
+            or bounded.subjective_depth is not SubjectiveDepthClass.FOCUSED
+            or bounded.proposition_ref != subjective_proposition_v2_id(proposition)
+            or bounded.contribution_kind
+            != "AFFIRMATIVE_RECEPTION_CONTRIBUTION"
+        ):
+            raise CMEEStage1ContractError(
+                "bounded_limited_reception_binding_invalid"
+            )
+        bounded_limited_reception_id(
+            bounded,
+            limited_outcome=outcome,
+            subjective_proposition=proposition,
+        )
+    else:
+        raise CMEEStage1ContractError(
+            "stage1_post_selection_outcome_type_invalid"
+        )
+    expected_seal = project_stage1_subjective_projection_seal_ref(
+        projection_preimage_ref,
+        meaning_decision_outcome=outcome,
+        reading_consequence_records=consequences,
+        sealed_emlis_provisional_reading_records=sealed,
+        meaning_bound_reception_proposition_records=propositions,
+        meaning_bound_reception_set_records=sets,
+        bounded_limited_reception_records=limited,
+        bounded_limited_subjective_proposition_records=limited_propositions,
+        whole_reading_consequence_rows=(
+            input_specific_meaning_structure.whole_reading_consequence_rows
+        ),
+    )
+    if projection_seal_ref != expected_seal:
+        raise CMEEStage1ContractError("stage1_projection_seal_ref_invalid")
 
 
 def whole_reading_consequence_id(row: WholeReadingConsequenceRow) -> str:
@@ -17062,15 +17840,18 @@ __all__ = [
     "ArgumentBinding",
     "ArgumentRole",
     "AllowedReceptionOpportunityEnvelope",
+    "AffectContent",
     "AttachmentAdmission",
     "AtomicPredicateHeadSpec",
     "BasisEpistemicTier",
     "BasisProvenanceKind",
     "BasisProvenanceRow",
+    "BoundedLimitedReception",
     "CaseParticleRule",
     "CaseParticleSurfaceVariant",
     "CMEE_COMMON_GUARD_PROOF_VERSION",
     "CMEE_GROUNDED_GRAPH_SCHEMA_VERSION",
+    "CMEE_READING_CONSEQUENCE_REQUIREMENT_CODES_EXACT4",
     "CMEE_OBLIGATION_VERSION",
     "CMEE_OWNER_UNIVERSE_SCHEMA_VERSION",
     "CMEE_SOURCE_OWNER_POLICY_VERSION",
@@ -17159,6 +17940,8 @@ __all__ = [
     "MeaningDecisionTrace",
     "MeaningDecisionTraceKind",
     "MeaningDecisionTraceRow",
+    "MeaningBoundReceptionProposition",
+    "MeaningBoundReceptionSet",
     "MeaningReadingOperation",
     "MeaningSemanticSignature",
     "MeaningEdge",
@@ -17181,6 +17964,9 @@ __all__ = [
     "PolicyApplicationRow",
     "PlannedObservationContribution",
     "PreMeaningGroundedInputs",
+    "ReadingConsequence",
+    "ReceptionContributionKind",
+    "ReceptionFunction",
     "PredicateMorphologyPlan",
     "PredicateSenseFrameLicense",
     "PredicateSenseSpec",
@@ -17205,6 +17991,7 @@ __all__ = [
     "SourceOwnerDisposition",
     "SourceOwnerResolution",
     "SelectedEmlisProvisionalReading",
+    "SealedEmlisProvisionalReading",
     "SemanticOperator",
     "SourceEnvelope",
     "SourceClassifierSpec",
@@ -17241,6 +18028,8 @@ __all__ = [
     "SubjectivePropositionV2",
     "SubjectiveResponsibilityKind",
     "SubjectiveResponsibilityRow",
+    "ResponseConsequenceRequirementCode",
+    "RelationalStance",
     "SubjectiveSpecificity",
     "Stage1V2UnitSeal",
     "SurfaceDerivation",
@@ -17254,6 +18043,7 @@ __all__ = [
     "WholeReadingConsequenceRow",
     "WholeReadingConsequenceValidationContext",
     "apply_meaning_signature_mutation",
+    "bounded_limited_reception_id",
     "counterfactual_mutation_id",
     "difference_configuration_id",
     "foreground_scope_basis_row_ref",
@@ -17265,6 +18055,8 @@ __all__ = [
     "input_specific_meaning_candidate_source_component_refs",
     "input_specificity_evidence_id",
     "limited_meaning_outcome_id",
+    "meaning_bound_reception_id",
+    "meaning_bound_reception_set_id",
     "meaning_decision_candidate_reason_codes",
     "meaning_selection_assessment_refs",
     "observed_distinction_id",
@@ -17273,12 +18065,15 @@ __all__ = [
     "project_premeaning_source_relation_rows",
     "project_stage1_policy_basis_binding_ref",
     "project_stage1_projection_preimage_ref",
+    "project_stage1_subjective_projection_seal_ref",
     "project_stage1_source_qualifier_binding_ref",
     "project_stage1_subjective_basis_binding_ref",
     "project_stage1_subjective_opportunity_key",
     "project_stage1_subjective_responsibility_ref",
     "recompute_input_specific_meaning_candidate_signature",
     "recompute_stage1_identity",
+    "reading_consequence_id",
+    "reading_consequence_source_constraint_refs",
     "required_difference_id",
     "resolve_mutation_application_spec",
     "requirement_bundle_id",
@@ -17286,12 +18081,15 @@ __all__ = [
     "stage1_projection_artifact_ref",
     "stage1_canonical_json_bytes",
     "selected_emlis_provisional_reading_id",
+    "sealed_emlis_provisional_reading_id",
+    "subjective_proposition_v2_id",
     "validate_stage1_anti_template_registry_invariant",
     "validate_stage1_final_logical_id_registry",
     "validate_stage1_identity",
     "validate_stage1_local_ref_dag",
     "validate_stage1_projection",
     "validate_stage1_projection_artifact_ref",
+    "validate_stage1_post_selection_reception_records",
     "validate_stage1_sentence_unit",
     "validate_stage1_trace_spine",
     "validate_foreground_scope",

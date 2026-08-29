@@ -12920,7 +12920,11 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             "SubjectiveClaimDraft", "MaterialValueContent", "ValueApplication",
             "Stage1PolicyFeatureVector", "PolicyApplicationSeed",
             "PolicyApplicationRow", "SubjectivePropositionV2",
-            "EmlisStage1Projection", "Stage1SubjectivePlanningInputs",
+            "EmlisStage1Projection", "ReadingConsequence",
+            "SealedEmlisProvisionalReading",
+            "MeaningBoundReceptionProposition",
+            "MeaningBoundReceptionSet", "BoundedLimitedReception",
+            "Stage1SubjectivePlanningInputs",
             "Stage1SurfaceCompositionInputs", "EmlisSubjectiveMeaningPlan",
             "SubjectiveResponsibilityRow", "SubjectiveOpportunityRow",
             "SubjectiveFacetSuppressionRow", "Stage1DiscourseArcView",
@@ -12941,7 +12945,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         )
         contract_manifest = dict(module._contract_manifest())
         descriptors = contract_manifest["logical_contract_descriptors"]
-        self.assertEqual(contract_manifest["logical_contract_count"], 59)
+        self.assertEqual(contract_manifest["logical_contract_count"], 64)
         self.assertEqual(
             tuple(dict(row)["type_name"] for row in descriptors),
             expected_contract_names,
@@ -25427,6 +25431,16 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
             if type(case.structure.meaning_decision_outcome)
             is contracts_module.LimitedMeaningOutcome
             and not case.structure.candidate_records
+            and case.structure.meaning_decision_outcome.retained_layer1_refs
+            and case.structure.meaning_decision_outcome.foreground_source_object_refs
+            and set(
+                case.structure.meaning_decision_outcome.retained_layer1_refs
+            ).issubset(
+                {
+                    row.contribution_id
+                    for row in case.premeaning_inputs.observation_contribution_rows
+                }
+            )
         )
         cls.mutation_template = next(
             mutation
@@ -25455,6 +25469,44 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
             value,
             mutation_id=contracts_module.counterfactual_mutation_id(value),
         )
+
+    @classmethod
+    def _im04_records(cls, case):
+        structure = case.structure
+        outcome = structure.meaning_decision_outcome
+        if type(outcome) is contracts_module.SelectedEmlisProvisionalReading:
+            candidate = next(
+                row
+                for row in structure.candidate_records
+                if row.candidate_id == outcome.selected_candidate_ref
+            )
+            basis_refs = candidate.basis_contribution_refs
+        else:
+            basis_refs = outcome.retained_layer1_refs
+        retained_rows = tuple(
+            stage1_composition_module.RetainedReceptionActRow(
+                act_ref,
+                act_ref,
+                basis_refs,
+            )
+            for act_ref in case.parent_plan.allowed_reception_act_ids
+        )
+        projection_preimage_ref = (
+            "projection-preimage:"
+            f"{hashlib.sha256(stage1_canonical_json_bytes(structure)).hexdigest()}"
+            "@cocolon.cmee.v1a.emlis_stage1_projection_preimage_ref.v1"
+        )
+        records = (
+            stage1_response_module.build_stage1_post_selection_reception_records(
+                input_specific_meaning_structure=structure,
+                projection_preimage_ref=projection_preimage_ref,
+                retained_reception_act_rows=retained_rows,
+                observation_contribution_rows=(
+                    case.premeaning_inputs.observation_contribution_rows
+                ),
+            )
+        )
+        return projection_preimage_ref, retained_rows, records
 
     @classmethod
     def _mutation_matrix(cls):
@@ -26333,6 +26385,381 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                 grounded_view=self.normal_case.grounded_view,
                 foreground_scope_derivation=self.normal_case.scope_derivation,
             )
+
+    def test_im04_normal_reading_consequence_and_reception_partition_are_post_selection(
+        self,
+    ) -> None:
+        carrier_fields = fields(
+            stage1_composition_module.Stage1SubjectivePlanningInputs
+        )
+        self.assertEqual(len(carrier_fields), 38)
+        carrier_names = tuple(row.name for row in carrier_fields)
+        base_index = carrier_names.index("projection_preimage_ref")
+        self.assertEqual(
+            carrier_names[base_index + 1 : base_index + 8],
+            (
+                "reading_consequence_records",
+                "sealed_emlis_provisional_reading_records",
+                "meaning_bound_reception_proposition_records",
+                "meaning_bound_reception_set_records",
+                "bounded_limited_reception_records",
+                "bounded_limited_subjective_proposition_records",
+                "projection_seal_ref",
+            ),
+        )
+        self.assertTrue(
+            all(
+                row.default is MISSING and row.default_factory is MISSING
+                for row in carrier_fields
+            )
+        )
+        structure = self.normal_case.structure
+        before = stage1_canonical_json_bytes(structure)
+        with patch.object(
+            input_specific_meaning_module,
+            "select_input_specific_meaning",
+            side_effect=AssertionError("im04_must_not_reselect"),
+        ) as selector:
+            preimage, retained_rows, records = self._im04_records(
+                self.normal_case
+            )
+            (
+                consequences,
+                sealed,
+                propositions,
+                sets,
+                bounded,
+                limited_propositions,
+                projection_seal_ref,
+            ) = records
+            self.assertEqual(
+                tuple(
+                    len(rows)
+                    for rows in (
+                        consequences,
+                        sealed,
+                        propositions,
+                        sets,
+                        bounded,
+                        limited_propositions,
+                    )
+                )[:2],
+                (1, 1),
+            )
+            self.assertTrue(1 <= len(propositions) <= 4)
+            self.assertEqual(
+                (len(sets), len(bounded), len(limited_propositions)),
+                (1, 0, 0),
+            )
+            outcome = structure.meaning_decision_outcome
+            candidate = next(
+                row
+                for row in structure.candidate_records
+                if row.candidate_id == outcome.selected_candidate_ref
+            )
+            whole_by_ref = {
+                row.consequence_id: row
+                for row in structure.whole_reading_consequence_rows
+            }
+            evidence = next(
+                row
+                for row in structure.input_specificity_evidence_records
+                if contracts_module.input_specificity_evidence_id(
+                    row,
+                    whole_reading_consequence_rows=tuple(
+                        whole_by_ref[ref]
+                        for ref in row.whole_reading_consequence_refs
+                    ),
+                )
+                == candidate.input_specificity_evidence_ref
+            )
+            resolved_rows = tuple(
+                whole_by_ref[ref]
+                for ref in evidence.whole_reading_consequence_refs
+            )
+            consequence = consequences[0]
+            consequence_ref = contracts_module.reading_consequence_id(
+                consequence,
+                whole_reading_consequence_rows=resolved_rows,
+            )
+            self.assertEqual(
+                (
+                    consequence.selected_reading_ref,
+                    consequence.input_specificity_evidence_ref,
+                    consequence.whole_reading_consequence_refs,
+                    consequence.changed_whole_reading_codes,
+                ),
+                (
+                    outcome.reading_id,
+                    candidate.input_specificity_evidence_ref,
+                    evidence.whole_reading_consequence_refs,
+                    tuple(
+                        code
+                        for code in contracts_module.WholeReadingConsequenceCode
+                        if code in {row.consequence_code for row in resolved_rows}
+                    ),
+                ),
+            )
+            self.assertEqual(
+                sealed[0].reading_consequence_ref, consequence_ref
+            )
+            self.assertRegex(
+                contracts_module.sealed_emlis_provisional_reading_id(
+                    sealed[0],
+                    selected_reading=outcome,
+                    reading_consequence=consequence,
+                    whole_reading_consequence_rows=resolved_rows,
+                ),
+                r"^sealed-emlis-provisional-reading:[0-9a-f]{64}@",
+            )
+            reception_set = sets[0]
+            proposition_refs = tuple(row.reception_id for row in propositions)
+            affirmative_refs = tuple(
+                row.reception_id
+                for row in propositions
+                if row.contribution_kind
+                == "AFFIRMATIVE_RECEPTION_CONTRIBUTION"
+            )
+            counter_refs = tuple(
+                row.reception_id
+                for row in propositions
+                if row.contribution_kind == "BOUNDED_COUNTERPOSITION"
+            )
+            self.assertEqual(reception_set.proposition_refs, proposition_refs)
+            self.assertEqual(
+                reception_set.affirmative_contribution_refs,
+                affirmative_refs,
+            )
+            self.assertEqual(
+                reception_set.optional_counterposition_refs, counter_refs
+            )
+            self.assertTrue(affirmative_refs)
+            self.assertFalse(set(affirmative_refs).intersection(counter_refs))
+            self.assertEqual(
+                set((*affirmative_refs, *counter_refs)), set(proposition_refs)
+            )
+            self.assertEqual(
+                tuple(
+                    contracts_module.meaning_bound_reception_id(row)
+                    for row in propositions
+                ),
+                proposition_refs,
+            )
+            self.assertRegex(
+                contracts_module.meaning_bound_reception_set_id(
+                    reception_set,
+                    proposition_records=propositions,
+                ),
+                r"^meaning-bound-reception-set:[0-9a-f]{64}@",
+            )
+            contracts_module.validate_stage1_post_selection_reception_records(
+                input_specific_meaning_structure=structure,
+                projection_preimage_ref=preimage,
+                reading_consequence_records=consequences,
+                sealed_emlis_provisional_reading_records=sealed,
+                meaning_bound_reception_proposition_records=propositions,
+                meaning_bound_reception_set_records=sets,
+                bounded_limited_reception_records=bounded,
+                bounded_limited_subjective_proposition_records=(
+                    limited_propositions
+                ),
+                projection_seal_ref=projection_seal_ref,
+                allowed_reception_act_ids=tuple(
+                    row.reception_act for row in retained_rows
+                ),
+                observation_contribution_refs=tuple(
+                    row.contribution_id
+                    for row in self.normal_case.premeaning_inputs.observation_contribution_rows
+                ),
+            )
+            self.assertEqual(
+                projection_seal_ref,
+                contracts_module.project_stage1_subjective_projection_seal_ref(
+                    preimage,
+                    meaning_decision_outcome=outcome,
+                    reading_consequence_records=consequences,
+                    sealed_emlis_provisional_reading_records=sealed,
+                    meaning_bound_reception_proposition_records=propositions,
+                    meaning_bound_reception_set_records=sets,
+                    bounded_limited_reception_records=bounded,
+                    bounded_limited_subjective_proposition_records=(
+                        limited_propositions
+                    ),
+                    whole_reading_consequence_rows=(
+                        structure.whole_reading_consequence_rows
+                    ),
+                ),
+            )
+            with self.assertRaises(CMEEStage1ContractError):
+                contracts_module.validate_stage1_post_selection_reception_records(
+                    input_specific_meaning_structure=structure,
+                    projection_preimage_ref=preimage,
+                    reading_consequence_records=consequences,
+                    sealed_emlis_provisional_reading_records=sealed,
+                    meaning_bound_reception_proposition_records=propositions,
+                    meaning_bound_reception_set_records=(
+                        replace(
+                            reception_set,
+                            reading_consequence_ref="foreign:im04",
+                        ),
+                    ),
+                    bounded_limited_reception_records=bounded,
+                    bounded_limited_subjective_proposition_records=(
+                        limited_propositions
+                    ),
+                    projection_seal_ref=projection_seal_ref,
+                    allowed_reception_act_ids=tuple(
+                        row.reception_act for row in retained_rows
+                    ),
+                    observation_contribution_refs=tuple(
+                        row.contribution_id
+                        for row in self.normal_case.premeaning_inputs.observation_contribution_rows
+                    ),
+                )
+        self.assertEqual(selector.call_count, 0)
+        self.assertEqual(stage1_canonical_json_bytes(structure), before)
+
+    def test_im04_limited_outcome_builds_focused_affirmative_reception_without_reselection(
+        self,
+    ) -> None:
+        structure = self.limited_case.structure
+        outcome = structure.meaning_decision_outcome
+        before = stage1_canonical_json_bytes(structure)
+        with patch.object(
+            input_specific_meaning_module,
+            "select_input_specific_meaning",
+            side_effect=AssertionError("im04_must_not_reselect"),
+        ) as selector:
+            preimage, retained_rows, records = self._im04_records(
+                self.limited_case
+            )
+            (
+                consequences,
+                sealed,
+                propositions,
+                sets,
+                bounded,
+                limited_propositions,
+                projection_seal_ref,
+            ) = records
+            self.assertEqual(
+                tuple(
+                    len(rows)
+                    for rows in (
+                        consequences,
+                        sealed,
+                        propositions,
+                        sets,
+                        bounded,
+                        limited_propositions,
+                    )
+                ),
+                (0, 0, 0, 0, 1, 1),
+            )
+            reception = bounded[0]
+            proposition = limited_propositions[0]
+            self.assertEqual(
+                reception.limited_outcome_ref,
+                contracts_module.limited_meaning_outcome_id(outcome),
+            )
+            self.assertEqual(
+                (
+                    reception.bound_layer1_contribution_refs,
+                    reception.foreground_source_object_refs,
+                    reception.retained_qualifier_refs,
+                ),
+                (
+                    outcome.retained_layer1_refs,
+                    outcome.foreground_source_object_refs,
+                    outcome.retained_qualifier_refs,
+                ),
+            )
+            self.assertIs(
+                reception.subjective_depth,
+                contracts_module.SubjectiveDepthClass.FOCUSED,
+            )
+            self.assertEqual(
+                reception.contribution_kind,
+                "AFFIRMATIVE_RECEPTION_CONTRIBUTION",
+            )
+            self.assertEqual(
+                reception.proposition_ref,
+                contracts_module.subjective_proposition_v2_id(proposition),
+            )
+            self.assertRegex(
+                contracts_module.bounded_limited_reception_id(
+                    reception,
+                    limited_outcome=outcome,
+                    subjective_proposition=proposition,
+                ),
+                r"^bounded-limited-reception:[0-9a-f]{64}@",
+            )
+            contracts_module.validate_stage1_post_selection_reception_records(
+                input_specific_meaning_structure=structure,
+                projection_preimage_ref=preimage,
+                reading_consequence_records=consequences,
+                sealed_emlis_provisional_reading_records=sealed,
+                meaning_bound_reception_proposition_records=propositions,
+                meaning_bound_reception_set_records=sets,
+                bounded_limited_reception_records=bounded,
+                bounded_limited_subjective_proposition_records=(
+                    limited_propositions
+                ),
+                projection_seal_ref=projection_seal_ref,
+                allowed_reception_act_ids=tuple(
+                    row.reception_act for row in retained_rows
+                ),
+                observation_contribution_refs=tuple(
+                    row.contribution_id
+                    for row in self.limited_case.premeaning_inputs.observation_contribution_rows
+                ),
+            )
+            self.assertEqual(
+                projection_seal_ref,
+                contracts_module.project_stage1_subjective_projection_seal_ref(
+                    preimage,
+                    meaning_decision_outcome=outcome,
+                    reading_consequence_records=consequences,
+                    sealed_emlis_provisional_reading_records=sealed,
+                    meaning_bound_reception_proposition_records=propositions,
+                    meaning_bound_reception_set_records=sets,
+                    bounded_limited_reception_records=bounded,
+                    bounded_limited_subjective_proposition_records=(
+                        limited_propositions
+                    ),
+                    whole_reading_consequence_rows=(
+                        structure.whole_reading_consequence_rows
+                    ),
+                ),
+            )
+            with self.assertRaises(CMEEStage1ContractError):
+                contracts_module.validate_stage1_post_selection_reception_records(
+                    input_specific_meaning_structure=structure,
+                    projection_preimage_ref=preimage,
+                    reading_consequence_records=consequences,
+                    sealed_emlis_provisional_reading_records=sealed,
+                    meaning_bound_reception_proposition_records=propositions,
+                    meaning_bound_reception_set_records=sets,
+                    bounded_limited_reception_records=(
+                        replace(
+                            reception,
+                            proposition_ref="foreign:im04",
+                        ),
+                    ),
+                    bounded_limited_subjective_proposition_records=(
+                        limited_propositions
+                    ),
+                    projection_seal_ref=projection_seal_ref,
+                    allowed_reception_act_ids=tuple(
+                        row.reception_act for row in retained_rows
+                    ),
+                    observation_contribution_refs=tuple(
+                        row.contribution_id
+                        for row in self.limited_case.premeaning_inputs.observation_contribution_rows
+                    ),
+                )
+        self.assertEqual(selector.call_count, 0)
+        self.assertEqual(stage1_canonical_json_bytes(structure), before)
 
 
 if __name__ == "__main__":

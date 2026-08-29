@@ -20,6 +20,7 @@ from .contracts import (
     AffectCategory,
     AffectIntensity,
     AllowedReceptionOpportunityEnvelope,
+    BoundedLimitedReception,
     AppraisalDimension,
     AppraisalOperation,
     ArgumentBinding,
@@ -57,10 +58,13 @@ from .contracts import (
     MatrixMorphologyParadigmSpec,
     MaterialRisk,
     MaterialValueContent,
+    MeaningBoundReceptionProposition,
+    MeaningBoundReceptionSet,
     MeaningFieldEntry,
     ObservationContributionKind,
     PlannedObservationContribution,
     PreMeaningGroundedInputs,
+    ReadingConsequence,
     ForegroundScopeDerivation,
     PolicyBasisBinding,
     PolicyBasisOwnerKind,
@@ -100,6 +104,7 @@ from .contracts import (
     SubjectiveMode,
     SubjectiveOperator,
     SubjectivePropositionV2,
+    SealedEmlisProvisionalReading,
     SubjectiveResponsibilityKind,
     SubjectiveSpecificity,
     SurfaceDerivation,
@@ -117,6 +122,7 @@ from .contracts import (
     validate_stage1_identity,
     validate_foreground_scope_derivation,
     validate_input_specific_meaning_structure,
+    validate_stage1_post_selection_reception_records,
     validate_premeaning_grounded_inputs,
 )
 from .emlis_input_specific_meaning import (
@@ -1653,6 +1659,23 @@ class Stage1SubjectivePlanningInputs:
         AllowedReceptionOpportunityEnvelope
     )
     projection_preimage_ref: str
+    reading_consequence_records: Tuple[ReadingConsequence, ...]
+    sealed_emlis_provisional_reading_records: Tuple[
+        SealedEmlisProvisionalReading, ...
+    ]
+    meaning_bound_reception_proposition_records: Tuple[
+        MeaningBoundReceptionProposition, ...
+    ]
+    meaning_bound_reception_set_records: Tuple[
+        MeaningBoundReceptionSet, ...
+    ]
+    bounded_limited_reception_records: Tuple[
+        BoundedLimitedReception, ...
+    ]
+    bounded_limited_subjective_proposition_records: Tuple[
+        SubjectivePropositionV2, ...
+    ]
+    projection_seal_ref: str
     interpretation_candidate_rows: Tuple[EmlisInterpretationCandidate, ...]
     meaning_field: Any
     observation_contribution_rows: Tuple[PlannedObservationContribution, ...]
@@ -4724,6 +4747,44 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
             grounded_view=phase_A.grounded_situation_view,
             foreground_scope_derivation=(
                 phase_A.foreground_scope_derivation
+            ),
+        )
+    except CMEEStage1ContractError:
+        raise Stage1CompositionError(
+            "STAGE1_INPUT_SPECIFIC_MEANING_STRUCTURE_STOP"
+        ) from None
+    try:
+        validate_stage1_post_selection_reception_records(
+            input_specific_meaning_structure=(
+                phase_A.input_specific_meaning_structure
+            ),
+            projection_preimage_ref=phase_A.projection_preimage_ref,
+            reading_consequence_records=(
+                phase_A.reading_consequence_records
+            ),
+            sealed_emlis_provisional_reading_records=(
+                phase_A.sealed_emlis_provisional_reading_records
+            ),
+            meaning_bound_reception_proposition_records=(
+                phase_A.meaning_bound_reception_proposition_records
+            ),
+            meaning_bound_reception_set_records=(
+                phase_A.meaning_bound_reception_set_records
+            ),
+            bounded_limited_reception_records=(
+                phase_A.bounded_limited_reception_records
+            ),
+            bounded_limited_subjective_proposition_records=(
+                phase_A.bounded_limited_subjective_proposition_records
+            ),
+            projection_seal_ref=phase_A.projection_seal_ref,
+            allowed_reception_act_ids=(
+                phase_A.allowed_reception_opportunity_envelope
+                .allowed_reception_act_ids
+            ),
+            observation_contribution_refs=tuple(
+                row.contribution_id
+                for row in phase_A.observation_contribution_rows
             ),
         )
     except CMEEStage1ContractError:
@@ -11652,7 +11713,7 @@ def _logical_contract_descriptor(
     )
 
 
-# This literal exact-59 inventory is deliberately independent of dataclass
+# This literal exact-64 inventory is deliberately independent of dataclass
 # introspection.  Logical Step-4 types which are not runtime-active in Step 2
 # are still frozen here with their complete approved field order/cardinality.
 _LOGICAL_CONTRACT_FIELD_SPECS = (
@@ -11674,7 +11735,12 @@ _LOGICAL_CONTRACT_FIELD_SPECS = (
     ("PolicyApplicationRow", "policy-row-v1", "policy_application_row_ref=exact1 affected_claim_policy_target_key=exact1 application_kind=exact1 principle_ref=exact1 material_risk=exact1 policy_basis_binding_refs=1..N material_risk_evidence_refs=1..N protected_subjective_binding_refs=0..N affected_claim_ref=exact1 source_reception_act_ref=0..1 act_basis_contribution_refs=0..N disposition=exact1 visible_claim_ref=0..1", ("SUPPRESSION_OR_VISIBILITY_DISCRIMINATED", "POST_CLAIM_REFS_EXCLUDED_FROM_ROW_ID"), "POLICY_ROW_PROJECTOR"),
     ("SubjectivePropositionV2", "proposition-v2", "schema_version=exact1 content_kind=exact1 subjective_mode=exact1 subjective_operator=exact1 target_contribution_refs=1..N primary_target_refs=1..N boundary_target_refs=0..N response_object_refs=1..N basis_binding_refs=1..N source_qualifier_binding_refs=1..N focal_relation_ref=0..1 affect_content=0..1 appraisal_content=0..1 material_value_content=0..1 relational_position=0..1 referenced_actor_refs=0..N referenced_experiencer_refs=0..N addressee_role=exact1 assertion_modality=exact1 epistemic_scope=exact1", ("CONTENT_DISCRIMINANT_EXACT1", "MODE_OPERATOR_MODALITY_TOTAL_DERIVATION"), "FINAL_PROPOSITION_PROJECTOR"),
     ("EmlisStage1Projection", "response-v2", "schema_version=exact1 projection_id=exact1 projection_preimage_ref=exact1 grounded_graph_ref=exact1 parent_observation_duty_ref=exact1 parent_reception_duty_ref=exact1 interpretation_candidates=1..N meaning_field=exact1 observation_contributions=1..N subjective_claims=1..4 ordered_observation_refs=1..N ordered_subjective_refs=1..4 retained_reception_act_ids=1..N observation_depth_class=exact1 subjective_depth_class=exact1 temperature_class=exact1 reception_style_policy_ref=exact1 emlis_value_policy_ref=exact1 composition_policy_ref=exact1 low_level_grammar_policy_ref=exact1 subjective_responsibility_rows=1..N subjective_opportunity_rows=1..N subjective_facet_suppression_rows=0..N subjective_basis_binding_rows=1..N source_qualifier_binding_rows=1..N policy_basis_binding_rows=0..N policy_application_rows=0..N", ("FULL_ROW_TABLE_EXACT_COVER", "SUBJECTIVE_DEPTH_POST_CLAIM_ONLY"), "FINAL_PROJECTION_SEAL"),
-    ("Stage1SubjectivePlanningInputs", "phase-a-v2", "admitted_source=exact1 grounded_graph=exact1 grounded_plan=exact1 parent_plan=exact1 premeaning_inputs=exact1 grounded_situation_view=exact1 foreground_scope_derivation=exact1 foreground_scope_disposition=exact1 input_specific_meaning_structure=exact1 allowed_reception_opportunity_envelope=exact1 projection_preimage_ref=exact1 interpretation_candidate_rows=1..N meaning_field=exact1 observation_contribution_rows=1..N retained_reception_act_rows=1..N material_unknown_refs=0..N observation_depth_class=exact1 temperature_class=exact1 reception_style_policy_ref=exact1 emlis_value_policy_ref=exact1 contribution_to_candidate_ref_map=1..N resolved_grounded_frame_by_candidate_ref=1..N relation_endpoint_grounded_candidate_ref_by_binding_key=0..N qualifier_value_by_candidate_scope_axis_key=1..N construction_registry_snapshot=exact1 expression_asset_registry_snapshot=exact1 response_object_registry_snapshot=exact1 functional_asset_registry_snapshot=exact1 participant_asset_registry_snapshot=exact1 structural_asset_registry_snapshot=exact1 profile_rule_registry_snapshot=exact1", ("PREMEANING_RECEPTION_TYPE_SPLIT", "FOREGROUND_SCOPE_DERIVED_BEFORE_RECEPTION", "IM02_STRUCTURE_DERIVED_BEFORE_RECEPTION", "FINAL_SUBJECTIVE_OUTPUT_EXACT0", "FULL_DOMAIN_FROZEN_MAPS"), "RESPONSE_PHASE_A_ADAPTER"),
+    ("ReadingConsequence", "meaning-consequence-v1", "selected_reading_ref=exact1 input_specificity_evidence_ref=exact1 whole_reading_consequence_refs=1..N changed_whole_reading_codes=1..N response_consequence_requirement_codes=exact4 source_constraint_refs=1..N", ("POST_SELECTION_ONLY", "NO_RECEPTION_FIELDS"), "INPUT_SPECIFIC_MEANING_OWNER"),
+    ("SealedEmlisProvisionalReading", "sealed-reading-v1", "selected_reading_ref=exact1 reading_consequence_ref=exact1", ("FULL_RECORD_REF_CLOSURE",), "POST_SELECTION_RESPONSE_ADAPTER"),
+    ("MeaningBoundReceptionProposition", "meaning-reception-v1", "schema_version=exact1 reception_id=exact1 selected_reading_ref=exact1 reception_function=exact1 responsibility_kind=exact1 subjective_mode=exact1 contribution_kind=exact1 response_object_refs=1..N preserved_difference_refs=1..N optional_affect=0..1 optional_stance=0..1 reading_status=exact1 subjective_assertion_modality=exact1", ("AFFIRMATIVE_OR_COUNTERPOSITION", "SELECTED_READING_EXACT_BIND"), "POST_SELECTION_RESPONSE_ADAPTER"),
+    ("MeaningBoundReceptionSet", "meaning-reception-set-v1", "schema_version=exact1 selected_reading_ref=exact1 reading_consequence_ref=exact1 subjective_depth=exact1 proposition_refs=1..4 affirmative_contribution_refs=1..4 optional_counterposition_refs=0..3", ("DISJOINT_UNION_EXACT_COVER", "SUBJECTIVE_DEPTH_CARDINALITY"), "POST_SELECTION_RESPONSE_ADAPTER"),
+    ("BoundedLimitedReception", "bounded-limited-reception-v1", "schema_version=exact1 limited_outcome_ref=exact1 bound_layer1_contribution_refs=1..N foreground_source_object_refs=1..N retained_qualifier_refs=0..N subjective_depth=FOCUSED proposition_ref=exact1 contribution_kind=AFFIRMATIVE_RECEPTION_CONTRIBUTION", ("NO_FAKE_SELECTED_READING", "SOURCE_BOUND_EXACT1"), "POST_SELECTION_RESPONSE_ADAPTER"),
+    ("Stage1SubjectivePlanningInputs", "phase-a-v2", "admitted_source=exact1 grounded_graph=exact1 grounded_plan=exact1 parent_plan=exact1 premeaning_inputs=exact1 grounded_situation_view=exact1 foreground_scope_derivation=exact1 foreground_scope_disposition=exact1 input_specific_meaning_structure=exact1 allowed_reception_opportunity_envelope=exact1 projection_preimage_ref=exact1 reading_consequence_records=0..1 sealed_emlis_provisional_reading_records=0..1 meaning_bound_reception_proposition_records=0..4 meaning_bound_reception_set_records=0..1 bounded_limited_reception_records=0..1 bounded_limited_subjective_proposition_records=0..1 projection_seal_ref=exact1 interpretation_candidate_rows=1..N meaning_field=exact1 observation_contribution_rows=1..N retained_reception_act_rows=1..N material_unknown_refs=0..N observation_depth_class=exact1 temperature_class=exact1 reception_style_policy_ref=exact1 emlis_value_policy_ref=exact1 contribution_to_candidate_ref_map=1..N resolved_grounded_frame_by_candidate_ref=1..N relation_endpoint_grounded_candidate_ref_by_binding_key=0..N qualifier_value_by_candidate_scope_axis_key=1..N construction_registry_snapshot=exact1 expression_asset_registry_snapshot=exact1 response_object_registry_snapshot=exact1 functional_asset_registry_snapshot=exact1 participant_asset_registry_snapshot=exact1 structural_asset_registry_snapshot=exact1 profile_rule_registry_snapshot=exact1", ("PREMEANING_RECEPTION_TYPE_SPLIT", "FOREGROUND_SCOPE_DERIVED_BEFORE_RECEPTION", "IM02_STRUCTURE_DERIVED_BEFORE_RECEPTION", "IM04_BRANCH_CARDINALITY_EXACT", "FULL_DOMAIN_FROZEN_MAPS"), "RESPONSE_PHASE_A_ADAPTER"),
     ("Stage1SurfaceCompositionInputs", "phase-b-v1", "admitted_source=exact1 grounded_graph=exact1 grounded_plan=exact1 parent_plan=exact1 projection=exact1 resolved_grounded_frame_by_candidate_ref=1..N relation_endpoint_grounded_candidate_ref_by_binding_key=0..N qualifier_value_by_candidate_scope_axis_key=1..N addressee_deictic_context=exact1 section_speaker_owner_ref=0..1 construction_registry_snapshot=exact1 expression_asset_registry_snapshot=exact1 response_object_registry_snapshot=exact1 functional_asset_registry_snapshot=exact1 participant_asset_registry_snapshot=exact1 structural_asset_registry_snapshot=exact1 profile_rule_registry_snapshot=exact1", ("PHASE_A_BYTES_EXACT_MATCH", "FINAL_PROJECTION_EXACT1"), "RESPONSE_PHASE_B_ADAPTER"),
     ("EmlisSubjectiveMeaningPlan", "meaning-plan-v1", "projection_preimage_ref=exact1 subjective_claim_rows=1..4 thought_support_status=exact1 content_bearing_thought_claim_refs=0..N retained_reception_act_refs=1..N subjective_responsibility_rows=1..N subjective_opportunity_rows=1..N responsibility_coverage_rows=1..N subjective_basis_binding_rows=1..N source_qualifier_binding_rows=1..N policy_basis_binding_rows=0..N policy_application_rows=0..N subjective_facet_suppression_rows=0..N", ("REQUEST_LOCAL_VIEW_NOT_ARTIFACT", "OPPORTUNITY_PARTITION_EXACT_COVER"), "SUBJECTIVE_MEANING_PROJECTOR"),
     ("SubjectiveResponsibilityRow", "responsibility-v1", "responsibility_ref=exact1 responsibility_kind=exact1 owner_component_refs=1..N retained_reception_act_refs=1..N", ("CLOSED_EXACT4_KIND",), "RESPONSIBILITY_PROJECTOR"),
@@ -11756,11 +11822,11 @@ def _contract_manifest() -> tuple[Any, ...]:
         _logical_contract_descriptor(*row)
         for row in _LOGICAL_CONTRACT_FIELD_SPECS
     )
-    if len(descriptors) != 59 or len({row[0][1] for row in descriptors}) != 59:
+    if len(descriptors) != 64 or len({row[0][1] for row in descriptors}) != 64:
         raise Stage1CompositionError("LANGUAGE_CORE_CONTRACT_DESCRIPTOR_STOP")
     return (
         ("schema_version", _CONTRACT_MANIFEST_SCHEMA_VERSION),
-        ("logical_contract_count", 59),
+        ("logical_contract_count", 64),
         ("logical_contract_descriptors", descriptors),
         ("content_kind_derivation_rows", LANGUAGE_CORE_CONTENT_DERIVATION_ROWS),
         ("concrete_runtime_binding_descriptors", LANGUAGE_CORE_CONCRETE_BINDING_DESCRIPTORS),
