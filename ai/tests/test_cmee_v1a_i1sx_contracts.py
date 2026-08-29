@@ -25473,40 +25473,131 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
     @classmethod
     def _im04_records(cls, case):
         structure = case.structure
-        outcome = structure.meaning_decision_outcome
-        if type(outcome) is contracts_module.SelectedEmlisProvisionalReading:
-            candidate = next(
-                row
-                for row in structure.candidate_records
-                if row.candidate_id == outcome.selected_candidate_ref
-            )
-            basis_refs = candidate.basis_contribution_refs
-        else:
-            basis_refs = outcome.retained_layer1_refs
+        premeaning = case.premeaning_inputs
+        candidates = stage1_response_module._final_stage1_candidate_closure(
+            source=case.source,
+            grounded_graph=case.grounded_graph,
+            grounded_plan=case.grounded_plan,
+            candidate_rows=premeaning.interpretation_candidate_rows,
+            stage1_response_schema_version=(
+                contracts_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+            ),
+        )
+        reception_plan = stage1_response_module._semantic_reception_asset(
+            source=case.source,
+            grounded_plan=case.grounded_plan,
+        )
+        stage1_response_module.validate_reception_asset_mapping(
+            reception_plan,
+            grounded_plan=case.grounded_plan,
+        )
+        retained_act_ids = tuple(case.parent_plan.allowed_reception_act_ids)
+        if stage1_response_module._ordered(
+            str(move.reception_act) for move in reception_plan.moves
+        ) != retained_act_ids:
+            raise AssertionError("IM04 Reception asset parent act mismatch")
+        plan_binding = stage1_response_module._bind_grounded_plan(
+            case.source,
+            case.grounded_graph,
+            case.grounded_plan,
+        )
+        contributions = premeaning.observation_contribution_rows
+        bound_moves = stage1_response_module._bind_reception_moves(
+            reception_plan,
+            binding=plan_binding,
+            contributions=contributions,
+        )
         retained_rows = tuple(
             stage1_composition_module.RetainedReceptionActRow(
-                act_ref,
-                act_ref,
-                basis_refs,
+                act_ref=act_ref,
+                reception_act=act_ref,
+                basis_contribution_refs=stage1_response_module._ordered(
+                    row.contribution_id
+                    for bound_move in bound_moves
+                    if str(bound_move.move.reception_act) == act_ref
+                    for row in bound_move.basis_contributions
+                ),
             )
-            for act_ref in case.parent_plan.allowed_reception_act_ids
+            for act_ref in retained_act_ids
         )
-        projection_preimage_ref = (
-            "projection-preimage:"
-            f"{hashlib.sha256(stage1_canonical_json_bytes(structure)).hexdigest()}"
-            "@cocolon.cmee.v1a.emlis_stage1_projection_preimage_ref.v1"
+        if any(not row.basis_contribution_refs for row in retained_rows):
+            raise AssertionError("IM04 retained Reception basis missing")
+        contribution_map = tuple(
+            (
+                contribution.contribution_id,
+                stage1_response_module.resolve_candidate_for_contribution(
+                    candidates,
+                    contribution,
+                ).candidate_id,
+            )
+            for contribution in contributions
         )
+        _frame_rows, _endpoint_rows, qualifier_rows = (
+            stage1_response_module._final_stage1_semantic_maps(
+                source=case.source,
+                grounded_graph=case.grounded_graph,
+                grounded_plan=case.grounded_plan,
+                candidate_rows=candidates,
+            )
+        )
+        style_ref = stage1_response_module._style_policy_ref_for_stance(
+            str(reception_plan.stance)
+        )
+        temperature = stage1_response_module._temperature_for_reception_asset(
+            reception_plan,
+            case.grounded_plan,
+        )
+        projection_inputs = {
+            "grounded_graph_ref": stage1_response_module._graph_ref(
+                case.grounded_graph
+            ),
+            "parent_observation_duty_ref": (
+                case.parent_plan.observation_duty_id
+            ),
+            "parent_reception_duty_ref": case.parent_plan.reception_duty_id,
+            "interpretation_candidate_ids": tuple(
+                row.candidate_id for row in candidates
+            ),
+            "meaning_field_id": premeaning.meaning_field.meaning_field_id,
+            "observation_contribution_ids": tuple(
+                row.contribution_id for row in contributions
+            ),
+            "retained_reception_act_ids": retained_act_ids,
+            "observation_depth_class": premeaning.observation_depth_class,
+            "temperature_class": temperature,
+            "reception_style_policy_ref": style_ref,
+            "emlis_value_policy_ref": CMEE_STAGE1_VALUE_POLICY_REF,
+        }
+        projection_preimage_ref = project_stage1_projection_preimage_ref(
+            **projection_inputs
+        )
+        authority = {
+            "retained_reception_act_rows": retained_rows,
+            "observation_contribution_rows": contributions,
+            "interpretation_candidate_rows": candidates,
+            "contribution_to_candidate_ref_map": contribution_map,
+            "qualifier_value_rows": qualifier_rows,
+            "material_unknown_refs": premeaning.material_unknown_refs,
+        }
         records = (
             stage1_response_module.build_stage1_post_selection_reception_records(
                 input_specific_meaning_structure=structure,
                 projection_preimage_ref=projection_preimage_ref,
-                retained_reception_act_rows=retained_rows,
-                observation_contribution_rows=(
-                    case.premeaning_inputs.observation_contribution_rows
-                ),
+                **authority,
             )
         )
-        return projection_preimage_ref, retained_rows, records
+        return SimpleNamespace(
+            projection_preimage_ref=projection_preimage_ref,
+            projection_inputs=projection_inputs,
+            retained_rows=retained_rows,
+            candidates=candidates,
+            contributions=contributions,
+            contribution_map=contribution_map,
+            qualifier_rows=qualifier_rows,
+            material_unknown_refs=premeaning.material_unknown_refs,
+            authority=authority,
+            records=records,
+        )
 
     @classmethod
     def _mutation_matrix(cls):
@@ -26415,14 +26506,67 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
         )
         structure = self.normal_case.structure
         before = stage1_canonical_json_bytes(structure)
+        phase_a = stage1_response_module.build_subjective_planning_inputs(
+            source=self.normal_case.source,
+            grounded_graph=self.normal_case.grounded_graph,
+            parent_plan=self.normal_case.parent_plan,
+            grounded_plan=self.normal_case.grounded_plan,
+        )
+        self.assertEqual(
+            stage1_canonical_json_bytes(
+                phase_a.input_specific_meaning_structure
+            ),
+            before,
+        )
+        forged_preimage_ref = f"projection-preimage-{'0' * 64}"
+        forged_projection_seal_ref = (
+            contracts_module.project_stage1_subjective_projection_seal_ref(
+                forged_preimage_ref,
+                meaning_decision_outcome=(
+                    phase_a.input_specific_meaning_structure.meaning_decision_outcome
+                ),
+                reading_consequence_records=(
+                    phase_a.reading_consequence_records
+                ),
+                sealed_emlis_provisional_reading_records=(
+                    phase_a.sealed_emlis_provisional_reading_records
+                ),
+                meaning_bound_reception_proposition_records=(
+                    phase_a.meaning_bound_reception_proposition_records
+                ),
+                meaning_bound_reception_set_records=(
+                    phase_a.meaning_bound_reception_set_records
+                ),
+                bounded_limited_reception_records=(
+                    phase_a.bounded_limited_reception_records
+                ),
+                bounded_limited_subjective_proposition_records=(
+                    phase_a.bounded_limited_subjective_proposition_records
+                ),
+                whole_reading_consequence_rows=(
+                    phase_a.input_specific_meaning_structure.whole_reading_consequence_rows
+                ),
+            )
+        )
+        with self.assertRaisesRegex(
+            stage1_composition_module.Stage1CompositionError,
+            "STAGE1_PROJECTION_PREIMAGE_CLOSURE_STOP",
+        ):
+            stage1_composition_module._validate_phase_A(
+                replace(
+                    phase_a,
+                    projection_preimage_ref=forged_preimage_ref,
+                    projection_seal_ref=forged_projection_seal_ref,
+                )
+            )
         with patch.object(
             input_specific_meaning_module,
             "select_input_specific_meaning",
             side_effect=AssertionError("im04_must_not_reselect"),
         ) as selector:
-            preimage, retained_rows, records = self._im04_records(
-                self.normal_case
-            )
+            context = self._im04_records(self.normal_case)
+            preimage = context.projection_preimage_ref
+            retained_rows = context.retained_rows
             (
                 consequences,
                 sealed,
@@ -26431,7 +26575,13 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                 bounded,
                 limited_propositions,
                 projection_seal_ref,
-            ) = records
+            ) = context.records
+            self.assertEqual(
+                preimage,
+                project_stage1_projection_preimage_ref(
+                    **context.projection_inputs
+                ),
+            )
             self.assertEqual(
                 tuple(
                     len(rows)
@@ -26545,6 +26695,57 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                 ),
                 proposition_refs,
             )
+            responsibility_by_mode = {
+                SubjectiveMode.ATTENTION: (
+                    contracts_module.SubjectiveResponsibilityKind.MATERIAL_APPRAISAL,
+                    SubjectiveAssertionModality.EMLIS_APPRAISAL,
+                ),
+                SubjectiveMode.PERSONAL_APPRAISAL: (
+                    contracts_module.SubjectiveResponsibilityKind.MATERIAL_APPRAISAL,
+                    SubjectiveAssertionModality.EMLIS_APPRAISAL,
+                ),
+                SubjectiveMode.AFFECTIVE_RESPONSE: (
+                    contracts_module.SubjectiveResponsibilityKind.AFFECTIVE_RESPONSE,
+                    SubjectiveAssertionModality.EMLIS_FEELING,
+                ),
+                SubjectiveMode.VALUE_POSITION: (
+                    contracts_module.SubjectiveResponsibilityKind.POLICY_VISIBLE_VALUE,
+                    SubjectiveAssertionModality.EMLIS_VALUE_POSITION,
+                ),
+                SubjectiveMode.RELATIONAL_STANCE: (
+                    contracts_module.SubjectiveResponsibilityKind.RELATIONAL_POSITION,
+                    SubjectiveAssertionModality.EMLIS_RELATIONAL_INTENTION,
+                ),
+                SubjectiveMode.BOUNDED_COUNTERPOSITION: (
+                    contracts_module.SubjectiveResponsibilityKind.RELATIONAL_POSITION,
+                    SubjectiveAssertionModality.EMLIS_BOUNDED_REFUSAL,
+                ),
+            }
+            mapping_by_act = {
+                row.reception_act: row
+                for row in CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7
+            }
+            for proposition in propositions:
+                mapping = mapping_by_act[proposition.reception_function]
+                self.assertIn(
+                    proposition.subjective_mode,
+                    tuple(
+                        mode
+                        for mode, _operator in mapping.eligible_mode_operator_pairs
+                    ),
+                )
+                self.assertEqual(
+                    (
+                        proposition.responsibility_kind,
+                        proposition.subjective_assertion_modality,
+                    ),
+                    responsibility_by_mode[proposition.subjective_mode],
+                )
+                self.assertTrue(
+                    set(proposition.response_object_refs).issubset(
+                        consequence.source_constraint_refs
+                    )
+                )
             self.assertRegex(
                 contracts_module.meaning_bound_reception_set_id(
                     reception_set,
@@ -26564,13 +26765,7 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                     limited_propositions
                 ),
                 projection_seal_ref=projection_seal_ref,
-                allowed_reception_act_ids=tuple(
-                    row.reception_act for row in retained_rows
-                ),
-                observation_contribution_refs=tuple(
-                    row.contribution_id
-                    for row in self.normal_case.premeaning_inputs.observation_contribution_rows
-                ),
+                **context.authority,
             )
             self.assertEqual(
                 projection_seal_ref,
@@ -26608,13 +26803,218 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                         limited_propositions
                     ),
                     projection_seal_ref=projection_seal_ref,
-                    allowed_reception_act_ids=tuple(
-                        row.reception_act for row in retained_rows
+                    **context.authority,
+                )
+
+            source_proposition = propositions[0]
+            allowed_modes = {
+                mode
+                for mode, _operator in mapping_by_act[
+                    source_proposition.reception_function
+                ].eligible_mode_operator_pairs
+            }
+            invalid_mode = next(
+                mode for mode in SubjectiveMode if mode not in allowed_modes
+            )
+            tampered_proposition = replace(
+                source_proposition,
+                reception_id="",
+                subjective_mode=invalid_mode,
+            )
+            tampered_proposition = replace(
+                tampered_proposition,
+                reception_id=contracts_module.meaning_bound_reception_id(
+                    tampered_proposition
+                ),
+            )
+            tampered_propositions = (
+                tampered_proposition,
+                *propositions[1:],
+            )
+            tampered_affirmative_refs = tuple(
+                row.reception_id
+                for row in tampered_propositions
+                if row.contribution_kind
+                == "AFFIRMATIVE_RECEPTION_CONTRIBUTION"
+            )
+            tampered_counter_refs = tuple(
+                row.reception_id
+                for row in tampered_propositions
+                if row.contribution_kind == "BOUNDED_COUNTERPOSITION"
+            )
+            tampered_set = replace(
+                reception_set,
+                proposition_refs=tuple(
+                    row.reception_id for row in tampered_propositions
+                ),
+                affirmative_contribution_refs=tampered_affirmative_refs,
+                optional_counterposition_refs=tampered_counter_refs,
+            )
+            tampered_seal = (
+                contracts_module.project_stage1_subjective_projection_seal_ref(
+                    preimage,
+                    meaning_decision_outcome=outcome,
+                    reading_consequence_records=consequences,
+                    sealed_emlis_provisional_reading_records=sealed,
+                    meaning_bound_reception_proposition_records=(
+                        tampered_propositions
                     ),
-                    observation_contribution_refs=tuple(
-                        row.contribution_id
-                        for row in self.normal_case.premeaning_inputs.observation_contribution_rows
+                    meaning_bound_reception_set_records=(tampered_set,),
+                    bounded_limited_reception_records=bounded,
+                    bounded_limited_subjective_proposition_records=(
+                        limited_propositions
                     ),
+                    whole_reading_consequence_rows=(
+                        structure.whole_reading_consequence_rows
+                    ),
+                )
+            )
+            with self.assertRaisesRegex(
+                CMEEStage1ContractError,
+                "MEANING_RESPONSE_CONSEQUENCE_GAP|meaning_bound_reception_binding_invalid",
+            ):
+                contracts_module.validate_stage1_post_selection_reception_records(
+                    input_specific_meaning_structure=structure,
+                    projection_preimage_ref=preimage,
+                    reading_consequence_records=consequences,
+                    sealed_emlis_provisional_reading_records=sealed,
+                    meaning_bound_reception_proposition_records=(
+                        tampered_propositions
+                    ),
+                    meaning_bound_reception_set_records=(tampered_set,),
+                    bounded_limited_reception_records=bounded,
+                    bounded_limited_subjective_proposition_records=(
+                        limited_propositions
+                    ),
+                    projection_seal_ref=tampered_seal,
+                    **context.authority,
+                )
+
+            raw_depth_set = replace(
+                reception_set,
+                subjective_depth=reception_set.subjective_depth.value,
+            )
+            with self.assertRaisesRegex(
+                CMEEStage1ContractError,
+                "meaning_bound_reception_set_type_invalid|meaning_bound_reception_partition_invalid",
+            ):
+                contracts_module.validate_stage1_post_selection_reception_records(
+                    input_specific_meaning_structure=structure,
+                    projection_preimage_ref=preimage,
+                    reading_consequence_records=consequences,
+                    sealed_emlis_provisional_reading_records=sealed,
+                    meaning_bound_reception_proposition_records=propositions,
+                    meaning_bound_reception_set_records=(raw_depth_set,),
+                    bounded_limited_reception_records=bounded,
+                    bounded_limited_subjective_proposition_records=(
+                        limited_propositions
+                    ),
+                    projection_seal_ref=projection_seal_ref,
+                    **context.authority,
+                )
+
+            conflicting_rows = tuple(
+                stage1_composition_module.RetainedReceptionActRow(
+                    act_ref=mapping.reception_act,
+                    reception_act=mapping.reception_act,
+                    basis_contribution_refs=candidate.basis_contribution_refs,
+                )
+                for mapping in CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7
+                if mapping.reception_act != "bounded_counter_self_denial"
+            )[:5]
+            self.assertEqual(len(conflicting_rows), 5)
+            with self.assertRaisesRegex(
+                CMEEStage1ContractError,
+                "RECEPTION_BINDING_CONFLICT_STOP",
+            ):
+                stage1_response_module.build_stage1_post_selection_reception_records(
+                    input_specific_meaning_structure=structure,
+                    projection_preimage_ref=preimage,
+                    **{
+                        **context.authority,
+                        "retained_reception_act_rows": conflicting_rows,
+                    },
+                )
+
+            adversarial_case = next(
+                case
+                for case in self.actual_cases
+                if type(case.structure.meaning_decision_outcome)
+                is contracts_module.SelectedEmlisProvisionalReading
+                and "honor_concrete_effort"
+                in case.parent_plan.allowed_reception_act_ids
+                and len(
+                    case.premeaning_inputs.observation_contribution_rows
+                )
+                > 1
+            )
+            adversarial_context = self._im04_records(adversarial_case)
+            adversarial_outcome = (
+                adversarial_case.structure.meaning_decision_outcome
+            )
+            adversarial_candidate = next(
+                row
+                for row in adversarial_case.structure.candidate_records
+                if row.candidate_id
+                == adversarial_outcome.selected_candidate_ref
+            )
+            adversarial_records = adversarial_context.records
+            adversarial_proposition = adversarial_records[2][0]
+            source_row = next(
+                row
+                for row in adversarial_context.retained_rows
+                if row.reception_act
+                == adversarial_proposition.reception_function
+            )
+            foreign_contribution_ref = next(
+                row.contribution_id
+                for row in adversarial_context.contributions
+                if row.contribution_id
+                not in adversarial_candidate.basis_contribution_refs
+            )
+            mixed_source_row = replace(
+                source_row,
+                basis_contribution_refs=(
+                    *source_row.basis_contribution_refs,
+                    foreign_contribution_ref,
+                ),
+            )
+            mixed_retained_rows = tuple(
+                mixed_source_row if row is source_row else row
+                for row in adversarial_context.retained_rows
+            )
+            with self.assertRaisesRegex(
+                CMEEStage1ContractError,
+                "MEANING_RESPONSE_CONSEQUENCE_GAP",
+            ):
+                contracts_module.validate_stage1_post_selection_reception_records(
+                    input_specific_meaning_structure=(
+                        adversarial_case.structure
+                    ),
+                    projection_preimage_ref=(
+                        adversarial_context.projection_preimage_ref
+                    ),
+                    reading_consequence_records=adversarial_records[0],
+                    sealed_emlis_provisional_reading_records=(
+                        adversarial_records[1]
+                    ),
+                    meaning_bound_reception_proposition_records=(
+                        adversarial_records[2]
+                    ),
+                    meaning_bound_reception_set_records=(
+                        adversarial_records[3]
+                    ),
+                    bounded_limited_reception_records=(
+                        adversarial_records[4]
+                    ),
+                    bounded_limited_subjective_proposition_records=(
+                        adversarial_records[5]
+                    ),
+                    projection_seal_ref=adversarial_records[6],
+                    **{
+                        **adversarial_context.authority,
+                        "retained_reception_act_rows": mixed_retained_rows,
+                    },
                 )
         self.assertEqual(selector.call_count, 0)
         self.assertEqual(stage1_canonical_json_bytes(structure), before)
@@ -26625,14 +27025,34 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
         structure = self.limited_case.structure
         outcome = structure.meaning_decision_outcome
         before = stage1_canonical_json_bytes(structure)
+        exact_basis_case = next(
+            case
+            for case in self.actual_cases
+            if type(case.structure.meaning_decision_outcome)
+            is contracts_module.LimitedMeaningOutcome
+            and "protect_retained_intention"
+            in case.parent_plan.allowed_reception_act_ids
+            and len(
+                case.structure.meaning_decision_outcome.foreground_source_object_refs
+            )
+            == 2
+        )
+        exact_basis_phase_a = (
+            stage1_response_module.build_subjective_planning_inputs(
+                source=exact_basis_case.source,
+                grounded_graph=exact_basis_case.grounded_graph,
+                parent_plan=exact_basis_case.parent_plan,
+                grounded_plan=exact_basis_case.grounded_plan,
+            )
+        )
         with patch.object(
             input_specific_meaning_module,
             "select_input_specific_meaning",
             side_effect=AssertionError("im04_must_not_reselect"),
         ) as selector:
-            preimage, retained_rows, records = self._im04_records(
-                self.limited_case
-            )
+            context = self._im04_records(self.limited_case)
+            preimage = context.projection_preimage_ref
+            retained_rows = context.retained_rows
             (
                 consequences,
                 sealed,
@@ -26641,7 +27061,13 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                 bounded,
                 limited_propositions,
                 projection_seal_ref,
-            ) = records
+            ) = context.records
+            self.assertEqual(
+                preimage,
+                project_stage1_projection_preimage_ref(
+                    **context.projection_inputs
+                ),
+            )
             self.assertEqual(
                 tuple(
                     len(rows)
@@ -26686,6 +27112,197 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                 reception.proposition_ref,
                 contracts_module.subjective_proposition_v2_id(proposition),
             )
+            basis_rows, qualifier_binding_rows = (
+                contracts_module.resolve_limited_subjective_binding_rows(
+                    projection_preimage_ref=preimage,
+                    limited_outcome=outcome,
+                    observation_contribution_rows=context.contributions,
+                    interpretation_candidate_rows=context.candidates,
+                    contribution_to_candidate_ref_map=(
+                        context.contribution_map
+                    ),
+                    qualifier_value_rows=context.qualifier_rows,
+                )
+            )
+            proposition_basis_ref_set = set(
+                proposition.basis_binding_refs
+            )
+            proposition_basis_rows = tuple(
+                row
+                for row in basis_rows
+                if row.binding_ref in proposition_basis_ref_set
+            )
+            proposition_qualifier_rows = tuple(
+                row
+                for row in qualifier_binding_rows
+                if row.basis_binding_ref in proposition_basis_ref_set
+            )
+            with self.assertRaisesRegex(
+                CMEEStage1ContractError,
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP",
+            ):
+                contracts_module.resolve_limited_subjective_binding_rows(
+                    projection_preimage_ref=preimage,
+                    limited_outcome=replace(
+                        outcome,
+                        retained_qualifier_refs=("foreign:qualifier",),
+                    ),
+                    observation_contribution_rows=context.contributions,
+                    interpretation_candidate_rows=context.candidates,
+                    contribution_to_candidate_ref_map=(
+                        context.contribution_map
+                    ),
+                    qualifier_value_rows=context.qualifier_rows,
+                )
+            self.assertEqual(
+                proposition.basis_binding_refs,
+                tuple(row.binding_ref for row in proposition_basis_rows),
+            )
+            self.assertEqual(
+                proposition.source_qualifier_binding_refs,
+                tuple(
+                    row.source_qualifier_binding_ref
+                    for row in proposition_qualifier_rows
+                ),
+            )
+            self.assertTrue(
+                set(proposition.target_contribution_refs).issubset(
+                    outcome.retained_layer1_refs
+                )
+            )
+            self.assertTrue(
+                set(proposition.primary_target_refs).issubset(
+                    outcome.foreground_source_object_refs
+                )
+            )
+            allowed_pair = (
+                proposition.subjective_mode,
+                proposition.subjective_operator,
+            )
+            self.assertTrue(
+                any(
+                    allowed_pair
+                    in next(
+                        mapping.eligible_mode_operator_pairs
+                        for mapping in CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7
+                        if mapping.reception_act == row.reception_act
+                    )
+                    and bool(row.basis_contribution_refs)
+                    and set(row.basis_contribution_refs).issubset(
+                        outcome.retained_layer1_refs
+                    )
+                    and set(row.basis_contribution_refs)
+                    == set(proposition.target_contribution_refs)
+                    for row in retained_rows
+                    if row.reception_act != "bounded_counter_self_denial"
+                )
+            )
+            forbidden_promotions = stage1_subjective_forbidden_promotions(
+                context.contributions,
+                material_unknown_refs=context.material_unknown_refs,
+            )
+            validate_subjective_proposition_v2(
+                proposition,
+                projection_preimage_ref=preimage,
+                basis_rows=proposition_basis_rows,
+                qualifier_rows=proposition_qualifier_rows,
+                expected_basis_rows=proposition_basis_rows,
+                expected_qualifier_rows=proposition_qualifier_rows,
+                policy_basis_rows=(),
+                expected_policy_basis_rows=(),
+                allowed_contribution_refs=tuple(
+                    row.contribution_id for row in context.contributions
+                ),
+                allowed_semantic_refs=tuple(
+                    dict.fromkeys(row.semantic_ref for row in basis_rows)
+                ),
+                allowed_source_candidate_refs=tuple(
+                    row.candidate_id for row in context.candidates
+                ),
+                allowed_policy_application_row_refs=(),
+                admitted_relation_refs=(),
+                material_unknown_refs=context.material_unknown_refs,
+                expected_actor_refs=proposition.referenced_actor_refs,
+                expected_experiencer_refs=(
+                    proposition.referenced_experiencer_refs
+                ),
+                expected_focal_relation_ref=proposition.focal_relation_ref,
+                owner_ref=dict(CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY)[
+                    "CMEE_STAGE1_EMLIS_OWNER_REF"
+                ],
+                speaker_owner="EMLIS",
+                user_fact_effect=0,
+                forbidden_promotions=forbidden_promotions,
+                expected_forbidden_promotions=forbidden_promotions,
+            )
+
+            all_basis_refs = tuple(row.binding_ref for row in basis_rows)
+            all_contribution_refs = tuple(
+                dict.fromkeys(row.contribution_ref for row in basis_rows)
+            )
+            all_semantic_refs = tuple(
+                dict.fromkeys(row.semantic_ref for row in basis_rows)
+            )
+            overbroad_proposition = replace(
+                proposition,
+                target_contribution_refs=all_contribution_refs,
+                primary_target_refs=all_semantic_refs,
+                response_object_refs=all_semantic_refs,
+                basis_binding_refs=all_basis_refs,
+                source_qualifier_binding_refs=tuple(
+                    row.source_qualifier_binding_ref
+                    for row in qualifier_binding_rows
+                ),
+                relational_position=replace(
+                    proposition.relational_position,
+                    target_bindings=all_basis_refs,
+                ),
+            )
+            self.assertNotEqual(
+                overbroad_proposition.target_contribution_refs,
+                proposition.target_contribution_refs,
+            )
+            overbroad_reception = replace(
+                reception,
+                proposition_ref=contracts_module.subjective_proposition_v2_id(
+                    overbroad_proposition
+                ),
+            )
+            overbroad_seal = (
+                contracts_module.project_stage1_subjective_projection_seal_ref(
+                    preimage,
+                    meaning_decision_outcome=outcome,
+                    reading_consequence_records=consequences,
+                    sealed_emlis_provisional_reading_records=sealed,
+                    meaning_bound_reception_proposition_records=propositions,
+                    meaning_bound_reception_set_records=sets,
+                    bounded_limited_reception_records=(overbroad_reception,),
+                    bounded_limited_subjective_proposition_records=(
+                        overbroad_proposition,
+                    ),
+                    whole_reading_consequence_rows=(
+                        structure.whole_reading_consequence_rows
+                    ),
+                )
+            )
+            with self.assertRaisesRegex(
+                CMEEStage1ContractError,
+                "stage1_subjective_v2_basis_exact_cover_invalid|bounded_limited_reception_binding_invalid",
+            ):
+                contracts_module.validate_stage1_post_selection_reception_records(
+                    input_specific_meaning_structure=structure,
+                    projection_preimage_ref=preimage,
+                    reading_consequence_records=consequences,
+                    sealed_emlis_provisional_reading_records=sealed,
+                    meaning_bound_reception_proposition_records=propositions,
+                    meaning_bound_reception_set_records=sets,
+                    bounded_limited_reception_records=(overbroad_reception,),
+                    bounded_limited_subjective_proposition_records=(
+                        overbroad_proposition,
+                    ),
+                    projection_seal_ref=overbroad_seal,
+                    **context.authority,
+                )
             self.assertRegex(
                 contracts_module.bounded_limited_reception_id(
                     reception,
@@ -26706,13 +27323,7 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                     limited_propositions
                 ),
                 projection_seal_ref=projection_seal_ref,
-                allowed_reception_act_ids=tuple(
-                    row.reception_act for row in retained_rows
-                ),
-                observation_contribution_refs=tuple(
-                    row.contribution_id
-                    for row in self.limited_case.premeaning_inputs.observation_contribution_rows
-                ),
+                **context.authority,
             )
             self.assertEqual(
                 projection_seal_ref,
@@ -26750,14 +27361,331 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                         limited_propositions
                     ),
                     projection_seal_ref=projection_seal_ref,
-                    allowed_reception_act_ids=tuple(
-                        row.reception_act for row in retained_rows
+                    **context.authority,
+                )
+
+            foreign_binding_ref = (
+                "subjective-basis-binding:"
+                f"{'0' * 64}@cocolon.cmee.v1a."
+                "emlis_subjective_basis_binding_ref.v1"
+            )
+            recomputed_tampers = (
+                replace(
+                    proposition,
+                    basis_binding_refs=(foreign_binding_ref,),
+                ),
+                replace(proposition, addressee_role="NOT_USER"),
+                replace(proposition, epistemic_scope="GLOBAL_FACT"),
+                replace(
+                    proposition,
+                    relational_position=replace(
+                        proposition.relational_position,
+                        stance_operator=(
+                            StanceOperator.WELCOME_BOUNDED_CHANGE
+                        ),
                     ),
-                    observation_contribution_refs=tuple(
-                        row.contribution_id
-                        for row in self.limited_case.premeaning_inputs.observation_contribution_rows
+                ),
+            )
+            for tampered_proposition in recomputed_tampers:
+                tampered_reception = replace(
+                    reception,
+                    proposition_ref=(
+                        contracts_module.subjective_proposition_v2_id(
+                            tampered_proposition
+                        )
                     ),
                 )
+                tampered_seal = (
+                    contracts_module.project_stage1_subjective_projection_seal_ref(
+                        preimage,
+                        meaning_decision_outcome=outcome,
+                        reading_consequence_records=consequences,
+                        sealed_emlis_provisional_reading_records=sealed,
+                        meaning_bound_reception_proposition_records=propositions,
+                        meaning_bound_reception_set_records=sets,
+                        bounded_limited_reception_records=(
+                            tampered_reception,
+                        ),
+                        bounded_limited_subjective_proposition_records=(
+                            tampered_proposition,
+                        ),
+                        whole_reading_consequence_rows=(
+                            structure.whole_reading_consequence_rows
+                        ),
+                    )
+                )
+                with self.assertRaises(CMEEStage1ContractError):
+                    contracts_module.validate_stage1_post_selection_reception_records(
+                        input_specific_meaning_structure=structure,
+                        projection_preimage_ref=preimage,
+                        reading_consequence_records=consequences,
+                        sealed_emlis_provisional_reading_records=sealed,
+                        meaning_bound_reception_proposition_records=(
+                            propositions
+                        ),
+                        meaning_bound_reception_set_records=sets,
+                        bounded_limited_reception_records=(
+                            tampered_reception,
+                        ),
+                        bounded_limited_subjective_proposition_records=(
+                            tampered_proposition,
+                        ),
+                        projection_seal_ref=tampered_seal,
+                        **context.authority,
+                    )
+
+            direction_contribution_ref = next(
+                row.contribution_id
+                for row in context.contributions
+                if row.semantic_operator is SemanticOperator.PRESENT_DIRECTION
+            )
+            competing_choice_row = (
+                stage1_composition_module.RetainedReceptionActRow(
+                    act_ref="protect_retained_intention",
+                    reception_act="protect_retained_intention",
+                    basis_contribution_refs=(direction_contribution_ref,),
+                )
+            )
+            competing_choice_rows = (
+                *retained_rows,
+                competing_choice_row,
+            )
+            for ordered_rows in (
+                competing_choice_rows,
+                tuple(reversed(competing_choice_rows)),
+            ):
+                with self.assertRaisesRegex(
+                    CMEEStage1ContractError,
+                    "LIMITED_RECEPTION_CAPABILITY_GAP_STOP",
+                ):
+                    stage1_response_module.build_stage1_post_selection_reception_records(
+                        input_specific_meaning_structure=structure,
+                        projection_preimage_ref=preimage,
+                        **{
+                            **context.authority,
+                            "retained_reception_act_rows": ordered_rows,
+                        },
+                    )
+
+            counter_only_row = (
+                stage1_composition_module.RetainedReceptionActRow(
+                    act_ref="bounded_counter_self_denial",
+                    reception_act="bounded_counter_self_denial",
+                    basis_contribution_refs=outcome.retained_layer1_refs,
+                )
+            )
+            affirmative_with_counter_records = (
+                stage1_response_module.build_stage1_post_selection_reception_records(
+                    input_specific_meaning_structure=structure,
+                    projection_preimage_ref=preimage,
+                    **{
+                        **context.authority,
+                        "retained_reception_act_rows": (
+                            *retained_rows,
+                            counter_only_row,
+                        ),
+                    },
+                )
+            )
+            self.assertEqual(
+                tuple(
+                    len(rows)
+                    for rows in affirmative_with_counter_records[:6]
+                ),
+                (0, 0, 0, 0, 1, 1),
+            )
+            with self.assertRaisesRegex(
+                CMEEStage1ContractError,
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP",
+            ):
+                stage1_response_module.build_stage1_post_selection_reception_records(
+                    input_specific_meaning_structure=structure,
+                    projection_preimage_ref=preimage,
+                    **{
+                        **context.authority,
+                        "retained_reception_act_rows": (counter_only_row,),
+                    },
+                )
+
+            unequal_case = next(
+                case
+                for case in self.actual_cases
+                if type(case.structure.meaning_decision_outcome)
+                is contracts_module.LimitedMeaningOutcome
+                and len(
+                    case.structure.meaning_decision_outcome.foreground_source_object_refs
+                )
+                == 4
+            )
+            unequal_context = self._im04_records(unequal_case)
+            unequal_outcome = unequal_case.structure.meaning_decision_outcome
+            unequal_proposition = unequal_context.records[5][0]
+            unequal_basis_rows, _unequal_qualifier_rows = (
+                contracts_module.resolve_limited_subjective_binding_rows(
+                    projection_preimage_ref=(
+                        unequal_context.projection_preimage_ref
+                    ),
+                    limited_outcome=unequal_outcome,
+                    observation_contribution_rows=(
+                        unequal_context.contributions
+                    ),
+                    interpretation_candidate_rows=unequal_context.candidates,
+                    contribution_to_candidate_ref_map=(
+                        unequal_context.contribution_map
+                    ),
+                    qualifier_value_rows=unequal_context.qualifier_rows,
+                )
+            )
+            self.assertNotEqual(
+                len(unequal_outcome.retained_layer1_refs),
+                len(unequal_outcome.foreground_source_object_refs),
+            )
+            self.assertEqual(
+                tuple(
+                    dict.fromkeys(
+                        row.contribution_ref for row in unequal_basis_rows
+                    )
+                ),
+                unequal_outcome.retained_layer1_refs,
+            )
+            self.assertTrue(
+                set(
+                    row.semantic_ref for row in unequal_basis_rows
+                ).issubset(unequal_outcome.foreground_source_object_refs)
+            )
+            self.assertTrue(
+                set(unequal_proposition.target_contribution_refs).issubset(
+                    unequal_outcome.retained_layer1_refs
+                )
+            )
+            self.assertTrue(
+                set(unequal_proposition.primary_target_refs).issubset(
+                    unequal_outcome.foreground_source_object_refs
+                )
+            )
+            self.assertIsNotNone(unequal_proposition.appraisal_content)
+            tampered_appraisal_proposition = replace(
+                unequal_proposition,
+                appraisal_content=replace(
+                    unequal_proposition.appraisal_content,
+                    dimension=AppraisalDimension.UNFINISHED_OPENNESS,
+                    operation=AppraisalOperation.LEAVE_UNFINISHED,
+                ),
+            )
+            unequal_bounded = unequal_context.records[4][0]
+            tampered_appraisal_bounded = replace(
+                unequal_bounded,
+                proposition_ref=contracts_module.subjective_proposition_v2_id(
+                    tampered_appraisal_proposition
+                ),
+            )
+            tampered_appraisal_seal = (
+                contracts_module.project_stage1_subjective_projection_seal_ref(
+                    unequal_context.projection_preimage_ref,
+                    meaning_decision_outcome=unequal_outcome,
+                    reading_consequence_records=(),
+                    sealed_emlis_provisional_reading_records=(),
+                    meaning_bound_reception_proposition_records=(),
+                    meaning_bound_reception_set_records=(),
+                    bounded_limited_reception_records=(
+                        tampered_appraisal_bounded,
+                    ),
+                    bounded_limited_subjective_proposition_records=(
+                        tampered_appraisal_proposition,
+                    ),
+                    whole_reading_consequence_rows=(
+                        unequal_case.structure.whole_reading_consequence_rows
+                    ),
+                )
+            )
+            with self.assertRaises(CMEEStage1ContractError):
+                contracts_module.validate_stage1_post_selection_reception_records(
+                    input_specific_meaning_structure=unequal_case.structure,
+                    projection_preimage_ref=(
+                        unequal_context.projection_preimage_ref
+                    ),
+                    reading_consequence_records=(),
+                    sealed_emlis_provisional_reading_records=(),
+                    meaning_bound_reception_proposition_records=(),
+                    meaning_bound_reception_set_records=(),
+                    bounded_limited_reception_records=(
+                        tampered_appraisal_bounded,
+                    ),
+                    bounded_limited_subjective_proposition_records=(
+                        tampered_appraisal_proposition,
+                    ),
+                    projection_seal_ref=tampered_appraisal_seal,
+                    **unequal_context.authority,
+                )
+
+            canonical_retained_row = (
+                exact_basis_phase_a.retained_reception_act_rows[0]
+            )
+            self.assertEqual(
+                len(canonical_retained_row.basis_contribution_refs),
+                2,
+            )
+            contribution_by_id = {
+                row.contribution_id: row
+                for row in exact_basis_phase_a.observation_contribution_rows
+            }
+            reduced_basis_refs = tuple(
+                ref
+                for ref in canonical_retained_row.basis_contribution_refs
+                if contribution_by_id[ref].semantic_operator
+                is SemanticOperator.PRESENT_DIRECTION
+            )
+            self.assertEqual(len(reduced_basis_refs), 1)
+            reduced_retained_rows = (
+                replace(
+                    canonical_retained_row,
+                    basis_contribution_refs=reduced_basis_refs,
+                ),
+            )
+            reduced_records = (
+                stage1_response_module.build_stage1_post_selection_reception_records(
+                    input_specific_meaning_structure=(
+                        exact_basis_phase_a.input_specific_meaning_structure
+                    ),
+                    projection_preimage_ref=(
+                        exact_basis_phase_a.projection_preimage_ref
+                    ),
+                    retained_reception_act_rows=reduced_retained_rows,
+                    observation_contribution_rows=(
+                        exact_basis_phase_a.observation_contribution_rows
+                    ),
+                    interpretation_candidate_rows=(
+                        exact_basis_phase_a.interpretation_candidate_rows
+                    ),
+                    contribution_to_candidate_ref_map=(
+                        exact_basis_phase_a.contribution_to_candidate_ref_map
+                    ),
+                    qualifier_value_rows=(
+                        exact_basis_phase_a.qualifier_value_by_candidate_scope_axis_key
+                    ),
+                    material_unknown_refs=(
+                        exact_basis_phase_a.material_unknown_refs
+                    ),
+                )
+            )
+            forged_phase_a = replace(
+                exact_basis_phase_a,
+                retained_reception_act_rows=reduced_retained_rows,
+                reading_consequence_records=reduced_records[0],
+                sealed_emlis_provisional_reading_records=reduced_records[1],
+                meaning_bound_reception_proposition_records=reduced_records[2],
+                meaning_bound_reception_set_records=reduced_records[3],
+                bounded_limited_reception_records=reduced_records[4],
+                bounded_limited_subjective_proposition_records=(
+                    reduced_records[5]
+                ),
+                projection_seal_ref=reduced_records[6],
+            )
+            with self.assertRaisesRegex(
+                stage1_composition_module.Stage1CompositionError,
+                "STAGE1_RECEPTION_ACT_BASIS_CLOSURE_STOP",
+            ):
+                stage1_composition_module._validate_phase_A(forged_phase_a)
         self.assertEqual(selector.call_count, 0)
         self.assertEqual(stage1_canonical_json_bytes(structure), before)
 

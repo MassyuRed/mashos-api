@@ -112,6 +112,7 @@ from .contracts import (
     ValueApplication,
     _stage1_material_visible_value_refs,
     project_stage1_policy_basis_binding_ref,
+    project_stage1_projection_preimage_ref,
     project_stage1_subjective_opportunity_key,
     project_stage1_subjective_responsibility_ref,
     project_stage1_source_qualifier_binding_ref,
@@ -4709,7 +4710,12 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
             parent_plan=phase_A.parent_plan,
         )
         from .emlis_stage1_response import (
+            _bind_grounded_plan,
+            _bind_reception_moves,
+            _ordered,
+            _semantic_reception_asset,
             validate_allowed_reception_opportunity_envelope,
+            validate_reception_asset_mapping,
         )
 
         validate_allowed_reception_opportunity_envelope(
@@ -4719,6 +4725,51 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
             parent_plan=phase_A.parent_plan,
             grounded_plan=phase_A.grounded_plan,
         )
+        reception_plan = _semantic_reception_asset(
+            source=phase_A.admitted_source,
+            grounded_plan=phase_A.grounded_plan,
+        )
+        validate_reception_asset_mapping(
+            reception_plan,
+            grounded_plan=phase_A.grounded_plan,
+        )
+        retained_act_ids = envelope.allowed_reception_act_ids
+        if _ordered(
+            str(move.reception_act) for move in reception_plan.moves
+        ) != retained_act_ids:
+            raise CMEEStage1ContractError(
+                "stage1_reception_parent_act_mismatch"
+            )
+        plan_binding = _bind_grounded_plan(
+            phase_A.admitted_source,
+            phase_A.grounded_graph,
+            phase_A.grounded_plan,
+        )
+        bound_moves = _bind_reception_moves(
+            reception_plan,
+            binding=plan_binding,
+            contributions=phase_A.observation_contribution_rows,
+        )
+        expected_retained_reception_act_rows = tuple(
+            RetainedReceptionActRow(
+                act_ref,
+                act_ref,
+                _ordered(
+                    row.contribution_id
+                    for bound_move in bound_moves
+                    if str(bound_move.move.reception_act) == act_ref
+                    for row in bound_move.basis_contributions
+                ),
+            )
+            for act_ref in retained_act_ids
+        )
+        if any(
+            not row.basis_contribution_refs
+            for row in expected_retained_reception_act_rows
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_final_reception_act_basis_missing"
+            )
         validate_grounded_situation_view(
             phase_A.grounded_situation_view,
             premeaning_inputs,
@@ -4741,6 +4792,13 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
         raise Stage1CompositionError(
             "STAGE1_PREMEANING_RECEPTION_SPLIT_STOP"
         ) from None
+    if (
+        phase_A.retained_reception_act_rows
+        != expected_retained_reception_act_rows
+    ):
+        raise Stage1CompositionError(
+            "STAGE1_RECEPTION_ACT_BASIS_CLOSURE_STOP"
+        )
     try:
         validate_input_specific_meaning_structure(
             phase_A.input_specific_meaning_structure,
@@ -4753,6 +4811,47 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
         raise Stage1CompositionError(
             "STAGE1_INPUT_SPECIFIC_MEANING_STRUCTURE_STOP"
         ) from None
+    try:
+        expected_projection_preimage_ref = (
+            project_stage1_projection_preimage_ref(
+                grounded_graph_ref=(
+                    f"grounded:{getattr(phase_A.grounded_graph, 'graph_id', '')}"
+                    f"@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+                ),
+                parent_observation_duty_ref=(
+                    phase_A.parent_plan.observation_duty_id
+                ),
+                parent_reception_duty_ref=(
+                    phase_A.parent_plan.reception_duty_id
+                ),
+                interpretation_candidate_ids=tuple(
+                    row.candidate_id
+                    for row in phase_A.interpretation_candidate_rows
+                ),
+                meaning_field_id=phase_A.meaning_field.meaning_field_id,
+                observation_contribution_ids=tuple(
+                    row.contribution_id
+                    for row in phase_A.observation_contribution_rows
+                ),
+                retained_reception_act_ids=tuple(
+                    row.act_ref for row in phase_A.retained_reception_act_rows
+                ),
+                observation_depth_class=phase_A.observation_depth_class,
+                temperature_class=phase_A.temperature_class,
+                reception_style_policy_ref=(
+                    phase_A.reception_style_policy_ref
+                ),
+                emlis_value_policy_ref=phase_A.emlis_value_policy_ref,
+            )
+        )
+    except (AttributeError, TypeError, CMEEStage1ContractError):
+        raise Stage1CompositionError(
+            "STAGE1_PROJECTION_PREIMAGE_CLOSURE_STOP"
+        ) from None
+    if phase_A.projection_preimage_ref != expected_projection_preimage_ref:
+        raise Stage1CompositionError(
+            "STAGE1_PROJECTION_PREIMAGE_CLOSURE_STOP"
+        )
     try:
         validate_stage1_post_selection_reception_records(
             input_specific_meaning_structure=(
@@ -4778,14 +4877,22 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
                 phase_A.bounded_limited_subjective_proposition_records
             ),
             projection_seal_ref=phase_A.projection_seal_ref,
-            allowed_reception_act_ids=(
-                phase_A.allowed_reception_opportunity_envelope
-                .allowed_reception_act_ids
+            retained_reception_act_rows=(
+                phase_A.retained_reception_act_rows
             ),
-            observation_contribution_refs=tuple(
-                row.contribution_id
-                for row in phase_A.observation_contribution_rows
+            observation_contribution_rows=(
+                phase_A.observation_contribution_rows
             ),
+            interpretation_candidate_rows=(
+                phase_A.interpretation_candidate_rows
+            ),
+            contribution_to_candidate_ref_map=(
+                phase_A.contribution_to_candidate_ref_map
+            ),
+            qualifier_value_rows=(
+                phase_A.qualifier_value_by_candidate_scope_axis_key
+            ),
+            material_unknown_refs=phase_A.material_unknown_refs,
         )
     except CMEEStage1ContractError:
         raise Stage1CompositionError(

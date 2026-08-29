@@ -72,6 +72,7 @@ from .contracts import (
     ClauseFrame,
     EmlisInterpretationCandidate,
     EmlisAppraisalContent,
+    EmlisRelationalPosition,
     EmlisMeaningField,
     EmlisStage1Projection,
     EmlisSubjectiveClaim,
@@ -98,6 +99,9 @@ from .contracts import (
     RealizedSemanticBinding,
     RealizedSentenceUnit,
     RelationOperator,
+    RelationalClosure,
+    RelationalCommitment,
+    RelationalPositionKind,
     SourceOwnerDisposition,
     SelectedEmlisProvisionalReading,
     Stage1V2UnitSeal,
@@ -119,6 +123,7 @@ from .contracts import (
     SubjectiveFacetSuppressionRow,
     PolicyApplicationRow,
     TemperatureClass,
+    _im04_reception_object_contract_satisfied,
     bounded_limited_reception_id,
     limited_meaning_outcome_id,
     meaning_bound_reception_id,
@@ -127,6 +132,7 @@ from .contracts import (
     project_premeaning_source_qualifier_rows,
     project_premeaning_source_relation_rows,
     recompute_stage1_identity,
+    resolve_limited_subjective_binding_rows,
     stage1_projection_artifact_ref,
     stage1_canonical_json_bytes,
     stage1_policy_application_order_key,
@@ -3933,12 +3939,192 @@ def validate_allowed_reception_opportunity_envelope(
         )
 
 
+_NORMAL_RECEPTION_ROLE_BY_MODE = {
+    SubjectiveMode.ATTENTION: (
+        SubjectiveResponsibilityKind.MATERIAL_APPRAISAL,
+        SubjectiveAssertionModality.EMLIS_APPRAISAL,
+    ),
+    SubjectiveMode.PERSONAL_APPRAISAL: (
+        SubjectiveResponsibilityKind.MATERIAL_APPRAISAL,
+        SubjectiveAssertionModality.EMLIS_APPRAISAL,
+    ),
+    SubjectiveMode.VALUE_POSITION: (
+        SubjectiveResponsibilityKind.POLICY_VISIBLE_VALUE,
+        SubjectiveAssertionModality.EMLIS_VALUE_POSITION,
+    ),
+    SubjectiveMode.RELATIONAL_STANCE: (
+        SubjectiveResponsibilityKind.RELATIONAL_POSITION,
+        SubjectiveAssertionModality.EMLIS_RELATIONAL_INTENTION,
+    ),
+}
+
+
+def _normal_reception_profiles(
+    reception_act: str,
+) -> tuple[
+    tuple[
+        SubjectiveMode,
+        SubjectiveResponsibilityKind,
+        SubjectiveAssertionModality,
+    ],
+    ...,
+]:
+    mapping_rows = tuple(
+        row
+        for row in CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7
+        if row.reception_act == reception_act
+    )
+    if len(mapping_rows) != 1:
+        raise CMEEStage1ContractError(
+            "MEANING_RECEPTION_CAPABILITY_GAP"
+        )
+    profiles: list[
+        tuple[
+            SubjectiveMode,
+            SubjectiveResponsibilityKind,
+            SubjectiveAssertionModality,
+        ]
+    ] = []
+    seen_responsibilities: set[SubjectiveResponsibilityKind] = set()
+    for mode, _operator in mapping_rows[0].eligible_mode_operator_pairs:
+        role = _NORMAL_RECEPTION_ROLE_BY_MODE.get(mode)
+        if role is None or role[0] in seen_responsibilities:
+            continue
+        seen_responsibilities.add(role[0])
+        profiles.append((mode, *role))
+    return tuple(profiles)
+
+
+def _assign_normal_reception_profiles(
+    retained_rows: tuple[Any, ...],
+    *,
+    response_object_refs: tuple[str, ...],
+) -> tuple[
+    tuple[
+        SubjectiveMode,
+        SubjectiveResponsibilityKind,
+        SubjectiveAssertionModality,
+    ],
+    ...,
+]:
+    """Choose one complementary typed role per retained material act."""
+
+    if len(retained_rows) > 4:
+        raise CMEEStage1ContractError(
+            "RECEPTION_BINDING_CONFLICT_STOP"
+        )
+    options = tuple(
+        _normal_reception_profiles(row.reception_act)
+        for row in retained_rows
+    )
+
+    def resolve(
+        index: int,
+        selected: tuple[
+            tuple[
+                SubjectiveMode,
+                SubjectiveResponsibilityKind,
+                SubjectiveAssertionModality,
+            ],
+            ...,
+        ],
+        occupied: frozenset[
+            tuple[SubjectiveResponsibilityKind, tuple[str, ...]]
+        ],
+    ) -> Optional[
+        tuple[
+            tuple[
+                SubjectiveMode,
+                SubjectiveResponsibilityKind,
+                SubjectiveAssertionModality,
+            ],
+            ...,
+        ]
+    ]:
+        if index == len(options):
+            return selected
+        for profile in options[index]:
+            conflict_key = (profile[1], response_object_refs)
+            if conflict_key in occupied:
+                continue
+            result = resolve(
+                index + 1,
+                (*selected, profile),
+                occupied | {conflict_key},
+            )
+            if result is not None:
+                return result
+        return None
+
+    resolved = resolve(0, (), frozenset())
+    if resolved is None:
+        raise CMEEStage1ContractError(
+            "RECEPTION_BINDING_CONFLICT_STOP"
+        )
+    return resolved
+
+
+def _limited_reception_pair(
+    retained_rows: tuple[Any, ...],
+    *,
+    retained_layer1_refs: tuple[str, ...],
+    contribution_by_id: Mapping[str, PlannedObservationContribution],
+) -> tuple[SubjectiveMode, SubjectiveOperator, tuple[str, ...]]:
+    """Resolve the sole source-bound affirmative mode representable by v2."""
+
+    required_basis = set(retained_layer1_refs)
+    choices: list[
+        tuple[SubjectiveMode, SubjectiveOperator, tuple[str, ...]]
+    ] = []
+    for retained in retained_rows:
+        retained_basis = set(retained.basis_contribution_refs)
+        if (
+            retained.reception_act == "bounded_counter_self_denial"
+            or not retained_basis
+            or not retained_basis.issubset(required_basis)
+            or any(ref not in contribution_by_id for ref in retained_basis)
+            or not _im04_reception_object_contract_satisfied(
+                retained.reception_act,
+                tuple(
+                    contribution_by_id[ref]
+                    for ref in retained.basis_contribution_refs
+                ),
+            )
+        ):
+            continue
+        mapping_rows = tuple(
+            row
+            for row in CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7
+            if row.reception_act == retained.reception_act
+        )
+        if len(mapping_rows) != 1:
+            continue
+        mapping = mapping_rows[0]
+        for mode, operator in mapping.eligible_mode_operator_pairs:
+            if mode in {
+                SubjectiveMode.PERSONAL_APPRAISAL,
+                SubjectiveMode.RELATIONAL_STANCE,
+            }:
+                choices.append(
+                    (mode, operator, retained.basis_contribution_refs)
+                )
+    if len(choices) != 1:
+        raise CMEEStage1ContractError(
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+        )
+    return choices[0]
+
+
 def build_stage1_post_selection_reception_records(
     *,
     input_specific_meaning_structure: InputSpecificMeaningStructure,
     projection_preimage_ref: str,
     retained_reception_act_rows: Sequence[Any],
     observation_contribution_rows: Sequence[PlannedObservationContribution],
+    interpretation_candidate_rows: Sequence[EmlisInterpretationCandidate],
+    contribution_to_candidate_ref_map: Sequence[tuple[str, str]],
+    qualifier_value_rows: Sequence[Any],
+    material_unknown_refs: Sequence[str],
 ) -> tuple[
     Tuple[Any, ...],
     Tuple[Any, ...],
@@ -3957,14 +4143,43 @@ def build_stage1_post_selection_reception_records(
         )
     retained_rows = tuple(retained_reception_act_rows)
     contributions = tuple(observation_contribution_rows)
+    interpretation_candidates = tuple(interpretation_candidate_rows)
+    contribution_candidate_map = tuple(
+        contribution_to_candidate_ref_map
+    )
+    qualifiers = tuple(qualifier_value_rows)
+    material_unknowns = tuple(material_unknown_refs)
     allowed_acts = tuple(row.reception_act for row in retained_rows)
     contribution_refs = tuple(row.contribution_id for row in contributions)
+    interpretation_candidate_refs = tuple(
+        row.candidate_id for row in interpretation_candidates
+    )
     if (
         not projection_preimage_ref
         or not retained_rows
         or not contributions
+        or not interpretation_candidates
+        or not qualifiers
+        or any(
+            type(row) is not EmlisInterpretationCandidate
+            for row in interpretation_candidates
+        )
+        or type(contribution_candidate_map) is not tuple
+        or any(
+            type(row) is not tuple
+            or len(row) != 2
+            or any(type(value) is not str or not value for value in row)
+            for row in contribution_candidate_map
+        )
+        or type(material_unknowns) is not tuple
+        or any(type(value) is not str or not value for value in material_unknowns)
         or len(allowed_acts) != len(set(allowed_acts))
         or len(contribution_refs) != len(set(contribution_refs))
+        or len(interpretation_candidate_refs)
+        != len(set(interpretation_candidate_refs))
+        or len(contribution_candidate_map)
+        != len(set(contribution_candidate_map))
+        or len(material_unknowns) != len(set(material_unknowns))
     ):
         raise CMEEStage1ContractError(
             "stage1_post_selection_authority_invalid"
@@ -4001,24 +4216,32 @@ def build_stage1_post_selection_reception_records(
             row
             for row in retained_rows
             if row.reception_act != "bounded_counter_self_denial"
-            and candidate_basis_refs.intersection(row.basis_contribution_refs)
+            and bool(row.basis_contribution_refs)
+            and set(row.basis_contribution_refs).issubset(
+                candidate_basis_refs
+            )
         )
         if not bound_rows:
             raise CMEEStage1ContractError(
                 "MEANING_RECEPTION_CAPABILITY_GAP"
             )
-        bound_rows = bound_rows[:4]
+        profiles = _assign_normal_reception_profiles(
+            bound_rows,
+            response_object_refs=response_object_refs,
+        )
         proposition_records: list[MeaningBoundReceptionProposition] = []
-        for row in bound_rows:
+        for row, (
+            subjective_mode,
+            responsibility_kind,
+            assertion_modality,
+        ) in zip(bound_rows, profiles, strict=True):
             proposition = MeaningBoundReceptionProposition(
                 schema_version="1.1",
                 reception_id="",
                 selected_reading_ref=outcome.reading_id,
                 reception_function=row.reception_act,
-                responsibility_kind=(
-                    SubjectiveResponsibilityKind.MATERIAL_APPRAISAL
-                ),
-                subjective_mode=SubjectiveMode.ATTENTION,
+                responsibility_kind=responsibility_kind,
+                subjective_mode=subjective_mode,
                 contribution_kind=(
                     "AFFIRMATIVE_RECEPTION_CONTRIBUTION"
                 ),
@@ -4029,9 +4252,7 @@ def build_stage1_post_selection_reception_records(
                 optional_affect=None,
                 optional_stance=None,
                 reading_status="EMLIS_PROVISIONAL_READING",
-                subjective_assertion_modality=(
-                    SubjectiveAssertionModality.EMLIS_APPRAISAL
-                ),
+                subjective_assertion_modality=assertion_modality,
             )
             proposition_records.append(
                 replace(
@@ -4075,37 +4296,141 @@ def build_stage1_post_selection_reception_records(
             raise CMEEStage1ContractError(
                 "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
             )
-        appraisal = EmlisAppraisalContent(
-            AppraisalDimension.MATERIAL_WEIGHT,
-            AppraisalOperation.RECEIVE_AS_MATERIAL,
-            outcome.foreground_source_object_refs,
-            None,
-            (),
-            outcome.retained_layer1_refs,
+        contribution_by_id = {
+            row.contribution_id: row for row in contributions
+        }
+        (
+            limited_mode,
+            limited_operator,
+            licensed_contribution_refs,
+        ) = (
+            _limited_reception_pair(
+                retained_rows,
+                retained_layer1_refs=outcome.retained_layer1_refs,
+                contribution_by_id=contribution_by_id,
+            )
         )
+        try:
+            resolved_basis_rows, resolved_qualifier_rows = (
+                resolve_limited_subjective_binding_rows(
+                    projection_preimage_ref=projection_preimage_ref,
+                    limited_outcome=outcome,
+                    observation_contribution_rows=contributions,
+                    interpretation_candidate_rows=interpretation_candidates,
+                    contribution_to_candidate_ref_map=(
+                        contribution_candidate_map
+                    ),
+                    qualifier_value_rows=qualifiers,
+                )
+            )
+        except CMEEStage1ContractError as exc:
+            raise CMEEStage1ContractError(
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+            ) from exc
+        licensed_contribution_set = set(licensed_contribution_refs)
+        limited_basis_rows = tuple(
+            row
+            for row in resolved_basis_rows
+            if row.contribution_ref in licensed_contribution_set
+        )
+        limited_basis_ref_set = {
+            row.binding_ref for row in limited_basis_rows
+        }
+        limited_qualifier_rows = tuple(
+            row
+            for row in resolved_qualifier_rows
+            if row.basis_binding_ref in limited_basis_ref_set
+        )
+        basis_binding_refs = tuple(
+            row.binding_ref for row in limited_basis_rows
+        )
+        qualifier_binding_refs = tuple(
+            row.source_qualifier_binding_ref
+            for row in limited_qualifier_rows
+        )
+        bound_contribution_refs = tuple(
+            dict.fromkeys(
+                row.contribution_ref for row in limited_basis_rows
+            )
+        )
+        bound_semantic_refs = tuple(
+            dict.fromkeys(row.semantic_ref for row in limited_basis_rows)
+        )
+        expected_bound_contribution_refs = tuple(
+            ref
+            for ref in outcome.retained_layer1_refs
+            if ref in licensed_contribution_set
+        )
+        if (
+            not basis_binding_refs
+            or bound_contribution_refs != expected_bound_contribution_refs
+            or not bound_semantic_refs
+            or not set(bound_semantic_refs).issubset(
+                outcome.foreground_source_object_refs
+            )
+            or len(qualifier_binding_refs) != len(basis_binding_refs)
+        ):
+            raise CMEEStage1ContractError(
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+            )
+
+        content_kind: SubjectiveContentKind
+        appraisal_content: Optional[EmlisAppraisalContent] = None
+        relational_position: Optional[EmlisRelationalPosition] = None
+        assertion_modality: SubjectiveAssertionModality
+        if limited_mode is SubjectiveMode.PERSONAL_APPRAISAL:
+            content_kind = SubjectiveContentKind.APPRAISAL
+            appraisal_content = EmlisAppraisalContent(
+                AppraisalDimension.MATERIAL_WEIGHT,
+                AppraisalOperation.RECEIVE_AS_MATERIAL,
+                basis_binding_refs,
+                None,
+                (),
+                bound_contribution_refs,
+            )
+            assertion_modality = (
+                SubjectiveAssertionModality.EMLIS_APPRAISAL
+            )
+        elif limited_mode is SubjectiveMode.RELATIONAL_STANCE:
+            content_kind = SubjectiveContentKind.RELATIONAL_POSITION
+            relational_position = EmlisRelationalPosition(
+                RelationalPositionKind.STANCE,
+                StanceOperator.STAY_WITH_SPECIFIC_OBJECT,
+                basis_binding_refs,
+                (),
+                RelationalCommitment.STAY_WITH,
+                RelationalClosure.NONE,
+            )
+            assertion_modality = (
+                SubjectiveAssertionModality.EMLIS_RELATIONAL_INTENTION
+            )
+        else:
+            raise CMEEStage1ContractError(
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+            )
         subjective_proposition = SubjectivePropositionV2(
-            dict(CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY)[
+            schema_version=dict(CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY)[
                 "CMEE_STAGE1_SUBJECTIVE_PROPOSITION_SCHEMA_VERSION"
             ],
-            SubjectiveContentKind.APPRAISAL,
-            SubjectiveMode.PERSONAL_APPRAISAL,
-            SubjectiveOperator.APPRAISE_AS_MATERIAL,
-            outcome.retained_layer1_refs,
-            outcome.foreground_source_object_refs,
-            (),
-            outcome.foreground_source_object_refs,
-            outcome.retained_layer1_refs,
-            outcome.retained_qualifier_refs,
-            None,
-            None,
-            appraisal,
-            None,
-            None,
-            (),
-            (),
-            "USER",
-            SubjectiveAssertionModality.EMLIS_APPRAISAL,
-            "REQUEST_LOCAL_EMLIS_SUBJECTIVITY",
+            content_kind=content_kind,
+            subjective_mode=limited_mode,
+            subjective_operator=limited_operator,
+            target_contribution_refs=bound_contribution_refs,
+            primary_target_refs=bound_semantic_refs,
+            boundary_target_refs=(),
+            response_object_refs=bound_semantic_refs,
+            basis_binding_refs=basis_binding_refs,
+            source_qualifier_binding_refs=qualifier_binding_refs,
+            focal_relation_ref=None,
+            affect_content=None,
+            appraisal_content=appraisal_content,
+            material_value_content=None,
+            relational_position=relational_position,
+            referenced_actor_refs=(),
+            referenced_experiencer_refs=(),
+            addressee_role="USER",
+            assertion_modality=assertion_modality,
+            epistemic_scope="REQUEST_LOCAL_EMLIS_SUBJECTIVITY",
         )
         bounded = BoundedLimitedReception(
             schema_version="1.1",
@@ -4161,8 +4486,12 @@ def build_stage1_post_selection_reception_records(
             bounded_proposition_records
         ),
         projection_seal_ref=projection_seal_ref,
-        allowed_reception_act_ids=allowed_acts,
-        observation_contribution_refs=contribution_refs,
+        retained_reception_act_rows=retained_rows,
+        observation_contribution_rows=contributions,
+        interpretation_candidate_rows=interpretation_candidates,
+        contribution_to_candidate_ref_map=contribution_candidate_map,
+        qualifier_value_rows=qualifiers,
+        material_unknown_refs=material_unknowns,
     )
     return (
         consequence_records,
@@ -4348,6 +4677,10 @@ def build_subjective_planning_inputs(
         projection_preimage_ref=projection_preimage_ref,
         retained_reception_act_rows=tuple(retained_rows),
         observation_contribution_rows=contributions,
+        interpretation_candidate_rows=candidates,
+        contribution_to_candidate_ref_map=contribution_map,
+        qualifier_value_rows=qualifier_rows,
+        material_unknown_refs=meaning_field.material_unknown_refs,
     )
     return composition.Stage1SubjectivePlanningInputs(
         admitted_source=source,

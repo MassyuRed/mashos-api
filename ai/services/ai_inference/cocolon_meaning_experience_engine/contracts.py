@@ -1628,7 +1628,9 @@ class ReadingConsequence:
     input_specificity_evidence_ref: str
     whole_reading_consequence_refs: Tuple[str, ...]
     changed_whole_reading_codes: Tuple[WholeReadingConsequenceCode, ...]
-    response_consequence_requirement_codes: Tuple[str, ...]
+    response_consequence_requirement_codes: Tuple[
+        ResponseConsequenceRequirementCode, ...
+    ]
     source_constraint_refs: Tuple[str, ...]
 
 
@@ -1842,9 +1844,9 @@ class BoundedLimitedReception:
     bound_layer1_contribution_refs: Tuple[str, ...]
     foreground_source_object_refs: Tuple[str, ...]
     retained_qualifier_refs: Tuple[str, ...]
-    subjective_depth: SubjectiveDepthClass
+    subjective_depth: Literal[SubjectiveDepthClass.FOCUSED]
     proposition_ref: str
-    contribution_kind: ReceptionContributionKind
+    contribution_kind: Literal["AFFIRMATIVE_RECEPTION_CONTRIBUTION"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -13369,7 +13371,10 @@ def sealed_emlis_provisional_reading_id(
         type(value) is not SealedEmlisProvisionalReading
         or type(selected_reading) is not SelectedEmlisProvisionalReading
         or type(reading_consequence) is not ReadingConsequence
-        or value.selected_reading_ref != selected_reading.reading_id
+        or selected_reading.reading_id
+        != selected_emlis_provisional_reading_id(selected_reading)
+        or value.selected_reading_ref
+        != selected_emlis_provisional_reading_id(selected_reading)
         or value.reading_consequence_ref
         != reading_consequence_id(
             reading_consequence,
@@ -13378,13 +13383,11 @@ def sealed_emlis_provisional_reading_id(
     ):
         raise CMEEStage1ContractError("sealed_reading_closure_invalid")
     payload = {
-        "sealed_reading": value,
-        "resolved_selected_reading": selected_reading,
-        "resolved_reading_consequence": reading_consequence,
-        "resolved_whole_reading_consequence_rows": tuple(
-            whole_reading_consequence_rows
-        ),
+        field.name: getattr(value, field.name)
+        for field in dataclass_fields(value)
     }
+    payload["resolved_selected_reading"] = selected_reading
+    payload["resolved_reading_consequence"] = reading_consequence
     digest = hashlib.sha256(stage1_canonical_json_bytes(payload)).hexdigest()
     return (
         f"sealed-emlis-provisional-reading:{digest}"
@@ -13397,7 +13400,10 @@ def meaning_bound_reception_set_id(
     *,
     proposition_records: Sequence[MeaningBoundReceptionProposition],
 ) -> str:
-    if type(value) is not MeaningBoundReceptionSet:
+    if (
+        type(value) is not MeaningBoundReceptionSet
+        or type(value.subjective_depth) is not SubjectiveDepthClass
+    ):
         raise CMEEStage1ContractError(
             "meaning_bound_reception_set_type_invalid"
         )
@@ -13405,14 +13411,19 @@ def meaning_bound_reception_set_id(
     if (
         any(type(row) is not MeaningBoundReceptionProposition for row in rows)
         or tuple(row.reception_id for row in rows) != value.proposition_refs
+        or any(
+            row.reception_id != meaning_bound_reception_id(row)
+            for row in rows
+        )
     ):
         raise CMEEStage1ContractError(
             "meaning_bound_reception_set_closure_invalid"
         )
     payload = {
-        "reception_set": value,
-        "resolved_proposition_records": rows,
+        field.name: getattr(value, field.name)
+        for field in dataclass_fields(value)
     }
+    payload["resolved_proposition_records"] = rows
     digest = hashlib.sha256(stage1_canonical_json_bytes(payload)).hexdigest()
     return (
         f"meaning-bound-reception-set:{digest}"
@@ -13430,6 +13441,11 @@ def bounded_limited_reception_id(
         type(value) is not BoundedLimitedReception
         or type(limited_outcome) is not LimitedMeaningOutcome
         or type(subjective_proposition) is not SubjectivePropositionV2
+        or type(value.subjective_depth) is not SubjectiveDepthClass
+        or value.subjective_depth is not SubjectiveDepthClass.FOCUSED
+        or type(value.contribution_kind) is not str
+        or value.contribution_kind
+        != "AFFIRMATIVE_RECEPTION_CONTRIBUTION"
         or value.limited_outcome_ref != limited_meaning_outcome_id(limited_outcome)
         or value.proposition_ref
         != subjective_proposition_v2_id(subjective_proposition)
@@ -13438,10 +13454,11 @@ def bounded_limited_reception_id(
             "bounded_limited_reception_closure_invalid"
         )
     payload = {
-        "bounded_limited_reception": value,
-        "resolved_limited_outcome": limited_outcome,
-        "resolved_subjective_proposition": subjective_proposition,
+        field.name: getattr(value, field.name)
+        for field in dataclass_fields(value)
     }
+    payload["resolved_limited_outcome"] = limited_outcome
+    payload["resolved_subjective_proposition"] = subjective_proposition
     digest = hashlib.sha256(stage1_canonical_json_bytes(payload)).hexdigest()
     return (
         f"bounded-limited-reception:{digest}"
@@ -13474,6 +13491,523 @@ def reading_consequence_source_constraint_refs(
             "reading_consequence_source_constraint_missing"
         )
     return refs
+
+
+_IM04_ARGUMENT_ROLE_TO_SUBJECTIVE_BASIS_ROLE = {
+    ArgumentRole.LEFT: SubjectiveBasisRole.RELATION_LEFT,
+    ArgumentRole.RIGHT: SubjectiveBasisRole.RELATION_RIGHT,
+    ArgumentRole.ACTION: SubjectiveBasisRole.ACTION,
+    ArgumentRole.CHANGE: SubjectiveBasisRole.CHANGE,
+    ArgumentRole.BEFORE: SubjectiveBasisRole.BEFORE,
+    ArgumentRole.AFTER: SubjectiveBasisRole.AFTER,
+    ArgumentRole.CAUSE: SubjectiveBasisRole.RELATION_LEFT,
+    ArgumentRole.EFFECT: SubjectiveBasisRole.RELATION_RIGHT,
+}
+
+
+def _im04_subjective_basis_role(
+    contribution: PlannedObservationContribution,
+    argument_role: ArgumentRole,
+) -> SubjectiveBasisRole:
+    mapped = _IM04_ARGUMENT_ROLE_TO_SUBJECTIVE_BASIS_ROLE.get(argument_role)
+    if mapped is not None:
+        return mapped
+    if argument_role is not ArgumentRole.PRIMARY:
+        raise CMEEStage1ContractError(
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+        )
+    if contribution.semantic_operator is SemanticOperator.PRESENT_DIRECTION:
+        return SubjectiveBasisRole.CHOICE_TARGET
+    if contribution.semantic_operator is SemanticOperator.PRESENT_RESIDUE:
+        return SubjectiveBasisRole.RESIDUE
+    if contribution.semantic_operator is SemanticOperator.PRESENT_UNFINISHED:
+        return SubjectiveBasisRole.UNFINISHED
+    return SubjectiveBasisRole.APPRAISED_OBJECT
+
+
+def _im04_authority_closure(
+    *,
+    retained_reception_act_rows: Sequence[Any],
+    observation_contribution_rows: Sequence[PlannedObservationContribution],
+    interpretation_candidate_rows: Sequence[EmlisInterpretationCandidate],
+    contribution_to_candidate_ref_map: Sequence[Tuple[str, str]],
+    qualifier_value_rows: Sequence[Any],
+    material_unknown_refs: Sequence[str],
+) -> tuple[
+    tuple[Any, ...],
+    tuple[PlannedObservationContribution, ...],
+    tuple[EmlisInterpretationCandidate, ...],
+    tuple[tuple[str, str], ...],
+    tuple[Any, ...],
+    tuple[str, ...],
+]:
+    retained = tuple(retained_reception_act_rows)
+    contributions = tuple(observation_contribution_rows)
+    candidates = tuple(interpretation_candidate_rows)
+    contribution_map = tuple(contribution_to_candidate_ref_map)
+    qualifier_rows = tuple(qualifier_value_rows)
+    unknown_refs = tuple(material_unknown_refs)
+    if (
+        type(retained_reception_act_rows) is not tuple
+        or type(observation_contribution_rows) is not tuple
+        or type(interpretation_candidate_rows) is not tuple
+        or type(contribution_to_candidate_ref_map) is not tuple
+        or type(qualifier_value_rows) is not tuple
+        or type(material_unknown_refs) is not tuple
+        or not retained
+        or not contributions
+        or not candidates
+        or not qualifier_rows
+        or any(
+            not is_dataclass(row)
+            or tuple(field.name for field in dataclass_fields(row))
+            != ("act_ref", "reception_act", "basis_contribution_refs")
+            or not _stage1_identity_string(row.act_ref)
+            or not _stage1_identity_string(row.reception_act)
+            or row.act_ref != row.reception_act
+            or type(row.basis_contribution_refs) is not tuple
+            or not row.basis_contribution_refs
+            or any(
+                not _stage1_identity_string(ref)
+                for ref in row.basis_contribution_refs
+            )
+            or len(row.basis_contribution_refs)
+            != len(set(row.basis_contribution_refs))
+            for row in retained
+        )
+        or len({row.act_ref for row in retained}) != len(retained)
+        or any(
+            row.reception_act
+            not in {
+                mapping.reception_act
+                for mapping in CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7
+            }
+            for row in retained
+        )
+        or any(
+            type(row) is not PlannedObservationContribution
+            for row in contributions
+        )
+        or len({row.contribution_id for row in contributions})
+        != len(contributions)
+        or any(
+            type(row) is not EmlisInterpretationCandidate
+            for row in candidates
+        )
+        or len({row.candidate_id for row in candidates}) != len(candidates)
+        or any(
+            type(row) is not tuple
+            or len(row) != 2
+            or any(not _stage1_identity_string(ref) for ref in row)
+            for row in contribution_map
+        )
+        or tuple(row[0] for row in contribution_map)
+        != tuple(row.contribution_id for row in contributions)
+        or len({row[0] for row in contribution_map}) != len(contribution_map)
+        or any(
+            not is_dataclass(row)
+            or tuple(field.name for field in dataclass_fields(row))
+            != (
+                "candidate_ref",
+                "qualifier_scope",
+                "source_argument_role",
+                "source_semantic_ref",
+                "axis",
+                "value",
+            )
+            for row in qualifier_rows
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_post_selection_authority_invalid"
+        )
+    contribution_ids = {row.contribution_id for row in contributions}
+    candidate_by_id = {row.candidate_id: row for row in candidates}
+    if (
+        any(
+            not set(row.basis_contribution_refs).issubset(contribution_ids)
+            for row in retained
+        )
+        or any(candidate_ref not in candidate_by_id for _, candidate_ref in contribution_map)
+        or any(
+            contribution.interpretation_candidate_refs != (candidate_ref,)
+            for contribution, (_contribution_ref, candidate_ref) in zip(
+                contributions,
+                contribution_map,
+                strict=True,
+            )
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_post_selection_authority_invalid"
+        )
+    try:
+        _stage1_exact_string_tuple(unknown_refs, allow_empty=True)
+    except CMEEStage1ContractError:
+        raise CMEEStage1ContractError(
+            "stage1_post_selection_authority_invalid"
+        ) from None
+    return (
+        retained,
+        contributions,
+        candidates,
+        contribution_map,
+        qualifier_rows,
+        unknown_refs,
+    )
+
+
+def resolve_limited_subjective_binding_rows(
+    *,
+    projection_preimage_ref: str,
+    limited_outcome: LimitedMeaningOutcome,
+    observation_contribution_rows: Sequence[PlannedObservationContribution],
+    interpretation_candidate_rows: Sequence[EmlisInterpretationCandidate],
+    contribution_to_candidate_ref_map: Sequence[Tuple[str, str]],
+    qualifier_value_rows: Sequence[Any],
+) -> tuple[
+    tuple[SubjectiveBasisBinding, ...],
+    tuple[SourceQualifierBinding, ...],
+]:
+    """Resolve LIMITED's existing source bindings without choosing meaning."""
+
+    contributions = tuple(observation_contribution_rows)
+    candidates = tuple(interpretation_candidate_rows)
+    contribution_map = tuple(contribution_to_candidate_ref_map)
+    qualifier_rows = tuple(qualifier_value_rows)
+    if (
+        type(limited_outcome) is not LimitedMeaningOutcome
+        or not _stage1_identity_string(projection_preimage_ref)
+        or type(observation_contribution_rows) is not tuple
+        or type(interpretation_candidate_rows) is not tuple
+        or type(contribution_to_candidate_ref_map) is not tuple
+        or type(qualifier_value_rows) is not tuple
+        or not limited_outcome.retained_layer1_refs
+        or not limited_outcome.foreground_source_object_refs
+        or any(
+            type(row) is not PlannedObservationContribution
+            for row in contributions
+        )
+        or any(type(row) is not EmlisInterpretationCandidate for row in candidates)
+        or tuple(row[0] for row in contribution_map)
+        != tuple(row.contribution_id for row in contributions)
+    ):
+        raise CMEEStage1ContractError(
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+        )
+    contribution_by_id = {row.contribution_id: row for row in contributions}
+    candidate_by_id = {row.candidate_id: row for row in candidates}
+    candidate_ref_by_contribution = dict(contribution_map)
+    if (
+        len(contribution_by_id) != len(contributions)
+        or len(candidate_by_id) != len(candidates)
+        or len(candidate_ref_by_contribution) != len(contribution_map)
+        or any(
+            ref not in contribution_by_id
+            for ref in limited_outcome.retained_layer1_refs
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+        )
+
+    basis_rows: list[SubjectiveBasisBinding] = []
+    source_qualifier_rows: list[SourceQualifierBinding] = []
+    foreground_ref_set = set(limited_outcome.foreground_source_object_refs)
+    for contribution_ref in limited_outcome.retained_layer1_refs:
+        contribution = contribution_by_id[contribution_ref]
+        candidate = candidate_by_id.get(
+            candidate_ref_by_contribution.get(contribution_ref, "")
+        )
+        matching_bindings = tuple(
+            binding
+            for binding in (() if candidate is None else candidate.argument_bindings)
+            if binding.role is not ArgumentRole.EXPERIENCER
+            and binding.semantic_ref in foreground_ref_set
+        )
+        if (
+            candidate is None
+            or contribution.interpretation_candidate_refs
+            != (candidate.candidate_id,)
+            or contribution.argument_bindings != candidate.argument_bindings
+            or not matching_bindings
+        ):
+            raise CMEEStage1ContractError(
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+            )
+        for binding in matching_bindings:
+            foreground_ref = binding.semantic_ref
+            role = _im04_subjective_basis_role(contribution, binding.role)
+            basis_ref = project_stage1_subjective_basis_binding_ref(
+                projection_preimage_ref=projection_preimage_ref,
+                contribution_ref=contribution_ref,
+                semantic_ref=foreground_ref,
+                role=role,
+            )
+            basis_row = SubjectiveBasisBinding(
+                projection_preimage_ref,
+                basis_ref,
+                contribution_ref,
+                foreground_ref,
+                role,
+            )
+            relation_bound = (
+                candidate.relation_operator
+                is not RelationOperator.NO_RELATION_CLAIM
+            )
+            qualifier_role = binding.role if relation_bound else None
+            qualifier_semantic_ref = foreground_ref if relation_bound else None
+            expected_scope = (
+                "RELATION_SOURCE_BINDING"
+                if relation_bound
+                else "DIRECT_UNQUALIFIED"
+            )
+            values: list[str] = []
+            for axis in ("POLARITY", "MODALITY", "TIME_SCOPE"):
+                rows = tuple(
+                    row
+                    for row in qualifier_rows
+                    if getattr(row, "candidate_ref", None)
+                    == candidate.candidate_id
+                    and getattr(
+                        getattr(row, "qualifier_scope", None), "value", None
+                    )
+                    == expected_scope
+                    and getattr(row, "source_argument_role", None)
+                    is qualifier_role
+                    and getattr(row, "source_semantic_ref", None)
+                    == qualifier_semantic_ref
+                    and getattr(getattr(row, "axis", None), "value", None)
+                    == axis
+                )
+                if (
+                    len(rows) != 1
+                    or not _stage1_identity_string(rows[0].value)
+                    or (
+                        f"{'' if qualifier_role is None else qualifier_role.value.lower() + '_'}"
+                        f"{axis.lower()}:{rows[0].value}"
+                        not in candidate.required_qualifiers
+                    )
+                ):
+                    raise CMEEStage1ContractError(
+                        "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+                    )
+                values.append(rows[0].value)
+            polarity, modality, time_scope = values
+            prefix = (
+                ""
+                if qualifier_role is None
+                else f"{qualifier_role.value.lower()}_"
+            )
+            qualifier_codes = (
+                f"{prefix}polarity:{polarity}",
+                f"{prefix}modality:{modality}",
+                f"{prefix}time_scope:{time_scope}",
+            )
+            qualifier_ref = project_stage1_source_qualifier_binding_ref(
+                projection_preimage_ref=projection_preimage_ref,
+                basis_binding_ref=basis_ref,
+                source_candidate_ref=candidate.candidate_id,
+                source_argument_role=qualifier_role,
+                canonical_qualifier_codes=qualifier_codes,
+                polarity=polarity,
+                modality=modality,
+                time_scope=time_scope,
+            )
+            basis_rows.append(basis_row)
+            source_qualifier_rows.append(
+                SourceQualifierBinding(
+                    projection_preimage_ref,
+                    qualifier_ref,
+                    basis_ref,
+                    candidate.candidate_id,
+                    qualifier_role,
+                    qualifier_codes,
+                    polarity,
+                    modality,
+                    time_scope,
+                )
+            )
+    bound_contribution_refs = tuple(
+        dict.fromkeys(row.contribution_ref for row in basis_rows)
+    )
+    bound_semantic_refs = tuple(
+        dict.fromkeys(row.semantic_ref for row in basis_rows)
+    )
+    if (
+        bound_contribution_refs != limited_outcome.retained_layer1_refs
+        or not bound_semantic_refs
+        or not set(bound_semantic_refs).issubset(foreground_ref_set)
+        or len({row.binding_ref for row in basis_rows}) != len(basis_rows)
+        or not _im04_retained_qualifier_coverage_satisfied(
+            retained_qualifier_refs=limited_outcome.retained_qualifier_refs,
+            source_qualifier_rows=source_qualifier_rows,
+            candidate_rows=candidates,
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+        )
+    return tuple(basis_rows), tuple(source_qualifier_rows)
+
+
+_IM04_NORMAL_SUBJECTIVE_SEMANTICS = {
+    SubjectiveMode.ATTENTION: (
+        SubjectiveResponsibilityKind.MATERIAL_APPRAISAL,
+        SubjectiveAssertionModality.EMLIS_APPRAISAL,
+        "AFFIRMATIVE_RECEPTION_CONTRIBUTION",
+    ),
+    SubjectiveMode.PERSONAL_APPRAISAL: (
+        SubjectiveResponsibilityKind.MATERIAL_APPRAISAL,
+        SubjectiveAssertionModality.EMLIS_APPRAISAL,
+        "AFFIRMATIVE_RECEPTION_CONTRIBUTION",
+    ),
+    SubjectiveMode.AFFECTIVE_RESPONSE: (
+        SubjectiveResponsibilityKind.AFFECTIVE_RESPONSE,
+        SubjectiveAssertionModality.EMLIS_FEELING,
+        "AFFIRMATIVE_RECEPTION_CONTRIBUTION",
+    ),
+    SubjectiveMode.VALUE_POSITION: (
+        SubjectiveResponsibilityKind.POLICY_VISIBLE_VALUE,
+        SubjectiveAssertionModality.EMLIS_VALUE_POSITION,
+        "AFFIRMATIVE_RECEPTION_CONTRIBUTION",
+    ),
+    SubjectiveMode.RELATIONAL_STANCE: (
+        SubjectiveResponsibilityKind.RELATIONAL_POSITION,
+        SubjectiveAssertionModality.EMLIS_RELATIONAL_INTENTION,
+        "AFFIRMATIVE_RECEPTION_CONTRIBUTION",
+    ),
+    SubjectiveMode.BOUNDED_COUNTERPOSITION: (
+        SubjectiveResponsibilityKind.RELATIONAL_POSITION,
+        SubjectiveAssertionModality.EMLIS_BOUNDED_REFUSAL,
+        "BOUNDED_COUNTERPOSITION",
+    ),
+}
+
+
+def _im04_reception_act_mapping(reception_act: str) -> ReceptionActMappingRow:
+    rows = tuple(
+        row
+        for row in CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7
+        if row.reception_act == reception_act
+    )
+    if len(rows) != 1:
+        raise CMEEStage1ContractError(
+            "stage1_post_selection_authority_invalid"
+        )
+    return rows[0]
+
+
+def _im04_reception_object_contract_satisfied(
+    reception_act: str,
+    contributions: Sequence[PlannedObservationContribution],
+) -> bool:
+    rows = tuple(contributions)
+    if not rows:
+        return False
+    operators = {row.semantic_operator for row in rows}
+    kinds = {row.contribution_kind for row in rows}
+    if reception_act == "stay_with_current_burden":
+        return bool(
+            operators
+            & {SemanticOperator.PRESENT_BURDEN, SemanticOperator.PRESENT_RESIDUE}
+            or kinds
+            & {
+                ObservationContributionKind.OBSERVE_BURDEN,
+                ObservationContributionKind.PRESERVE_RESIDUE,
+            }
+        )
+    if reception_act == "honor_concrete_effort":
+        return bool(
+            SemanticOperator.PRESENT_ACTUAL_OUTPUT in operators
+            or ObservationContributionKind.OBSERVE_ACTION_THEN_CHANGE in kinds
+        )
+    if reception_act == "protect_retained_intention":
+        return SemanticOperator.PRESENT_DIRECTION in operators
+    if reception_act == "recognize_lived_change":
+        return bool(
+            SemanticOperator.PRESENT_CHANGE in operators
+            or ObservationContributionKind.OBSERVE_ACTION_THEN_CHANGE in kinds
+        )
+    if reception_act == "hold_help_seeking":
+        return bool(
+            operators
+            & {
+                SemanticOperator.PRESENT_DIRECTION,
+                SemanticOperator.PRESENT_STATE,
+            }
+        )
+    if reception_act == "bounded_counter_self_denial":
+        return all(row.evidence_refs for row in rows)
+    if reception_act == "respect_words_placed":
+        return all(row.evidence_refs for row in rows)
+    return False
+
+
+def _im04_source_axis_qualifier_ref(value: str) -> bool:
+    return type(value) is str and any(
+        value.startswith(f"{axis}:") or f"_{axis}:" in value
+        for axis in ("polarity", "modality", "time_scope")
+    )
+
+
+def _im04_retained_qualifier_coverage_satisfied(
+    *,
+    retained_qualifier_refs: Sequence[str],
+    source_qualifier_rows: Sequence[SourceQualifierBinding],
+    candidate_rows: Sequence[EmlisInterpretationCandidate],
+) -> bool:
+    retained = set(retained_qualifier_refs)
+    qualifier_rows = tuple(source_qualifier_rows)
+    source_candidate_refs = {
+        row.source_candidate_ref for row in qualifier_rows
+    }
+    required_qualifiers = {
+        qualifier
+        for candidate in candidate_rows
+        if candidate.candidate_id in source_candidate_refs
+        for qualifier in candidate.required_qualifiers
+    }
+    bound_axis_qualifiers = {
+        qualifier
+        for row in qualifier_rows
+        for qualifier in row.canonical_qualifier_codes
+    }
+    retained_axis_qualifiers = {
+        qualifier
+        for qualifier in retained
+        if _im04_source_axis_qualifier_ref(qualifier)
+    }
+    return bool(qualifier_rows) and retained.issubset(
+        required_qualifiers
+    ) and retained_axis_qualifiers.issubset(bound_axis_qualifiers)
+
+
+def _im04_limited_subjective_content_closed(
+    proposition: SubjectivePropositionV2,
+    *,
+    basis_binding_refs: tuple[str, ...],
+    contribution_refs: tuple[str, ...],
+) -> bool:
+    if proposition.subjective_mode is SubjectiveMode.PERSONAL_APPRAISAL:
+        return proposition.appraisal_content == EmlisAppraisalContent(
+            AppraisalDimension.MATERIAL_WEIGHT,
+            AppraisalOperation.RECEIVE_AS_MATERIAL,
+            basis_binding_refs,
+            None,
+            (),
+            contribution_refs,
+        )
+    if proposition.subjective_mode is SubjectiveMode.RELATIONAL_STANCE:
+        return proposition.relational_position == EmlisRelationalPosition(
+            RelationalPositionKind.STANCE,
+            StanceOperator.STAY_WITH_SPECIFIC_OBJECT,
+            basis_binding_refs,
+            (),
+            RelationalCommitment.STAY_WITH,
+            RelationalClosure.NONE,
+        )
+    return False
 
 
 def project_stage1_subjective_projection_seal_ref(
@@ -13542,7 +14076,7 @@ def project_stage1_subjective_projection_seal_ref(
         )
         branch_extension: tuple[Any, ...] = (
             "NORMAL",
-            meaning_decision_outcome.reading_id,
+            selected_emlis_provisional_reading_id(meaning_decision_outcome),
             sealed_ref,
             consequence_ref,
             proposition_refs,
@@ -13610,10 +14144,14 @@ def validate_stage1_post_selection_reception_records(
     bounded_limited_reception_records: object,
     bounded_limited_subjective_proposition_records: object,
     projection_seal_ref: str,
-    allowed_reception_act_ids: Sequence[str],
-    observation_contribution_refs: Sequence[str],
+    retained_reception_act_rows: Sequence[Any],
+    observation_contribution_rows: Sequence[PlannedObservationContribution],
+    interpretation_candidate_rows: Sequence[EmlisInterpretationCandidate],
+    contribution_to_candidate_ref_map: Sequence[Tuple[str, str]],
+    qualifier_value_rows: Sequence[Any],
+    material_unknown_refs: Sequence[str],
 ) -> None:
-    """Validate the carried IM04 closure without deriving or selecting."""
+    """Validate post-binding Reception against one frozen Phase-A authority."""
 
     if type(input_specific_meaning_structure) is not InputSpecificMeaningStructure:
         raise CMEEStage1ContractError(
@@ -13639,20 +14177,27 @@ def validate_stage1_post_selection_reception_records(
         limited,
         limited_propositions,
     ) = tuple_values
-    allowed_acts = tuple(allowed_reception_act_ids)
-    contribution_refs = tuple(observation_contribution_refs)
-    if (
-        not allowed_acts
-        or len(allowed_acts) != len(set(allowed_acts))
-        or not set(allowed_acts).issubset(
-            {row.reception_act for row in CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7}
-        )
-        or not contribution_refs
-        or len(contribution_refs) != len(set(contribution_refs))
-    ):
-        raise CMEEStage1ContractError(
-            "stage1_post_selection_authority_invalid"
-        )
+    (
+        retained_act_rows,
+        contribution_rows,
+        candidate_authority_rows,
+        contribution_candidate_map,
+        qualifier_rows,
+        unknown_refs,
+    ) = _im04_authority_closure(
+        retained_reception_act_rows=retained_reception_act_rows,
+        observation_contribution_rows=observation_contribution_rows,
+        interpretation_candidate_rows=interpretation_candidate_rows,
+        contribution_to_candidate_ref_map=contribution_to_candidate_ref_map,
+        qualifier_value_rows=qualifier_value_rows,
+        material_unknown_refs=material_unknown_refs,
+    )
+    contribution_by_id = {
+        row.contribution_id: row for row in contribution_rows
+    }
+    retained_by_act = {
+        row.reception_act: row for row in retained_act_rows
+    }
     outcome = input_specific_meaning_structure.meaning_decision_outcome
     whole_rows_by_ref = {
         row.consequence_id: row
@@ -13728,8 +14273,10 @@ def validate_stage1_post_selection_reception_records(
             for code in WholeReadingConsequenceCode
             if code in {row.consequence_code for row in resolved_whole_rows}
         )
+        selected_reading_ref = selected_emlis_provisional_reading_id(outcome)
         if (
-            consequence.selected_reading_ref != outcome.reading_id
+            outcome.reading_id != selected_reading_ref
+            or consequence.selected_reading_ref != selected_reading_ref
             or consequence.input_specificity_evidence_ref
             != candidate.input_specificity_evidence_ref
             or consequence.whole_reading_consequence_refs
@@ -13748,7 +14295,7 @@ def validate_stage1_post_selection_reception_records(
             whole_reading_consequence_rows=resolved_whole_rows,
         )
         if (
-            sealed[0].selected_reading_ref != outcome.reading_id
+            sealed[0].selected_reading_ref != selected_reading_ref
             or sealed[0].reading_consequence_ref != consequence_ref
         ):
             raise CMEEStage1ContractError("sealed_reading_binding_invalid")
@@ -13758,59 +14305,118 @@ def validate_stage1_post_selection_reception_records(
             reading_consequence=consequence,
             whole_reading_consequence_rows=resolved_whole_rows,
         )
-        response_domain = set(
-            (
-                outcome.primary_reading_focus_ref,
-                *outcome.supporting_facet_refs,
-                *outcome.reading_component_refs,
-                *outcome.reading_relation_refs,
-                *outcome.qualified_event_state_refs,
+        response_domain = tuple(
+            dict.fromkeys(
+                (
+                    outcome.primary_reading_focus_ref,
+                    *outcome.supporting_facet_refs,
+                    *outcome.reading_component_refs,
+                    *outcome.reading_relation_refs,
+                    *outcome.qualified_event_state_refs,
+                )
             )
         )
+        if (
+            not response_domain
+            or not set(response_domain).issubset(
+                set(consequence.source_constraint_refs)
+            )
+            or not set(candidate.preserved_difference_refs).issubset(
+                set(consequence.source_constraint_refs)
+            )
+        ):
+            raise CMEEStage1ContractError(
+                "MEANING_RESPONSE_CONSEQUENCE_GAP"
+            )
         proposition_refs: list[str] = []
+        reception_binding_keys: set[
+            tuple[SubjectiveResponsibilityKind, tuple[str, ...]]
+        ] = set()
         for proposition in propositions:
             _validate_stage1_immutable_shape(proposition)
+            retained_act = retained_by_act.get(proposition.reception_function)
+            mapping = (
+                None
+                if retained_act is None
+                else _im04_reception_act_mapping(
+                    proposition.reception_function
+                )
+            )
+            semantics = _IM04_NORMAL_SUBJECTIVE_SEMANTICS.get(
+                proposition.subjective_mode
+            )
+            bound_contributions = tuple(
+                contribution_by_id[ref]
+                for ref in (
+                    ()
+                    if retained_act is None
+                    else retained_act.basis_contribution_refs
+                )
+                if ref in contribution_by_id
+            )
+            mode_is_licensed = bool(
+                mapping is not None
+                and any(
+                    mode is proposition.subjective_mode
+                    for mode, _operator in mapping.eligible_mode_operator_pairs
+                )
+            )
+            materially_bound = bool(
+                retained_act is not None
+                and len(bound_contributions)
+                == len(retained_act.basis_contribution_refs)
+                and bool(retained_act.basis_contribution_refs)
+                and set(retained_act.basis_contribution_refs).issubset(
+                    set(candidate.basis_contribution_refs)
+                )
+                and _im04_reception_object_contract_satisfied(
+                    proposition.reception_function,
+                    bound_contributions,
+                )
+            )
             if (
-                proposition.schema_version != _INPUT_SPECIFIC_MEANING_STRUCTURE_SCHEMA_VERSION
-                or proposition.selected_reading_ref != outcome.reading_id
-                or proposition.reception_function not in set(allowed_acts)
+                proposition.schema_version
+                != _INPUT_SPECIFIC_MEANING_STRUCTURE_SCHEMA_VERSION
+                or proposition.selected_reading_ref != selected_reading_ref
+                or type(proposition.reception_function) is not str
+                or retained_act is None
                 or type(proposition.responsibility_kind)
                 is not SubjectiveResponsibilityKind
                 or type(proposition.subjective_mode) is not SubjectiveMode
-                or proposition.contribution_kind
-                not in {
-                    "AFFIRMATIVE_RECEPTION_CONTRIBUTION",
-                    "BOUNDED_COUNTERPOSITION",
-                }
+                or type(proposition.contribution_kind) is not str
+                or semantics is None
                 or (
-                    proposition.subjective_mode
-                    is SubjectiveMode.BOUNDED_COUNTERPOSITION
+                    proposition.responsibility_kind,
+                    proposition.subjective_assertion_modality,
+                    proposition.contribution_kind,
                 )
-                != (
-                    proposition.contribution_kind == "BOUNDED_COUNTERPOSITION"
-                )
-                or not proposition.response_object_refs
-                or len(proposition.response_object_refs)
-                != len(set(proposition.response_object_refs))
-                or not set(proposition.response_object_refs).issubset(
-                    response_domain
-                )
+                != semantics
+                or not mode_is_licensed
+                or not materially_bound
+                or proposition.response_object_refs != response_domain
                 or proposition.preserved_difference_refs
                 != candidate.preserved_difference_refs
                 or proposition.optional_affect is not None
-                and type(proposition.optional_affect) is not EmlisAffectContent
                 or proposition.optional_stance is not None
-                and type(proposition.optional_stance)
-                is not EmlisRelationalPosition
-                or proposition.reading_status != "EMLIS_PROVISIONAL_READING"
+                or proposition.reading_status
+                != "EMLIS_PROVISIONAL_READING"
                 or type(proposition.subjective_assertion_modality)
                 is not SubjectiveAssertionModality
                 or proposition.reception_id
                 != meaning_bound_reception_id(proposition)
             ):
                 raise CMEEStage1ContractError(
-                    "meaning_bound_reception_binding_invalid"
+                    "MEANING_RESPONSE_CONSEQUENCE_GAP"
                 )
+            binding_key = (
+                proposition.responsibility_kind,
+                proposition.response_object_refs,
+            )
+            if binding_key in reception_binding_keys:
+                raise CMEEStage1ContractError(
+                    "RECEPTION_BINDING_CONFLICT_STOP"
+                )
+            reception_binding_keys.add(binding_key)
             proposition_refs.append(proposition.reception_id)
         if len(proposition_refs) != len(set(proposition_refs)):
             raise CMEEStage1ContractError(
@@ -13836,8 +14442,10 @@ def validate_stage1_post_selection_reception_records(
         if (
             reception_set.schema_version
             != _INPUT_SPECIFIC_MEANING_STRUCTURE_SCHEMA_VERSION
-            or reception_set.selected_reading_ref != outcome.reading_id
+            or reception_set.selected_reading_ref != selected_reading_ref
             or reception_set.reading_consequence_ref != consequence_ref
+            or type(reception_set.subjective_depth)
+            is not SubjectiveDepthClass
             or not depth_count_valid
             or reception_set.proposition_refs != tuple(proposition_refs)
             or reception_set.affirmative_contribution_refs != affirmative_refs
@@ -13871,35 +14479,166 @@ def validate_stage1_post_selection_reception_records(
         bounded = limited[0]
         _validate_stage1_immutable_shape(proposition)
         _validate_stage1_immutable_shape(bounded)
-        final_subjective_schema = _stage1_final_logical_identity(
-            "CMEE_STAGE1_SUBJECTIVE_PROPOSITION_SCHEMA_VERSION"
+        basis_rows, source_qualifier_rows = (
+            resolve_limited_subjective_binding_rows(
+                projection_preimage_ref=projection_preimage_ref,
+                limited_outcome=outcome,
+                observation_contribution_rows=contribution_rows,
+                interpretation_candidate_rows=candidate_authority_rows,
+                contribution_to_candidate_ref_map=contribution_candidate_map,
+                qualifier_value_rows=qualifier_rows,
+            )
+        )
+        retained_layer1_set = set(outcome.retained_layer1_refs)
+        source_bound_choices = tuple(
+            (row, mode, operator)
+            for row in retained_act_rows
+            if row.reception_act != "bounded_counter_self_denial"
+            and bool(row.basis_contribution_refs)
+            and set(row.basis_contribution_refs).issubset(retained_layer1_set)
+            and _im04_reception_object_contract_satisfied(
+                row.reception_act,
+                tuple(
+                    contribution_by_id[ref]
+                    for ref in row.basis_contribution_refs
+                ),
+            )
+            for mode, operator in _im04_reception_act_mapping(
+                row.reception_act
+            ).eligible_mode_operator_pairs
+            if mode
+            in {
+                SubjectiveMode.PERSONAL_APPRAISAL,
+                SubjectiveMode.RELATIONAL_STANCE,
+            }
+        )
+        if len(source_bound_choices) != 1:
+            raise CMEEStage1ContractError(
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+            )
+        source_bound_act, licensed_mode, licensed_operator = (
+            source_bound_choices[0]
+        )
+        if (
+            proposition.subjective_mode is not licensed_mode
+            or proposition.subjective_operator is not licensed_operator
+        ):
+            raise CMEEStage1ContractError(
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+            )
+        licensed_contribution_set = set(
+            source_bound_act.basis_contribution_refs
+        )
+        licensed_basis_rows = tuple(
+            row
+            for row in basis_rows
+            if row.contribution_ref in licensed_contribution_set
+        )
+        licensed_basis_ref_set = {
+            row.binding_ref for row in licensed_basis_rows
+        }
+        licensed_source_qualifier_rows = tuple(
+            row
+            for row in source_qualifier_rows
+            if row.basis_binding_ref in licensed_basis_ref_set
+        )
+        licensed_contribution_refs = tuple(
+            dict.fromkeys(row.contribution_ref for row in licensed_basis_rows)
+        )
+        licensed_semantic_refs = tuple(
+            dict.fromkeys(row.semantic_ref for row in licensed_basis_rows)
+        )
+        expected_licensed_contribution_refs = tuple(
+            ref
+            for ref in outcome.retained_layer1_refs
+            if ref in licensed_contribution_set
+        )
+        if (
+            not licensed_basis_rows
+            or licensed_contribution_refs
+            != expected_licensed_contribution_refs
+            or len(licensed_source_qualifier_rows) != len(licensed_basis_rows)
+            or not _im04_retained_qualifier_coverage_satisfied(
+                retained_qualifier_refs=outcome.retained_qualifier_refs,
+                source_qualifier_rows=licensed_source_qualifier_rows,
+                candidate_rows=candidate_authority_rows,
+            )
+        ):
+            raise CMEEStage1ContractError(
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+            )
+        allowed_semantic_refs = tuple(
+            dict.fromkeys(
+                ref
+                for row in contribution_rows
+                for ref in (*row.semantic_refs, *row.relation_basis_refs)
+            )
+        )
+        admitted_relation_refs = tuple(
+            dict.fromkeys(
+                ref
+                for row in contribution_rows
+                for ref in row.relation_basis_refs
+            )
+        )
+        forbidden_promotions = stage1_subjective_forbidden_promotions(
+            contribution_rows,
+            material_unknown_refs=unknown_refs,
+        )
+        validate_subjective_proposition_v2(
+            proposition,
+            projection_preimage_ref=projection_preimage_ref,
+            basis_rows=licensed_basis_rows,
+            qualifier_rows=licensed_source_qualifier_rows,
+            expected_basis_rows=licensed_basis_rows,
+            expected_qualifier_rows=licensed_source_qualifier_rows,
+            policy_basis_rows=(),
+            expected_policy_basis_rows=(),
+            allowed_contribution_refs=tuple(
+                row.contribution_id for row in contribution_rows
+            ),
+            allowed_semantic_refs=allowed_semantic_refs,
+            allowed_source_candidate_refs=tuple(
+                row.candidate_id for row in candidate_authority_rows
+            ),
+            allowed_policy_application_row_refs=(),
+            admitted_relation_refs=admitted_relation_refs,
+            material_unknown_refs=unknown_refs,
+            expected_actor_refs=(),
+            expected_experiencer_refs=(),
+            expected_focal_relation_ref=None,
+            owner_ref=_stage1_final_logical_identity(
+                "CMEE_STAGE1_EMLIS_OWNER_REF"
+            ),
+            speaker_owner="EMLIS",
+            user_fact_effect=0,
+            forbidden_promotions=forbidden_promotions,
+            expected_forbidden_promotions=forbidden_promotions,
         )
         if (
             not outcome.retained_layer1_refs
             or not outcome.foreground_source_object_refs
             or not set(outcome.retained_layer1_refs).issubset(
-                contribution_refs
+                set(contribution_by_id)
             )
-            or proposition.schema_version != final_subjective_schema
-            or proposition.content_kind is not SubjectiveContentKind.APPRAISAL
-            or proposition.subjective_mode
-            is not SubjectiveMode.PERSONAL_APPRAISAL
-            or proposition.subjective_operator
-            is not SubjectiveOperator.APPRAISE_AS_MATERIAL
             or proposition.target_contribution_refs
-            != outcome.retained_layer1_refs
-            or proposition.primary_target_refs
-            != outcome.foreground_source_object_refs
-            or proposition.response_object_refs
-            != outcome.foreground_source_object_refs
+            != licensed_contribution_refs
+            or proposition.primary_target_refs != licensed_semantic_refs
+            or proposition.response_object_refs != licensed_semantic_refs
+            or proposition.basis_binding_refs
+            != tuple(row.binding_ref for row in licensed_basis_rows)
             or proposition.source_qualifier_binding_refs
-            != outcome.retained_qualifier_refs
-            or type(proposition.appraisal_content) is not EmlisAppraisalContent
-            or proposition.affect_content is not None
-            or proposition.material_value_content is not None
-            or proposition.relational_position is not None
-            or proposition.assertion_modality
-            is not SubjectiveAssertionModality.EMLIS_APPRAISAL
+            != tuple(
+                row.source_qualifier_binding_ref
+                for row in licensed_source_qualifier_rows
+            )
+            or not _im04_limited_subjective_content_closed(
+                proposition,
+                basis_binding_refs=tuple(
+                    row.binding_ref for row in licensed_basis_rows
+                ),
+                contribution_refs=licensed_contribution_refs,
+            )
             or bounded.schema_version
             != _INPUT_SPECIFIC_MEANING_STRUCTURE_SCHEMA_VERSION
             or bounded.limited_outcome_ref != limited_meaning_outcome_id(outcome)
@@ -13908,8 +14647,10 @@ def validate_stage1_post_selection_reception_records(
             or bounded.foreground_source_object_refs
             != outcome.foreground_source_object_refs
             or bounded.retained_qualifier_refs != outcome.retained_qualifier_refs
+            or type(bounded.subjective_depth) is not SubjectiveDepthClass
             or bounded.subjective_depth is not SubjectiveDepthClass.FOCUSED
             or bounded.proposition_ref != subjective_proposition_v2_id(proposition)
+            or type(bounded.contribution_kind) is not str
             or bounded.contribution_kind
             != "AFFIRMATIVE_RECEPTION_CONTRIBUTION"
         ):
@@ -18074,6 +18815,7 @@ __all__ = [
     "recompute_stage1_identity",
     "reading_consequence_id",
     "reading_consequence_source_constraint_refs",
+    "resolve_limited_subjective_binding_rows",
     "required_difference_id",
     "resolve_mutation_application_spec",
     "requirement_bundle_id",
