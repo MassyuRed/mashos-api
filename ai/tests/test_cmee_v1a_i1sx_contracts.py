@@ -13510,7 +13510,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             )
         )
         frozen_runtime_payload_sha256 = {
-            exact17_names[0]: "06dca9a8753ac1058213af3582a9723a228c1a69ec5a9b71c4f78c0e27323da5",
+            exact17_names[0]: "aee6328677e6f813c5b165c40de3b0100a336a810ba812d4d19d46c6756a039f",
             exact17_names[1]: "0705bcb48ca1c9a347b691d2eaf3d8a980cd8a044ca66292dda69e3b5fdbdc8c",
             exact17_names[2]: "437831951fa0c4062d68af2342d79ebfc4b29e8c318e1fa8765c74c4aac9a832",
             exact17_names[3]: "c907af7a059f802120b3e494a88651015a14d45c5e272ab1f9d3f1e9bfa8d06f",
@@ -13518,10 +13518,10 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             exact17_names[5]: "e524111597d75599b0550b271a3df464df4d468aec28e608ab4586b7840da1f0",
             exact17_names[6]: "3ca31fbcf0ad9c93bdd4d267a3ef2000ce79b8d702bd7188f020eb11d5bd593c",
             exact17_names[7]: "75343d43f9e22c101d218fb80fb2b17a9a264780ceb63842c6d75cb7dbb0c2f4",
-            exact17_names[9]: "838767e83ab7f34e955bab4ed5e9efd07e238a6a74c5024ea644e70af1cd3cf1",
-            exact17_names[10]: "bbfea5e3c018d2415218988e49b059f9720a46914ce374793f5c4a0b3e6e1d3b",
-            exact17_names[11]: "b60f13b6f253cfb94d759d8b0ade9d3ea6c7fd6786a964886cf02037ab2d4d40",
-            exact17_names[12]: "e3d07093cff557255015673212cd2da17244fd96e75a113a55fd1d4ff5726042",
+            exact17_names[9]: "e0c43723126dc14fd9ac3cb23a882ed22e78c93363454ed43e510f5c0d705b6c",
+            exact17_names[10]: "c240de444bbf40a2bfa381dca2960906731a3e1055ba4ddc93f2959383c30dc5",
+            exact17_names[11]: "da19eb0abdbf25079674536e559dbcc0edcf6604161770799e7aec3f1b5fd689",
+            exact17_names[12]: "e64b46889f05ac391e6905cdf4ae7bd4e94e50f95efd8c339fbce7a54c2bb155",
             exact17_names[13]: "cee6c2989896f8e3f3642f98a354ea294d34b05eff81a2322fcb94ce9fc9abba",
             exact17_names[15]: "3c14b8eb9e5cd8ff5410ffc7c1a0d3558784a75f8c355c272904dc650dd50ff7",
         }
@@ -13554,7 +13554,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 in runtime_payload_name_sha256_byte_count_exact17[:8]
             ),
             (
-                657096,
+                666280,
                 760521,
                 412047,
                 293740,
@@ -13975,10 +13975,10 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             )
         )
         frozen_unchanged_manifest_sha256 = {
-            expected_names[9]: "838767e83ab7f34e955bab4ed5e9efd07e238a6a74c5024ea644e70af1cd3cf1",
-            expected_names[10]: "bbfea5e3c018d2415218988e49b059f9720a46914ce374793f5c4a0b3e6e1d3b",
-            expected_names[11]: "b60f13b6f253cfb94d759d8b0ade9d3ea6c7fd6786a964886cf02037ab2d4d40",
-            expected_names[12]: "e3d07093cff557255015673212cd2da17244fd96e75a113a55fd1d4ff5726042",
+            expected_names[9]: "e0c43723126dc14fd9ac3cb23a882ed22e78c93363454ed43e510f5c0d705b6c",
+            expected_names[10]: "c240de444bbf40a2bfa381dca2960906731a3e1055ba4ddc93f2959383c30dc5",
+            expected_names[11]: "da19eb0abdbf25079674536e559dbcc0edcf6604161770799e7aec3f1b5fd689",
+            expected_names[12]: "e64b46889f05ac391e6905cdf4ae7bd4e94e50f95efd8c339fbce7a54c2bb155",
             expected_names[13]: "cee6c2989896f8e3f3642f98a354ea294d34b05eff81a2322fcb94ce9fc9abba",
             expected_names[15]: "3c14b8eb9e5cd8ff5410ffc7c1a0d3558784a75f8c355c272904dc650dd50ff7",
         }
@@ -18945,33 +18945,33 @@ class CMEERouteAV2I01DisabledRegistryContractsTest(unittest.TestCase):
     ) -> None:
         stage1_composition_module.validate_v2_grammar_inventory()
         inventory = stage1_composition_module.V2_GRAMMAR_INVENTORY
-        self.assertEqual(len(inventory.encode("utf-8")), 13_833)
+        self.assertEqual(len(inventory.encode("utf-8")), 14_752)
         self.assertEqual(
             hashlib.sha256(inventory.encode("utf-8")).hexdigest(),
-            "9765f6032d38899862bc83cf3150739a8380fc252855ac74ad059bc1b2690bf5",
+            "1e593666c8ca7c02824fa51978827b62afb46a6f3254f4c612635eb3945fdfe1",
         )
         self.assertEqual(
             len(stage1_composition_module.V2_GRAMMAR_INVENTORY_ROWS),
-            232,
+            246,
         )
         expected_counts = (
             17,
-            22,
-            22,
-            22,
-            22,
+            24,
+            24,
+            24,
+            23,
             8,
-            22,
+            24,
             5,
             5,
             3,
             3,
             4,
-            42,
-            59,
+            46,
+            64,
             6,
-            22,
-            10,
+            24,
+            11,
             12,
             7,
         )
@@ -19154,7 +19154,7 @@ class CMEERouteAV2I01DisabledRegistryContractsTest(unittest.TestCase):
 
 
 class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
-    _BASE_SURFACE_SKELETON_EXACT22 = (
+    _BASE_SURFACE_SKELETON_EXACT24 = (
         "「〈X〉」という内容が中心になっています。",
         "「〈X〉」という方向性が見えます。",
         "「〈X〉」という負担が残っています。",
@@ -19177,9 +19177,11 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
         "Emlisは「〈X〉」を「〈Y〉」に固定したくありません。",
         "Emlisはここで「〈X〉」と断定したくありません。",
         "Emlisは「〈X〉」を「〈Y〉」に限定したくありません。",
+        "Emlisは「〈X〉」と「〈Y〉」を見守りたいです。",
+        "「〈X〉」と「〈Y〉」が緊張関係にあります。",
     )
     _BASE_SURFACE_SKELETON_SHA256 = (
-        "1a46358ce3cc041a93bc54035bb6a1cf1c35e5f3662e9928b7e765b7771a77bf"
+        "619a6a4d6153dab9a3aaa277b45ce63ad812c4545d367936cb264b42895747d8"
     )
     _TERMINAL_BY_CLASS = {
         contracts_module.SourceFinalTerminalClass.ABSENT: "",
@@ -19788,7 +19790,7 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
             len(stage1_composition_module.V2_MUTATION_CASE_REGISTRY),
             stage1_composition_module.V2_MUTATION_CASE_COUNT,
         )
-        self.assertEqual(stage1_composition_module.V2_MUTATION_CASE_COUNT, 273)
+        self.assertEqual(stage1_composition_module.V2_MUTATION_CASE_COUNT, 297)
         self.assertEqual(
             Counter(
                 row[1]
@@ -19796,13 +19798,13 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
             ),
             Counter(
                 {
-                    "PARTICLE_DROP": 59,
-                    "PARTICLE_DUPLICATE": 59,
-                    "PARTICLE_WRONG_SWAP": 59,
-                    "REQUIRED_SLOT_DROP": 42,
-                    "COMPLEMENT_SWAP": 22,
-                    "FINITE_TO_CONTINUATIVE": 22,
-                    "ILLEGAL_CONNECTIVE": 10,
+                    "PARTICLE_DROP": 64,
+                    "PARTICLE_DUPLICATE": 64,
+                    "PARTICLE_WRONG_SWAP": 64,
+                    "REQUIRED_SLOT_DROP": 46,
+                    "COMPLEMENT_SWAP": 24,
+                    "FINITE_TO_CONTINUATIVE": 24,
+                    "ILLEGAL_CONNECTIVE": 11,
                 }
             ),
         )
@@ -19979,8 +19981,8 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
                 mutation_count += 1
             mocked_rank.assert_not_called()
             mocked_linearizer.assert_not_called()
-        self.assertEqual(mutation_count, 59 * 3 + 42 + 22 + 22 + 10)
-        self.assertEqual(mutation_count, 273)
+        self.assertEqual(mutation_count, 64 * 3 + 46 + 24 + 24 + 11)
+        self.assertEqual(mutation_count, 297)
 
     def test_route_a_source_leaf_modes_preserve_bytes_and_ownership(self) -> None:
         self.assertEqual(
@@ -20242,22 +20244,22 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
                 selected_frames.append(selected_frame.frame_id)
                 selected_heads.append(selected_head.head_id)
                 argument_plans.extend(plans)
-            self.assertEqual(frame_spy.call_count, 22)
-            self.assertEqual(head_spy.call_count, 22)
-        self.assertEqual(len(set(selected_frames)), 22)
-        self.assertEqual(len(set(selected_heads)), 22)
-        self.assertEqual(len(argument_plans), 42)
+            self.assertEqual(frame_spy.call_count, 24)
+            self.assertEqual(head_spy.call_count, 24)
+        self.assertEqual(len(set(selected_frames)), 24)
+        self.assertEqual(len(set(selected_heads)), 24)
+        self.assertEqual(len(argument_plans), 46)
         self.assertEqual(
             len({plan.particle_rule_ref for plan in argument_plans}),
-            42,
+            46,
         )
 
         skeleton_clauses = tuple(
             self._linearized_skeleton_clause(f"F{index:02d}")
-            for index in range(1, 23)
+            for index in range(1, 25)
         )
         skeleton = tuple(clause.text for clause in skeleton_clauses)
-        self.assertEqual(skeleton, self._BASE_SURFACE_SKELETON_EXACT22)
+        self.assertEqual(skeleton, self._BASE_SURFACE_SKELETON_EXACT24)
         skeleton_payload = "".join(
             f"SURFACE_SKELETON|F{index:02d}|{surface}\n"
             for index, surface in enumerate(skeleton, start=1)
@@ -20386,7 +20388,7 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
                 placement=stage1_composition_module.ClauseLinkPlacement.FRAME_INTERNAL,
                 frame=self._frame(f"F{index:02d}"),
             )
-            for index in range(5, 10)
+            for index in (*range(5, 10), 24)
         ]
         for relation in (
             RelationOperator.TEMPORALLY_PRECEDES,
@@ -20431,7 +20433,7 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
                 )
                 for plan in link_plans
             },
-            {f"L{index:02d}" for index in range(1, 11)},
+            {f"L{index:02d}" for index in range(1, 12)},
         )
 
         external_frame = self._frame("F01")
@@ -20462,7 +20464,7 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
             leaves=external_leaves,
             source_plan=external_source_plan,
         )
-        for plan in link_plans[5:9]:
+        for plan in link_plans[6:10]:
             clause_ir = stage1_composition_module.build_japanese_clause_ir(
                 frame=external_frame,
                 head=external_head,
@@ -30157,13 +30159,30 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
             if (
                 candidate_phase_a
                 .bounded_limited_subjective_proposition_records
+                and (
+                    candidate_phase_a
+                    .bounded_limited_subjective_proposition_records[
+                        0
+                    ].subjective_mode
+                    is SubjectiveMode.RELATIONAL_STANCE
+                )
                 and len(
                     candidate_phase_a
                     .bounded_limited_subjective_proposition_records[
                         0
+                    ].primary_target_refs
+                )
+                == 2
+                and (
+                    candidate_phase_a
+                    .bounded_limited_subjective_proposition_records[
+                        0
+                    ].primary_target_refs
+                    == candidate_phase_a
+                    .bounded_limited_subjective_proposition_records[
+                        0
                     ].response_object_refs
                 )
-                > 1
             ):
                 multi_object_phase_a = candidate_phase_a
                 break
@@ -30183,12 +30202,108 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                 multi_object_phase_a, multi_object_projection
             )
         )
+        multi_object_composition = (
+            stage1_composition_module.compose_stage1_from_projection(
+                multi_object_phase_b
+            )
+        )
+        multi_object_claim = multi_object_projection.subjective_claims[0]
+        multi_object_proposition = (
+            multi_object_claim.asserted_subjective_proposition
+        )
+        multi_object_layer2_duties = tuple(
+            row
+            for row in (
+                multi_object_composition.selected_candidate
+                .normalized_artifact.composition_duty_rows
+            )
+            if row.layer == "LAYER_2"
+        )
+        self.assertEqual(len(multi_object_layer2_duties), 1)
+        multi_object_layer2_rows = tuple(
+            row
+            for row in (
+                multi_object_composition.selected_candidate
+                .normalized_artifact.v2_clause_rows
+            )
+            if row.duty_ref == multi_object_layer2_duties[0].duty_ref
+        )
+        self.assertEqual(len(multi_object_layer2_rows), 1)
+        multi_object_layer2 = multi_object_layer2_rows[0]
+        self.assertEqual(
+            (
+                multi_object_layer2.frame.frame_id,
+                multi_object_layer2.frame.complement_rule_ref,
+            ),
+            ("F23", "C08"),
+        )
+        self.assertIs(
+            multi_object_layer2.source_group.cardinality,
+            contracts_module.SourceLeafCardinality.ORDERED_EXACT2,
+        )
+        preserved_primary_refs = tuple(
+            leaf.semantic_ref for leaf in multi_object_layer2.source_leaves
+        )
+        self.assertEqual(
+            preserved_primary_refs,
+            multi_object_proposition.primary_target_refs,
+        )
+        self.assertEqual(
+            preserved_primary_refs,
+            multi_object_proposition.response_object_refs,
+        )
+        self.assertEqual(
+            tuple(
+                multi_object_projection.reception_visible_causal_trace_rows[
+                    0
+                ].projected_response_object_refs
+            ),
+            preserved_primary_refs,
+        )
+
+        third_primary_ref = "tamper:third-primary-target"
+        over_cardinality_proposition = replace(
+            multi_object_proposition,
+            primary_target_refs=(
+                *multi_object_proposition.primary_target_refs,
+                third_primary_ref,
+            ),
+            response_object_refs=(
+                *multi_object_proposition.response_object_refs,
+                third_primary_ref,
+            ),
+        )
+        over_cardinality_claim = replace(
+            multi_object_claim,
+            asserted_subjective_proposition=over_cardinality_proposition,
+        )
+        over_cardinality_refs = (
+            over_cardinality_proposition.primary_target_refs
+        )
+        over_cardinality_frame = (
+            stage1_composition_module._v2_frame_for_duty(
+                multi_object_layer2_duties[0],
+                over_cardinality_claim,
+                over_cardinality_refs,
+                multi_object_phase_b,
+            )
+        )
+        self.assertEqual(
+            (
+                over_cardinality_frame.frame_id,
+                over_cardinality_frame.complement_rule_ref,
+            ),
+            ("F19", "C06"),
+        )
         with self.assertRaisesRegex(
             stage1_composition_module.Stage1CompositionError,
             "LIMITED_RECEPTION_CAPABILITY_GAP_STOP",
         ):
-            stage1_composition_module.compose_stage1_from_projection(
-                multi_object_phase_b
+            stage1_composition_module._v2_source_refs_for_frame(
+                over_cardinality_refs,
+                over_cardinality_claim,
+                over_cardinality_frame,
+                multi_object_phase_b,
             )
 
     def test_im06_contrastive_paraphrase_adjunct_synthetic_oracle_and_positive_exact_once_order(
@@ -30201,9 +30316,12 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
             category: str = "生活",
             emotion: str = "不安",
             strength: str = "medium",
+            exact_request: GenerationRequest | None = None,
         ) -> SimpleNamespace:
             source = freeze_text_source(
-                _request(
+                exact_request
+                if exact_request is not None
+                else _request(
                     record_id=f"im06-{label}",
                     memo=memo,
                     category=category,
@@ -30247,6 +30365,7 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
             emotion: str = "不安",
             strength: str = "medium",
             expected_reception_count: int = 1,
+            exact_request: GenerationRequest | None = None,
         ) -> SimpleNamespace:
             inputs = raw_inputs(
                 label,
@@ -30254,6 +30373,7 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                 category=category,
                 emotion=emotion,
                 strength=strength,
+                exact_request=exact_request,
             )
             phase_a = stage1_response_module.build_subjective_planning_inputs(
                 source=inputs.source,
@@ -32279,6 +32399,181 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                 candidate_run_module.IM03_WORKING_RUNTIME_INTEGRATION_IDENTITY,
             ),
         )
+        reciprocal_formal_row = next(
+            row
+            for row in candidate_run_module.EXACT8
+            if row[0] == "SX-07"
+        )
+        reciprocal_raw = candidate_run_module._raw(*reciprocal_formal_row)
+        reciprocal_request = GenerationRequest(
+            request_id=f"req-{reciprocal_formal_row[0]}",
+            current_input_bundle=build_emlis_current_input_bundle(
+                reciprocal_raw
+            ),
+            expected_source_record_id=str(reciprocal_raw["id"]),
+        )
+        reciprocal = build_and_seal_normal(
+            "formal-reciprocal-tension",
+            reciprocal_formal_row[1],
+            category=reciprocal_formal_row[2],
+            emotion=reciprocal_formal_row[3],
+            strength=reciprocal_formal_row[4],
+            exact_request=reciprocal_request,
+        )
+        reciprocal_pair = (
+            stage1_composition_module._reciprocal_tension_relation_pair(
+                tuple(reciprocal.projection.observation_contributions)
+            )
+        )
+        self.assertEqual(
+            reciprocal_pair,
+            tuple(reciprocal.projection.observation_contributions),
+        )
+        self.assertTrue(
+            stage1_composition_module._reciprocal_tension_scalar_axes_match(
+                reciprocal_pair,
+                reciprocal.phase_b,
+            )
+        )
+        first_relation, second_relation = reciprocal_pair
+        self.assertEqual(
+            tuple(
+                row.semantic_ref
+                for row in first_relation.argument_bindings
+            ),
+            tuple(
+                reversed(
+                    tuple(
+                        row.semantic_ref
+                        for row in second_relation.argument_bindings
+                    )
+                )
+            ),
+        )
+        reciprocal_shape_mutations = (
+            (
+                first_relation,
+                replace(
+                    second_relation,
+                    argument_bindings=first_relation.argument_bindings,
+                ),
+            ),
+            (
+                first_relation,
+                replace(
+                    second_relation,
+                    relation_basis_refs=(
+                        first_relation.relation_basis_refs
+                    ),
+                ),
+            ),
+            (*reciprocal_pair, first_relation),
+            (
+                first_relation,
+                replace(
+                    second_relation,
+                    relation_operator=RelationOperator.COEXISTS_WITH,
+                ),
+            ),
+        )
+        self.assertTrue(
+            all(
+                stage1_composition_module
+                ._reciprocal_tension_relation_pair(rows)
+                == ()
+                for rows in reciprocal_shape_mutations
+            )
+        )
+        reciprocal_artifact = (
+            reciprocal.composition.selected_candidate.normalized_artifact
+        )
+        reciprocal_duties = tuple(
+            row
+            for row in reciprocal_artifact.composition_duty_rows
+            if row.layer == "LAYER_1" and row.relation_refs
+        )
+        self.assertEqual(len(reciprocal_duties), 2)
+        selected_relation_frames = []
+        for duty in reciprocal_duties:
+            owner, source_refs = stage1_composition_module._duty_semantics(
+                duty, reciprocal.phase_b
+            )
+            selected_relation_frames.append(
+                stage1_composition_module._v2_frame_for_duty(
+                    duty,
+                    owner,
+                    source_refs,
+                    reciprocal.phase_b,
+                ).frame_id
+            )
+        self.assertEqual(tuple(selected_relation_frames), ("F06", "F24"))
+        second_candidate_ref = second_relation.interpretation_candidate_refs[0]
+        second_binding = second_relation.argument_bindings[0]
+        qualifier_rows = (
+            reciprocal.phase_b.qualifier_value_by_candidate_scope_axis_key
+        )
+        target_qualifier = next(
+            row
+            for row in qualifier_rows
+            if row.candidate_ref == second_candidate_ref
+            and row.qualifier_scope
+            is stage1_composition_module.QualifierLookupScope.RELATION_SOURCE_BINDING
+            and row.source_argument_role is second_binding.role
+            and row.source_semantic_ref == second_binding.semantic_ref
+            and row.axis
+            is stage1_composition_module.ClauseScalarAxis.POLARITY
+        )
+        tampered_qualifier_sets = (
+            tuple(row for row in qualifier_rows if row is not target_qualifier),
+            (*qualifier_rows, target_qualifier),
+            tuple(
+                replace(row, value=f"{row.value}:tampered")
+                if row is target_qualifier
+                else row
+                for row in qualifier_rows
+            ),
+        )
+        second_duty = reciprocal_duties[1]
+        second_owner, second_source_refs = (
+            stage1_composition_module._duty_semantics(
+                second_duty, reciprocal.phase_b
+            )
+        )
+        for tampered_qualifiers in tampered_qualifier_sets:
+            with self.assertRaisesRegex(
+                stage1_composition_module.Stage1CompositionError,
+                "STAGE1_QUALIFIER_CLOSURE_STOP",
+            ):
+                stage1_composition_module._v2_frame_for_duty(
+                    second_duty,
+                    second_owner,
+                    second_source_refs,
+                    replace(
+                        reciprocal.phase_b,
+                        qualifier_value_by_candidate_scope_axis_key=(
+                            tampered_qualifiers
+                        ),
+                    ),
+                )
+        f06_frame = next(
+            row
+            for row in stage1_composition_module.V2_JAPANESE_CASE_FRAME_REGISTRY
+            if row.frame_id == "F06"
+        )
+        with self.assertRaisesRegex(
+            stage1_composition_module.Stage1CompositionError,
+            "STAGE1_CLAUSE_LINK_REPEAT_STOP",
+        ):
+            stage1_composition_module.project_clause_link_plan(
+                link_plan_ref="link:reciprocal-repeat-guard",
+                admitted_relation_ref="relation:reciprocal-repeat-guard",
+                admitted_relation=RelationOperator.TENSION_WITH,
+                placement=(
+                    stage1_composition_module.ClauseLinkPlacement.FRAME_INTERNAL
+                ),
+                frame=f06_frame,
+                previous_token_owner_ref="F06",
+            )
         im07_domains = (
             candidate_run_module.IM07_PRODUCT_IMPLEMENTATION_DOMAIN,
             candidate_run_module.IM07_FORMAL_EVALUATION_BUNDLE_DOMAIN,
@@ -32370,59 +32665,177 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
             changed_bundle["formal_evaluation_bundle_id"],
             im07_envelope["formal_evaluation_bundle_id"],
         )
-        formal_row = candidate_run_module.EXACT8[0]
-        formal_private_case, formal_body_free_case = (
-            candidate_run_module._materialize_im07_formal_case(
-                case_id=formal_row[0],
-                memo=formal_row[1],
-                category=formal_row[2],
-                emotion=formal_row[3],
-                strength=formal_row[4],
+        formal_cases = tuple(
+            (
+                formal_row,
+                *candidate_run_module._materialize_im07_formal_case(
+                    case_id=formal_row[0],
+                    memo=formal_row[1],
+                    category=formal_row[2],
+                    emotion=formal_row[3],
+                    strength=formal_row[4],
+                ),
             )
+            for formal_row in candidate_run_module.EXACT8
         )
-        self.assertTrue(formal_private_case["formal_trace_valid"])
-        self.assertTrue(formal_private_case["machine_invariant_clear"])
-        self.assertTrue(formal_body_free_case["formal_trace_valid"])
-        self.assertTrue(formal_body_free_case["machine_invariant_clear"])
-        self.assertEqual(
-            formal_private_case["visible_trace"]["schema_version"],
-            candidate_run_module.IM07_VISIBLE_TRACE_SCHEMA_VERSION,
-        )
-        self.assertEqual(
-            formal_private_case["visible_trace"]["ordered_visible_unit_ids"],
-            tuple(
-                row["unit_id"]
-                for row in formal_private_case["visible_trace"][
-                    "realized_visible_units"
-                ]
-            ),
-        )
-        self.assertEqual(
-            candidate_run_module._domain_separated_sha256(
-                candidate_run_module.IM07_FORMAL_VISIBLE_TRACE_DOMAIN,
-                formal_private_case["visible_trace"],
-            ),
-            formal_body_free_case["visible_trace_body_sha256"],
-        )
-        formal_case_material = dict(formal_private_case)
-        formal_case_digest = formal_case_material.pop("case_record_sha256")
-        self.assertEqual(
-            candidate_run_module._domain_separated_sha256(
-                candidate_run_module.IM07_FORMAL_CASE_RECORD_DOMAIN,
-                formal_case_material,
-            ),
-            formal_case_digest,
-        )
-        formal_body_free_json = json.dumps(
-            formal_body_free_case,
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-        self.assertNotIn(formal_row[1], formal_body_free_json)
-        self.assertNotIn(
-            formal_private_case["artifact"]["candidate_text"],
-            formal_body_free_json,
-        )
+        self.assertEqual(len(formal_cases), 8)
+        reciprocal_tension_case_count = 0
+        for formal_row, formal_private_case, formal_body_free_case in formal_cases:
+            self.assertTrue(formal_private_case["formal_trace_valid"])
+            self.assertTrue(formal_private_case["machine_invariant_clear"])
+            self.assertTrue(formal_body_free_case["formal_trace_valid"])
+            self.assertTrue(formal_body_free_case["machine_invariant_clear"])
+            self.assertEqual(
+                formal_private_case["visible_trace"]["schema_version"],
+                candidate_run_module.IM07_VISIBLE_TRACE_SCHEMA_VERSION,
+            )
+            self.assertEqual(
+                formal_private_case["visible_trace"]["ordered_visible_unit_ids"],
+                tuple(
+                    row["unit_id"]
+                    for row in formal_private_case["visible_trace"][
+                        "realized_visible_units"
+                    ]
+                ),
+            )
+            self.assertEqual(
+                candidate_run_module._domain_separated_sha256(
+                    candidate_run_module.IM07_FORMAL_VISIBLE_TRACE_DOMAIN,
+                    formal_private_case["visible_trace"],
+                ),
+                formal_body_free_case["visible_trace_body_sha256"],
+            )
+            formal_case_material = dict(formal_private_case)
+            formal_case_digest = formal_case_material.pop("case_record_sha256")
+            self.assertEqual(
+                candidate_run_module._domain_separated_sha256(
+                    candidate_run_module.IM07_FORMAL_CASE_RECORD_DOMAIN,
+                    formal_case_material,
+                ),
+                formal_case_digest,
+            )
+            formal_body_free_json = json.dumps(
+                formal_body_free_case,
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            self.assertNotIn(formal_row[1], formal_body_free_json)
+            self.assertNotIn(
+                formal_private_case["artifact"]["candidate_text"],
+                formal_body_free_json,
+            )
+            normalized = formal_private_case["artifact"][
+                "normalized_artifact"
+            ]
+            relation_duties = tuple(
+                row
+                for row in normalized["composition_duty_rows"]
+                if row["layer"] == "LAYER_1"
+                and len(row["relation_refs"]) == 1
+                and len(row["response_object_refs"]) == 2
+            )
+            reciprocal_relation_duties = (
+                relation_duties
+                if len(relation_duties) == 2
+                and tuple(relation_duties[0]["response_object_refs"])
+                == tuple(
+                    reversed(
+                        tuple(relation_duties[1]["response_object_refs"])
+                    )
+                )
+                else ()
+            )
+            if reciprocal_relation_duties:
+                reciprocal_tension_case_count += 1
+                self.assertEqual(
+                    tuple(
+                        len(row["basis_projection_refs"])
+                        for row in reciprocal_relation_duties
+                    ),
+                    (1, 1),
+                )
+                relation_refs = tuple(
+                    row["relation_refs"][0]
+                    for row in reciprocal_relation_duties
+                )
+                self.assertEqual(len(set(relation_refs)), 2)
+                clauses_by_duty = {
+                    row["duty_ref"]: row
+                    for row in normalized["v2_clause_rows"]
+                }
+                reciprocal_clauses = tuple(
+                    clauses_by_duty[row["duty_ref"]]
+                    for row in reciprocal_relation_duties
+                )
+                self.assertEqual(
+                    tuple(
+                        (
+                            row["frame"]["frame_id"],
+                            row["head"]["head_id"],
+                            row["head"]["lexical_family_ref"],
+                            row["link_plan"]["token_owner_ref"],
+                        )
+                        for row in reciprocal_clauses
+                    ),
+                    (
+                        ("F06", "H06", "LF06", "F06"),
+                        ("F24", "H24", "LF23", "F24"),
+                    ),
+                )
+                self.assertEqual(
+                    tuple(
+                        tuple(
+                            leaf["semantic_ref"]
+                            for leaf in clause["source_leaves"]
+                        )
+                        for clause in reciprocal_clauses
+                    ),
+                    tuple(
+                        tuple(row["response_object_refs"])
+                        for row in reciprocal_relation_duties
+                    ),
+                )
+                arc = normalized["discourse_arc"]
+                direction_rows = tuple(
+                    row
+                    for row in arc["dependency_rows"]
+                    if row["dependency_kind"]
+                    == "ADMITTED_RELATION_DIRECTION"
+                )
+                self.assertEqual(
+                    tuple(arc["admitted_relation_refs"]),
+                    relation_refs,
+                )
+                self.assertEqual(
+                    tuple(
+                        (
+                            row["predecessor_owner_ref"],
+                            row["successor_owner_ref"],
+                            row["source_relation_ref"],
+                        )
+                        for row in direction_rows
+                    ),
+                    tuple(
+                        (
+                            duty["response_object_refs"][0],
+                            duty["response_object_refs"][1],
+                            duty["relation_refs"][0],
+                        )
+                        for duty in reciprocal_relation_duties
+                    ),
+                )
+                self.assertEqual(normalized["suppressed_duty_rows"], [])
+                self.assertEqual(normalized["suppressed_claim_rows"], [])
+                relation_unit_refs = tuple(
+                    next(
+                        unit["unit_ref"]
+                        for unit in normalized["sentence_units"]
+                        if duty["duty_ref"] in unit["duty_refs"]
+                    )
+                    for duty in reciprocal_relation_duties
+                )
+                self.assertEqual(len(set(relation_unit_refs)), 2)
+        self.assertEqual(reciprocal_tension_case_count, 1)
         self.assertEqual(
             (
                 len(

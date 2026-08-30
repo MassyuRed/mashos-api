@@ -215,16 +215,16 @@ class ClauseLinkPlacement(str, Enum):
 # I01 registration only: no active facade reads this inventory and none of the
 # rows contain request data or a completed user-visible phrase.
 V2_GRAMMAR_INVENTORY_SHA256 = (
-    "9765f6032d38899862bc83cf3150739a8380fc252855ac74ad059bc1b2690bf5"
+    "1e593666c8ca7c02824fa51978827b62afb46a6f3254f4c612635eb3945fdfe1"
 )
-V2_GRAMMAR_INVENTORY_BYTE_COUNT = 13_833
-V2_GRAMMAR_INVENTORY_ROW_COUNT = 232
+V2_GRAMMAR_INVENTORY_BYTE_COUNT = 14_752
+V2_GRAMMAR_INVENTORY_ROW_COUNT = 246
 V2_GRAMMAR_INVENTORY = """SENSE|S01|OBSERVE_CENTER|GROUNDED_PREDICATE|center|F01
 SENSE|S02|OBSERVE_CENTER|GROUNDED_PREDICATE|direction|F02
 SENSE|S03|OBSERVE_CENTER|GROUNDED_PREDICATE|burden|F03
 SENSE|S04|OBSERVE_CENTER|GROUNDED_PREDICATE|bounded-change|F04
 SENSE|S05|RELATE_COEXISTING_OR_TENSION|ADMITTED_RELATION|coexistence|F05
-SENSE|S06|RELATE_COEXISTING_OR_TENSION|ADMITTED_RELATION|tension|F06
+SENSE|S06|RELATE_COEXISTING_OR_TENSION|ADMITTED_RELATION|tension|F06,F24
 SENSE|S07|TRACE_CHANGE_OR_SEQUENCE|ADMITTED_RELATION|sequence|F07,F08,F09
 SENSE|S08|PRESERVE_RESIDUE_OR_UNFINISHED|GROUNDED_PREDICATE|unfinished|F10
 SENSE|S09|FEEL_TOWARD_OBJECT|SUBJECTIVE_PREDICATE|affect|F11
@@ -234,7 +234,7 @@ SENSE|S12|CONSIDER_MATERIAL_MEANING|SUBJECTIVE_PREDICATE|appraisal-change|F14
 SENSE|S13|CONSIDER_MATERIAL_MEANING|SUBJECTIVE_PREDICATE|appraisal-unfinished|F15
 SENSE|S14|CONSIDER_MATERIAL_MEANING|SUBJECTIVE_PREDICATE|appraisal-agency|F16
 SENSE|S15|TAKE_MATERIAL_POSITION|SUBJECTIVE_PREDICATE|material-value|F17,F18
-SENSE|S16|TAKE_MATERIAL_POSITION|SUBJECTIVE_PREDICATE|position|F19,F20
+SENSE|S16|TAKE_MATERIAL_POSITION|SUBJECTIVE_PREDICATE|position|F19,F20,F23
 SENSE|S17|STAY_WITH_UNFINISHED|SUBJECTIVE_PREDICATE|open-position|F21,F22
 FRAME|F01|S01|GROUNDED_CENTER_MONADIC|SUBJECT|required|C03|TOPIC_CONDITIONAL|ZERO_FORBIDDEN|H01|MP01|NONE
 FRAME|F02|S02|GROUNDED_DIRECTION_MONADIC|SUBJECT|required|C05|TOPIC_CONDITIONAL|ZERO_FORBIDDEN|H02|MP02|NONE
@@ -258,6 +258,8 @@ FRAME|F19|S16|SUBJECTIVE_POSITION_DYADIC|SUBJECT,PRIMARY_OBJECT|required|require
 FRAME|F20|S16|SUBJECTIVE_POSITION_BOUNDARY_TRIADIC|SUBJECT,PRIMARY_OBJECT,SECONDARY_OBJECT|required|required|required|C09|TOPIC_CONDITIONAL|EMLIS_ZERO_CONDITIONAL|H20|MP20|NONE
 FRAME|F21|S17|SUBJECTIVE_OPEN_DYADIC|SUBJECT,PRIMARY_OBJECT|required|required|C02|TOPIC_CONDITIONAL|EMLIS_ZERO_CONDITIONAL|H21|MP21|FM03
 FRAME|F22|S17|SUBJECTIVE_OPEN_BOUNDARY_TRIADIC|SUBJECT,PRIMARY_OBJECT,SECONDARY_OBJECT|required|required|required|C09|TOPIC_CONDITIONAL|EMLIS_ZERO_CONDITIONAL|H22|MP22|NONE
+FRAME|F23|S16|SUBJECTIVE_POSITION_COORDINATED_DYADIC|SUBJECT,PRIMARY_OBJECT|required|required|C08|TOPIC_CONDITIONAL|EMLIS_ZERO_CONDITIONAL|H23|MP23|NONE
+FRAME|F24|S06|RELATION_TENSION_STATIVE|LEFT_ENDPOINT,RIGHT_ENDPOINT|required|required|C07|TOPIC_FORBIDDEN|ZERO_FORBIDDEN|H24|MP24|NONE
 HEAD|H01|F01|中心+LEXICALIZED_に+なる|IC03|LF01
 HEAD|H02|F02|見える|IC01|LF02
 HEAD|H03|F03|残る|IC03|LF03
@@ -280,6 +282,8 @@ HEAD|H19|F19|見+守る|IC03|LF18
 HEAD|H20|F20|固定+する|IC06|LF19
 HEAD|H21|F21|断定+する|IC06|LF22
 HEAD|H22|F22|限定+する|IC06|LF20
+HEAD|H23|F23|見+守る|IC03|LF18
+HEAD|H24|F24|緊張+関係+LEXICALIZED_に+ある|IC03|LF23
 LEXICAL_FAMILY|LF01|中心+LEXICALIZED_に+なる
 LEXICAL_FAMILY|LF02|見える
 LEXICAL_FAMILY|LF03|残る
@@ -302,6 +306,7 @@ LEXICAL_FAMILY|LF19|固定+する
 LEXICAL_FAMILY|LF20|限定+する
 LEXICAL_FAMILY|LF21|見+られる
 LEXICAL_FAMILY|LF22|断定+する
+LEXICAL_FAMILY|LF23|緊張+関係+LEXICALIZED_に+ある
 COMPLEMENT|C02|QUOTE_COMPLEMENT|EXACT1|PRIMARY_OBJECT|OUTER_QUOTES,FRAME_MARKER
 COMPLEMENT|C03|CONTENT_NOMINAL|EXACT1|MONADIC_SUBJECT|OUTER_QUOTES,SF01,SF02
 COMPLEMENT|C04|CONTENT_NOMINAL|EXACT1|PRIMARY_OBJECT|OUTER_QUOTES,SF01,SF02
@@ -332,6 +337,8 @@ SENSE_COMPLEMENT|SC19|S16|F19|C06|CL04
 SENSE_COMPLEMENT|SC20|S16|F20|C09|NONE
 SENSE_COMPLEMENT|SC21|S17|F21|C02|NONE
 SENSE_COMPLEMENT|SC22|S17|F22|C09|NONE
+SENSE_COMPLEMENT|SC23|S16|F23|C08|NONE
+SENSE_COMPLEMENT|SC24|S06|F24|C07|NONE
 SOURCE_MODE|SM01|QUOTE_COMPLEMENT
 SOURCE_MODE|SM02|CONTENT_NOMINAL
 SOURCE_MODE|SM03|CLASSIFIED_CONTENT
@@ -394,6 +401,10 @@ PARTICLE|P39|F20|SECONDARY_OBJECT|FIXED_に
 PARTICLE|P40|F22|SUBJECT|BASE_が|TOPIC_は
 PARTICLE|P41|F22|PRIMARY_OBJECT|FIXED_を
 PARTICLE|P42|F22|SECONDARY_OBJECT|FIXED_に
+PARTICLE|P43|F23|SUBJECT|BASE_が|TOPIC_は
+PARTICLE|P44|F23|PRIMARY_OBJECT|FIXED_を
+PARTICLE|P45|F24|LEFT_ENDPOINT|FIXED_と
+PARTICLE|P46|F24|RIGHT_ENDPOINT|FIXED_が
 INFLECTION_CLASS|IC01|ICHIDAN_RU
 INFLECTION_CLASS|IC02|GODAN_KU
 INFLECTION_CLASS|IC03|GODAN_RU
@@ -422,6 +433,8 @@ MORPHOLOGY|MP19|F19|NONPAST|POSITIVE|EMLIS_VOLITIONAL|POLITE|STEM_TAI_DESU|PERIO
 MORPHOLOGY|MP20|F20|NONPAST|NEGATIVE|EMLIS_BOUNDED_REFUSAL|POLITE|SAHEN_SHI_TAKU_ARIMASEN|PERIOD
 MORPHOLOGY|MP21|F21|NONPAST|NEGATIVE|EMLIS_BOUNDED_REFUSAL|POLITE|SAHEN_SHI_TAKU_ARIMASEN|PERIOD
 MORPHOLOGY|MP22|F22|NONPAST|NEGATIVE|EMLIS_BOUNDED_REFUSAL|POLITE|SAHEN_SHI_TAKU_ARIMASEN|PERIOD
+MORPHOLOGY|MP23|F23|NONPAST|POSITIVE|EMLIS_VOLITIONAL|POLITE|STEM_TAI_DESU|PERIOD
+MORPHOLOGY|MP24|F24|NONPAST_STATIVE|POSITIVE|GROUNDED_ASSERTION|POLITE|STEM_MASU|PERIOD
 LINK|L01|COEXISTS_WITH|FRAME_INTERNAL|F05|ZERO_EXTERNAL
 LINK|L02|TENSION_WITH|FRAME_INTERNAL|F06|ZERO_EXTERNAL
 LINK|L03|TEMPORALLY_PRECEDES|FRAME_INTERNAL|F07|ZERO_EXTERNAL
@@ -432,6 +445,7 @@ LINK|L07|ACTION_PRECEDES_CHANGE|SENTENCE_INITIAL|registered:その後|INTERNAL_Z
 LINK|L08|SOURCE_EXPLICIT_CAUSE|SENTENCE_INITIAL|registered:そのため|INTERNAL_ZERO
 LINK|L09|NO_RELATION_CLAIM|SENTENCE_INITIAL_ADDITIVE|registered:また|INDEPENDENT_TOPIC_ONLY
 LINK|L10|ANY_ADMITTED_RELATION|ZERO|registered:empty|RELATION_ALREADY_OWNED
+LINK|L11|TENSION_WITH|FRAME_INTERNAL|F24|ZERO_EXTERNAL
 REFERENCE|R01|FIRST_MENTION|FULL_EXPRESSION
 REFERENCE|R02|AMBIGUOUS_ANTECEDENT|FULL_EXPRESSION
 REFERENCE|R03|SINGULAR_ANTECEDENT_EXACT1|SINGULAR_ANAPHOR
@@ -457,20 +471,20 @@ V2_GRAMMAR_INVENTORY_ROWS = tuple(
 )
 V2_GRAMMAR_INVENTORY_EXACT_COUNTS = (
     ("SENSE", 17),
-    ("FRAME", 22),
-    ("HEAD", 22),
-    ("LEXICAL_FAMILY", 22),
+    ("FRAME", 24),
+    ("HEAD", 24),
+    ("LEXICAL_FAMILY", 23),
     ("COMPLEMENT", 8),
-    ("SENSE_COMPLEMENT", 22),
+    ("SENSE_COMPLEMENT", 24),
     ("SOURCE_MODE", 5),
     ("CLASSIFIER", 5),
     ("SOURCE_TOKEN", 3),
     ("MODIFIER", 3),
     ("QUOTE_DELIMITER", 4),
-    ("PARTICLE", 42),
+    ("PARTICLE", 46),
     ("INFLECTION_CLASS", 6),
-    ("MORPHOLOGY", 22),
-    ("LINK", 10),
+    ("MORPHOLOGY", 24),
+    ("LINK", 11),
     ("REFERENCE", 12),
     ("PREFERENCE", 7),
 )
@@ -695,7 +709,7 @@ V2_REFERENCE_SURFACE_REGISTRY_EXACT2 = (
         reference_rule_ref="R04",
         atomic_surface="その両方",
         source_cardinality=SourceLeafCardinality.ORDERED_EXACT2,
-        licensed_frame_refs=("F13",),
+        licensed_frame_refs=("F13", "F23"),
     ),
 )
 V2_JAPANESE_LOCAL_PREFERENCE_REGISTRY = tuple(
@@ -729,9 +743,9 @@ V2_COMPLEMENT_WRONG_TARGET = (
 V2_LINK_WRONG_TARGET = tuple(
     (
         f"L{index:02d}",
-        f"L{index + 1:02d}" if index < 10 else "L01",
+        f"L{index + 1:02d}" if index < 11 else "L01",
     )
-    for index in range(1, 11)
+    for index in range(1, 12)
 )
 V2_CONTINUATIVE_WRONG_TARGET = (
     ("ONBIN_TE_IRU_MASU", "ONBIN_TE"),
@@ -812,7 +826,7 @@ def _v2_mutation_case_registry() -> Tuple[Tuple[str, str, str], ...]:
 
 
 V2_MUTATION_CASE_REGISTRY = _v2_mutation_case_registry()
-V2_MUTATION_CASE_COUNT = 273
+V2_MUTATION_CASE_COUNT = 297
 
 # The source boundary is a closed public-typed verification table.  Payload
 # bytes are never stored here: the table enumerates only the shape predicate,
@@ -1225,8 +1239,8 @@ def validate_v2_grammar_inventory() -> None:
         (row.sense_ref, row.frame_id) for row in V2_JAPANESE_CASE_FRAME_REGISTRY
     )
     if (
-        len(licensed_pairs) != 22
-        or len(set(licensed_pairs)) != 22
+        len(licensed_pairs) != 24
+        or len(set(licensed_pairs)) != 24
         or frozenset(licensed_pairs) != frozenset(frame_pairs)
         or any(row.sense_ref not in senses for row in V2_JAPANESE_CASE_FRAME_REGISTRY)
     ):
@@ -1342,7 +1356,7 @@ def validate_v2_grammar_inventory() -> None:
         or sum(
             len(row.surface_variants) for row in V2_CASE_PARTICLE_REGISTRY
         )
-        != 59
+        != 64
     ):
         raise Stage1CompositionError("GRAMMAR_INVENTORY_ORPHAN_STOP")
 
@@ -1404,19 +1418,19 @@ def validate_v2_grammar_inventory() -> None:
         or tuple(sorted(mutation_registry)) != mutation_registry
         or len(mutation_registry) != len(set(mutation_registry))
         or len(mutation_registry) != V2_MUTATION_CASE_COUNT
-        or V2_MUTATION_CASE_COUNT != 273
+        or V2_MUTATION_CASE_COUNT != 297
         or mutation_operator_counts
         != (
-            ("PARTICLE_DROP", 59),
-            ("PARTICLE_DUPLICATE", 59),
-            ("PARTICLE_WRONG_SWAP", 59),
-            ("REQUIRED_SLOT_DROP", 42),
-            ("COMPLEMENT_SWAP", 22),
-            ("FINITE_TO_CONTINUATIVE", 22),
-            ("ILLEGAL_CONNECTIVE", 10),
+            ("PARTICLE_DROP", 64),
+            ("PARTICLE_DUPLICATE", 64),
+            ("PARTICLE_WRONG_SWAP", 64),
+            ("REQUIRED_SLOT_DROP", 46),
+            ("COMPLEMENT_SWAP", 24),
+            ("FINITE_TO_CONTINUATIVE", 24),
+            ("ILLEGAL_CONNECTIVE", 11),
         )
     ):
-        raise Stage1CompositionError("GRAMMAR_INVENTORY_MUTATION_EXACT273_STOP")
+        raise Stage1CompositionError("GRAMMAR_INVENTORY_MUTATION_EXACT297_STOP")
 
     registry_field_names = tuple(
         field.name
@@ -2270,6 +2284,7 @@ _V2_SOURCE_TERMINAL_CLASS_BY_CODEPOINT = (
 _V2_RELATION_OPERATOR_BY_FRAME_REF = (
     ("F05", RelationOperator.COEXISTS_WITH),
     ("F06", RelationOperator.TENSION_WITH),
+    ("F24", RelationOperator.TENSION_WITH),
     ("F07", RelationOperator.TEMPORALLY_PRECEDES),
     ("F08", RelationOperator.ACTION_PRECEDES_CHANGE),
     ("F09", RelationOperator.SOURCE_EXPLICIT_CAUSE),
@@ -5994,16 +6009,29 @@ def _normal_reception_appraisal(
 
     focal_relation_ref: Optional[str] = None
     if relation_rows:
-        if (
-            len(relation_rows) != 1
-            or len(relation_rows[0].relation_basis_refs) != 1
-        ):
+        reciprocal_pair = _reciprocal_tension_relation_pair(
+            relation_rows
+        )
+        appraised_semantic_refs = _unique(
+            row.semantic_ref for row in basis_rows
+        )
+        focal_relation_rows = (
+            relation_rows
+            if len(relation_rows) == 1
+            else tuple(
+                row
+                for row in reciprocal_pair
+                if _ordered_relation_endpoint_refs(row)
+                == appraised_semantic_refs
+            )
+        )
+        if len(focal_relation_rows) != 1:
             raise Stage1CompositionError(
                 "MEANING_REALIZATION_CAPABILITY_GAP"
             )
         dimension = AppraisalDimension.RELATIONAL_NONCOLLAPSE
         operation = AppraisalOperation.PRESERVE_BOTH_ENDPOINTS
-        focal_relation_ref = relation_rows[0].relation_basis_refs[0]
+        focal_relation_ref = _relation_refs(focal_relation_rows[0])[0]
     elif unfinished:
         dimension = AppraisalDimension.UNFINISHED_OPENNESS
         operation = AppraisalOperation.LEAVE_UNFINISHED
@@ -7676,6 +7704,91 @@ def _ordered_relation_endpoint_refs(
     return bindings[0].semantic_ref, bindings[1].semantic_ref
 
 
+def _reciprocal_tension_relation_pair(
+    contributions: tuple[PlannedObservationContribution, ...],
+) -> tuple[
+    PlannedObservationContribution,
+    PlannedObservationContribution,
+] | tuple[()]:
+    """Return the sole reciprocal TENSION exact2 without collapsing it."""
+
+    relation_rows = tuple(
+        row
+        for row in contributions
+        if row.relation_operator is not RelationOperator.NO_RELATION_CLAIM
+    )
+    if (
+        len(relation_rows) != 2
+        or any(
+            row.relation_operator is not RelationOperator.TENSION_WITH
+            for row in relation_rows
+        )
+    ):
+        return ()
+    first, second = relation_rows
+    first_endpoints = _ordered_relation_endpoint_refs(first)
+    second_endpoints = _ordered_relation_endpoint_refs(second)
+    if (
+        first.contribution_id == second.contribution_id
+        or first_endpoints != tuple(reversed(second_endpoints))
+        or _relation_refs(first) == _relation_refs(second)
+    ):
+        return ()
+    return first, second
+
+
+def _reciprocal_tension_scalar_axes_match(
+    pair: tuple[
+        PlannedObservationContribution,
+        PlannedObservationContribution,
+    ],
+    phase_B: Stage1SurfaceCompositionInputs,
+) -> bool:
+    """Require identical carried endpoint qualifiers across both directions."""
+
+    if len(pair) != 2:
+        return False
+    axes_by_contribution: list[
+        tuple[tuple[str, tuple[str, str, str]], ...]
+    ] = []
+    for contribution in pair:
+        if len(contribution.interpretation_candidate_refs) != 1:
+            return False
+        candidate_ref = contribution.interpretation_candidate_refs[0]
+        endpoint_axes: list[tuple[str, tuple[str, str, str]]] = []
+        for binding in contribution.argument_bindings:
+            rows = tuple(
+                row
+                for row in phase_B.qualifier_value_by_candidate_scope_axis_key
+                if row.candidate_ref == candidate_ref
+                and row.qualifier_scope
+                is QualifierLookupScope.RELATION_SOURCE_BINDING
+                and row.source_argument_role is binding.role
+                and row.source_semantic_ref == binding.semantic_ref
+            )
+            values = tuple(
+                _v2_exact1(
+                    tuple(row.value for row in rows if row.axis is axis),
+                    "STAGE1_QUALIFIER_CLOSURE_STOP",
+                )
+                for axis in ClauseScalarAxis
+            )
+            if len(rows) != len(ClauseScalarAxis):
+                return False
+            endpoint_axes.append((binding.semantic_ref, values))
+        if len(endpoint_axes) != 2:
+            return False
+        axes_by_contribution.append(tuple(endpoint_axes))
+    first_axes, second_axes = axes_by_contribution
+    second_by_ref = dict(second_axes)
+    return (
+        len(second_by_ref) == 2
+        and tuple(ref for ref, _values in first_axes)
+        == tuple(reversed(tuple(ref for ref, _values in second_axes)))
+        and all(second_by_ref.get(ref) == values for ref, values in first_axes)
+    )
+
+
 def _append_arc_dependency(
     rows: list[ArcDependencyRow],
     *,
@@ -7741,6 +7854,10 @@ def project_stage1_discourse_arc(
     projection_ref = _projection_ref(projection)
     contributions = _contributions(projection)
     claims = _claims(projection)
+    reciprocal_pair = _reciprocal_tension_relation_pair(contributions)
+    nonprecedence_relation_refs = {
+        ref for row in reciprocal_pair for ref in _relation_refs(row)
+    }
     nucleus = tuple(row.contribution_id for row in contributions)
     relations = _unique(
         ref
@@ -7946,8 +8063,21 @@ def project_stage1_discourse_arc(
     all_owners = _unique(
         (*nucleus, *supporting, *(claim.subjective_claim_id for claim in claims))
     )
-    incoming = {row.successor_owner_ref for row in dependencies}
-    outgoing = {row.predecessor_owner_ref for row in dependencies}
+    precedence_dependencies = tuple(
+        row
+        for row in dependencies
+        if not (
+            row.dependency_kind
+            is ArcDependencyKind.ADMITTED_RELATION_DIRECTION
+            and row.source_relation_ref in nonprecedence_relation_refs
+        )
+    )
+    incoming = {
+        row.successor_owner_ref for row in precedence_dependencies
+    }
+    outgoing = {
+        row.predecessor_owner_ref for row in precedence_dependencies
+    }
     roots = tuple(ref for ref in all_owners if ref not in incoming)
     if not terminal:
         terminal = tuple(ref for ref in all_owners if ref not in outgoing)
@@ -7955,12 +8085,12 @@ def project_stage1_discourse_arc(
         raise Stage1CompositionError("STAGE1_DISCOURSE_ARC_BOUNDARY_STOP")
     if any(
         row.predecessor_owner_ref in set(terminal)
-        for row in dependencies
+        for row in precedence_dependencies
     ):
         raise Stage1CompositionError("STAGE1_UNFINISHED_TERMINAL_CLOSURE_STOP")
 
     adjacency: dict[str, set[str]] = {ref: set() for ref in all_owners}
-    for row in dependencies:
+    for row in precedence_dependencies:
         adjacency.setdefault(row.predecessor_owner_ref, set()).add(
             row.successor_owner_ref
         )
@@ -9783,6 +9913,70 @@ def _dedupe_layout_seeds(
     return tuple(unique)
 
 
+def _local_reciprocal_tension_dependencies(
+    duties: Tuple[CompositionDutyView, ...],
+    arc: Stage1DiscourseArcView,
+) -> tuple[ArcDependencyRow, ArcDependencyRow] | tuple[()]:
+    """Resolve the carried reciprocal TENSION orientation rows exact2."""
+
+    relation_duties_by_ref: dict[str, list[CompositionDutyView]] = {}
+    for duty in duties:
+        if duty.sentence_job is not SentenceJob.RELATE_COEXISTING_OR_TENSION:
+            continue
+        for relation_ref in duty.relation_refs:
+            relation_duties_by_ref.setdefault(relation_ref, []).append(duty)
+    dependencies = tuple(
+        row
+        for row in arc.dependency_rows
+        if row.dependency_kind
+        is ArcDependencyKind.ADMITTED_RELATION_DIRECTION
+        and row.source_relation_ref in relation_duties_by_ref
+    )
+    if len(dependencies) != 2:
+        return ()
+    first, second = dependencies
+    dependency_relation_refs = tuple(
+        row.source_relation_ref for row in dependencies
+    )
+    matched_duties = tuple(
+        tuple(relation_duties_by_ref.get(relation_ref or "", ()))
+        for relation_ref in dependency_relation_refs
+    )
+    endpoint_refs = {
+        first.predecessor_owner_ref,
+        first.successor_owner_ref,
+    }
+    if (
+        arc.admitted_relation_refs != dependency_relation_refs
+        or first.source_relation_ref == second.source_relation_ref
+        or (
+            first.predecessor_owner_ref,
+            first.successor_owner_ref,
+        )
+        != (
+            second.successor_owner_ref,
+            second.predecessor_owner_ref,
+        )
+        or any(len(rows) != 1 for rows in matched_duties)
+        or len({rows[0].duty_ref for rows in matched_duties}) != 2
+        or any(
+            rows[0].relation_refs != (dependency.source_relation_ref,)
+            or rows[0].response_object_refs
+            != (
+                dependency.predecessor_owner_ref,
+                dependency.successor_owner_ref,
+            )
+            for dependency, rows in zip(
+                dependencies, matched_duties, strict=True
+            )
+        )
+        or not endpoint_refs.issubset(arc.root_owner_refs)
+        or not endpoint_refs.issubset(arc.terminal_owner_refs)
+    ):
+        return ()
+    return first, second
+
+
 def _duty_dependency_maps(
     required: Tuple[CompositionDutyView, ...],
     arc: Stage1DiscourseArcView,
@@ -9800,7 +9994,13 @@ def _duty_dependency_maps(
                 ).append(duty.duty_ref)
     predecessors = {ref: set() for ref in required_refs}
     successors = {ref: set() for ref in required_refs}
+    nonprecedence_dependency_refs = {
+        row.arc_dependency_ref
+        for row in _local_reciprocal_tension_dependencies(required, arc)
+    }
     for dependency in arc.dependency_rows:
+        if dependency.arc_dependency_ref in nonprecedence_dependency_refs:
+            continue
         owner_to_duties = (
             layer1_response_owner_to_duties
             if dependency.dependency_kind
@@ -10278,11 +10478,41 @@ def _v2_frame_for_duty(
     )
     if semantic_kind is SemanticClauseKind.ADMITTED_RELATION:
         relation = getattr(owner, "relation_operator", None)
+        reciprocal_pair = _reciprocal_tension_relation_pair(
+            _contributions(phase_B.projection)
+        )
+        preferred_frame_ref: Optional[str] = None
+        if relation is RelationOperator.TENSION_WITH:
+            if reciprocal_pair:
+                if not _reciprocal_tension_scalar_axes_match(
+                    reciprocal_pair, phase_B
+                ):
+                    raise Stage1CompositionError(
+                        "STAGE1_QUALIFIER_CLOSURE_STOP"
+                    )
+                owner_positions = tuple(
+                    index
+                    for index, row in enumerate(reciprocal_pair)
+                    if row == owner
+                )
+                if len(owner_positions) != 1:
+                    raise Stage1CompositionError(
+                        "STAGE1_JAPANESE_CASE_FRAME_NONUNIQUE_STOP"
+                    )
+                preferred_frame_ref = (
+                    "F06" if owner_positions[0] == 0 else "F24"
+                )
+            else:
+                preferred_frame_ref = "F06"
         frame = _v2_exact1(
             tuple(
                 row
                 for row in licensed_frames
                 if _v2_relation_operator_for_frame(row.frame_id) is relation
+                and (
+                    preferred_frame_ref is None
+                    or row.frame_id == preferred_frame_ref
+                )
             ),
             "STAGE1_JAPANESE_CASE_FRAME_NONUNIQUE_STOP",
         )
@@ -10292,15 +10522,26 @@ def _v2_frame_for_duty(
         boundary_refs = tuple(
             getattr(_prop(owner), "boundary_target_refs", ())
         )
-        required_slot_count = 3 if boundary_refs else 2
-        frame = _v2_exact1(
-            tuple(
-                row
-                for row in licensed_frames
-                if len(row.slot_roles) == required_slot_count
-            ),
-            "STAGE1_JAPANESE_CASE_FRAME_NONUNIQUE_STOP",
-        )
+        if sense.sense_id == "S16" and not boundary_refs:
+            complement_ref = "C08" if len(source_refs) == 2 else "C06"
+            frame = _v2_exact1(
+                tuple(
+                    row
+                    for row in licensed_frames
+                    if row.complement_rule_ref == complement_ref
+                ),
+                "STAGE1_JAPANESE_CASE_FRAME_NONUNIQUE_STOP",
+            )
+        else:
+            required_slot_count = 3 if boundary_refs else 2
+            frame = _v2_exact1(
+                tuple(
+                    row
+                    for row in licensed_frames
+                    if len(row.slot_roles) == required_slot_count
+                ),
+                "STAGE1_JAPANESE_CASE_FRAME_NONUNIQUE_STOP",
+            )
     morphology = _v2_exact1(
         tuple(
             row
