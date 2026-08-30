@@ -5728,11 +5728,16 @@ def _validate_foreground_canonical_source_inputs(
             "foreground_scope_parent_plan_type_invalid"
         )
 
-    from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+    from emlis_ai_current_input_bundle import normalize_emlis_current_input
+    from emlis_ai_evidence_ledger_service import (
+        build_evidence_ledger,
+        build_evidence_span_resolver,
+    )
     from .source_kernel import (
         AdmittedTextSource,
+        _exact_labels,
+        _validate_source_envelope_identity,
         build_source_owner_universe,
-        freeze_text_source,
         validate_evidence_refs,
     )
 
@@ -5741,19 +5746,36 @@ def _validate_foreground_canonical_source_inputs(
             "foreground_scope_admitted_text_source_required"
         )
     try:
-        expected_source = freeze_text_source(
-            GenerationRequest(
-                request_id="im00-source-revalidation",
-                current_input_bundle=build_emlis_current_input_bundle(
-                    source.normalized_current_input
-                ),
-                expected_source_record_id=source.envelope.source_record_id,
-            )
+        source_snapshot, _source_segments = (
+            _validate_source_envelope_identity(source.envelope)
+        )
+        expected_normalized = normalize_emlis_current_input(
+            source_snapshot
+        )
+        expected_spans = tuple(
+            build_evidence_ledger(expected_normalized)
+        )
+        build_evidence_span_resolver(
+            expected_spans,
+            current_input=expected_normalized,
         )
         validate_evidence_refs(source.envelope, source.evidence_refs)
         expected_universe = build_source_owner_universe(
             source.envelope,
             source.evidence_refs,
+        )
+        expected_category, expected_emotion, expected_strength = (
+            _exact_labels(source_snapshot)
+        )
+        expected_source = AdmittedTextSource(
+            envelope=source.envelope,
+            normalized_current_input=expected_normalized,
+            evidence_spans=expected_spans,
+            evidence_refs=source.evidence_refs,
+            owner_universe=expected_universe,
+            category=expected_category,
+            emotion=expected_emotion,
+            strength=expected_strength,
         )
     except CMEEStage1ContractError:
         raise
@@ -5761,7 +5783,7 @@ def _validate_foreground_canonical_source_inputs(
         raise CMEEStage1ContractError(
             "foreground_scope_source_evidence_unreachable"
         ) from None
-    if source != expected_source or source.owner_universe != expected_universe:
+    if source != expected_source:
         raise CMEEStage1ContractError(
             "foreground_scope_source_evidence_unreachable"
         )
@@ -7041,6 +7063,10 @@ def validate_foreground_scope_basis_row(
             if type(value) is MeaningNode
             and value.owner_id in required_owner_ids
             and value.node_id in required_visible_claim_ids
+            and not (
+                value.node_kind == "other_explicit"
+                and value.grounding_kind == "user_stated_relation"
+            )
         }
         expected_source_objects = target_topic_scope_refs
         if (
@@ -9218,6 +9244,9 @@ def validate_mutation_signature_delta(
     source_component_rows: Sequence[
         GroundedSemanticComponentProjection
     ] | None = None,
+    mutation_scope_component_rows: Sequence[
+        GroundedSemanticComponentProjection
+    ] | None = None,
     _verify_exact_result: bool = True,
 ) -> WholeReadingConsequenceCode:
     spec = resolve_mutation_application_spec(mutation)
@@ -9247,7 +9276,7 @@ def validate_mutation_signature_delta(
     }
     direct = set(spec.directly_changed_signature_fields)
     allowed = direct | set(spec.derived_recomputed_signature_fields)
-    if not changed.intersection(direct):
+    if not changed:
         raise CMEEStage1ContractError("mutation_application_noop_red")
     if not changed.issubset(allowed) or any(
         getattr(baseline_semantic_signature, field_name)
@@ -9263,6 +9292,7 @@ def validate_mutation_signature_delta(
             mutation,
             source_component_refs=source_component_refs,
             source_component_rows=source_component_rows,
+            mutation_scope_component_rows=mutation_scope_component_rows,
             _validate_delta=False,
         )
         if mutated_semantic_signature != expected:
@@ -9349,6 +9379,26 @@ def _meaning_signature_mutation_target_present(
             )
         return False
     return baseline.resolution_treatment_keys == ("resolution:unresolved",)
+
+
+def _input_center_keys_from_grounded_component_rows(
+    rows: Sequence[GroundedSemanticComponentProjection],
+) -> Tuple[str, ...]:
+    """Keep one source-ordered center for each distinct predicate group."""
+
+    predicate_keys: set[str] = set()
+    center_keys: list[str] = []
+    for row in rows:
+        if row.typed_predicate_key in predicate_keys:
+            continue
+        predicate_keys.add(row.typed_predicate_key)
+        center_key = (
+            "center:"
+            f"{row.semantic_kind_key.removeprefix('semantic-kind:')}"
+        )
+        if center_key not in center_keys:
+            center_keys.append(center_key)
+    return tuple(center_keys)
 
 
 def _rebuild_signature_from_grounded_component_rows(
@@ -9441,11 +9491,8 @@ def _rebuild_signature_from_grounded_component_rows(
         schema_version=baseline.schema_version,
         reading_operation=baseline.reading_operation,
         input_center_keys=(
-            (
-                "center:"
-                f"{values[0].semantic_kind_key.removeprefix('semantic-kind:')}"
-            ),
-        ) if values else (),
+            _input_center_keys_from_grounded_component_rows(values)
+        ),
         component_role_keys=roles,
         relation_direction_keys=relation_keys,
         epistemic_state_keys=tuple(epistemic),
@@ -9493,20 +9540,12 @@ def _grounded_material_leaf_owner_sets(
             scope_key=row.scope_key,
             role_key=row.role_key,
         )
+        # Axis replacement/deletion is the counterfactual itself; two source
+        # objects acquiring the same world, time, or modality value is the
+        # intended evidence of that semantic consequence.  Only collapse of
+        # the complete typed component key loses a material source leaf.
         leaves = (
             ("component", stage1_canonical_json_bytes(component).hex()),
-            ("owner", row.owner_key),
-            ("scope", row.scope_key),
-            ("role", row.role_key),
-            ("epistemic", row.epistemic_state_key),
-            ("time", row.temporal_state_key),
-            ("modality", row.modality_key),
-            ("polarity", row.polarity_key),
-            *tuple(
-                (f"qualifier:{value.split(':', 1)[0]}", value)
-                for value in row.qualifier_refs
-                if ":" in value
-            ),
         )
         for axis, value in leaves:
             if value:
@@ -9540,6 +9579,9 @@ def _apply_meaning_signature_mutation_from_source_rows(
     mutation: CounterfactualMutationRow,
     *,
     source_component_rows: Sequence[GroundedSemanticComponentProjection],
+    mutation_scope_component_rows: Sequence[
+        GroundedSemanticComponentProjection
+    ] | None,
     _validate_delta: bool,
 ) -> MeaningSemanticSignature:
     original_rows = tuple(source_component_rows)
@@ -9551,6 +9593,22 @@ def _apply_meaning_signature_mutation_from_source_rows(
         raise CMEEStage1ContractError(
             "mutation_source_component_binding_invalid"
         )
+    scoped_rows = (
+        original_rows
+        if mutation_scope_component_rows is None
+        else tuple(mutation_scope_component_rows)
+    )
+    if (
+        not scoped_rows
+        or any(
+            type(row) is not GroundedSemanticComponentProjection
+            or row not in original_rows
+            for row in scoped_rows
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "mutation_configuration_scope_binding_invalid"
+        )
     kind = mutation.mutation_kind
     target = mutation.target_component_refs[0]
 
@@ -9559,7 +9617,11 @@ def _apply_meaning_signature_mutation_from_source_rows(
         *,
         require_unique_source_binding: bool = False,
     ) -> tuple[int, ...]:
-        indexes = tuple(index for index, row in enumerate(rows) if predicate(row))
+        indexes = tuple(
+            index
+            for index, row in enumerate(rows)
+            if row in scoped_rows and predicate(row)
+        )
         if not indexes:
             raise CMEEStage1ContractError(
                 "mutation_target_absent_candidate_invalid"
@@ -9767,6 +9829,7 @@ def _apply_meaning_signature_mutation_from_source_rows(
                 row.source_object_ref for row in source_component_rows
             ),
             source_component_rows=source_component_rows,
+            mutation_scope_component_rows=scoped_rows,
         )
     return result
 
@@ -9777,6 +9840,9 @@ def apply_meaning_signature_mutation(
     *,
     source_component_refs: Sequence[str] | None = None,
     source_component_rows: Sequence[GroundedSemanticComponentProjection] | None = None,
+    mutation_scope_component_rows: Sequence[
+        GroundedSemanticComponentProjection
+    ] | None = None,
     _validate_delta: bool = True,
 ) -> MeaningSemanticSignature:
     """Apply the shared closed exact12 mutation contract."""
@@ -9794,7 +9860,12 @@ def apply_meaning_signature_mutation(
             baseline,
             mutation,
             source_component_rows=rows,
+            mutation_scope_component_rows=mutation_scope_component_rows,
             _validate_delta=_validate_delta,
+        )
+    if mutation_scope_component_rows is not None:
+        raise CMEEStage1ContractError(
+            "mutation_configuration_scope_binding_invalid"
         )
     if not _meaning_signature_mutation_target_present(
         baseline,
@@ -10381,6 +10452,155 @@ def input_specific_meaning_candidate_source_component_refs(
     )
 
 
+def input_specific_meaning_configuration_source_component_rows(
+    candidate: InputSpecificMeaningCandidate,
+    configuration: DifferenceConfiguration,
+    *,
+    grounded_view: object,
+    mutation: CounterfactualMutationRow | None = None,
+) -> Tuple[GroundedSemanticComponentProjection, ...]:
+    """Resolve the exact source projection owned by one configuration."""
+
+    projections = getattr(
+        grounded_view, "semantic_interpretation_projections", None
+    )
+    if type(projections) is not tuple or type(configuration) not in {
+        RelationalConfiguration,
+        QualifiedEventStateConfiguration,
+    }:
+        raise CMEEStage1ContractError(
+            "mutation_configuration_scope_binding_invalid"
+        )
+    if type(configuration) is RelationalConfiguration:
+        matching = tuple(
+            projection
+            for projection in projections
+            if type(projection) is GroundedInterpretationProjection
+            and projection.interpretation_candidate_ref
+            in candidate.basis_derivation_refs
+            and projection.relation_path_refs
+            == configuration.relation_path_refs
+        )
+        expected_refs = set(configuration.endpoint_component_refs)
+    else:
+        def qualified_row_matches(
+            row: GroundedSemanticComponentProjection,
+        ) -> bool:
+            time_values = {
+                value.split(":", 1)[1].split("@", 1)[0]
+                for value in configuration.time_refs
+                if ":" in value
+            }
+            row_time_value = (
+                row.temporal_state_key.split(":", 1)[1].split("@", 1)[0]
+                if ":" in row.temporal_state_key
+                else ""
+            )
+            return (
+                row.source_object_ref == configuration.predicate_ref
+                # ``configuration.owner_ref`` is the source obligation
+                # owner, while the semantic projection carries the actor
+                # owner.  Bind the latter through the source qualifier leaf;
+                # comparing the two different owner namespaces would reject
+                # valid grounded projections.
+                and row.owner_key.startswith("owner:")
+                and f"actor:{row.owner_key.removeprefix('owner:')}"
+                in configuration.qualifier_refs
+                and row.modality_key in configuration.modality_refs
+                and row_time_value in time_values
+                and row.scope_key in configuration.scope_refs
+                and set(row.qualifier_refs).issubset(
+                    configuration.qualifier_refs
+                )
+                and set(row.material_unknown_refs).issubset(
+                    configuration.qualifier_refs
+                )
+            )
+
+        matching = tuple(
+            projection
+            for projection in projections
+            if type(projection) is GroundedInterpretationProjection
+            and projection.interpretation_candidate_ref
+            in candidate.basis_derivation_refs
+            and not projection.relation_path_refs
+            and any(
+                qualified_row_matches(row)
+                for row in projection.component_rows
+            )
+        )
+        expected_refs = {configuration.predicate_ref}
+    if not matching:
+        raise CMEEStage1ContractError(
+            "mutation_configuration_scope_binding_invalid"
+        )
+    full_rows = input_specific_meaning_candidate_source_component_rows(
+        candidate, grounded_view=grounded_view
+    )
+    matching_rows = tuple(
+        row for projection in matching for row in projection.component_rows
+    )
+    owned_rows = tuple(
+        row
+        for row in full_rows
+        if row in matching_rows
+        and row.source_object_ref in expected_refs
+    )
+    if (
+        not owned_rows
+        or {row.source_object_ref for row in owned_rows} != expected_refs
+    ):
+        raise CMEEStage1ContractError(
+            "mutation_configuration_scope_binding_invalid"
+        )
+    if mutation is not None:
+        validate_counterfactual_mutation_local_shape(mutation)
+        if mutation.mutation_kind in {
+            CounterfactualMutationKind.DELETE_OWNER,
+            CounterfactualMutationKind.REPLACE_WORLD,
+            CounterfactualMutationKind.REPLACE_TIME,
+            CounterfactualMutationKind.DELETE_MODALITY,
+            CounterfactualMutationKind.DELETE_ASPECT,
+            CounterfactualMutationKind.DELETE_SCOPE,
+            CounterfactualMutationKind.DELETE_QUALIFIER,
+        }:
+            source_object_refs = {
+                row.source_object_ref for row in owned_rows
+            }
+            expanded_rows = tuple(
+                row
+                for row in full_rows
+                if row.source_object_ref in source_object_refs
+            )
+            # Grounded projections may repeat one source leaf under distinct
+            # predicate/role facets.  A source-axis mutation must update all
+            # such copies, but only after proving that their source-owned
+            # owner/world/time/modality/aspect/scope/qualifier/evidence leaf
+            # is identical.  Inconsistent copies are structural RED, not a
+            # reason to mutate an arbitrary subset.
+            source_axis_leaf_by_object: dict[str, tuple[object, ...]] = {}
+            for row in expanded_rows:
+                source_axis_leaf = (
+                    row.owner_key,
+                    row.temporal_state_key,
+                    row.modality_key,
+                    row.polarity_key,
+                    row.scope_key,
+                    row.qualifier_refs,
+                    row.source_evidence_refs,
+                    row.material_unknown_refs,
+                )
+                prior = source_axis_leaf_by_object.setdefault(
+                    row.source_object_ref, source_axis_leaf
+                )
+                if prior != source_axis_leaf:
+                    raise CMEEStage1ContractError(
+                        "mutation_source_axis_leaf_inconsistent_red"
+                    )
+            owned_rows = expanded_rows
+    return owned_rows
+
+
 def recompute_input_specific_meaning_candidate_signature(
     candidate: InputSpecificMeaningCandidate,
     *,
@@ -10526,15 +10746,11 @@ def recompute_input_specific_meaning_candidate_signature(
             for ref in candidate.relation_path_refs
         )
     )
-    primary_ref = candidate.primary_component_refs[0]
-    primary_row = next(
-        row for row in component_rows if row.source_object_ref == primary_ref
-    )
     signature = MeaningSemanticSignature(
         schema_version=_FOREGROUND_SCOPE_SCHEMA_VERSION,
         reading_operation=candidate.reading_operation,
         input_center_keys=(
-            f"center:{primary_row.semantic_kind_key.removeprefix('semantic-kind:')}",
+            _input_center_keys_from_grounded_component_rows(component_rows)
         ),
         component_role_keys=tuple(
             dict.fromkeys(value.role_key for value in components)
@@ -10846,6 +11062,10 @@ def _validate_input_specific_meaning_im03(
     required_by_ref = {
         value.difference_id: value
         for value in structure.required_difference_rows
+    }
+    observed_by_ref = {
+        value.distinction_id: value
+        for value in structure.observed_distinction_rows
     }
     mutation_by_ref = {
         value.mutation_id: value
@@ -11374,6 +11594,17 @@ def _validate_input_specific_meaning_im03(
             mutation = mutation_by_ref.get(
                 required_by_ref[required_ref].counterfactual_mutation_ref
             )
+            observed = observed_by_ref[
+                required_by_ref[required_ref].observed_distinction_ref
+            ]
+            mutation_scope_rows = (
+                input_specific_meaning_configuration_source_component_rows(
+                    candidate,
+                    config_by_ref[observed.configuration_ref],
+                    grounded_view=grounded_view,
+                    mutation=mutation,
+                )
+            )
             if (
                 mutation is None
                 or row.mutated_semantic_signature
@@ -11382,6 +11613,7 @@ def _validate_input_specific_meaning_im03(
                     mutation,
                     source_component_refs=candidate_source_refs,
                     source_component_rows=candidate_source_rows,
+                    mutation_scope_component_rows=mutation_scope_rows,
                 )
             ):
                 raise CMEEStage1ContractError(
@@ -14069,6 +14301,83 @@ def _im04_reception_object_contract_satisfied(
     return False
 
 
+def _im04_normal_reception_mode_contract_satisfied(
+    reception_act: str,
+    subjective_mode: SubjectiveMode,
+    contributions: Sequence[PlannedObservationContribution],
+) -> bool:
+    """Bind normal ATTENTION to evidence and specific modes to objects."""
+
+    rows = tuple(contributions)
+    mapping = _im04_reception_act_mapping(reception_act)
+    if not rows or not any(
+        mode is subjective_mode
+        for mode, _operator in mapping.eligible_mode_operator_pairs
+    ):
+        return False
+    if subjective_mode is SubjectiveMode.ATTENTION:
+        return all(row.evidence_refs for row in rows)
+    return _im04_reception_object_contract_satisfied(
+        reception_act,
+        rows,
+    )
+
+
+def _im04_normal_reception_binding_key(
+    *,
+    reception_act: str,
+    responsibility_kind: SubjectiveResponsibilityKind,
+    basis_contribution_refs: Sequence[str],
+    response_object_refs: Sequence[str],
+) -> tuple[
+    SubjectiveResponsibilityKind,
+    str,
+    tuple[str, ...],
+    tuple[str, ...],
+]:
+    """Scope normal-role uniqueness to one retained material contract."""
+
+    return (
+        responsibility_kind,
+        reception_act,
+        tuple(basis_contribution_refs),
+        tuple(response_object_refs),
+    )
+
+
+def _im04_limited_reception_mode_operator_pairs(
+    reception_act: str,
+    contributions: Sequence[PlannedObservationContribution],
+) -> tuple[tuple[SubjectiveMode, SubjectiveOperator], ...]:
+    """Close LIMITED to one specific mode or source-bound ATTENTION."""
+
+    rows = tuple(contributions)
+    mapping = _im04_reception_act_mapping(reception_act)
+    specialized = tuple(
+        (mode, operator)
+        for mode, operator in mapping.eligible_mode_operator_pairs
+        if mode
+        in {
+            SubjectiveMode.PERSONAL_APPRAISAL,
+            SubjectiveMode.RELATIONAL_STANCE,
+        }
+        and _im04_reception_object_contract_satisfied(
+            reception_act, rows
+        )
+    )
+    if specialized:
+        return specialized
+    attention = (
+        SubjectiveMode.ATTENTION,
+        SubjectiveOperator.ATTEND_TO,
+    )
+    if rows and all(row.evidence_refs for row in rows) and attention in (
+        mapping.eligible_mode_operator_pairs
+    ):
+        return (attention,)
+    return ()
+
+
 def _im04_source_axis_qualifier_ref(value: str) -> bool:
     return type(value) is str and any(
         value.startswith(f"{axis}:") or f"_{axis}:" in value
@@ -14114,7 +14423,10 @@ def _im04_limited_subjective_content_closed(
     basis_binding_refs: tuple[str, ...],
     contribution_refs: tuple[str, ...],
 ) -> bool:
-    if proposition.subjective_mode is SubjectiveMode.PERSONAL_APPRAISAL:
+    if proposition.subjective_mode in {
+        SubjectiveMode.ATTENTION,
+        SubjectiveMode.PERSONAL_APPRAISAL,
+    }:
         return proposition.appraisal_content == EmlisAppraisalContent(
             AppraisalDimension.MATERIAL_WEIGHT,
             AppraisalOperation.RECEIVE_AS_MATERIAL,
@@ -14514,7 +14826,12 @@ def validate_stage1_post_selection_reception_records(
             )
         proposition_refs: list[str] = []
         reception_binding_keys: set[
-            tuple[SubjectiveResponsibilityKind, tuple[str, ...]]
+            tuple[
+                SubjectiveResponsibilityKind,
+                str,
+                tuple[str, ...],
+                tuple[str, ...],
+            ]
         ] = set()
         for proposition in propositions:
             _validate_stage1_immutable_shape(proposition)
@@ -14550,11 +14867,19 @@ def validate_stage1_post_selection_reception_records(
                 and len(bound_contributions)
                 == len(retained_act.basis_contribution_refs)
                 and bool(retained_act.basis_contribution_refs)
-                and set(retained_act.basis_contribution_refs).issubset(
-                    set(candidate.basis_contribution_refs)
+                and bool(
+                    set(retained_act.basis_contribution_refs).intersection(
+                        candidate.basis_contribution_refs
+                    )
                 )
-                and _im04_reception_object_contract_satisfied(
+                and {
+                    semantic_ref
+                    for contribution in bound_contributions
+                    for semantic_ref in contribution.semantic_refs
+                }.issubset(response_domain)
+                and _im04_normal_reception_mode_contract_satisfied(
                     proposition.reception_function,
+                    proposition.subjective_mode,
                     bound_contributions,
                 )
             )
@@ -14592,9 +14917,15 @@ def validate_stage1_post_selection_reception_records(
                 raise CMEEStage1ContractError(
                     "MEANING_RESPONSE_CONSEQUENCE_GAP"
                 )
-            binding_key = (
-                proposition.responsibility_kind,
-                proposition.response_object_refs,
+            binding_key = _im04_normal_reception_binding_key(
+                reception_act=proposition.reception_function,
+                responsibility_kind=proposition.responsibility_kind,
+                basis_contribution_refs=(
+                    ()
+                    if retained_act is None
+                    else retained_act.basis_contribution_refs
+                ),
+                response_object_refs=proposition.response_object_refs,
             )
             if binding_key in reception_binding_keys:
                 raise CMEEStage1ContractError(
@@ -14680,21 +15011,13 @@ def validate_stage1_post_selection_reception_records(
             if row.reception_act != "bounded_counter_self_denial"
             and bool(row.basis_contribution_refs)
             and set(row.basis_contribution_refs).issubset(retained_layer1_set)
-            and _im04_reception_object_contract_satisfied(
+            for mode, operator in _im04_limited_reception_mode_operator_pairs(
                 row.reception_act,
                 tuple(
                     contribution_by_id[ref]
                     for ref in row.basis_contribution_refs
                 ),
             )
-            for mode, operator in _im04_reception_act_mapping(
-                row.reception_act
-            ).eligible_mode_operator_pairs
-            if mode
-            in {
-                SubjectiveMode.PERSONAL_APPRAISAL,
-                SubjectiveMode.RELATIONAL_STANCE,
-            }
         )
         if len(source_bound_choices) != 1:
             raise CMEEStage1ContractError(
@@ -16349,16 +16672,24 @@ def _validate_stage1_projection_causal_trace(
             meaning_visible_causal_trace_rows=meaning_rows,
             reception_visible_causal_trace_rows=reception_rows,
         )
-        or tuple(row.projected_claim_ref for row in reception_rows)
+        or tuple(
+            dict.fromkeys(
+                row.projected_claim_ref for row in reception_rows
+            )
+        )
         != projection.ordered_subjective_refs
         or set(row.projected_claim_ref for row in reception_rows) != claim_refs
-        or len(reception_rows) != len(claim_refs)
+        or len(
+            {row.reception_record_ref for row in reception_rows}
+        ) != len(reception_rows)
         or any(
             type(row.branch) is not SubjectiveProjectionBranch
             or row.branch is not branch
             or not _stage1_identity_string(row.meaning_outcome_ref)
             or not _stage1_identity_string(row.reception_record_ref)
             or not row.layer1_contribution_refs
+            or len(row.layer1_contribution_refs)
+            != len(set(row.layer1_contribution_refs))
             or not set(row.layer1_contribution_refs).issubset(
                 contribution_refs
             )
@@ -16383,10 +16714,32 @@ def _validate_stage1_projection_causal_trace(
         claim = claim_by_ref.get(row.projected_claim_ref)
         if (
             claim is None
-            or row.layer1_contribution_refs
-            != claim.basis_observation_contribution_refs
+            or not set(row.layer1_contribution_refs).issubset(
+                claim.basis_observation_contribution_refs
+            )
             or row.projected_response_object_refs
             != claim.asserted_subjective_proposition.response_object_refs
+        ):
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+    for claim in claim_by_ref.values():
+        claim_traces = tuple(
+            row
+            for row in reception_rows
+            if row.projected_claim_ref == claim.subjective_claim_id
+        )
+        exact_ordered_cover = (
+            claim_traces[0].layer1_contribution_refs
+            if len(claim_traces) == 1
+            else _stage1_first_occurrence_union(
+                *(row.layer1_contribution_refs for row in claim_traces)
+            )
+        )
+        if (
+            not claim_traces
+            or exact_ordered_cover
+            != claim.basis_observation_contribution_refs
         ):
             raise CMEEStage1ContractError(
                 "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
@@ -16446,17 +16799,53 @@ def _validate_stage1_projection_causal_trace(
                 != set(meaning_difference_refs)
                 or row.meaning_outcome_ref
                 != meaning_rows[0].selected_reading_ref
-                or set(row.response_object_refs)
-                != (
-                    set(row.projected_response_object_refs)
-                    | configuration_refs
-                )
                 for row in reception_rows
             )
         ):
             raise CMEEStage1ContractError(
                 "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
             )
+        for row in reception_rows:
+            source_rows = tuple(
+                contribution_by_ref[ref]
+                for ref in row.layer1_contribution_refs
+            )
+            source_domain = {
+                ref
+                for contribution in source_rows
+                for ref in (
+                    *contribution.semantic_refs,
+                    *contribution.relation_basis_refs,
+                    *(
+                        binding.semantic_ref
+                        for binding in contribution.argument_bindings
+                    ),
+                )
+            }
+            relation_refs = {
+                ref
+                for contribution in source_rows
+                for ref in contribution.relation_basis_refs
+            }
+            projected_refs = set(row.projected_response_object_refs)
+            response_refs = set(row.response_object_refs)
+            if (
+                not projected_refs.issubset(source_domain)
+                or response_refs
+                != (
+                    projected_refs
+                    | relation_refs
+                    | response_refs.intersection(configuration_refs)
+                )
+                or any(
+                    not set(meaning_row.configuration_component_refs)
+                    .intersection(projected_refs)
+                    for meaning_row in meaning_rows
+                )
+            ):
+                raise CMEEStage1ContractError(
+                    "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                )
         basis_by_ref = {
             row.binding_ref: row
             for row in projection.subjective_basis_binding_rows
@@ -16469,8 +16858,8 @@ def _validate_stage1_projection_causal_trace(
                     row.layer1_contribution_refs
                 )
             )
-            required_qualifier_codes = {
-                code
+            bound_axis_qualifier_codes = {
+                f"{canonical_axis}:{value}"
                 for qualifier in projection.source_qualifier_binding_rows
                 if qualifier.basis_binding_ref in basis_by_ref
                 and basis_by_ref[
@@ -16478,15 +16867,29 @@ def _validate_stage1_projection_causal_trace(
                 ].contribution_ref
                 in set(row.layer1_contribution_refs)
                 for code in qualifier.canonical_qualifier_codes
+                for axis, value in (code.split(":", 1),)
+                for role_prefix in (
+                    ""
+                    if qualifier.source_argument_role is None
+                    else f"{qualifier.source_argument_role.value.lower()}_",
+                )
+                for canonical_axis in (axis.removeprefix(role_prefix),)
+                if canonical_axis in {"polarity", "modality", "time_scope"}
+            }
+            trace_axis_qualifier_codes = {
+                code
+                for code in row.source_qualifier_refs
+                if code.split(":", 1)[0]
+                in {"polarity", "modality", "time_scope"}
             }
             if (
                 not relevant_basis_rows
                 or not set(row.configuration_component_refs).intersection(
                     basis.semantic_ref for basis in relevant_basis_rows
                 )
-                or not required_qualifier_codes
-                or not required_qualifier_codes.issubset(
-                    set(row.source_qualifier_refs)
+                or not trace_axis_qualifier_codes
+                or not trace_axis_qualifier_codes.issubset(
+                    bound_axis_qualifier_codes
                 )
             ):
                 raise CMEEStage1ContractError(
@@ -16713,7 +17116,8 @@ def _validate_stage1_projection_v2_subjective_spine(
         row.suppressed_opportunity_key for row in suppressions
     )
     if (
-        len(selected_keys) != len(set(selected_keys))
+        suppressions
+        or len(selected_keys) != len(set(selected_keys))
         or len(suppressed_keys) != len(set(suppressed_keys))
         or set(selected_keys).intersection(suppressed_keys)
         or set((*selected_keys, *suppressed_keys)) != set(opportunity_by_key)
@@ -17786,7 +18190,10 @@ def validate_stage1_projection(
             != len(set(proposition.referenced_experiencer_refs))
         ):
             raise CMEEStage1ContractError("stage1_actor_ref_duplicate")
-        if len(row.source_reception_act_refs) != 1:
+        if (
+            not is_v2
+            and len(row.source_reception_act_refs) != 1
+        ):
             raise CMEEStage1ContractError(
                 "stage1_subjective_reception_act_union_invalid"
             )
@@ -19218,6 +19625,7 @@ __all__ = [
     "input_specific_meaning_candidate_core_payload",
     "input_specific_meaning_candidate_dominates",
     "input_specific_meaning_candidate_id",
+    "input_specific_meaning_configuration_source_component_rows",
     "input_specific_meaning_candidate_source_component_rows",
     "input_specific_meaning_candidate_source_component_refs",
     "input_specificity_evidence_id",

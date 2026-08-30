@@ -70,6 +70,7 @@ from .contracts import (
     PreMeaningGroundedInputs,
     ReadingConsequence,
     QualifiedEventStateConfiguration,
+    RelationOperator,
     RelationDirectionRow,
     RelationalConfiguration,
     RequiredDifferenceRow,
@@ -91,6 +92,7 @@ from .contracts import (
     input_specific_meaning_candidate_core_payload,
     input_specific_meaning_candidate_dominates,
     input_specific_meaning_candidate_id,
+    input_specific_meaning_configuration_source_component_rows,
     input_specific_meaning_candidate_source_component_rows,
     input_specific_meaning_candidate_source_component_refs,
     input_specificity_evidence_id,
@@ -735,6 +737,15 @@ def derive_grounded_situation_view(
         if node.owner_id in required_owner_ids
         and node.node_id in required_visible_claim_ids
         and node.epistemic_state is EpistemicState.SOURCE_EXPLICIT
+        # A source-explicit connective nucleus (for example a contrast
+        # marker) proves the relation carried by its grounded edge; it is not
+        # itself a target, topic, or scope object.  Keeping it as an
+        # independent object creates an artificial competing scope beside
+        # the two source-bound endpoints.
+        and not (
+            node.node_kind == "other_explicit"
+            and node.grounding_kind == "user_stated_relation"
+        )
     )
     if source_explicit_objects:
         append_basis(
@@ -1152,11 +1163,25 @@ def _relation_connects(
 ) -> bool:
     if left_object_ref == right_object_ref:
         return False
-    endpoints = {left_object_ref, right_object_ref}
-    return any(
-        {row.source_object_ref, row.target_object_ref} == endpoints
-        for row in relations
-    )
+    adjacency: dict[str, set[str]] = {}
+    for row in relations:
+        adjacency.setdefault(row.source_object_ref, set()).add(
+            row.target_object_ref
+        )
+        adjacency.setdefault(row.target_object_ref, set()).add(
+            row.source_object_ref
+        )
+    visited = {left_object_ref}
+    pending = [left_object_ref]
+    while pending:
+        current = pending.pop()
+        for candidate in adjacency.get(current, ()):
+            if candidate == right_object_ref:
+                return True
+            if candidate not in visited:
+                visited.add(candidate)
+                pending.append(candidate)
+    return False
 
 
 def _material_object_pairs(
@@ -1515,7 +1540,16 @@ def derive_foreground_scope_closed(
                 continue
             pair_objects = _canonical((*left_objects, *right_objects))
             if not left_values or not right_values:
-                missing.add(_missing_ref(axis.value, *pair_objects))
+                # UNKNOWN is an optional material leaf, unlike the required
+                # carrier axes above.  A source-connected relation may keep
+                # an unknown on one facet and its absence on the other as a
+                # distinct value; treating the absent side as missing would
+                # prevent the closed union from preserving that unknown.
+                if not (
+                    axis is ForegroundScopeCompatibilityAxis.UNKNOWN
+                    and relation_bridges_rows
+                ):
+                    missing.add(_missing_ref(axis.value, *pair_objects))
             elif (
                 (
                     axis
@@ -1553,9 +1587,14 @@ def derive_foreground_scope_closed(
                 if left_values == right_values:
                     continue
                 if not left_values or not right_values:
-                    missing.add(
-                        _missing_ref(axis.value, left_ref, right_ref)
-                    )
+                    if not (
+                        axis is ForegroundScopeCompatibilityAxis.UNKNOWN
+                        and not same_object
+                        and connected
+                    ):
+                        missing.add(
+                            _missing_ref(axis.value, left_ref, right_ref)
+                        )
                 elif same_object or not connected:
                     conflicts.update((left_ref, right_ref))
 
@@ -1728,6 +1767,49 @@ def _profile_source_qualifiers(
             *profile.polarity_refs,
             *profile.scope_refs,
             *profile.required_qualifier_refs,
+            *profile.material_unknown_refs,
+        )
+    )
+
+
+def _qualified_material_modifier_refs(
+    profile: ForegroundScopeObjectCompatibilityRow,
+) -> Tuple[str, ...]:
+    """Return non-default typed leaves that can make a qualified facet material."""
+
+    return _canonical(
+        (
+            *(ref for ref in profile.world_refs if ref != "world:unknown"),
+            *(
+                ref
+                for ref in profile.modality_refs
+                if ref != "modality:fact"
+            ),
+            *(
+                ref
+                for ref in profile.time_refs
+                if ref != "time_scope:current_input"
+            ),
+            *(
+                ref
+                for ref in profile.aspect_refs
+                if ref != "aspect:unknown"
+            ),
+            *(
+                ref
+                for ref in profile.polarity_refs
+                if ref != "polarity:neutral"
+            ),
+            *(
+                ref
+                for ref in profile.scope_refs
+                if ref != "scope:source_bounded"
+            ),
+            *(
+                ref
+                for ref in profile.required_qualifier_refs
+                if ref.startswith("qualifier:")
+            ),
             *profile.material_unknown_refs,
         )
     )
@@ -1907,7 +1989,12 @@ def derive_difference_configuration_set(
     )
     configurations: list[DifferenceConfiguration] = []
     relationally_covered: set[str] = set()
-    for relation_component in _relation_components(admitted_relations):
+    # Each typed source relation owns one binary configuration.  Connected
+    # multi-facet inputs are integrated later by the requirement-bundle and
+    # material-seed graph; folding an entire path into one configuration
+    # would violate the binary endpoint contract and duplicate the shared
+    # endpoint during counterfactual mutation.
+    for relation_component in tuple((relation,) for relation in admitted_relations):
         endpoints = _canonical(
             ref
             for relation in relation_component
@@ -1973,15 +2060,45 @@ def derive_difference_configuration_set(
         configurations.append(configuration)
         relationally_covered.update(endpoints)
 
-    # A source object already represented by a relational configuration is
-    # not duplicated as a qualified configuration.  This keeps the set a
-    # semantic partition rather than an optional-feature counter.
-    for object_ref in sorted(scope_objects - relationally_covered):
+    # A relational endpoint is normally not duplicated as a qualified
+    # configuration.  The closed exception is category-neutral: an
+    # independently grounded NO_RELATION projection may retain a distinct
+    # qualified facet on the same source object when its predicate and owner
+    # are source-bound.  Material non-default modifier admission is checked
+    # below from the exact typed compatibility profile.  Candidate kind and
+    # semantic operator are deliberately unreachable from this admission
+    # decision; they would be a fixed-category selector.
+    independently_projected_qualified_refs = {
+        row.source_object_ref
+        for projection in grounded_view.semantic_interpretation_projections
+        if not projection.relation_path_refs
+        and projection.relation_operator is RelationOperator.NO_RELATION_CLAIM
+        for row in projection.component_rows
+        for profile in (profiles_by_object.get(row.source_object_ref),)
+        if profile is not None
+        and len(profile.owner_refs) == 1
+        and row.scope_key == "scope:source_bounded"
+        and row.typed_predicate_key.startswith("predicate:")
+        and bool(row.typed_predicate_key.removeprefix("predicate:"))
+        and row.owner_key == profile.owner_refs[0].split("@", 1)[0]
+    }
+    qualified_object_refs = (
+        scope_objects - relationally_covered
+    ) | (relationally_covered & independently_projected_qualified_refs)
+    for object_ref in sorted(qualified_object_refs):
         profile = profiles_by_object.get(object_ref)
         if profile is None:
             continue
         if len(profile.owner_refs) != 1:
             missing.append(_missing_ref("qualified-owner", object_ref))
+            continue
+        # owner + the carrier defaults (fact/current-input/unknown-aspect/
+        # neutral/source-bounded) do not constitute the material qualifier
+        # difference required by QUALIFIED_EVENT_ADMISSION.  Without a
+        # non-default typed modifier this is a thin source event, not a
+        # provisional input-specific reading.
+        material_modifier_refs = _qualified_material_modifier_refs(profile)
+        if not material_modifier_refs:
             continue
         qualifiers = _profile_source_qualifiers(profile)
         modifier_refs = _canonical(
@@ -2160,6 +2277,7 @@ def _derive_observed_distinctions(
         objects = _configuration_object_refs(configuration)
         qualifiers = _configuration_qualifier_refs(configuration)
         evidence = _configuration_evidence_refs(configuration)
+        qualified_material_modifiers: Tuple[str, ...] = ()
         if type(configuration) is RelationalConfiguration:
             for direction in configuration.direction_rows:
                 rows.append(
@@ -2213,13 +2331,25 @@ def _derive_observed_distinctions(
                         )
                     )
         elif type(configuration) is QualifiedEventStateConfiguration:
+            profile = profiles_by_object.get(configuration.predicate_ref)
+            if profile is None:
+                raise CMEEStage1ContractError(
+                    "qualified_observed_profile_unbound"
+                )
+            qualified_material_modifiers = (
+                _qualified_material_modifier_refs(profile)
+            )
+            if not qualified_material_modifiers:
+                raise CMEEStage1ContractError(
+                    "qualified_observed_material_modifier_missing"
+                )
             rows.append(
                 _new_observed_distinction(
                     configuration_ref=configuration.configuration_id,
                     derivation_kind=(
                         ObservedDistinctionDerivationKind.QUALIFIED_PREDICATE_OWNER_MODIFIER
                     ),
-                    axis=_qualifier_axis(qualifiers),
+                    axis=_qualifier_axis(qualified_material_modifiers),
                     contrasted_component_refs=(
                         configuration.predicate_ref,
                         configuration.owner_ref,
@@ -2248,8 +2378,15 @@ def _derive_observed_distinctions(
             for value in qualifiers
             if not value.startswith("unknown:")
             and (
-                type(configuration) is not RelationalConfiguration
-                or qualifier_owner_count.get(value) == 1
+                (
+                    type(configuration)
+                    is QualifiedEventStateConfiguration
+                    and value in qualified_material_modifiers
+                )
+                or (
+                    type(configuration) is RelationalConfiguration
+                    and qualifier_owner_count.get(value) == 1
+                )
             )
         )
         if bound_qualifiers:
@@ -2712,17 +2849,39 @@ def derive_requirement_bundle_set(
 
     required_configuration_refs = set(differences_by_configuration)
     bundles: list[RequirementBundle] = []
-    for anchor in configurations:
-        if anchor.configuration_id not in required_configuration_refs:
-            continue
+    required_configurations = tuple(
+        configuration
+        for configuration in configurations
+        if configuration.configuration_id in required_configuration_refs
+    )
+    remaining = set(range(len(required_configurations)))
+    connected_components: list[tuple[DifferenceConfiguration, ...]] = []
+    while remaining:
+        first = min(remaining)
+        selected = {first}
+        changed = True
+        while changed:
+            changed = False
+            for index in tuple(sorted(remaining - selected)):
+                if any(
+                    _configurations_are_source_connected(
+                        required_configurations[index],
+                        required_configurations[member],
+                        grounded_view,
+                    )
+                    for member in selected
+                ):
+                    selected.add(index)
+                    changed = True
+        connected_components.append(
+            tuple(required_configurations[index] for index in sorted(selected))
+        )
+        remaining.difference_update(selected)
+
+    for component in connected_components:
+        anchor = component[0]
         adjacent = tuple(
-            candidate.configuration_id
-            for candidate in configurations
-            if candidate.configuration_id != anchor.configuration_id
-            and candidate.configuration_id in required_configuration_refs
-            and _configurations_are_source_connected(
-                anchor, candidate, grounded_view
-            )
+            candidate.configuration_id for candidate in component[1:]
         )
         if len(adjacent) > 4:
             raise CMEEStage1ContractError(
@@ -2757,8 +2916,9 @@ def derive_requirement_bundle_set(
         )
         bundle = replace(bundle, bundle_id=requirement_bundle_id(bundle))
         bundles.append(bundle)
-    # Anchor iteration follows the semantic configuration order; IDs do not
-    # select a primary bundle or change its position.
+    # Each source-connected component owns one bundle.  Its first semantic
+    # configuration is the stable anchor; alternate anchor permutations are
+    # not distinct readings.
     ordered_bundles = tuple(bundles)
     if not 1 <= len(ordered_bundles) <= 5:
         raise CMEEStage1ContractError(
@@ -3145,6 +3305,9 @@ def apply_counterfactual_mutation(
     source_component_rows: Sequence[
         GroundedSemanticComponentProjection
     ] | None = None,
+    mutation_scope_component_rows: Sequence[
+        GroundedSemanticComponentProjection
+    ] | None = None,
 ) -> MeaningSemanticSignature:
     """Apply exactly one mutation from the closed exact12 set, fail-closed."""
 
@@ -3153,6 +3316,7 @@ def apply_counterfactual_mutation(
         counterfactual_mutation,
         source_component_refs=source_component_refs,
         source_component_rows=source_component_rows,
+        mutation_scope_component_rows=mutation_scope_component_rows,
     )
 
 
@@ -3176,6 +3340,9 @@ def issue_whole_reading_consequence_row(
     baseline_semantic_signature: MeaningSemanticSignature,
     source_component_refs: Sequence[str] | None = None,
     source_component_rows: Sequence[
+        GroundedSemanticComponentProjection
+    ] | None = None,
+    mutation_scope_component_rows: Sequence[
         GroundedSemanticComponentProjection
     ] | None = None,
 ) -> WholeReadingConsequenceRow | None:
@@ -3284,6 +3451,7 @@ def issue_whole_reading_consequence_row(
             counterfactual_mutation,
             source_component_refs=source_component_refs,
             source_component_rows=source_component_rows,
+            mutation_scope_component_rows=mutation_scope_component_rows,
         )
     except CMEEStage1ContractError as exc:
         if str(exc) in {
@@ -3891,6 +4059,7 @@ def _derive_candidate_semantic_loss_codes(
     foreground_scope: ForegroundScope,
     bundle: RequirementBundle,
     configurations: Sequence[DifferenceConfiguration],
+    observed_by_ref: Mapping[str, ObservedDistinctionRow],
     required_by_ref: Mapping[str, RequiredDifferenceRow],
     mutation_by_ref: Mapping[str, CounterfactualMutationRow],
 ) -> Tuple[DifferenceInvariantCode, ...]:
@@ -4005,12 +4174,27 @@ def _derive_candidate_semantic_loss_codes(
     for required_ref in bundle.required_difference_refs:
         required = required_by_ref[required_ref]
         mutation = mutation_by_ref[required.counterfactual_mutation_ref]
+        observed = observed_by_ref[required.observed_distinction_ref]
+        configuration = next(
+            value
+            for value in values
+            if value.configuration_id == observed.configuration_ref
+        )
+        mutation_scope_rows = (
+            input_specific_meaning_configuration_source_component_rows(
+                candidate,
+                configuration,
+                grounded_view=grounded_view,
+                mutation=mutation,
+            )
+        )
         try:
             apply_meaning_signature_mutation(
                 source_signature,
                 mutation,
                 source_component_refs=source_refs,
                 source_component_rows=source_rows,
+                mutation_scope_component_rows=mutation_scope_rows,
             )
         except CMEEStage1ContractError as exc:
             if str(exc) == "mutation_material_semantic_collapse_candidate_invalid":
@@ -4029,6 +4213,7 @@ def _evaluate_candidate_hard_validity(
     foreground_scope: ForegroundScope,
     bundle: RequirementBundle,
     configurations: Sequence[DifferenceConfiguration],
+    observed_by_ref: Mapping[str, ObservedDistinctionRow],
     required_by_ref: Mapping[str, RequiredDifferenceRow],
     mutation_by_ref: Mapping[str, CounterfactualMutationRow],
     expected_required_difference_refs: Sequence[str],
@@ -4073,6 +4258,7 @@ def _evaluate_candidate_hard_validity(
             foreground_scope=foreground_scope,
             bundle=bundle,
             configurations=values,
+            observed_by_ref=observed_by_ref,
             required_by_ref=required_by_ref,
             mutation_by_ref=mutation_by_ref,
         )
@@ -4166,6 +4352,7 @@ def _derive_candidate_for_bundle(
     foreground_scope: ForegroundScope,
     bundle: RequirementBundle,
     configurations: Sequence[DifferenceConfiguration],
+    observed_by_ref: Mapping[str, ObservedDistinctionRow],
     required_by_ref: Mapping[str, RequiredDifferenceRow],
     mutation_by_ref: Mapping[str, CounterfactualMutationRow],
     lane_operation: MeaningReadingOperation,
@@ -4327,6 +4514,7 @@ def _derive_candidate_for_bundle(
             foreground_scope=foreground_scope,
             bundle=bundle,
             configurations=owned_configurations,
+            observed_by_ref=observed_by_ref,
             required_by_ref=required_by_ref,
             mutation_by_ref=mutation_by_ref,
         ),
@@ -4350,6 +4538,20 @@ def _derive_candidate_for_bundle(
     for required_ref in candidate.preserved_difference_refs:
         required = required_by_ref[required_ref]
         mutation = mutation_by_ref[required.counterfactual_mutation_ref]
+        observed = observed_by_ref[required.observed_distinction_ref]
+        configuration = next(
+            value
+            for value in owned_configurations
+            if value.configuration_id == observed.configuration_ref
+        )
+        mutation_scope_rows = (
+            input_specific_meaning_configuration_source_component_rows(
+                candidate,
+                configuration,
+                grounded_view=grounded_view,
+                mutation=mutation,
+            )
+        )
         try:
             row = issue_whole_reading_consequence_row(
                 foreground_scope=foreground_scope,
@@ -4358,6 +4560,7 @@ def _derive_candidate_for_bundle(
                 baseline_semantic_signature=signature,
                 source_component_refs=signature_source_component_refs,
                 source_component_rows=signature_source_component_rows,
+                mutation_scope_component_rows=mutation_scope_rows,
             )
         except CMEEStage1ContractError as exc:
             if str(exc) in {
@@ -4399,6 +4602,7 @@ def _derive_candidate_for_bundle(
         foreground_scope=foreground_scope,
         bundle=bundle,
         configurations=owned_configurations,
+        observed_by_ref=observed_by_ref,
         required_by_ref=required_by_ref,
         mutation_by_ref=mutation_by_ref,
         expected_required_difference_refs=bundle.required_difference_refs,
@@ -4910,6 +5114,9 @@ def derive_input_specific_meaning_structure(
         required_by_ref = {
             value.difference_id: value for value in required
         }
+        observed_by_ref = {
+            value.distinction_id: value for value in observed
+        }
         mutation_by_ref = {
             value.mutation_id: value for value in mutations
         }
@@ -4948,6 +5155,7 @@ def derive_input_specific_meaning_structure(
                     foreground_scope=scope,
                     bundle=bundle,
                     configurations=configurations,
+                    observed_by_ref=observed_by_ref,
                     required_by_ref=required_by_ref,
                     mutation_by_ref=mutation_by_ref,
                     lane_operation=operation,

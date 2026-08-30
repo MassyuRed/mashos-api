@@ -11,6 +11,7 @@ process interruption cannot expose a partially committed result set.
 """
 
 import argparse
+import ast
 import base64
 import binascii
 import ctypes
@@ -346,22 +347,30 @@ N3_BEHAVIOR_ROOT_EXACT28_SHA256 = (
 N3_IDENTITY_INFRASTRUCTURE_EXACT5_SHA256 = (
     "1df267709164af1ce8e3ee443eddad14c83efa132bb1cf87492ab8cccf9f9c27"
 )
+N3_HISTORICAL_RUNNER_IDENTITY = (
+    "ai/tools/cmee_v1a_i1sx_candidate_run.py",
+    "de681cd4123b67732f67aab87973dac630993f0defe278d687c321991f895703",
+    199820,
+)
+N3_HISTORICAL_STATIC_RECEIPT_SHA256 = (
+    "e71a79fa4748134396b5fa46e6cf98ff91e535fb91b955fa5c814106177a26bb"
+)
 IM03_WORKING_LANGUAGE_CORE_IDENTITY = (
-    "ac79fd64c9a07e86b08ba279f7fca209b77eee285a39abba5d50d856dc3817be"
+    "1074e5581e93457ecebbe3d5a6e0b56c75b058121a39c05bff4534f6f1a33a8b"
 )
 IM03_WORKING_RUNTIME_INTEGRATION_IDENTITY = (
-    "6686fd945c1d8822e1f2e9fb77bf11e55d7eeb4bc2e61f01ffda50054123a757"
+    "f2ed399d005e557941850206878e90a3bdd310734dbd781238238b47844f03a4"
 )
 IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT17 = (
-    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "b8a5e92847f2ac09bb89f52df51bb687a5e4b7c290646f970fcf952bf14de144", 1282730),
-    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py", "1499e17e43bf9fe5e738191d9f8562089880cf992766ecc78f159bc4779eee81", 1846975),
-    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py", "5f44be03e634e165f95c23ba49d811f664b1bf31ad605380faa304bd81f0a141", 627130),
+    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "e5718c1436be8b8d8693c2859ba422c146e7bdc0f372fcb9197d219d17adbd21", 1429427),
+    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py", "ff3342478c47299955c749f325efede2c6b374479693cc326bcda96008bc7428", 1882678),
+    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py", "20a8cae3ab3d3e24111ef1aa4053a17080341135007a14c8e12fa6895613b4d5", 647650),
     ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py", "8c6ed267db55cc87751d3f75fc39eb7678224266595c175b5d216518d004e8ca", 712544),
     ("language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_plan.py", "2fd50144fb65e9ff7d3dfd163c71f6ac6691e04d608ae70d6082d93ef577da07", 900661),
     ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_text_generation_core/composer.py", "8b6c361506f5efe3d508a8ea0685524baa2c092fb149fa04718242afaf524e43", 21822),
     ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_text_generation_core/adapters/emlis_observation_composer.py", "19ec812e35ecbb70661c66156cd6609e2dc813016b7358f290db04cab09de64f", 90077),
-    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py", "b603514b0788bad34db52da7339c59d08bc85eec2c78b776625d02531ff375d7", 478409),
-    ("language_core_contract_manifest", "faf7ab6df5c8dadb576a1d27be73f8bcf25863e094231336a0ec84ab5764fe13", 213360),
+    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py", "cd3a760ff62048978780d0c87489c560a2f65fa74ea719a67cffe9a343e794f5", 491593),
+    ("language_core_contract_manifest", "a7c3307b43156135c1b16ce7f3759f0e11cc72e089c905f32a8eb969f1402323", 213364),
     ("case_frame_and_particle_manifest", "838767e83ab7f34e955bab4ed5e9efd07e238a6a74c5024ea644e70af1cd3cf1", 14076),
     ("predicate_sense_and_atomic_head_manifest", "7db3d6c83e24a364e701af35c84ec68b7f36ff24acbe5c6f2b9020dfbbc96774", 8097),
     ("source_complement_reference_manifest", "b60f13b6f253cfb94d759d8b0ade9d3ea6c7fd6786a964886cf02037ab2d4d40", 25759),
@@ -372,15 +381,15 @@ IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT17 = (
     ("product_causal_owner_and_registry_digests_manifest", "d7eee459ee05a9a17d7fc092d9a93982fc8ff348a4d9a8fda1e122d402a54c3a", 6646),
 )
 IM03_WORKING_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT17 = (
-    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "a73f564169ed11e9b84a41fab21fdf14bb35bda867e15b1c41c1327baba8ba8f", 594798),
-    ("ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py", "739da0e0ea489d75e2b3c5833199d39c3ead0c188133173a695fcc60a84c2b53", 731296),
-    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py", "27362e8e175f7891b3c43e2d05e379bf774d695548e365ef84ea44c38c3fa49d", 401675),
+    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "ddea39d2aa35b9ba3cb6a3aab34f683b17af13a4e5d869801ae18265e9924387", 652257),
+    ("ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py", "38060d5f3f012c9590333e26278784fb01d85e4f91773e49e96541fef1d82c58", 746324),
+    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py", "904431c56d31234c73a3d51e072f8d557368e5aed27bd2044d6bd04e060a57fb", 411856),
     ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py", "c907af7a059f802120b3e494a88651015a14d45c5e272ab1f9d3f1e9bfa8d06f", 293740),
     ("ai/services/ai_inference/emlis_ai_grounded_observation_plan.py", "efb08a5f49d6c3452a8f2332c9d45cebcb5e91ed2c8e8c41fa5a06b3faa4fadd", 352379),
     ("ai/services/ai_inference/cocolon_text_generation_core/composer.py", "e524111597d75599b0550b271a3df464df4d468aec28e608ab4586b7840da1f0", 8179),
     ("ai/services/ai_inference/cocolon_text_generation_core/adapters/emlis_observation_composer.py", "3ca31fbcf0ad9c93bdd4d267a3ef2000ce79b8d702bd7188f020eb11d5bd593c", 25495),
-    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py", "4f8e56c9f7f04d54d54ad908c81f40a85d5cb6215dbdfcea8c13652f95b4042b", 193615),
-    ("language_core_contract_manifest", "faf7ab6df5c8dadb576a1d27be73f8bcf25863e094231336a0ec84ab5764fe13", 213360),
+    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py", "6545d8f1ca56e5d576e6e6902978ab5e6b23b5e8223b332d304aa45649438c4c", 202329),
+    ("language_core_contract_manifest", "a7c3307b43156135c1b16ce7f3759f0e11cc72e089c905f32a8eb969f1402323", 213364),
     ("case_frame_and_particle_manifest", "838767e83ab7f34e955bab4ed5e9efd07e238a6a74c5024ea644e70af1cd3cf1", 14076),
     ("predicate_sense_and_atomic_head_manifest", "7db3d6c83e24a364e701af35c84ec68b7f36ff24acbe5c6f2b9020dfbbc96774", 8097),
     ("source_complement_reference_manifest", "b60f13b6f253cfb94d759d8b0ade9d3ea6c7fd6786a964886cf02037ab2d4d40", 25759),
@@ -391,22 +400,22 @@ IM03_WORKING_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT17 = (
     ("product_causal_owner_and_registry_digests_manifest", "d7eee459ee05a9a17d7fc092d9a93982fc8ff348a4d9a8fda1e122d402a54c3a", 6646),
 )
 IM03_WORKING_LANGUAGE_PAYLOAD_TUPLE_SHA256 = (
-    "b4b0e88a623bc24b71a0f21c6c105c702ad4df05fb2f19318292a897844604ea"
+    "302aaf5e619bb9c78272b07d66646092e7e0fbaee1db52809cc9226d32d4311a"
 )
 IM03_WORKING_RUNTIME_PAYLOAD_TUPLE_SHA256 = (
-    "57c28d689d448fe4b3c68bb31513b32c3a0d61d0325ab25a921b711073725d22"
+    "8a0870d87c2806197ab7e2cbb32f3083d4b3594d3015f53e2b25b4442bc44d3f"
 )
 IM03_WORKING_SOURCE_OWNER_PAYLOAD_EXACT8_TUPLE_SHA256 = (
-    "aabc8975deb457195c23dcb4bfc475309ad0ffa0b20134f3a95cff890f028fe4"
+    "b86c39a3caf95d39c30ef4d145ec8cee4c5a2f0e07c0f879102da6ca4457e8f7"
 )
 IM03_WORKING_SOURCE_OWNER_SYMBOL_SET_SHA256 = (
-    "cd0def6b9fe4da3d465d2a238737d4f0441af60c658f5e2dd67e59d06a053a28"
+    "07e5849c527300e16d91f44e9844acd27ccecaed9d318c322016f410c25f8a9d"
 )
 IM03_WORKING_SOURCE_OWNER_DECLARATION_COUNTS_EXACT8 = (
-    274, 471, 114, 180, 251, 5, 39, 89,
+    279, 477, 114, 180, 251, 5, 39, 89,
 )
 IM03_WORKING_SOURCE_OWNER_IMPORT_COUNTS_EXACT8 = (
-    130, 17, 138, 70, 36, 25, 19, 94,
+    138, 17, 141, 70, 36, 25, 19, 96,
 )
 IM03_WORKING_PRODUCT_CAUSAL_OWNER_MANIFEST_SHA256 = (
     "cc3017e9cef7e5e679a23a81bd78a6fcf2810a4a374db97062c76572ad6a6e9d"
@@ -416,6 +425,128 @@ IM03_WORKING_BEHAVIOR_ROOT_EXACT35_SHA256 = (
 )
 IM03_WORKING_IDENTITY_INFRASTRUCTURE_EXACT5_SHA256 = (
     "1df267709164af1ce8e3ee443eddad14c83efa132bb1cf87492ab8cccf9f9c27"
+)
+IM06_DEVELOPMENT_APPROVED_PATHS_EXACT6 = (
+    "ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py",
+    "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
+    "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py",
+    "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py",
+    "ai/tools/cmee_v1a_i1sx_candidate_run.py",
+)
+IM06_APPROVED_NONSELF_BYTES_NAME_SHA256_BYTE_COUNT_EXACT5 = (
+    ("ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py", "38060d5f3f012c9590333e26278784fb01d85e4f91773e49e96541fef1d82c58", 746324),
+    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py", "6545d8f1ca56e5d576e6e6902978ab5e6b23b5e8223b332d304aa45649438c4c", 202329),
+    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py", "904431c56d31234c73a3d51e072f8d557368e5aed27bd2044d6bd04e060a57fb", 411856),
+    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "ddea39d2aa35b9ba3cb6a3aab34f683b17af13a4e5d869801ae18265e9924387", 652257),
+    ("ai/tests/test_cmee_v1a_i1sx_contracts.py", "70dac02af6d2225dde8ae60a5544ef08deeb3b9dffcf6495278118219228a68a", 1313290),
+)
+IM06_EXPECTED_COLLECTED_DENOMINATORS_EXACT2 = (47, 241)
+IM06_ACTUAL_COLLECTED_DENOMINATORS_EXACT2 = (47, 241)
+IM06_WORKING_RUNNER_SELF_PROJECTION_SHA256 = (
+    "674631fd71ec40e40def04b4ec4e3a74c50c80eaa419ed3dd51c4764f3ab4be7"
+)
+IM06_WORKING_RUNNER_SELF_PROJECTION_BYTE_COUNT = 237549
+IM06_WORKING_RUNNER_SELF_PROJECTION_DECLARATION_COUNT = 185
+IM06_WORKING_RUNNER_SELF_PROJECTION_PROOF = (
+    IM06_WORKING_RUNNER_SELF_PROJECTION_SHA256,
+    IM06_WORKING_RUNNER_SELF_PROJECTION_BYTE_COUNT,
+    IM06_WORKING_RUNNER_SELF_PROJECTION_DECLARATION_COUNT,
+)
+IM06_HISTORICAL_RECONSTRUCTED_NODEIDS_EXACT32 = (
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM00ContractsTest::test_im00_reuses_subjective_depth_class_exact3_without_legacy_alias",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM00ContractsTest::test_im00_foreground_scope_closed_types_match_final_design",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM00ContractsTest::test_im01_premeaning_and_allowed_reception_envelope_are_typed_split",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM00ContractsTest::test_im01_actual_pipeline_derives_scope_before_reception_and_stops_at_phase_a",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM00ContractsTest::test_im01_closed_derivation_exact4_union_exact10_and_zero_only_stop",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM00ContractsTest::test_im01_shared_relation_projector_retains_optional_source_relation_union",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM00ContractsTest::test_im01_reception_delivery_identity_and_order_backflow_is_zero",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM00ContractsTest::test_im00_foreground_scope_basis_binds_actual_source_and_layer1",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM00ContractsTest::test_im00_foreground_scope_basis_rejects_unbound_or_wrong_kind",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM00ContractsTest::test_im00_foreground_scope_and_derivation_state_invariants",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM00ContractsTest::test_im00_scope_and_consequence_have_zero_reception_backflow",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM00ContractsTest::test_im00_reception_only_values_are_semantically_invariant",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM00ContractsTest::test_im00_coherent_premeaning_qualifier_rehash_is_source_rejected",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM00ContractsTest::test_im00_legacy_valid_operator_rehash_in_premeaning_is_source_rejected",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM00ContractsTest::test_im00_operation_seam_and_counterfactual_shapes_are_closed",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM00ContractsTest::test_im00_qualified_event_counterfactuals_are_source_coherent",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM00ContractsTest::test_im00_whole_reading_consequence_exact7_and_row_binding",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM00ContractsTest::test_im00_whole_reading_row_rejects_wrong_axis_unbound_and_free_text",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEEStage1AdditionalCorrectionStep2CompositionTest::test_runtime_integration_identity_is_independent_exact17_framed_digest",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEEStage1AdditionalCorrectionStep2CompositionTest::test_language_core_identity_is_transitive_exact17_owner_ast_and_step4_isolated",
+    "ai/tests/test_cocolon_text_generation_core_boundary.py::test_core_boundary_contract_registry_keeps_three_outputs_separated",
+    "ai/tests/test_cocolon_text_generation_core_boundary.py::test_emlis_boundary_rejects_ungrounded_supplementation",
+    "ai/tests/test_cocolon_text_generation_core_boundary.py::test_piece_boundary_rejects_overcompression_when_must_keep_claims_disappear",
+    "ai/tests/test_cocolon_text_generation_core_boundary.py::test_analysis_boundary_rejects_emlis_temperature_and_diagnostic_surface",
+    "ai/tests/test_cocolon_text_generation_core_boundary.py::test_common_analysis_payload_rejects_piece_voice_at_core_boundary",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM02ContractsTest::test_im02_closed_types_exact_sets_and_zero_reception_backflow",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM02ContractsTest::test_im02_actual_source_bound_configurations_cover_exact5_origins",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM02ContractsTest::test_im02_exact4_configuration_states_are_derived_fail_closed",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM02ContractsTest::test_im02_required_differences_own_exact_one_closed_mutation",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM02ContractsTest::test_im02_requirement_bundles_exclude_optional_and_shared_evidence",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM02ContractsTest::test_im02_whole_reading_issuer_binds_owned_mutation_exactly",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM02ContractsTest::test_im02_response_stores_and_composition_revalidates_aggregate",
+)
+IM06_NEW_FOCUSED_NODEIDS_EXACT15 = (
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest::test_im03_forward_carrier_v1_1_required_exact12_and_v1_0_runtime_rejected",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest::test_im03_candidate_evidence_outcome_closed_types_and_full_core_identity",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest::test_im03_exact12_mutations_bind_exact_one_target_delta_and_consequence",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest::test_im03_mutation_target_absent_is_candidate_invalid_and_ambiguous_or_noop_is_implementation_red",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest::test_im03_material_basis_provenance_exact_cover_and_weakest_tier",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest::test_im03_full_required_difference_row_coverage_and_evidence_back_binding",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest::test_im03_full_core_dedupe_preserves_distinct_provenance_tier_unknown_and_qualifier",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest::test_im03_hard_valid_selection_and_all_invalid_closed_disposition",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest::test_im03_sealed_trace_exact3_excludes_hard_invalid_and_recomputes_identity",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest::test_im04_normal_reading_consequence_and_reception_partition_are_post_selection",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest::test_im04_limited_outcome_builds_focused_affirmative_reception_without_reselection",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest::test_im05_response_calls_sole_meaning_owner_once_and_carries_same_sealed_artifact",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest::test_im05_composition_rederives_zero_and_rejects_schema_ref_identity_and_nonmutation_tamper",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest::test_im05_tagged_projection_preserves_meaning_and_reception_visible_causal_trace",
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest::test_im06_contrastive_paraphrase_adjunct_synthetic_oracle_and_positive_exact_once_order",
+)
+IM06_CUMULATIVE_DEVELOPMENT_NODEIDS_EXACT47 = (
+    *IM06_HISTORICAL_RECONSTRUCTED_NODEIDS_EXACT32,
+    *IM06_NEW_FOCUSED_NODEIDS_EXACT15,
+)
+IM06_FULL_REGRESSION_PATHS_EXACT3 = (
+    "ai/tests/test_cmee_v1a_i1sx_contracts.py",
+    "ai/tests/test_cmee_v1a_i1sx_vertical.py",
+    "ai/tests/test_cocolon_text_generation_core_boundary.py",
+)
+IM06_RUNTIME_LOCK_IDENTITY = (
+    (
+        "path",
+        "ai/configs/emlis_nls_v3_recovery_epoch002_formal_worker_bootstrap_lock_v1.json",
+    ),
+    ("git_blob", "0822fcb010985cd0d384f250a9e8a1fe16dc8fd4"),
+    ("raw_sha256", "9bb2875541a6d959c1dca47cb5b96de5b0041ccf5288e849c469c15a8b310787"),
+    ("logical_sha256", "801ba54efc0f6655238d14e7c153fb70b555801489aa8ba028515fc64d9c05f4"),
+    ("wheel_bundle_manifest_sha256", "63f3915ccf57845dc0c4b5d14762207d23d1cb7a435a9de8411add8491ba6fc8"),
+    ("installed_distributions_sha256", "0e2e4b5ec3f3b1aef7fad4474af28d8eeea8fa7bec1a57a9cb7180fc81b80e42"),
+    ("runtime", "Python 3.12.13 / linux x86_64 / wheel-only"),
+    ("reachable_distribution_count", 46),
+)
+IM06_PYTEST_WORKING_DIRECTORY = "ai"
+IM06_PYTEST_RUNTIME_EXECUTABLE = "<CMEE_LOCKED_RUNTIME>/bin/python"
+IM06_PYTEST_ENVIRONMENT_EXACT2 = (
+    ("PYTHONDONTWRITEBYTECODE", "1"),
+    ("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1"),
+)
+IM06_PYTEST_BASE_ARGUMENTS_EXACT6 = (
+    "-m",
+    "pytest",
+    "-q",
+    "--disable-warnings",
+    "-p",
+    "no:cacheprovider",
+)
+IM06_DEVELOPMENT_COMMAND_PLAN_EXACT6 = (
+    ("collect_cumulative_exact47", True, "cumulative_exact47"),
+    ("collect_full_exact241", True, "full_exact3_paths"),
+    ("run_im06_exact1", False, "im06_exact1"),
+    ("run_new_focused_exact15", False, "new_focused_exact15"),
+    ("run_cumulative_exact47", False, "cumulative_exact47"),
+    ("run_full_exact241", False, "full_exact3_paths"),
 )
 N4_ACTIVATION_OWNER_SYMBOL_SET_EXACT2 = (
     (
@@ -505,6 +636,224 @@ PRIVATE_OUTPUT_ROOT = Path(
     os.environ.get("CMEE_PRIVATE_OUTPUT_ROOT", "/tmp/cocolon-cmee-v1a-private")
 ).resolve()
 CHECKOUT_ROOT = AI_ROOT.parent.resolve()
+
+
+_IM06_RUNNER_SELF_PROJECTION_EXCLUDED_BINDINGS = frozenset(
+    {
+        "IM06_WORKING_RUNNER_SELF_PROJECTION_SHA256",
+        "IM06_WORKING_RUNNER_SELF_PROJECTION_BYTE_COUNT",
+        "IM06_WORKING_RUNNER_SELF_PROJECTION_DECLARATION_COUNT",
+    }
+)
+_IM06_RUNNER_SELF_PROJECTION_SCHEMA_VERSION = (
+    "cocolon.cmee.stage1.im06_runner_self_projection.v1"
+)
+
+
+def _im06_runner_self_projection_bytes() -> bytes:
+    """Normalize only recursive literals while retaining every other byte."""
+
+    relative_path = IM06_DEVELOPMENT_APPROVED_PATHS_EXACT6[-1]
+    target = Path(__file__).resolve()
+    if (
+        target != (CHECKOUT_ROOT / relative_path).resolve()
+        or _IM06_RUNNER_SELF_PROJECTION_EXCLUDED_BINDINGS
+        != frozenset(
+            {
+                "IM06_WORKING_RUNNER_SELF_PROJECTION_SHA256",
+                "IM06_WORKING_RUNNER_SELF_PROJECTION_BYTE_COUNT",
+                "IM06_WORKING_RUNNER_SELF_PROJECTION_DECLARATION_COUNT",
+            }
+        )
+        or _IM06_RUNNER_SELF_PROJECTION_SCHEMA_VERSION
+        != "cocolon.cmee.stage1.im06_runner_self_projection.v1"
+    ):
+        raise RuntimeError("im06 approved runner path mismatch")
+    try:
+        source_bytes = target.read_bytes()
+        source_text = source_bytes.decode("utf-8", errors="strict")
+        tree = ast.parse(source_text, filename=relative_path)
+    except (OSError, UnicodeDecodeError, SyntaxError, ValueError):
+        raise RuntimeError("im06 runner self projection mismatch") from None
+
+    line_start_offsets = [0]
+    for line in source_bytes.splitlines(keepends=True):
+        line_start_offsets.append(line_start_offsets[-1] + len(line))
+
+    def source_offset(line_number: int, column_offset: int) -> int:
+        if (
+            type(line_number) is not int
+            or type(column_offset) is not int
+            or line_number <= 0
+            or line_number >= len(line_start_offsets)
+            or column_offset < 0
+        ):
+            raise RuntimeError("im06 runner self projection mismatch")
+        result = line_start_offsets[line_number - 1] + column_offset
+        line_end = line_start_offsets[line_number]
+        if result > line_end:
+            raise RuntimeError("im06 runner self projection mismatch")
+        return result
+
+    excluded_counts = {
+        name: 0 for name in _IM06_RUNNER_SELF_PROJECTION_EXCLUDED_BINDINGS
+    }
+    replacement_spans = []
+    for node in tree.body:
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id
+            in _IM06_RUNNER_SELF_PROJECTION_EXCLUDED_BINDINGS
+        ):
+            excluded_name = node.targets[0].id
+            value = node.value
+            if (
+                not isinstance(value, ast.Constant)
+                or value.end_lineno is None
+                or value.end_col_offset is None
+                or value.lineno is None
+                or value.col_offset is None
+            ):
+                raise RuntimeError("im06 runner self projection mismatch")
+            literal_value = value.value
+            if excluded_name == "IM06_WORKING_RUNNER_SELF_PROJECTION_SHA256":
+                if (
+                    type(literal_value) is not str
+                    or len(literal_value) != 64
+                    or any(character not in "0123456789abcdef" for character in literal_value)
+                ):
+                    raise RuntimeError("im06 runner self projection mismatch")
+            elif type(literal_value) is not int or literal_value <= 0:
+                raise RuntimeError("im06 runner self projection mismatch")
+            excluded_counts[excluded_name] += 1
+            replacement_spans.append(
+                (
+                    source_offset(value.lineno, value.col_offset),
+                    source_offset(value.end_lineno, value.end_col_offset),
+                )
+            )
+    excluded_store_counts = {
+        name: sum(
+            isinstance(node, ast.Name)
+            and isinstance(node.ctx, ast.Store)
+            and node.id == name
+            for node in ast.walk(tree)
+        )
+        for name in _IM06_RUNNER_SELF_PROJECTION_EXCLUDED_BINDINGS
+    }
+    replacement_spans.sort()
+    if (
+        any(count != 1 for count in excluded_counts.values())
+        or any(count != 1 for count in excluded_store_counts.values())
+        or len(replacement_spans) != 3
+        or any(start >= end for start, end in replacement_spans)
+        or any(
+            previous_end > current_start
+            for (_previous_start, previous_end), (current_start, _current_end)
+            in zip(replacement_spans, replacement_spans[1:])
+        )
+    ):
+        raise RuntimeError("im06 runner self projection mismatch")
+    sentinel = b'"<IM06_FROZEN_SELF_LITERAL>"'
+    projected_parts = []
+    cursor = 0
+    for start, end in replacement_spans:
+        projected_parts.extend((source_bytes[cursor:start], sentinel))
+        cursor = end
+    projected_parts.append(source_bytes[cursor:])
+    projection = b"".join(projected_parts)
+    try:
+        ast.parse(projection.decode("utf-8", errors="strict"), filename=relative_path)
+    except (UnicodeDecodeError, SyntaxError, ValueError):
+        raise RuntimeError("im06 runner self projection mismatch") from None
+    return projection
+
+
+def _current_im06_runner_self_projection_proof() -> tuple[str, int, int]:
+    projection = _im06_runner_self_projection_bytes()
+    try:
+        tree = ast.parse(Path(__file__).read_bytes(), filename=str(Path(__file__)))
+    except (OSError, SyntaxError, ValueError):
+        raise RuntimeError("im06 runner self projection mismatch") from None
+    declaration_count = sum(
+        isinstance(
+            node,
+            (ast.Assign, ast.AnnAssign, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef),
+        )
+        for node in tree.body
+    )
+    if type(declaration_count) is not int or declaration_count <= 0:
+        raise RuntimeError("im06 runner self projection mismatch")
+    return hashlib.sha256(projection).hexdigest(), len(projection), declaration_count
+
+
+def _validate_im06_runner_self_projection(
+    frozen_proof: tuple[str, int, int],
+) -> tuple[str, int, int]:
+    if (
+        type(frozen_proof) is not tuple
+        or len(frozen_proof) != 3
+        or re.fullmatch(r"[0-9a-f]{64}", frozen_proof[0]) is None
+        or type(frozen_proof[1]) is not int
+        or frozen_proof[1] <= 0
+        or type(frozen_proof[2]) is not int
+        or frozen_proof[2] <= 0
+    ):
+        raise RuntimeError("im06 runner self projection mismatch")
+    current_proof = _current_im06_runner_self_projection_proof()
+    if current_proof != frozen_proof:
+        raise RuntimeError("im06 runner self projection mismatch")
+    return current_proof
+
+
+def _current_im06_full_bytes_receipt_rows() -> tuple[tuple[str, str, int], ...]:
+    """Return current full exact6 rows for the external Git checkpoint receipt."""
+
+    rows = []
+    for relative_path in IM06_DEVELOPMENT_APPROVED_PATHS_EXACT6:
+        target = (CHECKOUT_ROOT / relative_path).resolve()
+        try:
+            target.relative_to(CHECKOUT_ROOT)
+            payload = target.read_bytes()
+        except (OSError, ValueError):
+            raise RuntimeError("im06 approved bytes receipt mismatch") from None
+        rows.append((relative_path, hashlib.sha256(payload).hexdigest(), len(payload)))
+    result = tuple(rows)
+    if len(result) != 6 or len({row[0] for row in result}) != 6:
+        raise RuntimeError("im06 approved bytes receipt mismatch")
+    return result
+
+
+def _validate_im06_approved_bytes_freeze(
+    frozen_nonself_rows: tuple[tuple[str, str, int], ...],
+    frozen_runner_self_projection: tuple[str, int, int],
+) -> tuple[tuple[tuple[str, str, int], ...], tuple[str, int, int]]:
+    """Validate exact5 full bytes and the nonrecursive runner projection."""
+
+    expected_nonself_paths = IM06_DEVELOPMENT_APPROVED_PATHS_EXACT6[:-1]
+    if (
+        len(frozen_nonself_rows) != 5
+        or tuple(row[0] for row in frozen_nonself_rows)
+        != expected_nonself_paths
+        or any(
+            type(row) is not tuple
+            or len(row) != 3
+            or re.fullmatch(r"[0-9a-f]{64}", row[1]) is None
+            or type(row[2]) is not int
+            or row[2] <= 0
+            for row in frozen_nonself_rows
+        )
+    ):
+        raise RuntimeError("im06 approved nonself bytes mismatch")
+    full_receipt_rows = _current_im06_full_bytes_receipt_rows()
+    if full_receipt_rows[:-1] != frozen_nonself_rows:
+        raise RuntimeError("im06 approved nonself bytes mismatch")
+    runner_self_projection = _validate_im06_runner_self_projection(
+        frozen_runner_self_projection
+    )
+    return full_receipt_rows, runner_self_projection
 
 
 def _body_free_mutation_registry() -> dict[str, Any]:
@@ -949,10 +1298,8 @@ def _early_private_packet_binding(
         "withheld_input_raw_sha256": withheld_input_raw_sha256,
         "withheld_set_digest": withheld_set_digest,
         "runner_identity": {
-            "repo_relative_path": str(
-                Path(__file__).resolve().relative_to(CHECKOUT_ROOT)
-            ),
-            "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            "repo_relative_path": N3_HISTORICAL_RUNNER_IDENTITY[0],
+            "runner_sha256": N3_HISTORICAL_RUNNER_IDENTITY[1],
         },
     }
     return {**material, "packet_binding_sha256": _canonical_sha256(material)}
@@ -964,6 +1311,129 @@ def _identity_payload_proof_rows(
     return tuple(
         (name, hashlib.sha256(payload).hexdigest(), len(payload))
         for name, payload in payloads
+    )
+
+
+def _im06_development_pytest_invocation(
+    command_name: str,
+) -> tuple[str, str, tuple[tuple[str, str], ...], tuple[str, ...]]:
+    """Return a locked-runtime invocation; materialize its executable placeholder."""
+
+    if (
+        IM06_DEVELOPMENT_APPROVED_PATHS_EXACT6
+        != (
+            "ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py",
+            "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
+            "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py",
+            "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
+            "ai/tests/test_cmee_v1a_i1sx_contracts.py",
+            "ai/tools/cmee_v1a_i1sx_candidate_run.py",
+        )
+        or len(set(IM06_DEVELOPMENT_APPROVED_PATHS_EXACT6)) != 6
+        or len(IM06_HISTORICAL_RECONSTRUCTED_NODEIDS_EXACT32) != 32
+        or len(set(IM06_HISTORICAL_RECONSTRUCTED_NODEIDS_EXACT32)) != 32
+        or len(IM06_NEW_FOCUSED_NODEIDS_EXACT15) != 15
+        or len(set(IM06_NEW_FOCUSED_NODEIDS_EXACT15)) != 15
+        or len(IM06_CUMULATIVE_DEVELOPMENT_NODEIDS_EXACT47) != 47
+        or len(set(IM06_CUMULATIVE_DEVELOPMENT_NODEIDS_EXACT47)) != 47
+        or IM06_FULL_REGRESSION_PATHS_EXACT3
+        != (
+            "ai/tests/test_cmee_v1a_i1sx_contracts.py",
+            "ai/tests/test_cmee_v1a_i1sx_vertical.py",
+            "ai/tests/test_cocolon_text_generation_core_boundary.py",
+        )
+        or len(set(IM06_FULL_REGRESSION_PATHS_EXACT3)) != 3
+        or IM06_RUNTIME_LOCK_IDENTITY
+        != (
+            (
+                "path",
+                "ai/configs/emlis_nls_v3_recovery_epoch002_formal_worker_bootstrap_lock_v1.json",
+            ),
+            ("git_blob", "0822fcb010985cd0d384f250a9e8a1fe16dc8fd4"),
+            (
+                "raw_sha256",
+                "9bb2875541a6d959c1dca47cb5b96de5b0041ccf5288e849c469c15a8b310787",
+            ),
+            (
+                "logical_sha256",
+                "801ba54efc0f6655238d14e7c153fb70b555801489aa8ba028515fc64d9c05f4",
+            ),
+            (
+                "wheel_bundle_manifest_sha256",
+                "63f3915ccf57845dc0c4b5d14762207d23d1cb7a435a9de8411add8491ba6fc8",
+            ),
+            (
+                "installed_distributions_sha256",
+                "0e2e4b5ec3f3b1aef7fad4474af28d8eeea8fa7bec1a57a9cb7180fc81b80e42",
+            ),
+            ("runtime", "Python 3.12.13 / linux x86_64 / wheel-only"),
+            ("reachable_distribution_count", 46),
+        )
+        or IM06_PYTEST_RUNTIME_EXECUTABLE != "<CMEE_LOCKED_RUNTIME>/bin/python"
+        or IM06_PYTEST_WORKING_DIRECTORY != "ai"
+        or IM06_PYTEST_ENVIRONMENT_EXACT2
+        != (
+            ("PYTHONDONTWRITEBYTECODE", "1"),
+            ("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1"),
+        )
+        or IM06_PYTEST_BASE_ARGUMENTS_EXACT6
+        != (
+            "-m",
+            "pytest",
+            "-q",
+            "--disable-warnings",
+            "-p",
+            "no:cacheprovider",
+        )
+        or IM06_DEVELOPMENT_COMMAND_PLAN_EXACT6
+        != (
+            ("collect_cumulative_exact47", True, "cumulative_exact47"),
+            ("collect_full_exact241", True, "full_exact3_paths"),
+            ("run_im06_exact1", False, "im06_exact1"),
+            ("run_new_focused_exact15", False, "new_focused_exact15"),
+            ("run_cumulative_exact47", False, "cumulative_exact47"),
+            ("run_full_exact241", False, "full_exact3_paths"),
+        )
+    ):
+        raise RuntimeError("im06 development freeze metadata mismatch")
+    selector_by_name = {
+        "cumulative_exact47": IM06_CUMULATIVE_DEVELOPMENT_NODEIDS_EXACT47,
+        "full_exact3_paths": IM06_FULL_REGRESSION_PATHS_EXACT3,
+        "im06_exact1": (IM06_NEW_FOCUSED_NODEIDS_EXACT15[-1],),
+        "new_focused_exact15": IM06_NEW_FOCUSED_NODEIDS_EXACT15,
+    }
+    try:
+        collect_only, selector_name = {
+            name: (collect, selector)
+            for name, collect, selector in IM06_DEVELOPMENT_COMMAND_PLAN_EXACT6
+        }[command_name]
+        selectors = selector_by_name[selector_name]
+    except KeyError:
+        raise ValueError("unknown im06 development command") from None
+    executable_selectors = []
+    allowed_selector_paths = frozenset(IM06_FULL_REGRESSION_PATHS_EXACT3)
+    for selector in selectors:
+        selector_path = selector.split("::", 1)[0]
+        if (
+            not selector.startswith("ai/")
+            or selector_path not in allowed_selector_paths
+            or any(part in {"", ".", ".."} for part in Path(selector_path).parts)
+        ):
+            raise RuntimeError("im06 development selector path mismatch")
+        executable_selector = selector[len("ai/") :]
+        if not executable_selector.startswith("tests/"):
+            raise RuntimeError("im06 development selector path mismatch")
+        executable_selectors.append(executable_selector)
+    collect_arguments = ("--collect-only",) if collect_only else ()
+    return (
+        IM06_PYTEST_RUNTIME_EXECUTABLE,
+        IM06_PYTEST_WORKING_DIRECTORY,
+        IM06_PYTEST_ENVIRONMENT_EXACT2,
+        (
+            *IM06_PYTEST_BASE_ARGUMENTS_EXACT6,
+            *collect_arguments,
+            *executable_selectors,
+        ),
     )
 
 
@@ -1002,63 +1472,122 @@ def _source_owner_symbol_proof(
     )
 
 
-def _current_frozen_early_identity_pair() -> tuple[str, str]:
-    """Return the exact N3 pair only after the full I05 proof matches."""
-
-    language_payloads = stage1_composition.language_core_identity_payloads()
-    runtime_payloads = (
-        stage1_composition.stage1_runtime_integration_identity_payloads()
+def _n3_historical_static_receipt_material() -> tuple[tuple[str, Any], ...]:
+    return (
+        ("schema_version", "cocolon.cmee.stage1.n3_historical_receipt.v1"),
+        ("language_core_identity", N3_LANGUAGE_CORE_IDENTITY),
+        ("runtime_integration_identity", N3_RUNTIME_INTEGRATION_IDENTITY),
+        (
+            "language_payload_name_sha256_byte_count_exact16",
+            N3_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT16,
+        ),
+        (
+            "runtime_payload_name_sha256_byte_count_exact16",
+            N3_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT16,
+        ),
+        ("language_payload_tuple_sha256", N3_LANGUAGE_PAYLOAD_TUPLE_SHA256),
+        ("runtime_payload_tuple_sha256", N3_RUNTIME_PAYLOAD_TUPLE_SHA256),
+        (
+            "source_owner_payload_exact7_tuple_sha256",
+            N3_SOURCE_OWNER_PAYLOAD_EXACT7_TUPLE_SHA256,
+        ),
+        (
+            "source_owner_declaration_counts_exact7",
+            N3_SOURCE_OWNER_DECLARATION_COUNTS_EXACT7,
+        ),
+        ("source_owner_import_counts_exact7", N3_SOURCE_OWNER_IMPORT_COUNTS_EXACT7),
+        ("source_owner_symbol_set_sha256", N3_SOURCE_OWNER_SYMBOL_SET_SHA256),
+        (
+            "product_causal_owner_manifest_sha256",
+            N3_PRODUCT_CAUSAL_OWNER_MANIFEST_SHA256,
+        ),
+        ("behavior_root_exact28_sha256", N3_BEHAVIOR_ROOT_EXACT28_SHA256),
+        (
+            "identity_infrastructure_exact5_sha256",
+            N3_IDENTITY_INFRASTRUCTURE_EXACT5_SHA256,
+        ),
+        ("activation_owner_symbol_set_exact2", N4_ACTIVATION_OWNER_SYMBOL_SET_EXACT2),
+        (
+            "activation_owner_symbol_set_exact2_sha256",
+            N4_ACTIVATION_OWNER_SYMBOL_SET_EXACT2_SHA256,
+        ),
+        ("historical_runner_identity", N3_HISTORICAL_RUNNER_IDENTITY),
     )
-    language_payload_rows = _identity_payload_proof_rows(language_payloads)
-    runtime_payload_rows = _identity_payload_proof_rows(runtime_payloads)
-    (
-        declaration_counts,
-        import_counts,
-        source_owner_symbol_set_sha256,
-    ) = _source_owner_symbol_proof(language_payloads)
-    language_core_identity = stage1_composition.compute_language_core_identity()
-    stage1_runtime_integration_identity = (
-        stage1_composition.compute_stage1_runtime_integration_identity()
+
+
+def _validate_frozen_n3_historical_receipt() -> tuple[str, str]:
+    """Validate the sealed N3 receipt without reading current source bytes."""
+
+    language_rows = N3_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT16
+    runtime_rows = N3_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT16
+    sha_values = (
+        N3_LANGUAGE_CORE_IDENTITY,
+        N3_RUNTIME_INTEGRATION_IDENTITY,
+        N3_LANGUAGE_PAYLOAD_TUPLE_SHA256,
+        N3_RUNTIME_PAYLOAD_TUPLE_SHA256,
+        N3_SOURCE_OWNER_PAYLOAD_EXACT7_TUPLE_SHA256,
+        N3_SOURCE_OWNER_SYMBOL_SET_SHA256,
+        N3_PRODUCT_CAUSAL_OWNER_MANIFEST_SHA256,
+        N3_BEHAVIOR_ROOT_EXACT28_SHA256,
+        N3_IDENTITY_INFRASTRUCTURE_EXACT5_SHA256,
+        N4_ACTIVATION_OWNER_SYMBOL_SET_EXACT2_SHA256,
+        N3_HISTORICAL_RUNNER_IDENTITY[1],
+        N3_HISTORICAL_STATIC_RECEIPT_SHA256,
     )
     if (
-        language_payload_rows
-        != N3_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT16
-        or runtime_payload_rows
-        != N3_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT16
-        or _canonical_sha256(language_payload_rows)
-        != N3_LANGUAGE_PAYLOAD_TUPLE_SHA256
-        or _canonical_sha256(runtime_payload_rows)
-        != N3_RUNTIME_PAYLOAD_TUPLE_SHA256
-        or _canonical_sha256(language_payload_rows[:7])
+        len(language_rows) != 16
+        or len(runtime_rows) != 16
+        or any(
+            type(row) is not tuple
+            or len(row) != 3
+            or type(row[0]) is not str
+            or not row[0]
+            or re.fullmatch(r"[0-9a-f]{64}", row[1]) is None
+            or type(row[2]) is not int
+            or row[2] <= 0
+            for row in (*language_rows, *runtime_rows)
+        )
+        or tuple(
+            row[0].removeprefix("language_core_source_owner_ast:")
+            for row in language_rows[:7]
+        )
+        != tuple(row[0] for row in runtime_rows[:7])
+        or runtime_rows[7:] != language_rows[7:]
+        or _canonical_sha256(language_rows) != N3_LANGUAGE_PAYLOAD_TUPLE_SHA256
+        or _canonical_sha256(runtime_rows) != N3_RUNTIME_PAYLOAD_TUPLE_SHA256
+        or _canonical_sha256(language_rows[:7])
         != N3_SOURCE_OWNER_PAYLOAD_EXACT7_TUPLE_SHA256
-        or declaration_counts
-        != N3_SOURCE_OWNER_DECLARATION_COUNTS_EXACT7
-        or import_counts != N3_SOURCE_OWNER_IMPORT_COUNTS_EXACT7
-        or source_owner_symbol_set_sha256
-        != N3_SOURCE_OWNER_SYMBOL_SET_SHA256
-        or _canonical_sha256(
-            stage1_composition.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
+        or len(N3_SOURCE_OWNER_DECLARATION_COUNTS_EXACT7) != 7
+        or len(N3_SOURCE_OWNER_IMPORT_COUNTS_EXACT7) != 7
+        or any(
+            type(value) is not int or value <= 0
+            for value in (
+                *N3_SOURCE_OWNER_DECLARATION_COUNTS_EXACT7,
+                *N3_SOURCE_OWNER_IMPORT_COUNTS_EXACT7,
+            )
         )
-        != N3_PRODUCT_CAUSAL_OWNER_MANIFEST_SHA256
-        or _canonical_sha256(
-            stage1_composition.N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT28
-        )
-        != N3_BEHAVIOR_ROOT_EXACT28_SHA256
-        or _canonical_sha256(
-            stage1_composition.N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5
-        )
-        != N3_IDENTITY_INFRASTRUCTURE_EXACT5_SHA256
+        or any(re.fullmatch(r"[0-9a-f]{64}", value) is None for value in sha_values)
+        or len(N4_ACTIVATION_OWNER_SYMBOL_SET_EXACT2) != 2
         or _canonical_sha256(N4_ACTIVATION_OWNER_SYMBOL_SET_EXACT2)
         != N4_ACTIVATION_OWNER_SYMBOL_SET_EXACT2_SHA256
-        or language_core_identity != stage1_composition.LANGUAGE_CORE_IDENTITY
-        or language_core_identity != N3_LANGUAGE_CORE_IDENTITY
-        or stage1_runtime_integration_identity
-        != stage1_composition.STAGE1_RUNTIME_INTEGRATION_IDENTITY
-        or stage1_runtime_integration_identity
+        or N3_HISTORICAL_RUNNER_IDENTITY[0]
+        != "ai/tools/cmee_v1a_i1sx_candidate_run.py"
+        or type(N3_HISTORICAL_RUNNER_IDENTITY[2]) is not int
+        or N3_HISTORICAL_RUNNER_IDENTITY[2] <= 0
+        or STEP2_FROZEN_LANGUAGE_CORE_IDENTITY != N3_LANGUAGE_CORE_IDENTITY
+        or STEP3_FROZEN_STAGE1_RUNTIME_INTEGRATION_IDENTITY
         != N3_RUNTIME_INTEGRATION_IDENTITY
+        or _canonical_sha256(_n3_historical_static_receipt_material())
+        != N3_HISTORICAL_STATIC_RECEIPT_SHA256
     ):
         raise RuntimeError("early frozen runtime identity mismatch")
-    return language_core_identity, stage1_runtime_integration_identity
+    return N3_LANGUAGE_CORE_IDENTITY, N3_RUNTIME_INTEGRATION_IDENTITY
+
+
+def _current_frozen_early_identity_pair() -> tuple[str, str]:
+    """Compatibility entry point for the sealed static N3 receipt."""
+
+    return _validate_frozen_n3_historical_receipt()
 
 
 def _current_im03_working_identity_pair() -> tuple[str, str]:
@@ -1172,7 +1701,10 @@ def run_early_actual(
     runtime_repo_head: str,
     design_repo_head: str,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Materialize known exact4 plus private withheld exact4 through one core."""
+    """Reject generation for the consumed historical N3 attempt."""
+
+    _validate_frozen_n3_historical_receipt()
+    raise RuntimeError("HISTORICAL_ATTEMPT_GENERATION_CLOSED")
 
     _validate_early_repo_heads(
         runtime_repo_head=runtime_repo_head,
@@ -1647,9 +2179,9 @@ def _validate_early_private_packet(
         != withheld_input_raw_sha256
         or binding["withheld_set_digest"] != withheld_set_digest
         or runner["repo_relative_path"]
-        != str(Path(__file__).resolve().relative_to(CHECKOUT_ROOT))
+        != N3_HISTORICAL_RUNNER_IDENTITY[0]
         or runner["runner_sha256"]
-        != hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+        != N3_HISTORICAL_RUNNER_IDENTITY[1]
         or binding["packet_binding_sha256"]
         != _canonical_sha256(binding_material)
     ):

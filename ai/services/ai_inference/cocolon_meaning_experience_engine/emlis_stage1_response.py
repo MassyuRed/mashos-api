@@ -51,6 +51,7 @@ from .contracts import (
     ArgumentBinding,
     ArgumentRole,
     CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
+    CMEE_STAGE1_MEANING_BOUND_SUBJECTIVE_PROJECTION_SCHEMA_VERSION,
     CMEE_STAGE1_MICROGRAMMAR_POLICY_REF,
     CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7,
     CMEE_STAGE1_RECEPTION_ACT_STANCE_EXACT7,
@@ -127,7 +128,9 @@ from .contracts import (
     SubjectiveFacetSuppressionRow,
     PolicyApplicationRow,
     TemperatureClass,
-    _im04_reception_object_contract_satisfied,
+    _im04_limited_reception_mode_operator_pairs,
+    _im04_normal_reception_binding_key,
+    _im04_normal_reception_mode_contract_satisfied,
     bounded_limited_reception_id,
     limited_meaning_outcome_id,
     meaning_bound_reception_id,
@@ -3966,6 +3969,7 @@ _NORMAL_RECEPTION_ROLE_BY_MODE = {
 
 def _normal_reception_profiles(
     reception_act: str,
+    contributions: Sequence[PlannedObservationContribution],
 ) -> tuple[
     tuple[
         SubjectiveMode,
@@ -3993,7 +3997,15 @@ def _normal_reception_profiles(
     seen_responsibilities: set[SubjectiveResponsibilityKind] = set()
     for mode, _operator in mapping_rows[0].eligible_mode_operator_pairs:
         role = _NORMAL_RECEPTION_ROLE_BY_MODE.get(mode)
-        if role is None or role[0] in seen_responsibilities:
+        if (
+            role is None
+            or role[0] in seen_responsibilities
+            or not _im04_normal_reception_mode_contract_satisfied(
+                reception_act,
+                mode,
+                contributions,
+            )
+        ):
             continue
         seen_responsibilities.add(role[0])
         profiles.append((mode, *role))
@@ -4004,6 +4016,7 @@ def _assign_normal_reception_profiles(
     retained_rows: tuple[Any, ...],
     *,
     response_object_refs: tuple[str, ...],
+    contribution_by_ref: Mapping[str, PlannedObservationContribution],
 ) -> tuple[
     tuple[
         SubjectiveMode,
@@ -4019,7 +4032,13 @@ def _assign_normal_reception_profiles(
             "RECEPTION_BINDING_CONFLICT_STOP"
         )
     options = tuple(
-        _normal_reception_profiles(row.reception_act)
+        _normal_reception_profiles(
+            row.reception_act,
+            tuple(
+                contribution_by_ref[ref]
+                for ref in row.basis_contribution_refs
+            ),
+        )
         for row in retained_rows
     )
 
@@ -4034,7 +4053,12 @@ def _assign_normal_reception_profiles(
             ...,
         ],
         occupied: frozenset[
-            tuple[SubjectiveResponsibilityKind, tuple[str, ...]]
+            tuple[
+                SubjectiveResponsibilityKind,
+                str,
+                tuple[str, ...],
+                tuple[str, ...],
+            ]
         ],
     ) -> Optional[
         tuple[
@@ -4048,8 +4072,16 @@ def _assign_normal_reception_profiles(
     ]:
         if index == len(options):
             return selected
+        retained_row = retained_rows[index]
         for profile in options[index]:
-            conflict_key = (profile[1], response_object_refs)
+            conflict_key = _im04_normal_reception_binding_key(
+                reception_act=retained_row.reception_act,
+                responsibility_kind=profile[1],
+                basis_contribution_refs=(
+                    retained_row.basis_contribution_refs
+                ),
+                response_object_refs=response_object_refs,
+            )
             if conflict_key in occupied:
                 continue
             result = resolve(
@@ -4088,31 +4120,18 @@ def _limited_reception_pair(
             or not retained_basis
             or not retained_basis.issubset(required_basis)
             or any(ref not in contribution_by_id for ref in retained_basis)
-            or not _im04_reception_object_contract_satisfied(
-                retained.reception_act,
-                tuple(
-                    contribution_by_id[ref]
-                    for ref in retained.basis_contribution_refs
-                ),
-            )
         ):
             continue
-        mapping_rows = tuple(
-            row
-            for row in CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7
-            if row.reception_act == retained.reception_act
-        )
-        if len(mapping_rows) != 1:
-            continue
-        mapping = mapping_rows[0]
-        for mode, operator in mapping.eligible_mode_operator_pairs:
-            if mode in {
-                SubjectiveMode.PERSONAL_APPRAISAL,
-                SubjectiveMode.RELATIONAL_STANCE,
-            }:
-                choices.append(
-                    (mode, operator, retained.basis_contribution_refs)
-                )
+        for mode, operator in _im04_limited_reception_mode_operator_pairs(
+            retained.reception_act,
+            tuple(
+                contribution_by_id[ref]
+                for ref in retained.basis_contribution_refs
+            ),
+        ):
+            choices.append(
+                (mode, operator, retained.basis_contribution_refs)
+            )
     if len(choices) != 1:
         raise CMEEStage1ContractError(
             "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
@@ -4217,13 +4236,37 @@ def build_stage1_post_selection_reception_records(
             )
         )
         candidate_basis_refs = set(candidate.basis_contribution_refs)
+        contribution_by_ref = {
+            row.contribution_id: row for row in contributions
+        }
+        selected_response_object_refs = set(response_object_refs)
         bound_rows = tuple(
-            row
-            for row in retained_rows
-            if row.reception_act != "bounded_counter_self_denial"
-            and bool(row.basis_contribution_refs)
-            and set(row.basis_contribution_refs).issubset(
-                candidate_basis_refs
+            sorted(
+                (
+                    row
+                    for row in retained_rows
+                    if row.reception_act != "bounded_counter_self_denial"
+                    and bool(row.basis_contribution_refs)
+                    and bool(
+                        set(row.basis_contribution_refs).intersection(
+                            candidate_basis_refs
+                        )
+                    )
+                    and all(
+                        ref in contribution_by_ref
+                        for ref in row.basis_contribution_refs
+                    )
+                    and {
+                        semantic_ref
+                        for ref in row.basis_contribution_refs
+                        for semantic_ref in contribution_by_ref[ref].semantic_refs
+                    }.issubset(selected_response_object_refs)
+                ),
+                key=lambda row: (
+                    row.reception_act,
+                    row.act_ref,
+                    row.basis_contribution_refs,
+                ),
             )
         )
         if not bound_rows:
@@ -4233,6 +4276,7 @@ def build_stage1_post_selection_reception_records(
         profiles = _assign_normal_reception_profiles(
             bound_rows,
             response_object_refs=response_object_refs,
+            contribution_by_ref=contribution_by_ref,
         )
         proposition_records: list[MeaningBoundReceptionProposition] = []
         for row, (
@@ -4383,7 +4427,10 @@ def build_stage1_post_selection_reception_records(
         appraisal_content: Optional[EmlisAppraisalContent] = None
         relational_position: Optional[EmlisRelationalPosition] = None
         assertion_modality: SubjectiveAssertionModality
-        if limited_mode is SubjectiveMode.PERSONAL_APPRAISAL:
+        if limited_mode in {
+            SubjectiveMode.ATTENTION,
+            SubjectiveMode.PERSONAL_APPRAISAL,
+        }:
             content_kind = SubjectiveContentKind.APPRAISAL
             appraisal_content = EmlisAppraisalContent(
                 AppraisalDimension.MATERIAL_WEIGHT,
@@ -4414,9 +4461,13 @@ def build_stage1_post_selection_reception_records(
                 "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
             )
         subjective_proposition = SubjectivePropositionV2(
-            schema_version=dict(CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY)[
-                "CMEE_STAGE1_SUBJECTIVE_PROPOSITION_SCHEMA_VERSION"
-            ],
+            schema_version=(
+                CMEE_STAGE1_MEANING_BOUND_SUBJECTIVE_PROJECTION_SCHEMA_VERSION
+                if limited_mode is SubjectiveMode.ATTENTION
+                else dict(CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY)[
+                    "CMEE_STAGE1_SUBJECTIVE_PROPOSITION_SCHEMA_VERSION"
+                ]
+            ),
             content_kind=content_kind,
             subjective_mode=limited_mode,
             subjective_operator=limited_operator,
@@ -4899,7 +4950,11 @@ def _validate_meaning_plan_vertical_binding(
     reception_rows = meaning_plan.reception_visible_causal_trace_rows
     if (
         type(reception_rows) is not tuple
-        or tuple(row.projected_claim_ref for row in reception_rows)
+        or tuple(
+            dict.fromkeys(
+                row.projected_claim_ref for row in reception_rows
+            )
+        )
         != tuple(claim_by_ref)
     ):
         raise CMEEStage1ContractError(
@@ -4947,7 +5002,7 @@ def _validate_meaning_plan_vertical_binding(
         expected_claim_id = composition._projected_claim_identity(
             proposition=proposition,
             parent_duty_ref=phase_A.parent_plan.reception_duty_id,
-            responsibility_ref=responsibility_ref,
+            responsibility_refs=(responsibility_ref,),
             opportunity_key=opportunity_key,
             contribution_refs=contribution_refs,
             semantic_refs=semantic_refs,
@@ -5012,10 +5067,26 @@ def _validate_meaning_plan_vertical_binding(
     )
     if type(outcome) is SelectedEmlisProvisionalReading:
         sources = phase_A.meaning_bound_reception_proposition_records
-        if len(sources) != len(reception_rows) or len(sources) != len(claims):
+        selected_candidates = tuple(
+            row
+            for row in (
+                phase_A.input_specific_meaning_structure.candidate_records
+            )
+            if row.candidate_id == outcome.selected_candidate_ref
+        )
+        if (
+            len(sources) != len(reception_rows)
+            or not 1 <= len(claims) <= len(sources)
+            or len(selected_candidates) != 1
+        ):
             raise CMEEStage1ContractError(
                 "stage1_final_meaning_plan_noncanonical"
             )
+        selected_candidate = selected_candidates[0]
+        expected_local_claims: list[object] = []
+        expected_local_responsibilities: list[object] = []
+        expected_local_opportunities: list[object] = []
+        expected_local_traces: list[object] = []
         for trace, source in zip(reception_rows, sources, strict=True):
             claim = claim_by_ref.get(trace.projected_claim_ref)
             retained = tuple(
@@ -5027,7 +5098,15 @@ def _validate_meaning_plan_vertical_binding(
                 raise CMEEStage1ContractError(
                     "stage1_final_meaning_plan_noncanonical"
                 )
-            contribution_refs = retained[0].basis_contribution_refs
+            projection_contribution_ref_set = {
+                *retained[0].basis_contribution_refs,
+                *selected_candidate.basis_contribution_refs,
+            }
+            contribution_refs = tuple(
+                row.contribution_id
+                for row in phase_A.observation_contribution_rows
+                if row.contribution_id in projection_contribution_ref_set
+            )
             if (
                 trace.layer1_contribution_refs != contribution_refs
                 or any(
@@ -5066,6 +5145,11 @@ def _validate_meaning_plan_vertical_binding(
                     proposition=source,
                     contributions=contributions,
                     basis_rows=own_basis,
+                    semantic_contributions=tuple(
+                        contribution_by_ref[ref]
+                        for ref in selected_candidate.basis_contribution_refs
+                        if ref in set(contribution_refs)
+                    ),
                 )
                 focal_relation_ref = content.focal_relation_ref
                 content_fields = (None, content, None, None)
@@ -5161,14 +5245,8 @@ def _validate_meaning_plan_vertical_binding(
                 source.subjective_assertion_modality,
                 "REQUEST_LOCAL_EMLIS_SUBJECTIVITY",
             )
-            actual_proposition = getattr(
-                claim,
-                "asserted_subjective_proposition",
-                None,
-            )
             if (
-                actual_proposition != expected_proposition
-                or trace.reception_record_ref
+                trace.reception_record_ref
                 != meaning_bound_reception_id(source)
                 or trace.projected_response_object_refs
                 != own_semantic_refs
@@ -5176,22 +5254,196 @@ def _validate_meaning_plan_vertical_binding(
                 raise CMEEStage1ContractError(
                     "stage1_final_meaning_plan_noncanonical"
                 )
-            require_claim_spine(
-                claim=claim,
-                proposition=actual_proposition,
-                responsibility_kind=source.responsibility_kind,
+            act_refs = (retained[0].act_ref,)
+            specificity = (
+                SubjectiveSpecificity.RELATION_BOUND_MULTI_ROLE
+                if focal_relation_ref is not None
+                else SubjectiveSpecificity.MULTI_ROLE
+                if len(own_semantic_refs) > 1
+                else SubjectiveSpecificity.SINGLE_ROLE
+            )
+            responsibility_ref = (
+                composition.project_stage1_subjective_responsibility_ref(
+                    projection_preimage_ref=phase_A.projection_preimage_ref,
+                    responsibility_kind=source.responsibility_kind,
+                    owner_component_refs=contribution_refs,
+                    retained_reception_act_refs=act_refs,
+                )
+            )
+            opportunity_key = (
+                composition.project_stage1_subjective_opportunity_key(
+                    projection_preimage_ref=phase_A.projection_preimage_ref,
+                    responsibility_refs=(responsibility_ref,),
+                    content_kind=content_kind,
+                    row_ref_free_discriminated_content=content,
+                    specificity_key=specificity,
+                )
+            )
+            contributions = tuple(
+                contribution_by_ref[ref] for ref in contribution_refs
+            )
+            forbidden = stage1_subjective_forbidden_promotions(
+                contributions,
+                material_unknown_refs=phase_A.material_unknown_refs,
+            )
+            local_claim_id = composition._projected_claim_identity(
+                proposition=expected_proposition,
+                parent_duty_ref=phase_A.parent_plan.reception_duty_id,
+                responsibility_refs=(responsibility_ref,),
+                opportunity_key=opportunity_key,
                 contribution_refs=contribution_refs,
                 semantic_refs=own_semantic_refs,
-                act_refs=(retained[0].act_ref,),
-                value_refs=value_refs,
-                specificity=(
-                    SubjectiveSpecificity.RELATION_BOUND_MULTI_ROLE
-                    if focal_relation_ref is not None
-                    else SubjectiveSpecificity.MULTI_ROLE
-                    if len(own_semantic_refs) > 1
-                    else SubjectiveSpecificity.SINGLE_ROLE
-                ),
-                content=content,
+                act_refs=act_refs,
+                value_principle_refs=value_refs,
+                forbidden_promotions=forbidden,
+            )
+            expected_local_responsibilities.append(
+                composition.SubjectiveResponsibilityRow(
+                    responsibility_ref,
+                    source.responsibility_kind,
+                    contribution_refs,
+                    act_refs,
+                )
+            )
+            expected_local_opportunities.append(
+                composition.SubjectiveOpportunityRow(
+                    opportunity_key,
+                    (responsibility_ref,),
+                    content_kind,
+                    content,
+                    specificity,
+                )
+            )
+            expected_local_claims.append(
+                composition.ProjectedSubjectiveClaim(
+                    composition.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+                    local_claim_id,
+                    phase_A.parent_plan.reception_duty_id,
+                    composition.CMEE_STAGE1_EMLIS_OWNER_REF,
+                    "EMLIS_SUBJECTIVE_RESPONSE",
+                    (responsibility_ref,),
+                    opportunity_key,
+                    expected_proposition,
+                    contribution_refs,
+                    own_semantic_refs,
+                    act_refs,
+                    value_refs,
+                    0,
+                    forbidden,
+                )
+            )
+            expected_local_traces.append(
+                replace(trace, projected_claim_ref=local_claim_id)
+            )
+        (
+            expected_claims,
+            expected_opportunities,
+            expected_traces,
+        ) = composition._coalesce_normal_subjective_facets(
+            authority=composition._projection_common_authority(phase_A),
+            claims=expected_local_claims,
+            responsibilities=expected_local_responsibilities,
+            opportunities=expected_local_opportunities,
+            basis_rows=expected_basis,
+            qualifier_rows=expected_qualifiers,
+            reception_traces=expected_local_traces,
+            policy_applications=expected_policy_applications,
+        )
+        canonical_expected_responsibilities = tuple(
+            sorted(
+                expected_local_responsibilities,
+                key=lambda row: row.responsibility_ref,
+            )
+        )
+        canonical_expected_opportunities = tuple(
+            sorted(
+                expected_opportunities,
+                key=lambda row: row.opportunity_key,
+            )
+        )
+        if (
+            len(claims) != len(expected_claims)
+            or any(
+                (
+                    getattr(actual, "schema_version", None),
+                    getattr(actual, "subjective_claim_id", None),
+                    getattr(actual, "parent_duty_ref", None),
+                    getattr(actual, "speaker_owner", None),
+                    getattr(actual, "claim_domain", None),
+                    getattr(actual, "asserted_subjective_proposition", None),
+                    getattr(actual, "basis_observation_contribution_refs", None),
+                    getattr(actual, "basis_semantic_refs", None),
+                    getattr(actual, "source_reception_act_refs", None),
+                    getattr(actual, "value_principle_refs", None),
+                    getattr(actual, "user_fact_effect", None),
+                    getattr(actual, "forbidden_promotions", None),
+                    getattr(actual, "subjective_responsibility_refs", None),
+                    getattr(actual, "selected_subjective_opportunity_key", None),
+                )
+                != (
+                    expected.schema_version,
+                    expected.subjective_claim_id,
+                    expected.parent_duty_ref,
+                    (
+                        composition.CMEE_STAGE1_EMLIS_OWNER_REF
+                        if is_unsealed_plan
+                        else "EMLIS"
+                    ),
+                    expected.claim_domain,
+                    expected.asserted_subjective_proposition,
+                    expected.basis_observation_contribution_refs,
+                    expected.basis_semantic_refs,
+                    expected.source_reception_act_refs,
+                    expected.value_principle_refs,
+                    expected.user_fact_effect,
+                    expected.forbidden_promotions,
+                    expected.subjective_responsibility_refs,
+                    expected.selected_subjective_opportunity_key,
+                )
+                for actual, expected in zip(claims, expected_claims)
+            )
+            or tuple(
+                (
+                    row.responsibility_ref,
+                    row.responsibility_kind,
+                    row.owner_component_refs,
+                    row.retained_reception_act_refs,
+                )
+                for row in responsibilities
+            )
+            != tuple(
+                (
+                    row.responsibility_ref,
+                    row.responsibility_kind,
+                    row.owner_component_refs,
+                    row.retained_reception_act_refs,
+                )
+                for row in canonical_expected_responsibilities
+            )
+            or tuple(
+                (
+                    row.opportunity_key,
+                    row.responsibility_refs,
+                    row.content_kind,
+                    row.content,
+                    row.specificity_key,
+                )
+                for row in opportunities
+            )
+            != tuple(
+                (
+                    row.opportunity_key,
+                    row.responsibility_refs,
+                    row.content_kind,
+                    row.content,
+                    row.specificity_key,
+                )
+                for row in canonical_expected_opportunities
+            )
+            or reception_rows != tuple(expected_traces)
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_final_meaning_plan_noncanonical"
             )
     elif type(outcome) is LimitedMeaningOutcome:
         sources = phase_A.bounded_limited_subjective_proposition_records
