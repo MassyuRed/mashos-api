@@ -46,8 +46,6 @@ from .contracts import (
     AffectCategory,
     AffectIntensity,
     AllowedReceptionOpportunityEnvelope,
-    AppraisalDimension,
-    AppraisalOperation,
     ArgumentBinding,
     ArgumentRole,
     CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
@@ -128,6 +126,7 @@ from .contracts import (
     SubjectiveFacetSuppressionRow,
     PolicyApplicationRow,
     TemperatureClass,
+    _im04_limited_appraisal_content,
     _im04_limited_reception_mode_operator_pairs,
     _im04_normal_reception_binding_key,
     _im04_normal_reception_mode_contract_satisfied,
@@ -4426,14 +4425,18 @@ def build_stage1_post_selection_reception_records(
             SubjectiveMode.PERSONAL_APPRAISAL,
         }:
             content_kind = SubjectiveContentKind.APPRAISAL
-            appraisal_content = EmlisAppraisalContent(
-                AppraisalDimension.MATERIAL_WEIGHT,
-                AppraisalOperation.RECEIVE_AS_MATERIAL,
-                basis_binding_refs,
-                None,
-                (),
-                bound_contribution_refs,
+            appraisal_content = _im04_limited_appraisal_content(
+                basis_binding_refs=basis_binding_refs,
+                contribution_rows=contributions,
+                candidate_rows=interpretation_candidates,
+                contribution_candidate_map=contribution_candidate_map,
+                contribution_refs=bound_contribution_refs,
+                semantic_refs=bound_semantic_refs,
             )
+            if appraisal_content is None:
+                raise CMEEStage1ContractError(
+                    "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+                )
             assertion_modality = (
                 SubjectiveAssertionModality.EMLIS_APPRAISAL
             )
@@ -4471,7 +4474,11 @@ def build_stage1_post_selection_reception_records(
             response_object_refs=bound_semantic_refs,
             basis_binding_refs=basis_binding_refs,
             source_qualifier_binding_refs=qualifier_binding_refs,
-            focal_relation_ref=None,
+            focal_relation_ref=(
+                appraisal_content.focal_relation_ref
+                if appraisal_content is not None
+                else None
+            ),
             affect_content=None,
             appraisal_content=appraisal_content,
             material_value_content=None,

@@ -14652,19 +14652,15 @@ def _im04_limited_subjective_content_closed(
     proposition: SubjectivePropositionV2,
     *,
     basis_binding_refs: tuple[str, ...],
-    contribution_refs: tuple[str, ...],
+    expected_appraisal_content: Optional[EmlisAppraisalContent],
 ) -> bool:
     if proposition.subjective_mode in {
         SubjectiveMode.ATTENTION,
         SubjectiveMode.PERSONAL_APPRAISAL,
     }:
-        return proposition.appraisal_content == EmlisAppraisalContent(
-            AppraisalDimension.MATERIAL_WEIGHT,
-            AppraisalOperation.RECEIVE_AS_MATERIAL,
-            basis_binding_refs,
-            None,
-            (),
-            contribution_refs,
+        return (
+            expected_appraisal_content is not None
+            and proposition.appraisal_content == expected_appraisal_content
         )
     if proposition.subjective_mode is SubjectiveMode.RELATIONAL_STANCE:
         return proposition.relational_position == EmlisRelationalPosition(
@@ -14676,6 +14672,138 @@ def _im04_limited_subjective_content_closed(
             RelationalClosure.NONE,
         )
     return False
+
+
+def _im04_limited_exact2_relation_ref(
+    *,
+    contribution_rows: Sequence[PlannedObservationContribution],
+    candidate_rows: Sequence[EmlisInterpretationCandidate],
+    contribution_candidate_map: Sequence[Tuple[str, str]],
+    contribution_refs: tuple[str, ...],
+    semantic_refs: tuple[str, ...],
+) -> Optional[str]:
+    """Return the sole relation proving a LIMITED exact-two target pair."""
+
+    if (
+        len(contribution_refs) != 1
+        or len(semantic_refs) != 2
+        or len(set(semantic_refs)) != 2
+    ):
+        return None
+    rows = tuple(
+        row
+        for row in contribution_rows
+        if type(row) is PlannedObservationContribution
+        and row.contribution_id == contribution_refs[0]
+    )
+    if len(rows) != 1:
+        return None
+    row = rows[0]
+    mapped_candidate_refs = tuple(
+        candidate_ref
+        for contribution_ref, candidate_ref in contribution_candidate_map
+        if contribution_ref == row.contribution_id
+    )
+    candidates = tuple(
+        candidate
+        for candidate in candidate_rows
+        if candidate.candidate_id in mapped_candidate_refs
+    )
+    if len(mapped_candidate_refs) != 1 or len(candidates) != 1:
+        return None
+    candidate = candidates[0]
+    try:
+        _validate_stage1_interpretation_matrix(candidate)
+        expected_contribution_kind = (
+            _stage1_contribution_kind_for_candidate(candidate)
+        )
+    except CMEEStage1ContractError:
+        return None
+    if (
+        row.interpretation_candidate_refs != (candidate.candidate_id,)
+        or row.contribution_kind is not expected_contribution_kind
+        or row.semantic_operator is not candidate.semantic_operator
+        or row.argument_bindings != candidate.argument_bindings
+        or row.relation_operator is not candidate.relation_operator
+        or row.relation_basis_refs != candidate.relation_basis_refs
+        or row.semantic_refs != candidate.semantic_refs
+        or row.evidence_refs != candidate.evidence_refs
+    ):
+        return None
+    expected_roles = {
+        RelationOperator.COEXISTS_WITH: (
+            ArgumentRole.LEFT,
+            ArgumentRole.RIGHT,
+        ),
+        RelationOperator.TENSION_WITH: (
+            ArgumentRole.LEFT,
+            ArgumentRole.RIGHT,
+        ),
+        RelationOperator.TEMPORALLY_PRECEDES: (
+            ArgumentRole.BEFORE,
+            ArgumentRole.AFTER,
+        ),
+        RelationOperator.ACTION_PRECEDES_CHANGE: (
+            ArgumentRole.ACTION,
+            ArgumentRole.CHANGE,
+        ),
+        RelationOperator.SOURCE_EXPLICIT_CAUSE: (
+            ArgumentRole.CAUSE,
+            ArgumentRole.EFFECT,
+        ),
+    }.get(row.relation_operator)
+    argument_refs = tuple(
+        binding.semantic_ref for binding in row.argument_bindings
+    )
+    if (
+        expected_roles is None
+        or len(row.relation_basis_refs) != 1
+        or tuple(row.semantic_refs) != semantic_refs
+        or tuple(binding.role for binding in row.argument_bindings)
+        != expected_roles
+        or argument_refs != semantic_refs
+    ):
+        return None
+    return row.relation_basis_refs[0]
+
+
+def _im04_limited_appraisal_content(
+    *,
+    basis_binding_refs: tuple[str, ...],
+    contribution_rows: Sequence[PlannedObservationContribution],
+    candidate_rows: Sequence[EmlisInterpretationCandidate],
+    contribution_candidate_map: Sequence[Tuple[str, str]],
+    contribution_refs: tuple[str, ...],
+    semantic_refs: tuple[str, ...],
+) -> Optional[EmlisAppraisalContent]:
+    """Derive the only lossless LIMITED appraisal for one or two targets."""
+
+    if len(semantic_refs) == 1:
+        return EmlisAppraisalContent(
+            AppraisalDimension.MATERIAL_WEIGHT,
+            AppraisalOperation.RECEIVE_AS_MATERIAL,
+            basis_binding_refs,
+            None,
+            (),
+            contribution_refs,
+        )
+    focal_relation_ref = _im04_limited_exact2_relation_ref(
+        contribution_rows=contribution_rows,
+        candidate_rows=candidate_rows,
+        contribution_candidate_map=contribution_candidate_map,
+        contribution_refs=contribution_refs,
+        semantic_refs=semantic_refs,
+    )
+    if focal_relation_ref is None:
+        return None
+    return EmlisAppraisalContent(
+        AppraisalDimension.RELATIONAL_NONCOLLAPSE,
+        AppraisalOperation.PRESERVE_BOTH_ENDPOINTS,
+        basis_binding_refs,
+        focal_relation_ref,
+        (),
+        contribution_refs,
+    )
 
 
 def project_stage1_subjective_projection_seal_ref(
@@ -15278,6 +15406,21 @@ def validate_stage1_post_selection_reception_records(
         licensed_semantic_refs = tuple(
             dict.fromkeys(row.semantic_ref for row in licensed_basis_rows)
         )
+        expected_appraisal_content = _im04_limited_appraisal_content(
+            basis_binding_refs=tuple(
+                row.binding_ref for row in licensed_basis_rows
+            ),
+            contribution_rows=contribution_rows,
+            candidate_rows=candidate_authority_rows,
+            contribution_candidate_map=contribution_candidate_map,
+            contribution_refs=licensed_contribution_refs,
+            semantic_refs=licensed_semantic_refs,
+        )
+        expected_focal_relation_ref = (
+            expected_appraisal_content.focal_relation_ref
+            if expected_appraisal_content is not None
+            else None
+        )
         expected_licensed_contribution_refs = tuple(
             ref
             for ref in outcome.retained_layer1_refs
@@ -15288,6 +15431,14 @@ def validate_stage1_post_selection_reception_records(
             or licensed_contribution_refs
             != expected_licensed_contribution_refs
             or len(licensed_source_qualifier_rows) != len(licensed_basis_rows)
+            or (
+                licensed_mode
+                in {
+                    SubjectiveMode.ATTENTION,
+                    SubjectiveMode.PERSONAL_APPRAISAL,
+                }
+                and expected_appraisal_content is None
+            )
             or not _im04_retained_qualifier_coverage_satisfied(
                 retained_qualifier_refs=outcome.retained_qualifier_refs,
                 source_qualifier_rows=licensed_source_qualifier_rows,
@@ -15336,7 +15487,7 @@ def validate_stage1_post_selection_reception_records(
             material_unknown_refs=unknown_refs,
             expected_actor_refs=(),
             expected_experiencer_refs=(),
-            expected_focal_relation_ref=None,
+            expected_focal_relation_ref=expected_focal_relation_ref,
             owner_ref=_stage1_final_logical_identity(
                 "CMEE_STAGE1_EMLIS_OWNER_REF"
             ),
@@ -15367,7 +15518,7 @@ def validate_stage1_post_selection_reception_records(
                 basis_binding_refs=tuple(
                     row.binding_ref for row in licensed_basis_rows
                 ),
-                contribution_refs=licensed_contribution_refs,
+                expected_appraisal_content=expected_appraisal_content,
             )
             or bounded.schema_version
             != _INPUT_SPECIFIC_MEANING_STRUCTURE_SCHEMA_VERSION

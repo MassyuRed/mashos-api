@@ -317,8 +317,8 @@ def _stage2_inputs(request: GenerationRequest):
     return source, grounded_plan, graph, parent_plan
 
 
-def _final_stage1_composition_inputs(request: GenerationRequest):
-    """Build the disabled final Phase-A/Phase-B seam from frozen real inputs."""
+def _final_stage1_grounded_inputs(request: GenerationRequest):
+    """Build the canonical source/plan/graph seam before Reception."""
 
     source = freeze_text_source(request)
     grounded_plan = build_final_stage1_grounded_observation_plan(
@@ -341,6 +341,15 @@ def _final_stage1_composition_inputs(request: GenerationRequest):
         required_nuclei,
         required_relations,
         reception_targets,
+    )
+    return source, grounded_plan, graph, parent_plan
+
+
+def _final_stage1_composition_inputs(request: GenerationRequest):
+    """Build the disabled final Phase-A/Phase-B seam from frozen real inputs."""
+
+    source, grounded_plan, graph, parent_plan = _final_stage1_grounded_inputs(
+        request
     )
     phase_a = stage1_response_module.build_subjective_planning_inputs(
         source=source,
@@ -369,6 +378,83 @@ def _final_stage1_composition_inputs(request: GenerationRequest):
         subjective_plan,
         phase_b,
     )
+
+
+def _assert_final_stage1_reception_binding_conflict(
+    test_case: unittest.TestCase,
+    *,
+    request: GenerationRequest,
+    expected_kinds: tuple[str, str],
+    expected_fragments: tuple[str, str] | None = None,
+    expected_relation_type: str = "contrast",
+) -> None:
+    """Keep source/relationship coverage while requiring the named STOP."""
+
+    source, grounded_plan, graph, parent_plan = (
+        _final_stage1_grounded_inputs(request)
+    )
+    typed = tuple(
+        row
+        for row in grounded_plan.nuclei
+        if "semantic_role:generic_relation_fragment"
+        in row.semantic_frame.attribute_codes
+    )
+    test_case.assertEqual(len(typed), 2)
+    test_case.assertEqual(tuple(row.kind for row in typed), expected_kinds)
+    test_case.assertTrue(
+        all(len(row.source_span_ids) == 1 for row in typed)
+    )
+    test_case.assertEqual(len({row.source_span_ids for row in typed}), 1)
+    source_span = next(
+        row
+        for row in source.evidence_spans
+        if row.span_id == typed[0].source_span_ids[0]
+    )
+    normalized_source = re.sub(
+        r"\s+",
+        " ",
+        str(source_span.raw_text or "").replace("\u3000", " "),
+    ).strip()
+    actual_fragments = []
+    for row in typed:
+        scalar_rows = tuple(
+            code
+            for code in row.semantic_frame.attribute_codes
+            if code.startswith("source_fragment_scalar_range:")
+        )
+        test_case.assertEqual(len(scalar_rows), 1)
+        _prefix, start_text, end_text = scalar_rows[0].rsplit(":", 2)
+        start = int(start_text)
+        end = int(end_text)
+        test_case.assertTrue(0 <= start < end <= len(normalized_source))
+        actual_fragments.append(normalized_source[start:end])
+    if expected_fragments is not None:
+        test_case.assertEqual(tuple(actual_fragments), expected_fragments)
+    relation_rows = tuple(
+        row
+        for row in grounded_plan.relations
+        if row.source_relation_ids
+        == ("typed_projection:top_level_connective",)
+    )
+    test_case.assertEqual(len(relation_rows), 1)
+    test_case.assertEqual(relation_rows[0].type, expected_relation_type)
+    test_case.assertEqual(
+        (
+            relation_rows[0].from_nucleus_id,
+            relation_rows[0].to_nucleus_id,
+        ),
+        tuple(row.nucleus_id for row in typed),
+    )
+    with test_case.assertRaisesRegex(
+        CMEEStage1ContractError,
+        r"^RECEPTION_BINDING_CONFLICT_STOP$",
+    ):
+        stage1_response_module.build_subjective_planning_inputs(
+            source=source,
+            grounded_graph=graph,
+            parent_plan=parent_plan,
+            grounded_plan=grounded_plan,
+        )
 
 
 def _identified(value: object, identity_field: str) -> object:
@@ -9251,7 +9337,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                         (
                             ("F07", "H07"),
                             ("F10", "H10"),
-                            ("F12", "H12"),
+                            ("F13", "H13"),
                         ),
                     )
                     self.assertEqual(
@@ -9265,19 +9351,20 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                         (
                             ("予定の話はした", "まだ迷いが残っていて"),
                             ("どうしたいかは分からない",),
-                            ("予定の話はした",),
+                            ("予定の話はした", "まだ迷いが残っていて"),
                         ),
                     )
                     self.assertIs(
                         normalized.v2_clause_rows[0].source_group.cardinality,
                         contracts_module.SourceLeafCardinality.ORDERED_EXACT2,
                     )
-                    self.assertTrue(
-                        all(
-                            row.source_group.cardinality
-                            is contracts_module.SourceLeafCardinality.EXACT1
-                            for row in normalized.v2_clause_rows[1:]
-                        )
+                    self.assertIs(
+                        normalized.v2_clause_rows[1].source_group.cardinality,
+                        contracts_module.SourceLeafCardinality.EXACT1,
+                    )
+                    self.assertIs(
+                        normalized.v2_clause_rows[2].source_group.cardinality,
+                        contracts_module.SourceLeafCardinality.ORDERED_EXACT2,
                     )
                     self.assertIn(
                         "reference-rule:R11",
@@ -9400,6 +9487,19 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             start=1,
         ):
             with self.subTest(public_generic_contrast=index):
+                request = _request(
+                    record_id=f"stage2-generic-contrast-{index}",
+                    memo=memo,
+                )
+                if memo == "大事だが、相談したい。":
+                    _assert_final_stage1_reception_binding_conflict(
+                        self,
+                        request=request,
+                        expected_kinds=expected_kinds,
+                        expected_fragments=expected_fragments,
+                        expected_relation_type=relation_type,
+                    )
+                    continue
                 (
                     source,
                     grounded_plan,
@@ -9409,12 +9509,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     _phase_a,
                     _subjective_plan,
                     phase_b,
-                ) = _final_stage1_composition_inputs(
-                    _request(
-                        record_id=f"stage2-generic-contrast-{index}",
-                        memo=memo,
-                    )
-                )
+                ) = _final_stage1_composition_inputs(request)
                 typed = tuple(
                     row
                     for row in grounded_plan.nuclei
@@ -9544,6 +9639,26 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     if "相談したい" in left_fragment
                     else "相談したい"
                 )
+                request = _request(
+                    record_id=f"stage2-hosted-endpoint-{index}",
+                    memo=(
+                        f"{left_fragment}けれど、"
+                        f"{right_fragment}。"
+                    ),
+                )
+                if left_fragment in {
+                    "大事なのです",
+                    "大事なことがある",
+                    "大事なままでした",
+                    "価値が残っている",
+                }:
+                    _assert_final_stage1_reception_binding_conflict(
+                        self,
+                        request=request,
+                        expected_kinds=(expected_left_kind, "wish"),
+                        expected_fragments=(left_fragment, right_fragment),
+                    )
+                    continue
                 (
                     _source,
                     grounded_plan,
@@ -9553,15 +9668,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     _phase_a,
                     _subjective_plan,
                     phase_b,
-                ) = _final_stage1_composition_inputs(
-                    _request(
-                        record_id=f"stage2-hosted-endpoint-{index}",
-                        memo=(
-                            f"{left_fragment}けれど、"
-                            f"{right_fragment}。"
-                        ),
-                    )
-                )
+                ) = _final_stage1_composition_inputs(request)
                 typed = tuple(
                     row
                     for row in grounded_plan.nuclei
@@ -10134,8 +10241,30 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 ObservationContributionKind.OBSERVE_TENSION,
                 RelationOperator.TENSION_WITH,
             )
+        reception_conflict_kinds = {
+            "少し落ち着いたけれど、相談したい。": ("change", "wish"),
+            "少し落ち着いたけれど、メモを書いた。": (
+                "change",
+                "action",
+            ),
+            "メモを書いたけれど、相談したい。": ("action", "wish"),
+            "大事だけれど、相談したい。": ("value", "wish"),
+            "大事だけれど、メモを書いた。": ("value", "action"),
+            "少し落ち着いてきたが、相談したい。": ("change", "wish"),
+        }
         for index, memo in enumerate(supported_pairs, start=1):
             with self.subTest(downstream_exact2_relation=index):
+                request = _request(
+                    record_id=f"stage2-generic-downstream-{index}",
+                    memo=memo,
+                )
+                if memo in reception_conflict_kinds:
+                    _assert_final_stage1_reception_binding_conflict(
+                        self,
+                        request=request,
+                        expected_kinds=reception_conflict_kinds[memo],
+                    )
+                    continue
                 (
                     source,
                     grounded_plan,
@@ -10145,12 +10274,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     _phase_a,
                     subjective_plan,
                     phase_b,
-                ) = _final_stage1_composition_inputs(
-                    _request(
-                        record_id=f"stage2-generic-downstream-{index}",
-                        memo=memo,
-                    )
-                )
+                ) = _final_stage1_composition_inputs(request)
                 typed = tuple(
                     row
                     for row in grounded_plan.nuclei
@@ -10620,14 +10744,10 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                         SubjectiveOperator.ATTEND_TO,
                     )
                     expected_dimension = (
-                        AppraisalDimension.MATERIAL_WEIGHT
-                        if label == "unfinished"
-                        else AppraisalDimension.RELATIONAL_NONCOLLAPSE
+                        AppraisalDimension.RELATIONAL_NONCOLLAPSE
                     )
                     expected_operation = (
-                        AppraisalOperation.RECEIVE_AS_MATERIAL
-                        if label == "unfinished"
-                        else AppraisalOperation.PRESERVE_BOTH_ENDPOINTS
+                        AppraisalOperation.PRESERVE_BOTH_ENDPOINTS
                     )
                     expected_specificity = (
                         module.SubjectiveSpecificity.MULTI_ROLE
@@ -10839,11 +10959,11 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         self.assertEqual(proposition.appraisal_content, opportunity.content)
         self.assertIs(
             opportunity.content.dimension,
-            AppraisalDimension.MATERIAL_WEIGHT,
+            AppraisalDimension.RELATIONAL_NONCOLLAPSE,
         )
         self.assertIs(
             opportunity.content.operation,
-            AppraisalOperation.RECEIVE_AS_MATERIAL,
+            AppraisalOperation.PRESERVE_BOTH_ENDPOINTS,
         )
         self.assertIs(
             proposition.subjective_mode,
@@ -10980,7 +11100,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                             content=replace(
                                 opportunity.content,
                                 dimension=(
-                                    AppraisalDimension.RELATIONAL_NONCOLLAPSE
+                                    AppraisalDimension.MATERIAL_WEIGHT
                                 ),
                             ),
                         ),
@@ -11563,11 +11683,11 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         self.assertIsNotNone(d_content)
         self.assertIs(
             d_content.dimension,
-            AppraisalDimension.MATERIAL_WEIGHT,
+            AppraisalDimension.RELATIONAL_NONCOLLAPSE,
         )
         self.assertIs(
             d_content.operation,
-            AppraisalOperation.RECEIVE_AS_MATERIAL,
+            AppraisalOperation.PRESERVE_BOTH_ENDPOINTS,
         )
         self.assertEqual(
             d_content.basis_contribution_refs,
@@ -11597,7 +11717,43 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             d_proposition.response_object_refs,
             residue.semantic_refs,
         )
-        self.assertIsNone(d_proposition.focal_relation_ref)
+        self.assertEqual(
+            d_proposition.focal_relation_ref,
+            residue.relation_basis_refs[0],
+        )
+        tampered_contributions = tuple(
+            replace(
+                row,
+                semantic_operator=SemanticOperator.PRESENT_STATE,
+            )
+            if row.contribution_id == residue.contribution_id
+            else row
+            for row in d_phase_a.observation_contribution_rows
+        )
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            r"^LIMITED_RECEPTION_CAPABILITY_GAP_STOP$",
+        ):
+            stage1_response_module.build_stage1_post_selection_reception_records(
+                input_specific_meaning_structure=(
+                    d_phase_a.input_specific_meaning_structure
+                ),
+                projection_preimage_ref=d_phase_a.projection_preimage_ref,
+                retained_reception_act_rows=(
+                    d_phase_a.retained_reception_act_rows
+                ),
+                observation_contribution_rows=tampered_contributions,
+                interpretation_candidate_rows=(
+                    d_phase_a.interpretation_candidate_rows
+                ),
+                contribution_to_candidate_ref_map=(
+                    d_phase_a.contribution_to_candidate_ref_map
+                ),
+                qualifier_value_rows=(
+                    d_phase_a.qualifier_value_by_candidate_scope_axis_key
+                ),
+                material_unknown_refs=d_phase_a.material_unknown_refs,
+            )
         self.assertNotIn(
             unfinished.contribution_id,
             d_proposition.target_contribution_refs,
@@ -13355,8 +13511,8 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         )
         frozen_runtime_payload_sha256 = {
             exact17_names[0]: "06dca9a8753ac1058213af3582a9723a228c1a69ec5a9b71c4f78c0e27323da5",
-            exact17_names[1]: "175ea46f6b9377c574f6527e7aad232b7becc6a361ad4bf939dfb1dd52338c4a",
-            exact17_names[2]: "2fd4479ffb886fb7e95a15ba0ebe456bb179d245d9932cf243d5db7708c1e780",
+            exact17_names[1]: "0705bcb48ca1c9a347b691d2eaf3d8a980cd8a044ca66292dda69e3b5fdbdc8c",
+            exact17_names[2]: "437831951fa0c4062d68af2342d79ebfc4b29e8c318e1fa8765c74c4aac9a832",
             exact17_names[3]: "c907af7a059f802120b3e494a88651015a14d45c5e272ab1f9d3f1e9bfa8d06f",
             exact17_names[4]: "efb08a5f49d6c3452a8f2332c9d45cebcb5e91ed2c8e8c41fa5a06b3faa4fadd",
             exact17_names[5]: "e524111597d75599b0550b271a3df464df4d468aec28e608ab4586b7840da1f0",
@@ -13399,8 +13555,8 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             ),
             (
                 657096,
-                755209,
-                411626,
+                760521,
+                412047,
                 293740,
                 352379,
                 8179,
@@ -15274,6 +15430,32 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 leaf.payload_utf8.decode("utf-8"),
                 cause_row.linearized_clause.text,
             )
+        cause_reception_rows = tuple(
+            row
+            for row in result.selected_candidate.normalized_artifact.v2_clause_rows
+            if row.frame.frame_id == "F13"
+        )
+        self.assertEqual(len(cause_reception_rows), 1)
+        cause_reception_row = cause_reception_rows[0]
+        self.assertEqual(
+            cause_reception_row.frame.complement_rule_ref,
+            "C08",
+        )
+        self.assertIs(
+            cause_reception_row.source_group.cardinality,
+            contracts_module.SourceLeafCardinality.ORDERED_EXACT2,
+        )
+        cause_proposition = inputs[4].subjective_claims[0].asserted_subjective_proposition
+        self.assertEqual(
+            tuple(
+                leaf.semantic_ref for leaf in cause_reception_row.source_leaves
+            ),
+            cause_proposition.response_object_refs,
+        )
+        self.assertEqual(
+            cause_proposition.focal_relation_ref,
+            cause_row.link_plan.admitted_relation_ref,
+        )
 
         projection, units = (
             stage1_response_module._compile_stage1_response_v2_candidate(
@@ -30370,13 +30552,71 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                 unfinished_projection,
             )
         )
-        with self.assertRaisesRegex(
-            stage1_composition_module.Stage1CompositionError,
-            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP",
-        ):
+        unfinished_composition = (
             stage1_composition_module.compose_stage1_from_projection(
                 unfinished_phase_b
             )
+        )
+        unfinished_proposition = (
+            unfinished_plan.subjective_claim_rows[0]
+            .asserted_subjective_proposition
+        )
+        self.assertIsNotNone(unfinished_proposition.appraisal_content)
+        assert unfinished_proposition.appraisal_content is not None
+        self.assertIs(
+            unfinished_proposition.appraisal_content.dimension,
+            AppraisalDimension.RELATIONAL_NONCOLLAPSE,
+        )
+        self.assertIs(
+            unfinished_proposition.appraisal_content.operation,
+            AppraisalOperation.PRESERVE_BOTH_ENDPOINTS,
+        )
+        self.assertEqual(
+            len(unfinished_proposition.response_object_refs),
+            2,
+        )
+        self.assertEqual(
+            len(set(unfinished_proposition.response_object_refs)),
+            2,
+        )
+        self.assertEqual(
+            unfinished_proposition.focal_relation_ref,
+            unfinished_proposition.appraisal_content.focal_relation_ref,
+        )
+        unfinished_layer2_rows = tuple(
+            row
+            for row in (
+                unfinished_composition.selected_candidate
+                .normalized_artifact.v2_clause_rows
+            )
+            if row.duty_ref in {
+                duty.duty_ref
+                for duty in (
+                    unfinished_composition.selected_candidate
+                    .normalized_artifact.composition_duty_rows
+                )
+                if duty.layer == "LAYER_2"
+            }
+        )
+        self.assertEqual(len(unfinished_layer2_rows), 1)
+        self.assertEqual(
+            (
+                unfinished_layer2_rows[0].frame.frame_id,
+                unfinished_layer2_rows[0].frame.complement_rule_ref,
+            ),
+            ("F13", "C08"),
+        )
+        self.assertIs(
+            unfinished_layer2_rows[0].source_group.cardinality,
+            contracts_module.SourceLeafCardinality.ORDERED_EXACT2,
+        )
+        self.assertEqual(
+            tuple(
+                leaf.semantic_ref
+                for leaf in unfinished_layer2_rows[0].source_leaves
+            ),
+            unfinished_proposition.response_object_refs,
+        )
         for relation_case in (tension, temporal, help_seeking):
             self.assertTrue(relation_case.selected.relation_path_refs)
             self.assertTrue(
