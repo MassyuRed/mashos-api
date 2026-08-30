@@ -10773,9 +10773,142 @@ def recompute_input_specific_meaning_candidate_signature(
     return signature
 
 
+MaterialProvenanceKey = Tuple[BasisProvenanceKind, str]
+MaterialProvenanceKeysByCandidate = Mapping[
+    str,
+    Mapping[str, Tuple[MaterialProvenanceKey, ...]],
+]
+
+
+def input_specific_meaning_material_provenance_keys_by_candidate(
+    candidates: Sequence[InputSpecificMeaningCandidate],
+    *,
+    configurations: Sequence[DifferenceConfiguration],
+    observed_distinction_rows: Sequence[ObservedDistinctionRow],
+    required_difference_rows: Sequence[RequiredDifferenceRow],
+) -> dict[str, dict[str, Tuple[MaterialProvenanceKey, ...]]]:
+    """Resolve each candidate-owned required difference to material basis keys."""
+
+    values = tuple(candidates)
+    configuration_values = tuple(configurations)
+    observed_values = tuple(observed_distinction_rows)
+    required_values = tuple(required_difference_rows)
+    if (
+        any(
+            type(value) is not InputSpecificMeaningCandidate
+            for value in values
+        )
+        or any(
+            type(value)
+            not in {RelationalConfiguration, QualifiedEventStateConfiguration}
+            for value in configuration_values
+        )
+        or any(
+            type(value) is not ObservedDistinctionRow
+            for value in observed_values
+        )
+        or any(
+            type(value) is not RequiredDifferenceRow
+            for value in required_values
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_material_provenance_context_invalid"
+        )
+    configuration_by_ref = {
+        value.configuration_id: value for value in configuration_values
+    }
+    observed_by_ref = {
+        value.distinction_id: value for value in observed_values
+    }
+    required_by_ref = {
+        value.difference_id: value for value in required_values
+    }
+    if (
+        len(configuration_by_ref) != len(configuration_values)
+        or len(observed_by_ref) != len(observed_values)
+        or len(required_by_ref) != len(required_values)
+        or len({value.candidate_id for value in values}) != len(values)
+    ):
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_material_provenance_context_duplicate"
+        )
+
+    result: dict[str, dict[str, Tuple[MaterialProvenanceKey, ...]]] = {}
+    for candidate in values:
+        required_keys: dict[str, Tuple[MaterialProvenanceKey, ...]] = {}
+        for required_ref in candidate.preserved_difference_refs:
+            required = required_by_ref.get(required_ref)
+            observed = (
+                None
+                if required is None
+                else observed_by_ref.get(required.observed_distinction_ref)
+            )
+            configuration = (
+                None
+                if observed is None
+                else configuration_by_ref.get(observed.configuration_ref)
+            )
+            if (
+                required is None
+                or observed is None
+                or configuration is None
+                or configuration.configuration_id
+                not in candidate.basis_configuration_refs
+            ):
+                raise CMEEStage1ContractError(
+                    "input_specific_meaning_material_provenance_context_foreign"
+                )
+            if type(configuration) is RelationalConfiguration:
+                keys = tuple(
+                    (BasisProvenanceKind.RELATION_BRIDGE, ref)
+                    for ref in configuration.relation_path_refs
+                )
+            elif type(configuration) is QualifiedEventStateConfiguration:
+                keys = (
+                    (
+                        BasisProvenanceKind.QUALIFIED_EVENT_STATE,
+                        configuration.configuration_id,
+                    ),
+                )
+            else:  # pragma: no cover - closed above, retained fail-closed
+                raise CMEEStage1ContractError(
+                    "input_specific_meaning_material_provenance_context_invalid"
+                )
+            if not keys or len(keys) != len(set(keys)):
+                raise CMEEStage1ContractError(
+                    "input_specific_meaning_material_provenance_context_orphan"
+                )
+            required_keys[required_ref] = keys
+
+        provenance_keys = tuple(
+            (row.basis_kind, row.basis_ref)
+            for row in candidate.basis_provenance_rows
+            if type(row) is BasisProvenanceRow
+        )
+        expected_keys = {
+            key for keys in required_keys.values() for key in keys
+        }
+        if (
+            len(required_keys) != len(candidate.preserved_difference_refs)
+            or len(provenance_keys) != len(candidate.basis_provenance_rows)
+            or len(provenance_keys) != len(set(provenance_keys))
+            or set(provenance_keys) != expected_keys
+        ):
+            raise CMEEStage1ContractError(
+                "input_specific_meaning_material_provenance_context_orphan"
+            )
+        result[candidate.candidate_id] = required_keys
+    return result
+
+
 def input_specific_meaning_candidate_dominates(
     candidate: InputSpecificMeaningCandidate,
     other: InputSpecificMeaningCandidate,
+    *,
+    material_provenance_keys_by_candidate: Optional[
+        MaterialProvenanceKeysByCandidate
+    ] = None,
 ) -> bool:
     """Return the closed componentwise minimal-sufficiency relation."""
 
@@ -10789,6 +10922,14 @@ def input_specific_meaning_candidate_dominates(
         BasisEpistemicTier.SOURCE_EXPLICIT: 1,
         BasisEpistemicTier.RULE_ADMITTED_PROVISIONAL: 0,
     }
+    if any(
+        type(row) is not BasisProvenanceRow
+        for row in (
+            *candidate.basis_provenance_rows,
+            *other.basis_provenance_rows,
+        )
+    ):
+        return False
     candidate_rows = {
         (row.basis_kind, row.basis_ref): row
         for row in candidate.basis_provenance_rows
@@ -10800,8 +10941,53 @@ def input_specific_meaning_candidate_dominates(
     if (
         len(candidate_rows) != len(candidate.basis_provenance_rows)
         or len(other_rows) != len(other.basis_provenance_rows)
+        or any(
+            type(row.source_evidence_refs) is not tuple
+            or len(row.source_evidence_refs)
+            != len(set(row.source_evidence_refs))
+            or type(row.approved_derivation_refs) is not tuple
+            or len(row.approved_derivation_refs)
+            != len(set(row.approved_derivation_refs))
+            for row in (*candidate_rows.values(), *other_rows.values())
+        )
     ):
         return False
+    candidate_materiality: Mapping[
+        str, Tuple[MaterialProvenanceKey, ...]
+    ] = {}
+    other_materiality: Mapping[
+        str, Tuple[MaterialProvenanceKey, ...]
+    ] = {}
+    if material_provenance_keys_by_candidate is not None:
+        candidate_materiality = material_provenance_keys_by_candidate.get(
+            candidate.candidate_id, {}
+        )
+        other_materiality = material_provenance_keys_by_candidate.get(
+            other.candidate_id, {}
+        )
+        candidate_expected_keys = {
+            key for keys in candidate_materiality.values() for key in keys
+        }
+        other_expected_keys = {
+            key for keys in other_materiality.values() for key in keys
+        }
+        if (
+            set(candidate_materiality)
+            != set(candidate.preserved_difference_refs)
+            or set(other_materiality) != set(other.preserved_difference_refs)
+            or candidate_expected_keys != set(candidate_rows)
+            or other_expected_keys != set(other_rows)
+            or any(
+                type(keys) is not tuple
+                or not keys
+                or len(keys) != len(set(keys))
+                for keys in (
+                    *candidate_materiality.values(),
+                    *other_materiality.values(),
+                )
+            )
+        ):
+            return False
     provenance_no_worse = all(
         key in candidate_rows
         and set(candidate_rows[key].source_evidence_refs).issuperset(
@@ -10812,7 +10998,19 @@ def input_specific_meaning_candidate_dominates(
         )
         for key, row in other_rows.items()
     )
-    if set(candidate_rows) - set(other_rows):
+    candidate_extra_keys = set(candidate_rows) - set(other_rows)
+    candidate_extra_required = set(candidate.preserved_difference_refs) - set(
+        other.preserved_difference_refs
+    )
+    allowed_extra_keys = {
+        key
+        for required_ref in candidate_extra_required
+        for key in candidate_materiality.get(required_ref, ())
+    }
+    if candidate_extra_keys and (
+        material_provenance_keys_by_candidate is None
+        or not candidate_extra_keys.issubset(allowed_extra_keys)
+    ):
         provenance_no_worse = False
     provenance_strict = provenance_no_worse and any(
         set(candidate_rows[key].source_evidence_refs)
@@ -10856,6 +11054,10 @@ def input_specific_meaning_candidate_dominates(
 
 def meaning_selection_assessment_refs(
     candidates: Sequence[InputSpecificMeaningCandidate],
+    *,
+    material_provenance_keys_by_candidate: Optional[
+        MaterialProvenanceKeysByCandidate
+    ] = None,
 ) -> tuple[Tuple[str, ...], Tuple[str, ...]]:
     """Return tier-admitted and componentwise-nondominated refs in order."""
 
@@ -10883,7 +11085,13 @@ def meaning_selection_assessment_refs(
         candidate
         for candidate in admitted_values
         if not any(
-            input_specific_meaning_candidate_dominates(other, candidate)
+            input_specific_meaning_candidate_dominates(
+                other,
+                candidate,
+                material_provenance_keys_by_candidate=(
+                    material_provenance_keys_by_candidate
+                ),
+            )
             for other in admitted_values
             if other is not candidate
         )
@@ -10900,6 +11108,9 @@ def meaning_decision_candidate_reason_codes(
     *,
     candidates: Sequence[InputSpecificMeaningCandidate],
     selected: bool,
+    material_provenance_keys_by_candidate: Optional[
+        MaterialProvenanceKeysByCandidate
+    ] = None,
 ) -> Tuple[MeaningDecisionReasonCode, ...]:
     """Project the closed trace assessment from sealed candidate facts."""
 
@@ -10913,7 +11124,10 @@ def meaning_decision_candidate_reason_codes(
             "meaning_decision_trace_assessment_input_invalid"
         )
     tier_admitted_refs, nondominated_refs = meaning_selection_assessment_refs(
-        candidates
+        candidates,
+        material_provenance_keys_by_candidate=(
+            material_provenance_keys_by_candidate
+        ),
     )
     admitted: set[MeaningDecisionReasonCode] = set()
     if candidate.candidate_id in tier_admitted_refs:
@@ -11526,6 +11740,14 @@ def _validate_input_specific_meaning_im03(
         raise CMEEStage1ContractError(
             "input_specific_meaning_candidates_noncanonical"
         )
+    material_provenance_keys_by_candidate = (
+        input_specific_meaning_material_provenance_keys_by_candidate(
+            candidates,
+            configurations=structure.configurations,
+            observed_distinction_rows=structure.observed_distinction_rows,
+            required_difference_rows=structure.required_difference_rows,
+        )
+    )
     declared_consequence_refs = set(consequence_by_ref)
     referenced_consequence_refs = {
         ref
@@ -11749,6 +11971,9 @@ def _validate_input_specific_meaning_im03(
                 evidence_by_candidate[selected.candidate_id],
                 candidates=candidates,
                 selected=True,
+                material_provenance_keys_by_candidate=(
+                    material_provenance_keys_by_candidate
+                ),
             )
             or outcome.reading_id
             != selected_emlis_provisional_reading_id(outcome)
@@ -11766,6 +11991,9 @@ def _validate_input_specific_meaning_im03(
                     evidence_by_candidate[row.subject_ref],
                     candidates=candidates,
                     selected=False,
+                    material_provenance_keys_by_candidate=(
+                        material_provenance_keys_by_candidate
+                    ),
                 )
                 for row in nonselected_rows
             )
@@ -11925,6 +12153,9 @@ def _validate_input_specific_meaning_im03(
                             evidence_by_candidate[row.subject_ref],
                             candidates=candidates,
                             selected=False,
+                            material_provenance_keys_by_candidate=(
+                                material_provenance_keys_by_candidate
+                            ),
                         )
                         for row in nonselected_rows
                     )
@@ -14325,22 +14556,22 @@ def _im04_normal_reception_mode_contract_satisfied(
 
 def _im04_normal_reception_binding_key(
     *,
-    reception_act: str,
     responsibility_kind: SubjectiveResponsibilityKind,
-    basis_contribution_refs: Sequence[str],
     response_object_refs: Sequence[str],
+    reception_act: Optional[str] = None,
+    basis_contribution_refs: Sequence[str] = (),
 ) -> tuple[
     SubjectiveResponsibilityKind,
-    str,
-    tuple[str, ...],
     tuple[str, ...],
 ]:
-    """Scope normal-role uniqueness to one retained material contract."""
+    """Close normal-role uniqueness to responsibility and response object."""
 
+    # The legacy keyword arguments remain temporarily accepted because this
+    # helper is imported by the response owner.  They are material-binding
+    # inputs, not part of the Reception mutex identity.
+    del reception_act, basis_contribution_refs
     return (
         responsibility_kind,
-        reception_act,
-        tuple(basis_contribution_refs),
         tuple(response_object_refs),
     )
 
@@ -14828,8 +15059,6 @@ def validate_stage1_post_selection_reception_records(
         reception_binding_keys: set[
             tuple[
                 SubjectiveResponsibilityKind,
-                str,
-                tuple[str, ...],
                 tuple[str, ...],
             ]
         ] = set()
@@ -14918,13 +15147,7 @@ def validate_stage1_post_selection_reception_records(
                     "MEANING_RESPONSE_CONSEQUENCE_GAP"
                 )
             binding_key = _im04_normal_reception_binding_key(
-                reception_act=proposition.reception_function,
                 responsibility_kind=proposition.responsibility_kind,
-                basis_contribution_refs=(
-                    ()
-                    if retained_act is None
-                    else retained_act.basis_contribution_refs
-                ),
                 response_object_refs=proposition.response_object_refs,
             )
             if binding_key in reception_binding_keys:
@@ -19516,6 +19739,8 @@ __all__ = [
     "MeaningSemanticSignature",
     "MeaningEdge",
     "MeaningNode",
+    "MaterialProvenanceKey",
+    "MaterialProvenanceKeysByCandidate",
     "MaterialRisk",
     "MaterialValueContent",
     "LimitedMeaningOutcome",
@@ -19625,6 +19850,7 @@ __all__ = [
     "input_specific_meaning_candidate_core_payload",
     "input_specific_meaning_candidate_dominates",
     "input_specific_meaning_candidate_id",
+    "input_specific_meaning_material_provenance_keys_by_candidate",
     "input_specific_meaning_configuration_source_component_rows",
     "input_specific_meaning_candidate_source_component_rows",
     "input_specific_meaning_candidate_source_component_refs",

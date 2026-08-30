@@ -55,6 +55,7 @@ from .contracts import (
     InterpretationKind,
     LimitedMeaningOutcome,
     LimitedMeaningOutcomeState,
+    MaterialProvenanceKeysByCandidate,
     MeaningDecisionReasonCode,
     MeaningDecisionTrace,
     MeaningDecisionTraceKind,
@@ -92,6 +93,7 @@ from .contracts import (
     input_specific_meaning_candidate_core_payload,
     input_specific_meaning_candidate_dominates,
     input_specific_meaning_candidate_id,
+    input_specific_meaning_material_provenance_keys_by_candidate,
     input_specific_meaning_configuration_source_component_rows,
     input_specific_meaning_candidate_source_component_rows,
     input_specific_meaning_candidate_source_component_refs,
@@ -4368,18 +4370,25 @@ def _derive_candidate_for_bundle(
         *bundle.adjacent_configuration_refs,
     )
     owned_configurations = tuple(seed_configurations)
-    if (
-        not owned_configurations
-        or tuple(value.configuration_id for value in owned_configurations)
-        != tuple(
-            ref for ref in owned_bundle_refs if ref in {
-                value.configuration_id for value in owned_configurations
-            }
-        )
-        or set(value.configuration_id for value in owned_configurations)
-        != set(owned_bundle_refs)
-    ):
+    if not owned_configurations:
         return None
+    owned_configuration_refs = tuple(
+        value.configuration_id for value in owned_configurations
+    )
+    if owned_configuration_refs != tuple(
+        ref for ref in owned_bundle_refs if ref in set(owned_configuration_refs)
+    ) or len(owned_configuration_refs) != len(set(owned_configuration_refs)):
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_candidate_seed_binding_red"
+        )
+    if set(owned_configuration_refs) != set(owned_bundle_refs):
+        # §20.3 currently requires full referenced-bundle difference coverage.
+        # Until a candidate-local multi-seed ownership contract is closed, a
+        # proper-subset seed is a producer capability defect, never an
+        # ALL_DRAFTS_SOURCE_GROUNDED_HARD_INVALID accepted LIMITED outcome.
+        raise CMEEStage1ContractError(
+            "input_specific_meaning_multiseed_candidate_capability_red"
+        )
     primary_members = _stable_unique(
         ref
         for configuration in owned_configurations
@@ -4715,8 +4724,18 @@ def _dedupe_whole_reading_consequence_rows(
 def _candidate_dominates(
     candidate: InputSpecificMeaningCandidate,
     other: InputSpecificMeaningCandidate,
+    *,
+    material_provenance_keys_by_candidate: (
+        MaterialProvenanceKeysByCandidate | None
+    ) = None,
 ) -> bool:
-    return input_specific_meaning_candidate_dominates(candidate, other)
+    return input_specific_meaning_candidate_dominates(
+        candidate,
+        other,
+        material_provenance_keys_by_candidate=(
+            material_provenance_keys_by_candidate
+        ),
+    )
 
 
 def _build_canonical_meaning_decision_trace(
@@ -4728,6 +4747,9 @@ def _build_canonical_meaning_decision_trace(
     limited_reason_code: MeaningDecisionReasonCode | None,
     consequence_by_ref: Mapping[str, WholeReadingConsequenceRow] | None = None,
     limited_source_refs: Sequence[str] = (),
+    material_provenance_keys_by_candidate: (
+        MaterialProvenanceKeysByCandidate | None
+    ) = None,
 ) -> MeaningDecisionTrace:
     consequence_lookup = consequence_by_ref or {}
     rows: list[MeaningDecisionTraceRow] = []
@@ -4747,6 +4769,9 @@ def _build_canonical_meaning_decision_trace(
                     evidence_by_candidate[selected.candidate_id],
                     candidates=candidates,
                     selected=True,
+                    material_provenance_keys_by_candidate=(
+                        material_provenance_keys_by_candidate
+                    ),
                 ),
                 source_refs=_candidate_trace_source_refs(
                     selected,
@@ -4767,6 +4792,9 @@ def _build_canonical_meaning_decision_trace(
                     evidence_by_candidate[candidate.candidate_id],
                     candidates=candidates,
                     selected=False,
+                    material_provenance_keys_by_candidate=(
+                        material_provenance_keys_by_candidate
+                    ),
                 ),
                 source_refs=_candidate_trace_source_refs(
                     candidate,
@@ -4842,6 +4870,9 @@ def select_input_specific_meaning(
     candidates: Sequence[InputSpecificMeaningCandidate],
     evidence_records: Sequence[InputSpecificityEvidence],
     consequence_rows: Sequence[WholeReadingConsequenceRow] = (),
+    material_provenance_keys_by_candidate: (
+        MaterialProvenanceKeysByCandidate | None
+    ) = None,
 ) -> SelectedEmlisProvisionalReading | None:
     if not candidates:
         return None
@@ -4849,7 +4880,12 @@ def select_input_specific_meaning(
         value.candidate_ref: value for value in evidence_records
     }
     _tier_admitted_refs, nondominated_refs = (
-        meaning_selection_assessment_refs(candidates)
+        meaning_selection_assessment_refs(
+            candidates,
+            material_provenance_keys_by_candidate=(
+                material_provenance_keys_by_candidate
+            ),
+        )
     )
     nondominated = tuple(
         candidate
@@ -4868,6 +4904,9 @@ def select_input_specific_meaning(
         consequence_by_ref={
             value.consequence_id: value for value in consequence_rows
         },
+        material_provenance_keys_by_candidate=(
+            material_provenance_keys_by_candidate
+        ),
     )
     return project_selected_reading(selected, trace)
 
@@ -4882,6 +4921,9 @@ def _limited_meaning_outcome(
     candidates: Sequence[InputSpecificMeaningCandidate] = (),
     evidence_records: Sequence[InputSpecificityEvidence] = (),
     consequence_rows: Sequence[WholeReadingConsequenceRow] = (),
+    material_provenance_keys_by_candidate: (
+        MaterialProvenanceKeysByCandidate | None
+    ) = None,
 ) -> LimitedMeaningOutcome:
     evidence_by_candidate = {
         value.candidate_ref: value for value in evidence_records
@@ -4907,6 +4949,9 @@ def _limited_meaning_outcome(
                     for ref in candidate.primary_component_refs
                 ),
             )
+        ),
+        material_provenance_keys_by_candidate=(
+            material_provenance_keys_by_candidate
         ),
     )
     scope = foreground_scope_derivation.foreground_scope
@@ -5105,6 +5150,9 @@ def derive_input_specific_meaning_structure(
     candidates: Tuple[InputSpecificMeaningCandidate, ...] = ()
     evidence_records: Tuple[InputSpecificityEvidence, ...] = ()
     consequence_rows: Tuple[WholeReadingConsequenceRow, ...] = ()
+    material_provenance_keys_by_candidate: (
+        MaterialProvenanceKeysByCandidate
+    ) = {}
     scope = foreground_scope_derivation.foreground_scope
     if (
         type(scope) is ForegroundScope
@@ -5175,11 +5223,22 @@ def derive_input_specific_meaning_structure(
         consequence_rows = _dedupe_whole_reading_consequence_rows(
             sealed_records
         )
+        material_provenance_keys_by_candidate = (
+            input_specific_meaning_material_provenance_keys_by_candidate(
+                candidates,
+                configurations=configurations,
+                observed_distinction_rows=observed,
+                required_difference_rows=required,
+            )
+        )
     if candidates:
         selected = select_input_specific_meaning(
             candidates=candidates,
             evidence_records=evidence_records,
             consequence_rows=consequence_rows,
+            material_provenance_keys_by_candidate=(
+                material_provenance_keys_by_candidate
+            ),
         )
         if selected is not None:
             outcome: SelectedEmlisProvisionalReading | LimitedMeaningOutcome = (
@@ -5197,6 +5256,9 @@ def derive_input_specific_meaning_structure(
                 candidates=candidates,
                 evidence_records=evidence_records,
                 consequence_rows=consequence_rows,
+                material_provenance_keys_by_candidate=(
+                    material_provenance_keys_by_candidate
+                ),
             )
     elif foreground_scope_derivation.state is (
         ForegroundScopeDerivationState.COMPETING_MATERIAL_SCOPES

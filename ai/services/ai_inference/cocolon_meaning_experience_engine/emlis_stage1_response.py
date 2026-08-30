@@ -4055,8 +4055,6 @@ def _assign_normal_reception_profiles(
         occupied: frozenset[
             tuple[
                 SubjectiveResponsibilityKind,
-                str,
-                tuple[str, ...],
                 tuple[str, ...],
             ]
         ],
@@ -4075,11 +4073,7 @@ def _assign_normal_reception_profiles(
         retained_row = retained_rows[index]
         for profile in options[index]:
             conflict_key = _im04_normal_reception_binding_key(
-                reception_act=retained_row.reception_act,
                 responsibility_kind=profile[1],
-                basis_contribution_refs=(
-                    retained_row.basis_contribution_refs
-                ),
                 response_object_refs=response_object_refs,
             )
             if conflict_key in occupied:

@@ -13354,18 +13354,18 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             )
         )
         frozen_runtime_payload_sha256 = {
-            exact17_names[0]: "ddea39d2aa35b9ba3cb6a3aab34f683b17af13a4e5d869801ae18265e9924387",
-            exact17_names[1]: "38060d5f3f012c9590333e26278784fb01d85e4f91773e49e96541fef1d82c58",
-            exact17_names[2]: "904431c56d31234c73a3d51e072f8d557368e5aed27bd2044d6bd04e060a57fb",
+            exact17_names[0]: "06dca9a8753ac1058213af3582a9723a228c1a69ec5a9b71c4f78c0e27323da5",
+            exact17_names[1]: "175ea46f6b9377c574f6527e7aad232b7becc6a361ad4bf939dfb1dd52338c4a",
+            exact17_names[2]: "2fd4479ffb886fb7e95a15ba0ebe456bb179d245d9932cf243d5db7708c1e780",
             exact17_names[3]: "c907af7a059f802120b3e494a88651015a14d45c5e272ab1f9d3f1e9bfa8d06f",
             exact17_names[4]: "efb08a5f49d6c3452a8f2332c9d45cebcb5e91ed2c8e8c41fa5a06b3faa4fadd",
             exact17_names[5]: "e524111597d75599b0550b271a3df464df4d468aec28e608ab4586b7840da1f0",
             exact17_names[6]: "3ca31fbcf0ad9c93bdd4d267a3ef2000ce79b8d702bd7188f020eb11d5bd593c",
-            exact17_names[7]: "6545d8f1ca56e5d576e6e6902978ab5e6b23b5e8223b332d304aa45649438c4c",
+            exact17_names[7]: "75343d43f9e22c101d218fb80fb2b17a9a264780ceb63842c6d75cb7dbb0c2f4",
             exact17_names[9]: "838767e83ab7f34e955bab4ed5e9efd07e238a6a74c5024ea644e70af1cd3cf1",
-            exact17_names[10]: "7db3d6c83e24a364e701af35c84ec68b7f36ff24acbe5c6f2b9020dfbbc96774",
+            exact17_names[10]: "bbfea5e3c018d2415218988e49b059f9720a46914ce374793f5c4a0b3e6e1d3b",
             exact17_names[11]: "b60f13b6f253cfb94d759d8b0ade9d3ea6c7fd6786a964886cf02037ab2d4d40",
-            exact17_names[12]: "9a0b927f1a8239024a2d97351277412fed65e1975408de1328411ac2e1ae2ea9",
+            exact17_names[12]: "e3d07093cff557255015673212cd2da17244fd96e75a113a55fd1d4ff5726042",
             exact17_names[13]: "cee6c2989896f8e3f3642f98a354ea294d34b05eff81a2322fcb94ce9fc9abba",
             exact17_names[15]: "3c14b8eb9e5cd8ff5410ffc7c1a0d3558784a75f8c355c272904dc650dd50ff7",
         }
@@ -13398,14 +13398,14 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 in runtime_payload_name_sha256_byte_count_exact17[:8]
             ),
             (
-                652257,
-                746324,
-                411856,
+                657096,
+                755209,
+                411626,
                 293740,
                 352379,
                 8179,
                 25495,
-                202329,
+                204877,
             ),
         )
 
@@ -13820,9 +13820,9 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         )
         frozen_unchanged_manifest_sha256 = {
             expected_names[9]: "838767e83ab7f34e955bab4ed5e9efd07e238a6a74c5024ea644e70af1cd3cf1",
-            expected_names[10]: "7db3d6c83e24a364e701af35c84ec68b7f36ff24acbe5c6f2b9020dfbbc96774",
+            expected_names[10]: "bbfea5e3c018d2415218988e49b059f9720a46914ce374793f5c4a0b3e6e1d3b",
             expected_names[11]: "b60f13b6f253cfb94d759d8b0ade9d3ea6c7fd6786a964886cf02037ab2d4d40",
-            expected_names[12]: "9a0b927f1a8239024a2d97351277412fed65e1975408de1328411ac2e1ae2ea9",
+            expected_names[12]: "e3d07093cff557255015673212cd2da17244fd96e75a113a55fd1d4ff5726042",
             expected_names[13]: "cee6c2989896f8e3f3642f98a354ea294d34b05eff81a2322fcb94ce9fc9abba",
             expected_names[15]: "3c14b8eb9e5cd8ff5410ffc7c1a0d3558784a75f8c355c272904dc650dd50ff7",
         }
@@ -18763,10 +18763,10 @@ class CMEERouteAV2I01DisabledRegistryContractsTest(unittest.TestCase):
     ) -> None:
         stage1_composition_module.validate_v2_grammar_inventory()
         inventory = stage1_composition_module.V2_GRAMMAR_INVENTORY
-        self.assertEqual(len(inventory.encode("utf-8")), 13_811)
+        self.assertEqual(len(inventory.encode("utf-8")), 13_833)
         self.assertEqual(
             hashlib.sha256(inventory.encode("utf-8")).hexdigest(),
-            "f071244e28baa5a824067ebfddf273bc4ad8f967d90ed5bd0bf9b9862a68a802",
+            "9765f6032d38899862bc83cf3150739a8380fc252855ac74ad059bc1b2690bf5",
         )
         self.assertEqual(
             len(stage1_composition_module.V2_GRAMMAR_INVENTORY_ROWS),
@@ -18985,7 +18985,7 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
         "「〈X〉」という点があります。",
         "Emlisは「〈X〉」を気にかけています。",
         "Emlisは「〈X〉」という内容を受け止めたいです。",
-        "Emlisは「〈X〉」と「〈Y〉」を一つにまとめたくありません。",
+        "Emlisは「〈X〉」と「〈Y〉」をどちらか一方だけにせず受け止めたいです。",
         "Emlisは「〈X〉」という変化を見届けたいです。",
         "Emlisは今すぐ「〈X〉」と結論づけたくありません。",
         "Emlisは「〈X〉」という選択を尊重したいです。",
@@ -18997,7 +18997,7 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
         "Emlisは「〈X〉」を「〈Y〉」に限定したくありません。",
     )
     _BASE_SURFACE_SKELETON_SHA256 = (
-        "cba16357cec9cd37c8da16e9727aeea5a961c8e413c2f97469161c5a03a5f03b"
+        "1a46358ce3cc041a93bc54035bb6a1cf1c35e5f3662e9928b7e765b7771a77bf"
     )
     _TERMINAL_BY_CLASS = {
         contracts_module.SourceFinalTerminalClass.ABSENT: "",
@@ -26782,6 +26782,158 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
         )
         self.assertIs(candidate.basis_epistemic_tier, expected_tier)
 
+        dominance_case = next(
+            case
+            for case in self.actual_cases
+            if case.structure.candidate_records
+            and len(
+                case.structure.candidate_records[0].basis_provenance_rows
+            )
+            >= 2
+        )
+        dominance_structure = dominance_case.structure
+        dominant = dominance_structure.candidate_records[0]
+        full_materiality = (
+            contracts_module
+            .input_specific_meaning_material_provenance_keys_by_candidate(
+                (dominant,),
+                configurations=dominance_structure.configurations,
+                observed_distinction_rows=(
+                    dominance_structure.observed_distinction_rows
+                ),
+                required_difference_rows=(
+                    dominance_structure.required_difference_rows
+                ),
+            )[dominant.candidate_id]
+        )
+        retained_key = dominant.basis_provenance_rows[0]
+        retained_material_key = (
+            retained_key.basis_kind,
+            retained_key.basis_ref,
+        )
+        retained_required_refs = tuple(
+            required_ref
+            for required_ref, keys in full_materiality.items()
+            if retained_material_key in keys
+        )
+        self.assertTrue(retained_required_refs)
+        self.assertNotEqual(
+            retained_required_refs,
+            dominant.preserved_difference_refs,
+        )
+        required_by_ref = {
+            row.difference_id: row
+            for row in dominance_structure.required_difference_rows
+        }
+        observed_by_ref = {
+            row.distinction_id: row
+            for row in dominance_structure.observed_distinction_rows
+        }
+        retained_configuration_refs = tuple(
+            dict.fromkeys(
+                observed_by_ref[
+                    required_by_ref[required_ref]
+                    .observed_distinction_ref
+                ].configuration_ref
+                for required_ref in retained_required_refs
+            )
+        )
+        covered = replace(
+            dominant,
+            candidate_id=f"{dominant.candidate_id}:covered",
+            basis_configuration_refs=retained_configuration_refs,
+            basis_provenance_rows=(retained_key,),
+            preserved_difference_refs=retained_required_refs,
+        )
+        dominance_materiality = (
+            contracts_module
+            .input_specific_meaning_material_provenance_keys_by_candidate(
+                (dominant, covered),
+                configurations=dominance_structure.configurations,
+                observed_distinction_rows=(
+                    dominance_structure.observed_distinction_rows
+                ),
+                required_difference_rows=(
+                    dominance_structure.required_difference_rows
+                ),
+            )
+        )
+        self.assertTrue(
+            contracts_module.input_specific_meaning_candidate_dominates(
+                dominant,
+                covered,
+                material_provenance_keys_by_candidate=(
+                    dominance_materiality
+                ),
+            )
+        )
+        self.assertFalse(
+            contracts_module.input_specific_meaning_candidate_dominates(
+                covered,
+                dominant,
+                material_provenance_keys_by_candidate=(
+                    dominance_materiality
+                ),
+            )
+        )
+        self.assertFalse(
+            contracts_module.input_specific_meaning_candidate_dominates(
+                dominant,
+                covered,
+            )
+        )
+
+        strict_row = replace(
+            retained_key,
+            source_evidence_refs=(
+                *retained_key.source_evidence_refs,
+                "evidence:im03-provenance-strict",
+            ),
+        )
+        evidence_strict = replace(
+            covered,
+            candidate_id=f"{dominant.candidate_id}:evidence-strict",
+            basis_provenance_rows=(strict_row,),
+        )
+        covered_materiality = dominance_materiality[covered.candidate_id]
+        strict_materiality = {
+            covered.candidate_id: covered_materiality,
+            evidence_strict.candidate_id: covered_materiality,
+        }
+        self.assertTrue(
+            contracts_module.input_specific_meaning_candidate_dominates(
+                evidence_strict,
+                covered,
+                material_provenance_keys_by_candidate=strict_materiality,
+            )
+        )
+        self.assertFalse(
+            contracts_module.input_specific_meaning_candidate_dominates(
+                covered,
+                evidence_strict,
+                material_provenance_keys_by_candidate=strict_materiality,
+            )
+        )
+
+        unrequired_extra = replace(
+            covered,
+            candidate_id=f"{dominant.candidate_id}:unrequired-extra",
+            basis_provenance_rows=dominant.basis_provenance_rows,
+        )
+        incomparable_materiality = {
+            covered.candidate_id: covered_materiality,
+            unrequired_extra.candidate_id: covered_materiality,
+        }
+        self.assertFalse(
+            contracts_module.input_specific_meaning_candidate_dominates(
+                unrequired_extra,
+                covered,
+                material_provenance_keys_by_candidate=(
+                    incomparable_materiality
+                ),
+            )
+        )
+
     def test_im03_full_required_difference_row_coverage_and_evidence_back_binding(
         self,
     ) -> None:
@@ -26993,6 +27145,52 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
             len(input_specific_meaning_module._enumerate_candidate_lanes(seeds)),
             14 * max(1, len(seeds)),
         )
+        multiconfiguration_case = next(
+            case
+            for case in self.actual_cases
+            if type(case.structure.meaning_decision_outcome)
+            is contracts_module.SelectedEmlisProvisionalReading
+            and len(case.structure.configurations) >= 2
+            and len(case.structure.requirement_bundles) == 1
+        )
+        multiconfiguration_bundle = (
+            multiconfiguration_case.structure.requirement_bundles[0]
+        )
+        multiconfiguration_by_ref = {
+            row.configuration_id: row
+            for row in multiconfiguration_case.structure.configurations
+        }
+        multiconfiguration_values = tuple(
+            multiconfiguration_by_ref[ref]
+            for ref in (
+                multiconfiguration_bundle.anchor_configuration_ref,
+                *multiconfiguration_bundle.adjacent_configuration_refs,
+            )
+        )
+        self.assertGreaterEqual(len(multiconfiguration_values), 2)
+        forced_proper_subset_seeds = tuple(
+            (row,) for row in multiconfiguration_values
+        )
+        self.assertEqual(
+            len(
+                input_specific_meaning_module._enumerate_candidate_lanes(
+                    forced_proper_subset_seeds
+                )
+            ),
+            14 * len(forced_proper_subset_seeds),
+        )
+        with patch.object(
+            input_specific_meaning_module,
+            "_material_binding_seed_partition",
+            return_value=forced_proper_subset_seeds,
+        ), self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "input_specific_meaning_multiseed_candidate_capability_red",
+        ):
+            input_specific_meaning_module.derive_input_specific_meaning_structure(
+                multiconfiguration_case.grounded_view,
+                multiconfiguration_case.scope_derivation,
+            )
         material_vertices = tuple(
             (
                 contracts_module.BasisProvenanceKind.RELATION_BRIDGE,
@@ -29749,7 +29947,7 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
             )
             with self.assertRaisesRegex(
                 stage1_composition_module.Stage1CompositionError,
-                "MEANING_REALIZATION_CAUSAL_TRACE_GAP",
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP",
             ):
                 stage1_composition_module.validate_postrealizer_visible_causal_trace(
                     limited_phase_b, tampered_candidate
@@ -29805,7 +30003,7 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
         )
         with self.assertRaisesRegex(
             stage1_composition_module.Stage1CompositionError,
-            "MEANING_REALIZATION_CAUSAL_TRACE_GAP",
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP",
         ):
             stage1_composition_module.compose_stage1_from_projection(
                 multi_object_phase_b
@@ -30134,6 +30332,51 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
             "oracle-qualified",
             "提出するかは、まだ決めきれていない。",
         )
+        unfinished_row = PUBLIC_NONSECRET_EARLY_STANDIN_EXACT4[3]
+        unfinished_inputs = raw_inputs(
+            "oracle-unfinished",
+            unfinished_row[1],
+            category=unfinished_row[2],
+            emotion=unfinished_row[3],
+            strength=unfinished_row[4],
+        )
+        unfinished_phase_a = (
+            stage1_response_module.build_subjective_planning_inputs(
+                source=unfinished_inputs.source,
+                grounded_graph=unfinished_inputs.grounded_graph,
+                parent_plan=unfinished_inputs.parent_plan,
+                grounded_plan=unfinished_inputs.grounded_plan,
+            )
+        )
+        self.assertIs(
+            type(
+                unfinished_phase_a.input_specific_meaning_structure
+                .meaning_decision_outcome
+            ),
+            contracts_module.LimitedMeaningOutcome,
+        )
+        unfinished_plan = (
+            stage1_composition_module.project_subjective_meaning_plan(
+                unfinished_phase_a
+            )
+        )
+        unfinished_projection = stage1_response_module.seal_stage1_projection(
+            unfinished_phase_a,
+            unfinished_plan,
+        )
+        unfinished_phase_b = (
+            stage1_response_module.build_surface_composition_inputs(
+                unfinished_phase_a,
+                unfinished_projection,
+            )
+        )
+        with self.assertRaisesRegex(
+            stage1_composition_module.Stage1CompositionError,
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP",
+        ):
+            stage1_composition_module.compose_stage1_from_projection(
+                unfinished_phase_b
+            )
         for relation_case in (tension, temporal, help_seeking):
             self.assertTrue(relation_case.selected.relation_path_refs)
             self.assertTrue(
@@ -30311,379 +30554,149 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
             1,
         )
 
-        actual_coalescer = (
-            stage1_composition_module._coalesce_normal_subjective_facets
+        conflicting_n1_inputs = raw_inputs(
+            "oracle-n1-conflicting-reception",
+            "大事だが、相談したい。",
         )
-        n1_capture: list[dict[str, object]] = []
-
-        def capture_n1_coalescence(**kwargs):
-            if len(kwargs["claims"]) == 2 and not n1_capture:
-                n1_capture.append(
-                    {
-                        name: tuple(value) if isinstance(value, list) else value
-                        for name, value in kwargs.items()
-                    }
-                )
-            return actual_coalescer(**kwargs)
-
-        with patch.object(
-            stage1_composition_module,
-            "_coalesce_normal_subjective_facets",
-            side_effect=capture_n1_coalescence,
+        with self.assertRaisesRegex(
+            CMEEStage1ContractError,
+            "RECEPTION_BINDING_CONFLICT_STOP",
         ):
-            n1 = build_and_seal_normal(
-                "oracle-n1-coalescence",
-                "大事だが、相談したい。",
-                expected_reception_count=2,
+            stage1_response_module.build_subjective_planning_inputs(
+                source=conflicting_n1_inputs.source,
+                grounded_graph=conflicting_n1_inputs.grounded_graph,
+                parent_plan=conflicting_n1_inputs.parent_plan,
+                grounded_plan=conflicting_n1_inputs.grounded_plan,
             )
-        self.assertEqual(len(n1_capture), 1)
-        n1_local = n1_capture[0]
-        local_claims = tuple(n1_local["claims"])
-        local_responsibilities = tuple(n1_local["responsibilities"])
-        local_opportunities = tuple(n1_local["opportunities"])
-        local_basis_rows = tuple(n1_local["basis_rows"])
-        local_qualifier_rows = tuple(n1_local["qualifier_rows"])
-        local_reception_traces = tuple(n1_local["reception_traces"])
-        local_policy_applications = tuple(n1_local["policy_applications"])
-        n1_plan = n1.meaning_plan
-        n1_claim = n1_plan.subjective_claim_rows[0]
-        n1_opportunity = n1_plan.subjective_opportunity_rows[0]
-        n1_claim_ref = n1_claim.subjective_claim_id
+
+        complementary_n1_inputs = raw_inputs(
+            "oracle-n1-complementary-reception",
+            "続けたい気持ちはあるが、相談したい。",
+        )
+        complementary_n1_phase_a = (
+            stage1_response_module.build_subjective_planning_inputs(
+                source=complementary_n1_inputs.source,
+                grounded_graph=complementary_n1_inputs.grounded_graph,
+                parent_plan=complementary_n1_inputs.parent_plan,
+                grounded_plan=complementary_n1_inputs.grounded_plan,
+            )
+        )
+        n1_receptions = (
+            complementary_n1_phase_a
+            .meaning_bound_reception_proposition_records
+        )
+        self.assertEqual(
+            tuple(row.responsibility_kind for row in n1_receptions),
+            (
+                contracts_module.SubjectiveResponsibilityKind.MATERIAL_APPRAISAL,
+                contracts_module.SubjectiveResponsibilityKind.POLICY_VISIBLE_VALUE,
+            ),
+        )
+        self.assertEqual(
+            len({row.response_object_refs for row in n1_receptions}),
+            1,
+        )
+        n1_source_act_refs = tuple(
+            row.act_ref
+            for row in complementary_n1_phase_a.retained_reception_act_rows
+        )
+        self.assertEqual(
+            tuple(row.reception_function for row in n1_receptions),
+            n1_source_act_refs,
+        )
+        complementary_n1_plan = (
+            stage1_composition_module.project_subjective_meaning_plan(
+                complementary_n1_phase_a
+            )
+        )
         self.assertEqual(
             tuple(
                 len(rows)
                 for rows in (
-                    n1.phase_a.retained_reception_act_rows,
-                    n1.phase_a.meaning_bound_reception_proposition_records,
-                    n1_plan.subjective_responsibility_rows,
-                    n1_plan.subjective_opportunity_rows,
-                    n1_plan.subjective_claim_rows,
-                    n1_plan.responsibility_coverage_rows,
-                    n1_plan.reception_visible_causal_trace_rows,
+                    complementary_n1_phase_a.retained_reception_act_rows,
+                    n1_receptions,
+                    complementary_n1_plan.subjective_responsibility_rows,
+                    complementary_n1_plan.subjective_opportunity_rows,
+                    complementary_n1_plan.subjective_claim_rows,
+                    complementary_n1_plan.responsibility_coverage_rows,
+                    complementary_n1_plan.reception_visible_causal_trace_rows,
                 )
             ),
-            (2, 2, 2, 1, 1, 2, 2),
+            (2, 2, 2, 2, 2, 2, 2),
         )
-        n1_source_act_refs = tuple(
-            row.act_ref for row in n1.phase_a.retained_reception_act_rows
-        )
-        self.assertEqual(
-            tuple(
-                row.reception_function
-                for row in n1.phase_a.meaning_bound_reception_proposition_records
-            ),
-            n1_source_act_refs,
-        )
-        self.assertEqual(n1_claim.source_reception_act_refs, n1_source_act_refs)
-        self.assertEqual(
-            n1_claim.subjective_responsibility_refs,
-            tuple(
-                row.responsibility_ref
-                for row in n1_plan.subjective_responsibility_rows
-            ),
-        )
-        self.assertEqual(
-            n1_opportunity.responsibility_refs,
-            n1_claim.subjective_responsibility_refs,
-        )
-        self.assertTrue(
-            all(
-                row.covered_by_claim_refs == (n1_claim_ref,)
-                for row in n1_plan.responsibility_coverage_rows
+        complementary_n1_projection = (
+            stage1_response_module.seal_stage1_projection(
+                complementary_n1_phase_a,
+                complementary_n1_plan,
             )
         )
-        self.assertEqual(
-            tuple(
-                row.projected_claim_ref
-                for row in n1_plan.reception_visible_causal_trace_rows
-            ),
-            (n1_claim_ref, n1_claim_ref),
+        complementary_n1_phase_b = (
+            stage1_response_module.build_surface_composition_inputs(
+                complementary_n1_phase_a,
+                complementary_n1_projection,
+            )
         )
-        n1_responsibility_by_act = {
-            row.retained_reception_act_refs[0]: row
-            for row in n1_plan.subjective_responsibility_rows
-        }
-        for reception, trace in zip(
-            n1.phase_a.meaning_bound_reception_proposition_records,
-            n1_plan.reception_visible_causal_trace_rows,
-            strict=True,
+        with self.assertRaisesRegex(
+            stage1_composition_module.Stage1CompositionError,
+            "MEANING_REALIZATION_CAPABILITY_GAP",
         ):
-            responsibility = n1_responsibility_by_act[
-                reception.reception_function
-            ]
-            self.assertEqual(
-                responsibility.retained_reception_act_refs,
-                (reception.reception_function,),
-            )
-            self.assertEqual(
-                responsibility.owner_component_refs,
-                trace.layer1_contribution_refs,
-            )
-        self.assertEqual(
-            tuple(
-                dict.fromkeys(
-                    ref
-                    for row in n1_plan.reception_visible_causal_trace_rows
-                    for ref in row.layer1_contribution_refs
-                )
-            ),
-            n1_claim.basis_observation_contribution_refs,
-        )
-        n1_frame_refs = tuple(
-            row.frame.frame_id
-            for row in (
-                n1.composition.selected_candidate.normalized_artifact
-                .v2_clause_rows
-            )
-        )
-        self.assertEqual(n1_frame_refs, ("F06", "F13"))
-        self.assertFalse(
-            any(
-                left == right == "F13"
-                for left, right in zip(n1_frame_refs, n1_frame_refs[1:])
-            )
-        )
-
-        n1_builder_kwargs = {
-            "input_specific_meaning_structure": n1.structure,
-            "projection_preimage_ref": n1.phase_a.projection_preimage_ref,
-            "observation_contribution_rows": (
-                n1.phase_a.observation_contribution_rows
-            ),
-            "interpretation_candidate_rows": (
-                n1.phase_a.interpretation_candidate_rows
-            ),
-            "contribution_to_candidate_ref_map": (
-                n1.phase_a.contribution_to_candidate_ref_map
-            ),
-            "qualifier_value_rows": (
-                n1.phase_a.qualifier_value_by_candidate_scope_axis_key
-            ),
-            "material_unknown_refs": n1.phase_a.material_unknown_refs,
-        }
-        n1_forward_records = (
-            stage1_response_module.build_stage1_post_selection_reception_records(
-                retained_reception_act_rows=(
-                    n1.phase_a.retained_reception_act_rows
-                ),
-                **n1_builder_kwargs,
-            )
-        )
-        n1_reverse_records = (
-            stage1_response_module.build_stage1_post_selection_reception_records(
-                retained_reception_act_rows=tuple(
-                    reversed(n1.phase_a.retained_reception_act_rows)
-                ),
-                **n1_builder_kwargs,
-            )
-        )
-        self.assertEqual(n1_forward_records, n1_reverse_records)
-        self.assertEqual(
-            n1_forward_records,
-            (
-                n1.phase_a.reading_consequence_records,
-                n1.phase_a.sealed_emlis_provisional_reading_records,
-                n1.phase_a.meaning_bound_reception_proposition_records,
-                n1.phase_a.meaning_bound_reception_set_records,
-                n1.phase_a.bounded_limited_reception_records,
-                n1.phase_a.bounded_limited_subjective_proposition_records,
-                n1.phase_a.projection_seal_ref,
-            ),
-        )
-
-        def run_local_coalescer(
-            *,
-            claims=local_claims,
-            responsibilities=local_responsibilities,
-            opportunities=local_opportunities,
-        ):
-            return actual_coalescer(
-                authority=n1_local["authority"],
-                claims=list(claims),
-                responsibilities=list(responsibilities),
-                opportunities=list(opportunities),
-                basis_rows=local_basis_rows,
-                qualifier_rows=local_qualifier_rows,
-                reception_traces=list(local_reception_traces),
-                policy_applications=list(local_policy_applications),
+            stage1_composition_module.compose_stage1_from_projection(
+                complementary_n1_phase_b
             )
 
-        n1_forward_coalescence = run_local_coalescer()
-        n1_reverse_coalescence = run_local_coalescer(
-            claims=tuple(reversed(local_claims)),
-            responsibilities=tuple(reversed(local_responsibilities)),
-            opportunities=tuple(reversed(local_opportunities)),
+        mutex_key_a = contracts_module._im04_normal_reception_binding_key(
+            responsibility_kind=(
+                contracts_module.SubjectiveResponsibilityKind.MATERIAL_APPRAISAL
+            ),
+            response_object_refs=("response-object:im06",),
+            reception_act="honor_concrete_effort",
+            basis_contribution_refs=("contribution:im06-a",),
         )
-        self.assertEqual(n1_forward_coalescence, n1_reverse_coalescence)
-        self.assertEqual(
-            tuple(n1_forward_coalescence[0]),
-            n1_plan.subjective_claim_rows,
+        mutex_key_b = contracts_module._im04_normal_reception_binding_key(
+            responsibility_kind=(
+                contracts_module.SubjectiveResponsibilityKind.MATERIAL_APPRAISAL
+            ),
+            response_object_refs=("response-object:im06",),
+            reception_act="respect_words_placed",
+            basis_contribution_refs=("contribution:im06-b",),
         )
-        self.assertEqual(
-            tuple(n1_forward_coalescence[1]),
-            n1_plan.subjective_opportunity_rows,
-        )
-        self.assertEqual(
-            tuple(n1_forward_coalescence[2]),
-            n1_plan.reception_visible_causal_trace_rows,
-        )
+        self.assertEqual(mutex_key_a, mutex_key_b)
 
-        responsibility_by_ref = {
-            row.responsibility_ref: row for row in local_responsibilities
-        }
-        basis_by_ref = {row.binding_ref: row for row in local_basis_rows}
-        qualifier_by_ref = {
-            row.source_qualifier_binding_ref: row
-            for row in local_qualifier_rows
-        }
-
-        def n1_key(claim):
-            return stage1_composition_module._normal_subjective_coalescence_key(
-                claim,
-                responsibility_by_ref=responsibility_by_ref,
-                basis_by_ref=basis_by_ref,
-                qualifier_by_ref=qualifier_by_ref,
-            )
-
-        self.assertEqual(len(local_claims), 2)
-        self.assertEqual(
-            {
-                len(
-                    row.asserted_subjective_proposition
-                    .appraisal_content.appraised_bindings
-                )
-                for row in local_claims
-            },
-            {2, 3},
-        )
-        canonical_local_key = n1_key(local_claims[0])
-        self.assertIsNotNone(canonical_local_key)
-        self.assertEqual(canonical_local_key, n1_key(local_claims[1]))
-        mutation_source = local_claims[1].asserted_subjective_proposition
-        protected_binding = (
-            mutation_source.appraisal_content.appraised_bindings[-1]
-        )
-        nonmerge_propositions = (
-            (
-                "primary_partition",
-                replace(
-                    mutation_source,
-                    primary_target_refs=(mutation_source.primary_target_refs[0],),
-                ),
-            ),
-            (
-                "boundary_partition",
-                replace(
-                    mutation_source,
-                    boundary_target_refs=(
-                        mutation_source.response_object_refs[-1],
-                    ),
-                ),
-            ),
-            (
-                "ordered_endpoints",
-                replace(
-                    mutation_source,
-                    response_object_refs=tuple(
-                        reversed(mutation_source.response_object_refs)
-                    ),
-                ),
-            ),
-            (
-                "protected_partition",
-                replace(
-                    mutation_source,
-                    appraisal_content=replace(
-                        mutation_source.appraisal_content,
-                        protected_bindings=(protected_binding,),
-                    ),
-                ),
-            ),
-            (
-                "qualifier_semantics",
-                replace(
-                    mutation_source,
-                    source_qualifier_binding_refs=(
-                        mutation_source.source_qualifier_binding_refs[0],
-                    ),
-                ),
-            ),
-        )
-        for label, mutated_proposition in nonmerge_propositions:
-            with self.subTest(n1_nonmerge=label):
-                mutated_claim = replace(
-                    local_claims[1],
-                    asserted_subjective_proposition=mutated_proposition,
-                )
-                self.assertNotEqual(canonical_local_key, n1_key(mutated_claim))
-                separated = run_local_coalescer(
-                    claims=(local_claims[0], mutated_claim)
-                )
-                self.assertEqual(
-                    (len(separated[0]), len(separated[1]), len(separated[2])),
-                    (2, 2, 2),
-                )
-        policy_claim = replace(
-            local_claims[1],
-            value_principle_refs=("value-principle:im06-synthetic",),
-        )
-        material_value_claim = replace(
-            local_claims[1],
-            asserted_subjective_proposition=replace(
-                mutation_source,
-                content_kind=SubjectiveContentKind.MATERIAL_VALUE,
-                appraisal_content=None,
-                material_value_content=MaterialValueContent(
-                    (),
-                    mutation_source.basis_binding_refs,
-                    (),
-                ),
-            ),
-        )
-        for label, noncoalescible in (
-            ("policy", policy_claim),
-            ("material_value", material_value_claim),
-        ):
-            with self.subTest(n1_nonmerge=label):
-                self.assertIsNone(n1_key(noncoalescible))
-                separated = run_local_coalescer(
-                    claims=(local_claims[0], noncoalescible)
-                )
-                self.assertEqual(
-                    (len(separated[0]), len(separated[1])),
-                    (2, 2),
-                )
-
-        n1_l1_clause = next(
+        tension_l1_clause = next(
             row
             for row in (
-                n1.composition.selected_candidate.normalized_artifact
+                tension.composition.selected_candidate.normalized_artifact
                 .v2_clause_rows
             )
-            if row.frame.frame_id == "F06"
+            if row.frame.frame_id in {"F05", "F06"}
         )
         positive_constraints = tuple(
             row
-            for row in n1_l1_clause.clause_plan.scalar_constraint_rows
+            for row in tension_l1_clause.clause_plan.scalar_constraint_rows
             if row.polarity == "positive"
         )
         positive_witnesses = tuple(
             row
             for constraint in positive_constraints
-            for row in n1_l1_clause.clause_plan.scalar_surface_realization_rows
+            for row in (
+                tension_l1_clause.clause_plan
+                .scalar_surface_realization_rows
+            )
             if row.clause_scalar_constraint_ref
             == constraint.clause_scalar_constraint_ref
             and row.scalar_axis
             is stage1_composition_module.ClauseScalarAxis.POLARITY
         )
+        self.assertTrue(positive_constraints)
         self.assertEqual(
-            (len(positive_constraints), len(positive_witnesses)),
-            (2, 2),
+            len(positive_constraints),
+            len(positive_witnesses),
         )
         self.assertTrue(
             all(
                 row.realization_mode
-                is stage1_composition_module.ScalarSurfaceRealizationMode.UNMARKED_DEFAULT
+                is stage1_composition_module
+                .ScalarSurfaceRealizationMode.UNMARKED_DEFAULT
                 and row.registered_realization_rule_ref
                 == "scalar:polarity:positive:unmarked.v1"
                 and row.target_clause_slot_ref is None
@@ -30692,87 +30705,123 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
         )
         positive_assets = tuple(
             row
-            for row in stage1_composition_module.SCALAR_MORPHOLOGY_ASSET_REGISTRY
+            for row in stage1_composition_module
+            .SCALAR_MORPHOLOGY_ASSET_REGISTRY
             if row.morphology_asset_id
             == "scalar:polarity:positive:unmarked.v1"
         )
         self.assertEqual(len(positive_assets), 1)
         self.assertEqual(positive_assets[0].morphemes, ())
-        n1_surface = "\n".join(
-            row.text for row in n1.composition.selected_candidate.sentence_units
-        )
-        self.assertNotIn("肯定", n1_surface)
-        n1_l2_clause = next(
+
+        tension_l2_clause = next(
             row
             for row in (
-                n1.composition.selected_candidate.normalized_artifact
+                tension.composition.selected_candidate.normalized_artifact
                 .v2_clause_rows
             )
             if row.frame.frame_id == "F13"
         )
-        self.assertEqual(n1_l2_clause.morphology_plan.polarity, "NEGATIVE")
-        self.assertIn("ありません", n1_l2_clause.linearized_clause.text)
+        self.assertEqual(
+            tension_l2_clause.morphology_plan.polarity,
+            "POSITIVE",
+        )
+        self.assertNotEqual(
+            tension_l2_clause.morphology_plan.modal,
+            "EMLIS_BOUNDED_REFUSAL",
+        )
+        self.assertIn(
+            "受け止めたいです",
+            tension_l2_clause.linearized_clause.text,
+        )
+        self.assertNotIn(
+            "ありません",
+            tension_l2_clause.linearized_clause.text,
+        )
+        self.assertTrue(
+            all(
+                row.contribution_kind
+                == "AFFIRMATIVE_RECEPTION_CONTRIBUTION"
+                for row in (
+                    tension.phase_a
+                    .meaning_bound_reception_proposition_records
+                )
+            )
+        )
 
-        n1_suppression = contracts_module.SubjectiveFacetSuppressionRow(
-            n1_opportunity.opportunity_key,
-            contracts_module.SubjectiveFacetSuppressionReason.NONMATERIAL,
-            None,
+        tension_opportunity = (
+            tension.meaning_plan.subjective_opportunity_rows[0]
         )
-        n1_suppression_tamper = replace(
-            n1.projection,
+        tension_suppression = (
+            contracts_module.SubjectiveFacetSuppressionRow(
+                tension_opportunity.opportunity_key,
+                contracts_module
+                .SubjectiveFacetSuppressionReason.NONMATERIAL,
+                None,
+            )
+        )
+        tension_suppression_tamper = replace(
+            tension.projection,
             projection_id="",
-            subjective_facet_suppression_rows=(n1_suppression,),
+            subjective_facet_suppression_rows=(tension_suppression,),
         )
-        n1_suppression_tamper = replace(
-            n1_suppression_tamper,
-            projection_id=recompute_stage1_identity(n1_suppression_tamper),
+        tension_suppression_tamper = replace(
+            tension_suppression_tamper,
+            projection_id=recompute_stage1_identity(
+                tension_suppression_tamper
+            ),
         )
-        validate_stage1_identity(n1_suppression_tamper)
+        validate_stage1_identity(tension_suppression_tamper)
         with self.assertRaisesRegex(
             CMEEStage1ContractError,
             "stage1_projection_v2_opportunity_partition_invalid",
         ):
             validate_stage1_projection(
-                n1_suppression_tamper,
-                grounded_graph=n1.grounded_graph,
-                parent_plan=n1.parent_plan,
+                tension_suppression_tamper,
+                grounded_graph=tension.grounded_graph,
+                parent_plan=tension.parent_plan,
             )
-        dropped_n1_trace_rows = (
-            n1.projection.reception_visible_causal_trace_rows[:1]
+
+        dropped_tension_trace = replace(
+            tension.projection.reception_visible_causal_trace_rows[0],
+            layer1_contribution_refs=(),
         )
-        self.assertNotEqual(
-            dropped_n1_trace_rows[0].layer1_contribution_refs,
-            n1_claim.basis_observation_contribution_refs,
-        )
-        dropped_n1_tagged_ref = (
+        dropped_tension_tagged_ref = (
             contracts_module.project_stage1_tagged_projection_ref(
-                projection_branch=n1.projection.projection_branch,
-                projection_seal_ref=n1.projection.projection_seal_ref,
-                meaning_visible_causal_trace_rows=(
-                    n1.projection.meaning_visible_causal_trace_rows
+                projection_branch=tension.projection.projection_branch,
+                projection_seal_ref=(
+                    tension.projection.projection_seal_ref
                 ),
-                reception_visible_causal_trace_rows=dropped_n1_trace_rows,
+                meaning_visible_causal_trace_rows=(
+                    tension.projection.meaning_visible_causal_trace_rows
+                ),
+                reception_visible_causal_trace_rows=(
+                    dropped_tension_trace,
+                ),
             )
         )
-        dropped_n1_trace_tamper = replace(
-            n1.projection,
+        dropped_tension_trace_tamper = replace(
+            tension.projection,
             projection_id="",
-            tagged_projection_ref=dropped_n1_tagged_ref,
-            reception_visible_causal_trace_rows=dropped_n1_trace_rows,
+            tagged_projection_ref=dropped_tension_tagged_ref,
+            reception_visible_causal_trace_rows=(
+                dropped_tension_trace,
+            ),
         )
-        dropped_n1_trace_tamper = replace(
-            dropped_n1_trace_tamper,
-            projection_id=recompute_stage1_identity(dropped_n1_trace_tamper),
+        dropped_tension_trace_tamper = replace(
+            dropped_tension_trace_tamper,
+            projection_id=recompute_stage1_identity(
+                dropped_tension_trace_tamper
+            ),
         )
-        validate_stage1_identity(dropped_n1_trace_tamper)
+        validate_stage1_identity(dropped_tension_trace_tamper)
         with self.assertRaisesRegex(
             CMEEStage1ContractError,
             "MEANING_REALIZATION_CAUSAL_TRACE_GAP",
         ):
             validate_stage1_projection(
-                dropped_n1_trace_tamper,
-                grounded_graph=n1.grounded_graph,
-                parent_plan=n1.parent_plan,
+                dropped_tension_trace_tamper,
+                grounded_graph=tension.grounded_graph,
+                parent_plan=tension.parent_plan,
             )
 
         temporal_record = (

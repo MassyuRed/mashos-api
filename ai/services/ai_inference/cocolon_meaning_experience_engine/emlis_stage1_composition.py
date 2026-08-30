@@ -76,6 +76,7 @@ from .contracts import (
     ReceptionVisibleCausalTraceRow,
     RelationalConfiguration,
     ForegroundScopeDerivation,
+    PolicyApplicationRow,
     PolicyBasisBinding,
     PolicyBasisOwnerKind,
     PolicyBasisRole,
@@ -214,9 +215,9 @@ class ClauseLinkPlacement(str, Enum):
 # I01 registration only: no active facade reads this inventory and none of the
 # rows contain request data or a completed user-visible phrase.
 V2_GRAMMAR_INVENTORY_SHA256 = (
-    "f071244e28baa5a824067ebfddf273bc4ad8f967d90ed5bd0bf9b9862a68a802"
+    "9765f6032d38899862bc83cf3150739a8380fc252855ac74ad059bc1b2690bf5"
 )
-V2_GRAMMAR_INVENTORY_BYTE_COUNT = 13_811
+V2_GRAMMAR_INVENTORY_BYTE_COUNT = 13_833
 V2_GRAMMAR_INVENTORY_ROW_COUNT = 232
 V2_GRAMMAR_INVENTORY = """SENSE|S01|OBSERVE_CENTER|GROUNDED_PREDICATE|center|F01
 SENSE|S02|OBSERVE_CENTER|GROUNDED_PREDICATE|direction|F02
@@ -269,7 +270,7 @@ HEAD|H09|F09|生じる|IC01|LF08
 HEAD|H10|F10|ある|IC03|LF09
 HEAD|H11|F11|気+LEXICALIZED_に+かける|IC01|LF10
 HEAD|H12|F12|受け+止める|IC01|LF11
-HEAD|H13|F13|まとめる|IC01|LF12
+HEAD|H13|F13|受け+止める|IC01|LF12
 HEAD|H14|F14|見+届ける|IC01|LF13
 HEAD|H15|F15|結論づける|IC01|LF14
 HEAD|H16|F16|尊重+する|IC06|LF15
@@ -290,7 +291,7 @@ LEXICAL_FAMILY|LF08|生じる
 LEXICAL_FAMILY|LF09|ある
 LEXICAL_FAMILY|LF10|気+LEXICALIZED_に+かける
 LEXICAL_FAMILY|LF11|受け+止める
-LEXICAL_FAMILY|LF12|まとめる
+LEXICAL_FAMILY|LF12|受け+止める
 LEXICAL_FAMILY|LF13|見+届ける
 LEXICAL_FAMILY|LF14|結論づける
 LEXICAL_FAMILY|LF15|尊重+する
@@ -344,7 +345,7 @@ CLASSIFIER|CL05|preserved-point|点
 SOURCE_TOKEN|SF01|NOMINAL_ATTRIBUTIVE|という
 SOURCE_TOKEN|SF02|CONTENT_HEAD|内容
 SOURCE_TOKEN|SF03|PAIR_COORDINATOR|と
-MODIFIER|FM01|F13|AFTER_PRIMARY_OBJECT_BEFORE_HEAD|一つに
+MODIFIER|FM01|F13|AFTER_PRIMARY_OBJECT_BEFORE_HEAD|どちらか一方だけにせず
 MODIFIER|FM02|F15|AFTER_SUBJECT_BEFORE_PRIMARY_OBJECT|今すぐ
 MODIFIER|FM03|F21|AFTER_SUBJECT_BEFORE_PRIMARY_OBJECT|ここで
 QUOTE_DELIMITER|QD01|NONE|KAGI_OUTER
@@ -411,7 +412,7 @@ MORPHOLOGY|MP09|F09|RESULTATIVE_STATE|POSITIVE|GROUNDED_ASSERTION|POLITE|STEM_TE
 MORPHOLOGY|MP10|F10|NONPAST_STATIVE|POSITIVE|GROUNDED_ASSERTION|POLITE|STEM_MASU|PERIOD
 MORPHOLOGY|MP11|F11|PROGRESSIVE_STATE|POSITIVE|EMLIS_FEELING|POLITE|STEM_TE_IRU_MASU|PERIOD
 MORPHOLOGY|MP12|F12|NONPAST|POSITIVE|EMLIS_VOLITIONAL|POLITE|STEM_TAI_DESU|PERIOD
-MORPHOLOGY|MP13|F13|NONPAST|NEGATIVE|EMLIS_BOUNDED_REFUSAL|POLITE|STEM_TAKU_ARIMASEN|PERIOD
+MORPHOLOGY|MP13|F13|NONPAST|POSITIVE|EMLIS_VOLITIONAL|POLITE|STEM_TAI_DESU|PERIOD
 MORPHOLOGY|MP14|F14|NONPAST|POSITIVE|EMLIS_VOLITIONAL|POLITE|STEM_TAI_DESU|PERIOD
 MORPHOLOGY|MP15|F15|NONPAST|NEGATIVE|EMLIS_BOUNDED_REFUSAL|POLITE|STEM_TAKU_ARIMASEN|PERIOD
 MORPHOLOGY|MP16|F16|NONPAST|POSITIVE|EMLIS_VOLITIONAL|POLITE|SAHEN_SHI_TAI_DESU|PERIOD
@@ -1841,17 +1842,6 @@ class SubjectiveFacetSuppressionRow:
     suppressed_opportunity_key: str
     reason: SubjectiveFacetSuppressionReason
     absorbed_by_selected_opportunity_key: Optional[str]
-
-
-@dataclass(frozen=True, slots=True)
-class PolicyApplicationRow:
-    policy_application_row_ref: str
-    application_kind: str
-    principle_ref: str
-    material_risk: MaterialRisk
-    policy_basis_binding_refs: Tuple[str, ...]
-    affected_claim_ref: str
-    visible_claim_ref: Optional[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -8252,7 +8242,7 @@ EXPRESSION_ASSET_REGISTRY = (
     ExpressionAssetSpec("expression:preserve-unfinished.v1", SentenceJob.PRESERVE_RESIDUE_OR_UNFINISHED, SemanticClauseKind.GROUNDED_PREDICATE, "unfinished", ("まだ閉じていないものとして", "残っています"), (PredicateValency.MONADIC_ARGUMENT,)),
     ExpressionAssetSpec("expression:emlis-affect.v1", SentenceJob.FEEL_TOWARD_OBJECT, SemanticClauseKind.SUBJECTIVE_PREDICATE, "affect", ("静かに", "気にかけています"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
     ExpressionAssetSpec("expression:emlis-appraisal-material.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-material", ("軽く扱えないものとして", "受け止めたいです"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
-    ExpressionAssetSpec("expression:emlis-appraisal-noncollapse.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-noncollapse", ("どちらか一方に決めず", "大切に受け止めたいです"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
+    ExpressionAssetSpec("expression:emlis-appraisal-noncollapse.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-noncollapse", ("どちらか一方だけにせず", "受け止めたいです"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
     ExpressionAssetSpec("expression:emlis-appraisal-change.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-change", ("今回起きた変化として", "大切に受け止めたいです"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
     ExpressionAssetSpec("expression:emlis-appraisal-unfinished.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-unfinished", ("まだ結論にしなくてよいものとして", "受け止めたいです"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
     ExpressionAssetSpec("expression:emlis-appraisal-agency.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-agency", ("本人が選べる向きとして", "大切に受け止めたいです"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
@@ -10658,32 +10648,18 @@ def _v2_source_refs_for_frame(
         return typed_source_refs
     if expected != 1 or not typed_source_refs:
         raise Stage1CompositionError("STAGE1_SOURCE_PAIR_CARDINALITY_STOP")
-    predicate_kind_preference = {
-        "F14": "change",
-        "F15": "unfinished",
-        "F21": "unfinished",
-    }.get(frame.frame_id)
-    if predicate_kind_preference is not None:
-        preferred = tuple(
-            ref
-            for ref in typed_source_refs
-            if str(
-                getattr(
-                    _frame_for_semantic_ref(owner, ref, phase_B),
-                    "predicate_kind",
-                    "",
-                )
+    if len(typed_source_refs) != 1:
+        branch = phase_B.projection.projection_branch
+        if branch is SubjectiveProjectionBranch.LIMITED:
+            raise Stage1CompositionError(
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
             )
-            == predicate_kind_preference
-        )
-        if preferred:
-            return (
-                _v2_exact1(
-                    preferred,
-                    "STAGE1_SOURCE_LEAF_BINDING_NONUNIQUE_STOP",
-                ),
+        if branch is SubjectiveProjectionBranch.NORMAL:
+            raise Stage1CompositionError(
+                "MEANING_REALIZATION_CAPABILITY_GAP"
             )
-    return (typed_source_refs[0],)
+        raise Stage1CompositionError("MEANING_REALIZATION_CAPABILITY_GAP")
+    return typed_source_refs
 
 
 def _v2_source_binding_for_duty(
@@ -10730,6 +10706,124 @@ def _v2_source_binding_for_duty(
     if len(source_refs) != expected_cardinality:
         raise Stage1CompositionError("STAGE1_SOURCE_PAIR_CARDINALITY_STOP")
     return owner, all_source_refs, frame, source_refs
+
+
+def _v2_reception_contribution_kinds_for_claim(
+    claim_ref: str,
+    phase_B: Stage1SurfaceCompositionInputs,
+) -> Tuple[str, ...]:
+    """Resolve the carried Reception kind without adding a parallel carrier."""
+
+    projection = phase_B.projection
+    phase_A = phase_B.phase_A_authority
+    traces = tuple(
+        row
+        for row in projection.reception_visible_causal_trace_rows
+        if row.projected_claim_ref == claim_ref
+    )
+    if (
+        not claim_ref
+        or not traces
+        or any(row.branch is not projection.projection_branch for row in traces)
+    ):
+        raise Stage1CompositionError("MEANING_REALIZATION_CAPABILITY_GAP")
+    if projection.projection_branch is SubjectiveProjectionBranch.NORMAL:
+        records = tuple(
+            _v2_exact1(
+                tuple(
+                    record
+                    for record in (
+                        phase_A.meaning_bound_reception_proposition_records
+                    )
+                    if type(record) is MeaningBoundReceptionProposition
+                    and record.reception_id == trace.reception_record_ref
+                ),
+                "MEANING_REALIZATION_CAPABILITY_GAP",
+            )
+            for trace in traces
+        )
+    elif projection.projection_branch is SubjectiveProjectionBranch.LIMITED:
+        outcome = phase_A.input_specific_meaning_structure.meaning_decision_outcome
+        bounded = _v2_exact1(
+            tuple(phase_A.bounded_limited_reception_records),
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP",
+        )
+        proposition = _v2_exact1(
+            tuple(phase_A.bounded_limited_subjective_proposition_records),
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP",
+        )
+        if (
+            len(traces) != 1
+            or type(outcome) is not LimitedMeaningOutcome
+            or type(bounded) is not BoundedLimitedReception
+            or type(proposition) is not SubjectivePropositionV2
+            or traces[0].reception_record_ref
+            != bounded_limited_reception_id(
+                bounded,
+                limited_outcome=outcome,
+                subjective_proposition=proposition,
+            )
+        ):
+            raise Stage1CompositionError(
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+            )
+        records = (bounded,)
+    else:
+        raise Stage1CompositionError("MEANING_REALIZATION_CAPABILITY_GAP")
+    kinds = tuple(record.contribution_kind for record in records)
+    if (
+        not kinds
+        or any(
+            kind
+            not in {
+                "AFFIRMATIVE_RECEPTION_CONTRIBUTION",
+                "BOUNDED_COUNTERPOSITION",
+            }
+            for kind in kinds
+        )
+    ):
+        raise Stage1CompositionError("MEANING_REALIZATION_CAPABILITY_GAP")
+    return kinds
+
+
+def _v2_validate_layer2_reception_morphology(
+    duty: CompositionDutyView,
+    phase_B: Stage1SurfaceCompositionInputs,
+    morphology: PredicateMorphologyPlan,
+) -> None:
+    """Keep carried affirmative/counterposition type and morphology aligned."""
+
+    if duty.layer != "LAYER_2":
+        return
+    if (
+        type(morphology) is not PredicateMorphologyPlan
+        or len(duty.basis_projection_refs) != 1
+    ):
+        raise Stage1CompositionError("MEANING_REALIZATION_CAPABILITY_GAP")
+    kinds = _v2_reception_contribution_kinds_for_claim(
+        duty.basis_projection_refs[0],
+        phase_B,
+    )
+    kind_set = set(kinds)
+    if kind_set == {"AFFIRMATIVE_RECEPTION_CONTRIBUTION"}:
+        if (
+            morphology.polarity != "POSITIVE"
+            or morphology.modal == "EMLIS_BOUNDED_REFUSAL"
+        ):
+            raise Stage1CompositionError(
+                "MEANING_REALIZATION_CAPABILITY_GAP"
+            )
+        return
+    if kind_set == {"BOUNDED_COUNTERPOSITION"}:
+        if (
+            morphology.polarity != "NEGATIVE"
+            or morphology.modal != "EMLIS_BOUNDED_REFUSAL"
+        ):
+            raise Stage1CompositionError(
+                "MEANING_REALIZATION_CAPABILITY_GAP"
+            )
+        return
+    raise Stage1CompositionError("MEANING_REALIZATION_CAPABILITY_GAP")
 
 
 def _normal_form_repair_defect_tuple_strictly_decreases(
@@ -11739,6 +11833,11 @@ def _v2_normal_form_phase_grammar_binding_ir_local_repair(
             previous_token_owner_ref = link_plan.token_owner_ref
             morphology_plan = project_predicate_morphology_plan(
                 frame=frame, head=head
+            )
+            _v2_validate_layer2_reception_morphology(
+                duty,
+                phase_B,
+                morphology_plan,
             )
             clause_ir = build_japanese_clause_ir(
                 frame=frame,
@@ -14154,6 +14253,11 @@ def validate_postrealizer_visible_causal_trace(
             )
         duty = matching_duties[0]
         unit, clause_row, frame = typed_unit_for_duty(duty.duty_ref)
+        _v2_validate_layer2_reception_morphology(
+            duty,
+            phase_B,
+            clause_row.morphology_plan,
+        )
         try:
             (
                 expected_owner,
@@ -14296,64 +14400,77 @@ def validate_postrealizer_visible_causal_trace(
             ),
         }
         if projection.projection_branch is SubjectiveProjectionBranch.LIMITED:
-            projected_response_ref_set = set(
-                trace.projected_response_object_refs
-            )
+            projected_response_refs = trace.projected_response_object_refs
+            projected_response_ref_set = set(projected_response_refs)
             is_anaphoric = (
                 expression.expression_mode
                 is ResponseObjectExpressionMode.ANAPHORIC
             )
-            direct_shape_exact = bool(
-                matching_projected
-                if is_anaphoric
-                else (
-                    not matching_projected
-                    and set(expression.basis_semantic_refs)
-                    == literal_refs.intersection(
-                        projected_response_ref_set
-                    )
-                )
-            )
             direct_exact_cover = (
                 direct_response_refs == projected_response_ref_set
             )
-            single_layer1_unit_refs = (
-                (expression.antecedent_unit_ref,)
-                if is_anaphoric
-                and expression.antecedent_unit_ref in allowed_layer1_refs
-                else ()
-                if is_anaphoric
-                else tuple(allowed_layer1_refs)
-            )
-            single_layer1_exact_cover = any(
-                antecedent_visible_semantic_refs(
-                    unit_ref,
-                    allowed_layer1_refs,
-                    set(),
+            if is_anaphoric:
+                expected_cardinality = (
+                    SourceLeafCardinality.EXACT1
+                    if len(projected_response_refs) == 1
+                    else SourceLeafCardinality.ORDERED_EXACT2
+                    if len(projected_response_refs) == 2
+                    else None
                 )
-                == projected_response_ref_set
-                for unit_ref in single_layer1_unit_refs
-            )
-            # LIMITED has no selected configuration that could justify a
-            # union across unrelated Layer-1 units.  Accept either a direct
-            # response-object witness, or one typed Layer-1 unit that itself
-            # carries the complete projected domain.
-            response_visible = bool(
-                response_visible
-                and direct_shape_exact
-                and (direct_exact_cover or single_layer1_exact_cover)
-            )
-            visible_response_refs = projected_response_ref_set.intersection(
-                direct_response_refs
-                | (
-                    projected_response_ref_set
-                    if single_layer1_exact_cover
-                    else set()
+                single_antecedent_refs = (
+                    set()
+                    if expression.antecedent_unit_ref is None
+                    else antecedent_visible_semantic_refs(
+                        expression.antecedent_unit_ref,
+                        allowed_layer1_refs,
+                        set(),
+                    )
                 )
+                response_visible = bool(
+                    len(matching_projected) == 1
+                    and expression.antecedent_unit_ref
+                    in allowed_layer1_refs
+                    and matching_projected[0].antecedent_unit_ref
+                    == expression.antecedent_unit_ref
+                    and expression.basis_semantic_refs
+                    == projected_response_refs
+                    and matching_projected[0].source_or_claim_refs
+                    == projected_response_refs
+                    and expected_cardinality is not None
+                    and clause_row.source_group.cardinality
+                    is expected_cardinality
+                    and single_antecedent_refs
+                    == projected_response_ref_set
+                    and antecedent_reaches_layer1(
+                        expression.antecedent_unit_ref,
+                        allowed_layer1_refs,
+                        set(),
+                    )
+                    and direct_exact_cover
+                )
+            else:
+                response_visible = bool(
+                    expression.expression_mode
+                    in {
+                        ResponseObjectExpressionMode.EXPLICIT,
+                        ResponseObjectExpressionMode.COMPOSITE,
+                    }
+                    and expression.antecedent_unit_ref is None
+                    and not matching_projected
+                    and expression.basis_semantic_refs
+                    == projected_response_refs
+                    and literal_refs == projected_response_ref_set
+                    and direct_exact_cover
+                )
+            visible_response_refs = (
+                projected_response_ref_set if response_visible else set()
             )
         if not response_visible:
             raise Stage1CompositionError(
-                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+                if projection.projection_branch
+                is SubjectiveProjectionBranch.LIMITED
+                else "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
             )
         layer2_witness_rows.append(
             (
