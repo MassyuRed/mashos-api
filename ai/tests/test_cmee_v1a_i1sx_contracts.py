@@ -32279,6 +32279,150 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                 candidate_run_module.IM03_WORKING_RUNTIME_INTEGRATION_IDENTITY,
             ),
         )
+        im07_domains = (
+            candidate_run_module.IM07_PRODUCT_IMPLEMENTATION_DOMAIN,
+            candidate_run_module.IM07_FORMAL_EVALUATION_BUNDLE_DOMAIN,
+            candidate_run_module.IM07_FORMAL_VISIBLE_TRACE_DOMAIN,
+            candidate_run_module.IM07_FORMAL_ACTUAL_OUTPUT_DOMAIN,
+        )
+        self.assertEqual(len(im07_domains), len(set(im07_domains)))
+        domain_preimage = {"schema_version": "im07-test.v1", "ordered": (1, 2)}
+        self.assertEqual(
+            candidate_run_module._domain_separated_sha256(
+                im07_domains[0],
+                domain_preimage,
+            ),
+            hashlib.sha256(
+                im07_domains[0].encode("utf-8")
+                + b"\x00"
+                + contracts_module.stage1_canonical_json_bytes(
+                    domain_preimage
+                )
+            ).hexdigest(),
+        )
+        im07_source_rows = (
+            candidate_run_module._current_im06_full_bytes_receipt_rows()
+        )
+        product_preimage = (
+            candidate_run_module._im07_product_implementation_preimage(
+                im07_source_rows
+            )
+        )
+        self.assertEqual(
+            tuple(
+                row["path"]
+                for row in product_preimage["ordered_product_source_bytes"]
+            ),
+            candidate_run_module.IM06_DEVELOPMENT_APPROVED_PATHS_EXACT6[:4],
+        )
+        self.assertEqual(
+            len(product_preimage["ordered_product_source_bytes"]),
+            4,
+        )
+        im07_envelope = candidate_run_module._im07_formal_identity_envelope(
+            runtime_repo_head="1" * 40,
+            design_repo_head="2" * 40,
+            design_document_raw_sha256="3" * 64,
+            design_document_byte_count=1,
+        )
+        self.assertRegex(
+            im07_envelope["product_implementation_id"],
+            r"^cmee-product-implementation-v1:[0-9a-f]{64}$",
+        )
+        self.assertRegex(
+            im07_envelope["formal_evaluation_bundle_id"],
+            r"^cmee-formal-evaluation-bundle-v1:[0-9a-f]{64}$",
+        )
+        bundle_preimage = im07_envelope[
+            "formal_evaluation_bundle_preimage"
+        ]
+        self.assertEqual(
+            tuple(
+                row["path"]
+                for row in bundle_preimage[
+                    "ordered_approved_source_bytes_exact6"
+                ]
+            ),
+            candidate_run_module.IM06_DEVELOPMENT_APPROVED_PATHS_EXACT6,
+        )
+        self.assertEqual(
+            (
+                len(bundle_preimage["focused_selector"]["ordered_nodeids_exact47"]),
+                bundle_preimage["focused_selector"]["expected_denominator"],
+                bundle_preimage["full_regression_selector"]["expected_denominator"],
+                bundle_preimage["runtime_lock_exact46"]["distribution_count"],
+                len(bundle_preimage["input_set"]["ordered_exact8"]),
+                len(bundle_preimage["product_read_axes_exact12"]),
+            ),
+            (47, 47, 241, 46, 8, 12),
+        )
+        changed_bundle = candidate_run_module._im07_formal_identity_envelope(
+            runtime_repo_head="1" * 40,
+            design_repo_head="2" * 40,
+            design_document_raw_sha256="4" * 64,
+            design_document_byte_count=1,
+        )
+        self.assertEqual(
+            changed_bundle["product_implementation_id"],
+            im07_envelope["product_implementation_id"],
+        )
+        self.assertNotEqual(
+            changed_bundle["formal_evaluation_bundle_id"],
+            im07_envelope["formal_evaluation_bundle_id"],
+        )
+        formal_row = candidate_run_module.EXACT8[0]
+        formal_private_case, formal_body_free_case = (
+            candidate_run_module._materialize_im07_formal_case(
+                case_id=formal_row[0],
+                memo=formal_row[1],
+                category=formal_row[2],
+                emotion=formal_row[3],
+                strength=formal_row[4],
+            )
+        )
+        self.assertTrue(formal_private_case["formal_trace_valid"])
+        self.assertTrue(formal_private_case["machine_invariant_clear"])
+        self.assertTrue(formal_body_free_case["formal_trace_valid"])
+        self.assertTrue(formal_body_free_case["machine_invariant_clear"])
+        self.assertEqual(
+            formal_private_case["visible_trace"]["schema_version"],
+            candidate_run_module.IM07_VISIBLE_TRACE_SCHEMA_VERSION,
+        )
+        self.assertEqual(
+            formal_private_case["visible_trace"]["ordered_visible_unit_ids"],
+            tuple(
+                row["unit_id"]
+                for row in formal_private_case["visible_trace"][
+                    "realized_visible_units"
+                ]
+            ),
+        )
+        self.assertEqual(
+            candidate_run_module._domain_separated_sha256(
+                candidate_run_module.IM07_FORMAL_VISIBLE_TRACE_DOMAIN,
+                formal_private_case["visible_trace"],
+            ),
+            formal_body_free_case["visible_trace_body_sha256"],
+        )
+        formal_case_material = dict(formal_private_case)
+        formal_case_digest = formal_case_material.pop("case_record_sha256")
+        self.assertEqual(
+            candidate_run_module._domain_separated_sha256(
+                candidate_run_module.IM07_FORMAL_CASE_RECORD_DOMAIN,
+                formal_case_material,
+            ),
+            formal_case_digest,
+        )
+        formal_body_free_json = json.dumps(
+            formal_body_free_case,
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertNotIn(formal_row[1], formal_body_free_json)
+        self.assertNotIn(
+            formal_private_case["artifact"]["candidate_text"],
+            formal_body_free_json,
+        )
         self.assertEqual(
             (
                 len(

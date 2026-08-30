@@ -24,6 +24,8 @@ import re
 import stat
 import subprocess
 import sys
+from dataclasses import fields as dataclass_fields, is_dataclass
+from enum import Enum
 from typing import Any, Mapping
 
 
@@ -42,23 +44,33 @@ import cocolon_meaning_experience_engine.emlis_stage1_response as stage1_respons
 from cocolon_meaning_experience_engine.contracts import (  # noqa: E402
     AttachmentAdmission,
     CMEE_COMMON_GUARD_PROOF_VERSION,
+    CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
     CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION,
     CMEE_TERMINAL_GENERATED_DISABLED,
     CommonGuardProof,
     CommonGuardResultProof,
     EmlisStage1PositiveTraceExtension,
+    EmlisStage1Projection,
     EmlisTraceClaimDomain,
     EpistemicState,
     ExperiencePlan,
     GenerationArtifactBundle,
     GroundedMeaningGraph,
+    LimitedMeaningOutcome,
     MeaningNode,
     OwnerClass,
     ResolverResolution,
+    RealizedSentenceUnit,
+    SelectedEmlisProvisionalReading,
     SourceOwnerDisposition,
+    SubjectiveProjectionBranch,
     VisibleAuthority,
     VisibleUnitTrace,
     VisibleUnknownUnit,
+    limited_meaning_outcome_id,
+    selected_emlis_provisional_reading_id,
+    stage1_canonical_json_bytes,
+    stage1_projection_artifact_ref,
 )
 from cocolon_meaning_experience_engine.emlis_v1a import (  # noqa: E402
     COMMON_GUARD_STABILIZATION_CORE_ID,
@@ -439,15 +451,15 @@ IM06_APPROVED_NONSELF_BYTES_NAME_SHA256_BYTE_COUNT_EXACT5 = (
     ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py", "75343d43f9e22c101d218fb80fb2b17a9a264780ceb63842c6d75cb7dbb0c2f4", 204877),
     ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py", "437831951fa0c4062d68af2342d79ebfc4b29e8c318e1fa8765c74c4aac9a832", 412047),
     ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "06dca9a8753ac1058213af3582a9723a228c1a69ec5a9b71c4f78c0e27323da5", 657096),
-    ("ai/tests/test_cmee_v1a_i1sx_contracts.py", "51d800ecd357a89d741be771919bc4f61cc3678715d8f7f3094c847536dc6914", 1323974),
+    ("ai/tests/test_cmee_v1a_i1sx_contracts.py", "a7f11a0b7ac161ec0923c12c60f6d9b000f829bcfd7627f125d5a17788797457", 1329758),
 )
 IM06_EXPECTED_COLLECTED_DENOMINATORS_EXACT2 = (47, 241)
 IM06_ACTUAL_COLLECTED_DENOMINATORS_EXACT2 = (47, 241)
 IM06_WORKING_RUNNER_SELF_PROJECTION_SHA256 = (
-    "967271538d0364c9e69725b993daea2c4ae45d43298b406985091cef205bda73"
+    "e16a1bc6bde51f6579c4e91a311ddef650124dc4dc0228c9cffdb0d5ba3ddbd1"
 )
-IM06_WORKING_RUNNER_SELF_PROJECTION_BYTE_COUNT = 237549
-IM06_WORKING_RUNNER_SELF_PROJECTION_DECLARATION_COUNT = 185
+IM06_WORKING_RUNNER_SELF_PROJECTION_BYTE_COUNT = 285581
+IM06_WORKING_RUNNER_SELF_PROJECTION_DECLARATION_COUNT = 213
 IM06_WORKING_RUNNER_SELF_PROJECTION_PROOF = (
     IM06_WORKING_RUNNER_SELF_PROJECTION_SHA256,
     IM06_WORKING_RUNNER_SELF_PROJECTION_BYTE_COUNT,
@@ -631,6 +643,46 @@ PRODUCT_READ_AXES = (
     "DEPTH_PROPORTIONAL",
     "NO_FALSE_UNDERSTANDING_COMPLETION",
     "IMMEDIATE_OBSERVATION_FEELS_READ",
+)
+IM07_PRODUCT_IMPLEMENTATION_DOMAIN = (
+    "cocolon.cmee.stage1.product_implementation_id.v1"
+)
+IM07_FORMAL_EVALUATION_BUNDLE_DOMAIN = (
+    "cocolon.cmee.stage1.formal_evaluation_bundle_id.v1"
+)
+IM07_FORMAL_INPUT_DOMAIN = "cocolon.cmee.stage1.im07.formal_input.v1"
+IM07_FORMAL_DECISION_DOMAIN = "cocolon.cmee.stage1.im07.formal_decision.v1"
+IM07_FORMAL_PROJECTION_DOMAIN = "cocolon.cmee.stage1.im07.formal_projection.v1"
+IM07_FORMAL_ARTIFACT_DOMAIN = "cocolon.cmee.stage1.im07.formal_artifact.v1"
+IM07_FORMAL_VISIBLE_TRACE_DOMAIN = (
+    "cocolon.cmee.stage1.im07.formal_visible_trace.v1"
+)
+IM07_FORMAL_CASE_RECORD_DOMAIN = (
+    "cocolon.cmee.stage1.im07.formal_case_record.v1"
+)
+IM07_FORMAL_OUTPUT_SET_DOMAIN = (
+    "cocolon.cmee.stage1.im07.formal_output_set.v1"
+)
+IM07_FORMAL_ACTUAL_OUTPUT_DOMAIN = (
+    "cocolon.cmee.stage1.im07.formal_actual_output.v1"
+)
+IM07_FORMAL_RESULT_DOMAIN = "cocolon.cmee.stage1.im07.formal_result.v1"
+IM07_FORMAL_PRIVATE_SCHEMA_VERSION = (
+    "cocolon.cmee.stage1.im07_formal_private_record.v1"
+)
+IM07_FORMAL_BODY_FREE_SCHEMA_VERSION = (
+    "cocolon.cmee.stage1.im07_formal_body_free_receipt.v1"
+)
+IM07_VISIBLE_TRACE_SCHEMA_VERSION = (
+    "cocolon.cmee.stage1.im07_visible_trace.v1"
+)
+IM07_MACHINE_COMPARATOR_SCHEMA_VERSION = (
+    "cocolon.cmee.stage1.im07_machine_comparator.v1"
+)
+IM07_CANONICAL_DESIGN_PATH = (
+    "Cocolon_前提資料/designs/cmee/"
+    "Cocolon_CMEE_Stage1_Emlis_InputSpecificMeaningDecision_"
+    "KarenDesigned_FinalTechnicalDesignAndImplementationOrder_20260828.md"
 )
 PRIVATE_OUTPUT_ROOT = Path(
     os.environ.get("CMEE_PRIVATE_OUTPUT_ROOT", "/tmp/cocolon-cmee-v1a-private")
@@ -931,6 +983,52 @@ def _canonical_sha256(value: object) -> str:
             separators=(",", ":"),
         )
     )
+
+
+def _domain_separated_sha256(domain: str, preimage: object) -> str:
+    """Hash one Stage 1 canonical preimage under a closed UTF-8 domain."""
+
+    if (
+        type(domain) is not str
+        or not domain
+        or "\x00" in domain
+        or not domain.startswith("cocolon.cmee.stage1.")
+    ):
+        raise ValueError("im07 domain invalid")
+    return hashlib.sha256(
+        domain.encode("utf-8")
+        + b"\x00"
+        + stage1_canonical_json_bytes(preimage)
+    ).hexdigest()
+
+
+def _im07_json_value(value: object) -> object:
+    """Project a formal body through the sole Stage 1 canonical encoder."""
+
+    def project(item: object) -> object:
+        if isinstance(item, Enum):
+            return item.value
+        if is_dataclass(item):
+            return {
+                row.name: project(getattr(item, row.name))
+                for row in dataclass_fields(item)
+            }
+        if isinstance(item, Mapping):
+            if any(type(key) is not str for key in item):
+                raise ValueError("im07 canonical mapping key invalid")
+            return {key: project(child) for key, child in item.items()}
+        if isinstance(item, (tuple, list)):
+            return [project(child) for child in item]
+        if type(item) is bytes:
+            return {
+                "encoding": "base64",
+                "data": base64.b64encode(item).decode("ascii"),
+            }
+        if item is None or type(item) in {str, int, bool}:
+            return item
+        raise ValueError("im07 canonical value invalid")
+
+    return json.loads(stage1_canonical_json_bytes(project(value)))
 
 
 def _pretty_json_bytes(value: object) -> bytes:
@@ -1651,6 +1749,236 @@ def _current_im03_working_identity_pair() -> tuple[str, str]:
     ):
         raise RuntimeError("im03 working runtime identity mismatch")
     return language_core_identity, stage1_runtime_integration_identity
+
+
+def _im07_lock_preimage() -> dict[str, Any]:
+    lock_identity = dict(IM06_RUNTIME_LOCK_IDENTITY)
+    lock_path = CHECKOUT_ROOT / str(lock_identity["path"])
+    try:
+        raw = lock_path.read_bytes()
+        lock = json.loads(raw.decode("utf-8", errors="strict"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        raise RuntimeError("im07 runtime lock invalid") from None
+    if (
+        hashlib.sha256(raw).hexdigest() != lock_identity["raw_sha256"]
+        or lock.get("lock_sha256") != lock_identity["logical_sha256"]
+        or lock.get("distribution_count") != 46
+        or type(lock.get("distributions")) is not list
+        or len(lock["distributions"]) != 46
+        or type(lock.get("pip_require_hashes_lines")) is not list
+        or len(lock["pip_require_hashes_lines"]) != 46
+        or lock.get("target")
+        != {
+            "abi_flags": "",
+            "byte_order": "little",
+            "implementation": "CPYTHON",
+            "machine": "x86_64",
+            "platform": "linux-x86_64",
+            "python_cache_tag": "cpython-312",
+            "python_version": "3.12.13",
+            "wheel_only": True,
+        }
+        or lock.get("resolution", {}).get("only_binary") != ":all:"
+        or lock.get("resolution", {}).get("allow_sdist") is not False
+        or lock.get("resolution", {}).get("hashes_required") is not True
+        or lock.get("resolution", {}).get("reachable_distribution_count") != 46
+    ):
+        raise RuntimeError("im07 runtime lock invalid")
+    return {
+        "path": lock_identity["path"],
+        "git_blob": lock_identity["git_blob"],
+        "raw_sha256": lock_identity["raw_sha256"],
+        "logical_sha256": lock_identity["logical_sha256"],
+        "wheel_bundle_manifest_sha256": lock_identity[
+            "wheel_bundle_manifest_sha256"
+        ],
+        "installed_distributions_sha256": lock_identity[
+            "installed_distributions_sha256"
+        ],
+        "runtime": lock_identity["runtime"],
+        "distribution_count": 46,
+        "ordered_distributions_exact46": lock["distributions"],
+    }
+
+
+def _im07_product_implementation_preimage(
+    source_rows_exact6: tuple[tuple[str, str, int], ...],
+) -> dict[str, Any]:
+    if (
+        type(source_rows_exact6) is not tuple
+        or len(source_rows_exact6) != 6
+        or tuple(row[0] for row in source_rows_exact6)
+        != IM06_DEVELOPMENT_APPROVED_PATHS_EXACT6
+    ):
+        raise ValueError("im07 product preimage invalid")
+    return {
+        "schema_version": IM07_PRODUCT_IMPLEMENTATION_DOMAIN,
+        "repository": "MassyuRed/mashos-api",
+        "ordered_product_source_bytes": [
+            {
+                "path": path,
+                "raw_sha256": raw_sha256,
+                "byte_count": byte_count,
+            }
+            for path, raw_sha256, byte_count in source_rows_exact6[:4]
+        ],
+    }
+
+
+def _im07_formal_evaluation_bundle_preimage(
+    *,
+    product_implementation_id: str,
+    runtime_repo_head: str,
+    design_repo_head: str,
+    design_document_raw_sha256: str,
+    design_document_byte_count: int,
+    source_rows_exact6: tuple[tuple[str, str, int], ...],
+) -> dict[str, Any]:
+    if (
+        re.fullmatch(r"cmee-product-implementation-v1:[0-9a-f]{64}", product_implementation_id)
+        is None
+        or re.fullmatch(r"[0-9a-f]{40}", runtime_repo_head) is None
+        or re.fullmatch(r"[0-9a-f]{40}", design_repo_head) is None
+        or re.fullmatch(r"[0-9a-f]{64}", design_document_raw_sha256) is None
+        or type(design_document_byte_count) is not int
+        or design_document_byte_count <= 0
+        or type(source_rows_exact6) is not tuple
+        or len(source_rows_exact6) != 6
+        or tuple(row[0] for row in source_rows_exact6)
+        != IM06_DEVELOPMENT_APPROVED_PATHS_EXACT6
+    ):
+        raise ValueError("im07 formal bundle preimage invalid")
+    language_identity, runtime_identity = _current_im03_working_identity_pair()
+    return {
+        "schema_version": IM07_FORMAL_EVALUATION_BUNDLE_DOMAIN,
+        "product_implementation_id": product_implementation_id,
+        "authority_heads": {
+            "mashos_api": runtime_repo_head,
+            "cocolon": design_repo_head,
+        },
+        "canonical_design": {
+            "repository": "MassyuRed/Cocolon",
+            "path": IM07_CANONICAL_DESIGN_PATH,
+            "raw_sha256": design_document_raw_sha256,
+            "byte_count": design_document_byte_count,
+        },
+        "ordered_approved_source_bytes_exact6": [
+            {
+                "path": path,
+                "raw_sha256": raw_sha256,
+                "byte_count": byte_count,
+            }
+            for path, raw_sha256, byte_count in source_rows_exact6
+        ],
+        "runner_successor_identity_exact17": {
+            "language_core_identity": language_identity,
+            "runtime_integration_identity": runtime_identity,
+            "language_payload_name_sha256_byte_count_exact17": (
+                IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT17
+            ),
+            "runtime_payload_name_sha256_byte_count_exact17": (
+                IM03_WORKING_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT17
+            ),
+            "runner_raw_sha256": source_rows_exact6[-1][1],
+            "runner_byte_count": source_rows_exact6[-1][2],
+        },
+        "focused_selector": {
+            "ordered_nodeids_exact47": IM06_CUMULATIVE_DEVELOPMENT_NODEIDS_EXACT47,
+            "expected_denominator": 47,
+            "actual_collected_denominator": (
+                IM06_ACTUAL_COLLECTED_DENOMINATORS_EXACT2[0]
+            ),
+        },
+        "full_regression_selector": {
+            "ordered_paths_exact3": IM06_FULL_REGRESSION_PATHS_EXACT3,
+            "expected_denominator": 241,
+            "actual_collected_denominator": (
+                IM06_ACTUAL_COLLECTED_DENOMINATORS_EXACT2[1]
+            ),
+        },
+        "input_set": {
+            "ordered_exact8": EXACT8,
+            "case_order": tuple(row[0] for row in EXACT8),
+        },
+        "runtime_lock_exact46": _im07_lock_preimage(),
+        "formal_command": {
+            "working_directory": "ai",
+            "runtime_executable": "<CMEE_LOCKED_RUNTIME>/bin/python",
+            "environment_exact2": IM06_PYTEST_ENVIRONMENT_EXACT2,
+            "argv_template": (
+                "tools/cmee_v1a_i1sx_candidate_run.py",
+                "--formal-im07",
+                "--expected-product-implementation-id",
+                "<PRODUCT_IMPLEMENTATION_ID>",
+                "--expected-formal-evaluation-bundle-id",
+                "<FORMAL_EVALUATION_BUNDLE_ID>",
+                "--design-document-raw-sha256",
+                "<CANONICAL_DESIGN_RAW_SHA256>",
+                "--design-document-byte-count",
+                "<CANONICAL_DESIGN_BYTE_COUNT>",
+                "--body-full-output",
+                "<CMEE_PRIVATE_OUTPUT_ROOT>/IM07_FORMAL_ATTEMPT_01.json",
+                "--runtime-repo-head",
+                "<MASHOS_API_AUTHORITY_HEAD>",
+                "--design-repo-head",
+                "<COCOLON_AUTHORITY_HEAD>",
+            ),
+        },
+        "product_read_axes_exact12": PRODUCT_READ_AXES,
+        "machine_comparator": {
+            "schema_version": IM07_MACHINE_COMPARATOR_SCHEMA_VERSION,
+            "product_predicate": (
+                "formal v2 call graph identity and visible trace closure"
+            ),
+            "required_case_count": 8,
+            "required_formal_trace_valid_count": 8,
+            "semantic_oracle_change": 0,
+        },
+        "visible_record_schema": {
+            "private": IM07_FORMAL_PRIVATE_SCHEMA_VERSION,
+            "body_free": IM07_FORMAL_BODY_FREE_SCHEMA_VERSION,
+            "trace": IM07_VISIBLE_TRACE_SCHEMA_VERSION,
+        },
+    }
+
+
+def _im07_formal_identity_envelope(
+    *,
+    runtime_repo_head: str,
+    design_repo_head: str,
+    design_document_raw_sha256: str,
+    design_document_byte_count: int,
+) -> dict[str, Any]:
+    source_rows = _current_im06_full_bytes_receipt_rows()
+    product_preimage = _im07_product_implementation_preimage(source_rows)
+    product_id = (
+        "cmee-product-implementation-v1:"
+        + _domain_separated_sha256(
+            IM07_PRODUCT_IMPLEMENTATION_DOMAIN,
+            product_preimage,
+        )
+    )
+    bundle_preimage = _im07_formal_evaluation_bundle_preimage(
+        product_implementation_id=product_id,
+        runtime_repo_head=runtime_repo_head,
+        design_repo_head=design_repo_head,
+        design_document_raw_sha256=design_document_raw_sha256,
+        design_document_byte_count=design_document_byte_count,
+        source_rows_exact6=source_rows,
+    )
+    bundle_id = (
+        "cmee-formal-evaluation-bundle-v1:"
+        + _domain_separated_sha256(
+            IM07_FORMAL_EVALUATION_BUNDLE_DOMAIN,
+            bundle_preimage,
+        )
+    )
+    return {
+        "product_implementation_id": product_id,
+        "formal_evaluation_bundle_id": bundle_id,
+        "product_implementation_preimage": product_preimage,
+        "formal_evaluation_bundle_preimage": bundle_preimage,
+    }
 
 
 def _early_exact8_machine_is_clear(
@@ -3828,6 +4156,635 @@ def _structural_trace_valid(outcome: object) -> bool:
     return True
 
 
+def _im07_outcome_identity(outcome: object) -> tuple[str, str]:
+    if type(outcome) is SelectedEmlisProvisionalReading:
+        identity = selected_emlis_provisional_reading_id(outcome)
+        if identity != outcome.reading_id:
+            raise RuntimeError("im07 selected outcome identity mismatch")
+        return type(outcome).__name__, identity
+    if type(outcome) is LimitedMeaningOutcome:
+        return type(outcome).__name__, limited_meaning_outcome_id(outcome)
+    raise RuntimeError("im07 outcome type invalid")
+
+
+def _im07_formal_trace_valid(
+    *,
+    projection: object,
+    realized_units: object,
+    validated_visible_causal_trace_seal_ref: object,
+) -> bool:
+    if (
+        type(projection) is not EmlisStage1Projection
+        or projection.schema_version != CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+        or projection.projection_branch
+        not in {SubjectiveProjectionBranch.NORMAL, SubjectiveProjectionBranch.LIMITED}
+        or re.fullmatch(r"projection-preimage-[0-9a-f]{64}", projection.projection_preimage_ref)
+        is None
+        or re.fullmatch(
+            r"stage1-subjective-projection-seal:[0-9a-f]{64}"
+            r"@cocolon\.emlis\.stage1\.subjective_projection_seal\.v1",
+            projection.projection_seal_ref,
+        )
+        is None
+        or re.fullmatch(
+            r"tagged-subjective-projection:[0-9a-f]{64}"
+            r"@cocolon\.cmee\.emlis\.tagged_subjective_projection\.v1",
+            projection.tagged_projection_ref,
+        )
+        is None
+        or type(projection.meaning_visible_causal_trace_rows) is not tuple
+        or not projection.meaning_visible_causal_trace_rows
+        or type(projection.reception_visible_causal_trace_rows) is not tuple
+        or not projection.reception_visible_causal_trace_rows
+        or type(realized_units) is not tuple
+        or not realized_units
+        or any(type(row) is not RealizedSentenceUnit for row in realized_units)
+        or type(validated_visible_causal_trace_seal_ref) is not str
+        or re.fullmatch(
+            r"postrealizer-visible-causal-trace-seal-[0-9a-f]{64}",
+            validated_visible_causal_trace_seal_ref,
+        )
+        is None
+    ):
+        return False
+    seals = tuple(row.v2_trace_seal for row in realized_units)
+    if any(seal is None for seal in seals):
+        return False
+    artifact_refs = tuple(seal.selected_stage1_artifact_ref for seal in seals)
+    candidate_refs = tuple(seal.composition_candidate_ref for seal in seals)
+    layout_refs = tuple(seal.composition_layout_ref for seal in seals)
+    return not (
+        any(not row.text or not row.unit_id for row in realized_units)
+        or len(set(row.unit_id for row in realized_units)) != len(realized_units)
+        or any(not ref for ref in (*artifact_refs, *candidate_refs, *layout_refs))
+        or len(set(artifact_refs)) != 1
+        or len(set(candidate_refs)) != 1
+        or len(set(layout_refs)) != 1
+        or any(row.projection_ref != projection.projection_id for row in realized_units)
+    )
+
+
+def _materialize_im07_formal_case(
+    *,
+    case_id: str,
+    memo: str,
+    category: str,
+    emotion: str,
+    strength: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Run the current direct-v2 call graph exactly once and retain its bodies."""
+
+    raw = _raw(case_id, memo, category, emotion, strength)
+    request = GenerationRequest(
+        request_id=f"req-{case_id}",
+        current_input_bundle=build_emlis_current_input_bundle(raw),
+        expected_source_record_id=str(raw["id"]),
+    )
+    source = freeze_text_source(request)
+    grounded_plan = build_final_stage1_grounded_observation_plan(
+        source.normalized_current_input,
+        evidence_spans=source.evidence_spans,
+    )
+    required_nuclei, required_relations, reception_targets = (
+        _planned_visible_source_ids(grounded_plan)
+    )
+    graph = _build_graph(
+        source,
+        grounded_plan,
+        _ordered((*required_nuclei, *reception_targets)),
+        required_relations,
+    )
+    parent_plan = _build_experience_plan(
+        source,
+        graph,
+        grounded_plan,
+        required_nuclei,
+        required_relations,
+        reception_targets,
+    )
+    phase_a = stage1_response.build_subjective_planning_inputs(
+        source=source,
+        grounded_graph=graph,
+        parent_plan=parent_plan,
+        grounded_plan=grounded_plan,
+    )
+    structure = phase_a.input_specific_meaning_structure
+    outcome = structure.meaning_decision_outcome
+    subjective_plan = stage1_composition.project_subjective_meaning_plan(phase_a)
+    projection = stage1_response.seal_stage1_projection(phase_a, subjective_plan)
+    phase_b = stage1_response.build_surface_composition_inputs(phase_a, projection)
+    composition = stage1_composition.compose_stage1_from_projection(phase_b)
+    realized_units = stage1_response._adapt_v2_composed_units_to_realized_units(
+        projection=projection,
+        candidate=composition.selected_candidate,
+        validated_visible_causal_trace_seal_ref=(
+            composition.validated_visible_causal_trace_seal_ref
+        ),
+        grounded_graph=graph,
+        parent_plan=parent_plan,
+    )
+    ranked = composition.ranked_candidates
+    selected = composition.selected_candidate
+    selected_normalized = selected.normalized_artifact
+    renormalized_ranked = tuple(
+        stage1_composition.normalize_to_normal_form(
+            candidate.normalized_artifact,
+            candidate.normalized_artifact.layout_preference_seed,
+            phase_b,
+        )
+        for candidate in ranked
+    )
+    normalization_idempotent = all(
+        stage1_composition.canonical_normalized_bytes(
+            candidate.normalized_artifact
+        )
+        == stage1_composition.canonical_normalized_bytes(repeated)
+        for candidate, repeated in zip(
+            ranked,
+            renormalized_ranked,
+            strict=True,
+        )
+    )
+    realized_duties = tuple(
+        ref for unit in selected.sentence_units for ref in unit.duty_refs
+    )
+    required_duty_coverage_exact = (
+        len(realized_duties) == len(set(realized_duties))
+        and set(realized_duties) == set(selected_normalized.required_duty_refs)
+    )
+    normal_form_phase_exact6 = all(
+        candidate.normalized_artifact.normalization_phase_trace
+        == tuple(stage1_composition.NormalFormPhase)
+        for candidate in ranked
+    )
+    normal_form_defect_free = all(
+        candidate.normalized_artifact.correctable_defect_rows == ()
+        for candidate in ranked
+    )
+    actual_japanese_reached = bool(realized_units) and all(
+        row.text.endswith("。")
+        and re.search(r"[ぁ-んァ-ヶ一-龯]", row.text) is not None
+        for row in realized_units
+    )
+    outcome_type, outcome_identity = _im07_outcome_identity(outcome)
+    projection_artifact_ref = stage1_projection_artifact_ref(projection)
+    candidate_text = "\n".join(row.text for row in realized_units)
+    input_sha256 = _domain_separated_sha256(IM07_FORMAL_INPUT_DOMAIN, raw)
+    decision_body = _im07_json_value(structure)
+    decision_body_sha256 = _domain_separated_sha256(
+        IM07_FORMAL_DECISION_DOMAIN,
+        decision_body,
+    )
+    projection_body = {
+        "subjective_plan_body": _im07_json_value(subjective_plan),
+        "stage1_projection_body": _im07_json_value(projection),
+        "projection_artifact_ref": projection_artifact_ref,
+    }
+    projection_body_sha256 = _domain_separated_sha256(
+        IM07_FORMAL_PROJECTION_DOMAIN,
+        projection_body,
+    )
+    normalized_artifact_body = _im07_json_value(
+        composition.selected_candidate.normalized_artifact
+    )
+    artifact_body = {
+        "selected_rank": composition.selected_candidate.rank,
+        "internal_candidate_count": composition.internal_candidate_count,
+        "ranked_candidate_count": len(composition.ranked_candidates),
+        "language_core_identity": composition.language_core_identity,
+        "normalized_artifact": normalized_artifact_body,
+        "realized_units": _im07_json_value(realized_units),
+        "candidate_text": candidate_text,
+    }
+    artifact_body_sha256 = _domain_separated_sha256(
+        IM07_FORMAL_ARTIFACT_DOMAIN,
+        artifact_body,
+    )
+    visible_trace_body = {
+        "schema_version": IM07_VISIBLE_TRACE_SCHEMA_VERSION,
+        "projection_id": projection.projection_id,
+        "projection_artifact_ref": projection_artifact_ref,
+        "projection_preimage_ref": projection.projection_preimage_ref,
+        "projection_seal_ref": projection.projection_seal_ref,
+        "projection_branch": projection.projection_branch.value,
+        "tagged_projection_ref": projection.tagged_projection_ref,
+        "meaning_visible_causal_trace_rows": _im07_json_value(
+            projection.meaning_visible_causal_trace_rows
+        ),
+        "reception_visible_causal_trace_rows": _im07_json_value(
+            projection.reception_visible_causal_trace_rows
+        ),
+        "realized_visible_units": _im07_json_value(realized_units),
+        "ordered_visible_unit_ids": tuple(row.unit_id for row in realized_units),
+        "ordered_visible_text_sha256": tuple(
+            _sha256_text(row.text) for row in realized_units
+        ),
+        "validated_visible_causal_trace_seal_ref": (
+            composition.validated_visible_causal_trace_seal_ref
+        ),
+    }
+    visible_trace_body_sha256 = _domain_separated_sha256(
+        IM07_FORMAL_VISIBLE_TRACE_DOMAIN,
+        visible_trace_body,
+    )
+    actual_output_sha256 = _domain_separated_sha256(
+        IM07_FORMAL_ACTUAL_OUTPUT_DOMAIN,
+        {
+            "case_id": case_id,
+            "candidate_text": candidate_text,
+            "visible_trace_body_sha256": visible_trace_body_sha256,
+        },
+    )
+    formal_trace_valid = _im07_formal_trace_valid(
+        projection=projection,
+        realized_units=realized_units,
+        validated_visible_causal_trace_seal_ref=(
+            composition.validated_visible_causal_trace_seal_ref
+        ),
+    )
+    ranked_count = len(ranked)
+    machine_invariant = {
+        "actual_japanese_reached": actual_japanese_reached,
+        "phase_a_and_b_validated": True,
+        "subjective_claim_count": len(subjective_plan.subjective_claim_rows),
+        "internal_candidate_count": composition.internal_candidate_count,
+        "ranked_candidate_count": ranked_count,
+        "rank_order_exact": tuple(row.rank for row in ranked)
+        == tuple(range(1, ranked_count + 1)),
+        "selected_rank_one": selected.rank == 1,
+        "normal_form_phase_exact6": normal_form_phase_exact6,
+        "normal_form_defect_free": normal_form_defect_free,
+        "normalization_idempotent": normalization_idempotent,
+        "required_duty_coverage_exact": required_duty_coverage_exact,
+        "language_core_identity_match": (
+            composition.language_core_identity
+            == stage1_composition.LANGUAGE_CORE_IDENTITY
+            == IM03_WORKING_LANGUAGE_CORE_IDENTITY
+        ),
+        "runtime_integration_identity_match": (
+            stage1_composition.compute_stage1_runtime_integration_identity()
+            == stage1_composition.STAGE1_RUNTIME_INTEGRATION_IDENTITY
+            == IM03_WORKING_RUNTIME_INTEGRATION_IDENTITY
+        ),
+        "formal_record_identity_closure": formal_trace_valid,
+    }
+    machine_invariant["machine_invariant_clear"] = all(
+        (
+            machine_invariant["actual_japanese_reached"],
+            machine_invariant["phase_a_and_b_validated"],
+            machine_invariant["subjective_claim_count"] >= 1,
+            machine_invariant["internal_candidate_count"] >= ranked_count,
+            1 <= ranked_count <= 2,
+            machine_invariant["rank_order_exact"],
+            machine_invariant["selected_rank_one"],
+            machine_invariant["normal_form_phase_exact6"],
+            machine_invariant["normal_form_defect_free"],
+            machine_invariant["normalization_idempotent"],
+            machine_invariant["required_duty_coverage_exact"],
+            machine_invariant["language_core_identity_match"],
+            machine_invariant["runtime_integration_identity_match"],
+            machine_invariant["formal_record_identity_closure"],
+        )
+    )
+    machine_invariant["failure_class"] = (
+        None
+        if machine_invariant["machine_invariant_clear"]
+        else "IM07_FORMAL_MACHINE_INVARIANT_NONCLEAR"
+    )
+    private_material = {
+        "case_id": case_id,
+        "input_private": raw,
+        "input_sha256": input_sha256,
+        "outcome_type": outcome_type,
+        "outcome_identity": outcome_identity,
+        "decision": {
+            "input_specific_meaning_structure_body": decision_body,
+            "body_sha256": decision_body_sha256,
+        },
+        "projection": {
+            **projection_body,
+            "body_sha256": projection_body_sha256,
+        },
+        "artifact": {**artifact_body, "body_sha256": artifact_body_sha256},
+        "visible_trace": visible_trace_body,
+        "visible_trace_body_sha256": visible_trace_body_sha256,
+        "actual_output_sha256": actual_output_sha256,
+        "formal_trace_valid": formal_trace_valid,
+        "machine_invariant": machine_invariant,
+        "machine_invariant_clear": machine_invariant[
+            "machine_invariant_clear"
+        ],
+        "failure_class": machine_invariant["failure_class"],
+        "review_axes": list(PRODUCT_READ_AXES),
+        "human_product_read": {
+            "axis_results": None,
+            "common_severity": None,
+            "accepted": None,
+        },
+    }
+    case_record_sha256 = _domain_separated_sha256(
+        IM07_FORMAL_CASE_RECORD_DOMAIN,
+        private_material,
+    )
+    private_case = {**private_material, "case_record_sha256": case_record_sha256}
+    body_free_case = {
+        "case_id": case_id,
+        "outcome_type": outcome_type,
+        "outcome_identity": outcome_identity,
+        "projection_id": projection.projection_id,
+        "projection_artifact_ref": projection_artifact_ref,
+        "projection_seal_ref": projection.projection_seal_ref,
+        "tagged_projection_ref": projection.tagged_projection_ref,
+        "input_sha256": input_sha256,
+        "decision_body_sha256": decision_body_sha256,
+        "projection_body_sha256": projection_body_sha256,
+        "artifact_body_sha256": artifact_body_sha256,
+        "visible_trace_body_sha256": visible_trace_body_sha256,
+        "actual_output_sha256": actual_output_sha256,
+        "case_record_sha256": case_record_sha256,
+        "meaning_visible_trace_count": len(
+            projection.meaning_visible_causal_trace_rows
+        ),
+        "reception_visible_trace_count": len(
+            projection.reception_visible_causal_trace_rows
+        ),
+        "visible_unit_count": len(realized_units),
+        "formal_trace_valid": formal_trace_valid,
+        "machine_invariant_clear": machine_invariant[
+            "machine_invariant_clear"
+        ],
+        "failure_class": machine_invariant["failure_class"],
+    }
+    return private_case, body_free_case
+
+
+def _validate_im07_formal_packet_pair(
+    private_packet: object,
+    body_free_receipt: object,
+) -> None:
+    try:
+        private = dict(private_packet)
+        receipt = dict(body_free_receipt)
+        private_cases = tuple(private["cases"])
+        receipt_cases = tuple(receipt["cases"])
+        case_order = tuple(private["ordered_case_ids"])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("IM07_FORMAL_PACKET_INVALID") from None
+    cross_keys = (
+        "case_id",
+        "outcome_type",
+        "outcome_identity",
+        "input_sha256",
+        "visible_trace_body_sha256",
+        "actual_output_sha256",
+        "case_record_sha256",
+        "formal_trace_valid",
+        "machine_invariant_clear",
+        "failure_class",
+    )
+    if (
+        private.get("schema_version") != IM07_FORMAL_PRIVATE_SCHEMA_VERSION
+        or receipt.get("schema_version") != IM07_FORMAL_BODY_FREE_SCHEMA_VERSION
+        or private.get("product_implementation_id")
+        != receipt.get("product_implementation_id")
+        or private.get("formal_evaluation_bundle_id")
+        != receipt.get("formal_evaluation_bundle_id")
+        or private.get("formal_output_set_sha256")
+        != receipt.get("formal_output_set_sha256")
+        or private.get("formal_result_id") != receipt.get("formal_result_id")
+        or private.get("machine_result") != receipt.get("machine_result")
+        or private.get("formal_attempt_count") != 1
+        or receipt.get("formal_attempt_count") != 1
+        or private.get("bundle_state") != "CONSUMED"
+        or receipt.get("bundle_state") != "CONSUMED"
+        or case_order != tuple(row[0] for row in EXACT8)
+        or tuple(receipt.get("ordered_case_ids", ())) != case_order
+        or len(private_cases) != 8
+        or len(receipt_cases) != 8
+        or tuple(row.get("case_id") for row in private_cases) != case_order
+        or tuple(row.get("case_id") for row in receipt_cases) != case_order
+        or any(
+            private_row.get(key) != receipt_row.get(key)
+            for private_row, receipt_row in zip(
+                private_cases,
+                receipt_cases,
+                strict=True,
+            )
+            for key in cross_keys
+        )
+    ):
+        raise ValueError("IM07_FORMAL_PACKET_INVALID")
+    for private_row, receipt_row in zip(
+        private_cases,
+        receipt_cases,
+        strict=True,
+    ):
+        try:
+            decision = dict(private_row["decision"])
+            decision_digest = decision.pop("body_sha256")
+            projection = dict(private_row["projection"])
+            projection_digest = projection.pop("body_sha256")
+            artifact = dict(private_row["artifact"])
+            artifact_digest = artifact.pop("body_sha256")
+            visible_trace = private_row["visible_trace"]
+            case_material = dict(private_row)
+            case_digest = case_material.pop("case_record_sha256")
+            recomputed = (
+                _domain_separated_sha256(
+                    IM07_FORMAL_INPUT_DOMAIN,
+                    private_row["input_private"],
+                ),
+                _domain_separated_sha256(
+                    IM07_FORMAL_DECISION_DOMAIN,
+                    decision["input_specific_meaning_structure_body"],
+                ),
+                _domain_separated_sha256(
+                    IM07_FORMAL_PROJECTION_DOMAIN,
+                    projection,
+                ),
+                _domain_separated_sha256(
+                    IM07_FORMAL_ARTIFACT_DOMAIN,
+                    artifact,
+                ),
+                _domain_separated_sha256(
+                    IM07_FORMAL_VISIBLE_TRACE_DOMAIN,
+                    visible_trace,
+                ),
+                _domain_separated_sha256(
+                    IM07_FORMAL_ACTUAL_OUTPUT_DOMAIN,
+                    {
+                        "case_id": private_row["case_id"],
+                        "candidate_text": artifact["candidate_text"],
+                        "visible_trace_body_sha256": private_row[
+                            "visible_trace_body_sha256"
+                        ],
+                    },
+                ),
+                _domain_separated_sha256(
+                    IM07_FORMAL_CASE_RECORD_DOMAIN,
+                    case_material,
+                ),
+            )
+            stored = (
+                private_row["input_sha256"],
+                decision_digest,
+                projection_digest,
+                artifact_digest,
+                private_row["visible_trace_body_sha256"],
+                private_row["actual_output_sha256"],
+                case_digest,
+            )
+            body_free_stored = (
+                receipt_row["input_sha256"],
+                receipt_row["decision_body_sha256"],
+                receipt_row["projection_body_sha256"],
+                receipt_row["artifact_body_sha256"],
+                receipt_row["visible_trace_body_sha256"],
+                receipt_row["actual_output_sha256"],
+                receipt_row["case_record_sha256"],
+            )
+        except (KeyError, TypeError, ValueError):
+            raise ValueError("IM07_FORMAL_PACKET_INVALID") from None
+        if recomputed != stored or stored != body_free_stored:
+            raise ValueError("IM07_FORMAL_PACKET_INVALID")
+    output_preimage = {
+        "formal_evaluation_bundle_id": private["formal_evaluation_bundle_id"],
+        "ordered_cases": tuple(
+            {
+                "case_id": row["case_id"],
+                "actual_output_sha256": row["actual_output_sha256"],
+                "visible_trace_body_sha256": row[
+                    "visible_trace_body_sha256"
+                ],
+                "case_record_sha256": row["case_record_sha256"],
+            }
+            for row in private_cases
+        ),
+    }
+    if (
+        _domain_separated_sha256(
+            IM07_FORMAL_OUTPUT_SET_DOMAIN,
+            output_preimage,
+        )
+        != private["formal_output_set_sha256"]
+        or any(not row["machine_invariant_clear"] for row in private_cases)
+        != (private["machine_result"] != "CLEAR")
+    ):
+        raise ValueError("IM07_FORMAL_PACKET_INVALID")
+
+
+def run_im07_formal(
+    *,
+    runtime_repo_head: str,
+    design_repo_head: str,
+    design_document_raw_sha256: str,
+    design_document_byte_count: int,
+    expected_product_implementation_id: str,
+    expected_formal_evaluation_bundle_id: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    envelope = _im07_formal_identity_envelope(
+        runtime_repo_head=runtime_repo_head,
+        design_repo_head=design_repo_head,
+        design_document_raw_sha256=design_document_raw_sha256,
+        design_document_byte_count=design_document_byte_count,
+    )
+    if (
+        envelope["product_implementation_id"]
+        != expected_product_implementation_id
+        or envelope["formal_evaluation_bundle_id"]
+        != expected_formal_evaluation_bundle_id
+    ):
+        raise ValueError("im07 formal identity mismatch")
+    private_cases = []
+    body_free_cases = []
+    for case_id, memo, category, emotion, strength in EXACT8:
+        private_case, body_free_case = _materialize_im07_formal_case(
+            case_id=case_id,
+            memo=memo,
+            category=category,
+            emotion=emotion,
+            strength=strength,
+        )
+        private_cases.append(private_case)
+        body_free_cases.append(body_free_case)
+    output_preimage = {
+        "formal_evaluation_bundle_id": expected_formal_evaluation_bundle_id,
+        "ordered_cases": tuple(
+            {
+                "case_id": row["case_id"],
+                "actual_output_sha256": row["actual_output_sha256"],
+                "visible_trace_body_sha256": row[
+                    "visible_trace_body_sha256"
+                ],
+                "case_record_sha256": row["case_record_sha256"],
+            }
+            for row in private_cases
+        ),
+    }
+    output_set_sha256 = _domain_separated_sha256(
+        IM07_FORMAL_OUTPUT_SET_DOMAIN,
+        output_preimage,
+    )
+    valid_count = sum(row["machine_invariant_clear"] for row in private_cases)
+    machine_result = "CLEAR" if valid_count == len(EXACT8) else "NONCLEAR"
+    result_id = (
+        "cmee-im07-formal-result-v1:"
+        + _domain_separated_sha256(
+            IM07_FORMAL_RESULT_DOMAIN,
+            {
+                "formal_evaluation_bundle_id": (
+                    expected_formal_evaluation_bundle_id
+                ),
+                "formal_output_set_sha256": output_set_sha256,
+                "machine_invariant_clear_count": valid_count,
+                "machine_result": machine_result,
+            },
+        )
+    )
+    private_packet = {
+        "schema_version": IM07_FORMAL_PRIVATE_SCHEMA_VERSION,
+        "product_implementation_id": expected_product_implementation_id,
+        "formal_evaluation_bundle_id": expected_formal_evaluation_bundle_id,
+        "identity_preimages": envelope,
+        "formal_attempt_count": 1,
+        "bundle_state": "CONSUMED",
+        "case_count": len(private_cases),
+        "ordered_case_ids": tuple(row[0] for row in EXACT8),
+        "cases": private_cases,
+        "formal_output_set_sha256": output_set_sha256,
+        "formal_result_id": result_id,
+        "machine_invariant_clear_count": valid_count,
+        "machine_result": machine_result,
+        "product_read_axes": PRODUCT_READ_AXES,
+        "product_read_evaluated": False,
+        "private_body_full": True,
+        "private_text_published": False,
+        "production_effect": 0,
+        "automatic_progression": False,
+    }
+    body_free_receipt = {
+        "schema_version": IM07_FORMAL_BODY_FREE_SCHEMA_VERSION,
+        "product_implementation_id": expected_product_implementation_id,
+        "formal_evaluation_bundle_id": expected_formal_evaluation_bundle_id,
+        "formal_attempt_count": 1,
+        "bundle_state": "CONSUMED",
+        "case_count": len(body_free_cases),
+        "ordered_case_ids": tuple(row[0] for row in EXACT8),
+        "cases": body_free_cases,
+        "formal_output_set_sha256": output_set_sha256,
+        "formal_result_id": result_id,
+        "machine_invariant_clear_count": valid_count,
+        "machine_result": machine_result,
+        "private_body_present": False,
+        "private_text_published": False,
+        "product_read_evaluated": False,
+        "production_effect": 0,
+        "automatic_progression": False,
+    }
+    _validate_im07_formal_packet_pair(private_packet, body_free_receipt)
+    return body_free_receipt, private_packet
+
+
 def run(
     *,
     runtime_repo_head: str | None = None,
@@ -5414,11 +6371,103 @@ def _read_body_free_json(
         parser.error("early finalization body-free input invalid")
 
 
+def _commit_im07_formal_private(
+    parser: argparse.ArgumentParser,
+    target: Path,
+    private_packet: Mapping[str, Any],
+) -> None:
+    """Atomically publish one complete formal private record without overwrite."""
+
+    payload = _pretty_json_bytes(private_packet)
+    try:
+        parsed = json.loads(payload)
+        if stage1_canonical_json_bytes(parsed) != stage1_canonical_json_bytes(
+            private_packet
+        ):
+            raise ValueError
+    except (json.JSONDecodeError, TypeError, ValueError):
+        parser.error("im07 formal private serialization invalid")
+    root = PRIVATE_OUTPUT_ROOT.resolve()
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if _paths_overlap(root, CHECKOUT_ROOT.resolve()):
+        parser.error("private output target is not isolated")
+    os.chmod(root, 0o700)
+    no_follow = getattr(os, "O_NOFOLLOW", 0)
+    directory = getattr(os, "O_DIRECTORY", 0)
+    relative_parts = target.relative_to(root).parts
+    directory_fd = os.open(root, os.O_RDONLY | directory | no_follow)
+    stage_name = f".{relative_parts[-1]}.im07-stage-{os.getpid()}"
+    stage_created = False
+    try:
+        for part in relative_parts[:-1]:
+            try:
+                os.mkdir(part, mode=0o700, dir_fd=directory_fd)
+            except FileExistsError:
+                pass
+            next_directory_fd = os.open(
+                part,
+                os.O_RDONLY | directory | no_follow,
+                dir_fd=directory_fd,
+            )
+            os.close(directory_fd)
+            directory_fd = next_directory_fd
+            os.fchmod(directory_fd, 0o700)
+        stage_fd = os.open(
+            stage_name,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | no_follow,
+            0o600,
+            dir_fd=directory_fd,
+        )
+        stage_created = True
+        os.fchmod(stage_fd, 0o600)
+        with os.fdopen(stage_fd, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.link(
+                stage_name,
+                relative_parts[-1],
+                src_dir_fd=directory_fd,
+                dst_dir_fd=directory_fd,
+                follow_symlinks=False,
+            )
+        except (FileExistsError, OSError):
+            parser.error("im07 formal private output already exists or is unsafe")
+        committed_fd = os.open(
+            relative_parts[-1],
+            os.O_RDONLY | no_follow,
+            dir_fd=directory_fd,
+        )
+        try:
+            with os.fdopen(committed_fd, "rb") as handle:
+                if handle.read() != payload:
+                    parser.error("im07 formal private output readback invalid")
+        finally:
+            committed_fd = -1
+        os.unlink(stage_name, dir_fd=directory_fd)
+        stage_created = False
+        os.fsync(directory_fd)
+    finally:
+        if stage_created:
+            try:
+                os.unlink(stage_name, dir_fd=directory_fd)
+            except FileNotFoundError:
+                pass
+        os.close(directory_fd)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--body-full-output", type=Path)
     parser.add_argument("--runtime-repo-head")
     parser.add_argument("--design-repo-head")
+    parser.add_argument("--im07-pre-admission", action="store_true")
+    parser.add_argument("--formal-im07", action="store_true")
+    parser.add_argument("--expected-product-implementation-id")
+    parser.add_argument("--expected-formal-evaluation-bundle-id")
+    parser.add_argument("--design-document-raw-sha256")
+    parser.add_argument("--design-document-byte-count", type=int)
     parser.add_argument("--early-actual", action="store_true")
     parser.add_argument("--early-attempt-id")
     parser.add_argument(
@@ -5454,6 +6503,143 @@ def main() -> int:
     parser.add_argument("--early-pro-body-free-input", type=Path)
     parser.add_argument("--early-ultra-body-free-input", type=Path)
     args = parser.parse_args()
+    if args.im07_pre_admission or args.formal_im07:
+        legacy_mode_values = (
+            args.early_actual,
+            args.early_attempt_id,
+            args.seal_early_private_review_master,
+            args.validate_early_private_review_master,
+            args.early_private_review_master,
+            args.expected_private_review_master_sha256,
+            args.seal_early_known_review_auxiliary,
+            args.validate_early_known_review_auxiliary,
+            args.early_known_review_auxiliary,
+            args.expected_early_known_review_auxiliary_sha256,
+            args.finalize_early_actual,
+            args.withheld_input,
+            args.known_visible_output,
+            args.early_run_output_dir,
+            args.early_machine_body_free_input,
+            args.early_master_body_free_input,
+            args.early_known_auxiliary_body_free_input,
+            args.early_pro_body_free_input,
+            args.early_ultra_body_free_input,
+        )
+        if (
+            args.im07_pre_admission == args.formal_im07
+            or any(value not in {None, False} for value in legacy_mode_values)
+            or re.fullmatch(r"[0-9a-f]{40}", str(args.runtime_repo_head or ""))
+            is None
+            or re.fullmatch(r"[0-9a-f]{40}", str(args.design_repo_head or ""))
+            is None
+            or re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(args.design_document_raw_sha256 or ""),
+            )
+            is None
+            or type(args.design_document_byte_count) is not int
+            or args.design_document_byte_count <= 0
+        ):
+            parser.error("im07 mode arguments invalid")
+        try:
+            _validate_im06_approved_bytes_freeze(
+                IM06_APPROVED_NONSELF_BYTES_NAME_SHA256_BYTE_COUNT_EXACT5,
+                IM06_WORKING_RUNNER_SELF_PROJECTION_PROOF,
+            )
+            envelope = _im07_formal_identity_envelope(
+                runtime_repo_head=args.runtime_repo_head,
+                design_repo_head=args.design_repo_head,
+                design_document_raw_sha256=args.design_document_raw_sha256,
+                design_document_byte_count=args.design_document_byte_count,
+            )
+        except (OSError, ValueError, RuntimeError, json.JSONDecodeError):
+            parser.error("im07 pre-admission identity freeze failed")
+        if args.im07_pre_admission:
+            if (
+                args.body_full_output is not None
+                or args.expected_product_implementation_id is not None
+                or args.expected_formal_evaluation_bundle_id is not None
+            ):
+                parser.error("im07 pre-admission arguments invalid")
+            receipt = {
+                "schema_version": "cocolon.cmee.stage1.im07_pre_admission.v1",
+                "readiness": "PASS",
+                "formal_attempt_count": 0,
+                "bundle_state": "FROZEN",
+                "product_implementation_id": envelope[
+                    "product_implementation_id"
+                ],
+                "formal_evaluation_bundle_id": envelope[
+                    "formal_evaluation_bundle_id"
+                ],
+                "product_implementation_preimage_sha256": (
+                    _domain_separated_sha256(
+                        IM07_PRODUCT_IMPLEMENTATION_DOMAIN,
+                        envelope["product_implementation_preimage"],
+                    )
+                ),
+                "formal_evaluation_bundle_preimage_sha256": (
+                    _domain_separated_sha256(
+                        IM07_FORMAL_EVALUATION_BUNDLE_DOMAIN,
+                        envelope["formal_evaluation_bundle_preimage"],
+                    )
+                ),
+                "case_count": len(EXACT8),
+                "focused_denominator": 47,
+                "full_denominator": 241,
+                "production_effect": 0,
+                "automatic_progression": False,
+            }
+            print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
+            return 0
+        if (
+            args.body_full_output is None
+            or re.fullmatch(
+                r"cmee-product-implementation-v1:[0-9a-f]{64}",
+                str(args.expected_product_implementation_id or ""),
+            )
+            is None
+            or re.fullmatch(
+                r"cmee-formal-evaluation-bundle-v1:[0-9a-f]{64}",
+                str(args.expected_formal_evaluation_bundle_id or ""),
+            )
+            is None
+            or envelope["product_implementation_id"]
+            != args.expected_product_implementation_id
+            or envelope["formal_evaluation_bundle_id"]
+            != args.expected_formal_evaluation_bundle_id
+        ):
+            parser.error("im07 formal frozen identity mismatch")
+        target = _private_output_target(parser, args.body_full_output)
+        try:
+            body_free, private_packet = run_im07_formal(
+                runtime_repo_head=args.runtime_repo_head,
+                design_repo_head=args.design_repo_head,
+                design_document_raw_sha256=args.design_document_raw_sha256,
+                design_document_byte_count=args.design_document_byte_count,
+                expected_product_implementation_id=(
+                    args.expected_product_implementation_id
+                ),
+                expected_formal_evaluation_bundle_id=(
+                    args.expected_formal_evaluation_bundle_id
+                ),
+            )
+            _validate_im07_formal_packet_pair(private_packet, body_free)
+            _commit_im07_formal_private(parser, target, private_packet)
+        except (OSError, ValueError, RuntimeError, json.JSONDecodeError):
+            parser.error("im07 formal RUN_RESULT_UNKNOWN_TERMINAL")
+        print(json.dumps(body_free, ensure_ascii=False, sort_keys=True))
+        return 0 if body_free["machine_result"] == "CLEAR" else 1
+    if any(
+        value is not None
+        for value in (
+            args.expected_product_implementation_id,
+            args.expected_formal_evaluation_bundle_id,
+            args.design_document_raw_sha256,
+            args.design_document_byte_count,
+        )
+    ):
+        parser.error("im07-only argument requires im07 mode")
     finalizer_inputs = (
         args.early_machine_body_free_input,
         args.early_master_body_free_input,
