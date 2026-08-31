@@ -32203,6 +32203,246 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
             candidate_run_module.IM06_PYTEST_ENVIRONMENT_EXACT2,
             pytest_environment_literal,
         )
+        formal_product_id = (
+            "cmee-product-implementation-v1:" + "1" * 64
+        )
+        formal_bundle_id = (
+            "cmee-formal-evaluation-bundle-v1:" + "2" * 64
+        )
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            formal_target = (
+                Path(temporary_directory)
+                / "private-root"
+                / "IM07_FORMAL_ATTEMPT_01.json"
+            )
+            formal_argv = (
+                "cmee-v1a-i1sx-candidate-run",
+                "--formal-im07",
+                "--expected-product-implementation-id",
+                formal_product_id,
+                "--expected-formal-evaluation-bundle-id",
+                formal_bundle_id,
+                "--design-document-raw-sha256",
+                "3" * 64,
+                "--design-document-byte-count",
+                "1",
+                "--body-full-output",
+                str(formal_target),
+                "--runtime-repo-head",
+                "4" * 40,
+                "--design-repo-head",
+                "5" * 40,
+            )
+            invalid_formal_environments = (
+                (
+                    "missing-dont-write-bytecode",
+                    {"PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"},
+                ),
+                (
+                    "wrong-dont-write-bytecode",
+                    {
+                        "PYTHONDONTWRITEBYTECODE": "0",
+                        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+                    },
+                ),
+                (
+                    "missing-plugin-autoload",
+                    {"PYTHONDONTWRITEBYTECODE": "1"},
+                ),
+                (
+                    "wrong-plugin-autoload",
+                    {
+                        "PYTHONDONTWRITEBYTECODE": "1",
+                        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "0",
+                    },
+                ),
+            )
+            for scenario, environment in invalid_formal_environments:
+                with self.subTest(formal_environment=scenario):
+                    stdout = io.StringIO()
+                    stderr = io.StringIO()
+                    with ExitStack() as stack:
+                        stack.enter_context(
+                            patch.dict(
+                                candidate_run_module.os.environ,
+                                environment,
+                                clear=True,
+                            )
+                        )
+                        stack.enter_context(
+                            patch.object(
+                                candidate_run_module.sys,
+                                "argv",
+                                formal_argv,
+                            )
+                        )
+                        stack.enter_context(
+                            patch.object(
+                                candidate_run_module.sys,
+                                "stdout",
+                                stdout,
+                            )
+                        )
+                        stack.enter_context(
+                            patch.object(
+                                candidate_run_module.sys,
+                                "stderr",
+                                stderr,
+                            )
+                        )
+                        freeze = stack.enter_context(
+                            patch.object(
+                                candidate_run_module,
+                                "_validate_im06_approved_bytes_freeze",
+                            )
+                        )
+                        envelope = stack.enter_context(
+                            patch.object(
+                                candidate_run_module,
+                                "_im07_formal_identity_envelope",
+                            )
+                        )
+                        target_resolver = stack.enter_context(
+                            patch.object(
+                                candidate_run_module,
+                                "_private_output_target",
+                            )
+                        )
+                        formal_runner = stack.enter_context(
+                            patch.object(
+                                candidate_run_module,
+                                "run_im07_formal",
+                            )
+                        )
+                        pair_validator = stack.enter_context(
+                            patch.object(
+                                candidate_run_module,
+                                "_validate_im07_formal_packet_pair",
+                            )
+                        )
+                        private_commit = stack.enter_context(
+                            patch.object(
+                                candidate_run_module,
+                                "_commit_im07_formal_private",
+                            )
+                        )
+                        with self.assertRaises(SystemExit) as raised:
+                            candidate_run_module.main()
+                    self.assertEqual(raised.exception.code, 2)
+                    self.assertEqual(stdout.getvalue(), "")
+                    self.assertIn(
+                        "im07 formal prelaunch environment admission failed",
+                        stderr.getvalue(),
+                    )
+                    self.assertNotIn(
+                        "PYTHONDONTWRITEBYTECODE",
+                        stderr.getvalue(),
+                    )
+                    self.assertNotIn(
+                        "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
+                        stderr.getvalue(),
+                    )
+                    for pre_effect in (
+                        freeze,
+                        envelope,
+                        target_resolver,
+                        formal_runner,
+                        pair_validator,
+                        private_commit,
+                    ):
+                        pre_effect.assert_not_called()
+                    self.assertFalse(formal_target.exists())
+
+            body_free = {
+                "schema_version": (
+                    "cocolon.cmee.stage1.im07_formal_body_free_receipt.v1"
+                ),
+                "machine_result": "CLEAR",
+            }
+            private_packet = {
+                "schema_version": (
+                    "cocolon.cmee.stage1.im07_formal_private_record.v1"
+                )
+            }
+            stdout = io.StringIO()
+            with ExitStack() as stack:
+                stack.enter_context(
+                    patch.dict(
+                        candidate_run_module.os.environ,
+                        {
+                            **dict(pytest_environment_literal),
+                            "UNRELATED_CMEE_TEST_ENV": "retained",
+                        },
+                        clear=True,
+                    )
+                )
+                stack.enter_context(
+                    patch.object(
+                        candidate_run_module.sys,
+                        "argv",
+                        formal_argv,
+                    )
+                )
+                stack.enter_context(
+                    patch.object(
+                        candidate_run_module.sys,
+                        "stdout",
+                        stdout,
+                    )
+                )
+                freeze = stack.enter_context(
+                    patch.object(
+                        candidate_run_module,
+                        "_validate_im06_approved_bytes_freeze",
+                    )
+                )
+                envelope = stack.enter_context(
+                    patch.object(
+                        candidate_run_module,
+                        "_im07_formal_identity_envelope",
+                        return_value={
+                            "product_implementation_id": formal_product_id,
+                            "formal_evaluation_bundle_id": formal_bundle_id,
+                        },
+                    )
+                )
+                target_resolver = stack.enter_context(
+                    patch.object(
+                        candidate_run_module,
+                        "_private_output_target",
+                        return_value=formal_target,
+                    )
+                )
+                formal_runner = stack.enter_context(
+                    patch.object(
+                        candidate_run_module,
+                        "run_im07_formal",
+                        return_value=(body_free, private_packet),
+                    )
+                )
+                pair_validator = stack.enter_context(
+                    patch.object(
+                        candidate_run_module,
+                        "_validate_im07_formal_packet_pair",
+                    )
+                )
+                private_commit = stack.enter_context(
+                    patch.object(
+                        candidate_run_module,
+                        "_commit_im07_formal_private",
+                    )
+                )
+                self.assertEqual(candidate_run_module.main(), 0)
+            self.assertEqual(json.loads(stdout.getvalue()), body_free)
+            for admitted_effect in (
+                freeze,
+                envelope,
+                target_resolver,
+                formal_runner,
+                pair_validator,
+                private_commit,
+            ):
+                admitted_effect.assert_called_once()
         self.assertEqual(
             candidate_run_module.IM06_PYTEST_BASE_ARGUMENTS_EXACT6,
             pytest_base_arguments_literal,

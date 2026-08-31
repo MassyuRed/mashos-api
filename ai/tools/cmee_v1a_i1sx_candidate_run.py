@@ -451,15 +451,15 @@ IM06_APPROVED_NONSELF_BYTES_NAME_SHA256_BYTE_COUNT_EXACT5 = (
     ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py", "75343d43f9e22c101d218fb80fb2b17a9a264780ceb63842c6d75cb7dbb0c2f4", 204877),
     ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py", "437831951fa0c4062d68af2342d79ebfc4b29e8c318e1fa8765c74c4aac9a832", 412047),
     ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "6e3c816ce5a9136eeb248db009bca73852a26de07791ffe7d9fd374d6ba6041a", 674426),
-    ("ai/tests/test_cmee_v1a_i1sx_contracts.py", "9cd9f2068f1171357ed150d6a30d641c6a50c46385e7472beceb8bd05c579c66", 1345764),
+    ("ai/tests/test_cmee_v1a_i1sx_contracts.py", "1dfdecef0e760ba4e5d9255f5335768eb57a571399ca89e0ab7b52b0fde53e4d", 1355314),
 )
 IM06_EXPECTED_COLLECTED_DENOMINATORS_EXACT2 = (47, 241)
 IM06_ACTUAL_COLLECTED_DENOMINATORS_EXACT2 = (47, 241)
 IM06_WORKING_RUNNER_SELF_PROJECTION_SHA256 = (
-    "c33c98dd1d5b48a188032d8b31e03e77cda777e24e9c43f701388eb3d41ebe33"
+    "6cdeb584d89fbc57f72d17d04aefaa02913f67491a5ac70cfb28a5997c0b147a"
 )
-IM06_WORKING_RUNNER_SELF_PROJECTION_BYTE_COUNT = 285581
-IM06_WORKING_RUNNER_SELF_PROJECTION_DECLARATION_COUNT = 213
+IM06_WORKING_RUNNER_SELF_PROJECTION_BYTE_COUNT = 286403
+IM06_WORKING_RUNNER_SELF_PROJECTION_DECLARATION_COUNT = 214
 IM06_WORKING_RUNNER_SELF_PROJECTION_PROOF = (
     IM06_WORKING_RUNNER_SELF_PROJECTION_SHA256,
     IM06_WORKING_RUNNER_SELF_PROJECTION_BYTE_COUNT,
@@ -6457,6 +6457,27 @@ def _commit_im07_formal_private(
         os.close(directory_fd)
 
 
+def _admit_im07_formal_prelaunch_environment_exact2(
+) -> tuple[tuple[str, str], ...]:
+    expected = IM06_PYTEST_ENVIRONMENT_EXACT2
+    observed = tuple(
+        (name, os.environ.get(name))
+        for name, _expected_value in expected
+    )
+    if (
+        expected
+        != (
+            ("PYTHONDONTWRITEBYTECODE", "1"),
+            ("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1"),
+        )
+        or observed != expected
+    ):
+        raise RuntimeError(
+            "IM07_FORMAL_PRELAUNCH_ENVIRONMENT_ADMISSION_FAILED"
+        )
+    return expected
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--body-full-output", type=Path)
@@ -6541,6 +6562,13 @@ def main() -> int:
             or args.design_document_byte_count <= 0
         ):
             parser.error("im07 mode arguments invalid")
+        if args.formal_im07:
+            try:
+                _admit_im07_formal_prelaunch_environment_exact2()
+            except RuntimeError:
+                parser.error(
+                    "im07 formal prelaunch environment admission failed"
+                )
         try:
             _validate_im06_approved_bytes_freeze(
                 IM06_APPROVED_NONSELF_BYTES_NAME_SHA256_BYTE_COUNT_EXACT5,
