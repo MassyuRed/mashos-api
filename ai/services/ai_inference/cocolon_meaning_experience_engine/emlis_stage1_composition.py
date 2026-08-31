@@ -1990,6 +1990,20 @@ class ExpressionAssetSpec:
     predicate_key: str
     predicate_lexemes: Tuple[str, ...]
     compatible_valencies: Tuple[PredicateValency, ...]
+    reception_projection_branch: Optional[SubjectiveProjectionBranch] = None
+    reception_act_refs: Tuple[str, ...] = ()
+    reception_content_kind: Optional[SubjectiveContentKind] = None
+    reception_subjective_mode: Optional[SubjectiveMode] = None
+    reception_subjective_operator: Optional[SubjectiveOperator] = None
+    reception_semantic_operators: Tuple[SemanticOperator, ...] = ()
+    reception_appraisal_dimension: Optional[AppraisalDimension] = None
+    reception_appraisal_operation: Optional[AppraisalOperation] = None
+    reception_relational_position_kind: Optional[
+        RelationalPositionKind
+    ] = None
+    reception_stance_operator: Optional[StanceOperator] = None
+    reception_relational_commitment: Optional[RelationalCommitment] = None
+    reception_relational_closure: Optional[RelationalClosure] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -2111,6 +2125,7 @@ class V2ClauseIRRow:
     link_plan: ClauseLinkPlan
     morphology_plan: PredicateMorphologyPlan
     clause_ir: JapaneseClauseIR
+    selected_expression_asset_ref: str
     clause_plan: Optional[ClausePlan] = None
     visible_meaning_trace_rows: Tuple[
         SelectedMeaningVisibleCausalTraceRow, ...
@@ -2134,6 +2149,7 @@ class V2ClauseRealizationRow:
     morphology_plan: PredicateMorphologyPlan
     clause_ir: JapaneseClauseIR
     linearized_clause: LinearizedJapaneseClause
+    selected_expression_asset_ref: str
     clause_plan: Optional[ClausePlan] = None
     visible_meaning_trace_rows: Tuple[
         SelectedMeaningVisibleCausalTraceRow, ...
@@ -4342,6 +4358,7 @@ def linearize_japanese_clause(
     link_plan: ClauseLinkPlan,
     morphology_plan: PredicateMorphologyPlan,
     clause_plan: Optional[ClausePlan] = None,
+    selected_expression_asset_ref: Optional[str] = None,
     suppress_grouped_sequence_asset_surface: bool = False,
     visible_meaning_trace_rows: Tuple[
         SelectedMeaningVisibleCausalTraceRow, ...
@@ -4402,6 +4419,10 @@ def linearize_japanese_clause(
         raise Stage1CompositionError(
             "STAGE1_EXPRESSION_ASSET_NONUNIQUE_STOP"
         )
+    if (clause_plan is None) != (selected_expression_asset_ref is None):
+        raise Stage1CompositionError(
+            "STAGE1_EXPRESSION_ASSET_NONUNIQUE_STOP"
+        )
     expression_asset: Optional[ExpressionAssetSpec] = None
     expression_prefix: Optional[str] = None
     if clause_plan is not None:
@@ -4434,17 +4455,29 @@ def linearize_japanese_clause(
             tuple(
                 row
                 for row in EXPRESSION_ASSET_REGISTRY
-                if row.sentence_job.value == sense.sentence_job
-                and row.semantic_clause_kind.value
-                == sense.semantic_clause_kind
-                and row.predicate_key == sense.semantic_sense
-                and clause_plan.predicate_valency
-                in row.compatible_valencies
+                if row.expression_asset_id
+                == selected_expression_asset_ref
             ),
             "STAGE1_EXPRESSION_ASSET_NONUNIQUE_STOP",
         )
         if (
-            len(expression_asset.predicate_lexemes) != 2
+            expression_asset.sentence_job.value != sense.sentence_job
+            or expression_asset.semantic_clause_kind.value
+            != sense.semantic_clause_kind
+            or expression_asset.predicate_key != sense.semantic_sense
+            or clause_plan.predicate_valency
+            not in expression_asset.compatible_valencies
+            or (
+                sense.semantic_clause_kind
+                != SemanticClauseKind.SUBJECTIVE_PREDICATE.value
+                and expression_asset.reception_projection_branch is not None
+            )
+            or (
+                sense.semantic_clause_kind
+                == SemanticClauseKind.SUBJECTIVE_PREDICATE.value
+                and suppress_grouped_sequence_asset_surface
+            )
+            or len(expression_asset.predicate_lexemes) != 2
             or any(not value for value in expression_asset.predicate_lexemes)
         ):
             raise Stage1CompositionError(
@@ -4547,17 +4580,8 @@ def linearize_japanese_clause(
         raise Stage1CompositionError(
             "STAGE1_REFERENCE_REPAIR_UNAVAILABLE_STOP"
         )
-    materialize_specific_reception_object = bool(
-        anaphoric_surface is not None
-        and clause_plan is not None
-        and clause_plan.semantic_clause_kind
-        is SemanticClauseKind.SUBJECTIVE_PREDICATE
-    )
     quote_slots: Tuple[str, ...] = ()
-    if (
-        anaphoric_surface is not None
-        and not materialize_specific_reception_object
-    ):
+    if anaphoric_surface is not None:
         slot = source_slots[0]
         source_segment_by_slot[slot].append(
             (
@@ -4594,10 +4618,7 @@ def linearize_japanese_clause(
                 strict=True,
             )
         )
-    if (
-        anaphoric_surface is not None
-        and not materialize_specific_reception_object
-    ):
+    if anaphoric_surface is not None:
         pass
     elif rule.complement_rule_id in {"C02", "C03", "C04", "C05", "C06"}:
         slot = source_slots[0]
@@ -4671,44 +4692,6 @@ def linearize_japanese_clause(
     else:
         raise Stage1CompositionError(
             "STAGE1_SOURCE_COMPLEMENT_NONUNIQUE_STOP"
-        )
-
-    if materialize_specific_reception_object:
-        if (
-            anaphoric_surface is None
-            or rule.complement_rule_id
-            not in {"C02", "C03", "C04", "C05", "C06", "C08"}
-            or len(source_slots) != 1
-            or not source_segment_by_slot[source_slots[0]]
-            or any(
-                segments
-                for slot, segments in source_segment_by_slot.items()
-                if slot != source_slots[0]
-            )
-        ):
-            raise Stage1CompositionError(
-                "STAGE1_REFERENCE_REPAIR_UNAVAILABLE_STOP"
-            )
-        slot = source_slots[0]
-        source_segment_by_slot[slot].append(
-            structural_segment(
-                "、",
-                "structural:comma.v1",
-                slot,
-            )
-        )
-        source_segment_by_slot[slot].append(
-            (
-                anaphoric_surface.atomic_surface,
-                anaphoric_surface.surface_ref,
-                slot,
-                _v2_surface_derivation(
-                    SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT,
-                    response_object_expression=(
-                        reference_state.response_object_expression
-                    ),
-                ),
-            )
         )
 
     segments: list[Tuple[str, str, str, SurfaceDerivation]] = []
@@ -8565,6 +8548,93 @@ EXPRESSION_ASSET_REGISTRY = (
     ExpressionAssetSpec("expression:emlis-value.v1", SentenceJob.TAKE_MATERIAL_POSITION, SemanticClauseKind.SUBJECTIVE_PREDICATE, "material-value", ("決めつけに変えず", "大切にしたいです"), (PredicateValency.DYADIC_ACTOR_TARGET, PredicateValency.TRIADIC_ACTOR_TARGET_BOUNDARY)),
     ExpressionAssetSpec("expression:emlis-position.v1", SentenceJob.TAKE_MATERIAL_POSITION, SemanticClauseKind.SUBJECTIVE_PREDICATE, "position", ("選べる向きとして", "尊重したいです"), (PredicateValency.DYADIC_ACTOR_TARGET, PredicateValency.TRIADIC_ACTOR_TARGET_BOUNDARY)),
     ExpressionAssetSpec("expression:emlis-open-position.v1", SentenceJob.STAY_WITH_UNFINISHED, SemanticClauseKind.SUBJECTIVE_PREDICATE, "open-position", ("急いで閉じず", "一緒に置いていたいです"), (PredicateValency.DYADIC_ACTOR_TARGET, PredicateValency.TRIADIC_ACTOR_TARGET_BOUNDARY)),
+    ExpressionAssetSpec(
+        "expression:emlis-appraisal-material-current-burden.v1",
+        SentenceJob.CONSIDER_MATERIAL_MEANING,
+        SemanticClauseKind.SUBJECTIVE_PREDICATE,
+        "appraisal-material",
+        ("具体的な負担の重みを軽く扱わずに", "受け止めたいです"),
+        (PredicateValency.DYADIC_ACTOR_TARGET,),
+        reception_projection_branch=SubjectiveProjectionBranch.NORMAL,
+        reception_act_refs=("stay_with_current_burden",),
+        reception_content_kind=SubjectiveContentKind.APPRAISAL,
+        reception_subjective_mode=SubjectiveMode.ATTENTION,
+        reception_subjective_operator=SubjectiveOperator.ATTEND_TO,
+        reception_semantic_operators=(SemanticOperator.PRESENT_BURDEN,),
+        reception_appraisal_dimension=AppraisalDimension.MATERIAL_WEIGHT,
+        reception_appraisal_operation=AppraisalOperation.RECEIVE_AS_MATERIAL,
+    ),
+    ExpressionAssetSpec(
+        "expression:emlis-appraisal-bounded-change.v1",
+        SentenceJob.CONSIDER_MATERIAL_MEANING,
+        SemanticClauseKind.SUBJECTIVE_PREDICATE,
+        "appraisal-change",
+        ("ここで示された変化をほかの場面まで広げずに", "見届けたいです"),
+        (PredicateValency.DYADIC_ACTOR_TARGET,),
+        reception_projection_branch=SubjectiveProjectionBranch.NORMAL,
+        reception_act_refs=("recognize_lived_change",),
+        reception_content_kind=SubjectiveContentKind.APPRAISAL,
+        reception_subjective_mode=SubjectiveMode.ATTENTION,
+        reception_subjective_operator=SubjectiveOperator.ATTEND_TO,
+        reception_semantic_operators=(SemanticOperator.PRESENT_CHANGE,),
+        reception_appraisal_dimension=AppraisalDimension.BOUNDED_CHANGE,
+        reception_appraisal_operation=AppraisalOperation.RECOGNIZE_AS_BOUNDED,
+    ),
+    ExpressionAssetSpec(
+        "expression:emlis-appraisal-retained-direction.v1",
+        SentenceJob.CONSIDER_MATERIAL_MEANING,
+        SemanticClauseKind.SUBJECTIVE_PREDICATE,
+        "appraisal-agency",
+        ("選べる向きを固定せずに", "尊重したいです"),
+        (PredicateValency.DYADIC_ACTOR_TARGET,),
+        reception_projection_branch=SubjectiveProjectionBranch.NORMAL,
+        reception_act_refs=("protect_retained_intention",),
+        reception_content_kind=SubjectiveContentKind.APPRAISAL,
+        reception_subjective_mode=SubjectiveMode.ATTENTION,
+        reception_subjective_operator=SubjectiveOperator.ATTEND_TO,
+        reception_semantic_operators=(SemanticOperator.PRESENT_DIRECTION,),
+        reception_appraisal_dimension=AppraisalDimension.AGENCY_BOUNDARY,
+        reception_appraisal_operation=AppraisalOperation.RESPECT_CHOICE,
+    ),
+    ExpressionAssetSpec(
+        "expression:emlis-position-help-seeking.v1",
+        SentenceJob.TAKE_MATERIAL_POSITION,
+        SemanticClauseKind.SUBJECTIVE_PREDICATE,
+        "position",
+        ("助けを求める向きから離れずに", "見守りたいです"),
+        (PredicateValency.DYADIC_ACTOR_TARGET,),
+        reception_projection_branch=SubjectiveProjectionBranch.LIMITED,
+        reception_act_refs=("hold_help_seeking",),
+        reception_content_kind=SubjectiveContentKind.RELATIONAL_POSITION,
+        reception_subjective_mode=SubjectiveMode.RELATIONAL_STANCE,
+        reception_subjective_operator=SubjectiveOperator.TAKE_RELATIONAL_STANCE,
+        reception_semantic_operators=(SemanticOperator.PRESENT_DIRECTION,),
+        reception_relational_position_kind=RelationalPositionKind.STANCE,
+        reception_stance_operator=StanceOperator.STAY_WITH_SPECIFIC_OBJECT,
+        reception_relational_commitment=RelationalCommitment.STAY_WITH,
+        reception_relational_closure=RelationalClosure.NONE,
+    ),
+    ExpressionAssetSpec(
+        "expression:emlis-position-burden-direction-pair.v1",
+        SentenceJob.TAKE_MATERIAL_POSITION,
+        SemanticClauseKind.SUBJECTIVE_PREDICATE,
+        "position",
+        ("負担と残る向きのどちらか一方だけに縮めずに", "見守りたいです"),
+        (PredicateValency.DYADIC_ACTOR_TARGET,),
+        reception_projection_branch=SubjectiveProjectionBranch.LIMITED,
+        reception_act_refs=("protect_retained_intention",),
+        reception_content_kind=SubjectiveContentKind.RELATIONAL_POSITION,
+        reception_subjective_mode=SubjectiveMode.RELATIONAL_STANCE,
+        reception_subjective_operator=SubjectiveOperator.TAKE_RELATIONAL_STANCE,
+        reception_semantic_operators=(
+            SemanticOperator.PRESENT_BURDEN,
+            SemanticOperator.PRESENT_DIRECTION,
+        ),
+        reception_relational_position_kind=RelationalPositionKind.STANCE,
+        reception_stance_operator=StanceOperator.STAY_WITH_SPECIFIC_OBJECT,
+        reception_relational_commitment=RelationalCommitment.STAY_WITH,
+        reception_relational_closure=RelationalClosure.NONE,
+    ),
 )
 
 
@@ -9236,19 +9306,172 @@ def _expression_asset(
     duty: CompositionDutyView,
     plan: ClausePlan,
     owner: Any,
+    phase_B: Stage1SurfaceCompositionInputs | None = None,
 ) -> ExpressionAssetSpec:
+    """Select a broad sense asset, then refine only from typed Reception."""
+
     key = _predicate_key(duty, owner)
-    rows = tuple(
+    base_asset = _v2_exact1(
+        tuple(
+            row
+            for row in EXPRESSION_ASSET_REGISTRY
+            if row.sentence_job is duty.sentence_job
+            and row.semantic_clause_kind is plan.semantic_clause_kind
+            and row.predicate_key == key
+            and plan.predicate_valency in row.compatible_valencies
+            and row.reception_projection_branch is None
+        ),
+        "STAGE1_EXPRESSION_ASSET_NONUNIQUE_STOP",
+    )
+    if duty.layer != "LAYER_2":
+        return base_asset
+    if phase_B is None:
+        raise Stage1CompositionError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+    proposition = _prop(owner)
+    branch = phase_B.projection.projection_branch
+    trace_stop = (
+        "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+        if branch is SubjectiveProjectionBranch.LIMITED
+        else "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+    )
+    if (
+        type(owner) not in {ProjectedSubjectiveClaim, EmlisSubjectiveClaim}
+        or type(proposition) is not SubjectivePropositionV2
+        or branch
+        not in {
+            SubjectiveProjectionBranch.NORMAL,
+            SubjectiveProjectionBranch.LIMITED,
+        }
+        or tuple(owner.basis_observation_contribution_refs)
+        != tuple(proposition.target_contribution_refs)
+        or tuple(duty.response_object_refs)
+        != tuple(proposition.response_object_refs)
+    ):
+        raise Stage1CompositionError(trace_stop)
+    contribution_by_ref = {
+        row.contribution_id: row
+        for row in phase_B.projection.observation_contributions
+    }
+    if (
+        len(contribution_by_ref)
+        != len(phase_B.projection.observation_contributions)
+        or any(
+            ref not in contribution_by_ref
+            for ref in owner.basis_observation_contribution_refs
+        )
+    ):
+        raise Stage1CompositionError(trace_stop)
+    semantic_operators = tuple(
+        sorted(
+            {
+                contribution_by_ref[ref].semantic_operator
+                for ref in owner.basis_observation_contribution_refs
+            },
+            key=lambda value: value.value,
+        )
+    )
+    reception_traces = tuple(
+        row
+        for row in phase_B.projection.reception_visible_causal_trace_rows
+        if type(row) is ReceptionVisibleCausalTraceRow
+        and row.projected_claim_ref == owner.subjective_claim_id
+    )
+    trace_layer1_cover = _unique(
+        ref
+        for row in reception_traces
+        for ref in row.layer1_contribution_refs
+    )
+    if (
+        not reception_traces
+        or len(reception_traces) != len(owner.source_reception_act_refs)
+        or any(row.branch is not branch for row in reception_traces)
+        or any(
+            tuple(row.projected_response_object_refs)
+            != tuple(duty.response_object_refs)
+            or not row.layer1_contribution_refs
+            or not set(row.layer1_contribution_refs).issubset(
+                owner.basis_observation_contribution_refs
+            )
+            for row in reception_traces
+        )
+        or set(trace_layer1_cover)
+        != set(owner.basis_observation_contribution_refs)
+    ):
+        raise Stage1CompositionError(trace_stop)
+    if branch is SubjectiveProjectionBranch.NORMAL:
+        reading_consequence_refs = {
+            row.reading_consequence_ref for row in reception_traces
+        }
+        sealed_consequence_refs = {
+            row.reading_consequence_ref
+            for row in (
+                phase_B.phase_A_authority
+                .sealed_emlis_provisional_reading_records
+            )
+        }
+        difference_refs = {
+            row.required_difference_ref
+            for row in (
+                phase_B.phase_A_authority.input_specific_meaning_structure
+                .whole_reading_consequence_rows
+            )
+        }
+        if (
+            len(reading_consequence_refs) != 1
+            or None in reading_consequence_refs
+            or not reading_consequence_refs.issubset(
+                sealed_consequence_refs
+            )
+            or any(
+                not row.preserved_difference_refs
+                or not set(row.preserved_difference_refs).issubset(
+                    difference_refs
+                )
+                for row in reception_traces
+            )
+        ):
+            raise Stage1CompositionError(trace_stop)
+    elif any(
+        row.reading_consequence_ref is not None
+        or row.preserved_difference_refs
+        for row in reception_traces
+    ):
+        raise Stage1CompositionError(trace_stop)
+
+    appraisal = proposition.appraisal_content
+    position = proposition.relational_position
+    profile_rows = tuple(
         row
         for row in EXPRESSION_ASSET_REGISTRY
         if row.sentence_job is duty.sentence_job
         and row.semantic_clause_kind is plan.semantic_clause_kind
         and row.predicate_key == key
         and plan.predicate_valency in row.compatible_valencies
+        and row.reception_projection_branch is branch
+        and row.reception_act_refs == owner.source_reception_act_refs
+        and row.reception_content_kind is proposition.content_kind
+        and row.reception_subjective_mode is proposition.subjective_mode
+        and row.reception_subjective_operator
+        is proposition.subjective_operator
+        and row.reception_semantic_operators == semantic_operators
+        and row.reception_appraisal_dimension
+        is getattr(appraisal, "dimension", None)
+        and row.reception_appraisal_operation
+        is getattr(appraisal, "operation", None)
+        and row.reception_relational_position_kind
+        is getattr(position, "relational_position_kind", None)
+        and row.reception_stance_operator
+        is getattr(position, "stance_operator", None)
+        and row.reception_relational_commitment
+        is getattr(position, "commitment", None)
+        and row.reception_relational_closure
+        is getattr(position, "closure", None)
     )
-    if len(rows) != 1:
-        raise Stage1CompositionError("STAGE1_EXPRESSION_ASSET_NONUNIQUE_STOP")
-    return rows[0]
+    if len(profile_rows) > 1:
+        raise Stage1CompositionError(
+            "STAGE1_EXPRESSION_ASSET_NONUNIQUE_STOP"
+        )
+    return profile_rows[0] if profile_rows else base_asset
 
 
 def _response_object_surface(
@@ -9641,7 +9864,7 @@ def _surface_for_plan(
     if len(construction_rows) != 1:
         raise Stage1CompositionError("STAGE1_CONSTRUCTION_NONUNIQUE_STOP")
     construction = construction_rows[0]
-    expression_asset = _expression_asset(duty, plan, owner)
+    expression_asset = _expression_asset(duty, plan, owner, phase_B)
     objects = _response_object_surface(expression, owner, phase_B)
     comma = _structural_lexeme("structural:comma.v1")
     terminal = _structural_lexeme("structural:sentence.v1")
@@ -11998,6 +12221,12 @@ def _v2_normal_form_phase_grammar_binding_ir_local_repair(
                 raise Stage1CompositionError(
                     "STAGE1_SOURCE_PAIR_CARDINALITY_STOP"
                 )
+            selected_expression_asset = _expression_asset(
+                duty,
+                plan,
+                owner,
+                phase_B,
+            )
             projected_leaf_rows = tuple(
                 _v2_source_leaf_for_semantic_ref(
                     semantic_ref=semantic_ref,
@@ -12289,6 +12518,9 @@ def _v2_normal_form_phase_grammar_binding_ir_local_repair(
                     link_plan=link_plan,
                     morphology_plan=morphology_plan,
                     clause_ir=clause_ir,
+                    selected_expression_asset_ref=(
+                        selected_expression_asset.expression_asset_id
+                    ),
                     clause_plan=plan,
                     visible_meaning_trace_rows=(
                         visible_meaning_trace_rows
@@ -12356,12 +12588,18 @@ def _v2_normal_form_phase_sole_linearization_grammar_seal(
                 link_plan=row.link_plan,
                 morphology_plan=row.morphology_plan,
                 clause_plan=row.clause_plan,
+                selected_expression_asset_ref=(
+                    row.selected_expression_asset_ref
+                ),
                 suppress_grouped_sequence_asset_surface=(
                     row.duty_ref in grouped_sequence_duty_refs
                 ),
                 visible_meaning_trace_rows=(
                     row.visible_meaning_trace_rows
                 ),
+            ),
+            selected_expression_asset_ref=(
+                row.selected_expression_asset_ref
             ),
             clause_plan=row.clause_plan,
             visible_meaning_trace_rows=row.visible_meaning_trace_rows,
@@ -12560,6 +12798,9 @@ def _validate_v2_normalized_grammar_seal(
                 link_plan=row.link_plan,
                 morphology_plan=row.morphology_plan,
                 clause_plan=row.clause_plan,
+                selected_expression_asset_ref=(
+                    row.selected_expression_asset_ref
+                ),
                 suppress_grouped_sequence_asset_surface=(
                     grouped_sequence_chain is not None
                     and row.frame.sense_ref == "S07"
@@ -13117,6 +13358,7 @@ def canonical_normalized_bytes(artifact: NormalizedDraftArtifact) -> bytes:
             row.link_plan,
             row.morphology_plan,
             row.clause_ir,
+            row.selected_expression_asset_ref,
             row.linearized_clause,
         )
         for row in artifact.v2_clause_rows
@@ -14748,7 +14990,10 @@ def validate_postrealizer_visible_causal_trace(
             )
         except Stage1CompositionError as exc:
             raise Stage1CompositionError(
-                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+                if projection.projection_branch
+                is SubjectiveProjectionBranch.LIMITED
+                else "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
             ) from exc
         plan = clause_plan_by_duty[duty.duty_ref]
         expressions = tuple(
@@ -14784,9 +15029,96 @@ def validate_postrealizer_visible_causal_trace(
             or frame.predicate_operator != clause_row.head.head_id
         ):
             raise Stage1CompositionError(
-                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+                if projection.projection_branch
+                is SubjectiveProjectionBranch.LIMITED
+                else "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
             )
         expression = expressions[0]
+        try:
+            expected_expression_asset = _expression_asset(
+                duty,
+                plan,
+                expected_owner,
+                phase_B,
+            )
+        except Stage1CompositionError as exc:
+            raise Stage1CompositionError(
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+                if projection.projection_branch
+                is SubjectiveProjectionBranch.LIMITED
+                else "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            ) from exc
+        expression_asset_segments = tuple(
+            (
+                clause_row.linearized_clause.text[
+                    binding.surface_scalar_start : binding.surface_scalar_end
+                ],
+                binding,
+                derivation,
+            )
+            for binding, derivation in zip(
+                clause_row.linearized_clause.realized_semantic_bindings,
+                clause_row.linearized_clause.surface_derivations,
+                strict=True,
+            )
+            if binding.semantic_ref
+            == expected_expression_asset.expression_asset_id
+            and derivation.derivation_kind
+            is SurfaceDerivationKind.PROJECTED_FUNCTIONAL_ASSET
+        )
+        matching_registered_modifier_rows = tuple(
+            row
+            for row in V2_SOURCE_FUNCTIONAL_MODIFIER_REGISTRY
+            if row.frame_ref == clause_row.frame.frame_id
+            and row.atomic_surface
+            == expected_expression_asset.predicate_lexemes[0]
+        )
+        modifier_expression_segments = tuple(
+            (
+                clause_row.linearized_clause.text[
+                    binding.surface_scalar_start : binding.surface_scalar_end
+                ],
+                binding,
+                derivation,
+            )
+            for binding, derivation in zip(
+                clause_row.linearized_clause.realized_semantic_bindings,
+                clause_row.linearized_clause.surface_derivations,
+                strict=True,
+            )
+            if len(matching_registered_modifier_rows) == 1
+            and binding.semantic_ref
+            == matching_registered_modifier_rows[0].modifier_id
+            and derivation.derivation_kind
+            is SurfaceDerivationKind.PROJECTED_FUNCTIONAL_ASSET
+        )
+        base_modifier_surface_is_exact = bool(
+            expected_expression_asset.reception_projection_branch is None
+            and not expression_asset_segments
+            and len(matching_registered_modifier_rows) == 1
+            and len(modifier_expression_segments) == 1
+            and modifier_expression_segments[0][0]
+            == expected_expression_asset.predicate_lexemes[0]
+        )
+        if (
+            clause_row.selected_expression_asset_ref
+            != expected_expression_asset.expression_asset_id
+            or (
+                not base_modifier_surface_is_exact
+                and (
+                    len(expression_asset_segments) != 1
+                    or expression_asset_segments[0][0]
+                    != expected_expression_asset.predicate_lexemes[0]
+                )
+            )
+        ):
+            raise Stage1CompositionError(
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+                if projection.projection_branch
+                is SubjectiveProjectionBranch.LIMITED
+                else "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
         projected_objects = tuple(
             row
             for row in unit.surface_derivations
@@ -14956,6 +15288,7 @@ def validate_postrealizer_visible_causal_trace(
                 trace.reception_record_ref,
                 unit.unit_ref,
                 expression.response_object_expression_ref,
+                expected_expression_asset.expression_asset_id,
                 tuple(
                     ref
                     for ref in trace.projected_response_object_refs
@@ -15158,14 +15491,109 @@ def validate_language_core_registry_invariant() -> None:
         raise Stage1CompositionError("LANGUAGE_CORE_ANTI_TEMPLATE_REGISTRY_STOP")
 
     expression_ids = tuple(row.expression_asset_id for row in EXPRESSION_ASSET_REGISTRY)
+    reception_profile_rows = tuple(
+        row
+        for row in EXPRESSION_ASSET_REGISTRY
+        if row.reception_projection_branch is not None
+    )
+    reception_profile_keys = tuple(
+        (
+            row.reception_projection_branch,
+            row.reception_act_refs,
+            row.reception_content_kind,
+            row.reception_subjective_mode,
+            row.reception_subjective_operator,
+            row.reception_semantic_operators,
+            row.reception_appraisal_dimension,
+            row.reception_appraisal_operation,
+            row.reception_relational_position_kind,
+            row.reception_stance_operator,
+            row.reception_relational_commitment,
+            row.reception_relational_closure,
+        )
+        for row in reception_profile_rows
+    )
     if (
         len(expression_ids) != len(set(expression_ids))
+        or len(reception_profile_rows) != 5
+        or len(reception_profile_keys) != len(set(reception_profile_keys))
         or any(
             not row.predicate_lexemes
             or any(
                 not token
                 or any(mark in token for mark in ("。", "！", "？", "\n", "\r"))
                 for token in row.predicate_lexemes
+            )
+            for row in EXPRESSION_ASSET_REGISTRY
+        )
+        or any(
+            row.semantic_clause_kind
+            is not SemanticClauseKind.SUBJECTIVE_PREDICATE
+            or len(row.reception_act_refs) != 1
+            or row.reception_content_kind is None
+            or row.reception_subjective_mode is None
+            or row.reception_subjective_operator is None
+            or not row.reception_semantic_operators
+            or row.reception_semantic_operators
+            != tuple(
+                sorted(
+                    set(row.reception_semantic_operators),
+                    key=lambda value: value.value,
+                )
+            )
+            or "、" in row.predicate_lexemes[0]
+            or not any(
+                marker in row.predicate_lexemes[0]
+                for marker in ("ず", "ではなく")
+            )
+            or (
+                row.reception_content_kind
+                is SubjectiveContentKind.APPRAISAL
+                and (
+                    row.reception_appraisal_dimension is None
+                    or row.reception_appraisal_operation is None
+                    or any(
+                        value is not None
+                        for value in (
+                            row.reception_relational_position_kind,
+                            row.reception_stance_operator,
+                            row.reception_relational_commitment,
+                            row.reception_relational_closure,
+                        )
+                    )
+                )
+            )
+            or (
+                row.reception_content_kind
+                is SubjectiveContentKind.RELATIONAL_POSITION
+                and (
+                    row.reception_appraisal_dimension is not None
+                    or row.reception_appraisal_operation is not None
+                    or row.reception_relational_position_kind is None
+                    or row.reception_stance_operator is None
+                    or row.reception_relational_commitment is None
+                    or row.reception_relational_closure is None
+                )
+            )
+            for row in reception_profile_rows
+        )
+        or any(
+            row.reception_projection_branch is None
+            and any(
+                value
+                for value in (
+                    row.reception_act_refs,
+                    row.reception_content_kind,
+                    row.reception_subjective_mode,
+                    row.reception_subjective_operator,
+                    row.reception_semantic_operators,
+                    row.reception_appraisal_dimension,
+                    row.reception_appraisal_operation,
+                    row.reception_relational_position_kind,
+                    row.reception_stance_operator,
+                    row.reception_relational_commitment,
+                    row.reception_relational_closure,
+                )
             )
             for row in EXPRESSION_ASSET_REGISTRY
         )

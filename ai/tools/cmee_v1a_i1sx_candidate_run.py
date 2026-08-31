@@ -368,13 +368,13 @@ N3_HISTORICAL_STATIC_RECEIPT_SHA256 = (
     "e71a79fa4748134396b5fa46e6cf98ff91e535fb91b955fa5c814106177a26bb"
 )
 IM03_WORKING_LANGUAGE_CORE_IDENTITY = (
-    "04d1c27683b02656386223966a17236532d33d30925c74ac047b93e6fc327418"
+    "1385d011d08474c9d90a22daf92fa1bb901b66918229821ed66520da85007100"
 )
 IM03_WORKING_RUNTIME_INTEGRATION_IDENTITY = (
-    "91d863a9b727e45e66474110da8075b310dd047cd99ca670c3345feb63c719ec"
+    "1b7d54a819cb3abf4d34df07523577a1fc83b20e05d12034a94f2979b63972aa"
 )
 IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT17 = (
-    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "149bbda366b42c74f09b5810d7dbb7a90fb44eee97280bfd94feb47708f632f6", 1488936),
+    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "81ebd860b8dd1fc202576ec2da7afc5c4a017a6d46c5f7000906add406e32892", 1528109),
     ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py", "ac374e92f6309b38432db6a9b99c5cd7690b71b4139b2456965cd69b48e9c9ab", 1922340),
     ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py", "1fee0aa96c732c07bbc1f9cb522c669839f83d74ba2388b9b8d174208a2ee86e", 647828),
     ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py", "8c6ed267db55cc87751d3f75fc39eb7678224266595c175b5d216518d004e8ca", 712544),
@@ -393,7 +393,7 @@ IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT17 = (
     ("product_causal_owner_and_registry_digests_manifest", "ae2d61ff3119527266ea6b2d02fbf1aa4bb1ab91ba56676875f1d36762bc7f4c", 6646),
 )
 IM03_WORKING_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT17 = (
-    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "6e3c816ce5a9136eeb248db009bca73852a26de07791ffe7d9fd374d6ba6041a", 674426),
+    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "928cb826c0ee486bd1f511d24a5deb7199804d5e462ac238a37156d62078dd43", 693577),
     ("ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py", "0705bcb48ca1c9a347b691d2eaf3d8a980cd8a044ca66292dda69e3b5fdbdc8c", 760521),
     ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py", "437831951fa0c4062d68af2342d79ebfc4b29e8c318e1fa8765c74c4aac9a832", 412047),
     ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py", "c907af7a059f802120b3e494a88651015a14d45c5e272ab1f9d3f1e9bfa8d06f", 293740),
@@ -412,19 +412,19 @@ IM03_WORKING_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT17 = (
     ("product_causal_owner_and_registry_digests_manifest", "ae2d61ff3119527266ea6b2d02fbf1aa4bb1ab91ba56676875f1d36762bc7f4c", 6646),
 )
 IM03_WORKING_LANGUAGE_PAYLOAD_TUPLE_SHA256 = (
-    "c41db988502b80db647f791c56835d66c6a256b0e6a8cbf44a48edae0fe8a793"
+    "1bba5f655f6627c608b541dabd851c76a283775857bd204cbbc609db90600750"
 )
 IM03_WORKING_RUNTIME_PAYLOAD_TUPLE_SHA256 = (
-    "014f9529eeb1d4e06cf71a28b9c97d22ae874085208207f79c405beb471cd0eb"
+    "166754bc94edc65d0a2e66420c9fb023a46dc7a3eac69acdea10d7c78e11d37d"
 )
 IM03_WORKING_SOURCE_OWNER_PAYLOAD_EXACT8_TUPLE_SHA256 = (
-    "eb0e3a1ea5d22799b2dc672ef3a914baf5ea27c87fd43d85856b259f1d08fe7b"
+    "ec88a27e623415df6811d74dd53f5e8c456c3bb92f2061e4d732dafc82483796"
 )
 IM03_WORKING_SOURCE_OWNER_SYMBOL_SET_SHA256 = (
-    "e72d71bf222286efe85f97eae3a8c5e9f9455d298d99c6a554f9909d73a9e644"
+    "8f55ff07619b4bcc194651bcf09b8d369aad571b29268440d72ce376a1cd7733"
 )
 IM03_WORKING_SOURCE_OWNER_DECLARATION_COUNTS_EXACT8 = (
-    283, 482, 114, 180, 251, 5, 39, 89,
+    284, 482, 114, 180, 251, 5, 39, 89,
 )
 IM03_WORKING_SOURCE_OWNER_IMPORT_COUNTS_EXACT8 = (
     139, 17, 140, 70, 36, 25, 19, 98,
@@ -450,13 +450,13 @@ IM06_APPROVED_NONSELF_BYTES_NAME_SHA256_BYTE_COUNT_EXACT5 = (
     ("ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py", "0705bcb48ca1c9a347b691d2eaf3d8a980cd8a044ca66292dda69e3b5fdbdc8c", 760521),
     ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py", "75343d43f9e22c101d218fb80fb2b17a9a264780ceb63842c6d75cb7dbb0c2f4", 204877),
     ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py", "437831951fa0c4062d68af2342d79ebfc4b29e8c318e1fa8765c74c4aac9a832", 412047),
-    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "6e3c816ce5a9136eeb248db009bca73852a26de07791ffe7d9fd374d6ba6041a", 674426),
-    ("ai/tests/test_cmee_v1a_i1sx_contracts.py", "1dfdecef0e760ba4e5d9255f5335768eb57a571399ca89e0ab7b52b0fde53e4d", 1355314),
+    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "928cb826c0ee486bd1f511d24a5deb7199804d5e462ac238a37156d62078dd43", 693577),
+    ("ai/tests/test_cmee_v1a_i1sx_contracts.py", "54b8453cd441939a59a84d198904ce19df9d49c9ab90d51a05f4bca13ba770f0", 1369522),
 )
 IM06_EXPECTED_COLLECTED_DENOMINATORS_EXACT2 = (47, 241)
 IM06_ACTUAL_COLLECTED_DENOMINATORS_EXACT2 = (47, 241)
 IM06_WORKING_RUNNER_SELF_PROJECTION_SHA256 = (
-    "6cdeb584d89fbc57f72d17d04aefaa02913f67491a5ac70cfb28a5997c0b147a"
+    "02de4da45c02daf5210af7b64b57bc5b332bec6c56b8693fed4be77ee562a643"
 )
 IM06_WORKING_RUNNER_SELF_PROJECTION_BYTE_COUNT = 286403
 IM06_WORKING_RUNNER_SELF_PROJECTION_DECLARATION_COUNT = 214

@@ -13510,7 +13510,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             )
         )
         frozen_runtime_payload_sha256 = {
-            exact17_names[0]: "6e3c816ce5a9136eeb248db009bca73852a26de07791ffe7d9fd374d6ba6041a",
+            exact17_names[0]: "928cb826c0ee486bd1f511d24a5deb7199804d5e462ac238a37156d62078dd43",
             exact17_names[1]: "0705bcb48ca1c9a347b691d2eaf3d8a980cd8a044ca66292dda69e3b5fdbdc8c",
             exact17_names[2]: "437831951fa0c4062d68af2342d79ebfc4b29e8c318e1fa8765c74c4aac9a832",
             exact17_names[3]: "c907af7a059f802120b3e494a88651015a14d45c5e272ab1f9d3f1e9bfa8d06f",
@@ -13554,7 +13554,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 in runtime_payload_name_sha256_byte_count_exact17[:8]
             ),
             (
-                674426,
+                693577,
                 760521,
                 412047,
                 293740,
@@ -32920,6 +32920,80 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
         )
         self.assertEqual(len(formal_cases), 8)
         reciprocal_tension_case_count = 0
+        reception_visible_witness_count = 0
+        typed_reception_asset_witness_count = 0
+        typed_reception_asset_by_profile = {
+            (
+                "NORMAL",
+                ("stay_with_current_burden",),
+                "APPRAISAL",
+                "ATTENTION",
+                "ATTEND_TO",
+                ("PRESENT_BURDEN",),
+                "MATERIAL_WEIGHT",
+                "RECEIVE_AS_MATERIAL",
+                None,
+                None,
+                None,
+                None,
+            ): "expression:emlis-appraisal-material-current-burden.v1",
+            (
+                "NORMAL",
+                ("recognize_lived_change",),
+                "APPRAISAL",
+                "ATTENTION",
+                "ATTEND_TO",
+                ("PRESENT_CHANGE",),
+                "BOUNDED_CHANGE",
+                "RECOGNIZE_AS_BOUNDED",
+                None,
+                None,
+                None,
+                None,
+            ): "expression:emlis-appraisal-bounded-change.v1",
+            (
+                "NORMAL",
+                ("protect_retained_intention",),
+                "APPRAISAL",
+                "ATTENTION",
+                "ATTEND_TO",
+                ("PRESENT_DIRECTION",),
+                "AGENCY_BOUNDARY",
+                "RESPECT_CHOICE",
+                None,
+                None,
+                None,
+                None,
+            ): "expression:emlis-appraisal-retained-direction.v1",
+            (
+                "LIMITED",
+                ("hold_help_seeking",),
+                "RELATIONAL_POSITION",
+                "RELATIONAL_STANCE",
+                "TAKE_RELATIONAL_STANCE",
+                ("PRESENT_DIRECTION",),
+                None,
+                None,
+                "STANCE",
+                "STAY_WITH_SPECIFIC_OBJECT",
+                "STAY_WITH",
+                "NONE",
+            ): "expression:emlis-position-help-seeking.v1",
+            (
+                "LIMITED",
+                ("protect_retained_intention",),
+                "RELATIONAL_POSITION",
+                "RELATIONAL_STANCE",
+                "TAKE_RELATIONAL_STANCE",
+                ("PRESENT_BURDEN", "PRESENT_DIRECTION"),
+                None,
+                None,
+                "STANCE",
+                "STAY_WITH_SPECIFIC_OBJECT",
+                "STAY_WITH",
+                "NONE",
+            ): "expression:emlis-position-burden-direction-pair.v1",
+        }
         for formal_row, formal_private_case, formal_body_free_case in formal_cases:
             self.assertTrue(formal_private_case["formal_trace_valid"])
             self.assertTrue(formal_private_case["machine_invariant_clear"])
@@ -32967,6 +33041,264 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
             normalized = formal_private_case["artifact"][
                 "normalized_artifact"
             ]
+            decision = formal_private_case["decision"][
+                "input_specific_meaning_structure_body"
+            ]
+            subjective_plan = formal_private_case["projection"][
+                "subjective_plan_body"
+            ]
+            stage1_projection = formal_private_case["projection"][
+                "stage1_projection_body"
+            ]
+            consequence_rows = decision["whole_reading_consequence_rows"]
+            subjective_claim_rows = subjective_plan["subjective_claim_rows"]
+            contribution_by_ref = {
+                row["contribution_id"]: row
+                for row in stage1_projection["observation_contributions"]
+            }
+            reception_trace_rows = subjective_plan[
+                "reception_visible_causal_trace_rows"
+            ]
+            self.assertTrue(reception_trace_rows)
+            for reception_trace in reception_trace_rows:
+                reception_visible_witness_count += 1
+                if reception_trace["branch"] == "NORMAL":
+                    self.assertIsNotNone(
+                        reception_trace["reading_consequence_ref"]
+                    )
+                    self.assertTrue(
+                        reception_trace["preserved_difference_refs"]
+                    )
+                    for required_difference_ref in reception_trace[
+                        "preserved_difference_refs"
+                    ]:
+                        self.assertEqual(
+                            sum(
+                                row["required_difference_ref"]
+                                == required_difference_ref
+                                for row in consequence_rows
+                            ),
+                            1,
+                        )
+                matching_claims = tuple(
+                    row
+                    for row in subjective_claim_rows
+                    if row["subjective_claim_id"]
+                    == reception_trace["projected_claim_ref"]
+                )
+                self.assertEqual(len(matching_claims), 1)
+                matching_claim = matching_claims[0]
+                proposition = matching_claim[
+                    "asserted_subjective_proposition"
+                ]
+                matching_duties = tuple(
+                    row
+                    for row in normalized["composition_duty_rows"]
+                    if row["layer"] == "LAYER_2"
+                    and matching_claim["subjective_claim_id"]
+                    in row["basis_projection_refs"]
+                )
+                self.assertEqual(len(matching_duties), 1)
+                reception_duty = matching_duties[0]
+                self.assertEqual(
+                    tuple(reception_duty["response_object_refs"]),
+                    tuple(reception_trace["projected_response_object_refs"]),
+                )
+                matching_clauses = tuple(
+                    row
+                    for row in normalized["v2_clause_rows"]
+                    if row["duty_ref"] == reception_duty["duty_ref"]
+                )
+                matching_units = tuple(
+                    row
+                    for row in normalized["sentence_units"]
+                    if reception_duty["duty_ref"] in row["duty_refs"]
+                )
+                self.assertEqual(
+                    (len(matching_clauses), len(matching_units)),
+                    (1, 1),
+                )
+                reception_clause = matching_clauses[0]
+                reception_unit = matching_units[0]
+                response_expression = reception_clause["reference_state"][
+                    "response_object_expression"
+                ]
+                self.assertEqual(
+                    tuple(response_expression["basis_semantic_refs"]),
+                    tuple(reception_trace["projected_response_object_refs"]),
+                )
+                linearized = reception_clause["linearized_clause"]
+                realized_segments = tuple(
+                    (
+                        linearized["text"][
+                            binding["surface_scalar_start"] :
+                            binding["surface_scalar_end"]
+                        ],
+                        binding,
+                        derivation,
+                    )
+                    for binding, derivation in zip(
+                        linearized["realized_semantic_bindings"],
+                        linearized["surface_derivations"],
+                        strict=True,
+                    )
+                )
+                literal_segments = tuple(
+                    row
+                    for row in realized_segments
+                    if row[2]["derivation_kind"] == "LITERAL_SUBSPAN"
+                    and row[1]["semantic_ref"]
+                    in reception_trace["projected_response_object_refs"]
+                )
+                projected_response_segments = tuple(
+                    row
+                    for row in realized_segments
+                    if row[2]["derivation_kind"]
+                    == "PROJECTED_RESPONSE_OBJECT"
+                )
+                consequence_prefix_segments = tuple(
+                    row
+                    for row in realized_segments
+                    if row[2]["derivation_kind"]
+                    == "PROJECTED_FUNCTIONAL_ASSET"
+                    and row[1]["semantic_ref"].startswith(
+                        "expression:emlis-"
+                    )
+                )
+                appraisal = proposition.get("appraisal_content") or {}
+                position = proposition.get("relational_position") or {}
+                typed_profile = (
+                    reception_trace["branch"],
+                    tuple(matching_claim["source_reception_act_refs"]),
+                    proposition["content_kind"],
+                    proposition["subjective_mode"],
+                    proposition["subjective_operator"],
+                    tuple(
+                        sorted(
+                            {
+                                contribution_by_ref[ref]["semantic_operator"]
+                                for ref in matching_claim[
+                                    "basis_observation_contribution_refs"
+                                ]
+                            }
+                        )
+                    ),
+                    appraisal.get("dimension"),
+                    appraisal.get("operation"),
+                    position.get("relational_position_kind"),
+                    position.get("stance_operator"),
+                    position.get("commitment"),
+                    position.get("closure"),
+                )
+                expected_typed_asset_ref = (
+                    typed_reception_asset_by_profile.get(typed_profile)
+                )
+                if expected_typed_asset_ref is not None:
+                    typed_reception_asset_witness_count += 1
+                    self.assertEqual(
+                        reception_clause["selected_expression_asset_ref"],
+                        expected_typed_asset_ref,
+                    )
+                    self.assertEqual(len(consequence_prefix_segments), 1)
+                    self.assertEqual(
+                        consequence_prefix_segments[0][1]["semantic_ref"],
+                        expected_typed_asset_ref,
+                    )
+                    self.assertTrue(
+                        any(
+                            marker in consequence_prefix_segments[0][0]
+                            for marker in ("ず", "ではなく")
+                        )
+                    )
+                else:
+                    self.assertEqual(
+                        typed_profile[6:8],
+                        ("RELATIONAL_NONCOLLAPSE", "PRESERVE_BOTH_ENDPOINTS"),
+                    )
+                    self.assertEqual(
+                        reception_clause["selected_expression_asset_ref"],
+                        "expression:emlis-appraisal-noncollapse.v1",
+                    )
+                if response_expression["expression_mode"] == "ANAPHORIC":
+                    self.assertFalse(literal_segments)
+                    self.assertEqual(len(projected_response_segments), 1)
+                    projected_response = projected_response_segments[0][2]
+                    self.assertEqual(
+                        projected_response[
+                            "response_object_expression_ref"
+                        ],
+                        response_expression[
+                            "response_object_expression_ref"
+                        ],
+                    )
+                    self.assertEqual(
+                        projected_response["antecedent_unit_ref"],
+                        response_expression["antecedent_unit_ref"],
+                    )
+                    unit_index = normalized["sentence_units"].index(
+                        reception_unit
+                    )
+                    self.assertGreater(unit_index, 0)
+                    antecedent_unit = normalized["sentence_units"][
+                        unit_index - 1
+                    ]
+                    self.assertEqual(
+                        antecedent_unit["unit_ref"],
+                        response_expression["antecedent_unit_ref"],
+                    )
+                    self.assertEqual(antecedent_unit["layer"], "LAYER_1")
+                    antecedent_literal_refs = tuple(
+                        dict.fromkeys(
+                            binding["semantic_ref"]
+                            for binding, derivation in zip(
+                                antecedent_unit[
+                                    "realized_semantic_bindings"
+                                ],
+                                antecedent_unit["surface_derivations"],
+                                strict=True,
+                            )
+                            if derivation["derivation_kind"]
+                            == "LITERAL_SUBSPAN"
+                            and binding["semantic_ref"]
+                            in reception_trace[
+                                "projected_response_object_refs"
+                            ]
+                        )
+                    )
+                    self.assertEqual(
+                        antecedent_literal_refs,
+                        tuple(
+                            reception_trace[
+                                "projected_response_object_refs"
+                            ]
+                        ),
+                    )
+                else:
+                    self.assertFalse(projected_response_segments)
+                    self.assertEqual(
+                        tuple(
+                            row[1]["semantic_ref"]
+                            for row in literal_segments
+                        ),
+                        tuple(
+                            reception_trace[
+                                "projected_response_object_refs"
+                            ]
+                        ),
+                    )
+                    source_without_terminal = formal_row[1].rstrip(
+                        "。．.!！?？"
+                    ).strip()
+                    self.assertTrue(
+                        all(
+                            segment[0] in source_without_terminal
+                            for segment in literal_segments
+                        )
+                    )
+                    self.assertNotEqual(
+                        "".join(segment[0] for segment in literal_segments),
+                        source_without_terminal,
+                    )
             relation_duties = tuple(
                 row
                 for row in normalized["composition_duty_rows"]
@@ -33075,6 +33407,8 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                     for duty in reciprocal_relation_duties
                 )
                 self.assertEqual(len(set(relation_unit_refs)), 2)
+        self.assertEqual(reception_visible_witness_count, 8)
+        self.assertEqual(typed_reception_asset_witness_count, 7)
         self.assertEqual(reciprocal_tension_case_count, 1)
         self.assertEqual(
             (
