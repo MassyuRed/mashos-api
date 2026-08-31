@@ -215,9 +215,9 @@ class ClauseLinkPlacement(str, Enum):
 # I01 registration only: no active facade reads this inventory and none of the
 # rows contain request data or a completed user-visible phrase.
 V2_GRAMMAR_INVENTORY_SHA256 = (
-    "1e593666c8ca7c02824fa51978827b62afb46a6f3254f4c612635eb3945fdfe1"
+    "a669b33be64b067b6548da20390d7dbb8ffab0f8297d91736bf4363780d7c7b9"
 )
-V2_GRAMMAR_INVENTORY_BYTE_COUNT = 14_752
+V2_GRAMMAR_INVENTORY_BYTE_COUNT = 14_695
 V2_GRAMMAR_INVENTORY_ROW_COUNT = 246
 V2_GRAMMAR_INVENTORY = """SENSE|S01|OBSERVE_CENTER|GROUNDED_PREDICATE|center|F01
 SENSE|S02|OBSERVE_CENTER|GROUNDED_PREDICATE|direction|F02
@@ -272,7 +272,7 @@ HEAD|H09|F09|生じる|IC01|LF08
 HEAD|H10|F10|ある|IC03|LF09
 HEAD|H11|F11|気+LEXICALIZED_に+かける|IC01|LF10
 HEAD|H12|F12|受け+止める|IC01|LF11
-HEAD|H13|F13|受け+止める|IC01|LF12
+HEAD|H13|F13|抱える|IC01|LF12
 HEAD|H14|F14|見+届ける|IC01|LF13
 HEAD|H15|F15|結論づける|IC01|LF14
 HEAD|H16|F16|尊重+する|IC06|LF15
@@ -282,7 +282,7 @@ HEAD|H19|F19|見+守る|IC03|LF18
 HEAD|H20|F20|固定+する|IC06|LF19
 HEAD|H21|F21|断定+する|IC06|LF22
 HEAD|H22|F22|限定+する|IC06|LF20
-HEAD|H23|F23|見+守る|IC03|LF18
+HEAD|H23|F23|守る|IC03|LF17
 HEAD|H24|F24|緊張+関係+LEXICALIZED_に+ある|IC03|LF23
 LEXICAL_FAMILY|LF01|中心+LEXICALIZED_に+なる
 LEXICAL_FAMILY|LF02|見える
@@ -295,7 +295,7 @@ LEXICAL_FAMILY|LF08|生じる
 LEXICAL_FAMILY|LF09|ある
 LEXICAL_FAMILY|LF10|気+LEXICALIZED_に+かける
 LEXICAL_FAMILY|LF11|受け+止める
-LEXICAL_FAMILY|LF12|受け+止める
+LEXICAL_FAMILY|LF12|抱える
 LEXICAL_FAMILY|LF13|見+届ける
 LEXICAL_FAMILY|LF14|結論づける
 LEXICAL_FAMILY|LF15|尊重+する
@@ -308,11 +308,11 @@ LEXICAL_FAMILY|LF21|見+られる
 LEXICAL_FAMILY|LF22|断定+する
 LEXICAL_FAMILY|LF23|緊張+関係+LEXICALIZED_に+ある
 COMPLEMENT|C02|QUOTE_COMPLEMENT|EXACT1|PRIMARY_OBJECT|OUTER_QUOTES,FRAME_MARKER
-COMPLEMENT|C03|CONTENT_NOMINAL|EXACT1|MONADIC_SUBJECT|OUTER_QUOTES,SF01,SF02
-COMPLEMENT|C04|CONTENT_NOMINAL|EXACT1|PRIMARY_OBJECT|OUTER_QUOTES,SF01,SF02
-COMPLEMENT|C05|CLASSIFIED_CONTENT|EXACT1|MONADIC_SUBJECT|OUTER_QUOTES,SF01,CLASSIFIER_EXACT1
-COMPLEMENT|C06|CLASSIFIED_CONTENT|EXACT1|PRIMARY_OBJECT|OUTER_QUOTES,SF01,CLASSIFIER_EXACT1
-COMPLEMENT|C07|COORDINATED_EXACT2|ORDERED_EXACT2|PAIRED_ENDPOINTS|FRAME_PARTICLES,COORDINATOR_ZERO
+COMPLEMENT|C03|CONTENT_NOMINAL|EXACT1|MONADIC_SUBJECT|SF01,SF02
+COMPLEMENT|C04|CONTENT_NOMINAL|EXACT1|PRIMARY_OBJECT|SF01,SF02
+COMPLEMENT|C05|CLASSIFIED_CONTENT|EXACT1|MONADIC_SUBJECT|SF01,CLASSIFIER_EXACT1
+COMPLEMENT|C06|CLASSIFIED_CONTENT|EXACT1|PRIMARY_OBJECT|SF01,CLASSIFIER_EXACT1
+COMPLEMENT|C07|COORDINATED_EXACT2|ORDERED_EXACT2|PAIRED_ENDPOINTS|OUTER_QUOTES,FRAME_PARTICLES,COORDINATOR_ZERO
 COMPLEMENT|C08|COORDINATED_EXACT2|ORDERED_EXACT2|PRIMARY_OBJECT|OUTER_QUOTES,SF03
 COMPLEMENT|C09|BOUNDARY_SPLIT_EXACT2|ORDERED_EXACT2|PRIMARY_OBJECT,SECONDARY_OBJECT|OUTER_QUOTES,FRAME_PARTICLES,COORDINATOR_ZERO
 SENSE_COMPLEMENT|SC01|S01|F01|C03|NONE
@@ -2726,21 +2726,33 @@ def select_source_complement_plan(
     if not compatibility or rule.cardinality is not group.cardinality:
         raise Stage1CompositionError("STAGE1_SOURCE_PAIR_CARDINALITY_STOP")
 
+    direct_source_safe = all(
+        leaf.sentence_shape is SourceSentenceShape.ONE_SENTENCE
+        and
+        leaf.final_terminal_class
+        is SourceFinalTerminalClass.ABSENT
+        and leaf.line_break_shape is SourceLineBreakShape.NONE
+        for leaf in leaves
+    )
     delimiter_refs: list[str] = []
-    for leaf in leaves:
-        delimiter = _v2_exact1(
-            tuple(
-                row
-                for row in V2_SOURCE_QUOTE_DELIMITER_REGISTRY
-                if row.source_quote_topology is leaf.quote_topology
-            ),
-            "STAGE1_SOURCE_COMPLEMENT_NONUNIQUE_STOP",
-        )
-        if delimiter.outer_delimiter_kind == "STOP":
-            raise Stage1CompositionError(
-                "SOURCE_OUTER_DELIMITER_UNAVAILABLE_STOP"
+    if (
+        "OUTER_QUOTES" in rule.structural_asset_refs
+        or not direct_source_safe
+    ):
+        for leaf in leaves:
+            delimiter = _v2_exact1(
+                tuple(
+                    row
+                    for row in V2_SOURCE_QUOTE_DELIMITER_REGISTRY
+                    if row.source_quote_topology is leaf.quote_topology
+                ),
+                "STAGE1_SOURCE_COMPLEMENT_NONUNIQUE_STOP",
             )
-        delimiter_refs.append(delimiter.delimiter_rule_id)
+            if delimiter.outer_delimiter_kind == "STOP":
+                raise Stage1CompositionError(
+                    "SOURCE_OUTER_DELIMITER_UNAVAILABLE_STOP"
+                )
+            delimiter_refs.append(delimiter.delimiter_rule_id)
 
     classifier_ref: Optional[str] = None
     expects_classifier = "CLASSIFIER_EXACT1" in rule.structural_asset_refs
@@ -3618,12 +3630,17 @@ def _v2_validate_source_complement_plan(
         "STAGE1_SOURCE_COMPLEMENT_NONUNIQUE_STOP",
     )
     expected_slots = ",".join(_v2_complement_case_slots(rule, frame))
-    expected_delimiter_count = (
+    source_cardinality = (
         1 if rule.cardinality is SourceLeafCardinality.EXACT1 else 2
+    )
+    allowed_delimiter_counts = (
+        {source_cardinality}
+        if "OUTER_QUOTES" in rule.structural_asset_refs
+        else {0, source_cardinality}
     )
     if (
         plan.case_slot_ref != expected_slots
-        or len(plan.quote_delimiter_refs) != expected_delimiter_count
+        or len(plan.quote_delimiter_refs) not in allowed_delimiter_counts
         or plan.classifier_ref != license_row.classifier_ref
         or ("CLASSIFIER_EXACT1" in rule.structural_asset_refs)
         != (plan.classifier_ref is not None)
@@ -4549,6 +4566,20 @@ def linearize_japanese_clause(
             structural_segment(closing, f"{delimiter_ref}:CLOSE", slot),
         ]
 
+    def direct_leaf_segment(
+        leaf: SourceLeafToken,
+        slot: str,
+    ) -> Tuple[str, str, str, SurfaceDerivation]:
+        return (
+            leaf.payload_utf8.decode("utf-8", "strict"),
+            leaf.semantic_ref,
+            slot,
+            _v2_surface_derivation(
+                SurfaceDerivationKind.LITERAL_SUBSPAN,
+                source_leaf=leaf,
+            ),
+        )
+
     rule = _v2_exact1(
         tuple(
             row
@@ -4580,7 +4611,7 @@ def linearize_japanese_clause(
         raise Stage1CompositionError(
             "STAGE1_REFERENCE_REPAIR_UNAVAILABLE_STOP"
         )
-    quote_slots: Tuple[str, ...] = ()
+    leaf_slots: Tuple[str, ...] = ()
     if anaphoric_surface is not None:
         slot = source_slots[0]
         source_segment_by_slot[slot].append(
@@ -4596,33 +4627,54 @@ def linearize_japanese_clause(
                 ),
             )
         )
-        quoted: Tuple[
+        realized_leaves: Tuple[
             list[Tuple[str, str, str, SurfaceDerivation]], ...
         ] = ()
     else:
-        quote_slots = (
+        leaf_slots = (
             source_slots
             if rule.complement_rule_id in {"C07", "C09"}
             else tuple(source_slots[0] for _leaf in leaves)
         )
-        if len(quote_slots) != len(leaves):
+        if len(leaf_slots) != len(leaves):
             raise Stage1CompositionError(
                 "STAGE1_SOURCE_COMPLEMENT_NONUNIQUE_STOP"
             )
-        quoted = tuple(
-            quoted_leaf_segments(leaf, delimiter_ref, slot)
-            for leaf, delimiter_ref, slot in zip(
-                leaves,
-                source_complement_plan.quote_delimiter_refs,
-                quote_slots,
-                strict=True,
-            )
+        direct_source_safe = all(
+            leaf.sentence_shape is SourceSentenceShape.ONE_SENTENCE
+            and
+            leaf.final_terminal_class
+            is SourceFinalTerminalClass.ABSENT
+            and leaf.line_break_shape is SourceLineBreakShape.NONE
+            for leaf in leaves
         )
+        if (
+            not source_complement_plan.quote_delimiter_refs
+            and not direct_source_safe
+        ):
+            raise Stage1CompositionError(
+                "STAGE1_SOURCE_COMPLEMENT_NONUNIQUE_STOP"
+            )
+        if source_complement_plan.quote_delimiter_refs:
+            realized_leaves = tuple(
+                quoted_leaf_segments(leaf, delimiter_ref, slot)
+                for leaf, delimiter_ref, slot in zip(
+                    leaves,
+                    source_complement_plan.quote_delimiter_refs,
+                    leaf_slots,
+                    strict=True,
+                )
+            )
+        else:
+            realized_leaves = tuple(
+                [direct_leaf_segment(leaf, slot)]
+                for leaf, slot in zip(leaves, leaf_slots, strict=True)
+            )
     if anaphoric_surface is not None:
         pass
     elif rule.complement_rule_id in {"C02", "C03", "C04", "C05", "C06"}:
         slot = source_slots[0]
-        source_segment_by_slot[slot].extend(quoted[0])
+        source_segment_by_slot[slot].extend(realized_leaves[0])
         if rule.complement_rule_id in {"C03", "C04", "C05", "C06"}:
             token = _v2_exact1(
                 tuple(
@@ -4665,11 +4717,11 @@ def linearize_japanese_clause(
                 )
             )
     elif rule.complement_rule_id == "C07":
-        for slot, segments in zip(source_slots, quoted):
-            source_segment_by_slot[slot].extend(segments)
+        for slot, leaf_segments in zip(source_slots, realized_leaves):
+            source_segment_by_slot[slot].extend(leaf_segments)
     elif rule.complement_rule_id == "C08":
         slot = source_slots[0]
-        source_segment_by_slot[slot].extend(quoted[0])
+        source_segment_by_slot[slot].extend(realized_leaves[0])
         coordinator = _v2_exact1(
             tuple(
                 row
@@ -4685,10 +4737,10 @@ def linearize_japanese_clause(
                 slot,
             )
         )
-        source_segment_by_slot[slot].extend(quoted[1])
+        source_segment_by_slot[slot].extend(realized_leaves[1])
     elif rule.complement_rule_id == "C09":
-        for slot, segments in zip(source_slots, quoted):
-            source_segment_by_slot[slot].extend(segments)
+        for slot, leaf_segments in zip(source_slots, realized_leaves):
+            source_segment_by_slot[slot].extend(leaf_segments)
     else:
         raise Stage1CompositionError(
             "STAGE1_SOURCE_COMPLEMENT_NONUNIQUE_STOP"
@@ -4746,7 +4798,7 @@ def linearize_japanese_clause(
     if (
         expression_prefix is not None
         and clause_plan.semantic_clause_kind
-        is not SemanticClauseKind.SUBJECTIVE_PREDICATE
+        is SemanticClauseKind.ADMITTED_RELATION
     ):
         segments.append(
             functional_segment(
@@ -4938,7 +4990,7 @@ def linearize_japanese_clause(
         )
         expected_literal_slot_rows = tuple(
             (leaf.semantic_ref, slot)
-            for leaf, slot in zip(leaves, quote_slots, strict=True)
+            for leaf, slot in zip(leaves, leaf_slots, strict=True)
         )
         if literal_slot_rows != expected_literal_slot_rows:
             raise Stage1CompositionError("STAGE1_DERIVATION_SEAL_STOP")
@@ -7901,6 +7953,7 @@ def _reciprocal_tension_relation_pair(
         first.contribution_id == second.contribution_id
         or first_endpoints != tuple(reversed(second_endpoints))
         or _relation_refs(first) == _relation_refs(second)
+        or first.retention != second.retention
     ):
         return ()
     return first, second
@@ -8320,6 +8373,14 @@ def _project_duties(phase_B: Stage1SurfaceCompositionInputs, arc: Stage1Discours
     projection = phase_B.projection
     duties: list[CompositionDutyView] = []
     contributions = _contributions(projection)
+    reciprocal_pair = _reciprocal_tension_relation_pair(contributions)
+    if reciprocal_pair and not _reciprocal_tension_scalar_axes_match(
+        reciprocal_pair,
+        phase_B,
+    ):
+        raise Stage1CompositionError("STAGE1_QUALIFIER_CLOSURE_STOP")
+    reciprocal_first = reciprocal_pair[0] if reciprocal_pair else None
+    reciprocal_second = reciprocal_pair[1] if reciprocal_pair else None
     relation_rows = tuple(
         row
         for row in contributions
@@ -8331,6 +8392,11 @@ def _project_duties(phase_B: Stage1SurfaceCompositionInputs, arc: Stage1Discours
         for semantic_ref in row.semantic_refs
     }
     for row in contributions:
+        if reciprocal_second is not None and row == reciprocal_second:
+            # A reciprocal TENSION pair is one symmetric visible fact.  The
+            # reverse source edge remains in the frozen arc and trace, while
+            # this canonical surface owner carries both contribution refs.
+            continue
         if row.relation_operator in {RelationOperator.COEXISTS_WITH, RelationOperator.TENSION_WITH}:
             job = SentenceJob.RELATE_COEXISTING_OR_TENSION
         elif row.relation_operator in {RelationOperator.TEMPORALLY_PRECEDES, RelationOperator.ACTION_PRECEDES_CHANGE, RelationOperator.SOURCE_EXPLICIT_CAUSE}:
@@ -8362,7 +8428,17 @@ def _project_duties(phase_B: Stage1SurfaceCompositionInputs, arc: Stage1Discours
             else ()
         )
         basis_projection_refs = _unique(
-            (row.contribution_id, *absorbed_endpoint_owners)
+            (
+                row.contribution_id,
+                *(
+                    (reciprocal_second.contribution_id,)
+                    if reciprocal_first is not None
+                    and reciprocal_second is not None
+                    and row == reciprocal_first
+                    else ()
+                ),
+                *absorbed_endpoint_owners,
+            )
         )
         material = (
             arc.projection_ref,
@@ -8541,7 +8617,7 @@ EXPRESSION_ASSET_REGISTRY = (
     ExpressionAssetSpec("expression:preserve-unfinished.v1", SentenceJob.PRESERVE_RESIDUE_OR_UNFINISHED, SemanticClauseKind.GROUNDED_PREDICATE, "unfinished", ("まだ閉じていないものとして", "残っています"), (PredicateValency.MONADIC_ARGUMENT,)),
     ExpressionAssetSpec("expression:emlis-affect.v1", SentenceJob.FEEL_TOWARD_OBJECT, SemanticClauseKind.SUBJECTIVE_PREDICATE, "affect", ("静かに", "気にかけています"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
     ExpressionAssetSpec("expression:emlis-appraisal-material.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-material", ("軽く扱えないものとして", "受け止めたいです"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
-    ExpressionAssetSpec("expression:emlis-appraisal-noncollapse.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-noncollapse", ("どちらか一方だけにせず", "受け止めたいです"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
+    ExpressionAssetSpec("expression:emlis-appraisal-noncollapse.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-noncollapse", ("どちらか一方だけにせず", "抱えたいです"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
     ExpressionAssetSpec("expression:emlis-appraisal-change.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-change", ("今回起きた変化として", "大切に受け止めたいです"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
     ExpressionAssetSpec("expression:emlis-appraisal-unfinished.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-unfinished", ("まだ結論にしなくてよいものとして", "受け止めたいです"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
     ExpressionAssetSpec("expression:emlis-appraisal-agency.v1", SentenceJob.CONSIDER_MATERIAL_MEANING, SemanticClauseKind.SUBJECTIVE_PREDICATE, "appraisal-agency", ("本人が選べる向きとして", "大切に受け止めたいです"), (PredicateValency.DYADIC_ACTOR_TARGET,)),
@@ -8619,7 +8695,7 @@ EXPRESSION_ASSET_REGISTRY = (
         SentenceJob.TAKE_MATERIAL_POSITION,
         SemanticClauseKind.SUBJECTIVE_PREDICATE,
         "position",
-        ("負担と残る向きのどちらか一方だけに縮めずに", "見守りたいです"),
+        ("負担と残る向きのどちらか一方だけに縮めずに", "守りたいです"),
         (PredicateValency.DYADIC_ACTOR_TARGET,),
         reception_projection_branch=SubjectiveProjectionBranch.LIMITED,
         reception_act_refs=("protect_retained_intention",),
@@ -10339,7 +10415,6 @@ def _local_reciprocal_tension_dependencies(
         for row in arc.dependency_rows
         if row.dependency_kind
         is ArcDependencyKind.ADMITTED_RELATION_DIRECTION
-        and row.source_relation_ref in relation_duties_by_ref
     )
     if len(dependencies) != 2:
         return ()
@@ -10366,12 +10441,17 @@ def _local_reciprocal_tension_dependencies(
             second.successor_owner_ref,
             second.predecessor_owner_ref,
         )
-        or any(len(rows) != 1 for rows in matched_duties)
-        or len({rows[0].duty_ref for rows in matched_duties}) != 2
-        or any(
-            rows[0].relation_refs != (dependency.source_relation_ref,)
-            or rows[0].response_object_refs
-            != (
+        or not endpoint_refs.issubset(arc.root_owner_refs)
+        or not endpoint_refs.issubset(arc.terminal_owner_refs)
+    ):
+        return ()
+    exact2_duty_shape = bool(
+        all(len(rows) == 1 for rows in matched_duties)
+        and len({rows[0].duty_ref for rows in matched_duties}) == 2
+        and all(
+            rows[0].relation_refs == (dependency.source_relation_ref,)
+            and rows[0].response_object_refs
+            == (
                 dependency.predecessor_owner_ref,
                 dependency.successor_owner_ref,
             )
@@ -10379,9 +10459,20 @@ def _local_reciprocal_tension_dependencies(
                 dependencies, matched_duties, strict=True
             )
         )
-        or not endpoint_refs.issubset(arc.root_owner_refs)
-        or not endpoint_refs.issubset(arc.terminal_owner_refs)
-    ):
+    )
+    canonical_exact1_shape = bool(
+        len(matched_duties[0]) == 1
+        and not matched_duties[1]
+        and matched_duties[0][0].relation_refs
+        == (first.source_relation_ref,)
+        and matched_duties[0][0].response_object_refs
+        == (
+            first.predecessor_owner_ref,
+            first.successor_owner_ref,
+        )
+        and len(matched_duties[0][0].basis_projection_refs) == 2
+    )
+    if not (exact2_duty_shape or canonical_exact1_shape):
         return ()
     return first, second
 
@@ -10681,6 +10772,7 @@ def _v2_source_leaf_for_semantic_ref(
     *,
     semantic_ref: str,
     owner: Any,
+    case_frame: JapaneseCaseFrameSpec,
     phase_B: Stage1SurfaceCompositionInputs,
 ) -> Tuple[SourceLeafToken, Optional[Tuple[str, str, int, int]]]:
     """Project one EvidenceRef-bound leaf without searching source text."""
@@ -10747,6 +10839,31 @@ def _v2_source_leaf_for_semantic_ref(
         evidence_text
     )
     scalar_range = _surface_scalar_range(frame, len(normalized_text))
+    raw_graph_value = getattr(graph_node, "value", "")
+    try:
+        graph_value, _graph_value_spans = (
+            _v2_reverse_normalized_scalar_spans(raw_graph_value)
+        )
+    except Stage1CompositionError:
+        graph_value = ""
+    if (
+        scalar_range is None
+        and case_frame.complement_rule_ref in {"C03", "C04", "C05", "C06"}
+    ):
+        matching_starts = tuple(
+            index
+            for index in range(
+                0,
+                len(normalized_text) - len(graph_value) + 1,
+            )
+            if graph_value
+            and normalized_text.startswith(graph_value, index)
+        )
+        if len(matching_starts) == 1:
+            graph_start = matching_starts[0]
+            graph_end = graph_start + len(graph_value)
+            if (graph_start, graph_end) != (0, len(normalized_text)):
+                scalar_range = (graph_start, graph_end)
     certified_binding: Optional[Tuple[str, str, int, int]] = None
     if scalar_range is None:
         extent = SourceLeafExtent.FULL_EVIDENCE_LITERAL
@@ -11518,18 +11635,70 @@ def _v2_normal_form_phase_dependency_preserving_merge_split(
             == 1
         )
 
+    def ordered_response_target_merge(
+        group: DutyGroupRow,
+    ) -> Optional[DutyGroupRow]:
+        if len(group.ordered_duty_refs) != 2:
+            return None
+        first, second = tuple(
+            duty_by_ref[ref] for ref in group.ordered_duty_refs
+        )
+        paired_refs = (*first.response_object_refs, *second.response_object_refs)
+        consumers = tuple(
+            duty
+            for duty in duty_by_ref.values()
+            if duty.layer == "LAYER_2"
+            and duty.retention == "REQUIRED"
+            and not duty.relation_refs
+            and len(duty.response_object_refs) == 2
+            and len(set(duty.response_object_refs)) == 2
+            and set(duty.response_object_refs) == set(paired_refs)
+        )
+        if not (
+            first.layer == second.layer == "LAYER_1"
+            and not first.relation_refs
+            and not second.relation_refs
+            and len(first.response_object_refs)
+            == len(second.response_object_refs)
+            == 1
+            and len(set(paired_refs)) == 2
+            and len(consumers) == 1
+        ):
+            return None
+        duty_ref_by_response_ref = {
+            first.response_object_refs[0]: first.duty_ref,
+            second.response_object_refs[0]: second.duty_ref,
+        }
+        return DutyGroupRow(
+            tuple(
+                duty_ref_by_response_ref[response_ref]
+                for response_ref in consumers[0].response_object_refs
+            )
+        )
+
+    ordered_response_target_groups = {
+        group: ordered
+        for group in groups
+        if (ordered := ordered_response_target_merge(group)) is not None
+    }
+    normalized_groups = tuple(
+        ordered_response_target_groups.get(group, group)
+        for group in groups
+    )
+
     overloaded = tuple(
         group
         for group in groups
         if len(group.ordered_duty_refs) == 2
         and not licensed_shared_relation_merge(group)
+        and group not in ordered_response_target_groups
     )
     before = (0, len(overloaded), 0, 0)
     if not overloaded:
-        return groups, (), before
+        return normalized_groups, (), before
     repaired = tuple(
         repaired_group
-        for group in groups
+        for group in normalized_groups
         for repaired_group in (
             tuple(
                 DutyGroupRow((duty_ref,))
@@ -11690,6 +11859,26 @@ def _normal_form_phase_dependency_information_order(
         if row.duty_ref in set(input_refs)
     }
     terminal_owner_refs = set(arc.terminal_owner_refs)
+    licensed_pair_target_refs = {
+        response_ref
+        for layer2_duty in required
+        if layer2_duty.layer == "LAYER_2"
+        and not layer2_duty.relation_refs
+        and len(layer2_duty.response_object_refs) == 2
+        and len(
+            tuple(
+                layer1_duty
+                for layer1_duty in required
+                if layer1_duty.layer == "LAYER_1"
+                and not layer1_duty.relation_refs
+                and len(layer1_duty.response_object_refs) == 1
+                and layer1_duty.response_object_refs[0]
+                in set(layer2_duty.response_object_refs)
+            )
+        )
+        == 2
+        for response_ref in layer2_duty.response_object_refs
+    }
     remaining = set(input_refs)
     ordered_refs: list[str] = []
     while remaining:
@@ -11704,6 +11893,12 @@ def _normal_form_phase_dependency_information_order(
             eligible,
             key=lambda ref: (
                 0 if duty_by_ref[ref].layer == "LAYER_1" else 1,
+                1
+                if duty_by_ref[ref].layer == "LAYER_1"
+                and licensed_pair_target_refs.intersection(
+                    duty_by_ref[ref].response_object_refs
+                )
+                else 0,
                 1
                 if terminal_owner_refs.intersection(
                     duty_by_ref[ref].basis_projection_refs
@@ -11739,6 +11934,9 @@ def _normal_form_phase_reference_antecedent_recalculation(
     antecedent_by_refs: dict[
         Tuple[str, ...], Tuple[str, str, int, Tuple[str, ...]]
     ] = {}
+    antecedent_by_ref: dict[
+        str, Tuple[str, str, int, Tuple[str, ...]]
+    ] = {}
     for index, group in enumerate(groups):
         duties = tuple(duty_by_ref[ref] for ref in group.ordered_duty_refs)
         layer = duties[0].layer
@@ -11765,6 +11963,22 @@ def _normal_form_phase_reference_antecedent_recalculation(
                 _v2_source_binding_for_duty(duty, phase_B)
             )
             prior = antecedent_by_refs.get(refs)
+            if prior is None and len(refs) == 2 and not duty.relation_refs:
+                prior_rows = tuple(
+                    antecedent_by_ref.get(ref) for ref in refs
+                )
+                if (
+                    all(row is not None for row in prior_rows)
+                    and all(row[1] == "LAYER_1" for row in prior_rows if row)
+                    and len({row[0] for row in prior_rows if row}) == 1
+                    and all(row[3] == refs for row in prior_rows if row)
+                ):
+                    latest_prior = max(
+                        (row for row in prior_rows if row),
+                        key=lambda row: row[2],
+                    )
+                    if latest_prior[2] == index - 1:
+                        prior = latest_prior
             plan = plan_by_duty[duty.duty_ref]
             exact_immediately_prior = (
                 prior is not None
@@ -11824,6 +12038,13 @@ def _normal_form_phase_reference_antecedent_recalculation(
                 index,
                 unit_anchor_refs,
             )
+            for ref in refs:
+                antecedent_by_ref[ref] = (
+                    unit_ref,
+                    layer,
+                    index,
+                    unit_anchor_refs,
+                )
     return tuple(expressions), tuple(units)
 
 
@@ -12167,6 +12388,10 @@ def _v2_normal_form_phase_grammar_binding_ir_local_repair(
     previous_subjective_was_counterposition = False
     previous_token_owner_ref: Optional[str] = None
     prior_object_by_refs: dict[Tuple[str, ...], Tuple[str, int]] = {}
+    prior_object_by_ref: dict[str, Tuple[str, int]] = {}
+    unit_anchor_refs_by_ref = {
+        unit.unit_ref: unit.basis_anchor_refs for unit in units
+    }
     for unit_index, unit in enumerate(units):
         for duty_ref in unit.duty_refs:
             duty = duty_by_ref[duty_ref]
@@ -12231,6 +12456,7 @@ def _v2_normal_form_phase_grammar_binding_ir_local_repair(
                 _v2_source_leaf_for_semantic_ref(
                     semantic_ref=semantic_ref,
                     owner=owner,
+                    case_frame=frame,
                     phase_B=phase_B,
                 )
                 for semantic_ref in source_refs
@@ -12409,6 +12635,29 @@ def _v2_normal_form_phase_grammar_binding_ir_local_repair(
                 )
             if frame_relation is RelationOperator.NO_RELATION_CLAIM:
                 prior_object = prior_object_by_refs.get(source_refs)
+                if (
+                    prior_object is None
+                    and len(source_refs) == 2
+                    and expression.expression_mode
+                    is ResponseObjectExpressionMode.ANAPHORIC
+                ):
+                    prior_rows = tuple(
+                        prior_object_by_ref.get(ref) for ref in source_refs
+                    )
+                    if (
+                        all(row is not None for row in prior_rows)
+                        and len({row[0] for row in prior_rows if row}) == 1
+                        and unit_anchor_refs_by_ref.get(
+                            next(row[0] for row in prior_rows if row)
+                        )
+                        == source_refs
+                    ):
+                        latest_prior = max(
+                            (row for row in prior_rows if row),
+                            key=lambda row: row[1],
+                        )
+                        if latest_prior[1] == unit_index - 1:
+                            prior_object = latest_prior
                 exact_immediately_prior = bool(
                     prior_object is not None
                     and prior_object[1] == unit_index - 1
@@ -12486,6 +12735,11 @@ def _v2_normal_form_phase_grammar_binding_ir_local_repair(
                 response_object_expression=expression,
             )
             prior_object_by_refs[source_refs] = (unit.unit_ref, unit_index)
+            for source_ref in source_refs:
+                prior_object_by_ref[source_ref] = (
+                    unit.unit_ref,
+                    unit_index,
+                )
             previous_token_owner_ref = link_plan.token_owner_ref
             morphology_plan = project_predicate_morphology_plan(
                 frame=frame, head=head
@@ -12961,7 +13215,14 @@ def _project_post_normalization_defect_rows(
         ):
             owner_unit_indexes.setdefault(owner_ref, set()).add(unit_index)
 
+    reciprocal_nonprecedence_refs = {
+        row.arc_dependency_ref
+        for row in _local_reciprocal_tension_dependencies(duties, arc)
+    }
+
     def dependency_valid(edge: ArcDependencyRow) -> bool:
+        if edge.arc_dependency_ref in reciprocal_nonprecedence_refs:
+            return True
         predecessors = owner_unit_indexes.get(edge.predecessor_owner_ref, set())
         successors = owner_unit_indexes.get(edge.successor_owner_ref, set())
         return bool(predecessors and successors) and min(predecessors) <= min(
@@ -12988,6 +13249,7 @@ def _project_post_normalization_defect_rows(
             CorrectableDefectKind.UNRESOLVED_OR_DISTANT_REFERENT
         ].update(expression_refs or tuple(plan_by_ref))
     prior_expression_by_refs: dict[Tuple[str, ...], Tuple[str, int]] = {}
+    prior_expression_by_ref: dict[str, Tuple[str, int]] = {}
     for expression in expressions:
         own_index = unit_index_by_ref.get(expression.unit_ref)
         plan = plan_by_ref.get(expression.clause_plan_ref)
@@ -13043,6 +13305,28 @@ def _project_post_normalization_defect_rows(
         prior_expression = prior_expression_by_refs.get(
             expression.basis_semantic_refs
         )
+        if (
+            prior_expression is None
+            and expression.expression_mode
+            is ResponseObjectExpressionMode.ANAPHORIC
+            and len(expression.basis_semantic_refs) == 2
+        ):
+            prior_rows = tuple(
+                prior_expression_by_ref.get(ref)
+                for ref in expression.basis_semantic_refs
+            )
+            if (
+                all(row is not None for row in prior_rows)
+                and len({row[0] for row in prior_rows if row}) == 1
+                and unit_by_ref[
+                    next(row[0] for row in prior_rows if row)
+                ].basis_anchor_refs
+                == expression.basis_semantic_refs
+            ):
+                prior_expression = max(
+                    (row for row in prior_rows if row),
+                    key=lambda row: row[1],
+                )
         if expression.expression_mode is ResponseObjectExpressionMode.ANAPHORIC:
             antecedent_index = unit_index_by_ref.get(
                 expression.antecedent_unit_ref or ""
@@ -13071,6 +13355,11 @@ def _project_post_normalization_defect_rows(
             expression.unit_ref,
             own_index,
         )
+        for semantic_ref in expression.basis_semantic_refs:
+            prior_expression_by_ref[semantic_ref] = (
+                expression.unit_ref,
+                own_index,
+            )
 
     invalid_scalar_plan_refs: list[str] = []
     for plan in clause_plans:
@@ -13466,23 +13755,35 @@ def _derive_discourse_preference_profile_with_frozen_applicability(
         ):
             owner_unit_indexes.setdefault(owner_ref, set()).add(unit_index)
 
+    reciprocal_nonprecedence_rows = (
+        _local_reciprocal_tension_dependencies(
+            normalized_artifact.composition_duty_rows,
+            arc,
+        )
+    )
+
     def dependency_is_aligned(row: ArcDependencyRow) -> bool:
         predecessor_indexes = owner_unit_indexes.get(row.predecessor_owner_ref, set())
         successor_indexes = owner_unit_indexes.get(row.successor_owner_ref, set())
         if not predecessor_indexes or not successor_indexes:
             return False
         if row.dependency_kind is ArcDependencyKind.ADMITTED_RELATION_DIRECTION:
+            if row in reciprocal_nonprecedence_rows:
+                return True
             relation_duties = tuple(
                 duty
                 for duty in normalized_artifact.composition_duty_rows
                 if row.source_relation_ref in duty.relation_refs
             )
-            return (
+            directly_aligned = (
                 len(relation_duties) == 1
                 and plan_by_duty[relation_duties[0].duty_ref].semantic_clause_kind
                 is SemanticClauseKind.ADMITTED_RELATION
                 and min(predecessor_indexes) <= min(successor_indexes)
             )
+            if directly_aligned:
+                return True
+            return False
         return min(predecessor_indexes) <= min(successor_indexes)
 
     group_sizes = tuple(len(unit.duty_refs) for unit in units)
@@ -13507,15 +13808,75 @@ def _derive_discourse_preference_profile_with_frozen_applicability(
         )
         is not None
     }
-    # Exact2 grouping is preferred only for the typed shared-endpoint relation
-    # chain.  Every other duty keeps one finite case frame per sentence unit.
+    available_response_target_pairs = {
+        (first.duty_ref, second.duty_ref)
+        for consumer in normalized_artifact.composition_duty_rows
+        for first in normalized_artifact.composition_duty_rows
+        for second in normalized_artifact.composition_duty_rows
+        if consumer.layer == "LAYER_2"
+        and consumer.retention == "REQUIRED"
+        and not consumer.relation_refs
+        and len(consumer.response_object_refs) == 2
+        and len(set(consumer.response_object_refs)) == 2
+        and first.layer == second.layer == "LAYER_1"
+        and first.retention == second.retention == "REQUIRED"
+        and not first.relation_refs
+        and not second.relation_refs
+        and len(first.response_object_refs)
+        == len(second.response_object_refs)
+        == 1
+        and consumer.response_object_refs
+        == (
+            first.response_object_refs[0],
+            second.response_object_refs[0],
+        )
+        and len(
+            tuple(
+                duty
+                for duty in normalized_artifact.composition_duty_rows
+                if duty.layer == "LAYER_1"
+                and duty.retention == "REQUIRED"
+                and not duty.relation_refs
+                and len(duty.response_object_refs) == 1
+                and duty.response_object_refs[0]
+                in set(consumer.response_object_refs)
+            )
+        )
+        == 2
+        and len(
+            tuple(
+                duty
+                for duty in normalized_artifact.composition_duty_rows
+                if duty.layer == "LAYER_2"
+                and duty.retention == "REQUIRED"
+                and not duty.relation_refs
+                and len(duty.response_object_refs) == 2
+                and set(duty.response_object_refs)
+                == set(consumer.response_object_refs)
+            )
+        )
+        == 1
+    }
+    grouped_response_target_pairs = {
+        unit.duty_refs
+        for unit in units
+        if unit.duty_refs in available_response_target_pairs
+    }
+    available_exact2_groups = (
+        available_relation_chains | available_response_target_pairs
+    )
+    grouped_exact2_groups = (
+        grouped_relation_chains | grouped_response_target_pairs
+    )
+    # Exact2 grouping is preferred for a typed relation chain or for the two
+    # concrete Layer-1 objects jointly received by one Layer-2 proposition.
     sentence_load_aligned = (
         all(size == 1 for size in group_sizes)
-        if not available_relation_chains
-        else grouped_relation_chains == available_relation_chains
+        if not available_exact2_groups
+        else grouped_exact2_groups == available_exact2_groups
         and all(
             len(unit.duty_refs) == 1
-            or unit.duty_refs in grouped_relation_chains
+            or unit.duty_refs in grouped_exact2_groups
             for unit in units
         )
     )
@@ -14539,6 +14900,31 @@ def validate_postrealizer_visible_causal_trace(
             ordered_frame_semantic_refs = tuple(
                 binding.semantic_ref for binding in frame.argument_bindings
             )
+            reciprocal_pair = _reciprocal_tension_relation_pair(
+                _contributions(projection)
+            )
+            absorbed_reciprocal = bool(
+                reciprocal_pair
+                and expected_owner == reciprocal_pair[0]
+                and contribution == reciprocal_pair[1]
+                and set(duty.basis_projection_refs).issuperset(
+                    {
+                        reciprocal_pair[0].contribution_id,
+                        reciprocal_pair[1].contribution_id,
+                    }
+                )
+                and duty.relation_refs
+                == _relation_refs(reciprocal_pair[0])
+                and _reciprocal_tension_scalar_axes_match(
+                    reciprocal_pair,
+                    phase_B,
+                )
+                and set(artifact.discourse_arc.admitted_relation_refs)
+                == {
+                    *_relation_refs(reciprocal_pair[0]),
+                    *_relation_refs(reciprocal_pair[1]),
+                }
+            )
             relation_is_typed = (
                 contribution.relation_operator
                 is not RelationOperator.NO_RELATION_CLAIM
@@ -14546,10 +14932,20 @@ def validate_postrealizer_visible_causal_trace(
                     clause_row.frame.frame_id
                 )
                 is contribution.relation_operator
-                and ordered_frame_semantic_refs == expected_source_refs
+                and (
+                    ordered_frame_semantic_refs == expected_source_refs
+                    or (
+                        absorbed_reciprocal
+                        and tuple(reversed(ordered_frame_semantic_refs))
+                        == tuple(
+                            binding.semantic_ref
+                            for binding in contribution.argument_bindings
+                        )
+                    )
+                )
             )
             predicate_is_typed = (
-                expected_owner is contribution
+                (expected_owner is contribution or absorbed_reciprocal)
                 and clause_row.frame == expected_case_frame
                 and clause_row.head == expected_head
                 and clause_row.head.frame_ref == clause_row.frame.frame_id
@@ -14714,7 +15110,14 @@ def validate_postrealizer_visible_causal_trace(
                 relation_topology_exact = (
                     relation_is_typed
                     and len(ordered_relation_refs) == 2
-                    and ordered_relation_refs == expected_source_refs
+                    and (
+                        ordered_relation_refs == expected_source_refs
+                        or (
+                            absorbed_reciprocal
+                            and ordered_relation_refs
+                            == tuple(reversed(expected_source_refs))
+                        )
+                    )
                     and len(set(ordered_frame_semantic_refs)) == 2
                 )
                 role_topology_exact = (
@@ -14726,7 +15129,14 @@ def validate_postrealizer_visible_causal_trace(
                         }
                     )
                     == 2
-                    and ordered_relation_refs == ordered_frame_semantic_refs
+                    and (
+                        ordered_relation_refs == ordered_frame_semantic_refs
+                        or (
+                            absorbed_reciprocal
+                            and ordered_relation_refs
+                            == tuple(reversed(ordered_frame_semantic_refs))
+                        )
+                    )
                 )
                 direction_exact = relation_topology_exact
                 qualified_semantics_exact = bool(
@@ -14834,10 +15244,33 @@ def validate_postrealizer_visible_causal_trace(
                     raise Stage1CompositionError(
                         "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
                     )
+                carried_is_absorbed_reciprocal = bool(
+                    reciprocal_pair
+                    and carried_contribution == reciprocal_pair[1]
+                    and expected_owner == reciprocal_pair[0]
+                    and duty.relation_refs
+                    == _relation_refs(reciprocal_pair[0])
+                    and {
+                        reciprocal_pair[0].contribution_id,
+                        reciprocal_pair[1].contribution_id,
+                    }.issubset(duty.basis_projection_refs)
+                    and _reciprocal_tension_scalar_axes_match(
+                        reciprocal_pair,
+                        phase_B,
+                    )
+                    and set(artifact.discourse_arc.admitted_relation_refs)
+                    == {
+                        *_relation_refs(reciprocal_pair[0]),
+                        *_relation_refs(reciprocal_pair[1]),
+                    }
+                )
                 if not set(carried_contribution.semantic_refs).issubset(
                     frame_semantic_refs
-                ) or not set(carried_contribution.relation_basis_refs).issubset(
-                    duty.relation_refs
+                ) or not (
+                    set(carried_contribution.relation_basis_refs).issubset(
+                        duty.relation_refs
+                    )
+                    or carried_is_absorbed_reciprocal
                 ):
                     continue
                 prior = layer1_units_by_contribution.get(

@@ -11989,10 +11989,23 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     "",
                     str(_source.normalized_current_input.get("memo", "")),
                 )
-                quoted_source_fragments = tuple(
-                    re.sub(r"\s+", "", value)
+                literal_source_fragments = tuple(
+                    re.sub(
+                        r"\s+",
+                        "",
+                        unit.text[
+                            binding.surface_scalar_start :
+                            binding.surface_scalar_end
+                        ],
+                    )
                     for unit in layer1
-                    for value in re.findall(r"「([^」]+)」", unit.text)
+                    for binding, derivation in zip(
+                        unit.realized_semantic_bindings,
+                        unit.surface_derivations,
+                        strict=True,
+                    )
+                    if derivation.derivation_kind
+                    is SurfaceDerivationKind.LITERAL_SUBSPAN
                 )
                 def source_bound_or_registered_finite_form(value: str) -> bool:
                     if value in compact_source:
@@ -12007,26 +12020,26 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                     )
 
                 self.assertGreaterEqual(
-                    len(quoted_source_fragments),
+                    len(literal_source_fragments),
                     len(layer1),
                 )
                 self.assertTrue(
                     all(
                         source_bound_or_registered_finite_form(value)
-                        for value in quoted_source_fragments
+                        for value in literal_source_fragments
                     )
                 )
                 if label == "temporal_change":
-                    self.assertIn("散歩に出た", quoted_source_fragments)
-                    self.assertNotIn("散歩に出", quoted_source_fragments)
+                    self.assertIn("散歩に出た", literal_source_fragments)
+                    self.assertNotIn("散歩に出", literal_source_fragments)
                 elif label == "unfinished":
                     self.assertIn(
                         "まだ気持ちが残っていて",
-                        quoted_source_fragments,
+                        literal_source_fragments,
                     )
                     self.assertNotIn(
                         "まだ気持ちが残っている",
-                        quoted_source_fragments,
+                        literal_source_fragments,
                     )
                 normalized = result.selected_candidate.normalized_artifact
                 self.assertEqual(
@@ -12096,6 +12109,142 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 }
                 self.assertTrue(relation_duties.issubset(set(realized_duties)))
                 visible_bodies.append(tuple(row.text for row in units))
+
+        *_, fallback_phase_b = _final_stage1_composition_inputs(
+            _request(
+                record_id="stage2-source-leaf-fallback",
+                memo="対象を考えている。",
+            )
+        )
+        fallback_normalized = (
+            stage1_composition_module
+            .compose_stage1_from_projection(fallback_phase_b)
+            .selected_candidate.normalized_artifact
+        )
+        direct_clause = next(
+            row
+            for row in fallback_normalized.v2_clause_rows
+            if row.frame.complement_rule_ref == "C03"
+        )
+        direct_duty = next(
+            row
+            for row in fallback_normalized.composition_duty_rows
+            if row.duty_ref == direct_clause.duty_ref
+        )
+        direct_owner, _all_source_refs, direct_frame, direct_refs = (
+            stage1_composition_module._v2_source_binding_for_duty(
+                direct_duty,
+                fallback_phase_b,
+            )
+        )
+        self.assertEqual(len(direct_refs), 1)
+        direct_semantic_ref = direct_refs[0]
+        grounded_frame = (
+            stage1_composition_module._frame_for_semantic_ref(
+                direct_owner,
+                direct_semantic_ref,
+                fallback_phase_b,
+            )
+        )
+        self.assertIsNone(
+            stage1_composition_module._surface_scalar_range(
+                grounded_frame,
+                4,
+            )
+        )
+        direct_node = next(
+            row
+            for row in fallback_phase_b.grounded_graph.nodes
+            if row.node_id
+            == stage1_composition_module._semantic_ref_node_id(
+                direct_semantic_ref
+            )
+        )
+        direct_evidence = next(
+            row
+            for row in fallback_phase_b.admitted_source.evidence_refs
+            if row.source_span_id == grounded_frame.target_anchor_ids[0]
+        )
+
+        def projected_leaf(
+            raw_text: str,
+            graph_value: str,
+        ):
+            raw_utf8 = raw_text.encode("utf-8")
+            raw_sha256 = hashlib.sha256(raw_utf8).hexdigest()
+            evidence = replace(
+                direct_evidence,
+                field_utf8_start=0,
+                field_utf8_end=len(raw_utf8),
+                scalar_start=0,
+                scalar_end=len(raw_text),
+                utf8_start=0,
+                utf8_end=len(raw_utf8),
+                field_sha256=raw_sha256,
+                literal_sha256=raw_sha256,
+            )
+            admitted_source = replace(
+                fallback_phase_b.admitted_source,
+                envelope=replace(
+                    fallback_phase_b.admitted_source.envelope,
+                    raw_utf8=raw_utf8,
+                    raw_sha256=raw_sha256,
+                ),
+                evidence_refs=tuple(
+                    evidence
+                    if row.evidence_id == evidence.evidence_id
+                    else row
+                    for row in fallback_phase_b.admitted_source.evidence_refs
+                ),
+            )
+            grounded_graph = replace(
+                fallback_phase_b.grounded_graph,
+                nodes=tuple(
+                    replace(row, value=graph_value)
+                    if row.node_id == direct_node.node_id
+                    else row
+                    for row in fallback_phase_b.grounded_graph.nodes
+                ),
+            )
+            return (
+                stage1_composition_module
+                ._v2_source_leaf_for_semantic_ref(
+                    semantic_ref=direct_semantic_ref,
+                    owner=direct_owner,
+                    case_frame=direct_frame,
+                    phase_B=replace(
+                        fallback_phase_b,
+                        admitted_source=admitted_source,
+                        grounded_graph=grounded_graph,
+                    ),
+                )
+            )
+
+        ambiguous_leaf, ambiguous_certification = projected_leaf(
+            "abab",
+            "ab",
+        )
+        self.assertIs(
+            ambiguous_leaf.extent,
+            contracts_module.SourceLeafExtent.FULL_EVIDENCE_LITERAL,
+        )
+        self.assertEqual(ambiguous_leaf.payload_utf8, b"abab")
+        self.assertIsNone(ambiguous_certification)
+        unique_leaf, unique_certification = projected_leaf("abx", "ab")
+        self.assertIs(
+            unique_leaf.extent,
+            contracts_module.SourceLeafExtent.CERTIFIED_LITERAL_SUBSPAN,
+        )
+        self.assertEqual(unique_leaf.payload_utf8, b"ab")
+        self.assertEqual(
+            unique_certification,
+            (
+                direct_evidence.evidence_id,
+                fallback_phase_b.admitted_source.envelope.envelope_id,
+                0,
+                2,
+            ),
+        )
         self.assertEqual(len(visible_bodies), 4)
         self.assertEqual(len(set(visible_bodies)), 4)
 
@@ -13510,7 +13659,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             )
         )
         frozen_runtime_payload_sha256 = {
-            exact17_names[0]: "928cb826c0ee486bd1f511d24a5deb7199804d5e462ac238a37156d62078dd43",
+            exact17_names[0]: "a404b3639853e185d6361696da5b0d744362e5d11d9cbd94aaec959bee0377a7",
             exact17_names[1]: "0705bcb48ca1c9a347b691d2eaf3d8a980cd8a044ca66292dda69e3b5fdbdc8c",
             exact17_names[2]: "437831951fa0c4062d68af2342d79ebfc4b29e8c318e1fa8765c74c4aac9a832",
             exact17_names[3]: "c907af7a059f802120b3e494a88651015a14d45c5e272ab1f9d3f1e9bfa8d06f",
@@ -13519,8 +13668,8 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             exact17_names[6]: "3ca31fbcf0ad9c93bdd4d267a3ef2000ce79b8d702bd7188f020eb11d5bd593c",
             exact17_names[7]: "75343d43f9e22c101d218fb80fb2b17a9a264780ceb63842c6d75cb7dbb0c2f4",
             exact17_names[9]: "e0c43723126dc14fd9ac3cb23a882ed22e78c93363454ed43e510f5c0d705b6c",
-            exact17_names[10]: "c240de444bbf40a2bfa381dca2960906731a3e1055ba4ddc93f2959383c30dc5",
-            exact17_names[11]: "da19eb0abdbf25079674536e559dbcc0edcf6604161770799e7aec3f1b5fd689",
+            exact17_names[10]: "a9599e2b75528503c0bed24e80ace501689fd96dd2c703ac89e192b8375f1b75",
+            exact17_names[11]: "909165f05829208da7739d09c9d700df1ada98973d7bcadf07a39eec6f02c2bb",
             exact17_names[12]: "e64b46889f05ac391e6905cdf4ae7bd4e94e50f95efd8c339fbce7a54c2bb155",
             exact17_names[13]: "cee6c2989896f8e3f3642f98a354ea294d34b05eff81a2322fcb94ce9fc9abba",
             exact17_names[15]: "3c14b8eb9e5cd8ff5410ffc7c1a0d3558784a75f8c355c272904dc650dd50ff7",
@@ -13554,7 +13703,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 in runtime_payload_name_sha256_byte_count_exact17[:8]
             ),
             (
-                693577,
+                710241,
                 760521,
                 412047,
                 293740,
@@ -13976,8 +14125,8 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
         )
         frozen_unchanged_manifest_sha256 = {
             expected_names[9]: "e0c43723126dc14fd9ac3cb23a882ed22e78c93363454ed43e510f5c0d705b6c",
-            expected_names[10]: "c240de444bbf40a2bfa381dca2960906731a3e1055ba4ddc93f2959383c30dc5",
-            expected_names[11]: "da19eb0abdbf25079674536e559dbcc0edcf6604161770799e7aec3f1b5fd689",
+            expected_names[10]: "a9599e2b75528503c0bed24e80ace501689fd96dd2c703ac89e192b8375f1b75",
+            expected_names[11]: "909165f05829208da7739d09c9d700df1ada98973d7bcadf07a39eec6f02c2bb",
             expected_names[12]: "e64b46889f05ac391e6905cdf4ae7bd4e94e50f95efd8c339fbce7a54c2bb155",
             expected_names[13]: "cee6c2989896f8e3f3642f98a354ea294d34b05eff81a2322fcb94ce9fc9abba",
             expected_names[15]: "3c14b8eb9e5cd8ff5410ffc7c1a0d3558784a75f8c355c272904dc650dd50ff7",
@@ -18945,10 +19094,10 @@ class CMEERouteAV2I01DisabledRegistryContractsTest(unittest.TestCase):
     ) -> None:
         stage1_composition_module.validate_v2_grammar_inventory()
         inventory = stage1_composition_module.V2_GRAMMAR_INVENTORY
-        self.assertEqual(len(inventory.encode("utf-8")), 14_752)
+        self.assertEqual(len(inventory.encode("utf-8")), 14_695)
         self.assertEqual(
             hashlib.sha256(inventory.encode("utf-8")).hexdigest(),
-            "1e593666c8ca7c02824fa51978827b62afb46a6f3254f4c612635eb3945fdfe1",
+            "a669b33be64b067b6548da20390d7dbb8ffab0f8297d91736bf4363780d7c7b9",
         )
         self.assertEqual(
             len(stage1_composition_module.V2_GRAMMAR_INVENTORY_ROWS),
@@ -19155,33 +19304,33 @@ class CMEERouteAV2I01DisabledRegistryContractsTest(unittest.TestCase):
 
 class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
     _BASE_SURFACE_SKELETON_EXACT24 = (
-        "「〈X〉」という内容が中心になっています。",
-        "「〈X〉」という方向性が見えます。",
-        "「〈X〉」という負担が残っています。",
-        "「〈X〉」という変化が見られます。",
+        "〈X〉という内容が中心になっています。",
+        "〈X〉という方向性が見えます。",
+        "〈X〉という負担が残っています。",
+        "〈X〉という変化が見られます。",
         "「〈X〉」と「〈Y〉」が並んでいます。",
         "「〈X〉」と「〈Y〉」がせめぎ合っています。",
         "「〈X〉」のあとに「〈Y〉」が続いています。",
         "「〈X〉」のあとに「〈Y〉」が起こっています。",
         "「〈X〉」によって「〈Y〉」が生じています。",
-        "「〈X〉」という点があります。",
+        "〈X〉という点があります。",
         "Emlisは「〈X〉」を気にかけています。",
-        "Emlisは「〈X〉」という内容を受け止めたいです。",
-        "Emlisは「〈X〉」と「〈Y〉」をどちらか一方だけにせず受け止めたいです。",
-        "Emlisは「〈X〉」という変化を見届けたいです。",
+        "Emlisは〈X〉という内容を受け止めたいです。",
+        "Emlisは「〈X〉」と「〈Y〉」をどちらか一方だけにせず抱えたいです。",
+        "Emlisは〈X〉という変化を見届けたいです。",
         "Emlisは今すぐ「〈X〉」と結論づけたくありません。",
-        "Emlisは「〈X〉」という選択を尊重したいです。",
-        "Emlisは「〈X〉」という内容を大切にしたいです。",
+        "Emlisは〈X〉という選択を尊重したいです。",
+        "Emlisは〈X〉という内容を大切にしたいです。",
         "Emlisは「〈X〉」を「〈Y〉」から守りたいです。",
-        "Emlisは「〈X〉」という選択を見守りたいです。",
+        "Emlisは〈X〉という選択を見守りたいです。",
         "Emlisは「〈X〉」を「〈Y〉」に固定したくありません。",
         "Emlisはここで「〈X〉」と断定したくありません。",
         "Emlisは「〈X〉」を「〈Y〉」に限定したくありません。",
-        "Emlisは「〈X〉」と「〈Y〉」を見守りたいです。",
+        "Emlisは「〈X〉」と「〈Y〉」を守りたいです。",
         "「〈X〉」と「〈Y〉」が緊張関係にあります。",
     )
     _BASE_SURFACE_SKELETON_SHA256 = (
-        "619a6a4d6153dab9a3aaa277b45ce63ad812c4545d367936cb264b42895747d8"
+        "549bbe18cd089eaedec41a65c5249e79e38ae6ad4125db1ecc488a6990f7712a"
     )
     _TERMINAL_BY_CLASS = {
         contracts_module.SourceFinalTerminalClass.ABSENT: "",
@@ -20081,7 +20230,11 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
                 frame=self._frame(frame_id),
             )
             self.assertIs(plan.mode, expected_mode)
-            self.assertEqual(len(plan.quote_delimiter_refs), len(leaves))
+            expected_delimiter_count = len(leaves)
+            self.assertEqual(
+                len(plan.quote_delimiter_refs),
+                expected_delimiter_count,
+            )
             self.assertEqual(
                 tuple(leaf.payload_utf8 for leaf in leaves),
                 tuple(fixture[0].payload_utf8 for fixture in fixtures),
@@ -20114,10 +20267,66 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
                         if binding.semantic_ref.endswith((":OPEN", ":CLOSE"))
                     )
                 ),
-                len(leaves) * 2,
+                expected_delimiter_count * 2,
             )
             actual_modes.append(plan.mode)
         self.assertEqual(set(actual_modes), set(contracts_module.SourceRealizationMode))
+
+        direct_fixture = self._source_leaf_fixture(
+            tag="direct-safe",
+            payload_utf8="対象".encode("utf-8"),
+        )
+        direct_group, direct_leaves = self._project_group(
+            tag="direct-safe",
+            fixtures=(direct_fixture,),
+            cardinality=contracts_module.SourceLeafCardinality.EXACT1,
+        )
+        for frame_id in ("F01", "F02", "F12", "F14"):
+            with self.subTest(direct_safe_frame=frame_id):
+                direct_plan = (
+                    stage1_composition_module
+                    .select_source_complement_plan(
+                        group=direct_group,
+                        source_leaves=direct_leaves,
+                        frame=self._frame(frame_id),
+                    )
+                )
+                self.assertEqual(direct_plan.quote_delimiter_refs, ())
+                direct_clause = self._project_i03_clause(
+                    frame=self._frame(frame_id),
+                    group=direct_group,
+                    leaves=direct_leaves,
+                    source_plan=direct_plan,
+                )[-1]
+                literal_rows = tuple(
+                    (binding, derivation)
+                    for binding, derivation in zip(
+                        direct_clause.realized_semantic_bindings,
+                        direct_clause.surface_derivations,
+                        strict=True,
+                    )
+                    if derivation.derivation_kind
+                    is SurfaceDerivationKind.LITERAL_SUBSPAN
+                )
+                self.assertEqual(len(literal_rows), 1)
+                binding, derivation = literal_rows[0]
+                self.assertEqual(
+                    direct_clause.text[
+                        binding.surface_scalar_start :
+                        binding.surface_scalar_end
+                    ],
+                    "対象",
+                )
+                self.assertEqual(
+                    derivation.input_scalar_ranges,
+                    ((0, 2),),
+                )
+                self.assertFalse(
+                    any(
+                        row.semantic_ref.endswith((":OPEN", ":CLOSE"))
+                        for row in direct_clause.realized_semantic_bindings
+                    )
+                )
 
         mixed = self._source_leaf_fixture(
             tag="mixed-delimiter",
@@ -20136,7 +20345,7 @@ class CMEERouteAV2I02SourceComplementCaseHeadContractsTest(unittest.TestCase):
             stage1_composition_module.select_source_complement_plan(
                 group=mixed_group,
                 source_leaves=mixed_leaves,
-                frame=self._frame("F01"),
+                frame=self._frame("F11"),
             )
 
         invalid_cases = (
@@ -31090,7 +31299,7 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
             "EMLIS_BOUNDED_REFUSAL",
         )
         self.assertIn(
-            "受け止めたいです",
+            "抱えたいです",
             tension_l2_clause.linearized_clause.text,
         )
         self.assertNotIn(
@@ -32715,6 +32924,17 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                     relation_operator=RelationOperator.COEXISTS_WITH,
                 ),
             ),
+            (
+                first_relation,
+                replace(
+                    second_relation,
+                    retention=(
+                        "OPTIONAL"
+                        if second_relation.retention == "REQUIRED"
+                        else "REQUIRED"
+                    ),
+                ),
+            ),
         )
         self.assertTrue(
             all(
@@ -32732,21 +32952,59 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
             for row in reciprocal_artifact.composition_duty_rows
             if row.layer == "LAYER_1" and row.relation_refs
         )
-        self.assertEqual(len(reciprocal_duties), 2)
-        selected_relation_frames = []
-        for duty in reciprocal_duties:
-            owner, source_refs = stage1_composition_module._duty_semantics(
-                duty, reciprocal.phase_b
+        self.assertEqual(len(reciprocal_duties), 1)
+        reciprocal_duty = reciprocal_duties[0]
+        self.assertEqual(
+            reciprocal_duty.basis_projection_refs,
+            (
+                first_relation.contribution_id,
+                second_relation.contribution_id,
+            ),
+        )
+        self.assertEqual(
+            reciprocal_duty.relation_refs,
+            first_relation.relation_basis_refs,
+        )
+        self.assertEqual(
+            reciprocal_duty.response_object_refs,
+            tuple(
+                row.semantic_ref
+                for row in first_relation.argument_bindings
+            ),
+        )
+        reciprocal_owner, reciprocal_source_refs = (
+            stage1_composition_module._duty_semantics(
+                reciprocal_duty,
+                reciprocal.phase_b,
             )
-            selected_relation_frames.append(
-                stage1_composition_module._v2_frame_for_duty(
-                    duty,
-                    owner,
-                    source_refs,
-                    reciprocal.phase_b,
-                ).frame_id
+        )
+        self.assertEqual(
+            stage1_composition_module._v2_frame_for_duty(
+                reciprocal_duty,
+                reciprocal_owner,
+                reciprocal_source_refs,
+                reciprocal.phase_b,
+            ).frame_id,
+            "F06",
+        )
+        self.assertFalse(
+            any(
+                row.frame.frame_id == "F24"
+                for row in reciprocal_artifact.v2_clause_rows
             )
-        self.assertEqual(tuple(selected_relation_frames), ("F06", "F24"))
+        )
+        self.assertEqual(
+            stage1_composition_module._local_reciprocal_tension_dependencies(
+                reciprocal_artifact.composition_duty_rows,
+                reciprocal_artifact.discourse_arc,
+            ),
+            tuple(
+                row
+                for row in reciprocal_artifact.discourse_arc.dependency_rows
+                if row.dependency_kind
+                is stage1_composition_module.ArcDependencyKind.ADMITTED_RELATION_DIRECTION
+            ),
+        )
         second_candidate_ref = second_relation.interpretation_candidate_refs[0]
         second_binding = second_relation.argument_bindings[0]
         qualifier_rows = (
@@ -32773,27 +33031,19 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                 for row in qualifier_rows
             ),
         )
-        second_duty = reciprocal_duties[1]
-        second_owner, second_source_refs = (
-            stage1_composition_module._duty_semantics(
-                second_duty, reciprocal.phase_b
-            )
-        )
         for tampered_qualifiers in tampered_qualifier_sets:
             with self.assertRaisesRegex(
                 stage1_composition_module.Stage1CompositionError,
                 "STAGE1_QUALIFIER_CLOSURE_STOP",
             ):
-                stage1_composition_module._v2_frame_for_duty(
-                    second_duty,
-                    second_owner,
-                    second_source_refs,
+                stage1_composition_module._project_duties(
                     replace(
                         reciprocal.phase_b,
                         qualifier_value_by_candidate_scope_axis_key=(
                             tampered_qualifiers
                         ),
                     ),
+                    reciprocal_artifact.discourse_arc,
                 )
         f06_frame = next(
             row
@@ -33041,6 +33291,34 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
             normalized = formal_private_case["artifact"][
                 "normalized_artifact"
             ]
+            duty_by_ref = {
+                row["duty_ref"]: row
+                for row in normalized["composition_duty_rows"]
+            }
+            for clause in normalized["v2_clause_rows"]:
+                if (
+                    duty_by_ref[clause["duty_ref"]]["layer"]
+                    == "LAYER_1"
+                    and clause["clause_plan"]["semantic_clause_kind"]
+                    == "GROUNDED_PREDICATE"
+                ):
+                    self.assertNotIn(
+                        clause["selected_expression_asset_ref"],
+                        tuple(
+                            binding["semantic_ref"]
+                            for binding, derivation in zip(
+                                clause["linearized_clause"][
+                                    "realized_semantic_bindings"
+                                ],
+                                clause["linearized_clause"][
+                                    "surface_derivations"
+                                ],
+                                strict=True,
+                            )
+                            if derivation["derivation_kind"]
+                            == "PROJECTED_FUNCTIONAL_ASSET"
+                        ),
+                    )
             decision = formal_private_case["decision"][
                 "input_specific_meaning_structure_body"
             ]
@@ -33273,6 +33551,49 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                             ]
                         ),
                     )
+                    if len(response_expression["basis_semantic_refs"]) == 2:
+                        antecedent_duties = tuple(
+                            duty_by_ref[ref]
+                            for ref in antecedent_unit["duty_refs"]
+                        )
+                        expected_pair = tuple(
+                            response_expression["basis_semantic_refs"]
+                        )
+                        self.assertIn(len(antecedent_duties), {1, 2})
+                        if len(antecedent_duties) == 1:
+                            self.assertEqual(
+                                tuple(
+                                    antecedent_duties[0][
+                                        "response_object_refs"
+                                    ]
+                                ),
+                                expected_pair,
+                            )
+                            self.assertEqual(
+                                len(antecedent_duties[0]["relation_refs"]),
+                                1,
+                            )
+                        else:
+                            self.assertTrue(
+                                all(
+                                    not duty["relation_refs"]
+                                    and len(
+                                        duty["response_object_refs"]
+                                    )
+                                    == 1
+                                    for duty in antecedent_duties
+                                )
+                            )
+                            self.assertEqual(
+                                tuple(
+                                    ref
+                                    for duty in antecedent_duties
+                                    for ref in duty[
+                                        "response_object_refs"
+                                    ]
+                                ),
+                                expected_pair,
+                            )
                 else:
                     self.assertFalse(projected_response_segments)
                     self.assertEqual(
@@ -33306,77 +33627,90 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                 and len(row["relation_refs"]) == 1
                 and len(row["response_object_refs"]) == 2
             )
+            arc = normalized["discourse_arc"]
+            direction_rows = tuple(
+                row
+                for row in arc["dependency_rows"]
+                if row["dependency_kind"]
+                == "ADMITTED_RELATION_DIRECTION"
+            )
             reciprocal_relation_duties = (
                 relation_duties
-                if len(relation_duties) == 2
+                if len(relation_duties) == 1
+                and len(direction_rows) == 2
                 and tuple(relation_duties[0]["response_object_refs"])
+                == (
+                    direction_rows[0]["predecessor_owner_ref"],
+                    direction_rows[0]["successor_owner_ref"],
+                )
+                and (
+                    direction_rows[0]["predecessor_owner_ref"],
+                    direction_rows[0]["successor_owner_ref"],
+                )
                 == tuple(
                     reversed(
-                        tuple(relation_duties[1]["response_object_refs"])
+                        (
+                            direction_rows[1]["predecessor_owner_ref"],
+                            direction_rows[1]["successor_owner_ref"],
+                        )
                     )
                 )
                 else ()
             )
             if reciprocal_relation_duties:
                 reciprocal_tension_case_count += 1
+                reciprocal_duty = reciprocal_relation_duties[0]
+                relation_refs = tuple(arc["admitted_relation_refs"])
+                self.assertEqual(len(relation_refs), 2)
                 self.assertEqual(
                     tuple(
-                        len(row["basis_projection_refs"])
-                        for row in reciprocal_relation_duties
+                        row["source_relation_ref"]
+                        for row in direction_rows
                     ),
-                    (1, 1),
+                    relation_refs,
                 )
-                relation_refs = tuple(
-                    row["relation_refs"][0]
-                    for row in reciprocal_relation_duties
+                relation_contribution_refs = tuple(
+                    row["contribution_id"]
+                    for row in stage1_projection[
+                        "observation_contributions"
+                    ]
+                    if tuple(row["relation_basis_refs"])
+                    in {(relation_refs[0],), (relation_refs[1],)}
                 )
-                self.assertEqual(len(set(relation_refs)), 2)
+                self.assertEqual(
+                    len(relation_contribution_refs),
+                    2,
+                )
+                self.assertEqual(
+                    tuple(reciprocal_duty["basis_projection_refs"]),
+                    relation_contribution_refs,
+                )
+                self.assertEqual(
+                    tuple(reciprocal_duty["relation_refs"]),
+                    (relation_refs[0],),
+                )
                 clauses_by_duty = {
                     row["duty_ref"]: row
                     for row in normalized["v2_clause_rows"]
                 }
-                reciprocal_clauses = tuple(
-                    clauses_by_duty[row["duty_ref"]]
-                    for row in reciprocal_relation_duties
-                )
+                reciprocal_clause = clauses_by_duty[
+                    reciprocal_duty["duty_ref"]
+                ]
                 self.assertEqual(
-                    tuple(
-                        (
-                            row["frame"]["frame_id"],
-                            row["head"]["head_id"],
-                            row["head"]["lexical_family_ref"],
-                            row["link_plan"]["token_owner_ref"],
-                        )
-                        for row in reciprocal_clauses
-                    ),
                     (
-                        ("F06", "H06", "LF06", "F06"),
-                        ("F24", "H24", "LF23", "F24"),
+                        reciprocal_clause["frame"]["frame_id"],
+                        reciprocal_clause["head"]["head_id"],
+                        reciprocal_clause["head"]["lexical_family_ref"],
+                        reciprocal_clause["link_plan"]["token_owner_ref"],
                     ),
+                    ("F06", "H06", "LF06", "F06"),
                 )
                 self.assertEqual(
                     tuple(
-                        tuple(
-                            leaf["semantic_ref"]
-                            for leaf in clause["source_leaves"]
-                        )
-                        for clause in reciprocal_clauses
+                        leaf["semantic_ref"]
+                        for leaf in reciprocal_clause["source_leaves"]
                     ),
-                    tuple(
-                        tuple(row["response_object_refs"])
-                        for row in reciprocal_relation_duties
-                    ),
-                )
-                arc = normalized["discourse_arc"]
-                direction_rows = tuple(
-                    row
-                    for row in arc["dependency_rows"]
-                    if row["dependency_kind"]
-                    == "ADMITTED_RELATION_DIRECTION"
-                )
-                self.assertEqual(
-                    tuple(arc["admitted_relation_refs"]),
-                    relation_refs,
+                    tuple(reciprocal_duty["response_object_refs"]),
                 )
                 self.assertEqual(
                     tuple(
@@ -33387,26 +33721,29 @@ class CMEESubjectiveMeaningPlannerIM03ThroughIM06ContractsTest(
                         )
                         for row in direction_rows
                     ),
-                    tuple(
+                    (
                         (
-                            duty["response_object_refs"][0],
-                            duty["response_object_refs"][1],
-                            duty["relation_refs"][0],
-                        )
-                        for duty in reciprocal_relation_duties
+                            reciprocal_duty["response_object_refs"][0],
+                            reciprocal_duty["response_object_refs"][1],
+                            relation_refs[0],
+                        ),
+                        (
+                            reciprocal_duty["response_object_refs"][1],
+                            reciprocal_duty["response_object_refs"][0],
+                            relation_refs[1],
+                        ),
                     ),
                 )
                 self.assertEqual(normalized["suppressed_duty_rows"], [])
                 self.assertEqual(normalized["suppressed_claim_rows"], [])
-                relation_unit_refs = tuple(
-                    next(
-                        unit["unit_ref"]
+                self.assertEqual(
+                    sum(
+                        reciprocal_duty["duty_ref"]
+                        in unit["duty_refs"]
                         for unit in normalized["sentence_units"]
-                        if duty["duty_ref"] in unit["duty_refs"]
-                    )
-                    for duty in reciprocal_relation_duties
+                    ),
+                    1,
                 )
-                self.assertEqual(len(set(relation_unit_refs)), 2)
         self.assertEqual(reception_visible_witness_count, 8)
         self.assertEqual(typed_reception_asset_witness_count, 7)
         self.assertEqual(reciprocal_tension_case_count, 1)
