@@ -4547,8 +4547,17 @@ def linearize_japanese_clause(
         raise Stage1CompositionError(
             "STAGE1_REFERENCE_REPAIR_UNAVAILABLE_STOP"
         )
+    materialize_specific_reception_object = bool(
+        anaphoric_surface is not None
+        and clause_plan is not None
+        and clause_plan.semantic_clause_kind
+        is SemanticClauseKind.SUBJECTIVE_PREDICATE
+    )
     quote_slots: Tuple[str, ...] = ()
-    if anaphoric_surface is not None:
+    if (
+        anaphoric_surface is not None
+        and not materialize_specific_reception_object
+    ):
         slot = source_slots[0]
         source_segment_by_slot[slot].append(
             (
@@ -4585,7 +4594,10 @@ def linearize_japanese_clause(
                 strict=True,
             )
         )
-    if anaphoric_surface is not None:
+    if (
+        anaphoric_surface is not None
+        and not materialize_specific_reception_object
+    ):
         pass
     elif rule.complement_rule_id in {"C02", "C03", "C04", "C05", "C06"}:
         slot = source_slots[0]
@@ -4659,6 +4671,44 @@ def linearize_japanese_clause(
     else:
         raise Stage1CompositionError(
             "STAGE1_SOURCE_COMPLEMENT_NONUNIQUE_STOP"
+        )
+
+    if materialize_specific_reception_object:
+        if (
+            anaphoric_surface is None
+            or rule.complement_rule_id
+            not in {"C02", "C03", "C04", "C05", "C06", "C08"}
+            or len(source_slots) != 1
+            or not source_segment_by_slot[source_slots[0]]
+            or any(
+                segments
+                for slot, segments in source_segment_by_slot.items()
+                if slot != source_slots[0]
+            )
+        ):
+            raise Stage1CompositionError(
+                "STAGE1_REFERENCE_REPAIR_UNAVAILABLE_STOP"
+            )
+        slot = source_slots[0]
+        source_segment_by_slot[slot].append(
+            structural_segment(
+                "、",
+                "structural:comma.v1",
+                slot,
+            )
+        )
+        source_segment_by_slot[slot].append(
+            (
+                anaphoric_surface.atomic_surface,
+                anaphoric_surface.surface_ref,
+                slot,
+                _v2_surface_derivation(
+                    SurfaceDerivationKind.PROJECTED_RESPONSE_OBJECT,
+                    response_object_expression=(
+                        reference_state.response_object_expression
+                    ),
+                ),
+            )
         )
 
     segments: list[Tuple[str, str, str, SurfaceDerivation]] = []
