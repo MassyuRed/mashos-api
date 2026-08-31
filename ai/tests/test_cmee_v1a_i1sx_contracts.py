@@ -13510,7 +13510,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             )
         )
         frozen_runtime_payload_sha256 = {
-            exact17_names[0]: "aee6328677e6f813c5b165c40de3b0100a336a810ba812d4d19d46c6756a039f",
+            exact17_names[0]: "166e0a01641155e84a28ad00c745ceb5699d21bc8b804158bc33bb8d7a70ce16",
             exact17_names[1]: "0705bcb48ca1c9a347b691d2eaf3d8a980cd8a044ca66292dda69e3b5fdbdc8c",
             exact17_names[2]: "437831951fa0c4062d68af2342d79ebfc4b29e8c318e1fa8765c74c4aac9a832",
             exact17_names[3]: "c907af7a059f802120b3e494a88651015a14d45c5e272ab1f9d3f1e9bfa8d06f",
@@ -13554,7 +13554,7 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
                 in runtime_payload_name_sha256_byte_count_exact17[:8]
             ),
             (
-                666280,
+                672782,
                 760521,
                 412047,
                 293740,

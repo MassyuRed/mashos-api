@@ -4342,6 +4342,7 @@ def linearize_japanese_clause(
     link_plan: ClauseLinkPlan,
     morphology_plan: PredicateMorphologyPlan,
     clause_plan: Optional[ClausePlan] = None,
+    suppress_grouped_sequence_asset_surface: bool = False,
     visible_meaning_trace_rows: Tuple[
         SelectedMeaningVisibleCausalTraceRow, ...
     ] = (),
@@ -4391,6 +4392,69 @@ def linearize_japanese_clause(
     link_rule = _v2_validate_link_plan_for_frame(frame, link_plan)
     morphology = _v2_validate_morphology_plan(frame, head, morphology_plan)
     finite_surface = _v2_finite_predicate_surface(head, morphology)
+    if (
+        type(suppress_grouped_sequence_asset_surface) is not bool
+        or (
+            suppress_grouped_sequence_asset_surface
+            and clause_plan is None
+        )
+    ):
+        raise Stage1CompositionError(
+            "STAGE1_EXPRESSION_ASSET_NONUNIQUE_STOP"
+        )
+    expression_asset: Optional[ExpressionAssetSpec] = None
+    expression_prefix: Optional[str] = None
+    if clause_plan is not None:
+        sense = _v2_exact1(
+            tuple(
+                row
+                for row in V2_PREDICATE_SENSE_REGISTRY
+                if row.sense_id == frame.sense_ref
+            ),
+            "STAGE1_EXPRESSION_ASSET_NONUNIQUE_STOP",
+        )
+        if (
+            type(clause_plan) is not ClausePlan
+            or clause_plan.semantic_clause_kind.value
+            != sense.semantic_clause_kind
+            or frame.frame_id not in sense.frame_license_refs
+            or (
+                suppress_grouped_sequence_asset_surface
+                and (
+                    sense.sense_id != "S07"
+                    or sense.semantic_clause_kind
+                    != SemanticClauseKind.ADMITTED_RELATION.value
+                )
+            )
+        ):
+            raise Stage1CompositionError(
+                "STAGE1_EXPRESSION_ASSET_NONUNIQUE_STOP"
+            )
+        expression_asset = _v2_exact1(
+            tuple(
+                row
+                for row in EXPRESSION_ASSET_REGISTRY
+                if row.sentence_job.value == sense.sentence_job
+                and row.semantic_clause_kind.value
+                == sense.semantic_clause_kind
+                and row.predicate_key == sense.semantic_sense
+                and clause_plan.predicate_valency
+                in row.compatible_valencies
+            ),
+            "STAGE1_EXPRESSION_ASSET_NONUNIQUE_STOP",
+        )
+        if (
+            len(expression_asset.predicate_lexemes) != 2
+            or any(not value for value in expression_asset.predicate_lexemes)
+        ):
+            raise Stage1CompositionError(
+                "STAGE1_EXPRESSION_ASSET_NONUNIQUE_STOP"
+            )
+        if (
+            not suppress_grouped_sequence_asset_surface
+            and frame.frame_id not in {"F10", "F24"}
+        ):
+            expression_prefix = expression_asset.predicate_lexemes[0]
     plan_by_role = {
         plan.slot_role: plan for plan in clause_ir.argument_plans
     }
@@ -4483,6 +4547,7 @@ def linearize_japanese_clause(
         raise Stage1CompositionError(
             "STAGE1_REFERENCE_REPAIR_UNAVAILABLE_STOP"
         )
+    quote_slots: Tuple[str, ...] = ()
     if anaphoric_surface is not None:
         slot = source_slots[0]
         source_segment_by_slot[slot].append(
@@ -4502,11 +4567,22 @@ def linearize_japanese_clause(
             list[Tuple[str, str, str, SurfaceDerivation]], ...
         ] = ()
     else:
+        quote_slots = (
+            source_slots
+            if rule.complement_rule_id in {"C07", "C09"}
+            else tuple(source_slots[0] for _leaf in leaves)
+        )
+        if len(quote_slots) != len(leaves):
+            raise Stage1CompositionError(
+                "STAGE1_SOURCE_COMPLEMENT_NONUNIQUE_STOP"
+            )
         quoted = tuple(
-            quoted_leaf_segments(leaf, delimiter_ref, source_slots[0])
-            for leaf, delimiter_ref in zip(
+            quoted_leaf_segments(leaf, delimiter_ref, slot)
+            for leaf, delimiter_ref, slot in zip(
                 leaves,
                 source_complement_plan.quote_delimiter_refs,
+                quote_slots,
+                strict=True,
             )
         )
     if anaphoric_surface is not None:
@@ -4601,7 +4677,9 @@ def linearize_japanese_clause(
         )
 
     for surface, rule_ref, provenance_refs, qualifier_refs in (
-        _v2_visible_scalar_carrier_rows(
+        ()
+        if not visible_meaning_trace_rows
+        else _v2_visible_scalar_carrier_rows(
             clause_plan,
             visible_meaning_trace_rows,
         )
@@ -4629,6 +4707,26 @@ def linearize_japanese_clause(
                 "、",
                 "QUALIFIER_COMMA",
                 "QUALIFIER",
+            )
+        )
+
+    if (
+        expression_prefix is not None
+        and clause_plan.semantic_clause_kind
+        is not SemanticClauseKind.SUBJECTIVE_PREDICATE
+    ):
+        segments.append(
+            functional_segment(
+                expression_prefix,
+                expression_asset.expression_asset_id,
+                "PREDICATE_HEAD",
+            )
+        )
+        segments.append(
+            structural_segment(
+                "、",
+                "EXPRESSION_ASSET_COMMA",
+                "PREDICATE_HEAD",
             )
         )
 
@@ -4726,6 +4824,31 @@ def linearize_japanese_clause(
                     "MODIFIER",
                 )
             )
+        if (
+            expression_prefix is not None
+            and clause_plan.semantic_clause_kind
+            is SemanticClauseKind.SUBJECTIVE_PREDICATE
+            and slot == "SUBJECT"
+            and (
+                modifier is None
+                or modifier.atomic_surface
+                != expression_prefix
+            )
+        ):
+            segments.append(
+                functional_segment(
+                    expression_prefix,
+                    expression_asset.expression_asset_id,
+                    "PREDICATE_HEAD",
+                )
+            )
+            segments.append(
+                structural_segment(
+                    "、",
+                    "EXPRESSION_ASSET_COMMA",
+                    "PREDICATE_HEAD",
+                )
+            )
 
     segments.append(
         functional_segment(
@@ -4773,6 +4896,19 @@ def linearize_japanese_clause(
         or len(bindings) != len(derivations)
     ):
         raise Stage1CompositionError("STAGE1_DERIVATION_SEAL_STOP")
+    if anaphoric_surface is None:
+        literal_slot_rows = tuple(
+            (binding.semantic_ref, binding.clause_slot)
+            for binding, derivation in zip(bindings, derivations, strict=True)
+            if derivation.derivation_kind
+            is SurfaceDerivationKind.LITERAL_SUBSPAN
+        )
+        expected_literal_slot_rows = tuple(
+            (leaf.semantic_ref, slot)
+            for leaf, slot in zip(leaves, quote_slots, strict=True)
+        )
+        if literal_slot_rows != expected_literal_slot_rows:
+            raise Stage1CompositionError("STAGE1_DERIVATION_SEAL_STOP")
 
     argument_bindings = tuple(
         ArgumentBinding(
@@ -12103,9 +12239,7 @@ def _v2_normal_form_phase_grammar_binding_ir_local_repair(
                     link_plan=link_plan,
                     morphology_plan=morphology_plan,
                     clause_ir=clause_ir,
-                    clause_plan=(
-                        plan if visible_meaning_trace_rows else None
-                    ),
+                    clause_plan=plan,
                     visible_meaning_trace_rows=(
                         visible_meaning_trace_rows
                     ),
@@ -12118,9 +12252,35 @@ def _v2_normal_form_phase_grammar_binding_ir_local_repair(
 def _v2_normal_form_phase_sole_linearization_grammar_seal(
     units: Tuple[ComposedSentenceUnit, ...],
     clause_ir_rows: Tuple[V2ClauseIRRow, ...],
+    duty_by_ref: dict[str, CompositionDutyView],
+    plan_by_duty: dict[str, ClausePlan],
 ) -> Tuple[Tuple[ComposedSentenceUnit, ...], Tuple[V2ClauseRealizationRow, ...]]:
     """Phase 6: invoke the sole linearizer and seal exact visible cover."""
 
+    row_by_duty = {row.duty_ref: row for row in clause_ir_rows}
+    if (
+        len(row_by_duty) != len(clause_ir_rows)
+        or set(row_by_duty) != set(duty_by_ref)
+        or set(row_by_duty) != set(plan_by_duty)
+        or any(
+            duty_ref not in row_by_duty
+            for unit in units
+            for duty_ref in unit.duty_refs
+        )
+    ):
+        raise Stage1CompositionError("STAGE1_DERIVATION_SEAL_STOP")
+    grouped_sequence_duty_refs = frozenset(
+        duty_ref
+        for unit in units
+        if _v2_shared_endpoint_relation_chain(
+            unit.duty_refs,
+            duty_by_ref,
+            plan_by_duty,
+        )
+        is not None
+        for duty_ref in unit.duty_refs
+        if row_by_duty[duty_ref].frame.sense_ref == "S07"
+    )
     clause_rows = tuple(
         V2ClauseRealizationRow(
             duty_ref=row.duty_ref,
@@ -12146,6 +12306,9 @@ def _v2_normal_form_phase_sole_linearization_grammar_seal(
                 link_plan=row.link_plan,
                 morphology_plan=row.morphology_plan,
                 clause_plan=row.clause_plan,
+                suppress_grouped_sequence_asset_surface=(
+                    row.duty_ref in grouped_sequence_duty_refs
+                ),
                 visible_meaning_trace_rows=(
                     row.visible_meaning_trace_rows
                 ),
@@ -12275,7 +12438,10 @@ def _normal_form_phase_expression_selection_final_linearization(
         project_stage1_discourse_arc(phase_B),
     )
     return _v2_normal_form_phase_sole_linearization_grammar_seal(
-        units, clause_ir_rows
+        units,
+        clause_ir_rows,
+        duty_by_ref,
+        plan_by_duty,
     )
 
 
@@ -12296,6 +12462,16 @@ def _validate_v2_normalized_grammar_seal(
         raise Stage1CompositionError("STAGE1_DERIVATION_SEAL_STOP")
     prior_lexical_family_ref: Optional[str] = None
     row_by_duty = {row.duty_ref: row for row in rows}
+    duty_by_ref = {
+        row.duty_ref: row for row in artifact.composition_duty_rows
+    }
+    plan_by_duty = {
+        row.duty_ref: row for row in artifact.clause_plan_rows
+    }
+    if set(row_by_duty) != set(duty_by_ref) or set(row_by_duty) != set(
+        plan_by_duty
+    ):
+        raise Stage1CompositionError("STAGE1_DERIVATION_SEAL_STOP")
     for unit in units:
         unit_rows = tuple(row_by_duty[duty_ref] for duty_ref in unit.duty_refs)
         exact_count = len(unit_rows)
@@ -12317,6 +12493,11 @@ def _validate_v2_normalized_grammar_seal(
             != len(unit.surface_derivations)
         ):
             raise Stage1CompositionError("STAGE1_DERIVATION_SEAL_STOP")
+        grouped_sequence_chain = _v2_shared_endpoint_relation_chain(
+            unit.duty_refs,
+            duty_by_ref,
+            plan_by_duty,
+        )
         for row in unit_rows:
             repeated = linearize_japanese_clause(
                 clause_ir=row.clause_ir,
@@ -12329,6 +12510,10 @@ def _validate_v2_normalized_grammar_seal(
                 link_plan=row.link_plan,
                 morphology_plan=row.morphology_plan,
                 clause_plan=row.clause_plan,
+                suppress_grouped_sequence_asset_surface=(
+                    grouped_sequence_chain is not None
+                    and row.frame.sense_ref == "S07"
+                ),
                 visible_meaning_trace_rows=(
                     row.visible_meaning_trace_rows
                 ),
@@ -12773,6 +12958,8 @@ def normalize_to_normal_form(
         _v2_normal_form_phase_sole_linearization_grammar_seal(
             unit_skeletons,
             clause_ir_rows,
+            duty_by_ref,
+            plan_by_duty,
         )
     )
     post_defect_rows = _project_post_normalization_defect_rows(
