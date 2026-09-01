@@ -46,6 +46,7 @@ from tools.cmee_v1a_i1sx_candidate_run import (
     EXACT8,
     STAGE1_KAREN_DERIVED_MUTATION_SET_V1,
     _body_free_mutation_registry,
+    _materialize_im07_formal_case,
     _structural_trace_valid,
     run as run_exact8_candidate,
 )
@@ -2811,6 +2812,7 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 graph = outcome.meaning_graph
                 self.assertIsNotNone(graph)
                 assert artifact is not None and graph is not None
+                self.assertTrue(_structural_trace_valid(outcome))
                 text = artifact.text
                 delimiter = "\n\nEmlisから：\n"
                 self.assertTrue(text.startswith("見えたこと：\n"), "Layer 1 missing")
@@ -2847,15 +2849,12 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 self.assertTrue(layer1.removeprefix("見えたこと：\n").strip())
                 self.assertTrue(layer2.strip())
                 first_reception_sentence = layer2.splitlines()[0]
-                self.assertTrue(first_reception_sentence.startswith("Emlisは、"))
-                self.assertEqual(first_reception_sentence.count("「"), 0)
-                self.assertEqual(first_reception_sentence.count("」"), 0)
-                self.assertTrue(
-                    any(
-                        token in first_reception_sentence
-                        for token in stage1_response_module._LAYER2_ANAPHORIC_SURFACES.values()
-                    ),
-                    "first Reception sentence must use a typed anaphor",
+                self.assertTrue(first_reception_sentence.endswith("。"))
+                self.assertIsNotNone(
+                    re.search(
+                        r"[ぁ-んァ-ヶ一-龯]",
+                        first_reception_sentence,
+                    )
                 )
                 observation_norm = re.sub(r"\s+", "", artifact.observation)
                 reception_norm = re.sub(r"\s+", "", artifact.reception)
@@ -2874,6 +2873,55 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
                 reception_trace = next(
                     row for row in artifact.trace if row.role == "RECEPTION"
                 )
+                reception_extension = reception_trace.emlis_stage1_extension
+                self.assertIsNotNone(reception_extension)
+                assert reception_extension is not None
+                self.assertEqual(
+                    reception_extension.schema_version,
+                    cmee_contracts_module
+                    .CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V2,
+                )
+                self.assertEqual(
+                    reception_extension.owner_ref,
+                    cmee_contracts_module.CMEE_STAGE1_EMLIS_OWNER_REF_V2,
+                )
+                self.assertIsNone(reception_extension.subjective_claim_ref)
+                self.assertTrue(reception_extension.subjective_claim_refs)
+                if case_id == "SX-08":
+                    self.assertEqual(
+                        tuple(row.role for row in artifact.trace).count(
+                            "RECEPTION"
+                        ),
+                        1,
+                    )
+                    self.assertEqual(
+                        len(reception_extension.subjective_claim_refs),
+                        2,
+                    )
+                if case_id == "SX-01":
+                    reception_index = artifact.trace.index(reception_trace)
+                    downgraded_rows = list(artifact.trace)
+                    downgraded_rows[reception_index] = replace(
+                        reception_trace,
+                        emlis_stage1_extension=replace(
+                            reception_extension,
+                            subjective_claim_ref=(
+                                reception_extension.subjective_claim_refs[0]
+                            ),
+                            subjective_claim_refs=(),
+                        ),
+                    )
+                    self.assertFalse(
+                        _structural_trace_valid(
+                            replace(
+                                outcome,
+                                artifact=replace(
+                                    artifact,
+                                    trace=tuple(downgraded_rows),
+                                ),
+                            )
+                        )
+                    )
                 self.assertTrue(bool(reception_trace.meaning_node_ids))
                 self.assertTrue(
                     set(reception_trace.meaning_node_ids).issubset(observation_nodes),
@@ -6039,7 +6087,7 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
             parent_plan=artifact.plan,
         )
 
-    def test_final_stage1_composition_core_remains_disabled_and_publicly_isolated(
+    def test_final_stage1_v2_uses_the_grounded_surface_owner_without_v1_fallback(
         self,
     ) -> None:
         self.assertEqual(
@@ -6052,57 +6100,211 @@ class CMEEV1AI1SXVerticalTest(unittest.TestCase):
         )
         self.assertEqual(
             cmee_contracts_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
-            "cocolon.cmee.v1a.emlis_stage1_response.v1",
-        )
-        self.assertEqual(
-            stage1_composition_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
             "cocolon.cmee.v1a.emlis_stage1_response.v2",
         )
-        patch_rows = tuple(
-            patch.object(
-                stage1_composition_module,
-                name,
-                side_effect=AssertionError(f"disabled final core called: {name}"),
-            )
-            for name in (
-                "project_subjective_meaning_plan",
-                "project_stage1_discourse_arc",
-                "compose_stage1_from_projection",
-                "normalize_to_normal_form",
-            )
+        original_v2_compiler = (
+            emlis_v1a_module.compile_stage1_response
         )
-        patch_rows += tuple(
+        compiled = []
+
+        def compile_v2_once(*args, **kwargs):
+            result = original_v2_compiler(*args, **kwargs)
+            compiled.append(result)
+            return result
+
+        _case_id, memo, category, emotion, strength = EXACT8[0]
+        with (
+            patch.object(
+                emlis_v1a_module,
+                "compile_stage1_response",
+                side_effect=compile_v2_once,
+            ) as active_v2_compiler,
             patch.object(
                 stage1_response_module,
-                name,
+                "build_grounded_sentence_plan",
+                wraps=stage1_response_module.build_grounded_sentence_plan,
+            ) as grounded_sentence_planner,
+            patch.object(
+                stage1_response_module,
+                "realize_grounded_sentence_plan",
+                wraps=stage1_response_module.realize_grounded_sentence_plan,
+            ) as grounded_sentence_realizer,
+            patch.object(
+                stage1_composition_module,
+                "compose_stage1_from_projection",
                 side_effect=AssertionError(
-                    f"preactivated v2 response helper called: {name}"
+                    "independent composition surface reached"
                 ),
-            )
-            for name in (
-                "_adapt_v2_composed_units_to_realized_units",
+            ) as independent_composer,
+            patch.object(
+                stage1_response_module,
+                "_compile_stage1_response_v1_legacy",
+                side_effect=AssertionError("legacy v1 compiler reached"),
+            ) as legacy_v1_compiler,
+            patch.object(
+                stage1_response_module,
                 "_compile_stage1_response_v2_candidate",
-            )
-        )
-        active_compile_source = inspect.getsource(
-            stage1_response_module.compile_stage1_response
-        )
-        self.assertNotIn("_compile_stage1_response_v2_candidate", active_compile_source)
-        mocks = []
-        try:
-            mocks = [row.start() for row in patch_rows]
+                side_effect=AssertionError("private v2 wrapper reached"),
+            ) as private_v2_wrapper,
+            patch.object(
+                emlis_v1a_module,
+                "build_grounded_observation_plan",
+                side_effect=AssertionError("legacy v1 plan reached"),
+            ) as legacy_v1_plan,
+            patch.object(
+                emlis_v1a_module,
+                "_cmee_nucleus_observation_text",
+                side_effect=AssertionError("legacy v1 observation reached"),
+            ) as legacy_v1_observation,
+            patch.object(
+                emlis_v1a_module,
+                "_cmee_stage1_reception_text",
+                side_effect=AssertionError("legacy v1 reception reached"),
+            ) as legacy_v1_reception,
+        ):
             outcome = MeaningExperienceEngine().generate(
                 _request(
-                    record_id="cmee-final-core-disabled",
-                    memo=REPRESENTATIVE_MEMO,
+                    record_id="cmee-final-v2-active",
+                    memo=memo,
+                    category=category,
+                    emotion=emotion,
+                    strength=strength,
                 )
             )
-        finally:
-            for row in reversed(patch_rows):
-                row.stop()
+
         self.assertEqual(outcome.status.value, "GENERATED", outcome.reason_codes)
-        self.assertIsNotNone(outcome.artifact)
-        self.assertTrue(all(row.call_count == 0 for row in mocks))
+        self.assertEqual(active_v2_compiler.call_count, 2)
+        self.assertGreaterEqual(grounded_sentence_planner.call_count, 2)
+        self.assertGreaterEqual(grounded_sentence_realizer.call_count, 2)
+        self.assertEqual(independent_composer.call_count, 0)
+        self.assertEqual(legacy_v1_compiler.call_count, 0)
+        self.assertEqual(private_v2_wrapper.call_count, 0)
+        self.assertEqual(legacy_v1_plan.call_count, 0)
+        self.assertEqual(legacy_v1_observation.call_count, 0)
+        self.assertEqual(legacy_v1_reception.call_count, 0)
+        self.assertEqual(len(compiled), 2)
+        self.assertEqual(compiled[0], compiled[1])
+        projection, units = compiled[0]
+        self.assertEqual(
+            projection.schema_version,
+            cmee_contracts_module.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
+        )
+        self.assertTrue(units)
+        artifact = outcome.artifact
+        graph = outcome.meaning_graph
+        assert artifact is not None and graph is not None
+        positive_extensions = tuple(
+            row.emlis_stage1_extension
+            for row in artifact.trace
+            if row.role in {"OBSERVATION", "RECEPTION"}
+        )
+        self.assertTrue(positive_extensions)
+        self.assertTrue(
+            all(
+                extension is not None
+                and extension.schema_version
+                == cmee_contracts_module.CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V2
+                and extension.owner_ref
+                == cmee_contracts_module.CMEE_STAGE1_EMLIS_OWNER_REF_V2
+                and extension.user_fact_effect == 0
+                and extension.covered_duty_refs
+                and extension.composition_candidate_ref
+                and extension.composition_layout_ref
+                and extension.selected_stage1_artifact_ref
+                for extension in positive_extensions
+            )
+        )
+        cmee_contracts_module.validate_stage1_trace_spine(
+            artifact.trace,
+            projection,
+            grounded_graph=graph,
+            parent_plan=artifact.plan,
+        )
+
+    def test_formal_exact8_uses_the_response_facade_as_its_only_compile_boundary(
+        self,
+    ) -> None:
+        runner_module = inspect.getmodule(_materialize_im07_formal_case)
+        assert runner_module is not None
+        runner_source = inspect.getsource(runner_module)
+        self.assertNotIn(
+            "import cocolon_meaning_experience_engine.emlis_stage1_composition",
+            runner_source,
+        )
+        materializer_source = inspect.getsource(_materialize_im07_formal_case)
+        self.assertEqual(
+            materializer_source.count("stage1_response.compile_stage1_response("),
+            1,
+        )
+        for forbidden_direct_compile_symbol in (
+            "stage1_composition.project_subjective_meaning_plan",
+            "stage1_response.seal_stage1_projection",
+            "stage1_response.build_surface_composition_inputs",
+            "stage1_composition.compose_stage1_from_projection",
+            "_adapt_v2_composed_units_to_realized_units",
+            "_compile_stage1_response_v2_candidate",
+        ):
+            self.assertNotIn(
+                forbidden_direct_compile_symbol,
+                materializer_source,
+            )
+
+        for case_id, memo, category, emotion, strength in EXACT8:
+            with patch.object(
+                stage1_response_module,
+                "compile_stage1_response",
+                wraps=getattr(
+                    stage1_response_module,
+                    "compile_stage1_response",
+                ),
+            ) as response_facade:
+                private_case, body_free_case = _materialize_im07_formal_case(
+                    case_id=case_id,
+                    memo=memo,
+                    category=category,
+                    emotion=emotion,
+                    strength=strength,
+                )
+            self.assertEqual(response_facade.call_count, 1)
+            self.assertTrue(private_case["formal_trace_valid"])
+            self.assertTrue(private_case["machine_invariant_clear"])
+            self.assertTrue(body_free_case["formal_trace_valid"])
+            self.assertTrue(body_free_case["machine_invariant_clear"])
+            artifact = private_case["artifact"]
+            self.assertEqual(
+                artifact["compiler_boundary"],
+                "compile_stage1_response",
+            )
+            self.assertNotIn("normalized_artifact", artifact)
+            self.assertNotIn(
+                "subjective_plan_body",
+                private_case["projection"],
+            )
+            visible_units = private_case["visible_trace"][
+                "realized_visible_units"
+            ]
+            self.assertTrue(visible_units)
+            for shared_ref_name in (
+                "selected_stage1_artifact_ref",
+                "composition_candidate_ref",
+                "composition_layout_ref",
+            ):
+                shared_ref = artifact[shared_ref_name]
+                self.assertTrue(shared_ref)
+                self.assertEqual(
+                    private_case["visible_trace"][shared_ref_name],
+                    shared_ref,
+                )
+                self.assertTrue(
+                    all(
+                        row["v2_trace_seal"][shared_ref_name] == shared_ref
+                        for row in visible_units
+                    )
+                )
+            invariant = private_case["machine_invariant"]
+            self.assertTrue(invariant["response_facade_compiled"])
+            self.assertTrue(invariant["visible_anchor_coverage_exact"])
+            self.assertTrue(invariant["shared_trace_identity_exact"])
 
 
 if __name__ == "__main__":

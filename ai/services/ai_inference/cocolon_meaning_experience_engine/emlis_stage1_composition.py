@@ -133,14 +133,17 @@ from .contracts import (
     project_stage1_subjective_projection_seal_ref,
     project_stage1_subjective_responsibility_ref,
     recompute_stage1_identity,
+    resolve_limited_reception_aggregate,
     project_stage1_source_qualifier_binding_ref,
     project_stage1_subjective_basis_binding_ref,
     project_stage1_tagged_projection_ref,
     bounded_limited_reception_id,
+    canonical_limited_retained_layer1_refs,
     limited_meaning_outcome_id,
     meaning_bound_reception_id,
     subjective_proposition_v2_id,
     stage1_canonical_json_bytes,
+    stage1_candidate_uses_relation_qualifier_scope,
     stage1_policy_application_order_key,
     stage1_subjective_forbidden_promotions,
     validate_stage1_anti_template_registry_invariant,
@@ -5163,7 +5166,7 @@ def _validate_frozen_semantic_maps(
     direct = tuple(
         row
         for row in candidates
-        if row.relation_operator is RelationOperator.NO_RELATION_CLAIM
+        if not stage1_candidate_uses_relation_qualifier_scope(row)
     )
     if (
         len({row.candidate_ref for row in frame_rows}) != len(frame_rows)
@@ -5195,7 +5198,7 @@ def _validate_frozen_semantic_maps(
 
     expected_endpoint_keys: list[Tuple[str, ArgumentRole, str]] = []
     for candidate in candidates:
-        if candidate.relation_operator is RelationOperator.NO_RELATION_CLAIM:
+        if not stage1_candidate_uses_relation_qualifier_scope(candidate):
             continue
         for binding in candidate.argument_bindings:
             expected_endpoint_keys.append(
@@ -5218,8 +5221,9 @@ def _validate_frozen_semantic_maps(
         direct_candidate = candidate_by_id.get(row.endpoint_grounded_candidate_ref)
         if (
             direct_candidate is None
-            or direct_candidate.relation_operator
-            is not RelationOperator.NO_RELATION_CLAIM
+            or stage1_candidate_uses_relation_qualifier_scope(
+                direct_candidate
+            )
             or not any(
                 binding.role is ArgumentRole.PRIMARY
                 and binding.semantic_ref == row.source_semantic_ref
@@ -5230,7 +5234,7 @@ def _validate_frozen_semantic_maps(
 
     expected_qualifiers: list[QualifierValueRow] = []
     for candidate in candidates:
-        relation = candidate.relation_operator is not RelationOperator.NO_RELATION_CLAIM
+        relation = stage1_candidate_uses_relation_qualifier_scope(candidate)
         bindings = (
             tuple(candidate.argument_bindings)
             if relation
@@ -5309,6 +5313,7 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
         from .emlis_stage1_response import (
             _bind_grounded_plan,
             _bind_reception_moves,
+            _final_stage1_candidate_closure,
             _ordered,
             _semantic_reception_asset,
             validate_allowed_reception_opportunity_envelope,
@@ -5345,7 +5350,7 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
         bound_moves = _bind_reception_moves(
             reception_plan,
             binding=plan_binding,
-            contributions=phase_A.observation_contribution_rows,
+            contributions=premeaning_inputs.observation_contribution_rows,
         )
         expected_retained_reception_act_rows = tuple(
             RetainedReceptionActRow(
@@ -5407,6 +5412,25 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
     except CMEEStage1ContractError:
         raise Stage1CompositionError(
             "STAGE1_INPUT_SPECIFIC_MEANING_STRUCTURE_STOP"
+        ) from None
+    try:
+        expected_candidate_rows = _final_stage1_candidate_closure(
+            source=phase_A.admitted_source,
+            grounded_graph=phase_A.grounded_graph,
+            grounded_plan=phase_A.grounded_plan,
+            candidate_rows=(
+                premeaning_inputs.interpretation_candidate_rows
+            ),
+            required_candidate_refs=(
+                premeaning_inputs.meaning_field.required_candidate_refs
+            ),
+            stage1_response_schema_version=(
+                premeaning_inputs.stage1_response_schema_version
+            ),
+        )
+    except CMEEStage1ContractError:
+        raise Stage1CompositionError(
+            "STAGE1_CONTRIBUTION_CANDIDATE_CLOSURE_STOP"
         ) from None
     try:
         expected_projection_preimage_ref = (
@@ -5490,6 +5514,10 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
                 phase_A.qualifier_value_by_candidate_scope_axis_key
             ),
             material_unknown_refs=phase_A.material_unknown_refs,
+            expected_act_refs=(
+                phase_A.allowed_reception_opportunity_envelope
+                .allowed_reception_act_ids
+            ),
         )
     except CMEEStage1ContractError:
         raise Stage1CompositionError(
@@ -5497,13 +5525,14 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
         ) from None
     if (
         premeaning_inputs.grounded_graph is not phase_A.grounded_graph
-        or premeaning_inputs.meaning_field != phase_A.meaning_field
-        or premeaning_inputs.observation_contribution_rows
-        != phase_A.observation_contribution_rows
+        or phase_A.interpretation_candidate_rows != expected_candidate_rows
+        or phase_A.meaning_field != premeaning_inputs.meaning_field
+        or phase_A.observation_contribution_rows
+        != premeaning_inputs.observation_contribution_rows
         or premeaning_inputs.material_unknown_refs
         != phase_A.material_unknown_refs
-        or premeaning_inputs.observation_depth_class
-        is not phase_A.observation_depth_class
+        or phase_A.observation_depth_class
+        is not premeaning_inputs.observation_depth_class
         or type(phase_A.grounded_situation_view)
         is not GroundedSituationView
         or type(phase_A.foreground_scope_derivation)
@@ -5709,7 +5738,7 @@ def _qualifier_lookup(
     candidate: EmlisInterpretationCandidate,
     binding: Any,
 ) -> Tuple[str, str, str, Optional[ArgumentRole]]:
-    relation = candidate.relation_operator is not RelationOperator.NO_RELATION_CLAIM
+    relation = stage1_candidate_uses_relation_qualifier_scope(candidate)
     scope = (
         QualifierLookupScope.RELATION_SOURCE_BINDING
         if relation
@@ -6172,16 +6201,23 @@ def _normal_reception_appraisal(
         if semantic_contributions is None
         else semantic_contributions
     )
+    bounded_change = (
+        proposition.reception_function == "recognize_lived_change"
+        and any(
+            row.semantic_operator is SemanticOperator.PRESENT_CHANGE
+            for row in semantic_rows
+        )
+    )
     relation_rows = tuple(
         row
         for row in semantic_rows
-        if row.relation_operator
-        in {
+        if not bounded_change
+        and row.relation_operator in {
             RelationOperator.COEXISTS_WITH,
             RelationOperator.TENSION_WITH,
         }
     )
-    unfinished = any(
+    unfinished = not (bounded_change or relation_rows) and any(
         row.semantic_operator
         in {
             SemanticOperator.PRESENT_RESIDUE,
@@ -6193,13 +6229,6 @@ def _normal_reception_appraisal(
             ObservationContributionKind.PRESERVE_UNFINISHED,
         }
         for row in semantic_rows
-    )
-    bounded_change = (
-        proposition.reception_function == "recognize_lived_change"
-        and any(
-            row.semantic_operator is SemanticOperator.PRESENT_CHANGE
-            for row in semantic_rows
-        )
     )
     agency = (
         proposition.reception_function == "protect_retained_intention"
@@ -6745,6 +6774,119 @@ def _coalesce_normal_subjective_facets(
     return merged_claims, merged_opportunities, merged_traces
 
 
+def _validate_retained_reception_act_exact_cover(
+    *,
+    retained_act_refs: Tuple[str, ...],
+    responsibilities: Sequence[SubjectiveResponsibilityRow],
+    claims: Sequence[ProjectedSubjectiveClaim],
+) -> None:
+    """Reject any metadata-only addition or loss of a retained act.
+
+    The authority's retained acts must be represented exactly once by a typed
+    responsibility and exactly once by a projected claim.  Each claim must in
+    turn carry exactly the acts owned by its linked responsibilities.
+    """
+
+    stop = "MEANING_PLAN_RECEPTION_ACT_EXACT_COVER_STOP"
+    if (
+        type(retained_act_refs) is not tuple
+        or not retained_act_refs
+        or any(not ref for ref in retained_act_refs)
+        or len(retained_act_refs) != len(set(retained_act_refs))
+        or not responsibilities
+        or not claims
+    ):
+        raise Stage1CompositionError(stop)
+    retained_set = set(retained_act_refs)
+    responsibility_by_ref = {
+        row.responsibility_ref: row for row in responsibilities
+    }
+    if (
+        len(responsibility_by_ref) != len(responsibilities)
+        or any(
+            not row.responsibility_ref
+            or type(row.retained_reception_act_refs) is not tuple
+            or not row.retained_reception_act_refs
+            or any(not ref for ref in row.retained_reception_act_refs)
+            or len(row.retained_reception_act_refs)
+            != len(set(row.retained_reception_act_refs))
+            or tuple(
+                ref
+                for ref in retained_act_refs
+                if ref in set(row.retained_reception_act_refs)
+            )
+            != row.retained_reception_act_refs
+            for row in responsibilities
+        )
+    ):
+        raise Stage1CompositionError(stop)
+    responsibility_act_refs = tuple(
+        ref
+        for row in responsibilities
+        for ref in row.retained_reception_act_refs
+    )
+    if (
+        len(responsibility_act_refs) != len(set(responsibility_act_refs))
+        or set(responsibility_act_refs) != retained_set
+    ):
+        raise Stage1CompositionError(stop)
+
+    claim_ids = tuple(claim.subjective_claim_id for claim in claims)
+    if (
+        any(not claim_id for claim_id in claim_ids)
+        or len(claim_ids) != len(set(claim_ids))
+        or any(
+            type(claim.subjective_responsibility_refs) is not tuple
+            or not claim.subjective_responsibility_refs
+            or len(claim.subjective_responsibility_refs)
+            != len(set(claim.subjective_responsibility_refs))
+            or any(not ref for ref in claim.subjective_responsibility_refs)
+            or type(claim.source_reception_act_refs) is not tuple
+            or not claim.source_reception_act_refs
+            or len(claim.source_reception_act_refs)
+            != len(set(claim.source_reception_act_refs))
+            or any(not ref for ref in claim.source_reception_act_refs)
+            for claim in claims
+        )
+    ):
+        raise Stage1CompositionError(stop)
+    linked_responsibility_refs = tuple(
+        ref for claim in claims for ref in claim.subjective_responsibility_refs
+    )
+    claim_act_refs = tuple(
+        ref for claim in claims for ref in claim.source_reception_act_refs
+    )
+    if (
+        len(linked_responsibility_refs)
+        != len(set(linked_responsibility_refs))
+        or set(linked_responsibility_refs) != set(responsibility_by_ref)
+        or len(claim_act_refs) != len(set(claim_act_refs))
+        or set(claim_act_refs) != retained_set
+    ):
+        raise Stage1CompositionError(stop)
+    for claim in claims:
+        responsibility_refs = claim.subjective_responsibility_refs
+        if (
+            any(
+                ref not in responsibility_by_ref
+                for ref in responsibility_refs
+            )
+        ):
+            raise Stage1CompositionError(stop)
+        linked_act_set = {
+            act_ref
+            for responsibility_ref in responsibility_refs
+            for act_ref in responsibility_by_ref[
+                responsibility_ref
+            ].retained_reception_act_refs
+        }
+        expected_claim_act_refs = tuple(
+            ref for ref in retained_act_refs if ref in linked_act_set
+        )
+        if claim.source_reception_act_refs != expected_claim_act_refs:
+            raise Stage1CompositionError(stop)
+
+
 def _finalize_subjective_meaning_plan(
     *,
     authority: _ProjectionCommonAuthority,
@@ -6786,6 +6928,14 @@ def _finalize_subjective_meaning_plan(
             policy_application_rows,
             key=stage1_policy_application_order_key,
         )
+    )
+    retained_act_refs = tuple(
+        row.act_ref for row in authority.retained_reception_act_rows
+    )
+    _validate_retained_reception_act_exact_cover(
+        retained_act_refs=retained_act_refs,
+        responsibilities=canonical_responsibilities,
+        claims=claims,
     )
     coverage = tuple(
         ResponsibilityCoverageRow(
@@ -6832,9 +6982,7 @@ def _finalize_subjective_meaning_plan(
             "SUPPORTED" if thought_refs else "NOT_SUPPORTED"
         ),
         content_bearing_thought_claim_refs=thought_refs,
-        retained_reception_act_refs=tuple(
-            row.act_ref for row in authority.retained_reception_act_rows
-        ),
+        retained_reception_act_refs=retained_act_refs,
         subjective_responsibility_rows=canonical_responsibilities,
         subjective_opportunity_rows=canonical_opportunities,
         responsibility_coverage_rows=coverage,
@@ -6992,6 +7140,10 @@ def _validate_tagged_projection_inputs(
                 authority.qualifier_value_by_candidate_scope_axis_key
             ),
             material_unknown_refs=authority.material_unknown_refs,
+            expected_act_refs=(
+                authority.allowed_reception_opportunity_envelope
+                .allowed_reception_act_ids
+            ),
         )
         expected_seal_ref = project_stage1_subjective_projection_seal_ref(
             authority.projection_preimage_ref,
@@ -7130,10 +7282,7 @@ def project_selected_reading_plan_candidate(
             if retained is None
             else retained.basis_contribution_refs
         )
-        projection_contribution_ref_set = {
-            *retained_contribution_refs,
-            *candidate.basis_contribution_refs,
-        }
+        projection_contribution_ref_set = set(retained_contribution_refs)
         contribution_refs = tuple(
             row.contribution_id
             for row in authority.observation_contribution_rows
@@ -7618,27 +7767,41 @@ def project_limited_subjective_plan_candidate(
             "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
         )
 
-    matching_act_rows = tuple(
-        row
-        for row in authority.retained_reception_act_rows
-        for mapping in CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7
-        if mapping.reception_act == row.reception_act
-        and (
-            proposition.subjective_mode,
-            proposition.subjective_operator,
+    try:
+        (
+            licensed_mode,
+            licensed_operator,
+            act_refs,
+            licensed_contribution_refs,
+            aggregate_attention,
+        ) = resolve_limited_reception_aggregate(
+            authority.retained_reception_act_rows,
+            expected_act_refs=(
+                authority.allowed_reception_opportunity_envelope
+                .allowed_reception_act_ids
+            ),
+            retained_layer1_refs=(
+                canonical_limited_retained_layer1_refs(
+                    inputs.limited_outcome.retained_layer1_refs,
+                    authority.observation_contribution_rows,
+                )
+            ),
+            observation_contribution_rows=(
+                authority.observation_contribution_rows
+            ),
         )
-        in mapping.eligible_mode_operator_pairs
-        and len(row.basis_contribution_refs) == len(contribution_refs)
-        and set(row.basis_contribution_refs) == set(contribution_refs)
-        and set(row.basis_contribution_refs).issubset(
-            set(bounded_reception.bound_layer1_contribution_refs)
-        )
-    )
-    if len(matching_act_rows) != 1:
+    except CMEEStage1ContractError:
+        raise Stage1CompositionError(
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+        ) from None
+    if (
+        proposition.subjective_mode is not licensed_mode
+        or proposition.subjective_operator is not licensed_operator
+        or contribution_refs != licensed_contribution_refs
+    ):
         raise Stage1CompositionError(
             "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
         )
-    act_refs = (matching_act_rows[0].act_ref,)
     responsibility_ref = project_stage1_subjective_responsibility_ref(
         projection_preimage_ref=authority.projection_preimage_ref,
         responsibility_kind=responsibility_kind,
@@ -7713,28 +7876,28 @@ def project_limited_subjective_plan_candidate(
         limited_outcome=inputs.limited_outcome,
         subjective_proposition=proposition,
     )
+    trace_contributions = (
+        tuple(
+            contribution_by_id[ref]
+            for ref in bounded_reception.bound_layer1_contribution_refs
+        )
+        if aggregate_attention
+        else authority.observation_contribution_rows
+    )
     meaning_traces = tuple(
         LimitedMeaningVisibleCausalTraceRow(
             limited_outcome_ref=outcome_ref,
             source_object_ref=source_object_ref,
             layer1_contribution_refs=tuple(
-                contribution_ref
-                for contribution_ref in (
-                    bounded_reception.bound_layer1_contribution_refs
-                )
+                contribution.contribution_id
+                for contribution in trace_contributions
                 if source_object_ref
                 in {
-                    *contribution_by_id[
-                        contribution_ref
-                    ].semantic_refs,
-                    *contribution_by_id[
-                        contribution_ref
-                    ].relation_basis_refs,
+                    *contribution.semantic_refs,
+                    *contribution.relation_basis_refs,
                     *(
                         binding.semantic_ref
-                        for binding in contribution_by_id[
-                            contribution_ref
-                        ].argument_bindings
+                        for binding in contribution.argument_bindings
                     ),
                 }
             ),
@@ -16164,8 +16327,9 @@ LANGUAGE_CORE_EXTERNAL_PATHS = (
     "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py",
     "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py",
     "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
-    "ai/services/ai_inference/cocolon_text_generation_core/composer.py",
-    "ai/services/ai_inference/cocolon_text_generation_core/adapters/emlis_observation_composer.py",
+    "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
+    "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
+    "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
     "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
 )
 _COMPOSITION_PATH = "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py"
@@ -16633,8 +16797,62 @@ LANGUAGE_CORE_STAGE_A_B_RULES = (
     ("RESOURCE_ENVELOPE", "LAYOUT4_X_MENTION2_X_LINK2_X_HEAD1", "INTERNAL_1_TO_16_NO_TRUNCATION", "EMITTED_1_TO_2"),
 )
 
-N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34 = (
-    (LANGUAGE_CORE_EXTERNAL_PATHS[0], (
+STAGE1_FINAL_LANGUAGE_OWNER_CHAIN_EXACT7 = (
+    (_COMPOSITION_PATH, ("project_subjective_meaning_plan",)),
+    (LANGUAGE_CORE_EXTERNAL_PATHS[1], (
+        "compile_stage1_response",
+        "_adapt_grounded_surface_to_v2_realized_units",
+    )),
+    (LANGUAGE_CORE_EXTERNAL_PATHS[3], (
+        "build_final_stage1_grounded_observation_plan",
+    )),
+    (LANGUAGE_CORE_EXTERNAL_PATHS[4], (
+        "build_grounded_sentence_plan",
+        "realize_grounded_sentence_plan",
+    )),
+    (LANGUAGE_CORE_EXTERNAL_PATHS[5], (
+        "realize_grounded_human_reception",
+    )),
+    (LANGUAGE_CORE_EXTERNAL_PATHS[6], (
+        "evaluate_grounded_observation_gate",
+        "evaluate_grounded_surface_body_inverse",
+    )),
+    (LANGUAGE_CORE_EXTERNAL_PATHS[2], (
+        "build_text_grounded_limited_artifact",
+    )),
+)
+N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT10 = (
+    STAGE1_FINAL_LANGUAGE_OWNER_CHAIN_EXACT7
+)
+IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT11 = (
+    *N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT10,
+    (
+        LANGUAGE_CORE_EXTERNAL_PATHS[7],
+        ("derive_input_specific_meaning_structure",),
+    ),
+)
+STAGE1_FINAL_LANGUAGE_PRODUCTION_BOUNDARY = (
+    ("production_effect", 0),
+    ("production_cutover", False),
+    ("merge_authority", False),
+    ("external_ai_calls", 0),
+    ("legacy_general_label_surface_product_owner", False),
+)
+
+# Frozen compatibility identities for the disabled pre-inheritance runner.
+# They are historical evidence only and are never consulted by an active
+# product-owner validator or facade.
+HISTORICAL_LANGUAGE_CORE_EXTERNAL_PATHS_EXACT7 = (
+    "ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py",
+    "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py",
+    "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py",
+    "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
+    "ai/services/ai_inference/cocolon_text_generation_core/composer.py",
+    "ai/services/ai_inference/cocolon_text_generation_core/adapters/emlis_observation_composer.py",
+    "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
+)
+HISTORICAL_N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34 = (
+    (HISTORICAL_LANGUAGE_CORE_EXTERNAL_PATHS_EXACT7[0], (
         "CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY",
         "validate_stage1_anti_template_registry_invariant",
     )),
@@ -16655,14 +16873,14 @@ N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34 = (
         "derive_discourse_preference_profile",
         "compose_stage1_from_projection",
     )),
-    (LANGUAGE_CORE_EXTERNAL_PATHS[1], (
+    (HISTORICAL_LANGUAGE_CORE_EXTERNAL_PATHS_EXACT7[1], (
         "build_subjective_planning_inputs",
         "seal_stage1_projection",
         "build_surface_composition_inputs",
         "_adapt_v2_composed_units_to_realized_units",
         "_compile_stage1_response_v2_candidate",
     )),
-    (LANGUAGE_CORE_EXTERNAL_PATHS[2], (
+    (HISTORICAL_LANGUAGE_CORE_EXTERNAL_PATHS_EXACT7[2], (
         "_stage1_runtime_contract",
         "_build_stage1_grounded_observation_plan_for_schema",
         "_realize_cmee_experience",
@@ -16670,7 +16888,7 @@ N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34 = (
         "validate_positive_realization_trace",
         "_build_text_grounded_limited_artifact_for_schema",
     )),
-    (LANGUAGE_CORE_EXTERNAL_PATHS[6], (
+    (HISTORICAL_LANGUAGE_CORE_EXTERNAL_PATHS_EXACT7[6], (
         "derive_grounded_situation_view",
         "derive_foreground_scope_closed",
         "foreground_scope_disposition",
@@ -16679,22 +16897,25 @@ N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34 = (
         "issue_whole_reading_consequence_row",
     )),
 )
-IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT35 = (
-    *N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34[:-1],
+HISTORICAL_IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT35 = (
+    *HISTORICAL_N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34[:-1],
     (
-        LANGUAGE_CORE_EXTERNAL_PATHS[6],
+        HISTORICAL_LANGUAGE_CORE_EXTERNAL_PATHS_EXACT7[6],
         (
-            *N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34[-1][1],
+            *HISTORICAL_N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34[-1][1],
             "derive_input_specific_meaning_structure",
         ),
     ),
 )
-# The disabled historical N3 runner still reads the frozen exact28 symbol to
-# prove its own immutable terminal identity before it reports the expected
-# source drift.  Keep that tuple as a compatibility view; the IM01 roots and
-# IM02's new exact3 meaning-owner roots live only in the exact34 identity.
+# Compatibility exports read only by the frozen historical receipt path.
+N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34 = (
+    HISTORICAL_N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34
+)
+IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT35 = (
+    HISTORICAL_IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT35
+)
 N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT28 = (
-    N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34[:-1]
+    HISTORICAL_N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT34[:-1]
 )
 N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5 = (
     "LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST",
@@ -16707,42 +16928,44 @@ N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5 = (
 LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST = (
     (_COMPOSITION_PATH, (
         "project_subjective_meaning_plan",
-        "project_stage1_discourse_arc",
-        "compose_stage1_from_projection",
-        "normalize_to_normal_form",
-        "derive_discourse_preference_profile",
-        "_derive_discourse_preference_profile_with_frozen_applicability",
-        "V2_GRAMMAR_INVENTORY",
-        "validate_v2_grammar_inventory",
-        "project_source_leaf_group",
-        "select_source_complement_plan",
-        "select_case_frame",
-        "select_atomic_predicate_head",
-        "project_argument_realization_plan",
-        "project_reference_state",
-        "project_clause_link_plan",
-        "project_predicate_morphology_plan",
-        "build_japanese_clause_ir",
-        "linearize_japanese_clause",
     )),
-    (LANGUAGE_CORE_EXTERNAL_PATHS[0], ("stage1_canonical_json_bytes", "stage1_subjective_forbidden_promotions", "_stage1_material_visible_value_refs", "project_stage1_projection_preimage_ref", "project_stage1_subjective_basis_binding_ref", "project_stage1_source_qualifier_binding_ref", "project_stage1_policy_basis_binding_ref", "validate_stage1_projection", "validate_stage1_sentence_unit", "validate_stage1_anti_template_registry_invariant")),
-    (LANGUAGE_CORE_EXTERNAL_PATHS[1], ("project_direct_argument_bindings", "_candidate_from_direct", "_candidate_for_contribution", "resolve_candidate_for_contribution", "_qualifier_value", "resolve_qualifier_value", "build_subjective_planning_inputs", "seal_stage1_projection", "build_surface_composition_inputs", "_adapt_v2_composed_units_to_realized_units", "_compile_stage1_response_v2_candidate")),
+    (LANGUAGE_CORE_EXTERNAL_PATHS[0], (
+        "validate_stage1_projection",
+        "validate_stage1_sentence_unit",
+    )),
+    (LANGUAGE_CORE_EXTERNAL_PATHS[1], (
+        "compile_stage1_response",
+        "_adapt_grounded_surface_to_v2_realized_units",
+    )),
     (LANGUAGE_CORE_EXTERNAL_PATHS[2], (
-        "_ordered",
-        "_planned_visible_source_ids",
-        "_build_graph",
-        "_build_experience_plan",
-        "_stage1_runtime_contract",
         "_build_stage1_grounded_observation_plan_for_schema",
         "_realize_cmee_experience",
-        "_trace_for_lines",
         "validate_positive_realization_trace",
         "_build_text_grounded_limited_artifact_for_schema",
+        "build_text_grounded_limited_artifact",
     )),
-    (LANGUAGE_CORE_EXTERNAL_PATHS[3], ("build_grounded_observation_plan", "build_final_stage1_grounded_observation_plan", "validate_grounded_observation_plan")),
-    (LANGUAGE_CORE_EXTERNAL_PATHS[4], ("generate_core_text",)),
-    (LANGUAGE_CORE_EXTERNAL_PATHS[5], ("build_emlis_observation_core_payload", "evaluate_emlis_observation_candidate")),
+    (LANGUAGE_CORE_EXTERNAL_PATHS[3], (
+        "build_final_stage1_grounded_observation_plan",
+        "validate_grounded_observation_plan",
+    )),
+    (LANGUAGE_CORE_EXTERNAL_PATHS[4], (
+        "build_grounded_sentence_plan",
+        "build_reception_recovery_sentence_plan",
+        "realize_grounded_sentence_plan",
+        "validate_grounded_sentence_plan",
+        "validate_grounded_surface_result",
+        "parse_grounded_surface_body_bytes",
+    )),
+    (LANGUAGE_CORE_EXTERNAL_PATHS[5], (
+        "build_grounded_reception_clause_plans",
+        "realize_grounded_human_reception",
+        "validate_grounded_human_reception_surface",
+    )),
     (LANGUAGE_CORE_EXTERNAL_PATHS[6], (
+        "evaluate_grounded_observation_gate",
+        "evaluate_grounded_surface_body_inverse",
+    )),
+    (LANGUAGE_CORE_EXTERNAL_PATHS[7], (
         "derive_grounded_situation_view",
         "derive_foreground_scope_closed",
         "foreground_scope_disposition",
@@ -16758,7 +16981,27 @@ def _validate_product_causal_owner_manifest(
     file_payloads: tuple[tuple[str, bytes], ...]
 ) -> None:
     expected_paths = (_COMPOSITION_PATH, *LANGUAGE_CORE_EXTERNAL_PATHS)
-    expected_seed_cardinalities = (18, 10, 11, 10, 3, 1, 2, 7)
+    expected_seed_cardinalities = (1, 2, 2, 5, 2, 6, 3, 2, 7)
+    active_root_cardinalities = (1, 2, 1, 2, 1, 2, 1)
+    forbidden_product_surface_symbols = frozenset(
+        {
+            "compose_stage1_from_projection",
+            "normalize_to_normal_form",
+            "derive_discourse_preference_profile",
+            "V2_GRAMMAR_INVENTORY",
+            "validate_v2_grammar_inventory",
+            "project_source_leaf_group",
+            "select_source_complement_plan",
+            "select_case_frame",
+            "select_atomic_predicate_head",
+            "project_argument_realization_plan",
+            "project_reference_state",
+            "project_clause_link_plan",
+            "project_predicate_morphology_plan",
+            "build_japanese_clause_ir",
+            "linearize_japanese_clause",
+        }
+    )
     if (
         tuple(
             path for path, _names in LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
@@ -16769,24 +17012,41 @@ def _validate_product_causal_owner_manifest(
             for _path, names in LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
         )
         != expected_seed_cardinalities
-        or tuple(path for path, _names in IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT35)
-        != (
-            LANGUAGE_CORE_EXTERNAL_PATHS[0],
-            _COMPOSITION_PATH,
-            LANGUAGE_CORE_EXTERNAL_PATHS[1],
-            LANGUAGE_CORE_EXTERNAL_PATHS[2],
-            LANGUAGE_CORE_EXTERNAL_PATHS[6],
-        )
+        or N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT10
+        != STAGE1_FINAL_LANGUAGE_OWNER_CHAIN_EXACT7
         or tuple(
             len(names)
-            for _path, names in IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT35
+            for _path, names in N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT10
         )
-        != (2, 15, 5, 6, 7)
+        != active_root_cardinalities
         or sum(
             len(names)
-            for _path, names in IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT35
+            for _path, names in N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT10
         )
-        != 35
+        != 10
+        or len(IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT11) != 8
+        or sum(
+            len(names)
+            for _path, names in IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT11
+        )
+        != 11
+        or dict(STAGE1_FINAL_LANGUAGE_PRODUCTION_BOUNDARY)
+        != {
+            "production_effect": 0,
+            "production_cutover": False,
+            "merge_authority": False,
+            "external_ai_calls": 0,
+            "legacy_general_label_surface_product_owner": False,
+        }
+        or any(
+            symbol in forbidden_product_surface_symbols
+            for _path, names in LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
+            for symbol in names
+        )
+        or any(
+            "emlis_ai_reply_service.py" in path
+            for path, _names in LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
+        )
         or len(N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5) != 5
         or len(set(N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5))
         != 5
@@ -16797,6 +17057,7 @@ def _validate_product_causal_owner_manifest(
     payload_by_path = dict(file_payloads)
     if tuple(payload_by_path) != expected_paths:
         raise Stage1CompositionError("LANGUAGE_CORE_DEPENDENCY_SCOPE_STOP")
+    active_compose_call_count = 0
     for path, callable_names in LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST:
         if not callable_names or len(callable_names) != len(set(callable_names)):
             raise Stage1CompositionError("LANGUAGE_CORE_DEPENDENCY_SCOPE_STOP")
@@ -16823,12 +17084,40 @@ def _validate_product_causal_owner_manifest(
         for callable_name in callable_names:
             if bound_names.count(callable_name) != 1:
                 raise Stage1CompositionError("LANGUAGE_CORE_DEPENDENCY_SCOPE_STOP")
+        nodes_to_scan = (
+            tuple(
+                node
+                for node in tree.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name in callable_names
+            )
+            if path == _COMPOSITION_PATH
+            else (tree,)
+        )
+        active_compose_call_count += sum(
+            1
+            for owner_node in nodes_to_scan
+            for node in ast.walk(owner_node)
+            if isinstance(node, ast.Call)
+            and (
+                (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id == "compose_stage1_from_projection"
+                )
+                or (
+                    isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "compose_stage1_from_projection"
+                )
+            )
+        )
+    if active_compose_call_count != 0:
+        raise Stage1CompositionError("LANGUAGE_CORE_ACTIVE_COMPOSE_CALL_STOP")
 
 
 def stage1_runtime_integration_identity_payloads(
     repository_root: Optional[Path] = None,
 ) -> Tuple[Tuple[str, bytes], ...]:
-    """Return the broad exact-17 whole-file/manifest integration payloads."""
+    """Return the active exact-18 whole-file/manifest integration payloads."""
 
     root = repository_root or Path(__file__).resolve().parents[4]
     file_paths = (_COMPOSITION_PATH, *LANGUAGE_CORE_EXTERNAL_PATHS)
@@ -16879,15 +17168,18 @@ def stage1_runtime_integration_identity_payloads(
         (
             "surface_owner_total_rules",
             (
-                "project_predicate_head_owner_total_exact3_branch_table",
-                "project_explicit_subject_surface_owner_total_exact4_branch_table",
-                "zero_subject_removes_subject_part_only_and_retains_predicate_head",
-                "reference_state_transition_and_terminal_duty_are_total_derived",
+                "grounded_observation_plan_is_final_semantic_plan_owner",
+                "grounded_sentence_surface_is_final_observation_text_owner",
+                "grounded_human_reception_is_distinct_reception_text_owner",
+                "grounded_observation_gate_and_body_inverse_are_required",
+                "response_compile_stage1_response_is_canonical_facade",
+                "legacy_general_label_composition_is_historical_non_product",
             ),
         ),
     )
     normal_form_and_profile_manifest = (
         ("schema_version", "cocolon.cmee.v1a.stage1_normal_form_and_profile_manifest.v1"),
+        ("owner_status", "HISTORICAL_NON_PRODUCT"),
         ("normal_form_version", CMEE_STAGE1_NORMAL_FORM_VERSION),
         ("normal_form_exact6", LANGUAGE_CORE_NORMAL_FORM_EXACT6_RULES),
         (
@@ -16931,6 +17223,7 @@ def stage1_runtime_integration_identity_payloads(
             "schema_version",
             "cocolon.cmee.v1a.stage1_case_frame_and_particle_manifest.v2",
         ),
+        ("owner_status", "HISTORICAL_NON_PRODUCT"),
         ("japanese_case_frames", V2_JAPANESE_CASE_FRAME_REGISTRY),
         ("case_particles", V2_CASE_PARTICLE_REGISTRY),
     )
@@ -16939,6 +17232,7 @@ def stage1_runtime_integration_identity_payloads(
             "schema_version",
             "cocolon.cmee.v1a.stage1_predicate_sense_and_atomic_head_manifest.v2",
         ),
+        ("owner_status", "HISTORICAL_NON_PRODUCT"),
         ("predicate_senses", V2_PREDICATE_SENSE_REGISTRY),
         ("predicate_sense_frame_licenses", V2_PREDICATE_SENSE_FRAME_LICENSE_REGISTRY),
         ("atomic_predicate_heads", V2_ATOMIC_PREDICATE_HEAD_REGISTRY),
@@ -16949,6 +17243,7 @@ def stage1_runtime_integration_identity_payloads(
             "schema_version",
             "cocolon.cmee.v1a.stage1_source_complement_reference_manifest.v2",
         ),
+        ("owner_status", "HISTORICAL_NON_PRODUCT"),
         ("source_realization_modes", V2_SOURCE_REALIZATION_MODE_REGISTRY),
         ("complement_rules", V2_COMPLEMENT_RULE_REGISTRY),
         ("sense_complement_licenses", V2_SENSE_COMPLEMENT_LICENSE_REGISTRY),
@@ -16963,6 +17258,7 @@ def stage1_runtime_integration_identity_payloads(
             "schema_version",
             "cocolon.cmee.v1a.stage1_morphology_link_functional_manifest.v2",
         ),
+        ("owner_status", "HISTORICAL_NON_PRODUCT"),
         ("inflection_classes", V2_INFLECTION_CLASS_REGISTRY),
         ("matrix_morphology", V2_MATRIX_MORPHOLOGY_PARADIGM_REGISTRY),
         ("clause_links", V2_CLAUSE_LINK_REGISTRY),
@@ -16974,23 +17270,38 @@ def stage1_runtime_integration_identity_payloads(
             "schema_version",
             "cocolon.cmee.v1a.stage1_participant_structural_manifest.v2",
         ),
+        ("owner_status", "HISTORICAL_NON_PRODUCT"),
         ("participant_lexemes", PARTICIPANT_ASSET_REGISTRY),
         ("structural_assets", STRUCTURAL_ASSET_REGISTRY),
     )
     product_causal_owner_and_registry_digests_manifest = (
         (
             "schema_version",
-            "cocolon.cmee.v1a.stage1_product_causal_owner_and_registry_digests.v3",
+            "cocolon.cmee.v1a.stage1_product_causal_owner_and_registry_digests.v4",
         ),
         ("product_causal_owner_manifest", LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST),
-        ("im03_behavior_root_exact35", IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT35),
+        ("final_language_owner_chain_exact7", STAGE1_FINAL_LANGUAGE_OWNER_CHAIN_EXACT7),
+        ("n2_behavior_root_exact10", N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT10),
+        ("im03_behavior_root_exact11", IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT11),
+        ("production_boundary", STAGE1_FINAL_LANGUAGE_PRODUCTION_BOUNDARY),
         (
             "n2_identity_infrastructure_exact5",
             N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5,
         ),
         (
-            "legacy_composition_seam_exact18",
-            LEGACY_COMPOSITION_SEAM_SYMBOL_SET_EXACT18,
+            "historical_non_product_receipts",
+            (
+                (
+                    "historical_im03_behavior_root_exact35",
+                    HISTORICAL_IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT35,
+                ),
+                (
+                    "legacy_composition_seam_exact18",
+                    LEGACY_COMPOSITION_SEAM_SYMBOL_SET_EXACT18,
+                ),
+                ("ultra_pro_clear_product_proof", False),
+                ("product_read_status", "NOT_EVALUATED"),
+            ),
         ),
         (
             "v2_grammar_inventory_identity",
@@ -17045,7 +17356,7 @@ def stage1_runtime_integration_identity_payloads(
         ("product_causal_owner_and_registry_digests_manifest", stage1_canonical_json_bytes(product_causal_owner_and_registry_digests_manifest)),
     )
     result = (*frozen_file_payloads, *manifests)
-    if len(result) != 17:
+    if len(result) != 18:
         raise Stage1CompositionError(
             "STAGE1_RUNTIME_INTEGRATION_IDENTITY_PAYLOAD_COUNT_STOP"
         )
@@ -17070,30 +17381,18 @@ def _module_name_from_language_core_path(relative_path: str) -> str:
 def _language_core_source_owner_payloads(
     repository_root: Optional[Path] = None,
 ) -> Tuple[Tuple[str, bytes], ...]:
-    """Project the transitive AST closure of the declared Step-2 owners.
+    """Project the transitive AST closure of the active final-language owners.
 
     The closure includes only declarations and import bindings reached from
-    the explicit planner/composer/normalizer/ranker owner seeds.  Formatting,
-    comments and unrelated later-step declarations are excluded, while every
-    referenced same-module declaration and every referenced declaration in
-    the other admitted owner modules is included fail closed.
+    the meaning projector, grounded plan/surface/reception/gate, response
+    facade and public CMEE facade seeds. Formatting, comments, historical
+    general-label grammar and unrelated declarations are excluded.
     """
 
     root = repository_root or Path(__file__).resolve().parents[4]
     owner_seed_by_path = dict(LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST)
     expected_paths = (_COMPOSITION_PATH, *LANGUAGE_CORE_EXTERNAL_PATHS)
-    activation_owner_exclusions = frozenset(
-        {
-            (
-                LANGUAGE_CORE_EXTERNAL_PATHS[1],
-                "compile_stage1_response",
-            ),
-            (
-                LANGUAGE_CORE_EXTERNAL_PATHS[2],
-                "build_text_grounded_limited_artifact",
-            ),
-        }
-    )
+    activation_owner_exclusions: frozenset[tuple[str, str]] = frozenset()
     if tuple(owner_seed_by_path) != expected_paths:
         raise Stage1CompositionError("LANGUAGE_CORE_DEPENDENCY_SCOPE_STOP")
     if any(
@@ -17330,8 +17629,9 @@ def language_core_identity_payloads(
         repository_root
     )
     source_owner_payloads = _language_core_source_owner_payloads(repository_root)
-    result = (*source_owner_payloads, *integration_payloads[8:])
-    if len(result) != 17:
+    source_count = len(LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST)
+    result = (*source_owner_payloads, *integration_payloads[source_count:])
+    if len(result) != 18:
         raise Stage1CompositionError("LANGUAGE_CORE_IDENTITY_PAYLOAD_COUNT_STOP")
     return tuple(result)
 
@@ -17384,7 +17684,11 @@ __all__ = (
     "DiscoursePreferenceProfile",
     "EmlisSubjectiveMeaningPlan",
     "JapaneseCaseFrameKey",
-    "IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT35",
+    "IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT11",
+    "N2_BEHAVIOR_ROOT_SYMBOL_SET_EXACT10",
+    "STAGE1_FINAL_LANGUAGE_OWNER_CHAIN_EXACT7",
+    "STAGE1_FINAL_LANGUAGE_PRODUCTION_BOUNDARY",
+    "LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST",
     "LANGUAGE_CORE_IDENTITY",
     "STAGE1_RUNTIME_INTEGRATION_IDENTITY",
     "LayoutPreferenceSeed",

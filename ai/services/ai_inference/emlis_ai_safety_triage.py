@@ -53,36 +53,51 @@ _SUPPORT_REQUIRED_RE: Final = re.compile(
     r"(安全が保てない|今すぐ危ない|助けてほしい|助けが必要|緊急|救急|通報|抑えられない|止められない)",
     re.IGNORECASE,
 )
-_EXPRESSION_DIFFICULTY_RE: Final = re.compile(
-    r"(上手く表現できない|うまく表現できない|表現できない|"
-    r"言葉にできない|言葉に出来ない|整理できない|言い切れない|"
-    r"うまく言えない|上手く言えない)",
-    re.IGNORECASE,
-)
-_SELF_REFERENCE_RE: Final = re.compile(
-    r"(?:自分|私|わたし|俺|おれ|僕|ぼく)",
-    re.IGNORECASE,
-)
-_SELF_WORTH_NEGATION_RE: Final = re.compile(
+_SELF_REFERENCE_SOURCE: Final = r"(?:自分|私|わたし|俺|おれ|僕|ぼく)"
+_SELF_WORTH_NEGATION_SOURCE: Final = (
     # ``最低でも15分`` is a lower-bound adverb, not a self-worth claim.
     r"(?:嫌い|きらい|駄目|だめ|ダメ(?!ージ)|最低(?!でも|限)|クズ|いらない|必要ない|"
     r"価値(?:が|は)?(?:ない|無い)|役に立たない|好きになれない|許せない|"
-    r"中途半端|失敗ばかり|悪い(?:人間|人|奴|やつ)?)",
+    r"中途半端|失敗ばかり|悪い(?:人間|人|奴|やつ)?)"
+)
+_SELF_DIRECTED_NEGATIVE_ACTION_SOURCE: Final = (
+    r"(?:責め(?:た|て|る|続け)|追い込(?:ん|む|んで)|傷つけ(?:た|て|る|続け)|"
+    r"下げ(?:た|て|る|続け)|否定(?:した|して|し続け))"
+)
+_REFLEXIVE_SELF_OBJECT_SOURCE: Final = (
+    r"(?:自分(?:自身)?|(?:私|わたし|俺|おれ|僕|ぼく)自身)"
+    r"(?:のこと)?を"
+)
+_SELF_IDENTITY_LINK_SOURCE: Final = (
+    r"(?:自身)?(?:"
+    r"(?:には|なんか|なんて|など|は|が)|"
+    r"(?:だけ|こそ|も)(?:は|が)?|"
+    r"のこと(?:には|は|が|を)|"
+    r"の(?:存在|人間性)(?:には|は|が)"
+    r")"
+)
+_BOUNDED_SELF_WORTH_NEGATION_RE: Final = re.compile(
+    rf"{_SELF_REFERENCE_SOURCE}{_SELF_IDENTITY_LINK_SOURCE}"
+    rf"[^。！？!?\n]{{0,24}}{_SELF_WORTH_NEGATION_SOURCE}",
+    re.IGNORECASE,
+)
+_SELF_OWNED_WORTH_NEGATION_RE: Final = re.compile(
+    rf"{_SELF_REFERENCE_SOURCE}(?:自身)?の価値(?:が|は)?(?:ない|無い)",
     re.IGNORECASE,
 )
 _SELF_DIRECTED_NEGATIVE_ACTION_RE: Final = re.compile(
-    r"(?:責め(?:て|る|続け)|追い込(?:ん|む|んで)|傷つけ(?:て|る|続け)|"
-    r"下げ(?:て|る|続け)|否定(?:して|し続け))",
+    rf"{_REFLEXIVE_SELF_OBJECT_SOURCE}"
+    rf"[^。！？!?\n]{{0,20}}{_SELF_DIRECTED_NEGATIVE_ACTION_SOURCE}",
     re.IGNORECASE,
 )
 # Keep inability-as-identity separate from expression difficulty. General
 # exhaustion such as ``何もできないくらい消耗`` remains normal observation
 # unless the clause is explicitly self/identity shaped.
 _SELF_DENIAL_IDENTITY_INABILITY_RE: Final = re.compile(
-    r"(?:(?:自分|私|わたし|俺|おれ|僕|ぼく)(?:なんか|など|は|が|には|も)?"
+    rf"(?:{_SELF_REFERENCE_SOURCE}{_SELF_IDENTITY_LINK_SOURCE}"
     r"[^。！？!?\n]{0,24}(?:何も|なにも|何にも)できない|"
-    r"(?:何も|なにも|何にも)できない(?:自分|人間|奴|やつ)|"
-    r"できない(?:自分|人間|奴|やつ))",
+    rf"(?:何も|なにも|何にも)できない(?:ような)?{_SELF_REFERENCE_SOURCE}|"
+    rf"できない(?:ような)?{_SELF_REFERENCE_SOURCE})",
     re.IGNORECASE,
 )
 _CONTINUATION_REFUSAL_RE: Final = re.compile(
@@ -115,33 +130,29 @@ def _dedupe(values: Iterable[Any]) -> list[str]:
     return out
 
 
-def _is_self_denial_non_emergency(value: str) -> bool:
-    """Detect self-worth/identity denial from broad clause structure.
+def is_bounded_self_denial_text(value: Any) -> bool:
+    """Return whether a clause grammatically directs denial at the speaker.
 
-    The classifier does not rely on a known fixture sentence. Expression
-    difficulty stays on the normal observation path unless a separate
-    self-worth, self-directed harm, or identity-inability predicate is present.
+    A self pronoun and a negative predicate in the same field are insufficient:
+    the pronoun must be the predicate's object or identity/topic owner.  This
+    keeps accountability such as ``自分の言い方で傷つけた`` on the normal
+    observation path while preserving ``自分を傷つける`` and
+    ``自分には価値がない`` as bounded self-denial.
     """
 
-    has_self_reference = bool(_SELF_REFERENCE_RE.search(value))
-    has_worth_negation = bool(_SELF_WORTH_NEGATION_RE.search(value))
-    has_self_directed_negative_action = bool(_SELF_DIRECTED_NEGATIVE_ACTION_RE.search(value))
-    has_identity_inability = bool(_SELF_DENIAL_IDENTITY_INABILITY_RE.search(value))
-
-    if _EXPRESSION_DIFFICULTY_RE.search(value) and not (
-        has_worth_negation
-        or has_self_directed_negative_action
-        or has_identity_inability
-    ):
+    text = _clean(value)
+    if not text:
         return False
     return bool(
-        has_self_reference
-        and (
-            has_worth_negation
-            or has_self_directed_negative_action
-            or has_identity_inability
-        )
+        _BOUNDED_SELF_WORTH_NEGATION_RE.search(text)
+        or _SELF_OWNED_WORTH_NEGATION_RE.search(text)
+        or _SELF_DIRECTED_NEGATIVE_ACTION_RE.search(text)
+        or _SELF_DENIAL_IDENTITY_INABILITY_RE.search(text)
     )
+
+
+def _is_self_denial_non_emergency(value: str) -> bool:
+    return is_bounded_self_denial_text(value)
 
 
 def _text_from_current_input(current_input: Any | None) -> str:
@@ -453,5 +464,6 @@ __all__ = [
     "build_emlis_internal_response_contract_from_safety_triage",
     "build_emlis_safety_triage_decision",
     "classify_emlis_safety_triage_text",
+    "is_bounded_self_denial_text",
     "merge_emlis_safety_triage_decisions",
 ]

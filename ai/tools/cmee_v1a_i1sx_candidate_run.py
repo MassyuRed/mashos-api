@@ -17,6 +17,7 @@ import binascii
 import ctypes
 import errno
 import hashlib
+import importlib
 import json
 import os
 from pathlib import Path
@@ -39,13 +40,13 @@ from emlis_ai_grounded_observation_plan import (  # noqa: E402
     build_final_stage1_grounded_observation_plan,
 )
 from cocolon_meaning_experience_engine import GenerationRequest, MeaningExperienceEngine  # noqa: E402
-import cocolon_meaning_experience_engine.emlis_stage1_composition as stage1_composition  # noqa: E402
 import cocolon_meaning_experience_engine.emlis_stage1_response as stage1_response  # noqa: E402
 from cocolon_meaning_experience_engine.contracts import (  # noqa: E402
     AttachmentAdmission,
     CMEE_COMMON_GUARD_PROOF_VERSION,
+    CMEE_STAGE1_EMLIS_OWNER_REF_V2,
     CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
-    CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION,
+    CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V2,
     CMEE_TERMINAL_GENERATED_DISABLED,
     CommonGuardProof,
     CommonGuardResultProof,
@@ -86,6 +87,14 @@ from cocolon_meaning_experience_engine.emlis_v1a import (  # noqa: E402
     _planned_visible_source_ids,
 )
 from cocolon_meaning_experience_engine.source_kernel import freeze_text_source  # noqa: E402
+
+
+def _historical_stage1_composition_module() -> Any:
+    """Load the frozen pre-facade owner only for historical receipt checks."""
+
+    return importlib.import_module(
+        "cocolon_meaning_experience_engine.emlis_stage1_composition"
+    )
 
 
 EXACT8: tuple[tuple[str, str, str, str, str], ...] = (
@@ -368,69 +377,71 @@ N3_HISTORICAL_STATIC_RECEIPT_SHA256 = (
     "e71a79fa4748134396b5fa46e6cf98ff91e535fb91b955fa5c814106177a26bb"
 )
 IM03_WORKING_LANGUAGE_CORE_IDENTITY = (
-    "cf9d7d6332920791bde1d4e60b3e5ebc0dc3e5e50aa310236a3cfa3ca59a23f3"
+    "076e6637b0171955320f8f4bc8e6517ffafb14c400b35d661a5bd4461e2d43fe"
 )
 IM03_WORKING_RUNTIME_INTEGRATION_IDENTITY = (
-    "0fff1f9987c0ae5bccfba25896ac523d81c2947f1aedd87461bae1ccaa2ad517"
+    "c2d3bce2a366131041cc839806592cb5da04b7a343181757d61c853ed4e4bcc1"
 )
-IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT17 = (
-    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "71ebb47ddec93bf918a584b4a62fb1c522b69a247e7dff105f9a7206af42bc16", 1575204),
-    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py", "ac374e92f6309b38432db6a9b99c5cd7690b71b4139b2456965cd69b48e9c9ab", 1922340),
-    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py", "1fee0aa96c732c07bbc1f9cb522c669839f83d74ba2388b9b8d174208a2ee86e", 647828),
-    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py", "8c6ed267db55cc87751d3f75fc39eb7678224266595c175b5d216518d004e8ca", 712544),
-    ("language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_plan.py", "2fd50144fb65e9ff7d3dfd163c71f6ac6691e04d608ae70d6082d93ef577da07", 900661),
-    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_text_generation_core/composer.py", "8b6c361506f5efe3d508a8ea0685524baa2c092fb149fa04718242afaf524e43", 21822),
-    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_text_generation_core/adapters/emlis_observation_composer.py", "19ec812e35ecbb70661c66156cd6609e2dc813016b7358f290db04cab09de64f", 90077),
+IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT18 = (
+    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "652a35946e0f3afd59da49df150d30931707809633907f4d520e106330a6f4c5", 391508),
+    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py", "96ee7848bbbb4cd365338965c7d57c9c0b4c60936100f97833ee2750940f0f27", 1999615),
+    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py", "d5661acd7a19f2f2446a8e37dc150049df38e46171b08f71c620c5b4fd97e338", 619133),
+    ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py", "9ac48c2438af4492ec5fe0aaa61a1b3229cda7ed6c7d5993773a60194db8950a", 752112),
+    ("language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_plan.py", "fef6f19ae09c374745b827fc9ce8b3dfc90cc486f30ccf5b6a984dfc1392aa2e", 986247),
+    ("language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py", "67ce1fc7aa283d7da2b51921a81167175f00652e057c39d6ead32712c430d42c", 511772),
+    ("language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_human_reception.py", "6de7032a7840041eff5e44cc8504cdf159e466b3d5d23e12663bf9cb7500b97b", 218119),
+    ("language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_gate.py", "80931ecdd98784c1fe9fdc823897e6e8247de94b508093fd808f771ac35dbe4e", 311978),
     ("language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py", "9167c63c4d7f8df0cf4cd31c3414878c187c08c2e75162a38f36290b4a1c73b2", 494518),
     ("language_core_contract_manifest", "a7c3307b43156135c1b16ce7f3759f0e11cc72e089c905f32a8eb969f1402323", 213364),
-    ("case_frame_and_particle_manifest", "e0c43723126dc14fd9ac3cb23a882ed22e78c93363454ed43e510f5c0d705b6c", 15363),
-    ("predicate_sense_and_atomic_head_manifest", "a9599e2b75528503c0bed24e80ace501689fd96dd2c703ac89e192b8375f1b75", 8546),
-    ("source_complement_reference_manifest", "909165f05829208da7739d09c9d700df1ada98973d7bcadf07a39eec6f02c2bb", 25936),
-    ("morphology_link_functional_manifest", "e64b46889f05ac391e6905cdf4ae7bd4e94e50f95efd8c339fbce7a54c2bb155", 7972),
-    ("participant_structural_manifest", "cee6c2989896f8e3f3642f98a354ea294d34b05eff81a2322fcb94ce9fc9abba", 774),
-    ("policy_and_closed_enum_manifest", "7e399f96a566667d41d3b9d6e06d93fc11ea92d798aa5aaf5ad55347fb06dd1d", 21819),
-    ("normal_form_and_profile_manifest", "3c14b8eb9e5cd8ff5410ffc7c1a0d3558784a75f8c355c272904dc650dd50ff7", 4055),
-    ("product_causal_owner_and_registry_digests_manifest", "2a87411eefd6b1a18d3f5f18d7db6b10df0b77daee440b8f4379a921a2a816bb", 6646),
+    ("case_frame_and_particle_manifest", "4b30a2f87f68f272345c2d19c2f8d1719ded6e0c1394a50253fe08ada67c71d6", 15405),
+    ("predicate_sense_and_atomic_head_manifest", "e6b6290139edf2566b9dccd3ed9d46d30739ae215da9d67525749e007e9c2d95", 8588),
+    ("source_complement_reference_manifest", "4deb1656e3a2f3c7e358af9cd70d69084f3fc9c889e8458c19bce85973a2cab8", 25978),
+    ("morphology_link_functional_manifest", "11b3a4db25717d471478d0ea1e0cf5745a4dabaf304961f1ca42b332bc06a660", 8014),
+    ("participant_structural_manifest", "a2707f492cc45ff2678d2f11f064d9d47eb3e474f5a4b86c63160a4dc2d6053d", 816),
+    ("policy_and_closed_enum_manifest", "37cbdbadf235eea79270b795860a1c9ba765d7f7dbdbfb093b9fe98ee91d8c8a", 20980),
+    ("normal_form_and_profile_manifest", "fa678370da4eebe55de65fe0ca32ae1db1edcd08a1a18492ad595ff62e7132e2", 4097),
+    ("product_causal_owner_and_registry_digests_manifest", "915a3d026575a93fca43ca22a86548923eb3f51c744d47b3e02a7834bdbf67b9", 8985),
 )
-IM03_WORKING_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT17 = (
-    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "a404b3639853e185d6361696da5b0d744362e5d11d9cbd94aaec959bee0377a7", 710241),
-    ("ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py", "0705bcb48ca1c9a347b691d2eaf3d8a980cd8a044ca66292dda69e3b5fdbdc8c", 760521),
-    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py", "437831951fa0c4062d68af2342d79ebfc4b29e8c318e1fa8765c74c4aac9a832", 412047),
-    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py", "c907af7a059f802120b3e494a88651015a14d45c5e272ab1f9d3f1e9bfa8d06f", 293740),
-    ("ai/services/ai_inference/emlis_ai_grounded_observation_plan.py", "efb08a5f49d6c3452a8f2332c9d45cebcb5e91ed2c8e8c41fa5a06b3faa4fadd", 352379),
-    ("ai/services/ai_inference/cocolon_text_generation_core/composer.py", "e524111597d75599b0550b271a3df464df4d468aec28e608ab4586b7840da1f0", 8179),
-    ("ai/services/ai_inference/cocolon_text_generation_core/adapters/emlis_observation_composer.py", "3ca31fbcf0ad9c93bdd4d267a3ef2000ce79b8d702bd7188f020eb11d5bd593c", 25495),
+IM03_WORKING_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT18 = (
+    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py", "a8e0d84061285cde383fb39ca057c414d237cb4d9ff4a69592b073537689f350", 721251),
+    ("ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py", "26d576df03c154a49047e555518b7e0543fc7e1e8cc8348bcd23a1b0e7759028", 817428),
+    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py", "8535ed3826bb8a783f776aa3948cf09d6247d001a369cbeef12867e30b0b88b7", 414727),
+    ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py", "60ade26e53b03e1c5d0bb392021b6a68bae9fedee32c3ff19623b7dd9f7b2deb", 308555),
+    ("ai/services/ai_inference/emlis_ai_grounded_observation_plan.py", "0508031c30596d513a47dde5af43b4ed0e8020a9d7e22a3f108bcca8320fc473", 389375),
+    ("ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py", "839b0541866552c70c686df675db25a84421f03ac92ab0059cd21c13dce86b44", 178872),
+    ("ai/services/ai_inference/emlis_ai_grounded_human_reception.py", "da1e6dc14e8d0ff9d2733ddfd026473a6b538411e74ba271426c97c1fbcdba90", 86849),
+    ("ai/services/ai_inference/emlis_ai_grounded_observation_gate.py", "4021d17cef426a113e7598f064cdcd664baf309aeef9d66629a6093814adc8ce", 121151),
     ("ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py", "75343d43f9e22c101d218fb80fb2b17a9a264780ceb63842c6d75cb7dbb0c2f4", 204877),
     ("language_core_contract_manifest", "a7c3307b43156135c1b16ce7f3759f0e11cc72e089c905f32a8eb969f1402323", 213364),
-    ("case_frame_and_particle_manifest", "e0c43723126dc14fd9ac3cb23a882ed22e78c93363454ed43e510f5c0d705b6c", 15363),
-    ("predicate_sense_and_atomic_head_manifest", "a9599e2b75528503c0bed24e80ace501689fd96dd2c703ac89e192b8375f1b75", 8546),
-    ("source_complement_reference_manifest", "909165f05829208da7739d09c9d700df1ada98973d7bcadf07a39eec6f02c2bb", 25936),
-    ("morphology_link_functional_manifest", "e64b46889f05ac391e6905cdf4ae7bd4e94e50f95efd8c339fbce7a54c2bb155", 7972),
-    ("participant_structural_manifest", "cee6c2989896f8e3f3642f98a354ea294d34b05eff81a2322fcb94ce9fc9abba", 774),
-    ("policy_and_closed_enum_manifest", "7e399f96a566667d41d3b9d6e06d93fc11ea92d798aa5aaf5ad55347fb06dd1d", 21819),
-    ("normal_form_and_profile_manifest", "3c14b8eb9e5cd8ff5410ffc7c1a0d3558784a75f8c355c272904dc650dd50ff7", 4055),
-    ("product_causal_owner_and_registry_digests_manifest", "2a87411eefd6b1a18d3f5f18d7db6b10df0b77daee440b8f4379a921a2a816bb", 6646),
+    ("case_frame_and_particle_manifest", "4b30a2f87f68f272345c2d19c2f8d1719ded6e0c1394a50253fe08ada67c71d6", 15405),
+    ("predicate_sense_and_atomic_head_manifest", "e6b6290139edf2566b9dccd3ed9d46d30739ae215da9d67525749e007e9c2d95", 8588),
+    ("source_complement_reference_manifest", "4deb1656e3a2f3c7e358af9cd70d69084f3fc9c889e8458c19bce85973a2cab8", 25978),
+    ("morphology_link_functional_manifest", "11b3a4db25717d471478d0ea1e0cf5745a4dabaf304961f1ca42b332bc06a660", 8014),
+    ("participant_structural_manifest", "a2707f492cc45ff2678d2f11f064d9d47eb3e474f5a4b86c63160a4dc2d6053d", 816),
+    ("policy_and_closed_enum_manifest", "37cbdbadf235eea79270b795860a1c9ba765d7f7dbdbfb093b9fe98ee91d8c8a", 20980),
+    ("normal_form_and_profile_manifest", "fa678370da4eebe55de65fe0ca32ae1db1edcd08a1a18492ad595ff62e7132e2", 4097),
+    ("product_causal_owner_and_registry_digests_manifest", "915a3d026575a93fca43ca22a86548923eb3f51c744d47b3e02a7834bdbf67b9", 8985),
 )
 IM03_WORKING_LANGUAGE_PAYLOAD_TUPLE_SHA256 = (
-    "a436b6cfffa1bacaa16284228411ad27e788d211a165fd714713fddfec7f9c6a"
+    "f2d36009680451433106db57c82939c604f80d96334d54b9501f4a77a7ce9ea9"
 )
 IM03_WORKING_RUNTIME_PAYLOAD_TUPLE_SHA256 = (
-    "b55a2f8b3eaede8465c2e0b080bdabd1721134f5ecf66bf833751ad33fe26917"
+    "dcf8c92487646863b8c64592fe8e08ed001783ab9c4411d3508bdada806025c3"
 )
-IM03_WORKING_SOURCE_OWNER_PAYLOAD_EXACT8_TUPLE_SHA256 = (
-    "f5998ba4ef1f051629662c2ceecd1f93bafc7ab8ca3087ef1b11f40dcda73d8c"
+IM03_WORKING_SOURCE_OWNER_PAYLOAD_EXACT9_TUPLE_SHA256 = (
+    "951e352b37b9956555ddeb24009e8114fb16ce97f9c985a7133c97f0fb63d1d5"
 )
 IM03_WORKING_SOURCE_OWNER_SYMBOL_SET_SHA256 = (
-    "8f55ff07619b4bcc194651bcf09b8d369aad571b29268440d72ce376a1cd7733"
+    "ec3ef40bc42e8334378994e8a1eda417fba9f4819259cc746161dae1738703c2"
 )
-IM03_WORKING_SOURCE_OWNER_DECLARATION_COUNTS_EXACT8 = (
-    284, 482, 114, 180, 251, 5, 39, 89,
+IM03_WORKING_SOURCE_OWNER_DECLARATION_COUNTS_EXACT9 = (
+    81, 469, 103, 194, 263, 129, 63, 56, 89,
 )
-IM03_WORKING_SOURCE_OWNER_IMPORT_COUNTS_EXACT8 = (
-    139, 17, 140, 70, 36, 25, 19, 98,
+IM03_WORKING_SOURCE_OWNER_IMPORT_COUNTS_EXACT9 = (
+    89, 17, 158, 69, 37, 41, 12, 32, 98,
 )
 IM03_WORKING_PRODUCT_CAUSAL_OWNER_MANIFEST_SHA256 = (
-    "cc3017e9cef7e5e679a23a81bd78a6fcf2810a4a374db97062c76572ad6a6e9d"
+    "e5ba29b6004a07b758ef68e81dc4f91c4cd04d33dc7d3cf40c46b67dc84f93a2"
 )
 IM03_WORKING_BEHAVIOR_ROOT_EXACT35_SHA256 = (
     "53945aaccaf175b7adf9482ee38e4dfce754e6d7651ed4d65a131b54d8b6c297"
@@ -456,10 +467,10 @@ IM06_APPROVED_NONSELF_BYTES_NAME_SHA256_BYTE_COUNT_EXACT5 = (
 IM06_EXPECTED_COLLECTED_DENOMINATORS_EXACT2 = (47, 241)
 IM06_ACTUAL_COLLECTED_DENOMINATORS_EXACT2 = (47, 241)
 IM06_WORKING_RUNNER_SELF_PROJECTION_SHA256 = (
-    "527ef12d514e29a178e70c07addf4a714b2a845fbd2ba61c89a97617c2738b88"
+    "d5367a4cf9d8f20ae72162eb70f98bb695825053502d3feb2837a2dfa1ead29c"
 )
-IM06_WORKING_RUNNER_SELF_PROJECTION_BYTE_COUNT = 286403
-IM06_WORKING_RUNNER_SELF_PROJECTION_DECLARATION_COUNT = 214
+IM06_WORKING_RUNNER_SELF_PROJECTION_BYTE_COUNT = 286586
+IM06_WORKING_RUNNER_SELF_PROJECTION_DECLARATION_COUNT = 215
 IM06_WORKING_RUNNER_SELF_PROJECTION_PROOF = (
     IM06_WORKING_RUNNER_SELF_PROJECTION_SHA256,
     IM06_WORKING_RUNNER_SELF_PROJECTION_BYTE_COUNT,
@@ -1218,6 +1229,7 @@ def _materialize_early_case(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Run one case through the final Step 2 production call graph only."""
 
+    historical_composition = _historical_stage1_composition_module()
     raw = _raw(request_token, memo, category, emotion, strength)
     public_source = {
         "memo": memo,
@@ -1259,7 +1271,7 @@ def _materialize_early_case(
             parent_plan=parent_plan,
             grounded_plan=grounded_plan,
         )
-        subjective_plan = stage1_composition.project_subjective_meaning_plan(
+        subjective_plan = historical_composition.project_subjective_meaning_plan(
             phase_a
         )
         projection = stage1_response.seal_stage1_projection(
@@ -1270,13 +1282,13 @@ def _materialize_early_case(
             phase_a,
             projection,
         )
-        result = stage1_composition.compose_stage1_from_projection(phase_b)
+        result = historical_composition.compose_stage1_from_projection(phase_b)
         ranked = result.ranked_candidates
         selected = result.selected_candidate
         units = selected.sentence_units
         selected_normalized = selected.normalized_artifact
         renormalized_ranked = tuple(
-            stage1_composition.normalize_to_normal_form(
+            historical_composition.normalize_to_normal_form(
                 candidate.normalized_artifact,
                 candidate.normalized_artifact.layout_preference_seed,
                 phase_b,
@@ -1284,10 +1296,10 @@ def _materialize_early_case(
             for candidate in ranked
         )
         idempotent = all(
-            stage1_composition.canonical_normalized_bytes(
+            historical_composition.canonical_normalized_bytes(
                 candidate.normalized_artifact
             )
-            == stage1_composition.canonical_normalized_bytes(repeated)
+            == historical_composition.canonical_normalized_bytes(repeated)
             for candidate, repeated in zip(ranked, renormalized_ranked)
         )
         realized_duties = tuple(ref for unit in units for ref in unit.duty_refs)
@@ -1297,7 +1309,7 @@ def _materialize_early_case(
         )
         exact6 = all(
             candidate.normalized_artifact.normalization_phase_trace
-            == tuple(stage1_composition.NormalFormPhase)
+            == tuple(historical_composition.NormalFormPhase)
             for candidate in ranked
         )
         defect_free = all(
@@ -1311,7 +1323,7 @@ def _materialize_early_case(
         )
         identity_match = (
             result.language_core_identity
-            == stage1_composition.LANGUAGE_CORE_IDENTITY
+            == historical_composition.LANGUAGE_CORE_IDENTITY
             == N3_LANGUAGE_CORE_IDENTITY
         )
         ranked_count = len(ranked)
@@ -1538,7 +1550,7 @@ def _im06_development_pytest_invocation(
 def _source_owner_symbol_proof(
     language_payloads: tuple[tuple[str, bytes], ...],
     *,
-    source_owner_count: int = 7,
+    source_owner_count: int,
 ) -> tuple[tuple[int, ...], tuple[int, ...], str]:
     symbol_rows = []
     declaration_counts = []
@@ -1689,11 +1701,12 @@ def _current_frozen_early_identity_pair() -> tuple[str, str]:
 
 
 def _current_im03_working_identity_pair() -> tuple[str, str]:
-    """Return the IM03 pair only after the exact17 proof matches."""
+    """Return the IM03 pair only after the current exact18 proof matches."""
 
-    language_payloads = stage1_composition.language_core_identity_payloads()
+    historical_composition = _historical_stage1_composition_module()
+    language_payloads = historical_composition.language_core_identity_payloads()
     runtime_payloads = (
-        stage1_composition.stage1_runtime_integration_identity_payloads()
+        historical_composition.stage1_runtime_integration_identity_payloads()
     )
     language_payload_rows = _identity_payload_proof_rows(language_payloads)
     runtime_payload_rows = _identity_payload_proof_rows(runtime_payloads)
@@ -1703,47 +1716,49 @@ def _current_im03_working_identity_pair() -> tuple[str, str]:
         source_owner_symbol_set_sha256,
     ) = _source_owner_symbol_proof(
         language_payloads,
-        source_owner_count=8,
+        source_owner_count=9,
     )
-    language_core_identity = stage1_composition.compute_language_core_identity()
+    language_core_identity = (
+        historical_composition.compute_language_core_identity()
+    )
     stage1_runtime_integration_identity = (
-        stage1_composition.compute_stage1_runtime_integration_identity()
+        historical_composition.compute_stage1_runtime_integration_identity()
     )
     if (
         language_payload_rows
-        != IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT17
+        != IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT18
         or runtime_payload_rows
-        != IM03_WORKING_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT17
+        != IM03_WORKING_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT18
         or _canonical_sha256(language_payload_rows)
         != IM03_WORKING_LANGUAGE_PAYLOAD_TUPLE_SHA256
         or _canonical_sha256(runtime_payload_rows)
         != IM03_WORKING_RUNTIME_PAYLOAD_TUPLE_SHA256
-        or _canonical_sha256(language_payload_rows[:8])
-        != IM03_WORKING_SOURCE_OWNER_PAYLOAD_EXACT8_TUPLE_SHA256
+        or _canonical_sha256(language_payload_rows[:9])
+        != IM03_WORKING_SOURCE_OWNER_PAYLOAD_EXACT9_TUPLE_SHA256
         or declaration_counts
-        != IM03_WORKING_SOURCE_OWNER_DECLARATION_COUNTS_EXACT8
-        or import_counts != IM03_WORKING_SOURCE_OWNER_IMPORT_COUNTS_EXACT8
+        != IM03_WORKING_SOURCE_OWNER_DECLARATION_COUNTS_EXACT9
+        or import_counts != IM03_WORKING_SOURCE_OWNER_IMPORT_COUNTS_EXACT9
         or source_owner_symbol_set_sha256
         != IM03_WORKING_SOURCE_OWNER_SYMBOL_SET_SHA256
         or _canonical_sha256(
-            stage1_composition.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
+            historical_composition.LANGUAGE_CORE_PRODUCT_CAUSAL_OWNER_MANIFEST
         )
         != IM03_WORKING_PRODUCT_CAUSAL_OWNER_MANIFEST_SHA256
         or _canonical_sha256(
-            stage1_composition.IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT35
+            historical_composition.IM03_BEHAVIOR_ROOT_SYMBOL_SET_EXACT35
         )
         != IM03_WORKING_BEHAVIOR_ROOT_EXACT35_SHA256
         or _canonical_sha256(
-            stage1_composition.N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5
+            historical_composition.N2_IDENTITY_INFRASTRUCTURE_CHANGED_SYMBOL_SET_EXACT5
         )
         != IM03_WORKING_IDENTITY_INFRASTRUCTURE_EXACT5_SHA256
         or _canonical_sha256(N4_ACTIVATION_OWNER_SYMBOL_SET_EXACT2)
         != N4_ACTIVATION_OWNER_SYMBOL_SET_EXACT2_SHA256
         or language_core_identity
-        != stage1_composition.LANGUAGE_CORE_IDENTITY
+        != historical_composition.LANGUAGE_CORE_IDENTITY
         or language_core_identity != IM03_WORKING_LANGUAGE_CORE_IDENTITY
         or stage1_runtime_integration_identity
-        != stage1_composition.STAGE1_RUNTIME_INTEGRATION_IDENTITY
+        != historical_composition.STAGE1_RUNTIME_INTEGRATION_IDENTITY
         or stage1_runtime_integration_identity
         != IM03_WORKING_RUNTIME_INTEGRATION_IDENTITY
     ):
@@ -1870,14 +1885,14 @@ def _im07_formal_evaluation_bundle_preimage(
             }
             for path, raw_sha256, byte_count in source_rows_exact6
         ],
-        "runner_successor_identity_exact17": {
+        "runner_successor_identity_exact18": {
             "language_core_identity": language_identity,
             "runtime_integration_identity": runtime_identity,
-            "language_payload_name_sha256_byte_count_exact17": (
-                IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT17
+            "language_payload_name_sha256_byte_count_exact18": (
+                IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT18
             ),
-            "runtime_payload_name_sha256_byte_count_exact17": (
-                IM03_WORKING_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT17
+            "runtime_payload_name_sha256_byte_count_exact18": (
+                IM03_WORKING_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT18
             ),
             "runner_raw_sha256": source_rows_exact6[-1][1],
             "runner_byte_count": source_rows_exact6[-1][2],
@@ -3906,6 +3921,10 @@ def _structural_trace_valid(outcome: object) -> bool:
     }
     observation_contributions_by_trace: dict[str, tuple[str, ...]] = {}
     positive_variants: set[str] = set()
+    composition_candidate_refs: set[str] = set()
+    composition_layout_refs: set[str] = set()
+    selected_stage1_artifact_refs: set[str] = set()
+    covered_duty_refs: list[str] = []
     observation_contribution_refs: list[str] = []
     reception_claim_refs: list[str] = []
     for trace in artifact.trace:
@@ -3920,10 +3939,9 @@ def _structural_trace_valid(outcome: object) -> bool:
                 return False
             if (
                 extension.schema_version
-                != CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION
+                != CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V2
                 or type(extension.owner_ref) is not str
-                or extension.owner_ref
-                != "owner:emlis@cocolon.cmee.v1a.emlis_stage1_response.v1"
+                or extension.owner_ref != CMEE_STAGE1_EMLIS_OWNER_REF_V2
                 or type(extension.user_fact_effect) is not int
                 or extension.user_fact_effect != 0
                 or type(extension.composition_variant_id) is not str
@@ -3937,21 +3955,48 @@ def _structural_trace_valid(outcome: object) -> bool:
                     extension.basis_observation_contribution_refs,
                     allow_empty=True,
                 )
-                or not _valid_ref_tuple(extension.value_principle_refs, allow_empty=True)
+                or not _valid_ref_tuple(
+                    extension.value_principle_refs,
+                    allow_empty=True,
+                )
+                or not _valid_ref_tuple(
+                    extension.subjective_claim_refs,
+                    allow_empty=True,
+                )
+                or not _valid_ref_tuple(extension.covered_duty_refs)
+                or not _valid_ref_tuple(extension.sentence_job_refs)
+                or not _valid_ref_tuple(
+                    extension.source_reception_act_refs,
+                    allow_empty=True,
+                )
+                or type(extension.composition_candidate_ref) is not str
+                or not extension.composition_candidate_ref
+                or type(extension.composition_layout_ref) is not str
+                or not extension.composition_layout_ref
+                or type(extension.selected_stage1_artifact_ref) is not str
+                or not extension.selected_stage1_artifact_ref
             ):
                 return False
             positive_variants.add(extension.composition_variant_id)
+            composition_candidate_refs.add(extension.composition_candidate_ref)
+            composition_layout_refs.add(extension.composition_layout_ref)
+            selected_stage1_artifact_refs.add(
+                extension.selected_stage1_artifact_ref
+            )
+            covered_duty_refs.extend(extension.covered_duty_refs)
             if trace.role == "OBSERVATION":
                 if (
                     trace.duty_id != artifact.plan.observation_duty_id
                     or trace.operation != "SOURCE_EXPLICIT_GROUNDED_OBSERVATION"
                     or extension.claim_domain
                     is not EmlisTraceClaimDomain.INTERPRETIVE_OBSERVATION
-                    or len(extension.contribution_refs) != 1
+                    or not extension.contribution_refs
                     or not extension.interpretation_candidate_refs
                     or extension.subjective_claim_ref is not None
+                    or extension.subjective_claim_refs
                     or extension.basis_trace_refs
                     or extension.basis_observation_contribution_refs
+                    or extension.source_reception_act_refs
                     or extension.value_principle_refs
                     or extension.speaker_owner is not None
                 ):
@@ -3967,8 +4012,8 @@ def _structural_trace_valid(outcome: object) -> bool:
                 is not EmlisTraceClaimDomain.SUBJECTIVE_RESPONSE
                 or extension.contribution_refs
                 or extension.interpretation_candidate_refs
-                or type(extension.subjective_claim_ref) is not str
-                or not extension.subjective_claim_ref
+                or extension.subjective_claim_ref is not None
+                or not extension.subjective_claim_refs
                 or not extension.basis_observation_contribution_refs
                 or not extension.basis_trace_refs
                 or extension.speaker_owner != "EMLIS"
@@ -3980,7 +4025,7 @@ def _structural_trace_valid(outcome: object) -> bool:
             ):
                 return False
             else:
-                reception_claim_refs.append(extension.subjective_claim_ref)
+                reception_claim_refs.extend(extension.subjective_claim_refs)
                 reachable_basis_contributions = tuple(
                     contribution_ref
                     for basis_ref in extension.basis_trace_refs
@@ -3988,10 +4033,9 @@ def _structural_trace_valid(outcome: object) -> bool:
                         basis_ref, ()
                     )
                 )
-                if (
+                if not set(
                     extension.basis_observation_contribution_refs
-                    != reachable_basis_contributions
-                ):
+                ).issubset(set(reachable_basis_contributions)):
                     return False
         for node_id in trace.meaning_node_ids:
             node = nodes.get(node_id)
@@ -4039,10 +4083,20 @@ def _structural_trace_valid(outcome: object) -> bool:
             trace.evidence_ids
         ) != semantic_evidence_ids:
             return False
-    if len(positive_variants) != 1:
+    if any(
+        len(refs) != 1
+        for refs in (
+            positive_variants,
+            composition_candidate_refs,
+            composition_layout_refs,
+            selected_stage1_artifact_refs,
+        )
+    ):
         return False
     if (
-        len(observation_contribution_refs)
+        len(covered_duty_refs) != len(set(covered_duty_refs))
+        or not covered_duty_refs
+        or len(observation_contribution_refs)
         != len(set(observation_contribution_refs))
         or len(reception_claim_refs) != len(set(reception_claim_refs))
     ):
@@ -4151,6 +4205,7 @@ def _structural_trace_valid(outcome: object) -> bool:
         common_shapes_ready=proof.common_shapes_ready,
         stabilization_guard_names=proof.stabilization_guard_names,
         issue_codes=proof.issue_codes,
+        typed_admission_refs=proof.typed_admission_refs,
     ):
         return False
     return True
@@ -4171,7 +4226,6 @@ def _im07_formal_trace_valid(
     *,
     projection: object,
     realized_units: object,
-    validated_visible_causal_trace_seal_ref: object,
 ) -> bool:
     if (
         type(projection) is not EmlisStage1Projection
@@ -4199,12 +4253,6 @@ def _im07_formal_trace_valid(
         or type(realized_units) is not tuple
         or not realized_units
         or any(type(row) is not RealizedSentenceUnit for row in realized_units)
-        or type(validated_visible_causal_trace_seal_ref) is not str
-        or re.fullmatch(
-            r"postrealizer-visible-causal-trace-seal-[0-9a-f]{64}",
-            validated_visible_causal_trace_seal_ref,
-        )
-        is None
     ):
         return False
     seals = tuple(row.v2_trace_seal for row in realized_units)
@@ -4213,6 +4261,15 @@ def _im07_formal_trace_valid(
     artifact_refs = tuple(seal.selected_stage1_artifact_ref for seal in seals)
     candidate_refs = tuple(seal.composition_candidate_ref for seal in seals)
     layout_refs = tuple(seal.composition_layout_ref for seal in seals)
+    covered_anchor_refs = tuple(
+        anchor_ref
+        for row in realized_units
+        for anchor_ref in row.basis_anchor_refs
+    )
+    required_anchor_refs = (
+        *projection.ordered_observation_refs,
+        *projection.ordered_subjective_refs,
+    )
     return not (
         any(not row.text or not row.unit_id for row in realized_units)
         or len(set(row.unit_id for row in realized_units)) != len(realized_units)
@@ -4221,6 +4278,8 @@ def _im07_formal_trace_valid(
         or len(set(candidate_refs)) != 1
         or len(set(layout_refs)) != 1
         or any(row.projection_ref != projection.projection_id for row in realized_units)
+        or len(covered_anchor_refs) != len(set(covered_anchor_refs))
+        or set(covered_anchor_refs) != set(required_anchor_refs)
     )
 
 
@@ -4232,7 +4291,7 @@ def _materialize_im07_formal_case(
     emotion: str,
     strength: str,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Run the current direct-v2 call graph exactly once and retain its bodies."""
+    """Run the formal case through the response facade exactly once."""
 
     raw = _raw(case_id, memo, category, emotion, strength)
     request = GenerationRequest(
@@ -4270,56 +4329,32 @@ def _materialize_im07_formal_case(
     )
     structure = phase_a.input_specific_meaning_structure
     outcome = structure.meaning_decision_outcome
-    subjective_plan = stage1_composition.project_subjective_meaning_plan(phase_a)
-    projection = stage1_response.seal_stage1_projection(phase_a, subjective_plan)
-    phase_b = stage1_response.build_surface_composition_inputs(phase_a, projection)
-    composition = stage1_composition.compose_stage1_from_projection(phase_b)
-    realized_units = stage1_response._adapt_v2_composed_units_to_realized_units(
+    projection, realized_units = (
+        stage1_response.compile_stage1_response(
+            source=source,
+            grounded_graph=graph,
+            parent_plan=parent_plan,
+            grounded_plan=grounded_plan,
+        )
+    )
+    seals = tuple(row.v2_trace_seal for row in realized_units)
+    if not seals or any(seal is None for seal in seals):
+        raise RuntimeError("im07 response facade trace seal missing")
+    selected_artifact_ref = seals[0].selected_stage1_artifact_ref
+    composition_candidate_ref = seals[0].composition_candidate_ref
+    composition_layout_ref = seals[0].composition_layout_ref
+    if any(
+        (
+            seal.selected_stage1_artifact_ref != selected_artifact_ref
+            or seal.composition_candidate_ref != composition_candidate_ref
+            or seal.composition_layout_ref != composition_layout_ref
+        )
+        for seal in seals[1:]
+    ):
+        raise RuntimeError("im07 response facade trace seal divergence")
+    formal_trace_valid = _im07_formal_trace_valid(
         projection=projection,
-        candidate=composition.selected_candidate,
-        validated_visible_causal_trace_seal_ref=(
-            composition.validated_visible_causal_trace_seal_ref
-        ),
-        grounded_graph=graph,
-        parent_plan=parent_plan,
-    )
-    ranked = composition.ranked_candidates
-    selected = composition.selected_candidate
-    selected_normalized = selected.normalized_artifact
-    renormalized_ranked = tuple(
-        stage1_composition.normalize_to_normal_form(
-            candidate.normalized_artifact,
-            candidate.normalized_artifact.layout_preference_seed,
-            phase_b,
-        )
-        for candidate in ranked
-    )
-    normalization_idempotent = all(
-        stage1_composition.canonical_normalized_bytes(
-            candidate.normalized_artifact
-        )
-        == stage1_composition.canonical_normalized_bytes(repeated)
-        for candidate, repeated in zip(
-            ranked,
-            renormalized_ranked,
-            strict=True,
-        )
-    )
-    realized_duties = tuple(
-        ref for unit in selected.sentence_units for ref in unit.duty_refs
-    )
-    required_duty_coverage_exact = (
-        len(realized_duties) == len(set(realized_duties))
-        and set(realized_duties) == set(selected_normalized.required_duty_refs)
-    )
-    normal_form_phase_exact6 = all(
-        candidate.normalized_artifact.normalization_phase_trace
-        == tuple(stage1_composition.NormalFormPhase)
-        for candidate in ranked
-    )
-    normal_form_defect_free = all(
-        candidate.normalized_artifact.correctable_defect_rows == ()
-        for candidate in ranked
+        realized_units=realized_units,
     )
     actual_japanese_reached = bool(realized_units) and all(
         row.text.endswith("。")
@@ -4336,7 +4371,6 @@ def _materialize_im07_formal_case(
         decision_body,
     )
     projection_body = {
-        "subjective_plan_body": _im07_json_value(subjective_plan),
         "stage1_projection_body": _im07_json_value(projection),
         "projection_artifact_ref": projection_artifact_ref,
     }
@@ -4344,15 +4378,11 @@ def _materialize_im07_formal_case(
         IM07_FORMAL_PROJECTION_DOMAIN,
         projection_body,
     )
-    normalized_artifact_body = _im07_json_value(
-        composition.selected_candidate.normalized_artifact
-    )
     artifact_body = {
-        "selected_rank": composition.selected_candidate.rank,
-        "internal_candidate_count": composition.internal_candidate_count,
-        "ranked_candidate_count": len(composition.ranked_candidates),
-        "language_core_identity": composition.language_core_identity,
-        "normalized_artifact": normalized_artifact_body,
+        "compiler_boundary": "compile_stage1_response",
+        "selected_stage1_artifact_ref": selected_artifact_ref,
+        "composition_candidate_ref": composition_candidate_ref,
+        "composition_layout_ref": composition_layout_ref,
         "realized_units": _im07_json_value(realized_units),
         "candidate_text": candidate_text,
     }
@@ -4379,9 +4409,9 @@ def _materialize_im07_formal_case(
         "ordered_visible_text_sha256": tuple(
             _sha256_text(row.text) for row in realized_units
         ),
-        "validated_visible_causal_trace_seal_ref": (
-            composition.validated_visible_causal_trace_seal_ref
-        ),
+        "selected_stage1_artifact_ref": selected_artifact_ref,
+        "composition_candidate_ref": composition_candidate_ref,
+        "composition_layout_ref": composition_layout_ref,
     }
     visible_trace_body_sha256 = _domain_separated_sha256(
         IM07_FORMAL_VISIBLE_TRACE_DOMAIN,
@@ -4395,54 +4425,38 @@ def _materialize_im07_formal_case(
             "visible_trace_body_sha256": visible_trace_body_sha256,
         },
     )
-    formal_trace_valid = _im07_formal_trace_valid(
-        projection=projection,
-        realized_units=realized_units,
-        validated_visible_causal_trace_seal_ref=(
-            composition.validated_visible_causal_trace_seal_ref
-        ),
+    covered_anchor_refs = tuple(
+        anchor_ref
+        for row in realized_units
+        for anchor_ref in row.basis_anchor_refs
     )
-    ranked_count = len(ranked)
+    required_anchor_refs = (
+        *projection.ordered_observation_refs,
+        *projection.ordered_subjective_refs,
+    )
     machine_invariant = {
         "actual_japanese_reached": actual_japanese_reached,
-        "phase_a_and_b_validated": True,
-        "subjective_claim_count": len(subjective_plan.subjective_claim_rows),
-        "internal_candidate_count": composition.internal_candidate_count,
-        "ranked_candidate_count": ranked_count,
-        "rank_order_exact": tuple(row.rank for row in ranked)
-        == tuple(range(1, ranked_count + 1)),
-        "selected_rank_one": selected.rank == 1,
-        "normal_form_phase_exact6": normal_form_phase_exact6,
-        "normal_form_defect_free": normal_form_defect_free,
-        "normalization_idempotent": normalization_idempotent,
-        "required_duty_coverage_exact": required_duty_coverage_exact,
-        "language_core_identity_match": (
-            composition.language_core_identity
-            == stage1_composition.LANGUAGE_CORE_IDENTITY
-            == IM03_WORKING_LANGUAGE_CORE_IDENTITY
+        "response_facade_compiled": True,
+        "subjective_claim_count": len(projection.subjective_claims),
+        "visible_anchor_coverage_exact": (
+            len(covered_anchor_refs) == len(set(covered_anchor_refs))
+            and set(covered_anchor_refs) == set(required_anchor_refs)
         ),
-        "runtime_integration_identity_match": (
-            stage1_composition.compute_stage1_runtime_integration_identity()
-            == stage1_composition.STAGE1_RUNTIME_INTEGRATION_IDENTITY
-            == IM03_WORKING_RUNTIME_INTEGRATION_IDENTITY
+        "shared_trace_identity_exact": all(
+            seal.selected_stage1_artifact_ref == selected_artifact_ref
+            and seal.composition_candidate_ref == composition_candidate_ref
+            and seal.composition_layout_ref == composition_layout_ref
+            for seal in seals
         ),
         "formal_record_identity_closure": formal_trace_valid,
     }
     machine_invariant["machine_invariant_clear"] = all(
         (
             machine_invariant["actual_japanese_reached"],
-            machine_invariant["phase_a_and_b_validated"],
+            machine_invariant["response_facade_compiled"],
             machine_invariant["subjective_claim_count"] >= 1,
-            machine_invariant["internal_candidate_count"] >= ranked_count,
-            1 <= ranked_count <= 2,
-            machine_invariant["rank_order_exact"],
-            machine_invariant["selected_rank_one"],
-            machine_invariant["normal_form_phase_exact6"],
-            machine_invariant["normal_form_defect_free"],
-            machine_invariant["normalization_idempotent"],
-            machine_invariant["required_duty_coverage_exact"],
-            machine_invariant["language_core_identity_match"],
-            machine_invariant["runtime_integration_identity_match"],
+            machine_invariant["visible_anchor_coverage_exact"],
+            machine_invariant["shared_trace_identity_exact"],
             machine_invariant["formal_record_identity_closure"],
         )
     )

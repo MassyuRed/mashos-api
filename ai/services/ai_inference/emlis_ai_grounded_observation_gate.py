@@ -15,22 +15,32 @@ from typing import Any, Final, Literal, Mapping
 from emlis_ai_evidence_ledger_service import EvidenceSpanResolver
 from emlis_ai_grounded_human_reception import (
     GroundedHumanReceptionSurfaceError,
-    realize_grounded_human_reception,
+    bind_and_validate_grounded_human_reception_surface,
+    reception_action_is_future_intention,
+    reception_action_is_performed,
     reception_active_moves,
+    reception_effective_move_reference_mode,
     reception_effective_sentence_budget,
     reception_move_predicate_family,
     reception_terminal_predicate_kind,
+    realize_grounded_human_reception,
+    resolve_grounded_reception_move_referent,
 )
 from emlis_ai_grounded_observation_plan import (
+    FINAL_STAGE1_GROUNDED_PROJECTION_VERSION,
     GroundedObservationPlan,
     validate_grounded_human_reception_plan,
     validate_grounded_observation_plan,
 )
 from emlis_ai_grounded_sentence_surface import (
     DIRECTIONAL_GROUNDED_RELATION_TYPES,
+    OBSERVATION_SECTION_LABEL,
+    RECEPTION_SECTION_LABEL,
     GroundedSentencePlan,
     GroundedSurfaceResult,
     expected_human_follow_role,
+    parse_grounded_surface_body_bytes,
+    realize_grounded_human_follow_text,
     split_two_stage_surface,
     validate_grounded_sentence_plan,
     validate_grounded_surface_result,
@@ -142,6 +152,68 @@ _RECEPTION_IDENTITY_ACCEPTANCE_RE: Final = re.compile(
 _RECEPTION_QUOTE_RE: Final = re.compile(r"「([^」]+)」")
 _RECEPTION_SENTENCE_END_RE: Final = re.compile(r"[。！？!?]+")
 _GROUNDED_GATE_BODY_FREE_CODE_RE: Final = re.compile(r"^[A-Za-z0-9_.:/-]*$")
+_BODY_INVERSE_ANCHOR_NORMALIZE_RE: Final = re.compile(
+    r"[\s\u3000、。,.!！?？「」『』（）()・:：;；'’\"]"
+)
+_BODY_INVERSE_LEADING_CONNECTOR_RE: Final = re.compile(
+    r"^(?:とそれから|そして|それでも|けれど|だけど|でも|で)"
+)
+_BODY_INVERSE_RELATION_MARKERS_BY_TYPE: Final[dict[str, frozenset[str]]] = {
+    "temporal_before_after": frozenset({"from_to", "change"}),
+    "shift_from_to": frozenset({"from_to", "change"}),
+    "contrast": frozenset({"coexistence", "counterdirection"}),
+    "coexistence": frozenset({"coexistence"}),
+    "user_stated_cause": frozenset({"link", "from_to"}),
+    "user_stated_result": frozenset({"link", "from_to", "change"}),
+    "attempt_and_block": frozenset({"coexistence", "counterdirection"}),
+    "wish_and_constraint": frozenset({"coexistence", "counterdirection"}),
+    "action_supports_change": frozenset({"link"}),
+    "evaluation_about_event": frozenset({"change", "link"}),
+    "self_evaluation_about_state": frozenset({"change", "coexistence"}),
+    "preserves_despite": frozenset({"coexistence", "counterdirection"}),
+    "uncertain_connection": frozenset({"coexistence", "change", "link"}),
+    "continuation_or_refusal": frozenset({"counterdirection", "coexistence"}),
+}
+_BODY_INVERSE_RECEPTION_ACT_TARGET_MARKERS: Final[
+    dict[str, frozenset[str]]
+] = {
+    "stay_with_current_burden": frozenset({"target_burden", "target_words"}),
+    "honor_concrete_effort": frozenset({"target_effort", "target_words"}),
+    "protect_retained_intention": frozenset({"target_intention", "target_words"}),
+    "recognize_lived_change": frozenset({"target_change", "target_words"}),
+    "hold_help_seeking": frozenset({"target_help", "target_words"}),
+    "bounded_counter_self_denial": frozenset(
+        {"target_self_evaluation", "target_words"}
+    ),
+    "respect_words_placed": frozenset({"target_words"}),
+}
+_BODY_INVERSE_RECEPTION_RELATION_PREFERENCE: Final[
+    dict[str, tuple[str, ...]]
+] = {
+    "protect_retained_intention": (
+        "preserves_despite",
+        "wish_and_constraint",
+        "coexistence",
+        "contrast",
+        "continuation_or_refusal",
+    ),
+    "hold_help_seeking": (
+        "wish_and_constraint",
+        "preserves_despite",
+        "coexistence",
+        "contrast",
+    ),
+    "honor_concrete_effort": (
+        "action_supports_change",
+        "temporal_before_after",
+        "user_stated_result",
+    ),
+    "recognize_lived_change": (
+        "action_supports_change",
+        "temporal_before_after",
+        "contrast",
+    ),
+}
 
 
 def _dedupe(values: Any) -> tuple[str, ...]:
@@ -642,6 +714,7 @@ def _evaluate_reception_gates(
 
     active_moves = ()
     realized_reception = None
+    canonical_reception_text = ""
     recovery_contract_valid = True
     if reception_plan is not None:
         try:
@@ -671,22 +744,63 @@ def _evaluate_reception_gates(
             )
         if human_line is not None and recovery_contract_valid:
             try:
-                realized_reception = realize_grounded_human_reception(
-                    reception_plan,
-                    nucleus_index,
+                canonical_reception_text = realize_grounded_human_follow_text(
+                    human_line,
+                    plan,
                     resolver,
-                    recovery_stage=sentence_plan.recovery_stage,
-                    clause_plans=human_line.reception_clause_plans,
                 )
-            except (
-                GroundedHumanReceptionSurfaceError,
-                AttributeError,
-                KeyError,
-                TypeError,
-            ):
+            except (AttributeError, KeyError, TypeError, ValueError):
                 reasons_by_gate["reception_move_realization_gate"].append(
-                    "reception_canonical_realization_failed"
+                    "reception_canonical_surface_owner_failed"
                 )
+            if _body_inverse_is_final_stage1_plan(plan):
+                try:
+                    context_map = {
+                        move.move_id: _body_inverse_reception_context_ids(
+                            move,
+                            plan,
+                        )
+                        for move in active_moves
+                    }
+                    realized_reception = (
+                        bind_and_validate_grounded_human_reception_surface(
+                            reception_plan,
+                            nucleus_index,
+                            resolver,
+                            actual_text=reception_text,
+                            recovery_stage=sentence_plan.recovery_stage,
+                            clause_plans=human_line.reception_clause_plans,
+                            context_nucleus_ids_by_move=context_map,
+                            allow_anaphoric_topic=True,
+                        )
+                    )
+                except (
+                    GroundedHumanReceptionSurfaceError,
+                    AttributeError,
+                    KeyError,
+                    TypeError,
+                ):
+                    reasons_by_gate["reception_move_realization_gate"].append(
+                        "reception_actual_surface_contract_failed"
+                    )
+            else:
+                try:
+                    realized_reception = realize_grounded_human_reception(
+                        reception_plan,
+                        nucleus_index,
+                        resolver,
+                        recovery_stage=sentence_plan.recovery_stage,
+                        clause_plans=human_line.reception_clause_plans,
+                    )
+                except (
+                    GroundedHumanReceptionSurfaceError,
+                    AttributeError,
+                    KeyError,
+                    TypeError,
+                ):
+                    reasons_by_gate["reception_move_realization_gate"].append(
+                        "reception_canonical_realization_failed"
+                    )
 
     if reception_plan is None:
         reasons_by_gate["reception_plan_gate"].append(
@@ -963,14 +1077,17 @@ def _evaluate_reception_gates(
                 reasons_by_gate["reception_move_realization_gate"].append(
                     "reception_realized_predicate_family_mismatch"
                 )
-            if realized_reception.text.strip() != reception_text.strip():
+            expected_reception_text = (
+                canonical_reception_text or realized_reception.text
+            )
+            if expected_reception_text.strip() != reception_text.strip():
                 reasons_by_gate["reception_move_realization_gate"].append(
                     "reception_canonical_surface_mismatch"
                 )
             if (
                 human_surface_line is None
                 or human_surface_line.text.strip()
-                != realized_reception.text.strip()
+                != expected_reception_text.strip()
             ):
                 reasons_by_gate["reception_move_realization_gate"].append(
                     "reception_surface_line_mismatch"
@@ -1383,6 +1500,857 @@ def _evaluate_reception_gates(
 
 
 @dataclass(frozen=True)
+class GroundedBodyInverseEvaluation:
+    """Body-free result of matching a byte-derived witness to required duties."""
+
+    passed: bool
+    body_sha256: str
+    observation_line_count: int
+    reception_line_count: int
+    observation_sentence_count: int
+    reception_sentence_count: int
+    source_anchor_count: int
+    relation_marker_count: int
+    uncertainty_marker_count: int
+    reception_marker_count: int
+    failure_codes: tuple[str, ...]
+
+    def as_body_free_meta(self) -> dict[str, Any]:
+        return {
+            "passed": self.passed,
+            "body_sha256": self.body_sha256,
+            "observation_line_count": self.observation_line_count,
+            "reception_line_count": self.reception_line_count,
+            "observation_sentence_count": self.observation_sentence_count,
+            "reception_sentence_count": self.reception_sentence_count,
+            "source_anchor_count": self.source_anchor_count,
+            "relation_marker_count": self.relation_marker_count,
+            "uncertainty_marker_count": self.uncertainty_marker_count,
+            "reception_marker_count": self.reception_marker_count,
+            "failure_codes": list(self.failure_codes),
+            "raw_input_included": False,
+            "raw_text_included": False,
+            "source_text_included": False,
+            "surface_text_included": False,
+            "candidate_body_included": False,
+        }
+
+
+def _body_inverse_normalized_anchor(value: Any) -> str:
+    compact = _BODY_INVERSE_ANCHOR_NORMALIZE_RE.sub("", str(value or "")).lower()
+    while True:
+        reduced = _BODY_INVERSE_LEADING_CONNECTOR_RE.sub("", compact, count=1)
+        if reduced == compact:
+            return compact
+        compact = reduced
+
+
+def _body_inverse_is_final_stage1_plan(plan: GroundedObservationPlan) -> bool:
+    return FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in tuple(
+        getattr(plan, "source_contracts", ())
+    )
+
+
+def _body_inverse_typed_source_fragment(
+    nucleus: Any,
+    raw_text: str,
+) -> str | None:
+    """Independently recover a plan-owned typed source obligation."""
+
+    attributes = tuple(
+        getattr(nucleus.semantic_frame, "attribute_codes", ())
+    )
+    marker_rows = tuple(
+        code
+        for code in attributes
+        if code == "semantic_role:generic_relation_fragment"
+    )
+    scalar_rows = tuple(
+        code
+        for code in attributes
+        if isinstance(code, str)
+        and code.startswith("source_fragment_scalar_range:")
+    )
+    source_rows = tuple(
+        code
+        for code in attributes
+        if isinstance(code, str)
+        and code.startswith("source_fragment_scalar_source:")
+    )
+    legacy_rows = tuple(
+        code
+        for code in attributes
+        if isinstance(code, str)
+        and code.startswith(("surface_scalar_range:", "surface_scalar_source:"))
+    )
+    if not marker_rows:
+        return None
+    if (
+        len(marker_rows) != 1
+        or len(scalar_rows) != 1
+        or source_rows
+        != ("source_fragment_scalar_source:normalized_raw_text",)
+        or legacy_rows
+    ):
+        return ""
+    parts = scalar_rows[0].split(":")
+    if len(parts) != 3:
+        return ""
+    try:
+        start, end = int(parts[1]), int(parts[2])
+    except ValueError:
+        return ""
+    normalized_raw = re.sub(
+        r"\s+",
+        " ",
+        str(raw_text or "").replace("\u3000", " "),
+    ).strip()
+    if not (0 <= start < end <= len(normalized_raw)):
+        return ""
+    fragment = normalized_raw[start:end]
+    if not fragment or fragment != fragment.strip():
+        return ""
+    return fragment
+
+
+def _body_inverse_action_is_performed(nucleus: Any) -> bool:
+    return reception_action_is_performed(nucleus)
+
+
+def _body_inverse_action_is_future_intention(nucleus: Any) -> bool:
+    return reception_action_is_future_intention(nucleus)
+
+
+def _body_inverse_source_values(
+    line: Any,
+    plan: GroundedObservationPlan,
+    resolver: EvidenceSpanResolver,
+) -> tuple[str, ...]:
+    nucleus_index = {item.nucleus_id: item for item in plan.nuclei}
+    span_ids: list[str] = []
+    for nucleus_id in line.binding.nucleus_ids:
+        nucleus = nucleus_index.get(nucleus_id)
+        if nucleus is None:
+            continue
+        for span_id in nucleus.source_span_ids:
+            if span_id not in span_ids:
+                span_ids.append(span_id)
+    for span_id in line.binding.evidence_span_ids:
+        if span_id not in span_ids:
+            span_ids.append(span_id)
+    values: list[str] = []
+    for span_id in span_ids:
+        try:
+            raw_text = str(resolver.resolve(span_id).raw_text or "")
+        except (AttributeError, KeyError, TypeError, ValueError):
+            continue
+        normalized = _body_inverse_normalized_anchor(raw_text)
+        if normalized and normalized not in values:
+            values.append(normalized)
+    return tuple(values)
+
+
+def _body_inverse_nucleus_source_values(
+    nucleus_id: str,
+    plan: GroundedObservationPlan,
+    resolver: EvidenceSpanResolver,
+) -> tuple[str, ...]:
+    nucleus = next(
+        (item for item in plan.nuclei if item.nucleus_id == nucleus_id),
+        None,
+    )
+    if nucleus is None:
+        return ()
+    values: list[str] = []
+    for span_id in nucleus.source_span_ids:
+        try:
+            raw_text = str(resolver.resolve(span_id).raw_text or "")
+        except (AttributeError, KeyError, TypeError, ValueError):
+            continue
+        typed = _body_inverse_typed_source_fragment(nucleus, raw_text)
+        if typed == "":
+            return ()
+        normalized = _body_inverse_normalized_anchor(
+            typed if typed is not None else raw_text
+        )
+        if normalized and normalized not in values:
+            values.append(normalized)
+    return tuple(values)
+
+
+def _body_inverse_anchor_matches(left: str, right: str) -> bool:
+    if not left or not right:
+        return False
+    return left in right or right in left
+
+
+def _body_inverse_quote_text(body: bytes, row: Any) -> str:
+    return body[row.utf8_byte_start : row.utf8_byte_end].decode(
+        "utf-8", errors="strict"
+    )
+
+
+def _body_inverse_visible_text(body: bytes, row: Any) -> str:
+    return body[row.utf8_byte_start : row.utf8_byte_end].decode(
+        "utf-8", errors="strict"
+    )
+
+
+def _body_inverse_reception_context_ids(
+    move: Any,
+    plan: GroundedObservationPlan,
+) -> tuple[str, ...]:
+    if move.support_nucleus_ids:
+        return tuple(move.support_nucleus_ids)
+    target_set = set(move.target_nucleus_ids)
+    preference = {
+        relation_type: index
+        for index, relation_type in enumerate(
+            _BODY_INVERSE_RECEPTION_RELATION_PREFERENCE.get(
+                move.reception_act,
+                (),
+            )
+        )
+    }
+    candidates: list[tuple[int, int, str]] = []
+    relation_index = {row.relation_id: row for row in plan.relations}
+    for order, relation_id in enumerate(
+        plan.coverage_requirements.required_relation_ids
+    ):
+        relation = relation_index.get(relation_id)
+        if relation is None:
+            continue
+        endpoints = (relation.from_nucleus_id, relation.to_nucleus_id)
+        if not target_set.intersection(endpoints):
+            continue
+        other_ids = tuple(item for item in endpoints if item not in target_set)
+        if len(other_ids) != 1:
+            continue
+        candidates.append(
+            (
+                preference.get(relation.type, len(preference) + 1),
+                order,
+                other_ids[0],
+            )
+        )
+    if not candidates:
+        return ()
+    candidates.sort()
+    return (candidates[0][2],)
+
+
+def evaluate_grounded_surface_body_inverse(
+    *,
+    body: bytes,
+    plan: GroundedObservationPlan,
+    sentence_plan: GroundedSentencePlan,
+    resolver: EvidenceSpanResolver,
+) -> GroundedBodyInverseEvaluation:
+    """Re-parse final bytes and independently match plan-visible duties.
+
+    The parser is body-only.  This matcher then checks section/line order,
+    source-bound quote order, relation and boundary markers, and the distinct
+    human-reception duty against the canonical plans.  It never consults a
+    forward parser witness or serialized source text.
+    """
+
+    witness = parse_grounded_surface_body_bytes(body)
+    failures: list[str] = list(witness.structural_issues)
+    final_stage1_plan = _body_inverse_is_final_stage1_plan(plan)
+    observation_lines = tuple(
+        row for row in witness.lines if row.section == "observation"
+    )
+    reception_lines = tuple(
+        row for row in witness.lines if row.section == "reception"
+    )
+    planned_observation_lines = tuple(
+        row
+        for row in sentence_plan.lines
+        if row.binding.line_role != "human_follow"
+    )
+    planned_reception_lines = tuple(
+        row
+        for row in sentence_plan.lines
+        if row.binding.line_role == "human_follow"
+    )
+    nucleus_index = {item.nucleus_id: item for item in plan.nuclei}
+    if witness.section_order != ("observation", "reception"):
+        failures.append("body_inverse_section_order_mismatch")
+    if len(observation_lines) != len(planned_observation_lines):
+        failures.append("body_inverse_observation_line_count_mismatch")
+    if len(reception_lines) != len(planned_reception_lines):
+        failures.append("body_inverse_reception_line_count_mismatch")
+
+    sentence_line_index = {
+        (row.section, row.section_ordinal): row.section_line_ordinal
+        for row in witness.sentences
+    }
+
+    def quotes_for_line(section: str, line_ordinal: int) -> tuple[Any, ...]:
+        return tuple(
+            row
+            for row in witness.quotes
+            if row.section == section
+            and sentence_line_index.get((row.section, row.sentence_ordinal))
+            == line_ordinal
+        )
+
+    for index, (parsed_line, planned_line) in enumerate(
+        zip(observation_lines, planned_observation_lines),
+        start=1,
+    ):
+        quote_rows = quotes_for_line("observation", parsed_line.section_ordinal)
+        expected_sources = _body_inverse_source_values(planned_line, plan, resolver)
+        if expected_sources and not quote_rows:
+            failures.append(f"body_inverse_observation_source_anchor_missing:{index}")
+        normalized_quote_texts: list[str] = []
+        for quote_row in quote_rows:
+            try:
+                quote_text = _body_inverse_normalized_anchor(
+                    _body_inverse_quote_text(body, quote_row)
+                )
+            except (UnicodeDecodeError, ValueError):
+                failures.append(f"body_inverse_quote_bytes_invalid:{index}")
+                continue
+            normalized_quote_texts.append(quote_text)
+            matches = tuple(
+                source_index
+                for source_index, source_text in enumerate(expected_sources)
+                if _body_inverse_anchor_matches(quote_text, source_text)
+            )
+            if not matches:
+                failures.append(f"body_inverse_unbound_observation_quote:{index}")
+                continue
+        if planned_line.binding.relation_ids and not parsed_line.relation_marker_codes:
+            failures.append(f"body_inverse_required_relation_marker_missing:{index}")
+        relation_index = {item.relation_id: item for item in plan.relations}
+        for relation_id in planned_line.binding.relation_ids:
+            relation = relation_index.get(relation_id)
+            if relation is None:
+                failures.append(f"body_inverse_required_relation_missing:{index}")
+                continue
+            allowed_markers = _BODY_INVERSE_RELATION_MARKERS_BY_TYPE.get(
+                relation.type,
+                frozenset(),
+            )
+            if allowed_markers and not (
+                set(parsed_line.relation_marker_codes) & allowed_markers
+            ):
+                failures.append(
+                    f"body_inverse_relation_type_marker_mismatch:{index}"
+                )
+            from_values = _body_inverse_nucleus_source_values(
+                relation.from_nucleus_id,
+                plan,
+                resolver,
+            )
+            to_values = _body_inverse_nucleus_source_values(
+                relation.to_nucleus_id,
+                plan,
+                resolver,
+            )
+            from_positions = tuple(
+                quote_index
+                for quote_index, quote_text in enumerate(normalized_quote_texts)
+                if any(
+                    _body_inverse_anchor_matches(quote_text, source_text)
+                    for source_text in from_values
+                )
+            )
+            to_positions = tuple(
+                quote_index
+                for quote_index, quote_text in enumerate(normalized_quote_texts)
+                if any(
+                    _body_inverse_anchor_matches(quote_text, source_text)
+                    for source_text in to_values
+                )
+            )
+            if final_stage1_plan and (
+                not from_positions or not to_positions
+            ):
+                failures.append(
+                    f"body_inverse_relation_endpoint_missing:{index}"
+                )
+            if (
+                relation.type in DIRECTIONAL_GROUNDED_RELATION_TYPES
+                and from_positions
+                and to_positions
+                and not any(
+                    to_position == from_position + 1
+                    for from_position in from_positions
+                    for to_position in to_positions
+                )
+            ):
+                failures.append(f"body_inverse_relation_direction_reversed:{index}")
+        if (
+            planned_line.binding.line_role == "fact_boundary"
+            and "fact_boundary" not in parsed_line.uncertainty_marker_codes
+        ):
+            failures.append(f"body_inverse_fact_boundary_marker_missing:{index}")
+        if (
+            planned_line.binding.line_role == "limited_opposition"
+            and not set(parsed_line.relation_marker_codes)
+            & {"counterdirection", "coexistence"}
+        ):
+            failures.append(f"body_inverse_limited_opposition_marker_missing:{index}")
+        required_nuclei = tuple(
+            nucleus_index[nucleus_id]
+            for nucleus_id in planned_line.binding.nucleus_ids
+            if nucleus_id in nucleus_index
+            and nucleus_id in set(plan.coverage_requirements.required_nucleus_ids)
+        )
+        required_kinds = {item.kind for item in required_nuclei}
+        if "change" in required_kinds and "change" not in parsed_line.semantic_marker_codes:
+            failures.append(f"body_inverse_required_change_missing:{index}")
+        if (
+            "constraint" in required_kinds
+            and "constraint" not in parsed_line.semantic_marker_codes
+        ):
+            failures.append(f"body_inverse_required_constraint_missing:{index}")
+        if (
+            (
+                "uncertainty" in required_kinds
+                or any(
+                    "semantic_role:limiting_unknown"
+                    in item.semantic_frame.attribute_codes
+                    for item in required_nuclei
+                )
+            )
+            and "unknown" not in parsed_line.semantic_marker_codes
+            and not parsed_line.uncertainty_marker_codes
+        ):
+            failures.append(f"body_inverse_required_unknown_missing:{index}")
+        required_future_intention = any(
+            item.kind == "wish"
+            and item.semantic_frame.modality in {"wish", "intention"}
+            for item in required_nuclei
+        ) or (
+            final_stage1_plan
+            and any(
+                _body_inverse_action_is_future_intention(item)
+                for item in required_nuclei
+            )
+        )
+        if (
+            required_future_intention
+            and "intention" not in parsed_line.semantic_marker_codes
+        ):
+            failures.append(f"body_inverse_required_intention_missing:{index}")
+        required_effort = (
+            any(
+                _body_inverse_action_is_performed(item)
+                for item in required_nuclei
+            )
+            if final_stage1_plan
+            else "action" in required_kinds
+        )
+        if (
+            required_effort
+            and "effort" not in parsed_line.semantic_marker_codes
+        ):
+            failures.append(f"body_inverse_required_effort_missing:{index}")
+
+    for index, (parsed_line, planned_line) in enumerate(
+        zip(reception_lines, planned_reception_lines),
+        start=1,
+    ):
+        if not parsed_line.reception_marker_codes:
+            failures.append(f"body_inverse_reception_response_marker_missing:{index}")
+        if (
+            "reception_speaker:explicit_emlis"
+            in planned_line.binding.functional_atom_ids
+            and "emlis_voice" not in parsed_line.reception_marker_codes
+        ):
+            failures.append(f"body_inverse_explicit_emlis_voice_missing:{index}")
+        quote_rows = quotes_for_line("reception", parsed_line.section_ordinal)
+        expected_sources = _body_inverse_source_values(planned_line, plan, resolver)
+        for quote_row in quote_rows:
+            try:
+                quote_text = _body_inverse_normalized_anchor(
+                    _body_inverse_quote_text(body, quote_row)
+                )
+            except (UnicodeDecodeError, ValueError):
+                failures.append(f"body_inverse_reception_quote_bytes_invalid:{index}")
+                continue
+            matches = tuple(
+                source_index
+                for source_index, source_text in enumerate(expected_sources)
+                if _body_inverse_anchor_matches(quote_text, source_text)
+            )
+            if not matches:
+                failures.append(f"body_inverse_unbound_reception_quote:{index}")
+                continue
+
+        atom_values = set(planned_line.binding.functional_atom_ids)
+        min_values = tuple(
+            int(atom.rsplit(":", 1)[1])
+            for atom in atom_values
+            if atom.startswith("reception_sentence_min:")
+            and atom.rsplit(":", 1)[1].isdigit()
+        )
+        max_values = tuple(
+            int(atom.rsplit(":", 1)[1])
+            for atom in atom_values
+            if atom.startswith("reception_sentence_max:")
+            and atom.rsplit(":", 1)[1].isdigit()
+        )
+        if min_values and parsed_line.sentence_count < min_values[0]:
+            failures.append(f"body_inverse_reception_sentence_underflow:{index}")
+        if max_values and parsed_line.sentence_count > max_values[0]:
+            failures.append(f"body_inverse_reception_sentence_overflow:{index}")
+
+        reception_plan = plan.response_plan.human_reception_plan
+        if reception_plan is not None:
+            parsed_codes = set(parsed_line.reception_marker_codes)
+            if not final_stage1_plan:
+                for move in reception_plan.moves:
+                    if not move.required:
+                        continue
+                    target_markers = (
+                        _BODY_INVERSE_RECEPTION_ACT_TARGET_MARKERS.get(
+                            move.reception_act,
+                            frozenset(),
+                        )
+                    )
+                    if target_markers and not parsed_codes.intersection(
+                        target_markers
+                    ):
+                        failures.append(
+                            "body_inverse_reception_target_duty_missing:"
+                            f"{move.move_id}"
+                        )
+                    if (
+                        move.move_role == "attention"
+                        and "attention" not in parsed_codes
+                    ):
+                        failures.append(
+                            "body_inverse_reception_attention_duty_missing:"
+                            f"{move.move_id}"
+                        )
+                    why_markers = {
+                        "stay_with_current_burden": {"receive"},
+                        "honor_concrete_effort": {
+                            "receive",
+                            "felt_response",
+                        },
+                        "protect_retained_intention": {
+                            "attention",
+                            "protect",
+                            "receive",
+                        },
+                        "recognize_lived_change": {
+                            "attention",
+                            "felt_response",
+                        },
+                        "hold_help_seeking": {
+                            "attention",
+                            "felt_response",
+                        },
+                        "bounded_counter_self_denial": {"protect"},
+                        "respect_words_placed": {
+                            "receive",
+                            "felt_response",
+                        },
+                    }.get(move.reception_act, set())
+                    if why_markers and not parsed_codes.intersection(
+                        why_markers
+                    ):
+                        failures.append(
+                            "body_inverse_reception_why_duty_missing:"
+                            f"{move.move_id}"
+                        )
+            else:
+                parsed_sentences = tuple(
+                    row
+                    for row in witness.sentences
+                    if row.section == "reception"
+                    and row.section_line_ordinal
+                    == parsed_line.section_ordinal
+                )
+                clause_plans = tuple(planned_line.reception_clause_plans)
+                if len(parsed_sentences) != len(clause_plans):
+                    failures.append(
+                        f"body_inverse_reception_clause_count_mismatch:{index}"
+                    )
+                move_index = {
+                    move.move_id: move for move in reception_plan.moves
+                }
+                expected_referent_by_move: dict[str, Any] = {}
+                anchor_used = False
+                for clause in clause_plans:
+                    for move_id in clause.move_ids:
+                        move = move_index.get(move_id)
+                        if move is None:
+                            continue
+                        try:
+                            referent = resolve_grounded_reception_move_referent(
+                                reception_plan,
+                                move,
+                                nucleus_index,
+                                resolver,
+                                allow_short_anchor=bool(
+                                    clause.quote_budget and not anchor_used
+                                ),
+                                recovery_stage=sentence_plan.recovery_stage,
+                                allow_anaphoric_topic=True,
+                            )
+                        except (
+                            GroundedHumanReceptionSurfaceError,
+                            AttributeError,
+                            KeyError,
+                            TypeError,
+                        ):
+                            failures.append(
+                                "body_inverse_reception_referent_unavailable:"
+                                f"{move_id}"
+                            )
+                            continue
+                        anchor_used = anchor_used or referent.source_anchor_used
+                        expected_referent_by_move[move_id] = referent
+                for clause, parsed_sentence in zip(
+                    clause_plans,
+                    parsed_sentences,
+                ):
+                    try:
+                        parsed_sentence_text = (
+                            _body_inverse_normalized_anchor(
+                                _body_inverse_visible_text(
+                                    body,
+                                    parsed_sentence,
+                                )
+                            )
+                        )
+                    except (UnicodeDecodeError, ValueError):
+                        failures.append(
+                            f"body_inverse_reception_sentence_bytes_invalid:{index}"
+                        )
+                        continue
+                    sentence_codes = set(
+                        parsed_sentence.reception_marker_codes
+                    )
+                    for move_id in clause.move_ids:
+                        move = move_index.get(move_id)
+                        if move is None or not move.required:
+                            continue
+                        target_nuclei = tuple(
+                            nucleus_index[nucleus_id]
+                            for nucleus_id in move.target_nucleus_ids
+                            if nucleus_id in nucleus_index
+                        )
+                        if any(
+                            _body_inverse_action_is_future_intention(nucleus)
+                            for nucleus in target_nuclei
+                        ):
+                            target_markers = frozenset({"target_intention"})
+                        else:
+                            target_markers = (
+                                _BODY_INVERSE_RECEPTION_ACT_TARGET_MARKERS.get(
+                                    move.reception_act,
+                                    frozenset(),
+                                )
+                            )
+                        if target_markers and not sentence_codes.intersection(
+                            target_markers
+                        ):
+                            failures.append(
+                                "body_inverse_reception_target_duty_missing:"
+                                f"{move.move_id}"
+                            )
+                        effective_reference_mode = (
+                            reception_effective_move_reference_mode(
+                                reception_plan,
+                                move,
+                                sentence_plan.recovery_stage,
+                            )
+                        )
+                        expected_referent = expected_referent_by_move.get(
+                            move.move_id
+                        )
+                        expected_referent_text = (
+                            _body_inverse_normalized_anchor(
+                                expected_referent.text
+                            )
+                            if expected_referent is not None
+                            else ""
+                        )
+                        if (
+                            not expected_referent_text
+                            or expected_referent_text
+                            not in parsed_sentence_text
+                        ):
+                            failures.append(
+                                "body_inverse_reception_target_referent_missing:"
+                                f"{move.move_id}"
+                            )
+                        target_values = tuple(
+                            source_value
+                            for nucleus_id in move.target_nucleus_ids
+                            for source_value in (
+                                _body_inverse_nucleus_source_values(
+                                    nucleus_id,
+                                    plan,
+                                    resolver,
+                                )
+                            )
+                        )
+                        if (
+                            effective_reference_mode == "anaphoric_first"
+                            and any(
+                                source_value in parsed_sentence_text
+                                for source_value in target_values
+                            )
+                        ):
+                            failures.append(
+                                "body_inverse_reception_anaphoric_target_replayed:"
+                                f"{move.move_id}"
+                            )
+                        if (
+                            move.move_role == "attention"
+                            and "attention" not in sentence_codes
+                        ):
+                            failures.append(
+                                "body_inverse_reception_attention_duty_missing:"
+                                f"{move.move_id}"
+                            )
+
+                        importance_codes = {
+                            "stay_with_current_burden": {"receive"},
+                            "honor_concrete_effort": {
+                                "receive",
+                                "felt_response",
+                            },
+                            "protect_retained_intention": {
+                                "receive",
+                                "felt_response",
+                            },
+                            "recognize_lived_change": {
+                                "receive",
+                                "felt_response",
+                            },
+                            "hold_help_seeking": {
+                                "receive",
+                                "felt_response",
+                            },
+                            "bounded_counter_self_denial": {"protect"},
+                            "respect_words_placed": {
+                                "receive",
+                                "felt_response",
+                            },
+                        }.get(move.reception_act, set())
+                        importance_missing = bool(
+                            importance_codes
+                            and not sentence_codes.intersection(
+                                importance_codes
+                            )
+                        )
+                        if (
+                            move.reception_act
+                            == "protect_retained_intention"
+                            and "protect" not in sentence_codes
+                        ):
+                            importance_missing = True
+
+                        context_ids = _body_inverse_reception_context_ids(
+                            move,
+                            plan,
+                        )
+                        context_values = tuple(
+                            source_value
+                            for nucleus_id in context_ids
+                            for source_value in (
+                                _body_inverse_nucleus_source_values(
+                                    nucleus_id,
+                                    plan,
+                                    resolver,
+                                )
+                            )
+                        )
+                        anaphoric_context = bool(
+                            context_values
+                            and effective_reference_mode
+                            == "anaphoric_first"
+                        )
+                        context_missing = bool(
+                            context_values
+                            and (
+                                (
+                                    anaphoric_context
+                                    and not any(
+                                        marker in parsed_sentence_text
+                                        for marker in ("中で", "中にも", "背景")
+                                    )
+                                )
+                                or (
+                                    not anaphoric_context
+                                    and not any(
+                                        source_value in parsed_sentence_text
+                                        for source_value in context_values
+                                    )
+                                )
+                            )
+                        )
+                        if anaphoric_context and any(
+                            source_value in parsed_sentence_text
+                            for source_value in context_values
+                        ):
+                            failures.append(
+                                "body_inverse_reception_anaphoric_context_replayed:"
+                                f"{move.move_id}"
+                            )
+                        if context_missing:
+                            failures.append(
+                                "body_inverse_reception_context_anchor_missing:"
+                                f"{move.move_id}"
+                            )
+                        if importance_missing or context_missing:
+                            failures.append(
+                                "body_inverse_reception_why_duty_missing:"
+                                f"{move.move_id}"
+                            )
+
+    failure_codes = _dedupe(failures)
+    return GroundedBodyInverseEvaluation(
+        passed=not failure_codes,
+        body_sha256=witness.body_sha256,
+        observation_line_count=len(observation_lines),
+        reception_line_count=len(reception_lines),
+        observation_sentence_count=witness.observation_sentence_count,
+        reception_sentence_count=witness.reception_sentence_count,
+        source_anchor_count=len(witness.quotes),
+        relation_marker_count=sum(
+            row.marker_kind == "relation" for row in witness.markers
+        ),
+        uncertainty_marker_count=sum(
+            row.marker_kind == "uncertainty" for row in witness.markers
+        ),
+        reception_marker_count=sum(
+            row.marker_kind == "reception" for row in witness.markers
+        ),
+        failure_codes=failure_codes,
+    )
+
+
+def _grounded_surface_body_projection_matches(
+    surface_result: GroundedSurfaceResult,
+) -> bool:
+    observation = "\n".join(
+        line.text
+        for line in surface_result.lines
+        if line.binding.line_role != "human_follow"
+    ).strip()
+    reception = "\n".join(
+        line.text
+        for line in surface_result.lines
+        if line.binding.line_role == "human_follow"
+    ).strip()
+    expected = (
+        f"{OBSERVATION_SECTION_LABEL}\n{observation}\n\n"
+        f"{RECEPTION_SECTION_LABEL}\n{reception}"
+    ).strip()
+    return surface_result.text.encode("utf-8") == expected.encode("utf-8")
+
+
+@dataclass(frozen=True)
 class GroundedObservationGateReport:
     schema_version: str
     generation_path: str
@@ -1616,11 +2584,15 @@ def evaluate_grounded_observation_gate(
     surface_result: GroundedSurfaceResult,
     resolver: EvidenceSpanResolver,
     product_readfeel_status: ProductReadfeelStatus = "not_evaluated",
+    require_body_inverse: bool = False,
 ) -> GroundedObservationGateReport:
     """Evaluate I5 plan/coverage/evidence/template/depth gates.
 
     Product Read Feel is an external human result.  A delivery pass therefore
     remains ``not_evaluated`` unless an explicit human result is supplied.
+    The stronger body-only inverse is opt-in so the existing production I5
+    route remains byte-for-byte and decision-for-decision unchanged; the CMEE
+    candidate path enables it explicitly before selection.
     """
 
     if product_readfeel_status not in {"not_evaluated", "human_pass", "human_fail"}:
@@ -1647,6 +2619,23 @@ def evaluate_grounded_observation_gate(
         )
     except (AttributeError, KeyError, TypeError, ValueError):
         surface_issues = ("grounded_surface_validation_contract_invalid",)
+    body_inverse_reasons: tuple[str, ...] = ()
+    if require_body_inverse and surface_result.status == "generated":
+        try:
+            body_inverse = evaluate_grounded_surface_body_inverse(
+                body=surface_result.text.encode("utf-8"),
+                plan=plan,
+                sentence_plan=sentence_plan,
+                resolver=resolver,
+            )
+        except (AttributeError, KeyError, TypeError, UnicodeError, ValueError):
+            body_inverse_reasons = ("body_inverse_evaluation_contract_invalid",)
+        else:
+            body_inverse_reasons = body_inverse.failure_codes
+        if not _grounded_surface_body_projection_matches(surface_result):
+            body_inverse_reasons = _dedupe(
+                (*body_inverse_reasons, "body_inverse_surface_projection_mismatch")
+            )
     semantic_subcheck_reasons, anti_template_reasons, depth_reasons = _semantic_subcheck_reasons(
         plan=plan,
         sentence_plan=sentence_plan,
@@ -1721,7 +2710,7 @@ def evaluate_grounded_observation_gate(
             and required_nuclei <= bound_nuclei
             and required_relations <= bound_relations
         )
-    ) and not semantic_subcheck_reasons
+    ) and not semantic_subcheck_reasons and not body_inverse_reasons
 
     anti_template = bool(
         not plan.surface_policy.completed_semantic_template_allowed
@@ -1816,7 +2805,10 @@ def evaluate_grounded_observation_gate(
     if not required_coverage:
         reasons.append("grounded_required_coverage_failed")
     if not text_semantic_retained:
-        reasons.extend(semantic_subcheck_reasons or ("grounded_text_semantic_retention_failed",))
+        reasons.extend(
+            (*semantic_subcheck_reasons, *body_inverse_reasons)
+            or ("grounded_text_semantic_retention_failed",)
+        )
     if not anti_template:
         reasons.extend(anti_template_reasons or ("grounded_anti_template_failed",))
     if mechanical_restatement_detected:
@@ -1980,7 +2972,9 @@ __all__ = [
     "GROUND_OBSERVATION_GATE_SCHEMA_VERSION",
     "GROUND_OBSERVATION_REPLY_GENERATION_PATH",
     "RECEPTION_GATE_REPORT_FIELDS",
+    "GroundedBodyInverseEvaluation",
     "GroundedObservationGateReport",
     "grounded_gate_meta_is_body_free",
+    "evaluate_grounded_surface_body_inverse",
     "evaluate_grounded_observation_gate",
 ]

@@ -35,7 +35,7 @@ CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1 = (
 CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2 = (
     "cocolon.cmee.v1a.emlis_stage1_response.v2"
 )
-CMEE_STAGE1_RESPONSE_SCHEMA_VERSION = CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+CMEE_STAGE1_RESPONSE_SCHEMA_VERSION = CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
 CMEE_STAGE1_MEANING_BOUND_SUBJECTIVE_PROJECTION_SCHEMA_VERSION = (
     "cocolon.cmee.v1a.emlis_meaning_bound_subjective_projection.v1"
 )
@@ -49,7 +49,7 @@ CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V2 = (
     "cocolon.cmee.v1a.emlis_stage1_positive_trace_extension.v2"
 )
 CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION = (
-    CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V1
+    CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V2
 )
 CMEE_STAGE1_IDENTITY_ALGORITHM = (
     "cocolon.cmee.identity.typed_canonical_json_sha256.v1"
@@ -60,10 +60,10 @@ CMEE_STAGE1_EMLIS_OWNER_REF_V1 = (
 CMEE_STAGE1_EMLIS_OWNER_REF_V2 = (
     "owner:emlis@cocolon.cmee.v1a.emlis_stage1_response.v2"
 )
-CMEE_STAGE1_EMLIS_OWNER_REF = CMEE_STAGE1_EMLIS_OWNER_REF_V1
-# Step 1 freezes the final v2 identity values without relabelling the callable
-# v1 response route.  The active constants above, the v1 realizer registry and
-# the runner move together only at the atomic cutover owned by Step 5.
+CMEE_STAGE1_EMLIS_OWNER_REF = CMEE_STAGE1_EMLIS_OWNER_REF_V2
+# Step 1 froze the final v2 identity values before activation.  Step 5 moves
+# the active schema, trace specialization and Emlis owner together so callers
+# can never observe a cross-version response contract.
 CMEE_STAGE1_FINAL_LOGICAL_ID_REGISTRY = (
     (
         "CMEE_STAGE1_RESPONSE_SCHEMA_VERSION",
@@ -310,6 +310,9 @@ class InterpretationKind(str, Enum):
     RESIDUE_AFTER_EVENT = "RESIDUE_AFTER_EVENT"
     SOURCE_STATED_CAUSE = "SOURCE_STATED_CAUSE"
     UNFINISHED = "UNFINISHED"
+    ACTION_BEFORE_AFTER = "ACTION_BEFORE_AFTER"
+    BOUNDED_SOURCE_ORDER = "BOUNDED_SOURCE_ORDER"
+    SOURCE_STATED_TRANSITION = "SOURCE_STATED_TRANSITION"
 
 
 class RelationOperator(str, Enum):
@@ -4829,7 +4832,7 @@ CMEE_READING_CONSEQUENCE_REQUIREMENT_CODES_EXACT4 = (
     "VISIBLE_CAUSAL_TRACE_REQUIRED",
 )
 _CANONICAL_TYPED_KEY_RE = re.compile(
-    r"^[A-Za-z][A-Za-z0-9_-]*:[A-Za-z0-9][A-Za-z0-9._/@|=+\-]*$"
+    r"^[A-Za-z][A-Za-z0-9_-]*:[A-Za-z0-9][A-Za-z0-9._/@|=+:\-]*$"
 )
 _FOREGROUND_SCOPE_TUPLE_FIELDS = (
     "scope_object_refs",
@@ -4880,6 +4883,7 @@ _QUALIFIER_PREFIXES = (
             "polarity",
             "modality",
             "time_scope",
+            "qualifier",
         )
     ),
 )
@@ -4985,6 +4989,109 @@ def _graph_object_ref(row: object) -> str:
     if type(row) is MeaningEdge:
         return f"edge:{row.edge_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
     raise CMEEStage1ContractError("foreground_scope_graph_object_type_invalid")
+
+
+def stage1_source_explicit_target_topic_scope_refs(
+    grounded_graph: GroundedMeaningGraph,
+) -> Tuple[str, ...]:
+    """Resolve the graph-only foreground objects required before IM03.
+
+    This is deliberately independent of Foreground Scope, IM03, Reception,
+    candidate order, and surface state.  It is the canonical source-side
+    predicate shared by the premeaning builder and its contract replay.
+    """
+
+    if type(grounded_graph) is not GroundedMeaningGraph:
+        raise CMEEStage1ContractError(
+            "stage1_foreground_required_graph_invalid"
+        )
+    required_owner_ids = set(grounded_graph.required_owner_refs)
+    required_visible_claim_ids = {
+        claim_id
+        for disposition in grounded_graph.owner_dispositions
+        if disposition.meaning_owner_id in required_owner_ids
+        and disposition.owner_class is OwnerClass.REQUIRED
+        and disposition.visible_authority is VisibleAuthority.SOURCE_EXPLICIT
+        and disposition.source_owner_disposition
+        is SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
+        for claim_id in disposition.visible_claim_refs
+    }
+    return tuple(
+        sorted(
+            {
+                _graph_object_ref(node)
+                for node in grounded_graph.nodes
+                if node.owner_id in required_owner_ids
+                and node.node_id in required_visible_claim_ids
+                and node.epistemic_state is EpistemicState.SOURCE_EXPLICIT
+                and not (
+                    node.node_kind == "other_explicit"
+                    and node.grounding_kind == "user_stated_relation"
+                )
+            }
+        )
+    )
+
+
+def stage1_foreground_coverage_required_flags(
+    *,
+    candidate_semantic_refs: Sequence[Tuple[str, ...]],
+    source_required_flags: Sequence[bool],
+    relation_flags: Sequence[bool],
+    foreground_object_refs: Sequence[str],
+) -> Tuple[bool, ...]:
+    """Promote only exact direct rows needed for source foreground cover."""
+
+    semantic_rows = tuple(candidate_semantic_refs)
+    required = tuple(source_required_flags)
+    relations = tuple(relation_flags)
+    foreground = tuple(foreground_object_refs)
+    if (
+        not semantic_rows
+        or len(semantic_rows) != len(required)
+        or len(semantic_rows) != len(relations)
+        or any(type(value) is not tuple or not value for value in semantic_rows)
+        or any(
+            type(ref) is not str or not ref
+            for values in semantic_rows
+            for ref in values
+        )
+        or any(type(value) is not bool for value in (*required, *relations))
+        or any(type(ref) is not str or not ref for ref in foreground)
+        or len(foreground) != len(set(foreground))
+        or foreground != tuple(sorted(foreground))
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_foreground_coverage_input_invalid"
+        )
+    effective = list(required)
+    covered = {
+        ref
+        for values, is_required in zip(semantic_rows, required, strict=True)
+        if is_required
+        for ref in values
+    }
+    for foreground_ref in foreground:
+        if foreground_ref in covered:
+            continue
+        direct_indices = tuple(
+            index
+            for index, (values, is_relation) in enumerate(
+                zip(semantic_rows, relations, strict=True)
+            )
+            if not is_relation and values == (foreground_ref,)
+        )
+        if len(direct_indices) != 1:
+            raise CMEEStage1ContractError(
+                "stage1_required_observation_unrealizable"
+            )
+        effective[direct_indices[0]] = True
+        covered.add(foreground_ref)
+    if any(ref not in covered for ref in foreground):
+        raise CMEEStage1ContractError(
+            "stage1_required_observation_unrealizable"
+        )
+    return tuple(effective)
 
 
 def _graph_evidence_refs(row: object, *, source_version: str) -> Tuple[str, ...]:
@@ -5802,6 +5909,7 @@ def _foreground_source_qualifiers_by_node_ref(
     grounded_plan: object,
     grounded_graph: GroundedMeaningGraph,
     parent_plan: ExperiencePlan,
+    stage1_response_schema_version: str = CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
 ) -> Mapping[str, Tuple[str, ...]]:
     """Bind source semantic frames to graph nodes without importing owners.
 
@@ -5812,6 +5920,13 @@ def _foreground_source_qualifiers_by_node_ref(
     reach one graph node.
     """
 
+    if stage1_response_schema_version not in {
+        CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1,
+        CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
+    }:
+        raise CMEEStage1ContractError(
+            "stage1_response_schema_version_invalid"
+        )
     _validate_foreground_canonical_source_inputs(
         source=source,
         grounded_plan=grounded_plan,
@@ -5860,6 +5975,11 @@ def _foreground_source_qualifiers_by_node_ref(
 
     node_qualifiers: dict[str, Tuple[str, ...]] = {}
     used_node_ids: set[str] = set()
+    shift_endpoint_node_ids = (
+        project_stage1_source_explicit_shift_endpoint_node_ids(
+            grounded_graph
+        )
+    )
     for nucleus in nuclei:
         grounding = _foreground_enum_text(
             getattr(nucleus, "grounding_kind", "")
@@ -5937,6 +6057,17 @@ def _foreground_source_qualifiers_by_node_ref(
             f"polarity:{polarity}",
             f"modality:{modality}",
             f"time_scope:{time_scope}",
+            *project_stage1_source_contract_qualifiers(
+                source_attribute_codes=tuple(
+                    getattr(frame, "attribute_codes", ())
+                ),
+                source_explicit_shift_relation_endpoint=(
+                    node.node_id in shift_endpoint_node_ids
+                ),
+                stage1_response_schema_version=(
+                    stage1_response_schema_version
+                ),
+            ),
         )
 
     if not node_qualifiers:
@@ -5955,6 +6086,13 @@ def _foreground_candidate_required_qualifiers(
         value
         for value in source_qualifiers
         if not value.startswith(("world:", "aspect:"))
+        and value
+        not in {
+            "qualifier:"
+            + _STAGE1_DIRECTION_UNDER_BURDEN_DIRECTION_ATTRIBUTE_CODE,
+            "qualifier:"
+            + _STAGE1_DIRECTION_UNDER_BURDEN_BURDEN_ATTRIBUTE_CODE,
+        }
     )
 
 
@@ -6147,13 +6285,24 @@ def _foreground_direct_argument_bindings(
     return tuple(values)
 
 
-def _foreground_relation_shape(
+def project_stage1_relation_shape(
     *,
-    edge: MeaningEdge,
-    relation: object,
-    node_by_ref: Mapping[str, MeaningNode],
-    node_meta_by_ref: Mapping[str, object],
-    source_order_by_ref: Mapping[str, int],
+    relation_kind: str,
+    source_ref: str,
+    target_ref: str,
+    source_node_kind: str,
+    target_node_kind: str,
+    source_direct_shape: Tuple[InterpretationKind, SemanticOperator],
+    target_direct_shape: Tuple[InterpretationKind, SemanticOperator],
+    source_time_scope: str,
+    target_time_scope: str,
+    source_attribute_codes: Sequence[str],
+    target_attribute_codes: Sequence[str],
+    source_order: Optional[int],
+    target_order: Optional[int],
+    edge_grounding_kind: str,
+    edge_epistemic_state: EpistemicState,
+    edge_evidence_ids: Sequence[str],
     stage1_response_schema_version: str,
 ) -> Optional[
     Tuple[
@@ -6163,21 +6312,60 @@ def _foreground_relation_shape(
         Tuple[ArgumentBinding, ...],
     ]
 ]:
-    source_ref = _stage1_node_ref(edge.source_node_id)
-    target_ref = _stage1_node_ref(edge.target_node_id)
-    source_node = node_by_ref[source_ref]
-    target_node = node_by_ref[target_ref]
-    source_shape = _foreground_direct_shape(
-        source_node,
-        node_meta_by_ref[source_ref],
-        stage1_response_schema_version=stage1_response_schema_version,
+    """Project one normalized, source-bound edge through the finite matrix."""
+
+    if stage1_response_schema_version not in {
+        CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1,
+        CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
+    }:
+        raise CMEEStage1ContractError("stage1_response_schema_version_invalid")
+    relation_kind = _foreground_enum_text(relation_kind).lower()
+    source_node_kind = _foreground_enum_text(source_node_kind).lower()
+    target_node_kind = _foreground_enum_text(target_node_kind).lower()
+    source_time_scope = _foreground_enum_text(source_time_scope).lower()
+    target_time_scope = _foreground_enum_text(target_time_scope).lower()
+    _stage1_direction_under_burden_endpoint_attribute_code(
+        source_attribute_codes
     )
-    target_shape = _foreground_direct_shape(
-        target_node,
-        node_meta_by_ref[target_ref],
-        stage1_response_schema_version=stage1_response_schema_version,
+    _stage1_direction_under_burden_endpoint_attribute_code(
+        target_attribute_codes
     )
-    relation_kind = _foreground_enum_text(getattr(relation, "type", ""))
+    if relation_kind in {
+        "wish_and_constraint",
+        "preserves_despite",
+        "attempt_and_block",
+        "continuation_or_refusal",
+    }:
+        _stage1_direction_under_burden_endpoint_pair(
+            source_attribute_codes,
+            target_attribute_codes,
+        )
+    source_codes = frozenset(
+        _foreground_enum_text(value)
+        for value in source_attribute_codes
+        if _foreground_enum_text(value)
+    )
+    target_codes = frozenset(
+        _foreground_enum_text(value)
+        for value in target_attribute_codes
+        if _foreground_enum_text(value)
+    )
+    source_explicit_edge = bool(
+        edge_epistemic_state is EpistemicState.SOURCE_EXPLICIT
+        and _foreground_enum_text(edge_grounding_kind).lower()
+        == "user_stated_relation"
+        and type(edge_evidence_ids) is tuple
+        and bool(edge_evidence_ids)
+        and len(edge_evidence_ids) == len(set(edge_evidence_ids))
+    )
+    canonical_order = bool(
+        type(source_order) is int
+        and type(target_order) is int
+        and source_order != target_order
+    )
+    source_precedes_target = bool(
+        canonical_order and source_order < target_order
+    )
 
     def symmetric(
         candidate_kind: InterpretationKind,
@@ -6188,27 +6376,20 @@ def _foreground_relation_shape(
         RelationOperator,
         Tuple[ArgumentBinding, ...],
     ]:
-        ordered_refs = tuple(
-            sorted(
-                (source_ref, target_ref),
-                key=source_order_by_ref.__getitem__,
-            )
+        if not canonical_order:
+            raise CMEEStage1ContractError("stage1_relation_direction_invalid")
+        left_ref, right_ref = (
+            (source_ref, target_ref)
+            if source_order < target_order
+            else (target_ref, source_ref)
         )
-        if (
-            len(ordered_refs) != 2
-            or source_order_by_ref[source_ref]
-            == source_order_by_ref[target_ref]
-        ):
-            raise CMEEStage1ContractError(
-                "foreground_scope_meaning_projection_noncanonical"
-            )
         return (
             candidate_kind,
             SemanticOperator.SYNTHESIZE_RELATION,
             relation_operator,
             (
-                ArgumentBinding(ArgumentRole.LEFT, ordered_refs[0]),
-                ArgumentBinding(ArgumentRole.RIGHT, ordered_refs[1]),
+                ArgumentBinding(ArgumentRole.LEFT, left_ref),
+                ArgumentBinding(ArgumentRole.RIGHT, right_ref),
             ),
         )
 
@@ -6222,6 +6403,22 @@ def _foreground_relation_shape(
             InterpretationKind.TENSION,
             RelationOperator.TENSION_WITH,
         )
+    if (
+        relation_kind == "uncertain_connection"
+        and stage1_response_schema_version
+        == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+        and source_explicit_edge
+        and source_precedes_target
+    ):
+        return (
+            InterpretationKind.BOUNDED_SOURCE_ORDER,
+            SemanticOperator.PRESENT_UNFINISHED,
+            RelationOperator.NO_RELATION_CLAIM,
+            (
+                ArgumentBinding(ArgumentRole.BEFORE, source_ref),
+                ArgumentBinding(ArgumentRole.AFTER, target_ref),
+            ),
+        )
     if relation_kind in {
         "wish_and_constraint",
         "preserves_despite",
@@ -6230,23 +6427,58 @@ def _foreground_relation_shape(
     }:
         direction_ref: Optional[str] = None
         burden_ref: Optional[str] = None
+        source_is_direction = bool(
+            source_direct_shape[0] is InterpretationKind.DIRECT_DIRECTION
+            or "semantic_role:direction_under_burden_direction"
+            in source_codes
+        )
+        target_is_direction = bool(
+            target_direct_shape[0] is InterpretationKind.DIRECT_DIRECTION
+            or "semantic_role:direction_under_burden_direction"
+            in target_codes
+        )
+        source_is_burden = bool(
+            source_direct_shape[1] is SemanticOperator.PRESENT_BURDEN
+            or "semantic_role:direction_under_burden_burden" in source_codes
+        )
+        target_is_burden = bool(
+            target_direct_shape[1] is SemanticOperator.PRESENT_BURDEN
+            or "semantic_role:direction_under_burden_burden" in target_codes
+        )
         if (
-            source_shape[0] is InterpretationKind.DIRECT_DIRECTION
-            and target_shape[1] is SemanticOperator.PRESENT_BURDEN
+            source_is_direction
+            and target_is_burden
+            and not source_is_burden
+            and not target_is_direction
         ):
             direction_ref, burden_ref = source_ref, target_ref
         elif (
-            source_shape[1] is SemanticOperator.PRESENT_BURDEN
-            and target_shape[0] is InterpretationKind.DIRECT_DIRECTION
+            source_is_burden
+            and target_is_direction
+            and not source_is_direction
+            and not target_is_burden
         ):
             direction_ref, burden_ref = target_ref, source_ref
-        if direction_ref is None or burden_ref is None:
-            return None
         operator = (
             RelationOperator.COEXISTS_WITH
             if relation_kind == "wish_and_constraint"
             else RelationOperator.TENSION_WITH
         )
+        if direction_ref is None or burden_ref is None:
+            if (
+                stage1_response_schema_version
+                != CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+                or not source_explicit_edge
+            ):
+                return None
+            return symmetric(
+                (
+                    InterpretationKind.COEXISTENCE
+                    if relation_kind == "wish_and_constraint"
+                    else InterpretationKind.TENSION
+                ),
+                operator,
+            )
         return (
             InterpretationKind.DIRECTION_UNDER_BURDEN,
             SemanticOperator.SYNTHESIZE_RELATION,
@@ -6258,8 +6490,8 @@ def _foreground_relation_shape(
         )
     if relation_kind == "action_supports_change":
         if (
-            source_node.node_kind.lower() not in _FOREGROUND_ACTION_KINDS
-            or target_node.node_kind.lower() not in _FOREGROUND_CHANGE_KINDS
+            source_node_kind not in _FOREGROUND_ACTION_KINDS
+            or target_node_kind not in _FOREGROUND_CHANGE_KINDS
         ):
             return None
         return (
@@ -6271,10 +6503,73 @@ def _foreground_relation_shape(
                 ArgumentBinding(ArgumentRole.CHANGE, target_ref),
             ),
         )
-    if relation_kind in {"temporal_before_after", "shift_from_to"}:
+    if relation_kind == "shift_from_to":
         if (
-            source_node.node_kind.lower() not in _FOREGROUND_EVENT_KINDS
-            or target_node.node_kind.lower() not in _FOREGROUND_RESIDUE_KINDS
+            stage1_response_schema_version
+            == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+        ):
+            if (
+                source_node_kind not in _FOREGROUND_EVENT_KINDS
+                or target_node_kind not in _FOREGROUND_RESIDUE_KINDS
+            ):
+                return None
+            return (
+                InterpretationKind.RESIDUE_AFTER_EVENT,
+                SemanticOperator.PRESENT_RESIDUE,
+                RelationOperator.TEMPORALLY_PRECEDES,
+                (
+                    ArgumentBinding(ArgumentRole.BEFORE, source_ref),
+                    ArgumentBinding(ArgumentRole.AFTER, target_ref),
+                ),
+            )
+        action_pair = bool(
+            source_node_kind in _FOREGROUND_ACTION_KINDS
+            and target_node_kind in _FOREGROUND_ACTION_KINDS
+        )
+        if action_pair:
+            if (
+                stage1_response_schema_version
+                == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+                and source_explicit_edge
+                and source_precedes_target
+                and source_time_scope == "past"
+                and target_time_scope in {"present", "current_input"}
+                and "operator:shift" in source_codes
+                and "operator:shift" in target_codes
+            ):
+                return (
+                    InterpretationKind.ACTION_BEFORE_AFTER,
+                    SemanticOperator.PRESENT_ACTUAL_OUTPUT,
+                    RelationOperator.TEMPORALLY_PRECEDES,
+                    (
+                        ArgumentBinding(ArgumentRole.BEFORE, source_ref),
+                        ArgumentBinding(ArgumentRole.AFTER, target_ref),
+                    ),
+                )
+            return None
+        if (
+            stage1_response_schema_version
+            == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+            and source_explicit_edge
+            and source_precedes_target
+            and source_time_scope == "past"
+            and target_time_scope in {"present", "current_input"}
+            and "operator:shift" in source_codes
+        ):
+            return (
+                InterpretationKind.SOURCE_STATED_TRANSITION,
+                SemanticOperator.PRESENT_CHANGE,
+                RelationOperator.TEMPORALLY_PRECEDES,
+                (
+                    ArgumentBinding(ArgumentRole.BEFORE, source_ref),
+                    ArgumentBinding(ArgumentRole.AFTER, target_ref),
+                ),
+            )
+        return None
+    if relation_kind == "temporal_before_after":
+        if (
+            source_node_kind not in _FOREGROUND_EVENT_KINDS
+            or target_node_kind not in _FOREGROUND_RESIDUE_KINDS
         ):
             return None
         return (
@@ -6297,6 +6592,444 @@ def _foreground_relation_shape(
             ),
         )
     return None
+
+
+_STAGE1_ACTION_BEFORE_AFTER_SOURCE_CONTRACT_QUALIFIERS = (
+    "before_qualifier:operator:shift",
+    "after_qualifier:operator:shift",
+)
+_STAGE1_SOURCE_STATED_TRANSITION_SOURCE_CONTRACT_QUALIFIERS = (
+    "before_qualifier:operator:shift",
+)
+_STAGE1_DIRECTION_UNDER_BURDEN_DIRECTION_ATTRIBUTE_CODE = (
+    "semantic_role:direction_under_burden_direction"
+)
+_STAGE1_DIRECTION_UNDER_BURDEN_BURDEN_ATTRIBUTE_CODE = (
+    "semantic_role:direction_under_burden_burden"
+)
+_STAGE1_DIRECTION_UNDER_BURDEN_SOURCE_CONTRACT_QUALIFIERS = (
+    "left_qualifier:semantic_role:direction_under_burden_direction",
+    "right_qualifier:semantic_role:direction_under_burden_burden",
+)
+_STAGE1_DIRECTION_UNDER_BURDEN_ATTRIBUTE_NAMESPACE = (
+    "semantic_role:direction_under_burden_"
+)
+_STAGE1_DIRECTION_UNDER_BURDEN_ATTRIBUTE_CODES = (
+    _STAGE1_DIRECTION_UNDER_BURDEN_DIRECTION_ATTRIBUTE_CODE,
+    _STAGE1_DIRECTION_UNDER_BURDEN_BURDEN_ATTRIBUTE_CODE,
+)
+
+
+def _stage1_direction_under_burden_endpoint_attribute_code(
+    attribute_codes: Sequence[str],
+) -> Optional[str]:
+    """Validate one raw endpoint before any set-based normalization."""
+
+    normalized = tuple(
+        _foreground_enum_text(value)
+        for value in attribute_codes
+        if _foreground_enum_text(value)
+    )
+    namespace_values = tuple(
+        value
+        for value in normalized
+        if value.startswith(
+            _STAGE1_DIRECTION_UNDER_BURDEN_ATTRIBUTE_NAMESPACE
+        )
+    )
+    if not namespace_values:
+        return None
+    if (
+        len(namespace_values) != 1
+        or namespace_values[0]
+        not in _STAGE1_DIRECTION_UNDER_BURDEN_ATTRIBUTE_CODES
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_direction_under_burden_source_contract_invalid"
+        )
+    return namespace_values[0]
+
+
+def _stage1_direction_under_burden_endpoint_pair(
+    source_attribute_codes: Sequence[str],
+    target_attribute_codes: Sequence[str],
+) -> Tuple[str, ...]:
+    """Admit either legacy marker-free endpoints or one complementary pair."""
+
+    source_marker = (
+        _stage1_direction_under_burden_endpoint_attribute_code(
+            source_attribute_codes
+        )
+    )
+    target_marker = (
+        _stage1_direction_under_burden_endpoint_attribute_code(
+            target_attribute_codes
+        )
+    )
+    if source_marker is None and target_marker is None:
+        return ()
+    if (
+        source_marker is None
+        or target_marker is None
+        or source_marker == target_marker
+        or {source_marker, target_marker}
+        != set(_STAGE1_DIRECTION_UNDER_BURDEN_ATTRIBUTE_CODES)
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_direction_under_burden_source_contract_invalid"
+        )
+    return source_marker, target_marker
+
+
+def project_stage1_source_contract_qualifiers(
+    *,
+    source_attribute_codes: Sequence[str],
+    source_explicit_shift_relation_endpoint: bool,
+    stage1_response_schema_version: str,
+) -> Tuple[str, ...]:
+    """Project finite source-bound V2 qualifiers admitted by Stage 1."""
+
+    if (
+        stage1_response_schema_version
+        == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+    ):
+        return ()
+    if (
+        stage1_response_schema_version
+        != CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+        or type(source_explicit_shift_relation_endpoint) is not bool
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_response_schema_version_invalid"
+        )
+    direction_under_burden_code = (
+        _stage1_direction_under_burden_endpoint_attribute_code(
+            source_attribute_codes
+        )
+    )
+    source_codes = {
+        _foreground_enum_text(value)
+        for value in source_attribute_codes
+        if _foreground_enum_text(value)
+    }
+    return (
+        *(
+            ("qualifier:operator:shift",)
+            if source_explicit_shift_relation_endpoint
+            and "operator:shift" in source_codes
+            else ()
+        ),
+        *(
+            (f"qualifier:{direction_under_burden_code}",)
+            if direction_under_burden_code is not None
+            else ()
+        ),
+    )
+
+
+def project_stage1_source_explicit_shift_endpoint_node_ids(
+    grounded_graph: GroundedMeaningGraph,
+) -> frozenset[str]:
+    """Resolve only source-explicit ``shift_from_to`` graph endpoints."""
+
+    if type(grounded_graph) is not GroundedMeaningGraph:
+        raise CMEEStage1ContractError(
+            "stage1_source_contract_graph_invalid"
+        )
+    return frozenset(
+        node_id
+        for edge in grounded_graph.edges
+        if _foreground_enum_text(edge.relation).lower() == "shift_from_to"
+        and _foreground_enum_text(edge.grounding_kind).lower()
+        == "user_stated_relation"
+        and edge.epistemic_state is EpistemicState.SOURCE_EXPLICIT
+        and type(edge.evidence_ids) is tuple
+        and bool(edge.evidence_ids)
+        and len(edge.evidence_ids) == len(set(edge.evidence_ids))
+        for node_id in (edge.source_node_id, edge.target_node_id)
+    )
+
+
+def _stage1_relation_expected_source_contract_qualifiers(
+    candidate_kind: InterpretationKind,
+    *,
+    stage1_response_schema_version: str,
+) -> Tuple[str, ...]:
+    if (
+        stage1_response_schema_version
+        == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+    ):
+        return ()
+    if (
+        stage1_response_schema_version
+        != CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_response_schema_version_invalid"
+        )
+    if candidate_kind is InterpretationKind.ACTION_BEFORE_AFTER:
+        return _STAGE1_ACTION_BEFORE_AFTER_SOURCE_CONTRACT_QUALIFIERS
+    if candidate_kind is InterpretationKind.SOURCE_STATED_TRANSITION:
+        return (
+            _STAGE1_SOURCE_STATED_TRANSITION_SOURCE_CONTRACT_QUALIFIERS
+        )
+    return ()
+
+
+def project_stage1_relation_source_contract_qualifiers(
+    *,
+    candidate_kind: InterpretationKind,
+    source_attribute_codes: Sequence[str],
+    target_attribute_codes: Sequence[str],
+    stage1_response_schema_version: str,
+) -> Tuple[str, ...]:
+    """Seal finite V2 endpoint markers used by the relation matrix owner."""
+
+    if (
+        stage1_response_schema_version
+        == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+    ):
+        return ()
+    if (
+        stage1_response_schema_version
+        != CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_response_schema_version_invalid"
+        )
+    if candidate_kind is InterpretationKind.DIRECTION_UNDER_BURDEN:
+        endpoint_pair = _stage1_direction_under_burden_endpoint_pair(
+            source_attribute_codes,
+            target_attribute_codes,
+        )
+        if not endpoint_pair:
+            return ()
+        sealed = (
+            *(
+                _STAGE1_DIRECTION_UNDER_BURDEN_SOURCE_CONTRACT_QUALIFIERS[
+                    0
+                    if value
+                    == _STAGE1_DIRECTION_UNDER_BURDEN_DIRECTION_ATTRIBUTE_CODE
+                    else 1
+                ]
+                for value in endpoint_pair
+            ),
+        )
+        if frozenset(sealed) != frozenset(
+            _STAGE1_DIRECTION_UNDER_BURDEN_SOURCE_CONTRACT_QUALIFIERS
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_relation_source_contract_seal_invalid"
+            )
+        return sealed
+    expected = _stage1_relation_expected_source_contract_qualifiers(
+        candidate_kind,
+        stage1_response_schema_version=stage1_response_schema_version,
+    )
+    if not expected:
+        return ()
+    source_qualifiers = project_stage1_source_contract_qualifiers(
+        source_attribute_codes=source_attribute_codes,
+        source_explicit_shift_relation_endpoint=True,
+        stage1_response_schema_version=stage1_response_schema_version,
+    )
+    target_qualifiers = project_stage1_source_contract_qualifiers(
+        source_attribute_codes=target_attribute_codes,
+        source_explicit_shift_relation_endpoint=True,
+        stage1_response_schema_version=stage1_response_schema_version,
+    )
+    if "qualifier:operator:shift" not in source_qualifiers or (
+        candidate_kind is InterpretationKind.ACTION_BEFORE_AFTER
+        and "qualifier:operator:shift" not in target_qualifiers
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_relation_source_contract_seal_invalid"
+        )
+    return expected
+
+
+_STAGE1_ROLE_SOURCE_CONTRACT_PREFIXES = tuple(
+    f"{role.value.lower()}_qualifier:" for role in ArgumentRole
+)
+
+
+def _stage1_relation_role_source_contract_values(
+    qualifiers: Sequence[str],
+) -> Tuple[str, ...]:
+    return tuple(
+        value
+        for value in qualifiers
+        if value.startswith(_STAGE1_ROLE_SOURCE_CONTRACT_PREFIXES)
+    )
+
+
+def _stage1_relation_binding_direct_source_contract_qualifiers(
+    candidate: EmlisInterpretationCandidate,
+    binding: ArgumentBinding,
+) -> Tuple[str, ...]:
+    """Project one relation role marker into its direct endpoint namespace."""
+
+    prefix = f"{binding.role.value.lower()}_qualifier:"
+    return tuple(
+        f"qualifier:{value[len(prefix):]}"
+        for value in candidate.required_qualifiers
+        if value.startswith(prefix) and value[len(prefix):]
+    )
+
+
+def _stage1_direct_source_contract_qualifiers(
+    candidate: EmlisInterpretationCandidate,
+) -> Tuple[str, ...]:
+    """Return only finite source-contract qualifiers from one direct row."""
+
+    return tuple(
+        value
+        for value in candidate.required_qualifiers
+        if value.startswith("qualifier:")
+    )
+
+
+def _stage1_direct_support_twin_signature(
+    candidate: EmlisInterpretationCandidate,
+) -> EmlisInterpretationCandidate:
+    """Remove only identity and finite source-contract values for twin checks."""
+
+    return replace(
+        candidate,
+        candidate_id="",
+        required_qualifiers=tuple(
+            value
+            for value in candidate.required_qualifiers
+            if not value.startswith("qualifier:")
+        ),
+    )
+
+
+def project_stage1_relation_required_qualifiers(
+    *,
+    candidate_kind: InterpretationKind,
+    role_qualified_values: Sequence[str],
+    source_attribute_codes: Sequence[str],
+    target_attribute_codes: Sequence[str],
+    stage1_response_schema_version: str,
+) -> Tuple[str, ...]:
+    """Bind relation-role seals to source-projected direct qualifiers."""
+
+    expected = project_stage1_relation_source_contract_qualifiers(
+        candidate_kind=candidate_kind,
+        source_attribute_codes=source_attribute_codes,
+        target_attribute_codes=target_attribute_codes,
+        stage1_response_schema_version=stage1_response_schema_version,
+    )
+    supplied_source_contract = tuple(
+        value
+        for value in _stage1_relation_role_source_contract_values(
+            role_qualified_values
+        )
+        if "_qualifier:semantic_role:" in value
+    )
+    if candidate_kind is InterpretationKind.DIRECTION_UNDER_BURDEN:
+        if supplied_source_contract and (
+            len(supplied_source_contract) != 2
+            or len(set(supplied_source_contract)) != 2
+            or frozenset(supplied_source_contract) != frozenset(expected)
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_relation_source_contract_seal_invalid"
+            )
+        role_qualified_values = (
+            *(
+                value
+                for value in role_qualified_values
+                if value not in supplied_source_contract
+            ),
+            *expected,
+        )
+    retained = tuple(
+        value
+        for value in role_qualified_values
+        if not value.startswith(_STAGE1_ROLE_SOURCE_CONTRACT_PREFIXES)
+        or value in expected
+    )
+    if _stage1_relation_role_source_contract_values(retained) != expected:
+        raise CMEEStage1ContractError(
+            "stage1_relation_source_contract_seal_invalid"
+        )
+    return retained
+
+
+def _foreground_relation_shape(
+    *,
+    edge: MeaningEdge,
+    relation: object,
+    node_by_ref: Mapping[str, MeaningNode],
+    node_meta_by_ref: Mapping[str, object],
+    source_order_by_ref: Mapping[str, int],
+    stage1_response_schema_version: str,
+) -> Optional[
+    Tuple[
+        InterpretationKind,
+        SemanticOperator,
+        RelationOperator,
+        Tuple[ArgumentBinding, ...],
+    ]
+]:
+    source_ref = _stage1_node_ref(edge.source_node_id)
+    target_ref = _stage1_node_ref(edge.target_node_id)
+    source_node = node_by_ref[source_ref]
+    target_node = node_by_ref[target_ref]
+    source_meta = node_meta_by_ref[source_ref]
+    target_meta = node_meta_by_ref[target_ref]
+    source_frame = getattr(source_meta, "semantic_frame", None)
+    target_frame = getattr(target_meta, "semantic_frame", None)
+    try:
+        return project_stage1_relation_shape(
+            relation_kind=_foreground_enum_text(
+                getattr(relation, "type", "")
+            ),
+            source_ref=source_ref,
+            target_ref=target_ref,
+            source_node_kind=source_node.node_kind,
+            target_node_kind=target_node.node_kind,
+            source_direct_shape=_foreground_direct_shape(
+                source_node,
+                source_meta,
+                stage1_response_schema_version=(
+                    stage1_response_schema_version
+                ),
+            ),
+            target_direct_shape=_foreground_direct_shape(
+                target_node,
+                target_meta,
+                stage1_response_schema_version=(
+                    stage1_response_schema_version
+                ),
+            ),
+            source_time_scope=_foreground_enum_text(
+                getattr(source_frame, "time_scope", "")
+            ),
+            target_time_scope=_foreground_enum_text(
+                getattr(target_frame, "time_scope", "")
+            ),
+            source_attribute_codes=tuple(
+                getattr(source_frame, "attribute_codes", ())
+            ),
+            target_attribute_codes=tuple(
+                getattr(target_frame, "attribute_codes", ())
+            ),
+            source_order=source_order_by_ref.get(source_ref),
+            target_order=source_order_by_ref.get(target_ref),
+            edge_grounding_kind=edge.grounding_kind,
+            edge_epistemic_state=edge.epistemic_state,
+            edge_evidence_ids=edge.evidence_ids,
+            stage1_response_schema_version=stage1_response_schema_version,
+        )
+    except CMEEStage1ContractError as exc:
+        if str(exc) != "stage1_relation_direction_invalid":
+            raise
+        raise CMEEStage1ContractError(
+            "foreground_scope_meaning_projection_noncanonical"
+        ) from None
 
 
 def _foreground_identified(value: object, identity_field: str) -> object:
@@ -6387,9 +7120,38 @@ def _foreground_expected_layer1(
             qualifiers.extend(
                 f"{role_prefix}{value}" for value in source_qualifiers[1:]
             )
+        source_frame = getattr(
+            node_meta_by_ref[
+                _stage1_node_ref(edge.source_node_id)
+            ],
+            "semantic_frame",
+            None,
+        )
+        target_frame = getattr(
+            node_meta_by_ref[
+                _stage1_node_ref(edge.target_node_id)
+            ],
+            "semantic_frame",
+            None,
+        )
+        qualifiers = list(
+            project_stage1_relation_required_qualifiers(
+                candidate_kind=candidate_kind,
+                role_qualified_values=qualifiers,
+                source_attribute_codes=tuple(
+                    getattr(source_frame, "attribute_codes", ())
+                ),
+                target_attribute_codes=tuple(
+                    getattr(target_frame, "attribute_codes", ())
+                ),
+                stage1_response_schema_version=(
+                    stage1_response_schema_version
+                ),
+            )
+        )
         relation_meta = edge_meta_by_ref[edge_ref]
         candidate = EmlisInterpretationCandidate(
-            schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+            schema_version=stage1_response_schema_version,
             candidate_id="",
             candidate_kind=candidate_kind,
             claim_domain=EmlisTraceClaimDomain.INTERPRETIVE_OBSERVATION.value,
@@ -6450,7 +7212,7 @@ def _foreground_expected_layer1(
             ),
         )
         candidate = EmlisInterpretationCandidate(
-            schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
+            schema_version=stage1_response_schema_version,
             candidate_id="",
             candidate_kind=candidate_kind,
             claim_domain=EmlisTraceClaimDomain.INTERPRETIVE_OBSERVATION.value,
@@ -6503,6 +7265,33 @@ def _foreground_expected_layer1(
             )
         )
 
+    try:
+        foreground_required_flags = (
+            stage1_foreground_coverage_required_flags(
+                candidate_semantic_refs=tuple(
+                    value[0].semantic_refs for value in candidate_rows
+                ),
+                source_required_flags=tuple(
+                    bool(value[1]) for value in candidate_rows
+                ),
+                relation_flags=tuple(
+                    bool(value[2]) for value in candidate_rows
+                ),
+                foreground_object_refs=(
+                    stage1_source_explicit_target_topic_scope_refs(
+                        grounded_graph
+                    )
+                ),
+            )
+        )
+    except CMEEStage1ContractError:
+        raise CMEEStage1ContractError(
+            "foreground_scope_meaning_projection_noncanonical"
+        ) from None
+    candidate_rows = [
+        (value[0], foreground_required_flags[index], *value[2:])
+        for index, value in enumerate(candidate_rows)
+    ]
     candidate_rows.sort(
         key=lambda value: (
             0 if value[1] else 1,
@@ -6514,25 +7303,16 @@ def _foreground_expected_layer1(
             value[0].candidate_id,
         )
     )
-    selected_rows: list[tuple[object, ...]] = []
-    kind_counts: dict[InterpretationKind, int] = {}
-    for value in candidate_rows:
-        candidate = value[0]
-        count = kind_counts.get(candidate.candidate_kind, 0)
-        if count >= _STAGE1_INTERPRETATION_CANDIDATE_KIND_CAP:
-            if value[1]:
-                raise CMEEStage1ContractError(
-                    "foreground_scope_meaning_projection_noncanonical"
-                )
-            continue
-        selected_rows.append(value)
-        kind_counts[candidate.candidate_kind] = count + 1
-    if len(selected_rows) > 16:
-        if any(value[1] for value in selected_rows[16:]):
-            raise CMEEStage1ContractError(
-                "foreground_scope_meaning_projection_noncanonical"
-            )
-        selected_rows = selected_rows[:16]
+    try:
+        selected_indices = stage1_candidate_selection_indices(
+            tuple(value[0].candidate_kind for value in candidate_rows),
+            tuple(bool(value[1]) for value in candidate_rows),
+        )
+    except CMEEStage1ContractError:
+        raise CMEEStage1ContractError(
+            "foreground_scope_meaning_projection_noncanonical"
+        ) from None
+    selected_rows = [candidate_rows[index] for index in selected_indices]
     if not selected_rows or not any(value[1] for value in selected_rows):
         raise CMEEStage1ContractError(
             "foreground_scope_meaning_projection_noncanonical"
@@ -6670,6 +7450,7 @@ def project_premeaning_source_qualifier_rows(
     grounded_plan: object,
     grounded_graph: GroundedMeaningGraph,
     parent_plan: ExperiencePlan,
+    stage1_response_schema_version: str = CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
 ) -> Tuple[GroundedSourceQualifierRow, ...]:
     """Project the canonical source-owned qualifier closure once."""
 
@@ -6678,6 +7459,7 @@ def project_premeaning_source_qualifier_rows(
         grounded_plan=grounded_plan,
         grounded_graph=grounded_graph,
         parent_plan=parent_plan,
+        stage1_response_schema_version=stage1_response_schema_version,
     )
     return tuple(
         GroundedSourceQualifierRow(node_ref=ref, qualifier_refs=qualifiers)
@@ -6787,6 +7569,9 @@ def validate_premeaning_grounded_inputs(
             grounded_plan=grounded_plan,
             grounded_graph=grounded_graph,
             parent_plan=parent_plan,
+            stage1_response_schema_version=(
+                premeaning_inputs.stage1_response_schema_version
+            ),
         )
     )
     (
@@ -6814,6 +7599,9 @@ def validate_premeaning_grounded_inputs(
         grounded_plan=grounded_plan,
         grounded_graph=grounded_graph,
         parent_plan=parent_plan,
+        stage1_response_schema_version=(
+            premeaning_inputs.stage1_response_schema_version
+        ),
     )
     expected_relation_rows = project_premeaning_source_relation_rows(
         source=source,
@@ -6852,9 +7640,10 @@ def _validate_premeaning_source_qualifiers(
     *,
     interpretation_candidate_rows: Sequence[EmlisInterpretationCandidate],
     source_qualifiers_by_node_ref: Mapping[str, Tuple[str, ...]],
+    source_relation_by_ref: Mapping[str, MeaningEdge],
 ) -> None:
     for candidate in interpretation_candidate_rows:
-        if candidate.relation_operator is RelationOperator.NO_RELATION_CLAIM:
+        if not candidate.relation_basis_refs:
             semantic_refs = tuple(dict.fromkeys(candidate.semantic_refs))
             if (
                 len(semantic_refs) != 1
@@ -6883,7 +7672,45 @@ def _validate_premeaning_source_qualifiers(
                 expected_values.extend(
                     f"{role_prefix}{value}" for value in qualifiers[1:]
                 )
-            expected = tuple(expected_values)
+            if (
+                len(candidate.relation_basis_refs) != 1
+                or candidate.relation_basis_refs[0]
+                not in source_relation_by_ref
+            ):
+                raise CMEEStage1ContractError(
+                    "foreground_scope_projection_qualifier_source_mismatch"
+                )
+            edge = source_relation_by_ref[
+                candidate.relation_basis_refs[0]
+            ]
+            edge_source_ref = _stage1_node_ref(edge.source_node_id)
+            edge_target_ref = _stage1_node_ref(edge.target_node_id)
+            source_attribute_codes = tuple(
+                value.removeprefix("qualifier:")
+                for value in source_qualifiers_by_node_ref.get(
+                    edge_source_ref, ()
+                )
+                if value.startswith("qualifier:")
+            )
+            target_attribute_codes = tuple(
+                value.removeprefix("qualifier:")
+                for value in source_qualifiers_by_node_ref.get(
+                    edge_target_ref, ()
+                )
+                if value.startswith("qualifier:")
+            )
+            try:
+                expected = project_stage1_relation_required_qualifiers(
+                    candidate_kind=candidate.candidate_kind,
+                    role_qualified_values=expected_values,
+                    source_attribute_codes=source_attribute_codes,
+                    target_attribute_codes=target_attribute_codes,
+                    stage1_response_schema_version=candidate.schema_version,
+                )
+            except CMEEStage1ContractError:
+                raise CMEEStage1ContractError(
+                    "foreground_scope_projection_qualifier_source_mismatch"
+                ) from None
         if candidate.required_qualifiers != expected:
             raise CMEEStage1ContractError(
                 "foreground_scope_projection_qualifier_source_mismatch"
@@ -6990,6 +7817,9 @@ def validate_foreground_scope_basis_row(
             grounded_plan=grounded_plan,
             grounded_graph=grounded_graph,
             parent_plan=parent_plan,
+            stage1_response_schema_version=(
+                premeaning_inputs.stage1_response_schema_version
+            ),
         )
     )
     _validate_premeaning_source_qualifiers(
@@ -6997,6 +7827,10 @@ def validate_foreground_scope_basis_row(
             premeaning_inputs.interpretation_candidate_rows
         ),
         source_qualifiers_by_node_ref=source_qualifiers_by_node_ref,
+        source_relation_by_ref={
+            _graph_object_ref(value): value
+            for value in grounded_graph.edges
+        },
     )
     expected_graph_ref = (
         f"grounded:{grounded_graph.graph_id}"
@@ -7045,30 +7879,11 @@ def validate_foreground_scope_basis_row(
             raise CMEEStage1ContractError(
                 "foreground_scope_basis_source_explicit_mixed_basis_invalid"
             )
-        required_owner_ids = set(grounded_graph.required_owner_refs)
-        required_visible_claim_ids = {
-            claim_id
-            for disposition in grounded_graph.owner_dispositions
-            if disposition.meaning_owner_id in required_owner_ids
-            and disposition.owner_class is OwnerClass.REQUIRED
-            and disposition.visible_authority
-            is VisibleAuthority.SOURCE_EXPLICIT
-            and disposition.source_owner_disposition
-            is SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
-            for claim_id in disposition.visible_claim_refs
-        }
-        target_topic_scope_refs = {
-            ref
-            for ref, value in graph_objects.items()
-            if type(value) is MeaningNode
-            and value.owner_id in required_owner_ids
-            and value.node_id in required_visible_claim_ids
-            and not (
-                value.node_kind == "other_explicit"
-                and value.grounding_kind == "user_stated_relation"
+        expected_source_objects = set(
+            stage1_source_explicit_target_topic_scope_refs(
+                grounded_graph
             )
-        }
-        expected_source_objects = target_topic_scope_refs
+        )
         if (
             not expected_source_objects
             or any(
@@ -12643,6 +13458,9 @@ def _meaning_semantic_signature_profiles(
             grounded_plan=grounded_plan,
             grounded_graph=grounded_graph,
             parent_plan=parent_plan,
+            stage1_response_schema_version=(
+                premeaning_inputs.stage1_response_schema_version
+            ),
         )
     )
     _validate_premeaning_source_qualifiers(
@@ -12650,6 +13468,10 @@ def _meaning_semantic_signature_profiles(
             premeaning_inputs.interpretation_candidate_rows
         ),
         source_qualifiers_by_node_ref=source_qualifiers_by_node_ref,
+        source_relation_by_ref={
+            _graph_object_ref(value): value
+            for value in grounded_graph.edges
+        },
     )
     scoped_node_refs = {
         ref
@@ -14113,6 +14935,30 @@ def _im04_subjective_basis_role(
     return SubjectiveBasisRole.APPRAISED_OBJECT
 
 
+def _im04_retained_reception_act_row_valid(row: object) -> bool:
+    """Recognize the frozen exact3 cross-module retained-act carrier."""
+
+    field_names = ("act_ref", "reception_act", "basis_contribution_refs")
+    params = getattr(type(row), "__dataclass_params__", None)
+    return bool(
+        is_dataclass(row)
+        and tuple(field.name for field in dataclass_fields(row)) == field_names
+        and tuple(getattr(type(row), "__slots__", ())) == field_names
+        and getattr(params, "frozen", False)
+        and _stage1_identity_string(getattr(row, "act_ref", None))
+        and _stage1_identity_string(getattr(row, "reception_act", None))
+        and row.act_ref == row.reception_act
+        and type(getattr(row, "basis_contribution_refs", None)) is tuple
+        and bool(row.basis_contribution_refs)
+        and all(
+            _stage1_identity_string(ref)
+            for ref in row.basis_contribution_refs
+        )
+        and len(row.basis_contribution_refs)
+        == len(set(row.basis_contribution_refs))
+    )
+
+
 def _im04_authority_closure(
     *,
     retained_reception_act_rows: Sequence[Any],
@@ -14147,20 +14993,7 @@ def _im04_authority_closure(
         or not candidates
         or not qualifier_rows
         or any(
-            not is_dataclass(row)
-            or tuple(field.name for field in dataclass_fields(row))
-            != ("act_ref", "reception_act", "basis_contribution_refs")
-            or not _stage1_identity_string(row.act_ref)
-            or not _stage1_identity_string(row.reception_act)
-            or row.act_ref != row.reception_act
-            or type(row.basis_contribution_refs) is not tuple
-            or not row.basis_contribution_refs
-            or any(
-                not _stage1_identity_string(ref)
-                for ref in row.basis_contribution_refs
-            )
-            or len(row.basis_contribution_refs)
-            != len(set(row.basis_contribution_refs))
+            not _im04_retained_reception_act_row_valid(row)
             for row in retained
         )
         or len({row.act_ref for row in retained}) != len(retained)
@@ -14253,6 +15086,7 @@ def resolve_limited_subjective_binding_rows(
     interpretation_candidate_rows: Sequence[EmlisInterpretationCandidate],
     contribution_to_candidate_ref_map: Sequence[Tuple[str, str]],
     qualifier_value_rows: Sequence[Any],
+    licensed_contribution_refs: Optional[Sequence[str]] = None,
 ) -> tuple[
     tuple[SubjectiveBasisBinding, ...],
     tuple[SourceQualifierBinding, ...],
@@ -14263,6 +15097,11 @@ def resolve_limited_subjective_binding_rows(
     candidates = tuple(interpretation_candidate_rows)
     contribution_map = tuple(contribution_to_candidate_ref_map)
     qualifier_rows = tuple(qualifier_value_rows)
+    licensed_refs = (
+        limited_outcome.retained_layer1_refs
+        if licensed_contribution_refs is None
+        else tuple(licensed_contribution_refs)
+    )
     if (
         type(limited_outcome) is not LimitedMeaningOutcome
         or not _stage1_identity_string(projection_preimage_ref)
@@ -14270,7 +15109,16 @@ def resolve_limited_subjective_binding_rows(
         or type(interpretation_candidate_rows) is not tuple
         or type(contribution_to_candidate_ref_map) is not tuple
         or type(qualifier_value_rows) is not tuple
+        or (
+            licensed_contribution_refs is not None
+            and type(licensed_contribution_refs) is not tuple
+        )
         or not limited_outcome.retained_layer1_refs
+        or not licensed_refs
+        or len(licensed_refs) != len(set(licensed_refs))
+        or not set(licensed_refs).issubset(
+            set(limited_outcome.retained_layer1_refs)
+        )
         or not limited_outcome.foreground_source_object_refs
         or any(
             type(row) is not PlannedObservationContribution
@@ -14302,7 +15150,7 @@ def resolve_limited_subjective_binding_rows(
     basis_rows: list[SubjectiveBasisBinding] = []
     source_qualifier_rows: list[SourceQualifierBinding] = []
     foreground_ref_set = set(limited_outcome.foreground_source_object_refs)
-    for contribution_ref in limited_outcome.retained_layer1_refs:
+    for contribution_ref in licensed_refs:
         contribution = contribution_by_id[contribution_ref]
         candidate = candidate_by_id.get(
             candidate_ref_by_contribution.get(contribution_ref, "")
@@ -14339,9 +15187,8 @@ def resolve_limited_subjective_binding_rows(
                 foreground_ref,
                 role,
             )
-            relation_bound = (
-                candidate.relation_operator
-                is not RelationOperator.NO_RELATION_CLAIM
+            relation_bound = stage1_candidate_uses_relation_qualifier_scope(
+                candidate
             )
             qualifier_role = binding.role if relation_bound else None
             qualifier_semantic_ref = foreground_ref if relation_bound else None
@@ -14423,7 +15270,7 @@ def resolve_limited_subjective_binding_rows(
         dict.fromkeys(row.semantic_ref for row in basis_rows)
     )
     if (
-        bound_contribution_refs != limited_outcome.retained_layer1_refs
+        bound_contribution_refs != licensed_refs
         or not bound_semantic_refs
         or not set(bound_semantic_refs).issubset(foreground_ref_set)
         or len({row.binding_ref for row in basis_rows}) != len(basis_rows)
@@ -14437,6 +15284,18 @@ def resolve_limited_subjective_binding_rows(
             "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
         )
     return tuple(basis_rows), tuple(source_qualifier_rows)
+
+
+def stage1_candidate_uses_relation_qualifier_scope(
+    candidate: EmlisInterpretationCandidate,
+) -> bool:
+    """Use structural relation evidence as the qualifier-scope owner."""
+
+    if type(candidate) is not EmlisInterpretationCandidate:
+        raise CMEEStage1ContractError(
+            "stage1_post_selection_authority_invalid"
+        )
+    return bool(candidate.relation_basis_refs)
 
 
 _IM04_NORMAL_SUBJECTIVE_SEMANTICS = {
@@ -14609,6 +15468,213 @@ def _im04_limited_reception_mode_operator_pairs(
     return ()
 
 
+def canonical_limited_retained_layer1_refs(
+    retained_layer1_refs: Sequence[str],
+    observation_contribution_rows: Sequence[PlannedObservationContribution],
+) -> Tuple[str, ...]:
+    """Project a retained Layer-1 set into contribution-authority order."""
+
+    retained = tuple(retained_layer1_refs)
+    contributions = tuple(observation_contribution_rows)
+    contribution_ids = tuple(
+        row.contribution_id
+        for row in contributions
+        if type(row) is PlannedObservationContribution
+    )
+    if (
+        type(retained_layer1_refs) is not tuple
+        or type(observation_contribution_rows) is not tuple
+        or not retained
+        or len(retained) > _STAGE1_LAYER1_OBSERVATION_CAP
+        or len(retained) != len(set(retained))
+        or any(not _stage1_identity_string(ref) for ref in retained)
+        or len(contribution_ids) != len(contributions)
+        or len(contribution_ids) != len(set(contribution_ids))
+        or any(not _stage1_identity_string(ref) for ref in contribution_ids)
+        or not set(retained).issubset(set(contribution_ids))
+    ):
+        raise CMEEStage1ContractError(
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+        )
+    return tuple(ref for ref in contribution_ids if ref in set(retained))
+
+
+def resolve_limited_reception_aggregate(
+    retained_reception_act_rows: Sequence[Any],
+    *,
+    expected_act_refs: Sequence[str],
+    retained_layer1_refs: Sequence[str],
+    observation_contribution_rows: Sequence[PlannedObservationContribution],
+) -> tuple[
+    SubjectiveMode,
+    SubjectiveOperator,
+    Tuple[str, ...],
+    Tuple[str, ...],
+    bool,
+]:
+    """Resolve one canonical LIMITED proposition without changing meaning.
+
+    A single act preserves the existing exact-one mode selection.  Its
+    registered ATTENTION mode may bind more than one selected source basis.
+    Two to four affirmative acts may share only that same ATTENTION seam;
+    their source-bound bases are retained as one ordered Layer-1 union.
+    """
+
+    retained = tuple(retained_reception_act_rows)
+    expected_acts = tuple(expected_act_refs)
+    retained_layer1 = tuple(retained_layer1_refs)
+    contributions = tuple(observation_contribution_rows)
+    contribution_by_id = {
+        row.contribution_id: row
+        for row in contributions
+        if type(row) is PlannedObservationContribution
+    }
+    registered_mapping = {
+        row.reception_act: row
+        for row in CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7
+    }
+    attention = (
+        SubjectiveMode.ATTENTION,
+        SubjectiveOperator.ATTEND_TO,
+    )
+    try:
+        canonical_retained_layer1 = canonical_limited_retained_layer1_refs(
+            retained_layer1,
+            contributions,
+        )
+    except CMEEStage1ContractError:
+        raise CMEEStage1ContractError(
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+        ) from None
+    if (
+        type(retained_reception_act_rows) is not tuple
+        or type(expected_act_refs) is not tuple
+        or type(retained_layer1_refs) is not tuple
+        or type(observation_contribution_rows) is not tuple
+        or not 1 <= len(retained) <= 4
+        or not expected_acts
+        or len(expected_acts) != len(set(expected_acts))
+        or any(not _stage1_identity_string(ref) for ref in expected_acts)
+        or any(
+            not _im04_retained_reception_act_row_valid(row)
+            for row in retained
+        )
+        or tuple(row.act_ref for row in retained) != expected_acts
+        or not retained_layer1
+        or retained_layer1 != canonical_retained_layer1
+        or len(retained_layer1) > _STAGE1_LAYER1_OBSERVATION_CAP
+        or len(retained_layer1) != len(set(retained_layer1))
+        or any(not _stage1_identity_string(ref) for ref in retained_layer1)
+        or len(contribution_by_id) != len(contributions)
+        or any(ref not in contribution_by_id for ref in retained_layer1)
+        or len(registered_mapping)
+        != len(CMEE_STAGE1_RECEPTION_ACT_MAPPING_EXACT7)
+    ):
+        raise CMEEStage1ContractError(
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+        )
+
+    act_refs: list[str] = []
+    basis_sets: list[set[str]] = []
+    for row in retained:
+        act_ref = getattr(row, "act_ref", None)
+        reception_act = getattr(row, "reception_act", None)
+        basis_refs = getattr(row, "basis_contribution_refs", None)
+        mapping = registered_mapping.get(reception_act)
+        if (
+            not _stage1_identity_string(act_ref)
+            or reception_act != act_ref
+            or mapping is None
+            or type(basis_refs) is not tuple
+            or not basis_refs
+            or len(basis_refs) != len(set(basis_refs))
+            or any(ref not in contribution_by_id for ref in basis_refs)
+            or not set(basis_refs).issubset(set(retained_layer1))
+            or any(
+                type(contribution_by_id[ref].evidence_refs) is not tuple
+                or not contribution_by_id[ref].evidence_refs
+                or any(
+                    not _stage1_identity_string(evidence_ref)
+                    for evidence_ref in contribution_by_id[ref].evidence_refs
+                )
+                or len(contribution_by_id[ref].evidence_refs)
+                != len(set(contribution_by_id[ref].evidence_refs))
+                for ref in basis_refs
+            )
+        ):
+            raise CMEEStage1ContractError(
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+            )
+        act_refs.append(act_ref)
+        basis_sets.append(set(basis_refs))
+    if len(act_refs) != len(set(act_refs)):
+        raise CMEEStage1ContractError(
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+        )
+
+    if len(retained) == 1:
+        row = retained[0]
+        if row.reception_act == "bounded_counter_self_denial":
+            raise CMEEStage1ContractError(
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+            )
+        ordered_basis = tuple(
+            ref
+            for ref in canonical_retained_layer1
+            if ref in basis_sets[0]
+        )
+        if not ordered_basis or set(ordered_basis) != basis_sets[0]:
+            raise CMEEStage1ContractError(
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+            )
+        pairs = _im04_limited_reception_mode_operator_pairs(
+            row.reception_act,
+            tuple(
+                contribution_by_id[ref]
+                for ref in ordered_basis
+            ),
+        )
+        if len(pairs) != 1:
+            raise CMEEStage1ContractError(
+                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+            )
+        return (
+            pairs[0][0],
+            pairs[0][1],
+            (row.act_ref,),
+            ordered_basis,
+            pairs[0][0] is SubjectiveMode.ATTENTION
+            and len(ordered_basis) > 1,
+        )
+
+    if any(
+        row.reception_act == "bounded_counter_self_denial"
+        or attention
+        not in registered_mapping[
+            row.reception_act
+        ].eligible_mode_operator_pairs
+        for row in retained
+    ):
+        raise CMEEStage1ContractError(
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+        )
+    basis_union = set().union(*basis_sets)
+    ordered_basis = tuple(
+        ref for ref in retained_layer1 if ref in basis_union
+    )
+    if not ordered_basis:
+        raise CMEEStage1ContractError(
+            "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+        )
+    return (
+        attention[0],
+        attention[1],
+        tuple(act_refs),
+        ordered_basis,
+        True,
+    )
+
+
 def _im04_source_axis_qualifier_ref(value: str) -> bool:
     return type(value) is str and any(
         value.startswith(f"{axis}:") or f"_{axis}:" in value
@@ -14767,6 +15833,75 @@ def _im04_limited_exact2_relation_ref(
     return row.relation_basis_refs[0]
 
 
+def _im04_limited_bounded_source_order_unfinished(
+    *,
+    basis_binding_refs: tuple[str, ...],
+    contribution_rows: Sequence[PlannedObservationContribution],
+    candidate_rows: Sequence[EmlisInterpretationCandidate],
+    contribution_candidate_map: Sequence[Tuple[str, str]],
+    contribution_refs: tuple[str, ...],
+    semantic_refs: tuple[str, ...],
+) -> bool:
+    """Recognize the exact structural unfinished-order contribution."""
+
+    if (
+        len(contribution_refs) != 1
+        or len(semantic_refs) != 2
+        or len(semantic_refs) != len(set(semantic_refs))
+        or len(basis_binding_refs) != 2
+        or len(basis_binding_refs) != len(set(basis_binding_refs))
+    ):
+        return False
+    rows = tuple(
+        row
+        for row in contribution_rows
+        if type(row) is PlannedObservationContribution
+        and row.contribution_id == contribution_refs[0]
+    )
+    mapped_candidate_refs = tuple(
+        candidate_ref
+        for contribution_ref, candidate_ref in contribution_candidate_map
+        if contribution_ref == contribution_refs[0]
+    )
+    candidates = tuple(
+        candidate
+        for candidate in candidate_rows
+        if candidate.candidate_id in mapped_candidate_refs
+    )
+    if len(rows) != 1 or len(mapped_candidate_refs) != 1 or len(candidates) != 1:
+        return False
+    row = rows[0]
+    candidate = candidates[0]
+    try:
+        validate_stage1_interpretation_matrix(candidate)
+        expected_contribution_kind = (
+            _stage1_contribution_kind_for_candidate(candidate)
+        )
+    except CMEEStage1ContractError:
+        return False
+    return bool(
+        candidate.candidate_kind is InterpretationKind.BOUNDED_SOURCE_ORDER
+        and candidate.semantic_operator is SemanticOperator.PRESENT_UNFINISHED
+        and candidate.relation_operator is RelationOperator.NO_RELATION_CLAIM
+        and len(candidate.relation_basis_refs) == 1
+        and tuple(binding.role for binding in candidate.argument_bindings)
+        == (ArgumentRole.BEFORE, ArgumentRole.AFTER)
+        and tuple(
+            binding.semantic_ref for binding in candidate.argument_bindings
+        )
+        == semantic_refs
+        and candidate.semantic_refs == semantic_refs
+        and row.interpretation_candidate_refs == (candidate.candidate_id,)
+        and row.contribution_kind is expected_contribution_kind
+        and row.semantic_operator is candidate.semantic_operator
+        and row.argument_bindings == candidate.argument_bindings
+        and row.relation_operator is candidate.relation_operator
+        and row.relation_basis_refs == candidate.relation_basis_refs
+        and row.semantic_refs == candidate.semantic_refs
+        and row.evidence_refs == candidate.evidence_refs
+    )
+
+
 def _im04_limited_appraisal_content(
     *,
     basis_binding_refs: tuple[str, ...],
@@ -14775,6 +15910,7 @@ def _im04_limited_appraisal_content(
     contribution_candidate_map: Sequence[Tuple[str, str]],
     contribution_refs: tuple[str, ...],
     semantic_refs: tuple[str, ...],
+    aggregate_attention: bool = False,
 ) -> Optional[EmlisAppraisalContent]:
     """Derive the only lossless LIMITED appraisal for one or two targets."""
 
@@ -14787,6 +15923,22 @@ def _im04_limited_appraisal_content(
             (),
             contribution_refs,
         )
+    if _im04_limited_bounded_source_order_unfinished(
+        basis_binding_refs=basis_binding_refs,
+        contribution_rows=contribution_rows,
+        candidate_rows=candidate_rows,
+        contribution_candidate_map=contribution_candidate_map,
+        contribution_refs=contribution_refs,
+        semantic_refs=semantic_refs,
+    ):
+        return EmlisAppraisalContent(
+            AppraisalDimension.UNFINISHED_OPENNESS,
+            AppraisalOperation.LEAVE_UNFINISHED,
+            basis_binding_refs,
+            None,
+            (),
+            contribution_refs,
+        )
     focal_relation_ref = _im04_limited_exact2_relation_ref(
         contribution_rows=contribution_rows,
         candidate_rows=candidate_rows,
@@ -14794,16 +15946,30 @@ def _im04_limited_appraisal_content(
         contribution_refs=contribution_refs,
         semantic_refs=semantic_refs,
     )
-    if focal_relation_ref is None:
-        return None
-    return EmlisAppraisalContent(
-        AppraisalDimension.RELATIONAL_NONCOLLAPSE,
-        AppraisalOperation.PRESERVE_BOTH_ENDPOINTS,
-        basis_binding_refs,
-        focal_relation_ref,
-        (),
-        contribution_refs,
-    )
+    if focal_relation_ref is not None:
+        return EmlisAppraisalContent(
+            AppraisalDimension.RELATIONAL_NONCOLLAPSE,
+            AppraisalOperation.PRESERVE_BOTH_ENDPOINTS,
+            basis_binding_refs,
+            focal_relation_ref,
+            (),
+            contribution_refs,
+        )
+    if (
+        aggregate_attention
+        and basis_binding_refs
+        and contribution_refs
+        and semantic_refs
+    ):
+        return EmlisAppraisalContent(
+            AppraisalDimension.MATERIAL_WEIGHT,
+            AppraisalOperation.RECEIVE_AS_MATERIAL,
+            basis_binding_refs,
+            None,
+            (),
+            contribution_refs,
+        )
+    return None
 
 
 def project_stage1_subjective_projection_seal_ref(
@@ -15005,6 +16171,7 @@ def validate_stage1_post_selection_reception_records(
     contribution_to_candidate_ref_map: Sequence[Tuple[str, str]],
     qualifier_value_rows: Sequence[Any],
     material_unknown_refs: Sequence[str],
+    expected_act_refs: Sequence[str],
 ) -> None:
     """Validate post-binding Reception against one frozen Phase-A authority."""
 
@@ -15047,6 +16214,17 @@ def validate_stage1_post_selection_reception_records(
         qualifier_value_rows=qualifier_value_rows,
         material_unknown_refs=material_unknown_refs,
     )
+    expected_acts = tuple(expected_act_refs)
+    if (
+        type(expected_act_refs) is not tuple
+        or not expected_acts
+        or len(expected_acts) != len(set(expected_acts))
+        or any(not _stage1_identity_string(ref) for ref in expected_acts)
+        or tuple(row.act_ref for row in retained_act_rows) != expected_acts
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_post_selection_authority_invalid"
+        )
     contribution_by_id = {
         row.contribution_id: row for row in contribution_rows
     }
@@ -15212,6 +16390,16 @@ def validate_stage1_post_selection_reception_records(
                 )
                 if ref in contribution_by_id
             )
+            act_response_domain = _stage1_first_occurrence_union(
+                tuple(
+                    response_object_ref
+                    for contribution in bound_contributions
+                    for response_object_ref in (
+                        *contribution.semantic_refs,
+                        *contribution.relation_basis_refs,
+                    )
+                )
+            )
             mode_is_licensed = bool(
                 mapping is not None
                 and any(
@@ -15259,7 +16447,11 @@ def validate_stage1_post_selection_reception_records(
                 != semantics
                 or not mode_is_licensed
                 or not materially_bound
-                or proposition.response_object_refs != response_domain
+                or proposition.response_object_refs
+                != act_response_domain
+                or not set(proposition.response_object_refs).issubset(
+                    response_domain
+                )
                 or proposition.preserved_difference_refs
                 != candidate.preserved_difference_refs
                 or proposition.optional_affect is not None
@@ -15345,6 +16537,24 @@ def validate_stage1_post_selection_reception_records(
         bounded = limited[0]
         _validate_stage1_immutable_shape(proposition)
         _validate_stage1_immutable_shape(bounded)
+        canonical_retained_refs = (
+            canonical_limited_retained_layer1_refs(
+                outcome.retained_layer1_refs,
+                contribution_rows,
+            )
+        )
+        (
+            licensed_mode,
+            licensed_operator,
+            licensed_act_refs,
+            resolved_licensed_contribution_refs,
+            aggregate_attention,
+        ) = resolve_limited_reception_aggregate(
+            retained_act_rows,
+            expected_act_refs=expected_acts,
+            retained_layer1_refs=canonical_retained_refs,
+            observation_contribution_rows=contribution_rows,
+        )
         basis_rows, source_qualifier_rows = (
             resolve_limited_subjective_binding_rows(
                 projection_preimage_ref=projection_preimage_ref,
@@ -15353,39 +16563,21 @@ def validate_stage1_post_selection_reception_records(
                 interpretation_candidate_rows=candidate_authority_rows,
                 contribution_to_candidate_ref_map=contribution_candidate_map,
                 qualifier_value_rows=qualifier_rows,
-            )
-        )
-        retained_layer1_set = set(outcome.retained_layer1_refs)
-        source_bound_choices = tuple(
-            (row, mode, operator)
-            for row in retained_act_rows
-            if row.reception_act != "bounded_counter_self_denial"
-            and bool(row.basis_contribution_refs)
-            and set(row.basis_contribution_refs).issubset(retained_layer1_set)
-            for mode, operator in _im04_limited_reception_mode_operator_pairs(
-                row.reception_act,
-                tuple(
-                    contribution_by_id[ref]
-                    for ref in row.basis_contribution_refs
+                licensed_contribution_refs=(
+                    resolved_licensed_contribution_refs
                 ),
             )
         )
-        if len(source_bound_choices) != 1:
-            raise CMEEStage1ContractError(
-                "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
-            )
-        source_bound_act, licensed_mode, licensed_operator = (
-            source_bound_choices[0]
-        )
         if (
-            proposition.subjective_mode is not licensed_mode
+            not licensed_act_refs
+            or proposition.subjective_mode is not licensed_mode
             or proposition.subjective_operator is not licensed_operator
         ):
             raise CMEEStage1ContractError(
                 "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
             )
         licensed_contribution_set = set(
-            source_bound_act.basis_contribution_refs
+            resolved_licensed_contribution_refs
         )
         licensed_basis_rows = tuple(
             row
@@ -15415,6 +16607,7 @@ def validate_stage1_post_selection_reception_records(
             contribution_candidate_map=contribution_candidate_map,
             contribution_refs=licensed_contribution_refs,
             semantic_refs=licensed_semantic_refs,
+            aggregate_attention=aggregate_attention,
         )
         expected_focal_relation_ref = (
             expected_appraisal_content.focal_relation_ref
@@ -15423,13 +16616,15 @@ def validate_stage1_post_selection_reception_records(
         )
         expected_licensed_contribution_refs = tuple(
             ref
-            for ref in outcome.retained_layer1_refs
+            for ref in canonical_retained_refs
             if ref in licensed_contribution_set
         )
         if (
             not licensed_basis_rows
             or licensed_contribution_refs
             != expected_licensed_contribution_refs
+            or licensed_contribution_refs
+            != resolved_licensed_contribution_refs
             or len(licensed_source_qualifier_rows) != len(licensed_basis_rows)
             or (
                 licensed_mode
@@ -15524,7 +16719,11 @@ def validate_stage1_post_selection_reception_records(
             != _INPUT_SPECIFIC_MEANING_STRUCTURE_SCHEMA_VERSION
             or bounded.limited_outcome_ref != limited_meaning_outcome_id(outcome)
             or bounded.bound_layer1_contribution_refs
-            != outcome.retained_layer1_refs
+            != (
+                canonical_retained_refs
+                if aggregate_attention
+                else outcome.retained_layer1_refs
+            )
             or bounded.foreground_source_object_refs
             != outcome.foreground_source_object_refs
             or bounded.retained_qualifier_refs != outcome.retained_qualifier_refs
@@ -15771,8 +16970,116 @@ def validate_whole_reading_consequence_row(
         )
 
 
+_STAGE1_INTERPRETATION_CANDIDATE_POOL_CAP = 16
 _STAGE1_INTERPRETATION_CANDIDATE_KIND_CAP = 2
 _STAGE1_LAYER1_OBSERVATION_CAP = 5
+
+
+def stage1_candidate_selection_indices(
+    candidate_kinds: Sequence[InterpretationKind],
+    required_flags: Sequence[bool],
+) -> tuple[int, ...]:
+    """Keep every required candidate before bounding optional breadth.
+
+    The static per-kind cap remains the optional breadth limit.  A kind with
+    more required candidates receives an exact request-local floor equal to
+    that required count; only optional excess is removed.  The total pool
+    remains bounded at the existing cap and fails only when the required set
+    itself cannot fit.
+    """
+
+    kinds = tuple(candidate_kinds)
+    required = tuple(required_flags)
+    if (
+        len(kinds) != len(required)
+        or any(type(kind) is not InterpretationKind for kind in kinds)
+        or any(type(flag) is not bool for flag in required)
+    ):
+        raise CMEEStage1ContractError("stage1_candidate_bound_input_invalid")
+    required_indices = tuple(
+        index for index, flag in enumerate(required) if flag
+    )
+    if len(required_indices) > _STAGE1_INTERPRETATION_CANDIDATE_POOL_CAP:
+        raise CMEEStage1ContractError("stage1_required_candidate_overflow")
+
+    required_kind_counts: dict[InterpretationKind, int] = {}
+    for index in required_indices:
+        kind = kinds[index]
+        required_kind_counts[kind] = required_kind_counts.get(kind, 0) + 1
+    selected = list(required_indices)
+    selected_kind_counts = dict(required_kind_counts)
+    for index, kind in enumerate(kinds):
+        if required[index]:
+            continue
+        kind_limit = max(
+            _STAGE1_INTERPRETATION_CANDIDATE_KIND_CAP,
+            required_kind_counts.get(kind, 0),
+        )
+        if selected_kind_counts.get(kind, 0) >= kind_limit:
+            continue
+        if len(selected) >= _STAGE1_INTERPRETATION_CANDIDATE_POOL_CAP:
+            break
+        selected.append(index)
+        selected_kind_counts[kind] = selected_kind_counts.get(kind, 0) + 1
+    return tuple(selected)
+
+
+def validate_stage1_candidate_partition_bounds(
+    candidate_kinds: Sequence[InterpretationKind],
+    required_flags: Sequence[bool],
+    *,
+    support_semantic_refs: Sequence[str] = (),
+    expected_support_semantic_refs: Sequence[str] = (),
+) -> None:
+    """Validate the bounded meaning pool and its separate endpoint support."""
+
+    kinds = tuple(candidate_kinds)
+    required = tuple(required_flags)
+    selected_indices = stage1_candidate_selection_indices(kinds, required)
+    if len(kinds) > _STAGE1_INTERPRETATION_CANDIDATE_POOL_CAP:
+        raise CMEEStage1ContractError("stage1_candidate_pool_cap_exceeded")
+
+    required_kind_counts: dict[InterpretationKind, int] = {}
+    kind_counts: dict[InterpretationKind, int] = {}
+    for kind, is_required in zip(kinds, required):
+        kind_counts[kind] = kind_counts.get(kind, 0) + 1
+        if is_required:
+            required_kind_counts[kind] = (
+                required_kind_counts.get(kind, 0) + 1
+            )
+    if any(
+        count
+        > max(
+            _STAGE1_INTERPRETATION_CANDIDATE_KIND_CAP,
+            required_kind_counts.get(kind, 0),
+        )
+        for kind, count in kind_counts.items()
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_candidate_kind_cap_exceeded"
+        )
+    if selected_indices != tuple(range(len(kinds))):
+        raise CMEEStage1ContractError(
+            "stage1_required_candidate_order_invalid"
+        )
+
+    support_refs = tuple(support_semantic_refs)
+    expected_support_refs = tuple(expected_support_semantic_refs)
+    if (
+        any(type(ref) is not str or not ref for ref in support_refs)
+        or any(
+            type(ref) is not str or not ref
+            for ref in expected_support_refs
+        )
+        or len(support_refs) != len(set(support_refs))
+        or len(expected_support_refs) != len(set(expected_support_refs))
+        or set(support_refs) != set(expected_support_refs)
+    ):
+        raise CMEEStage1ContractError(
+            "stage1_candidate_support_partition_invalid"
+        )
+
+
 _STAGE2_OBSERVATION_SEMANTIC_KEY_VERSION = (
     "cocolon.cmee.v1a.emlis_stage1.observation_semantic_key.v1"
 )
@@ -15834,10 +17141,10 @@ _STAGE1_UNFINISHED_DIRECT_SHAPE = (
     SemanticOperator.PRESENT_UNFINISHED,
 )
 
-# Keep the projection validator closed over the same exact-thirteen public
-# contract as the Step 2 builder.  The builder is layered on this module, so
-# importing its table here would introduce a circular dependency.
-_STAGE1_INTERPRETATION_MATRIX_EXACT13 = (
+# Canonical matrix owner. V1 remains frozen exact-thirteen; V2 extends that
+# same tuple with three finite, source-bound relation shapes. Higher layers
+# import and re-export these exact objects instead of restating the rows.
+INTERPRETATION_MATRIX_EXACT13 = (
     (InterpretationKind.DIRECT_STATE, SemanticOperator.PRESENT_STATE, RelationOperator.NO_RELATION_CLAIM, (ArgumentRole.PRIMARY,)),
     (InterpretationKind.DIRECT_STATE, SemanticOperator.PRESENT_BURDEN, RelationOperator.NO_RELATION_CLAIM, (ArgumentRole.PRIMARY,)),
     (InterpretationKind.DIRECT_STATE, SemanticOperator.PRESENT_CHANGE, RelationOperator.NO_RELATION_CLAIM, (ArgumentRole.PRIMARY,)),
@@ -15852,6 +17159,32 @@ _STAGE1_INTERPRETATION_MATRIX_EXACT13 = (
     (InterpretationKind.SOURCE_STATED_CAUSE, SemanticOperator.SYNTHESIZE_RELATION, RelationOperator.SOURCE_EXPLICIT_CAUSE, (ArgumentRole.CAUSE, ArgumentRole.EFFECT)),
     (InterpretationKind.UNFINISHED, SemanticOperator.PRESENT_UNFINISHED, RelationOperator.NO_RELATION_CLAIM, (ArgumentRole.PRIMARY,)),
 )
+ACTION_BEFORE_AFTER_INTERPRETATION_ROW_EXACT1 = (
+    InterpretationKind.ACTION_BEFORE_AFTER,
+    SemanticOperator.PRESENT_ACTUAL_OUTPUT,
+    RelationOperator.TEMPORALLY_PRECEDES,
+    (ArgumentRole.BEFORE, ArgumentRole.AFTER),
+)
+BOUNDED_SOURCE_ORDER_INTERPRETATION_ROW_EXACT1 = (
+    InterpretationKind.BOUNDED_SOURCE_ORDER,
+    SemanticOperator.PRESENT_UNFINISHED,
+    RelationOperator.NO_RELATION_CLAIM,
+    (ArgumentRole.BEFORE, ArgumentRole.AFTER),
+)
+SOURCE_STATED_TRANSITION_INTERPRETATION_ROW_EXACT1 = (
+    InterpretationKind.SOURCE_STATED_TRANSITION,
+    SemanticOperator.PRESENT_CHANGE,
+    RelationOperator.TEMPORALLY_PRECEDES,
+    (ArgumentRole.BEFORE, ArgumentRole.AFTER),
+)
+INTERPRETATION_MATRIX_EXACT16 = (
+    *INTERPRETATION_MATRIX_EXACT13,
+    ACTION_BEFORE_AFTER_INTERPRETATION_ROW_EXACT1,
+    BOUNDED_SOURCE_ORDER_INTERPRETATION_ROW_EXACT1,
+    SOURCE_STATED_TRANSITION_INTERPRETATION_ROW_EXACT1,
+)
+_STAGE1_INTERPRETATION_MATRIX_EXACT13 = INTERPRETATION_MATRIX_EXACT13
+_STAGE1_INTERPRETATION_MATRIX_EXACT16 = INTERPRETATION_MATRIX_EXACT16
 
 
 def _stage1_ordered_unique(values: Sequence[str]) -> tuple[str, ...]:
@@ -15978,12 +17311,20 @@ def stage1_subjective_semantic_key(claim: EmlisSubjectiveClaim) -> str:
     return f"subjective-key-{digest}"
 
 
-def _validate_stage1_interpretation_matrix(
+def validate_stage1_interpretation_matrix(
     candidate: EmlisInterpretationCandidate,
 ) -> None:
+    if candidate.schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1:
+        matrix = INTERPRETATION_MATRIX_EXACT13
+    elif candidate.schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2:
+        matrix = INTERPRETATION_MATRIX_EXACT16
+    else:
+        raise CMEEStage1ContractError(
+            "stage1_interpretation_matrix_invalid"
+        )
     matches = tuple(
         row
-        for row in _STAGE1_INTERPRETATION_MATRIX_EXACT13
+        for row in matrix
         if row[:3]
         == (
             candidate.candidate_kind,
@@ -15995,21 +17336,30 @@ def _validate_stage1_interpretation_matrix(
         raise CMEEStage1ContractError("stage1_interpretation_matrix_invalid")
     required_roles = matches[0][3]
     actual_roles = tuple(row.role for row in candidate.argument_bindings)
-    if actual_roles not in {
-        required_roles,
-        (*required_roles, ArgumentRole.EXPERIENCER),
-    }:
+    direct_optional_experiencer = bool(
+        not candidate.relation_basis_refs
+        and candidate.relation_operator is RelationOperator.NO_RELATION_CLAIM
+        and actual_roles == (*required_roles, ArgumentRole.EXPERIENCER)
+    )
+    if actual_roles != required_roles and not direct_optional_experiencer:
         raise CMEEStage1ContractError("stage1_interpretation_matrix_invalid")
-    if (
-        actual_roles != required_roles
-        and candidate.relation_operator is not RelationOperator.NO_RELATION_CLAIM
-    ):
-        raise CMEEStage1ContractError("stage1_interpretation_matrix_invalid")
+    bounded_source_order = bool(
+        candidate.candidate_kind is InterpretationKind.BOUNDED_SOURCE_ORDER
+        and candidate.relation_operator is RelationOperator.NO_RELATION_CLAIM
+    )
     if candidate.relation_operator is RelationOperator.NO_RELATION_CLAIM:
-        if candidate.relation_basis_refs:
+        if bounded_source_order:
+            if len(candidate.relation_basis_refs) != 1:
+                raise CMEEStage1ContractError(
+                    "stage1_interpretation_matrix_invalid"
+                )
+        elif candidate.relation_basis_refs:
             raise CMEEStage1ContractError("stage1_interpretation_matrix_invalid")
     elif len(candidate.relation_basis_refs) != 1:
         raise CMEEStage1ContractError("stage1_interpretation_matrix_invalid")
+
+
+_validate_stage1_interpretation_matrix = validate_stage1_interpretation_matrix
 
 
 def _stage1_node_ref(node_id: str) -> str:
@@ -16056,6 +17406,39 @@ def _stage1_allowed_direct_shapes(
     return frozenset({_STAGE1_STATE_DIRECT_SHAPE})
 
 
+def _stage1_support_only_direct_shape_satisfied(
+    candidate: EmlisInterpretationCandidate,
+    *,
+    node: MeaningNode,
+) -> bool:
+    """Bind support-only rows to the strongest available source authority."""
+
+    actual_shape = (
+        candidate.candidate_kind,
+        candidate.semantic_operator,
+    )
+    allowed_shapes = _stage1_allowed_direct_shapes(node)
+    if actual_shape not in allowed_shapes:
+        return False
+    if len(allowed_shapes) == 1:
+        return True
+    dub_markers = tuple(
+        value.removeprefix("qualifier:")
+        for value in _stage1_direct_source_contract_qualifiers(candidate)
+        if value.removeprefix("qualifier:")
+        in _STAGE1_DIRECTION_UNDER_BURDEN_ATTRIBUTE_CODES
+    )
+    if not dub_markers:
+        return True
+    if dub_markers == (
+        _STAGE1_DIRECTION_UNDER_BURDEN_BURDEN_ATTRIBUTE_CODE,
+    ):
+        return actual_shape == _STAGE1_BURDEN_DIRECT_SHAPE
+    # An ambiguous node carrying the direction role has no independent
+    # direct-shape authority in this projection and therefore fails closed.
+    return False
+
+
 def _validate_stage1_relation_binding(
     candidate: EmlisInterpretationCandidate,
     *,
@@ -16066,8 +17449,16 @@ def _validate_stage1_relation_binding(
         str,
         frozenset[tuple[InterpretationKind, SemanticOperator]],
     ],
+    direct_source_contract_qualifiers_by_node_ref: Mapping[
+        str,
+        Tuple[str, ...],
+    ] | None = None,
 ) -> None:
-    if candidate.relation_operator is RelationOperator.NO_RELATION_CLAIM:
+    if not candidate.relation_basis_refs:
+        if candidate.relation_operator is not RelationOperator.NO_RELATION_CLAIM:
+            raise CMEEStage1ContractError(
+                "stage1_candidate_relation_binding_invalid"
+            )
         return
     _ref_type, edge_id = _stage1_ref_parts(
         candidate.relation_basis_refs[0],
@@ -16079,6 +17470,11 @@ def _validate_stage1_relation_binding(
         edge.source_node_id == edge.target_node_id
         or edge.source_node_id not in node_by_id
         or edge.target_node_id not in node_by_id
+        or edge.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
+        or str(edge.grounding_kind).lower() != "user_stated_relation"
+        or type(edge.evidence_ids) is not tuple
+        or not edge.evidence_ids
+        or len(edge.evidence_ids) != len(set(edge.evidence_ids))
     ):
         raise CMEEStage1ContractError("stage1_candidate_relation_binding_invalid")
     source_ref = _stage1_node_ref(edge.source_node_id)
@@ -16087,171 +17483,108 @@ def _validate_stage1_relation_binding(
     target_kind = str(node_by_id[edge.target_node_id].node_kind).lower()
     source_direct_shapes = direct_shapes_by_node_ref.get(source_ref, frozenset())
     target_direct_shapes = direct_shapes_by_node_ref.get(target_ref, frozenset())
-    relation = str(edge.relation).lower()
-    expected_relation: Optional[set[str]] = None
-    expected_bindings: tuple[ArgumentBinding, ...]
-    if candidate.candidate_kind is InterpretationKind.COEXISTENCE:
-        expected_relation = {"coexistence"}
-        left, right = tuple(
-            _stage1_node_ref(node_id)
-            for node_id in sorted(
-                (edge.source_node_id, edge.target_node_id),
-                key=node_source_order.__getitem__,
+    source_shapes = source_direct_shapes or _stage1_allowed_direct_shapes(
+        node_by_id[edge.source_node_id]
+    )
+    target_shapes = target_direct_shapes or _stage1_allowed_direct_shapes(
+        node_by_id[edge.target_node_id]
+    )
+
+    def role_values(semantic_ref: str, axis: str) -> Tuple[str, ...]:
+        roles = tuple(
+            binding.role
+            for binding in candidate.argument_bindings
+            if binding.semantic_ref == semantic_ref
+        )
+        if len(roles) != 1:
+            return ()
+        prefix = f"{roles[0].value.lower()}_{axis}:"
+        return tuple(
+            value[len(prefix) :]
+            for value in candidate.required_qualifiers
+            if value.startswith(prefix) and value[len(prefix) :]
+        )
+
+    actual_source_contract_qualifiers = tuple(
+        value
+        for value in candidate.required_qualifiers
+        if value.startswith(_STAGE1_ROLE_SOURCE_CONTRACT_PREFIXES)
+    )
+    source_direct_contract_qualifiers = (
+        (direct_source_contract_qualifiers_by_node_ref or {}).get(
+            source_ref, ()
+        )
+    )
+    target_direct_contract_qualifiers = (
+        (direct_source_contract_qualifiers_by_node_ref or {}).get(
+            target_ref, ()
+        )
+    )
+    source_attribute_codes = tuple(
+        value.removeprefix("qualifier:")
+        for value in source_direct_contract_qualifiers
+    )
+    target_attribute_codes = tuple(
+        value.removeprefix("qualifier:")
+        for value in target_direct_contract_qualifiers
+    )
+    try:
+        expected_source_contract_qualifiers = (
+            project_stage1_relation_source_contract_qualifiers(
+                candidate_kind=candidate.candidate_kind,
+                source_attribute_codes=source_attribute_codes,
+                target_attribute_codes=target_attribute_codes,
+                stage1_response_schema_version=candidate.schema_version,
             )
         )
-        expected_bindings = (
-            ArgumentBinding(ArgumentRole.LEFT, left),
-            ArgumentBinding(ArgumentRole.RIGHT, right),
-        )
-    elif candidate.candidate_kind is InterpretationKind.TENSION:
-        expected_relation = {"contrast"}
-        left, right = tuple(
-            _stage1_node_ref(node_id)
-            for node_id in sorted(
-                (edge.source_node_id, edge.target_node_id),
-                key=node_source_order.__getitem__,
-            )
-        )
-        expected_bindings = (
-            ArgumentBinding(ArgumentRole.LEFT, left),
-            ArgumentBinding(ArgumentRole.RIGHT, right),
-        )
-    elif candidate.candidate_kind is InterpretationKind.DIRECTION_UNDER_BURDEN:
-        source_direction_valid = (
-            _STAGE1_DIRECTION_DIRECT_SHAPE in source_direct_shapes
-            if source_direct_shapes
-            else source_kind in _STAGE1_DIRECTION_NODE_KINDS
-        )
-        target_direction_valid = (
-            _STAGE1_DIRECTION_DIRECT_SHAPE in target_direct_shapes
-            if target_direct_shapes
-            else target_kind in _STAGE1_DIRECTION_NODE_KINDS
-        )
-        source_burden_valid = (
-            _STAGE1_BURDEN_DIRECT_SHAPE in source_direct_shapes
-            if source_direct_shapes
-            else source_kind in _STAGE1_BURDEN_NODE_KINDS
-        )
-        target_burden_valid = (
-            _STAGE1_BURDEN_DIRECT_SHAPE in target_direct_shapes
-            if target_direct_shapes
-            else target_kind in _STAGE1_BURDEN_NODE_KINDS
-        )
-        source_is_direction = (
-            source_kind in _STAGE1_DIRECTION_NODE_KINDS
-            and source_direction_valid
-        )
-        target_is_direction = (
-            target_kind in _STAGE1_DIRECTION_NODE_KINDS
-            and target_direction_valid
-        )
-        source_is_burden = (
-            source_kind in _STAGE1_BURDEN_NODE_KINDS
-            and source_burden_valid
-        )
-        target_is_burden = (
-            target_kind in _STAGE1_BURDEN_NODE_KINDS
-            and target_burden_valid
-        )
-        if not (
-            (source_is_direction and target_is_burden)
-            or (source_is_burden and target_is_direction)
-        ):
-            raise CMEEStage1ContractError(
-                "stage1_candidate_relation_binding_invalid"
-            )
-        direction_ref = source_ref if source_is_direction else target_ref
-        burden_ref = source_ref if source_is_burden else target_ref
-        expected_relation = (
-            {"wish_and_constraint"}
-            if candidate.relation_operator is RelationOperator.COEXISTS_WITH
-            else {
-                "preserves_despite",
-                "attempt_and_block",
-                "continuation_or_refusal",
-            }
-        )
-        expected_bindings = (
-            ArgumentBinding(ArgumentRole.LEFT, direction_ref),
-            ArgumentBinding(ArgumentRole.RIGHT, burden_ref),
-        )
-    elif candidate.candidate_kind is InterpretationKind.ACTION_THEN_CHANGE_ONCE:
-        source_shape_valid = (
-            _STAGE1_ACTION_DIRECT_SHAPE in source_direct_shapes
-            if source_direct_shapes
-            else source_kind in _STAGE1_ACTION_NODE_KINDS
-        )
-        target_shape_valid = (
-            _STAGE1_CHANGE_DIRECT_SHAPE in target_direct_shapes
-            if target_direct_shapes
-            else target_kind in _STAGE1_CHANGE_NODE_KINDS
-        )
-        if (
-            source_kind not in _STAGE1_ACTION_NODE_KINDS
-            or target_kind not in _STAGE1_CHANGE_NODE_KINDS
-            or not source_shape_valid
-            or not target_shape_valid
-        ):
-            raise CMEEStage1ContractError(
-                "stage1_candidate_relation_binding_invalid"
-            )
-        expected_relation = {"action_supports_change"}
-        expected_bindings = (
-            ArgumentBinding(ArgumentRole.ACTION, source_ref),
-            ArgumentBinding(ArgumentRole.CHANGE, target_ref),
-        )
-    elif candidate.candidate_kind is InterpretationKind.RESIDUE_AFTER_EVENT:
-        source_shape_valid = (
-            bool(
-                source_direct_shapes.intersection(
-                    {
-                        _STAGE1_STATE_DIRECT_SHAPE,
-                        _STAGE1_ACTION_DIRECT_SHAPE,
-                        _STAGE1_CHANGE_DIRECT_SHAPE,
-                    }
-                )
-            )
-            if source_direct_shapes
-            else source_kind in _STAGE1_EVENT_NODE_KINDS
-        )
-        target_shape_valid = (
-            bool(
-                target_direct_shapes.intersection(
-                    {
-                        _STAGE1_STATE_DIRECT_SHAPE,
-                        _STAGE1_BURDEN_DIRECT_SHAPE,
-                        _STAGE1_CHANGE_DIRECT_SHAPE,
-                        _STAGE1_UNFINISHED_DIRECT_SHAPE,
-                    }
-                )
-            )
-            if target_direct_shapes
-            else target_kind in _STAGE1_RESIDUE_NODE_KINDS
-        )
-        if (
-            source_kind not in _STAGE1_EVENT_NODE_KINDS
-            or target_kind not in _STAGE1_RESIDUE_NODE_KINDS
-            or not source_shape_valid
-            or not target_shape_valid
-        ):
-            raise CMEEStage1ContractError(
-                "stage1_candidate_relation_binding_invalid"
-            )
-        expected_relation = {"temporal_before_after", "shift_from_to"}
-        expected_bindings = (
-            ArgumentBinding(ArgumentRole.BEFORE, source_ref),
-            ArgumentBinding(ArgumentRole.AFTER, target_ref),
-        )
-    elif candidate.candidate_kind is InterpretationKind.SOURCE_STATED_CAUSE:
-        expected_relation = {"user_stated_cause"}
-        expected_bindings = (
-            ArgumentBinding(ArgumentRole.CAUSE, source_ref),
-            ArgumentBinding(ArgumentRole.EFFECT, target_ref),
-        )
-    else:
+    except CMEEStage1ContractError:
+        raise CMEEStage1ContractError(
+            "stage1_candidate_relation_binding_invalid"
+        ) from None
+    if (
+        actual_source_contract_qualifiers
+        != expected_source_contract_qualifiers
+    ):
         raise CMEEStage1ContractError("stage1_candidate_relation_binding_invalid")
-    if relation not in expected_relation or candidate.argument_bindings != expected_bindings:
-        raise CMEEStage1ContractError("stage1_candidate_relation_binding_invalid")
+
+    canonical_shapes = set()
+    for source_shape in source_shapes:
+        for target_shape in target_shapes:
+            shape = project_stage1_relation_shape(
+                relation_kind=edge.relation,
+                source_ref=source_ref,
+                target_ref=target_ref,
+                source_node_kind=source_kind,
+                target_node_kind=target_kind,
+                source_direct_shape=source_shape,
+                target_direct_shape=target_shape,
+                source_time_scope=(
+                    role_values(source_ref, "time_scope") or ("",)
+                )[0],
+                target_time_scope=(
+                    role_values(target_ref, "time_scope") or ("",)
+                )[0],
+                source_attribute_codes=source_attribute_codes,
+                target_attribute_codes=target_attribute_codes,
+                source_order=node_source_order.get(edge.source_node_id),
+                target_order=node_source_order.get(edge.target_node_id),
+                edge_grounding_kind=edge.grounding_kind,
+                edge_epistemic_state=edge.epistemic_state,
+                edge_evidence_ids=edge.evidence_ids,
+                stage1_response_schema_version=candidate.schema_version,
+            )
+            if shape is not None:
+                canonical_shapes.add(shape)
+    candidate_shape = (
+        candidate.candidate_kind,
+        candidate.semantic_operator,
+        candidate.relation_operator,
+        candidate.argument_bindings,
+    )
+    if candidate_shape not in canonical_shapes:
+        raise CMEEStage1ContractError(
+            "stage1_candidate_relation_binding_invalid"
+        )
 
 
 def _stage1_contribution_kind_for_candidate(
@@ -16305,6 +17638,12 @@ def _stage1_meaning_field_slot_for_candidate(
         return MeaningFieldSlot.CHANGE
     if candidate.candidate_kind is InterpretationKind.RESIDUE_AFTER_EVENT:
         return MeaningFieldSlot.RESIDUE
+    if candidate.candidate_kind in {
+        InterpretationKind.ACTION_BEFORE_AFTER,
+        InterpretationKind.BOUNDED_SOURCE_ORDER,
+        InterpretationKind.SOURCE_STATED_TRANSITION,
+    }:
+        return MeaningFieldSlot.TIME_RELATION
     if candidate.candidate_kind is InterpretationKind.SOURCE_STATED_CAUSE:
         return MeaningFieldSlot.TIME_RELATION
     direct_mapping = {
@@ -17588,9 +18927,8 @@ def _validate_stage1_projection_v2_subjective_spine(
             else None
         )
         candidate = candidate_by_id.get(row.source_candidate_ref)
-        relation_scoped = (
-            candidate is not None
-            and candidate.relation_operator is not RelationOperator.NO_RELATION_CLAIM
+        relation_scoped = bool(
+            candidate is not None and candidate.relation_basis_refs
         )
         matching_binding = (
             candidate is not None
@@ -18041,16 +19379,10 @@ def validate_stage1_projection(
         or any(type(row) is not EmlisSubjectiveClaim for row in claims)
     ):
         raise CMEEStage1ContractError("stage1_projection_child_type_invalid")
-    if len(candidates) > 16:
-        raise CMEEStage1ContractError("stage1_candidate_pool_cap_exceeded")
     layer1_children = (*candidates, projection.meaning_field, *contributions)
     for child in layer1_children:
         _validate_stage1_immutable_shape(child)
-        expected_layer1_schema = (
-            CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
-            if is_v2
-            else projection.schema_version
-        )
+        expected_layer1_schema = projection.schema_version
         if child.schema_version != expected_layer1_schema:
             raise CMEEStage1ContractError("stage1_child_schema_version_mismatch")
         validate_stage1_identity(child)
@@ -18180,13 +19512,14 @@ def validate_stage1_projection(
     ):
         raise CMEEStage1ContractError("stage1_meaning_field_slot_order_invalid")
 
-    direct_shape_sets: dict[
-        str,
-        set[tuple[InterpretationKind, SemanticOperator]],
+    meaning_candidate_set = set(meaning_field_candidate_refs)
+    direct_candidate_rows_by_node_ref: dict[
+        str, list[EmlisInterpretationCandidate]
     ] = {}
     for row in candidates:
         if (
-            row.relation_operator is RelationOperator.NO_RELATION_CLAIM
+            not row.relation_basis_refs
+            and row.relation_operator is RelationOperator.NO_RELATION_CLAIM
             and type(row.candidate_kind) is InterpretationKind
             and type(row.semantic_operator) is SemanticOperator
         ):
@@ -18197,12 +19530,85 @@ def validate_stage1_projection(
                 and binding.role is ArgumentRole.PRIMARY
             )
             if len(primary_refs) == 1:
-                direct_shape_sets.setdefault(primary_refs[0], set()).add(
-                    (row.candidate_kind, row.semantic_operator)
+                direct_source_contract = (
+                    _stage1_direct_source_contract_qualifiers(row)
                 )
-    direct_shapes_by_node_ref = {
-        ref: frozenset(shapes) for ref, shapes in direct_shape_sets.items()
+                if row.candidate_id in meaning_candidate_set and any(
+                    value.removeprefix("qualifier:")
+                    in _STAGE1_DIRECTION_UNDER_BURDEN_ATTRIBUTE_CODES
+                    for value in direct_source_contract
+                ):
+                    raise CMEEStage1ContractError(
+                        "stage1_candidate_direct_source_contract_invalid"
+                    )
+                direct_candidate_rows_by_node_ref.setdefault(
+                    primary_refs[0], []
+                ).append(row)
+    direct_shapes_by_node_ref: dict[
+        str,
+        frozenset[tuple[InterpretationKind, SemanticOperator]],
+    ] = {}
+    direct_source_contract_qualifiers_by_node_ref: dict[
+        str, Tuple[str, ...]
+    ] = {}
+    meaning_direct_source_contract_qualifiers_by_node_ref: dict[
+        str, Tuple[str, ...]
+    ] = {}
+    meaning_direct_candidate_by_node_ref: dict[
+        str, EmlisInterpretationCandidate
+    ] = {}
+    support_direct_candidate_by_node_ref: dict[
+        str, EmlisInterpretationCandidate
+    ] = {}
+    direct_node_by_ref = {
+        _stage1_node_ref(node.node_id): node for node in node_by_id.values()
     }
+    for ref, rows in direct_candidate_rows_by_node_ref.items():
+        meaning_rows = tuple(
+            row for row in rows if row.candidate_id in meaning_candidate_set
+        )
+        support_rows = tuple(
+            row for row in rows if row.candidate_id not in meaning_candidate_set
+        )
+        if support_rows and not meaning_rows and (
+            ref not in direct_node_by_ref
+            or not _stage1_support_only_direct_shape_satisfied(
+                support_rows[0],
+                node=direct_node_by_ref[ref],
+            )
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_projection_v2_support_candidate_invalid"
+            )
+        if len(meaning_rows) > 1 or len(support_rows) > 1:
+            raise CMEEStage1ContractError(
+                "stage1_candidate_direct_source_contract_invalid"
+            )
+        if meaning_rows:
+            meaning = meaning_rows[0]
+            meaning_direct_candidate_by_node_ref[ref] = meaning
+            meaning_direct_source_contract_qualifiers_by_node_ref[ref] = (
+                _stage1_direct_source_contract_qualifiers(meaning)
+            )
+        if support_rows:
+            support_direct_candidate_by_node_ref[ref] = support_rows[0]
+        if meaning_rows and support_rows and (
+            _stage1_direct_support_twin_signature(meaning_rows[0])
+            != _stage1_direct_support_twin_signature(support_rows[0])
+        ):
+            raise CMEEStage1ContractError(
+                "stage1_projection_v2_support_candidate_invalid"
+            )
+        shape_owner = (meaning_rows or support_rows)[0]
+        direct_shapes_by_node_ref[ref] = frozenset(
+            {(shape_owner.candidate_kind, shape_owner.semantic_operator)}
+        )
+        source_contract_owner = (support_rows or meaning_rows)[0]
+        direct_source_contract_qualifiers_by_node_ref[ref] = (
+            _stage1_direct_source_contract_qualifiers(
+                source_contract_owner
+            )
+        )
 
     for row in candidates:
         if (
@@ -18268,16 +19674,20 @@ def validate_stage1_projection(
         )
         if row.semantic_refs != binding_refs:
             raise CMEEStage1ContractError("stage1_candidate_argument_ref_invalid")
+        relation_scoped = bool(row.relation_basis_refs)
         if (
-            row.relation_operator is RelationOperator.NO_RELATION_CLAIM
+            not relation_scoped
+            and row.relation_operator is RelationOperator.NO_RELATION_CLAIM
             and len(row.argument_bindings) == 2
             and row.argument_bindings[0].semantic_ref
             != row.argument_bindings[1].semantic_ref
         ):
             raise CMEEStage1ContractError("stage1_candidate_argument_ref_invalid")
-        if row.relation_operator is RelationOperator.NO_RELATION_CLAIM:
-            if row.relation_basis_refs:
-                raise CMEEStage1ContractError("stage1_candidate_relation_basis_invalid")
+        if not relation_scoped:
+            if row.relation_operator is not RelationOperator.NO_RELATION_CLAIM:
+                raise CMEEStage1ContractError(
+                    "stage1_candidate_relation_basis_missing"
+                )
             primary_ref = row.argument_bindings[0].semantic_ref
             _primary_type, primary_node_id = _stage1_ref_parts(
                 primary_ref,
@@ -18291,16 +19701,59 @@ def validate_stage1_projection(
                 raise CMEEStage1ContractError(
                     "stage1_candidate_direct_shape_invalid"
                 )
-        elif not row.relation_basis_refs:
-            raise CMEEStage1ContractError("stage1_candidate_relation_basis_missing")
+            direct_source_contract_qualifiers = tuple(
+                value
+                for value in row.required_qualifiers
+                if value.startswith("qualifier:")
+            )
+            if (
+                len(direct_source_contract_qualifiers)
+                != len(set(direct_source_contract_qualifiers))
+                or len(
+                    {
+                        "qualifier:"
+                        + _STAGE1_DIRECTION_UNDER_BURDEN_DIRECTION_ATTRIBUTE_CODE,
+                        "qualifier:"
+                        + _STAGE1_DIRECTION_UNDER_BURDEN_BURDEN_ATTRIBUTE_CODE,
+                    }
+                    & set(direct_source_contract_qualifiers)
+                )
+                > 1
+                or any(
+                    value
+                    not in {
+                        "qualifier:operator:shift",
+                        "qualifier:"
+                        + _STAGE1_DIRECTION_UNDER_BURDEN_DIRECTION_ATTRIBUTE_CODE,
+                        "qualifier:"
+                        + _STAGE1_DIRECTION_UNDER_BURDEN_BURDEN_ATTRIBUTE_CODE,
+                    }
+                    for value in direct_source_contract_qualifiers
+                )
+                or (
+                    row.schema_version
+                    == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+                    and direct_source_contract_qualifiers
+                )
+            ):
+                raise CMEEStage1ContractError(
+                    "stage1_candidate_direct_source_contract_invalid"
+                )
+        elif len(row.relation_basis_refs) != 1:
+            raise CMEEStage1ContractError(
+                "stage1_candidate_relation_basis_invalid"
+            )
         _validate_stage1_relation_binding(
             row,
             edge_by_id=edge_by_id,
             node_by_id=node_by_id,
             node_source_order=node_source_order,
             direct_shapes_by_node_ref=direct_shapes_by_node_ref,
+            direct_source_contract_qualifiers_by_node_ref=(
+                direct_source_contract_qualifiers_by_node_ref
+            ),
         )
-        if row.relation_operator is RelationOperator.NO_RELATION_CLAIM:
+        if not relation_scoped:
             expected_derivation_rule_id = (
                 "cocolon.cmee.v1a.stage1.direct."
                 f"{row.candidate_kind.value.lower()}.v1"
@@ -18338,47 +19791,133 @@ def validate_stage1_projection(
                 "stage1_candidate_source_evidence_unreachable"
             )
 
+    required_candidate_set = set(meaning_field.required_candidate_refs)
+    support_candidate_set: set[str] = set()
     if is_v2:
-        meaning_candidate_set = set(meaning_field_candidate_refs)
         support_candidate_set = candidate_set - meaning_candidate_set
-        admitted_endpoint_refs = {
-            binding.semantic_ref
-            for candidate in candidates
-            if candidate.relation_operator is not RelationOperator.NO_RELATION_CLAIM
-            for binding in candidate.argument_bindings
+        required_relation_endpoint_contracts: dict[str, list[str]] = {}
+        for candidate in candidates:
+            if (
+                candidate.candidate_id not in required_candidate_set
+                or not candidate.relation_basis_refs
+            ):
+                continue
+            for binding in candidate.argument_bindings:
+                endpoint_contracts = (
+                    required_relation_endpoint_contracts.setdefault(
+                        binding.semantic_ref, []
+                    )
+                )
+                for value in (
+                    _stage1_relation_binding_direct_source_contract_qualifiers(
+                        candidate,
+                        binding,
+                    )
+                ):
+                    if value not in endpoint_contracts:
+                        endpoint_contracts.append(value)
+        required_relation_endpoint_refs = set(
+            required_relation_endpoint_contracts
+        )
+        direct_meaning_endpoint_refs = set(
+            meaning_direct_candidate_by_node_ref
+        )
+        expected_support_semantic_refs = {
+            ref
+            for ref, required_contracts in (
+                required_relation_endpoint_contracts.items()
+            )
+            if ref not in direct_meaning_endpoint_refs
+            or not set(required_contracts).issubset(
+                set(
+                    meaning_direct_source_contract_qualifiers_by_node_ref.get(
+                        ref, ()
+                    )
+                )
+            )
         }
         contribution_candidate_refs = {
             ref
             for contribution in contributions
             for ref in contribution.interpretation_candidate_refs
         }
-        if any(
-            support.relation_operator is not RelationOperator.NO_RELATION_CLAIM
-            or len(support.semantic_refs) != 1
-            or support.semantic_refs[0] not in admitted_endpoint_refs
-            or support.candidate_id in contribution_candidate_refs
-            or support.candidate_id in set(meaning_field.required_candidate_refs)
-            for support in (
-                candidate_by_id[ref] for ref in support_candidate_set
+        support_candidates = tuple(
+            candidate_by_id[ref] for ref in support_candidate_set
+        )
+        support_semantic_refs = tuple(
+            support.semantic_refs[0]
+            for support in support_candidates
+            if len(support.semantic_refs) == 1
+        )
+        support_contract_invalid = False
+        for semantic_ref, support in (
+            support_direct_candidate_by_node_ref.items()
+        ):
+            support_contract = (
+                _stage1_direct_source_contract_qualifiers(support)
             )
+            required_contract = tuple(
+                required_relation_endpoint_contracts.get(semantic_ref, ())
+            )
+            meaning = meaning_direct_candidate_by_node_ref.get(semantic_ref)
+            if meaning is None:
+                if not set(required_contract).issubset(
+                    set(support_contract)
+                ):
+                    support_contract_invalid = True
+                continue
+            expected_contract = _stage1_ordered_unique(
+                (
+                    *_stage1_direct_source_contract_qualifiers(meaning),
+                    *required_contract,
+                )
+            )
+            if support_contract != expected_contract:
+                support_contract_invalid = True
+        if (
+            any(
+                support.relation_operator
+                is not RelationOperator.NO_RELATION_CLAIM
+                or len(support.semantic_refs) != 1
+                or support.semantic_refs[0]
+                not in required_relation_endpoint_refs
+                or support.candidate_id in contribution_candidate_refs
+                or support.candidate_id in required_candidate_set
+                for support in support_candidates
+            )
+            or len(support_semantic_refs) != len(support_candidates)
+            or len(support_semantic_refs) != len(set(support_semantic_refs))
+            or set(support_semantic_refs) != expected_support_semantic_refs
+            or len(support_candidates) > len(required_relation_endpoint_refs)
+            or support_contract_invalid
         ):
             raise CMEEStage1ContractError(
                 "stage1_projection_v2_support_candidate_invalid"
             )
 
-    kind_counts: dict[InterpretationKind, int] = {}
-    required_candidate_set = set(meaning_field.required_candidate_refs)
-    for row in candidates:
-        if is_v2 and row.candidate_id in support_candidate_set:
-            continue
-        kind_counts[row.candidate_kind] = kind_counts.get(row.candidate_kind, 0) + 1
-        if kind_counts[row.candidate_kind] > _STAGE1_INTERPRETATION_CANDIDATE_KIND_CAP:
-            code = (
-                "stage1_required_candidate_overflow"
-                if row.candidate_id in required_candidate_set
-                else "stage1_candidate_kind_cap_exceeded"
-            )
-            raise CMEEStage1ContractError(code)
+    meaning_candidates = tuple(
+        row for row in candidates if row.candidate_id in meaning_candidate_set
+    )
+    try:
+        validate_stage1_candidate_partition_bounds(
+            tuple(row.candidate_kind for row in meaning_candidates),
+            tuple(
+                row.candidate_id in required_candidate_set
+                for row in meaning_candidates
+            ),
+            support_semantic_refs=(
+                support_semantic_refs if is_v2 else ()
+            ),
+            expected_support_semantic_refs=(
+                tuple(expected_support_semantic_refs) if is_v2 else ()
+            ),
+        )
+    except CMEEStage1ContractError as exc:
+        if str(exc) != "stage1_candidate_support_partition_invalid":
+            raise
+        raise CMEEStage1ContractError(
+            "stage1_projection_v2_support_candidate_invalid"
+        ) from None
 
     required_contribution_candidate_refs: list[str] = []
     optional_contribution_count = 0
@@ -19436,9 +20975,12 @@ def validate_stage1_trace_spine(
         if type(extension) is not EmlisStage1PositiveTraceExtension:
             raise CMEEStage1ContractError("stage1_trace_extension_type_invalid")
         _validate_stage1_immutable_shape(extension)
-        if extension.schema_version != CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION:
+        if (
+            extension.schema_version
+            != CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V1
+        ):
             raise CMEEStage1ContractError("stage1_trace_extension_version_invalid")
-        if extension.owner_ref != CMEE_STAGE1_EMLIS_OWNER_REF:
+        if extension.owner_ref != CMEE_STAGE1_EMLIS_OWNER_REF_V1:
             raise CMEEStage1ContractError("stage1_trace_owner_invalid")
         if (
             extension.subjective_claim_refs
@@ -19866,6 +21408,11 @@ __all__ = [
     "InflectionClassSpec",
     "InterpretationEpistemicState",
     "InterpretationKind",
+    "INTERPRETATION_MATRIX_EXACT13",
+    "INTERPRETATION_MATRIX_EXACT16",
+    "ACTION_BEFORE_AFTER_INTERPRETATION_ROW_EXACT1",
+    "BOUNDED_SOURCE_ORDER_INTERPRETATION_ROW_EXACT1",
+    "SOURCE_STATED_TRANSITION_INTERPRETATION_ROW_EXACT1",
     "InputSpecificMeaningStructure",
     "InputSpecificMeaningCandidate",
     "InputSpecificityEvidence",
@@ -19994,6 +21541,7 @@ __all__ = [
     "WholeReadingConsequenceValidationContext",
     "apply_meaning_signature_mutation",
     "bounded_limited_reception_id",
+    "canonical_limited_retained_layer1_refs",
     "counterfactual_mutation_id",
     "difference_configuration_id",
     "foreground_scope_basis_row_ref",
@@ -20017,6 +21565,13 @@ __all__ = [
     "project_premeaning_source_relation_rows",
     "project_stage1_policy_basis_binding_ref",
     "project_stage1_projection_preimage_ref",
+    "project_stage1_relation_required_qualifiers",
+    "project_stage1_relation_source_contract_qualifiers",
+    "project_stage1_relation_shape",
+    "project_stage1_source_contract_qualifiers",
+    "stage1_source_explicit_target_topic_scope_refs",
+    "stage1_foreground_coverage_required_flags",
+    "project_stage1_source_explicit_shift_endpoint_node_ids",
     "project_stage1_subjective_projection_seal_ref",
     "project_stage1_tagged_projection_ref",
     "project_stage1_source_qualifier_binding_ref",
@@ -20028,22 +21583,27 @@ __all__ = [
     "reading_consequence_id",
     "reading_consequence_source_constraint_refs",
     "resolve_limited_subjective_binding_rows",
+    "resolve_limited_reception_aggregate",
     "required_difference_id",
     "resolve_mutation_application_spec",
     "requirement_bundle_id",
     "stage1_policy_application_order_key",
+    "stage1_candidate_selection_indices",
+    "stage1_candidate_uses_relation_qualifier_scope",
     "stage1_projection_artifact_ref",
     "stage1_canonical_json_bytes",
     "selected_emlis_provisional_reading_id",
     "sealed_emlis_provisional_reading_id",
     "subjective_proposition_v2_id",
     "validate_stage1_anti_template_registry_invariant",
+    "validate_stage1_candidate_partition_bounds",
     "validate_stage1_final_logical_id_registry",
     "validate_stage1_identity",
     "validate_stage1_local_ref_dag",
     "validate_stage1_projection",
     "validate_stage1_projection_artifact_ref",
     "validate_stage1_post_selection_reception_records",
+    "validate_stage1_interpretation_matrix",
     "validate_stage1_sentence_unit",
     "validate_stage1_trace_spine",
     "validate_foreground_scope",

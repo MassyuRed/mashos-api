@@ -46,13 +46,11 @@ from cocolon_text_generation_core.adapters.emlis_observation_composer import (
 from .contracts import (
     AttachmentAdmission,
     CMEE_COMMON_GUARD_PROOF_VERSION,
-    CMEE_STAGE1_EMLIS_OWNER_REF,
     CMEE_STAGE1_EMLIS_OWNER_REF_V1,
     CMEE_STAGE1_EMLIS_OWNER_REF_V2,
     CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
     CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1,
     CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
-    CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION,
     CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V1,
     CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION_V2,
     CMEEStage1ContractError,
@@ -83,7 +81,6 @@ from .contracts import (
 )
 from .emlis_stage1_response import (
     CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE,
-    _compile_stage1_response_v2_candidate,
     compile_stage1_response,
     stage1_required_projection_nucleus_ids,
 )
@@ -634,6 +631,38 @@ CMEE_FROZEN_ROLE_MAX = int(
         "max_graphemes"
     ]
 )
+_CMEE_FINITE_NEGATIVE_CARRIER_RE = re.compile(
+    r"(?:ではありませんでした|じゃありませんでした|ありませんでした|"
+    r"ございませんでした|ませんでした|ではありません|じゃありません|"
+    r"ありません|ございません|ません|ではなかった|じゃなかった|"
+    r"なかった|ではない|じゃない|ない)"
+)
+_CMEE_EXCLUSIVE_FOCUS_GROUP_RE = re.compile(
+    r"[「」『』\"“”【】〔〕［］\[\]（）()]"
+)
+_CMEE_EXCLUSIVE_FOCUS_METALINGUISTIC_RE = re.compile(
+    r"(?:単語|表現|文|言葉|例文?|サンプル|テスト|練習|引用|出典)"
+    r"[^。！？!?]{0,24}しか|"
+    r"しか[^。！？!?]{0,24}(?:単語|表現|文|言葉|例文?|引用)"
+)
+_CMEE_EXCLUSIVE_FOCUS_SCOPE_NEGATION_RE = re.compile(
+    r"しか[^。！？!?]{0,24}(?:わけ|ということ|のでは|とは)"
+    r"[^。！？!?]{0,12}(?:ない|なかった|ありません|"
+    r"限らない|言えない)"
+)
+_CMEE_EXCLUSIVE_FOCUS_OTHER_EXPERIENCER_RE = re.compile(
+    rf"^(?:{OTHER_EXPERIENCER_SUBJECT_PATTERN}|"
+    r"みんな|皆|全員|人々|誰か|誰も|彼ら|彼女ら|"
+    r"[^、。！？!?「」『』]{1,12}(?:さん|氏|ちゃん|くん))"
+    r"(?:が|は|には|にしか)"
+)
+_CMEE_EXCLUSIVE_FOCUS_OTHER_CONTEXT_RE = re.compile(
+    rf"(?:{OTHER_EXPERIENCER_SUBJECT_PATTERN}|みんな|皆|全員|"
+    r"人々|彼ら|彼女ら)"
+    r"(?:によると|によれば|の話では|の話だと|"
+    r"が言うには|から聞くと)"
+    r"[^。！？!?]{0,32}しか"
+)
 _CMEE_SOURCE_SHAPE_RECOGNIZERS = dict(
     dict(CMEE_STAGE1_MICROGRAMMAR_INVENTORY_TUPLE)["source_shape_recognizers"]
 )
@@ -720,10 +749,8 @@ COMMON_GUARD_STABILIZATION_REPORT_NAME = (
 )
 COMMON_GUARD_STABILIZATION_PHASE = "step15_common_core_stabilization"
 COMMON_GUARD_STABILIZATION_CORE_ID = "emlis"
-TRUST_POLICY_IDS = (
-    *tuple(sorted(EXPECTED_COMMON_GUARDS)),
-    "cocolon.cmee.source_owner.positive_realization_trace.v2",
-    CMEE_STAGE1_TRACE_EXTENSION_SCHEMA_VERSION,
+TRUST_POLICY_IDS = _stage1_trust_policy_ids(
+    CMEE_STAGE1_RESPONSE_SCHEMA_VERSION
 )
 SOURCE_OWNER_REASON_CODES = frozenset(
     {
@@ -1540,6 +1567,43 @@ def _cmee_parse_simple_change_shape(
     return context, reconstructed, result
 
 
+def _cmee_named_shape_fragments_within_l1_limit(
+    pattern: re.Pattern[str],
+    value: str,
+    names: Sequence[str],
+) -> bool:
+    """Return whether a registered multipart shape fits its L1 role slots.
+
+    Source-shape parsers are owned by the finite multipart microgrammar, not
+    by generic source-role realization.  A regex hit whose exact named roles
+    cannot fit those slots must therefore leave the source role generic; it
+    is not malformed input.  Once the roles fit, the parser remains the
+    fail-closed authority for morphology, ordering, and duplicate anchors.
+    """
+
+    match = pattern.fullmatch(value)
+    if match is None:
+        return False
+    return all(
+        bool(fragment := str(match.group(name) or ""))
+        and len(fragment) <= _CMEE_SOURCE_FRAGMENT_MAX
+        for name in names
+    )
+
+
+def _cmee_direct_contrast_fragments_within_l1_limit(value: str) -> bool:
+    """Return whether exactly one contrast has two bounded source roles."""
+
+    matches = tuple(_CMEE_DIRECT_CONTRAST_SHAPE_RE.finditer(value))
+    if len(matches) != 1:
+        return False
+    match = matches[0]
+    return all(
+        len(fragment) <= _CMEE_SOURCE_FRAGMENT_MAX
+        for fragment in (value[: match.start()], value[match.end() :])
+    )
+
+
 def _cmee_validate_typed_source_shape(nucleus: Any, value: str) -> None:
     """Dispatch finite multipart recognizers exactly once or fail closed."""
 
@@ -1548,19 +1612,25 @@ def _cmee_validate_typed_source_shape(nucleus: Any, value: str) -> None:
     parsed: list[str] = []
 
     if "operator:positive_change" in attributes:
-        for name, pattern, parser in (
+        for name, pattern, fragment_names, parser in (
             (
                 "action_change",
                 _CMEE_ACTION_CHANGE_SHAPE_RE,
+                ("context", "action", "result"),
                 _cmee_parse_action_change_shape,
             ),
             (
                 "simple_positive_change",
                 _CMEE_SIMPLE_CHANGE_SHAPE_RE,
+                ("context", "result"),
                 _cmee_parse_simple_change_shape,
             ),
         ):
-            if pattern.fullmatch(value) is not None:
+            if _cmee_named_shape_fragments_within_l1_limit(
+                pattern,
+                value,
+                fragment_names,
+            ):
                 signatures.append(name)
                 if parser(value) is not None:
                     parsed.append(name)
@@ -1571,31 +1641,51 @@ def _cmee_validate_typed_source_shape(nucleus: Any, value: str) -> None:
             or "semantic_role:retained_intention" in attributes
         )
         if retained_direction:
-            for name, pattern, parser in (
+            for name, pattern, fragment_names, parser in (
                 (
                     "context_direction_residue",
                     _CMEE_CONTEXT_DIRECTION_RESIDUE_SHAPE_RE,
+                    ("context", "direction", "residue"),
                     _cmee_parse_context_direction_residue_shape,
                 ),
                 (
                     "open_question",
                     _CMEE_OPEN_QUESTION_SHAPE_RE,
+                    ("burden", "question"),
                     _cmee_parse_open_question_shape,
                 ),
             ):
-                if pattern.fullmatch(value) is not None:
+                if _cmee_named_shape_fragments_within_l1_limit(
+                    pattern,
+                    value,
+                    fragment_names,
+                ):
                     signatures.append(name)
                     if parser(value) is not None:
                         parsed.append(name)
 
         if nucleus.kind in {"state", "reaction", "constraint"}:
-            if _CMEE_COMPOUND_BURDEN_SHAPE_RE.fullmatch(value) is not None:
+            if _cmee_named_shape_fragments_within_l1_limit(
+                _CMEE_COMPOUND_BURDEN_SHAPE_RE,
+                value,
+                ("context", "fatigue", "burden"),
+            ):
                 signatures.append("compound_burden")
                 if _cmee_parse_compound_burden_shape(value) is not None:
                     parsed.append("compound_burden")
 
-        direct_matches = tuple(_CMEE_DIRECT_CONTRAST_SHAPE_RE.finditer(value))
-        if direct_matches and _cmee_semantic_desire(nucleus, value):
+        typed_direct_contrast_owner = bool(
+            nucleus.kind in {"wish", "constraint"}
+            or {
+                "semantic_role:retained_intention",
+                "semantic_role:burden",
+            }.intersection(attributes)
+        ) and "semantic_role:embedded_turn" not in attributes
+        if (
+            typed_direct_contrast_owner
+            and _cmee_direct_contrast_fragments_within_l1_limit(value)
+            and _cmee_semantic_desire(nucleus, value)
+        ):
             signatures.append("direct_contrast")
             if _cmee_parse_direct_contrast_shape(nucleus, value) is not None:
                 parsed.append("direct_contrast")
@@ -1764,9 +1854,123 @@ def _cmee_exact_contrast_parts(text: str) -> tuple[str, str, str] | None:
     return left, separator, right
 
 
+def _cmee_bounded_exclusive_focus_role(text: str) -> str:
+    """Return one exact ``XしかV-neg`` source role, or fail closed.
+
+    Japanese exclusive focus uses a finite negative carrier without negating
+    the focused role itself.  This recognizer deliberately admits only one
+    short punctuation-bounded source clause; quoted, metalinguistic, nested,
+    multi-focus, and other-experiencer readings remain outside the finite
+    Stage 1 lexical-role contract.
+    """
+
+    raw = str(text or "")
+    compact = re.sub(r"\s+", "", raw)
+    if not compact or compact.count("しか") != 1:
+        return ""
+    source_segments = tuple(
+        segment
+        for segment in re.split(r"[、,。！？!?]+", compact)
+        if segment
+    )
+    focus_segments = tuple(
+        segment for segment in source_segments if "しか" in segment
+    )
+    if len(focus_segments) != 1:
+        return ""
+    candidate = focus_segments[0]
+    if (
+        not candidate
+        or candidate not in raw
+        or len(candidate) > CMEE_FROZEN_ROLE_MAX
+    ):
+        return ""
+    focus_index = candidate.find("しか")
+    if focus_index < 1:
+        return ""
+    carriers = tuple(_CMEE_FINITE_NEGATIVE_CARRIER_RE.finditer(candidate))
+    if len(carriers) != 1:
+        return ""
+    carrier = carriers[0]
+    if (
+        carrier.start() < focus_index + len("しか")
+        or carrier.end() != len(candidate)
+    ):
+        return ""
+    if any(
+        segment != candidate
+        and EXPLICIT_WHOLE_STATE_NEGATION_RE.search(segment)
+        for segment in source_segments
+    ):
+        return ""
+    if (
+        _CMEE_EXCLUSIVE_FOCUS_GROUP_RE.search(candidate)
+        or _CMEE_EXCLUSIVE_FOCUS_METALINGUISTIC_RE.search(compact)
+        or _CMEE_EXCLUSIVE_FOCUS_SCOPE_NEGATION_RE.search(candidate)
+        or _CMEE_EXCLUSIVE_FOCUS_OTHER_EXPERIENCER_RE.search(candidate)
+        or _CMEE_EXCLUSIVE_FOCUS_OTHER_CONTEXT_RE.search(compact)
+    ):
+        return ""
+    subject_match = re.match(
+        rf"^(?P<subject>{GENERIC_EXPERIENCER_SUBJECT_PATTERN})"
+        r"(?:が|は|には|では|こそ|も)(?=.+しか)",
+        candidate,
+    )
+    if subject_match:
+        subject = str(subject_match.group("subject") or "")
+        safe_subject = bool(
+            subject in FIRST_PERSON_SUBJECTS
+            or subject in SAFE_NONPERSON_TOPIC_EXACT
+            or any(
+                pattern.fullmatch(subject)
+                for pattern in SAFE_NONPERSON_TOPIC_PATTERNS
+            )
+            or subject
+            in {
+                "ここ",
+                "そこ",
+                "実際",
+                "現在",
+                "当時",
+                "そのとき",
+                "その時",
+                "疲れ",
+                "不安",
+                "心配",
+                "つらさ",
+                "苦しさ",
+                "しんどさ",
+            }
+        )
+        if not safe_subject:
+            return ""
+    return candidate
+
+
+def _cmee_typed_exclusive_focus_role_owner(nucleus: Any) -> bool:
+    """Require one explicit current-user negative state owner."""
+
+    frame = getattr(nucleus, "semantic_frame", None)
+    attributes = frozenset(getattr(frame, "attribute_codes", ()))
+    return bool(
+        str(getattr(nucleus, "kind", "")) in {"state", "reaction"}
+        and str(getattr(nucleus, "grounding_kind", "")) == "explicit"
+        and tuple(getattr(nucleus, "source_span_ids", ()))
+        and str(getattr(frame, "actor", "")) == "current_user"
+        and str(getattr(frame, "predicate_kind", "")) == "state"
+        and str(getattr(frame, "polarity", "")) == "negative"
+        and str(getattr(frame, "modality", "")) == "fact"
+        and "operator:negation" in attributes
+        and "operator:refusal" not in attributes
+        and "semantic_role:retained_intention" not in attributes
+    )
+
+
 def _cmee_frozen_lexical_role_surface(
     nucleus: Any,
     source_text: str,
+    *,
+    allow_final_exclusive_focus: bool = False,
 ) -> str:
     """Freeze one finite source-grounded semantic-role surface.
 
@@ -1794,6 +1998,13 @@ def _cmee_frozen_lexical_role_surface(
     ) and NEGATED_DESIRE_RE.search(value):
         raise CMEEVerticalError("lexical_role_negated_desire_conflict")
 
+    exclusive_focus_role = (
+        _cmee_bounded_exclusive_focus_role(source_text)
+        if allow_final_exclusive_focus
+        and _cmee_typed_exclusive_focus_role_owner(nucleus)
+        else ""
+    )
+
     # The finite Stage 1 operator matrix has no general negated-state
     # realization.  Refusal is representable by its registered modality
     # wrapper; every other explicit negation fails closed before a positive
@@ -1805,8 +2016,11 @@ def _cmee_frozen_lexical_role_surface(
             frame.modality == "refusal"
             and "operator:refusal" in attributes
         )
+        and not exclusive_focus_role
     ):
         raise CMEEVerticalError("lexical_role_negation_unrepresentable")
+    if exclusive_focus_role:
+        return exclusive_focus_role
 
     # Discourse markers are owned by the admitted relation (or remain an
     # unclaimed source-order marker).  They are not part of either endpoint's
@@ -2181,6 +2395,10 @@ def _build_graph(
 
     visible_nuclei = set(planned_visible_nucleus_ids)
     visible_relations = set(planned_visible_relation_ids)
+    allow_final_exclusive_focus = (
+        FINAL_STAGE1_GROUNDED_PROJECTION_VERSION
+        in tuple(getattr(grounded_plan, "source_contracts", ()))
+    )
     ref_by_span = {row.source_span_id: row for row in source.evidence_refs}
     planned_visible_span_ids = {
         source_span_id
@@ -2226,7 +2444,11 @@ def _build_graph(
         value = (
             typed_fragment
             if typed_fragment is not None
-            else _cmee_frozen_lexical_role_surface(nucleus, raw_value)
+            else _cmee_frozen_lexical_role_surface(
+                nucleus,
+                raw_value,
+                allow_final_exclusive_focus=allow_final_exclusive_focus,
+            )
         )
         nodes.append(
             MeaningNode(
@@ -2617,6 +2839,108 @@ def _build_experience_plan(
     )
 
 
+def _cmee_rr4_aggregate_support_exact(
+    reception_plan: Any,
+    *,
+    nucleus_index: Mapping[str, Any],
+) -> bool:
+    """Check the adapter-only RR4 selected-Move aggregate closure."""
+
+    target_ids = tuple(reception_plan.target_nucleus_ids)
+    support_ids = tuple(reception_plan.support_nucleus_ids)
+    moves = tuple(reception_plan.moves)
+    if not target_ids or not support_ids or not moves:
+        return False
+    move_nucleus_ids = _ordered(
+        nucleus_id
+        for move in moves
+        for nucleus_id in (
+            *move.target_nucleus_ids,
+            *move.support_nucleus_ids,
+        )
+    )
+    move_nucleus_set = set(move_nucleus_ids)
+    expected_support_ids = tuple(
+        nucleus_id
+        for nucleus_id in move_nucleus_ids
+        if nucleus_id not in set(target_ids)
+    )
+    aggregate_nucleus_ids = _ordered((*target_ids, *support_ids))
+    return (
+        support_ids == expected_support_ids
+        and set(aggregate_nucleus_ids)
+        == set(target_ids) | move_nucleus_set
+        and set(aggregate_nucleus_ids).issubset(
+            set(reception_plan.observation_owned_nucleus_ids)
+        )
+        and all(
+            nucleus_id in nucleus_index
+            for nucleus_id in aggregate_nucleus_ids
+        )
+    )
+
+
+def _cmee_target_self_evidences_retained_intention(
+    reception_plan: Any,
+    *,
+    nucleus_index: Mapping[str, Any],
+    resolver: Any,
+) -> bool:
+    """Accept an exact source-stated intention without invented support.
+
+    ``operator:value`` is also used for open deliberation.  Such a target
+    still needs a separate source-stated desire, while a target that already
+    is that desire must not be forced to borrow an unrelated support row.
+    """
+
+    target_ids = tuple(reception_plan.target_nucleus_ids)
+    if len(target_ids) != 1 or tuple(reception_plan.support_nucleus_ids):
+        return False
+    nucleus = nucleus_index.get(target_ids[0])
+    if nucleus is None:
+        return False
+    frame = nucleus.semantic_frame
+    attributes = frozenset(frame.attribute_codes)
+    retained_intention = bool(
+        nucleus.kind == "wish"
+        or frame.modality in {"wish", "intention"}
+        or "semantic_role:retained_intention" in attributes
+    )
+    source_explicit = str(nucleus.grounding_kind) == "explicit"
+    target_span_set = set(nucleus.source_span_ids)
+    exact_target_evidence = tuple(
+        span_id
+        for span_id in resolver.span_ids
+        if span_id in target_span_set
+    )
+    if (
+        not target_span_set
+        or set(exact_target_evidence) != target_span_set
+        or tuple(reception_plan.source_evidence_span_ids)
+        != exact_target_evidence
+    ):
+        return False
+    source_text = _cmee_source_text(nucleus, resolver)
+    open_deliberation = bool(
+        nucleus.kind == "uncertainty"
+        or frame.modality == "uncertain"
+        or "operator:uncertainty" in attributes
+        or "semantic_role:limiting_unknown" in attributes
+        or _cmee_parse_open_question_shape(source_text) is not None
+    )
+    nonnegated = bool(
+        str(frame.polarity) != "negative"
+        and "operator:negation" not in attributes
+        and not NEGATED_DESIRE_RE.search(source_text)
+    )
+    return bool(
+        retained_intention
+        and source_explicit
+        and not open_deliberation
+        and nonnegated
+    )
+
+
 def _cmee_semantic_reception_plan(grounded_plan: Any, resolver: Any) -> Any:
     """Project the existing target into a polarity-strict CMEE reception plan.
 
@@ -2652,6 +2976,7 @@ def _cmee_semantic_reception_plan(grounded_plan: Any, resolver: Any) -> Any:
     # Stage 1 can keep desire, current action, and result separate.
     semantic_support_ids: tuple[str, ...] = ()
     generic_relation_support_bound = False
+    rr4_aggregate_support_bound = False
     initial_support_ids = tuple(reception_plan.support_nucleus_ids)
     if initial_support_ids:
         selected_relation_endpoint_ids = _ordered(
@@ -2666,8 +2991,18 @@ def _cmee_semantic_reception_plan(grounded_plan: Any, resolver: Any) -> Any:
         typed_relation_rows = tuple(
             relation
             for relation in grounded_plan.relations
-            if relation.source_relation_ids
-            == ("typed_projection:top_level_connective",)
+            if (
+                relation.source_relation_ids
+                == ("typed_projection:top_level_connective",)
+                or (
+                    str(relation.type) == "action_supports_change"
+                    and relation.source_relation_ids
+                    == (
+                        "typed_projection:"
+                        "perfective_action_before_bounded_change",
+                    )
+                )
+            )
             and frozenset(
                 (
                     relation.from_nucleus_id,
@@ -2767,6 +3102,27 @@ def _cmee_semantic_reception_plan(grounded_plan: Any, resolver: Any) -> Any:
                     ),
                     source_evidence_span_ids=selected_evidence_ids,
                 )
+        if (
+            not generic_relation_support_bound
+            and not validate_grounded_human_reception_plan(
+                reception_plan,
+                expected_target_ids=tuple(
+                    response_plan.human_follow_target_ids
+                ),
+                nucleus_index=nucleus_index,
+                resolver=resolver,
+                safety_kind=grounded_plan.safety_policy.safety_kind,
+                material_quality=CMEE_RECEPTION_MATERIAL_MODE,
+            )
+            and _cmee_rr4_aggregate_support_exact(
+                reception_plan,
+                nucleus_index=nucleus_index,
+            )
+        ):
+            semantic_support_ids = tuple(
+                reception_plan.support_nucleus_ids
+            )
+            rr4_aggregate_support_bound = True
     initial_acts = _ordered(move.reception_act for move in reception_plan.moves)
     target_has_value_operator = any(
         "operator:value" in set(nucleus_index[row_id].semantic_frame.attribute_codes)
@@ -2777,6 +3133,11 @@ def _cmee_semantic_reception_plan(grounded_plan: Any, resolver: Any) -> Any:
         "protect_retained_intention" in initial_acts
         and target_has_value_operator
         and not reception_plan.support_nucleus_ids
+        and not _cmee_target_self_evidences_retained_intention(
+            reception_plan,
+            nucleus_index=nucleus_index,
+            resolver=resolver,
+        )
     ):
         semantic_support_ids = tuple(
             row_id
@@ -2879,6 +3240,14 @@ def _cmee_semantic_reception_plan(grounded_plan: Any, resolver: Any) -> Any:
             raise CMEEVerticalError(
                 "bound_human_reception_move_binding_mismatch"
             )
+    elif rr4_aggregate_support_bound:
+        if not _cmee_rr4_aggregate_support_exact(
+            reception_plan,
+            nucleus_index=nucleus_index,
+        ):
+            raise CMEEVerticalError(
+                "bound_human_reception_move_binding_mismatch"
+            )
     elif any(
         move.target_nucleus_ids != reception_plan.target_nucleus_ids
         or move.support_nucleus_ids != reception_plan.support_nucleus_ids
@@ -2936,7 +3305,7 @@ def _cmee_semantic_reception_plan(grounded_plan: Any, resolver: Any) -> Any:
             for nucleus in target_nuclei
         )
 
-    if generic_relation_support_bound:
+    if generic_relation_support_bound or rr4_aggregate_support_bound:
         for move in reception_plan.moves:
             move_target_nuclei = tuple(
                 nucleus_index[row_id]
@@ -3129,6 +3498,24 @@ def _stage1_v2_typed_unfinished_scope_supported(grounded_plan: Any) -> bool:
     )
 
 
+def _stage1_v2_typed_exclusive_focus_scope_supported(
+    text: str,
+    grounded_plan: Any,
+) -> bool:
+    """Admit only a final-plan typed owner for one bounded exclusive role."""
+
+    if FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in tuple(
+        getattr(grounded_plan, "source_contracts", ())
+    ):
+        return False
+    if not _cmee_bounded_exclusive_focus_role(text):
+        return False
+    return any(
+        _cmee_typed_exclusive_focus_role_owner(nucleus)
+        for nucleus in tuple(getattr(grounded_plan, "nuclei", ()))
+    )
+
+
 def _cmee_assert_current_first_person_scope_supported(
     text: str,
     grounded_plan: Any,
@@ -3143,6 +3530,19 @@ def _cmee_assert_current_first_person_scope_supported(
         stage1_response_schema_version
         == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
         and _stage1_v2_typed_unfinished_scope_supported(grounded_plan)
+    )
+    typed_v2_exclusive_focus_scope = (
+        stage1_response_schema_version
+        == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+        and _stage1_v2_typed_exclusive_focus_scope_supported(
+            value,
+            grounded_plan,
+        )
+    )
+    exclusive_focus_role = (
+        _cmee_bounded_exclusive_focus_role(value)
+        if typed_v2_exclusive_focus_scope
+        else ""
     )
     explicit_whole_state_negation = EXPLICIT_WHOLE_STATE_NEGATION_RE.search(
         value.strip("、。！？!?「」『』 ")
@@ -3179,7 +3579,11 @@ def _cmee_assert_current_first_person_scope_supported(
             value,
         )
     )
-    if explicit_whole_state_negation and not legacy_scope_preempts_negation:
+    if (
+        explicit_whole_state_negation
+        and not legacy_scope_preempts_negation
+        and not typed_v2_exclusive_focus_scope
+    ):
         raise CMEEVerticalError("lexical_role_negation_unrepresentable")
     for pattern in (
         GENERIC_EXPERIENCER_APPEARANCE_RE,
@@ -3207,6 +3611,15 @@ def _cmee_assert_current_first_person_scope_supported(
                 subject.endswith(first_person)
                 for first_person in FIRST_PERSON_SUBJECTS
             ):
+                continue
+            if (
+                pattern is GENERIC_EXPERIENCER_STATE_OR_DESIRE_RE
+                and exclusive_focus_role
+                and subject.endswith(("とき", "時", "場合", "頃"))
+                and match.end() > value.find(exclusive_focus_role)
+            ):
+                # A temporal subordinate ending immediately before the exact
+                # focus clause is context, not an experiencer attribution.
                 continue
             if (
                 pattern is GENERIC_EXPERIENCER_STATE_OR_DESIRE_RE
@@ -5895,6 +6308,11 @@ def _validate_reception_semantic_compatibility(
         projection.subjective_depth_class.value,
         (0, 0),
     )
+    reception_semantic_count = (
+        reception_count
+        if schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1
+        else len(projection.ordered_subjective_refs)
+    )
     anchor_cardinality_valid = (
         observation_count == len(projection.ordered_observation_refs)
         and reception_count == len(projection.ordered_subjective_refs)
@@ -5907,7 +6325,12 @@ def _validate_reception_semantic_compatibility(
     if (
         not 1 <= observation_count <= 5
         or not 0 <= unknown_count <= 1
-        or not reception_floor <= reception_count <= reception_ceiling
+        or not 1 <= reception_count <= 4
+        or not (
+            reception_floor
+            <= reception_semantic_count
+            <= reception_ceiling
+        )
         or not anchor_cardinality_valid
         or roles
         != (
@@ -6536,7 +6959,7 @@ def validate_positive_realization_trace(
     if schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2:
         try:
             canonical_projection, canonical_units = (
-                _compile_stage1_response_v2_candidate(
+                compile_stage1_response(
                     source=source,
                     grounded_graph=canonical_graph,
                     parent_plan=canonical_plan,
@@ -7283,11 +7706,11 @@ def _build_text_grounded_limited_artifact_for_schema(
 def build_text_grounded_limited_artifact(
     source: AdmittedTextSource,
 ) -> tuple[GroundedMeaningGraph, ExperiencePlan, GenerationArtifactBundle]:
-    """Build the active v1 artifact through the immutable public facade."""
+    """Build the active v2 artifact through the immutable public facade."""
 
     return _build_text_grounded_limited_artifact_for_schema(
         source,
-        stage1_response_schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1,
+        stage1_response_schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
         stage1_compiler=compile_stage1_response,
     )
 

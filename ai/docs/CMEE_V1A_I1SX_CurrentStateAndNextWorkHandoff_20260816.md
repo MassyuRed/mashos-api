@@ -4297,3 +4297,90 @@ ACTIVATION / I09 / PRODUCTION / MERGE = NOT_STARTED / NOT_STARTED / NOT_STARTED 
 NEXT_DEPENDENCY = IM03
 CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_IM02
 ```
+
+---
+
+## CMEE current-structure inheritance foundation（2026-09-01）
+
+この節は、上記のappend-onlyな過去checkpointを改変せず、2026-09-01時点のcurrent disabled foundationを所有する。過去節の`exact17`、旧composer owner、旧Product Read lifecycle、IM02直後のnext-step表記はhistorical receiptであり、この節のcurrent owner mapへ遡及適用しない。
+
+```text
+CHECKPOINT_SCHEMA = CMEE_CURRENT_STRUCTURE_INHERITANCE_FOUNDATION_V1
+CHECKPOINT_ID = CMEE_CURRENT_STRUCTURE_INHERITANCE_FOUNDATION_20260901_V1
+REPOSITORY = MassyuRed/mashos-api
+PULL_REQUEST = 3
+BRANCH = agent/cmee-v1a-i1sx-source-explicit-20260815
+PRE_HEAD = ff5c77ba15debba97828ce27ba66d8fd0c7f496e
+FINAL_HEAD = THIS_COMMIT_RESOLVED_BY_FRESH_REMOTE_POSTVERIFY
+CURRENT_IMPLEMENTATION_OWNER = IMPLEMENTED_NOT_ACCEPTED
+CURRENT_DEPENDENCY = IM10
+IM10_DISPOSITION = MASH_PENDING
+CANDIDATE_READY = false
+PRODUCT_READ_ELIGIBLE = false
+AUTOMATIC_PROGRESSION = false
+PRODUCTION_EFFECT = 0
+```
+
+### Current owner map
+
+- existing source admission、word-box／packing／user dictionary、evidence ledgerを入力正本として継承し、case table、本文辞書、第二parserを追加しない。
+- environment × state × output、state answer + human follow、I5のEvidence／Perspective／ObservationPlan／Reception／Gateを既存typed owner chainから継承する。
+- `emlis_input_specific_meaning.py`はGrounded Situation View、Foreground Scope、Difference Configuration／Requirement Bundle、Reading Consequence、input-specific meaning structureを所有する。
+- `emlis_stage1_composition.py`は`project_subjective_meaning_plan()`によるmeaning projection／validationだけを所有し、final product language、Observation text、Reception textを所有しない。legacy general-label composition seamはhistorical non-productである。
+- `emlis_ai_grounded_observation_plan.py`はGrounded Observation Plan、`emlis_ai_grounded_sentence_surface.py`はSentence PlanとObservation surface、`emlis_ai_grounded_human_reception.py`はHuman Reception、`emlis_ai_grounded_observation_gate.py`はgateとfinal-body-only inverseを所有する。
+- `emlis_stage1_response.py::compile_stage1_response()`は上記ownerをexact-oneで接続するcanonical facadeであり、composition surface、compatibility compiler、V1 legacy、legacy builder／selectorへfallbackしない。
+- disabled outer engineは同じsurface ownerを使い、generatedでもterminalはdisabled、未対応入力は有限reason集合へfail closedする。API、DB、React Native、persistence、Cycle001、external AI、network providerへの接続はない。
+
+### Inherited semantic closure
+
+1. selected Layer 1 meaningをfinal coverageへ継承し、visible event／wish／block／change／relation／source boundaryをtyped sourceへ固定した。
+2. action→change、self-denial source dependency、Reception target／attention／why、future Reception dutyを既存Grounded PlanとHuman Receptionへ継承した。
+3. relation endpoint、direction、burden、supportをmeaning ownerとsupport ownerへ分離した。`DIRECTION_UNDER_BURDEN`はdirection／burdenのrole-qualified exact2 supportを要求し、duplicate、foreign、partial、dual、same-role、role-swap、full-rehashをfail closedする。
+4. single ATTENTIONのmulti-basisはcanonical aggregateとして保持し、exact1は従来どおり非aggregateとする。limited foreground／aggregate meaningはcontribution orderを維持し、support-only nodeはsingleton authority、burden role、meaning twinのいずれかでだけ閉じる。ambiguous direction-only supportは独立authorityを持たない。
+5. final body bytesだけをinverseへ渡し、protected body／Reception tamperをgate前に受理しない。source／relation／difference／unknown／Reading Consequenceのauthorityを本文文字列、fixture ID、hash順へ逆流させない。
+
+### Canonical batch bridge
+
+canonical NLS v3 batch 001のvalidated JSONL／manifestだけをcase inventoryとして100件をactive unified Stage 1へ接続した。copied case table、case-ID routing、期待本文、本文別分岐はない。
+
+- direct active final surface: 100 / 100
+- premeaning → Phase A → meaning projection → projection seal: 各case exact1、同一object chain
+- dormant composition surface／compat compiler／V1 legacy／legacy builder／selector: call 0
+- selected final body inverse: pass 100 / 100
+- selected final gate: pass 100 / 100
+- outer engine: generated disabled 68 / finite fail-closed unavailable 32
+- all 100: `production_effect=0`、`candidate_ready=false`、`product_read_eligible=false`、`automatic_progression=false`
+- external AI／network import: 0
+
+### Current identity and immutable history
+
+active final-language dependency closureはexact18 payload、product causal source ownerはexact9で封印した。
+
+```text
+LANGUAGE_CORE_IDENTITY = 076e6637b0171955320f8f4bc8e6517ffafb14c400b35d661a5bd4461e2d43fe
+STAGE1_RUNTIME_INTEGRATION_IDENTITY = c2d3bce2a366131041cc839806592cb5da04b7a343181757d61c853ed4e4bcc1
+LANGUAGE_PAYLOAD_COUNT / RUNTIME_PAYLOAD_COUNT = 18 / 18
+SOURCE_OWNER_COUNT = 9
+SOURCE_OWNER_PAYLOAD_TUPLE_SHA256 = 951e352b37b9956555ddeb24009e8114fb16ce97f9c985a7133c97f0fb63d1d5
+SOURCE_OWNER_SYMBOL_SET_SHA256 = ec3ef40bc42e8334378994e8a1eda417fba9f4819259cc746161dae1738703c2
+PRODUCT_CAUSAL_OWNER_MANIFEST_SHA256 = e5ba29b6004a07b758ef68e81dc4f91c4cd04d33dc7d3cf40c46b67dc84f93a2
+```
+
+N3 exact16／source-owner exact7、historical exact17 tests、historical runner identity、IM06 approval freezeは変更していない。現行runner bytesとIM06 self-proofの不一致は、IM06を無断rebaselineしないための意図的holdである。これをcurrent IM03 identity failureと混同しない。
+
+### Implementation commits inherited by this checkpoint
+
+```text
+7eaf26dbab38523d38c9cbd55070681d1c72c820  self-denial source dependency
+c702be029dbd491092536f0157507ab01420c3bf  Reception typed source fragments
+09062b5cce741f3a5d0f336f90f8de7f4b06ea9b  limited foreground and aggregate meaning
+62ee6ce6c2d09aa23152f37560cb7410e4ad8b82  typed relation surface duties
+bd952752d8e45a3b0132438df4cb4d7af8cacdaf  selected meaning into final coverage
+622b4d8eb8d9ebb6422d7df0ed3423234c1b5225  typed future Reception duties
+31e293856410a0908812be204e2d952da01af991  burden/direction typed source roles
+db9d678f83ed674251a6de84b32a5323a498b698  limited relation support authority
+9176874ef67e3b5707162eb140e533a8760c6d51  canonical100 unified Stage 1 bridge
+ff5c77ba15debba97828ce27ba66d8fd0c7f496e  current exact18/exact9 identity seal
+```
+
+Cycle001 giant moduleは`NOT_ADOPTED`であり、このfoundationのowner、fallback、surface source、activation pathではない。current structureの次のlifecycle judgmentは`IM10=MASH_PENDING`のまま保持し、本checkpointからacceptance、Product Read、ready、merge、production cutoverへ進めない。

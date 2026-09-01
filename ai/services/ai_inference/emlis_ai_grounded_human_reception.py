@@ -143,6 +143,22 @@ _ACT_RESPONSIBILITY_RE: Final[dict[GroundedReceptionAct, re.Pattern[str]]] = {
     ),
     "respect_words_placed": re.compile(r"言葉.{0,40}(?:大切|受け止)"),
 }
+_ATTENTION_RESPONSIBILITY_RE: Final = re.compile(
+    r"(?:目が留まり|印象に残|見過ご)"
+)
+_ANAPHORIC_TOPIC_OBJECT_RE: Final = re.compile(
+    r"(?:^|[、,。．.!！?？])"
+    r"(?P<topic>[ぁ-んァ-ヶ一-鿿々ー]{1,18})"
+    r"(?:を|は)"
+    r"[ぁ-んァ-ヶ一-鿿々ー]{1,16}"
+    r"(?:たい|たく)"
+)
+_ANAPHORIC_TOPIC_SAHEN_RE: Final = re.compile(
+    r"(?:^|[、,。．.!！?？])"
+    r"(?P<topic>[ァ-ヶ一-鿿々ー]{2,12})"
+    r"し(?:たい|たく)"
+)
+_ANAPHORIC_TOPIC_SOURCE_MAX_CHARS: Final = 24
 _ANCHOR_DELETE_TRANSLATION: Final = str.maketrans("", "", "「」『』?？!！")
 
 
@@ -463,6 +479,68 @@ def reception_effective_reference_mode(
     return reception_plan.reference_mode or "anaphoric_first"
 
 
+def reception_effective_move_reference_mode(
+    reception_plan: GroundedHumanReceptionPlan,
+    move: GroundedReceptionMovePlan,
+    recovery_stage: ReceptionRecoveryStage,
+) -> str:
+    """Return the one recovery-aware reference contract for a retained Move."""
+
+    if move.reception_act == "bounded_counter_self_denial":
+        return "explicit_emlis_counterposition"
+    if recovery_stage in {"integrated", "hedged", "minimal_grounded"}:
+        return "anaphoric_first"
+    return move.reference_mode or "anaphoric_first"
+
+
+def reception_action_is_future_intention(
+    nucleus: GroundedSemanticNucleus,
+) -> bool:
+    """Classify only affirmative, not-yet-performed typed future actions."""
+
+    frame = nucleus.semantic_frame
+    attributes = frozenset(frame.attribute_codes)
+    if (
+        nucleus.kind != "action"
+        or frame.polarity == "negative"
+        or "operator:negation" in attributes
+        or "operator:performed_action" in attributes
+        or frame.time_scope in {"past", "past_to_present", "completed"}
+        or attributes
+        & {
+            "time_scope:past",
+            "time_scope:past_to_present",
+            "aspect:completed",
+            "aspect:perfective",
+        }
+    ):
+        return False
+    return bool(
+        frame.time_scope in {"future", "present_to_future"}
+        or frame.modality in {"wish", "intention"}
+        or "operator:wish" in attributes
+    )
+
+
+def reception_action_is_performed(
+    nucleus: GroundedSemanticNucleus,
+) -> bool:
+    """Classify performed action only after future intention is excluded."""
+
+    frame = nucleus.semantic_frame
+    attributes = frozenset(frame.attribute_codes)
+    return bool(
+        nucleus.kind == "action"
+        and frame.polarity != "negative"
+        and "operator:negation" not in attributes
+        and not reception_action_is_future_intention(nucleus)
+        and (
+            frame.modality == "fact"
+            or "operator:performed_action" in attributes
+        )
+    )
+
+
 def _dedupe(values) -> tuple[str, ...]:
     result: list[str] = []
     for value in values or ():
@@ -546,6 +624,77 @@ def _compact_bound_anchor(candidate: str, max_chars: int) -> str:
     return max(suffixes, key=len, default="")
 
 
+def _typed_reception_source_fragment(
+    nucleus: GroundedSemanticNucleus,
+    raw_text: str,
+) -> str | None:
+    """Resolve the plan-owned source slice used by reception grounding."""
+
+    attributes = tuple(nucleus.semantic_frame.attribute_codes)
+    marker_rows = tuple(
+        code
+        for code in attributes
+        if code == "semantic_role:generic_relation_fragment"
+    )
+    scalar_rows = tuple(
+        code
+        for code in attributes
+        if code.startswith("source_fragment_scalar_range:")
+    )
+    source_rows = tuple(
+        code
+        for code in attributes
+        if code.startswith("source_fragment_scalar_source:")
+    )
+    legacy_rows = tuple(
+        code
+        for code in attributes
+        if code.startswith(("surface_scalar_range:", "surface_scalar_source:"))
+    )
+    if not marker_rows:
+        if scalar_rows or source_rows or legacy_rows:
+            raise GroundedHumanReceptionSurfaceError(
+                "typed_reception_source_fragment_contract_invalid"
+            )
+        return None
+    if (
+        len(marker_rows) != 1
+        or len(scalar_rows) != 1
+        or source_rows
+        != ("source_fragment_scalar_source:normalized_raw_text",)
+        or legacy_rows
+    ):
+        raise GroundedHumanReceptionSurfaceError(
+            "typed_reception_source_fragment_contract_invalid"
+        )
+    parts = scalar_rows[0].split(":")
+    if len(parts) != 3:
+        raise GroundedHumanReceptionSurfaceError(
+            "typed_reception_source_fragment_contract_invalid"
+        )
+    try:
+        start, end = int(parts[1]), int(parts[2])
+    except ValueError:
+        raise GroundedHumanReceptionSurfaceError(
+            "typed_reception_source_fragment_contract_invalid"
+        ) from None
+    normalized_raw = re.sub(
+        r"\s+",
+        " ",
+        str(raw_text or "").replace("\u3000", " "),
+    ).strip()
+    if not (0 <= start < end <= len(normalized_raw)):
+        raise GroundedHumanReceptionSurfaceError(
+            "typed_reception_source_fragment_contract_invalid"
+        )
+    fragment = normalized_raw[start:end]
+    if not fragment or fragment != fragment.strip():
+        raise GroundedHumanReceptionSurfaceError(
+            "typed_reception_source_fragment_contract_invalid"
+        )
+    return fragment
+
+
 def _short_bound_anchor(
     reception_plan: GroundedHumanReceptionPlan,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
@@ -557,10 +706,17 @@ def _short_bound_anchor(
     allow_truncation: bool = True,
     compact_terminal_action: bool = False,
     require_headroom: bool = False,
+    effective_reference_mode: str | None = None,
 ) -> str:
     quote_policy = reception_plan.quote_policy
     if (
-        reception_effective_reference_mode(reception_plan, recovery_stage)
+        (
+            effective_reference_mode
+            or reception_effective_reference_mode(
+                reception_plan,
+                recovery_stage,
+            )
+        )
         != "short_anchor_if_ambiguous"
         or quote_policy.max_anchor_count < 1
         or quote_policy.max_anchor_visible_chars < 2
@@ -587,11 +743,19 @@ def _short_bound_anchor(
         for span_id in nucleus.source_span_ids:
             if resolver.unresolved_ids((span_id,)):
                 continue
-            candidate = re.sub(
+            raw_text = re.sub(
                 r"\s+",
                 " ",
-                resolver.resolve(span_id).raw_text,
-            ).strip(" \u3000、,。．.")
+                str(resolver.resolve(span_id).raw_text or "").replace(
+                    "\u3000",
+                    " ",
+                ),
+            ).strip()
+            candidate = (
+                _typed_reception_source_fragment(nucleus, raw_text)
+                or raw_text
+            )
+            candidate = candidate.strip(" \u3000、,。．.")
             candidate = candidate.translate(_ANCHOR_DELETE_TRANSLATION).strip()
             if compact_terminal_action and candidate.endswith("した"):
                 candidate = candidate[:-2].rstrip(" \u3000、,")
@@ -630,6 +794,7 @@ def resolve_grounded_reception_referent(
     recovery_stage: ReceptionRecoveryStage = "full",
     act: GroundedReceptionAct | None = None,
     allow_short_anchor: bool = True,
+    effective_reference_mode: str | None = None,
 ) -> GroundedReceptionReferent:
     """Resolve an anaphor or one policy-bounded anchor from bound evidence."""
 
@@ -658,7 +823,15 @@ def resolve_grounded_reception_referent(
     support_attributes = _semantic_attributes(support_nuclei)
     kinds = {nucleus.kind for nucleus in selected}
 
-    if reception_act == "stay_with_current_burden":
+    if (
+        reception_act == "honor_concrete_effort"
+        and any(
+            reception_action_is_future_intention(nucleus)
+            for nucleus in target_nuclei
+        )
+    ):
+        kind, text = "future_action_intention", "その向き"
+    elif reception_act == "stay_with_current_burden":
         if "lexical:no_new_sensation_family" in attributes:
             if "lexical:source_metaphor_present" in attributes:
                 kind, text = "expressed_burden", "その言葉にある負荷"
@@ -692,6 +865,7 @@ def resolve_grounded_reception_referent(
                 allow_truncation=False,
                 compact_terminal_action=True,
                 require_headroom=True,
+                effective_reference_mode=effective_reference_mode,
             )
             if enacted_after_intention
             and allow_short_anchor
@@ -705,6 +879,7 @@ def resolve_grounded_reception_referent(
                 resolver,
                 selected_ids,
                 recovery_stage,
+                effective_reference_mode=effective_reference_mode,
             )
             if allow_short_anchor
             and recovery_stage in {"full", "optional_removed"}
@@ -801,6 +976,7 @@ def resolve_grounded_reception_referent(
 def _scoped_reception_plan_for_move(
     reception_plan: GroundedHumanReceptionPlan,
     move: GroundedReceptionMovePlan,
+    recovery_stage: ReceptionRecoveryStage,
 ) -> GroundedHumanReceptionPlan:
     """Create an ephemeral compatibility view for one Move's grounding."""
 
@@ -814,8 +990,70 @@ def _scoped_reception_plan_for_move(
         source_evidence_span_ids=move.source_evidence_span_ids,
         stance=_STANCE_BY_ACT[move.reception_act],
         speaker_presence=move.speaker_presence,
-        reference_mode=move.reference_mode,
+        reference_mode=reception_effective_move_reference_mode(
+            reception_plan,
+            move,
+            recovery_stage,
+        ),
     )
+
+
+def _short_anaphoric_topic(fragment: str) -> str:
+    """Recover only a short grammatical topic, never the target clause."""
+
+    compact = re.sub(r"\s+", "", fragment).strip(
+        " 　、,。．.!！?？「」『』"
+    )
+    if (
+        not compact
+        or len(compact) > _ANAPHORIC_TOPIC_SOURCE_MAX_CHARS
+        or _QUESTION_RE.search(fragment)
+        or _POLICY_EXPLANATION_RE.search(fragment)
+        or _ADVICE_RE.search(fragment)
+        or _UNSUPPORTED_CLAIM_RE.search(fragment)
+    ):
+        return ""
+    for pattern in (
+        _ANAPHORIC_TOPIC_OBJECT_RE,
+        _ANAPHORIC_TOPIC_SAHEN_RE,
+    ):
+        match = pattern.search(compact)
+        if match is None:
+            continue
+        topic = match.group("topic").strip()
+        if (
+            not 1 <= len(topic) <= 18
+            or _QUESTION_RE.search(topic)
+            or _POLICY_EXPLANATION_RE.search(topic)
+            or _ADVICE_RE.search(topic)
+            or _UNSUPPORTED_CLAIM_RE.search(topic)
+        ):
+            continue
+        return topic
+    return ""
+
+
+def _topic_bound_anaphoric_referent(
+    referent: GroundedReceptionReferent,
+    move: GroundedReceptionMovePlan,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+) -> GroundedReceptionReferent:
+    """Bind an anaphor to a short target topic without replaying its clause."""
+
+    if move.reception_act != "protect_retained_intention":
+        return referent
+    for _nucleus_id, fragments in _reception_source_fragments(
+        move.target_nucleus_ids,
+        nucleus_index,
+        resolver,
+    ):
+        for fragment in fragments:
+            topic = _short_anaphoric_topic(fragment)
+            candidate = f"{topic}についてのその願い" if topic else ""
+            if candidate and fragment not in candidate:
+                return replace(referent, text=candidate)
+    return referent
 
 
 def resolve_grounded_reception_move_referent(
@@ -825,17 +1063,37 @@ def resolve_grounded_reception_move_referent(
     resolver: EvidenceSpanResolver,
     *,
     allow_short_anchor: bool,
+    recovery_stage: ReceptionRecoveryStage = "full",
+    allow_anaphoric_topic: bool = False,
 ) -> GroundedReceptionReferent:
     """Resolve one RR5 referent using only that Move's nucleus/evidence IDs."""
 
-    return resolve_grounded_reception_referent(
-        _scoped_reception_plan_for_move(reception_plan, move),
+    effective_reference = reception_effective_move_reference_mode(
+        reception_plan,
+        move,
+        recovery_stage,
+    )
+    referent = resolve_grounded_reception_referent(
+        _scoped_reception_plan_for_move(
+            reception_plan,
+            move,
+            recovery_stage,
+        ),
         nucleus_index,
         resolver,
-        recovery_stage="full",
+        recovery_stage=recovery_stage,
         act=move.reception_act,
         allow_short_anchor=allow_short_anchor,
+        effective_reference_mode=effective_reference,
     )
+    if allow_anaphoric_topic and effective_reference == "anaphoric_first":
+        return _topic_bound_anaphoric_referent(
+            referent,
+            move,
+            nucleus_index,
+            resolver,
+        )
+    return referent
 
 
 def _predicate_fragment(
@@ -861,7 +1119,9 @@ def _predicate_fragment(
         )
     elif act == "honor_concrete_effort":
         fragment = (
-            "大切なこととして受け止めたいです"
+            "これからの行動として大切に受け止めています"
+            if referent_kind == "future_action_intention"
+            else "大切なこととして受け止めたいです"
             if hedged
             else "大切に受け止めます"
             if compact
@@ -1058,6 +1318,22 @@ def _realize_full_move_sentence(
                 & attributes
             ),
         )
+
+    if act == "honor_concrete_effort" and referent.kind == (
+        "future_action_intention"
+    ):
+        if strategy == "emlis_attention_first":
+            return (
+                f"{text}が特に印象に残り、"
+                "これからの行動として大切に思います"
+            )
+        if strategy == "referent_significance_first":
+            return (
+                f"{text}を、これからの行動として"
+                "軽く扱わず大切に思います"
+            )
+        if strategy in {"quiet_referent_first", "felt_response_first"}:
+            return f"{text}を、これからの行動として大切に思います"
 
     if strategy == "emlis_attention_first":
         if act == "honor_concrete_effort":
@@ -1635,6 +1911,268 @@ def validate_grounded_human_reception_surface(
     return _dedupe(issues)
 
 
+def _reception_source_fragments(
+    nucleus_ids: Sequence[str],
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    rows: list[tuple[str, tuple[str, ...]]] = []
+    for nucleus_id in nucleus_ids:
+        nucleus = nucleus_index.get(nucleus_id)
+        if nucleus is None:
+            continue
+        values_list: list[str] = []
+        for span_id in nucleus.source_span_ids:
+            if resolver.unresolved_ids((span_id,)):
+                continue
+            raw_text = re.sub(
+                r"\s+",
+                " ",
+                str(resolver.resolve(span_id).raw_text or "").replace(
+                    "\u3000",
+                    " ",
+                ),
+            ).strip()
+            fragment = (
+                _typed_reception_source_fragment(nucleus, raw_text)
+                or raw_text
+            ).strip(" \u3000、,。．.!！?？「」『』")
+            if fragment:
+                values_list.append(fragment)
+        values = _dedupe(values_list)
+        if values:
+            rows.append((nucleus_id, values))
+    return tuple(rows)
+
+
+def bind_and_validate_grounded_human_reception_surface(
+    reception_plan: GroundedHumanReceptionPlan,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+    *,
+    actual_text: str,
+    recovery_stage: ReceptionRecoveryStage = "full",
+    clause_plans: Sequence[GroundedReceptionClausePlan] | None = None,
+    context_nucleus_ids_by_move: Mapping[str, Sequence[str]] | None = None,
+    allow_anaphoric_topic: bool = False,
+) -> GroundedHumanReceptionSurface:
+    """Bind an already-realized body to RR4 and validate that exact body."""
+
+    if recovery_stage not in _RECOVERY_STAGES:
+        raise GroundedHumanReceptionSurfaceError(
+            f"unsupported_reception_recovery_stage:{recovery_stage}"
+        )
+    if not reception_plan.required:
+        raise GroundedHumanReceptionSurfaceError(
+            "human_reception_plan_present_but_not_required"
+        )
+    active_moves = reception_active_moves(reception_plan, recovery_stage)
+    active_acts = tuple(move.reception_act for move in active_moves)
+    resolved_clause_plans = tuple(
+        clause_plans
+        if clause_plans is not None
+        else build_grounded_reception_clause_plans(
+            reception_plan,
+            recovery_stage,
+        )
+    )
+    _validate_clause_plan_binding(
+        reception_plan,
+        resolved_clause_plans,
+        recovery_stage,
+    )
+    move_index = {move.move_id: move for move in active_moves}
+    referents: list[GroundedReceptionReferent] = []
+    referent_by_move: dict[str, GroundedReceptionReferent] = {}
+    anchor_used = False
+    for clause_plan in resolved_clause_plans:
+        for move_id in clause_plan.move_ids:
+            move = move_index[move_id]
+            referent = resolve_grounded_reception_move_referent(
+                reception_plan,
+                move,
+                nucleus_index,
+                resolver,
+                allow_short_anchor=bool(
+                    clause_plan.quote_budget and not anchor_used
+                ),
+                recovery_stage=recovery_stage,
+                allow_anaphoric_topic=allow_anaphoric_topic,
+            )
+            anchor_used = anchor_used or referent.source_anchor_used
+            referents.append(referent)
+            referent_by_move[move_id] = referent
+
+    quote_values = tuple(_QUOTE_RE.findall(actual_text))
+    surface = GroundedHumanReceptionSurface(
+        text=actual_text,
+        terminal_predicate_kinds=tuple(
+            reception_terminal_predicate_kind(move.reception_act)
+            for move in active_moves
+        ),
+        sentence_count=_sentence_count(actual_text),
+        referent_kind="+".join(referent.kind for referent in referents),
+        realized_reception_acts=active_acts,
+        realized_move_ids=tuple(move.move_id for move in active_moves),
+        realized_move_roles=tuple(move.move_role for move in active_moves),
+        move_predicate_families=tuple(
+            reception_move_predicate_family(move) for move in active_moves
+        ),
+        realized_clause_move_ids=tuple(
+            clause.move_ids for clause in resolved_clause_plans
+        ),
+        grounded_nucleus_ids=_dedupe(
+            nucleus_id
+            for referent in referents
+            for nucleus_id in referent.nucleus_ids
+        ),
+        grounded_evidence_span_ids=_dedupe(
+            span_id
+            for referent in referents
+            for span_id in referent.evidence_span_ids
+        ),
+        source_anchor_count=len(quote_values),
+        source_anchor_max_visible_chars=max(
+            (len(value) for value in quote_values),
+            default=0,
+        ),
+        recovery_stage=recovery_stage,
+    )
+    issues = list(
+        validate_grounded_human_reception_surface(
+            surface,
+            reception_plan,
+            resolver,
+        )
+    )
+    actual_clause_texts = tuple(
+        part.strip()
+        for part in _SENTENCE_END_RE.split(actual_text)
+        if part.strip()
+    )
+    actual_text_by_move = {
+        move_id: clause_text
+        for clause_plan, clause_text in zip(
+            resolved_clause_plans,
+            actual_clause_texts,
+        )
+        for move_id in clause_plan.move_ids
+    }
+
+    active_nucleus_ids = _dedupe(
+        nucleus_id
+        for move in active_moves
+        for nucleus_id in (
+            *move.target_nucleus_ids,
+            *move.support_nucleus_ids,
+        )
+    )
+    allowed_source_fragments = tuple(
+        fragment
+        for _nucleus_id, fragments in _reception_source_fragments(
+            active_nucleus_ids,
+            nucleus_index,
+            resolver,
+        )
+        for fragment in fragments
+    )
+    for quote in quote_values:
+        if not any(quote in fragment for fragment in allowed_source_fragments):
+            issues.append("human_reception_source_anchor_unbound")
+
+    context_map = context_nucleus_ids_by_move or {}
+    for move in active_moves:
+        move_text = actual_text_by_move.get(move.move_id, "")
+        referent = referent_by_move.get(move.move_id)
+        if not _ACT_RESPONSIBILITY_RE[move.reception_act].search(move_text):
+            issues.append(
+                "human_reception_act_responsibility_missing:"
+                f"{move.reception_act}"
+            )
+        if (
+            move.move_role == "attention"
+            and not _ATTENTION_RESPONSIBILITY_RE.search(move_text)
+        ):
+            issues.append(
+                f"human_reception_move_attention_missing:{move.move_id}"
+            )
+
+        effective_reference = reception_effective_move_reference_mode(
+            reception_plan,
+            move,
+            recovery_stage,
+        )
+        target_rows = _reception_source_fragments(
+            move.target_nucleus_ids,
+            nucleus_index,
+            resolver,
+        )
+        target_fragments = tuple(
+            fragment
+            for _nucleus_id, fragments in target_rows
+            for fragment in fragments
+        )
+        referent_visible = bool(
+            referent is not None and referent.text in move_text
+        )
+        if not referent_visible:
+            issues.append(
+                f"human_reception_move_target_missing:{move.move_id}"
+            )
+        if effective_reference == "anaphoric_first" and any(
+            fragment in move_text for fragment in target_fragments
+        ):
+            issues.append(
+                f"human_reception_anaphoric_target_replayed:{move.move_id}"
+            )
+        if effective_reference == "short_anchor_if_ambiguous" and any(
+            len(fragment)
+            > reception_plan.quote_policy.max_anchor_visible_chars
+            and fragment in move_text
+            for fragment in target_fragments
+        ):
+            issues.append(
+                f"human_reception_long_target_replayed:{move.move_id}"
+            )
+
+        context_ids = tuple(context_map.get(move.move_id, ()))
+        context_rows = _reception_source_fragments(
+            context_ids,
+            nucleus_index,
+            resolver,
+        )
+        if context_rows and effective_reference == "anaphoric_first":
+            if not any(
+                marker in move_text
+                for marker in ("中で", "中にも", "背景")
+            ):
+                issues.append(
+                    f"human_reception_context_anaphor_missing:{move.move_id}"
+                )
+            if any(
+                fragment in move_text
+                for _nucleus_id, fragments in context_rows
+                for fragment in fragments
+            ):
+                issues.append(
+                    f"human_reception_anaphoric_context_replayed:{move.move_id}"
+                )
+        elif context_rows and any(
+            not any(fragment in move_text for fragment in fragments)
+            for _nucleus_id, fragments in context_rows
+        ):
+            issues.append(
+                f"human_reception_move_context_missing:{move.move_id}"
+            )
+
+    issues = list(_dedupe(issues))
+    if issues:
+        raise GroundedHumanReceptionSurfaceError(
+            "invalid_grounded_human_reception_surface:" + ",".join(issues)
+        )
+    return surface
+
+
 def realize_grounded_human_reception(
     reception_plan: GroundedHumanReceptionPlan,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
@@ -1685,6 +2223,7 @@ def realize_grounded_human_reception(
                 allow_short_anchor=bool(
                     clause_plan.quote_budget and not anchor_used
                 ),
+                recovery_stage=recovery_stage,
             )
             anchor_used = anchor_used or referent.source_anchor_used
             referents.append(referent)
@@ -1771,8 +2310,11 @@ __all__ = [
     "reception_effective_sentence_budget",
     "reception_effective_speaker_presence",
     "reception_effective_reference_mode",
+    "reception_effective_move_reference_mode",
+    "reception_action_is_future_intention",
     "resolve_grounded_reception_referent",
     "resolve_grounded_reception_move_referent",
     "validate_grounded_human_reception_surface",
+    "bind_and_validate_grounded_human_reception_surface",
     "realize_grounded_human_reception",
 ]

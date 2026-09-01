@@ -60,12 +60,9 @@ _FRAME_FIELD_PATHS: Tuple[str, ...] = (
     "category.0",
     "emotion_details.0.strength",
 )
-_SOURCE_FIELD_PATHS = {
+_TEXT_SOURCE_FIELD_PATHS = {
     "memo": ("memo", -1),
     "memo_action": ("memo_action", -1),
-    "emotion_details": ("emotion_details.0.type", 0),
-    "emotions": ("emotions.0", 0),
-    "category": ("category.0", 0),
 }
 _SPACE_RE = re.compile(r"\s+")
 
@@ -214,6 +211,39 @@ class AdmittedTextSource:
     emotion: str
     strength: str
 
+    @property
+    def categories(self) -> Tuple[str, ...]:
+        """Return every admitted category in original source order."""
+
+        value = self.normalized_current_input.get("category", ())
+        return tuple(str(item) for item in value) if isinstance(value, list) else ()
+
+    @property
+    def emotions(self) -> Tuple[str, ...]:
+        """Return every admitted emotion type in original source order."""
+
+        value = self.normalized_current_input.get("emotion_details", ())
+        if not isinstance(value, list):
+            return ()
+        return tuple(
+            str(item.get("type"))
+            for item in value
+            if isinstance(item, Mapping) and isinstance(item.get("type"), str)
+        )
+
+    @property
+    def strengths(self) -> Tuple[str, ...]:
+        """Return every admitted emotion strength in original source order."""
+
+        value = self.normalized_current_input.get("emotion_details", ())
+        if not isinstance(value, list):
+            return ()
+        return tuple(
+            str(item.get("strength"))
+            for item in value
+            if isinstance(item, Mapping) and isinstance(item.get("strength"), str)
+        )
+
     def evidence_ref(self, source_span_id: str) -> EvidenceRef:
         matches = tuple(row for row in self.evidence_refs if row.source_span_id == source_span_id)
         if len(matches) != 1:
@@ -289,34 +319,54 @@ def build_source_owner_universe(
     """
 
     validate_evidence_refs(envelope, evidence_refs)
-    refs_by_path = {
-        path: tuple(row for row in evidence_refs if row.field_path == path)
-        for path in {
-            "memo",
-            "memo_action",
-            "emotion_details.0.type",
-            "emotions.0",
-            "category.0",
-            "emotion_details.0.strength",
-        }
-    }
-    thought_refs = refs_by_path["memo"]
-    action_refs = refs_by_path["memo_action"]
+    snapshot, _segments = _validate_source_envelope_identity(envelope)
+    categories, emotions, strengths = _ordered_labels(snapshot)
+
+    def refs_for_path(path: str) -> Tuple[EvidenceRef, ...]:
+        return tuple(row for row in evidence_refs if row.field_path == path)
+
+    thought_refs = refs_for_path("memo")
+    action_refs = refs_for_path("memo_action")
     text_refs = (*thought_refs, *action_refs)
     if not text_refs:
         raise SourceAdmissionError("owner_universe_required_text_empty", hard_invalid=False)
-    emotion_refs = (
-        *refs_by_path["emotion_details.0.type"],
-        *refs_by_path["emotions.0"],
+    emotion_detail_refs = tuple(
+        row
+        for index in range(len(emotions))
+        for row in refs_for_path(f"emotion_details.{index}.type")
     )
-    category_refs = refs_by_path["category.0"]
-    strength_refs = refs_by_path["emotion_details.0.strength"]
-    if len(emotion_refs) != 2 or len(category_refs) != 1 or len(strength_refs) != 1:
+    emotion_alias_refs = tuple(
+        row
+        for index in range(len(emotions))
+        for row in refs_for_path(f"emotions.{index}")
+    )
+    emotion_refs = (*emotion_detail_refs, *emotion_alias_refs)
+    category_refs = tuple(
+        row
+        for index in range(len(categories))
+        for row in refs_for_path(f"category.{index}")
+    )
+    strength_refs = tuple(
+        row
+        for index in range(len(strengths))
+        for row in refs_for_path(f"emotion_details.{index}.strength")
+    )
+    if (
+        len(emotion_detail_refs) != len(emotions)
+        or len(emotion_alias_refs) != len(emotions)
+        or len(category_refs) != len(categories)
+        or len(strength_refs) != len(strengths)
+    ):
         raise SourceAdmissionError("owner_universe_structured_context_cardinality")
-    emotion_literals = {
-        envelope.raw_utf8[row.utf8_start : row.utf8_end] for row in emotion_refs
-    }
-    if len(emotion_literals) != 1:
+    if any(
+        envelope.raw_utf8[detail.utf8_start : detail.utf8_end]
+        != envelope.raw_utf8[alias.utf8_start : alias.utf8_end]
+        for detail, alias in zip(
+            emotion_detail_refs,
+            emotion_alias_refs,
+            strict=True,
+        )
+    ):
         raise SourceAdmissionError("owner_universe_emotion_alias_mismatch")
 
     required_obligations = tuple(
@@ -491,60 +541,142 @@ def _alias_list(data: Mapping[str, Any], keys: Tuple[str, ...]) -> list[Any]:
     return present[0]
 
 
-def _exact_labels(raw: Mapping[str, Any]) -> tuple[str, str, str]:
+def _ordered_labels(
+    raw: Mapping[str, Any],
+) -> tuple[Tuple[str, ...], Tuple[str, ...], Tuple[str, ...]]:
+    """Validate and retain the complete ordered structured-label source.
+
+    ``emotion_details`` is the strength-bearing canonical field and
+    ``emotions`` is its exact ordered type alias.  Keeping both sequences in
+    the admitted frame makes alias agreement independently reconstructible;
+    neither sequence is collapsed to its first item.
+    """
+
     categories = _alias_list(raw, ("category", "categories"))
-    if len(categories) != 1 or not isinstance(categories[0], str):
-        raise SourceAdmissionError("category_exact1_required")
-    category = categories[0]
-    if category not in CANONICAL_CATEGORIES:
+    if not categories or any(not isinstance(item, str) for item in categories):
+        raise SourceAdmissionError("category_required")
+    if len(categories) != len(set(categories)):
+        raise SourceAdmissionError("category_duplicate")
+    if any(category not in CANONICAL_CATEGORIES for category in categories):
         raise SourceAdmissionError("category_noncanonical")
 
     details = _alias_list(raw, ("emotion_details", "emotionDetails"))
-    if len(details) != 1 or not isinstance(details[0], Mapping):
-        raise SourceAdmissionError("emotion_detail_exact1_required")
-    if set(details[0]).difference({"type", "strength"}):
-        raise SourceAdmissionError("emotion_detail_unknown_field")
-    emotion = details[0].get("type")
-    strength = details[0].get("strength")
-    if not isinstance(emotion, str) or not isinstance(strength, str):
-        raise SourceAdmissionError("emotion_detail_literal_required")
-    if emotion not in CANONICAL_EMOTIONS:
-        raise SourceAdmissionError("emotion_noncanonical")
-    if strength not in CANONICAL_STRENGTHS:
-        raise SourceAdmissionError("emotion_strength_noncanonical")
-    if emotion == "自己理解" and strength != "medium":
-        raise SourceAdmissionError("self_insight_requires_medium_strength")
+    if not details or any(not isinstance(item, Mapping) for item in details):
+        raise SourceAdmissionError("emotion_detail_required")
+    emotions: list[str] = []
+    strengths: list[str] = []
+    for detail in details:
+        if set(detail).difference({"type", "strength"}):
+            raise SourceAdmissionError("emotion_detail_unknown_field")
+        emotion = detail.get("type")
+        strength = detail.get("strength")
+        if not isinstance(emotion, str) or not isinstance(strength, str):
+            raise SourceAdmissionError("emotion_detail_literal_required")
+        if emotion not in CANONICAL_EMOTIONS:
+            raise SourceAdmissionError("emotion_noncanonical")
+        if strength not in CANONICAL_STRENGTHS:
+            raise SourceAdmissionError("emotion_strength_noncanonical")
+        if emotion == "自己理解" and strength != "medium":
+            raise SourceAdmissionError("self_insight_requires_medium_strength")
+        emotions.append(emotion)
+        strengths.append(strength)
+    if len(emotions) != len(set(emotions)):
+        raise SourceAdmissionError("emotion_duplicate")
+    if "自己理解" in emotions and len(emotions) != 1:
+        raise SourceAdmissionError("self_insight_requires_exclusive")
 
     simple = _alias_list(raw, ("emotions", "emotion"))
-    if simple and (len(simple) != 1 or simple[0] != emotion):
+    if tuple(simple) != tuple(emotions):
         raise SourceAdmissionError("emotion_fields_conflict")
-    return category, emotion, strength
+    return tuple(categories), tuple(emotions), tuple(strengths)
 
 
-def _source_leaf_values(snapshot: Mapping[str, Any]) -> tuple[str, str, str, str, str, str]:
+def _exact_labels(raw: Mapping[str, Any]) -> tuple[str, str, str]:
+    """Compatibility view for the existing exact-one Stage 1 consumers.
+
+    Source admission and source ownership use :func:`_ordered_labels`; this
+    view intentionally exposes only the historical primary fields so the
+    exact-one production representative keeps its byte and object identity.
+    """
+
+    categories, emotions, strengths = _ordered_labels(raw)
+    return categories[0], emotions[0], strengths[0]
+
+
+def _source_leaf_values(
+    snapshot: Mapping[str, Any],
+) -> tuple[
+    str,
+    str,
+    Tuple[str, ...],
+    Tuple[str, ...],
+    Tuple[str, ...],
+    Tuple[str, ...],
+]:
     if not (
         isinstance(snapshot.get("memo"), str)
         and isinstance(snapshot.get("memo_action"), str)
         and isinstance(snapshot.get("category"), list)
-        and len(snapshot["category"]) == 1
+        and bool(snapshot["category"])
         and isinstance(snapshot.get("emotion_details"), list)
-        and len(snapshot["emotion_details"]) == 1
-        and isinstance(snapshot["emotion_details"][0], Mapping)
+        and bool(snapshot["emotion_details"])
+        and all(isinstance(item, Mapping) for item in snapshot["emotion_details"])
         and isinstance(snapshot.get("emotions"), list)
-        and len(snapshot["emotions"]) == 1
+        and bool(snapshot["emotions"])
     ):
         raise SourceAdmissionError("noncanonical_current_input_source_shape")
+    categories, emotions, strengths = _ordered_labels(snapshot)
+    simple_emotions = tuple(snapshot["emotions"])
     values = (
         snapshot["memo"],
         snapshot["memo_action"],
-        snapshot["emotion_details"][0].get("type"),
-        snapshot["emotions"][0],
-        snapshot["category"][0],
-        snapshot["emotion_details"][0].get("strength"),
+        emotions,
+        simple_emotions,
+        categories,
+        strengths,
     )
-    if not all(isinstance(value, str) for value in values):
+    if not all(
+        isinstance(value, str)
+        for group in values[2:]
+        for value in group
+    ):
         raise SourceAdmissionError("noncanonical_current_input_source_leaf")
     return values
+
+
+def _frame_field_rows(snapshot: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
+    (
+        raw_memo,
+        raw_action,
+        raw_emotions,
+        raw_simple_emotions,
+        raw_categories,
+        raw_strengths,
+    ) = _source_leaf_values(snapshot)
+    rows = (
+        ("memo", raw_memo),
+        ("memo_action", raw_action),
+        *tuple(
+            (f"emotion_details.{index}.type", value)
+            for index, value in enumerate(raw_emotions)
+        ),
+        *tuple(
+            (f"emotions.{index}", value)
+            for index, value in enumerate(raw_simple_emotions)
+        ),
+        *tuple(
+            (f"category.{index}", value)
+            for index, value in enumerate(raw_categories)
+        ),
+        *tuple(
+            (f"emotion_details.{index}.strength", value)
+            for index, value in enumerate(raw_strengths)
+        ),
+    )
+    if len(raw_emotions) == len(raw_categories) == 1:
+        if tuple(path for path, _value in rows) != _FRAME_FIELD_PATHS:
+            raise SourceAdmissionError("exact1_source_frame_identity_changed")
+    return rows
 
 
 def normalize_evidence_literal(value: str) -> str:
@@ -633,30 +765,10 @@ def _parse_canonical_frame(
         raise SourceAdmissionError("owner_universe_source_frame_invalid") from None
     if not isinstance(snapshot, Mapping) or _canonical_json(snapshot) != canonical_raw:
         raise SourceAdmissionError("owner_universe_source_frame_invalid")
-    (
-        raw_memo,
-        raw_action,
-        raw_emotion,
-        raw_simple_emotion,
-        raw_category,
-        raw_strength,
-    ) = _source_leaf_values(snapshot)
-    expected_values = dict(
-        zip(
-            _FRAME_FIELD_PATHS,
-            (
-                raw_memo,
-                raw_action,
-                raw_emotion,
-                raw_simple_emotion,
-                raw_category,
-                raw_strength,
-            ),
-            strict=True,
-        )
-    )
+    field_rows = _frame_field_rows(snapshot)
+    expected_values = dict(field_rows)
     segments: dict[str, tuple[int, int, str]] = {}
-    for path in _FRAME_FIELD_PATHS:
+    for path, _expected_value in field_rows:
         start, end, cursor = _parse_length_prefixed_segment(
             raw_utf8,
             cursor,
@@ -689,20 +801,20 @@ def _validate_source_envelope_identity(
     ):
         raise SourceAdmissionError("owner_universe_source_envelope_invalid")
     snapshot, segments = _parse_canonical_frame(envelope.raw_utf8)
-    category, emotion, strength = _exact_labels(snapshot)
+    categories, emotions, strengths = _ordered_labels(snapshot)
     (
         raw_memo,
         raw_action,
-        raw_emotion,
-        raw_simple_emotion,
-        raw_category,
-        raw_strength,
+        raw_emotions,
+        raw_simple_emotions,
+        raw_categories,
+        raw_strengths,
     ) = _source_leaf_values(snapshot)
     if (
-        raw_category != category
-        or raw_emotion != emotion
-        or raw_simple_emotion != emotion
-        or raw_strength != strength
+        raw_categories != categories
+        or raw_emotions != emotions
+        or raw_simple_emotions != emotions
+        or raw_strengths != strengths
     ):
         raise SourceAdmissionError("owner_universe_source_label_binding_mismatch")
     source_record_id = _alias_text(
@@ -752,14 +864,37 @@ def _canonical_evidence_refs_from_envelope(
         raise SourceAdmissionError("evidence_ledger_empty", hard_invalid=False)
     build_evidence_span_resolver(spans, current_input=normalized)
 
+    categories, emotions, strengths = _ordered_labels(snapshot)
+    structured_paths = {
+        "emotion_details": tuple(
+            f"emotion_details.{index}.type" for index in range(len(emotions))
+        ),
+        "emotions": tuple(f"emotions.{index}" for index in range(len(emotions))),
+        "category": tuple(
+            f"category.{index}" for index in range(len(categories))
+        ),
+    }
+    structured_cursors = {field: 0 for field in structured_paths}
     locator_rows: list[tuple[str, str, int, int, int, int, int]] = []
     for span in spans:
         source_field = str(getattr(span, "source_field", "") or "")
-        binding = _SOURCE_FIELD_PATHS.get(source_field)
         literal = str(getattr(span, "raw_text", "") or "")
-        if binding is None or not literal:
+        if not literal:
             raise SourceAdmissionError("evidence_original_field_binding_missing")
-        path, element_index = binding
+        if source_field in _TEXT_SOURCE_FIELD_PATHS:
+            path, element_index = _TEXT_SOURCE_FIELD_PATHS[source_field]
+        elif source_field in structured_paths:
+            cursor = structured_cursors[source_field]
+            paths = structured_paths[source_field]
+            if cursor >= len(paths):
+                raise SourceAdmissionError(
+                    "evidence_structured_leaf_cardinality_mismatch"
+                )
+            path = paths[cursor]
+            element_index = cursor
+            structured_cursors[source_field] = cursor + 1
+        else:
+            raise SourceAdmissionError("evidence_original_field_binding_missing")
         field_start, field_end, raw_value = segments[path]
         if source_field in {"memo", "memo_action"}:
             scalar_start, scalar_end = _text_span_raw_subrange(
@@ -782,20 +917,29 @@ def _canonical_evidence_refs_from_envelope(
                 scalar_end,
             )
         )
-    strength_start, strength_end, strength_value = segments[
-        "emotion_details.0.strength"
-    ]
-    locator_rows.append(
-        (
-            "structured:emotion_strength",
-            "emotion_details.0.strength",
-            0,
-            strength_start,
-            strength_end,
-            0,
-            len(strength_value),
+    if any(
+        structured_cursors[field] != len(paths)
+        for field, paths in structured_paths.items()
+    ):
+        raise SourceAdmissionError("evidence_structured_leaf_cardinality_mismatch")
+    for index, _strength in enumerate(strengths):
+        strength_path = f"emotion_details.{index}.strength"
+        strength_start, strength_end, strength_value = segments[strength_path]
+        locator_rows.append(
+            (
+                (
+                    "structured:emotion_strength"
+                    if index == 0
+                    else f"structured:emotion_strength:{index}"
+                ),
+                strength_path,
+                index,
+                strength_start,
+                strength_end,
+                0,
+                len(strength_value),
+            )
         )
-    )
 
     refs: list[EvidenceRef] = []
     for (
@@ -871,10 +1015,10 @@ def freeze_text_source(request: GenerationRequest) -> AdmittedTextSource:
     (
         raw_memo,
         raw_action,
-        raw_emotion,
-        raw_simple_emotion,
-        raw_category,
-        raw_strength,
+        _raw_emotions,
+        _raw_simple_emotions,
+        _raw_categories,
+        _raw_strengths,
     ) = _source_leaf_values(snapshot)
 
     source_record_id = _alias_text(snapshot, ("id", "source_record_id", "sourceRecordId"))
@@ -891,11 +1035,13 @@ def freeze_text_source(request: GenerationRequest) -> AdmittedTextSource:
         raise SourceAdmissionError("text_grounded_material_required", hard_invalid=False)
     if thought != _clean(bundle.thought_text) or action != _clean(bundle.action_text):
         raise SourceAdmissionError("text_bundle_binding_mismatch")
-    category, emotion, strength = _exact_labels(snapshot)
-    if tuple(bundle.categories) != (category,) or len(bundle.emotions) != 1:
+    categories, emotions, strengths = _ordered_labels(snapshot)
+    if tuple(bundle.categories) != categories or len(bundle.emotions) != len(emotions):
         raise SourceAdmissionError("structured_bundle_binding_mismatch")
-    bundled_emotion = bundle.emotions[0]
-    if bundled_emotion.type != emotion or bundled_emotion.strength != strength:
+    if tuple(
+        (bundled_emotion.type, bundled_emotion.strength)
+        for bundled_emotion in bundle.emotions
+    ) != tuple(zip(emotions, strengths, strict=True)):
         raise SourceAdmissionError("emotion_bundle_binding_mismatch")
 
     normalized = normalize_emlis_current_input(snapshot)
@@ -911,18 +1057,7 @@ def freeze_text_source(request: GenerationRequest) -> AdmittedTextSource:
     # Each segment stores the original admitted field value, not a normalized
     # ledger copy. Evidence ranges below point into these original-value
     # segments and are independently checked byte-for-byte.
-    for path, raw_value in zip(
-        _FRAME_FIELD_PATHS,
-        (
-            raw_memo,
-            raw_action,
-            raw_emotion,
-            raw_simple_emotion,
-            raw_category,
-            raw_strength,
-        ),
-        strict=True,
-    ):
+    for path, raw_value in _frame_field_rows(snapshot):
         _append_field(frame, f"original.{path}", raw_value)
 
     raw_utf8 = bytes(frame)
@@ -977,9 +1112,9 @@ def freeze_text_source(request: GenerationRequest) -> AdmittedTextSource:
         evidence_spans=spans,
         evidence_refs=tuple(refs),
         owner_universe=owner_universe,
-        category=category,
-        emotion=emotion,
-        strength=strength,
+        category=categories[0],
+        emotion=emotions[0],
+        strength=strengths[0],
     )
 
 
