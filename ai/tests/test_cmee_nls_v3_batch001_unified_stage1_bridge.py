@@ -24,6 +24,7 @@ from emlis_ai_grounded_observation_plan import (
 )
 import emlis_ai_grounded_observation_plan as grounded_plan_module
 import emlis_ai_grounded_sentence_surface as grounded_surface_module
+from emlis_ai_safety_triage import TRIAGE_SAFE_OBSERVATION
 from cocolon_meaning_experience_engine import MeaningExperienceEngine
 from cocolon_meaning_experience_engine.contracts import (
     CMEE_STAGE1_EMLIS_OWNER_REF_V2,
@@ -33,6 +34,7 @@ from cocolon_meaning_experience_engine.contracts import (
     EngineStatus,
     GenerationRequest,
     LimitedMeaningVisibleCausalTraceRow,
+    SubjectiveProjectionBranch,
     validate_stage1_sentence_unit,
     validate_stage1_trace_spine,
 )
@@ -212,6 +214,7 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
             ("body", "plan", "sentence_plan", "resolver"),
         )
         limited_trace_count = 0
+        grounded_normal_count = 0
 
         for row in self.rows:
             with self.subTest(case_id=row["case_id"]):
@@ -237,6 +240,7 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                 )
 
                 realized_surfaces: list[object] = []
+                selected_plans: list[object] = []
                 inverse_by_body: dict[bytes, list[object]] = {}
                 gates_by_body: dict[bytes, list[object]] = {}
                 premeaning_outputs: list[object] = []
@@ -267,6 +271,9 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                 def track_realize(*args, **kwargs):
                     result = actual_realize(*args, **kwargs)
                     realized_surfaces.append(result)
+                    selected_plans.append(
+                        kwargs.get("plan", args[1] if len(args) > 1 else None)
+                    )
                     return result
 
                 def track_inverse(*args, **kwargs):
@@ -363,6 +370,30 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                     CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
                 )
                 self.assertTrue(units)
+                grounded_selected = bool(
+                    projection.projection_branch
+                    is SubjectiveProjectionBranch.NORMAL
+                    and grounded_plan.input_profile.material_quality
+                    == "grounded"
+                    and grounded_plan.safety_policy.safety_kind
+                    == TRIAGE_SAFE_OBSERVATION
+                )
+                grounded_normal_count += int(grounded_selected)
+                expected_material_quality = (
+                    "grounded" if grounded_selected else "limited_grounding"
+                )
+                self.assertTrue(selected_plans)
+                self.assertTrue(
+                    all(
+                        plan.input_profile.material_quality
+                        == expected_material_quality
+                        for plan in selected_plans
+                    )
+                )
+                self.assertNotIn(
+                    "それ以上の出来事や理由は広げません。",
+                    "\n".join(unit.text for unit in units),
+                )
                 self.assertEqual(len(premeaning_outputs), 1)
                 self.assertEqual(len(phase_a_inputs), 1)
                 self.assertEqual(len(project_calls), 1)
@@ -487,6 +518,7 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                         expected_subsequence,
                     )
         self.assertGreater(limited_trace_count, 0)
+        self.assertEqual(grounded_normal_count, 4)
 
     def test_all100_outer_engine_is_disabled_or_fail_closed_with_v2_trace(
         self,

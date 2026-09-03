@@ -12,10 +12,14 @@ from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
 from emlis_ai_grounded_observation_plan import (
     build_final_stage1_grounded_observation_plan,
 )
+import emlis_ai_grounded_observation_gate as gate_owner
+import emlis_ai_grounded_sentence_surface as surface_owner
+from emlis_ai_safety_triage import TRIAGE_SAFE_OBSERVATION
 from cocolon_meaning_experience_engine.contracts import (
     CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1,
     CMEEStage1ContractError,
     GenerationRequest,
+    SubjectiveProjectionBranch,
     validate_stage1_projection,
     validate_stage1_sentence_unit,
 )
@@ -28,6 +32,7 @@ from cocolon_meaning_experience_engine.emlis_v1a import (
 from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
 import cocolon_meaning_experience_engine.emlis_stage1_composition as composition
 import cocolon_meaning_experience_engine.emlis_stage1_response as response
+import cocolon_meaning_experience_engine.emlis_v1a as v1a_module
 from tools.cmee_v1a_i1sx_candidate_run import EXACT8
 
 
@@ -159,12 +164,25 @@ class CMEEGroundedSurfaceOwnerInheritanceTest(unittest.TestCase):
                     strength,
                 )
                 realized_surfaces = []
+                selected_plans = []
+                selected_reception_materials = []
                 actual_realize = response.realize_grounded_sentence_plan
+                actual_reception_plan = v1a_module._cmee_semantic_reception_plan
 
                 def track_realize(*args, **kwargs):
                     result = actual_realize(*args, **kwargs)
                     realized_surfaces.append(result)
+                    selected_plans.append(
+                        kwargs.get("plan", args[1] if len(args) > 1 else None)
+                    )
                     return result
+
+                def track_reception_plan(*args, **kwargs):
+                    if "material_quality" in kwargs:
+                        selected_reception_materials.append(
+                            kwargs["material_quality"]
+                        )
+                    return actual_reception_plan(*args, **kwargs)
 
                 with (
                     patch.object(
@@ -179,6 +197,11 @@ class CMEEGroundedSurfaceOwnerInheritanceTest(unittest.TestCase):
                             "independent final surface owner reached"
                         ),
                     ) as independent_composer,
+                    patch.object(
+                        v1a_module,
+                        "_cmee_semantic_reception_plan",
+                        side_effect=track_reception_plan,
+                    ),
                 ):
                     projection, units = response.compile_stage1_response(
                         source=source,
@@ -190,14 +213,118 @@ class CMEEGroundedSurfaceOwnerInheritanceTest(unittest.TestCase):
                 self.assertGreaterEqual(grounded_realizer.call_count, 2)
                 self.assertEqual(independent_composer.call_count, 0)
                 self.assertTrue(units)
+                grounded_selected = bool(
+                    projection.projection_branch
+                    is SubjectiveProjectionBranch.NORMAL
+                    and grounded_plan.input_profile.material_quality
+                    == "grounded"
+                    and grounded_plan.safety_policy.safety_kind
+                    == TRIAGE_SAFE_OBSERVATION
+                )
+                expected_material_quality = (
+                    "grounded" if grounded_selected else "limited_grounding"
+                )
+                expected_hedge_policy = (
+                    "single_input_scope"
+                    if grounded_selected
+                    else "limited_single_input_scope"
+                )
+                self.assertTrue(selected_plans)
+                self.assertTrue(
+                    all(
+                        plan.input_profile.material_quality
+                        == expected_material_quality
+                        for plan in selected_plans
+                    )
+                )
+                self.assertTrue(
+                    all(
+                        plan.surface_policy.hedge_policy
+                        == expected_hedge_policy
+                        for plan in selected_plans
+                    )
+                )
+                self.assertTrue(selected_reception_materials)
+                self.assertTrue(
+                    all(
+                        material_quality == expected_material_quality
+                        for material_quality in selected_reception_materials
+                    )
+                )
+                self.assertNotIn(
+                    "それ以上の出来事や理由は広げません。",
+                    "\n".join(unit.text for unit in units),
+                )
+                selected_surface = next(
+                    surface
+                    for surface in realized_surfaces
+                    if tuple(line.text for line in surface.lines)
+                    == tuple(unit.text for unit in units)
+                )
+                if case_id in {"SX-06", "SX-07"}:
+                    self.assertIs(
+                        projection.projection_branch,
+                        SubjectiveProjectionBranch.LIMITED,
+                    )
+                    observation_unit = next(
+                        unit for unit in units if unit.layer == "LAYER_1"
+                    )
+                    relation_frames = tuple(
+                        frame
+                        for frame in observation_unit.clause_frames
+                        if frame.discourse_relation.startswith("edge:")
+                    )
+                    self.assertEqual(
+                        len(relation_frames),
+                        len(
+                            grounded_plan.coverage_requirements.required_relation_ids
+                        ),
+                    )
+                    self.assertEqual(
+                        len(
+                            {
+                                frame.discourse_relation
+                                for frame in relation_frames
+                            }
+                        ),
+                        len(relation_frames),
+                    )
+                    witness = surface_owner.parse_grounded_surface_body_bytes(
+                        selected_surface.text.encode("utf-8")
+                    )
+                    observation_sentences = tuple(
+                        sentence
+                        for sentence in witness.sentences
+                        if sentence.section == "observation"
+                    )
+                    self.assertGreaterEqual(
+                        len(observation_sentences),
+                        len(relation_frames),
+                    )
+                    edge_by_id = {edge.edge_id: edge for edge in graph.edges}
+                    for sentence, frame in zip(
+                        observation_sentences,
+                        relation_frames,
+                    ):
+                        edge_id = frame.discourse_relation.removeprefix(
+                            "edge:"
+                        ).split("@", 1)[0]
+                        self.assertIn(edge_id, edge_by_id)
+                        relation_type = edge_by_id[edge_id].relation
+                        allowed_markers = (
+                            gate_owner._BODY_INVERSE_RELATION_MARKERS_BY_TYPE[
+                                relation_type
+                            ]
+                        )
+                        self.assertGreater(sentence.quote_count, 0)
+                        self.assertTrue(
+                            set(sentence.relation_marker_codes).intersection(
+                                allowed_markers
+                            )
+                        )
                 self.assertEqual(
                     tuple(unit.text for unit in units),
-                    next(
-                        tuple(line.text for line in surface.lines)
-                        for surface in realized_surfaces
-                        if tuple(line.text for line in surface.lines)
-                        == tuple(unit.text for unit in units)
-                    ),
+                    tuple(line.text for line in selected_surface.lines),
                 )
                 observation_anchors = tuple(
                     ref

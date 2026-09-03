@@ -2941,7 +2941,12 @@ def _cmee_target_self_evidences_retained_intention(
     )
 
 
-def _cmee_semantic_reception_plan(grounded_plan: Any, resolver: Any) -> Any:
+def _cmee_semantic_reception_plan(
+    grounded_plan: Any,
+    resolver: Any,
+    *,
+    material_quality: str = CMEE_RECEPTION_MATERIAL_MODE,
+) -> Any:
     """Project the existing target into a polarity-strict CMEE reception plan.
 
     The legacy short-state compatibility policy intentionally collapses every
@@ -2964,7 +2969,7 @@ def _cmee_semantic_reception_plan(grounded_plan: Any, resolver: Any) -> Any:
         nuclei=grounded_plan.nuclei,
         relations=grounded_plan.relations,
         safety_kind=grounded_plan.safety_policy.safety_kind,
-        material_quality=CMEE_RECEPTION_MATERIAL_MODE,
+        material_quality=material_quality,
         semantic_complexity=grounded_plan.input_profile.semantic_complexity,
     )
     if reception_plan is None or not reception_plan.required:
@@ -3112,7 +3117,7 @@ def _cmee_semantic_reception_plan(grounded_plan: Any, resolver: Any) -> Any:
                 nucleus_index=nucleus_index,
                 resolver=resolver,
                 safety_kind=grounded_plan.safety_policy.safety_kind,
-                material_quality=CMEE_RECEPTION_MATERIAL_MODE,
+                material_quality=material_quality,
             )
             and _cmee_rr4_aggregate_support_exact(
                 reception_plan,
@@ -3262,7 +3267,7 @@ def _cmee_semantic_reception_plan(grounded_plan: Any, resolver: Any) -> Any:
         nucleus_index=nucleus_index,
         resolver=resolver,
         safety_kind=grounded_plan.safety_policy.safety_kind,
-        material_quality=CMEE_RECEPTION_MATERIAL_MODE,
+        material_quality=material_quality,
     )
     if plan_issues:
         raise CMEEVerticalError("bound_human_reception_plan_invalid")

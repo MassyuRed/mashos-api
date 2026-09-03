@@ -2482,6 +2482,8 @@ def _render_observation(
     binding: GroundedSentenceBinding,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
+    *,
+    typed_semantic_duties: bool = False,
 ) -> str:
     quotes = _quotes_for_nuclei(binding.nucleus_ids, nucleus_index, resolver)
     joined = _join_quotes(quotes)
@@ -2519,6 +2521,14 @@ def _render_observation(
             return f"{prefix}{joined}が、同じ入力に置かれた出来事として並んでいます。"
         return f"{prefix}{joined}が、同じ入力の中で一つの流れになっています。"
     nucleus = nucleus_index[binding.nucleus_ids[0]]
+    if typed_semantic_duties:
+        typed_endpoint = _final_stage1_typed_relation_endpoint(
+            binding.nucleus_ids[0],
+            nucleus_index,
+            resolver,
+        )
+        if typed_endpoint and typed_endpoint != joined:
+            return f"{prefix}今の入力には、{typed_endpoint}があります。"
     if "lexical:preserve_source_predicate" in nucleus.semantic_frame.attribute_codes:
         return f"{prefix}今は、{joined}という感覚が前に出ています。"
     if all(field in {"emotion_details", "emotions", "category"} for field in nucleus.source_fields):
@@ -2609,14 +2619,27 @@ def _render_observation_with_relations(
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     relation_index: Mapping[str, GroundedSemanticRelation],
     resolver: EvidenceSpanResolver,
+    *,
+    typed_semantic_duties: bool = False,
 ) -> str:
     quotes = _quotes_for_nuclei(binding.nucleus_ids, nucleus_index, resolver)
     joined = _join_quotes(quotes)
     if not joined:
         return ""
     if not binding.relation_ids:
-        return _render_observation(binding, nucleus_index, resolver)
-    relation_text = _render_relation(binding, nucleus_index, relation_index, resolver)
+        return _render_observation(
+            binding,
+            nucleus_index,
+            resolver,
+            typed_semantic_duties=typed_semantic_duties,
+        )
+    relation_text = _render_relation(
+        binding,
+        nucleus_index,
+        relation_index,
+        resolver,
+        typed_semantic_duties=typed_semantic_duties,
+    )
     endpoint_ids = {
         nucleus_id
         for relation_id in binding.relation_ids
@@ -2638,20 +2661,43 @@ def _render_relation(
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     relation_index: Mapping[str, GroundedSemanticRelation],
     resolver: EvidenceSpanResolver,
+    *,
+    typed_semantic_duties: bool = False,
 ) -> str:
     if not binding.relation_ids:
-        return _render_observation(binding, nucleus_index, resolver)
+        return _render_observation(
+            binding,
+            nucleus_index,
+            resolver,
+            typed_semantic_duties=typed_semantic_duties,
+        )
     sentences: list[str] = []
     for relation_id in binding.relation_ids:
         if relation_id not in relation_index:
             continue
         relation = relation_index[relation_id]
-        left = _join_quotes(
-            _quotes_for_nuclei((relation.from_nucleus_id,), nucleus_index, resolver)
-        )
-        right = _join_quotes(
-            _quotes_for_nuclei((relation.to_nucleus_id,), nucleus_index, resolver)
-        )
+        if typed_semantic_duties:
+            left = _final_stage1_typed_relation_endpoint(
+                relation.from_nucleus_id,
+                nucleus_index,
+                resolver,
+            )
+            right = _final_stage1_typed_relation_endpoint(
+                relation.to_nucleus_id,
+                nucleus_index,
+                resolver,
+            )
+        else:
+            left = _join_quotes(
+                _quotes_for_nuclei(
+                    (relation.from_nucleus_id,), nucleus_index, resolver
+                )
+            )
+            right = _join_quotes(
+                _quotes_for_nuclei(
+                    (relation.to_nucleus_id,), nucleus_index, resolver
+                )
+            )
         if not left or not right:
             continue
         role = relation_surface_role(relation, nucleus_index)
@@ -2682,7 +2728,10 @@ def _render_relation(
                 f"{left}という変化が、{right}という行動にも表れています。"
             )
         elif role == "dimension_shift":
-            sentences.append(f"{left}から{right}へ、捉え方や動きが移っています。")
+            sentences.append(
+                f"{left}から{right}へ、{_RELATION_LABELS[relation.type]}として、"
+                "捉え方や動きが移っています。"
+            )
         elif role == "coexisting_contrast":
             sentences.append(f"{left}と{right}が、異なる向きのまま同時にあります。")
         elif relation.type == "temporal_before_after":
@@ -2824,6 +2873,11 @@ def _final_stage1_relation_fragment(
         return f"{left}と{right}の異なる向き"
     if relation.type == "temporal_before_after":
         return f"{left}から{right}へ続く時間の前後"
+    if relation.type == "uncertain_connection":
+        return (
+            f"{left}のあとに{right}が続く順序上のつながりで、"
+            "因果までは確定しない形"
+        )
     if relation.type == "continuation_or_refusal":
         return f"{left}に表れた、{right}だけで終わらない続ける向き"
     fragment = _relation_fragment(relation, nucleus_index, resolver)
@@ -2911,8 +2965,9 @@ def _render_final_stage1_limited_scope(
         for relation_id in binding.relation_ids
         if relation_id in relation_index
     )
-    relation_text = _join_relation_fragments(
-        tuple(
+    relation_fragments = tuple(
+        fragment
+        for fragment in (
             _final_stage1_relation_fragment(
                 relation,
                 nucleus_index,
@@ -2920,6 +2975,7 @@ def _render_final_stage1_limited_scope(
             )
             for relation in relation_rows
         )
+        if fragment
     )
     endpoint_ids = {
         nucleus_id
@@ -2940,11 +2996,20 @@ def _render_final_stage1_limited_scope(
         resolver,
     )
     clauses: list[str] = []
-    if relation_text:
-        clauses.append(
-            f"今の入力では、{relation_text}が確認できます{_JA_SENTENCE_END}"
-        )
-    elif extras:
+    for relation_index_value, relation_fragment in enumerate(
+        relation_fragments
+    ):
+        if relation_index_value == 0:
+            clauses.append(
+                f"今の入力では、{relation_fragment}が確認できます"
+                f"{_JA_SENTENCE_END}"
+            )
+        else:
+            clauses.append(
+                f"また、{relation_fragment}も確認できます"
+                f"{_JA_SENTENCE_END}"
+            )
+    if not relation_fragments and extras:
         clauses.append(
             f"今の入力では、{extras}までが確かに見えます"
             f"{_JA_SENTENCE_END}"
@@ -2955,9 +3020,6 @@ def _render_final_stage1_limited_scope(
             f"あわせて、{extras}も今の状態として見えます"
             f"{_JA_SENTENCE_END}"
         )
-    clauses.append(
-        f"それ以上の出来事や理由は広げません{_JA_SENTENCE_END}"
-    )
     return " ".join(clauses)
 
 
@@ -3706,16 +3768,34 @@ def _realize_line(
     resolver: EvidenceSpanResolver,
 ) -> str:
     if line.surface_function == "observe_nuclei":
-        return _render_observation(line.binding, nucleus_index, resolver)
+        return _render_observation(
+            line.binding,
+            nucleus_index,
+            resolver,
+            typed_semantic_duties=(
+                _is_final_stage1_grounded_projection(plan)
+            ),
+        )
     if line.surface_function == "observe_nuclei_with_relations":
         return _render_observation_with_relations(
             line.binding,
             nucleus_index,
             relation_index,
             resolver,
+            typed_semantic_duties=(
+                _is_final_stage1_grounded_projection(plan)
+            ),
         )
     if line.surface_function == "observe_relation":
-        return _render_relation(line.binding, nucleus_index, relation_index, resolver)
+        return _render_relation(
+            line.binding,
+            nucleus_index,
+            relation_index,
+            resolver,
+            typed_semantic_duties=(
+                _is_final_stage1_grounded_projection(plan)
+            ),
+        )
     if line.surface_function == "render_limited_scope":
         return _render_limited_scope(
             line.binding,

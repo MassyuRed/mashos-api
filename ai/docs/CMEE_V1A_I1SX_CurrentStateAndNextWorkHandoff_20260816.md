@@ -4572,3 +4572,150 @@ KAREN_BODY_FULL_PRE_SCREEN_READY = false
 NEXT_AUTOMATIC_ACTION = NONE
 CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_THIS_STOP
 ```
+
+---
+
+## CMEE Work Stage 1 / visible binding closure and forced-limited fix（2026-09-03）
+
+本節は、Mash authority
+`FRESH_MASH_LEVEL3_CMEE_WORK_STAGE1_VISIBLE_BINDING_CLOSURE_THEN_FORCED_LIMITED_FIX_20260903`
+によるbounded unitの完了checkpointである。上記handoffのruntime evidenceは
+保持するが、product verdictとnext routeはCocolon正本`02` latest §35／`06`
+latest §86を優先する。
+
+```text
+CHECKPOINT_SCHEMA = CMEE_WORK_STAGE1_VISIBLE_BINDING_AND_CONDITION_FIX_V1
+CHECKPOINT_ID = CMEE_WORK_STAGE1_VISIBLE_BINDING_AND_CONDITION_FIX_20260903_V1
+STEP_STATE = COMPLETE_BOUNDED_NONTERMINAL_CHECKPOINT
+REPOSITORY = MassyuRed/mashos-api
+PULL_REQUEST = 3
+BRANCH = agent/cmee-v1a-i1sx-source-explicit-20260815
+PRE_HEAD = c010a984f430269121663d2ea2b0c3f71af55d59_REMOTE_VERIFIED
+DESIGN_REPOSITORY_HEAD = 97b25c146ad41f87d5859e450e48face9de65ea0_REMOTE_VERIFIED
+FINAL_HEAD = THIS_COMMIT_RESOLVED_BY_FRESH_REMOTE_POSTVERIFY
+
+CURRENT_IMPLEMENTATION_OWNER = IMPLEMENTED_NOT_ACCEPTED
+CANDIDATE_READY = false
+PRODUCT_READ_ELIGIBLE = false
+AUTOMATIC_PROGRESSION = false
+PRODUCTION_EFFECT = 0
+```
+
+current active callerからfinal Layer 1／2、Gate、body-only inverse、source
+grounding、unknown protection、public response mappingまでを再追跡した。Phase A
+では、上流で確定済みのrequired semantic dutiesをfinal Stage 1の通常sentence
+realizerにも継承し、intention、effort、changeとrelation typeをvisible endpoint／
+relation grammarへ閉じた。genuine LIMITEDでは複数relationを一文へ集約せず、
+各relationをsource quoteとrelation markerを持つ意味文へ分けた。adapterの
+sentence／relation exact binding、Gate、body inverseは変更していない。
+
+Phase Aの初回broad candidateは、groundedへ戻った`shift_from_to`が既存の
+visible relation labelを通常grammarで保持せず、relation matrix exact1が停止した。
+既存`_RELATION_LABELS`の同relation labelを同じgeneric grammarへ継承し、対象testと
+broad exact118を再実行して全件PASSした。test、Gate、inverseの緩和ではない。
+
+```text
+PHASE_A_COMMON_CAUSE = FINAL_STAGE1_SENTENCE_REALIZER_VISIBLE_BINDING_CLOSURE_GAP
+PHASE_A_BEFORE_CANONICAL_GROUNDED_NORMAL = HARD_VALID_1_OF_4
+PHASE_A_AFTER_CANONICAL_GROUNDED_NORMAL = HARD_VALID_4_OF_4
+PHASE_A_REQUIRED_INTENTION_EFFORT_CHANGE_RELATION = PASS
+PHASE_A_LIMITED_SENTENCE_RELATION_BINDING_WITHOUT_DISCLAIMER = PASS
+PHASE_A_GATE / BODY_INVERSE / SOURCE / UNKNOWN = PASS / PASS / PASS / PASS
+PHASE_A_COMPLETE = true
+```
+
+Phase Bでは、新しい分類を作らず、既存のprojection branch、入力material quality、
+safety kindだけからselected material modeをexact onceで決めた。`NORMAL + grounded +
+safe_observation`のときだけgroundedを保持し、それ以外は従来のlimited groundingへ
+残す。同じselected modeをReception plan、final input profile、response kind、hedge
+policyへ渡す。short-state、Reception act、semantic complexity、required dutyをrelease
+条件にせず、生成後fallbackも追加していない。指定不要注意文は置換や文数合わせを
+置かずactive final Stage 1本文から削除した。入力外の理由、人格、背景、他者意図を
+推測しない既存保護は維持した。
+
+```text
+PHASE_B_COMMON_CAUSE = COMPILE_STAGE1_RESPONSE_FORCED_LIMITED_FIELDS
+CONDITION_BEFORE = ALL_FINAL_PLANS_FORCED_TO_LIMITED_MATERIAL_RESPONSE_AND_HEDGE
+CONDITION_AFTER = NORMAL_AND_GROUNDED_AND_SAFE_ONLY_KEEP_GROUNDED_MODE
+RECEPTION_AND_FINAL_PLAN_SELECTED_MODE = EXACT_SAME_EXISTING_CLASSIFICATION
+GENUINE_LIMITED_RECLASSIFIED = false
+SAFETY_RECLASSIFIED = false
+POST_GENERATION_LIMITED_FALLBACK = 0
+UNWANTED_DISCLAIMER_REPLACEMENT = 0
+PHASE_B_COMPLETE = true
+```
+
+actual比較は同じ既存public-safe synthetic代表exact1で行った。before／afterとも
+`GENERATED`、terminal disabledを維持した。afterのLayer 1は二つの入力固有の意味中心
+とその関係を直接示し、注意文削除だけではないvisible非0改善になった。Layer 2は
+入力固有context、target、Emlisの一方向の受け止めを持つ既存本文を維持した。private
+入力本文とactual bodyは本handoffへ保存しない。
+
+```text
+PUBLIC_SAFE_REPRESENTATIVE_COUNT = 1
+BEFORE_STATUS / AFTER_STATUS = GENERATED / GENERATED
+BEFORE_TERMINAL / AFTER_TERMINAL = DISABLED / DISABLED
+ACTUAL_VISIBLE_TEXT_DELTA = NONZERO_LAYER1_MEANING_RELATION_BEYOND_DISCLAIMER_REMOVAL
+ACTUAL_LAYER2_REGRESSION = 0
+PRIVATE_INPUT_BODY_PUBLICATION / ACTUAL_BODY_PUBLICATION = 0 / 0
+
+GROUNDED_NORMAL_EXACT4 = HARD_VALID_4_OF_4
+GENUINE_LIMITED_DIRECT_EXACT2 = PASS_2_OF_2
+GENUINE_LIMITED_OUTER_EXACT2 = GENERATED_2_OF_2
+GENUINE_LIMITED_PROJECTION = LIMITED_2_OF_2
+SAFETY_SELECTOR = PASS_1_OF_1
+```
+
+final candidateでfocused exact33、body inverse exact17、reconstructed current
+broad exact118、canonical bridge exact4、safety selector exact1はすべてPASSした。
+canonical100のfinal surface Gateは100／100、outer engineは既存内訳
+`positive=68 / fail-closed unavailable=32`を維持した。source owner、relation
+authority、unknown marker、body tamper、no-fallback、no-case-routingも同じ回帰群で
+確認した。
+
+```text
+FINAL_FOCUSED_ACTIVE_ROUTE = PASS_33_OF_33
+FINAL_BODY_INVERSE = PASS_17_OF_17
+FINAL_BROAD_STAGE1_RECONSTRUCTED_SELECTOR = PASS_118_OF_118
+FINAL_CANONICAL_BRIDGE = PASS_4_OF_4
+FINAL_CANONICAL100_GATE = PASS_100_OF_100
+FINAL_CANONICAL100_OUTER = POSITIVE_68 / UNAVAILABLE_32
+FINAL_SAFETY_SELECTOR = PASS_1_OF_1
+GIT_DIFF_CHECK = PASS
+```
+
+System Contextはdoctor-equivalent確認後、承認済みrefsでprepareを試みたが、saved
+profileのmashos-api ref drift、pinned `scip-python`不在、Node 20不在によりfail
+closedとなった。generated contextは判断に使用せずfresh current repositoriesを直接
+読んだ。tracked profile、基準ref、tracked currentの変更は0である。
+
+```text
+SYSTEM_CONTEXT_STATE = STALE_FAIL_CLOSED_NOT_CONSUMED
+TRACKED_PROFILE_CHANGE / BASE_REF_CHANGE / TRACKED_CURRENT_CHANGE = 0 / 0 / 0
+STRUCTURE_MAP_DELTA = NONE
+CASE_ID_ROUTING / FIXTURE_LEXEME_ROUTING / FIXED_COMPLETED_TEXT = 0 / 0 / 0
+EXTERNAL_AI / PROVIDER / NETWORK / FALLBACK = 0 / 0 / 0 / 0
+QUESTION_FLOW / PUBLIC_API / DB / SUPABASE / RN / LAYER3 = 0 / 0 / 0 / 0 / 0 / 0
+PRODUCTION / MERGE / CUTOVER = 0 / 0 / 0
+```
+
+今回の二つのcommon causeは解消した。current actualから次に残る文章出力構造上の
+common cause exact1は、既存Human Reception Move Planがtarget、support、
+follow elements、surface strategyを持つ一方、final rendererがその内容上の流れを
+一つのgeneric reception moveへ縮約することである。この識別子は正本の既存名称では
+なく、current source／actualからのcausal inferenceである。正本のnext routeは
+`ROUND0_FOLLOW_PRIMARY_VISIBLE_RESPONSE_CORRECTION`のままであり、fresh承認後に同じ
+Stage 1の次bounded correctionへ進める。generic Layer 2が残るため、body-full
+pre-screenへはまだ進めない。
+
+```text
+RESOLVED_CURRENT_COMMON_CAUSE_1 = FINAL_STAGE1_SENTENCE_REALIZER_VISIBLE_BINDING_CLOSURE_GAP
+RESOLVED_CURRENT_COMMON_CAUSE_2 = COMPILE_STAGE1_RESPONSE_FORCED_LIMITED_FIELDS
+REMAINING_CURRENT_COMMON_CAUSE_EXACT1 = FINAL_STAGE1_HUMAN_RECEPTION_MOVE_PLAN_CONTENT_FLOW_COLLAPSE
+REMAINING_COMMON_CAUSE_NAME_BASIS = CURRENT_SOURCE_AND_ACTUAL_CAUSAL_INFERENCE
+AUTHORITATIVE_NEXT_ROUTE = ROUND0_FOLLOW_PRIMARY_VISIBLE_RESPONSE_CORRECTION
+NEXT_BOUNDED_SENTENCE_OUTPUT_CORRECTION_READY_FOR_FRESH_APPROVAL = true
+KAREN_BODY_FULL_PRE_SCREEN_READY = false
+NEXT_AUTOMATIC_ACTION = NONE
+CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_THIS_BOUNDED_UNIT
+```

@@ -10709,24 +10709,42 @@ def compile_stage1_response(
     # Local import avoids the existing emlis_v1a -> response import cycle.
     from .emlis_v1a import _cmee_semantic_reception_plan
 
+    grounded_material_selected = bool(
+        projection.projection_branch is SubjectiveProjectionBranch.NORMAL
+        and grounded_plan.input_profile.material_quality == "grounded"
+        and grounded_plan.safety_policy.safety_kind
+        == TRIAGE_SAFE_OBSERVATION
+    )
+    selected_material_quality = (
+        "grounded" if grounded_material_selected else "limited_grounding"
+    )
     reception_plan = _cmee_semantic_reception_plan(
         grounded_plan,
         resolver,
+        material_quality=selected_material_quality,
     )
     selected_grounded_plan = replace(
         grounded_plan,
         input_profile=replace(
             grounded_plan.input_profile,
-            material_quality="limited_grounding",
+            material_quality=selected_material_quality,
         ),
         response_plan=replace(
             grounded_plan.response_plan,
-            response_kind="limited_grounding_observation",
+            response_kind=(
+                "normal_observation"
+                if grounded_material_selected
+                else "limited_grounding_observation"
+            ),
             human_reception_plan=reception_plan,
         ),
         surface_policy=replace(
             grounded_plan.surface_policy,
-            hedge_policy="limited_single_input_scope",
+            hedge_policy=(
+                "single_input_scope"
+                if grounded_material_selected
+                else "limited_single_input_scope"
+            ),
         ),
     )
     selected_grounded_plan = _inherit_projection_observation_coverage(
