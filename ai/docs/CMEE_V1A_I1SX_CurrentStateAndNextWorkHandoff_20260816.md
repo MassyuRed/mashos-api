@@ -4857,3 +4857,144 @@ PRODUCT_CREDIT = 0
 NEXT_AUTOMATIC_ACTION = NONE
 CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_THIS_STOP
 ```
+
+---
+
+## CMEE Work Stage 1 / plan-owned surface-safe focus capability STOP（2026-09-03）
+
+本節は、Mash authority
+`FRESH_MASH_LEVEL3_CMEE_WORK_STAGE1_PLAN_OWNED_SURFACE_SAFE_FOCUS_AND_CONTENT_FLOW_CLOSURE_20260903`
+によるbounded unitの未完了STOP checkpointである。上記handoffのruntime evidenceは
+保持するが、product verdictとnext routeはCocolon正本`02` latest §35／`06`
+latest §86を優先する。current product stateは`IMPLEMENTED_NOT_ACCEPTED`のままである。
+
+```text
+CHECKPOINT_SCHEMA = CMEE_WORK_STAGE1_PLAN_OWNED_VISIBLE_FOCUS_CAPABILITY_STOP_V1
+CHECKPOINT_ID = CMEE_WORK_STAGE1_PLAN_OWNED_VISIBLE_FOCUS_CAPABILITY_STOP_20260903_V1
+STEP_STATE = INCOMPLETE_UPSTREAM_FOCUS_RANGE_CAPABILITY_STOP
+REPOSITORY = MassyuRed/mashos-api
+PULL_REQUEST = 3
+BRANCH = agent/cmee-v1a-i1sx-source-explicit-20260815
+PRE_HEAD = 0476459b5134d2d33fbec6442c0710ffc40db88b_REMOTE_VERIFIED
+DESIGN_REPOSITORY_HEAD = 97b25c146ad41f87d5859e450e48face9de65ea0_REMOTE_VERIFIED_UNCHANGED
+SYSTEM_CONTEXT_OWNER_HEAD = 01fdb13cf1f77892f300bbbc25391a8ca9493d0d_REMOTE_VERIFIED
+FINAL_HEAD = THIS_COMMIT_RESOLVED_BY_FRESH_REMOTE_POSTVERIFY
+
+CURRENT_IMPLEMENTATION_OWNER = IMPLEMENTED_NOT_ACCEPTED
+CANDIDATE_READY = false
+PRODUCT_READ_ELIGIBLE = false
+AUTOMATIC_PROGRESSION = false
+PRODUCTION_EFFECT = 0
+```
+
+current active caller、final Layer 1／2、Human Reception Move Plan、late CMEE
+rebuild、Sentence Plan、Gate、body-only inverse、source grounding、unknown protection、
+public response mappingまでを再追跡した。active final Stage 1では、上流で作られた
+Human Reception planが`_cmee_semantic_reception_plan()`で再構築され、その後
+final sentence surfaceがcanonical Human Reception本文ownerを迂回してgeneric本文を
+作り、canonical ownerを後段validationにだけ用いる。前checkpointで特定した
+content-flow collapseは開始headでも残っている。
+
+Phase Aの実装前に、current canonical100をbody-freeに全件調べた。100 planには
+Human Reception Moveが124あり、全Moveのtarget exact1とEvidence span identityは
+解決できた。しかし、predicate-completeな既存typed scalar rangeを持つMoveは
+2／124だけで、残る122／124にはfocus開始位置がない。既存のfinite endpoint、
+operator closure、bounded semantic content、bounded structural actionのgrammar proofも
+再利用して照合したが、これらは主としてsource clause全体の終端成立を証明するもので、
+入力固有target、述語、程度、否定scope、方向を保った短いfocusの開始位置を確定しない。
+operator末尾からのsubrangeは1／122だけ取得できたが、target保持を証明できず採用しない。
+grounded／NORMAL canonical exact4でも承認条件を満たすfocus rangeは0／4であった。
+
+```text
+CANONICAL_PLAN_COUNT = 100
+CANONICAL_RECEPTION_MOVE_COUNT = 124
+MOVE_TARGET_EXACT1_AND_SOURCE_IDENTITY_RESOLVED = 124_OF_124
+EXISTING_TYPED_PREDICATE_COMPLETE_FOCUS_RANGE = 2_OF_124
+UNTYPED_FOCUS_RANGE = 122_OF_124
+EXISTING_GRAMMAR_OPERATOR_SUFFIX_CANDIDATE = 1_OF_122_NOT_TARGET_PROVEN
+GROUNDED_NORMAL_EXACT4_APPROVED_FOCUS_RANGE = 0_OF_4
+WHOLE_SOURCE_CLAUSE_AS_FOCUS = REJECTED_BY_AUTHORITY
+```
+
+source clause全体を使えば全Moveにlocatorを置けるが、それは承認で禁止された
+source clause全体の再掲と、既存anaphoric／long-target replay保護への後退になる。
+機械的なhead／tail切り出しも、日本語の途中切れ、target消失、否定・希望・方向の
+欠落を起こすため採用しない。残る122 Moveを閉じるには、現在のsemantic categoryとは
+別に、source本文内でtargetとpredicateの開始・終了を決める一般的な日本語focus range
+抽出能力が必要である。これはauthorityが明示したSTOP条件に該当するため、schema field、
+renderer接続、validator変更へ作業を拡大していない。
+
+transport自体は、body-freeなsource identity、scalar range、surface normalization codeを
+final typed nucleusからMoveのrequest-localな`visible_focus_binding`へ写し、Human Reception
+ownerがresolverで本文化する設計で成立可能である。focus本文をdiagnostics、trace、DB、
+public APIへ保持・露出せず、Move plan外へ出さないprivacy境界も維持可能である。ただし、
+運ぶべき安全なrangeが全Moveで確定しないため、`visible_focus_binding`を部分実装または
+generic fallback付きで追加していない。
+
+```text
+VISIBLE_FOCUS_TRANSPORT_CAPABILITY = BODY_FREE_DESCRIPTOR_PATH_FEASIBLE
+VISIBLE_FOCUS_SELECTION_CAPABILITY = NOT_AVAILABLE_FOR_ALL_REQUIRED_MOVES
+FOCUS_TEXT_PERSISTED / DIAGNOSTICS_EXPOSED / TRACE_EXPOSED = 0 / 0 / 0
+NEW_JAPANESE_RANGE_EXTRACTOR / TEMPLATE / FALLBACK = 0 / 0 / 0
+REFERENCE_MODE_CHANGE / VALIDATOR_RELAXATION / AVAILABILITY_CHANGE = 0 / 0 / 0
+```
+
+production変更前に、前checkpointと同じ既存public-safe synthetic代表exact1をactive
+public facadeからfreshに取得した。statusは`GENERATED`、Layer 1／2の開始head本文を
+確認した。Phase Aのfocus exact1が成立しなかったためproduction candidateとactual
+afterは生成していない。private input、private actual、private locator、digest、case別本文は
+本handoffまたはGitHubへ保存していない。
+
+```text
+PUBLIC_SAFE_REPRESENTATIVE_COUNT = 1
+ACTUAL_BEFORE_STATUS = GENERATED
+ACTUAL_BEFORE_LAYER1_AND_LAYER2 = HUMAN_READ_COMPLETE_NOT_STORED_HERE
+ACTUAL_AFTER = NOT_GENERATED_BECAUSE_PHASE_A_STOPPED_BEFORE_PRODUCTION_CHANGE
+LAYER1_BYTE_COMPARISON = NOT_APPLICABLE_NO_CANDIDATE
+PRIVATE_INPUT_BODY_PUBLICATION / PRIVATE_ACTUAL_BODY_PUBLICATION = 0 / 0
+PRIVATE_LOCATOR_DIGEST_CASE_INFORMATION_PUBLICATION = 0
+```
+
+失敗するcanonical設計、production、test変更は作成しておらず、Cocolon PR #30の
+design／current structureとmashos-apiのproduction／test bytesは開始headのままである。
+Phase Aで未完了が確定したため、candidate後に要求されるbroad、canonical100 actual、
+LIMITED／safety回帰は開始していない。開始headに記録済みのretained baseline evidenceは
+上節のまま保持するが、本checkpointのfresh candidate test結果として再計上しない。
+
+```text
+CANONICAL_DESIGN_CHANGE = 0
+PRODUCTION_SOURCE_CHANGE / TEST_SOURCE_CHANGE = 0 / 0
+HANDOFF_CHANGE = 1
+POST_CANDIDATE_REGRESSION_RUN = NOT_RUN_NO_CANDIDATE
+STRUCTURE_MAP_DELTA = NONE
+CASE_ID_ROUTING / FIXTURE_LEXEME_ROUTING / FIXED_COMPLETED_TEXT = 0 / 0 / 0
+EXTERNAL_AI / PROVIDER / NETWORK / FALLBACK = 0 / 0 / 0 / 0
+QUESTION_FLOW / PUBLIC_API / DB / SUPABASE / RN / LAYER3 = 0 / 0 / 0 / 0 / 0 / 0
+PRODUCTION / MERGE / CUTOVER = 0 / 0 / 0
+```
+
+System Contextはmashos-api PR #3の承認headへworkspace profileを更新し、profile test、
+doctor、prepare、verify-onlyを承認済みrefsで完了した。実行ownerはremote-verified
+PR #37 head `01fdb13cf1f77892f300bbbc25391a8ca9493d0d`、exact input／outputはfresh、
+ref driftはnone、blocking unresolvedは0である。既知のCycle001移行履歴finding exact1は
+nonblockingでcurrent product verdict／routeを変更しない。生成物はGit管理外cacheだけに
+置き、workspace／task transportのlogical file countは0、profile構造とtracked currentは
+変更していない。
+
+current common cause exact1は未解消である。同じdescriptor、helper、rendererを別名で
+追加してもrange selection能力は増えないため、自動反復しない。次に必要なのは、
+selected target全件へpredicate-completeなfocus rangeを供給する上流能力を、一般parser、
+product method、または別のsource契約のどれとして扱うかについてのMashのfresh判断である。
+華恋body-full pre-screen、Product Read、acceptance、ready、activationへ進めない。
+
+```text
+REMAINING_CURRENT_COMMON_CAUSE_EXACT1 = FINAL_STAGE1_HUMAN_RECEPTION_MOVE_PLAN_CONTENT_FLOW_COLLAPSE
+BLOCKING_CURRENT_CAPABILITY = PLAN_OWNED_SURFACE_SAFE_GRAMMATICAL_FOCUS_ABSENT
+OBSERVED_BLOCKING_DETAIL = SAFE_FOCUS_RANGE_SELECTION_NOT_AVAILABLE_FOR_ALL_REQUIRED_MOVES
+SAME_METHOD_ADDITIONAL_REPAIR_READY = false
+MASH_METHOD_OR_PRODUCT_JUDGMENT_REQUIRED = true
+KAREN_BODY_FULL_PRE_SCREEN_READY_FOR_FRESH_APPROVAL = false
+PRODUCT_CREDIT = 0
+NEXT_AUTOMATIC_ACTION = NONE
+CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_THIS_STOP
+```
