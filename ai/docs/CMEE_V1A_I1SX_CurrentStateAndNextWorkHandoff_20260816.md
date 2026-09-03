@@ -4449,3 +4449,126 @@ KAREN_BODY_FULL_PRE_SCREEN_READY = false
 NEXT_AUTOMATIC_ACTION = NONE
 CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_THIS_BOUNDED_UNIT
 ```
+
+---
+
+## CMEE Work Stage 1 / forced-limited condition capability STOP（2026-09-03）
+
+本節は、Mash authority
+`FRESH_MASH_LEVEL3_CMEE_WORK_STAGE1_FORCED_LIMITED_CONDITION_FIX_20260903`
+によるbounded unitの未完了STOP checkpointである。上記handoffのruntime
+evidenceは保持するが、product verdictとnext routeはCocolon正本`02`
+latest §35／`06` latest §86を優先する。
+
+```text
+CHECKPOINT_SCHEMA = CMEE_WORK_STAGE1_CONDITION_CAPABILITY_STOP_V1
+CHECKPOINT_ID = CMEE_WORK_STAGE1_FORCED_LIMITED_CONDITION_STOP_20260903_V1
+STEP_STATE = INCOMPLETE_NAMED_CAPABILITY_STOP
+REPOSITORY = MassyuRed/mashos-api
+PULL_REQUEST = 3
+BRANCH = agent/cmee-v1a-i1sx-source-explicit-20260815
+PRE_HEAD = aaf049817a6e8aba766b92e717097e40f2b04548_REMOTE_VERIFIED
+DESIGN_REPOSITORY_HEAD = 97b25c146ad41f87d5859e450e48face9de65ea0_REMOTE_VERIFIED
+FINAL_HEAD = THIS_COMMIT_RESOLVED_BY_FRESH_REMOTE_POSTVERIFY
+
+CURRENT_IMPLEMENTATION_OWNER = IMPLEMENTED_NOT_ACCEPTED
+CANDIDATE_READY = false
+PRODUCT_READ_ELIGIBLE = false
+AUTOMATIC_PROGRESSION = false
+PRODUCTION_EFFECT = 0
+```
+
+current active caller、final Layer 1／2、Gate、body-only inverse、source grounding、
+unknown protection、public response mappingまでを再追跡した。開始headでは、
+`compile_stage1_response()`がfinal planの三項目を全件limitedへ置換し、
+`_cmee_semantic_reception_plan()`もlimited material定数を使う。上流では既に
+NORMAL／LIMITED outcome、material quality、safety stateが確定している。
+
+承認条件どおり、新しいmeaning判定を作らず、既存のNORMAL、grounded、
+safe classificationが揃うplanだけをgrounded三項目へ保ち、それ以外を従来の
+limited／fail-closedへ残すcandidateをローカルで実行した。選択した同じmaterial
+modeをReception builderとfinal planへ渡し、生成後のfallback、fixture語、case
+ID、固定本文、template、provider、外部AIは追加しなかった。
+
+public-safe代表exact1では、candidateのactual Layer 1が入力固有の二つの意味中心と
+関係を示す本文へ変わり、Layer 2の既存入力固有本文を維持した。visible差分は
+注意文削除だけではなく非0で、direct Gate、body-only inverse、source coverage、
+unknown protectionはPASSした。private入力本文とactual bodyは本handoffへ保存しない。
+
+しかし、同じ条件を未知入力へ共通適用すると、canonical100のgroundedかつNORMAL
+exact4のうちexact3で、既存normal sentence realizerがrequired intention／effort
+dutyをvisible本文へ閉じられず、`stage1_no_hard_valid_realization`になった。
+NORMALをReception act、semantic complexityまたはrequired dutyで再選別する既存の
+release authorityはない。それらをallowlistとして使うことは新しい出力可能性判定と
+NORMALからLIMITEDへの再分類になり、正本の`NO_ABSTENTION_SUBSTITUTION`に反する。
+
+また、指定の注意文を置換なしで削除すると、genuine LIMITEDのdirect compileは
+limited、Gate PASS、body inverse PASSを維持する一方、outer engineのpublic-safe
+exact8ではexact2が`stage1_v2_core_binding_relation_cardinality_mismatch`で
+UNAVAILABLEになった。不要文が偶然満たしていたsentence／relation cardinality前提を、
+現在のvisible binding ownerが本文なしでは閉じられないためである。同義注意文、
+fallbackまたはcase別分岐では埋めていない。
+
+```text
+PUBLIC_SAFE_REPRESENTATIVE_COUNT = 1
+CANDIDATE_ACTUAL_VISIBLE_TEXT_DELTA = NONZERO_LAYER1_RELATION
+CANDIDATE_LAYER2_REGRESSION = 0
+CANDIDATE_DIRECT_GATE / BODY_INVERSE / SOURCE / UNKNOWN = PASS / PASS / PASS / PASS
+PRIVATE_INPUT_BODY_PUBLICATION / ACTUAL_BODY_PUBLICATION = 0 / 0
+
+CANDIDATE_CANONICAL_GROUNDED_NORMAL = PASS_1_OF_4 / FAIL_3_OF_4
+CANDIDATE_FOCUSED_ACTIVE_ROUTE = PASS_32_OF_33 / ERROR_1
+CANDIDATE_EXACT8_OUTER_ENGINE = GENERATED_6 / UNAVAILABLE_2
+CANDIDATE_SAFETY_ROUTE = PASS
+
+CONDITION_FIX_RETAINED = false
+UNWANTED_DISCLAIMER_REMOVAL_RETAINED = false
+PRODUCTION_SOURCE_CHANGE / TEST_SOURCE_CHANGE = 0 / 0
+```
+
+今回のauthorityは文章生成構造の一般的強化を含まず、生成後fallbackも禁止する。
+そのため失敗candidateは全てrevertし、回帰をremote branchへ残していない。final
+retained stateでfocused exact33、body inverse exact17、reconstructed current broad
+exact118、canonical bridge exact4、safety selector exact1はすべてPASSした。
+canonical100のfinal surface GateもPASSし、outer engineの既存内訳
+`positive=68 / fail-closed unavailable=32`を維持した。
+
+```text
+FINAL_RETAINED_FOCUSED_ACTIVE_ROUTE = PASS_33_OF_33
+FINAL_RETAINED_BODY_INVERSE = PASS_17_OF_17
+FINAL_RETAINED_BROAD_STAGE1_RECONSTRUCTED_SELECTOR = PASS_118_OF_118
+FINAL_RETAINED_CANONICAL_BRIDGE = PASS_4_OF_4
+FINAL_RETAINED_CANONICAL100_GATE = PASS
+FINAL_RETAINED_CANONICAL100_OUTER = POSITIVE_68 / UNAVAILABLE_32
+FINAL_RETAINED_SAFETY_SELECTOR = PASS_1_OF_1
+GIT_DIFF_CHECK = PASS
+```
+
+System Contextはdoctor-equivalent確認後、承認済みrefsを使うrepo外candidate
+cacheでprepareしたが、pinned `scip-python`とNode 20が現在環境に存在せずfail
+closedとなった。generated contextは判断に使用せずfresh current repositoriesを
+直接読んだ。tracked profile、基準ref、tracked currentの変更は0である。
+
+```text
+SYSTEM_CONTEXT_STATE = STALE_FAIL_CLOSED_NOT_CONSUMED
+TRACKED_PROFILE_CHANGE / BASE_REF_CHANGE / TRACKED_CURRENT_CHANGE = 0 / 0 / 0
+STRUCTURE_MAP_DELTA = NONE
+CASE_ID_ROUTING / FIXTURE_LEXEME_ROUTING / FIXED_COMPLETED_TEXT = 0 / 0 / 0
+EXTERNAL_AI / PROVIDER / NETWORK / FALLBACK = 0 / 0 / 0 / 0
+QUESTION_FLOW / PUBLIC_API / DB / SUPABASE / RN / LAYER3 = 0 / 0 / 0 / 0 / 0 / 0
+PRODUCTION / MERGE / CUTOVER = 0 / 0 / 0
+```
+
+remote retained codeでは`COMPILE_STAGE1_RESPONSE_FORCED_LIMITED_FIELDS`が未解消の
+ままである。今回のcandidateがactual改善まで到達したうえで露出させた、残る文章出力
+構造上のcurrent common cause exact1は、required semantic dutiesとvisible sentence
+line／bindingの対応を全入力で閉じられないことである。
+
+```text
+REMAINING_CURRENT_COMMON_CAUSE_EXACT1 = FINAL_STAGE1_SENTENCE_REALIZER_VISIBLE_BINDING_CLOSURE_GAP
+FORCED_LIMITED_CONDITION_FIX_COMPLETE = false
+NEXT_SENTENCE_STRUCTURE_STRENGTHENING_READY_FOR_FRESH_APPROVAL = true
+KAREN_BODY_FULL_PRE_SCREEN_READY = false
+NEXT_AUTOMATIC_ACTION = NONE
+CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_THIS_STOP
+```
