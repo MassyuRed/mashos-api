@@ -219,8 +219,12 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
                     resolver=resolver,
                 )
                 self.assertTrue(evaluation.passed, evaluation.failure_codes)
+                protective_why = (
+                    "見失わず、大切な向きとして受け止めています"
+                )
+                self.assertIn(protective_why, surface.text)
                 without_why = surface.text.replace(
-                    "消さず、大切に受け止めています",
+                    protective_why,
                     "そこにあります",
                 )
                 missing_why = evaluate_grounded_surface_body_inverse(
@@ -252,7 +256,10 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         self.assertIn("その願い", reception)
         self.assertIn("疲れている", reception)
         self.assertIn("重なる中で", reception)
-        self.assertIn("消さず、大切に受け止めています", reception)
+        self.assertIn(
+            "見失わず、大切な向きとして受け止めています",
+            reception,
+        )
 
         wrong_target = reception.replace("その願い", "その内容", 1)
         wrong_target_evaluation = evaluate_grounded_surface_body_inverse(

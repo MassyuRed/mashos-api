@@ -300,6 +300,38 @@ class CMEEGroundedSurfaceOwnerInheritanceTest(unittest.TestCase):
                 expected_objects,
             )
 
+    def test_significance_protect_actual_keeps_relation_and_emlis_stance(
+        self,
+    ) -> None:
+        source, grounded_plan, graph, parent_plan = _inputs(*EXACT8[6])
+        _, units = response.compile_stage1_response(
+            source=source,
+            grounded_graph=graph,
+            parent_plan=parent_plan,
+            grounded_plan=grounded_plan,
+        )
+        observation = next(
+            unit.text for unit in units if unit.layer == "LAYER_1"
+        )
+        reception = next(
+            unit.text for unit in units if unit.layer == "LAYER_2"
+        )
+
+        self.assertIn("異なる向き", observation)
+        self.assertIn("だけで終わらない", observation)
+        markers = (
+            "が重なる中で",
+            "その願いがここに残っていること",
+            "見失わず",
+            "大切な向きとして受け止め",
+        )
+        self.assertEqual(reception.count("その願い"), 1)
+        self.assertTrue(all(marker in reception for marker in markers))
+        self.assertEqual(
+            tuple(reception.index(marker) for marker in markers),
+            tuple(sorted(reception.index(marker) for marker in markers)),
+        )
+
     def test_legacy_v1_compiler_is_schema_coherent_and_unreachable(self) -> None:
         source, grounded_plan, graph, parent_plan = _inputs(*EXACT8[0])
         projection, units = response._compile_stage1_response_v1_legacy(

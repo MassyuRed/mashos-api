@@ -3321,6 +3321,16 @@ def _render_generic_final_reception_move(
 
     if not target:
         return ""
+    if (
+        move.move_role == "significance"
+        and move.reception_act == "protect_retained_intention"
+    ):
+        context_prefix = f"{context}が重なる中で、" if context else ""
+        return (
+            f"{context_prefix}{target}がここに残っていることを、"
+            "見失わず、大切な向きとして受け止めています"
+        )
+
     context_prefix = f"{context}が重なる中で、" if context else ""
     if move.move_role == "attention":
         opening = f"{context_prefix}{target}に目が留まり、"
