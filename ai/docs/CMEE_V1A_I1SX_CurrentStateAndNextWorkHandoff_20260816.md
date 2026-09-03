@@ -4998,3 +4998,109 @@ PRODUCT_CREDIT = 0
 NEXT_AUTOMATIC_ACTION = NONE
 CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_THIS_STOP
 ```
+
+---
+
+## CMEE Work Stage 1 / bounded grammatical focus selection STOP（2026-09-04）
+
+本節は、Mash authority
+`FRESH_MASH_LEVEL3_CMEE_WORK_STAGE1_UPSTREAM_SURFACE_SAFE_GRAMMATICAL_FOCUS_SELECTION_AND_CONTENT_FLOW_CLOSURE_20260903`
+によるbounded unitの未完了STOP checkpointである。上記の前回STOPを受け、今回は
+`BOUNDED_TARGET_AWARE_JAPANESE_GRAMMATICAL_FOCUS_SELECTOR` exact1の実装が明示承認
+されたが、承認された能力境界だけでは全required Moveを閉じられないことをfreshに確認した。
+current product stateは`IMPLEMENTED_NOT_ACCEPTED`のままである。
+
+```text
+CHECKPOINT_SCHEMA = CMEE_WORK_STAGE1_BOUNDED_GRAMMATICAL_FOCUS_SELECTION_STOP_V1
+CHECKPOINT_ID = CMEE_WORK_STAGE1_BOUNDED_GRAMMATICAL_FOCUS_SELECTION_STOP_20260904_V1
+STEP_STATE = INCOMPLETE_REQUIRED_MOVE_SAFE_FOCUS_STOP
+REPOSITORY = MassyuRed/mashos-api
+PULL_REQUEST = 3
+BRANCH = agent/cmee-v1a-i1sx-source-explicit-20260815
+PRE_HEAD = c1cc0bbaa5234278d63ebd6458c6c5f4097033be_REMOTE_VERIFIED
+DESIGN_REPOSITORY_HEAD = 97b25c146ad41f87d5859e450e48face9de65ea0_REMOTE_VERIFIED_UNCHANGED
+SYSTEM_CONTEXT_START_HEAD = 01fdb13cf1f77892f300bbbc25391a8ca9493d0d_REMOTE_VERIFIED
+FINAL_HEAD = THIS_COMMIT_RESOLVED_BY_FRESH_REMOTE_POSTVERIFY
+
+CURRENT_IMPLEMENTATION_OWNER = IMPLEMENTED_NOT_ACCEPTED
+CANDIDATE_READY = false
+PRODUCT_READ_ELIGIBLE = false
+AUTOMATIC_PROGRESSION = false
+PRODUCTION_EFFECT = 0
+```
+
+作業開始前にアプリ全体の設計図、全ファイル地図、CMEE前後関係、共通基盤、旧経路、
+active public route、Human Reception owner、late rebuild、Gate、body inverse、public mappingを
+再確認した。System Contextはdoctor、prepare、verify-onlyを承認済みexact refsで完了し、
+exact input／output fresh、ref drift none、blocking unresolved 0を確認した。
+structure map deltaはnoneである。
+
+承認されたselector候補では、target-awareなtop-level clause境界、finite predicate closure、
+必要な格要素、否定、希望、程度、時制、方向、relation接続、ordered source range、最小表面
+正規化を組み合わせ、plan-ownedでbody-freeな`visible_focus_binding`からrequest-localの
+Human Reception ownerへ到達させる経路を検証した。transport、late rebind、privacy境界は
+構成可能であり、focus本文をmetadata、diagnostics、trace、DB、APIへ保持しない設計も成立した。
+
+しかしcanonical100には、必要な目的語／程度／有限述語／時制をすべて保持すると、現行の
+source契約上はsource clause全体が残るrequired Move clause形が存在する。この形は、今回
+安全性を証明できたtop-level複節から短い完結節を選ぶ規則では短縮できない。任意の助詞後で
+切れば目的語、数量、方向または形式名詞の係りを失い、読点を追加して複数rangeに分けるだけ
+では整形差によるsource clause全体の再掲になる。格助詞を説明語へ置換すると格支配を変え、
+一般的な述語活用変換で閉じる候補も、current planにない活用型またはargument boundaryの
+明示契約なしには安全性を証明できなかった。これを今回許可されたminimal adjustment内で
+どう供給するかはfresh判断が必要である。
+
+```text
+CANONICAL_PLAN_COUNT = 100
+CANONICAL_RECEPTION_MOVE_COUNT = 124
+AUTHORIZED_BOUNDED_SELECTOR = EXERCISED
+BODY_FREE_BINDING_TRANSPORT = FEASIBLE
+REQUEST_LOCAL_HUMAN_RECEPTION_OWNERSHIP = FEASIBLE
+AT_LEAST_ONE_REQUIRED_MOVE_WITH_NO_PROVEN_SAFE_SHORT_FOCUS = PRESENT
+CURRENT_CONTRACT_NON_REPLAY_SHORTENING = NOT_ESTABLISHED
+ADDITIONAL_MORPHOSYNTACTIC_OR_ARGUMENT_CONTRACT = FRESH_METHOD_JUDGMENT_REQUIRED
+```
+
+このため、全124 Moveへsource-bound focusを置く条件と、target／predicate／polarity／modality／
+directionを保持する条件と、source clause全体の再掲を禁止する条件の同時成立を、今回検証した
+current-contract規則では確定できない。これは明示されたSTOP条件であり、case routing、
+語彙辞書、完成文template、generic fallback、reference mode変更、validator緩和、
+availability変更または一般parserへ方法を拡大していない。
+
+失敗するCocolon正本、production、test変更は全てrollbackし、Cocolon PR #30とmashos-api
+production／test bytesを開始headの状態に戻した。候補本文、private input、private actual、
+locator、digest、case別情報は本handoffまたはGitHubへ保存していない。STOP確定後は追加の
+candidate探索または別名実装を行っていない。
+
+```text
+CANONICAL_DESIGN_CHANGE = 0
+PRODUCTION_SOURCE_CHANGE / TEST_SOURCE_CHANGE = 0 / 0
+HANDOFF_CHANGE = 1
+STRUCTURE_MAP_DELTA = NONE
+CASE_ID_ROUTING / FIXTURE_LEXEME_ROUTING / FIXED_COMPLETED_TEXT = 0 / 0 / 0
+GENERAL_PARSER / NEW_ONTOLOGY / NEW_ARGUMENT_BINDING = 0 / 0 / 0
+EXTERNAL_AI / PROVIDER / NETWORK / FALLBACK = 0 / 0 / 0 / 0
+REFERENCE_MODE_CHANGE / VALIDATOR_RELAXATION / AVAILABILITY_CHANGE = 0 / 0 / 0
+QUESTION_FLOW / PUBLIC_API / DB / SUPABASE / RN / LAYER3 = 0 / 0 / 0 / 0 / 0 / 0
+PRODUCTION / MERGE / CUTOVER = 0 / 0 / 0
+PRIVATE_INPUT_BODY / PRIVATE_ACTUAL_BODY / PRIVATE_LOCATOR_CASE_DATA_PUBLICATION = 0 / 0 / 0
+```
+
+current common cause exact1は未解消である。次に進めるには、今回安全に短縮できなかった
+required Move clauseをgrammatical focusとして許可するか、上流source契約へ活用型／argument
+bindingを追加するか、source clause全体禁止条件をどう扱うかについてMashのfresh method／
+product判断が必要である。同じbounded selectorを別名helper、rendererまたはschemaとして
+自動反復しない。華恋body-full pre-screen、Product Read、acceptance、ready、activationへ
+進めない。
+
+```text
+REMAINING_CURRENT_COMMON_CAUSE_EXACT1 = FINAL_STAGE1_HUMAN_RECEPTION_MOVE_PLAN_CONTENT_FLOW_COLLAPSE
+BLOCKING_CURRENT_CAPABILITY = REQUIRED_MOVE_SAFE_FOCUS_NOT_ESTABLISHED
+SAME_METHOD_ADDITIONAL_REPAIR_READY = false
+MASH_METHOD_OR_PRODUCT_JUDGMENT_REQUIRED = true
+KAREN_BODY_FULL_PRE_SCREEN_READY_FOR_FRESH_APPROVAL = false
+PRODUCT_CREDIT = 0
+TECHNICAL_CREDIT = 0
+NEXT_AUTOMATIC_ACTION = NONE
+CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_THIS_STOP
+```
