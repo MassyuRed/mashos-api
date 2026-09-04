@@ -8348,77 +8348,6 @@ def _final_stage1_relation_source_text(
     )
 
 
-def _final_stage1_owner_scope_is_current(
-    fragment: str, *, source_field: str, strict_actor: bool = False,
-) -> bool:
-    top_level = _top_level_text(fragment)
-    if top_level is None:
-        return False
-    scope = top_level.strip()
-    if not scope:
-        return False
-    attributed_owner = re.search(
-        r"(?:と|って)(?P<owner>[^\s、,。.!！?？]{1,20}?)"
-        r"(?:は|が|も)(?=(?:言|話|語|述|書|記録|考|思|感じ|判断|決め))",
-        scope,
-    )
-    if (
-        attributed_owner is not None
-        and _SELF_REFERENCE_RE.fullmatch(
-            attributed_owner.group("owner")
-        )
-        is None
-    ):
-        return False
-    temporal_prefix = re.compile(
-        r"^(?:(?:今日|昨日|明日|今|現在|今朝|午前|午後|"
-        r"夕方|朝|昼|夜|以前|これまで)(?:は|も|の|には)?|"
-        r"この記録では?|少し(?:だけ|ずつ)?|やや|ずっと|まだ)"
-        r"[、,\s]*"
-    )
-    owner_marker = re.compile(
-        r"^(?P<owner>[^\s、,。.!！?？]{1,32}?)"
-        r"(?P<marker>にとって|には|は|が|も)"
-        r"(?P<remainder>.*)$"
-    )
-    while scope:
-        stripped = temporal_prefix.sub("", scope, count=1)
-        if stripped != scope:
-            scope = stripped.lstrip(" \t　")
-            continue
-        owner_match = owner_marker.match(scope)
-        if owner_match is None:
-            return True
-        owner = owner_match.group("owner")
-        remainder = owner_match.group("remainder").lstrip(" \t　、,")
-        owner_operators = set(
-            _operator_codes_for_text(owner, source_field=source_field)
-        )
-        semantic_content_owner = bool(
-            owner_operators
-            or _FINAL_STAGE1_BURDEN_RE.search(owner)
-            or owner.endswith(("気持ち", "願い", "わけ", "こと", "の"))
-            and bool(
-                _operator_codes_for_text(
-                    remainder,
-                    source_field=source_field,
-                )
-                or _FINAL_STAGE1_BURDEN_RE.search(remainder)
-                or _PRESENT_RESIDUE_RE.search(remainder)
-            )
-        )
-        if (
-            _SELF_REFERENCE_RE.fullmatch(owner) is None
-            and (strict_actor or not semantic_content_owner)
-        ):
-            return False
-        if not remainder:
-            return True
-        scope = remainder
-    return True
-
-
-
 def _final_stage1_compound_meaning_projections_for_span(
     span: EvidenceSpan,
     *,
@@ -8477,6 +8406,73 @@ def _final_stage1_compound_meaning_projections_for_span(
             )
         )
 
+    def owner_scope_is_current(fragment: str) -> bool:
+        top_level = _top_level_text(fragment)
+        if top_level is None:
+            return False
+        scope = top_level.strip()
+        if not scope:
+            return False
+        attributed_owner = re.search(
+            r"(?:と|って)(?P<owner>[^\s、,。.!！?？]{1,20}?)"
+            r"(?:は|が|も)(?=(?:言|話|語|述|書|記録|考|思|感じ|判断|決め))",
+            scope,
+        )
+        if (
+            attributed_owner is not None
+            and _SELF_REFERENCE_RE.fullmatch(
+                attributed_owner.group("owner")
+            )
+            is None
+        ):
+            return False
+        temporal_prefix = re.compile(
+            r"^(?:(?:今日|昨日|明日|今|現在|今朝|午前|午後|"
+            r"夕方|朝|昼|夜|以前|これまで)(?:は|も|の|には)?|"
+            r"この記録では?|少し(?:だけ|ずつ)?|やや|ずっと|まだ)"
+            r"[、,\s]*"
+        )
+        owner_marker = re.compile(
+            r"^(?P<owner>[^\s、,。.!！?？]{1,32}?)"
+            r"(?P<marker>にとって|には|は|が|も)"
+            r"(?P<remainder>.*)$"
+        )
+        while scope:
+            stripped = temporal_prefix.sub("", scope, count=1)
+            if stripped != scope:
+                scope = stripped.lstrip(" \t　")
+                continue
+            owner_match = owner_marker.match(scope)
+            if owner_match is None:
+                return True
+            owner = owner_match.group("owner")
+            remainder = owner_match.group("remainder").lstrip(" \t　、,")
+            owner_operators = set(
+                _operator_codes_for_text(owner, source_field=source_field)
+            )
+            semantic_content_owner = bool(
+                owner_operators
+                or _FINAL_STAGE1_BURDEN_RE.search(owner)
+                or owner.endswith(("気持ち", "願い", "わけ", "こと", "の"))
+                and bool(
+                    _operator_codes_for_text(
+                        remainder,
+                        source_field=source_field,
+                    )
+                    or _FINAL_STAGE1_BURDEN_RE.search(remainder)
+                    or _PRESENT_RESIDUE_RE.search(remainder)
+                )
+            )
+            if (
+                _SELF_REFERENCE_RE.fullmatch(owner) is None
+                and not semantic_content_owner
+            ):
+                return False
+            if not remainder:
+                return True
+            scope = remainder
+        return True
+
     def endpoint_projection(
         scalar_start: int,
         scalar_end: int,
@@ -8485,7 +8481,7 @@ def _final_stage1_compound_meaning_projections_for_span(
         extra_codes: Sequence[str] = (),
     ) -> _TypedNucleusProjection | None:
         fragment = text[scalar_start:scalar_end]
-        if not fragment or not _final_stage1_owner_scope_is_current(fragment, source_field=source_field):
+        if not fragment or not owner_scope_is_current(fragment):
             return None
         operators = set(
             _operator_codes_for_text(fragment, source_field=source_field)
@@ -8721,7 +8717,7 @@ def _final_stage1_compound_meaning_projections_for_span(
         if (
             len(admitted) == 1
             and event_start < event_end
-            and _final_stage1_owner_scope_is_current(event_fragment, source_field=source_field)
+            and owner_scope_is_current(event_fragment)
         ):
             wish, residue = admitted[0]
             event = _TypedNucleusProjection(
@@ -9583,7 +9579,7 @@ def _final_stage1_align_action_status(
             or len(nucleus.source_span_ids) != 1
             or frame.actor != "current_user"
             or frame.polarity in {"negative", "mixed"}
-            or frame.modality in {"wish", "uncertain", "refusal", "possibility"}
+            or frame.modality not in {"fact", "intention"}
             or set(codes) & {
                 "operator:negation", "operator:wish", "operator:uncertainty",
                 "operator:refusal",
@@ -9620,31 +9616,40 @@ def _final_stage1_align_action_status(
         # factual action.  Field defaults are not evidence about an actor.
         if (
             not text or visible is None or visible != text
-            or not _final_stage1_owner_scope_is_current(text, source_field="", strict_actor=True)
             or re.search(r"(?:ない|なかった|ません|ませんでした|ずに|ぬ)$", text)
         ):
             aligned.append(nucleus)
             continue
         finite = _strip_bounded_operator_prefix(visible.strip())
-        argument = _ACTION_ARGUMENT_STEM_RE.search(finite)
-        if (
-            argument is None or argument.start() == 0
-            or argument.end() != len(finite)
-            or re.search(r"[、,.!?！？\s]|(?:は|が|も)", argument.group("predicate"))
-        ):
+        # Keep the selected action and actor. Only resolve the outer finite
+        # predicate inside that same source span; a topic is not a new actor.
+        # Match the existing case-frame pattern at each boundary so an early
+        # argument cannot absorb a later argument or its embedded modality.
+        arguments = tuple(
+            match for offset in range(1, len(finite))
+            if (match := _ACTION_ARGUMENT_STEM_RE.match(finite, offset)) is not None
+            and match.end() == len(finite)
+        )
+        if not arguments:
             aligned.append(nucleus)
             continue
-        predicate = argument.group("predicate")
-        if re.search(r"(?:たい|たく|ほしい|つもり|予定|かもしれ|らしい|はず|なら|たら|れば|場合|もし|ようと|ように)", predicate):
+        predicate = arguments[-1].group("predicate")
+        if re.search(r"(?:たい|たく|たかった|ほしい|ほしかった|つもり|予定|かもしれ|らしい|はず|なら|たら|れば|場合|もし|ようと|ように)", predicate):
             aligned.append(nucleus)
             continue
-        progressive = re.search(r"(?:て|で)(?:い|お)(?:る|ます|た|ました)$", predicate)
-        past = _bounded_structural_action_endpoint(text)
+        progressive = re.search(r"(?:て|で)(?:い|お)(?:る|ます|た|ました)$", finite)
+        past = _EXPLICIT_PERFECTIVE_END_RE.search(finite)
         if not (progressive or past):
             aligned.append(nucleus)
             continue
         time_scope = "past" if past else "continuing"
-        aspect = "progressive" if progressive else "perfective"
+        # Past tense proves past occurrence, not completion. Preserve an
+        # existing explicit aspect; otherwise only progressive morphology
+        # adds an aspect claim. Ordinary past retains unknown aspect.
+        prior_aspects = tuple(code.split(":", 1)[1] for code in codes if code.startswith("aspect:"))
+        if len(prior_aspects) > 1:
+            raise GroundedObservationPlanError("final_action_status_aspect_invalid")
+        aspect = "progressive" if progressive else (prior_aspects[0] if prior_aspects else "unknown")
         attributes = tuple(
             code for code in codes
             if not code.startswith(("time_scope:", "aspect:", "modality:"))

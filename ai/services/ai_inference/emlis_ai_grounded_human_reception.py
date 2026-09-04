@@ -1897,7 +1897,7 @@ def resolve_grounded_reception_referent(
             for nucleus in target_nuclei
         )
     ):
-        kind, text = "future_action_intention", "その向き"
+        kind, text = "future_action_intention", "これからの行動への思い"
     elif reception_act == "stay_with_current_burden":
         if "lexical:no_new_sensation_family" in attributes:
             if "lexical:source_metaphor_present" in attributes:
@@ -1995,7 +1995,7 @@ def resolve_grounded_reception_referent(
         ):
             kind, text = (
                 "self_started_effort",
-                "自分から起こした実際の行動",
+                "実際の行動",
             )
         elif performed_targets:
             kind, text = (
@@ -2067,9 +2067,9 @@ def resolve_grounded_reception_referent(
         )
         if progressive_targets and len(progressive_targets) == len(progressive_owners):
             text = (
-                "そのとき取り組んでいた行動"
+                "実際に取り組んでいた行動"
                 if all(nucleus.semantic_frame.time_scope == "past" for nucleus in progressive_targets)
-                else "今取り組んでいる行動"
+                else "実際に取り組んでいる行動"
             )
 
     evidence_span_ids = _grounding_evidence_span_ids(selected, recovery_stage)
@@ -6274,7 +6274,11 @@ def _source_grounded_response_predicate(
     if reception_act == "stay_with_current_burden":
         act_guard, predicate_lemma, conjugation_class = "小さくせずに", "受け止める", "ICHIDAN"
     elif reception_act == "protect_retained_intention":
-        act_guard, predicate_lemma, conjugation_class = "大切に", "受け止める", "ICHIDAN"
+        # Every Move must carry its own protection duty, including a felt
+        # response that follows another Move. A significance role already
+        # realizes that duty in its role operator.
+        act_guard = "大切に" if move_role == "significance" else "見失わずに、大切に"
+        predicate_lemma, conjugation_class = "受け止める", "ICHIDAN"
     elif reception_act == "recognize_lived_change":
         act_guard, predicate_lemma, conjugation_class = "", "感じる", "ICHIDAN"
     elif reception_act in {"honor_concrete_effort", "hold_help_seeking", "respect_words_placed"}:

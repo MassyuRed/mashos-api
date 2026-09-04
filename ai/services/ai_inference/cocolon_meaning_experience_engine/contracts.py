@@ -6049,11 +6049,26 @@ def _foreground_source_qualifiers_by_node_ref(
             )
         node = matches[0]
         used_node_ids.add(node.node_id)
+        source_aspects = tuple(
+            code for code in getattr(frame, "attribute_codes", ())
+            if isinstance(code, str) and code.startswith("aspect:")
+        )
+        if len(source_aspects) > 1 or any(
+            code not in {
+                "aspect:unknown", "aspect:source_bounded", "aspect:not_applicable",
+                "aspect:completed", "aspect:perfective", "aspect:ongoing",
+                "aspect:progressive",
+            }
+            for code in source_aspects
+        ):
+            raise CMEEStage1ContractError(
+                "foreground_scope_source_qualifier_value_invalid"
+            )
         node_qualifiers[_graph_object_ref(node)] = (
             "epistemic:provisional_interpretation",
             f"actor:{actor}",
             "world:unknown",
-            "aspect:unknown",
+            source_aspects[0] if source_aspects else "aspect:unknown",
             f"polarity:{polarity}",
             f"modality:{modality}",
             f"time_scope:{time_scope}",
@@ -6533,7 +6548,10 @@ def project_stage1_relation_shape(
                 and source_explicit_edge
                 and source_precedes_target
                 and source_time_scope == "past"
-                and target_time_scope in {"present", "current_input"}
+                # The two source-owned shift markers establish the relative
+                # before/after relation. The later action can itself be past
+                # or ongoing; its tense is independent of that relation.
+                and target_time_scope in {"past", "continuing", "present", "current_input"}
                 and "operator:shift" in source_codes
                 and "operator:shift" in target_codes
             ):
@@ -10178,6 +10196,12 @@ def _meaning_signature_mutation_target_present(
         return (
             f"episodicity:{target.removeprefix('aspect:')}"
             in baseline.episodicity_boundary_keys
+        ) or (
+            target in {"aspect:perfective", "aspect:progressive"}
+            and any(
+                parts is not None and parts[1:] == ("aspect", target.split(":", 1)[1])
+                for parts in (_meaning_role_qualifier_parts(value) for value in baseline.qualifier_keys)
+            )
         )
     if kind is CounterfactualMutationKind.DELETE_SCOPE:
         return any(value.scope_key == target for value in components)
@@ -10273,7 +10297,9 @@ def _rebuild_signature_from_grounded_component_rows(
             elif axis == "aspect" and body == "one_off":
                 if "episodicity:one_off" not in episodicity:
                     episodicity.append("episodicity:one_off")
-            if axis in {"actor", "time_scope", "modality", "polarity"}:
+            if axis in {"actor", "time_scope", "modality", "polarity"} or (
+                axis == "aspect" and body in {"perfective", "progressive"}
+            ):
                 bound = f"qualifier:{role}_{axis}={body}"
             elif qualifier.startswith("qualifier:"):
                 bound = qualifier
@@ -11041,7 +11067,19 @@ def apply_meaning_signature_mutation(
             )
     elif kind is CounterfactualMutationKind.DELETE_ASPECT:
         episodicity = f"episodicity:{target.removeprefix('aspect:')}"
-        if episodicity in baseline.episodicity_boundary_keys:
+        if target in {"aspect:perfective", "aspect:progressive"}:
+            matching_qualifiers = tuple(
+                value for value in baseline.qualifier_keys
+                if (parts := _meaning_role_qualifier_parts(value)) is not None
+                and parts[1:] == ("aspect", target.split(":", 1)[1])
+            )
+            if len(matching_qualifiers) > 1:
+                raise CMEEStage1ContractError("mutation_target_ambiguous_red")
+            if matching_qualifiers:
+                result = replace(baseline, qualifier_keys=tuple(
+                    value for value in baseline.qualifier_keys if value not in matching_qualifiers
+                ))
+        elif episodicity in baseline.episodicity_boundary_keys:
             body = target.removeprefix("aspect:")
             matching_qualifiers = tuple(
                 value
@@ -11518,7 +11556,9 @@ def recompute_input_specific_meaning_candidate_signature(
             if axis == "aspect" and body == "one_off":
                 if "episodicity:one_off" not in episodicity:
                     episodicity.append("episodicity:one_off")
-            if axis in {"actor", "time_scope", "modality", "polarity"}:
+            if axis in {"actor", "time_scope", "modality", "polarity"} or (
+                axis == "aspect" and body in {"perfective", "progressive"}
+            ):
                 bound = f"qualifier:{role}_{axis}={body}"
             elif qualifier.startswith("qualifier:"):
                 bound = qualifier
@@ -14539,10 +14579,24 @@ def _validate_counterfactual_meaning_semantic_signature(
                 for value in expected_qualifiers
                 if value != "qualifier:not_generalized"
             )
+        removed = tuple(value for value in baseline_semantic_signature.qualifier_keys
+                        if value not in signature.qualifier_keys)
+        aspect_only_deletion = (
+            len(removed) == 1
+            and (parts := _meaning_role_qualifier_parts(removed[0])) is not None
+            and parts[1] == "aspect" and parts[2] in {"perfective", "progressive"}
+            and signature.qualifier_keys == tuple(
+                value for value in baseline_semantic_signature.qualifier_keys
+                if value != removed[0]
+            )
+            and episodicity == baseline_semantic_signature.episodicity_boundary_keys
+        )
         component_mutation_valid = (
             components == baseline_components
-            and len(episodicity) == 1
-            and signature.qualifier_keys == expected_qualifiers
+            and (
+                (len(episodicity) == 1 and signature.qualifier_keys == expected_qualifiers)
+                or aspect_only_deletion
+            )
         )
     if not component_mutation_valid:
         raise CMEEStage1ContractError(

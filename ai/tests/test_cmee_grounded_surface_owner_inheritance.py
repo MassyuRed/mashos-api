@@ -4,6 +4,7 @@ from __future__ import annotations
 import ast
 from dataclasses import replace
 import inspect
+import hashlib
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -105,7 +106,8 @@ class CMEEGroundedSurfaceOwnerInheritanceTest(unittest.TestCase):
                 "seal_stage1_projection",
                 "build_grounded_sentence_plan",
                 "build_reception_recovery_sentence_plan",
-                "realize_grounded_sentence_plan",
+                "realize_source_grounded_human_reception",
+                "realize_grounded_sentence_plan_with_human_reception",
                 "evaluate_grounded_observation_gate",
                 "evaluate_grounded_surface_body_inverse",
                 "_adapt_grounded_surface_to_v2_realized_units",
@@ -166,15 +168,34 @@ class CMEEGroundedSurfaceOwnerInheritanceTest(unittest.TestCase):
                 realized_surfaces = []
                 selected_plans = []
                 selected_reception_materials = []
-                actual_realize = response.realize_grounded_sentence_plan
+                actual_realize = response.realize_grounded_sentence_plan_with_human_reception
+                actual_author = response.realize_source_grounded_human_reception
+                authored = []
                 actual_reception_plan = v1a_module._cmee_semantic_reception_plan
 
                 def track_realize(*args, **kwargs):
                     result = actual_realize(*args, **kwargs)
-                    realized_surfaces.append(result)
+                    surface, placements = result
+                    human = kwargs["human_reception_surface"]
+                    self.assertIn(human, authored)
+                    self.assertEqual(len(placements), len(human.visible_segment_bindings))
+                    for placement, binding in zip(placements, human.visible_segment_bindings, strict=True):
+                        self.assertEqual(placement.binding_ref, binding.binding_ref)
+                        segment = human.text[binding.human_reception_local_scalar_start:binding.human_reception_local_scalar_end]
+                        self.assertEqual(segment, surface.text[placement.body_scalar_start:placement.body_scalar_end])
+                        self.assertEqual(hashlib.sha256(segment.encode("utf-8")).hexdigest(), binding.surface_span_sha256)
+                    realized_surfaces.append(surface)
                     selected_plans.append(
                         kwargs.get("plan", args[1] if len(args) > 1 else None)
                     )
+                    return result
+
+                def track_author(*args, **kwargs):
+                    result = actual_author(*args, **kwargs)
+                    self.assertEqual(result.expression_refs, tuple(e.expression_ref for e in args[1]))
+                    self.assertEqual(result.realized_move_ids, tuple(e.move_id for e in args[1]))
+                    self.assertTrue(all(sum(e.expression_ref in binding.expression_refs for binding in result.visible_segment_bindings) == 1 for e in args[1]))
+                    authored.append(result)
                     return result
 
                 def track_reception_plan(*args, **kwargs):
@@ -187,9 +208,11 @@ class CMEEGroundedSurfaceOwnerInheritanceTest(unittest.TestCase):
                 with (
                     patch.object(
                         response,
-                        "realize_grounded_sentence_plan",
+                        "realize_grounded_sentence_plan_with_human_reception",
                         side_effect=track_realize,
                     ) as grounded_realizer,
+                    patch.object(response, "realize_source_grounded_human_reception", side_effect=track_author) as human_author,
+                    patch.object(response, "realize_grounded_sentence_plan", side_effect=AssertionError("legacy final author reached")),
                     patch.object(
                         composition,
                         "compose_stage1_from_projection",
@@ -211,6 +234,7 @@ class CMEEGroundedSurfaceOwnerInheritanceTest(unittest.TestCase):
                     )
 
                 self.assertGreaterEqual(grounded_realizer.call_count, 2)
+                self.assertEqual(human_author.call_count, grounded_realizer.call_count)
                 self.assertEqual(independent_composer.call_count, 0)
                 self.assertTrue(units)
                 grounded_selected = bool(

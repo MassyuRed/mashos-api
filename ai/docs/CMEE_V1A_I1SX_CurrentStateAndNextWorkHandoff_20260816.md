@@ -5255,3 +5255,22 @@ Current source changes: final-only finite action status alignment before graph/m
 Initial connection probe exposed implementation errors and is NOT a successful candidate. Full source-alignment tests, required regression, final canonical100 production, exact availability/Move parity, all100 full-body CLEAR and final source-identity receipts remain pending. No Product Read preparation, candidate-ready or product acceptance is claimed.
 
 Resume: finish finite scope/fragment tests, resolve expression-to-author causal trace discrepancies, regenerate through the unchanged canonical bridge, verify source/identity/binding/Gate regressions, then freeze and read all100 completely and iterate within this authority. Keep the predecessor terminal STOP/rollback as history.
+
+
+### Source-alignment verification checkpoint (same authority, unfinished)
+
+The additional exact source path `ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py` is now exercised for the previously declared status/identity propagation: source aspect was dropped to unknown in the existing qualifier projector. It now preserves the existing source-owned aspect through existing fields. The original/rebuilt semantic signature and existing aspect-deletion coherence follow the same role-bound qualifier; episodicity values and public schema stay unchanged.
+
+Ordinary affirmative past establishes past factual occurrence only; it does not establish completion. Progressive morphology preserves progressive aspect, including past progressive. The final-only status seam retains existing nucleus/actor/source owners and does not reselect the actor from a topic marker. Original selected source contents, negative/wish/uncertain bounds and source scalar ranges are retained.
+
+Focused newly added scope tests passed in the locked runtime (3 test methods). Initial five-row connection probe passed direct generation after aspect transport and future-reference repairs. These are implementation probes, not canonical100 acceptance. Static source-to-plan inspection identifies the predecessor same-action finite clauses as factual under the aligned plan; full completed-body verification remains pending.
+
+Next checkpoint step: freeze current source for the unchanged canonical100 direct/outer and regression evaluation; adapt existing tests to the sole Human Reception author/placement entrypoint without adopting the predecessor shortened-context Gate. Then perform all100 full-body review and fix remaining scope-internal defects. Candidate and Product Read readiness remain false.
+
+### Recovery checkpoint after interrupted execution (same authority, unfinished)
+
+The frozen first canonical candidate completed: direct generation 83/100; 17 failed before a hard-valid candidate could be selected. All 83 evaluated availability classifications agreed with the immutable baseline. This is a failed implementation probe, not acceptance.
+
+Sixteen failures were traced to a missing per-Move protection duty in Human Reception felt responses. The author now realizes that selected duty in every Move; Gate markers and thresholds remain unchanged. One additional failure was the existing action-before/after projector assuming the later action must use present tense. The approved status correction exposes factual past or progressive occurrence for that later action. The existing source-explicit ordered shift with both endpoint shift markers now retains its same relation when the later action has past/continuing time; relative ordering remains grounded in the existing explicit shift, both endpoint markers and source order. Neither relation direction nor endpoint ownership is reselected.
+
+Next: verify the repaired frozen candidate, complete existing entrypoint/replay and status/aspect regression tests, then read the final same100 original/observation/follow bodies in full. Root CLEAR, Product Read preparation, required regression completion and final candidate readiness remain pending.

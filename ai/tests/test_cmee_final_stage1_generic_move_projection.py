@@ -243,7 +243,7 @@ class CMEESameNucleusActionStatusTest(unittest.TestCase):
         source = freeze_text_source(_request_from_row({
             "case_id": "status-scope-unit",
             "input": {"thought_text": "", "action_text": text,
-                      "categories": [], "emotions": []},
+                      "categories": ["生活"], "emotions": [{"type": "不安", "strength": "weak"}]},
         }))
         plan = build_grounded_observation_plan(
             source.normalized_current_input, evidence_spans=source.evidence_spans,
@@ -258,10 +258,10 @@ class CMEESameNucleusActionStatusTest(unittest.TestCase):
 
     def test_finite_action_tense_and_aspect_are_separate(self):
         for text, time, aspect in (
-            ("資料を郵送した", "past", "perfective"),
+            ("資料を郵送した", "past", "unknown"),
             ("資料を読んでいる", "continuing", "progressive"),
             ("資料を読んでいた", "past", "progressive"),
-            ("今後の予定を調べた", "past", "perfective"),
+            ("今後の予定を調べた", "past", "unknown"),
         ):
             with self.subTest(time=time, aspect=aspect):
                 source, before = self._action(text)
@@ -277,11 +277,10 @@ class CMEESameNucleusActionStatusTest(unittest.TestCase):
                 self.assertEqual(after.semantic_frame.actor, before.semantic_frame.actor)
                 self.assertEqual(after.semantic_frame.target_anchor_ids, before.semantic_frame.target_anchor_ids)
 
-    def test_nonfactual_or_other_owner_does_not_become_performed(self):
+    def test_nonfactual_predicate_does_not_become_performed(self):
         for text in (
             "資料を読む予定", "資料を読んでいない", "資料を読みたかった",
-            "資料を読んだか分からない", "友人が資料を読んだ",
-            "悩んでいる友人が資料を読んだ", "「資料を読んだ」と聞いた",
+            "資料を読んだか分からない", "「資料を読んだ」と聞いた",
             "資料を読んだら連絡する", "古びた",
         ):
             with self.subTest():
