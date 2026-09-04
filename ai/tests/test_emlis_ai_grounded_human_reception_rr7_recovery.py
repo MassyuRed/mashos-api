@@ -17,8 +17,14 @@ from emlis_ai_evidence_ledger_service import (
 )
 from emlis_ai_grounded_human_reception import (
     GroundedHumanReceptionSurfaceError,
+    RealizableReceptionArgumentV1,
+    SOURCE_GROUNDED_RECEPTION_EXPRESSION_SCHEMA_VERSION,
+    SourceGroundedRealizableReceptionExpressionV1,
+    identify_source_grounded_reception_expression,
     realize_grounded_human_reception,
     reception_active_moves,
+    reception_effective_move_reference_mode,
+    validate_source_grounded_reception_expressions,
     validate_grounded_human_reception_surface,
 )
 from emlis_ai_grounded_observation_gate import (
@@ -207,13 +213,204 @@ def test_rr7_optional_removed_drops_only_a_synthetic_optional_third_move() -> No
         moves=(*reception_plan.moves[:-1], optional_third),
     )
 
-    assert len(reception_active_moves(synthetic, "full")) == 3
-    assert tuple(
+    full_moves = reception_active_moves(synthetic, "full")
+    optional_removed_moves = reception_active_moves(
+        synthetic,
+        "optional_removed",
+    )
+    assert len(full_moves) == 3
+    assert tuple(move.move_id for move in optional_removed_moves) == tuple(
         move.move_id
-        for move in reception_active_moves(synthetic, "optional_removed")
-    ) == tuple(move.move_id for move in synthetic.moves[:2])
+        for move in full_moves
+        if move.move_id != optional_third.move_id
+    )
     assert len(reception_active_moves(synthetic, "integrated")) == 3
     assert len(reception_active_moves(synthetic, "hedged")) == 3
+
+    def expression_for_move(move, recovery_stage):
+        semantic_ref = (
+            f"node:rr7-{move.move_id}@cocolon.cmee.grounded_graph.v1"
+        )
+        evidence_ref = (
+            f"evidence:rr7-{move.move_id}@cocolon.cmee.grounded_graph.v1"
+        )
+        reference_mode = (
+            "ANAPHORIC"
+            if reception_effective_move_reference_mode(
+                synthetic,
+                move,
+                recovery_stage,
+            )
+            == "anaphoric_first"
+            else "EXPLICIT"
+        )
+        argument = RealizableReceptionArgumentV1(
+            semantic_ref=semantic_ref,
+            source_evidence_refs=(evidence_ref,),
+            semantic_role="PRIMARY",
+            lexical_form=f"対象{move.move_id}",
+            requirement="REQUIRED",
+            omission_permission="FORBIDDEN",
+            zero_realization_condition_refs=(),
+            omission_condition_refs=(),
+            case_marker="を",
+            direction_ref=None,
+            relation_endpoint_ref=None,
+            realization="EXPLICIT",
+        )
+        outcome_ref = "selected-reading:rr7-optional"
+        reception_ref = f"meaning-bound-reception:rr7-{move.move_id}"
+        return identify_source_grounded_reception_expression(
+            SourceGroundedRealizableReceptionExpressionV1(
+                schema_version=(
+                    SOURCE_GROUNDED_RECEPTION_EXPRESSION_SCHEMA_VERSION
+                ),
+                expression_ref="",
+                meaning_outcome_ref=outcome_ref,
+                reception_binding_ref=reception_ref,
+                move_id=move.move_id,
+                source_evidence_refs=(evidence_ref,),
+                actor_refs=(),
+                subject_refs=(semantic_ref,),
+                experiencer_refs=(),
+                predicate_kind="present_state",
+                lexical_head=f"対象{move.move_id}",
+                arguments=(argument,),
+                polarity="affirmative",
+                modality="source_bounded",
+                time_scope="current_input",
+                aspect="source_bounded",
+                degree="not_applicable",
+                quantity="not_applicable",
+                scope="source_bounded",
+                qualifier_refs=(),
+                relation_refs=(),
+                relation_endpoint_refs=(),
+                direction_refs=(),
+                reference_mode=reference_mode,
+                antecedent_refs=(semantic_ref,)
+                if reference_mode == "ANAPHORIC"
+                else (),
+                antecedent_condition=(
+                    "PRIOR_LAYER1_EXACT_SEMANTIC_COVER"
+                    if reference_mode == "ANAPHORIC"
+                    else None
+                ),
+                particle_plan=("particle:PRIMARY:を",),
+                inflection_plan=(
+                    "predicate:present_state",
+                    "polarity:affirmative",
+                    "modality:source_bounded",
+                    "time:current_input",
+                    "aspect:source_bounded",
+                    "degree:not_applicable",
+                    "quantity:not_applicable",
+                    "scope:source_bounded",
+                    "focus-kind:other_explicit",
+                    "head-class:source-grounded-proposition",
+                    "politeness:polite",
+                    f"reception-form:{recovery_stage}",
+                    "clause-form:FINITE",
+                ),
+                nominalization_plan=(
+                    "nominalization:source-grounded-reception-object",
+                ),
+                clause_link_plan=("clause-link:none",),
+                provenance_refs=(outcome_ref, reception_ref),
+            )
+        )
+
+    full_expressions = tuple(
+        expression_for_move(move, "full") for move in full_moves
+    )
+    optional_removed_expressions = tuple(
+        expression_for_move(move, "optional_removed")
+        for move in optional_removed_moves
+    )
+    full_pairs = validate_source_grounded_reception_expressions(
+        synthetic,
+        full_expressions,
+        "full",
+    )
+    optional_removed_pairs = validate_source_grounded_reception_expressions(
+        synthetic,
+        optional_removed_expressions,
+        "optional_removed",
+    )
+    assert tuple(row[0].move_id for row in full_pairs) == tuple(
+        move.move_id for move in full_moves
+    )
+    assert tuple(row[1].expression_ref for row in optional_removed_pairs) == tuple(
+        expression.expression_ref
+        for expression in optional_removed_expressions
+    )
+    assert {
+        (
+            row[1].move_id,
+            row[1].meaning_outcome_ref,
+            row[1].reception_binding_ref,
+        )
+        for row in optional_removed_pairs
+    } == {
+        (
+            row[1].move_id,
+            row[1].meaning_outcome_ref,
+            row[1].reception_binding_ref,
+        )
+        for row in full_pairs
+        if row[0].required
+    }
+    for stage in ("integrated", "hedged"):
+        stage_expressions = tuple(
+            expression_for_move(move, stage)
+            for move in reception_active_moves(synthetic, stage)
+        )
+        assert tuple(
+            row[1].expression_ref
+            for row in validate_source_grounded_reception_expressions(
+                synthetic,
+                stage_expressions,
+                stage,
+            )
+        ) == tuple(
+            expression.expression_ref for expression in stage_expressions
+        )
+    full_without_optional = tuple(
+        expression
+        for expression in full_expressions
+        if expression.move_id != optional_third.move_id
+    )
+    foreign_optional_expression = expression_for_move(
+        optional_third,
+        "optional_removed",
+    )
+    for stage, expressions in (
+        ("full", full_without_optional),
+        ("full", (*full_expressions[:-1], full_expressions[0])),
+        (
+            "optional_removed",
+            (*optional_removed_expressions, foreign_optional_expression),
+        ),
+        ("optional_removed", optional_removed_expressions[1:]),
+    ):
+        with pytest.raises(
+            GroundedHumanReceptionSurfaceError,
+            match="^MEANING_REALIZATION_CAUSAL_TRACE_GAP$",
+        ):
+            validate_source_grounded_reception_expressions(
+                synthetic,
+                expressions,
+                stage,
+            )
+    with pytest.raises(
+        GroundedHumanReceptionSurfaceError,
+        match="^MEANING_REALIZATION_CAPABILITY_GAP$",
+    ):
+        validate_source_grounded_reception_expressions(
+            synthetic,
+            None,
+            "full",
+        )
     with pytest.raises(
         GroundedHumanReceptionSurfaceError,
         match="human_reception_minimal_grounded_not_allowed",

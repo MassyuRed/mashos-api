@@ -36,18 +36,42 @@ from emlis_ai_grounded_observation_plan import (
     build_grounded_observation_plan,
     validate_grounded_observation_plan,
 )
+from emlis_ai_grounded_human_reception import (
+    SOURCE_GROUNDED_RECEPTION_EXPRESSION_SCHEMA_VERSION,
+    GroundedHumanReceptionSurface,
+    GroundedHumanReceptionSurfaceError,
+    ReceptionVisibleSegmentBindingV1,
+    RealizableReceptionArgumentV1,
+    SourceGroundedRealizableReceptionExpressionV1,
+    _bounded_source_grounded_lexemes,
+    _identify_visible_segment_binding,
+    _source_grounded_direction_ref,
+    _source_grounded_direction_side,
+    _source_grounded_relation_endpoint_nucleus_roles,
+    _source_grounded_relation_endpoint_ref,
+    build_grounded_reception_clause_plans,
+    identify_source_grounded_reception_expression,
+    realize_source_grounded_human_reception,
+    reception_active_moves,
+    reception_effective_move_reference_mode,
+    source_grounded_case_marker_for_role,
+    validate_source_grounded_reception_expressions,
+)
 from emlis_ai_grounded_observation_gate import (
     evaluate_grounded_observation_gate,
     evaluate_grounded_surface_body_inverse,
 )
 from emlis_ai_grounded_sentence_surface import (
     GROUND_RECOVERY_STAGES,
+    RECEPTION_SECTION_LABEL,
     GroundedSentencePlan,
     GroundedSentenceSurfaceError,
     GroundedSurfaceResult,
+    SentenceSurfacePlacement,
     build_grounded_sentence_plan,
     build_reception_recovery_sentence_plan,
     realize_grounded_sentence_plan,
+    realize_grounded_sentence_plan_with_human_reception,
     validate_grounded_sentence_plan,
     validate_grounded_surface_result,
 )
@@ -148,6 +172,7 @@ from .contracts import (
     bounded_limited_reception_id,
     canonical_limited_retained_layer1_refs,
     limited_meaning_outcome_id,
+    meaning_bound_reception_set_id,
     meaning_bound_reception_id,
     project_stage1_subjective_projection_seal_ref,
     project_stage1_tagged_projection_ref,
@@ -10127,6 +10152,270 @@ def select_stage1_realization_candidate(
     return min(valid, key=_candidate_variant_id)
 
 
+def _validated_reception_adapter_rows(
+    *,
+    sentence_plan: GroundedSentencePlan,
+    surface_result: GroundedSurfaceResult,
+    human_reception_surface: GroundedHumanReceptionSurface,
+    reception_placements: tuple[SentenceSurfacePlacement, ...],
+) -> tuple[
+    tuple[
+        ReceptionVisibleSegmentBindingV1,
+        SentenceSurfacePlacement,
+        Mapping[str, Any],
+    ],
+    ...,
+]:
+    """Join the request-local Human Reception binding and placement once."""
+
+    failure = "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP"
+    if (
+        type(human_reception_surface) is not GroundedHumanReceptionSurface
+        or type(reception_placements) is not tuple
+    ):
+        raise CMEEStage1ContractError(failure)
+    reception_lines = tuple(
+        line
+        for line in surface_result.lines
+        if line.binding.line_role == "human_follow"
+    )
+    bindings = human_reception_surface.visible_segment_bindings
+    if (
+        type(bindings) is not tuple
+        or len(reception_lines) != 1
+        or not bindings
+        or len(bindings) != len(reception_placements)
+        or human_reception_surface.recovery_stage
+        != sentence_plan.recovery_stage
+        or human_reception_surface.text != reception_lines[0].text
+        or type(human_reception_surface.expression_refs) is not tuple
+        or not human_reception_surface.expression_refs
+        or any(
+            type(ref) is not str or not ref
+            for ref in human_reception_surface.expression_refs
+        )
+        or len(human_reception_surface.expression_refs)
+        != len(set(human_reception_surface.expression_refs))
+        or type(human_reception_surface.realized_move_ids) is not tuple
+        or not human_reception_surface.realized_move_ids
+        or len(human_reception_surface.expression_refs)
+        != len(human_reception_surface.realized_move_ids)
+        or any(
+            type(ref) is not str or not ref
+            for ref in human_reception_surface.realized_move_ids
+        )
+        or len(human_reception_surface.realized_move_ids)
+        != len(set(human_reception_surface.realized_move_ids))
+        or type(human_reception_surface.realized_clause_move_ids) is not tuple
+        or len(human_reception_surface.realized_clause_move_ids)
+        != len(bindings)
+    ):
+        raise CMEEStage1ContractError(failure)
+
+    reception_line = reception_lines[0]
+    reception_prefix = f"{RECEPTION_SECTION_LABEL}\n"
+    prefix_index = surface_result.text.find(reception_prefix)
+    line_body_start = prefix_index + len(reception_prefix)
+    if (
+        prefix_index < 0
+        or surface_result.text.find(reception_prefix, prefix_index + 1) >= 0
+        or surface_result.text[
+            line_body_start : line_body_start + len(reception_line.text)
+        ]
+        != reception_line.text
+    ):
+        raise CMEEStage1ContractError(failure)
+
+    expected_field_order = (
+        "semantic_refs",
+        "source_evidence_refs",
+        "predicate_operator",
+        "lexical_heads",
+        "topic_ref",
+        "object_ref",
+        "argument_bindings",
+        "qualifier_refs",
+        "relation_refs",
+        "relation_endpoint_refs",
+        "direction_refs",
+        "polarity",
+        "modality",
+        "time_scope",
+        "aspect",
+        "degree",
+        "quantity",
+        "scope",
+        "actor_refs",
+        "subject_refs",
+        "experiencer_refs",
+        "reference_modes",
+        "antecedent_refs",
+        "antecedent_conditions",
+        "particle_plans",
+        "inflection_plans",
+        "nominalization_plans",
+        "clause_link_plans",
+        "meaning_outcome_refs",
+        "reception_binding_refs",
+        "expression_frames",
+    )
+    rows: list[
+        tuple[
+            ReceptionVisibleSegmentBindingV1,
+            SentenceSurfacePlacement,
+            Mapping[str, Any],
+        ]
+    ] = []
+    prior_local_end = 0
+    prior_line_end = 0
+    prior_body_end = line_body_start
+    seen_binding_refs: set[str] = set()
+    for binding, placement in zip(
+        bindings,
+        reception_placements,
+        strict=True,
+    ):
+        if (
+            type(binding) is not ReceptionVisibleSegmentBindingV1
+            or type(placement) is not SentenceSurfacePlacement
+            or type(binding.binding_ref) is not str
+            or not binding.binding_ref
+            or binding.binding_ref in seen_binding_refs
+            or placement.binding_ref != binding.binding_ref
+            or placement.sentence_id != reception_line.sentence_id
+            or type(binding.expression_refs) is not tuple
+            or not binding.expression_refs
+            or any(
+                type(ref) is not str or not ref
+                for ref in binding.expression_refs
+            )
+            or len(binding.expression_refs) != len(set(binding.expression_refs))
+            or type(binding.move_ids) is not tuple
+            or not binding.move_ids
+            or len(binding.expression_refs) != len(binding.move_ids)
+            or any(type(ref) is not str or not ref for ref in binding.move_ids)
+            or len(binding.move_ids) != len(set(binding.move_ids))
+            or type(binding.surface_derivation_refs) is not tuple
+            or not binding.surface_derivation_refs
+            or any(
+                type(ref) is not str or not ref
+                for ref in binding.surface_derivation_refs
+            )
+            or len(binding.surface_derivation_refs)
+            != len(set(binding.surface_derivation_refs))
+            or type(binding.human_reception_local_scalar_start) is not int
+            or type(binding.human_reception_local_scalar_end) is not int
+            or binding.human_reception_local_scalar_start != prior_local_end
+            or not (
+                0
+                <= binding.human_reception_local_scalar_start
+                < binding.human_reception_local_scalar_end
+                <= len(human_reception_surface.text)
+            )
+            or type(placement.line_scalar_start) is not int
+            or type(placement.line_scalar_end) is not int
+            or type(placement.body_scalar_start) is not int
+            or type(placement.body_scalar_end) is not int
+            or placement.line_scalar_start != prior_line_end
+            or placement.body_scalar_start != prior_body_end
+            or not (
+                0
+                <= placement.line_scalar_start
+                < placement.line_scalar_end
+                <= len(reception_line.text)
+            )
+            or not (
+                line_body_start
+                <= placement.body_scalar_start
+                < placement.body_scalar_end
+                <= line_body_start + len(reception_line.text)
+            )
+            or placement.body_scalar_start
+            != line_body_start + placement.line_scalar_start
+            or placement.body_scalar_end
+            != line_body_start + placement.line_scalar_end
+            or type(binding.surface_span_sha256) is not str
+            or re.fullmatch(
+                r"[0-9a-f]{64}",
+                binding.surface_span_sha256,
+            )
+            is None
+            or not isinstance(binding.clause_frame_fields, Mapping)
+            or tuple(binding.clause_frame_fields) != expected_field_order
+        ):
+            raise CMEEStage1ContractError(failure)
+        try:
+            expected_binding_ref = _identify_visible_segment_binding(
+                replace(binding, binding_ref="")
+            ).binding_ref
+        except (AttributeError, TypeError, ValueError):
+            raise CMEEStage1ContractError(failure) from None
+        if not hmac.compare_digest(
+            binding.binding_ref,
+            expected_binding_ref,
+        ):
+            raise CMEEStage1ContractError(failure)
+
+        local_segment = human_reception_surface.text[
+            binding.human_reception_local_scalar_start :
+            binding.human_reception_local_scalar_end
+        ]
+        line_segment = reception_line.text[
+            placement.line_scalar_start : placement.line_scalar_end
+        ]
+        body_segment = surface_result.text[
+            placement.body_scalar_start : placement.body_scalar_end
+        ]
+        for segment in (local_segment, line_segment, body_segment):
+            if not hmac.compare_digest(
+                hashlib.sha256(segment.encode("utf-8")).hexdigest(),
+                binding.surface_span_sha256,
+            ):
+                raise CMEEStage1ContractError(failure)
+        fields = binding.clause_frame_fields
+        seen_binding_refs.add(binding.binding_ref)
+        prior_local_end = binding.human_reception_local_scalar_end
+        prior_line_end = placement.line_scalar_end
+        prior_body_end = placement.body_scalar_end
+        rows.append((binding, placement, fields))
+
+    if (
+        prior_local_end != len(human_reception_surface.text)
+        or prior_line_end != len(reception_line.text)
+        or prior_body_end != line_body_start + len(reception_line.text)
+        or tuple(
+            expression_ref
+            for binding in bindings
+            for expression_ref in binding.expression_refs
+        )
+        != human_reception_surface.expression_refs
+        or tuple(
+            move_id for binding in bindings for move_id in binding.move_ids
+        )
+        != human_reception_surface.realized_move_ids
+        or tuple(binding.move_ids for binding in bindings)
+        != human_reception_surface.realized_clause_move_ids
+        or tuple(
+            pair
+            for binding in bindings
+            for pair in zip(
+                binding.expression_refs,
+                binding.move_ids,
+                strict=True,
+            )
+        )
+        != tuple(
+            zip(
+                human_reception_surface.expression_refs,
+                human_reception_surface.realized_move_ids,
+                strict=True,
+            )
+        )
+    ):
+        raise CMEEStage1ContractError(failure)
+    return tuple(rows)
+
+
 def _adapt_grounded_surface_to_v2_realized_units(
     *,
     source: AdmittedTextSource,
@@ -10134,6 +10423,8 @@ def _adapt_grounded_surface_to_v2_realized_units(
     grounded_plan: GroundedObservationPlan,
     sentence_plan: GroundedSentencePlan,
     surface_result: GroundedSurfaceResult,
+    human_reception_surface: GroundedHumanReceptionSurface,
+    reception_placements: tuple[SentenceSurfacePlacement, ...],
     selection_score: tuple[int, int, int, int, int],
     hard_valid_candidate_count: int,
     candidate_set_ref: str,
@@ -10194,6 +10485,13 @@ def _adapt_grounded_surface_to_v2_realized_units(
         raise CMEEStage1ContractError(
             "stage1_v2_grounded_surface_adapter_projection_invalid"
         ) from None
+
+    reception_adapter_rows = _validated_reception_adapter_rows(
+        sentence_plan=sentence_plan,
+        surface_result=surface_result,
+        human_reception_surface=human_reception_surface,
+        reception_placements=reception_placements,
+    )
 
     plan_binding = _bind_grounded_plan(
         source,
@@ -10313,9 +10611,9 @@ def _adapt_grounded_surface_to_v2_realized_units(
             ref for ref in reachable_refs if ref.startswith("edge:")
         )
         move_ref = _move_ref(anchors[0])
-        argument_rows: list[ArgumentBinding] = []
-        seen_argument_rows: set[tuple[ArgumentRole, str]] = set()
         if layer == "LAYER_1":
+            argument_rows: list[ArgumentBinding] = []
+            seen_argument_rows: set[tuple[ArgumentRole, str]] = set()
             for anchor in anchors:
                 for row in contribution_by_ref[anchor].argument_bindings:
                     key = (row.role, row.semantic_ref)
@@ -10325,67 +10623,608 @@ def _adapt_grounded_surface_to_v2_realized_units(
                     ):
                         seen_argument_rows.add(key)
                         argument_rows.append(row)
-        if not argument_rows and node_refs:
-            argument_rows.append(
-                ArgumentBinding(ArgumentRole.PRIMARY, node_refs[0])
+            if not argument_rows and node_refs:
+                argument_rows.append(
+                    ArgumentBinding(ArgumentRole.PRIMARY, node_refs[0])
+                )
+            visible_sentences = tuple(
+                match.group(0).strip()
+                for match in re.finditer(
+                    r"[^。！？!?\r\n]+[。！？!?]*",
+                    line.text,
+                )
+                if match.group(0).strip()
+            ) or (line.text,)
+            predicate_operator = _enum_or_text(
+                contribution_by_ref[anchors[0]].semantic_operator
             )
-        visible_sentences = tuple(
-            match.group(0).strip()
-            for match in re.finditer(
-                r"[^。！？!?\r\n]+[。！？!?]*",
-                line.text,
+            clause_frames = tuple(
+                ClauseFrame(
+                    move_ref=move_ref,
+                    discourse_relation=(
+                        relation_refs[index]
+                        if index < len(relation_refs)
+                        else f"relation:none:{line.binding.line_role}:{index}"
+                    ),
+                    topic_ref=node_refs[0] if node_refs else None,
+                    predicate_operator=predicate_operator,
+                    object_ref=node_refs[1] if len(node_refs) > 1 else None,
+                    argument_bindings=tuple(argument_rows),
+                    qualifier_refs=(),
+                    polarity="source_bounded",
+                    modality="source_bounded",
+                    time_scope="current_input",
+                    actor_refs=(),
+                    experiencer_refs=(),
+                    addressee_role="NONE",
+                    epistemic_marker="source_bounded",
+                    speaker_marker=None,
+                    connective_requirement=None,
+                    reception_style_policy_ref=(
+                        projection.reception_style_policy_ref
+                    ),
+                    terminal_style="declarative",
+                )
+                for index, _sentence in enumerate(visible_sentences)
             )
-            if match.group(0).strip()
-        ) or (line.text,)
-        predicate_operator = (
-            _enum_or_text(contribution_by_ref[anchors[0]].semantic_operator)
-            if layer == "LAYER_1"
-            else _enum_or_text(
-                claim_by_ref[
-                    anchors[0]
-                ].asserted_subjective_proposition.subjective_operator
+            text_digest = hashlib.sha256(
+                line.text.encode("utf-8")
+            ).hexdigest()
+            public_bindings = tuple(
+                RealizedSemanticBinding(
+                    semantic_ref=ref,
+                    clause_slot=f"grounded_surface:{line.binding.line_role}",
+                    surface_scalar_start=0,
+                    surface_scalar_end=len(line.text),
+                    surface_span_sha256=text_digest,
+                )
+                for ref in reachable_refs
             )
-        )
-        clause_frames = tuple(
-            ClauseFrame(
-                move_ref=move_ref,
-                discourse_relation=(
-                    relation_refs[index]
-                    if index < len(relation_refs)
-                    else f"relation:none:{line.binding.line_role}:{index}"
-                ),
-                topic_ref=node_refs[0] if node_refs else None,
-                predicate_operator=predicate_operator,
-                object_ref=node_refs[1] if len(node_refs) > 1 else None,
-                argument_bindings=tuple(argument_rows),
-                qualifier_refs=(),
-                polarity="source_bounded",
-                modality="source_bounded",
-                time_scope="current_input",
-                actor_refs=(),
-                experiencer_refs=(),
-                addressee_role="USER" if layer == "LAYER_2" else "NONE",
-                epistemic_marker="source_bounded",
-                speaker_marker="EMLIS" if layer == "LAYER_2" else None,
-                connective_requirement=None,
-                reception_style_policy_ref=(
-                    projection.reception_style_policy_ref
-                ),
-                terminal_style="declarative",
-            )
-            for index, _sentence in enumerate(visible_sentences)
-        )
-        text_digest = hashlib.sha256(line.text.encode("utf-8")).hexdigest()
-        public_bindings = tuple(
-            RealizedSemanticBinding(
-                semantic_ref=ref,
-                clause_slot=f"grounded_surface:{line.binding.line_role}",
-                surface_scalar_start=0,
-                surface_scalar_end=len(line.text),
-                surface_span_sha256=text_digest,
-            )
-            for ref in reachable_refs
-        )
+        else:
+            failure = "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP"
+            clause_frame_rows: list[ClauseFrame] = []
+            semantic_binding_rows: list[RealizedSemanticBinding] = []
+            bound_semantic_refs: list[str] = []
+            for index, (binding, placement, fields) in enumerate(
+                reception_adapter_rows
+            ):
+                semantic_refs = fields["semantic_refs"]
+                source_evidence_refs = fields["source_evidence_refs"]
+                raw_argument_bindings = fields["argument_bindings"]
+                qualifier_refs = fields["qualifier_refs"]
+                relation_refs = fields["relation_refs"]
+                relation_endpoint_refs = fields["relation_endpoint_refs"]
+                direction_refs = fields["direction_refs"]
+                actor_refs = fields["actor_refs"]
+                subject_refs = fields["subject_refs"]
+                experiencer_refs = fields["experiencer_refs"]
+                topic_ref = fields["topic_ref"]
+                object_ref = fields["object_ref"]
+                expression_frames = fields["expression_frames"]
+                expression_count = len(binding.expression_refs)
+                per_expression_fields = tuple(
+                    fields[name]
+                    for name in (
+                        "predicate_operator",
+                        "lexical_heads",
+                        "polarity",
+                        "modality",
+                        "time_scope",
+                        "aspect",
+                        "degree",
+                        "quantity",
+                        "scope",
+                        "reference_modes",
+                        "antecedent_refs",
+                        "antecedent_conditions",
+                        "particle_plans",
+                        "inflection_plans",
+                        "nominalization_plans",
+                        "clause_link_plans",
+                        "meaning_outcome_refs",
+                        "reception_binding_refs",
+                    )
+                )
+                if (
+                    type(semantic_refs) is not tuple
+                    or not semantic_refs
+                    or any(
+                        type(ref) is not str
+                        or not ref
+                        or ref not in graph_refs
+                        for ref in semantic_refs
+                    )
+                    or len(semantic_refs) != len(set(semantic_refs))
+                    or type(source_evidence_refs) is not tuple
+                    or not source_evidence_refs
+                    or any(
+                        type(ref) is not str or not ref
+                        for ref in source_evidence_refs
+                    )
+                    or len(source_evidence_refs)
+                    != len(set(source_evidence_refs))
+                    or type(raw_argument_bindings) is not tuple
+                    or not raw_argument_bindings
+                    or type(qualifier_refs) is not tuple
+                    or any(
+                        type(ref) is not str or not ref
+                        for ref in qualifier_refs
+                    )
+                    or len(qualifier_refs) != len(set(qualifier_refs))
+                    or any(
+                        type(values) is not tuple
+                        or any(type(ref) is not str or not ref for ref in values)
+                        or len(values) != len(set(values))
+                        for values in (
+                            relation_refs,
+                            relation_endpoint_refs,
+                            direction_refs,
+                            actor_refs,
+                            subject_refs,
+                            experiencer_refs,
+                        )
+                    )
+                    or not (actor_refs or subject_refs or experiencer_refs)
+                    or any(
+                        type(ref) is not str
+                        or not ref.startswith("node:")
+                        or ref not in set(reachable_refs)
+                        or ref not in set(semantic_refs)
+                        for ref in (
+                            *actor_refs,
+                            *subject_refs,
+                            *experiencer_refs,
+                        )
+                    )
+                    or any(
+                        not ref.startswith("edge:")
+                        or ref not in set(semantic_refs)
+                        or ref not in graph_refs
+                        for ref in relation_refs
+                    )
+                    or any(
+                        not ref.startswith(
+                            "source-grounded-relation-endpoint:"
+                        )
+                        or not ref.endswith(
+                            "@"
+                            + SOURCE_GROUNDED_RECEPTION_EXPRESSION_SCHEMA_VERSION
+                        )
+                        for ref in relation_endpoint_refs
+                    )
+                    or any(
+                        not ref.startswith("source-grounded-direction:")
+                        or not ref.endswith(
+                            "@"
+                            + SOURCE_GROUNDED_RECEPTION_EXPRESSION_SCHEMA_VERSION
+                        )
+                        for ref in direction_refs
+                    )
+                    or type(topic_ref) is not str
+                    or topic_ref not in set(reachable_refs)
+                    or topic_ref not in set(semantic_refs)
+                    or (
+                        object_ref is not None
+                        and (
+                            type(object_ref) is not str
+                            or object_ref not in set(reachable_refs)
+                            or object_ref not in set(semantic_refs)
+                        )
+                    )
+                    or any(
+                        type(values) is not tuple
+                        or len(values) != expression_count
+                        for values in per_expression_fields
+                    )
+                    or type(expression_frames) is not tuple
+                    or len(expression_frames) != expression_count
+                    or any(
+                        not ref.endswith(
+                            "@"
+                            + SOURCE_GROUNDED_RECEPTION_EXPRESSION_SCHEMA_VERSION
+                        )
+                        for ref in binding.expression_refs
+                    )
+                ):
+                    raise CMEEStage1ContractError(failure)
+
+                argument_bindings: list[ArgumentBinding] = []
+                argument_identity_keys: list[tuple[str, str, str | None]] = []
+                argument_counts: list[int] = []
+                argument_cursor = 0
+                for raw_argument in raw_argument_bindings:
+                    if type(raw_argument) is not tuple or len(raw_argument) != 12:
+                        raise CMEEStage1ContractError(failure)
+                    (
+                        role_name,
+                        semantic_ref,
+                        lexical_form,
+                        argument_evidence_refs,
+                        requirement,
+                        omission_permission,
+                        zero_condition_refs,
+                        omission_condition_refs,
+                        case_marker,
+                        direction_ref,
+                        relation_endpoint_ref,
+                        realization,
+                    ) = raw_argument
+                    if (
+                        type(role_name) is not str
+                        or role_name not in ArgumentRole.__members__
+                        or type(semantic_ref) is not str
+                        or semantic_ref not in set(semantic_refs)
+                        or type(lexical_form) is not str
+                        or not lexical_form
+                        or type(argument_evidence_refs) is not tuple
+                        or not argument_evidence_refs
+                        or any(
+                            type(ref) is not str or not ref
+                            for ref in argument_evidence_refs
+                        )
+                        or requirement not in {"REQUIRED", "OPTIONAL"}
+                        or omission_permission not in {"FORBIDDEN", "PERMITTED"}
+                        or type(zero_condition_refs) is not tuple
+                        or type(omission_condition_refs) is not tuple
+                        or any(
+                            type(ref) is not str or not ref
+                            for ref in (
+                                *zero_condition_refs,
+                                *omission_condition_refs,
+                            )
+                        )
+                        or (
+                            case_marker is not None
+                            and (type(case_marker) is not str or not case_marker)
+                        )
+                        or (
+                            direction_ref is not None
+                            and direction_ref not in set(direction_refs)
+                        )
+                        or (
+                            relation_endpoint_ref is not None
+                            and relation_endpoint_ref
+                            not in set(relation_endpoint_refs)
+                        )
+                        or realization not in {"EXPLICIT", "ZERO", "OMITTED"}
+                    ):
+                        raise CMEEStage1ContractError(failure)
+                    argument = ArgumentBinding(
+                        ArgumentRole[role_name],
+                        semantic_ref,
+                    )
+                    argument_bindings.append(argument)
+                    argument_identity_keys.append(
+                        (semantic_ref, role_name, relation_endpoint_ref)
+                    )
+                if not argument_bindings:
+                    raise CMEEStage1ContractError(failure)
+
+                for particle_plan in fields["particle_plans"]:
+                    if (
+                        type(particle_plan) is not tuple
+                        or not particle_plan
+                        or any(
+                            type(row) is not str or not row
+                            for row in particle_plan
+                        )
+                    ):
+                        raise CMEEStage1ContractError(failure)
+                    argument_counts.append(len(particle_plan))
+                if sum(argument_counts) != len(raw_argument_bindings):
+                    raise CMEEStage1ContractError(failure)
+                validation_cursor = 0
+                for count in argument_counts:
+                    frame_arguments = tuple(
+                        argument_bindings[
+                            validation_cursor : validation_cursor + count
+                        ]
+                    )
+                    validation_cursor += count
+                    argument_keys = tuple(
+                        argument_identity_keys[
+                            validation_cursor - count : validation_cursor
+                        ]
+                    )
+                    if len(argument_keys) != len(set(argument_keys)):
+                        raise CMEEStage1ContractError(failure)
+
+                expected_expression_frame_cores = tuple(
+                    (
+                        binding.expression_refs[frame_index],
+                        fields["predicate_operator"][frame_index],
+                        fields["lexical_heads"][frame_index],
+                        fields["polarity"][frame_index],
+                        fields["modality"][frame_index],
+                        fields["time_scope"][frame_index],
+                        fields["aspect"][frame_index],
+                        fields["degree"][frame_index],
+                        fields["quantity"][frame_index],
+                        fields["scope"][frame_index],
+                        fields["reference_modes"][frame_index],
+                        fields["antecedent_refs"][frame_index],
+                        fields["antecedent_conditions"][frame_index],
+                    )
+                    for frame_index in range(expression_count)
+                )
+                if (
+                    tuple(
+                        frame[:13]
+                        if type(frame) is tuple and len(frame) == 14
+                        else ()
+                        for frame in expression_frames
+                    )
+                    != expected_expression_frame_cores
+                    or any(
+                        type(frame) is not tuple
+                        or len(frame) != 14
+                        or any(
+                            type(value) is not str or not value
+                            for value in frame[:11]
+                        )
+                        or type(frame[11]) is not tuple
+                        or any(
+                            type(ref) is not str or not ref
+                            for ref in frame[11]
+                        )
+                        or (
+                            frame[12] is not None
+                            and (type(frame[12]) is not str or not frame[12])
+                        )
+                        or type(frame[13]) is not tuple
+                        or len(frame[13]) != 9
+                        or type(frame[13][0]) is not str
+                        or not frame[13][0]
+                        or any(
+                            type(values) is not tuple
+                            or any(
+                                type(ref) is not str or not ref
+                                for ref in values
+                            )
+                            or len(values) != len(set(values))
+                            for values in frame[13][1:]
+                        )
+                        or not frame[13][1]
+                        or not (
+                            frame[13][6]
+                            or frame[13][7]
+                            or frame[13][8]
+                        )
+                        for frame in expression_frames
+                    )
+                    or tuple(frame[13][0] for frame in expression_frames)
+                    != binding.move_ids
+                    or _ordered(
+                        ref
+                        for frame in expression_frames
+                        for ref in frame[13][1]
+                    )
+                    != semantic_refs
+                    or _ordered(
+                        ref
+                        for frame in expression_frames
+                        for ref in frame[13][2]
+                    )
+                    != qualifier_refs
+                    or _ordered(
+                        ref
+                        for frame in expression_frames
+                        for ref in frame[13][3]
+                    )
+                    != relation_refs
+                    or _ordered(
+                        ref
+                        for frame in expression_frames
+                        for ref in frame[13][4]
+                    )
+                    != relation_endpoint_refs
+                    or _ordered(
+                        ref
+                        for frame in expression_frames
+                        for ref in frame[13][5]
+                    )
+                    != direction_refs
+                    or _ordered(
+                        ref
+                        for frame in expression_frames
+                        for ref in frame[13][6]
+                    )
+                    != actor_refs
+                    or _ordered(
+                        ref
+                        for frame in expression_frames
+                        for ref in frame[13][7]
+                    )
+                    != subject_refs
+                    or _ordered(
+                        ref
+                        for frame in expression_frames
+                        for ref in frame[13][8]
+                    )
+                    != experiencer_refs
+                    or any(
+                        type(plan_rows) is not tuple
+                        or not plan_rows
+                        or any(
+                            type(row) is not str or not row
+                            for row in plan_rows
+                        )
+                        for plan_rows in (
+                            *fields["inflection_plans"],
+                            *fields["nominalization_plans"],
+                            *fields["clause_link_plans"],
+                        )
+                    )
+                ):
+                    raise CMEEStage1ContractError(failure)
+
+                for frame_index, expression_frame in enumerate(
+                    expression_frames
+                ):
+                    count = argument_counts[frame_index]
+                    frame_arguments = tuple(
+                        argument_bindings[
+                            argument_cursor : argument_cursor + count
+                        ]
+                    )
+                    frame_raw_arguments = raw_argument_bindings[
+                        argument_cursor : argument_cursor + count
+                    ]
+                    argument_cursor += count
+                    local_projection = expression_frame[13]
+                    local_move_id = local_projection[0]
+                    local_semantic_refs = local_projection[1]
+                    local_qualifier_refs = local_projection[2]
+                    local_relation_refs = local_projection[3]
+                    local_relation_endpoint_refs = local_projection[4]
+                    local_direction_refs = local_projection[5]
+                    local_actor_refs = local_projection[6]
+                    local_subject_refs = local_projection[7]
+                    local_experiencer_refs = local_projection[8]
+                    frame_argument_semantic_ref_order = _ordered(
+                        argument.semantic_ref
+                        for argument in frame_arguments
+                    )
+                    frame_argument_semantic_refs = set(
+                        frame_argument_semantic_ref_order
+                    )
+                    if (
+                        _ordered(
+                            (
+                                *frame_argument_semantic_ref_order,
+                                *local_relation_refs,
+                            )
+                        )
+                        != local_semantic_refs
+                        or _ordered(
+                            raw_argument[10]
+                            for raw_argument in frame_raw_arguments
+                            if raw_argument[10] is not None
+                        )
+                        != local_relation_endpoint_refs
+                        or _ordered(
+                            raw_argument[9]
+                            for raw_argument in frame_raw_arguments
+                            if raw_argument[9] is not None
+                        )
+                        != local_direction_refs
+                        or any(
+                            ref not in frame_argument_semantic_refs
+                            or not ref.startswith("node:")
+                            or ref not in set(reachable_refs)
+                            for ref in (
+                                *local_actor_refs,
+                                *local_subject_refs,
+                                *local_experiencer_refs,
+                            )
+                        )
+                        or any(
+                            ref not in local_semantic_refs
+                            or not ref.startswith("edge:")
+                            or ref not in graph_refs
+                            for ref in local_relation_refs
+                        )
+                        or any(
+                            (
+                                raw_argument[9] is not None
+                                and raw_argument[9]
+                                not in local_direction_refs
+                            )
+                            or (
+                                raw_argument[10] is not None
+                                and raw_argument[10]
+                                not in local_relation_endpoint_refs
+                            )
+                            for raw_argument in frame_raw_arguments
+                        )
+                    ):
+                        raise CMEEStage1ContractError(failure)
+                    frame_topic_ref = next(
+                        (
+                            ref
+                            for ref in local_subject_refs
+                            if ref in frame_argument_semantic_refs
+                        ),
+                        frame_argument_semantic_ref_order[0],
+                    )
+                    frame_object_ref = next(
+                        (
+                            ref for ref in frame_argument_semantic_ref_order
+                            if ref != frame_topic_ref
+                        ),
+                        None,
+                    )
+                    discourse_relation = next(
+                        iter(local_relation_refs),
+                        (
+                            f"relation:none:{line.binding.line_role}:"
+                            f"{index}:{frame_index}"
+                        ),
+                    )
+                    clause_frame_rows.append(
+                        ClauseFrame(
+                            move_ref=move_ref,
+                            discourse_relation=discourse_relation,
+                            topic_ref=frame_topic_ref,
+                            predicate_operator=expression_frame[1],
+                            object_ref=frame_object_ref,
+                            argument_bindings=frame_arguments,
+                            qualifier_refs=_ordered(
+                                (
+                                    *local_qualifier_refs,
+                                    expression_frame[0],
+                                    binding.binding_ref,
+                                )
+                            ),
+                            polarity=expression_frame[3],
+                            modality=expression_frame[4],
+                            time_scope=expression_frame[5],
+                            actor_refs=local_actor_refs,
+                            experiencer_refs=local_experiencer_refs,
+                            addressee_role="USER",
+                            epistemic_marker="source_bounded",
+                            speaker_marker="EMLIS",
+                            connective_requirement=None,
+                            reception_style_policy_ref=(
+                                projection.reception_style_policy_ref
+                            ),
+                            terminal_style="declarative",
+                        )
+                    )
+                    publicly_reachable_semantic_refs = tuple(
+                        semantic_ref
+                        for semantic_ref in local_semantic_refs
+                        if semantic_ref in set(reachable_refs)
+                    )
+                    if not publicly_reachable_semantic_refs:
+                        raise CMEEStage1ContractError(failure)
+                    bound_semantic_refs.extend(
+                        publicly_reachable_semantic_refs
+                    )
+                    clause_slot = (
+                        f"human_reception:{binding.binding_ref}:"
+                        f"expression[{expression_frame[0]}]:"
+                        f"move[{local_move_id}]"
+                    )
+                    semantic_binding_rows.extend(
+                        RealizedSemanticBinding(
+                            semantic_ref=semantic_ref,
+                            clause_slot=clause_slot,
+                            surface_scalar_start=placement.line_scalar_start,
+                            surface_scalar_end=placement.line_scalar_end,
+                            surface_span_sha256=binding.surface_span_sha256,
+                        )
+                        for semantic_ref in publicly_reachable_semantic_refs
+                    )
+                if argument_cursor != len(argument_bindings):
+                    raise CMEEStage1ContractError(failure)
+            if (
+                not line_ref_set.issubset(set(bound_semantic_refs))
+                or not set(bound_semantic_refs).issubset(set(reachable_refs))
+            ):
+                raise CMEEStage1ContractError(failure)
+            clause_frames = tuple(clause_frame_rows)
+            public_bindings = tuple(semantic_binding_rows)
         unit = _identified(
             RealizedSentenceUnit(
                 unit_id="",
@@ -10682,6 +11521,1591 @@ def _grounded_surface_projection_trace_closed(
     return True
 
 
+_REALIZABLE_RECEPTION_ENDPOINT_ROLES = frozenset(
+    {"LEFT", "RIGHT", "BEFORE", "AFTER", "ACTION", "CHANGE", "CAUSE", "EFFECT"}
+)
+_REALIZABLE_RECEPTION_NAMED_FAILURES = frozenset(
+    {
+        "MEANING_REALIZATION_CAPABILITY_GAP",
+        "MEANING_REALIZATION_CAUSAL_TRACE_GAP",
+        "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP",
+        "REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP",
+        "REALIZABLE_RECEPTION_EXPRESSION_REFERENCE_GAP",
+        "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP",
+    }
+)
+
+
+def _raise_realizable_reception_failure(
+    exc: GroundedHumanReceptionSurfaceError,
+) -> None:
+    failure = str(exc)
+    if failure not in _REALIZABLE_RECEPTION_NAMED_FAILURES:
+        failure = "MEANING_REALIZATION_CAPABILITY_GAP"
+    raise CMEEStage1ContractError(failure) from None
+
+
+def _realizable_reception_case_marker_for_role(
+    role: str,
+    relation_kind: str | None = None,
+) -> str:
+    try:
+        return source_grounded_case_marker_for_role(role, relation_kind)
+    except GroundedHumanReceptionSurfaceError:
+        raise CMEEStage1ContractError(
+            "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
+        ) from None
+
+
+def _one_realization_row(
+    rows: Iterable[Any],
+    *,
+    failure: str = "MEANING_REALIZATION_CAUSAL_TRACE_GAP",
+) -> Any:
+    selected = tuple(rows)
+    if len(selected) != 1:
+        raise CMEEStage1ContractError(failure)
+    return selected[0]
+
+
+def _validate_selected_reception_expression_lineage(
+    *,
+    phase_A: "Stage1SubjectivePlanningInputs",
+    projection: EmlisStage1Projection,
+    reception_plan: GroundedHumanReceptionPlan,
+    recovery_stage: str,
+    expressions: tuple[SourceGroundedRealizableReceptionExpressionV1, ...],
+    authority_expressions: tuple[
+        SourceGroundedRealizableReceptionExpressionV1, ...
+    ],
+) -> None:
+    """Rebind every sealed field to the typed selected branch authority."""
+
+    failure = "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+    if (
+        type(expressions) is not tuple
+        or type(authority_expressions) is not tuple
+        or not expressions
+        or not authority_expressions
+        or any(
+            type(expression)
+            is not SourceGroundedRealizableReceptionExpressionV1
+            for expression in (*expressions, *authority_expressions)
+        )
+        or any(
+            (
+                expression.meaning_outcome_ref,
+                expression.reception_binding_ref,
+                expression.source_evidence_refs,
+                expression.arguments,
+                expression.relation_refs,
+                expression.relation_endpoint_refs,
+                expression.direction_refs,
+                expression.provenance_refs,
+            )
+            != (
+                authority.meaning_outcome_ref,
+                authority.reception_binding_ref,
+                authority.source_evidence_refs,
+                authority.arguments,
+                authority.relation_refs,
+                authority.relation_endpoint_refs,
+                authority.direction_refs,
+                authority.provenance_refs,
+            )
+            for expression, authority in zip(
+                expressions,
+                authority_expressions,
+                strict=False,
+            )
+        )
+        or expressions != authority_expressions
+    ):
+        raise CMEEStage1ContractError(failure)
+    try:
+        active_moves = reception_active_moves(reception_plan, recovery_stage)
+    except GroundedHumanReceptionSurfaceError:
+        raise CMEEStage1ContractError(failure) from None
+    if tuple(expression.move_id for expression in expressions) != tuple(
+        move.move_id for move in active_moves
+    ):
+        raise CMEEStage1ContractError(failure)
+
+    outcome = (
+        phase_A.input_specific_meaning_structure.meaning_decision_outcome
+    )
+    expected_rows: list[
+        tuple[
+            str,
+            str,
+            str,
+            ReceptionVisibleCausalTraceRow,
+            tuple[str, ...],
+        ]
+    ] = []
+    if type(outcome) is SelectedEmlisProvisionalReading:
+        if projection.projection_branch is not SubjectiveProjectionBranch.NORMAL:
+            raise CMEEStage1ContractError(failure)
+        reception_set = _one_realization_row(
+            row
+            for row in phase_A.meaning_bound_reception_set_records
+            if row.selected_reading_ref == outcome.reading_id
+        )
+        try:
+            reception_set_ref = meaning_bound_reception_set_id(
+                reception_set,
+                proposition_records=(
+                    phase_A.meaning_bound_reception_proposition_records
+                ),
+            )
+        except CMEEStage1ContractError:
+            raise CMEEStage1ContractError(failure) from None
+        for move in active_moves:
+            proposition = _one_realization_row(
+                row
+                for row in phase_A.meaning_bound_reception_proposition_records
+                if row.selected_reading_ref == outcome.reading_id
+                and row.reception_function == move.reception_act
+            )
+            try:
+                proposition_ref = meaning_bound_reception_id(proposition)
+            except CMEEStage1ContractError:
+                raise CMEEStage1ContractError(failure) from None
+            if proposition.reception_id != proposition_ref:
+                raise CMEEStage1ContractError(failure)
+            trace = _one_realization_row(
+                row
+                for row in projection.reception_visible_causal_trace_rows
+                if row.branch is SubjectiveProjectionBranch.NORMAL
+                and row.meaning_outcome_ref == outcome.reading_id
+                and row.reception_record_ref == proposition_ref
+            )
+            expected_rows.append(
+                (
+                    move.move_id,
+                    outcome.reading_id,
+                    proposition_ref,
+                    trace,
+                    (
+                        outcome.reading_id,
+                        outcome.selected_candidate_ref,
+                        reception_set_ref,
+                        proposition_ref,
+                        trace.projected_claim_ref,
+                        *(
+                            (trace.reading_consequence_ref,)
+                            if trace.reading_consequence_ref is not None
+                            else ()
+                        ),
+                    ),
+                )
+            )
+    elif type(outcome) is LimitedMeaningOutcome:
+        if projection.projection_branch is not SubjectiveProjectionBranch.LIMITED:
+            raise CMEEStage1ContractError(failure)
+        bounded = _one_realization_row(
+            phase_A.bounded_limited_reception_records
+        )
+        subjective_proposition = _one_realization_row(
+            phase_A.bounded_limited_subjective_proposition_records
+        )
+        outcome_ref = limited_meaning_outcome_id(outcome)
+        try:
+            reception_binding_ref = bounded_limited_reception_id(
+                bounded,
+                limited_outcome=outcome,
+                subjective_proposition=subjective_proposition,
+            )
+        except CMEEStage1ContractError:
+            raise CMEEStage1ContractError(failure) from None
+        trace = _one_realization_row(
+            row
+            for row in projection.reception_visible_causal_trace_rows
+            if row.branch is SubjectiveProjectionBranch.LIMITED
+            and row.meaning_outcome_ref == outcome_ref
+            and row.reception_record_ref == reception_binding_ref
+        )
+        for move in active_moves:
+            retained = _one_realization_row(
+                row
+                for row in phase_A.retained_reception_act_rows
+                if row.act_ref == move.reception_act
+                and row.reception_act == move.reception_act
+            )
+            expected_rows.append(
+                (
+                    move.move_id,
+                    outcome_ref,
+                    reception_binding_ref,
+                    trace,
+                    (
+                        outcome_ref,
+                        reception_binding_ref,
+                        bounded.proposition_ref,
+                        trace.projected_claim_ref,
+                        retained.act_ref,
+                    ),
+                )
+            )
+    else:
+        raise CMEEStage1ContractError(failure)
+
+    if len(expected_rows) != len(expressions):
+        raise CMEEStage1ContractError(failure)
+    for expression, expected in zip(expressions, expected_rows, strict=True):
+        (
+            move_id,
+            meaning_outcome_ref,
+            reception_binding_ref,
+            trace,
+            required_provenance_refs,
+        ) = expected
+        if (
+            expression.move_id != move_id
+            or expression.meaning_outcome_ref != meaning_outcome_ref
+            or expression.reception_binding_ref != reception_binding_ref
+            or trace.branch is not projection.projection_branch
+            or trace.meaning_outcome_ref != meaning_outcome_ref
+            or trace.reception_record_ref != reception_binding_ref
+            or not set(required_provenance_refs).issubset(
+                expression.provenance_refs
+            )
+        ):
+            raise CMEEStage1ContractError(failure)
+
+
+def _realizable_reception_axis(
+    values: Iterable[Any],
+    *,
+    prefix: str,
+    empty: str,
+) -> str:
+    raw_values = tuple(values)
+    if any(
+        type(value) is not str
+        or not value.startswith(prefix)
+        or not value.removeprefix(prefix).strip()
+        for value in raw_values
+    ):
+        raise CMEEStage1ContractError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        )
+    normalized = _ordered(
+        value.removeprefix(prefix).strip() for value in raw_values
+    )
+    if len(normalized) > 1:
+        raise CMEEStage1ContractError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        )
+    return normalized[0] if normalized else empty
+
+
+def _derive_source_grounded_reception_expression_authority(
+    *,
+    source: AdmittedTextSource,
+    phase_A: "Stage1SubjectivePlanningInputs",
+    projection: EmlisStage1Projection,
+    selected_grounded_plan: GroundedObservationPlan,
+    reception_plan: GroundedHumanReceptionPlan,
+    recovery_stage: str,
+) -> tuple[SourceGroundedRealizableReceptionExpressionV1, ...]:
+    """Join selected meaning to each active Move without selecting again."""
+
+    outcome = (
+        phase_A.input_specific_meaning_structure.meaning_decision_outcome
+    )
+    if projection.projection_branch not in {
+        SubjectiveProjectionBranch.NORMAL,
+        SubjectiveProjectionBranch.LIMITED,
+    }:
+        raise CMEEStage1ContractError("MEANING_REALIZATION_CAPABILITY_GAP")
+    try:
+        active_moves = reception_active_moves(reception_plan, recovery_stage)
+        clause_plans = build_grounded_reception_clause_plans(
+            reception_plan,
+            recovery_stage,
+        )
+    except GroundedHumanReceptionSurfaceError as exc:
+        _raise_realizable_reception_failure(exc)
+    if not active_moves:
+        raise CMEEStage1ContractError("MEANING_REALIZATION_CAPABILITY_GAP")
+
+    clause_form_by_move_id: dict[str, str] = {}
+    for clause_plan in clause_plans:
+        if (
+            type(clause_plan.move_ids) is not tuple
+            or not clause_plan.move_ids
+            or any(
+                type(move_id) is not str or not move_id
+                for move_id in clause_plan.move_ids
+            )
+        ):
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        for index, move_id in enumerate(clause_plan.move_ids):
+            if move_id in clause_form_by_move_id:
+                raise CMEEStage1ContractError(
+                    "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                )
+            clause_form_by_move_id[move_id] = (
+                "FINITE"
+                if index == len(clause_plan.move_ids) - 1
+                else "CONTINUATIVE"
+            )
+    if set(clause_form_by_move_id) != {
+        move.move_id for move in active_moves
+    }:
+        raise CMEEStage1ContractError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        )
+
+    if (
+        selected_grounded_plan.response_plan.human_reception_plan
+        != reception_plan
+    ):
+        raise CMEEStage1ContractError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        )
+    plan_binding = _bind_grounded_plan(
+        source,
+        phase_A.grounded_graph,
+        selected_grounded_plan,
+    )
+    semantic_ref_by_nucleus_id = {
+        nucleus_id: _node_ref(node_id)
+        for nucleus_id, node_id in plan_binding.nucleus_to_node.items()
+    }
+    nucleus_id_by_semantic_ref = {
+        semantic_ref: nucleus_id
+        for nucleus_id, semantic_ref in semantic_ref_by_nucleus_id.items()
+    }
+    nucleus_by_id = {
+        nucleus.nucleus_id: nucleus
+        for nucleus in selected_grounded_plan.nuclei
+    }
+    relation_by_edge_ref = {
+        _edge_ref(edge_id): relation
+        for edge_id, relation in plan_binding.edge_meta.items()
+    }
+    resolver = build_evidence_span_resolver(
+        source.evidence_spans,
+        current_input=source.normalized_current_input,
+    )
+
+    contribution_by_ref = {
+        row.contribution_id: row
+        for row in phase_A.observation_contribution_rows
+    }
+    candidate_ref_by_contribution = dict(
+        phase_A.contribution_to_candidate_ref_map
+    )
+    semantic_projection_by_candidate = {
+        row.interpretation_candidate_ref: row
+        for row in (
+            phase_A.grounded_situation_view.semantic_interpretation_projections
+        )
+    }
+    node_by_ref = {
+        _node_ref(node.node_id): node for node in phase_A.grounded_graph.nodes
+    }
+    edge_by_ref = {
+        _edge_ref(edge.edge_id): edge for edge in phase_A.grounded_graph.edges
+    }
+    edge_refs = {
+        _edge_ref(edge.edge_id) for edge in phase_A.grounded_graph.edges
+    }
+    evidence_rows = tuple(source.evidence_refs)
+    canonical_evidence_rows = tuple(
+        (
+            _evidence_ref(
+                row.evidence_id,
+                phase_A.grounded_graph.source_version,
+            ),
+            row,
+        )
+        for row in evidence_rows
+    )
+    evidence_ref_by_canonical_ref = dict(canonical_evidence_rows)
+    evidence_ref_by_source_span_id = {
+        row.source_span_id: row for row in evidence_rows
+    }
+    if (
+        len(evidence_ref_by_canonical_ref) != len(canonical_evidence_rows)
+        or len(evidence_ref_by_source_span_id) != len(evidence_rows)
+        or any(
+            type(ref) is not str
+            or not ref
+            or type(row.source_span_id) is not str
+            or not row.source_span_id
+            for ref, row in canonical_evidence_rows
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        )
+
+    def _canonical_evidence_refs_for_span_ids(
+        span_ids: Iterable[str],
+    ) -> tuple[str, ...]:
+        try:
+            rows = tuple(
+                evidence_ref_by_source_span_id[span_id]
+                for span_id in span_ids
+            )
+        except KeyError:
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            ) from None
+        refs = tuple(
+            _evidence_ref(
+                row.evidence_id,
+                phase_A.grounded_graph.source_version,
+            )
+            for row in rows
+        )
+        if len(refs) != len(set(refs)):
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        return refs
+    claim_by_ref = {
+        row.subjective_claim_id: row for row in projection.subjective_claims
+    }
+
+    normal_set_ref = ""
+    normal_proposition_by_act: dict[str, MeaningBoundReceptionProposition] = {}
+    limited_binding_ref = ""
+    limited_trace: ReceptionVisibleCausalTraceRow | None = None
+    limited_claim: EmlisSubjectiveClaim | None = None
+    bounded: BoundedLimitedReception | None = None
+    limited_subjective_proposition: SubjectivePropositionV2 | None = None
+    selected_meaning_candidate: Any | None = None
+    retained_by_act: dict[str, Any] = {}
+    if type(outcome) is SelectedEmlisProvisionalReading:
+        if projection.projection_branch is not SubjectiveProjectionBranch.NORMAL:
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        reception_set = _one_realization_row(
+            row
+            for row in phase_A.meaning_bound_reception_set_records
+            if row.selected_reading_ref == outcome.reading_id
+        )
+        normal_set_ref = meaning_bound_reception_set_id(
+            reception_set,
+            proposition_records=(
+                phase_A.meaning_bound_reception_proposition_records
+            ),
+        )
+        selected_meaning_candidate = _one_realization_row(
+            row
+            for row in (
+                phase_A.input_specific_meaning_structure.candidate_records
+            )
+            if row.candidate_id == outcome.selected_candidate_ref
+        )
+        for move in active_moves:
+            proposition = _one_realization_row(
+                row
+                for row in phase_A.meaning_bound_reception_proposition_records
+                if row.selected_reading_ref == outcome.reading_id
+                and row.reception_function == move.reception_act
+            )
+            normal_proposition_by_act[move.reception_act] = proposition
+        meaning_outcome_ref = outcome.reading_id
+    elif type(outcome) is LimitedMeaningOutcome:
+        if projection.projection_branch is not SubjectiveProjectionBranch.LIMITED:
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        meaning_outcome_ref = limited_meaning_outcome_id(outcome)
+        bounded = _one_realization_row(
+            phase_A.bounded_limited_reception_records
+        )
+        limited_subjective_proposition = _one_realization_row(
+            phase_A.bounded_limited_subjective_proposition_records
+        )
+        limited_binding_ref = bounded_limited_reception_id(
+            bounded,
+            limited_outcome=outcome,
+            subjective_proposition=limited_subjective_proposition,
+        )
+        limited_trace = _one_realization_row(
+            row
+            for row in projection.reception_visible_causal_trace_rows
+            if row.branch is SubjectiveProjectionBranch.LIMITED
+            and row.meaning_outcome_ref == meaning_outcome_ref
+            and row.reception_record_ref == limited_binding_ref
+        )
+        limited_claim = claim_by_ref.get(limited_trace.projected_claim_ref)
+        if limited_claim is None:
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        if (
+            not limited_subjective_proposition.target_contribution_refs
+            or tuple(limited_subjective_proposition.target_contribution_refs)
+            != tuple(limited_trace.layer1_contribution_refs)
+            or not set(limited_subjective_proposition.target_contribution_refs)
+            <= set(bounded.bound_layer1_contribution_refs)
+            or tuple(limited_trace.projected_response_object_refs)
+            != tuple(limited_subjective_proposition.response_object_refs)
+            or tuple(limited_trace.response_object_refs)
+            != tuple(bounded.foreground_source_object_refs)
+        ):
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        for move in active_moves:
+            retained_by_act[move.reception_act] = _one_realization_row(
+                row
+                for row in phase_A.retained_reception_act_rows
+                if row.act_ref == move.reception_act
+                and row.reception_act == move.reception_act
+            )
+    else:
+        raise CMEEStage1ContractError("MEANING_REALIZATION_CAPABILITY_GAP")
+
+    expressions: list[SourceGroundedRealizableReceptionExpressionV1] = []
+    for move in active_moves:
+        if type(outcome) is SelectedEmlisProvisionalReading:
+            proposition = normal_proposition_by_act[move.reception_act]
+            trace = _one_realization_row(
+                row
+                for row in projection.reception_visible_causal_trace_rows
+                if row.branch is SubjectiveProjectionBranch.NORMAL
+                and row.meaning_outcome_ref == outcome.reading_id
+                and row.reception_record_ref == proposition.reception_id
+            )
+            claim = claim_by_ref.get(trace.projected_claim_ref)
+            if (
+                claim is None
+                or move.reception_act not in claim.source_reception_act_refs
+                or trace.response_object_refs != proposition.response_object_refs
+                or trace.preserved_difference_refs
+                != proposition.preserved_difference_refs
+            ):
+                raise CMEEStage1ContractError(
+                    "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                )
+            assert selected_meaning_candidate is not None
+            if (
+                type(selected_meaning_candidate.basis_contribution_refs)
+                is not tuple
+            ):
+                raise CMEEStage1ContractError(
+                    "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                )
+            contribution_refs = tuple(
+                ref
+                for ref in trace.layer1_contribution_refs
+                if ref in set(
+                    selected_meaning_candidate.basis_contribution_refs
+                )
+            )
+            semantic_domain = set(trace.projected_response_object_refs)
+            reception_binding_ref = proposition.reception_id
+            branch_provenance = (
+                outcome.reading_id,
+                outcome.selected_candidate_ref,
+                normal_set_ref,
+                proposition.reception_id,
+                trace.projected_claim_ref,
+                *(ref for ref in (trace.reading_consequence_ref,) if ref),
+            )
+        else:
+            assert bounded is not None
+            assert limited_trace is not None
+            assert limited_claim is not None
+            assert limited_subjective_proposition is not None
+            retained = retained_by_act[move.reception_act]
+            if (
+                move.reception_act
+                not in limited_claim.source_reception_act_refs
+                or retained.act_ref != move.reception_act
+                or retained.reception_act != move.reception_act
+                or type(retained.basis_contribution_refs) is not tuple
+                or not retained.basis_contribution_refs
+                or not set(retained.basis_contribution_refs).issubset(
+                    limited_subjective_proposition.target_contribution_refs
+                )
+            ):
+                raise CMEEStage1ContractError(
+                    "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                )
+            contribution_refs = tuple(retained.basis_contribution_refs)
+            semantic_domain = set(
+                limited_subjective_proposition.response_object_refs
+            )
+            reception_binding_ref = limited_binding_ref
+            branch_provenance = (
+                meaning_outcome_ref,
+                limited_binding_ref,
+                bounded.proposition_ref,
+                limited_trace.projected_claim_ref,
+                retained.act_ref,
+            )
+
+        if (
+            type(move.target_nucleus_ids) is not tuple
+            or not move.target_nucleus_ids
+            or type(move.support_nucleus_ids) is not tuple
+            or any(
+                type(nucleus_id) is not str or not nucleus_id
+                for nucleus_id in (
+                    *move.target_nucleus_ids,
+                    *move.support_nucleus_ids,
+                )
+            )
+            or any(
+                type(ref) is not str or not ref
+                for ref in (*contribution_refs, *semantic_domain)
+            )
+        ):
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        move_nucleus_ids = _ordered(
+            (*move.target_nucleus_ids, *move.support_nucleus_ids)
+        )
+        try:
+            target_semantic_refs = _ordered(
+                semantic_ref_by_nucleus_id[nucleus_id]
+                for nucleus_id in move.target_nucleus_ids
+            )
+            target_nuclei = tuple(
+                nucleus_by_id[nucleus_id]
+                for nucleus_id in move.target_nucleus_ids
+            )
+        except KeyError:
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            ) from None
+        focus_kinds = _ordered(
+            nucleus.kind
+            for nucleus in target_nuclei
+            if type(nucleus.kind) is str and nucleus.kind
+        )
+        if (
+            not contribution_refs
+            or not semantic_domain
+            or not target_semantic_refs
+            or not focus_kinds
+            or any(
+                type(nucleus.kind) is not str or not nucleus.kind
+                for nucleus in target_nuclei
+            )
+            or not set(target_semantic_refs).issubset(semantic_domain)
+        ):
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        focus_kind = "+".join(focus_kinds)
+        contribution_candidate_refs: list[str] = []
+        for contribution_ref in contribution_refs:
+            contribution = contribution_by_ref.get(contribution_ref)
+            candidate_ref = candidate_ref_by_contribution.get(contribution_ref)
+            semantic_projection = semantic_projection_by_candidate.get(
+                candidate_ref
+            )
+            if (
+                contribution is None
+                or semantic_projection is None
+                or contribution_ref
+                not in semantic_projection.basis_contribution_refs
+            ):
+                raise CMEEStage1ContractError(
+                    "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                )
+            if candidate_ref not in contribution_candidate_refs:
+                contribution_candidate_refs.append(candidate_ref)
+
+        realization_candidate_refs = tuple(contribution_candidate_refs)
+        realization_candidate_ref_set = set(realization_candidate_refs)
+        selected_projection_rows = [
+            semantic_projection
+            for semantic_projection in (
+                phase_A.grounded_situation_view
+                .semantic_interpretation_projections
+            )
+            if semantic_projection.interpretation_candidate_ref
+            in realization_candidate_ref_set
+        ]
+        if (
+            len(selected_projection_rows) != len(realization_candidate_refs)
+            or {
+                semantic_projection.interpretation_candidate_ref
+                for semantic_projection in selected_projection_rows
+            }
+            != realization_candidate_ref_set
+            or any(
+                not set(semantic_projection.basis_contribution_refs).issubset(
+                    contribution_refs
+                )
+                for semantic_projection in selected_projection_rows
+            )
+        ):
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        for semantic_projection in selected_projection_rows:
+            try:
+                expected_projection_evidence_refs = _ordered(
+                    (
+                        *(
+                            ref
+                            for component in semantic_projection.component_rows
+                            for ref in component.source_evidence_refs
+                        ),
+                        *(
+                            _evidence_ref(
+                                evidence_id,
+                                phase_A.grounded_graph.source_version,
+                            )
+                            for relation_ref in (
+                                semantic_projection.relation_path_refs
+                            )
+                            for evidence_id in edge_by_ref[
+                                relation_ref
+                            ].evidence_ids
+                        ),
+                    )
+                )
+            except KeyError:
+                raise CMEEStage1ContractError(
+                    "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                ) from None
+            if (
+                tuple(semantic_projection.source_evidence_refs)
+                != expected_projection_evidence_refs
+                or any(
+                    ref not in evidence_ref_by_canonical_ref
+                    for ref in expected_projection_evidence_refs
+                )
+            ):
+                raise CMEEStage1ContractError(
+                    "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                )
+
+        candidate_relation_refs = _ordered(
+            (
+                *(
+                    ref
+                    for semantic_projection in selected_projection_rows
+                    for ref in semantic_projection.relation_path_refs
+                ),
+                *(
+                    ref
+                    for contribution_ref in contribution_refs
+                    for ref in contribution_by_ref[
+                        contribution_ref
+                    ].relation_basis_refs
+                ),
+            )
+        )
+        if any(
+            type(ref) is not str
+            or not ref
+            or ref not in edge_refs
+            or ref not in relation_by_edge_ref
+            for ref in candidate_relation_refs
+        ):
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        target_nucleus_id_set = set(move.target_nucleus_ids)
+        required_relation_ids = set(
+            selected_grounded_plan.coverage_requirements.required_relation_ids
+        )
+        candidate_relation_ref_set = set(candidate_relation_refs)
+        applicable_relation_rows = tuple(
+            relation
+            for relation in selected_grounded_plan.relations
+            if relation.relation_id in required_relation_ids
+            and target_nucleus_id_set.intersection(
+                (
+                    relation.from_nucleus_id,
+                    relation.to_nucleus_id,
+                )
+            )
+        )
+        try:
+            plan_applicable_relation_refs = tuple(
+                _edge_ref(plan_binding.relation_to_edge[relation.relation_id])
+                for relation in applicable_relation_rows
+            )
+        except KeyError:
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            ) from None
+        candidate_applicable_relation_refs = tuple(
+            ref
+            for ref in plan_applicable_relation_refs
+            if ref in candidate_relation_ref_set
+        )
+        if candidate_applicable_relation_refs != plan_applicable_relation_refs:
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        move_nucleus_ids = _ordered(
+            (
+                *move_nucleus_ids,
+                *(
+                    nucleus_id
+                    for relation in applicable_relation_rows
+                    for nucleus_id in (
+                        relation.from_nucleus_id,
+                        relation.to_nucleus_id,
+                    )
+                ),
+            )
+        )
+        try:
+            move_semantic_refs = _ordered(
+                semantic_ref_by_nucleus_id[nucleus_id]
+                for nucleus_id in move_nucleus_ids
+            )
+        except KeyError:
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            ) from None
+        semantic_domain.intersection_update(move_semantic_refs)
+        if (
+            not semantic_domain
+            or not set(target_semantic_refs).issubset(semantic_domain)
+        ):
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+
+        move_semantic_rank = {
+            semantic_ref: index
+            for index, semantic_ref in enumerate(move_semantic_refs)
+        }
+        relation_refs = plan_applicable_relation_refs
+        relation_kinds = tuple(
+            relation.type for relation in applicable_relation_rows
+        )
+        if (
+            candidate_applicable_relation_refs != relation_refs
+            or len(relation_refs) != len(set(relation_refs))
+            or any(
+                type(relation_kind) is not str or not relation_kind
+                for relation_kind in relation_kinds
+            )
+        ):
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        applicable_relation_ref_set = set(relation_refs)
+        relation_rank = {
+            relation_ref: index
+            for index, relation_ref in enumerate(relation_refs)
+        }
+        relation_by_ref = dict(zip(
+            relation_refs,
+            applicable_relation_rows,
+            strict=True,
+        ))
+        selected_nucleus_rank = {
+            nucleus.nucleus_id: index
+            for index, nucleus in enumerate(selected_grounded_plan.nuclei)
+        }
+
+        # Keep the owning projection beside every component.  Dataclass
+        # equality is payload equality, not provenance, and therefore cannot
+        # be used to recover a component's relation path.
+        component_entries: list[tuple[int, int, Any, Any]] = []
+        for projection_rank, semantic_projection in enumerate(
+            selected_projection_rows
+        ):
+            owned_applicable_refs = set(
+                semantic_projection.relation_path_refs
+            ).intersection(applicable_relation_ref_set)
+            for component_rank, component in enumerate(
+                semantic_projection.component_rows
+            ):
+                role_key = getattr(component, "role_key", "")
+                if component.source_object_ref not in semantic_domain:
+                    continue
+                if (
+                    role_key.removeprefix("role:").upper()
+                    in _REALIZABLE_RECEPTION_ENDPOINT_ROLES
+                    and not owned_applicable_refs
+                ):
+                    continue
+                component_entries.append(
+                    (
+                        projection_rank,
+                        component_rank,
+                        semantic_projection,
+                        component,
+                    )
+                )
+        if not component_entries:
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAPABILITY_GAP"
+            )
+        if any(
+            type(entry[3].source_object_ref) is not str
+            or not entry[3].source_object_ref
+            or entry[3].source_object_ref not in move_semantic_rank
+            for entry in component_entries
+        ):
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        component_entries.sort(
+            key=lambda entry: (
+                move_semantic_rank[entry[3].source_object_ref],
+                entry[0],
+                entry[1],
+            )
+        )
+        if (
+            _ordered(
+                entry[3].source_object_ref for entry in component_entries
+            )
+            != move_semantic_refs
+        ):
+            raise CMEEStage1ContractError(
+                "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
+            )
+        try:
+            lexical_rows = tuple(
+                _bounded_source_grounded_lexemes(
+                    nucleus_by_id[nucleus_id_by_semantic_ref[semantic_ref]],
+                    resolver,
+                )
+                for semantic_ref in move_semantic_refs
+            )
+        except KeyError:
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            ) from None
+        except GroundedHumanReceptionSurfaceError as exc:
+            _raise_realizable_reception_failure(exc)
+        if (
+            len(lexical_rows) != len(move_semantic_refs)
+            or any(
+                type(argument) is not str
+                or not argument.strip()
+                or type(head) is not str
+                or not head.strip()
+                for argument, head in lexical_rows
+            )
+        ):
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAPABILITY_GAP"
+            )
+        lexical_form_by_semantic_ref = {
+            semantic_ref: lexical_row[0]
+            for semantic_ref, lexical_row in zip(
+                move_semantic_refs,
+                lexical_rows,
+                strict=True,
+            )
+        }
+        if any(
+            entry[3].source_object_ref not in lexical_form_by_semantic_ref
+            for entry in component_entries
+        ):
+            raise CMEEStage1ContractError(
+                "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
+            )
+
+        def _component_relation_refs(
+            entry: tuple[int, int, Any, Any],
+        ) -> tuple[str, ...]:
+            owner_relation_refs = set(entry[2].relation_path_refs)
+            return tuple(
+                relation_ref
+                for relation_ref in relation_refs
+                if relation_ref in owner_relation_refs
+            )
+
+        def _component_relation_matches(
+            entry: tuple[int, int, Any, Any],
+            relation_ref: str,
+        ) -> bool:
+            component = entry[3]
+            role = component.role_key.removeprefix("role:").upper()
+            relation = relation_by_ref[relation_ref]
+            expected_endpoints = (
+                _source_grounded_relation_endpoint_nucleus_roles(
+                    relation,
+                    nucleus_by_id,
+                    selected_nucleus_rank,
+                )
+            )
+            return any(
+                expected_role == role
+                and semantic_ref_by_nucleus_id.get(nucleus_id)
+                == component.source_object_ref
+                for nucleus_id, expected_role in expected_endpoints
+            )
+
+        argument_entries: list[
+            tuple[tuple[int, int, Any, Any], str | None]
+        ] = []
+        for entry in component_entries:
+            component = entry[3]
+            role = component.role_key.removeprefix("role:").upper()
+            if role in _REALIZABLE_RECEPTION_ENDPOINT_ROLES:
+                matching_relation_refs = tuple(
+                    relation_ref
+                    for relation_ref in _component_relation_refs(entry)
+                    if _component_relation_matches(entry, relation_ref)
+                )
+                if not matching_relation_refs:
+                    raise CMEEStage1ContractError(
+                        "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
+                    )
+                for relation_ref in matching_relation_refs:
+                    _realizable_reception_case_marker_for_role(
+                        role,
+                        relation_by_ref[relation_ref].type,
+                    )
+                argument_entries.extend(
+                    (entry, relation_ref)
+                    for relation_ref in matching_relation_refs
+                )
+            else:
+                _realizable_reception_case_marker_for_role(role)
+                if _component_relation_refs(entry):
+                    raise CMEEStage1ContractError(
+                        "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
+                    )
+                argument_entries.append((entry, None))
+        argument_entries.sort(
+            key=lambda row: (
+                move_semantic_rank[row[0][3].source_object_ref],
+                -1 if row[1] is None else relation_rank[row[1]],
+                row[0][0],
+                row[0][1],
+            )
+        )
+        direct_argument_role_keys = {
+            (
+                entry[3].source_object_ref,
+                entry[3].role_key.removeprefix("role:").upper(),
+            )
+            for entry, relation_ref in argument_entries
+            if relation_ref is None
+        }
+
+        arguments: list[RealizableReceptionArgumentV1] = []
+        argument_by_key: dict[
+            tuple[str, str, str | None], RealizableReceptionArgumentV1
+        ] = {}
+        for entry, relation_ref in argument_entries:
+            semantic_projection = entry[2]
+            component = entry[3]
+            semantic_ref = component.source_object_ref
+            node = node_by_ref.get(semantic_ref)
+            lexical_form = lexical_form_by_semantic_ref[semantic_ref]
+            role = (
+                component.role_key.removeprefix("role:").upper()
+                if (
+                    type(component.role_key) is str
+                    and component.role_key.startswith("role:")
+                )
+                else ""
+            )
+            relation_kind = (
+                relation_by_ref[relation_ref].type
+                if relation_ref is not None
+                else None
+            )
+            case_marker = _realizable_reception_case_marker_for_role(
+                role,
+                relation_kind,
+            )
+            if (
+                node is None
+                or type(component.source_evidence_refs) is not tuple
+                or not component.source_evidence_refs
+                or any(
+                    type(ref) is not str or not ref
+                    for ref in component.source_evidence_refs
+                )
+                or set(
+                    _evidence_ref(
+                        evidence_id,
+                        phase_A.grounded_graph.source_version,
+                    )
+                    for evidence_id in node.evidence_ids
+                )
+                != set(component.source_evidence_refs)
+                or any(
+                    evidence_ref not in evidence_ref_by_canonical_ref
+                    for evidence_ref in component.source_evidence_refs
+                )
+                or not set(component.source_evidence_refs).issubset(
+                    semantic_projection.source_evidence_refs
+                )
+            ):
+                raise CMEEStage1ContractError(
+                    "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
+                )
+            try:
+                nucleus = nucleus_by_id[
+                    nucleus_id_by_semantic_ref[semantic_ref]
+                ]
+            except KeyError:
+                raise CMEEStage1ContractError(
+                    "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                ) from None
+            if set(component.source_evidence_refs) != set(
+                _canonical_evidence_refs_for_span_ids(
+                    nucleus.source_span_ids
+                )
+            ):
+                raise CMEEStage1ContractError(
+                    "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                )
+            relation_evidence_refs: tuple[str, ...] = ()
+            relation_endpoint_ref: str | None = None
+            direction_ref: str | None = None
+            if relation_ref is not None:
+                relation = relation_by_ref[relation_ref]
+                edge = edge_by_ref.get(relation_ref)
+                relation_evidence_refs = (
+                    _canonical_evidence_refs_for_span_ids(
+                        relation.source_span_ids
+                    )
+                )
+                if (
+                    edge is None
+                    or set(relation_evidence_refs)
+                    != {
+                        _evidence_ref(
+                            evidence_id,
+                            phase_A.grounded_graph.source_version,
+                        )
+                        for evidence_id in edge.evidence_ids
+                    }
+                    or not set(relation_evidence_refs).issubset(
+                        semantic_projection.source_evidence_refs
+                    )
+                ):
+                    raise CMEEStage1ContractError(
+                        "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+                    )
+                relation_endpoint_ref = (
+                    _source_grounded_relation_endpoint_ref(
+                        relation_ref,
+                        semantic_ref,
+                        role,
+                    )
+                )
+                direction_side = _source_grounded_direction_side(
+                    relation.type,
+                    role,
+                )
+                if direction_side is not None:
+                    direction_ref = _source_grounded_direction_ref(
+                        relation_ref,
+                        semantic_ref,
+                        role,
+                        direction_side,
+                    )
+            argument_evidence_refs = _ordered(
+                (
+                    *component.source_evidence_refs,
+                    *relation_evidence_refs,
+                )
+            )
+            shared_current_user_subject = bool(
+                relation_ref is None
+                and role == "EXPERIENCER"
+                and (semantic_ref, "PRIMARY") in direct_argument_role_keys
+                and _enum_or_text(nucleus.semantic_frame.actor).lower()
+                in {"current_user", "user"}
+            )
+            candidate_argument = RealizableReceptionArgumentV1(
+                semantic_ref=semantic_ref,
+                source_evidence_refs=argument_evidence_refs,
+                semantic_role=role,
+                lexical_form=lexical_form,
+                requirement="REQUIRED",
+                omission_permission="FORBIDDEN",
+                zero_realization_condition_refs=(
+                    ("shared-subject:current-user",)
+                    if shared_current_user_subject
+                    else ()
+                ),
+                omission_condition_refs=(),
+                case_marker=case_marker,
+                direction_ref=direction_ref,
+                relation_endpoint_ref=relation_endpoint_ref,
+                realization=(
+                    "ZERO" if shared_current_user_subject else "EXPLICIT"
+                ),
+            )
+            key = (semantic_ref, role, relation_endpoint_ref)
+            prior = argument_by_key.get(key)
+            if prior is not None:
+                if prior != candidate_argument:
+                    raise CMEEStage1ContractError(
+                        "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
+                    )
+                continue
+            argument_by_key[key] = candidate_argument
+            arguments.append(candidate_argument)
+        if not arguments:
+            raise CMEEStage1ContractError(
+                "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
+            )
+
+        source_evidence_refs = _ordered(
+            ref
+            for argument in arguments
+            for ref in argument.source_evidence_refs
+        )
+        expected_move_evidence_refs = _ordered(
+            (
+                *(
+                    ref
+                    for semantic_ref in move_semantic_refs
+                    for ref in _canonical_evidence_refs_for_span_ids(
+                        nucleus_by_id[
+                            nucleus_id_by_semantic_ref[semantic_ref]
+                        ].source_span_ids
+                    )
+                ),
+                *(
+                    ref
+                    for relation in applicable_relation_rows
+                    for ref in _canonical_evidence_refs_for_span_ids(
+                        relation.source_span_ids
+                    )
+                ),
+            )
+        )
+        if (
+            set(source_evidence_refs) != set(expected_move_evidence_refs)
+            or not set(move.source_evidence_span_ids).issubset(
+                evidence_ref_by_canonical_ref[ref].source_span_id
+                for ref in source_evidence_refs
+            )
+        ):
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        component_rows = [entry[3] for entry in component_entries]
+        semantic_refs = _ordered(
+            argument.semantic_ref for argument in arguments
+        )
+        subject_refs = _ordered(
+            argument.semantic_ref
+            for argument in arguments
+            if argument.semantic_role
+            in {"PRIMARY", "LEFT", "RIGHT", "BEFORE", "AFTER", "CHANGE", "EFFECT"}
+        ) or semantic_refs[:1]
+        actor_refs = _ordered(
+            argument.semantic_ref
+            for argument in arguments
+            if argument.semantic_role in {"ACTION", "CAUSE"}
+            or any(
+                component.source_object_ref == argument.semantic_ref
+                and component.semantic_kind_key == "semantic-kind:action"
+                for component in component_rows
+            )
+        )
+        experiencer_refs = _ordered(
+            argument.semantic_ref
+            for argument in arguments
+            if argument.semantic_role == "EXPERIENCER"
+        )
+        qualifier_refs = _ordered(
+            ref for component in component_rows for ref in component.qualifier_refs
+        )
+        if any(type(ref) is not str or not ref for ref in qualifier_refs):
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        target_component_rows = tuple(
+            component
+            for component in component_rows
+            if component.source_object_ref in set(target_semantic_refs)
+        )
+        # LEFT/RIGHT rows describe a target's participation in a relation;
+        # they do not replace an available content-bearing predicate duty for
+        # that same target.  Prefer the selected meaning's non-endpoint row
+        # and use an endpoint row only when it is the sole target carrier.
+        content_component_rows = tuple(
+            component
+            for component in target_component_rows
+            if component.role_key not in {"role:left", "role:right"}
+        )
+        scalar_component_rows = (
+            content_component_rows or target_component_rows
+        )
+        if not scalar_component_rows:
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        scalar_qualifier_refs = _ordered(
+            ref
+            for component in scalar_component_rows
+            for ref in component.qualifier_refs
+        )
+        predicate_kind = _realizable_reception_axis(
+            (
+                component.typed_predicate_key
+                for component in scalar_component_rows
+            ),
+            prefix="predicate:",
+            empty="source_bounded",
+        )
+        polarity = _realizable_reception_axis(
+            (component.polarity_key for component in scalar_component_rows),
+            prefix="polarity:",
+            empty="source_bounded",
+        )
+        modality = _realizable_reception_axis(
+            (component.modality_key for component in scalar_component_rows),
+            prefix="modality:",
+            empty="source_bounded",
+        )
+        time_scope = _realizable_reception_axis(
+            (
+                component.temporal_state_key
+                for component in scalar_component_rows
+            ),
+            prefix="time:",
+            empty="current_input",
+        )
+        scope = _realizable_reception_axis(
+            (component.scope_key for component in scalar_component_rows),
+            prefix="scope:",
+            empty="source_bounded",
+        )
+        aspect = _realizable_reception_axis(
+            (
+                ref
+                for ref in scalar_qualifier_refs
+                if ref.startswith("aspect:")
+            ),
+            prefix="aspect:",
+            empty="unknown",
+        )
+        degree = _realizable_reception_axis(
+            (
+                ref
+                for ref in scalar_qualifier_refs
+                if ref.startswith("degree:")
+            ),
+            prefix="degree:",
+            empty="source_bounded",
+        )
+        quantity = _realizable_reception_axis(
+            (
+                ref
+                for ref in scalar_qualifier_refs
+                if ref.startswith("quantity:")
+            ),
+            prefix="quantity:",
+            empty="not_applicable",
+        )
+        lexical_head = lexical_rows[0][1]
+        effective_reference_mode = reception_effective_move_reference_mode(
+            reception_plan,
+            move,
+            recovery_stage,
+        )
+        if effective_reference_mode == "anaphoric_first":
+            reference_mode = "ANAPHORIC"
+        elif effective_reference_mode == "short_anchor_if_ambiguous":
+            reference_mode = (
+                "COMPOSITE" if len(lexical_rows) > 1 else "EXPLICIT"
+            )
+        elif effective_reference_mode == "explicit_emlis_counterposition":
+            reference_mode = "EXPLICIT"
+        else:
+            raise CMEEStage1ContractError(
+                "REALIZABLE_RECEPTION_EXPRESSION_REFERENCE_GAP"
+            )
+        if reference_mode == "ANAPHORIC":
+            antecedent_refs = semantic_refs
+            antecedent_condition = "PRIOR_LAYER1_EXACT_SEMANTIC_COVER"
+        elif reference_mode in {"COMPOSITE", "EXPLICIT"}:
+            antecedent_refs = ()
+            antecedent_condition = None
+        else:
+            raise CMEEStage1ContractError(
+                "REALIZABLE_RECEPTION_EXPRESSION_REFERENCE_GAP"
+            )
+        direction_refs = _ordered(
+            argument.direction_ref
+            for argument in arguments
+            if argument.direction_ref is not None
+        )
+        relation_endpoint_refs = _ordered(
+            argument.relation_endpoint_ref
+            for argument in arguments
+            if argument.relation_endpoint_ref is not None
+        )
+        particle_plan = tuple(
+            f"particle:{argument.semantic_role}:{argument.case_marker or 'ZERO'}"
+            for argument in arguments
+        )
+        inflection_plan = (
+            f"predicate:{predicate_kind}",
+            f"polarity:{polarity}",
+            f"modality:{modality}",
+            f"time:{time_scope}",
+            f"aspect:{aspect}",
+            f"degree:{degree}",
+            f"quantity:{quantity}",
+            f"scope:{scope}",
+            f"focus-kind:{focus_kind}",
+            "head-class:source-grounded-proposition",
+            "politeness:polite",
+            f"reception-form:{recovery_stage}",
+            f"clause-form:{clause_form_by_move_id[move.move_id]}",
+        )
+        nominalization_plan = (
+            "nominalization:source-grounded-reception-object",
+        )
+        relation_kinds = tuple(relation_kinds)
+        if any(
+            type(relation_kind) is not str or not relation_kind
+            for relation_kind in relation_kinds
+        ):
+            raise CMEEStage1ContractError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        clause_link_plan = (
+            tuple(
+                f"relation-kind:{relation_kind}"
+                for relation_kind in relation_kinds
+            )
+            or ("clause-link:none",)
+        )
+        provenance_refs = _ordered(
+            (
+                *branch_provenance,
+                *contribution_refs,
+                *(
+                    semantic_projection.interpretation_candidate_ref
+                    for semantic_projection in selected_projection_rows
+                ),
+                *source_evidence_refs,
+                *relation_refs,
+            )
+        )
+        draft = SourceGroundedRealizableReceptionExpressionV1(
+            schema_version=(
+                SOURCE_GROUNDED_RECEPTION_EXPRESSION_SCHEMA_VERSION
+            ),
+            expression_ref="",
+            meaning_outcome_ref=meaning_outcome_ref,
+            reception_binding_ref=reception_binding_ref,
+            move_id=move.move_id,
+            source_evidence_refs=source_evidence_refs,
+            actor_refs=actor_refs,
+            subject_refs=subject_refs,
+            experiencer_refs=experiencer_refs,
+            predicate_kind=predicate_kind,
+            lexical_head=lexical_head,
+            arguments=tuple(arguments),
+            polarity=polarity,
+            modality=modality,
+            time_scope=time_scope,
+            aspect=aspect,
+            degree=degree,
+            quantity=quantity,
+            scope=scope,
+            qualifier_refs=qualifier_refs,
+            relation_refs=relation_refs,
+            relation_endpoint_refs=relation_endpoint_refs,
+            direction_refs=direction_refs,
+            reference_mode=reference_mode,
+            antecedent_refs=antecedent_refs,
+            antecedent_condition=antecedent_condition,
+            particle_plan=particle_plan,
+            inflection_plan=inflection_plan,
+            nominalization_plan=nominalization_plan,
+            clause_link_plan=clause_link_plan,
+            provenance_refs=provenance_refs,
+        )
+        try:
+            expressions.append(
+                identify_source_grounded_reception_expression(draft)
+            )
+        except GroundedHumanReceptionSurfaceError as exc:
+            _raise_realizable_reception_failure(exc)
+
+    if (
+        tuple(expression.move_id for expression in expressions)
+        != tuple(move.move_id for move in active_moves)
+        or len({row.move_id for row in expressions}) != len(expressions)
+        or len({row.expression_ref for row in expressions}) != len(expressions)
+        or not {
+            move.move_id for move in active_moves if move.required
+        }.issubset(row.move_id for row in expressions)
+    ):
+        raise CMEEStage1ContractError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        )
+    try:
+        validated_rows = validate_source_grounded_reception_expressions(
+            reception_plan,
+            tuple(expressions),
+            recovery_stage,
+        )
+    except GroundedHumanReceptionSurfaceError as exc:
+        _raise_realizable_reception_failure(exc)
+    if tuple(expression for _move, expression in validated_rows) != tuple(
+        expressions
+    ):
+        raise CMEEStage1ContractError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        )
+    return tuple(expressions)
+
+
+def _build_source_grounded_reception_expressions(
+    *,
+    source: AdmittedTextSource,
+    phase_A: "Stage1SubjectivePlanningInputs",
+    projection: EmlisStage1Projection,
+    selected_grounded_plan: GroundedObservationPlan,
+    reception_plan: GroundedHumanReceptionPlan,
+    recovery_stage: str,
+    authority_expressions: (
+        tuple[SourceGroundedRealizableReceptionExpressionV1, ...] | None
+    ) = None,
+) -> tuple[SourceGroundedRealizableReceptionExpressionV1, ...]:
+    """Expose the derived rows without making them their own authority."""
+
+    if authority_expressions is None:
+        return _derive_source_grounded_reception_expression_authority(
+            source=source,
+            phase_A=phase_A,
+            projection=projection,
+            selected_grounded_plan=selected_grounded_plan,
+            reception_plan=reception_plan,
+            recovery_stage=recovery_stage,
+        )
+    if (
+        type(authority_expressions) is not tuple
+        or not authority_expressions
+        or any(
+            type(expression)
+            is not SourceGroundedRealizableReceptionExpressionV1
+            for expression in authority_expressions
+        )
+    ):
+        raise CMEEStage1ContractError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        )
+    return authority_expressions
+
+
 def compile_stage1_response(
     *,
     source: AdmittedTextSource,
@@ -10783,6 +13207,8 @@ def compile_stage1_response(
         tuple[
             GroundedSentencePlan,
             GroundedSurfaceResult,
+            GroundedHumanReceptionSurface,
+            tuple[SentenceSurfacePlacement, ...],
             tuple[int, int, int, int],
             str,
         ]
@@ -10808,13 +13234,73 @@ def compile_stage1_response(
         )
         if sentence_issues:
             continue
-        try:
-            surface_result = realize_grounded_sentence_plan(
-                sentence_plan,
-                selected_grounded_plan,
-                resolver,
+        authority_expressions = (
+            _derive_source_grounded_reception_expression_authority(
+                source=source,
+                phase_A=phase_A,
+                projection=projection,
+                selected_grounded_plan=selected_grounded_plan,
+                reception_plan=reception_plan,
+                recovery_stage=recovery_stage,
             )
-        except GroundedSentenceSurfaceError:
+        )
+        expressions = _build_source_grounded_reception_expressions(
+            source=source,
+            phase_A=phase_A,
+            projection=projection,
+            selected_grounded_plan=selected_grounded_plan,
+            reception_plan=reception_plan,
+            recovery_stage=recovery_stage,
+            authority_expressions=authority_expressions,
+        )
+        _validate_selected_reception_expression_lineage(
+            phase_A=phase_A,
+            projection=projection,
+            reception_plan=reception_plan,
+            recovery_stage=recovery_stage,
+            expressions=expressions,
+            authority_expressions=authority_expressions,
+        )
+        reception_lines = tuple(
+            line
+            for line in sentence_plan.lines
+            if line.binding.line_role == "human_follow"
+        )
+        if len(reception_lines) != 1:
+            raise CMEEStage1ContractError(
+                "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP"
+            )
+        try:
+            human_reception_surface = (
+                realize_source_grounded_human_reception(
+                    reception_plan,
+                    expressions,
+                    {item.nucleus_id: item for item in selected_grounded_plan.nuclei},
+                    resolver,
+                    plan=selected_grounded_plan,
+                    recovery_stage=recovery_stage,
+                    clause_plans=(
+                        reception_lines[0].reception_clause_plans
+                    ),
+                )
+            )
+            surface_result, reception_placements = (
+                realize_grounded_sentence_plan_with_human_reception(
+                    sentence_plan,
+                    selected_grounded_plan,
+                    resolver,
+                    human_reception_surface=human_reception_surface,
+                )
+            )
+        except GroundedHumanReceptionSurfaceError as exc:
+            if str(exc) in _REALIZABLE_RECEPTION_NAMED_FAILURES:
+                _raise_realizable_reception_failure(exc)
+            continue
+        except GroundedSentenceSurfaceError as exc:
+            if "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP" in str(exc):
+                raise CMEEStage1ContractError(
+                    "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP"
+                ) from None
             continue
         surface_issues = validate_grounded_surface_result(
             surface_result,
@@ -10879,6 +13365,8 @@ def compile_stage1_response(
             (
                 sentence_plan,
                 surface_result,
+                human_reception_surface,
+                reception_placements,
                 (
                     retention_score,
                     specificity_score,
@@ -10904,17 +13392,33 @@ def compile_stage1_response(
         (
             sentence_plan,
             surface_result,
+            human_reception_surface,
+            reception_placements,
             (*score, -text_frequency[text_hash]),
             text_hash,
         )
-        for sentence_plan, surface_result, score, text_hash
+        for (
+            sentence_plan,
+            surface_result,
+            human_reception_surface,
+            reception_placements,
+            score,
+            text_hash,
+        )
         in hard_valid_candidates
     )
-    selected_sentence_plan, selected_surface, selection_score, _text_hash = (
+    (
+        selected_sentence_plan,
+        selected_surface,
+        selected_human_reception_surface,
+        selected_reception_placements,
+        selection_score,
+        _text_hash,
+    ) = (
         sorted(
             scored_candidates,
             key=lambda row: (
-                *(-value for value in row[2]),
+                *(-value for value in row[4]),
                 row[0].recovery_stage,
             ),
         )[0]
@@ -10927,7 +13431,14 @@ def compile_stage1_response(
                 score,
                 text_hash,
             )
-            for sentence_plan, _surface, score, text_hash
+            for (
+                sentence_plan,
+                _surface,
+                _human_surface,
+                _placements,
+                score,
+                text_hash,
+            )
             in scored_candidates
         ),
     )
@@ -10941,6 +13452,8 @@ def compile_stage1_response(
         grounded_plan=selected_grounded_plan,
         sentence_plan=selected_sentence_plan,
         surface_result=selected_surface,
+        human_reception_surface=selected_human_reception_surface,
+        reception_placements=selected_reception_placements,
         selection_score=selection_score,
         hard_valid_candidate_count=len(scored_candidates),
         candidate_set_ref=candidate_set_ref,

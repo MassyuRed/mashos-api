@@ -212,6 +212,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
                     self.assertIn("unknown", observation.semantic_marker_codes)
                 self.assertIn("target_intention", reception.reception_marker_codes)
                 self.assertIn("protect", reception.reception_marker_codes)
+                self.assertIn("receive", reception.reception_marker_codes)
                 evaluation = evaluate_grounded_surface_body_inverse(
                     body=surface.text.encode("utf-8"),
                     plan=plan,
@@ -219,16 +220,67 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
                     resolver=resolver,
                 )
                 self.assertTrue(evaluation.passed, evaluation.failure_codes)
-                protective_why = (
-                    "見失わず、大切な向きとして受け止めています"
+                ordered_markers = tuple(
+                    next(
+                        marker
+                        for marker in witness.markers
+                        if marker.section == "reception"
+                        and marker.marker_kind == "reception"
+                        and marker.marker_code == marker_code
+                    )
+                    for marker_code in (
+                        "target_intention",
+                        "protect",
+                        "receive",
+                    )
                 )
-                self.assertIn(protective_why, surface.text)
-                without_why = surface.text.replace(
-                    protective_why,
-                    "そこにあります",
+                self.assertEqual(
+                    tuple(
+                        marker.utf8_byte_start
+                        for marker in ordered_markers
+                    ),
+                    tuple(
+                        sorted(
+                            marker.utf8_byte_start
+                            for marker in ordered_markers
+                        )
+                    ),
+                )
+                body = surface.text.encode("utf-8")
+                protect_spans = tuple(
+                    marker
+                    for marker in witness.markers
+                    if marker.section == "reception"
+                    and marker.marker_kind == "reception"
+                    and marker.marker_code == "protect"
+                )
+                self.assertTrue(protect_spans)
+                without_why = body
+                for marker in sorted(
+                    protect_spans,
+                    key=lambda row: row.utf8_byte_start,
+                    reverse=True,
+                ):
+                    without_why = (
+                        without_why[: marker.utf8_byte_start]
+                        + "そこにあり".encode("utf-8")
+                        + without_why[marker.utf8_byte_end :]
+                    )
+                self.assertNotEqual(without_why, body)
+                tampered_witness = parse_grounded_surface_body_bytes(
+                    without_why
+                )
+                tampered_reception = next(
+                    row
+                    for row in tampered_witness.lines
+                    if row.section == "reception"
+                )
+                self.assertNotIn(
+                    "protect",
+                    tampered_reception.reception_marker_codes,
                 )
                 missing_why = evaluate_grounded_surface_body_inverse(
-                    body=without_why.encode("utf-8"),
+                    body=without_why,
                     plan=plan,
                     sentence_plan=sentence_plan,
                     resolver=resolver,
@@ -253,15 +305,78 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         self.assertIn("「少し整えたい気持ちもある」", observation)
         self.assertIn("「疲れている」", observation)
         self.assertNotIn("「少し整えたい気持ちもある」", reception)
-        self.assertIn("その願い", reception)
         self.assertIn("疲れている", reception)
-        self.assertIn("重なる中で", reception)
-        self.assertIn(
-            "見失わず、大切な向きとして受け止めています",
-            reception,
+        witness = parse_grounded_surface_body_bytes(
+            surface.text.encode("utf-8")
+        )
+        parsed_reception = next(
+            row for row in witness.lines if row.section == "reception"
+        )
+        self.assertIn("coexistence", parsed_reception.relation_marker_codes)
+        body = surface.text.encode("utf-8")
+        target_markers = tuple(
+            marker
+            for marker in witness.markers
+            if marker.section == "reception"
+            and marker.marker_kind == "reception"
+            and marker.marker_code == "target_intention"
+        )
+        self.assertEqual(len(target_markers), 1)
+        target_marker = target_markers[0]
+        target_bytes = body[
+            target_marker.utf8_byte_start : target_marker.utf8_byte_end
+        ]
+        self.assertTrue(target_bytes)
+        target_text = target_bytes.decode("utf-8")
+        self.assertEqual(reception.count(target_text), 1)
+        relation_marker = next(
+            marker
+            for marker in witness.markers
+            if marker.section == "reception"
+            and marker.marker_kind == "relation"
+            and marker.marker_code == "coexistence"
+        )
+        protect_marker = min(
+            (
+                marker
+                for marker in witness.markers
+                if marker.section == "reception"
+                and marker.marker_kind == "reception"
+                and marker.marker_code == "protect"
+                and marker.utf8_byte_start
+                > max(
+                    target_marker.utf8_byte_start,
+                    relation_marker.utf8_byte_start,
+                )
+            ),
+            key=lambda row: row.utf8_byte_start,
+        )
+        receive_marker = min(
+            (
+                marker
+                for marker in witness.markers
+                if marker.section == "reception"
+                and marker.marker_kind == "reception"
+                and marker.marker_code == "receive"
+                and marker.utf8_byte_start > protect_marker.utf8_byte_start
+            ),
+            key=lambda row: row.utf8_byte_start,
+        )
+        self.assertLess(
+            max(
+                relation_marker.utf8_byte_start,
+                target_marker.utf8_byte_start,
+            ),
+            protect_marker.utf8_byte_start,
+        )
+        self.assertLess(
+            protect_marker.utf8_byte_start,
+            receive_marker.utf8_byte_start,
         )
 
-        wrong_target = reception.replace("その願い", "その内容", 1)
+        wrong_target = reception.replace(target_text, "その内容", 1)
+        self.assertNotEqual(wrong_target, reception)
+        self.assertEqual(wrong_target.count(target_text), 0)
         wrong_target_evaluation = evaluate_grounded_surface_body_inverse(
             body=(observation + "Emlisから：\n" + wrong_target).encode("utf-8"),
             plan=plan,
@@ -351,20 +466,31 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         reception_plan = plan.response_plan.human_reception_plan
         self.assertIsNotNone(reception_plan)
         assert reception_plan is not None
-        future_move = next(
-            move
-            for move in reception_plan.moves
-            if move.reception_act == "honor_concrete_effort"
+        reception_line_plan = next(
+            line
+            for line in sentence_plan.lines
+            if line.binding.line_role == "human_follow"
         )
-        generic_future_clause = (
-            surface_owner._render_generic_final_reception_move(
-                move=future_move,
-                target="その向き",
-                context="",
-                target_kind="future_action_intention",
+        replayed_reception = (
+            reception_owner.replay_source_grounded_human_reception_from_plan(
+                reception_plan,
+                {
+                    nucleus.nucleus_id: nucleus
+                    for nucleus in plan.nuclei
+                },
+                resolver,
+                plan=plan,
+                recovery_stage=sentence_plan.recovery_stage,
+                clause_plans=reception_line_plan.reception_clause_plans,
             )
         )
-        self.assertEqual(generic_future_clause.count("その向き"), 1)
+        reception_line = next(
+            line
+            for line in surface.lines
+            if line.binding.line_role == "human_follow"
+        )
+        self.assertEqual(replayed_reception.text, reception_line.text)
+        self.assertEqual(replayed_reception.text.count("その向き"), 1)
         evaluation = evaluate_grounded_surface_body_inverse(
             body=surface.text.encode("utf-8"),
             plan=plan,
@@ -372,12 +498,24 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             resolver=resolver,
         )
         self.assertTrue(evaluation.passed, evaluation.failure_codes)
-        completed_tamper = surface.text.replace(
-            "という、これからの行動",
-            "という実際の行動",
-        ).replace("その向き", "その手間")
+        body = surface.text.encode("utf-8")
+        intention_markers = tuple(
+            marker
+            for marker in witness.markers
+            if marker.section == "observation"
+            and marker.marker_kind == "semantic"
+            and marker.marker_code == "intention"
+        )
+        self.assertEqual(len(intention_markers), 1)
+        intention_marker = intention_markers[0]
+        completed_tamper = (
+            body[: intention_marker.utf8_byte_start]
+            + "実際の行動".encode("utf-8")
+            + body[intention_marker.utf8_byte_end :]
+        )
+        self.assertNotEqual(completed_tamper, body)
         tampered_evaluation = evaluate_grounded_surface_body_inverse(
-            body=completed_tamper.encode("utf-8"),
+            body=completed_tamper,
             plan=plan,
             sentence_plan=sentence_plan,
             resolver=resolver,
@@ -519,6 +657,9 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         observation = next(
             row for row in witness.lines if row.section == "observation"
         )
+        reception = next(
+            row for row in witness.lines if row.section == "reception"
+        )
         self.assertIn("effort", observation.semantic_marker_codes)
         self.assertIn(
             "「帰ってから少し散歩した」という行動",
@@ -526,7 +667,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         )
         self.assertNotIn("という実際の行動", surface.lines[0].text)
         self.assertIn("実際の行動", surface.text)
-        self.assertIn("その手間", surface.text)
+        self.assertIn("target_effort", reception.reception_marker_codes)
         evaluation = evaluate_grounded_surface_body_inverse(
             body=surface.text.encode("utf-8"),
             plan=plan,
@@ -538,6 +679,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             "という行動から",
             "という、これからの行動から",
         )
+        self.assertNotEqual(future_tamper, surface.text)
         tampered_evaluation = evaluate_grounded_surface_body_inverse(
             body=future_tamper.encode("utf-8"),
             plan=plan,
@@ -636,26 +778,85 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         )
         self.assertTrue(gate.passed, gate.rejection_reasons)
 
-        target_tamper = surface.text.replace("そのつらさ", "そのこと", 1)
+        body = surface.text.encode("utf-8")
+        target_spans = tuple(
+            marker
+            for marker in witness.markers
+            if marker.section == "reception"
+            and marker.marker_kind == "reception"
+            and marker.marker_code == "target_burden"
+        )
+        self.assertTrue(target_spans)
+        target_tamper = body
+        for marker in sorted(
+            target_spans,
+            key=lambda row: row.utf8_byte_start,
+            reverse=True,
+        ):
+            target_tamper = (
+                target_tamper[: marker.utf8_byte_start]
+                + "そのこと".encode("utf-8")
+                + target_tamper[marker.utf8_byte_end :]
+            )
+        self.assertNotEqual(target_tamper, body)
+        target_tamper_witness = parse_grounded_surface_body_bytes(
+            target_tamper
+        )
+        target_tamper_reception = next(
+            item
+            for item in target_tamper_witness.lines
+            if item.section == "reception"
+        )
+        self.assertNotIn(
+            "target_burden",
+            target_tamper_reception.reception_marker_codes,
+        )
         target_evaluation = evaluate_grounded_surface_body_inverse(
-            body=target_tamper.encode("utf-8"),
+            body=target_tamper,
             plan=plan,
             sentence_plan=sentence_plan,
             resolver=resolver,
         )
         self.assertFalse(target_evaluation.passed)
         self.assertIn(
-            "body_inverse_reception_target_duty_missing:rm1",
+            "body_inverse_reception_target_referent_missing:rm1",
             target_evaluation.failure_codes,
         )
 
-        receive_tamper = surface.text.replace(
-            "受け止めています",
-            "そこにあります",
-            1,
+        receive_spans = tuple(
+            marker
+            for marker in witness.markers
+            if marker.section == "reception"
+            and marker.marker_kind == "reception"
+            and marker.marker_code == "receive"
+        )
+        self.assertTrue(receive_spans)
+        receive_tamper = body
+        for marker in sorted(
+            receive_spans,
+            key=lambda row: row.utf8_byte_start,
+            reverse=True,
+        ):
+            receive_tamper = (
+                receive_tamper[: marker.utf8_byte_start]
+                + "そこにあります".encode("utf-8")
+                + receive_tamper[marker.utf8_byte_end :]
+            )
+        self.assertNotEqual(receive_tamper, body)
+        receive_tamper_witness = parse_grounded_surface_body_bytes(
+            receive_tamper
+        )
+        receive_tamper_reception = next(
+            item
+            for item in receive_tamper_witness.lines
+            if item.section == "reception"
+        )
+        self.assertNotIn(
+            "receive",
+            receive_tamper_reception.reception_marker_codes,
         )
         receive_evaluation = evaluate_grounded_surface_body_inverse(
-            body=receive_tamper.encode("utf-8"),
+            body=receive_tamper,
             plan=plan,
             sentence_plan=sentence_plan,
             resolver=resolver,
@@ -752,9 +953,45 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         )
 
     def test_reception_target_attention_why_duties_are_protected(self) -> None:
-        _plan, _sentence_plan, surface, _resolver = _artifacts("I6-C01")
-        tampered = surface.text.replace("が特に印象に残り、", "があり、")
-        evaluation = self._evaluate("I6-C01", tampered)
+        plan, sentence_plan, surface, resolver = _artifacts("I6-C01")
+        body = surface.text.encode("utf-8")
+        witness = parse_grounded_surface_body_bytes(body)
+        attention_spans = tuple(
+            marker
+            for marker in witness.markers
+            if marker.section == "reception"
+            and marker.marker_kind == "reception"
+            and marker.marker_code == "attention"
+        )
+        self.assertTrue(attention_spans)
+        tampered = body
+        for marker in sorted(
+            attention_spans,
+            key=lambda row: row.utf8_byte_start,
+            reverse=True,
+        ):
+            tampered = (
+                tampered[: marker.utf8_byte_start]
+                + "そこにあり".encode("utf-8")
+                + tampered[marker.utf8_byte_end :]
+            )
+        self.assertNotEqual(tampered, body)
+        tampered_witness = parse_grounded_surface_body_bytes(tampered)
+        tampered_reception = next(
+            row
+            for row in tampered_witness.lines
+            if row.section == "reception"
+        )
+        self.assertNotIn(
+            "attention",
+            tampered_reception.reception_marker_codes,
+        )
+        evaluation = evaluate_grounded_surface_body_inverse(
+            body=tampered,
+            plan=plan,
+            sentence_plan=sentence_plan,
+            resolver=resolver,
+        )
         self.assertFalse(evaluation.passed)
         self.assertTrue(
             any(
