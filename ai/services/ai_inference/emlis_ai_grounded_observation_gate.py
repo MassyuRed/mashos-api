@@ -15,7 +15,7 @@ from typing import Any, Final, Literal, Mapping
 from emlis_ai_evidence_ledger_service import EvidenceSpanResolver
 from emlis_ai_grounded_human_reception import (
     GroundedHumanReceptionSurfaceError,
-    bind_and_validate_grounded_human_reception_surface,
+    replay_source_grounded_human_reception_from_plan,
     reception_action_is_future_intention,
     reception_action_is_performed,
     reception_active_moves,
@@ -755,25 +755,16 @@ def _evaluate_reception_gates(
                 )
             if _body_inverse_is_final_stage1_plan(plan):
                 try:
-                    context_map = {
-                        move.move_id: _body_inverse_reception_context_ids(
-                            move,
-                            plan,
-                        )
-                        for move in active_moves
-                    }
-                    realized_reception = (
-                        bind_and_validate_grounded_human_reception_surface(
-                            reception_plan,
-                            nucleus_index,
-                            resolver,
-                            actual_text=reception_text,
-                            recovery_stage=sentence_plan.recovery_stage,
-                            clause_plans=human_line.reception_clause_plans,
-                            context_nucleus_ids_by_move=context_map,
-                            allow_anaphoric_topic=True,
-                        )
+                    realized_reception = replay_source_grounded_human_reception_from_plan(
+                        reception_plan, nucleus_index, resolver,
+                        plan=plan,
+                        recovery_stage=sentence_plan.recovery_stage,
+                        clause_plans=human_line.reception_clause_plans,
                     )
+                    if realized_reception.text != reception_text:
+                        raise GroundedHumanReceptionSurfaceError(
+                            "human_reception_surface_replay_mismatch"
+                        )
                 except (
                     GroundedHumanReceptionSurfaceError,
                     AttributeError,
@@ -1584,6 +1575,8 @@ def _body_inverse_typed_source_fragment(
         and code.startswith(("surface_scalar_range:", "surface_scalar_source:"))
     )
     if not marker_rows:
+        if scalar_rows or source_rows or legacy_rows:
+            return ""
         return None
     if (
         len(marker_rows) != 1
@@ -2001,6 +1994,18 @@ def evaluate_grounded_surface_body_inverse(
 
         reception_plan = plan.response_plan.human_reception_plan
         if reception_plan is not None:
+            if final_stage1_plan:
+                try:
+                    replay = replay_source_grounded_human_reception_from_plan(
+                        reception_plan, nucleus_index, resolver,
+                        plan=plan,
+                        recovery_stage=sentence_plan.recovery_stage,
+                        clause_plans=planned_line.reception_clause_plans,
+                    )
+                    if _body_inverse_visible_text(body, parsed_line) != replay.text:
+                        failures.append(f"body_inverse_reception_replay_mismatch:{index}")
+                except (GroundedHumanReceptionSurfaceError, AttributeError, KeyError, TypeError, ValueError):
+                    failures.append(f"body_inverse_reception_replay_unavailable:{index}")
             parsed_codes = set(parsed_line.reception_marker_codes)
             if not final_stage1_plan:
                 for move in reception_plan.moves:
@@ -2088,9 +2093,7 @@ def evaluate_grounded_surface_body_inverse(
                                 move,
                                 nucleus_index,
                                 resolver,
-                                allow_short_anchor=bool(
-                                    clause.quote_budget and not anchor_used
-                                ),
+                                allow_short_anchor=False,
                                 recovery_stage=sentence_plan.recovery_stage,
                                 allow_anaphoric_topic=True,
                             )

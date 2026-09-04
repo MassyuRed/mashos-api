@@ -5213,3 +5213,45 @@ NEXT_AUTOMATIC_ACTION = NONE
 CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_THIS_STOP
 KAREN_BODY_FULL_PRE_SCREEN_READY_FOR_FRESH_APPROVAL = false
 ```
+
+
+## Same-nucleus status alignment — authorized work checkpoint（2026-09-04）
+
+AUTHORITY = FRESH_MASH_LEVEL3_CMEE_STAGE1_SAME_NUCLEUS_STATUS_ALIGNMENT_WITH_LAYER1_PARITY_RELAXATION_20260904
+STATE = IN_PROGRESS_ADMISSION_AND_CAUSAL_SCOPE_CONFIRMED
+EXECUTION_OWNER = ULTRA_KAREN_SINGLE_OWNER
+
+Admission heads: runtime `99e308effb629362a06c9d63429c77cb760da273`, canonical PR30 `c5eb8310df31f1d9d459761c5abdc77791c35790`, System Context PR37 `8701513dafdb22c026dd87096d5ec731b2c9671f`; open Draft/unmerged freshly confirmed. Existing predecessor STOP and rollback are not reopened. Current authority is the new Mash option-1 decision.
+
+Causal source scope fixed before changes:
+- `ai/services/ai_inference/emlis_ai_grounded_observation_plan.py`: final-only source-bound status normalization before relations/meaning.
+- `ai/services/ai_inference/emlis_ai_grounded_human_reception.py`: source-grounded expression and sole Layer2 realization, common state consumption.
+- `ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py`: aligned Observation and preauthored Reception placement.
+- `ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py`: expression bridge, per-candidate carriers and adapter.
+- `ai/services/ai_inference/emlis_ai_grounded_observation_gate.py`: existing replay/temporal integration only; source matching and thresholds preserved.
+Conditional status/identity propagation scope: existing `cocolon_meaning_experience_engine/emlis_input_specific_meaning.py`, `emlis_v1a.py`, `emlis_stage1_composition.py`, `contracts.py`.
+Existing direct tests: generic_move_projection, grounded_surface_owner_inheritance, nls_v3_batch001_unified_stage1_bridge, emlis_cmee_body_inverse_protected, rr7_recovery, exact8_meaning_inheritance and relevant existing contracts/vertical/RR3–RR8. Fixture or acceptance changes are not authorized. Existing runner identity updates only when source changes require them.
+
+System Context doctor = FAIL_PINNED_TOOLCHAIN_MISMATCH; prepare not executed and generated Context not used. Direct original reading used. Isolated clean checkouts prevent unrelated generated working changes from entering commits. Runtime baseline stdlib checks = 47/47 PASS (body inverse, generic projection, owner inheritance). Locked runtime restoration and required full regression are not yet complete at this checkpoint.
+
+Predecessor expression/carrier/placement code was audited as reference only. Its shortened-context inverse matching and repeated response predicate construction are not adopted unchanged. No runtime candidate is complete or accepted.
+
+Next: correct upstream same-nucleus source status, rebuild the expression→HumanReception→placement→adapter route, run required regression/canonical100, privately freeze/read all100 and repair remaining scope-internal defects. Canonical 02 §38 / 06 §89 own current contract/order.
+
+CANDIDATE_READY=false; MASH_ROUND0_PRODUCT_READ_READY=false; IMPLEMENTED_NOT_ACCEPTED; production/API/DB/Supabase/RN/persistence/merge effects=0; private body/case/digest/locator publication=0.
+
+
+### Resumable implementation checkpoint (same authority)
+
+STATE = IN_PROGRESS_RUNTIME_CONNECTION_NOT_VALIDATED
+Canonical option-1 design checkpoint is reflected on PR30 at `3c82cae2efebedc56e7d6017645e5b996a7423e0` (seven related existing paths; remote path/blob agreement confirmed).
+
+Existing formal worker lock environment restored: all 46 distribution versions and wheel hashes match; no new dependency introduced. This is the formal runtime-test lock, not a substitute for the different System Context toolchain. System Context doctor remains failed for its pinned environment; prepare has not run, and stale generated outputs are not used.
+
+Immutable admission baseline: direct canonical100 = 100/100; outer GENERATED 68 / UNAVAILABLE 32. Input-specific availability is retained privately for exact comparison. Relevant baseline pytest set = 170 tests: 156 passed, 8 pre-existing failures, 6 asynchronous tests initially unexecuted. Those same six tests were subsequently executed using stdlib asyncio with existing pytest fixtures and all six passed. Remaining baseline failures concern RR5/RR8 frozen observation expectations, RR7 optional ordering, RR8 depth/safety/batch metrics and source identity. They are not credited as passing and must be distinguished from new regressions.
+
+Current source changes: final-only finite action status alignment before graph/meaning sealing; expression/Move/visible-binding and preauthored placement connection rebuilt from reviewed existing design scaffolding; Human Reception wording revisited to retain complete explicit context, avoid generic internal-policy narration and preserve progressive aspect; Gate keeps its existing source matching and uses the existing Human Reception owner for plan-only replay. The previous rejected candidate was not accepted. Its independent shortened-context parser was not restored.
+
+Initial connection probe exposed implementation errors and is NOT a successful candidate. Full source-alignment tests, required regression, final canonical100 production, exact availability/Move parity, all100 full-body CLEAR and final source-identity receipts remain pending. No Product Read preparation, candidate-ready or product acceptance is claimed.
+
+Resume: finish finite scope/fragment tests, resolve expression-to-author causal trace discrepancies, regenerate through the unchanged canonical bridge, verify source/identity/binding/Gate regressions, then freeze and read all100 completely and iterate within this authority. Keep the predecessor terminal STOP/rollback as history.

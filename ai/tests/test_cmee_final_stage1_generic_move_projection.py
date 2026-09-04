@@ -238,6 +238,76 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         )
 
 
+class CMEESameNucleusActionStatusTest(unittest.TestCase):
+    def _action(self, text):
+        source = freeze_text_source(_request_from_row({
+            "case_id": "status-scope-unit",
+            "input": {"thought_text": "", "action_text": text,
+                      "categories": [], "emotions": []},
+        }))
+        plan = build_grounded_observation_plan(
+            source.normalized_current_input, evidence_spans=source.evidence_spans,
+        )
+        action = next(n for n in plan.nuclei if "memo_action" in n.source_fields)
+        # Exercise the conservative default that this final-only seam owns.
+        action = replace(action, kind="action", semantic_frame=replace(
+            action.semantic_frame, modality="intention", polarity="positive",
+            time_scope="current_input", attribute_codes=("operator:action",),
+        ))
+        return source, action
+
+    def test_finite_action_tense_and_aspect_are_separate(self):
+        for text, time, aspect in (
+            ("資料を郵送した", "past", "perfective"),
+            ("資料を読んでいる", "continuing", "progressive"),
+            ("資料を読んでいた", "past", "progressive"),
+            ("今後の予定を調べた", "past", "perfective"),
+        ):
+            with self.subTest(time=time, aspect=aspect):
+                source, before = self._action(text)
+                after, = observation_plan_owner._final_stage1_align_action_status(
+                    (before,), source.evidence_spans,
+                )
+                self.assertEqual(after.semantic_frame.modality, "fact")
+                self.assertEqual(after.semantic_frame.time_scope, time)
+                self.assertIn("aspect:" + aspect, after.semantic_frame.attribute_codes)
+                self.assertFalse(reception_owner.reception_action_is_future_intention(after))
+                self.assertTrue(reception_owner.reception_action_is_performed(after))
+                self.assertEqual(replace(after, semantic_frame=before.semantic_frame), before)
+                self.assertEqual(after.semantic_frame.actor, before.semantic_frame.actor)
+                self.assertEqual(after.semantic_frame.target_anchor_ids, before.semantic_frame.target_anchor_ids)
+
+    def test_nonfactual_or_other_owner_does_not_become_performed(self):
+        for text in (
+            "資料を読む予定", "資料を読んでいない", "資料を読みたかった",
+            "資料を読んだか分からない", "友人が資料を読んだ",
+            "悩んでいる友人が資料を読んだ", "「資料を読んだ」と聞いた",
+            "資料を読んだら連絡する", "古びた",
+        ):
+            with self.subTest():
+                source, before = self._action(text)
+                after, = observation_plan_owner._final_stage1_align_action_status(
+                    (before,), source.evidence_spans,
+                )
+                self.assertEqual(after, before)
+
+    def test_incomplete_fragment_provenance_is_rejected(self):
+        source, before = self._action("資料を郵送した")
+        for codes in (
+            ("source_fragment_scalar_range:0:3",),
+            ("source_fragment_scalar_source:normalized_raw_text",),
+            ("semantic_role:generic_relation_fragment",),
+            ("surface_scalar_range:0:3",),
+        ):
+            malformed = replace(before, semantic_frame=replace(
+                before.semantic_frame, attribute_codes=codes,
+            ))
+            with self.assertRaises(observation_plan_owner.GroundedObservationPlanError):
+                observation_plan_owner._final_stage1_align_action_status(
+                    (malformed,), source.evidence_spans,
+                )
+
+
 class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

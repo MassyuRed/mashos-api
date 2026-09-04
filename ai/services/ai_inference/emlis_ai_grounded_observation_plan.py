@@ -8348,6 +8348,77 @@ def _final_stage1_relation_source_text(
     )
 
 
+def _final_stage1_owner_scope_is_current(
+    fragment: str, *, source_field: str, strict_actor: bool = False,
+) -> bool:
+    top_level = _top_level_text(fragment)
+    if top_level is None:
+        return False
+    scope = top_level.strip()
+    if not scope:
+        return False
+    attributed_owner = re.search(
+        r"(?:と|って)(?P<owner>[^\s、,。.!！?？]{1,20}?)"
+        r"(?:は|が|も)(?=(?:言|話|語|述|書|記録|考|思|感じ|判断|決め))",
+        scope,
+    )
+    if (
+        attributed_owner is not None
+        and _SELF_REFERENCE_RE.fullmatch(
+            attributed_owner.group("owner")
+        )
+        is None
+    ):
+        return False
+    temporal_prefix = re.compile(
+        r"^(?:(?:今日|昨日|明日|今|現在|今朝|午前|午後|"
+        r"夕方|朝|昼|夜|以前|これまで)(?:は|も|の|には)?|"
+        r"この記録では?|少し(?:だけ|ずつ)?|やや|ずっと|まだ)"
+        r"[、,\s]*"
+    )
+    owner_marker = re.compile(
+        r"^(?P<owner>[^\s、,。.!！?？]{1,32}?)"
+        r"(?P<marker>にとって|には|は|が|も)"
+        r"(?P<remainder>.*)$"
+    )
+    while scope:
+        stripped = temporal_prefix.sub("", scope, count=1)
+        if stripped != scope:
+            scope = stripped.lstrip(" \t　")
+            continue
+        owner_match = owner_marker.match(scope)
+        if owner_match is None:
+            return True
+        owner = owner_match.group("owner")
+        remainder = owner_match.group("remainder").lstrip(" \t　、,")
+        owner_operators = set(
+            _operator_codes_for_text(owner, source_field=source_field)
+        )
+        semantic_content_owner = bool(
+            owner_operators
+            or _FINAL_STAGE1_BURDEN_RE.search(owner)
+            or owner.endswith(("気持ち", "願い", "わけ", "こと", "の"))
+            and bool(
+                _operator_codes_for_text(
+                    remainder,
+                    source_field=source_field,
+                )
+                or _FINAL_STAGE1_BURDEN_RE.search(remainder)
+                or _PRESENT_RESIDUE_RE.search(remainder)
+            )
+        )
+        if (
+            _SELF_REFERENCE_RE.fullmatch(owner) is None
+            and (strict_actor or not semantic_content_owner)
+        ):
+            return False
+        if not remainder:
+            return True
+        scope = remainder
+    return True
+
+
+
 def _final_stage1_compound_meaning_projections_for_span(
     span: EvidenceSpan,
     *,
@@ -8406,73 +8477,6 @@ def _final_stage1_compound_meaning_projections_for_span(
             )
         )
 
-    def owner_scope_is_current(fragment: str) -> bool:
-        top_level = _top_level_text(fragment)
-        if top_level is None:
-            return False
-        scope = top_level.strip()
-        if not scope:
-            return False
-        attributed_owner = re.search(
-            r"(?:と|って)(?P<owner>[^\s、,。.!！?？]{1,20}?)"
-            r"(?:は|が|も)(?=(?:言|話|語|述|書|記録|考|思|感じ|判断|決め))",
-            scope,
-        )
-        if (
-            attributed_owner is not None
-            and _SELF_REFERENCE_RE.fullmatch(
-                attributed_owner.group("owner")
-            )
-            is None
-        ):
-            return False
-        temporal_prefix = re.compile(
-            r"^(?:(?:今日|昨日|明日|今|現在|今朝|午前|午後|"
-            r"夕方|朝|昼|夜|以前|これまで)(?:は|も|の|には)?|"
-            r"この記録では?|少し(?:だけ|ずつ)?|やや|ずっと|まだ)"
-            r"[、,\s]*"
-        )
-        owner_marker = re.compile(
-            r"^(?P<owner>[^\s、,。.!！?？]{1,32}?)"
-            r"(?P<marker>にとって|には|は|が|も)"
-            r"(?P<remainder>.*)$"
-        )
-        while scope:
-            stripped = temporal_prefix.sub("", scope, count=1)
-            if stripped != scope:
-                scope = stripped.lstrip(" \t　")
-                continue
-            owner_match = owner_marker.match(scope)
-            if owner_match is None:
-                return True
-            owner = owner_match.group("owner")
-            remainder = owner_match.group("remainder").lstrip(" \t　、,")
-            owner_operators = set(
-                _operator_codes_for_text(owner, source_field=source_field)
-            )
-            semantic_content_owner = bool(
-                owner_operators
-                or _FINAL_STAGE1_BURDEN_RE.search(owner)
-                or owner.endswith(("気持ち", "願い", "わけ", "こと", "の"))
-                and bool(
-                    _operator_codes_for_text(
-                        remainder,
-                        source_field=source_field,
-                    )
-                    or _FINAL_STAGE1_BURDEN_RE.search(remainder)
-                    or _PRESENT_RESIDUE_RE.search(remainder)
-                )
-            )
-            if (
-                _SELF_REFERENCE_RE.fullmatch(owner) is None
-                and not semantic_content_owner
-            ):
-                return False
-            if not remainder:
-                return True
-            scope = remainder
-        return True
-
     def endpoint_projection(
         scalar_start: int,
         scalar_end: int,
@@ -8481,7 +8485,7 @@ def _final_stage1_compound_meaning_projections_for_span(
         extra_codes: Sequence[str] = (),
     ) -> _TypedNucleusProjection | None:
         fragment = text[scalar_start:scalar_end]
-        if not fragment or not owner_scope_is_current(fragment):
+        if not fragment or not _final_stage1_owner_scope_is_current(fragment, source_field=source_field):
             return None
         operators = set(
             _operator_codes_for_text(fragment, source_field=source_field)
@@ -8717,7 +8721,7 @@ def _final_stage1_compound_meaning_projections_for_span(
         if (
             len(admitted) == 1
             and event_start < event_end
-            and owner_scope_is_current(event_fragment)
+            and _final_stage1_owner_scope_is_current(event_fragment, source_field=source_field)
         ):
             wish, residue = admitted[0]
             event = _TypedNucleusProjection(
@@ -9557,6 +9561,102 @@ def _final_stage1_unknown_boundaries(
     return tuple(expanded)
 
 
+def _final_stage1_align_action_status(
+    nuclei: Sequence[GroundedSemanticNucleus],
+    evidence_spans: Sequence[EvidenceSpan],
+) -> tuple[GroundedSemanticNucleus, ...]:
+    """Resolve factual tense once, before the final graph/meaning is sealed.
+
+    The public input adapter deliberately has a conservative action default.
+    Final Stage 1 may replace that default only when the same source-bounded
+    predicate explicitly realizes a factual past or progressive action.  A
+    past suffix in a wish, denial, quotation or condition is not such proof.
+    """
+
+    spans = {str(span.span_id): span for span in evidence_spans}
+    aligned: list[GroundedSemanticNucleus] = []
+    for nucleus in nuclei:
+        frame = nucleus.semantic_frame
+        codes = tuple(frame.attribute_codes)
+        if (
+            nucleus.kind != "action"
+            or len(nucleus.source_span_ids) != 1
+            or frame.actor != "current_user"
+            or frame.polarity in {"negative", "mixed"}
+            or frame.modality in {"wish", "uncertain", "refusal", "possibility"}
+            or set(codes) & {
+                "operator:negation", "operator:wish", "operator:uncertainty",
+                "operator:refusal",
+            }
+        ):
+            aligned.append(nucleus)
+            continue
+        span = spans.get(nucleus.source_span_ids[0])
+        if span is None:
+            raise GroundedObservationPlanError("final_action_status_source_missing")
+        text = re.sub(r"\s+", " ", str(span.raw_text).replace("\u3000", " ")).strip()
+        ranges = tuple(code for code in codes if code.startswith("source_fragment_scalar_range:"))
+        sources = tuple(code for code in codes if code.startswith("source_fragment_scalar_source:"))
+        markers = codes.count("semantic_role:generic_relation_fragment")
+        legacy = any(code.startswith(("surface_scalar_range:", "surface_scalar_source:")) for code in codes)
+        if markers or ranges or sources or legacy:
+            if (
+                markers != 1 or len(ranges) != 1 or legacy
+                or sources != ("source_fragment_scalar_source:normalized_raw_text",)
+            ):
+                raise GroundedObservationPlanError("final_action_status_fragment_invalid")
+            try:
+                start, end = map(int, ranges[0].split(":")[1:])
+            except (ValueError, TypeError):
+                raise GroundedObservationPlanError("final_action_status_fragment_invalid") from None
+            if not 0 <= start < end <= len(text):
+                raise GroundedObservationPlanError("final_action_status_fragment_invalid")
+            text = text[start:end]
+            if text != text.strip():
+                raise GroundedObservationPlanError("final_action_status_fragment_invalid")
+        text = text.strip(" \u3000、,。．.!！?？")
+        visible = _top_level_text(text)
+        # A quoted or attributed predicate cannot establish this owner's
+        # factual action.  Field defaults are not evidence about an actor.
+        if (
+            not text or visible is None or visible != text
+            or not _final_stage1_owner_scope_is_current(text, source_field="", strict_actor=True)
+            or re.search(r"(?:ない|なかった|ません|ませんでした|ずに|ぬ)$", text)
+        ):
+            aligned.append(nucleus)
+            continue
+        finite = _strip_bounded_operator_prefix(visible.strip())
+        argument = _ACTION_ARGUMENT_STEM_RE.search(finite)
+        if (
+            argument is None or argument.start() == 0
+            or argument.end() != len(finite)
+            or re.search(r"[、,.!?！？\s]|(?:は|が|も)", argument.group("predicate"))
+        ):
+            aligned.append(nucleus)
+            continue
+        predicate = argument.group("predicate")
+        if re.search(r"(?:たい|たく|ほしい|つもり|予定|かもしれ|らしい|はず|なら|たら|れば|場合|もし|ようと|ように)", predicate):
+            aligned.append(nucleus)
+            continue
+        progressive = re.search(r"(?:て|で)(?:い|お)(?:る|ます|た|ました)$", predicate)
+        past = _bounded_structural_action_endpoint(text)
+        if not (progressive or past):
+            aligned.append(nucleus)
+            continue
+        time_scope = "past" if past else "continuing"
+        aspect = "progressive" if progressive else "perfective"
+        attributes = tuple(
+            code for code in codes
+            if not code.startswith(("time_scope:", "aspect:", "modality:"))
+            and code != "operator:performed_action"
+        ) + (f"time_scope:{time_scope}", f"aspect:{aspect}", "operator:performed_action")
+        aligned.append(replace(nucleus, semantic_frame=replace(
+            frame, modality="fact", time_scope=time_scope,
+            attribute_codes=tuple(_dedupe(attributes)),
+        )))
+    return tuple(aligned)
+
+
 def project_final_stage1_grounded_observation_plan(
     plan: GroundedObservationPlan,
     *,
@@ -9573,6 +9673,10 @@ def project_final_stage1_grounded_observation_plan(
 
     projected_nuclei, compound_dependencies = _final_stage1_typed_nuclei(
         plan,
+        evidence_spans,
+    )
+    projected_nuclei = _final_stage1_align_action_status(
+        projected_nuclei,
         evidence_spans,
     )
     relations, nuclei = _final_stage1_typed_relations(
