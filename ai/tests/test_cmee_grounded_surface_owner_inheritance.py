@@ -1034,6 +1034,7 @@ class CMEEGroundedSurfaceOwnerInheritanceTest(unittest.TestCase):
             ),
             expected_semantic_profiles=expected_move_ir.semantic_profiles,
             expected_target_slot_count=expected_move_ir.target_slot_count,
+            expected_context_slots=expected_move_ir.context_slots,
         )
         self.assertEqual(move_ir.reference_mode, "ANAPHORIC")
         self.assertEqual(len(move_ir.semantic_fragments), 2)
@@ -1558,6 +1559,7 @@ class CMEEGroundedSurfaceOwnerInheritanceTest(unittest.TestCase):
             ),
             expected_semantic_profiles=owner_ir.semantic_profiles,
             expected_target_slot_count=owner_ir.target_slot_count,
+            expected_context_slots=owner_ir.context_slots,
         )
         self.assertEqual(move_ir, owner_ir)
         canonical_clause_plans = (
@@ -1990,6 +1992,7 @@ class CMEEGroundedSurfaceOwnerInheritanceTest(unittest.TestCase):
                     ),
                     expected_semantic_profiles=owner_ir.semantic_profiles,
                     expected_target_slot_count=owner_ir.target_slot_count,
+                    expected_context_slots=owner_ir.context_slots,
                 )
 
     def test_exact8_use_canonical_recovery_candidates_and_trace_score(self) -> None:

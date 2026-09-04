@@ -17,6 +17,7 @@ import json
 import re
 from types import MappingProxyType
 from typing import Any, Final, Literal
+import unicodedata
 
 from emlis_ai_evidence_ledger_service import EvidenceSpanResolver
 from emlis_ai_grounded_observation_plan import (
@@ -152,7 +153,8 @@ _ACT_RESPONSIBILITY_RE: Final[dict[GroundedReceptionAct, re.Pattern[str]]] = {
         r"変化.{0,40}(?:感じ|受け止|見過ご|軽く扱|軽いこと|流したく)"
     ),
     "hold_help_seeking": re.compile(
-        r"(?:助け|踏みとどまり).{0,48}(?:大切|受け止)"
+        r"(?:助け|踏みとどまり).{0,64}"
+        r"(?:大切|受け止|尊重|見失わず|見守)"
     ),
     "bounded_counter_self_denial": re.compile(
         r"苦しさ.{0,48}否定せず.*Emlis.{0,48}自身.{0,24}思えません"
@@ -177,7 +179,8 @@ _ACT_OWNED_RESPONSIBILITY_RE: Final[
         r"変化.*?(?:感じ|受け止|見過ご|軽く扱|軽いこと|流したく)"
     ),
     "hold_help_seeking": re.compile(
-        r"(?:助け|踏みとどまり).*?(?:大切|受け止)"
+        r"(?:助け|踏みとどまり).*?"
+        r"(?:大切|受け止|尊重|見失わず|見守)"
     ),
     "bounded_counter_self_denial": re.compile(
         r"苦しさ.*?否定せず.*?Emlis.*?自身.*?思えません"
@@ -383,6 +386,7 @@ class _ReceptionMoveRealizationV1:
     semantic_heads: tuple[str, ...] = field(repr=False)
     semantic_profiles: tuple[_ReceptionSemanticProfileV1, ...]
     target_slot_count: int
+    context_slots: tuple[int, ...]
     arguments: tuple[_ReceptionArgumentRealizationV1, ...] = field(
         repr=False
     )
@@ -3065,6 +3069,19 @@ def _visible_fragment_occurrence_count(
     return sum(1 for _match in pattern.finditer(text))
 
 
+def _source_grounded_context_occurrence_text(value: Any) -> str:
+    """Normalize only for rejecting disguised duplicate context adjuncts."""
+
+    normalized = unicodedata.normalize("NFKC", str(value or "")).lower()
+    return "".join(
+        character
+        for character in normalized
+        if not character.isspace()
+        and unicodedata.category(character)[0] not in {"P", "S", "Z"}
+        and unicodedata.category(character) not in {"Cf", "Mn"}
+    )
+
+
 def _final_clean(value: Any) -> str:
     return re.sub(
         r"\s+",
@@ -4095,6 +4112,26 @@ def _project_source_grounded_reception_move_realization(
         nucleus.nucleus_id: index
         for index, nucleus in enumerate(semantic_nuclei)
     }
+    context_nucleus_ids = final_reception_context_nucleus_ids(
+        move=move,
+        plan=plan,
+    )
+    try:
+        context_slots = tuple(
+            semantic_slot_by_nucleus_id[nucleus_id]
+            for nucleus_id in context_nucleus_ids
+        )
+    except KeyError:
+        raise GroundedHumanReceptionSurfaceError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        ) from None
+    if (
+        len(context_slots) != len(set(context_slots))
+        or any(slot < len(typed_targets) for slot in context_slots)
+    ):
+        raise GroundedHumanReceptionSurfaceError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        )
     nucleus_rank = {
         nucleus.nucleus_id: index
         for index, nucleus in enumerate(plan.nuclei)
@@ -4255,6 +4292,7 @@ def _project_source_grounded_reception_move_realization(
         semantic_heads=semantic_heads,
         semantic_profiles=semantic_profiles,
         target_slot_count=len(typed_targets),
+        context_slots=context_slots,
         arguments=tuple(argument_rows),
         predicate_kind=predicate_values[0],
         predicate_head=predicate_head,
@@ -4325,6 +4363,7 @@ def _expression_source_grounded_move_realization(
         _ReceptionSemanticProfileV1, ...
     ] | None = None,
     expected_target_slot_count: int | None = None,
+    expected_context_slots: tuple[int, ...] | None = None,
     expected_relation_predicate_kinds: tuple[str, ...] | None = None,
 ) -> _ReceptionMoveRealizationV1:
     """Project only identity-bearing expression grammar into the final IR."""
@@ -4381,15 +4420,23 @@ def _expression_source_grounded_move_realization(
     if (
         expected_semantic_profiles is None
         or expected_target_slot_count is None
+        or expected_context_slots is None
     ):
         raise GroundedHumanReceptionSurfaceError(
             "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
         )
     semantic_profiles = expected_semantic_profiles
     target_slot_count = expected_target_slot_count
+    context_slots = expected_context_slots
     if (
         len(semantic_profiles) != len(semantic_fragments)
         or not 1 <= target_slot_count <= len(semantic_fragments)
+        or len(context_slots) != len(set(context_slots))
+        or any(
+            type(slot) is not int
+            or not target_slot_count <= slot < len(semantic_fragments)
+            for slot in context_slots
+        )
     ):
         raise GroundedHumanReceptionSurfaceError(
             "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
@@ -4635,6 +4682,7 @@ def _expression_source_grounded_move_realization(
         semantic_heads=semantic_heads,
         semantic_profiles=semantic_profiles,
         target_slot_count=target_slot_count,
+        context_slots=context_slots,
         arguments=tuple(argument_rows),
         predicate_kind=expression.predicate_kind,
         predicate_head=expression.lexical_head,
@@ -4739,6 +4787,9 @@ def _source_grounded_expression_clause_realizations(
                         ),
                         expected_target_slot_count=(
                             expected.moves[index].target_slot_count
+                        ),
+                        expected_context_slots=(
+                            expected.moves[index].context_slots
                         ),
                     )
                     for index, move_id in enumerate(clause.move_ids)
@@ -4962,6 +5013,86 @@ def _source_grounded_anaphoric_nominal(
     return f"{clean}ということ"
 
 
+def _source_grounded_context_head_nominal(value: str) -> str:
+    """Nominalize one bounded context head without replaying its clause."""
+
+    clean = value.strip(" \u3000、,。．.")
+    if (
+        not clean
+        or len(clean) > _SOURCE_GROUNDED_LEXEME_MAX_CHARS
+        or _SOURCE_GROUNDED_LEXICAL_FORBIDDEN_RE.search(clean)
+    ):
+        raise GroundedHumanReceptionSurfaceError(
+            "MEANING_REALIZATION_CAPABILITY_GAP"
+        )
+    if re.search(r"[一-龯々ァ-ヶー]$", clean) or clean.endswith(
+        ("こと", "もの", "の", "気持ち", "状態", "感じ")
+    ):
+        return clean
+    if clean.endswith(("たい", "ほしい", "欲しい")):
+        return f"{clean}気持ち"
+    if clean.endswith("かも"):
+        return f"{clean}という感覚"
+    if (
+        clean.endswith(
+            (
+                "なかった",
+                "ない",
+                "ている",
+                "でいる",
+                "ていた",
+                "でいた",
+                "だった",
+                "です",
+                "ます",
+                "た",
+                "ある",
+                "いる",
+                "なる",
+                "する",
+            )
+        )
+        or re.search(r"[うくぐすつぬぶむるい]$", clean)
+    ):
+        return f"{clean}こと"
+    return f"{clean}ということ"
+
+
+def _source_grounded_context_adjunct_from_heads(
+    semantic_heads: Sequence[str],
+) -> str:
+    """Compose one complete context adjunct from ordered bounded heads."""
+
+    if not semantic_heads:
+        return ""
+    nominals = tuple(
+        _source_grounded_context_head_nominal(head)
+        for head in semantic_heads
+    )
+    if len(nominals) != len(set(nominals)):
+        raise GroundedHumanReceptionSurfaceError(
+            "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+        )
+    joined = _final_join_relation_fragments(nominals)
+    if not joined:
+        raise GroundedHumanReceptionSurfaceError(
+            "MEANING_REALIZATION_CAPABILITY_GAP"
+        )
+    return f"{joined}を背景に、"
+
+
+def _source_grounded_context_adjunct(
+    move: _ReceptionMoveRealizationV1,
+) -> str:
+    """Realize the exact plan-owned EXPLICIT context as one adjunct."""
+
+    if move.reference_mode == "ANAPHORIC" or not move.context_slots:
+        return ""
+    return _source_grounded_context_adjunct_from_heads(
+        tuple(move.semantic_heads[slot] for slot in move.context_slots)
+    )
+
+
 def _source_grounded_axis_prefix(
     mapping: Mapping[str, str],
     value: str,
@@ -5020,6 +5151,12 @@ def _validate_source_grounded_move_ir(
         or len(move.semantic_heads) != semantic_count
         or len(move.semantic_profiles) != semantic_count
         or not 1 <= move.target_slot_count <= semantic_count
+        or len(move.context_slots) != len(set(move.context_slots))
+        or any(
+            type(slot) is not int
+            or not move.target_slot_count <= slot < semantic_count
+            for slot in move.context_slots
+        )
         or not move.arguments
         or move.subject_realization != "EXPLICIT"
         or any(
@@ -5316,7 +5453,6 @@ def _source_grounded_argument_surface(
     *,
     target_nominal: str | None = None,
     target_owner_slot: int = 0,
-    context_fragments: tuple[str, ...] = (),
 ) -> str:
     """Realize bounded heads in one relation clause per endpoint pair."""
 
@@ -5391,13 +5527,9 @@ def _source_grounded_argument_surface(
             return target_nominal
         if (
             first_realization
-            and move.reference_mode != "ANAPHORIC"
-            and move.semantic_fragments[semantic_slot] in context_fragments
+            and semantic_slot in move.context_slots
         ):
-            return _source_grounded_anaphoric_nominal(
-                move.semantic_fragments[semantic_slot],
-                predicate_kind=move.predicate_kind,
-            )
+            return typed_nominal_by_slot[semantic_slot]
         if (
             not first_realization
             or move.reference_mode == "ANAPHORIC"
@@ -5428,6 +5560,10 @@ def _source_grounded_argument_surface(
             direct_phrases.append(target_nominal)
             realized_semantic_slots.add(semantic_slot)
             target_inserted = True
+        elif semantic_slot in move.context_slots:
+            # The context head has one dedicated adjunct owner.  A direct
+            # argument would duplicate it inside the same Move.
+            realized_semantic_slots.add(semantic_slot)
         elif move.reference_mode != "ANAPHORIC":
             direct_phrases.append(
                 _source_grounded_anaphoric_nominal(
@@ -5898,7 +6034,15 @@ def _validate_source_grounded_clause_core(
         )
         != 1
         or any(core.text.count(adjunct) != 1 for adjunct in visible_adjuncts)
-        or any(adjunct in core.text for adjunct in nonexpected_adjuncts)
+        or any(
+            core.text.count(adjunct)
+            > sum(
+                core.text.count(visible_adjunct)
+                * visible_adjunct.count(adjunct)
+                for visible_adjunct in visible_adjuncts
+            )
+            for adjunct in nonexpected_adjuncts
+        )
     ):
         raise GroundedHumanReceptionSurfaceError(
             "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP"
@@ -5913,7 +6057,6 @@ def _source_grounded_target_np(
     referent_text: str,
     referent_kind: str,
     source_anchor_used: bool,
-    context_fragments: tuple[str, ...] = (),
     target_owner_slot: int,
 ) -> _SourceGroundedClauseCoreV1:
     """Build one grammatical content core with one inverse referent."""
@@ -5965,7 +6108,6 @@ def _source_grounded_target_np(
             realization,
             target_nominal=content_target,
             target_owner_slot=target_owner_slot,
-            context_fragments=context_fragments,
         )
     else:
         target = content_target
@@ -6486,18 +6628,6 @@ def _author_source_grounded_reception_clauses(
                 move=move,
                 plan=plan,
             )
-            context_values = (
-                ()
-                if meaning_realization.reference_mode == "ANAPHORIC"
-                else _dedupe(
-                    final_reception_source_anchor_text(
-                        context_id,
-                        nucleus_index,
-                        resolver,
-                    )
-                    for context_id in context_ids
-                )
-            )
             target_core = _source_grounded_target_np(
                 move,
                 meaning_realization,
@@ -6505,7 +6635,6 @@ def _author_source_grounded_reception_clauses(
                 referent_kind=referent.kind,
                 meaning_fragment=meaning_fragment,
                 source_anchor_used=referent.source_anchor_used,
-                context_fragments=context_values,
                 target_owner_slot=target_owner_slot,
             )
             if meaning_realization.reference_mode == "ANAPHORIC":
@@ -6525,16 +6654,8 @@ def _author_source_grounded_reception_clauses(
                     else ""
                 )
             else:
-                unowned_context_values = tuple(
-                    context_value
-                    for context_value in context_values
-                    if context_value not in target_core.text
-                )
-                context_prefix = (
-                    f"{_final_join_relation_fragments(unowned_context_values)}"
-                    "を背景に、"
-                    if unowned_context_values
-                    else ""
+                context_prefix = _source_grounded_context_adjunct(
+                    meaning_realization
                 )
             move_sentence = _source_grounded_reception_fragment(
                 move,
@@ -7274,10 +7395,35 @@ def bind_and_validate_grounded_human_reception_surface(
             issues.append("human_reception_source_anchor_unbound")
 
     context_map = context_nucleus_ids_by_move or {}
+    explicit_context_adjunct_by_move: dict[str, str] = {}
+    explicit_context_heads_by_move: dict[str, tuple[str, ...]] = {}
+    for move in active_moves:
+        context_ids = _dedupe(context_map.get(move.move_id, ()))
+        if (
+            context_ids
+            and reception_effective_move_reference_mode(
+                reception_plan,
+                move,
+                recovery_stage,
+            )
+            != "anaphoric_first"
+        ):
+            heads = tuple(
+                _bounded_source_grounded_lexemes(
+                    nucleus_index[nucleus_id],
+                    resolver,
+                )[1]
+                for nucleus_id in context_ids
+            )
+            explicit_context_heads_by_move[move.move_id] = heads
+            explicit_context_adjunct_by_move[move.move_id] = (
+                _source_grounded_context_adjunct_from_heads(heads)
+            )
     # A clause may contain several Moves.  A sibling Move's visible stance or
     # context must not be borrowed to satisfy another Move's responsibility.
     # Count disjoint witnesses per semantic owner before the per-Move checks.
     owned_text_by_move: dict[str, str] = {}
+    context_prefix_by_move: dict[str, str] = {}
     for clause_plan, clause_text in zip(
         resolved_clause_plans,
         actual_clause_texts,
@@ -7285,7 +7431,7 @@ def bind_and_validate_grounded_human_reception_surface(
         clause_moves = tuple(
             move_index[move_id]
             for move_id in clause_plan.move_ids
-            if move_id in move_index and move_index[move_id].required
+            if move_id in move_index
         )
         moves_by_referent_text: dict[str, list[GroundedReceptionMovePlan]] = {}
         for move in clause_moves:
@@ -7377,25 +7523,21 @@ def bind_and_validate_grounded_human_reception_surface(
                         if marker_starts:
                             context_start = marker_starts[-1]
                     elif next_context_ids:
-                        next_fragments = tuple(
-                            fragment
-                            for _nucleus_id, values in _reception_source_fragments(
-                                next_context_ids,
-                                nucleus_index,
-                                resolver,
-                            )
-                            for fragment in values
+                        next_adjunct = explicit_context_adjunct_by_move.get(
+                            next_move.move_id,
+                            "",
                         )
-                        fragment_starts = tuple(
-                            position
-                            for fragment in next_fragments
-                            for position in (
-                                clause_text.find(fragment, start, next_start),
+                        adjunct_start = (
+                            clause_text.find(
+                                next_adjunct,
+                                start,
+                                next_start,
                             )
-                            if position >= 0
+                            if next_adjunct
+                            else -1
                         )
-                        if fragment_starts:
-                            context_start = min(fragment_starts)
+                        if adjunct_start >= 0:
+                            context_start = adjunct_start
                     join_boundary = clause_text.rfind(
                         "、",
                         start,
@@ -7491,33 +7633,33 @@ def bind_and_validate_grounded_human_reception_surface(
                         f"{move.reception_act}"
                     )
             else:
-                for witness in witnesses:
+                prior_response_end = 0
+                for witness_index, witness in enumerate(witnesses):
                     if witness is None:
                         continue
                     move, start, end = witness
+                    owned_context_prefix = clause_text[
+                        prior_response_end:start
+                    ]
+                    if witness_index:
+                        delimiter_count = sum(
+                            owned_context_prefix.startswith(delimiter)
+                            for delimiter in ("、", ",")
+                        )
+                        owned_context_prefix = (
+                            owned_context_prefix[1:]
+                            if delimiter_count == 1
+                            else ""
+                        )
+                    context_prefix_by_move[
+                        move.move_id
+                    ] = owned_context_prefix
                     owned_text_by_move[move.move_id] = clause_text[start:end]
+                    prior_response_end = end
 
-        anaphoric_context_moves = tuple(
-            move
-            for move in clause_moves
-            if context_map.get(move.move_id, ())
-            and reception_effective_move_reference_mode(
-                reception_plan,
-                move,
-                recovery_stage,
-            )
-            == "anaphoric_first"
-        )
-        if sum(
-            1
-            for _match in _ANAPHORIC_CONTEXT_MARKER_RE.finditer(clause_text)
-        ) < len(anaphoric_context_moves):
-            issues.extend(
-                f"human_reception_context_anaphor_missing:{move.move_id}"
-                for move in anaphoric_context_moves
-            )
-
-        moves_by_context_id: dict[str, list[GroundedReceptionMovePlan]] = {}
+        moves_by_context_adjunct: dict[
+            str, list[GroundedReceptionMovePlan]
+        ] = {}
         for move in clause_moves:
             if (
                 reception_effective_move_reference_mode(
@@ -7528,23 +7670,28 @@ def bind_and_validate_grounded_human_reception_surface(
                 == "anaphoric_first"
             ):
                 continue
-            for context_id in _dedupe(context_map.get(move.move_id, ())):
-                moves_by_context_id.setdefault(context_id, []).append(move)
-        for context_id, moves in moves_by_context_id.items():
-            rows = _reception_source_fragments(
-                (context_id,),
-                nucleus_index,
-                resolver,
+            adjunct = explicit_context_adjunct_by_move.get(
+                move.move_id,
+                "",
             )
-            fragments = tuple(
-                fragment
-                for _nucleus_id, values in rows
-                for fragment in values
+            if adjunct:
+                moves_by_context_adjunct.setdefault(adjunct, []).append(move)
+        for adjunct, moves in moves_by_context_adjunct.items():
+            occurrence_count = clause_text.count(adjunct)
+            normalized_adjunct = _source_grounded_context_occurrence_text(
+                adjunct
             )
-            if _visible_fragment_occurrence_count(
-                clause_text,
-                fragments,
-            ) < len(moves):
+            normalized_occurrence_count = (
+                _source_grounded_context_occurrence_text(clause_text).count(
+                    normalized_adjunct
+                )
+                if normalized_adjunct
+                else 0
+            )
+            if (
+                occurrence_count != len(moves)
+                or normalized_occurrence_count != len(moves)
+            ):
                 issues.extend(
                     f"human_reception_move_context_missing:{move.move_id}"
                     for move in moves
@@ -7609,7 +7756,7 @@ def bind_and_validate_grounded_human_reception_surface(
         )
 
         def _is_integrated_target_head(fragment: str) -> bool:
-            return bool(
+            if not (
                 visible_referent
                 and len(fragment) <= _SOURCE_GROUNDED_LEXEME_MAX_CHARS
                 and _source_grounded_predicate_head(fragment) == fragment
@@ -7618,9 +7765,38 @@ def bind_and_validate_grounded_human_reception_surface(
                     (fragment,),
                 )
                 == 1
-                and re.search(
-                    re.escape(fragment)
-                    + r"という(?:一つの|いくつかの)?"
+            ):
+                return False
+            legacy_wrapper = re.search(
+                re.escape(fragment)
+                + r"という(?:一つの|いくつかの)?"
+                + re.escape(visible_referent),
+                move_text,
+            )
+            if legacy_wrapper is not None:
+                return True
+            fragment_owner_ids = tuple(
+                nucleus_id
+                for nucleus_id, fragments in target_rows
+                if fragment in fragments
+            )
+            if len(fragment_owner_ids) != 1:
+                return False
+            profile = semantic_profile_by_move[move.move_id]
+            proposition = (
+                f"{fragment}という言葉"
+                if profile.quoted_boundary
+                else _source_grounded_anaphoric_nominal(
+                    fragment,
+                    predicate_kind=_source_grounded_direct_predicate(
+                        nucleus_index[fragment_owner_ids[0]]
+                    ),
+                )
+            )
+            return (
+                re.search(
+                    re.escape(proposition)
+                    + r"に表れた(?:一つの|いくつかの)?"
                     + re.escape(visible_referent),
                     move_text,
                 )
@@ -7645,28 +7821,111 @@ def bind_and_validate_grounded_human_reception_surface(
             resolver,
         )
         if context_rows and effective_reference == "anaphoric_first":
-            if not any(
-                marker in move_text
-                for marker in ("中で", "中にも", "背景")
-            ):
+            owned_prefix = context_prefix_by_move.get(move.move_id, "")
+            if sum(
+                1
+                for _match in _ANAPHORIC_CONTEXT_MARKER_RE.finditer(
+                    owned_prefix
+                )
+            ) != 1:
+                issues.append(
+                    f"human_reception_context_anaphor_missing:{move.move_id}"
+                )
+            if re.search(
+                r"[「」『』'\"‘’“”]",
+                owned_prefix,
+            ) is not None:
                 issues.append(
                     f"human_reception_context_anaphor_missing:{move.move_id}"
                 )
             if any(
-                fragment in move_text
+                fragment in owned_prefix
                 for _nucleus_id, fragments in context_rows
                 for fragment in fragments
             ):
                 issues.append(
                     f"human_reception_anaphoric_context_replayed:{move.move_id}"
                 )
-        elif context_rows and any(
-            not any(fragment in move_text for fragment in fragments)
-            for _nucleus_id, fragments in context_rows
-        ):
-            issues.append(
-                f"human_reception_move_context_missing:{move.move_id}"
+        elif context_rows:
+            expected_adjunct = explicit_context_adjunct_by_move.get(
+                move.move_id,
+                "",
             )
+            owned_prefix = context_prefix_by_move.get(move.move_id, "")
+            adjunct_count = (
+                owned_prefix.count(expected_adjunct)
+                if expected_adjunct
+                else 0
+            )
+            normalized_expected_adjunct = (
+                _source_grounded_context_occurrence_text(expected_adjunct)
+            )
+            normalized_adjunct_count = (
+                _source_grounded_context_occurrence_text(owned_prefix).count(
+                    normalized_expected_adjunct
+                )
+                if normalized_expected_adjunct
+                else 0
+            )
+            if adjunct_count != 1 or normalized_adjunct_count != 1:
+                issues.append(
+                    f"human_reception_move_context_missing:{move.move_id}"
+                )
+            if not owned_prefix.startswith(expected_adjunct):
+                issues.append(
+                    f"human_reception_move_context_missing:{move.move_id}"
+                )
+            if adjunct_count > 1:
+                issues.append(
+                    f"human_reception_move_context_missing:{move.move_id}"
+                )
+            context_fragments = tuple(
+                fragment
+                for _nucleus_id, fragments in context_rows
+                for fragment in fragments
+            )
+            if any(
+                _source_grounded_context_occurrence_text(
+                    owned_prefix
+                ).count(
+                    _source_grounded_context_occurrence_text(fragment)
+                )
+                > _source_grounded_context_occurrence_text(
+                    expected_adjunct
+                ).count(
+                    _source_grounded_context_occurrence_text(fragment)
+                )
+                * adjunct_count
+                for fragment in context_fragments
+                if _source_grounded_context_occurrence_text(fragment)
+            ):
+                issues.append(
+                    f"human_reception_move_context_missing:{move.move_id}"
+                )
+            if re.search(
+                r"[「」『』'\"‘’“”]",
+                owned_prefix,
+            ) is not None:
+                issues.append(
+                    f"human_reception_move_context_missing:{move.move_id}"
+                )
+            context_candidates = (
+                expected_adjunct,
+                *explicit_context_heads_by_move.get(move.move_id, ()),
+                *context_fragments,
+            )
+            if any(
+                quote
+                and any(
+                    quote in candidate or candidate in quote
+                    for candidate in context_candidates
+                    if candidate
+                )
+                for quote in _QUOTE_RE.findall(move_text)
+            ):
+                issues.append(
+                    f"human_reception_move_context_missing:{move.move_id}"
+                )
 
     issues = list(_dedupe(issues))
     if issues:

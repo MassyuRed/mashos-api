@@ -306,6 +306,75 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         self.assertIn("「疲れている」", observation)
         self.assertNotIn("「少し整えたい気持ちもある」", reception)
         self.assertIn("疲れている", reception)
+        reception_plan = plan.response_plan.human_reception_plan
+        nucleus_index = {
+            nucleus.nucleus_id: nucleus for nucleus in plan.nuclei
+        }
+        reception_line = next(
+            line
+            for line in sentence_plan.lines
+            if line.binding.line_role == "human_follow"
+        )
+        move_ir = reception_owner._source_grounded_plan_clause_realizations(
+            reception_plan,
+            nucleus_index,
+            resolver,
+            plan=plan,
+            recovery_stage=sentence_plan.recovery_stage,
+            clause_plans=tuple(reception_line.reception_clause_plans),
+        )[0].moves[0]
+        expected_context_adjunct = (
+            reception_owner._source_grounded_context_adjunct(move_ir)
+        )
+        self.assertTrue(expected_context_adjunct)
+        self.assertEqual(reception.count(expected_context_adjunct), 1)
+        context_id = reception_owner.final_reception_context_nucleus_id(
+            move=reception_plan.moves[0],
+            plan=plan,
+        )
+        raw_context = reception_owner.final_reception_source_anchor_text(
+            context_id,
+            nucleus_index,
+            resolver,
+        )
+        self.assertTrue(raw_context)
+        self.assertNotEqual(expected_context_adjunct, raw_context)
+        for replacement, mutation_kind in (
+            (
+                raw_context,
+                "raw_whole_clause",
+            ),
+            (
+                f"「{raw_context}」",
+                "quoted_whole_clause",
+            ),
+            (
+                expected_context_adjunct + expected_context_adjunct,
+                "duplicate_adjunct",
+            ),
+        ):
+            with self.subTest(context_mutation=mutation_kind):
+                mutated_reception = reception.replace(
+                    expected_context_adjunct,
+                    replacement,
+                    1,
+                )
+                mutated = observation + "Emlisから：\n" + mutated_reception
+                mutation_evaluation = evaluate_grounded_surface_body_inverse(
+                    body=mutated.encode("utf-8"),
+                    plan=plan,
+                    sentence_plan=sentence_plan,
+                    resolver=resolver,
+                )
+                self.assertFalse(mutation_evaluation.passed)
+                self.assertIn(
+                    "body_inverse_reception_context_anchor_missing:rm1",
+                    mutation_evaluation.failure_codes,
+                )
+                self.assertIn(
+                    "body_inverse_reception_why_duty_missing:rm1",
+                    mutation_evaluation.failure_codes,
+                )
         witness = parse_grounded_surface_body_bytes(
             surface.text.encode("utf-8")
         )

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+import re
 from types import SimpleNamespace
 from typing import Any, Mapping
 import unittest
@@ -313,6 +314,104 @@ def _symbolic_cross_move_borrow_artifacts() -> SimpleNamespace:
 
 
 class CMEEReceptionCrossMoveBorrowContractTest(unittest.TestCase):
+    def test_body_inverse_join_boundary_requires_one_canonical_owner_cut(
+        self,
+    ) -> None:
+        left_referent = "先の対象"
+        right_referent = "次の対象"
+        context_with_marker = "受け止めたいことを背景に、"
+
+        def _markers_for(
+            text: str,
+            *tokens: str,
+        ) -> tuple[SimpleNamespace, ...]:
+            rows = []
+            for token in tokens:
+                for match in re.finditer(re.escape(token), text):
+                    rows.append(
+                        SimpleNamespace(
+                            section="reception",
+                            marker_kind="reception",
+                            utf8_byte_start=len(
+                                text[: match.start()].encode("utf-8")
+                            ),
+                            utf8_byte_end=len(
+                                text[: match.end()].encode("utf-8")
+                            ),
+                        )
+                    )
+            return tuple(rows)
+
+        canonical_response = "を受け止めていて"
+        canonical_prefix = left_referent + canonical_response + "、"
+        canonical_text = (
+            canonical_prefix + context_with_marker + right_referent
+        )
+        canonical_boundary = len(canonical_prefix.encode("utf-8"))
+        prior_referent_end = len(left_referent.encode("utf-8"))
+        owned_referent_start = len(
+            (canonical_prefix + context_with_marker).encode("utf-8")
+        )
+        self.assertEqual(
+            gate_owner._body_inverse_reception_join_boundary(
+                canonical_text.encode("utf-8"),
+                prior_referent_byte_end=prior_referent_end,
+                owned_referent_byte_start=owned_referent_start,
+                markers=_markers_for(canonical_text, "受け止め"),
+            ),
+            canonical_boundary,
+        )
+
+        missing_join_text = canonical_text.replace(
+            canonical_response + "、",
+            canonical_response + "と",
+            1,
+        )
+        self.assertIsNone(
+            gate_owner._body_inverse_reception_join_boundary(
+                missing_join_text.encode("utf-8"),
+                prior_referent_byte_end=prior_referent_end,
+                owned_referent_byte_start=len(
+                    (
+                        left_referent
+                        + canonical_response
+                        + "と"
+                        + context_with_marker
+                    ).encode("utf-8")
+                ),
+                markers=_markers_for(
+                    missing_join_text,
+                    "受け止め",
+                ),
+            )
+        )
+
+        ambiguous_response = "を受け止めていて、見守っていて、"
+        ambiguous_text = (
+            left_referent
+            + ambiguous_response
+            + context_with_marker
+            + right_referent
+        )
+        self.assertIsNone(
+            gate_owner._body_inverse_reception_join_boundary(
+                ambiguous_text.encode("utf-8"),
+                prior_referent_byte_end=prior_referent_end,
+                owned_referent_byte_start=len(
+                    (
+                        left_referent
+                        + ambiguous_response
+                        + context_with_marker
+                    ).encode("utf-8")
+                ),
+                markers=_markers_for(
+                    ambiguous_text,
+                    "受け止め",
+                    "見守",
+                ),
+            )
+        )
+
     def test_multi_move_responsibility_cannot_borrow_next_context_tail(
         self,
     ) -> None:
@@ -1634,6 +1733,146 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             missing_context_gate.rejection_reasons,
         )
 
+        context_nucleus = nucleus_index[context_ids[0]]
+        context_attributes = tuple(
+            context_nucleus.semantic_frame.attribute_codes
+        )
+        self.assertIn(
+            "semantic_role:generic_relation_fragment",
+            context_attributes,
+        )
+        self.assertTrue(
+            any(
+                code.startswith(
+                    (
+                        "source_fragment_scalar_range:",
+                        "source_fragment_scalar_source:",
+                    )
+                )
+                for code in context_attributes
+            )
+        )
+        markerless_context_nucleus = replace(
+            context_nucleus,
+            semantic_frame=replace(
+                context_nucleus.semantic_frame,
+                attribute_codes=tuple(
+                    code
+                    for code in context_attributes
+                    if code != "semantic_role:generic_relation_fragment"
+                ),
+            ),
+        )
+        markerless_plan = replace(
+            artifacts.plan,
+            nuclei=tuple(
+                markerless_context_nucleus
+                if nucleus.nucleus_id == context_nucleus.nucleus_id
+                else nucleus
+                for nucleus in artifacts.plan.nuclei
+            ),
+        )
+        markerless_inverse = evaluate_grounded_surface_body_inverse(
+            body=artifacts.surface.text.encode("utf-8"),
+            plan=markerless_plan,
+            sentence_plan=artifacts.sentence_plan,
+            resolver=artifacts.resolver,
+        )
+        self.assertFalse(markerless_inverse.passed)
+        self.assertIn(
+            "body_inverse_reception_context_anchor_missing:rm1",
+            markerless_inverse.failure_codes,
+        )
+        self.assertIn(
+            "body_inverse_reception_why_duty_missing:rm1",
+            markerless_inverse.failure_codes,
+        )
+        with self.assertRaisesRegex(
+            reception_owner.GroundedHumanReceptionSurfaceError,
+            "typed_reception_source_fragment_contract_invalid",
+        ):
+            reception_owner.bind_and_validate_grounded_human_reception_surface(
+                reception_plan,
+                {
+                    nucleus.nucleus_id: nucleus
+                    for nucleus in markerless_plan.nuclei
+                },
+                artifacts.resolver,
+                actual_text=baseline_reception.strip(),
+                recovery_stage=artifacts.sentence_plan.recovery_stage,
+                clause_plans=tuple(reception_line.reception_clause_plans),
+                context_nucleus_ids_by_move={
+                    active_move.move_id:
+                    reception_owner.final_reception_context_nucleus_ids(
+                        move=active_move,
+                        plan=markerless_plan,
+                    )
+                    for active_move in reception_owner.reception_active_moves(
+                        reception_plan,
+                        artifacts.sentence_plan.recovery_stage,
+                    )
+                },
+                allow_anaphoric_topic=True,
+            )
+
+        for invalid_support_ids, mutation_kind in (
+            (
+                (context_ids[0], context_ids[0]),
+                "duplicate_context_owner",
+            ),
+            (
+                (move.target_nucleus_ids[0],),
+                "target_context_overlap",
+            ),
+        ):
+            with self.subTest(context_owner_mutation=mutation_kind):
+                invalid_move = replace(
+                    move,
+                    support_nucleus_ids=invalid_support_ids,
+                )
+                invalid_reception_plan = replace(
+                    reception_plan,
+                    moves=tuple(
+                        invalid_move
+                        if candidate.move_id == move.move_id
+                        else candidate
+                        for candidate in reception_plan.moves
+                    ),
+                )
+                invalid_owner_plan = replace(
+                    artifacts.plan,
+                    response_plan=replace(
+                        artifacts.plan.response_plan,
+                        human_reception_plan=invalid_reception_plan,
+                    ),
+                )
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "context_owner_ambiguous",
+                ):
+                    gate_owner._body_inverse_reception_context_expectation(
+                        invalid_move,
+                        invalid_owner_plan,
+                        artifacts.resolver,
+                    )
+                invalid_owner_inverse = (
+                    evaluate_grounded_surface_body_inverse(
+                        body=artifacts.surface.text.encode("utf-8"),
+                        plan=invalid_owner_plan,
+                        sentence_plan=artifacts.sentence_plan,
+                        resolver=artifacts.resolver,
+                    )
+                )
+                self.assertFalse(invalid_owner_inverse.passed)
+                self.assertIn(
+                    "body_inverse_reception_context_anchor_missing:rm1",
+                    invalid_owner_inverse.failure_codes,
+                )
+                self.assertIn(
+                    "body_inverse_reception_why_duty_missing:rm1",
+                    invalid_owner_inverse.failure_codes,
+                )
+
         wrong_source_nucleus = replace(
             action_nucleus,
             semantic_frame=replace(
@@ -1983,15 +2222,48 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             move=move,
             plan=artifacts.plan,
         )
-        context = reception_owner.final_reception_nucleus_text(
+        raw_context = reception_owner.final_reception_source_anchor_text(
             context_id,
             nucleus_index,
             artifacts.resolver,
         )
+        reception_line = next(
+            line
+            for line in artifacts.sentence_plan.lines
+            if line.binding.line_role == "human_follow"
+        )
+        move_ir = reception_owner._source_grounded_plan_clause_realizations(
+            reception_plan,
+            nucleus_index,
+            artifacts.resolver,
+            plan=artifacts.plan,
+            recovery_stage=artifacts.sentence_plan.recovery_stage,
+            clause_plans=tuple(reception_line.reception_clause_plans),
+        )[0].moves[0]
+        context_adjunct = reception_owner._source_grounded_context_adjunct(
+            move_ir
+        )
+        baseline_reception = _reception_text(artifacts.surface.text)
+        self.assertTrue(raw_context)
+        self.assertTrue(context_adjunct)
+        self.assertNotEqual(context_adjunct, raw_context)
+        self.assertEqual(baseline_reception.count(context_adjunct), 1)
+        punctuation_offset = max(1, len(context_adjunct) // 2)
+        punctuated_context_adjunct = (
+            context_adjunct[:punctuation_offset]
+            + "、"
+            + context_adjunct[punctuation_offset:]
+        )
+        ellipsis_context_adjunct = (
+            context_adjunct[:punctuation_offset]
+            + "…"
+            + context_adjunct[punctuation_offset:]
+        )
+        zero_width_raw_context = "\u200b".join(raw_context)
         body = _tamper_reception(
             artifacts.surface.text,
-            context,
-            "その状況",
+            context_adjunct,
+            "その状況を背景に、",
         )
         inverse = self._inverse_for_tamper(case_id, body)
         self.assertIn(
@@ -2009,6 +2281,122 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             self._bind_reception_text(
                 case_id,
                 _reception_text(body),
+            )
+
+        for replacement, mutation_kind in (
+            (
+                raw_context,
+                "raw_whole_clause",
+            ),
+            (
+                f"「{raw_context}」",
+                "quoted_whole_clause",
+            ),
+            (
+                context_adjunct + context_adjunct,
+                "duplicate_adjunct",
+            ),
+            (
+                punctuated_context_adjunct,
+                "internal_punctuation",
+            ),
+            (
+                context_adjunct + punctuated_context_adjunct,
+                "punctuation_obfuscated_duplicate",
+            ),
+            (
+                context_adjunct + ellipsis_context_adjunct,
+                "ellipsis_obfuscated_duplicate",
+            ),
+            (
+                f'"{context_adjunct}"',
+                "ascii_quoted_adjunct",
+            ),
+            (
+                f"“{context_adjunct}”",
+                "curly_quoted_adjunct",
+            ),
+            (
+                ("prefix" * 16) + context_adjunct,
+                "long_arbitrary_prefix",
+            ),
+            (
+                "、" + context_adjunct,
+                "extra_leading_delimiter",
+            ),
+            (
+                raw_context + context_adjunct,
+                "raw_and_derived_adjunct",
+            ),
+            (
+                context_adjunct + f"“{raw_context}”",
+                "curly_quoted_raw_after_adjunct",
+            ),
+            (
+                context_adjunct + zero_width_raw_context,
+                "zero_width_raw_after_adjunct",
+            ),
+        ):
+            with self.subTest(context_mutation=mutation_kind):
+                mutated_body = _tamper_reception(
+                    artifacts.surface.text,
+                    context_adjunct,
+                    replacement,
+                )
+                mutated_inverse = self._inverse_for_tamper(
+                    case_id,
+                    mutated_body,
+                )
+                self.assertFalse(mutated_inverse.passed)
+                self.assertIn(
+                    "body_inverse_reception_context_anchor_missing:rm1",
+                    mutated_inverse.failure_codes,
+                )
+                self.assertIn(
+                    "body_inverse_reception_why_duty_missing:rm1",
+                    mutated_inverse.failure_codes,
+                )
+                with self.assertRaisesRegex(
+                    reception_owner.GroundedHumanReceptionSurfaceError,
+                    "human_reception_move_context_missing:rm1",
+                ):
+                    self._bind_reception_text(
+                        case_id,
+                        _reception_text(mutated_body),
+                    )
+
+        terminal_index = baseline_reception.rfind("。")
+        self.assertGreaterEqual(terminal_index, 0)
+        trailing_duplicate_reception = (
+            baseline_reception[:terminal_index]
+            + context_adjunct
+            + baseline_reception[terminal_index:]
+        )
+        trailing_duplicate_body = _tamper_reception(
+            artifacts.surface.text,
+            baseline_reception,
+            trailing_duplicate_reception,
+        )
+        trailing_duplicate_inverse = self._inverse_for_tamper(
+            case_id,
+            trailing_duplicate_body,
+        )
+        self.assertFalse(trailing_duplicate_inverse.passed)
+        self.assertIn(
+            "body_inverse_reception_context_anchor_missing:rm1",
+            trailing_duplicate_inverse.failure_codes,
+        )
+        self.assertIn(
+            "body_inverse_reception_why_duty_missing:rm1",
+            trailing_duplicate_inverse.failure_codes,
+        )
+        with self.assertRaisesRegex(
+            reception_owner.GroundedHumanReceptionSurfaceError,
+            "human_reception_move_context_missing:rm1",
+        ):
+            self._bind_reception_text(
+                case_id,
+                trailing_duplicate_reception,
             )
 
     def test_importance_predicate_deletion_is_rejected(self) -> None:
