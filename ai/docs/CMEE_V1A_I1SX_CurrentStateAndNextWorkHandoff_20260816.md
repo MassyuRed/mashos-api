@@ -5319,3 +5319,13 @@ MASH_PRODUCT_READ_READY = false
 CANDIDATE_READY = false
 PRODUCT_ADOPTION_OR_PRODUCTION_MERGE = false
 PRIVATE_BODY_CASE_DIGEST_LOCATOR_PUBLICATION = 0
+
+### Completed checkpoint regression (same unfinished authority)
+
+Runtime checkpoint `1e607e2b2ae920311f4b787b676e34318925dc6a` has the same tree as the source used for this regression. All eleven expected changed paths and remote blobs were verified against the local checkpoint; PR3 remained open Draft/unmerged.
+
+Existing related test set plus the four added status/aspect methods: **174 executed, 166 passed, 8 failed, 0 skipped/unexecuted**. The six existing asynchronous RR6/RR7 tests ran through stdlib asyncio with existing pytest fixtures; no dependency was added. The final focused body-inverse/generic/owner set is 51/51 passing within that run. Exact8 meaning inheritance is 6/6; RR3 22/22, RR4 21/21, RR5 22/23, RR6 10/10, RR7 9/9, RR8 22/28. This is not an all-regression PASS.
+
+Seven failures already reproduce on the immutable admission baseline: two frozen observation expectations, two self-denial safety/depth expectations, two existing RR8 Gate outcomes and one dated source-bound PASS receipt. The existing RR7 optional-removal test was corrected to compare retained moves in the owner's existing display order, without changing runtime selection. No historical PASS receipt or frozen expected observation was altered.
+
+The one new failure is the unchanged canonical100 outer-availability assertion (actual GENERATED 72 versus required 68), which is the confirmed approval-condition conflict above. Current direct all100 bridge and exact required Move/expression/visible-binding checks pass. Direct generation or mechanical binding success is not a naturalness verdict. Root full100 NOT_CLEAR refers to the earlier frozen probe; latest output has not received the mandatory full root reread, so completion and Product Read readiness remain false. Further status/language repairs and current-runner identity/final receipt remain pending at the recorded resume point.
