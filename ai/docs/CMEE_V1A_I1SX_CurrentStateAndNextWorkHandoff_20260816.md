@@ -5104,3 +5104,112 @@ TECHNICAL_CREDIT = 0
 NEXT_AUTOMATIC_ACTION = NONE
 CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_THIS_STOP
 ```
+
+---
+
+## CMEE Work Stage 1 / realizable Reception expression terminal scope STOP rollback（2026-09-04）
+
+本節は、Mash authority
+`FRESH_MASH_LEVEL3_CMEE_WORK_STAGE1_REALIZABLE_RECEPTION_EXPRESSION_CANONICAL_INTEGRATION_AND_HUMAN_RECEPTION_BODY_CLOSURE_20260904`
+により進めた同一product-causal unitのterminal scope STOP記録である。前節のbounded focus
+STOPを受け、selected input-specific meaningからHuman Reception sole Layer 2 authorへ、
+source-grounded realizable Reception expressionを渡すcurrent owner経路を実装・監査した。
+公開schema、route、API、DB、RN、persistence、production activationは変更していない。
+
+```text
+CHECKPOINT_SCHEMA = CMEE_WORK_STAGE1_REALIZABLE_RECEPTION_EXPRESSION_TERMINAL_STOP_ROLLBACK_V1
+CURRENT_PHASE = TERMINAL_STOP_ROLLBACK
+AUTHORITY_OUTCOME = TERMINAL_SCOPE_STOP
+REPOSITORY = MassyuRed/mashos-api
+PULL_REQUEST = 3
+BRANCH = agent/cmee-v1a-i1sx-source-explicit-20260815
+AUTHORITY_ADMISSION_HEAD = 3c335bd11eb94d38eb5649b54b31b2de38636ebb
+PARENT_REMOTE_HEAD = 8f30d8d15c1362b517796ca50c70a9afe0454cb0_REMOTE_VERIFIED
+FINAL_REMOTE_HEAD = NOT_YET_RECORDED
+
+CURRENT_PRODUCT_OWNER_ADOPTION_STATE = IMPLEMENTED_NOT_ACCEPTED
+CANDIDATE_READY = false
+PRODUCT_CREDIT = 0
+TECHNICAL_CREDIT = 0
+PRODUCTION_EFFECT = 0
+AUTOMATIC_PROGRESSION = false
+```
+
+凍結candidateは、canonical direct build `100/100`、required Move `124/124`、
+realizable expression `124/124`、visible binding `124/124`へ到達し、binding violationは0だった。
+Gate/body-only inverse、exact source grounding、raw replay禁止、private publication禁止の機械境界も
+通過した。しかし、これはfull-bodyの商品成立を証明しない。華恋の同一snapshot body-full
+pre-screenでは、Layer 2単体の集計が`B1 / M2 / m13 / C84`となり、さらにLayer 1とLayer 2の
+cross-layer時制ownerにterminal blockerが確認された。
+
+```text
+FROZEN_CANDIDATE_DIRECT_BUILD = 100/100
+FROZEN_CANDIDATE_REQUIRED_MOVE = 124/124
+FROZEN_CANDIDATE_REALIZABLE_EXPRESSION = 124/124
+FROZEN_CANDIDATE_VISIBLE_BINDING = 124/124
+FROZEN_CANDIDATE_BINDING_VIOLATION = 0
+FROZEN_LAYER2_BODY_PRESCREEN = B1/M2/m13/C84
+
+SAME_NUCLEUS_LAYER1_FUTURE_LAYER2_PERFORMED_CONFLICT = 20
+CONFLICT_BOUNDED_HEAD_POSITIVE_PAST = 19
+CONFLICT_BOUNDED_HEAD_PROGRESSIVE = 1
+INDEPENDENT_FUTURE_CONSTITUENT_IN_CONFLICT_SCOPE = 0
+```
+
+矛盾20件はすべて、Layer 1のprospective classificationとLayer 2のperformed classificationが
+同じaction nucleusを所有していた。別のfuture constituentへscopeを分けられる例は0であり、
+Layer 2だけを補正するとfull body内で同一意味の時制が衝突する。一方、Layer 2を開始時点の
+future classificationへ戻すと、positive-past 19件とprogressive 1件のbounded source
+morphologyをperformedとして受け取る自然さ条件を満たさない。
+
+したがって、次のconstraint triangleは今回のHuman Reception/Gate owner範囲内では同時に
+成立しない。
+
+1. selected meaningとLayer 1のexact byte parityを維持する。
+2. canonical100のfull bodyを`CLEAR`にする。
+3. positive-past／progressiveのsource-grounded morphologyを自然なperformed statusとして扱う。
+
+同じnucleusをprospective intentionとcompleted actionの別ownerへ分けるには、上流のselected
+meaning／Layer 1 producerを再authorする必要がある。これはHuman Reception sole Layer 2 author
+とGateの今回の変更範囲を越える。Layer 1 bytesを変更せずLayer 2だけで隠すこと、future markerを
+別scopeへ推測移動すること、case rule、fixture lexeme、fixed sentence、fallbackまたはvalidator
+緩和では解消しないため、真正なscope外STOPとした。
+
+STOP確定後、壊れたruntime candidateを残さないため、authority admission headのproduction exact4
+とtest exact5を、指定pathに限定してadmission bytesへ復元した。復元は`9/9` byte-equalで、
+admission headに対するproduction/test deltaは0である。既存handoff以外のcanonical design、docs、
+public surfaceはこのrollbackで変更していない。
+
+```text
+ADMISSION_BYTE_ROLLBACK = 9/9
+RESTORED_PRODUCTION_PATHS = 4
+RESTORED_TEST_PATHS = 5
+PRODUCTION_SOURCE_DELTA_FROM_ADMISSION = 0
+TEST_SOURCE_DELTA_FROM_ADMISSION = 0
+HANDOFF_DELTA = 1
+
+RESTORED_PRODUCTION_PY_COMPILE = PASS
+BASELINE_RELEVANT_SMOKE = 4/4_PASS
+PYTEST_IN_CURRENT_RUNTIME = UNAVAILABLE
+DIFF_CHECK = PASS
+PRIVATE_INPUT_BODY_PUBLICATION = 0
+PRIVATE_ACTUAL_BODY_PUBLICATION = 0
+PRIVATE_LOCATOR_OR_CASE_DATA_PUBLICATION = 0
+```
+
+このSTOPから自動で同じclassifier、別名helper、Layer 2-only時制補正、自然さpatchまたは
+candidate再生成へ進まない。次に必要なfresh Mash判断はexact2である。
+
+1. Layer 1 exact byte parityを緩和し、同一nucleusのstatusをsource morphologyと整合させる
+   method authorityを与えるか。
+2. Layer 1 exact byte parityを維持し、上流selected meaning ownerでprospective intentionと
+   completed actionを別ownerへ分割するmethod authorityを与えるか。
+
+```text
+NEXT_FRESH_MASH_DECISION_COUNT = 2
+FRESH_MASH_DECISION_1 = RELAX_LAYER1_BYTE_PARITY_AND_ALIGN_SAME_NUCLEUS_STATUS
+FRESH_MASH_DECISION_2 = PRESERVE_LAYER1_BYTE_PARITY_AND_AUTHORIZE_UPSTREAM_SPLIT_OWNER
+NEXT_AUTOMATIC_ACTION = NONE
+CURRENT_AUTHORIZED_NEXT_IMPLEMENTATION = NONE_AFTER_THIS_STOP
+KAREN_BODY_FULL_PRE_SCREEN_READY_FOR_FRESH_APPROVAL = false
+```

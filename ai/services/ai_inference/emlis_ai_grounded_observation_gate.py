@@ -11,7 +11,6 @@ reconstruct meaning from the public body and it never serializes source text.
 from dataclasses import dataclass
 import re
 from typing import Any, Final, Literal, Mapping
-import unicodedata
 
 from emlis_ai_evidence_ledger_service import EvidenceSpanResolver
 from emlis_ai_grounded_human_reception import (
@@ -158,45 +157,6 @@ _BODY_INVERSE_ANCHOR_NORMALIZE_RE: Final = re.compile(
 )
 _BODY_INVERSE_LEADING_CONNECTOR_RE: Final = re.compile(
     r"^(?:とそれから|そして|それでも|けれど|だけど|でも|で)"
-)
-_BODY_INVERSE_CONTEXT_LEXICAL_FORBIDDEN_RE: Final = re.compile(
-    r"[「」『』\r\n!?！？]|(?:してください|しましょう|すべき)"
-)
-_BODY_INVERSE_CONTEXT_SINGLE_QUOTE_RE: Final = re.compile(
-    r"「(?P<corner>[^「」『』\r\n!?！？]{1,16})」"
-    r"|『(?P<double>[^「」『』\r\n!?！？]{1,16})』"
-)
-_BODY_INVERSE_CONTEXT_LEXEME_MAX_CHARS: Final = 24
-_BODY_INVERSE_CONTEXT_STRONG_PARTICLES: Final[tuple[str, ...]] = (
-    "について",
-    "に対して",
-    "によって",
-    "には",
-    "では",
-    "とは",
-    "から",
-    "まで",
-    "より",
-    "を",
-    "へ",
-    "は",
-    "が",
-)
-_BODY_INVERSE_CONTEXT_WEAK_PARTICLES: Final[tuple[str, ...]] = (
-    "に",
-    "で",
-    "と",
-)
-_BODY_INVERSE_CONTEXT_TRAILING_CONNECTIVE_RE: Final = re.compile(
-    r"(?:けれども?|けど|のに|とはいえ)[、,\s]*$"
-)
-_BODY_INVERSE_CONTEXT_FINITE_END_RE: Final = re.compile(
-    r"(?:かも|感じ|予定|つもり|まま|こと|"
-    r"なかった|ない|たい|ほしい|欲しい|"
-    r"している|ている|でいる|ていた|でいた|"
-    r"した|できた|できない|分からない|わからない|"
-    r"だった|です|ます|ある|いる|なる|する|"
-    r"[ただいうくぐすつぬぶむるん])$"
 )
 _BODY_INVERSE_RELATION_MARKERS_BY_TYPE: Final[dict[str, frozenset[str]]] = {
     "temporal_before_after": frozenset({"from_to", "change"}),
@@ -1585,71 +1545,6 @@ def _body_inverse_normalized_anchor(value: Any) -> str:
         compact = reduced
 
 
-def _body_inverse_context_occurrence_text(value: Any) -> str:
-    """Normalize only for rejecting disguised duplicate context adjuncts."""
-
-    normalized = unicodedata.normalize("NFKC", str(value or "")).lower()
-    return "".join(
-        character
-        for character in normalized
-        if not character.isspace()
-        and unicodedata.category(character)[0] not in {"P", "S", "Z"}
-        and unicodedata.category(character) not in {"Cf", "Mn"}
-    )
-
-
-def _body_inverse_reception_join_boundary(
-    body: bytes,
-    *,
-    prior_referent_byte_end: int,
-    owned_referent_byte_start: int,
-    markers: tuple[Any, ...],
-) -> int | None:
-    """Return the sole canonical continuative boundary between two Moves."""
-
-    if not (
-        0 <= prior_referent_byte_end < owned_referent_byte_start <= len(body)
-    ):
-        return None
-    marker_ends = tuple(
-        sorted(
-            {
-                int(marker.utf8_byte_end)
-                for marker in markers
-                if getattr(marker, "section", None) == "reception"
-                and getattr(marker, "marker_kind", None) == "reception"
-                and prior_referent_byte_end
-                <= int(getattr(marker, "utf8_byte_start", -1))
-                < int(getattr(marker, "utf8_byte_end", -1))
-                <= owned_referent_byte_start
-            }
-        )
-    )
-    boundary_candidates: set[int] = set()
-    try:
-        for marker_end in marker_ends:
-            join_region = body[
-                marker_end:owned_referent_byte_start
-            ].decode("utf-8", errors="strict")
-            for match in re.finditer(r"[、,]", join_region):
-                if re.search(
-                    r"(?:ていて|思えず)$",
-                    join_region[: match.start()].rstrip(),
-                ) is None:
-                    continue
-                boundary_candidates.add(
-                    marker_end
-                    + len(
-                        join_region[: match.start() + 1].encode("utf-8")
-                    )
-                )
-    except UnicodeDecodeError:
-        return None
-    if len(boundary_candidates) != 1:
-        return None
-    return next(iter(boundary_candidates))
-
-
 def _body_inverse_is_final_stage1_plan(plan: GroundedObservationPlan) -> bool:
     return FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in tuple(
         getattr(plan, "source_contracts", ())
@@ -1689,8 +1584,6 @@ def _body_inverse_typed_source_fragment(
         and code.startswith(("surface_scalar_range:", "surface_scalar_source:"))
     )
     if not marker_rows:
-        if scalar_rows or source_rows or legacy_rows:
-            return ""
         return None
     if (
         len(marker_rows) != 1
@@ -1803,234 +1696,6 @@ def _body_inverse_visible_text(body: bytes, row: Any) -> str:
     )
 
 
-def _body_inverse_context_particle_positions(
-    value: str,
-) -> tuple[tuple[int, int, str], ...]:
-    positions: list[tuple[int, int, str]] = []
-    for particle in (
-        *_BODY_INVERSE_CONTEXT_STRONG_PARTICLES,
-        *_BODY_INVERSE_CONTEXT_WEAK_PARTICLES,
-    ):
-        cursor = 0
-        while (start := value.find(particle, cursor)) >= 0:
-            end = start + len(particle)
-            before = value[:start]
-            after = value[end:]
-            cursor = start + 1
-            if not before or not after:
-                continue
-            if particle == "から" and before.endswith(("分", "わ")) and after.startswith("な"):
-                continue
-            if particle == "が" and after.startswith(
-                ("ら", "り", "る", "れ", "ろ", "っ")
-            ):
-                continue
-            if particle == "で" and after.startswith(("き", "は", "も")):
-                continue
-            if particle == "と" and before.endswith("こ"):
-                continue
-            if particle == "に" and before.endswith(
-                ("気", "ため", "よう", "こと")
-            ):
-                continue
-            positions.append((start, end, particle))
-    by_start: dict[int, tuple[int, int, str]] = {}
-    for row in positions:
-        incumbent = by_start.get(row[0])
-        if incumbent is None or len(row[2]) > len(incumbent[2]):
-            by_start[row[0]] = row
-    longest = tuple(by_start[index] for index in sorted(by_start))
-    return tuple(
-        row
-        for row in longest
-        if not any(
-            other[0] <= row[0]
-            and row[1] <= other[1]
-            and len(other[2]) > len(row[2])
-            for other in longest
-        )
-    )
-
-
-def _body_inverse_context_trim_modifier(value: str) -> str:
-    clean = value.strip(" 　、,…")
-    return _BODY_INVERSE_CONTEXT_TRAILING_CONNECTIVE_RE.sub(
-        "", clean
-    ).strip(" 　、,…")
-
-
-def _body_inverse_context_final_lexical_word(value: str) -> str:
-    match = re.search(
-        r"(?P<kanji>[一-龯々]+[ぁ-んァ-ヶー]*)$"
-        r"|(?P<katakana>[ァ-ヶー]+[ぁ-ん]*)$",
-        value,
-    )
-    if match is None:
-        return value
-    return str(match.group("kanji") or match.group("katakana") or value)
-
-
-def _body_inverse_context_predicate_head(value: str) -> str:
-    segment = re.split(r"[、,]", value)[-1]
-    segment = _body_inverse_context_trim_modifier(segment)
-    if not segment:
-        return ""
-    positions = _body_inverse_context_particle_positions(segment)
-    candidates = tuple(
-        candidate
-        for candidate in (
-            *((segment,) if len(segment) <= _BODY_INVERSE_CONTEXT_LEXEME_MAX_CHARS else ()),
-            *(
-                _body_inverse_context_trim_modifier(segment[end:])
-                for _start, end, _particle in positions
-            ),
-        )
-        if candidate
-        and not re.fullmatch(r"[ぁ-ん]{1,3}", candidate)
-        and not candidate.startswith(("を", "に", "へ", "は", "が", "と", "で"))
-        and len(candidate) <= _BODY_INVERSE_CONTEXT_LEXEME_MAX_CHARS
-        and _BODY_INVERSE_CONTEXT_FINITE_END_RE.search(candidate)
-    )
-    if candidates:
-        return max(candidates, key=len)
-    lexical = _body_inverse_context_final_lexical_word(segment)
-    if len(lexical) <= _BODY_INVERSE_CONTEXT_LEXEME_MAX_CHARS:
-        return lexical
-    connective_tails = tuple(
-        _body_inverse_context_trim_modifier(segment[match.end() :])
-        for match in re.finditer(
-            r"(?:なくて|ないで|して|されて|られて|って|たら|なら)",
-            segment,
-        )
-    )
-    for candidate in reversed(connective_tails):
-        if (
-            candidate
-            and len(candidate) <= _BODY_INVERSE_CONTEXT_LEXEME_MAX_CHARS
-            and _BODY_INVERSE_CONTEXT_FINITE_END_RE.search(candidate)
-        ):
-            return candidate
-    return ""
-
-
-def _body_inverse_context_clause_candidate(
-    nucleus: Any,
-    resolver: EvidenceSpanResolver,
-) -> tuple[str, tuple[str, ...]]:
-    candidates: list[str] = []
-    source_values: list[str] = []
-    for span_id in tuple(getattr(nucleus, "source_span_ids", ())):
-        if not isinstance(span_id, str) or re.fullmatch(r"s[1-9][0-9]*", span_id) is None:
-            raise ValueError("context_source_identity_invalid")
-        raw = re.sub(
-            r"\s+",
-            " ",
-            str(getattr(resolver.resolve(span_id), "raw_text", "") or "")
-            .replace("\u3000", " "),
-        ).strip()
-        if not raw:
-            raise ValueError("context_source_missing")
-        typed = _body_inverse_typed_source_fragment(nucleus, raw)
-        if typed == "":
-            raise ValueError("context_typed_source_invalid")
-        bounded = typed if typed is not None else raw
-        normalized_source = _body_inverse_normalized_anchor(bounded)
-        if normalized_source and normalized_source not in source_values:
-            source_values.append(normalized_source)
-        for row in re.split(r"[。．.!！?？]+", bounded):
-            value = re.sub(r"\s+", " ", row).strip(
-                " 　、,。．.!！?？「」『』"
-            )
-            if value and value not in candidates:
-                candidates.append(value)
-    if len(candidates) != 1 or not source_values:
-        raise ValueError("context_clause_ambiguous")
-    return candidates[0], tuple(source_values)
-
-
-def _body_inverse_context_head(
-    nucleus: Any,
-    resolver: EvidenceSpanResolver,
-) -> tuple[str, tuple[str, ...]]:
-    clause, source_values = _body_inverse_context_clause_candidate(
-        nucleus,
-        resolver,
-    )
-    clean = clause.strip(" 　、,…")
-    quoted_head = ""
-    quote_chars = tuple(ch for ch in clean if ch in "「」『』")
-    if quote_chars:
-        matches = tuple(_BODY_INVERSE_CONTEXT_SINGLE_QUOTE_RE.finditer(clean))
-        if len(quote_chars) != 2 or len(matches) != 1:
-            raise ValueError("context_quote_boundary_invalid")
-        match = matches[0]
-        quoted_head = str(
-            match.group("corner") or match.group("double") or ""
-        ).strip()
-        if not quoted_head:
-            raise ValueError("context_quote_boundary_invalid")
-        clean = clean[: match.start()] + quoted_head + clean[match.end() :]
-    if not clean or _BODY_INVERSE_CONTEXT_LEXICAL_FORBIDDEN_RE.search(clean):
-        raise ValueError("context_lexeme_invalid")
-    head = _body_inverse_context_predicate_head(clean)
-    if (
-        not head
-        or len(head) > _BODY_INVERSE_CONTEXT_LEXEME_MAX_CHARS
-        or _BODY_INVERSE_CONTEXT_LEXICAL_FORBIDDEN_RE.search(head)
-        or bool(quoted_head and head == clean)
-    ):
-        raise ValueError("context_head_invalid")
-    return head, source_values
-
-
-def _body_inverse_context_head_nominal(value: str) -> str:
-    clean = value.strip(" 　、,。．.")
-    if (
-        not clean
-        or len(clean) > _BODY_INVERSE_CONTEXT_LEXEME_MAX_CHARS
-        or _BODY_INVERSE_CONTEXT_LEXICAL_FORBIDDEN_RE.search(clean)
-    ):
-        raise ValueError("context_head_invalid")
-    if re.search(r"[一-龯々ァ-ヶー]$", clean) or clean.endswith(
-        ("こと", "もの", "の", "気持ち", "状態", "感じ")
-    ):
-        return clean
-    if clean.endswith(("たい", "ほしい", "欲しい")):
-        return f"{clean}気持ち"
-    if clean.endswith("かも"):
-        return f"{clean}という感覚"
-    if (
-        clean.endswith(
-            (
-                "なかった",
-                "ない",
-                "ている",
-                "でいる",
-                "ていた",
-                "でいた",
-                "だった",
-                "です",
-                "ます",
-                "た",
-                "ある",
-                "いる",
-                "なる",
-                "する",
-            )
-        )
-        or re.search(r"[うくぐすつぬぶむるい]$", clean)
-    ):
-        return f"{clean}こと"
-    return f"{clean}ということ"
-
-
-@dataclass(frozen=True)
-class _BodyInverseReceptionContextExpectation:
-    adjunct: str
-    semantic_heads: tuple[str, ...]
-    source_values: tuple[str, ...]
-
-
 def _body_inverse_reception_context_ids(
     move: Any,
     plan: GroundedObservationPlan,
@@ -2072,51 +1737,6 @@ def _body_inverse_reception_context_ids(
         return ()
     candidates.sort()
     return (candidates[0][2],)
-
-
-def _body_inverse_reception_context_expectation(
-    move: Any,
-    plan: GroundedObservationPlan,
-    resolver: EvidenceSpanResolver,
-) -> _BodyInverseReceptionContextExpectation:
-    context_ids = _body_inverse_reception_context_ids(move, plan)
-    if not context_ids:
-        return _BodyInverseReceptionContextExpectation("", (), ())
-    if (
-        len(context_ids) != len(set(context_ids))
-        or set(context_ids).intersection(move.target_nucleus_ids)
-    ):
-        raise ValueError("context_owner_ambiguous")
-    nucleus_index = {item.nucleus_id: item for item in plan.nuclei}
-    rows = tuple(
-        _body_inverse_context_head(nucleus_index[nucleus_id], resolver)
-        for nucleus_id in context_ids
-    )
-    heads = tuple(head for head, _source_values in rows)
-    source_values = _dedupe(
-        source_value
-        for _head, values in rows
-        for source_value in values
-    )
-    nominals = tuple(
-        _body_inverse_context_head_nominal(head) for head in heads
-    )
-    if (
-        len(heads) != len(set(heads))
-        or len(nominals) != len(set(nominals))
-    ):
-        raise ValueError("context_owner_ambiguous")
-    if len(nominals) == 1:
-        joined = nominals[0]
-    elif len(nominals) == 2:
-        joined = f"{nominals[0]}と{nominals[1]}"
-    else:
-        joined = "、".join(nominals[:-1]) + f"、そして{nominals[-1]}"
-    return _BodyInverseReceptionContextExpectation(
-        adjunct=f"{joined}を背景に、",
-        semantic_heads=heads,
-        source_values=source_values,
-    )
 
 
 def evaluate_grounded_surface_body_inverse(
@@ -2492,12 +2112,13 @@ def evaluate_grounded_surface_body_inverse(
                     parsed_sentences,
                 ):
                     try:
-                        parsed_sentence_visible = _body_inverse_visible_text(
-                            body,
-                            parsed_sentence,
-                        )
-                        parsed_sentence_text = _body_inverse_normalized_anchor(
-                            parsed_sentence_visible
+                        parsed_sentence_text = (
+                            _body_inverse_normalized_anchor(
+                                _body_inverse_visible_text(
+                                    body,
+                                    parsed_sentence,
+                                )
+                            )
                         )
                     except (UnicodeDecodeError, ValueError):
                         failures.append(
@@ -2507,252 +2128,6 @@ def evaluate_grounded_surface_body_inverse(
                     sentence_codes = set(
                         parsed_sentence.reception_marker_codes
                     )
-                    clause_moves = tuple(
-                        move_index[move_id]
-                        for move_id in clause.move_ids
-                        if move_id in move_index
-                    )
-                    referent_positions: dict[str, tuple[int, int]] = {}
-                    referent_byte_positions: dict[str, tuple[int, int]] = {}
-                    referent_cursor = 0
-                    raw_referent_cursor = 0
-                    for owned_move in clause_moves:
-                        owned_referent = expected_referent_by_move.get(
-                            owned_move.move_id
-                        )
-                        owned_referent_text = (
-                            _body_inverse_normalized_anchor(
-                                owned_referent.text
-                            )
-                            if owned_referent is not None
-                            else ""
-                        )
-                        owned_start = (
-                            parsed_sentence_text.find(
-                                owned_referent_text,
-                                referent_cursor,
-                            )
-                            if owned_referent_text
-                            else -1
-                        )
-                        owned_visible_referent = (
-                            str(owned_referent.text)
-                            .replace("「", "")
-                            .replace("」", "")
-                            if owned_referent is not None
-                            else ""
-                        )
-                        owned_raw_start = (
-                            parsed_sentence_visible.find(
-                                owned_visible_referent,
-                                raw_referent_cursor,
-                            )
-                            if owned_visible_referent
-                            else -1
-                        )
-                        if owned_start < 0 or owned_raw_start < 0:
-                            continue
-                        owned_end = owned_start + len(owned_referent_text)
-                        referent_positions[owned_move.move_id] = (
-                            owned_start,
-                            owned_end,
-                        )
-                        referent_cursor = owned_end
-                        owned_raw_end = (
-                            owned_raw_start + len(owned_visible_referent)
-                        )
-                        referent_byte_positions[owned_move.move_id] = (
-                            parsed_sentence.utf8_byte_start
-                            + len(
-                                parsed_sentence_visible[:owned_raw_start].encode(
-                                    "utf-8"
-                                )
-                            ),
-                            parsed_sentence.utf8_byte_start
-                            + len(
-                                parsed_sentence_visible[:owned_raw_end].encode(
-                                    "utf-8"
-                                )
-                            ),
-                        )
-                        raw_referent_cursor = owned_raw_end
-                    context_prefix_by_move: dict[str, str] = {}
-                    context_visible_prefix_by_move: dict[str, str] = {}
-                    prior_referent_byte_end: int | None = None
-                    for move_offset, owned_move in enumerate(
-                        clause_moves
-                    ):
-                        owned_position = referent_positions.get(
-                            owned_move.move_id
-                        )
-                        owned_byte_position = referent_byte_positions.get(
-                            owned_move.move_id
-                        )
-                        if owned_position is None or owned_byte_position is None:
-                            context_prefix_by_move[owned_move.move_id] = ""
-                            context_visible_prefix_by_move[owned_move.move_id] = ""
-                            continue
-                        owned_start, _owned_end = owned_position
-                        owned_byte_start, owned_byte_end = owned_byte_position
-                        if move_offset:
-                            if prior_referent_byte_end is None:
-                                context_prefix_by_move[owned_move.move_id] = ""
-                                context_visible_prefix_by_move[
-                                    owned_move.move_id
-                                ] = ""
-                                prior_referent_byte_end = owned_byte_end
-                                continue
-                            response_boundary = (
-                                _body_inverse_reception_join_boundary(
-                                    body,
-                                    prior_referent_byte_end=(
-                                        prior_referent_byte_end
-                                    ),
-                                    owned_referent_byte_start=(
-                                        owned_byte_start
-                                    ),
-                                    markers=tuple(witness.markers),
-                                )
-                            )
-                            if response_boundary is None:
-                                context_prefix_by_move[owned_move.move_id] = ""
-                                context_visible_prefix_by_move[
-                                    owned_move.move_id
-                                ] = ""
-                                prior_referent_byte_end = owned_byte_end
-                                continue
-                        else:
-                            response_boundary = (
-                                parsed_sentence.utf8_byte_start
-                            )
-                        visible_prefix = body[
-                            response_boundary:owned_byte_start
-                        ].decode("utf-8", errors="strict")
-                        context_visible_prefix_by_move[
-                            owned_move.move_id
-                        ] = visible_prefix
-                        context_prefix_by_move[owned_move.move_id] = (
-                            _body_inverse_normalized_anchor(visible_prefix)
-                        )
-                        prior_referent_byte_end = owned_byte_end
-                    sentence_quote_values: list[str] = []
-                    for quote_row in quote_rows:
-                        if (
-                            quote_row.utf8_byte_start
-                            < parsed_sentence.utf8_byte_start
-                            or quote_row.utf8_byte_end
-                            > parsed_sentence.utf8_byte_end
-                        ):
-                            continue
-                        try:
-                            sentence_quote_values.append(
-                                _body_inverse_normalized_anchor(
-                                    _body_inverse_quote_text(
-                                        body,
-                                        quote_row,
-                                    )
-                                )
-                            )
-                        except (UnicodeDecodeError, ValueError):
-                            failures.append(
-                                "body_inverse_reception_quote_bytes_invalid:"
-                                f"{index}"
-                            )
-                    explicit_context_expectations: dict[
-                        str, _BodyInverseReceptionContextExpectation
-                    ] = {}
-                    context_projection_invalid: set[str] = set()
-                    for owned_move in clause_moves:
-                        owned_context_ids = (
-                            _body_inverse_reception_context_ids(
-                                owned_move,
-                                plan,
-                            )
-                        )
-                        if (
-                            not owned_context_ids
-                            or reception_effective_move_reference_mode(
-                                reception_plan,
-                                owned_move,
-                                sentence_plan.recovery_stage,
-                            )
-                            == "anaphoric_first"
-                        ):
-                            continue
-                        try:
-                            explicit_context_expectations[
-                                owned_move.move_id
-                            ] = _body_inverse_reception_context_expectation(
-                                owned_move,
-                                plan,
-                                resolver,
-                            )
-                        except (
-                            AttributeError,
-                            KeyError,
-                            TypeError,
-                            UnicodeError,
-                            ValueError,
-                        ):
-                            context_projection_invalid.add(
-                                owned_move.move_id
-                            )
-                    expected_adjunct_multiplicity: dict[str, int] = {}
-                    moves_by_expected_adjunct: dict[str, list[str]] = {}
-                    for owned_move in clause_moves:
-                        expectation = explicit_context_expectations.get(
-                            owned_move.move_id
-                        )
-                        expected_adjunct = (
-                            _body_inverse_normalized_anchor(
-                                expectation.adjunct
-                            )
-                            if expectation is not None
-                            else ""
-                        )
-                        if not expected_adjunct:
-                            continue
-                        expected_adjunct_multiplicity[expected_adjunct] = (
-                            expected_adjunct_multiplicity.get(
-                                expected_adjunct,
-                                0,
-                            )
-                            + 1
-                        )
-                        moves_by_expected_adjunct.setdefault(
-                            expected_adjunct,
-                            [],
-                        ).append(owned_move.move_id)
-                    context_multiset_overflow_moves = {
-                        move_id
-                        for expected_adjunct, expected_count
-                        in expected_adjunct_multiplicity.items()
-                        if (
-                            parsed_sentence_visible.count(
-                                explicit_context_expectations[
-                                    moves_by_expected_adjunct[
-                                        expected_adjunct
-                                    ][0]
-                                ].adjunct
-                            )
-                            != expected_count
-                            or _body_inverse_context_occurrence_text(
-                                parsed_sentence_visible
-                            ).count(
-                                _body_inverse_context_occurrence_text(
-                                    explicit_context_expectations[
-                                        moves_by_expected_adjunct[
-                                            expected_adjunct
-                                        ][0]
-                                    ].adjunct
-                                )
-                            )
-                            != expected_count
-                        )
-                        for move_id in moves_by_expected_adjunct[
-                            expected_adjunct
-                        ]
-                    }
                     for move_id in clause.move_ids:
                         move = move_index.get(move_id)
                         if move is None or not move.required:
@@ -2800,7 +2175,8 @@ def evaluate_grounded_surface_body_inverse(
                         )
                         if (
                             not expected_referent_text
-                            or move.move_id not in referent_positions
+                            or expected_referent_text
+                            not in parsed_sentence_text
                         ):
                             failures.append(
                                 "body_inverse_reception_target_referent_missing:"
@@ -2890,148 +2266,37 @@ def evaluate_grounded_surface_body_inverse(
                             )
                         )
                         anaphoric_context = bool(
-                            context_ids
+                            context_values
                             and effective_reference_mode
                             == "anaphoric_first"
                         )
-                        owned_prefix = context_prefix_by_move.get(
-                            move.move_id,
-                            "",
-                        )
                         context_missing = bool(
-                            context_ids
-                            and move.move_id not in referent_positions
+                            context_values
+                            and (
+                                (
+                                    anaphoric_context
+                                    and not any(
+                                        marker in parsed_sentence_text
+                                        for marker in ("中で", "中にも", "背景")
+                                    )
+                                )
+                                or (
+                                    not anaphoric_context
+                                    and not any(
+                                        source_value in parsed_sentence_text
+                                        for source_value in context_values
+                                    )
+                                )
+                            )
                         )
-                        if anaphoric_context:
-                            owned_visible_prefix = (
-                                context_visible_prefix_by_move.get(
-                                    move.move_id,
-                                    "",
-                                )
+                        if anaphoric_context and any(
+                            source_value in parsed_sentence_text
+                            for source_value in context_values
+                        ):
+                            failures.append(
+                                "body_inverse_reception_anaphoric_context_replayed:"
+                                f"{move.move_id}"
                             )
-                            marker_count = sum(
-                                1
-                                for _match in re.finditer(
-                                    "中にも|中で|背景",
-                                    owned_prefix,
-                                )
-                            )
-                            context_missing = context_missing or bool(
-                                not context_values
-                                or marker_count != 1
-                                or re.search(
-                                    r"[「」『』'\"‘’“”]",
-                                    owned_visible_prefix,
-                                )
-                                is not None
-                            )
-                            if any(
-                                source_value in owned_prefix
-                                for source_value in context_values
-                            ):
-                                failures.append(
-                                    "body_inverse_reception_anaphoric_context_replayed:"
-                                    f"{move.move_id}"
-                                )
-                                context_missing = True
-                        elif context_ids:
-                            expectation = explicit_context_expectations.get(
-                                move.move_id,
-                                _BodyInverseReceptionContextExpectation(
-                                    "", (), ()
-                                ),
-                            )
-                            expected_adjunct = (
-                                _body_inverse_normalized_anchor(
-                                    expectation.adjunct
-                                )
-                            )
-                            owned_visible_prefix = (
-                                context_visible_prefix_by_move.get(
-                                    move.move_id,
-                                    "",
-                                )
-                            )
-                            adjunct_count = (
-                                owned_visible_prefix.count(
-                                    expectation.adjunct
-                                )
-                                if expectation.adjunct
-                                else 0
-                            )
-                            normalized_expected_adjunct = (
-                                _body_inverse_context_occurrence_text(
-                                    expectation.adjunct
-                                )
-                            )
-                            normalized_adjunct_count = (
-                                _body_inverse_context_occurrence_text(
-                                    owned_visible_prefix
-                                ).count(normalized_expected_adjunct)
-                                if normalized_expected_adjunct
-                                else 0
-                            )
-                            context_missing = context_missing or bool(
-                                move.move_id in context_projection_invalid
-                                or adjunct_count != 1
-                                or normalized_adjunct_count != 1
-                                or not owned_visible_prefix.startswith(
-                                    expectation.adjunct
-                                )
-                                or re.search(
-                                    r"[「」『』'\"‘’“”]",
-                                    owned_visible_prefix,
-                                )
-                                is not None
-                                or move.move_id
-                                in context_multiset_overflow_moves
-                            )
-                            raw_context_replayed = any(
-                                _body_inverse_context_occurrence_text(
-                                    owned_visible_prefix
-                                ).count(
-                                    _body_inverse_context_occurrence_text(
-                                        source_value
-                                    )
-                                )
-                                > (
-                                    _body_inverse_context_occurrence_text(
-                                        expectation.adjunct
-                                    ).count(
-                                        _body_inverse_context_occurrence_text(
-                                            source_value
-                                        )
-                                    )
-                                    * adjunct_count
-                                )
-                                for source_value in expectation.source_values
-                                if _body_inverse_context_occurrence_text(
-                                    source_value
-                                )
-                            )
-                            if raw_context_replayed:
-                                context_missing = True
-                            quoted_context = any(
-                                quote_value
-                                and any(
-                                    quote_value in candidate
-                                    or candidate in quote_value
-                                    for candidate in (
-                                        expected_adjunct,
-                                        *(
-                                            _body_inverse_normalized_anchor(
-                                                head
-                                            )
-                                            for head in expectation.semantic_heads
-                                        ),
-                                        *expectation.source_values,
-                                    )
-                                    if candidate
-                                )
-                                for quote_value in sentence_quote_values
-                            )
-                            if quoted_context:
-                                context_missing = True
                         if context_missing:
                             failures.append(
                                 "body_inverse_reception_context_anchor_missing:"

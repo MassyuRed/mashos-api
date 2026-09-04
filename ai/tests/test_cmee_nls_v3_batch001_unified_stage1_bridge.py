@@ -202,12 +202,7 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
     def test_all100_inherit_premeaning_and_reach_selected_final_surface_gate(
         self,
     ) -> None:
-        actual_realize = (
-            response.realize_grounded_sentence_plan_with_human_reception
-        )
-        actual_human_reception = (
-            response.realize_source_grounded_human_reception
-        )
+        actual_realize = response.realize_grounded_sentence_plan
         actual_inverse = response.evaluate_grounded_surface_body_inverse
         actual_gate = response.evaluate_grounded_observation_gate
         actual_premeaning = response.build_premeaning_grounded_inputs
@@ -218,42 +213,8 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
             tuple(inspect.signature(actual_inverse).parameters),
             ("body", "plan", "sentence_plan", "resolver"),
         )
-        self.assertEqual(
-            tuple(inspect.signature(actual_gate).parameters),
-            (
-                "plan",
-                "sentence_plan",
-                "surface_result",
-                "resolver",
-                "product_readfeel_status",
-                "require_body_inverse",
-            ),
-        )
-        self.assertEqual(
-            tuple(
-                inspect.signature(
-                    grounded_surface_module.realize_grounded_sentence_plan
-                ).parameters
-            ),
-            ("sentence_plan", "plan", "resolver"),
-        )
-        self.assertEqual(
-            tuple(inspect.signature(actual_realize).parameters),
-            (
-                "sentence_plan",
-                "plan",
-                "resolver",
-                "human_reception_surface",
-            ),
-        )
         limited_trace_count = 0
         grounded_normal_count = 0
-        full_move_count = 0
-        full_expression_count = 0
-        shared_subject_zero_count = 0
-        same_act_witnesses: list[
-            tuple[tuple[str, ...], tuple[str, ...], str]
-        ] = []
 
         for row in self.rows:
             with self.subTest(case_id=row["case_id"]):
@@ -279,8 +240,6 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                 )
 
                 realized_surfaces: list[object] = []
-                arranged_candidates: list[tuple[object, ...]] = []
-                human_reception_calls: list[tuple[object, ...]] = []
                 selected_plans: list[object] = []
                 inverse_by_body: dict[bytes, list[object]] = {}
                 gates_by_body: dict[bytes, list[object]] = {}
@@ -311,44 +270,13 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
 
                 def track_realize(*args, **kwargs):
                     result = actual_realize(*args, **kwargs)
-                    surface, placements = result
-                    realized_surfaces.append(surface)
+                    realized_surfaces.append(result)
                     selected_plans.append(
                         kwargs.get("plan", args[1] if len(args) > 1 else None)
-                    )
-                    arranged_candidates.append(
-                        (
-                            args[0],
-                            args[1],
-                            args[2],
-                            kwargs["human_reception_surface"],
-                            surface,
-                            placements,
-                        )
-                    )
-                    return result
-
-                def track_human_reception(*args, **kwargs):
-                    result = actual_human_reception(*args, **kwargs)
-                    human_reception_calls.append(
-                        (
-                            args[0],
-                            tuple(args[1]),
-                            kwargs["recovery_stage"],
-                            result,
-                        )
                     )
                     return result
 
                 def track_inverse(*args, **kwargs):
-                    self.assertTrue(
-                        {
-                            "expressions",
-                            "human_reception_surface",
-                            "visible_segment_bindings",
-                            "reception_placements",
-                        }.isdisjoint(kwargs)
-                    )
                     result = actual_inverse(*args, **kwargs)
                     body = kwargs.get("body", args[0] if args else None)
                     if type(body) is bytes:
@@ -356,14 +284,6 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                     return result
 
                 def track_gate(*args, **kwargs):
-                    self.assertTrue(
-                        {
-                            "expressions",
-                            "human_reception_surface",
-                            "visible_segment_bindings",
-                            "reception_placements",
-                        }.isdisjoint(kwargs)
-                    )
                     result = actual_gate(*args, **kwargs)
                     surface = kwargs.get("surface_result")
                     if surface is not None:
@@ -396,17 +316,7 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                     patch.object(
                         response,
                         "realize_grounded_sentence_plan",
-                        wraps=grounded_surface_module.realize_grounded_sentence_plan,
-                    ) as base_realizer,
-                    patch.object(
-                        response,
-                        "realize_grounded_sentence_plan_with_human_reception",
                         side_effect=track_realize,
-                    ),
-                    patch.object(
-                        response,
-                        "realize_source_grounded_human_reception",
-                        side_effect=track_human_reception,
                     ),
                     patch.object(
                         response,
@@ -488,7 +398,6 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                 self.assertEqual(len(phase_a_inputs), 1)
                 self.assertEqual(len(project_calls), 1)
                 self.assertEqual(len(seal_calls), 1)
-                self.assertEqual(base_realizer.call_count, 0)
                 captured_premeaning = premeaning_outputs[0]
                 phase_a = phase_a_inputs[0]
                 projected_plan_input, projected_plan = project_calls[0]
@@ -530,148 +439,6 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                 self.assertIs(
                     projection.observation_depth_class,
                     premeaning.observation_depth_class,
-                )
-
-                self.assertEqual(
-                    len(human_reception_calls),
-                    len(arranged_candidates),
-                )
-                full_calls = tuple(
-                    call
-                    for call in human_reception_calls
-                    if call[2] == "full"
-                )
-                self.assertEqual(len(full_calls), 1)
-                (
-                    full_reception_plan,
-                    full_expressions,
-                    _full_stage,
-                    full_human_surface,
-                ) = full_calls[0]
-                full_moves = grounded_reception_module.reception_active_moves(
-                    full_reception_plan,
-                    "full",
-                )
-                self.assertEqual(
-                    tuple(expression.move_id for expression in full_expressions),
-                    tuple(move.move_id for move in full_moves),
-                )
-                self.assertTrue(all(move.required for move in full_moves))
-                full_move_count += len(full_moves)
-                full_expression_count += len(full_expressions)
-                for expression in full_expressions:
-                    for argument in expression.arguments:
-                        matching_primary = any(
-                            peer.semantic_ref == argument.semantic_ref
-                            and peer.semantic_role == "PRIMARY"
-                            and peer.relation_endpoint_ref is None
-                            for peer in expression.arguments
-                        )
-                        if (
-                            argument.semantic_role == "EXPERIENCER"
-                            and argument.relation_endpoint_ref is None
-                            and matching_primary
-                        ):
-                            self.assertEqual(argument.realization, "ZERO")
-                            self.assertEqual(
-                                argument.zero_realization_condition_refs,
-                                ("shared-subject:current-user",),
-                            )
-                            shared_subject_zero_count += 1
-                        if argument.relation_endpoint_ref is not None:
-                            self.assertEqual(argument.realization, "EXPLICIT")
-                            self.assertFalse(
-                                argument.zero_realization_condition_refs
-                            )
-                for (
-                    candidate_reception_plan,
-                    expressions,
-                    recovery_stage,
-                    human_surface,
-                ) in human_reception_calls:
-                    active_moves = grounded_reception_module.reception_active_moves(
-                        candidate_reception_plan,
-                        recovery_stage,
-                    )
-                    self.assertEqual(
-                        tuple(expression.move_id for expression in expressions),
-                        tuple(move.move_id for move in active_moves),
-                    )
-                    self.assertEqual(
-                        human_surface.expression_refs,
-                        tuple(
-                            expression.expression_ref
-                            for expression in expressions
-                        ),
-                    )
-                    self.assertTrue(
-                        all(
-                            sum(
-                                expression.expression_ref
-                                in binding.expression_refs
-                                for binding
-                                in human_surface.visible_segment_bindings
-                            )
-                            == 1
-                            for expression in expressions
-                        )
-                    )
-                full_private_body_free_values = {
-                    *(
-                        expression.expression_ref
-                        for expression in full_expressions
-                    ),
-                    *(
-                        expression.lexical_head
-                        for expression in full_expressions
-                    ),
-                    *(
-                        evidence_ref
-                        for expression in full_expressions
-                        for evidence_ref in expression.source_evidence_refs
-                    ),
-                    *(
-                        argument.lexical_form
-                        for expression in full_expressions
-                        for argument in expression.arguments
-                    ),
-                    *(
-                        binding.binding_ref
-                        for binding
-                        in full_human_surface.visible_segment_bindings
-                    ),
-                    *(
-                        binding.surface_span_sha256
-                        for binding
-                        in full_human_surface.visible_segment_bindings
-                    ),
-                }
-                full_arrangement = next(
-                    candidate
-                    for candidate in arranged_candidates
-                    if candidate[3] is full_human_surface
-                )
-                body_free_material = repr(
-                    (
-                        full_arrangement[0].as_body_free_meta(),
-                        full_arrangement[4].as_body_free_meta(),
-                    )
-                )
-                self.assertTrue(
-                    all(
-                        private_ref not in body_free_material
-                        for private_ref in full_private_body_free_values
-                    )
-                )
-                same_act_witnesses.append(
-                    (
-                        tuple(move.reception_act for move in full_moves),
-                        tuple(
-                            expression.meaning_outcome_ref
-                            for expression in full_expressions
-                        ),
-                        full_human_surface.text,
-                    )
                 )
 
                 selected_texts = tuple(unit.text for unit in units)
@@ -752,31 +519,11 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                     )
         self.assertGreater(limited_trace_count, 0)
         self.assertEqual(grounded_normal_count, 4)
-        self.assertEqual(full_move_count, 124)
-        self.assertEqual(full_expression_count, 124)
-        self.assertGreater(shared_subject_zero_count, 0)
-        self.assertTrue(
-            any(
-                left_acts == right_acts
-                and left_meaning != right_meaning
-                and left_text != right_text
-                for index, (
-                    left_acts,
-                    left_meaning,
-                    left_text,
-                ) in enumerate(same_act_witnesses)
-                for right_acts, right_meaning, right_text
-                in same_act_witnesses[index + 1 :]
-            )
-        )
 
     def test_all100_outer_engine_is_disabled_or_fail_closed_with_v2_trace(
         self,
     ) -> None:
         actual_compile = vertical_module.compile_stage1_response
-        actual_human_reception = (
-            response.realize_source_grounded_human_reception
-        )
         positive_count = 0
         unavailable_count = 0
         unavailable_reasons = {
@@ -787,30 +534,16 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
         for row in self.rows:
             with self.subTest(case_id=row["case_id"]):
                 compiled: list[tuple[object, object]] = []
-                full_expression_rebuilds: list[tuple[object, ...]] = []
 
                 def track_compile(*args, **kwargs):
                     result = actual_compile(*args, **kwargs)
                     compiled.append(result)
                     return result
 
-                def track_human_reception(*args, **kwargs):
-                    result = actual_human_reception(*args, **kwargs)
-                    if kwargs["recovery_stage"] == "full":
-                        full_expression_rebuilds.append(tuple(args[1]))
-                    return result
-
-                with (
-                    patch.object(
-                        vertical_module,
-                        "compile_stage1_response",
-                        side_effect=track_compile,
-                    ),
-                    patch.object(
-                        response,
-                        "realize_source_grounded_human_reception",
-                        side_effect=track_human_reception,
-                    ),
+                with patch.object(
+                    vertical_module,
+                    "compile_stage1_response",
+                    side_effect=track_compile,
                 ):
                     outcome = MeaningExperienceEngine().generate(
                         _request_from_canonical_row(row)
@@ -864,11 +597,6 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                 projection = compiled[0][0]
                 self.assertTrue(
                     all(result[0] == projection for result in compiled)
-                )
-                self.assertEqual(len(full_expression_rebuilds), 2)
-                self.assertEqual(
-                    full_expression_rebuilds[0],
-                    full_expression_rebuilds[1],
                 )
                 validate_stage1_trace_spine(
                     artifact.trace,
@@ -932,14 +660,7 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
             if isinstance(node, ast.Call)
         }
         self.assertIn("build_subjective_planning_inputs", call_names)
-        self.assertIn(
-            "realize_source_grounded_human_reception",
-            call_names,
-        )
-        self.assertIn(
-            "realize_grounded_sentence_plan_with_human_reception",
-            call_names,
-        )
+        self.assertIn("realize_grounded_sentence_plan", call_names)
         self.assertIn("evaluate_grounded_surface_body_inverse", call_names)
         self.assertIn("evaluate_grounded_observation_gate", call_names)
         self.assertTrue(
