@@ -5274,3 +5274,48 @@ The frozen first canonical candidate completed: direct generation 83/100; 17 fai
 Sixteen failures were traced to a missing per-Move protection duty in Human Reception felt responses. The author now realizes that selected duty in every Move; Gate markers and thresholds remain unchanged. One additional failure was the existing action-before/after projector assuming the later action must use present tense. The approved status correction exposes factual past or progressive occurrence for that later action. The existing source-explicit ordered shift with both endpoint shift markers now retains its same relation when the later action has past/continuing time; relative ordering remains grounded in the existing explicit shift, both endpoint markers and source order. Neither relation direction nor endpoint ownership is reselected.
 
 Next: verify the repaired frozen candidate, complete existing entrypoint/replay and status/aspect regression tests, then read the final same100 original/observation/follow bodies in full. Root CLEAR, Product Read preparation, required regression completion and final candidate readiness remain pending.
+
+### Aspect-only difference closure in progress (same authority)
+
+The existing NORMAL trace may correctly contain a required difference consisting only of aspect when the two action endpoints share factual past tense. Its former projection validator could bind only polarity/modality/time, rejecting that legitimate difference. The existing V2 candidate required-qualifier field now transports source aspect (role-qualified for relation endpoints), with matching foreground source re-derivation. The causal validator follows the existing basis/contribution/candidate/role to check that aspect. SourceQualifierBinding remains exactly its original three axes; unrelated axes are not injected into the required difference. V1 projection remains unchanged.
+
+Human Reception source fidelity and grammar repair is also ongoing: no-new-sensation targets no longer become suffering by default; help-related event words without action/receipt proof are kept neutral; explicit factual-action/future-intention noun phrases use direct apposition; effort has its own valuing predicate. These are unaccepted implementation changes awaiting regenerated completed-body review.
+
+The first failed candidate remains the only completed reliable count at this checkpoint. Two subsequent temporary diagnostic collectors failed after generation while serializing/reading fields; their aggregate output is not credited as generation evidence. The remaining runtime aspect trace failure is being repaired. Required all100 counts and full-body CLEAR are still pending.
+
+Baseline RR8 classification note: the same16 gate/depth/Move/sentence loop passed; the unseen gate loop failed before later cohort concentration checks. Those later checks are not claimed to have run. Historical fixed-observation and dated PASS receipts remain unchanged.
+
+### Canonical generation and availability checkpoint (same authority, unfinished)
+
+Frozen implementation probe: direct canonical100 100/100, required Moves 124/124, expressions 124/124, visible binding cover 124/124. Outer availability was GENERATED 72 / UNAVAILABLE 28, with four classifications changed; this did not satisfy acceptance. The initial hypothesis was that shared referent changes reached legacy admission. Final-only scoping restored the legacy defaults, but the subsequent probe still changed the same four availability classifications. The completed-body compatibility guard, described below, is the actual cause; legacy scoping alone does not restore availability parity.
+
+The conditional source owner `ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py` was read in full before its minimal V2 compatibility update. Its existing source aspect is retained in V2 required qualifiers consistently with the source candidate. The existing compatibility check remains strict; V1 is unchanged.
+
+Aspect-bearing NORMAL trace rows now require exact aspect-set coverage for their bound configuration components, in addition to the existing three-axis checks. New tests cover missing/unsupported aspect, wrong-owner borrowing and unchanged SourceQualifierBinding exact3.
+
+Root full-body review is in progress and has found remaining generic phrasing, repeated source descriptions, uncertain/future wording around embedded operators, and action framing that must be investigated against the existing selected meaning boundary. No all100 CLEAR, Product Read readiness, candidate-ready or product acceptance is claimed. Continue scope-internal repairs and preserve actual unexecuted/failed verification state.
+
+### Confirmed availability approval boundary and resumable checkpoint
+
+STATE = BLOCKED_AVAILABILITY_CONSTRAINT_UNFINISHED
+AUTHORITY remains the same Mash option-1 authority. This is an unfinished disabled implementation checkpoint, not an accepted candidate or a rollback of the newly authorized work. The predecessor terminal STOP and rollback remain historical.
+
+The reliable frozen probe reached direct canonical100 100/100, required Moves/expressions/visible bindings 124/124, but outer GENERATED 72 / UNAVAILABLE 28. Four input-specific classifications changed. Root completed a full reading of all100 original inputs, observations and follows and recorded NOT_CLEAR. Remaining issues include embedded wish/negation scope in action status, negative nonperformance framed as effort, relation language, repeated source descriptions, generic follows and set-level repetition. Resolution of the original twenty contradictions is not claimed. Subsequent source changes require fresh final generation and full rereading.
+
+The availability cause is now confirmed, replacing the earlier shared-resolver hypothesis. In `ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py`, `_validate_reception_semantic_compatibility` rejects a finished follow when its negative-sensation wording has no current-burden source support. This function, `_cmee_has_current_burden` and the relevant source/response pattern definitions are byte-equal to the admission baseline. The guard runs on the compiled and canonically rebuilt final units; the existing engine converts its error to UNAVAILABLE. For the four changes, original inputs, observations and serialized nuclei match the baseline. Removing unsupported sensation from the follow removes the only former failure. Final-only referent scoping does not restore that failure.
+
+Faithful status/time/modality correction cannot preserve those classifications because their same source owners did not change. Reintroducing unsupported sensation, creating a body-independent hold, using an old renderer to determine availability, changing Gate thresholds or altering the source is not an authorized solution. The narrow unresolved condition is whether source-faithful removal of unsupported meaning may be an exception to exact 68/32 and per-input availability parity. No exception is assumed or implemented; inputs/order/axes/denominator remain unchanged. The existing strict completed-body guard does not need weakening.
+
+The remaining status and Japanese quality repairs are scope-internal; this checkpoint does not invent a second approval boundary for them. Latest bounded exclusions prevent a decision to perform an embedded action from proving that action performed, and distinguish copular past from finite action while retaining progressive aspect. Related tests have been updated to the actual sole Human Reception author, complete two-section body parser and non-noop semantic tampering. Existing fixed observation fixtures and dated PASS receipts remain untouched. Final regression results are recorded below when execution completes; intermediate failed probes are not credited as PASS.
+
+Canonical current state and schema/structure synchronization is on Cocolon PR30 `97e58b383a8179c7b0a32d236435a97692feb281`; seven expected paths and remote blobs match. Runtime PR3 and Cocolon PR30/37 were freshly open Draft/unmerged. System Context remains doctor FAIL_PINNED_TOOLCHAIN_MISMATCH, prepare NOT_EXECUTED, stale outputs NOT_USED; direct original reading is the authorized fallback. The distinct existing runtime lock is restored without new dependencies.
+
+Resume after the availability condition is resolved: preserve the current source/nucleus/actor/target/negation owners; complete bounded outer-predicate status proof and consistent Plan/HR/Surface consumption; improve the existing selected Reception meaning without arbitrary target reselection; update the existing runner's current source identity only after source freeze; execute required regressions; regenerate the same100; root reread all100 original/observation/follow and repair to CLEAR; synchronize existing originals and verify GitHub heads/paths/bytes. Historical PASS receipts are never rewritten to match a new source.
+
+FULL_FINAL_CANONICAL_REGENERATION_AND_ROOT_REREAD = PENDING_AFTER_LATEST_SOURCE_FIX
+RUNNER_CURRENT_SOURCE_IDENTITY_AND_FINAL_RECEIPT = PENDING
+KAREN_FULL100_CLEAR = false
+MASH_PRODUCT_READ_READY = false
+CANDIDATE_READY = false
+PRODUCT_ADOPTION_OR_PRODUCTION_MERGE = false
+PRIVATE_BODY_CASE_DIGEST_LOCATOR_PUBLICATION = 0

@@ -9621,6 +9621,12 @@ def _final_stage1_align_action_status(
             aligned.append(nucleus)
             continue
         finite = _strip_bounded_operator_prefix(visible.strip())
+        # A past decision establishes the decision, not performance of its
+        # embedded action. Keep this owner's existing intention; do not split
+        # it into a new decision owner or promote that action to performed.
+        if re.search(r"(?:こと|よう)に(?:し(?:た|ました)|して(?:いる|いた|います|いました))$", finite):
+            aligned.append(nucleus)
+            continue
         # Keep the selected action and actor. Only resolve the outer finite
         # predicate inside that same source span; a topic is not a new actor.
         # Match the existing case-frame pattern at each boundary so an early
@@ -9640,6 +9646,13 @@ def _final_stage1_align_action_status(
         progressive = re.search(r"(?:て|で)(?:い|お)(?:る|ます|た|ました)$", finite)
         past = _EXPLICIT_PERFECTIVE_END_RE.search(finite)
         if not (progressive or past):
+            aligned.append(nucleus)
+            continue
+        if past and not progressive and (
+            _NON_ACTION_CONDITION_END_RE.search(finite[:past.start()])
+            or finite.endswith("た")
+            and _NON_ACTION_CONDITION_END_RE.search(finite[:-1])
+        ):
             aligned.append(nucleus)
             continue
         time_scope = "past" if past else "continuing"

@@ -2096,6 +2096,7 @@ def evaluate_grounded_surface_body_inverse(
                                 allow_short_anchor=False,
                                 recovery_stage=sentence_plan.recovery_stage,
                                 allow_anaphoric_topic=True,
+                                final_source_fidelity=final_stage1_plan,
                             )
                         except (
                             GroundedHumanReceptionSurfaceError,

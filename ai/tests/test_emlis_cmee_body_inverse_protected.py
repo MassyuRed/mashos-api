@@ -106,6 +106,27 @@ def _final_stage1_artifacts(memo: str, *, memo_action: str = ""):
     )
 
 
+def _replace_body_markers(body: str, *, section: str, codes: set[str], replacement: str) -> str:
+    raw = body.encode("utf-8")
+    witness = parse_grounded_surface_body_bytes(raw)
+    spans = sorted({(m.utf8_byte_start, m.utf8_byte_end) for m in witness.markers
+                    if m.section == section and m.marker_code in codes})
+    if not spans:
+        raise AssertionError("semantic_mutation_marker_missing")
+    merged = []
+    for start, end in spans:
+        if merged and start < merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+        else:
+            merged.append((start, end))
+    for start, end in reversed(merged):
+        raw = raw[:start] + replacement.encode("utf-8") + raw[end:]
+    result = raw.decode("utf-8")
+    if result == body:
+        raise AssertionError("semantic_mutation_noop")
+    return result
+
+
 class GroundedBodyOnlyParserProtectedTest(unittest.TestCase):
     def test_parser_contract_is_exact_bytes_only_and_deterministic(self) -> None:
         _plan, _sentence_plan, surface, _resolver = _artifacts("I6-C01")
@@ -219,13 +240,8 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
                     resolver=resolver,
                 )
                 self.assertTrue(evaluation.passed, evaluation.failure_codes)
-                protective_why = (
-                    "見失わず、大切な向きとして受け止めています"
-                )
-                self.assertIn(protective_why, surface.text)
-                without_why = surface.text.replace(
-                    protective_why,
-                    "そこにあります",
+                without_why = _replace_body_markers(
+                    surface.text, section="reception", codes={"protect"}, replacement="",
                 )
                 missing_why = evaluate_grounded_surface_body_inverse(
                     body=without_why.encode("utf-8"),
@@ -253,15 +269,12 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         self.assertIn("「少し整えたい気持ちもある」", observation)
         self.assertIn("「疲れている」", observation)
         self.assertNotIn("「少し整えたい気持ちもある」", reception)
-        self.assertIn("その願い", reception)
+        self.assertIn("願い", reception)
         self.assertIn("疲れている", reception)
-        self.assertIn("重なる中で", reception)
-        self.assertIn(
-            "見失わず、大切な向きとして受け止めています",
-            reception,
-        )
-
-        wrong_target = reception.replace("その願い", "その内容", 1)
+        self.assertTrue(any(marker in reception for marker in ("中で", "中にも", "背景")))
+        wrong_target = _replace_body_markers(
+            surface.text, section="reception", codes={"target_intention"}, replacement="内容",
+        ).split("Emlisから：\n", 1)[1]
         wrong_target_evaluation = evaluate_grounded_surface_body_inverse(
             body=(observation + "Emlisから：\n" + wrong_target).encode("utf-8"),
             plan=plan,
@@ -345,7 +358,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         self.assertIn("これからの行動", surface.lines[0].text)
         self.assertIn("target_intention", reception.reception_marker_codes)
         self.assertIn("これからの行動", surface.text)
-        self.assertIn("その向き", surface.text)
+        self.assertNotIn("target_effort", reception.reception_marker_codes)
         self.assertNotIn("実際の行動", surface.text)
         self.assertNotIn("その手間", surface.text)
         reception_plan = plan.response_plan.human_reception_plan
@@ -356,15 +369,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             for move in reception_plan.moves
             if move.reception_act == "honor_concrete_effort"
         )
-        generic_future_clause = (
-            surface_owner._render_generic_final_reception_move(
-                move=future_move,
-                target="その向き",
-                context="",
-                target_kind="future_action_intention",
-            )
-        )
-        self.assertEqual(generic_future_clause.count("その向き"), 1)
+        self.assertTrue(future_move.required)
         evaluation = evaluate_grounded_surface_body_inverse(
             body=surface.text.encode("utf-8"),
             plan=plan,
@@ -372,10 +377,9 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             resolver=resolver,
         )
         self.assertTrue(evaluation.passed, evaluation.failure_codes)
-        completed_tamper = surface.text.replace(
-            "という、これからの行動",
-            "という実際の行動",
-        ).replace("その向き", "その手間")
+        completed_tamper = _replace_body_markers(
+            surface.text, section="observation", codes={"intention"}, replacement="実際の行動",
+        )
         tampered_evaluation = evaluate_grounded_surface_body_inverse(
             body=completed_tamper.encode("utf-8"),
             plan=plan,
@@ -526,7 +530,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         )
         self.assertNotIn("という実際の行動", surface.lines[0].text)
         self.assertIn("実際の行動", surface.text)
-        self.assertIn("その手間", surface.text)
+        self.assertIn("target_effort", next(row for row in witness.lines if row.section == "reception").reception_marker_codes)
         evaluation = evaluate_grounded_surface_body_inverse(
             body=surface.text.encode("utf-8"),
             plan=plan,
@@ -534,9 +538,8 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             resolver=resolver,
         )
         self.assertTrue(evaluation.passed, evaluation.failure_codes)
-        future_tamper = surface.text.replace(
-            "という行動から",
-            "という、これからの行動から",
+        future_tamper = _replace_body_markers(
+            surface.text, section="observation", codes={"effort"}, replacement="これからの行動",
         )
         tampered_evaluation = evaluate_grounded_surface_body_inverse(
             body=future_tamper.encode("utf-8"),
@@ -614,9 +617,10 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             item for item in witness.lines if item.section == "reception"
         )
         self.assertIn(
-            "target_burden",
+            "target_words",
             parsed_reception.reception_marker_codes,
         )
+        self.assertNotIn("target_burden", parsed_reception.reception_marker_codes)
         self.assertIn("receive", parsed_reception.reception_marker_codes)
         self.assertNotIn("attention", parsed_reception.reception_marker_codes)
 
@@ -636,7 +640,8 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         )
         self.assertTrue(gate.passed, gate.rejection_reasons)
 
-        target_tamper = surface.text.replace("そのつらさ", "そのこと", 1)
+        target_tamper = surface.text.replace("今ここに置かれた言葉", "そのこと", 1)
+        self.assertNotEqual(target_tamper, surface.text)
         target_evaluation = evaluate_grounded_surface_body_inverse(
             body=target_tamper.encode("utf-8"),
             plan=plan,

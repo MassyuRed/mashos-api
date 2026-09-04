@@ -1862,6 +1862,7 @@ def resolve_grounded_reception_referent(
     act: GroundedReceptionAct | None = None,
     allow_short_anchor: bool = True,
     effective_reference_mode: str | None = None,
+    final_source_fidelity: bool = False,
 ) -> GroundedReceptionReferent:
     """Resolve an anaphor or one policy-bounded anchor from bound evidence."""
 
@@ -1897,12 +1898,17 @@ def resolve_grounded_reception_referent(
             for nucleus in target_nuclei
         )
     ):
-        kind, text = "future_action_intention", "これからの行動への思い"
+        kind, text = "future_action_intention", ("これからの行動への思い" if final_source_fidelity else "その向き")
     elif reception_act == "stay_with_current_burden":
-        if "lexical:no_new_sensation_family" in attributes:
-            if "lexical:source_metaphor_present" in attributes:
+        burden_attributes = target_attributes if final_source_fidelity else attributes
+        if "lexical:no_new_sensation_family" in burden_attributes:
+            if "lexical:source_metaphor_present" in burden_attributes:
                 kind, text = "expressed_burden", "その言葉にある負荷"
-            elif "detected_type:limit_signal" in attributes:
+            elif final_source_fidelity:
+                # A limit/unknown or a source-bounded expression does not
+                # license replacing it with a new sensation of suffering.
+                kind, text = "current_expression", "今ここに置かれた言葉"
+            elif "detected_type:limit_signal" in burden_attributes:
                 kind, text = "current_suffering", "その苦しさ"
             else:
                 kind, text = "current_distress", "そのつらさ"
@@ -1925,7 +1931,10 @@ def resolve_grounded_reception_referent(
         enacted_after_intention = bool(
             recovery_stage in {"full", "optional_removed"}
             and "operator:action" not in target_attributes
-            and performed_supports
+            and (
+                performed_supports if final_source_fidelity else
+                {"operator:action", "semantic_role:concrete_action_evidence"} & support_attributes
+            )
         )
         enacted_action_anchor = (
             _short_bound_anchor(
@@ -1988,6 +1997,14 @@ def resolve_grounded_reception_referent(
                 "anchored_concrete_effort",
                 f"「{anchor}」という実際の行動",
             )
+        elif not final_source_fidelity and "operator:action" in target_attributes:
+            kind, text = "self_started_effort", "自分から実際に動いたこと"
+        elif not final_source_fidelity and (
+            "action" in kinds or {"operator:action", "semantic_role:concrete_action_evidence"} & attributes
+        ):
+            kind, text = "concrete_effort", "そこまで実際に動いたこと"
+        elif not final_source_fidelity:
+            kind, text = "grounded_effort", "その働きかけ"
         elif performed_targets and any(
             str(nucleus.semantic_frame.actor).lower()
             in {"current_user", "user", "self"}
@@ -2018,6 +2035,13 @@ def resolve_grounded_reception_referent(
             kind, text = "enacted_change", "動きとして確かめてきた変化"
         else:
             kind, text = "lived_change", "その変化"
+    elif reception_act == "hold_help_seeking" and not final_source_fidelity:
+        if "operator:action" in target_attributes:
+            kind, text = "help_seeking", "助けにつながるものを残したこと"
+        elif "operator:help_seeking" in attributes:
+            kind, text = "help_seeking_step", "助けへ向かう一歩を残したこと"
+        else:
+            kind, text = "protective_pause", "その踏みとどまり"
     elif reception_act == "hold_help_seeking":
         self_directed_targets = tuple(
             nucleus
@@ -2030,15 +2054,14 @@ def resolve_grounded_reception_referent(
             for nucleus in self_directed_targets
         ):
             kind, text = "help_seeking", "助けにつながるものを残したこと"
-        elif self_directed_targets and (
-            "operator:help_seeking" in target_attributes
-            or any(
+        elif self_directed_targets and any(
                 nucleus.kind
                 in {"wish", "direction", "intention", "help_seeking"}
                 for nucleus in self_directed_targets
-            )
         ):
-            kind, text = "help_seeking_step", "助けへ向かう一歩を残したこと"
+            kind, text = "help_seeking_step", "助けを求める思い"
+        elif self_directed_targets:
+            kind, text = "current_expression", "助けについて置かれた言葉"
         else:
             kind, text = "received_help", "受け取った助け"
     elif reception_act == "bounded_counter_self_denial":
@@ -2060,16 +2083,20 @@ def resolve_grounded_reception_referent(
         )
 
     progressive_owners = tuple(n for n in target_nuclei if reception_action_is_performed(n))
-    if reception_act == "honor_concrete_effort" and progressive_owners:
+    if (
+        final_source_fidelity and reception_act == "honor_concrete_effort"
+        and progressive_owners
+        and (effective_reference_mode or reception_effective_reference_mode(reception_plan, recovery_stage)) == "anaphoric_first"
+    ):
         progressive_targets = tuple(
             nucleus for nucleus in progressive_owners
             if set(nucleus.semantic_frame.attribute_codes) & {"aspect:progressive", "aspect:ongoing"}
         )
         if progressive_targets and len(progressive_targets) == len(progressive_owners):
             text = (
-                "実際に取り組んでいた行動"
+                "その時に続いていた実際の行動"
                 if all(nucleus.semantic_frame.time_scope == "past" for nucleus in progressive_targets)
-                else "実際に取り組んでいる行動"
+                else "続いている実際の行動"
             )
 
     evidence_span_ids = _grounding_evidence_span_ids(selected, recovery_stage)
@@ -2174,6 +2201,7 @@ def resolve_grounded_reception_move_referent(
     allow_short_anchor: bool,
     recovery_stage: ReceptionRecoveryStage = "full",
     allow_anaphoric_topic: bool = False,
+    final_source_fidelity: bool = False,
 ) -> GroundedReceptionReferent:
     """Resolve one RR5 referent using only that Move's nucleus/evidence IDs."""
 
@@ -2195,8 +2223,9 @@ def resolve_grounded_reception_move_referent(
         # Layer 2 integrates a bounded lexical head into its clause core.  A
         # second verbatim short anchor would both replay Layer 1 and make the
         # inverse referent depend on the caller's quote budget.
-        allow_short_anchor=False,
+        allow_short_anchor=False if final_source_fidelity else allow_short_anchor,
         effective_reference_mode=effective_reference,
+        final_source_fidelity=final_source_fidelity,
     )
     if allow_anaphoric_topic and effective_reference == "anaphoric_first":
         return _topic_bound_anaphoric_referent(
@@ -2205,7 +2234,7 @@ def resolve_grounded_reception_move_referent(
             nucleus_index,
             resolver,
         )
-    if effective_reference != "anaphoric_first":
+    if final_source_fidelity and effective_reference != "anaphoric_first":
         # A demonstrative belongs to anaphora.  Explicit/composite clause
         # heads govern a non-deictic typed nominal from the same sole resolver.
         return replace(
@@ -6109,9 +6138,18 @@ def _source_grounded_target_np(
                 predicate_kind=realization.predicate_kind,
             )
         )
-        content_target = (
-            f"{proposition}に表れた{quantity_modifier}{referent_text}"
-        )
+        if (
+            not profile.quoted_boundary
+            and referent_kind in {
+                "self_started_effort", "concrete_effort",
+                "future_action_intention",
+            }
+        ):
+            content_target = f"{meaning_fragment}という{quantity_modifier}{referent_text}"
+        else:
+            content_target = (
+                f"{proposition}に表れた{quantity_modifier}{referent_text}"
+            )
     if realization.relations:
         # A relation clause is already a complete grammatical core.  Never
         # feed its governed endpoints through a target or act wrapper.
@@ -6281,7 +6319,9 @@ def _source_grounded_response_predicate(
         predicate_lemma, conjugation_class = "受け止める", "ICHIDAN"
     elif reception_act == "recognize_lived_change":
         act_guard, predicate_lemma, conjugation_class = "", "感じる", "ICHIDAN"
-    elif reception_act in {"honor_concrete_effort", "hold_help_seeking", "respect_words_placed"}:
+    elif reception_act == "honor_concrete_effort":
+        act_guard, predicate_lemma, conjugation_class = "大切に", "思う", "GODAN_U"
+    elif reception_act in {"hold_help_seeking", "respect_words_placed"}:
         act_guard, predicate_lemma, conjugation_class = "大切に", "受け止める", "ICHIDAN"
     else:
         raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
@@ -6332,6 +6372,10 @@ def _source_grounded_inflect_response_predicate(
             raise GroundedHumanReceptionSurfaceError(
                 "REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP"
             )
+        # A cautious close must not imply that valuing an already selected
+        # effort is merely an unrealized wish of Emlis.
+        if lemma == "思う":
+            return "思っています"
         return desire_form
     return te_form + ("います" if clause_form == "FINITE" else "いて")
 
@@ -6530,6 +6574,7 @@ def _author_source_grounded_reception_clauses(
                 allow_short_anchor=False,
                 recovery_stage=recovery_stage,
                 allow_anaphoric_topic=True,
+                final_source_fidelity=True,
             )
             anchor_used = anchor_used or referent.source_anchor_used
             referent_kinds.append(referent.kind)

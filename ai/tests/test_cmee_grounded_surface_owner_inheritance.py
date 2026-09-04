@@ -470,18 +470,17 @@ class CMEEGroundedSurfaceOwnerInheritanceTest(unittest.TestCase):
 
         self.assertIn("異なる向き", observation)
         self.assertIn("だけで終わらない", observation)
-        markers = (
-            "が重なる中で",
-            "その願いがここに残っていること",
-            "見失わず",
-            "大切な向きとして受け止め",
+        witness = surface_owner.parse_grounded_surface_body_bytes(
+            (
+                surface_owner.OBSERVATION_SECTION_LABEL + "\n" + observation
+                + "\n\n" + surface_owner.RECEPTION_SECTION_LABEL + "\n" + reception
+            ).encode("utf-8")
         )
-        self.assertEqual(reception.count("その願い"), 1)
-        self.assertTrue(all(marker in reception for marker in markers))
-        self.assertEqual(
-            tuple(reception.index(marker) for marker in markers),
-            tuple(sorted(reception.index(marker) for marker in markers)),
-        )
+        self.assertFalse(witness.structural_issues)
+        codes = {marker.marker_code for marker in witness.markers if marker.section == "reception"}
+        self.assertTrue({"protect", "receive", "target_intention"} <= codes)
+        self.assertTrue(any(marker in reception for marker in ("中で", "中にも", "背景")))
+        self.assertEqual(reception.count("願い"), 1)
 
     def test_legacy_v1_compiler_is_schema_coherent_and_unreachable(self) -> None:
         source, grounded_plan, graph, parent_plan = _inputs(*EXACT8[0])

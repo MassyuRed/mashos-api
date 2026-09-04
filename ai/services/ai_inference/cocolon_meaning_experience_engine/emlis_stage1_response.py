@@ -1811,6 +1811,17 @@ def _qualifiers(
         ("modality", _enum_or_text(getattr(frame, "modality", ""))),
         ("time_scope", _enum_or_text(getattr(frame, "time_scope", ""))),
     )
+    if stage1_response_schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2:
+        aspects = tuple(
+            code.split(":", 1)[1]
+            for code in frame.attribute_codes if code.startswith("aspect:")
+        )
+        if len(aspects) > 1 or aspects and aspects[0] not in {
+            "unknown", "source_bounded", "not_applicable", "completed",
+            "perfective", "ongoing", "progressive",
+        }:
+            raise CMEEStage1ContractError("stage1_source_aspect_invalid")
+        values = (values[0], ("aspect", aspects[0] if aspects else "unknown"), *values[1:])
     source_contract_qualifiers = project_stage1_source_contract_qualifiers(
         source_attribute_codes=tuple(
             getattr(frame, "attribute_codes", ())

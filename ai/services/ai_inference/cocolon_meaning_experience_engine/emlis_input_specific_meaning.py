@@ -26,6 +26,8 @@ from .contracts import (
     BasisProvenanceKind,
     BasisProvenanceRow,
     CMEE_GROUNDED_GRAPH_SCHEMA_VERSION,
+    CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1,
+    CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
     CMEE_READING_CONSEQUENCE_REQUIREMENT_CODES_EXACT4,
     CMEEStage1ContractError,
     CounterfactualMutationKind,
@@ -335,6 +337,7 @@ def _compatibility_row(
     graph: GroundedMeaningGraph,
     qualifier_refs: Sequence[str],
     material_unknown_refs: Sequence[str],
+    stage1_response_schema_version: str = CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1,
 ) -> ForegroundScopeObjectCompatibilityRow:
     qualifiers = _canonical(qualifier_refs)
     explicit_scope = tuple(
@@ -374,7 +377,11 @@ def _compatibility_row(
         required_qualifier_refs=tuple(
             value
             for value in qualifiers
-            if not value.startswith(("world:", "aspect:"))
+            if not value.startswith("world:")
+            and not (
+                value.startswith("aspect:")
+                and stage1_response_schema_version != CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+            )
         ),
         material_unknown_refs=_canonical(material_unknown_refs),
     )
@@ -654,6 +661,7 @@ def derive_grounded_situation_view(
             graph=graph,
             qualifier_refs=qualifiers_by_node.get(object_ref, ()),
             material_unknown_refs=unknowns_by_node.get(object_ref, ()),
+            stage1_response_schema_version=premeaning_inputs.stage1_response_schema_version,
         )
         for object_ref, node in nodes_by_ref.items()
     }

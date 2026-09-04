@@ -6094,13 +6094,19 @@ def _foreground_source_qualifiers_by_node_ref(
 
 def _foreground_candidate_required_qualifiers(
     source_qualifiers: Sequence[str],
+    *,
+    stage1_response_schema_version: str = CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1,
 ) -> Tuple[str, ...]:
-    """Keep compatibility-only world/aspect out of Layer-1 identity."""
+    """Preserve source aspect in V2 identity, keeping V1 compatibility."""
 
     return tuple(
         value
         for value in source_qualifiers
-        if not value.startswith(("world:", "aspect:"))
+        if not value.startswith("world:")
+        and not (
+            value.startswith("aspect:")
+            and stage1_response_schema_version != CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+        )
         and value
         not in {
             "qualifier:"
@@ -7132,7 +7138,8 @@ def _foreground_expected_layer1(
         qualifiers = ["epistemic:provisional_interpretation"]
         for argument in arguments:
             source_qualifiers = _foreground_candidate_required_qualifiers(
-                source_qualifiers_by_node_ref[argument.semantic_ref]
+                source_qualifiers_by_node_ref[argument.semantic_ref],
+                stage1_response_schema_version=stage1_response_schema_version,
             )
             role_prefix = f"{argument.role.value.lower()}_"
             qualifiers.extend(
@@ -7255,7 +7262,8 @@ def _foreground_expected_layer1(
             ),
             required_qualifiers=(
                 _foreground_candidate_required_qualifiers(
-                    source_qualifiers_by_node_ref[node_ref]
+                    source_qualifiers_by_node_ref[node_ref],
+                    stage1_response_schema_version=stage1_response_schema_version,
                 )
             ),
             forbidden_promotions=(
@@ -7671,7 +7679,8 @@ def _validate_premeaning_source_qualifiers(
                     "foreground_scope_projection_qualifier_source_mismatch"
                 )
             expected = _foreground_candidate_required_qualifiers(
-                source_qualifiers_by_node_ref[semantic_refs[0]]
+                source_qualifiers_by_node_ref[semantic_refs[0]],
+                stage1_response_schema_version=candidate.schema_version,
             )
         else:
             expected_values = ["epistemic:provisional_interpretation"]
@@ -7684,7 +7693,8 @@ def _validate_premeaning_source_qualifiers(
                         "foreground_scope_projection_qualifier_source_mismatch"
                     )
                 qualifiers = _foreground_candidate_required_qualifiers(
-                    qualifiers
+                    qualifiers,
+                    stage1_response_schema_version=candidate.schema_version,
                 )
                 role_prefix = f"{binding.role.value.lower()}_"
                 expected_values.extend(
@@ -18617,6 +18627,10 @@ def _validate_stage1_projection_causal_trace(
             row.binding_ref: row
             for row in projection.subjective_basis_binding_rows
         }
+        candidate_by_ref = {
+            candidate.candidate_id: candidate
+            for candidate in projection.interpretation_candidates
+        }
         for row in meaning_rows:
             relevant_basis_rows = tuple(
                 basis
@@ -18643,12 +18657,47 @@ def _validate_stage1_projection_causal_trace(
                 for canonical_axis in (axis.removeprefix(role_prefix),)
                 if canonical_axis in {"polarity", "modality", "time_scope"}
             }
+            # Aspect stays outside SourceQualifierBinding's exact three
+            # scalar axes. Its source is the same sealed candidate and role
+            # reached through the existing basis/contribution binding.
+            for qualifier in projection.source_qualifier_binding_rows:
+                basis = basis_by_ref.get(qualifier.basis_binding_ref)
+                if (
+                    basis is None
+                    or basis.contribution_ref not in row.layer1_contribution_refs
+                    or basis.semantic_ref not in row.configuration_component_refs
+                ):
+                    continue
+                candidate = candidate_by_ref.get(qualifier.source_candidate_ref)
+                contribution = contribution_by_ref.get(basis.contribution_ref)
+                role = qualifier.source_argument_role
+                if (
+                    candidate is None or contribution is None
+                    or candidate.candidate_id not in contribution.interpretation_candidate_refs
+                    or basis.semantic_ref not in candidate.semantic_refs
+                    or role is not None and sum(
+                        binding.role is role and binding.semantic_ref == basis.semantic_ref
+                        for binding in candidate.argument_bindings
+                    ) != 1
+                    or role is None and bool(candidate.relation_basis_refs)
+                ):
+                    raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+                prefix = "aspect:" if role is None else f"{role.value.lower()}_aspect:"
+                aspects = tuple(
+                    value[len(prefix):] for value in candidate.required_qualifiers
+                    if value.startswith(prefix)
+                )
+                if len(aspects) != 1:
+                    raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+                bound_axis_qualifier_codes.add(f"aspect:{aspects[0]}")
             trace_axis_qualifier_codes = {
                 code
                 for code in row.source_qualifier_refs
                 if code.split(":", 1)[0]
-                in {"polarity", "modality", "time_scope"}
+                in {"polarity", "modality", "time_scope", "aspect"}
             }
+            trace_aspects = {code for code in trace_axis_qualifier_codes if code.startswith("aspect:")}
+            source_aspects = {code for code in bound_axis_qualifier_codes if code.startswith("aspect:")}
             if (
                 not relevant_basis_rows
                 or not set(row.configuration_component_refs).intersection(
@@ -18658,6 +18707,7 @@ def _validate_stage1_projection_causal_trace(
                 or not trace_axis_qualifier_codes.issubset(
                     bound_axis_qualifier_codes
                 )
+                or trace_aspects and trace_aspects != source_aspects
             ):
                 raise CMEEStage1ContractError(
                     "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
