@@ -421,10 +421,32 @@ class CMEEPastReportedWishTest(unittest.TestCase):
             (before,), source.evidence_spans,
             normalized_input=source.normalized_current_input,
         )
+        resolver = build_evidence_span_resolver(source.evidence_spans)
         current = replace(past, semantic_frame=replace(past.semantic_frame, time_scope="current_input"))
-        self.assertFalse(reception_owner._past_wish_target((past, current)))
-        self.assertFalse(reception_owner._past_wish_target(()))
-        self.assertFalse(reception_owner._past_wish_target((None,)))
+        self.assertTrue(reception_owner._past_wish_target((past,), resolver))
+        self.assertFalse(reception_owner._past_wish_target((past, current), resolver))
+        self.assertFalse(reception_owner._past_wish_target((), resolver))
+        self.assertFalse(reception_owner._past_wish_target((None,), resolver))
+        for original in (
+            "「はい。休みたいと言った。」と聞いた。",
+            "同僚がいくつもの事情を詳しく説明したあと、休みたいと言った。",
+        ):
+            pos = original.index("休みたいと言った")
+            span = replace(resolver.resolve(before.source_span_ids[0]),
+                           start_index=pos, end_index=pos + len("休みたいと言った"))
+            after, = observation_plan_owner._final_stage1_align_action_status(
+                (before,), (span,), normalized_input={
+                    **source.normalized_current_input, span.source_field: original,
+                },
+            )
+            self.assertEqual(after, before)
+        # A past calendar phrase inside the desired object is not a past
+        # desire. Legacy time classification alone cannot label its reference.
+        source, before = self._wish("昨日の打合せで考えたことを短い文にまとめて明確に伝えたい。")
+        legacy_past = replace(before, semantic_frame=replace(before.semantic_frame, time_scope="past"))
+        self.assertFalse(reception_owner._past_wish_target(
+            (legacy_past,), build_evidence_span_resolver(source.evidence_spans),
+        ))
 
     def test_selected_past_wish_body_keeps_time_in_independent_inverse(self):
         rows, _ = load_validated_batch(_BATCH_PATH, _MANIFEST_PATH)
@@ -432,9 +454,10 @@ class CMEEPastReportedWishTest(unittest.TestCase):
         for row in rows:
             inputs = _compile_inputs(row)
             nuclei = {n.nucleus_id: n for n in inputs.grounded_plan.nuclei}
+            resolver = build_evidence_span_resolver(inputs.source.evidence_spans)
             moves = inputs.grounded_plan.response_plan.human_reception_plan.moves
             if not any(m.reception_act == "protect_retained_intention"
-                       and reception_owner._past_wish_target(tuple(nuclei[nid] for nid in m.target_nucleus_ids))
+                       and reception_owner._past_wish_target(tuple(nuclei[nid] for nid in m.target_nucleus_ids), resolver)
                        for m in moves):
                 continue
             a = _full_surface_artifacts(row)
@@ -447,7 +470,7 @@ class CMEEPastReportedWishTest(unittest.TestCase):
             for move in a.plan.response_plan.human_reception_plan.moves:
                 for nid in move.target_nucleus_ids:
                     target = next(n for n in a.plan.nuclei if n.nucleus_id == nid)
-                    if not reception_owner._past_wish_target((target,)):
+                    if not reception_owner._past_wish_target((target,), a.resolver):
                         continue
                     self.assertEqual(reception_owner.final_reception_anaphoric_context(
                         move=move, context_nucleus_ids=(nid,), plan=a.plan,

@@ -30,6 +30,7 @@ from emlis_ai_grounded_observation_plan import (
     source_proven_performed_action_status,
     source_proven_future_action_status,
     is_grounded_positive_feeling,
+    past_reported_wish_finite,
     _FEELING_RE,
     _direct_finite_carrier_shape,
     _source_finite_without_postposed_focus,
@@ -2056,14 +2057,24 @@ def _positive_feeling_target(nuclei: Sequence[GroundedSemanticNucleus]) -> bool:
     return bool(nuclei) and all(is_grounded_positive_feeling(n) for n in nuclei)
 
 
-def _past_wish_target(nuclei: Sequence[GroundedSemanticNucleus]) -> bool:
-    """Keep each selected wish's existing past scope in its reference."""
-    return bool(nuclei) and all(
+def _past_wish_target(
+    nuclei: Sequence[GroundedSemanticNucleus], resolver: EvidenceSpanResolver,
+) -> bool:
+    """Retain past scope only when the wish itself has a past report host."""
+    if not nuclei or not all(
         n is not None and n.kind == "wish"
         and n.semantic_frame.modality == "wish"
         and n.semantic_frame.time_scope == "past"
+        and len(n.source_span_ids) == 1
         for n in nuclei
-    )
+    ):
+        return False
+    for nucleus in nuclei:
+        raw = re.sub(r"\s+", " ", resolver.resolve(nucleus.source_span_ids[0]).raw_text).strip()
+        fragment = _typed_reception_source_fragment(nucleus, raw) or raw
+        if not past_reported_wish_finite(fragment):
+            return False
+    return True
 
 
 def _positive_feeling_responsibility(text: str) -> bool:
@@ -2262,7 +2273,7 @@ def resolve_grounded_reception_referent(
     elif reception_act == "protect_retained_intention":
         if "wish" in kinds or "operator:wish" in attributes:
             kind, text = "retained_wish", "その願い"
-            if final_source_fidelity and _past_wish_target(target_nuclei):
+            if final_source_fidelity and _past_wish_target(target_nuclei, resolver):
                 text = "当時の願い"
             elif final_source_fidelity and target_nuclei and all(
                 nucleus.semantic_frame.modality == "uncertain"
@@ -2440,7 +2451,7 @@ def _topic_bound_anaphoric_referent(
     ):
         if final_source_fidelity and (
             nucleus_index[_nucleus_id].semantic_frame.modality == "uncertain"
-            or nucleus_index[_nucleus_id].semantic_frame.time_scope == "past"
+            or _past_wish_target((nucleus_index[_nucleus_id],), resolver)
         ):
             continue
         for fragment in fragments:
@@ -3694,7 +3705,7 @@ def final_reception_anaphoric_context(
         typed_context = "その変化"
     elif "action" in context_kinds:
         typed_context = "その行動"
-    elif _past_wish_target(context_nuclei):
+    elif _past_wish_target(context_nuclei, resolver):
         typed_context = "当時の願い"
     else:
         context_label_by_kind = {

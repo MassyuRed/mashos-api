@@ -9857,6 +9857,22 @@ def _final_stage1_continuation_is_desired(text: str) -> bool:
     return False
 
 
+def past_reported_wish_finite(text: str) -> bool:
+    """Recognize a finite reporting host, not prove its source or actor."""
+    text = text.strip(" \u3000、,。．.!！")
+    if _top_level_text(text) != text:
+        return False
+    finite = _source_finite_without_postposed_focus(_strip_bounded_operator_prefix(text))
+    return bool(
+        re.search(
+            r"(?:たい|ほしい|欲しい)と(?:思って(?:いた|いました)|"
+            r"言(?:った|いました)|伝え(?:た|ました))$", finite,
+        )
+        and not re.search(r"[はがも?？]", finite)
+        and not re.match(r"(?:たぶん|多分|おそらく|恐らく)[、,]?", finite)
+    )
+
+
 def _final_stage1_align_action_status(
     nuclei: Sequence[GroundedSemanticNucleus],
     evidence_spans: Sequence[EvidenceSpan],
@@ -9892,6 +9908,7 @@ def _final_stage1_align_action_status(
         sources = tuple(code for code in codes if code.startswith("source_fragment_scalar_source:"))
         markers = codes.count("semantic_role:generic_relation_fragment")
         legacy = any(code.startswith(("surface_scalar_range:", "surface_scalar_source:")) for code in codes)
+        fragment_start = 0
         if markers or ranges or sources or legacy:
             if (
                 markers != 1 or len(ranges) != 1 or legacy
@@ -9904,6 +9921,7 @@ def _final_stage1_align_action_status(
                 raise GroundedObservationPlanError("final_action_status_fragment_invalid") from None
             if not 0 <= start < end <= len(text):
                 raise GroundedObservationPlanError("final_action_status_fragment_invalid")
+            fragment_start = start
             text = text[start:end]
             if text != text.strip():
                 raise GroundedObservationPlanError("final_action_status_fragment_invalid")
@@ -9967,13 +9985,8 @@ def _final_stage1_align_action_status(
                 nucleus.kind == "wish"
                 and frame.modality == "wish"
                 and frame.time_scope == "current_input"
-                and visible == text
-                and re.search(
-                    r"(?:たい|ほしい|欲しい)と(?:思って(?:いた|いました)|"
-                    r"言(?:った|いました)|伝え(?:た|ました))$", finite,
-                )
-                and not re.search(r"[はがも?？]", finite)
-                and not re.match(r"(?:たぶん|多分|おそらく|恐らく)[、,]?", finite)
+                and fragment_start == 0
+                and past_reported_wish_finite(text)
             ):
                 # A finite report locates the expressed desire in the past;
                 # it proves neither present desire nor performed action.
@@ -9981,10 +9994,18 @@ def _final_stage1_align_action_status(
                 # have removed the question mark after this same span.
                 source = str((normalized_input or {}).get(span.source_field) or "")
                 source_start, source_end = span.start_index, span.end_index
+                visible_source = _top_level_text(source)
+                previous_boundary = max(
+                    (visible_source or "").rfind(mark, 0, source_start)
+                    for mark in "。.!！?？"
+                )
                 if (
                     span.source_field in _TEXT_SOURCE_FIELDS
                     and 0 <= source_start < source_end <= len(source)
                     and _clean(source[source_start:source_end]) == _clean(span.raw_text)
+                    and visible_source is not None
+                    and visible_source[source_start:source_end] == source[source_start:source_end]
+                    and not source[previous_boundary + 1:source_start].strip()
                     and not re.search(r"[?？]", str(span.raw_text))
                     and not re.match(r"^[\s。、,.!！]*[?？]", source[source_end:])
                 ):

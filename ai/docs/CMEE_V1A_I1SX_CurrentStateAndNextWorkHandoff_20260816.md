@@ -5639,3 +5639,12 @@ System Contextはdoctor→prepare実行、18成功／16失敗、prepareは固定
 代表4本文を華恋が原入力とともに読み、Gate／independent inverse成功を確認した。過去の発言の参照1件が変わり、もう1件の既存願望は意味時制だけ変わるため本文改善件数へ含めない。簡略入力をwishと仮定した新規検査案2件の失敗は保存し、既存typed状態を明示する境界検査と実際の選択本文検査へ直して3成功を確認した。context参照の追加assertionを含む最終検査、固定100・必要回帰・全文確認はこの後に実施する。現在runnerのexact18／exact9対応だけを更新し、歴史的receipt／PASS／hashは保持する。
 
 開始時に3 PRの保存headとlocal treeを照合し、全体設計・国家flow・current地図・tracked inventory・影響現物・最新weekly reviewを確認した。System Contextはdoctor→prepareを実行したが固定環境不一致で不成立、staleは不使用で承認済み原典を直接読んだ。profile／基準ref／tracked currentは変更していない。既存実装runtimeの46依存版・46wheel hash・2277installed RECORDは今回も不一致0。候補18の100／124／73-27、201検査197成功4失敗、全文NOT_CLEARは前段証拠であり、変更コードの最終証明に流用しない。商品確認準備・ready・採用・merge・本番・問い・Layer3は未成立。
+
+
+### 2026-09-05 continuation — 分割前の引用・話者境界と過去参照の補正
+
+前段固定source（runtime remote `35cd05e37f4b19d576960dbb813611b9f9c618bc` / local `125a1ef15003c9947f6a1c5e2c07b0acead1612a`）は100/124/73-27、204検査200成功／既存4失敗だったが、追加source reviewで引用・他者主語が分割前の位置へ残る不足を特定した。華恋が同じspan/元offsetを用いた最小再現で2つの誤ったpast補正を確認したため、このsourceの成功を最終証明にしない。前段100の全文確認は未実施、生成・XML・後続診断・最小再現を途中証拠として保持する。
+
+既存alignerの新past-report補正だけを、元フィールド全体で引用外の同位置、直前文境界から未知の前置きがないspan、同じtyped fragmentの先頭に限定した。分割された引用・話者は推測で補わない。Human Receptionはtyped pastだけを過去の願望と同一視せず、同じ完全source fragmentの願望が有限の過去report hostに閉じることも確認する。この形態規則は既存ObservationPlan内のpure functionを共有し、別の分類器・opaque flag・新意味carrierを作らない。元の目的語内の時間語だけで得られたpast値は、新しい当時参照の根拠にならない。
+
+追加3検査の中に元位置・話者／引用・目的語内時間語の境界を追加し、同じ固定100と必要回帰を新sourceで再実行してから華恋が全100本文を読む。required124・選択責務・Gate／parser／閾値・過去PASS／hashを維持する。前段検証と今回の最終sourceを混ぜず、実装／検査／runner以後の変更は結果と地図・handoffに限定して保存する。商品NOT_CLEAR、ready／採用／merge／本番／問い／Layer3は未成立。
