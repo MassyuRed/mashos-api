@@ -376,8 +376,8 @@ N3_HISTORICAL_RUNNER_IDENTITY = (
 N3_HISTORICAL_STATIC_RECEIPT_SHA256 = (
     "e71a79fa4748134396b5fa46e6cf98ff91e535fb91b955fa5c814106177a26bb"
 )
-IM03_WORKING_LANGUAGE_CORE_IDENTITY = 'f89d19d57940c54427244837309dcd76912273fc6468dae63b653f6a1b05364f'
-IM03_WORKING_RUNTIME_INTEGRATION_IDENTITY = '85dfc1000938cc4c4a907ef0912cd3190a83ad38b721a1002f1a0198a30d0047'
+IM03_WORKING_LANGUAGE_CORE_IDENTITY = '05c575965946b3fde1c43a5974d5335b381236b634e706b1e17ffbe7e57dc17a'
+IM03_WORKING_RUNTIME_INTEGRATION_IDENTITY = '82f2357faef799d523ff725d8680685f49ddd89cc928c29787f60976f8f579f5'
 IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT18 = (('language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py',
   '652a35946e0f3afd59da49df150d30931707809633907f4d520e106330a6f4c5',
   391508),
@@ -391,14 +391,14 @@ IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT18 = (('language_core_
   'c8fcd93a2b161f9d2b7c3e8cf7befc21cd117b9884d3d638a4333bddf6bd96d5',
   752916),
  ('language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_plan.py',
-  '777d1bfd10d3390278304de65e9b701e3fefd166fb9dcdceabedba18fbf1b560',
-  1069540),
+  '87f431136b12e8415257e5d6df1154cba69eeae30f6e0b2d1dd699f3adbc4822',
+  1076316),
  ('language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py',
   'ee0bc068dfd24e37dca6968e360b397fbf5f06cabb47a4cb1b594317be3ca09c',
   487568),
  ('language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_human_reception.py',
-  '6ae21a390ade85933ed6f8f0534391adba9e5c473237f6f24fb36880d37e42de',
-  817945),
+  'c701f0aade04039363e2ce2bfd15357fe074c436bbefd37c9ffcf2f5104383f9',
+  819452),
  ('language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_gate.py',
   '1d6378ce1c5e77eaa39548cac859da47be6367825ccf3a03100dbbbb02468ebf',
   316450),
@@ -433,14 +433,14 @@ IM03_WORKING_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT18 = (('ai/services/ai_
   '1fba02e7cfa5e9e5e4d257aa8c49670dfbc6e6a4638c8b3100414f314aa9eb4d',
   308921),
  ('ai/services/ai_inference/emlis_ai_grounded_observation_plan.py',
-  '6a301c66727df598d014a910db8f092e2c7377d9857f5e42be89bcd6ed149f9b',
-  420913),
+  'f3bf084d6c4062c002b5858f9603e442fe466f1b501afb17b2a7dc86c3aa59da',
+  423404),
  ('ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py',
   '9a299bc6ec0b7296146d6ee9664d506702c68bdca6c085dd89194394e7f73311',
   171047),
  ('ai/services/ai_inference/emlis_ai_grounded_human_reception.py',
-  '5935d2b6ff3a2e0bb38b7d910344933f73cdef4292c6968464494fcaeb68471c',
-  317550),
+  'c28dba18d2d15562d1db87a770071265d6b76aeb964564342c0b8a0ce1124ef7',
+  318213),
  ('ai/services/ai_inference/emlis_ai_grounded_observation_gate.py',
   '6d4724120167fd93694ab6c1ade2ced947cbc0513731cdc6b289b780512d536a',
   123301),
@@ -462,9 +462,9 @@ IM03_WORKING_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT18 = (('ai/services/ai_
  ('product_causal_owner_and_registry_digests_manifest',
   '915a3d026575a93fca43ca22a86548923eb3f51c744d47b3e02a7834bdbf67b9',
   8985))
-IM03_WORKING_LANGUAGE_PAYLOAD_TUPLE_SHA256 = '47a84a762a07b27b0eba9c1abfcdfc750ed3518491b9a0fbc9184e6d669bb279'
-IM03_WORKING_RUNTIME_PAYLOAD_TUPLE_SHA256 = '78730cb78e795e57081a91fc0462d9dbb5fd0f6b10cbcf685e5ca4f511537e73'
-IM03_WORKING_SOURCE_OWNER_PAYLOAD_EXACT9_TUPLE_SHA256 = '9779236e873f758e3d7bb85a7856f84cecbcd09767f26f7dbae1ae864c17e529'
+IM03_WORKING_LANGUAGE_PAYLOAD_TUPLE_SHA256 = '5f79102e0c67ece0e6b12072bc12ecc31f2c70422e59754c5fc241f78559bdb3'
+IM03_WORKING_RUNTIME_PAYLOAD_TUPLE_SHA256 = 'bda73baec8479de58dd90c97faab11d3bb035f8eb2f6c700cb5ba0930d5bb3f1'
+IM03_WORKING_SOURCE_OWNER_PAYLOAD_EXACT9_TUPLE_SHA256 = '110b2a28b1002002ec4e8aab7fc1fde8c83fa7e1124ea6e6df82b59e38624cb9'
 IM03_WORKING_SOURCE_OWNER_SYMBOL_SET_SHA256 = '783393b453359f3b6f846fbced95f4ac96fa0a50f8ce65e1d1d3e6dcd013968a'
 IM03_WORKING_SOURCE_OWNER_DECLARATION_COUNTS_EXACT9 = (81, 471, 115, 194, 274, 120, 199, 56, 89)
 IM03_WORKING_SOURCE_OWNER_IMPORT_COUNTS_EXACT9 = (89, 17, 188, 69, 37, 42, 29, 34, 100)

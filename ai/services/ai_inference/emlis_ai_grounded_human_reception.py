@@ -7092,8 +7092,19 @@ def _source_grounded_response_predicate_surface(
         clause_form=clause_form,
         hedged=recovery_stage == "hedged",
     )
+    # Separate the received object from the embedded accusative argument in
+    # the selected openness adjunct. Attention/significance already supplies
+    # a clause boundary through its role operator.
+    proposition = selected_subjective_decision.subjective_proposition
+    openness = bool(
+        proposition.appraisal_content is not None
+        and proposition.appraisal_content.operation == "LEAVE_UNFINISHED"
+        or proposition.relational_position is not None
+        and proposition.relational_position.stance_operator == "HOLD_UNFINISHED_OPEN"
+    )
+    object_boundary = "、" if openness and not predicate.role_operator else ""
     return (
-        f"{predicate.object_particle}{predicate.role_operator}"
+        f"{predicate.object_particle}{predicate.role_operator}{object_boundary}"
         f"{predicate.act_guard}{predicate.reception_operator}"
         f"{predicate.voice_complement}{predicate.valency_complement}"
         f"{governed_predicate}"

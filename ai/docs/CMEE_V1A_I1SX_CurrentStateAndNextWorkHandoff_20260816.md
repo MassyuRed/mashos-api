@@ -5676,3 +5676,14 @@ System Contextはdoctor→prepare実行、18成功／16失敗、prepareは固定
 System Contextは今回doctor→prepareを実行したが18成功16失敗、prepareも固定toolchain不一致で不成立。stale不使用・承認済み原典直接読取。profile／基準ref／tracked current変更0。既存実装runtimeは46依存版・46wheel hash・2277installed RECORDを今回照合し不一致0。全体／国家／共通基盤と最新地図・tracked inventory・weekly reviewを確認し、今回もdisabled final Stage1の既存ObservationPlan／Human Reception内部、テスト、現在runner identityに限定した。Sentence Surface／Gate／parser変更0、既存exact replay・source／unknown／安全・124義務を保持する。
 
 次は同じ承認内で、過去の発言の今回修正を保持し、未解決の複文・伝達・予定と、援助の受領主体、問い・比較・可能性を既存意味ownerの原入力へ戻って確認する。原入力→選択意味→本文を代表例で先に突き合わせ、分類語だけの変更や長い再掲を商品改善にしない。既存ownerの範囲で次修正を実装し、同じ100・124と必要回帰・華恋全文確認をそろえる。新proposal／台帳／言い換えbank／第二selector／renderer／隠し意味／弱いGate／歴史的hash修正を追加しない。9月12日商品確認準備は依然危うく、9月9日の作業時には改善本文・残件・見通しを確認する。日付による自動実装／停止／Product Read PASSはない。PR3／30／37はDraft/open/unmerged、ready／採用／merge／本番／問い／Layer3は未成立。
+
+
+### 2026-09-05 continuation — 未完の問いと埋込行動のsource分類（最終検証前）
+
+最新再開点に残る問いの誤分類を、同じ承認内の既存final ObservationPlan ownerで修正する。既存action型の中でも、既にuncertainとoperator:uncertaintyを持ち、元field／offset一致・引用外の同位置・前の文境界から未所有prefixなし・疑問の外側終端を証明できる理由疑問だけを、同じnucleusの既存uncertainty型へ正す。kind／predicate_kindの訂正をstatus一般の拡大許可とは扱わない。原入力の同じ未完述語を分類し直す限定修正であり、nucleus ID・actor・polarity・時制・modality・source／anchor・関係は保持する。埋込行動を外側行動の断定にしない。新しい型・意味選択器・owner split・公開base経路を追加しない。
+
+既存graph／direct shape／contributionと既存優先条件からPRESENT_UNFINISHED／LEAVE_UNFINISHEDが選択され、同じimmutable request-local decisionがHuman Receptionのforwardと独立replayへ届く。Human Receptionはその既選択openness補語に必要な読点を置き、既存の受取対象と補語内の目的語を区切る。観測上の分類語を消すだけの修正ではない。既存action-status補正にも元field末尾の疑問符を確認する拒否を加え、Ledgerで符号が落ちた質問から実行／予定の証明を作らない。Gate／parser／閾値／歴史的hash・PASSは変更しない。
+
+代表本文で選択前の分類、選択された未完openness、観測とフォロー、Gate／independent inverseを確認した。4つの直接関連検査を追加し、原source欠損・不一致・引用・他者prefix・報告host・質問符と、本文から選択内容を除く改変を覆う。代表検証後の読点／追加境界を含む固定sourceで必要回帰・同じ100件・華恋全件全文確認を実行する。前段204件200成功／既存4失敗と100／124／73-27は変更前の証拠であり、今回最終コードの証明に流用しない。
+
+この機能は保存直後Emlisのdisabled final Stage1内の受け止めを担当する。国家の保存・dispatch・queue・read-side、共通公開返却・RN passed-only表示、旧経路、Piece／分析との境界は維持。System Contextはdoctor→prepareが固定toolchain不一致で不成立のため原典直読、profile／基準ref／tracked current変更0。複文の過去予定・援助の受領主体・比較や他の可能性・長い復唱と集合反復は残件。商品NOT_CLEAR、商品確認準備／ready／採用／merge／本番／質問生成／Layer3は未成立。

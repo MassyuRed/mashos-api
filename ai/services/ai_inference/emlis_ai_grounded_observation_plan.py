@@ -9328,6 +9328,46 @@ def _final_stage1_typed_nuclei(
             else ()
         )
         if not projections:
+            # An embedded action does not make an unresolved why-question
+            # an action assertion. Correct this existing source kind before
+            # graph/meaning selection; keep the same owner and all evidence.
+            # Require the complete top-level source clause, not a quotation
+            # or a fragment whose reporting host was lost by Ledger.
+            if (
+                span is not None
+                and nucleus.kind == "action"
+                and nucleus.semantic_frame.modality == "uncertain"
+                and "operator:uncertainty" in nucleus.semantic_frame.attribute_codes
+                and normalized_input is not None
+            ):
+                source = str(normalized_input.get(span.source_field) or "")
+                start, end = span.start_index, span.end_index
+                visible_source = _top_level_text(source)
+                raw = str(span.raw_text)
+                finite = raw.strip(" \u3000、,。．.!！?？")
+                previous_boundary = max(
+                    (visible_source or "").rfind(mark, 0, start)
+                    for mark in "。.!！?？"
+                )
+                if (
+                    span.source_field in _TEXT_SOURCE_FIELDS
+                    and 0 <= start < end <= len(source)
+                    and _clean(source[start:end]) == _clean(raw)
+                    and visible_source is not None
+                    and visible_source[start:end] == source[start:end]
+                    and not source[previous_boundary + 1:start].strip()
+                    and re.match(r"^(?:どうして|なぜ|何故)", finite)
+                    and re.search(r"(?:ん|の)?だろう(?:か)?$", finite)
+                    and _top_level_text(finite) == finite
+                    and not re.search(r"[。.!！?？\n]", finite)
+                    and re.match(r"^(?:\s*[。．.!！?？]|\s*$)", source[end:])
+                ):
+                    nucleus = replace(
+                        nucleus, kind="uncertainty",
+                        semantic_frame=replace(
+                            nucleus.semantic_frame, predicate_kind="uncertainty",
+                        ),
+                    )
             result.append(nucleus)
             continue
         projected_ids: list[str] = []
@@ -10042,8 +10082,13 @@ def _final_stage1_align_action_status(
             continue
         # A quoted or attributed predicate cannot establish this owner's
         # factual action.  Field defaults are not evidence about an actor.
+        source = str((normalized_input or {}).get(span.source_field) or "")
+        source_end = span.end_index
         if (
             not text or visible is None or visible != text
+            or re.search(r"[?？]", str(span.raw_text))
+            or 0 < source_end <= len(source)
+            and re.match(r"^[\s。、,.!！]*[?？]", source[source_end:])
             or re.search(r"(?:ない|なかった|ません|ませんでした|ずに|ぬ)$", text)
         ):
             aligned.append(nucleus)

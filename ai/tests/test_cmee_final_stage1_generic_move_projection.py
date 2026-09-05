@@ -373,6 +373,109 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         )
 
 
+class CMEEUnresolvedQuestionSourceTest(unittest.TestCase):
+    def _source_plan(self, text):
+        source = freeze_text_source(_request_from_row({
+            "case_id": "unresolved-question-source-unit",
+            "input": {"thought_text": text, "action_text": "",
+                      "categories": ["生活"],
+                      "emotions": [{"type": "不安", "strength": "weak"}]},
+        }))
+        plan = build_grounded_observation_plan(
+            source.normalized_current_input, evidence_spans=source.evidence_spans,
+        )
+        return source, plan
+
+    def test_why_question_preserves_owner_and_source_before_meaning_selection(self):
+        for prefix in ("どうして", "なぜ", "何故"):
+            with self.subTest(prefix=prefix):
+                source, before = self._source_plan(
+                    prefix + "決めた後に迷う気がするんだろう。"
+                )
+                nuclei, dependencies = observation_plan_owner._final_stage1_typed_nuclei(
+                    before, source.evidence_spans,
+                    normalized_input=source.normalized_current_input,
+                )
+                target = next(n for n in before.nuclei if "memo" in n.source_fields)
+                self.assertEqual(target.kind, "action")
+                self.assertEqual(dependencies, ())
+                self.assertEqual(nuclei, tuple(
+                    replace(n, kind="uncertainty", semantic_frame=replace(
+                        n.semantic_frame, predicate_kind="uncertainty",
+                    )) if n.nucleus_id == target.nucleus_id else n
+                    for n in before.nuclei
+                ))
+                unproven, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                    before, source.evidence_spans,
+                )
+                self.assertEqual(unproven, before.nuclei)
+                mismatch, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                    before, source.evidence_spans,
+                    normalized_input={**source.normalized_current_input, "memo": "別の文"},
+                )
+                self.assertEqual(mismatch, before.nuclei)
+                # The same visible fragment cannot discard a subject,
+                # quotation, or reporting host outside its Ledger span.
+                original = source.normalized_current_input["memo"]
+                for left, right in (("同僚は、", ""), ("「", "」と聞いた。"),
+                                    ("", "と思った。")):
+                    raw = original.rstrip("。")
+                    spans = tuple(
+                        replace(s, start_index=s.start_index + len(left),
+                                end_index=s.end_index + len(left))
+                        if s.source_field == "memo" else s
+                        for s in source.evidence_spans
+                    )
+                    bounded, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                        before, spans, normalized_input={
+                            **source.normalized_current_input,
+                            "memo": left + raw + right,
+                        },
+                    )
+                    self.assertEqual(bounded, before.nuclei)
+
+    def test_report_quote_and_nonquestion_do_not_acquire_question_kind(self):
+        for text in (
+            "決めた後に迷う気がする。",
+            "なぜ決めた後に迷う気がするんだろうと思った。",
+            "「なぜ決めた後に迷う気がするんだろう」と聞いた。",
+            "なぜ決めた後に迷う気がするんだろうかと尋ねた。",
+        ):
+            with self.subTest(text=text):
+                source, plan = self._source_plan(text)
+                nuclei, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                    plan, source.evidence_spans,
+                    normalized_input=source.normalized_current_input,
+                )
+                self.assertFalse(any(n.kind == "uncertainty" for n in nuclei))
+
+    def test_selected_unfinished_appraisal_reaches_body_and_inverse(self):
+        artifacts = _full_surface_artifacts({
+            "case_id": "unresolved-question-expression-unit",
+            "input": {"thought_text": "なぜ決めた後に迷う気がするんだろう。",
+                      "action_text": "", "categories": ["生活"],
+                      "emotions": [{"type": "不安", "strength": "weak"}]},
+        })
+        self.assertTrue(artifacts.gate.passed)
+        self.assertTrue(artifacts.inverse.passed)
+        self.assertNotIn("確かめきれない行動", artifacts.surface.text)
+        self.assertTrue(any(
+            d.subjective_proposition.appraisal_content is not None
+            and d.subjective_proposition.appraisal_content.operation == "LEAVE_UNFINISHED"
+            for d in artifacts.selected_subjective_input.decisions
+        ))
+        follow = _reception_text(artifacts.surface.text)
+        self.assertIn("結論を急がずに", follow)
+        self.assertNotIn("を結論を", follow)
+        changed = _tamper_reception(artifacts.surface.text, "結論を急がずに、", "")
+        inverse = evaluate_grounded_surface_body_inverse(
+            body=changed.encode("utf-8"), plan=artifacts.plan,
+            sentence_plan=artifacts.sentence_plan, resolver=artifacts.resolver,
+            selected_subjective_input=artifacts.selected_subjective_input,
+        )
+        self.assertFalse(inverse.passed)
+
+
 class CMEEPastReportedWishTest(unittest.TestCase):
     def _wish(self, text):
         source, nucleus = CMEESameNucleusActionStatusTest()._action(text)
@@ -613,6 +716,17 @@ class CMEEPositiveFeelingProjectionTest(unittest.TestCase):
 
 
 class CMEESameNucleusActionStatusTest(unittest.TestCase):
+    def test_original_question_punctuation_cannot_prove_action_status(self):
+        for text in ("資料を読んだ？", "資料を読みました ?",
+                     "資料を読んでいる！？", "資料を読むつもり？"):
+            with self.subTest(text=text):
+                source, before = self._action(text)
+                after, = observation_plan_owner._final_stage1_align_action_status(
+                    (before,), source.evidence_spans,
+                    normalized_input=source.normalized_current_input,
+                )
+                self.assertEqual(after, before)
+
     def test_finite_plan_preserves_embedded_desire_and_negation(self):
         for text in (
             "資料を読むつもり",
