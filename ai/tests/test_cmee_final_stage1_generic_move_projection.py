@@ -414,7 +414,8 @@ class CMEEPositiveFeelingProjectionTest(unittest.TestCase):
             base_target = next(n for n in base.nuclei if "memo" in n.source_fields)
             self.assertNotIn("operator:change", base_target.semantic_frame.attribute_codes)
         for text in ("落ち着いたら嬉しい。", "落ち着いたかもしれない。",
-                     "落ち着いた？", "「落ち着いた」と言った。"):
+                     "落ち着いた？", "落ち着いた！？  ", "落ち着いた ?",
+                     "「落ち着いた」と言った。"):
             final = build_final_stage1_grounded_observation_plan({"memo": text})
             for n in final.nuclei:
                 self.assertNotIn("operator:change", n.semantic_frame.attribute_codes)

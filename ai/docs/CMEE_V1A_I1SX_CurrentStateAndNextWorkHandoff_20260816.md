@@ -5607,3 +5607,5 @@ parser／Gateにも限定した変更がある。既存body parserは本文だ�
 全体・国家システム・current file map・既存保存入力→Emlis→返却→RN表示と旧経路の境界を確認した。STRUCTURE_MAP_DELTA_NONE：既存owner内の意味投影・文法・検証を修正し、新owner／route／公開schemaを追加しない。production／API／DB／RN／Piece／Analysisの変更0、新CMEE本文保存・履歴接続の完成は未主張。System Contextはfresh doctor18成功／16失敗、prepare実行・固定toolchain不一致で不成立。stale不使用・原典直読、profile／基準ref／lock／tracked current変更0。9月12日商品確認準備、ready／採用／merge／本番／問い／Layer3は未成立。
 
 実際に完了した肯定変化については、既存final source alignerで同じ反応の原文範囲を確認する。既存positive lexiconの一致自体が有限の完了動詞で、引用・疑問・条件・後続hostの内側ではなく外側述語の末尾を占める場合だけ、既存operator:changeを保持・明示する。単なる肯定感情のstemはこの証明にならない。選択感情labelだけでは新しい反応判定を成立させない。先行代表7件／追加3検査の成功後、この実変化境界を補った。最終固定コードの回帰・同じ100件で再確認する。V1分類と受取義務は従来通りであり、共通parserのmarker診断だけには新語の検出が現れ得る。
+
+最初の固定コードで全201検査を実行したところ196成功／5失敗となり、既存4件に加えて疑問符を失ったsourceから変化を確定する新規失敗が1件発生した。Ledgerは原文末尾の疑問符をspanから除くため、span内だけの確認では不十分だった。既存normalized_inputを同じfinal alignerへ渡し、元fieldとstart/endの一致を確認したうえで終端の疑問記号列を調べる。欠損・不一致のsourceでは新しい変化証明を追加しない。Ledger／offset／既存action・wish分岐と検査期待は変更しない。この失敗と途中100件は非公開記録に保持し、修正後を新たに固定して全201検査・同じ100件・全文確認を行う。

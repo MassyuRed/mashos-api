@@ -9860,6 +9860,8 @@ def _final_stage1_continuation_is_desired(text: str) -> bool:
 def _final_stage1_align_action_status(
     nuclei: Sequence[GroundedSemanticNucleus],
     evidence_spans: Sequence[EvidenceSpan],
+    *,
+    normalized_input: Mapping[str, Any] | None = None,
 ) -> tuple[GroundedSemanticNucleus, ...]:
     """Resolve factual tense once, before the final graph/meaning is sealed.
 
@@ -9915,9 +9917,20 @@ def _final_stage1_align_action_status(
             # Positive lexicon entries ending in an actual perfective verb
             # are change evidence; a feeling stem by itself is not. Prove
             # the outer finite predicate, not an embedded/quoted match.
+            # Ledger trims sentence punctuation. Verify the original field
+            # and offsets before deciding that its ending is declarative.
+            source = str((normalized_input or {}).get(span.source_field) or "")
+            source_start, source_end = span.start_index, span.end_index
+            source_bound = bool(
+                span.source_field in _TEXT_SOURCE_FIELDS
+                and 0 <= source_start < source_end <= len(source)
+                and _clean(source[source_start:source_end]) == _clean(span.raw_text)
+            )
             if (
                 visible is not None
+                and source_bound
                 and not re.search(r"[?？]", str(span.raw_text))
+                and not re.match(r"^[\s。、,.!！]*[?？]", source[source_end:])
                 and any(
                     match.end() == len(finite)
                     and _EXPLICIT_PERFECTIVE_END_RE.search(match.group(0))
@@ -10141,6 +10154,7 @@ def project_final_stage1_grounded_observation_plan(
     projected_nuclei = _final_stage1_align_action_status(
         projected_nuclei,
         evidence_spans,
+        normalized_input=normalized_input,
     )
     relations, nuclei = _final_stage1_typed_relations(
         plan,
