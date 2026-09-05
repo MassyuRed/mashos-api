@@ -373,6 +373,98 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         )
 
 
+class CMEEPastReportedWishTest(unittest.TestCase):
+    def _wish(self, text):
+        source, nucleus = CMEESameNucleusActionStatusTest()._action(text)
+        return source, replace(nucleus, kind="wish", semantic_frame=replace(
+            nucleus.semantic_frame, predicate_kind="wish", modality="wish",
+            attribute_codes=("operator:wish", "time_scope:current_input"),
+        ))
+
+    def test_finite_past_report_preserves_host_and_same_wish_owner(self):
+        for text in ("休みたいと言った。", "休みたいと言いました。",
+                     "休みたいと思っていた。", "休みたいと思っていました。",
+                     "休みたいと伝えた。", "休みたいと伝えました。"):
+            with self.subTest(text=text):
+                source, before = self._wish(text)
+                after, = observation_plan_owner._final_stage1_align_action_status(
+                    (before,), source.evidence_spans,
+                    normalized_input=source.normalized_current_input,
+                )
+                self.assertEqual(after, replace(before, semantic_frame=replace(
+                    before.semantic_frame, time_scope="past",
+                    attribute_codes=("operator:wish", "time_scope:past"),
+                )))
+                unproven, = observation_plan_owner._final_stage1_align_action_status(
+                    (before,), source.evidence_spans,
+                )
+                self.assertEqual(unproven, before)
+
+    def test_report_scope_does_not_override_question_quote_or_current_wish(self):
+        for text in (
+            "休みたいと言った？", "休みたいと言った！？  ",
+            "休みたいと言った ?", "休みたいと言ったら考える。",
+            "休みたいと言ったかもしれない。", "休みたいとは言わなかった。",
+            "休みたいと思っている。", "休みたい。",
+            "同僚が休みたいと言った。", "同僚は休みたいと言った。",
+            "たぶん休みたいと言った。", "「休みたいと言った」と聞いた。",
+        ):
+            with self.subTest(text=text):
+                source, before = self._wish(text)
+                after, = observation_plan_owner._final_stage1_align_action_status(
+                    (before,), source.evidence_spans,
+                    normalized_input=source.normalized_current_input,
+                )
+                self.assertEqual(after, before)
+        source, before = self._wish("休みたいと言った。")
+        past, = observation_plan_owner._final_stage1_align_action_status(
+            (before,), source.evidence_spans,
+            normalized_input=source.normalized_current_input,
+        )
+        current = replace(past, semantic_frame=replace(past.semantic_frame, time_scope="current_input"))
+        self.assertFalse(reception_owner._past_wish_target((past, current)))
+        self.assertFalse(reception_owner._past_wish_target(()))
+        self.assertFalse(reception_owner._past_wish_target((None,)))
+
+    def test_selected_past_wish_body_keeps_time_in_independent_inverse(self):
+        rows, _ = load_validated_batch(_BATCH_PATH, _MANIFEST_PATH)
+        checked = 0
+        for row in rows:
+            inputs = _compile_inputs(row)
+            nuclei = {n.nucleus_id: n for n in inputs.grounded_plan.nuclei}
+            moves = inputs.grounded_plan.response_plan.human_reception_plan.moves
+            if not any(m.reception_act == "protect_retained_intention"
+                       and reception_owner._past_wish_target(tuple(nuclei[nid] for nid in m.target_nucleus_ids))
+                       for m in moves):
+                continue
+            a = _full_surface_artifacts(row)
+            checked += 1
+            self.assertTrue(a.gate.passed)
+            self.assertTrue(a.inverse.passed)
+            self.assertEqual(a.sentence_plan.recovery_stage, "full")
+            follow = _reception_text(a.surface.text)
+            self.assertIn("当時の願い", follow)
+            for move in a.plan.response_plan.human_reception_plan.moves:
+                for nid in move.target_nucleus_ids:
+                    target = next(n for n in a.plan.nuclei if n.nucleus_id == nid)
+                    if not reception_owner._past_wish_target((target,)):
+                        continue
+                    self.assertEqual(reception_owner.final_reception_anaphoric_context(
+                        move=move, context_nucleus_ids=(nid,), plan=a.plan,
+                        nucleus_index={n.nucleus_id: n for n in a.plan.nuclei},
+                        resolver=a.resolver,
+                    ), "当時の願い")
+            for wrong in ("今も残る願い", "これからの行動"):
+                changed = _tamper_reception(a.surface.text, "当時の願い", wrong)
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=changed.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(inverse.passed)
+                self.assertTrue(any("replay_mismatch" in code for code in inverse.failure_codes))
+        self.assertGreater(checked, 0)
+
+
 class CMEEPositiveFeelingProjectionTest(unittest.TestCase):
     def test_typed_feeling_does_not_override_change_result_or_unknown(self):
         plan = build_final_stage1_grounded_observation_plan({"memo": "嬉しい。"})

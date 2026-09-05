@@ -9963,6 +9963,38 @@ def _final_stage1_align_action_status(
                     frame, time_scope="current_input",
                     attribute_codes=tuple(_dedupe(attributes)),
                 ))
+            elif (
+                nucleus.kind == "wish"
+                and frame.modality == "wish"
+                and frame.time_scope == "current_input"
+                and visible == text
+                and re.search(
+                    r"(?:たい|ほしい|欲しい)と(?:思って(?:いた|いました)|"
+                    r"言(?:った|いました)|伝え(?:た|ました))$", finite,
+                )
+                and not re.search(r"[はがも?？]", finite)
+                and not re.match(r"(?:たぶん|多分|おそらく|恐らく)[、,]?", finite)
+            ):
+                # A finite report locates the expressed desire in the past;
+                # it proves neither present desire nor performed action.
+                # Verify punctuation in the original field: Ledger may
+                # have removed the question mark after this same span.
+                source = str((normalized_input or {}).get(span.source_field) or "")
+                source_start, source_end = span.start_index, span.end_index
+                if (
+                    span.source_field in _TEXT_SOURCE_FIELDS
+                    and 0 <= source_start < source_end <= len(source)
+                    and _clean(source[source_start:source_end]) == _clean(span.raw_text)
+                    and not re.search(r"[?？]", str(span.raw_text))
+                    and not re.match(r"^[\s。、,.!！]*[?？]", source[source_end:])
+                ):
+                    attributes = tuple(code for code in codes if not code.startswith(
+                        "time_scope:"
+                    )) + ("time_scope:past",)
+                    nucleus = replace(nucleus, semantic_frame=replace(
+                        frame, time_scope="past",
+                        attribute_codes=tuple(_dedupe(attributes)),
+                    ))
             aligned.append(nucleus)
             continue
         if (

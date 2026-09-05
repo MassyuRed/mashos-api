@@ -2056,6 +2056,16 @@ def _positive_feeling_target(nuclei: Sequence[GroundedSemanticNucleus]) -> bool:
     return bool(nuclei) and all(is_grounded_positive_feeling(n) for n in nuclei)
 
 
+def _past_wish_target(nuclei: Sequence[GroundedSemanticNucleus]) -> bool:
+    """Keep each selected wish's existing past scope in its reference."""
+    return bool(nuclei) and all(
+        n is not None and n.kind == "wish"
+        and n.semantic_frame.modality == "wish"
+        and n.semantic_frame.time_scope == "past"
+        for n in nuclei
+    )
+
+
 def _positive_feeling_responsibility(text: str) -> bool:
     return bool(re.search(r"気持ち.{0,80}感じ", text))
 
@@ -2252,7 +2262,9 @@ def resolve_grounded_reception_referent(
     elif reception_act == "protect_retained_intention":
         if "wish" in kinds or "operator:wish" in attributes:
             kind, text = "retained_wish", "その願い"
-            if final_source_fidelity and target_nuclei and all(
+            if final_source_fidelity and _past_wish_target(target_nuclei):
+                text = "当時の願い"
+            elif final_source_fidelity and target_nuclei and all(
                 nucleus.semantic_frame.modality == "uncertain"
                 for nucleus in target_nuclei
             ):
@@ -2426,7 +2438,10 @@ def _topic_bound_anaphoric_referent(
         nucleus_index,
         resolver,
     ):
-        if final_source_fidelity and nucleus_index[_nucleus_id].semantic_frame.modality == "uncertain":
+        if final_source_fidelity and (
+            nucleus_index[_nucleus_id].semantic_frame.modality == "uncertain"
+            or nucleus_index[_nucleus_id].semantic_frame.time_scope == "past"
+        ):
             continue
         for fragment in fragments:
             topic = _short_anaphoric_topic(fragment)
@@ -3679,6 +3694,8 @@ def final_reception_anaphoric_context(
         typed_context = "その変化"
     elif "action" in context_kinds:
         typed_context = "その行動"
+    elif _past_wish_target(context_nuclei):
+        typed_context = "当時の願い"
     else:
         context_label_by_kind = {
             "event": "そこまでの出来事",

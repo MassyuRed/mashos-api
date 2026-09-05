@@ -5628,3 +5628,14 @@ parser／Gateにも限定した変更がある。既存body parserは本文だ�
 System Contextはdoctor→prepare実行、18成功／16失敗、prepareは固定toolchain不一致で不成立。stale不使用、承認済み原典直読を継続。既存lock46依存の版／46 wheel hash／installed RECORD2277件を照合し不一致0。profile／基準ref／tracked current／lock変更0。全体設計・全ファイル地図・国家システム・保存入力→Emlis→返却→RN表示・旧経路と他機能境界を確認した。STRUCTURE_MAP_DELTA_NONE：新owner／route／公開schema追加0、production／API／DB／RN／Piece／Analysis変更0。地図は現状の説明を同期する。新CMEE本文の保存・履歴接続が完成済みとは扱わない。
 
 次は同じ承認内で、今回の予定・反応の修正を保持し、過去の発言／意図と現在の主述語・援助の主体・不確かさ・比較関係を既存意味ownerと代表本文で突き合わせる。選択前のsource scopeと実現責務を直し、同じ100件・required124と既存失敗を保持して検証する。表面的な分類語削除、言い換えbank、第二selector／renderer、隠し意味、新proposal／台帳は作らない。9月12日商品確認準備は集合の反復と意味分類の未解決により依然危うい。9月9日の中間確認では改善本文・残件・見通しを確認する。日付からの自動作業／停止／Product Read PASSはない。PR3／30／37はDraft/open/unmerged、ready／採用／merge／本番／問い／Layer3は未成立。
+
+
+### 2026-09-05 continuation — 過去の願望発言と現在時制の整合（最終検証前）
+
+同じ承認済み継続内で、final Stage1の既存same-nucleus status alignerが、current_inputのwishに属する有限な過去発言・思考を原入力へ照合し、既存time_scopeと対応属性だけpastへ整合する。願望modality・kind・actor・polarity・source・nucleus IDを保持し、発話から願望の現在継続や行動実行を導かない。引用・疑問・明示主語を含む曖昧な範囲・推量・条件・非過去・既存continuingにはこの限定補正を拡大しない。Ledgerで落ちる疑問符は元フィールドと既存offsetの照合で除外する。presentに属する埋込時間句や複文の過去予定は未解決として保持する。
+
+唯一のHuman Receptionは、同じ選択対象が全てpastのwishである場合、既存retained_wishの参照を当時の願いとして実現する。後段のtopic補正で現在の願いへ戻さず、既存context参照も同じtyped時制に従う。方向のdirect shape・Move act・対象・支援先・選択担当・replay入力契約は増設も置換もしない。Sentence Surface・Gate・body parser・閾値は変更しない。past化でgraph／selected identityは選択前から再導出し、sealed意味を書き換えない。実装位置は保存直後Emlisのdisabled final Stage1内部で、国家の保存・dispatch・queue・read-side、RN passed-only境界、旧public/V1経路・Piece・分析には波及させない。
+
+代表4本文を華恋が原入力とともに読み、Gate／independent inverse成功を確認した。過去の発言の参照1件が変わり、もう1件の既存願望は意味時制だけ変わるため本文改善件数へ含めない。簡略入力をwishと仮定した新規検査案2件の失敗は保存し、既存typed状態を明示する境界検査と実際の選択本文検査へ直して3成功を確認した。context参照の追加assertionを含む最終検査、固定100・必要回帰・全文確認はこの後に実施する。現在runnerのexact18／exact9対応だけを更新し、歴史的receipt／PASS／hashは保持する。
+
+開始時に3 PRの保存headとlocal treeを照合し、全体設計・国家flow・current地図・tracked inventory・影響現物・最新weekly reviewを確認した。System Contextはdoctor→prepareを実行したが固定環境不一致で不成立、staleは不使用で承認済み原典を直接読んだ。profile／基準ref／tracked currentは変更していない。既存実装runtimeの46依存版・46wheel hash・2277installed RECORDは今回も不一致0。候補18の100／124／73-27、201検査197成功4失敗、全文NOT_CLEARは前段証拠であり、変更コードの最終証明に流用しない。商品確認準備・ready・採用・merge・本番・問い・Layer3は未成立。
