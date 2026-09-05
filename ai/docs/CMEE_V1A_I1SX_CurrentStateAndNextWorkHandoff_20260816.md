@@ -8,10 +8,10 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. `R4_PLAN_BOUND_REALIZER_EXACT8=CLOSED_GREEN`と`SEPARATE_PRIVATE_HUMAN_PRODUCT_READ=EVALUATED_FAIL_STOP`を確認する。
+3. 末尾の最新未完了checkpointと継承承認を確認する。2026-08-16のR4／Product Read記録は履歴であり、現在は選択済み判断のforward／replay接続と継続文法修正を実装・検証済み、華恋の同じ100件全文判定はNOT_CLEAR。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
-新しいPR、別branch、R4再実装、Product Read再実行、無承認のcorrection、P0/metadata/executor検討から再開してはいけません。
+既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
 ## 1. GitHub anchors
 
@@ -5506,3 +5506,22 @@ System Contextはdoctor不成立（固定toolchain不一致）、prepare未実�
 背景は、source slotがcoveredであるという理由だけで削除しない。最初の単純削除案は既存逆検証のcontext／why義務で停止したため採用せず、失敗記録を保持した。関係exact1・背景exact1・応答対象とのendpoint一致を満たすANAPHORICだけ、背景を対象の連体修飾へ組み込み、背景の可視markerと両方のsource objectを同じcoreに一度ずつ残す。複数関係、方向・比較、不確かさを一般的な背景へ平坦化しない。forwardと独立replayが同じplan／resolver／検証済み判断からこの文法を再導出し、生成metadataを逆検証の正解にしない。
 
 同じ100件の大部分には、選択済み判断が一つの行動へのMATERIAL_WEIGHT評価に限られるものが残る。文法修正で選ばれていない感情・価値・関係を付け足さず、選択内容の限界と表現実装の不足を区別する。代表本文を先に確認し、変更コードの最終100件・必要回帰・華恋の全文確認後に結果を本handoff／実装順へ保存する。NOT_CLEAR、全ready／採用／merge／本番／問い／Layer3未成立を維持する。
+
+
+### 2026-09-05 continuation — 選択済み対象の本文接続・最終確認と未完了の再開位置
+
+同じ承認の継続修正を、runtime remote `12cbd0d03ce4d2235ffce50147a250e8f2310df5`／local `27345652b2f4e6a68ff3fff11a21ccbd491ea5d5`（whole tree一致）で固定し、同じ100件を新規生成・検証した。Human Receptionの既存文法が、選択済みの両側保持を二つの対象へ直接かけ、限定条件下では背景を対象の修飾として一度だけ表す。上流の意味・判断・Move・actを変更せず、生成側metadataを逆検証の正解にせず、背景・why・両endpointの可視義務を保持する。単純な背景削除の失敗案は採用していない。
+
+今回の本文変更は7件、開始時候補から通算14件。直前候補との全100件比較で、フォロー以外の保存項目は全て同一（入力・順序、nuclei、選択済み判断、観測、Move／expression／binding、外側状態・理由を含む）。直接100/100、必要Move／expression／binding各124、外側73 GENERATED／27 UNAVAILABLE、可否変更0。runner identity exact18／exact9を確認した。両側保持の文法による変更3件、背景関係の重複削減4件であり、これを全体の品質成立や一定率の商品改善とみなさない。
+
+華恋自身が、この固定コードによる原入力全フィールド・観測・フォロー100件を全て全文で読み、集合としても **NOT_CLEAR** と判定した。長い行動の復唱、ほぼ同じ締め、分類名だけの先行詞が残る。選択済みの124判断は、material評価116、両側保持5、限定変化1、関係姿勢2で同一である。意味が接続されたことと、入力固有の人間的なフォローが成立したことは別々に確認する。一つの行動への評価しか選ばれていない場面で、rendererが未選択の感情・価値・関係を足す修正は行っていない。過去の意図・発話内の願い、主体、複文の時制や不確かさ、関係の型にも上流の残問題がある。
+
+必要回帰を固定コードで全193件実行し、189 PASS／4 FAIL。元184件は180 PASS／4 FAIL、追加9件は全成功（先の契約3、前回文法3、今回の両側保持・背景義務・不正slot拒否3）。今回の新しい失敗testは0、開始時7失敗のうち3修正済み／4残存を区別する。今回の完成本文に対して、両方を片方へ変える・削除する・不確かにする改変、背景markerの削除を既存逆検証が拒否した。Gate、body-only parser、基準・閾値、historical hash／PASS receiptは変更していない。
+
+残4件は観測固定値不一致2、dated receiptとの現コード不一致1、集合フォロー重複1。観測不一致には比較・意味分類の未解決問題があるため、古い期待値というだけで消さない。dated receiptは歴史的記録として維持し、現コードの合格証拠へ転用しない。集合重複は今回の最終文法の外側にある既存経路で残り、合格として報告しない。途中終了の後ろも、全36ケース・post-hash96検査を今回の固定コードで実行した。96は全成功、unseen集合の重複は失敗を維持する。追加診断は元testのFAILを置き換えない。共有追加164件157／7は過去コードの結果であり、今回の193件に混ぜない。
+
+利用不可27件は直前候補と入力・nuclei・選択済み判断・観測・理由・可否が全件同一。既存の能力不足18／時制・不確かさ等の根拠未成立8／composer内訳未解決1という説明を維持する。今回変わった本文のうち4件は利用不可側の直接生成であり、本文の局所改善で外側の停止を通過したとは扱わない。
+
+次の再開位置は、改善した7件と未改善の行動評価を同じ原入力へ戻して比較し、既存のsource-boundな項・述語・先行詞のどこまでを省略／統合できるか確認する部分。Human Reception内部の実現不足と、既存の意味選択／source scopeの狭さを区別し、各既存ownerへ戻して扱う。別の意味選択担当、言い換えbank、隠し属性、検査緩和を導入しない。代表本文を先に確認し、コード変更後は同じ100件・必要回帰・華恋全文確認を新しく行う。同じ承認範囲の継続修正に再承認は不要。
+
+作業開始時doctorは18 PASS／16 FAIL（固定toolchain不一致）。prepare未実行、stale不使用、原典直接確認、profile／ref／lock変更0を維持した。9月12日までの商品確認準備は、集合の定型化と上流scope残件により引き続き危うい。9月9日の作業時には改善本文・100件残件・見通しを確認する。日付による自動実行・停止はしない。Product Read PASS、採用、candidate ready、merge、本番、問い／Layer3は未成立。private本文・個別ケース・digest・locatorの公開0。この結果保存の差分は文書のみで、runtime／test／runnerの検証対象bytesは変えない。
