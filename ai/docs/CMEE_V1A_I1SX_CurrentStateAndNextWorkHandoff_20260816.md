@@ -5575,3 +5575,20 @@ System Contextは今回doctor→prepareを実行。doctor18 PASS／16 FAIL、pre
 Human Reception内の責務検証は、既存final Planのtyped target証明がある場合だけ、予定対象・見失わず・大切の全てを要求する。共通の願望regexを無条件には拡張しない。Sentence Surfaceの既存検証呼出2箇所は同じPlanを渡すだけで、意味や本文を生成しない。Planなし／base経路では従来の責務検証を維持する。Gate／body parser／閾値／selected request-local契約／private schema変更0。実ファイル追加0、owner／経路追加0。実装対象は既存Observation Plan、Human Reception、Sentence Surface、既存テスト、current runnerと既存設計・地図・handoffに限定する。
 
 代表検査で、予定の原文とfuture参照が同じ本文に残り、願い／実施済みへの改ざんを独立inverseが拒否することを確認する。最終固定後に同じ100件・全関連回帰と華恋の全文再読を行う。先の125結果は合格証拠にしない。商品確認準備は未成立、同じ承認内の継続中。
+
+
+### 2026-09-05 continuation — 最終検証と全文確認（商品未成立）
+
+最終実装の固定sourceはruntime remote `853df85d7e4c7805b07b4df5d7dbc5cb58e25220`、local `6d1dc0706e6faa58bc087dc634c295604c28e4f3`、全体tree `f54e820a123fefa55e15835389dfebaa576ce4a9`。local／remoteはcommit objectが異なるがtree一致を確認した。この後の最終保存差分は結果文書のみで、実装・テスト・runner bytesを変更しない。
+
+同じcanonical入力全フィールド・順序・評価軸・分母100で、direct100、required Move／expression／visible binding各124、外側GENERATED73／UNAVAILABLE27。直前候補と観測・可否・外側理由は全件同一。フォロー1件が変わり、これはGENERATED側の予定を願いと呼んでいた不一致を、同じ意図保護の担当のまま訂正した。上流の状態／予定証明と選択済み入力のidentityは3件で変わり、残97件は全保存項目同一。全100の既存act・target・supportは不変で、selected operation内訳もmaterial116／両側保持5／限定変化1／関係姿勢2を維持する。別の入力で意味状態だけが直っても、未選択の対象をrendererが追加することはしない。
+
+全198検査をこの固定sourceで通して実行し、194成功／4失敗。元184は180成功／4失敗、従来追加11と今回追加3の計14は全成功。新規失敗0、未実行0。最初の125-Move案による追加1失敗は、期待値を変えずfamily分類の拡張を撤回して解消した。予定参照への切替時に残っていた願望用の責務検査不一致も修正し、最終検査はPlanなしで新しい予定表現を許さないこと、独立inverseが願望・実施済みへの改ざんを拒否することを確認する。途中の検査設定不一致・失敗案は非公開証拠に残す。
+
+既存4失敗は観測固定との不一致2、過去dated receiptと現コードの不一致1、旧経路の集合フォロー重複1。観測不一致には比較・意味分類の未解決問題があり、古い期待値だけとして消さない。過去PASS／hash変更0。後続36ケースとpost-hash96検査を今回も全実行、96成功。unseen集合重複FAILを維持し、追加診断で元testの失敗を置換しない。過去コードの共有164件157／7を今回の成功証拠にしない。
+
+華恋自身が変更後の原入力全フィールド・観測・フォロー100件を全文で読み、集合判定はNOT_CLEAR。予定／願望の局所改善はあるが、長い行動節の復唱、同じ締め、分類名だけの参照、感情・価値・関係から一つの行動評価へ寄る対象選択が残る。肯定反応を変化へ寄せる分類、過去の意図・伝達と現在の願い、援助の主体、複文の時制と関係にも問題が残る。意味状態の補正と本文の自然さを同一視せず、受け取りの担当を増やして解決したことにしない。
+
+System Contextは今回doctor→prepare実行、doctor18成功／16失敗、prepareは固定toolchain不一致で不成立。stale不使用、原典直接読取。既存runtime lock46依存の版／wheel hash／installed RECORD2277件を復元・照合し、profile／基準ref／tracked current／lock変更0。全体と国家システム、入力保存→Emlis→返却→表示、旧経路・他機能境界を確認し、今回は既存final実装だけに限定。新CMEE本文の保存・履歴接続が完成済みとは扱わない。
+
+次は同じ承認内で、今回の予定修正を保持し、選択対象のsource scopeと主述語・主体・不確かさ・関係分類を既存ownerへ戻して本文と突き合わせる。特に反応と変化を混同する入力、過去の発言／願望、長い行動の既存引数を代表本文で比較してから同じ100へ広げる。新しいproposal／台帳／言い換えbank／第二selector／隠し意味／Gate・parser緩和は作らない。9月12日商品確認準備は、集合の反復と意味分類が未解決のため依然危うい。9月9日の作業時には改善本文と残件・見通しを確認する。日付による自動実行・停止や自動Product Read PASSはない。採用／candidate ready／merge／本番／問い／Layer3は未成立。
