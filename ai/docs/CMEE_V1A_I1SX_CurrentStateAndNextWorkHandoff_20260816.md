@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾の最新未完了checkpointと継承承認を確認する。旧記録は履歴。選択済み判断のforward／replay、予定・肯定反応・過去の願望発言の限定修正を実装・検証済み。最新は同じ100件direct100／required124／外側73-27、全204検査200成功／既存4失敗。時制2件・利用不可側フォロー1件の局所改善、生成可能73件の本文変更0。華恋の全文判定はNOT_CLEAR。
+3. 末尾の最新未完了checkpointと継承承認を確認する。旧記録は履歴。未完の問いのsource分類と既存選択opennessの本文接続を修正。固定100／124／73-27、全208検査204成功／既存4失敗、新規失敗0。生成可能側1件で観測・フォローが改善、華恋の全100全文判定はNOT_CLEAR。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -5687,3 +5687,20 @@ System Contextは今回doctor→prepareを実行したが18成功16失敗、prep
 代表本文で選択前の分類、選択された未完openness、観測とフォロー、Gate／independent inverseを確認した。4つの直接関連検査を追加し、原source欠損・不一致・引用・他者prefix・報告host・質問符と、本文から選択内容を除く改変を覆う。代表検証後の読点／追加境界を含む固定sourceで必要回帰・同じ100件・華恋全件全文確認を実行する。前段204件200成功／既存4失敗と100／124／73-27は変更前の証拠であり、今回最終コードの証明に流用しない。
 
 この機能は保存直後Emlisのdisabled final Stage1内の受け止めを担当する。国家の保存・dispatch・queue・read-side、共通公開返却・RN passed-only表示、旧経路、Piece／分析との境界は維持。System Contextはdoctor→prepareが固定toolchain不一致で不成立のため原典直読、profile／基準ref／tracked current変更0。複文の過去予定・援助の受領主体・比較や他の可能性・長い復唱と集合反復は残件。商品NOT_CLEAR、商品確認準備／ready／採用／merge／本番／質問生成／Layer3は未成立。
+
+
+### 2026-09-05 continuation — 未完の問いの最終検証・全文確認（商品未成立）
+
+固定runtime sourceはremote `30213efd2a2545598a9be6fe23174d94dfa88678`、local `3581911f3e855847cdf96493832e18dc9ab48de6`、全体tree `2491c976ec4529e850260ecb6bebfeecc88f99a4`。対応する設計sourceはremote `245a34762aa1007060f61c1fb9a2dce0d8a6a83f`、local `2076b60e046d7911a3ff9c963d3a7651eacaf6d6`、全体tree `323d6b6a4a6732ae858397d16c6e00afac891a0a`。全変更ファイルのGitHub取得全文とlocal bytes、変更path、tree一致を確認。以後は結果・現在地図・handoffだけを同期し、実装／テスト／runnerは固定する。
+
+同じcanonical100の全入力・順序・評価軸・分母を維持し、direct100、required Move／expression／visible binding各124、外側GENERATED73／UNAVAILABLE27。生成可能側1件で観測とフォローが変わり、原文にある未完の問いを行動と呼ばず、結論を急がない既存の選択内容が最終本文へ届いた。意味核ID・actor・polarity・source／anchor・time／modalityと全件の選択act／対象／支援先を保持。選択前のkind／predicate_kindが1件だけ既存uncertaintyへ訂正され、既存選択のmaterial116件中1件がLEAVE_UNFINISHEDへ移った。両側保持5／限定変化1／関係姿勢2は維持。別1件の同じoperator属性の順序差でselected identityも変わったが意味内容は同じで、本文改善には数えない。残98件は全保存項目同一。入力ごとの可否・外側理由は全件不変、GENERATED→UNAVAILABLEは0。
+
+最終固定sourceで必要回帰208件を全実行し204成功／既存4失敗。原184は180成功4失敗、追加24は全成功、新規失敗0、未実行0。追加4検査は原位置・証拠欠損／不一致・引用・前置主語・後続report・元質問符、同じownerの保持、選択内容の本文到達と改変の独立inverse拒否を含む。過去期待・hash・PASSを置き換えず、既存4失敗は観測固定との不一致2、dated receiptの現コード不一致1、旧経路の集合フォロー重複1として保持。後続36ケースも全実行、post-hash96検査は全成功。unseen集合の重複FAILを維持し、後続診断で元test失敗を置換しない。別GA2/shared164の過去結果を今回再実行したとは扱わない。
+
+利用不可27件の今回の外側理由はcurrent_experiencer_or_time_scope_unsupportedが26件、plan_bound_observation_realizer_unavailableが1件。これは外側理由の集計で、旧内部18／8／1の再立証ではない。全件を一括で正常停止・一括で欠陥とは判定しない。既存Gate／parser／閾値／全完成本文replay一致を維持し、新しいadmission条件は追加していない。
+
+華恋が固定sourceの原入力全フィールド・観測・フォローを10件ずつ全100読み、集合判定はNOT_CLEAR。今回の生成可能側1件では原意と選択内容の接続が改善したが、長い行動節・関係節の復唱、同じ締め、行動評価へ偏る選択、一般的な対象参照が残る。複文の過去願望・予定と伝達内の現在語、援助の受領主体、他の問い・比較・可能性の分類も未解決。限定的な改善を商品全体のCLEARへ読み替えず、Mashへ未達本文のProduct Readを求めない。
+
+System Contextは作業前doctor→prepareを実行し18成功16失敗、prepareは固定toolchain不一致で不成立。stale不使用・承認済み原典直読、profile／基準ref／tracked current変更0。実装runtimeは46依存版・46wheel hash・installed RECORD2277件の照合不一致0。全体／国家／共通基盤／current地図と全ファイルinventory、最新weekly reviewを確認し、disabled final Stage1の既存ObservationPlan／Human Reception、直接関連テストと現在runner identityに限定した。STRUCTURE_MAP_DELTA_NONE：新owner／route／公開schemaなし。国家保存・dispatch・queue・read-side、公開API／DB／RN・旧経路・Piece／分析の変更0。
+
+次はこの固定修正を保持し、複文の外側述語と主語の範囲、援助の受領、残る問い・比較・可能性を既存意味ownerで確認する。未知の話題名詞を物と人のどちらかへ推測して予定／自己行為を立てない。代表本文で意味→選択→実現の因果を先に示し、同じ100・124、必要回帰と華恋全文確認を揃える。新proposal／台帳／言い換えbank／第二selector／renderer／隠し意味を増やさない。9月12日商品確認準備は集合反復とsource分類残件により依然危うく、9月9日の作業時に改善本文・残件・見通しを確認する。日付による自動実装／停止はない。PR3／30／37はDraft/open/unmerged、商品確認準備／ready／採用／merge／本番／質問生成／Layer3は未成立。
