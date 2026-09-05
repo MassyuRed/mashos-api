@@ -10196,6 +10196,33 @@ def _final_stage1_align_action_status(
             # A topicalized object may precede the registered outer verb;
             # an explicit nominative subject still cannot prove self-action.
             separate_subject = bool(re.search(r"(?<=[一-龯々ァ-ヶ])が", finite[:registered_tail.start()]))
+        # A benefactive auxiliary reports receiving another performance;
+        # its finite past/progressive does not prove this owner's execution
+        # of the embedded verb. Keep fact/time/aspect and the same owner,
+        # without inventing a different actor or an unrepresented receiver.
+        # Anchor to the original finite tail: the argument matcher can split
+        # a voiced te-form at de. A bare te/de is not verb proof (it may be
+        # a quantity or locative). Use only the existing registered verb
+        # spelling, in its past inflection, to establish the auxiliary host;
+        # this lookup does not claim that the owner performed that verb.
+        # Receiving help inside a later reporting act cannot erase that act.
+        received_auxiliary = re.search(
+            r"(?P<te>て|で)"
+            r"(?:もら(?:った|いました|って(?:いる|いた|います|いました))|"
+            r"くれ(?:た|ました|て(?:いる|いた|います|いました))|"
+            r"いただ(?:いた|きました|いて(?:いる|いた|います|いました)))$",
+            finite,
+        )
+        received_performance = False
+        if received_auxiliary is not None:
+            host_past = finite[:received_auxiliary.start()] + (
+                "た" if received_auxiliary.group("te") == "て" else "だ"
+            )
+            received_performance = any(
+                match.end() == len(host_past)
+                for pattern in (_COMPLETED_ACTION_RE, _ACHIEVEMENT_RE)
+                for match in pattern.finditer(host_past)
+            )
         if _last_finite_operator_match(
             predicate, _NEGATION_RE, _WISH_RE, _UNCERTAIN_RE, _FEELING_RE,
         ) is not None:
@@ -10227,7 +10254,7 @@ def _final_stage1_align_action_status(
             if not code.startswith(("time_scope:", "aspect:", "modality:"))
             and code != "operator:performed_action"
         ) + (f"time_scope:{time_scope}", f"aspect:{aspect}") + (
-            () if separate_subject else ("operator:performed_action",)
+            () if separate_subject or received_performance else ("operator:performed_action",)
         )
         aligned.append(replace(nucleus, semantic_frame=replace(
             frame, modality="fact", time_scope=time_scope,

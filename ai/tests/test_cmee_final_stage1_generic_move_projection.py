@@ -1062,6 +1062,77 @@ class CMEESameNucleusActionStatusTest(unittest.TestCase):
         ))
         return source, action
 
+    def test_received_performance_does_not_prove_self_execution(self):
+        for predicate in (
+            "整理してもらった", "書いてもらった", "見てくれた",
+            "片づけてもらった", "片づけてもらいました", "片づけてもらっている",
+            "片づけてもらっていた", "片づけてもらっています", "片づけてもらっていました",
+            "片づけてくれた", "片づけてくれました", "片づけてくれている",
+            "片づけてくれていた", "片づけてくれています", "片づけてくれていました",
+            "片づけていただいた", "片づけていただきました", "片づけていただいている",
+            "片づけていただいていた", "片づけていただいています", "片づけていただいていました",
+        ):
+            with self.subTest(predicate=predicate):
+                source, before = self._action(f"荷物を{predicate}。")
+                after, = observation_plan_owner._final_stage1_align_action_status(
+                    (before,), source.evidence_spans,
+                )
+                self.assertEqual(replace(after, semantic_frame=before.semantic_frame), before)
+                self.assertEqual(after.semantic_frame.actor, before.semantic_frame.actor)
+                self.assertEqual(after.semantic_frame.polarity, before.semantic_frame.polarity)
+                self.assertEqual(after.semantic_frame.modality, "fact")
+                self.assertIn(after.semantic_frame.time_scope, ("past", "continuing"))
+                self.assertFalse(observation_plan_owner.source_proven_performed_action_status(after))
+                self.assertFalse(reception_owner.reception_action_is_performed(
+                    after, final_source_fidelity=True,
+                ))
+
+    def test_embedded_received_performance_keeps_later_self_execution(self):
+        for text in (
+            "荷物を運んだ。",
+            "荷物を運んでもらったことを記録した。",
+            "荷物を運んでくれたことを記録した。",
+            "荷物を運んでいただいたことを記録した。",
+            "本をもらった。",
+            "本を店でもらった。",
+            "資料を窓口でもらった。",
+            "資料を全てもらった。",
+            "小遣いを手伝いでもらった。",
+            "本を皆さんでもらった。",
+        ):
+            with self.subTest(text=text):
+                source, before = self._action(text)
+                after, = observation_plan_owner._final_stage1_align_action_status(
+                    (before,), source.evidence_spans,
+                )
+                self.assertTrue(observation_plan_owner.source_proven_performed_action_status(after))
+                self.assertTrue(reception_owner.reception_action_is_performed(
+                    after, final_source_fidelity=True,
+                ))
+
+    def test_received_and_self_performed_clauses_keep_distinct_body_proof(self):
+        artifacts = _full_surface_artifacts({
+            "case_id": "received-performance-expression-unit",
+            "input": {
+                "thought_text": "",
+                "action_text": "荷物を片づけてもらった。届いたことを記録した。",
+                "categories": ["生活"],
+                "emotions": [{"type": "平穏", "strength": "weak"}],
+            },
+        })
+        self.assertTrue(artifacts.gate.passed)
+        self.assertTrue(artifacts.inverse.passed)
+        self.assertEqual(artifacts.sentence_plan.recovery_stage, "full")
+        self.assertIn("荷物を片づけてもらった", artifacts.surface.text)
+        self.assertNotIn("荷物を片づけてもらった」という行動", artifacts.surface.text)
+        self.assertIn("届いたことを記録した」という行動", artifacts.surface.text)
+        actions = [n for n in artifacts.plan.nuclei if n.kind == "action"]
+        self.assertEqual(len(actions), 2)
+        self.assertEqual([
+            observation_plan_owner.source_proven_performed_action_status(n)
+            for n in actions
+        ], [False, True])
+
     def test_future_decision_keeps_embedded_negation_without_performance(self):
         source, action = self._action(
             "先に結論を出さず、材料を比べてから選ぶことにした。"

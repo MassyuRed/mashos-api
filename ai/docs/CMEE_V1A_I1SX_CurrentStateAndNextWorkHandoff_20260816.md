@@ -5704,3 +5704,14 @@ System Contextは今回doctor→prepareを実行したが18成功16失敗、prep
 System Contextは作業前doctor→prepareを実行し18成功16失敗、prepareは固定toolchain不一致で不成立。stale不使用・承認済み原典直読、profile／基準ref／tracked current変更0。実装runtimeは46依存版・46wheel hash・installed RECORD2277件の照合不一致0。全体／国家／共通基盤／current地図と全ファイルinventory、最新weekly reviewを確認し、disabled final Stage1の既存ObservationPlan／Human Reception、直接関連テストと現在runner identityに限定した。STRUCTURE_MAP_DELTA_NONE：新owner／route／公開schemaなし。国家保存・dispatch・queue・read-side、公開API／DB／RN・旧経路・Piece／分析の変更0。
 
 次はこの固定修正を保持し、複文の外側述語と主語の範囲、援助の受領、残る問い・比較・可能性を既存意味ownerで確認する。未知の話題名詞を物と人のどちらかへ推測して予定／自己行為を立てない。代表本文で意味→選択→実現の因果を先に示し、同じ100・124、必要回帰と華恋全文確認を揃える。新proposal／台帳／言い換えbank／第二selector／renderer／隠し意味を増やさない。9月12日商品確認準備は集合反復とsource分類残件により依然危うく、9月9日の作業時に改善本文・残件・見通しを確認する。日付による自動実装／停止はない。PR3／30／37はDraft/open/unmerged、商品確認準備／ready／採用／merge／本番／質問生成／Layer3は未成立。
+
+
+### 2026-09-05 continuation — 援助の受領節に自己実行の証明を付けない（最終検証前）
+
+同じ承認内で、既存final ObservationPlanのsame-nucleus action-status補正に限定し、文末の授受補助動詞が表す他者の行為の受領を、本人の埋込行為の実行と扱う誤りを修正する。既存のperformed属性を付与しないだけで、kind・actor・polarity・証拠・時制／aspectを新しい意味へ置換しない。action引数抽出が濁音テ形の「で」を分離するため、元の有限節末尾を確認し、テ形のhostを過去活用の綴りへ戻して、既存completed-action／achievement述語の末尾一致がある場合だけに限定する。この既存語形照合は本人が実行したという証明を作らない。数量表現の末尾「て」・名詞末尾の「い／ん＋で」・場所格「で」や裸の主動詞の授受、受領内容を後で記録する本人の行為は消さない。全表記の授受解析や受領者の意味契約を完成したとは扱わない。
+
+保存直後Emlisのdisabled final Stage1における、原入力から観測・受け止めまでの忠実性を担当する修正である。既存source-qualified actor値はcurrent_userのみであり、Human Reception側のOTHER／UNSPECIFIEDの型が存在するだけでは新しいactorをここへ渡せない。援助者／受領者の新しい意味契約、複文予定で未知の話題名詞を人／物と推測する主語継承は未実装の境界として保持する。新carrier／schema／helper／selector／renderer、Gate／parser／閾値／歴史的hash・PASS変更0。
+
+代表実データでは、受領節の誤った行動呼称を除いても、後続の本人行動と既存required Moveを保ち、独立inverse・Gateを通ることを確認した。3つの関連検査で活用、主動詞と補助動詞、後続本人行動、完成本文を確認し、固定sourceで同じ100・124、必要回帰、華恋の全100本文再読を行う。初回試験の2失敗はargument抽出境界の不一致であり、修正後結果と分ける。前段100／124／73-27と208件204成功／既存4失敗を今回最終sourceの証明に流用しない。
+
+System Contextはdoctor→prepareを実行し18成功16失敗、prepareは固定toolchain不一致で不成立。stale不使用、原典直読、profile／基準ref／tracked current変更0。アプリ全体／国家／共通基盤・全ファイル地図とinventory・最新weekly review、影響ownerと旧経路の本文を確認。国家保存・dispatch・queue・read-side、公開API／DB／RN、Piece／分析の変更0。商品NOT_CLEAR、ready／採用／merge／本番／質問生成／Layer3は未成立。
