@@ -1608,11 +1608,11 @@ def _body_inverse_typed_source_fragment(
 
 
 def _body_inverse_action_is_performed(nucleus: Any) -> bool:
-    return reception_action_is_performed(nucleus)
+    return reception_action_is_performed(nucleus, final_source_fidelity=True)
 
 
 def _body_inverse_action_is_future_intention(nucleus: Any) -> bool:
-    return reception_action_is_future_intention(nucleus)
+    return reception_action_is_future_intention(nucleus, final_source_fidelity=True)
 
 
 def _body_inverse_source_values(

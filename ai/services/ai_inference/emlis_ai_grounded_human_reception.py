@@ -27,6 +27,7 @@ from emlis_ai_grounded_observation_plan import (
     GroundedReceptionMovePlan,
     GroundedSemanticNucleus,
     source_proven_performed_action_status,
+    source_proven_future_action_status,
 )
 
 
@@ -1507,11 +1508,15 @@ def reception_effective_move_reference_mode(
 
 def reception_action_is_future_intention(
     nucleus: GroundedSemanticNucleus,
+    *,
+    final_source_fidelity: bool = False,
 ) -> bool:
     """Classify only affirmative, not-yet-performed typed future actions."""
 
     frame = nucleus.semantic_frame
     attributes = frozenset(frame.attribute_codes)
+    if final_source_fidelity and source_proven_future_action_status(nucleus):
+        return True
     if (
         nucleus.kind != "action"
         or frame.polarity == "negative"
@@ -1536,6 +1541,8 @@ def reception_action_is_future_intention(
 
 def reception_action_is_performed(
     nucleus: GroundedSemanticNucleus,
+    *,
+    final_source_fidelity: bool = False,
 ) -> bool:
     """Classify performed action only after future intention is excluded."""
 
@@ -1543,11 +1550,15 @@ def reception_action_is_performed(
     attributes = frozenset(frame.attribute_codes)
     if source_proven_performed_action_status(nucleus):
         return True
+    if final_source_fidelity:
+        return False
     return bool(
         nucleus.kind == "action"
         and frame.polarity != "negative"
         and "operator:negation" not in attributes
-        and not reception_action_is_future_intention(nucleus)
+        and not reception_action_is_future_intention(
+            nucleus, final_source_fidelity=final_source_fidelity,
+        )
         and (
             frame.modality == "fact"
             or "operator:performed_action" in attributes
@@ -1575,8 +1586,8 @@ def _source_grounded_semantic_profile(
         predicate_kind=str(
             nucleus.semantic_frame.predicate_kind
         ).strip().lower(),
-        performed_action=reception_action_is_performed(nucleus),
-        future_action=reception_action_is_future_intention(nucleus),
+        performed_action=reception_action_is_performed(nucleus, final_source_fidelity=True),
+        future_action=reception_action_is_future_intention(nucleus, final_source_fidelity=True),
         quoted_boundary=bool(
             re.search(r"[「」『』]", semantic_fragment)
             or re.search(r"(?:まで|だけ|さえ)$", semantic_fragment)
@@ -1897,11 +1908,16 @@ def resolve_grounded_reception_referent(
     if (
         reception_act == "honor_concrete_effort"
         and any(
-            reception_action_is_future_intention(nucleus)
+            reception_action_is_future_intention(nucleus, final_source_fidelity=final_source_fidelity)
             for nucleus in target_nuclei
         )
     ):
-        kind, text = "future_action_intention", ("これからの行動への思い" if final_source_fidelity else "その向き")
+        kind, text = "future_action_intention", (
+            "まだ定めていないこれからの行動"
+            if final_source_fidelity
+            and any(n.semantic_frame.modality == "uncertain" for n in target_nuclei)
+            else "これからの行動" if final_source_fidelity else "その向き"
+        )
     elif reception_act == "stay_with_current_burden":
         burden_attributes = target_attributes if final_source_fidelity else attributes
         if "lexical:no_new_sensation_family" in burden_attributes:
@@ -1924,12 +1940,12 @@ def resolve_grounded_reception_referent(
         performed_targets = tuple(
             nucleus
             for nucleus in target_nuclei
-            if reception_action_is_performed(nucleus)
+            if reception_action_is_performed(nucleus, final_source_fidelity=final_source_fidelity)
         )
         performed_supports = tuple(
             nucleus
             for nucleus in support_nuclei
-            if reception_action_is_performed(nucleus)
+            if reception_action_is_performed(nucleus, final_source_fidelity=final_source_fidelity)
         )
         enacted_after_intention = bool(
             recovery_stage in {"full", "optional_removed"}
@@ -2023,14 +2039,16 @@ def resolve_grounded_reception_referent(
                 "実際に行われた行動",
             )
         else:
-            kind, text = "grounded_effort", "その働きかけに伴う手間"
+            kind, text = "grounded_effort", "行動について置かれた言葉"
     elif reception_act == "protect_retained_intention":
         if "wish" in kinds or "operator:wish" in attributes:
             kind, text = "retained_wish", "その願い"
         else:
             kind, text = "retained_intention", "大切にしたいもの"
     elif reception_act == "recognize_lived_change":
-        if "action" in kinds and (
+        if final_source_fidelity:
+            kind, text = "lived_change", "その変化"
+        elif "action" in kinds and (
             "change" in kinds or "operator:change" in attributes
         ):
             kind, text = "lived_change", "自分で確かめてきた変化"
@@ -2053,7 +2071,7 @@ def resolve_grounded_reception_referent(
             in {"current_user", "user", "self"}
         )
         if self_directed_targets and any(
-            reception_action_is_performed(nucleus)
+            reception_action_is_performed(nucleus, final_source_fidelity=final_source_fidelity)
             for nucleus in self_directed_targets
         ):
             kind, text = "help_seeking", "助けにつながるものを残したこと"
@@ -2085,7 +2103,7 @@ def resolve_grounded_reception_referent(
             f"unsupported_reception_act:{reception_act}"
         )
 
-    progressive_owners = tuple(n for n in target_nuclei if reception_action_is_performed(n))
+    progressive_owners = tuple(n for n in target_nuclei if reception_action_is_performed(n, final_source_fidelity=final_source_fidelity))
     if (
         final_source_fidelity and reception_act == "honor_concrete_effort"
         and progressive_owners
@@ -3354,7 +3372,7 @@ def final_reception_anaphoric_context(
                 for nucleus in context_nuclei
             )
         ):
-            typed_context = "まだ定まらない迷い"
+            typed_context = "まだ定まらないこと"
         elif (
             "operator:negation" in context_attributes
             or any(
@@ -3362,19 +3380,19 @@ def final_reception_anaphoric_context(
                 for nucleus in context_nuclei
             )
         ):
-            typed_context = "動きを止める制約"
+            typed_context = "その制約"
         else:
-            typed_context = "動きを狭める制約"
+            typed_context = "その制約"
     elif "reaction" in context_kinds:
         typed_context = (
-            "今の不安"
+            "その不安"
             if "detected_type:fear" in context_attributes
-            else "今の負担"
+            else "その反応"
         )
     elif "change" in context_kinds:
-        typed_context = "その後の変化"
+        typed_context = "その変化"
     elif "action" in context_kinds:
-        typed_context = "そこまでの行動"
+        typed_context = "その行動"
     else:
         context_label_by_kind = {
             "event": "そこまでの出来事",
@@ -3754,6 +3772,7 @@ class _SourceGroundedRelationFrameV1:
     continuative_predicate: str
     finite_predicate: str
     content_predicate_kind: str
+    nominal_head: str | None = None
 
 
 _SOURCE_GROUNDED_RELATION_FRAMES: Final[
@@ -3764,9 +3783,9 @@ _SOURCE_GROUNDED_RELATION_FRAMES: Final[
         "並び", "並んでいる", "synthesize_relation",
     ),
     "contrast": _SourceGroundedRelationFrameV1(
-        ("LEFT", "RIGHT"), ("と", "が"), (None, None),
+        ("LEFT", "RIGHT"), ("と", "との"), (None, None),
         "一方で異なり", "一方で異なっている",
-        "synthesize_relation",
+        "synthesize_relation", "違い",
     ),
     "wish_and_constraint": _SourceGroundedRelationFrameV1(
         ("LEFT", "RIGHT"), ("と", "が"), (None, None),
@@ -3794,7 +3813,7 @@ _SOURCE_GROUNDED_RELATION_FRAMES: Final[
     ),
     "shift_from_to": _SourceGroundedRelationFrameV1(
         ("BEFORE", "AFTER"), ("から", "へ"), ("FROM", "TO"),
-        "移り", "移っていく", "dynamic_shift",
+        "移り", "移っていく", "dynamic_shift", "の移り変わり",
     ),
     "uncertain_connection": _SourceGroundedRelationFrameV1(
         ("BEFORE", "AFTER"), ("から", "へ"), ("FROM", "TO"),
@@ -4987,11 +5006,11 @@ def _source_grounded_relation_endpoint_anaphor(
         return directional[role]
     paired = {
         ("wish_and_constraint", "LEFT"): "残る願い",
-        ("wish_and_constraint", "RIGHT"): "動きを狭める制約",
+        ("wish_and_constraint", "RIGHT"): "その制約",
         ("preserves_despite", "LEFT"): "残る向き",
-        ("preserves_despite", "RIGHT"): "今の負荷",
-        ("attempt_and_block", "LEFT"): "続けた試み",
-        ("attempt_and_block", "RIGHT"): "動きを止めたもの",
+        ("preserves_despite", "RIGHT"): "その状況",
+        ("attempt_and_block", "LEFT"): "その試み",
+        ("attempt_and_block", "RIGHT"): "そこでの制約",
         ("continuation_or_refusal", "LEFT"): "続ける向き",
         ("continuation_or_refusal", "RIGHT"): "拒む向き",
         ("evaluation_about_event", "LEFT"): "示された出来事",
@@ -5132,9 +5151,13 @@ def _source_grounded_context_adjunct(
 
     if move.reference_mode == "ANAPHORIC" or not move.context_slots:
         return ""
-    return _source_grounded_context_adjunct_from_heads(
-        tuple(move.semantic_fragments[slot] for slot in move.context_slots)
-    )
+    relation_slots = {
+        slot for relation in move.relations for slot in relation.endpoint_slots
+    }
+    return _source_grounded_context_adjunct_from_heads(tuple(
+        move.semantic_fragments[slot] for slot in move.context_slots
+        if slot not in relation_slots
+    ))
 
 
 def _source_grounded_axis_prefix(
@@ -5573,7 +5596,13 @@ def _source_grounded_argument_surface(
             first_realization
             and semantic_slot in move.context_slots
         ):
-            return typed_nominal_by_slot[semantic_slot]
+            return (
+                typed_nominal_by_slot[semantic_slot]
+                if move.reference_mode == "ANAPHORIC"
+                else _source_grounded_context_head_nominal(
+                    move.semantic_fragments[semantic_slot]
+                )
+            )
         if (
             not first_realization
             or move.reference_mode == "ANAPHORIC"
@@ -5604,9 +5633,10 @@ def _source_grounded_argument_surface(
             realized_semantic_slots.add(semantic_slot)
             target_inserted = True
         elif semantic_slot in move.context_slots:
-            # The context head has one dedicated adjunct owner.  A direct
-            # argument would duplicate it inside the same Move.
-            realized_semantic_slots.add(semantic_slot)
+            # Relation-owned context is first realized at its endpoint;
+            # other context has one independent adjunct owner.
+            if semantic_slot not in relation_occurrences_by_slot:
+                realized_semantic_slots.add(semantic_slot)
         elif move.reference_mode != "ANAPHORIC":
             direct_phrases.append(
                 _source_grounded_anaphoric_nominal(
@@ -5639,9 +5669,13 @@ def _source_grounded_argument_surface(
         _continuative, finite = _source_grounded_relation_predicate_morphemes(
             relation
         )
+        nominal_head = _SOURCE_GROUNDED_RELATION_FRAMES[
+            relation.relation_kind
+        ].nominal_head
         relation_phrases.append(
             f"{first_nominal}{first.case_marker}"
-            f"{second_nominal}{second.case_marker}{finite}こと"
+            f"{second_nominal}{second.case_marker}"
+            + (nominal_head if nominal_head is not None else f"{finite}こと")
         )
     independent_target = (
         (target_nominal,)
@@ -6141,7 +6175,16 @@ def _source_grounded_target_np(
                 predicate_kind=realization.predicate_kind,
             )
         )
-        if (
+        if referent_kind in {"current_expression", "grounded_effort"}:
+            content_target = f"{meaning_fragment}という{quantity_modifier}{referent_text}"
+        elif (
+            not profile.quoted_boundary
+            and referent_kind == "retained_wish"
+            and realization.modality == "wish"
+            and meaning_fragment.endswith(("たい", "ほしい", "欲しい"))
+        ):
+            content_target = f"{meaning_fragment}という{quantity_modifier}{referent_text}"
+        elif (
             not profile.quoted_boundary
             and referent_kind in {
                 "self_started_effort", "concrete_effort",

@@ -243,6 +243,10 @@ class CMEESameNucleusActionStatusTest(unittest.TestCase):
             ("資料を読んでいる", "continuing", "progressive"),
             ("資料を読んでいた", "past", "progressive"),
             ("今後の予定を調べた", "past", "unknown"),
+            ("整理した、それだけ", "past", "unknown"),
+            ("完成させた、これだけ", "past", "unknown"),
+            ("話したい内容は二行だけ記録した", "past", "unknown"),
+            ("回答を待ってもらうよう頼んだ", "past", "unknown"),
         ):
             with self.subTest(time=time, aspect=aspect):
                 source, before = self._action(text)
@@ -260,13 +264,14 @@ class CMEESameNucleusActionStatusTest(unittest.TestCase):
 
     def test_nonfactual_predicate_does_not_become_performed(self):
         for text in (
-            "資料を読む予定", "資料を読んでいない", "資料を読みたかった",
+            "資料を読んでいない", "資料を読みたかった",
             "資料を読んだか分からない", "「資料を読んだ」と聞いた",
             "資料を読んだら連絡する", "古びた",
-            "資料を読むことにした", "資料を読むようにした",
+            "資料を読むようにした", "資料を読んだことにした",
             "この部屋は作業に便利だった", "部屋にいた",
             "資料を読もうとした", "資料を読もうとしていた",
             "資料を読む予定だった", "資料を読むつもりだった",
+            "何を選んだのだろう", "そうだろうと思う",
         ):
             with self.subTest():
                 source, before = self._action(text)
@@ -274,6 +279,47 @@ class CMEESameNucleusActionStatusTest(unittest.TestCase):
                     (before,), source.evidence_spans,
                 )
                 self.assertEqual(after, before)
+
+    def test_source_future_keeps_embedded_negation_and_tentative_modality(self):
+        for text, tentative in (
+            ("資料を読む予定", False),
+            ("明日は都合のつかない人にも案内を送る", False),
+            ("来週は変更しない範囲を決めるつもり", False),
+            ("次の段階を決めようかな", True),
+            ("今日は少し早めに休む", False),
+            ("資料を読むことにした", False),
+        ):
+            with self.subTest(tentative=tentative):
+                source, nucleus = self._action(text)
+                before = replace(nucleus, semantic_frame=replace(
+                    nucleus.semantic_frame, polarity="negative",
+                    attribute_codes=(*nucleus.semantic_frame.attribute_codes, "operator:negation"),
+                ))
+                after, = observation_plan_owner._final_stage1_align_action_status((before,), source.evidence_spans)
+                self.assertEqual(after.semantic_frame.time_scope, "future")
+                self.assertEqual(after.semantic_frame.modality, "uncertain" if tentative else "intention")
+                self.assertEqual(after.semantic_frame.polarity, "negative")
+                self.assertTrue(observation_plan_owner.source_proven_future_action_status(after))
+                self.assertTrue(reception_owner.reception_action_is_future_intention(after, final_source_fidelity=True))
+                self.assertFalse(reception_owner.reception_action_is_performed(after, final_source_fidelity=True))
+                self.assertEqual(replace(after, semantic_frame=before.semantic_frame), before)
+
+    def test_ellipsis_is_not_a_future_plan_and_separate_subject_is_not_effort(self):
+        for text in ("手紙に「受け取った」まで", "連絡はまだ", "宛先だけ"):
+            with self.subTest():
+                source, before = self._action(text)
+                after, = observation_plan_owner._final_stage1_align_action_status((before,), source.evidence_spans)
+                self.assertEqual(after.semantic_frame.modality, "uncertain")
+                self.assertEqual(after.semantic_frame.time_scope, before.semantic_frame.time_scope)
+                self.assertFalse(reception_owner.reception_action_is_future_intention(after, final_source_fidelity=True))
+                self.assertFalse(reception_owner.reception_action_is_performed(after, final_source_fidelity=True))
+                self.assertEqual(replace(after, semantic_frame=before.semantic_frame), before)
+        source, before = self._action("窓を開けたまま雨が入ってきた")
+        after, = observation_plan_owner._final_stage1_align_action_status((before,), source.evidence_spans)
+        self.assertEqual(after.semantic_frame.modality, "fact")
+        self.assertEqual(after.semantic_frame.time_scope, "past")
+        self.assertFalse(reception_owner.reception_action_is_performed(after, final_source_fidelity=True))
+        self.assertEqual(replace(after, semantic_frame=before.semantic_frame), before)
 
     def test_embedded_operator_keeps_scope_with_factual_outer_action(self):
         for text, polarity, modality, code, aspect in (
@@ -1261,7 +1307,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
         case_id = "nls3s_b001_0024"
         body = _tamper_reception(
             self.artifacts[case_id].surface.text,
-            "働きかけに伴う手間",
+            "実際の行動",
             "その内容",
         )
         inverse = self._inverse_for_tamper(case_id, body)
@@ -1275,7 +1321,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
         artifacts = self.artifacts[case_id]
         body = _tamper_reception(
             artifacts.surface.text,
-            "願い",
+            "これからの行動",
             "内容",
         )
         inverse = self._inverse_for_tamper(case_id, body)
@@ -1583,7 +1629,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
         reception = _reception_text(recovered_surface.text)
         self.assertNotIn(target, reception)
         self.assertNotIn(f"「{target}」", reception)
-        self.assertIn("その願い", reception)
+        self.assertIn("これからの行動", reception)
         self._bind_reception_text(
             case_id,
             reception,

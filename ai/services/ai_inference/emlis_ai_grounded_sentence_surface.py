@@ -2900,13 +2900,13 @@ def _final_stage1_relation_fragment(
 
 
 def _final_action_is_performed(nucleus: GroundedSemanticNucleus) -> bool:
-    return reception_action_is_performed(nucleus)
+    return reception_action_is_performed(nucleus, final_source_fidelity=True)
 
 
 def _final_action_is_future_intention(
     nucleus: GroundedSemanticNucleus,
 ) -> bool:
-    return reception_action_is_future_intention(nucleus)
+    return reception_action_is_future_intention(nucleus, final_source_fidelity=True)
 
 
 def _final_stage1_nucleus_summary(
@@ -2926,7 +2926,11 @@ def _final_stage1_nucleus_summary(
             continue
         attributes = set(nucleus.semantic_frame.attribute_codes)
         if _final_action_is_future_intention(nucleus):
-            unit = f"{quote}という、これからの行動"
+            unit = (
+                f"{quote}という、まだ定めていないこれからの行動"
+                if nucleus.semantic_frame.modality == "uncertain"
+                else f"{quote}という、これからの行動"
+            )
         elif _final_action_is_performed(nucleus):
             unit = f"{quote}という行動"
         elif nucleus.kind == "action":
@@ -2936,6 +2940,7 @@ def _final_stage1_nucleus_summary(
                 quote
                 if nucleus.semantic_frame.polarity == "negative"
                 or "operator:negation" in attributes
+                or nucleus.semantic_frame.modality == "fact"
                 else f"{quote}という、まだ確かめきれない行動"
             )
         elif nucleus.kind == "change":

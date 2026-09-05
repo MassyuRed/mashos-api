@@ -5909,6 +5909,7 @@ def _grounded_human_follow_role_for_nucleus(
     retained_intention = bool(
         nucleus.kind == "wish"
         or nucleus.semantic_frame.modality == "wish"
+        or final_source_fidelity and source_proven_future_action_status(nucleus)
         or {
             "semantic_role:retained_intention",
             "semantic_role:next_intention",
@@ -5980,6 +5981,18 @@ def map_grounded_human_follow_role_to_reception_act(
         raise GroundedObservationPlanError(f"unsupported_grounded_human_follow_role:{role}") from exc
 
 
+def source_proven_future_action_status(nucleus: GroundedSemanticNucleus) -> bool:
+    """Read the source-owned future intention, retaining embedded negation."""
+    frame = nucleus.semantic_frame
+    return bool(
+        nucleus.kind == "action"
+        and frame.modality in {"intention", "wish", "uncertain"}
+        and frame.time_scope in {"future", "present_to_future"}
+        and "semantic_role:next_intention" in frame.attribute_codes
+        and "operator:performed_action" not in frame.attribute_codes
+    )
+
+
 def source_proven_performed_action_status(nucleus: GroundedSemanticNucleus) -> bool:
     """Read the existing source-owned outer-action proof, never raw text.
 
@@ -5999,10 +6012,15 @@ def _is_explicit_action_nucleus(nucleus: GroundedSemanticNucleus, *, final_sourc
     attributes = set(nucleus.semantic_frame.attribute_codes)
     if source_proven_performed_action_status(nucleus):
         return True
-    if final_source_fidelity and (
-        nucleus.semantic_frame.polarity == "negative" or "operator:negation" in attributes
-    ):
-        return False
+    if final_source_fidelity:
+        # The existing action-content family also has a future variant;
+        # being a concrete response target does not prove performance.
+        return bool(
+            source_proven_future_action_status(nucleus)
+            or nucleus.kind == "action"
+            and nucleus.semantic_frame.modality == "uncertain"
+            and "semantic_role:concrete_action_evidence" in attributes
+        )
     if (
         "operator:help_seeking" in attributes
         and "operator:action" in attributes
@@ -6044,9 +6062,7 @@ def _is_reception_performed_action_nucleus(
     attributes = set(nucleus.semantic_frame.attribute_codes)
     if source_proven_performed_action_status(nucleus):
         return True
-    if final_source_fidelity and (
-        nucleus.semantic_frame.polarity == "negative" or "operator:negation" in attributes
-    ):
+    if final_source_fidelity:
         return False
     return bool(
         _is_explicit_action_nucleus(nucleus, final_source_fidelity=final_source_fidelity)
@@ -6268,11 +6284,17 @@ def _reception_opportunity_families_for_nucleus(
         and nucleus.kind != "self_evaluation"
     ):
         return ("counterdirection",)
-    if _is_reception_performed_action_nucleus(nucleus, final_source_fidelity=final_source_fidelity):
+    if (
+        _is_reception_performed_action_nucleus(nucleus, final_source_fidelity=final_source_fidelity)
+        or final_source_fidelity and _is_explicit_action_nucleus(
+            nucleus, final_source_fidelity=True,
+        )
+    ):
         return ("concrete_effort",)
     if (
         nucleus.kind == "wish"
         or nucleus.semantic_frame.modality == "wish"
+        or final_source_fidelity and source_proven_future_action_status(nucleus)
         or {
             "semantic_role:retained_intention",
             "semantic_role:next_intention",
@@ -9655,6 +9677,28 @@ def _final_stage1_align_action_status(
                 raise GroundedObservationPlanError("final_action_status_fragment_invalid")
         text = text.strip(" \u3000、,。．.!！?？")
         visible = _top_level_text(text)
+        finite = _strip_bounded_operator_prefix((visible or "").strip())
+        # A postposed demonstrative/focus limits the same statement.  Keep
+        # it in source and surface; isolate only the finite part for proof.
+        finite = re.sub(
+            r"[、,]\s*(?:それ|これ|あれ)" + _OWNER_FOCUS_PARTICLE_SOURCE + r"$",
+            "", finite,
+        ).strip()
+        if (
+            frame.modality == "intention"
+            and re.search(r"(?:まで|だけ|さえ|まだ|未定|途中)$", text)
+            and (visible is None or not _EXPLICIT_PERFECTIVE_END_RE.search(finite))
+        ):
+            # A verbless limit or unfinished fragment does not assert a
+            # future action merely because it came from the action field.
+            attributes = tuple(code for code in codes if not code.startswith(
+                ("time_scope:", "modality:")
+            ) and code != "operator:performed_action") + (f"time_scope:{frame.time_scope}",)
+            aligned.append(replace(nucleus, semantic_frame=replace(
+                frame, modality="uncertain",
+                attribute_codes=tuple(_dedupe(attributes)),
+            )))
+            continue
         # A quoted or attributed predicate cannot establish this owner's
         # factual action.  Field defaults are not evidence about an actor.
         if (
@@ -9663,15 +9707,52 @@ def _final_stage1_align_action_status(
         ):
             aligned.append(nucleus)
             continue
-        finite = _strip_bounded_operator_prefix(visible.strip())
         # A past decision establishes the decision, not performance of its
         # embedded action. Keep this owner's existing intention; do not split
         # it into a new decision owner or promote that action to performed.
+        decision = re.search(r"(?P<base>.+[うくぐすつぬぶむる])ことに(?:した|しました)$", finite)
+        if decision and not re.search(r"(?:ない|なかった|た|だ)$", decision.group("base")):
+            attributes = tuple(code for code in codes if not code.startswith(
+                ("time_scope:", "modality:")
+            ) and code != "operator:performed_action") + (
+                "time_scope:future", "semantic_role:next_intention",
+            )
+            aligned.append(replace(nucleus, semantic_frame=replace(
+                frame, modality="intention", time_scope="future",
+                attribute_codes=tuple(_dedupe(attributes)),
+            )))
+            continue
         if re.search(r"(?:こと|よう)に(?:し(?:た|ました)|して(?:いる|いた|います|いました))$", finite):
             aligned.append(nucleus)
             continue
         if re.search(r"(?:(?:よう|[おこごそとのぼもろ]う)とし(?:た|ました|ていた|ていました)|(?:つもり|予定)(?:だった|でした))$", finite):
             aligned.append(nucleus)
+            continue
+        progressive = re.search(r"(?:て|で)(?:い|お)(?:る|ます|た|ました)$", finite)
+        past = _EXPLICIT_PERFECTIVE_END_RE.search(finite)
+        intended_tail = re.search(
+            r"(?:(?:つもり|予定)(?:です)?|(?<!だ)(?:よう|[おこごそとのぼもろ]う)(?:かな|か|と思う)?|(?:たい|ほしい|欲しい))$",
+            finite,
+        )
+        future_calendar = bool(_FUTURE_RE.search(visible) or re.search(
+            r"(?:今日|今夜|今晩|今朝|明日|明後日|来(?:週|月|年)|次回|あとで|後で)", visible,
+        ))
+        if (
+            not past and not progressive
+            and frame.modality in {"intention", "wish", "uncertain"}
+            and (intended_tail or future_calendar and frame.modality == "intention"
+                 and re.search(r"(?:ます|[うくぐすつぬぶむる])$", finite))
+        ):
+            modality = "uncertain" if finite.endswith(("かな", "か")) else frame.modality
+            attributes = tuple(code for code in codes if not code.startswith(
+                ("time_scope:", "modality:")
+            ) and code != "operator:performed_action") + (
+                "time_scope:future", "semantic_role:next_intention",
+            )
+            aligned.append(replace(nucleus, semantic_frame=replace(
+                frame, modality=modality, time_scope="future",
+                attribute_codes=tuple(_dedupe(attributes)),
+            )))
             continue
         # Keep the selected action and actor. Only resolve the outer finite
         # predicate inside that same source span; a topic is not a new actor.
@@ -9682,10 +9763,29 @@ def _final_stage1_align_action_status(
             if (match := _ACTION_ARGUMENT_STEM_RE.match(finite, offset)) is not None
             and match.end() == len(finite)
         )
-        if not arguments:
+        registered_tail = next((match for match in reversed(tuple(
+            _COMPLETED_ACTION_RE.finditer(finite)
+        )) if match.end() == len(finite)), None)
+        omitted_object_action = bool(
+            not arguments and not re.search(r"[。.!?！？\n]", finite)
+            and (
+                registered_tail is not None
+                or re.fullmatch(r"[ぁ-んァ-ヶ一-龯々〆ヵヶー]{1,24}(?:させ|せ)(?:た|ました)", finite)
+            )
+        )
+        if not arguments and not omitted_object_action:
             aligned.append(nucleus)
             continue
-        predicate = arguments[-1].group("predicate")
+        predicate = (
+            registered_tail.group() if registered_tail is not None
+            else arguments[-1].group("predicate") if arguments else finite
+        )
+        subject_scope = arguments[-1].group("predicate") if arguments else finite
+        separate_subject = bool(re.search(r"(?<=[一-龯々ァ-ヶ])(?:は|が|も)", subject_scope))
+        if registered_tail is not None and not arguments:
+            # A topicalized object may precede the registered outer verb;
+            # an explicit nominative subject still cannot prove self-action.
+            separate_subject = bool(re.search(r"(?<=[一-龯々ァ-ヶ])が", finite[:registered_tail.start()]))
         if _last_finite_operator_match(
             predicate, _NEGATION_RE, _WISH_RE, _UNCERTAIN_RE, _FEELING_RE,
         ) is not None:
@@ -9694,8 +9794,6 @@ def _final_stage1_align_action_status(
         if re.search(r"(?:たい|たく|たかった|ほしい|ほしかった|つもり|予定|かもしれ|らしい|はず|なら|たら|れば|場合|もし|ようと|ように)", predicate):
             aligned.append(nucleus)
             continue
-        progressive = re.search(r"(?:て|で)(?:い|お)(?:る|ます|た|ました)$", finite)
-        past = _EXPLICIT_PERFECTIVE_END_RE.search(finite)
         if not (progressive or past):
             aligned.append(nucleus)
             continue
@@ -9718,7 +9816,9 @@ def _final_stage1_align_action_status(
             code for code in codes
             if not code.startswith(("time_scope:", "aspect:", "modality:"))
             and code != "operator:performed_action"
-        ) + (f"time_scope:{time_scope}", f"aspect:{aspect}", "operator:performed_action")
+        ) + (f"time_scope:{time_scope}", f"aspect:{aspect}") + (
+            () if separate_subject else ("operator:performed_action",)
+        )
         aligned.append(replace(nucleus, semantic_frame=replace(
             frame, modality="fact", time_scope=time_scope,
             attribute_codes=tuple(_dedupe(attributes)),
