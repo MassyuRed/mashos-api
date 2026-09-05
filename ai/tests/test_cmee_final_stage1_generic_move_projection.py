@@ -227,6 +227,78 @@ def _tamper_reception(body: str, source: str, replacement: str) -> str:
 
 
 class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
+    def test_anaphoric_context_stays_visible_without_repeating_its_relation(self):
+        rows, _ = load_validated_batch(_BATCH_PATH, _MANIFEST_PATH)
+        exercised = 0
+        for row in rows:
+            if row["case_id"] not in _TYPED_RELATION_CLOSURE_CASE_IDS:
+                continue
+            artifacts = _full_surface_artifacts(row)
+            follow = _reception_text(artifacts.surface.text)
+            if "が重なる中での" not in follow:
+                continue
+            exercised += 1
+            self.assertTrue(artifacts.inverse.passed)
+            self.assertTrue(artifacts.gate.passed)
+            self.assertNotIn("が重なる中で、", follow)
+            changed = _tamper_reception(
+                artifacts.surface.text, "が重なる中での", "と",
+            )
+            inverse = evaluate_grounded_surface_body_inverse(
+                body=changed.encode("utf-8"), plan=artifacts.plan,
+                sentence_plan=artifacts.sentence_plan, resolver=artifacts.resolver,
+                selected_subjective_input=artifacts.selected_subjective_input,
+            )
+            self.assertFalse(inverse.passed)
+            self.assertTrue(any("context_anchor_missing" in code
+                                for code in inverse.failure_codes))
+        self.assertGreaterEqual(exercised, 2)
+
+    def test_selected_noncollapse_governs_both_visible_objects_once(self):
+        rows, _ = load_validated_batch(_BATCH_PATH, _MANIFEST_PATH)
+        selected_ids = set(_TYPED_RELATION_CLOSURE_CASE_IDS + _REPRESENTATIVE_CASE_IDS)
+        exercised = 0
+        for row in rows:
+            if row["case_id"] not in selected_ids:
+                continue
+            artifacts = _full_surface_artifacts(row)
+            follow = _reception_text(artifacts.surface.text)
+            if "の両方" not in follow:
+                continue
+            exercised += 1
+            self.assertTrue(artifacts.inverse.passed)
+            self.assertTrue(artifacts.gate.passed)
+            self.assertTrue(any(
+                decision.subjective_proposition.appraisal_content is not None
+                and decision.subjective_proposition.appraisal_content.operation
+                == "PRESERVE_BOTH_ENDPOINTS"
+                for decision in artifacts.selected_subjective_input.decisions
+            ))
+            self.assertNotIn("どちらの側も残したまま", follow)
+            self.assertNotIn("がともにあること", follow)
+            for replacement in ("の片方", "", "のどちらか"):
+                changed = _tamper_reception(
+                    artifacts.surface.text, "の両方", replacement,
+                )
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=changed.encode("utf-8"), plan=artifacts.plan,
+                    sentence_plan=artifacts.sentence_plan, resolver=artifacts.resolver,
+                    selected_subjective_input=artifacts.selected_subjective_input,
+                )
+                self.assertFalse(inverse.passed)
+        self.assertGreaterEqual(exercised, 2)
+
+    def test_distributive_object_cannot_invent_a_relation_slot(self):
+        for invalid_slot in (True, -1, 0, "0"):
+            with self.assertRaisesRegex(
+                reception_owner.GroundedHumanReceptionSurfaceError,
+                "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP",
+            ):
+                reception_owner._source_grounded_argument_surface(
+                    SimpleNamespace(relations=()),
+                    distributive_relation_slot=invalid_slot,
+                )
+
     def test_negative_feeling_nominal_uses_existing_finite_classes(self):
         for source, nominal in (
             ("どことなく、落ち着かない", "どことなくの落ち着かなさ"),

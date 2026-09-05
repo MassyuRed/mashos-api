@@ -5868,9 +5868,18 @@ def _source_grounded_argument_surface(
     *,
     target_nominal: str | None = None,
     target_owner_slot: int = 0,
+    distributive_relation_slot: int | None = None,
+    anaphoric_context_object: tuple[int, str] | None = None,
 ) -> tuple[str, tuple[int, ...], tuple[int, ...]]:
     """Realize bounded heads in one relation clause per endpoint pair."""
 
+    if distributive_relation_slot is not None and (
+        type(distributive_relation_slot) is not int
+        or not 0 <= distributive_relation_slot < len(move.relations)
+    ):
+        raise GroundedHumanReceptionSurfaceError(
+            "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
+        )
     realized_semantic_slots: set[int] = set()
     appended_semantic_slots: set[int] = set()
     appended_relation_slots: list[int] = []
@@ -6019,11 +6028,46 @@ def _source_grounded_argument_surface(
         nominal_head = _SOURCE_GROUNDED_RELATION_FRAMES[
             relation.relation_kind
         ].nominal_head
-        relation_phrases.append(
-            f"{first_nominal}{first.case_marker}"
-            f"{second_nominal}{second.case_marker}"
-            + (nominal_head if nominal_head is not None else f"{finite}こと")
-        )
+        if anaphoric_context_object is not None:
+            context_slot, context_nominal = anaphoric_context_object
+            if (len(move.relations) != 1
+                or move.reference_mode != "ANAPHORIC"
+                or len(move.context_slots) != 1
+                or context_slot != move.context_slots[0]
+                or set(relation.endpoint_slots) != {target_owner_slot, context_slot}
+                or relation.endpoint_roles != ("LEFT", "RIGHT")
+                or relation.relation_kind not in {
+                    "coexistence", "wish_and_constraint", "attempt_and_block",
+                    "continuation_or_refusal",
+                }
+                or distributive_relation_slot is not None
+                or target_nominal is None or not context_nominal):
+                raise GroundedHumanReceptionSurfaceError(
+                    "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
+                )
+            # One attributive context realizes the same undirected relation
+            # and both source objects, including its explicit context marker.
+            relation_phrases.append(f"{context_nominal}が重なる中での{target_nominal}")
+        elif relation_slot == distributive_relation_slot:
+            # The selected noncollapse appraisal governs both complete
+            # endpoint objects. Its distributive object realizes that duty
+            # once, without first restating their coexistence as a fact.
+            if (relation.endpoint_roles != ("LEFT", "RIGHT")
+                or relation.relation_kind not in {
+                    "coexistence", "wish_and_constraint", "attempt_and_block",
+                    "continuation_or_refusal",
+                }
+                or (first.case_marker, second.case_marker) != ("と", "が")):
+                raise GroundedHumanReceptionSurfaceError(
+                    "REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP"
+                )
+            relation_phrases.append(f"{first_nominal}と{second_nominal}の両方")
+        else:
+            relation_phrases.append(
+                f"{first_nominal}{first.case_marker}"
+                f"{second_nominal}{second.case_marker}"
+                + (nominal_head if nominal_head is not None else f"{finite}こと")
+            )
         appended_semantic_slots.update(relation.endpoint_slots)
         appended_relation_slots.append(relation_slot)
     independent_target = (
@@ -6536,6 +6580,8 @@ def _source_grounded_target_np(
     referent_kind: str,
     source_anchor_used: bool,
     target_owner_slot: int,
+    distributive_relation_slot: int | None = None,
+    anaphoric_context_object: tuple[int, str] | None = None,
 ) -> _SourceGroundedClauseCoreV1:
     """Build one grammatical content core with one inverse referent."""
 
@@ -6615,6 +6661,8 @@ def _source_grounded_target_np(
         realization,
         target_nominal=content_target,
         target_owner_slot=target_owner_slot,
+        distributive_relation_slot=distributive_relation_slot,
+        anaphoric_context_object=anaphoric_context_object,
     )
     adjuncts = _dedupe(
         adjunct
@@ -6735,6 +6783,7 @@ def _source_grounded_response_predicate(
         "STATE",
     ],
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
+    distributive_object: bool = False,
 ) -> _SourceGroundedResponsePredicateV1:
     """Compose role valency independently from the act predicate."""
 
@@ -6784,12 +6833,16 @@ def _source_grounded_response_predicate(
         raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
     proposition = selected_subjective_decision.subjective_proposition
     appraisal = proposition.appraisal_content
+    if distributive_object and (
+        appraisal is None or appraisal.operation != "PRESERVE_BOTH_ENDPOINTS"
+    ):
+        raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
     if appraisal is not None:
         # These are the existing upstream operations, never selected here.
         # Their grammatical guards apply to the source-bound object above.
         selected_guard = {
             "RECEIVE_AS_MATERIAL": "",
-            "PRESERVE_BOTH_ENDPOINTS": "どちらの側も残したまま、",
+            "PRESERVE_BOTH_ENDPOINTS": "" if distributive_object else "どちらの側も残したまま、",
             "RECOGNIZE_AS_BOUNDED": "",
             "LEAVE_UNFINISHED": "結論を急がずに、",
             "RESPECT_CHOICE": "あなた自身の向きとして、",
@@ -6912,6 +6965,7 @@ def _source_grounded_response_predicate_surface(
     clause_form: Literal["FINITE", "CONTINUATIVE"],
     recovery_stage: ReceptionRecoveryStage = "full",
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
+    distributive_object: bool = False,
 ) -> str:
     """Author and binder share one exact governed predicate surface."""
 
@@ -6924,6 +6978,7 @@ def _source_grounded_response_predicate_surface(
         referent_kind=referent_kind,
         voice=voice,
         selected_subjective_decision=selected_subjective_decision,
+        distributive_object=distributive_object,
     )
     if recovery_stage not in _RECOVERY_STAGES:
         raise GroundedHumanReceptionSurfaceError(
@@ -6952,6 +7007,7 @@ def _source_grounded_reception_fragment(
     target_owner_slot: int,
     recovery_stage: ReceptionRecoveryStage,
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
+    distributive_object: bool = False,
 ) -> str:
     """Compose one content core with one role/focus reception predicate."""
 
@@ -7018,6 +7074,7 @@ def _source_grounded_reception_fragment(
         clause_form=realization.clause_form,
         recovery_stage=recovery_stage,
         selected_subjective_decision=selected_subjective_decision,
+        distributive_object=distributive_object,
     )
     return f"{core}{predicate_surface}"
 
@@ -7131,6 +7188,49 @@ def _author_source_grounded_reception_clauses(
                 move=move,
                 plan=plan,
             )
+            selected_decision = selected_decisions[move_id]
+            selected_proposition = selected_decision.subjective_proposition
+            applicable_relations = tuple(
+                relation for relation in plan.relations
+                if relation.relation_id in plan.coverage_requirements.required_relation_ids
+                and set(move.target_nucleus_ids).intersection(
+                    (relation.from_nucleus_id, relation.to_nucleus_id))
+            )
+            # Resolve only the already selected focal relation. Directional,
+            # comparative and uncertain relations keep their own predicates;
+            # two endpoints alone never authorize distributive realization.
+            appraisal = selected_proposition.appraisal_content
+            distributive_relation_slot = None
+            if (appraisal is not None
+                and appraisal.operation == "PRESERVE_BOTH_ENDPOINTS"
+                and selected_proposition.focal_relation_ref is not None):
+                focal_id = relation_map[selected_proposition.focal_relation_ref]
+                for slot, relation in enumerate(applicable_relations):
+                    if (relation.relation_id == focal_id
+                        and meaning_realization.relations[slot].relation_kind in {
+                            "coexistence", "wish_and_constraint", "attempt_and_block",
+                            "continuation_or_refusal",
+                        }):
+                        distributive_relation_slot = slot
+            anaphoric_context_object = None
+            if (meaning_realization.reference_mode == "ANAPHORIC"
+                and distributive_relation_slot is None
+                and len(meaning_realization.relations) == 1
+                and len(context_ids) == len(meaning_realization.context_slots) == 1):
+                relation = meaning_realization.relations[0]
+                context_slot = meaning_realization.context_slots[0]
+                if (set(relation.endpoint_slots) == {target_owner_slot, context_slot}
+                    and relation.relation_kind in {
+                        "coexistence", "wish_and_constraint", "attempt_and_block",
+                        "continuation_or_refusal",
+                    }):
+                    anaphoric_context_object = (
+                        context_slot,
+                        final_reception_anaphoric_context(
+                            move=move, context_nucleus_ids=context_ids,
+                            plan=plan, nucleus_index=nucleus_index, resolver=resolver,
+                        ),
+                    )
             target_core = _source_grounded_target_np(
                 move,
                 meaning_realization,
@@ -7139,11 +7239,24 @@ def _author_source_grounded_reception_clauses(
                 meaning_fragment=meaning_fragment,
                 source_anchor_used=referent.source_anchor_used,
                 target_owner_slot=target_owner_slot,
+                distributive_relation_slot=distributive_relation_slot,
+                anaphoric_context_object=anaphoric_context_object,
             )
             if meaning_realization.reference_mode == "ANAPHORIC":
+                # Only the context actually emitted by the attributable
+                # relation above loses its second adjunct occurrence. A
+                # covered slot alone does not prove visible context grammar.
+                remaining_context = tuple(
+                    (nucleus_id, slot)
+                    for nucleus_id, slot in zip(
+                        context_ids, meaning_realization.context_slots, strict=True,
+                    )
+                    if anaphoric_context_object is None
+                    or slot != anaphoric_context_object[0]
+                )
                 context_value = final_reception_anaphoric_context(
                     move=move,
-                    context_nucleus_ids=context_ids,
+                    context_nucleus_ids=tuple(row[0] for row in remaining_context),
                     plan=plan,
                     nucleus_index=nucleus_index,
                     resolver=resolver,
@@ -7157,7 +7270,7 @@ def _author_source_grounded_reception_clauses(
                     else ""
                 )
                 context_semantic_slots = (
-                    meaning_realization.context_slots if context_value else ()
+                    tuple(row[1] for row in remaining_context) if context_value else ()
                 )
             else:
                 context_prefix, context_semantic_slots = _source_grounded_context_adjunct(
@@ -7169,14 +7282,6 @@ def _author_source_grounded_reception_clauses(
                 realization=meaning_realization,
                 target_owner_slot=target_owner_slot,
                 context_semantic_slots=context_semantic_slots,
-            )
-            selected_decision = selected_decisions[move_id]
-            selected_proposition = selected_decision.subjective_proposition
-            applicable_relations = tuple(
-                relation for relation in plan.relations
-                if relation.relation_id in plan.coverage_requirements.required_relation_ids
-                and set(move.target_nucleus_ids).intersection(
-                    (relation.from_nucleus_id, relation.to_nucleus_id))
             )
             # This is the exact existing source-slot order used by plan IR.
             source_slot_nuclei = (
@@ -7224,6 +7329,7 @@ def _author_source_grounded_reception_clauses(
                 target_owner_slot=target_owner_slot,
                 recovery_stage=recovery_stage,
                 selected_subjective_decision=selected_decisions[move_id],
+                distributive_object=distributive_relation_slot is not None,
             )
             if (
                 _visible_fragment_occurrence_count(

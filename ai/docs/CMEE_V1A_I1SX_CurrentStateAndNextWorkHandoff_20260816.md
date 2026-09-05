@@ -5497,3 +5497,12 @@ System Contextはdoctor不成立（固定toolchain不一致）、prepare未実�
 次の修正は、選択済みの受け取り内容を既存Human Receptionの述語・項の組合せへ反映し、観測で明示済みの内容を省略できる根拠を確認する部分を優先する。意味を別担当で選び直さず、語彙bank／定型句差替え／引用装飾で見かけの重複率を下げず、独立した逆検証を保つ。代表本文の意味と読める変化を先に確認し、その後同じ100件へ広げる。同じ承認の再要求は不要。
 
 最新doctorは18 PASS／16 FAIL（固定toolchain不一致）を再確認。prepare未実行、stale不使用、原典直接確認、lock／profile／基準refの変更0。9月12日までの商品確認準備には引き続きリスクがある。Product Read PASS、採用、candidate ready、merge、本番、問い／Layer3は未成立。private本文・個別ケース・digest・locatorの公開0。この結果保存以後の差分は文書のみで、runtime／test／runnerの検証対象bytesは変えない。
+
+
+### 2026-09-05 continuation — selected object grammar and context responsibility
+
+同じ承認の継続修正として、唯一のHuman Receptionが選択済みPRESERVE_BOTH_ENDPOINTSのfocal relationを既存のrelation順へexact joinし、方向のない共在関係に限り、二つの完全な対象を一つの分配的目的語へ組み立てる。共在の事実説明と両側保持の締めを二重に出さず、選択済みの両側保持を可視目的語で一度だけ表す。方向、比較、因果、不確かな接続はこの省略対象にせず、既存の述語・endpoint・directionを維持する。意味、Move、act、上流のselection、private schema、Gate／body parser／判定項目・閾値は変更しない。
+
+背景は、source slotがcoveredであるという理由だけで削除しない。最初の単純削除案は既存逆検証のcontext／why義務で停止したため採用せず、失敗記録を保持した。関係exact1・背景exact1・応答対象とのendpoint一致を満たすANAPHORICだけ、背景を対象の連体修飾へ組み込み、背景の可視markerと両方のsource objectを同じcoreに一度ずつ残す。複数関係、方向・比較、不確かさを一般的な背景へ平坦化しない。forwardと独立replayが同じplan／resolver／検証済み判断からこの文法を再導出し、生成metadataを逆検証の正解にしない。
+
+同じ100件の大部分には、選択済み判断が一つの行動へのMATERIAL_WEIGHT評価に限られるものが残る。文法修正で選ばれていない感情・価値・関係を付け足さず、選択内容の限界と表現実装の不足を区別する。代表本文を先に確認し、変更コードの最終100件・必要回帰・華恋の全文確認後に結果を本handoff／実装順へ保存する。NOT_CLEAR、全ready／採用／merge／本番／問い／Layer3未成立を維持する。
