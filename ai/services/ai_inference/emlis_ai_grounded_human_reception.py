@@ -28,6 +28,8 @@ from emlis_ai_grounded_observation_plan import (
     GroundedSemanticNucleus,
     source_proven_performed_action_status,
     source_proven_future_action_status,
+    _FEELING_RE,
+    _direct_finite_carrier_shape,
 )
 
 
@@ -387,6 +389,7 @@ class _ReceptionMoveRealizationV1:
     semantic_fragments: tuple[str, ...] = field(repr=False)
     semantic_heads: tuple[str, ...] = field(repr=False)
     semantic_profiles: tuple[_ReceptionSemanticProfileV1, ...]
+    nominalization_plan: tuple[str, ...]
     target_slot_count: int
     context_slots: tuple[int, ...]
     arguments: tuple[_ReceptionArgumentRealizationV1, ...] = field(
@@ -443,7 +446,7 @@ class _SourceGroundedClauseCoreV1:
     relation_count: int
     target_owner_slot: int
     temporal_realization: Literal[
-        "SOURCE_CLAUSE", "ANTECEDENT", "ADJUNCT"
+        "SOURCE_CLAUSE", "ANTECEDENT", "TARGET_REFERENT", "ADJUNCT"
     ]
     aspect_realization: Literal[
         "SOURCE_CLAUSE", "ANTECEDENT", "ADJUNCT"
@@ -836,8 +839,10 @@ def _validate_expression_morphology(
         expression.particle_plan != expected_particle_plan
         or not _has_unique_private_strings(inflection)
         or not extended_suffix_valid
-        or expression.nominalization_plan
-        != ("nominalization:source-grounded-reception-object",)
+        or not _source_grounded_nominalization_shape_valid(
+            expression.nominalization_plan,
+            len(_dedupe(argument.semantic_ref for argument in expression.arguments)),
+        )
         or not (
             (
                 not expression.relation_refs
@@ -3348,6 +3353,34 @@ def final_reception_anaphoric_context(
 
     if not context_nucleus_ids:
         return ""
+    if len(context_nucleus_ids) > 1:
+        # Each antecedent has its own visible reference. Combining kinds
+        # first would silently let one priority label stand for all slots.
+        references = tuple(
+            final_reception_anaphoric_context(
+                move=move,
+                context_nucleus_ids=(nucleus_id,),
+                plan=plan,
+                nucleus_index=nucleus_index,
+                resolver=resolver,
+            )
+            for nucleus_id in context_nucleus_ids
+        )
+        occurrences: dict[str, int] = {}
+        distinct_references: list[str] = []
+        for reference in references:
+            occurrence = occurrences.get(reference, 0)
+            if occurrence > 2:
+                raise GroundedHumanReceptionSurfaceError(
+                    "REALIZABLE_RECEPTION_EXPRESSION_REFERENCE_GAP"
+                )
+            distinct_references.append(
+                reference if occurrence == 0
+                else f"もう一つの{reference}" if occurrence == 1
+                else f"さらに別の{reference}"
+            )
+            occurrences[reference] = occurrence + 1
+        return _final_join_relation_fragments(tuple(distinct_references))
     context_nuclei = tuple(
         nucleus_index[nucleus_id]
         for nucleus_id in context_nucleus_ids
@@ -3753,6 +3786,118 @@ def _bounded_source_grounded_lexemes(
             "MEANING_REALIZATION_CAPABILITY_GAP"
         )
     return argument, predicate
+
+
+_SOURCE_GROUNDED_NOMINALIZATION_BASE: Final = (
+    "nominalization:source-grounded-reception-object",
+)
+# Grammatical attachment under nominalization, not a feeling vocabulary or
+# a sentence bank. The registered finite feeling host supplies its class.
+_SOURCE_GROUNDED_INDEFINITE_ADVERB_NOMINALS: Final = (
+    ("", ""),
+    ("なんとなく", "なんとなくの"),
+    ("どことなく", "どことなくの"),
+    ("漠然と", "漠然とした"),
+)
+_SOURCE_GROUNDED_NEGATIVE_FEELING_NOMINAL_RE: Final = re.compile(
+    r"(?P<modifier>なんとなく|どことなく|漠然と)?"
+    r"(?P<separator>[、,]?)"
+    r"(?P<predicate>[^、,。．.]+ない)"
+)
+
+
+def _source_grounded_negative_feeling_nominal(
+    fragment: str,
+) -> tuple[str, str] | None:
+    """Reduce one complete registered predicate with reversible attachment."""
+    match = _SOURCE_GROUNDED_NEGATIVE_FEELING_NOMINAL_RE.fullmatch(fragment)
+    if match is None:
+        return None
+    modifier = match.group("modifier") or ""
+    separator = match.group("separator")
+    predicate = match.group("predicate")
+    admitted = tuple(
+        (predicate[:split], predicate[split:])
+        for split in range(1, len(predicate) - 1)
+        if _FEELING_RE.fullmatch(predicate[:split]) is not None
+        and _direct_finite_carrier_shape(
+            predicate[split:], operator_surface=predicate[:split],
+            operator_pattern=_FEELING_RE,
+        )
+    )
+    if separator and not modifier or len(admitted) != 1:
+        return None
+    host, carrier = admitted[0]
+    if modifier + separator + host + carrier != fragment:
+        return None
+    modifier_index = next(
+        index for index, row in enumerate(_SOURCE_GROUNDED_INDEFINITE_ADVERB_NOMINALS)
+        if row[0] == modifier
+    )
+    separator_index = ("", "、", ",").index(separator)
+    nominal = (
+        _SOURCE_GROUNDED_INDEFINITE_ADVERB_NOMINALS[modifier_index][1]
+        + host + carrier[:-2] + "なさ"
+    )
+    # Inverse morphology restores the source, including its separator.
+    reconstructed = (
+        _SOURCE_GROUNDED_INDEFINITE_ADVERB_NOMINALS[modifier_index][0]
+        + ("", "、", ",")[separator_index] + host + carrier[:-2] + "ない"
+    )
+    if reconstructed != fragment:
+        raise GroundedHumanReceptionSurfaceError(
+            "REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP"
+        )
+    return f"NEGATIVE_FEELING_CARRIER:{modifier_index}:{separator_index}", nominal
+
+
+def _source_grounded_nominalization_from_profiles(
+    fragments: tuple[str, ...],
+    profiles: tuple[_ReceptionSemanticProfileV1, ...],
+    reference_mode: ReceptionExpressionReferenceMode,
+) -> tuple[str, ...]:
+    if reference_mode != "ANAPHORIC" or len(fragments) != 1 or len(profiles) != 1:
+        return _SOURCE_GROUNDED_NOMINALIZATION_BASE
+    profile = profiles[0]
+    if (
+        profile.nucleus_kind != "reaction"
+        or profile.predicate_kind != "feeling"
+        or profile.quoted_boundary or profile.performed_action or profile.future_action
+    ):
+        return _SOURCE_GROUNDED_NOMINALIZATION_BASE
+    row = _source_grounded_negative_feeling_nominal(fragments[0])
+    return (
+        (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, f"nominal-slot:0:{row[0]}")
+        if row is not None else _SOURCE_GROUNDED_NOMINALIZATION_BASE
+    )
+
+
+def derive_source_grounded_nominalization_plan(
+    nuclei: tuple[GroundedSemanticNucleus, ...],
+    fragments: tuple[str, ...],
+    reference_mode: ReceptionExpressionReferenceMode,
+) -> tuple[str, ...]:
+    if len(nuclei) != len(fragments):
+        raise GroundedHumanReceptionSurfaceError(
+            "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
+        )
+    return _source_grounded_nominalization_from_profiles(
+        fragments,
+        tuple(_source_grounded_semantic_profile(nucleus, fragment)
+              for nucleus, fragment in zip(nuclei, fragments, strict=True)),
+        reference_mode,
+    )
+
+
+def _source_grounded_nominalization_shape_valid(
+    plan: tuple[str, ...], semantic_count: int,
+) -> bool:
+    return bool(
+        plan == _SOURCE_GROUNDED_NOMINALIZATION_BASE
+        or semantic_count == 1 and len(plan) == 2
+        and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
+        and re.fullmatch(r"nominal-slot:0:NEGATIVE_FEELING_CARRIER:[0-3]:[0-2]", plan[1])
+    )
 
 
 _SOURCE_GROUNDED_CASE_BY_ROLE: Final[dict[str, str]] = {
@@ -4355,6 +4500,9 @@ def _project_source_grounded_reception_move_realization(
         semantic_fragments=semantic_fragments,
         semantic_heads=semantic_heads,
         semantic_profiles=semantic_profiles,
+        nominalization_plan=derive_source_grounded_nominalization_plan(
+            semantic_nuclei, semantic_fragments, reference_mode,
+        ),
         target_slot_count=len(typed_targets),
         context_slots=context_slots,
         arguments=tuple(argument_rows),
@@ -4745,6 +4893,7 @@ def _expression_source_grounded_move_realization(
         semantic_fragments=semantic_fragments,
         semantic_heads=semantic_heads,
         semantic_profiles=semantic_profiles,
+        nominalization_plan=expression.nominalization_plan,
         target_slot_count=target_slot_count,
         context_slots=context_slots,
         arguments=tuple(argument_rows),
@@ -5146,18 +5295,20 @@ def _source_grounded_context_adjunct_from_heads(
 
 def _source_grounded_context_adjunct(
     move: _ReceptionMoveRealizationV1,
-) -> str:
+    *,
+    core_semantic_slots: tuple[int, ...],
+) -> tuple[str, tuple[int, ...]]:
     """Realize the exact plan-owned EXPLICIT context as one adjunct."""
 
     if move.reference_mode == "ANAPHORIC" or not move.context_slots:
-        return ""
-    relation_slots = {
-        slot for relation in move.relations for slot in relation.endpoint_slots
-    }
-    return _source_grounded_context_adjunct_from_heads(tuple(
-        move.semantic_fragments[slot] for slot in move.context_slots
-        if slot not in relation_slots
+        return "", ()
+    pending_slots = tuple(
+        slot for slot in move.context_slots if slot not in core_semantic_slots
+    )
+    text = _source_grounded_context_adjunct_from_heads(tuple(
+        move.semantic_fragments[slot] for slot in pending_slots
     ))
+    return text, pending_slots if text else ()
 
 
 def _source_grounded_axis_prefix(
@@ -5252,6 +5403,13 @@ def _validate_source_grounded_move_ir(
     ):
         raise GroundedHumanReceptionSurfaceError(
             "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
+        )
+
+    if move.nominalization_plan != _source_grounded_nominalization_from_profiles(
+        move.semantic_fragments, move.semantic_profiles, move.reference_mode,
+    ):
+        raise GroundedHumanReceptionSurfaceError(
+            "REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP"
         )
 
     relation_arguments_by_slot: dict[
@@ -5520,10 +5678,12 @@ def _source_grounded_argument_surface(
     *,
     target_nominal: str | None = None,
     target_owner_slot: int = 0,
-) -> str:
+) -> tuple[str, tuple[int, ...], tuple[int, ...]]:
     """Realize bounded heads in one relation clause per endpoint pair."""
 
     realized_semantic_slots: set[int] = set()
+    appended_semantic_slots: set[int] = set()
+    appended_relation_slots: list[int] = []
     relation_endpoints = tuple(
         (relation, role, semantic_slot)
         for relation in move.relations
@@ -5631,20 +5791,23 @@ def _source_grounded_argument_surface(
         if semantic_slot == target_owner_slot and target_nominal is not None:
             direct_phrases.append(target_nominal)
             realized_semantic_slots.add(semantic_slot)
+            appended_semantic_slots.add(semantic_slot)
             target_inserted = True
         elif semantic_slot in move.context_slots:
             # Relation-owned context is first realized at its endpoint;
             # other context has one independent adjunct owner.
-            if semantic_slot not in relation_occurrences_by_slot:
-                realized_semantic_slots.add(semantic_slot)
-        elif move.reference_mode != "ANAPHORIC":
+            continue
+        else:
             direct_phrases.append(
-                _source_grounded_anaphoric_nominal(
+                f"その{_SOURCE_GROUNDED_FOCUS_NOMINAL[move.semantic_profiles[semantic_slot].nucleus_kind]}"
+                if move.reference_mode == "ANAPHORIC"
+                else _source_grounded_anaphoric_nominal(
                     move.semantic_fragments[semantic_slot],
                     predicate_kind=move.predicate_kind,
                 )
             )
             realized_semantic_slots.add(semantic_slot)
+            appended_semantic_slots.add(semantic_slot)
 
     relation_phrases: list[str] = []
     for relation_slot, relation in enumerate(move.relations):
@@ -5677,17 +5840,29 @@ def _source_grounded_argument_surface(
             f"{second_nominal}{second.case_marker}"
             + (nominal_head if nominal_head is not None else f"{finite}こと")
         )
+        appended_semantic_slots.update(relation.endpoint_slots)
+        appended_relation_slots.append(relation_slot)
     independent_target = (
         (target_nominal,)
         if target_nominal is not None and not target_inserted
         else ()
     )
     phrases = (*independent_target, *direct_phrases, *relation_phrases)
+    if independent_target:
+        appended_semantic_slots.add(target_owner_slot)
     if not phrases:
         raise GroundedHumanReceptionSurfaceError(
             "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
         )
-    return "、また、".join(phrases)
+    if tuple(appended_relation_slots) != tuple(range(len(move.relations))):
+        raise GroundedHumanReceptionSurfaceError(
+            "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
+        )
+    return (
+        "、また、".join(phrases),
+        tuple(sorted(appended_semantic_slots)),
+        tuple(appended_relation_slots),
+    )
 
 
 def _source_grounded_meaning_fragment(
@@ -5983,8 +6158,10 @@ _SOURCE_GROUNDED_NONPAST_MORPHOLOGY_RE: Final = re.compile(
 def _source_grounded_temporal_aspect_realization(
     realization: _ReceptionMoveRealizationV1,
     semantic_head: str,
+    *,
+    target_referent: str = "",
 ) -> tuple[
-    Literal["SOURCE_CLAUSE", "ANTECEDENT", "ADJUNCT"],
+    Literal["SOURCE_CLAUSE", "ANTECEDENT", "TARGET_REFERENT", "ADJUNCT"],
     Literal["SOURCE_CLAUSE", "ANTECEDENT", "ADJUNCT"],
     str,
     str,
@@ -6033,6 +6210,15 @@ def _source_grounded_temporal_aspect_realization(
     else:
         morphological_time = True
     time_in_source = lexical_time or morphological_time or not time_adjunct
+    time_in_referent = bool(
+        realization.time_scope in {"future", "present_to_future"}
+        and all(
+            marker in target_referent
+            for marker in _SOURCE_GROUNDED_TEMPORAL_LEXICAL_MARKERS[
+                realization.time_scope
+            ]
+        )
+    )
 
     if realization.aspect in {"completed", "perfective"}:
         aspect_in_source = bool(
@@ -6046,9 +6232,10 @@ def _source_grounded_temporal_aspect_realization(
         aspect_in_source = True
 
     return (
-        "SOURCE_CLAUSE" if time_in_source else "ADJUNCT",
+        "SOURCE_CLAUSE" if time_in_source else
+        "TARGET_REFERENT" if time_in_referent else "ADJUNCT",
         "SOURCE_CLAUSE" if aspect_in_source else "ADJUNCT",
-        "" if time_in_source else time_adjunct,
+        "" if time_in_source or time_in_referent else time_adjunct,
         "" if aspect_in_source else aspect_adjunct,
     )
 
@@ -6058,6 +6245,7 @@ def _validate_source_grounded_clause_core(
     *,
     realization: _ReceptionMoveRealizationV1,
     target_owner_slot: int,
+    context_semantic_slots: tuple[int, ...] | None = None,
 ) -> None:
     """Fail closed when a ClauseCore loses or duplicates an axis owner."""
 
@@ -6065,10 +6253,28 @@ def _validate_source_grounded_clause_core(
         _source_grounded_temporal_aspect_realization(
             realization,
             realization.semantic_fragments[target_owner_slot],
+            target_referent=core.target_referent,
         )
     )
     if (
         core.target_owner_slot != target_owner_slot
+        or core.semantic_slots != tuple(sorted(set(core.semantic_slots)))
+        or any(
+            type(slot) is not int
+            or not 0 <= slot < len(realization.semantic_fragments)
+            for slot in core.semantic_slots
+        )
+        or target_owner_slot not in core.semantic_slots
+        or core.relation_count != len(realization.relations)
+        or any(
+            slot not in core.semantic_slots
+            for relation in realization.relations
+            for slot in relation.endpoint_slots
+        )
+        or not (
+            set(range(len(realization.semantic_fragments)))
+            - set(realization.context_slots)
+        ).issubset(core.semantic_slots)
         or core.temporal_realization != expected_time
         or core.aspect_realization != expected_aspect
         or core.temporal_adjunct != expected_time_adjunct
@@ -6076,6 +6282,15 @@ def _validate_source_grounded_clause_core(
     ):
         raise GroundedHumanReceptionSurfaceError(
             "REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP"
+        )
+    if context_semantic_slots is not None and (
+        len(context_semantic_slots) != len(set(context_semantic_slots))
+        or not set(context_semantic_slots).issubset(realization.context_slots)
+        or set(core.semantic_slots).union(context_semantic_slots)
+        != set(range(len(realization.semantic_fragments)))
+    ):
+        raise GroundedHumanReceptionSurfaceError(
+            "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
         )
     ownership_rows = (
         (core.temporal_realization, core.temporal_adjunct),
@@ -6146,6 +6361,7 @@ def _source_grounded_target_np(
     ) = _source_grounded_temporal_aspect_realization(
         realization,
         realization.semantic_fragments[target_owner_slot],
+        target_referent=referent_text,
     )
     if realization.reference_mode == "ANAPHORIC":
         referent_np = (
@@ -6154,6 +6370,17 @@ def _source_grounded_target_np(
             else referent_text
         )
         content_target = f"{meaning_fragment}{referent_np}"
+        if len(realization.nominalization_plan) == 2:
+            row = _source_grounded_negative_feeling_nominal(
+                realization.semantic_fragments[target_owner_slot]
+            )
+            if row is None or realization.nominalization_plan[1] != (
+                f"nominal-slot:{target_owner_slot}:{row[0]}"
+            ):
+                raise GroundedHumanReceptionSurfaceError(
+                    "REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP"
+                )
+            content_target = f"{row[1]}について、{referent_np}"
     else:
         if referent_text.startswith(("その", "それらの")):
             raise GroundedHumanReceptionSurfaceError(
@@ -6196,16 +6423,13 @@ def _source_grounded_target_np(
             content_target = (
                 f"{proposition}に表れた{quantity_modifier}{referent_text}"
             )
-    if realization.relations:
-        # A relation clause is already a complete grammatical core.  Never
-        # feed its governed endpoints through a target or act wrapper.
-        target = _source_grounded_argument_surface(
-            realization,
-            target_nominal=content_target,
-            target_owner_slot=target_owner_slot,
-        )
-    else:
-        target = content_target
+    # Record slots only when their direct phrase or relation is appended.
+    # The same path also realizes non-relational secondary arguments.
+    target, semantic_slots, relation_slots = _source_grounded_argument_surface(
+        realization,
+        target_nominal=content_target,
+        target_owner_slot=target_owner_slot,
+    )
     adjuncts = _dedupe(
         adjunct
         for adjunct in (temporal_adjunct, aspect_adjunct)
@@ -6215,8 +6439,8 @@ def _source_grounded_target_np(
     core = _SourceGroundedClauseCoreV1(
         text=target,
         target_referent=referent_text,
-        semantic_slots=tuple(range(len(realization.semantic_fragments))),
-        relation_count=len(realization.relations),
+        semantic_slots=semantic_slots,
+        relation_count=len(relation_slots),
         target_owner_slot=target_owner_slot,
         temporal_realization=temporal_realization,
         aspect_realization=aspect_realization,
@@ -6664,10 +6888,20 @@ def _author_source_grounded_reception_clauses(
                     if context_value
                     else ""
                 )
-            else:
-                context_prefix = _source_grounded_context_adjunct(
-                    meaning_realization
+                context_semantic_slots = (
+                    meaning_realization.context_slots if context_value else ()
                 )
+            else:
+                context_prefix, context_semantic_slots = _source_grounded_context_adjunct(
+                    meaning_realization,
+                    core_semantic_slots=target_core.semantic_slots,
+                )
+            _validate_source_grounded_clause_core(
+                target_core,
+                realization=meaning_realization,
+                target_owner_slot=target_owner_slot,
+                context_semantic_slots=context_semantic_slots,
+            )
             move_sentence = _source_grounded_reception_fragment(
                 move,
                 meaning_realization,

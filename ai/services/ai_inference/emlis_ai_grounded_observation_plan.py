@@ -6013,6 +6013,25 @@ def _is_explicit_action_nucleus(nucleus: GroundedSemanticNucleus, *, final_sourc
     if source_proven_performed_action_status(nucleus):
         return True
     if final_source_fidelity:
+        if (
+            source_proven_future_action_status(nucleus)
+            and "semantic_role:concrete_action" in attributes
+            and "operator:wish" not in attributes
+        ):
+            # An admitted affirmative outer decision may retain negation
+            # inside its object or earlier clause. It is still prospective.
+            return True
+        # Preserve the existing response-family boundary. A future time
+        # correction does not turn a wish or an unperformed negative
+        # intention into a separate concrete-effort opportunity.
+        if (
+            "operator:wish" in attributes
+            or (
+                nucleus.semantic_frame.polarity == "negative"
+                or "operator:negation" in attributes
+            )
+        ):
+            return False
         # The existing action-content family also has a future variant;
         # being a concrete response target does not prove performance.
         return bool(
@@ -9716,6 +9735,7 @@ def _final_stage1_align_action_status(
                 ("time_scope:", "modality:")
             ) and code != "operator:performed_action") + (
                 "time_scope:future", "semantic_role:next_intention",
+                "semantic_role:concrete_action",
             )
             aligned.append(replace(nucleus, semantic_frame=replace(
                 frame, modality="intention", time_scope="future",

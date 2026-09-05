@@ -50,6 +50,7 @@ from emlis_ai_grounded_human_reception import (
     _source_grounded_relation_endpoint_nucleus_roles,
     _source_grounded_relation_endpoint_ref,
     build_grounded_reception_clause_plans,
+    derive_source_grounded_nominalization_plan,
     identify_source_grounded_reception_expression,
     realize_source_grounded_human_reception,
     reception_active_moves,
@@ -12978,8 +12979,11 @@ def _derive_source_grounded_reception_expression_authority(
             f"reception-form:{recovery_stage}",
             f"clause-form:{clause_form_by_move_id[move.move_id]}",
         )
-        nominalization_plan = (
-            "nominalization:source-grounded-reception-object",
+        nominalization_plan = derive_source_grounded_nominalization_plan(
+            tuple(nucleus_by_id[nucleus_id_by_semantic_ref[semantic_ref]]
+                  for semantic_ref in move_semantic_refs),
+            tuple(argument for argument, _head in lexical_rows),
+            reference_mode,
         )
         relation_kinds = tuple(relation_kinds)
         if any(

@@ -188,6 +188,48 @@ def _tamper_reception(body: str, source: str, replacement: str) -> str:
 
 
 class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
+    def test_negative_feeling_nominal_uses_existing_finite_classes(self):
+        for source, nominal in (
+            ("どことなく、落ち着かない", "どことなくの落ち着かなさ"),
+            ("なんとなく感じない", "なんとなくの感じなさ"),
+            ("漠然と、焦らない", "漠然とした焦らなさ"),
+            ("苦しまない", "苦しまなさ"),
+            ("苦しくない", "苦しくなさ"),
+        ):
+            with self.subTest(source=source):
+                row = reception_owner._source_grounded_negative_feeling_nominal(source)
+                self.assertIsNotNone(row)
+                self.assertEqual(row[1], nominal)
+        for source in (
+            "落ち着かないかもしれない", "落ち着かなかった", "落ち着かないと話した",
+            "落ち着かないでほしい", "人が落ち着かない", "感じかない", "焦ない",
+            "どことなく、落ち着かないけれど嬉しい",
+        ):
+            with self.subTest(source=source):
+                self.assertIsNone(reception_owner._source_grounded_negative_feeling_nominal(source))
+
+    def test_negative_feeling_body_keeps_manner_and_negation(self):
+        artifacts = _full_surface_artifacts({
+            "case_id": "negative-feeling-expression-unit",
+            "input": {
+                "thought_text": "どことなく、落ち着かない。",
+                "action_text": "", "categories": ["生活"],
+                "emotions": [{"type": "不安", "strength": "weak"}],
+            },
+        })
+        follow = _reception_text(artifacts.surface.text)
+        self.assertTrue(artifacts.inverse.passed)
+        self.assertIn("どことなくの落ち着かなさ", follow)
+        self.assertNotIn("どことなく、落ち着かないという", follow)
+        changed = _tamper_reception(
+            artifacts.surface.text, "落ち着かなさ", "落ち着き",
+        )
+        inverse = evaluate_grounded_surface_body_inverse(
+            body=changed.encode("utf-8"), plan=artifacts.plan,
+            sentence_plan=artifacts.sentence_plan, resolver=artifacts.resolver,
+        )
+        self.assertFalse(inverse.passed)
+
     def test_short_grammatical_topic_is_bounded_and_question_free(self) -> None:
         self.assertEqual(
             reception_owner._short_anaphoric_topic("環境を変えたい"),
@@ -236,6 +278,44 @@ class CMEESameNucleusActionStatusTest(unittest.TestCase):
             time_scope="current_input", attribute_codes=("operator:action",),
         ))
         return source, action
+
+    def test_future_decision_keeps_embedded_negation_without_performance(self):
+        source, action = self._action(
+            "先に結論を出さず、材料を比べてから選ぶことにした。"
+        )
+        action = replace(action, semantic_frame=replace(
+            action.semantic_frame, polarity="negative",
+            attribute_codes=("operator:action", "operator:negation"),
+        ))
+        aligned, = observation_plan_owner._final_stage1_align_action_status(
+            (action,), source.evidence_spans,
+        )
+        self.assertEqual(aligned.semantic_frame.polarity, "negative")
+        self.assertEqual(aligned.semantic_frame.modality, "intention")
+        self.assertEqual(aligned.semantic_frame.time_scope, "future")
+        self.assertIn("operator:negation", aligned.semantic_frame.attribute_codes)
+        self.assertTrue(observation_plan_owner._is_explicit_action_nucleus(
+            aligned, final_source_fidelity=True,
+        ))
+        self.assertFalse(observation_plan_owner.source_proven_performed_action_status(aligned))
+        self.assertFalse(reception_owner.reception_action_is_performed(
+            aligned, final_source_fidelity=True,
+        ))
+
+    def test_future_decision_has_one_visible_time_expression(self):
+        artifacts = _full_surface_artifacts({
+            "case_id": "future-decision-expression-unit",
+            "input": {
+                "thought_text": "返事を待っていて、少し気になっている。",
+                "action_text": "連絡を急がず、候補を比べてから決めることにした。",
+                "categories": ["生活"],
+                "emotions": [{"type": "不安", "strength": "weak"}],
+            },
+        })
+        follow = _reception_text(artifacts.surface.text)
+        self.assertTrue(artifacts.inverse.passed)
+        self.assertEqual(follow.count("これから"), 1)
+        self.assertNotIn("実際の行動", follow)
 
     def test_finite_action_tense_and_aspect_are_separate(self):
         for text, time, aspect in (
@@ -1321,7 +1401,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
         artifacts = self.artifacts[case_id]
         body = _tamper_reception(
             artifacts.surface.text,
-            "これからの行動",
+            "願い",
             "内容",
         )
         inverse = self._inverse_for_tamper(case_id, body)
@@ -1629,7 +1709,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
         reception = _reception_text(recovered_surface.text)
         self.assertNotIn(target, reception)
         self.assertNotIn(f"「{target}」", reception)
-        self.assertIn("これからの行動", reception)
+        self.assertIn("その願い", reception)
         self._bind_reception_text(
             case_id,
             reception,
