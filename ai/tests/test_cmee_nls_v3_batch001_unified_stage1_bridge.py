@@ -8,6 +8,7 @@ no copied case table and asserts structure rather than expected surface text.
 """
 
 import ast
+from dataclasses import FrozenInstanceError, asdict, fields
 import inspect
 from pathlib import Path
 from typing import Any, Mapping
@@ -35,6 +36,7 @@ from cocolon_meaning_experience_engine.contracts import (
     GenerationRequest,
     LimitedMeaningVisibleCausalTraceRow,
     SubjectiveProjectionBranch,
+    SubjectivePropositionV2,
     validate_stage1_sentence_unit,
     validate_stage1_trace_spine,
 )
@@ -214,9 +216,11 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
         actual_phase_a = response.build_subjective_planning_inputs
         actual_project = composition.project_subjective_meaning_plan
         actual_seal = response.seal_stage1_projection
+        actual_selected_input = response._build_selected_subjective_reception_input
+        actual_replay = grounded_gate_module.replay_source_grounded_human_reception_from_plan
         self.assertEqual(
             tuple(inspect.signature(actual_inverse).parameters),
-            ("body", "plan", "sentence_plan", "resolver"),
+            ("body", "plan", "sentence_plan", "resolver", "selected_subjective_input"),
         )
         self.assertEqual(
             tuple(inspect.signature(actual_gate).parameters),
@@ -227,6 +231,7 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                 "resolver",
                 "product_readfeel_status",
                 "require_body_inverse",
+                "selected_subjective_input",
             ),
         )
         self.assertEqual(
@@ -244,8 +249,14 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                 "plan",
                 "resolver",
                 "human_reception_surface",
+                "selected_subjective_input",
             ),
         )
+        self.assertEqual(
+            tuple(inspect.signature(grounded_surface_module.parse_grounded_surface_body_bytes).parameters),
+            ("body",),
+        )
+        request_local_inputs: list[object] = []
         limited_trace_count = 0
         grounded_normal_count = 0
         full_move_count = 0
@@ -288,6 +299,9 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                 phase_a_inputs: list[object] = []
                 project_calls: list[tuple[object, object]] = []
                 seal_calls: list[tuple[object, object, object]] = []
+                selected_inputs: list[object] = []
+                selected_input_snapshots: list[object] = []
+                replay_inputs: list[object] = []
 
                 def track_premeaning(*args, **kwargs):
                     result = actual_premeaning(*args, **kwargs)
@@ -309,7 +323,53 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                     seal_calls.append((phase_a, meaning_plan, result))
                     return result
 
+                def track_selected_input(*args, **kwargs):
+                    # The trusted input is exposed once, after the existing
+                    # projection seal and before any generated body exists.
+                    self.assertEqual(len(seal_calls), 1)
+                    self.assertFalse(selected_inputs)
+                    self.assertFalse(human_reception_calls)
+                    self.assertFalse(realized_surfaces)
+                    self.assertFalse(inverse_by_body)
+                    result = actual_selected_input(*args, **kwargs)
+                    self.assertIs(result, kwargs["authority_input"])
+                    self.assertIs(type(result), grounded_reception_module.SelectedSubjectiveReceptionInputV1)
+                    self.assertEqual(tuple(field.name for field in fields(result)), (
+                        "input_ref", "projection_preimage_ref", "projection_seal_ref", "grounding_ref",
+                        "semantic_nucleus_pairs", "relation_pairs", "decisions",
+                    ))
+                    self.assertIs(type(result.decisions), tuple)
+                    self.assertTrue(result.decisions)
+                    for decision in result.decisions:
+                        self.assertIs(type(decision), grounded_reception_module.SelectedSubjectiveReceptionDecisionV1)
+                        self.assertIs(type(decision.subjective_proposition), SubjectivePropositionV2)
+                    for target, attribute in (
+                        (result, "input_ref"),
+                        (result.decisions[0], "decision_ref"),
+                        (result.decisions[0].subjective_proposition, "epistemic_scope"),
+                    ):
+                        with self.assertRaises(FrozenInstanceError):
+                            setattr(target, attribute, "changed")
+                    self.assertTrue(all(result is not prior for prior in request_local_inputs))
+                    request_local_inputs.append(result)
+                    selected_inputs.append(result)
+                    selected_input_snapshots.append(asdict(result))
+                    return result
+
+                def assert_selected_input(kwargs):
+                    self.assertEqual(len(selected_inputs), 1)
+                    self.assertIs(kwargs["selected_subjective_input"], selected_inputs[0])
+
+                def track_replay(*args, **kwargs):
+                    assert_selected_input(kwargs)
+                    self.assertEqual(set(kwargs), {
+                        "plan", "recovery_stage", "clause_plans", "selected_subjective_input",
+                    })
+                    replay_inputs.append(kwargs["selected_subjective_input"])
+                    return actual_replay(*args, **kwargs)
+
                 def track_realize(*args, **kwargs):
+                    assert_selected_input(kwargs)
                     result = actual_realize(*args, **kwargs)
                     surface, placements = result
                     realized_surfaces.append(surface)
@@ -329,6 +389,7 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                     return result
 
                 def track_human_reception(*args, **kwargs):
+                    assert_selected_input(kwargs)
                     result = actual_human_reception(*args, **kwargs)
                     human_reception_calls.append(
                         (
@@ -341,6 +402,7 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                     return result
 
                 def track_inverse(*args, **kwargs):
+                    assert_selected_input(kwargs)
                     self.assertTrue(
                         {
                             "expressions",
@@ -356,6 +418,7 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                     return result
 
                 def track_gate(*args, **kwargs):
+                    assert_selected_input(kwargs)
                     self.assertTrue(
                         {
                             "expressions",
@@ -392,6 +455,16 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                         response,
                         "seal_stage1_projection",
                         side_effect=track_seal,
+                    ),
+                    patch.object(
+                        response,
+                        "_build_selected_subjective_reception_input",
+                        side_effect=track_selected_input,
+                    ),
+                    patch.object(
+                        grounded_gate_module,
+                        "replay_source_grounded_human_reception_from_plan",
+                        side_effect=track_replay,
                     ),
                     patch.object(
                         response,
@@ -498,6 +571,19 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                 self.assertIs(sealed_phase_a, phase_a)
                 self.assertIs(sealed_plan, projected_plan)
                 self.assertIs(sealed_projection, projection)
+                self.assertEqual(len(selected_inputs), 1)
+                selected_input = selected_inputs[0]
+                self.assertEqual(asdict(selected_input), selected_input_snapshots[0])
+                self.assertEqual(selected_input.projection_preimage_ref, phase_a.projection_preimage_ref)
+                self.assertEqual(selected_input.projection_seal_ref, projection.projection_seal_ref)
+                self.assertTrue(replay_inputs)
+                self.assertTrue(all(value is selected_input for value in replay_inputs))
+                claims = {claim.subjective_claim_id: claim for claim in projection.subjective_claims}
+                for decision in selected_input.decisions:
+                    claim = claims[decision.projected_claim_ref]
+                    self.assertEqual(decision.branch, projection.projection_branch.value)
+                    self.assertEqual(decision.selected_opportunity_ref, claim.selected_subjective_opportunity_key)
+                    self.assertIs(decision.subjective_proposition, claim.asserted_subjective_proposition)
                 premeaning = captured_premeaning
                 for dormant_owner in (
                     composition_surface_fallback,
@@ -617,6 +703,8 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                         )
                     )
                 full_private_body_free_values = {
+                    selected_input.input_ref,
+                    *(decision.decision_ref for decision in selected_input.decisions),
                     *(
                         expression.expression_ref
                         for expression in full_expressions
@@ -750,6 +838,7 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                         trace.layer1_contribution_refs,
                         expected_subsequence,
                     )
+        self.assertEqual(len(request_local_inputs), 100)
         self.assertGreater(limited_trace_count, 0)
         # Source-owned uncertain modality re-derives one existing reading;
         # the selected meaning, trace and all124 Move bindings above still
