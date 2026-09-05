@@ -373,6 +373,119 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         )
 
 
+class CMEEPositiveFeelingProjectionTest(unittest.TestCase):
+    def test_typed_feeling_does_not_override_change_result_or_unknown(self):
+        plan = build_final_stage1_grounded_observation_plan({"memo": "嬉しい。"})
+        target = next(n for n in plan.nuclei if "memo" in n.source_fields)
+        self.assertTrue(observation_plan_owner.is_grounded_positive_feeling(target))
+        self.assertEqual(reception_owner._source_grounded_direct_predicate(target), "present_state")
+        for code in ("operator:change", "operator:result",
+                     "semantic_role:explicit_result",
+                     "semantic_dependency:action_before_change"):
+            changed = replace(target, semantic_frame=replace(
+                target.semantic_frame,
+                attribute_codes=(*target.semantic_frame.attribute_codes, code),
+            ))
+            self.assertFalse(observation_plan_owner.is_grounded_positive_feeling(changed))
+            self.assertEqual(reception_owner._source_grounded_direct_predicate(changed), "present_change")
+            self.assertFalse(reception_owner._positive_feeling_target((target, changed)))
+        for field, value in (("predicate_kind", "change"), ("modality", "uncertain"),
+                             ("polarity", "negative"), ("polarity", "mixed")):
+            changed = replace(target, semantic_frame=replace(target.semantic_frame, **{field: value}))
+            self.assertFalse(observation_plan_owner.is_grounded_positive_feeling(changed))
+        missing = replace(target, semantic_frame=replace(
+            target.semantic_frame, attribute_codes=tuple(
+                code for code in target.semantic_frame.attribute_codes if code != "operator:feeling"
+            ),
+        ))
+        self.assertFalse(observation_plan_owner.is_grounded_positive_feeling(missing))
+        self.assertFalse(reception_owner._positive_feeling_target(()))
+        self.assertFalse(reception_owner._positive_feeling_target((target, None)))
+        self.assertFalse(observation_plan_owner.is_grounded_positive_feeling(
+            replace(target, source_fields=("emotions",)),
+        ))
+        for text in ("今日は少し落ち着いた。", "少し落ち着いてきた。"):
+            final = build_final_stage1_grounded_observation_plan({"memo": text})
+            changed = next(n for n in final.nuclei if "memo" in n.source_fields)
+            self.assertFalse(observation_plan_owner.is_grounded_positive_feeling(changed))
+            self.assertIn("operator:change", changed.semantic_frame.attribute_codes)
+            self.assertEqual(reception_owner._source_grounded_direct_predicate(changed), "present_change")
+            base = build_grounded_observation_plan({"memo": text})
+            base_target = next(n for n in base.nuclei if "memo" in n.source_fields)
+            self.assertNotIn("operator:change", base_target.semantic_frame.attribute_codes)
+        for text in ("落ち着いたら嬉しい。", "落ち着いたかもしれない。",
+                     "落ち着いた？", "「落ち着いた」と言った。"):
+            final = build_final_stage1_grounded_observation_plan({"memo": text})
+            for n in final.nuclei:
+                self.assertNotIn("operator:change", n.semantic_frame.attribute_codes)
+
+    def test_selected_feeling_body_requires_same_target_in_independent_inverse(self):
+        rows, _ = load_validated_batch(_BATCH_PATH, _MANIFEST_PATH)
+        checked = 0
+        for row in rows:
+            inputs = _compile_inputs(row)
+            nuclei = {n.nucleus_id: n for n in inputs.grounded_plan.nuclei}
+            reception_plan = inputs.grounded_plan.response_plan.human_reception_plan
+            if not any(m.reception_act == "recognize_lived_change"
+                       and reception_owner._positive_feeling_target(tuple(
+                           nuclei[nid] for nid in m.target_nucleus_ids
+                       )) for m in reception_plan.moves):
+                continue
+            a = _full_surface_artifacts(row)
+            checked += 1
+            self.assertTrue(a.gate.passed)
+            self.assertTrue(a.inverse.passed)
+            self.assertEqual(a.sentence_plan.recovery_stage, "full")
+            follow = _reception_text(a.surface.text)
+            self.assertIn("気持ち", follow)
+            authored = next(s for s in a.authored if s.recovery_stage == "full")
+            self.assertFalse(reception_owner.validate_grounded_human_reception_surface(
+                authored, a.plan.response_plan.human_reception_plan, a.resolver, plan=a.plan,
+            ))
+            self.assertIn("human_reception_act_responsibility_missing:recognize_lived_change",
+                          reception_owner.validate_grounded_human_reception_surface(
+                              authored, a.plan.response_plan.human_reception_plan, a.resolver,
+                          ))
+            for wrong in ("変化", "その言葉"):
+                changed = _tamper_reception(a.surface.text, "気持ち", wrong)
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=changed.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(inverse.passed)
+                self.assertTrue(any("replay_mismatch" in code for code in inverse.failure_codes))
+                self.assertTrue(any("target_duty_missing" in code for code in inverse.failure_codes))
+        self.assertGreater(checked, 0)
+
+    def test_result_body_cannot_discharge_change_duty_with_feeling(self):
+        rows, _ = load_validated_batch(_BATCH_PATH, _MANIFEST_PATH)
+        for row in rows:
+            inputs = _compile_inputs(row)
+            nuclei = {n.nucleus_id: n for n in inputs.grounded_plan.nuclei}
+            moves = inputs.grounded_plan.response_plan.human_reception_plan.moves
+            if not any(m.reception_act == "recognize_lived_change" and any(
+                "operator:result" in nuclei[nid].semantic_frame.attribute_codes
+                and nuclei[nid].semantic_frame.predicate_kind == "feeling"
+                for nid in m.target_nucleus_ids
+            ) for m in moves):
+                continue
+            a = _full_surface_artifacts(row)
+            self.assertTrue(a.gate.passed)
+            self.assertTrue(a.inverse.passed)
+            self.assertIn("変化", _reception_text(a.surface.text))
+            changed = _tamper_reception(a.surface.text, "変化", "気持ち")
+            inverse = evaluate_grounded_surface_body_inverse(
+                body=changed.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+            )
+            self.assertFalse(inverse.passed)
+            self.assertTrue(any("target_duty_missing" in code for code in inverse.failure_codes))
+            self.assertTrue(any("replay_mismatch" in code for code in inverse.failure_codes))
+            break
+        else:
+            self.fail("source-bound result representative missing")
+
+
 class CMEESameNucleusActionStatusTest(unittest.TestCase):
     def test_finite_plan_preserves_embedded_desire_and_negation(self):
         for text in (

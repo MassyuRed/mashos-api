@@ -173,6 +173,7 @@ _BODY_RECEPTION_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ("target_effort", re.compile(r"実際(?:に|の).{0,20}行動|手間")),
     ("target_intention", re.compile(r"願い|思い|意図|これからの行動|その向き")),
     ("target_change", re.compile(r"変化|進み|一歩")),
+    ("target_feeling", re.compile(r"気持ち")),
     ("target_help", re.compile(r"助け|相談|面談|一歩")),
     ("target_self_evaluation", re.compile(r"自己評価|言葉だけであなた自身が決ま")),
     ("target_words", re.compile(r"その言葉|置かれた言葉")),

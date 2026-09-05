@@ -29,6 +29,7 @@ from emlis_ai_grounded_observation_plan import (
     GroundedSemanticNucleus,
     source_proven_performed_action_status,
     source_proven_future_action_status,
+    is_grounded_positive_feeling,
     _FEELING_RE,
     _direct_finite_carrier_shape,
     _source_finite_without_postposed_focus,
@@ -2051,6 +2052,14 @@ def _retained_future_intention_target(
     )
 
 
+def _positive_feeling_target(nuclei: Sequence[GroundedSemanticNucleus]) -> bool:
+    return bool(nuclei) and all(is_grounded_positive_feeling(n) for n in nuclei)
+
+
+def _positive_feeling_responsibility(text: str) -> bool:
+    return bool(re.search(r"気持ち.{0,80}感じ", text))
+
+
 def _retained_future_intention_responsibility(text: str) -> bool:
     # The source-bound future target and this act's protection both remain
     # mandatory. This grammar is admitted only with final-plan proof.
@@ -2251,7 +2260,9 @@ def resolve_grounded_reception_referent(
         else:
             kind, text = "retained_intention", "大切にしたいもの"
     elif reception_act == "recognize_lived_change":
-        if final_source_fidelity:
+        if final_source_fidelity and _positive_feeling_target(target_nuclei):
+            kind, text = "positive_feeling", "その気持ち"
+        elif final_source_fidelity:
             kind, text = "lived_change", "その変化"
         elif "action" in kinds and (
             "change" in kinds or "operator:change" in attributes
@@ -3254,9 +3265,18 @@ def validate_grounded_human_reception_surface(
                     for nucleus_id in move.target_nucleus_ids)
             and _retained_future_intention_target(future_targets)
         )
+        positive_feeling = (
+            act == "recognize_lived_change"
+            and all(nucleus_id in final_nuclei
+                    for move in active_moves if move.reception_act == act
+                    for nucleus_id in move.target_nucleus_ids)
+            and _positive_feeling_target(future_targets)
+        )
         visible = (
             _retained_future_intention_responsibility(surface.text)
             if future_intention else
+            _positive_feeling_responsibility(surface.text)
+            if positive_feeling else
             bool(_ACT_OWNED_RESPONSIBILITY_RE[act].search(surface.text))
         )
         visible_responsibilities.append(visible)
@@ -4288,6 +4308,8 @@ def _source_grounded_direct_predicate(
         or any(row.startswith("source_claim:pressure.") for row in attributes)
     )
     if kind == "reaction":
+        if is_grounded_positive_feeling(nucleus):
+            return "present_state"
         if (
             predicate == "change"
             or "operator:change" in attributes
@@ -6700,7 +6722,7 @@ def _source_grounded_target_np(
             not profile.quoted_boundary
             and referent_kind in {
                 "self_started_effort", "concrete_effort",
-                "future_action_intention",
+                "future_action_intention", "positive_feeling",
             }
         ):
             content_target = f"{meaning_fragment}という{quantity_modifier}{referent_text}"
@@ -7395,6 +7417,12 @@ def _author_source_grounded_reception_clauses(
                     if move.reception_act == "protect_retained_intention"
                     and referent.kind == "future_action_intention"
                     and _retained_future_intention_target(tuple(
+                        nucleus_index[nucleus_id]
+                        for nucleus_id in move.target_nucleus_ids
+                    )) else _positive_feeling_responsibility(move_sentence)
+                    if move.reception_act == "recognize_lived_change"
+                    and referent.kind == "positive_feeling"
+                    and _positive_feeling_target(tuple(
                         nucleus_index[nucleus_id]
                         for nucleus_id in move.target_nucleus_ids
                     )) else _ACT_OWNED_RESPONSIBILITY_RE[

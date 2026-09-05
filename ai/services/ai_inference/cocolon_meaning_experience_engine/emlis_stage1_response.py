@@ -1918,6 +1918,8 @@ def _direct_shape_v2(
 ) -> tuple[InterpretationKind, SemanticOperator]:
     """Project the v2 node-kind-authoritative direct shape."""
 
+    from emlis_ai_grounded_observation_plan import is_grounded_positive_feeling
+
     kind = _enum_or_text(node.node_kind).lower()
     frame = getattr(meta, "semantic_frame", None)
     predicate = _enum_or_text(getattr(frame, "predicate_kind", "")).lower()
@@ -1950,6 +1952,8 @@ def _direct_shape_v2(
         )
     )
     if kind == "reaction":
+        if is_grounded_positive_feeling(meta):
+            return InterpretationKind.DIRECT_STATE, SemanticOperator.PRESENT_STATE
         if (
             predicate == "change"
             or "operator:change" in attribute_codes

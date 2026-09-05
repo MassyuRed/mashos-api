@@ -6200,6 +6200,34 @@ def _is_reception_performed_action_nucleus(
     )
 
 
+def is_grounded_positive_feeling(nucleus: object) -> bool:
+    """Distinguish a typed feeling from the shared positive lexical cue.
+
+    The legacy positive-change cue also includes feelings. It establishes
+    positive valence, but cannot override an explicit feeling predicate.
+    Explicit change/result evidence keeps its existing interpretation.
+    This reads source semantics before selection and stores no extra flag.
+    """
+
+    if not isinstance(nucleus, GroundedSemanticNucleus):
+        return False
+    frame = nucleus.semantic_frame
+    attributes = set(frame.attribute_codes)
+    return bool(
+        nucleus.kind == "reaction"
+        and any(field in _TEXT_SOURCE_FIELDS for field in nucleus.source_fields)
+        and frame.predicate_kind == "feeling"
+        and frame.modality == "feeling"
+        and frame.polarity == "positive"
+        and "operator:feeling" in attributes
+        and not attributes.intersection({
+            "operator:change", "operator:result",
+            "semantic_role:explicit_result",
+            "semantic_dependency:action_before_change",
+        })
+    )
+
+
 def _is_valued_change_nucleus(nucleus: GroundedSemanticNucleus) -> bool:
     attributes = set(nucleus.semantic_frame.attribute_codes)
     return bool(
@@ -9847,7 +9875,8 @@ def _final_stage1_align_action_status(
         frame = nucleus.semantic_frame
         codes = tuple(frame.attribute_codes)
         if (
-            (nucleus.kind != "action" and "operator:wish" not in codes)
+            (nucleus.kind != "action" and "operator:wish" not in codes
+             and not is_grounded_positive_feeling(nucleus))
             or len(nucleus.source_span_ids) != 1
             or frame.actor != "current_user"
         ):
@@ -9882,6 +9911,24 @@ def _final_stage1_align_action_status(
         # A postposed demonstrative/focus limits the same statement.  Keep
         # it in source and surface; isolate only the finite part for proof.
         finite = _source_finite_without_postposed_focus(finite)
+        if is_grounded_positive_feeling(nucleus):
+            # Positive lexicon entries ending in an actual perfective verb
+            # are change evidence; a feeling stem by itself is not. Prove
+            # the outer finite predicate, not an embedded/quoted match.
+            if (
+                visible is not None
+                and not re.search(r"[?？]", str(span.raw_text))
+                and any(
+                    match.end() == len(finite)
+                    and _EXPLICIT_PERFECTIVE_END_RE.search(match.group(0))
+                    for match in _POSITIVE_CHANGE_RE.finditer(finite)
+                )
+            ):
+                nucleus = replace(nucleus, semantic_frame=replace(
+                    frame, attribute_codes=tuple(_dedupe((*codes, "operator:change"))),
+                ))
+            aligned.append(nucleus)
+            continue
         if nucleus.kind != "action":
             if _final_stage1_wish_is_open(text):
                 attributes = tuple(code for code in codes if not code.startswith(

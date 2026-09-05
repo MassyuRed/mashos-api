@@ -30,6 +30,7 @@ from emlis_ai_grounded_human_reception import (
 from emlis_ai_grounded_observation_plan import (
     FINAL_STAGE1_GROUNDED_PROJECTION_VERSION,
     GroundedObservationPlan,
+    is_grounded_positive_feeling,
     validate_grounded_human_reception_plan,
     validate_grounded_observation_plan,
 )
@@ -2153,6 +2154,18 @@ def evaluate_grounded_surface_body_inverse(
                             for nucleus in target_nuclei
                         ):
                             target_markers = frozenset({"target_intention"})
+                        elif (
+                            final_stage1_plan
+                            and move.reception_act == "recognize_lived_change"
+                            and target_nuclei
+                            and len(target_nuclei) == len(move.target_nucleus_ids)
+                            and all(is_grounded_positive_feeling(nucleus)
+                                    for nucleus in target_nuclei)
+                        ):
+                            # The same source-bound feeling used before
+                            # selection must be visible in the parsed body.
+                            # Change/words markers cannot discharge this duty.
+                            target_markers = frozenset({"target_feeling"})
                         else:
                             target_markers = (
                                 _BODY_INVERSE_RECEPTION_ACT_TARGET_MARKERS.get(

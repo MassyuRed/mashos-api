@@ -6167,6 +6167,8 @@ def _foreground_direct_shape(
 ) -> Tuple[InterpretationKind, SemanticOperator]:
     """Derive the exact current Layer-1 direct shape from source metadata."""
 
+    from emlis_ai_grounded_observation_plan import is_grounded_positive_feeling
+
     kind = _foreground_enum_text(node.node_kind).lower()
     frame = getattr(nucleus, "semantic_frame", None)
     modality = _foreground_enum_text(getattr(frame, "modality", "")).lower()
@@ -6215,6 +6217,8 @@ def _foreground_direct_shape(
             )
         )
         if kind == "reaction":
+            if is_grounded_positive_feeling(nucleus):
+                return InterpretationKind.DIRECT_STATE, SemanticOperator.PRESENT_STATE
             if (
                 predicate == "change"
                 or "operator:change" in attribute_codes

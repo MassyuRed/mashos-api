@@ -5592,3 +5592,18 @@ Human Reception内の責務検証は、既存final Planのtyped target証明が�
 System Contextは今回doctor→prepare実行、doctor18成功／16失敗、prepareは固定toolchain不一致で不成立。stale不使用、原典直接読取。既存runtime lock46依存の版／wheel hash／installed RECORD2277件を復元・照合し、profile／基準ref／tracked current／lock変更0。全体と国家システム、入力保存→Emlis→返却→表示、旧経路・他機能境界を確認し、今回は既存final実装だけに限定。新CMEE本文の保存・履歴接続が完成済みとは扱わない。
 
 次は同じ承認内で、今回の予定修正を保持し、選択対象のsource scopeと主述語・主体・不確かさ・関係分類を既存ownerへ戻して本文と突き合わせる。特に反応と変化を混同する入力、過去の発言／願望、長い行動の既存引数を代表本文で比較してから同じ100へ広げる。新しいproposal／台帳／言い換えbank／第二selector／隠し意味／Gate・parser緩和は作らない。9月12日商品確認準備は、集合の反復と意味分類が未解決のため依然危うい。9月9日の作業時には改善本文と残件・見通しを確認する。日付による自動実行・停止や自動Product Read PASSはない。採用／candidate ready／merge／本番／問い／Layer3は未成立。
+
+
+### 2026-09-05 continuation — 肯定反応と変化の区別を本文へ渡す（実装固定前）
+
+同じ承認済み継続修正として、既存Observation Planのtyped reaction／feeling／positiveを、共用のpositive_change語彙だけで変化へ昇格させない。既存ownerのpure helperが、明示されたchange／result／action-before-change根拠を除外して判定する。新しい属性・意味carrierを保存せず、nucleus、actor、polarity、modality、time、source、relation、受け取りfamily／Moveの選択は変更しない。共用regexと旧V1分類は維持する。
+
+既存V2の選択前direct projection、独立contractsの再導出、Human Receptionの文法projectionは同じtyped区別を参照する。sealed meaningの後から本文側で意味を選び直さない。既存認識actの全targetがこの反応に該当するとき、sole Human Receptionの先行詞を気持ちとして実現し、原文の有限節と既存の関係・相手側を保持する。実際の変化・結果は従来の表現を維持する。positive_changeの共用名称や上流の全分類問題を解消したとは扱わない。
+
+parser／Gateにも限定した変更がある。既存body parserは本文だけから感情対象markerを読み、finalの同act・全target存在・全targetのtyped証明が成立するときだけGateがそのmarkerを必須にする。その場合は従来のchange／words markerを代用品にしない。他対象、mixed／空／不足target、V1／baseは従来条件を維持する。Human Receptionの責務検証も同じPlan証明と感情対象・感じる述語を要求し、Planなしでは新文法を許さない。独立replayの完成本文一致、参照・source・context・why・Move cover、既存閾値と歴史的hash／PASS記録は保持する。検査省略や許容幅の一律拡張ではなく、誤った変化対象義務を正しい対象へ結び直す同一本文修正である。
+
+代表7件のうち3件で根拠のない変化表現を除き、全7件のGate／独立inverseが成立した。最初の代表実行では3件が既存の変化marker義務で停止し、その途中記録は非公開証拠に保持する。これから最終コードの同じ100件、required124、必要回帰、華恋による全100件全文確認を行う。直前候補の結果を新コードの証拠にしない。
+
+全体・国家システム・current file map・既存保存入力→Emlis→返却→RN表示と旧経路の境界を確認した。STRUCTURE_MAP_DELTA_NONE：既存owner内の意味投影・文法・検証を修正し、新owner／route／公開schemaを追加しない。production／API／DB／RN／Piece／Analysisの変更0、新CMEE本文保存・履歴接続の完成は未主張。System Contextはfresh doctor18成功／16失敗、prepare実行・固定toolchain不一致で不成立。stale不使用・原典直読、profile／基準ref／lock／tracked current変更0。9月12日商品確認準備、ready／採用／merge／本番／問い／Layer3は未成立。
+
+実際に完了した肯定変化については、既存final source alignerで同じ反応の原文範囲を確認する。既存positive lexiconの一致自体が有限の完了動詞で、引用・疑問・条件・後続hostの内側ではなく外側述語の末尾を占める場合だけ、既存operator:changeを保持・明示する。単なる肯定感情のstemはこの証明にならない。選択感情labelだけでは新しい反応判定を成立させない。先行代表7件／追加3検査の成功後、この実変化境界を補った。最終固定コードの回帰・同じ100件で再確認する。V1分類と受取義務は従来通りであり、共通parserのmarker診断だけには新語の検出が現れ得る。
