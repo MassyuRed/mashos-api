@@ -30,6 +30,7 @@ from emlis_ai_grounded_observation_plan import (
     source_proven_future_action_status,
     _FEELING_RE,
     _direct_finite_carrier_shape,
+    _source_finite_without_postposed_focus,
 )
 
 
@@ -3920,7 +3921,10 @@ def _bounded_source_grounded_lexemes(
     """Decompose one owned source clause; never cut a Japanese word."""
 
     clause = _source_grounded_clause_candidate(nucleus, resolver)
-    clean = clause.strip(" 　、,…")
+    # Ellipsis is part of an unfinished source, not lexical whitespace.
+    # The head parser may inspect its finite/lexical part, but the argument
+    # carried into both forward realization and replay keeps the ellipsis.
+    clean = clause.strip(" 　、,")
     quoted_lexical_head = ""
     quote_chars = tuple(
         character for character in clean if character in "「」『』"
@@ -6359,7 +6363,9 @@ def _source_grounded_temporal_aspect_realization(
     if realization.reference_mode == "ANAPHORIC":
         return "ANTECEDENT", "ANTECEDENT", "", ""
 
-    clean_head = semantic_head.strip(" \u3000、,。．.")
+    clean_head = _source_finite_without_postposed_focus(
+        semantic_head.strip(" \u3000、,。．.")
+    )
     lexical_time = any(
         marker in clean_head
         for marker in _SOURCE_GROUNDED_TEMPORAL_LEXICAL_MARKERS[

@@ -9793,6 +9793,37 @@ def _final_stage1_wish_is_open(text: str) -> bool:
     return bool(governed_question or epistemic_question)
 
 
+def _source_finite_without_postposed_focus(text: str) -> str:
+    """Inspect the same finite clause before an existing postposed focus.
+
+    This is a morphology view only: source spans, arguments and body text
+    retain the demonstrative and its limiting particle.
+    """
+    return re.sub(
+        r"[、,]\s*(?:それ|これ|あれ)" + _OWNER_FOCUS_PARTICLE_SOURCE + r"$",
+        "", text,
+    ).strip()
+
+
+def _final_stage1_continuation_is_desired(text: str) -> bool:
+    """A finite desire to continue does not assert ongoing performance."""
+    if _top_level_text(text) != text:
+        return False
+    matches = tuple(_CONTINUATION_RE.finditer(text))
+    if len(matches) != 1:
+        return False
+    operator = matches[0]
+    # Reuse the registered continuation stems and their conjugation classes.
+    # Only the direct affirmative desiderative is resolved here. A reporting
+    # host, prior continuation, quoted clause or past wish stays unresolved.
+    carrier = text[operator.end():]
+    if operator.group().endswith("続け"):
+        return re.fullmatch(r"たい(?:です)?", carrier) is not None
+    if operator.group().endswith("繰り返"):
+        return re.fullmatch(r"したい(?:です)?", carrier) is not None
+    return False
+
+
 def _final_stage1_align_action_status(
     nuclei: Sequence[GroundedSemanticNucleus],
     evidence_spans: Sequence[EvidenceSpan],
@@ -9845,10 +9876,7 @@ def _final_stage1_align_action_status(
         finite = _strip_bounded_operator_prefix((visible or "").strip())
         # A postposed demonstrative/focus limits the same statement.  Keep
         # it in source and surface; isolate only the finite part for proof.
-        finite = re.sub(
-            r"[、,]\s*(?:それ|これ|あれ)" + _OWNER_FOCUS_PARTICLE_SOURCE + r"$",
-            "", finite,
-        ).strip()
+        finite = _source_finite_without_postposed_focus(finite)
         if nucleus.kind != "action":
             if _final_stage1_wish_is_open(text):
                 attributes = tuple(code for code in codes if not code.startswith(
@@ -9856,6 +9884,18 @@ def _final_stage1_align_action_status(
                 )) + ("time_scope:current_input", "operator:uncertainty")
                 nucleus = replace(nucleus, semantic_frame=replace(
                     frame, modality="uncertain", time_scope="current_input",
+                    attribute_codes=tuple(_dedupe(attributes)),
+                ))
+            elif (
+                frame.modality == "wish"
+                and frame.time_scope == "continuing"
+                and _final_stage1_continuation_is_desired(text)
+            ):
+                attributes = tuple(code for code in codes if not code.startswith(
+                    "time_scope:"
+                )) + ("time_scope:current_input",)
+                nucleus = replace(nucleus, semantic_frame=replace(
+                    frame, time_scope="current_input",
                     attribute_codes=tuple(_dedupe(attributes)),
                 ))
             aligned.append(nucleus)

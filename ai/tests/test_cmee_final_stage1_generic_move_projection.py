@@ -302,6 +302,94 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
 
 
 class CMEESameNucleusActionStatusTest(unittest.TestCase):
+    def test_desired_continuation_keeps_wish_without_ongoing_assertion(self):
+        for text, resolved in (
+            ("作業を続けたい", True),
+            ("練習を続けたいです", True),
+            ("同じ確認を繰り返したい", True),
+            ("ずっと作業を続けたい", False),
+            ("作業を続けたいと思っている", False),
+            ("作業を続けていた", False),
+            ("作業を続けたかった", False),
+            ("「作業を続けたい」と聞いた", False),
+            ("作業を続けていて、休みたい", False),
+        ):
+            with self.subTest(text=text):
+                source, action = self._action(text)
+                before = replace(action, kind="wish", semantic_frame=replace(
+                    action.semantic_frame, predicate_kind="wish", modality="wish",
+                    time_scope="continuing", attribute_codes=(
+                        "operator:wish", "operator:continuation", "time_scope:continuing",
+                    ),
+                ))
+                after, = observation_plan_owner._final_stage1_align_action_status(
+                    (before,), source.evidence_spans,
+                )
+                self.assertEqual(after.semantic_frame.time_scope,
+                                 "current_input" if resolved else "continuing")
+                self.assertEqual(after.semantic_frame.modality, "wish")
+                self.assertEqual(replace(after, semantic_frame=before.semantic_frame), before)
+
+    def test_visible_wish_and_postposed_focus_do_not_add_time(self):
+        rows, _ = load_validated_batch(_BATCH_PATH, _MANIFEST_PATH)
+        checked = {"desire": 0, "postposed": 0}
+        for row in rows:
+            memo = row["input"]["thought_text"].rstrip("。 ")
+            action = row["input"]["action_text"].rstrip("。 ")
+            kind = (
+                "desire" if memo.endswith("続けたい")
+                else "postposed" if action.endswith(("、それだけ", "、これだけ", "、あれだけ"))
+                else ""
+            )
+            if not kind:
+                continue
+            artifacts = _full_surface_artifacts(row)
+            follow = _reception_text(artifacts.surface.text)
+            forbidden = "今も、" if kind == "desire" else "これまで、"
+            self.assertTrue(artifacts.inverse.passed)
+            self.assertTrue(artifacts.gate.passed)
+            self.assertNotIn(forbidden, follow)
+            # Inspect an actual explicit body, including the limiting focus;
+            # an anaphoric short input cannot exercise this morphology bug.
+            marker = "続けたい" if kind == "desire" else "それだけ" if "それだけ" in action else "これだけ" if "これだけ" in action else "あれだけ"
+            if marker not in follow:
+                continue
+            checked[kind] += 1
+            changed = _tamper_reception(artifacts.surface.text, follow.strip(), forbidden + follow.strip())
+            inverse = evaluate_grounded_surface_body_inverse(
+                body=changed.encode("utf-8"), plan=artifacts.plan,
+                sentence_plan=artifacts.sentence_plan, resolver=artifacts.resolver,
+                selected_subjective_input=artifacts.selected_subjective_input,
+            )
+            self.assertFalse(inverse.passed)
+        self.assertGreater(checked["desire"], 0)
+        self.assertGreater(checked["postposed"], 0)
+
+    def test_unfinished_source_ellipsis_survives_body_and_inverse(self):
+        rows, _ = load_validated_batch(_BATCH_PATH, _MANIFEST_PATH)
+        checked = 0
+        for row in rows:
+            memo = row["input"]["thought_text"]
+            if not memo.endswith("…"):
+                continue
+            artifacts = _full_surface_artifacts(row)
+            follow = _reception_text(artifacts.surface.text)
+            self.assertTrue(artifacts.inverse.passed)
+            # Only a source phrase actually exposed by the selected Move
+            # supplies the antecedent for this character-preservation test.
+            if memo[:-1] not in follow:
+                continue
+            checked += 1
+            self.assertIn(memo, follow)
+            changed = _tamper_reception(artifacts.surface.text, memo, memo[:-1])
+            inverse = evaluate_grounded_surface_body_inverse(
+                body=changed.encode("utf-8"), plan=artifacts.plan,
+                sentence_plan=artifacts.sentence_plan, resolver=artifacts.resolver,
+                selected_subjective_input=artifacts.selected_subjective_input,
+            )
+            self.assertFalse(inverse.passed)
+        self.assertGreater(checked, 0)
+
     def test_open_desire_scope_does_not_change_affirmed_desire(self):
         for source, expected in (
             ("何を選びたいのかも決められず、迷っている気がする", True),
