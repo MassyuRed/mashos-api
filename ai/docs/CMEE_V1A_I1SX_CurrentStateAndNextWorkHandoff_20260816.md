@@ -5456,3 +5456,20 @@ Focused evidence before final freezing: the shared safety/contract suite passed2
 An additional default-owner test passes its public signature/disabled-owner assertions but fails its historical whole-output hash at both admission and current source. The first collection attempts lacked the helper import path and are retained as environment errors, not runtime failures; a proper detached admission worktree was required by the existing real Git-status check. Historical hashes and receipts remain unchanged. The source comparison-role deficit underlying the two original frozen-observation failures remains unresolved; a broad self-evaluation regex or stronger counterevidence role was not adopted without source proof.
 
 Final current same100 generation, full related verification and root full100 reading are pending after these shared grammar changes. Candidate12 remains valid only for the preceding frozen runtime. Product Read readiness, candidate readiness, adoption, merge, production and Layer3 remain false/0.
+
+
+## 2026-09-05 — 承認済み接続・共有文法修正後の検証 checkpoint（未完了）
+
+承認 `FRESH_MASH_LEVEL3_CMEE_STAGE1_SELECTED_SUBJECTIVE_RECEPTION_FORWARD_INVERSE_REQUEST_LOCAL_CONTRACT_20260905` の同じ作業を継続中。実装・runner を固定した runtime remote `245e3254d4ee1310b94723100103596dc1a10699`（local `f5a0a469268e5366f9928c0065cc1a3e22ae4f01`、全 tree 同一）に対して再生成・再検証した。以後この checkpoint 保存は文書のみで、実装の検証証拠を古いコードから流用していない。
+
+- 同じ100件・入力順・評価軸・分母で直接生成100/100、Move／expression／binding各124。外側73 GENERATED／27 UNAVAILABLE。開始時候補から観測本文の変更0、フォロー本文の変更7、利用可否の変更0。今回の共有文法修正直前との100件全フィールド比較は同一。runner identityを確認済み。
+- 華恋自身が変更後の原入力全フィールド・観測・フォロー100件を全文再読し、集合としての定型化と重複も確認した。判定は **NOT_CLEAR**。長い復唱、定型的な締め、関係説明と観測の重複、上流の意図・主体・時制・不確かさの扱いが残る。
+- 必要な187件を今回の固定コードで全件実行：元の184件は180 PASS／4 FAIL、追加の契約3件は3 PASS。合計183 PASS／4 FAIL。開始時7失敗のうち自己否定2件と時間導入句の誤分類1件が成功へ移った。元184件で新しい失敗testは0。ただし集合testは以前の個別Gate停止を越えた先の本文重複で失敗しており、同じ失敗名を同じ原因とは扱わない。
+- 残4件：同じ観測固定値との不一致2件、過去のdated receiptと現コードの不一致1件、集合フォロー重複1件。観測不一致には既存の比較・意味分類の問題があり、単なる古い期待値として消していない。歴史的hash・PASS記録を変更していない。
+- 途中停止の後ろも別途実行：exact8／same16／unseen12の全36ケース、post-hash96検査。追加診断は元testのFAILをPASSへ置き換えない。集合の未成立を維持する。
+- 共有影響の追加164件は157 PASS／7 FAIL。GA2の6件は開始時コードでも同じ6件が失敗、既存default-owner出力固定値1件もGit管理された開始時worktreeで失敗を再現。現コードの出力hashが開始時と同じとは主張しない。共有修正の境界検査は成功。追加範囲を元184件の分母に混ぜない。
+- 利用不可27件は今回の入力・nuclei・理由・本文を直前候補と照合済み。既存整理は能力不足18、時制／不確かさ等の根拠未成立8、composer内訳未解決1。全停止を維持し、無条件生成へ目標変更しない。
+
+次の再開位置は、既存source-boundな文法単位と先行詞の根拠を保ちながら、選択済みの受け取りを復唱・定型句に頼らず本文へ届ける修正。既存IRで目的語や修飾を省略できる根拠が不足している箇所を先に確認する。新しい意味選択担当、言い換えbank、引用の装飾による重複回避、検査緩和にはしない。代表本文を先に確認し、修正後は再び同じ100件と必要回帰・全文確認へ進める。同じ承認の再要求は不要。
+
+System Contextはdoctor不成立（固定toolchain不一致）、prepare未実行、stale不使用、原典直接確認を継続。profile／ref／lock変更なし。9月12日の商品確認準備は体系的な文章・意味分類の残件により危うく、9月9日の作業時に改善本文と残件を確認する。日付による自動実行・停止なし。Product Read PASS／candidate ready／採用／merge／本番／Layer3は未成立。private本文・個別ケース・digest・locator公開0。
