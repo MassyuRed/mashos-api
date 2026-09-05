@@ -374,6 +374,74 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
 
 
 class CMEESameNucleusActionStatusTest(unittest.TestCase):
+    def test_continuation_inside_desired_object_keeps_source_scope(self):
+        for text, resolved in (
+            ("待ち続ける時間を短くしたい", True),
+            ("働き続ける周期を長くしたいです", True),
+            ("待ち続けた時間を短くしたい", False),
+            ("待ち続けていた期間を短くしたい", False),
+            ("待ち続ける時間を短くしたかった", False),
+            ("待ち続ける時間を短くしたいと思っていた", False),
+            ("待ち続ける時間を短くしたいと言った", False),
+            ("待ち続ける時間を短くしたいかもしれない", False),
+            ("待ち続ける時間を短くしたいわけではない", False),
+            ("ずっと待ち続ける時間を短くしたい", False),
+            ("待ち続ける時間を短くしたいと思い続けている", False),
+            ("「待ち続ける時間を短くしたい」と聞いた", False),
+        ):
+            with self.subTest(text=text):
+                source, action = self._action(text)
+                before = replace(action, kind="wish", semantic_frame=replace(
+                    action.semantic_frame, predicate_kind="wish", modality="wish",
+                    time_scope="continuing", attribute_codes=(
+                        "operator:wish", "operator:continuation", "time_scope:continuing",
+                    ),
+                ))
+                after, = observation_plan_owner._final_stage1_align_action_status(
+                    (before,), source.evidence_spans,
+                )
+                expected_frame = replace(
+                    before.semantic_frame, time_scope="current_input",
+                    attribute_codes=(
+                        "operator:wish", "operator:continuation", "time_scope:current_input",
+                    ),
+                ) if resolved else before.semantic_frame
+                self.assertEqual(after, replace(before, semantic_frame=expected_frame))
+        # Desire uncertainty has its own earlier correction; it is not an
+        # affirmative current desire admitted by the continuation grammar.
+        self.assertFalse(observation_plan_owner._final_stage1_continuation_is_desired(
+            "待ち続ける時間を短くしたいのか分からない",
+        ))
+
+    def test_desired_object_time_correction_reaches_full_body_and_inverse(self):
+        rows, _ = load_validated_batch(_BATCH_PATH, _MANIFEST_PATH)
+        checked = 0
+        for row in rows:
+            memo = next((part for part in row["input"]["thought_text"].split("。")
+                         if observation_plan_owner._final_stage1_continuation_is_desired(part)
+                         and not part.endswith(("続けたい", "続けたいです", "繰り返したい"))), "")
+            if not memo:
+                continue
+            checked += 1
+            artifacts = _full_surface_artifacts(row)
+            self.assertEqual(artifacts.sentence_plan.recovery_stage, "full")
+            self.assertTrue(artifacts.gate.passed)
+            self.assertTrue(artifacts.inverse.passed)
+            follow = _reception_text(artifacts.surface.text)
+            self.assertIn(memo, follow)
+            self.assertNotIn("今も、", follow)
+            changed = _tamper_reception(
+                artifacts.surface.text, follow.strip(), "今も、" + follow.strip(),
+            )
+            inverse = evaluate_grounded_surface_body_inverse(
+                body=changed.encode("utf-8"), plan=artifacts.plan,
+                sentence_plan=artifacts.sentence_plan, resolver=artifacts.resolver,
+                selected_subjective_input=artifacts.selected_subjective_input,
+            )
+            self.assertFalse(inverse.passed)
+            self.assertTrue(any("replay_mismatch" in code for code in inverse.failure_codes))
+        self.assertGreater(checked, 0)
+
     def test_desired_continuation_keeps_wish_without_ongoing_assertion(self):
         for text, resolved in (
             ("作業を続けたい", True),

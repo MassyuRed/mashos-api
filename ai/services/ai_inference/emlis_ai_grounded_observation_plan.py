@@ -9814,11 +9814,18 @@ def _final_stage1_continuation_is_desired(text: str) -> bool:
         return False
     operator = matches[0]
     # Reuse the registered continuation stems and their conjugation classes.
-    # Only the direct affirmative desiderative is resolved here. A reporting
-    # host, prior continuation, quoted clause or past wish stays unresolved.
+    # A reporting host, prior continuation, quoted clause or past wish stays
+    # unresolved. A continuation verb may also modify the object of a finite
+    # change wish: continuing that action is not the asserted main predicate.
     carrier = text[operator.end():]
     if operator.group().endswith("続け"):
-        return re.fullmatch(r"たい(?:です)?", carrier) is not None
+        return bool(
+            re.fullmatch(r"たい(?:です)?", carrier)
+            or re.fullmatch(
+                r"る[一-龯々ァ-ヶー]+を[一-龯々ぁ-ゖ]+くしたい(?:です)?",
+                carrier,
+            )
+        )
     if operator.group().endswith("繰り返"):
         return re.fullmatch(r"したい(?:です)?", carrier) is not None
     return False

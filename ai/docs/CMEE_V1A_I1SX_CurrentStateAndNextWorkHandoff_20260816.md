@@ -5525,3 +5525,14 @@ System Contextはdoctor不成立（固定toolchain不一致）、prepare未実�
 次の再開位置は、改善した7件と未改善の行動評価を同じ原入力へ戻して比較し、既存のsource-boundな項・述語・先行詞のどこまでを省略／統合できるか確認する部分。Human Reception内部の実現不足と、既存の意味選択／source scopeの狭さを区別し、各既存ownerへ戻して扱う。別の意味選択担当、言い換えbank、隠し属性、検査緩和を導入しない。代表本文を先に確認し、コード変更後は同じ100件・必要回帰・華恋全文確認を新しく行う。同じ承認範囲の継続修正に再承認は不要。
 
 作業開始時doctorは18 PASS／16 FAIL（固定toolchain不一致）。prepare未実行、stale不使用、原典直接確認、profile／ref／lock変更0を維持した。9月12日までの商品確認準備は、集合の定型化と上流scope残件により引き続き危うい。9月9日の作業時には改善本文・100件残件・見通しを確認する。日付による自動実行・停止はしない。Product Read PASS、採用、candidate ready、merge、本番、問い／Layer3は未成立。private本文・個別ケース・digest・locatorの公開0。この結果保存の差分は文書のみで、runtime／test／runnerの検証対象bytesは変えない。
+
+
+### 2026-09-05 continuation — 願望目的語内の継続と主述語の状態補正（検証途中）
+
+同じ承認範囲でcandidate15から継続。既存final-only Observation Plan ownerで、継続動詞が非過去連体形として目的語名詞を修飾し、外側が直接の変化願望で閉じる文法だけを解決する。目的語内の継続を願望全体の継続と扱っていたtime_scopeをcurrent_inputへ戻す。nucleus identity／kind／modality／source scalar／continuation operatorを維持し、graph・意味選択の固定前に同じownerで補正する。過去・進行の連体形、reporting host、引用、不確かさ、複数continuationを一般化しない。productionのbase builder、Human Reception、Gate、body parser、historical hash／receiptは変更しない。
+
+追加2検査は、境界文法と同一nucleusの保持、canonical入力のfull本文、独立逆検証、不要な継続句を再挿入した本文の拒否を確認して成功した。初回の新規検査案2件は、既存の願望不確かさ補正を誤って不変と期待した点と、複数文全体を単一source節として検査入力に選んだ点で失敗した。製品コードや既存検査を緩和せず、新規検査の対象を修正した。
+
+Human Receptionで完全な行動節を名詞化し、述語目的語として再参照する案も代表例で試したが、full本文の既存対象marker検査を通らずanaphoric recoveryへ移るため採用しなかった。分類名を省くだけの方法は、sourceと既存可視義務を同時に満たす改善とは扱わない。試案のruntime差分は取り消し、診断はprivateに保持する。
+
+現在は実装／追加検査／current runner identityを固定する保存点。同じ100件、必要回帰、華恋の変更後全文確認はこのコードに対してこれから実行する。candidate15の73/27・189/4・NOT_CLEARを新しいコードの成功証拠には流用しない。System Contextは今回doctor18 PASS／16 FAIL、prepareも実行して固定toolchain不一致で不成立。stale不使用・原典直接確認、profile／基準ref／lock／tracked current変更0。Product Read／candidate ready／採用／merge／本番／問い／Layer3は未成立。
