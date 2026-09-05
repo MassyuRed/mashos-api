@@ -15,6 +15,8 @@ from typing import Any
 
 import pytest
 
+import emlis_ai_grounded_observation_plan as observation_plan_owner
+
 from emlis_ai_complete_focus_selector import build_complete_coverage_plan
 from emlis_ai_complete_material_service import CompleteMaterialBundle, CompleteMaterialUnit
 from emlis_ai_current_input_bundle import normalize_emlis_current_input
@@ -160,6 +162,137 @@ def test_i2_i4_known_inputs_build_valid_canonical_plan_and_bound_surface(case_id
         result.as_body_free_meta(),
         (str(normalized.get("memo") or ""), str(normalized.get("memo_action") or "")),
     )
+
+
+@pytest.mark.parametrize("time_head", ("朝", "昼", "夜", "今朝", "午後", "夕方"))
+@pytest.mark.parametrize("prefix", ("", "記録を読み返した。"))
+def test_i2_concessive_time_intro_uses_original_source_position(
+    time_head: str, prefix: str,
+) -> None:
+    normalized, spans, _, plan = _build({
+        "memo": f"{prefix}{time_head}になっても落ち着かない。",
+    })
+    target = next(span for span in spans if span.raw_text.startswith(time_head))
+    operators = set(observation_plan_owner._operator_codes_for_span(
+        target, normalized_input=normalized,
+    ))
+    assert "operator:change" not in operators
+    assert "operator:positive_change" not in operators
+    assert {"operator:feeling", "operator:negation"} <= operators
+    nucleus = next(item for item in _text_nuclei(plan) if target.span_id in item.source_span_ids)
+    assert nucleus.kind == "reaction"
+    assert "operator:change" not in nucleus.semantic_frame.attribute_codes
+    assert "semantic_role:current_change" not in nucleus.semantic_frame.attribute_codes
+    # A fragment alone cannot prove the owner that appeared before a split.
+    assert "operator:change" in observation_plan_owner._operator_codes_for_span(target)
+
+
+@pytest.mark.parametrize("ending", ("見るようになった", "見るようになっている"))
+def test_i2_time_intro_keeps_later_actual_change_and_progressive(ending: str) -> None:
+    # The content tail is from the existing public noun-replacement test.
+    _, _, _, plan = _build({"memo": f"昼になっても、建物の形も{ending}。"})
+    nucleus = _text_nuclei(plan)[0]
+    assert nucleus.kind == "change"
+    assert "operator:change" in nucleus.semantic_frame.attribute_codes
+    assert "semantic_role:current_change" in nucleus.semantic_frame.attribute_codes
+
+
+def test_i2_time_intro_keeps_later_negated_change() -> None:
+    _, _, _, plan = _build({"memo": "昼になっても、落ち着かなくなっている。"})
+    nucleus = _text_nuclei(plan)[0]
+    assert nucleus.kind == "change"
+    assert {
+        "operator:change", "operator:negation", "operator:feeling",
+    } <= set(nucleus.semantic_frame.attribute_codes)
+    assert nucleus.semantic_frame.polarity == "negative"
+
+
+@pytest.mark.parametrize("memo, predicate", (
+    ("昨日になった。", "昨日になった"),
+    ("昼になっている。", "昼になっている"),
+    ("徹夜になった。", "徹夜になった"),
+    ("徹夜になっている。", "徹夜になっている"),
+    ("徹夜になっても落ち着かない。", "徹夜になっても"),
+    ("休みが明日になった。", "明日になった"),
+    ("開始時刻が午後になった。", "午後になった"),
+    ("休みが 明日になっても落ち着かない。", "明日になっても"),
+    ("開始時刻が、午後になっても落ち着かない。", "午後になっても"),
+    (
+        "開始時刻が、午後になっても落ち着かない"
+        + "確認のために記録を読み返している" * 4 + "。",
+        "午後になっても",
+    ),
+))
+def test_i2_schedule_value_change_keeps_source_anchors_across_ledger_splits(
+    memo: str, predicate: str,
+) -> None:
+    normalized, spans, resolver, plan = _build({"memo": memo})
+    memo_spans = tuple(span for span in spans if span.source_field == "memo")
+    starts = tuple(span.start_index for span in memo_spans)
+    assert starts == tuple(sorted(starts))
+    for span in memo_spans:
+        assert normalized["memo"][span.start_index:span.end_index] == span.raw_text
+    value_span_ids = {
+        span.span_id for span in memo_spans if predicate in span.raw_text
+    }
+    assert value_span_ids
+    value_nuclei = tuple(
+        nucleus for nucleus in _text_nuclei(plan)
+        if value_span_ids.intersection(nucleus.source_span_ids)
+    )
+    assert value_nuclei
+    assert all(
+        nucleus.kind == "change"
+        and "operator:change" in nucleus.semantic_frame.attribute_codes
+        and "semantic_role:current_change" in nucleus.semantic_frame.attribute_codes
+        for nucleus in value_nuclei
+    )
+    for nucleus in value_nuclei:
+        anchor_starts = tuple(
+            span.start_index for span in resolver.resolve_many(nucleus.source_span_ids)
+            if span.source_field == "memo"
+        )
+        assert anchor_starts == tuple(sorted(anchor_starts))
+    if len(memo.removesuffix("。")) > 72:
+        # Exercise the risk: the value really starts a different Ledger span.
+        value_span = next(span for span in memo_spans if span.span_id in value_span_ids)
+        assert value_span.raw_text.startswith(predicate)
+        assert any(span.end_index < value_span.start_index for span in memo_spans)
+
+
+def test_i2_time_introduction_cannot_use_foreign_or_quoted_context() -> None:
+    normalized, spans, _, _ = _build({"memo": "昼になっても落ち着かない。"})
+    span = next(item for item in spans if item.source_field == "memo")
+    original = observation_plan_owner._operator_codes_for_span(span)
+    assert "operator:change" in original
+    assert observation_plan_owner._operator_codes_for_span(
+        span, normalized_input={"memo": "開始時刻が、" + normalized["memo"]},
+    ) == original
+    quoted_input, quoted_spans, _, _ = _build({
+        "memo": "「昼になっても落ち着かない」と書いた。",
+    })
+    quoted_targets = tuple(item for item in quoted_spans
+                           if "昼になっても" in item.raw_text)
+    assert quoted_targets
+    for quoted_span in quoted_targets:
+        assert observation_plan_owner._operator_codes_for_span(
+            quoted_span, normalized_input=quoted_input,
+        ) == observation_plan_owner._operator_codes_for_span(quoted_span)
+
+
+@pytest.mark.parametrize("memo", (
+    "昼になっても落ち着かない。",
+    "昼になっても落ち着かないけれど、建物の形も見たい。",
+))
+def test_i2_final_projection_does_not_restore_time_only_change(memo: str) -> None:
+    normalized, spans, resolver, _ = _build({"memo": memo})
+    final = observation_plan_owner.build_final_stage1_grounded_observation_plan(
+        normalized, evidence_spans=spans,
+    )
+    assert validate_grounded_observation_plan(final, resolver) == ()
+    assert not any(item.kind == "change" for item in final.nuclei)
+    assert all("operator:change" not in item.semantic_frame.attribute_codes
+               for item in final.nuclei)
 
 
 def test_i2_event_noun_replacement_preserves_structure_family() -> None:

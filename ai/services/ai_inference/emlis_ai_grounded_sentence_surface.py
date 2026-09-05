@@ -16,11 +16,13 @@ collapsing layered or bounded reception to a minimal surface.
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
+import hashlib
 import re
 from typing import Any, Final, Literal
 
 from emlis_ai_evidence_ledger_service import EvidenceSpanResolver
 from emlis_ai_grounded_observation_plan import (
+    FINAL_STAGE1_GROUNDED_PROJECTION_VERSION,
     GROUND_OBSERVATION_PLAN_SCHEMA_VERSION,
     GroundedHumanReceptionPlan,
     GroundedObservationPlan,
@@ -31,10 +33,16 @@ from emlis_ai_grounded_observation_plan import (
     validate_grounded_human_reception_plan,
 )
 from emlis_ai_grounded_human_reception import (
+    SelectedSubjectiveReceptionInputV1,
+    GroundedHumanReceptionSurface,
     GroundedReceptionClausePlan,
     GroundedHumanReceptionSurfaceError,
+    ReceptionVisibleSegmentBindingV1,
     build_grounded_reception_clause_plans,
+    replay_source_grounded_human_reception_from_plan,
     realize_grounded_human_reception,
+    reception_action_is_future_intention,
+    reception_action_is_performed,
     reception_active_acts,
     reception_active_moves,
     reception_effective_reference_mode,
@@ -53,6 +61,9 @@ from emlis_ai_safety_triage import (
 GROUND_SENTENCE_PLAN_SCHEMA_VERSION: Final = "cocolon.emlis.grounded_sentence_plan.rr4.v2"
 GROUND_SURFACE_RESULT_SCHEMA_VERSION: Final = "cocolon.emlis.grounded_surface.i4.v1"
 GROUND_SURFACE_GENERATION_PATH: Final = "grounded_sentence_surface_canonical_v1"
+GROUND_BODY_ONLY_WITNESS_SCHEMA_VERSION: Final = (
+    "cocolon.emlis.grounded_surface.body_only_witness.v1"
+)
 DIRECTIONAL_GROUNDED_RELATION_TYPES: Final = frozenset(
     {
         "temporal_before_after",
@@ -127,6 +138,7 @@ GROUND_RECOVERY_STAGES: Final[tuple[RecoveryStage, ...]] = (
 )
 OBSERVATION_SECTION_LABEL: Final = "見えたこと："
 RECEPTION_SECTION_LABEL: Final = "Emlisから："
+_JA_SENTENCE_END: Final = "。"
 _EVIDENCE_ID_RE: Final = re.compile(r"^s[1-9][0-9]*$")
 _SPACE_RE: Final = re.compile(r"\s+")
 _LEADING_CONNECTOR_RE: Final = re.compile(
@@ -135,8 +147,52 @@ _LEADING_CONNECTOR_RE: Final = re.compile(
     r"と考えて(?:いたけど|しまって)|とか|という)[、,\s]*"
 )
 _QUESTION_RE: Final = re.compile(r"[?？]")
+_BODY_QUOTE_RE: Final = re.compile(r"「([^「」]*)」")
 _RECEPTION_SENTENCE_END_RE: Final = re.compile(r"[。！？!?]+")
 _RECEPTION_QUOTE_RE: Final = re.compile(r"「([^」]*)」")
+_BODY_RELATION_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
+    ("from_to", re.compile(r"から.{0,160}(?:へ|に)")),
+    ("coexistence", re.compile(r"一方で|同時に|重なり|異なる向き|並んで|両方|ともに|中にも|中でも")),
+    ("link", re.compile(r"つなが|表れ|生まれ|結びつ")),
+    ("counterdirection", re.compile(r"同意していない|終わらない|それでも|けれど")),
+    ("change", re.compile(r"変化|動いて|進み|向き")),
+)
+_BODY_UNCERTAINTY_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
+    ("felt_uncertainty", re.compile(r"気がする|感じる")),
+    ("provisional", re.compile(r"と思う|に見え|かもしれ|可能性")),
+    ("fact_boundary", re.compile(r"確定した事実ではありません|事実とは限りません")),
+    ("bounded_scope", re.compile(r"言える範囲|決めつけ|分かりません")),
+)
+_BODY_RECEPTION_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
+    ("emlis_voice", re.compile(r"Emlis")),
+    ("receive", re.compile(r"受け止め|大切に思|大切にした|大切にしたい|尊重")),
+    ("felt_response", re.compile(r"感じます|感じて|思います|見過ごしたく|流したく")),
+    ("protect", re.compile(r"見失わ|終わらない|決まるとは思え|消さず|残しておきたい|残したい|なかったことにしたくない")),
+    ("attention", re.compile(r"特に印象|印象に残|見過ご|目(?:が|に)留ま")),
+    ("target_burden", re.compile(r"しんどさ|苦しさ|つらさ|負荷|自己評価")),
+    ("target_effort", re.compile(r"実際(?:に|の).{0,20}行動|手間")),
+    ("target_intention", re.compile(r"願い|思い|意図|これからの行動|その向き")),
+    ("target_change", re.compile(r"変化|進み|一歩")),
+    ("target_help", re.compile(r"助け|相談|面談|一歩")),
+    ("target_self_evaluation", re.compile(r"自己評価|言葉だけであなた自身が決ま")),
+    ("target_words", re.compile(r"その言葉|置かれた言葉")),
+)
+_BODY_SEMANTIC_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
+    ("change", re.compile(r"変化|変わ|進み|進歩|増え|減っ|戻っ|できるよう|になった")),
+    ("constraint", re.compile(r"無理|難し|制約|限界|止まっ|できない|出来ない|取れな|遠い|負荷")),
+    ("unknown", re.compile(r"わからな|分からな|不明|確定した事実ではありません|まだ分からない|どうしたら|どうすれば|どうしていい|何をすれば")),
+    ("intention", re.compile(r"(?<![み重])たい|つもり|願い|意図|保ちたい|これからの行動")),
+    ("effort", re.compile(r"(?<!これからの)行動|手間|記録|作業|実際に動")),
+)
+_FINAL_STAGE1_CHANGE_MARKER_RE: Final = re.compile(
+    r"変化|変わ|進み|進歩|増え|減っ|戻っ|できるよう|になった"
+)
+_FINAL_STAGE1_INTENTION_MARKER_RE: Final = re.compile(
+    r"(?<![み重])たい|つもり|願い|意図|保ちたい|これからの行動"
+)
+_FINAL_STAGE1_EFFORT_MARKER_RE: Final = re.compile(
+    r"(?<!これからの)行動|手間|記録|作業|実際に動"
+)
 _RETENTION_RANK: Final = {"optional": 0, "should": 1, "required": 2}
 _FRAGMENT_DELETE_TRANSLATION: Final = str.maketrans("", "", "「」?？")
 _SEPARATE_SAFETY_KINDS: Final = frozenset(
@@ -312,6 +368,472 @@ class GroundedSurfaceResult:
         }
 
 
+@dataclass(frozen=True, repr=False)
+class SentenceSurfacePlacement:
+    """Request-local remap of one Human Reception-authored segment."""
+
+    binding_ref: str
+    sentence_id: str
+    line_scalar_start: int
+    line_scalar_end: int
+    body_scalar_start: int
+    body_scalar_end: int
+
+
+BodyWitnessSection = Literal["observation", "reception"]
+BodyMarkerKind = Literal["relation", "uncertainty", "reception", "semantic"]
+
+
+@dataclass(frozen=True)
+class GroundedBodySentenceWitness:
+    """One visible sentence recovered from final UTF-8 reply bytes.
+
+    Only byte locations, counts, stable codes, and digests are retained.  The
+    witness deliberately does not retain the candidate text itself.
+    """
+
+    section: BodyWitnessSection
+    section_line_ordinal: int
+    section_ordinal: int
+    visible_ordinal: int
+    utf8_byte_start: int
+    utf8_byte_end: int
+    text_sha256: str
+    quote_count: int
+    relation_marker_codes: tuple[str, ...]
+    uncertainty_marker_codes: tuple[str, ...]
+    reception_marker_codes: tuple[str, ...]
+    semantic_marker_codes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class GroundedBodyLineWitness:
+    """One non-empty visible section line, preserving forward line order."""
+
+    section: BodyWitnessSection
+    section_ordinal: int
+    utf8_byte_start: int
+    utf8_byte_end: int
+    text_sha256: str
+    sentence_count: int
+    quote_count: int
+    relation_marker_codes: tuple[str, ...]
+    uncertainty_marker_codes: tuple[str, ...]
+    reception_marker_codes: tuple[str, ...]
+    semantic_marker_codes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class GroundedBodyQuoteWitness:
+    """One exact Japanese quote interior recovered from final bytes."""
+
+    section: BodyWitnessSection
+    sentence_ordinal: int
+    quote_ordinal: int
+    utf8_byte_start: int
+    utf8_byte_end: int
+    text_sha256: str
+
+
+@dataclass(frozen=True)
+class GroundedBodyMarkerWitness:
+    """A structural marker found without consulting forward artifacts."""
+
+    section: BodyWitnessSection
+    sentence_ordinal: int
+    marker_kind: BodyMarkerKind
+    marker_code: str
+    utf8_byte_start: int
+    utf8_byte_end: int
+    text_sha256: str
+
+
+@dataclass(frozen=True)
+class GroundedBodyOnlyWitness:
+    """Deterministic inverse witness made exclusively from final body bytes."""
+
+    schema_version: str
+    utf8_valid: bool
+    body_sha256: str
+    body_byte_length: int
+    section_order: tuple[str, ...]
+    observation_label_count: int
+    reception_label_count: int
+    observation_sentence_count: int
+    reception_sentence_count: int
+    lines: tuple[GroundedBodyLineWitness, ...]
+    sentences: tuple[GroundedBodySentenceWitness, ...]
+    quotes: tuple[GroundedBodyQuoteWitness, ...]
+    markers: tuple[GroundedBodyMarkerWitness, ...]
+    structural_issues: tuple[str, ...]
+
+    def as_body_free_meta(self) -> dict[str, Any]:
+        """Expose only stable counts/codes/digests, never recovered text."""
+
+        return {
+            "schema_version": self.schema_version,
+            "utf8_valid": self.utf8_valid,
+            "body_sha256": self.body_sha256,
+            "body_byte_length": self.body_byte_length,
+            "section_order": list(self.section_order),
+            "observation_label_count": self.observation_label_count,
+            "reception_label_count": self.reception_label_count,
+            "observation_sentence_count": self.observation_sentence_count,
+            "reception_sentence_count": self.reception_sentence_count,
+            "visible_line_count": len(self.lines),
+            "quote_count": len(self.quotes),
+            "marker_count": len(self.markers),
+            "structural_issues": list(self.structural_issues),
+            "raw_input_included": False,
+            "raw_text_included": False,
+            "source_text_included": False,
+            "surface_text_included": False,
+            "candidate_body_included": False,
+        }
+
+
+def _body_witness_dedupe(values: Iterable[str]) -> tuple[str, ...]:
+    output: list[str] = []
+    for value in values:
+        item = str(value or "").strip()
+        if item and item not in output:
+            output.append(item)
+    return tuple(output)
+
+
+def _body_char_byte_boundaries(text: str) -> tuple[int, ...]:
+    boundaries = [0]
+    for character in text:
+        boundaries.append(boundaries[-1] + len(character.encode("utf-8")))
+    return tuple(boundaries)
+
+
+def _body_line_spans(text: str) -> tuple[tuple[int, int, int], ...]:
+    """Return content start/end and next-line start as character offsets."""
+
+    rows: list[tuple[int, int, int]] = []
+    cursor = 0
+    for raw_line in text.splitlines(keepends=True):
+        content = raw_line.rstrip("\r\n")
+        rows.append((cursor, cursor + len(content), cursor + len(raw_line)))
+        cursor += len(raw_line)
+    if cursor < len(text):
+        rows.append((cursor, len(text), len(text)))
+    elif not rows and text == "":
+        rows = []
+    return tuple(rows)
+
+
+def _body_sentence_spans(line_text: str) -> tuple[tuple[int, int], ...]:
+    """Split visible sentences while ignoring punctuation inside quotes."""
+
+    spans: list[tuple[int, int]] = []
+    start = 0
+    quote_depth = 0
+    for index, character in enumerate(line_text):
+        if character in {"「", "『"}:
+            quote_depth += 1
+        elif character in {"」", "』"} and quote_depth:
+            quote_depth -= 1
+        if quote_depth or character not in "。！？!?":
+            continue
+        end = index + 1
+        while end < len(line_text) and line_text[end] in "。！？!?":
+            end += 1
+        raw = line_text[start:end]
+        left_trim = len(raw) - len(raw.lstrip())
+        right_trimmed = raw.rstrip()
+        if right_trimmed:
+            spans.append((start + left_trim, start + len(right_trimmed)))
+        start = end
+    raw = line_text[start:]
+    left_trim = len(raw) - len(raw.lstrip())
+    right_trimmed = raw.rstrip()
+    if right_trimmed:
+        spans.append((start + left_trim, start + len(right_trimmed)))
+    return tuple(spans)
+
+
+def _body_marker_rows(
+    *,
+    section: BodyWitnessSection,
+    sentence_ordinal: int,
+    sentence_text: str,
+    sentence_char_start: int,
+    boundaries: tuple[int, ...],
+) -> tuple[GroundedBodyMarkerWitness, ...]:
+    rows: list[GroundedBodyMarkerWitness] = []
+    groups: tuple[
+        tuple[BodyMarkerKind, tuple[tuple[str, re.Pattern[str]], ...]], ...
+    ] = (
+        ("relation", _BODY_RELATION_MARKERS),
+        ("uncertainty", _BODY_UNCERTAINTY_MARKERS),
+        ("reception", _BODY_RECEPTION_MARKERS),
+        ("semantic", _BODY_SEMANTIC_MARKERS),
+    )
+    for marker_kind, patterns in groups:
+        for marker_code, pattern in patterns:
+            for match in pattern.finditer(sentence_text):
+                start = sentence_char_start + match.start()
+                end = sentence_char_start + match.end()
+                marker_bytes = sentence_text[match.start() : match.end()].encode("utf-8")
+                rows.append(
+                    GroundedBodyMarkerWitness(
+                        section=section,
+                        sentence_ordinal=sentence_ordinal,
+                        marker_kind=marker_kind,
+                        marker_code=marker_code,
+                        utf8_byte_start=boundaries[start],
+                        utf8_byte_end=boundaries[end],
+                        text_sha256=hashlib.sha256(marker_bytes).hexdigest(),
+                    )
+                )
+    return tuple(
+        sorted(
+            rows,
+            key=lambda row: (
+                row.utf8_byte_start,
+                row.utf8_byte_end,
+                row.marker_kind,
+                row.marker_code,
+            ),
+        )
+    )
+
+
+def parse_grounded_surface_body_bytes(body: bytes) -> GroundedBodyOnlyWitness:
+    """Parse the final two-section reply using *only* exact UTF-8 bytes.
+
+    The signature intentionally accepts no plan, source, resolver, candidate,
+    or forward-generation metadata.  Invalid UTF-8 and malformed layout are
+    represented as stable issue codes so downstream matching can fail closed.
+    """
+
+    if type(body) is not bytes:
+        raise TypeError("grounded_surface_body_bytes_required")
+
+    body_sha256 = hashlib.sha256(body).hexdigest()
+    try:
+        text = body.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        return GroundedBodyOnlyWitness(
+            schema_version=GROUND_BODY_ONLY_WITNESS_SCHEMA_VERSION,
+            utf8_valid=False,
+            body_sha256=body_sha256,
+            body_byte_length=len(body),
+            section_order=(),
+            observation_label_count=0,
+            reception_label_count=0,
+            observation_sentence_count=0,
+            reception_sentence_count=0,
+            lines=(),
+            sentences=(),
+            quotes=(),
+            markers=(),
+            structural_issues=("body_utf8_invalid",),
+        )
+
+    boundaries = _body_char_byte_boundaries(text)
+    line_spans = _body_line_spans(text)
+    observation_rows = tuple(
+        index
+        for index, (start, end, _next_start) in enumerate(line_spans)
+        if text[start:end].strip() == OBSERVATION_SECTION_LABEL
+    )
+    reception_rows = tuple(
+        index
+        for index, (start, end, _next_start) in enumerate(line_spans)
+        if text[start:end].strip() == RECEPTION_SECTION_LABEL
+    )
+    section_events = sorted(
+        (*((index, "observation") for index in observation_rows),
+         *((index, "reception") for index in reception_rows)),
+        key=lambda row: row[0],
+    )
+    issues: list[str] = []
+    if len(observation_rows) != 1 or len(reception_rows) != 1:
+        issues.append("body_section_labels_missing_or_duplicated")
+    if (
+        len(observation_rows) == 1
+        and len(reception_rows) == 1
+        and (observation_rows[0] != 0 or reception_rows[0] <= observation_rows[0])
+    ):
+        issues.append("body_section_order_invalid")
+
+    visible_lines: list[GroundedBodyLineWitness] = []
+    sentences: list[GroundedBodySentenceWitness] = []
+    quotes: list[GroundedBodyQuoteWitness] = []
+    markers: list[GroundedBodyMarkerWitness] = []
+    if not issues:
+        observation_row = observation_rows[0]
+        reception_row = reception_rows[0]
+        section_ranges: tuple[tuple[BodyWitnessSection, int, int], ...] = (
+            (
+                "observation",
+                line_spans[observation_row][2],
+                line_spans[reception_row][0],
+            ),
+            ("reception", line_spans[reception_row][2], len(text)),
+        )
+        visible_ordinal = 0
+        for section, section_start, section_end in section_ranges:
+            section_text = text[section_start:section_end]
+            section_sentence_ordinal = 0
+            section_line_ordinal = 0
+            for local_line_start, local_line_end, _local_next in _body_line_spans(
+                section_text
+            ):
+                raw_line = section_text[local_line_start:local_line_end]
+                left_trim = len(raw_line) - len(raw_line.lstrip())
+                right_trimmed = raw_line.rstrip()
+                if not right_trimmed:
+                    continue
+                line_start = section_start + local_line_start + left_trim
+                line_end = section_start + local_line_start + len(right_trimmed)
+                line_text = text[line_start:line_end]
+                section_line_ordinal += 1
+                line_sentences: list[GroundedBodySentenceWitness] = []
+                line_quotes: list[GroundedBodyQuoteWitness] = []
+                line_markers: list[GroundedBodyMarkerWitness] = []
+                for sentence_local_start, sentence_local_end in _body_sentence_spans(
+                    line_text
+                ):
+                    sentence_start = line_start + sentence_local_start
+                    sentence_end = line_start + sentence_local_end
+                    sentence_text = text[sentence_start:sentence_end]
+                    section_sentence_ordinal += 1
+                    visible_ordinal += 1
+                    sentence_quotes: list[GroundedBodyQuoteWitness] = []
+                    for quote_ordinal, quote_match in enumerate(
+                        _BODY_QUOTE_RE.finditer(sentence_text),
+                        start=1,
+                    ):
+                        quote_start = sentence_start + quote_match.start(1)
+                        quote_end = sentence_start + quote_match.end(1)
+                        quote_bytes = text[quote_start:quote_end].encode("utf-8")
+                        sentence_quotes.append(
+                            GroundedBodyQuoteWitness(
+                                section=section,
+                                sentence_ordinal=section_sentence_ordinal,
+                                quote_ordinal=quote_ordinal,
+                                utf8_byte_start=boundaries[quote_start],
+                                utf8_byte_end=boundaries[quote_end],
+                                text_sha256=hashlib.sha256(quote_bytes).hexdigest(),
+                            )
+                        )
+                    if (
+                        sentence_text.count("「") != len(sentence_quotes)
+                        or sentence_text.count("」") != len(sentence_quotes)
+                    ):
+                        issues.append("body_quote_balance_invalid")
+                    sentence_markers = _body_marker_rows(
+                        section=section,
+                        sentence_ordinal=section_sentence_ordinal,
+                        sentence_text=sentence_text,
+                        sentence_char_start=sentence_start,
+                        boundaries=boundaries,
+                    )
+                    relation_codes = _body_witness_dedupe(
+                        row.marker_code
+                        for row in sentence_markers
+                        if row.marker_kind == "relation"
+                    )
+                    uncertainty_codes = _body_witness_dedupe(
+                        row.marker_code
+                        for row in sentence_markers
+                        if row.marker_kind == "uncertainty"
+                    )
+                    reception_codes = _body_witness_dedupe(
+                        row.marker_code
+                        for row in sentence_markers
+                        if row.marker_kind == "reception"
+                    )
+                    semantic_codes = _body_witness_dedupe(
+                        row.marker_code
+                        for row in sentence_markers
+                        if row.marker_kind == "semantic"
+                    )
+                    sentence_bytes = text[sentence_start:sentence_end].encode("utf-8")
+                    sentence_witness = GroundedBodySentenceWitness(
+                        section=section,
+                        section_line_ordinal=section_line_ordinal,
+                        section_ordinal=section_sentence_ordinal,
+                        visible_ordinal=visible_ordinal,
+                        utf8_byte_start=boundaries[sentence_start],
+                        utf8_byte_end=boundaries[sentence_end],
+                        text_sha256=hashlib.sha256(sentence_bytes).hexdigest(),
+                        quote_count=len(sentence_quotes),
+                        relation_marker_codes=relation_codes,
+                        uncertainty_marker_codes=uncertainty_codes,
+                        reception_marker_codes=reception_codes,
+                        semantic_marker_codes=semantic_codes,
+                    )
+                    line_sentences.append(sentence_witness)
+                    line_quotes.extend(sentence_quotes)
+                    line_markers.extend(sentence_markers)
+                line_bytes = text[line_start:line_end].encode("utf-8")
+                visible_lines.append(
+                    GroundedBodyLineWitness(
+                        section=section,
+                        section_ordinal=section_line_ordinal,
+                        utf8_byte_start=boundaries[line_start],
+                        utf8_byte_end=boundaries[line_end],
+                        text_sha256=hashlib.sha256(line_bytes).hexdigest(),
+                        sentence_count=len(line_sentences),
+                        quote_count=len(line_quotes),
+                        relation_marker_codes=_body_witness_dedupe(
+                            row.marker_code
+                            for row in line_markers
+                            if row.marker_kind == "relation"
+                        ),
+                        uncertainty_marker_codes=_body_witness_dedupe(
+                            row.marker_code
+                            for row in line_markers
+                            if row.marker_kind == "uncertainty"
+                        ),
+                        reception_marker_codes=_body_witness_dedupe(
+                            row.marker_code
+                            for row in line_markers
+                            if row.marker_kind == "reception"
+                        ),
+                        semantic_marker_codes=_body_witness_dedupe(
+                            row.marker_code
+                            for row in line_markers
+                            if row.marker_kind == "semantic"
+                        ),
+                    )
+                )
+                sentences.extend(line_sentences)
+                quotes.extend(line_quotes)
+                markers.extend(line_markers)
+
+        if not any(row.section == "observation" for row in visible_lines):
+            issues.append("body_observation_section_empty")
+        if not any(row.section == "reception" for row in visible_lines):
+            issues.append("body_reception_section_empty")
+
+    observation_sentence_count = sum(
+        row.section == "observation" for row in sentences
+    )
+    reception_sentence_count = sum(row.section == "reception" for row in sentences)
+    return GroundedBodyOnlyWitness(
+        schema_version=GROUND_BODY_ONLY_WITNESS_SCHEMA_VERSION,
+        utf8_valid=True,
+        body_sha256=body_sha256,
+        body_byte_length=len(body),
+        section_order=tuple(row[1] for row in section_events),
+        observation_label_count=len(observation_rows),
+        reception_label_count=len(reception_rows),
+        observation_sentence_count=observation_sentence_count,
+        reception_sentence_count=reception_sentence_count,
+        lines=tuple(visible_lines),
+        sentences=tuple(sentences),
+        quotes=tuple(quotes),
+        markers=tuple(markers),
+        structural_issues=_body_witness_dedupe(issues),
+    )
+
+
 def _clean(value: Any) -> str:
     return _SPACE_RE.sub(" ", str(value or "").replace("\u3000", " ")).strip()
 
@@ -392,6 +914,14 @@ def _claim_scope(plan: GroundedObservationPlan) -> str:
     return "single_input_bounded_observation"
 
 
+def _is_final_stage1_grounded_projection(plan: GroundedObservationPlan) -> bool:
+    """Keep final-language refinements behind the typed projection seam."""
+
+    return FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in tuple(
+        getattr(plan, "source_contracts", ())
+    )
+
+
 def expected_human_follow_role(
     plan: GroundedObservationPlan,
     nucleus_ids: Sequence[str],
@@ -412,6 +942,7 @@ def expected_human_follow_role(
         material_quality=plan.input_profile.material_quality,
         required_nucleus_count=len(plan.coverage_requirements.required_nucleus_ids),
         nuclei=nuclei,
+        final_source_fidelity=_is_final_stage1_grounded_projection(plan),
     )
     intention_target = any(
         nucleus.kind == "wish"
@@ -1447,6 +1978,13 @@ def _build_regular_lines(
             "mandatory_two_stage_follow_delivery_not_separate"
         )
     if material_quality in {"limited_grounding", "labels_only_limited"}:
+        if _is_final_stage1_grounded_projection(plan):
+            selected_ids = _directionally_order_group(
+                selected_ids,
+                required_relation_ids,
+                nucleus_index,
+                relation_index,
+            )
         lines.append(
             _make_line(
                 sentence_number=sentence_number,
@@ -1728,15 +2266,71 @@ def _quote(value: Any) -> str:
     return f"「{text}」" if text else ""
 
 
-def _texts_for_nucleus(
+def _typed_source_fragment_for_nucleus(
     nucleus: GroundedSemanticNucleus,
-    resolver: EvidenceSpanResolver,
-) -> tuple[str, ...]:
-    return _dedupe(
-        _clean_fragment(resolver.resolve(span_id).raw_text)
-        for span_id in nucleus.source_span_ids
-        if _EVIDENCE_ID_RE.fullmatch(span_id)
+    raw_text: Any,
+) -> str | None:
+    """Resolve one exact typed source slice without consulting CMEE owners."""
+
+    attributes = tuple(nucleus.semantic_frame.attribute_codes)
+    scalar_rows = tuple(
+        code
+        for code in attributes
+        if code.startswith("source_fragment_scalar_range:")
     )
+    source_rows = tuple(
+        code
+        for code in attributes
+        if code.startswith("source_fragment_scalar_source:")
+    )
+    legacy_rows = tuple(
+        code
+        for code in attributes
+        if code.startswith(("surface_scalar_range:", "surface_scalar_source:"))
+    )
+    marker_rows = tuple(
+        code
+        for code in attributes
+        if code == "semantic_role:generic_relation_fragment"
+    )
+    if not marker_rows:
+        if scalar_rows or source_rows or legacy_rows:
+            raise GroundedSentenceSurfaceError(
+                "typed_source_fragment_contract_invalid"
+            )
+        return None
+    if (
+        len(marker_rows) != 1
+        or len(scalar_rows) != 1
+        or source_rows
+        != ("source_fragment_scalar_source:normalized_raw_text",)
+        or legacy_rows
+    ):
+        raise GroundedSentenceSurfaceError(
+            "typed_source_fragment_contract_invalid"
+        )
+    parts = scalar_rows[0].split(":")
+    if len(parts) != 3:
+        raise GroundedSentenceSurfaceError(
+            "typed_source_fragment_contract_invalid"
+        )
+    try:
+        start, end = int(parts[1]), int(parts[2])
+    except ValueError:
+        raise GroundedSentenceSurfaceError(
+            "typed_source_fragment_contract_invalid"
+        ) from None
+    normalized = _clean(raw_text)
+    if not (0 <= start < end <= len(normalized)):
+        raise GroundedSentenceSurfaceError(
+            "typed_source_fragment_contract_invalid"
+        )
+    fragment = normalized[start:end]
+    if not fragment or fragment != fragment.strip():
+        raise GroundedSentenceSurfaceError(
+            "typed_source_fragment_contract_invalid"
+        )
+    return fragment
 
 
 def _surface_fragment_for_nucleus(
@@ -1745,6 +2339,9 @@ def _surface_fragment_for_nucleus(
 ) -> str:
     text = _clean(raw_text)
     attributes = set(nucleus.semantic_frame.attribute_codes)
+    typed_fragment = _typed_source_fragment_for_nucleus(nucleus, text)
+    if typed_fragment is not None:
+        return typed_fragment
     if "lexical:preserve_source_predicate" in attributes:
         return text
     if len(text) > 40 and any(code.startswith("semantic_role:") for code in attributes):
@@ -1883,6 +2480,8 @@ def _render_observation(
     binding: GroundedSentenceBinding,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
+    *,
+    typed_semantic_duties: bool = False,
 ) -> str:
     quotes = _quotes_for_nuclei(binding.nucleus_ids, nucleus_index, resolver)
     joined = _join_quotes(quotes)
@@ -1920,6 +2519,14 @@ def _render_observation(
             return f"{prefix}{joined}が、同じ入力に置かれた出来事として並んでいます。"
         return f"{prefix}{joined}が、同じ入力の中で一つの流れになっています。"
     nucleus = nucleus_index[binding.nucleus_ids[0]]
+    if typed_semantic_duties:
+        typed_endpoint = _final_stage1_typed_relation_endpoint(
+            binding.nucleus_ids[0],
+            nucleus_index,
+            resolver,
+        )
+        if typed_endpoint and typed_endpoint != joined:
+            return f"{prefix}今の入力には、{typed_endpoint}があります。"
     if "lexical:preserve_source_predicate" in nucleus.semantic_frame.attribute_codes:
         return f"{prefix}今は、{joined}という感覚が前に出ています。"
     if all(field in {"emotion_details", "emotions", "category"} for field in nucleus.source_fields):
@@ -2010,14 +2617,27 @@ def _render_observation_with_relations(
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     relation_index: Mapping[str, GroundedSemanticRelation],
     resolver: EvidenceSpanResolver,
+    *,
+    typed_semantic_duties: bool = False,
 ) -> str:
     quotes = _quotes_for_nuclei(binding.nucleus_ids, nucleus_index, resolver)
     joined = _join_quotes(quotes)
     if not joined:
         return ""
     if not binding.relation_ids:
-        return _render_observation(binding, nucleus_index, resolver)
-    relation_text = _render_relation(binding, nucleus_index, relation_index, resolver)
+        return _render_observation(
+            binding,
+            nucleus_index,
+            resolver,
+            typed_semantic_duties=typed_semantic_duties,
+        )
+    relation_text = _render_relation(
+        binding,
+        nucleus_index,
+        relation_index,
+        resolver,
+        typed_semantic_duties=typed_semantic_duties,
+    )
     endpoint_ids = {
         nucleus_id
         for relation_id in binding.relation_ids
@@ -2039,26 +2659,58 @@ def _render_relation(
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     relation_index: Mapping[str, GroundedSemanticRelation],
     resolver: EvidenceSpanResolver,
+    *,
+    typed_semantic_duties: bool = False,
 ) -> str:
     if not binding.relation_ids:
-        return _render_observation(binding, nucleus_index, resolver)
+        return _render_observation(
+            binding,
+            nucleus_index,
+            resolver,
+            typed_semantic_duties=typed_semantic_duties,
+        )
     sentences: list[str] = []
     for relation_id in binding.relation_ids:
         if relation_id not in relation_index:
             continue
         relation = relation_index[relation_id]
-        left = _join_quotes(
-            _quotes_for_nuclei((relation.from_nucleus_id,), nucleus_index, resolver)
-        )
-        right = _join_quotes(
-            _quotes_for_nuclei((relation.to_nucleus_id,), nucleus_index, resolver)
-        )
+        if typed_semantic_duties:
+            left = _final_stage1_typed_relation_endpoint(
+                relation.from_nucleus_id,
+                nucleus_index,
+                resolver,
+            )
+            right = _final_stage1_typed_relation_endpoint(
+                relation.to_nucleus_id,
+                nucleus_index,
+                resolver,
+            )
+        else:
+            left = _join_quotes(
+                _quotes_for_nuclei(
+                    (relation.from_nucleus_id,), nucleus_index, resolver
+                )
+            )
+            right = _join_quotes(
+                _quotes_for_nuclei(
+                    (relation.to_nucleus_id,), nucleus_index, resolver
+                )
+            )
         if not left or not right:
             continue
         role = relation_surface_role(relation, nucleus_index)
         left_form = _semantic_endpoint_surface_form(nucleus_index[relation.from_nucleus_id])
         right_form = _semantic_endpoint_surface_form(nucleus_index[relation.to_nucleus_id])
-        if role == "provisional_evaluation_to_counterevidence":
+        if (
+            typed_semantic_duties
+            and relation.type == "action_supports_change"
+            and nucleus_index[relation.from_nucleus_id].kind == "action"
+            and nucleus_index[relation.to_nucleus_id].kind == "change"
+        ):
+            # Final projection owns action -> change. Typed endpoints already
+            # carry each kind; preserve that direction without re-labelling.
+            sentences.append(f"{left}から{right}へつながっています。")
+        elif role == "provisional_evaluation_to_counterevidence":
             sentences.append(
                 f"{left}と見ている一方で、{right}という別の事実もあります。"
             )
@@ -2083,7 +2735,10 @@ def _render_relation(
                 f"{left}という変化が、{right}という行動にも表れています。"
             )
         elif role == "dimension_shift":
-            sentences.append(f"{left}から{right}へ、捉え方や動きが移っています。")
+            sentences.append(
+                f"{left}から{right}へ、{_RELATION_LABELS[relation.type]}として、"
+                "捉え方や動きが移っています。"
+            )
         elif role == "coexisting_contrast":
             sentences.append(f"{left}と{right}が、異なる向きのまま同時にあります。")
         elif relation.type == "temporal_before_after":
@@ -2108,6 +2763,289 @@ def _render_relation(
     return f"{_hedge_prefix(binding)}{joined}"
 
 
+def _final_stage1_typed_relation_endpoint(
+    nucleus_id: str,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+) -> str:
+    """Keep a relation endpoint's required semantic kind body-visible."""
+
+    text = _join_quotes(
+        _quotes_for_nuclei(
+            (nucleus_id,),
+            nucleus_index,
+            resolver,
+        )
+    )
+    nucleus = nucleus_index.get(nucleus_id)
+    if not text or nucleus is None:
+        return text
+    if (
+        _final_action_is_future_intention(nucleus)
+        and not _FINAL_STAGE1_INTENTION_MARKER_RE.search(text)
+    ):
+        text = f"{text}という、これからの行動"
+    elif (
+        _final_action_is_performed(nucleus)
+        and not _FINAL_STAGE1_EFFORT_MARKER_RE.search(text)
+    ):
+        text = f"{text}という行動"
+    elif (
+        nucleus.kind == "change"
+        and not _FINAL_STAGE1_CHANGE_MARKER_RE.search(text)
+    ):
+        text = f"{text}という変化"
+
+    semantic_marker_codes = {
+        marker_code
+        for marker_code, pattern in _BODY_SEMANTIC_MARKERS
+        if pattern.search(text)
+    }
+    uncertainty_marker_present = any(
+        pattern.search(text)
+        for _marker_code, pattern in _BODY_UNCERTAINTY_MARKERS
+    )
+    attributes = set(nucleus.semantic_frame.attribute_codes)
+    if (
+        nucleus.kind == "wish"
+        and nucleus.semantic_frame.modality in {"wish", "intention"}
+        and "intention" not in semantic_marker_codes
+    ):
+        text = f"{text}という願い"
+        semantic_marker_codes.add("intention")
+    if (
+        nucleus.kind == "constraint"
+        and "constraint" not in semantic_marker_codes
+    ):
+        text = f"{text}という制約"
+        semantic_marker_codes.add("constraint")
+    if (
+        (
+            nucleus.kind == "uncertainty"
+            or "semantic_role:limiting_unknown" in attributes
+        )
+        and "unknown" not in semantic_marker_codes
+        and not uncertainty_marker_present
+    ):
+        text = f"{text}として、まだ分からない範囲"
+    return text
+
+
+def _final_stage1_relation_fragment(
+    relation: GroundedSemanticRelation,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+) -> str:
+    """Render typed relation endpoints once, in their owned direction."""
+
+    left = _final_stage1_typed_relation_endpoint(
+        relation.from_nucleus_id,
+        nucleus_index,
+        resolver,
+    )
+    right = _final_stage1_typed_relation_endpoint(
+        relation.to_nucleus_id,
+        nucleus_index,
+        resolver,
+    )
+    if not left or not right:
+        return ""
+    if relation.type == "action_supports_change":
+        action = _join_quotes(
+            _quotes_for_nuclei(
+                (relation.from_nucleus_id,),
+                nucleus_index,
+                resolver,
+            )
+        )
+        change = _join_quotes(
+            _quotes_for_nuclei(
+                (relation.to_nucleus_id,),
+                nucleus_index,
+                resolver,
+            )
+        )
+        if not action or not change:
+            return ""
+        return f"{action}という行動から{change}という変化へのつながり"
+    if relation.type == "preserves_despite":
+        return f"{left}が{right}の中にも残る向き"
+    if relation.type == "wish_and_constraint":
+        return f"{left}と{right}が並んでいる状態"
+    if relation.type == "attempt_and_block":
+        return f"{left}がある一方で、{right}には止まりもある状態"
+    if relation.type == "coexistence":
+        return f"{left}と{right}が同時に残る状態"
+    if relation.type == "contrast":
+        return f"{left}と{right}の異なる向き"
+    if relation.type == "temporal_before_after":
+        return f"{left}から{right}へ続く時間の前後"
+    if relation.type == "uncertain_connection":
+        return (
+            f"{left}のあとに{right}が続く順序上のつながりで、"
+            "因果までは確定しない形"
+        )
+    if relation.type == "continuation_or_refusal":
+        return f"{left}に表れた、{right}だけで終わらない続ける向き"
+    fragment = _relation_fragment(relation, nucleus_index, resolver)
+    raw_left = _join_quotes(
+        _quotes_for_nuclei(
+            (relation.from_nucleus_id,),
+            nucleus_index,
+            resolver,
+        )
+    )
+    raw_right = _join_quotes(
+        _quotes_for_nuclei(
+            (relation.to_nucleus_id,),
+            nucleus_index,
+            resolver,
+        )
+    )
+    if raw_left and left != raw_left:
+        fragment = fragment.replace(raw_left, left, 1)
+    if raw_right and right != raw_right:
+        fragment = fragment.replace(raw_right, right, 1)
+    return fragment
+
+
+def _final_action_is_performed(nucleus: GroundedSemanticNucleus) -> bool:
+    return reception_action_is_performed(nucleus, final_source_fidelity=True)
+
+
+def _final_action_is_future_intention(
+    nucleus: GroundedSemanticNucleus,
+) -> bool:
+    return reception_action_is_future_intention(nucleus, final_source_fidelity=True)
+
+
+def _final_stage1_nucleus_summary(
+    nucleus_ids: Sequence[str],
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+) -> str:
+    units: list[str] = []
+    for nucleus_id in nucleus_ids:
+        nucleus = nucleus_index.get(nucleus_id)
+        if nucleus is None:
+            continue
+        quote = _join_quotes(
+            _quotes_for_nuclei((nucleus_id,), nucleus_index, resolver)
+        )
+        if not quote:
+            continue
+        attributes = set(nucleus.semantic_frame.attribute_codes)
+        if _final_action_is_future_intention(nucleus):
+            unit = (
+                f"{quote}という、まだ定めていないこれからの行動"
+                if nucleus.semantic_frame.modality == "uncertain"
+                else f"{quote}という、これからの行動"
+            )
+        elif _final_action_is_performed(nucleus):
+            unit = f"{quote}という行動"
+        elif nucleus.kind == "action":
+            # A source denial is known negative content, not missing proof
+            # about whether it happened. Preserve that source clause itself.
+            unit = (
+                quote
+                if nucleus.semantic_frame.polarity == "negative"
+                or "operator:negation" in attributes
+                or nucleus.semantic_frame.modality == "fact"
+                else f"{quote}という、まだ確かめきれない行動"
+            )
+        elif nucleus.kind == "change":
+            unit = f"{quote}という変化"
+        elif nucleus.kind == "constraint":
+            unit = f"{quote}という制約"
+        elif nucleus.kind == "wish":
+            unit = (
+                f"{quote}という、まだ定まっていない思い"
+                if nucleus.semantic_frame.modality == "uncertain"
+                else f"{quote}という願い"
+            )
+        elif (
+            nucleus.kind == "uncertainty"
+            or "semantic_role:limiting_unknown" in attributes
+        ):
+            unit = f"{quote}という、まだ分からない範囲"
+        else:
+            unit = quote
+        if unit not in units:
+            units.append(unit)
+    return _join_relation_fragments(tuple(units))
+
+
+def _render_final_stage1_limited_scope(
+    binding: GroundedSentenceBinding,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    relation_index: Mapping[str, GroundedSemanticRelation],
+    resolver: EvidenceSpanResolver,
+) -> str:
+    """Keep typed final meaning visible without replaying the whole memo."""
+
+    relation_rows = tuple(
+        relation_index[relation_id]
+        for relation_id in binding.relation_ids
+        if relation_id in relation_index
+    )
+    relation_fragments = tuple(
+        fragment
+        for fragment in (
+            _final_stage1_relation_fragment(
+                relation,
+                nucleus_index,
+                resolver,
+            )
+            for relation in relation_rows
+        )
+        if fragment
+    )
+    endpoint_ids = {
+        nucleus_id
+        for relation in relation_rows
+        for nucleus_id in (
+            relation.from_nucleus_id,
+            relation.to_nucleus_id,
+        )
+    }
+    extra_ids = tuple(
+        nucleus_id
+        for nucleus_id in binding.nucleus_ids
+        if nucleus_id not in endpoint_ids
+    )
+    extras = _final_stage1_nucleus_summary(
+        extra_ids,
+        nucleus_index,
+        resolver,
+    )
+    clauses: list[str] = []
+    for relation_index_value, relation_fragment in enumerate(
+        relation_fragments
+    ):
+        if relation_index_value == 0:
+            clauses.append(
+                f"今の入力では、{relation_fragment}が確認できます"
+                f"{_JA_SENTENCE_END}"
+            )
+        else:
+            clauses.append(
+                f"また、{relation_fragment}も確認できます"
+                f"{_JA_SENTENCE_END}"
+            )
+    if not relation_fragments and extras:
+        clauses.append(
+            f"今の入力では、{extras}までが確かに見えます"
+            f"{_JA_SENTENCE_END}"
+        )
+        extras = ""
+    if extras:
+        clauses.append(
+            f"あわせて、{extras}も今の状態として見えます"
+            f"{_JA_SENTENCE_END}"
+        )
+    return " ".join(clauses)
+
+
 def _render_limited_scope(
     binding: GroundedSentenceBinding,
     plan: GroundedObservationPlan,
@@ -2115,6 +3053,13 @@ def _render_limited_scope(
     relation_index: Mapping[str, GroundedSemanticRelation],
     resolver: EvidenceSpanResolver,
 ) -> str:
+    if _is_final_stage1_grounded_projection(plan):
+        return _render_final_stage1_limited_scope(
+            binding,
+            nucleus_index,
+            relation_index,
+            resolver,
+        )
     joined = _join_quotes(_quotes_for_nuclei(binding.nucleus_ids, nucleus_index, resolver))
     relation_text = _join_relation_fragments(
         tuple(
@@ -2176,6 +3121,8 @@ def _render_human_follow(
     plan: GroundedObservationPlan,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
+    *,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> str:
     reception_plan = plan.response_plan.human_reception_plan
     if reception_plan is None or not reception_plan.required:
@@ -2195,6 +3142,20 @@ def _render_human_follow(
         raise GroundedSentenceSurfaceError(
             "human_reception_source_evidence_mismatch"
         )
+    if _is_final_stage1_grounded_projection(plan):
+        try:
+            reception = replay_source_grounded_human_reception_from_plan(
+                reception_plan,
+                nucleus_index,
+                resolver,
+                plan=plan,
+                recovery_stage=recovery_stage,
+                clause_plans=clause_plans,
+                selected_subjective_input=selected_subjective_input,
+            )
+        except GroundedHumanReceptionSurfaceError as exc:
+            raise GroundedSentenceSurfaceError(str(exc)) from exc
+        return reception.text
     try:
         reception = realize_grounded_human_reception(
             reception_plan,
@@ -2206,6 +3167,31 @@ def _render_human_follow(
     except GroundedHumanReceptionSurfaceError as exc:
         raise GroundedSentenceSurfaceError(str(exc)) from exc
     return reception.text
+
+
+def realize_grounded_human_follow_text(
+    line: GroundedSentencePlanLine,
+    plan: GroundedObservationPlan,
+    resolver: EvidenceSpanResolver,
+    *,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
+) -> str:
+    """Realize the one canonical reception line owned by this surface."""
+
+    if (
+        line.surface_function != "render_human_follow"
+        or line.binding.line_role != "human_follow"
+    ):
+        raise GroundedSentenceSurfaceError("human_reception_surface_owner_invalid")
+    nucleus_index = {item.nucleus_id: item for item in plan.nuclei}
+    return _render_human_follow(
+        line.binding,
+        line.reception_clause_plans,
+        plan,
+        nucleus_index,
+        resolver,
+        selected_subjective_input=selected_subjective_input,
+    )
 
 
 def _plan_recovery_stage(binding: GroundedSentenceBinding) -> RecoveryStage:
@@ -2241,18 +3227,37 @@ def _realize_line(
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     relation_index: Mapping[str, GroundedSemanticRelation],
     resolver: EvidenceSpanResolver,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> str:
     if line.surface_function == "observe_nuclei":
-        return _render_observation(line.binding, nucleus_index, resolver)
+        return _render_observation(
+            line.binding,
+            nucleus_index,
+            resolver,
+            typed_semantic_duties=(
+                _is_final_stage1_grounded_projection(plan)
+            ),
+        )
     if line.surface_function == "observe_nuclei_with_relations":
         return _render_observation_with_relations(
             line.binding,
             nucleus_index,
             relation_index,
             resolver,
+            typed_semantic_duties=(
+                _is_final_stage1_grounded_projection(plan)
+            ),
         )
     if line.surface_function == "observe_relation":
-        return _render_relation(line.binding, nucleus_index, relation_index, resolver)
+        return _render_relation(
+            line.binding,
+            nucleus_index,
+            relation_index,
+            resolver,
+            typed_semantic_duties=(
+                _is_final_stage1_grounded_projection(plan)
+            ),
+        )
     if line.surface_function == "render_limited_scope":
         return _render_limited_scope(
             line.binding,
@@ -2272,12 +3277,11 @@ def _realize_line(
             resolver,
         )
     if line.surface_function == "render_human_follow":
-        return _render_human_follow(
-            line.binding,
-            line.reception_clause_plans,
+        return realize_grounded_human_follow_text(
+            line,
             plan,
-            nucleus_index,
             resolver,
+            selected_subjective_input=selected_subjective_input,
         )
     raise GroundedSentenceSurfaceError(f"unsupported_surface_function:{line.surface_function}")
 
@@ -2315,10 +3319,13 @@ def split_two_stage_surface(text: Any) -> tuple[str, str, tuple[str, ...]]:
     return observation, reception, tuple(issues)
 
 
-def realize_grounded_sentence_plan(
+def _realize_grounded_sentence_plan(
     sentence_plan: GroundedSentencePlan,
     plan: GroundedObservationPlan,
     resolver: EvidenceSpanResolver,
+    *,
+    human_reception_surface: GroundedHumanReceptionSurface | None = None,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> GroundedSurfaceResult:
     """Realize a SentencePlan with generic functional atoms and source text."""
 
@@ -2345,18 +3352,32 @@ def realize_grounded_sentence_plan(
         relation_index = {item.relation_id: item for item in plan.relations}
         surface_lines: list[GroundedSurfaceLine] = []
         for line in sentence_plan.lines:
-            text = _clean(
-                _apply_integrated_human_follow(
-                    _realize_line(
-                        line,
-                        plan=plan,
-                        nucleus_index=nucleus_index,
-                        relation_index=relation_index,
-                        resolver=resolver,
-                    ),
-                    line.binding,
+            realized_line = (
+                human_reception_surface.text
+                if (
+                    human_reception_surface is not None
+                    and line.binding.line_role == "human_follow"
+                )
+                else _realize_line(
+                    line,
+                    plan=plan,
+                    nucleus_index=nucleus_index,
+                    relation_index=relation_index,
+                    resolver=resolver,
+                    selected_subjective_input=selected_subjective_input,
                 )
             )
+            text = _clean(
+                _apply_integrated_human_follow(realized_line, line.binding)
+            )
+            if (
+                human_reception_surface is not None
+                and line.binding.line_role == "human_follow"
+                and text != human_reception_surface.text
+            ):
+                raise GroundedSentenceSurfaceError(
+                    "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP"
+                )
             if not text:
                 continue
             binding = GroundedSentenceBinding(
@@ -2417,10 +3438,164 @@ def realize_grounded_sentence_plan(
             limited_opposition_covered=sentence_plan.limited_opposition_covered,
         )
 
-    issues = validate_grounded_surface_result(result, sentence_plan, plan, resolver)
+    issues = validate_grounded_surface_result(result, sentence_plan, plan, resolver, selected_subjective_input=selected_subjective_input)
     if issues:
         raise GroundedSentenceSurfaceError("invalid_grounded_surface_result:" + ",".join(issues))
     return result
+
+
+def realize_grounded_sentence_plan(
+    sentence_plan: GroundedSentencePlan,
+    plan: GroundedObservationPlan,
+    resolver: EvidenceSpanResolver,
+) -> GroundedSurfaceResult:
+    """Preserve the existing public/base realizer signature and bytes."""
+
+    return _realize_grounded_sentence_plan(sentence_plan, plan, resolver)
+
+
+def realize_grounded_sentence_plan_with_human_reception(
+    sentence_plan: GroundedSentencePlan,
+    plan: GroundedObservationPlan,
+    resolver: EvidenceSpanResolver,
+    *,
+    human_reception_surface: GroundedHumanReceptionSurface | None = None,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
+) -> tuple[GroundedSurfaceResult, tuple[SentenceSurfacePlacement, ...]]:
+    """Place one preauthored final Human Reception surface without rewriting."""
+
+    if (
+        not _is_final_stage1_grounded_projection(plan)
+        or type(human_reception_surface) is not GroundedHumanReceptionSurface
+        or not human_reception_surface.text
+        or not human_reception_surface.expression_refs
+        or not human_reception_surface.visible_segment_bindings
+        or human_reception_surface.recovery_stage
+        != sentence_plan.recovery_stage
+        or len(
+            tuple(
+                line
+                for line in sentence_plan.lines
+                if line.binding.line_role == "human_follow"
+            )
+        )
+        != 1
+        or type(plan.response_plan.human_reception_plan)
+        is not GroundedHumanReceptionPlan
+        or validate_grounded_human_reception_surface(
+            human_reception_surface,
+            plan.response_plan.human_reception_plan,
+            resolver,
+        )
+    ):
+        raise GroundedSentenceSurfaceError(
+            "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP"
+        )
+    result = _realize_grounded_sentence_plan(
+        sentence_plan,
+        plan,
+        resolver,
+        human_reception_surface=human_reception_surface,
+        selected_subjective_input=selected_subjective_input,
+    )
+    reception_lines = tuple(
+        line
+        for line in result.lines
+        if line.binding.line_role == "human_follow"
+    )
+    if (
+        len(reception_lines) != 1
+        or reception_lines[0].text != human_reception_surface.text
+    ):
+        raise GroundedSentenceSurfaceError(
+            "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP"
+        )
+    reception_line = reception_lines[0]
+    reception_prefix = f"{RECEPTION_SECTION_LABEL}\n"
+    prefix_index = result.text.find(reception_prefix)
+    if prefix_index < 0 or result.text.find(
+        reception_prefix,
+        prefix_index + 1,
+    ) >= 0:
+        raise GroundedSentenceSurfaceError(
+            "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP"
+        )
+    line_body_start = prefix_index + len(reception_prefix)
+    if (
+        result.text[
+            line_body_start : line_body_start + len(reception_line.text)
+        ]
+        != reception_line.text
+    ):
+        raise GroundedSentenceSurfaceError(
+            "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP"
+        )
+
+    placements: list[SentenceSurfacePlacement] = []
+    seen_binding_refs: set[str] = set()
+    prior_end = 0
+    for binding in human_reception_surface.visible_segment_bindings:
+        if (
+            type(binding) is not ReceptionVisibleSegmentBindingV1
+            or not binding.binding_ref
+            or binding.binding_ref in seen_binding_refs
+            or binding.human_reception_local_scalar_start != prior_end
+            or not (
+                0
+                <= binding.human_reception_local_scalar_start
+                < binding.human_reception_local_scalar_end
+                <= len(human_reception_surface.text)
+            )
+        ):
+            raise GroundedSentenceSurfaceError(
+                "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP"
+            )
+        seen_binding_refs.add(binding.binding_ref)
+        prior_end = binding.human_reception_local_scalar_end
+        line_start = binding.human_reception_local_scalar_start
+        line_end = binding.human_reception_local_scalar_end
+        body_start = line_body_start + line_start
+        body_end = line_body_start + line_end
+        source_segment = human_reception_surface.text[line_start:line_end]
+        line_segment = reception_line.text[line_start:line_end]
+        body_segment = result.text[body_start:body_end]
+        digests = {
+            hashlib.sha256(value.encode("utf-8")).hexdigest()
+            for value in (source_segment, line_segment, body_segment)
+        }
+        if digests != {binding.surface_span_sha256}:
+            raise GroundedSentenceSurfaceError(
+                "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP"
+            )
+        placements.append(
+            SentenceSurfacePlacement(
+                binding_ref=binding.binding_ref,
+                sentence_id=reception_line.sentence_id,
+                line_scalar_start=line_start,
+                line_scalar_end=line_end,
+                body_scalar_start=body_start,
+                body_scalar_end=body_end,
+            )
+        )
+    if (
+        prior_end != len(human_reception_surface.text)
+        or tuple(
+            expression_ref
+            for binding in human_reception_surface.visible_segment_bindings
+            for expression_ref in binding.expression_refs
+        )
+        != human_reception_surface.expression_refs
+        or tuple(
+            move_id
+            for binding in human_reception_surface.visible_segment_bindings
+            for move_id in binding.move_ids
+        )
+        != human_reception_surface.realized_move_ids
+    ):
+        raise GroundedSentenceSurfaceError(
+            "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP"
+        )
+    return result, tuple(placements)
 
 
 def build_grounded_surface_result(
@@ -2741,6 +3916,7 @@ def validate_grounded_sentence_plan(
                         resolver=resolver,
                         safety_kind=plan.safety_policy.safety_kind,
                         material_quality=plan.input_profile.material_quality,
+                        final_source_fidelity=_is_final_stage1_grounded_projection(plan),
                     )
                 )
                 expected_nucleus_ids = _dedupe(
@@ -2886,6 +4062,8 @@ def validate_grounded_surface_result(
     sentence_plan: GroundedSentencePlan,
     plan: GroundedObservationPlan,
     resolver: EvidenceSpanResolver,
+    *,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if result.schema_version != GROUND_SURFACE_RESULT_SCHEMA_VERSION:
@@ -2935,66 +4113,94 @@ def validate_grounded_surface_result(
                 issues.append("human_reception_surface_line_count_invalid")
             else:
                 reception_line = reception_lines[0]
-                quote_values = tuple(
-                    _RECEPTION_QUOTE_RE.findall(reception_line.text)
-                )
-                terminal_kinds = tuple(
-                    atom.split(":", 1)[1]
-                    for atom in reception_line.binding.functional_atom_ids
-                    if atom.startswith("reception_terminal_predicate:")
-                )
                 reception_plan_line = next(
                     line
                     for line in sentence_plan.lines
                     if line.binding.line_role == "human_follow"
                 )
-                try:
-                    expected_reception_surface = (
-                        realize_grounded_human_reception(
-                            reception_plan,
-                            {
-                                item.nucleus_id: item
-                                for item in plan.nuclei
-                            },
-                            resolver,
-                            recovery_stage=sentence_plan.recovery_stage,
-                            clause_plans=(
-                                reception_plan_line.reception_clause_plans
+                if _is_final_stage1_grounded_projection(plan):
+                    try:
+                        expected_reception = (
+                            replay_source_grounded_human_reception_from_plan(
+                                reception_plan,
+                                {
+                                    item.nucleus_id: item
+                                    for item in plan.nuclei
+                                },
+                                resolver,
+                                plan=plan,
+                                recovery_stage=sentence_plan.recovery_stage,
+                                clause_plans=(
+                                    reception_plan_line.reception_clause_plans
+                                ),
+                                selected_subjective_input=selected_subjective_input,
+                            )
+                        )
+                        if expected_reception.text != reception_line.text:
+                            raise GroundedHumanReceptionSurfaceError(
+                                "human_reception_surface_replay_mismatch"
+                            )
+                    except GroundedHumanReceptionSurfaceError as exc:
+                        issues.append(
+                            "human_reception_surface_contract_invalid:"
+                            f"{exc}"
+                        )
+                else:
+                    quote_values = tuple(
+                        _RECEPTION_QUOTE_RE.findall(reception_line.text)
+                    )
+                    terminal_kinds = tuple(
+                        atom.split(":", 1)[1]
+                        for atom in reception_line.binding.functional_atom_ids
+                        if atom.startswith("reception_terminal_predicate:")
+                    )
+                    try:
+                        expected_reception_surface = (
+                            realize_grounded_human_reception(
+                                reception_plan,
+                                {
+                                    item.nucleus_id: item
+                                    for item in plan.nuclei
+                                },
+                                resolver,
+                                recovery_stage=sentence_plan.recovery_stage,
+                                clause_plans=(
+                                    reception_plan_line.reception_clause_plans
+                                ),
+                            )
+                        )
+                    except GroundedHumanReceptionSurfaceError as exc:
+                        issues.append(
+                            "human_reception_surface_contract_invalid:"
+                            f"{exc}"
+                        )
+                    else:
+                        reception_surface = replace(
+                            expected_reception_surface,
+                            text=reception_line.text,
+                            terminal_predicate_kinds=terminal_kinds,
+                            sentence_count=len(
+                                tuple(
+                                    part.strip()
+                                    for part in _RECEPTION_SENTENCE_END_RE.split(
+                                        reception_line.text
+                                    )
+                                    if part.strip()
+                                )
+                            ),
+                            source_anchor_count=len(quote_values),
+                            source_anchor_max_visible_chars=max(
+                                (len(value) for value in quote_values),
+                                default=0,
                             ),
                         )
-                    )
-                except GroundedHumanReceptionSurfaceError as exc:
-                    issues.append(
-                        "human_reception_surface_contract_invalid:"
-                        f"{exc}"
-                    )
-                else:
-                    reception_surface = replace(
-                        expected_reception_surface,
-                        text=reception_line.text,
-                        terminal_predicate_kinds=terminal_kinds,
-                        sentence_count=len(
-                            tuple(
-                                part.strip()
-                                for part in _RECEPTION_SENTENCE_END_RE.split(
-                                    reception_line.text
-                                )
-                                if part.strip()
+                        issues.extend(
+                            validate_grounded_human_reception_surface(
+                                reception_surface,
+                                reception_plan,
+                                resolver,
                             )
-                        ),
-                        source_anchor_count=len(quote_values),
-                        source_anchor_max_visible_chars=max(
-                            (len(value) for value in quote_values),
-                            default=0,
-                        ),
-                    )
-                    issues.extend(
-                        validate_grounded_human_reception_surface(
-                            reception_surface,
-                            reception_plan,
-                            resolver,
                         )
-                    )
     elif result.status == "separate_safety_owner":
         if plan.safety_policy.safety_kind not in _SEPARATE_SAFETY_KINDS:
             issues.append("unexpected_separate_safety_owner")
@@ -3021,6 +4227,7 @@ __all__ = [
     "GROUND_SENTENCE_PLAN_SCHEMA_VERSION",
     "GROUND_SURFACE_RESULT_SCHEMA_VERSION",
     "GROUND_SURFACE_GENERATION_PATH",
+    "GROUND_BODY_ONLY_WITNESS_SCHEMA_VERSION",
     "OBSERVATION_SECTION_LABEL",
     "RECEPTION_SECTION_LABEL",
     "split_two_stage_surface",
@@ -3034,10 +4241,19 @@ __all__ = [
     "GroundedSentencePlan",
     "GroundedSurfaceLine",
     "GroundedSurfaceResult",
+    "SentenceSurfacePlacement",
+    "GroundedBodyLineWitness",
+    "GroundedBodySentenceWitness",
+    "GroundedBodyQuoteWitness",
+    "GroundedBodyMarkerWitness",
+    "GroundedBodyOnlyWitness",
+    "parse_grounded_surface_body_bytes",
     "expected_human_follow_role",
     "relation_surface_role",
+    "realize_grounded_human_follow_text",
     "build_grounded_sentence_plan",
     "realize_grounded_sentence_plan",
+    "realize_grounded_sentence_plan_with_human_reception",
     "build_grounded_surface_result",
     "build_reception_recovery_sentence_plan",
     "build_plan_preserving_recovery_sequence",
