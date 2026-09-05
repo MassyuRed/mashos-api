@@ -941,6 +941,7 @@ def expected_human_follow_role(
         material_quality=plan.input_profile.material_quality,
         required_nucleus_count=len(plan.coverage_requirements.required_nucleus_ids),
         nuclei=nuclei,
+        final_source_fidelity=_is_final_stage1_grounded_projection(plan),
     )
     intention_target = any(
         nucleus.kind == "wish"
@@ -2929,7 +2930,14 @@ def _final_stage1_nucleus_summary(
         elif _final_action_is_performed(nucleus):
             unit = f"{quote}という行動"
         elif nucleus.kind == "action":
-            unit = f"{quote}という、まだ確かめきれない行動"
+            # A source denial is known negative content, not missing proof
+            # about whether it happened. Preserve that source clause itself.
+            unit = (
+                quote
+                if nucleus.semantic_frame.polarity == "negative"
+                or "operator:negation" in attributes
+                else f"{quote}という、まだ確かめきれない行動"
+            )
         elif nucleus.kind == "change":
             unit = f"{quote}という変化"
         elif nucleus.kind == "constraint":
@@ -3877,6 +3885,7 @@ def validate_grounded_sentence_plan(
                         resolver=resolver,
                         safety_kind=plan.safety_policy.safety_kind,
                         material_quality=plan.input_profile.material_quality,
+                        final_source_fidelity=_is_final_stage1_grounded_projection(plan),
                     )
                 )
                 expected_nucleus_ids = _dedupe(

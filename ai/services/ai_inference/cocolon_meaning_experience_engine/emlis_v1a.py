@@ -2971,6 +2971,7 @@ def _cmee_semantic_reception_plan(
         safety_kind=grounded_plan.safety_policy.safety_kind,
         material_quality=material_quality,
         semantic_complexity=grounded_plan.input_profile.semantic_complexity,
+        final_source_fidelity=FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in grounded_plan.source_contracts,
     )
     if reception_plan is None or not reception_plan.required:
         raise CMEEVerticalError("bound_human_reception_plan_missing")
@@ -3118,6 +3119,7 @@ def _cmee_semantic_reception_plan(
                 resolver=resolver,
                 safety_kind=grounded_plan.safety_policy.safety_kind,
                 material_quality=material_quality,
+                final_source_fidelity=FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in grounded_plan.source_contracts,
             )
             and _cmee_rr4_aggregate_support_exact(
                 reception_plan,
@@ -3268,6 +3270,7 @@ def _cmee_semantic_reception_plan(
         resolver=resolver,
         safety_kind=grounded_plan.safety_policy.safety_kind,
         material_quality=material_quality,
+        final_source_fidelity=FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in grounded_plan.source_contracts,
     )
     if plan_issues:
         raise CMEEVerticalError("bound_human_reception_plan_invalid")

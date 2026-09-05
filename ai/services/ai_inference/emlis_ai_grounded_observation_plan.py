@@ -5885,6 +5885,7 @@ def _grounded_human_follow_role_for_nucleus(
     nucleus: GroundedSemanticNucleus,
     *,
     safety_kind: str,
+    final_source_fidelity: bool = False,
 ) -> GroundedHumanFollowRole:
     attributes = set(nucleus.semantic_frame.attribute_codes)
     if "operator:help_seeking" in attributes:
@@ -5902,7 +5903,7 @@ def _grounded_human_follow_role_for_nucleus(
     # Performed action evidence wins over a wider-arc intention label.  A
     # merely unperformed negative action (for example an inability to move)
     # must remain an intention/burden rather than becoming "effort".
-    if _is_explicit_action_nucleus(nucleus):
+    if _is_explicit_action_nucleus(nucleus, final_source_fidelity=final_source_fidelity):
         return "concrete_effort"
 
     retained_intention = bool(
@@ -5916,7 +5917,7 @@ def _grounded_human_follow_role_for_nucleus(
     )
     if retained_intention:
         return "retained_intention"
-    if _is_reception_performed_action_nucleus(nucleus):
+    if _is_reception_performed_action_nucleus(nucleus, final_source_fidelity=final_source_fidelity):
         return "concrete_effort"
     if nucleus.kind in {"change", "value"} or {
         "semantic_role:current_change",
@@ -5933,6 +5934,7 @@ def classify_grounded_human_follow_role(
     material_quality: str,
     required_nucleus_count: int,
     nuclei: Sequence[GroundedSemanticNucleus],
+    final_source_fidelity: bool = False,
 ) -> GroundedHumanFollowRole:
     """Classify a body-free follow role from semantic nuclei.
 
@@ -5955,6 +5957,7 @@ def classify_grounded_human_follow_role(
         _grounded_human_follow_role_for_nucleus(
             nucleus,
             safety_kind=safety_kind,
+            final_source_fidelity=final_source_fidelity,
         )
         for nucleus in candidates
     }
@@ -5977,8 +5980,29 @@ def map_grounded_human_follow_role_to_reception_act(
         raise GroundedObservationPlanError(f"unsupported_grounded_human_follow_role:{role}") from exc
 
 
-def _is_explicit_action_nucleus(nucleus: GroundedSemanticNucleus) -> bool:
+def source_proven_performed_action_status(nucleus: GroundedSemanticNucleus) -> bool:
+    """Read the existing source-owned outer-action proof, never raw text.
+
+    Embedded negation/wish remains in the same semantic frame. It does not
+    negate the separately proven finite act of recording/communicating it.
+    """
+    frame = nucleus.semantic_frame
+    return bool(
+        nucleus.kind == "action"
+        and frame.modality == "fact"
+        and frame.time_scope in {"past", "continuing", "present", "completed"}
+        and "operator:performed_action" in frame.attribute_codes
+    )
+
+
+def _is_explicit_action_nucleus(nucleus: GroundedSemanticNucleus, *, final_source_fidelity: bool = False) -> bool:
     attributes = set(nucleus.semantic_frame.attribute_codes)
+    if source_proven_performed_action_status(nucleus):
+        return True
+    if final_source_fidelity and (
+        nucleus.semantic_frame.polarity == "negative" or "operator:negation" in attributes
+    ):
+        return False
     if (
         "operator:help_seeking" in attributes
         and "operator:action" in attributes
@@ -6012,12 +6036,20 @@ def _is_explicit_action_nucleus(nucleus: GroundedSemanticNucleus) -> bool:
 
 def _is_reception_performed_action_nucleus(
     nucleus: GroundedSemanticNucleus,
+    *,
+    final_source_fidelity: bool = False,
 ) -> bool:
     """Accept performed action semantics without treating plans as actions."""
 
     attributes = set(nucleus.semantic_frame.attribute_codes)
+    if source_proven_performed_action_status(nucleus):
+        return True
+    if final_source_fidelity and (
+        nucleus.semantic_frame.polarity == "negative" or "operator:negation" in attributes
+    ):
+        return False
     return bool(
-        _is_explicit_action_nucleus(nucleus)
+        _is_explicit_action_nucleus(nucleus, final_source_fidelity=final_source_fidelity)
         or (
             nucleus.semantic_frame.modality == "fact"
             and "operator:action" in attributes
@@ -6043,10 +6075,10 @@ def _is_valued_change_nucleus(nucleus: GroundedSemanticNucleus) -> bool:
     )
 
 
-def _is_input_grounded_counterposition_nucleus(nucleus: GroundedSemanticNucleus) -> bool:
+def _is_input_grounded_counterposition_nucleus(nucleus: GroundedSemanticNucleus, *, final_source_fidelity: bool = False) -> bool:
     attributes = set(nucleus.semantic_frame.attribute_codes)
     return bool(
-        _is_explicit_action_nucleus(nucleus)
+        _is_explicit_action_nucleus(nucleus, final_source_fidelity=final_source_fidelity)
         or nucleus.semantic_frame.modality == "refusal"
         or (
             nucleus.kind == "wish"
@@ -6061,13 +6093,15 @@ def _is_input_grounded_counterposition_nucleus(nucleus: GroundedSemanticNucleus)
 
 def _is_reception_grounded_counterposition_nucleus(
     nucleus: GroundedSemanticNucleus,
+    *,
+    final_source_fidelity: bool = False,
 ) -> bool:
     """Recognize grounded action for RR2 without advancing the legacy Surface."""
 
     attributes = set(nucleus.semantic_frame.attribute_codes)
     return bool(
-        _is_input_grounded_counterposition_nucleus(nucleus)
-        or _is_reception_performed_action_nucleus(nucleus)
+        _is_input_grounded_counterposition_nucleus(nucleus, final_source_fidelity=final_source_fidelity)
+        or _is_reception_performed_action_nucleus(nucleus, final_source_fidelity=final_source_fidelity)
     )
 
 
@@ -6079,6 +6113,7 @@ def select_grounded_reception_act(
     semantic_complexity: str,
     target_nuclei: Sequence[GroundedSemanticNucleus],
     available_nuclei: Sequence[GroundedSemanticNucleus],
+    final_source_fidelity: bool = False,
 ) -> GroundedReceptionAct:
     """Select an act from body-free semantic structure, never fixture identity."""
 
@@ -6086,12 +6121,12 @@ def select_grounded_reception_act(
     target_ids = {item.nucleus_id for item in target_nuclei}
     if safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER:
         if any(
-            _grounded_human_follow_role_for_nucleus(item, safety_kind=safety_kind)
+            _grounded_human_follow_role_for_nucleus(item, safety_kind=safety_kind, final_source_fidelity=final_source_fidelity)
             == "help_seeking_preserved"
             for item in candidates
         ):
             return "hold_help_seeking"
-        if any(_is_input_grounded_counterposition_nucleus(item) for item in candidates):
+        if any(_is_input_grounded_counterposition_nucleus(item, final_source_fidelity=final_source_fidelity) for item in candidates):
             return "bounded_counter_self_denial"
         # The observation fact boundary still rejects the identity claim.  The
         # reception layer must not manufacture a counterposition without input
@@ -6108,7 +6143,7 @@ def select_grounded_reception_act(
 
     non_target_candidates = tuple(item for item in candidates if item.nucleus_id not in target_ids)
     if human_follow_role == "retained_intention" and any(
-        _is_reception_performed_action_nucleus(item)
+        _is_reception_performed_action_nucleus(item, final_source_fidelity=final_source_fidelity)
         for item in non_target_candidates
     ):
         return "honor_concrete_effort"
@@ -6129,6 +6164,7 @@ def _select_reception_support_nucleus_ids(
     fact_boundary_nucleus_ids: Sequence[str],
     observation_owned_nucleus_ids: Sequence[str],
     nuclei: Sequence[GroundedSemanticNucleus],
+    final_source_fidelity: bool = False,
 ) -> tuple[str, ...]:
     target_ids = set(target_nucleus_ids)
     observation_owned = set(observation_owned_nucleus_ids)
@@ -6153,13 +6189,13 @@ def _select_reception_support_nucleus_ids(
         )
         if fact_boundary:
             return (fact_boundary,)
-        return first(_is_input_grounded_counterposition_nucleus)
+        return first(lambda item: _is_input_grounded_counterposition_nucleus(item, final_source_fidelity=final_source_fidelity))
     if primary_act == "honor_concrete_effort" and human_follow_role == "retained_intention":
-        return first(_is_explicit_action_nucleus)
+        return first(lambda item: _is_explicit_action_nucleus(item, final_source_fidelity=final_source_fidelity))
     if primary_act == "recognize_lived_change" and human_follow_role == "concrete_effort":
         return first(_is_valued_change_nucleus)
     if primary_act == "recognize_lived_change":
-        return first(_is_explicit_action_nucleus)
+        return first(lambda item: _is_explicit_action_nucleus(item, final_source_fidelity=final_source_fidelity))
     return ()
 
 
@@ -6209,6 +6245,7 @@ def _reception_opportunity_families_for_nucleus(
     nucleus: GroundedSemanticNucleus,
     *,
     safety_kind: str,
+    final_source_fidelity: bool = False,
 ) -> tuple[GroundedReceptionOpportunityFamily, ...]:
     """Map body-free nucleus semantics to distinct human contribution families."""
 
@@ -6227,11 +6264,11 @@ def _reception_opportunity_families_for_nucleus(
         )
     if (
         safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER
-        and _is_reception_grounded_counterposition_nucleus(nucleus)
+        and _is_reception_grounded_counterposition_nucleus(nucleus, final_source_fidelity=final_source_fidelity)
         and nucleus.kind != "self_evaluation"
     ):
         return ("counterdirection",)
-    if _is_reception_performed_action_nucleus(nucleus):
+    if _is_reception_performed_action_nucleus(nucleus, final_source_fidelity=final_source_fidelity):
         return ("concrete_effort",)
     if (
         nucleus.kind == "wish"
@@ -6316,6 +6353,7 @@ def build_grounded_reception_opportunities(
     safety_kind: str,
     material_quality: str,
     include_relation_support: bool = False,
+    final_source_fidelity: bool = False,
 ) -> tuple[GroundedReceptionOpportunity, ...]:
     """Build a deterministic body-free RR2 opportunity inventory.
 
@@ -6364,6 +6402,7 @@ def build_grounded_reception_opportunities(
         for family in _reception_opportunity_families_for_nucleus(
             nucleus,
             safety_kind=safety_kind,
+            final_source_fidelity=final_source_fidelity,
         ):
             candidates_by_family.setdefault(family, []).append(nucleus)
 
@@ -6814,6 +6853,7 @@ def build_grounded_human_reception_plan(
     material_quality: str,
     semantic_complexity: str,
     include_relation_support: bool = False,
+    final_source_fidelity: bool = False,
 ) -> GroundedHumanReceptionPlan | None:
     """Build the request-local body-free RR2/RR3 reception plan."""
 
@@ -6830,6 +6870,7 @@ def build_grounded_human_reception_plan(
         material_quality=material_quality,
         required_nucleus_count=len(tuple(required_nucleus_ids)),
         nuclei=target_nuclei,
+        final_source_fidelity=final_source_fidelity,
     )
     observation_owned_ids = tuple(
         _dedupe(
@@ -6851,6 +6892,7 @@ def build_grounded_human_reception_plan(
         semantic_complexity=semantic_complexity,
         target_nuclei=target_nuclei,
         available_nuclei=available_nuclei,
+        final_source_fidelity=final_source_fidelity,
     )
     support_ids = _select_reception_support_nucleus_ids(
         primary_act=primary_act,
@@ -6859,6 +6901,7 @@ def build_grounded_human_reception_plan(
         fact_boundary_nucleus_ids=fact_boundary_nucleus_ids,
         observation_owned_nucleus_ids=observation_owned_ids,
         nuclei=nuclei,
+        final_source_fidelity=final_source_fidelity,
     )
     selected_nuclei = tuple(
         nucleus_index[item]
@@ -6866,7 +6909,7 @@ def build_grounded_human_reception_plan(
         if item in nucleus_index
     )
     grounded_counterposition = any(
-        _is_input_grounded_counterposition_nucleus(item) for item in selected_nuclei
+        _is_input_grounded_counterposition_nucleus(item, final_source_fidelity=final_source_fidelity) for item in selected_nuclei
     )
     secondary_act: GroundedReceptionAct | None = None
     if (
@@ -6907,6 +6950,7 @@ def build_grounded_human_reception_plan(
         safety_kind=safety_kind,
         material_quality=material_quality,
         include_relation_support=include_relation_support,
+        final_source_fidelity=final_source_fidelity,
     )
     depth_policy, moves = _build_reception_depth_policy_and_moves(
         opportunities,
@@ -7073,6 +7117,7 @@ def _build_response_and_policies(
     complexity: str,
     material_quality: str,
     include_reception_relation_support: bool = False,
+    final_source_fidelity: bool = False,
 ) -> tuple[GroundedResponsePlan, GroundedCoverageRequirements, GroundedSurfacePolicy, GroundedSafetyPolicy]:
     ordered = sorted(
         nuclei,
@@ -7234,6 +7279,7 @@ def _build_response_and_policies(
             material_quality=material_quality,
             required_nucleus_count=len(required_ids),
             nuclei=(item,),
+            final_source_fidelity=final_source_fidelity,
         )
         attributes = set(item.semantic_frame.attribute_codes)
         role_explicit = bool(
@@ -7317,6 +7363,7 @@ def _build_response_and_policies(
         material_quality=material_quality,
         semantic_complexity=complexity,
         include_relation_support=include_reception_relation_support,
+        final_source_fidelity=final_source_fidelity,
     )
     response = GroundedResponsePlan(
         response_kind=response_kind,
@@ -7391,6 +7438,7 @@ def validate_grounded_human_reception_plan(
     resolver: EvidenceSpanResolver,
     safety_kind: str,
     material_quality: str,
+    final_source_fidelity: bool = False,
 ) -> tuple[str, ...]:
     """Validate the nested plan without inspecting source text or a surface."""
 
@@ -7520,7 +7568,7 @@ def validate_grounded_human_reception_plan(
             issues.append("human_reception_opportunity_duplicate")
         opportunity_signatures.add(signature)
         if opportunity.family == "counterdirection" and not any(
-            _is_reception_grounded_counterposition_nucleus(nucleus)
+            _is_reception_grounded_counterposition_nucleus(nucleus, final_source_fidelity=final_source_fidelity)
             for nucleus in opportunity_nuclei
         ):
             issues.append("human_reception_opportunity_ungrounded_counterposition")
@@ -7720,7 +7768,7 @@ def validate_grounded_human_reception_plan(
             if move.surface_strategy != "explicit_emlis_counterposition":
                 issues.append("human_reception_counterposition_move_strategy_invalid")
             if not any(
-                _is_reception_grounded_counterposition_nucleus(nucleus)
+                _is_reception_grounded_counterposition_nucleus(nucleus, final_source_fidelity=final_source_fidelity)
                 for nucleus in move_nuclei
             ):
                 issues.append("human_reception_move_ungrounded_counterposition")
@@ -7928,7 +7976,7 @@ def validate_grounded_human_reception_plan(
         if "counterposition_requires_input_evidence" not in reception_plan.safety_modifier_codes:
             issues.append("human_reception_counterposition_evidence_policy_missing")
         if not any(
-            _is_reception_grounded_counterposition_nucleus(item)
+            _is_reception_grounded_counterposition_nucleus(item, final_source_fidelity=final_source_fidelity)
             for item in selected_nuclei
         ):
             issues.append("human_reception_ungrounded_self_denial_counterposition")
@@ -8070,6 +8118,7 @@ def validate_grounded_observation_plan(
                     resolver=resolver,
                     safety_kind=plan.safety_policy.safety_kind,
                     material_quality=plan.input_profile.material_quality,
+                    final_source_fidelity=FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in plan.source_contracts,
                 )
             )
     elif reception_plan is not None:
@@ -9578,12 +9627,6 @@ def _final_stage1_align_action_status(
             nucleus.kind != "action"
             or len(nucleus.source_span_ids) != 1
             or frame.actor != "current_user"
-            or frame.polarity in {"negative", "mixed"}
-            or frame.modality not in {"fact", "intention"}
-            or set(codes) & {
-                "operator:negation", "operator:wish", "operator:uncertainty",
-                "operator:refusal",
-            }
         ):
             aligned.append(nucleus)
             continue
@@ -9627,6 +9670,9 @@ def _final_stage1_align_action_status(
         if re.search(r"(?:こと|よう)に(?:し(?:た|ました)|して(?:いる|いた|います|いました))$", finite):
             aligned.append(nucleus)
             continue
+        if re.search(r"(?:(?:よう|[おこごそとのぼもろ]う)とし(?:た|ました|ていた|ていました)|(?:つもり|予定)(?:だった|でした))$", finite):
+            aligned.append(nucleus)
+            continue
         # Keep the selected action and actor. Only resolve the outer finite
         # predicate inside that same source span; a topic is not a new actor.
         # Match the existing case-frame pattern at each boundary so an early
@@ -9640,6 +9686,11 @@ def _final_stage1_align_action_status(
             aligned.append(nucleus)
             continue
         predicate = arguments[-1].group("predicate")
+        if _last_finite_operator_match(
+            predicate, _NEGATION_RE, _WISH_RE, _UNCERTAIN_RE, _FEELING_RE,
+        ) is not None:
+            aligned.append(nucleus)
+            continue
         if re.search(r"(?:たい|たく|たかった|ほしい|ほしかった|つもり|予定|かもしれ|らしい|はず|なら|たら|れば|場合|もし|ようと|ように)", predicate):
             aligned.append(nucleus)
             continue
@@ -9724,6 +9775,7 @@ def project_final_stage1_grounded_observation_plan(
             complexity=complexity,
             material_quality=material_quality,
             include_reception_relation_support=True,
+            final_source_fidelity=True,
         )
     )
     projected = replace(

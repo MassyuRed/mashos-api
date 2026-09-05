@@ -265,6 +265,8 @@ class CMEESameNucleusActionStatusTest(unittest.TestCase):
             "資料を読んだら連絡する", "古びた",
             "資料を読むことにした", "資料を読むようにした",
             "この部屋は作業に便利だった", "部屋にいた",
+            "資料を読もうとした", "資料を読もうとしていた",
+            "資料を読む予定だった", "資料を読むつもりだった",
         ):
             with self.subTest():
                 source, before = self._action(text)
@@ -272,6 +274,43 @@ class CMEESameNucleusActionStatusTest(unittest.TestCase):
                     (before,), source.evidence_spans,
                 )
                 self.assertEqual(after, before)
+
+    def test_embedded_operator_keeps_scope_with_factual_outer_action(self):
+        for text, polarity, modality, code, aspect in (
+            ("参加できないことだけを記録した", "negative", "possibility", "operator:negation", "unknown"),
+            ("続けたいと伝えた", "neutral", "wish", "operator:wish", "unknown"),
+            ("不安な箇所を記録していた", "neutral", "feeling", "operator:feeling", "progressive"),
+        ):
+            with self.subTest(operator=code):
+                source, nucleus = self._action(text)
+                before = replace(nucleus, semantic_frame=replace(
+                    nucleus.semantic_frame, polarity=polarity, modality=modality,
+                    attribute_codes=(*nucleus.semantic_frame.attribute_codes, code),
+                ))
+                after, = observation_plan_owner._final_stage1_align_action_status((before,), source.evidence_spans)
+                self.assertEqual(after.semantic_frame.modality, "fact")
+                self.assertEqual(after.semantic_frame.time_scope, "past")
+                self.assertEqual(after.semantic_frame.polarity, polarity)
+                self.assertIn(code, after.semantic_frame.attribute_codes)
+                self.assertIn("aspect:" + aspect, after.semantic_frame.attribute_codes)
+                self.assertEqual(replace(after, semantic_frame=before.semantic_frame), before)
+                self.assertTrue(observation_plan_owner._is_explicit_action_nucleus(after))
+                self.assertTrue(reception_owner.reception_action_is_performed(after))
+                self.assertFalse(reception_owner.reception_action_is_future_intention(after))
+
+    def test_negative_fact_without_outer_action_proof_is_not_effort(self):
+        source, nucleus = self._action("何も記録しなかった")
+        negative = replace(nucleus, semantic_frame=replace(
+            nucleus.semantic_frame, modality="fact", polarity="negative",
+            attribute_codes=("operator:negation", "operator:action", "semantic_role:concrete_action_evidence"),
+        ))
+        after, = observation_plan_owner._final_stage1_align_action_status((negative,), source.evidence_spans)
+        self.assertEqual(after, negative)
+        self.assertTrue(observation_plan_owner._is_explicit_action_nucleus(after))
+        self.assertTrue(observation_plan_owner._is_reception_performed_action_nucleus(after))
+        self.assertFalse(observation_plan_owner._is_explicit_action_nucleus(after, final_source_fidelity=True))
+        self.assertFalse(observation_plan_owner._is_reception_performed_action_nucleus(after, final_source_fidelity=True))
+        self.assertFalse(reception_owner.reception_action_is_performed(after))
 
     def test_past_action_pair_keeps_source_aspect_and_rejects_wrong_owner(self):
         rows, _ = load_validated_batch(_BATCH_PATH, _MANIFEST_PATH)

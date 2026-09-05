@@ -806,6 +806,7 @@ def _evaluate_reception_gates(
                 resolver=resolver,
                 safety_kind=plan.safety_policy.safety_kind,
                 material_quality=plan.input_profile.material_quality,
+                final_source_fidelity=FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in plan.source_contracts,
             )
         except (AttributeError, KeyError, TypeError, ValueError):
             reception_plan_issues = (

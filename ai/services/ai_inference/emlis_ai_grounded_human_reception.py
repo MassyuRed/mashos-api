@@ -26,6 +26,7 @@ from emlis_ai_grounded_observation_plan import (
     GroundedReceptionAct,
     GroundedReceptionMovePlan,
     GroundedSemanticNucleus,
+    source_proven_performed_action_status,
 )
 
 
@@ -1540,6 +1541,8 @@ def reception_action_is_performed(
 
     frame = nucleus.semantic_frame
     attributes = frozenset(frame.attribute_codes)
+    if source_proven_performed_action_status(nucleus):
+        return True
     return bool(
         nucleus.kind == "action"
         and frame.polarity != "negative"
