@@ -221,6 +221,31 @@ class CMEE0066SelfDenialDependencyAndExactCoverTest(unittest.TestCase):
                     TRIAGE_SAFE_OBSERVATION,
                 )
 
+    def test_self_worth_particles_keep_the_same_identity_boundary(self) -> None:
+        # Transform an existing public synthetic input; no corpus text is
+        # copied into this grammatical boundary regression.
+        source = "自分には価値がない。"
+        for owner_link in ("には", "の"):
+            for particle in ("が", "は", "も"):
+                for negation in ("ない", "無い"):
+                    text = source.replace("には", owner_link).replace(
+                        "価値がない", f"価値{particle}{negation}",
+                    )
+                    with self.subTest(owner_link=owner_link, particle=particle,
+                                      negation=negation):
+                        self.assertTrue(is_bounded_self_denial_text(text))
+                        decision = classify_emlis_safety_triage_text(text)
+                        self.assertEqual(decision.safety_triage_kind,
+                                         TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER)
+                        self.assertTrue(decision.must_not_accept_identity_claim_as_fact)
+                        self.assertFalse(decision.requires_separate_safety_surface)
+        for owner_link in ("の表現には", "の予定には"):
+            text = source.replace("には", owner_link).replace("価値が", "価値も")
+            with self.subTest(non_identity_owner=owner_link):
+                self.assertFalse(is_bounded_self_denial_text(text))
+                self.assertEqual(classify_emlis_safety_triage_text(text).safety_triage_kind,
+                                 TRIAGE_SAFE_OBSERVATION)
+
     def test_03_fact_boundary_cannot_launder_an_action_as_self_denial(self) -> None:
         action_id = next(
             row.nucleus_id

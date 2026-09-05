@@ -1657,12 +1657,20 @@ _FINITE_OPERATOR_PATTERNS: Final = (
     _CONTINUATION_RE,
     _ACTION_RE,
 )
+# The unchanged time-head vocabulary is shared by the existing prefix proof
+# and the source-position proof for a concessive time introduction.
+_BOUNDED_TIME_HEAD_SOURCE: Final = (
+    r"(?:今日|昨日|明日|今|現在|今朝|午前|午後|夕方|"
+    r"朝|昼|夜|以前|これまで)"
+)
+_CONCESSIVE_TIME_INTRO_RE: Final = re.compile(
+    _BOUNDED_TIME_HEAD_SOURCE + r"に(?P<change>なって)も"
+)
 _BOUNDED_OPERATOR_PREFIX_RE: Final = re.compile(
     r"^(?:"
     r"(?:自分|私|わたし|僕|ぼく|俺|おれ)"
     r"(?:にとって|には|は|が|も|の)|"
-    r"(?:今日|昨日|明日|今|現在|今朝|午前|午後|夕方|"
-    r"朝|昼|夜|以前|これまで)(?:は|も|の|には)?|"
+    + _BOUNDED_TIME_HEAD_SOURCE + r"(?:は|も|の|には)?|"
     r"この記録では?|"
     r"もう少し|少し(?:だけ|ずつ)?|やや|ずっと|強く|まだ|なお"
     r")[、,\s]*"
@@ -2262,10 +2270,78 @@ def _operator_codes_for_text(text: str, *, source_field: str = "") -> tuple[str,
     return tuple(_dedupe(values))
 
 
-def _clause_signals(span: EvidenceSpan, *, kind: NucleusKind) -> _ClauseSignals:
-    text = _clean(getattr(span, "raw_text", ""))
+def _operator_codes_for_span(
+    span: EvidenceSpan,
+    *,
+    normalized_input: Mapping[str, Any] | None = None,
+    scalar_start: int = 0,
+    scalar_end: int | None = None,
+) -> tuple[str, ...]:
+    """Use verified original position to bound one time-only copula match.
+
+    A Ledger span can start midway through a sentence after a soft/length
+    split. Only the original field can prove an independent time introduction;
+    missing or mismatched context preserves the existing operator result.
+    Neither the Evidence text/offsets nor any semantic attributes are altered.
+    """
+
+    span_text = _clean(getattr(span, "raw_text", ""))
+    scalar_end = len(span_text) if scalar_end is None else scalar_end
+    text = span_text[scalar_start:scalar_end]
     source_field = _clean(getattr(span, "source_field", ""))
     operators = _operator_codes_for_text(text, source_field=source_field)
+    if (
+        "operator:change" not in operators
+        or normalized_input is None
+        or source_field not in _TEXT_SOURCE_FIELDS
+        or scalar_start != 0
+        or not 0 < scalar_end <= len(span_text)
+    ):
+        return operators
+    intro = _CONCESSIVE_TIME_INTRO_RE.match(text)
+    if intro is None:
+        return operators
+    source = str(normalized_input.get(source_field) or "")
+    start = int(getattr(span, "start_index", -1))
+    end = int(getattr(span, "end_index", -1))
+    if (
+        start < 0
+        or end <= start
+        or end > len(source)
+        or _clean(source[start:end]) != span_text
+        or not source.startswith(intro.group(0), start)
+    ):
+        return operators
+    visible_source = _top_level_text(source)
+    if (
+        visible_source is None
+        or visible_source[start:start + intro.end()] != intro.group(0)
+    ):
+        return operators
+    # Do not treat a comma, whitespace, soft split, or length split as proof
+    # that the preceding subject is absent. Ignore boundaries inside groups.
+    previous_boundary = max(
+        visible_source.rfind(mark, 0, start) for mark in "。.!！?？"
+    )
+    if source[previous_boundary + 1:start].strip():
+        return operators
+    if any(
+        (match.start(), match.end()) != intro.span("change")
+        for match in _CHANGE_RE.finditer(text)
+    ):
+        return operators
+    return tuple(code for code in operators if code != "operator:change")
+
+
+def _clause_signals(
+    span: EvidenceSpan,
+    *,
+    kind: NucleusKind,
+    normalized_input: Mapping[str, Any] | None = None,
+) -> _ClauseSignals:
+    text = _clean(getattr(span, "raw_text", ""))
+    source_field = _clean(getattr(span, "source_field", ""))
+    operators = _operator_codes_for_span(span, normalized_input=normalized_input)
     operator_set = set(operators)
 
     negative = "operator:negation" in operator_set or "operator:refusal" in operator_set
@@ -2320,7 +2396,11 @@ def _nearest_substantive_span(
     return None
 
 
-def _arc_roles_by_span(spans: Sequence[EvidenceSpan]) -> dict[str, tuple[str, ...]]:
+def _arc_roles_by_span(
+    spans: Sequence[EvidenceSpan],
+    *,
+    normalized_input: Mapping[str, Any] | None = None,
+) -> dict[str, tuple[str, ...]]:
     """Classify major semantic turns without using event or fixture nouns.
 
     Roles are body-free codes attached to existing Evidence spans.  They
@@ -2355,7 +2435,7 @@ def _arc_roles_by_span(spans: Sequence[EvidenceSpan]) -> dict[str, tuple[str, ..
             scored: list[tuple[int, int, EvidenceSpan]] = []
             for order, span in enumerate(substantive):
                 text = _clean(getattr(span, "raw_text", ""))
-                operators = set(_operator_codes_for_text(text, source_field=field_name))
+                operators = set(_operator_codes_for_span(span, normalized_input=normalized_input))
                 score = 1
                 if _COMPLETED_ACTION_RE.search(text):
                     score += 5
@@ -2383,7 +2463,7 @@ def _arc_roles_by_span(spans: Sequence[EvidenceSpan]) -> dict[str, tuple[str, ..
             if not _is_substantive_text_span(span):
                 continue
 
-            operators = set(_operator_codes_for_text(text, source_field=field_name))
+            operators = set(_operator_codes_for_span(span, normalized_input=normalized_input))
             if _LEADING_CONTRAST_RE.search(text):
                 add(_nearest_substantive_span(field_spans, index - 1, -1), "semantic_role:contrast_before")
                 add(span, "semantic_role:contrast_after")
@@ -2704,12 +2784,15 @@ def _relation_grounding_kind_for_pair(
     return "bounded_structural_inference"
 
 
-def _structural_role_for_span(span: EvidenceSpan) -> str:
+def _structural_role_for_span(
+    span: EvidenceSpan,
+    *,
+    normalized_input: Mapping[str, Any] | None = None,
+) -> str:
     """Return a source-bound role from operators, never from example nouns."""
 
-    text = _clean(getattr(span, "raw_text", ""))
     source_field = _clean(getattr(span, "source_field", ""))
-    operators = set(_operator_codes_for_text(text, source_field=source_field))
+    operators = set(_operator_codes_for_span(span, normalized_input=normalized_input))
     if source_field == "memo_action" or "operator:action" in operators:
         return "action"
     if "operator:self_evaluation" in operators:
@@ -2757,11 +2840,11 @@ def _build_meaning_artifacts(
     must_keep_keys: list[str] = []
     should_keep_keys: list[str] = []
     optional_keys: list[str] = []
-    arc_roles_by_span = _arc_roles_by_span(spans)
+    arc_roles_by_span = _arc_roles_by_span(spans, normalized_input=normalized_input)
 
     for order, span in enumerate(text_spans):
         span_id = _clean(getattr(span, "span_id", ""))
-        role = _structural_role_for_span(span)
+        role = _structural_role_for_span(span, normalized_input=normalized_input)
         arc_roles = set(arc_roles_by_span.get(span_id, ()))
         block_key = f"meaning:{order}:{role}"
         priority = 0.92 if arc_roles else 0.72
@@ -2902,6 +2985,7 @@ def _retention_by_span(
     block_span_ids: Mapping[str, Sequence[str]],
     meaning_artifacts: _MeaningArtifacts,
     safety_decision: EmlisSafetyTriageDecision,
+    normalized_input: Mapping[str, Any] | None = None,
 ) -> dict[str, Retention]:
     ordered_text = _sort_spans(_text_spans(spans))
     substantive_text = [span for span in ordered_text if _is_substantive_text_span(span)]
@@ -2931,7 +3015,7 @@ def _retention_by_span(
     ] or substantive_text
     text_count = len(surface_substantive_text)
     result: dict[str, Retention] = {}
-    arc_roles_by_span = _arc_roles_by_span(spans)
+    arc_roles_by_span = _arc_roles_by_span(spans, normalized_input=normalized_input)
 
     for span in spans:
         span_id = _clean(getattr(span, "span_id", ""))
@@ -2992,6 +3076,7 @@ def _kind_for_span(
     roles: Sequence[str],
     safety_decision: EmlisSafetyTriageDecision,
     safety_span_order: Mapping[str, int],
+    normalized_input: Mapping[str, Any] | None = None,
 ) -> NucleusKind:
     field_name = _clean(getattr(span, "source_field", ""))
     span_id = _clean(getattr(span, "span_id", ""))
@@ -3023,7 +3108,7 @@ def _kind_for_span(
         return "reaction"
     if _WISH_RE.search(_SIMILE_NOT_WISH_RE.sub("", text)):
         return "wish"
-    if _CHANGE_RE.search(text):
+    if "operator:change" in _operator_codes_for_span(span, normalized_input=normalized_input):
         return "change"
     if _CONSTRAINT_RE.search(text):
         return "constraint"
@@ -3052,8 +3137,9 @@ def _semantic_frame_for_span(
     roles: Sequence[str],
     claim_ids: Sequence[str],
     arc_role_codes: Sequence[str] = (),
+    normalized_input: Mapping[str, Any] | None = None,
 ) -> GroundedSemanticFrame:
-    signals = _clause_signals(span, kind=kind)
+    signals = _clause_signals(span, kind=kind, normalized_input=normalized_input)
     detected_type = _clean(getattr(span, "detected_type", "")) or "unknown"
     span_id = _clean(getattr(span, "span_id", ""))
     predicate_kind = (
@@ -3104,6 +3190,7 @@ def _typed_nucleus_projections_for_span(
     span: EvidenceSpan,
     *,
     base_frame: GroundedSemanticFrame,
+    normalized_input: Mapping[str, Any] | None = None,
 ) -> tuple[_TypedNucleusProjection, ...]:
     """Project compound Japanese predicate structure without new Evidence.
 
@@ -3124,6 +3211,20 @@ def _typed_nucleus_projections_for_span(
         scalar_end: int,
         *codes: str,
     ) -> tuple[str, ...]:
+        # Only withdraw a raw copula operator that the original source
+        # proves to be a time introduction. Manually justified change codes
+        # for a different bounded predicate retain their existing meaning.
+        if (
+            "operator:change" in codes
+            and "operator:change" in _operator_codes_for_span(
+                span, scalar_start=scalar_start, scalar_end=scalar_end,
+            )
+            and "operator:change" not in _operator_codes_for_span(
+                span, normalized_input=normalized_input,
+                scalar_start=scalar_start, scalar_end=scalar_end,
+            )
+        ):
+            codes = tuple(code for code in codes if code != "operator:change")
         provenance = tuple(
             code
             for code in base_frame.attribute_codes
@@ -5123,6 +5224,7 @@ def _build_nuclei(
     board: PerspectiveBoard,
     meaning_artifacts: _MeaningArtifacts,
     safety_decision: EmlisSafetyTriageDecision,
+    normalized_input: Mapping[str, Any] | None = None,
 ) -> tuple[GroundedSemanticNucleus, ...]:
     block_span_ids = _meaning_block_span_ids(meaning_artifacts.meaning_blocks, spans)
     roles_by_span, block_keys_by_span = _roles_and_block_keys_by_span(
@@ -5134,11 +5236,12 @@ def _build_nuclei(
         block_span_ids=block_span_ids,
         meaning_artifacts=meaning_artifacts,
         safety_decision=safety_decision,
+        normalized_input=normalized_input,
     )
     claim_ids_by_span = _claim_ids_by_span(board)
     safety_ids = _ordered_span_ids(getattr(safety_decision, "evidence_span_ids", ()) or ())
     safety_span_order = {span_id: index for index, span_id in enumerate(safety_ids)}
-    arc_roles_by_span = _arc_roles_by_span(spans)
+    arc_roles_by_span = _arc_roles_by_span(spans, normalized_input=normalized_input)
 
     nuclei: list[GroundedSemanticNucleus] = []
     for span in _sort_spans(spans):
@@ -5153,6 +5256,7 @@ def _build_nuclei(
             roles=roles,
             safety_decision=safety_decision,
             safety_span_order=safety_span_order,
+            normalized_input=normalized_input,
         )
         field_name = _clean(getattr(span, "source_field", ""))
         grounding_kind: GroundingKind = (
@@ -5173,6 +5277,7 @@ def _build_nuclei(
                     roles=roles,
                     claim_ids=claim_ids,
                     arc_role_codes=arc_roles_by_span.get(span_id, ()),
+                    normalized_input=normalized_input,
                 ),
                 grounding_kind=grounding_kind,
                 certainty=_clamp(getattr(span, "confidence", 0.0)),
@@ -8345,6 +8450,7 @@ def build_grounded_observation_plan(
         board=perspective_board,
         meaning_artifacts=meaning_artifacts,
         safety_decision=triage,
+        normalized_input=normalized,
     )
     relations = _build_relations(
         spans=span_list,
@@ -8442,6 +8548,7 @@ def _final_stage1_compound_meaning_projections_for_span(
     span: EvidenceSpan,
     *,
     base_frame: GroundedSemanticFrame,
+    normalized_input: Mapping[str, Any] | None = None,
 ) -> tuple[_TypedNucleusProjection, ...]:
     """Recover source-bounded compound meaning only for final Stage-1.
 
@@ -8472,6 +8579,20 @@ def _final_stage1_compound_meaning_projections_for_span(
         scalar_end: int,
         *codes: str,
     ) -> tuple[str, ...]:
+        # Only withdraw a raw copula operator that the original source
+        # proves to be a time introduction. Manually justified change codes
+        # for a different bounded predicate retain their existing meaning.
+        if (
+            "operator:change" in codes
+            and "operator:change" in _operator_codes_for_span(
+                span, scalar_start=scalar_start, scalar_end=scalar_end,
+            )
+            and "operator:change" not in _operator_codes_for_span(
+                span, normalized_input=normalized_input,
+                scalar_start=scalar_start, scalar_end=scalar_end,
+            )
+        ):
+            codes = tuple(code for code in codes if code != "operator:change")
         provenance = tuple(
             code
             for code in base_frame.attribute_codes
@@ -9141,6 +9262,8 @@ def _final_stage1_action_change_source_fragment_projections(
 def _final_stage1_typed_nuclei(
     plan: GroundedObservationPlan,
     evidence_spans: Sequence[EvidenceSpan],
+    *,
+    normalized_input: Mapping[str, Any] | None = None,
 ) -> tuple[tuple[GroundedSemanticNucleus, ...], tuple[tuple[str, str, str], ...]]:
     span_index = {
         _clean(getattr(span, "span_id", "")): span
@@ -9159,6 +9282,7 @@ def _final_stage1_typed_nuclei(
             _typed_nucleus_projections_for_span(
                 span,
                 base_frame=nucleus.semantic_frame,
+                normalized_input=normalized_input,
             )
             if span is not None and nucleus.kind != "self_evaluation"
             else ()
@@ -9172,6 +9296,7 @@ def _final_stage1_typed_nuclei(
             _final_stage1_compound_meaning_projections_for_span(
                 span,
                 base_frame=nucleus.semantic_frame,
+                normalized_input=normalized_input,
             )
             if span is not None and nucleus.kind != "self_evaluation"
             else ()
@@ -9884,6 +10009,7 @@ def project_final_stage1_grounded_observation_plan(
     evidence_spans: Sequence[EvidenceSpan],
     safety_decision: EmlisSafetyTriageDecision,
     resolver: EvidenceSpanResolver | None = None,
+    normalized_input: Mapping[str, Any] | None = None,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -9895,6 +10021,7 @@ def project_final_stage1_grounded_observation_plan(
     projected_nuclei, compound_dependencies = _final_stage1_typed_nuclei(
         plan,
         evidence_spans,
+        normalized_input=normalized_input,
     )
     projected_nuclei = _final_stage1_align_action_status(
         projected_nuclei,
@@ -10033,6 +10160,7 @@ def build_final_stage1_grounded_observation_plan(
         evidence_spans=span_list,
         safety_decision=triage,
         resolver=resolver,
+        normalized_input=normalized,
     )
 
 

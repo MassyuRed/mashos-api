@@ -57,7 +57,7 @@ _SELF_REFERENCE_SOURCE: Final = r"(?:自分|私|わたし|俺|おれ|僕|ぼく)
 _SELF_WORTH_NEGATION_SOURCE: Final = (
     # ``最低でも15分`` is a lower-bound adverb, not a self-worth claim.
     r"(?:嫌い|きらい|駄目|だめ|ダメ(?!ージ)|最低(?!でも|限)|クズ|いらない|必要ない|"
-    r"価値(?:が|は)?(?:ない|無い)|役に立たない|好きになれない|許せない|"
+    r"価値(?:が|は|も)?(?:ない|無い)|役に立たない|好きになれない|許せない|"
     r"中途半端|失敗ばかり|悪い(?:人間|人|奴|やつ)?)"
 )
 _SELF_DIRECTED_NEGATIVE_ACTION_SOURCE: Final = (
@@ -82,7 +82,7 @@ _BOUNDED_SELF_WORTH_NEGATION_RE: Final = re.compile(
     re.IGNORECASE,
 )
 _SELF_OWNED_WORTH_NEGATION_RE: Final = re.compile(
-    rf"{_SELF_REFERENCE_SOURCE}(?:自身)?の価値(?:が|は)?(?:ない|無い)",
+    rf"{_SELF_REFERENCE_SOURCE}(?:自身)?の価値(?:が|は|も)?(?:ない|無い)",
     re.IGNORECASE,
 )
 _SELF_DIRECTED_NEGATIVE_ACTION_RE: Final = re.compile(
