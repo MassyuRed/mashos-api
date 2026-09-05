@@ -11,7 +11,7 @@ from move-scoped semantic referents and deterministic role/act families.
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field, fields, is_dataclass, replace
 import hashlib
 import json
 import re
@@ -264,6 +264,167 @@ class GroundedHumanReceptionSurfaceError(ValueError):
 
 
 @dataclass(frozen=True, repr=False)
+class SelectedSubjectiveReceptionDecisionV1:
+    """One already-selected proposition, exactly joined to its existing Move."""
+
+    decision_ref: str
+    branch: str
+    meaning_outcome_ref: str
+    reception_binding_ref: str
+    projected_claim_ref: str
+    selected_opportunity_ref: str
+    move_id: str
+    reception_act: str
+    target_nucleus_ids: tuple[str, ...]
+    support_nucleus_ids: tuple[str, ...]
+    selected_contribution_refs: tuple[str, ...]
+    subjective_proposition: Any = field(repr=False)
+    basis_rows: tuple[Any, ...] = field(repr=False)
+    qualifier_rows: tuple[Any, ...] = field(repr=False)
+
+
+@dataclass(frozen=True, repr=False)
+class SelectedSubjectiveReceptionInputV1:
+    """Pre-realization authority shared by forward and independent replay.
+
+    Never serialized into an artifact, a plan, a source attribute or public
+    metadata. The bridge proves the upstream join before this value is sealed;
+    consumers verify its immutable shape and its current grounding binding.
+    """
+
+    input_ref: str
+    projection_preimage_ref: str
+    projection_seal_ref: str
+    grounding_ref: str
+    semantic_nucleus_pairs: tuple[tuple[str, str], ...]
+    relation_pairs: tuple[tuple[str, str], ...]
+    decisions: tuple[SelectedSubjectiveReceptionDecisionV1, ...]
+
+
+def selected_subjective_reception_grounding_ref(
+    plan: GroundedObservationPlan, resolver: EvidenceSpanResolver,
+) -> str:
+    payload = (asdict(plan), tuple(asdict(resolver.resolve(ref)) for ref in resolver.span_ids))
+    return hashlib.sha256(_private_canonical_json_bytes(payload)).hexdigest()
+
+
+def identify_selected_subjective_reception_decision(
+    row: SelectedSubjectiveReceptionDecisionV1,
+) -> SelectedSubjectiveReceptionDecisionV1:
+    payload = asdict(replace(row, decision_ref=""))
+    return replace(row, decision_ref="selected-reception-decision:" + hashlib.sha256(
+        _private_canonical_json_bytes(payload)
+    ).hexdigest())
+
+
+def identify_selected_subjective_reception_input(
+    value: SelectedSubjectiveReceptionInputV1,
+) -> SelectedSubjectiveReceptionInputV1:
+    payload = asdict(replace(value, input_ref=""))
+    return replace(value, input_ref="selected-reception-input:" + hashlib.sha256(
+        _private_canonical_json_bytes(payload)
+    ).hexdigest())
+
+
+def validate_selected_subjective_reception_input(
+    value: SelectedSubjectiveReceptionInputV1 | None,
+    reception_plan: GroundedHumanReceptionPlan,
+    plan: GroundedObservationPlan,
+    resolver: EvidenceSpanResolver,
+) -> Mapping[str, SelectedSubjectiveReceptionDecisionV1]:
+    # Local import preserves the existing emlis_v1a/response import boundary.
+    from cocolon_meaning_experience_engine.contracts import (
+        SubjectivePropositionV2, SubjectiveBasisBinding, SourceQualifierBinding,
+        CMEEStage1ContractError, _stage1_subjective_v2_content_bindings,
+    )
+
+    failure = "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+    if type(value) is not SelectedSubjectiveReceptionInputV1:
+        raise GroundedHumanReceptionSurfaceError(failure)
+    def immutable(item: Any) -> bool:
+        if item is None or isinstance(item, (str, int, bool)):
+            return True
+        if type(item) is tuple:
+            return all(immutable(child) for child in item)
+        return (is_dataclass(item) and item.__dataclass_params__.frozen
+                and all(immutable(getattr(item, f.name)) for f in fields(item)))
+    if not immutable(value):
+        raise GroundedHumanReceptionSurfaceError(failure)
+    if (not value.projection_preimage_ref or not value.projection_seal_ref
+        or identify_selected_subjective_reception_input(value) != value
+        or value.grounding_ref != selected_subjective_reception_grounding_ref(plan, resolver)
+        or tuple(row.move_id for row in value.decisions)
+        != tuple(move.move_id for move in reception_plan.moves)):
+        raise GroundedHumanReceptionSurfaceError(failure)
+    semantic_map = dict(value.semantic_nucleus_pairs)
+    relation_map = dict(value.relation_pairs)
+    if (len(semantic_map) != len(value.semantic_nucleus_pairs)
+        or len(relation_map) != len(value.relation_pairs)
+        or set(semantic_map.values()) != {row.nucleus_id for row in plan.nuclei}
+        or not set(relation_map.values()) <= {row.relation_id for row in plan.relations}):
+        raise GroundedHumanReceptionSurfaceError(failure)
+    for row, move in zip(value.decisions, reception_plan.moves, strict=True):
+        if (type(row) is not SelectedSubjectiveReceptionDecisionV1
+            or identify_selected_subjective_reception_decision(row) != row
+            or row.branch not in {"NORMAL", "LIMITED"}
+            or not all((row.meaning_outcome_ref, row.reception_binding_ref, row.projected_claim_ref))
+            or row.reception_act != move.reception_act
+            or row.target_nucleus_ids != move.target_nucleus_ids
+            or row.support_nucleus_ids != move.support_nucleus_ids
+            or type(row.subjective_proposition) is not SubjectivePropositionV2
+            or any(type(basis) is not SubjectiveBasisBinding for basis in row.basis_rows)
+            or any(type(qualifier) is not SourceQualifierBinding for qualifier in row.qualifier_rows)):
+            raise GroundedHumanReceptionSurfaceError(failure)
+        proposition = row.subjective_proposition
+        if (not row.selected_contribution_refs
+            or not set(row.selected_contribution_refs) <= set(proposition.target_contribution_refs)
+            or tuple(basis.binding_ref for basis in row.basis_rows) != proposition.basis_binding_refs
+            or tuple(q.source_qualifier_binding_ref for q in row.qualifier_rows)
+            != proposition.source_qualifier_binding_refs
+            or any(basis.projection_preimage_ref != value.projection_preimage_ref
+                   or basis.semantic_ref not in semantic_map
+                   or basis.contribution_ref not in proposition.target_contribution_refs
+                   for basis in row.basis_rows)
+            or any(q.projection_preimage_ref != value.projection_preimage_ref
+                   or q.basis_binding_ref not in proposition.basis_binding_refs for q in row.qualifier_rows)
+            or not set(move.target_nucleus_ids) <= {
+                semantic_map[ref] for ref in proposition.response_object_refs if ref in semantic_map
+            }
+            or proposition.focal_relation_ref is not None
+            and proposition.focal_relation_ref not in relation_map):
+            raise GroundedHumanReceptionSurfaceError(failure)
+        # Reuse the existing content owner's exact binding projection. The
+        # selected candidate subset cannot substitute for content-owned primary
+        # and protected/boundary targets when the latter span another basis.
+        basis_by_ref = {basis.binding_ref: basis for basis in row.basis_rows}
+        try:
+            primary_bindings, boundary_bindings, focal_ref = (
+                _stage1_subjective_v2_content_bindings(proposition)
+            )
+            primary_refs = _dedupe(basis_by_ref[ref].semantic_ref for ref in primary_bindings)
+            boundary_refs = _dedupe(basis_by_ref[ref].semantic_ref for ref in boundary_bindings)
+        except (CMEEStage1ContractError, KeyError, TypeError, AttributeError):
+            raise GroundedHumanReceptionSurfaceError(failure) from None
+        if (len(basis_by_ref) != len(row.basis_rows)
+            or proposition.primary_target_refs != primary_refs
+            or proposition.boundary_target_refs != boundary_refs
+            or proposition.response_object_refs != (*primary_refs, *boundary_refs)
+            or proposition.focal_relation_ref != focal_ref):
+            raise GroundedHumanReceptionSurfaceError(failure)
+        appraisal = proposition.appraisal_content
+        if appraisal is not None and (
+            not set(appraisal.appraised_bindings) <= set(proposition.basis_binding_refs)
+            or not set(appraisal.protected_bindings) <= set(proposition.basis_binding_refs)
+            or not set(appraisal.basis_contribution_refs) <= set(proposition.target_contribution_refs)
+            or appraisal.focal_relation_ref != proposition.focal_relation_ref
+        ):
+            raise GroundedHumanReceptionSurfaceError(failure)
+    if len({row.move_id for row in value.decisions}) != len(value.decisions):
+        raise GroundedHumanReceptionSurfaceError(failure)
+    return MappingProxyType({row.move_id: row for row in value.decisions})
+
+
+@dataclass(frozen=True, repr=False)
 class RealizableReceptionArgumentV1:
     """One ordered semantic role and its grammatical realization duty."""
 
@@ -318,6 +479,7 @@ class SourceGroundedRealizableReceptionExpressionV1:
     nominalization_plan: tuple[str, ...]
     clause_link_plan: tuple[str, ...]
     provenance_refs: tuple[str, ...]
+    selected_subjective_decision_ref: str = ""
 
 
 @dataclass(frozen=True, repr=False)
@@ -1938,6 +2100,11 @@ def resolve_grounded_reception_referent(
                 kind, text = "current_suffering", "その苦しさ"
             else:
                 kind, text = "current_distress", "そのつらさ"
+        elif final_source_fidelity:
+            # A current-input state is not proof of currently experienced
+            # suffering (it may describe an anticipated or uncertain state).
+            # Keep its selected source object without adding that sensation.
+            kind, text = "current_expression", "今ここに置かれた言葉"
         elif kinds & {"reaction", "state", "constraint"}:
             kind, text = "current_burden", "今のしんどさ"
         else:
@@ -6561,6 +6728,7 @@ def _source_grounded_response_predicate(
         "RECEIVED",
         "STATE",
     ],
+    selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
 ) -> _SourceGroundedResponsePredicateV1:
     """Compose role valency independently from the act predicate."""
 
@@ -6606,6 +6774,63 @@ def _source_grounded_response_predicate(
         act_guard, predicate_lemma, conjugation_class = "大切に", "思う", "GODAN_U"
     elif reception_act in {"hold_help_seeking", "respect_words_placed"}:
         act_guard, predicate_lemma, conjugation_class = "大切に", "受け止める", "ICHIDAN"
+    else:
+        raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
+    proposition = selected_subjective_decision.subjective_proposition
+    appraisal = proposition.appraisal_content
+    if appraisal is not None:
+        # These are the existing upstream operations, never selected here.
+        # Their grammatical guards apply to the source-bound object above.
+        selected_guard = {
+            "RECEIVE_AS_MATERIAL": "",
+            "PRESERVE_BOTH_ENDPOINTS": "どちらの側も残したまま、",
+            "RECOGNIZE_AS_BOUNDED": "",
+            "LEAVE_UNFINISHED": "結論を急がずに、",
+            "RESPECT_CHOICE": "あなた自身の向きとして、",
+        }.get(appraisal.operation)
+        if selected_guard is None:
+            raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
+        if appraisal.operation == "RECOGNIZE_AS_BOUNDED":
+            # The source-owned change referent already bounds this object.
+            # Realize the selected recognition with its governed predicate,
+            # instead of repeating the change noun as an extra label.
+            if reception_act != "recognize_lived_change" or target_predicate_kind != "present_change":
+                raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
+            predicate_lemma, conjugation_class = "感じる", "ICHIDAN"
+        act_guard = selected_guard + act_guard
+    elif proposition.affect_content is not None:
+        affect = proposition.affect_content.category
+        if affect == "CONCERN":
+            predicate_lemma, conjugation_class = "気にかける", "ICHIDAN"
+        elif affect == "RESPECT":
+            predicate_lemma, conjugation_class = "大切に思う", "GODAN_U"
+            act_guard = ""
+        elif affect == "RELIEF":
+            act_guard = "ほっとしながら、" + act_guard
+        elif affect == "JOY":
+            act_guard = "うれしく、" + act_guard
+        elif affect == "SADNESS":
+            act_guard = "悲しく、" + act_guard
+        elif affect == "DISCOMFORT":
+            act_guard = "ひっかかりを感じながら、" + act_guard
+        else:
+            raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
+    elif proposition.relational_position is not None:
+        operator = proposition.relational_position.stance_operator
+        selected_guard = {
+            "STAY_WITH_SPECIFIC_OBJECT": "",
+            "PROTECT_USER_AGENCY": "あなた自身の向きとして、",
+            "HOLD_UNFINISHED_OPEN": "結論を急がずに、",
+            "WELCOME_BOUNDED_CHANGE": "変わった点として、",
+        }.get(operator)
+        if selected_guard is None:
+            raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
+        act_guard = selected_guard + act_guard
+    elif proposition.material_value_content is not None:
+        # Selected material value has no supported risk/target realization
+        # here yet. Until that existing semantic duty can be consumed,
+        # a generic act clause must not silently count as content consumption.
+        raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
     else:
         raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
     reception_operator = voice_complement = valency_complement = ""
@@ -6680,6 +6905,7 @@ def _source_grounded_response_predicate_surface(
     ],
     clause_form: Literal["FINITE", "CONTINUATIVE"],
     recovery_stage: ReceptionRecoveryStage = "full",
+    selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
 ) -> str:
     """Author and binder share one exact governed predicate surface."""
 
@@ -6691,6 +6917,7 @@ def _source_grounded_response_predicate_surface(
         semantic_profile=semantic_profile,
         referent_kind=referent_kind,
         voice=voice,
+        selected_subjective_decision=selected_subjective_decision,
     )
     if recovery_stage not in _RECOVERY_STAGES:
         raise GroundedHumanReceptionSurfaceError(
@@ -6718,6 +6945,7 @@ def _source_grounded_reception_fragment(
     referent_kind: str,
     target_owner_slot: int,
     recovery_stage: ReceptionRecoveryStage,
+    selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
 ) -> str:
     """Compose one content core with one role/focus reception predicate."""
 
@@ -6732,6 +6960,15 @@ def _source_grounded_reception_fragment(
         )
     core = f"{context_prefix}{target_core.text}"
     if move.move_role == "bounded_counterposition":
+        proposition = selected_subjective_decision.subjective_proposition
+        position = proposition.relational_position
+        if (position is None
+            or position.relational_position_kind != "BOUNDED_COUNTERPOSITION"
+            or position.commitment != "DECLINE_PROMOTION"
+            or not position.boundary_bindings
+            or proposition.subjective_operator != "COUNTER_SPECIFIC_PROMOTION"
+            or proposition.assertion_modality != "EMLIS_BOUNDED_REFUSAL"):
+            raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
         reference_complement = (
             "その見方だけで"
             if realization.reference_mode == "ANAPHORIC"
@@ -6774,6 +7011,7 @@ def _source_grounded_reception_fragment(
         ),
         clause_form=realization.clause_form,
         recovery_stage=recovery_stage,
+        selected_subjective_decision=selected_subjective_decision,
     )
     return f"{core}{predicate_surface}"
 
@@ -6788,9 +7026,15 @@ def _author_source_grounded_reception_clauses(
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     recovery_stage: ReceptionRecoveryStage,
     binding_seeds: tuple[_ReceptionClauseBindingSeedV1, ...] = (),
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> GroundedHumanReceptionSurface:
     """The sole final author; bindings are emitted in the same append pass."""
 
+    selected_decisions = validate_selected_subjective_reception_input(
+        selected_subjective_input, reception_plan, plan, resolver,
+    )
+    semantic_nucleus_map = dict(selected_subjective_input.semantic_nucleus_pairs)
+    relation_map = dict(selected_subjective_input.relation_pairs)
     expected_clause_realizations = _source_grounded_plan_clause_realizations(
         reception_plan,
         nucleus_index,
@@ -6818,6 +7062,11 @@ def _author_source_grounded_reception_clauses(
     referent_kinds: list[str] = []
     anchor_used = False
     cursor = 0
+    # Per-Move selected contribution cover stays exact. Complete proposition
+    # cover is aggregated across active Moves sharing that selected claim;
+    # each Move need not repeat the other Moves' source objects.
+    consumed_by_selected_claim: dict[tuple[str, str, str, str], set[str]] = {}
+    content_by_selected_claim: dict[tuple[str, str, str, str], set[str]] = {}
     for clause_index, (clause_plan, realization) in enumerate(
         zip(clause_plans, clause_realizations, strict=True)
     ):
@@ -6915,6 +7164,51 @@ def _author_source_grounded_reception_clauses(
                 target_owner_slot=target_owner_slot,
                 context_semantic_slots=context_semantic_slots,
             )
+            selected_decision = selected_decisions[move_id]
+            selected_proposition = selected_decision.subjective_proposition
+            applicable_relations = tuple(
+                relation for relation in plan.relations
+                if relation.relation_id in plan.coverage_requirements.required_relation_ids
+                and set(move.target_nucleus_ids).intersection(
+                    (relation.from_nucleus_id, relation.to_nucleus_id))
+            )
+            # This is the exact existing source-slot order used by plan IR.
+            source_slot_nuclei = (
+                *move.target_nucleus_ids, *move.support_nucleus_ids,
+                *_dedupe(nucleus_id for relation in applicable_relations
+                         for nucleus_id in (relation.from_nucleus_id, relation.to_nucleus_id)
+                         if nucleus_id not in (*move.target_nucleus_ids, *move.support_nucleus_ids)),
+            )
+            consumed_nuclei = {
+                source_slot_nuclei[slot]
+                for slot in (*target_core.semantic_slots, *context_semantic_slots)
+            }
+            selected_basis_nuclei = {
+                semantic_nucleus_map[basis.semantic_ref]
+                for basis in selected_decision.basis_rows
+                if basis.contribution_ref in selected_decision.selected_contribution_refs
+            }
+            if (not selected_basis_nuclei
+                or not selected_basis_nuclei <= consumed_nuclei):
+                raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+            selected_claim_key = (
+                selected_decision.branch, selected_decision.meaning_outcome_ref,
+                selected_decision.reception_binding_ref, selected_decision.projected_claim_ref,
+            )
+            content_nuclei = {
+                semantic_nucleus_map[ref]
+                for ref in selected_proposition.response_object_refs
+            }
+            consumed_by_selected_claim.setdefault(selected_claim_key, set()).update(consumed_nuclei)
+            content_by_selected_claim.setdefault(selected_claim_key, set()).update(content_nuclei)
+            if selected_proposition.focal_relation_ref is not None:
+                focal_id = relation_map[selected_proposition.focal_relation_ref]
+                focal = tuple(relation for relation in applicable_relations
+                              if relation.relation_id == focal_id)
+                if (len(focal) != 1 or not {
+                    focal[0].from_nucleus_id, focal[0].to_nucleus_id,
+                } <= consumed_nuclei):
+                    raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
             move_sentence = _source_grounded_reception_fragment(
                 move,
                 meaning_realization,
@@ -6923,6 +7217,7 @@ def _author_source_grounded_reception_clauses(
                 referent_kind=referent.kind,
                 target_owner_slot=target_owner_slot,
                 recovery_stage=recovery_stage,
+                selected_subjective_decision=selected_decisions[move_id],
             )
             if (
                 _visible_fragment_occurrence_count(
@@ -6974,6 +7269,10 @@ def _author_source_grounded_reception_clauses(
             )
             bindings.append(_identify_visible_segment_binding(draft))
 
+    if (not content_by_selected_claim
+        or any(not expected or not expected <= consumed_by_selected_claim[key]
+               for key, expected in content_by_selected_claim.items())):
+        raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
     text = "".join(parts)
     realized_move_ids = tuple(move.move_id for move in active_moves)
     grounded_nucleus_ids = _dedupe(
@@ -7053,6 +7352,7 @@ def _replay_source_grounded_human_reception_from_plan(
     plan: GroundedObservationPlan,
     recovery_stage: ReceptionRecoveryStage,
     clause_plans: Sequence[GroundedReceptionClausePlan],
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> GroundedHumanReceptionSurface:
     """Validation-only replay from existing grounding inputs, never a carrier."""
 
@@ -7078,6 +7378,7 @@ def _replay_source_grounded_human_reception_from_plan(
         plan=plan,
         nucleus_index=nucleus_index,
         recovery_stage=recovery_stage,
+        selected_subjective_input=selected_subjective_input,
     )
 
 
@@ -7305,9 +7606,13 @@ def _realize_source_grounded_human_reception(
     plan: GroundedObservationPlan,
     recovery_stage: ReceptionRecoveryStage,
     clause_plans: Sequence[GroundedReceptionClausePlan],
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> GroundedHumanReceptionSurface:
     """Consume exact selected-meaning expressions and author Layer 2 once."""
 
+    selected_decisions = validate_selected_subjective_reception_input(
+        selected_subjective_input, reception_plan, plan, resolver,
+    )
     pairs = validate_source_grounded_reception_expressions(
         reception_plan,
         expressions,
@@ -7317,6 +7622,11 @@ def _realize_source_grounded_human_reception(
         expression.move_id: expression for _move, expression in pairs
     }
     for _move, expression in pairs:
+        selected = selected_decisions[expression.move_id]
+        if (expression.selected_subjective_decision_ref != selected.decision_ref
+            or expression.meaning_outcome_ref != selected.meaning_outcome_ref
+            or expression.reception_binding_ref != selected.reception_binding_ref):
+            raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
         # Expression evidence refs are canonical graph identities (opaque
         # ``evidence:ev-...@version``), while the plan/resolver owns local
         # ``sN`` ids.  Their exact join is proved by the compiler bridge.  Do
@@ -7386,6 +7696,7 @@ def _realize_source_grounded_human_reception(
         nucleus_index=nucleus_index,
         recovery_stage=recovery_stage,
         binding_seeds=tuple(seeds),
+        selected_subjective_input=selected_subjective_input,
     )
 
 
@@ -7435,6 +7746,7 @@ def replay_source_grounded_human_reception_from_plan(
     plan: GroundedObservationPlan,
     recovery_stage: ReceptionRecoveryStage,
     clause_plans: Sequence[GroundedReceptionClausePlan],
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> GroundedHumanReceptionSurface:
     """Independently rebuild final bytes from plan inputs only."""
 
@@ -7446,6 +7758,7 @@ def replay_source_grounded_human_reception_from_plan(
             plan=plan,
             recovery_stage=recovery_stage,
             clause_plans=clause_plans,
+            selected_subjective_input=selected_subjective_input,
         )
     except GroundedHumanReceptionSurfaceError as exc:
         raise GroundedHumanReceptionSurfaceError(
@@ -7466,6 +7779,7 @@ def realize_source_grounded_human_reception(
     plan: GroundedObservationPlan,
     recovery_stage: ReceptionRecoveryStage,
     clause_plans: Sequence[GroundedReceptionClausePlan],
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> GroundedHumanReceptionSurface:
     """Named-failure boundary for the final source-grounded author."""
 
@@ -7478,6 +7792,7 @@ def realize_source_grounded_human_reception(
             plan=plan,
             recovery_stage=recovery_stage,
             clause_plans=clause_plans,
+            selected_subjective_input=selected_subjective_input,
         )
     except GroundedHumanReceptionSurfaceError as exc:
         raise GroundedHumanReceptionSurfaceError(

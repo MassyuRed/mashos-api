@@ -14,6 +14,7 @@ from typing import Any, Final, Literal, Mapping
 
 from emlis_ai_evidence_ledger_service import EvidenceSpanResolver
 from emlis_ai_grounded_human_reception import (
+    SelectedSubjectiveReceptionInputV1,
     GroundedHumanReceptionSurfaceError,
     replay_source_grounded_human_reception_from_plan,
     reception_action_is_future_intention,
@@ -629,6 +630,7 @@ def _evaluate_reception_gates(
     resolver: EvidenceSpanResolver,
     observation_text: str,
     reception_text: str,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> tuple[
     dict[str, GateStatus],
     tuple[str, ...],
@@ -748,6 +750,7 @@ def _evaluate_reception_gates(
                     human_line,
                     plan,
                     resolver,
+                    selected_subjective_input=selected_subjective_input,
                 )
             except (AttributeError, KeyError, TypeError, ValueError):
                 reasons_by_gate["reception_move_realization_gate"].append(
@@ -760,6 +763,7 @@ def _evaluate_reception_gates(
                         plan=plan,
                         recovery_stage=sentence_plan.recovery_stage,
                         clause_plans=human_line.reception_clause_plans,
+                        selected_subjective_input=selected_subjective_input,
                     )
                     if realized_reception.text != reception_text:
                         raise GroundedHumanReceptionSurfaceError(
@@ -1739,6 +1743,7 @@ def evaluate_grounded_surface_body_inverse(
     plan: GroundedObservationPlan,
     sentence_plan: GroundedSentencePlan,
     resolver: EvidenceSpanResolver,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> GroundedBodyInverseEvaluation:
     """Re-parse final bytes and independently match plan-visible duties.
 
@@ -2002,6 +2007,7 @@ def evaluate_grounded_surface_body_inverse(
                         plan=plan,
                         recovery_stage=sentence_plan.recovery_stage,
                         clause_plans=planned_line.reception_clause_plans,
+                        selected_subjective_input=selected_subjective_input,
                     )
                     if _body_inverse_visible_text(body, parsed_line) != replay.text:
                         failures.append(f"body_inverse_reception_replay_mismatch:{index}")
@@ -2590,6 +2596,7 @@ def evaluate_grounded_observation_gate(
     resolver: EvidenceSpanResolver,
     product_readfeel_status: ProductReadfeelStatus = "not_evaluated",
     require_body_inverse: bool = False,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> GroundedObservationGateReport:
     """Evaluate I5 plan/coverage/evidence/template/depth gates.
 
@@ -2621,6 +2628,7 @@ def evaluate_grounded_observation_gate(
             sentence_plan,
             plan,
             resolver,
+            selected_subjective_input=selected_subjective_input,
         )
     except (AttributeError, KeyError, TypeError, ValueError):
         surface_issues = ("grounded_surface_validation_contract_invalid",)
@@ -2632,6 +2640,7 @@ def evaluate_grounded_observation_gate(
                 plan=plan,
                 sentence_plan=sentence_plan,
                 resolver=resolver,
+                selected_subjective_input=selected_subjective_input,
             )
         except (AttributeError, KeyError, TypeError, UnicodeError, ValueError):
             body_inverse_reasons = ("body_inverse_evaluation_contract_invalid",)
@@ -2661,6 +2670,7 @@ def evaluate_grounded_observation_gate(
         resolver=resolver,
         observation_text=two_stage_observation,
         reception_text=two_stage_reception,
+        selected_subjective_input=selected_subjective_input,
     )
 
     validation_issues = _dedupe((*plan_issues, *sentence_issues, *surface_issues))

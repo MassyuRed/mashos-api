@@ -37,12 +37,18 @@ from emlis_ai_grounded_observation_plan import (
     validate_grounded_observation_plan,
 )
 from emlis_ai_grounded_human_reception import (
+    SelectedSubjectiveReceptionInputV1,
     SOURCE_GROUNDED_RECEPTION_EXPRESSION_SCHEMA_VERSION,
     GroundedHumanReceptionSurface,
     GroundedHumanReceptionSurfaceError,
     ReceptionVisibleSegmentBindingV1,
     RealizableReceptionArgumentV1,
     SourceGroundedRealizableReceptionExpressionV1,
+    SelectedSubjectiveReceptionDecisionV1,
+    identify_selected_subjective_reception_decision,
+    identify_selected_subjective_reception_input,
+    selected_subjective_reception_grounding_ref,
+    validate_selected_subjective_reception_input,
     _bounded_source_grounded_lexemes,
     _identify_visible_segment_binding,
     _source_grounded_direction_ref,
@@ -11812,6 +11818,120 @@ def _realizable_reception_axis(
     return normalized[0] if normalized else empty
 
 
+def _derive_selected_subjective_reception_input_authority(
+    *,
+    source: AdmittedTextSource,
+    phase_A: "Stage1SubjectivePlanningInputs",
+    projection: EmlisStage1Projection,
+    selected_grounded_plan: GroundedObservationPlan,
+    reception_plan: GroundedHumanReceptionPlan,
+) -> SelectedSubjectiveReceptionInputV1:
+    """Bind existing selected judgments before any expression or body exists."""
+
+    validate_stage1_projection(projection, grounded_graph=phase_A.grounded_graph,
+                              parent_plan=phase_A.parent_plan)
+    if (projection.projection_preimage_ref != phase_A.projection_preimage_ref
+        or projection.projection_seal_ref != phase_A.projection_seal_ref):
+        raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+    outcome = phase_A.input_specific_meaning_structure.meaning_decision_outcome
+    binding = _bind_grounded_plan(source, phase_A.grounded_graph, selected_grounded_plan)
+    resolver = build_evidence_span_resolver(source.evidence_spans,
+                                           current_input=source.normalized_current_input)
+    claims = {row.subjective_claim_id: row for row in projection.subjective_claims}
+    basis = {row.binding_ref: row for row in projection.subjective_basis_binding_rows}
+    qualifiers = {row.source_qualifier_binding_ref: row
+                  for row in projection.source_qualifier_binding_rows}
+    rows = []
+    for move in reception_plan.moves:
+        if type(outcome) is SelectedEmlisProvisionalReading:
+            branch = SubjectiveProjectionBranch.NORMAL
+            outcome_ref = outcome.reading_id
+            selected = _one_realization_row(
+                row for row in phase_A.meaning_bound_reception_proposition_records
+                if row.selected_reading_ref == outcome_ref
+                and row.reception_function == move.reception_act)
+            binding_ref = selected.reception_id
+            candidate = _one_realization_row(
+                row for row in phase_A.input_specific_meaning_structure.candidate_records
+                if row.candidate_id == outcome.selected_candidate_ref)
+        elif type(outcome) is LimitedMeaningOutcome:
+            branch = SubjectiveProjectionBranch.LIMITED
+            outcome_ref = limited_meaning_outcome_id(outcome)
+            bounded = _one_realization_row(phase_A.bounded_limited_reception_records)
+            bounded_proposition = _one_realization_row(
+                phase_A.bounded_limited_subjective_proposition_records)
+            binding_ref = bounded_limited_reception_id(
+                bounded, limited_outcome=outcome, subjective_proposition=bounded_proposition)
+        else:
+            raise CMEEStage1ContractError("MEANING_REALIZATION_CAPABILITY_GAP")
+        trace = _one_realization_row(
+            row for row in projection.reception_visible_causal_trace_rows
+            if row.branch is branch and row.meaning_outcome_ref == outcome_ref
+            and row.reception_record_ref == binding_ref)
+        claim = claims.get(trace.projected_claim_ref)
+        if (projection.projection_branch is not branch or claim is None
+            or move.reception_act not in claim.source_reception_act_refs
+            or type(claim.asserted_subjective_proposition) is not SubjectivePropositionV2):
+            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        proposition = claim.asserted_subjective_proposition
+        if branch is SubjectiveProjectionBranch.NORMAL:
+            selected_refs = tuple(ref for ref in trace.layer1_contribution_refs
+                                  if ref in candidate.basis_contribution_refs)
+            if (trace.response_object_refs != selected.response_object_refs
+                or trace.preserved_difference_refs != selected.preserved_difference_refs):
+                raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        else:
+            retained = _one_realization_row(
+                row for row in phase_A.retained_reception_act_rows
+                if row.act_ref == move.reception_act and row.reception_act == move.reception_act)
+            selected_refs = tuple(retained.basis_contribution_refs)
+            if (proposition != bounded_proposition
+                or trace.layer1_contribution_refs != proposition.target_contribution_refs
+                or trace.response_object_refs != bounded.foreground_source_object_refs):
+                raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        if trace.projected_response_object_refs != proposition.response_object_refs:
+            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        try:
+            rows.append(identify_selected_subjective_reception_decision(
+                SelectedSubjectiveReceptionDecisionV1(
+                    decision_ref="", branch=branch.value,
+                    meaning_outcome_ref=outcome_ref, reception_binding_ref=binding_ref,
+                    projected_claim_ref=claim.subjective_claim_id,
+                    selected_opportunity_ref=claim.selected_subjective_opportunity_key,
+                    move_id=move.move_id, reception_act=move.reception_act,
+                    target_nucleus_ids=move.target_nucleus_ids,
+                    support_nucleus_ids=move.support_nucleus_ids,
+                    selected_contribution_refs=selected_refs,
+                    subjective_proposition=proposition,
+                    basis_rows=tuple(basis[ref] for ref in proposition.basis_binding_refs),
+                    qualifier_rows=tuple(qualifiers[ref] for ref in proposition.source_qualifier_binding_refs),
+                )))
+        except KeyError:
+            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP") from None
+    result = identify_selected_subjective_reception_input(SelectedSubjectiveReceptionInputV1(
+        input_ref="", projection_preimage_ref=projection.projection_preimage_ref,
+        projection_seal_ref=projection.projection_seal_ref,
+        grounding_ref=selected_subjective_reception_grounding_ref(selected_grounded_plan, resolver),
+        semantic_nucleus_pairs=tuple((_node_ref(node_id), nucleus_id)
+                                    for nucleus_id, node_id in binding.nucleus_to_node.items()),
+        relation_pairs=tuple((_edge_ref(edge_id), relation.relation_id)
+                             for edge_id, relation in binding.edge_meta.items()),
+        decisions=tuple(rows),
+    ))
+    try:
+        validate_selected_subjective_reception_input(result, reception_plan, selected_grounded_plan, resolver)
+    except GroundedHumanReceptionSurfaceError as exc:
+        _raise_realizable_reception_failure(exc)
+    return result
+
+
+def _build_selected_subjective_reception_input(
+    *, authority_input: SelectedSubjectiveReceptionInputV1,
+) -> SelectedSubjectiveReceptionInputV1:
+    """Expose pre-body input without allowing it to become its own oracle."""
+    return authority_input
+
+
 def _derive_source_grounded_reception_expression_authority(
     *,
     source: AdmittedTextSource,
@@ -11820,6 +11940,7 @@ def _derive_source_grounded_reception_expression_authority(
     selected_grounded_plan: GroundedObservationPlan,
     reception_plan: GroundedHumanReceptionPlan,
     recovery_stage: str,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1,
 ) -> tuple[SourceGroundedRealizableReceptionExpressionV1, ...]:
     """Join selected meaning to each active Move without selecting again."""
 
@@ -11903,6 +12024,10 @@ def _derive_source_grounded_reception_expression_authority(
     resolver = build_evidence_span_resolver(
         source.evidence_spans,
         current_input=source.normalized_current_input,
+    )
+
+    selected_decisions = validate_selected_subjective_reception_input(
+        selected_subjective_input, reception_plan, selected_grounded_plan, resolver,
     )
 
     contribution_by_ref = {
@@ -13020,6 +13145,7 @@ def _derive_source_grounded_reception_expression_authority(
             meaning_outcome_ref=meaning_outcome_ref,
             reception_binding_ref=reception_binding_ref,
             move_id=move.move_id,
+            selected_subjective_decision_ref=selected_decisions[move.move_id].decision_ref,
             source_evidence_refs=source_evidence_refs,
             actor_refs=actor_refs,
             subject_refs=subject_refs,
@@ -13094,6 +13220,7 @@ def _build_source_grounded_reception_expressions(
     authority_expressions: (
         tuple[SourceGroundedRealizableReceptionExpressionV1, ...] | None
     ) = None,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> tuple[SourceGroundedRealizableReceptionExpressionV1, ...]:
     """Expose the derived rows without making them their own authority."""
 
@@ -13105,6 +13232,7 @@ def _build_source_grounded_reception_expressions(
             selected_grounded_plan=selected_grounded_plan,
             reception_plan=reception_plan,
             recovery_stage=recovery_stage,
+            selected_subjective_input=selected_subjective_input,
         )
     if (
         type(authority_expressions) is not tuple
@@ -13208,6 +13336,18 @@ def compile_stage1_response(
             "stage1_v2_grounded_surface_plan_invalid"
         )
 
+    authority_input = _derive_selected_subjective_reception_input_authority(
+        source=source, phase_A=phase_A, projection=projection,
+        selected_grounded_plan=selected_grounded_plan,
+        reception_plan=reception_plan,
+    )
+    selected_subjective_input = _build_selected_subjective_reception_input(
+        authority_input=authority_input,
+    )
+    if (type(selected_subjective_input) is not SelectedSubjectiveReceptionInputV1
+        or selected_subjective_input != authority_input):
+        raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+
     try:
         base_sentence_plan = build_grounded_sentence_plan(
             selected_grounded_plan,
@@ -13257,6 +13397,7 @@ def compile_stage1_response(
                 selected_grounded_plan=selected_grounded_plan,
                 reception_plan=reception_plan,
                 recovery_stage=recovery_stage,
+                selected_subjective_input=selected_subjective_input,
             )
         )
         expressions = _build_source_grounded_reception_expressions(
@@ -13267,6 +13408,7 @@ def compile_stage1_response(
             reception_plan=reception_plan,
             recovery_stage=recovery_stage,
             authority_expressions=authority_expressions,
+            selected_subjective_input=selected_subjective_input,
         )
         _validate_selected_reception_expression_lineage(
             phase_A=phase_A,
@@ -13297,6 +13439,7 @@ def compile_stage1_response(
                     clause_plans=(
                         reception_lines[0].reception_clause_plans
                     ),
+                    selected_subjective_input=selected_subjective_input,
                 )
             )
             surface_result, reception_placements = (
@@ -13305,6 +13448,7 @@ def compile_stage1_response(
                     selected_grounded_plan,
                     resolver,
                     human_reception_surface=human_reception_surface,
+                    selected_subjective_input=selected_subjective_input,
                 )
             )
         except GroundedHumanReceptionSurfaceError as exc:
@@ -13322,6 +13466,7 @@ def compile_stage1_response(
             sentence_plan,
             selected_grounded_plan,
             resolver,
+            selected_subjective_input=selected_subjective_input,
         )
         if surface_issues:
             continue
@@ -13333,12 +13478,14 @@ def compile_stage1_response(
                 resolver=resolver,
                 product_readfeel_status="not_evaluated",
                 require_body_inverse=True,
+                selected_subjective_input=selected_subjective_input,
             )
             inverse_report = evaluate_grounded_surface_body_inverse(
                 body=surface_result.text.encode("utf-8"),
                 plan=selected_grounded_plan,
                 sentence_plan=sentence_plan,
                 resolver=resolver,
+                selected_subjective_input=selected_subjective_input,
             )
         except (AttributeError, KeyError, TypeError, UnicodeError, ValueError):
             continue

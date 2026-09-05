@@ -33,6 +33,7 @@ from emlis_ai_grounded_observation_plan import (
     validate_grounded_human_reception_plan,
 )
 from emlis_ai_grounded_human_reception import (
+    SelectedSubjectiveReceptionInputV1,
     GroundedHumanReceptionSurface,
     GroundedReceptionClausePlan,
     GroundedHumanReceptionSurfaceError,
@@ -2700,7 +2701,16 @@ def _render_relation(
         role = relation_surface_role(relation, nucleus_index)
         left_form = _semantic_endpoint_surface_form(nucleus_index[relation.from_nucleus_id])
         right_form = _semantic_endpoint_surface_form(nucleus_index[relation.to_nucleus_id])
-        if role == "provisional_evaluation_to_counterevidence":
+        if (
+            typed_semantic_duties
+            and relation.type == "action_supports_change"
+            and nucleus_index[relation.from_nucleus_id].kind == "action"
+            and nucleus_index[relation.to_nucleus_id].kind == "change"
+        ):
+            # Final projection owns action -> change. Typed endpoints already
+            # carry each kind; preserve that direction without re-labelling.
+            sentences.append(f"{left}から{right}へつながっています。")
+        elif role == "provisional_evaluation_to_counterevidence":
             sentences.append(
                 f"{left}と見ている一方で、{right}という別の事実もあります。"
             )
@@ -3111,6 +3121,8 @@ def _render_human_follow(
     plan: GroundedObservationPlan,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
+    *,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> str:
     reception_plan = plan.response_plan.human_reception_plan
     if reception_plan is None or not reception_plan.required:
@@ -3139,6 +3151,7 @@ def _render_human_follow(
                 plan=plan,
                 recovery_stage=recovery_stage,
                 clause_plans=clause_plans,
+                selected_subjective_input=selected_subjective_input,
             )
         except GroundedHumanReceptionSurfaceError as exc:
             raise GroundedSentenceSurfaceError(str(exc)) from exc
@@ -3160,6 +3173,8 @@ def realize_grounded_human_follow_text(
     line: GroundedSentencePlanLine,
     plan: GroundedObservationPlan,
     resolver: EvidenceSpanResolver,
+    *,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> str:
     """Realize the one canonical reception line owned by this surface."""
 
@@ -3175,6 +3190,7 @@ def realize_grounded_human_follow_text(
         plan,
         nucleus_index,
         resolver,
+        selected_subjective_input=selected_subjective_input,
     )
 
 
@@ -3211,6 +3227,7 @@ def _realize_line(
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     relation_index: Mapping[str, GroundedSemanticRelation],
     resolver: EvidenceSpanResolver,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> str:
     if line.surface_function == "observe_nuclei":
         return _render_observation(
@@ -3264,6 +3281,7 @@ def _realize_line(
             line,
             plan,
             resolver,
+            selected_subjective_input=selected_subjective_input,
         )
     raise GroundedSentenceSurfaceError(f"unsupported_surface_function:{line.surface_function}")
 
@@ -3307,6 +3325,7 @@ def _realize_grounded_sentence_plan(
     resolver: EvidenceSpanResolver,
     *,
     human_reception_surface: GroundedHumanReceptionSurface | None = None,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> GroundedSurfaceResult:
     """Realize a SentencePlan with generic functional atoms and source text."""
 
@@ -3345,6 +3364,7 @@ def _realize_grounded_sentence_plan(
                     nucleus_index=nucleus_index,
                     relation_index=relation_index,
                     resolver=resolver,
+                    selected_subjective_input=selected_subjective_input,
                 )
             )
             text = _clean(
@@ -3418,7 +3438,7 @@ def _realize_grounded_sentence_plan(
             limited_opposition_covered=sentence_plan.limited_opposition_covered,
         )
 
-    issues = validate_grounded_surface_result(result, sentence_plan, plan, resolver)
+    issues = validate_grounded_surface_result(result, sentence_plan, plan, resolver, selected_subjective_input=selected_subjective_input)
     if issues:
         raise GroundedSentenceSurfaceError("invalid_grounded_surface_result:" + ",".join(issues))
     return result
@@ -3440,6 +3460,7 @@ def realize_grounded_sentence_plan_with_human_reception(
     resolver: EvidenceSpanResolver,
     *,
     human_reception_surface: GroundedHumanReceptionSurface | None = None,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> tuple[GroundedSurfaceResult, tuple[SentenceSurfacePlacement, ...]]:
     """Place one preauthored final Human Reception surface without rewriting."""
 
@@ -3475,6 +3496,7 @@ def realize_grounded_sentence_plan_with_human_reception(
         plan,
         resolver,
         human_reception_surface=human_reception_surface,
+        selected_subjective_input=selected_subjective_input,
     )
     reception_lines = tuple(
         line
@@ -4040,6 +4062,8 @@ def validate_grounded_surface_result(
     sentence_plan: GroundedSentencePlan,
     plan: GroundedObservationPlan,
     resolver: EvidenceSpanResolver,
+    *,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if result.schema_version != GROUND_SURFACE_RESULT_SCHEMA_VERSION:
@@ -4109,6 +4133,7 @@ def validate_grounded_surface_result(
                                 clause_plans=(
                                     reception_plan_line.reception_clause_plans
                                 ),
+                                selected_subjective_input=selected_subjective_input,
                             )
                         )
                         if expected_reception.text != reception_line.text:

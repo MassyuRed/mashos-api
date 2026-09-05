@@ -8,11 +8,12 @@ import inspect
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from helpers.emlis_ai_grounded_observation_i6_cases import (
     GROUND_OBSERVATION_I6_BLIND_CASES,
 )
-from emlis_ai_current_input_bundle import normalize_emlis_current_input
+from emlis_ai_current_input_bundle import normalize_emlis_current_input, build_emlis_current_input_bundle
 from emlis_ai_evidence_ledger_service import (
     build_evidence_ledger,
     build_evidence_span_resolver,
@@ -35,9 +36,12 @@ from emlis_ai_grounded_sentence_surface import (
 import emlis_ai_grounded_human_reception as reception_owner
 import emlis_ai_grounded_sentence_surface as surface_owner
 from cocolon_meaning_experience_engine.emlis_v1a import (
-    _cmee_semantic_reception_plan,
+    _build_graph, _build_experience_plan, _ordered, _planned_visible_source_ids,
 )
 from tools.emlis_nls_v3_batch_run import load_validated_batch
+from cocolon_meaning_experience_engine.contracts import GenerationRequest
+from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
+import cocolon_meaning_experience_engine.emlis_stage1_response as response_owner
 
 
 _GENERATED_FIXTURE_ROOT = (
@@ -63,33 +67,52 @@ def _artifacts(case_id: str):
 
 
 def _final_stage1_artifacts_from_raw(raw: dict[str, object]):
-    current_input = normalize_emlis_current_input(raw)
-    spans = tuple(build_evidence_ledger(current_input))
-    resolver = build_evidence_span_resolver(spans, current_input=current_input)
+    # Final Stage1 replay now requires its actual upstream selected decision.
+    # Preserve this test's input, and capture that input from the real compiler.
+    case_id = str(raw.get("record_id", "SX-PROTECTED"))
+    source = freeze_text_source(GenerationRequest(
+        request_id=f"req-body-inverse-{case_id}",
+        current_input_bundle=build_emlis_current_input_bundle({
+            **raw, "id": case_id, "created_at": "2026-09-01T00:00:00Z",
+        }),
+        expected_source_record_id=case_id,
+    ))
+    resolver = build_evidence_span_resolver(
+        source.evidence_spans, current_input=source.normalized_current_input,
+    )
     plan = build_final_stage1_grounded_observation_plan(
-        current_input,
-        evidence_spans=spans,
+        source.normalized_current_input, evidence_spans=source.evidence_spans,
     )
-    reception_plan = _cmee_semantic_reception_plan(plan, resolver)
-    plan = replace(
-        plan,
-        input_profile=replace(
-            plan.input_profile,
-            material_quality="limited_grounding",
-        ),
-        response_plan=replace(
-            plan.response_plan,
-            response_kind="limited_grounding_observation",
-            human_reception_plan=reception_plan,
-        ),
-        surface_policy=replace(
-            plan.surface_policy,
-            hedge_policy="limited_single_input_scope",
-        ),
+    required_nuclei, required_relations, reception_targets = _planned_visible_source_ids(plan)
+    graph = _build_graph(source, plan, _ordered((*required_nuclei, *reception_targets)), required_relations)
+    parent_plan = _build_experience_plan(
+        source, graph, plan, required_nuclei, required_relations, reception_targets,
     )
-    sentence_plan = build_grounded_sentence_plan(plan, resolver)
-    surface = realize_grounded_sentence_plan(sentence_plan, plan, resolver)
-    return plan, sentence_plan, surface, resolver
+    inputs, captured = [], []
+    build_input = response_owner._build_selected_subjective_reception_input
+    adapt = response_owner._adapt_grounded_surface_to_v2_realized_units
+
+    def track_input(*args, **kwargs):
+        value = build_input(*args, **kwargs)
+        inputs.append(value)
+        return value
+
+    def track_adapter(*args, **kwargs):
+        captured.append(kwargs)
+        return adapt(*args, **kwargs)
+
+    with (
+        patch.object(response_owner, "_build_selected_subjective_reception_input", side_effect=track_input),
+        patch.object(response_owner, "_adapt_grounded_surface_to_v2_realized_units", side_effect=track_adapter),
+    ):
+        response_owner.compile_stage1_response(
+            source=source, grounded_graph=graph, parent_plan=parent_plan, grounded_plan=plan,
+        )
+    if len(inputs) != 1 or len(captured) != 1:
+        raise AssertionError("selected_subjective_input_and_surface_exact1_required")
+    selected = captured[0]
+    return (selected["grounded_plan"], selected["sentence_plan"],
+            selected["surface_result"], resolver, inputs[0])
 
 
 def _final_stage1_artifacts(memo: str, *, memo_action: str = ""):
@@ -216,7 +239,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             "どうしたらいいのか考えている。",
         ):
             with self.subTest(memo=memo):
-                plan, sentence_plan, surface, resolver = _final_stage1_artifacts(
+                plan, sentence_plan, surface, resolver, selected_subjective_input = _final_stage1_artifacts(
                     memo
                 )
                 witness = parse_grounded_surface_body_bytes(
@@ -238,6 +261,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
                     plan=plan,
                     sentence_plan=sentence_plan,
                     resolver=resolver,
+                    selected_subjective_input=selected_subjective_input,
                 )
                 self.assertTrue(evaluation.passed, evaluation.failure_codes)
                 without_why = _replace_body_markers(
@@ -248,6 +272,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
                     plan=plan,
                     sentence_plan=sentence_plan,
                     resolver=resolver,
+                    selected_subjective_input=selected_subjective_input,
                 )
                 self.assertFalse(missing_why.passed)
                 self.assertTrue(
@@ -263,7 +288,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         self,
     ) -> None:
         memo = "疲れているけれど、少し整えたい気持ちもある。"
-        plan, sentence_plan, surface, resolver = _final_stage1_artifacts(memo)
+        plan, sentence_plan, surface, resolver, selected_subjective_input = _final_stage1_artifacts(memo)
         observation, reception = surface.text.split("Emlisから：\n", 1)
         self.assertNotIn(memo.rstrip("。"), observation)
         self.assertIn("「少し整えたい気持ちもある」", observation)
@@ -280,6 +305,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             plan=plan,
             sentence_plan=sentence_plan,
             resolver=resolver,
+            selected_subjective_input=selected_subjective_input,
         )
         self.assertFalse(wrong_target_evaluation.passed)
         self.assertTrue(
@@ -298,6 +324,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             plan=plan,
             sentence_plan=sentence_plan,
             resolver=resolver,
+            selected_subjective_input=selected_subjective_input,
         )
         self.assertFalse(evaluation.passed)
         self.assertIn(
@@ -312,7 +339,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
     def test_final_directional_binding_and_body_surface_pass_for_sx07(
         self,
     ) -> None:
-        plan, sentence_plan, surface, resolver = _final_stage1_artifacts(
+        plan, sentence_plan, surface, resolver, selected_subjective_input = _final_stage1_artifacts(
             "この職場でやっていけるか不安。でも、続けられる形は探したい。"
         )
         relation = next(
@@ -335,12 +362,13 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             surface_result=surface,
             resolver=resolver,
             require_body_inverse=True,
+            selected_subjective_input=selected_subjective_input,
         )
         self.assertTrue(gate.passed, gate.rejection_reasons)
 
     def test_final_future_action_is_intention_not_performed_effort(self) -> None:
         action = "今日は少し早めに休む。"
-        plan, sentence_plan, surface, resolver = _final_stage1_artifacts(
+        plan, sentence_plan, surface, resolver, selected_subjective_input = _final_stage1_artifacts(
             "",
             memo_action=action,
         )
@@ -375,6 +403,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             plan=plan,
             sentence_plan=sentence_plan,
             resolver=resolver,
+            selected_subjective_input=selected_subjective_input,
         )
         self.assertTrue(evaluation.passed, evaluation.failure_codes)
         completed_tamper = _replace_body_markers(
@@ -385,6 +414,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             plan=plan,
             sentence_plan=sentence_plan,
             resolver=resolver,
+            selected_subjective_input=selected_subjective_input,
         )
         self.assertFalse(tampered_evaluation.passed)
         self.assertIn(
@@ -397,11 +427,12 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             surface_result=surface,
             resolver=resolver,
             require_body_inverse=True,
+            selected_subjective_input=selected_subjective_input,
         )
         self.assertTrue(gate.passed, gate.rejection_reasons)
 
     def test_future_action_classification_precedes_performed_action(self) -> None:
-        plan, _sentence_plan, _surface, _resolver = _final_stage1_artifacts(
+        plan, _sentence_plan, _surface, _resolver, selected_subjective_input = _final_stage1_artifacts(
             "",
             memo_action="今日は少し早めに休む。",
         )
@@ -461,7 +492,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         # source-owned performed-action proof.
         self.assertFalse(surface_owner._final_action_is_performed(completed))
         self.assertFalse(gate_owner._body_inverse_action_is_performed(completed))
-        performed_plan, _, _, _ = _final_stage1_artifacts(
+        performed_plan, _, _, _, selected_subjective_input = _final_stage1_artifacts(
             "", memo_action="資料を箱に片づけた。",
         )
         performed = next(n for n in performed_plan.nuclei if n.kind == "action")
@@ -526,7 +557,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         )
 
     def test_final_performed_action_keeps_visible_effort(self) -> None:
-        plan, sentence_plan, surface, resolver = _final_stage1_artifacts(
+        plan, sentence_plan, surface, resolver, selected_subjective_input = _final_stage1_artifacts(
             "今日は仕事で疲れたけど、帰ってから少し散歩したら落ち着いた。"
         )
         witness = parse_grounded_surface_body_bytes(
@@ -548,6 +579,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             plan=plan,
             sentence_plan=sentence_plan,
             resolver=resolver,
+            selected_subjective_input=selected_subjective_input,
         )
         self.assertTrue(evaluation.passed, evaluation.failure_codes)
         future_tamper = _replace_body_markers(
@@ -558,6 +590,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             plan=plan,
             sentence_plan=sentence_plan,
             resolver=resolver,
+            selected_subjective_input=selected_subjective_input,
         )
         self.assertFalse(tampered_evaluation.passed)
         self.assertIn(
@@ -570,6 +603,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             surface_result=surface,
             resolver=resolver,
             require_body_inverse=True,
+            selected_subjective_input=selected_subjective_input,
         )
         self.assertTrue(gate.passed, gate.rejection_reasons)
 
@@ -588,7 +622,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         )
         input_row = row["input"]
         emotions = input_row["emotions"]
-        plan, sentence_plan, surface, resolver = (
+        plan, sentence_plan, surface, resolver, selected_subjective_input = (
             _final_stage1_artifacts_from_raw(
                 {
                     "record_id": row["case_id"],
@@ -641,6 +675,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             plan=plan,
             sentence_plan=sentence_plan,
             resolver=resolver,
+            selected_subjective_input=selected_subjective_input,
         )
         self.assertTrue(evaluation.passed, evaluation.failure_codes)
         gate = evaluate_grounded_observation_gate(
@@ -649,6 +684,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             surface_result=surface,
             resolver=resolver,
             require_body_inverse=True,
+            selected_subjective_input=selected_subjective_input,
         )
         self.assertTrue(gate.passed, gate.rejection_reasons)
 
@@ -659,6 +695,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             plan=plan,
             sentence_plan=sentence_plan,
             resolver=resolver,
+            selected_subjective_input=selected_subjective_input,
         )
         self.assertFalse(target_evaluation.passed)
         self.assertIn(
@@ -676,6 +713,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             plan=plan,
             sentence_plan=sentence_plan,
             resolver=resolver,
+            selected_subjective_input=selected_subjective_input,
         )
         self.assertFalse(receive_evaluation.passed)
         self.assertIn(
@@ -709,25 +747,45 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         )
 
     def test_d21_relation_reverse_vector_is_rejected(self) -> None:
-        plan, sentence_plan, surface, resolver = _final_stage1_artifacts(
+        plan, sentence_plan, surface, resolver, selected_subjective_input = _final_stage1_artifacts(
             "今日は仕事で疲れたけど、帰ってから少し散歩したら落ち着いた。"
         )
-        reversed_relation = surface.text.replace(
-            "「帰ってから少し散歩した」という行動から"
-            "「落ち着いた」という変化へのつながり",
-            "「落ち着いた」という変化から"
-            "「帰ってから少し散歩した」という行動へのつながり",
-            1,
-        )
+        relation = next(row for row in plan.relations if row.type == "action_supports_change")
+        observation_plans = tuple(row for row in sentence_plan.lines if row.binding.line_role != "human_follow")
+        relation_line_ordinal = next(index for index, row in enumerate(observation_plans, 1)
+                                     if relation.relation_id in row.binding.relation_ids)
+        raw = surface.text.encode("utf-8")
+        witness = parse_grounded_surface_body_bytes(raw)
+        relation_line = next(row for row in witness.lines
+                             if row.section == "observation" and row.section_ordinal == relation_line_ordinal)
+        # Swap this relation's source quote interiors, retaining connective,
+        # source bytes, and the separate contrast sentence on the same line.
+        source_quote = next(row for row in witness.quotes
+                            if row.section == "observation"
+                            and relation_line.utf8_byte_start <= row.utf8_byte_start < relation_line.utf8_byte_end
+                            and raw[row.utf8_byte_start:row.utf8_byte_end].decode("utf-8") == "帰ってから少し散歩した")
+        target_quote = next(row for row in witness.quotes
+                            if row.section == "observation" and row.sentence_ordinal == source_quote.sentence_ordinal
+                            and raw[row.utf8_byte_start:row.utf8_byte_end].decode("utf-8") == "落ち着いた")
+        self.assertLess(source_quote.utf8_byte_start, target_quote.utf8_byte_start)
+        source_bytes = raw[source_quote.utf8_byte_start:source_quote.utf8_byte_end]
+        target_bytes = raw[target_quote.utf8_byte_start:target_quote.utf8_byte_end]
+        reversed_relation = (
+            raw[:source_quote.utf8_byte_start] + target_bytes
+            + raw[source_quote.utf8_byte_end:target_quote.utf8_byte_start] + source_bytes
+            + raw[target_quote.utf8_byte_end:]
+        ).decode("utf-8")
+        self.assertNotEqual(reversed_relation, surface.text)
         evaluation = evaluate_grounded_surface_body_inverse(
             body=reversed_relation.encode("utf-8"),
             plan=plan,
             sentence_plan=sentence_plan,
             resolver=resolver,
+            selected_subjective_input=selected_subjective_input,
         )
         self.assertFalse(evaluation.passed)
         self.assertIn(
-            "body_inverse_relation_direction_reversed:1",
+            f"body_inverse_relation_direction_reversed:{relation_line_ordinal}",
             evaluation.failure_codes,
         )
 
@@ -748,23 +806,44 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         )
 
     def test_d21_relation_tamper_vector_is_rejected(self) -> None:
-        plan, sentence_plan, surface, resolver = _final_stage1_artifacts(
+        plan, sentence_plan, surface, resolver, selected_subjective_input = _final_stage1_artifacts(
             "今日は仕事で疲れたけど、帰ってから少し散歩したら落ち着いた。"
         )
-        tampered = surface.text.replace(
-            "という変化へのつながり",
-            "という変化が並んでいること",
-            1,
+        relation = next(row for row in plan.relations if row.type == "action_supports_change")
+        observation_plans = tuple(row for row in sentence_plan.lines if row.binding.line_role != "human_follow")
+        relation_line_ordinal = next(index for index, row in enumerate(observation_plans, 1)
+                                     if relation.relation_id in row.binding.relation_ids)
+        original_bytes = surface.text.encode("utf-8")
+        original_witness = parse_grounded_surface_body_bytes(original_bytes)
+        relation_line = next(row for row in original_witness.lines
+                             if row.section == "observation" and row.section_ordinal == relation_line_ordinal)
+        self.assertIn("link", relation_line.relation_marker_codes)
+        tampered = _replace_body_markers(
+            surface.text, section="observation", codes={"link"}, replacement="並んで",
+        )
+        self.assertNotEqual(tampered, surface.text)
+        tampered_bytes = tampered.encode("utf-8")
+        changed_witness = parse_grounded_surface_body_bytes(tampered_bytes)
+        changed_line = next(row for row in changed_witness.lines
+                           if row.section == "observation" and row.section_ordinal == relation_line_ordinal)
+        self.assertNotIn("link", changed_line.relation_marker_codes)
+        self.assertIn("coexistence", changed_line.relation_marker_codes)
+        # This vector changes the relation type while keeping every quote and
+        # its order, so an endpoint deletion cannot make the test pass.
+        self.assertEqual(
+            tuple(original_bytes[row.utf8_byte_start:row.utf8_byte_end] for row in original_witness.quotes),
+            tuple(tampered_bytes[row.utf8_byte_start:row.utf8_byte_end] for row in changed_witness.quotes),
         )
         evaluation = evaluate_grounded_surface_body_inverse(
             body=tampered.encode("utf-8"),
             plan=plan,
             sentence_plan=sentence_plan,
             resolver=resolver,
+            selected_subjective_input=selected_subjective_input,
         )
         self.assertFalse(evaluation.passed)
         self.assertIn(
-            "body_inverse_relation_type_marker_mismatch:1",
+            f"body_inverse_relation_type_marker_mismatch:{relation_line_ordinal}",
             evaluation.failure_codes,
         )
 

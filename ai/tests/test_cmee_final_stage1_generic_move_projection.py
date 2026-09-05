@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Mapping
@@ -98,19 +98,42 @@ def _full_surface_artifacts(row: Mapping[str, Any]) -> SimpleNamespace:
     inputs = _compile_inputs(row)
     resolver = build_evidence_span_resolver(inputs.source.evidence_spans, current_input=inputs.source.normalized_current_input)
     captured = []
+    selected_inputs = []
+    authored = []
+    author_arguments = []
+    build_input = response_owner._build_selected_subjective_reception_input
+    author = response_owner.realize_source_grounded_human_reception
     adapt = response_owner._adapt_grounded_surface_to_v2_realized_units
 
     def track_adapter(*args, **kwargs):
         captured.append(kwargs)
         return adapt(*args, **kwargs)
 
-    with patch.object(response_owner, "_adapt_grounded_surface_to_v2_realized_units", side_effect=track_adapter):
+    def track_input(*args, **kwargs):
+        value = build_input(*args, **kwargs)
+        selected_inputs.append(value)
+        return value
+
+    def track_author(*args, **kwargs):
+        value = author(*args, **kwargs)
+        authored.append(value)
+        author_arguments.append((args, kwargs))
+        return value
+
+    with (
+        patch.object(response_owner, "_build_selected_subjective_reception_input", side_effect=track_input),
+        patch.object(response_owner, "realize_source_grounded_human_reception", side_effect=track_author),
+        patch.object(response_owner, "_adapt_grounded_surface_to_v2_realized_units", side_effect=track_adapter),
+    ):
         response_owner.compile_stage1_response(
             source=inputs.source, grounded_graph=inputs.graph,
             parent_plan=inputs.parent_plan, grounded_plan=inputs.grounded_plan,
         )
     if len(captured) != 1:
         raise AssertionError("selected_surface_adapter_exact1_required")
+    if len(selected_inputs) != 1:
+        raise AssertionError("selected_subjective_input_exact1_required")
+    selected_subjective_input = selected_inputs[0]
     selected_plan = captured[0]["grounded_plan"]
     sentence_plan = captured[0]["sentence_plan"]
     surface = captured[0]["surface_result"]
@@ -119,6 +142,7 @@ def _full_surface_artifacts(row: Mapping[str, Any]) -> SimpleNamespace:
         plan=selected_plan,
         sentence_plan=sentence_plan,
         resolver=resolver,
+        selected_subjective_input=selected_subjective_input,
     )
     gate = evaluate_grounded_observation_gate(
         plan=selected_plan,
@@ -127,6 +151,7 @@ def _full_surface_artifacts(row: Mapping[str, Any]) -> SimpleNamespace:
         resolver=resolver,
         product_readfeel_status="not_evaluated",
         require_body_inverse=True,
+        selected_subjective_input=selected_subjective_input,
     )
     return SimpleNamespace(
         plan=selected_plan,
@@ -135,6 +160,9 @@ def _full_surface_artifacts(row: Mapping[str, Any]) -> SimpleNamespace:
         resolver=resolver,
         inverse=inverse,
         gate=gate,
+        selected_subjective_input=selected_subjective_input,
+        authored=tuple(authored),
+        author_arguments=tuple(author_arguments),
     )
 
 
@@ -176,6 +204,17 @@ def _reception_text(body: str) -> str:
     if not separator:
         raise AssertionError("reception_section_missing")
     return reception
+
+
+def _recovery_surface(artifacts, sentence_plan):
+    authored = next(row for row in artifacts.authored
+                    if row.recovery_stage == sentence_plan.recovery_stage)
+    result, _placements = surface_owner.realize_grounded_sentence_plan_with_human_reception(
+        sentence_plan, artifacts.plan, artifacts.resolver,
+        human_reception_surface=authored,
+        selected_subjective_input=artifacts.selected_subjective_input,
+    )
+    return result
 
 
 def _tamper_reception(body: str, source: str, replacement: str) -> str:
@@ -227,6 +266,7 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         inverse = evaluate_grounded_surface_body_inverse(
             body=changed.encode("utf-8"), plan=artifacts.plan,
             sentence_plan=artifacts.sentence_plan, resolver=artifacts.resolver,
+            selected_subjective_input=artifacts.selected_subjective_input,
         )
         self.assertFalse(inverse.passed)
 
@@ -294,6 +334,7 @@ class CMEESameNucleusActionStatusTest(unittest.TestCase):
         inverse = evaluate_grounded_surface_body_inverse(
             body=changed.encode("utf-8"), plan=artifacts.plan,
             sentence_plan=artifacts.sentence_plan, resolver=artifacts.resolver,
+            selected_subjective_input=artifacts.selected_subjective_input,
         )
         self.assertFalse(inverse.passed)
 
@@ -556,13 +597,14 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             plan=artifacts.plan,
             sentence_plan=artifacts.sentence_plan,
             resolver=artifacts.resolver,
+            selected_subjective_input=artifacts.selected_subjective_input,
         )
 
     def _bind_reception_text(self, case_id: str, text: str, *, sentence_plan=None):
         artifacts = self.artifacts[case_id]
         selected = sentence_plan or artifacts.sentence_plan
         base = (artifacts.surface if selected == artifacts.sentence_plan else
-                surface_owner.realize_grounded_sentence_plan(selected, artifacts.plan, artifacts.resolver))
+                _recovery_surface(artifacts, selected))
         observation, label, _follow = base.text.partition(surface_owner.RECEPTION_SECTION_LABEL)
         gate = self._gate_for_tampered_body(
             case_id, observation + label + "\n" + text.strip(),
@@ -578,6 +620,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             {n.nucleus_id: n for n in artifacts.plan.nuclei}, artifacts.resolver,
             plan=artifacts.plan, recovery_stage=selected.recovery_stage,
             clause_plans=line.reception_clause_plans,
+            selected_subjective_input=artifacts.selected_subjective_input,
         )
 
     def _gate_for_tampered_body(
@@ -609,6 +652,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             resolver=artifacts.resolver,
             product_readfeel_status="not_evaluated",
             require_body_inverse=True,
+            selected_subjective_input=artifacts.selected_subjective_input,
         )
 
     def test_representative_moves_all_reach_one_hard_valid_surface(self) -> None:
@@ -746,6 +790,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             plan=artifacts.plan,
             sentence_plan=artifacts.sentence_plan,
             resolver=artifacts.resolver,
+            selected_subjective_input=artifacts.selected_subjective_input,
         )
         self.assertFalse(deleted_inverse.passed)
         self.assertIn(
@@ -763,6 +808,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             plan=artifacts.plan,
             sentence_plan=artifacts.sentence_plan,
             resolver=artifacts.resolver,
+            selected_subjective_input=artifacts.selected_subjective_input,
         )
         self.assertFalse(wrong_inverse.passed)
         self.assertIn(
@@ -1307,6 +1353,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             plan=wrong_source_plan,
             sentence_plan=artifacts.sentence_plan,
             resolver=artifacts.resolver,
+            selected_subjective_input=artifacts.selected_subjective_input,
         )
         self.assertFalse(wrong_source_inverse.passed)
         self.assertIn(
@@ -1320,6 +1367,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             resolver=artifacts.resolver,
             product_readfeel_status="not_evaluated",
             require_body_inverse=True,
+            selected_subjective_input=artifacts.selected_subjective_input,
         )
         self.assertFalse(wrong_source_gate.passed)
 
@@ -1402,6 +1450,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             plan=plan_with(completed),
             sentence_plan=artifacts.sentence_plan,
             resolver=artifacts.resolver,
+            selected_subjective_input=artifacts.selected_subjective_input,
         )
         self.assertNotIn(
             "body_inverse_required_intention_missing:1",
@@ -1412,6 +1461,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             plan=plan_with(future),
             sentence_plan=artifacts.sentence_plan,
             resolver=artifacts.resolver,
+            selected_subjective_input=artifacts.selected_subjective_input,
         )
         self.assertIn(
             "body_inverse_required_intention_missing:1",
@@ -1624,11 +1674,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             artifacts.resolver,
             recovery_stage="integrated",
         )
-        recovered_surface = surface_owner.realize_grounded_sentence_plan(
-            recovered_plan,
-            artifacts.plan,
-            artifacts.resolver,
-        )
+        recovered_surface = _recovery_surface(artifacts, recovered_plan)
         reception = _reception_text(recovered_surface.text)
         rendered_context, context_separator, _target_clause = (
             reception.strip().partition("が重なる中で、")
@@ -1645,6 +1691,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             plan=artifacts.plan,
             sentence_plan=recovered_plan,
             resolver=artifacts.resolver,
+            selected_subjective_input=artifacts.selected_subjective_input,
         )
         self.assertIn(
             "body_inverse_reception_context_anchor_missing:rm1",
@@ -1685,6 +1732,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             plan=artifacts.plan,
             sentence_plan=recovered_plan,
             resolver=artifacts.resolver,
+            selected_subjective_input=artifacts.selected_subjective_input,
         )
         self.assertIn(
             "body_inverse_reception_anaphoric_context_replayed:rm1",
@@ -1719,11 +1767,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             if line.binding.line_role == "human_follow"
         )
         self.assertEqual(clause.quote_budget, 0)
-        recovered_surface = surface_owner.realize_grounded_sentence_plan(
-            recovered_plan,
-            artifacts.plan,
-            artifacts.resolver,
-        )
+        recovered_surface = _recovery_surface(artifacts, recovered_plan)
         move = artifacts.plan.response_plan.human_reception_plan.moves[0]
         self.assertEqual(
             reception_owner.reception_effective_move_reference_mode(
@@ -1755,6 +1799,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             plan=artifacts.plan,
             sentence_plan=recovered_plan,
             resolver=artifacts.resolver,
+            selected_subjective_input=artifacts.selected_subjective_input,
         )
         self.assertTrue(inverse.passed, inverse.failure_codes)
         gate = evaluate_grounded_observation_gate(
@@ -1764,8 +1809,184 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             resolver=artifacts.resolver,
             product_readfeel_status="not_evaluated",
             require_body_inverse=True,
+            selected_subjective_input=artifacts.selected_subjective_input,
         )
         self.assertTrue(gate.passed, gate.rejection_reasons)
+
+
+    def test_selected_reception_input_is_immutable_and_reused_for_replay(self) -> None:
+        branches = set()
+        for case_id, artifacts in self.artifacts.items():
+            with self.subTest(case_id=case_id):
+                selected = artifacts.selected_subjective_input
+                branches.update(row.branch for row in selected.decisions)
+                with self.assertRaises(FrozenInstanceError):
+                    selected.input_ref = "changed"
+                with self.assertRaises(FrozenInstanceError):
+                    selected.decisions[0].subjective_proposition.epistemic_scope = "changed"
+                self.assertTrue(artifacts.author_arguments)
+                self.assertTrue(all(
+                    kwargs["selected_subjective_input"] is selected
+                    for _args, kwargs in artifacts.author_arguments
+                ))
+                line = next(row for row in artifacts.sentence_plan.lines
+                            if row.binding.line_role == "human_follow")
+                replay = reception_owner.replay_source_grounded_human_reception_from_plan(
+                    artifacts.plan.response_plan.human_reception_plan,
+                    {row.nucleus_id: row for row in artifacts.plan.nuclei},
+                    artifacts.resolver,
+                    plan=artifacts.plan,
+                    recovery_stage=artifacts.sentence_plan.recovery_stage,
+                    clause_plans=line.reception_clause_plans,
+                    selected_subjective_input=selected,
+                )
+                self.assertEqual(replay.text, _reception_text(artifacts.surface.text).strip())
+                self.assertTrue(any(row.text == replay.text for row in artifacts.authored))
+                seen = []
+                original = gate_owner.replay_source_grounded_human_reception_from_plan
+
+                def track_replay(*args, **kwargs):
+                    seen.append(kwargs["selected_subjective_input"])
+                    return original(*args, **kwargs)
+
+                with patch.object(gate_owner, "replay_source_grounded_human_reception_from_plan", side_effect=track_replay):
+                    evaluation = evaluate_grounded_surface_body_inverse(
+                        body=artifacts.surface.text.encode("utf-8"), plan=artifacts.plan,
+                        sentence_plan=artifacts.sentence_plan, resolver=artifacts.resolver,
+                        selected_subjective_input=selected,
+                    )
+                self.assertTrue(evaluation.passed, evaluation.failure_codes)
+                self.assertTrue(seen)
+                self.assertTrue(all(value is selected for value in seen))
+        self.assertEqual(branches, {"NORMAL", "LIMITED"})
+
+    def test_selected_reception_input_missing_or_foreign_fails_closed(self) -> None:
+        artifacts = self.artifacts["nls3s_b001_0024"]
+        foreign = self.artifacts["nls3s_b001_0051"].selected_subjective_input
+        line = next(row for row in artifacts.sentence_plan.lines
+                    if row.binding.line_role == "human_follow")
+        for invalid in (None, foreign):
+            with self.subTest(missing=invalid is None):
+                evaluation = evaluate_grounded_surface_body_inverse(
+                    body=artifacts.surface.text.encode("utf-8"), plan=artifacts.plan,
+                    sentence_plan=artifacts.sentence_plan, resolver=artifacts.resolver,
+                    selected_subjective_input=invalid,
+                )
+                self.assertFalse(evaluation.passed)
+                self.assertIn("body_inverse_reception_replay_unavailable:1", evaluation.failure_codes)
+                gate = evaluate_grounded_observation_gate(
+                    plan=artifacts.plan, sentence_plan=artifacts.sentence_plan,
+                    surface_result=artifacts.surface, resolver=artifacts.resolver,
+                    require_body_inverse=True, selected_subjective_input=invalid,
+                )
+                self.assertFalse(gate.passed)
+                with self.assertRaises(reception_owner.GroundedHumanReceptionSurfaceError):
+                    reception_owner.replay_source_grounded_human_reception_from_plan(
+                        artifacts.plan.response_plan.human_reception_plan,
+                        {row.nucleus_id: row for row in artifacts.plan.nuclei}, artifacts.resolver,
+                        plan=artifacts.plan, recovery_stage=artifacts.sentence_plan.recovery_stage,
+                        clause_plans=line.reception_clause_plans, selected_subjective_input=invalid,
+                    )
+                args, kwargs = artifacts.author_arguments[0]
+                with self.assertRaises(reception_owner.GroundedHumanReceptionSurfaceError):
+                    response_owner.realize_source_grounded_human_reception(
+                        *args, **{**kwargs, "selected_subjective_input": invalid},
+                    )
+
+    def test_selected_reception_boundary_rejects_resealed_semantic_mutations(self) -> None:
+        inputs = _compile_inputs(self.rows_by_id["nls3s_b001_0024"])
+        original = response_owner._build_selected_subjective_reception_input
+
+        def change_decision(value, **changes):
+            row = reception_owner.identify_selected_subjective_reception_decision(
+                replace(value.decisions[0], **changes),
+            )
+            return replace(value, decisions=(row, *value.decisions[1:]))
+
+        def change_basis(value):
+            row = value.decisions[0]
+            self.assertTrue(row.basis_rows)
+            changed = replace(row.basis_rows[0], contribution_ref="foreign-contribution")
+            return change_decision(value, basis_rows=(changed, *row.basis_rows[1:]))
+
+        def change_qualifier(value):
+            row = next(row for row in value.decisions if row.qualifier_rows)
+            changed = replace(row.qualifier_rows[0], time_scope="foreign-time-scope")
+            changed_row = reception_owner.identify_selected_subjective_reception_decision(
+                replace(row, qualifier_rows=(changed, *row.qualifier_rows[1:])),
+            )
+            return replace(value, decisions=tuple(changed_row if item is row else item for item in value.decisions))
+
+        def replace_appraisal(value, row, appraisal, *, focal_relation_ref):
+            proposition = replace(row.subjective_proposition,
+                                  appraisal_content=appraisal, focal_relation_ref=focal_relation_ref)
+            # Use an internally legal existing content shape. The compiler
+            # must reject it because it differs from the selected authority.
+            contracts_owner._stage1_subjective_v2_content_bindings(proposition)
+            changed_row = reception_owner.identify_selected_subjective_reception_decision(
+                replace(row, subjective_proposition=proposition),
+            )
+            return replace(value, decisions=tuple(changed_row if item is row else item for item in value.decisions))
+
+        def change_appraisal_operation(value):
+            row = next(row for row in value.decisions if row.subjective_proposition.appraisal_content is not None)
+            appraisal = row.subjective_proposition.appraisal_content
+            pair = (contracts_owner.AppraisalDimension.UNFINISHED_OPENNESS,
+                    contracts_owner.AppraisalOperation.LEAVE_UNFINISHED)
+            if (appraisal.dimension, appraisal.operation) == pair:
+                pair = (contracts_owner.AppraisalDimension.MATERIAL_WEIGHT,
+                        contracts_owner.AppraisalOperation.RECEIVE_AS_MATERIAL)
+            return replace_appraisal(value, row, replace(appraisal, dimension=pair[0], operation=pair[1]),
+                                     focal_relation_ref=row.subjective_proposition.focal_relation_ref)
+
+        def change_focal_pair(value):
+            row = next(row for row in value.decisions if row.subjective_proposition.appraisal_content is not None)
+            appraisal = row.subjective_proposition.appraisal_content
+            alternate = next(ref for ref, _relation_id in value.relation_pairs
+                             if ref != row.subjective_proposition.focal_relation_ref)
+            # Both focal fields name the same admitted relation. Neither a
+            # mismatched pair nor an unknown relation is the rejection cause.
+            return replace_appraisal(value, row, replace(appraisal, focal_relation_ref=alternate),
+                                     focal_relation_ref=alternate)
+
+        mutations = {
+            "branch": lambda value: change_decision(value, branch="LIMITED" if value.decisions[0].branch == "NORMAL" else "NORMAL"),
+            "outcome": lambda value: change_decision(value, meaning_outcome_ref="foreign-outcome"),
+            "opportunity": lambda value: change_decision(value, selected_opportunity_ref="foreign-opportunity"),
+            "claim": lambda value: change_decision(value, projected_claim_ref="foreign-claim"),
+            "proposition": lambda value: change_decision(value, subjective_proposition=replace(value.decisions[0].subjective_proposition, epistemic_scope="FOREIGN_SCOPE")),
+            "selected_subset": lambda value: change_decision(value, selected_contribution_refs=("foreign-contribution",)),
+            "appraisal_operation": change_appraisal_operation,
+            "focal_pair": change_focal_pair,
+            "basis": change_basis,
+            "qualifier": change_qualifier,
+            "preimage": lambda value: replace(value, projection_preimage_ref="foreign-preimage"),
+            "seal": lambda value: replace(value, projection_seal_ref="foreign-seal"),
+            "nucleus_mapping": lambda value: replace(value, semantic_nucleus_pairs=(("foreign-semantic-ref", value.semantic_nucleus_pairs[0][1]), *value.semantic_nucleus_pairs[1:])),
+        }
+        for label, mutation in mutations.items():
+            with self.subTest(field=label):
+                mutation_inputs = (_compile_inputs(self.rows_by_id["nls3s_b001_0081"])
+                                   if label == "focal_pair" else inputs)
+                def tamper(*args, **kwargs):
+                    expected = original(*args, **kwargs)
+                    changed = reception_owner.identify_selected_subjective_reception_input(mutation(expected))
+                    # Re-identification is deliberate: identity consistency must
+                    # not substitute for the original upstream decision.
+                    self.assertNotEqual(changed, expected)
+                    self.assertEqual(reception_owner.identify_selected_subjective_reception_input(changed), changed)
+                    return changed
+
+                with (
+                    patch.object(response_owner, "_build_selected_subjective_reception_input", side_effect=tamper),
+                    patch.object(response_owner, "realize_source_grounded_human_reception", side_effect=AssertionError("untrusted decision reached author")) as author,
+                    self.assertRaisesRegex(contracts_owner.CMEEStage1ContractError, "MEANING_REALIZATION_CAUSAL_TRACE_GAP"),
+                ):
+                    response_owner.compile_stage1_response(
+                        source=mutation_inputs.source, grounded_graph=mutation_inputs.graph,
+                        parent_plan=mutation_inputs.parent_plan, grounded_plan=mutation_inputs.grounded_plan,
+                    )
+                author.assert_not_called()
 
 
 if __name__ == "__main__":
