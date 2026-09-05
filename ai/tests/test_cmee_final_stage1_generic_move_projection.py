@@ -262,6 +262,41 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
 
 
 class CMEESameNucleusActionStatusTest(unittest.TestCase):
+    def test_open_desire_scope_does_not_change_affirmed_desire(self):
+        for source, expected in (
+            ("何を選びたいのかも決められず、迷っている気がする", True),
+            ("進みたいのか、ここに残りたいのかも定まっていない", True),
+            ("たぶん続けたい、でもそれでいいのか…", True),
+            ("続けたいが、できるかは分からない", False),
+            ("何を選びたいのか迷ったが、いまは続けたい", False),
+            ("たぶん雨が降るが、続けたいと思っている", False),
+            ("「何をしたいのかも分からない」と言われた", False),
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(observation_plan_owner._final_stage1_wish_is_open(source), expected)
+
+    def test_uncertain_desire_keeps_owner_and_completed_body_boundary(self):
+        artifacts = _full_surface_artifacts({
+            "case_id": "uncertain-desire-expression-unit",
+            "input": {
+                "thought_text": "何を選びたいのか、ただ話を聞いてほしいのかも定まっていない。",
+                "action_text": "候補を紙に記録した。", "categories": ["生活"],
+                "emotions": [{"type": "不安", "strength": "weak"}],
+            },
+        })
+        target = next(n for n in artifacts.plan.nuclei if "operator:wish" in n.semantic_frame.attribute_codes)
+        self.assertEqual(target.semantic_frame.modality, "uncertain")
+        self.assertEqual(target.semantic_frame.time_scope, "current_input")
+        self.assertFalse(reception_owner.reception_action_is_performed(target, final_source_fidelity=True))
+        self.assertTrue(artifacts.inverse.passed)
+        self.assertIn("まだ確かではない願い", _reception_text(artifacts.surface.text))
+        changed = _tamper_reception(artifacts.surface.text, "まだ確かではない願い", "確かに定まった願い")
+        inverse = evaluate_grounded_surface_body_inverse(
+            body=changed.encode("utf-8"), plan=artifacts.plan,
+            sentence_plan=artifacts.sentence_plan, resolver=artifacts.resolver,
+        )
+        self.assertFalse(inverse.passed)
+
     def _action(self, text):
         source = freeze_text_source(_request_from_row({
             "case_id": "status-scope-unit",

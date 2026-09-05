@@ -2948,7 +2948,11 @@ def _final_stage1_nucleus_summary(
         elif nucleus.kind == "constraint":
             unit = f"{quote}という制約"
         elif nucleus.kind == "wish":
-            unit = f"{quote}という願い"
+            unit = (
+                f"{quote}という、まだ定まっていない思い"
+                if nucleus.semantic_frame.modality == "uncertain"
+                else f"{quote}という願い"
+            )
         elif (
             nucleus.kind == "uncertainty"
             or "semantic_role:limiting_unknown" in attributes

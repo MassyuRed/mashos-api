@@ -751,7 +751,10 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                         expected_subsequence,
                     )
         self.assertGreater(limited_trace_count, 0)
-        self.assertEqual(grounded_normal_count, 4)
+        # Source-owned uncertain modality re-derives one existing reading;
+        # the selected meaning, trace and all124 Move bindings above still
+        # have to agree with their original owner chain.
+        self.assertEqual(grounded_normal_count, 5)
         self.assertEqual(full_move_count, 124)
         self.assertEqual(full_expression_count, 124)
         self.assertGreater(shared_subject_zero_count, 0)
@@ -897,8 +900,11 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                         for extension in positive_extensions
                     )
                 )
-        self.assertEqual(positive_count, 68)
-        self.assertEqual(unavailable_count, 32)
+        # Mash's source-fidelity exception: five formerly unavailable bodies
+        # now pass the unchanged strict check after unsupported meaning was
+        # removed. The canonical inputs, axes and denominator are unchanged.
+        self.assertEqual(positive_count, 73)
+        self.assertEqual(unavailable_count, 27)
 
     def test_runtime_owners_have_no_external_ai_or_batch_case_routing(
         self,

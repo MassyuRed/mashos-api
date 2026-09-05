@@ -9647,6 +9647,27 @@ def _final_stage1_unknown_boundaries(
     return tuple(expanded)
 
 
+def _final_stage1_wish_is_open(text: str) -> bool:
+    """Prove uncertainty about a desire, not merely its feasibility."""
+    visible = _top_level_text(text)
+    if visible is None or visible != text:
+        return False
+    finite = text.rstrip("…⋯・ ")
+    if _FINITE_WISH_CLAUSE_END_RE.search(finite):
+        return False
+    governed_question = re.search(
+        r"(?:たい|ほしい|欲しい)のか(?:も|は)?(?:まだ)?"
+        r"(?:決められ(?:ず|ない)|定まっていない|分からない|わからない)",
+        finite,
+    )
+    epistemic_question = bool(
+        re.match(r"(?:たぶん|多分|おそらく|恐らく)[、,]?", finite)
+        and _WISH_RE.search(finite)
+        and finite.endswith("のか")
+    )
+    return bool(governed_question or epistemic_question)
+
+
 def _final_stage1_align_action_status(
     nuclei: Sequence[GroundedSemanticNucleus],
     evidence_spans: Sequence[EvidenceSpan],
@@ -9665,7 +9686,7 @@ def _final_stage1_align_action_status(
         frame = nucleus.semantic_frame
         codes = tuple(frame.attribute_codes)
         if (
-            nucleus.kind != "action"
+            (nucleus.kind != "action" and "operator:wish" not in codes)
             or len(nucleus.source_span_ids) != 1
             or frame.actor != "current_user"
         ):
@@ -9703,6 +9724,17 @@ def _final_stage1_align_action_status(
             r"[、,]\s*(?:それ|これ|あれ)" + _OWNER_FOCUS_PARTICLE_SOURCE + r"$",
             "", finite,
         ).strip()
+        if nucleus.kind != "action":
+            if _final_stage1_wish_is_open(text):
+                attributes = tuple(code for code in codes if not code.startswith(
+                    ("time_scope:", "modality:")
+                )) + ("time_scope:current_input", "operator:uncertainty")
+                nucleus = replace(nucleus, semantic_frame=replace(
+                    frame, modality="uncertain", time_scope="current_input",
+                    attribute_codes=tuple(_dedupe(attributes)),
+                ))
+            aligned.append(nucleus)
+            continue
         if (
             frame.modality == "intention"
             and re.search(r"(?:まで|だけ|さえ|まだ|未定|途中)$", text)

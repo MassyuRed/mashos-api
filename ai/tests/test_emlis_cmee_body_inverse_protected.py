@@ -413,7 +413,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             in set(plan.coverage_requirements.required_nucleus_ids)
         )
         self.assertEqual(action.semantic_frame.modality, "intention")
-        self.assertEqual(action.semantic_frame.time_scope, "present")
+        self.assertEqual(action.semantic_frame.time_scope, "future")
         self.assertTrue(
             reception_owner.reception_action_is_future_intention(action)
         )
@@ -456,8 +456,20 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         self.assertFalse(
             reception_owner.reception_action_is_future_intention(completed)
         )
-        self.assertTrue(surface_owner._final_action_is_performed(completed))
-        self.assertTrue(gate_owner._body_inverse_action_is_performed(completed))
+        # Changing temporal metadata on a future source is not proof that
+        # the action occurred. Both final consumers require the upstream
+        # source-owned performed-action proof.
+        self.assertFalse(surface_owner._final_action_is_performed(completed))
+        self.assertFalse(gate_owner._body_inverse_action_is_performed(completed))
+        performed_plan, _, _, _ = _final_stage1_artifacts(
+            "", memo_action="資料を箱に片づけた。",
+        )
+        performed = next(n for n in performed_plan.nuclei if n.kind == "action")
+        self.assertEqual(performed.semantic_frame.modality, "fact")
+        self.assertEqual(performed.semantic_frame.time_scope, "past")
+        self.assertIn("operator:performed_action", performed.semantic_frame.attribute_codes)
+        self.assertTrue(surface_owner._final_action_is_performed(performed))
+        self.assertTrue(gate_owner._body_inverse_action_is_performed(performed))
 
         negative_fact = replace(
             completed,

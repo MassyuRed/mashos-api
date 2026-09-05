@@ -479,7 +479,14 @@ class CMEEGroundedSurfaceOwnerInheritanceTest(unittest.TestCase):
         self.assertFalse(witness.structural_issues)
         codes = {marker.marker_code for marker in witness.markers if marker.section == "reception"}
         self.assertTrue({"protect", "receive", "target_intention"} <= codes)
-        self.assertTrue(any(marker in reception for marker in ("中で", "中にも", "背景")))
+        # The context is already an explicit relation endpoint. Require its
+        # actual content once, rather than a duplicate background adjunct.
+        context = next(n for n in grounded_plan.nuclei if n.kind == "reaction"
+                       and n.nucleus_id in grounded_plan.coverage_requirements.required_nucleus_ids)
+        context_text = next(str(span.raw_text).strip(" 、,。．.") for span in source.evidence_spans
+                            if str(span.span_id) in context.source_span_ids)
+        self.assertEqual(reception.count(context_text), 1)
+        self.assertIn("違い", reception)
         self.assertEqual(reception.count("願い"), 1)
 
     def test_legacy_v1_compiler_is_schema_coherent_and_unreachable(self) -> None:

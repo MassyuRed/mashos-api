@@ -376,6 +376,7 @@ class _ReceptionSemanticProfileV1:
     nucleus_kind: str
     actor_kind: str
     predicate_kind: str
+    modality: str
     performed_action: bool
     future_action: bool
     quoted_boundary: bool
@@ -1591,6 +1592,7 @@ def _source_grounded_semantic_profile(
         predicate_kind=str(
             nucleus.semantic_frame.predicate_kind
         ).strip().lower(),
+        modality=str(nucleus.semantic_frame.modality).strip().lower(),
         performed_action=reception_action_is_performed(nucleus, final_source_fidelity=True),
         future_action=reception_action_is_future_intention(nucleus, final_source_fidelity=True),
         quoted_boundary=bool(
@@ -2048,6 +2050,11 @@ def resolve_grounded_reception_referent(
     elif reception_act == "protect_retained_intention":
         if "wish" in kinds or "operator:wish" in attributes:
             kind, text = "retained_wish", "その願い"
+            if final_source_fidelity and target_nuclei and all(
+                nucleus.semantic_frame.modality == "uncertain"
+                for nucleus in target_nuclei
+            ):
+                text = "まだ確かではない願い"
         else:
             kind, text = "retained_intention", "大切にしたいもの"
     elif reception_act == "recognize_lived_change":
@@ -2200,6 +2207,8 @@ def _topic_bound_anaphoric_referent(
     move: GroundedReceptionMovePlan,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
+    *,
+    final_source_fidelity: bool = False,
 ) -> GroundedReceptionReferent:
     """Bind an anaphor to a short target topic without replaying its clause."""
 
@@ -2210,6 +2219,8 @@ def _topic_bound_anaphoric_referent(
         nucleus_index,
         resolver,
     ):
+        if final_source_fidelity and nucleus_index[_nucleus_id].semantic_frame.modality == "uncertain":
+            continue
         for fragment in fragments:
             topic = _short_anaphoric_topic(fragment)
             candidate = f"{topic}についてのその願い" if topic else ""
@@ -2259,6 +2270,7 @@ def resolve_grounded_reception_move_referent(
             move,
             nucleus_index,
             resolver,
+            final_source_fidelity=final_source_fidelity,
         )
     if final_source_fidelity and effective_reference != "anaphoric_first":
         # A demonstrative belongs to anaphora.  Explicit/composite clause
@@ -5140,9 +5152,16 @@ def _source_grounded_relation_predicate_morphemes(
 def _source_grounded_relation_endpoint_anaphor(
     relation_kind: str,
     role: str,
+    *,
+    semantic_profile: _ReceptionSemanticProfileV1 | None = None,
 ) -> str:
     """Retain a repeated endpoint's typed role without source replay."""
 
+    if semantic_profile is not None and relation_kind == "wish_and_constraint" and role == "LEFT":
+        if semantic_profile.modality == "uncertain":
+            return "まだ定まっていない思い"
+        if semantic_profile.nucleus_kind != "wish" and semantic_profile.predicate_kind != "wish":
+            return f"その{_SOURCE_GROUNDED_FOCUS_NOMINAL[semantic_profile.nucleus_kind]}"
     directional = {
         "ACTION": "先の行動",
         "CHANGE": "続く変化",
@@ -5693,13 +5712,6 @@ def _source_grounded_argument_surface(
             strict=True,
         )
     )
-    relation_occurrences_by_slot = {
-        semantic_slot: sum(
-            endpoint_slot == semantic_slot
-            for _relation, _role, endpoint_slot in relation_endpoints
-        )
-        for _relation, _role, semantic_slot in relation_endpoints
-    }
     first_relation_role_by_slot = {
         semantic_slot: (relation.relation_kind, role)
         for relation, role, semantic_slot in reversed(relation_endpoints)
@@ -5708,6 +5720,7 @@ def _source_grounded_argument_surface(
         semantic_slot: _source_grounded_relation_endpoint_anaphor(
             relation_kind,
             role,
+            semantic_profile=move.semantic_profiles[semantic_slot],
         )
         for semantic_slot, (
             relation_kind,
