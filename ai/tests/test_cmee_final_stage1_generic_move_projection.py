@@ -447,6 +447,16 @@ class CMEEPastReportedWishTest(unittest.TestCase):
         self.assertFalse(reception_owner._past_wish_target(
             (legacy_past,), build_evidence_span_resolver(source.evidence_spans),
         ))
+        for text in ("昨日、休みたいと言った？", "昨日、休みたいと言った。",
+                     "以前、休みたいと思っていた。"):
+            source, before = self._wish(text)
+            legacy_past = replace(before, semantic_frame=replace(before.semantic_frame, time_scope="past"))
+            self.assertFalse(reception_owner._past_wish_target(
+                (legacy_past,), build_evidence_span_resolver(source.evidence_spans),
+            ))
+        self.assertFalse(observation_plan_owner.past_reported_wish_finite(
+            "休みたいと言った", span_text="昨日、話したあと休みたいと言った",
+        ))
 
     def test_selected_past_wish_body_keeps_time_in_independent_inverse(self):
         rows, _ = load_validated_batch(_BATCH_PATH, _MANIFEST_PATH)

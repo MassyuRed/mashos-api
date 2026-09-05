@@ -2072,7 +2072,7 @@ def _past_wish_target(
     for nucleus in nuclei:
         raw = re.sub(r"\s+", " ", resolver.resolve(nucleus.source_span_ids[0]).raw_text).strip()
         fragment = _typed_reception_source_fragment(nucleus, raw) or raw
-        if not past_reported_wish_finite(fragment):
+        if not past_reported_wish_finite(fragment, span_text=raw):
             return False
     return True
 

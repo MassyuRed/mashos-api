@@ -5648,3 +5648,12 @@ System Contextはdoctor→prepare実行、18成功／16失敗、prepareは固定
 既存alignerの新past-report補正だけを、元フィールド全体で引用外の同位置、直前文境界から未知の前置きがないspan、同じtyped fragmentの先頭に限定した。分割された引用・話者は推測で補わない。Human Receptionはtyped pastだけを過去の願望と同一視せず、同じ完全source fragmentの願望が有限の過去report hostに閉じることも確認する。この形態規則は既存ObservationPlan内のpure functionを共有し、別の分類器・opaque flag・新意味carrierを作らない。元の目的語内の時間語だけで得られたpast値は、新しい当時参照の根拠にならない。
 
 追加3検査の中に元位置・話者／引用・目的語内時間語の境界を追加し、同じ固定100と必要回帰を新sourceで再実行してから華恋が全100本文を読む。required124・選択責務・Gate／parser／閾値・過去PASS／hashを維持する。前段検証と今回の最終sourceを混ぜず、実装／検査／runner以後の変更は結果と地図・handoffに限定して保存する。商品NOT_CLEAR、ready／採用／merge／本番／問い／Layer3は未成立。
+
+
+### 2026-09-05 continuation — 当時参照を原文確認済み補正へ限定
+
+2回目の固定source（runtime remote `7d447d146a6ef780cc13262ffc2d205ca908f160` / local `880a8158f1da6d442f5f61587d100dd9675a32d3`）も100/124/73-27、204検査200成功／既存4失敗だった。ただし旧時間語判定でpastとなる疑問文が、元フィールド確認を経ず当時参照へ入る境界を華恋の最小再現でも確認した。2回目の全文確認は未実施で、生成・XML・診断・再現を途中証拠として保持する。
+
+有限過去reportの共通関数は、既存時間語関数で元spanとtyped fragmentの両方がcurrent_inputとなる範囲だけを新しい本文参照の対象にする。現行wish builderの旧past生成はこの時間語関数に由来し、他の固定past経路はaction／change／eventである。現在のtyped pastと両方の元分類・有限reportの組合せにより、今回の元位置／疑問／引用／話者確認を通った補正へ限定される。暦・期間・継続等の従来時制経路を新表現へ一括移行しない。新flag／schema／carrier／第二selectorや原入力を保持する新resolver契約は追加しない。対象・支援先・Move124・既存replay責務を保持する。
+
+同じ追加3検査内で、旧past疑問、旧past断定、typed fragment外の時間語を除外する境界も検証する。限定後の最終sourceで必要回帰・固定100生成・華恋全文確認をそろえる。過去2回の結果を最終証拠へ流用せず、既存4失敗・歴史的hash／PASSを変更しない。商品NOT_CLEAR、ready／採用／merge／本番／問い／Layer3は未成立。

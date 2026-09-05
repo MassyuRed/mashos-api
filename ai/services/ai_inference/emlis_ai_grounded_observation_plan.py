@@ -9857,10 +9857,17 @@ def _final_stage1_continuation_is_desired(text: str) -> bool:
     return False
 
 
-def past_reported_wish_finite(text: str) -> bool:
-    """Recognize a finite reporting host, not prove its source or actor."""
+def past_reported_wish_finite(text: str, *, span_text: str | None = None) -> bool:
+    """Recognize a default-time report; source/actor proof stays upstream."""
     text = text.strip(" \u3000、,。．.!！")
-    if _top_level_text(text) != text:
+    # Existing lexical past/continuing paths have not undergone the new
+    # original-field proof. Do not infer that proof from their past value,
+    # including when the calendar cue lies outside a typed fragment.
+    if (
+        _top_level_text(text) != text
+        or _time_scope_for_text(text) != "current_input"
+        or _time_scope_for_text(span_text or text) != "current_input"
+    ):
         return False
     finite = _source_finite_without_postposed_focus(_strip_bounded_operator_prefix(text))
     return bool(
@@ -9986,7 +9993,7 @@ def _final_stage1_align_action_status(
                 and frame.modality == "wish"
                 and frame.time_scope == "current_input"
                 and fragment_start == 0
-                and past_reported_wish_finite(text)
+                and past_reported_wish_finite(text, span_text=str(span.raw_text))
             ):
                 # A finite report locates the expressed desire in the past;
                 # it proves neither present desire nor performed action.
