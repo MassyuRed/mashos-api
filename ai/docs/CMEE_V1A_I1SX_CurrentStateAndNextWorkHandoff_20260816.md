@@ -5551,3 +5551,16 @@ Human Receptionで完全な行動節を名詞化し、述語目的語として�
 System Contextは今回doctor→prepareを実行。doctor18 PASS／16 FAIL、prepareは固定toolchain不一致で不成立。stale不使用、原典直接確認、profile／基準ref／lock／tracked current変更0。全体・国家システム・既存API→保存→Emlis→返却→RN表示の責務を確認し、新CMEEのLayer1／2保存・履歴接続が完成済みとは扱わない。今回はproduction／DB／API／RN／Piece／Analysis変更0。
 
 9月12日までの商品確認準備は引き続き危うい。今回の局所補正だけでは、生成可能73件の本文の厚みと集合の定型化を改善できていないためである。次は同じ承認範囲で、既存の意味選択・source scopeを原入力の主述語・主体・不確かさへ戻して整え、その対象と受け取り方が既存Human Receptionで表現できるか代表本文から確認する。分類名の削除や定型句の差替えだけの同種試行を反復しない。文法と上流判断を一つの問題にせず、各既存ownerで修正する。9月9日の作業時にはこの本文差分と残件を中間確認する。日付による自動実行・自動停止なし。同じ承認の再要求なし。Product Read PASS／candidate ready／採用／merge／本番／問い／Layer3は未成立。private本文・個別ケース・digest・locatorはprivate checkpointへ保存し、公開しない。
+
+
+### 2026-09-05 continuation — 有限の行動予定を願望と混同しない（実装固定前）
+
+同じ承認の継続として、既存final-only Observation Planのsame-nucleus status alignerで、肯定の非過去動詞＋予定hostの有限末尾だけを既存intention／future／next_intention／concrete_actionへ整合する。kind、nucleus、actor、polarity、predicate kind、source範囲と文中のwish／negation operatorを保持する。既存の行動対象判定はfinal分岐でこの外側intentionを読み、上流の既存meaning ownerがMove・selected inputを再構築する。Human Receptionはその判断を既存future-action表現へ実現する。文末を越えた願望の昇格や、実行済みの主張を加えない。
+
+引用・括弧、過去予定、否定された予定、推量・疑問、明示された別主体は今回の肯定予定証明へ入れない。subjectの初期current_user値を本人の行動証明とせず、冒頭の既存calendar adjunctを除いてsubject／topicとなり得る文字が残る場合は保守的に未解決とする。目的語topicを正しく分解できない文もこの限定修正へ混ぜない。一般的な日本語の主語解析の完成ではない。
+
+既存Human Reception、Sentence Surface、Gate、body-only parser、閾値、historical hash／PASS receiptを変更しない。全体の入力保存→dispatch→production Emlis→public feedback→RN表示を実ファイルで確認し、今回のfinal seamをproduction経路・Piece・Analysisへ適用しない。STRUCTURE_MAP_DELTA_NONE：owner、経路、schema、公開契約を変えず既存final内の意味状態を補正する。構造地図の現在地案内だけを同期する。
+
+代表本文では予定を願いと呼ぶ不一致が除かれ、既存Gate／独立inverseは成功。ただし初期trialは主体境界を絞る前の診断であり、最終コードの合格証拠ではない。追加検査の最初の実行は2成功／1失敗で、短いsynthetic入力が正規のanaphoraを選ぶのにEXPLICIT全文を期待した検査設定の不一致だった。既存の明示対象を実際に選ぶcanonical入力へ検査を合わせ、要求自体は維持して再実行し、追加3検査は全成功。同じ100件、全関連回帰、華恋の変更後全文確認は固定後に実行する。直前候補の100／124／73-27、195件191成功／4失敗、NOT_CLEARは履歴として保持し、この変更後へ流用しない。
+
+今回System Contextはdoctor18成功／16失敗、prepare実行・固定toolchain不一致で不成立。stale不使用、原典直接確認。実装検証環境は消失していたため既存lock46依存の版・wheel hashで復元し、installed RECORD 2277件のhashを照合した。lock／profile／基準ref／tracked current変更0。9月12日の商品確認準備は未成立。ready、採用、merge、本番、問い／Layer3へ進まない。

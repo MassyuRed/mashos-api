@@ -374,6 +374,118 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
 
 
 class CMEESameNucleusActionStatusTest(unittest.TestCase):
+    def test_finite_plan_preserves_embedded_desire_and_negation(self):
+        for text in (
+            "資料を読むつもり",
+            "荷物を届ける予定です",
+            "手順を確認するつもりだ",
+            "来週も変更しない枠を残し、確かめたい点を短く記録するつもり",
+        ):
+            with self.subTest(text=text):
+                source, action = self._action(text)
+                before = replace(action, semantic_frame=replace(
+                    action.semantic_frame, predicate_kind="wish", modality="wish",
+                    polarity="negative", attribute_codes=(
+                        "operator:action", "operator:wish", "operator:negation",
+                    ),
+                ))
+                after, = observation_plan_owner._final_stage1_align_action_status(
+                    (before,), source.evidence_spans,
+                )
+                self.assertEqual(after, replace(before, semantic_frame=replace(
+                    before.semantic_frame, modality="intention", time_scope="future",
+                    attribute_codes=(
+                        *before.semantic_frame.attribute_codes,
+                        "time_scope:future", "semantic_role:next_intention",
+                        "semantic_role:concrete_action",
+                    ),
+                )))
+                self.assertTrue(observation_plan_owner._is_explicit_action_nucleus(
+                    after, final_source_fidelity=True,
+                ))
+                self.assertFalse(observation_plan_owner._is_explicit_action_nucleus(after))
+                self.assertFalse(reception_owner.reception_action_is_performed(
+                    after, final_source_fidelity=True,
+                ))
+                self.assertTrue(reception_owner.reception_action_is_future_intention(
+                    after, final_source_fidelity=True,
+                ))
+
+    def test_finite_plan_does_not_promote_uncertain_negative_or_other_subject(self):
+        for text, modality in (
+            ("資料を読みたい", "wish"),
+            ("資料を読むつもりだった", "wish"),
+            ("資料を読む予定でした", "wish"),
+            ("資料を読むつもりと思う", "wish"),
+            ("資料を読む予定らしい", "wish"),
+            ("資料を読む予定かもしれない", "wish"),
+            ("資料を読むつもりかな", "wish"),
+            ("資料を読む予定ではない", "wish"),
+            ("資料を読まないつもり", "wish"),
+            ("たぶん資料を読むつもり", "wish"),
+            ("資料を読む予定", "uncertain"),
+            ("弟が資料を読むつもり", "wish"),
+            ("妹は資料を読む予定", "wish"),
+            ("同僚も資料を読むつもり", "wish"),
+            ("明日は同僚が資料を読むつもり", "wish"),
+            ("資料は明日に読むつもり", "wish"),
+            ("「資料を読むつもり」と聞いた", "wish"),
+        ):
+            with self.subTest(text=text, modality=modality):
+                source, action = self._action(text)
+                before = replace(action, semantic_frame=replace(
+                    action.semantic_frame, modality=modality,
+                    attribute_codes=("operator:action", "operator:wish"),
+                ))
+                after, = observation_plan_owner._final_stage1_align_action_status(
+                    (before,), source.evidence_spans,
+                )
+                self.assertEqual(replace(after, semantic_frame=before.semantic_frame), before)
+                self.assertNotEqual(after.semantic_frame.modality, "intention")
+                self.assertNotIn("semantic_role:concrete_action", after.semantic_frame.attribute_codes)
+                self.assertFalse(observation_plan_owner._is_explicit_action_nucleus(
+                    after, final_source_fidelity=True,
+                ))
+
+    def test_finite_plan_reaches_selected_body_and_independent_inverse(self):
+        rows, _ = load_validated_batch(_BATCH_PATH, _MANIFEST_PATH)
+        checked = 0
+        for row in rows:
+            action = row["input"]["action_text"].rstrip("。 ")
+            if not action.endswith(("つもり", "予定", "つもりです", "予定です")):
+                continue
+            artifacts = _full_surface_artifacts(row)
+            targets = {n.nucleus_id for n in artifacts.plan.nuclei
+                       if "memo_action" in n.source_fields
+                       and n.semantic_frame.modality == "intention"}
+            selected = any(d.reception_act == "honor_concrete_effort"
+                           and targets.intersection(d.target_nucleus_ids)
+                           for d in artifacts.selected_subjective_input.decisions)
+            follow = _reception_text(artifacts.surface.text)
+            # Short inputs and nonprimary Moves may legitimately use an
+            # anaphor. Exercise a real selected explicit prospective body.
+            if not selected or action not in follow:
+                continue
+            checked += 1
+            self.assertEqual(artifacts.sentence_plan.recovery_stage, "full")
+            self.assertTrue(artifacts.gate.passed)
+            self.assertTrue(artifacts.inverse.passed)
+            self.assertIn("これからの行動", follow)
+            self.assertNotIn("願い", follow)
+            self.assertNotIn("実際の行動", follow)
+            for wrong in ("実際の行動", "その願い"):
+                changed = _tamper_reception(
+                    artifacts.surface.text, "これからの行動", wrong,
+                )
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=changed.encode("utf-8"), plan=artifacts.plan,
+                    sentence_plan=artifacts.sentence_plan, resolver=artifacts.resolver,
+                    selected_subjective_input=artifacts.selected_subjective_input,
+                )
+                self.assertFalse(inverse.passed)
+                self.assertTrue(any("replay_mismatch" in code for code in inverse.failure_codes))
+        self.assertGreater(checked, 0)
+
     def test_continuation_inside_desired_object_keeps_source_scope(self):
         for text, resolved in (
             ("待ち続ける時間を短くしたい", True),

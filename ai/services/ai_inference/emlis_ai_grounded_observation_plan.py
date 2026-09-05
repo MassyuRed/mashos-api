@@ -6121,10 +6121,10 @@ def _is_explicit_action_nucleus(nucleus: GroundedSemanticNucleus, *, final_sourc
         if (
             source_proven_future_action_status(nucleus)
             and "semantic_role:concrete_action" in attributes
-            and "operator:wish" not in attributes
+            and nucleus.semantic_frame.modality == "intention"
         ):
-            # An admitted affirmative outer decision may retain negation
-            # inside its object or earlier clause. It is still prospective.
+            # An admitted affirmative outer decision/plan may retain wish
+            # or negation inside its object. It is still prospective.
             return True
         # Preserve the existing response-family boundary. A future time
         # correction does not turn a wish or an unperformed negative
@@ -9955,8 +9955,25 @@ def _final_stage1_align_action_status(
         progressive = re.search(r"(?:て|で)(?:い|お)(?:る|ます|た|ました)$", finite)
         past = _EXPLICIT_PERFECTIVE_END_RE.search(finite)
         intended_tail = re.search(
-            r"(?:(?:つもり|予定)(?:です)?|(?<!だ)(?:よう|[おこごそとのぼもろ]う)(?:かな|か|と思う)?|(?:たい|ほしい|欲しい))$",
+            r"(?:(?:つもり|予定)(?:だ|です)?|(?<!だ)(?:よう|[おこごそとのぼもろ]う)(?:かな|か|と思う)?|(?:たい|ほしい|欲しい))$",
             finite,
+        )
+        plan_tail = re.search(
+            r"[うくぐすつぬぶむる](?:つもり|予定)(?:だ|です)?$", finite,
+        )
+        # The input-field actor is a default, not proof of a different
+        # subject's intention. Admit only an implicit-subject clause here.
+        # A leading calendar adjunct can own は/も; other potential subject
+        # particles remain unresolved (including object-topic ambiguity).
+        plan_subject_scope = re.sub(
+            r"^(?:今日|今夜|今晩|今朝|明日|明後日|来(?:週|月|年)|次回|あとで|後で)(?:は|も)?[、,]?",
+            "", finite[:plan_tail.start() + 1] if plan_tail else finite,
+        )
+        affirmative_plan = bool(
+            frame.modality in {"intention", "wish"}
+            and plan_tail
+            and not re.search(r"[はがも。.!?！？\n]", plan_subject_scope)
+            and not re.match(r"(?:たぶん|多分|おそらく|恐らく)[、,]?", finite)
         )
         future_calendar = bool(_FUTURE_RE.search(visible) or re.search(
             r"(?:今日|今夜|今晩|今朝|明日|明後日|来(?:週|月|年)|次回|あとで|後で)", visible,
@@ -9967,11 +9984,17 @@ def _final_stage1_align_action_status(
             and (intended_tail or future_calendar and frame.modality == "intention"
                  and re.search(r"(?:ます|[うくぐすつぬぶむる])$", finite))
         ):
-            modality = "uncertain" if finite.endswith(("かな", "か")) else frame.modality
+            modality = (
+                "intention" if affirmative_plan
+                else "uncertain" if finite.endswith(("かな", "か"))
+                else frame.modality
+            )
             attributes = tuple(code for code in codes if not code.startswith(
                 ("time_scope:", "modality:")
             ) and code != "operator:performed_action") + (
                 "time_scope:future", "semantic_role:next_intention",
+            ) + (
+                ("semantic_role:concrete_action",) if affirmative_plan else ()
             )
             aligned.append(replace(nucleus, semantic_frame=replace(
                 frame, modality=modality, time_scope="future",
