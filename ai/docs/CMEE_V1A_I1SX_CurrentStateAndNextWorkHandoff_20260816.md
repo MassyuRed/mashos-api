@@ -5564,3 +5564,14 @@ System Contextは今回doctor→prepareを実行。doctor18 PASS／16 FAIL、pre
 代表本文では予定を願いと呼ぶ不一致が除かれ、既存Gate／独立inverseは成功。ただし初期trialは主体境界を絞る前の診断であり、最終コードの合格証拠ではない。追加検査の最初の実行は2成功／1失敗で、短いsynthetic入力が正規のanaphoraを選ぶのにEXPLICIT全文を期待した検査設定の不一致だった。既存の明示対象を実際に選ぶcanonical入力へ検査を合わせ、要求自体は維持して再実行し、追加3検査は全成功。同じ100件、全関連回帰、華恋の変更後全文確認は固定後に実行する。直前候補の100／124／73-27、195件191成功／4失敗、NOT_CLEARは履歴として保持し、この変更後へ流用しない。
 
 今回System Contextはdoctor18成功／16失敗、prepare実行・固定toolchain不一致で不成立。stale不使用、原典直接確認。実装検証環境は消失していたため既存lock46依存の版・wheel hashで復元し、installed RECORD 2277件のhashを照合した。lock／profile／基準ref／tracked current変更0。9月12日の商品確認準備は未成立。ready、採用、merge、本番、問い／Layer3へ進まない。
+
+
+### 2026-09-05 continuation — 予定の意味を同じ選択済み意図の担当で表す（再固定前）
+
+直前の実装固定は同じ100件を直接生成したが、Move／expression／bindingが125となり、全198検査は193成功／5失敗だった。従来4失敗に加え、既存bridgeの124要件へ違反した1失敗であり、この案は不採用。124という期待値、過去receipt／hashを変更して合格へ合わせない。原入力／観測／外側73-27と理由は変わらなかったが、別familyへの移動が新しいsupport Moveを作っていた。非公開の途中証拠として保持する。
+
+肯定予定のsame-nucleus modality補正は維持し、行動family分類の今回変更を撤回した。既存protect_retained_intentionの選択済みtargetが、既存future／next_intention、modality=intention、concrete_action証明を全て持つ場合だけ、唯一のHuman Receptionが既存future_action_intention参照を使う。願望用の短いtopic補正で願いへ戻さない。新しいMoveや受け取り判断を作らず、同じ選択済み意図を保護する述語の義務を保持する。
+
+Human Reception内の責務検証は、既存final Planのtyped target証明がある場合だけ、予定対象・見失わず・大切の全てを要求する。共通の願望regexを無条件には拡張しない。Sentence Surfaceの既存検証呼出2箇所は同じPlanを渡すだけで、意味や本文を生成しない。Planなし／base経路では従来の責務検証を維持する。Gate／body parser／閾値／selected request-local契約／private schema変更0。実ファイル追加0、owner／経路追加0。実装対象は既存Observation Plan、Human Reception、Sentence Surface、既存テスト、current runnerと既存設計・地図・handoffに限定する。
+
+代表検査で、予定の原文とfuture参照が同じ本文に残り、願い／実施済みへの改ざんを独立inverseが拒否することを確認する。最終固定後に同じ100件・全関連回帰と華恋の全文再読を行う。先の125結果は合格証拠にしない。商品確認準備は未成立、同じ承認内の継続中。

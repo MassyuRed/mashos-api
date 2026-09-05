@@ -3486,6 +3486,7 @@ def realize_grounded_sentence_plan_with_human_reception(
             human_reception_surface,
             plan.response_plan.human_reception_plan,
             resolver,
+            plan=plan,
         )
     ):
         raise GroundedSentenceSurfaceError(
@@ -4199,6 +4200,7 @@ def validate_grounded_surface_result(
                                 reception_surface,
                                 reception_plan,
                                 resolver,
+                                plan=plan,
                             )
                         )
     elif result.status == "separate_safety_owner":

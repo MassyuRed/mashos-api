@@ -21,6 +21,7 @@ import unicodedata
 
 from emlis_ai_evidence_ledger_service import EvidenceSpanResolver
 from emlis_ai_grounded_observation_plan import (
+    FINAL_STAGE1_GROUNDED_PROJECTION_VERSION,
     GroundedHumanReceptionPlan,
     GroundedObservationPlan,
     GroundedReceptionAct,
@@ -2037,6 +2038,25 @@ def _short_bound_anchor(
     return ""
 
 
+def _retained_future_intention_target(
+    nuclei: Sequence[GroundedSemanticNucleus],
+) -> bool:
+    """Read existing affirmative future proof without changing the Move act."""
+    return bool(nuclei) and all(
+        source_proven_future_action_status(nucleus)
+        and nucleus.semantic_frame.modality == "intention"
+        and "semantic_role:concrete_action"
+        in nucleus.semantic_frame.attribute_codes
+        for nucleus in nuclei
+    )
+
+
+def _retained_future_intention_responsibility(text: str) -> bool:
+    # The source-bound future target and this act's protection both remain
+    # mandatory. This grammar is admitted only with final-plan proof.
+    return re.search(r"これからの行動.{0,40}見失わず.{0,12}大切", text) is not None
+
+
 def resolve_grounded_reception_referent(
     reception_plan: GroundedHumanReceptionPlan,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
@@ -2076,7 +2096,12 @@ def resolve_grounded_reception_referent(
     kinds = {nucleus.kind for nucleus in selected}
 
     if (
-        reception_act == "honor_concrete_effort"
+        (
+            reception_act == "honor_concrete_effort"
+            or final_source_fidelity
+            and reception_act == "protect_retained_intention"
+            and _retained_future_intention_target(target_nuclei)
+        )
         and any(
             reception_action_is_future_intention(nucleus, final_source_fidelity=final_source_fidelity)
             for nucleus in target_nuclei
@@ -2380,7 +2405,10 @@ def _topic_bound_anaphoric_referent(
 ) -> GroundedReceptionReferent:
     """Bind an anaphor to a short target topic without replaying its clause."""
 
-    if move.reception_act != "protect_retained_intention":
+    if (
+        move.reception_act != "protect_retained_intention"
+        or referent.kind == "future_action_intention"
+    ):
         return referent
     for _nucleus_id, fragments in _reception_source_fragments(
         move.target_nucleus_ids,
@@ -3114,6 +3142,8 @@ def validate_grounded_human_reception_surface(
     surface: GroundedHumanReceptionSurface,
     reception_plan: GroundedHumanReceptionPlan,
     resolver: EvidenceSpanResolver,
+    *,
+    plan: GroundedObservationPlan | None = None,
 ) -> tuple[str, ...]:
     """Validate the R4 surface without reconstructing observation meaning."""
 
@@ -3202,14 +3232,37 @@ def validate_grounded_human_reception_surface(
         )
     ):
         issues.append("human_reception_non_human_terminal_predicate")
+    final_nuclei = {
+        nucleus.nucleus_id: nucleus for nucleus in plan.nuclei
+    } if (
+        plan is not None
+        and FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in plan.source_contracts
+        and plan.response_plan.human_reception_plan == reception_plan
+    ) else {}
+    visible_responsibilities = []
     for act in active_acts:
-        responsibility = _ACT_OWNED_RESPONSIBILITY_RE[act]
-        if not responsibility.search(surface.text):
+        future_targets = tuple(
+            final_nuclei[nucleus_id]
+            for move in active_moves if move.reception_act == act
+            for nucleus_id in move.target_nucleus_ids
+            if nucleus_id in final_nuclei
+        )
+        future_intention = (
+            act == "protect_retained_intention"
+            and all(nucleus_id in final_nuclei
+                    for move in active_moves if move.reception_act == act
+                    for nucleus_id in move.target_nucleus_ids)
+            and _retained_future_intention_target(future_targets)
+        )
+        visible = (
+            _retained_future_intention_responsibility(surface.text)
+            if future_intention else
+            bool(_ACT_OWNED_RESPONSIBILITY_RE[act].search(surface.text))
+        )
+        visible_responsibilities.append(visible)
+        if not visible:
             issues.append(f"human_reception_act_responsibility_missing:{act}")
-    if active_acts and all(
-        not _ACT_OWNED_RESPONSIBILITY_RE[act].search(surface.text)
-        for act in active_acts
-    ):
+    if active_acts and not any(visible_responsibilities):
         issues.append("human_reception_generic_suffix_forbidden")
 
     bounded_counterposition = "bounded_counter_self_denial" in active_acts
@@ -7337,9 +7390,17 @@ def _author_source_grounded_reception_clauses(
                     (referent_text,),
                 )
                 != 1
-                or not _ACT_OWNED_RESPONSIBILITY_RE[
-                    move.reception_act
-                ].search(move_sentence)
+                or not (
+                    _retained_future_intention_responsibility(move_sentence)
+                    if move.reception_act == "protect_retained_intention"
+                    and referent.kind == "future_action_intention"
+                    and _retained_future_intention_target(tuple(
+                        nucleus_index[nucleus_id]
+                        for nucleus_id in move.target_nucleus_ids
+                    )) else _ACT_OWNED_RESPONSIBILITY_RE[
+                        move.reception_act
+                    ].search(move_sentence)
+                )
                 or move.move_role == "attention"
                 and not _ATTENTION_RESPONSIBILITY_RE.search(move_sentence)
             ):
@@ -7448,6 +7509,7 @@ def _author_source_grounded_reception_clauses(
         surface,
         reception_plan,
         resolver,
+        plan=plan,
     )
     if issues:
         raise GroundedHumanReceptionSurfaceError(

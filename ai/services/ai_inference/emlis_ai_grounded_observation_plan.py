@@ -6121,10 +6121,8 @@ def _is_explicit_action_nucleus(nucleus: GroundedSemanticNucleus, *, final_sourc
         if (
             source_proven_future_action_status(nucleus)
             and "semantic_role:concrete_action" in attributes
-            and nucleus.semantic_frame.modality == "intention"
+            and "operator:wish" not in attributes
         ):
-            # An admitted affirmative outer decision/plan may retain wish
-            # or negation inside its object. It is still prospective.
             return True
         # Preserve the existing response-family boundary. A future time
         # correction does not turn a wish or an unperformed negative

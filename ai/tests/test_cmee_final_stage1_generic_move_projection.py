@@ -400,7 +400,9 @@ class CMEESameNucleusActionStatusTest(unittest.TestCase):
                         "semantic_role:concrete_action",
                     ),
                 )))
-                self.assertTrue(observation_plan_owner._is_explicit_action_nucleus(
+                # Correct source status within the existing intention
+                # family; do not add a concrete-effort opportunity.
+                self.assertFalse(observation_plan_owner._is_explicit_action_nucleus(
                     after, final_source_fidelity=True,
                 ))
                 self.assertFalse(observation_plan_owner._is_explicit_action_nucleus(after))
@@ -458,7 +460,7 @@ class CMEESameNucleusActionStatusTest(unittest.TestCase):
             targets = {n.nucleus_id for n in artifacts.plan.nuclei
                        if "memo_action" in n.source_fields
                        and n.semantic_frame.modality == "intention"}
-            selected = any(d.reception_act == "honor_concrete_effort"
+            selected = any(d.reception_act == "protect_retained_intention"
                            and targets.intersection(d.target_nucleus_ids)
                            for d in artifacts.selected_subjective_input.decisions)
             follow = _reception_text(artifacts.surface.text)
@@ -473,6 +475,18 @@ class CMEESameNucleusActionStatusTest(unittest.TestCase):
             self.assertIn("これからの行動", follow)
             self.assertNotIn("願い", follow)
             self.assertNotIn("実際の行動", follow)
+            authored = next(surface for surface in artifacts.authored
+                            if surface.recovery_stage == "full")
+            reception_plan = artifacts.plan.response_plan.human_reception_plan
+            self.assertFalse(reception_owner.validate_grounded_human_reception_surface(
+                authored, reception_plan, artifacts.resolver, plan=artifacts.plan,
+            ))
+            self.assertIn(
+                "human_reception_act_responsibility_missing:protect_retained_intention",
+                reception_owner.validate_grounded_human_reception_surface(
+                    authored, reception_plan, artifacts.resolver,
+                ),
+            )
             for wrong in ("実際の行動", "その願い"):
                 changed = _tamper_reception(
                     artifacts.surface.text, "これからの行動", wrong,
