@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾の最新未完了checkpointと継承承認を確認する。2026-08-16のR4／Product Read記録は履歴。現在は選択済み判断のforward／replay接続、予定・肯定反応の継続修正を実装・検証済み。同じ100件direct100／required124／外側73-27、全201検査197成功／既存4失敗。華恋の全文判定はNOT_CLEAR。
+3. 末尾の最新未完了checkpointと継承承認を確認する。旧記録は履歴。選択済み判断のforward／replay、予定・肯定反応・過去の願望発言の限定修正を実装・検証済み。最新は同じ100件direct100／required124／外側73-27、全204検査200成功／既存4失敗。時制2件・利用不可側フォロー1件の局所改善、生成可能73件の本文変更0。華恋の全文判定はNOT_CLEAR。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -5657,3 +5657,22 @@ System Contextはdoctor→prepare実行、18成功／16失敗、prepareは固定
 有限過去reportの共通関数は、既存時間語関数で元spanとtyped fragmentの両方がcurrent_inputとなる範囲だけを新しい本文参照の対象にする。現行wish builderの旧past生成はこの時間語関数に由来し、他の固定past経路はaction／change／eventである。現在のtyped pastと両方の元分類・有限reportの組合せにより、今回の元位置／疑問／引用／話者確認を通った補正へ限定される。暦・期間・継続等の従来時制経路を新表現へ一括移行しない。新flag／schema／carrier／第二selectorや原入力を保持する新resolver契約は追加しない。対象・支援先・Move124・既存replay責務を保持する。
 
 同じ追加3検査内で、旧past疑問、旧past断定、typed fragment外の時間語を除外する境界も検証する。限定後の最終sourceで必要回帰・固定100生成・華恋全文確認をそろえる。過去2回の結果を最終証拠へ流用せず、既存4失敗・歴史的hash／PASSを変更しない。商品NOT_CLEAR、ready／採用／merge／本番／問い／Layer3は未成立。
+
+
+### 2026-09-05 continuation — 過去の願望発言の最終検証・全文確認（商品未成立）
+
+最終固定sourceはruntime remote `ed884a4493ccb43b3620ac2897e6defd670d3982`、local `d519c3e655966a78bf5baf98d7ae23c8b87b8b81`、全体tree `7e6dce47eaa29af5241f97151e17cc5a6c490c18`。対応する設計sourceはremote `e3d9524c34dbf70fcce1e1fa5f7e8d5e2c9d6c56`、local `3b828dd79facd19d2a85403a3222b58416cfff7f`、全体tree `516a9e9c1e148a15d516cd67cd9c137d2c9daae0`。両repoのlocal／remote treeと変更ファイル全文が一致。この後の変更は結果・地図・handoffだけで、実装・テスト・runner bytesは固定する。
+
+同じ原入力全フィールド・順序・評価軸・分母100で、direct100、required Move／expression／binding124、外側GENERATED73／UNAVAILABLE27。前段との比較で同じnucleusのcurrent_input→pastと既存time属性が2件変わり、そのselected-input identityも2件変わった。同じ対向nucleusのoperator属性順序1件にも実行間の差があり、非時制属性tupleのbyte一致は主張しない。非時制属性の内容集合・actor・polarity・source・nucleus IDは一致する。選択act／対象／支援先は全件同じで、operation内訳116／5／1／2も同じ。フォローが変わったのは利用不可側1件、当時の願いという時点が本文へ届いた。もう1件は時制だけの補正で本文改善には数えない。生成可能73件の本文変更0、観測・可否・理由変更0、残98件は全保存項目同一。局所修正を生成可能集合の商品改善へ読み替えない。
+
+最終sourceの必要回帰204件を全実行し、200成功／既存4失敗、新規失敗0、未実行0。原184は180成功4失敗、前段追加17と今回追加3は20成功。XML・完全なconsoleの最終集計を照合した。過去sourceの成功、最初の新規検査案2失敗、2つの固定途中版の200／4、source位置と旧past疑問の誤適用再現は別証拠として保持し、最終合格へ流用しない。
+
+既存4失敗は、観測固定との不一致2、過去dated receiptと現コードの不一致1、旧経路の集合フォロー重複1。観測には比較・意味分類の未解決もあり、古い期待値だけとして消さない。後続36ケースも全実行し、観測hash不一致を保持。post-hash96検査は全成功、unseen集合の重複FAILを保持する。後続診断で元test失敗を置換せず、歴史的hash／PASS／閾値変更0。
+
+利用不可27件の今回の外側理由は、current_experiencer_or_time_scope_unsupportedが26件、plan_bound_observation_realizer_unavailableが1件で全件不変。これは今回観測したトップレベルの理由集計であり、旧記録の内部分類18／8／1を今回あらためて個別立証したという意味ではない。全文確認でも過去の伝達・予定、未知、関係・主体分類が残るため、27件を一括で正しい停止とも一括で不具合とも判定しない。停止を解除するための新しい判断条件は追加しない。
+
+華恋自身が最終sourceの原入力全フィールド・観測・フォロー100件を、10件ずつ省略なしで読み、集合判定はNOT_CLEAR。過去の発言の時点は1件改善したが、感情・価値・関係より行動評価に偏る選択、長い行動節と関係節の復唱、同じ締め、分類名だけの参照、問い・比較・可能性の誤分類が残る。過去予定と未完結果、伝達文内の現在時点、援助を受けた主体、複文の関係も未解決。型の時制だけの改善を本文改善へ数えず、今回もMashへ未達本文の確認を求めない。
+
+System Contextは今回doctor→prepareを実行したが18成功16失敗、prepareも固定toolchain不一致で不成立。stale不使用・承認済み原典直接読取。profile／基準ref／tracked current変更0。既存実装runtimeは46依存版・46wheel hash・2277installed RECORDを今回照合し不一致0。全体／国家／共通基盤と最新地図・tracked inventory・weekly reviewを確認し、今回もdisabled final Stage1の既存ObservationPlan／Human Reception内部、テスト、現在runner identityに限定した。Sentence Surface／Gate／parser変更0、既存exact replay・source／unknown／安全・124義務を保持する。
+
+次は同じ承認内で、過去の発言の今回修正を保持し、未解決の複文・伝達・予定と、援助の受領主体、問い・比較・可能性を既存意味ownerの原入力へ戻って確認する。原入力→選択意味→本文を代表例で先に突き合わせ、分類語だけの変更や長い再掲を商品改善にしない。既存ownerの範囲で次修正を実装し、同じ100・124と必要回帰・華恋全文確認をそろえる。新proposal／台帳／言い換えbank／第二selector／renderer／隠し意味／弱いGate／歴史的hash修正を追加しない。9月12日商品確認準備は依然危うく、9月9日の作業時には改善本文・残件・見通しを確認する。日付による自動実装／停止／Product Read PASSはない。PR3／30／37はDraft/open/unmerged、ready／採用／merge／本番／問い／Layer3は未成立。
