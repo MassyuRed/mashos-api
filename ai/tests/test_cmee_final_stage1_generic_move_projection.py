@@ -3323,5 +3323,136 @@ class CMEEConcreteActionNominalTest(unittest.TestCase):
         self.assertEqual(final.kind, "self_started_effort")
 
 
+class CMEENegativeContextNominalTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = {}
+        for name, context in (("verb", "今は長く話せなくて"),
+                              ("adjective", "今は体調がよくなくて")):
+            row = cls._row("この役割を続けたい。でも、" + context + "。")
+            cls.artifacts[name] = (context, _full_surface_artifacts(row))
+
+    @staticmethod
+    def _row(text):
+        return {"case_id": "public-negative-context-grammar", "input": {
+            "thought_text": text, "action_text": "", "categories": ["趣味"],
+            "emotions": [{"type": "不安", "strength": "medium"}],
+        }}
+
+    def test_context_is_inflected_without_losing_its_complete_source_or_relation(self):
+        for source, a in self.artifacts.values():
+            with self.subTest(source=source):
+                nominal = source[:-3] + "ないこと"
+                self.assertTrue(a.gate.passed)
+                self.assertTrue(a.inverse.passed)
+                self.assertEqual(a.sentence_plan.recovery_stage, "full")
+                follow = _reception_text(a.surface.text)
+                self.assertEqual(follow.count(nominal), 1)
+                self.assertIn("この役割を続けたいという願いと", follow)
+                self.assertIn("との違いを見失わず", follow)
+                self.assertNotIn("なくてということ", follow)
+                args, kwargs = a.author_arguments[0]
+                self.assertIs(kwargs["selected_subjective_input"], a.selected_subjective_input)
+                expressions = args[1]
+                self.assertTrue(any(source == arg.lexical_form
+                                    for e in expressions for arg in e.arguments))
+                self.assertTrue(any("context-slot:1:NEGATIVE_CONTINUATIVE" in e.nominalization_plan
+                                    for e in expressions))
+                replay = reception_owner.replay_source_grounded_human_reception_from_plan(
+                    args[0], args[2], args[3], plan=kwargs["plan"],
+                    recovery_stage=kwargs["recovery_stage"], clause_plans=kwargs["clause_plans"],
+                    selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertEqual(replay.text, a.authored[0].text)
+
+    def test_full_context_witness_rejects_lexical_polarity_time_and_duplicate_tampering(self):
+        source, a = self.artifacts["verb"]
+        nominal = source[:-3] + "ないこと"
+        for replacement in ("話せないこと", "今は長く話せること", "昔は長く話せないこと",
+                            "今は短く話せないこと", "今は長く書けないこと",
+                            source + "ということ", nominal + "と" + nominal,
+                            "「" + nominal + "」", "『" + nominal + "』"):
+            with self.subTest(replacement=replacement):
+                body = _tamper_reception(a.surface.text, nominal, replacement)
+                self.assertNotEqual(body, a.surface.text)
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(inverse.passed)
+                self.assertTrue(any("context_anchor_missing" in c for c in inverse.failure_codes))
+                self.assertTrue(any("why_duty_missing" in c for c in inverse.failure_codes))
+                gate = evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan,
+                    surface_result=replace(a.surface, text=body), resolver=a.resolver,
+                    require_body_inverse=True, selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(gate.passed)
+
+    def test_context_grammar_stays_bound_to_its_sealed_slot_and_source_permission(self):
+        source, a = self.artifacts["verb"]
+        args, kwargs = a.author_arguments[0]
+        ir = reception_owner._source_grounded_plan_clause_realizations(
+            args[0], args[2], args[3], plan=kwargs["plan"],
+            recovery_stage=kwargs["recovery_stage"], clause_plans=kwargs["clause_plans"],
+        )[0].moves[0]
+        for grammar in ((ir.nominalization_plan[0], "context-slot:0:NEGATIVE_CONTINUATIVE"),
+                        (ir.nominalization_plan[0], "context-slot:8:NEGATIVE_CONTINUATIVE"),
+                        (ir.nominalization_plan[0], "context-slot:01:NEGATIVE_CONTINUATIVE"),
+                        (ir.nominalization_plan[0], "context-slot:" + "1" * 5000 + ":NEGATIVE_CONTINUATIVE"),
+                        (*ir.nominalization_plan, ir.nominalization_plan[1])):
+            with self.subTest(grammar=grammar):
+                with self.assertRaises(reception_owner.GroundedHumanReceptionSurfaceError):
+                    reception_owner._validate_source_grounded_move_ir(replace(ir, nominalization_plan=grammar))
+        move = args[0].moves[0]
+        index = {n.nucleus_id: n for n in a.plan.nuclei}
+        context_id = reception_owner.final_reception_context_nucleus_ids(move=move, plan=a.plan)[0]
+        nucleus = index[context_id]
+        for changes in ({"actor": "other"}, {"modality": "uncertain"}, {"modality": "wish"}):
+            altered = replace(nucleus, semantic_frame=replace(nucleus.semantic_frame, **changes))
+            self.assertIsNone(reception_owner.source_grounded_negative_context_nominal(
+                move, a.plan, {**index, context_id: altered}, a.resolver))
+        legacy_plan = replace(a.plan, source_contracts=())
+        self.assertIsNone(reception_owner.source_grounded_negative_context_nominal(move, legacy_plan, index, a.resolver))
+        self.assertEqual(reception_owner.derive_source_grounded_nominalization_plan(
+            tuple(index[nid] for nid in (*move.target_nucleus_ids, context_id)),
+            ir.semantic_fragments, "COMPOSITE"), (ir.nominalization_plan[0],))
+
+    def test_alias_uses_existing_source_form_and_invalid_context_fails_closed(self):
+        a = _full_surface_artifacts(self._row("話せないことを伝えたい。でも、話せなくて。"))
+        self.assertTrue(a.gate.passed)
+        self.assertTrue(a.inverse.passed)
+        self.assertEqual(a.sentence_plan.recovery_stage, "full")
+        self.assertIn("話せなくてということ", _reception_text(a.surface.text))
+        self.assertFalse(any(p.startswith("context-slot:") for args, _kwargs in a.author_arguments
+                             for e in args[1] for p in e.nominalization_plan))
+        source, a = self.artifacts["verb"]
+        move = a.plan.response_plan.human_reception_plan.moves[0]
+        context_id = reception_owner.final_reception_context_nucleus_ids(move=move, plan=a.plan)[0]
+        invalid = replace(a.plan, nuclei=tuple(replace(n, source_span_ids=("s99999",))
+                          if n.nucleus_id == context_id else n for n in a.plan.nuclei))
+        inverse = evaluate_grounded_surface_body_inverse(
+            body=a.surface.text.encode("utf-8"), plan=invalid, sentence_plan=a.sentence_plan,
+            resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+        )
+        self.assertFalse(inverse.passed)
+        self.assertTrue(any("context_anchor_missing" in c for c in inverse.failure_codes))
+        self.assertTrue(any("why_duty_missing" in c for c in inverse.failure_codes))
+
+    def test_visible_quote_ellipsis_and_past_context_keep_their_existing_forms(self):
+        for prefix, context in (("見出しは「休憩」です。", "今は長く話せなくて"),
+                                ("", "今は長く話せなくて…"),
+                                ("", "今は長く話せなかった")):
+            with self.subTest(prefix=prefix, context=context):
+                a = _full_surface_artifacts(self._row(prefix + "この役割を続けたい。でも、" + context + "。"))
+                self.assertTrue(a.inverse.passed)
+                self.assertTrue(a.gate.passed)
+                self.assertIn(context, _reception_text(a.surface.text))
+                self.assertNotIn("今は長く話せないこと", _reception_text(a.surface.text))
+                self.assertFalse(any(p.startswith("context-slot:")
+                                     for args, _kwargs in a.author_arguments
+                                     for e in args[1] for p in e.nominalization_plan))
+
+
 if __name__ == "__main__":
     unittest.main()

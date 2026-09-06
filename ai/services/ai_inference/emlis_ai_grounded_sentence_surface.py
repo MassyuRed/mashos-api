@@ -189,6 +189,8 @@ _BODY_RECEPTION_GRAMMAR_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] 
     # A suffix witness makes no claim about actor or performance. Only the
     # final inverse matcher may bind its exact bytes to a proven source target.
     ("finite_clause_nominal", re.compile(r"(?:ている|でいる|た|だ)こと")),
+    # A quote boundary for context grammar, not an additional source anchor.
+    ("secondary_quote_boundary", re.compile(r"『[^『』]*』")),
 )
 _FINAL_STAGE1_CHANGE_MARKER_RE: Final = re.compile(
     r"変化|変わ|進み|進歩|増え|減っ|戻っ|できるよう|になった"

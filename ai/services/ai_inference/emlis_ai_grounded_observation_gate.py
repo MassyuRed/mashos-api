@@ -27,6 +27,7 @@ from emlis_ai_grounded_human_reception import (
     realize_grounded_human_reception,
     resolve_grounded_reception_move_referent,
     source_grounded_performed_action_nominal,
+    source_grounded_negative_context_nominal,
 )
 from emlis_ai_grounded_observation_plan import (
     FINAL_STAGE1_GROUNDED_PROJECTION_VERSION,
@@ -2325,8 +2326,52 @@ def evaluate_grounded_surface_body_inverse(
                             and effective_reference_mode
                             == "anaphoric_first"
                         )
+                        context_match_text = parsed_sentence_text
+                        context_morphology_missing = False
+                        context_nominal = None
+                        if final_stage1_plan and not anaphoric_context:
+                            try:
+                                context_nominal = source_grounded_negative_context_nominal(
+                                    move, plan, nucleus_index, resolver,
+                                )
+                            except GroundedHumanReceptionSurfaceError:
+                                context_morphology_missing = True
+                        if context_nominal is not None:
+                            context_id, source_fragment, nominal = context_nominal
+                            raw_sentence = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end]
+                            nominal_bytes = nominal.encode("utf-8")
+                            offset = raw_sentence.find(nominal_bytes)
+                            start = parsed_sentence.utf8_byte_start + max(offset, 0)
+                            end = start + len(nominal_bytes)
+                            # This branch requires the independently derived
+                            # whole nominal exactly once. It cannot fall back
+                            # to the old category phrase or a shortened stem.
+                            context_morphology_missing = bool(
+                                context_ids != (context_id,)
+                                or offset < 0 or raw_sentence.count(nominal_bytes) != 1
+                                or any(q.utf8_byte_start < end and start < q.utf8_byte_end
+                                       for q in witness.quotes)
+                                or any(m.section == "reception" and m.marker_kind == "semantic"
+                                       and m.marker_code == "secondary_quote_boundary"
+                                       and m.utf8_byte_start < end and start < m.utf8_byte_end
+                                       for m in witness.markers)
+                                or not nominal.endswith("ないこと")
+                                or nominal[:-4] + "なくて" != source_fragment
+                                or _body_inverse_normalized_anchor(source_fragment)
+                                not in context_values
+                            )
+                            if not context_morphology_missing:
+                                # Restore only this witnessed grammatical
+                                # span for the original full-source check.
+                                # The actual body/witness and exact replay
+                                # comparison remain untouched.
+                                restored = (raw_sentence[:offset]
+                                            + (nominal[:-4] + "なくて").encode("utf-8")
+                                            + raw_sentence[offset + len(nominal_bytes):])
+                                context_match_text = _body_inverse_normalized_anchor(
+                                    restored.decode("utf-8", errors="strict"))
                         context_missing = bool(
-                            context_values
+                            context_morphology_missing or context_values
                             and (
                                 (
                                     anaphoric_context
@@ -2338,7 +2383,7 @@ def evaluate_grounded_surface_body_inverse(
                                 or (
                                     not anaphoric_context
                                     and not any(
-                                        source_value in parsed_sentence_text
+                                        source_value in context_match_text
                                         for source_value in context_values
                                     )
                                 )

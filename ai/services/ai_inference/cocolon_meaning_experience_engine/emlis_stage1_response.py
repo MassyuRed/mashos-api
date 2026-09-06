@@ -13113,6 +13113,7 @@ def _derive_source_grounded_reception_expression_authority(
                   for semantic_ref in move_semantic_refs),
             tuple(argument for argument, _head in lexical_rows),
             reference_mode,
+            move=move, plan=selected_grounded_plan, resolver=resolver,
         )
         relation_kinds = tuple(relation_kinds)
         if any(

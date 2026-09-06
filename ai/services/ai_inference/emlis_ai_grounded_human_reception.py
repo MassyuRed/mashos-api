@@ -4224,17 +4224,100 @@ def derive_source_grounded_nominalization_plan(
     nuclei: tuple[GroundedSemanticNucleus, ...],
     fragments: tuple[str, ...],
     reference_mode: ReceptionExpressionReferenceMode,
+    *,
+    move: GroundedReceptionMovePlan | None = None,
+    plan: GroundedObservationPlan | None = None,
+    resolver: EvidenceSpanResolver | None = None,
 ) -> tuple[str, ...]:
     if len(nuclei) != len(fragments):
         raise GroundedHumanReceptionSurfaceError(
             "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
         )
-    return _source_grounded_nominalization_from_profiles(
+    nominalization = _source_grounded_nominalization_from_profiles(
         fragments,
         tuple(_source_grounded_semantic_profile(nucleus, fragment)
               for nucleus, fragment in zip(nuclei, fragments, strict=True)),
         reference_mode,
     )
+    if reference_mode == "ANAPHORIC" or move is None or plan is None or resolver is None:
+        return nominalization
+    context = source_grounded_negative_context_nominal(
+        move, plan, {n.nucleus_id: n for n in nuclei}, resolver,
+    )
+    if context is None:
+        return nominalization
+    nucleus_id, source, _nominal = context
+    slots = tuple(i for i, n in enumerate(nuclei) if n.nucleus_id == nucleus_id)
+    if len(slots) != 1 or fragments[slots[0]] != source:
+        raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+    return (*nominalization, f"context-slot:{slots[0]}:NEGATIVE_CONTINUATIVE")
+
+
+def _negative_continuative_nominal(fragment: str) -> str | None:
+    """Inflect one negative connective without changing its lexical stem."""
+
+    if (not fragment.endswith("なくて") or len(fragment) <= 3
+        or re.search(r"[「」『』…‥。．.!！?？\r\n]", fragment)):
+        return None
+    nominal = fragment[:-3] + "ないこと"
+    if nominal[:-4] + "なくて" != fragment:
+        raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+    return nominal
+
+
+def source_grounded_negative_context_nominal(
+    move: GroundedReceptionMovePlan,
+    plan: GroundedObservationPlan,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+) -> tuple[str, str, str] | None:
+    """Derive a reversible view of one already selected contrast context.
+
+    No source or meaning is selected here. The original complete fragment
+    stays in the expression; the tuple seals its grammatical view before
+    emission. Inverse callers derive it afresh from the same plan/source.
+    Ledger-discarded punctuation is not observable through this resolver.
+    """
+
+    if (FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
+        or len(move.target_nucleus_ids) != 1):
+        return None
+    context_ids = final_reception_context_nucleus_ids(move=move, plan=plan)
+    if len(context_ids) != 1 or context_ids[0] in move.target_nucleus_ids:
+        return None
+    context_id = context_ids[0]
+    relations = tuple(r for r in plan.relations
+                      if r.relation_id in plan.coverage_requirements.required_relation_ids
+                      and set(move.target_nucleus_ids).intersection(
+                          (r.from_nucleus_id, r.to_nucleus_id)))
+    if (len(relations) != 1 or relations[0].type != "contrast"
+        or {relations[0].from_nucleus_id, relations[0].to_nucleus_id}
+        != {*move.target_nucleus_ids, context_id}):
+        return None
+    nucleus = nucleus_index.get(context_id)
+    if nucleus is None:
+        return None
+    fragment = _source_grounded_clause_candidate(nucleus, resolver)
+    profile = _source_grounded_semantic_profile(nucleus, fragment)
+    if (profile.actor_kind != "SELF" or profile.modality not in {"fact", "feeling"}
+        or profile.quoted_boundary or profile.performed_action or profile.future_action):
+        return None
+    fields = resolver.source_fields_for(nucleus.source_span_ids)
+    if (len(fields) != 1 or fields[0] not in {"memo", "memo_action"}
+        or any(re.search(r"[「」『』…‥]", span.raw_text)
+               for span in resolver.resolve_many(resolver.span_ids)
+               if span.source_field in fields)):
+        return None
+    nominal = _negative_continuative_nominal(fragment)
+    if nominal is not None:
+        # A different semantic slot must not impersonate this whole nominal
+        # in the independent exact-once body witness.
+        for other_id in _dedupe((*move.target_nucleus_ids, *move.support_nucleus_ids)):
+            if other_id != context_id:
+                other = nucleus_index.get(other_id)
+                if other is None or nominal in _source_grounded_clause_candidate(other, resolver):
+                    return None
+    return (context_id, fragment, nominal) if nominal is not None else None
 
 
 def _source_grounded_nominalization_shape_valid(
@@ -4245,6 +4328,9 @@ def _source_grounded_nominalization_shape_valid(
         or semantic_count == 1 and len(plan) == 2
         and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
         and re.fullmatch(r"nominal-slot:0:NEGATIVE_FEELING_CARRIER:[0-3]:[0-2]", plan[1])
+        or len(plan) == 2 and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
+        and plan[1] in {f"context-slot:{slot}:NEGATIVE_CONTINUATIVE"
+                       for slot in range(semantic_count)}
     )
 
 
@@ -4852,6 +4938,7 @@ def _project_source_grounded_reception_move_realization(
         semantic_profiles=semantic_profiles,
         nominalization_plan=derive_source_grounded_nominalization_plan(
             semantic_nuclei, semantic_fragments, reference_mode,
+            move=move, plan=plan, resolver=resolver,
         ),
         target_slot_count=len(typed_targets),
         context_slots=context_slots,
@@ -5762,9 +5849,30 @@ def _validate_source_grounded_move_ir(
             "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
         )
 
-    if move.nominalization_plan != _source_grounded_nominalization_from_profiles(
+    expected_nominalization = _source_grounded_nominalization_from_profiles(
         move.semantic_fragments, move.semantic_profiles, move.reference_mode,
-    ):
+    )
+    context_grammar = tuple(p for p in move.nominalization_plan
+                            if p.startswith("context-slot:"))
+    if context_grammar:
+        if (len(context_grammar) != 1
+            or not _source_grounded_nominalization_shape_valid(move.nominalization_plan, semantic_count)):
+            raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+        slot = int(context_grammar[0].split(":")[1])
+        profile = move.semantic_profiles[slot]
+        if (move.reference_mode == "ANAPHORIC" or move.context_slots != (slot,)
+            or len(move.relations) != 1 or move.relations[0].relation_kind != "contrast"
+            or move.relations[0].endpoint_roles != ("LEFT", "RIGHT")
+            or len(set(move.relations[0].endpoint_slots)) != 2
+            or slot not in move.relations[0].endpoint_slots
+            or profile.actor_kind != "SELF" or profile.modality not in {"fact", "feeling"}
+            or profile.quoted_boundary or profile.performed_action or profile.future_action
+            or _negative_continuative_nominal(move.semantic_fragments[slot]) is None):
+            raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+        # Source/field permission is additionally rederived in the complete
+        # plan IR and compared exactly by the sole author before emission.
+        expected_nominalization = (*expected_nominalization, context_grammar[0])
+    if move.nominalization_plan != expected_nominalization:
         raise GroundedHumanReceptionSurfaceError(
             "REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP"
         )
@@ -6116,6 +6224,11 @@ def _source_grounded_argument_surface(
             first_realization
             and semantic_slot in move.context_slots
         ):
+            if f"context-slot:{semantic_slot}:NEGATIVE_CONTINUATIVE" in move.nominalization_plan:
+                nominal = _negative_continuative_nominal(move.semantic_fragments[semantic_slot])
+                if nominal is None:
+                    raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+                return nominal
             return (
                 typed_nominal_by_slot[semantic_slot]
                 if move.reference_mode == "ANAPHORIC"
