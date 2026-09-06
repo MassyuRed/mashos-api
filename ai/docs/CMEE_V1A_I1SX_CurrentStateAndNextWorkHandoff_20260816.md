@@ -5825,3 +5825,26 @@ final・safe observation・groundedで、memoに単一required primaryがあり�
 次はこの既存選択と本文順・照応・関係範囲の接続を見直し、具体性を保って長い再掲・定型化を減らす。既存role/familyが不一致になる混合・未完状態も、原入力と同じ選択前ownerから確認する。count clamp、追加Move、seal後のsource再選択や未選択意味の補充、一律relation support引継ぎで代用しない。current_user専用source-qualified契約をHR OTHER型だけで拡張せず、未知の話題名詞から主語を推測しない。過去予定／未遂／伝達時点、比較・可能性・受援主体の分類も残る。未達本文のProduct ReadをMashへ求めず、商品確認準備／ready／採用／merge／本番／質問生成／Layer3は未成立。
 
 作業前System Contextはdoctor→prepareを実行し18成功16失敗、固定toolchain不一致でprepare不成立。stale不使用・原典直読、profile／基準ref／tracked current変更0。全体設計・国家・共通基盤、全ファイル地図とCocolon1635／API2138のtracked inventory、最新weekly review、必須incident全文、影響owner・下流・旧経路を確認。前回照合済み46依存版の実装環境を継続し、今回は依存照合を再実行したとはしない。STRUCTURE_MAP_DELTA_NONE：新owner／route／公開schemaなし。国家保存・dispatch・queue・read-side、公開API／DB／RN、Piece／分析の変更0。PR3／30／37はDraft/open/unmerged、既存9月9日の確認予定を維持する。
+
+
+### 2026-09-06 continuation — 関係で結ばれた共同主題の保持（candidate26／商品未成立）
+
+candidate25の単一primary条件では、既存scoreで共同主題となった喜び・迷いが補助行動に押しのけられる場合が残った。既存ObservationPlanの `_build_response_and_policies` 内で、適格なrequired memo primaryを全primaryから集め、既存mapperのexact lived_changeを満たす候補が一つだけの場合に限定する。従来の単一primaryに加え、全primaryがちょうど二つで、候補と他方が既存required関係で直接結ばれている場合を対象にした。自己関係とuncertain_connectionは除外する。二つのprimaryという条件はMove数の条件とは別であり、二主題なら必ず二Moveとはしない。三つ以上、独立した共同主題、適格候補が複数の場合は補助行動の順位を変えない。
+
+final・safe observation・grounded、正の既存primary_score、低scoreの非primary・非directional memo_action concrete_action_evidence、既存concrete_effort分類という前段の条件を保持した。既存role／directional／help／intentionの順位を一律反転せず、candidate25の選択済み主題と役割の整合も維持する。新selector／Move／helper／意味carrier／schema／rendererを追加せず、意味核と関係の追加・書換えもない。seal前の既存選択ownerだけを補正し、forwardと独立replayは同じ検証済み入力を消費する。Human Reception、Gate／parser／inverse／閾値、public／旧builderは変更しない。
+
+既存generic Move検査に二つの検査を追加した。公開合成例で、適格候補が一つの接続済み共同主題について、具体的な気持ち・未確定境界、両required Move、役割と本文順、境界改変のinverse拒否、旧builderの従来選択を確認する。独立例と複数適格例は、それぞれの前提をassertして補助行動の旧順位を保つことを確認した。runnerは既存current identityだけを更新し、非current AST・歴史的hash／PASSは保持した。独立した公開静的レビューでもexact2と旧経路を確認済み。
+
+関係条件を付けない先行診断はcanonical100の直接compileが99成功1失敗だった。失敗例では選択projectionのtrace閉包を満たさず、公開合成例でも再現した。Gate／inverseを通るsurfaceがあってもtrace閉包の代わりにはしない。required関係と全primary数を制限した最終版へ修正し、失敗診断はprivateに保存した。途中診断の比較flagは上流planと保存形式の違いを含むため本文変更数には使わない。
+
+固定runtime sourceはremote `e9c286ad253b3e34ef2b46f2f6fc0693a1e3eb91`、local `5b017d709c72de70666b5639c9a4cf702e88426b`、全体tree `38cb530673d62dc1765876fe7d3479b49903c163`。変更3pathのGitHub全文・blobとlocal treeは一致。以後は既存文書と地図だけを更新する。同じcanonical100の全入力・順序・軸・分母を維持し、direct100、required Move／expression／visible binding各124、外側GENERATED73／UNAVAILABLE27。原入力・意味核・観察・可否・理由・責務数は全100同一。Move識別子・順序を除いたact／target／support／selected contributionの集合とrelation pairsも全100同一。
+
+生成可能側1件のフォローで、喜びと未確定な点を具体的に先に受け、補助行動を後へ置いた。選択inputは計2件変化し、うち別1件はinput_ref／grounding_refのみの差で、decision・projection preimage／seal・両層本文は同一。この参照差を本文改善へ数えない。残98件は全保存項目同一。本文変更1件を全体の自然さPASSとしない。
+
+固定sourceで必要220検査を全実行し216成功／既存4失敗、新規失敗0・skip0・未実行0。原184は180成功4失敗、追加36は全成功。既存4失敗は観察固定不一致2、過去dated receiptと現在sourceの不一致1、旧経路の集合重複1。過去fixture／hash／PASSを更新して消していない。後続36ケースとpost-hash96検査も実行し、exact8／same16集合は成功、unseen12の既存重複は失敗を維持する。後続診断は元pytest失敗の置換ではなく、別GA2/shared164を今回再実行したとも主張しない。
+
+華恋が最終sourceの原入力全フィールド・観察・フォロー全100を全文確認した。集合判定はNOT_CLEAR、product credit／technical creditは0。長い原文再掲、分類をそのまま語る表現と定型的な締め、通常の負担・未完・混合状態の対象選択、複文の主体・時制・予定、比較・可能性・受援主体が残る。次は既存選択とHuman Receptionの対象補語・照応・述語を同じ根拠範囲で結び、具体性と必要な深さを保って再掲・定型化を減らす。内部appraisal名だけの変更は本文改善としない。追加Move、count clamp、seal後の再選択、未選択意味の補充、一律relation support引継ぎで代用しない。current_user専用source-qualified契約をHRのOTHER型だけで広げない。未達本文のProduct ReadはMashへ求めず、商品確認準備／ready／採用／merge／本番／質問生成／Layer3は未成立。
+
+作業前にSystem Context doctor→prepareを実行した。doctorは18成功16失敗、prepareは固定toolchain不一致で不成立。clone由来の一時partをGit管理外へ保全してclean状態でも再確認し、stale cacheを使わず原典直読した。profile／基準ref／tracked current変更0。全体設計・国家・共通基盤、全ファイル地図とCocolon1635／API2138のtracked inventory、2026-09-05 weekly review、必須incident全文、影響owner・下流・旧経路を確認した。実装用Python環境は再発見した実体の46依存版・RECORD内容を前回証跡と今回再照合して一致し、物理環境の連続性を推定していない。System Contextの固定toolchainが成立したという意味ではない。実装環境の依存変更・外部AI利用は0。
+
+STRUCTURE_MAP_DELTA_NONE：既存final ObservationPlan内の順位補正であり、新owner／route／公開schemaなし。国家保存・dispatch・queue・read-side、公開API／DB／RN、Piece／分析への変更0。PR3／30／37はDraft/open/unmergedを維持し、9月9日の既存確認予定を重複作成しない。
