@@ -434,6 +434,96 @@ class CMEEUnresolvedQuestionSourceTest(unittest.TestCase):
                     )
                     self.assertEqual(bounded, before.nuclei)
 
+    def test_postposed_why_question_preserves_same_nucleus_and_source(self):
+        for reason in ("なぜ", "何故", "どうして"):
+            for text, source_kind in (
+                (f"昨日より楽になったのは{reason}だろう。", "change"),
+                (f"片付いたのに、気分が重くなったのは{reason}だろうか。", "change"),
+                (f"記録したのは{reason}だろう。", "action"),
+            ):
+                with self.subTest(text=text):
+                    source, before = self._source_plan(text)
+                    target = next(n for n in before.nuclei if "memo" in n.source_fields)
+                    self.assertEqual(target.kind, source_kind)
+                    nuclei, dependencies = observation_plan_owner._final_stage1_typed_nuclei(
+                        before, source.evidence_spans,
+                        normalized_input=source.normalized_current_input,
+                    )
+                    self.assertEqual(dependencies, ())
+                    self.assertEqual(nuclei, tuple(
+                        replace(n, kind="uncertainty", semantic_frame=replace(
+                            n.semantic_frame, predicate_kind="uncertainty",
+                            modality="uncertain",
+                            attribute_codes=tuple(dict.fromkeys((
+                                *n.semantic_frame.attribute_codes, "operator:uncertainty",
+                            ))),
+                        )) if n.nucleus_id == target.nucleus_id else n
+                        for n in before.nuclei
+                    ))
+                    for normalized in (None, {
+                        **source.normalized_current_input, "memo": "原文と異なる文",
+                    }):
+                        untouched, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                            before, source.evidence_spans, normalized_input=normalized,
+                        )
+                        self.assertEqual(untouched, before.nuclei)
+
+    def test_postposed_why_rejects_report_quote_fragment_and_parallel_assertion(self):
+        for text in (
+            "昨日より楽になった。",
+            "昨日より楽になったのはなぜだろうと思った。",
+            "「昨日より楽になったのはなぜだろう」と聞いた。",
+            "昨日より楽になったのはなぜだろうかと尋ねた。",
+            "記録した、寝るのはなぜだろう。",
+            "記録した,寝るのはなぜだろう。",
+        ):
+            with self.subTest(text=text):
+                source, before = self._source_plan(text)
+                nuclei, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                    before, source.evidence_spans,
+                    normalized_input=source.normalized_current_input,
+                )
+                self.assertFalse(any(n.kind == "uncertainty" for n in nuclei))
+        source, before = self._source_plan("昨日より楽になったのはなぜだろう。")
+        raw = source.normalized_current_input["memo"].rstrip("。")
+        for left, right in (("同僚は、", "。"), ("「", "」と聞いた。"),
+                            ("", "と思った。")):
+            spans = tuple(
+                replace(s, start_index=s.start_index + len(left),
+                        end_index=s.end_index + len(left))
+                if s.source_field == "memo" else s for s in source.evidence_spans
+            )
+            nuclei, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                before, spans, normalized_input={
+                    **source.normalized_current_input, "memo": left + raw + right,
+                },
+            )
+            self.assertEqual(nuclei, before.nuclei)
+
+    def test_postposed_question_selected_openness_reaches_body_and_inverse(self):
+        artifacts = _full_surface_artifacts({
+            "case_id": "postposed-question-expression-unit",
+            "input": {"thought_text": "昨日より楽になったのはなぜだろう。",
+                      "action_text": "", "categories": ["生活"],
+                      "emotions": [{"type": "喜び", "strength": "weak"}]},
+        })
+        self.assertTrue(artifacts.gate.passed)
+        self.assertTrue(artifacts.inverse.passed)
+        self.assertIn("まだ分からない範囲", artifacts.surface.text)
+        self.assertTrue(any(
+            d.subjective_proposition.appraisal_content is not None
+            and d.subjective_proposition.appraisal_content.operation == "LEAVE_UNFINISHED"
+            for d in artifacts.selected_subjective_input.decisions
+        ))
+        self.assertIn("結論を急がずに、", _reception_text(artifacts.surface.text))
+        changed = _tamper_reception(artifacts.surface.text, "結論を急がずに、", "")
+        inverse = evaluate_grounded_surface_body_inverse(
+            body=changed.encode("utf-8"), plan=artifacts.plan,
+            sentence_plan=artifacts.sentence_plan, resolver=artifacts.resolver,
+            selected_subjective_input=artifacts.selected_subjective_input,
+        )
+        self.assertFalse(inverse.passed)
+
     def test_report_quote_and_nonquestion_do_not_acquire_question_kind(self):
         for text in (
             "決めた後に迷う気がする。",

@@ -9328,16 +9328,14 @@ def _final_stage1_typed_nuclei(
             else ()
         )
         if not projections:
-            # An embedded action does not make an unresolved why-question
-            # an action assertion. Correct this existing source kind before
+            # An embedded action/change does not make an unresolved why-question
+            # an assertion. Correct this existing source kind before
             # graph/meaning selection; keep the same owner and all evidence.
             # Require the complete top-level source clause, not a quotation
             # or a fragment whose reporting host was lost by Ledger.
             if (
                 span is not None
-                and nucleus.kind == "action"
-                and nucleus.semantic_frame.modality == "uncertain"
-                and "operator:uncertainty" in nucleus.semantic_frame.attribute_codes
+                and nucleus.kind in {"action", "change"}
                 and normalized_input is not None
             ):
                 source = str(normalized_input.get(span.source_field) or "")
@@ -9356,8 +9354,22 @@ def _final_stage1_typed_nuclei(
                     and visible_source is not None
                     and visible_source[start:end] == source[start:end]
                     and not source[previous_boundary + 1:start].strip()
-                    and re.match(r"^(?:どうして|なぜ|何故)", finite)
-                    and re.search(r"(?:ん|の)?だろう(?:か)?$", finite)
+                    and (
+                        (
+                            nucleus.semantic_frame.modality == "uncertain"
+                            and "operator:uncertainty"
+                            in nucleus.semantic_frame.attribute_codes
+                            and re.match(r"^(?:どうして|なぜ|何故)", finite)
+                            and re.search(r"(?:ん|の)?だろう(?:か)?$", finite)
+                        )
+                        # A concessive subordinate clause may precede the
+                        # question; a comma-separated independent assertion
+                        # cannot be absorbed into its uncertain status.
+                        or re.fullmatch(
+                            r"(?:[^、,]+のに[、,])?[^、,]+"
+                            r"のは(?:どうして|なぜ|何故)だろう(?:か)?", finite,
+                        )
+                    )
                     and _top_level_text(finite) == finite
                     and not re.search(r"[。.!！?？\n]", finite)
                     and re.match(r"^(?:\s*[。．.!！?？]|\s*$)", source[end:])
@@ -9366,6 +9378,11 @@ def _final_stage1_typed_nuclei(
                         nucleus, kind="uncertainty",
                         semantic_frame=replace(
                             nucleus.semantic_frame, predicate_kind="uncertainty",
+                            modality="uncertain",
+                            attribute_codes=tuple(_dedupe((
+                                *nucleus.semantic_frame.attribute_codes,
+                                "operator:uncertainty",
+                            ))),
                         ),
                     )
             result.append(nucleus)
