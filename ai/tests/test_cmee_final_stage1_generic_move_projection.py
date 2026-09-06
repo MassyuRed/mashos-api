@@ -227,6 +227,72 @@ def _tamper_reception(body: str, source: str, replacement: str) -> str:
 
 
 class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
+    def test_attention_resumes_its_object_before_the_reception_predicate(self):
+        row = {
+            "case_id": "public-attention-governed-change",
+            "input": {
+                "thought_text": "休憩したら、頭の切り替えができた感じ。",
+                "action_text": "机の上を片づけた。",
+                "categories": ["生活"],
+                "emotions": [{"type": "平穏", "strength": "medium"}],
+            },
+        }
+        a = _full_surface_artifacts(row)
+        self.assertTrue(a.gate.passed)
+        self.assertTrue(a.inverse.passed)
+        moves = a.plan.response_plan.human_reception_plan.moves
+        self.assertEqual(
+            tuple((m.reception_act, m.move_role) for m in moves),
+            (("recognize_lived_change", "attention"),
+             ("honor_concrete_effort", "felt_response")),
+        )
+        follow = _reception_text(a.surface.text)
+        self.assertEqual(follow.count("頭の切り替えができた感じ"), 1)
+        self.assertIn("に目が留まり、それを感じています", follow)
+        self.assertIn("実際の行動を大切に思っています", follow)
+        self.assertNotIn("実際の行動をそれを", follow)
+        for authored in a.authored:
+            with self.subTest(stage=authored.recovery_stage):
+                self.assertIn("に目が留まり、それを", authored.text)
+        for changed_object in ("", "別のことを"):
+            changed = _tamper_reception(
+                a.surface.text, "に目が留まり、それを",
+                "に目が留まり、" + changed_object,
+            )
+            self.assertNotEqual(changed, a.surface.text)
+            inverse = evaluate_grounded_surface_body_inverse(
+                body=changed.encode("utf-8"), plan=a.plan,
+                sentence_plan=a.sentence_plan, resolver=a.resolver,
+                selected_subjective_input=a.selected_subjective_input,
+            )
+            self.assertFalse(inverse.passed)
+            self.assertTrue(any("reception_replay_mismatch" in code
+                                for code in inverse.failure_codes))
+
+    def test_attention_object_resumption_preserves_a_source_anaphor(self):
+        row = {
+            "case_id": "public-attention-source-anaphor",
+            "input": {
+                "thought_text": "少し前に書いたものを読み返した。",
+                "action_text": "それをノートに書いた。",
+                "categories": ["生活"],
+                "emotions": [{"type": "不安", "strength": "medium"}],
+            },
+        }
+        a = _full_surface_artifacts(row)
+        self.assertTrue(a.gate.passed)
+        self.assertTrue(a.inverse.passed)
+        follow = _reception_text(a.surface.text)
+        self.assertEqual(follow.count("それをノートに書いた"), 1)
+        self.assertIn(
+            "それをノートに書いたという実際の行動に目が留まり、"
+            "それを大切に思っています", follow,
+        )
+        self.assertNotIn("大切にそれを", follow)
+        for authored in a.authored:
+            with self.subTest(stage=authored.recovery_stage):
+                self.assertIn("に目が留まり、それを大切に思っています", authored.text)
+
     def test_anaphoric_context_stays_visible_without_repeating_its_relation(self):
         rows, _ = load_validated_batch(_BATCH_PATH, _MANIFEST_PATH)
         exercised = 0

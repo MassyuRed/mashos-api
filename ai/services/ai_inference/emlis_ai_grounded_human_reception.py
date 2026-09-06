@@ -6995,7 +6995,11 @@ def _source_grounded_response_predicate(
         raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
     else:
         raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
-    reception_operator = voice_complement = valency_complement = ""
+    reception_operator = voice_complement = ""
+    # Attention governs the source object with ni, while the following
+    # reception predicate governs it with wo. Resume that same whole object
+    # once, instead of leaving the transitive predicate without its object.
+    valency_complement = "それを" if move_role == "attention" else ""
     return _SourceGroundedResponsePredicateV1(
         object_particle=object_particle,
         role_operator=role_operator,
@@ -7115,8 +7119,9 @@ def _source_grounded_response_predicate_surface(
     return (
         f"{clause_adjunct}{object_core}"
         f"{predicate.object_particle}{predicate.role_operator}"
+        f"{predicate.valency_complement}"
         f"{act_guard}{predicate.reception_operator}"
-        f"{predicate.voice_complement}{predicate.valency_complement}"
+        f"{predicate.voice_complement}"
         f"{governed_predicate}"
     )
 
