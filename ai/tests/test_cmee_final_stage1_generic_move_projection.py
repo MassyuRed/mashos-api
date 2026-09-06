@@ -227,6 +227,92 @@ def _tamper_reception(body: str, source: str, replacement: str) -> str:
 
 
 class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
+    def test_contrast_target_nominal_keeps_both_endpoints_and_source_argument(self):
+        left = "説明書の細かな記号が分かるようになった"
+        right = "それでも小さな部品を一つずつ机に並べて確かめながら組み立てる時間はまだ難しく感じている"
+        row = {
+            "case_id": "public-contrast-target-nominal",
+            "input": {
+                "thought_text": f"新しい模型に取りかかり、{left}けれど、{right}。",
+                "action_text": "道具を箱に戻した。",
+                "categories": ["趣味"],
+                "emotions": [{"type": "不安", "strength": "medium"}],
+            },
+        }
+        a = _full_surface_artifacts(row)
+        self.assertTrue(a.gate.passed)
+        self.assertTrue(a.inverse.passed)
+        follow = _reception_text(a.surface.text)
+        self.assertEqual(follow.count(left + "ことに表れた変化"), 1)
+        self.assertEqual(follow.count(right), 1)
+        self.assertIn("との違いに目が留まり、それを感じています", follow)
+        self.assertNotIn("けれどということ", follow)
+        self.assertTrue(any(span.raw_text == left + "けれど"
+                            for span in a.resolver.resolve_many(a.resolver.span_ids)))
+        args, kwargs = a.author_arguments[0]
+        ir = reception_owner._source_grounded_plan_clause_realizations(
+            args[0], args[2], args[3], plan=kwargs["plan"],
+            recovery_stage=kwargs["recovery_stage"], clause_plans=kwargs["clause_plans"],
+        )
+        self.assertTrue(any(left + "けれど" in move.semantic_fragments
+                            for clause in ir for move in clause.moves))
+        for source, replacement in ((left, ""), (right, ""), ("との違い", "との一致")):
+            changed = _tamper_reception(a.surface.text, source, replacement)
+            inverse = evaluate_grounded_surface_body_inverse(
+                body=changed.encode("utf-8"), plan=a.plan,
+                sentence_plan=a.sentence_plan, resolver=a.resolver,
+                selected_subjective_input=a.selected_subjective_input,
+            )
+            self.assertFalse(inverse.passed)
+
+    def test_contrast_nominal_keeps_ellipsis_and_a_quoted_source_field(self):
+        left = "説明書の細かな記号が分かるようになった"
+        right = "それでも小さな部品を一つずつ机に並べて確かめながら組み立てる時間はまだ難しく感じている"
+        for prefix, ending in (("見出しは「模型」です。", "けれど"), ("", "…けれど")):
+            with self.subTest(prefix=prefix, ending=ending):
+                row = {
+                    "case_id": "public-contrast-nominal-boundary",
+                    "input": {
+                        "thought_text": f"{prefix}新しい模型に取りかかり、{left}{ending}、{right}。",
+                        "action_text": "道具を箱に戻した。",
+                        "categories": ["趣味"],
+                        "emotions": [{"type": "不安", "strength": "medium"}],
+                    },
+                }
+                a = _full_surface_artifacts(row)
+                self.assertTrue(a.gate.passed)
+                self.assertTrue(a.inverse.passed)
+                follow = _reception_text(a.surface.text)
+                self.assertIn(left + ending + "ということ", follow)
+                self.assertEqual(follow.count(right), 1)
+                self.assertIn("との違い", follow)
+
+    def test_polite_contrast_context_uses_a_quotative_nominal(self):
+        row = {
+            "case_id": "public-polite-contrast-context",
+            "input": {
+                "thought_text": "この役割を続けたい。でも、今は困っています。",
+                "action_text": "",
+                "categories": ["趣味"],
+                "emotions": [{"type": "不安", "strength": "medium"}],
+            },
+        }
+        a = _full_surface_artifacts(row)
+        self.assertTrue(a.gate.passed)
+        self.assertTrue(a.inverse.passed)
+        follow = _reception_text(a.surface.text)
+        self.assertEqual(follow.count("今は困っていますということ"), 1)
+        self.assertIn("この役割を続けたいという願いと", follow)
+        self.assertIn("との違いを見失わず", follow)
+        self.assertNotIn("困っていますこと", follow)
+        changed = _tamper_reception(a.surface.text, "今は困っています", "困っていました")
+        inverse = evaluate_grounded_surface_body_inverse(
+            body=changed.encode("utf-8"), plan=a.plan,
+            sentence_plan=a.sentence_plan, resolver=a.resolver,
+            selected_subjective_input=a.selected_subjective_input,
+        )
+        self.assertFalse(inverse.passed)
+
     def test_attention_resumes_its_object_before_the_reception_predicate(self):
         row = {
             "case_id": "public-attention-governed-change",

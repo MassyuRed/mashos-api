@@ -5538,6 +5538,8 @@ def _source_grounded_context_head_nominal(value: str) -> str:
         return f"{clean}気持ち"
     if clean.endswith("かも"):
         return f"{clean}という感覚"
+    if clean.endswith(("です", "ます")):
+        return f"{clean}ということ"
     if (
         clean.endswith(
             (
@@ -5548,8 +5550,6 @@ def _source_grounded_context_head_nominal(value: str) -> str:
                 "ていた",
                 "でいた",
                 "だった",
-                "です",
-                "ます",
                 "た",
                 "ある",
                 "いる",
@@ -7311,6 +7311,35 @@ def _author_source_grounded_reception_clauses(
                 meaning_realization,
                 semantic_slot=target_owner_slot,
             )
+            # A typed contrast already expresses the link around this object.
+            # Make only the selected target's grammatical view finite; source
+            # arguments and the independently rebuilt plan IR stay unchanged.
+            # A quote anywhere in the same source field conservatively keeps
+            # the old form, including when its delimiters cross ledger spans.
+            if (
+                meaning_realization.reference_mode != "ANAPHORIC"
+                and not meaning_realization.semantic_profiles[target_owner_slot].quoted_boundary
+                and target_owner_slot not in meaning_realization.context_slots
+                and _SOURCE_GROUNDED_TRAILING_CONNECTIVE_RE.search(meaning_fragment)
+                and any(
+                    relation.relation_kind == "contrast"
+                    and relation.endpoint_roles == ("LEFT", "RIGHT")
+                    and relation.endpoint_slots[0] == target_owner_slot
+                    and relation.endpoint_slots[0] != relation.endpoint_slots[1]
+                    for relation in meaning_realization.relations
+                )
+            ):
+                source_fields = resolver.source_fields_for(move.source_evidence_span_ids)
+                if not any(
+                    re.search(r"[「」『』]", span.raw_text)
+                    for span in resolver.resolve_many(resolver.span_ids)
+                    if span.source_field in source_fields
+                ):
+                    finite_fragment = _SOURCE_GROUNDED_TRAILING_CONNECTIVE_RE.sub(
+                        "", meaning_fragment,
+                    ).strip(" 　、,")
+                    if finite_fragment and _SOURCE_GROUNDED_FINITE_END_RE.search(finite_fragment):
+                        meaning_fragment = finite_fragment
             # A short source-bound lexical anchor may be part of an existing
             # referent duty, but final Layer 2 never presents it as a quote.
             referent_text = referent.text.replace("「", "").replace("」", "")
