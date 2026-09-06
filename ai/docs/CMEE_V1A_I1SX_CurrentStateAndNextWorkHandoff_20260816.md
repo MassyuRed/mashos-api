@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾のcandidate34と継承承認を確認する。既存sourceで未来のintentionと確認した本人の行動の完全節を同じ受け止め対象へ接続し、分類句の重複を除いた。固定100はdirect100／124／73-27、生成可能側1件のフォローのみ変化。必須247検査243成功／既存4失敗、新規失敗0。華恋が全100全文を読みNOT_CLEAR。未来一般句全般、定型締め、補助行動偏重、未完/混合状態・受援の具体的な受け止めは残件。旧記録は履歴。
+3. 末尾のcandidate35と継承承認を確認する。既存sourceの単一uncertainty対象に残る変化の未知範囲を、選択済みLEAVE_UNFINISHEDの受け止めへ接続した。固定100はdirect100／124／73-27、生成可能側1件のフォローのみ変化。必須251検査247成功／既存4失敗、新規失敗0。華恋が全100全文を読みNOT_CLEAR。一般的参照句・定型締め・補助行動偏重・複数endpointの未完/混合状態と受援等は残件。旧記録は履歴。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -5994,5 +5994,26 @@ final explicit/compositeのhonor_concrete_effortで、既存source ownerが未�
 同じcanonical100を新たに生成し、原入力全フィールド・順序・軸・分母を保持。direct100、required Move/expression/visible binding各124、外側GENERATED73/UNAVAILABLE27、可否変更0。生成可能側1件のフォローだけが変化し、残99件は全保存項目同一。原入力・核・選択済み主観input・観察・可否・理由・責務数は全100同一。生成プロセス終了後に保存100件とplan100件の一致を確かめ、華恋が原入力全フィールド・観察・フォロー全100と変更前後を全文確認した。UNAVAILABLEのdirect本文を配信成立や商品合格へ換算しない。
 
 全体の商品判定はNOT_CLEAR。今回の有限な予定行動の対象句から分類名の重複を除いた範囲に限り、対象入力全体を商品合格にしていない。未来一般句全般や決定済み/体言終止/不確定の文法、定型的な締め、補助行動へ寄る選択、未完/混合状態・受援の具体的な受け止め、長い原文再掲、主体/時点の既存分類は残る。同じ継承承認の未完unitで、選択済みの体験内容と主観判断・関係の接続を続ける。新たな承認待ちや全体STOPを設けず、familyからの苦しさ追加、短いanchor、追加Move、seal後再選択、語尾variationで代用しない。商品確認準備/ready/採用/merge/本番/質問生成/Layer3は未成立、product/technical credit 0。PR3/30/37はDraft/open/unmergedを維持する。
+
+作業前のSystem Context doctorは18成功16失敗、prepareは固定環境不一致で不成立。stale cacheを使用せず原典を読み、profile/基準ref/tracked currentは変更していない。実装Python3.12.13と46依存版・hashed RECORDを前回環境と再照合して一致した。新依存・runtime外部生成AI利用0。国家保存/dispatch/queue/read-side、公開API/DB/RN、Piece/分析の実装変更はない。
+
+
+## 2026-09-06 — 変化について未解決の部分を受け止め対象へ接続（candidate35／商品未成立）
+
+継承承認 `FRESH_MASH_LEVEL3_CMEE_STAGE1_SELECTED_SUBJECTIVE_RECEPTION_FORWARD_INVERSE_REQUEST_LOCAL_CONTRACT_20260905` の同じ未完unit。全体設計・全ファイル地図・国家／共通基盤と他機能の境界・最新weekly・必須incident、影響ownerと下流／旧経路を確認した。STRUCTURE_MAP_DELTA_NONE。今回のruntime変更は既存Human Receptionの対象参照とsole authorの文法処理に収まる。
+
+既存source ownerがuncertaintyとして確定し、change属性を保持する単一SELF targetについて、final ANAPHORICの参照先へ未知範囲を残した。選択済みLEAVE_UNFINISHEDに限り、その未知範囲を受け止める既存述語を使う。kind=lived_change、act=recognize_lived_change、source polarity、present_change／STATE、target／support、既存selected inputを保持する。変化そのものと、その変化について未解決の部分を両方残し、未知範囲を感じ取った事実へ置き換えない。
+
+適用には同じplan所属、単一target、SELF、kind／predicate=uncertainty、modality=uncertain、既存uncertainty／positive_change／change属性、単一memo系field、非実行／非未来、数量・引用境界を要求する。required relation、support、複数target、引用／省略、他者／不明主体、EXPLICIT／COMPOSITE参照、旧経路へは広げない。完全な理由疑問の構文を新規に解析・証明する機能ではなく、既存source ownerの型と属性を使う文法である。複数endpointを持つ混合感情全般の修正とはしない。
+
+上流のsource／polarity／選択を変更しない。新しい意味owner／generic selector／Move／schema／parser／renderer、seal後の再選択、生成済み本文の修理は追加しない。Gate／ObservationPlan／Sentence Surfaceは無変更。作者のexact1対象照合とact責務、独立Gateの全文参照・変化marker・receive・attention／context、同じselected inputによる全文replayを維持する。公開合成4検査で通常の変化の維持、未知範囲の削除・確定化・引用化・複製・述語変更・openness変更の拒否、sourceと旧参照の境界、別の選択済み操作への置換拒否を確認した。
+
+先行したuncertainty→burdenのrole補正案は、既存のpositive内容をburdenへ昇格させない条件で拒否されたため不採用とした。source polarityを通過目的でneutralに変えず、当該差分を戻してから今回の対象文法へ移った。補助行動優先の広範変更も過去のMove／関係重複診断と照合し、再採用していない。補助agentは公開sourceの静的確認のみで、編集・実行・private本文確認・GitHub保存はrootが担当した。外部Proによる独立商品審査とはしない。
+
+固定検証sourceは `e7a2f2b65cfbf0a0a05e3b4db87419ae7eaefdd6`、treeは `657223633156365c15d0163fb36ee6b5b0b65673`。runtime1path・追加test・runnerの3pathをGitHub保存し、全文再取得でlocal bytes/blobと照合した。同じclean sourceの必須251検査は247成功／既存4失敗。原184は180成功4失敗、追加67全成功。前回247の成否を全件保持し、今回追加4も成功、新規失敗・skip・未実行0。既存4は観察固定不一致2・dated receiptと現source不一致1・旧集合重複1で、historical fixture/hash/dated PASSは変更していない。初回251検査は246成功5失敗で、新規1件は既存の述語削除検査が置換前の語を探していたことによる。入力・test名・分母・why責務欠落の拒否目的を保ち、削除対象を今回の受け止め述語へ更新した。初回失敗と当時の全生成結果は保持している。後続36ケースとpost-hash96を実行し96全成功、exact8/same16集合成功、unseen12既存重複FAILを保持した。元pytest失敗を後続診断で置き換えず、別GA2/shared164の今回実行は主張しない。runnerは既存current13定数のみ再導出し、exact18/exact9と非current AST不変を確認した。
+
+同じcanonical100を新たに生成し、原入力全フィールド・順序・軸・分母を保持した。direct100、required Move/expression/visible binding各124、外側GENERATED73/UNAVAILABLE27、可否変更0。生成可能側1件のフォローだけが変化し、残99件は全保存項目同一。原入力・核・選択済み主観input・観察・可否・理由・責務数は全100同一。生成プロセス終了後に保存100件とplan100件の一致を確認した。華恋が原入力全フィールド・観察・フォロー全100と変更前後を全文確認し、検査の削除対象修正後に再生成した確定版でも、当該全文確認済み100件の全保存項目と同一であることを照合した。UNAVAILABLEのdirect本文を配信成立や商品合格へ換算しない。
+
+全体の商品判定はNOT_CLEAR。今回の単一uncertainty対象へ未解決範囲を接続した局所修正を、入力全体の商品合格や混合感情一般の解決へ換算しない。一般的参照句、定型的な締め、補助行動へ寄る選択、複数endpointを持つ未完／混合状態・受援の具体的な受け止め、長い原文再掲、主体／時点／未来の既存分類は残る。既存の公開合成入力の一つも修正前後で同じcapability gapを維持し、今回の成功へ数えていない。同じ継承承認の未完unitとして続ける。新たな承認待ちや全体STOPは設けず、familyからの苦しさ追加、短いanchor、追加Move、seal後再選択、語尾variationで代用しない。商品確認準備/ready/採用/merge/本番/質問生成/Layer3は未成立、product/technical credit 0。PR3/30/37はDraft/open/unmergedを維持する。
 
 作業前のSystem Context doctorは18成功16失敗、prepareは固定環境不一致で不成立。stale cacheを使用せず原典を読み、profile/基準ref/tracked currentは変更していない。実装Python3.12.13と46依存版・hashed RECORDを前回環境と再照合して一致した。新依存・runtime外部生成AI利用0。国家保存/dispatch/queue/read-side、公開API/DB/RN、Piece/分析の実装変更はない。
