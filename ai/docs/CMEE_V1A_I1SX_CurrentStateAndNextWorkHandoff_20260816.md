@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾のcandidate30と継承承認を確認する。具体的行動の対象句と独立照合を整合。固定100はdirect100／124／73-27、フォロー52件のみ変更。最終230検査226成功／既存4失敗、新規失敗0。華恋が全100全文を読みNOT_CLEAR。次は選択済みの体験内容と関係を具体的な受け止めへつなぐ。旧記録は履歴。
+3. 末尾のcandidate31と継承承認を確認する。否定背景の可逆文法と独立原文復元を整合。固定100はdirect100／124／73-27、フォロー1件のみ変更。必須235検査231成功／既存4失敗、新規失敗0。華恋が全100全文を読みNOT_CLEAR。次は選択済み体験と関係を具体的な受け止めへつなぐ未完作業。旧記録は履歴。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -5916,3 +5916,26 @@ runtime固定commitは `1068e114f6bad5f7bc1f2517134f750cb1f09a41`、test修正�
 全体の商品判定はNOT_CLEAR。具体的対象句の文法上の改善はあるが、長い原文再掲、同じ注意／大切という締めの反復、補助行動へ寄る対象選択、負担／未完／混合状態の受け止め不足、ANAPHORICの分類語、未来形・受援・主体／時制の既存分類、未完contextの名詞化は残る。新しい主観判断をseal後に選び直さず、選択済みの体験内容と関係を具体的な受け止めへつなぐ作業を継承承認内で続ける。現在負担familyから苦しさを補わず、検査省略・短さ・語尾variation・追加Moveで代用しない。商品確認準備／ready／採用／merge／本番／質問生成／Layer3は未成立、product credit／technical credit 0。
 
 作業前に最新PR、全体設計・全ファイル地図・国家／共通基盤・2026-09-05 weekly review・必須incident全文、影響ownerと旧経路を確認した。System Context doctor→prepareは18成功16失敗、固定環境不一致でprepare不成立。stale cacheを使わず原典直読、profile／基準ref／tracked current変更0。実装Python環境の46依存版と全RECORD内容を今回再照合して一致し、System Context成立とは扱わない。新依存・runtime外部生成AI利用0。STRUCTURE_MAP_DELTA_NONE：既存owner内の文法と対応検証の更新で、国家保存・dispatch・queue・read-side、公開API／DB／RN、Piece／分析への変更0。公開静的レビューだけを補助agentに委ね、編集・実行・private全100本文確認・公開はrootが担当した。PR3／30／37はDraft/open/unmergedを維持する。
+
+
+### 2026-09-06 continuation — 否定の背景節の可逆な名詞化（candidate31／商品未成立）
+
+前回に残った、対比の背景節を「なくてということ」とつなぐ不自然さを修正した。final・非ANAPHORIC・target一つ・distinct context一つ・同じ必須contrast関係一つに限り、SELFのfact／feelingで、引用・実行済み／未来のactionでない、完全なsource節末の「なくて」を「ないこと」へ活用する。語幹・主語・時点・量・限定語・否定は保持し、完全なsource節を逆変換で復元できることを要求する。因果への読み替え、行動完了の認定、未知状態の補完はしない。
+
+上流で選択済みの同じ意味と関係を使い、既存nominalization_plan tupleにcanonical context slotの文法対応をexpression封印前に入れる。expressionの元lexical fragmentは保持する。Human Receptionの全IRを同じplan／sourceから再導出し、作者が完全一致を要求する。ANAPHORIC、旧HR呼出し、異なる主体やmodality、不明なsource、別slot内の同nominal aliasへこの文法を広げない。新しい意味selector／Move／意味carrier／schema／owner／rendererは設けない。
+
+Gateはforward expressionを証拠にせず、同じplan／sourceから文法対応を独立導出する。実際の文内で完全nominalがちょうど一度、引用外にあることをraw UTF-8座標で照合し、その一箇所だけを逆変換した一時的比較viewで元の完全context検査を行う。本文・body witness・独立full replayは改変しない。旧分類語、短い語幹、別の時点・量・否定・動詞、重複や引用による代用は認めない。source解決失敗はcontext／whyの失敗へ閉じる。same SelectedSubjectiveReceptionInputV1、source／context／why／role／relation／unknown／safety／slot／bindingの義務を保持し、閾値を緩和しない。
+
+Sentence Surfaceにはreception限定の二重かぎ括弧の中立構文markerを追加し、Gateはbyte overlapによって新context候補への引用混入を拒否する。既存quote witnessの数・順序・source_anchor_countを変えない。途中で検討した『』を一般quote witnessへ追加する案は、方向照合と候補順位への影響を避けるため採用しなかった。一般的な引用／同種の入れ子全域を解決したとはしない。
+
+source field内の参照可能な引用・Unicode省略記号は適用除外に使う。一方、Evidence Ledgerが破棄したASCII句点等はresolverから元のfield全体を復元できない。この変更を、元field全体に省略や未完がないことの証明、または一般的な文末判定の改善と扱わない。新しいsource保持carrierを足してこの境界を越えない。
+
+公開合成例の追加5検査で、動詞／形容詞の完全節・関係・封印・同じinputのreplay、語句／否定／時点／数量／引用／重複改変拒否、非正規・範囲外slot、source許可と旧経路、別slot alias、無効sourceのfail-closedを確認する。実装途中の変数名不一致による診断エラーは修正し、失敗記録を保持した。固定後の結果とは分ける。
+
+System Contextは作業前にdoctor→prepareを実行し、18成功16失敗、固定環境不一致でprepare不成立。staleを使わずcanonical原典を読み、profile／基準ref／tracked currentは変更しなかった。実装用Python3.12.13の46依存版と全hashed RECORDは前回保存証拠と新たに照合した。全体設計・全ファイル地図・国家／共通基盤・最新weekly review・必須incident全文と影響owner／旧経路を確認した。STRUCTURE_MAP_DELTA_NONE。国家保存・dispatch・queue・read-side、API／DB／RN、Piece／分析の変更0。公開静的レビューだけを補助agentに委ね、編集・実行・private本文確認・公開はrootが担当した。
+
+runtime・追加test・runnerを固定した検証commitは `5247e4edfe6010d3c8130aea9ee76e01cc8c1a71`、treeは `3d6517c2844863db009e4016be50a5ab38dc79fb`。最終の公開合成5検査成功後、同じclean sourceで必須235検査を実行して231成功／既存4失敗。原184は180成功4失敗、追加51は全成功、前回230の成否は全て同一で新規失敗・skip・未実行0。観察固定不一致2、過去receiptと現source不一致1、旧集合重複1を残し、historical fixtures／hash／dated PASS／既存期待値は変更しない。後続36ケースとpost-hash96も実行し、96全成功、exact8／same16集合成功、unseen12既存重複FAIL。追加診断で元pytest失敗を置き換えない。別GA2/shared164の今回実行は未主張。runnerは既存current13定数を更新し、exact18／exact9と非current AST不変を確認した。
+
+同じcanonical100を全件新たに生成し、原入力・順序・軸・分母を維持。direct100、required Move／expression／visible binding各124、外側GENERATED73／UNAVAILABLE27、可否変更0。candidate30から変わったのは生成可能側のフォロー1件だけで、残99件は全保存項目同一。全100の入力・核・観察・選択済みinput・可否・理由・責務数は同一。華恋が原入力全フィールド・観察・フォロー全100と変更前フォローを全文確認した。対象の否定背景の自然な文法を確認したが、当該入力全体を商品合格にしていない。UNAVAILABLE側のdirect本文を配信成立と扱わない。
+
+全体の商品判定はNOT_CLEAR。長い原文再掲、同じ注意／大切という締め、補助行動へ寄る選択、通常の負担／未完／混合状態や受援の受け止め不足、ANAPHORIC分類語、主体／時制／未来の既存分類、対象外の省略を含むcontext名詞化は残る。同じ継承承認 `FRESH_MASH_LEVEL3_CMEE_STAGE1_SELECTED_SUBJECTIVE_RECEPTION_FORWARD_INVERSE_REQUEST_LOCAL_CONTRACT_20260905` 内で、選択済みの体験と主観判断・関係を具体的な受け止めの責務へつなぐ未完作業を続ける。seal後の再選択、未選択意味補充、familyからの苦しさ追加、短いanchor、追加Moveや語尾variationで代用しない。商品確認準備／ready／採用／merge／本番／質問生成／Layer3は未成立、product／technical credit 0。新たな承認待ちや全体STOPを設けない。PR3／30／37はDraft/open/unmergedを維持する。
