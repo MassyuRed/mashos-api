@@ -3927,6 +3927,7 @@ class CMEEFinalMixedUnfinishedReceptionTest(unittest.TestCase):
         for name, thought in (
             ("explanation", "説明が伝わったのはうれしい。ただ、どの部分が役に立ったのかは分からない。"),
             ("preparation", "準備が終わってうれしい。でも、本当にこれで十分なのかは分からない。"),
+            ("unknown_action", "説明が伝わったのはうれしい。ただ、どの作業を見ていたのかは分からない。"),
             ("settled", "説明が伝わったのはうれしい。どの部分が役に立ったのかも分かった。"),
         ):
             cls.artifacts[name] = _full_surface_artifacts({
@@ -3940,6 +3941,7 @@ class CMEEFinalMixedUnfinishedReceptionTest(unittest.TestCase):
         for name, feeling, unknown in (
             ("explanation", "説明が伝わったのはうれしい", "どの部分が役に立ったのかは分からない"),
             ("preparation", "準備が終わってうれしい", "本当にこれで十分なのかは分からない"),
+            ("unknown_action", "説明が伝わったのはうれしい", "どの作業を見ていたのかは分からない"),
         ):
             a = self.artifacts[name]
             with self.subTest(name=name):
@@ -3955,6 +3957,25 @@ class CMEEFinalMixedUnfinishedReceptionTest(unittest.TestCase):
                 proposition = decisions[moves[0].move_id].subjective_proposition
                 self.assertEqual(proposition.appraisal_content.operation, "PRESERVE_BOTH_ENDPOINTS")
                 self.assertIsNotNone(proposition.focal_relation_ref)
+
+        a = self.artifacts["unknown_action"]
+        move = a.plan.response_plan.human_reception_plan.moves[0]
+        context_id = reception_owner.final_reception_context_nucleus_ids(move=move, plan=a.plan)[0]
+        context = next(n for n in a.plan.nuclei if n.nucleus_id == context_id)
+        self.assertEqual(context.kind, "action")
+        self.assertEqual(context.semantic_frame.predicate_kind, "action")
+        self.assertEqual(context.semantic_frame.modality, "uncertain")
+        self.assertFalse(reception_owner.reception_action_is_performed(context, final_source_fidelity=True))
+        self.assertFalse(reception_owner.reception_action_is_future_intention(context, final_source_fidelity=True))
+        index = {n.nucleus_id: n for n in a.plan.nuclei}
+        for code in ("operator:uncertainty", "semantic_role:limiting_unknown"):
+            changed = replace(context, semantic_frame=replace(context.semantic_frame,
+                attribute_codes=tuple(c for c in context.semantic_frame.attribute_codes if c != code)))
+            changed_plan = replace(a.plan, nuclei=tuple(changed if n == context else n for n in a.plan.nuclei))
+            with self.subTest(missing_code=code):
+                self.assertEqual(reception_owner._source_grounded_positive_feeling_unfinished_relation(
+                    move, changed_plan, {**index, context_id: changed}, a.resolver,
+                ), "")
 
     def test_whole_pair_unknown_polarity_and_selected_reception_survive_inverse(self):
         a = self.artifacts["explanation"]

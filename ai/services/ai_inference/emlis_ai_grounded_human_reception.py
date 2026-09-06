@@ -2102,9 +2102,13 @@ def _source_grounded_positive_feeling_unfinished_relation(
     context = nucleus_index.get(context_ids[0])
     if (not is_grounded_positive_feeling(target) or context is None
         or target not in plan.nuclei or context not in plan.nuclei
-        or context.kind not in {"state", "uncertainty"}
+        or context.kind not in {"state", "uncertainty", "action"}
         or context.semantic_frame.predicate_kind != context.kind
         or context.semantic_frame.modality != "uncertain"):
+        return ""
+    if context.kind == "action" and not {
+        "operator:uncertainty", "semantic_role:limiting_unknown",
+    } <= set(context.semantic_frame.attribute_codes):
         return ""
     for nucleus in (target, context):
         profile = _source_grounded_semantic_profile(
