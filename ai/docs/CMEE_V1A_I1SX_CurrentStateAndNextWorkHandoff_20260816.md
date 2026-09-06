@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾のcandidate36と継承承認を確認する。既存selected PRESERVE_BOTH_ENDPOINTSの同じ気持ちと未解決contextを、両端を残して受け止める既存述語へ接続した。固定100はdirect100／124／73-27、生成可能側1件のフォローのみ変化。必須255検査251成功／既存4失敗、新規失敗0。華恋が全100全文を読みNOT_CLEAR。一般的参照句・定型締め・補助行動偏重・未完/混合状態と受援等は残件。旧記録は履歴。
+3. 末尾のcandidate37と継承承認を確認する。単一memoの有限source証明を既存OPへ追加し、NORMALの同じ肯定feeling／PRESENT_STATEを既存MATERIAL_WEIGHTへ接続。forwardと独立再導出で同じqualifier／SELFのEXPERIENCERを要求。公開単文2例の応答を修正したが、複文は対象外。固定100は全保存項目が前回と同一、direct100／124／73-27、canonical本文改善0。必須260検査256成功／既存4失敗、新規失敗0。全100全文確認済み、商品NOT_CLEAR。詳細は02／06とruntime handoffのcandidate37末尾。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -6040,3 +6040,20 @@ final explicit/compositeのhonor_concrete_effortで、既存source ownerが未�
 全体の商品判定はNOT_CLEAR。今回の同じ選択済み関係に対する局所修正を、入力全体の商品合格や混合感情一般の解決へ換算しない。一般的参照句、定型的な締め、補助行動へ寄る選択、未完／混合状態・受援の具体的な受け止め、長い原文再掲、主体／時点／未来の既存分類は残る。次はこの全100の残る本文から既存owner内で意味選択と対象接続の不足を絞り、同じ入力・Move・保護条件を維持して修正する。過去にMove増加や関係重複を起こした広範な行動優先案、短いanchor、追加Move、seal後再選択、語尾variationを代用品へ戻さない。同じ継承承認の未完unitとして続け、新たな承認待ちや全体STOPは設けない。商品確認準備/ready/採用/merge/本番/質問生成/Layer3は未成立、product/technical credit 0。PR3/30/37はDraft/open/unmergedを維持する。
 
 作業前のSystem Context doctorは18成功16失敗、prepareは固定環境不一致で不成立。stale cacheを使用せず原典を読み、profile/基準ref/tracked currentは変更していない。実装Python3.12.13と46依存版・hashed RECORDを前回環境と再照合して一致した。新依存・runtime外部生成AI利用0。国家保存/dispatch/queue/read-side、公開API/DB/RN、Piece/分析の実装変更はない。
+
+
+### 2026-09-06 continuation — 独立した現在の肯定的な気分とnormal受取の接続（candidate37／商品未成立）
+
+同じ継承承認 `FRESH_MASH_LEVEL3_CMEE_STAGE1_SELECTED_SUBJECTIVE_RECEPTION_FORWARD_INVERSE_REQUEST_LOCAL_CONTRACT_20260905` の未完unit。全体図・全ファイル地図・国家／共通基盤と他機能の境界、最新weekly、必須incidentと関連owner／旧経路を確認した。STRUCTURE_MAP_DELTA_NONE。今回のruntimeは既存ObservationPlanのfinal同核分類、Final Stage1 compositionのnormal Appraisal、responseの正本再導出の3pathを変更した。
+
+ObservationPlanは、既存語彙では証明できなかった「気分が／は／も軽い（です）」を、一つの独立した現在の自己のmemoに限定してreaction／feeling／positiveへ分類する。元field・offset・rawの一致、全文有限節、SELF、現在時点、単一text核、関係なしを要求する。今日／今、明示自己所有、少し／とてもの付着を有限文法で扱う。引用・報告・疑問・条件・否定・不確実・過去・他者・省略・複文は非適用。既存positive／feeling／positive_evaluation属性を接続するが、change／result／current_changeは追加しない。これは既にあったpositive証拠の接続漏れだけではなく、既存source owner内の語彙と主述語の能力追加である。原ID・Evidence・主体・時点・保持責務は維持し、旧V1の分類は変えない。
+
+このsource修正を公開例で実行すると、NORMALのrecognize_lived_changeとPRESENT_STATEにAppraisal対応がなくMEANING_REALIZATION_CAPABILITY_GAPとなった。既存normal helperへforwardと独立正本再導出の両方から既存own_qualifiersを渡し、同一の単一contribution／basis／qualifier、PRESENT_STATE、NO_RELATION_CLAIM、対象と同じEXPERIENCER、positive／feeling／現在がそろう場合だけ既存MATERIAL_WEIGHT／RECEIVE_AS_MATERIALへ接続した。新しい意味／carrier／schema／selector／Moveは作らない。このnormal対応は新語彙だけでなく、同じ検証済み意味形を持つ単一の現在の肯定感情へ適用し得る。関係・未完・変化・主体性の既存優先とLIMITED別経路を維持する。Human Reception／Sentence Surface／Gateの実装と全文replay、source／unknown／safety保護は変更していない。seal後再選択・完成本文修理・runtime外部生成AIはない。
+
+公開合成例では、短い現在気分2例が一般的な受け止め文から既存の気持ちを受け取る文へ変わり、Gate／独立inverseが成立した。複文の公開例は同じ出力のままで、この能力追加へ取り込んでいない。追加5検査は、原sourceと旧base、主体／時点／未知／引用／疑問等の境界、normalの同一qualifier／EXPERIENCER欠落・別参照、気持ち対象と受取の改変拒否を確認した。途中のcapture検査で関数内importをmodule属性として参照したsetup誤りを修正して再実行した記録を保持し、最終成否とは分離した。
+
+固定source `f40fedaf8d833e41427264af883c356eff571923`、tree `7ee06135509c7996b5c815f8a60c170901c1f873`。runtime3path・test・runnerをGitHubへ保存し全文再取得で照合した。必須260検査は256成功／既存4失敗。原184は180成功4失敗、追加76全成功。前回255の成否を維持し、今回5も成功、新規失敗／skip／未実行0。既存4は観察固定不一致2・dated receiptと現source不一致1・旧集合重複1で、historical fixture／hash／dated PASSは変更していない。後続36ケースとpost-hash96を実行して96成功、exact8／same16集合成功、unseen12既存重複FAILを保持した。別GA2／shared164の今回実行は主張しない。runnerはcurrent13定数のみ再導出し、exact18／exact9と非current AST不変を確認した。
+
+同じcanonical100を新たに生成した。direct100、required Move／expression／visible binding各124、外側GENERATED73／UNAVAILABLE27、可否変更0。今回、全100件が全保存項目で前回と同一であり、canonical本文の改善件数は0。公開例の能力差をcanonical100の改善へ換算しない。生成終了後に華恋が原入力全フィールド・観察・フォロー・可否と理由の全100を全文確認した。商品NOT_CLEAR。一般的参照、定型締め、補助行動偏重、通常の負担／未完／混合状態／受援、長い原文再掲、複文の主節・主体・時点は残る。次は複文の前半を捨てずに主節の気分へ結ぶsource範囲と既存分解の境界を、実際の本文から修正する。単文の語彙追加や検査成功だけを商品成立へ変換しない。
+
+System Contextはdoctor18成功16失敗、prepareは固定toolchain不一致で不成立。stale不使用・原典直接読取、profile／基準ref／tracked current変更0。Python3.12.13と46依存版・hashed RECORDを再照合して一致した。国家保存／dispatch／queue／read-side、公開API／DB／RN、Piece／分析変更0。継承承認内の未完作業を継続し、新しい承認待ちや全体STOPを設けない。商品確認準備／ready／採用／merge／本番／質問生成／Layer3は未成立、product／technical credit 0。PR3／30／37はDraft/open/unmerged。
