@@ -675,10 +675,11 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         parsed_reception = next(
             item for item in witness.lines if item.section == "reception"
         )
-        self.assertIn(
-            "target_words",
-            parsed_reception.reception_marker_codes,
-        )
+        # The source-proven unfinished nominal is bound independently by
+        # inverse; its structural suffix is not a general target-word proof.
+        self.assertIn("まだ分からないこと", reception_text)
+        self.assertIn("finite_clause_nominal", parsed_reception.semantic_marker_codes)
+        self.assertNotIn("target_words", parsed_reception.reception_marker_codes)
         self.assertNotIn("target_burden", parsed_reception.reception_marker_codes)
         self.assertIn("receive", parsed_reception.reception_marker_codes)
         self.assertNotIn("attention", parsed_reception.reception_marker_codes)
@@ -701,7 +702,7 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
         )
         self.assertTrue(gate.passed, gate.rejection_reasons)
 
-        target_tamper = surface.text.replace("今ここに置かれた言葉", "そのこと", 1)
+        target_tamper = surface.text.replace("まだ分からないこと", "そのこと", 1)
         self.assertNotEqual(target_tamper, surface.text)
         target_evaluation = evaluate_grounded_surface_body_inverse(
             body=target_tamper.encode("utf-8"),

@@ -2925,8 +2925,8 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
         self.assertNotIn(target, _reception_text(artifacts.surface.text))
         replayed_body = _tamper_reception(
             artifacts.surface.text,
-            "今ここに置かれた言葉",
-            f"今ここに置かれた言葉（{target}）",
+            "まだ分からないこと",
+            f"まだ分からないこと（{target}）",
         )
         replayed_inverse = self._inverse_for_tamper(
             case_id,
