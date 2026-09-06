@@ -4,8 +4,12 @@ from __future__ import annotations
 """Final-only CMEE inheritance for the current SX exact8 meaning shapes."""
 
 from dataclasses import asdict
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
+import os
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -340,6 +344,41 @@ def _check_active_production_builder_never_enters_final_compound_projection() ->
 
 
 class FinalStage1Exact8MeaningInheritanceTest(unittest.TestCase):
+    def test_compound_projection_identity_is_stable_across_process_hash_seeds(self) -> None:
+        # Compare complete plans from fresh interpreters. Repeating a build
+        # in one process cannot expose unordered-set serialization.
+        script = """
+import json
+from test_cmee_final_stage1_exact8_meaning_inheritance import _EXACT8, _plans, _plan_sha256
+digests = []
+multi_operator_endpoints = 0
+for row in _EXACT8:
+    active, final, _, _ = _plans(row)
+    digests.append((_plan_sha256(active), _plan_sha256(final)))
+    multi_operator_endpoints += sum(
+        'semantic_role:final_stage1_compound_meaning' in n.semantic_frame.attribute_codes
+        and sum(c.startswith('operator:') for c in n.semantic_frame.attribute_codes) > 1
+        for n in final.nuclei
+    )
+assert multi_operator_endpoints > 0
+print(json.dumps(digests))
+"""
+
+        def run(seed: str) -> str:
+            result = subprocess.run(
+                [sys.executable, "-c", script],
+                env={**os.environ, "PYTHONHASHSEED": seed,
+                     "PYTHONDONTWRITEBYTECODE": "1",
+                     "PYTHONPATH": os.pathsep.join(sys.path)},
+                check=True, capture_output=True, text=True, timeout=180,
+            )
+            return result.stdout.strip()
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            results = tuple(executor.map(run, ("0", "1", "2")))
+        self.assertEqual(len(json.loads(results[0])), len(_EXACT8))
+        self.assertEqual(len(set(results)), 1)
+
     def test_final_stage1_exact8_keeps_required_meaning_and_relation_coverage(
         self,
     ) -> None:

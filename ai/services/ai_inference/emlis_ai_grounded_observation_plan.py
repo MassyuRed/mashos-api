@@ -8720,9 +8720,10 @@ def _final_stage1_compound_meaning_projections_for_span(
         fragment = text[scalar_start:scalar_end]
         if not fragment or not owner_scope_is_current(fragment):
             return None
-        operators = set(
-            _operator_codes_for_text(fragment, source_field=source_field)
-        )
+        # The detector already returns a deduplicated, ordered tuple. Keep
+        # that order when these attributes enter the final plan identity;
+        # serializing a set made identical inputs depend on process hash seed.
+        operators = _operator_codes_for_text(fragment, source_field=source_field)
         explicit_deliberation = bool(
             _FINAL_STAGE1_OPEN_DELIBERATION_RE.search(fragment)
         )
@@ -8861,14 +8862,13 @@ def _final_stage1_compound_meaning_projections_for_span(
             )
         performed_action = bool(
             _ACTION_ARGUMENT_STEM_RE.search(fragment)
-            and not {
+            and {
                 "operator:negation",
                 "operator:constraint",
                 "operator:refusal",
                 "operator:uncertainty",
                 "operator:wish",
-            }
-            & operators
+            }.isdisjoint(operators)
         )
         if performed_action:
             return _TypedNucleusProjection(
