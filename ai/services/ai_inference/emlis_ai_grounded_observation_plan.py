@@ -7470,29 +7470,50 @@ def _build_response_and_policies(
     # When that arc has one scored, source-grounded lived-change primary,
     # do not let the action-family preference displace it.  This uses the
     # existing opportunity proof, not primary membership's zero-score fallback.
-    # Burden/intention selection and directional endpoints keep their own
-    # contracts; they are not promoted by this preference.
-    scored_lived_change_primary = next(
-        (
-            item
-            for item in follow_candidates
-            if len(primary_ids) == 1
-            and item.nucleus_id in primary_set
-            and item.retention == "required"
-            and item.source_fields == ("memo",)
-            and primary_score(item) > 0
-            and _reception_opportunity_families_for_nucleus(
-                item,
-                safety_kind=safety_decision.safety_triage_kind,
-                final_source_fidelity=True,
-            ) == ("lived_change",)
-        ),
-        None,
+    # A required relation may give the same arc a pair of primaries.
+    # Require one eligible family target and an explicit retained link to
+    # its co-primary; independent or uncertain co-primary material does not
+    # license this preference. Burden/intention and directional endpoints
+    # retain their own contracts.
+    scored_lived_change_primaries = tuple(
+        item
+        for item in follow_candidates
+        if item.nucleus_id in primary_set
+        and item.retention == "required"
+        and item.source_fields == ("memo",)
+        and primary_score(item) > 0
+        and _reception_opportunity_families_for_nucleus(
+            item,
+            safety_kind=safety_decision.safety_triage_kind,
+            final_source_fidelity=True,
+        ) == ("lived_change",)
     ) if (
         final_source_fidelity
         and safety_decision.safety_triage_kind == TRIAGE_SAFE_OBSERVATION
         and material_quality == "grounded"
-    ) else None
+    ) else ()
+    scored_lived_change_primary = (
+        scored_lived_change_primaries[0]
+        if len(scored_lived_change_primaries) == 1
+        else None
+    )
+    if (
+        scored_lived_change_primary is not None
+        and len(primary_ids) > 1
+        and (len(primary_ids) != 2 or not any(
+            relation.relation_id in required_relation_ids
+            and relation.type != "uncertain_connection"
+            and scored_lived_change_primary.nucleus_id in {
+                relation.from_nucleus_id, relation.to_nucleus_id,
+            }
+            and relation.from_nucleus_id != relation.to_nucleus_id
+            and {
+                relation.from_nucleus_id, relation.to_nucleus_id,
+            } <= primary_set
+            for relation in relations
+        ))
+    ):
+        scored_lived_change_primary = None
     supplemental_action_ids = {
         item.nucleus_id
         for item in follow_candidates

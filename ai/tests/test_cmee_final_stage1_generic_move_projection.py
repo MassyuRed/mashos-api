@@ -724,6 +724,102 @@ class CMEEPastReportedWishTest(unittest.TestCase):
 
 
 class CMEEPositiveFeelingProjectionTest(unittest.TestCase):
+    def test_linked_coprimary_feeling_precedes_supplemental_action(self):
+        for memo, boundary in (
+            ("模型が完成してうれしかった。でも、説明書どおりに作れたのかは分からない。", "分からない"),
+            ("作ったものを見てもらえてうれしかった。でも、手伝ってもらった部分もあり、自分だけの成果としてよいのか迷っている。", "迷っている"),
+        ):
+            with self.subTest(memo=memo):
+                action = "作業台を片づけた。"
+                row = {
+                    "case_id": "public-linked-coprimary-and-action",
+                    "input": {
+                        "thought_text": memo, "action_text": action,
+                        "categories": ["趣味"],
+                        "emotions": [{"type": "平穏", "strength": "medium"}],
+                    },
+                }
+                a = _full_surface_artifacts(row)
+                self.assertTrue(a.gate.passed)
+                self.assertTrue(a.inverse.passed)
+                response = a.plan.response_plan
+                self.assertEqual(len(response.primary_nucleus_ids), 2)
+                self.assertEqual(len(response.human_follow_target_ids), 1)
+                target_id = response.human_follow_target_ids[0]
+                self.assertIn(target_id, response.primary_nucleus_ids)
+                self.assertTrue(any(
+                    relation.retention == "required"
+                    and relation.type != "uncertain_connection"
+                    and target_id in {relation.from_nucleus_id, relation.to_nucleus_id}
+                    and {relation.from_nucleus_id, relation.to_nucleus_id}
+                    <= set(response.primary_nucleus_ids)
+                    for relation in a.plan.relations
+                ))
+                moves = response.human_reception_plan.moves
+                self.assertEqual(
+                    tuple(move.reception_act for move in moves),
+                    ("recognize_lived_change", "honor_concrete_effort"),
+                )
+                self.assertTrue(all(move.required for move in moves))
+                self.assertEqual(moves[0].target_nucleus_ids, (target_id,))
+                self.assertEqual(moves[0].move_role, "attention")
+                authored = next(s for s in a.authored if s.recovery_stage == "full")
+                self.assertEqual(authored.realized_move_ids, ("rm1", "rm2"))
+                follow = _reception_text(a.surface.text)
+                self.assertIn(memo.split("。")[0], follow)
+                self.assertIn(boundary, follow)
+                self.assertLess(follow.index("気持ち"), follow.index("実際の行動"))
+                changed = _tamper_reception(a.surface.text, boundary, "確定した")
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=changed.encode("utf-8"), plan=a.plan,
+                    sentence_plan=a.sentence_plan, resolver=a.resolver,
+                    selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+                active = build_grounded_observation_plan({"memo": memo, "memo_action": action})
+                active_nuclei = {n.nucleus_id: n for n in active.nuclei}
+                self.assertEqual(
+                    active_nuclei[active.response_plan.human_follow_target_ids[0]].source_fields,
+                    ("memo_action",),
+                )
+
+    def test_independent_or_multiple_change_primaries_do_not_demote_action(self):
+        for memo, eligible_count in (
+            ("道具が使えるようになってうれしかった。全部覚えたわけではないけれど、練習を続けたことで少し安心した。", 1),
+            ("道具が使えてうれしかった。休憩したら、気持ちが楽になった。", 2),
+        ):
+            with self.subTest(memo=memo):
+                plan = build_final_stage1_grounded_observation_plan({
+                    "memo": memo, "memo_action": "作業台を片づけた。",
+                })
+                nuclei = {n.nucleus_id: n for n in plan.nuclei}
+                response = plan.response_plan
+                self.assertGreater(len(response.primary_nucleus_ids), 1)
+                eligible_ids = {
+                    nucleus_id for nucleus_id in response.primary_nucleus_ids
+                    if observation_plan_owner._reception_opportunity_families_for_nucleus(
+                        nuclei[nucleus_id], safety_kind=plan.safety_policy.safety_kind,
+                        final_source_fidelity=True,
+                    ) == ("lived_change",)
+                }
+                self.assertEqual(len(eligible_ids), eligible_count)
+                if eligible_count == 1:
+                    self.assertFalse(any(
+                        relation.retention == "required"
+                        and relation.type != "uncertain_connection"
+                        and {relation.from_nucleus_id, relation.to_nucleus_id}
+                        <= set(response.primary_nucleus_ids)
+                        and {relation.from_nucleus_id, relation.to_nucleus_id} & eligible_ids
+                        for relation in plan.relations
+                    ))
+                self.assertEqual(
+                    nuclei[response.human_follow_target_ids[0]].source_fields,
+                    ("memo_action",),
+                )
+                self.assertEqual(
+                    tuple(move.reception_act for move in response.human_reception_plan.moves),
+                    ("honor_concrete_effort", "recognize_lived_change"),
+                )
+
     def test_scored_memo_change_keeps_its_focus_beside_supplemental_action(self):
         for memo in (
             "少し歩いたら、気持ちが楽になった。",
