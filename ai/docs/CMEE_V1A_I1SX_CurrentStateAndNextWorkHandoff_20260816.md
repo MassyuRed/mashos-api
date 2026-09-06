@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾のcandidate31と継承承認を確認する。否定背景の可逆文法と独立原文復元を整合。固定100はdirect100／124／73-27、フォロー1件のみ変更。必須235検査231成功／既存4失敗、新規失敗0。華恋が全100全文を読みNOT_CLEAR。次は選択済み体験と関係を具体的な受け止めへつなぐ未完作業。旧記録は履歴。
+3. 末尾のcandidate32と継承承認を確認する。有限認知不明の同核分類を既存未完判断へ接続。固定100はdirect100／124／73-27、生成可能側1件の核分類・選択判断・フォローが変化。必須238検査234成功／既存4失敗、新規失敗0。華恋が全100全文を読みNOT_CLEAR。次は一般的な参照句、選択済み体験と関係の具体的な受け止め、残る負担／未完／混合状態の接続。旧記録は履歴。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -5939,3 +5939,20 @@ runtime・追加test・runnerを固定した検証commitは `5247e4edfe6010d3c81
 同じcanonical100を全件新たに生成し、原入力・順序・軸・分母を維持。direct100、required Move／expression／visible binding各124、外側GENERATED73／UNAVAILABLE27、可否変更0。candidate30から変わったのは生成可能側のフォロー1件だけで、残99件は全保存項目同一。全100の入力・核・観察・選択済みinput・可否・理由・責務数は同一。華恋が原入力全フィールド・観察・フォロー全100と変更前フォローを全文確認した。対象の否定背景の自然な文法を確認したが、当該入力全体を商品合格にしていない。UNAVAILABLE側のdirect本文を配信成立と扱わない。
 
 全体の商品判定はNOT_CLEAR。長い原文再掲、同じ注意／大切という締め、補助行動へ寄る選択、通常の負担／未完／混合状態や受援の受け止め不足、ANAPHORIC分類語、主体／時制／未来の既存分類、対象外の省略を含むcontext名詞化は残る。同じ継承承認 `FRESH_MASH_LEVEL3_CMEE_STAGE1_SELECTED_SUBJECTIVE_RECEPTION_FORWARD_INVERSE_REQUEST_LOCAL_CONTRACT_20260905` 内で、選択済みの体験と主観判断・関係を具体的な受け止めの責務へつなぐ未完作業を続ける。seal後の再選択、未選択意味補充、familyからの苦しさ追加、短いanchor、追加Moveや語尾variationで代用しない。商品確認準備／ready／採用／merge／本番／質問生成／Layer3は未成立、product／technical credit 0。新たな承認待ちや全体STOPを設けない。PR3／30／37はDraft/open/unmergedを維持する。
+
+
+### 2026-09-06 continuation — 有限の認知的不明を未完の受け止めへつなぐ（candidate32／商品未成立）
+
+既存source分類の同核補正で、現在の自己状態として既にuncertain・operator:uncertainty・limiting_unknownが付いた有限の「分からない／わからない」を、通常stateのまま渡さず既存uncertaintyへ接続する。対象は同じ原fieldの全有限節で、副詞の付着以外の対象・主体・埋込み主張を補わない範囲に限定する。原fieldとoffsetの一致、引用外、前後の境界、原文内と直後の疑問符拒否を要求する。報告・過去・条件・否定の取消し・別主体・主語を落とした切片へ拡張しない。ID・主体・極性・時点・source証拠・既存属性・依存関係を保持し、kindとpredicate_kindだけを同じownerで補正する。
+
+既存のdirect shape v2からPRESENT_UNFINISHED、選択済みLEAVE_UNFINISHED、同じHuman Reception作者へ到達し、「結論を急がずに」という既存の責務が最終フォローに現れる。語尾候補やMoveを追加して多様さを作る変更ではない。seal後の意味再選択、modalityの下流fallback、新しいselector／owner／schema／renderer、Gate／inverseの緩和は行わない。公開合成検査ではsource欠落・不一致・引用・別主体・報告・条件・取消し・疑問の非適用と、判断が本文まで届くこと、未完の責務を本文から除いた独立inverse拒否を確認する。
+
+作業前に最新PRと添付checkpointを照合し、全体設計・全ファイル地図、国家／共通基盤、最新weekly review、必須incidentと影響owner／下流／旧経路を参照した。System Context doctor→prepareを実行したが、固定toolchain不一致でprepareは不成立。staleを使わず原典を直接読み、profile／基準ref／tracked currentは変更していない。最初のcache指定はGit管理内の非ignored経路として拒否され、Git管理外cacheへ修正してから固定環境不一致を確認した。実装Python3.12.13の46依存版とhashed RECORD内容は保存証拠と今回再照合して一致した。新依存・runtime外部生成AI利用0。
+
+STRUCTURE_MAP_DELTA_NONE。既存ObservationPlan source分類と既存意味選択から最終本文への接続内の修正であり、国家保存・dispatch・queue・read-side、公開API／DB／RN、Piece／分析に実装変更はない。公開静的レビューのみ補助agentが担当し、編集・実行・private本文確認・公開はrootが担当した。
+
+runtime・追加test・runnerの固定検証commitは `462c3e5dc21a74b7d0ade9e4442188bdcf8b2b96`、treeは `e9dbab51101d5a118632066ffe49b397e912c88f`。GitHub保存した3pathを全文取得してlocal bytes／blobと照合した。同じclean sourceで必須238検査を実行し234成功／既存4失敗。原184は180成功4失敗、追加54全成功、前回235の成否を全て維持し、今回追加3も成功した。新規失敗・skip・未実行0。既存4失敗は観察固定不一致2、過去receiptと現source不一致1、旧集合重複1であり、historical fixture／hash／dated PASS／既存期待値を変更していない。後続36ケース・post-hash96も実行し、96全成功、exact8／same16集合成功、unseen12既存重複FAILを保持した。後続診断で元pytest失敗を置き換えず、別GA2/shared164の今回実行は主張しない。runnerは既存current13定数の再導出のみを行い、exact18／exact9と非current AST不変を確認した。
+
+同じcanonical100を新たに生成し、原入力全フィールド・順序・軸・分母を維持した。direct100、required Move／expression／visible binding各124、外側GENERATED73／UNAVAILABLE27、可否変更0。生成可能側1件で同核のkind／predicate、選択済みappraisalの未完責務とそれに依存するref／seal、フォローが変わった。残99件は全保存項目同一。原入力・観察・可否・理由・責務数は全100同一で、追加Moveや対象追加による本文変更ではない。内部名の変更だけでなく、既存未完責務が実際のフォローへ到達している。華恋が原入力全フィールド・観察・フォロー全100と変更前後の意味／本文を全文確認した。UNAVAILABLEのdirect本文を配信成立や商品合格件数へ数えない。
+
+全体の商品判定はNOT_CLEAR。今回接続した有限認知述語以外の通常の負担／未完／混合状態、長い原文再掲、定型的な締め、補助行動へ寄る選択、受援・主体／時制／未来の既存分類、ANAPHORICの一般的・分類的な対象句は残る。「今ここに置かれた言葉」という参照の具体性も今回解決していない。同じ継承承認 `FRESH_MASH_LEVEL3_CMEE_STAGE1_SELECTED_SUBJECTIVE_RECEPTION_FORWARD_INVERSE_REQUEST_LOCAL_CONTRACT_20260905` の未完unit内で、選択済みの具体的な体験内容と主観判断・関係を、作者と独立照合の対応を保って受け止めへつなぐ。seal後再選択・未選択意味補充・familyからの苦しさ追加・短いanchor・追加Move・語尾variationで代用しない。商品確認準備／ready／採用／merge／本番／質問生成／Layer3は未成立、product／technical credit 0。新たな承認待ちや全体STOPは設けず、PR3／30／37はDraft/open/unmergedを維持する。
