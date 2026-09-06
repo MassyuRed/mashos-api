@@ -515,7 +515,8 @@ class CMEEUnresolvedQuestionSourceTest(unittest.TestCase):
             and d.subjective_proposition.appraisal_content.operation == "LEAVE_UNFINISHED"
             for d in artifacts.selected_subjective_input.decisions
         ))
-        self.assertIn("結論を急がずに、", _reception_text(artifacts.surface.text))
+        self.assertTrue(_reception_text(artifacts.surface.text).lstrip().startswith("結論を急がずに、"))
+        self.assertNotIn("を、結論を", _reception_text(artifacts.surface.text))
         changed = _tamper_reception(artifacts.surface.text, "結論を急がずに、", "")
         inverse = evaluate_grounded_surface_body_inverse(
             body=changed.encode("utf-8"), plan=artifacts.plan,
@@ -555,7 +556,7 @@ class CMEEUnresolvedQuestionSourceTest(unittest.TestCase):
             for d in artifacts.selected_subjective_input.decisions
         ))
         follow = _reception_text(artifacts.surface.text)
-        self.assertIn("結論を急がずに", follow)
+        self.assertTrue(follow.lstrip().startswith("結論を急がずに、"))
         self.assertNotIn("を結論を", follow)
         changed = _tamper_reception(artifacts.surface.text, "結論を急がずに、", "")
         inverse = evaluate_grounded_surface_body_inverse(
@@ -564,6 +565,37 @@ class CMEEUnresolvedQuestionSourceTest(unittest.TestCase):
             selected_subjective_input=artifacts.selected_subjective_input,
         )
         self.assertFalse(inverse.passed)
+
+    def test_openness_scope_preserves_object_act_and_clause_inflection(self):
+        calls = []
+        author = reception_owner._source_grounded_response_predicate_surface
+
+        def capture(*args, **kwargs):
+            calls.append((args, kwargs))
+            return author(*args, **kwargs)
+
+        with patch.object(reception_owner, "_source_grounded_response_predicate_surface",
+                          side_effect=capture):
+            artifacts = _full_surface_artifacts({
+                "case_id": "openness-clause-scope-unit",
+                "input": {"thought_text": "なぜ決めた後に迷う気がするんだろう。",
+                          "action_text": "", "categories": ["生活"],
+                          "emotions": [{"type": "不安", "strength": "weak"}]},
+            })
+        self.assertTrue(artifacts.inverse.passed)
+        self.assertTrue(calls)
+        args, kwargs = next((args, kwargs) for args, kwargs in calls
+                            if kwargs["recovery_stage"] == "full")
+        for role, connection in (("attention", "に目が留まり、"),
+                                 ("significance", "を見失わず、"),
+                                 ("felt_response", "を")):
+            for form, ending in (("FINITE", "受け止めています"),
+                                 ("CONTINUATIVE", "受け止めていて")):
+                with self.subTest(role=role, form=form):
+                    text = author(args[0], role, **{**kwargs, "clause_form": form})
+                    self.assertTrue(text.startswith("結論を急がずに、" + kwargs["object_core"] + connection))
+                    self.assertEqual(text.count("結論を急がずに、"), 1)
+                    self.assertTrue(text.endswith("小さくせずに" + ending))
 
 
 class CMEEPastReportedWishTest(unittest.TestCase):

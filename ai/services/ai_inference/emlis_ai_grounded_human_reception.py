@@ -7054,6 +7054,7 @@ def _source_grounded_response_predicate_surface(
     reception_act: GroundedReceptionAct,
     move_role: str,
     *,
+    object_core: str,
     future_action: bool,
     target_predicate_kind: str,
     semantic_profile: _ReceptionSemanticProfileV1,
@@ -7070,7 +7071,7 @@ def _source_grounded_response_predicate_surface(
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
     distributive_object: bool = False,
 ) -> str:
-    """Author and binder share one exact governed predicate surface."""
+    """Place the governed object and adjunct around one inflected predicate."""
 
     predicate = _source_grounded_response_predicate(
         reception_act,
@@ -7092,9 +7093,9 @@ def _source_grounded_response_predicate_surface(
         clause_form=clause_form,
         hedged=recovery_stage == "hedged",
     )
-    # Separate the received object from the embedded accusative argument in
-    # the selected openness adjunct. Attention/significance already supplies
-    # a clause boundary through its role operator.
+    # The selected openness adjunct scopes over the whole reception clause.
+    # Place it before the object, preserving direct object/role/act government
+    # and keeping its own accusative argument outside that connection.
     proposition = selected_subjective_decision.subjective_proposition
     openness = bool(
         proposition.appraisal_content is not None
@@ -7102,10 +7103,19 @@ def _source_grounded_response_predicate_surface(
         or proposition.relational_position is not None
         and proposition.relational_position.stance_operator == "HOLD_UNFINISHED_OPEN"
     )
-    object_boundary = "、" if openness and not predicate.role_operator else ""
+    clause_adjunct = ""
+    act_guard = predicate.act_guard
+    if openness:
+        clause_adjunct = "結論を急がずに、"
+        if not act_guard.startswith(clause_adjunct):
+            raise GroundedHumanReceptionSurfaceError(
+                "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
+            )
+        act_guard = act_guard[len(clause_adjunct):]
     return (
-        f"{predicate.object_particle}{predicate.role_operator}{object_boundary}"
-        f"{predicate.act_guard}{predicate.reception_operator}"
+        f"{clause_adjunct}{object_core}"
+        f"{predicate.object_particle}{predicate.role_operator}"
+        f"{act_guard}{predicate.reception_operator}"
         f"{predicate.voice_complement}{predicate.valency_complement}"
         f"{governed_predicate}"
     )
@@ -7168,6 +7178,7 @@ def _source_grounded_reception_fragment(
     predicate_surface = _source_grounded_response_predicate_surface(
         move.reception_act,
         move.move_role,
+        object_core=core,
         future_action=_source_grounded_future_action(
             realization,
             reception_act=move.reception_act,
@@ -7190,7 +7201,7 @@ def _source_grounded_reception_fragment(
         selected_subjective_decision=selected_subjective_decision,
         distributive_object=distributive_object,
     )
-    return f"{core}{predicate_surface}"
+    return predicate_surface
 
 
 def _author_source_grounded_reception_clauses(
