@@ -2077,8 +2077,58 @@ def _past_wish_target(
     return True
 
 
-def _positive_feeling_responsibility(text: str) -> bool:
-    return bool(re.search(r"気持ち.{0,80}感じ", text))
+def _positive_feeling_responsibility(text: str, *, unfinished_pair: bool = False) -> bool:
+    return bool(re.search(r"気持ち.{0,80}感じ", text)) or bool(
+        unfinished_pair and re.search(r"気持ち.{0,80}両方.{0,40}受け止", text)
+    )
+
+
+def _source_grounded_positive_feeling_unfinished_relation(
+    move: GroundedReceptionMovePlan,
+    plan: GroundedObservationPlan,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+) -> str:
+    """Prove an existing feeling/context pair without selecting a relation."""
+    if (FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
+        or move not in plan.response_plan.human_reception_plan.moves
+        or move.reception_act != "recognize_lived_change"
+        or len(move.target_nucleus_ids) != 1):
+        return ""
+    context_ids = final_reception_context_nucleus_ids(move=move, plan=plan)
+    if len(context_ids) != 1:
+        return ""
+    target = nucleus_index.get(move.target_nucleus_ids[0])
+    context = nucleus_index.get(context_ids[0])
+    if (not is_grounded_positive_feeling(target) or context is None
+        or target not in plan.nuclei or context not in plan.nuclei
+        or context.kind not in {"state", "uncertainty"}
+        or context.semantic_frame.predicate_kind != context.kind
+        or context.semantic_frame.modality != "uncertain"):
+        return ""
+    for nucleus in (target, context):
+        profile = _source_grounded_semantic_profile(
+            nucleus, final_reception_nucleus_text(nucleus.nucleus_id, nucleus_index, resolver),
+        )
+        if (profile.actor_kind != "SELF" or profile.performed_action
+            or profile.future_action or profile.quoted_boundary):
+            return ""
+    source_fields = set(target.source_fields) | set(context.source_fields)
+    if any(re.search(r"[「」『』…‥]", span.raw_text)
+           for span in resolver.resolve_many(resolver.span_ids)
+           if span.source_field in source_fields):
+        return ""
+    relations = tuple(
+        relation for relation in plan.relations
+        if relation.relation_id in plan.coverage_requirements.required_relation_ids
+        and relation.type in {
+            "coexistence", "wish_and_constraint", "attempt_and_block",
+            "continuation_or_refusal",
+        }
+        and {relation.from_nucleus_id, relation.to_nucleus_id}
+        == {target.nucleus_id, context.nucleus_id}
+    )
+    return relations[0].relation_id if len(relations) == 1 else ""
 
 
 def _retained_future_intention_responsibility(text: str) -> bool:
@@ -3487,7 +3537,11 @@ def validate_grounded_human_reception_surface(
         visible = (
             _retained_future_intention_responsibility(surface.text)
             if future_intention else
-            _positive_feeling_responsibility(surface.text)
+            _positive_feeling_responsibility(surface.text, unfinished_pair=all(
+                _source_grounded_positive_feeling_unfinished_relation(
+                    move, plan, final_nuclei, resolver,
+                ) for move in active_moves if move.reception_act == act
+            ))
             if positive_feeling else
             bool(_ACT_OWNED_RESPONSIBILITY_RE[act].search(surface.text))
             or any(_performed_action_nominal_responsibility(surface.text, nominal)
@@ -7253,6 +7307,7 @@ def _source_grounded_response_predicate(
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
     distributive_object: bool = False,
     unfinished_change: bool = False,
+    unfinished_pair: bool = False,
 ) -> _SourceGroundedResponsePredicateV1:
     """Compose role valency independently from the act predicate."""
 
@@ -7315,6 +7370,20 @@ def _source_grounded_response_predicate(
             raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
         # Feeling a realized change would close the still-unknown source.
         # Receive the same change's unknown scope under selected openness.
+        predicate_lemma, conjugation_class = "受け止める", "ICHIDAN"
+    if unfinished_pair:
+        if (reception_act != "recognize_lived_change" or referent_kind != "positive_feeling"
+            or semantic_profile.nucleus_kind != "reaction"
+            or semantic_profile.predicate_kind != "feeling"
+            or semantic_profile.modality != "feeling"
+            or semantic_profile.actor_kind != "SELF" or voice != "STATE"
+            or semantic_profile.performed_action or semantic_profile.future_action
+            or semantic_profile.quoted_boundary or not distributive_object
+            or appraisal is None or appraisal.operation != "PRESERVE_BOTH_ENDPOINTS"
+            or proposition.focal_relation_ref is None):
+            raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        # Receive both selected endpoints without making the unknown endpoint
+        # into something already felt. Their source clauses stay untouched.
         predicate_lemma, conjugation_class = "受け止める", "ICHIDAN"
     if distributive_object and (
         appraisal is None or appraisal.operation != "PRESERVE_BOTH_ENDPOINTS"
@@ -7455,6 +7524,7 @@ def _source_grounded_response_predicate_surface(
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
     distributive_object: bool = False,
     unfinished_change: bool = False,
+    unfinished_pair: bool = False,
 ) -> str:
     """Place the governed object and adjunct around one inflected predicate."""
 
@@ -7469,6 +7539,7 @@ def _source_grounded_response_predicate_surface(
         selected_subjective_decision=selected_subjective_decision,
         distributive_object=distributive_object,
         unfinished_change=unfinished_change,
+        unfinished_pair=unfinished_pair,
     )
     if recovery_stage not in _RECOVERY_STAGES:
         raise GroundedHumanReceptionSurfaceError(
@@ -7519,6 +7590,7 @@ def _source_grounded_reception_fragment(
     recovery_stage: ReceptionRecoveryStage,
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
     distributive_object: bool = False,
+    unfinished_pair: bool = False,
 ) -> str:
     """Compose one content core with one role/focus reception predicate."""
 
@@ -7587,6 +7659,7 @@ def _source_grounded_reception_fragment(
         recovery_stage=recovery_stage,
         selected_subjective_decision=selected_subjective_decision,
         distributive_object=distributive_object,
+        unfinished_pair=unfinished_pair,
         unfinished_change=(
             realization.reference_mode == "ANAPHORIC"
             and target_core.target_referent == _SOURCE_GROUNDED_UNFINISHED_CHANGE_REFERENT
@@ -7866,6 +7939,17 @@ def _author_source_grounded_reception_clauses(
                     focal[0].from_nucleus_id, focal[0].to_nucleus_id,
                 } <= consumed_nuclei):
                     raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+            unfinished_pair_relation = _source_grounded_positive_feeling_unfinished_relation(
+                move, plan, nucleus_index, resolver,
+            )
+            unfinished_pair = bool(
+                unfinished_pair_relation and distributive_relation_slot is not None
+                and applicable_relations[distributive_relation_slot].relation_id
+                == unfinished_pair_relation
+                and len(meaning_realization.context_slots) == 1
+                and set(meaning_realization.relations[distributive_relation_slot].endpoint_slots)
+                == {target_owner_slot, meaning_realization.context_slots[0]}
+            )
             move_sentence = _source_grounded_reception_fragment(
                 move,
                 meaning_realization,
@@ -7876,6 +7960,7 @@ def _author_source_grounded_reception_clauses(
                 recovery_stage=recovery_stage,
                 selected_subjective_decision=selected_decisions[move_id],
                 distributive_object=distributive_relation_slot is not None,
+                unfinished_pair=unfinished_pair,
             )
             if (
                 _visible_fragment_occurrence_count(
@@ -7890,7 +7975,9 @@ def _author_source_grounded_reception_clauses(
                     and _retained_future_intention_target(tuple(
                         nucleus_index[nucleus_id]
                         for nucleus_id in move.target_nucleus_ids
-                    )) else _positive_feeling_responsibility(move_sentence)
+                    )) else _positive_feeling_responsibility(
+                        move_sentence, unfinished_pair=unfinished_pair,
+                    )
                     if move.reception_act == "recognize_lived_change"
                     and referent.kind == "positive_feeling"
                     and _positive_feeling_target(tuple(

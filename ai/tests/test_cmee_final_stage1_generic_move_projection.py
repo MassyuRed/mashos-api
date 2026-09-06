@@ -3918,3 +3918,117 @@ class CMEEFinalUnfinishedChangeReceptionTest(unittest.TestCase):
                 reception_owner._source_grounded_response_predicate(
                     move.reception_act, move.move_role, **kwargs, selected_subjective_decision=changed,
                 )
+
+
+class CMEEFinalMixedUnfinishedReceptionTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = {}
+        for name, thought in (
+            ("explanation", "説明が伝わったのはうれしい。ただ、どの部分が役に立ったのかは分からない。"),
+            ("preparation", "準備が終わってうれしい。でも、本当にこれで十分なのかは分からない。"),
+            ("settled", "説明が伝わったのはうれしい。どの部分が役に立ったのかも分かった。"),
+        ):
+            cls.artifacts[name] = _full_surface_artifacts({
+                "case_id": "public-mixed-unfinished-" + name, "input": {
+                    "thought_text": thought, "action_text": "", "categories": ["生活"],
+                    "emotions": [{"type": "喜び", "strength": "medium"}],
+                },
+            })
+
+    def test_selected_pair_receives_feeling_and_unknown_without_resolving_either(self):
+        for name, feeling, unknown in (
+            ("explanation", "説明が伝わったのはうれしい", "どの部分が役に立ったのかは分からない"),
+            ("preparation", "準備が終わってうれしい", "本当にこれで十分なのかは分からない"),
+        ):
+            a = self.artifacts[name]
+            with self.subTest(name=name):
+                self.assertTrue(a.gate.passed and a.inverse.passed)
+                self.assertEqual(_reception_text(a.surface.text).strip(),
+                    feeling + "という気持ちと" + unknown + "ことの両方を受け止めています。")
+                moves = a.plan.response_plan.human_reception_plan.moves
+                self.assertEqual(len(moves), 1)
+                self.assertEqual(moves[0].reception_act, "recognize_lived_change")
+                decisions = reception_owner.validate_selected_subjective_reception_input(
+                    a.selected_subjective_input, a.plan.response_plan.human_reception_plan, a.plan, a.resolver,
+                )
+                proposition = decisions[moves[0].move_id].subjective_proposition
+                self.assertEqual(proposition.appraisal_content.operation, "PRESERVE_BOTH_ENDPOINTS")
+                self.assertIsNotNone(proposition.focal_relation_ref)
+
+    def test_whole_pair_unknown_polarity_and_selected_reception_survive_inverse(self):
+        a = self.artifacts["explanation"]
+        for old, new in (
+            ("説明が伝わったのはうれしいという気持ち", "その気持ち"),
+            ("どの部分が役に立ったのかは分からないこと", "分からないこと"),
+            ("分からない", "分かった"), ("の両方", "の片方"),
+            ("の両方", ""), ("受け止めています", "感じています"),
+            ("説明が伝わったのはうれしい", "相手には説明が伝わったのがうれしい"),
+        ):
+            with self.subTest(old=old, new=new):
+                body = _tamper_reception(a.surface.text, old, new)
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                )
+                gate = evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan, surface_result=replace(a.surface, text=body),
+                    resolver=a.resolver, require_body_inverse=True,
+                    selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(inverse.passed)
+                self.assertFalse(gate.passed)
+
+    def test_settled_context_does_not_authorize_unfinished_pair_grammar(self):
+        a = self.artifacts["settled"]
+        self.assertTrue(a.gate.passed and a.inverse.passed)
+        self.assertIn("の両方を感じています", _reception_text(a.surface.text))
+        body = _tamper_reception(a.surface.text, "感じています", "受け止めています")
+        inverse = evaluate_grounded_surface_body_inverse(
+            body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+            resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+        )
+        self.assertFalse(inverse.passed)
+        self.assertFalse(reception_owner._positive_feeling_responsibility(_reception_text(body)))
+
+    def test_unrelated_or_unproven_context_cannot_authorize_receive_responsibility(self):
+        a = self.artifacts["explanation"]
+        rp = a.plan.response_plan.human_reception_plan
+        move = rp.moves[0]
+        index = {n.nucleus_id: n for n in a.plan.nuclei}
+        derive = reception_owner._source_grounded_positive_feeling_unfinished_relation
+        relation_id = derive(move, a.plan, index, a.resolver)
+        self.assertTrue(relation_id)
+        relation = next(r for r in a.plan.relations if r.relation_id == relation_id)
+        context_id = reception_owner.final_reception_context_nucleus_ids(move=move, plan=a.plan)[0]
+        context = index[context_id]
+        for nucleus in (index[move.target_nucleus_ids[0]], context):
+            for actor in ("other", "unknown"):
+                changed = replace(nucleus, semantic_frame=replace(nucleus.semantic_frame, actor=actor))
+                changed_plan = replace(a.plan, nuclei=tuple(changed if n == nucleus else n for n in a.plan.nuclei))
+                with self.subTest(actor=actor, kind=nucleus.kind):
+                    self.assertEqual(derive(move, changed_plan, {**index, nucleus.nucleus_id: changed}, a.resolver), "")
+        changed = replace(context, semantic_frame=replace(context.semantic_frame, modality="fact"))
+        stale_plan = replace(a.plan, nuclei=tuple(changed if n == context else n for n in a.plan.nuclei))
+        self.assertEqual(derive(move, stale_plan, index, a.resolver), "")
+        self.assertEqual(derive(move, replace(a.plan, nuclei=tuple(changed if n == context else n for n in a.plan.nuclei)),
+                                {**index, context_id: changed}, a.resolver), "")
+        for changed_relations in (
+            (), (replace(relation, type="contrast"),),
+            (replace(relation, to_nucleus_id=move.target_nucleus_ids[0]),),
+        ):
+            with self.subTest(relations=changed_relations):
+                self.assertEqual(derive(move, replace(a.plan, relations=changed_relations), index, a.resolver), "")
+        no_required = replace(a.plan, coverage_requirements=replace(a.plan.coverage_requirements, required_relation_ids=()))
+        self.assertEqual(derive(move, no_required, index, a.resolver), "")
+        unrelated = next(n.nucleus_id for n in a.plan.nuclei
+                         if n.nucleus_id not in (context_id, *move.target_nucleus_ids))
+        changed_move = replace(move, support_nucleus_ids=(unrelated,))
+        changed_plan = replace(a.plan, response_plan=replace(a.plan.response_plan,
+            human_reception_plan=replace(rp, moves=(changed_move,))))
+        self.assertEqual(derive(changed_move, changed_plan, index, a.resolver), "")
+        spans = tuple(a.resolver.resolve_many(a.resolver.span_ids))
+        altered = tuple(replace(span, raw_text=span.raw_text + "『引用』")
+                        if span.source_field == "memo" else span for span in spans)
+        with patch.object(type(a.resolver), "resolve_many", return_value=altered):
+            self.assertEqual(derive(move, a.plan, index, a.resolver), "")
