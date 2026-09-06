@@ -371,7 +371,7 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         follow = _reception_text(a.surface.text)
         self.assertEqual(follow.count("それをノートに書いた"), 1)
         self.assertIn(
-            "それをノートに書いたという実際の行動に目が留まり、"
+            "それをノートに書いたことに目が留まり、"
             "それを大切に思っています", follow,
         )
         self.assertNotIn("大切にそれを", follow)
@@ -2682,8 +2682,8 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
         case_id = "nls3s_b001_0024"
         body = _tamper_reception(
             self.artifacts[case_id].surface.text,
-            "実際の行動",
-            "その内容",
+            "たこと",
+            "たという内容",
         )
         inverse = self._inverse_for_tamper(case_id, body)
         self.assertIn(

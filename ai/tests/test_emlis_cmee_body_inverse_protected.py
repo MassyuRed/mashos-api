@@ -572,8 +572,11 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             surface.lines[0].text,
         )
         self.assertNotIn("という実際の行動", surface.lines[0].text)
-        self.assertIn("実際の行動", surface.text)
-        self.assertIn("target_effort", next(row for row in witness.lines if row.section == "reception").reception_marker_codes)
+        action_nominal = "帰ってから少し散歩したこと"
+        self.assertEqual(surface.text.count(action_nominal), 1)
+        self.assertIn("finite_clause_nominal", next(
+            row for row in witness.lines if row.section == "reception"
+        ).semantic_marker_codes)
         evaluation = evaluate_grounded_surface_body_inverse(
             body=surface.text.encode("utf-8"),
             plan=plan,
@@ -582,6 +585,16 @@ class GroundedBodyInverseProtectedTest(unittest.TestCase):
             selected_subjective_input=selected_subjective_input,
         )
         self.assertTrue(evaluation.passed, evaluation.failure_codes)
+        for replacement in ("その内容", "帰ってから少し散歩すること"):
+            changed = surface.text.replace(action_nominal, replacement)
+            self.assertNotEqual(changed, surface.text)
+            inverse = evaluate_grounded_surface_body_inverse(
+                body=changed.encode("utf-8"), plan=plan, sentence_plan=sentence_plan,
+                resolver=resolver, selected_subjective_input=selected_subjective_input,
+            )
+            self.assertFalse(inverse.passed)
+            self.assertTrue(any("reception_target_duty_missing" in code
+                                for code in inverse.failure_codes))
         future_tamper = _replace_body_markers(
             surface.text, section="observation", codes={"effort"}, replacement="これからの行動",
         )
