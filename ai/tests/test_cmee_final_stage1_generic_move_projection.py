@@ -724,6 +724,62 @@ class CMEEPastReportedWishTest(unittest.TestCase):
 
 
 class CMEEPositiveFeelingProjectionTest(unittest.TestCase):
+    def test_scored_memo_change_keeps_its_focus_beside_supplemental_action(self):
+        for memo in (
+            "少し歩いたら、気持ちが楽になった。",
+            "休憩したら、頭の切り替えができた感じ。",
+        ):
+            with self.subTest(memo=memo):
+                row = {
+                    "case_id": "public-memo-change-and-action",
+                    "input": {
+                        "thought_text": memo,
+                        "action_text": "机の上を片づけた。",
+                        "categories": ["生活"],
+                        "emotions": [{"type": "平穏", "strength": "medium"}],
+                    },
+                }
+                a = _full_surface_artifacts(row)
+                self.assertTrue(a.gate.passed)
+                self.assertTrue(a.inverse.passed)
+                plan = a.plan
+                nuclei = {n.nucleus_id: n for n in plan.nuclei}
+                follow_ids = plan.response_plan.human_follow_target_ids
+                self.assertEqual(follow_ids, plan.response_plan.primary_nucleus_ids)
+                self.assertEqual(nuclei[follow_ids[0]].source_fields, ("memo",))
+                moves = plan.response_plan.human_reception_plan.moves
+                self.assertEqual(len(moves), 2)
+                self.assertTrue(all(move.required for move in moves))
+                self.assertEqual(
+                    {(move.reception_act, nuclei[move.target_nucleus_ids[0]].source_fields)
+                     for move in moves},
+                    {("recognize_lived_change", ("memo",)),
+                     ("honor_concrete_effort", ("memo_action",))},
+                )
+                self.assertIn(memo.rstrip("。"), _reception_text(a.surface.text))
+                active = build_grounded_observation_plan({
+                    "memo": memo, "memo_action": row["input"]["action_text"],
+                })
+                active_nuclei = {n.nucleus_id: n for n in active.nuclei}
+                self.assertEqual(
+                    active_nuclei[active.response_plan.human_follow_target_ids[0]].source_fields,
+                    ("memo_action",),
+                )
+
+    def test_unsettled_memo_is_not_promoted_by_change_labels_alone(self):
+        for memo in (
+            "前より楽な気はするけど、まだ重さが残っている。",
+            "少し気になっている。",
+        ):
+            with self.subTest(memo=memo):
+                plan = build_final_stage1_grounded_observation_plan({
+                    "memo": memo, "memo_action": "机の上を片づけた。",
+                })
+                nuclei = {n.nucleus_id: n for n in plan.nuclei}
+                follow = nuclei[plan.response_plan.human_follow_target_ids[0]]
+                self.assertEqual(follow.source_fields, ("memo_action",))
+                self.assertEqual(len(plan.response_plan.human_reception_plan.moves), 1)
+
     def test_typed_feeling_does_not_override_change_result_or_unknown(self):
         plan = build_final_stage1_grounded_observation_plan({"memo": "嬉しい。"})
         target = next(n for n in plan.nuclei if "memo" in n.source_fields)

@@ -7445,6 +7445,45 @@ def _build_response_and_policies(
         else set()
     )
 
+    # A separately recorded action is supporting evidence for the memo arc.
+    # When that arc has one scored, source-grounded lived-change primary,
+    # do not let the action-family preference displace it.  This uses the
+    # existing opportunity proof, not primary membership's zero-score fallback.
+    # Burden/intention selection and directional endpoints keep their own
+    # contracts; they are not promoted by this preference.
+    scored_lived_change_primary = next(
+        (
+            item
+            for item in follow_candidates
+            if len(primary_ids) == 1
+            and item.nucleus_id in primary_set
+            and item.retention == "required"
+            and item.source_fields == ("memo",)
+            and primary_score(item) > 0
+            and _reception_opportunity_families_for_nucleus(
+                item,
+                safety_kind=safety_decision.safety_triage_kind,
+                final_source_fidelity=True,
+            ) == ("lived_change",)
+        ),
+        None,
+    ) if (
+        final_source_fidelity
+        and safety_decision.safety_triage_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality == "grounded"
+    ) else None
+    supplemental_action_ids = {
+        item.nucleus_id
+        for item in follow_candidates
+        if scored_lived_change_primary is not None
+        and item.nucleus_id not in primary_set
+        and item.nucleus_id not in directional_follow_to_ids
+        and item.source_fields == ("memo_action",)
+        and "semantic_role:concrete_action_evidence"
+        in item.semantic_frame.attribute_codes
+        and primary_score(item) < primary_score(scored_lived_change_primary)
+    }
+
     def follow_rank(item: GroundedSemanticNucleus) -> tuple[Any, ...]:
         role = classify_grounded_human_follow_role(
             safety_kind=safety_decision.safety_triage_kind,
@@ -7482,6 +7521,10 @@ def _build_response_and_policies(
         )
         return (
             0 if item.nucleus_id in directional_follow_to_ids else 1,
+            1
+            if item.nucleus_id in supplemental_action_ids
+            and role == "concrete_effort"
+            else 0,
             follow_role_rank.get(role, len(follow_role_rank)),
             -_RETENTION_RANK[item.retention],
             0 if role_explicit else 1,
