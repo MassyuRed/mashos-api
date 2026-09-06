@@ -28,7 +28,7 @@ from emlis_ai_grounded_human_reception import (
     resolve_grounded_reception_move_referent,
     source_grounded_performed_action_nominal,
     source_grounded_future_action_nominal,
-    source_grounded_negative_feeling_target_nominal,
+    source_grounded_feeling_target_nominal,
     source_grounded_unfinished_referent,
     source_grounded_negative_context_nominal,
 )
@@ -2244,7 +2244,7 @@ def evaluate_grounded_surface_body_inverse(
                             and effective_reference_mode == "anaphoric_first"
                             and expected_referent is not None
                             and expected_referent.kind == "current_expression"
-                            and expected_referent.text == (source_grounded_negative_feeling_target_nominal(
+                            and expected_referent.text == (source_grounded_feeling_target_nominal(
                                 move, plan, nucleus_index, resolver,
                             ) or source_grounded_unfinished_referent(
                                 move, plan, nucleus_index, resolver,
@@ -2273,8 +2273,10 @@ def evaluate_grounded_surface_body_inverse(
                                     marker.section == "reception"
                                     and marker.marker_kind == "semantic"
                                     and marker.marker_code == (
-                                        "negative_carrier_nominal" if burden_nominal_required
-                                        and expected_referent.text == source_grounded_negative_feeling_target_nominal(
+                                        ("negative_carrier_nominal"
+                                         if expected_referent.text.endswith("なさ")
+                                         else "adnominal_subject") if burden_nominal_required
+                                        and expected_referent.text == source_grounded_feeling_target_nominal(
                                             move, plan, nucleus_index, resolver,
                                         )
                                         else "finite_clause_nominal"

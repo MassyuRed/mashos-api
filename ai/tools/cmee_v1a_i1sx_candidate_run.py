@@ -376,8 +376,8 @@ N3_HISTORICAL_RUNNER_IDENTITY = (
 N3_HISTORICAL_STATIC_RECEIPT_SHA256 = (
     "e71a79fa4748134396b5fa46e6cf98ff91e535fb91b955fa5c814106177a26bb"
 )
-IM03_WORKING_LANGUAGE_CORE_IDENTITY = '0f06915de65a121736a5626efe216dcf8bd631972d2a97e5305485110d035d50'
-IM03_WORKING_RUNTIME_INTEGRATION_IDENTITY = '99fe7f5bf5b601150b7ff192883d92f8bc5e01f17322dd3fad589c48aeb79f8e'
+IM03_WORKING_LANGUAGE_CORE_IDENTITY = 'b665ef521cc1d76f8cd615f90add9edd11c20c35fb9aaccba842829e96764a5f'
+IM03_WORKING_RUNTIME_INTEGRATION_IDENTITY = 'aacd6e37b9cde9e45e453e630a7feaa299dbd89b17f2fdb38c4c781aab7ab330'
 IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT18 = (('language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py',
   '9add6b159118f362c2b4b34b66d36d1825c8a308b21ba48e997d96b3e0eb246d',
   395742),
@@ -391,17 +391,17 @@ IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT18 = (('language_core_
   'c8fcd93a2b161f9d2b7c3e8cf7befc21cd117b9884d3d638a4333bddf6bd96d5',
   752916),
  ('language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_plan.py',
-  '1483cf6867f2e21e8055d3f48ccc3f887dfb46301dbd4b49e8d456551aecd24d',
-  1095251),
+  'f708e1212d2b615090dc71458c517321577782bcc73de5eead9ca117c18a4d9a',
+  1103195),
  ('language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py',
-  '60db92887888017e089c0e54a11c443df2a2c8a93856d3c6a339f9fe140f97b0',
-  489204),
+  '9ffc7595ed0b758da180e07382c47c5dd72b4e1d58b45699c00c10cb516d8069',
+  489437),
  ('language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_human_reception.py',
-  '4a245c0653eba2f0638549012364561ed59b5210c13bfbdba595abe380653406',
-  911899),
+  '03330459f78740ec0c4d1a13c8f5dcd7c5dc29053774c8a79df2992aa9ad7386',
+  917424),
  ('language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_gate.py',
-  '3887f6e53eb4e6c66e300e6785475c5e5640b8a394e756f5cab4fcbd3de9e10e',
-  336688),
+  '9b50427de5579e08429a7eab2fae4108d4d28c9628a608b768936a2b4012cf6c',
+  336900),
  ('language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py',
   '6d0bc6ef587f94ffae5e08d679254de49f2ddd78428a237b4249db1ac10df08d',
   495439),
@@ -433,17 +433,17 @@ IM03_WORKING_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT18 = (('ai/services/ai_
   '1fba02e7cfa5e9e5e4d257aa8c49670dfbc6e6a4638c8b3100414f314aa9eb4d',
   308921),
  ('ai/services/ai_inference/emlis_ai_grounded_observation_plan.py',
-  'aac3de52b9f6e922202174e5cbbcedc6f86c86a9032fbde6454238a98f36b704',
-  434786),
+  '8e04af00a11912b1a4347a8acb142f81635ce40c590f6d3b44fe202ba8fb69c0',
+  437506),
  ('ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py',
-  'e9422d5034eeabac8ddb7e74f58f2dc7ff64a5ff657582cd73359c238a300add',
-  171775),
+  'de696cfb75d7dde69a0f33d5e3e69a17cf507d1447cfdfbfb8374189126ca7d0',
+  172017),
  ('ai/services/ai_inference/emlis_ai_grounded_human_reception.py',
-  '3a30fe8cc9472ad8c2bb3cadf883b04b75d6b1307e3bc5df3ae5e6e66255ab15',
-  347700),
+  'fc02d388e993a88a6cbc32916acb16b7b7ad0577e7628ba7f51a9f1b68f054fb',
+  349485),
  ('ai/services/ai_inference/emlis_ai_grounded_observation_gate.py',
-  '763e78788d33f9f654997b757eab06d70a8d3b8c11400e1cab7106397dcad306',
-  132929),
+  'c0e61756ebf599109a4cc551b64032fddd7a3cdf015736a7038d559a64253662',
+  133056),
  ('ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py',
   '4c410c4caa38a516680eabea7446f0309163125fe06e587c4a226dd10265d683',
   205300),
@@ -462,12 +462,12 @@ IM03_WORKING_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT18 = (('ai/services/ai_
  ('product_causal_owner_and_registry_digests_manifest',
   '915a3d026575a93fca43ca22a86548923eb3f51c744d47b3e02a7834bdbf67b9',
   8985))
-IM03_WORKING_LANGUAGE_PAYLOAD_TUPLE_SHA256 = '6abe94edaebff94f0f576fe8106d152ab352b24b3d6b547aa0c4f62cf6a2eb23'
-IM03_WORKING_RUNTIME_PAYLOAD_TUPLE_SHA256 = 'ff46e8e1481491819b0f69ff57fe77c0c78833ce0fd4e2595ec62052afb2c7f1'
-IM03_WORKING_SOURCE_OWNER_PAYLOAD_EXACT9_TUPLE_SHA256 = '023f75a48eb4a4811edab10cfa466dfbb1ab96211768afe08032867e3b7390c2'
-IM03_WORKING_SOURCE_OWNER_SYMBOL_SET_SHA256 = 'b7850a2fb1e8df7bd33975deafff8e7ada160d12a8e61e6e8f96d1e8ce347b2d'
-IM03_WORKING_SOURCE_OWNER_DECLARATION_COUNTS_EXACT9 = (81, 471, 115, 194, 274, 121, 213, 56, 89)
-IM03_WORKING_SOURCE_OWNER_IMPORT_COUNTS_EXACT9 = (89, 17, 188, 69, 37, 42, 29, 39, 100)
+IM03_WORKING_LANGUAGE_PAYLOAD_TUPLE_SHA256 = 'e9578bbdcdbe3cdea36567c39afa1f5cfdf7f09e73c8a07d54d80d90c644eef5'
+IM03_WORKING_RUNTIME_PAYLOAD_TUPLE_SHA256 = '528bb1fdb7db412d78eb7c7ba747df73daf62e9548df95c78565492aef9808e2'
+IM03_WORKING_SOURCE_OWNER_PAYLOAD_EXACT9_TUPLE_SHA256 = '8496c499fab37573717f3f19c0c3088a2d181ed69616bc094a3c19209a2a0fbe'
+IM03_WORKING_SOURCE_OWNER_SYMBOL_SET_SHA256 = 'f68a81e20afce8dbadd7cada548dc6da488e1420475f8fc7f0dcdfb86775a62f'
+IM03_WORKING_SOURCE_OWNER_DECLARATION_COUNTS_EXACT9 = (81, 471, 115, 194, 275, 121, 214, 56, 89)
+IM03_WORKING_SOURCE_OWNER_IMPORT_COUNTS_EXACT9 = (89, 17, 188, 69, 37, 42, 30, 39, 100)
 IM03_WORKING_PRODUCT_CAUSAL_OWNER_MANIFEST_SHA256 = 'e5ba29b6004a07b758ef68e81dc4f91c4cd04d33dc7d3cf40c46b67dc84f93a2'
 IM03_WORKING_BEHAVIOR_ROOT_EXACT35_SHA256 = '53945aaccaf175b7adf9482ee38e4dfce754e6d7651ed4d65a131b54d8b6c297'
 IM03_WORKING_IDENTITY_INFRASTRUCTURE_EXACT5_SHA256 = '1df267709164af1ce8e3ee443eddad14c83efa132bb1cf87492ab8cccf9f9c27'

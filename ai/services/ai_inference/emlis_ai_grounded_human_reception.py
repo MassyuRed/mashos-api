@@ -33,6 +33,7 @@ from emlis_ai_grounded_observation_plan import (
     past_reported_wish_finite,
     _FEELING_RE,
     _direct_finite_carrier_shape,
+    source_grounded_feeling_subject_parts,
     _source_finite_without_postposed_focus,
 )
 
@@ -2727,7 +2728,7 @@ def resolve_grounded_reception_move_referent(
             return replace(referent, text=unfinished)
     if (final_source_fidelity and effective_reference == "anaphoric_first"
         and referent.kind == "current_expression"):
-        nominal = source_grounded_negative_feeling_target_nominal(
+        nominal = source_grounded_feeling_target_nominal(
             move, plan, nucleus_index, resolver,
         )
         if nominal:
@@ -3551,7 +3552,7 @@ def validate_grounded_human_reception_surface(
             ) != "anaphoric_first"
         ) if final_nuclei else ()
         burden_nominals = tuple(
-            source_grounded_negative_feeling_target_nominal(move, plan, final_nuclei, resolver)
+            source_grounded_feeling_target_nominal(move, plan, final_nuclei, resolver)
             or source_grounded_unfinished_referent(move, plan, final_nuclei, resolver)
             for move in active_moves
             if move.reception_act == act == "stay_with_current_burden"
@@ -4404,6 +4405,28 @@ def _source_grounded_negative_feeling_nominal(
     return f"NEGATIVE_FEELING_CARRIER:{modifier_index}:{separator_index}", nominal
 
 
+def _source_grounded_feeling_nominal(fragment: str) -> tuple[str, str] | None:
+    """Nominalize a registered feeling without dropping its finite host.
+
+    Subject relocation admits only the existing semantic-subject grammar
+    in its current progressive form. It cannot turn arbitrary adjectives,
+    absence, reported cognition, topic/focus or another owner into a feeling.
+    Prefix and host modifiers survive byte-for-byte; the sole removed case
+    particle is restored with the original subject during inverse morphology.
+    """
+    negative = _source_grounded_negative_feeling_nominal(fragment)
+    if negative is not None:
+        return negative
+    parts = source_grounded_feeling_subject_parts(fragment)
+    if parts is None:
+        return None
+    prefix, subject, host = parts
+    nominal = prefix + host + subject
+    if prefix + subject + "が" + host != fragment or fragment in nominal:
+        return None
+    return "FEELING_SUBJECT_CARRIER", nominal
+
+
 def _source_grounded_nominalization_from_profiles(
     fragments: tuple[str, ...],
     profiles: tuple[_ReceptionSemanticProfileV1, ...],
@@ -4425,7 +4448,7 @@ def _source_grounded_nominalization_from_profiles(
     )
 
 
-def source_grounded_negative_feeling_target_nominal(
+def source_grounded_feeling_target_nominal(
     move: GroundedReceptionMovePlan,
     plan: GroundedObservationPlan | None,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
@@ -4462,7 +4485,20 @@ def source_grounded_negative_feeling_target_nominal(
     nominalization = _source_grounded_nominalization_from_profiles(
         (fragment,), (profile,), "ANAPHORIC",
     )
-    row = _source_grounded_negative_feeling_nominal(fragment)
+    row = _source_grounded_feeling_nominal(fragment)
+    if row is not None and row[0] == "FEELING_SUBJECT_CARRIER":
+        if (profile.nucleus_kind != "reaction" or profile.predicate_kind != "feeling"
+            or profile.quoted_boundary or profile.performed_action or profile.future_action
+            or len(nucleus.source_span_ids) != 1
+            or "lexical:source_declarative_feeling_subject" not in nucleus.semantic_frame.attribute_codes
+            or nucleus.semantic_frame.time_scope not in {"present", "current_input", "continuing"}
+            or nucleus.semantic_frame.polarity not in {"neutral", "negative"}
+            or any(re.search(r"[?？!！]", span.raw_text)
+                   for span in resolver.resolve_many(resolver.span_ids)
+                   if span.source_field in fields)
+        ):
+            return ""
+        return row[1]
     return row[1] if row is not None and nominalization == (
         *_SOURCE_GROUNDED_NOMINALIZATION_BASE, f"nominal-slot:0:{row[0]}",
     ) else ""
@@ -8018,7 +8054,7 @@ def _author_source_grounded_reception_clauses(
                     )) else _source_grounded_burden_nominal_responsibility(move_sentence, referent_text)
                     if referent.kind == "current_expression"
                     and meaning_realization.reference_mode == "ANAPHORIC"
-                    and referent_text == (source_grounded_negative_feeling_target_nominal(
+                    and referent_text == (source_grounded_feeling_target_nominal(
                         move, plan, nucleus_index, resolver,
                     ) or source_grounded_unfinished_referent(
                         move, plan, nucleus_index, resolver,

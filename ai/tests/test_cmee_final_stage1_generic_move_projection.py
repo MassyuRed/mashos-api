@@ -3611,7 +3611,7 @@ class CMEENegativeFeelingReferentTest(unittest.TestCase):
         move = reception.moves[0]
         index = {n.nucleus_id: n for n in a.plan.nuclei}
         target = index[move.target_nucleus_ids[0]]
-        derive = reception_owner.source_grounded_negative_feeling_target_nominal
+        derive = reception_owner.source_grounded_feeling_target_nominal
         self.assertEqual(derive(move, a.plan, index, a.resolver), nominal)
         self.assertEqual(derive(move, None, index, a.resolver), "")
         self.assertEqual(derive(move, replace(a.plan, source_contracts=()), index, a.resolver), "")
@@ -4375,3 +4375,170 @@ class CMEEFinalSceneMoodSourceTest(unittest.TestCase):
             self.assertFalse(evaluate_grounded_surface_body_inverse(
                 body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
                 resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+
+
+class CMEEFinalFeelingSubjectReferentTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = tuple((source, nominal, _full_surface_artifacts({
+            "case_id": "public-feeling-subject-referent", "input": {
+                "thought_text": source + "。", "action_text": "", "categories": ["生活"],
+                "emotions": [{"type": "不安", "strength": "weak"}],
+            },
+        })) for source, nominal in (
+            ("今も不安が残っている", "今も残っている不安"),
+            ("不安が少し残っている", "少し残っている不安"),
+            ("もやもやがずっと続いている", "ずっと続いているもやもや"),
+            ("気持ちが少し残っている", "少し残っている気持ち"),
+        ))
+
+    def test_selected_feeling_host_and_modifiers_reach_same_move_and_replay(self):
+        for source, nominal, a in self.artifacts:
+            with self.subTest(source=source):
+                follow = _reception_text(a.surface.text).strip()
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                self.assertEqual(follow, nominal + "を小さくせずに受け止めています。")
+                self.assertNotIn(source, follow)
+                reception = a.plan.response_plan.human_reception_plan
+                self.assertEqual(len(reception.moves), 1)
+                move = reception.moves[0]
+                self.assertTrue(move.required)
+                self.assertEqual(move.reception_act, "stay_with_current_burden")
+                self.assertEqual(move.support_nucleus_ids, ())
+                index = {n.nucleus_id: n for n in a.plan.nuclei}
+                ref = reception_owner.resolve_grounded_reception_move_referent(
+                    reception, move, index, a.resolver, allow_short_anchor=False,
+                    final_source_fidelity=True, plan=a.plan,
+                )
+                self.assertEqual((ref.kind, ref.text), ("current_expression", nominal))
+                line = next(line for line in a.sentence_plan.lines if line.binding.line_role == "human_follow")
+                replay = reception_owner.replay_source_grounded_human_reception_from_plan(
+                    reception, index, a.resolver, plan=a.plan,
+                    recovery_stage=a.sentence_plan.recovery_stage,
+                    clause_plans=line.reception_clause_plans,
+                    selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertEqual(replay.text, follow)
+                self.assertTrue(all(kw["selected_subjective_input"] is a.selected_subjective_input
+                                    for _args, kw in a.author_arguments))
+                self.assertTrue(all(e.nominalization_plan == reception_owner._SOURCE_GROUNDED_NOMINALIZATION_BASE
+                                    for args, _kw in a.author_arguments for e in args[1]))
+
+    def test_inverse_requires_complete_source_nominal_once_and_responsibility(self):
+        source, nominal, a = self.artifacts[1]
+        for replacement in (
+            "残っている不安", "強く残っている不安", "少し続いている不安", "少し残っていた不安",
+            "少し残っている喜び", "今ここに置かれた言葉", source,
+            "「" + nominal + "」", "『" + nominal + "』", nominal + "と" + nominal,
+        ):
+            with self.subTest(replacement=replacement):
+                body = _tamper_reception(a.surface.text, nominal, replacement)
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(inverse.passed)
+                self.assertTrue(any("target_duty_missing" in c for c in inverse.failure_codes))
+        for original, replacement, reason in (
+            (nominal, source + "、" + nominal, "anaphoric_target_replayed"),
+            ("小さくせずに受け止めています", "小さなことだと考えています", "why_duty_missing"),
+        ):
+            body = _tamper_reception(a.surface.text, original, replacement)
+            inverse = evaluate_grounded_surface_body_inverse(
+                body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+            )
+            self.assertFalse(inverse.passed)
+            self.assertTrue(any(reason in c for c in inverse.failure_codes), inverse.failure_codes)
+
+    def test_subject_transposition_requires_registered_current_host_and_bound_source(self):
+        derive = reception_owner._source_grounded_feeling_nominal
+        for source in (
+            "気持ちが悪い", "気持ちがない", "気持ちがせわしない", "不安は残っている",
+            "不安も残っている", "弟の不安が残っている", "私は不安が残っている",
+            "不安の記録が残っている", "不安が残っていた", "不安が残っています",
+            "不安が残っていると思う", "不安が残っているなら休む", "不安が残っている人だ",
+            "不安が残っている？", "「不安が残っている」", "不安が残っている…",
+            "不安が私こそ感じている",
+        ):
+            with self.subTest(source=source):
+                self.assertIsNone(derive(source))
+        _source, nominal, a = self.artifacts[0]
+        reception = a.plan.response_plan.human_reception_plan
+        move = reception.moves[0]
+        index = {n.nucleus_id: n for n in a.plan.nuclei}
+        target = index[move.target_nucleus_ids[0]]
+        resolve = reception_owner.source_grounded_feeling_target_nominal
+        self.assertEqual(resolve(move, a.plan, index, a.resolver), nominal)
+        self.assertEqual(resolve(move, None, index, a.resolver), "")
+        self.assertEqual(resolve(move, replace(a.plan, source_contracts=()), index, a.resolver), "")
+        for changes in (
+            {"actor": "other"}, {"modality": "uncertain"}, {"predicate_kind": "event"},
+            {"time_scope": "future"}, {"time_scope": "past"}, {"polarity": "positive"},
+            {"attribute_codes": (*target.semantic_frame.attribute_codes, "quantity:multiple")},
+        ):
+            changed = replace(target, semantic_frame=replace(target.semantic_frame, **changes))
+            plan = replace(a.plan, nuclei=tuple(changed if n == target else n for n in a.plan.nuclei))
+            self.assertEqual(resolve(move, plan, {**index, target.nucleus_id: changed}, a.resolver), "")
+        supported = replace(move, support_nucleus_ids=(a.plan.nuclei[1].nucleus_id,))
+        plan = replace(a.plan, response_plan=replace(a.plan.response_plan,
+            human_reception_plan=replace(reception, moves=(supported,))))
+        self.assertEqual(resolve(supported, plan, index, a.resolver), "")
+        relation = observation_plan_owner.GroundedSemanticRelation(
+            relation_id="public-feeling-required-context", type="contrast", from_nucleus_id=target.nucleus_id,
+            to_nucleus_id=a.plan.nuclei[1].nucleus_id, source_span_ids=target.source_span_ids,
+            grounding_kind="explicit", certainty=1.0, retention="required",
+        )
+        plan = replace(a.plan, relations=(relation,), coverage_requirements=replace(a.plan.coverage_requirements,
+            required_relation_ids=(relation.relation_id,)))
+        self.assertEqual(resolve(move, plan, index, a.resolver), "")
+        legacy = reception_owner.resolve_grounded_reception_move_referent(
+            reception, move, index, a.resolver, allow_short_anchor=False,
+        )
+        self.assertNotEqual(legacy.text, nominal)
+
+    def test_adnominal_witness_is_structural_and_bound_at_whole_target_end(self):
+        for _source, nominal, a in self.artifacts:
+            body = a.surface.text.encode("utf-8")
+            witness = surface_owner.parse_grounded_surface_body_bytes(body)
+            markers = [m for m in witness.markers if m.marker_code == "adnominal_subject"]
+            end = body.index(nominal.encode("utf-8")) + len(nominal.encode("utf-8"))
+            self.assertTrue(any(m.utf8_byte_end == end for m in markers))
+            self.assertTrue(all(m.section == "reception" and m.marker_kind == "semantic" for m in markers))
+            self.assertTrue(all(not {"target_burden", "target_words"}.intersection(s.reception_marker_codes)
+                                for s in witness.sentences if s.section == "reception"))
+
+
+    def test_original_field_proof_survives_ledger_punctuation_and_owner_splitting(self):
+        marker = "lexical:source_declarative_feeling_subject"
+        for source in (
+            "不安が残っている？", "不安が残っている！", "「不安が残っている」",
+            "不安が残っている…", "不安が残っている...", "不安が残っている。。",
+            "弟は。今も不安が残っている。",
+            "不安が残っている。と弟が話した。",
+        ):
+            with self.subTest(source=source):
+                inputs = _compile_inputs({"case_id": "public-feeling-original-boundary", "input": {
+                    "thought_text": source, "action_text": "", "categories": ["生活"],
+                    "emotions": [{"type": "不安", "strength": "weak"}],
+                }})
+                plan = inputs.grounded_plan
+                self.assertTrue(all(marker not in n.semantic_frame.attribute_codes for n in plan.nuclei))
+                resolver = build_evidence_span_resolver(inputs.source.evidence_spans,
+                                                        current_input=inputs.source.normalized_current_input)
+                for move in plan.response_plan.human_reception_plan.moves:
+                    self.assertEqual(reception_owner.source_grounded_feeling_target_nominal(
+                        move, plan, {n.nucleus_id: n for n in plan.nuclei}, resolver,
+                    ), "")
+        _source, _nominal, a = self.artifacts[0]
+        move = a.plan.response_plan.human_reception_plan.moves[0]
+        index = {n.nucleus_id: n for n in a.plan.nuclei}
+        target = index[move.target_nucleus_ids[0]]
+        self.assertIn(marker, target.semantic_frame.attribute_codes)
+        changed = replace(target, semantic_frame=replace(target.semantic_frame,
+            attribute_codes=tuple(c for c in target.semantic_frame.attribute_codes if c != marker)))
+        plan = replace(a.plan, nuclei=tuple(changed if n == target else n for n in a.plan.nuclei))
+        self.assertEqual(reception_owner.source_grounded_feeling_target_nominal(
+            move, plan, {**index, target.nucleus_id: changed}, a.resolver,
+        ), "")

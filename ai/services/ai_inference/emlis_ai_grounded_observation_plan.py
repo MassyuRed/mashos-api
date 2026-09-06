@@ -10106,6 +10106,28 @@ def past_reported_wish_finite(text: str, *, span_text: str | None = None) -> boo
     )
 
 
+def source_grounded_feeling_subject_parts(text: str) -> tuple[str, str, str] | None:
+    """Prove a current registered feeling subject and its progressive host.
+
+    This grammatical view does not classify a source or select a Move.
+    Only nominative ga relocates; topic/focus and self-owned reporting hosts
+    are not equivalent to an adnominal feeling reference.
+    """
+    match = re.fullmatch(
+        r"(?P<prefix>(?:(?:今も|今は|今|まだ|ずっと|なお)[、, \t\u3000]*)?)"
+        r"(?P<subject>[^、,。．.\s]+?)が(?P<host>[^、,。．.]+(?:ている|でいる))",
+        text,
+    )
+    if match is None:
+        return None
+    prefix, subject, host = (match.group(name) for name in ("prefix", "subject", "host"))
+    if (_FEELING_RE.fullmatch(subject) is None
+        or not _operator_supports_semantic_subject(subject, _FEELING_RE)
+        or _FINITE_SEMANTIC_SUBJECT_HOST_RE.fullmatch(host) is None):
+        return None
+    return prefix, subject, host
+
+
 def _final_stage1_align_action_status(
     nuclei: Sequence[GroundedSemanticNucleus],
     evidence_spans: Sequence[EvidenceSpan],
@@ -10125,6 +10147,33 @@ def _final_stage1_align_action_status(
     for nucleus in nuclei:
         frame = nucleus.semantic_frame
         codes = tuple(frame.attribute_codes)
+        if (nucleus.kind == "reaction" and frame.predicate_kind == "feeling"
+            and frame.actor == "current_user" and frame.modality in {"fact", "feeling"}
+            and frame.time_scope in {"present", "current_input", "continuing"}
+            and frame.polarity in {"neutral", "negative"} and len(nucleus.source_span_ids) == 1):
+            # Ledger removes terminal punctuation. Bind the whole original
+            # text field before licensing a declarative nominal downstream;
+            # span labels alone cannot rule out a question or split owner.
+            span = spans.get(nucleus.source_span_ids[0])
+            if span is not None:
+                source = str((normalized_input or {}).get(span.source_field) or "")
+                start, end = span.start_index, span.end_index
+                if (span.source_field in _TEXT_SOURCE_FIELDS
+                    and 0 <= start < end <= len(source)
+                    and source[start:end] == span.raw_text
+                    and not source[:start].strip()
+                    and re.fullmatch(r"\s*[。．.]?\s*", source[end:]) is not None
+                    and _top_level_text(source) == source
+                    and source_grounded_feeling_subject_parts(span.raw_text) is not None
+                    and not any(code.startswith(("source_fragment_scalar_", "surface_scalar_"))
+                                for code in codes)):
+                    nucleus = replace(nucleus, semantic_frame=replace(
+                        frame, attribute_codes=tuple(_dedupe((
+                            *codes, "lexical:source_declarative_feeling_subject",
+                        ))),
+                    ))
+            aligned.append(nucleus)
+            continue
         if (
             (nucleus.kind != "action" and "operator:wish" not in codes
              and not is_grounded_positive_feeling(nucleus))
