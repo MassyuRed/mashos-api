@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾のcandidate41と継承承認を確認する。既存OPの意味確定前で、行動の次に選ばれたrequired memo feelingが先行文に未参照のとき、既存の具体参照を残す。NORMAL／LIMITEDを昇格せず、核・対象・役割・順序・124責務を維持。canonical100中1件の受取が具体化、他99件同一、direct100／73-27、可否変更0。必須274検査270成功／既存4失敗、新規失敗0。全100全文再確認、商品NOT_CLEAR。補助行動偏重等は残る。詳細はruntime handoffのcandidate41末尾。
+3. 末尾のcandidate42と継承承認を確認する。既存OPの意味確定前に2 Moveの役割と対応strategyを変更し、気持ち→行動の順で本文を実現する。candidate41の対象条件と具体参照、核・対象・primary／follow・124責務を維持。canonical100中1件の受取順を修正、他99件同一、direct100／73-27、可否変更0。必須274検査270成功／既存4失敗、前回全成否一致。全100全文再確認、商品NOT_CLEAR。選択されない中心感情や対象外の補助行動偏重等は残る。詳細はruntime handoffのcandidate42末尾。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -6141,5 +6141,26 @@ System Contextは作業前にdoctor→prepareを実行し、固定toolchain不�
 商品NOT_CLEAR。今回は既に選ばれた肯定的感情の具体性を戻した限定修正であり、行動先行そのものは残る。通常負担・混合状態・受援・補助行動偏重・未知の具体的範囲・一般参照・定型締め・長い原文再掲も残る。次は選択から外れた中心感情についてsource分類／primary／supportを追い、先に必要な受取責務を定める。順位の一律反転や不足を隠す件数調整はしない。
 
 作業前System Context doctor→prepareは固定toolchain不一致でprepare不成立。ref鮮度判定前に止まったためstale cacheを使わず、Context00／weeklyが認める原典確認で継続した。profile／基準ref／tracked current変更では不足binaryを解消しないため変更なし。実行用Python3.12.13を復元し、固定46依存のversion／wheel hash／installed RECORD closure（2277 hashed files）と6 root importを今回照合した。これはSystem Context用Python3.11.16等のtoolchain復元ではない。sub-agentはruntime復元と公開sourceの静的確認を担当し、商品source編集・生成・検査・非公開本文読取・GitHub更新は華恋が担当。
+
+PR3／30／37はDraft/open/unmerged。外部Pro独立Product Read、ready／採用／merge／本番／質問生成／Layer3は未成立、product／technical credit0。同じ承認内の継続で、新しい承認待ちは設けない。国家保存／dispatch／queue／read、公開API／DB／RN、Piece／分析の挙動は今回変更なし。
+
+
+### 2026-09-06 continuation — 選択済みの独立した気持ちを行動より先に受け取る（candidate42／商品未成立）
+
+継承承認 `FRESH_MASH_LEVEL3_CMEE_STAGE1_SELECTED_SUBJECTIVE_RECEPTION_FORWARD_INVERSE_REQUEST_LOCAL_CONTRACT_20260905` 内の同じ未完unit。candidate41保存状態とGitHub fresh head一致から再開。全体設計・全ファイル地図、国家システムとの接続、最新weekly20260905、必須incident、関連する選択／受取／生成／inverse／旧経路を確認した。感情を記録した人へ、既に選択された具体的な気持ちを先に受け取って届けることが今回の目的。STRUCTURE_MAP_DELTA_NONE。final Stage1の公開返信経路への未接続を維持。
+
+既存OPのbuild_grounded_human_reception_plan内で、意味確定前の2 Moveの役割と対応するsurface strategyを整合した。対象条件はcandidate41を継承する。final／safe、groundedまたはlimited_grounding、既存multi参照方式、複数primary、選択済みexact2 Moveがeffort→lived_changeの場合に限定する。二番目の単一targetはrequiredなmemo primaryかつ既存型判定による肯定的feelingで、supportを持たず、先行Moveのtarget／support、およびそれらに接続するrequired relationの端点で既に参照されていないことを要求する。このとき、effortをfelt_response＋felt_response_first、feelingをattention＋emlis_attention_firstとする。candidate41の具体参照を維持する。
+
+既存HRが役割順に本文を実現し、選択済みの気持ちを先に、行動への受け取りを後に届ける。Moveの構造上の配列順、ID、act、target、support、evidence、required、primary／followは維持する。確度や応答区分を昇格せず、初期OPと最終再構築が同じownerを通る。新しい意味owner／核／Move／schema／参照alias／body repairは追加しない。役割順は許可済みrecoveryにも適用され、回復時の既存anaphoric参照方式を変えない。行動欄限定や現在・SELF限定を新しい条件として主張しない。選択から外れた感情の回復は今回の範囲に含まれない。
+
+runtime固定source `52ced56345ac3fbc453336f5fc0a3a11f762ba62`、test追従後の最終検証source `eafbfe555ae2b73d135ba25f245e16decb357baa`、tree `239a453f02eedeef665835d5171628f58a128568`。runtime変更は既存OPの1path、既存test1pathとrunnerの計3path。GitHubへ保存し全文再取得の一致と変更pathを照合した。runnerは既存current13定数のみ再導出し、exact18／exact9と非current AST不変を確認。公開済みの合成入力に対する既存検査を強化し、気持ち→行動の本文順・active Move順を確認した。具体参照、本文改変のinverse拒否、既存回復方式の検査も維持。focused4成功。初回274検査は269成功5失敗で、1件は今回意図した本文順に対して旧順序を要求する現行検査だった。入力・test名・分母・責務保持の目的を保ち、実現act順を気持ち→行動へ更新し、実現Move順と構造上のID／act／両required維持の明示検査を加えた。初回失敗を私的証跡へ保持し、historical fixture／hash／dated PASSは変更していない。runtimeは初回固定後に変えていない。
+
+必須274検査は270成功／既存4失敗。原184は180成功4失敗、追加90全成功。candidate41の274件と全成否が一致し、新規失敗／skip／未実行0。既存4は観察固定不一致2・dated receiptと現source不一致1・旧集合重複1。後続36ケースを個別確認し、post-hash96成功、exact8／same16成功、unseen12の既存重複FAILを保持。別GA2／shared164や実機の今回実行は主張しない。
+
+同じcanonical100を固定sourceから再生成し、direct100、required Move／expression／visible binding各124、GENERATED73／UNAVAILABLE27、可否変更0。1件で具体的な気持ちを行動より先に受け取り、他99件は保存項目と実reception planが同一。変更planは2 Moveのroleとsurface_strategyの4項目だけ。selected subjective inputの差は参照同一性の2項目だけで、全selected decision、意味内容、対象、支援、寄与、basis、qualifierは同一。核・観察・可否・理由と各Moveの責務・124件を維持した。runtime固定後、華恋が全100の原入力全フィールド・観察・受取・可否・理由を全文再確認。test追従後の全100再生成も、初回固定runtimeの全保存項目・本文・実planと完全一致した。UNAVAILABLEのdirect本文は診断出力。
+
+商品NOT_CLEAR。既に選ばれた独立した肯定的感情の受け取り順を直した限定修正であり、構造上のfollow主対象は維持する。通常負担・混合状態・受援などが選択から外れる問題、対象外の補助行動偏重、未知の具体的範囲・一般参照・定型締め・長い原文再掲は残る。次は選択されている意味と失われている意味を区別し、source分類／primary／supportの必要な受取責務を追う。124は意味内容を伴う責務として維持し、数だけを合わせる置換や一律の順位反転は行わない。
+
+作業前System Context doctor→prepareは固定toolchain不一致でprepare不成立。ref鮮度判定前に止まったためstale cacheを使わず、Context00／weeklyが認める原典確認で継続した。profile／基準ref／tracked current変更では不足binaryを解消しないため変更なし。検証にはcandidate41で固定46依存とinstalled RECORD closureを照合済みの同じCPython3.12.13環境を継続使用。今回あらためてruntimeを復元したとは主張しない。System Context用Python3.11.16等の不足は残る。sub-agentは公開sourceと既存選択契約を読み取り専用で確認し、商品source編集・生成・検査・非公開本文読取・GitHub更新は華恋が担当。
 
 PR3／30／37はDraft/open/unmerged。外部Pro独立Product Read、ready／採用／merge／本番／質問生成／Layer3は未成立、product／technical credit0。同じ承認内の継続で、新しい承認待ちは設けない。国家保存／dispatch／queue／read、公開API／DB／RN、Piece／分析の挙動は今回変更なし。
