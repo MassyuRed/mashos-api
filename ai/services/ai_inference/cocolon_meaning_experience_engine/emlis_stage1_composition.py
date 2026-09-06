@@ -6193,6 +6193,7 @@ def _normal_reception_appraisal(
     semantic_contributions: Optional[
         tuple[PlannedObservationContribution, ...]
     ] = None,
+    source_qualifiers: tuple[SourceQualifierBinding, ...] = (),
 ) -> EmlisAppraisalContent:
     """Derive one act-local appraisal without whole-input focus priority."""
 
@@ -6238,11 +6239,29 @@ def _normal_reception_appraisal(
             for row in semantic_rows
         )
     )
-    material = proposition.reception_function in {
-        "stay_with_current_burden",
-        "honor_concrete_effort",
-        "respect_words_placed",
-    } and not (relation_rows or unfinished or bounded_change or agency)
+    # This existing act also receives a positive feeling. A validated state
+    # and its own source qualifier establish material to receive, not a
+    # bounded change. Keep the single target and the selected attention mode.
+    positive_feeling_state = bool(
+        proposition.reception_function == "recognize_lived_change"
+        and len(semantic_rows) == len(contributions) == len(basis_rows) == len(source_qualifiers) == 1
+        and semantic_rows == contributions
+        and semantic_rows[0].semantic_operator is SemanticOperator.PRESENT_STATE
+        and semantic_rows[0].relation_operator is RelationOperator.NO_RELATION_CLAIM
+        and semantic_rows[0].semantic_refs == (basis_rows[0].semantic_ref,)
+        and tuple(binding.semantic_ref for binding in semantic_rows[0].argument_bindings
+                  if binding.role is ArgumentRole.EXPERIENCER) == (basis_rows[0].semantic_ref,)
+        and source_qualifiers[0].basis_binding_ref == basis_rows[0].binding_ref
+        and source_qualifiers[0].source_argument_role is None
+        and source_qualifiers[0].polarity == "positive"
+        and source_qualifiers[0].modality == "feeling"
+        and source_qualifiers[0].time_scope in {"present", "current_input"}
+    )
+    material = (
+        proposition.reception_function in {
+            "stay_with_current_burden", "honor_concrete_effort", "respect_words_placed",
+        } or positive_feeling_state
+    ) and not (relation_rows or unfinished or bounded_change or agency)
     matched = sum(
         (
             bool(relation_rows),
@@ -7333,6 +7352,7 @@ def project_selected_reading_plan_candidate(
                 proposition=source_reception,
                 contributions=contributions,
                 basis_rows=own_basis,
+                source_qualifiers=own_qualifiers,
                 semantic_contributions=tuple(
                     contribution_by_id[ref]
                     for ref in candidate.basis_contribution_refs

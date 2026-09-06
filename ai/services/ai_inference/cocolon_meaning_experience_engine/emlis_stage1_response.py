@@ -5315,6 +5315,7 @@ def _validate_meaning_plan_vertical_binding(
                     proposition=source,
                     contributions=contributions,
                     basis_rows=own_basis,
+                    source_qualifiers=own_qualifiers,
                     semantic_contributions=tuple(
                         contribution_by_ref[ref]
                         for ref in selected_candidate.basis_contribution_refs

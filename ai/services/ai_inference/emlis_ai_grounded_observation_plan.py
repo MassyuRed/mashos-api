@@ -9413,6 +9413,54 @@ def _final_stage1_typed_nuclei(
             else ()
         )
         if not projections:
+            # A present mood is a feeling, not a positive change or a burden.
+            # The old lexical signals do not recognize this subject/predicate
+            # pair. Prove the whole independent source sentence here; a tail
+            # match cannot borrow its subject from a compound or a report.
+            frame = nucleus.semantic_frame
+            if (
+                span is not None and normalized_input is not None
+                and nucleus.kind in {"event", "state", "reaction"}
+                and nucleus.source_fields == ("memo",)
+                and span.source_field == "memo"
+                and frame.actor == "current_user"
+                and frame.time_scope in {"present", "current_input"}
+                and frame.modality in {"fact", "feeling"}
+                and not plan.relations
+                and sum(bool(set(n.source_fields) & _TEXT_SOURCE_FIELDS)
+                        for n in plan.nuclei) == 1
+                and not set(frame.attribute_codes).intersection({
+                    "operator:negation", "operator:refusal", "operator:wish",
+                    "operator:uncertainty", "operator:constraint",
+                    "operator:change", "operator:result",
+                    "semantic_role:limiting_unknown", "semantic_role:current_change",
+                    "semantic_role:explicit_result",
+                    "semantic_dependency:action_before_change",
+                })
+            ):
+                source = str(normalized_input.get("memo") or "")
+                start, end = span.start_index, span.end_index
+                raw = str(span.raw_text)
+                finite = raw.strip(" \u3000。．.!！")
+                if (
+                    0 <= start < end <= len(source)
+                    and _clean(source[start:end]) == _clean(raw)
+                    and not source[:start].strip()
+                    and re.fullmatch(r"\s*[。．.!！]?\s*", source[end:])
+                    and _top_level_text(source) == source
+                    and re.fullmatch(
+                        r"(?:(?:今日|今)(?:は|も)?[、,]?)?"
+                        r"(?:(?:私|わたし|自分)の)?"
+                        r"気分(?:が|は|も)(?:少し|とても)?軽い(?:です)?", finite,
+                    )
+                ):
+                    nucleus = replace(nucleus, kind="reaction", semantic_frame=replace(
+                        frame, predicate_kind="feeling", polarity="positive", modality="feeling",
+                        attribute_codes=tuple(_dedupe((
+                            *frame.attribute_codes, "operator:feeling",
+                            "operator:positive_change", "semantic_role:positive_evaluation",
+                        ))),
+                    ))
             # An embedded action/change does not make an unresolved why-question
             # an assertion. A finite, already-uncertain state must likewise
             # retain its openness before meaning selection. Correct the kind before

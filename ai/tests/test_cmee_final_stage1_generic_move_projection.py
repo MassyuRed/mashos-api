@@ -4053,3 +4053,136 @@ class CMEEFinalMixedUnfinishedReceptionTest(unittest.TestCase):
                         if span.source_field == "memo" else span for span in spans)
         with patch.object(type(a.resolver), "resolve_many", return_value=altered):
             self.assertEqual(derive(move, a.plan, index, a.resolver), "")
+
+
+class CMEEFinalCurrentMoodSourceTest(unittest.TestCase):
+    @staticmethod
+    def _row(text, emotion="不安"):
+        return {"case_id": "public-current-mood-source", "input": {
+            "thought_text": text, "action_text": "", "categories": ["生活"],
+            "emotions": [{"type": emotion, "strength": "weak"}],
+        }}
+
+    @classmethod
+    def setUpClass(cls):
+        from cocolon_meaning_experience_engine import emlis_stage1_composition
+        cls.composition = emlis_stage1_composition
+        cls.appraisal_arguments = []
+        derive = cls.composition._normal_reception_appraisal
+        def track(**kwargs):
+            value = derive(**kwargs)
+            cls.appraisal_arguments.append(kwargs)
+            return value
+        with patch.object(cls.composition, "_normal_reception_appraisal", side_effect=track):
+            cls.artifacts = tuple(_full_surface_artifacts(cls._row(text)) for text in (
+                "今日は気分が軽い。", "今は私の気分が少し軽いです。",
+            ))
+
+    def test_current_mood_reaches_feeling_reception_without_change_claim(self):
+        for a in self.artifacts:
+            with self.subTest(body=a.surface.text):
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                target = next(n for n in a.plan.nuclei if n.source_fields == ("memo",))
+                self.assertTrue(observation_plan_owner.is_grounded_positive_feeling(target))
+                self.assertFalse(set(target.semantic_frame.attribute_codes) & {
+                    "operator:change", "operator:result", "semantic_role:current_change",
+                })
+                follow = _reception_text(a.surface.text)
+                self.assertIn("気持ち", follow)
+                self.assertIn("感じています", follow)
+                self.assertNotIn("変化", follow)
+                self.assertNotIn("小さくせず", follow)
+                self.assertEqual(len(a.selected_subjective_input.decisions), 1)
+                self.assertEqual(a.selected_subjective_input.decisions[0].reception_act,
+                                 "recognize_lived_change")
+                self.assertTrue(all(kw["selected_subjective_input"] is a.selected_subjective_input
+                                    for _args, kw in a.author_arguments))
+
+    def test_source_proof_preserves_same_owner_and_leaves_base_unchanged(self):
+        source, before = CMEEUnresolvedQuestionSourceTest()._source_plan("今日は気分が軽い。")
+        target = next(n for n in before.nuclei if n.source_fields == ("memo",))
+        self.assertFalse(observation_plan_owner.is_grounded_positive_feeling(target))
+        nuclei, dependencies = observation_plan_owner._final_stage1_typed_nuclei(
+            before, source.evidence_spans, normalized_input=source.normalized_current_input)
+        self.assertEqual(dependencies, ())
+        expected = replace(target, kind="reaction", semantic_frame=replace(
+            target.semantic_frame, predicate_kind="feeling", polarity="positive", modality="feeling",
+            attribute_codes=tuple(dict.fromkeys((*target.semantic_frame.attribute_codes,
+                "operator:feeling", "operator:positive_change", "semantic_role:positive_evaluation"))),
+        ))
+        self.assertEqual(nuclei, tuple(expected if n == target else n for n in before.nuclei))
+        for normalized in (None, {**source.normalized_current_input, "memo": "原文と異なる文"}):
+            self.assertEqual(observation_plan_owner._final_stage1_typed_nuclei(
+                before, source.evidence_spans, normalized_input=normalized)[0], before.nuclei)
+        for changes in ({"actor": "other"}, {"time_scope": "past"},
+                        {"modality": "uncertain"}, {"modality": "wish"},
+                        {"attribute_codes": (*target.semantic_frame.attribute_codes, "semantic_role:limiting_unknown")},
+                        {"attribute_codes": (*target.semantic_frame.attribute_codes, "operator:change")}):
+            altered = replace(before, nuclei=tuple(replace(n, semantic_frame=replace(
+                n.semantic_frame, **changes)) if n == target else n for n in before.nuclei))
+            self.assertEqual(observation_plan_owner._final_stage1_typed_nuclei(
+                altered, source.evidence_spans, normalized_input=source.normalized_current_input)[0], altered.nuclei)
+
+    def test_full_source_rejects_lost_subject_report_question_and_compound(self):
+        source, before = CMEEUnresolvedQuestionSourceTest()._source_plan("今日は気分が軽い。")
+        raw = source.normalized_current_input["memo"].rstrip("。")
+        for left, right in (("同僚は、", "。"), ("「", "」と話した。"),
+                            ("", "？"), ("", "と思った。"), ("", "なら出かける。"),
+                            ("外の空気が気持ちよくて、", "。"), ("", "。でも不安だ。")):
+            with self.subTest(left=left, right=right):
+                spans = tuple(replace(s, start_index=s.start_index + len(left),
+                                      end_index=s.end_index + len(left))
+                              if s.source_field == "memo" else s for s in source.evidence_spans)
+                result, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                    before, spans, normalized_input={**source.normalized_current_input,
+                        "memo": left + raw + right})
+                self.assertEqual(result, before.nuclei)
+        for text in ("昨日は気分が軽かった。", "明日は気分が軽い。", "同僚の気分が軽い。",
+                     "今日は気分が軽くない。", "今日は気分が軽いかもしれない。",
+                     "今日は鞄が軽い。", "今日は気分が軽い…", "今日は気分が軽い？"):
+            source, before = CMEEUnresolvedQuestionSourceTest()._source_plan(text)
+            result, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                before, source.evidence_spans, normalized_input=source.normalized_current_input)
+            self.assertFalse(any(observation_plan_owner.is_grounded_positive_feeling(n) for n in result))
+
+    def test_inverse_keeps_feeling_target_and_rejects_burden_or_change_substitution(self):
+        a = self.artifacts[0]
+        for old, new in (("気持ち", "変化"), ("気持ち", "今ここに置かれた言葉"),
+                         ("感じています", "小さくせずに受け止めています")):
+            with self.subTest(new=new):
+                body = _tamper_reception(a.surface.text, old, new)
+                self.assertNotEqual(body, a.surface.text)
+                result = evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input)
+                self.assertFalse(result.passed)
+
+    def test_normal_appraisal_requires_its_own_current_positive_feeling_qualifier(self):
+        derive = self.composition._normal_reception_appraisal
+        self.assertTrue(self.appraisal_arguments)
+        args = self.appraisal_arguments[0]
+        qualifier = args["source_qualifiers"][0]
+        content = derive(**args)
+        self.assertEqual(content.operation.value, "RECEIVE_AS_MATERIAL")
+        self.assertEqual(content.dimension.value, "MATERIAL_WEIGHT")
+        for qualifiers in ((), (qualifier, qualifier),
+                           (replace(qualifier, basis_binding_ref="foreign-basis"),),
+                           (replace(qualifier, polarity="negative"),),
+                           (replace(qualifier, modality="uncertain"),),
+                           (replace(qualifier, modality="fact"),),
+                           (replace(qualifier, time_scope="past"),),
+                           (replace(qualifier, source_argument_role=contracts_owner.ArgumentRole.LEFT),)):
+            with self.subTest(qualifiers=qualifiers):
+                with self.assertRaises(self.composition.Stage1CompositionError):
+                    derive(**{**args, "source_qualifiers": qualifiers})
+        row = args["semantic_contributions"][0]
+        for changed in (replace(row, semantic_refs=("foreign-semantic",)),
+                        replace(row, argument_bindings=tuple(b for b in row.argument_bindings
+                                if b.role is not contracts_owner.ArgumentRole.EXPERIENCER)),
+                        replace(row, argument_bindings=tuple(replace(b, semantic_ref="foreign-experiencer")
+                                if b.role is contracts_owner.ArgumentRole.EXPERIENCER else b
+                                for b in row.argument_bindings)),
+                        replace(row, semantic_operator=contracts_owner.SemanticOperator.PRESENT_BURDEN)):
+            with self.assertRaises(self.composition.Stage1CompositionError):
+                derive(**{**args, "semantic_contributions": (changed,), "contributions": (changed,)})
