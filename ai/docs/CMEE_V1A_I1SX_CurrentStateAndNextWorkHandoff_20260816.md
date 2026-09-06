@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾の最新未完了checkpointと継承承認を確認する。旧記録は履歴。compound operator順序を安定化し、fresh interpreter 3 seedの全plan一致を確認。固定100は全保存項目が前回と同一、direct100／124／73-27。全216検査212成功／既存4失敗、新規失敗0。華恋の全100全文判定NOT_CLEAR。relation support一律引継ぎ案はstrict不整合で不採用、次は既存選択前ownerからNORMAL／LIMITEDの根拠範囲の接続を直す。
+3. 末尾の最新未完了checkpointと継承承認を確認する。旧記録は履歴。既存memo主題と補助行動の順位をfinal専用で限定整合。固定100はdirect100／124／73-27、生成可能側5件の選択inputとフォローだけ変更、他95全項目同一。全218検査214成功／既存4失敗、新規失敗0。華恋が全100全文を読みNOT_CLEAR。主題の具体性は戻ったが長い再掲と対象外に残る行動偏重・定型的な締めが残る。次は同じ選択・本文順・照応・関係範囲を整合する。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -5802,3 +5802,26 @@ System Contextは作業前doctor→prepareを実行したが18成功16失敗、p
 華恋が固定sourceの原入力全フィールド・観察・フォロー全100を10件ずつ読み、NOT_CLEAR。長い再掲・同じ締め・行動偏重、問いへの意味の浅さ、過去予定／未遂／伝達時点、比較・可能性・受援主体の分類が残る。Mashへ未達本文のProduct Readを求めない。商品確認準備／ready／採用／merge／本番／質問生成／Layer3は未成立。
 
 作業前System Contextはdoctor→prepareを実行し18成功16失敗、固定toolchain不一致でprepare不成立。stale不使用・原典直読、profile／基準ref／tracked current変更0。全体設計・国家・共通基盤、全ファイル地図とtracked inventory、最新weekly review、毎回必須incident全文、影響owner・下流・旧経路を確認した。実装は前回照合済み46依存版の同じ環境を継続し、依存照合を今回再実行したとはしない。STRUCTURE_MAP_DELTA_NONE：新owner／route／公開schemaなし。国家保存・dispatch・queue・read-side、公開API／DB／RN、Piece／分析変更0。current_user専用source-qualified契約をHRのOTHER型だけで拡張せず、未知の話題名詞から主語を推測しない。PR3／30／37はDraft/open/unmergedを維持する。
+
+
+### 2026-09-06 continuation — 既存memo主題と補助行動の順位整合（candidate25／商品未成立）
+
+既存ObservationPlanでは、別行動欄をmemoの意味の流れの補助証拠と定義している。しかし受け止め対象のfollow_rankはroleを先に評価するため、既存scoreで主題から外れた補助行動が、本文の変化・実感を押しのける経路があった。同じ継承承認内で `_build_response_and_policies` の既存順位だけを限定修正した。
+
+final・safe observation・groundedで、memoに単一required primaryがあり、既存primary_scoreが正で、既存opportunity mapperがexact lived_changeと証明する場合に限る。それより低scoreで非primary・非directionalのmemo_action concrete_action_evidenceがconcrete_effortへ分類された場合だけ、既存role順位より前で補助として扱う。primaryのfallback、help、願い・負担、directional endpointの旧順位へ一律に適用しない。ObservationPlanの入力・安全・material_quality条件（short／safety／limited／labels／empty）とpublic／旧builderは従来条件を保つ。ここでのlimitedはCMEEのNORMAL／LIMITED branch全体を指すものではない。新selector／Move／helper／意味carrier／schema／辞書／rendererは作らず、既存候補と根拠だけでseal前に決定する。さらにfinal・safe・exact2 familyで選択済みprimaryがlived_changeの場合、既存役割割当でprimaryをattention、補助effortをfelt_responseとする。既存final boolをbuild→depth→roleへ渡し、共通RR7のrole順が主題を再び後置しないようにした。role／actの両組合せは既存登録済みで、strategyは既存helperから導出する。新しい意味carrierは不要で、public・安全経路・3 Moveは旧割当を保つ。sourceのactor／polarity／time／unknown、関係と意味核は変更しない。seal後は同じimmutable選択inputをforwardと独立replayが消費する。
+
+既存generic Move検査moduleへ2検査を追加した。public syntheticの2つのmemo結果と別行動欄をactual compileし、memoの具体的対象が受け止め本文へ残ること、両required Move、Gate／inverse、active旧builderの行動対象保持を検査した。別の中立・未完memo2例はラベルだけで主題を昇格しない。主題と両Moveだけでなく実現順rm1→rm2も確認した。初回固定sourceの回帰ではその順序が逆になり1新規失敗を検出したため、上記pre-seal役割割当を追加して修正した。元検査のexpected Move順は維持。否定検査は具体的対象にも実際の改変が入るよう「その変化」限定から「変化」へ変更し、assertNotEqualを加えてno-opを拒否する。歴史的結果の書き換えではない。関連2検査成功。current runnerの既存identityだけを再計算し、非current ASTと歴史的hash／PASSは保持。Gate／parser／inverse／閾値の変更0。
+
+最初の固定sourceはdirect100／124／73-27・全218中213成功5失敗（1新規＋4既存）であり、attempt1へ全文・XML・root全100読解とともに保存した。以下の最終実行へ読み替えない。
+
+固定runtime sourceはremote `e46ad33fb4ec80d1e37c0d481ddfa6b645214015`、local `07870656f64d8b5e2442576e6c54eb1838ae43cd`、全体tree `97a56bd9d69a9f5d0a03924283050a49a843f9ec`。変更3pathのGitHub全文・blobとlocal treeを照合。以後の変更は既存文書と地図だけである。同じcanonical100の全入力・順序・軸・分母を保ち、direct100、required Move／expression／visible binding各124、外側GENERATED73／UNAVAILABLE27。生成可能側5件の選択inputとフォローだけが変化し、他95件は全保存項目同一。原入力、核、観察、責務数、可否、理由は全100同じ。Move ID・順序を除いたact・target・support・selected contributionの集合は、入力ごとに全100同一で、新設・欠落なし。4件は主対象の選択と本文順を整合し、既に変化が主対象だった別1件も役割順の修正を受ける。役割・順序・参照IDを含む選択inputは変わるため、それらまで同一とはしない。既存の主題が具体的な受け止め対象へ戻り、補助行動より先に実現することを確認した。
+
+必要218検査を固定sourceで全実行し214成功／既存4失敗、新規失敗0・未実行0。原184は180成功4失敗、追加34成功。既存4失敗は観察固定不一致2、過去dated receiptと現在sourceの不一致1、旧経路の集合重複1で、比較・意味分類の課題を古い期待値だけとして消さない。後続36ケースを実行し、post-hash96成功、unseen集合重複FAILを維持する。後続診断で元testの失敗を置換せず、別GA2/shared164を今回再実行したとはしない。
+
+一律の単一primary優先は先にprivate診断し不採用とした。canonical100を直接compileして97成功3失敗、follow対象13件変更、Move数6件増加だった。失敗は既存lived-change roleとfamilyの不整合からのhard-valid不成立であり、strictを緩めて救済しない。その後の限定初稿はcanonical100成功・124だったが、public synthetic追加診断の最後でdriverがNoneのreception planを参照して停止した。canonical100完了後のdriver errorとして記録し、最終218／100へ混ぜない。初稿のtuple/list比較が全100をcompile対象にしたことも保存した。最終sourceには独立静的レビューによるfamily一致・required・directional除外・concrete_effort限定を反映済み。
+
+華恋が固定sourceの原入力全フィールド・観察・フォローを全100読み、10区間で記録した。主題の具体性は戻ったが、複文では長い原文再掲が増え、対象外に残る行動偏重・定型的な締め、変化という分類と語調、理由疑問の浅さが残る。本文5件が変わったことを5件すべての自然さ改善または商品品質PASSへ読み替えない。集合判定NOT_CLEAR。通常の負担・混合感情・未完の主題は未解決である。burden主対象化では既存副候補によりMove数が増える場合があり、NORMALでは同一関係contributionへの二重appraisal conflictにもつながり得る。既存LIMITEDは複数basisを受け取れるが、入力内に存在するだけでは追加できない。
+
+次はこの既存選択と本文順・照応・関係範囲の接続を見直し、具体性を保って長い再掲・定型化を減らす。既存role/familyが不一致になる混合・未完状態も、原入力と同じ選択前ownerから確認する。count clamp、追加Move、seal後のsource再選択や未選択意味の補充、一律relation support引継ぎで代用しない。current_user専用source-qualified契約をHR OTHER型だけで拡張せず、未知の話題名詞から主語を推測しない。過去予定／未遂／伝達時点、比較・可能性・受援主体の分類も残る。未達本文のProduct ReadをMashへ求めず、商品確認準備／ready／採用／merge／本番／質問生成／Layer3は未成立。
+
+作業前System Contextはdoctor→prepareを実行し18成功16失敗、固定toolchain不一致でprepare不成立。stale不使用・原典直読、profile／基準ref／tracked current変更0。全体設計・国家・共通基盤、全ファイル地図とCocolon1635／API2138のtracked inventory、最新weekly review、必須incident全文、影響owner・下流・旧経路を確認。前回照合済み46依存版の実装環境を継続し、今回は依存照合を再実行したとはしない。STRUCTURE_MAP_DELTA_NONE：新owner／route／公開schemaなし。国家保存・dispatch・queue・read-side、公開API／DB／RN、Piece／分析の変更0。PR3／30／37はDraft/open/unmerged、既存9月9日の確認予定を維持する。
