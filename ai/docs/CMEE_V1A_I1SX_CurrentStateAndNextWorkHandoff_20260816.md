@@ -5865,3 +5865,20 @@ STRUCTURE_MAP_DELTA_NONE：既存final ObservationPlan内の順位補正であ�
 華恋が最終sourceの原入力全フィールド・観察・フォロー全100を全文確認しNOT_CLEAR。今回成立したのは同じ対象への格支配の接続であり、長い原文再掲・分類的な対象句・定型的な締め、負担／未完／混合状態の選択、主体・時制・予定・比較・可能性・受援の残分類は解消していない。次は既存target NPと選択済みの関係・意味の範囲を接続し、十分な深さを保った具体的な受け止めへ進む。短さや語尾variationだけを成果にしない。追加Move、count clamp、seal後再選択、未選択意味補充、一律relation support継承で代用しない。商品確認準備／ready／採用／merge／本番／質問生成／Layer3は未成立、product credit／technical credit 0。
 
 作業前にPR3／30／37の最新headと前回保存点の一致、全体設計・全ファイル地図・国家／共通基盤・2026-09-05 weekly review、必須incident全文、影響owner／下流／旧経路を確認した。System Context doctor→prepareは固定toolchain不一致で不成立のため、stale不使用・原典直読。profile／基準ref／tracked current変更0。実装は同じ会話内で前回内容照合済み46依存版の同じPython実体を継続し、今回の依存再照合は主張しない。依存変更・runtime外部生成AI利用0。STRUCTURE_MAP_DELTA_NONE：既存Human Receptionの文法部品内の変更であり、新owner／route／公開schema、国家保存・dispatch・queue・read-side、公開API／DB／RN、Piece／分析変更0。PR3／30／37はDraft/open/unmergedを維持する。
+
+
+### 2026-09-06 continuation — 対比の対象節と丁寧な背景節の名詞化を補正（candidate28／商品未成立）
+
+既存Human Receptionで、対比の左側の対象節が接続助詞のまま名詞化される不整合を修正した。選択済みのdistinctなLEFT／RIGHTを持つcontrastが関係を表現する場合、同じsole author内の対象表示だけを有限節にしてから既存target NPへ渡す。対象はEXPLICIT／COMPOSITEかつcontext以外、既存接続助詞の後置一致と有限語尾判定が成立する範囲に限定した。元source argument・semantic fragment・Plan IR、projection／seal／selected input、対象と関係の選択を変更しない。新しい意味やMoveを加えて本文を成立させる処置ではない。
+
+引用符除去後のprofileだけでは元入力の引用を保証できないため、既存Move evidenceのsource field内に「」『』がある場合は今回の有限化を見送る。引用外の対象まで旧表現に残す保守的制限であり、引用一般を解決したとはしない。「…」を削除しないため言いかけも旧表現を保持する。ANAPHORIC、関係のない節、context、非対象endpointを一律に切り詰めない。背景の丁寧文は既存context_head_nominalで「です／ます」の後へ「ということ」を続け、原文を保ったまま「ますこと」の接続を解消した。
+
+公開合成例を用いた追加3検査は、対比の両側と元argumentの保持、本文から片側を削除・関係を改変した場合の独立inverse拒否、同一source fieldの引用とellipsisによる有限化見送り、丁寧な背景の保持と時制改変拒否を確認する。引用文の別診断ではtarget authorへ到達しない既存lexical gapもあり、跨span引用のfull-path成功や引用全般の修復は主張しない。短い二重接続の別合成例は前回sourceでも同じvisible-binding failureになり、今回の新規不具合としても成功例としても扱わない。公開静的レビューは同一authorを通り、同じ検証済み選択入力とPlanから再構成する独立replay、下流の配置／保存／再読、旧経路と他中核の境界を確認した。
+
+固定runtime sourceはremote `b2f7d3a1cf2cfde18640103e8306c3f6ce8f8624`、local `ac536330359fa0bab7cccffa5c69d6c6185c91e0`、tree `a4d1583e5d02ae505a053006cb65b69dc7878134`。同じcanonical100の全入力・順序・軸・分母を維持し、direct100、required Move／expression／visible binding各124、外側GENERATED73／UNAVAILABLE27。フォロー本文1件だけが変わり、他99件は全保存項目同一。原入力・意味核・観察・選択input・可否・理由・責務数は全100同一。本文差分は対象節の名詞化補正であり、本文変更件数を自然さの合格件数へ変換しない。丁寧な背景節の修正は公開合成例で実証し、canonical100に効果件数を作らない。
+
+必要225検査を固定sourceで全実行し221成功／既存4失敗、新規失敗0・skip0・未実行0。原184は180成功4失敗、追加41は全成功。既存4は観察固定不一致2、過去dated receiptと現在source不一致1、旧経路の集合重複1を維持し、歴史的fixture／hash／PASSで消していない。後続36ケース・post-hash96も実行し、exact8／same16集合は成功、unseen12の既存重複は失敗のまま。後続診断で元pytest失敗を置換せず、別GA2/shared164の今回再実行も主張しない。runnerは既存current identityのみ更新し、非current ASTを保持した。
+
+華恋が最終sourceの原入力全フィールド・観察・フォロー全100を全文確認しNOT_CLEAR。対象節の局所的な文法改善は成立したが、長い原文再掲・分類的な対象句・定型的な締め、補助行動へ寄る対象選択、通常の負担／未完／混合状態、主体・時制・予定・比較・可能性・受援の残分類は未解決。次は既存target NPと選択済みの関係・意味の範囲を接続し、必要な深さを保った具体的な受け止めへ進む。短さ、語尾variation、内部appraisal名のみの変更、追加Move、count clamp、seal後再選択、未選択意味補充、一律relation support継承で代用しない。current_user専用source-qualified契約をHR OTHER型だけで広げない。商品確認準備／ready／採用／merge／本番／質問生成／Layer3は未成立、product credit／technical credit 0。
+
+作業前にPR3／30／37の最新headと前回保存点、全体設計・全ファイル地図・国家／共通基盤・2026-09-05 weekly review・必須incident全文、影響owner／下流／旧経路を確認した。System Context doctor→prepareは18成功16失敗、固定toolchain不一致で不成立のためstale不使用・原典直読。profile／基準ref／tracked current変更0。同じ会話内で内容照合済み46依存版の同じPython実体を継続し、今回の依存再照合は主張しない。依存変更・runtime外部生成AI利用0。STRUCTURE_MAP_DELTA_NONE：既存Human Receptionの名詞化とsole author内の文法処理のみ。新helper／selector／意味carrier／schema／renderer、Gate／parser／inverse／閾値の追加・緩和0。国家保存・dispatch・queue・read-side、公開API／DB／RN、Piece／分析・public／旧builder変更0。PR3／30／37はDraft/open/unmergedを維持する。
