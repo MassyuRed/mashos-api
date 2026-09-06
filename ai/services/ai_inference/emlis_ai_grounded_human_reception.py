@@ -2137,6 +2137,46 @@ def _performed_action_nominal_responsibility(text: str, nominal: str) -> bool:
     ))
 
 
+def source_grounded_future_action_nominal(
+    move: GroundedReceptionMovePlan,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+) -> str:
+    """Expose a proven intended action through its complete adnominal clause.
+
+    The status owner, not the nonpast ending, proves intention and future.
+    This bounded grammar leaves volitional, polite and nominal endings alone.
+    """
+    if move.reception_act != "honor_concrete_effort" or len(move.target_nucleus_ids) != 1:
+        return ""
+    nucleus = nucleus_index.get(move.target_nucleus_ids[0])
+    if (
+        nucleus is None or not source_proven_future_action_status(nucleus)
+        or nucleus.semantic_frame.modality != "intention"
+        or str(nucleus.semantic_frame.actor).strip().lower()
+        not in {"current_user", "user", "self"}
+        or any(code.startswith("quantity:") and code.removeprefix("quantity:")
+               not in {"not_applicable", "source_bounded", "unknown"}
+               for code in nucleus.semantic_frame.attribute_codes)
+    ):
+        return ""
+    source_fields = resolver.source_fields_for(nucleus.source_span_ids)
+    if (len(source_fields) != 1 or source_fields[0] != "memo_action"
+        or any(re.search(r"[「」『』…‥!?！？]", span.raw_text)
+               for span in resolver.resolve_many(resolver.span_ids)
+               if span.source_field in source_fields)):
+        return ""
+    clause = _source_grounded_clause_candidate(nucleus, resolver)
+    # These plain nonpast endings can precede こと unchanged. Exclude the
+    # ambiguous -う class, including volition, and polite terminal -ます/-です.
+    # No finite decision or nominal plan is rewritten into a performed act.
+    if (not re.search(r"[くぐすつぬぶむる]$", clause)
+        or clause.endswith(("ます", "です"))
+        or re.search(r"[「」『』…‥。．.!！?？\r\n]", clause)):
+        return ""
+    return f"{clause}こと"
+
+
 def _negative_feeling_nominal_responsibility(text: str, nominal: str) -> bool:
     return bool(nominal and re.search(
         re.escape(nominal) + r"(?:を|に)[^。！？!?]*?小さくせずに(?:"
@@ -2575,6 +2615,10 @@ def resolve_grounded_reception_move_referent(
     if final_source_fidelity and effective_reference != "anaphoric_first":
         if referent.kind == "self_started_effort":
             nominal = source_grounded_performed_action_nominal(move, nucleus_index, resolver)
+            if nominal:
+                return replace(referent, text=nominal)
+        elif referent.kind == "future_action_intention":
+            nominal = source_grounded_future_action_nominal(move, nucleus_index, resolver)
             if nominal:
                 return replace(referent, text=nominal)
         # A demonstrative belongs to anaphora.  Explicit/composite clause
@@ -3371,6 +3415,7 @@ def validate_grounded_human_reception_surface(
         )
         action_nominals = tuple(
             source_grounded_performed_action_nominal(move, final_nuclei, resolver)
+            or source_grounded_future_action_nominal(move, final_nuclei, resolver)
             for move in active_moves
             if move.reception_act == act == "honor_concrete_effort"
             and reception_effective_move_reference_mode(
@@ -6969,9 +7014,15 @@ def _source_grounded_target_np(
     else:
         profile = realization.semantic_profiles[target_owner_slot]
         action_nominal = bool(
-            referent_kind == "self_started_effort"
-            and profile.actor_kind == "SELF" and profile.performed_action
-            and not profile.future_action and not profile.quoted_boundary
+            profile.actor_kind == "SELF" and not profile.quoted_boundary
+            and (
+                referent_kind == "self_started_effort"
+                and profile.performed_action and not profile.future_action
+                or referent_kind == "future_action_intention"
+                and move.reception_act == "honor_concrete_effort"
+                and profile.future_action and not profile.performed_action
+                and profile.modality == "intention"
+            )
             and realization.target_slot_count == 1
             and realization.quantity in {"not_applicable", "source_bounded", "unknown"}
             and referent_text == f"{meaning_fragment}こと"
@@ -7771,11 +7822,13 @@ def _author_source_grounded_reception_clauses(
                         nucleus_index[nucleus_id]
                         for nucleus_id in move.target_nucleus_ids
                     )) else _performed_action_nominal_responsibility(move_sentence, referent_text)
-                    if referent.kind == "self_started_effort"
+                    if referent.kind in {"self_started_effort", "future_action_intention"}
                     and meaning_realization.reference_mode != "ANAPHORIC"
-                    and referent_text == source_grounded_performed_action_nominal(
+                    and referent_text == (source_grounded_performed_action_nominal(
                         move, nucleus_index, resolver,
-                    ) else _negative_feeling_nominal_responsibility(move_sentence, referent_text)
+                    ) or source_grounded_future_action_nominal(
+                        move, nucleus_index, resolver,
+                    )) else _negative_feeling_nominal_responsibility(move_sentence, referent_text)
                     if referent.kind == "current_expression"
                     and meaning_realization.reference_mode == "ANAPHORIC"
                     and referent_text == source_grounded_negative_feeling_target_nominal(

@@ -3645,3 +3645,152 @@ class CMEENegativeFeelingReferentTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CMEEFutureActionNominalTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = {}
+        for name, action in (
+            ("calendar", "明日の朝は充電器を机から離れた棚へ移す"),
+            ("qualified", "明日は会議で使う資料を三ページだけ記録する"),
+            ("embedded_negative", "明日は返事を急がずに予定の確認から始める"),
+        ):
+            row = {"case_id": "public-future-action-nominal-" + name, "input": {
+                "action_text": action + "。", "thought_text": "まだ先の見通しは分からない。",
+                "categories": ["仕事"], "emotions": [{"type": "不安", "strength": "medium"}],
+            }}
+            cls.artifacts[name] = (action, _full_surface_artifacts(row))
+
+    def test_future_clause_reaches_body_with_same_status_and_replay(self):
+        for name, (action, a) in self.artifacts.items():
+            with self.subTest(name=name):
+                follow = _reception_text(a.surface.text)
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                self.assertEqual(a.sentence_plan.recovery_stage, "full")
+                self.assertEqual(follow.count(action + "こと"), 1)
+                self.assertNotIn("これからの行動", follow)
+                self.assertNotIn("実際の行動", follow)
+                self.assertIn("目が留まり", follow)
+                self.assertIn("大切に思っています", follow)
+                plan = a.plan.response_plan.human_reception_plan
+                index = {n.nucleus_id: n for n in a.plan.nuclei}
+                move = plan.moves[0]
+                ref = reception_owner.resolve_grounded_reception_move_referent(
+                    plan, move, index, a.resolver, allow_short_anchor=False,
+                    final_source_fidelity=True, plan=a.plan,
+                )
+                self.assertEqual(ref.kind, "future_action_intention")
+                self.assertEqual(ref.text, action + "こと")
+                target = index[move.target_nucleus_ids[0]]
+                self.assertEqual(target.semantic_frame.modality, "intention")
+                self.assertEqual(target.semantic_frame.time_scope, "future")
+                self.assertNotIn("operator:performed_action", target.semantic_frame.attribute_codes)
+                line = next(line for line in a.sentence_plan.lines
+                            if line.binding.line_role == "human_follow")
+                replay = reception_owner.replay_source_grounded_human_reception_from_plan(
+                    plan, index, a.resolver, plan=a.plan,
+                    recovery_stage=a.sentence_plan.recovery_stage,
+                    clause_plans=line.reception_clause_plans,
+                    selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertEqual(replay.text, follow.strip())
+                self.assertTrue(all(kwargs["selected_subjective_input"] is a.selected_subjective_input
+                                    for _args, kwargs in a.author_arguments))
+
+    def test_future_nominal_rejects_target_time_status_and_response_mutations(self):
+        mutations = (
+            ("calendar", "明日の朝", "昨日の朝"),
+            ("calendar", "充電器", "別の道具"),
+            ("calendar", "移すこと", "移したこと"),
+            ("calendar", "移すこと", "移さないこと"),
+            ("qualified", "三ページだけ", "全ページ"),
+            ("embedded_negative", "急がずに", "急いで"),
+            ("calendar", "目が留まり", "目に入りませんが"),
+            ("calendar", "大切に思っています", "大切ではありません"),
+        )
+        for name, old, new in mutations:
+            with self.subTest(name=name, old=old):
+                _action, a = self.artifacts[name]
+                body = _tamper_reception(a.surface.text, old, new)
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(inverse.passed)
+                gate = evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan,
+                    surface_result=replace(a.surface, text=body), resolver=a.resolver,
+                    require_body_inverse=True, selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(gate.passed)
+
+    def test_future_nominal_requires_whole_unquoted_exact_once_target(self):
+        action, a = self.artifacts["calendar"]
+        nominal = action + "こと"
+        for replacement in (
+            "別の棚へ移すこと", "これからの行動", "実際の行動",
+            "「" + nominal + "」", "『" + nominal + "』", nominal + "と" + nominal,
+        ):
+            with self.subTest(replacement=replacement):
+                changed = _tamper_reception(a.surface.text, nominal, replacement)
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=changed.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(inverse.passed)
+                self.assertTrue(any("target_duty_missing" in code for code in inverse.failure_codes))
+
+    def test_future_nominal_keeps_source_proof_and_grammar_boundaries(self):
+        action, a = self.artifacts["calendar"]
+        plan = a.plan.response_plan.human_reception_plan
+        move = plan.moves[0]
+        index = {n.nucleus_id: n for n in a.plan.nuclei}
+        target = index[move.target_nucleus_ids[0]]
+        derive = reception_owner.source_grounded_future_action_nominal
+        self.assertEqual(derive(move, index, a.resolver), action + "こと")
+        for changes in (
+            {"actor": "other"}, {"actor": "unknown"}, {"modality": "uncertain"},
+            {"modality": "wish"}, {"modality": "fact"}, {"time_scope": "past"},
+            {"attribute_codes": tuple(c for c in target.semantic_frame.attribute_codes
+                                      if c != "semantic_role:next_intention")},
+            {"attribute_codes": (*target.semantic_frame.attribute_codes, "operator:performed_action")},
+            {"attribute_codes": (*target.semantic_frame.attribute_codes, "quantity:multiple")},
+        ):
+            with self.subTest(changes=changes):
+                changed = replace(target, semantic_frame=replace(target.semantic_frame, **changes))
+                self.assertEqual(derive(move, {**index, target.nucleus_id: changed}, a.resolver), "")
+        for ending in ("読もう", "します", "です", "する予定", "するつもり", "することにした",
+                       "するかな", "する、それだけ", "する…", "する？"):
+            with self.subTest(ending=ending), patch.object(
+                reception_owner, "_source_grounded_clause_candidate", return_value="明日は資料を" + ending,
+            ):
+                self.assertEqual(derive(move, index, a.resolver), "")
+        # Embedded polarity is retained; it cannot cancel the existing outer intention proof.
+        changed = replace(target, semantic_frame=replace(target.semantic_frame, polarity="negative"))
+        self.assertEqual(derive(move, {**index, target.nucleus_id: changed}, a.resolver), action + "こと")
+        self.assertEqual(derive(replace(move, reception_act="protect_retained_intention"), index, a.resolver), "")
+        self.assertEqual(derive(replace(move, target_nucleus_ids=(*move.target_nucleus_ids, "foreign")), index, a.resolver), "")
+        spans = tuple(a.resolver.resolve_many(a.resolver.span_ids))
+        for boundary in ("？", "?", "…", "『引用』", "「引用」"):
+            altered = tuple(replace(span, raw_text=span.raw_text + boundary)
+                            if span.source_field == "memo_action" else span for span in spans)
+            with self.subTest(boundary=boundary), patch.object(
+                type(a.resolver), "resolve_many", return_value=altered,
+            ):
+                self.assertEqual(derive(move, index, a.resolver), "")
+
+    def test_future_nominal_is_not_used_by_legacy_or_anaphoric_references(self):
+        action, a = self.artifacts["calendar"]
+        plan = a.plan.response_plan.human_reception_plan
+        move = plan.moves[0]
+        index = {n.nucleus_id: n for n in a.plan.nuclei}
+        kwargs = dict(reception_plan=plan, move=move, nucleus_index=index,
+                      resolver=a.resolver, allow_short_anchor=False)
+        legacy = reception_owner.resolve_grounded_reception_move_referent(**kwargs)
+        self.assertNotEqual(legacy.text, action + "こと")
+        with patch.object(reception_owner, "reception_effective_move_reference_mode", return_value="anaphoric_first"):
+            anaphoric = reception_owner.resolve_grounded_reception_move_referent(**kwargs, final_source_fidelity=True)
+        self.assertEqual(anaphoric.kind, "future_action_intention")
+        self.assertNotEqual(anaphoric.text, action + "こと")
