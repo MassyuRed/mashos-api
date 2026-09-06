@@ -28,6 +28,7 @@ from emlis_ai_grounded_human_reception import (
     resolve_grounded_reception_move_referent,
     source_grounded_performed_action_nominal,
     source_grounded_future_action_nominal,
+    source_grounded_retained_wish_nominal,
     source_grounded_feeling_target_nominal,
     source_grounded_unfinished_referent,
     source_grounded_negative_context_nominal,
@@ -2250,6 +2251,15 @@ def evaluate_grounded_surface_body_inverse(
                                 move, plan, nucleus_index, resolver,
                             ))
                         )
+                        wish_nominal_required = bool(
+                            final_stage1_plan
+                            and effective_reference_mode != "anaphoric_first"
+                            and expected_referent is not None
+                            and expected_referent.kind == "retained_wish"
+                            and expected_referent.text == source_grounded_retained_wish_nominal(
+                                move, plan, nucleus_index, resolver,
+                            )
+                        )
                         nominal_target_required = bool(
                             final_stage1_plan
                             and effective_reference_mode != "anaphoric_first"
@@ -2258,7 +2268,7 @@ def evaluate_grounded_surface_body_inverse(
                             and expected_referent.text == source_grounded_performed_action_nominal(
                                 move, nucleus_index, resolver,
                             )
-                        ) or burden_nominal_required or future_nominal_required
+                        ) or burden_nominal_required or future_nominal_required or wish_nominal_required
                         if nominal_target_required:
                             # Bind a body-only grammatical suffix to the end
                             # of this independently resolved *whole* referent.
@@ -2285,7 +2295,7 @@ def evaluate_grounded_surface_body_inverse(
                                     and marker.utf8_byte_end == end
                                     for marker in witness.markers
                                 )
-                                if (burden_nominal_required or future_nominal_required) and (
+                                if (burden_nominal_required or future_nominal_required or wish_nominal_required) and (
                                     any(q.section == "reception" and q.utf8_byte_start < end
                                         and start < q.utf8_byte_end for q in witness.quotes)
                                     or any(m.section == "reception" and m.marker_code == "secondary_quote_boundary"

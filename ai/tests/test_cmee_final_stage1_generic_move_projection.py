@@ -281,6 +281,76 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
                 reception, reception.moves[1], stage,
             ), "anaphoric_first")
 
+    def test_retained_wish_nominal_keeps_existence_context_and_protection(self):
+        source = "覚えたい気持ちはある"
+        context = "手順が分からなくなった"
+        a = _full_surface_artifacts({
+            "case_id": "public-retained-wish-carrier",
+            "input": {
+                "thought_text": f"{source}。でも{context}。",
+                "action_text": "説明書を棚に戻した。",
+                "categories": ["学習"],
+                "emotions": [{"type": "不安", "strength": "medium"}],
+            },
+        })
+        self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+        self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+        self.assertEqual(a.sentence_plan.recovery_stage, "full")
+        follow = _reception_text(a.surface.text)
+        nominal = source + "こと"
+        self.assertEqual(follow.count(nominal), 1)
+        self.assertNotIn("に表れた願い", follow)
+        self.assertIn(context + "こととの違い", follow)
+        self.assertIn("見失わずに、大切に受け止めています", follow)
+        for old, new in (
+            (nominal, "覚えたい気持ち"), (nominal, "覚えたい気持ちはあったこと"),
+            (nominal, "覚えたい気持ちはないこと"), (nominal, "別の気持ちはあること"),
+            (nominal, "「" + nominal + "」"), (nominal, nominal + "と" + nominal),
+            (context, "別のこと"), ("との違い", "との一致"),
+            ("見失わずに、大切に受け止めています", "小さなことだと考えています"),
+        ):
+            with self.subTest(replacement=new):
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=_tamper_reception(a.surface.text, old, new).encode("utf-8"),
+                    plan=a.plan, sentence_plan=a.sentence_plan, resolver=a.resolver,
+                    selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(inverse.passed)
+        reception = a.plan.response_plan.human_reception_plan
+        move = next(m for m in reception.moves if m.reception_act == "protect_retained_intention")
+        index = {n.nucleus_id: n for n in a.plan.nuclei}
+        target = index[move.target_nucleus_ids[0]]
+        derive = reception_owner.source_grounded_retained_wish_nominal
+        self.assertEqual(derive(move, a.plan, index, a.resolver), nominal)
+        self.assertEqual(derive(move, None, index, a.resolver), "")
+        self.assertEqual(derive(move, replace(a.plan, source_contracts=()), index, a.resolver), "")
+        for changes in (
+            {"actor": "other"}, {"actor": "unknown"}, {"modality": "uncertain"},
+            {"modality": "fact"}, {"time_scope": "past"}, {"time_scope": "future"},
+            {"polarity": "negative"}, {"predicate_kind": "action"},
+            {"attribute_codes": (*target.semantic_frame.attribute_codes, "quantity:multiple")},
+            {"attribute_codes": (*target.semantic_frame.attribute_codes, "operator:performed_action")},
+        ):
+            changed = replace(target, semantic_frame=replace(target.semantic_frame, **changes))
+            plan = replace(a.plan, nuclei=tuple(changed if n == target else n for n in a.plan.nuclei))
+            with self.subTest(changes=changes):
+                self.assertEqual(derive(move, plan, {**index, target.nucleus_id: changed}, a.resolver), "")
+        for value in (
+            "覚えたい思いはある", "覚えたい気持ちはあった", "覚えたい気持ちはまだある",
+            "覚えたい気持ちはない", "覚えたい気持ちはあるかもしれない", "覚えたい気持ちはあります",
+            "覚えたい気持ちはある？", "覚えたい気持ちはある…", "「覚えたい気持ちはある」",
+        ):
+            with self.subTest(value=value), patch.object(
+                reception_owner, "_source_grounded_clause_candidate", return_value=value,
+            ):
+                self.assertEqual(derive(move, a.plan, index, a.resolver), "")
+        kwargs = dict(reception_plan=reception, move=move, nucleus_index=index,
+                      resolver=a.resolver, allow_short_anchor=False, plan=a.plan)
+        self.assertNotEqual(reception_owner.resolve_grounded_reception_move_referent(**kwargs).text, nominal)
+        self.assertNotEqual(reception_owner.resolve_grounded_reception_move_referent(
+            **kwargs, final_source_fidelity=True, recovery_stage="integrated",
+        ).text, nominal)
+
     def test_contrast_target_nominal_keeps_both_endpoints_and_source_argument(self):
         left = "説明書の細かな記号が分かるようになった"
         right = "それでも小さな部品を一つずつ机に並べて確かめながら組み立てる時間はまだ難しく感じている"

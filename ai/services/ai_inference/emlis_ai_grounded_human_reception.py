@@ -33,6 +33,7 @@ from emlis_ai_grounded_observation_plan import (
     past_reported_wish_finite,
     _FEELING_RE,
     _direct_finite_carrier_shape,
+    _bounded_nominal_wish_endpoint,
     source_grounded_feeling_subject_parts,
     _source_finite_without_postposed_focus,
 )
@@ -2192,6 +2193,58 @@ def _performed_action_nominal_responsibility(text: str, nominal: str) -> bool:
     ))
 
 
+def source_grounded_retained_wish_nominal(
+    move: GroundedReceptionMovePlan,
+    plan: GroundedObservationPlan | None,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+) -> str:
+    """Nominalize a proven present wish carrier without deleting existence.
+
+    Keep the complete finite clause, including its topic/case particle and
+    affirmative host. Removing the host would lose a temporal surface owner.
+    This view neither selects a wish nor discharges its reception duty.
+    """
+    if (plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
+        or move not in plan.response_plan.human_reception_plan.moves
+        or move.reception_act != "protect_retained_intention"
+        or len(move.target_nucleus_ids) != 1):
+        return ""
+    nucleus = nucleus_index.get(move.target_nucleus_ids[0])
+    if (nucleus is None or nucleus not in plan.nuclei
+        or nucleus.kind != "wish"
+        or nucleus.semantic_frame.predicate_kind != "feeling"
+        or nucleus.semantic_frame.modality != "wish"
+        or nucleus.semantic_frame.polarity != "positive"
+        or nucleus.semantic_frame.time_scope not in {"present", "current_input"}
+        or len(nucleus.source_span_ids) != 1
+        or "operator:performed_action" in nucleus.semantic_frame.attribute_codes
+        or any(code.startswith("quantity:") and code.removeprefix("quantity:")
+               not in {"not_applicable", "source_bounded", "unknown"}
+               for code in nucleus.semantic_frame.attribute_codes)):
+        return ""
+    clause = _source_grounded_clause_candidate(nucleus, resolver)
+    profile = _source_grounded_semantic_profile(nucleus, clause)
+    fields = resolver.source_fields_for(nucleus.source_span_ids)
+    if (profile.actor_kind != "SELF" or profile.quoted_boundary
+        or profile.performed_action or profile.future_action
+        or len(fields) != 1 or fields[0] not in {"memo", "memo_action"}
+        or any(re.search(r"[「」『』…‥!?！？]", span.raw_text)
+               for span in resolver.resolve_many(resolver.span_ids)
+               if span.source_field in fields)
+        or not re.fullmatch(r"[^、,。\s]+(?:たい|ほしい|欲しい)(?:気持ち|願い)(?:は|が)ある", clause)
+        or not _bounded_nominal_wish_endpoint(clause)):
+        return ""
+    return f"{clause}こと"
+
+
+def _retained_wish_nominal_responsibility(text: str, nominal: str) -> bool:
+    return bool(nominal and re.search(
+        re.escape(nominal) + r"[^。！？!?]*見失わず[^。！？!?]*大切に受け止め",
+        text,
+    ))
+
+
 def source_grounded_future_action_nominal(
     move: GroundedReceptionMovePlan,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
@@ -2748,6 +2801,10 @@ def resolve_grounded_reception_move_referent(
                 return replace(referent, text=nominal)
         elif referent.kind == "future_action_intention":
             nominal = source_grounded_future_action_nominal(move, nucleus_index, resolver)
+            if nominal:
+                return replace(referent, text=nominal)
+        elif referent.kind == "retained_wish":
+            nominal = source_grounded_retained_wish_nominal(move, plan, nucleus_index, resolver)
             if nominal:
                 return replace(referent, text=nominal)
         # A demonstrative belongs to anaphora.  Explicit/composite clause
@@ -3560,6 +3617,14 @@ def validate_grounded_human_reception_surface(
                 reception_plan, move, surface.recovery_stage,
             ) == "anaphoric_first"
         ) if final_nuclei else ()
+        wish_nominals = tuple(
+            source_grounded_retained_wish_nominal(move, plan, final_nuclei, resolver)
+            for move in active_moves
+            if move.reception_act == act == "protect_retained_intention"
+            and reception_effective_move_reference_mode(
+                reception_plan, move, surface.recovery_stage,
+            ) != "anaphoric_first"
+        ) if final_nuclei else ()
         visible = (
             _retained_future_intention_responsibility(surface.text)
             if future_intention else
@@ -3574,6 +3639,8 @@ def validate_grounded_human_reception_surface(
                    for nominal in action_nominals)
             or any(_source_grounded_burden_nominal_responsibility(surface.text, nominal)
                    for nominal in burden_nominals)
+            or any(_retained_wish_nominal_responsibility(surface.text, nominal)
+                   for nominal in wish_nominals)
         )
         visible_responsibilities.append(visible)
         if not visible:
@@ -7196,7 +7263,17 @@ def _source_grounded_target_np(
             and realization.quantity in {"not_applicable", "source_bounded", "unknown"}
             and referent_text == f"{meaning_fragment}こと"
         )
-        if not action_nominal and referent_text.startswith(("その", "それらの")):
+        wish_nominal = bool(
+            profile.actor_kind == "SELF" and not profile.quoted_boundary
+            and not profile.performed_action and not profile.future_action
+            and referent_kind == "retained_wish"
+            and move.reception_act == "protect_retained_intention"
+            and realization.modality == "wish"
+            and realization.target_slot_count == 1
+            and realization.quantity in {"not_applicable", "source_bounded", "unknown"}
+            and referent_text == f"{meaning_fragment}こと"
+        )
+        if not (action_nominal or wish_nominal) and referent_text.startswith(("その", "それらの")):
             raise GroundedHumanReceptionSurfaceError(
                 "REALIZABLE_RECEPTION_EXPRESSION_REFERENCE_GAP"
             )
@@ -7215,7 +7292,7 @@ def _source_grounded_target_np(
                 predicate_kind=realization.predicate_kind,
             )
         )
-        if action_nominal:
+        if action_nominal or wish_nominal:
             content_target = referent_text
         elif referent_kind in {"current_expression", "grounded_effort"}:
             content_target = f"{meaning_fragment}という{quantity_modifier}{referent_text}"
@@ -8044,7 +8121,12 @@ def _author_source_grounded_reception_clauses(
                     and _positive_feeling_target(tuple(
                         nucleus_index[nucleus_id]
                         for nucleus_id in move.target_nucleus_ids
-                    )) else _performed_action_nominal_responsibility(move_sentence, referent_text)
+                    )) else _retained_wish_nominal_responsibility(move_sentence, referent_text)
+                    if referent.kind == "retained_wish"
+                    and meaning_realization.reference_mode != "ANAPHORIC"
+                    and referent_text == source_grounded_retained_wish_nominal(
+                        move, plan, nucleus_index, resolver,
+                    ) else _performed_action_nominal_responsibility(move_sentence, referent_text)
                     if referent.kind in {"self_started_effort", "future_action_intention"}
                     and meaning_realization.reference_mode != "ANAPHORIC"
                     and referent_text == (source_grounded_performed_action_nominal(
