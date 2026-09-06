@@ -5848,3 +5848,20 @@ final・safe observation・grounded、正の既存primary_score、低scoreの非
 作業前にSystem Context doctor→prepareを実行した。doctorは18成功16失敗、prepareは固定toolchain不一致で不成立。clone由来の一時partをGit管理外へ保全してclean状態でも再確認し、stale cacheを使わず原典直読した。profile／基準ref／tracked current変更0。全体設計・国家・共通基盤、全ファイル地図とCocolon1635／API2138のtracked inventory、2026-09-05 weekly review、必須incident全文、影響owner・下流・旧経路を確認した。実装用Python環境は再発見した実体の46依存版・RECORD内容を前回証跡と今回再照合して一致し、物理環境の連続性を推定していない。System Contextの固定toolchainが成立したという意味ではない。実装環境の依存変更・外部AI利用は0。
 
 STRUCTURE_MAP_DELTA_NONE：既存final ObservationPlan内の順位補正であり、新owner／route／公開schemaなし。国家保存・dispatch・queue・read-side、公開API／DB／RN、Piece／分析への変更0。PR3／30／37はDraft/open/unmergedを維持し、9月9日の既存確認予定を重複作成しない。
+
+
+### 2026-09-06 continuation — 注意と受け止めの対象を文法で接続（candidate27／商品未成立）
+
+既存Human Receptionはattentionを「対象に目が留まり、」と実現した後、他動詞の「感じる」「思う」「受け止める」等を目的語なしで続けていた。同じ対象を指す既存valency_complementをattentionだけ「それを」とし、role_operator直後・act_guard前へ置いた。対象を長く再掲せず、注意の「に」格と受け止めの「を」格を同じ対象へ結ぶ修正である。新しい名詞分類・意味選択・感情を加えず、意味核・関係・主題順位・Move責務・選択済みinputを保持する。significance／felt_responseは元の目的語を共有し、二重の「を」を追加しない。
+
+既存fieldと既存predicate surfaceだけを使う。OPENの補語は従来どおり節先頭、agencyとactのguardは同じ対象にかかる。FINITE／CONTINUATIVE／hedgedの活用、bounded_counterpositionの別経路、public／旧builderは変更しない。新helper／selector／Move／意味carrier／schema／renderer、Gate／parser／inverse／閾値の追加・緩和は0。runnerは既存current identityのみ更新し、非current AST・歴史的hash／PASSは保持した。
+
+公開合成例の代表compileは5例で既存Gate／inverseが成功した。追加2検査では、具体的な変化を一度だけ示してから同じ対象を受け直すこと、felt_responseへ二重補語を入れないこと、原入力内の「それを」を消さず保持することを確認した。補語を削除または別対象へ改変した本文は、同じ選択inputの独立replayが拒否する。成功した著述候補群も確認したが、これだけで全recovery stageの網羅とはしない。既存OPEN検査を含む最終222検査が活用・scopeの回帰範囲を担う。公開静的レビューはfieldの全消費先・旧経路・source内照応との非衝突を確認した。
+
+固定runtime sourceはremote `8d039aea1d008a0e6eec40a35390726a87a236ed`、local `4a792007c557fa79e3e90d00de0da3aac0b06281`、tree `915f620a5c207e9f7554f0337aae2a9943a0a516`。同じcanonical100の全入力・順序・軸・分母を維持し、direct100、required Move／expression／visible binding各124、外側GENERATED73／UNAVAILABLE27。フォロー本文73件だけが変わり、全差分は上記の目的語接続に一致した。他27件は全保存項目同一。原入力・意味核・観察・選択input・可否・理由・責務数は全100同一である。この本文変更数を自然さ改善の合格件数へ読み替えない。固定source以後は既存文書・地図だけを更新する。
+
+必要222検査を固定sourceで全実行し218成功／既存4失敗、新規失敗0・skip0・未実行0。原184は180成功4失敗、追加38は全成功。既存4は観察固定不一致2、過去dated receiptと現在source不一致1、旧経路の集合重複1を維持し、歴史的fixture／hash／PASSで消していない。後続36ケース・post-hash96も実行し、exact8／same16集合は成功、unseen12の既存重複は失敗のまま。後続診断は元pytest失敗の置換ではなく、別GA2/shared164の今回再実行は主張しない。
+
+華恋が最終sourceの原入力全フィールド・観察・フォロー全100を全文確認しNOT_CLEAR。今回成立したのは同じ対象への格支配の接続であり、長い原文再掲・分類的な対象句・定型的な締め、負担／未完／混合状態の選択、主体・時制・予定・比較・可能性・受援の残分類は解消していない。次は既存target NPと選択済みの関係・意味の範囲を接続し、十分な深さを保った具体的な受け止めへ進む。短さや語尾variationだけを成果にしない。追加Move、count clamp、seal後再選択、未選択意味補充、一律relation support継承で代用しない。商品確認準備／ready／採用／merge／本番／質問生成／Layer3は未成立、product credit／technical credit 0。
+
+作業前にPR3／30／37の最新headと前回保存点の一致、全体設計・全ファイル地図・国家／共通基盤・2026-09-05 weekly review、必須incident全文、影響owner／下流／旧経路を確認した。System Context doctor→prepareは固定toolchain不一致で不成立のため、stale不使用・原典直読。profile／基準ref／tracked current変更0。実装は同じ会話内で前回内容照合済み46依存版の同じPython実体を継続し、今回の依存再照合は主張しない。依存変更・runtime外部生成AI利用0。STRUCTURE_MAP_DELTA_NONE：既存Human Receptionの文法部品内の変更であり、新owner／route／公開schema、国家保存・dispatch・queue・read-side、公開API／DB／RN、Piece／分析変更0。PR3／30／37はDraft/open/unmergedを維持する。
