@@ -3581,7 +3581,7 @@ class CMEENegativeFeelingReferentTest(unittest.TestCase):
                 self.assertFalse(inverse.passed)
                 self.assertTrue(any("target_duty_missing" in c for c in inverse.failure_codes))
         body = _tamper_reception(a.surface.text, "小さくせずに受け止めています", "小さなことだと考えています")
-        self.assertFalse(reception_owner._negative_feeling_nominal_responsibility(body, nominal))
+        self.assertFalse(reception_owner._source_grounded_burden_nominal_responsibility(body, nominal))
         self.assertFalse(evaluate_grounded_surface_body_inverse(
             body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
             resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
