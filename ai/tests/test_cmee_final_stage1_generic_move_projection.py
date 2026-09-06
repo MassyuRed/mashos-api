@@ -2236,9 +2236,17 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             accountability_case,
             accountability_reception,
         )
+        # The selected duties stay intact while discourse receives the feeling first.
+        planned = self.artifacts[accountability_case].plan.response_plan.human_reception_plan
+        self.assertEqual(
+            tuple((move.move_id, move.reception_act) for move in planned.moves),
+            (("rm1", "honor_concrete_effort"), ("rm2", "recognize_lived_change")),
+        )
+        self.assertTrue(all(move.required for move in planned.moves))
+        self.assertEqual(accountability.realized_move_ids, ("rm2", "rm1"))
         self.assertEqual(
             accountability.realized_reception_acts,
-            ("honor_concrete_effort", "recognize_lived_change"),
+            ("recognize_lived_change", "honor_concrete_effort"),
         )
         self.assertNotIn(
             "bounded_counter_self_denial",
