@@ -976,6 +976,10 @@ class CMEEPositiveFeelingProjectionTest(unittest.TestCase):
         body = _reception_text(a.surface.text)
         self.assertIn("作業台を片づけた", body)
         self.assertIn("道具が使えてうれしかった", body)
+        self.assertLess(body.index("道具が使えてうれしかった"), body.index("作業台を片づけた"))
+        active = reception_owner.reception_active_moves(reception, "full")
+        self.assertEqual(active[0].target_nucleus_ids, feeling.target_nucleus_ids)
+        self.assertEqual(active[1].target_nucleus_ids, first.target_nucleus_ids)
         self.assertNotIn("その気持ち", body)
         changed = _tamper_reception(
             a.surface.text, "道具が使えてうれしかった", "別のことがうれしかった",

@@ -7152,9 +7152,9 @@ def build_grounded_human_reception_plan(
         semantic_complexity=semantic_complexity,
         final_source_fidelity=final_source_fidelity,
     )
-    # A separate memo feeling has no antecedent in an effort-only first Move.
-    # Keep its already-selected meaning and responsibilities, but retain the
-    # existing explicit reference grammar before the request-local plan seals.
+    # Receive an already-selected independent memo feeling before the separate
+    # effort. Keep both meanings, Move identities and explicit references; only
+    # their existing discourse roles change before the request-local plan seals.
     if (
         final_source_fidelity
         and safety_kind == TRIAGE_SAFE_OBSERVATION
@@ -7185,7 +7185,19 @@ def build_grounded_human_reception_plan(
             and feeling.source_fields == ("memo",)
             and is_grounded_positive_feeling(feeling)
         ):
-            moves = (moves[0], replace(moves[1], reference_mode=reference_mode))
+            moves = (
+                replace(
+                    moves[0],
+                    move_role="felt_response",
+                    surface_strategy="felt_response_first",
+                ),
+                replace(
+                    moves[1],
+                    move_role="attention",
+                    reference_mode=reference_mode,
+                    surface_strategy="emlis_attention_first",
+                ),
+            )
     # RR4 keeps the public follow target stable while expanding the aggregate
     # compatibility grounding to every selected Move.  ClausePlan remains the
     # owner of each individual Move binding; the aggregate fields keep the
