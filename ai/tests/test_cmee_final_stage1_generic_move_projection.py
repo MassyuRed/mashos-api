@@ -227,6 +227,60 @@ def _tamper_reception(body: str, source: str, replacement: str) -> str:
 
 
 class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
+    def test_independent_selected_relation_keeps_both_concrete_endpoints(self):
+        left = "覚えたい気持ちはある"
+        right = "手順が分からなくなった"
+        structural_moves = []
+        build_moves = observation_plan_owner._build_reception_depth_policy_and_moves
+
+        def capture_moves(*args, **kwargs):
+            result = build_moves(*args, **kwargs)
+            structural_moves.append(result[1])
+            return result
+
+        with patch.object(
+            observation_plan_owner, "_build_reception_depth_policy_and_moves",
+            side_effect=capture_moves,
+        ):
+            a = _full_surface_artifacts({
+                "case_id": "public-independent-learning-relation",
+                "input": {
+                    "thought_text": f"{left}。でも{right}。",
+                    "action_text": "説明書を棚に戻した。",
+                    "categories": ["学習"],
+                    "emotions": [{"type": "不安", "strength": "medium"}],
+                },
+            })
+        self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+        self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+        self.assertEqual(a.sentence_plan.recovery_stage, "full")
+        reception = a.plan.response_plan.human_reception_plan
+        self.assertEqual(len(reception.moves), 2)
+        self.assertTrue(all(move.required for move in reception.moves))
+        self.assertEqual(reception.moves[1].reference_mode, "short_anchor_if_ambiguous")
+        old_reference_moves = tuple(
+            replace(move, reference_mode="anaphoric_first") if index else move
+            for index, move in enumerate(reception.moves)
+        )
+        self.assertIn(old_reference_moves, structural_moves)
+        follow = _reception_text(a.surface.text)
+        for source in (left, right, "説明書を棚に戻した"):
+            self.assertEqual(follow.count(source), 1)
+        self.assertIn("との違い", follow)
+        self.assertNotIn("もう一方の向き", follow)
+        for source, replacement in ((left, ""), (right, "別のこと"), ("との違い", "との一致")):
+            with self.subTest(source=source):
+                changed = _tamper_reception(a.surface.text, source, replacement)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=changed.encode("utf-8"), plan=a.plan,
+                    sentence_plan=a.sentence_plan, resolver=a.resolver,
+                    selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+        for stage in ("integrated", "hedged", "minimal_grounded"):
+            self.assertEqual(reception_owner.reception_effective_move_reference_mode(
+                reception, reception.moves[1], stage,
+            ), "anaphoric_first")
+
     def test_contrast_target_nominal_keeps_both_endpoints_and_source_argument(self):
         left = "説明書の細かな記号が分かるようになった"
         right = "それでも小さな部品を一つずつ机に並べて確かめながら組み立てる時間はまだ難しく感じている"
@@ -386,19 +440,37 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
             if row["case_id"] not in _TYPED_RELATION_CLOSURE_CASE_IDS:
                 continue
             artifacts = _full_surface_artifacts(row)
-            follow = _reception_text(artifacts.surface.text)
+            self.assertTrue(artifacts.inverse.passed)
+            self.assertTrue(artifacts.gate.passed)
+            # Independent full references are now concrete. Exercise the same
+            # anaphoric context duty in its existing integrated recovery route.
+            sentence_plan = surface_owner.build_reception_recovery_sentence_plan(
+                artifacts.sentence_plan, artifacts.plan, artifacts.resolver,
+                recovery_stage="integrated",
+            )
+            surface = _recovery_surface(artifacts, sentence_plan)
+            follow = _reception_text(surface.text)
             if "が重なる中での" not in follow:
                 continue
             exercised += 1
-            self.assertTrue(artifacts.inverse.passed)
-            self.assertTrue(artifacts.gate.passed)
+            self.assertTrue(evaluate_grounded_surface_body_inverse(
+                body=surface.text.encode("utf-8"), plan=artifacts.plan,
+                sentence_plan=sentence_plan, resolver=artifacts.resolver,
+                selected_subjective_input=artifacts.selected_subjective_input,
+            ).passed)
+            self.assertTrue(evaluate_grounded_observation_gate(
+                plan=artifacts.plan, sentence_plan=sentence_plan,
+                surface_result=surface, resolver=artifacts.resolver,
+                product_readfeel_status="not_evaluated", require_body_inverse=True,
+                selected_subjective_input=artifacts.selected_subjective_input,
+            ).passed)
             self.assertNotIn("が重なる中で、", follow)
             changed = _tamper_reception(
-                artifacts.surface.text, "が重なる中での", "と",
+                surface.text, "が重なる中での", "と",
             )
             inverse = evaluate_grounded_surface_body_inverse(
                 body=changed.encode("utf-8"), plan=artifacts.plan,
-                sentence_plan=artifacts.sentence_plan, resolver=artifacts.resolver,
+                sentence_plan=sentence_plan, resolver=artifacts.resolver,
                 selected_subjective_input=artifacts.selected_subjective_input,
             )
             self.assertFalse(inverse.passed)

@@ -7198,6 +7198,75 @@ def build_grounded_human_reception_plan(
                     surface_strategy="emlis_attention_first",
                 ),
             )
+    # A later Move can own an independent required relation. Preserve that
+    # relation's concrete referent instead of making it anaphoric solely by
+    # position. This changes only the existing reference policy before sealing;
+    # selection, semantic duties and recovery ownership remain unchanged.
+    if (
+        final_source_fidelity
+        and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"grounded", "limited_grounding"}
+        and reference_mode == "short_anchor_if_ambiguous"
+    ):
+        concrete_moves = []
+        for move in moves:
+            if (
+                not move.required
+                or move.reference_mode != "anaphoric_first"
+                or len(move.target_nucleus_ids) != 1
+            ):
+                concrete_moves.append(move)
+                continue
+            target_id = move.target_nucleus_ids[0]
+            required_relations = tuple(
+                relation
+                for relation in relations
+                if relation.retention == "required"
+                and target_id in (relation.from_nucleus_id, relation.to_nucleus_id)
+            )
+            if len(required_relations) != 1:
+                concrete_moves.append(move)
+                continue
+            relation = required_relations[0]
+            endpoint_ids = {relation.from_nucleus_id, relation.to_nucleus_id}
+            context_ids = endpoint_ids - {target_id}
+            other_move_ids = {
+                nucleus_id
+                for other_move in moves
+                if other_move.move_id != move.move_id
+                for nucleus_id in (
+                    *other_move.target_nucleus_ids, *other_move.support_nucleus_ids
+                )
+            }
+            other_context_ids = other_move_ids | {
+                endpoint
+                for other_relation in relations
+                if other_relation.retention == "required"
+                and {other_relation.from_nucleus_id, other_relation.to_nucleus_id}
+                & other_move_ids
+                for endpoint in (
+                    other_relation.from_nucleus_id, other_relation.to_nucleus_id
+                )
+            }
+            if (
+                len(context_ids) == 1
+                and all(
+                    endpoint in nucleus_index
+                    and nucleus_index[endpoint].retention == "required"
+                    for endpoint in endpoint_ids
+                )
+                and (
+                    not move.support_nucleus_ids
+                    or (
+                        len(move.support_nucleus_ids) == 1
+                        and set(move.support_nucleus_ids) == context_ids
+                    )
+                )
+                and not endpoint_ids & other_context_ids
+            ):
+                move = replace(move, reference_mode=reference_mode)
+            concrete_moves.append(move)
+        moves = tuple(concrete_moves)
     # RR4 keeps the public follow target stable while expanding the aggregate
     # compatibility grounding to every selected Move.  ClausePlan remains the
     # owner of each individual Move binding; the aggregate fields keep the
