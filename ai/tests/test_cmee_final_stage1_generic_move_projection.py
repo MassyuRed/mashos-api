@@ -4186,3 +4186,108 @@ class CMEEFinalCurrentMoodSourceTest(unittest.TestCase):
                         replace(row, semantic_operator=contracts_owner.SemanticOperator.PRESENT_BURDEN)):
             with self.assertRaises(self.composition.Stage1CompositionError):
                 derive(**{**args, "semantic_contributions": (changed,), "contributions": (changed,)})
+
+
+class CMEEFinalSceneMoodSourceTest(unittest.TestCase):
+    @staticmethod
+    def _project(text):
+        source, base = CMEEUnresolvedQuestionSourceTest()._source_plan(text)
+        nuclei, dependencies = observation_plan_owner._final_stage1_typed_nuclei(
+            base, source.evidence_spans, normalized_input=source.normalized_current_input)
+        return source, base, nuclei, dependencies
+
+    def test_finite_scene_preserves_whole_source_and_same_nucleus(self):
+        for text in (
+            "外の空気が気持ちよくて、今日は気分が軽い。",
+            "日差しが窓から差し込んできて、今は気分が軽い。",
+            "風が室内に入ってきて、今日は私の気分が軽いです。",
+            "部屋の空気が心地よくて、気分も少し軽い。",
+        ):
+            with self.subTest(text=text):
+                source, base, nuclei, dependencies = self._project(text)
+                before = next(n for n in base.nuclei if n.source_fields == ("memo",))
+                after = next(n for n in nuclei if n.source_fields == ("memo",))
+                self.assertFalse(observation_plan_owner.is_grounded_positive_feeling(before))
+                self.assertTrue(observation_plan_owner.is_grounded_positive_feeling(after))
+                self.assertEqual(len(nuclei), len(base.nuclei))
+                self.assertEqual(dependencies, ())
+                self.assertEqual(replace(after, kind=before.kind, semantic_frame=before.semantic_frame), before)
+                self.assertEqual(after.semantic_frame.actor, before.semantic_frame.actor)
+                self.assertEqual(after.semantic_frame.time_scope, before.semantic_frame.time_scope)
+                self.assertFalse(any(c.startswith(("surface_scalar_", "source_fragment_scalar_"))
+                                     for c in after.semantic_frame.attribute_codes))
+                self.assertFalse(set(after.semantic_frame.attribute_codes) & {
+                    "operator:change", "operator:result", "operator:action", "operator:performed_action",
+                    "semantic_role:current_change", "semantic_role:explicit_result"})
+                spans = [s for s in source.evidence_spans if s.source_field == "memo"]
+                self.assertEqual(len(spans), 1)
+                self.assertEqual(spans[0].raw_text.rstrip("。"), text.rstrip("。"))
+
+    def test_scene_cannot_borrow_other_person_or_noncurrent_mood(self):
+        for text in (
+            "同僚が入ってきて、今日は気分が軽い。",
+            "同僚は外の空気が気持ちよくて、今日は気分が軽い。",
+            "同僚の部屋の空気が気持ちよくて、今日は気分が軽い。",
+            "外の空気が気持ちよくて、同僚の気分が軽い。",
+            "外の空気が気持ちよくて、昨日は気分が軽かった。",
+            "外の空気が気持ちよくて、明日は気分が軽い。",
+            "外の空気が気持ちよくて、今日は気分が軽くない。",
+            "外の空気が気持ちよくて、今日は気分が軽いかもしれない。",
+            "外の空気が気持ちよくて、今日は気分が軽い？",
+            "外の空気が気持ちよくて、今日は気分が軽い…",
+            "外の空気が気持ちよくて、今日は気分が軽いと思った。",
+            "外の空気が気持ちよくて、今日は気分が軽いなら出かける。",
+            "『外の空気が気持ちよくて、今日は気分が軽い』と聞いた。",
+            "昨日の光が部屋に入ってきて、今日は気分が軽い。",
+            "光が部屋に入ってこなくて、今日は気分が軽い。",
+        ):
+            with self.subTest(text=text):
+                _source, _base, nuclei, _dependencies = self._project(text)
+                self.assertFalse(any(observation_plan_owner.is_grounded_positive_feeling(n)
+                                     for n in nuclei if n.source_fields == ("memo",)))
+
+    def test_compound_proof_requires_complete_matching_source(self):
+        text = "外の空気が気持ちよくて、今日は気分が軽い。"
+        source, base, _nuclei, _dependencies = self._project(text)
+        target = next(n for n in base.nuclei if n.source_fields == ("memo",))
+        for normalized in (None, {**source.normalized_current_input, "memo": "今日は気分が軽い。"}):
+            self.assertEqual(observation_plan_owner._final_stage1_typed_nuclei(
+                base, source.evidence_spans, normalized_input=normalized)[0], base.nuclei)
+        for changes in ({"actor": "other"}, {"actor": "unknown"}, {"time_scope": "past"},
+                        {"modality": "uncertain"}, {"modality": "wish"},
+                        {"attribute_codes": (*target.semantic_frame.attribute_codes, "operator:change")},
+                        {"attribute_codes": (*target.semantic_frame.attribute_codes, "semantic_role:limiting_unknown")}):
+            altered = replace(base, nuclei=tuple(replace(n, semantic_frame=replace(n.semantic_frame, **changes))
+                                                if n == target else n for n in base.nuclei))
+            self.assertEqual(observation_plan_owner._final_stage1_typed_nuclei(
+                altered, source.evidence_spans, normalized_input=source.normalized_current_input)[0], altered.nuclei)
+        for span_changes in ({"start_index": 1}, {"end_index": 2}, {"raw_text": "今日は気分が軽い"}):
+            spans = tuple(replace(s, **span_changes) if s.source_field == "memo" else s
+                          for s in source.evidence_spans)
+            self.assertEqual(observation_plan_owner._final_stage1_typed_nuclei(
+                base, spans, normalized_input=source.normalized_current_input)[0], base.nuclei)
+
+    def test_whole_scene_reaches_reception_and_inverse_rejects_context_loss(self):
+        text = "風が室内に入ってきて、今日は私の気分が軽いです。"
+        a = _full_surface_artifacts(CMEEFinalCurrentMoodSourceTest._row(text))
+        self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+        self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+        self.assertEqual(len(a.selected_subjective_input.decisions), 1)
+        self.assertEqual(a.selected_subjective_input.decisions[0].reception_act, "recognize_lived_change")
+        follow = _reception_text(a.surface.text)
+        self.assertIn("気持ち", follow)
+        self.assertNotIn("今ここに置かれた言葉", follow)
+        for old, new in (("気持ち", "変化"), ("感じています", "小さくせずに受け止めています")):
+            body = _tamper_reception(a.surface.text, old, new)
+            self.assertNotEqual(body, a.surface.text)
+            self.assertFalse(evaluate_grounded_surface_body_inverse(
+                body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+        # The complete event is still asserted in Layer 1. It cannot be
+        # discarded just because Layer 2 now receives the focal feeling.
+        for old, new in (("風が室内に入ってきて、", ""), ("風", "同僚"), ("今日", "明日")):
+            body = a.surface.text.replace(old, new)
+            self.assertNotEqual(body, a.surface.text)
+            self.assertFalse(evaluate_grounded_surface_body_inverse(
+                body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)

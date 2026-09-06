@@ -9415,8 +9415,11 @@ def _final_stage1_typed_nuclei(
         if not projections:
             # A present mood is a feeling, not a positive change or a burden.
             # The old lexical signals do not recognize this subject/predicate
-            # pair. Prove the whole independent source sentence here; a tail
-            # match cannot borrow its subject from a compound or a report.
+            # pair. Prove the whole source sentence here; a tail match cannot
+            # borrow its subject from a compound or a report. The optional
+            # subordinate clause has a finite non-person scene subject/frame.
+            # It stays in this same source nucleus: do not project only the
+            # final mood, infer causation, or turn the scene into user action.
             frame = nucleus.semantic_frame
             if (
                 span is not None and normalized_input is not None
@@ -9449,6 +9452,16 @@ def _final_stage1_typed_nuclei(
                     and re.fullmatch(r"\s*[。．.!！]?\s*", source[end:])
                     and _top_level_text(source) == source
                     and re.fullmatch(
+                        r"(?:(?:"
+                        r"(?:(?:外|室内|部屋)の)?(?:風|空気)が"
+                        r"(?:気持ちよくて|心地よくて|"
+                        r"(?:(?:部屋|室内|窓|家|外)(?:に|へ|から))?"
+                        r"入ってきて)|"
+                        r"(?:(?:朝|昼|夕方|夜|今朝|今日|今|窓|外|室内|部屋)の)?"
+                        r"(?:光|日差し)が"
+                        r"(?:(?:部屋|室内|窓|家)(?:に|へ|から))?"
+                        r"(?:入ってきて|差し込んできて)"
+                        r")[、,])?"
                         r"(?:(?:今日|今)(?:は|も)?[、,]?)?"
                         r"(?:(?:私|わたし|自分)の)?"
                         r"気分(?:が|は|も)(?:少し|とても)?軽い(?:です)?", finite,
