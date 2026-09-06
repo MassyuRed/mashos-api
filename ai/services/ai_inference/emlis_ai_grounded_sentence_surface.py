@@ -188,7 +188,7 @@ _BODY_SEMANTIC_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
 _BODY_RECEPTION_GRAMMAR_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     # A suffix witness makes no claim about actor or performance. Only the
     # final inverse matcher may bind its exact bytes to a proven source target.
-    ("finite_clause_nominal", re.compile(r"(?:ている|でいる|た|だ|[くぐすつぬぶむる])こと")),
+    ("finite_clause_nominal", re.compile(r"(?:ている|でいる|ない|た|だ|[くぐすつぬぶむる])こと")),
     # Structural only: this suffix does not prove feeling or burden.
     ("negative_carrier_nominal", re.compile(r"なさ")),
     # A quote boundary for context grammar, not an additional source anchor.

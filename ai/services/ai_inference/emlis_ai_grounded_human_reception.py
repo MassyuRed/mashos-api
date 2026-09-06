@@ -2231,7 +2231,7 @@ def source_grounded_future_action_nominal(
     return f"{clause}こと"
 
 
-def _negative_feeling_nominal_responsibility(text: str, nominal: str) -> bool:
+def _source_grounded_burden_nominal_responsibility(text: str, nominal: str) -> bool:
     return bool(nominal and re.search(
         re.escape(nominal) + r"(?:を|に)[^。！？!?]*?小さくせずに(?:"
         r"(?:受け止めて|気にかけて)(?:います|いて)|"
@@ -2615,16 +2615,17 @@ def _topic_bound_anaphoric_referent(
     return referent
 
 
+_SOURCE_GROUNDED_UNFINISHED_REFERENT: Final = "まだ分からないこと"
 _SOURCE_GROUNDED_UNFINISHED_CHANGE_REFERENT: Final = "その変化についてまだ分からないこと"
 
 
-def _source_grounded_unfinished_change_referent(
+def source_grounded_unfinished_referent(
     move: GroundedReceptionMovePlan,
     plan: GroundedObservationPlan | None,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
 ) -> str:
-    """Retain both the source-owned change and its explicit unknown scope.
+    """Retain the selected unknown scope, including its change when present.
 
     This grammatical view does not reclassify polarity, act, or status. Only
     the existing final anaphoric caller may use it; selected openness is
@@ -2632,7 +2633,7 @@ def _source_grounded_unfinished_change_referent(
     """
     if (plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
         or move not in plan.response_plan.human_reception_plan.moves
-        or move.reception_act != "recognize_lived_change"
+        or move.reception_act not in {"recognize_lived_change", "stay_with_current_burden"}
         or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids
         or any(r.relation_id in plan.coverage_requirements.required_relation_ids
                and set(move.target_nucleus_ids).intersection((r.from_nucleus_id, r.to_nucleus_id))
@@ -2644,8 +2645,7 @@ def _source_grounded_unfinished_change_referent(
         or nucleus.semantic_frame.predicate_kind != "uncertainty"
         or nucleus.semantic_frame.modality != "uncertain"
         or str(nucleus.semantic_frame.actor).strip().lower() not in {"current_user", "user", "self"}
-        or not {"operator:uncertainty", "operator:positive_change", "operator:change"}
-        <= set(nucleus.semantic_frame.attribute_codes)
+        or "operator:uncertainty" not in nucleus.semantic_frame.attribute_codes
         or source_proven_performed_action_status(nucleus)
         or source_proven_future_action_status(nucleus)
         or len(nucleus.source_span_ids) != 1
@@ -2659,7 +2659,27 @@ def _source_grounded_unfinished_change_referent(
                for span in resolver.resolve_many(resolver.span_ids)
                if span.source_field in fields)):
         return ""
-    return _SOURCE_GROUNDED_UNFINISHED_CHANGE_REFERENT
+    attributes = set(nucleus.semantic_frame.attribute_codes)
+    if move.reception_act == "recognize_lived_change":
+        return (
+            _SOURCE_GROUNDED_UNFINISHED_CHANGE_REFERENT
+            if {"operator:positive_change", "operator:change"} <= attributes
+            else ""
+        )
+    # The final source owner has already proved an unresolved question or
+    # finite cognition predicate. A general burden family alone does not
+    # prove that something is unknown, nor may it erase an owned change.
+    if (
+        nucleus.semantic_frame.time_scope not in {"present", "current_input"}
+        or nucleus.semantic_frame.polarity not in {"neutral", "negative"}
+        or not {"lexical:preserve_source_predicate", "lexical:no_new_sensation_family"} <= attributes
+        or {"operator:positive_change", "operator:change", "operator:result"} & attributes
+        # Keep the established anaphoric no-full-source-replay boundary.
+        or _source_grounded_clause_candidate(nucleus, resolver)
+        in _SOURCE_GROUNDED_UNFINISHED_REFERENT
+    ):
+        return ""
+    return _SOURCE_GROUNDED_UNFINISHED_REFERENT
 
 
 def resolve_grounded_reception_move_referent(
@@ -2699,8 +2719,8 @@ def resolve_grounded_reception_move_referent(
         final_source_fidelity=final_source_fidelity,
     )
     if (final_source_fidelity and effective_reference == "anaphoric_first"
-        and referent.kind == "lived_change"):
-        unfinished = _source_grounded_unfinished_change_referent(
+        and referent.kind in {"lived_change", "current_expression"}):
+        unfinished = source_grounded_unfinished_referent(
             move, plan, nucleus_index, resolver,
         )
         if unfinished:
@@ -3530,8 +3550,9 @@ def validate_grounded_human_reception_surface(
                 reception_plan, move, surface.recovery_stage,
             ) != "anaphoric_first"
         ) if final_nuclei else ()
-        feeling_nominals = tuple(
+        burden_nominals = tuple(
             source_grounded_negative_feeling_target_nominal(move, plan, final_nuclei, resolver)
+            or source_grounded_unfinished_referent(move, plan, final_nuclei, resolver)
             for move in active_moves
             if move.reception_act == act == "stay_with_current_burden"
             and reception_effective_move_reference_mode(
@@ -3550,8 +3571,8 @@ def validate_grounded_human_reception_surface(
             bool(_ACT_OWNED_RESPONSIBILITY_RE[act].search(surface.text))
             or any(_performed_action_nominal_responsibility(surface.text, nominal)
                    for nominal in action_nominals)
-            or any(_negative_feeling_nominal_responsibility(surface.text, nominal)
-                   for nominal in feeling_nominals)
+            or any(_source_grounded_burden_nominal_responsibility(surface.text, nominal)
+                   for nominal in burden_nominals)
         )
         visible_responsibilities.append(visible)
         if not visible:
@@ -7994,12 +8015,14 @@ def _author_source_grounded_reception_clauses(
                         move, nucleus_index, resolver,
                     ) or source_grounded_future_action_nominal(
                         move, nucleus_index, resolver,
-                    )) else _negative_feeling_nominal_responsibility(move_sentence, referent_text)
+                    )) else _source_grounded_burden_nominal_responsibility(move_sentence, referent_text)
                     if referent.kind == "current_expression"
                     and meaning_realization.reference_mode == "ANAPHORIC"
-                    and referent_text == source_grounded_negative_feeling_target_nominal(
+                    and referent_text == (source_grounded_negative_feeling_target_nominal(
                         move, plan, nucleus_index, resolver,
-                    ) else _ACT_OWNED_RESPONSIBILITY_RE[
+                    ) or source_grounded_unfinished_referent(
+                        move, plan, nucleus_index, resolver,
+                    )) else _ACT_OWNED_RESPONSIBILITY_RE[
                         move.reception_act
                     ].search(move_sentence)
                 )
