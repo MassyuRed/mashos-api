@@ -3794,3 +3794,127 @@ class CMEEFutureActionNominalTest(unittest.TestCase):
             anaphoric = reception_owner.resolve_grounded_reception_move_referent(**kwargs, final_source_fidelity=True)
         self.assertEqual(anaphoric.kind, "future_action_intention")
         self.assertNotEqual(anaphoric.text, action + "こと")
+
+
+class CMEEFinalUnfinishedChangeReceptionTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = {}
+        for name, thought in (
+            ("open", "昨日より楽になったのはなぜだろう。"),
+            ("mixed", "片付いたのに、気分が重くなったのはなぜだろうか。"),
+            ("settled", "昨日より楽になった。"),
+        ):
+            row = {"case_id": "public-unfinished-change-" + name, "input": {
+                "thought_text": thought, "action_text": "", "categories": ["生活"],
+                "emotions": [{"type": "喜び", "strength": "weak"}],
+            }}
+            cls.artifacts[name] = _full_surface_artifacts(row)
+
+    def test_existing_change_act_receives_its_unfinished_scope(self):
+        for name in ("open", "mixed"):
+            a = self.artifacts[name]
+            with self.subTest(name=name):
+                self.assertTrue(a.gate.passed)
+                self.assertTrue(a.inverse.passed)
+                self.assertEqual(_reception_text(a.surface.text).strip(),
+                                 "結論を急がずに、その変化についてまだ分からないことを受け止めています。")
+                moves = a.plan.response_plan.human_reception_plan.moves
+                self.assertEqual(len(moves), 1)
+                self.assertEqual(moves[0].reception_act, "recognize_lived_change")
+                target = next(n for n in a.plan.nuclei if n.nucleus_id == moves[0].target_nucleus_ids[0])
+                self.assertEqual(target.semantic_frame.polarity, "positive")
+                self.assertEqual(target.semantic_frame.modality, "uncertain")
+        settled = self.artifacts["settled"]
+        self.assertTrue(settled.gate.passed and settled.inverse.passed)
+        self.assertIn("その変化を感じています", _reception_text(settled.surface.text))
+        self.assertNotIn("まだ分からない", _reception_text(settled.surface.text))
+
+    def test_whole_unknown_target_and_selected_openness_are_required(self):
+        a = self.artifacts["open"]
+        target = "その変化についてまだ分からないこと"
+        for old, new in (
+            (target, "その変化"), (target, "まだ分からないこと"),
+            (target, target.replace("分からない", "分かった")),
+            (target, "「" + target + "」"), (target, target + "と" + target),
+            ("受け止めています", "感じています"),
+            ("結論を急がずに、", "結論を出して、"),
+        ):
+            with self.subTest(old=old, new=new):
+                body = _tamper_reception(a.surface.text, old, new)
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                )
+                gate = evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan, surface_result=replace(a.surface, text=body),
+                    resolver=a.resolver, require_body_inverse=True,
+                    selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(inverse.passed)
+                self.assertFalse(gate.passed)
+
+    def test_grammar_requires_same_single_unquoted_uncertainty_source(self):
+        a = self.artifacts["open"]
+        rp = a.plan.response_plan.human_reception_plan
+        move = rp.moves[0]
+        index = {n.nucleus_id: n for n in a.plan.nuclei}
+        target = index[move.target_nucleus_ids[0]]
+        derive = reception_owner._source_grounded_unfinished_change_referent
+        self.assertEqual(derive(move, a.plan, index, a.resolver), "その変化についてまだ分からないこと")
+        for changes in (
+            {"actor": "other"}, {"actor": "unknown"}, {"modality": "fact"},
+            {"predicate_kind": "change"},
+            {"attribute_codes": tuple(c for c in target.semantic_frame.attribute_codes if c != "operator:uncertainty")},
+            {"attribute_codes": tuple(c for c in target.semantic_frame.attribute_codes if c != "operator:positive_change")},
+            {"attribute_codes": tuple(c for c in target.semantic_frame.attribute_codes if c != "operator:change")},
+            {"attribute_codes": (*target.semantic_frame.attribute_codes, "quantity:multiple")},
+        ):
+            changed = replace(target, semantic_frame=replace(target.semantic_frame, **changes))
+            plan = replace(a.plan, nuclei=tuple(changed if n == target else n for n in a.plan.nuclei))
+            with self.subTest(changes=changes):
+                self.assertEqual(derive(move, plan, {**index, target.nucleus_id: changed}, a.resolver), "")
+        for changed_move in (
+            replace(move, target_nucleus_ids=(*move.target_nucleus_ids, "foreign")),
+            replace(move, support_nucleus_ids=("foreign",)),
+            replace(move, reception_act="stay_with_current_burden"),
+        ):
+            plan = replace(a.plan, response_plan=replace(a.plan.response_plan,
+                human_reception_plan=replace(rp, moves=(changed_move,))))
+            self.assertEqual(derive(changed_move, plan, index, a.resolver), "")
+        spans = tuple(a.resolver.resolve_many(a.resolver.span_ids))
+        for boundary in ("『引用』", "「引用」", "…"):
+            altered = tuple(replace(span, raw_text=span.raw_text + boundary)
+                            if span.source_field == "memo" else span for span in spans)
+            with self.subTest(boundary=boundary), patch.object(type(a.resolver), "resolve_many", return_value=altered):
+                self.assertEqual(derive(move, a.plan, index, a.resolver), "")
+        kwargs = dict(reception_plan=rp, move=move, nucleus_index=index,
+                      resolver=a.resolver, allow_short_anchor=False, plan=a.plan)
+        legacy = reception_owner.resolve_grounded_reception_move_referent(**kwargs)
+        self.assertNotIn("まだ分からない", legacy.text)
+        with patch.object(reception_owner, "reception_effective_move_reference_mode", return_value="short_anchor_if_ambiguous"):
+            explicit = reception_owner.resolve_grounded_reception_move_referent(**kwargs, final_source_fidelity=True)
+        self.assertNotIn("まだ分からない", explicit.text)
+
+    def test_unfinished_predicate_cannot_replace_another_selected_operation(self):
+        a = self.artifacts["open"]
+        rp = a.plan.response_plan.human_reception_plan
+        move = rp.moves[0]
+        decision = reception_owner.validate_selected_subjective_reception_input(
+            a.selected_subjective_input, rp, a.plan, a.resolver,
+        )[move.move_id]
+        target = next(n for n in a.plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0])
+        profile = reception_owner._source_grounded_semantic_profile(target, "理由はまだ分からない")
+        kwargs = dict(future_action=False, target_predicate_kind="present_change", semantic_profile=profile,
+                      referent_kind="lived_change", voice="STATE", unfinished_change=True)
+        predicate = reception_owner._source_grounded_response_predicate(
+            move.reception_act, move.move_role, **kwargs, selected_subjective_decision=decision,
+        )
+        self.assertEqual(predicate.predicate_lemma, "受け止める")
+        for operation in ("RECEIVE_AS_MATERIAL", "RECOGNIZE_AS_BOUNDED", "PRESERVE_BOTH_ENDPOINTS"):
+            changed = replace(decision, subjective_proposition=replace(decision.subjective_proposition,
+                appraisal_content=replace(decision.subjective_proposition.appraisal_content, operation=operation)))
+            with self.subTest(operation=operation), self.assertRaises(reception_owner.GroundedHumanReceptionSurfaceError):
+                reception_owner._source_grounded_response_predicate(
+                    move.reception_act, move.move_role, **kwargs, selected_subjective_decision=changed,
+                )

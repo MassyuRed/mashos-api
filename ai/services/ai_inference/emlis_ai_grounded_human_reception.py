@@ -2561,6 +2561,53 @@ def _topic_bound_anaphoric_referent(
     return referent
 
 
+_SOURCE_GROUNDED_UNFINISHED_CHANGE_REFERENT: Final = "その変化についてまだ分からないこと"
+
+
+def _source_grounded_unfinished_change_referent(
+    move: GroundedReceptionMovePlan,
+    plan: GroundedObservationPlan | None,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+) -> str:
+    """Retain both the source-owned change and its explicit unknown scope.
+
+    This grammatical view does not reclassify polarity, act, or status. Only
+    the existing final anaphoric caller may use it; selected openness is
+    consumed separately by the sole author and full-body replay.
+    """
+    if (plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
+        or move not in plan.response_plan.human_reception_plan.moves
+        or move.reception_act != "recognize_lived_change"
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids
+        or any(r.relation_id in plan.coverage_requirements.required_relation_ids
+               and set(move.target_nucleus_ids).intersection((r.from_nucleus_id, r.to_nucleus_id))
+               for r in plan.relations)):
+        return ""
+    nucleus = nucleus_index.get(move.target_nucleus_ids[0])
+    if (nucleus is None or nucleus not in plan.nuclei
+        or nucleus.kind != "uncertainty"
+        or nucleus.semantic_frame.predicate_kind != "uncertainty"
+        or nucleus.semantic_frame.modality != "uncertain"
+        or str(nucleus.semantic_frame.actor).strip().lower() not in {"current_user", "user", "self"}
+        or not {"operator:uncertainty", "operator:positive_change", "operator:change"}
+        <= set(nucleus.semantic_frame.attribute_codes)
+        or source_proven_performed_action_status(nucleus)
+        or source_proven_future_action_status(nucleus)
+        or len(nucleus.source_span_ids) != 1
+        or any(code.startswith("quantity:") and code.removeprefix("quantity:")
+               not in {"not_applicable", "source_bounded", "unknown"}
+               for code in nucleus.semantic_frame.attribute_codes)):
+        return ""
+    fields = resolver.source_fields_for(nucleus.source_span_ids)
+    if (len(fields) != 1 or fields[0] not in {"memo", "memo_action"}
+        or any(re.search(r"[「」『』…‥]", span.raw_text)
+               for span in resolver.resolve_many(resolver.span_ids)
+               if span.source_field in fields)):
+        return ""
+    return _SOURCE_GROUNDED_UNFINISHED_CHANGE_REFERENT
+
+
 def resolve_grounded_reception_move_referent(
     reception_plan: GroundedHumanReceptionPlan,
     move: GroundedReceptionMovePlan,
@@ -2597,6 +2644,13 @@ def resolve_grounded_reception_move_referent(
         effective_reference_mode=effective_reference,
         final_source_fidelity=final_source_fidelity,
     )
+    if (final_source_fidelity and effective_reference == "anaphoric_first"
+        and referent.kind == "lived_change"):
+        unfinished = _source_grounded_unfinished_change_referent(
+            move, plan, nucleus_index, resolver,
+        )
+        if unfinished:
+            return replace(referent, text=unfinished)
     if (final_source_fidelity and effective_reference == "anaphoric_first"
         and referent.kind == "current_expression"):
         nominal = source_grounded_negative_feeling_target_nominal(
@@ -7198,6 +7252,7 @@ def _source_grounded_response_predicate(
     ],
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
     distributive_object: bool = False,
+    unfinished_change: bool = False,
 ) -> _SourceGroundedResponsePredicateV1:
     """Compose role valency independently from the act predicate."""
 
@@ -7247,6 +7302,20 @@ def _source_grounded_response_predicate(
         raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
     proposition = selected_subjective_decision.subjective_proposition
     appraisal = proposition.appraisal_content
+    if unfinished_change:
+        if (reception_act != "recognize_lived_change" or referent_kind != "lived_change"
+            or semantic_profile.nucleus_kind != "uncertainty"
+            or semantic_profile.predicate_kind != "uncertainty"
+            or semantic_profile.modality != "uncertain"
+            or semantic_profile.actor_kind != "SELF"
+            or semantic_profile.performed_action or semantic_profile.future_action
+            or semantic_profile.quoted_boundary or distributive_object
+            or appraisal is None or appraisal.operation != "LEAVE_UNFINISHED"
+            or proposition.focal_relation_ref is not None):
+            raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        # Feeling a realized change would close the still-unknown source.
+        # Receive the same change's unknown scope under selected openness.
+        predicate_lemma, conjugation_class = "受け止める", "ICHIDAN"
     if distributive_object and (
         appraisal is None or appraisal.operation != "PRESERVE_BOTH_ENDPOINTS"
     ):
@@ -7385,6 +7454,7 @@ def _source_grounded_response_predicate_surface(
     recovery_stage: ReceptionRecoveryStage = "full",
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
     distributive_object: bool = False,
+    unfinished_change: bool = False,
 ) -> str:
     """Place the governed object and adjunct around one inflected predicate."""
 
@@ -7398,6 +7468,7 @@ def _source_grounded_response_predicate_surface(
         voice=voice,
         selected_subjective_decision=selected_subjective_decision,
         distributive_object=distributive_object,
+        unfinished_change=unfinished_change,
     )
     if recovery_stage not in _RECOVERY_STAGES:
         raise GroundedHumanReceptionSurfaceError(
@@ -7516,6 +7587,10 @@ def _source_grounded_reception_fragment(
         recovery_stage=recovery_stage,
         selected_subjective_decision=selected_subjective_decision,
         distributive_object=distributive_object,
+        unfinished_change=(
+            realization.reference_mode == "ANAPHORIC"
+            and target_core.target_referent == _SOURCE_GROUNDED_UNFINISHED_CHANGE_REFERENT
+        ),
     )
     return predicate_surface
 
