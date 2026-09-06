@@ -949,6 +949,47 @@ class CMEEPastReportedWishTest(unittest.TestCase):
 
 
 class CMEEPositiveFeelingProjectionTest(unittest.TestCase):
+    def test_independent_selected_feeling_keeps_its_referent_after_effort(self):
+        a = _full_surface_artifacts({
+            "case_id": "public-independent-feeling-after-effort",
+            "input": {
+                "thought_text": "道具が使えてうれしかった。休憩したら、気持ちが楽になった。",
+                "action_text": "作業台を片づけた。",
+                "categories": ["仕事"],
+                "emotions": [{"type": "喜び", "strength": "medium"}],
+            },
+        })
+        self.assertTrue(a.gate.passed)
+        self.assertTrue(a.inverse.passed)
+        self.assertEqual(a.sentence_plan.recovery_stage, "full")
+        response = a.plan.response_plan
+        reception = response.human_reception_plan
+        first, feeling = reception.moves
+        self.assertEqual(
+            (first.reception_act, feeling.reception_act),
+            ("honor_concrete_effort", "recognize_lived_change"),
+        )
+        self.assertEqual(first.target_nucleus_ids, response.human_follow_target_ids)
+        self.assertTrue(set(feeling.target_nucleus_ids) <= set(response.primary_nucleus_ids))
+        self.assertTrue(all(move.required for move in reception.moves))
+        self.assertEqual(feeling.reference_mode, "short_anchor_if_ambiguous")
+        body = _reception_text(a.surface.text)
+        self.assertIn("作業台を片づけた", body)
+        self.assertIn("道具が使えてうれしかった", body)
+        self.assertNotIn("その気持ち", body)
+        changed = _tamper_reception(
+            a.surface.text, "道具が使えてうれしかった", "別のことがうれしかった",
+        )
+        self.assertFalse(evaluate_grounded_surface_body_inverse(
+            body=changed.encode("utf-8"), plan=a.plan,
+            sentence_plan=a.sentence_plan, resolver=a.resolver,
+            selected_subjective_input=a.selected_subjective_input,
+        ).passed)
+        for stage in ("integrated", "hedged", "minimal_grounded"):
+            self.assertEqual(reception_owner.reception_effective_move_reference_mode(
+                reception, feeling, stage,
+            ), "anaphoric_first")
+
     def test_linked_coprimary_feeling_precedes_supplemental_action(self):
         for memo, boundary in (
             ("模型が完成してうれしかった。でも、説明書どおりに作れたのかは分からない。", "分からない"),

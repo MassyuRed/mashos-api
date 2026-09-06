@@ -7152,6 +7152,40 @@ def build_grounded_human_reception_plan(
         semantic_complexity=semantic_complexity,
         final_source_fidelity=final_source_fidelity,
     )
+    # A separate memo feeling has no antecedent in an effort-only first Move.
+    # Keep its already-selected meaning and responsibilities, but retain the
+    # existing explicit reference grammar before the request-local plan seals.
+    if (
+        final_source_fidelity
+        and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"grounded", "limited_grounding"}
+        and reference_mode == "short_anchor_if_ambiguous"
+        and len(primary_nucleus_ids) > 1
+        and len(moves) == 2
+        and moves[0].reception_act == "honor_concrete_effort"
+        and moves[1].reception_act == "recognize_lived_change"
+        and len(moves[1].target_nucleus_ids) == 1
+        and not moves[1].support_nucleus_ids
+    ):
+        feeling_id = moves[1].target_nucleus_ids[0]
+        feeling = nucleus_index.get(feeling_id)
+        preceding_ids = set((*moves[0].target_nucleus_ids, *moves[0].support_nucleus_ids))
+        preceding_context_ids = preceding_ids | {
+            endpoint
+            for relation in relations
+            if relation.retention == "required"
+            and {relation.from_nucleus_id, relation.to_nucleus_id} & preceding_ids
+            for endpoint in (relation.from_nucleus_id, relation.to_nucleus_id)
+        }
+        if (
+            feeling_id in primary_nucleus_ids
+            and feeling_id not in preceding_context_ids
+            and feeling is not None
+            and feeling.retention == "required"
+            and feeling.source_fields == ("memo",)
+            and is_grounded_positive_feeling(feeling)
+        ):
+            moves = (moves[0], replace(moves[1], reference_mode=reference_mode))
     # RR4 keeps the public follow target stable while expanding the aggregate
     # compatibility grounding to every selected Move.  ClausePlan remains the
     # owner of each individual Move binding; the aggregate fields keep the
