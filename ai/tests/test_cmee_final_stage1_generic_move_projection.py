@@ -538,6 +538,79 @@ class CMEEUnresolvedQuestionSourceTest(unittest.TestCase):
         )
         return source, plan
 
+    def test_finite_cognitive_unknown_preserves_same_nucleus_and_source(self):
+        for text in ("まだよく分からない。", "今もはっきりわからない。"):
+            with self.subTest(text=text):
+                source, before = self._source_plan(text)
+                target = next(n for n in before.nuclei if "memo" in n.source_fields)
+                self.assertEqual((target.kind, target.semantic_frame.predicate_kind), ("state", "state"))
+                nuclei, dependencies = observation_plan_owner._final_stage1_typed_nuclei(
+                    before, source.evidence_spans,
+                    normalized_input=source.normalized_current_input,
+                )
+                self.assertEqual(dependencies, ())
+                self.assertEqual(nuclei, tuple(
+                    replace(n, kind="uncertainty", semantic_frame=replace(
+                        n.semantic_frame, predicate_kind="uncertainty",
+                    )) if n.nucleus_id == target.nucleus_id else n
+                    for n in before.nuclei
+                ))
+                for normalized in (None, {**source.normalized_current_input, "memo": "別の文"}):
+                    untouched, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                        before, source.evidence_spans, normalized_input=normalized,
+                    )
+                    self.assertEqual(untouched, before.nuclei)
+
+    def test_cognitive_unknown_does_not_inherit_omitted_owner_or_host(self):
+        source, before = self._source_plan("まだよく分からない。")
+        raw = source.normalized_current_input["memo"].rstrip("。")
+        for left, right in (("弟は、", "。"), ("「", "」と聞いた。"),
+                            ("", "と思った。"), ("", "なら待つ。"),
+                            ("", "とは言えない。"), ("", "？")):
+            with self.subTest(left=left, right=right):
+                spans = tuple(replace(s, start_index=s.start_index + len(left),
+                                      end_index=s.end_index + len(left))
+                              if s.source_field == "memo" else s
+                              for s in source.evidence_spans)
+                untouched, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                    before, spans, normalized_input={
+                        **source.normalized_current_input, "memo": left + raw + right,
+                    },
+                )
+                self.assertEqual(untouched, before.nuclei)
+        for text in ("まだ弟は分からない。", "まだ体が動かない。",
+                     "まだ分からなかった。", "まだ分からないとは言えない。",
+                     "まだよく分からない？"):
+            with self.subTest(text=text):
+                candidate_source, plan = self._source_plan(text)
+                nuclei, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                    plan, candidate_source.evidence_spans,
+                    normalized_input=candidate_source.normalized_current_input,
+                )
+                self.assertFalse(any(n.kind == "uncertainty" for n in nuclei))
+
+    def test_cognitive_unknown_selected_openness_reaches_body_and_inverse(self):
+        artifacts = _full_surface_artifacts({
+            "case_id": "finite-cognitive-unknown-expression-unit",
+            "input": {"thought_text": "まだよく分からない。", "action_text": "",
+                      "categories": ["生活"],
+                      "emotions": [{"type": "不安", "strength": "weak"}]},
+        })
+        self.assertTrue(artifacts.gate.passed)
+        self.assertTrue(artifacts.inverse.passed)
+        self.assertEqual(len(artifacts.selected_subjective_input.decisions), 1)
+        decision = artifacts.selected_subjective_input.decisions[0]
+        self.assertEqual(decision.subjective_proposition.appraisal_content.operation, "LEAVE_UNFINISHED")
+        follow = _reception_text(artifacts.surface.text)
+        self.assertTrue(follow.lstrip().startswith("結論を急がずに、"))
+        altered = _tamper_reception(artifacts.surface.text, "結論を急がずに、", "")
+        inverse = evaluate_grounded_surface_body_inverse(
+            body=altered.encode("utf-8"), plan=artifacts.plan,
+            sentence_plan=artifacts.sentence_plan, resolver=artifacts.resolver,
+            selected_subjective_input=artifacts.selected_subjective_input,
+        )
+        self.assertFalse(inverse.passed)
+
     def test_why_question_preserves_owner_and_source_before_meaning_selection(self):
         for prefix in ("どうして", "なぜ", "何故"):
             with self.subTest(prefix=prefix):

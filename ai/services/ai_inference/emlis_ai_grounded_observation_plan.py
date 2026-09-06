@@ -9414,13 +9414,14 @@ def _final_stage1_typed_nuclei(
         )
         if not projections:
             # An embedded action/change does not make an unresolved why-question
-            # an assertion. Correct this existing source kind before
+            # an assertion. A finite, already-uncertain state must likewise
+            # retain its openness before meaning selection. Correct the kind before
             # graph/meaning selection; keep the same owner and all evidence.
             # Require the complete top-level source clause, not a quotation
             # or a fragment whose reporting host was lost by Ledger.
             if (
                 span is not None
-                and nucleus.kind in {"action", "change"}
+                and nucleus.kind in {"action", "change", "state"}
                 and normalized_input is not None
             ):
                 source = str(normalized_input.get(span.source_field) or "")
@@ -9441,7 +9442,8 @@ def _final_stage1_typed_nuclei(
                     and not source[previous_boundary + 1:start].strip()
                     and (
                         (
-                            nucleus.semantic_frame.modality == "uncertain"
+                            nucleus.kind in {"action", "change"}
+                            and nucleus.semantic_frame.modality == "uncertain"
                             and "operator:uncertainty"
                             in nucleus.semantic_frame.attribute_codes
                             and re.match(r"^(?:どうして|なぜ|何故)", finite)
@@ -9450,9 +9452,30 @@ def _final_stage1_typed_nuclei(
                         # A concessive subordinate clause may precede the
                         # question; a comma-separated independent assertion
                         # cannot be absorbed into its uncertain status.
-                        or re.fullmatch(
-                            r"(?:[^、,]+のに[、,])?[^、,]+"
-                            r"のは(?:どうして|なぜ|何故)だろう(?:か)?", finite,
+                        or (
+                            nucleus.kind in {"action", "change"}
+                            and re.fullmatch(
+                                r"(?:[^、,]+のに[、,])?[^、,]+"
+                                r"のは(?:どうして|なぜ|何故)だろう(?:か)?", finite,
+                            )
+                        )
+                        or (
+                            nucleus.kind == "state"
+                            and nucleus.semantic_frame.predicate_kind == "state"
+                            and nucleus.semantic_frame.actor == "current_user"
+                            and nucleus.semantic_frame.modality == "uncertain"
+                            and {"operator:uncertainty", "semantic_role:limiting_unknown"}
+                            <= set(nucleus.semantic_frame.attribute_codes)
+                            # Only adverb attachment to the registered finite
+                            # cognition predicate: no inferred object, actor,
+                            # embedded assertion or reporting host.
+                            and re.fullmatch(
+                                r"(?:まだ|今も)?(?:よく|はっきり)?"
+                                r"(?:分からない|わからない)", finite,
+                            )
+                            and _UNCERTAIN_RE.search(finite)
+                            and not re.search(r"[?？]", raw)
+                            and not re.match(r"^\s*[?？]", source[end:])
                         )
                     )
                     and _top_level_text(finite) == finite
