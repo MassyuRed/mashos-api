@@ -757,6 +757,10 @@ class CMEEPositiveFeelingProjectionTest(unittest.TestCase):
                      ("honor_concrete_effort", ("memo_action",))},
                 )
                 self.assertIn(memo.rstrip("。"), _reception_text(a.surface.text))
+                self.assertEqual(moves[0].move_role, "attention")
+                self.assertEqual(moves[0].reception_act, "recognize_lived_change")
+                authored = next(s for s in a.authored if s.recovery_stage == "full")
+                self.assertEqual(authored.realized_move_ids, ("rm1", "rm2"))
                 active = build_grounded_observation_plan({
                     "memo": memo, "memo_action": row["input"]["action_text"],
                 })
@@ -1847,13 +1851,15 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
         )
         bound = self._bind_reception_text(multi_case, multi_reception)
         self.assertEqual(bound.realized_move_ids, ("rm1", "rm2"))
+        missing_change_duty = multi_reception.replace("変化", "内容", 1)
+        self.assertNotEqual(missing_change_duty, multi_reception)
         with self.assertRaisesRegex(
             reception_owner.GroundedHumanReceptionSurfaceError,
             "reception_actual_surface_contract_failed",
         ):
             self._bind_reception_text(
                 multi_case,
-                multi_reception.replace("その変化", "その内容", 1),
+                missing_change_duty,
             )
 
         accountability_case = "nls3s_b001_0066"

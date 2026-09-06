@@ -6864,6 +6864,8 @@ def _select_reception_opportunities(
 
 def _move_roles_by_opportunity_family(
     selected: Sequence[GroundedReceptionOpportunity],
+    *,
+    final_source_fidelity: bool = False,
 ) -> dict[str, GroundedReceptionMoveRole]:
     families = {item.family for item in selected}
     result: dict[str, GroundedReceptionMoveRole] = {}
@@ -6873,7 +6875,18 @@ def _move_roles_by_opportunity_family(
         elif item.family in {"current_burden", "help_seeking", "words_placed"}:
             role = "felt_response"
         elif {"concrete_effort", "lived_change"} <= families:
-            role = "attention" if item.family == "concrete_effort" else "felt_response"
+            # RR7 orders attention before felt response.  For a final pair
+            # whose selected primary is the lived change, keep that primary
+            # as the attention object instead of putting the action first
+            # again during realization.  Both role/act pairs already exist.
+            attention_family = (
+                "lived_change"
+                if final_source_fidelity
+                and families == {"concrete_effort", "lived_change"}
+                and selected[0].family == "lived_change"
+                else "concrete_effort"
+            )
+            role = "attention" if item.family == attention_family else "felt_response"
         elif {"lived_change", "retained_intention"} <= families:
             role = "attention" if item.family == "lived_change" else "felt_response"
         elif {"concrete_effort", "retained_intention"} <= families:
@@ -6910,6 +6923,7 @@ def _build_reception_depth_policy_and_moves(
     legacy_reference_mode: GroundedReferenceMode,
     safety_kind: str,
     semantic_complexity: str,
+    final_source_fidelity: bool = False,
 ) -> tuple[GroundedReceptionDepthPolicy, tuple[GroundedReceptionMovePlan, ...]]:
     selected = _select_reception_opportunities(
         opportunities,
@@ -6939,7 +6953,13 @@ def _build_reception_depth_policy_and_moves(
             level = "focused"
             min_sentences = max_sentences = 1
 
-    roles = _move_roles_by_opportunity_family(selected)
+    roles = _move_roles_by_opportunity_family(
+        selected,
+        final_source_fidelity=(
+            final_source_fidelity
+            and safety_kind == TRIAGE_SAFE_OBSERVATION
+        ),
+    )
     moves: list[GroundedReceptionMovePlan] = []
     for index, opportunity in enumerate(selected, start=1):
         role = roles[opportunity.opportunity_id]
@@ -7130,6 +7150,7 @@ def build_grounded_human_reception_plan(
         legacy_reference_mode=reference_mode,
         safety_kind=safety_kind,
         semantic_complexity=semantic_complexity,
+        final_source_fidelity=final_source_fidelity,
     )
     # RR4 keeps the public follow target stable while expanding the aggregate
     # compatibility grounding to every selected Move.  ClausePlan remains the
