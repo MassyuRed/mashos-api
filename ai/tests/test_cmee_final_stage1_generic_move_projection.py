@@ -3527,5 +3527,121 @@ class CMEENegativeContextNominalTest(unittest.TestCase):
                                      for e in args[1] for p in e.nominalization_plan))
 
 
+class CMEENegativeFeelingReferentTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = tuple((source, nominal, _full_surface_artifacts({
+            "case_id": "public-negative-feeling-referent", "input": {
+                "thought_text": source + "。", "action_text": "", "categories": ["生活"],
+                "emotions": [{"type": "不安", "strength": "weak"}],
+            },
+        })) for source, nominal in (
+            ("どことなく、落ち着かない", "どことなくの落ち着かなさ"),
+            ("なんとなく感じない", "なんとなくの感じなさ"),
+            ("漠然と、焦らない", "漠然とした焦らなさ"),
+        ))
+
+    def test_existing_nominal_is_one_target_and_replays_same_selected_input(self):
+        for source, nominal, a in self.artifacts:
+            with self.subTest(source=source):
+                follow = _reception_text(a.surface.text)
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                self.assertEqual(follow.count(nominal), 1)
+                self.assertNotIn("今ここに置かれた言葉", follow)
+                self.assertNotIn("について", follow)
+                self.assertIn(nominal + "を小さくせずに受け止めています", follow)
+                plan = a.plan.response_plan.human_reception_plan
+                line = next(line for line in a.sentence_plan.lines if line.binding.line_role == "human_follow")
+                replay = reception_owner.replay_source_grounded_human_reception_from_plan(
+                    plan, {n.nucleus_id: n for n in a.plan.nuclei}, a.resolver,
+                    plan=a.plan, recovery_stage=a.sentence_plan.recovery_stage,
+                    clause_plans=line.reception_clause_plans,
+                    selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertEqual(replay.text, follow.strip())
+                self.assertTrue(all(kw["selected_subjective_input"] is a.selected_subjective_input
+                                    for _args, kw in a.author_arguments))
+                self.assertTrue(all(e.nominalization_plan[1].startswith("nominal-slot:0:NEGATIVE_FEELING_CARRIER:")
+                                    for args, _kw in a.author_arguments for e in args[1]))
+
+    def test_inverse_binds_whole_nominal_and_rejects_changed_responsibility(self):
+        source, nominal, a = self.artifacts[0]
+        for replacement in (
+            "落ち着かなさ", "どことなくの落ち着き", "なんとなくの落ち着かなさ",
+            "別の感じなさ", "今ここに置かれた言葉", "別の感じなさについて、今ここに置かれた言葉", source,
+            "「" + nominal + "」", "『" + nominal + "』", nominal + "と" + nominal,
+        ):
+            with self.subTest(replacement=replacement):
+                body = _tamper_reception(a.surface.text, nominal, replacement)
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(inverse.passed)
+                self.assertTrue(any("target_duty_missing" in c for c in inverse.failure_codes))
+        body = _tamper_reception(a.surface.text, "小さくせずに受け止めています", "小さなことだと考えています")
+        self.assertFalse(reception_owner._negative_feeling_nominal_responsibility(body, nominal))
+        self.assertFalse(evaluate_grounded_surface_body_inverse(
+            body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+            resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+        ).passed)
+        body = _tamper_reception(a.surface.text, nominal, source + "、" + nominal)
+        inverse = evaluate_grounded_surface_body_inverse(
+            body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+            resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+        )
+        self.assertFalse(inverse.passed)
+        self.assertTrue(any("anaphoric_target_replayed" in c for c in inverse.failure_codes))
+
+    def test_suffix_witness_is_reception_scoped_without_burden_classification(self):
+        _source, nominal, a = self.artifacts[0]
+        body = a.surface.text.encode("utf-8")
+        witness = surface_owner.parse_grounded_surface_body_bytes(body)
+        markers = [m for m in witness.markers if m.marker_code == "negative_carrier_nominal"]
+        end = body.index(nominal.encode("utf-8")) + len(nominal.encode("utf-8"))
+        self.assertTrue(any(m.utf8_byte_end == end for m in markers))
+        self.assertTrue(all(m.section == "reception" and m.marker_kind == "semantic" for m in markers))
+        self.assertTrue(all(not {"target_burden", "target_words"}.intersection(s.reception_marker_codes)
+                            for s in witness.sentences if s.section == "reception"))
+
+    def test_nominal_requires_final_same_plan_self_and_no_extra_context(self):
+        _source, nominal, a = self.artifacts[0]
+        reception = a.plan.response_plan.human_reception_plan
+        move = reception.moves[0]
+        index = {n.nucleus_id: n for n in a.plan.nuclei}
+        target = index[move.target_nucleus_ids[0]]
+        derive = reception_owner.source_grounded_negative_feeling_target_nominal
+        self.assertEqual(derive(move, a.plan, index, a.resolver), nominal)
+        self.assertEqual(derive(move, None, index, a.resolver), "")
+        self.assertEqual(derive(move, replace(a.plan, source_contracts=()), index, a.resolver), "")
+        for changes in ({"actor": "other"}, {"modality": "uncertain"},
+                        {"attribute_codes": (*target.semantic_frame.attribute_codes, "quantity:multiple")}):
+            changed = replace(target, semantic_frame=replace(target.semantic_frame, **changes))
+            plan = replace(a.plan, nuclei=tuple(changed if n == target else n for n in a.plan.nuclei))
+            self.assertEqual(derive(move, plan, {**index, target.nucleus_id: changed}, a.resolver), "")
+        supported = replace(move, support_nucleus_ids=(a.plan.nuclei[1].nucleus_id,))
+        plan = replace(a.plan, response_plan=replace(a.plan.response_plan,
+            human_reception_plan=replace(reception, moves=(supported,))))
+        self.assertEqual(derive(supported, plan, index, a.resolver), "")
+        relation = observation_plan_owner.GroundedSemanticRelation(
+            relation_id="public-required-context", type="contrast", from_nucleus_id=target.nucleus_id,
+            to_nucleus_id=a.plan.nuclei[1].nucleus_id, source_span_ids=target.source_span_ids,
+            grounding_kind="explicit", certainty=1.0, retention="required",
+        )
+        plan = replace(a.plan, relations=(relation,), coverage_requirements=replace(a.plan.coverage_requirements,
+            required_relation_ids=(relation.relation_id,)))
+        self.assertEqual(derive(move, plan, index, a.resolver), "")
+        kwargs = dict(reception_plan=reception, move=move, nucleus_index=index,
+                      resolver=a.resolver, allow_short_anchor=False, allow_anaphoric_topic=True)
+        legacy = reception_owner.resolve_grounded_reception_move_referent(**kwargs)
+        unbound = reception_owner.resolve_grounded_reception_move_referent(**kwargs, final_source_fidelity=True)
+        final = reception_owner.resolve_grounded_reception_move_referent(**kwargs, final_source_fidelity=True, plan=a.plan)
+        self.assertEqual(final.kind, "current_expression")
+        self.assertEqual(final.text, nominal)
+        self.assertNotEqual(legacy.text, nominal)
+        self.assertNotEqual(unbound.text, nominal)
+
+
 if __name__ == "__main__":
     unittest.main()

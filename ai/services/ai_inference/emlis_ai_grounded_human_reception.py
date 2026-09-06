@@ -2137,6 +2137,15 @@ def _performed_action_nominal_responsibility(text: str, nominal: str) -> bool:
     ))
 
 
+def _negative_feeling_nominal_responsibility(text: str, nominal: str) -> bool:
+    return bool(nominal and re.search(
+        re.escape(nominal) + r"(?:を|に)[^。！？!?]*?小さくせずに(?:"
+        r"(?:受け止めて|気にかけて)(?:います|いて)|"
+        r"(?:受け止め|気にかけ)たいです)",
+        text,
+    ))
+
+
 def resolve_grounded_reception_referent(
     reception_plan: GroundedHumanReceptionPlan,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
@@ -2522,6 +2531,7 @@ def resolve_grounded_reception_move_referent(
     recovery_stage: ReceptionRecoveryStage = "full",
     allow_anaphoric_topic: bool = False,
     final_source_fidelity: bool = False,
+    plan: GroundedObservationPlan | None = None,
 ) -> GroundedReceptionReferent:
     """Resolve one RR5 referent using only that Move's nucleus/evidence IDs."""
 
@@ -2547,6 +2557,13 @@ def resolve_grounded_reception_move_referent(
         effective_reference_mode=effective_reference,
         final_source_fidelity=final_source_fidelity,
     )
+    if (final_source_fidelity and effective_reference == "anaphoric_first"
+        and referent.kind == "current_expression"):
+        nominal = source_grounded_negative_feeling_target_nominal(
+            move, plan, nucleus_index, resolver,
+        )
+        if nominal:
+            return replace(referent, text=nominal)
     if allow_anaphoric_topic and effective_reference == "anaphoric_first":
         return _topic_bound_anaphoric_referent(
             referent,
@@ -3360,6 +3377,14 @@ def validate_grounded_human_reception_surface(
                 reception_plan, move, surface.recovery_stage,
             ) != "anaphoric_first"
         ) if final_nuclei else ()
+        feeling_nominals = tuple(
+            source_grounded_negative_feeling_target_nominal(move, plan, final_nuclei, resolver)
+            for move in active_moves
+            if move.reception_act == act == "stay_with_current_burden"
+            and reception_effective_move_reference_mode(
+                reception_plan, move, surface.recovery_stage,
+            ) == "anaphoric_first"
+        ) if final_nuclei else ()
         visible = (
             _retained_future_intention_responsibility(surface.text)
             if future_intention else
@@ -3368,6 +3393,8 @@ def validate_grounded_human_reception_surface(
             bool(_ACT_OWNED_RESPONSIBILITY_RE[act].search(surface.text))
             or any(_performed_action_nominal_responsibility(surface.text, nominal)
                    for nominal in action_nominals)
+            or any(_negative_feeling_nominal_responsibility(surface.text, nominal)
+                   for nominal in feeling_nominals)
         )
         visible_responsibilities.append(visible)
         if not visible:
@@ -4218,6 +4245,49 @@ def _source_grounded_nominalization_from_profiles(
         (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, f"nominal-slot:0:{row[0]}")
         if row is not None else _SOURCE_GROUNDED_NOMINALIZATION_BASE
     )
+
+
+def source_grounded_negative_feeling_target_nominal(
+    move: GroundedReceptionMovePlan,
+    plan: GroundedObservationPlan | None,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+) -> str:
+    """Use an existing reversible nominal as this selected Move's referent.
+
+    The full plan rules out relation-added context absent from Move.support.
+    No meaning, actor, burden category or reference mode is selected here.
+    """
+    if (plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
+        or move not in plan.response_plan.human_reception_plan.moves
+        or move.reception_act != "stay_with_current_burden"
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids
+        or any(r.relation_id in plan.coverage_requirements.required_relation_ids
+               and set(move.target_nucleus_ids).intersection((r.from_nucleus_id, r.to_nucleus_id))
+               for r in plan.relations)):
+        return ""
+    nucleus = nucleus_index.get(move.target_nucleus_ids[0])
+    if (nucleus is None or nucleus not in plan.nuclei
+        or any(code.startswith("quantity:") and code.removeprefix("quantity:")
+               not in {"not_applicable", "source_bounded", "unknown"}
+               for code in nucleus.semantic_frame.attribute_codes)):
+        return ""
+    fragment, _head = _bounded_source_grounded_lexemes(nucleus, resolver)
+    profile = _source_grounded_semantic_profile(nucleus, fragment)
+    fields = resolver.source_fields_for(nucleus.source_span_ids)
+    if (profile.actor_kind != "SELF" or profile.modality not in {"fact", "feeling"}
+        or len(fields) != 1 or fields[0] not in {"memo", "memo_action"}
+        or any(re.search(r"[「」『』…‥]", span.raw_text)
+               for span in resolver.resolve_many(resolver.span_ids)
+               if span.source_field in fields)):
+        return ""
+    nominalization = _source_grounded_nominalization_from_profiles(
+        (fragment,), (profile,), "ANAPHORIC",
+    )
+    row = _source_grounded_negative_feeling_nominal(fragment)
+    return row[1] if row is not None and nominalization == (
+        *_SOURCE_GROUNDED_NOMINALIZATION_BASE, f"nominal-slot:0:{row[0]}",
+    ) else ""
 
 
 def derive_source_grounded_nominalization_plan(
@@ -6892,7 +6962,10 @@ def _source_grounded_target_np(
                 raise GroundedHumanReceptionSurfaceError(
                     "REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP"
                 )
-            content_target = f"{row[1]}について、{referent_np}"
+            content_target = (
+                referent_np if referent_text == row[1]
+                else f"{row[1]}について、{referent_np}"
+            )
     else:
         profile = realization.semantic_profiles[target_owner_slot]
         action_nominal = bool(
@@ -7487,6 +7560,7 @@ def _author_source_grounded_reception_clauses(
                 recovery_stage=recovery_stage,
                 allow_anaphoric_topic=True,
                 final_source_fidelity=True,
+                plan=plan,
             )
             anchor_used = anchor_used or referent.source_anchor_used
             referent_kinds.append(referent.kind)
@@ -7701,6 +7775,11 @@ def _author_source_grounded_reception_clauses(
                     and meaning_realization.reference_mode != "ANAPHORIC"
                     and referent_text == source_grounded_performed_action_nominal(
                         move, nucleus_index, resolver,
+                    ) else _negative_feeling_nominal_responsibility(move_sentence, referent_text)
+                    if referent.kind == "current_expression"
+                    and meaning_realization.reference_mode == "ANAPHORIC"
+                    and referent_text == source_grounded_negative_feeling_target_nominal(
+                        move, plan, nucleus_index, resolver,
                     ) else _ACT_OWNED_RESPONSIBILITY_RE[
                         move.reception_act
                     ].search(move_sentence)

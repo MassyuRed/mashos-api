@@ -27,6 +27,7 @@ from emlis_ai_grounded_human_reception import (
     realize_grounded_human_reception,
     resolve_grounded_reception_move_referent,
     source_grounded_performed_action_nominal,
+    source_grounded_negative_feeling_target_nominal,
     source_grounded_negative_context_nominal,
 )
 from emlis_ai_grounded_observation_plan import (
@@ -2107,6 +2108,7 @@ def evaluate_grounded_surface_body_inverse(
                                 recovery_stage=sentence_plan.recovery_stage,
                                 allow_anaphoric_topic=True,
                                 final_source_fidelity=final_stage1_plan,
+                                plan=plan,
                             )
                         except (
                             GroundedHumanReceptionSurfaceError,
@@ -2193,6 +2195,15 @@ def evaluate_grounded_surface_body_inverse(
                             else ""
                         )
                         nominal_target_visible = False
+                        feeling_nominal_required = bool(
+                            final_stage1_plan
+                            and effective_reference_mode == "anaphoric_first"
+                            and expected_referent is not None
+                            and expected_referent.kind == "current_expression"
+                            and expected_referent.text == source_grounded_negative_feeling_target_nominal(
+                                move, plan, nucleus_index, resolver,
+                            )
+                        )
                         nominal_target_required = bool(
                             final_stage1_plan
                             and effective_reference_mode != "anaphoric_first"
@@ -2201,7 +2212,7 @@ def evaluate_grounded_surface_body_inverse(
                             and expected_referent.text == source_grounded_performed_action_nominal(
                                 move, nucleus_index, resolver,
                             )
-                        )
+                        ) or feeling_nominal_required
                         if nominal_target_required:
                             # Bind a body-only grammatical suffix to the end
                             # of this independently resolved *whole* referent.
@@ -2215,11 +2226,22 @@ def evaluate_grounded_surface_body_inverse(
                                 nominal_target_visible = any(
                                     marker.section == "reception"
                                     and marker.marker_kind == "semantic"
-                                    and marker.marker_code == "finite_clause_nominal"
+                                    and marker.marker_code == (
+                                        "negative_carrier_nominal" if feeling_nominal_required
+                                        else "finite_clause_nominal"
+                                    )
                                     and start <= marker.utf8_byte_start
                                     and marker.utf8_byte_end == end
                                     for marker in witness.markers
                                 )
+                                if feeling_nominal_required and (
+                                    any(q.section == "reception" and q.utf8_byte_start < end
+                                        and start < q.utf8_byte_end for q in witness.quotes)
+                                    or any(m.section == "reception" and m.marker_code == "secondary_quote_boundary"
+                                           and m.utf8_byte_start < end and start < m.utf8_byte_end
+                                           for m in witness.markers)
+                                ):
+                                    nominal_target_visible = False
                         target_visible = (
                             nominal_target_visible if nominal_target_required
                             else bool(sentence_codes.intersection(target_markers))
