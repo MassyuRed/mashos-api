@@ -2872,7 +2872,7 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
         case_id = "nls3s_b001_0054"
         body = _tamper_reception(
             self.artifacts[case_id].surface.text,
-            "感じています",
+            "受け止めています",
             "ここに置いておきます",
         )
         inverse = self._inverse_for_tamper(case_id, body)
