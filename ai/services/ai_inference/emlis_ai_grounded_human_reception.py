@@ -2087,6 +2087,56 @@ def _retained_future_intention_responsibility(text: str) -> bool:
     return re.search(r"これからの行動.{0,40}見失わず.{0,12}大切", text) is not None
 
 
+def source_grounded_performed_action_nominal(
+    move: GroundedReceptionMovePlan,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+) -> str:
+    """Nominalize one already proven SELF action without changing its clause.
+
+    This is a grammatical view, never an action/status selector. Callers must
+    additionally require the final explicit/composite reception contract.
+    """
+    if move.reception_act != "honor_concrete_effort" or len(move.target_nucleus_ids) != 1:
+        return ""
+    nucleus = nucleus_index.get(move.target_nucleus_ids[0])
+    if (
+        nucleus is None
+        or not source_proven_performed_action_status(nucleus)
+        or str(nucleus.semantic_frame.actor).strip().lower()
+        not in {"current_user", "user", "self"}
+        or any(code.startswith("quantity:") and code.removeprefix("quantity:")
+               not in {"not_applicable", "source_bounded", "unknown"}
+               for code in nucleus.semantic_frame.attribute_codes)
+    ):
+        return ""
+    source_fields = resolver.source_fields_for(nucleus.source_span_ids)
+    if any(
+        re.search(r"[「」『』]", span.raw_text)
+        for span in resolver.resolve_many(resolver.span_ids)
+        if span.source_field in source_fields
+    ):
+        return ""
+    clause = _source_grounded_clause_candidate(nucleus, resolver)
+    if (
+        not re.search(r"(?:た|だ|ている|でいる)$", clause)
+        or re.search(r"(?:ました|でした)$", clause)
+    ):
+        return ""
+    # Appending one fixed suffix is uniquely reversible. Every source scalar,
+    # including demonstratives, arguments and embedded negation, stays intact.
+    return f"{clause}こと"
+
+
+def _performed_action_nominal_responsibility(text: str, nominal: str) -> bool:
+    return bool(nominal and re.search(
+        re.escape(nominal) + r"[^。！？!?]*?大切に(?:"
+        r"(?:思って|気にかけて|受け止めて)(?:います|いて)|"
+        r"(?:思い|気にかけ|受け止め)たいです)",
+        text,
+    ))
+
+
 def resolve_grounded_reception_referent(
     reception_plan: GroundedHumanReceptionPlan,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
@@ -2506,6 +2556,10 @@ def resolve_grounded_reception_move_referent(
             final_source_fidelity=final_source_fidelity,
         )
     if final_source_fidelity and effective_reference != "anaphoric_first":
+        if referent.kind == "self_started_effort":
+            nominal = source_grounded_performed_action_nominal(move, nucleus_index, resolver)
+            if nominal:
+                return replace(referent, text=nominal)
         # A demonstrative belongs to anaphora.  Explicit/composite clause
         # heads govern a non-deictic typed nominal from the same sole resolver.
         return replace(
@@ -3298,12 +3352,22 @@ def validate_grounded_human_reception_surface(
                     for nucleus_id in move.target_nucleus_ids)
             and _positive_feeling_target(future_targets)
         )
+        action_nominals = tuple(
+            source_grounded_performed_action_nominal(move, final_nuclei, resolver)
+            for move in active_moves
+            if move.reception_act == act == "honor_concrete_effort"
+            and reception_effective_move_reference_mode(
+                reception_plan, move, surface.recovery_stage,
+            ) != "anaphoric_first"
+        ) if final_nuclei else ()
         visible = (
             _retained_future_intention_responsibility(surface.text)
             if future_intention else
             _positive_feeling_responsibility(surface.text)
             if positive_feeling else
             bool(_ACT_OWNED_RESPONSIBILITY_RE[act].search(surface.text))
+            or any(_performed_action_nominal_responsibility(surface.text, nominal)
+                   for nominal in action_nominals)
         )
         visible_responsibilities.append(visible)
         if not visible:
@@ -6717,7 +6781,16 @@ def _source_grounded_target_np(
                 )
             content_target = f"{row[1]}について、{referent_np}"
     else:
-        if referent_text.startswith(("その", "それらの")):
+        profile = realization.semantic_profiles[target_owner_slot]
+        action_nominal = bool(
+            referent_kind == "self_started_effort"
+            and profile.actor_kind == "SELF" and profile.performed_action
+            and not profile.future_action and not profile.quoted_boundary
+            and realization.target_slot_count == 1
+            and realization.quantity in {"not_applicable", "source_bounded", "unknown"}
+            and referent_text == f"{meaning_fragment}こと"
+        )
+        if not action_nominal and referent_text.startswith(("その", "それらの")):
             raise GroundedHumanReceptionSurfaceError(
                 "REALIZABLE_RECEPTION_EXPRESSION_REFERENCE_GAP"
             )
@@ -6728,7 +6801,6 @@ def _source_grounded_target_np(
             "single": "一つの",
             "multiple": "いくつかの",
         }[realization.quantity]
-        profile = realization.semantic_profiles[target_owner_slot]
         proposition = (
             f"{meaning_fragment}という言葉"
             if profile.quoted_boundary
@@ -6737,7 +6809,9 @@ def _source_grounded_target_np(
                 predicate_kind=realization.predicate_kind,
             )
         )
-        if referent_kind in {"current_expression", "grounded_effort"}:
+        if action_nominal:
+            content_target = referent_text
+        elif referent_kind in {"current_expression", "grounded_effort"}:
             content_target = f"{meaning_fragment}という{quantity_modifier}{referent_text}"
         elif (
             not profile.quoted_boundary
@@ -7509,7 +7583,12 @@ def _author_source_grounded_reception_clauses(
                     and _positive_feeling_target(tuple(
                         nucleus_index[nucleus_id]
                         for nucleus_id in move.target_nucleus_ids
-                    )) else _ACT_OWNED_RESPONSIBILITY_RE[
+                    )) else _performed_action_nominal_responsibility(move_sentence, referent_text)
+                    if referent.kind == "self_started_effort"
+                    and meaning_realization.reference_mode != "ANAPHORIC"
+                    and referent_text == source_grounded_performed_action_nominal(
+                        move, nucleus_index, resolver,
+                    ) else _ACT_OWNED_RESPONSIBILITY_RE[
                         move.reception_act
                     ].search(move_sentence)
                 )

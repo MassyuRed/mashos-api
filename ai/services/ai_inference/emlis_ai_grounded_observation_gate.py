@@ -26,6 +26,7 @@ from emlis_ai_grounded_human_reception import (
     reception_terminal_predicate_kind,
     realize_grounded_human_reception,
     resolve_grounded_reception_move_referent,
+    source_grounded_performed_action_nominal,
 )
 from emlis_ai_grounded_observation_plan import (
     FINAL_STAGE1_GROUNDED_PROJECTION_VERSION,
@@ -2173,13 +2174,6 @@ def evaluate_grounded_surface_body_inverse(
                                     frozenset(),
                                 )
                             )
-                        if target_markers and not sentence_codes.intersection(
-                            target_markers
-                        ):
-                            failures.append(
-                                "body_inverse_reception_target_duty_missing:"
-                                f"{move.move_id}"
-                            )
                         effective_reference_mode = (
                             reception_effective_move_reference_mode(
                                 reception_plan,
@@ -2197,6 +2191,43 @@ def evaluate_grounded_surface_body_inverse(
                             if expected_referent is not None
                             else ""
                         )
+                        nominal_target_visible = False
+                        nominal_target_required = bool(
+                            final_stage1_plan
+                            and effective_reference_mode != "anaphoric_first"
+                            and expected_referent is not None
+                            and expected_referent.kind == "self_started_effort"
+                            and expected_referent.text == source_grounded_performed_action_nominal(
+                                move, nucleus_index, resolver,
+                            )
+                        )
+                        if nominal_target_required:
+                            # Bind a body-only grammatical suffix to the end
+                            # of this independently resolved *whole* referent.
+                            # Normalized anchor offsets cannot address bytes.
+                            nominal_bytes = expected_referent.text.encode("utf-8")
+                            raw_sentence = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end]
+                            offset = raw_sentence.find(nominal_bytes)
+                            if offset >= 0 and raw_sentence.count(nominal_bytes) == 1:
+                                start = parsed_sentence.utf8_byte_start + offset
+                                end = start + len(nominal_bytes)
+                                nominal_target_visible = any(
+                                    marker.section == "reception"
+                                    and marker.marker_kind == "semantic"
+                                    and marker.marker_code == "finite_clause_nominal"
+                                    and start <= marker.utf8_byte_start
+                                    and marker.utf8_byte_end == end
+                                    for marker in witness.markers
+                                )
+                        target_visible = (
+                            nominal_target_visible if nominal_target_required
+                            else bool(sentence_codes.intersection(target_markers))
+                        )
+                        if target_markers and not target_visible:
+                            failures.append(
+                                "body_inverse_reception_target_duty_missing:"
+                                f"{move.move_id}"
+                            )
                         if (
                             not expected_referent_text
                             or expected_referent_text

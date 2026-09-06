@@ -185,6 +185,11 @@ _BODY_SEMANTIC_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ("intention", re.compile(r"(?<![み重])たい|つもり|願い|意図|保ちたい|これからの行動")),
     ("effort", re.compile(r"(?<!これからの)行動|手間|記録|作業|実際に動")),
 )
+_BODY_RECEPTION_GRAMMAR_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
+    # A suffix witness makes no claim about actor or performance. Only the
+    # final inverse matcher may bind its exact bytes to a proven source target.
+    ("finite_clause_nominal", re.compile(r"(?:ている|でいる|た|だ)こと")),
+)
 _FINAL_STAGE1_CHANGE_MARKER_RE: Final = re.compile(
     r"変化|変わ|進み|進歩|増え|減っ|戻っ|できるよう|になった"
 )
@@ -572,6 +577,8 @@ def _body_marker_rows(
         ("reception", _BODY_RECEPTION_MARKERS),
         ("semantic", _BODY_SEMANTIC_MARKERS),
     )
+    if section == "reception":
+        groups += (("semantic", _BODY_RECEPTION_GRAMMAR_MARKERS),)
     for marker_kind, patterns in groups:
         for marker_code, pattern in patterns:
             for match in pattern.finditer(sentence_text):

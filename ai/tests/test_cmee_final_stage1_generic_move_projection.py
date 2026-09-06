@@ -3199,5 +3199,129 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
                 author.assert_not_called()
 
 
+class CMEEConcreteActionNominalTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = {}
+        for name, action in (
+            ("qualified", "昨日、その資料を三ページだけ整理した"),
+            ("demonstrative", "その資料を整理した"),
+            ("embedded_negative", "今は引き受けられないと担当者に伝えた"),
+            ("ongoing", "資料を整理している"),
+        ):
+            row = {"case_id": "public-concrete-action-" + name, "input": {
+                "action_text": action + "。", "thought_text": "まだ先の見通しは分からない。",
+                "categories": ["仕事"], "emotions": [{"type": "不安", "strength": "medium"}],
+            }}
+            cls.artifacts[name] = (action, _full_surface_artifacts(row))
+
+    def test_concrete_action_keeps_complete_source_and_selected_replay(self):
+        for name, (action, a) in self.artifacts.items():
+            with self.subTest(name=name):
+                follow = _reception_text(a.surface.text)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertEqual(a.sentence_plan.recovery_stage, "full")
+                self.assertEqual(follow.count(action + "こと"), 1)
+                self.assertNotIn("実際の行動", follow)
+                self.assertIn("大切に思っています", follow)
+                self.assertTrue(reception_owner._performed_action_nominal_responsibility(follow, action + "こと"))
+                self.assertFalse(reception_owner._performed_action_nominal_responsibility(
+                    follow.replace("大切に思っています", "大切ではありません"), action + "こと",
+                ))
+                line = next(line for line in a.sentence_plan.lines
+                            if line.binding.line_role == "human_follow")
+                replay = reception_owner.replay_source_grounded_human_reception_from_plan(
+                    a.plan.response_plan.human_reception_plan,
+                    {n.nucleus_id: n for n in a.plan.nuclei}, a.resolver,
+                    plan=a.plan, recovery_stage=a.sentence_plan.recovery_stage,
+                    clause_plans=line.reception_clause_plans,
+                    selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertEqual(replay.text, follow.strip())
+                self.assertTrue(all(kwargs["selected_subjective_input"] is a.selected_subjective_input
+                                    for _args, kwargs in a.author_arguments))
+
+    def test_concrete_action_rejects_source_and_responsibility_tampering(self):
+        mutations = (
+            ("qualified", "昨日", "明日"),
+            ("qualified", "その資料", "別の資料"),
+            ("qualified", "三ページだけ", "全ページ"),
+            ("qualified", "整理したこと", "整理しなかったこと"),
+            ("embedded_negative", "引き受けられない", "引き受けられる"),
+            ("embedded_negative", "担当者に", "家族に"),
+            ("ongoing", "整理していること", "整理する予定のこと"),
+            ("demonstrative", "大切に思っています", "大切ではありません"),
+        )
+        for name, old, new in mutations:
+            with self.subTest(name=name, old=old):
+                _action, a = self.artifacts[name]
+                body = _tamper_reception(a.surface.text, old, new)
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(inverse.passed)
+                gate = evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan,
+                    surface_result=replace(a.surface, text=body), resolver=a.resolver,
+                    require_body_inverse=True, selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(gate.passed)
+
+    def test_body_nominal_marker_is_structural_and_reception_scoped(self):
+        action, a = self.artifacts["qualified"]
+        body = a.surface.text.encode("utf-8")
+        witness = surface_owner.parse_grounded_surface_body_bytes(body)
+        markers = [m for m in witness.markers if m.marker_code == "finite_clause_nominal"]
+        self.assertTrue(markers)
+        nominal = (action + "こと").encode("utf-8")
+        end = body.index(nominal) + len(nominal)
+        self.assertTrue(any(m.utf8_byte_end == end for m in markers))
+        self.assertTrue(all(m.section == "reception" and m.marker_kind == "semantic" for m in markers))
+        self.assertTrue(all("target_effort" not in s.reception_marker_codes
+                            for s in witness.sentences if s.section == "reception"))
+        # The suffix alone cannot establish the Move's concrete target.
+        for replacement in ("別の資料を整理したこと", "別の資料を整理したという実際の行動"):
+            changed = _tamper_reception(a.surface.text, action + "こと", replacement)
+            inverse = evaluate_grounded_surface_body_inverse(
+                body=changed.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+            )
+            self.assertFalse(inverse.passed)
+            self.assertTrue(any("target_duty_missing" in code for code in inverse.failure_codes))
+
+    def test_nominal_requires_same_target_actor_status_and_quantity_proof(self):
+        action, a = self.artifacts["demonstrative"]
+        move = a.plan.response_plan.human_reception_plan.moves[0]
+        index = {n.nucleus_id: n for n in a.plan.nuclei}
+        target = index[move.target_nucleus_ids[0]]
+        self.assertEqual(reception_owner.source_grounded_performed_action_nominal(move, index, a.resolver), action + "こと")
+        for changes in (
+            {"actor": "other"}, {"actor": "unknown"}, {"modality": "uncertain"},
+            {"time_scope": "future"},
+            {"attribute_codes": tuple(c for c in target.semantic_frame.attribute_codes
+                                      if c != "operator:performed_action")},
+            {"attribute_codes": (*target.semantic_frame.attribute_codes, "quantity:multiple")},
+        ):
+            with self.subTest(changes=changes):
+                changed = replace(target, semantic_frame=replace(target.semantic_frame, **changes))
+                self.assertEqual(reception_owner.source_grounded_performed_action_nominal(
+                    move, {**index, target.nucleus_id: changed}, a.resolver,
+                ), "")
+
+    def test_legacy_referent_does_not_acquire_final_nominal_grammar(self):
+        action, a = self.artifacts["demonstrative"]
+        plan = a.plan.response_plan.human_reception_plan
+        index = {n.nucleus_id: n for n in a.plan.nuclei}
+        kwargs = dict(reception_plan=plan, move=plan.moves[0], nucleus_index=index,
+                      resolver=a.resolver, allow_short_anchor=False, allow_anaphoric_topic=True)
+        final = reception_owner.resolve_grounded_reception_move_referent(**kwargs, final_source_fidelity=True)
+        legacy = reception_owner.resolve_grounded_reception_move_referent(**kwargs)
+        self.assertEqual(final.text, action + "こと")
+        self.assertNotEqual(legacy.text, final.text)
+        self.assertEqual(final.kind, "self_started_effort")
+
+
 if __name__ == "__main__":
     unittest.main()
