@@ -5882,3 +5882,18 @@ STRUCTURE_MAP_DELTA_NONE：既存final ObservationPlan内の順位補正であ�
 華恋が最終sourceの原入力全フィールド・観察・フォロー全100を全文確認しNOT_CLEAR。対象節の局所的な文法改善は成立したが、長い原文再掲・分類的な対象句・定型的な締め、補助行動へ寄る対象選択、通常の負担／未完／混合状態、主体・時制・予定・比較・可能性・受援の残分類は未解決。次は既存target NPと選択済みの関係・意味の範囲を接続し、必要な深さを保った具体的な受け止めへ進む。短さ、語尾variation、内部appraisal名のみの変更、追加Move、count clamp、seal後再選択、未選択意味補充、一律relation support継承で代用しない。current_user専用source-qualified契約をHR OTHER型だけで広げない。商品確認準備／ready／採用／merge／本番／質問生成／Layer3は未成立、product credit／technical credit 0。
 
 作業前にPR3／30／37の最新headと前回保存点、全体設計・全ファイル地図・国家／共通基盤・2026-09-05 weekly review・必須incident全文、影響owner／下流／旧経路を確認した。System Context doctor→prepareは18成功16失敗、固定toolchain不一致で不成立のためstale不使用・原典直読。profile／基準ref／tracked current変更0。同じ会話内で内容照合済み46依存版の同じPython実体を継続し、今回の依存再照合は主張しない。依存変更・runtime外部生成AI利用0。STRUCTURE_MAP_DELTA_NONE：既存Human Receptionの名詞化とsole author内の文法処理のみ。新helper／selector／意味carrier／schema／renderer、Gate／parser／inverse／閾値の追加・緩和0。国家保存・dispatch・queue・read-side、公開API／DB／RN、Piece／分析・public／旧builder変更0。PR3／30／37はDraft/open/unmergedを維持する。
+
+
+### 2026-09-06 continuation — 未完context有限化案を不採用、具体的対象句の照合経路を特定（診断29／runtimeはcandidate28を維持）
+
+今回採用したruntime差分は0。既存Human Receptionの対比contextに対する否定接続の有限化案を公開合成入力で実行したが、具体的なcontextを保持した返答からANAPHORICの抽象的な返答へ退いたため、不採用として差分を戻した。元の不自然な名詞化は未解決であり、新candidateの改善や可否維持の成功へ数えない。
+
+原因を同じ公開合成入力で生成途中まで追跡した。保持sourceでは四つの実行済みinverse候補が通った。試案では具体的contextを含む二候補が `body_inverse_reception_context_anchor_missing` と `body_inverse_reception_why_duty_missing` で拒否され、抽象化した二候補が通った。最終Gate／inverseのPASSだけではこの退行を検出できないため、採用本文と候補別の拒否を一緒に確認した。これは公開合成診断であり、canonical100の新しい実測ではない。
+
+既存Gateは非ANAPHORIC contextの元fragment包含を別途要求する。sole authorのforward／replayが一致しても、接続語尾を有限化して元fragmentを失えばこの条件は成立しない。既存の可逆名詞化はANAPHORICかつ単一reaction／feeling等の限定経路であり、このcontextをそのまま扱える経路ではない。今回の局所案が不成立という結論であって、文法修正全般を不可能とする判断ではない。Move evidenceのfield集合だけでは関係から追加された別fieldのcontextを引用検査へ必ず含められるとは限らず、Ledger分割後のspanだけでは元のASCII省略記号も保証できない。これらを解決済みとも扱わない。
+
+分類的な対象句は `_source_grounded_target_np` 一箇所だけの問題ではない。既存referent解決、ClauseCoreと作者末尾の可視責務、Gateの独立referent照合、bodyの対象markerが同じ対象を固定する。有限節の名詞化だけを残して分類語を省くと、現在の対応を失う。現在負担のfamilyも不確かさ・拒否・中立的入力を含み、act名だけから新しい現在の苦しさを補うことはできない。次の改修では、選択済みの具体的source内容を対象として保持する作者・独立検証の対応を既存owner内でそろえる。検査の省略、意味再選択、別ownerの追加や新しい承認待ちを前提にしない。継承承認の作業unitは未完で継続する。
+
+保持したruntime／tests／runnerは開始時PR3 `d49310e2b489bef91dcbe69afff8f83dce35a411` と同一であり、今回のGitHub変更は既存文書の診断・再開情報のみ。candidate28の固定100（direct100、Move／expression／binding124、外側73/27）、225検査221成功／既存4失敗、root全100 NOT_CLEARは前回の証跡として保持する。今回その全検査・全100生成／全文審査を再実行したとはしない。公開合成6入力の比較では二入力が抽象化、三入力は本文同一、一入力は両sourceで同じ既存capability gap。新しい合格件数・品質改善件数は0。
+
+System Context doctor→prepareを今回実行し、doctor18成功16失敗、prepareは固定toolchain不一致で不成立。stale cacheを使用せず原典を直接参照し、profile／基準ref／tracked currentは変更していない。実装用の別Python環境は再発見した実体の46依存版とRECORD内容を今回照合して一致し、物理環境の連続性やSystem Context成立を推定していない。新依存・外部生成AI利用0。STRUCTURE_MAP_DELTA_NONE、国家保存・dispatch・queue・read-side、公開API／DB／RN、Piece／分析への実装変更0。商品確認準備／ready／採用／merge／本番／質問生成／Layer3は未成立、PR3／30／37はDraft/open/unmergedを維持する。
