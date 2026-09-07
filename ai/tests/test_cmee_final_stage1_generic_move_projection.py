@@ -227,6 +227,134 @@ def _tamper_reception(body: str, source: str, replacement: str) -> str:
 
 
 class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
+    def test_separate_selected_performed_action_keeps_source_and_replay(self):
+        action = "作業台を片づけた"
+        structural_moves = []
+        build_moves = observation_plan_owner._build_reception_depth_policy_and_moves
+
+        def capture_moves(*args, **kwargs):
+            result = build_moves(*args, **kwargs)
+            structural_moves.append(result[1])
+            return result
+
+        with patch.object(
+            observation_plan_owner, "_build_reception_depth_policy_and_moves",
+            side_effect=capture_moves,
+        ):
+            a = _full_surface_artifacts({
+                "case_id": "public-separate-performed-action-reference",
+                "input": {
+                    "thought_text": "模型が完成してうれしかった。でも、説明書どおりに作れたのかは分からない。",
+                    "action_text": action + "。", "categories": ["趣味"],
+                    "emotions": [{"type": "平穏", "strength": "medium"}],
+                },
+            })
+        self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+        self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+        self.assertEqual(a.sentence_plan.recovery_stage, "full")
+        reception = a.plan.response_plan.human_reception_plan
+        first, effort = reception.moves
+        self.assertEqual(effort.reception_act, "honor_concrete_effort")
+        self.assertEqual(effort.move_role, "felt_response")
+        self.assertEqual(effort.reference_mode, "short_anchor_if_ambiguous")
+        self.assertIn((first, replace(effort, reference_mode="anaphoric_first")), structural_moves)
+        self.assertEqual(effort.support_nucleus_ids, ())
+        self.assertTrue(all(move.required for move in reception.moves))
+        follow = _reception_text(a.surface.text)
+        self.assertEqual(follow.count(action + "こと"), 1)
+        self.assertNotIn("実際の行動", follow)
+        self.assertLess(follow.index("分からない"), follow.index(action))
+        for old, new in (
+            (action, ""), (action, "別のものを片づけた"),
+            (action, "作業台を片づけるつもり"),
+            (action, "作業台を片づけなかった"),
+            (action, "「" + action + "」"),
+            (action, action + "ことと" + action),
+            ("大切に思っています", "小さなことだと考えています"),
+        ):
+            with self.subTest(replacement=new):
+                changed = _tamper_reception(a.surface.text, old, new)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=changed.encode("utf-8"), plan=a.plan,
+                    sentence_plan=a.sentence_plan, resolver=a.resolver,
+                    selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan,
+                    surface_result=replace(a.surface, text=changed),
+                    resolver=a.resolver, require_body_inverse=True,
+                    selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+        for stage in ("integrated", "hedged", "minimal_grounded"):
+            self.assertEqual(reception_owner.reception_effective_move_reference_mode(
+                reception, effort, stage,
+            ), "anaphoric_first")
+
+    def test_separate_action_reference_requires_performance_and_independent_context(self):
+        plan = build_final_stage1_grounded_observation_plan({
+            "memo": "模型が完成してうれしかった。でも、説明書どおりに作れたのかは分からない。",
+            "memo_action": "作業台を片づけた。",
+        })
+        response = plan.response_plan
+        kwargs = dict(
+            required=True, human_follow_target_ids=response.human_follow_target_ids,
+            primary_nucleus_ids=response.primary_nucleus_ids,
+            supporting_nucleus_ids=response.supporting_nucleus_ids,
+            required_nucleus_ids=response.required_nucleus_ids,
+            fact_boundary_nucleus_ids=response.fact_boundary_nucleus_ids,
+            nuclei=plan.nuclei, relations=plan.relations,
+            safety_kind=plan.safety_policy.safety_kind,
+            material_quality="limited_grounding",
+            semantic_complexity=plan.input_profile.semantic_complexity,
+            final_source_fidelity=True,
+        )
+        build = observation_plan_owner.build_grounded_human_reception_plan
+        reception = build(**kwargs)
+        first, effort = reception.moves
+        self.assertEqual(effort.reference_mode, "short_anchor_if_ambiguous")
+        target = next(n for n in plan.nuclei if n.nucleus_id == effort.target_nucleus_ids[0])
+        other = next(n for n in plan.nuclei if n.nucleus_id == first.target_nucleus_ids[0])
+        original_moves = (first, replace(effort, reference_mode="anaphoric_first"))
+
+        def with_target(changed):
+            return tuple(changed if n.nucleus_id == target.nucleus_id else n for n in plan.nuclei)
+
+        relation = replace(plan.relations[0], from_nucleus_id=other.nucleus_id,
+                           to_nucleus_id=target.nucleus_id, retention="required")
+        variants = (
+            {"final_source_fidelity": False},
+            {"material_quality": "short_state_sufficient"},
+            {"semantic_complexity": "single"},
+            {"nuclei": with_target(replace(target, retention="should"))},
+            {"nuclei": with_target(replace(target, semantic_frame=replace(
+                target.semantic_frame, actor="other_person")))},
+            {"nuclei": with_target(replace(target, semantic_frame=replace(
+                target.semantic_frame, modality="wish", time_scope="future")))},
+            {"nuclei": with_target(replace(target, semantic_frame=replace(
+                target.semantic_frame, attribute_codes=tuple(c for c in
+                    target.semantic_frame.attribute_codes if c != "operator:performed_action"))))},
+            {"nuclei": with_target(replace(target, source_span_ids=other.source_span_ids))},
+            {"relations": (*plan.relations, relation)},
+        )
+        # Hold the already selected duties fixed to test the reference policy,
+        # without allowing another selection to hide a missing proof.
+        for changes in variants:
+            with self.subTest(changes=changes), patch.object(
+                observation_plan_owner, "_build_reception_depth_policy_and_moves",
+                return_value=(reception.depth_policy, original_moves),
+            ):
+                rebuilt = build(**(kwargs | changes))
+                self.assertEqual(rebuilt.moves[1], original_moves[1])
+        for changed_effort in (
+            replace(original_moves[1], required=False),
+            replace(original_moves[1], support_nucleus_ids=first.target_nucleus_ids),
+        ):
+            with self.subTest(move=changed_effort), patch.object(
+                observation_plan_owner, "_build_reception_depth_policy_and_moves",
+                return_value=(reception.depth_policy, (first, changed_effort)),
+            ):
+                self.assertEqual(build(**kwargs).moves[1], changed_effort)
+
     def test_independent_selected_relation_keeps_both_concrete_endpoints(self):
         left = "覚えたい気持ちはある"
         right = "手順が分からなくなった"
@@ -553,7 +681,7 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         follow = _reception_text(a.surface.text)
         self.assertEqual(follow.count("頭の切り替えができた感じ"), 1)
         self.assertIn("に目が留まり、それを感じています", follow)
-        self.assertIn("実際の行動を大切に思っています", follow)
+        self.assertEqual(follow.count("机の上を片づけたことを大切に思っています"), 1)
         self.assertNotIn("実際の行動をそれを", follow)
         for authored in a.authored:
             with self.subTest(stage=authored.recovery_stage):
@@ -1274,7 +1402,8 @@ class CMEEPositiveFeelingProjectionTest(unittest.TestCase):
                 follow = _reception_text(a.surface.text)
                 self.assertIn(memo.split("。")[0], follow)
                 self.assertIn(boundary, follow)
-                self.assertLess(follow.index("気持ち"), follow.index("実際の行動"))
+                self.assertEqual(follow.count(action.removesuffix("。") + "こと"), 1)
+                self.assertLess(follow.index("気持ち"), follow.index(action.removesuffix("。")))
                 changed = _tamper_reception(a.surface.text, boundary, "確定した")
                 self.assertFalse(evaluate_grounded_surface_body_inverse(
                     body=changed.encode("utf-8"), plan=a.plan,
