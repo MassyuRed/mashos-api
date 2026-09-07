@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾のcandidate55と継承承認を確認する。選択済みの単一の本人の実行行動について、注意とmaterial受取を同じ具体的な目的語に接続するfinal HR文法を修正。canonical100の受取39件が変わり、他61件は全record同一。全plan・核・観察・可否理由・73/27と意味を伴う124責務は不変。必須300検査296成功／継承4失敗、前回298の全成否一致、新規2成功。華恋が全100件の原文と応答本文を読み商品NOT_CLEAR。長い原文再掲・定型的な締め・中心感情の未選択と補助行動偏重などは残る。
+3. 末尾のcandidate56と継承承認を確認する。選択済みMATERIALの二対象を、full attentionで同じ目的語として注意と受取へ接続。両端と違い／重なりの関係を保ち、代名詞で受け直す接続を除いた。canonical100の受取9件だけ変更、他91件は全record同一。全plan・意味選択・核・観察・可否理由・73/27・意味を伴う124責務は不変。必須302検査298成功／継承4失敗、前回300の全成否一致、新規2成功。華恋が全100件の原文と応答本文を読み商品NOT_CLEAR。長い再掲・定型締め・中心感情の未選択と補助行動偏重などは残る。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -6432,3 +6432,25 @@ GitHub最終実装保存 `0bd719266a042828633efecf7f65023b4eb81456`、検証tree
 System Context doctor→prepareは固定Python／Node／npm／SCIP等の不一致でref鮮度判定前に不成立。fresh／stale成功とはせず原典fallback、cache／profile／基準ref／tracked current変更0。実装用Python3.12.13の固定46依存と2268 installed filesのversion／wheel／RECORD closureを再確認。全tracked pathはCocolon1635／API2138。HR全文と関係source／既存testはrootと公開静的補助が分担読了。最終差分の静的blockerなし。全編集・実行・private100本文確認・GitHub反映はroot華恋。
 
 PR3／30／37はDraft／open／unmerged。商品NOT_CLEAR、商品／technical credit 0。human PASS／商品確認準備／採用／ready／merge／本番／問い／Layer3は未成立。
+
+### 2026-09-07 continuation — 関係する二対象への注意と受取の接続（candidate56／商品未成立）
+
+継承承認 `FRESH_MASH_LEVEL3_CMEE_STAGE1_SELECTED_SUBJECTIVE_RECEPTION_FORWARD_INVERSE_REQUEST_LOCAL_CONTRACT_20260905` 内の同じ未完unit。candidate55の最新GitHubと一致する保存点から継続。前提／CURRENT_RULES／恒久incident・latest weekly20260905・全体設計図と全ファイル地図、国家／共通基盤／他機能／旧経路を確認した。今回担当するUXは、二つの内容を読み、その違い・重なりも一緒に受け取る部分。STRUCTURE_MAP_DELTA_NONE：既存final HRの文法内であり、国家保存／dispatch／queue／read、公開API／DB／RN、Piece／分析との接続不変。旧I5は従来のrealize_grounded_human_reception→_realize_move_sentenceを通る。
+
+既存material_pair_objectが確認済みの、非ANAPHORIC・完全な二つのsemantic fragment・単一required関係・LEFT/RIGHTの別endpoint・両端がselected basisかつappraised primary・選択済みMATERIAL_WEIGHT／RECEIVE_AS_MATERIALを使う。対象actと自己／時点／状態の既存条件、contrast／wish_and_constraint／attempt_and_blockの区別を保持する。pending_relation_slots==(0,)の検査に通るmaterial_pairのattentionだけで、「AとBに目が留まり、それらを、その違いも含めて…」を「AとBを見過ごさず、その違いも含めて…」へ接続する。重なりの関係は既存の重なり副詞を保つ。
+
+変更は既存述語helperのobject_particle／role_operator／valency_complementの三要素のみ。内部引数integrate_attention_pairは既定false、既存surfaceがrecovery_stage==fullの場合だけ渡す。関係副詞・act_guard・述語lemma・completed_relation_slotsは不変。願いの「見失わずに、大切に」も保持する。felt_response、NONCOLLAPSE、単独対象、他recoveryは従来どおり。新しい意味選択・owner／schema・parser・Gate・閾値はない。forwardと独立replayが同じrequest-local selected inputを消費し、既存attention／受取／関係の本文検査を使う。
+
+GitHub実装保存 `f5742341dc52bc509a690c17bd67ece8a959e511`、検証tree `a6951737e41ae38cb6e818688237195851c43a80`。ローカル検証commit `a04b610102ca9b4bc4a888d206c95ec0d619a621` とはmetadataが異なるがtreeと対象全文は同一。HR・既存test・current runnerの3pathのみ。runner既存13定数を再導出し非current AST不変。歴史的fixture／hash／dated PASSは変更していない。
+
+公開合成入力のfocused10検査成功後、sourceを固定して最終全検証。新規2検査は二対象の同じ格・full以外の回復表現・実forward各回復のselected input同一性、attention削除／否定／目的語格欠落／代名詞による再開を検査。attention削除は具体的なattention duty missing codeも要求する。既存検査は両端・原文・否定・時点・関係・願い保護の責務を保持し、旧「それらを」削除の改変検査を、新しい接続で目的語の格を欠落させる検査へ更新した。静的指摘を受け、既存集合検査もroleとfull recoveryの双方で表示期待を選ぶ。
+
+選択済みMATERIALの二対象を、full attentionで同じ目的語として注意と受取へ接続。両端と違い／重なりの関係を保ち、代名詞で受け直す接続を除いた。canonical100の受取9件だけ変更、他91件は全record同一。全plan・意味選択・核・観察・可否理由・73/27・意味を伴う124責務は不変。必須302検査298成功／継承4失敗、前回300の全成否一致、新規2成功。華恋が全100件の原文と応答本文を読み商品NOT_CLEAR。長い再掲・定型締め・中心感情の未選択と補助行動偏重などは残る。
+
+原184は180成功4失敗、追加118は全成功。継承4は観察固定不一致2、dated receiptと現source不一致1、unseen12旧集合重複1。後続診断全体も前回と同一。36ケース・post-hash96・集合exact8／same16成功とunseen12旧重複FAILを区別し、別GA2／shared164・実機・本番の成立へ広げない。最終検証後runtime／runner／test変更なし。
+
+二対象への接続が直接になったことを確認したが、長い原文再掲、定型的な締め、一般参照、未選択の中心感情を補助行動が代替する残件は未解消。願いwrapperの別候補も調査した。過去願望には既存証明済みの経路があるが、一般wish条件や末尾語だけでの許容拡大をせず、今回は二対象の接続だけを修正した。診断29のcontext欠落とANAPHORIC退行を再利用していない。短さだけやtest件数を商品品質として数えず、同じ未完unitを継続する。
+
+System Context doctor→prepareはいずれも固定Python／Node／npm／SCIP等の不一致で鮮度判定前にexit2。fresh／stale成功とはせず原典fallback。cache／profile／基準ref／tracked current変更0。実装用Python3.12.13の46依存、wheel／version／installed RECORD closure2268 filesを再確認。全tracked mapはCocolon1635／API2138で不変。既読の全体・HR全文と今回の変更箇所／関連本文をrootと公開静的補助で照合。編集・実行・private100本文確認・GitHub反映はroot華恋。
+
+PR3／30／37はDraft／open／unmerged。商品NOT_CLEAR、商品／technical credit 0。human PASS／商品確認準備／採用／ready／merge／本番／問い／Layer3は未成立。9月12日の本文確認準備に対する既存の品質上のリスクも残る。
