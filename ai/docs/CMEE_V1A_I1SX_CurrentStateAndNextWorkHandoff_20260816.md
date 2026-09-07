@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾のcandidate50と継承承認を確認する。原文で証明済みの現在の願いの存在節を、助詞・存在・時点を保った全文＋「ということ」で名詞化。HR正本と対象名詞句の完全一致、限定した本文文法witnessを整合し、Gateの全文・引用外・byte末尾・独立replay条件を維持。canonical100の受取1件のみ変更し、他99件・全核・selected input・実plan・意味を伴う124責務・観察・可否理由・73/27は同一。必須290検査286成功／継承4失敗、前回289の全成否一致、新規1成功。華恋が全100件の本文を確認し商品NOT_CLEAR。長い再掲・定型締め・別actの対比名詞・中心感情の未選択と補助行動偏重は残る。
+3. 末尾のcandidate51と継承承認を確認する。選択済みMATERIALの変化を「受け止める」述語へ整合し、同じMoveで評価済みの対比両端を、変化と背景の二対象として受け取る。有限節だけを原文全文＋「という変化」へ接続し、差異を述語側で保持する。canonical100の受取5件のみ変更し、他95件・全核・selected input・実plan・意味を伴う124責務・観察・可否理由・73/27は同一。必須292検査288成功／継承4失敗、前回290の全成否一致、新規2成功。華恋が全100件の本文を確認し商品NOT_CLEAR。長い関係再掲・定型締め・一般名詞だけの受取・中心感情の未選択と補助行動偏重は残る。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -6332,5 +6332,19 @@ System Contextはdoctor→prepareを実行し、固定toolchain不一致でref�
 原文で証明済みの現在の願いの存在節を、助詞・存在・時点を保った全文＋「ということ」で名詞化。HR正本と対象名詞句の完全一致、限定した本文文法witnessを整合し、Gateの全文・引用外・byte末尾・独立replay条件を維持。canonical100の受取1件のみ変更し、他99件・全核・selected input・実plan・意味を伴う124責務・観察・可否理由・73/27は同一。必須290検査286成功／継承4失敗、前回289の全成否一致、新規1成功。華恋が全100件の本文を確認し商品NOT_CLEAR。長い再掲・定型締め・別actの対比名詞・中心感情の未選択と補助行動偏重は残る。
 
 原184は180成功4失敗、追加106は全成功。継承4は観察固定不一致2、dated receiptと現source不一致1、旧集合重複1。後続36ケースとpost-hash96を確認し、exact8／same16成功、unseen12の既存重複FAILを保持。historical fixture／hash／dated PASSは変更しない。未実行の実機や別GA2／shared164の成功には広げない。
+
+System Contextはdoctor→prepareを実行したが、固定toolchain不一致でref鮮度判定前に不成立。stale／fresh成功ではなくweekly5.4の原典fallback。cache／profile／ref／tracked current変更なし。前回復元・照合した固定46依存を使用。関連本文・影響先を確認し、sub-agentは公開source/testの静的読取のみ。全編集・検査・生成・private全文読取・GitHub更新はroot華恋。PR3／30／37はDraft／open／unmerged、商品NOT_CLEAR。ready／採用／merge／本番／問い／Layer3は未成立。同じ承認内の残件を継続する。
+
+### 2026-09-07 continuation — 選択済み変化と背景の受け取り（candidate51／商品未成立）
+
+継承承認 `FRESH_MASH_LEVEL3_CMEE_STAGE1_SELECTED_SUBJECTIVE_RECEPTION_FORWARD_INVERSE_REQUEST_LOCAL_CONTRACT_20260905` 内の同じ未完unit。candidate50・GitHub最新head・全体設計図・全ファイル地図・国家システム・前提／CURRENT_RULES・必須incident・latest weekly20260905を確認。今回の責任は、Emlisが本人の変化と併存する背景を、選択済みの主観的評価に沿って受け取るUX。final Stage1は公開返信へ未接続。国家保存／dispatch／queue／read、API／DB／RN、Piece／分析、旧経路と共通基盤の境界は同じ。STRUCTURE_MAP_DELTA_NONE。
+
+既存HRのrecognize_lived_change／lived_changeで、SELF・STATE・change核・present_change対象、change/fact又はfeeling/feeling、MATERIAL_WEIGHT／RECEIVE_AS_MATERIALが証明済みの場合に受取述語を整合する。performed／future／quoted／distributiveを除外。対比二対象化は従来のattention・exact2・single contrast・LEFT/RIGHT・nonANAPHORIC・当該Moveのselected contributionかつappraised primary両端という条件のまま。有限節のみ原文全文＋「という変化」とし、変化名詞を一度保持する。引用を含むsource fieldやellipsis末尾の境界は既存の全文接続を保持し、根拠なく削らない。BOUNDED／unfinished／別profileは従来の責務に残す。意味選択・schema・Sentence Surface・Gate・閾値の変更なし。
+
+固定source `a6cac6b8f5253c243b8b911c2962084664692547`、tree `c9759a6bbcca379d90e6dba4f0aff09148c3ecf4`。HR・既存public合成test・current runnerの3path。runnerは既存13定数だけを再導出し、非current AST不変。公開3例で意味選択・核・実plan・観測の前後一致を確認。新規2検査は、両端の保持と順序・否定・変化名詞・対比・受取述語・時制・引用・二重化の改変拒否、MATERIALとBOUNDED等の分離を確認する。引用／ellipsisの既存検査は新しい対比の表現位置へ期待を更新し、末尾削除を独立inverseで拒否する検査を追加。focus初回19成功／旧期待1失敗、修正後の当該1成功を最終回帰とは区別する。
+
+選択済みMATERIALの変化を「受け止める」述語へ整合し、同じMoveで評価済みの対比両端を、変化と背景の二対象として受け取る。有限節だけを原文全文＋「という変化」へ接続し、差異を述語側で保持する。canonical100の受取5件のみ変更し、他95件・全核・selected input・実plan・意味を伴う124責務・観察・可否理由・73/27は同一。必須292検査288成功／継承4失敗、前回290の全成否一致、新規2成功。華恋が全100件の本文を確認し商品NOT_CLEAR。長い関係再掲・定型締め・一般名詞だけの受取・中心感情の未選択と補助行動偏重は残る。
+
+原184は180成功4失敗、追加108は全成功。継承4は観察固定不一致2、dated receiptと現source不一致1、旧集合重複1。後続36ケースの診断とpost-hash96を確認し、集合判定exact8／same16成功、unseen12の既存重複FAILを保持。historical fixture／hash／dated PASSは変更しない。未実行の実機や別GA2／shared164の成功には広げない。
 
 System Contextはdoctor→prepareを実行したが、固定toolchain不一致でref鮮度判定前に不成立。stale／fresh成功ではなくweekly5.4の原典fallback。cache／profile／ref／tracked current変更なし。前回復元・照合した固定46依存を使用。関連本文・影響先を確認し、sub-agentは公開source/testの静的読取のみ。全編集・検査・生成・private全文読取・GitHub更新はroot華恋。PR3／30／37はDraft／open／unmerged、商品NOT_CLEAR。ready／採用／merge／本番／問い／Layer3は未成立。同じ承認内の残件を継続する。
