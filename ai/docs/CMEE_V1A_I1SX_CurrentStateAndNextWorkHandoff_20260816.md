@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾のcandidate46と継承承認を確認する。既存HRで、positive_feelingに選択済みのMATERIAL_WEIGHT／RECEIVE_AS_MATERIALを「受け止める」で実現する。本人の気持ちをEmlis自身が感じるという述語との不一致を修正。同じ不変selected inputをHRとSentenceSurfaceの責任検査へ渡す。canonical100の受取3件のみ変更、他97件・全核・意味選択・実plan・意味を伴う124責務・73/27は同一。必須282検査278成功／継承4失敗、前回279の全成否一致。華恋が全100件全文確認し商品NOT_CLEAR。長い再掲・名詞連結・定型締め、中心感情の未選択と補助行動偏重は残る。
+3. 末尾のcandidate47と継承承認を確認する。既存HRで、positive_feelingに選択済みのMATERIAL受取とattention、単一contrastの両端がそのMoveのselected basisかつappraised primaryである場合、両端そのものを受取対象にし、違いも同じ述語で受け取る。二端点の原文・順序・意味選択を維持し、coreで未完了の関係を述語で厳密に完了する。canonical100の受取1件のみ変更、他99件・全核・selected input・実plan・意味を伴う124責務・73/27は同一。必須285検査281成功／継承4失敗、前回282の全成否一致。華恋が全100件全文確認し商品NOT_CLEAR。長い再掲・定型締め、中心感情の未選択と補助行動偏重は残る。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -6254,5 +6254,27 @@ GitHub保存source `34d3cf0bea07718e3d5a2b7e06f388b5db5d3a77`、tree `550c036547
 商品NOT_CLEAR。選択済みの受取の意味と述語は整合したが、入力に応じた十分な厚みや自然さは未成立。長いsource再掲・関係の名詞連結・定型的な締め、中心感情が選択されず補助行動だけを受け取る問題が残る。次は既selected relation／contribution／basisまで確認し、参照と主観の受取対象の自然な実現を進める。未選択感情を同じMoveへ足すことや行動責務との交換は、124という件数の維持だけで正当化しない。既存の全意味責務を保つ。
 
 System Context doctor→prepareは固定toolchain不足／不一致でref鮮度判定前に不成立。古い索引を使わず原典fallbackを使用し、cache／profile／ref／tracked current変更なし。実装用CPython3.12.13環境は今回offline再構築し、固定46依存のversion・wheel hash・installed RECORD closureを全件照合、エラー0。System Contextの鮮度成功とは混同しない。sub-agentは公開sourceの静的レビューのみ、編集・検査・生成・非公開全文読取・GitHub更新はroot華恋が担当。
+
+PR3／30／37はDraft／open／unmerged。外部Pro独立Product Read、ready／採用／merge／本番／問い生成／Layer3は未成立、product／technical credit0。同じ承認内の未完unitとして継続し、新たな承認待ちを作らない。
+
+### 2026-09-07 continuation — 対比の両端を受取対象として保つ文法（candidate47／商品未成立）
+
+継承承認 `FRESH_MASH_LEVEL3_CMEE_STAGE1_SELECTED_SUBJECTIVE_RECEPTION_FORWARD_INVERSE_REQUEST_LOCAL_CONTRACT_20260905` 内の同じ未完unit。保存済みcandidate46とGitHub fresh head一致から継続した。全体設計図・全ファイル地図・国家システム・最新weekly20260905・毎回必須incident全文・関連する選択／主観／生成／逆検証／旧経路を確認。本人が記録した気持ちとそれに対比する事柄を、その意味ごと受け取ることが今回の目的。STRUCTURE_MAP_DELTA_NONE。final Stage1は公開返信経路へ未接続で、国家保存／dispatch／queue／read、公開API／DB／RN、Piece／分析との責務境界を維持する。
+
+既存HR作者で、positive_feeling、選択済みMATERIAL_WEIGHT／RECEIVE_AS_MATERIAL、attention、非ANAPHORIC、単一required contrastのexact2 semantic slotsに限定する。そのMoveのselected contributionに属するbasisとappraised primaryの両方へ二端点が含まれることを同じ不変selected inputから確認する。既存LEFT／RIGHT順・完全な名詞節を保って両者をattentionの目的語へ置き、同じ二つを受け取る対格補語と、既存contrastを表す付加句を述語で実現する。片側の背景化、未選択感情の追加、比較軸や別appraisalへの変更は行わない。
+
+内部ClauseCoreはこの関係を完了数へ加えず、pending_relation_slots=(0,)として保持する。core validatorはexact1 contrast・二端点・全slot・完了と未完了の数・型／重複／範囲を検査する。述語が実際の対格補語とcontrast句を組み立てたときにだけcompleted_relation_slots=(0,)を返し、surface組立で同じ節のpendingとの完全一致を要求する。non-attentionの早期returnでも未消費を拒否する。これはprivate文法内の分担であり、新しい意味carrier・公開schema・selector・意味抽出ではない。核、主観命題、basis、qualifier、Move、role、target、support、関係と時点は維持。GateとSentenceSurface、別act／PRESERVE等の旧経路は変更せず、同じselected inputを独立に再導出する既存全文replayを維持する。検査閾値・80字責務を緩めていない。
+
+GitHub保存source `c620c399c43ea592eb887843b9cb5f22d871f45f`、tree `524e0674b06ece3cea138d1037b096fe5ef7646c` をローカルへ適用し、変更3pathをGitHubから全文再取得してbyte一致を確認してから最終検証を実行した。検証中のHEAD／sourceは固定。対象はHR／既存test／runnerの3path。runnerはcurrent13定数のみ再導出、exact18／exact9と非current AST不変を確認した。通常git pushの再試行はせず、接続済みGitHub appで同じtreeを保存した。
+
+公開合成の追加3検査は、両端の原文と原順・選択済みbasis／appraisal、関係の未完了と完了、bool混入／誤型／重複／別slot、片側削除・入替え・対格補語や対比の欠落・旧本文・旧述語・別appraisalの拒否を確認する。rootの最初の合成例は非canonical感情ラベルで準備失敗し、ラベル訂正後も既存source shapeの範囲外で失敗した。既存範囲内の公開合成例へ直し、製品の入力解析や意味選択を広げず3検査成功。途中記録と最終結果を分けて保持する。
+
+固定sourceの必須285検査は281成功・継承4失敗。原184は180成功4失敗、追加101は全成功。前回282の全成否一致、新規3成功、新規失敗／skip／未実行0。継承4は観察固定不一致2、dated receiptと現source不一致1、旧集合重複1。後続36ケース個別確認、post-hash96成功、exact8／same16成功、unseen12の既存重複FAILを保持。historical fixture／hash／dated PASSを更新せず、実機・別GA2／shared164の今回実行を主張しない。
+
+同じcanonical100を再生成し、direct100、required Move／expression／visible binding各124、GENERATED73／UNAVAILABLE27、可否変更0。受取1件のみ変更、他99件は全保存項目で同一。原入力／順序／全核／selected inputと派生参照／観察／実reception plan／可否と理由／意味責務は全100で同一。華恋が原入力全field・観察・受取・可否と理由を全100件全文確認。外側UNAVAILABLEのdirect本文は診断であり、商品生成成立と数えない。
+
+商品NOT_CLEAR。対比の両端を直接受け取る対象として明確化できたが、長いsource再掲と定型締めは残る。別actの関係名詞連結、指示語や一般名詞だけの薄い受取、中心感情の未選択と補助行動偏重も未成立。次は同じselected relation／contribution／basis／appraisalの責務を確認し、参照と受取対象の自然な実現を進める。今回の文法を別actへ無条件展開せず、primary／protected／boundaryの意味と各Moveの責務を保つ。124の件数維持だけで未選択感情の追加や行動との交換を正当化しない。
+
+System Context doctor→prepareは固定toolchain不足／不一致によりref鮮度判定前に不成立。古い索引を使わず原典fallbackで確認し、cache／profile／ref／tracked current変更なし。実装にはcandidate46で固定46依存とRECORD closureまで照合済みのCPython3.12.13環境を継続使用。System Context鮮度成功や今回の環境再構築とは混同しない。sub-agentは公開source／公開合成testの静的レビューのみ、追加必須修正なし。編集・検査・生成・非公開全文読取・GitHub更新はroot華恋が担当。
 
 PR3／30／37はDraft／open／unmerged。外部Pro独立Product Read、ready／採用／merge／本番／問い生成／Layer3は未成立、product／technical credit0。同じ承認内の未完unitとして継続し、新たな承認待ちを作らない。
