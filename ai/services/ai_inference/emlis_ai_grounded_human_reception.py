@@ -7631,6 +7631,7 @@ def _source_grounded_response_predicate(
     ],
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
     distributive_object: bool = False,
+    single_action_object: bool = False,
     unfinished_change: bool = False,
     unfinished_pair: bool = False,
     pending_relation_slots: tuple[int, ...] = (),
@@ -7684,6 +7685,26 @@ def _source_grounded_response_predicate(
         raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
     proposition = selected_subjective_decision.subjective_proposition
     appraisal = proposition.appraisal_content
+    material_action_attention = bool(
+        single_action_object and move_role == "attention"
+        and reception_act == "honor_concrete_effort"
+        and referent_kind == "self_started_effort"
+        and target_predicate_kind == "present_actual_output"
+        and semantic_profile.nucleus_kind == "action"
+        and semantic_profile.modality == "fact"
+        and semantic_profile.actor_kind == "SELF" and voice == "SELF_PERFORMED"
+        and semantic_profile.performed_action and not semantic_profile.future_action
+        and not semantic_profile.quoted_boundary
+        and not distributive_object and not pending_relation_slots
+        and not unfinished_change and not unfinished_pair
+        and _selected_material_appraisal(selected_subjective_decision)
+    )
+    if material_action_attention:
+        # Attention and the selected material reception govern one complete
+        # action object. Keep honor explicit without switching case and
+        # introducing that same object again through a pronoun.
+        object_particle, role_operator = "を", "見過ごさず、"
+        predicate_lemma, conjugation_class = "受け止める", "ICHIDAN"
     material_change = bool(
         reception_act == "recognize_lived_change" and referent_kind == "lived_change"
         and target_predicate_kind == "present_change"
@@ -7803,7 +7824,7 @@ def _source_grounded_response_predicate(
     # Attention governs the source object with ni, while the following
     # reception predicate governs it with wo. Resume that same whole object
     # once, instead of leaving the transitive predicate without its object.
-    valency_complement = "それを" if move_role == "attention" else ""
+    valency_complement = "それを" if move_role == "attention" and not material_action_attention else ""
     completed_relation_slots = ()
     if type(pending_relation_slots) is not tuple or any(type(slot) is not int for slot in pending_relation_slots):
         raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
@@ -7926,6 +7947,7 @@ def _source_grounded_response_predicate_surface(
     recovery_stage: ReceptionRecoveryStage = "full",
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
     distributive_object: bool = False,
+    single_action_object: bool = False,
     unfinished_change: bool = False,
     unfinished_pair: bool = False,
     pending_relation_slots: tuple[int, ...] = (),
@@ -7943,6 +7965,7 @@ def _source_grounded_response_predicate_surface(
         voice=voice,
         selected_subjective_decision=selected_subjective_decision,
         distributive_object=distributive_object,
+        single_action_object=single_action_object,
         unfinished_change=unfinished_change,
         unfinished_pair=unfinished_pair,
         pending_relation_slots=pending_relation_slots,
@@ -8072,6 +8095,14 @@ def _source_grounded_reception_fragment(
         recovery_stage=recovery_stage,
         selected_subjective_decision=selected_subjective_decision,
         distributive_object=distributive_object,
+        single_action_object=(
+            recovery_stage == "full"
+            and realization.reference_mode != "ANAPHORIC"
+            and realization.target_slot_count == 1
+            and len(realization.semantic_fragments) == 1
+            and not realization.relations and not realization.context_slots
+            and target_core.semantic_slots == (target_owner_slot,)
+        ),
         unfinished_pair=unfinished_pair,
         pending_relation_slots=target_core.pending_relation_slots,
         pending_relation_kind=(realization.relations[target_core.pending_relation_slots[0]].relation_kind

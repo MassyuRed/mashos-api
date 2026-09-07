@@ -717,13 +717,14 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         follow = _reception_text(a.surface.text)
         self.assertEqual(follow.count("それをノートに書いた"), 1)
         self.assertIn(
-            "それをノートに書いたことに目が留まり、"
-            "それを大切に思っています", follow,
+            "それをノートに書いたことを見過ごさず、"
+            "大切に受け止めています", follow,
         )
         self.assertNotIn("大切にそれを", follow)
         for authored in a.authored:
             with self.subTest(stage=authored.recovery_stage):
-                self.assertIn("に目が留まり、それを大切に思っています", authored.text)
+                self.assertIn("を見過ごさず、大切に受け止めています" if authored.recovery_stage == "full"
+                              else "に目が留まり、それを大切に思っています", authored.text)
 
     def test_anaphoric_context_stays_visible_without_repeating_its_relation(self):
         rows, _ = load_validated_batch(_BATCH_PATH, _MANIFEST_PATH)
@@ -3890,6 +3891,7 @@ class CMEEConcreteActionNominalTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.artifacts = {}
+        cls.predicates = {}
         for name, action in (
             ("qualified", "昨日、その資料を三ページだけ整理した"),
             ("demonstrative", "その資料を整理した"),
@@ -3900,7 +3902,15 @@ class CMEEConcreteActionNominalTest(unittest.TestCase):
                 "action_text": action + "。", "thought_text": "まだ先の見通しは分からない。",
                 "categories": ["仕事"], "emotions": [{"type": "不安", "strength": "medium"}],
             }}
-            cls.artifacts[name] = (action, _full_surface_artifacts(row))
+            captured = []
+            original = reception_owner._source_grounded_response_predicate_surface
+            def capture(reception_act, move_role, **kwargs):
+                result = original(reception_act, move_role, **kwargs)
+                captured.append({"reception_act": reception_act, "move_role": move_role, **kwargs})
+                return result
+            with patch.object(reception_owner, "_source_grounded_response_predicate_surface", side_effect=capture):
+                cls.artifacts[name] = (action, _full_surface_artifacts(row))
+            cls.predicates[name] = tuple(captured)
 
     def test_concrete_action_keeps_complete_source_and_selected_replay(self):
         for name, (action, a) in self.artifacts.items():
@@ -3911,10 +3921,10 @@ class CMEEConcreteActionNominalTest(unittest.TestCase):
                 self.assertEqual(a.sentence_plan.recovery_stage, "full")
                 self.assertEqual(follow.count(action + "こと"), 1)
                 self.assertNotIn("実際の行動", follow)
-                self.assertIn("大切に思っています", follow)
+                self.assertIn("大切に受け止めています", follow)
                 self.assertTrue(reception_owner._performed_action_nominal_responsibility(follow, action + "こと"))
                 self.assertFalse(reception_owner._performed_action_nominal_responsibility(
-                    follow.replace("大切に思っています", "大切ではありません"), action + "こと",
+                    follow.replace("大切に受け止めています", "大切ではありません"), action + "こと",
                 ))
                 line = next(line for line in a.sentence_plan.lines
                             if line.binding.line_role == "human_follow")
@@ -3938,7 +3948,7 @@ class CMEEConcreteActionNominalTest(unittest.TestCase):
             ("embedded_negative", "引き受けられない", "引き受けられる"),
             ("embedded_negative", "担当者に", "家族に"),
             ("ongoing", "整理していること", "整理する予定のこと"),
-            ("demonstrative", "大切に思っています", "大切ではありません"),
+            ("demonstrative", "大切に受け止めています", "大切ではありません"),
         )
         for name, old, new in mutations:
             with self.subTest(name=name, old=old):
@@ -4008,6 +4018,70 @@ class CMEEConcreteActionNominalTest(unittest.TestCase):
         self.assertEqual(final.text, action + "こと")
         self.assertNotEqual(legacy.text, final.text)
         self.assertEqual(final.kind, "self_started_effort")
+
+
+    def test_selected_material_attention_receives_one_complete_action_object(self):
+        action, a = self.artifacts["qualified"]
+        follow = _reception_text(a.surface.text)
+        self.assertEqual(follow.strip(), action + "ことを見過ごさず、大切に受け止めています。")
+        decision = a.selected_subjective_input.decisions[0]
+        self.assertTrue(reception_owner._selected_material_appraisal(decision))
+        self.assertEqual((decision.reception_act, len(decision.target_nucleus_ids), decision.support_nucleus_ids),
+                         ("honor_concrete_effort", 1, ()))
+        self.assertEqual(a.plan.response_plan.human_reception_plan.moves[0].move_role, "attention")
+        self.assertLessEqual({"full", "hedged"}, {row.recovery_stage for row in a.authored})
+        for authored in a.authored:
+            if authored.recovery_stage != "full":
+                self.assertIn("に目が留まり、それを大切に思っています", authored.text)
+                self.assertNotIn("受け止めたいです", authored.text)
+        for old, new in (
+            ("見過ごさず、", ""), ("見過ごさず、", "見過ごして、"),
+            ("大切に", ""), ("受け止めています", "思っています"),
+            ("受け止めています", "受け止めていません"),
+            (action + "こと", action + "ことと" + action + "こと"),
+            (action + "ことを", "別の行動を"),
+        ):
+            with self.subTest(new=new):
+                body = _tamper_reception(a.surface.text, old, new)
+                self.assertNotEqual(body, a.surface.text)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan,
+                    surface_result=replace(a.surface, text=body), resolver=a.resolver,
+                    require_body_inverse=True, selected_subjective_input=a.selected_subjective_input).passed)
+
+    def test_material_attention_preserves_other_roles_profiles_and_selected_operations(self):
+        kw = next(k for k in self.predicates["qualified"] if k["recovery_stage"] == "full")
+        render = reception_owner._source_grounded_response_predicate_surface
+        profile = kw["semantic_profile"]
+        decision = kw["selected_subjective_decision"]
+        prop = decision.subjective_proposition
+        self.assertEqual(profile.modality, "fact")
+        self.assertIn("を見過ごさず、大切に受け止めています", render(**kw))
+        other_appraisal = replace(decision, subjective_proposition=replace(prop,
+            appraisal_content=replace(prop.appraisal_content,
+                dimension=contracts_owner.AppraisalDimension.RELATIONAL_NONCOLLAPSE,
+                operation=contracts_owner.AppraisalOperation.PRESERVE_BOTH_ENDPOINTS)))
+        variants = [
+            {"single_action_object": False}, {"move_role": "felt_response"},
+            {"move_role": "significance"},
+            {"semantic_profile": replace(profile, quoted_boundary=True)},
+            {"semantic_profile": replace(profile, modality="uncertain")},
+            {"selected_subjective_decision": other_appraisal},
+            {"future_action": True, "voice": "FUTURE_INTENTION",
+             "referent_kind": "future_action_intention", "target_predicate_kind": "present_direction",
+             "semantic_profile": replace(profile, performed_action=False, future_action=True, modality="intention")},
+        ]
+        for update in variants:
+            with self.subTest(update=update):
+                try:
+                    text = render(**{**kw, **update})
+                except reception_owner.GroundedHumanReceptionSurfaceError:
+                    continue
+                self.assertNotIn("見過ごさず、大切に受け止め", text)
+                self.assertIn("大切に思っています", text)
 
 
 class CMEENegativeContextNominalTest(unittest.TestCase):
