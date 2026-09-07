@@ -303,7 +303,7 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         self.assertEqual(follow.count(nominal), 1)
         self.assertNotIn("に表れた願い", follow)
         self.assertNotIn("今も、", follow)
-        self.assertIn(context + "ことがともにあること", follow)
+        self.assertIn(nominal + "と" + context + "ことに目が留まり、それらを、その重なりも含めて", follow)
         self.assertIn("見失わずに、大切に受け止めています", follow)
         for old, new in (
             (nominal, source + "こと"),
@@ -314,7 +314,8 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
             (nominal, "別の気持ちはあるということ"),
             (nominal, "「" + nominal + "」"), (nominal, nominal + "と" + nominal),
             (nominal, "『" + nominal + "』"),
-            (context, "別のこと"), ("がともにある", "が同じである"),
+            (context, "別のこと"), ("その重なりも含めて", "同じものとして"),
+            ("その重なりも含めて", ""), ("それらを、", ""),
             ("見失わずに、大切に受け止めています", "小さなことだと考えています"),
             (nominal, "今も、" + nominal),
         ):
