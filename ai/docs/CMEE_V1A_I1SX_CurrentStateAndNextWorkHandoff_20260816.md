@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾のcandidate48と継承承認を確認する。既存HRで、選択済みRELATIONAL_NONCOLLAPSE／PRESERVE_BOTH_ENDPOINTSと同一focal contrast、両端のselected basisかつappraised primaryを確認し、felt_response／stay_with_current_burden／current_expressionに限定して両端そのものを受取対象にする。両方の保持と対比をobjectと述語で分担し、未完了の関係を同じ節で厳密に完了する。canonical100の受取1件のみ変更、他99件・全核・selected input・実plan・意味を伴う124責務・73/27は同一。変更例の外側不可は継続し、診断本文の文法改善である。必須287検査283成功／継承4失敗、前回285の全成否一致。華恋が全100件全文確認し商品NOT_CLEAR。長い再掲・定型締め、中心感情の未選択と補助行動偏重は残る。
+3. 末尾のcandidate49と継承承認を確認する。既存HRで、自己のretained_wish／protect_retained_intention／attentionに選択済みのMATERIAL対比を、願いと背景の完全な二端点へ直接つなぐ。対比と願いを大切に受け止める責務を同じ節に保持。canonical100の生成可能側の受取2件のみ変更し、他98件・全核・selected input・実plan・意味を伴う124責務・観察・可否理由・73/27は同一。必須289検査285成功／継承4失敗、前回287の全成否一致、新規2成功。華恋が全100件全文確認し商品NOT_CLEAR。長い再掲・定型締め、別actの対比名詞、中心感情の未選択と補助行動偏重は残る。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -6302,3 +6302,21 @@ GitHub保存source `19b91f3a299cf0d9e04a761c7d2b367e46747e1a`、tree `de0a0e1d8f
 System Context doctor→prepareは固定toolchain不足／不一致によりref鮮度判定前に不成立。古い索引を使わず原典fallbackで確認し、cache／profile／ref／tracked current変更なし。実装はcandidate46で固定46依存とRECORD closureまで照合済みのCPython3.12.13環境を継続使用。System Context鮮度成功や今回の環境再構築を主張しない。sub-agentは公開source／testの静的確認のみで必須修正なし。全編集・検査・生成・private全文読取・GitHub更新はroot華恋が担当。
 
 PR3／30／37はDraft／open／unmerged。外部Pro独立Product Read、ready／採用／merge／本番／問い生成／Layer3は未成立、product／technical credit0。同じ承認内の未完unitとして継続し、新たな承認待ちを作らない。
+
+### 2026-09-07 continuation — 願いと背景の対比を受取対象へ保つ文法（candidate49／商品未成立）
+
+継承承認 `FRESH_MASH_LEVEL3_CMEE_STAGE1_SELECTED_SUBJECTIVE_RECEPTION_FORWARD_INVERSE_REQUEST_LOCAL_CONTRACT_20260905` 内の同じ未完unit。candidate48とGitHub fresh headから継続。全体設計図・全ファイル地図・国家システム・前提／CURRENT_RULES・必須incident・latest weekly20260905を確認した。今回の責任はEmlisが、本人の願いと現在の状況を対比ごと受け取るUX。final Stage1は公開返信経路へ未接続で、国家保存／dispatch／queue／read、API／DB／RN、Piece／分析との境界は変わらない。STRUCTURE_MAP_DELTA_NONE。
+
+既存Human ReceptionのMATERIAL contrast文法を、自己のwish、retained_wish、protect_retained_intention、attention、非ANAPHORICに限定して適用する。既存exact2 semantic slots／単一required contrast／LEFT・RIGHT順を保持し、両端がそのMoveのselected contribution basisかつappraised primaryであることを要求する。performed／future action・引用・別主体へ広げない。願いの存在・topic/case粒子、背景全文・否定・未確定・時点を削らず、対象を「違い」という名詞だけへ置き換えない。
+
+同じClauseCoreのpending_relation_slots=(0,)を、同じ述語で対比を実際に出した場合だけ完了する。再参照・対比の付加句・見失わず大切に受け止めるguardの接続を維持。旧positive_feeling MATERIAL、NONCOLLAPSE、別act／role、意味選択・schema・Gate・閾値を変更しない。生成と独立replayは同じ不変selected inputから全文を再導出する。lived_changeやcoexistence、言いかけ末尾の単純削除へ無条件に展開しない。
+
+固定source `9996d7d9e2aaef20c858e44de8c616ebcb56f17f`、tree `ad128eff5ed796f378ff20a75f046e7cf8e91cfb`。製品HR・既存public合成test・current runnerの3pathで、runnerは既存13定数の再導出と非current AST不変を確認。新2検査は完全な両端、selected/appraised、対比・保護・時制・否定の欠落、別appraisal／role／profile、pending誤型・不完全終了を検出する。収集core回数を1とした初期テスト前提と、旧「との違い」を要求した既存期待値を訂正した。両端・関係・独立inverseの検査意図は維持し、製品条件を緩めていない。訂正後の固定headで必要検証を再実行した。
+
+既存HRで、自己のretained_wish／protect_retained_intention／attentionに選択済みのMATERIAL対比を、願いと背景の完全な二端点へ直接つなぐ。対比と願いを大切に受け止める責務を同じ節に保持。canonical100の生成可能側の受取2件のみ変更し、他98件・全核・selected input・実plan・意味を伴う124責務・観察・可否理由・73/27は同一。必須289検査285成功／継承4失敗、前回287の全成否一致、新規2成功。華恋が全100件全文確認し商品NOT_CLEAR。長い再掲・定型締め、別actの対比名詞、中心感情の未選択と補助行動偏重は残る。
+
+原184は180成功4失敗、追加105は全成功。継承4は観察固定不一致2、dated receiptと現source不一致1、旧集合重複1。後続36ケースとpost-hash96を確認し、exact8／same16成功、unseen12の既存重複FAILを保持。historical fixture／hash／dated PASSは変更しない。今回未実行の実機や別GA2／shared164の成功へ広げない。生成／全件読取後の本文に明白な薄さや不自然さが残るため、Mashの商品確認準備成立とはしない。
+
+System Contextはdoctor→prepareを実行し、固定toolchain不一致でref鮮度判定前に不成立。stale/freshを判定できたとはせず、原典を直接確認。cache／profile／ref／tracked current変更なし。実装用の固定46依存は今回復元し、既存lockのversion・wheel hash・installed RECORD closureと2277 hashed filesを照合、errors0。環境復元をSystem Context成立や商品成果に数えない。
+
+関連source／testはチームで本文を確認し、sub-agentは公開コードの静的読取だけを担当。全編集・検査・生成・private全文読取・GitHub更新はroot華恋が担当。PR3／30／37はDraft／open／unmerged、商品NOT_CLEAR、ready／採用／merge／本番／問い／Layer3は未成立。同じ承認内の残件を継続し、新たな承認待ちを作らない。
