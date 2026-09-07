@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾のcandidate51と継承承認を確認する。選択済みMATERIALの変化を「受け止める」述語へ整合し、同じMoveで評価済みの対比両端を、変化と背景の二対象として受け取る。有限節だけを原文全文＋「という変化」へ接続し、差異を述語側で保持する。canonical100の受取5件のみ変更し、他95件・全核・selected input・実plan・意味を伴う124責務・観察・可否理由・73/27は同一。必須292検査288成功／継承4失敗、前回290の全成否一致、新規2成功。華恋が全100件の本文を確認し商品NOT_CLEAR。長い関係再掲・定型締め・一般名詞だけの受取・中心感情の未選択と補助行動偏重は残る。
+3. 末尾のcandidate52と継承承認を確認する。選択済みMATERIALの願い・変化とその背景を二対象として受け取り、既存の関係を述語側で保持する。単独の有限な変化節は原文全文＋「という変化」へ接続。canonical100の受取6件のみ変更、他94件・全核・selected input・実plan・意味を伴う124責務・観察・可否理由・73/27は同一。最終必須294検査290成功／継承4失敗、前回292の全成否一致、新規2成功。華恋が全100件の本文を確認し商品NOT_CLEAR。長い原文再掲・定型締め・一般名詞／指示語だけの受取・中心感情の未選択と補助行動偏重は残る。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -6348,3 +6348,21 @@ System Contextはdoctor→prepareを実行したが、固定toolchain不一致�
 原184は180成功4失敗、追加108は全成功。継承4は観察固定不一致2、dated receiptと現source不一致1、旧集合重複1。後続36ケースの診断とpost-hash96を確認し、集合判定exact8／same16成功、unseen12の既存重複FAILを保持。historical fixture／hash／dated PASSは変更しない。未実行の実機や別GA2／shared164の成功には広げない。
 
 System Contextはdoctor→prepareを実行したが、固定toolchain不一致でref鮮度判定前に不成立。stale／fresh成功ではなくweekly5.4の原典fallback。cache／profile／ref／tracked current変更なし。前回復元・照合した固定46依存を使用。関連本文・影響先を確認し、sub-agentは公開source/testの静的読取のみ。全編集・検査・生成・private全文読取・GitHub更新はroot華恋。PR3／30／37はDraft／open／unmerged、商品NOT_CLEAR。ready／採用／merge／本番／問い／Layer3は未成立。同じ承認内の残件を継続する。
+
+### 2026-09-07 continuation — 関係する二対象と単独変化の受け取り（candidate52／商品未成立）
+
+継承承認 `FRESH_MASH_LEVEL3_CMEE_STAGE1_SELECTED_SUBJECTIVE_RECEPTION_FORWARD_INVERSE_REQUEST_LOCAL_CONTRACT_20260905` 内の同じ未完unit。candidate51・最新GitHub・全体設計図と全ファイル地図・国家システム・前提／CURRENT_RULES・必須incident全文・latest weekly20260905を確認。今回の責任は、本人の願いや変化と背景を、選択済みの主観的評価に沿って読み取りやすく受け取るUX。final Stage1は公開返信へ未接続。国家保存／dispatch／queue／read、API／DB／RN、Piece／分析、共通基盤と旧I5の境界は同じ。STRUCTURE_MAP_DELTA_NONE。
+
+既存HRのmaterial pair文法へwish_and_constraint／attempt_and_blockを接続。現行frameでLEFT/RIGHT・無方向・「ともにある」とされ、既存ANAPHORICでも「重なる」で受けている二種別に限る。同じMoveでselected contributionかつappraised bindingかつprimary targetを同一basis行で証明した双方のsourceを、順序どおり二対象として保持する。exact2／single relation／nonANAPHORIC／両focalなし、SELF・STATEと既存wish/change/feeling profileを維持。attentionは同じ二対象を受取動詞へつなぎ直し、felt_responseは目的格を一度だけ持つ。実IRのrelation kindをpending→同じ述語のcompleted slotsへ渡し、型・個数・完結を検証する。HR側の関係責務はtyped completionと同じselected入力でのreplay全文一致で閉じる。観測専用relation matcherをHR側の直接照合と説明しない。
+
+選択済み単独MATERIAL changeは、one fragment／no relation／SELF・非quoted・非performed・非future／change核と既存change-fact又はfeeling-feelingの場合だけ、有限節全文＋「という変化」へ接続する。context・極性・時点・不確かさ・言いかけを根拠なく削らない。PRESERVE／BOUNDED／unfinished／別profile・coexistence・directional relationは今回の新pair許可へ入れない。意味選択、owner、schema、Sentence Surface、Gate、parser、閾値への変更なし。
+
+GitHub実装保存 `4f07ded0956244f13b217620aa6b6eec580135be`、生成tree `7d01068ce9d361dc59ab44dc6c6cd01f8993df52`。最終test保存 `785fe7cde58d124bc7b4f9d0842ffa0acae1d1c6`、回帰tree `51975ff9726ac9273de24e4ffa26b2afef4f8e5c`。ローカル検証commitとGitHub保存commitはメタデータが異なり、対応するtreeと対象全文の一致を確認。100件生成後の変更は既存testのみで、生成runtime／runner bytesは不変。実装差分はHR・既存test・current runnerの3path。runnerは既存13定数を再導出し非current AST不変。
+
+新規2検査は単独変化の完全なsourceと変化名詞、既存typed集合の両関係種別・attention/felt両role・selected basis・focalなし・actual replay・対象／関係／時制／引用改変拒否を確認。既存公開合成例の「ともにある」wrapper期待を新しい二対象と関係adjunctの位置へ整合し、元の意味削除・同一視の拒否を維持、関係adjunctと複数目的格の削除拒否も確認。初回全294は289成功5失敗で旧wrapper期待1を含み、最終結果とは区別する。historical fixture／hash／dated PASSを変更しない。
+
+選択済みMATERIALの願い・変化とその背景を二対象として受け取り、既存の関係を述語側で保持する。単独の有限な変化節は原文全文＋「という変化」へ接続。canonical100の受取6件のみ変更、他94件・全核・selected input・実plan・意味を伴う124責務・観察・可否理由・73/27は同一。最終必須294検査290成功／継承4失敗、前回292の全成否一致、新規2成功。華恋が全100件の本文を確認し商品NOT_CLEAR。長い原文再掲・定型締め・一般名詞／指示語だけの受取・中心感情の未選択と補助行動偏重は残る。
+
+原184は180成功4失敗、追加110は全成功。継承4は観察固定不一致2、dated receiptと現source不一致1、旧集合重複1。後続36ケース・post-hash96・集合exact8／same16成功とunseen12の既存重複FAILは前回と同じ。別GA2／shared164・実機・本番の成功には広げない。
+
+System Contextはdoctor→prepareを実行したが、固定toolchain不一致でref鮮度判定前に不成立。stale／fresh成功とはせずweekly5.4の原典fallbackで確認。cache／profile／ref／tracked current変更なし。実装runtimeは固定46依存をno-index／require-hashesで復元しversion／wheel／installed RECORD closureを照合。sub-agentは公開原典と差分の静的読取のみ、全編集・検査・生成・private全文読取・GitHub反映はroot華恋。PR3／30／37はDraft／open／unmerged。商品NOT_CLEAR、ready／採用／merge／本番／問い／Layer3は未成立。同じ承認内の残件を継続する。
