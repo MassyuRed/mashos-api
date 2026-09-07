@@ -2226,7 +2226,7 @@ def source_grounded_retained_wish_nominal(
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
 ) -> str:
-    """Nominalize a proven present wish carrier without deleting its host.
+    """Nominalize a proven wish carrier without deleting its finite host.
 
     Keep the complete finite clause, including its topic/case particle and
     affirmative host. Removing the host would lose a temporal surface owner.
@@ -2240,10 +2240,10 @@ def source_grounded_retained_wish_nominal(
     nucleus = nucleus_index.get(move.target_nucleus_ids[0])
     if (nucleus is None or nucleus not in plan.nuclei
         or nucleus.kind != "wish"
-        or nucleus.semantic_frame.predicate_kind != "feeling"
+        or nucleus.semantic_frame.predicate_kind not in {"feeling", "wish"}
         or nucleus.semantic_frame.modality != "wish"
         or nucleus.semantic_frame.polarity != "positive"
-        or nucleus.semantic_frame.time_scope not in {"present", "current_input"}
+        or nucleus.semantic_frame.time_scope not in {"present", "current_input", "past"}
         or len(nucleus.source_span_ids) != 1
         or "operator:performed_action" in nucleus.semantic_frame.attribute_codes
         or any(code.startswith("quantity:") and code.removeprefix("quantity:")
@@ -2259,6 +2259,18 @@ def source_grounded_retained_wish_nominal(
         or any(re.search(r"[「」『』…‥!?！？]", span.raw_text)
                for span in resolver.resolve_many(resolver.span_ids)
                if span.source_field in fields)):
+        return ""
+    if nucleus.semantic_frame.time_scope == "past":
+        # The existing status owner already proved this same wish's past
+        # reporting host. Recheck that grammar through the shared owner;
+        # a past date elsewhere in the source is not a past wish. Preserve
+        # the complete plain finite report as the adnominal time witness.
+        if (_past_wish_target((nucleus,), resolver)
+            and past_reported_wish_finite(clause)
+            and clause.endswith("た") and not clause.endswith("ました")):
+            return f"{clause}こと"
+        return ""
+    if nucleus.semantic_frame.predicate_kind != "feeling":
         return ""
     changing_wish = re.fullmatch(
         r"(?P<nominal>[^、,。\s]+(?:たい|ほしい|欲しい)(?:気持ち|願い))"

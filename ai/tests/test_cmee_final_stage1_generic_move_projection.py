@@ -1393,7 +1393,18 @@ class CMEEPastReportedWishTest(unittest.TestCase):
             self.assertTrue(a.inverse.passed)
             self.assertEqual(a.sentence_plan.recovery_stage, "full")
             follow = _reception_text(a.surface.text)
-            self.assertIn("当時の願い", follow)
+            index = {n.nucleus_id: n for n in a.plan.nuclei}
+            nominals = tuple(filter(None, (
+                reception_owner.source_grounded_retained_wish_nominal(
+                    move, a.plan, index, a.resolver,
+                ) for move in a.plan.response_plan.human_reception_plan.moves
+                if reception_owner.reception_effective_move_reference_mode(
+                    a.plan.response_plan.human_reception_plan, move, "full",
+                ) != "anaphoric_first"
+            )))
+            witnesses = nominals or ("当時の願い",)
+            for witness in witnesses:
+                self.assertEqual(follow.count(witness), 1)
             for move in a.plan.response_plan.human_reception_plan.moves:
                 for nid in move.target_nucleus_ids:
                     target = next(n for n in a.plan.nuclei if n.nucleus_id == nid)
@@ -1404,15 +1415,95 @@ class CMEEPastReportedWishTest(unittest.TestCase):
                         nucleus_index={n.nucleus_id: n for n in a.plan.nuclei},
                         resolver=a.resolver,
                     ), "当時の願い")
-            for wrong in ("今も残る願い", "これからの行動"):
-                changed = _tamper_reception(a.surface.text, "当時の願い", wrong)
-                inverse = evaluate_grounded_surface_body_inverse(
-                    body=changed.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
-                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
-                )
-                self.assertFalse(inverse.passed)
-                self.assertTrue(any("replay_mismatch" in code for code in inverse.failure_codes))
+            for witness in witnesses:
+                for wrong in ("今も残る願い", "これからの行動"):
+                    changed = _tamper_reception(a.surface.text, witness, wrong)
+                    inverse = evaluate_grounded_surface_body_inverse(
+                        body=changed.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                        resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                    )
+                    self.assertFalse(inverse.passed)
+                    self.assertTrue(any("replay_mismatch" in code for code in inverse.failure_codes))
         self.assertGreater(checked, 0)
+
+    def test_past_wish_nominal_preserves_report_context_and_protection(self):
+        # Use an actually selected explicit target from the unchanged loader.
+        # A short synthetic report legitimately chooses anaphoric delivery.
+        rows, _ = load_validated_batch(_BATCH_PATH, _MANIFEST_PATH)
+        a = None
+        for row in rows:
+            inputs = _compile_inputs(row)
+            plan = inputs.grounded_plan
+            index = {n.nucleus_id: n for n in plan.nuclei}
+            resolver = build_evidence_span_resolver(inputs.source.evidence_spans)
+            reception = plan.response_plan.human_reception_plan
+            if any(
+                reception_owner._past_wish_target(tuple(index[nid] for nid in move.target_nucleus_ids), resolver)
+                and reception_owner.reception_effective_move_reference_mode(reception, move, "full") != "anaphoric_first"
+                for move in reception.moves
+            ):
+                a = _full_surface_artifacts(row)
+                break
+        self.assertIsNotNone(a)
+        self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+        self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+        self.assertEqual(a.sentence_plan.recovery_stage, "full")
+        follow = _reception_text(a.surface.text)
+        reception = a.plan.response_plan.human_reception_plan
+        move = next(m for m in reception.moves if m.reception_act == "protect_retained_intention")
+        index = {n.nucleus_id: n for n in a.plan.nuclei}
+        target = index[move.target_nucleus_ids[0]]
+        derive = reception_owner.source_grounded_retained_wish_nominal
+        report = reception_owner._source_grounded_clause_candidate(target, a.resolver)
+        nominal = report + "こと"
+        self.assertEqual(follow.count(nominal), 1)
+        self.assertNotIn("ことに表れた当時の願い", follow)
+        self.assertIn("見失わずに、大切に受け止めています", follow)
+        self.assertEqual(target.semantic_frame.time_scope, "past")
+        self.assertEqual(derive(move, a.plan, index, a.resolver), nominal)
+        for old, new in (
+            (nominal, report.removesuffix("た") + "ていること"),
+            (nominal, report.removesuffix("た") + "ていないこと"),
+            (nominal, "別のことを望んだこと"),
+            (nominal, "今の願い"), (nominal, "当時の願い"),
+            (nominal, "「" + nominal + "」"), (nominal, nominal + "と" + nominal),
+            ("その重なりも含めて", ""), ("見失わずに、", ""),
+        ):
+            with self.subTest(replacement=new):
+                body = _tamper_reception(a.surface.text, old, new)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan,
+                    surface_result=replace(a.surface, text=body), resolver=a.resolver,
+                    require_body_inverse=True, selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+        for changes in (
+            {"actor": "other"}, {"actor": "unknown"}, {"modality": "uncertain"},
+            {"time_scope": "current_input"}, {"time_scope": "future"},
+            {"polarity": "negative"}, {"predicate_kind": "action"},
+            {"attribute_codes": (*target.semantic_frame.attribute_codes, "operator:performed_action")},
+            {"attribute_codes": (*target.semantic_frame.attribute_codes, "quantity:multiple")},
+        ):
+            changed = replace(target, semantic_frame=replace(target.semantic_frame, **changes))
+            plan = replace(a.plan, nuclei=tuple(changed if n == target else n for n in a.plan.nuclei))
+            with self.subTest(changes=changes):
+                self.assertEqual(derive(move, plan, {**index, target.nucleus_id: changed}, a.resolver), "")
+        for text in ("休みたいと言いました", "休みたいと思っている", "休みたいと言った？",
+                     "昨日、休みたいと言った", "休みたい気持ちで待っていた"):
+            with self.subTest(text=text), patch.object(
+                reception_owner, "_source_grounded_clause_candidate", return_value=text,
+            ):
+                self.assertEqual(derive(move, a.plan, index, a.resolver), "")
+        kwargs = dict(reception_plan=reception, move=move, nucleus_index=index,
+                      resolver=a.resolver, allow_short_anchor=False, plan=a.plan)
+        self.assertNotEqual(reception_owner.resolve_grounded_reception_move_referent(**kwargs).text, nominal)
+        with patch.object(reception_owner, "reception_effective_move_reference_mode", return_value="anaphoric_first"):
+            self.assertEqual(reception_owner.resolve_grounded_reception_move_referent(
+                **kwargs, final_source_fidelity=True,
+            ).text, "当時の願い")
 
 
 class CMEEPositiveFeelingProjectionTest(unittest.TestCase):
