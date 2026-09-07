@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾のcandidate45と継承承認を確認する。既存HRで非ANAPHORICのcurrent_expression参照を、同じsource節全文＋「という言葉」へ短縮した。語への参照を保ち、内容を事実として新たに認定しない。意味・否定・時点・不確かさ・関係両端と選択済み受取を維持。canonical100中8件の受取のみ変更、他92件同一、全核・selected input・実reception plan・意味を伴う124責務・73/27は同一。必須279検査275成功／継承4失敗、前回276の全成否一致。全100件全文確認、商品NOT_CLEAR。長い再掲・名詞接続・定型締め、中心感情の未選択と補助行動偏重は残る。
+3. 末尾のcandidate46と継承承認を確認する。既存HRで、positive_feelingに選択済みのMATERIAL_WEIGHT／RECEIVE_AS_MATERIALを「受け止める」で実現する。本人の気持ちをEmlis自身が感じるという述語との不一致を修正。同じ不変selected inputをHRとSentenceSurfaceの責任検査へ渡す。canonical100の受取3件のみ変更、他97件・全核・意味選択・実plan・意味を伴う124責務・73/27は同一。必須282検査278成功／継承4失敗、前回279の全成否一致。華恋が全100件全文確認し商品NOT_CLEAR。長い再掲・名詞連結・定型締め、中心感情の未選択と補助行動偏重は残る。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -6233,3 +6233,26 @@ PR3/30/37はDraft/open/unmerged。外部Pro独立Product Read、ready/採用/mer
 System Context doctor→prepareは固定toolchain不足/不一致でref鮮度判定前に不成立。stale cacheを使わず原典fallbackで継続し、profile/ref/tracked current変更なし。candidate41で46依存/RECORD closure照合済みの同じCPython3.12.13環境を使用し、今回の再照合・鮮度成功は主張しない。sub-agentは公開source/契約/testの静的レビューのみ、編集・生成・検査・非公開全文読取・GitHub更新は華恋が担当。
 
 PR3/30/37はDraft/open/unmerged。外部Pro独立Product Read、ready/採用/merge/本番/質問生成/Layer3は未成立、product/technical credit0。新しい承認待ちを作らず同じ未完unitを継続。国家保存/dispatch/queue/read、公開API/DB/RN、Piece/分析は変更なし。
+
+
+### 2026-09-07 continuation — 選択済みの気持ちを受け取る述語の整合（candidate46／商品未成立）
+
+継承承認 `FRESH_MASH_LEVEL3_CMEE_STAGE1_SELECTED_SUBJECTIVE_RECEPTION_FORWARD_INVERSE_REQUEST_LOCAL_CONTRACT_20260905` 内の同じ未完unit。candidate45添付とGitHub fresh head一致から継続。全体設計図・全ファイル地図・国家システム・最新weekly20260905・必須incidentと関連する選択／主観／生成／逆検証／旧経路を確認した。感情を記録した本人へ、その意味を保った受取を返すことが今回の目的。STRUCTURE_MAP_DELTA_NONE。final Stage1は公開返信経路へ未接続で、国家保存／dispatch／queue／read、公開API／DB／RN、Piece／分析の責務境界を維持する。
+
+既存compositionが選択したMATERIAL_WEIGHT／RECEIVE_AS_MATERIALに対して、HRのrecognize_lived_change既定述語「感じる」が残る不一致を修正した。既存positive_feeling参照、reaction／feeling、SELF／STATE、非実行・非未来行為・非引用、非distributiveと選択済みdimension／operationの完全一致を要求し、「受け止める」を用いる。核・主観命題・basis・qualifier・Move・role・target・support・関係の両端や時点を変更しない。真の変化、別appraisal、AFFECTの分岐や未確定の対を受け取る既存条件は維持する。新たな意味選択は行わない。
+
+同じ不変selected inputを、sole HR作者から責任検査、SentenceSurfaceの配置前検査と生成後検査へ渡し、既存のidentity／plan／対象／basis照合を通す。MATERIAL対象は「受け止める」を要求し、旧「感じる」とのORにはしない。入力省略の旧経路は従来条件のまま。Gateは変更せず、既存の独立selected input、対象markerと全文replay一致によって別感情・負担化・旧述語への改変を拒否する。一般的な語尾の追加や検査閾値の緩和ではない。
+
+GitHub保存source `34d3cf0bea07718e3d5a2b7e06f388b5db5d3a77`、tree `550c0365472b824f0016010d13194685e3314bdf`。最終検証はローカル固定commit `1ece3fa9ed25b44b5895a632595c648de60f3703`で行い、保存sourceとtreeおよび変更4path全文byte一致を確認した。通常git pushには認証がなくGitHub appで同じtreeを保存したため、commit metadataのみ異なる。検証中のHEADとsourceは変更していない。対象はHR／SentenceSurface／既存test／runnerの4path。runner current13定数のみ再導出、exact18／exact9と非current AST不変を確認。
+
+公開合成の追加3検査は、不変選択の欠落・不正なgrounding、dimension／operation片側だけの一致、本人性・状態・実行／未来／引用の証明欠落、本文の旧述語・負担化・別感情追加の拒否を確認。既存の真の変化・settledなPRESERVE等も必要回帰で維持した。検査準備で2回失敗した原因はrootのラッパーが位置引数を受けていなかったこと。入力範囲不足との初期説明を訂正し、製品側の対応範囲を変えず検査ラッパーを直した。途中記録と最終成功を区別する。
+
+固定sourceの必須282検査は278成功・継承4失敗。原184は180成功4失敗、追加98は全成功。前回279の全成否一致、新規3成功、新規失敗／skip／未実行0。継承4は観察固定不一致2、dated receiptと現source不一致1、旧集合重複1。後続36ケースの個別確認、post-hash96成功、exact8／same16成功、unseen12の既存重複FAILを保持。historical fixture／hash／dated PASSを更新していない。実機や別GA2／shared164の今回実行は主張しない。
+
+同じcanonical100を再生成し、direct100、required Move／expression／visible binding各124、GENERATED73／UNAVAILABLE27、可否変更0。受取3件のみ変更、他97件は全保存項目で同一。原入力／順序／全核／selected inputと派生参照／観察／実reception plan／可否と理由／意味責務は全100で同一。華恋が原入力全field・観察・受取・可否と理由を全100件全文確認した。外側UNAVAILABLEのdirect本文は診断出力であり、商品生成成立とは数えない。
+
+商品NOT_CLEAR。選択済みの受取の意味と述語は整合したが、入力に応じた十分な厚みや自然さは未成立。長いsource再掲・関係の名詞連結・定型的な締め、中心感情が選択されず補助行動だけを受け取る問題が残る。次は既selected relation／contribution／basisまで確認し、参照と主観の受取対象の自然な実現を進める。未選択感情を同じMoveへ足すことや行動責務との交換は、124という件数の維持だけで正当化しない。既存の全意味責務を保つ。
+
+System Context doctor→prepareは固定toolchain不足／不一致でref鮮度判定前に不成立。古い索引を使わず原典fallbackを使用し、cache／profile／ref／tracked current変更なし。実装用CPython3.12.13環境は今回offline再構築し、固定46依存のversion・wheel hash・installed RECORD closureを全件照合、エラー0。System Contextの鮮度成功とは混同しない。sub-agentは公開sourceの静的レビューのみ、編集・検査・生成・非公開全文読取・GitHub更新はroot華恋が担当。
+
+PR3／30／37はDraft／open／unmerged。外部Pro独立Product Read、ready／採用／merge／本番／問い生成／Layer3は未成立、product／technical credit0。同じ承認内の未完unitとして継続し、新たな承認待ちを作らない。
