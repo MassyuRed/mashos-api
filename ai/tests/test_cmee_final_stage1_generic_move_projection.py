@@ -282,9 +282,9 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
             ), "anaphoric_first")
 
     def test_retained_wish_nominal_keeps_existence_context_and_protection(self):
-        source = "覚えたい気持ちはある"
+        source = "模型を作り続けたい気持ちはある"
         context = "手順が分からなくなった"
-        a = _full_surface_artifacts({
+        row = {
             "case_id": "public-retained-wish-carrier",
             "input": {
                 "thought_text": f"{source}。でも{context}。",
@@ -292,7 +292,8 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
                 "categories": ["学習"],
                 "emotions": [{"type": "不安", "strength": "medium"}],
             },
-        })
+        }
+        a = _full_surface_artifacts(row)
         self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
         self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
         self.assertEqual(a.sentence_plan.recovery_stage, "full")
@@ -300,6 +301,7 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         nominal = source + "こと"
         self.assertEqual(follow.count(nominal), 1)
         self.assertNotIn("に表れた願い", follow)
+        self.assertNotIn("今も、", follow)
         self.assertIn(context + "こととの違い", follow)
         self.assertIn("見失わずに、大切に受け止めています", follow)
         for old, new in (
@@ -308,6 +310,7 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
             (nominal, "「" + nominal + "」"), (nominal, nominal + "と" + nominal),
             (context, "別のこと"), ("との違い", "との一致"),
             ("見失わずに、大切に受け止めています", "小さなことだと考えています"),
+            (nominal, "今も、" + nominal),
         ):
             with self.subTest(replacement=new):
                 inverse = evaluate_grounded_surface_body_inverse(
@@ -321,6 +324,29 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         index = {n.nucleus_id: n for n in a.plan.nuclei}
         target = index[move.target_nucleus_ids[0]]
         derive = reception_owner.source_grounded_retained_wish_nominal
+        self.assertEqual(target.semantic_frame.time_scope, "current_input")
+        self.assertIn("operator:continuation", target.semantic_frame.attribute_codes)
+        frozen = freeze_text_source(_request_from_row(row))
+        span = next(s for s in frozen.evidence_spans if s.span_id == target.source_span_ids[0])
+        before = replace(target, semantic_frame=replace(
+            target.semantic_frame, time_scope="continuing", attribute_codes=tuple(
+                c for c in target.semantic_frame.attribute_codes if not c.startswith("time_scope:")
+            ) + ("time_scope:continuing",),
+        ))
+        align = observation_plan_owner._final_stage1_align_action_status
+        after, = align((before,), (span,), normalized_input=frozen.normalized_current_input)
+        self.assertEqual(after, target)
+        self.assertEqual(align((before,), (span,)), (before,))
+        for prefix, suffix in (
+            ("", "？"), ("", "、と説明していた。"), ("友人の話では、", "。"),
+            ("（", "）。"), ("", "とは言い切れない。"),
+        ):
+            field = prefix + source + suffix
+            clipped = replace(span, start_index=len(prefix), end_index=len(prefix) + len(source))
+            with self.subTest(prefix=prefix, suffix=suffix):
+                self.assertEqual(align(
+                    (before,), (clipped,), normalized_input={span.source_field: field},
+                ), (before,))
         self.assertEqual(derive(move, a.plan, index, a.resolver), nominal)
         self.assertEqual(derive(move, None, index, a.resolver), "")
         self.assertEqual(derive(move, replace(a.plan, source_contracts=()), index, a.resolver), "")
@@ -330,6 +356,7 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
             {"polarity": "negative"}, {"predicate_kind": "action"},
             {"attribute_codes": (*target.semantic_frame.attribute_codes, "quantity:multiple")},
             {"attribute_codes": (*target.semantic_frame.attribute_codes, "operator:performed_action")},
+            {"time_scope": "continuing"},
         ):
             changed = replace(target, semantic_frame=replace(target.semantic_frame, **changes))
             plan = replace(a.plan, nuclei=tuple(changed if n == target else n for n in a.plan.nuclei))
@@ -350,6 +377,18 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         self.assertNotEqual(reception_owner.resolve_grounded_reception_move_referent(
             **kwargs, final_source_fidelity=True, recovery_stage="integrated",
         ).text, nominal)
+        desired = observation_plan_owner._final_stage1_continuation_is_desired
+        for value in (source, "同じ確認を繰り返したい願いがある"):
+            self.assertFalse(desired(value))
+            self.assertTrue(desired(value, allow_nominal_carrier=True))
+        for value in (
+            "ずっと模型を作り続けたい気持ちはある", "模型を作り続けたい気持ちはあった",
+            "模型を作り続けたい気持ちはまだある", "模型を作り続けたい気持ちはない",
+            "模型を作り続けたい気持ちはあると思う", "模型を作り続けたい気持ちはある？",
+            "「模型を作り続けたい気持ちはある」", "模型を作り続けたい気持ちはある…",
+        ):
+            with self.subTest(value=value):
+                self.assertFalse(desired(value, allow_nominal_carrier=True))
 
     def test_contrast_target_nominal_keeps_both_endpoints_and_source_argument(self):
         left = "説明書の細かな記号が分かるようになった"

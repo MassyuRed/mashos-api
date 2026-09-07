@@ -10172,7 +10172,9 @@ def _source_finite_without_postposed_focus(text: str) -> str:
     ).strip()
 
 
-def _final_stage1_continuation_is_desired(text: str) -> bool:
+def _final_stage1_continuation_is_desired(
+    text: str, *, allow_nominal_carrier: bool = False,
+) -> bool:
     """A finite desire to continue does not assert ongoing performance."""
     if _top_level_text(text) != text:
         return False
@@ -10185,6 +10187,16 @@ def _final_stage1_continuation_is_desired(text: str) -> bool:
     # unresolved. A continuation verb may also modify the object of a finite
     # change wish: continuing that action is not the asserted main predicate.
     carrier = text[operator.end():]
+    # Only the final status owner may admit this additional carrier after
+    # verifying its original declarative source field. The continuation is
+    # inside the desire, not proof that the wish or action has persisted.
+    if (allow_nominal_carrier and _bounded_nominal_wish_endpoint(text)
+        and re.fullmatch(
+            (r"たい" if operator.group().endswith("続け") else
+             r"したい" if operator.group().endswith("繰り返") else r"(?!)")
+            + r"(?:気持ち|願い)(?:は|が)ある", carrier,
+        )):
+        return True
     if operator.group().endswith("続け"):
         return bool(
             re.fullmatch(r"たい(?:です)?", carrier)
@@ -10358,6 +10370,28 @@ def _final_stage1_align_action_status(
             aligned.append(nucleus)
             continue
         if nucleus.kind != "action":
+            source = str((normalized_input or {}).get(span.source_field) or "")
+            source_start, source_end = span.start_index, span.end_index
+            previous_boundary = max(source.rfind(mark, 0, source_start)
+                                    for mark in "\n\r。.!！?？；;")
+            next_boundary = min(
+                (position for mark in "\n\r。.!！?？；;"
+                 if (position := source.find(mark, source_end)) >= 0),
+                default=len(source),
+            )
+            nominal_wish_source_bound = bool(
+                nucleus.kind == "wish" and frame.predicate_kind == "feeling"
+                and frame.polarity == "positive"
+                and not (markers or ranges or sources or legacy)
+                and span.source_field in _TEXT_SOURCE_FIELDS
+                and 0 <= source_start < source_end <= len(source)
+                and _clean(source[source_start:source_end]) == _clean(span.raw_text)
+                and not source[previous_boundary + 1:source_start].strip()
+                and not source[source_end:next_boundary].strip()
+                and _top_level_text(source) == source
+                and not re.search(r"[「」『』…‥!?！？]", source)
+                and "operator:performed_action" not in codes
+            )
             if _final_stage1_wish_is_open(text):
                 attributes = tuple(code for code in codes if not code.startswith(
                     ("time_scope:", "modality:")
@@ -10369,7 +10403,9 @@ def _final_stage1_align_action_status(
             elif (
                 frame.modality == "wish"
                 and frame.time_scope == "continuing"
-                and _final_stage1_continuation_is_desired(text)
+                and _final_stage1_continuation_is_desired(
+                    text, allow_nominal_carrier=nominal_wish_source_bound,
+                )
             ):
                 attributes = tuple(code for code in codes if not code.startswith(
                     "time_scope:"
