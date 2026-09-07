@@ -1399,6 +1399,7 @@ class CMEEPositiveFeelingProjectionTest(unittest.TestCase):
             authored = next(s for s in a.authored if s.recovery_stage == "full")
             self.assertFalse(reception_owner.validate_grounded_human_reception_surface(
                 authored, a.plan.response_plan.human_reception_plan, a.resolver, plan=a.plan,
+                selected_subjective_input=a.selected_subjective_input,
             ))
             self.assertIn("human_reception_act_responsibility_missing:recognize_lived_change",
                           reception_owner.validate_grounded_human_reception_surface(
@@ -4324,7 +4325,7 @@ class CMEEFinalCurrentMoodSourceTest(unittest.TestCase):
                 })
                 follow = _reception_text(a.surface.text)
                 self.assertIn("気持ち", follow)
-                self.assertIn("感じています", follow)
+                self.assertIn("受け止めています", follow)
                 self.assertNotIn("変化", follow)
                 self.assertNotIn("小さくせず", follow)
                 self.assertEqual(len(a.selected_subjective_input.decisions), 1)
@@ -4383,7 +4384,8 @@ class CMEEFinalCurrentMoodSourceTest(unittest.TestCase):
     def test_inverse_keeps_feeling_target_and_rejects_burden_or_change_substitution(self):
         a = self.artifacts[0]
         for old, new in (("気持ち", "変化"), ("気持ち", "今ここに置かれた言葉"),
-                         ("感じています", "小さくせずに受け止めています")):
+                         ("受け止めています", "小さくせずに受け止めています"),
+                         ("受け止めています", "感じています")):
             with self.subTest(new=new):
                 body = _tamper_reception(a.surface.text, old, new)
                 self.assertNotEqual(body, a.surface.text)
@@ -4420,6 +4422,71 @@ class CMEEFinalCurrentMoodSourceTest(unittest.TestCase):
                         replace(row, semantic_operator=contracts_owner.SemanticOperator.PRESENT_BURDEN)):
             with self.assertRaises(self.composition.Stage1CompositionError):
                 derive(**{**args, "semantic_contributions": (changed,), "contributions": (changed,)})
+
+
+class CMEEFinalSelectedMaterialFeelingTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.predicate_arguments = []
+        predicate = reception_owner._source_grounded_response_predicate
+        def track(reception_act, move_role, **kwargs):
+            result = predicate(reception_act, move_role, **kwargs)
+            cls.predicate_arguments.append({**kwargs, "reception_act": reception_act, "move_role": move_role})
+            return result
+        with patch.object(reception_owner, "_source_grounded_response_predicate", side_effect=track):
+            cls.a = _full_surface_artifacts(CMEEFinalCurrentMoodSourceTest._row(
+                "今日は気分が軽い。"))
+
+    def test_material_responsibility_requires_the_same_validated_selection(self):
+        a = self.a
+        surface = next(s for s in a.authored if s.recovery_stage == "full")
+        validate = reception_owner.validate_grounded_human_reception_surface
+        rp = a.plan.response_plan.human_reception_plan
+        self.assertFalse(validate(surface, rp, a.resolver, plan=a.plan,
+                                  selected_subjective_input=a.selected_subjective_input))
+        self.assertIn("human_reception_act_responsibility_missing:recognize_lived_change",
+                      validate(surface, rp, a.resolver, plan=a.plan))
+        stale = replace(a.selected_subjective_input, grounding_ref="foreign-grounding")
+        self.assertIn("MEANING_REALIZATION_CAUSAL_TRACE_GAP",
+                      validate(surface, rp, a.resolver, plan=a.plan, selected_subjective_input=stale))
+        changed = replace(surface, text=surface.text.replace("受け止めています", "感じています"))
+        self.assertIn("human_reception_act_responsibility_missing:recognize_lived_change",
+                      validate(changed, rp, a.resolver, plan=a.plan,
+                               selected_subjective_input=a.selected_subjective_input))
+
+    def test_receive_predicate_requires_personal_feeling_state_proof(self):
+        kwargs = self.predicate_arguments[0]
+        predicate = reception_owner._source_grounded_response_predicate
+        self.assertTrue(reception_owner._selected_material_appraisal(kwargs["selected_subjective_decision"]))
+        self.assertEqual(predicate(**kwargs).predicate_lemma, "受け止める")
+        decision = kwargs["selected_subjective_decision"]
+        proposition = decision.subjective_proposition
+        appraisal = proposition.appraisal_content
+        for changed in (replace(appraisal, dimension=contracts_owner.AppraisalDimension.BOUNDED_CHANGE),
+                        replace(appraisal, operation=contracts_owner.AppraisalOperation.RECOGNIZE_AS_BOUNDED), None):
+            altered = replace(decision, subjective_proposition=replace(proposition, appraisal_content=changed))
+            self.assertFalse(reception_owner._selected_material_appraisal(altered))
+        profile = kwargs["semantic_profile"]
+        for changes in ({"actor_kind": "OTHER"}, {"actor_kind": "UNSPECIFIED"},
+                        {"nucleus_kind": "change"}, {"predicate_kind": "change"},
+                        {"modality": "uncertain"}, {"performed_action": True},
+                        {"future_action": True}, {"quoted_boundary": True}):
+            with self.subTest(changes=changes), self.assertRaises(reception_owner.GroundedHumanReceptionSurfaceError):
+                predicate(**{**kwargs, "semantic_profile": replace(profile, **changes)})
+
+    def test_independent_gate_rejects_feeling_experience_and_burden_substitution(self):
+        a = self.a
+        for replacement in ("感じています", "小さくせずに受け止めています", "うれしく受け止めています"):
+            body = _tamper_reception(a.surface.text, "受け止めています", replacement)
+            with self.subTest(replacement=replacement):
+                self.assertNotEqual(body, a.surface.text)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan, surface_result=replace(a.surface, text=body),
+                    resolver=a.resolver, require_body_inverse=True,
+                    selected_subjective_input=a.selected_subjective_input).passed)
 
 
 class CMEEFinalCurrentExpressionNominalTest(unittest.TestCase):
@@ -4723,7 +4790,7 @@ class CMEEFinalSceneMoodSourceTest(unittest.TestCase):
         follow = _reception_text(a.surface.text)
         self.assertIn("気持ち", follow)
         self.assertNotIn("今ここに置かれた言葉", follow)
-        for old, new in (("気持ち", "変化"), ("感じています", "小さくせずに受け止めています")):
+        for old, new in (("気持ち", "変化"), ("受け止めています", "小さくせずに受け止めています")):
             body = _tamper_reception(a.surface.text, old, new)
             self.assertNotEqual(body, a.surface.text)
             self.assertFalse(evaluate_grounded_surface_body_inverse(

@@ -2080,10 +2080,22 @@ def _past_wish_target(
     return True
 
 
-def _positive_feeling_responsibility(text: str, *, unfinished_pair: bool = False) -> bool:
+def _positive_feeling_responsibility(
+    text: str, *, unfinished_pair: bool = False, material_appraisal: bool = False,
+) -> bool:
+    if material_appraisal:
+        return bool(re.search(r"気持ち.{0,80}受け止", text))
     return bool(re.search(r"気持ち.{0,80}感じ", text)) or bool(
         unfinished_pair and re.search(r"気持ち.{0,80}両方.{0,40}受け止", text)
     )
+
+
+def _selected_material_appraisal(decision: SelectedSubjectiveReceptionDecisionV1) -> bool:
+    """Read the existing selected operation; never infer it from an act."""
+    appraisal = decision.subjective_proposition.appraisal_content
+    return bool(appraisal is not None
+                and appraisal.dimension == "MATERIAL_WEIGHT"
+                and appraisal.operation == "RECEIVE_AS_MATERIAL")
 
 
 def _source_grounded_positive_feeling_unfinished_relation(
@@ -3538,10 +3550,19 @@ def validate_grounded_human_reception_surface(
     resolver: EvidenceSpanResolver,
     *,
     plan: GroundedObservationPlan | None = None,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> tuple[str, ...]:
     """Validate the R4 surface without reconstructing observation meaning."""
 
     issues: list[str] = []
+    selected_decisions = {}
+    if selected_subjective_input is not None:
+        try:
+            selected_decisions = validate_selected_subjective_reception_input(
+                selected_subjective_input, reception_plan, plan, resolver,
+            )
+        except (GroundedHumanReceptionSurfaceError, AttributeError):
+            issues.append("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
     if not surface.text.strip():
         issues.append("human_reception_surface_empty")
     actual_sentence_count = _sentence_count(surface.text)
@@ -3696,6 +3717,10 @@ def validate_grounded_human_reception_surface(
                 _source_grounded_positive_feeling_unfinished_relation(
                     move, plan, final_nuclei, resolver,
                 ) for move in active_moves if move.reception_act == act
+            ), material_appraisal=all(
+                move.move_id in selected_decisions
+                and _selected_material_appraisal(selected_decisions[move.move_id])
+                for move in active_moves if move.reception_act == act
             ))
             if positive_feeling else
             bool(_ACT_OWNED_RESPONSIBILITY_RE[act].search(surface.text))
@@ -7570,6 +7595,19 @@ def _source_grounded_response_predicate(
         raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
     proposition = selected_subjective_decision.subjective_proposition
     appraisal = proposition.appraisal_content
+    if (reception_act == "recognize_lived_change"
+        and referent_kind == "positive_feeling"
+        and _selected_material_appraisal(selected_subjective_decision)):
+        if (semantic_profile.nucleus_kind != "reaction"
+            or semantic_profile.predicate_kind != "feeling"
+            or semantic_profile.modality != "feeling"
+            or semantic_profile.actor_kind != "SELF" or voice != "STATE"
+            or semantic_profile.performed_action or semantic_profile.future_action
+            or semantic_profile.quoted_boundary or distributive_object):
+            raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        # The selected appraisal receives the person's current feeling. It
+        # does not claim that Emlis experiences that feeling or a new change.
+        predicate_lemma, conjugation_class = "受け止める", "ICHIDAN"
     if unfinished_change:
         if (reception_act != "recognize_lived_change" or referent_kind != "lived_change"
             or semantic_profile.nucleus_kind != "uncertainty"
@@ -8190,6 +8228,7 @@ def _author_source_grounded_reception_clauses(
                         for nucleus_id in move.target_nucleus_ids
                     )) else _positive_feeling_responsibility(
                         move_sentence, unfinished_pair=unfinished_pair,
+                        material_appraisal=_selected_material_appraisal(selected_decisions[move_id]),
                     )
                     if move.reception_act == "recognize_lived_change"
                     and referent.kind == "positive_feeling"
@@ -8335,6 +8374,7 @@ def _author_source_grounded_reception_clauses(
         reception_plan,
         resolver,
         plan=plan,
+        selected_subjective_input=selected_subjective_input,
     )
     if issues:
         raise GroundedHumanReceptionSurfaceError(
