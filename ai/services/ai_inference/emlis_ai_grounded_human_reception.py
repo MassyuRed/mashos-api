@@ -2262,7 +2262,9 @@ def source_grounded_retained_wish_nominal(
         or not (_bounded_nominal_wish_endpoint(clause)
                 or _final_stage1_continuation_is_desired(clause, allow_nominal_carrier=True))):
         return ""
-    return f"{clause}こと"
+    # Embed the complete assertion, including its topic/case and existence.
+    # Direct adnominal attachment would leave a topical 「はあること」 head.
+    return f"{clause}ということ"
 
 
 def _retained_wish_nominal_responsibility(text: str, nominal: str) -> bool:
@@ -7419,7 +7421,7 @@ def _source_grounded_target_np(
             and realization.modality == "wish"
             and realization.target_slot_count == 1
             and realization.quantity in {"not_applicable", "source_bounded", "unknown"}
-            and referent_text == f"{meaning_fragment}こと"
+            and referent_text == f"{meaning_fragment}ということ"
         )
         expression_nominal = bool(
             profile.actor_kind == "SELF" and not profile.quoted_boundary

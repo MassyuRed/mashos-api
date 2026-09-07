@@ -266,7 +266,7 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         follow = _reception_text(a.surface.text)
         for source in (left, right, "説明書を棚に戻した"):
             self.assertEqual(follow.count(source), 1)
-        self.assertIn(left + "ことと" + right + "ことに目が留まり、それらを、その違いも含めて", follow)
+        self.assertIn(left + "ということと" + right + "ことに目が留まり、それらを、その違いも含めて", follow)
         self.assertNotIn("との違いに目が留まり", follow)
         self.assertNotIn("もう一方の向き", follow)
         for source, replacement in ((left, ""), (right, "別のこと"), ("その違いも含めて", "同じものとして")):
@@ -299,16 +299,21 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
         self.assertEqual(a.sentence_plan.recovery_stage, "full")
         follow = _reception_text(a.surface.text)
-        nominal = source + "こと"
+        nominal = source + "ということ"
         self.assertEqual(follow.count(nominal), 1)
         self.assertNotIn("に表れた願い", follow)
         self.assertNotIn("今も、", follow)
         self.assertIn(context + "ことがともにあること", follow)
         self.assertIn("見失わずに、大切に受け止めています", follow)
         for old, new in (
-            (nominal, "覚えたい気持ち"), (nominal, "覚えたい気持ちはあったこと"),
-            (nominal, "覚えたい気持ちはないこと"), (nominal, "別の気持ちはあること"),
+            (nominal, source + "こと"),
+            (nominal, source.removesuffix("はある")),
+            (nominal, source.replace("はある", "がある") + "ということ"),
+            (nominal, source.replace("はある", "はあった") + "ということ"),
+            (nominal, source.replace("はある", "はない") + "ということ"),
+            (nominal, "別の気持ちはあるということ"),
             (nominal, "「" + nominal + "」"), (nominal, nominal + "と" + nominal),
+            (nominal, "『" + nominal + "』"),
             (context, "別のこと"), ("がともにある", "が同じである"),
             ("見失わずに、大切に受け止めています", "小さなことだと考えています"),
             (nominal, "今も、" + nominal),
@@ -320,6 +325,12 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
                     selected_subjective_input=a.selected_subjective_input,
                 )
                 self.assertFalse(inverse.passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan,
+                    surface_result=replace(a.surface, text=_tamper_reception(a.surface.text, old, new)),
+                    resolver=a.resolver, require_body_inverse=True,
+                    selected_subjective_input=a.selected_subjective_input,
+                ).passed)
         reception = a.plan.response_plan.human_reception_plan
         move = next(m for m in reception.moves if m.reception_act == "protect_retained_intention")
         index = {n.nucleus_id: n for n in a.plan.nuclei}
@@ -390,6 +401,41 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         ):
             with self.subTest(value=value):
                 self.assertFalse(desired(value, allow_nominal_carrier=True))
+
+    def test_retained_wish_quotative_keeps_case_and_bounded_body_witness(self):
+        source = "繰り返したい気持ちがある"
+        a = _full_surface_artifacts({"case_id": "public-retained-wish-case", "input": {
+            "thought_text": source + "。でも手順が分からなくなった。",
+            "action_text": "説明書を棚に戻した。", "categories": ["学習"],
+            "emotions": [{"type": "不安", "strength": "medium"}],
+        }})
+        nominal = source + "ということ"
+        self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+        self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+        self.assertEqual(_reception_text(a.surface.text).count(nominal), 1)
+        encoded = a.surface.text.encode("utf-8")
+        start = encoded.index(nominal.encode("utf-8"))
+        end = start + len(nominal.encode("utf-8"))
+        self.assertTrue(any(
+            m.section == "reception" and m.marker_kind == "semantic"
+            and m.marker_code == "finite_clause_nominal"
+            and start <= m.utf8_byte_start and m.utf8_byte_end == end
+            for m in surface_owner.parse_grounded_surface_body_bytes(encoded).markers
+        ))
+        for replacement in (source + "こと", source.replace("がある", "はある") + "ということ"):
+            with self.subTest(replacement=replacement):
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=_tamper_reception(a.surface.text, nominal, replacement).encode("utf-8"),
+                    plan=a.plan, sentence_plan=a.sentence_plan, resolver=a.resolver,
+                    selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+        for fragment in ("物を買うということ", "箱があるということ", "気持ちはあるということ",
+                         "繰り返したい気持ちはないということ", "繰り返したい気持ちはあったということ"):
+            body = (surface_owner.OBSERVATION_SECTION_LABEL + "\n記録があります。\n"
+                    + surface_owner.RECEPTION_SECTION_LABEL + "\n" + fragment + "を大切に思っています。")
+            with self.subTest(fragment=fragment):
+                self.assertFalse(any(m.marker_code == "finite_clause_nominal"
+                                     for m in surface_owner.parse_grounded_surface_body_bytes(body.encode()).markers))
 
     def test_contrast_target_nominal_keeps_both_endpoints_and_source_argument(self):
         left = "説明書の細かな記号が分かるようになった"
