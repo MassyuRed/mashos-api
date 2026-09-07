@@ -1428,7 +1428,7 @@ class CMEEPastReportedWishTest(unittest.TestCase):
 
     def test_past_wish_nominal_preserves_report_context_and_protection(self):
         # Use an actually selected explicit target from the unchanged loader.
-        # A short synthetic report legitimately chooses anaphoric delivery.
+        # A short synthetic input can leave this wish target unselected.
         rows, _ = load_validated_batch(_BATCH_PATH, _MANIFEST_PATH)
         a = None
         for row in rows:

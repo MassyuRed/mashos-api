@@ -6486,7 +6486,7 @@ PR3／30／37はDraft／open／unmerged。商品NOT_CLEAR、商品／technical c
 
 同じ継承承認内で、既存Human Receptionのsource_grounded_retained_wish_nominalだけを拡張した。final・非ANAPHORIC・同じplanの単一target・SELF・positive wish・既存quantity等のguardを維持し、time_scope= pastの同じ核について既存_past_wish_targetと共有past_reported_wish_finiteを再確認する。plain過去報告の全文を「こと」へ接続し、語尾の過去形を既存SOURCE_CLAUSEの時間証拠として消費する。敬体過去、引用、不確かさ、異なる主体、現在／未来、別の過去日付、動機願いの新分類はこの文法で追加しない。現行の現在願望branchと旧／ANAPHORIC経路は維持した。
 
-対象名詞句の全文一致、出現1回、引用外、文法witness、関係両端・重なり・願いの保護、sole-authorの独立replayを保持した。時制・内容・否定・引用・重複・関係・保護を変えた完成本文をinverseとGateが拒否する。最初の短い公開検査入力では正しくANAPHORICが選ばれたため、直接名詞化の固定期待が1件失敗した。実際の対象を選ぶ既存canonical loaderに検査を合わせ、focused 5件成功。歴史的fixture／hash／dated PASSは変更していない。
+対象名詞句の全文一致、出現1回、引用外、文法witness、関係両端・重なり・願いの保護、sole-authorの独立replayを保持した。時制・内容・否定・引用・重複・関係・保護を変えた完成本文をinverseとGateが拒否する。最初の短い公開検査入力では過去願いが受取targetに選ばれず、補助行動へのMoveだけが選ばれたため、直接名詞化の固定期待が1件失敗した。実際の対象を選ぶ既存canonical loaderに検査を合わせ、focused 5件成功。歴史的fixture／hash／dated PASSは変更していない。
 
 source／test／current runnerの3pathをremote `4df0e6f80d79b843a0f114d729e524cfd8db6a31` に保存。最終実行local head `5465738f5d604d664ba329d2b2de7d3dcd11a3be` とwhole tree `501e560c7fa9dbaa580505b7c4b60f5ac025fd73` が同一。remoteのchanged pathsと3path全文も照合。runner既存13定数を再導出しexact18／exact9、非current AST不変を確認した。必須305件は原184が180成功4失敗、追加121全成功、ERROR／skip0。継承4失敗は観察固定2・dated source receipt1・旧unseen集合重複1のまま。全36ケース／post-hash96と集合後続診断も前回と全項目同一で、未実行を成功にしない。
 
@@ -6497,3 +6497,5 @@ source／test／current runnerの3pathをremote `4df0e6f80d79b843a0f114d729e524c
 System Contextは開始時PR37 `a069cf241210ad8781bfcbfed544b5888674bef7` と別系統の最新Actionsを確認。前のproduct refs（PR30 `dd11c067b28ad4e53421e109fed78fd667f7447f`／PR3 `247c0228a8a4b66ceee6b5f599800f923ca2acf0`）について、run 34165831128はlocked doctor34件、prepare、verify-only、source heads／trees再照合、cache uploadまで成功しEXACT_INPUTS_VERIFIED／FRESH_FOR_EXACT_INPUTS、proofはREMOTE_PROOF_PENDINGのまま。ローカルdoctor→prepareはtoolchain不一致で両方exit2、cache取得は403で利用せず、最新原典直接確認を継続した。今回の最終refsに対する同期・再生成結果はPR37のcurrent本文とexact-head Actionsで確認し、前回cacheの成功を今回へ流用しない。
 
 次は既存source ownerの同核時点・主体・関係、中心の選択責務と実際の受取本文へ戻って続ける。動機節の過去願いは未修正。長い再掲／定型締めを未選択の感情や意味の注入で修正しない。同じ承認の再要求は不要。商品NOT_CLEAR、Human Product Read／human PASS／ready／採用／merge／本番／問い／Layer3は未成立。9月9日の途中確認・9月12日の本文確認準備目標と品質リスクを継承する。private本文・個別case・digest・locatorの公開0。
+
+初回focused失敗の原因説明は、公開入力の実Moveを再確認して訂正した。過去願いtargetが未選択で、補助行動のMoveだけが選ばれていた。ANAPHORICだったという途中説明は誤り。既存testの注釈1行のみ訂正し、Python AST全体一致、最終検証時からのHR/runtime/current runner bytes不変を確認した。これは機能差分ではなく説明訂正で、100件の結果と305検査の成否を変更しない。
