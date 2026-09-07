@@ -266,9 +266,10 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         follow = _reception_text(a.surface.text)
         for source in (left, right, "説明書を棚に戻した"):
             self.assertEqual(follow.count(source), 1)
-        self.assertIn("との違い", follow)
+        self.assertIn(left + "ことと" + right + "ことに目が留まり、それらを、その違いも含めて", follow)
+        self.assertNotIn("との違いに目が留まり", follow)
         self.assertNotIn("もう一方の向き", follow)
-        for source, replacement in ((left, ""), (right, "別のこと"), ("との違い", "との一致")):
+        for source, replacement in ((left, ""), (right, "別のこと"), ("その違いも含めて", "同じものとして")):
             with self.subTest(source=source):
                 changed = _tamper_reception(a.surface.text, source, replacement)
                 self.assertFalse(evaluate_grounded_surface_body_inverse(
