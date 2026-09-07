@@ -7470,6 +7470,11 @@ def _source_grounded_target_np(
             }
         ):
             content_target = f"{meaning_fragment}という{quantity_modifier}{referent_text}"
+        elif (material_contrast_object and referent_kind == "lived_change"
+              and _SOURCE_GROUNDED_FINITE_END_RE.search(meaning_fragment)):
+            # The proven change clause directly modifies the same referent.
+            # Its contrast partner remains a separate, fully stated object.
+            content_target = f"{meaning_fragment}という{quantity_modifier}{referent_text}"
         else:
             content_target = (
                 f"{proposition}に表れた{quantity_modifier}{referent_text}"
@@ -7660,6 +7665,21 @@ def _source_grounded_response_predicate(
         raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
     proposition = selected_subjective_decision.subjective_proposition
     appraisal = proposition.appraisal_content
+    material_change = bool(
+        reception_act == "recognize_lived_change" and referent_kind == "lived_change"
+        and target_predicate_kind == "present_change"
+        and semantic_profile.nucleus_kind == "change"
+        and (semantic_profile.predicate_kind, semantic_profile.modality)
+        in {("change", "fact"), ("feeling", "feeling")}
+        and semantic_profile.actor_kind == "SELF" and voice == "STATE"
+        and not semantic_profile.performed_action and not semantic_profile.future_action
+        and not semantic_profile.quoted_boundary and not distributive_object
+        and _selected_material_appraisal(selected_subjective_decision)
+    )
+    if material_change:
+        # Receive the already appraised change. Bounded recognition and an
+        # unfinished change retain their own, separately selected predicates.
+        predicate_lemma, conjugation_class = "受け止める", "ICHIDAN"
     if (reception_act == "recognize_lived_change"
         and referent_kind == "positive_feeling"
         and _selected_material_appraisal(selected_subjective_decision)):
@@ -7773,6 +7793,7 @@ def _source_grounded_response_predicate(
             move_role == "attention" and not distributive_object
             and (
                 reception_act == "recognize_lived_change" and referent_kind == "positive_feeling"
+                or material_change
                 or reception_act == "protect_retained_intention" and referent_kind == "retained_wish"
                 and semantic_profile.nucleus_kind == "wish" and semantic_profile.modality == "wish"
                 and semantic_profile.actor_kind == "SELF" and voice == "STATE"
@@ -8249,6 +8270,15 @@ def _author_source_grounded_reception_clauses(
                 move.move_role == "attention"
                 and (
                     move.reception_act == "recognize_lived_change" and referent.kind == "positive_feeling"
+                    or move.reception_act == "recognize_lived_change" and referent.kind == "lived_change"
+                    and meaning_realization.semantic_profiles[target_owner_slot].nucleus_kind == "change"
+                    and (meaning_realization.semantic_profiles[target_owner_slot].predicate_kind,
+                         meaning_realization.semantic_profiles[target_owner_slot].modality)
+                    in {("change", "fact"), ("feeling", "feeling")}
+                    and meaning_realization.semantic_profiles[target_owner_slot].actor_kind == "SELF"
+                    and not meaning_realization.semantic_profiles[target_owner_slot].performed_action
+                    and not meaning_realization.semantic_profiles[target_owner_slot].future_action
+                    and not meaning_realization.semantic_profiles[target_owner_slot].quoted_boundary
                     or move.reception_act == "protect_retained_intention" and referent.kind == "retained_wish"
                     and meaning_realization.semantic_profiles[target_owner_slot].nucleus_kind == "wish"
                     and meaning_realization.semantic_profiles[target_owner_slot].modality == "wish"

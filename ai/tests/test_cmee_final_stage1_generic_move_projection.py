@@ -453,9 +453,10 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         self.assertTrue(a.gate.passed)
         self.assertTrue(a.inverse.passed)
         follow = _reception_text(a.surface.text)
-        self.assertEqual(follow.count(left + "ことに表れた変化"), 1)
+        self.assertEqual(follow.count(left + "という変化"), 1)
         self.assertEqual(follow.count(right), 1)
-        self.assertIn("との違いに目が留まり、それを感じています", follow)
+        self.assertIn("ことに目が留まり、それらを、その違いも含めて受け止めています", follow)
+        self.assertNotIn("との違いに目が留まり", follow)
         self.assertNotIn("けれどということ", follow)
         self.assertTrue(any(span.raw_text == left + "けれど"
                             for span in a.resolver.resolve_many(a.resolver.span_ids)))
@@ -466,7 +467,7 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         )
         self.assertTrue(any(left + "けれど" in move.semantic_fragments
                             for clause in ir for move in clause.moves))
-        for source, replacement in ((left, ""), (right, ""), ("との違い", "との一致")):
+        for source, replacement in ((left, ""), (right, ""), ("その違いも含めて", "同じものとして")):
             changed = _tamper_reception(a.surface.text, source, replacement)
             inverse = evaluate_grounded_surface_body_inverse(
                 body=changed.encode("utf-8"), plan=a.plan,
@@ -495,7 +496,13 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
                 follow = _reception_text(a.surface.text)
                 self.assertIn(left + ending + "ということ", follow)
                 self.assertEqual(follow.count(right), 1)
-                self.assertIn("との違い", follow)
+                self.assertIn("それらを、その違いも含めて受け止めています", follow)
+                self.assertNotIn(left + "という変化", follow)
+                changed = _tamper_reception(a.surface.text, left + ending, left)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=changed.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                ).passed)
 
     def test_polite_contrast_context_uses_a_quotative_nominal(self):
         row = {
@@ -4646,6 +4653,118 @@ class CMEEFinalMaterialContrastObjectsTest(unittest.TestCase):
                         {"selected_subjective_decision": changed}, {"move_role": "felt_response"}):
             with self.subTest(updates=updates), self.assertRaises(reception_owner.GroundedHumanReceptionSurfaceError):
                 render(**{**kwargs, **updates})
+
+
+class CMEEFinalMaterialChangeReceptionTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.left = "説明書の細かな記号が分かるようになった"
+        cls.right = "それでも小さな部品を一つずつ机に並べて確かめながら組み立てる時間はまだ難しく感じている"
+        cls.cases = {}
+        for name, thought in (
+            ("contrast", "新しい模型に取りかかり、" + cls.left + "けれど、" + cls.right + "。"),
+            ("single", cls.left + "。"),
+            ("feeling", "小さな文字が読みにくくて不安になったけれど、それでも道具を持ち替えて作業する時間は楽しかった。"),
+        ):
+            cores, predicates = [], []
+            target = reception_owner._source_grounded_target_np
+            predicate = reception_owner._source_grounded_response_predicate_surface
+            def track_target(move, realization, **kwargs):
+                result = target(move, realization, **kwargs)
+                if move.reception_act == "recognize_lived_change":
+                    cores.append((result, realization))
+                return result
+            def track_predicate(reception_act, move_role, **kwargs):
+                result = predicate(reception_act, move_role, **kwargs)
+                if reception_act == "recognize_lived_change":
+                    predicates.append({"reception_act": reception_act, "move_role": move_role, **kwargs})
+                return result
+            with patch.object(reception_owner, "_source_grounded_target_np", side_effect=track_target), patch.object(
+                    reception_owner, "_source_grounded_response_predicate_surface", side_effect=track_predicate):
+                a = _full_surface_artifacts({"case_id": "public-material-change-" + name, "input": {
+                    "thought_text": thought, "action_text": "道具を箱に戻した。", "categories": ["趣味"],
+                    "emotions": [{"type": "不安", "strength": "medium"}],
+                }})
+            cls.cases[name] = (a, cores, predicates)
+
+    def test_appraised_change_and_context_are_received_with_their_contrast(self):
+        a, cores, predicates = self.cases["contrast"]
+        self.assertTrue(a.gate.passed and a.inverse.passed)
+        core, realization = cores[0]
+        self.assertEqual(core.text, self.left + "という変化と" + self.right + "こと")
+        self.assertEqual((core.semantic_slots, core.relation_count, core.pending_relation_slots), ((0, 1), 0, (0,)))
+        self.assertEqual(realization.relations[0].relation_kind, "contrast")
+        follow = _reception_text(a.surface.text)
+        self.assertIn(core.text + "に目が留まり、それらを、その違いも含めて受け止めています", follow)
+        self.assertEqual(follow.count("変化"), 1)
+        self.assertNotIn("との違いに目が留まり", follow)
+        decision = predicates[0]["selected_subjective_decision"]
+        self.assertTrue(reception_owner._selected_material_appraisal(decision))
+        sm = dict(a.selected_subjective_input.semantic_nucleus_pairs)
+        prop = decision.subjective_proposition
+        bound = {sm[b.semantic_ref] for b in decision.basis_rows
+                 if b.contribution_ref in decision.selected_contribution_refs
+                 and b.semantic_ref in prop.primary_target_refs
+                 and b.binding_ref in prop.appraisal_content.appraised_bindings}
+        relation = next(r for r in a.plan.relations if r.type == "contrast")
+        self.assertLessEqual({relation.from_nucleus_id, relation.to_nucleus_id}, bound)
+        for old, new in (
+            (self.left, "別の出来事"), (self.right, "別の状況"),
+            (self.right, self.right.replace("難しく感じている", "簡単に感じている")),
+            (core.text, self.right + "ことと" + self.left + "という変化"),
+            ("という変化", "ということ"), ("それらを、", ""),
+            ("その違いも含めて", ""), ("その違いも含めて", "同じものとして"),
+            ("受け止めています", "感じています"), ("受け止めています", "受け止めていました"),
+            ("受け止めています", "受け止めていません"),
+            (core.text, "「" + core.text + "」"), (core.text, core.text + "と" + core.text),
+        ):
+            with self.subTest(new=new):
+                body = _tamper_reception(a.surface.text, old, new)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan, resolver=a.resolver,
+                    selected_subjective_input=a.selected_subjective_input).passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan, surface_result=replace(a.surface, text=body),
+                    resolver=a.resolver, require_body_inverse=True,
+                    selected_subjective_input=a.selected_subjective_input).passed)
+
+    def test_material_receive_keeps_change_profile_and_bounded_recognition_distinct(self):
+        render = reception_owner._source_grounded_response_predicate_surface
+        for name, expected_profile in (("single", ("change", "fact")), ("feeling", ("feeling", "feeling"))):
+            a, _cores, predicates = self.cases[name]
+            with self.subTest(name=name):
+                self.assertTrue(a.gate.passed and a.inverse.passed)
+                self.assertIn("それを受け止めています", _reception_text(a.surface.text))
+                kw = predicates[0]
+                profile = kw["semantic_profile"]
+                self.assertEqual((profile.predicate_kind, profile.modality), expected_profile)
+                decision = kw["selected_subjective_decision"]
+                prop = decision.subjective_proposition
+                bounded = replace(decision, subjective_proposition=replace(prop, appraisal_content=replace(
+                    prop.appraisal_content, dimension=contracts_owner.AppraisalDimension.BOUNDED_CHANGE,
+                    operation=contracts_owner.AppraisalOperation.RECOGNIZE_AS_BOUNDED)))
+                self.assertIn("それを感じています", render(**{**kw, "selected_subjective_decision": bounded}))
+                body = _tamper_reception(a.surface.text, "それを受け止めています", "それを感じています")
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan, resolver=a.resolver,
+                    selected_subjective_input=a.selected_subjective_input).passed)
+        kw = self.cases["contrast"][2][0]
+        profile = kw["semantic_profile"]
+        decision = kw["selected_subjective_decision"]
+        prop = decision.subjective_proposition
+        bounded = replace(decision, subjective_proposition=replace(prop, appraisal_content=replace(
+            prop.appraisal_content, dimension=contracts_owner.AppraisalDimension.BOUNDED_CHANGE,
+            operation=contracts_owner.AppraisalOperation.RECOGNIZE_AS_BOUNDED)))
+        updates = [{"selected_subjective_decision": bounded}, {"move_role": "felt_response"},
+                   {"pending_relation_slots": (False,)}, {"pending_relation_slots": (1,)},
+                   {"distributive_object": True}, {"unfinished_change": True}, {"unfinished_pair": True}]
+        updates.extend({"semantic_profile": replace(profile, **change)} for change in (
+            {"nucleus_kind": "reaction"}, {"predicate_kind": "uncertainty"}, {"modality": "uncertain"},
+            {"actor_kind": "OTHER"}, {"quoted_boundary": True}, {"performed_action": True}, {"future_action": True},
+        ))
+        for update in updates:
+            with self.subTest(update=update), self.assertRaises(reception_owner.GroundedHumanReceptionSurfaceError):
+                render(**{**kw, **update})
 
 
 class CMEEFinalMaterialWishContrastTest(unittest.TestCase):
