@@ -282,7 +282,7 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
             ), "anaphoric_first")
 
     def test_retained_wish_nominal_keeps_existence_context_and_protection(self):
-        source = "模型を作り続けたい気持ちはある"
+        source = "繰り返したい気持ちはある"
         context = "手順が分からなくなった"
         row = {
             "case_id": "public-retained-wish-carrier",
@@ -302,13 +302,13 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         self.assertEqual(follow.count(nominal), 1)
         self.assertNotIn("に表れた願い", follow)
         self.assertNotIn("今も、", follow)
-        self.assertIn(context + "こととの違い", follow)
+        self.assertIn(context + "ことがともにあること", follow)
         self.assertIn("見失わずに、大切に受け止めています", follow)
         for old, new in (
             (nominal, "覚えたい気持ち"), (nominal, "覚えたい気持ちはあったこと"),
             (nominal, "覚えたい気持ちはないこと"), (nominal, "別の気持ちはあること"),
             (nominal, "「" + nominal + "」"), (nominal, nominal + "と" + nominal),
-            (context, "別のこと"), ("との違い", "との一致"),
+            (context, "別のこと"), ("がともにある", "が同じである"),
             ("見失わずに、大切に受け止めています", "小さなことだと考えています"),
             (nominal, "今も、" + nominal),
         ):
@@ -378,7 +378,7 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
             **kwargs, final_source_fidelity=True, recovery_stage="integrated",
         ).text, nominal)
         desired = observation_plan_owner._final_stage1_continuation_is_desired
-        for value in (source, "同じ確認を繰り返したい願いがある"):
+        for value in (source, "模型を作り続けたい気持ちはある", "同じ確認を繰り返したい願いがある"):
             self.assertFalse(desired(value))
             self.assertTrue(desired(value, allow_nominal_carrier=True))
         for value in (

@@ -10190,13 +10190,11 @@ def _final_stage1_continuation_is_desired(
     # Only the final status owner may admit this additional carrier after
     # verifying its original declarative source field. The continuation is
     # inside the desire, not proof that the wish or action has persisted.
-    if (allow_nominal_carrier and _bounded_nominal_wish_endpoint(text)
-        and re.fullmatch(
-            (r"たい" if operator.group().endswith("続け") else
-             r"したい" if operator.group().endswith("繰り返") else r"(?!)")
-            + r"(?:気持ち|願い)(?:は|が)ある", carrier,
-        )):
-        return True
+    nominal = re.fullmatch(r"(?P<finite>.+たい)(?:気持ち|願い)(?:は|が)ある", text)
+    if allow_nominal_carrier and nominal is not None:
+        # The existing finite class also admits an omitted object. Do not
+        # invent an object or require a second lexical proof for that form.
+        return _final_stage1_continuation_is_desired(nominal.group("finite"))
     if operator.group().endswith("続け"):
         return bool(
             re.fullmatch(r"たい(?:です)?", carrier)

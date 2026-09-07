@@ -34,6 +34,7 @@ from emlis_ai_grounded_observation_plan import (
     _FEELING_RE,
     _direct_finite_carrier_shape,
     _bounded_nominal_wish_endpoint,
+    _final_stage1_continuation_is_desired,
     source_grounded_feeling_subject_parts,
     _source_finite_without_postposed_focus,
 )
@@ -2233,7 +2234,8 @@ def source_grounded_retained_wish_nominal(
                for span in resolver.resolve_many(resolver.span_ids)
                if span.source_field in fields)
         or not re.fullmatch(r"[^、,。\s]+(?:たい|ほしい|欲しい)(?:気持ち|願い)(?:は|が)ある", clause)
-        or not _bounded_nominal_wish_endpoint(clause)):
+        or not (_bounded_nominal_wish_endpoint(clause)
+                or _final_stage1_continuation_is_desired(clause, allow_nominal_carrier=True))):
         return ""
     return f"{clause}こと"
 
