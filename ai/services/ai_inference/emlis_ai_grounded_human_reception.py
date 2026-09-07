@@ -7461,9 +7461,24 @@ def _source_grounded_target_np(
         elif (
             not profile.quoted_boundary
             and referent_kind == "retained_wish"
-            and realization.modality == "wish"
-            and meaning_fragment.endswith(("たい", "ほしい", "欲しい"))
+            and (
+                realization.modality == "wish"
+                and meaning_fragment.endswith(("たい", "ほしい", "欲しい"))
+                or move.reception_act == "protect_retained_intention"
+                and profile.actor_kind == "SELF"
+                and not profile.performed_action and not profile.future_action
+                and profile.nucleus_kind == profile.predicate_kind == "wish"
+                and (profile.modality, referent_text) in {
+                    ("wish", "願い"), ("uncertain", "まだ確かではない願い"),
+                }
+                and realization.modality == profile.modality
+                and realization.target_slot_count == 1
+                and realization.quantity in {"not_applicable", "source_bounded", "unknown"}
+                and _SOURCE_GROUNDED_FINITE_END_RE.search(meaning_fragment)
+            )
         ):
+            # The complete wish clause already carries its uncertainty and
+            # time. Attach the same referent without another nominal layer.
             content_target = f"{meaning_fragment}という{quantity_modifier}{referent_text}"
         elif (
             not profile.quoted_boundary
@@ -7802,7 +7817,11 @@ def _source_grounded_response_predicate(
                 reception_act == "recognize_lived_change" and referent_kind == "positive_feeling"
                 or material_change
                 or reception_act == "protect_retained_intention" and referent_kind == "retained_wish"
-                and semantic_profile.nucleus_kind == "wish" and semantic_profile.modality == "wish"
+                and semantic_profile.nucleus_kind == "wish"
+                and (semantic_profile.modality == "wish"
+                     or semantic_profile.modality == "uncertain"
+                     and semantic_profile.predicate_kind == "wish"
+                     and pending_relation_kind == "wish_and_constraint")
                 and semantic_profile.actor_kind == "SELF" and voice == "STATE"
                 and not semantic_profile.performed_action and not semantic_profile.future_action
                 and not semantic_profile.quoted_boundary
@@ -8313,7 +8332,12 @@ def _author_source_grounded_reception_clauses(
                     and not meaning_realization.semantic_profiles[target_owner_slot].quoted_boundary
                     or move.reception_act == "protect_retained_intention" and referent.kind == "retained_wish"
                     and meaning_realization.semantic_profiles[target_owner_slot].nucleus_kind == "wish"
-                    and meaning_realization.semantic_profiles[target_owner_slot].modality == "wish"
+                    and (meaning_realization.semantic_profiles[target_owner_slot].modality == "wish"
+                         or meaning_realization.semantic_profiles[target_owner_slot].modality == "uncertain"
+                         and meaning_realization.semantic_profiles[target_owner_slot].predicate_kind == "wish"
+                         and referent_text == "まだ確かではない願い"
+                         and len(meaning_realization.relations) == 1
+                         and meaning_realization.relations[0].relation_kind == "wish_and_constraint")
                     and meaning_realization.semantic_profiles[target_owner_slot].actor_kind == "SELF"
                     and not meaning_realization.semantic_profiles[target_owner_slot].performed_action
                     and not meaning_realization.semantic_profiles[target_owner_slot].future_action

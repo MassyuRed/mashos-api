@@ -2163,6 +2163,118 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             selected_subjective_input=artifacts.selected_subjective_input,
         )
 
+    def test_uncertain_wish_pair_keeps_source_modality_and_same_selected_targets(self):
+        reached = 0
+        target = reception_owner._source_grounded_target_np
+        predicate = reception_owner._source_grounded_response_predicate_surface
+        for row in self.rows_by_id.values():
+            inputs = _compile_inputs(row)
+            uncertain = {n.nucleus_id for n in inputs.grounded_plan.nuclei
+                         if n.kind == "wish" and n.semantic_frame.modality == "uncertain"}
+            if not any(r.type == "wish_and_constraint"
+                       and uncertain.intersection((r.from_nucleus_id, r.to_nucleus_id))
+                       for r in inputs.grounded_plan.relations):
+                continue
+            cores, predicates = [], []
+            def capture_target(move, realization, **kwargs):
+                core = target(move, realization, **kwargs)
+                if (kwargs["referent_kind"] == "retained_wish" and core.pending_relation_slots
+                    and realization.semantic_profiles[kwargs["target_owner_slot"]].modality == "uncertain"):
+                    cores.append((core, realization, kwargs))
+                return core
+            def capture_predicate(reception_act, move_role, **kwargs):
+                result = predicate(reception_act, move_role, **kwargs)
+                if kwargs.get("pending_relation_slots") and kwargs["semantic_profile"].modality == "uncertain":
+                    predicates.append({"reception_act": reception_act, "move_role": move_role, **kwargs})
+                return result
+            with patch.object(reception_owner, "_source_grounded_target_np", side_effect=capture_target), patch.object(
+                    reception_owner, "_source_grounded_response_predicate_surface", side_effect=capture_predicate):
+                a = _full_surface_artifacts(row)
+            if not cores:
+                continue
+            reached += 1
+            self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+            self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+            self.assertTrue(predicates)
+            core, realization, kw = cores[0]
+            self.assertEqual(core.pending_relation_slots, (0,))
+            self.assertEqual(core.semantic_slots, (0, 1))
+            relation, = realization.relations
+            self.assertEqual(relation.relation_kind, "wish_and_constraint")
+            self.assertEqual(relation.endpoint_roles, ("LEFT", "RIGHT"))
+            self.assertEqual(kw["referent_text"], "まだ確かではない願い")
+            profile = realization.semantic_profiles[kw["target_owner_slot"]]
+            self.assertEqual((profile.nucleus_kind, profile.predicate_kind, profile.modality), ("wish", "wish", "uncertain"))
+            decision = predicates[0]["selected_subjective_decision"]
+            prop = decision.subjective_proposition
+            self.assertTrue(reception_owner._selected_material_appraisal(decision))
+            self.assertIsNone(prop.focal_relation_ref)
+            self.assertIsNone(prop.appraisal_content.focal_relation_ref)
+            semantic_map = dict(a.selected_subjective_input.semantic_nucleus_pairs)
+            appraised = {semantic_map[b.semantic_ref] for b in decision.basis_rows
+                         if b.contribution_ref in decision.selected_contribution_refs
+                         and b.binding_ref in prop.appraisal_content.appraised_bindings
+                         and b.semantic_ref in prop.primary_target_refs}
+            self.assertTrue(uncertain.intersection(appraised))
+            selected_relation = next(r for r in a.plan.relations if r.type == "wish_and_constraint")
+            self.assertLessEqual({selected_relation.from_nucleus_id, selected_relation.to_nucleus_id}, appraised)
+            follow = _reception_text(a.surface.text)
+            for fragment in realization.semantic_fragments:
+                self.assertEqual(core.text.count(fragment), 1)
+            self.assertIn(core.text, follow)
+            self.assertIn(kw["meaning_fragment"] + "というまだ確かではない願い", core.text)
+            self.assertIn("それらを、その重なりも含めて", follow)
+            self.assertNotIn("がともにあること", core.text)
+            for old, new in (
+                (kw["meaning_fragment"], "別の内容"),
+                ("まだ確かではない願い", "確かに定まった願い"),
+                ("その重なりも含めて", ""), ("それらを、", ""),
+                ("受け止めています", "受け止めていました"),
+                ("見失わずに、大切に", "大切に"),
+                (core.text, "「" + core.text + "」"),
+            ):
+                body = _tamper_reception(a.surface.text, old, new)
+                self.assertNotEqual(body, a.surface.text)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan, surface_result=replace(a.surface, text=body),
+                    resolver=a.resolver, require_body_inverse=True,
+                    selected_subjective_input=a.selected_subjective_input).passed)
+            for kind in ("contrast", "attempt_and_block", "coexistence", "uncertain_connection"):
+                with self.assertRaises(reception_owner.GroundedHumanReceptionSurfaceError):
+                    predicate(**{**predicates[0], "pending_relation_kind": kind})
+        self.assertGreater(reached, 0)
+
+    def test_finite_wish_clause_preserves_the_same_whole_source(self):
+        reached = 0
+        target = reception_owner._source_grounded_target_np
+        for a in self.artifacts.values():
+            cores = []
+            def capture(move, realization, **kwargs):
+                core = target(move, realization, **kwargs)
+                if (kwargs["referent_kind"] == "retained_wish" and kwargs["referent_text"] == "願い"
+                    and realization.reference_mode != "ANAPHORIC" and not realization.relations
+                    and not kwargs["meaning_fragment"].endswith(("たい", "ほしい", "欲しい"))):
+                    cores.append((core, realization, kwargs))
+                return core
+            args, kwargs = a.author_arguments[0]
+            with patch.object(reception_owner, "_source_grounded_target_np", side_effect=capture):
+                replay = reception_owner.realize_source_grounded_human_reception(*args, **kwargs)
+            for core, realization, kw in cores:
+                if realization.semantic_profiles[kw["target_owner_slot"]].future_action:
+                    continue
+                reached += 1
+                self.assertEqual(core.text, kw["meaning_fragment"] + "という願い")
+                self.assertIn(core.text, replay.text)
+                self.assertIn(core.text, _reception_text(a.surface.text))
+                body = _tamper_reception(a.surface.text, core.text, kw["meaning_fragment"] + "ことに表れた願い")
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+        self.assertGreater(reached, 0)
+
     def _bind_reception_text(self, case_id: str, text: str, *, sentence_plan=None):
         artifacts = self.artifacts[case_id]
         selected = sentence_plan or artifacts.sentence_plan
