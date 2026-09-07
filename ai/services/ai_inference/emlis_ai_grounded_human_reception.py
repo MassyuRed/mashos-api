@@ -7768,8 +7768,15 @@ def _source_grounded_response_predicate(
         raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
     if pending_relation_slots:
         material_contrast = bool(
-            move_role == "attention" and reception_act == "recognize_lived_change"
-            and referent_kind == "positive_feeling" and not distributive_object
+            move_role == "attention" and not distributive_object
+            and (
+                reception_act == "recognize_lived_change" and referent_kind == "positive_feeling"
+                or reception_act == "protect_retained_intention" and referent_kind == "retained_wish"
+                and semantic_profile.nucleus_kind == "wish" and semantic_profile.modality == "wish"
+                and semantic_profile.actor_kind == "SELF" and voice == "STATE"
+                and not semantic_profile.performed_action and not semantic_profile.future_action
+                and not semantic_profile.quoted_boundary
+            )
             and _selected_material_appraisal(selected_subjective_decision)
         )
         preserved_contrast = bool(
@@ -8237,8 +8244,17 @@ def _author_source_grounded_reception_clauses(
                 and not meaning_realization.semantic_profiles[target_owner_slot].future_action):
                 distributive_relation_slot = 0
             material_contrast_object = bool(
-                move.move_role == "attention" and move.reception_act == "recognize_lived_change"
-                and referent.kind == "positive_feeling"
+                move.move_role == "attention"
+                and (
+                    move.reception_act == "recognize_lived_change" and referent.kind == "positive_feeling"
+                    or move.reception_act == "protect_retained_intention" and referent.kind == "retained_wish"
+                    and meaning_realization.semantic_profiles[target_owner_slot].nucleus_kind == "wish"
+                    and meaning_realization.semantic_profiles[target_owner_slot].modality == "wish"
+                    and meaning_realization.semantic_profiles[target_owner_slot].actor_kind == "SELF"
+                    and not meaning_realization.semantic_profiles[target_owner_slot].performed_action
+                    and not meaning_realization.semantic_profiles[target_owner_slot].future_action
+                    and not meaning_realization.semantic_profiles[target_owner_slot].quoted_boundary
+                )
                 and _selected_material_appraisal(selected_decision)
                 and meaning_realization.reference_mode != "ANAPHORIC"
                 and distributive_relation_slot is None and anaphoric_context_object is None
