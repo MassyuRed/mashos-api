@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾のcandidate53と継承承認を確認する。未確定の願いと背景を、既存wish_and_constraintの二対象として受け取り、不確かさと関係を保持。願いの有限節は全文を同じ参照語へ直接接続して二重名詞化を減らした。canonical100の受取2件のみ変更、他98件・全核・selected input・実plan・意味を伴う124責務・観察・可否理由・73/27は同一。最終必須296検査292成功／継承4失敗、前回294の全成否一致、新規2成功。華恋が全100件の本文を確認し商品NOT_CLEAR。長い原文再掲・定型締め・一般参照・中心感情の未選択と補助行動偏重は残る。
+3. 末尾のcandidate54と継承承認を確認する。選択済みの独立した本人の行動が、後続応答で一般語に縮む参照policyを修正。canonical100の受取5件を具体化し、他95件は全record同一。全核・観察・可否理由・73/27と意味を伴う124責務は不変。実planは5件のreference_modeだけが変わり、selected inputの意味内容は同一、plan由来input_ref／grounding_refのみ更新。必須298検査294成功／継承4失敗、前回296の全成否一致、新規2成功。華恋が全100件本文を読み商品NOT_CLEAR。長い原文再掲・定型締め・一般参照・中心感情の未選択と補助行動偏重は残る。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -6386,3 +6386,25 @@ GitHub実装保存 `a7ee4f60ea35b1bc8c27e91aca8214f16efb54ea`、検証tree `a7d4
 今回の二文も長い再掲と定型締めが残り、human PASS／商品確認準備／採用／ready／merge／本番／問い／Layer3は未成立。次は複数関係・一般参照・行動偏重と、将来行動内の願望を区別できていない既存profileなど、残る原因を原典とselected basisから扱う。未選択の中心感情をHRで補わず、意味選択ownerと同核訂正の許可範囲へ戻る。同じ未完unitに新たな承認待ちや日付だけのSTOPを作らない。
 
 System Context doctor→prepareは固定Python／Node／npm／SCIP等の不一致でref鮮度判定前に不成立。stale／fresh成功とはせず原典fallback、cache／profile／基準ref／tracked current変更0。実装用Python3.12.13の固定46依存についてversion／wheel／installed RECORD closureを再確認。全tracked pathはCocolon1635／API2138で前回と同じ。関係sourceと既存test全文をrootと公開静的補助で分担読了、巨大な全体図の歴史本文全てを読了したとはしない。全編集・実行・private100件本文確認・GitHub反映はroot華恋。PR3／30／37はDraft／open／unmerged、商品／technical credit 0、商品NOT_CLEARを維持。
+
+### 2026-09-07 continuation — 独立した実行済み行動の具体的な参照（candidate54／商品未成立）
+
+継承承認 `FRESH_MASH_LEVEL3_CMEE_STAGE1_SELECTED_SUBJECTIVE_RECEPTION_FORWARD_INVERSE_REQUEST_LOCAL_CONTRACT_20260905` 内の同じ未完unit。candidate53から継続し、fresh GitHub・前提／CURRENT_RULES・恒久incident全文・latest weekly20260905・全体設計図と全ファイル地図、国家／共通基盤／他機能と旧経路の関係本文を確認。利用者が記録した行動を、既に選んだ気持ちや迷いの後で具体的に受け取るUXを修正した。STRUCTURE_MAP_DELTA_NONE：既存OP内のfinal-only参照policyであり、国家保存／dispatch／queue／read、公開API／DB／RN、Piece／分析、旧I5と公開返信への接続は不変。
+
+対象は既存required Moveのfelt_response／honor_concrete_effortで、単一のrequired memo_action核・単一source span・current_user・既存performed_action証明を持つもの。support無し、対象のrequired関係無し、全他Moveとそのrequired関係contextとの核／source_span非交差を要求する。既存final／SAFE_OBSERVATION／grounded系／short_anchor条件内で、位置だけを理由にanaphoricへ落ちていたMoveのreference_modeを保持する。act／role／target／support／選択数／深さは変えない。
+
+should関係は本文のrequired coverageに含まれず、参照変更によって関係・focal・appraisalへ昇格しない。初期案の全relation拒否は未選択の補助関係も拒否し実到達しなかったため、実際のHR contextと同じrequired範囲へ修正した。HRは既存performed nominalでsource全文と主体・節範囲を確認し、そのまま「こと」へ接続する。新しいHR文法、owner、schema、意味再選択、parser、Gate、閾値は追加していない。回復時の既存anaphoric規則、短状態、Safety、legacyを保持する。
+
+GitHub実装保存 `b8759bdaaf78a32919691958f94c78b99aa0ef78`、検証tree `2560de301066314606604c313d203b7f55c8e19b`。ローカル検証commit `49eb928a1aa7470d7ee40a81ca99a705bd04d25a`とはmetadataが異なるがtreeと対象全文は同一。OP・既存test・current runnerの3pathのみ。runner既存13定数を再導出し非current AST不変。forwardとplan再導出replayは当該requestの同じ不変selected inputを消費する。
+
+新規2検査は公開合成入力で実到達・原文1回・中心内容を先に受ける順序・reference以外のMove同一性・行動内容／時制／否定／引用／重複／受取述語改変のinverseとGate拒否・回復規則を確認する。選択済み責務を固定したpolicy検査では実行証明・主体・required・source独立性・関係・support等が欠けたときの非適用を確認。既存linked coprimaryとattention objectの2検査は、一般語の期待を具体的な行動全文1回へ更新した。後者は最初の全回帰で判明した旧表示期待であり、実行コードを変えず是正して最終全回帰を再実行した。historical fixture／hash／dated PASSを変更していない。focused3成功後、sourceを固定し全検証を実行した。
+
+選択済みの独立した本人の行動が、後続応答で一般語に縮む参照policyを修正。canonical100の受取5件を具体化し、他95件は全record同一。全核・観察・可否理由・73/27と意味を伴う124責務は不変。実planは5件のreference_modeだけが変わり、selected inputの意味内容は同一、plan由来input_ref／grounding_refのみ更新。必須298検査294成功／継承4失敗、前回296の全成否一致、新規2成功。華恋が全100件本文を読み商品NOT_CLEAR。長い原文再掲・定型締め・一般参照・中心感情の未選択と補助行動偏重は残る。
+
+原184は180成功4失敗、追加114は全成功。継承4は観察固定不一致2、dated receiptと現source不一致1、旧集合重複1。後続診断全体も前回と同一で、36ケース・post-hash96・集合exact8／same16成功とunseen12旧重複FAILを区別する。別GA2／shared164・実機・本番検証の成立へ広げない。検証後runtime／runner／test変更なし。
+
+予定表現の既存問題も原因を確認したが、文中のtopicと別主体を既存proofだけで区別できないため、主体guardを緩和せず残件保持した。有限節内の名詞一覧や末尾だけで本人の予定を推測せず、既存source ownerの証明範囲へ戻る。長い再掲・一般的な締め・未選択の中心感情も未解消であり、HRに未選択の意味を足さない。同じ未完unitに新しい承認待ちや日付だけのSTOPを作らない。
+
+System Context doctor→prepareは固定Python／Node／npm／SCIP等の不一致でref鮮度判定前に不成立。stale／fresh成功とはせず原典fallback、cache／profile／基準ref／tracked current変更0。実装用Python3.12.13の固定46依存のversion／wheel／installed RECORD closureを再確認。全tracked pathはCocolon1635／API2138で同一。OP全体と関係source／既存testをrootと公開静的補助で分担読了し、最終差分の静的blockerなし。全編集・実行・private100件本文確認・GitHub反映はroot華恋。
+
+PR3／30／37はDraft／open／unmerged。商品NOT_CLEAR、商品／technical credit 0。human PASS／商品確認準備／採用／ready／merge／本番／問い／Layer3は未成立。
