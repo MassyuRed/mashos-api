@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾のcandidate43と継承承認を確認する。既存OPの意味確定前で、他Moveから独立した単一required関係を持つMoveの参照方式を既存short_anchorへ戻し、両端の具体的内容を受取へ届ける。核・対象・act・role・意味を伴う124責務・全selected decision／basisは維持。canonical100中6件の受取が変更、他94件同一、direct100／73-27、可否変更0。必須275検査271成功／継承4失敗、前回274の全成否一致、新規一件成功。全100全文確認、商品NOT_CLEAR。長い原文再掲・定型表現、中心感情の未選択と補助行動偏重は残る。詳細はruntime handoffのcandidate43末尾。
+3. 末尾のcandidate44と継承承認を確認する。既存OPで願望内の継続動詞を既に継続中とは扱わず、同核の時点をcurrent_inputへ補正する。既存HRで、現在の自己の肯定wishを表す有限carrier全文に「こと」を付け、一般wrapperの重複を除いた。存在・topic/case・時点・願い・関係と両端を保持。canonical100中1件の受取だけが変更、他99件同一、全核identity・観察・実reception plan・意味を伴う124責務・73/27を維持し、selected inputの時点と参照を同じownerから再導出。必須276検査272成功／継承4失敗、前回275の全成否一致。全100件を全文確認、商品NOT_CLEAR。長い再掲・名詞接続・定型締め、中心感情の未選択と補助行動偏重は残る。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -6187,3 +6187,26 @@ PR3／30／37はDraft/open/unmerged。外部Pro独立Product Read、ready／採�
 作業前System Context doctor→prepareは固定toolchain不足・不一致でref鮮度判定前に不成立。stale cacheは使わず、Context00／weeklyの原典確認fallbackで継続した。profile／基準ref／tracked current変更では不足binaryを解消しないため変更なし。candidate41で固定46依存とinstalled RECORD closureを照合済みの同じCPython3.12.13環境を再発見して今回の生成・検査に使用した。今回の46依存再照合やSystem Context鮮度成功は主張しない。sub-agentは公開source・契約・test差分の静的レビューのみ。商品source編集・生成・検査・非公開全文読取・GitHub更新は華恋が担当した。
 
 PR3／30／37はDraft/open/unmerged。外部Pro独立Product Read、ready／採用／merge／本番／質問生成／Layer3は未成立、product／technical credit0。同じ承認内の継続で新しい承認待ちは設けない。国家保存／dispatch／queue／read、公開API／DB／RN、Piece／分析の挙動は今回変更なし。
+
+
+### 2026-09-07 continuation — 願望内の継続時点補正と願いの参照（candidate44／商品未成立）
+
+継承承認 `FRESH_MASH_LEVEL3_CMEE_STAGE1_SELECTED_SUBJECTIVE_RECEPTION_FORWARD_INVERSE_REQUEST_LOCAL_CONTRACT_20260905` 内の同じ未完unit。candidate43の保存状態とGitHub fresh head一致から継続した。全体設計図・全ファイル地図・国家システム・最新weekly20260905・必須incident・関係ownerと旧経路を確認。感情記録への即時受取における、既に選択された願いの名詞句重複が今回の対象。STRUCTURE_MAP_DELTA_NONE、final Stage1の公開返信経路への未接続を維持。
+
+既存OPの_final_stage1_continuation_is_desiredを限定拡張した。全文に継続operatorが一つだけあり、有限wish＋「気持ち/願い」＋「は/がある」に全文一致し、名詞carrierだけを外した有限節が既存bare desired-continuation文法に一致する場合が対象。これにより既存の目的語省略形も同じ有限文法で扱い、目的語を創作しない。既存final status ownerが原fieldとoffsetの一致・前後の文境界と未消費文字なし・top-level一致、自己の肯定wish/feeling、非fragment、引用/疑問/ellipsisなし、実行済み属性なしを確認した場合だけ追加文法を有効にする。既存同核current_input訂正へ通し、願望内部の継続動詞から「今も」と推定する誤りを除く。語彙operator自体は保持し、意味・時点・selected qualifierと派生参照を同じ上流ownerから再導出する。継承済みsame-nucleus/time/L1 parity補正の範囲であり、HRが意味を再選択しない。
+
+既存HRにsource証明付きの願い参照文法を追加。final・非ANAPHORIC・protect_retained_intention・単一target、同じplanの自己のwish核、feeling predicate、肯定、現在、単一span、数量中立が条件。既存OPのbounded wishまたは同じdesired-continuation有限文法の証明と、desiderative＋気持ち/願い＋は/があるという無修飾有限形の全文一致を要求し、引用・疑問・ellipsis・実行済み属性を除く。全文へ「こと」を付け、一般wrapperを省く。有限「ある」とtopic「は」を削除しないため、存在・時点・対比とSOURCE_CLAUSE時間所有が残る。Move・関係・両端と意味責務を保持する。文法変更のために核・schema・Move・意味ownerを追加しない。
+
+HRのsole resolver、target core、Move/surfaceの保護責務を同じ証明へ接続。Gateは独立に導いた完全参照のUTF-8 exact1と既存finite_clause_nominal終端を要求し、引用・重複を拒否する。一般keywordだけで代替せず、本文全文replay、対象・context・relation・whyの検査と閾値を維持する。Responseの既存nominalization base、ClausePlan、recovery選択、SentenceSurface parser/配置は変更不要。旧legacyとanaphoric回復は既存参照を維持。
+
+最終検証source `c78526fc1edb278542a3ff77b6c150abc6ca37a4`、tree `4af06183597f319b8441656471e63127c2d2c0ea`。既存OP/HR/Gate/test/runnerの5pathをGitHub保存・全文再取得照合。runnerはcurrent13定数だけを再導出し、exact18/exact9と非current AST不変を確認。新しい公開合成検査一つで、存在・過去/否定・対象・引用/重複・context・関係・保護述語の本文改変拒否と非適用境界を検証。最初の限定7検査は6成功1失敗で、wishに実行済み属性が混じる不整合の拒否が不足していた。source条件を補強し、同じ7検査が全成功。最初の固定sourceでは100件の本文差分が0で、40件まで実読してtyped継続時点の取りこぼしを確認した。その固定sourceの100件と276検査は保存。HRがcontinuingを受理する案は限定7検査を通ったが、継続時点の推定誤りを残すため見送り、HRを現在限定へ戻して既存OPの同核時点補正へ接続した。補修後の限定8検査は全成功。静的レビューで長文splitの危険を確認し、元fieldの前後のhard文境界・未消費文字なし・top-level一致を追加した。同じ合成検査にnormalized_input欠落・元fieldだけの疑問・外側carrierから切り出したspanの訂正拒否と時点以外の核完全一致を追加し、同じ8検査が全成功。次の固定sourceもcanonical100の本文差分0であり、通常のnominal wish証明が目的語省略形を除いていることを確認した。その版の全100/276検査を保存し、既存bare有限文法への委譲へ統一。公開合成を目的語省略形へ更新した際、既存ownerが選択した関係が旧合成の対比と異なり、限定8検査は7成功1失敗だった。合成入力に対して実際に選択された共存関係の保持と改変拒否を検査するよう新規testを修正し、同じ8検査が全成功。さらに非公開対象のfull本文で時点補正とwrapper除去の到達を固定前に確認。最終sourceで100件と必須検査を再実行した。途中の失敗・見送りと生成記録を保持。非公開入力は公開testに複写していない。
+
+固定sourceの必須276検査は272成功・継承4失敗。原184は180成功4失敗、追加92全成功。前回275の全成否一致、新規一件成功、新規失敗/skip/未実行0。継承4は観察固定不一致2、dated receiptと現source不一致1、旧集合重複1。後続36ケースの個別確認、post-hash96成功、exact8/same16成功、unseen12の既存重複FAILを保持。historical fixture/hash/dated PASSを変更しない。実機・別GA2/shared164の今回実行は主張しない。
+
+同じcanonical100を固定sourceから再生成。direct100、required Move/expression/visible binding各124、GENERATED73/UNAVAILABLE27、可否変更0。受取1件と同じ核の時点/selected inputが変更、他99件は全保存項目で同一。全100の原入力・順序・核identity・観察・実reception plan・可否/理由と意味責務を保持。selected inputは補正された時点とその派生参照以外の意味を維持。華恋が原入力全field・観察・受取・可否/理由を全100件全文確認した。UNAVAILABLEのdirect本文は診断出力。
+
+商品NOT_CLEAR。重複は少し減ったが、有限sourceの長い再掲や名詞接続・定型締めは残る。中心感情が選択から外れるケースは今回未修正。Move support空だけでは未選択と判定せず、required relationとselected contribution/basisにも照合する。補助行動を感情へ一律置換して同じ意味を伴う124責務を失わないこと。次は既存selected meaningを保つ自然な受取と、上流の感情未選択の原因を引き続き追う。
+
+System Context doctor→prepareは固定toolchain不足/不一致でref鮮度判定前に不成立。stale cacheを使わず原典fallbackで継続し、profile/ref/tracked current変更なし。candidate41で46依存/RECORD closure照合済みの同じCPython3.12.13環境を使用し、今回の再照合・鮮度成功は主張しない。sub-agentは公開source/契約/testの静的レビューのみ、編集・生成・検査・非公開全文読取・GitHub更新は華恋が担当。
+
+PR3/30/37はDraft/open/unmerged。外部Pro独立Product Read、ready/採用/merge/本番/質問生成/Layer3は未成立、product/technical credit0。新しい承認待ちを作らず同じ未完unitを継続。国家保存/dispatch/queue/read、公開API/DB/RN、Piece/分析は変更なし。
