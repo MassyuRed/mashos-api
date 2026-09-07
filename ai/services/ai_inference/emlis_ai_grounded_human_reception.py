@@ -2100,6 +2100,17 @@ def _selected_material_appraisal(decision: SelectedSubjectiveReceptionDecisionV1
                 and appraisal.operation == "RECEIVE_AS_MATERIAL")
 
 
+def _selected_noncollapse_appraisal(decision: SelectedSubjectiveReceptionDecisionV1) -> bool:
+    """Require the same selected operation and its already bound focal relation."""
+    proposition = decision.subjective_proposition
+    appraisal = proposition.appraisal_content
+    return bool(appraisal is not None
+                and appraisal.dimension == "RELATIONAL_NONCOLLAPSE"
+                and appraisal.operation == "PRESERVE_BOTH_ENDPOINTS"
+                and proposition.focal_relation_ref is not None
+                and appraisal.focal_relation_ref == proposition.focal_relation_ref)
+
+
 def _source_grounded_positive_feeling_unfinished_relation(
     move: GroundedReceptionMovePlan,
     plan: GroundedObservationPlan,
@@ -6600,6 +6611,18 @@ def _source_grounded_argument_surface(
         raise GroundedHumanReceptionSurfaceError(
             "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
         )
+    distributive_contrast = bool(
+        distributive_relation_slot is not None
+        and move.relations[distributive_relation_slot].relation_kind == "contrast"
+    )
+    if distributive_contrast and (
+        material_contrast_object or distributive_relation_slot != 0
+        or len(move.relations) != 1 or len(move.semantic_fragments) != 2
+        or move.reference_mode == "ANAPHORIC" or anaphoric_context_object is not None
+        or move.relations[0].endpoint_roles != ("LEFT", "RIGHT")
+        or len(set(move.relations[0].endpoint_slots)) != 2
+    ):
+        raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP")
     if material_contrast_object and (
         len(move.relations) != 1 or len(move.semantic_fragments) != 2
         or move.reference_mode == "ANAPHORIC"
@@ -6791,13 +6814,15 @@ def _source_grounded_argument_surface(
         elif relation_slot == distributive_relation_slot:
             # The selected noncollapse appraisal governs both complete
             # endpoint objects. Its distributive object realizes that duty
-            # once, without first restating their coexistence as a fact.
+            # once. A contrast still needs its pending predicate adjunct;
+            # the object alone must not count as relation completion.
             if (relation.endpoint_roles != ("LEFT", "RIGHT")
                 or relation.relation_kind not in {
                     "coexistence", "wish_and_constraint", "attempt_and_block",
-                    "continuation_or_refusal",
+                    "continuation_or_refusal", "contrast",
                 }
-                or (first.case_marker, second.case_marker) != ("と", "が")):
+                or (first.case_marker, second.case_marker)
+                != (("と", "との") if distributive_contrast else ("と", "が"))):
                 raise GroundedHumanReceptionSurfaceError(
                     "REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP"
                 )
@@ -6809,7 +6834,7 @@ def _source_grounded_argument_surface(
                 + (nominal_head if nominal_head is not None else f"{finite}こと")
             )
         appended_semantic_slots.update(relation.endpoint_slots)
-        if not material_contrast_object:
+        if not (material_contrast_object or distributive_contrast):
             appended_relation_slots.append(relation_slot)
     independent_target = (
         (target_nominal,)
@@ -6823,7 +6848,7 @@ def _source_grounded_argument_surface(
         raise GroundedHumanReceptionSurfaceError(
             "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
         )
-    expected_completed_slots = () if material_contrast_object else tuple(range(len(move.relations)))
+    expected_completed_slots = () if material_contrast_object or distributive_contrast else tuple(range(len(move.relations)))
     if tuple(appended_relation_slots) != expected_completed_slots:
         raise GroundedHumanReceptionSurfaceError(
             "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
@@ -7468,7 +7493,10 @@ def _source_grounded_target_np(
         target_referent=referent_text,
         semantic_slots=semantic_slots,
         relation_count=len(relation_slots),
-        pending_relation_slots=(0,) if material_contrast_object else (),
+        pending_relation_slots=(0,) if material_contrast_object or (
+            distributive_relation_slot is not None
+            and realization.relations[distributive_relation_slot].relation_kind == "contrast"
+        ) else (),
         target_owner_slot=target_owner_slot,
         temporal_realization=temporal_realization,
         aspect_realization=aspect_realization,
@@ -7739,13 +7767,29 @@ def _source_grounded_response_predicate(
     if type(pending_relation_slots) is not tuple or any(type(slot) is not int for slot in pending_relation_slots):
         raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
     if pending_relation_slots:
-        if (pending_relation_slots != (0,) or move_role != "attention"
-            or reception_act != "recognize_lived_change" or referent_kind != "positive_feeling"
-            or not _selected_material_appraisal(selected_subjective_decision)
-            or distributive_object or unfinished_change or unfinished_pair):
+        material_contrast = bool(
+            move_role == "attention" and reception_act == "recognize_lived_change"
+            and referent_kind == "positive_feeling" and not distributive_object
+            and _selected_material_appraisal(selected_subjective_decision)
+        )
+        preserved_contrast = bool(
+            move_role == "felt_response" and reception_act == "stay_with_current_burden"
+            and referent_kind == "current_expression" and distributive_object
+            and _selected_noncollapse_appraisal(selected_subjective_decision)
+            and semantic_profile.actor_kind == "SELF" and voice == "STATE"
+            and not semantic_profile.performed_action and not semantic_profile.future_action
+            and not semantic_profile.quoted_boundary
+        )
+        if (pending_relation_slots != (0,) or unfinished_change or unfinished_pair
+            or not (material_contrast or preserved_contrast)):
             raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
-        valency_complement = "それらを、"
-        reception_operator = "その違いも含めて"
+        if material_contrast:
+            valency_complement = "それらを、"
+            reception_operator = "その違いも含めて"
+        else:
+            # Both complete objects carry the selected noncollapse duty.
+            # Complete their still-pending contrast in this same predicate.
+            reception_operator = "、その違いも含めて"
         completed_relation_slots = (0,)
     return _SourceGroundedResponsePredicateV1(
         object_particle=object_particle,
@@ -7878,7 +7922,7 @@ def _source_grounded_response_predicate_surface(
         f"{clause_adjunct}{object_core}"
         f"{predicate.object_particle}{predicate.role_operator}"
         f"{predicate.valency_complement}"
-        f"{act_guard}{predicate.reception_operator}"
+        f"{predicate.reception_operator}{act_guard}"
         f"{predicate.voice_complement}"
         f"{governed_predicate}"
     )
@@ -7905,7 +7949,8 @@ def _source_grounded_reception_fragment(
         target_owner_slot=target_owner_slot,
     )
     if (target_core.target_owner_slot != target_owner_slot
-        or target_core.pending_relation_slots and move.move_role != "attention"):
+        or target_core.pending_relation_slots
+        and move.move_role not in {"attention", "felt_response"}):
         raise GroundedHumanReceptionSurfaceError(
             "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
         )
@@ -8122,9 +8167,9 @@ def _author_source_grounded_reception_clauses(
                 and set(move.target_nucleus_ids).intersection(
                     (relation.from_nucleus_id, relation.to_nucleus_id))
             )
-            # Resolve only the already selected focal relation. Directional,
-            # comparative and uncertain relations keep their own predicates;
-            # two endpoints alone never authorize distributive realization.
+            # Resolve only the already selected focal relation. Directional
+            # and uncertain relations keep their own predicates; contrast
+            # needs the additional object-and-predicate proof below.
             appraisal = selected_proposition.appraisal_content
             distributive_relation_slot = None
             if (appraisal is not None
@@ -8168,6 +8213,29 @@ def _author_source_grounded_reception_clauses(
                 if appraisal is not None and basis.binding_ref in appraisal.appraised_bindings
                 and basis.semantic_ref in selected_proposition.primary_target_refs
             }
+            # Contrast requires an explicit adjunct as well as a distributive
+            # object. Admit only the selected current-expression reception,
+            # with both complete endpoints independently appraised as primary.
+            if (move.move_role == "felt_response"
+                and move.reception_act == "stay_with_current_burden"
+                and referent.kind == "current_expression"
+                and _selected_noncollapse_appraisal(selected_decision)
+                and meaning_realization.reference_mode != "ANAPHORIC"
+                and distributive_relation_slot is None and anaphoric_context_object is None
+                and len(meaning_realization.semantic_fragments) == 2
+                and len(applicable_relations) == len(meaning_realization.relations) == 1
+                and meaning_realization.relations[0].relation_kind == "contrast"
+                and meaning_realization.relations[0].endpoint_roles == ("LEFT", "RIGHT")
+                and len(set(meaning_realization.relations[0].endpoint_slots)) == 2
+                and relation_map[selected_proposition.focal_relation_ref]
+                == applicable_relations[0].relation_id
+                and {applicable_relations[0].from_nucleus_id, applicable_relations[0].to_nucleus_id}
+                <= selected_basis_nuclei & appraised_primary_nuclei
+                and meaning_realization.semantic_profiles[target_owner_slot].actor_kind == "SELF"
+                and not meaning_realization.semantic_profiles[target_owner_slot].quoted_boundary
+                and not meaning_realization.semantic_profiles[target_owner_slot].performed_action
+                and not meaning_realization.semantic_profiles[target_owner_slot].future_action):
+                distributive_relation_slot = 0
             material_contrast_object = bool(
                 move.move_role == "attention" and move.reception_act == "recognize_lived_change"
                 and referent.kind == "positive_feeling"
