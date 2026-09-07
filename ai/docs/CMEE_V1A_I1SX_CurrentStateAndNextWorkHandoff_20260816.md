@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾のcandidate49と継承承認を確認する。既存HRで、自己のretained_wish／protect_retained_intention／attentionに選択済みのMATERIAL対比を、願いと背景の完全な二端点へ直接つなぐ。対比と願いを大切に受け止める責務を同じ節に保持。canonical100の生成可能側の受取2件のみ変更し、他98件・全核・selected input・実plan・意味を伴う124責務・観察・可否理由・73/27は同一。必須289検査285成功／継承4失敗、前回287の全成否一致、新規2成功。華恋が全100件全文確認し商品NOT_CLEAR。長い再掲・定型締め、別actの対比名詞、中心感情の未選択と補助行動偏重は残る。
+3. 末尾のcandidate50と継承承認を確認する。原文で証明済みの現在の願いの存在節を、助詞・存在・時点を保った全文＋「ということ」で名詞化。HR正本と対象名詞句の完全一致、限定した本文文法witnessを整合し、Gateの全文・引用外・byte末尾・独立replay条件を維持。canonical100の受取1件のみ変更し、他99件・全核・selected input・実plan・意味を伴う124責務・観察・可否理由・73/27は同一。必須290検査286成功／継承4失敗、前回289の全成否一致、新規1成功。華恋が全100件の本文を確認し商品NOT_CLEAR。長い再掲・定型締め・別actの対比名詞・中心感情の未選択と補助行動偏重は残る。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -6320,3 +6320,17 @@ PR3／30／37はDraft／open／unmerged。外部Pro独立Product Read、ready／
 System Contextはdoctor→prepareを実行し、固定toolchain不一致でref鮮度判定前に不成立。stale/freshを判定できたとはせず、原典を直接確認。cache／profile／ref／tracked current変更なし。実装用の固定46依存は今回復元し、既存lockのversion・wheel hash・installed RECORD closureと2277 hashed filesを照合、errors0。環境復元をSystem Context成立や商品成果に数えない。
 
 関連source／testはチームで本文を確認し、sub-agentは公開コードの静的読取だけを担当。全編集・検査・生成・private全文読取・GitHub更新はroot華恋が担当。PR3／30／37はDraft／open／unmerged、商品NOT_CLEAR、ready／採用／merge／本番／問い／Layer3は未成立。同じ承認内の残件を継続し、新たな承認待ちを作らない。
+
+### 2026-09-07 continuation — 願いの存在節を保つ名詞化（candidate50／商品未成立）
+
+継承承認 `FRESH_MASH_LEVEL3_CMEE_STAGE1_SELECTED_SUBJECTIVE_RECEPTION_FORWARD_INVERSE_REQUEST_LOCAL_CONTRACT_20260905` 内の同じ未完unit。candidate49・GitHub最新head・全体設計図・全ファイル地図・国家システム・前提／CURRENT_RULES・必須incident・latest weekly20260905を確認。今回の責任は、Emlisが本人の願いの存在を歪めず自然な名詞句として受け取るUX。final Stage1は公開返信へ未接続。国家保存／dispatch／queue／read、API／DB／RN、Piece／分析、旧経路と共通基盤の境界は同じ。STRUCTURE_MAP_DELTA_NONE。
+
+既存HRのSELF・current wish・retained_wish／protect_retained_intentionで証明された単一存在節へ、原文全文＋「ということ」を接続する。「は／が」「ある」を保持し、存在削除・助詞変換・時点追加はしない。target_np exact照合も同じ形とする。本文witnessは願望carrier＋は／が＋あるということに限定し、一般的な「ということ」へ広げない。witness単独で意味を証明せず、同じ不変selected inputからの生成・独立replayと既存Gateの全文exact1・引用外・末尾byte一致で結び付ける。意味選択・schema・Gate・閾値の変更なし。
+
+固定source `8a02417348920a351b2e546ed609298612d2d5e1`、tree `13e2fb943c948bf03608e253c76938cee8b1d02d`。HR・Sentence Surface・既存public合成test・current runnerの4path。runnerは既存13定数だけを再導出し、非current AST不変。対象周辺14検査成功。旧形差戻し、同じ原文の助詞・存在・時制・否定変更、引用・二重化・保護責務削除を拒否することを確認。publicの短いは／が存在節では意味選択・核・実planが前後一致し、長い別public例の既存VISIBLE_BINDING_GAPは残件として保持。
+
+原文で証明済みの現在の願いの存在節を、助詞・存在・時点を保った全文＋「ということ」で名詞化。HR正本と対象名詞句の完全一致、限定した本文文法witnessを整合し、Gateの全文・引用外・byte末尾・独立replay条件を維持。canonical100の受取1件のみ変更し、他99件・全核・selected input・実plan・意味を伴う124責務・観察・可否理由・73/27は同一。必須290検査286成功／継承4失敗、前回289の全成否一致、新規1成功。華恋が全100件の本文を確認し商品NOT_CLEAR。長い再掲・定型締め・別actの対比名詞・中心感情の未選択と補助行動偏重は残る。
+
+原184は180成功4失敗、追加106は全成功。継承4は観察固定不一致2、dated receiptと現source不一致1、旧集合重複1。後続36ケースとpost-hash96を確認し、exact8／same16成功、unseen12の既存重複FAILを保持。historical fixture／hash／dated PASSは変更しない。未実行の実機や別GA2／shared164の成功には広げない。
+
+System Contextはdoctor→prepareを実行したが、固定toolchain不一致でref鮮度判定前に不成立。stale／fresh成功ではなくweekly5.4の原典fallback。cache／profile／ref／tracked current変更なし。前回復元・照合した固定46依存を使用。関連本文・影響先を確認し、sub-agentは公開source/testの静的読取のみ。全編集・検査・生成・private全文読取・GitHub更新はroot華恋。PR3／30／37はDraft／open／unmerged、商品NOT_CLEAR。ready／採用／merge／本番／問い／Layer3は未成立。同じ承認内の残件を継続する。
