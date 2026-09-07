@@ -566,6 +566,108 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
                 self.assertFalse(any(m.marker_code == "finite_clause_nominal"
                                      for m in surface_owner.parse_grounded_surface_body_bytes(body.encode()).markers))
 
+    def test_changing_wish_nominal_preserves_degree_context_and_protection(self):
+        context = "今の暮らしを変える怖さもあって、急いで決めたくない"
+        for degree in ("強", "弱"):
+            source = f"新しい分野を学びたい気持ちが{degree}くなっている"
+            with self.subTest(degree=degree):
+                a = _full_surface_artifacts({"case_id": "public-changing-wish", "input": {
+                    "thought_text": source + "。でも" + context + "。",
+                    "action_text": "本を棚に戻した。", "categories": ["学習"],
+                    "emotions": [{"type": "不安", "strength": "medium"}],
+                }})
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                self.assertEqual(a.sentence_plan.recovery_stage, "full")
+                nominal = source + "こと"
+                follow = _reception_text(a.surface.text)
+                self.assertEqual(follow.count(nominal), 1)
+                self.assertEqual(follow.count(context), 1)
+                self.assertNotIn("に表れた願い", follow)
+                self.assertIn("その違いも含めて見失わずに、大切に受け止めています", follow)
+                for old, new in (
+                    (nominal, source.replace(degree, "弱" if degree == "強" else "強") + "こと"),
+                    (nominal, source.removesuffix(f"が{degree}くなっている")),
+                    (nominal, source.replace("気持ちが", "気持ちは") + "こと"),
+                    (nominal, source.replace("なっている", "なっていた") + "こと"),
+                    (nominal, source.replace("なっている", "なっていない") + "こと"),
+                    (nominal, source.replace("学びたい", "遊びたい") + "こと"),
+                    (nominal, nominal + "と" + nominal), (nominal, "「" + nominal + "」"),
+                    (nominal, source + "ということ"), (context, "別のこと"),
+                    ("その違いも含めて", "同じものとして"),
+                    ("見失わずに、大切に受け止めています", "小さなことだと考えています"),
+                ):
+                    with self.subTest(replacement=new):
+                        changed = _tamper_reception(a.surface.text, old, new)
+                        self.assertFalse(evaluate_grounded_surface_body_inverse(
+                            body=changed.encode("utf-8"), plan=a.plan,
+                            sentence_plan=a.sentence_plan, resolver=a.resolver,
+                            selected_subjective_input=a.selected_subjective_input,
+                        ).passed)
+                        self.assertFalse(evaluate_grounded_observation_gate(
+                            plan=a.plan, sentence_plan=a.sentence_plan,
+                            surface_result=replace(a.surface, text=changed), resolver=a.resolver,
+                            require_body_inverse=True, selected_subjective_input=a.selected_subjective_input,
+                        ).passed)
+
+    def test_changing_wish_nominal_requires_existing_selected_source_proof(self):
+        source = "学びたい気持ちが強くなっている"
+        a = _full_surface_artifacts({"case_id": "public-changing-wish-proof", "input": {
+            "thought_text": source + "。でも手順が分からなくなった。",
+            "action_text": "本を棚に戻した。", "categories": ["学習"],
+            "emotions": [{"type": "不安", "strength": "medium"}],
+        }})
+        move = next(m for m in a.plan.response_plan.human_reception_plan.moves
+                    if m.reception_act == "protect_retained_intention")
+        index = {n.nucleus_id: n for n in a.plan.nuclei}
+        target = index[move.target_nucleus_ids[0]]
+        derive = reception_owner.source_grounded_retained_wish_nominal
+        self.assertEqual(derive(move, a.plan, index, a.resolver), source + "こと")
+        proof = "lexical:source_declarative_wish_change"
+        self.assertIn(proof, target.semantic_frame.attribute_codes)
+        for changes in (
+            {"actor": "other"}, {"actor": "unknown"}, {"modality": "uncertain"},
+            {"modality": "fact"}, {"time_scope": "past"}, {"time_scope": "future"},
+            {"polarity": "negative"}, {"predicate_kind": "action"},
+            {"attribute_codes": (*target.semantic_frame.attribute_codes, "quantity:multiple")},
+            {"attribute_codes": (*target.semantic_frame.attribute_codes, "operator:performed_action")},
+            {"attribute_codes": tuple(c for c in target.semantic_frame.attribute_codes if c != proof)},
+        ):
+            changed = replace(target, semantic_frame=replace(target.semantic_frame, **changes))
+            plan = replace(a.plan, nuclei=tuple(changed if n == target else n for n in a.plan.nuclei))
+            with self.subTest(changes=changes):
+                self.assertEqual(derive(move, plan, {**index, target.nucleus_id: changed}, a.resolver), "")
+        for value in (
+            source.replace("気持ちが", "気持ちは"), source.replace("気持ちが", "気持ちも"),
+            source.replace("なっている", "なっていた"), source.replace("なっている", "なっています"),
+            source.replace("なっている", "なっていない"), source + "かもしれない",
+            source + "と聞いた", source + "なら", source + "？", source + "…",
+            "「" + source + "」", "友人が" + source, source.replace("強くなっている", "強まっている"),
+        ):
+            with self.subTest(value=value), patch.object(
+                reception_owner, "_source_grounded_clause_candidate", return_value=value,
+            ):
+                self.assertEqual(derive(move, a.plan, index, a.resolver), "")
+        with patch.object(reception_owner, "_bounded_bare_wish_nominal", return_value=False):
+            self.assertEqual(derive(move, a.plan, index, a.resolver), "")
+        self.assertEqual(derive(move, None, index, a.resolver), "")
+        self.assertEqual(derive(move, replace(a.plan, source_contracts=()), index, a.resolver), "")
+
+        # Exercise original-field boundaries before ledger punctuation handling.
+        for field in (source + "？", source + "…", "「" + source + "」", source + "と聞いた。"):
+            with self.subTest(original_field=field):
+                inputs = _compile_inputs({"case_id": "public-changing-wish-boundary", "input": {
+                    "thought_text": field, "action_text": "本を棚に戻した。", "categories": ["学習"],
+                    "emotions": [{"type": "不安", "strength": "medium"}],
+                }})
+                resolver = build_evidence_span_resolver(
+                    inputs.source.evidence_spans, current_input=inputs.source.normalized_current_input,
+                )
+                plan = inputs.grounded_plan
+                nuclei = {n.nucleus_id: n for n in plan.nuclei}
+                self.assertTrue(all(derive(m, plan, nuclei, resolver) == ""
+                                    for m in plan.response_plan.human_reception_plan.moves))
+
     def test_contrast_target_nominal_keeps_both_endpoints_and_source_argument(self):
         left = "説明書の細かな記号が分かるようになった"
         right = "それでも小さな部品を一つずつ机に並べて確かめながら組み立てる時間はまだ難しく感じている"

@@ -34,6 +34,7 @@ from emlis_ai_grounded_observation_plan import (
     _FEELING_RE,
     _direct_finite_carrier_shape,
     _bounded_nominal_wish_endpoint,
+    _bounded_bare_wish_nominal,
     _final_stage1_continuation_is_desired,
     source_grounded_feeling_subject_parts,
     _source_finite_without_postposed_focus,
@@ -2225,7 +2226,7 @@ def source_grounded_retained_wish_nominal(
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
 ) -> str:
-    """Nominalize a proven present wish carrier without deleting existence.
+    """Nominalize a proven present wish carrier without deleting its host.
 
     Keep the complete finite clause, including its topic/case particle and
     affirmative host. Removing the host would lose a temporal surface owner.
@@ -2257,8 +2258,19 @@ def source_grounded_retained_wish_nominal(
         or len(fields) != 1 or fields[0] not in {"memo", "memo_action"}
         or any(re.search(r"[「」『』…‥!?！？]", span.raw_text)
                for span in resolver.resolve_many(resolver.span_ids)
-               if span.source_field in fields)
-        or not re.fullmatch(r"[^、,。\s]+(?:たい|ほしい|欲しい)(?:気持ち|願い)(?:は|が)ある", clause)
+               if span.source_field in fields)):
+        return ""
+    changing_wish = re.fullmatch(
+        r"(?P<nominal>[^、,。\s]+(?:たい|ほしい|欲しい)(?:気持ち|願い))"
+        r"が(?:強|弱)くなっている", clause,
+    )
+    if (changing_wish
+        and "lexical:source_declarative_wish_change" in nucleus.semantic_frame.attribute_codes
+        and _bounded_bare_wish_nominal(changing_wish.group("nominal"))):
+        # The selected wish is already owned and current. This bounded が
+        # clause attaches directly; keep its degree and aspect verbatim.
+        return f"{clause}こと"
+    if (not re.fullmatch(r"[^、,。\s]+(?:たい|ほしい|欲しい)(?:気持ち|願い)(?:は|が)ある", clause)
         or not (_bounded_nominal_wish_endpoint(clause)
                 or _final_stage1_continuation_is_desired(clause, allow_nominal_carrier=True))):
         return ""
@@ -7424,7 +7436,7 @@ def _source_grounded_target_np(
             and realization.modality == "wish"
             and realization.target_slot_count == 1
             and realization.quantity in {"not_applicable", "source_bounded", "unknown"}
-            and referent_text == f"{meaning_fragment}ということ"
+            and referent_text in {f"{meaning_fragment}ということ", f"{meaning_fragment}こと"}
         )
         expression_nominal = bool(
             profile.actor_kind == "SELF" and not profile.quoted_boundary

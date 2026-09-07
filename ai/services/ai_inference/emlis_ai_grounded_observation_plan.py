@@ -10411,6 +10411,21 @@ def _final_stage1_align_action_status(
                 and not re.search(r"[「」『』…‥!?！？]", source)
                 and "operator:performed_action" not in codes
             )
+            changing_wish = re.fullmatch(
+                r"(?P<nominal>[^、,。\s]+(?:たい|ほしい|欲しい)(?:気持ち|願い))"
+                r"が(?:強|弱)くなっている", text,
+            )
+            if (nominal_wish_source_bound and frame.modality == "wish"
+                and frame.time_scope in {"present", "current_input"}
+                and changing_wish
+                and _bounded_bare_wish_nominal(changing_wish.group("nominal"))):
+                # Carry original-field assertion proof through the existing
+                # nucleus; ledger text alone has lost terminal question marks.
+                nucleus = replace(nucleus, semantic_frame=replace(
+                    frame, attribute_codes=tuple(_dedupe((
+                        *codes, "lexical:source_declarative_wish_change",
+                    ))),
+                ))
             if _final_stage1_wish_is_open(text):
                 attributes = tuple(code for code in codes if not code.startswith(
                     ("time_scope:", "modality:")
