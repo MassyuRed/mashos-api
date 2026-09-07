@@ -7632,6 +7632,7 @@ def _source_grounded_response_predicate(
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
     distributive_object: bool = False,
     single_action_object: bool = False,
+    integrate_attention_pair: bool = False,
     unfinished_change: bool = False,
     unfinished_pair: bool = False,
     pending_relation_slots: tuple[int, ...] = (),
@@ -7863,7 +7864,14 @@ def _source_grounded_response_predicate(
             or not (material_pair or preserved_contrast)):
             raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
         if material_pair:
-            valency_complement = "それらを、" if move_role == "attention" else ""
+            if integrate_attention_pair and move_role == "attention":
+                # Both complete, appraised objects stay under the same case
+                # for attention and reception; their relation is completed
+                # by the unchanged adjunct below, without a pronoun restart.
+                object_particle, role_operator = "を", "見過ごさず、"
+                valency_complement = ""
+            else:
+                valency_complement = "それらを、" if move_role == "attention" else ""
             reception_operator = ("" if move_role == "attention" else "、") + (
                 "その違いも含めて" if pending_relation_kind == "contrast" else "その重なりも含めて"
             )
@@ -7966,6 +7974,7 @@ def _source_grounded_response_predicate_surface(
         selected_subjective_decision=selected_subjective_decision,
         distributive_object=distributive_object,
         single_action_object=single_action_object,
+        integrate_attention_pair=recovery_stage == "full",
         unfinished_change=unfinished_change,
         unfinished_pair=unfinished_pair,
         pending_relation_slots=pending_relation_slots,

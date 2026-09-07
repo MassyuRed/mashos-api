@@ -394,7 +394,7 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         follow = _reception_text(a.surface.text)
         for source in (left, right, "説明書を棚に戻した"):
             self.assertEqual(follow.count(source), 1)
-        self.assertIn(left + "ということと" + right + "ことに目が留まり、それらを、その違いも含めて", follow)
+        self.assertIn(left + "ということと" + right + "ことを見過ごさず、その違いも含めて", follow)
         self.assertNotIn("との違いに目が留まり", follow)
         self.assertNotIn("もう一方の向き", follow)
         for source, replacement in ((left, ""), (right, "別のこと"), ("その違いも含めて", "同じものとして")):
@@ -431,7 +431,7 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         self.assertEqual(follow.count(nominal), 1)
         self.assertNotIn("に表れた願い", follow)
         self.assertNotIn("今も、", follow)
-        self.assertIn(nominal + "と" + context + "ことに目が留まり、それらを、その重なりも含めて", follow)
+        self.assertIn(nominal + "と" + context + "ことを見過ごさず、その重なりも含めて", follow)
         self.assertIn("見失わずに、大切に受け止めています", follow)
         for old, new in (
             (nominal, source + "こと"),
@@ -443,7 +443,7 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
             (nominal, "「" + nominal + "」"), (nominal, nominal + "と" + nominal),
             (nominal, "『" + nominal + "』"),
             (context, "別のこと"), ("その重なりも含めて", "同じものとして"),
-            ("その重なりも含めて", ""), ("それらを、", ""),
+            ("その重なりも含めて", ""), ("を見過ごさず、", "に目が留まり、"),
             ("見失わずに、大切に受け止めています", "小さなことだと考えています"),
             (nominal, "今も、" + nominal),
         ):
@@ -584,7 +584,7 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
         follow = _reception_text(a.surface.text)
         self.assertEqual(follow.count(left + "という変化"), 1)
         self.assertEqual(follow.count(right), 1)
-        self.assertIn("ことに目が留まり、それらを、その違いも含めて受け止めています", follow)
+        self.assertIn("ことを見過ごさず、その違いも含めて受け止めています", follow)
         self.assertNotIn("との違いに目が留まり", follow)
         self.assertNotIn("けれどということ", follow)
         self.assertTrue(any(span.raw_text == left + "けれど"
@@ -625,7 +625,7 @@ class CMEEAnaphoricTopicOwnerTest(unittest.TestCase):
                 follow = _reception_text(a.surface.text)
                 self.assertIn(left + ending + "ということ", follow)
                 self.assertEqual(follow.count(right), 1)
-                self.assertIn("それらを、その違いも含めて受け止めています", follow)
+                self.assertIn("見過ごさず、その違いも含めて受け止めています", follow)
                 self.assertNotIn(left + "という変化", follow)
                 changed = _tamper_reception(a.surface.text, left + ending, left)
                 self.assertFalse(evaluate_grounded_surface_body_inverse(
@@ -2353,12 +2353,12 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
                 self.assertEqual(core.text.count(fragment), 1)
             self.assertIn(core.text, follow)
             self.assertIn(kw["meaning_fragment"] + "というまだ確かではない願い", core.text)
-            self.assertIn("それらを、その重なりも含めて", follow)
+            self.assertIn("見過ごさず、その重なりも含めて", follow)
             self.assertNotIn("がともにあること", core.text)
             for old, new in (
                 (kw["meaning_fragment"], "別の内容"),
                 ("まだ確かではない願い", "確かに定まった願い"),
-                ("その重なりも含めて", ""), ("それらを、", ""),
+                ("その重なりも含めて", ""), ("を見過ごさず、", "に目が留まり、"),
                 ("受け止めています", "受け止めていました"),
                 ("見失わずに、大切に", "大切に"),
                 (core.text, "「" + core.text + "」"),
@@ -2676,7 +2676,9 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
                          and set(move.target_nucleus_ids).intersection({r.from_nucleus_id, r.to_nucleus_id})
                          and {r.from_nucleus_id, r.to_nucleus_id} <= selected]
                 self.assertEqual(len(owned), 1)
-                ending = ("に目が留まり、それらを、" if kw["move_role"] == "attention" else "を、")
+                ending = ("を、" if kw["move_role"] != "attention" else
+                          "を見過ごさず、" if kw["recovery_stage"] == "full" else
+                          "に目が留まり、それらを、")
                 self.assertIn(core.text + ending + "その重なりも含めて", replay.text)
                 for old, new in (
                     ("その重なりも含めて", ""), ("その重なりも含めて", "その違いも含めて"),
@@ -4978,7 +4980,7 @@ class CMEEFinalMaterialContrastObjectsTest(unittest.TestCase):
         self.assertEqual(core.semantic_slots, (0, 1))
         self.assertEqual(realization.relations[0].relation_kind, "contrast")
         follow = _reception_text(a.surface.text)
-        self.assertIn(core.text + "に目が留まり、それらを、その違いも含めて受け止めています", follow)
+        self.assertIn(core.text + "を見過ごさず、その違いも含めて受け止めています", follow)
         self.assertNotIn("との違いに目が留まり", follow)
         for fragment in realization.semantic_fragments:
             self.assertEqual(core.text.count(fragment), 1)
@@ -5000,10 +5002,10 @@ class CMEEFinalMaterialContrastObjectsTest(unittest.TestCase):
         for old, new in (
             (left, "別の気持ち"), (right, "別のこと"),
             (core.text, core.text.replace(left, "TEMP").replace(right, left).replace("TEMP", right)),
-            ("それらを、", ""), ("その違いも含めて", ""),
+            ("を見過ごさず、", "に目が留まり、"), ("その違いも含めて", ""),
             ("その違いも含めて", "同じものとして"),
             ("受け止めています", "感じています"),
-            (core.text + "に目が留まり、それらを、その違いも含めて",
+            (core.text + "を見過ごさず、その違いも含めて",
              core.text + "との違いに目が留まり、それを"),
         ):
             with self.subTest(new=new):
@@ -5016,6 +5018,51 @@ class CMEEFinalMaterialContrastObjectsTest(unittest.TestCase):
                     plan=a.plan, sentence_plan=a.sentence_plan, surface_result=replace(a.surface, text=body),
                     resolver=a.resolver, require_body_inverse=True,
                     selected_subjective_input=a.selected_subjective_input).passed)
+
+    def test_pair_attention_uses_one_object_case_only_in_full_recovery(self):
+        kw = self.predicates[0]
+        core = self.cores[0][0]
+        render = reception_owner._source_grounded_response_predicate_surface
+        self.assertEqual(kw["recovery_stage"], "full")
+        full = render(**kw)
+        self.assertEqual(full, core.text + "を見過ごさず、その違いも含めて受け止めています")
+        self.assertNotIn("それらを", full)
+        self.assertEqual(kw["pending_relation_slots"], (0,))
+        for stage in reception_owner._RECOVERY_STAGES:
+            if stage == "full":
+                continue
+            with self.subTest(stage=stage):
+                other = render(**{**kw, "recovery_stage": stage})
+                self.assertIn(core.text + "に目が留まり、それらを、その違いも含めて", other)
+                self.assertNotIn("見過ごさず", other)
+        # The pre-body selected input and both appraised endpoints are the
+        # same objects consumed by every actual forward/replay recovery.
+        self.assertTrue({"full", "hedged"} <= {
+            arguments[1]["recovery_stage"] for arguments in self.a.author_arguments
+        })
+        for _args, kwargs in self.a.author_arguments:
+            self.assertIs(kwargs["selected_subjective_input"], self.a.selected_subjective_input)
+
+    def test_pair_attention_loss_and_wrong_object_case_are_rejected(self):
+        a = self.a
+        for old, new, attention_missing in (
+            ("見過ごさず、", "", True),
+            ("見過ごさず", "見過ごして", False),
+            ("を見過ごさず、", "に目が留まり、", False),
+            ("を見過ごさず、", "を見過ごさず、それらを、", False),
+        ):
+            with self.subTest(new=new):
+                body = _tamper_reception(a.surface.text, old, new)
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input)
+                self.assertFalse(inverse.passed)
+                if attention_missing:
+                    self.assertIn("body_inverse_reception_attention_duty_missing:rm1", inverse.failure_codes)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan,
+                    surface_result=replace(a.surface, text=body), resolver=a.resolver,
+                    require_body_inverse=True, selected_subjective_input=a.selected_subjective_input).passed)
 
     def test_pending_relation_requires_exact_local_completion_and_same_appraisal(self):
         core, realization, target_kwargs = self.cores[0]
@@ -5094,7 +5141,7 @@ class CMEEFinalMaterialChangeReceptionTest(unittest.TestCase):
         self.assertEqual((core.semantic_slots, core.relation_count, core.pending_relation_slots), ((0, 1), 0, (0,)))
         self.assertEqual(realization.relations[0].relation_kind, "contrast")
         follow = _reception_text(a.surface.text)
-        self.assertIn(core.text + "に目が留まり、それらを、その違いも含めて受け止めています", follow)
+        self.assertIn(core.text + "を見過ごさず、その違いも含めて受け止めています", follow)
         self.assertEqual(follow.count("変化"), 1)
         self.assertNotIn("との違いに目が留まり", follow)
         decision = predicates[0]["selected_subjective_decision"]
@@ -5111,7 +5158,7 @@ class CMEEFinalMaterialChangeReceptionTest(unittest.TestCase):
             (self.left, "別の出来事"), (self.right, "別の状況"),
             (self.right, self.right.replace("難しく感じている", "簡単に感じている")),
             (core.text, self.right + "ことと" + self.left + "という変化"),
-            ("という変化", "ということ"), ("それらを、", ""),
+            ("という変化", "ということ"), ("を見過ごさず、", "に目が留まり、"),
             ("その違いも含めて", ""), ("その違いも含めて", "同じものとして"),
             ("受け止めています", "感じています"), ("受け止めています", "受け止めていました"),
             ("受け止めています", "受け止めていません"),
@@ -5231,7 +5278,7 @@ class CMEEFinalMaterialWishContrastTest(unittest.TestCase):
         self.assertEqual(core.pending_relation_slots, (0,))
         self.assertEqual(realization.relations[0].relation_kind, "contrast")
         follow = _reception_text(a.surface.text)
-        self.assertIn(core.text + "に目が留まり、それらを、その違いも含めて見失わずに、大切に受け止めています", follow)
+        self.assertIn(core.text + "を見過ごさず、その違いも含めて見失わずに、大切に受け止めています", follow)
         self.assertNotIn("との違いに目が留まり", follow)
         left, right = realization.semantic_fragments
         for fragment in (left, right):
@@ -5248,12 +5295,12 @@ class CMEEFinalMaterialWishContrastTest(unittest.TestCase):
         for old, new in (
             (left, "別の願い"), (right, "別の状況"),
             (core.text, core.text.replace(left, "TEMP").replace(right, left).replace("TEMP", right)),
-            ("それらを、", ""), ("その違いも含めて", ""),
+            ("を見過ごさず、", "に目が留まり、"), ("その違いも含めて", ""),
             ("その違いも含めて", "同じものとして"),
             ("見失わずに、大切に", ""), ("見失わずに、大切に", "大切に"),
             ("受け止めています", "受け止めていました"),
             ("受け止めています", "受け止めていません"),
-            (core.text + "に目が留まり、それらを、その違いも含めて",
+            (core.text + "を見過ごさず、その違いも含めて",
              core.text + "との違いに目が留まり、それを"),
         ):
             with self.subTest(new=new):
