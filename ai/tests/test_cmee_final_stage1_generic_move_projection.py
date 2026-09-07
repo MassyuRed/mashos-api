@@ -4422,6 +4422,134 @@ class CMEEFinalCurrentMoodSourceTest(unittest.TestCase):
                 derive(**{**args, "semantic_contributions": (changed,), "contributions": (changed,)})
 
 
+class CMEEFinalCurrentExpressionNominalTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = "何を変えたいのかはまだ分からない"
+        cls.context = "以前より楽にはなった"
+        cls.row = {"case_id": "public-quotative-expression", "input": {
+            "thought_text": cls.context + "。でも" + cls.source + "。",
+            "action_text": "", "categories": ["学習"],
+            "emotions": [{"type": "不安", "strength": "medium"}],
+        }}
+        cls.a = _full_surface_artifacts(cls.row)
+
+    def test_complete_expression_and_selected_relation_reach_same_reception(self):
+        a = self.a
+        self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+        self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+        self.assertEqual(a.sentence_plan.recovery_stage, "full")
+        nominal = self.source + "という言葉"
+        follow = _reception_text(a.surface.text)
+        self.assertEqual(follow.count(nominal), 1)
+        self.assertNotIn("置かれた言葉", follow)
+        self.assertIn(self.context + "ことと" + nominal + "との違い", follow)
+        self.assertIn("どちらの側も残したまま、小さくせずに受け止めています", follow)
+        plan = a.plan.response_plan.human_reception_plan
+        self.assertEqual(len(plan.moves), 1)
+        move = plan.moves[0]
+        self.assertEqual(move.reception_act, "stay_with_current_burden")
+        self.assertEqual(move.reference_mode, "short_anchor_if_ambiguous")
+        index = {n.nucleus_id: n for n in a.plan.nuclei}
+        ref = reception_owner.resolve_grounded_reception_move_referent(
+            plan, move, index, a.resolver, allow_short_anchor=False,
+            final_source_fidelity=True, plan=a.plan,
+        )
+        self.assertEqual((ref.kind, ref.text, ref.source_anchor_used),
+                         ("current_expression", nominal, False))
+        self.assertEqual(reception_owner._source_grounded_referent_predicate_kind(ref.kind), "source_bounded")
+        self.assertEqual(a.plan.nuclei, _compile_inputs(self.row).grounded_plan.nuclei)
+
+    def test_expression_suffix_context_and_reception_duties_survive_inverse(self):
+        a = self.a
+        nominal = self.source + "という言葉"
+        for old, new in (
+            (nominal, self.source + "こと"),
+            (nominal, self.source + "ということ"),
+            (nominal, "その言葉"),
+            (nominal, "分かったという言葉"),
+            (nominal, self.source.replace("分からない", "分からなかった") + "という言葉"),
+            (nominal, "別のことという言葉"),
+            (nominal, "「" + nominal + "」"), (nominal, "『" + nominal + "』"),
+            (nominal, nominal + "と" + nominal),
+            (self.context + "こと", "別のこと"),
+            ("との違い", "と同じこと"),
+            ("どちらの側も残したまま、", "片方だけを残して、"),
+            ("小さくせずに", "小さく扱って"),
+            ("受け止めています", "感じています"),
+        ):
+            with self.subTest(replacement=new):
+                body = _tamper_reception(a.surface.text, old, new)
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(inverse.passed)
+        witness = surface_owner.parse_grounded_surface_body_bytes(a.surface.text.encode("utf-8"))
+        encoded = a.surface.text.encode("utf-8")
+        self.assertTrue(any(m.marker_kind == "reception" and m.marker_code == "target_words"
+                            and encoded[m.utf8_byte_start:m.utf8_byte_end].decode() == "という言葉"
+                            for m in witness.markers))
+        body = (surface_owner.OBSERVATION_SECTION_LABEL + "\n記録があります。\n"
+                + surface_owner.RECEPTION_SECTION_LABEL + "\n物を買うということを大切に思っています。")
+        self.assertFalse(any(m.marker_code == "finite_clause_nominal"
+                             for m in surface_owner.parse_grounded_surface_body_bytes(body.encode()).markers))
+
+    def test_expression_grammar_requires_whole_same_source_and_keeps_legacy(self):
+        a = self.a
+        rp = a.plan.response_plan.human_reception_plan
+        move = rp.moves[0]
+        index = {n.nucleus_id: n for n in a.plan.nuclei}
+        target = index[move.target_nucleus_ids[0]]
+        derive = reception_owner.source_grounded_current_expression_nominal
+        nominal = self.source + "という言葉"
+        self.assertEqual(derive(move, a.plan, index, a.resolver), nominal)
+        self.assertEqual(derive(move, None, index, a.resolver), "")
+        self.assertEqual(derive(move, replace(a.plan, source_contracts=()), index, a.resolver), "")
+        self.assertEqual(derive(replace(move, move_id="foreign"), a.plan, index, a.resolver), "")
+        for changes in (
+            {"actor": "other"}, {"actor": "unknown"}, {"modality": "wish"},
+            {"modality": "intention"},
+            {"attribute_codes": (*target.semantic_frame.attribute_codes, "quantity:multiple")},
+            {"attribute_codes": (*target.semantic_frame.attribute_codes, "operator:performed_action")},
+        ):
+            changed = replace(target, semantic_frame=replace(target.semantic_frame, **changes))
+            plan = replace(a.plan, nuclei=tuple(changed if n == target else n for n in a.plan.nuclei))
+            with self.subTest(changes=changes):
+                self.assertEqual(derive(move, plan, {**index, target.nucleus_id: changed}, a.resolver), "")
+        spans = tuple(a.resolver.resolve_many(a.resolver.span_ids))
+        # Ledger drops terminal punctuation. Identical spans do not prove
+        # a declarative source field, so this grammar must remain words-only.
+        for punctuation in ("？", "！"):
+            row = {**self.row, "input": {**self.row["input"],
+                   "thought_text": self.row["input"]["thought_text"][:-1] + punctuation}}
+            source = freeze_text_source(_request_from_row(row))
+            self.assertEqual(source.evidence_spans, spans)
+            resolver = build_evidence_span_resolver(
+                source.evidence_spans, current_input=source.normalized_current_input,
+            )
+            self.assertEqual(derive(move, a.plan, index, resolver), nominal)
+            self.assertNotEqual(nominal, self.source + "ということ")
+        for suffix in ("？", "！", "…", "‥", "けど", "と", "。別の文"):
+            altered = tuple(replace(s, raw_text=s.raw_text + suffix)
+                            if s.span_id == target.source_span_ids[0] else s for s in spans)
+            with self.subTest(suffix=suffix):
+                resolver = build_evidence_span_resolver(altered)
+                if suffix == "。別の文":
+                    with self.assertRaises(reception_owner.GroundedHumanReceptionSurfaceError):
+                        derive(move, a.plan, index, resolver)
+                else:
+                    self.assertEqual(derive(move, a.plan, index, resolver), "")
+        with patch.object(reception_owner, "_source_grounded_clause_candidate", return_value="分からない"):
+            self.assertEqual(derive(move, a.plan, index, a.resolver), "")
+        for final, stage in ((False, "full"), (True, "integrated")):
+            ref = reception_owner.resolve_grounded_reception_move_referent(
+                rp, move, index, a.resolver, allow_short_anchor=False,
+                final_source_fidelity=final, recovery_stage=stage, plan=a.plan,
+            )
+            self.assertNotEqual(ref.text, nominal)
+
+
 class CMEEFinalUnfinishedStateReferentTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

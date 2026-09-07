@@ -2287,13 +2287,63 @@ def source_grounded_future_action_nominal(
     return f"{clause}こと"
 
 
-def _source_grounded_burden_nominal_responsibility(text: str, nominal: str) -> bool:
+def _source_grounded_burden_nominal_responsibility(
+    text: str, nominal: str, *, allow_relation_object: bool = False,
+) -> bool:
+    case = "" if allow_relation_object else r"(?:を|に)"
     return bool(nominal and re.search(
-        re.escape(nominal) + r"(?:を|に)[^。！？!?]*?小さくせずに(?:"
+        re.escape(nominal) + case + r"[^。！？!?]*?小さくせずに(?:"
         r"(?:受け止めて|気にかけて)(?:います|いて)|"
         r"(?:受け止め|気にかけ)たいです)",
         text,
     ))
+
+
+def source_grounded_current_expression_nominal(
+    move: GroundedReceptionMovePlan,
+    plan: GroundedObservationPlan | None,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+) -> str:
+    """Shorten the existing words referent without asserting its content.
+
+    The whole source span and quotative stay explicit. A span cannot prove
+    the original field's declarative boundary: Ledger removes punctuation.
+    Keep a words reference, not a fact nominal, and preserve the selected
+    act, scope and axes. Anaphoric callers retain their existing boundary.
+    """
+    if (plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
+        or move not in plan.response_plan.human_reception_plan.moves
+        or move.reception_act != "stay_with_current_burden"
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids):
+        return ""
+    nucleus = nucleus_index.get(move.target_nucleus_ids[0])
+    if (nucleus is None or nucleus not in plan.nuclei
+        or len(nucleus.source_span_ids) != 1
+        or any(code.startswith("quantity:") and code.removeprefix("quantity:")
+               not in {"not_applicable", "source_bounded", "unknown"}
+               for code in nucleus.semantic_frame.attribute_codes)
+        or "operator:performed_action" in nucleus.semantic_frame.attribute_codes):
+        return ""
+    fragment = _source_grounded_clause_candidate(nucleus, resolver)
+    profile = _source_grounded_semantic_profile(nucleus, fragment)
+    fields = resolver.source_fields_for(nucleus.source_span_ids)
+    raw = re.sub(r"\s+", " ", resolver.resolve(nucleus.source_span_ids[0]).raw_text).strip(
+        " \u3000、,。．.",
+    )
+    if (profile.actor_kind != "SELF" or profile.quoted_boundary
+        or profile.performed_action or profile.future_action
+        or profile.modality not in {"fact", "feeling", "uncertain"}
+        or len(fields) != 1 or fields[0] not in {"memo", "memo_action"}
+        or raw != fragment
+        or any(re.search(r"[「」『』…‥?？!！]", span.raw_text)
+               for span in resolver.resolve_many(resolver.span_ids)
+               if span.source_field in fields)
+        or _SOURCE_GROUNDED_TRAILING_CONNECTIVE_RE.search(fragment)
+        or not (_SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragment)
+                or _SOURCE_GROUNDED_NONPAST_MORPHOLOGY_RE.search(fragment))):
+        return ""
+    return fragment + "という言葉"
 
 
 def resolve_grounded_reception_referent(
@@ -2797,7 +2847,11 @@ def resolve_grounded_reception_move_referent(
             final_source_fidelity=final_source_fidelity,
         )
     if final_source_fidelity and effective_reference != "anaphoric_first":
-        if referent.kind == "self_started_effort":
+        if referent.kind == "current_expression":
+            nominal = source_grounded_current_expression_nominal(move, plan, nucleus_index, resolver)
+            if nominal:
+                return replace(referent, text=nominal)
+        elif referent.kind == "self_started_effort":
             nominal = source_grounded_performed_action_nominal(move, nucleus_index, resolver)
             if nominal:
                 return replace(referent, text=nominal)
@@ -3627,6 +3681,14 @@ def validate_grounded_human_reception_surface(
                 reception_plan, move, surface.recovery_stage,
             ) != "anaphoric_first"
         ) if final_nuclei else ()
+        expression_nominals = tuple(
+            source_grounded_current_expression_nominal(move, plan, final_nuclei, resolver)
+            for move in active_moves
+            if move.reception_act == act == "stay_with_current_burden"
+            and reception_effective_move_reference_mode(
+                reception_plan, move, surface.recovery_stage,
+            ) != "anaphoric_first"
+        ) if final_nuclei else ()
         visible = (
             _retained_future_intention_responsibility(surface.text)
             if future_intention else
@@ -3643,6 +3705,8 @@ def validate_grounded_human_reception_surface(
                    for nominal in burden_nominals)
             or any(_retained_wish_nominal_responsibility(surface.text, nominal)
                    for nominal in wish_nominals)
+            or any(_source_grounded_burden_nominal_responsibility(surface.text, nominal, allow_relation_object=True)
+                   for nominal in expression_nominals)
         )
         visible_responsibilities.append(visible)
         if not visible:
@@ -7275,7 +7339,16 @@ def _source_grounded_target_np(
             and realization.quantity in {"not_applicable", "source_bounded", "unknown"}
             and referent_text == f"{meaning_fragment}こと"
         )
-        if not (action_nominal or wish_nominal) and referent_text.startswith(("その", "それらの")):
+        expression_nominal = bool(
+            profile.actor_kind == "SELF" and not profile.quoted_boundary
+            and not profile.performed_action and not profile.future_action
+            and referent_kind == "current_expression"
+            and move.reception_act == "stay_with_current_burden"
+            and realization.target_slot_count == 1
+            and realization.quantity in {"not_applicable", "source_bounded", "unknown"}
+            and referent_text == f"{meaning_fragment}という言葉"
+        )
+        if not (action_nominal or wish_nominal or expression_nominal) and referent_text.startswith(("その", "それらの")):
             raise GroundedHumanReceptionSurfaceError(
                 "REALIZABLE_RECEPTION_EXPRESSION_REFERENCE_GAP"
             )
@@ -7294,7 +7367,7 @@ def _source_grounded_target_np(
                 predicate_kind=realization.predicate_kind,
             )
         )
-        if action_nominal or wish_nominal:
+        if action_nominal or wish_nominal or expression_nominal:
             content_target = referent_text
         elif referent_kind in {"current_expression", "grounded_effort"}:
             content_target = f"{meaning_fragment}という{quantity_modifier}{referent_text}"
@@ -8135,7 +8208,14 @@ def _author_source_grounded_reception_clauses(
                         move, nucleus_index, resolver,
                     ) or source_grounded_future_action_nominal(
                         move, nucleus_index, resolver,
-                    )) else _source_grounded_burden_nominal_responsibility(move_sentence, referent_text)
+                    )) else _source_grounded_burden_nominal_responsibility(
+                        move_sentence, referent_text, allow_relation_object=True,
+                    )
+                    if referent.kind == "current_expression"
+                    and meaning_realization.reference_mode != "ANAPHORIC"
+                    and referent_text == source_grounded_current_expression_nominal(
+                        move, plan, nucleus_index, resolver,
+                    ) else _source_grounded_burden_nominal_responsibility(move_sentence, referent_text)
                     if referent.kind == "current_expression"
                     and meaning_realization.reference_mode == "ANAPHORIC"
                     and referent_text == (source_grounded_feeling_target_nominal(

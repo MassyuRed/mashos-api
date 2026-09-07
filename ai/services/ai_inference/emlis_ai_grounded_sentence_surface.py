@@ -176,7 +176,7 @@ _BODY_RECEPTION_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ("target_feeling", re.compile(r"気持ち")),
     ("target_help", re.compile(r"助け|相談|面談|一歩")),
     ("target_self_evaluation", re.compile(r"自己評価|言葉だけであなた自身が決ま")),
-    ("target_words", re.compile(r"その言葉|置かれた言葉")),
+    ("target_words", re.compile(r"その言葉|置かれた言葉|という言葉")),
 )
 _BODY_SEMANTIC_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ("change", re.compile(r"変化|変わ|進み|進歩|増え|減っ|戻っ|できるよう|になった")),
