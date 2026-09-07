@@ -6602,7 +6602,7 @@ def _source_grounded_argument_surface(
     target_owner_slot: int = 0,
     distributive_relation_slot: int | None = None,
     anaphoric_context_object: tuple[int, str] | None = None,
-    material_contrast_object: bool = False,
+    material_pair_object: bool = False,
 ) -> tuple[str, tuple[int, ...], tuple[int, ...]]:
     """Realize bounded heads in one relation clause per endpoint pair."""
 
@@ -6618,18 +6618,18 @@ def _source_grounded_argument_surface(
         and move.relations[distributive_relation_slot].relation_kind == "contrast"
     )
     if distributive_contrast and (
-        material_contrast_object or distributive_relation_slot != 0
+        material_pair_object or distributive_relation_slot != 0
         or len(move.relations) != 1 or len(move.semantic_fragments) != 2
         or move.reference_mode == "ANAPHORIC" or anaphoric_context_object is not None
         or move.relations[0].endpoint_roles != ("LEFT", "RIGHT")
         or len(set(move.relations[0].endpoint_slots)) != 2
     ):
         raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP")
-    if material_contrast_object and (
+    if material_pair_object and (
         len(move.relations) != 1 or len(move.semantic_fragments) != 2
         or move.reference_mode == "ANAPHORIC"
         or distributive_relation_slot is not None or anaphoric_context_object is not None
-        or move.relations[0].relation_kind != "contrast"
+        or move.relations[0].relation_kind not in {"contrast", "wish_and_constraint", "attempt_and_block"}
         or move.relations[0].endpoint_roles != ("LEFT", "RIGHT")
         or len(set(move.relations[0].endpoint_slots)) != 2
     ):
@@ -6787,11 +6787,13 @@ def _source_grounded_argument_surface(
         nominal_head = _SOURCE_GROUNDED_RELATION_FRAMES[
             relation.relation_kind
         ].nominal_head
-        if material_contrast_object:
-            if (first.case_marker, second.case_marker) != ("と", "との"):
+        if material_pair_object:
+            if (first.case_marker, second.case_marker) != (
+                ("と", "との") if relation.relation_kind == "contrast" else ("と", "が")
+            ):
                 raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
             # Both full objects stay governed by attention and reception.
-            # Contrast remains pending until the predicate emits its adjunct.
+            # The typed relation remains pending until its predicate adjunct.
             relation_phrases.append(f"{first_nominal}と{second_nominal}")
         elif anaphoric_context_object is not None:
             context_slot, context_nominal = anaphoric_context_object
@@ -6836,7 +6838,7 @@ def _source_grounded_argument_surface(
                 + (nominal_head if nominal_head is not None else f"{finite}こと")
             )
         appended_semantic_slots.update(relation.endpoint_slots)
-        if not (material_contrast_object or distributive_contrast):
+        if not (material_pair_object or distributive_contrast):
             appended_relation_slots.append(relation_slot)
     independent_target = (
         (target_nominal,)
@@ -6850,7 +6852,7 @@ def _source_grounded_argument_surface(
         raise GroundedHumanReceptionSurfaceError(
             "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
         )
-    expected_completed_slots = () if material_contrast_object or distributive_contrast else tuple(range(len(move.relations)))
+    expected_completed_slots = () if material_pair_object or distributive_contrast else tuple(range(len(move.relations)))
     if tuple(appended_relation_slots) != expected_completed_slots:
         raise GroundedHumanReceptionSurfaceError(
             "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
@@ -7272,7 +7274,7 @@ def _validate_source_grounded_clause_core(
             core.pending_relation_slots != (0,) or core.relation_count != 0
             or len(realization.relations) != 1 or len(realization.semantic_fragments) != 2
             or realization.reference_mode == "ANAPHORIC"
-            or realization.relations[0].relation_kind != "contrast"
+            or realization.relations[0].relation_kind not in {"contrast", "wish_and_constraint", "attempt_and_block"}
             or realization.relations[0].endpoint_roles != ("LEFT", "RIGHT")
             or len(set(realization.relations[0].endpoint_slots)) != 2
         )
@@ -7362,7 +7364,8 @@ def _source_grounded_target_np(
     target_owner_slot: int,
     distributive_relation_slot: int | None = None,
     anaphoric_context_object: tuple[int, str] | None = None,
-    material_contrast_object: bool = False,
+    material_pair_object: bool = False,
+    material_change_object: bool = False,
 ) -> _SourceGroundedClauseCoreV1:
     """Build one grammatical content core with one inverse referent."""
 
@@ -7470,10 +7473,10 @@ def _source_grounded_target_np(
             }
         ):
             content_target = f"{meaning_fragment}という{quantity_modifier}{referent_text}"
-        elif (material_contrast_object and referent_kind == "lived_change"
+        elif ((material_pair_object or material_change_object) and referent_kind == "lived_change"
               and _SOURCE_GROUNDED_FINITE_END_RE.search(meaning_fragment)):
             # The proven change clause directly modifies the same referent.
-            # Its contrast partner remains a separate, fully stated object.
+            # Any relation partner remains a separate, fully stated object.
             content_target = f"{meaning_fragment}という{quantity_modifier}{referent_text}"
         else:
             content_target = (
@@ -7487,7 +7490,7 @@ def _source_grounded_target_np(
         target_owner_slot=target_owner_slot,
         distributive_relation_slot=distributive_relation_slot,
         anaphoric_context_object=anaphoric_context_object,
-        material_contrast_object=material_contrast_object,
+        material_pair_object=material_pair_object,
     )
     adjuncts = _dedupe(
         adjunct
@@ -7500,7 +7503,7 @@ def _source_grounded_target_np(
         target_referent=referent_text,
         semantic_slots=semantic_slots,
         relation_count=len(relation_slots),
-        pending_relation_slots=(0,) if material_contrast_object or (
+        pending_relation_slots=(0,) if material_pair_object or (
             distributive_relation_slot is not None
             and realization.relations[distributive_relation_slot].relation_kind == "contrast"
         ) else (),
@@ -7616,6 +7619,7 @@ def _source_grounded_response_predicate(
     unfinished_change: bool = False,
     unfinished_pair: bool = False,
     pending_relation_slots: tuple[int, ...] = (),
+    pending_relation_kind: str | None = None,
 ) -> _SourceGroundedResponsePredicateV1:
     """Compose role valency independently from the act predicate."""
 
@@ -7788,9 +7792,12 @@ def _source_grounded_response_predicate(
     completed_relation_slots = ()
     if type(pending_relation_slots) is not tuple or any(type(slot) is not int for slot in pending_relation_slots):
         raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+    if not pending_relation_slots and pending_relation_kind is not None:
+        raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
     if pending_relation_slots:
-        material_contrast = bool(
-            move_role == "attention" and not distributive_object
+        material_pair = bool(
+            (move_role == "attention" or move_role == "felt_response" and pending_relation_kind in {"wish_and_constraint", "attempt_and_block"})
+            and not distributive_object
             and (
                 reception_act == "recognize_lived_change" and referent_kind == "positive_feeling"
                 or material_change
@@ -7811,11 +7818,15 @@ def _source_grounded_response_predicate(
             and not semantic_profile.quoted_boundary
         )
         if (pending_relation_slots != (0,) or unfinished_change or unfinished_pair
-            or not (material_contrast or preserved_contrast)):
+            or pending_relation_kind not in {"contrast", "wish_and_constraint", "attempt_and_block"}
+            or preserved_contrast and pending_relation_kind != "contrast"
+            or not (material_pair or preserved_contrast)):
             raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
-        if material_contrast:
-            valency_complement = "それらを、"
-            reception_operator = "その違いも含めて"
+        if material_pair:
+            valency_complement = "それらを、" if move_role == "attention" else ""
+            reception_operator = ("" if move_role == "attention" else "、") + (
+                "その違いも含めて" if pending_relation_kind == "contrast" else "その重なりも含めて"
+            )
         else:
             # Both complete objects carry the selected noncollapse duty.
             # Complete their still-pending contrast in this same predicate.
@@ -7899,6 +7910,7 @@ def _source_grounded_response_predicate_surface(
     unfinished_change: bool = False,
     unfinished_pair: bool = False,
     pending_relation_slots: tuple[int, ...] = (),
+    pending_relation_kind: str | None = None,
 ) -> str:
     """Place the governed object and adjunct around one inflected predicate."""
 
@@ -7915,6 +7927,7 @@ def _source_grounded_response_predicate_surface(
         unfinished_change=unfinished_change,
         unfinished_pair=unfinished_pair,
         pending_relation_slots=pending_relation_slots,
+        pending_relation_kind=pending_relation_kind,
     )
     if (type(predicate.completed_relation_slots) is not tuple
         or any(type(slot) is not int for slot in predicate.completed_relation_slots)
@@ -8042,6 +8055,8 @@ def _source_grounded_reception_fragment(
         distributive_object=distributive_object,
         unfinished_pair=unfinished_pair,
         pending_relation_slots=target_core.pending_relation_slots,
+        pending_relation_kind=(realization.relations[target_core.pending_relation_slots[0]].relation_kind
+                               if target_core.pending_relation_slots else None),
         unfinished_change=(
             realization.reference_mode == "ANAPHORIC"
             and target_core.target_referent == _SOURCE_GROUNDED_UNFINISHED_CHANGE_REFERENT
@@ -8266,8 +8281,25 @@ def _author_source_grounded_reception_clauses(
                 and not meaning_realization.semantic_profiles[target_owner_slot].performed_action
                 and not meaning_realization.semantic_profiles[target_owner_slot].future_action):
                 distributive_relation_slot = 0
-            material_contrast_object = bool(
-                move.move_role == "attention"
+            material_change_object = bool(
+                move.reception_act == "recognize_lived_change" and referent.kind == "lived_change"
+                and meaning_realization.semantic_profiles[target_owner_slot].nucleus_kind == "change"
+                and (meaning_realization.semantic_profiles[target_owner_slot].predicate_kind,
+                     meaning_realization.semantic_profiles[target_owner_slot].modality)
+                in {("change", "fact"), ("feeling", "feeling")}
+                and meaning_realization.semantic_profiles[target_owner_slot].actor_kind == "SELF"
+                and not meaning_realization.semantic_profiles[target_owner_slot].performed_action
+                and not meaning_realization.semantic_profiles[target_owner_slot].future_action
+                and not meaning_realization.semantic_profiles[target_owner_slot].quoted_boundary
+                and _selected_material_appraisal(selected_decision)
+                and meaning_realization.reference_mode != "ANAPHORIC"
+                and not meaning_realization.relations
+                and len(meaning_realization.semantic_fragments) == 1
+            )
+            material_pair_object = bool(
+                (move.move_role == "attention" or move.move_role == "felt_response"
+                 and len(meaning_realization.relations) == 1
+                 and meaning_realization.relations[0].relation_kind in {"wish_and_constraint", "attempt_and_block"})
                 and (
                     move.reception_act == "recognize_lived_change" and referent.kind == "positive_feeling"
                     or move.reception_act == "recognize_lived_change" and referent.kind == "lived_change"
@@ -8292,11 +8324,17 @@ def _author_source_grounded_reception_clauses(
                 and distributive_relation_slot is None and anaphoric_context_object is None
                 and len(meaning_realization.semantic_fragments) == 2
                 and len(applicable_relations) == len(meaning_realization.relations) == 1
-                and meaning_realization.relations[0].relation_kind == "contrast"
+                and meaning_realization.relations[0].relation_kind in {"contrast", "wish_and_constraint", "attempt_and_block"}
+                and (meaning_realization.relations[0].relation_kind == "contrast"
+                     or selected_proposition.focal_relation_ref is None
+                     and appraisal.focal_relation_ref is None)
                 and meaning_realization.relations[0].endpoint_roles == ("LEFT", "RIGHT")
                 and len(set(meaning_realization.relations[0].endpoint_slots)) == 2
                 and {applicable_relations[0].from_nucleus_id, applicable_relations[0].to_nucleus_id}
-                <= selected_basis_nuclei & appraised_primary_nuclei
+                <= {semantic_nucleus_map[basis.semantic_ref] for basis in selected_decision.basis_rows
+                    if basis.contribution_ref in selected_decision.selected_contribution_refs
+                    and basis.binding_ref in appraisal.appraised_bindings
+                    and basis.semantic_ref in selected_proposition.primary_target_refs}
             )
             target_core = _source_grounded_target_np(
                 move,
@@ -8308,7 +8346,8 @@ def _author_source_grounded_reception_clauses(
                 target_owner_slot=target_owner_slot,
                 distributive_relation_slot=distributive_relation_slot,
                 anaphoric_context_object=anaphoric_context_object,
-                material_contrast_object=material_contrast_object,
+                material_pair_object=material_pair_object,
+                material_change_object=material_change_object,
             )
             if meaning_realization.reference_mode == "ANAPHORIC":
                 # Only the context actually emitted by the attributable

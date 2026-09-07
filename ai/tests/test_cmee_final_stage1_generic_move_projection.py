@@ -2378,6 +2378,89 @@ class CMEEFinalStage1GenericMoveProjectionTest(unittest.TestCase):
             wrong_inverse.failure_codes,
         )
 
+    def test_material_related_objects_keeps_both_targets_and_completes_the_same_relation(self):
+        seen_roles, seen_kinds = set(), set()
+        for a in (self.artifacts[key] for key in _TYPED_RELATION_CLOSURE_CASE_IDS):
+            if "その重なりも含めて" not in _reception_text(a.surface.text):
+                continue
+            cores, predicates = [], []
+            target = reception_owner._source_grounded_target_np
+            predicate = reception_owner._source_grounded_response_predicate_surface
+            def trace_target(move, realization, **kwargs):
+                core = target(move, realization, **kwargs)
+                if core.pending_relation_slots:
+                    cores.append((move, core, realization, kwargs))
+                return core
+            def trace_predicate(reception_act, move_role, **kwargs):
+                value = predicate(reception_act, move_role, **kwargs)
+                if kwargs.get("pending_relation_slots"):
+                    predicates.append({"reception_act": reception_act, "move_role": move_role, **kwargs})
+                return value
+            reception = a.plan.response_plan.human_reception_plan
+            line = next(line for line in a.sentence_plan.lines if line.binding.line_role == "human_follow")
+            with patch.object(reception_owner, "_source_grounded_target_np", side_effect=trace_target), patch.object(
+                    reception_owner, "_source_grounded_response_predicate_surface", side_effect=trace_predicate):
+                replay = reception_owner.replay_source_grounded_human_reception_from_plan(
+                    reception, {n.nucleus_id: n for n in a.plan.nuclei}, a.resolver,
+                    plan=a.plan, recovery_stage=a.sentence_plan.recovery_stage,
+                    clause_plans=line.reception_clause_plans,
+                    selected_subjective_input=a.selected_subjective_input)
+            self.assertEqual(replay.text, _reception_text(a.surface.text).strip())
+            self.assertTrue(a.gate.passed and a.inverse.passed)
+            self.assertTrue(cores and predicates)
+            for (move, core, realization, target_kw), kw in zip(cores, predicates, strict=True):
+                if kw["pending_relation_kind"] not in {"wish_and_constraint", "attempt_and_block"}:
+                    continue
+                seen_roles.add(kw["move_role"])
+                seen_kinds.add(kw["pending_relation_kind"])
+                self.assertEqual((core.relation_count, core.pending_relation_slots, core.semantic_slots),
+                                 (0, (0,), (0, 1)))
+                self.assertTrue(target_kw["material_pair_object"])
+                relation = realization.relations[0]
+                self.assertEqual(relation.relation_kind, kw["pending_relation_kind"])
+                self.assertEqual(relation.endpoint_roles, ("LEFT", "RIGHT"))
+                decision = kw["selected_subjective_decision"]
+                prop = decision.subjective_proposition
+                self.assertTrue(reception_owner._selected_material_appraisal(decision))
+                self.assertIsNone(prop.focal_relation_ref)
+                self.assertIsNone(prop.appraisal_content.focal_relation_ref)
+                semantic_map = dict(a.selected_subjective_input.semantic_nucleus_pairs)
+                selected = {semantic_map[b.semantic_ref] for b in decision.basis_rows
+                            if b.contribution_ref in decision.selected_contribution_refs
+                            and b.binding_ref in prop.appraisal_content.appraised_bindings
+                            and b.semantic_ref in prop.primary_target_refs}
+                owned = [r for r in a.plan.relations if r.type == relation.relation_kind
+                         and set(move.target_nucleus_ids).intersection({r.from_nucleus_id, r.to_nucleus_id})
+                         and {r.from_nucleus_id, r.to_nucleus_id} <= selected]
+                self.assertEqual(len(owned), 1)
+                ending = ("に目が留まり、それらを、" if kw["move_role"] == "attention" else "を、")
+                self.assertIn(core.text + ending + "その重なりも含めて", replay.text)
+                for old, new in (
+                    ("その重なりも含めて", ""), ("その重なりも含めて", "その違いも含めて"),
+                    (core.text, "別の出来事"), (core.text, "「" + core.text + "」"),
+                    *((fragment, "別の内容") for fragment in realization.semantic_fragments),
+                    ("受け止めています", "受け止めていました"),
+                ):
+                    body = _tamper_reception(a.surface.text, old, new)
+                    self.assertFalse(evaluate_grounded_surface_body_inverse(
+                        body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
+                        resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+                    self.assertFalse(evaluate_grounded_observation_gate(
+                        plan=a.plan, sentence_plan=a.sentence_plan, surface_result=replace(a.surface, text=body),
+                        resolver=a.resolver, require_body_inverse=True,
+                        selected_subjective_input=a.selected_subjective_input).passed)
+                for updates in (
+                    {"pending_relation_kind": None}, {"pending_relation_kind": "user_stated_cause"},
+                    {"pending_relation_kind": "coexistence"},
+                    {"pending_relation_slots": (False,)}, {"pending_relation_slots": (1,)},
+                    {"pending_relation_slots": ()}, {"distributive_object": True},
+                    {"unfinished_pair": True}, {"move_role": "significance"},
+                ):
+                    with self.assertRaises(reception_owner.GroundedHumanReceptionSurfaceError):
+                        predicate(**{**kw, **updates})
+        self.assertEqual(seen_roles, {"attention", "felt_response"})
+        self.assertEqual(seen_kinds, {"wish_and_constraint", "attempt_and_block"})
+
     def test_typed_relation_closure_cases_compile_through_hard_gate(self) -> None:
         for case_id in _TYPED_RELATION_CLOSURE_CASE_IDS:
             with self.subTest(case_id=case_id):
@@ -4765,6 +4848,35 @@ class CMEEFinalMaterialChangeReceptionTest(unittest.TestCase):
         for update in updates:
             with self.subTest(update=update), self.assertRaises(reception_owner.GroundedHumanReceptionSurfaceError):
                 render(**{**kw, **update})
+
+
+    def test_single_material_change_keeps_the_whole_source_as_one_change(self):
+        for name in ("single", "feeling"):
+            a, cores, _predicates = self.cases[name]
+            core, realization = cores[0]
+            with self.subTest(name=name):
+                self.assertEqual(len(realization.semantic_fragments), 1)
+                source = realization.semantic_fragments[0]
+                self.assertEqual(core.text, source + "という変化")
+                self.assertEqual((core.relation_count, core.pending_relation_slots), (0, ()))
+                follow = _reception_text(a.surface.text)
+                self.assertEqual(follow.count(source), 1)
+                self.assertEqual(follow.count("変化"), 1)
+                self.assertNotIn("ことに表れた変化", follow)
+                for replacement in (
+                    source + "ことに表れた変化", source + "ということ",
+                    source + "という願い", "別の出来事という変化",
+                    "「" + source + "」という変化",
+                ):
+                    body = _tamper_reception(a.surface.text, core.text, replacement)
+                    self.assertNotEqual(body, a.surface.text)
+                    self.assertFalse(evaluate_grounded_surface_body_inverse(
+                        body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
+                        resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+                    self.assertFalse(evaluate_grounded_observation_gate(
+                        plan=a.plan, sentence_plan=a.sentence_plan,
+                        surface_result=replace(a.surface, text=body), resolver=a.resolver,
+                        require_body_inverse=True, selected_subjective_input=a.selected_subjective_input).passed)
 
 
 class CMEEFinalMaterialWishContrastTest(unittest.TestCase):
