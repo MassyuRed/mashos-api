@@ -4489,6 +4489,118 @@ class CMEEFinalSelectedMaterialFeelingTest(unittest.TestCase):
                     selected_subjective_input=a.selected_subjective_input).passed)
 
 
+class CMEEFinalMaterialContrastObjectsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.row = {"case_id": "public-material-contrast", "input": {
+            "thought_text": "今日はうれしかった。でも周りに頼った場面も多く、一人の実績として伝えてよいのか迷っている。",
+            "action_text": "道具を揃えて展示の準備をした。", "categories": ["学習"],
+            "emotions": [{"type": "喜び", "strength": "medium"}],
+        }}
+        cls.cores, cls.predicates = [], []
+        target = reception_owner._source_grounded_target_np
+        predicate = reception_owner._source_grounded_response_predicate_surface
+        def track_target(move, realization, **kwargs):
+            result = target(move, realization, **kwargs)
+            if result.pending_relation_slots:
+                cls.cores.append((result, realization, kwargs))
+            return result
+        def track_predicate(reception_act, move_role, **kwargs):
+            result = predicate(reception_act, move_role, **kwargs)
+            if kwargs.get("pending_relation_slots"):
+                cls.predicates.append({"reception_act": reception_act, "move_role": move_role, **kwargs})
+            return result
+        with patch.object(reception_owner, "_source_grounded_target_np", side_effect=track_target), patch.object(
+                reception_owner, "_source_grounded_response_predicate_surface", side_effect=track_predicate):
+            cls.a = _full_surface_artifacts(cls.row)
+
+    def test_complete_ordered_objects_and_selected_contrast_are_received_together(self):
+        a = self.a
+        self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+        self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+        self.assertTrue(self.cores)
+        core, realization, kwargs = self.cores[0]
+        self.assertEqual(core.relation_count, 0)
+        self.assertEqual(core.pending_relation_slots, (0,))
+        self.assertEqual(core.semantic_slots, (0, 1))
+        self.assertEqual(realization.relations[0].relation_kind, "contrast")
+        follow = _reception_text(a.surface.text)
+        self.assertIn(core.text + "に目が留まり、それらを、その違いも含めて受け止めています", follow)
+        self.assertNotIn("との違いに目が留まり", follow)
+        for fragment in realization.semantic_fragments:
+            self.assertEqual(core.text.count(fragment), 1)
+        self.assertEqual(a.plan.nuclei, _compile_inputs(self.row).grounded_plan.nuclei)
+        decision = self.predicates[0]["selected_subjective_decision"]
+        self.assertTrue(reception_owner._selected_material_appraisal(decision))
+        semantic_map = dict(a.selected_subjective_input.semantic_nucleus_pairs)
+        primary = {semantic_map[ref] for ref in decision.subjective_proposition.primary_target_refs}
+        appraised = {semantic_map[b.semantic_ref] for b in decision.basis_rows
+                     if b.binding_ref in decision.subjective_proposition.appraisal_content.appraised_bindings
+                     and b.contribution_ref in decision.selected_contribution_refs}
+        relation = next(r for r in a.plan.relations if r.type == "contrast")
+        self.assertLessEqual({relation.from_nucleus_id, relation.to_nucleus_id}, primary & appraised)
+
+    def test_independent_replay_rejects_endpoint_contrast_and_reception_loss(self):
+        a = self.a
+        core, realization, _kwargs = self.cores[0]
+        left, right = realization.semantic_fragments
+        for old, new in (
+            (left, "別の気持ち"), (right, "別のこと"),
+            (core.text, core.text.replace(left, "TEMP").replace(right, left).replace("TEMP", right)),
+            ("それらを、", ""), ("その違いも含めて", ""),
+            ("その違いも含めて", "同じものとして"),
+            ("受け止めています", "感じています"),
+            (core.text + "に目が留まり、それらを、その違いも含めて",
+             core.text + "との違いに目が留まり、それを"),
+        ):
+            with self.subTest(new=new):
+                body = _tamper_reception(a.surface.text, old, new)
+                self.assertNotEqual(body, a.surface.text)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan, surface_result=replace(a.surface, text=body),
+                    resolver=a.resolver, require_body_inverse=True,
+                    selected_subjective_input=a.selected_subjective_input).passed)
+
+    def test_pending_relation_requires_exact_local_completion_and_same_appraisal(self):
+        core, realization, target_kwargs = self.cores[0]
+        validate = reception_owner._validate_source_grounded_clause_core
+        for pending in ((), (False,), [0], (0, 0), (1,)):
+            with self.subTest(pending=pending), self.assertRaises(reception_owner.GroundedHumanReceptionSurfaceError):
+                validate(replace(core, pending_relation_slots=pending), realization=realization,
+                         target_owner_slot=target_kwargs["target_owner_slot"])
+        with self.assertRaises(reception_owner.GroundedHumanReceptionSurfaceError):
+            validate(replace(core, relation_count=1), realization=realization,
+                     target_owner_slot=target_kwargs["target_owner_slot"])
+        move = self.a.plan.response_plan.human_reception_plan.moves[0]
+        with self.assertRaises(reception_owner.GroundedHumanReceptionSurfaceError):
+            reception_owner._source_grounded_reception_fragment(
+                replace(move, move_role="bounded_counterposition"), realization,
+                context_prefix="", target_core=core, referent_kind="positive_feeling",
+                target_owner_slot=target_kwargs["target_owner_slot"], recovery_stage="full",
+                selected_subjective_decision=self.predicates[0]["selected_subjective_decision"])
+        kwargs = self.predicates[0]
+        render = reception_owner._source_grounded_response_predicate_surface
+        original = reception_owner._source_grounded_response_predicate
+        for completed in ((), (False,), [0], (0, 0), (1,)):
+            def wrong_completion(reception_act, move_role, **arguments):
+                return replace(original(reception_act, move_role, **arguments), completed_relation_slots=completed)
+            with self.subTest(completed=completed), patch.object(
+                    reception_owner, "_source_grounded_response_predicate", side_effect=wrong_completion):
+                with self.assertRaises(reception_owner.GroundedHumanReceptionSurfaceError):
+                    render(**kwargs)
+        decision = kwargs["selected_subjective_decision"]
+        prop = decision.subjective_proposition
+        changed = replace(decision, subjective_proposition=replace(prop, appraisal_content=replace(
+            prop.appraisal_content, operation=contracts_owner.AppraisalOperation.PRESERVE_BOTH_ENDPOINTS)))
+        for updates in ({"pending_relation_slots": (False,)}, {"pending_relation_slots": (0, 0)},
+                        {"selected_subjective_decision": changed}, {"move_role": "felt_response"}):
+            with self.subTest(updates=updates), self.assertRaises(reception_owner.GroundedHumanReceptionSurfaceError):
+                render(**{**kwargs, **updates})
+
+
 class CMEEFinalCurrentExpressionNominalTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
