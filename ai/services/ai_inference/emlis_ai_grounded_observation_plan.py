@@ -3740,6 +3740,30 @@ def _typed_nucleus_projections_for_span(
                 return False
         return True
 
+    def source_proven_past_wish(fragment: str) -> bool:
+        # A plain past reporting host is finite only within the same
+        # first-fragment/source boundary that the final status owner can
+        # locate in the past. Do not broaden the shared current-wish regex.
+        # A repeated fragment cannot prove which endpoint supplied it.
+        if (not fragment.endswith("と思った")
+            or not text.startswith(fragment) or text.count(fragment) != 1
+            or not past_reported_wish_finite(fragment, span_text=text)
+            # Preserve the existing neutral split for a cancelled burden;
+            # new wish authority must not trigger its fail-closed fallback.
+            or _NEGATED_CONSTRAINT_CANCELLATION_RE.search(text)
+            or _NEGATED_RELATION_UNCERTAINTY_CANCELLATION_RE.search(text)):
+            return False
+        source = str((normalized_input or {}).get(source_field) or "")
+        start, end = span.start_index, span.end_index
+        return bool(
+            0 <= start < end <= len(source)
+            and _clean(source[start:end]) == text
+            and _top_level_text(source) == source
+            and not source[:start].strip()
+            and re.fullmatch(r"\s*[。.!！]?\s*", source[end:])
+            and not re.search(r"[「」『』…‥!?！？]", text)
+        )
+
     def affirmative_wish_proof(fragment: str) -> tuple[bool, bool]:
         top_level_fragment = _top_level_text(fragment)
         if top_level_fragment is None:
@@ -3807,6 +3831,7 @@ def _typed_nucleus_projections_for_span(
         finite_wish = bool(
             shared_finite_wish
             or _FINITE_WISH_CLAUSE_END_RE.search(top_level_fragment)
+            or source_proven_past_wish(top_level_fragment)
             or re.search(
                 r"(?:たい|ほしい|欲しい)(?:と|とは)?思"
                 r"(?:う|っている|っていた|っています|っていました|"
@@ -4247,6 +4272,7 @@ def _typed_nucleus_projections_for_span(
         conjunctive_ga_is_finite = bool(
             not link.group(0).startswith("が")
             or _FINITE_WISH_CLAUSE_END_RE.search(left_text)
+            or source_proven_past_wish(left_text)
             or paired_m_row_wish
         )
         right_top_level = _top_level_text(right_text)

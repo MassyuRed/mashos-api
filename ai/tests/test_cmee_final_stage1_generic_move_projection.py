@@ -1365,6 +1365,87 @@ class CMEEFinalSinglePerformedActionReferenceTest(unittest.TestCase):
                 self.assertEqual(rp.quote_policy.max_anchor_count, 0)
 
 
+class CMEECompoundPastReportedWishTest(unittest.TestCase):
+    @staticmethod
+    def _row(text):
+        return {"case_id": "public-compound-past-wish", "input": {
+            "thought_text": text, "action_text": "", "categories": ["生活"],
+            "emotions": [{"type": "不安", "strength": "weak"}],
+        }}
+
+    def test_first_reported_wish_reaches_relation_body_and_past_qualifier(self):
+        for prefix, link in (("", "が"), ("", "けれど"), ("私は", "が")):
+            with self.subTest(prefix=prefix, link=link):
+                report = prefix + "生活を変えたいと思った"
+                a = _full_surface_artifacts(self._row(report + link + "、難しい。"))
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                self.assertEqual(a.sentence_plan.recovery_stage, "full")
+                left, right = a.plan.nuclei[:2]
+                self.assertEqual((left.kind, left.semantic_frame.modality,
+                                  left.semantic_frame.time_scope), ("wish", "wish", "past"))
+                self.assertEqual(right.kind, "constraint")
+                relation, = a.plan.relations
+                self.assertEqual((relation.type, relation.from_nucleus_id, relation.to_nucleus_id),
+                                 ("wish_and_constraint", left.nucleus_id, right.nucleus_id))
+                self.assertEqual(_reception_text(a.surface.text).strip(),
+                                 report + "ことと難しいことの両方を見失わず、大切に受け止めています。")
+                self.assertTrue(any(q.time_scope == "past"
+                                    for d in a.selected_subjective_input.decisions for q in d.qualifier_rows))
+                self.assertTrue(all(kw["selected_subjective_input"] is a.selected_subjective_input
+                                    for _args, kw in a.author_arguments))
+
+    def test_inverse_rejects_present_desire_and_performed_action_substitution(self):
+        a = _full_surface_artifacts(self._row("生活を変えたいと思ったが、難しい。"))
+        for replacement in ("生活を変えたいと思っていること", "今も残る願い", "生活を変えたこと"):
+            with self.subTest(replacement=replacement):
+                body = _tamper_reception(a.surface.text, "生活を変えたいと思ったこと", replacement)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+
+    def test_new_past_license_requires_unique_first_report_and_original_field(self):
+        # These forms retain their existing paths; this test does not call
+        # those paths a product pass or endorse their remaining wish labels.
+        for text in (
+            "生活を変えたいと思ったが、難しい？",
+            "生活を変えたいと思ったが、今は難しい。",
+            "難しいが、生活を変えたいと思った。",
+            "生活を変えたいと思ったが、生活を変えたいと思った。",
+            "友人は生活を変えたいと思ったが、難しい。",
+            "「生活を変えたいと思った」が、難しい。",
+            "生活を変えたいと思ったかもしれないが、難しい。",
+            "生活を変えたいと思わなかったが、難しい。",
+            "生活を変えたいと思ったが、難しい。と友人が話した。",
+            "生活を変えたいと思ったが、難しい…",
+        ):
+            with self.subTest(text=text):
+                plan = _compile_inputs(self._row(text)).grounded_plan
+                self.assertFalse(any(n.kind == "wish" and n.semantic_frame.time_scope == "past"
+                                     for n in plan.nuclei))
+        inputs = _compile_inputs(self._row("生活を変えたいと思ったが、難しい。"))
+        span = inputs.source.evidence_spans[0]
+        frame = inputs.grounded_plan.nuclei[0].semantic_frame
+        for normalized in (None, {"memo": "生活を変えたいと思ったが、難しい？"},
+                           {"memo": "生活を変えたいと思ったが、難しい。と聞いた。"}):
+            projections = observation_plan_owner._typed_nucleus_projections_for_span(
+                span, base_frame=frame, normalized_input=normalized,
+            )
+            self.assertTrue(projections)
+            self.assertEqual(projections[0].kind, "uncertainty")
+
+    def test_cancelled_constraint_keeps_neutral_split_and_complete_body(self):
+        for link in ("が", "けれど"):
+            with self.subTest(link=link):
+                a = _full_surface_artifacts(self._row("生活を変えたいと思った" + link + "、難しくない。"))
+                self.assertEqual(tuple(n.kind for n in a.plan.nuclei[:2]), ("uncertainty", "state"))
+                self.assertEqual(tuple(r.type for r in a.plan.relations), ("contrast",))
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                self.assertIn("難しくないこと", _reception_text(a.surface.text))
+
+
 class CMEEPastReportedWishTest(unittest.TestCase):
     def _wish(self, text):
         source, nucleus = CMEESameNucleusActionStatusTest()._action(text)
