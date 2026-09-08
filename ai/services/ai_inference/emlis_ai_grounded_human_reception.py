@@ -2473,6 +2473,30 @@ def resolve_grounded_reception_referent(
             kind, text = "current_expression", "今ここに置かれた言葉"
         elif kinds & {"reaction", "state", "constraint"}:
             kind, text = "current_burden", "今のしんどさ"
+            # Consume the Move's existing concrete-reference policy here too.
+            # Keep the selected burden and predicate; do not search another
+            # nucleus or shorten its source just to obtain a usable quote.
+            if (
+                allow_short_anchor
+                and recovery_stage in {"full", "optional_removed"}
+                and len(target_nuclei) == 1
+                and not support_nuclei
+                and len(target_nuclei[0].source_span_ids) == 1
+                and not resolver.unresolved_ids(target_nuclei[0].source_span_ids)
+            ):
+                raw = resolver.resolve(target_nuclei[0].source_span_ids[0]).raw_text
+                if raw and raw.translate(_ANCHOR_DELETE_TRANSLATION) == raw:
+                    anchor = _short_bound_anchor(
+                        reception_plan,
+                        nucleus_index,
+                        resolver,
+                        reception_plan.target_nucleus_ids,
+                        recovery_stage,
+                        allow_truncation=False,
+                        effective_reference_mode=effective_reference_mode,
+                    )
+                    if anchor and anchor in raw:
+                        text = f"「{anchor}」というしんどさ"
         else:
             kind, text = "current_expression", "今ここに置かれた言葉"
     elif reception_act == "honor_concrete_effort":
