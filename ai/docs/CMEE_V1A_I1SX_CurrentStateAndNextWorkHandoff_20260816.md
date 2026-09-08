@@ -8,12 +8,12 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. candidate64の開始証拠と、末尾の承認済み限定選択修復・実装再開点を確認する。既存Sentence Surfaceで、原fieldと本人の否定過去報告が証明済みの単独spanだけ、末尾の全角ピリオドを引用内に保持した。元入力・根拠・意味計画・Gateは変更しない。公開合成57件は8件の本文成立／49件全record同一、全57件の根拠とplanは不変。必須332件329 PASS／継承3 FAIL、前回329全成否一致、新規3成功。旧I5等11成功。canonical100は全record・実plan不変、73/27・124責務を維持し、華恋が全100件全文確認してNOT_CLEAR。V2の17件6 PASS／11 FAIL・全42件213候補も同一。共有Ledger案は他の未修復な誤読まで本文を返したため不採用。中心感情の未選択、再掲・定型締め、対象外の報告scopeと他の全角文末は残件。GitHub正本・定例ZIPなしを継続。
+3. candidate65と承認済み限定選択修復の最終検証・残件を末尾で確認する。原文全体で証明済みの現在の感情主語と、別欄の本人の実行済み行動が独立している場合に、既存OPで両方のrequired Moveを選ぶ修正を実装した。気持ちを先に受け取り、元の行動も本文へ残す。公開合成の代表例で2責務・厳格なGate／inverse・回復処理が成立。追加4検査成功、必須336件333 PASS／継承3 FAIL、前回332全成否一致。canonical100の全record・実planはcandidate64と同一で、direct100、73/27、各124。華恋が全100件の原文・観察・受取・可否理由を全文確認してNOT_CLEAR。現在の限定証明は100件の欠落例に適用できておらず、中心感情欠落全体の修復完了とはしない。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-08継続確認：直前の限定案への継続指示を受け、原文で証明済みの本人の気持ちと既存行動をともに残す選択修復を開始。固定runtime復元済み。各124固定への必要責務増加の限定例外はcanonical02末尾の承認節を参照。candidate64は開始時の比較証拠であり、変更後の実行結果は同じ末尾checkpointへ記録する。
+2026-09-08最新（candidate65）：原文全体で証明済みの現在の感情主語と、別欄の本人の実行済み行動が独立している場合に、既存OPで両方のrequired Moveを選ぶ修正を実装した。気持ちを先に受け取り、元の行動も本文へ残す。公開合成の代表例で2責務・厳格なGate／inverse・回復処理が成立。追加4検査成功、必須336件333 PASS／継承3 FAIL、前回332全成否一致。canonical100の全record・実planはcandidate64と同一で、direct100、73/27、各124。華恋が全100件の原文・観察・受取・可否理由を全文確認してNOT_CLEAR。現在の限定証明は100件の欠落例に適用できておらず、中心感情欠落全体の修復完了とはしない。
 
 ## 1. GitHub anchors
 
@@ -6637,3 +6637,25 @@ canonical100を同じ入力・順序・分母でdirectと外側の両方から�
 ### 2026-09-08 continuation — 限定選択修復の承認と固定runtime復元
 
 直前に提示した限定案へのMash様の継続指示を受領。canonical02末尾の承認済み限定例外に従い、原文で検証された本人の気持ちと既存の必要な行動をともに残すseal前OP選択修復を開始する。各124は比較開始値であり、必要責務増加を旧件数へ丸めない。既存owner／family／schema、最大3 Move、意味選択とReception順位の境界、NORMAL／LIMITED閉包、唯一のauthor／独立replay／Gateは維持する。固定Python3.12.13環境を保存済み46wheelから復元し、46依存と2268実ファイルを照合済み。前節の判断待ち・復元失敗は履歴で、現在のblockerではない。candidate64は開始証拠であり、変更後の生成・回帰結果は続く同系列checkpointに記録する。
+
+### 2026-09-08 continuation — 証明済みの独立した気持ちと行動を両方選択（candidate65／商品未成立）
+
+直前に提示した限定選択・必要責務増加案へのMash様の継続指示を受け、同じ未完unitを実装した。前提・作業規則・恒久incident・最新weekly20260905、全体設計と全tracked file地図を確認し、入力→国家保存／非同期処理／read-sideとEmlisの即時応答、三中核・共通基盤・旧I5を追った。current_structureのEmlis／CMEE二地図へ、このdisabled final Stage1内の選択境界の変更を反映した。新file・owner・schema・経路は追加せず、公開API／DB／RN・国家・Piece／Analysisの接続は維持する。
+
+既存OPの選択前に、原field全文で本人の現在の感情主語とprogressive hostが証明済みのrequired memo核、本人の実行済みrequired memo_action核、text核がその二つだけであることを確認する。既存lexical witnessとtyped sourceを使い、原文regexをReception selectorへ追加しない。既存順位で行動だけが主対象になる場合、その独立した気持ちをburden主対象へ置くことで、既存の候補保持と副候補処理から元の行動も選ぶ。感情ラベルだけ、他者・引用・疑問・過去・報告host・複数主題・非実行／未来行動へ適用しない。required関係または意味関係を共有する対には適用せず、単なるsource順の非required uncertain_connectionを意味関係へ昇格しない。
+
+意味決定前のcanonical reception planでは、選ばれた気持ち→行動の順を、既存のfelt_response二つで実現する。初期OPのinclude_relation_support=Trueには元からあるshould source-order supportが残るが、ExperiencePlan／PhaseA／seal後は同じ既存semantic adapterから各Moveの独立した対象を再導出する。NORMAL用／LIMITED用の再構築で同じact・target・support・roleが得られることを確認した。meaning ownerへReceptionのact／role／順位を逆流させず、関係contributionの切断や二重appraisalの通過条件は作らない。最大3 Move、唯一のHuman Reception、immutable selected input、独立replay、source matching、Gate／inverseの厳格性は維持する。今回の限られた形はLIMITEDで成立し、NORMAL全般の能力完成とはしない。
+
+公開合成の代表例では、行動だけだった応答に原文の気持ちが先に残り、行動も失われず2責務で本文が成立した。新規4検査は、両対象のselected decision／author／recovery／本文一致、どちらか一方の対象を除去した本文のinverse拒否、原field・主体・時点・host・複数主題・非実行行動の除外、required関係とoptional感情が従来選択を保つこと、旧公開OPの不変を確認する。初回の検査1件はkeyword-only引数の呼び出しを誤り失敗し、test側を修正した。最終固定sourceでは全4件成功。期待値や歴史的fixtureを書き換えていない。
+
+固定製品runtimeは保存済み46wheelから復元し、Python3.12.13・46依存・2268実ファイルをlockと照合。最終実行local `b47c8310b73761593dab1631f10ad10407c1210c` とremote `650646187583dadc493075eb618efd9aa20665de` はwhole tree `312c1165d4bb6a755d6c1dc33764d32da2b507ef` が同一。runtime変更はOPだけで、既存testとcurrent runner、既存handoffへ記録した。runnerはcurrent13定数だけ再導出しexact18／exact9・非current AST不変。後続の結果文書commitは製品コードを変更しない。
+
+必須336検査は333 PASS／継承3 FAIL、ERROR／skip0。前回332全成否一致、新規4全成功。原184は181 PASS／3 FAIL、追加152全成功。継承失敗は観察の歴史的固定hash2件とdated source receipt1件。36ケース・post-hash96・集合後続診断も前回と全内容同一。復元後の診断scriptが以前の参照directoryを見つけられなかったため、保存済み同じ184件の原XML三つのhashを照合して参照先を補正し、その後に検証を実行した。未実行を成功へ数えていない。V2の別17検査／42件213候補は今回再実行せず、以前の6 PASS／11 FAILは過去結果として保存する。
+
+同じcanonical100を順序・全入力・軸・分母不変でdirectと外側から実行。direct100、73 GENERATED／27 UNAVAILABLE、required Move／expression／binding各124。全核・selected input・観察・受取・理由・実reception planを含めcandidate64と全record同一。現在のsource witnessに適格な入力がこの100件にはなく、100件の中心感情欠落は今回解消していない。華恋が全100件の原文全field・両層本文・可否理由を再読しNOT_CLEAR。公開合成での追加選択の成立を、canonical100改善・商品完成・MashのProduct PASSへ変換しない。
+
+残件は、この限定証明外の中心感情の原field／主体／有限host／時点の接続、複数主題と共有関係を含む選択欠落、長い原文再掲・定型締め、否定報告scope等。次は原文で既にtyped feelingとなる核が、なぜ既存の有限source証明へ届かないかを同じsource ownerで扱い、根拠を保った候補・必要行動との選択へつなぐ。今回の継続指示で認められた限定例外を再び未承認へ戻さない。一律memo優先、感情だけの後付け、同一関係への二重appraisal、旧124へのcount clampでは直さない。
+
+System Contextは作業前doctor→prepareを実行し、localの固定toolchain不一致を保持。同一開始3refの既存固定CI run34214988633に対するdoctor34 PASS→actual prepare→verify-onlyを確認し、入力61・canonical出力37・transport19partsと全manifestを再照合して既存cacheを使用した。変更後の最終商品refsをPR37の既存profileと対応testへ同期し、既存固定CIからGit管理外cacheを再生成する。最終結果の正本はPR37 current本文と同headのActions。開始時の成功を最終refへ流用せず、REMOTE_PROOF_PENDINGをOperator actual proof完了とはしない。
+
+9月9日途中確認・9月12日本文確認準備目標と品質リスクを継承。全PR Draft/open/unmerged、商品NOT_CLEAR、disabled、human PASS／ready／採用／merge／本番／問い／Layer3は未成立。コード・設計・現在地はGitHub正本、private本文・個別case・digest・locatorの公開0、定例ZIPなし。補助agentは公開sourceの静的読取・反証のみを担当し、rootが編集・実行・全100本文確認・反映を担当した。
