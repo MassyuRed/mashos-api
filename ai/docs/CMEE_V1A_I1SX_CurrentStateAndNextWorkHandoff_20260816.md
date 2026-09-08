@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾のcandidate58と継承承認を確認する。既存ownerが証明・選択済みの過去願望の報告句を、原文のplain過去形を保った全文＋「こと」で受取対象へ接続し、重なった願いwrapperを除いた。canonical100の受取1件だけ変更、他99件は全record同一。原文・全核・時点・主体・selected input・全実plan・観察・可否理由・73/27・124責務は不変。必須305検査301成功／継承4失敗、前回304の全成否一致、新規1成功。華恋が全100件の原文全field・観察・受取を全文確認し、商品NOT_CLEAR。変更例も外側不可の診断本文で、商品PASSではない。長い再掲・定型締め・中心感情の未選択と補助行動偏重、動機願いの時点・複合関係などは残る。
+3. 末尾のcandidate59と継承承認を確認する。旧負担Moveの既存short-anchor参照方針をHRで消費し、選択済みの原文を省略せず受取へ保持した。旧集合の受取2件を修正し完全一致重複0。必須313件310 PASS／継承3 FAIL、新規8成功。canonical100は全record・実plan不変、73/27・124責務を維持。華恋の全100件全文確認はNOT_CLEAR。V2追加17検査は前後とも6 PASS／11 FAILで、全42件213候補・選択結果も同一。残件と検証限界は末尾のcandidate59へ記録。コード・設計・引き継ぎはGitHubを正本とし、定例ZIP手渡しを行わない。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -6499,3 +6499,25 @@ System Contextは開始時PR37 `a069cf241210ad8781bfcbfed544b5888674bef7` と別
 次は既存source ownerの同核時点・主体・関係、中心の選択責務と実際の受取本文へ戻って続ける。動機節の過去願いは未修正。長い再掲／定型締めを未選択の感情や意味の注入で修正しない。同じ承認の再要求は不要。商品NOT_CLEAR、Human Product Read／human PASS／ready／採用／merge／本番／問い／Layer3は未成立。9月9日の途中確認・9月12日の本文確認準備目標と品質リスクを継承する。private本文・個別case・digest・locatorの公開0。
 
 初回focused失敗の原因説明は、公開入力の実Moveを再確認して訂正した。過去願いtargetが未選択で、補助行動のMoveだけが選ばれていた。ANAPHORICだったという途中説明は誤り。既存testの注釈1行のみ訂正し、Python AST全体一致、最終検証時からのHR/runtime/current runner bytes不変を確認した。これは機能差分ではなく説明訂正で、100件の結果と305検査の成否を変更しない。
+
+### 2026-09-08 continuation — 選択済み負担の具体的参照を旧経路で保持（candidate59／商品未成立）
+
+旧経路の負担Moveが指定した `short_anchor_if_ambiguous` をHuman Receptionのcurrent_burden枝でも消費するようにした。異なる選択済みsourceを同じ一般参照へ縮めていた不具合を修正し、旧unseen12の受取2件が原文を保持する本文へ変わった。既存集合の完全一致重複は0になり、必須回帰の継承失敗が4件から3件へ減った。語尾variant、別核の探索、未選択意味の補充、引用の切出し・省略、閾値・fixture・dated receiptの更新は行っていない。
+
+適用条件は既存current_burden・単一target・supportなし・単一source・fullまたはoptional_removed・利用可能な既存引用枠。既存helperへ対象IDだけを渡し、allow_truncation=Falseとする。削除対象の引用／疑問／感嘆記号を含むraw sourceは採用せず、返ったanchorが原sourceの連続部分であることも確認する。kind、Move、述語、source IDsは維持する。これは原field全体の断定証明ではない。final_source_fidelityの枝は手前で処理され、final Stage1の意味・本文生成は変わらない。
+
+source／関連既存test／current runnerの3pathをremote `05ad0abcce8e1182b733bbebb926b0ce51766e62` に保存。最終実行local `7e6797c283d8797ca6b0dc137a27b690d1c9cc5c` とwhole tree `ae23aa97c4c1ff7c1837f6a54fd90a2c5a632d3f` が同一。既存runnerのcurrent13定数だけ再導出し、exact18／exact9と非current AST不変を確認した。
+
+必須313検査は310 PASS／継承3 FAIL、ERROR／skip0。原184は181 PASS／3 FAIL、追加129全成功。前回305との比較は重複集合1件だけFAIL→PASS、新規8件成功、既存PASSの後退0。残る3失敗は観察の歴史的固定hash2件とdated source receipt1件。全36ケースの後続診断、旧exact8／same16／unseen12集合を個別に実行し、集合判定はいずれもPASS。post-hash96の成否は前回と同一であり、履歴hashの失敗を上書きしない。
+
+共有resolverを使う開発用NLS V2も確認した。S5／S6／S7の17検査は変更前後とも6 PASS／11 FAILで成否一致。途中失敗以降も42件を個別に実行し、全213候補・41件の選択結果・1件の選択処理エラー（v2_no_valid_candidate）を含む全recordが変更前後で同一だった。V2の既存失敗は今回新たに比較確認した残件であり、V2合格やdated receipt復帰を主張しない。
+
+同じcanonical100はdirect100、73 GENERATED／27 UNAVAILABLE、必要Move／expression／binding各124。全100の原文・全核・selected input・実plan・観察・受取・可否理由を含む全recordが前回と同一。華恋が全100件の原文全field・観察・受取・理由を全文確認し、変更した旧受取2件も確認した。商品判定はNOT_CLEAR。中心感情の未選択と補助行動偏重、長い再掲と定型締め、動機願いの過去時点、複合関係・主体の問題は残る。
+
+作業前に全体設計と全tracked file地図、現行前提・恒久incident・最新weekly、国家／三中核／共通基盤／旧経路を確認。全path地図はCocolon1635／API2138で前回と完全一致し、STRUCTURE_MAP_DELTA_NONE。国家保存と背景処理は返信より前、RNはpassed-only本文を表示する。公開API／DB／RN、国家経路、Piece／Analysisのcontractと接続切替は変更していない。旧I5の本文と共有オフライン候補生成へ影響し得る修正を、final-onlyの変更とは扱わない。
+
+System Contextは開始時にdoctor→prepareを実行。ローカルdoctorはtoolchain不一致、prepareは残存する未追跡の不完全cache断片によるimplementation checkout不潔で失敗し、local cacheは利用しなかった。開始時の同一refについて固定CI run 34171373514のdoctor34 PASS／prepare・verify-only成功を確認し、原典直接確認で作業を継続。今回最終refのprofile同期とGit管理外cache再生成結果はPR37のcurrent本文とexact-head Actionsへ記録し、以前のrefの成功を今回へ流用しない。
+
+Mashの今回指示により、コード・設計・作業状態の引き継ぎは既存GitHub PRを正本とし、成功時の定例ZIP手渡しを行わない。両repoはpublicであるため、private入力・本文付き実行記録を公開repoへ置かない。private記録は非公開で継続保持し、通常の再開のたびにMashへローカルZIPの再添付を求めない。
+
+既存の2026-09-05承認を継承する同じ未完unit。次は既存source ownerの中心選択・同核の時点／主体／関係と実際の受取本文を修正する。V2既存失敗も実結果のまま保持する。全PR Draft／open／unmerged、商品NOT_CLEAR、human PASS／ready／採用／merge／本番／問い／Layer3は未成立。private本文・個別case・digest・locatorの公開0。
