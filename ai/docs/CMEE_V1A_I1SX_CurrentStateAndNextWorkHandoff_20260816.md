@@ -8,10 +8,12 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾のcandidate64と継承承認を確認する。既存Sentence Surfaceで、原fieldと本人の否定過去報告が証明済みの単独spanだけ、末尾の全角ピリオドを引用内に保持した。元入力・根拠・意味計画・Gateは変更しない。公開合成57件は8件の本文成立／49件全record同一、全57件の根拠とplanは不変。必須332件329 PASS／継承3 FAIL、前回329全成否一致、新規3成功。旧I5等11成功。canonical100は全record・実plan不変、73/27・124責務を維持し、華恋が全100件全文確認してNOT_CLEAR。V2の17件6 PASS／11 FAIL・全42件213候補も同一。共有Ledger案は他の未修復な誤読まで本文を返したため不採用。中心感情の未選択、再掲・定型締め、対象外の報告scopeと他の全角文末は残件。GitHub正本・定例ZIPなしを継続。
+3. candidate64と継承承認、および末尾の未承認変更案・再開点を確認する。既存Sentence Surfaceで、原fieldと本人の否定過去報告が証明済みの単独spanだけ、末尾の全角ピリオドを引用内に保持した。元入力・根拠・意味計画・Gateは変更しない。公開合成57件は8件の本文成立／49件全record同一、全57件の根拠とplanは不変。必須332件329 PASS／継承3 FAIL、前回329全成否一致、新規3成功。旧I5等11成功。canonical100は全record・実plan不変、73/27・124責務を維持し、華恋が全100件全文確認してNOT_CLEAR。V2の17件6 PASS／11 FAIL・全42件213候補も同一。共有Ledger案は他の未修復な誤読まで本文を返したため不採用。中心感情の未選択、再掲・定型締め、対象外の報告scopeと他の全角文末は残件。GitHub正本・定例ZIPなしを継続。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
+
+2026-09-08継続確認：runtimeと前回の実行結果はcandidate64を維持。中心感情の選択欠落に関する限定変更案と固定runtime未復元の再開点を末尾へ記録した。提案は未承認・実装未着手であり、商品改善・今回の再検証とはしない。
 
 ## 1. GitHub anchors
 
@@ -6619,3 +6621,15 @@ canonical100を同じ入力・順序・分母でdirectと外側の両方から�
 開始時System Contextは3承認refが前回最終と一致し、run34200511762のdoctor34 PASS→actual prepare→verify-only、実装入力61・canonical出力37・transport parts19のhash一致を確認。local doctorは固定toolchain不一致でFAIL、local prepareはNOT_RUNとして原典本文と同一refの実行済み証拠を用いた。製品用Python3.12.13の46依存／wheel・2268実ファイルも再検証した。今回の最終商品refsをPR37の既存profileと対応testへ同期し、固定CIでGit管理外cacheを再生成する。最終結果はPR37 current本文と同じheadのActionsを正本とし、開始時の成功を変更後へ流用しない。REMOTE_PROOF_PENDINGはOperator actual proof完了を意味しない。
 
 残件は中心感情の未選択と補助行動偏重、長い再掲・定型締め、対象外の否定報告scope／主体／時点、一般的な参照と他の全角文末。次も既存source ownerの意味状態と、選択済み受取を原文へ戻して扱い、退役済みfocus selectorを再開しない。9月9日途中確認・9月12日本文確認準備目標を継承。全PR Draft／open／unmerged、商品NOT_CLEAR、human PASS／ready／採用／merge／本番／問い／Layer3は未成立。コード・設計・再開点はGitHub正本、private本文・個別case・digest・locatorの公開0、定例ZIPなし。
+
+### 2026-09-08 continuation — 中心感情欠落の限定変更案と環境未復元（candidate64維持）
+
+今回の継続作業は保存済みcandidate64と現行sourceの照合。既存OPのrole優先、current_burden除去、concrete_effort主対象の副候補制限という既知の原因を再確認した。thought非空なのに選択target／supportが行動欄だけの入力は46/100、そのうちmemoにretention=required／modality=feelingの核がある入力は16/100。16件の原入力と両層本文を読んだが、本人性・時点等まで型だけで正しいとは扱わず、全16件が同一修正に適格とも判定していない。新規生成・全100件全文再読・回帰再実行0。
+
+具体的な変更案はCocolon PR30の既存02末尾「中心感情の選択欠落に対する限定変更案」、実行再開点は既存06末尾を正本とする。現在の02 §36.2／§36.6／§38・06 §89は必要な責務各124と選択責務集合を維持する。提案は、原文で検証された本人の気持ちと既存の必要な行動を両方残すために必要な、既存OPでの選択・意味投影・Move再導出と責務増加だけを許容するもの。まだ承認済み契約ではなく、runtimeへ実装していない。候補除去だけの解除、count clamp、第二selector、同一関係への二重appraisal、seal後の意味補充では救済しない。既存承認内の同核修正を別承認待ちへ戻すものではない。
+
+固定製品runtimeは復元未完。既存private保存物取得は初回と再取得がHTTP502、公式配布元取得はネットワーク承認が判断前にキャンセルされ、wheel取得／venv実体化／target起動0。host依存で代用せず、前回332件329 PASS／継承3 FAIL、canonical100 direct100・73/27・各124・NOT_CLEARを今回の実行結果へ流用しない。source／test／runner bytesはcandidate64から不変で、このPRの変更は本handoffだけ。
+
+開始System Contextはlocal doctor→prepare不成立。承認済みrefに一致する既存固定CIの成功診断はfresh確認したが、HTTP502でcache取得・local採用は未完。文書保存後の二つのmaterial headをPR37既存profile／対応testへ反映し、既存CIで最終Git管理外cacheを再生成する。最終実行結果はPR37 current本文と同headのActionsを参照し、旧成功を新refsへ流用しない。tracked currentと固定toolchainの変更なし。
+
+次は限定変更の判断と固定runtime復元後、既存ownerの関連本文を再確認し、両方の必要な対象を保持する修正、最終source固定、同100件・必要回帰、華恋の全本文読解へ戻る。国家経路／共通基盤／他機能／旧経路の変更0、STRUCTURE_MAP_DELTA_NONE。商品NOT_CLEAR、final Stage1 disabled、全PR Draft/open/unmergedを維持する。private診断は既存private作業記録、公開設計・再開点はGitHub正本。定例ZIPは作らず、保存・環境整備を商品改善へ数えない。
