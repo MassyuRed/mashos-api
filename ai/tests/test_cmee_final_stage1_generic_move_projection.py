@@ -1438,6 +1438,14 @@ class CMEECompoundPastReportedWishTest(unittest.TestCase):
     def test_cancelled_constraint_keeps_neutral_split_and_complete_body(self):
         for link in ("が", "けれど"):
             with self.subTest(link=link):
+                # Ledger retains the fullwidth dot; the relation owner
+                # trims it. Cancellation must use that same finite range.
+                for ending in ("。", "．"):
+                    plan = _compile_inputs(self._row(
+                        "生活を変えたいと思った" + link + "、難しくない" + ending,
+                    )).grounded_plan
+                    self.assertEqual(tuple(n.kind for n in plan.nuclei[:2]), ("uncertainty", "state"))
+                    self.assertEqual(tuple(r.type for r in plan.relations), ("contrast",))
                 a = _full_surface_artifacts(self._row("生活を変えたいと思った" + link + "、難しくない。"))
                 self.assertEqual(tuple(n.kind for n in a.plan.nuclei[:2]), ("uncertainty", "state"))
                 self.assertEqual(tuple(r.type for r in a.plan.relations), ("contrast",))

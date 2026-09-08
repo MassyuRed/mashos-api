@@ -3745,13 +3745,14 @@ def _typed_nucleus_projections_for_span(
         # first-fragment/source boundary that the final status owner can
         # locate in the past. Do not broaden the shared current-wish regex.
         # A repeated fragment cannot prove which endpoint supplied it.
+        finite_span = text[slice(*trimmed_range(0, len(text)))]
         if (not fragment.endswith("と思った")
             or not text.startswith(fragment) or text.count(fragment) != 1
             or not past_reported_wish_finite(fragment, span_text=text)
             # Preserve the existing neutral split for a cancelled burden;
             # new wish authority must not trigger its fail-closed fallback.
-            or _NEGATED_CONSTRAINT_CANCELLATION_RE.search(text)
-            or _NEGATED_RELATION_UNCERTAINTY_CANCELLATION_RE.search(text)):
+            or _NEGATED_CONSTRAINT_CANCELLATION_RE.search(finite_span)
+            or _NEGATED_RELATION_UNCERTAINTY_CANCELLATION_RE.search(finite_span)):
             return False
         source = str((normalized_input or {}).get(source_field) or "")
         start, end = span.start_index, span.end_index
