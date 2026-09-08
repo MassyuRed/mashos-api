@@ -7252,6 +7252,7 @@ def build_grounded_human_reception_plan(
         and set(feeling.semantic_frame.attribute_codes).intersection({
             "lexical:source_declarative_feeling_subject",
             "lexical:source_current_feeling_with_cognitive_background",
+            "lexical:source_current_feeling_with_verbal_background",
         })
         and not any(
             relation.retention == "required" or relation.type != "uncertain_connection"
@@ -7902,7 +7903,11 @@ def _build_response_and_policies(
         and item.retention == "required"
         and item.grounding_kind == "explicit"
         and item.kind == "reaction"
-        and item.semantic_frame.predicate_kind == "feeling"
+        and (item.semantic_frame.predicate_kind == "feeling" or (
+            item.semantic_frame.predicate_kind == "reaction"
+            and "lexical:source_current_feeling_with_verbal_background"
+            in item.semantic_frame.attribute_codes
+        ))
         and item.semantic_frame.actor == "current_user"
         and item.semantic_frame.modality in {"fact", "feeling"}
         and item.semantic_frame.polarity in {"negative", "neutral"}
@@ -7910,6 +7915,7 @@ def _build_response_and_policies(
         and set(item.semantic_frame.attribute_codes).intersection({
             "lexical:source_declarative_feeling_subject",
             "lexical:source_current_feeling_with_cognitive_background",
+            "lexical:source_current_feeling_with_verbal_background",
         })
         and _reception_opportunity_families_for_nucleus(
             item, safety_kind=safety_decision.safety_triage_kind,
@@ -10576,7 +10582,7 @@ def _final_stage1_align_action_status(
                     ))),
                 )))
                 continue
-        if (nucleus.kind == "reaction" and frame.predicate_kind == "feeling"
+        if (nucleus.kind == "reaction" and frame.predicate_kind in {"feeling", "reaction"}
             and frame.actor == "current_user" and frame.modality in {"fact", "feeling"}
             and frame.time_scope in {"present", "current_input", "continuing"}
             and frame.polarity in {"neutral", "negative"} and len(nucleus.source_span_ids) == 1):
@@ -10596,9 +10602,10 @@ def _final_stage1_align_action_status(
                     and not any(code.startswith(("source_fragment_scalar_", "surface_scalar_"))
                                 for code in codes)):
                     witness = ""
-                    if source_grounded_feeling_subject_parts(span.raw_text) is not None:
+                    if (frame.predicate_kind == "feeling"
+                        and source_grounded_feeling_subject_parts(span.raw_text) is not None):
                         witness = "lexical:source_declarative_feeling_subject"
-                    else:
+                    elif frame.predicate_kind == "feeling":
                         # Bind every clause, not just a feeling suffix. A finite
                         # self/ownerless effort precedes concessive no-ni; an
                         # information subject belongs to the negative cognitive
@@ -10631,6 +10638,33 @@ def _final_stage1_align_action_status(
                                 .intersection({"operator:negation", "operator:uncertainty", "operator:positive_change",
                                                "operator:refusal", "operator:wish"})):
                             witness = "lexical:source_current_feeling_with_cognitive_background"
+                    if not witness:
+                        # Bind a complete verbal background and the current
+                        # residual feeling in the same original field. These
+                        # nominal forms are local proof vocabulary, not an
+                        # extension of the shared feeling/operator grammar.
+                        # The background's passive/potential ambiguity and
+                        # unstated actor stay in the source; this witness does
+                        # not assert agency, causality or performed action.
+                        feeling_noun = r"(?:不安|悲しさ|寂しさ|悔しさ|怒り)"
+                        verbal_background = re.fullmatch(
+                            r"(?:(?:私|わたし|自分)(?:は|が))?"
+                            r"(?:話|発言|説明|提案|意見)を"
+                            r"(?:途中で|急に|何度も)?"
+                            r"(?:遮られ|止められ|否定され|退けられ)て[、,]"
+                            + feeling_noun + r"(?:と" + feeling_noun + r")?が"
+                            r"(?P<host>(?:まだ|今も|なお)?(?:少し|ずっと)?"
+                            r"残って(?:いる|います))",
+                            span.raw_text,
+                        )
+                        if (verbal_background is not None
+                            and _FINITE_SEMANTIC_SUBJECT_HOST_RE.fullmatch(
+                                verbal_background.group("host"),
+                            ) is not None):
+                            # Keep the pre-existing reaction/feeling type and
+                            # every source argument. No subject relocation or
+                            # shorter feeling-only referent is licensed here.
+                            witness = "lexical:source_current_feeling_with_verbal_background"
                     if witness:
                         nucleus = replace(nucleus, semantic_frame=replace(
                             frame, attribute_codes=tuple(_dedupe((*codes, witness))),
