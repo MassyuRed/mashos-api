@@ -3186,6 +3186,476 @@ def _semantic_frame_for_span(
     )
 
 
+def _source_operator_owner_scope_is_bound(fragment: str) -> bool:
+    top_level_fragment = _top_level_text(fragment)
+    if top_level_fragment is None:
+        return False
+    top_level_fragment = top_level_fragment.strip()
+    # A bounded time adverb is not an owner.  Remove it before checking
+    # the grammatical subject/possessor so that forms such as
+    # ``今日は弟が…`` and ``今の妹の…`` cannot borrow current-user
+    # ownership from their temporal prefix.
+    temporal_prefix = re.compile(
+        r"^(?:(?:今日|昨日|明日|今|現在|午前|午後|夕方|朝|昼|夜|"
+        r"以前|これまで)(?:は|も|の|には)?|この記録では?|"
+        r"少し(?:だけ|ずつ)?|やや|ずっと|強く|まだ)[、,\s]*"
+    )
+    owner_marker = re.compile(
+        r"^(?P<owner>[^\s、,。.!！?？]+?)"
+        r"[ \t\u3000]*"
+        r"(?P<marker>にとって|には|は|が|も|の)"
+    )
+    attribution_prefix = re.compile(
+        r"^(?P<owner>[^\s、,。.!！?？]+?)"
+        r"[ \t\u3000]*"
+        r"(?:(?:に|から)[^\s、,。.!！?？]+?"
+        r"(?:ると|れば|ますと)|いわく|曰く)"
+    )
+    leading_case_owner = re.compile(
+        r"^(?P<owner>[^\s、,。.!！?？]+?)"
+        r"[ \t\u3000]*"
+        r"(?P<marker>から|に|と)(?P<remainder>.+)$"
+    )
+    leading_focus_owner = re.compile(
+        r"^(?P<owner>[^\s、,。.!！?？]+?)"
+        r"[ \t\u3000]*"
+        r"(?P<marker>"
+        + _OWNER_FOCUS_PARTICLE_SOURCE
+        + r")"
+        r"(?:は|が|も)?(?P<remainder>.+)$"
+    )
+    leading_topic_owner = re.compile(
+        r"^(?P<owner>[^\s、,。.!！?？]+?)"
+        r"[ \t\u3000]*"
+        r"(?P<marker>"
+        + _OWNER_TOPIC_PARTICLE_SOURCE
+        + r")"
+        r"(?P<remainder>.+)$"
+    )
+    operator_patterns = _FINITE_OPERATOR_PATTERNS
+
+    def operator_left_context_is_bounded(
+        fragment: str,
+        operator_pattern: re.Pattern[str],
+        match: re.Match[str],
+    ) -> bool:
+        """Allow only a frozen semantic object before a predicate anchor."""
+        return _operator_match_left_context_is_bounded(
+            fragment,
+            operator_pattern,
+            match,
+        )
+
+    def finite_owned_operator_matches(
+        fragment: str,
+    ) -> tuple[tuple[re.Pattern[str], re.Match[str]], ...]:
+        return tuple(
+            (pattern, match)
+            for pattern in operator_patterns
+            for match in pattern.finditer(fragment)
+            if operator_left_context_is_bounded(
+                fragment,
+                pattern,
+                match,
+            )
+            and _operator_match_has_finite_closure(
+                fragment,
+                pattern,
+                match,
+            )
+        )
+    explicit_self_content_host = re.compile(
+        r"^(?P<content>.+?)(?:とは|と)"
+        r"(?P<owner>自分|私|わたし|僕|ぼく|俺|おれ)"
+        r"(?:にとって|には|は|が|も|"
+        + _OWNER_FOCUS_PARTICLE_SOURCE
+        + r"(?:は|が|も)?)"
+        r"(?P<host>.+)$"
+    )
+
+    def self_experiential_host_is_bounded(host: str) -> bool:
+        host_core = re.sub(
+            r"^(?:強く|少し|やや|ずっと)[、,\s]*",
+            "",
+            host,
+            count=1,
+        )
+        feeling_host = _last_finite_operator_match(
+            host_core,
+            _FEELING_RE,
+        )
+        epistemic_host = _last_finite_operator_match(
+            "と" + host_core,
+            _UNCERTAIN_RE,
+        )
+        return bool(
+            (
+                feeling_host is not None
+                and feeling_host.start() == 0
+            )
+            or (
+                epistemic_host is not None
+                and epistemic_host.start() == 0
+            )
+        )
+    # Whitespace is an owner boundary, not disposable formatting.  Only
+    # whitespace immediately consumed with a proven prefix/particle may
+    # be removed; an opaque token before an operator fails closed.
+    owner_scope = top_level_fragment
+    attribution_scope = owner_scope
+    # Consume only a chain of explicit self owners and bounded temporal
+    # prefixes.  Any subsequent grammatical owner/beneficiary remains a
+    # third-party authority and makes the projection ineligible.
+    while True:
+        owner_scope = owner_scope.lstrip(" \t\u3000")
+        previous_owner_scope = owner_scope
+        if not any(
+            pattern.match(owner_scope) is not None
+            for pattern in operator_patterns
+        ):
+            owner_scope = temporal_prefix.sub("", owner_scope)
+        if owner_scope != previous_owner_scope:
+            continue
+        explicit_content_host = explicit_self_content_host.match(
+            owner_scope
+        )
+        if explicit_content_host is not None:
+            content = explicit_content_host.group("content")
+            content_is_complete = bool(
+                any(
+                    match.end() == len(content)
+                    for pattern in operator_patterns
+                    for match in pattern.finditer(content)
+                )
+                or _last_finite_operator_match(
+                    content,
+                    *operator_patterns,
+                )
+                is not None
+            )
+            if (
+                content_is_complete
+                and self_experiential_host_is_bounded(
+                    explicit_content_host.group("host")
+                )
+            ):
+                owner_scope = ""
+                continue
+        leading_attribution = attribution_prefix.match(owner_scope)
+        if leading_attribution is not None:
+            if (
+                _SELF_REFERENCE_RE.fullmatch(
+                    leading_attribution.group("owner")
+                )
+                is None
+            ):
+                return False
+            owner_scope = owner_scope[
+                leading_attribution.end() :
+            ].lstrip(" \t\u3000")
+            continue
+        leading_owner = owner_marker.match(owner_scope)
+        case_owner = leading_case_owner.match(owner_scope)
+        focus_owner = leading_focus_owner.match(owner_scope)
+        topic_owner = leading_topic_owner.match(owner_scope)
+        for marked_owner in (focus_owner, topic_owner):
+            if (
+                marked_owner is not None
+                and any(
+                    pattern.search(marked_owner.group("remainder"))
+                    is not None
+                    for pattern in operator_patterns
+                )
+                and (
+                    leading_owner is None
+                    or marked_owner.start("marker")
+                    < leading_owner.start("marker")
+                )
+            ):
+                if (
+                    _SELF_REFERENCE_RE.fullmatch(
+                        marked_owner.group("owner")
+                    )
+                    is None
+                ):
+                    return False
+                owner_scope = marked_owner.group("remainder").lstrip(
+                    " \t\u3000"
+                )
+                break
+        else:
+            marked_owner = None
+        if marked_owner is not None:
+            continue
+        if (
+            case_owner is not None
+            and not any(
+                match.start()
+                <= case_owner.start("marker")
+                < match.end()
+                for pattern in operator_patterns
+                for match in pattern.finditer(owner_scope)
+            )
+            and any(
+                pattern.match(case_owner.group("remainder"))
+                is not None
+                for pattern in operator_patterns
+            )
+            and (
+                leading_owner is None
+                or case_owner.start("marker")
+                < leading_owner.start("marker")
+            )
+        ):
+            content_owner = case_owner.group("owner")
+            content_is_complete = bool(
+                any(
+                    match.end() == len(content_owner)
+                    for pattern in operator_patterns
+                    for match in pattern.finditer(content_owner)
+                )
+                or _last_finite_operator_match(
+                    content_owner,
+                    *operator_patterns,
+                )
+                is not None
+            )
+            semantic_content_bridge = bool(
+                case_owner.group("marker") == "と"
+                and content_is_complete
+                and self_experiential_host_is_bounded(
+                    case_owner.group("remainder")
+                )
+            )
+            if semantic_content_bridge:
+                owner_scope = ""
+                continue
+            if (
+                _SELF_REFERENCE_RE.fullmatch(case_owner.group("owner"))
+                is None
+            ):
+                return False
+            owner_scope = case_owner.group("remainder").lstrip(
+                " \t\u3000"
+            )
+            continue
+        if leading_owner is None:
+            if (
+                owner_scope
+                and not finite_owned_operator_matches(owner_scope)
+                and not _bounded_nominal_wish_endpoint(owner_scope)
+                and not _bounded_bare_wish_nominal(owner_scope)
+                and not _bounded_ambiguous_nominal_state(owner_scope)
+                and not _bounded_structural_action_endpoint(owner_scope)
+            ):
+                return False
+            break
+        owner = leading_owner.group("owner")
+        marker = leading_owner.group("marker")
+        if _SELF_REFERENCE_RE.fullmatch(owner) is None:
+            marker_start = leading_owner.start("marker")
+            marker_is_inside_operator = any(
+                operator_left_context_is_bounded(
+                    owner_scope,
+                    pattern,
+                    match,
+                )
+                and match.start() <= marker_start < match.end()
+                for pattern in operator_patterns
+                for match in pattern.finditer(owner_scope)
+            )
+            remainder = owner_scope[leading_owner.end() :]
+            owned_terminal_matches = finite_owned_operator_matches(
+                owner_scope
+            )
+            owned_scope_is_complete = any(
+                match.start() == 0 and match.end() == len(owner_scope)
+                for _pattern, match in owned_terminal_matches
+            )
+            bounded_terminal_carrier = bool(
+                any(
+                    match.end() <= marker_start
+                    for _pattern, match in owned_terminal_matches
+                )
+            )
+            semantic_subject_operator = next(
+                (
+                    (pattern, match)
+                    for pattern in operator_patterns
+                    for match in pattern.finditer(owner)
+                    if match.end() == len(owner)
+                    and operator_left_context_is_bounded(
+                        owner,
+                        pattern,
+                        match,
+                    )
+                ),
+                None,
+            )
+            special_wish_subject = bool(
+                re.search(
+                    r"(?:たい|ほしい|欲しい)(?:気持ち|願い)$",
+                    owner,
+                )
+            )
+            semantic_subject_complete = bool(
+                semantic_subject_operator is not None
+                or special_wish_subject
+            )
+            owner_is_complete_semantic_subject = bool(
+                marker in {"は", "が", "も"}
+                and semantic_subject_complete
+                and (
+                    _finite_endpoint_carrier_shape(
+                        marker + remainder,
+                        operator_surface=(
+                            owner
+                            if special_wish_subject
+                            else semantic_subject_operator[1].group(0)
+                            if semantic_subject_operator is not None
+                            else ""
+                        ),
+                        operator_pattern=(
+                            _WISH_RE
+                            if special_wish_subject
+                            else semantic_subject_operator[0]
+                            if semantic_subject_operator is not None
+                            else None
+                        ),
+                    )
+                    or _self_owned_finite_host_shape(
+                        marker + remainder
+                    )
+                )
+            )
+            epistemic_content_topic = bool(
+                marker in {"は", "も"}
+                and (
+                    (
+                        owner.endswith("か")
+                        and any(
+                            match.end() == len(remainder)
+                            for pattern in (
+                                _RELATION_UNCERTAINTY_RE,
+                                _UNCERTAIN_RE,
+                                _OPEN_UNFINISHED_RE,
+                            )
+                            for match in pattern.finditer(remainder)
+                        )
+                    )
+                    or (
+                        owner.endswith("と")
+                        and any(
+                            match.end() <= len(owner) - 1
+                            for pattern in operator_patterns
+                            for match in pattern.finditer(owner[:-1])
+                        )
+                        and re.fullmatch(
+                            r"思(?:う|っている|っていた|っています|"
+                            r"っていました|います|いました)"
+                            r"(?:の(?:だ|です)|ん(?:だ|です))?",
+                            remainder,
+                        )
+                        is not None
+                    )
+                )
+            )
+            predicate_auxiliary_particle = bool(
+                (
+                    marker == "の"
+                    and (
+                        semantic_subject_complete
+                        or (
+                            owner.endswith("な")
+                            and any(
+                                match.end() == len(owner) - 1
+                                for pattern in operator_patterns
+                                for match in pattern.finditer(owner[:-1])
+                            )
+                        )
+                    )
+                    and (
+                        semantic_subject_operator is not None
+                        or special_wish_subject
+                    )
+                    and _finite_endpoint_carrier_shape(
+                        marker + remainder,
+                        operator_surface=(
+                            owner
+                            if special_wish_subject
+                            else semantic_subject_operator[1].group(0)
+                        ),
+                        operator_pattern=(
+                            _WISH_RE
+                            if special_wish_subject
+                            else semantic_subject_operator[0]
+                        ),
+                    )
+                )
+                or (
+                    marker == "は"
+                    and owner.endswith(("て", "で"))
+                    and any(
+                        match.start() == 0
+                        and match.end() == len(owner) - 1
+                        and _direct_finite_carrier_shape(
+                            remainder,
+                            operator_surface=match.group(0),
+                            operator_pattern=pattern,
+                        )
+                        for pattern in operator_patterns
+                        for match in pattern.finditer(owner[:-1])
+                    )
+                )
+            )
+            # A marker inside an already-frozen terminal operator (for
+            # example 気がする / 意味がある), or a complete semantic
+            # content subject followed by an exact finite carrier, is not
+            # evidence of a third-party owner.  The operator/end boundary
+            # is grammatical; no noun, case or phrase-family list is used.
+            if (
+                marker_is_inside_operator
+                or bounded_terminal_carrier
+                or owner_is_complete_semantic_subject
+                or epistemic_content_topic
+                or predicate_auxiliary_particle
+            ):
+                # The marker is grammatical, but the remaining predicate
+                # can still introduce an explicit non-self subject or
+                # experiencer.  Consume the protected prefix and continue
+                # scanning to the end; an early break would lend the
+                # current user to a later owner.
+                owner_scope = (
+                    ""
+                    if (
+                        bounded_terminal_carrier
+                        or owned_scope_is_complete
+                        or owner_is_complete_semantic_subject
+                        or epistemic_content_topic
+                        or predicate_auxiliary_particle
+                    )
+                    else remainder
+                )
+                continue
+            return False
+        owner_scope = owner_scope[leading_owner.end() :].lstrip(
+            " \t\u3000、,"
+        )
+    # A later explicit speaker remains the authority for an attributed
+    # predicate even when the fragment begins with an ownerless state.
+    for attributed_owner in re.finditer(
+        r"(?:と|って)(?P<owner>[^\s、,。.!！?？]+?)"
+        r"(?:は|が|も)(?=(?:言|話|語|述べ|書|記録|考|思|感じ|判断|決め))",
+        attribution_scope,
+    ):
+        if (
+            _SELF_REFERENCE_RE.fullmatch(attributed_owner.group("owner"))
+            is None
+        ):
+            return False
+    return True
+
+
 def _typed_nucleus_projections_for_span(
     span: EvidenceSpan,
     *,
@@ -3271,474 +3741,7 @@ def _typed_nucleus_projections_for_span(
             end -= 1
         return start, end
 
-    def owner_scope_is_bound(fragment: str) -> bool:
-        top_level_fragment = _top_level_text(fragment)
-        if top_level_fragment is None:
-            return False
-        top_level_fragment = top_level_fragment.strip()
-        # A bounded time adverb is not an owner.  Remove it before checking
-        # the grammatical subject/possessor so that forms such as
-        # ``今日は弟が…`` and ``今の妹の…`` cannot borrow current-user
-        # ownership from their temporal prefix.
-        temporal_prefix = re.compile(
-            r"^(?:(?:今日|昨日|明日|今|現在|午前|午後|夕方|朝|昼|夜|"
-            r"以前|これまで)(?:は|も|の|には)?|この記録では?|"
-            r"少し(?:だけ|ずつ)?|やや|ずっと|強く|まだ)[、,\s]*"
-        )
-        owner_marker = re.compile(
-            r"^(?P<owner>[^\s、,。.!！?？]+?)"
-            r"[ \t\u3000]*"
-            r"(?P<marker>にとって|には|は|が|も|の)"
-        )
-        attribution_prefix = re.compile(
-            r"^(?P<owner>[^\s、,。.!！?？]+?)"
-            r"[ \t\u3000]*"
-            r"(?:(?:に|から)[^\s、,。.!！?？]+?"
-            r"(?:ると|れば|ますと)|いわく|曰く)"
-        )
-        leading_case_owner = re.compile(
-            r"^(?P<owner>[^\s、,。.!！?？]+?)"
-            r"[ \t\u3000]*"
-            r"(?P<marker>から|に|と)(?P<remainder>.+)$"
-        )
-        leading_focus_owner = re.compile(
-            r"^(?P<owner>[^\s、,。.!！?？]+?)"
-            r"[ \t\u3000]*"
-            r"(?P<marker>"
-            + _OWNER_FOCUS_PARTICLE_SOURCE
-            + r")"
-            r"(?:は|が|も)?(?P<remainder>.+)$"
-        )
-        leading_topic_owner = re.compile(
-            r"^(?P<owner>[^\s、,。.!！?？]+?)"
-            r"[ \t\u3000]*"
-            r"(?P<marker>"
-            + _OWNER_TOPIC_PARTICLE_SOURCE
-            + r")"
-            r"(?P<remainder>.+)$"
-        )
-        operator_patterns = _FINITE_OPERATOR_PATTERNS
-
-        def operator_left_context_is_bounded(
-            fragment: str,
-            operator_pattern: re.Pattern[str],
-            match: re.Match[str],
-        ) -> bool:
-            """Allow only a frozen semantic object before a predicate anchor."""
-            return _operator_match_left_context_is_bounded(
-                fragment,
-                operator_pattern,
-                match,
-            )
-
-        def finite_owned_operator_matches(
-            fragment: str,
-        ) -> tuple[tuple[re.Pattern[str], re.Match[str]], ...]:
-            return tuple(
-                (pattern, match)
-                for pattern in operator_patterns
-                for match in pattern.finditer(fragment)
-                if operator_left_context_is_bounded(
-                    fragment,
-                    pattern,
-                    match,
-                )
-                and _operator_match_has_finite_closure(
-                    fragment,
-                    pattern,
-                    match,
-                )
-            )
-        explicit_self_content_host = re.compile(
-            r"^(?P<content>.+?)(?:とは|と)"
-            r"(?P<owner>自分|私|わたし|僕|ぼく|俺|おれ)"
-            r"(?:にとって|には|は|が|も|"
-            + _OWNER_FOCUS_PARTICLE_SOURCE
-            + r"(?:は|が|も)?)"
-            r"(?P<host>.+)$"
-        )
-
-        def self_experiential_host_is_bounded(host: str) -> bool:
-            host_core = re.sub(
-                r"^(?:強く|少し|やや|ずっと)[、,\s]*",
-                "",
-                host,
-                count=1,
-            )
-            feeling_host = _last_finite_operator_match(
-                host_core,
-                _FEELING_RE,
-            )
-            epistemic_host = _last_finite_operator_match(
-                "と" + host_core,
-                _UNCERTAIN_RE,
-            )
-            return bool(
-                (
-                    feeling_host is not None
-                    and feeling_host.start() == 0
-                )
-                or (
-                    epistemic_host is not None
-                    and epistemic_host.start() == 0
-                )
-            )
-        # Whitespace is an owner boundary, not disposable formatting.  Only
-        # whitespace immediately consumed with a proven prefix/particle may
-        # be removed; an opaque token before an operator fails closed.
-        owner_scope = top_level_fragment
-        attribution_scope = owner_scope
-        # Consume only a chain of explicit self owners and bounded temporal
-        # prefixes.  Any subsequent grammatical owner/beneficiary remains a
-        # third-party authority and makes the projection ineligible.
-        while True:
-            owner_scope = owner_scope.lstrip(" \t\u3000")
-            previous_owner_scope = owner_scope
-            if not any(
-                pattern.match(owner_scope) is not None
-                for pattern in operator_patterns
-            ):
-                owner_scope = temporal_prefix.sub("", owner_scope)
-            if owner_scope != previous_owner_scope:
-                continue
-            explicit_content_host = explicit_self_content_host.match(
-                owner_scope
-            )
-            if explicit_content_host is not None:
-                content = explicit_content_host.group("content")
-                content_is_complete = bool(
-                    any(
-                        match.end() == len(content)
-                        for pattern in operator_patterns
-                        for match in pattern.finditer(content)
-                    )
-                    or _last_finite_operator_match(
-                        content,
-                        *operator_patterns,
-                    )
-                    is not None
-                )
-                if (
-                    content_is_complete
-                    and self_experiential_host_is_bounded(
-                        explicit_content_host.group("host")
-                    )
-                ):
-                    owner_scope = ""
-                    continue
-            leading_attribution = attribution_prefix.match(owner_scope)
-            if leading_attribution is not None:
-                if (
-                    _SELF_REFERENCE_RE.fullmatch(
-                        leading_attribution.group("owner")
-                    )
-                    is None
-                ):
-                    return False
-                owner_scope = owner_scope[
-                    leading_attribution.end() :
-                ].lstrip(" \t\u3000")
-                continue
-            leading_owner = owner_marker.match(owner_scope)
-            case_owner = leading_case_owner.match(owner_scope)
-            focus_owner = leading_focus_owner.match(owner_scope)
-            topic_owner = leading_topic_owner.match(owner_scope)
-            for marked_owner in (focus_owner, topic_owner):
-                if (
-                    marked_owner is not None
-                    and any(
-                        pattern.search(marked_owner.group("remainder"))
-                        is not None
-                        for pattern in operator_patterns
-                    )
-                    and (
-                        leading_owner is None
-                        or marked_owner.start("marker")
-                        < leading_owner.start("marker")
-                    )
-                ):
-                    if (
-                        _SELF_REFERENCE_RE.fullmatch(
-                            marked_owner.group("owner")
-                        )
-                        is None
-                    ):
-                        return False
-                    owner_scope = marked_owner.group("remainder").lstrip(
-                        " \t\u3000"
-                    )
-                    break
-            else:
-                marked_owner = None
-            if marked_owner is not None:
-                continue
-            if (
-                case_owner is not None
-                and not any(
-                    match.start()
-                    <= case_owner.start("marker")
-                    < match.end()
-                    for pattern in operator_patterns
-                    for match in pattern.finditer(owner_scope)
-                )
-                and any(
-                    pattern.match(case_owner.group("remainder"))
-                    is not None
-                    for pattern in operator_patterns
-                )
-                and (
-                    leading_owner is None
-                    or case_owner.start("marker")
-                    < leading_owner.start("marker")
-                )
-            ):
-                content_owner = case_owner.group("owner")
-                content_is_complete = bool(
-                    any(
-                        match.end() == len(content_owner)
-                        for pattern in operator_patterns
-                        for match in pattern.finditer(content_owner)
-                    )
-                    or _last_finite_operator_match(
-                        content_owner,
-                        *operator_patterns,
-                    )
-                    is not None
-                )
-                semantic_content_bridge = bool(
-                    case_owner.group("marker") == "と"
-                    and content_is_complete
-                    and self_experiential_host_is_bounded(
-                        case_owner.group("remainder")
-                    )
-                )
-                if semantic_content_bridge:
-                    owner_scope = ""
-                    continue
-                if (
-                    _SELF_REFERENCE_RE.fullmatch(case_owner.group("owner"))
-                    is None
-                ):
-                    return False
-                owner_scope = case_owner.group("remainder").lstrip(
-                    " \t\u3000"
-                )
-                continue
-            if leading_owner is None:
-                if (
-                    owner_scope
-                    and not finite_owned_operator_matches(owner_scope)
-                    and not _bounded_nominal_wish_endpoint(owner_scope)
-                    and not _bounded_bare_wish_nominal(owner_scope)
-                    and not _bounded_ambiguous_nominal_state(owner_scope)
-                    and not _bounded_structural_action_endpoint(owner_scope)
-                ):
-                    return False
-                break
-            owner = leading_owner.group("owner")
-            marker = leading_owner.group("marker")
-            if _SELF_REFERENCE_RE.fullmatch(owner) is None:
-                marker_start = leading_owner.start("marker")
-                marker_is_inside_operator = any(
-                    operator_left_context_is_bounded(
-                        owner_scope,
-                        pattern,
-                        match,
-                    )
-                    and match.start() <= marker_start < match.end()
-                    for pattern in operator_patterns
-                    for match in pattern.finditer(owner_scope)
-                )
-                remainder = owner_scope[leading_owner.end() :]
-                owned_terminal_matches = finite_owned_operator_matches(
-                    owner_scope
-                )
-                owned_scope_is_complete = any(
-                    match.start() == 0 and match.end() == len(owner_scope)
-                    for _pattern, match in owned_terminal_matches
-                )
-                bounded_terminal_carrier = bool(
-                    any(
-                        match.end() <= marker_start
-                        for _pattern, match in owned_terminal_matches
-                    )
-                )
-                semantic_subject_operator = next(
-                    (
-                        (pattern, match)
-                        for pattern in operator_patterns
-                        for match in pattern.finditer(owner)
-                        if match.end() == len(owner)
-                        and operator_left_context_is_bounded(
-                            owner,
-                            pattern,
-                            match,
-                        )
-                    ),
-                    None,
-                )
-                special_wish_subject = bool(
-                    re.search(
-                        r"(?:たい|ほしい|欲しい)(?:気持ち|願い)$",
-                        owner,
-                    )
-                )
-                semantic_subject_complete = bool(
-                    semantic_subject_operator is not None
-                    or special_wish_subject
-                )
-                owner_is_complete_semantic_subject = bool(
-                    marker in {"は", "が", "も"}
-                    and semantic_subject_complete
-                    and (
-                        _finite_endpoint_carrier_shape(
-                            marker + remainder,
-                            operator_surface=(
-                                owner
-                                if special_wish_subject
-                                else semantic_subject_operator[1].group(0)
-                                if semantic_subject_operator is not None
-                                else ""
-                            ),
-                            operator_pattern=(
-                                _WISH_RE
-                                if special_wish_subject
-                                else semantic_subject_operator[0]
-                                if semantic_subject_operator is not None
-                                else None
-                            ),
-                        )
-                        or _self_owned_finite_host_shape(
-                            marker + remainder
-                        )
-                    )
-                )
-                epistemic_content_topic = bool(
-                    marker in {"は", "も"}
-                    and (
-                        (
-                            owner.endswith("か")
-                            and any(
-                                match.end() == len(remainder)
-                                for pattern in (
-                                    _RELATION_UNCERTAINTY_RE,
-                                    _UNCERTAIN_RE,
-                                    _OPEN_UNFINISHED_RE,
-                                )
-                                for match in pattern.finditer(remainder)
-                            )
-                        )
-                        or (
-                            owner.endswith("と")
-                            and any(
-                                match.end() <= len(owner) - 1
-                                for pattern in operator_patterns
-                                for match in pattern.finditer(owner[:-1])
-                            )
-                            and re.fullmatch(
-                                r"思(?:う|っている|っていた|っています|"
-                                r"っていました|います|いました)"
-                                r"(?:の(?:だ|です)|ん(?:だ|です))?",
-                                remainder,
-                            )
-                            is not None
-                        )
-                    )
-                )
-                predicate_auxiliary_particle = bool(
-                    (
-                        marker == "の"
-                        and (
-                            semantic_subject_complete
-                            or (
-                                owner.endswith("な")
-                                and any(
-                                    match.end() == len(owner) - 1
-                                    for pattern in operator_patterns
-                                    for match in pattern.finditer(owner[:-1])
-                                )
-                            )
-                        )
-                        and (
-                            semantic_subject_operator is not None
-                            or special_wish_subject
-                        )
-                        and _finite_endpoint_carrier_shape(
-                            marker + remainder,
-                            operator_surface=(
-                                owner
-                                if special_wish_subject
-                                else semantic_subject_operator[1].group(0)
-                            ),
-                            operator_pattern=(
-                                _WISH_RE
-                                if special_wish_subject
-                                else semantic_subject_operator[0]
-                            ),
-                        )
-                    )
-                    or (
-                        marker == "は"
-                        and owner.endswith(("て", "で"))
-                        and any(
-                            match.start() == 0
-                            and match.end() == len(owner) - 1
-                            and _direct_finite_carrier_shape(
-                                remainder,
-                                operator_surface=match.group(0),
-                                operator_pattern=pattern,
-                            )
-                            for pattern in operator_patterns
-                            for match in pattern.finditer(owner[:-1])
-                        )
-                    )
-                )
-                # A marker inside an already-frozen terminal operator (for
-                # example 気がする / 意味がある), or a complete semantic
-                # content subject followed by an exact finite carrier, is not
-                # evidence of a third-party owner.  The operator/end boundary
-                # is grammatical; no noun, case or phrase-family list is used.
-                if (
-                    marker_is_inside_operator
-                    or bounded_terminal_carrier
-                    or owner_is_complete_semantic_subject
-                    or epistemic_content_topic
-                    or predicate_auxiliary_particle
-                ):
-                    # The marker is grammatical, but the remaining predicate
-                    # can still introduce an explicit non-self subject or
-                    # experiencer.  Consume the protected prefix and continue
-                    # scanning to the end; an early break would lend the
-                    # current user to a later owner.
-                    owner_scope = (
-                        ""
-                        if (
-                            bounded_terminal_carrier
-                            or owned_scope_is_complete
-                            or owner_is_complete_semantic_subject
-                            or epistemic_content_topic
-                            or predicate_auxiliary_particle
-                        )
-                        else remainder
-                    )
-                    continue
-                return False
-            owner_scope = owner_scope[leading_owner.end() :].lstrip(
-                " \t\u3000、,"
-            )
-        # A later explicit speaker remains the authority for an attributed
-        # predicate even when the fragment begins with an ownerless state.
-        for attributed_owner in re.finditer(
-            r"(?:と|って)(?P<owner>[^\s、,。.!！?？]+?)"
-            r"(?:は|が|も)(?=(?:言|話|語|述べ|書|記録|考|思|感じ|判断|決め))",
-            attribution_scope,
-        ):
-            if (
-                _SELF_REFERENCE_RE.fullmatch(attributed_owner.group("owner"))
-                is None
-            ):
-                return False
-        return True
+    owner_scope_is_bound = _source_operator_owner_scope_is_bound
 
     def source_proven_past_wish(fragment: str) -> bool:
         # A plain past reporting host is finite only within the same
@@ -7298,6 +7301,36 @@ def build_grounded_human_reception_plan(
         ):
             reference_mode = "short_anchor_if_ambiguous"
             moves = (replace(moves[0], reference_mode=reference_mode),)
+    # The same source-proven denied report must reach the selected reception
+    # referent, so its negation is also consumed by the author and replay.
+    # This selects no new meaning: use the existing whole-words reference
+    # and its matching global quote policy for the already required Move.
+    if (
+        final_source_fidelity
+        and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"short_state_sufficient", "grounded", "limited_grounding"}
+        and reference_mode == "anaphoric_first"
+        and len(moves) == 1 and moves[0].required
+        and moves[0].reception_act == "stay_with_current_burden"
+        and len(moves[0].target_nucleus_ids) == 1
+        and not moves[0].support_nucleus_ids
+    ):
+        target_id = moves[0].target_nucleus_ids[0]
+        target = nucleus_index.get(target_id)
+        if (
+            tuple(primary_nucleus_ids) == (target_id,)
+            and target is not None and target.retention == "required"
+            and target.kind == "state" and len(target.source_span_ids) == 1
+            and target.source_fields in {("memo",), ("memo_action",)}
+            and target.semantic_frame.actor == "current_user"
+            and target.semantic_frame.polarity == "negative"
+            and target.semantic_frame.modality == "fact"
+            and target.semantic_frame.time_scope == "past"
+            and "lexical:source_denied_past_thought_report" in target.semantic_frame.attribute_codes
+            and not any(target_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations)
+        ):
+            reference_mode = "short_anchor_if_ambiguous"
+            moves = (replace(moves[0], reference_mode=reference_mode),)
     # A later Move can own an independent required relation or a separately
     # recorded performed action. Preserve its concrete referent instead of
     # making it anaphoric solely by position. This changes only the existing
@@ -10380,12 +10413,14 @@ def _final_stage1_align_action_status(
     *,
     normalized_input: Mapping[str, Any] | None = None,
 ) -> tuple[GroundedSemanticNucleus, ...]:
-    """Resolve factual tense once, before the final graph/meaning is sealed.
+    """Resolve source-bounded status before the final graph/meaning is sealed.
 
     The public input adapter deliberately has a conservative action default.
     Final Stage 1 may replace that default only when the same source-bounded
     predicate explicitly realizes a factual past or progressive action.  A
     past suffix in a wish, denial, quotation or condition is not such proof.
+    A separately proven denied thought report keeps its negative past host;
+    its embedded wish is not an affirmative current desire or action.
     """
 
     spans = {str(span.span_id): span for span in evidence_spans}
@@ -10393,6 +10428,67 @@ def _final_stage1_align_action_status(
     for nucleus in nuclei:
         frame = nucleus.semantic_frame
         codes = tuple(frame.attribute_codes)
+        if (
+            nucleus.kind in {"wish", "action"}
+            and frame.predicate_kind == "wish"
+            and frame.actor == "current_user"
+            and frame.polarity == "negative"
+            and frame.modality == "wish"
+            and frame.time_scope == "current_input"
+            and len(nucleus.source_span_ids) == 1
+            and not any(code in {"detected_type:limit_signal", "detected_type:fear"}
+                        or code.startswith("source_claim:pressure.") for code in codes)
+            and not any(code.startswith(("source_fragment_scalar_", "surface_scalar_"))
+                        for code in codes)
+        ):
+            # A standalone denied thought report has the same finite host
+            # authority as a compound endpoint. Resolve that host before
+            # graph/meaning selection, without creating a singleton split.
+            span = spans.get(nucleus.source_span_ids[0])
+            source = str((normalized_input or {}).get(span.source_field) or "") if span else ""
+            raw = _clean(span.raw_text) if span else ""
+            report = re.fullmatch(
+                r"(?P<content>.+(?:たい|ほしい|欲しい))(?:と|とは)"
+                r"思(?:わなかった|いませんでした|って(?:い)?なかった|っていませんでした)",
+                raw.rstrip("。．.!！"),
+            )
+            content = report.group("content") if report else ""
+            owner_content = _strip_bounded_operator_prefix(content)
+            wishes = tuple(_WISH_RE.finditer(content))
+            if (
+                span is not None and span.source_field in _TEXT_SOURCE_FIELDS
+                and 0 <= span.start_index < span.end_index <= len(source)
+                and _clean(source[span.start_index:span.end_index]) == raw
+                and not source[:span.start_index].strip()
+                and re.fullmatch(r"\s*[。．.!！]?\s*", source[span.end_index:])
+                and _top_level_text(source) == source
+                and not re.search(r"[「」『』…‥!?！？]", raw)
+                and _time_scope_for_text(raw) == "current_input"
+                and not re.search(r"[はがも]", owner_content)
+                and not re.match(r"(?:たぶん|多分|おそらく|恐らく)[、,]?", owner_content)
+                and _source_operator_owner_scope_is_bound(content)
+                and _semantic_content_is_bounded(content, require_finite=True)
+                and len(wishes) == 1 and wishes[0].end() == len(content)
+                and _operator_match_left_context_is_bounded(content, _WISH_RE, wishes[0])
+                and not set(_operator_codes_for_text(content, source_field=span.source_field))
+                    .intersection({"operator:uncertainty", "operator:self_evaluation",
+                                   "operator:negation", "operator:refusal"})
+            ):
+                # Preserve provenance; the denied host does not assert its
+                # embedded wish, help request, value, or performed action.
+                # Those lexical operators/arc roles must not independently
+                # select an affirmative follow after kind/status alignment.
+                provenance = tuple(code for code in codes if code.startswith(
+                    ("semantic_analyzer:", "detected_type:", "source_claim:", "lexical:")
+                ))
+                aligned.append(replace(nucleus, kind="state", semantic_frame=replace(
+                    frame, predicate_kind="state", polarity="negative", modality="fact",
+                    time_scope="past", attribute_codes=tuple(_dedupe((
+                        *provenance, "operator:negation", "time_scope:past",
+                        "lexical:source_denied_past_thought_report",
+                    ))),
+                )))
+                continue
         if (nucleus.kind == "reaction" and frame.predicate_kind == "feeling"
             and frame.actor == "current_user" and frame.modality in {"fact", "feeling"}
             and frame.time_scope in {"present", "current_input", "continuing"}

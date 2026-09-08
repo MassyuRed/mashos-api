@@ -1519,12 +1519,19 @@ class CMEEFinalNegatedPastWishReportTest(unittest.TestCase):
             "生活を変えたいと思わなかったかもしれないが、難しい。",
             "生活を変えたいと思わなかったが、難しい。と友人が話した。",
             "生活を変えたいと思わなかったが、難しい…",
-            "生活を変えたいと思わなかった。",
         ):
             with self.subTest(text=text):
                 plan = _compile_inputs(self._row(text)).grounded_plan
                 self.assertFalse(any(n.kind == "state" and n.semantic_frame.polarity == "negative"
                                      and n.semantic_frame.time_scope == "past" for n in plan.nuclei))
+        # A standalone report now resolves in the same-nucleus final status
+        # owner. It must still never manufacture a singleton compound split.
+        standalone = _compile_inputs(self._row("生活を変えたいと思わなかった。"))
+        self.assertEqual(observation_plan_owner._typed_nucleus_projections_for_span(
+            standalone.source.evidence_spans[0],
+            base_frame=standalone.grounded_plan.nuclei[0].semantic_frame,
+            normalized_input=standalone.source.normalized_current_input,
+        ), ())
         inputs = _compile_inputs(self._row("生活を変えたいと思わなかったが、難しい。"))
         span = inputs.source.evidence_spans[0]
         for normalized in (None, {"memo": "生活を変えたいと思わなかったが、難しい？"},
@@ -1562,6 +1569,119 @@ class CMEEFinalNegatedPastWishReportTest(unittest.TestCase):
                 reception_owner.reception_active_moves(
                     replace(single_plan, moves=(replace(single, source_evidence_span_ids=evidence),)),
                     "minimal_grounded")
+
+
+class CMEEFinalStandaloneDeniedPastReportTest(unittest.TestCase):
+    _row = staticmethod(CMEEFinalNegatedPastWishReportTest._row)
+
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = tuple((text, _full_surface_artifacts(cls._row(text))) for text in (
+            "生活を変えたいと思わなかった。", "生活を変えたいとは思わなかった。",
+            "生活を変えたいと思いませんでした。", "生活を変えたいと思っていなかった。",
+            "生活を変えたいと思ってなかった。", "生活を変えたいと思っていませんでした。",
+            "私は生活を変えたいと思わなかった。", "相談したいと思わなかった。",
+            "安心したいと思わなかった。",
+        ))
+
+    def test_same_source_denial_reaches_completed_body_and_shared_input(self):
+        for text, a in self.artifacts:
+            with self.subTest(text=text):
+                source = freeze_text_source(_request_from_row(self._row(text)))
+                base = build_grounded_observation_plan(
+                    source.normalized_current_input, evidence_spans=source.evidence_spans)
+                before, = (n for n in base.nuclei if n.source_span_ids == (source.evidence_spans[0].span_id,))
+                after, = (n for n in a.plan.nuclei if n.nucleus_id == before.nucleus_id)
+                self.assertEqual(after, replace(before, kind="state", semantic_frame=after.semantic_frame))
+                self.assertEqual((after.semantic_frame.predicate_kind, after.semantic_frame.polarity,
+                                  after.semantic_frame.modality, after.semantic_frame.time_scope),
+                                 ("state", "negative", "fact", "past"))
+                self.assertEqual({c for c in after.semantic_frame.attribute_codes if c.startswith("operator:")},
+                                 {"operator:negation"})
+                self.assertEqual(tuple(c for c in after.semantic_frame.attribute_codes if c.startswith("lexical:")),
+                                 (*tuple(c for c in before.semantic_frame.attribute_codes if c.startswith("lexical:")),
+                                  "lexical:source_denied_past_thought_report"))
+                self.assertFalse(any(c.startswith(("semantic_role:", "arc_role:"))
+                                     for c in after.semantic_frame.attribute_codes))
+                self.assertIn(text.rstrip("。．") + "という言葉", _reception_text(a.surface.text))
+                self.assertNotIn("願い", _reception_text(a.surface.text))
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                self.assertTrue(all(kw["selected_subjective_input"] is a.selected_subjective_input
+                                    for _args, kw in a.author_arguments))
+
+    def test_completed_body_inverse_rejects_denial_loss_and_performed_action(self):
+        text, a = self.artifacts[0]
+        report = text.rstrip("。")
+        for replacement in ("生活を変えたいと思った", "生活を変えたいと思っている",
+                            "生活を変えたいという願い", "生活を変えた"):
+            with self.subTest(replacement=replacement):
+                body = _tamper_reception(a.surface.text, report, replacement)
+                self.assertNotEqual(body, a.surface.text)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+
+        # Layer 2 retaining the full report cannot discharge Layer 1's own
+        # negation/host obligation, even if a shorter quote is a substring.
+        observation, separator, reception = a.surface.text.partition(surface_owner.RECEPTION_SECTION_LABEL)
+        for replacement in ("生活を変えたい", "生活を変えたいと思った", "生活を変えた"):
+            with self.subTest(observation_replacement=replacement):
+                body = observation.replace(report, replacement) + separator + reception
+                self.assertNotEqual(body, a.surface.text)
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(inverse.passed)
+                self.assertTrue(any(code.startswith("body_inverse_observation_source_anchor_incomplete:")
+                                    for code in inverse.failure_codes))
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan, surface_result=replace(a.surface, text=body),
+                    resolver=a.resolver, require_body_inverse=True,
+                    selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+
+    def test_source_owner_and_report_boundaries_remain_unadmitted(self):
+        for text in (
+            "友人は生活を変えたいと思わなかった。", "弟が生活を変えたいと思わなかった。",
+            "友人曰く生活を変えたいと思わなかった。", "友人によると生活を変えたいと思わなかった。",
+            "私は友人が生活を変えたいと思わなかった。", "弟の生活を変えたいと思わなかった。",
+            "「生活を変えたいと思わなかった」。", "生活を変えたいと思わなかった？",
+            "私は多分生活を変えたいと思わなかった。", "生活を変えたいと思わなかったかもしれない。",
+            "生活を変えたいとは思わない。", "昨日は生活を変えたいと思わなかった。",
+            "生活を変えたいと思いたいと思わなかった。", "生活を変えたいと思わなかった。と友人が話した。",
+            "生活を変えたいと思わなかったので、記録した。",
+        ):
+            with self.subTest(text=text):
+                source = freeze_text_source(_request_from_row(self._row(text)))
+                base = build_grounded_observation_plan(
+                    source.normalized_current_input, evidence_spans=source.evidence_spans)
+                # Compare this final owner directly, without endorsing labels
+                # or other compound projections already present upstream.
+                self.assertEqual(observation_plan_owner._final_stage1_align_action_status(
+                    base.nuclei, source.evidence_spans, normalized_input=source.normalized_current_input),
+                    base.nuclei)
+
+    def test_original_field_proof_is_required_before_status_alignment(self):
+        text, _a = self.artifacts[0]
+        source = freeze_text_source(_request_from_row(self._row(text)))
+        base = build_grounded_observation_plan(
+            source.normalized_current_input, evidence_spans=source.evidence_spans)
+        for normalized in (None, {"memo": text + "と聞いた。"}, {"memo": text[:-1] + "？"},
+                           {"memo": "友人は" + text}):
+            with self.subTest(normalized=normalized):
+                self.assertEqual(observation_plan_owner._final_stage1_align_action_status(
+                    base.nuclei, source.evidence_spans, normalized_input=normalized), base.nuclei)
+        # Ledger retains a fullwidth period. Its finite report status can be
+        # proven, but this does not claim the separate surface anchor Gate
+        # accepts that terminal punctuation.
+        fullwidth = _compile_inputs(self._row("生活を変えたいと思わなかった．"))
+        nucleus = fullwidth.grounded_plan.nuclei[0]
+        self.assertEqual((nucleus.kind, nucleus.semantic_frame.polarity,
+                          nucleus.semantic_frame.modality, nucleus.semantic_frame.time_scope),
+                         ("state", "negative", "fact", "past"))
 
 
 class CMEEPastReportedWishTest(unittest.TestCase):

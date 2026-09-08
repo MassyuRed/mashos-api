@@ -1906,7 +1906,8 @@ def evaluate_grounded_surface_body_inverse(
             if nucleus_id in nucleus_index
             and nucleus_id in set(plan.coverage_requirements.required_nucleus_ids)
         )
-        # An undivided current feeling still owes its complete scene in Layer 1.
+        # An undivided current feeling or proven denied report still owes its
+        # complete scene/host in Layer 1, independently of its Layer 2 referent.
         # Substring matching must not accept deleting that scene merely because
         # the remaining feeling names the Layer 2 referent. Typed fragments and
         # relation surfaces retain their separate source obligations.
@@ -1917,14 +1918,21 @@ def evaluate_grounded_surface_body_inverse(
             and sum(bool(set(item.source_fields) & {"memo", "memo_action"})
                     for item in plan.nuclei) == 1
         ):
-            feeling_nucleus = required_nuclei[0]
-            frame = feeling_nucleus.semantic_frame
+            whole_nucleus = required_nuclei[0]
+            frame = whole_nucleus.semantic_frame
             if (
-                feeling_nucleus.source_fields == ("memo",)
-                and len(feeling_nucleus.source_span_ids) == 1
-                and is_grounded_positive_feeling(feeling_nucleus)
+                (
+                    whole_nucleus.source_fields == ("memo",)
+                    and is_grounded_positive_feeling(whole_nucleus)
+                    and frame.time_scope in {"present", "current_input"}
+                    or whole_nucleus.source_fields in {("memo",), ("memo_action",)}
+                    and whole_nucleus.kind == frame.predicate_kind == "state"
+                    and frame.polarity == "negative" and frame.modality == "fact"
+                    and frame.time_scope == "past"
+                    and "lexical:source_denied_past_thought_report" in frame.attribute_codes
+                )
+                and len(whole_nucleus.source_span_ids) == 1
                 and frame.actor == "current_user"
-                and frame.time_scope in {"present", "current_input"}
                 and not any(
                     code == "semantic_role:generic_relation_fragment"
                     or code.startswith(("source_fragment_scalar_", "surface_scalar_"))
@@ -1932,7 +1940,7 @@ def evaluate_grounded_surface_body_inverse(
                 )
             ):
                 whole_sources = _body_inverse_nucleus_source_values(
-                    feeling_nucleus.nucleus_id, plan, resolver
+                    whole_nucleus.nucleus_id, plan, resolver
                 )
                 if not whole_sources or any(
                     not any(source_text in quote_text for quote_text in normalized_quote_texts)
