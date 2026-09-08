@@ -840,12 +840,12 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                     )
         self.assertEqual(len(request_local_inputs), 100)
         self.assertGreater(limited_trace_count, 0)
-        # Source-owned uncertain modality re-derives one existing reading;
-        # the selected meaning, trace and all124 Move bindings above still
-        # have to agree with their original owner chain.
+        # The approved source-proven feeling/action selection restores one
+        # omitted feeling duty. Keep the original 124 duties plus that duty;
+        # selected meaning, expressions and bindings must still agree above.
         self.assertEqual(grounded_normal_count, 5)
-        self.assertEqual(full_move_count, 124)
-        self.assertEqual(full_expression_count, 124)
+        self.assertEqual(full_move_count, 125)
+        self.assertEqual(full_expression_count, 125)
         self.assertGreater(shared_subject_zero_count, 0)
         self.assertTrue(
             any(

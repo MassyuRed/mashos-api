@@ -8,12 +8,12 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. candidate65と承認済み限定選択修復の最終検証・残件を末尾で確認する。原文全体で証明済みの現在の感情主語と、別欄の本人の実行済み行動が独立している場合に、既存OPで両方のrequired Moveを選ぶ修正を実装した。気持ちを先に受け取り、元の行動も本文へ残す。公開合成の代表例で2責務・厳格なGate／inverse・回復処理が成立。追加4検査成功、必須336件333 PASS／継承3 FAIL、前回332全成否一致。canonical100の全record・実planはcandidate64と同一で、direct100、73/27、各124。華恋が全100件の原文・観察・受取・可否理由を全文確認してNOT_CLEAR。現在の限定証明は100件の欠落例に適用できておらず、中心感情欠落全体の修復完了とはしない。
+3. candidate66の実装checkpointと最終検証状態を末尾で確認する。candidate66実装checkpoint：既存OPのwhole-field検証に、有限な取組過去節・非人称情報主語の認知否定節・現在感情主節を全域照合する限定証明を追加した。旧感情主語転置の証明を拡張せず、同じ原文全体と核を既存の感情／行動選択へつなぐ。公開3代表例で気持ちと既存行動の2責務、Gate／inverse成立。追加4検査は修正後成功。全100のsource照合でこの証明が適用するのは1入力。最終固定sourceの必須回帰・同100実行と全件本文確認はこれから実施し、その結果を同ownerへ追記する。商品NOT_CLEAR、Draft／disabledを維持。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-08最新（candidate65）：原文全体で証明済みの現在の感情主語と、別欄の本人の実行済み行動が独立している場合に、既存OPで両方のrequired Moveを選ぶ修正を実装した。気持ちを先に受け取り、元の行動も本文へ残す。公開合成の代表例で2責務・厳格なGate／inverse・回復処理が成立。追加4検査成功、必須336件333 PASS／継承3 FAIL、前回332全成否一致。canonical100の全record・実planはcandidate64と同一で、direct100、73/27、各124。華恋が全100件の原文・観察・受取・可否理由を全文確認してNOT_CLEAR。現在の限定証明は100件の欠落例に適用できておらず、中心感情欠落全体の修復完了とはしない。
+2026-09-08実装中（candidate66）：candidate66実装checkpoint：既存OPのwhole-field検証に、有限な取組過去節・非人称情報主語の認知否定節・現在感情主節を全域照合する限定証明を追加した。旧感情主語転置の証明を拡張せず、同じ原文全体と核を既存の感情／行動選択へつなぐ。公開3代表例で気持ちと既存行動の2責務、Gate／inverse成立。追加4検査は修正後成功。全100のsource照合でこの証明が適用するのは1入力。最終固定sourceの必須回帰・同100実行と全件本文確認はこれから実施し、その結果を同ownerへ追記する。商品NOT_CLEAR、Draft／disabledを維持。
 
 ## 1. GitHub anchors
 
@@ -6659,3 +6659,13 @@ canonical100を同じ入力・順序・分母でdirectと外側の両方から�
 System Contextは作業前doctor→prepareを実行し、localの固定toolchain不一致を保持。同一開始3refの既存固定CI run34214988633に対するdoctor34 PASS→actual prepare→verify-onlyを確認し、入力61・canonical出力37・transport19partsと全manifestを再照合して既存cacheを使用した。変更後の最終商品refsをPR37の既存profileと対応testへ同期し、既存固定CIからGit管理外cacheを再生成する。最終結果の正本はPR37 current本文と同headのActions。開始時の成功を最終refへ流用せず、REMOTE_PROOF_PENDINGをOperator actual proof完了とはしない。
 
 9月9日途中確認・9月12日本文確認準備目標と品質リスクを継承。全PR Draft/open/unmerged、商品NOT_CLEAR、disabled、human PASS／ready／採用／merge／本番／問い／Layer3は未成立。コード・設計・現在地はGitHub正本、private本文・個別case・digest・locatorの公開0、定例ZIPなし。補助agentは公開sourceの静的読取・反証のみを担当し、rootが編集・実行・全100本文確認・反映を担当した。
+
+### 2026-09-08 continuation — 背景複文の現在感情を同核で証明する（candidate66実装checkpoint）
+
+candidate66実装checkpoint：既存OPのwhole-field検証に、有限な取組過去節・非人称情報主語の認知否定節・現在感情主節を全域照合する限定証明を追加した。旧感情主語転置の証明を拡張せず、同じ原文全体と核を既存の感情／行動選択へつなぐ。公開3代表例で気持ちと既存行動の2責務、Gate／inverse成立。追加4検査は修正後成功。全100のsource照合でこの証明が適用するのは1入力。最終固定sourceの必須回帰・同100実行と全件本文確認はこれから実施し、その結果を同ownerへ追記する。商品NOT_CLEAR、Draft／disabledを維持。
+
+意味の責務を増やす既存承認の範囲で、感情語の末尾一致やactorの既定値だけを本人性の根拠にしない。原fieldの全offset・前後終端・引用外と、全域の有限背景文法、主節の既存owner／有限形／時点検証をともに満たす場合だけ新しいlexical witnessを付ける。背景の過去・否定を主節の時点・極性へ移さず、正感情の主節をburdenへ変換しない。原文を分割せず、新しい核・関係・因果推論を作らない。既存の独立したrequired memo feelingと本人の実行済みrequired memo_actionの選択だけがこの証明を受け取る。exact2 text、共有意味関係の除外、最大3 Move、元の行動・unknown・関係、NORMAL／LIMITEDの同じ再導出、immutable selected input、sole HR、独立replay、Gate／inverseを保つ。
+
+通常HRは既存のcurrent-expression参照から原文全文を残す。回復のanaphoric段階では元の指示語仕様を保ち、観察の全source・両Moveの責務・本文inverseを確認する。最初の追加検査では、全回復段階にHR原文再掲を求めた過剰な期待と、否定負例を証明後のgraphまで進める検査構成で2 FAIL。証明ownerで負例を直接確認し、回復は両責務と全本文sourceとinverseを検査する形へ修正後4 PASS。歴史的fixtureは変更しない。bridgeの現在の責務総数だけは承認済み1責務増加に合わせ124→125へ更新し、入力別exact cover検査は維持する。
+
+runtime変更は既存OP内のみ。既存のgeneric test、現在bridge expectation、runner current13定数とこのhandoffを同source unitで更新する。runner exact18／exact9と非current AST不変。新file／owner／schema／routeは追加せず、STRUCTURE_MAP_DELTA_NONE。国家保存／非同期／read-side、公開I5、API／DB／RN、Piece／Analysisは変えない。最終回帰・同100と本文確認が未完のこのcheckpointを商品完成へ変換しない。

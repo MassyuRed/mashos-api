@@ -7249,8 +7249,10 @@ def build_grounded_human_reception_plan(
         and action.source_fields == ("memo_action",)
         and feeling.semantic_frame.actor == action.semantic_frame.actor == "current_user"
         and source_proven_performed_action_status(action)
-        and "lexical:source_declarative_feeling_subject"
-        in feeling.semantic_frame.attribute_codes
+        and set(feeling.semantic_frame.attribute_codes).intersection({
+            "lexical:source_declarative_feeling_subject",
+            "lexical:source_current_feeling_with_cognitive_background",
+        })
         and not any(
             relation.retention == "required" or relation.type != "uncertain_connection"
             for relation in relations
@@ -7905,8 +7907,10 @@ def _build_response_and_policies(
         and item.semantic_frame.modality in {"fact", "feeling"}
         and item.semantic_frame.polarity in {"negative", "neutral"}
         and item.semantic_frame.time_scope in {"present", "current_input", "continuing"}
-        and "lexical:source_declarative_feeling_subject"
-        in item.semantic_frame.attribute_codes
+        and set(item.semantic_frame.attribute_codes).intersection({
+            "lexical:source_declarative_feeling_subject",
+            "lexical:source_current_feeling_with_cognitive_background",
+        })
         and _reception_opportunity_families_for_nucleus(
             item, safety_kind=safety_decision.safety_triage_kind,
             final_source_fidelity=True,
@@ -10589,14 +10593,48 @@ def _final_stage1_align_action_status(
                     and not source[:start].strip()
                     and re.fullmatch(r"\s*[。．.]?\s*", source[end:]) is not None
                     and _top_level_text(source) == source
-                    and source_grounded_feeling_subject_parts(span.raw_text) is not None
                     and not any(code.startswith(("source_fragment_scalar_", "surface_scalar_"))
                                 for code in codes)):
-                    nucleus = replace(nucleus, semantic_frame=replace(
-                        frame, attribute_codes=tuple(_dedupe((
-                            *codes, "lexical:source_declarative_feeling_subject",
-                        ))),
-                    ))
+                    witness = ""
+                    if source_grounded_feeling_subject_parts(span.raw_text) is not None:
+                        witness = "lexical:source_declarative_feeling_subject"
+                    else:
+                        # Bind every clause, not just a feeling suffix. A finite
+                        # self/ownerless effort precedes concessive no-ni; an
+                        # information subject belongs to the negative cognitive
+                        # host, never to the final current feeling. Keep the
+                        # entire source in this nucleus without a causal edge.
+                        background = re.fullmatch(
+                            r"(?:(?:私|わたし|自分)(?:は|が))?"
+                            r"(?:(?:頑張って|集中して|丁寧に|何度も|繰り返し))?"
+                            r"(?:(?:説明|資料|文章|本|手順|内容)を)?"
+                            r"(?:読んだ|読み返した|聞いた|学んだ|勉強した|確認した)"
+                            r"のに[、,]?"
+                            r"(?:内容|説明|情報|手順|要点)が"
+                            r"(?:頭に入らなくて|理解できなくて|つかめなくて|のみ込めなくて)"
+                            r"[、,](?P<feeling>[^、,。．.\s]+)",
+                            span.raw_text,
+                        )
+                        feeling = background.group("feeling") if background else ""
+                        finite = _last_finite_operator_match(feeling, _FEELING_RE)
+                        carrier = feeling[finite.end():] if finite else ""
+                        current_finite = bool(finite and (
+                            carrier in {"い", "しい", "です", "っている", "っています",
+                                        "んでいる", "んでいます"}
+                            or (not carrier and finite.group(0).endswith("い"))
+                        ))
+                        if (background is not None and current_finite
+                            and _source_operator_owner_scope_is_bound(feeling)
+                            and _semantic_content_is_bounded(feeling, require_finite=True)
+                            and _time_scope_for_text(feeling) in {"present", "current_input", "continuing"}
+                            and not set(_operator_codes_for_text(feeling, source_field=span.source_field))
+                                .intersection({"operator:negation", "operator:uncertainty", "operator:positive_change",
+                                               "operator:refusal", "operator:wish"})):
+                            witness = "lexical:source_current_feeling_with_cognitive_background"
+                    if witness:
+                        nucleus = replace(nucleus, semantic_frame=replace(
+                            frame, attribute_codes=tuple(_dedupe((*codes, witness))),
+                        ))
             aligned.append(nucleus)
             continue
         if (
