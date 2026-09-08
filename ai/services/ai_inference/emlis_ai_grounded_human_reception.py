@@ -1467,10 +1467,22 @@ def reception_active_moves(
     if recovery_stage == "full":
         return ordered
     if recovery_stage == "minimal_grounded":
+        # Minimal surfaces already require one nucleus and one evidence span.
+        # Admit only moves that can satisfy that contract without dropping a
+        # required support; reject here before expression/surface authoring.
+        grounded_nuclei = {
+            nucleus_id for move in ordered
+            for nucleus_id in (*move.target_nucleus_ids, *move.support_nucleus_ids)
+        }
+        grounded_evidence = {
+            span_id for move in ordered for span_id in move.source_evidence_span_ids
+        }
         if (
             reception_plan.depth_policy.level != "minimal"
             or reception_plan.depth_policy.safety_mode != "standard"
             or len(ordered) != 1
+            or len(grounded_nuclei) != 1
+            or len(grounded_evidence) != 1
         ):
             raise GroundedHumanReceptionSurfaceError(
                 "human_reception_minimal_grounded_not_allowed"

@@ -3765,6 +3765,39 @@ def _typed_nucleus_projections_for_span(
             and not re.search(r"[「」『』…‥!?！？]", text)
         )
 
+    def source_proven_negated_past_wish_report(fragment: str) -> bool:
+        # The finite thought report is denied; its desiderative complement
+        # cannot become an affirmative wish. Prove the same first, unique
+        # source clause before retaining it as a negative past statement.
+        report = re.fullmatch(
+            r"(?P<content>.+(?:たい|ほしい|欲しい))(?:と|とは)"
+            r"思(?:わなかった|いませんでした|って(?:い)?なかった|っていませんでした)",
+            fragment,
+        )
+        if (report is None or not owner_scope_is_bound(report.group("content"))
+            or re.match(r"(?:たぶん|多分|おそらく|恐らく)[、,]?",
+                        _strip_bounded_operator_prefix(fragment))
+            or "operator:uncertainty" in _operator_codes_for_text(
+                report.group("content"), source_field=source_field,
+            )
+            or _time_scope_for_text(fragment) != "current_input"
+            or _time_scope_for_text(text) != "current_input"
+            or not text.startswith(fragment) or text.count(fragment) != 1):
+            return False
+        source = str((normalized_input or {}).get(source_field) or "")
+        start, end = span.start_index, span.end_index
+        return bool(
+            0 <= start < end <= len(source)
+            and _clean(source[start:end]) == text
+            and _top_level_text(source) == source
+            and not source[:start].strip()
+            and re.fullmatch(r"\s*[。．.!！]?\s*", source[end:])
+            and not re.search(r"[「」『』…‥!?！？]", text)
+            and "operator:wish" in _operator_codes_for_text(
+                report.group("content"), source_field=source_field,
+            )
+        )
+
     def affirmative_wish_proof(fragment: str) -> tuple[bool, bool]:
         top_level_fragment = _top_level_text(fragment)
         if top_level_fragment is None:
@@ -4481,11 +4514,13 @@ def _typed_nucleus_projections_for_span(
                 ),
                 None,
             )
+            negated_past_report = source_proven_negated_past_wish_report(top_level_fragment)
             if (
                 not top_level_fragment
                 or top_level_fragment != fragment.strip()
                 or (
                     connector_nominal_endpoint is None
+                    and not negated_past_report
                     and not owner_scope_is_bound(top_level_fragment)
                 )
             ):
@@ -4501,6 +4536,13 @@ def _typed_nucleus_projections_for_span(
             # promoted to a positive wish endpoint.
             if "operator:self_evaluation" in operators:
                 return None
+
+            if negated_past_report:
+                # Keep the complete reporting host, not its embedded desire.
+                # The existing state/contrast path owns this assertion;
+                # neither retained intention nor performed action is proven.
+                return ("state", "state", "negative", "fact",
+                        ("operator:negation",), True)
 
             positive_wish, finite_wish_endpoint = affirmative_wish_proof(
                 top_level_fragment
@@ -5202,7 +5244,8 @@ def _typed_nucleus_projections_for_span(
                     predicate_kind=left_predicate,
                     polarity=left_polarity,
                     modality=left_modality,
-                    time_scope=_time_scope_for_text(left_text),
+                    time_scope=("past" if source_proven_negated_past_wish_report(left_text)
+                                else _time_scope_for_text(left_text)),
                     scalar_start=left_start,
                     scalar_end=left_end,
                     attribute_codes=relation_fragment_codes(

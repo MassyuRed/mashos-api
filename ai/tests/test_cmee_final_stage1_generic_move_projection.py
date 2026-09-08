@@ -1454,6 +1454,116 @@ class CMEECompoundPastReportedWishTest(unittest.TestCase):
                 self.assertIn("難しくないこと", _reception_text(a.surface.text))
 
 
+class CMEEFinalNegatedPastWishReportTest(unittest.TestCase):
+    @staticmethod
+    def _row(text):
+        return {"case_id": "public-negated-past-report", "input": {
+            "thought_text": text, "action_text": "", "categories": ["生活"],
+            "emotions": [{"type": "不安", "strength": "weak"}],
+        }}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = tuple((report, _full_surface_artifacts(cls._row(report + "が、難しい。")))
+                              for report in (
+            "生活を変えたいと思わなかった", "生活を変えたいとは思わなかった",
+            "生活を変えたいと思いませんでした", "生活を変えたいと思っていなかった",
+            "生活を変えたいと思ってなかった", "生活を変えたいと思っていませんでした",
+            "私は生活を変えたいと思わなかった",
+        ))
+
+    def test_denied_report_keeps_past_negative_state_and_complete_contrast(self):
+        for report, a in self.artifacts:
+            with self.subTest(report=report):
+                left, right = a.plan.nuclei[:2]
+                self.assertEqual((left.kind, left.semantic_frame.predicate_kind,
+                                  left.semantic_frame.polarity, left.semantic_frame.modality,
+                                  left.semantic_frame.time_scope),
+                                 ("state", "state", "negative", "fact", "past"))
+                self.assertNotIn("operator:wish", left.semantic_frame.attribute_codes)
+                self.assertEqual(right.kind, "constraint")
+                self.assertEqual(tuple(r.type for r in a.plan.relations), ("contrast",))
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                self.assertEqual(a.sentence_plan.recovery_stage, "full")
+                follow = _reception_text(a.surface.text)
+                self.assertIn(report + "こと", follow)
+                self.assertIn("難しい", follow)
+                self.assertNotIn("願い", follow)
+                self.assertEqual({s.recovery_stage for s in a.authored},
+                                 {"full", "optional_removed", "integrated", "hedged"})
+
+    def test_inverse_rejects_negation_loss_current_wish_and_performed_action(self):
+        report, a = self.artifacts[0]
+        for replacement in ("生活を変えたいと思った", "生活を変えたいと思っている",
+                            "生活を変えたいという願い", "生活を変えた"):
+            with self.subTest(replacement=replacement):
+                body = _tamper_reception(a.surface.text, report, replacement)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+
+    def test_report_proof_requires_first_unique_self_clause_and_original_field(self):
+        # Excluded forms keep their prior paths; this does not endorse their
+        # existing labels or claim product acceptance for those paths.
+        for text in (
+            "生活を変えたいと思わなかったが、難しい？",
+            "生活を変えたいと思わなかったが、今は難しい。",
+            "難しいが、生活を変えたいと思わなかった。",
+            "生活を変えたいと思わなかったが、生活を変えたいと思わなかった。",
+            "友人は生活を変えたいと思わなかったが、難しい。",
+            "「生活を変えたいと思わなかった」が、難しい。",
+            "私は多分生活を変えたいと思わなかったが、難しい。",
+            "生活を変えたいと思ったので出かけたいと思わなかったが、難しい。",
+            "生活を変えたいと思わなかったかもしれないが、難しい。",
+            "生活を変えたいと思わなかったが、難しい。と友人が話した。",
+            "生活を変えたいと思わなかったが、難しい…",
+            "生活を変えたいと思わなかった。",
+        ):
+            with self.subTest(text=text):
+                plan = _compile_inputs(self._row(text)).grounded_plan
+                self.assertFalse(any(n.kind == "state" and n.semantic_frame.polarity == "negative"
+                                     and n.semantic_frame.time_scope == "past" for n in plan.nuclei))
+        inputs = _compile_inputs(self._row("生活を変えたいと思わなかったが、難しい。"))
+        span = inputs.source.evidence_spans[0]
+        for normalized in (None, {"memo": "生活を変えたいと思わなかったが、難しい？"},
+                           {"memo": "生活を変えたいと思わなかったが、難しい。と聞いた。"}):
+            projections = observation_plan_owner._typed_nucleus_projections_for_span(
+                span, base_frame=inputs.grounded_plan.nuclei[0].semantic_frame,
+                normalized_input=normalized,
+            )
+            self.assertFalse(any(p.kind == "state" and p.time_scope == "past" for p in projections))
+        for ending in ("。", "．"):
+            a = _full_surface_artifacts(self._row("生活を変えたいと思わなかったが、難しくない" + ending))
+            self.assertEqual(tuple(n.kind for n in a.plan.nuclei[:2]), ("state", "state"))
+            self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+            self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+            self.assertIn("難しくないこと", _reception_text(a.surface.text))
+
+    def test_minimal_admission_preserves_required_support_and_single_source_contract(self):
+        _report, a = self.artifacts[0]
+        rp = a.plan.response_plan.human_reception_plan
+        move, = rp.moves
+        self.assertTrue(move.required)
+        self.assertTrue(move.support_nucleus_ids)
+        with self.assertRaisesRegex(surface_owner.GroundedSentenceSurfaceError,
+                                    "human_reception_minimal_grounded_not_allowed"):
+            surface_owner.build_reception_recovery_sentence_plan(
+                a.sentence_plan, a.plan, a.resolver, recovery_stage="minimal_grounded")
+        for stage in ("full", "optional_removed", "integrated", "hedged"):
+            self.assertEqual(reception_owner.reception_active_moves(rp, stage), (move,))
+        single = replace(move, support_nucleus_ids=())
+        single_plan = replace(rp, moves=(single,))
+        self.assertEqual(reception_owner.reception_active_moves(single_plan, "minimal_grounded"), (single,))
+        for evidence in ((), (*single.source_evidence_span_ids, "other-span")):
+            with self.assertRaisesRegex(reception_owner.GroundedHumanReceptionSurfaceError,
+                                        "human_reception_minimal_grounded_not_allowed"):
+                reception_owner.reception_active_moves(
+                    replace(single_plan, moves=(replace(single, source_evidence_span_ids=evidence),)),
+                    "minimal_grounded")
+
+
 class CMEEPastReportedWishTest(unittest.TestCase):
     def _wish(self, text):
         source, nucleus = CMEESameNucleusActionStatusTest()._action(text)
