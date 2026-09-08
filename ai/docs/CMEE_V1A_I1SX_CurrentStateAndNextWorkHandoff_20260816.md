@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. 末尾のcandidate61と継承承認を確認する。既存OPの先頭・一意なplain過去報告句を原fieldで証明し、同じstatus ownerでpastへそろえた。公開合成の3件で過去の願いと制約が完成本文へ届き、他17件は全記録同一。取消し制約の初案退行も修正した。必須321件318 PASS／継承3 FAIL、前回317の全成否一致、新規4成功。canonical100は全record・実plan不変、73/27・124責務を維持。華恋の全100件全文確認はNOT_CLEAR。V2再実行17件6 PASS／11 FAIL、最後のcandidate59と全42件213候補・選択結果も同一。主体・極性・時点のscopeと中心感情の未選択などの残件はcanonical06・API handoffのcandidate61とPR37 current本文を参照。GitHub正本・定例ZIPなしを継続。
+3. 末尾のcandidate62と継承承認を確認する。既存OPで原fieldの先頭・一意・本人所有・default時点を証明した否定過去報告を、肯定の願いへ変えずnegative／fact／pastのstateとして保持した。既存HRのminimal適格条件を既存validatorの1核・1根拠条件へそろえ、必要supportを落とさず不適格候補を入口で除外する。必須325件322 PASS／継承3 FAIL、前回321の全成否一致、新規4成功。canonical100は全record・実plan不変、73/27・124責務を維持し、華恋の全100件全文確認はNOT_CLEAR。V2の17件6 PASS／11 FAILと全42件213候補も前回と同一。公開20件では否定報告1件の意味・本文を修正し、別3件の候補処理停止も解消、他16件は全記録同一。対象外の報告scope、中心感情の未選択、再掲・定型締めは残件。GitHub正本・定例ZIPなしを継続。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -6559,5 +6559,27 @@ source・既存関連test・既存current runnerの3pathをremote `2daf28d9c120d
 残件は、中心感情の未選択と補助行動偏重、長い原文再掲と定型的な締め、同核の主体・時点・関係の不足。今回の公開診断でも、逆順の過去願望・別節の現在時点・疑問・他者・否定された報告・報告自体の不確かさ・m行の願望と比喩の衝突に旧不整合が残る。敬体報告の名詞句接続も不自然さが残る。次は原fieldと有限述語の主体／極性／時点のscopeを既存ownerで確認し、同核の誤りから修正する。過去願望の活用追加だけでこれらを解決済みにしない。退役済みfocus-selector authorityはCONSUMED_TERMINAL_STOPのまま、表現側で未選択の感情を補わない。
 
 System Contextは開始時にdoctor→prepareを実行。ローカルは固定toolchain不一致で両方exit2、cacheを根拠にせず原典本文を確認した。開始時の同一refsに対する固定CI run34179774823はdoctor34 PASS、actual prepare・verify-only成功、EXACT_INPUTS_VERIFIED／FRESH_FOR_EXACT_INPUTS／ref_drift NONEを確認済み。変更後の最終refsは既存profileと対応検査へ同期し、Git管理外cacheを固定CIで再生成する。結果の正本はPR37 current本文と同じheadのActions。開始時の成功を変更後の証拠へ流用せず、REMOTE_PROOF_PENDINGをOperator proof完了としない。
+
+9月9日の途中確認・9月12日の本文確認準備目標と品質リスクを継承。全PR Draft・open・unmerged、商品NOT_CLEAR、human PASS・ready・採用・merge・本番は未成立。コード・設計・引き継ぎはGitHub正本、private本文・個別case・digest・locatorの公開0、定例ZIP手渡し0。補助agentは公開静的読取のみ、編集・実行・private全件読取・反映はrootが担当した。
+
+### 2026-09-08 continuation — 否定された過去の思考報告を受取まで保持（candidate62／商品未成立）
+
+継承承認 `FRESH_MASH_LEVEL3_CMEE_STAGE1_SELECTED_SUBJECTIVE_RECEPTION_FORWARD_INVERSE_REQUEST_LOCAL_CONTRACT_20260905` 内の同じ未完unit。前提・CURRENT_RULES・恒久incident・最新weekly20260905、全体設計図と全tracked file地図を確認し、三中核・国家経路・共通基盤・旧経路を照合した。全pathはCocolon1635／API2138で前回と同一、STRUCTURE_MAP_DELTA_NONE。担当UXは、本人が願ったという報告を否定した意味と過去時点を取り違えず、併記した事情とともに受け取ること。final Stage1は公開返信へ未接続で、国家保存・dispatch・queue・read、公開API・DB・RN、Piece・Analysisの接続変更はない。
+
+既存Observation Planのgeneric contrast endpointへ原field証明を追加した。desiderative complementの既存wish operator・主体判定、既存不確かさoperatorなし、default時点、原span先頭・一意、exact offset、field全体の引用外・平叙終端を必要とする。有限の思考報告自体が否定されたplain／敬体過去をstate／negative／fact／past、operator:negationとして保持し、complementのwishを肯定願望として残さない。自己prefix後の不確かさ、先行報告を含む入れ子、他者・引用・疑問・反復・別時点・後置hostへ追加証明を広げない。後半の制約と取消し制約、既存contrastの両端を保持する。新owner・selector・Gate・schema・依存・provider・問い・Layer3は追加していない。
+
+通常候補は完成したが、最後のminimal候補が2核groundingを持ち、既存validatorのexact1条件で生成全体を止める不整合を発見した。既存reception_active_movesのminimal適格条件にtarget∪supportと根拠spanの一意件数各1を加え、既存human_reception_minimal_grounded_not_allowedでsurface author前に除外する。必要supportを削らず、validatorやGateを緩めない。full／optional_removed／integrated／hedgedは従来の責務を保ち、sole compilerの既存sentence-plan回復処理を通る。旧公開reply／recovery sequence／R4／RR7も読んだ上で、既存成功minimalが満たす条件と整合することを確認した。
+
+公開合成20件の前後比較では、否定過去報告1件の肯定願望誤分類を修正し、原文の否定と過去形を保つ本文が完成した。別3件は核・関係を変えず、同じminimal不整合による停止から完成本文へ到達した。他16件は全record同一。後者3件には既存の不確かさ分類・疑問scope等が残り、生成成功を意味の正しさや商品PASSとしない。敬体の「でしたこと」接続も不自然さが残る。新規4検査は7つの公開報告形、否定・過去・contrastと完成本文、否定消去／現在願望／実行済みへの改変をinverseが拒否すること、原fieldとscopeの除外、句点2種の取消し制約、必要supportを保つminimal除外と正当な1核・1根拠の維持を確認した。
+
+source2path・既存関連test・既存current runnerの4pathをremote `0b4db470dad93a0558131e9aefbd785bb7cfa57d` に保存。最終実行local `0d8a299aac362f024a7f2d2c585cd565756442a2` とwhole tree `25374e9045be2eeddaede0140875301aab51306b` は同一。既存runnerのcurrent13定数だけ再導出しexact18／exact9、非current AST不変を確認した。以前のPython環境が今回のworkspaceに存在しなかったため保存済み固定wheelから復元し、Python3.12.13・lock指定46依存・46wheel・2268実ファイルの整合を確認した。歴史的fixture・期待hash・dated receiptは変更していない。
+
+必須325検査は322 PASS／継承3 FAIL、ERROR・skip0。前回321件の全成否一致、新規4全成功。原184は181 PASS／3 FAIL、追加141全成功。残る3失敗は観察の歴史的固定hash2件とdated source receipt1件。全36ケース・post-hash96・集合後続診断は前回と全内容同一。V2の17検査も再実行し6 PASS／11 FAIL、candidate61と全成否・全42件213候補・選択結果が同一。今回の成功で歴史的失敗を消さない。
+
+同じcanonical100はdirect100、73 GENERATED／27 UNAVAILABLE、必要Move・expression・binding各124。全入力・全核・selected subjective input・観察・受取・可否理由・実planを含む全recordがcandidate61と同一。華恋が全100件の原文全field・観察・受取・可否理由を全文確認し、商品NOT_CLEAR。公開診断の改善をcanonical100の改善やMashのProduct PASSへ変換しない。
+
+残件は中心感情の未選択と補助行動偏重、長い原文再掲と定型的な締め、同核の主体・時点・関係の不足。今回の追加証明は単独文、逆順、現在否定報告、不確かな報告、他者・引用、明示時点を含む形には適用しない。これらの既存経路に残る願望の誤分類や、動機願い・比喩・報告scopeの衝突は未修正。次は既存source ownerの原field・有限host・極性／時点／主体の証明へ戻り、同核の誤りを修正する。退役済みfocus-selector authorityはCONSUMED_TERMINAL_STOPのまま、表現側で未選択の感情を補わない。
+
+System Contextは開始時にdoctor→prepareを実行。ローカルは固定toolchain不一致で両方exit2、cacheを根拠にせず原典本文を確認した。開始時の同一refsに対する固定CI run34183892158はdoctor34 PASS、actual prepare・verify-only成功、EXACT_INPUTS_VERIFIED／FRESH_FOR_EXACT_INPUTS／ref_drift NONEを確認済み。変更後の最終refsは既存profileと対応検査へ同期し、Git管理外cacheを固定CIで再生成する。結果の正本はPR37 current本文と同じheadのActions。開始時の成功を変更後の証拠へ流用せず、REMOTE_PROOF_PENDINGをOperator proof完了としない。
 
 9月9日の途中確認・9月12日の本文確認準備目標と品質リスクを継承。全PR Draft・open・unmerged、商品NOT_CLEAR、human PASS・ready・採用・merge・本番は未成立。コード・設計・引き継ぎはGitHub正本、private本文・個別case・digest・locatorの公開0、定例ZIP手渡し0。補助agentは公開静的読取のみ、編集・実行・private全件読取・反映はrootが担当した。
