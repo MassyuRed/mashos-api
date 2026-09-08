@@ -1674,14 +1674,88 @@ class CMEEFinalStandaloneDeniedPastReportTest(unittest.TestCase):
             with self.subTest(normalized=normalized):
                 self.assertEqual(observation_plan_owner._final_stage1_align_action_status(
                     base.nuclei, source.evidence_spans, normalized_input=normalized), base.nuclei)
-        # Ledger retains a fullwidth period. Its finite report status can be
-        # proven, but this does not claim the separate surface anchor Gate
-        # accepts that terminal punctuation.
+        # The original fullwidth ending remains in Ledger. The observation
+        # quote must preserve it independently of this finite status proof.
         fullwidth = _compile_inputs(self._row("生活を変えたいと思わなかった．"))
         nucleus = fullwidth.grounded_plan.nuclei[0]
         self.assertEqual((nucleus.kind, nucleus.semantic_frame.polarity,
                           nucleus.semantic_frame.modality, nucleus.semantic_frame.time_scope),
                          ("state", "negative", "fact", "past"))
+
+    def test_fullwidth_report_quotes_keep_the_original_period_and_complete_body(self):
+        for standard_text, standard in self.artifacts:
+            with self.subTest(standard_text=standard_text):
+                report = standard_text.rstrip("。")
+                text = report + "．"
+                source = freeze_text_source(_request_from_row(self._row(text)))
+                a = _full_surface_artifacts(self._row(text))
+                self.assertEqual(a.surface.text, standard.surface.text.replace(
+                    "「" + report + "」", "「" + text + "」", 1))
+                self.assertEqual(a.resolver.resolve("s1"), source.evidence_spans[0])
+                self.assertEqual(a.resolver.resolve("s1").raw_text, text)
+                self.assertEqual(a.resolver.resolve("s1").end_index, len(text))
+                self.assertEqual(tuple(n.semantic_frame for n in a.plan.nuclei),
+                                 tuple(n.semantic_frame for n in standard.plan.nuclei))
+                self.assertIn(report + "という言葉", _reception_text(a.surface.text))
+                self.assertNotIn("願い", _reception_text(a.surface.text))
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+
+    def test_fullwidth_report_keeps_strict_observation_and_reception_source_checks(self):
+        report = "生活を変えたいと思わなかった"
+        a = _full_surface_artifacts(self._row(report + "．"))
+        observation, separator, reception = a.surface.text.partition(surface_owner.RECEPTION_SECTION_LABEL)
+        for body in (
+            observation.replace(report, "生活を変えたいと思った") + separator + reception,
+            observation.replace("．", "") + separator + reception,
+            _tamper_reception(a.surface.text, report, "生活を変えたいと思った"),
+        ):
+            with self.subTest(body=body):
+                self.assertNotEqual(body, a.surface.text)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan, surface_result=replace(a.surface, text=body),
+                    resolver=a.resolver, require_body_inverse=True,
+                    selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+
+    def test_fullwidth_quote_preservation_requires_the_existing_proof_and_single_ending(self):
+        for text in (
+            "友人は生活を変えたいと思わなかった．", "「生活を変えたいと思わなかった」．",
+            "生活を変えたいと思わなかったかもしれない．", "昨日は生活を変えたいと思わなかった．",
+            "生活を変えたいと思わなかった．．", "生活を変えたいと思わなかった．？",
+        ):
+            with self.subTest(text=text):
+                inputs = _compile_inputs(self._row(text))
+                nucleus = inputs.grounded_plan.nuclei[0]
+                resolver = build_evidence_span_resolver(inputs.source.evidence_spans)
+                quotes = surface_owner._quotes_for_nuclei((nucleus.nucleus_id,),
+                                                        {nucleus.nucleus_id: nucleus}, resolver)
+                self.assertEqual(quotes, (surface_owner._quote(resolver.resolve("s1").raw_text),))
+        inputs = _compile_inputs(self._row("生活を変えたいと思わなかった．"))
+        resolver = build_evidence_span_resolver(inputs.source.evidence_spans)
+        nucleus = inputs.grounded_plan.nuclei[0]
+        unproven = replace(nucleus, semantic_frame=replace(nucleus.semantic_frame,
+            attribute_codes=tuple(c for c in nucleus.semantic_frame.attribute_codes
+                                  if c != "lexical:source_denied_past_thought_report")))
+        self.assertEqual(surface_owner._quotes_for_nuclei((unproven.nucleus_id,),
+            {unproven.nucleus_id: unproven}, resolver), ("「生活を変えたいと思わなかった」",))
+        # A second typed nucleus can share the span; only the original full
+        # source quote may preserve this ending, never its partial slice.
+        raw = resolver.resolve("s1").raw_text
+        fragment = replace(unproven, nucleus_id=unproven.nucleus_id + ":fragment",
+            semantic_frame=replace(unproven.semantic_frame, attribute_codes=(
+                "semantic_role:generic_relation_fragment",
+                "source_fragment_scalar_source:normalized_raw_text",
+                f"source_fragment_scalar_range:1:{len(raw)}",
+            )))
+        self.assertEqual(surface_owner._quotes_for_nuclei(
+            (nucleus.nucleus_id, fragment.nucleus_id),
+            {nucleus.nucleus_id: nucleus, fragment.nucleus_id: fragment}, resolver),
+            ("「" + raw + "」", surface_owner._quote(raw[1:])))
 
 
 class CMEEPastReportedWishTest(unittest.TestCase):

@@ -2279,8 +2279,8 @@ def _clean_fragment(value: Any) -> str:
     return text.strip()
 
 
-def _quote(value: Any) -> str:
-    text = _clean_fragment(value)
+def _quote(value: Any, *, preserve_source_punctuation: bool = False) -> str:
+    text = _clean(value) if preserve_source_punctuation else _clean_fragment(value)
     return f"「{text}」" if text else ""
 
 
@@ -2399,6 +2399,24 @@ def _quotes_for_nuclei(
                 )
             )
     fragments.sort(key=lambda item: (item[3], item[4] if item[4] >= 0 else 10**9))
+    # A proven standalone denied report must reach the observation quote
+    # whole. Ledger retains this fullwidth ending and the strict source
+    # anchor checks it; preserve the original character instead of changing
+    # shared source spans or accepting a shortened anchor in the Gate.
+    punctuation_preserved_sources = {
+        (span_id, text) for span_id, nucleus, text, field, start, end in fragments
+        if nucleus.source_span_ids == (span_id,)
+        and nucleus.kind == "state"
+        and nucleus.semantic_frame.predicate_kind == "state"
+        and nucleus.semantic_frame.actor == "current_user"
+        and nucleus.semantic_frame.polarity == "negative"
+        and nucleus.semantic_frame.modality == "fact"
+        and nucleus.semantic_frame.time_scope == "past"
+        and "lexical:source_denied_past_thought_report" in nucleus.semantic_frame.attribute_codes
+        and field in {"memo", "memo_action"} and 0 <= start < end
+        and text.endswith("．") and text.count("．") == 1
+        and text[:-1] == _clean_fragment(text)
+    }
     units: list[tuple[SurfaceClauseUnit, str, int, int]] = []
     for span_id, nucleus, text, field, start, end in fragments:
         if not text:
@@ -2473,7 +2491,11 @@ def _quotes_for_nuclei(
         )
     return tuple(
         _dedupe(
-            _quote(unit.surface_text)
+            _quote(unit.surface_text, preserve_source_punctuation=(
+                len(unit.source_span_ids) == 1
+                and (unit.source_span_ids[0], unit.surface_text) in punctuation_preserved_sources
+                and unit.dependency_role == "standalone"
+            ))
             for unit, _field, _start, _end in units
         )
     )
