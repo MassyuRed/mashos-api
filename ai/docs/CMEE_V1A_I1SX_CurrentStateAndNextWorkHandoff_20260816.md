@@ -6694,7 +6694,7 @@ runtime変更は既存OP内のみ。既存のgeneric test、現在bridge expecta
 
 Emlisの入力直後の受取が、現在の気持ちを行動だけに置き換えないための限定修正。既存OPのfinal専用source alignmentで、原fieldの全offset・前後終端・引用外と、有限な発言等の動詞背景節、接続、1〜2の負の感情名詞、現在の残存hostを全域照合する。既存のowner／modality／極性／時点条件も必要とする。新witnessはlocalな証明語彙であり、共通感情辞書や旧感情主語転置の証明を拡張しない。背景の省略された行為者や受動／可能の違いを新たに確定せず、原文全体と元の意味核を保持する。
 
-既存typed reactionも、この新しい全域証明が成立しmodality=feelingの場合だけ、独立した感情／行動選択と意味決定前の役割再導出へ接続する。predicate kindのfeelingへの書換え、感情だけの短縮参照、新しい核・因果・関係の発行はない。required memoと本人の実行済みrequired memo_actionのexact2 text核、共有意味関係の除外、既存current_burdenの一意性を維持。元の行動・関係方向・unknown、最大3 Move、NORMAL／LIMITED、immutable selected input、sole HR、独立replay、Gate／inverseを保持する。seal後の感情補充や一律memo優先で直さない。
+既存typed reactionも、この新しい全域証明が成立し既存のmodality条件を満たす場合だけ、独立した感情／行動選択と意味決定前の役割再導出へ接続する。predicate kindのfeelingへの書換え、感情だけの短縮参照、新しい核・因果・関係の発行はない。required memoと本人の実行済みrequired memo_actionのexact2 text核、共有意味関係の除外、既存current_burdenの一意性を維持。元の行動・関係方向・unknown、最大3 Move、NORMAL／LIMITED、immutable selected input、sole HR、独立replay、Gate／inverseを保持する。seal後の感情補充や一律memo優先で直さない。
 
 公開合成3代表例を既存testに追加し、元のreaction型、両required責務と別々のselected contribution、全回復段階でのsource保持・inverse、背景／各感情／元の行動欠落のinverse拒否を検証した。他者・過去・否定・推量・報告・引用・条件・正感情・3感情・不完全field・別節・第三主題・optional感情・非実行行動・共有関係を対象外に保つ。通常HRは原field全文、anaphoric回復は既存指示語と観察の全sourceを用いる。新たな対応範囲を現在感情の全構文へ一般化しない。
 
