@@ -7198,6 +7198,36 @@ def build_grounded_human_reception_plan(
                     surface_strategy="emlis_attention_first",
                 ),
             )
+    # A single selected, source-proven performance still has concrete content.
+    # Keep that content explicit without changing its selected meaning or duty.
+    # Use the existing concrete-reference/quote policy together; the final
+    # author emits an unquoted nominal and anaphoric recovery stays available.
+    if (
+        final_source_fidelity
+        and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"grounded", "limited_grounding"}
+        and reference_mode == "anaphoric_first"
+        and len(moves) == 1
+        and moves[0].required
+        and moves[0].reception_act == "honor_concrete_effort"
+        and len(moves[0].target_nucleus_ids) == 1
+        and not moves[0].support_nucleus_ids
+    ):
+        target_id = moves[0].target_nucleus_ids[0]
+        target = nucleus_index.get(target_id)
+        if (
+            tuple(primary_nucleus_ids) == (target_id,)
+            and target is not None
+            and target.retention == "required"
+            and target.source_fields == ("memo_action",)
+            and len(target.source_span_ids) == 1
+            and target.semantic_frame.actor == "current_user"
+            and source_proven_performed_action_status(target)
+            and not any(target_id in (r.from_nucleus_id, r.to_nucleus_id)
+                        for r in relations)
+        ):
+            reference_mode = "short_anchor_if_ambiguous"
+            moves = (replace(moves[0], reference_mode=reference_mode),)
     # A later Move can own an independent required relation or a separately
     # recorded performed action. Preserve its concrete referent instead of
     # making it anaphoric solely by position. This changes only the existing
@@ -10244,7 +10274,7 @@ def past_reported_wish_finite(text: str, *, span_text: str | None = None) -> boo
     finite = _source_finite_without_postposed_focus(_strip_bounded_operator_prefix(text))
     return bool(
         re.search(
-            r"(?:たい|ほしい|欲しい)と(?:思って(?:いた|いました)|"
+            r"(?:たい|ほしい|欲しい)と(?:思(?:った|いました|って(?:いた|いました))|"
             r"言(?:った|いました)|伝え(?:た|ました))$", finite,
         )
         and not re.search(r"[はがも?？]", finite)

@@ -1290,6 +1290,81 @@ class CMEEUnresolvedQuestionSourceTest(unittest.TestCase):
                     self.assertTrue(text.endswith("小さくせずに" + ending))
 
 
+class CMEEFinalSinglePerformedActionReferenceTest(unittest.TestCase):
+    @staticmethod
+    def _row(text):
+        return {"case_id": "public-single-performed-action", "input": {
+            "thought_text": "", "action_text": text, "categories": ["生活"],
+            "emotions": [{"type": "不安", "strength": "weak"}],
+        }}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = tuple((text, _full_surface_artifacts(cls._row(text))) for text in (
+            "資料を整理した。", "資料を整理している。",
+            "会議で受け取った資料を種類ごとに整理した。",
+        ))
+
+    def test_complete_selected_action_reaches_reception_without_a_quote(self):
+        for text, a in self.artifacts:
+            with self.subTest(text=text):
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                self.assertEqual(a.sentence_plan.recovery_stage, "full")
+                rp = a.plan.response_plan.human_reception_plan
+                move, = rp.moves
+                self.assertTrue(move.required)
+                self.assertEqual(move.reception_act, "honor_concrete_effort")
+                self.assertEqual(move.target_nucleus_ids, a.plan.response_plan.primary_nucleus_ids)
+                self.assertEqual(move.support_nucleus_ids, ())
+                self.assertEqual(move.reference_mode, "short_anchor_if_ambiguous")
+                self.assertEqual(rp.reference_mode, move.reference_mode)
+                # Preserve the registered reference-policy mapping, including
+                # the quote budget. The final author still emits no quotes.
+                self.assertEqual((rp.quote_policy.max_anchor_count,
+                                  rp.quote_policy.max_anchor_visible_chars), (1, 16))
+                follow = _reception_text(a.surface.text)
+                self.assertEqual(follow.count(text.rstrip("。") + "こと"), 1)
+                self.assertNotIn("実際の行動", follow)
+                self.assertNotIn("「", follow)
+                self.assertNotIn("『", follow)
+                for stage in ("integrated", "hedged", "minimal_grounded"):
+                    self.assertEqual(reception_owner.reception_effective_move_reference_mode(
+                        rp, move, stage), "anaphoric_first")
+
+    def test_inverse_rejects_changed_action_time_owner_and_quoted_or_repeated_target(self):
+        text, a = self.artifacts[0]
+        nominal = text.rstrip("。") + "こと"
+        for wrong in ("実際の行動", "資料を整理すること", "資料を整理しなかったこと",
+                      "別の資料を整理したこと", "同僚が資料を整理したこと",
+                      "「" + nominal + "」", nominal + "と" + nominal):
+            with self.subTest(wrong=wrong):
+                body = _tamper_reception(a.surface.text, nominal, wrong)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan,
+                    surface_result=replace(a.surface, text=body), resolver=a.resolver,
+                    require_body_inverse=True, selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+
+    def test_legacy_and_unproven_performance_keep_their_reference_policy(self):
+        text, _a = self.artifacts[0]
+        inputs = _compile_inputs(self._row(text))
+        base = build_grounded_observation_plan(
+            inputs.source.normalized_current_input, evidence_spans=inputs.source.evidence_spans,
+        )
+        self.assertEqual(base.response_plan.human_reception_plan.reference_mode, "anaphoric_first")
+        for text in ("明日、資料を整理する。", "資料を整理した？", "資料を整理しなかった。"):
+            with self.subTest(text=text):
+                p = _compile_inputs(self._row(text)).grounded_plan
+                rp = p.response_plan.human_reception_plan
+                self.assertEqual(rp.reference_mode, "anaphoric_first")
+                self.assertEqual(rp.quote_policy.max_anchor_count, 0)
+
+
 class CMEEPastReportedWishTest(unittest.TestCase):
     def _wish(self, text):
         source, nucleus = CMEESameNucleusActionStatusTest()._action(text)
@@ -1300,6 +1375,7 @@ class CMEEPastReportedWishTest(unittest.TestCase):
 
     def test_finite_past_report_preserves_host_and_same_wish_owner(self):
         for text in ("休みたいと言った。", "休みたいと言いました。",
+                     "休みたいと思った。", "休みたいと思いました。",
                      "休みたいと思っていた。", "休みたいと思っていました。",
                      "休みたいと伝えた。", "休みたいと伝えました。"):
             with self.subTest(text=text):
@@ -1325,6 +1401,13 @@ class CMEEPastReportedWishTest(unittest.TestCase):
             "休みたいと思っている。", "休みたい。",
             "同僚が休みたいと言った。", "同僚は休みたいと言った。",
             "たぶん休みたいと言った。", "「休みたいと言った」と聞いた。",
+            "休みたいと思った？", "休みたいと思いました！？",
+            "休みたいと思ったら考える。", "休みたいと思ったかもしれない。",
+            "休みたいとは思わなかった。", "休みたいと思ったので、連絡した。",
+            "同僚が休みたいと思った。", "同僚は休みたいと思いました。",
+            "たぶん休みたいと思った。", "「休みたいと思った」と聞いた。",
+            # Existing lexical future scope is outside this default-time fix.
+            "静かに過ごしていきたいと思った。",
         ):
             with self.subTest(text=text):
                 source, before = self._wish(text)
@@ -1425,6 +1508,28 @@ class CMEEPastReportedWishTest(unittest.TestCase):
                     self.assertFalse(inverse.passed)
                     self.assertTrue(any("replay_mismatch" in code for code in inverse.failure_codes))
         self.assertGreater(checked, 0)
+
+    def test_simple_past_report_reaches_the_selected_wish_and_body_inverse(self):
+        for text in ("生活を変えたいと思った。", "生活を変えたいと思いました。"):
+            with self.subTest(text=text):
+                a = _full_surface_artifacts({"case_id": "public-simple-past-wish", "input": {
+                    "thought_text": text, "action_text": "", "categories": ["生活"],
+                    "emotions": [{"type": "不安", "strength": "weak"}],
+                }})
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                move, = a.plan.response_plan.human_reception_plan.moves
+                target = next(n for n in a.plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0])
+                self.assertEqual((target.kind, target.semantic_frame.modality,
+                                  target.semantic_frame.time_scope), ("wish", "wish", "past"))
+                self.assertEqual(move.reception_act, "protect_retained_intention")
+                self.assertIn("当時の願い", _reception_text(a.surface.text))
+                for wrong in ("今も残る願い", "これからの行動"):
+                    body = _tamper_reception(a.surface.text, "当時の願い", wrong)
+                    self.assertFalse(evaluate_grounded_surface_body_inverse(
+                        body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                        resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                    ).passed)
 
     def test_past_wish_nominal_preserves_report_context_and_protection(self):
         # Use an actually selected explicit target from the unchanged loader.
