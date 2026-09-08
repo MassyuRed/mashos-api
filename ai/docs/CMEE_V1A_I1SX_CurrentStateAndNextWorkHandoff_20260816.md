@@ -8,12 +8,12 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. candidate64と継承承認、および末尾の未承認変更案・再開点を確認する。既存Sentence Surfaceで、原fieldと本人の否定過去報告が証明済みの単独spanだけ、末尾の全角ピリオドを引用内に保持した。元入力・根拠・意味計画・Gateは変更しない。公開合成57件は8件の本文成立／49件全record同一、全57件の根拠とplanは不変。必須332件329 PASS／継承3 FAIL、前回329全成否一致、新規3成功。旧I5等11成功。canonical100は全record・実plan不変、73/27・124責務を維持し、華恋が全100件全文確認してNOT_CLEAR。V2の17件6 PASS／11 FAIL・全42件213候補も同一。共有Ledger案は他の未修復な誤読まで本文を返したため不採用。中心感情の未選択、再掲・定型締め、対象外の報告scopeと他の全角文末は残件。GitHub正本・定例ZIPなしを継続。
+3. candidate64の開始証拠と、末尾の承認済み限定選択修復・実装再開点を確認する。既存Sentence Surfaceで、原fieldと本人の否定過去報告が証明済みの単独spanだけ、末尾の全角ピリオドを引用内に保持した。元入力・根拠・意味計画・Gateは変更しない。公開合成57件は8件の本文成立／49件全record同一、全57件の根拠とplanは不変。必須332件329 PASS／継承3 FAIL、前回329全成否一致、新規3成功。旧I5等11成功。canonical100は全record・実plan不変、73/27・124責務を維持し、華恋が全100件全文確認してNOT_CLEAR。V2の17件6 PASS／11 FAIL・全42件213候補も同一。共有Ledger案は他の未修復な誤読まで本文を返したため不採用。中心感情の未選択、再掲・定型締め、対象外の報告scopeと他の全角文末は残件。GitHub正本・定例ZIPなしを継続。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-08継続確認：runtimeと前回の実行結果はcandidate64を維持。中心感情の選択欠落に関する限定変更案と固定runtime未復元の再開点を末尾へ記録した。提案は未承認・実装未着手であり、商品改善・今回の再検証とはしない。
+2026-09-08継続確認：直前の限定案への継続指示を受け、原文で証明済みの本人の気持ちと既存行動をともに残す選択修復を開始。固定runtime復元済み。各124固定への必要責務増加の限定例外はcanonical02末尾の承認節を参照。candidate64は開始時の比較証拠であり、変更後の実行結果は同じ末尾checkpointへ記録する。
 
 ## 1. GitHub anchors
 
@@ -6633,3 +6633,7 @@ canonical100を同じ入力・順序・分母でdirectと外側の両方から�
 開始System Contextはlocal doctor→prepare不成立。承認済みrefに一致する既存固定CIの成功診断はfresh確認したが、HTTP502でcache取得・local採用は未完。文書保存後の二つのmaterial headをPR37既存profile／対応testへ反映し、既存CIで最終Git管理外cacheを再生成する。最終実行結果はPR37 current本文と同headのActionsを参照し、旧成功を新refsへ流用しない。tracked currentと固定toolchainの変更なし。
 
 次は限定変更の判断と固定runtime復元後、既存ownerの関連本文を再確認し、両方の必要な対象を保持する修正、最終source固定、同100件・必要回帰、華恋の全本文読解へ戻る。国家経路／共通基盤／他機能／旧経路の変更0、STRUCTURE_MAP_DELTA_NONE。商品NOT_CLEAR、final Stage1 disabled、全PR Draft/open/unmergedを維持する。private診断は既存private作業記録、公開設計・再開点はGitHub正本。定例ZIPは作らず、保存・環境整備を商品改善へ数えない。
+
+### 2026-09-08 continuation — 限定選択修復の承認と固定runtime復元
+
+直前に提示した限定案へのMash様の継続指示を受領。canonical02末尾の承認済み限定例外に従い、原文で検証された本人の気持ちと既存の必要な行動をともに残すseal前OP選択修復を開始する。各124は比較開始値であり、必要責務増加を旧件数へ丸めない。既存owner／family／schema、最大3 Move、意味選択とReception順位の境界、NORMAL／LIMITED閉包、唯一のauthor／独立replay／Gateは維持する。固定Python3.12.13環境を保存済み46wheelから復元し、46依存と2268実ファイルを照合済み。前節の判断待ち・復元失敗は履歴で、現在のblockerではない。candidate64は開始証拠であり、変更後の生成・回帰結果は続く同系列checkpointに記録する。

@@ -7225,6 +7225,42 @@ def build_grounded_human_reception_plan(
         semantic_complexity=semantic_complexity,
         final_source_fidelity=final_source_fidelity,
     )
+    # A newly retained, independently proven burden is received before its
+    # separate action. Both canonical act/role pairs already permit felt
+    # response; no Reception role participates in the meaning decision.
+    if (
+        final_source_fidelity
+        and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"grounded", "limited_grounding"}
+        and len(moves) == 2
+        and moves[0].reception_act == "stay_with_current_burden"
+        and moves[1].reception_act == "honor_concrete_effort"
+        and len(moves[0].target_nucleus_ids) == 1
+        and not moves[0].support_nucleus_ids
+        and not moves[1].support_nucleus_ids
+        and (feeling := nucleus_index.get(moves[0].target_nucleus_ids[0])) is not None
+        and len(moves[1].target_nucleus_ids) == 1
+        and (action := nucleus_index.get(moves[1].target_nucleus_ids[0])) is not None
+        and {item.nucleus_id for item in nuclei
+             if any(field in _TEXT_SOURCE_FIELDS for field in item.source_fields)}
+        == {feeling.nucleus_id, action.nucleus_id}
+        and feeling.retention == action.retention == "required"
+        and feeling.source_fields == ("memo",)
+        and action.source_fields == ("memo_action",)
+        and feeling.semantic_frame.actor == action.semantic_frame.actor == "current_user"
+        and source_proven_performed_action_status(action)
+        and "lexical:source_declarative_feeling_subject"
+        in feeling.semantic_frame.attribute_codes
+        and not any(
+            relation.retention == "required" or relation.type != "uncertain_connection"
+            for relation in relations
+            if {relation.from_nucleus_id, relation.to_nucleus_id}
+            & {feeling.nucleus_id, action.nucleus_id}
+        )
+    ):
+        moves = (moves[0], replace(
+            moves[1], move_role="felt_response", surface_strategy="felt_response_first",
+        ))
     # Receive an already-selected independent memo feeling before the separate
     # effort. Keep both meanings, Move identities and explicit references; only
     # their existing discourse roles change before the request-local plan seals.
@@ -7848,6 +7884,53 @@ def _build_response_and_policies(
         )
 
     selected_follow = min(follow_candidates, key=follow_rank) if follow_candidates else None
+    # An independently recorded, source-proven current feeling must not be
+    # dropped merely because the other field contains a performed action.
+    # Choosing that existing burden as primary retains its opportunity and
+    # selects the same action as its support Move through the existing policy.
+    # The whole-field witness is supplied upstream; labels, quoted feelings,
+    # uncertain owners and related/multiple themes do not license this change.
+    text_candidates = tuple(
+        item for item in nuclei
+        if any(field in _TEXT_SOURCE_FIELDS for field in item.source_fields)
+    )
+    current_feelings = tuple(
+        item for item in text_candidates
+        if item.source_fields == ("memo",)
+        and item.retention == "required"
+        and item.grounding_kind == "explicit"
+        and item.kind == "reaction"
+        and item.semantic_frame.predicate_kind == "feeling"
+        and item.semantic_frame.actor == "current_user"
+        and item.semantic_frame.modality in {"fact", "feeling"}
+        and item.semantic_frame.polarity in {"negative", "neutral"}
+        and item.semantic_frame.time_scope in {"present", "current_input", "continuing"}
+        and "lexical:source_declarative_feeling_subject"
+        in item.semantic_frame.attribute_codes
+        and _reception_opportunity_families_for_nucleus(
+            item, safety_kind=safety_decision.safety_triage_kind,
+            final_source_fidelity=True,
+        ) == ("current_burden",)
+    )
+    if (
+        final_source_fidelity
+        and safety_decision.safety_triage_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"grounded", "limited_grounding"}
+        and len(text_candidates) == 2
+        and len(current_feelings) == 1
+        and selected_follow is not None
+        and selected_follow.source_fields == ("memo_action",)
+        and selected_follow.retention == "required"
+        and selected_follow.semantic_frame.actor == "current_user"
+        and source_proven_performed_action_status(selected_follow)
+        and not any(
+            relation.retention == "required" or relation.type != "uncertain_connection"
+            for relation in relations
+            if {relation.from_nucleus_id, relation.to_nucleus_id}
+            & {item.nucleus_id for item in text_candidates}
+        )
+    ):
+        selected_follow = current_feelings[0]
     follow_ids = (selected_follow.nucleus_id,) if selected_follow is not None else primary_ids[:1]
 
     observable_nucleus_present = bool(nuclei)

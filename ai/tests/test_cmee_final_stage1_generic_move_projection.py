@@ -6607,3 +6607,116 @@ class CMEEFinalFeelingSubjectReferentTest(unittest.TestCase):
         self.assertEqual(reception_owner.source_grounded_feeling_target_nominal(
             move, plan, {**index, target.nucleus_id: changed}, a.resolver,
         ), "")
+
+
+class CMEEFinalIndependentFeelingSelectionTest(unittest.TestCase):
+    """The selected response owes both a proven feeling and the old action."""
+
+    @staticmethod
+    def row(thought="今も不安が残っている。", action="作業台を片づけた。"):
+        return {"case_id": "public-independent-feeling-selection", "input": {
+            "thought_text": thought, "action_text": action, "categories": ["生活"],
+            "emotions": [{"type": "不安", "strength": "weak"}],
+        }}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.a = _full_surface_artifacts(cls.row())
+
+    def test_both_source_targets_reach_sealed_input_author_recovery_and_body(self):
+        a = self.a
+        self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+        self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+        moves = a.plan.response_plan.human_reception_plan.moves
+        self.assertEqual(tuple(m.reception_act for m in moves),
+                         ("stay_with_current_burden", "honor_concrete_effort"))
+        self.assertEqual(tuple(m.move_role for m in moves), ("felt_response", "felt_response"))
+        index = {n.nucleus_id: n for n in a.plan.nuclei}
+        self.assertEqual(tuple(index[m.target_nucleus_ids[0]].source_fields for m in moves),
+                         (("memo",), ("memo_action",)))
+        self.assertTrue(all(m.required and not m.support_nucleus_ids for m in moves))
+        decisions = a.selected_subjective_input.decisions
+        self.assertEqual(tuple((d.move_id, d.reception_act, d.target_nucleus_ids, d.support_nucleus_ids)
+                               for d in decisions),
+                         tuple((m.move_id, m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids)
+                               for m in moves))
+        # The structural source-order link is still uncertain. It is not
+        # promoted to a shared appraisal merely to add the feeling duty.
+        self.assertTrue(all(r.retention != "required" and r.type == "uncertain_connection"
+                            for r in a.plan.relations))
+        self.assertTrue(set(decisions[0].selected_contribution_refs).isdisjoint(
+            decisions[1].selected_contribution_refs))
+        follow = _reception_text(a.surface.text)
+        self.assertLess(follow.index("不安"), follow.index("作業台"))
+        self.assertIn("今も不安が残っている", follow)
+        self.assertIn("作業台を片づけた", follow)
+        required = {m.move_id for m in moves}
+        for args, kwargs in a.author_arguments:
+            self.assertIs(kwargs["selected_subjective_input"], a.selected_subjective_input)
+            self.assertEqual({m.move_id for m in args[0].moves if m.required}, required)
+        for authored in a.authored:
+            self.assertEqual(set(authored.realized_move_ids), required)
+        inputs = _compile_inputs(self.row())
+        resolver = build_evidence_span_resolver(inputs.source.evidence_spans,
+                                                current_input=inputs.source.normalized_current_input)
+        for quality in ("grounded", "limited_grounding"):
+            semantic = _cmee_semantic_reception_plan(inputs.grounded_plan, resolver, material_quality=quality)
+            self.assertEqual(semantic.moves, moves)
+
+    def test_removing_either_new_feeling_or_existing_action_fails_body_inverse(self):
+        a = self.a
+        for original in ("今も不安が残っている", "作業台を片づけた"):
+            with self.subTest(original=original):
+                body = _tamper_reception(a.surface.text, original, "")
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(inverse.passed)
+                self.assertTrue(any("target_duty_missing" in code for code in inverse.failure_codes),
+                                inverse.failure_codes)
+
+    def test_unproved_owner_host_and_unperformed_action_do_not_add_feeling(self):
+        cases = [(thought, "作業台を片づけた。") for thought in (
+            "", "不安が残っている？", "「不安が残っている」", "弟の不安が残っている。",
+            "弟は。今も不安が残っている。", "不安が残っている。と弟が話した。",
+            "不安が残っていた。", "不安が残っていると思う。",
+            "不安が残っているなら休む。", "今も不安が残っている。別の記録も読んだ。",
+        )]
+        cases += [("今も不安が残っている。", action) for action in (
+            "作業台を片づけるつもり。", "作業台を片づけてもらった。", "作業台を片づけなかった。",
+        )]
+        for thought, action in cases:
+            with self.subTest(thought=thought, action=action):
+                inputs = _compile_inputs(self.row(thought, action))
+                plan = inputs.grounded_plan
+                resolver = build_evidence_span_resolver(inputs.source.evidence_spans,
+                                                        current_input=inputs.source.normalized_current_input)
+                semantic = _cmee_semantic_reception_plan(plan, resolver)
+                self.assertNotEqual(tuple(m.reception_act for m in semantic.moves),
+                                    ("stay_with_current_burden", "honor_concrete_effort"))
+
+    def test_source_stated_relation_and_optional_feeling_keep_existing_selection(self):
+        from emlis_ai_safety_triage import build_emlis_safety_triage_decision
+        inputs = _compile_inputs(self.row())
+        plan = inputs.grounded_plan
+        feeling = next(n for n in plan.nuclei if n.source_fields == ("memo",))
+        action = next(n for n in plan.nuclei if n.source_fields == ("memo_action",))
+        relation = replace(plan.relations[0], type="contrast", retention="required",
+                           grounding_kind="user_stated_relation")
+        variants = (
+            (plan.nuclei, (relation,)),
+            (tuple(replace(n, retention="optional") if n == feeling else n for n in plan.nuclei), plan.relations),
+        )
+        for nuclei, relations in variants:
+            response, _coverage, _surface, _safety = observation_plan_owner._build_response_and_policies(
+                nuclei=nuclei, relations=relations,
+                safety_decision=build_emlis_safety_triage_decision(current_input=inputs.source.normalized_current_input),
+                complexity=plan.input_profile.semantic_complexity,
+                material_quality=plan.input_profile.material_quality,
+                include_reception_relation_support=True, final_source_fidelity=True,
+            )
+            self.assertEqual(response.human_follow_target_ids, (action.nucleus_id,))
+        legacy = build_grounded_observation_plan(inputs.source.normalized_current_input,
+                                                evidence_spans=inputs.source.evidence_spans)
+        self.assertEqual(legacy.response_plan.human_follow_target_ids, (action.nucleus_id,))
