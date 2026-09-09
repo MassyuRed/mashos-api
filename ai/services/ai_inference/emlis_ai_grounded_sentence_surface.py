@@ -3983,7 +3983,9 @@ def validate_grounded_sentence_plan(
                     reception_plan,
                     sentence_plan.recovery_stage,
                 )
-                expected_acts = tuple(
+                # Contract atoms list act kinds once; per-Move atoms below
+                # independently preserve every target and repeated act duty.
+                expected_acts = _dedupe(
                     f"reception_act:{act}"
                     for act in reception_active_acts(
                         reception_plan,

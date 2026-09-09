@@ -13,7 +13,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-09最新（candidate81）：全文証明した不確定表現を既存選択へ接続し、1件で暫定評価と行動を両方followに保持。観測2件変更・他98件同一、100件全文確認済み。必須395は389成功／6失敗、旧期待値不変更・品質NOT_CLEAR。詳細と再開点は末尾candidate81。System Context未使用・原典直接確認、PR37不変更。
+2026-09-09最新（candidate82 source checkpoint）：原fieldで証明した否定過去の非行動と独立したmaterialを、既存OP・同familyの二対象として保持。attention／felt responseを区別し、同じ選択済み意味の根拠を各対象へ厳密対応。留保句の説明重複も短縮。関連15検査成功。最終固定sourceの必須回帰・同じ100件・華恋全文確認はこれから。NOT_CLEAR、System Context未使用・原典直接確認、PR37不変更。
 
 ## 1. GitHub anchors
 
@@ -6977,3 +6977,14 @@ final OPの既存typed projectionで、閉じた評価・状態述語と終端�
 商品品質はNOT_CLEAR。観測の「まだ分からない範囲」、followの「今ここに置かれた言葉」等の長い説明、長文の復唱と定型締め、中心感情・複数主題・共有関係の欠落を保持する。次は不確定状態と否定過去の非行動が同familyで片方に寄る選択原因を調べ、既存familyと責務のまま両者を残せる条件を確認する。原行動・否定・unknownを犠牲にしない。既存6失敗は別途未解決のまま可視化し、期待値書換えで通さない。既存9月8日の原文保持に関する限定合意を継承し、行動だけの二行動選択拡張へは一般化しない。
 
 公開sourceと結果は既存Draft PR3／30、実入力・実出力・初期結果・再開点は従来の非公開作業記録へ継続保存。同一条件の再生成や説明のための再実行、原典一式の不要な再読、System Context一式の再生成、定例JSON／ZIP配布はしない。System Context未使用・原典直接確認、PR37不変更。NOT_CLEAR・disabled・Draft/open/unmerged・candidate_ready=false・automatic_progression=false、Mash human PASS／ready／採用／merge／本番未成立。
+
+
+### 2026-09-09 candidate82 source checkpoint — 原文証明済みの非行動と独立materialを保持
+
+元memo_action field全体・offset・本人・単核・閉じた否定過去述語を既存final OPで証明し、同じactionの否定・根拠・原文を保ち、modality=fact／time=pastへ整合する。既存登録actionの活用、または数量否定を伴うする述語に閉じ、疑問・他者・引用・伝聞・未来・条件・曖昧な活用・分割ownerを証明しない。時間前段から新たな実行済み属性や因果を作らない。非行動はperformedへ変えない。
+
+既存の独立material判定を共有し、全text核が必要な二核だけ、関係が非required uncertain_connectionだけ、双方がcurrent_burdenの場合に、二つのopportunityを保持する。第三主題、optional、別family、行動だけの二行動へ一般化しない。原文にあるmaterialをattention、非行動をfelt_responseへ既存role／strategyで配置し、通常本文では二対象とも具体参照する。既存HRと意味投影に存在するattention／current_burdenの組合せを、final assetの既存role対応表にも登録する。7 actと既存role／strategy集合は増やさず、未登録role拒否を維持する。NORMAL／LIMITED共通のselected input導出では、同じseal済みclaim／proposition／basis／qualifierを保持し、原根拠の一つずつを既存semantic bindingとMove対象へjoin。非空・重複なし・和集合完全一致だけを許し、意味再選択やHR内補充をしない。唯一のHRと独立replayは同一immutable inputを使い、各Moveおよび共通claim全内容の消費検査を維持する。
+
+SentenceとGateの集約act／terminal種類一覧はproducerどおり重複除去して照合する。Move別ID・act・family・対象・完成本文照合、逆変換、同述語反復拒否は維持。証明済み不確定句のHR名詞化では、留保と原句全文を保持し「今ここに置かれた言葉」の重なりを短縮する。既存ownerとschema、最大3 Move、API／DB／RN／公開I5／Piece／Analysis境界は不変更。STRUCTURE_MAP_DELTA_NONE。
+
+初期診断では集約atom不一致、同act根拠全複製、同述語反復によって生成が停止した。検査を弱めず上記対応と役割配置を修正し、初期rawも非公開記録へ保持する。関連15検査成功後の固定sourceで、必須回帰と同100件の生成・華恋全件確認を実施する。既存6失敗のfixture／期待値は変更しない。role対応表の必要変更による旧canonical mapping bytes／hash／長さとの不一致は、追加の既存stage3検査で別に確認し、旧期待値を書き換えて成功化しない。商品NOT_CLEAR・disabled、既存Draft PR3／30で継続、candidate_ready=false・automatic_progression=false、Mash human PASS／ready／採用／merge／本番なし。System Context未使用・原典直接確認、PR37不変更。

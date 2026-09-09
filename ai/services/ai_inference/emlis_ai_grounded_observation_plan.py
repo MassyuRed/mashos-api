@@ -6596,6 +6596,102 @@ def _opportunity_priority(
     )
 
 
+def _is_independent_source_material(
+    item: GroundedSemanticNucleus, *, safety_kind: str,
+) -> bool:
+    """One whole-field material duty, without inferring a new feeling."""
+
+    return bool(
+        item.source_fields == ("memo",)
+        and item.retention == "required"
+        and item.grounding_kind == "explicit"
+        and (
+            item.kind == "reaction"
+            and (item.semantic_frame.predicate_kind == "feeling" or (
+                item.semantic_frame.predicate_kind == "reaction"
+                and "lexical:source_current_feeling_with_verbal_background"
+                in item.semantic_frame.attribute_codes
+            ))
+            or (item.kind in {"event", "state"}
+                and item.semantic_frame.predicate_kind in {"event", "state"}
+                and item.semantic_frame.modality == "fact"
+                and set(item.semantic_frame.attribute_codes).intersection({
+                    "lexical:source_scalar_background_expression",
+                    "lexical:source_bounded_expression",
+                }))
+            or (item.kind == item.semantic_frame.predicate_kind == "change"
+                and item.semantic_frame.modality == "fact"
+                and item.semantic_frame.polarity == "mixed"
+                and "lexical:source_bounded_expression" in item.semantic_frame.attribute_codes)
+            or (item.kind == item.semantic_frame.predicate_kind == "uncertainty"
+                and item.semantic_frame.modality == "uncertain"
+                and "lexical:source_bounded_expression" in item.semantic_frame.attribute_codes)
+        )
+        and item.semantic_frame.actor == "current_user"
+        and (item.semantic_frame.modality in {"fact", "feeling"}
+             or (item.kind == item.semantic_frame.predicate_kind == "uncertainty"
+                 and item.semantic_frame.modality == "uncertain"
+                 and "lexical:source_bounded_expression" in item.semantic_frame.attribute_codes))
+        and (item.semantic_frame.polarity in {"negative", "neutral"}
+             or (item.kind == item.semantic_frame.predicate_kind == "change"
+                 and item.semantic_frame.polarity == "mixed"
+                 and "lexical:source_bounded_expression" in item.semantic_frame.attribute_codes))
+        and (item.semantic_frame.time_scope in {"present", "current_input", "continuing"}
+             or (item.semantic_frame.time_scope == "past"
+                 and set(item.semantic_frame.attribute_codes).intersection({
+                     "lexical:source_past_negative_feeling",
+                     "lexical:source_scalar_background_expression",
+                     "lexical:source_bounded_expression",
+                 })))
+        and set(item.semantic_frame.attribute_codes).intersection({
+            "lexical:source_declarative_feeling_subject",
+            "lexical:source_current_feeling_with_cognitive_background",
+            "lexical:source_current_feeling_with_verbal_background",
+            "lexical:source_past_negative_feeling",
+            "lexical:source_scalar_background_expression",
+            "lexical:source_bounded_expression",
+        })
+        and _reception_opportunity_families_for_nucleus(
+            item, safety_kind=safety_kind,
+            final_source_fidelity=True,
+        ) == ("current_burden",)
+    )
+
+
+def _source_proven_past_nonaction(nucleus: GroundedSemanticNucleus) -> bool:
+    frame = nucleus.semantic_frame
+    return bool(
+        nucleus.kind == frame.predicate_kind == "action"
+        and nucleus.source_fields == ("memo_action",)
+        and nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
+        and frame.actor == "current_user" and frame.polarity == "negative"
+        and frame.modality == "fact" and frame.time_scope == "past"
+        and {"operator:negation", "lexical:source_past_nonaction"}
+            <= set(frame.attribute_codes)
+        and "operator:performed_action" not in frame.attribute_codes
+    )
+
+
+def _independent_nonaction_pair(
+    nuclei: Sequence[GroundedSemanticNucleus],
+    relations: Sequence[GroundedSemanticRelation],
+    *, safety_kind: str, material_quality: str,
+) -> tuple[GroundedSemanticNucleus, ...]:
+    text = tuple(n for n in nuclei if any(f in _TEXT_SOURCE_FIELDS for f in n.source_fields))
+    if (safety_kind != TRIAGE_SAFE_OBSERVATION
+        or material_quality not in {"grounded", "limited_grounding"} or len(text) != 2
+        or any(r.retention == "required" or r.type != "uncertain_connection"
+               for r in relations
+               if {r.from_nucleus_id, r.to_nucleus_id} & {n.nucleus_id for n in text})):
+        return ()
+    material = tuple(n for n in text if _is_independent_source_material(n, safety_kind=safety_kind))
+    nonaction = tuple(n for n in text if _source_proven_past_nonaction(n)
+                      and _reception_opportunity_families_for_nucleus(
+                          n, safety_kind=safety_kind, final_source_fidelity=True,
+                      ) == ("current_burden",))
+    return (*material, *nonaction) if len(material) == len(nonaction) == 1 else ()
+
+
 def build_grounded_reception_opportunities(
     *,
     human_follow_target_ids: Sequence[str],
@@ -6709,6 +6805,13 @@ def build_grounded_reception_opportunities(
     ):
         candidates_by_family.pop("current_burden", None)
 
+    # Only this source-proven independent pair may retain two targets in
+    # one family. Their unknown connection remains outside both appraisals.
+    nonaction_pair = _independent_nonaction_pair(
+        nuclei, relations, safety_kind=safety_kind, material_quality=material_quality,
+    ) if final_source_fidelity else ()
+    if not all(n.nucleus_id in observation_owned_ids for n in nonaction_pair):
+        nonaction_pair = ()
     rows: list[GroundedReceptionOpportunity] = []
     for family in _OPPORTUNITY_FAMILY_ORDER:
         family_candidates = tuple(candidates_by_family.get(family, ()))
@@ -6747,7 +6850,7 @@ def build_grounded_reception_opportunities(
             if fact_id is not None and fact_id != representative.nucleus_id:
                 target_ids = (fact_id,)
                 support_ids = (representative.nucleus_id,)
-        elif include_relation_support:
+        elif include_relation_support and not (nonaction_pair and family == "current_burden"):
             relation_priority = {
                 "action_supports_change": 0,
                 "preserves_despite": 1,
@@ -6842,6 +6945,19 @@ def build_grounded_reception_opportunities(
             )
         )
 
+    if nonaction_pair:
+        burden = next(item for item in rows if item.family == "current_burden")
+        other = next(n for n in nonaction_pair if (n.nucleus_id,) != burden.target_nucleus_ids)
+        rows.append(replace(
+            burden, target_nucleus_ids=(other.nucleus_id,), support_nucleus_ids=(),
+            source_evidence_span_ids=tuple(_ordered_span_ids(other.source_span_ids)),
+            retention=other.retention, source_field_count=len(other.source_fields),
+            priority=_opportunity_priority(
+                other, family="current_burden", human_follow_target_ids=follow_ids,
+                relation_connected_ids=relation_connected_ids, safety_required=False,
+            ),
+        ))
+
     rows.sort(
         key=lambda item: (
             -item.priority,
@@ -6876,6 +6992,7 @@ def _select_reception_opportunities(
     legacy_primary_act: GroundedReceptionAct,
     safety_kind: str,
     semantic_complexity: str,
+    final_source_fidelity: bool = False,
 ) -> tuple[GroundedReceptionOpportunity, ...]:
     inventory = tuple(opportunities)
     if not inventory:
@@ -6888,6 +7005,15 @@ def _select_reception_opportunities(
         ),
         inventory[0],
     )
+    # A two-burden inventory is emitted only for the bounded independent
+    # material/nonaction pair above. Preserve both required, disjoint duties.
+    if (final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and len(inventory) == 2
+        and all(item.family == "current_burden" and item.retention == "required"
+                and len(item.target_nucleus_ids) == 1 and not item.support_nucleus_ids
+                for item in inventory)
+        and _opportunities_are_distinct(*inventory)):
+        return (primary, next(item for item in inventory if item != primary))
     selected: list[GroundedReceptionOpportunity] = [primary]
     by_family = {item.family: item for item in inventory}
 
@@ -6990,10 +7116,10 @@ def _surface_strategy_for_move(
 ) -> GroundedReceptionSurfaceStrategy:
     if role == "bounded_counterposition":
         return "explicit_emlis_counterposition"
-    if opportunity.family == "current_burden":
-        return "quiet_referent_first"
     if role == "attention":
         return "emlis_attention_first"
+    if opportunity.family == "current_burden":
+        return "quiet_referent_first"
     if role == "significance":
         return "referent_significance_first"
     return "felt_response_first"
@@ -7013,6 +7139,7 @@ def _build_reception_depth_policy_and_moves(
         legacy_primary_act=legacy_primary_act,
         safety_kind=safety_kind,
         semantic_complexity=semantic_complexity,
+        final_source_fidelity=final_source_fidelity,
     )
     if safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER:
         safety_mode: GroundedReceptionSafetyMode = (
@@ -7043,6 +7170,14 @@ def _build_reception_depth_policy_and_moves(
             and safety_kind == TRIAGE_SAFE_OBSERVATION
         ),
     )
+    independent_burdens = bool(
+        final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and len(selected) == 2 and all(item.family == "current_burden" for item in selected)
+    )
+    if independent_burdens:
+        # Existing attention and felt-response acts distinguish the two
+        # source duties without repeating the same predicate responsibility.
+        roles[selected[0].opportunity_id] = "attention"
     moves: list[GroundedReceptionMovePlan] = []
     for index, opportunity in enumerate(selected, start=1):
         role = roles[opportunity.opportunity_id]
@@ -7076,6 +7211,8 @@ def _build_reception_depth_policy_and_moves(
                 reference_mode=(
                     "explicit_emlis_counterposition"
                     if explicit
+                    else "short_anchor_if_ambiguous"
+                    if independent_burdens
                     else legacy_reference_mode
                     if index == 1
                     else "anaphoric_first"
@@ -7946,59 +8083,7 @@ def _build_response_and_policies(
     )
     independent_materials = tuple(
         item for item in text_candidates
-        if item.source_fields == ("memo",)
-        and item.retention == "required"
-        and item.grounding_kind == "explicit"
-        and (
-            item.kind == "reaction"
-            and (item.semantic_frame.predicate_kind == "feeling" or (
-                item.semantic_frame.predicate_kind == "reaction"
-                and "lexical:source_current_feeling_with_verbal_background"
-                in item.semantic_frame.attribute_codes
-            ))
-            or (item.kind in {"event", "state"}
-                and item.semantic_frame.predicate_kind in {"event", "state"}
-                and item.semantic_frame.modality == "fact"
-                and set(item.semantic_frame.attribute_codes).intersection({
-                    "lexical:source_scalar_background_expression",
-                    "lexical:source_bounded_expression",
-                }))
-            or (item.kind == item.semantic_frame.predicate_kind == "change"
-                and item.semantic_frame.modality == "fact"
-                and item.semantic_frame.polarity == "mixed"
-                and "lexical:source_bounded_expression" in item.semantic_frame.attribute_codes)
-            or (item.kind == item.semantic_frame.predicate_kind == "uncertainty"
-                and item.semantic_frame.modality == "uncertain"
-                and "lexical:source_bounded_expression" in item.semantic_frame.attribute_codes)
-        )
-        and item.semantic_frame.actor == "current_user"
-        and (item.semantic_frame.modality in {"fact", "feeling"}
-             or (item.kind == item.semantic_frame.predicate_kind == "uncertainty"
-                 and item.semantic_frame.modality == "uncertain"
-                 and "lexical:source_bounded_expression" in item.semantic_frame.attribute_codes))
-        and (item.semantic_frame.polarity in {"negative", "neutral"}
-             or (item.kind == item.semantic_frame.predicate_kind == "change"
-                 and item.semantic_frame.polarity == "mixed"
-                 and "lexical:source_bounded_expression" in item.semantic_frame.attribute_codes))
-        and (item.semantic_frame.time_scope in {"present", "current_input", "continuing"}
-             or (item.semantic_frame.time_scope == "past"
-                 and set(item.semantic_frame.attribute_codes).intersection({
-                     "lexical:source_past_negative_feeling",
-                     "lexical:source_scalar_background_expression",
-                     "lexical:source_bounded_expression",
-                 })))
-        and set(item.semantic_frame.attribute_codes).intersection({
-            "lexical:source_declarative_feeling_subject",
-            "lexical:source_current_feeling_with_cognitive_background",
-            "lexical:source_current_feeling_with_verbal_background",
-            "lexical:source_past_negative_feeling",
-            "lexical:source_scalar_background_expression",
-            "lexical:source_bounded_expression",
-        })
-        and _reception_opportunity_families_for_nucleus(
-            item, safety_kind=safety_decision.safety_triage_kind,
-            final_source_fidelity=True,
-        ) == ("current_burden",)
+        if _is_independent_source_material(item, safety_kind=safety_decision.safety_triage_kind)
     )
     if (
         final_source_fidelity
@@ -8010,7 +8095,11 @@ def _build_response_and_policies(
         and selected_follow.source_fields == ("memo_action",)
         and selected_follow.retention == "required"
         and selected_follow.semantic_frame.actor == "current_user"
-        and source_proven_performed_action_status(selected_follow)
+        and (source_proven_performed_action_status(selected_follow)
+             or bool(_independent_nonaction_pair(
+                 nuclei, relations, safety_kind=safety_decision.safety_triage_kind,
+                 material_quality=material_quality,
+             )))
         and not any(
             relation.retention == "required" or relation.type != "uncertain_connection"
             for relation in relations
@@ -11035,6 +11124,60 @@ def source_grounded_feeling_subject_parts(text: str) -> tuple[str, str, str] | N
     return prefix, subject, host
 
 
+def _bounded_past_nonaction_finite(text: str) -> bool:
+    """Prove a closed negated action host, never its positive performance."""
+
+    value = re.sub(r"^(?:(?:私|わたし|自分)(?:は|が))?", "", text)
+    value = re.sub(r"^(?:今日|昨日|今朝|昨夜)(?:は|も)?[、,]?", "", value)
+    # One implicit-subject temporal adjunct may precede the negated host.
+    # A plain verb te/de form proves its local grammatical boundary only;
+    # it does not create a second action nucleus or a new relation.
+    adjunct = re.match(r"^[一-龯々]+[ぁ-ん]*(?:って|いて|いで|んで|して|て)から", value)
+    if adjunct:
+        prefix = adjunct.group(0)
+        if (re.search(r"[はがものとをにへ]|(?:たい|ほしい|なら|れば|られ|もら|くれ)", prefix[:-2])
+            or re.search(r"(?:くて|なくて|ないで|んでいて)から$", prefix)):
+            return False
+        value = value[adjunct.end():]
+    if re.fullmatch(r"(?:何|なに)(?:も|一つ(?:も)?|ひとつ(?:も)?)し(?:なかった|ませんでした)", value):
+        return True
+    if (re.search(r"[はがも。．.!?！？、,\s]", value)
+        or re.search(r"(?:たい|ほしい|つもり|予定|かもしれ|らしい|なら|たら|れば|ようと|ように)", value)):
+        return False
+    negative = re.search(r"(?P<stem>.+?)(?P<ending>なかった|ませんでした)$", value)
+    if not negative:
+        return False
+    stem = negative.group("stem")
+    # Existing registered action vocabulary supplies verb identity. The
+    # inflection candidates are proof intermediates and never emitted.
+    candidates = [] if stem.endswith(("い", "っ", "ん")) else [stem + "た"]
+    endings = (
+        {"か": ("いた", "った"), "が": ("いだ",), "さ": ("した",),
+         "た": ("った",), "な": ("んだ",), "ば": ("んだ",),
+         "ま": ("んだ",), "ら": ("った",), "わ": ("った",)}
+        if negative.group("ending") == "なかった" else
+        {"き": ("いた", "った"), "ぎ": ("いだ",), "ち": ("った",),
+         "に": ("んだ",), "び": ("んだ",), "み": ("んだ",), "り": ("った",)}
+    )
+    candidates.extend(stem[:-1] + ending for ending in endings.get(stem[-1], ()))
+    for candidate in candidates:
+        match = next((m for m in _COMPLETED_ACTION_RE.finditer(candidate)
+                      if m.end() == len(candidate)), None)
+        if match is None:
+            continue
+        if match.group().endswith("した"):
+            # The registered native su verbs and suru nouns share a past
+            # ending but have different plain-negative conjugations.
+            native_su = match.group().endswith(("試した", "残した"))
+            suffix = "さ" if native_su and negative.group("ending") == "なかった" else "し"
+            if stem != candidate[:-2] + suffix:
+                continue
+        argument = candidate[:match.start()]
+        if not argument or re.fullmatch(r"[一-龯々ァ-ヶー]+を", argument):
+            return True
+    return False
+
+
 def _final_stage1_align_action_status(
     nuclei: Sequence[GroundedSemanticNucleus],
     evidence_spans: Sequence[EvidenceSpan],
@@ -11384,6 +11527,29 @@ def _final_stage1_align_action_status(
             aligned.append(replace(nucleus, semantic_frame=replace(
                 frame, modality="uncertain",
                 attribute_codes=tuple(_dedupe(attributes)),
+            )))
+            continue
+        # A whole-field negative past report can locate this same action
+        # owner in fact/past without ever asserting that it was performed.
+        source = str((normalized_input or {}).get(span.source_field) or "")
+        if (nucleus.source_fields == ("memo_action",) and span.source_field == "memo_action"
+            and frame.predicate_kind == "action" and frame.polarity == "negative"
+            and frame.modality in {"intention", "fact", "uncertain"}
+            and frame.time_scope in {"current_input", "past", "present"}
+            and "operator:negation" in codes
+            and not set(codes).intersection({"operator:performed_action", "operator:wish", "operator:uncertainty"})
+            and not (markers or ranges or sources or legacy)
+            and 0 <= span.start_index < span.end_index <= len(source)
+            and source[span.start_index:span.end_index] == span.raw_text
+            and not source[:span.start_index].strip()
+            and re.fullmatch(r"\s*[。．.]?\s*", source[span.end_index:])
+            and _top_level_text(source) == source
+            and not re.search(r"[「」『』…‥!?！？]", source)
+            and _bounded_past_nonaction_finite(str(span.raw_text))):
+            attributes = tuple(c for c in codes if not c.startswith(("time_scope:", "modality:")))
+            aligned.append(replace(nucleus, semantic_frame=replace(
+                frame, modality="fact", time_scope="past",
+                attribute_codes=tuple(_dedupe((*attributes, "time_scope:past", "lexical:source_past_nonaction"))),
             )))
             continue
         # A quoted or attributed predicate cannot establish this owner's

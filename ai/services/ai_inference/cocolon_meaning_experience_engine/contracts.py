@@ -1069,7 +1069,9 @@ CMEE_STAGE1_RECEPTION_ACT_STANCE_EXACT7 = (
     ("respect_words_placed", "gentle_respect"),
 )
 CMEE_STAGE1_RECEPTION_MOVE_ROLE_MAPPING = (
-    ("stay_with_current_burden", ("felt_response",)),
+    # Existing attention grammar is used when two source-proven independent
+    # burden targets require distinct attention and reception duties.
+    ("stay_with_current_burden", ("attention", "felt_response")),
     ("honor_concrete_effort", ("attention", "felt_response")),
     (
         "protect_retained_intention",

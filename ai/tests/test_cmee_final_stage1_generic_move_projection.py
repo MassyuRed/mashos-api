@@ -8818,3 +8818,206 @@ class CMEEFinalBoundedUncertainMaterialTest(unittest.TestCase):
                 complexity=plan.input_profile.semantic_complexity, material_quality=plan.input_profile.material_quality,
                 include_reception_relation_support=True, final_source_fidelity=True)
             self.assertEqual(response.human_follow_target_ids, (action.nucleus_id,))
+
+
+class CMEEFinalTentativeExpressionNominalTest(unittest.TestCase):
+    """Keep source hedges in the received object without a second words label."""
+
+    sources = ("まあ、つらくないかも。", "今日は悲しくないかもしれない。",
+               "おそらく、寂しかった。")
+    row = staticmethod(CMEEFinalIndependentFeelingSelectionTest.row)
+
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = tuple(_full_surface_artifacts(cls.row(s)) for s in cls.sources)
+
+    def test_complete_tentative_material_and_action_survive_all_recoveries(self):
+        for source, a in zip(self.sources, self.artifacts):
+            with self.subTest(source=source):
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                self.assertEqual(a.sentence_plan.recovery_stage, "full")
+                follow = _reception_text(a.surface.text)
+                self.assertEqual(follow.count(source.rstrip("。")), 1)
+                self.assertIn(source.rstrip("。") + "という言葉を小さくせずに", follow)
+                self.assertNotIn("今ここに置かれた言葉", follow)
+                moves = a.plan.response_plan.human_reception_plan.moves
+                self.assertEqual(tuple(m.reception_act for m in moves),
+                                 ("stay_with_current_burden", "honor_concrete_effort"))
+                for args, kwargs in a.author_arguments:
+                    self.assertIs(kwargs["selected_subjective_input"], a.selected_subjective_input)
+                    replay = reception_owner.replay_source_grounded_human_reception_from_plan(
+                        args[0], args[2], args[3], plan=kwargs["plan"],
+                        recovery_stage=kwargs["recovery_stage"], clause_plans=kwargs["clause_plans"],
+                        selected_subjective_input=a.selected_subjective_input)
+                    authored = next(s for s in a.authored if s.recovery_stage == kwargs["recovery_stage"])
+                    self.assertEqual(replay.text, authored.text)
+                    self.assertEqual(set(authored.realized_move_ids), {m.move_id for m in moves})
+                    sp = a.sentence_plan if authored.recovery_stage == "full" else (
+                        surface_owner.build_reception_recovery_sentence_plan(
+                            a.sentence_plan, a.plan, a.resolver, recovery_stage=authored.recovery_stage))
+                    actual = _recovery_surface(a, sp)
+                    self.assertIn(source.rstrip("。"), actual.text)
+                    self.assertIn("作業台を片づけた", actual.text)
+                    self.assertTrue(evaluate_grounded_surface_body_inverse(
+                        body=actual.text.encode(), plan=a.plan, sentence_plan=sp,
+                        resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+
+    def test_hedge_negation_action_or_reception_loss_is_rejected(self):
+        a = self.artifacts[0]
+        for old, new in (("つらくないかも", "つらくない"),
+                         ("つらくないかも", "つらいかも"),
+                         ("まあ、", "とても、"),
+                         ("という言葉", "という今ここに置かれた言葉"),
+                         ("小さくせずに", ""),
+                         ("作業台を片づけた", "")):
+            with self.subTest(old=old, new=new):
+                body = _tamper_reception(a.surface.text, old, new)
+                self.assertNotEqual(body, a.surface.text)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+
+    def test_unproved_hedges_keep_existing_reference_and_selection_boundaries(self):
+        a = self.artifacts[0]
+        plan = a.plan
+        move = plan.response_plan.human_reception_plan.moves[0]
+        target = next(n for n in plan.nuclei if n.nucleus_id in move.target_nucleus_ids)
+        derive = reception_owner.source_grounded_current_expression_nominal
+        for changed in (
+            replace(target, kind="event"),
+            replace(target, semantic_frame=replace(target.semantic_frame, predicate_kind="state")),
+            replace(target, semantic_frame=replace(target.semantic_frame, modality="fact")),
+            replace(target, semantic_frame=replace(target.semantic_frame, actor="other")),
+            *(replace(target, semantic_frame=replace(target.semantic_frame,
+                attribute_codes=tuple(c for c in target.semantic_frame.attribute_codes if c != marker)))
+              for marker in ("operator:uncertainty", "lexical:source_bounded_expression")),
+        ):
+            altered = replace(plan, nuclei=tuple(changed if n == target else n for n in plan.nuclei))
+            self.assertEqual(derive(move, altered, {n.nucleus_id:n for n in altered.nuclei}, a.resolver), "")
+        # A support duty cannot borrow this one-field proof.
+        other_move = replace(move, support_nucleus_ids=(plan.nuclei[1].nucleus_id,))
+        altered = replace(plan, response_plan=replace(plan.response_plan,
+            human_reception_plan=replace(plan.response_plan.human_reception_plan,
+                moves=(other_move, *plan.response_plan.human_reception_plan.moves[1:]))))
+        self.assertEqual(derive(other_move, altered, {n.nucleus_id:n for n in altered.nuclei}, a.resolver), "")
+
+
+class CMEEFinalIndependentNonactionSelectionTest(unittest.TestCase):
+    """A negative report and its independent material keep separate duties."""
+
+    row = staticmethod(CMEEFinalIndependentFeelingSelectionTest.row)
+    source = "まあ、つらくないかも。"
+    action = "着いてから何一つしませんでした。"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.a = _full_surface_artifacts(cls.row(cls.source, cls.action))
+
+    def test_two_required_source_duties_reach_same_input_all_recoveries_and_inverse(self):
+        a = self.a
+        self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+        self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+        moves = a.plan.response_plan.human_reception_plan.moves
+        self.assertEqual(len(moves), 2)
+        self.assertTrue(all(m.required and m.reception_act == "stay_with_current_burden"
+                            and not m.support_nucleus_ids for m in moves))
+        self.assertEqual(tuple(m.move_role for m in moves), ("attention", "felt_response"))
+        index = {n.nucleus_id: n for n in a.plan.nuclei}
+        self.assertEqual(tuple(index[m.target_nucleus_ids[0]].source_fields for m in moves),
+                         (("memo",), ("memo_action",)))
+        action = index[moves[1].target_nucleus_ids[0]]
+        self.assertEqual((action.kind, action.semantic_frame.polarity, action.semantic_frame.modality,
+                          action.semantic_frame.time_scope), ("action", "negative", "fact", "past"))
+        self.assertNotIn("operator:performed_action", action.semantic_frame.attribute_codes)
+        decisions = a.selected_subjective_input.decisions
+        self.assertEqual(decisions[0].subjective_proposition, decisions[1].subjective_proposition)
+        self.assertEqual(decisions[0].projected_claim_ref, decisions[1].projected_claim_ref)
+        self.assertEqual(decisions[0].basis_rows, decisions[1].basis_rows)
+        self.assertEqual(set(decisions[0].selected_contribution_refs) | set(decisions[1].selected_contribution_refs),
+                         set(decisions[0].subjective_proposition.target_contribution_refs))
+        self.assertEqual(tuple((d.move_id, d.target_nucleus_ids, d.support_nucleus_ids) for d in decisions),
+                         tuple((m.move_id, m.target_nucleus_ids, m.support_nucleus_ids) for m in moves))
+        self.assertTrue(set(decisions[0].selected_contribution_refs).isdisjoint(decisions[1].selected_contribution_refs))
+        self.assertTrue(all(r.type == "uncertain_connection" and r.retention != "required" for r in a.plan.relations))
+        follow = _reception_text(a.surface.text)
+        self.assertIn(self.source.rstrip("。"), follow)
+        self.assertIn(self.action.rstrip("。"), follow)
+        for args, kwargs in a.author_arguments:
+            self.assertIs(kwargs["selected_subjective_input"], a.selected_subjective_input)
+            self.assertEqual({m.move_id for m in args[0].moves if m.required}, {m.move_id for m in moves})
+        for authored in a.authored:
+            self.assertEqual(set(authored.realized_move_ids), {m.move_id for m in moves})
+            sp = a.sentence_plan if authored.recovery_stage == "full" else (
+                surface_owner.build_reception_recovery_sentence_plan(
+                    a.sentence_plan, a.plan, a.resolver, recovery_stage=authored.recovery_stage))
+            recovered = _recovery_surface(a, sp)
+            self.assertIn(self.source.rstrip("。"), recovered.text)
+            self.assertIn(self.action.rstrip("。"), recovered.text)
+            result = evaluate_grounded_surface_body_inverse(
+                body=recovered.text.encode(), plan=a.plan, sentence_plan=sp,
+                resolver=a.resolver, selected_subjective_input=a.selected_subjective_input)
+            self.assertTrue(result.passed, result.failure_codes)
+        reception_line = next(line for line in a.sentence_plan.lines
+                              if line.surface_function == "render_human_follow")
+        for atom in ("reception_act:stay_with_current_burden",
+                     "reception_move_act:rm2:stay_with_current_burden", "reception_move:rm2"):
+            self.assertIn(atom, reception_line.binding.functional_atom_ids)
+            changed = replace(reception_line, binding=replace(reception_line.binding,
+                functional_atom_ids=tuple(x for x in reception_line.binding.functional_atom_ids if x != atom)))
+            sp = replace(a.sentence_plan, lines=tuple(changed if line == reception_line else line
+                                                      for line in a.sentence_plan.lines))
+            self.assertTrue(surface_owner.validate_grounded_sentence_plan(sp, a.plan, a.resolver))
+        for quality in ("grounded", "limited_grounding"):
+            rebuilt = _cmee_semantic_reception_plan(a.plan, a.resolver, material_quality=quality)
+            self.assertEqual(rebuilt.moves, moves)
+
+    def test_dropped_material_negation_or_nonaction_fails_independent_body_inverse(self):
+        a = self.a
+        for original, replacement in ((self.source.rstrip("。"), ""), ("かも", ""),
+                                      (self.action.rstrip("。"), ""), ("しませんでした", "しました")):
+            with self.subTest(original=original):
+                body = _tamper_reception(a.surface.text, original, replacement)
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input)
+                self.assertFalse(inverse.passed)
+
+    def test_closed_negative_inflection_and_whole_field_owner_boundaries(self):
+        prove = observation_plan_owner._bounded_past_nonaction_finite
+        for text in ("記録しなかった", "記録しませんでした", "書かなかった", "書きませんでした",
+                     "試さなかった", "試しませんでした", "資料を見なかった", "調べてから何もしなかった"):
+            self.assertTrue(prove(text), text)
+        for text in ("書きなかった", "書かませんでした", "記録さなかった", "試しなかった",
+                     "書いなかった", "作っなかった", "行っなかった",
+                     "弟から連絡しなかった", "母と記録しなかった",
+                     "悲しくてから何もしなかった", "弟が着いてから何もしなかった",
+                     "と聞いてから何もしなかった", "何もしなかったかも", "何もしなかったなら",
+                     "何もしない", "何もした", "何もできなかった"):
+            self.assertFalse(prove(text), text)
+        for action in ("何もしなかった？", "「何もしなかった」", "弟は何もしなかった。",
+                       "何もしなかったと弟が話した。", "何もしなかった。別の記録も読んだ。"):
+            raw = {"memo": self.source, "memo_action": action, "category": "生活",
+                   "emotions": [{"type": "不安", "strength": "weak"}]}
+            plan = build_final_stage1_grounded_observation_plan(raw)
+            self.assertFalse(any("lexical:source_past_nonaction" in n.semantic_frame.attribute_codes for n in plan.nuclei), action)
+
+    def test_pair_excludes_third_theme_optional_relation_and_other_family(self):
+        a = self.a
+        plan = a.plan
+        index = {n.nucleus_id: n for n in plan.nuclei}
+        material, action = (index[m.target_nucleus_ids[0]] for m in plan.response_plan.human_reception_plan.moves)
+        pair = observation_plan_owner._independent_nonaction_pair
+        args = {"safety_kind": plan.safety_policy.safety_kind, "material_quality": "grounded"}
+        self.assertEqual(pair(plan.nuclei, plan.relations, **args), (material, action))
+        third = replace(material, nucleus_id="third_optional_theme", retention="optional")
+        self.assertEqual(pair((*plan.nuclei, third), plan.relations, **args), ())
+        optional = tuple(replace(n, retention="optional") if n == material else n for n in plan.nuclei)
+        self.assertEqual(pair(optional, plan.relations, **args), ())
+        relation = replace(plan.relations[0], type="contrast", retention="required", grounding_kind="user_stated_relation")
+        self.assertEqual(pair(plan.nuclei, (relation,), **args), ())
+        other_family = replace(action, semantic_frame=replace(action.semantic_frame,
+            attribute_codes=(*action.semantic_frame.attribute_codes, "operator:help_seeking")))
+        self.assertEqual(pair(tuple(other_family if n == action else n for n in plan.nuclei), plan.relations, **args), ())
+        legacy = build_grounded_observation_plan({"memo": self.source, "memo_action": self.action})
+        self.assertLess(len(legacy.response_plan.human_reception_plan.moves), 2)

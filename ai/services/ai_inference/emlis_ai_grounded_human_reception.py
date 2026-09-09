@@ -2394,6 +2394,16 @@ def source_grounded_current_expression_nominal(
     raw = re.sub(r"\s+", " ", resolver.resolve(nucleus.source_span_ids[0]).raw_text).strip(
         " \u3000、,。．.",
     )
+    # A source-owned tentative clause is complete even when its terminal
+    # hedge is not a plain verb ending. Keep that whole clause as words;
+    # do not turn possibility into a fact or infer a new feeling here.
+    witnessed_uncertainty = bool(
+        fields == ("memo",)
+        and nucleus.kind == profile.nucleus_kind == profile.predicate_kind == "uncertainty"
+        and profile.modality == "uncertain"
+        and {"operator:uncertainty", "lexical:source_bounded_expression"}
+        <= set(nucleus.semantic_frame.attribute_codes)
+    )
     if (profile.actor_kind != "SELF" or profile.quoted_boundary
         or profile.performed_action or profile.future_action
         or profile.modality not in {"fact", "feeling", "uncertain"}
@@ -2404,7 +2414,8 @@ def source_grounded_current_expression_nominal(
                if span.source_field in fields)
         or _SOURCE_GROUNDED_TRAILING_CONNECTIVE_RE.search(fragment)
         or not (_SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragment)
-                or _SOURCE_GROUNDED_NONPAST_MORPHOLOGY_RE.search(fragment))):
+                or _SOURCE_GROUNDED_NONPAST_MORPHOLOGY_RE.search(fragment)
+                or witnessed_uncertainty)):
         return ""
     # A final source witness has already bound the whole declarative field
     # and its experiential owner. Its plain finite clause can govern こと

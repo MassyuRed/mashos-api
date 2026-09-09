@@ -11913,6 +11913,39 @@ def _derive_selected_subjective_reception_input_authority(
                 )))
         except KeyError:
             raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP") from None
+    # One sealed act claim can own two independently selected source duties.
+    # Distribute its existing contribution bindings to their already-fixed
+    # Move targets; do not select a different meaning or rewrite the claim.
+    # The sole author/replay still require the shared claim's complete content
+    # across both Moves, including all primary and boundary response objects.
+    if (len(rows) == 2
+        and all(row.reception_act == "stay_with_current_burden" for row in rows)
+        and rows[0].projected_claim_ref == rows[1].projected_claim_ref):
+        first = rows[0]
+        if (any(not move.required or len(move.target_nucleus_ids) != 1
+                or move.support_nucleus_ids for move in reception_plan.moves)
+            or any((row.branch, row.meaning_outcome_ref, row.reception_binding_ref,
+                    row.subjective_proposition, row.selected_contribution_refs)
+                   != (first.branch, first.meaning_outcome_ref, first.reception_binding_ref,
+                       first.subjective_proposition, first.selected_contribution_refs)
+                   for row in rows)
+            or first.subjective_proposition.focal_relation_ref is not None):
+            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        targets = tuple(_node_ref(binding.nucleus_to_node[row.target_nucleus_ids[0]]) for row in rows)
+        if (len(set(targets)) != 2
+            or set(targets) != set(first.subjective_proposition.response_object_refs)):
+            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        partition = tuple(tuple(ref for ref in first.selected_contribution_refs
+                                if {entry.semantic_ref for entry in first.basis_rows
+                                    if entry.contribution_ref == ref} == {target})
+                          for target in targets)
+        if (any(not refs for refs in partition)
+            or set(partition[0]) & set(partition[1])
+            or set().union(*map(set, partition)) != set(first.selected_contribution_refs)):
+            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        rows = [identify_selected_subjective_reception_decision(replace(
+            row, decision_ref="", selected_contribution_refs=refs,
+        )) for row, refs in zip(rows, partition, strict=True)]
     result = identify_selected_subjective_reception_input(SelectedSubjectiveReceptionInputV1(
         input_ref="", projection_preimage_ref=projection.projection_preimage_ref,
         projection_seal_ref=projection.projection_seal_ref,

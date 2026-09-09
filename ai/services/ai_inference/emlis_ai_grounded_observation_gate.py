@@ -1355,7 +1355,9 @@ def _evaluate_reception_gates(
         reasons_by_gate["reception_human_voice_gate"].append(
             "reception_human_terminal_predicate_missing"
         )
-    expected_terminal_predicates = tuple(
+    # Aggregate contract atoms retain each terminal kind once. The Move
+    # predicate-family and visible-duty checks below remain per Move.
+    expected_terminal_predicates = _dedupe(
         reception_terminal_predicate_kind(move.reception_act)
         for move in active_moves
     )
