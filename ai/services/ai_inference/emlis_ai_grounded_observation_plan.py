@@ -6098,6 +6098,16 @@ def _grounded_human_follow_role_for_nucleus(
         return "retained_intention"
     if _is_reception_performed_action_nucleus(nucleus, final_source_fidelity=final_source_fidelity):
         return "concrete_effort"
+    if (
+        final_source_fidelity
+        and nucleus.kind == nucleus.semantic_frame.predicate_kind == "change"
+        and nucleus.semantic_frame.modality == "fact"
+        and nucleus.semantic_frame.polarity == "mixed"
+        and "lexical:source_bounded_expression" in attributes
+    ):
+        # The whole contrast is source material, not a solely valued change.
+        # Match the opportunity family without changing its semantic frame.
+        return "burden_expression"
     if nucleus.kind in {"change", "value"} or {
         "semantic_role:current_change",
         "semantic_role:explicit_evaluation",
@@ -7948,10 +7958,17 @@ def _build_response_and_policies(
                     "lexical:source_scalar_background_expression",
                     "lexical:source_bounded_expression",
                 }))
+            or (item.kind == item.semantic_frame.predicate_kind == "change"
+                and item.semantic_frame.modality == "fact"
+                and item.semantic_frame.polarity == "mixed"
+                and "lexical:source_bounded_expression" in item.semantic_frame.attribute_codes)
         )
         and item.semantic_frame.actor == "current_user"
         and item.semantic_frame.modality in {"fact", "feeling"}
-        and item.semantic_frame.polarity in {"negative", "neutral"}
+        and (item.semantic_frame.polarity in {"negative", "neutral"}
+             or (item.kind == item.semantic_frame.predicate_kind == "change"
+                 and item.semantic_frame.polarity == "mixed"
+                 and "lexical:source_bounded_expression" in item.semantic_frame.attribute_codes))
         and (item.semantic_frame.time_scope in {"present", "current_input", "continuing"}
              or (item.semantic_frame.time_scope == "past"
                  and set(item.semantic_frame.attribute_codes).intersection({
@@ -9887,15 +9904,50 @@ def _source_finite_background_expression_is_bound(fragment: str) -> bool:
     is converted only for this check; both original clauses stay untouched.
     A comparative subject likewise remains part of the source expression.
     """
-    parts = re.fullmatch(
-        r"(?P<background>[^、,。．.!！?？\s]+[てで])[、,]"
-        r"(?P<endpoint>[^、,。．.!！?？\s]+)", fragment,
-    )
-    if parts is None or _top_level_text(fragment) != fragment or re.search(
+    if _top_level_text(fragment) != fragment or re.search(
         r"[「」『』…‥]|(?:明日|あした|これから|今後)|"
         r"(?:と|って)(?:聞|聴|言|話|語|述べ|書|記録|思|考|感じ|判断|決め|伝|教|知ら)",
         fragment,
     ):
+        return False
+    # A denied change and a finite positive endpoint can coexist in one
+    # source object. Keep both grammatical subjects and the te-background
+    # verbatim; neither subject becomes the experiencer of a new feeling.
+    mixed = re.fullmatch(
+        r"(?P<left_subject>[^はがも、,。．.!！?？\s]+)は"
+        r"(?P<denied>[^、,。．.!！?？\s]+?)(?:けど|けれど|けれども)[、,]"
+        r"(?P<background_subject>[^はがもを、,。．.!！?？\s]+)が"
+        r"(?P<background>[^はがもを、,。．.!！?？\s]+[てで])"
+        r"(?:少し(?:だけ)?|ちょっと|とても|やや|かなり)?"
+        r"(?P<endpoint>[^、,。．.!！?？\s]+)", fragment,
+    )
+    if mixed is not None:
+        denied, background, endpoint = mixed.group("denied", "background", "endpoint")
+        change = _CHANGE_RE.match(denied)
+        carrier = denied[change.end():] if change else ""
+        perfective = background[:-1] + ("た" if background.endswith("て") else "だ")
+        positive = _last_finite_operator_match(endpoint, _POSITIVE_CHANGE_RE)
+        return bool(
+            change is not None
+            and re.fullmatch(r"(?:って|して)(?:は)?い(?:ない|ません)|らない|りません", carrier)
+            and (_ACHIEVEMENT_RE.fullmatch(perfective) or _COMPLETED_ACTION_RE.fullmatch(perfective))
+            and positive is not None and positive.start() == 0
+            and _EXPLICIT_PERFECTIVE_END_RE.search(endpoint)
+            and _source_operator_owner_scope_is_bound(endpoint)
+            and not _NEGATION_RE.search(endpoint)
+            and not any(re.search(
+                r"にとって|には|" + _OWNER_FOCUS_PARTICLE_SOURCE
+                + "|" + _OWNER_TOPIC_PARTICLE_SOURCE
+                + r"|(?:に|から)[^\s、,。.!！?？]+?(?:ると|れば|ますと)|いわく|曰く",
+                mixed.group(name),
+            ) for name in ("left_subject", "background_subject"))
+            and not re.search(r"(?:なら|たら|れば|らしい|よう|みたい|かも)", fragment)
+        )
+    parts = re.fullmatch(
+        r"(?P<background>[^、,。．.!！?？\s]+[てで])[、,]"
+        r"(?P<endpoint>[^、,。．.!！?？\s]+)", fragment,
+    )
+    if parts is None:
         return False
     background, endpoint = parts.group("background"), parts.group("endpoint")
     if not (
@@ -10027,6 +10079,42 @@ def _final_stage1_typed_nuclei(
                                  else "lexical:source_bounded_expression"),
                             ))),
                         ))
+            # Keep a whole mixed change as material. Its denied background
+            # and positive endpoint do not license retyping the whole source
+            # as a positive feeling or assigning its background subject to self.
+            frame = nucleus.semantic_frame
+            if (
+                span is not None and normalized_input is not None
+                and nucleus.kind == frame.predicate_kind == "change"
+                and nucleus.source_fields == ("memo",) and span.source_field == "memo"
+                and frame.actor == "current_user" and frame.modality == "fact"
+                and frame.polarity == "mixed"
+                and frame.time_scope in {"present", "current_input"}
+                and {"operator:negation", "operator:change", "operator:contrast", "operator:positive_change"}
+                    <= set(frame.attribute_codes)
+                and not set(frame.attribute_codes).intersection({
+                    "operator:refusal", "operator:wish", "operator:uncertainty",
+                    "operator:performed_action", "operator:result",
+                    "semantic_role:limiting_unknown", "semantic_role:explicit_result",
+                    "semantic_dependency:action_before_change",
+                })
+            ):
+                source = str(normalized_input.get("memo") or "")
+                start, end = span.start_index, span.end_index
+                raw = str(span.raw_text)
+                if (
+                    0 <= start < end <= len(source)
+                    and _clean(source[start:end]) == _clean(raw)
+                    and not source[:start].strip()
+                    and re.fullmatch(r"\s*[。．.]?\s*", source[end:])
+                    and _top_level_text(source) == source
+                    and _source_finite_background_expression_is_bound(raw.strip(" \u3000。．."))
+                ):
+                    nucleus = replace(nucleus, semantic_frame=replace(
+                        frame, attribute_codes=tuple(_dedupe((
+                            *frame.attribute_codes, "lexical:source_bounded_expression",
+                        ))),
+                    ))
             # A present mood is a feeling, not a positive change or a burden.
             # The old lexical signals do not recognize this subject/predicate
             # pair. Prove the whole source sentence here; a tail match cannot
@@ -10553,6 +10641,29 @@ def _final_stage1_normalize_relation_authority(
             # The memo's finite background/comparison stays inside that
             # whole source object. Source field order cannot relocate its
             # change to the separate action as a before/after endpoint.
+            relation_type = "uncertain_connection"
+        elif (
+            cross_field and left_fields == {"memo"} and right_fields == {"memo_action"}
+            and relation.type == "action_supports_change"
+            and relation.grounding_kind == "bounded_structural_inference"
+            and relation.source_relation_ids == (
+                "whole_input_source_order", "source_field_transition:memo_to_memo_action",
+            )
+            and relation.source_meaning_arc_keys == ("whole_input:source_order",)
+            and left.retention == right.retention == "required"
+            and left.semantic_frame.actor == right.semantic_frame.actor == "current_user"
+            and left.kind == left.semantic_frame.predicate_kind == "change"
+            and left.semantic_frame.modality == "fact"
+            and left.semantic_frame.polarity == "mixed"
+            and "lexical:source_bounded_expression" in left.semantic_frame.attribute_codes
+            and source_proven_performed_action_status(right)
+            and not set(right.semantic_frame.attribute_codes).intersection({
+                "operator:shift", "operator:change", "operator:result",
+                "semantic_role:current_change", "semantic_role:explicit_result",
+            })
+        ):
+            # The contrast and te-background are internal to the memo.
+            # Field order alone does not make the separate action their cause.
             relation_type = "uncertain_connection"
         normalized.append(
             replace(

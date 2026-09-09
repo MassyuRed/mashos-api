@@ -840,12 +840,12 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                     )
         self.assertEqual(len(request_local_inputs), 100)
         self.assertGreater(limited_trace_count, 0)
-        # Finite source backgrounds restore two further omitted material duties.
-        # Keep the prior 129 duties without retyping neutral material as feeling;
+        # A whole mixed contrast restores one further omitted material duty.
+        # Keep the prior 131 duties without retyping mixed material as feeling;
         # selected meaning, expressions and bindings must still agree above.
         self.assertEqual(grounded_normal_count, 5)
-        self.assertEqual(full_move_count, 131)
-        self.assertEqual(full_expression_count, 131)
+        self.assertEqual(full_move_count, 132)
+        self.assertEqual(full_expression_count, 132)
         self.assertGreater(shared_subject_zero_count, 0)
         self.assertTrue(
             any(
