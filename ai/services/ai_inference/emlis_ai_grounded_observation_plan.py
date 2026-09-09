@@ -7255,6 +7255,7 @@ def build_grounded_human_reception_plan(
             "lexical:source_current_feeling_with_verbal_background",
             "lexical:source_past_negative_feeling",
             "lexical:source_scalar_background_expression",
+            "lexical:source_bounded_expression",
         })
         and not any(
             relation.retention == "required" or relation.type != "uncertain_connection"
@@ -7917,7 +7918,7 @@ def _build_response_and_policies(
         )
 
     selected_follow = min(follow_candidates, key=follow_rank) if follow_candidates else None
-    # An independently recorded feeling or explicit scalar-background
+    # An independently recorded feeling or whole finite source-background
     # expression must not be dropped merely because the other field has an
     # action. The latter stays material, without a new feeling interpretation.
     # Choosing that existing burden as primary retains its opportunity and
@@ -7943,8 +7944,10 @@ def _build_response_and_policies(
             or (item.kind in {"event", "state"}
                 and item.semantic_frame.predicate_kind in {"event", "state"}
                 and item.semantic_frame.modality == "fact"
-                and "lexical:source_scalar_background_expression"
-                in item.semantic_frame.attribute_codes)
+                and set(item.semantic_frame.attribute_codes).intersection({
+                    "lexical:source_scalar_background_expression",
+                    "lexical:source_bounded_expression",
+                }))
         )
         and item.semantic_frame.actor == "current_user"
         and item.semantic_frame.modality in {"fact", "feeling"}
@@ -7954,6 +7957,7 @@ def _build_response_and_policies(
                  and set(item.semantic_frame.attribute_codes).intersection({
                      "lexical:source_past_negative_feeling",
                      "lexical:source_scalar_background_expression",
+                     "lexical:source_bounded_expression",
                  })))
         and set(item.semantic_frame.attribute_codes).intersection({
             "lexical:source_declarative_feeling_subject",
@@ -7961,6 +7965,7 @@ def _build_response_and_policies(
             "lexical:source_current_feeling_with_verbal_background",
             "lexical:source_past_negative_feeling",
             "lexical:source_scalar_background_expression",
+            "lexical:source_bounded_expression",
         })
         and _reception_opportunity_families_for_nucleus(
             item, safety_kind=safety_decision.safety_triage_kind,
@@ -9874,6 +9879,57 @@ def _source_scalar_background_expression_is_bound(fragment: str) -> bool:
     ) is not None
 
 
+def _source_finite_background_expression_is_bound(fragment: str) -> bool:
+    """Retain two finite source clauses as material without interpreting them.
+
+    Structural case frames establish complete words to receive, never an
+    action, a feeling, an experiencer or a causal link. The conjunctive form
+    is converted only for this check; both original clauses stay untouched.
+    A comparative subject likewise remains part of the source expression.
+    """
+    parts = re.fullmatch(
+        r"(?P<background>[^、,。．.!！?？\s]+[てで])[、,]"
+        r"(?P<endpoint>[^、,。．.!！?？\s]+)", fragment,
+    )
+    if parts is None or _top_level_text(fragment) != fragment or re.search(
+        r"[「」『』…‥]|(?:明日|あした|これから|今後)|"
+        r"(?:と|って)(?:聞|聴|言|話|語|述べ|書|記録|思|考|感じ|判断|決め|伝|教|知ら)",
+        fragment,
+    ):
+        return False
+    background, endpoint = parts.group("background"), parts.group("endpoint")
+    if not (
+        _bounded_structural_action_endpoint(endpoint)
+        and _source_operator_owner_scope_is_bound(endpoint)
+        and not _NEGATION_RE.search(endpoint)
+        and not re.search(r"(?:なら|たら|れば|らしい|よう|みたい|かも)", endpoint)
+    ):
+        return False
+    perfective = background[:-1] + ("た" if background.endswith("て") else "だ")
+    if (
+        re.fullmatch(r".+を[^を、,。．.!！?？\s]+[てで]", background)
+        and _bounded_structural_action_endpoint(perfective)
+        and _source_operator_owner_scope_is_bound(perfective)
+        and not _NEGATION_RE.search(perfective)
+    ):
+        return True
+    # Here the source explicitly compares a finite event. The subject and
+    # comparison are preserved verbatim; neither becomes a user action or
+    # a psychological interpretation. No new subject vocabulary is inferred.
+    comparison = re.fullmatch(
+        r"[^、,。．.!！?？\s]+より(?:少し(?:だけ|ずつ)?|やや|かなり)?"
+        r"[^はがも、,。．.!！?？\s]+が(?P<predicate>[^、,。．.!！?？\s]+)",
+        perfective,
+    )
+    predicate = comparison.group("predicate") if comparison else ""
+    finite = _last_finite_operator_match(predicate, *_FINITE_OPERATOR_PATTERNS)
+    return bool(
+        finite is not None and finite.start() == 0
+        and _EXPLICIT_PERFECTIVE_END_RE.search(predicate)
+        and not _NEGATION_RE.search(predicate)
+    )
+
+
 def _final_stage1_typed_nuclei(
     plan: GroundedObservationPlan,
     evidence_spans: Sequence[EvidenceSpan],
@@ -9919,8 +9975,8 @@ def _final_stage1_typed_nuclei(
         if not projections:
             # Prove the original field before graph selection. A lexical value
             # in the background must not mask a finite negative feeling. A
-            # source-stated delay/comparison instead keeps its existing type;
-            # no psychological reading is lent to its ambiguous endpoint.
+            # finite background expression instead keeps its existing type;
+            # no psychological reading is lent to its endpoint.
             frame = nucleus.semantic_frame
             if (
                 span is not None and normalized_input is not None
@@ -9948,7 +10004,8 @@ def _final_stage1_typed_nuclei(
                     and re.fullmatch(r"\s*[。．.]?\s*", source[end:])
                     and _top_level_text(source) == source
                     and ((past_feeling := _source_past_negative_feeling_is_bound(finite))
-                         or _source_scalar_background_expression_is_bound(finite))
+                         or (scalar_expression := _source_scalar_background_expression_is_bound(finite))
+                         or _source_finite_background_expression_is_bound(finite))
                 ):
                     if past_feeling:
                         nucleus = replace(nucleus, kind="reaction", semantic_frame=replace(
@@ -9966,7 +10023,8 @@ def _final_stage1_typed_nuclei(
                         nucleus = replace(nucleus, semantic_frame=replace(
                             frame, attribute_codes=tuple(_dedupe((
                                 *frame.attribute_codes,
-                                "lexical:source_scalar_background_expression",
+                                ("lexical:source_scalar_background_expression" if scalar_expression
+                                 else "lexical:source_bounded_expression"),
                             ))),
                         ))
             # A present mood is a feeling, not a positive change or a burden.
@@ -10473,9 +10531,33 @@ def _final_stage1_normalize_relation_authority(
             and relation.retention == "required"
             else relation.retention
         )
+        relation_type = relation.type
+        if (
+            cross_field and left_fields == {"memo"} and right_fields == {"memo_action"}
+            and relation.type == "shift_from_to" and relation.retention != "required"
+            and relation.grounding_kind == "bounded_structural_inference"
+            and relation.source_relation_ids == ("whole_input_source_order",)
+            and relation.source_meaning_arc_keys == ("whole_input:source_order",)
+            and left.retention == right.retention == "required"
+            and left.semantic_frame.actor == right.semantic_frame.actor == "current_user"
+            and left.kind in {"event", "state"}
+            and left.semantic_frame.modality == "fact"
+            and left.semantic_frame.polarity == "neutral"
+            and "lexical:source_bounded_expression" in left.semantic_frame.attribute_codes
+            and source_proven_performed_action_status(right)
+            and not set(right.semantic_frame.attribute_codes).intersection({
+                "operator:shift", "operator:change", "operator:result",
+                "semantic_role:current_change", "semantic_role:explicit_result",
+            })
+        ):
+            # The memo's finite background/comparison stays inside that
+            # whole source object. Source field order cannot relocate its
+            # change to the separate action as a before/after endpoint.
+            relation_type = "uncertain_connection"
         normalized.append(
             replace(
                 relation,
+                type=relation_type,
                 grounding_kind=grounding_kind,
                 retention=retention,
             )

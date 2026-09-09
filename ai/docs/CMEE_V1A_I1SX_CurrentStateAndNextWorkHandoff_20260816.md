@@ -6791,3 +6791,12 @@ Mash承認済み運用を継承する。System Contextは任意で今回は未�
 過去の肯定感情については、既存NORMAL appraisalのpositive feelingが現在時点だけを受け入れ、保護検査もpastを拒否することを確認した。今回はこの意味契約と保護期待値を変更していない。次はこの契約と原文の時点を区別して必要差分を確定し、感謝・複数主題・共有関係は既存の上流source証明から扱う。長い復唱、汎用結語、中心感情より補助行動へ偏る選択、限定構文外の背景は引き続き残件。
 
 Mash承認済み運用を継承する。System Contextは任意で今回は未使用・原典直接確認、PR37不変更。最終修正版の必須検査とroot全100件全文確認を維持し、同じ前提・全履歴・検証の不要な反復、定例JSON／ZIP配布、新しい管理系を追加しない。既存2026-09-05承認の同じ未完unit、disabled／Draft／open／unmerged、candidate_ready=false、automatic_progression=falseを維持。Product Read PASS・採用・merge・本番・問い／Layer3は未成立。9月12日の本文確認準備に対する未達リスクを保持する。
+
+
+### 2026-09-09 current — candidate73 有限背景を含む本文材料の保持・最終検証中
+
+既存OPの原field全体の有限背景＋有限主節を材料として証明し、別欄の実行済み行動とともに選択する。既存neutral event／state・factの型、主体、極性、時点を変更せず、背景を本人の行動や感情・因果へ読み替えない。新しい材料保持用lexical witnessを既存選択へ接続し、旧scalar witnessは維持する。原field全体、引用・報告・疑問・未来・否定host・第三節の境界を検証する。
+
+同じ材料核と別欄行動の関係がwhole_input_source_orderだけに由来するboundedなshiftの場合、欄内の比較を欄間の変化へ移さずuncertain_connectionに整合する。両核は本人のrequired核、行動側は実行済みかつ変化証拠なしに限定し、明示関係や別の根拠は変更しない。NORMALの現在肯定感情契約と保護期待値は不変更。
+
+途中の対象4検査、その後の関係境界を含む5検査は成功。独立レビュー後の原relation grounding／主体／retentionの追加境界を含め、最終固定sourceの必須検査と同じ100件・root全文確認をこれから実行する。現時点では完了証拠にしない。NOT_CLEAR、既存承認の未完unit、disabled／Draft、candidate_ready=false、automatic_progression=false。System Context未使用・原典直接確認、PR37不変更。
