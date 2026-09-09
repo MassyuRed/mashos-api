@@ -7285,6 +7285,18 @@ def _source_grounded_temporal_aspect_realization(
         morphological_time = bool(
             _SOURCE_GROUNDED_NONPAST_MORPHOLOGY_RE.search(clean_head)
         )
+        if realization.time_scope == "future" and not morphological_time:
+            # A final nonpast verb + tsumori already carries the selected
+            # future axis. Keep the source intention intact instead of
+            # adding another future adjunct. Past belief, quotation and
+            # a noun's 'no tsumori' are not this grammatical owner.
+            morphological_time = bool(
+                re.search(r"[うくぐすつぬぶむる]つもり$", clean_head)
+                and not re.search(r"[「」『』“”‘’\"()（）\[\]【】?？!！。．.;；…‥]", clean_head)
+                and not re.search(
+                    r"(?:という|っていう|[てで](?:い|お)?る|[てで]ある)つもり$", clean_head,
+                )
+            )
     else:
         morphological_time = True
     time_in_source = lexical_time or morphological_time or not time_adjunct

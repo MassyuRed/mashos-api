@@ -8,12 +8,12 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. candidate75の最新checkpoint・検証状態・残件を末尾で確認する。
+3. candidate76の最新checkpoint・検証状態・残件を末尾で確認する。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-09最新（candidate75）：試行条件・期待比較・授受可能の完了表現を含む原文全体を、型・主体・時点を保った本文材料として独立行動とともに残した。同じ100件の受取1件を改善、他99件の全recordと全100件の観察・可否理由は同一。旧132義務を保持してMove／expression／binding各133、direct100、73 GENERATED／27 UNAVAILABLE。必須375件の単一full runは372 PASS／継承3 FAIL、既存371件の成否・後続診断同一、新規4件成功。rootが全100件の全入力field・観察・受取・可否理由を全文確認しNOT_CLEAR。感謝・共有関係・複数主題、中心感情の取りこぼし、長い復唱と定型末尾は残る。System Context未使用・原典直接確認。再開点は末尾candidate75。
+2026-09-09最新（candidate76実装保存）：既存future軸を原文末尾の非過去動詞＋つもりが担う場合、重複する未来副詞句をsole HRで省く。原文・選択・133義務は不変更。関連10検査PASS後、対象核のfuture／非実行状態の明示検査を補強した。最終source固定後の必須回帰・同じ100件・root全文確認は後続で実施する。NOT_CLEAR、System Context未使用・原典直接確認。再開点は末尾candidate76。
 
 ## 1. GitHub anchors
 
@@ -6838,3 +6838,14 @@ Mash承認済み運用を継承する。System Contextは任意で今回は未�
 - 全100件生成・全文確認と全375検査のsourceはlocal `6ec69069d3e9da5bebaddc79bcbbe0234813338f`／remote `ff5a77a3f39a8c4f90219d99d4fd5efc400f3bcb`、tree `f1539ee40ec2fa4193834b747effb2647156d922`同一。後続変更は既存引継ぎ3資料の結果反映だけ。商品実装変更後へ今回の結果を流用しない。
 
 次は既存source証明・選択で、同familyの独立行動、未保持の複数主題・感謝・共有関係を別原因として追う。近傍のhelp-seeking binding gapは修正前にも発生し、other_explicitへの分類も今回対象外のまま残る。有限な材料保持を一般的な授受・感謝理解の完成に数えない。既存承認の同じ未完unit、disabled／Draft／open／unmerged、candidate_ready=false、automatic_progression=false、NOT_CLEARを継続。System Context未使用・原典直接確認、PR37不変更。Product Read PASS・採用・ready・merge・本番・問い／Layer3は未成立。9月12日の本文確認準備の未達リスクを保持する。
+
+
+### 2026-09-09 candidate76 実装保存時点（後続の最終結果を参照）
+
+既存sole HRのtime/aspect所有判定で、既に選ばれたfuture軸を末尾の非過去動詞＋つもりが原文で担う場合、重なる未来副詞句を省く。意図・内部の対象や量を含む原文全体はそのまま保持する。過去の思い込み、引用・外側報告・別文・疑問・名詞のつもり・進行状態は今回の証明に含めず、present_to_future、ANAPHORIC、aspectと既存Gate／inverseを維持する。否定形の一部や通常動詞の一部も旧挙動に残り、一般的な予定解釈の完成ではない。選択・意味核・133義務・bridge総数を変更せず、新owner／schema／経路なし、STRUCTURE_MAP_DELTA_NONE。
+
+関連10検査はPASS。独立静的レビュー後、実経路で対象核のfuture／非実行状態を確認するassertを補強した。最終の必須回帰・同じcanonical100・root全100件全文確認は固定sourceで続けて実施する。過去の結果を今回へ流用しない。
+
+同familyの独立二行動については、既存OPのfamily代表化と選択辞書が一方を落とす原因を確認した。ただし02 §36.2の選択義務保護に対する9月8日の限定例外は原文で証明した感情／材料＋既存行動であり、action-onlyの選択数変更まで含まない。今回この選択変更は実装せず、範囲拡張が必要な残件として保持する。長い復唱・定型末尾、感謝・共有関係・複数主題、other_explicit分類とhelp-seeking binding gapも未解決。
+
+既存承認の同じ未完unit、disabled／Draft／open／unmerged、NOT_CLEAR、candidate_ready=false、automatic_progression=falseを継続する。System Context未使用・原典直接確認、PR37不変更。採用・ready・merge・本番・Product Read PASSは未成立。

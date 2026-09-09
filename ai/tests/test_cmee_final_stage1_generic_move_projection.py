@@ -8048,3 +8048,98 @@ class CMEEFinalReceivedTrialMaterialSelectionTest(unittest.TestCase):
                 altered, frozen.evidence_spans, normalized_input=frozen.normalized_current_input,
             )
             self.assertTrue(all(self.marker not in n.semantic_frame.attribute_codes for n in nuclei))
+
+
+class CMEEFinalFutureIntentionTimeOwnershipTest(unittest.TestCase):
+    """The source intention can carry its already selected future axis."""
+
+    sources = (
+        "確かめたい条件を一つずつ書き、返事は週末にすると伝えるつもり。",
+        "調べたい点を紙に残し、週末に見直すつもり。",
+    )
+
+    @staticmethod
+    def row(action):
+        return {"case_id": "public-future-time-owner", "input": {
+            "thought_text": "どちらにも良いところがあるが、まだ迷っている。",
+            "action_text": action, "categories": ["仕事"],
+            "emotions": [{"type": "不安", "strength": "medium"}],
+        }}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = tuple(_full_surface_artifacts(cls.row(source)) for source in cls.sources)
+
+    def test_source_intention_stays_complete_without_repeated_future_adjunct(self):
+        for source, a in zip(self.sources, self.artifacts):
+            with self.subTest(source=source):
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                follow = _reception_text(a.surface.text)
+                self.assertEqual(follow.count(source.rstrip("。")), 1)
+                self.assertNotIn("これから、", follow)
+                moves = a.plan.response_plan.human_reception_plan.moves
+                self.assertEqual(len(moves), 1)
+                self.assertTrue(moves[0].required)
+                target = next(n for n in a.plan.nuclei if n.nucleus_id == moves[0].target_nucleus_ids[0])
+                self.assertEqual(target.semantic_frame.time_scope, "future")
+                self.assertFalse(reception_owner.reception_action_is_performed(
+                    target, final_source_fidelity=True,
+                ))
+                self.assertEqual(tuple(d.target_nucleus_ids for d in a.selected_subjective_input.decisions),
+                                 tuple(m.target_nucleus_ids for m in moves))
+                for _args, kwargs in a.author_arguments:
+                    self.assertIs(kwargs["selected_subjective_input"], a.selected_subjective_input)
+                for authored in a.authored:
+                    self.assertEqual(set(authored.realized_move_ids), {m.move_id for m in moves})
+                    sentence_plan = a.sentence_plan if authored.recovery_stage == "full" else (
+                        surface_owner.build_reception_recovery_sentence_plan(
+                            a.sentence_plan, a.plan, a.resolver, recovery_stage=authored.recovery_stage,
+                        )
+                    )
+                    surface = _recovery_surface(a, sentence_plan)
+                    self.assertTrue(evaluate_grounded_surface_body_inverse(
+                        body=surface.text.encode("utf-8"), plan=a.plan, sentence_plan=sentence_plan,
+                        resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                    ).passed)
+
+    def test_inverse_rejects_duplicate_time_lost_intention_or_changed_source(self):
+        source, a = self.sources[0], self.artifacts[0]
+        follow = _reception_text(a.surface.text)
+        for wrong in (
+            "これから、" + follow,
+            follow.replace("つもり", "つもりだった"),
+            follow.replace("伝えるつもり", "伝えた"),
+            follow.replace("返事は週末にすると", ""),
+            follow.replace("一つずつ", "全部"),
+        ):
+            with self.subTest(wrong=wrong):
+                body = _tamper_reception(a.surface.text, follow, wrong)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+
+    def test_future_owner_requires_outer_nonpast_intention_and_keeps_other_axes(self):
+        realize = reception_owner._source_grounded_temporal_aspect_realization
+        future = SimpleNamespace(time_scope="future", aspect="unknown", reference_mode="EXPLICIT")
+        for source in ("資料を読むつもり", "道具を片づけるつもり", "要点を伝えるつもり",
+                       "場所を聞くつもり", "先には進まぬつもり"):
+            self.assertEqual(realize(future, source), ("SOURCE_CLAUSE", "SOURCE_CLAUSE", "", ""))
+        for source in (
+            "資料を読んだつもり", "資料を読むつもりだった", "資料を読むつもりでした",
+            "資料を読むつもりだと聞いた", "資料を読むつもり？", "資料を読むつもり！",
+            "「資料を読むつもり」", "別の記録。資料を読むつもり", "資料を読むつもり。別件",
+            "練習のつもり", "資料を読むというつもり", "資料を読むっていうつもり",
+            "内容を知っているつもり", "内容を知ってるつもり", "資料を読んでいるつもり",
+            "道具を置いてあるつもり", "資料を読まないつもり", "資料を読むつもりなら別件",
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(realize(future, source), ("ADJUNCT", "SOURCE_CLAUSE", "これから、", ""))
+        for time in ("present", "present_to_future", "past", "past_to_present", "continuing", "completed"):
+            other = SimpleNamespace(time_scope=time, aspect="unknown", reference_mode="EXPLICIT")
+            self.assertEqual(realize(other, "資料を読むつもり"), realize(other, "練習のつもり"))
+        anaphoric = SimpleNamespace(time_scope="future", aspect="unknown", reference_mode="ANAPHORIC")
+        self.assertEqual(realize(anaphoric, "資料を読むつもり"), ("ANTECEDENT", "ANTECEDENT", "", ""))
+        completed = SimpleNamespace(time_scope="future", aspect="completed", reference_mode="EXPLICIT")
+        self.assertEqual(realize(completed, "資料を読むつもり"), ("SOURCE_CLAUSE", "ADJUNCT", "", "すでに、"))
