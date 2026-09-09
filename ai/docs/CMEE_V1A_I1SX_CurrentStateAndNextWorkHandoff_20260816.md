@@ -13,7 +13,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-09最新（candidate78 source checkpoint）：既存OPが原field全体の本人の有限感情を証明済みの場合に限り、HRで「という言葉」を原文＋「こと」の目的語へ接続する。意味核・選択・Moveを変更せず、Gateの既存finite_clause_nominal照合へ厳密に接続。未証明・不確定・丁寧語の引用境界を保持。関連20件の初回は19 PASS／新規fixture誤用1 FAIL、その新規3件はfinal plan fixture修正後全PASS。最終固定sourceの必須回帰とcanonical100生成・root全文確認は未実施。NOT_CLEAR、Draft/open/unmerged、System Context未使用・原典直接確認、PR37不変更。再開点は末尾candidate78。
+2026-09-09最新（candidate78）：既存OPの証明済みの本人の有限感情に限り、HRの原文＋「という言葉」を原文＋「こと」の目的語へ接続し、Gateの既存finite_clause_nominal照合へ厳密に接続した。canonical100の3件の受取だけが変わり、他97件の全recordと全100の入力・観察・意味核・選択入力・受取plan・可否理由は同一。133義務、direct100、73 GENERATED／27 UNAVAILABLEを維持。必須384件の単一full runは381 PASS／継承3 FAIL、前381件の全成否と後続診断同一、新規3件成功。rootが全100件を全文確認しNOT_CLEAR。長い復唱・定型末尾と中心感情／共有関係等の残件を継続。System Context未使用・原典直接確認、PR37不変更。再開点は末尾candidate78。
 
 ## 1. GitHub anchors
 
@@ -6893,3 +6893,17 @@ Mash承認済み運用を継承する。System Contextは任意で今回は未�
 初期試作ではGate文法未接続によりminimal回復へ退いた事実を保存し、通常のfull出力を回復した。関連20検査の初回19 PASS／新規1 FAILは、新規検査がfinal投影前planを使ったfixture誤用による。入力・期待値を変更せず実際のfinal planへ修正し、新規3検査全PASS。旧17検査は同じ実装で成功済み。原文・程度・時制・否定・主体・格・受取義務・行動欠落等のinverse拒否、未証明と丁寧語の境界を検査した。最終固定sourceによる必須回帰・canonical100とroot全文確認は次の検証であり、現時点で完了とは記録しない。runnerは既存current13定数のみ同期し、歴史receipt・期待値とexact18／exact9を維持。固定環境を再構築せず利用。
 
 NOT_CLEAR・disabled・Draft/open/unmerged・candidate_ready=false・automatic_progression=falseを維持。長い復唱・定型末尾と中心感情／共有関係等は未解決。同family二行動の選択拡張は未実装。System Context未使用、原典直接確認、PR37不変更。
+
+
+### 2026-09-09 current — candidate78 証明済み感情の目的語文法
+
+既存OPの3 witnessが原field全体・宣言境界・本人の有限感情を証明済みで、既存stay_with_current_burdenの条件を満たす場合に限り、HRの原文保持名詞化を「という言葉」から「こと」の目的語へ接続する。背景・程度・時制・否定を含む原文を保持し、未証明expression、不確定・疑問・引用・推量、丁寧語末尾の既存挙動へ適用を広げない。Gateは期待referentを独立に解決し、全文・一意性・末尾・引用境界・replay条件を維持して、既存finite_clause_nominal markerによる文法照合へ接続した。words形には引き続きtarget_wordsを要求する。OP・意味核・選択入力・Move義務・参照modeは不変更で、02 §36.2／§36.3の既存HRと独立Gateによる限定的文法修復。新owner／schema／経路なし、STRUCTURE_MAP_DELTA_NONE。
+
+- 同じcanonical100はdirect100、73 GENERATED／27 UNAVAILABLE、Move／expression／binding各133。3件の受取で、本人の感情を言葉という対象に置き換えるwrapperを除き、原文全体を「こと」の目的語として受け止める文法へ変えた。他97件の全record、全100件の入力・観察・意味核・selected input・受取plan・可否理由は同一。選択133義務をすべて保持し、提供可否は変わらない。
+- rootが全100件の思考・行動・カテゴリ・感情／強度・観察・受取・可否理由を、変更のない例と集合全体も含め全文確認しNOT_CLEAR。今回の文法修復で長い原文再掲や定型末尾が解消したとは扱わない。中心感情、感謝・共有関係・複数主題、薄い指示的受取、暫定的な自己否定への受取不足は未解決。
+- 初期試作ではGate文法の接続不足によりminimal回復へ退いた事実をrawで保持し、既存文法照合への接続を補正してfull出力を回復した。関連20検査の初回は19 PASS／新規1 FAIL。新規検査がfinal投影前planを使ったfixture誤用を、入力・期待値を変えず実際のfinal planへ修正し、新規3検査を再実行して全PASS。初回結果を消さず、初回20件全成功とは記録しない。
+- 最終固定sourceの必須384件を一括実行し、raw結果381 PASS／継承3 FAIL、ERROR／skip0。前381件の全成否と後続診断は同一、新規3検査全成功。新規検査は原文全体と二義務の全回復／独立inverseでの保持、程度・時制・否定・主体・引用・重複・格・受取義務・行動欠落等の拒否、未証明profileと丁寧語の既存境界を確認した。継承失敗は観察freeze hash2件と歴史source receipt1件で、保護された歴史期待値とbridge総数は不変更。別V2の17検査／42件213候補は今回未実行。
+- 固定Python3.12.13・46依存の既存環境を再構築せず使用。同セッションの保存済み環境照合を再利用し、今回の関連検査・必須回帰・100件の実行が完了した。依存ファイルの全件hash照合を今回再実施したという記録ではない。runnerは既存current13定数内の同期だけを扱い、exact18／exact9と非current ASTを維持した。
+- 全100件生成・全文確認と全384検査のsourceはlocal `dbf655d56a01fd4224339cd0c4a06f7d23b91acb`／remote `a435ad8868393f90633f233932298c0203dca08a`、tree `33397a038ca59ffeca4013bb6d37940e4f41c358`同一。後続変更は既存引継ぎ3資料の結果反映だけ。商品実装変更後へ今回の結果を流用しない。
+
+次は現在選ばれた意味を保つ文章改善を継続する。中心感情・共有関係やother_explicit分類・help-seeking binding gapは原因を分けて追う。同family二行動の代表化・選択数拡張は、9月8日の感情／材料と既存行動を保持する限定例外に含まれず、引き続き未実装。既存承認の同じ未完unit、disabled／Draft／open／unmerged、candidate_ready=false、automatic_progression=false、NOT_CLEARを継続。System Context未使用・原典直接確認、PR37不変更。Product Read PASS・採用・ready・merge・本番・問い／Layer3は未成立。9月12日の本文確認準備の未達リスクを保持する。
