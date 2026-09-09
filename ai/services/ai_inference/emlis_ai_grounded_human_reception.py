@@ -7825,6 +7825,25 @@ def _source_grounded_response_predicate(
         # introducing that same object again through a pronoun.
         object_particle, role_operator = "を", "見過ごさず、"
         predicate_lemma, conjugation_class = "受け止める", "ICHIDAN"
+    material_intention_attention = bool(
+        single_target_object and move_role == "attention"
+        and reception_act == "honor_concrete_effort"
+        and referent_kind == "future_action_intention"
+        and target_predicate_kind == "present_direction"
+        and semantic_profile.nucleus_kind == "action"
+        and semantic_profile.modality == "intention"
+        and semantic_profile.actor_kind == "SELF" and voice == "FUTURE_INTENTION"
+        and semantic_profile.future_action and not semantic_profile.performed_action
+        and not semantic_profile.quoted_boundary
+        and not distributive_object and not pending_relation_slots
+        and not unfinished_change and not unfinished_pair
+        and _selected_material_appraisal(selected_subjective_decision)
+    )
+    if material_intention_attention:
+        # The complete intended action is the object of both attention and
+        # honor. Keep its future source and the selected honor predicate;
+        # a second accusative pronoun does not introduce another object.
+        object_particle, role_operator = "を", "見過ごさず、"
     material_change = bool(
         reception_act == "recognize_lived_change" and referent_kind == "lived_change"
         and target_predicate_kind == "present_change"
@@ -7958,7 +7977,8 @@ def _source_grounded_response_predicate(
     # once, instead of leaving the transitive predicate without its object.
     valency_complement = (
         "それを" if move_role == "attention"
-        and not (material_action_attention or material_state_attention) else ""
+        and not (material_action_attention or material_intention_attention
+                 or material_state_attention) else ""
     )
     completed_relation_slots = ()
     if type(pending_relation_slots) is not tuple or any(type(slot) is not int for slot in pending_relation_slots):

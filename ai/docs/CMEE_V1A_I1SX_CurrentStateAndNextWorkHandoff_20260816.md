@@ -13,7 +13,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-09最新（candidate79・強制切替から復旧）：原文の背景と並列状態を既存行動とともに保持するsourceを復元。保存済みcanonical100のroot全文確認と前回比較を完了し、受取1件変更・他99全record同一、全100の入力・観察・可否理由同一、73 GENERATED／27 UNAVAILABLE。必要Move／expression／binding各134、旧133義務すべて保持。必須388は384 PASS／4 FAIL（既存3＋bridge合計133固定との不一致1）。期待値不変更・全成功扱いなし。商品NOT_CLEAR、実出力再生成なし。再開点は末尾candidate79 recovery。System Context未使用・原典直接確認、PR37不変更。
+2026-09-09最新（candidate80 source checkpoint）：原文証明済みの未来行動に対するattentionとhonorを同じ目的語へ接続し、代名詞での言い直しを削減。予定・原文・選択責務とhonor述語を保持。対象検査では新規3成功、旧句の固定期待2失敗を保持。最終固定sourceの必須回帰・同じ100件・root全文確認はこれから。NOT_CLEAR・Draft/open/unmerged、System Context未使用・原典直接確認、PR37不変更。
 
 ## 1. GitHub anchors
 
@@ -6933,3 +6933,12 @@ runnerは既存current13定数だけ同期し、exact18／exact9と非current AS
 再開点：保存済みcandidate79の出力・回帰・全文確認を引き継ぎ、133固定と承認済み必要義務増加の整合残件を保持しながら、既存範囲の入力固有フォロー改善を続ける。保護された期待値の変更が必要な場合は変更対象と意味を明示して扱い、単に成功させるためには変更しない。同family二行動の選択数拡張は限定例外外で未実装。商品NOT_CLEAR、disabled、Draft/open/unmerged、candidate_ready=false、automatic_progression=false。Product Read PASS・採用・ready・merge・本番・問い／Layer3は未成立。
 
 添付の9月9日運用変更を継承：System Context任意利用（今回は未使用・原典直接確認、PR37不変更）、同一source・入力・条件の結果を再利用、変更のある既存PRだけ反映、公開可能な再開情報はGitHub、private本文は既存非公開作業記録へ保持、定例JSON／ZIP配布なし。今回の復旧・保存を文章品質全体の完了とは扱わない。
+
+
+### 2026-09-09 candidate80 source checkpoint — 未来行動の目的語再導入を削減
+
+sole Human Receptionの既存述語文法で、full・非代名詞参照・関係/contextなし・単一の完全なfuture行動・本人・intention・未実行・selected MATERIAL_WEIGHT / RECEIVE_AS_MATERIALを満たすattentionだけを、同じ目的語を共有する形へ接続した。honorの「大切に思う」は維持し、実行済みへの変換、予定文・否定・時点・対象・選択Move・follow要素の削減はしない。他recovery、複数対象、引用、uncertain、他のappraisalは既存文法を保持。OP、意味owner、Gateとbody parserは不変更。02 §36.2／§36.3の既存HR owner内に閉じ、新file・owner・schema・経路追加なし、STRUCTURE_MAP_DELTA_NONE。
+
+新規3検査は意味・status・replay・対象/attention/honor喪失の拒否・選択範囲・recoveryを確認。初期の新規検査は名詞的予定の別actまでattentionと仮定して失敗したため、その実際のprotect選択を保持する検査に訂正し、初回結果も保存した。既存2検査は旧句「目が留まり」の固定期待／同句tamperが現修正と衝突し、raw FAILを保持する。既存期待値・fixtureは不変更。前候補の未解決4失敗を成功扱いへ変えず、最終必須回帰で差分を確認する。
+
+同じ100件と必須回帰はこの固定sourceから次に実施する。全本文確認前であり、商品完成・候補採用を意味しない。長い復唱・説明語・定型の締め、否定評価／不確定の原field証明不足による中心感情の欠落、複数主題・共有関係・同family二行動の選択残件を保持。NOT_CLEAR・disabled・Draft/open/unmerged・candidate_ready=false・automatic_progression=false。System Context未使用・原典直接確認、PR37不変更。

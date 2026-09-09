@@ -8567,3 +8567,118 @@ class CMEEFinalCoordinatedBackgroundMaterialTest(unittest.TestCase):
             self.assertFalse(evaluate_grounded_surface_body_inverse(
                 body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
                 resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+
+
+class CMEEFinalFutureIntentionAttentionTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = []
+        cls.predicate_arguments = []
+        predicate = reception_owner._source_grounded_response_predicate
+        def track(reception_act, move_role, **kwargs):
+            cls.predicate_arguments.append({**kwargs, "reception_act": reception_act,
+                                           "move_role": move_role})
+            return predicate(reception_act, move_role, **kwargs)
+        with patch.object(reception_owner, "_source_grounded_response_predicate", side_effect=track):
+            for ordinal, action in enumerate((
+                "明日は返事を急がずに展示会の持ち物を一項目ずつ確認する。",
+                "明日は展示会の持ち物を一項目ずつ確認するつもり。",
+                "すぐに参加を決めず、展示会の案内を一項目ずつ確認してから判断することにした。",
+            )):
+                cls.artifacts.append(_full_surface_artifacts({
+                    "case_id": "public-intention-attention-" + str(ordinal),
+                    "input": {"thought_text": "まだ先の見通しは分からない。",
+                              "action_text": action, "categories": ["仕事"],
+                              "emotions": [{"type": "不安", "strength": "medium"}]},
+                }))
+
+    def test_complete_future_object_keeps_intention_attention_and_honor(self):
+        for a in self.artifacts:
+            with self.subTest(source=a.surface.text):
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                self.assertEqual(a.sentence_plan.recovery_stage, "full")
+                rp = a.plan.response_plan.human_reception_plan
+                self.assertEqual(len(rp.moves), 1)
+                move = rp.moves[0]
+                is_honor = move.reception_act == "honor_concrete_effort"
+                self.assertEqual((move.reception_act, move.move_role),
+                                 ("honor_concrete_effort", "attention") if is_honor else
+                                 ("protect_retained_intention", "significance"))
+                index = {n.nucleus_id: n for n in a.plan.nuclei}
+                target = index[move.target_nucleus_ids[0]]
+                self.assertTrue(observation_plan_owner.source_proven_future_action_status(target))
+                self.assertFalse(observation_plan_owner.source_proven_performed_action_status(target))
+                self.assertEqual(target.semantic_frame.modality, "intention")
+                fragment = reception_owner._source_grounded_clause_candidate(target, a.resolver)
+                follow = _reception_text(a.surface.text)
+                self.assertEqual(follow.count(fragment), 1)
+                if is_honor:
+                    self.assertIn("を見過ごさず、大切に思っています", follow)
+                    self.assertNotIn("それを", follow)
+                    self.assertNotIn("受け止めています", follow)
+                    self.assertTrue(reception_owner._selected_material_appraisal(
+                        a.selected_subjective_input.decisions[0]))
+                else:
+                    # A nominal plan can select protection; this grammar
+                    # must not convert that existing act into attention.
+                    self.assertIn("を見失わず、大切に受け止めています", follow)
+                    self.assertNotIn("見過ごさず", follow)
+                for args, kwargs in a.author_arguments:
+                    self.assertIs(kwargs["selected_subjective_input"], a.selected_subjective_input)
+                    replay = reception_owner.replay_source_grounded_human_reception_from_plan(
+                        args[0], args[2], args[3], plan=kwargs["plan"],
+                        recovery_stage=kwargs["recovery_stage"], clause_plans=kwargs["clause_plans"],
+                        selected_subjective_input=a.selected_subjective_input,
+                    )
+                    actual = next(s for s in a.authored if s.recovery_stage == kwargs["recovery_stage"])
+                    self.assertEqual(replay.text, actual.text)
+                    if is_honor and actual.recovery_stage != "full":
+                        self.assertIn("に目が留まり、それを大切に思っています", actual.text)
+
+    def test_missing_attention_honor_or_changed_future_source_is_rejected(self):
+        a = self.artifacts[0]
+        for old, new in (
+            ("見過ごさず、", ""), ("見過ごさず、", "見過ごして、"),
+            ("大切に", ""), ("思っています", "思っていません"),
+            ("思っています", "受け止めています"),
+            ("明日は", "昨日は"), ("確認すること", "確認したこと"),
+            ("急がずに", "急いで"), ("一項目ずつ", "すべて"),
+        ):
+            with self.subTest(old=old, new=new):
+                body = _tamper_reception(a.surface.text, old, new)
+                self.assertNotEqual(body, a.surface.text)
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input)
+                self.assertFalse(inverse.passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan,
+                    surface_result=replace(a.surface, text=body), resolver=a.resolver,
+                    require_body_inverse=True, selected_subjective_input=a.selected_subjective_input).passed)
+
+    def test_integration_does_not_cross_scope_or_selected_appraisal(self):
+        kw = next(k for k in self.predicate_arguments if k["single_target_object"]
+                  and k["referent_kind"] == "future_action_intention")
+        predicate = reception_owner._source_grounded_response_predicate
+        profile = kw["semantic_profile"]
+        decision = kw["selected_subjective_decision"]
+        prop = decision.subjective_proposition
+        other = replace(decision, subjective_proposition=replace(prop,
+            appraisal_content=replace(prop.appraisal_content,
+                dimension=contracts_owner.AppraisalDimension.RELATIONAL_NONCOLLAPSE,
+                operation=contracts_owner.AppraisalOperation.PRESERVE_BOTH_ENDPOINTS)))
+        for changes in (
+            {"single_target_object": False}, {"move_role": "felt_response"},
+            {"move_role": "significance"}, {"selected_subjective_decision": other},
+            {"semantic_profile": replace(profile, modality="uncertain")},
+            {"semantic_profile": replace(profile, quoted_boundary=True)},
+            {"semantic_profile": replace(profile, actor_kind="OTHER")},
+            {"semantic_profile": replace(profile, performed_action=True)},
+        ):
+            with self.subTest(changes=changes):
+                try:
+                    result = predicate(**{**kw, **changes})
+                except reception_owner.GroundedHumanReceptionSurfaceError:
+                    continue
+                self.assertNotEqual(result.role_operator, "見過ごさず、")
