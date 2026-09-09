@@ -13,7 +13,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-09最新（candidate79 source checkpoint）：背景に続く二つの有限状態を原文の材料として保持し、別fieldの完了行動に埋め込まれたwishの近接conflict辺を既存OP内で限定整流。型・原文と既存行動の保持を対象検査で確認。最終固定sourceの必須回帰・canonical100・root全文確認はこれから実施し、現時点で最終完了とは記録しない。NOT_CLEAR・Draft/open/unmerged、System Context未使用、PR37不変更。再開点は末尾candidate79。
+2026-09-09最新（candidate79・強制切替から復旧）：原文の背景と並列状態を既存行動とともに保持するsourceを復元。保存済みcanonical100のroot全文確認と前回比較を完了し、受取1件変更・他99全record同一、全100の入力・観察・可否理由同一、73 GENERATED／27 UNAVAILABLE。必要Move／expression／binding各134、旧133義務すべて保持。必須388は384 PASS／4 FAIL（既存3＋bridge合計133固定との不一致1）。期待値不変更・全成功扱いなし。商品NOT_CLEAR、実出力再生成なし。再開点は末尾candidate79 recovery。System Context未使用・原典直接確認、PR37不変更。
 
 ## 1. GitHub anchors
 
@@ -6916,3 +6916,20 @@ NOT_CLEAR・disabled・Draft/open/unmerged・candidate_ready=false・automatic_p
 初期関連8件は6 PASS／新規2 FAILでrawを保存した。一つはcontinuing素材が未選択、もう一つは新規tamper検査が「少し」を接続助詞で誤分割したものだった。continuingの限定接続と新規検査の分割を修正し、元nucleusとの完全一致を保ったまま新規検査のstate固定仮定も訂正した。初期probeの行動のみの本文も保存し、近接conflict整流後に背景と二状態・行動の両義務をfull出力で保持した。修正後の関連9件は全PASS。原文欠落・時制・否定・主体・引用・重複のinverse拒否と、関係整流の一回目／冪等性／明示由来除外を検査した。既存テスト・入力・歴史期待値は不変更。
 
 runnerは既存current13定数だけ同期し、exact18／exact9と非current ASTを保持。最終固定sourceの必須回帰・canonical100とroot全文確認は次の検証であり、現時点で完了とは記録しない。固定環境を再構築せず使用。NOT_CLEAR・disabled・Draft/open/unmerged・candidate_ready=false・automatic_progression=falseを継続。長い復唱・定型末尾、中心感情・共有関係・複数主題の残件と同family二行動の選択拡張未実装を保持。System Context未使用・原典直接確認、PR37不変更。
+
+
+### 2026-09-09 current — candidate79 recovery（生成済み結果の復旧・検証失敗保持）
+
+強制セッション切替後、未公開だった固定sourceと生成済み実出力・raw回帰結果が残存していることを確認し、同じ未完unitを再開した。旧スクリーンショットの「最終検証を開始」と、実際に残る完了結果を分けて扱う。商品source、評価入力、検証条件は復旧中に変更せず、保存のための再生成・必須回帰の重複実行は行わなかった。
+
+既存OPの原field全域証明に、有限背景と二つの状態節を原文のまま保持する限定文法を接続した。継続時制は既存event/state・factの有限素材に限定。別fieldの完了した行動に含まれる願望を近接だけで現在の阻害された試みとみなしていた辺は、既存relation normalizerで端点・出典を残す未確定関係へ修復した。型・主体・時制を再分類せず、既存選択条件・Human Reception・独立Gate／inverseを継承する。9月8日の感情／材料と既存行動をともに保持する限定例外に接続し、新owner／schema／経路／選択枠は追加しない。STRUCTURE_MAP_DELTA_NONE。公開I5・国家保存／非同期処理／read-side・API／DB／RN・Piece／Analysisとの接続変更はない。
+
+- 保存済みcanonical100の原入力全field・観察・受取・生成可否と理由をrootが全件本文として確認し、NOT_CLEAR。受取1件に背景・疲れ・苛立ちが戻り、既存の行動も保持。他99件の全recordと全100件の入力・観察・可否理由は同一。変更例はUNAVAILABLEの診断本文であり提供可否の改善ではない。原文全体の長い再掲、言葉wrapper、定型的な締め、中心感情・感謝・共有関係・複数主題の不足は残る。
+- direct100、73 GENERATED／27 UNAVAILABLE。必要Move／expression／binding各134で、旧133義務はすべて保持した。新しい原文証明属性と受取義務に伴って意味核の証明属性・selected input・受取planが変わるため、それらまで不変とは主張しない。
+- 修正途中の8検査は6 PASS／2 FAIL、修正後の関連9検査は9 PASS。初期失敗と行動だけの試作出力も保持。最終固定sourceの必須388検査のraw結果は384 PASS／4 FAIL、ERROR／skip0。新規4検査は全PASS。前384検査のうち383成否は同一で、1件が新規FAIL。既存3 FAILは観察freeze hash2件と歴史source receipt1件。追加FAILは `test_all100_inherit_premeaning_and_reach_selected_final_surface_gate` の合計134と固定133の不一致。全100 loop後の件数assertで止まり、その後のassertまでこのtestで成功したとは扱わない。保存済みの後続診断結果は前回と同一。
+- 必要責務を旧数へ丸めず、テストの固定期待値も変更していない。合計整合の残件を未解決として保持し、成功へのoverlay・失敗の基準化・期待値の追随変更を行わない。前candidate78の384検査の結果は退行判定基準として保存し、candidate79の4失敗を解消済み基準へ昇格しない。別V2の17検査／42件213候補は今回再実行していない。
+- 実行source local `f195d1a967af6a2ccf91f8858d06155b43cedbe1`／remote `b65436162c369dc4324fb516fc14558e432f03e5`、tree `c9d1899e837d8825e7d362997b6cbae7fbf75f94`は同一。GitHub pluginでsource4pathを反映し、全変更blobとDraft headをfresh確認した。以後は既存02／06／API handoffの結果記載だけで、商品コード・テスト・入力・runnerの変更なし。
+
+再開点：保存済みcandidate79の出力・回帰・全文確認を引き継ぎ、133固定と承認済み必要義務増加の整合残件を保持しながら、既存範囲の入力固有フォロー改善を続ける。保護された期待値の変更が必要な場合は変更対象と意味を明示して扱い、単に成功させるためには変更しない。同family二行動の選択数拡張は限定例外外で未実装。商品NOT_CLEAR、disabled、Draft/open/unmerged、candidate_ready=false、automatic_progression=false。Product Read PASS・採用・ready・merge・本番・問い／Layer3は未成立。
+
+添付の9月9日運用変更を継承：System Context任意利用（今回は未使用・原典直接確認、PR37不変更）、同一source・入力・条件の結果を再利用、変更のある既存PRだけ反映、公開可能な再開情報はGitHub、private本文は既存非公開作業記録へ保持、定例JSON／ZIP配布なし。今回の復旧・保存を文章品質全体の完了とは扱わない。
