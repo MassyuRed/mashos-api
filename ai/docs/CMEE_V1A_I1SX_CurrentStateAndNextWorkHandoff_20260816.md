@@ -8,12 +8,12 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. candidate68最終製品検証と残件を末尾で確認する。既に選ばれた否定・継続を含む言葉の参照を、既存OPの参照方針とHRの原文全体＋「という言葉」で修復した。新しい意味選択・本人認定・source status変更・HR文法追加はない。同じ100件の1件で参照を修復し、他99件の全record／実planは同一。全nuclei・観察・可否理由は不変。direct100、73 GENERATED／27 UNAVAILABLE、Move／expression／binding各126を維持。華恋が全100件を全文確認しNOT_CLEAR。必須348件345 PASS／継承3 FAIL、ERROR／skip0。前回344件の全成否同一、新規4件全成功。最終System Context再生成は本記録時点未完で、PR37 current本文と同head Actionsを参照する。
+3. candidate69の最終製品検証・残件・今回の運用を末尾で確認する。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-09最新（candidate68）：既に選ばれた否定・継続を含む言葉の参照を、既存OPの参照方針とHRの原文全体＋「という言葉」で修復した。新しい意味選択・本人認定・source status変更・HR文法追加はない。同じ100件の1件で参照を修復し、他99件の全record／実planは同一。全nuclei・観察・可否理由は不変。direct100、73 GENERATED／27 UNAVAILABLE、Move／expression／binding各126を維持。華恋が全100件を全文確認しNOT_CLEAR。必須348件345 PASS／継承3 FAIL、ERROR／skip0。前回344件の全成否同一、新規4件全成功。最終System Context再生成は本記録時点未完で、PR37 current本文と同head Actionsを参照する。
+2026-09-09最新（candidate69）：単一の選択済み気持ち・変化を、注意と受取で一つの目的語として扱い、同じ対象を代名詞で受け直す重複を除いた。全100件のうち受取3件のみ変更、他97件の全recordは同一。全意味核・selected input・実plan・観察・可否理由は不変。direct100、73 GENERATED／27 UNAVAILABLE、Move／expression／binding各126。必須351件348 PASS／継承3 FAIL、新規3件全成功、前回348件の全成否と後続診断は同一。華恋が全100件の全入力field・観察・受取・可否理由を全文確認しNOT_CLEAR。System Contextは任意で、今回は未使用・原典直接確認。現在の運用と次の修正箇所は末尾のcandidate69を参照する。
 
 ## 1. GitHub anchors
 
@@ -6726,3 +6726,19 @@ canonical100は原入力・順序・軸・分母を保ってdirectと外側か�
 既存の2026-09-05 selected subjective reception承認を継承する同じ未完unit。後続の品質分類によるplan再構築でも、元の短状態の語彙維持指定に基づく参照方針を保持する。原文の背景・否定・継続・他者への帰属を維持し、従来の否定形・連体形の具体参照も保持する。同じimmutable selected inputによるforward／回復／独立replay／厳格なGate・inverseを維持し、seal後の意味補充や新しい自己証明を追加しない。最大3 Moveと既存126責務を保持する。
 
 最終System Context再生成は本記録時点では未完。開始時の鮮度確認を変更後の証拠へ流用しない。最終商品refsに対応するPR37 current本文と同head Actionsを最終結果の参照先とする。candidate_ready=falseを維持し、過去candidate67までの実行結果と当時の未完記録は履歴として残す。
+
+### 2026-09-09 current — candidate69 単一の気持ち・変化の受取対象を一度に結ぶ
+
+既存Human Reception内の単一対象証明を、本人の選択済みMATERIALの気持ち・変化にも適用した。full、非ANAPHORIC、targetとsemantic fragmentが各1、関係・背景slotなし、可視coreのslot一致に限定する。既存の主体・STATE・型・非引用・非未来行動・appraisal検証後、注意と受取が同じ「を」格の完全な対象を共有する。原文対象句、意味選択、独立replay、Gate／inverseは変更しない。複数対象・未完・別appraisal・別role・回復候補の文法は従来どおり。内部引数名をsingle_target_objectへ合わせた。新しいowner／schema／経路はなく、STRUCTURE_MAP_DELTA_NONE。
+
+- canonical100はdirect100、73 GENERATED／27 UNAVAILABLE、Move／expression／binding各126。受取3件だけ変更、他97件は全record同一。全100件の意味核・selected input・実plan・観察・可否理由を保持。
+- rootが全100件の元入力・行動・カテゴリ・感情と強度・観察・受取・可否理由を全文確認。重複受直しは減ったが、原文の長い再掲、定型締め、中心感情や複数主題／共有関係の欠落が残り、NOT_CLEAR。
+- 必須351件348 PASS／継承3 FAIL、ERROR／skip0。前回348件の全成否は同一、新規3件全成功。36ケース・post-hash96検査・集合後続診断も同一。歴史fixtureは不変更。別V2の17検査／42件213候補は今回は未実行。
+- 既存Python3.12.13を46依存／wheel・2268実ファイルまで照合して再利用。runnerの既存current13定数のみ同期し、exact18／exact9と非current ASTを維持。
+- 検証source: local `9fbf6e032b7cd387b9ec3b106c6c795271164e59` / remote `4304a7afcd18333e5db9f65dc8b4ae25ac01cba1`、tree `ec1ac1314f9ce0a29fcbd59ab9ac6d2a6bf5316f` 同一。後続変更は結果資料のみ。
+
+次は既存OPの_final_stage1_typed_nuclei()から_build_response_and_policies()を追い、原文で証明できる過去感情がvalue／eventのままcurrent_burdenへ入り、行動等の候補によって削除される欠落を直す。短い感情＋行動と複数主題の問題を分け、背景・主体・時点・原文を保持し、引用／否定／願望の誤認を防ぐ。共通感情正規表現の無条件拡張、候補削除条件の全面撤去、下流での感情補充は行わない。継続語と時点adjunctの重複も残件。
+
+既存2026-09-05承認の同じ未完unitを継続する。disabled、Draft/open/unmerged、candidate_ready=false、automatic_progression=false。Product Read PASS・採用・merge・本番・問い／Layer3は未成立。9月12日の本文確認準備目標に対し、中心感情と複数主題の欠落が残る品質リスクを保持する。
+
+今回のMash指示により、System Contextは原典読解を速める任意補助とする。再利用しにくければ未使用・原典直接確認で進め、同じ前提・全履歴・doctor／prepare・固定環境再構築・PR37同期・再生成を小修正ごとに反復しない。恒久incidentの毎回全文読了、必要な全体設計／ファイル地図／最新週次と影響元コードの確認は維持する。試行中は対象比較に絞り、最終修正版は必須検査と同じ100件の全入力field・本文・可否理由をrootが確認する。コード・公開設計・再開点は既存GitHub Draft PR、private本文と証拠は既存private保存先に保持し、定例JSON／ZIPや新しい管理系は作らない。この運用は過去checkpointのSystem Context毎回再生成指示より優先する。
