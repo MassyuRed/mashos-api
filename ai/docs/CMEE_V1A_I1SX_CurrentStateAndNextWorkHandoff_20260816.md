@@ -13,7 +13,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-09最新（candidate81 source checkpoint）：全文証明した不確定の評価・状態を既存uncertaintyと選択へ接続。原文・否定・owner・時点と実行済みの別行動を保持。関連8検査成功。最終固定sourceの必須回帰・同じ100件・華恋全文確認はこれから。NOT_CLEAR、System Context未使用・原典直接確認、PR37不変更。
+2026-09-09最新（candidate81）：全文証明した不確定表現を既存選択へ接続し、1件で暫定評価と行動を両方followに保持。観測2件変更・他98件同一、100件全文確認済み。必須395は389成功／6失敗、旧期待値不変更・品質NOT_CLEAR。詳細と再開点は末尾candidate81。System Context未使用・原典直接確認、PR37不変更。
 
 ## 1. GitHub anchors
 
@@ -6964,3 +6964,16 @@ final OPの既存typed projectionで、閉じた評価・状態の有限述語�
 共有regex、HR、meaning owner、Gate/body parserは不変更。旧bounded witnessの関係補正はevent/state等の型条件を要求するため、本uncertaintyには適用されない。静的レビューで丁寧形の不確定終端に既存否定検出の問題を確認し、その形は今回の証明対象から除外した。新規4＋既存関連4検査で原文の留保・否定・両責務・replay・recovery・限定品質・所有者／引用／関係／非行動の境界を検査した。新規検査の初回2失敗は、recoveryでも全文字列がfollowに必要との過剰な前提、およびOP除外検査から後段graphまで進んだことによる。既存recovery契約どおり観測に明示されたsourceと全follow Move・inverse閉包を確認し、OP除外検査はOP境界で確認する形へ訂正した。初回rawは保持。既存fixtureと期待値は変更しない。新しいowner・schema・selector・経路は追加せず、既存final OP owner内の局所文法。STRUCTURE_MAP_DELTA_NONE。
 
 最終固定sourceから必須回帰と同じ100件の生成・全件本文確認を続ける。前回の6失敗は未解決として引き継ぎ、新しい成功基準へ置き換えない。長い復唱・説明語・定型締め、中心感情・複数主題・共有関係の欠落はNOT_CLEAR。既存Draft PR3／30の継続、disabled・candidate_ready=false・automatic_progression=false、ready／採用／merge／本番なし。System Context未使用・原典直接確認、PR37不変更。
+
+
+### 2026-09-09 current — candidate81（全文証明した不確定materialを保持・検証未達）
+
+final OPの既存typed projectionで、閉じた評価・状態述語と終端留保／冒頭の不確定副詞を元memo field全体から証明する。kind/predicateをuncertainty、modalityをuncertainへ補正し、原文・否定・時点・本人owner・根拠・確信度は維持。既存source_bounded_expressionで証明した独立materialと、必要な原文証明済み実行行動を既存selectionへ接続する。共有regex、HR、meaning owner、Gate/body parser、family/schema/最大3 Moveは不変更。source_explicit_epistemic_limit／hedge_onlyとNORMAL／LIMITED・recovery閉包を継承。引用・他者・伝聞・条件・接続途中・複数文は証明せず、丁寧形留保に残る既存否定検出の問題も今回の証明対象から除外した。STRUCTURE_MAP_DELTA_NONE。国家／公開I5／API／DB／RN／Piece／Analysis経路不変更。
+
+最終固定sourceから同じ100件を生成し、華恋が全件の原入力全field・観測・follow・可否理由を全文確認。1件で暫定的否定評価と別の実行済み行動が両方followに残り、2件の観測が不確定を明示。変更2件でも原文・否定・時点・owner・根拠・確信度は維持し、98件は全record同一。全100件で元inputと可否理由、既存の必要target／act／follow要素を保持。direct100、73 GENERATED／27 UNAVAILABLE、必要Move／expression／bindingは各134から135へ増えた。reception planの変更は1件。非行動と組み合わさる例は、不確定を観測に保持したがfollowの中心状態欠落が残る。非行動を実行済みへ変換していない。
+
+関連8検査は8 PASS。初回の新規2失敗は、全recoveryのfollowでliteral全文を要求した過剰な前提と、OP除外検査から後段graphまで進めたことによる。既存契約どおり、integrated／hedgedでは観測の明示sourceとfollow全Moveおよびbody inverse閉包を確認し、証明除外はOP境界で確認する形へ訂正。初回rawも保持し、既存fixture／期待値は変更しない。最終必須395検査は389 PASS／6 FAIL、ERROR／skip0。前回の6失敗を引き継ぐ。歴史的観測hash2、dated receipt1、bridge合計135対固定133の不一致1、旧句の固定期待1、旧句tamperのreception_tamper_source_missingによる検査停止1。文言依存失敗は意味検査を通過した証拠ではない。新規4検査は全PASS。失敗を成功化せず、追加失敗を受入基準へ変更しない。既存後続診断は前回と同一。V2別17検査／42件213候補は今回未再実行。
+
+商品品質はNOT_CLEAR。観測の「まだ分からない範囲」、followの「今ここに置かれた言葉」等の長い説明、長文の復唱と定型締め、中心感情・複数主題・共有関係の欠落を保持する。次は不確定状態と否定過去の非行動が同familyで片方に寄る選択原因を調べ、既存familyと責務のまま両者を残せる条件を確認する。原行動・否定・unknownを犠牲にしない。既存6失敗は別途未解決のまま可視化し、期待値書換えで通さない。既存9月8日の原文保持に関する限定合意を継承し、行動だけの二行動選択拡張へは一般化しない。
+
+公開sourceと結果は既存Draft PR3／30、実入力・実出力・初期結果・再開点は従来の非公開作業記録へ継続保存。同一条件の再生成や説明のための再実行、原典一式の不要な再読、System Context一式の再生成、定例JSON／ZIP配布はしない。System Context未使用・原典直接確認、PR37不変更。NOT_CLEAR・disabled・Draft/open/unmerged・candidate_ready=false・automatic_progression=false、Mash human PASS／ready／採用／merge／本番未成立。
