@@ -13,7 +13,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-09最新（candidate74）：否定された変化と有限の背景・終端を含む原文全体を、既存mixed fact/changeの意味型と時点を保って独立した行動とともに受け取るようにした。同じ100件の受取1件を改善、他99件の全recordと全100件の観察・可否理由は同一。direct100、73 GENERATED／27 UNAVAILABLE、旧131義務を保持してMove／expression／binding各132。必須371件の単一full runは368 PASS／継承3 FAIL。前367件の最終有効成否は同一、新規4件成功、後続診断も同一。 rootが全100件の全入力field・観察・受取・可否理由を全文確認しNOT_CLEAR。NORMALの現在肯定感情契約は未変更。System Context未使用・原典直接確認。残件と再開点は末尾candidate74を参照する。
+2026-09-09最新（candidate75）：試行条件・期待比較・授受可能の完了表現を含む原文全体を、型・主体・時点を保った本文材料として独立行動とともに残した。同じ100件の受取1件を改善、他99件の全recordと全100件の観察・可否理由は同一。旧132義務を保持してMove／expression／binding各133、direct100、73 GENERATED／27 UNAVAILABLE。必須375件の単一full runは372 PASS／継承3 FAIL、既存371件の成否・後続診断同一、新規4件成功。rootが全100件の全入力field・観察・受取・可否理由を全文確認しNOT_CLEAR。感謝・共有関係・複数主題、中心感情の取りこぼし、長い復唱と定型末尾は残る。System Context未使用・原典直接確認。再開点は末尾candidate75。
 
 ## 1. GitHub anchors
 
@@ -6818,10 +6818,23 @@ Mash承認済み運用を継承する。System Contextは任意で今回は未�
 次は既存source証明と選択から未保持の感謝・共有関係・複数主題を扱う。条件・比較・授受を含む材料、同familyの独立行動、複数核の主体・時点・関係は別原因として確認し、一括解消済みにしない。既存2026-09-05承認の同じ未完unit、disabled／Draft／open／unmerged、candidate_ready=false、automatic_progression=false、NOT_CLEARを維持する。System Contextは未使用・原典直接確認、PR37不変更。Product Read PASS・採用・merge・本番・問い／Layer3は未成立、9月12日の本文確認準備の未達リスクを保持する。
 
 
-### 2026-09-09 current — candidate75 条件・比較・授受を含む材料の保持（最終検証前）
+### 2026-09-09 candidate75 実装保存時点（後続の最終結果を参照）
 
 既存OPの全field証明で、有限の通信動詞による試行条件と期待比較・授受可能の完了表現を一つの本文材料として保持する。原event／state・factと主体・時点・原文を変更せず、本人の感情・実行行動・相手の意図・欄間因果を新設しない。既存の独立材料＋別欄の実行済み行動の選択、MATERIAL受取、selected inputとinverseを使用する。通信動詞の有限語彙と有界な修飾部を用い、追加述語・否定節・帰属・他者・引用報告・未来・疑問・別fieldの不一致を除外する。新owner／schema／経路なし、STRUCTURE_MAP_DELTA_NONE。
 
 関連8検査はPASS、静的独立レビューの指摘を反映済み。現在bridgeの必要総数だけ132→133へ同期し、歴史fixture・期待値は不変更。最終の必須回帰・同じcanonical100・root全100件全文確認はこのsourceを固定して次に実施する。candidate74の結果を今回の結果に流用しない。近傍のhelp-seeking binding gapは変更前にも発生し、other_explicitへの分類、同familyの複数行動、一般的な感謝・共有関係は別残件として保持する。
 
 既存承認の未完unitを継続し、disabled／Draft／open／unmerged、NOT_CLEAR、candidate_ready=false、automatic_progression=falseを維持。System Contextは未使用・原典直接確認、PR37不変更。採用・ready・merge・本番・Product Read PASSは未成立。
+
+
+### 2026-09-09 current — candidate75 条件・比較・授受を含む材料と独立行動の保持
+
+既存OPの原field全域証明に、有限の通信動詞による試行条件、期待との比較、授受可能の完了表現を接続した。原event／state・factと主体・時点・程度・原文は保持し、本人の感情、実行行動、相手の意図、欄間因果を補わない。既存の独立MATERIAL＋別欄の実行済み行動、selected input、sole HR、全回復とinverseを使用する。通信動詞の有限語彙と有界な修飾部を使い、追加述語・否定節・帰属・非動詞、他者・引用報告・未来・疑問・別field不一致を除外した。NORMALの現在肯定感情契約、明示関係・第三主題・任意材料・未実行行動、旧公開経路とGateは不変更。新owner／schema／経路なし、STRUCTURE_MAP_DELTA_NONE。
+
+- canonical100はdirect100、73 GENERATED／27 UNAVAILABLE、Move／expression／binding各133。受取1件に材料が戻り、他99件の全recordと全100件の観察・可否理由は同一。追加witness以外の全意味核は同一、旧132の必要義務を全て保持して材料1を追加した。
+- rootが全100件の元入力・行動・カテゴリ・感情／強度・観察・受取・可否理由を、変更のない例と集合全体も含め全文確認しNOT_CLEAR。局所改善後も原文の長い再掲と定型結語が残る。感謝・共有関係・複数主題、中心感情の取りこぼし、指示表現だけの薄い受取、暫定的な自己否定への受取不足は未解決。
+- 関連8検査PASS後、同じ最終sourceで必須375件を一括実行しraw結果372 PASS／継承3 FAIL、ERROR／skip0。前371件の全成否、36ケース・post-hash96検査・集合後続診断は同一、新規4件全成功。継承失敗は観察freeze hash2件と歴史source receipt1件。保護された歴史期待値は不変更で、現行bridgeの総数だけ132→133を承認済み材料追加と整合した。別V2の17検査／42件213候補は今回未実行。
+- 固定Python3.12.13・46依存の既存環境を再構築せず使用。今回のread-only照合とrootの最小probe／役割smokeが成功。runnerは既存current13定数内のみ同期しexact18／exact9と非current ASTを維持した。
+- 全100件生成・全文確認と全375検査のsourceはlocal `6ec69069d3e9da5bebaddc79bcbbe0234813338f`／remote `ff5a77a3f39a8c4f90219d99d4fd5efc400f3bcb`、tree `f1539ee40ec2fa4193834b747effb2647156d922`同一。後続変更は既存引継ぎ3資料の結果反映だけ。商品実装変更後へ今回の結果を流用しない。
+
+次は既存source証明・選択で、同familyの独立行動、未保持の複数主題・感謝・共有関係を別原因として追う。近傍のhelp-seeking binding gapは修正前にも発生し、other_explicitへの分類も今回対象外のまま残る。有限な材料保持を一般的な授受・感謝理解の完成に数えない。既存承認の同じ未完unit、disabled／Draft／open／unmerged、candidate_ready=false、automatic_progression=false、NOT_CLEARを継続。System Context未使用・原典直接確認、PR37不変更。Product Read PASS・採用・ready・merge・本番・問い／Layer3は未成立。9月12日の本文確認準備の未達リスクを保持する。
