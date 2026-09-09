@@ -7691,7 +7691,7 @@ def _source_grounded_response_predicate(
     ],
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
     distributive_object: bool = False,
-    single_action_object: bool = False,
+    single_target_object: bool = False,
     integrate_attention_pair: bool = False,
     unfinished_change: bool = False,
     unfinished_pair: bool = False,
@@ -7747,7 +7747,7 @@ def _source_grounded_response_predicate(
     proposition = selected_subjective_decision.subjective_proposition
     appraisal = proposition.appraisal_content
     material_action_attention = bool(
-        single_action_object and move_role == "attention"
+        single_target_object and move_role == "attention"
         and reception_act == "honor_concrete_effort"
         and referent_kind == "self_started_effort"
         and target_predicate_kind == "present_actual_output"
@@ -7781,9 +7781,10 @@ def _source_grounded_response_predicate(
         # Receive the already appraised change. Bounded recognition and an
         # unfinished change retain their own, separately selected predicates.
         predicate_lemma, conjugation_class = "受け止める", "ICHIDAN"
-    if (reception_act == "recognize_lived_change"
+    material_feeling = bool(reception_act == "recognize_lived_change"
         and referent_kind == "positive_feeling"
-        and _selected_material_appraisal(selected_subjective_decision)):
+        and _selected_material_appraisal(selected_subjective_decision))
+    if material_feeling:
         if (semantic_profile.nucleus_kind != "reaction"
             or semantic_profile.predicate_kind != "feeling"
             or semantic_profile.modality != "feeling"
@@ -7794,6 +7795,17 @@ def _source_grounded_response_predicate(
         # The selected appraisal receives the person's current feeling. It
         # does not claim that Emlis experiences that feeling or a new change.
         predicate_lemma, conjugation_class = "受け止める", "ICHIDAN"
+    material_state_attention = bool(
+        single_target_object and move_role == "attention"
+        and (material_change or material_feeling)
+        and not distributive_object and not pending_relation_slots
+        and not unfinished_change and not unfinished_pair
+    )
+    if material_state_attention:
+        # The complete selected state is one object of both attention and
+        # material reception, just as for a performed action above. Keep
+        # that object under one case without restarting it as a pronoun.
+        object_particle, role_operator = "を", "見過ごさず、"
     if unfinished_change:
         if (reception_act != "recognize_lived_change" or referent_kind != "lived_change"
             or semantic_profile.nucleus_kind != "uncertainty"
@@ -7885,7 +7897,10 @@ def _source_grounded_response_predicate(
     # Attention governs the source object with ni, while the following
     # reception predicate governs it with wo. Resume that same whole object
     # once, instead of leaving the transitive predicate without its object.
-    valency_complement = "それを" if move_role == "attention" and not material_action_attention else ""
+    valency_complement = (
+        "それを" if move_role == "attention"
+        and not (material_action_attention or material_state_attention) else ""
+    )
     completed_relation_slots = ()
     if type(pending_relation_slots) is not tuple or any(type(slot) is not int for slot in pending_relation_slots):
         raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
@@ -8015,7 +8030,7 @@ def _source_grounded_response_predicate_surface(
     recovery_stage: ReceptionRecoveryStage = "full",
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
     distributive_object: bool = False,
-    single_action_object: bool = False,
+    single_target_object: bool = False,
     unfinished_change: bool = False,
     unfinished_pair: bool = False,
     pending_relation_slots: tuple[int, ...] = (),
@@ -8033,7 +8048,7 @@ def _source_grounded_response_predicate_surface(
         voice=voice,
         selected_subjective_decision=selected_subjective_decision,
         distributive_object=distributive_object,
-        single_action_object=single_action_object,
+        single_target_object=single_target_object,
         integrate_attention_pair=recovery_stage == "full",
         unfinished_change=unfinished_change,
         unfinished_pair=unfinished_pair,
@@ -8164,7 +8179,7 @@ def _source_grounded_reception_fragment(
         recovery_stage=recovery_stage,
         selected_subjective_decision=selected_subjective_decision,
         distributive_object=distributive_object,
-        single_action_object=(
+        single_target_object=(
             recovery_stage == "full"
             and realization.reference_mode != "ANAPHORIC"
             and realization.target_slot_count == 1

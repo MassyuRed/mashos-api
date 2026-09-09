@@ -4870,7 +4870,7 @@ class CMEEConcreteActionNominalTest(unittest.TestCase):
                 dimension=contracts_owner.AppraisalDimension.RELATIONAL_NONCOLLAPSE,
                 operation=contracts_owner.AppraisalOperation.PRESERVE_BOTH_ENDPOINTS)))
         variants = [
-            {"single_action_object": False}, {"move_role": "felt_response"},
+            {"single_target_object": False}, {"move_role": "felt_response"},
             {"move_role": "significance"},
             {"semantic_profile": replace(profile, quoted_boundary=True)},
             {"semantic_profile": replace(profile, modality="uncertain")},
@@ -5694,6 +5694,63 @@ class CMEEFinalSelectedMaterialFeelingTest(unittest.TestCase):
         with patch.object(reception_owner, "_source_grounded_response_predicate", side_effect=track):
             cls.a = _full_surface_artifacts(CMEEFinalCurrentMoodSourceTest._row(
                 "今日は気分が軽い。"))
+            cls.feeling_source = "友人が隣で一緒に図を確認してくれたことがうれしかった"
+            row = CMEEFinalCurrentMoodSourceTest._row(
+                "週末に取りかかった模型の細かな部品がどうしても組み合わず、手を止めて説明書を読み直していたとき、"
+                + cls.feeling_source + "。", emotion="喜び")
+            row["input"]["action_text"] = "作業が終わった後、残った部品を袋に入れて道具を箱に戻した。"
+            cls.attention = _full_surface_artifacts(row)
+
+    def test_single_material_feeling_shares_one_object_for_attention_and_reception(self):
+        a = self.attention
+        self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+        self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+        follow = _reception_text(a.surface.text)
+        target = self.feeling_source + "という気持ち"
+        self.assertIn(target + "を見過ごさず、受け止めています", follow)
+        self.assertEqual(follow.count(target), 1)
+        self.assertNotIn("それを受け止めています", follow)
+        for authored in a.authored:
+            if authored.recovery_stage != "full":
+                self.assertIn("に目が留まり、それを", authored.text)
+                self.assertNotIn("を見過ごさず、", authored.text)
+        for old, new in (
+            ("を見過ごさず、", "に目が留まり、それを"),
+            ("見過ごさず、", ""), ("見過ごさず、", "見過ごして、"),
+            (target, "別の気持ち"), (target, target + "と" + target),
+            ("受け止めています", "うれしく受け止めています"),
+        ):
+            with self.subTest(new=new):
+                body = _tamper_reception(a.surface.text, old, new)
+                self.assertNotEqual(body, a.surface.text)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan, surface_result=replace(a.surface, text=body),
+                    resolver=a.resolver, require_body_inverse=True,
+                    selected_subjective_input=a.selected_subjective_input).passed)
+
+    def test_feeling_attention_integration_requires_single_complete_material_target(self):
+        kwargs = next(k for k in self.predicate_arguments
+                      if k["referent_kind"] == "positive_feeling"
+                      and k["move_role"] == "attention" and k["single_target_object"])
+        predicate = reception_owner._source_grounded_response_predicate
+        actual = predicate(**kwargs)
+        self.assertEqual((actual.object_particle, actual.role_operator, actual.valency_complement),
+                         ("を", "見過ごさず、", ""))
+        decision = kwargs["selected_subjective_decision"]
+        prop = decision.subjective_proposition
+        different_appraisal = replace(decision, subjective_proposition=replace(prop,
+            appraisal_content=replace(prop.appraisal_content,
+                dimension=contracts_owner.AppraisalDimension.RELATIONAL_NONCOLLAPSE,
+                operation=contracts_owner.AppraisalOperation.PRESERVE_BOTH_ENDPOINTS)))
+        for changes in (
+            {"single_target_object": False}, {"move_role": "felt_response"},
+            {"move_role": "significance"}, {"selected_subjective_decision": different_appraisal},
+        ):
+            with self.subTest(changes=changes):
+                self.assertNotEqual(predicate(**{**kwargs, **changes}).role_operator, "見過ごさず、")
 
     def test_material_responsibility_requires_the_same_validated_selection(self):
         a = self.a
@@ -5983,7 +6040,7 @@ class CMEEFinalMaterialChangeReceptionTest(unittest.TestCase):
             a, _cores, predicates = self.cases[name]
             with self.subTest(name=name):
                 self.assertTrue(a.gate.passed and a.inverse.passed)
-                self.assertIn("それを受け止めています", _reception_text(a.surface.text))
+                self.assertIn("を見過ごさず、受け止めています", _reception_text(a.surface.text))
                 kw = predicates[0]
                 profile = kw["semantic_profile"]
                 self.assertEqual((profile.predicate_kind, profile.modality), expected_profile)
@@ -5993,7 +6050,7 @@ class CMEEFinalMaterialChangeReceptionTest(unittest.TestCase):
                     prop.appraisal_content, dimension=contracts_owner.AppraisalDimension.BOUNDED_CHANGE,
                     operation=contracts_owner.AppraisalOperation.RECOGNIZE_AS_BOUNDED)))
                 self.assertIn("それを感じています", render(**{**kw, "selected_subjective_decision": bounded}))
-                body = _tamper_reception(a.surface.text, "それを受け止めています", "それを感じています")
+                body = _tamper_reception(a.surface.text, "受け止めています", "感じています")
                 self.assertFalse(evaluate_grounded_surface_body_inverse(
                     body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan, resolver=a.resolver,
                     selected_subjective_input=a.selected_subjective_input).passed)
@@ -6029,6 +6086,8 @@ class CMEEFinalMaterialChangeReceptionTest(unittest.TestCase):
                 self.assertEqual(follow.count(source), 1)
                 self.assertEqual(follow.count("変化"), 1)
                 self.assertNotIn("ことに表れた変化", follow)
+                self.assertIn(core.text + "を見過ごさず、受け止めています", follow)
+                self.assertNotIn("それを受け止めています", follow)
                 for replacement in (
                     source + "ことに表れた変化", source + "ということ",
                     source + "という願い", "別の出来事という変化",
@@ -6043,6 +6102,31 @@ class CMEEFinalMaterialChangeReceptionTest(unittest.TestCase):
                         plan=a.plan, sentence_plan=a.sentence_plan,
                         surface_result=replace(a.surface, text=body), resolver=a.resolver,
                         require_body_inverse=True, selected_subjective_input=a.selected_subjective_input).passed)
+
+    def test_single_material_change_keeps_attention_duty_and_recovery_boundary(self):
+        render = reception_owner._source_grounded_response_predicate_surface
+        for name in ("single", "feeling"):
+            a, cores, predicates = self.cases[name]
+            kw = next(k for k in predicates if k["recovery_stage"] == "full")
+            for changes in ({"single_target_object": False}, {"move_role": "felt_response"},
+                            {"move_role": "significance"}, {"recovery_stage": "hedged", "single_target_object": False}):
+                with self.subTest(name=name, changes=changes):
+                    self.assertNotIn("を見過ごさず、", render(**{**kw, **changes}))
+            for authored in a.authored:
+                if authored.recovery_stage != "full":
+                    self.assertIn("に目が留まり、それを", authored.text)
+                    self.assertNotIn("を見過ごさず、", authored.text)
+            for replacement in ("に目が留まり、それを", "を", "を見過ごして、"):
+                with self.subTest(name=name, replacement=replacement):
+                    body = _tamper_reception(a.surface.text, "を見過ごさず、", replacement)
+                    self.assertNotEqual(body, a.surface.text)
+                    self.assertFalse(evaluate_grounded_surface_body_inverse(
+                        body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
+                        resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+                    self.assertFalse(evaluate_grounded_observation_gate(
+                        plan=a.plan, sentence_plan=a.sentence_plan, surface_result=replace(a.surface, text=body),
+                        resolver=a.resolver, require_body_inverse=True,
+                        selected_subjective_input=a.selected_subjective_input).passed)
 
 
 class CMEEFinalMaterialWishContrastTest(unittest.TestCase):

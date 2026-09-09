@@ -376,8 +376,8 @@ N3_HISTORICAL_RUNNER_IDENTITY = (
 N3_HISTORICAL_STATIC_RECEIPT_SHA256 = (
     "e71a79fa4748134396b5fa46e6cf98ff91e535fb91b955fa5c814106177a26bb"
 )
-IM03_WORKING_LANGUAGE_CORE_IDENTITY = '1bc05ab6c21e8ea8a1d0bf397ba56343c30aca6a042512651a7babdb67149af5'
-IM03_WORKING_RUNTIME_INTEGRATION_IDENTITY = 'ec104ce47baec5684dd442dc2c4447f2fa9010642dc8f04667c3175c07c34231'
+IM03_WORKING_LANGUAGE_CORE_IDENTITY = 'c85b0dd105cb6056c709a330c8ab372605fd8c421657f088655bc61d82c2ecc1'
+IM03_WORKING_RUNTIME_INTEGRATION_IDENTITY = '887e2e7f0e960fdf276eb0e58f0a0f6caf3ce7555b9f3d95fefa3ea83e081a1e'
 IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT18 = (('language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py',
   '9add6b159118f362c2b4b34b66d36d1825c8a308b21ba48e997d96b3e0eb246d',
   395742),
@@ -397,26 +397,36 @@ IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT18 = (('language_core_
   '5fb54270c3e069f698141db9f6437ee4d5d3778138e2d20f577854c8e62f0ace',
   493660),
  ('language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_human_reception.py',
-  'f71c21304c9eeb476e3507ab8e2bc1580a2fa02cdb797e40caba0e7d0f7075ae',
-  1009738),
+  '0d86a36b995c2aa5c531e1de90ca756f17ce41c854b73d5e2decbc2b9ed4a12b',
+  1010971),
  ('language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_gate.py',
   '9b366c2b7c8bc65e970a4c0955cc54334768da1629fe721dace2c5417582cc2c',
   340700),
  ('language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py',
   '6d0bc6ef587f94ffae5e08d679254de49f2ddd78428a237b4249db1ac10df08d',
   495439),
- ('language_core_contract_manifest', 'a7c3307b43156135c1b16ce7f3759f0e11cc72e089c905f32a8eb969f1402323', 213364),
- ('case_frame_and_particle_manifest', '4b30a2f87f68f272345c2d19c2f8d1719ded6e0c1394a50253fe08ada67c71d6', 15405),
+ ('language_core_contract_manifest',
+  'a7c3307b43156135c1b16ce7f3759f0e11cc72e089c905f32a8eb969f1402323',
+  213364),
+ ('case_frame_and_particle_manifest',
+  '4b30a2f87f68f272345c2d19c2f8d1719ded6e0c1394a50253fe08ada67c71d6',
+  15405),
  ('predicate_sense_and_atomic_head_manifest',
   'e6b6290139edf2566b9dccd3ed9d46d30739ae215da9d67525749e007e9c2d95',
   8588),
  ('source_complement_reference_manifest',
   '4deb1656e3a2f3c7e358af9cd70d69084f3fc9c889e8458c19bce85973a2cab8',
   25978),
- ('morphology_link_functional_manifest', '11b3a4db25717d471478d0ea1e0cf5745a4dabaf304961f1ca42b332bc06a660', 8014),
+ ('morphology_link_functional_manifest',
+  '11b3a4db25717d471478d0ea1e0cf5745a4dabaf304961f1ca42b332bc06a660',
+  8014),
  ('participant_structural_manifest', 'a2707f492cc45ff2678d2f11f064d9d47eb3e474f5a4b86c63160a4dc2d6053d', 816),
- ('policy_and_closed_enum_manifest', '37cbdbadf235eea79270b795860a1c9ba765d7f7dbdbfb093b9fe98ee91d8c8a', 20980),
- ('normal_form_and_profile_manifest', 'fa678370da4eebe55de65fe0ca32ae1db1edcd08a1a18492ad595ff62e7132e2', 4097),
+ ('policy_and_closed_enum_manifest',
+  '37cbdbadf235eea79270b795860a1c9ba765d7f7dbdbfb093b9fe98ee91d8c8a',
+  20980),
+ ('normal_form_and_profile_manifest',
+  'fa678370da4eebe55de65fe0ca32ae1db1edcd08a1a18492ad595ff62e7132e2',
+  4097),
  ('product_causal_owner_and_registry_digests_manifest',
   '915a3d026575a93fca43ca22a86548923eb3f51c744d47b3e02a7834bdbf67b9',
   8985))
@@ -439,32 +449,42 @@ IM03_WORKING_RUNTIME_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT18 = (('ai/services/ai_
   'ca910175cdb627272ad9ef7ee3629db8426c7936cf29e275982718f809ec30cc',
   173698),
  ('ai/services/ai_inference/emlis_ai_grounded_human_reception.py',
-  '06dcd2af0bd1983559c9758339d735a479ca93d07a7b2b90d7ac7f0a7aa463ea',
-  384018),
+  'f5d7b638a1565cd528d4989bd986268e5c8fe8acdb56c3be2bdd3a78f7423c3e',
+  384714),
  ('ai/services/ai_inference/emlis_ai_grounded_observation_gate.py',
   'a6788a07b955e4621e5c49236c73bcbe411412c5a0b82b642abb2d1903089ddd',
   134990),
  ('ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py',
   '4c410c4caa38a516680eabea7446f0309163125fe06e587c4a226dd10265d683',
   205300),
- ('language_core_contract_manifest', 'a7c3307b43156135c1b16ce7f3759f0e11cc72e089c905f32a8eb969f1402323', 213364),
- ('case_frame_and_particle_manifest', '4b30a2f87f68f272345c2d19c2f8d1719ded6e0c1394a50253fe08ada67c71d6', 15405),
+ ('language_core_contract_manifest',
+  'a7c3307b43156135c1b16ce7f3759f0e11cc72e089c905f32a8eb969f1402323',
+  213364),
+ ('case_frame_and_particle_manifest',
+  '4b30a2f87f68f272345c2d19c2f8d1719ded6e0c1394a50253fe08ada67c71d6',
+  15405),
  ('predicate_sense_and_atomic_head_manifest',
   'e6b6290139edf2566b9dccd3ed9d46d30739ae215da9d67525749e007e9c2d95',
   8588),
  ('source_complement_reference_manifest',
   '4deb1656e3a2f3c7e358af9cd70d69084f3fc9c889e8458c19bce85973a2cab8',
   25978),
- ('morphology_link_functional_manifest', '11b3a4db25717d471478d0ea1e0cf5745a4dabaf304961f1ca42b332bc06a660', 8014),
+ ('morphology_link_functional_manifest',
+  '11b3a4db25717d471478d0ea1e0cf5745a4dabaf304961f1ca42b332bc06a660',
+  8014),
  ('participant_structural_manifest', 'a2707f492cc45ff2678d2f11f064d9d47eb3e474f5a4b86c63160a4dc2d6053d', 816),
- ('policy_and_closed_enum_manifest', '37cbdbadf235eea79270b795860a1c9ba765d7f7dbdbfb093b9fe98ee91d8c8a', 20980),
- ('normal_form_and_profile_manifest', 'fa678370da4eebe55de65fe0ca32ae1db1edcd08a1a18492ad595ff62e7132e2', 4097),
+ ('policy_and_closed_enum_manifest',
+  '37cbdbadf235eea79270b795860a1c9ba765d7f7dbdbfb093b9fe98ee91d8c8a',
+  20980),
+ ('normal_form_and_profile_manifest',
+  'fa678370da4eebe55de65fe0ca32ae1db1edcd08a1a18492ad595ff62e7132e2',
+  4097),
  ('product_causal_owner_and_registry_digests_manifest',
   '915a3d026575a93fca43ca22a86548923eb3f51c744d47b3e02a7834bdbf67b9',
   8985))
-IM03_WORKING_LANGUAGE_PAYLOAD_TUPLE_SHA256 = 'fd34be449c7abc65432fa90b44313e29b5d239ebc96af7dc0f826634d9c0ec8f'
-IM03_WORKING_RUNTIME_PAYLOAD_TUPLE_SHA256 = 'f1fc1650780c0f5becb1c3ee5e0899545e439006af86379b907406e051f15917'
-IM03_WORKING_SOURCE_OWNER_PAYLOAD_EXACT9_TUPLE_SHA256 = '3319d7d0248c5b271996537b600efdffa929429c88ecd57db8d8650a1ab4299e'
+IM03_WORKING_LANGUAGE_PAYLOAD_TUPLE_SHA256 = '4d1cdec3492489537ff30fb5545eae58f1779a13ce8149223038d3097982ebcc'
+IM03_WORKING_RUNTIME_PAYLOAD_TUPLE_SHA256 = 'e22d3c5f5ea381d1b7516de725ff7a80795699481d0f7669a2677b748f17549b'
+IM03_WORKING_SOURCE_OWNER_PAYLOAD_EXACT9_TUPLE_SHA256 = 'd2c7e7e1e5914047e3408bafce528540a301b1932d2f8405ebd10583429b235f'
 IM03_WORKING_SOURCE_OWNER_SYMBOL_SET_SHA256 = '92b03acc482b211ae2bb402200ed4fbdf0205017efd9f9f588eb8cde77f467f5'
 IM03_WORKING_SOURCE_OWNER_DECLARATION_COUNTS_EXACT9 = (81, 471, 115, 194, 276, 121, 219, 56, 89)
 IM03_WORKING_SOURCE_OWNER_IMPORT_COUNTS_EXACT9 = (89, 17, 188, 69, 37, 42, 33, 41, 100)
