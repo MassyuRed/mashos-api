@@ -7967,9 +7967,15 @@ def _build_response_and_policies(
                 and item.semantic_frame.modality == "fact"
                 and item.semantic_frame.polarity == "mixed"
                 and "lexical:source_bounded_expression" in item.semantic_frame.attribute_codes)
+            or (item.kind == item.semantic_frame.predicate_kind == "uncertainty"
+                and item.semantic_frame.modality == "uncertain"
+                and "lexical:source_bounded_expression" in item.semantic_frame.attribute_codes)
         )
         and item.semantic_frame.actor == "current_user"
-        and item.semantic_frame.modality in {"fact", "feeling"}
+        and (item.semantic_frame.modality in {"fact", "feeling"}
+             or (item.kind == item.semantic_frame.predicate_kind == "uncertainty"
+                 and item.semantic_frame.modality == "uncertain"
+                 and "lexical:source_bounded_expression" in item.semantic_frame.attribute_codes))
         and (item.semantic_frame.polarity in {"negative", "neutral"}
              or (item.kind == item.semantic_frame.predicate_kind == "change"
                  and item.semantic_frame.polarity == "mixed"
@@ -10035,6 +10041,27 @@ def _source_finite_background_expression_is_bound(fragment: str) -> bool:
     )
 
 
+def _source_bounded_uncertainty_is_bound(fragment: str) -> bool:
+    """Prove a whole tentative evaluation/state, never an inferred feeling.
+
+    A closed finite predicate and its speaker-local modifiers prevent a
+    reporting host, foreign owner or unfinished clause from donating only
+    its uncertain tail. Negated evaluation remains negated source material.
+    """
+    match = re.fullmatch(
+        r"(?:まあ[、,]?)?"
+        r"(?:(?P<hedge>たぶん|多分|おそらく|恐らく)[、,]?)?"
+        r"(?:(?:(?:今日|昨日|今|今朝)(?:は|も)?|"
+        r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が|も))[、,]?){0,2}"
+        r"(?:少し(?:だけ)?|ちょっと|とても|まだ)?"
+        r"(?:(?:悪|良|よ|辛|つら|苦し|悲し|寂し|さみし|怖|こわ)"
+        r"(?:い|くない|かった|くなかった)|"
+        r"(?:疲れ|苛立っ|いらだっ)て(?:いる|いない|いた|いなかった))"
+        r"(?P<ending>かも(?:しれない)?|(?:です)?)", fragment,
+    )
+    return bool(match and (match.group("hedge") or match.group("ending").startswith("かも")))
+
+
 def _final_stage1_typed_nuclei(
     plan: GroundedObservationPlan,
     evidence_spans: Sequence[EvidenceSpan],
@@ -10078,6 +10105,43 @@ def _final_stage1_typed_nuclei(
             else ()
         )
         if not projections:
+            # The shared lexical analyzer can miss short terminal hedges or
+            # leading epistemic adverbs. Prove the entire original field at
+            # the final OP boundary, before selection and unknown expansion.
+            # No source span, negation, time, owner or confidence is replaced.
+            frame = nucleus.semantic_frame
+            if (
+                span is not None and normalized_input is not None
+                and nucleus.kind in {"event", "state", "reaction", "value", "uncertainty"}
+                and nucleus.source_fields == ("memo",) and span.source_field == "memo"
+                and frame.actor == "current_user"
+                and frame.time_scope in {"past", "present", "current_input", "continuing"}
+                and frame.modality in {"fact", "feeling", "uncertain"}
+                and not set(frame.attribute_codes).intersection({
+                    "operator:refusal", "operator:wish", "operator:performed_action",
+                    "operator:change", "operator:result", "operator:constraint",
+                    "semantic_role:current_change", "semantic_role:explicit_result",
+                    "semantic_dependency:action_before_change",
+                })
+            ):
+                source = str(normalized_input.get("memo") or "")
+                start, end = span.start_index, span.end_index
+                raw = str(span.raw_text)
+                if (
+                    0 <= start < end <= len(source)
+                    and _clean(source[start:end]) == _clean(raw)
+                    and not source[:start].strip()
+                    and re.fullmatch(r"\s*[。．.]?\s*", source[end:])
+                    and _top_level_text(source) == source
+                    and _source_bounded_uncertainty_is_bound(raw.strip(" \u3000。．."))
+                ):
+                    nucleus = replace(nucleus, kind="uncertainty", semantic_frame=replace(
+                        frame, predicate_kind="uncertainty", modality="uncertain",
+                        attribute_codes=tuple(_dedupe((
+                            *frame.attribute_codes, "operator:uncertainty",
+                            "lexical:source_bounded_expression",
+                        ))),
+                    ))
             # Prove the original field before graph selection. A lexical value
             # in the background must not mask a finite negative feeling. A
             # finite background expression instead keeps its existing type;

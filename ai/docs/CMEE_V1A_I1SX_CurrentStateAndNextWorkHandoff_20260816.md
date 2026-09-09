@@ -13,7 +13,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-09最新（candidate80）：未来行動に対する目的語の言い直しを4件で削減。全100件の意味・必要責務・観測・可否は維持、華恋全文確認済み。必須391は385成功／6失敗（前回4＋旧句依存2）、既存期待値不変更・品質NOT_CLEAR。詳細と再開点は末尾candidate80。System Context未使用・原典直接確認、PR37不変更。
+2026-09-09最新（candidate81 source checkpoint）：全文証明した不確定の評価・状態を既存uncertaintyと選択へ接続。原文・否定・owner・時点と実行済みの別行動を保持。関連8検査成功。最終固定sourceの必須回帰・同じ100件・華恋全文確認はこれから。NOT_CLEAR、System Context未使用・原典直接確認、PR37不変更。
 
 ## 1. GitHub anchors
 
@@ -6955,3 +6955,12 @@ sole Human Receptionの既存述語文法で、full・非代名詞参照・関�
 再開点はこの固定sourceと保存済み100件。文言依存2失敗と件数不一致1を未解決のまま保持し、期待値変更で通過させない。中心感情欠落の次の原因は、否定評価・不確定表現を原field全体から証明するfinal OP処理と既存選択への接続。終端の不確定や冒頭の留保を確定factへ残さず、否定過去の非行動を実行済みへ変えず、原行動・unknown・最大3 Move・既存family／NORMAL／LIMITED閉包を維持する。HRで未選択内容を補わない。新しい管理装置やparallel selectorは追加しない。
 
 公開sourceは既存Draft PR3、結果と引継ぎは既存PR3／30、private実入力・実出力・初期失敗は従来の非公開作業記録に保持。実装・入力・条件が同一の結果を保存説明のために再生成せず、同じ原典と全体地図の不要な再読、System Contextの一式再生成、定例JSON／ZIP配布を省く運用を継続。System Context未使用・原典直接確認、PR37不変更。NOT_CLEAR・disabled・Draft/open/unmerged・candidate_ready=false・automatic_progression=false、Mash human PASS／ready／採用／merge／本番未成立。
+
+
+### 2026-09-09 candidate81 source checkpoint — 全文証明した不確定表現を選択へ接続
+
+final OPの既存typed projectionで、閉じた評価・状態の有限述語と終端の留保／冒頭の不確定副詞を、元のmemo field全体・offset・top-level・本人・時点で証明する。kind/predicateをuncertainty、modalityをuncertainへ補正し、原文・否定・時点・所有者・根拠・確信度を維持。既存source_bounded_expression witnessにより、必要な独立materialと原文証明済みの実行済み別行動を既存selectionへ接続する。source_explicit_epistemic_limit／hedge_onlyと既存family・最大3 Move・NORMAL／LIMITEDを継承。曖昧な否定評価を肯定感情へ変えない。引用・伝聞・他者・条件・接続途中・複数文は全文証明しない。否定過去の非行動は実行済みへ変えず、このpair条件を満たさない残件として保持する。
+
+共有regex、HR、meaning owner、Gate/body parserは不変更。旧bounded witnessの関係補正はevent/state等の型条件を要求するため、本uncertaintyには適用されない。静的レビューで丁寧形の不確定終端に既存否定検出の問題を確認し、その形は今回の証明対象から除外した。新規4＋既存関連4検査で原文の留保・否定・両責務・replay・recovery・限定品質・所有者／引用／関係／非行動の境界を検査した。新規検査の初回2失敗は、recoveryでも全文字列がfollowに必要との過剰な前提、およびOP除外検査から後段graphまで進んだことによる。既存recovery契約どおり観測に明示されたsourceと全follow Move・inverse閉包を確認し、OP除外検査はOP境界で確認する形へ訂正した。初回rawは保持。既存fixtureと期待値は変更しない。新しいowner・schema・selector・経路は追加せず、既存final OP owner内の局所文法。STRUCTURE_MAP_DELTA_NONE。
+
+最終固定sourceから必須回帰と同じ100件の生成・全件本文確認を続ける。前回の6失敗は未解決として引き継ぎ、新しい成功基準へ置き換えない。長い復唱・説明語・定型締め、中心感情・複数主題・共有関係の欠落はNOT_CLEAR。既存Draft PR3／30の継続、disabled・candidate_ready=false・automatic_progression=false、ready／採用／merge／本番なし。System Context未使用・原典直接確認、PR37不変更。
