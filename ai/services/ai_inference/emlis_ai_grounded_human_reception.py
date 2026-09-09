@@ -7247,6 +7247,23 @@ def _source_grounded_temporal_aspect_realization(
             realization.time_scope
         ]
     )
+    # An explicit continuing adverb in the final source clause already
+    # carries this axis. Keep the whole clause and its degree/negation;
+    # do not repeat it with an extra present-continuing adjunct. A quoted,
+    # past, reported or merely comparative occurrence is not this owner.
+    if realization.time_scope == "continuing" and not lexical_time:
+        final_clause = re.split(r"[、,]", clean_head)[-1]
+        lexical_time = bool(
+            final_clause.startswith("ずっと")
+            and not re.search(r"[「」『』“”‘’\"()（）\[\]【】?？!！。．.;；…‥]", clean_head)
+            and not re.search(r"(?:より|比べ|比較)", clean_head)
+            and not re.match(r"ずっと(?:前|後|先|昔|未来|以前|以後|遠|近|多|少|高|低)", final_clause)
+            and not re.search(
+                r"(?:と|って)[^、,]*(?:聞|聴|言|話|語|述べ|書|記録|思|考|感じ|判断|伝|教)",
+                final_clause,
+            )
+            and _SOURCE_GROUNDED_NONPAST_MORPHOLOGY_RE.search(final_clause)
+        )
     if realization.time_scope in {"past", "completed"}:
         morphological_time = bool(
             _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(clean_head)

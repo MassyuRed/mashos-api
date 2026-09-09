@@ -6774,3 +6774,12 @@ canonical100は原入力・順序・軸・分母を保ってdirectと外側か�
 次は過去の肯定感情をNORMALの現在時点条件も含む意味契約から追い、複数主題の感謝・共有関係を既存の上流source証明から検討する。限定構文以外の背景、長い復唱、定型締め、継続語と時点adjunctの重複も残る。物理的状態と本人感情は引き続き区別する。
 
 Mash承認済み運用を継承する。System Contextは任意で今回は未使用・原典直接確認、PR37は不変更。必要な原典確認と最終版の必須検証／root全100件読了を維持し、同じ前提や全履歴の反復・定例JSON／ZIP配布は行わない。既存2026-09-05承認の同じ未完unit、disabled／Draft／open／unmerged、candidate_ready=false、automatic_progression=falseを維持。Product Read PASS・採用・merge・本番・問い／Layer3は未成立。9月12日の本文確認準備に対する未達リスクを保持する。
+
+
+### 2026-09-09 current — candidate72 継続表現の時点重複修正・最終検証中
+
+既存Human Receptionの時点表現で、継続が原文の最終節に明示されている場合に同じ意味の時点副詞を重ねない修正を実装した。完全な原文、程度、否定、上流意味、Move、選択済み判断は保持する。今回の新しい原文内表現の判定は、非過去の最終節に限定し、引用・報告・過去形・別節・明示比較を除外する。既存の時間／相の所有と独立replayを使用し、新しいowner・schema・経路や判定緩和は追加しない。STRUCTURE_MAP_DELTA_NONE。
+
+修正途中の関連7検査は成功。独立レビューで前節の比較を見落とす可能性を確認し、原文全体の比較除外と負例を追加した。最終固定sourceの必須検査と同じ100件・root全文確認はこれから行う。candidate71の356／359と73／27を変更後の成功証拠へ流用しない。
+
+過去の肯定感情については、既存NORMAL appraisalのpositive feelingが現在時点だけを受け入れ、保護検査もpastを拒否することを確認した。今回はこの契約と保護期待値を変更していない。感謝・複数主題・共有関係と長い復唱／定型締めは引き続き残件。System Contextは未使用・原典直接確認、PR37不変更。既存承認の同じ未完unit、NOT_CLEAR、disabled、Draft/open/unmerged、candidate_ready=false、automatic_progression=falseを維持する。

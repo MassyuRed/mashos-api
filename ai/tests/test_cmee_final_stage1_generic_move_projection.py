@@ -1402,6 +1402,61 @@ class CMEEFinalContinuingWordsReferenceTest(unittest.TestCase):
                 self.assertTrue(all(kw["selected_subjective_input"] is a.selected_subjective_input
                                     for _args, kw in a.author_arguments))
 
+    def test_source_continuation_is_received_once_without_extra_present_adjunct(self):
+        for text, a in self.artifacts:
+            with self.subTest(text=text):
+                follow = _reception_text(a.surface.text)
+                self.assertIn(text.rstrip("。"), follow)
+                self.assertNotIn("今も、", follow)
+                self.assertEqual(follow.count("ずっと"), 1)
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                for authored in a.authored:
+                    sentence_plan = a.sentence_plan if authored.recovery_stage == "full" else (
+                        surface_owner.build_reception_recovery_sentence_plan(
+                            a.sentence_plan, a.plan, a.resolver, recovery_stage=authored.recovery_stage,
+                        )
+                    )
+                    surface = _recovery_surface(a, sentence_plan)
+                    inverse = evaluate_grounded_surface_body_inverse(
+                        body=surface.text.encode("utf-8"), plan=a.plan,
+                        sentence_plan=sentence_plan, resolver=a.resolver,
+                        selected_subjective_input=a.selected_subjective_input,
+                    )
+                    self.assertTrue(inverse.passed, inverse.failure_codes)
+
+    def test_body_inverse_rejects_added_time_or_removed_continuation(self):
+        for text, a in self.artifacts:
+            follow = _reception_text(a.surface.text)
+            for wrong in ("今も、" + follow, follow.replace("ずっと", "")):
+                with self.subTest(text=text, wrong=wrong):
+                    body = _tamper_reception(a.surface.text, follow, wrong)
+                    self.assertFalse(evaluate_grounded_surface_body_inverse(
+                        body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                        resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                    ).passed)
+
+    def test_continuation_marker_cannot_borrow_another_time_clause_or_quotation(self):
+        realization = SimpleNamespace(time_scope="continuing", aspect="unknown", reference_mode="EXPLICIT")
+        for source in (
+            "ずっと前は落ち着かなかった", "ずっと先が怖い", "ずっと少ない",
+            "ずっと落ち着かなかった", "ずっと落ち着かないと思う",
+            "ずっと落ち着かないと友人は言う", "ずっと落ち着かない？",
+            "「ずっと落ち着かない」", "ずっと待って、落ち着かない",
+            "昨日より、ずっとつらい", "前の方法より、ずっと分かりやすい",
+            "前の方法と比べると、ずっと良い",
+        ):
+            with self.subTest(source=source):
+                time, _aspect, adjunct, _aspect_adjunct = reception_owner._source_grounded_temporal_aspect_realization(
+                    realization, source,
+                )
+                self.assertEqual((time, adjunct), ("ADJUNCT", "今も、"))
+        for mode in ("past", "future", "present_to_future"):
+            other = SimpleNamespace(time_scope=mode, aspect="unknown", reference_mode="EXPLICIT")
+            before = reception_owner._source_grounded_temporal_aspect_realization(other, "落ち着かない")
+            after = reception_owner._source_grounded_temporal_aspect_realization(other, "ずっと落ち着かない")
+            self.assertEqual(after, before)
+
     def test_inverse_rejects_lost_background_continuation_and_changed_attribution(self):
         text, a = self.artifacts[0]
         nominal = text.rstrip("。") + "という言葉"
