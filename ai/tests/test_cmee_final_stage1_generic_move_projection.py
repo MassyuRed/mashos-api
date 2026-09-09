@@ -1365,6 +1365,118 @@ class CMEEFinalSinglePerformedActionReferenceTest(unittest.TestCase):
                 self.assertEqual(rp.quote_policy.max_anchor_count, 0)
 
 
+class CMEEFinalContinuingWordsReferenceTest(unittest.TestCase):
+    @staticmethod
+    def _row(text):
+        return {"case_id": "public-continuing-words-reference", "input": {
+            "thought_text": text, "action_text": "", "categories": ["生活"],
+            "emotions": [{"type": "不安", "strength": "weak"}],
+        }}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = tuple((text, _full_surface_artifacts(cls._row(text))) for text in (
+            "書類が増えて、ずっと落ち着かない。", "ずっと落ち着かない。",
+        ))
+
+    def test_complete_continuing_words_survive_final_reference_rebuild(self):
+        for text, a in self.artifacts:
+            with self.subTest(text=text):
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                self.assertEqual(a.sentence_plan.recovery_stage, "full")
+                rp = a.plan.response_plan.human_reception_plan
+                move, = rp.moves
+                self.assertTrue(move.required)
+                self.assertEqual(move.reception_act, "stay_with_current_burden")
+                self.assertEqual(move.target_nucleus_ids, a.plan.response_plan.primary_nucleus_ids)
+                self.assertEqual(move.support_nucleus_ids, ())
+                self.assertEqual((rp.reference_mode, move.reference_mode),
+                                 ("short_anchor_if_ambiguous",) * 2)
+                self.assertEqual((rp.quote_policy.max_anchor_count,
+                                  rp.quote_policy.max_anchor_visible_chars), (1, 16))
+                follow = _reception_text(a.surface.text)
+                self.assertEqual(follow.count(text.rstrip("。") + "という言葉"), 1)
+                self.assertNotIn("今ここに置かれた言葉", follow)
+                self.assertNotIn("「", follow)
+                self.assertTrue(all(kw["selected_subjective_input"] is a.selected_subjective_input
+                                    for _args, kw in a.author_arguments))
+
+    def test_inverse_rejects_lost_background_continuation_and_changed_attribution(self):
+        text, a = self.artifacts[0]
+        nominal = text.rstrip("。") + "という言葉"
+        for wrong in (
+            "ずっと落ち着かないという言葉", "書類が増えて、落ち着かないという言葉",
+            "書類が増えて、ずっと落ち着いているという言葉",
+            "友人は書類が増えて、ずっと落ち着かないという言葉",
+            "書類が増えて、ずっと落ち着かないこと", "今ここに置かれた言葉",
+            nominal + "と" + nominal, "「" + nominal + "」",
+        ):
+            with self.subTest(wrong=wrong):
+                body = _tamper_reception(a.surface.text, nominal, wrong)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan,
+                    surface_result=replace(a.surface, text=body), resolver=a.resolver,
+                    require_body_inverse=True, selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+
+    def test_existing_nominals_and_legacy_scope_remain_and_attributed_words_stay_whole(self):
+        for text, expected in (("なんとなく落ち着かない。", "なんとなくの落ち着かなさ"),
+                               ("ずっと不安が残っている。", "ずっと残っている不安")):
+            with self.subTest(text=text):
+                a = _full_surface_artifacts(self._row(text))
+                self.assertEqual(a.plan.response_plan.human_reception_plan.reference_mode,
+                                 "anaphoric_first")
+                self.assertIn(expected, _reception_text(a.surface.text))
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+        for text in ("昨日はずっと落ち着かなかった。", "ずっと落ち着かないかもしれない。",
+                     "明日もずっと落ち着かない気がする。", "ずっと胸がざわつく。"):
+            with self.subTest(text=text):
+                plan = _compile_inputs(self._row(text)).grounded_plan
+                self.assertEqual(plan.response_plan.human_reception_plan.reference_mode,
+                                 "anaphoric_first")
+        text, _a = self.artifacts[0]
+        inputs = _compile_inputs(self._row(text))
+        legacy = build_grounded_observation_plan(
+            inputs.source.normalized_current_input, evidence_spans=inputs.source.evidence_spans)
+        self.assertEqual(legacy.response_plan.human_reception_plan.reference_mode, "anaphoric_first")
+        # This reference policy does not repair or endorse the upstream actor
+        # default. Refer to every attributed word without making it SELF's feeling.
+        text = "友人はずっと落ち着かない。"
+        a = _full_surface_artifacts(self._row(text))
+        self.assertIn(text.rstrip("。") + "という言葉", _reception_text(a.surface.text))
+        self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+        body = _tamper_reception(a.surface.text, "友人はずっと", "ずっと")
+        self.assertFalse(evaluate_grounded_surface_body_inverse(
+            body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+            resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+        ).passed)
+
+    def test_recovery_keeps_same_required_duty_and_source_observation(self):
+        for text, a in self.artifacts:
+            rp = a.plan.response_plan.human_reception_plan
+            move, = rp.moves
+            for stage in ("optional_removed", "integrated", "hedged"):
+                with self.subTest(text=text, stage=stage):
+                    sentence_plan = surface_owner.build_reception_recovery_sentence_plan(
+                        a.sentence_plan, a.plan, a.resolver, recovery_stage=stage)
+                    surface = _recovery_surface(a, sentence_plan)
+                    self.assertEqual(reception_owner.reception_active_moves(rp, stage), (move,))
+                    self.assertIn(text.rstrip("。"), surface.text.partition(
+                        surface_owner.RECEPTION_SECTION_LABEL)[0])
+                    self.assertTrue(evaluate_grounded_surface_body_inverse(
+                        body=surface.text.encode("utf-8"), plan=a.plan, sentence_plan=sentence_plan,
+                        resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                    ).passed)
+                    if stage in {"integrated", "hedged"}:
+                        self.assertEqual(reception_owner.reception_effective_move_reference_mode(
+                            rp, move, stage), "anaphoric_first")
+
+
 class CMEECompoundPastReportedWishTest(unittest.TestCase):
     @staticmethod
     def _row(text):

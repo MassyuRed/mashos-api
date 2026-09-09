@@ -7340,10 +7340,10 @@ def build_grounded_human_reception_plan(
         ):
             reference_mode = "short_anchor_if_ambiguous"
             moves = (replace(moves[0], reference_mode=reference_mode),)
-    # The same source-proven denied report must reach the selected reception
-    # referent, so its negation is also consumed by the author and replay.
-    # This selects no new meaning: use the existing whole-words reference
-    # and its matching global quote policy for the already required Move.
+    # A denied report or lexically preserved continuing feeling must reach
+    # the selected reception referent with its source predicate intact.
+    # Use the existing whole-words reference and matching quote policy for
+    # the already required Move; do not add a meaning or an affect synonym.
     if (
         final_source_fidelity
         and safety_kind == TRIAGE_SAFE_OBSERVATION
@@ -7359,14 +7359,42 @@ def build_grounded_human_reception_plan(
         if (
             tuple(primary_nucleus_ids) == (target_id,)
             and target is not None and target.retention == "required"
-            and target.kind == "state" and len(target.source_span_ids) == 1
-            and target.source_fields in {("memo",), ("memo_action",)}
+            and len(target.source_span_ids) == 1
             and target.semantic_frame.actor == "current_user"
             and target.semantic_frame.polarity == "negative"
-            and target.semantic_frame.modality == "fact"
-            and target.semantic_frame.time_scope == "past"
-            and "lexical:source_denied_past_thought_report" in target.semantic_frame.attribute_codes
             and not any(target_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations)
+            and (
+                (
+                    target.kind == "state"
+                    and target.source_fields in {("memo",), ("memo_action",)}
+                    and target.semantic_frame.modality == "fact"
+                    and target.semantic_frame.time_scope == "past"
+                    and "lexical:source_denied_past_thought_report"
+                    in target.semantic_frame.attribute_codes
+                )
+                or (
+                    # Keep the preselected source/owner axes. This licenses
+                    # a reference to the complete words, not a new assertion
+                    # that the feeling belongs to SELF. The lexical policy
+                    # survives final reception's material-quality remapping.
+                    target.kind == "reaction"
+                    and target.source_fields == ("memo",)
+                    and target.semantic_frame.predicate_kind == "feeling"
+                    and target.semantic_frame.modality == "feeling"
+                    and target.semantic_frame.time_scope == "continuing"
+                    and {
+                        "lexical:preserve_source_predicate",
+                        "lexical:no_new_sensation_family",
+                    } <= set(target.semantic_frame.attribute_codes)
+                    and not {
+                        "lexical:source_metaphor_present",
+                        "lexical:source_declarative_feeling_subject",
+                    } & set(target.semantic_frame.attribute_codes)
+                    and not relations
+                    and sum(bool(set(item.source_fields) & _TEXT_SOURCE_FIELDS)
+                            for item in nuclei) == 1
+                )
+            )
         ):
             reference_mode = "short_anchor_if_ambiguous"
             moves = (replace(moves[0], reference_mode=reference_mode),)
