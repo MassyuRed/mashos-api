@@ -844,8 +844,8 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
         # Keep the prior 131 duties without retyping mixed material as feeling;
         # selected meaning, expressions and bindings must still agree above.
         self.assertEqual(grounded_normal_count, 5)
-        self.assertEqual(full_move_count, 132)
-        self.assertEqual(full_expression_count, 132)
+        self.assertEqual(full_move_count, 133)
+        self.assertEqual(full_expression_count, 133)
         self.assertGreater(shared_subject_zero_count, 0)
         self.assertTrue(
             any(

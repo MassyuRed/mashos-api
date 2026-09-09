@@ -7951,3 +7951,100 @@ class CMEEFinalMixedContrastMaterialSelectionTest(unittest.TestCase):
                 self.assertNotEqual(tuple(m.reception_act for m in other.grounded_plan.response_plan.human_reception_plan.moves),
                                     ("stay_with_current_burden", "honor_concrete_effort"))
         self.assertEqual(legacy.response_plan.human_follow_target_ids, (action.nucleus_id,))
+
+
+class CMEEFinalReceivedTrialMaterialSelectionTest(unittest.TestCase):
+    """Preserve a received experience alongside the separate performed action."""
+
+    marker = "lexical:source_bounded_expression"
+    sources = (
+        "尋ねてみたら、思ったより静かに答えてもらえた。",
+        "話してみたら、予想より丁寧に聞いてもらえた。",
+    )
+    row = staticmethod(CMEEFinalFiniteBackgroundMaterialSelectionTest.row)
+
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = tuple(_full_surface_artifacts(cls.row(source)) for source in cls.sources)
+
+    # Reuse the complete material contract: original typed source, selected
+    # decisions, both grounding modes, all recovery stages and inverse replay.
+    test_original_material_and_action_reach_both_modes_author_and_recovery = (
+        CMEEFinalFiniteBackgroundMaterialSelectionTest.
+        test_original_material_and_action_reach_both_modes_author_and_recovery
+    )
+    test_related_optional_third_theme_and_unperformed_action_keep_old_selection = (
+        CMEEFinalFiniteBackgroundMaterialSelectionTest.
+        test_related_optional_third_theme_and_unperformed_action_keep_old_selection
+    )
+
+    def test_inverse_preserves_trial_comparison_received_modality_time_and_action(self):
+        source, a = self.sources[0], self.artifacts[0]
+        for original, replacement in (
+            (source.rstrip("。"), ""), ("尋ねてみたら、", ""),
+            ("思ったより", ""), ("静かに", ""),
+            ("答えてもらえた", "答えた"), ("もらえた", "もらえる"),
+            ("作業台を片づけた", ""),
+        ):
+            with self.subTest(original=original, replacement=replacement):
+                body = _tamper_reception(a.surface.text, original, replacement)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+
+    def test_complete_field_proof_excludes_extra_predicates_attribution_and_foreign_owners(self):
+        proof = observation_plan_owner._source_finite_background_expression_is_bound
+        for source in (
+            *self.sources,
+            "質問してみたら、想像していたより詳しく教えていただけました。",
+            "聞いてみたら、予想していたより優しく説明してもらえました。",
+        ):
+            self.assertTrue(proof(source.rstrip("。")), source)
+        base = self.sources[0]
+        invalid = (
+            "友人が" + base, "友人にとって" + base,
+            base.replace("静かに", "友人が静かに"),
+            base.replace("静かに", "先生曰く丁寧に"),
+            base.replace("静かに", "先生いわく丁寧に"),
+            base.replace("静かに", "云く"),
+            base.replace("静かに", "笑った後に"),
+            base.replace("静かに", "丁寧にせず静かに"),
+            base.replace("尋ねて", "猫いて"), base.replace("答えて", "机って"),
+            base.replace("尋ねて", "尋ねたと聞いて"),
+            base.replace("もらえた", "もらえなかった"),
+            base.replace("もらえた", "もらえたと聞いた"),
+            base.replace("もらえた", "もらえたかもしれない"),
+            base.replace("もらえた", "もらえたら帰る"),
+            base.replace("もらえた", "もらえて、資料を運んだ"),
+            "明日は" + base, "これから" + base,
+            base.rstrip("。") + "？", base.rstrip("。") + "！",
+            "「" + base.rstrip("。") + "」", base + "と友人が話した。",
+            "別の記録を読んだ。" + base, base + "別の記録も読んだ。",
+        )
+        for source in invalid:
+            with self.subTest(source=source):
+                frozen = freeze_text_source(_request_from_row(self.row(source)))
+                old = build_grounded_observation_plan(
+                    frozen.normalized_current_input, evidence_spans=frozen.evidence_spans,
+                )
+                nuclei, _dependencies = observation_plan_owner._final_stage1_typed_nuclei(
+                    old, frozen.evidence_spans, normalized_input=frozen.normalized_current_input,
+                )
+                self.assertTrue(all(self.marker not in n.semantic_frame.attribute_codes for n in nuclei), source)
+        frozen = freeze_text_source(_request_from_row(self.row(base)))
+        old = build_grounded_observation_plan(frozen.normalized_current_input, evidence_spans=frozen.evidence_spans)
+        for altered in (base.replace("静か", "丁寧"), "別の文。" + base, base + "別の文。"):
+            nuclei, _dependencies = observation_plan_owner._final_stage1_typed_nuclei(
+                old, frozen.evidence_spans, normalized_input={**frozen.normalized_current_input, "memo": altered},
+            )
+            self.assertTrue(all(self.marker not in n.semantic_frame.attribute_codes for n in nuclei))
+        for actor in ("unknown", "other_person"):
+            altered = replace(old, nuclei=tuple(
+                replace(n, semantic_frame=replace(n.semantic_frame, actor=actor))
+                if n.source_fields == ("memo",) else n for n in old.nuclei
+            ))
+            nuclei, _dependencies = observation_plan_owner._final_stage1_typed_nuclei(
+                altered, frozen.evidence_spans, normalized_input=frozen.normalized_current_input,
+            )
+            self.assertTrue(all(self.marker not in n.semantic_frame.attribute_codes for n in nuclei))

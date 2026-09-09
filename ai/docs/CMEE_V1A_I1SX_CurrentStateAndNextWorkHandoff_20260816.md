@@ -8,7 +8,7 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. candidate74の最終製品検証・残件・継承運用を末尾で確認する。
+3. candidate75の最新checkpoint・検証状態・残件を末尾で確認する。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
@@ -6816,3 +6816,12 @@ Mash承認済み運用を継承する。System Contextは任意で今回は未�
 - 全100件の生成・全文確認sourceはlocal `cbf3dc4cd9436e7bf58afc3e36441a13e4c8d2bf`／remote `7eabd361de566c6a73193fbe5e733587f40af2aa`、tree `f4d9f2f0e967924e850fcfab0594ca14900cd185`同一。商品実装が変わる場合はこの結果を変更後へ流用しない。
 
 次は既存source証明と選択から未保持の感謝・共有関係・複数主題を扱う。条件・比較・授受を含む材料、同familyの独立行動、複数核の主体・時点・関係は別原因として確認し、一括解消済みにしない。既存2026-09-05承認の同じ未完unit、disabled／Draft／open／unmerged、candidate_ready=false、automatic_progression=false、NOT_CLEARを維持する。System Contextは未使用・原典直接確認、PR37不変更。Product Read PASS・採用・merge・本番・問い／Layer3は未成立、9月12日の本文確認準備の未達リスクを保持する。
+
+
+### 2026-09-09 current — candidate75 条件・比較・授受を含む材料の保持（最終検証前）
+
+既存OPの全field証明で、有限の通信動詞による試行条件と期待比較・授受可能の完了表現を一つの本文材料として保持する。原event／state・factと主体・時点・原文を変更せず、本人の感情・実行行動・相手の意図・欄間因果を新設しない。既存の独立材料＋別欄の実行済み行動の選択、MATERIAL受取、selected inputとinverseを使用する。通信動詞の有限語彙と有界な修飾部を用い、追加述語・否定節・帰属・他者・引用報告・未来・疑問・別fieldの不一致を除外する。新owner／schema／経路なし、STRUCTURE_MAP_DELTA_NONE。
+
+関連8検査はPASS、静的独立レビューの指摘を反映済み。現在bridgeの必要総数だけ132→133へ同期し、歴史fixture・期待値は不変更。最終の必須回帰・同じcanonical100・root全100件全文確認はこのsourceを固定して次に実施する。candidate74の結果を今回の結果に流用しない。近傍のhelp-seeking binding gapは変更前にも発生し、other_explicitへの分類、同familyの複数行動、一般的な感謝・共有関係は別残件として保持する。
+
+既存承認の未完unitを継続し、disabled／Draft／open／unmerged、NOT_CLEAR、candidate_ready=false、automatic_progression=falseを維持。System Contextは未使用・原典直接確認、PR37不変更。採用・ready・merge・本番・Product Read PASSは未成立。

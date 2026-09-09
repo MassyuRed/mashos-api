@@ -9910,6 +9910,28 @@ def _source_finite_background_expression_is_bound(fragment: str) -> bool:
         fragment,
     ):
         return False
+    # A trial followed by a comparative, finite received opportunity is one
+    # source expression. Neither the conditional nor the benefactive verb
+    # proves a new self action, feeling, causal relation or listener intent.
+    # Resolve finite communication verbs before accepting their te-forms.
+    # The adverbial slot cannot absorb another predicate or an attribution.
+    verbal_te = r"(?:話して|相談して|質問して|尋ねて|頼んで|伝えて|聞いて|聴いて|教えて|答えて|説明して|確認して)"
+    received_trial = re.fullmatch(
+        r"(?P<trial>" + verbal_te + r")みたら[、,]"
+        r"(?:思った|思っていた|予想(?:していた)?|想像(?:していた)?)より"
+        r"(?:(?:少し(?:だけ)?|とても|ずっと)?"
+        r"(?P<modifier>[一-鿿々]+(?:(?:やか|らか|か)?に|し?く)))?"
+        r"(?P<received>" + verbal_te + r")"
+        r"(?:もらえ(?:た|ました)|いただけ(?:た|ました))", fragment,
+    )
+    if received_trial is not None:
+        # Subjects, possessors and attribution hosts cannot be hidden in a
+        # free modifier. Case/stance material outside this grammar stays out.
+        return not re.search(
+            r"[はがもをのと]|にとって|には|なら|れば|らしい|よう|みたい|かも|いわく|曰く|云く|"
+            + _OWNER_FOCUS_PARTICLE_SOURCE + "|" + _OWNER_TOPIC_PARTICLE_SOURCE,
+            received_trial.group("modifier") or "",
+        )
     # A denied change and a finite positive endpoint can coexist in one
     # source object. Keep both grammatical subjects and the te-background
     # verbatim; neither subject becomes the experiencer of a new feeling.
