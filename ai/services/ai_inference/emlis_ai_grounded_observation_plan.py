@@ -7254,6 +7254,7 @@ def build_grounded_human_reception_plan(
             "lexical:source_current_feeling_with_cognitive_background",
             "lexical:source_current_feeling_with_verbal_background",
             "lexical:source_past_negative_feeling",
+            "lexical:source_scalar_background_expression",
         })
         and not any(
             relation.retention == "required" or relation.type != "uncertain_connection"
@@ -7916,8 +7917,9 @@ def _build_response_and_policies(
         )
 
     selected_follow = min(follow_candidates, key=follow_rank) if follow_candidates else None
-    # An independently recorded, source-proven feeling must not be
-    # dropped merely because the other field contains a performed action.
+    # An independently recorded feeling or explicit scalar-background
+    # expression must not be dropped merely because the other field has an
+    # action. The latter stays material, without a new feeling interpretation.
     # Choosing that existing burden as primary retains its opportunity and
     # selects the same action as its support Move through the existing policy.
     # The whole-field witness is supplied upstream; labels, quoted feelings,
@@ -7926,29 +7928,39 @@ def _build_response_and_policies(
         item for item in nuclei
         if any(field in _TEXT_SOURCE_FIELDS for field in item.source_fields)
     )
-    source_feelings = tuple(
+    independent_materials = tuple(
         item for item in text_candidates
         if item.source_fields == ("memo",)
         and item.retention == "required"
         and item.grounding_kind == "explicit"
-        and item.kind == "reaction"
-        and (item.semantic_frame.predicate_kind == "feeling" or (
-            item.semantic_frame.predicate_kind == "reaction"
-            and "lexical:source_current_feeling_with_verbal_background"
-            in item.semantic_frame.attribute_codes
-        ))
+        and (
+            item.kind == "reaction"
+            and (item.semantic_frame.predicate_kind == "feeling" or (
+                item.semantic_frame.predicate_kind == "reaction"
+                and "lexical:source_current_feeling_with_verbal_background"
+                in item.semantic_frame.attribute_codes
+            ))
+            or (item.kind in {"event", "state"}
+                and item.semantic_frame.predicate_kind in {"event", "state"}
+                and item.semantic_frame.modality == "fact"
+                and "lexical:source_scalar_background_expression"
+                in item.semantic_frame.attribute_codes)
+        )
         and item.semantic_frame.actor == "current_user"
         and item.semantic_frame.modality in {"fact", "feeling"}
         and item.semantic_frame.polarity in {"negative", "neutral"}
         and (item.semantic_frame.time_scope in {"present", "current_input", "continuing"}
              or (item.semantic_frame.time_scope == "past"
-                 and "lexical:source_past_negative_feeling"
-                 in item.semantic_frame.attribute_codes))
+                 and set(item.semantic_frame.attribute_codes).intersection({
+                     "lexical:source_past_negative_feeling",
+                     "lexical:source_scalar_background_expression",
+                 })))
         and set(item.semantic_frame.attribute_codes).intersection({
             "lexical:source_declarative_feeling_subject",
             "lexical:source_current_feeling_with_cognitive_background",
             "lexical:source_current_feeling_with_verbal_background",
             "lexical:source_past_negative_feeling",
+            "lexical:source_scalar_background_expression",
         })
         and _reception_opportunity_families_for_nucleus(
             item, safety_kind=safety_decision.safety_triage_kind,
@@ -7960,7 +7972,7 @@ def _build_response_and_policies(
         and safety_decision.safety_triage_kind == TRIAGE_SAFE_OBSERVATION
         and material_quality in {"grounded", "limited_grounding"}
         and len(text_candidates) == 2
-        and len(source_feelings) == 1
+        and len(independent_materials) == 1
         and selected_follow is not None
         and selected_follow.source_fields == ("memo_action",)
         and selected_follow.retention == "required"
@@ -7973,7 +7985,7 @@ def _build_response_and_policies(
             & {item.nucleus_id for item in text_candidates}
         )
     ):
-        selected_follow = source_feelings[0]
+        selected_follow = independent_materials[0]
     follow_ids = (selected_follow.nucleus_id,) if selected_follow is not None else primary_ids[:1]
 
     observable_nucleus_present = bool(nuclei)
@@ -9811,6 +9823,57 @@ def _source_past_negative_feeling_is_bound(fragment: str) -> bool:
     )
 
 
+def _source_scalar_background_expression_is_bound(fragment: str) -> bool:
+    """Locate an explicit delay/comparison without interpreting its experiencer.
+
+    A completed endpoint may describe a person or a physical object. This
+    proof only keeps the whole expression as material; it cannot supply a
+    feeling, negative judgment, self-owned expectation or causal relation.
+    """
+    parts = re.fullmatch(
+        r"(?P<background>[^、,。．.!！?？\s]+)[、,]"
+        r"(?:少し(?:だけ)?|ちょっと|とても|やや|かなり|かえって)?"
+        r"(?P<endpoint>[ぁ-んァ-ヶ一-鿿々ー]+)", fragment,
+    )
+    if parts is None:
+        return False
+    background, endpoint = parts.group("background"), parts.group("endpoint")
+    finite_operator = _last_finite_operator_match(endpoint, *_FINITE_OPERATOR_PATTERNS)
+    finite_state = re.fullmatch(
+        r"(?:(?:へこ|落ちこ|落ち込|凹|沈|傷|痛|縮)んだ|"
+        r"(?:助か|困|変わ|収ま|固ま)った)", endpoint,
+    )
+    if (
+        # A bare suffix cannot distinguish a verb from fragments such as
+        # mata/anata. Use existing finite heads or bounded state inflections.
+        not (finite_state or finite_operator is not None and finite_operator.start() == 0)
+        or _EXPLICIT_PERFECTIVE_END_RE.search(endpoint) is None
+        or re.search(r"[はがもをのにと]|(?:かも|なら|たら|れば|らしい|よう|みたい)", endpoint)
+        or re.search(r"(?:明日|あした|これから|今後)", background)
+        or background.endswith("らしくて")
+        or re.search(
+            r"(?:と|って)(?:聞|聴|言|話|語|述べ|書|記録|思|考|感じ|判断|決め|伝|教|知ら)",
+            background,
+        )
+    ):
+        return False
+    # The nominalizer belongs to a nonpast verb phrase, not to a possessor.
+    # No object-name dictionary or assumption of performed user action is used.
+    delay = re.fullmatch(
+        r"(?P<event>[ぁ-んァ-ヶ一-鿿々ー]+を[ぁ-んァ-ヶ一-鿿々ー]+"
+        r"[うくぐすつぬぶむる])のが遅れて(?:しまい)?", background,
+    )
+    if delay is not None:
+        return _ACTION_ARGUMENT_STEM_RE.search(delay.group("event")) is not None
+    # The source states a comparison. Its subject need not be a non-person,
+    # and neither that subject nor the person who expected it is reclassified.
+    return re.fullmatch(
+        r"[ぁ-んァ-ヶ一-鿿々ー]+が"
+        r"(?:思った|思っていた|予想(?:していた)?|想像(?:していた)?)より"
+        r"[ぁ-んァ-ヶ一-鿿々ー]+くて", background,
+    ) is not None
+
+
 def _final_stage1_typed_nuclei(
     plan: GroundedObservationPlan,
     evidence_spans: Sequence[EvidenceSpan],
@@ -9854,9 +9917,10 @@ def _final_stage1_typed_nuclei(
             else ()
         )
         if not projections:
-            # A lexical value in the background must not mask the sentence's
-            # finite negative feeling. Prove the original field, not a ledger
-            # tail, before graph selection; keep identity, evidence and degree.
+            # Prove the original field before graph selection. A lexical value
+            # in the background must not mask a finite negative feeling. A
+            # source-stated delay/comparison instead keeps its existing type;
+            # no psychological reading is lent to its ambiguous endpoint.
             frame = nucleus.semantic_frame
             if (
                 span is not None and normalized_input is not None
@@ -9883,17 +9947,28 @@ def _final_stage1_typed_nuclei(
                     and not source[:start].strip()
                     and re.fullmatch(r"\s*[。．.]?\s*", source[end:])
                     and _top_level_text(source) == source
-                    and _source_past_negative_feeling_is_bound(finite)
+                    and ((past_feeling := _source_past_negative_feeling_is_bound(finite))
+                         or _source_scalar_background_expression_is_bound(finite))
                 ):
-                    nucleus = replace(nucleus, kind="reaction", semantic_frame=replace(
-                        frame, predicate_kind="feeling", polarity="negative", modality="feeling",
-                        time_scope="past", attribute_codes=tuple(_dedupe((
-                            *(code for code in frame.attribute_codes
-                              if not code.startswith("time_scope:")),
-                            "time_scope:past", "operator:feeling",
-                            "lexical:source_past_negative_feeling",
-                        ))),
-                    ))
+                    if past_feeling:
+                        nucleus = replace(nucleus, kind="reaction", semantic_frame=replace(
+                            frame, predicate_kind="feeling", polarity="negative", modality="feeling",
+                            time_scope="past", attribute_codes=tuple(_dedupe((
+                                *(code for code in frame.attribute_codes
+                                  if not code.startswith("time_scope:")),
+                                "time_scope:past", "operator:feeling",
+                                "lexical:source_past_negative_feeling",
+                            ))),
+                        ))
+                    elif (nucleus.kind in {"event", "state"}
+                          and frame.predicate_kind in {"event", "state"}
+                          and frame.modality == "fact"):
+                        nucleus = replace(nucleus, semantic_frame=replace(
+                            frame, attribute_codes=tuple(_dedupe((
+                                *frame.attribute_codes,
+                                "lexical:source_scalar_background_expression",
+                            ))),
+                        ))
             # A present mood is a feeling, not a positive change or a burden.
             # The old lexical signals do not recognize this subject/predicate
             # pair. Prove the whole source sentence here; a tail match cannot

@@ -840,12 +840,12 @@ class CMEENLSV3Batch001UnifiedStage1BridgeTest(unittest.TestCase):
                     )
         self.assertEqual(len(request_local_inputs), 100)
         self.assertGreater(limited_trace_count, 0)
-        # The approved source-proven feeling/action selection restores one
-        # further omitted past feeling duty. Keep the prior 126 duties plus it;
+        # Whole-source scalar backgrounds restore two omitted material duties.
+        # Keep the prior 127 duties without retyping a physical state as feeling;
         # selected meaning, expressions and bindings must still agree above.
         self.assertEqual(grounded_normal_count, 5)
-        self.assertEqual(full_move_count, 127)
-        self.assertEqual(full_expression_count, 127)
+        self.assertEqual(full_move_count, 129)
+        self.assertEqual(full_expression_count, 129)
         self.assertGreater(shared_subject_zero_count, 0)
         self.assertTrue(
             any(
