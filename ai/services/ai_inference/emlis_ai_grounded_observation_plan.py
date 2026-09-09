@@ -7253,6 +7253,7 @@ def build_grounded_human_reception_plan(
             "lexical:source_declarative_feeling_subject",
             "lexical:source_current_feeling_with_cognitive_background",
             "lexical:source_current_feeling_with_verbal_background",
+            "lexical:source_past_negative_feeling",
         })
         and not any(
             relation.retention == "required" or relation.type != "uncertain_connection"
@@ -7915,7 +7916,7 @@ def _build_response_and_policies(
         )
 
     selected_follow = min(follow_candidates, key=follow_rank) if follow_candidates else None
-    # An independently recorded, source-proven current feeling must not be
+    # An independently recorded, source-proven feeling must not be
     # dropped merely because the other field contains a performed action.
     # Choosing that existing burden as primary retains its opportunity and
     # selects the same action as its support Move through the existing policy.
@@ -7925,7 +7926,7 @@ def _build_response_and_policies(
         item for item in nuclei
         if any(field in _TEXT_SOURCE_FIELDS for field in item.source_fields)
     )
-    current_feelings = tuple(
+    source_feelings = tuple(
         item for item in text_candidates
         if item.source_fields == ("memo",)
         and item.retention == "required"
@@ -7939,11 +7940,15 @@ def _build_response_and_policies(
         and item.semantic_frame.actor == "current_user"
         and item.semantic_frame.modality in {"fact", "feeling"}
         and item.semantic_frame.polarity in {"negative", "neutral"}
-        and item.semantic_frame.time_scope in {"present", "current_input", "continuing"}
+        and (item.semantic_frame.time_scope in {"present", "current_input", "continuing"}
+             or (item.semantic_frame.time_scope == "past"
+                 and "lexical:source_past_negative_feeling"
+                 in item.semantic_frame.attribute_codes))
         and set(item.semantic_frame.attribute_codes).intersection({
             "lexical:source_declarative_feeling_subject",
             "lexical:source_current_feeling_with_cognitive_background",
             "lexical:source_current_feeling_with_verbal_background",
+            "lexical:source_past_negative_feeling",
         })
         and _reception_opportunity_families_for_nucleus(
             item, safety_kind=safety_decision.safety_triage_kind,
@@ -7955,7 +7960,7 @@ def _build_response_and_policies(
         and safety_decision.safety_triage_kind == TRIAGE_SAFE_OBSERVATION
         and material_quality in {"grounded", "limited_grounding"}
         and len(text_candidates) == 2
-        and len(current_feelings) == 1
+        and len(source_feelings) == 1
         and selected_follow is not None
         and selected_follow.source_fields == ("memo_action",)
         and selected_follow.retention == "required"
@@ -7968,7 +7973,7 @@ def _build_response_and_policies(
             & {item.nucleus_id for item in text_candidates}
         )
     ):
-        selected_follow = current_feelings[0]
+        selected_follow = source_feelings[0]
     follow_ids = (selected_follow.nucleus_id,) if selected_follow is not None else primary_ids[:1]
 
     observable_nucleus_present = bool(nuclei)
@@ -9760,6 +9765,52 @@ def _final_stage1_action_change_source_fragment_projections(
         )
         for row in rows
     )
+
+
+def _source_past_negative_feeling_is_bound(fragment: str) -> bool:
+    """Prove a finite experiential head and its optional owner-local background.
+
+    These mental predicates cannot mean a dent or a physical descent. Keep
+    their complete background in the same nucleus. The te-form check below
+    only verifies its case frame; it does not project a new past action or
+    assert a causal relation between the two clauses.
+    """
+    match = re.fullmatch(
+        r"(?:(?P<background>[^、,。．.!！?？\s]+[てで])[、,])?"
+        r"(?:(?:(?:今日|昨日|きのう|今朝)(?:は|も)?|"
+        r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が|も))[、,]?){0,2}"
+        r"(?:少し(?:だけ)?|ちょっと|とても|強く)?"
+        r"(?:がっかり(?:した|しました)|落胆(?:した|しました)|"
+        r"失望(?:した|しました)|残念(?:だった|でした)|"
+        r"悔しかった(?:です)?)", fragment,
+    )
+    if match is None:
+        return False
+    background = match.group("background")
+    if background is None:
+        return True
+    # Require the outer accusative before changing the conjunctive ending.
+    # Otherwise a dative experiencer such as ``弟にとって`` would become
+    # ``弟にとった`` and lose its original non-self ownership boundary.
+    if re.fullmatch(r".+を[^を、,。．.!！?？\s]+[てで]", background) is None:
+        return False
+    # An implicit speaker in a quotative complement is not proved by a
+    # structural action ending. Such a background needs its own projection.
+    if re.search(
+        r"(?:と|って)(?:聞|聴|言|話|語|述べ|書|記録|思|考|感じ|判断|決め|伝|教|知ら)",
+        background,
+    ):
+        return False
+    # The same existing owner and structural-action proofs reject foreign
+    # subjects, possessors, reporting hosts and unbounded predicate objects.
+    perfective = background[:-1] + ("た" if background.endswith("て") else "だ")
+    return bool(
+        _bounded_structural_action_endpoint(perfective)
+        and _source_operator_owner_scope_is_bound(perfective)
+        and not re.search(r"(?:明日|あした|これから|今後)", background)
+    )
+
+
 def _final_stage1_typed_nuclei(
     plan: GroundedObservationPlan,
     evidence_spans: Sequence[EvidenceSpan],
@@ -9803,6 +9854,46 @@ def _final_stage1_typed_nuclei(
             else ()
         )
         if not projections:
+            # A lexical value in the background must not mask the sentence's
+            # finite negative feeling. Prove the original field, not a ledger
+            # tail, before graph selection; keep identity, evidence and degree.
+            frame = nucleus.semantic_frame
+            if (
+                span is not None and normalized_input is not None
+                and nucleus.kind in {"event", "state", "reaction", "value"}
+                and nucleus.source_fields == ("memo",) and span.source_field == "memo"
+                and frame.actor == "current_user"
+                and frame.time_scope in {"past", "present", "current_input"}
+                and frame.modality in {"fact", "feeling"}
+                and not set(frame.attribute_codes).intersection({
+                    "operator:negation", "operator:refusal", "operator:wish",
+                    "operator:uncertainty", "operator:constraint",
+                    "operator:performed_action", "operator:change", "operator:result",
+                    "semantic_role:limiting_unknown", "semantic_role:current_change",
+                    "semantic_role:explicit_result", "semantic_dependency:action_before_change",
+                })
+            ):
+                source = str(normalized_input.get("memo") or "")
+                start, end = span.start_index, span.end_index
+                raw = str(span.raw_text)
+                finite = raw.strip(" \u3000。．.")
+                if (
+                    0 <= start < end <= len(source)
+                    and _clean(source[start:end]) == _clean(raw)
+                    and not source[:start].strip()
+                    and re.fullmatch(r"\s*[。．.]?\s*", source[end:])
+                    and _top_level_text(source) == source
+                    and _source_past_negative_feeling_is_bound(finite)
+                ):
+                    nucleus = replace(nucleus, kind="reaction", semantic_frame=replace(
+                        frame, predicate_kind="feeling", polarity="negative", modality="feeling",
+                        time_scope="past", attribute_codes=tuple(_dedupe((
+                            *(code for code in frame.attribute_codes
+                              if not code.startswith("time_scope:")),
+                            "time_scope:past", "operator:feeling",
+                            "lexical:source_past_negative_feeling",
+                        ))),
+                    ))
             # A present mood is a feeling, not a positive change or a burden.
             # The old lexical signals do not recognize this subject/predicate
             # pair. Prove the whole source sentence here; a tail match cannot

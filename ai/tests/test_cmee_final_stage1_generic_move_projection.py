@@ -7068,6 +7068,146 @@ class CMEEFinalVerbalBackgroundFeelingSelectionTest(unittest.TestCase):
         self.assertEqual(legacy.response_plan.human_follow_target_ids, (action.nucleus_id,))
 
 
+class CMEEFinalPastNegativeFeelingSelectionTest(unittest.TestCase):
+    """A finite past feeling retains its background and the separate action."""
+
+    marker = "lexical:source_past_negative_feeling"
+    sources = (
+        "資料を置き忘れて、少しがっかりした。",
+        "楽しみにしていた講座を欠席して、落胆した。",
+        "昨日は残念だった。",
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = tuple(_full_surface_artifacts(
+            CMEEFinalIndependentFeelingSelectionTest.row(source),
+        ) for source in cls.sources)
+
+    def test_past_feeling_background_and_action_reach_selected_input_and_all_recoveries(self):
+        for source, a in zip(self.sources, self.artifacts):
+            with self.subTest(source=source):
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                moves = a.plan.response_plan.human_reception_plan.moves
+                self.assertEqual(tuple(m.reception_act for m in moves),
+                                 ("stay_with_current_burden", "honor_concrete_effort"))
+                self.assertEqual(tuple(m.move_role for m in moves), ("felt_response", "felt_response"))
+                index = {n.nucleus_id: n for n in a.plan.nuclei}
+                feeling = index[moves[0].target_nucleus_ids[0]]
+                self.assertIn(self.marker, feeling.semantic_frame.attribute_codes)
+                self.assertEqual((feeling.kind, feeling.semantic_frame.predicate_kind,
+                                  feeling.semantic_frame.polarity, feeling.semantic_frame.modality,
+                                  feeling.semantic_frame.time_scope),
+                                 ("reaction", "feeling", "negative", "feeling", "past"))
+                self.assertEqual(tuple(index[m.target_nucleus_ids[0]].source_fields for m in moves),
+                                 (("memo",), ("memo_action",)))
+                self.assertTrue(all(m.required and not m.support_nucleus_ids for m in moves))
+                self.assertTrue(all(r.retention != "required" and r.type == "uncertain_connection"
+                                    for r in a.plan.relations))
+                self.assertEqual(tuple((d.reception_act, d.target_nucleus_ids, d.support_nucleus_ids)
+                                       for d in a.selected_subjective_input.decisions),
+                                 tuple((m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids)
+                                       for m in moves))
+                follow = _reception_text(a.surface.text)
+                self.assertIn(source.rstrip("。"), follow)
+                self.assertLess(follow.index(source.rstrip("。")), follow.index("作業台を片づけた"))
+                for args, kwargs in a.author_arguments:
+                    self.assertIs(kwargs["selected_subjective_input"], a.selected_subjective_input)
+                for authored in a.authored:
+                    self.assertEqual(set(authored.realized_move_ids), {m.move_id for m in moves})
+                    sentence_plan = a.sentence_plan if authored.recovery_stage == "full" else (
+                        surface_owner.build_reception_recovery_sentence_plan(
+                            a.sentence_plan, a.plan, a.resolver, recovery_stage=authored.recovery_stage,
+                        )
+                    )
+                    surface = _recovery_surface(a, sentence_plan)
+                    self.assertIn(source.rstrip("。"), surface.text)
+                    self.assertIn("作業台を片づけた", surface.text)
+                    inverse = evaluate_grounded_surface_body_inverse(
+                        body=surface.text.encode("utf-8"), plan=a.plan,
+                        sentence_plan=sentence_plan, resolver=a.resolver,
+                        selected_subjective_input=a.selected_subjective_input,
+                    )
+                    self.assertTrue(inverse.passed, inverse.failure_codes)
+                inputs = _compile_inputs(CMEEFinalIndependentFeelingSelectionTest.row(source))
+                resolver = build_evidence_span_resolver(inputs.source.evidence_spans,
+                                                        current_input=inputs.source.normalized_current_input)
+                for quality in ("grounded", "limited_grounding"):
+                    semantic = _cmee_semantic_reception_plan(inputs.grounded_plan, resolver,
+                                                            material_quality=quality)
+                    self.assertEqual(semantic.moves, moves)
+
+    def test_inverse_rejects_missing_feeling_action_or_its_source_background(self):
+        a = self.artifacts[0]
+        for original in (self.sources[0].rstrip("。"), "作業台を片づけた", "資料を置き忘れて、"):
+            with self.subTest(original=original):
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=_tamper_reception(a.surface.text, original, "").encode("utf-8"),
+                    plan=a.plan, sentence_plan=a.sentence_plan, resolver=a.resolver,
+                    selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(inverse.passed, inverse.failure_codes)
+
+    def test_original_field_owner_finite_head_and_modality_are_required(self):
+        base = self.sources[0]
+        sources = (
+            "友人が" + base, "私の友人が" + base, "友人の" + base,
+            base.replace("少し", "友人は少し"),
+            base.replace("置き忘れて", "置き忘れたと聞いて"),
+            base.replace("置き忘れて", "置き忘れたと友人が話して"),
+            base.replace("がっかりした", "がっかりしなかった"),
+            base.replace("がっかりした", "がっかりしたかもしれない"),
+            base.replace("がっかりした", "がっかりしたと思う"),
+            base.replace("がっかりした", "がっかりしたなら休む"),
+            base.replace("がっかりした", "がっかりしたくない"),
+            base.rstrip("。") + "？", base.rstrip("。") + "！",
+            "「" + base.rstrip("。") + "」", base + "と友人が話した。",
+            "友人は。" + base, base + "別の記録も読んだ。",
+            "弟にとって、残念だった。", "友人には、残念だった。",
+            "明日は残念だった。", "不安が残っていた。", "昨日は嬉しかった。",
+            "板を叩いて、へこんだ。", "穴に落ちこんだ。",
+        )
+        for source in sources:
+            with self.subTest(source=source):
+                frozen = freeze_text_source(_request_from_row(
+                    CMEEFinalIndependentFeelingSelectionTest.row(source),
+                ))
+                plan = build_final_stage1_grounded_observation_plan(
+                    frozen.normalized_current_input, evidence_spans=frozen.evidence_spans,
+                )
+                self.assertTrue(all(self.marker not in n.semantic_frame.attribute_codes for n in plan.nuclei))
+
+    def test_existing_relation_action_and_public_route_boundaries_remain(self):
+        from emlis_ai_safety_triage import build_emlis_safety_triage_decision
+        inputs = _compile_inputs(CMEEFinalIndependentFeelingSelectionTest.row(self.sources[0]))
+        plan = inputs.grounded_plan
+        feeling = next(n for n in plan.nuclei if n.source_fields == ("memo",))
+        action = next(n for n in plan.nuclei if n.source_fields == ("memo_action",))
+        relation = replace(plan.relations[0], type="contrast", retention="required",
+                           grounding_kind="user_stated_relation")
+        for nuclei, relations in (
+            (plan.nuclei, (relation,)),
+            ((*plan.nuclei, replace(feeling, nucleus_id="public-third-theme", retention="optional")), plan.relations),
+            (tuple(replace(n, retention="optional") if n == feeling else n for n in plan.nuclei), plan.relations),
+        ):
+            response, _coverage, _surface, _safety = observation_plan_owner._build_response_and_policies(
+                nuclei=nuclei, relations=relations,
+                safety_decision=build_emlis_safety_triage_decision(current_input=inputs.source.normalized_current_input),
+                complexity=plan.input_profile.semantic_complexity,
+                material_quality=plan.input_profile.material_quality,
+                include_reception_relation_support=True, final_source_fidelity=True,
+            )
+            self.assertEqual(response.human_follow_target_ids, (action.nucleus_id,))
+        for action_text in ("作業台を片づけるつもり。", "作業台を片づけてもらった。", "作業台を片づけなかった。"):
+            other = _compile_inputs(CMEEFinalIndependentFeelingSelectionTest.row(self.sources[0], action_text))
+            self.assertNotEqual(tuple(m.reception_act for m in other.grounded_plan.response_plan.human_reception_plan.moves),
+                                ("stay_with_current_burden", "honor_concrete_effort"))
+        legacy = build_grounded_observation_plan(inputs.source.normalized_current_input,
+                                                evidence_spans=inputs.source.evidence_spans)
+        self.assertEqual(legacy.response_plan.human_follow_target_ids, (action.nucleus_id,))
+
+
 class CMEEFinalBackgroundFeelingSelectionTest(unittest.TestCase):
     """A complete cognitive background stays with the independently felt target."""
 
