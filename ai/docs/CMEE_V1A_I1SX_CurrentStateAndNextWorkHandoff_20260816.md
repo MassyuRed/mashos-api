@@ -8,12 +8,12 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. candidate76の最新checkpoint・検証状態・残件を末尾で確認する。
+3. candidate77の最新checkpoint・検証状態・残件を末尾で確認する。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-09最新（candidate76）：既存future軸を原文末尾の非過去動詞＋つもりが担う場合、重複する未来副詞句をsole HRで省いた。outer UNAVAILABLEの診断本文1件を改善、他99件の全recordと全100件の入力・観察・意味核・selected input・選択plan・可否理由は同一。Move／expression／binding各133、direct100、73 GENERATED／27 UNAVAILABLEを維持。必須378件の単一full runは375 PASS／継承3 FAIL、前375件の全成否と後続診断同一、新規3件成功。rootが全100件を全文確認しNOT_CLEAR。同family二行動の選択数拡張は限定例外の範囲外として未実装、長い復唱・定型末尾と感情／共有関係の残件を継続。System Context未使用・原典直接確認。再開点は末尾candidate76。
+2026-09-09最新（candidate77 source checkpoint）：既存の後続felt_response Moveで、原文が証明する独立した予定も具体参照を保持するようOP内の既存参照条件を補正した。意味核・選択・Move責務は変更せず、単一予定の既存方針と未証明／願い／不確かなfutureの除外を維持。関連13検査PASS。最終固定sourceの必須回帰・canonical100・root全文確認はこのcheckpoint時点では未完了。前candidate76の確定結果を新sourceの結果へ流用しない。System Context未使用・原典直接確認、PR37不変更、NOT_CLEAR。再開点は末尾candidate77。
 
 ## 1. GitHub anchors
 
@@ -6862,3 +6862,12 @@ Mash承認済み運用を継承する。System Contextは任意で今回は未�
 - 全100件生成・全文確認と全378検査のsourceはlocal `9a03648805eed4283528cfd5db427f5f3155d482`／remote `6eec1da8520b9ab9fd3604c4e2f5f4832e46b16e`、tree `e5a0ef550a4c347528ba3ef80601e66457309e7a`同一。後続変更は既存引継ぎ3資料の結果反映だけ。商品実装変更後へ今回の結果を流用しない。
 
 同familyの独立二行動が一方へ減る原因は、既存OPのfamily代表化と選択辞書にある。ただし02 §36.2の選択義務保護に対する9月8日の限定例外は、原文で証明した感情／材料と既存行動の保持であり、action-onlyの選択数拡張を含まない。今回この変更は実装せず、範囲拡張が必要な残件として記録した。次は現在選ばれた意味を保った文章改善を継続し、未保持の感情・共有関係やother_explicit分類・help-seeking binding gapは別原因として追う。既存承認の同じ未完unit、disabled／Draft／open／unmerged、candidate_ready=false、automatic_progression=false、NOT_CLEARを継続。System Context未使用・原典直接確認、PR37不変更。Product Read PASS・採用・ready・merge・本番・問い／Layer3は未成立。9月12日の本文確認準備の未達リスクを保持する。
+
+
+### 2026-09-09 source checkpoint — candidate77 後続の予定の具体参照
+
+既存OPの後続Move参照処理で、既に選ばれた独立行動の具体参照を、原文で証明した実行済みだけでなく原文で証明した予定にも保持する。futureかpresent_to_future、modality=intention、next_intentionあり、performed_actionなしを既存helperで確認し、元の単一核・単一原field span・本人・memo_action・非重複・非共有関係の条件を維持する。Move数や選択義務は拡張しない。既存HRの原文を保持するfuture名詞化と全回復／独立inverseを使う。単一予定、未証明のfuture、wish／uncertain、他者、support／optional、共有文脈には適用を広げない。
+
+関連13検査PASS。新規3検査は公開合成例で、独立する二義務と全回復authorへの意味保持、時刻・数量・行為者・実行状態・原文欠落／重複の逆検証拒否、参照変更の証明と独立性を確認した。保護済み期待値は不変更。runnerは既存current13定数のみ同期。新owner／schema／経路なし、STRUCTURE_MAP_DELTA_NONE。
+
+このsource checkpoint時点で最終回帰と同じcanonical100の再生成・root全文確認は未完了。完了後は既存引継ぎへ実結果を追記する。長い原文再掲・定型末尾と感情／共有関係、action-only二行動の選択数拡張の残件を継続する。Draft／open／unmerged、disabled、candidate_ready=false、automatic_progression=false、NOT_CLEAR、System Context未使用・PR37不変更。

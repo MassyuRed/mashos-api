@@ -7412,8 +7412,9 @@ def build_grounded_human_reception_plan(
             reference_mode = "short_anchor_if_ambiguous"
             moves = (replace(moves[0], reference_mode=reference_mode),)
     # A later Move can own an independent required relation or a separately
-    # recorded performed action. Preserve its concrete referent instead of
-    # making it anaphoric solely by position. This changes only the existing
+    # recorded action with proven performance or future intention. Preserve
+    # its concrete referent instead of making it anaphoric solely by position.
+    # This changes only the existing
     # reference policy before sealing; selection, duties and recovery remain.
     if (
         final_source_fidelity
@@ -7466,7 +7467,11 @@ def build_grounded_human_reception_plan(
                 and target.source_fields == ("memo_action",)
                 and len(target.source_span_ids) == 1
                 and target.semantic_frame.actor == "current_user"
-                and source_proven_performed_action_status(target)
+                and (
+                    source_proven_performed_action_status(target)
+                    or source_proven_future_action_status(target)
+                    and target.semantic_frame.modality == "intention"
+                )
                 and target_id not in other_context_ids
                 and not set(target.source_span_ids) & {
                     span_id

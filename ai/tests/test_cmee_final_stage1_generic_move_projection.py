@@ -8143,3 +8143,130 @@ class CMEEFinalFutureIntentionTimeOwnershipTest(unittest.TestCase):
         self.assertEqual(realize(anaphoric, "資料を読むつもり"), ("ANTECEDENT", "ANTECEDENT", "", ""))
         completed = SimpleNamespace(time_scope="future", aspect="completed", reference_mode="EXPLICIT")
         self.assertEqual(realize(completed, "資料を読むつもり"), ("SOURCE_CLAUSE", "ADJUNCT", "", "すでに、"))
+
+
+class CMEEFinalSeparateFutureActionReferenceTest(unittest.TestCase):
+    """An independently selected next action keeps its concrete source."""
+
+    sources = (
+        "明日の朝は資料を三枚だけ読み直す。",
+        "返事を送る前に文章を一晩置くことにした。",
+    )
+
+    @staticmethod
+    def row(action):
+        return {"case_id": "public-separate-future-reference", "input": {
+            "thought_text": "模型が完成してうれしかった。でも、説明書どおりに作れたのかは分からない。",
+            "action_text": action, "categories": ["趣味", "学習"],
+            "emotions": [{"type": "喜び", "strength": "medium"}, {"type": "不安", "strength": "weak"}],
+        }}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = tuple(_full_surface_artifacts(cls.row(source)) for source in cls.sources)
+
+    def test_independent_future_source_and_two_duties_reach_all_recovery_authors(self):
+        for source, a in zip(self.sources, self.artifacts):
+            with self.subTest(source=source):
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                rp = a.plan.response_plan.human_reception_plan
+                first, future = rp.moves
+                self.assertTrue(all(m.required for m in rp.moves))
+                self.assertEqual((future.reception_act, future.move_role, future.reference_mode),
+                                 ("honor_concrete_effort", "felt_response", "short_anchor_if_ambiguous"))
+                self.assertEqual(future.support_nucleus_ids, ())
+                target = next(n for n in a.plan.nuclei if n.nucleus_id == future.target_nucleus_ids[0])
+                self.assertEqual((target.semantic_frame.modality, target.semantic_frame.time_scope),
+                                 ("intention", "future"))
+                self.assertTrue(observation_plan_owner.source_proven_future_action_status(target))
+                self.assertFalse(observation_plan_owner.source_proven_performed_action_status(target))
+                follow = _reception_text(a.surface.text)
+                self.assertEqual(follow.count(source.rstrip("。")), 1)
+                self.assertLess(follow.index("分からない"), follow.index(source.rstrip("。")))
+                self.assertNotIn("実際の行動", follow)
+                self.assertTrue(all(kwargs["selected_subjective_input"] is a.selected_subjective_input
+                                    for _args, kwargs in a.author_arguments))
+                for authored in a.authored:
+                    self.assertEqual(set(authored.realized_move_ids), {m.move_id for m in rp.moves})
+                    sentence_plan = a.sentence_plan if authored.recovery_stage == "full" else (
+                        surface_owner.build_reception_recovery_sentence_plan(
+                            a.sentence_plan, a.plan, a.resolver, recovery_stage=authored.recovery_stage,
+                        )
+                    )
+                    body = _recovery_surface(a, sentence_plan).text
+                    self.assertTrue(evaluate_grounded_surface_body_inverse(
+                        body=body.encode("utf-8"), plan=a.plan, sentence_plan=sentence_plan,
+                        resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                    ).passed)
+                for stage in ("integrated", "hedged", "minimal_grounded"):
+                    self.assertEqual(reception_owner.reception_effective_move_reference_mode(rp, future, stage),
+                                     "anaphoric_first")
+
+    def test_inverse_rejects_lost_future_source_performance_and_quantity_changes(self):
+        source, a = self.sources[0].rstrip("。"), self.artifacts[0]
+        for wrong in ("これからの行動", source.replace("明日の朝", "昨日の朝"),
+                      source.replace("三枚だけ", "全部"), source.replace("読み直す", "読み直した"),
+                      source.replace("読み直す", "読み直さない"), "同僚が" + source,
+                      "「" + source + "」", source + "ことと" + source):
+            with self.subTest(wrong=wrong):
+                body = _tamper_reception(a.surface.text, source, wrong)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode("utf-8"), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan, surface_result=replace(a.surface, text=body),
+                    resolver=a.resolver, require_body_inverse=True,
+                    selected_subjective_input=a.selected_subjective_input,
+                ).passed)
+
+    def test_future_reference_requires_proven_intention_and_independent_context(self):
+        a = self.artifacts[0]
+        p, response = a.plan, a.plan.response_plan
+        rp = response.human_reception_plan
+        first, future = rp.moves
+        target = next(n for n in p.nuclei if n.nucleus_id == future.target_nucleus_ids[0])
+        other = next(n for n in p.nuclei if n.nucleus_id == first.target_nucleus_ids[0])
+        original_moves = (first, replace(future, reference_mode="anaphoric_first"))
+        kwargs = dict(required=True, human_follow_target_ids=response.human_follow_target_ids,
+                      primary_nucleus_ids=response.primary_nucleus_ids,
+                      supporting_nucleus_ids=response.supporting_nucleus_ids,
+                      required_nucleus_ids=response.required_nucleus_ids,
+                      fact_boundary_nucleus_ids=response.fact_boundary_nucleus_ids,
+                      nuclei=p.nuclei, relations=p.relations, safety_kind=p.safety_policy.safety_kind,
+                      material_quality="limited_grounding", semantic_complexity=p.input_profile.semantic_complexity,
+                      final_source_fidelity=True)
+        def changed_target(**changes):
+            new = replace(target, **changes)
+            return tuple(new if n.nucleus_id == target.nucleus_id else n for n in p.nuclei)
+        variants = [
+            {"final_source_fidelity": False}, {"material_quality": "short_state_sufficient"},
+            {"semantic_complexity": "single"}, {"nuclei": changed_target(retention="should")},
+            {"nuclei": changed_target(source_fields=("memo",))},
+            {"nuclei": changed_target(source_span_ids=other.source_span_ids)},
+            {"nuclei": changed_target(source_span_ids=(*target.source_span_ids, *other.source_span_ids))},
+        ]
+        for change in ({"actor": "other_person"}, {"modality": "wish"}, {"modality": "uncertain"},
+                       {"modality": "fact"}, {"time_scope": "past"},
+                       {"attribute_codes": tuple(c for c in target.semantic_frame.attribute_codes
+                                                 if c != "semantic_role:next_intention")},
+                       {"attribute_codes": (*target.semantic_frame.attribute_codes, "operator:performed_action")}):
+            variants.append({"nuclei": changed_target(semantic_frame=replace(target.semantic_frame, **change))})
+        relation = replace(p.relations[0], from_nucleus_id=other.nucleus_id,
+                           to_nucleus_id=target.nucleus_id, retention="required")
+        variants.append({"relations": (*p.relations, relation)})
+        build = observation_plan_owner.build_grounded_human_reception_plan
+        for changes in variants:
+            with self.subTest(changes=changes), patch.object(
+                observation_plan_owner, "_build_reception_depth_policy_and_moves",
+                return_value=(rp.depth_policy, original_moves),
+            ):
+                self.assertEqual(build(**(kwargs | changes)).moves[1], original_moves[1])
+        for changed in (replace(original_moves[1], required=False),
+                        replace(original_moves[1], support_nucleus_ids=first.target_nucleus_ids)):
+            with self.subTest(move=changed), patch.object(
+                observation_plan_owner, "_build_reception_depth_policy_and_moves",
+                return_value=(rp.depth_policy, (first, changed)),
+            ):
+                self.assertEqual(build(**kwargs).moves[1], changed)
