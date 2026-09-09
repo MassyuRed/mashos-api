@@ -2278,6 +2278,10 @@ def evaluate_grounded_surface_body_inverse(
                                 move, plan, nucleus_index, resolver,
                             )
                         )
+                        expression_words_nominal_required = bool(
+                            expression_nominal_required
+                            and expected_referent.text.endswith("という言葉")
+                        )
                         nominal_target_required = bool(
                             final_stage1_plan
                             and effective_reference_mode != "anaphoric_first"
@@ -2299,9 +2303,9 @@ def evaluate_grounded_surface_body_inverse(
                                 end = start + len(nominal_bytes)
                                 nominal_target_visible = any(
                                     marker.section == "reception"
-                                    and marker.marker_kind == ("reception" if expression_nominal_required else "semantic")
+                                    and marker.marker_kind == ("reception" if expression_words_nominal_required else "semantic")
                                     and marker.marker_code == (
-                                        "target_words" if expression_nominal_required else
+                                        "target_words" if expression_words_nominal_required else
                                         ("negative_carrier_nominal"
                                          if expected_referent.text.endswith("なさ")
                                          else "adnominal_subject") if burden_nominal_required

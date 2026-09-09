@@ -2368,12 +2368,12 @@ def source_grounded_current_expression_nominal(
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
 ) -> str:
-    """Shorten the existing words referent without asserting its content.
+    """Bind the complete expression as the selected reception's object.
 
-    The whole source span and quotative stay explicit. A span cannot prove
-    the original field's declarative boundary: Ledger removes punctuation.
-    Keep a words reference, not a fact nominal, and preserve the selected
-    act, scope and axes. Anaphoric callers retain their existing boundary.
+    A span alone cannot prove a declarative field: Ledger drops punctuation.
+    Keep its quotative unless an existing final witness has already proved
+    a self-owned feeling over the whole field. That feeling's plain clause
+    can adjoin こと unchanged. Preserve act, scope, axes and anaphoric policy.
     """
     if (plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
         or move not in plan.response_plan.human_reception_plan.moves
@@ -2406,6 +2406,30 @@ def source_grounded_current_expression_nominal(
         or not (_SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragment)
                 or _SOURCE_GROUNDED_NONPAST_MORPHOLOGY_RE.search(fragment))):
         return ""
+    # A final source witness has already bound the whole declarative field
+    # and its experiential owner. Its plain finite clause can govern こと
+    # directly, without turning the selected feeling back into a words label.
+    # Keep every source character and the original tense; polite terminal
+    # forms and unproved expressions retain the existing quotative referent.
+    codes = set(nucleus.semantic_frame.attribute_codes)
+    witnessed_feeling = bool(
+        profile.nucleus_kind == "reaction" and profile.modality == "feeling"
+        and nucleus.semantic_frame.polarity == "negative"
+        and (
+            profile.predicate_kind == "feeling"
+            and nucleus.semantic_frame.time_scope == "past"
+            and "lexical:source_past_negative_feeling" in codes
+            or profile.predicate_kind in {"feeling", "reaction"}
+            and nucleus.semantic_frame.time_scope in {"present", "current_input", "continuing"}
+            and bool(codes.intersection({
+                "lexical:source_current_feeling_with_verbal_background",
+                "lexical:source_current_feeling_with_cognitive_background",
+            }))
+        )
+    )
+    if (witnessed_feeling and re.search(r"(?:た|る|ない)$", fragment)
+        and not fragment.endswith(("ます", "です", "ました", "でした"))):
+        return fragment + "こと"
     return fragment + "という言葉"
 
 
@@ -7522,7 +7546,13 @@ def _source_grounded_target_np(
             and move.reception_act == "stay_with_current_burden"
             and realization.target_slot_count == 1
             and realization.quantity in {"not_applicable", "source_bounded", "unknown"}
-            and referent_text == f"{meaning_fragment}という言葉"
+            and (
+                referent_text == f"{meaning_fragment}という言葉"
+                or profile.nucleus_kind == "reaction"
+                and profile.predicate_kind in {"feeling", "reaction"}
+                and profile.modality == "feeling"
+                and referent_text == f"{meaning_fragment}こと"
+            )
         )
         if not (action_nominal or wish_nominal or expression_nominal) and referent_text.startswith(("その", "それらの")):
             raise GroundedHumanReceptionSurfaceError(

@@ -8,12 +8,12 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. candidate77の最新checkpoint・検証状態・残件を末尾で確認する。
+3. candidate78の最新checkpoint・検証状態・残件を末尾で確認する。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-09最新（candidate77）：既に選ばれた独立した後続の予定が、位置だけを理由に抽象指示へ縮む参照処理を補正した。canonical100の5件で予定の対象・時刻・数量・順序を含む原文全体が受取へ戻り、他95件の全recordは同一。全100の入力・観察・意味核・選択意味・133義務・可否理由を保持。参照modeとそれを含むselected inputの導出refだけが対応して変わる。direct100、73 GENERATED／27 UNAVAILABLE。必須381件の単一full runは378 PASS／継承3 FAIL、前378件の全成否と後続診断同一、新規3件成功。rootが全100件を全文確認しNOT_CLEAR。長い復唱・定型末尾と中心感情／共有関係等の残件を継続。System Context未使用・原典直接確認、PR37不変更。再開点は末尾candidate77。
+2026-09-09最新（candidate78 source checkpoint）：既存OPが原field全体の本人の有限感情を証明済みの場合に限り、HRで「という言葉」を原文＋「こと」の目的語へ接続する。意味核・選択・Moveを変更せず、Gateの既存finite_clause_nominal照合へ厳密に接続。未証明・不確定・丁寧語の引用境界を保持。関連20件の初回は19 PASS／新規fixture誤用1 FAIL、その新規3件はfinal plan fixture修正後全PASS。最終固定sourceの必須回帰とcanonical100生成・root全文確認は未実施。NOT_CLEAR、Draft/open/unmerged、System Context未使用・原典直接確認、PR37不変更。再開点は末尾candidate78。
 
 ## 1. GitHub anchors
 
@@ -6884,3 +6884,12 @@ Mash承認済み運用を継承する。System Contextは任意で今回は未�
 - 全100件生成・全文確認と全381検査のsourceはlocal `32cf3a24d8e5fce86d51ac2d8064849cc06846bd`／remote `4c437ac2fc01761f766eb354dabe288f8cbf869c`、tree `76f81b0c51886ea54ea89337e94e9162cc0c97fc`同一。後続変更は既存引継ぎ3資料の結果反映だけ。商品実装変更後へ今回の結果を流用しない。
 
 次は現在選ばれた意味を保つ文章改善を継続する。中心感情・共有関係やother_explicit分類・help-seeking binding gapは原因を分けて追う。同family二行動の代表化・選択数拡張は、9月8日の感情／材料と既存行動を保持する限定例外に含まれず、引き続き未実装。既存承認の同じ未完unit、disabled／Draft／open／unmerged、candidate_ready=false、automatic_progression=false、NOT_CLEARを継続。System Context未使用・原典直接確認、PR37不変更。Product Read PASS・採用・ready・merge・本番・問い／Layer3は未成立。9月12日の本文確認準備の未達リスクを保持する。
+
+
+### 2026-09-09 candidate78 source checkpoint — 証明済み感情の目的語文法
+
+既存OPの3 witnessが原field全体・宣言境界・本人の感情を証明済みで、既存stay_with_current_burdenの条件を満たす場合だけ、HRの原文保持名詞化を「という言葉」から「こと」へ接続する。原文の背景・程度・時制・否定を変えず、未証明expression、疑問・引用・推量、丁寧語末尾には広げない。Gateは独立に得た期待referentの全文・一意性・終端を既存finite_clause_nominal markerへ照合し、words形のみにtarget_wordsを要求する。観察・意味核・選択入力・Move義務・Gateの意味保持基準は変えない。02 §36.2／§36.3の既存HRと独立Gateによる限定的文法修復。新owner／schema／経路なし、STRUCTURE_MAP_DELTA_NONE。
+
+初期試作ではGate文法未接続によりminimal回復へ退いた事実を保存し、通常のfull出力を回復した。関連20検査の初回19 PASS／新規1 FAILは、新規検査がfinal投影前planを使ったfixture誤用による。入力・期待値を変更せず実際のfinal planへ修正し、新規3検査全PASS。旧17検査は同じ実装で成功済み。原文・程度・時制・否定・主体・格・受取義務・行動欠落等のinverse拒否、未証明と丁寧語の境界を検査した。最終固定sourceによる必須回帰・canonical100とroot全文確認は次の検証であり、現時点で完了とは記録しない。runnerは既存current13定数のみ同期し、歴史receipt・期待値とexact18／exact9を維持。固定環境を再構築せず利用。
+
+NOT_CLEAR・disabled・Draft/open/unmerged・candidate_ready=false・automatic_progression=falseを維持。長い復唱・定型末尾と中心感情／共有関係等は未解決。同family二行動の選択拡張は未実装。System Context未使用、原典直接確認、PR37不変更。

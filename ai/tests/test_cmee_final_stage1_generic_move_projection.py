@@ -8270,3 +8270,117 @@ class CMEEFinalSeparateFutureActionReferenceTest(unittest.TestCase):
                 return_value=(rp.depth_policy, (first, changed)),
             ):
                 self.assertEqual(build(**kwargs).moves[1], changed)
+
+
+class CMEEFinalWitnessedFeelingClauseNominalTest(unittest.TestCase):
+    """A proven feeling clause is the complete object, without a words label."""
+
+    sources = (
+        "資料を置き忘れて、少しがっかりした。",
+        "発言を途中で止められて、悲しさと不安が残っている。",
+        "集中して読んだのに内容が頭に入らなくて、焦っている。",
+    )
+    markers = {
+        "lexical:source_past_negative_feeling",
+        "lexical:source_current_feeling_with_verbal_background",
+        "lexical:source_current_feeling_with_cognitive_background",
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = tuple(_full_surface_artifacts(
+            CMEEFinalIndependentFeelingSelectionTest.row(source),
+        ) for source in cls.sources)
+
+    def test_whole_feeling_clause_and_both_selected_duties_survive_recovery(self):
+        for source, a in zip(self.sources, self.artifacts):
+            with self.subTest(source=source):
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                self.assertEqual(a.sentence_plan.recovery_stage, "full")
+                moves = a.plan.response_plan.human_reception_plan.moves
+                self.assertEqual(tuple(m.reception_act for m in moves),
+                                 ("stay_with_current_burden", "honor_concrete_effort"))
+                index = {n.nucleus_id:n for n in a.plan.nuclei}
+                target = index[moves[0].target_nucleus_ids[0]]
+                self.assertEqual((target.kind, target.semantic_frame.modality), ("reaction", "feeling"))
+                self.assertEqual(len(self.markers.intersection(target.semantic_frame.attribute_codes)), 1)
+                nominal = source.rstrip("。") + "こと"
+                follow = _reception_text(a.surface.text)
+                self.assertIn(nominal + "を小さくせずに受け止めています", follow)
+                self.assertNotIn(source.rstrip("。") + "という言葉", follow)
+                self.assertEqual(follow.count(source.rstrip("。")), 1)
+                self.assertLess(follow.index(nominal), follow.index("作業台を片づけた"))
+                self.assertTrue(all(kw["selected_subjective_input"] is a.selected_subjective_input
+                                    for _args,kw in a.author_arguments))
+                for authored in a.authored:
+                    self.assertEqual(set(authored.realized_move_ids), {m.move_id for m in moves})
+                    sp = a.sentence_plan if authored.recovery_stage == "full" else (
+                        surface_owner.build_reception_recovery_sentence_plan(
+                            a.sentence_plan, a.plan, a.resolver, recovery_stage=authored.recovery_stage,
+                        ))
+                    actual = _recovery_surface(a, sp)
+                    self.assertIn(source.rstrip("。"), actual.text)
+                    self.assertIn("作業台を片づけた", actual.text)
+                    inverse = evaluate_grounded_surface_body_inverse(
+                        body=actual.text.encode(), plan=a.plan, sentence_plan=sp,
+                        resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                    )
+                    self.assertTrue(inverse.passed, inverse.failure_codes)
+
+    def test_inverse_rejects_source_loss_wrong_time_owner_case_and_old_wrapper(self):
+        source = self.sources[0].rstrip("。")
+        a = self.artifacts[0]
+        nominal = source + "こと"
+        for replacement in (
+            "がっかりしたこと", source.replace("少し", "とても") + "こと",
+            source.replace("がっかりした", "がっかりする") + "こと",
+            source.replace("がっかりした", "がっかりしなかった") + "こと",
+            "友人が" + nominal, "「" + nominal + "」", nominal + nominal,
+            source + "という言葉", source, "別のこと",
+        ):
+            with self.subTest(replacement=replacement):
+                body = _tamper_reception(a.surface.text, nominal, replacement)
+                inverse = evaluate_grounded_surface_body_inverse(
+                    body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+                )
+                self.assertFalse(inverse.passed, inverse.failure_codes)
+        for original, replacement in ((nominal+"を", nominal+"に"),
+                                      ("小さくせずに", ""), ("作業台を片づけた", "")):
+            body = _tamper_reception(a.surface.text, original, replacement)
+            self.assertNotEqual(body, a.surface.text)
+            self.assertFalse(evaluate_grounded_surface_body_inverse(
+                body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
+                resolver=a.resolver, selected_subjective_input=a.selected_subjective_input,
+            ).passed)
+
+    def test_unproved_profiles_and_polite_endings_keep_the_quotative_boundary(self):
+        a = self.artifacts[0]
+        move = a.plan.response_plan.human_reception_plan.moves[0]
+        target = next(n for n in a.plan.nuclei if n.nucleus_id in move.target_nucleus_ids)
+        derive = reception_owner.source_grounded_current_expression_nominal
+        variants = (
+            replace(target, kind="event"),
+            replace(target, semantic_frame=replace(target.semantic_frame, modality="uncertain")),
+            replace(target, semantic_frame=replace(target.semantic_frame, modality="fact")),
+            replace(target, semantic_frame=replace(target.semantic_frame, polarity="positive")),
+            replace(target, semantic_frame=replace(target.semantic_frame, time_scope="future")),
+            replace(target, semantic_frame=replace(target.semantic_frame, attribute_codes=tuple(
+                c for c in target.semantic_frame.attribute_codes if c not in self.markers))),
+        )
+        for changed in variants:
+            plan = replace(a.plan, nuclei=tuple(changed if n == target else n for n in a.plan.nuclei))
+            index = {n.nucleus_id:n for n in plan.nuclei}
+            self.assertNotEqual(derive(move, plan, index, a.resolver), self.sources[0].rstrip("。")+"こと")
+        for source in ("資料を置き忘れて、少しがっかりしました。",
+                       "昨日は残念でした。", "昨日は悔しかったです。",
+                       "提案を急に退けられて、怒りが残っています。"):
+            actual = _full_surface_artifacts(CMEEFinalIndependentFeelingSelectionTest.row(source))
+            self.assertTrue(actual.gate.passed, actual.gate.rejection_reasons)
+            self.assertEqual(actual.sentence_plan.recovery_stage, "full")
+            plan, resolver = actual.plan, actual.resolver
+            move = next(m for m in plan.response_plan.human_reception_plan.moves
+                        if m.reception_act == "stay_with_current_burden")
+            index = {n.nucleus_id:n for n in plan.nuclei}
+            self.assertEqual(derive(move, plan, index, resolver), source.rstrip("。")+"という言葉")
