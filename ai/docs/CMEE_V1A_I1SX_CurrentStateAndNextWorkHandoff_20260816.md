@@ -13,7 +13,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-09最新（candidate78）：既存OPの証明済みの本人の有限感情に限り、HRの原文＋「という言葉」を原文＋「こと」の目的語へ接続し、Gateの既存finite_clause_nominal照合へ厳密に接続した。canonical100の3件の受取だけが変わり、他97件の全recordと全100の入力・観察・意味核・選択入力・受取plan・可否理由は同一。133義務、direct100、73 GENERATED／27 UNAVAILABLEを維持。必須384件の単一full runは381 PASS／継承3 FAIL、前381件の全成否と後続診断同一、新規3件成功。rootが全100件を全文確認しNOT_CLEAR。長い復唱・定型末尾と中心感情／共有関係等の残件を継続。System Context未使用・原典直接確認、PR37不変更。再開点は末尾candidate78。
+2026-09-09最新（candidate79 source checkpoint）：背景に続く二つの有限状態を原文の材料として保持し、別fieldの完了行動に埋め込まれたwishの近接conflict辺を既存OP内で限定整流。型・原文と既存行動の保持を対象検査で確認。最終固定sourceの必須回帰・canonical100・root全文確認はこれから実施し、現時点で最終完了とは記録しない。NOT_CLEAR・Draft/open/unmerged、System Context未使用、PR37不変更。再開点は末尾candidate79。
 
 ## 1. GitHub anchors
 
@@ -6907,3 +6907,12 @@ NOT_CLEAR・disabled・Draft/open/unmerged・candidate_ready=false・automatic_p
 - 全100件生成・全文確認と全384検査のsourceはlocal `dbf655d56a01fd4224339cd0c4a06f7d23b91acb`／remote `a435ad8868393f90633f233932298c0203dca08a`、tree `33397a038ca59ffeca4013bb6d37940e4f41c358`同一。後続変更は既存引継ぎ3資料の結果反映だけ。商品実装変更後へ今回の結果を流用しない。
 
 次は現在選ばれた意味を保つ文章改善を継続する。中心感情・共有関係やother_explicit分類・help-seeking binding gapは原因を分けて追う。同family二行動の代表化・選択数拡張は、9月8日の感情／材料と既存行動を保持する限定例外に含まれず、引き続き未実装。既存承認の同じ未完unit、disabled／Draft／open／unmerged、candidate_ready=false、automatic_progression=false、NOT_CLEARを継続。System Context未使用・原典直接確認、PR37不変更。Product Read PASS・採用・ready・merge・本番・問い／Layer3は未成立。9月12日の本文確認準備の未達リスクを保持する。
+
+
+### 2026-09-09 candidate79 source checkpoint — 並列する有限状態と既存行動の保持
+
+既存OPのwholefield証明に、有限の背景と二つの状態節を原文のまま保持する限定文法を接続した。背景・程度・時制・二つの節は改変せず、既存event/state・factを新たな感情型へ置き換えない。continuingは同じevent/state・factの有限素材だけに限り、過去感情やscalarの再分類へ広げない。既存relation normalizerでは、別fieldの過去の完了行動に埋め込まれたwishと、証明済みneutral素材を結ぶ単一のconflict近接由来辺だけをuncertain_connectionへ整流し、参照・端点を保持する。生成元・arc空・両端span一致・既存performed証明を要求し、明示関係や未実行意図へ広げない。選択条件・HR・Gateは不変更。02 §36.2／§36.3の既存OP owner内の限定例外で、新owner／schema／経路なし、STRUCTURE_MAP_DELTA_NONE。
+
+初期関連8件は6 PASS／新規2 FAILでrawを保存した。一つはcontinuing素材が未選択、もう一つは新規tamper検査が「少し」を接続助詞で誤分割したものだった。continuingの限定接続と新規検査の分割を修正し、元nucleusとの完全一致を保ったまま新規検査のstate固定仮定も訂正した。初期probeの行動のみの本文も保存し、近接conflict整流後に背景と二状態・行動の両義務をfull出力で保持した。修正後の関連9件は全PASS。原文欠落・時制・否定・主体・引用・重複のinverse拒否と、関係整流の一回目／冪等性／明示由来除外を検査した。既存テスト・入力・歴史期待値は不変更。
+
+runnerは既存current13定数だけ同期し、exact18／exact9と非current ASTを保持。最終固定sourceの必須回帰・canonical100とroot全文確認は次の検証であり、現時点で完了とは記録しない。固定環境を再構築せず使用。NOT_CLEAR・disabled・Draft/open/unmerged・candidate_ready=false・automatic_progression=falseを継続。長い復唱・定型末尾、中心感情・共有関係・複数主題の残件と同family二行動の選択拡張未実装を保持。System Context未使用・原典直接確認、PR37不変更。

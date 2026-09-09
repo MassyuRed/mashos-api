@@ -9937,6 +9937,32 @@ def _source_finite_background_expression_is_bound(fragment: str) -> bool:
             + _OWNER_FOCUS_PARTICLE_SOURCE + "|" + _OWNER_TOPIC_PARTICLE_SOURCE,
             received_trial.group("modifier") or "",
         )
+    # A verbal background followed by two finite clauses joined with shi
+    # is one complete source expression. These local inflections prove
+    # words, not a feeling type, shared experiencer or causal relation.
+    # Closed clause heads prevent a free suffix check from swallowing an
+    # attribution, a changed subject, or an unfinished third clause.
+    degree = r"(?:(?:もう|まだ|今も|ずっと))?(?:少し(?:だけ)?|ちょっと|とても|かなり)?"
+    coordinated = re.fullmatch(
+        r"(?P<background>[^、,。．.!！?？\s]+[てで])[、,]"
+        + degree + r"(?:疲れた|疲れて(?:いる|います)|困った|困って(?:いる|います))し"
+        + degree + r"(?:(?:苛立|いらだ|怒)って|いらいらして)(?:いる|います)",
+        fragment,
+    )
+    if coordinated is not None:
+        background = coordinated.group("background")
+        # Repetition is an adverb, not a mo-marked owner. Remove only that
+        # closed prefix for the existing structural/owner checks; retain it
+        # verbatim in the source nucleus and every downstream reception.
+        checked = re.sub(r"^(?:何度も|繰り返し|再び)", "", background, count=1)
+        perfective = checked[:-1] + ("た" if checked.endswith("て") else "だ")
+        return bool(
+            re.fullmatch(r".+を[^を、,。．.!！?？\s]+[てで]", checked)
+            and _bounded_structural_action_endpoint(perfective)
+            and _source_operator_owner_scope_is_bound(perfective)
+            and not _NEGATION_RE.search(perfective)
+            and not re.search(r"なら|たら|れば|らしい|よう|みたい|かも", checked)
+        )
     # A denied change and a finite positive endpoint can coexist in one
     # source object. Keep both grammatical subjects and the te-background
     # verbatim; neither subject becomes the experiencer of a new feeling.
@@ -10062,7 +10088,11 @@ def _final_stage1_typed_nuclei(
                 and nucleus.kind in {"event", "state", "reaction", "value"}
                 and nucleus.source_fields == ("memo",) and span.source_field == "memo"
                 and frame.actor == "current_user"
-                and frame.time_scope in {"past", "present", "current_input"}
+                and (frame.time_scope in {"past", "present", "current_input"}
+                     or (frame.time_scope == "continuing"
+                         and nucleus.kind in {"event", "state"}
+                         and frame.predicate_kind in {"event", "state"}
+                         and frame.modality == "fact"))
                 and frame.modality in {"fact", "feeling"}
                 and not set(frame.attribute_codes).intersection({
                     "operator:negation", "operator:refusal", "operator:wish",
@@ -10082,8 +10112,10 @@ def _final_stage1_typed_nuclei(
                     and not source[:start].strip()
                     and re.fullmatch(r"\s*[。．.]?\s*", source[end:])
                     and _top_level_text(source) == source
-                    and ((past_feeling := _source_past_negative_feeling_is_bound(finite))
-                         or (scalar_expression := _source_scalar_background_expression_is_bound(finite))
+                    and ((past_feeling := frame.time_scope != "continuing"
+                          and _source_past_negative_feeling_is_bound(finite))
+                         or (scalar_expression := frame.time_scope != "continuing"
+                             and _source_scalar_background_expression_is_bound(finite))
                          or _source_finite_background_expression_is_bound(finite))
                 ):
                     if past_feeling:
@@ -10648,6 +10680,31 @@ def _final_stage1_normalize_relation_authority(
         )
         relation_type = relation.type
         if (
+            cross_field and left_fields == {"memo_action"} and right_fields == {"memo"}
+            and relation.type == "attempt_and_block"
+            and grounding_kind == "bounded_structural_inference" and retention != "required"
+            and len(relation.source_relation_ids) == 1
+            and re.fullmatch(r"conflict\.e[1-9][0-9]*", relation.source_relation_ids[0])
+            and not relation.source_meaning_arc_keys
+            and set(relation.source_span_ids) == set((*left.source_span_ids, *right.source_span_ids))
+            and left.retention == right.retention == "required"
+            and left.semantic_frame.actor == right.semantic_frame.actor == "current_user"
+            and source_proven_performed_action_status(left)
+            and left.semantic_frame.time_scope == "past"
+            and left.semantic_frame.predicate_kind == "wish"
+            and "operator:wish" in left.semantic_frame.attribute_codes
+            and right.kind in {"event", "state"}
+            and right.semantic_frame.predicate_kind in {"event", "state"}
+            and right.semantic_frame.modality == "fact"
+            and right.semantic_frame.polarity == "neutral"
+            and "lexical:source_bounded_expression" in right.semantic_frame.attribute_codes
+        ):
+            # The conflict observer pairs nearby wish/limit spans without
+            # checking the outer completed act. Its cross-field proximity
+            # cannot turn an embedded wish into a current blocked attempt.
+            # Keep the original endpoints and provenance as bounded context.
+            relation_type = "uncertain_connection"
+        elif (
             cross_field and left_fields == {"memo"} and right_fields == {"memo_action"}
             and relation.type == "shift_from_to" and relation.retention != "required"
             and relation.grounding_kind == "bounded_structural_inference"
