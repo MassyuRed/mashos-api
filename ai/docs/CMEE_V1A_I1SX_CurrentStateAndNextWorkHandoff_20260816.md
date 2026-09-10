@@ -13,7 +13,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-10最新（candidate88）：選択済みの現在の肯定感情が指示語だけへ縮む欠落を既存の具体参照方針で修正。1件のfollowへ背景と気分を保持し、他99件全record同一。華恋が前後の全100件を全文確認。direct100／73 GENERATED・27 UNAVAILABLE、必要Move／expression／binding各140を維持。必須426は420 PASS／6既存FAIL、前回422全成否同一・追加4全PASS。長い復唱・定型締め・他の中心内容の欠落は残りNOT_CLEAR。詳細と再開点は末尾candidate88。System Context未使用・原典直接確認、PR37不変更。
+2026-09-10最新（candidate89 source checkpoint）：本人にとってのやりやすさ／やりにくさの見込みがfollowから欠落する原因を、既存final OPの有限uncertainty証明で修正。原見込みと比較対象を元行動とともに保持する。最終必須回帰・同じ100件の確認は未完。直前candidate88はdirect100／73 GENERATED・27 UNAVAILABLE、必須426は420 PASS／6既存FAIL、商品NOT_CLEAR。現在の再開点は末尾candidate89。System Context未使用・原典直接確認。
 
 ## 1. GitHub anchors
 
@@ -7145,3 +7145,14 @@ HR／Surface／Gate／meaning／contracts・公開I5経路・API／DB／RN／Pie
 商品NOT_CLEAR。背景と気分を具体的に受け取る改善はあるが、原文復唱が長くなり、定型的な受取述語も残る。自然さ・簡潔さ・商品全体の受入成功にはしない。他の中心感情、自己評価、未来行動との組合せ、複数主題・関係の欠落は残件。自己評価の別例では有限自己評価の認識不足、行動冒頭の接続詞と格助詞の取り違え、既存対比関係が重なる原因を確認したが未修正。複合現在状態・不確定な能力のsource証明も未修正。次は保存済み100件とこの診断から既存source認定・選択への未到達原因を限定して扱い、自己評価を不確定表現へ読み替えず元行動・否定・unknownを保持する。共有述語の2 Move／layered／min2契約、action-only二行動・未来行動への選択拡張、旧mapping整合は未解決。対象削除・同義語だけの置換・旧期待値書換えで成功を作らない。
 
 source checkpointは既存Draft PR3へ先に保存・取得照合済み。最終結果は既存handoff／設計02・06と同じ非公開継続記録へ保存し、保存結果を照合する。結果資料だけの後続commitには同じ固定sourceの検証を継承し、保存目的の再生成はしない。System Context未使用・原典直接確認、PR37不変更、定例JSON／ZIP配布なし。disabled・Draft/open/unmerged、candidate_ready=false・automatic_progression=false。Mash human PASS／ready／採用／merge／本番なし。
+
+
+### 2026-09-10 candidate89 source checkpoint — 本人にとってのやりやすさの見込みを保持
+
+既存final OPの原field全域でのuncertainty証明へ、名詞対象／任意の比較・明示本人「には」・有限な動詞連用形・やす／にくそうだ／ですを追加した。名詞と動詞のslotを閉じ、比較対象を体験者や実行者へ変換せず、原文の見込みをuncertainty／uncertainとして保持する。原actor・polarity・時点・ID・source根拠・certaintyを保ち、既存source_bounded_expression、unknown／hedge_onlyとexact2材料＋元行動の選択へ接続する。伝聞の「やすいそう」、他者・報告・過去・未来・条件・外側否定・疑問・引用・別文・二重終端を除外。明示self_evaluationと既存action分類を対象外に保ち、感情・能力・実行の断定を追加しない。selector／HR／Surface／Gate／meaning／contracts・最大3 Move・公開I5／API／DB／RN／Piece／Analysisは不変更。STRUCTURE_MAP_DELTA_NONE：既存source証明の内部修正でownerと経路を維持する。
+
+実出力の初期試行では、欠落していた見込みと比較対象が元行動とともにfollowへ届き、Gate／inverseが成立した。原文復唱と定型的受取は残りNOT_CLEAR。公開synthetic追加4検査は、原materialと行動・unknown保持、NORMAL／LIMITED、同一selected input・全recovery・独立replay・改変拒否、原fieldと既存ownerの境界を扱う。初回2 PASS／2 FAILは、新検査が既存action分類の合成文をeventと誤って仮定したため。同じ入力を削除せず既存action分類・全plan不変の境界検査へ置き、正しいevent例の本文・recovery確認を維持した。実装範囲・旧入力／期待値／閾値は変更せず、初期結果も非creditで保存する。runnerは既存current13だけ再導出し非current ASTを維持する。
+
+この固定sourceで必須回帰・同じ100件・華恋による原入力全field／観測／follow／生成可否と全理由の全文確認を行う。直前と同一byteのbefore読了は同一session内で再利用し、afterは今回全件読む。意味核・unknown・selected投影の変更を予定しており、candidate88の全核／選択不変を継承しない。自己評価の別例には、有限自己評価認識・接続詞の格誤認・省略目的語の未登録動作・欄間の対比が重なることを診断したが未修正。複合現在状態、能力の推量、複数主題・共有関係、長い復唱・定型締めも残件。
+
+System Context未使用・原典直接確認、PR37不変更。コードと再開点は既存Draft PR3、privateの実本文・試行・検証は既存非公開継続記録へ保存する。定例JSON／ZIP配布なし。disabled・Draft/open/unmerged、商品NOT_CLEAR、candidate_ready=false・automatic_progression=false。Mash human PASS／ready／採用／merge／本番なし。

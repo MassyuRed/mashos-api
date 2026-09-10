@@ -10235,6 +10235,27 @@ def _source_alternative_uncertainty_is_bound(fragment: str) -> bool:
     ) is not None
 
 
+def _source_apparent_ease_is_bound(fragment: str) -> bool:
+    """Bind the speaker's tentative ease assessment of a nominal target.
+
+    The comparative subject remains the evaluated object, not an actor.
+    Closed nominal and continuative-verb slots cannot absorb a report or
+    another finite clause. Appearance ``yasusou`` is distinct from hearsay
+    ``yasui sou``; neither establishes ability, performance or a feeling.
+    """
+    noun = (r"(?:[一-鿿々ァ-ヶー]+|"
+            r"(?:やり|読み|書き|話し|使い|学び|覚え)方)")
+    nominal = (r"(?:この|その|あの|新しい|古い|別の|今の)?" + noun
+               + r"(?:の" + noun + r"){0,2}")
+    return re.fullmatch(
+        nominal + r"(?:の方|のほう)?が[、,]?"
+        r"(?:私|わたし|自分|僕|ぼく|俺|おれ)には"
+        r"(?:少し(?:だけ)?|ちょっと|とても|かなり)?"
+        r"(?:覚え|読み|書き|話し|聞き|使い|学び|続け|取り組み|分かり|わかり)"
+        r"(?:やす|にく)そう(?:だ|です)", fragment,
+    ) is not None
+
+
 def source_grounded_attention_subject_parts(text: str) -> tuple[str, str] | None:
     """Locate a finite attention object without deciding interest or worry.
 
@@ -10417,7 +10438,13 @@ def _final_stage1_typed_nuclei(
                          and _source_alternative_uncertainty_is_bound(
                              re.sub(r"[。．.]$", "", source.strip())))
                         or (nucleus.kind != "self_evaluation"
-                            and _source_bounded_uncertainty_is_bound(raw.strip(" \u3000。．.")))
+                            and (_source_bounded_uncertainty_is_bound(raw.strip(" \u3000。．."))
+                                 or (nucleus.grounding_kind == "explicit"
+                                     and nucleus.retention == "required"
+                                     and frame.time_scope in {"present", "current_input"}
+                                     and source[start:end] == raw
+                                     and _source_apparent_ease_is_bound(
+                                         re.sub(r"[。．.]$", "", source.strip())))))
                     )
                 ):
                     nucleus = replace(nucleus, kind="uncertainty", semantic_frame=replace(
