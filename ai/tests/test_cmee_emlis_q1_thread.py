@@ -282,3 +282,22 @@ def test_supplied_checkpoint_must_match_initial_prefix_too():
     req=initial()
     req=replace(req, emlis_thread=replace(req.emlis_thread, prepared_meaning_checkpoint_ref='foreign'))
     assert MeaningExperienceEngine().generate(req).status is c.EngineStatus.REJECTED
+
+@pytest.mark.parametrize('text', ['同僚は嬉しいと思った。', '花子は寂しいと感じた。', '田中も仕事を辞めたいと思った。'])
+def test_arbitrary_foreign_subject_is_not_adopted_as_user_belief(text):
+    update=prepare_emlis_meaning(answered(text)).checkpoint.answer_update
+    assert update.disposition=='UNRESOLVED' and not update.updates
+
+def test_replacement_frame_does_not_inherit_old_negation():
+    prepared=prepare_emlis_meaning(answered('「嬉しくなかった」ではなく「嬉しかった」です。'))
+    nucleus=prepared.accepted_nuclei[0]
+    assert nucleus.semantic_frame.polarity=='positive'
+    assert not any('negation' in c or 'denied' in c for c in nucleus.semantic_frame.attribute_codes)
+
+def test_clear_withdrawal_survives_unsupported_replacement_in_same_sentence():
+    req=initial(memo_action='寂しかった。')
+    prepared=prepare_emlis_meaning(answered('「寂しかった」は誤りで「未整理」です。',req))
+    assert prepared.checkpoint.assessment_status=='PARTIAL'
+    assert prepared.checkpoint.answer_update.updates[0].operation=='WITHDRAW'
+    assert prepared.checkpoint.inactive_claim_refs
+    assert prepared.checkpoint.unresolved_parts[0].reason_code=='correction_replacement_unsupported'

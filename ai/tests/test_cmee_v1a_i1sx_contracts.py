@@ -14685,13 +14685,19 @@ class CMEEStage1AdditionalCorrectionStep2CompositionTest(unittest.TestCase):
             module.compute_language_core_identity(repository_root),
             module.LANGUAGE_CORE_IDENTITY,
         )
-        self.assertEqual(
-            candidate_run_module._current_im03_working_identity_pair(),
-            (
-                module.LANGUAGE_CORE_IDENTITY,
-                module.STAGE1_RUNTIME_INTEGRATION_IDENTITY,
-            ),
-        )
+        # Q1 extends shared source/projection owners. Keep IM03's historical
+        # frozen proof unchanged and pin the current shared owners separately.
+        snapshot = json.loads((Path(__file__).parent / "fixtures" /
+            "cmee_emlis_q1_shared_owner_identity_v1.json").read_text())
+        self.assertEqual(snapshot["language_identity"], module.LANGUAGE_CORE_IDENTITY)
+        self.assertEqual(snapshot["runtime_identity"], module.STAGE1_RUNTIME_INTEGRATION_IDENTITY)
+        for key, actual in (
+            ("language_payloads", candidate_run_module._identity_payload_proof_rows(language_payloads)),
+            ("runtime_payloads", candidate_run_module._identity_payload_proof_rows(runtime_payloads)),
+            ("source_owner_symbols", candidate_run_module._source_owner_symbol_proof(
+                language_payloads, source_owner_count=9)),
+        ):
+            self.assertEqual(snapshot[key], json.loads(json.dumps(actual)))
         self.assertEqual(
             len(
                 candidate_run_module.IM03_WORKING_LANGUAGE_PAYLOAD_NAME_SHA256_BYTE_COUNT_EXACT18

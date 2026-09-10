@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass, replace
 import re
 
 import emlis_ai_grounded_observation_plan as gp
-from emlis_ai_evidence_ledger_service import EvidenceLedgerValidationReport
+from emlis_ai_evidence_ledger_service import EvidenceLedgerValidationReport, _detect_type
 from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
 from emlis_ai_safety_triage import classify_emlis_safety_triage_text, TRIAGE_SAFE_OBSERVATION
 
@@ -75,20 +75,26 @@ def _dependent_refs(plan, targets: tuple[str, ...]) -> tuple[str, ...]:
 
 def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, source_end: int | None = None):
     """Use the shared source grammar with a real answer field and no labels."""
-    local = {ANSWER_FIELD: raw}
-    safety = classify_emlis_safety_triage_text(raw)
-    kind = gp._kind_for_span(span, roles=(), safety_decision=safety,
-                            safety_span_order={}, normalized_input=local)
-    frame = gp._semantic_frame_for_span(span, kind=kind, roles=(), claim_ids=(),
-                                        normalized_input=local)
     text = span.raw_text
     offset = source_start
     end = len(text) if source_end is None else source_end
     bounded = text[offset:end].strip()
+    # Parse only the admitted claim range. The old text in a correction is a
+    # locator, not a source of polarity/operators for the replacement claim.
+    local = {ANSWER_FIELD: bounded}
+    local_span = replace(span, raw_text=bounded, detected_type=_detect_type(bounded, ()))
+    safety = classify_emlis_safety_triage_text(bounded)
+    kind = gp._kind_for_span(local_span, roles=(), safety_decision=safety,
+                            safety_span_order={}, normalized_input=local)
+    frame = gp._semantic_frame_for_span(local_span, kind=kind, roles=(), claim_ids=(),
+                                        normalized_input=local)
     # A finite self belief is retained as a belief, not its complement's
     # truth. The question only supplies the omitted response target.
     if (any(pattern.fullmatch(bounded) for pattern in (_BELIEF, _PERCEIVED_REACTION, _SELF_CORRECTIVE_STATE))
             and not _FOREIGN_HOST.search(bounded)):
+        if (not _SELF_CORRECTIVE_STATE.fullmatch(bounded)
+                and re.match(r"^(?!(?:私は|私が|私も|自分は|自分が|自分も|次も))[^、,「」]{1,28}?(?:は|が|も)", bounded)):
+            return None
         kind = "reaction"
         frame = replace(frame, predicate_kind="feeling", modality="feeling",
                         polarity="negative" if re.search(r"ない|なかった|重|苦|つら|辛", bounded) else "neutral")
@@ -216,7 +222,7 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
                 about_time=about, source_start=replacement.start("new"), source_end=replacement.end("new"))
             if replacement and nucleus is None:
                 unresolved.append(EmlisUnresolvedPartV1(ev, "correction_replacement_unsupported"))
-                continue
+                operation = "WITHDRAW"
         else:
             if _OTHER_TIME.match(text):
                 unresolved.append(EmlisUnresolvedPartV1(ev, "explicit_other_time_target_unresolved"))
