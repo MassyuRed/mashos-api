@@ -13,7 +13,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-10最新（candidate91 source checkpoint・最終検証前）：継続する活動・現在状態・予定までの時間を、同じ原文材料のまま元行動とともに保持する修正。対象の外側の生成不可は未解消。必須全回帰と同じ100件の最終確認は未完で、前回candidate90の428 PASS／6 FAIL、73 GENERATED／27 UNAVAILABLEは前回値。商品NOT_CLEAR、disabled・Draft維持。詳細は末尾。System Context未使用・原典直接確認、PR37不変更。
+2026-09-10最新（candidate91）：継続状態と予定までの時間を元行動と保持するsource証明を追加。1件の直接診断フォローの欠落を修正したが、対象の生成不可は未解消。他99件全record・全100件の観測と可否理由は同一。華恋が同じ100件全文確認、73 GENERATED／27 UNAVAILABLE、旧142責務を保持して各層143。必須438は432 PASS／既存6 FAIL、前回434の成否同一・追加4全PASS。復唱は長く、中心内容・複数主題／共有関係・定型締めは残りNOT_CLEAR。末尾candidate91から再開。System Context未使用・原典直接確認、PR37不変更。
 
 ## 1. GitHub anchors
 
@@ -7200,3 +7200,18 @@ Mash様の残件継続指示と既存20260905／20260908承認内で、final OP�
 追加検査は公開合成3例で、元核を証明属性以外そのまま保つこと、NORMAL／LIMITED、全recovery、同一immutable selected input、背景・程度・時点・譲歩・予定の境界・資源・元行動の独立inverse／Gate、他者／報告／否定／推量／条件／別文、既存選択のoptional／第三主題／required関係／未実行行動境界を確認する。初回3 PASS／1 FAILで、raw spanのstripが二重終端を隠す漏れを確認した。finite-background証明へ原field全文から終端を1個だけ除いた文字列を渡すよう修正し、旧テスト・入力・期待値・閾値は不変更。初期結果は非creditで保存する。
 
 対象の直接診断本文へ状態と時間条件を回復する修正であり、外側の生成不可の解消ではない。別の混合推量／確定否定は節の仮投影だけでは選択へ届かず、未来行動の名詞化試作は未実行の見え方を保てず不採用とした。これらを修正済みへ数えない。修正後の追加4検査は全PASS。既存current13定数だけを再導出し、非current ASTと旧test全byteを保持した。この固定sourceの必須回帰・同じ100件生成と華恋の全件全文確認は次工程であり未完。商品NOT_CLEAR、disabled・Draft/open/unmerged・automatic_progression=false。System Context未使用・原典直接確認、PR37不変更、private本文は既存非公開記録へ保持する。
+
+
+### 2026-09-10 continuation — 継続状態と残り時間を元行動と保持する（candidate91最終検証・品質未達）
+
+既存final OPで、活動が続く中での現在状態と、予定まで時間／余裕があるという譲歩を、原field全域の有限構文から一つの原文材料として証明した。同じ核のkind／predicate・fact／continuing・主体・極性・根拠・関係を保持し、既存source_bounded_expression属性だけを追加する。閉じた活動・状態・資源構文で他者、引用／報告、過去未来、否定／推量／条件や別文を取り込まず、疲れから感情・因果・休息の許可・十分な余裕・回復を作らない。既存の中心材料＋元行動選択と唯一のHR、immutable selected inputの再導出、NORMAL／LIMITED、全recovery・replay・Gate／inverseを継承する。新owner／schema／selector／Gate緩和なし、旧I5・国家／API／DB／RN／Piece／Analysis・Layer3は不変更、STRUCTURE_MAP_DELTA_NONE。
+
+公開合成3例を含む追加4検査は全PASS。原核から証明属性を除いた完全一致、既存の関係／optional／第三主題／未実行行動境界、背景・程度・継続時点・譲歩・時間境界・資源・元行動の改変拒否を確認した。初回3 PASS／1 FAILで二重終端がraw spanのstripに隠れる漏れを発見し、finite-background証明へ原fieldから終端を最大1個だけ除いて渡すよう修正した。初期結果は非creditで保存、旧test全byte・fixture・入力・期待値・閾値は保持。runnerは既存current13だけ再導出、exact18／exact9と非current ASTは不変。固定Python3.12.13と46依存の確認済みruntimeを再利用した。
+
+必須438検査は432 PASS／継承6 FAIL、ERROR／skip0。前回434件の全成否が一致し、追加4件は全成功。原184は180 PASS／4 FAIL、追加254は252 PASS／2 FAIL。未解消6件は歴史的観測hash2件、dated source receipt1件、固定133対143のbridge責務数1件、旧句の本文期待1件、同旧句が存在せずtamper開始前に止まる1件。停止をinverse成功へ換算せず、旧期待値を変更しない。責務数142→143と現行source hashは変わるため失敗詳細全byte不変とはしない。後段36ケース・post-hash96・集合診断は前回とbyte同一。Stage3とV2の別検証は今回未再実行で、過去結果を今回の成功へ流用しない。歴史的work79の384件381 PASS／3 FAILを保持し、現在6失敗を新しい受入基準にしない。
+
+華恋が同じ100件の原入力全field・観測・フォロー・directと外側可否・全理由を全文確認した。beforeは同一sessionで読了したcandidate90の同一保存byteを再利用し、afterは今回全件を読んだ。変更は1件の直接診断フォローで、状態と予定までの時間を元行動とともに回復した。他99件の全record・実reception planは同一、全100件の観測・入力順序・可否／理由も同一。direct100、73 GENERATED／27 UNAVAILABLE、Move／expression／binding各143、旧142責務のact／target／support／evidence／follow要素／requiredを全保持。核は当該memoの証明属性1個以外すべて同一で、元action核も同一。ただし既存selected input・decision／sealと元行動Moveの順番・role／strategyは再導出により変化する。
+
+対象は引き続きUNAVAILABLEであり、新たに利用可能な応答の改善へ換算しない。診断本文の内容欠落は減ったが、その分原文再掲が長くなり、定型的な受取と締めは残る。商品NOT_CLEAR。混合した推量と確定否定は、節の仮投影だけでは選択へ届かないと確認したが未修正。未来行動の短い名詞化試作は未実行の見え方とvisible bindingを保てず不採用。自己評価、複数主題・共有関係、中心感情の欠落、抽象的な参照、旧mapping整合も残る。次は保存済み本文と今回の不採用診断を使い、節ごとの不確かさ／確定性と関係を保って選択へ届ける既存経路を検討する。自己評価を単なるuncertaintyへ置換せず、対象削除・原期待値変更で成功を作らない。
+
+固定sourceはlocal `ae987731fd1693da1006f42a0f3253c3ae5d9644`／remote `dca20b06b69e149ef724428ec7381846a8a51c08`、同一tree `5445f8172b4cab55f4336cdb85208e28ffffb751`。sourceは既存Draft PR3へ途中保存・取得照合済み。後続変更は結果資料だけで、この固定sourceの検証を再利用する。PR3／PR30と既存非公開継続記録へ結果・残件・再開点を保存し、保存後照合する。既存20260905／20260908承認と今回運用指示を継承、前提・作業規則、恒久incident全文、weekly20260905、全体設計／全file地図・影響sourceを確認。System Context未使用・原典直接確認、PR37不変更。disabled・Draft/open/unmerged・candidate_ready=false・automatic_progression=false、Mash human PASS／ready／採用／merge／本番なし。private本文・個別case・digest・locatorを公開GitHubへ置かず、定例JSON／ZIP配布も行わない。9月12日の本文確認準備目標と品質リスクを継承する。
