@@ -9571,3 +9571,156 @@ class CMEEFinalSimileFeelingSelectionTest(unittest.TestCase):
                 complexity=plan.input_profile.semantic_complexity, material_quality=plan.input_profile.material_quality,
                 include_reception_relation_support=True, final_source_fidelity=True)
             self.assertEqual(response.human_follow_target_ids, (action.nucleus_id,))
+
+
+class CMEEFinalAlternativeUncertaintySelectionTest(unittest.TestCase):
+    """Unresolved alternatives are received together with the original action."""
+
+    row = staticmethod(CMEEFinalIndependentFeelingSelectionTest.row)
+    marker = "lexical:source_bounded_expression"
+    sources = (
+        "それが緊張なのか、ただ怖いだけなのか、自分でも区別がつかない。",
+        "あれが疲労なのか、眠いだけなのか、自分でも判断がつかない。",
+        "これが不安なのか、ただ苦しいだけなのか、僕でも区別がつかない。",
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = tuple(_full_surface_artifacts(cls.row(s)) for s in cls.sources)
+
+    def test_both_alternatives_unknown_limit_and_action_survive_qualities_and_recovery(self):
+        for source, a in zip(self.sources, self.artifacts):
+            with self.subTest(source=source):
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                inputs = _compile_inputs(self.row(source))
+                legacy = build_grounded_observation_plan(inputs.source.normalized_current_input,
+                                                        evidence_spans=inputs.source.evidence_spans)
+                before = next(n for n in legacy.nuclei if n.source_fields == ("memo",))
+                material = next(n for n in a.plan.nuclei if n.source_fields == ("memo",))
+                self.assertEqual((material.kind, material.semantic_frame.predicate_kind,
+                                  material.semantic_frame.modality), ("uncertainty", "uncertainty", "uncertain"))
+                self.assertEqual(replace(material, kind=before.kind, semantic_frame=before.semantic_frame), before)
+                self.assertEqual(replace(material.semantic_frame,
+                    predicate_kind=before.semantic_frame.predicate_kind, modality=before.semantic_frame.modality,
+                    attribute_codes=before.semantic_frame.attribute_codes), before.semantic_frame)
+                self.assertEqual(set(material.semantic_frame.attribute_codes),
+                                 set(before.semantic_frame.attribute_codes) | {self.marker, "operator:uncertainty"})
+                self.assertIn("operator:negation", material.semantic_frame.attribute_codes)
+                self.assertNotIn("operator:performed_action", material.semantic_frame.attribute_codes)
+                self.assertTrue(any(u.dimension == "source_explicit_epistemic_limit"
+                                    and u.affected_nucleus_ids == (material.nucleus_id,)
+                                    and u.surface_policy == "hedge_only" for u in a.plan.unknown_boundaries))
+                moves = a.plan.response_plan.human_reception_plan.moves
+                self.assertEqual(tuple(m.reception_act for m in moves),
+                                 ("stay_with_current_burden", "honor_concrete_effort"))
+                self.assertTrue(all(m.required and not m.support_nucleus_ids for m in moves))
+                for quality in ("grounded", "limited_grounding"):
+                    self.assertEqual(_cmee_semantic_reception_plan(inputs.grounded_plan, a.resolver,
+                                                                  material_quality=quality).moves, moves)
+                for args, kwargs in a.author_arguments:
+                    self.assertIs(kwargs["selected_subjective_input"], a.selected_subjective_input)
+                    replay = reception_owner.replay_source_grounded_human_reception_from_plan(
+                        args[0], args[2], args[3], plan=kwargs["plan"], recovery_stage=kwargs["recovery_stage"],
+                        clause_plans=kwargs["clause_plans"], selected_subjective_input=a.selected_subjective_input)
+                    authored = next(s for s in a.authored if s.recovery_stage == kwargs["recovery_stage"])
+                    self.assertEqual(replay.text, authored.text)
+                    sp = a.sentence_plan if authored.recovery_stage == "full" else (
+                        surface_owner.build_reception_recovery_sentence_plan(
+                            a.sentence_plan, a.plan, a.resolver, recovery_stage=authored.recovery_stage))
+                    actual = _recovery_surface(a, sp)
+                    self.assertIn(source.rstrip("。"), actual.text)
+                    self.assertIn("作業台を片づけた", actual.text)
+                    self.assertEqual(set(authored.realized_move_ids), {m.move_id for m in moves})
+                    if authored.recovery_stage in {"full", "optional_removed"}:
+                        self.assertIn(source.rstrip("。") + "という言葉", _reception_text(actual.text))
+                    self.assertTrue(evaluate_grounded_surface_body_inverse(
+                        body=actual.text.encode(), plan=a.plan, sentence_plan=sp, resolver=a.resolver,
+                        selected_subjective_input=a.selected_subjective_input).passed)
+
+    def test_asserted_alternative_or_lost_scope_owner_host_and_action_fail_inverse_and_gate(self):
+        a = self.artifacts[0]
+        for old, new in (("それが緊張なのか、", ""), ("ただ怖いだけなのか、", ""),
+                         ("緊張なのか", "緊張だ"), ("だけなのか", "のか"), ("ただ", ""),
+                         ("自分でも", "友人でも"), ("それが", "私が"),
+                         ("つかない", "ついた"), ("つかない", "つかなかった"),
+                         (self.sources[0].rstrip("。"), ""), ("作業台を片づけた", "")):
+            with self.subTest(old=old, new=new):
+                body = _tamper_reception(a.surface.text, old, new)
+                self.assertNotEqual(body, a.surface.text)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan, surface_result=replace(a.surface, text=body),
+                    resolver=a.resolver, require_body_inverse=True,
+                    selected_subjective_input=a.selected_subjective_input).passed)
+
+    def test_current_whole_field_self_host_does_not_borrow_other_owners_or_assertions(self):
+        base = self.sources[0]
+        sources = ("友人は" + base, base.replace("自分でも", "友人でも"),
+                   base.replace("自分でも", "私の友人でも"), base.replace("自分でも", ""),
+                   base.replace("それが", "友人が"), base.replace("つかない", "つく"),
+                   base.replace("つかない", "つかなかった"), base.replace("つかない", "つかないかもしれない"),
+                   base.replace("つかない", "つかないと聞いた"), base.replace("つかない", "つかないと友人が言った"),
+                   base.replace("つかない", "つかないなら休む"), base.replace("なのか、ただ", "なのか、疲れなのか、ただ"),
+                   base.replace("緊張なのか", "緊張だったのか"), "明日は" + base, "たぶん" + base,
+                   "「" + base.rstrip("。") + "」", base.rstrip("。") + "？", base.rstrip("。") + "…",
+                   base.rstrip("。") + "．。", "別の記録。" + base, base + "別の記録。")
+        for source in sources:
+            with self.subTest(source=source):
+                frozen = freeze_text_source(_request_from_row(self.row(source)))
+                plan = build_final_stage1_grounded_observation_plan(
+                    frozen.normalized_current_input, evidence_spans=frozen.evidence_spans)
+                self.assertFalse(any(self.marker in n.semantic_frame.attribute_codes
+                                     for n in plan.nuclei if n.source_fields == ("memo",)), source)
+        base = self.sources[1]
+        frozen = freeze_text_source(_request_from_row(self.row(base)))
+        legacy = build_grounded_observation_plan(frozen.normalized_current_input,
+                                                evidence_spans=frozen.evidence_spans)
+        before = next(n for n in legacy.nuclei if n.source_fields == ("memo",))
+        self.assertEqual(before.kind, "self_evaluation")
+        self.assertIn("detected_type:self_awareness", before.semantic_frame.attribute_codes)
+        for changed in (replace(before, retention="optional"),
+                        replace(before, semantic_frame=replace(before.semantic_frame, actor="unknown")),
+                        replace(before, semantic_frame=replace(before.semantic_frame, polarity="positive")),
+                        replace(before, semantic_frame=replace(before.semantic_frame, time_scope="past")),
+                        replace(before, semantic_frame=replace(before.semantic_frame, attribute_codes=(
+                            *before.semantic_frame.attribute_codes, "operator:self_evaluation"))),
+                        replace(before, semantic_frame=replace(before.semantic_frame, attribute_codes=tuple(
+                            c for c in before.semantic_frame.attribute_codes if c != "detected_type:self_awareness")))):
+            altered = replace(legacy, nuclei=tuple(changed if n == before else n for n in legacy.nuclei))
+            nuclei, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                altered, frozen.evidence_spans, normalized_input=frozen.normalized_current_input)
+            self.assertFalse(any(self.marker in n.semantic_frame.attribute_codes for n in nuclei))
+        for changed_source in ("別の文。" + base, base + "別の文。", base.replace("疲労", "不調")):
+            nuclei, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                legacy, frozen.evidence_spans, normalized_input={**frozen.normalized_current_input, "memo": changed_source})
+            self.assertFalse(any(self.marker in n.semantic_frame.attribute_codes for n in nuclei))
+
+    def test_old_hedge_does_not_reclassify_self_evaluation_or_widen_selection(self):
+        frozen = freeze_text_source(_request_from_row(self.row("たぶん疲れている。")))
+        legacy = build_grounded_observation_plan(frozen.normalized_current_input,
+                                                evidence_spans=frozen.evidence_spans)
+        legacy = replace(legacy, nuclei=tuple(replace(n, kind="self_evaluation", semantic_frame=replace(
+            n.semantic_frame, predicate_kind="self_evaluation")) if n.source_fields == ("memo",) else n for n in legacy.nuclei))
+        nuclei, _ = observation_plan_owner._final_stage1_typed_nuclei(
+            legacy, frozen.evidence_spans, normalized_input=frozen.normalized_current_input)
+        material = next(n for n in nuclei if n.source_fields == ("memo",))
+        self.assertEqual(material.kind, "self_evaluation")
+        self.assertNotIn(self.marker, material.semantic_frame.attribute_codes)
+        from emlis_ai_safety_triage import build_emlis_safety_triage_decision
+        inputs = _compile_inputs(self.row(self.sources[0])); plan = inputs.grounded_plan
+        material = next(n for n in plan.nuclei if n.source_fields == ("memo",))
+        action = next(n for n in plan.nuclei if n.source_fields == ("memo_action",))
+        relation = replace(plan.relations[0], type="contrast", retention="required", grounding_kind="user_stated_relation")
+        variants = ((tuple(replace(n, retention="optional") if n == material else n for n in plan.nuclei), plan.relations),
+                    ((*plan.nuclei, replace(material, nucleus_id="public-third-material")), plan.relations),
+                    (plan.nuclei, (relation,)))
+        for ns, rs in variants:
+            response, *_ = observation_plan_owner._build_response_and_policies(
+                nuclei=ns, relations=rs,
+                safety_decision=build_emlis_safety_triage_decision(current_input=inputs.source.normalized_current_input),
+                complexity=plan.input_profile.semantic_complexity, material_quality=plan.input_profile.material_quality,
+                include_reception_relation_support=True, final_source_fidelity=True)
+            self.assertEqual(response.human_follow_target_ids, (action.nucleus_id,))

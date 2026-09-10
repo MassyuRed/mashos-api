@@ -7099,3 +7099,12 @@ runnerは既存current13 identityだけ再導出し、非current ASTを維持す
 商品NOT_CLEAR。気分の欠落は減ったが、原文復唱と定型締め、他の中心material、自己評価／選択肢の不確かさ、未来行動との組合せ、複数主題・共有関係は残件。変化したfollowは長くなり、集合内の定型句も増えた。同一本文の同じ締め二連続は従来の1件で増加なし。次はこの保存済み100件と既存source証明から、未保持の中心materialが原文確認と既存選択へ届かない原因を扱う。共有述語の2 Move／layered／min2契約、action-only二行動や未来行動への選択拡張、旧mapping整合は未解決。対象削除・同義語置換だけ・旧期待値変更で成功を作らない。
 
 sourceは既存Draft PR3へ先に保存・取得照合済み。結果は既存handoff／設計02・06と非公開継続記録へ保存し、最後に取得照合する。前回の大きな非公開原本は全体取得ができなかったため、必要な保存済み要素を記録済み照合値と一致確認して復元し、原本を変更せず今回分の継続記録を残す。結果資料だけの追記後は固定sourceの実行結果を再利用し、保存目的で再生成しない。System Context未使用・原典直接確認、PR37不変更、定例JSON／ZIP配布なし。disabled・Draft/open/unmerged、candidate_ready=false・automatic_progression=false、Mash human PASS／ready／採用／merge／本番なし。
+
+
+### 2026-09-10 candidate87 source checkpoint — 二つの可能性を決められない気持ちと元行動の保持
+
+既存final OPで、原memo全field・正確なoffset・引用外・本人の現在の否定hostを確認し、指示対象を未解決のまま二つの有限な状態選択肢と区別／判断不能を全文証明する。この証明に限りuncertainty／uncertainty／uncertainへ整合し、自己言及に由来するself_awareness fallbackも対象とする。明示self_evaluationは対象外。元actor・否定・時点・ID・根拠・certainty・属性を保持し、既存uncertaintyとsource_bounded_expression根拠を付す。既存unknown／hedge_onlyとexact2選択・HRの全文参照から、どちらも事実化せず元の必要行動とともに受け取る。指示対象を本人や非人物へ解決せず、診断・新actor・performedを追加しない。
+
+他者／主体省略・過去／肯定／伝聞／推量／条件host・別の選択肢・引用・未来・別文・連続終端・任意／不正確な原fieldは証明しない。旧留保経路から自己評価を再分類せず、旧選択・HR／Surface／Gate／meaning／contracts・最大3 Move・公開経路は不変更。STRUCTURE_MAP_DELTA_NONE。追加検査はNORMAL／LIMITED・全recovery・同一immutable input・原文と元行動の保持、代替肢／否定／程度／owner／時点／元行動の改変を独立inverseとGateで拒否する境界を扱う。初回1失敗で二重終端をstripが受け入れる漏れを発見し、新proofだけ終端1個除去に修正した。その後、新検査が合成例をself_evaluationと仮定した誤りを確認し、実際にfallbackを通る合成例へ訂正。初期rawを非creditで保持し、旧test全文・入力・期待値・閾値を変更しない。
+
+修正後の追加4検査は全PASS。runnerは既存current13のみ再導出し、非current ASTを維持。この固定sourceで既存必須回帰と同じ100件を実行し、華恋が原入力全field・観測・follow・可否と全理由を全件全文確認する。最終検証は未完。商品NOT_CLEAR、長い原文復唱・定型締め・他の中心materialと複数主題／共有関係は残件。disabled・Draft/open/unmerged、candidate_ready=false・automatic_progression=false。Mash human PASS／ready／採用／merge／本番なし。System Context未使用・原典直接確認、PR37不変更。

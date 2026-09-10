@@ -10204,6 +10204,23 @@ def _source_bounded_uncertainty_is_bound(fragment: str) -> bool:
     return bool(match and (match.group("hedge") or match.group("ending").startswith("かも")))
 
 
+def _source_alternative_uncertainty_is_bound(fragment: str) -> bool:
+    """Bind two questioned states to the speaker's current inability to tell.
+
+    The deictic subject stays unresolved inside the alternatives; the
+    explicit self is the experiencer of the outer cognitive host. Neither
+    alternative is asserted or diagnosed. Closed state predicates cannot absorb a foreign
+    experiencer, reported judgment, desire, or a separate assertion.
+    """
+    return re.fullmatch(
+        r"(?:これ|それ|あれ)が"
+        r"(?:不調|疲れ|疲労|緊張|不安)なのか[、,]"
+        r"(?:ただ)?(?:眠|だる|つら|辛|苦し|怖|こわ)いだけなのか[、,]"
+        r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:でも|にも)"
+        r"(?:区別|判断)がつかない", fragment,
+    ) is not None
+
+
 def source_grounded_attention_subject_parts(text: str) -> tuple[str, str] | None:
     """Locate a finite attention object without deciding interest or worry.
 
@@ -10355,7 +10372,7 @@ def _final_stage1_typed_nuclei(
             frame = nucleus.semantic_frame
             if (
                 span is not None and normalized_input is not None
-                and nucleus.kind in {"event", "state", "reaction", "value", "uncertainty"}
+                and nucleus.kind in {"event", "state", "reaction", "value", "uncertainty", "self_evaluation"}
                 and nucleus.source_fields == ("memo",) and span.source_field == "memo"
                 and frame.actor == "current_user"
                 and frame.time_scope in {"past", "present", "current_input", "continuing"}
@@ -10376,7 +10393,18 @@ def _final_stage1_typed_nuclei(
                     and not source[:start].strip()
                     and re.fullmatch(r"\s*[。．.]?\s*", source[end:])
                     and _top_level_text(source) == source
-                    and _source_bounded_uncertainty_is_bound(raw.strip(" \u3000。．."))
+                    and (
+                        (nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
+                         and frame.time_scope == "current_input" and frame.polarity == "negative"
+                         and source[start:end] == raw
+                         and "operator:self_evaluation" not in frame.attribute_codes
+                         and (nucleus.kind != "self_evaluation"
+                              or "detected_type:self_awareness" in frame.attribute_codes)
+                         and _source_alternative_uncertainty_is_bound(
+                             re.sub(r"[。．.]$", "", source.strip())))
+                        or (nucleus.kind != "self_evaluation"
+                            and _source_bounded_uncertainty_is_bound(raw.strip(" \u3000。．.")))
+                    )
                 ):
                     nucleus = replace(nucleus, kind="uncertainty", semantic_frame=replace(
                         frame, predicate_kind="uncertainty", modality="uncertain",
