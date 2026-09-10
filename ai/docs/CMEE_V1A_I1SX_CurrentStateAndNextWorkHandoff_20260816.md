@@ -13,7 +13,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-10最新（candidate84 source checkpoint）：選択済みの具体対象が一般参照に消える問題を、原field証明済みの指示語付き対象・程度・気になるの可逆な連体形で改善。型・語義・reference modeを保持。境界4検査成功後、固定sourceの必須回帰・同100件・華恋全文確認へ進む。NOT_CLEAR、System Context未使用・原典直接確認、PR37不変更。
+2026-09-10最新（candidate84）：既に選ばれた対象の「気になる」を原語義・程度・対象付きでfollowへ保持。follow1件改善・他99件全record同一、全100件全文確認済み。必要Move／expression／binding各137とReception plan全100同一。必須410は404成功／6失敗、前回406の状態・既存期待値不変更。Stage3の2失敗は履歴から未解決として引継ぎ（今回未再実行）。締め反復・他の中心感情欠落・旧mapping整合は残りNOT_CLEAR。詳細と再開点は末尾candidate84。System Context未使用・原典直接確認、PR37不変更。
 
 ## 1. GitHub anchors
 
@@ -7036,3 +7036,20 @@ sourceと結果は既存Draft PR3／30、実入力・実出力・初期失敗・
 この／その／あの付き対象に閉じ、自己代名詞・疑問語・形式名詞・理由等の連体化で関係が変わる対象、他者・引用・報告・疑問・否定・未来・過去・推量・連続終端・別文・topic／focusは対象外。初期trialの裸名詞は最終scopeから除外した。初期9関連検査成功と境界修正後4検査を保存し、旧test全文・fixture・期待値を維持する。固定Python環境とGit管理情報が消失していたため、現在remote全blob／whole tree一致でGitを復元し、CPython3.12.13と46依存・46wheel・2268実体を既存lockで復元照合した。追加依存・外部AI・本番変更なし。技術復元自体は商品creditではない。
 
 既存owner／family／最大3・Depth／Gate閾値・API／DB／RN／I5／Piece／Analysisは不変更、STRUCTURE_MAP_DELTA_NONE。最終固定sourceで必須回帰と同100件を確認する。NOT_CLEAR・disabled・Draft PR3／30継続、candidate_ready=false／automatic_progression=false、Mash human PASS／ready／採用／merge／本番なし。
+
+
+### 2026-09-10 current — candidate84（原文の対象・程度・「気になる」を具体参照へ保持・品質未達）
+
+既に必要対象へ選ばれていたmaterialが、followでは一般的な「言葉」参照へ薄まる欠落を修正した。既存final OPで本人・引用外・memo全fieldの正確なoffset・単核・現在の中立event/factを証明し、指示語付き名詞主語「この／その／あの＋名詞」が、任意の限定した程度語と「気になる」へ係る場合だけ既存lexical:source_bounded_expression根拠を付す。既存HRの参照生成で原文を「述語＋主語」へ可逆な連体修飾として保持し、Surfaceの既存adnominal_subject構文認識へ必要な終止形だけ追加した。主体・対象・程度・原述語・actor／ID／polarity／time／certaintyとevent/fact/neutralの型を維持する。「気になる」を不安・心配・関心のいずれかへ解釈しない。選択の欠落修正ではなく、既存の同じ対象を受け取る参照の具体化である。
+
+自己代名詞・疑問主語・形式／関係名詞・引用／伝聞・他者・過去／未来／条件／否定・複数文・未完／連続終端記号・裸名詞主語は対象外。初期試行では裸名詞も通したが、独立レビュー後に最終sourceを指示語付きの閉じた範囲へ限定した。HR author／replay／全文inverseと既存Gateが同じ原文証明を用いる。Gateコード・閾値・meaning・contracts・既存owner／schema／family／最大3・公開経路は不変更。新carrier／slot／refmodeは作らない。STRUCTURE_MAP_DELTA_NONE。
+
+固定source local 889a10eeafe56539e4e6617f473a139bdb72c42d／remote bc782dd37f553f954e61bd808acffc02ef8ba3a3／同一tree 5b3500ccd283c40593be8b91d4f9e120fcc3cb21で必須回帰と同じ100件を実行した。華恋が原入力全field・観測・follow・outer・全理由を全100件全文確認した。1件で対象・程度・原述語がfollowへ戻り、他99件は全record同一。全100件のinput・観測・direct・outer・reasons、必要Move／expression／binding各137とReception plan全体は同一。変更はその1件の同核への既存witness追加、対応するsubjective inputの識別子2つ、followのみ。決定・命題・qualifier・sealは同一で、旧必要対象や元行動を削除していない。direct100、73 GENERATED／27 UNAVAILABLE。独立比較も保存し、華恋の全文確認の代替にはしない。
+
+関連9検査成功後、境界を絞った最終追加4検査も4 PASS。既存test全文をbyte exact prefixとして保ち4検査だけ追記。最終必須410は404 PASS／6 FAIL、ERROR／skip0。前回406の状態は全て同じで、新規4件は全PASS。6失敗は歴史的観測hash2、dated receipt1、bridge必要Move合計137対固定133の不一致1、旧句固定期待1、旧句tamperのreception_tamper_source_missing停止1。最後のtamperはinverse到達成功を意味しない。旧fixture／期待値／閾値不変更、work79の384件381 PASS／3 FAILを歴史的比較基準として保持し、6失敗を受入へ変更しない。後段36件・RR5 post-hash96検査・cohort診断も実行し、前回の診断全体と同一。Stage3の前回実行8 PASS／2 FAILは履歴として保持する。既存external_ref条件停止と旧mapping hash不一致は、該当contracts・固定期待不変更で未解決。Stage3の10検査とV2別17検査／42件213候補は今回未再実行で、今回の固定source実行結果とはしない。
+
+失われた旧worktree管理情報は、GitHubの固定headにある両repo全3773blobのbyteとtree一致を確認してローカル管理情報を復旧した。ローカル復旧commitとremoteの履歴は区別する。固定Pythonと全46依存を既存lockに照合し、46wheel hash・closure・2268ファイルを検証してから試験した。復旧は商品改善として数えず、初期取得失敗も非公開記録へ保持する。
+
+商品NOT_CLEAR。今回戻した具体参照にも定型締めが残り、2文の同じ締め、長い観測説明、他の中心感情・複数主題・共有関係の不足も未解決。次は同じ保存済み100件と既存承認範囲の原文証明から、中心materialと元の必要行動を保つ欠落へ進む。共有述語による統合は既存Reception Depth／Gateの2 Move・layered・min2に関わるため未実装、Stage3 FOCUSEDを流用しない。必要対象削除・同義語だけの入替え・期待値書換えで改善や成功を作らない。
+
+既存Draft PR3／30へsourceと結果を保存し、実入力・実出力・試行・失敗・全件読了記録・再開点は従来の非公開記録へ継続する。結果資料だけを追記した後は固定sourceの結果を再利用し、保存目的で再生成しない。System Context未使用・原典直接確認、PR37不変更。NOT_CLEAR・disabled・Draft/open/unmerged、candidate_ready=false・automatic_progression=false、Mash human PASS／ready／採用／merge／本番未成立。
