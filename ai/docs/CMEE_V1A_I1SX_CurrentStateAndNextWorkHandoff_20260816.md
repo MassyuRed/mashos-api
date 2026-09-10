@@ -7108,3 +7108,16 @@ sourceは既存Draft PR3へ先に保存・取得照合済み。結果は既存ha
 他者／主体省略・過去／肯定／伝聞／推量／条件host・別の選択肢・引用・未来・別文・連続終端・任意／不正確な原fieldは証明しない。旧留保経路から自己評価を再分類せず、旧選択・HR／Surface／Gate／meaning／contracts・最大3 Move・公開経路は不変更。STRUCTURE_MAP_DELTA_NONE。追加検査はNORMAL／LIMITED・全recovery・同一immutable input・原文と元行動の保持、代替肢／否定／程度／owner／時点／元行動の改変を独立inverseとGateで拒否する境界を扱う。初回1失敗で二重終端をstripが受け入れる漏れを発見し、新proofだけ終端1個除去に修正した。その後、新検査が合成例をself_evaluationと仮定した誤りを確認し、実際にfallbackを通る合成例へ訂正。初期rawを非creditで保持し、旧test全文・入力・期待値・閾値を変更しない。
 
 修正後の追加4検査は全PASS。runnerは既存current13のみ再導出し、非current ASTを維持。この固定sourceで既存必須回帰と同じ100件を実行し、華恋が原入力全field・観測・follow・可否と全理由を全件全文確認する。最終検証は未完。商品NOT_CLEAR、長い原文復唱・定型締め・他の中心materialと複数主題／共有関係は残件。disabled・Draft/open/unmerged、candidate_ready=false・automatic_progression=false。Mash human PASS／ready／採用／merge／本番なし。System Context未使用・原典直接確認、PR37不変更。
+
+
+### 2026-09-10 current — candidate87（二つの可能性を区別できない内容を元行動と保持・品質未達）
+
+既存final OPで本人の原memo全field・正確なoffset・引用外・必要な明示根拠を確認し、指示対象を未解決のまま二つの有限な状態選択肢と現在の区別／判断不能hostを全文証明する。この証明に限りkind／predicateをuncertainty、modalityをuncertainへ整合する。自己言及のself_awareness fallbackも同じ全文証明だけで整合し、明示self_evaluationは対象外。原actor・否定・時点・ID・根拠・certainty・属性を維持し、既存uncertainty／source_bounded_expression根拠、unknown／hedge_only、既存exact2選択とHR全文参照から元の必要行動も残す。選択肢を事実・診断へ確定せず、指示対象の解決、新actor／performed追加なし。他者／主体省略・過去／肯定／報告／推量／条件host・第三選択肢・引用・未来・別文・連続終端・原field不一致を除外。旧留保経路・選択条件・HR／Surface／Gate／meaning／contracts・最大3 Move・公開経路は不変更、STRUCTURE_MAP_DELTA_NONE。
+
+固定source local 1269f0d8ab1fe052fefffb997a5d77ec674d0324／remote 4e604eb5f899bac321f3e626d5ebaa2c18310b88／同一tree 6b1d646ac6f412eaea2dc88e83db4afb7ca185d4で必須回帰と同じ100件を実行。華恋が前後の原入力全field・観測・follow・可否と全理由を全100件全文確認した。同一sessionの前回読了済みbeforeは同一byteを再利用し、afterは今回全件読んだ。1件のfollowへ二つの可能性と判断不能を回復し、その観測にも不確定範囲を明示。他99件は全record・Reception plan同一。全入力・順序・可否・理由は同一で、旧139必要Moveのact／target／support／follow要素／source evidenceを全保持。direct100、73 GENERATED／27 UNAVAILABLE、Move／expression／binding各140。元行動のselected contribution・source候補・qualifierは保持するが、Move位置と役割・surface strategy、両材料をまとめる既存selected投影は変わるため、全Move／投影不変とはしない。独立比較は全文確認の補助として保存。
+
+最終必須422は416 PASS／6 FAIL、ERROR／skip0。前回418の全成否は同じで、追加4は全PASS。既存6失敗は歴史的観測hash2、dated receipt1、bridge合計140対固定133の不一致1、旧句固定期待1、旧句tamperのreception_tamper_source_missing停止1。tamper停止をinverse到達成功へ換算しない。初回の新規1失敗で二重終端のstrip漏れを修正し、その後の新規1失敗は合成例の既存分類を誤って仮定した検査構成を訂正。初期rawは非creditで保存し、旧test全文はbyte exact prefix、旧入力・期待値・閾値は不変更。work79の384件381 PASS／3 FAILという歴史的比較基準を保持し、現在6失敗を受入基準へ変えない。runnerは既存current13だけ再導出し非current AST不変。既存Python3.12.13とlock・46依存versionの確認結果を同一sessionで再利用、環境再構築なし。後段36件・RR5 post-hash96・cohort診断を実行し、前回保存診断との全文byte一致を確認した。Stage3過去8 PASS／2 FAILとV2別17検査／42件213候補は今回未再実行。
+
+商品NOT_CLEAR。今回の改善は中心内容の欠落回復であり、自然さ・簡潔さは未達。変化したfollowは長くなり、原文全文の復唱と定型句の出現も増えた。他の自己評価・中心material、未来行動との組合せ、複数主題・共有関係の欠落が残る。次はこの保存済み100件から、本来の自己評価や現在状態が既存source証明と選択へ届かない原因を確認する。自己評価を不確定表現へ読み替えず、元行動・否定・unknownを保持する。共有述語の2 Move／layered／min2契約、action-only二行動・未来行動への選択拡張、旧mapping整合は未解決。対象削除・同義語だけの置換・旧期待値書換えで成功を作らない。
+
+sourceは既存Draft PR3へ先に保存・取得照合済み。結果は既存handoff／設計02・06と同じ非公開継続記録へ保存し、取得内容と保存完了を照合する。結果資料のみの後続commitへ固定sourceの実行結果を継承し、保存目的の再生成はしない。System Context未使用・原典直接確認、PR37不変更、定例JSON／ZIP配布なし。disabled・Draft/open/unmerged、candidate_ready=false・automatic_progression=false。Mash human PASS／ready／採用／merge／本番なし。
