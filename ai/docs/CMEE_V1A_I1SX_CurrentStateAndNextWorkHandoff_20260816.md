@@ -7077,3 +7077,12 @@ runnerは既存current13 identityだけ再導出し、exact18／exact9と非curr
 商品NOT_CLEAR。回復したfollowも原文復唱と定型締めで、長さと集合内の定型句出現数は増えた。同一本文内の同じ締め二連続は従来の1件で増加なし。他の中心感情、自己評価、未来行動との組合せ、複数主題・共有関係の欠落は未解決。次は保存済み100件から、未保持の原materialが本人・有限host・時点の既存source証明と選択へ届かない原因を扱う。共有述語の2 Move／layered／min2契約、action-only二行動の選択拡張、旧mapping整合は未実装・未解決のまま保持する。必要対象削除・同義語だけの入替え・期待値書換えで解決扱いにしない。
 
 source checkpointを既存Draft PR3へ先に保存し、実試行と初期失敗も従来の非公開記録へ保存した。最終結果は既存handoff／設計02・06と同じ非公開記録へ継続し、取得内容と保存完了を確認する。資料だけの追記後は同じ固定sourceの検証を再利用する。System Context未使用・原典直接確認、PR37不変更、定例JSON／ZIP配布なし。disabled・Draft/open/unmerged・candidate_ready=false・automatic_progression=false、Mash human PASS／ready／採用／merge／本番なし。
+
+
+### 2026-09-10 candidate86 source checkpoint — 比喩としての現在の気分と元行動の保持
+
+原memo全fieldと正確なoffset・本人・引用外・単核を既存final OPで確認し、目的語付きの有限な背景＋「だけで」、比喩内の完了形＋「ような気分になる」を同じ原文のまま証明する。既存reaction／reaction／feeling／negative／current_inputと原属性を変えず、既存source_bounded_expression根拠だけを付す。選択側も同じ型・時点の根拠へ限定し、既存の独立materialと元の必要行動のexact2選択へ接続する。HRの全文「という言葉」参照を用い、比喩内の完了形を実行済み行動や事実へ確定しない。
+
+他者・疑問・引用・伝聞・外側の過去／未来／否定／推量／条件・複数文・原fieldやoffset不一致は対象外。既存other_explicitの表現をreactionへ再分類しない。HR／Surface／Gate／meaning／contracts・最大3 Move・公開経路は不変更。STRUCTURE_MAP_DELTA_NONE。公開synthetic追加4検査は、背景・比喩・現在host・元行動の保持、NORMAL／LIMITED、全recovery、同一immutable input、改変本文を独立inverse／Gateが拒否すること、原文／主体／範囲と選択境界を確認して4 PASS。旧test全文はbyte exact prefixで維持する。初期試験はsyntheticの意味分類不一致で2 FAIL／2 PASS。負例検査の後段owner未到達も見つけ、今回の新検査だけを正しい経路へ直した。初期結果は非creditで保存し、旧入力・期待値・閾値は不変更。
+
+runnerは既存current13 identityだけ再導出し、非current ASTを維持する。この固定sourceで既存必須回帰と同じ100件を実行し、華恋が入力全field・観測・follow・可否と全理由を全件全文確認する。最終検証は未完。長い原文復唱・定型締め・他の中心material・複数主題・共有関係は残件。NOT_CLEAR・disabled・Draft/open/unmerged、candidate_ready=false・automatic_progression=false。Mash human PASS／ready／採用／merge／本番なし。System Context未使用・原典直接確認、PR37不変更。

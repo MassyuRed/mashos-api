@@ -6609,8 +6609,12 @@ def _is_independent_source_material(
             item.kind == "reaction"
             and (item.semantic_frame.predicate_kind == "feeling" or (
                 item.semantic_frame.predicate_kind == "reaction"
-                and "lexical:source_current_feeling_with_verbal_background"
-                in item.semantic_frame.attribute_codes
+                and ("lexical:source_current_feeling_with_verbal_background"
+                     in item.semantic_frame.attribute_codes
+                     or ("lexical:source_bounded_expression" in item.semantic_frame.attribute_codes
+                         and item.semantic_frame.modality == "feeling"
+                         and item.semantic_frame.polarity == "negative"
+                         and item.semantic_frame.time_scope == "current_input"))
             ))
             or (item.kind in {"event", "state"}
                 and item.semantic_frame.predicate_kind in {"event", "state"}
@@ -11501,6 +11505,24 @@ def _final_stage1_align_action_status(
                             # every source argument. No subject relocation or
                             # shorter feeling-only referent is licensed here.
                             witness = "lexical:source_current_feeling_with_verbal_background"
+                    if (not witness and span.source_field == "memo"
+                        and frame.predicate_kind == "reaction"
+                        and frame.modality == "feeling" and frame.polarity == "negative"
+                        and frame.time_scope == "current_input"
+                        and re.fullmatch(
+                            r"(?:(?:私|わたし|自分)(?:は|が))?"
+                            r"[一-龯々ァ-ヶー]+を(?:一つ|ひとつ|少し)?"
+                            r"(?:見つけた|見落とした|確認した)だけで[、,]?"
+                            r"(?:全部|全て|すべて)(?:だめ|ダメ|駄目|台無し)にした"
+                            r"ような気分になる",
+                            span.raw_text,
+                        ) is not None):
+                        # Bind the finite background and the current simile
+                        # host together. Keep the existing feeling type and
+                        # operators; the embedded perfective is not an action
+                        # or a factual result. The bounded-expression witness
+                        # retains the whole wording, without fact nomination.
+                        witness = "lexical:source_bounded_expression"
                     if witness:
                         nucleus = replace(nucleus, semantic_frame=replace(
                             frame, attribute_codes=tuple(_dedupe((*codes, witness))),
