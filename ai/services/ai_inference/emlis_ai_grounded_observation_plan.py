@@ -7464,8 +7464,8 @@ def build_grounded_human_reception_plan(
                     surface_strategy="emlis_attention_first",
                 ),
             )
-    # A single selected, source-proven performance still has concrete content.
-    # Keep that content explicit without changing its selected meaning or duty.
+    # A single selected performance or current positive feeling still has
+    # concrete content. Keep it explicit without changing its meaning or duty.
     # Use the existing concrete-reference/quote policy together; the final
     # author emits an unquoted nominal and anaphoric recovery stays available.
     if (
@@ -7475,7 +7475,7 @@ def build_grounded_human_reception_plan(
         and reference_mode == "anaphoric_first"
         and len(moves) == 1
         and moves[0].required
-        and moves[0].reception_act == "honor_concrete_effort"
+        and moves[0].reception_act in {"honor_concrete_effort", "recognize_lived_change"}
         and len(moves[0].target_nucleus_ids) == 1
         and not moves[0].support_nucleus_ids
     ):
@@ -7485,10 +7485,24 @@ def build_grounded_human_reception_plan(
             tuple(primary_nucleus_ids) == (target_id,)
             and target is not None
             and target.retention == "required"
-            and target.source_fields == ("memo_action",)
             and len(target.source_span_ids) == 1
             and target.semantic_frame.actor == "current_user"
-            and source_proven_performed_action_status(target)
+            and (
+                moves[0].reception_act == "honor_concrete_effort"
+                and target.source_fields == ("memo_action",)
+                and source_proven_performed_action_status(target)
+                or moves[0].reception_act == "recognize_lived_change"
+                and target.source_fields == ("memo",)
+                and target.grounding_kind == "explicit"
+                and is_grounded_positive_feeling(target)
+                and target.semantic_frame.time_scope in {"present", "current_input"}
+                and not set(target.semantic_frame.attribute_codes).intersection({
+                    "operator:change", "operator:result", "operator:performed_action",
+                    "semantic_role:current_change", "semantic_role:explicit_result",
+                })
+                and sum(bool(set(item.source_fields) & _TEXT_SOURCE_FIELDS)
+                        for item in nuclei) == 1
+            )
             and not any(target_id in (r.from_nucleus_id, r.to_nucleus_id)
                         for r in relations)
         ):

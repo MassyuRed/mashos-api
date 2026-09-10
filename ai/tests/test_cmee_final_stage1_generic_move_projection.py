@@ -9724,3 +9724,117 @@ class CMEEFinalAlternativeUncertaintySelectionTest(unittest.TestCase):
                 complexity=plan.input_profile.semantic_complexity, material_quality=plan.input_profile.material_quality,
                 include_reception_relation_support=True, final_source_fidelity=True)
             self.assertEqual(response.human_follow_target_ids, (action.nucleus_id,))
+
+class CMEEFinalSingleCurrentFeelingReferenceTest(unittest.TestCase):
+    sources = (
+        "今日は気分が軽い。",
+        "外の空気が心地よくて、今は気分も少し軽い。",
+        "日差しが窓から差し込んできて、今は私の気分が軽いです。",
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = tuple(_full_surface_artifacts(CMEEFinalCurrentMoodSourceTest._row(s))
+                              for s in cls.sources)
+
+    def test_selected_current_feeling_keeps_its_complete_object_in_both_qualities(self):
+        for source, a in zip(self.sources, self.artifacts):
+            with self.subTest(source=source):
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                rp = a.plan.response_plan.human_reception_plan
+                move, = rp.moves
+                self.assertEqual((move.reception_act, move.reference_mode),
+                                 ("recognize_lived_change", "short_anchor_if_ambiguous"))
+                self.assertTrue(move.required)
+                self.assertEqual(move.target_nucleus_ids, a.plan.response_plan.primary_nucleus_ids)
+                self.assertEqual(move.support_nucleus_ids, ())
+                self.assertEqual((rp.reference_mode, rp.quote_policy.max_anchor_count),
+                                 (move.reference_mode, 1))
+                follow = _reception_text(a.surface.text)
+                self.assertEqual(follow.count(source.rstrip("。") + "という気持ち"), 1)
+                self.assertIn("受け止めています", follow)
+                for wrong in ("その気持ち", "変化", "小さくせず", "うれしく", "「", "『"):
+                    self.assertNotIn(wrong, follow)
+                inputs = _compile_inputs(CMEEFinalCurrentMoodSourceTest._row(source))
+                self.assertEqual(a.plan.nuclei, inputs.grounded_plan.nuclei)
+                self.assertEqual(a.plan.relations, inputs.grounded_plan.relations)
+                for quality in ("grounded", "limited_grounding"):
+                    self.assertEqual(_cmee_semantic_reception_plan(
+                        inputs.grounded_plan, a.resolver, material_quality=quality).moves, rp.moves)
+                decision, = a.selected_subjective_input.decisions
+                self.assertEqual(decision.subjective_proposition.appraisal_content.operation,
+                                 "RECEIVE_AS_MATERIAL")
+
+    def test_source_background_degree_time_and_feeling_cannot_be_replaced_in_follow(self):
+        a = self.artifacts[1]
+        nominal = self.sources[1].rstrip("。") + "という気持ち"
+        for old, new in ((nominal, "その気持ち"), (nominal, nominal + "と" + nominal),
+                         ("外の空気が心地よくて、", ""), ("外の空気", "友人"),
+                         ("今は", "昨日は"), ("少し", ""), ("軽い", "軽くない"),
+                         ("気分も", "気分だけ"), ("という気持ち", "という変化"),
+                         ("受け止めています", "感じています")):
+            with self.subTest(old=old, new=new):
+                body = _tamper_reception(a.surface.text, old, new)
+                self.assertNotEqual(body, a.surface.text)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan, surface_result=replace(a.surface, text=body),
+                    resolver=a.resolver, require_body_inverse=True,
+                    selected_subjective_input=a.selected_subjective_input).passed)
+
+    def test_all_recovery_stages_reuse_the_selected_decision_and_existing_reference_policy(self):
+        for source, a in zip(self.sources, self.artifacts):
+            rp = a.plan.response_plan.human_reception_plan
+            for args, kwargs in a.author_arguments:
+                stage = kwargs["recovery_stage"]
+                with self.subTest(source=source, stage=stage):
+                    self.assertIs(kwargs["selected_subjective_input"], a.selected_subjective_input)
+                    authored = next(s for s in a.authored if s.recovery_stage == stage)
+                    replay = reception_owner.replay_source_grounded_human_reception_from_plan(
+                        args[0], args[2], args[3], plan=kwargs["plan"], recovery_stage=stage,
+                        clause_plans=kwargs["clause_plans"], selected_subjective_input=a.selected_subjective_input)
+                    self.assertEqual(replay.text, authored.text)
+                    self.assertEqual(authored.realized_move_ids, (rp.moves[0].move_id,))
+                    if stage in {"full", "optional_removed"}:
+                        self.assertIn(source.rstrip("。") + "という気持ち", authored.text)
+                    else:
+                        self.assertEqual(reception_owner.reception_effective_move_reference_mode(
+                            rp, rp.moves[0], stage), "anaphoric_first")
+                    sp = a.sentence_plan if stage == "full" else (
+                        surface_owner.build_reception_recovery_sentence_plan(
+                            a.sentence_plan, a.plan, a.resolver, recovery_stage=stage))
+                    actual = _recovery_surface(a, sp)
+                    self.assertIn(source.rstrip("。"), actual.text)
+                    self.assertTrue(evaluate_grounded_surface_body_inverse(
+                        body=actual.text.encode(), plan=a.plan, sentence_plan=sp, resolver=a.resolver,
+                        selected_subjective_input=a.selected_subjective_input).passed)
+
+    def test_reference_does_not_select_new_feelings_or_change_legacy_source_admission(self):
+        a = self.artifacts[0]
+        inputs = _compile_inputs(CMEEFinalCurrentMoodSourceTest._row(self.sources[0]))
+        plan = inputs.grounded_plan
+        target = next(n for n in plan.nuclei if n.source_fields == ("memo",))
+        for changes in ({"actor": "other"}, {"actor": "unknown"}, {"time_scope": "past"},
+                        {"time_scope": "future"}, {"modality": "uncertain"}, {"polarity": "negative"},
+                        {"attribute_codes": (*target.semantic_frame.attribute_codes, "operator:change")},
+                        {"attribute_codes": (*target.semantic_frame.attribute_codes, "operator:performed_action")}):
+            altered = replace(target, semantic_frame=replace(target.semantic_frame, **changes))
+            changed = replace(plan, nuclei=tuple(altered if n == target else n for n in plan.nuclei))
+            with self.subTest(changes=changes):
+                self.assertEqual(_cmee_semantic_reception_plan(changed, a.resolver).reference_mode,
+                                 "anaphoric_first")
+        for changed in (replace(plan, source_contracts=()),
+                        replace(plan, nuclei=tuple(replace(n, grounding_kind="user_stated_relation")
+                                if n == target else n for n in plan.nuclei))):
+            self.assertEqual(_cmee_semantic_reception_plan(changed, a.resolver).reference_mode,
+                             "anaphoric_first")
+        for text in ("同僚の気分が軽い。", "今日は気分が軽い？", "今日は気分が軽いかもしれない。",
+                     "昨日は気分が軽かった。", "明日は気分が軽い。", "今日は気分が軽いと聞いた。"):
+            source, base, nuclei, _ = CMEEFinalSceneMoodSourceTest._project(text)
+            self.assertFalse(any(observation_plan_owner.is_grounded_positive_feeling(n)
+                                 for n in nuclei if n.source_fields == ("memo",)))
+            self.assertEqual(base, build_grounded_observation_plan(
+                source.normalized_current_input, evidence_spans=source.evidence_spans))

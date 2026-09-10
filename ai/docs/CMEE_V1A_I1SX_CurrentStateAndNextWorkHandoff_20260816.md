@@ -8,12 +8,12 @@
 
 1. `mashos-api` Draft PR #3 とこの文書を GitHub から fresh fetch する。
 2. PR head、base、changed paths、Draft/open/unmerged を確認する。
-3. candidate78の最新checkpoint・検証状態・残件を末尾で確認する。
+3. 末尾の最新candidate checkpoint・検証状態・残件を確認する。
 4. PRをready/mergeせず、`automatic_progression=false`を維持する。
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-10最新（candidate85）：疑問補文の否定と外側の過去経験を全fieldで分け、失われていた気持ち・背景と元行動をfollowへ保持。1件変更・他99件全record同一、華恋が全100件全文確認済み。direct100／73 GENERATED・27 UNAVAILABLE、旧137責務を保持して各層138。必須414は408成功／6失敗、前回410の全成否・旧期待値不変更。原文復唱・定型締め・他の中心感情／関係の欠落は残りNOT_CLEAR。詳細と再開点は末尾candidate85。System Context未使用・原典直接確認、PR37不変更。
+2026-09-10最新（candidate88 source checkpoint）：既に選択された現在の肯定感情が指示語だけへ縮む欠落を、既存OPの具体参照方針で修正。最終検証は未完。直前candidate87はdirect100／73 GENERATED・27 UNAVAILABLE、必須422は416成功／6既存失敗、NOT_CLEAR。現在の実装範囲と再開点は末尾candidate88。System Context未使用・原典直接確認。
 
 ## 1. GitHub anchors
 
@@ -7121,3 +7121,14 @@ sourceは既存Draft PR3へ先に保存・取得照合済み。結果は既存ha
 商品NOT_CLEAR。今回の改善は中心内容の欠落回復であり、自然さ・簡潔さは未達。変化したfollowは長くなり、原文全文の復唱と定型句の出現も増えた。他の自己評価・中心material、未来行動との組合せ、複数主題・共有関係の欠落が残る。次はこの保存済み100件から、本来の自己評価や現在状態が既存source証明と選択へ届かない原因を確認する。自己評価を不確定表現へ読み替えず、元行動・否定・unknownを保持する。共有述語の2 Move／layered／min2契約、action-only二行動・未来行動への選択拡張、旧mapping整合は未解決。対象削除・同義語だけの置換・旧期待値書換えで成功を作らない。
 
 sourceは既存Draft PR3へ先に保存・取得照合済み。結果は既存handoff／設計02・06と同じ非公開継続記録へ保存し、取得内容と保存完了を照合する。結果資料のみの後続commitへ固定sourceの実行結果を継承し、保存目的の再生成はしない。System Context未使用・原典直接確認、PR37不変更、定例JSON／ZIP配布なし。disabled・Draft/open/unmerged、candidate_ready=false・automatic_progression=false。Mash human PASS／ready／採用／merge／本番なし。
+
+
+### 2026-09-10 candidate88 source checkpoint — 選択済みの現在の肯定感情を具体参照へ保持
+
+現在の肯定感情は既に正しく選択されているが、単一Moveの参照方針により最終followが指示語だけになる欠落を修正した。既存final OPの単一実行済み行動に用いる具体参照方針を、required・単一memo／単一span・本人・現在・明示根拠・既存positive feeling型・関係なしの同じ選択済み対象にも適用する。意味核／actor／時制／感情分類／根拠／選択対象／act／role／supportは変更しない。新しいsource admissionや全field証明を追加せず、既存認定された意味を既存HRの全文＋気持ちの参照へ渡す。過去・未来・未確定・否定・change／result／performedは対象外。NORMAL／LIMITEDと既存quote方針をそろえ、anaphoric recoveryは維持する。
+
+公開synthetic追加4検査は、元の気分と背景・程度・時点、同一selected input、全recoveryと独立replay／inverse／Gate、他者・疑問・伝聞・不確定表現の既存source認定境界を扱う。初回3 PASS／1 FAILは新classの挿入位置により旧検査末尾が新methodへ移ったNameError。元検査全文を戻し、新classをEOFへ追記した。修正後は旧test全文byte prefixと全既存ASTの一致をrootと独立reviewで確認。初回結果は非creditで保持し、旧入力・期待値・閾値を書き換えていない。最終必須回帰で修正後4件も実行する。
+
+初期の実出力試行では背景と気分がfollowへ戻りGate／inverseが成立。runnerは既存current13 identityのみ再導出し非current ASTを維持した。この固定sourceで必須回帰・同じ100件・華恋による全入力field／観測／follow／可否と全理由の全文確認を行う。自己評価の別例では、有限自己評価の認識不足、行動先頭の接続詞と格助詞の取り違え、既存対比関係が重なることを確認したが未修正。複合現在状態と不確定な能力の欠落、共有述語の統合、action-onlyや未来行動の選択拡張も継続残件。
+
+HR／Surface／Gate／meaning／contracts・公開I5経路・API／DB／RN／Piece／Analysisは不変更、STRUCTURE_MAP_DELTA_NONE。System Context未使用・原典直接確認、PR37不変更。NOT_CLEAR・disabled・Draft/open/unmerged、candidate_ready=false・automatic_progression=false。Mash human PASS／ready／採用／merge／本番なし。
