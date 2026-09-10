@@ -196,7 +196,7 @@ _BODY_RECEPTION_GRAMMAR_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] 
     ("negative_carrier_nominal", re.compile(r"なさ")),
     # A finite adnominal plus its object head; source identity is proved only
     # by the inverse matcher, never by the lexical content of this witness.
-    ("adnominal_subject", re.compile(r"(?:ている|でいる)[^、,。\s]+?(?=を)")),
+    ("adnominal_subject", re.compile(r"(?:ている|でいる|気になる)[^、,。\s]+?(?=を)")),
     # A quote boundary for context grammar, not an additional source anchor.
     ("secondary_quote_boundary", re.compile(r"『[^『』]*』")),
 )

@@ -37,6 +37,7 @@ from emlis_ai_grounded_observation_plan import (
     _bounded_bare_wish_nominal,
     _final_stage1_continuation_is_desired,
     source_grounded_feeling_subject_parts,
+    source_grounded_attention_subject_parts,
     _source_finite_without_postposed_focus,
 )
 
@@ -4750,6 +4751,23 @@ def source_grounded_feeling_target_nominal(
                for span in resolver.resolve_many(resolver.span_ids)
                if span.source_field in fields)):
         return ""
+    attention = source_grounded_attention_subject_parts(fragment)
+    if attention is not None:
+        frame = nucleus.semantic_frame
+        if (nucleus.kind != "event" or frame.predicate_kind != "event"
+            or frame.modality != "fact" or frame.polarity != "neutral"
+            or frame.time_scope not in {"present", "current_input"}
+            or nucleus.source_fields != ("memo",) or fields != ("memo",)
+            or len(nucleus.source_span_ids) != 1
+            or profile.quoted_boundary or profile.performed_action or profile.future_action
+            or "lexical:source_bounded_expression" not in frame.attribute_codes
+            or any(code.startswith("operator:") for code in frame.attribute_codes)
+        ):
+            return ""
+        subject, host = attention
+        # Restore the original case and order exactly. No feeling category,
+        # temporal aspect or lexical synonym is supplied by this view.
+        return host + subject if subject + "が" + host == fragment else ""
     nominalization = _source_grounded_nominalization_from_profiles(
         (fragment,), (profile,), "ANAPHORIC",
     )

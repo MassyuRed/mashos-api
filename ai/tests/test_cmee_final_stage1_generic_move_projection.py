@@ -9155,3 +9155,143 @@ class CMEEFinalPastDislikeSourceTest(unittest.TestCase):
                 complexity=plan.input_profile.semantic_complexity, material_quality=plan.input_profile.material_quality,
                 include_reception_relation_support=True, final_source_fidelity=True)
             self.assertEqual(response.human_follow_target_ids, (action.nucleus_id,))
+
+
+class CMEEFinalAttentionObjectReferentTest(unittest.TestCase):
+    marker = "lexical:source_bounded_expression"
+    examples = (("その話題が少し気になる", "少し気になるその話題"),
+                ("この作品がとても気になる", "とても気になるこの作品"))
+
+    @staticmethod
+    def row(text, action=""):
+        return {"case_id": "public-attention-object", "input": {
+            "thought_text": text, "action_text": action, "categories": ["生活"],
+            "emotions": [{"type": "平穏", "strength": "weak"}],
+        }}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = tuple(_full_surface_artifacts(cls.row(s + "。")) for s, _n in cls.examples)
+
+    def test_object_degree_and_neutral_predicate_reach_unchanged_duty_and_replay(self):
+        for (source, nominal), a in zip(self.examples, self.artifacts):
+            with self.subTest(source=source):
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                target = next(n for n in a.plan.nuclei if n.source_fields == ("memo",))
+                inputs = _compile_inputs(self.row(source + "。"))
+                legacy = build_grounded_observation_plan(inputs.source.normalized_current_input,
+                                                        evidence_spans=inputs.source.evidence_spans)
+                before = next(n for n in legacy.nuclei if n.source_fields == ("memo",))
+                self.assertEqual(target.kind, "event")
+                self.assertEqual(replace(target.semantic_frame,
+                    attribute_codes=tuple(c for c in target.semantic_frame.attribute_codes if c != self.marker)),
+                    before.semantic_frame)
+                self.assertEqual(replace(target, semantic_frame=before.semantic_frame), before)
+                self.assertIn(self.marker, target.semantic_frame.attribute_codes)
+                follow = _reception_text(a.surface.text).strip()
+                self.assertEqual(follow, nominal + "を小さくせずに受け止めています。")
+                self.assertNotIn(source, follow)
+                moves = a.plan.response_plan.human_reception_plan.moves
+                self.assertEqual(len(moves), 1)
+                self.assertTrue(moves[0].required)
+                self.assertEqual(moves[0].reference_mode, "anaphoric_first")
+                self.assertEqual(moves[0].reception_act, "stay_with_current_burden")
+                for quality in ("grounded", "limited_grounding"):
+                    self.assertEqual(_cmee_semantic_reception_plan(inputs.grounded_plan, a.resolver,
+                                                                  material_quality=quality).moves, moves)
+                for args, kwargs in a.author_arguments:
+                    self.assertIs(kwargs["selected_subjective_input"], a.selected_subjective_input)
+                    self.assertTrue(all(e.nominalization_plan == reception_owner._SOURCE_GROUNDED_NOMINALIZATION_BASE
+                                        for e in args[1]))
+                    replay = reception_owner.replay_source_grounded_human_reception_from_plan(
+                        args[0], args[2], args[3], plan=kwargs["plan"], recovery_stage=kwargs["recovery_stage"],
+                        clause_plans=kwargs["clause_plans"], selected_subjective_input=a.selected_subjective_input)
+                    authored = next(s for s in a.authored if s.recovery_stage == kwargs["recovery_stage"])
+                    self.assertEqual(replay.text, authored.text)
+                for authored in a.authored:
+                    sp = a.sentence_plan if authored.recovery_stage == "full" else (
+                        surface_owner.build_reception_recovery_sentence_plan(
+                            a.sentence_plan, a.plan, a.resolver, recovery_stage=authored.recovery_stage))
+                    actual = _recovery_surface(a, sp)
+                    self.assertIn(nominal, _reception_text(actual.text))
+                    self.assertTrue(evaluate_grounded_surface_body_inverse(
+                        body=actual.text.encode(), plan=a.plan, sentence_plan=sp,
+                        resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+
+    def test_inverse_rejects_missing_object_degree_predicate_and_added_interpretation(self):
+        source, nominal = self.examples[0];a = self.artifacts[0]
+        for replacement in (
+            "気になるその話題", "とても気になるその話題", "少し気になる別件",
+            "少し気になったその話題", "少し気にならないその話題", "その話題への少しの心配",
+            "今ここに置かれた言葉", source, nominal + "と" + nominal,
+            "「" + nominal + "」", "『" + nominal + "』", source + "、" + nominal,
+        ):
+            with self.subTest(replacement=replacement):
+                body = _tamper_reception(a.surface.text, nominal, replacement)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan, surface_result=replace(a.surface, text=body),
+                    resolver=a.resolver, require_body_inverse=True,
+                    selected_subjective_input=a.selected_subjective_input).passed)
+
+    def test_original_field_rejects_other_owner_questions_focus_and_nonfinite_scope(self):
+        parts = observation_plan_owner.source_grounded_attention_subject_parts
+        for source in (
+            "その話題は気になる", "その話題も気になる", "弟はその話題が気になる",
+            "弟にとってその話題が気になる", "私はその話題が気になる",
+            "明日はその話題が気になる", "その話題が気になった", "その話題が気にならない",
+            "その話題が気になるかも", "その話題が気になると弟が言った", "その話題が気になるなら休む",
+            "終わった話題が気になる", "何が気になる", "何人が気になる", "誰が気になる",
+            "何処が気になる", "ナニが気になる", "ダレが気になる", "ドレが気になる",
+            "私が気になる", "自分が気になる", "時が気になる", "場合が気になる",
+            "その為が気になる", "前が気になる", "頃が気になる",
+            "返事が気になる", "この私が気になる", "そのワタシが気になる",
+            "その己が気になる", "その小生が気になる", "その当方が気になる",
+            "その理由が気になる", "この原因が気になる", "あの意味が気になる",
+            "その必要性が気になる", "その癖が気になる", "その傾向が気になる",
+            "その仕方が気になる", "その動機が気になる", "その条件が気になる",
+            "そのドノ作品が気になる", "そのドンナ案件が気になる", "そのナニモノが気になる",
+            "そのイツが気になる", "その幾人が気になる",
+        ):
+            with self.subTest(source=source):
+                self.assertIsNone(parts(source))
+        for source in (
+            "その話題が気になる？", "その話題が気になる！", "「その話題が気になる」",
+            "その話題が気になる…", "その話題が気になる...", "その話題が気になる．．．",
+            "その話題が気になる．。", "その話題が気になる。。",
+            "弟は。その話題が気になる。", "その話題が気になる。と弟が言った。",
+        ):
+            with self.subTest(source=source):
+                inputs = _compile_inputs(self.row(source))
+                self.assertTrue(all(self.marker not in n.semantic_frame.attribute_codes
+                                    for n in inputs.grounded_plan.nuclei))
+
+    def test_target_nominal_cannot_borrow_witness_owner_type_or_relation(self):
+        a = self.artifacts[0];rp = a.plan.response_plan.human_reception_plan;move = rp.moves[0]
+        index = {n.nucleus_id:n for n in a.plan.nuclei};target = index[move.target_nucleus_ids[0]]
+        derive = reception_owner.source_grounded_feeling_target_nominal
+        self.assertEqual(derive(move, a.plan, index, a.resolver), self.examples[0][1])
+        self.assertEqual(derive(move, None, index, a.resolver), "")
+        for fields in (
+            {"actor":"other"}, {"modality":"feeling"}, {"modality":"uncertain"},
+            {"predicate_kind":"feeling"}, {"polarity":"negative"}, {"time_scope":"past"},
+            {"time_scope":"future"}, {"attribute_codes":tuple(c for c in target.semantic_frame.attribute_codes if c != self.marker)},
+            {"attribute_codes":(*target.semantic_frame.attribute_codes,"quantity:multiple")},
+            {"attribute_codes":(*target.semantic_frame.attribute_codes,"operator:uncertainty")},
+        ):
+            changed = replace(target,semantic_frame=replace(target.semantic_frame,**fields))
+            plan = replace(a.plan,nuclei=tuple(changed if n==target else n for n in a.plan.nuclei))
+            self.assertEqual(derive(move,plan,{**index,target.nucleus_id:changed},a.resolver),"")
+        supported = replace(move,support_nucleus_ids=(a.plan.nuclei[1].nucleus_id,))
+        plan = replace(a.plan,response_plan=replace(a.plan.response_plan,human_reception_plan=replace(rp,moves=(supported,))))
+        self.assertEqual(derive(supported,plan,index,a.resolver),"")
+        relation = observation_plan_owner.GroundedSemanticRelation(
+            relation_id="public-attention-context",type="contrast",from_nucleus_id=target.nucleus_id,
+            to_nucleus_id=a.plan.nuclei[1].nucleus_id,source_span_ids=target.source_span_ids,
+            grounding_kind="explicit",certainty=1.0,retention="required")
+        plan = replace(a.plan,relations=(relation,),coverage_requirements=replace(a.plan.coverage_requirements,
+            required_relation_ids=(relation.relation_id,)))
+        self.assertEqual(derive(move,plan,index,a.resolver),"")

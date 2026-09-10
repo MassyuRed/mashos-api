@@ -10170,6 +10170,32 @@ def _source_bounded_uncertainty_is_bound(fragment: str) -> bool:
     return bool(match and (match.group("hedge") or match.group("ending").startswith("かも")))
 
 
+def source_grounded_attention_subject_parts(text: str) -> tuple[str, str] | None:
+    """Locate a finite attention object without deciding interest or worry.
+
+    Only the nominative case relocates under an adnominal view. A deictic
+    content noun and the unchanged degree/predicate preserve both readings
+    of kininaru; question words and formal nouns cannot donate an object.
+    The caller must separately prove the original field and experiencer.
+    """
+    match = re.fullmatch(
+        r"(?P<subject>(?:この|その|あの)[一-鿿々ァ-ヶー]+)が"
+        r"(?P<host>(?:少し|ちょっと|とても|強く|かなり)?気になる)", text,
+    )
+    if match is None:
+        return None
+    subject, host = match.group("subject"), match.group("host")
+    noun = re.sub(r"^(?:この|その|あの)", "", subject)
+    if (re.search(r"[何誰幾]", noun)
+        or re.match(r"(?:ナニ|ダレ|ドレ|ドコ|ドチラ|ドナタ|ドノ|ドンナ|イツ|イクツ|イズレ)", noun)
+        or re.fullmatch(r"(?:私|僕|俺|自分|己|我|小生|拙者|当方|ワタシ|ワタクシ|ボク|オレ)(?:達|等)?", noun)
+        or noun in {"時", "頃", "場合", "際", "所", "為", "訳", "筈", "方", "様",
+                    "前", "後", "上", "内", "中", "度", "理由", "原因", "意味", "必要",
+                    "必要性", "癖", "傾向", "仕方", "目的", "動機", "条件"}):
+        return None
+    return subject, host
+
+
 def _final_stage1_typed_nuclei(
     plan: GroundedObservationPlan,
     evidence_spans: Sequence[EvidenceSpan],
@@ -10213,6 +10239,38 @@ def _final_stage1_typed_nuclei(
             else ()
         )
         if not projections:
+            # Prove the entire current expression before a selected target
+            # can use an adnominal reference. Keep event/fact/neutral and all
+            # source ownership; kininaru is not promoted to worry or feeling.
+            frame = nucleus.semantic_frame
+            if (
+                span is not None and normalized_input is not None
+                and nucleus.kind == frame.predicate_kind == "event"
+                and frame.modality == "fact" and frame.polarity == "neutral"
+                and nucleus.source_fields == ("memo",) and span.source_field == "memo"
+                and frame.actor == "current_user"
+                and frame.time_scope in {"present", "current_input"}
+                and not any(code.startswith(("operator:", "source_fragment_scalar_",
+                                             "surface_scalar_", "semantic_dependency:"))
+                            for code in frame.attribute_codes)
+            ):
+                source = str(normalized_input.get("memo") or "")
+                start, end = span.start_index, span.end_index
+                if (
+                    0 <= start < end <= len(source)
+                    and _clean(source[start:end]) == _clean(span.raw_text)
+                    and not source[:start].strip()
+                    and re.fullmatch(r"\s*[。．.]?\s*", source[end:])
+                    and _top_level_text(source) == source
+                    and source_grounded_attention_subject_parts(
+                        re.sub(r"[。．.]$", "", source.strip()),
+                    ) is not None
+                ):
+                    nucleus = replace(nucleus, semantic_frame=replace(
+                        frame, attribute_codes=tuple(_dedupe((
+                            *frame.attribute_codes, "lexical:source_bounded_expression",
+                        ))),
+                    ))
             # The shared lexical refusal marker also matches a remembered
             # dislike. Only a whole, finite self-experiential past clause can
             # correct that status; the passive background stays verbatim in

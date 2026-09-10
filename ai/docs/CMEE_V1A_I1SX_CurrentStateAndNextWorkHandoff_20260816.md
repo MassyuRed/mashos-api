@@ -13,7 +13,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-10最新（candidate83）：過去の「嫌だった」という気持ちと元の行動をともに保持。follow1件改善・他99件全record同一、全100件全文確認済み。必須406は400成功／6失敗、既存期待値不変更。前回Stage3の2失敗は未解決として引継ぎ（今回未再実行）。締め反復・他の中心感情欠落・旧mapping整合は残りNOT_CLEAR。詳細と再開点は末尾candidate83。System Context未使用・原典直接確認、PR37不変更。
+2026-09-10最新（candidate84 source checkpoint）：選択済みの具体対象が一般参照に消える問題を、原field証明済みの指示語付き対象・程度・気になるの可逆な連体形で改善。型・語義・reference modeを保持。境界4検査成功後、固定sourceの必須回帰・同100件・華恋全文確認へ進む。NOT_CLEAR、System Context未使用・原典直接確認、PR37不変更。
 
 ## 1. GitHub anchors
 
@@ -7027,3 +7027,12 @@ sourceと結果は既存Draft PR3／30、実入力・実出力・初期失敗・
 商品NOT_CLEAR。回復した気持ちも原文復唱と定型締めに留まり、前回の2文同じ締め、長い説明、他の中心感情・複数主題・共有関係の不足は残る。共有述語で2対象を一文へ統合する案は現在のReception Depth／Gateの2 Move・layered・min2に関わるため実装せず、その具体境界を非公開記録へ残した。Stage3 FOCUSEDは別軸であり流用しない。次は既存承認範囲の原文証明で残る中心material欠落を進め、共有述語案はDepth／Gate契約変更の扱いと合わせて判断する。必要対象削除・同義語だけの入替え・期待値書換えで改善や成功を作らない。
 
 既存Draft PR3／30へsourceと結果を保存し、実入力・実出力・初期試行・失敗・全件読了記録・再開点は従来の非公開記録へ継続する。結果資料のみの追記後も同じ固定sourceの結果を再利用し、保存目的で再生成しない。System Context未使用・原典直接確認、PR37不変更。NOT_CLEAR・disabled・Draft/open/unmerged、candidate_ready=false・automatic_progression=false、Mash human PASS／ready／採用／merge／本番未成立。
+
+
+### 2026-09-10 candidate84 source checkpoint — 選択済み対象を具体的に受け取る
+
+原field全体で本人の現在のevent／fact／neutralと確定した「指示語付き対象が程度＋気になる」を既存OPで証明し、既存source_bounded_expression根拠を付ける。kind・polarity・modality・time・actor・ID・certainty・根拠は不変。「気になる」を不安・心配等へ確定させない。HRで元の対象と程度・述語を保って連体形へ移し、逆の格・順序復元が原句と完全一致する場合だけ、既存anaphoric referentとして使う。語義を新しく選択せず、reference mode・nominalization schema／slotは不変更。既存adnominal_subject認識に必要な有限終端だけを追加し、Gateの独立原文照合・全対象bytes・一回出現・文末位置・完成本文inverseは維持する。
+
+この／その／あの付き対象に閉じ、自己代名詞・疑問語・形式名詞・理由等の連体化で関係が変わる対象、他者・引用・報告・疑問・否定・未来・過去・推量・連続終端・別文・topic／focusは対象外。初期trialの裸名詞は最終scopeから除外した。初期9関連検査成功と境界修正後4検査を保存し、旧test全文・fixture・期待値を維持する。固定Python環境とGit管理情報が消失していたため、現在remote全blob／whole tree一致でGitを復元し、CPython3.12.13と46依存・46wheel・2268実体を既存lockで復元照合した。追加依存・外部AI・本番変更なし。技術復元自体は商品creditではない。
+
+既存owner／family／最大3・Depth／Gate閾値・API／DB／RN／I5／Piece／Analysisは不変更、STRUCTURE_MAP_DELTA_NONE。最終固定sourceで必須回帰と同100件を確認する。NOT_CLEAR・disabled・Draft PR3／30継続、candidate_ready=false／automatic_progression=false、Mash human PASS／ready／採用／merge／本番なし。
