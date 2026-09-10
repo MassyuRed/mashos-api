@@ -153,7 +153,7 @@ _RECEPTION_QUOTE_RE: Final = re.compile(r"「([^」]*)」")
 _BODY_RELATION_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ("from_to", re.compile(r"から.{0,160}(?:へ|に)")),
     ("coexistence", re.compile(r"一方で|同時に|重なり|異なる向き|並んで|両方|ともに|中にも|中でも")),
-    ("link", re.compile(r"つなが|表れ|生まれ|結びつ")),
+    ("link", re.compile(r"つなが|表れ|生まれ|結びつ|に対する")),
     ("counterdirection", re.compile(r"同意していない|終わらない|それでも|けれど")),
     ("change", re.compile(r"変化|動いて|進み|向き")),
 )
@@ -189,7 +189,7 @@ _BODY_RECEPTION_GRAMMAR_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] 
     # A suffix witness makes no claim about actor or performance. Only the
     # final inverse matcher may bind its exact bytes to a proven source target.
     ("finite_clause_nominal", re.compile(
-        r"(?:ている|でいる|ない|た|だ|[くぐすつぬぶむる])こと"
+        r"(?:ている|でいる|ない|た|だ|[いくぐすつぬぶむる])こと"
         r"|(?:たい|ほしい|欲しい)(?:気持ち|願い)(?:は|が)あるということ"
     )),
     # Structural only: this suffix does not prove feeling or burden.
@@ -2798,6 +2798,15 @@ def _render_relation(
             sentences.append(f"{left}から、結果として{right}へつながっています。")
         elif relation.type == "continuation_or_refusal":
             sentences.append(f"{left}に対して、{right}という、続ける方向には同意していない言葉もあります。")
+        elif (relation.type == "evaluation_about_event"
+              and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"):
+            target = nucleus_index[relation.to_nucleus_id]
+            times = {code.split(":", 1)[1] for code in target.semantic_frame.attribute_codes
+                     if code.startswith("thread_time:")}
+            when = "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
+            if when is None or target.source_fields != ("answer_text_private",):
+                raise GroundedSentenceSurfaceError("thread_answer_target_time_unbound")
+            sentences.append(f"{left}ことに対する{when}の受け止めとして、{right}が見えます。")
         elif relation.type == "uncertain_connection":
             sentences.append(f"{left}のあとに{right}が続いていますが、それ以上の因果は確定しません。")
         elif left_form == "nominal_anchor" and right_form == "nominal_anchor":

@@ -48,6 +48,8 @@ from .contracts import (
     ForegroundScopeDerivationState,
     ForegroundScopeObjectCompatibilityRow,
     ForegroundScopeRelationKind,
+    EmlisThreadScopeRelationKind,
+    admitted_scope_relation_kind,
     GroundedMeaningGraph,
     GroundedInterpretationProjection,
     GroundedSemanticComponentProjection,
@@ -128,6 +130,7 @@ _FOREGROUND_SCOPE_BASIS_REF_VERSION = (
 
 _BASIS_KINDS_EXACT5 = frozenset(ForegroundScopeBasisKind)
 _RELATION_KINDS_EXACT4 = frozenset(ForegroundScopeRelationKind)
+_ADMITTED_SCOPE_RELATIONS = _RELATION_KINDS_EXACT4 | frozenset(EmlisThreadScopeRelationKind)
 _COMPATIBILITY_AXES_EXACT10 = tuple(ForegroundScopeCompatibilityAxis)
 
 _COMPATIBILITY_FIELD_BY_AXIS = {
@@ -672,14 +675,19 @@ def derive_grounded_situation_view(
     for row in premeaning_inputs.source_relation_rows:
         if (
             type(row) is not GroundedSourceRelationRow
-            or type(row.relation_kind) is not ForegroundScopeRelationKind
-            or row.relation_kind not in _RELATION_KINDS_EXACT4
+            or not admitted_scope_relation_kind(row.relation_kind)
+            or row.relation_kind not in _ADMITTED_SCOPE_RELATIONS
             or type(row.relation_ref) is not str
             or not row.relation_ref
         ):
             raise CMEEStage1ContractError(
                 "grounded_situation_view_source_relation_invalid"
             )
+        if (type(row.relation_kind) is EmlisThreadScopeRelationKind
+                and (graph.source_version != "cocolon.cmee.emlis_thread.v1"
+                     or row.relation_ref not in edges_by_ref
+                     or edges_by_ref[row.relation_ref].relation != "evaluation_about_event")):
+            raise CMEEStage1ContractError("thread_answer_target_relation_source_invalid")
         validate_version_qualified_ref(
             row.relation_ref,
             expected_types=("edge",),
@@ -1053,6 +1061,26 @@ def validate_grounded_situation_view(
         raise CMEEStage1ContractError(
             "grounded_situation_view_source_projection_mismatch"
         )
+    edges = {_edge_ref(edge): edge for edge in grounded_graph.edges}
+    expected_relations = []
+    for row in premeaning_inputs.source_relation_rows:
+        edge = edges.get(row.relation_ref)
+        if (edge is None or not admitted_scope_relation_kind(row.relation_kind)
+                or type(row.relation_kind) is EmlisThreadScopeRelationKind and (
+                    grounded_graph.source_version != "cocolon.cmee.emlis_thread.v1"
+                    or edge.relation != "evaluation_about_event")):
+            raise CMEEStage1ContractError("grounded_situation_view_source_relation_mismatch")
+        if not _relation_is_source_explicit(edge, grounded_graph):
+            continue
+        left = f"node:{edge.source_node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        right = f"node:{edge.target_node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        if left not in nodes_by_ref or right not in nodes_by_ref or left == right:
+            continue
+        expected_relations.append(SourceConnectedScopeRelation(_SCHEMA_VERSION, row.relation_ref,
+            row.relation_kind, left, right, _evidence_refs((edge, nodes_by_ref[left], nodes_by_ref[right]),
+                                                        source_version=grounded_graph.source_version)))
+    if set(view.source_connected_relations) != set(expected_relations):
+        raise CMEEStage1ContractError("grounded_situation_view_source_relation_mismatch")
     if len(view.basis_rows) != len(set(view.basis_rows)):
         raise CMEEStage1ContractError(
             "grounded_situation_view_basis_duplicate"
@@ -1113,8 +1141,8 @@ def _validate_source_relation(row: SourceConnectedScopeRelation) -> None:
         )
     if (
         row.schema_version != _SCHEMA_VERSION
-        or type(row.relation_kind) is not ForegroundScopeRelationKind
-        or row.relation_kind not in _RELATION_KINDS_EXACT4
+        or not admitted_scope_relation_kind(row.relation_kind)
+        or row.relation_kind not in _ADMITTED_SCOPE_RELATIONS
         or type(row.relation_ref) is not str
         or not row.relation_ref
         or type(row.source_object_ref) is not str
@@ -3566,6 +3594,9 @@ def _candidate_operation(
     if relational and qualified:
         return MeaningReadingOperation.KEEP_DISTINCT
     if relational:
+        if any(type(direction.relation_kind) is EmlisThreadScopeRelationKind
+               for configuration in relational for direction in configuration.direction_rows):
+            return MeaningReadingOperation.HOLD_RELATION
         relation_kinds = {
             row.relation_operator for row in projections
         }
@@ -3607,6 +3638,14 @@ def _material_interpretation_projections(
         for configuration in configurations
         if type(configuration) is QualifiedEventStateConfiguration
     }
+    # Thread subject links connect already interpreted source endpoints. They
+    # have no new exact16 sentence candidate and cannot promote a causal fact.
+    qualified_object_refs.update(
+        ref for configuration in configurations
+        if type(configuration) is RelationalConfiguration
+        and any(type(row.relation_kind) is EmlisThreadScopeRelationKind
+                for row in configuration.direction_rows)
+        for ref in configuration.endpoint_component_refs)
     primary_refs = {
         ref
         for configuration in configurations
@@ -3688,8 +3727,8 @@ def _material_binding_seed_partition(
     relation_adjacency: dict[str, list[tuple[str, str]]] = {}
     for relation in grounded_view.source_connected_relations:
         if (
-            type(relation.relation_kind) is not ForegroundScopeRelationKind
-            or relation.relation_kind not in _RELATION_KINDS_EXACT4
+            not admitted_scope_relation_kind(relation.relation_kind)
+            or relation.relation_kind not in _ADMITTED_SCOPE_RELATIONS
             or not relation.source_evidence_refs
         ):
             raise CMEEStage1ContractError(
@@ -3798,7 +3837,7 @@ def _material_binding_seed_partition(
         )
         source_explicit_allowlist_relation = all(
             ref in relation_by_ref
-            and relation_by_ref[ref].relation_kind in _RELATION_KINDS_EXACT4
+            and relation_by_ref[ref].relation_kind in _ADMITTED_SCOPE_RELATIONS
             and bool(relation_by_ref[ref].source_evidence_refs)
             for ref in involved_relation_refs
         )

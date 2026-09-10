@@ -1894,6 +1894,14 @@ def evaluate_grounded_surface_body_inverse(
                 )
             ):
                 failures.append(f"body_inverse_relation_direction_reversed:{index}")
+            if (relation.type == "evaluation_about_event"
+                    and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"):
+                visible = _body_inverse_normalized_anchor(_body_inverse_visible_text(body, parsed_line))
+                left_sources = _body_inverse_nucleus_source_values(relation.from_nucleus_id, plan, resolver)
+                right_sources = _body_inverse_nucleus_source_values(relation.to_nucleus_id, plan, resolver)
+                if not any(re.search(re.escape(left) + r"[^。]*に対する[^。]*" + re.escape(right), visible)
+                           for left in left_sources for right in right_sources):
+                    failures.append(f"body_inverse_answer_target_relation_missing:{index}")
         if (
             planned_line.binding.line_role == "fact_boundary"
             and "fact_boundary" not in parsed_line.uncertainty_marker_codes
@@ -1953,6 +1961,20 @@ def evaluate_grounded_surface_body_inverse(
                 ):
                     failures.append(f"body_inverse_observation_source_anchor_incomplete:{index}")
         required_kinds = {item.kind for item in required_nuclei}
+        if getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1":
+            visible_line = _body_inverse_visible_text(body, parsed_line)
+            for nucleus in required_nuclei:
+                if nucleus.source_fields != ("answer_text_private",):
+                    continue
+                source_values = _body_inverse_nucleus_source_values(nucleus.nucleus_id, plan, resolver)
+                if not source_values or any(not any(value in quote for quote in normalized_quote_texts)
+                                            for value in source_values):
+                    failures.append(f"body_inverse_answer_source_anchor_incomplete:{index}")
+                times = {code.split(":", 1)[1] for code in nucleus.semantic_frame.attribute_codes
+                         if code.startswith("thread_time:")}
+                expected = "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
+                if expected is None or expected not in visible_line:
+                    failures.append(f"body_inverse_answer_target_time_missing:{index}")
         if "change" in required_kinds and "change" not in parsed_line.semantic_marker_codes:
             failures.append(f"body_inverse_required_change_missing:{index}")
         if (

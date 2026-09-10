@@ -7042,6 +7042,14 @@ def _validate_tagged_projection_inputs(
         raise Stage1CompositionError(
             "STAGE1_PROJECTION_PREIMAGE_CLOSURE_STOP"
         ) from None
+    return _validate_tagged_projection_semantic_closure(inputs, authority)
+
+
+def _validate_tagged_projection_semantic_closure(inputs, authority):
+    """Source-independent closure, shared by individually admitted versions."""
+    if (type(inputs) not in {SelectedReadingProjectionInputs, LimitedProjectionInputs}
+            or type(authority) is not _ProjectionCommonAuthority or inputs.common is not authority):
+        raise Stage1CompositionError("STAGE1_TAGGED_PROJECTION_INPUT_TYPE_STOP")
     if (
         authority.grounded_graph_ref
         != (

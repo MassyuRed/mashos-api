@@ -402,6 +402,15 @@ class ForegroundScopeRelationKind(str, Enum):
     CORRECTION = "correction"
 
 
+class EmlisThreadScopeRelationKind(str, Enum):
+    """An answer's subject, never a cause, contrast, or third-party intent."""
+    ABOUT_TARGET = "evaluation_about_event"
+
+
+def admitted_scope_relation_kind(value: object) -> bool:
+    return type(value) in {ForegroundScopeRelationKind, EmlisThreadScopeRelationKind}
+
+
 _FOREGROUND_SCOPE_RELATION_KIND_BY_SOURCE_RELATION = {
     "contrast": ForegroundScopeRelationKind.CONTRAST,
     "coexistence": ForegroundScopeRelationKind.COEXISTENCE,
@@ -8605,7 +8614,7 @@ def _validate_relation_direction_row(
     _validate_stage1_immutable_shape(row)
     if (
         row.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION
-        or type(row.relation_kind) is not ForegroundScopeRelationKind
+        or not admitted_scope_relation_kind(row.relation_kind)
     ):
         raise CMEEStage1ContractError(
             "difference_configuration_direction_shape_invalid"
@@ -11349,14 +11358,17 @@ def input_specific_meaning_configuration_source_component_rows(
             "mutation_configuration_scope_binding_invalid"
         )
     if type(configuration) is RelationalConfiguration:
+        about_target = any(type(row.relation_kind) is EmlisThreadScopeRelationKind
+                           for row in configuration.direction_rows)
         matching = tuple(
             projection
             for projection in projections
             if type(projection) is GroundedInterpretationProjection
             and projection.interpretation_candidate_ref
             in candidate.basis_derivation_refs
-            and projection.relation_path_refs
-            == configuration.relation_path_refs
+            and (projection.relation_path_refs == configuration.relation_path_refs
+                 or about_target and any(row.source_object_ref in configuration.endpoint_component_refs
+                                         for row in projection.component_rows))
         )
         expected_refs = set(configuration.endpoint_component_refs)
     else:
@@ -12309,6 +12321,12 @@ def _validate_input_specific_meaning_im03(
             for configuration in owned_configurations
             if type(configuration) is QualifiedEventStateConfiguration
         }
+        qualified_object_refs.update(
+            ref for configuration in owned_configurations
+            if type(configuration) is RelationalConfiguration
+            and any(type(row.relation_kind) is EmlisThreadScopeRelationKind
+                    for row in configuration.direction_rows)
+            for ref in configuration.endpoint_component_refs)
         selected_projections = tuple(
             projection
             for projection in projections
@@ -13409,7 +13427,7 @@ def _validate_meaning_component_semantic_key(
 
 _MEANING_SIGNATURE_FIXED_KEYS_BY_FIELD = {
     "relation_direction_keys": frozenset(
-        f"relation:{value.value}" for value in ForegroundScopeRelationKind
+        f"relation:{value.value}" for value in (*ForegroundScopeRelationKind, *EmlisThreadScopeRelationKind)
     ),
     "temporal_state_keys": frozenset(
         f"time:{value}" for value in _FOREGROUND_SOURCE_TIME_SCOPE_VALUES

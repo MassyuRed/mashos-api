@@ -28,12 +28,16 @@ from .emlis_thread_source import AdmittedEmlisThread, admit_emlis_thread, identi
 _UNKNOWN = re.compile(r"^(?:まだ|よく)?(?:分からない|わからない|分かりません|わかりません)(?:です)?$")
 _CORRECTION_META = re.compile(r"^(?:書き方|記録|書いた内容|表現)(?:を|が)(?:間違えた|間違っていた|誤っていた)(?:んです|です)?$")
 _WITHDRAWAL = re.compile(r"^「(?P<old>[^「」]+)」(?:という(?:記録|読み|部分))?は(?:違います|違う|誤りです|間違いです|取り消します)$")
+_REPLACEMENT = re.compile(r"^「(?P<old>[^「」]+)」(?:ではなく|は誤りで)[、,]?「(?P<new>[^「」]+)」(?:です|でした)?$")
 _THEN = re.compile(r"^(?:あの時|その時|当時)(?:は|も)?(?:本当は|実際は)?[、,\s]*")
 _NOW = re.compile(r"^(?:今|現在)(?:は|も)[、,\s]*")
 _FEELING = re.compile(r"^(?:私は|私も|自分は)?(?:少し|とても|本当は|まだ|全然|あまり)?(?:嬉し|うれし|寂し|さびし|悲し|苦し|つら|辛|怖|こわ|重|楽し|軽)(?:い|かった|くない|くなかった)(?:です)?$")
 _PAST = re.compile(r"(?:た|だった|でした|ました)(?:んです|のです|です)?$")
 _BELIEF = re.compile(r"^.+(?:と思った|と感じた|と思いました|と感じました)$")
 _FOREIGN_HOST = re.compile(r"(?:と|って).{1,16}(?:は|が|も)(?:思|感じ|言)|^(?:彼|彼女|母|父|妹|弟|兄|姉|友人|上司)(?:は|が|も)")
+_PERCEIVED_REACTION = re.compile(r"^.+(?:ようで|ように感じて|気がして|と思って)[、,](?:少し|とても|まだ)?(?:重|苦し|つら|辛|怖|悲し|寂し|嬉し|うれし|軽)(?:かった|くなかった)(?:です)?$")
+_SELF_CORRECTIVE_STATE = re.compile(r"^.+(?:のではなく|ではなく)[、,]?(?:私|自分)(?:では|は|も).+(?:していた|していなかった|できなかった)(?:です)?$")
+_OTHER_TIME = re.compile(r"^(?:昨日|一昨日|先週|去年|昨年|別の日|翌日|今日)(?:は|も|の)?")
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -46,6 +50,14 @@ class PreparedEmlisMeaning:
 
 def _text(row, index, resolver) -> str:
     return final_reception_source_anchor_text(row.nucleus_id, index, resolver)
+
+
+def _repetition_key(text: str) -> str:
+    text = re.sub(r"です$", "", text)
+    # Orthographic variants of the same bounded adjective are not new meaning.
+    for old, new in (("うれし", "嬉し"), ("さびし", "寂し"), ("こわ", "怖"), ("つら", "辛")):
+        text = text.replace(old, new)
+    return text
 
 
 def _base_ref(thread, plan) -> str:
@@ -61,7 +73,7 @@ def _dependent_refs(plan, targets: tuple[str, ...]) -> tuple[str, ...]:
                  if row.from_nucleus_id in targets or row.to_nucleus_id in targets)
 
 
-def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0):
+def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, source_end: int | None = None):
     """Use the shared source grammar with a real answer field and no labels."""
     local = {ANSWER_FIELD: raw}
     safety = classify_emlis_safety_triage_text(raw)
@@ -71,10 +83,12 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0):
                                         normalized_input=local)
     text = span.raw_text
     offset = source_start
-    bounded = text[offset:].strip()
+    end = len(text) if source_end is None else source_end
+    bounded = text[offset:end].strip()
     # A finite self belief is retained as a belief, not its complement's
     # truth. The question only supplies the omitted response target.
-    if _BELIEF.fullmatch(bounded) and not _FOREIGN_HOST.search(bounded):
+    if (any(pattern.fullmatch(bounded) for pattern in (_BELIEF, _PERCEIVED_REACTION, _SELF_CORRECTIVE_STATE))
+            and not _FOREIGN_HOST.search(bounded)):
         kind = "reaction"
         frame = replace(frame, predicate_kind="feeling", modality="feeling",
                         polarity="negative" if re.search(r"ない|なかった|重|苦|つら|辛", bounded) else "neutral")
@@ -93,7 +107,7 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0):
         *codes, f"time_scope:{time_scope}", f"thread_time:{about_time.lower()}",
         "lexical:preserve_source_predicate", "lexical:no_new_sensation_family",
         "semantic_role:generic_relation_fragment",
-        f"source_fragment_scalar_range:{offset}:{len(text)}",
+        f"source_fragment_scalar_range:{offset}:{end}",
         "source_fragment_scalar_source:normalized_raw_text",
     ))
     return gp.GroundedSemanticNucleus(
@@ -103,26 +117,50 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0):
     )
 
 
-def _active_plan(original, thread, added, inactive):
-    nuclei = tuple(row for row in original.nuclei if row.nucleus_id not in inactive
-                   and set(row.source_fields) & {"memo", "memo_action"}) + tuple(added)
+def _active_plan(original, thread, added, inactive, updates):
+    nuclei = tuple(row for row in original.nuclei if row.nucleus_id not in inactive) + tuple(added)
     relations = tuple(row for row in original.relations if row.relation_id not in inactive
                       and row.from_nucleus_id not in inactive and row.to_nucleus_id not in inactive)
     safety = classify_emlis_safety_triage_text(thread.answers[0].source.answer_text_private)
     complexity = gp._semantic_complexity(nuclei=nuclei, relations=relations, meaning_artifacts=gp._MeaningArtifacts())
+    unknowns = tuple(replace(row, affected_nucleus_ids=tuple(n for n in row.affected_nucleus_ids if n not in inactive))
+                     for row in original.unknown_boundaries
+                     if not row.affected_nucleus_ids or not set(row.affected_nucleus_ids).issubset(inactive))
+    quality = original.input_profile.material_quality
     response, coverage, surface, safety_policy = gp._build_response_and_policies(
         nuclei=nuclei, relations=relations, safety_decision=safety, complexity=complexity,
-        material_quality="grounded", include_reception_relation_support=True,
+        material_quality=quality, include_reception_relation_support=True,
         final_source_fidelity=True,
         primary_focus_nucleus_ids=tuple(row.nucleus_id for row in added),
     )
     resolver = thread.resolver()
-    return replace(original, nuclei=nuclei, relations=relations, unknown_boundaries=(),
+    index = {row.nucleus_id: row for row in nuclei}
+    # This subject relation is both a premeaning scope basis and a required
+    # source relation in Observation/Reception. It asserts no cause/contrast.
+    focus = thread.control.question_control_context.pending_question.decision.affected_meaning_refs
+    def subject_targets(item):
+        if item.operation == "ADD":
+            return item.target_meaning_refs
+        if (item.operation == "REVISE" and set(item.target_meaning_refs).issubset(focus)
+                and focus and focus[0] in index):
+            return (focus[0],)
+        return ()
+    about_relations = tuple(gp.GroundedSemanticRelation(
+        identity("answer-target", item.update_ref, target, changed), "evaluation_about_event",
+        target, changed, tuple(dict.fromkeys((*index[target].source_span_ids, *index[changed].source_span_ids))),
+        "user_stated_relation", 1.0, "required", (item.update_ref,))
+        for item in updates
+        for target in subject_targets(item) if target in index
+        for changed in item.changed_claim_refs if changed in index)
+    relations = (*relations, *about_relations)
+    coverage = replace(coverage, required_relation_ids=(*coverage.required_relation_ids,
+                                                       *(row.relation_id for row in about_relations)))
+    return replace(original, nuclei=nuclei, relations=relations, unknown_boundaries=unknowns,
         input_profile=replace(original.input_profile, nucleus_count=len(nuclei),
-            relation_count=len(relations), semantic_complexity=complexity, material_quality="grounded"),
+            relation_count=len(relations), semantic_complexity=complexity, material_quality=quality),
         response_plan=response, coverage_requirements=coverage, surface_policy=surface,
         safety_policy=safety_policy, source_contracts=(*original.source_contracts, THREAD_SCHEMA),
-        referenced_evidence_span_ids=gp._all_plan_evidence_ids(nuclei, relations, ()),
+        referenced_evidence_span_ids=gp._all_plan_evidence_ids(nuclei, relations, unknowns),
         evidence_ledger_validation=EvidenceLedgerValidationReport(True, canonical_span_ids=resolver.span_ids))
 
 
@@ -135,6 +173,8 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
             identity("emlis-checkpoint", thread.source_prefix_ref, base),
             thread.source_prefix_ref, base, None, "RESOLVED", (), (), (),
         )
+        if thread.control.prepared_meaning_checkpoint_ref not in {None, checkpoint.checkpoint_id}:
+            raise ValueError("emlis_checkpoint_source_prefix_mismatch")
         return PreparedEmlisMeaning(thread, original, (), checkpoint)
     validate_question_binding(thread, original)
     answer = thread.answers[0]
@@ -158,20 +198,29 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
             known_unchanged = True
             continue
         withdrawal = _WITHDRAWAL.fullmatch(text)
+        replacement = _REPLACEMENT.fullmatch(text)
         then, now = _THEN.match(text), _NOW.match(text)
         targets: tuple[str, ...] = ()
         operation, binding = "ADD", "QUESTION_FOCUS"
-        if withdrawal:
-            quoted = withdrawal.group("old").rstrip("。．.")
+        if withdrawal or replacement:
+            correction = withdrawal or replacement
+            quoted = correction.group("old").rstrip("。．.")
             targets = tuple(row.nucleus_id for row in original.nuclei
                             if set(row.source_fields) & {"memo", "memo_action"}
                             and _text(row, index, resolver).rstrip("。．.") == quoted)
             if len(targets) != 1:
                 unresolved.append(EmlisUnresolvedPartV1(ev, "correction_target_unresolved"))
                 continue
-            operation, binding, about = "WITHDRAW", "EXPLICIT_CORRECTION", "ORIGINAL_OCCASION"
-            nucleus = None
+            operation, binding, about = "WITHDRAW" if withdrawal else "REVISE", "EXPLICIT_CORRECTION", "ORIGINAL_OCCASION"
+            nucleus = None if withdrawal else _answer_nucleus(span, raw=answer.source.answer_text_private,
+                about_time=about, source_start=replacement.start("new"), source_end=replacement.end("new"))
+            if replacement and nucleus is None:
+                unresolved.append(EmlisUnresolvedPartV1(ev, "correction_replacement_unsupported"))
+                continue
         else:
+            if _OTHER_TIME.match(text):
+                unresolved.append(EmlisUnresolvedPartV1(ev, "explicit_other_time_target_unresolved"))
+                continue
             about = "ANSWER_TIME" if now else "ORIGINAL_OCCASION" if then or _PAST.search(text) else "UNRESOLVED"
             if about == "UNRESOLVED":
                 unresolved.append(EmlisUnresolvedPartV1(ev, "answer_target_time_unresolved"))
@@ -195,9 +244,13 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
                 targets, operation, binding = candidates, "REVISE", "EXPLICIT_CORRECTION"
             # Exact source-semantic repetition is assessed, not relabelled as
             # a fresh interpretation. Politeness alone cannot change meaning.
-            normalized = re.sub(r"(?:です|ました)$", "", text[offset:])
-            if any(re.sub(r"(?:です|ました)$", "", _text(row, index, resolver)) == normalized
-                   for row in original.nuclei if row.nucleus_id in focus):
+            normalized = _repetition_key(text[offset:])
+            if (operation == "ADD" and about == "ORIGINAL_OCCASION"
+                    and any(_repetition_key(_text(row, index, resolver)) == normalized
+                            and row.semantic_frame.actor == nucleus.semantic_frame.actor
+                            and row.semantic_frame.time_scope == nucleus.semantic_frame.time_scope
+                            and row.semantic_frame.polarity == nucleus.semantic_frame.polarity
+                            for row in original.nuclei if row.nucleus_id in focus)):
                 known_unchanged = True
                 continue
         temporal = AnswerTemporalBindingV1(about, thread.original.envelope.envelope_id,
@@ -234,4 +287,5 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
 def build_updated_grounded_plan(prepared: PreparedEmlisMeaning):
     """Post-checkpoint plan construction; failure cannot undo meaning."""
     return _active_plan(prepared.original_plan, prepared.thread,
-                        prepared.accepted_nuclei, set(prepared.checkpoint.inactive_claim_refs))
+                        prepared.accepted_nuclei, set(prepared.checkpoint.inactive_claim_refs),
+                        prepared.checkpoint.answer_update.updates if prepared.checkpoint.answer_update else ())

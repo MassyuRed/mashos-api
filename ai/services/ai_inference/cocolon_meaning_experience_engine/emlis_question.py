@@ -20,9 +20,12 @@ _PERSONAL_MEANING = re.compile(
     r"(?:自分|私|わたし|僕|ぼく).{0,24}(?:にとって|には).{1,36}(?:意味|感じ|思)|"
     r"(?:と|ように|ようで|みたいに)(?:受け取|感じ|思)|"
     r"(?:から|ので|ため).{0,30}(?:嬉|うれ|重|寂|さび|悲|辛|つら)|"
-    r"(?:嬉|うれ|重|寂|さび|悲|辛|つら).{0,20}(?:のは|理由は)"
+    r"(?:嬉|うれ|重|寂|さび|悲|辛|つら).{0,20}(?:のは|理由は)|"
+    r"(?:ようで|と思って)[、,].{0,12}(?:重|寂|悲|怖|嬉|うれ|つら)|"
+    r"と思った$"
 )
-_NONFACT = re.compile(r"(?:と言った|と言って|そうなら|たら|ならば|かもしれない|と言う話)")
+_NONFACT = re.compile(r"(?:と言った|と言って|そうなら|たら|なら|かもしれ|と言う話|なかった|ていない|なかったら|だろう)")
+_FACTUAL_RECEIVED = re.compile(r"(?:褒められ|ほめられ|言われ|伝えられ|評価され|断られ|誘われ|頼まれ|声をかけられ|声を掛けられ)(?:た|ました)$|(?:連絡|返事|返信)が来(?:た|ました)$")
 
 
 def original_meaning_plan(thread: AdmittedEmlisThread):
@@ -43,8 +46,6 @@ def question_candidate(thread: AdmittedEmlisThread, plan, *, parent_request_id: 
     # Read every admitted text field before treating a dimension as missing.
     texts = tuple(str(original.normalized_current_input.get(key, ""))
                   for key in ("memo", "memo_action"))
-    if any(_PERSONAL_MEANING.search(text) for text in texts):
-        return EmlisQuestionDecisionV1("END", decision_reason="personal_meaning_already_present"), None
     resolver = thread.resolver()
     index = {row.nucleus_id: row for row in plan.nuclei}
     reactions = tuple(row for row in plan.nuclei
@@ -62,14 +63,34 @@ def question_candidate(thread: AdmittedEmlisThread, plan, *, parent_request_id: 
         # Keep the event clause only. No arbitrary character truncation and no
         # hidden cause/character/third-party intention in the question premise.
         event = re.split(r"(?:のに|けれど|けど|が[、,]|[、,])", anchor, maxsplit=1)[0]
-        if not event or len(event) > 48 or any(c in event for c in "「」『』\n"):
+        if (not event or not _FACTUAL_RECEIVED.search(event) or len(event) > 48
+                or any(c in event for c in "「」『』\n")
+                or re.match(r"^(?:彼|彼女|母|父|妹|弟|兄|姉|友人|上司)(?:は|が|も)", event)):
             continue
+        bound_reactions = tuple(r for r in reactions
+                                if set(r.source_span_ids) & set(nucleus.source_span_ids))
+        if not bound_reactions:
+            continue
+        region = " ".join(resolver.resolve(s).raw_text for s in nucleus.source_span_ids)
+        if _PERSONAL_MEANING.search(region):
+            continue
+        # An immediately following self explanation of this single received
+        # event also answers the target. Foreign reports and marked other
+        # occasions cannot suppress it merely by sharing an input field.
+        source_spans = tuple(resolver.resolve(s) for s in resolver.span_ids)
+        last = max(i for i, s in enumerate(source_spans) if s.span_id in nucleus.source_span_ids)
+        if last + 1 < len(source_spans):
+            following = source_spans[last + 1]
+            if (following.source_field in nucleus.source_fields
+                    and _PERSONAL_MEANING.search(following.raw_text)
+                    and not re.search(r"別|ほか|他の|[「」『』]|(?:彼|彼女|母|父|上司)(?:は|が|も)", following.raw_text)):
+                continue
         target = identity("emlis-target", original.envelope.envelope_id,
                           nucleus.nucleus_id, "personal_received_meaning")
         if respect_control and target in control.asked_target_refs:
             continue
         evidence = tuple(resolver.qualified_ref(s).evidence.evidence_id for s in nucleus.source_span_ids)
-        affected = tuple(dict.fromkeys((nucleus.nucleus_id, *(r.nucleus_id for r in reactions))))
+        affected = tuple(dict.fromkeys((nucleus.nucleus_id, *(r.nucleus_id for r in bound_reactions))))
         decision = EmlisQuestionDecisionV1(
             "ASK", target, "PERSONAL_RECEIVED_MEANING", evidence,
             "personal_received_meaning", affected,

@@ -11932,6 +11932,25 @@ def _derive_selected_subjective_reception_input_authority(
                 )))
         except KeyError:
             raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP") from None
+    rows = _partition_shared_reception_move_contributions(rows, reception_plan, binding)
+    result = identify_selected_subjective_reception_input(SelectedSubjectiveReceptionInputV1(
+        input_ref="", projection_preimage_ref=projection.projection_preimage_ref,
+        projection_seal_ref=projection.projection_seal_ref,
+        grounding_ref=selected_subjective_reception_grounding_ref(selected_grounded_plan, resolver),
+        semantic_nucleus_pairs=tuple((_node_ref(node_id), nucleus_id)
+                                    for nucleus_id, node_id in binding.nucleus_to_node.items()),
+        relation_pairs=tuple((_edge_ref(edge_id), relation.relation_id)
+                             for edge_id, relation in binding.edge_meta.items()),
+        decisions=tuple(rows),
+    ))
+    try:
+        validate_selected_subjective_reception_input(result, reception_plan, selected_grounded_plan, resolver)
+    except GroundedHumanReceptionSurfaceError as exc:
+        _raise_realizable_reception_failure(exc)
+    return result
+
+
+def _partition_shared_reception_move_contributions(rows, reception_plan, binding):
     # One sealed act claim can own two independently selected source duties.
     # Distribute its existing contribution bindings to their already-fixed
     # Move targets; do not select a different meaning or rewrite the claim.
@@ -11965,21 +11984,7 @@ def _derive_selected_subjective_reception_input_authority(
         rows = [identify_selected_subjective_reception_decision(replace(
             row, decision_ref="", selected_contribution_refs=refs,
         )) for row, refs in zip(rows, partition, strict=True)]
-    result = identify_selected_subjective_reception_input(SelectedSubjectiveReceptionInputV1(
-        input_ref="", projection_preimage_ref=projection.projection_preimage_ref,
-        projection_seal_ref=projection.projection_seal_ref,
-        grounding_ref=selected_subjective_reception_grounding_ref(selected_grounded_plan, resolver),
-        semantic_nucleus_pairs=tuple((_node_ref(node_id), nucleus_id)
-                                    for nucleus_id, node_id in binding.nucleus_to_node.items()),
-        relation_pairs=tuple((_edge_ref(edge_id), relation.relation_id)
-                             for edge_id, relation in binding.edge_meta.items()),
-        decisions=tuple(rows),
-    ))
-    try:
-        validate_selected_subjective_reception_input(result, reception_plan, selected_grounded_plan, resolver)
-    except GroundedHumanReceptionSurfaceError as exc:
-        _raise_realizable_reception_failure(exc)
-    return result
+    return rows
 
 
 def _build_selected_subjective_reception_input(

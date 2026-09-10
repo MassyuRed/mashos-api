@@ -1,4 +1,4 @@
-> 2026-09-10 Q1 implementation checkpoint (WIP): the authorized next unit is the Free-equivalent, process-local question/answer/meaning-update loop. The prior candidate91 remains the baseline, not a startup gate. Separate answer admission, immutable qualified evidence, pure checkpoint preparation and the shared meaning/Reception projection are being connected. A synthetic answered turn has reached actual two-layer prose and the independent inverse; the fixed semantic matrix, regression and canonical-doc synchronization are not complete at this checkpoint. Q2 persistence/API/RN, paid plans, human Product Read and publication remain unstarted. No private source bodies or result locators are included here. Continue the same Q1 implementation, not another standalone-body-only cycle.
+> 2026-09-10 Q1 checkpoint: Free相当のprocess-local一往復を実装。独立回答source、純粋意味checkpoint、焦点補足／明示訂正／時点、既存IM03と唯一のHR作者／Surface／独立逆検証へ接続。Q1固定48件PASS。単独100件はcandidate91と全record一致（73 GENERATED／27 UNAVAILABLE）。主要回帰442は436 PASS／既存6 FAIL。追加旧契約群はbaselineとの比較で固定runtime symbol identity不一致1件増（旧期待値は未変更）。対象関係と時点の最終補強後の最終回帰、全100件読了、正本文書の最終レビューは進行中。次はこのQ1の検証・保存を完了する。Q2保存／API／RN、有料差、商品PASS、公開は未成立。単独本文PASS待ちへ戻さない。private本文／case／digest／locatorはこの文書に含めない。
 
 # CMEE V1-A I1-SX Current State and Next Work Handoff — 2026-08-16
 
@@ -15,7 +15,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-10最新（candidate91）：継続状態と予定までの時間を元行動と保持するsource証明を追加。1件の直接診断フォローの欠落を修正したが、対象の生成不可は未解消。他99件全record・全100件の観測と可否理由は同一。華恋が同じ100件全文確認、73 GENERATED／27 UNAVAILABLE、旧142責務を保持して各層143。必須438は432 PASS／既存6 FAIL、前回434の成否同一・追加4全PASS。復唱は長く、中心内容・複数主題／共有関係・定型締めは残りNOT_CLEAR。末尾candidate91から再開。System Context未使用・原典直接確認、PR37不変更。
+2026-09-10のQ1開始前baseline（candidate91）：継続状態と予定までの時間を元行動と保持するsource証明を追加。1件の直接診断フォローの欠落を修正したが、対象の生成不可は未解消。他99件全record・全100件の観測と可否理由は同一。華恋が同じ100件全文確認、73 GENERATED／27 UNAVAILABLE、旧142責務を保持して各層143。必須438は432 PASS／既存6 FAIL、前回434の成否同一・追加4全PASS。復唱は長く、中心内容・複数主題／共有関係・定型締めは残りNOT_CLEAR。末尾candidate91から再開。System Context未使用・原典直接確認、PR37不変更。
 
 ## 1. GitHub anchors
 

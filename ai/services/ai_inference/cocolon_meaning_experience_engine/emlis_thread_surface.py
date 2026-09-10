@@ -109,7 +109,8 @@ def realize_emlis_thread_body(prepared) -> EmlisThreadBodyOutcomeV1:
     if split_issues or not observation or not reception_text:
         raise ValueError("emlis_thread_two_layer_body_invalid")
     checkpoint = prepared.checkpoint
-    status = EngineStatus.LIMITED if checkpoint.assessment_status == "PARTIAL" else EngineStatus.GENERATED
+    status = EngineStatus.LIMITED if (projection.premeaning.material_unknown_refs
+        or plan.input_profile.material_quality in {"limited_grounding", "labels_only_limited"}) else EngineStatus.GENERATED
     artifact = EmlisThreadBodyArtifactV1(identity("emlis-artifact", checkpoint.checkpoint_id, surface.text),
         observation, reception_text, checkpoint.source_prefix_ref, checkpoint.checkpoint_id,
         resolver.qualified_refs, projection.meaning_plan.meaning_visible_causal_trace_rows,

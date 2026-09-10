@@ -2430,6 +2430,12 @@ def source_grounded_current_expression_nominal(
     # Keep every source character and the original tense; polite terminal
     # forms and unproved expressions retain the existing quotative referent.
     codes = set(nucleus.semantic_frame.attribute_codes)
+    if answer_clause:
+        times = {code.split(":", 1)[1] for code in codes if code.startswith("thread_time:")}
+        when = "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
+        if when is None:
+            return ""
+        return f"{when}{'で' if times == {'answer_time'} else 'に'}{fragment}こと"
     witnessed_feeling = bool(
         profile.nucleus_kind == "reaction" and profile.modality == "feeling"
         and nucleus.semantic_frame.polarity == "negative"
@@ -6955,6 +6961,8 @@ def _source_grounded_argument_surface(
                     "REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP"
                 )
             relation_phrases.append(f"{first_nominal}と{second_nominal}の両方")
+        elif relation.relation_kind == "evaluation_about_event":
+            relation_phrases.append(f"{first_nominal}について、{second_nominal}")
         else:
             relation_phrases.append(
                 f"{first_nominal}{first.case_marker}"
@@ -7519,6 +7527,7 @@ def _source_grounded_target_np(
     anaphoric_context_object: tuple[int, str] | None = None,
     material_pair_object: bool = False,
     material_change_object: bool = False,
+    thread_answer_about_time: str | None = None,
 ) -> _SourceGroundedClauseCoreV1:
     """Build one grammatical content core with one inverse referent."""
 
@@ -7588,6 +7597,8 @@ def _source_grounded_target_np(
             and realization.quantity in {"not_applicable", "source_bounded", "unknown"}
             and (
                 referent_text == f"{meaning_fragment}という言葉"
+                or thread_answer_about_time in {"original_occasion", "answer_time"}
+                and referent_text == f"{'その時に' if thread_answer_about_time == 'original_occasion' else '回答した時点で'}{meaning_fragment}こと"
                 or profile.nucleus_kind == "reaction"
                 and profile.predicate_kind in {"feeling", "reaction"}
                 and profile.modality == "feeling"
@@ -8606,6 +8617,12 @@ def _author_source_grounded_reception_clauses(
                 anaphoric_context_object=anaphoric_context_object,
                 material_pair_object=material_pair_object,
                 material_change_object=material_change_object,
+                thread_answer_about_time=next((code.split(":", 1)[1]
+                    for nid in move.target_nucleus_ids
+                    if getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+                    and nucleus_index[nid].source_fields == ("answer_text_private",)
+                    for code in nucleus_index[nid].semantic_frame.attribute_codes
+                    if code.startswith("thread_time:")), None),
             )
             if meaning_realization.reference_mode == "ANAPHORIC":
                 # Only the context actually emitted by the attributable
