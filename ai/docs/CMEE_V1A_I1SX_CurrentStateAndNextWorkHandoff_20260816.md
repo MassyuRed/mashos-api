@@ -13,7 +13,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-10最新（candidate84）：既に選ばれた対象の「気になる」を原語義・程度・対象付きでfollowへ保持。follow1件改善・他99件全record同一、全100件全文確認済み。必要Move／expression／binding各137とReception plan全100同一。必須410は404成功／6失敗、前回406の状態・既存期待値不変更。Stage3の2失敗は履歴から未解決として引継ぎ（今回未再実行）。締め反復・他の中心感情欠落・旧mapping整合は残りNOT_CLEAR。詳細と再開点は末尾candidate84。System Context未使用・原典直接確認、PR37不変更。
+2026-09-10最新（candidate85 source checkpoint）：否定状態の疑問補文と外側の過去感情を全fieldで分けて証明し、気持ち・背景と元の必要行動をfollowへ保持。関連初回11 PASS／新規1 FAILを修正し、追加4検査は固定実装でPASS。最終必須回帰・同100件・華恋全文確認はこれから実施。NOT_CLEAR、System Context未使用・原典直接確認、PR37不変更。
 
 ## 1. GitHub anchors
 
@@ -7053,3 +7053,14 @@ sourceと結果は既存Draft PR3／30、実入力・実出力・初期失敗・
 商品NOT_CLEAR。今回戻した具体参照にも定型締めが残り、2文の同じ締め、長い観測説明、他の中心感情・複数主題・共有関係の不足も未解決。次は同じ保存済み100件と既存承認範囲の原文証明から、中心materialと元の必要行動を保つ欠落へ進む。共有述語による統合は既存Reception Depth／Gateの2 Move・layered・min2に関わるため未実装、Stage3 FOCUSEDを流用しない。必要対象削除・同義語だけの入替え・期待値書換えで改善や成功を作らない。
 
 既存Draft PR3／30へsourceと結果を保存し、実入力・実出力・試行・失敗・全件読了記録・再開点は従来の非公開記録へ継続する。結果資料だけを追記した後は固定sourceの結果を再利用し、保存目的で再生成しない。System Context未使用・原典直接確認、PR37不変更。NOT_CLEAR・disabled・Draft/open/unmerged、candidate_ready=false・automatic_progression=false、Mash human PASS／ready／採用／merge／本番未成立。
+
+
+### 2026-09-10 candidate85 source checkpoint — 疑問補文を含む過去の気持ちと元行動の保持
+
+原memo全field・offset・本人・引用外・単核を既存final OPで確認し、非人物の情報／事情主題、有限な否定状態＋「のかと」、閉じた過去経験hostを同じ原文のまま証明する。任意の目的語付き受身背景も同核で保持する。埋込否定を外側経験の否定にせず、元negation属性・疑問・背景・程度・owner・ID・根拠・certaintyを維持してreaction／feeling／negative／pastへ整合する。既存source_past_negative_feeling根拠から、独立materialと元の必要行動を既存のexact2選択へ接続する。疑問の内容を事実・他者の意図・因果へ確定せず、受身から新actor／performedを作らない。
+
+非人物主題の限定語彙familyと有限述語を別slotで証明する。任意人物主題、外側の他者、否定経験、推量、報告、条件、未来、引用、別文、連続終端は除外。自己接頭による既存self_evaluation分類もこの全field経験証明に成功した同核だけを整合し、旧背景証明から自己評価を変更しない。原行動・required関係・複数主題・optional・最大3 Moveを含む選択条件は維持する。HR／Surface／Gate／meaning／contractsの変更0、STRUCTURE_MAP_DELTA_NONE。
+
+初回公開試行で自己接頭の分類欠落を確認し、関連12検査は11 PASS／新規1 FAIL。入力・期待値を変更せずsource証明への接続を修正し、追加4検査を固定実装で再実行して全PASS。原疑問の肯否・疑問性・背景・host時制・元行動の欠落を完成本文inverseとGateで拒否し、NORMAL／LIMITED・全recovery・同一immutable inputを確認した。初期失敗は保存し、途中source編集と重なった初回実行を最終固定source結果にしない。旧test全文・fixture・期待値を維持。既存Python実体とversion／required importsを確認して再利用し、環境再構築なし。
+
+runnerは既存current13 identityだけ再導出し、exact18／exact9と非current ASTを維持する。この固定sourceで必須回帰と同じ100件を実施し、華恋が全入力field・観測・follow・生成可否と理由を全件全文確認する。最終検証は未完。長い原文復唱、定型締め、他の中心感情・複数主題・共有関係は残件。NOT_CLEAR・disabled・Draft/open/unmerged・candidate_ready=false・automatic_progression=false。Mash human PASS／ready／採用／merge／本番なし。System Context未使用・原典直接確認、PR37不変更。

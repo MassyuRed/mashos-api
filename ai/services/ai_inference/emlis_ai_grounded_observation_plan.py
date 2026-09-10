@@ -9920,6 +9920,36 @@ def _source_past_dislike_is_bound(fragment: str) -> bool:
     ) is not None
 
 
+def _source_past_interrogative_feeling_is_bound(fragment: str) -> bool:
+    """Bind an embedded question to an asserted past experiential host.
+
+    The negative state belongs inside ``noka to``, not to the outer feeling.
+    Keep the question and optional passive background verbatim in one
+    nucleus: neither the questioned state nor an unstated agent is asserted.
+    Closed case frames prevent a report or foreign experiencer from lending
+    only its final emotional predicate to the current user.
+    """
+    noun = r"(?:[一-鿿々ァ-ヶー]+|こちら|そちら|あちら|これ|それ|あれ)"
+    nominal = noun + r"(?:の" + noun + r"){0,2}"
+    # A person marked by wa/ga/mo could be the outer experiencer instead.
+    # Only a non-person information/circumstance head closes that ambiguity;
+    # any possessor stays inside the question, without becoming an actor.
+    question_subject = (r"(?:" + noun + r"の){0,2}"
+                        r"(?:都合|事情|状況|意図|希望|意見|説明|負担|気持ち)")
+    return re.fullmatch(
+        r"(?:(?:(?:今日|昨日|きのう|今朝)(?:は|も)?|"
+        r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が|も))[、,]?){0,2}"
+        r"(?:(?:急に|突然|勝手に|無断で)?" + nominal + r"を"
+        r"(?:途中で|急に|突然|勝手に|無断で)?"
+        r"(?:変えられ|消され|止められ|遮られ|否定され|退けられ)て[、,])?"
+        + question_subject + r"(?:は|が|も)"
+        r"(?:まだ|もう|全く|まったく)?"
+        r"(?:見えていない|伝わっていない|届いていない|分かっていない|わかっていない)"
+        r"のかと(?:少し(?:だけ)?|ちょっと|とても|強く)?"
+        r"(?:腹が立った|苛立った|いらだった)", fragment,
+    ) is not None
+
+
 def _source_past_negative_feeling_is_bound(fragment: str) -> bool:
     """Prove a finite experiential head and its optional owner-local background.
 
@@ -10358,7 +10388,7 @@ def _final_stage1_typed_nuclei(
             frame = nucleus.semantic_frame
             if (
                 span is not None and normalized_input is not None
-                and nucleus.kind in {"event", "state", "reaction", "value"}
+                and nucleus.kind in {"event", "state", "reaction", "value", "self_evaluation"}
                 and nucleus.source_fields == ("memo",) and span.source_field == "memo"
                 and frame.actor == "current_user"
                 and (frame.time_scope in {"past", "present", "current_input"}
@@ -10368,7 +10398,7 @@ def _final_stage1_typed_nuclei(
                          and frame.modality == "fact"))
                 and frame.modality in {"fact", "feeling"}
                 and not set(frame.attribute_codes).intersection({
-                    "operator:negation", "operator:refusal", "operator:wish",
+                    "operator:refusal", "operator:wish",
                     "operator:uncertainty", "operator:constraint",
                     "operator:performed_action", "operator:change", "operator:result",
                     "semantic_role:limiting_unknown", "semantic_role:current_change",
@@ -10385,8 +10415,16 @@ def _final_stage1_typed_nuclei(
                     and not source[:start].strip()
                     and re.fullmatch(r"\s*[。．.]?\s*", source[end:])
                     and _top_level_text(source) == source
+                    and ((scoped_past_feeling := _source_past_interrogative_feeling_is_bound(
+                            re.sub(r"[。．.]$", "", source.strip())))
+                         or "operator:negation" not in frame.attribute_codes)
+                    # An explicit self prefix can trigger lexical self
+                    # evaluation. Only this complete experiential proof,
+                    # never the older background predicates, may correct it.
+                    and (nucleus.kind != "self_evaluation" or scoped_past_feeling)
                     and ((past_feeling := frame.time_scope != "continuing"
-                          and _source_past_negative_feeling_is_bound(finite))
+                          and (scoped_past_feeling
+                               or _source_past_negative_feeling_is_bound(finite)))
                          or (scalar_expression := frame.time_scope != "continuing"
                              and _source_scalar_background_expression_is_bound(finite))
                          or _source_finite_background_expression_is_bound(finite))
