@@ -9901,6 +9901,25 @@ def _final_stage1_action_change_source_fragment_projections(
     )
 
 
+def _source_past_dislike_is_bound(fragment: str) -> bool:
+    """Bind a past experienced dislike, not a present refusal or an agent.
+
+    A complete passive event can remain the explicit object of the feeling.
+    Its omitted actor/patient is not projected, and no cause or relation is
+    inferred. The closed nominal clause cannot absorb a report or a foreign
+    experiencer; the whole original field is checked by the caller.
+    """
+    return re.fullmatch(
+        r"(?:(?:(?:今日|昨日|きのう|今朝)(?:は|も)?|"
+        r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が|も))[、,]?){0,2}"
+        r"(?:(?:勝手に|無断で|急に)?"
+        r"(?:触られ|見られ|読まれ|聞かれ|話され|書かれ|呼ばれ|扱われ)た"
+        r"(?:の|こと)(?:は|が|も)?[、,]?)?"
+        r"(?:やっぱり|やはり)?(?:少し(?:だけ)?|ちょっと|とても|強く)?"
+        r"嫌だった", fragment,
+    ) is not None
+
+
 def _source_past_negative_feeling_is_bound(fragment: str) -> bool:
     """Prove a finite experiential head and its optional owner-local background.
 
@@ -10194,6 +10213,49 @@ def _final_stage1_typed_nuclei(
             else ()
         )
         if not projections:
+            # The shared lexical refusal marker also matches a remembered
+            # dislike. Only a whole, finite self-experiential past clause can
+            # correct that status; the passive background stays verbatim in
+            # this nucleus and never supplies a performed act or a new actor.
+            frame = nucleus.semantic_frame
+            if (
+                span is not None and normalized_input is not None
+                and nucleus.kind == "state" and frame.predicate_kind == "refusal"
+                and frame.modality == "refusal" and frame.polarity == "negative"
+                and nucleus.source_fields == ("memo",) and span.source_field == "memo"
+                and frame.actor == "current_user"
+                and frame.time_scope in {"past", "present", "current_input"}
+                and {"operator:refusal", "semantic_role:protective_or_limiting_refusal"}
+                    <= set(frame.attribute_codes)
+                and not set(frame.attribute_codes).intersection({
+                    "operator:negation", "operator:wish", "operator:uncertainty",
+                    "operator:performed_action", "operator:change", "operator:result",
+                    "operator:constraint", "semantic_role:limiting_unknown",
+                    "semantic_role:current_change", "semantic_role:explicit_result",
+                    "semantic_dependency:action_before_change",
+                })
+            ):
+                source = str(normalized_input.get("memo") or "")
+                start, end = span.start_index, span.end_index
+                raw = str(span.raw_text)
+                if (
+                    0 <= start < end <= len(source)
+                    and _clean(source[start:end]) == _clean(raw)
+                    and not source[:start].strip()
+                    and re.fullmatch(r"\s*[。．.]?\s*", source[end:])
+                    and _top_level_text(source) == source
+                    and _source_past_dislike_is_bound(re.sub(r"[。．.]$", "", source.strip()))
+                ):
+                    nucleus = replace(nucleus, kind="reaction", semantic_frame=replace(
+                        frame, predicate_kind="feeling", modality="feeling", time_scope="past",
+                        attribute_codes=tuple(_dedupe((
+                            *(code for code in frame.attribute_codes
+                              if not code.startswith("time_scope:") and code not in {
+                                  "operator:refusal", "semantic_role:protective_or_limiting_refusal",
+                              }),
+                            "time_scope:past", "operator:feeling", "lexical:source_past_negative_feeling",
+                        ))),
+                    ))
             # The shared lexical analyzer can miss short terminal hedges or
             # leading epistemic adverbs. Prove the entire original field at
             # the final OP boundary, before selection and unknown expansion.

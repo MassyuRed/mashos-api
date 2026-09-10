@@ -13,7 +13,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-10最新（candidate82）：原文証明した否定過去の非行動と独立materialを両方保持。follow2件変更・他98件同一、全100件全文確認済み。必須402は396成功／6失敗、追加Stage3は8成功／2失敗（旧mapping固定期待の不一致1件増）。旧期待値不変更。新しい締めの反復も残り品質NOT_CLEAR。詳細と再開点は末尾candidate82。System Context未使用・原典直接確認、PR37不変更。
+2026-09-10最新（candidate83 source checkpoint）：原文全体で証明した過去の「嫌だった」を現在の拒否から経験した気持ちへ整合し、元の行動とともに保持。関連4検査成功。固定sourceの必須回帰・同じ100件・華恋全文確認はこれから。締め反復と旧mapping不整合は残件。NOT_CLEAR、System Context未使用・原典直接確認、PR37不変更。
 
 ## 1. GitHub anchors
 
@@ -7005,3 +7005,12 @@ meaningの既存sealed claim/proposition/basis/qualifierは再選択せず、同
 商品品質はNOT_CLEAR。回復した1件では、隣接する2文の締めがともに「小さくせずに受け止めています」となり、新しい可視反復が残る。同本文内のこの重複は0件から1件へ増えた。既存の長い原文復唱、汎用締め、unknownの説明、中心感情・複数主題・共有関係の受け止め不足も残る。次は回復済み2責務を失わずこの締めの反復を解消できる既存表面責務を調べ、残る中心materialの選択不足を同じ限定範囲で進める。必須6失敗と追加Stage3の既存1・新規1失敗は別途可視化し、期待値の書換えで成功化しない。
 
 sourceと結果は既存Draft PR3／30、実入力・実出力・初期失敗・全100件の読了記録・再開点は従来の非公開作業記録へ継続保存。同じ固定sourceの検証は結果資料のみの追記後も再利用し、保存・説明目的の再生成、原典一式の不要な再読、System Context一式の再生成、定例JSON／ZIP配布はしない。System Context未使用・原典直接確認、PR37不変更。NOT_CLEAR・disabled・Draft/open/unmerged・candidate_ready=false・automatic_progression=false、Mash human PASS／ready／採用／merge／本番未成立。
+
+
+### 2026-09-10 candidate83 source checkpoint — 過去に経験した嫌悪の原文を保持
+
+「嫌だった」という経験した気持ちが現在の拒否へ分類され、併記した行動だけがfollowへ残る欠落を修正する。原memo_thought全field・offset・本人・単核・引用外・閉じた過去述語を既存final OPで証明し、同一nucleusをreaction／feeling／pastへ整合する。原文の受身背景、修飾、negative polarity、actor、ID、根拠、certaintyを保持し、performed・新actor・因果は追加しない。現在拒否、丁寧形、他者、伝聞、引用、未来、条件、否定、複数文、曖昧な三点リーダ・連続句点は対象外。既存source_past_negative_feeling根拠を使い、元の必要actionと独立materialを既存選択・Move・HR・逆変換へ渡す。
+
+追加4検査でwhole-field証明、NORMAL／LIMITEDの同一immutable入力、全recovery完成本文、背景・修飾・時制・owner・気持ち・actionの改変拒否、第三主題・optional・required関係の非拡張を確認した。初期8関連検査と連続句点修正後4検査のrawを保持する。旧検査・fixture・期待値不変更。runnerは現行13 identityのみ更新し、18 payload／9 source ownerと非current ASTの同一性を確認する。
+
+前回の二対象に同じ締めが続く問題を先に調査したが、自然な共有述語への統合は現在のReception Depth／Gateの二Move・layered・min2契約に関わる。Stage3のFOCUSEDを別軸のReceptionへ流用しない。今回その再分類、Gate緩和、同義語置換や必要対象削除は行わず残件化する。source-proven気持ちの保持は既存9月8日承認範囲で進める。HR／Gate／Surface／meaning／contracts不変更、owner／schema／family／最大3 Move不変更、STRUCTURE_MAP_DELTA_NONE。商品NOT_CLEAR・disabled、Draft PR3／30継続、candidate_ready=false、automatic_progression=false。Mash human PASS／ready／採用／merge／本番なし。
