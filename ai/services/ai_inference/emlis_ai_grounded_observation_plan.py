@@ -10235,6 +10235,24 @@ def _source_alternative_uncertainty_is_bound(fragment: str) -> bool:
     ) is not None
 
 
+def _source_deliberative_omission_is_bound(fragment: str) -> bool:
+    """Bind a speaker-local negative progressive question to its object.
+
+    The finite ``te inai kana`` host preserves both negation and uncertainty;
+    it never establishes an omission or an intention to act. Closed means
+    and nominal object slots cannot absorb a report, foreign subject,
+    future condition, or another finite clause.
+    """
+    noun = r"[一-鿿々ァ-ヶー]+"
+    return re.fullmatch(
+        r"(?:(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が|も)[、,]?)?"
+        r"(?:(?:この|その|あの)(?:(?:選び|進め|決め|調べ|確かめ|読み|書き)方|手順|方法)で)?"
+        r"(?:本当に)?(?:この|その|あの)?(?:大事な|重要な|必要な)?"
+        + noun + r"(?:の" + noun + r"){0,2}を"
+        r"(?:見落とし|取り違え|忘れ)ていないかな", fragment,
+    ) is not None
+
+
 def _source_apparent_ease_is_bound(fragment: str) -> bool:
     """Bind the speaker's tentative ease assessment of a nominal target.
 
@@ -10443,8 +10461,12 @@ def _final_stage1_typed_nuclei(
                                      and nucleus.retention == "required"
                                      and frame.time_scope in {"present", "current_input"}
                                      and source[start:end] == raw
-                                     and _source_apparent_ease_is_bound(
-                                         re.sub(r"[。．.]$", "", source.strip())))))
+                                     and (_source_apparent_ease_is_bound(
+                                             re.sub(r"[。．.]$", "", source.strip()))
+                                          or (frame.polarity == "negative"
+                                              and "operator:negation" in frame.attribute_codes
+                                              and _source_deliberative_omission_is_bound(
+                                                  re.sub(r"[。．.]$", "", source.strip())))))))
                     )
                 ):
                     nucleus = replace(nucleus, kind="uncertainty", semantic_frame=replace(

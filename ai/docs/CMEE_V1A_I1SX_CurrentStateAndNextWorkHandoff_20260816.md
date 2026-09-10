@@ -7169,3 +7169,10 @@ System Context未使用・原典直接確認、PR37不変更。コードと再�
 商品NOT_CLEAR。見込みを元行動とともに受け取れる改善はあるが、原文復唱が長くなり、定型的受取と機械的な不確定範囲表示は残る。自然さ・簡潔さ・商品全体の受入成功にはしない。自己評価の別例には、有限自己評価の認識不足、接続詞の格誤認、省略目的語の未登録動作、欄間対比の選択境界が重なると診断したが未修正。複合現在状態・能力の推量・未来行動との組合せ、複数主題・共有関係の欠落、共有述語の2 Move／layered／min2、action-only二行動・旧mapping整合も未解決。次は保存済み100件からこれらの原materialが既存source証明・選択へ届かない原因を限定して扱う。自己評価をuncertaintyへ読み替えず、元行動・否定・unknownを保持し、対象削除・同義語だけの置換・旧期待値書換えで解決扱いにしない。
 
 source checkpointは既存Draft PR3へ先に保存・取得照合済み。最終結果は既存handoff／設計02・06と同じ非公開継続記録へ保存し、保存結果を照合する。資料だけの後続commitへ同じ固定sourceの検証を継承し、保存目的の再生成はしない。System Context未使用・原典直接確認、PR37不変更、定例JSON／ZIP配布なし。disabled・Draft/open/unmerged、candidate_ready=false・automatic_progression=false。Mash human PASS／ready／採用／merge／本番なし。
+
+
+### 2026-09-10 continuation — 否定疑問と元行動の保持（candidate90 source checkpoint・最終検証前）
+
+Mash様の残件継続指示と既存20260905／20260908承認内で、final OPのwhole-field uncertainty証明へ、本人の名詞目的語＋否定進行形＋「かな」を結ぶ有限文法を追加した。明示required・本人・現在・原field全域と正確なsource offset・既存negative／negationを要求し、手段・目的語・修飾・否定・不確かさを同じ核に保持する。見落とし等の発生や実行・意図を断定しない。既存selectorと唯一のHR、同じimmutable selected inputとGate／inverseを使用し、新owner／schema／経路はない。STRUCTURE_MAP_DELTA_NONE。旧公開I5、国家／API／DB／RN／Piece／Analysis、問い／Layer3は変更しない。
+
+公開合成3例を含む追加4検査が成功。全回復とNORMAL／LIMITEDの同一責務、独立replay、対象・手段・否定・疑問・元行動の削除拒否、他者・伝聞・過去未来・別文・型境界を確認した。旧test全文を保持し、runnerのcurrent13定数だけを再導出、非current AST不変。これは最終source保存時点の試験結果であり、必須全回帰とcanonical same100の最終生成／root全本文読取は次工程。candidate89の424 PASS／6 FAIL、73 GENERATED／27 UNAVAILABLEは前回値。商品NOT_CLEAR、disabled、Draft/open/unmerged、automatic_progression=false。System Contextは現在指示に従い未使用、原資料と現行sourceを直接確認した。private本文・個別case・digest・locatorは公開せず、定例ZIPは作らない。

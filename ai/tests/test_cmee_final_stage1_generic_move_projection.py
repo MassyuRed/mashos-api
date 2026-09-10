@@ -9981,3 +9981,140 @@ class CMEEFinalApparentEaseSelectionTest(unittest.TestCase):
             old_public = build_grounded_observation_plan(frozen.normalized_current_input,
                                                          evidence_spans=frozen.evidence_spans)
         self.assertEqual(old_public, legacy)
+
+
+class CMEEFinalDeliberativeOmissionSelectionTest(unittest.TestCase):
+    """Keep a negative question and the speaker's already performed action."""
+
+    row = staticmethod(CMEEFinalIndependentFeelingSelectionTest.row)
+    marker = "lexical:source_bounded_expression"
+    sources = (
+        "この読み方で本当に重要な注意点を見落としていないかな。",
+        "必要な資料を忘れていないかな。",
+        "私はその手順でこの記号を取り違えていないかな。",
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = tuple(_full_surface_artifacts(cls.row(s)) for s in cls.sources)
+
+    def test_question_object_negation_uncertainty_and_original_action_survive(self):
+        for source, a in zip(self.sources, self.artifacts):
+            with self.subTest(source=source):
+                self.assertTrue(a.gate.passed, a.gate.rejection_reasons)
+                self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+                with patch.object(observation_plan_owner, "_source_deliberative_omission_is_bound", return_value=False):
+                    before_plan = _compile_inputs(self.row(source)).grounded_plan
+                before = next(n for n in before_plan.nuclei if n.source_fields == ("memo",))
+                material = next(n for n in a.plan.nuclei if n.source_fields == ("memo",))
+                self.assertEqual((material.kind, material.semantic_frame.predicate_kind,
+                                  material.semantic_frame.modality, material.semantic_frame.polarity),
+                                 ("uncertainty", "uncertainty", "uncertain", "negative"))
+                self.assertEqual(replace(material, kind=before.kind, semantic_frame=before.semantic_frame), before)
+                self.assertEqual(replace(material.semantic_frame,
+                    predicate_kind=before.semantic_frame.predicate_kind, modality=before.semantic_frame.modality,
+                    attribute_codes=before.semantic_frame.attribute_codes), before.semantic_frame)
+                self.assertEqual(set(material.semantic_frame.attribute_codes),
+                                 set(before.semantic_frame.attribute_codes) | {self.marker, "operator:uncertainty"})
+                action = next(n for n in a.plan.nuclei if n.source_fields == ("memo_action",))
+                self.assertEqual(action, next(n for n in before_plan.nuclei if n.source_fields == ("memo_action",)))
+                follow = _reception_text(a.surface.text)
+                self.assertEqual(follow.count(source.rstrip("。")), 1)
+                self.assertIn("作業台を片づけた", follow)
+                self.assertEqual(tuple(m.target_nucleus_ids for m in a.plan.response_plan.human_reception_plan.moves),
+                                 ((material.nucleus_id,), (action.nucleus_id,)))
+                self.assertTrue(any(u.dimension == "source_explicit_epistemic_limit"
+                                    and u.affected_nucleus_ids == (material.nucleus_id,)
+                                    and u.surface_policy == "hedge_only" for u in a.plan.unknown_boundaries))
+
+    def test_object_means_negation_question_or_action_loss_fails_inverse_and_gate(self):
+        a = self.artifacts[0]
+        for old, new in (("この読み方で", ""), ("本当に", ""), ("重要な注意点", "資料"),
+                         ("見落としていないかな", "見落としているかな"),
+                         ("見落としていないかな", "見落としていない"),
+                         ("見落としていないかな", "見落とした"),
+                         ("作業台を片づけた", ""), (self.sources[0].rstrip("。"), "")):
+            with self.subTest(old=old, new=new):
+                body = _tamper_reception(a.surface.text, old, new)
+                self.assertNotEqual(body, a.surface.text)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan, surface_result=replace(a.surface, text=body),
+                    resolver=a.resolver, require_body_inverse=True,
+                    selected_subjective_input=a.selected_subjective_input).passed)
+
+    def test_both_qualities_all_recoveries_and_replay_keep_the_same_selected_input(self):
+        for source, a in zip(self.sources, self.artifacts):
+            with self.subTest(source=source):
+                inputs = _compile_inputs(self.row(source))
+                moves = a.plan.response_plan.human_reception_plan.moves
+                self.assertEqual(tuple(m.reception_act for m in moves),
+                                 ("stay_with_current_burden", "honor_concrete_effort"))
+                self.assertTrue(all(m.required and not m.support_nucleus_ids for m in moves))
+                for quality in ("grounded", "limited_grounding"):
+                    self.assertEqual(_cmee_semantic_reception_plan(inputs.grounded_plan, a.resolver,
+                                                                  material_quality=quality).moves, moves)
+                for args, kwargs in a.author_arguments:
+                    self.assertIs(kwargs["selected_subjective_input"], a.selected_subjective_input)
+                    replay = reception_owner.replay_source_grounded_human_reception_from_plan(
+                        args[0], args[2], args[3], plan=kwargs["plan"], recovery_stage=kwargs["recovery_stage"],
+                        clause_plans=kwargs["clause_plans"], selected_subjective_input=a.selected_subjective_input)
+                    authored = next(s for s in a.authored if s.recovery_stage == kwargs["recovery_stage"])
+                    self.assertEqual(replay.text, authored.text)
+                    self.assertEqual(set(authored.realized_move_ids), {m.move_id for m in moves})
+                    sp = a.sentence_plan if authored.recovery_stage == "full" else (
+                        surface_owner.build_reception_recovery_sentence_plan(
+                            a.sentence_plan, a.plan, a.resolver, recovery_stage=authored.recovery_stage))
+                    recovered = _recovery_surface(a, sp)
+                    self.assertIn(source.rstrip("。"), recovered.text)
+                    self.assertIn("作業台を片づけた", recovered.text)
+                    inverse = evaluate_grounded_surface_body_inverse(
+                        body=recovered.text.encode(), plan=a.plan, sentence_plan=sp,
+                        resolver=a.resolver, selected_subjective_input=a.selected_subjective_input)
+                    self.assertTrue(inverse.passed, inverse.failure_codes)
+
+    def test_whole_field_owner_time_type_and_source_boundaries_stay_closed(self):
+        base = self.sources[0]
+        sources = (
+            "友人は" + base, "友人が" + base, "明日は" + base,
+            base.replace("見落としていないかな", "見落としていなかったかな"),
+            base.replace("見落としていないかな", "見落としていないなら確認する"),
+            base.replace("見落としていないかな", "見落としていないかなと思った"),
+            base.replace("見落としていないかな", "見落としていないかなと聞かれた"),
+            base.replace("見落としていないかな", "見落としていない"),
+            base.replace("見落としていないかな", "見落としているかな"),
+            base.replace("見落としていないかな", "見落としていないかもしれない"),
+            "「" + base.rstrip("。") + "」", base.rstrip("。") + "？", base.rstrip("。") + "…",
+            base.rstrip("。") + "．。", "別の記録。" + base, base + "別の記録。",
+        )
+        for source in sources:
+            with self.subTest(source=source):
+                self.assertFalse(observation_plan_owner._source_deliberative_omission_is_bound(
+                    source.rstrip("。")))
+                frozen = freeze_text_source(_request_from_row(self.row(source)))
+                plan = build_final_stage1_grounded_observation_plan(
+                    frozen.normalized_current_input, evidence_spans=frozen.evidence_spans)
+                self.assertFalse(any(self.marker in n.semantic_frame.attribute_codes
+                                     for n in plan.nuclei if n.source_fields == ("memo",)), source)
+        frozen = freeze_text_source(_request_from_row(self.row(base)))
+        legacy = build_grounded_observation_plan(frozen.normalized_current_input, evidence_spans=frozen.evidence_spans)
+        before = next(n for n in legacy.nuclei if n.source_fields == ("memo",))
+        for changed in (replace(before, kind="self_evaluation"), replace(before, kind="action"),
+                        replace(before, retention="optional"), replace(before, grounding_kind="user_stated_relation"),
+                        replace(before, semantic_frame=replace(before.semantic_frame, actor="other")),
+                        replace(before, semantic_frame=replace(before.semantic_frame, time_scope="past")),
+                        replace(before, semantic_frame=replace(before.semantic_frame, polarity="positive"))):
+            altered = replace(legacy, nuclei=tuple(changed if n == before else n for n in legacy.nuclei))
+            nuclei, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                altered, frozen.evidence_spans, normalized_input=frozen.normalized_current_input)
+            self.assertFalse(any(self.marker in n.semantic_frame.attribute_codes for n in nuclei))
+        for source in ("別の記録。" + base, base + "別の記録。", base.replace("注意点", "資料")):
+            nuclei, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                legacy, frozen.evidence_spans, normalized_input={**frozen.normalized_current_input, "memo": source})
+            self.assertFalse(any(self.marker in n.semantic_frame.attribute_codes for n in nuclei))
+        with patch.object(observation_plan_owner, "_source_deliberative_omission_is_bound", return_value=False):
+            old_public = build_grounded_observation_plan(frozen.normalized_current_input,
+                                                         evidence_spans=frozen.evidence_spans)
+        self.assertEqual(old_public, legacy)
