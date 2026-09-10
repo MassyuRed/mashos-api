@@ -1,4 +1,4 @@
-> 2026-09-10 Q1 checkpoint: Free相当のprocess-local一往復を実装。独立回答source、純粋意味checkpoint、焦点補足／明示訂正／時点、既存IM03と唯一のHR作者／Surface／独立逆検証へ接続。Q1固定48件PASS。単独100件はcandidate91と全record一致（73 GENERATED／27 UNAVAILABLE）。主要回帰442は436 PASS／既存6 FAIL。追加旧契約群はbaselineとの比較で固定runtime symbol identity不一致1件増（旧期待値は未変更）。対象関係と時点の最終補強後の最終回帰、全100件読了、正本文書の最終レビューは進行中。次はこのQ1の検証・保存を完了する。Q2保存／API／RN、有料差、商品PASS、公開は未成立。単独本文PASS待ちへ戻さない。private本文／case／digest／locatorはこの文書に含めない。
+> 2026-09-10 Q1最終更新：Q1のFree相当process-local一往復を実装・検証。初回本文→一問→独立回答source→意味checkpoint→回答後本文が共通作者を通る。追加53件PASS、主要既存442件は436 PASS／既存6 FAIL、旧契約194件は123 PASS／46 FAIL／23 ERROR／2 SKIPでcandidate91 baselineと全成否一致。単独100件は73 GENERATED／27 UNAVAILABLEで全record一致、華恋が全100件の入力・実本文・理由を読了。商品NOT_CLEAR、Q2以降未実施、未公開。 現在の再開先は本書末尾のQ1節。
 
 # CMEE V1-A I1-SX Current State and Next Work Handoff — 2026-08-16
 
@@ -15,7 +15,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-10のQ1開始前baseline（candidate91）：継続状態と予定までの時間を元行動と保持するsource証明を追加。1件の直接診断フォローの欠落を修正したが、対象の生成不可は未解消。他99件全record・全100件の観測と可否理由は同一。華恋が同じ100件全文確認、73 GENERATED／27 UNAVAILABLE、旧142責務を保持して各層143。必須438は432 PASS／既存6 FAIL、前回434の成否同一・追加4全PASS。復唱は長く、中心内容・複数主題／共有関係・定型締めは残りNOT_CLEAR。末尾candidate91から再開。System Context未使用・原典直接確認、PR37不変更。
+2026-09-10のQ1開始前baseline（candidate91）：継続状態と予定までの時間を元行動と保持するsource証明を追加。1件の直接診断フォローの欠落を修正したが、対象の生成不可は未解消。他99件全record・全100件の観測と可否理由は同一。華恋が同じ100件全文確認、73 GENERATED／27 UNAVAILABLE、旧142責務を保持して各層143。必須438は432 PASS／既存6 FAIL、前回434の成否同一・追加4全PASS。復唱は長く、中心内容・複数主題／共有関係・定型締めは残りNOT_CLEAR。この段落はQ1開始前baseline。現在は末尾Q1節から再開。System Context未使用・原典直接確認、PR37不変更。
 
 ## 1. GitHub anchors
 
@@ -7217,3 +7217,38 @@ Mash様の残件継続指示と既存20260905／20260908承認内で、final OP�
 対象は引き続きUNAVAILABLEであり、新たに利用可能な応答の改善へ換算しない。診断本文の内容欠落は減ったが、その分原文再掲が長くなり、定型的な受取と締めは残る。商品NOT_CLEAR。混合した推量と確定否定は、節の仮投影だけでは選択へ届かないと確認したが未修正。未来行動の短い名詞化試作は未実行の見え方とvisible bindingを保てず不採用。自己評価、複数主題・共有関係、中心感情の欠落、抽象的な参照、旧mapping整合も残る。次は保存済み本文と今回の不採用診断を使い、節ごとの不確かさ／確定性と関係を保って選択へ届ける既存経路を検討する。自己評価を単なるuncertaintyへ置換せず、対象削除・原期待値変更で成功を作らない。
 
 固定sourceはlocal `ae987731fd1693da1006f42a0f3253c3ae5d9644`／remote `dca20b06b69e149ef724428ec7381846a8a51c08`、同一tree `5445f8172b4cab55f4336cdb85208e28ffffb751`。sourceは既存Draft PR3へ途中保存・取得照合済み。後続変更は結果資料だけで、この固定sourceの検証を再利用する。PR3／PR30と既存非公開継続記録へ結果・残件・再開点を保存し、保存後照合する。既存20260905／20260908承認と今回運用指示を継承、前提・作業規則、恒久incident全文、weekly20260905、全体設計／全file地図・影響sourceを確認。System Context未使用・原典直接確認、PR37不変更。disabled・Draft/open/unmerged・candidate_ready=false・automatic_progression=false、Mash human PASS／ready／採用／merge／本番なし。private本文・個別case・digest・locatorを公開GitHubへ置かず、定例JSON／ZIP配布も行わない。9月12日の本文確認準備目標と品質リスクを継承する。
+
+
+## 2026-09-10 Q1 — 最終実装・検証と次の境界
+
+Q1のFree相当process-local一往復を実装・検証。初回本文→一問→独立回答source→意味checkpoint→回答後本文が共通作者を通る。追加53件PASS、主要既存442件は436 PASS／既存6 FAIL、旧契約194件は123 PASS／46 FAIL／23 ERROR／2 SKIPでcandidate91 baselineと全成否一致。単独100件は73 GENERATED／27 UNAVAILABLEで全record一致、華恋が全100件の入力・実本文・理由を読了。商品NOT_CLEAR、Q2以降未実施、未公開。
+
+### 実装済みの一往復
+
+添付 `COCOLON_CMEE_QUESTION_SYSTEM_20260910` v1.1とMashのQ1実装指示を使用した。全体の設計・全ファイル地図、国家システム、三大中核と旧経路、影響するsource・契約・本文ownerを確認した。System Contextは今回使用せず原典を直接確認した。正本の旧Round 0 PASS待ちをQ1開始条件から外し、現在の開発順をQ1→Q2→Q3→Q4へ同期した。
+
+`GenerationRequest.emlis_thread`を持つFree相当・履歴なし・最大一問の開発用呼出しを追加した。初回の実Layer 1／2を生成してから、SUFFICIENT／LIMITEDとは独立にASK／END／BLOCKEDを選ぶ。候補選択は純粋処理で、質問枠を消費せず、問いをsource証拠へ昇格しない。本文生成失敗は質問で代替しない。
+
+回答は原入力と別のSUPPLEMENTAL_ANSWER envelope・answer_text_private fieldに固定し、元envelope／field／scalar／UTF-8へ戻る根拠を保持する。原memoへ連結せず、感情labelを回答へ複写しない。prepare_emlis_updateは本文前に意味checkpointを返す。問い焦点の補足、同threadの一意な明示訂正・撤回、依存relationの無効化、非対象意味／unknownの保持を項目別に行う。明確な撤回は置換先の文法が未対応でも保持する。訂正の旧句はlocatorに留め、新句の型・極性・演算子は新句だけから導出する。他者の発言を本人の信念として採用しない。
+
+回答の受信時刻と内容の対象時点を分離し、当時の訂正と回答した時点の状態追加を区別する。時点・対象を結べない場合は未確定を保持する。検証済み更新は既存のIM03／意味選択／postselection／Human Reception唯一の作者／Sentence Surface／独立body inverseへ渡す。thread専用ABOUT_TARGETは出来事と回答の対象関係を保持し、旧scope exact4・解釈exact16を変更しない。時点・関係・回答対象の本文改変は元sourceから独立検証する。
+
+NO_MATERIAL_UPDATEを評価できたときだけUNCHANGED、部分採用はPARTIALLY_REFINED。意味が確定して本文が失敗してもcheckpointを返し、撤回前の本文を現在版へ付け替えない。本文失敗のcheckpoint保持は障害注入で確認した。設計の異なる三回答、当時訂正、現在状態、不明、部分更新の実本文も読了した。
+
+### 検証と継承失敗
+
+- 固定CPython 3.12.13＋46依存。Q1の53件を含む13 test filesは495件、最終結果489 PASS／6 FAIL、ERROR／SKIP 0。初回はasync harnessの指定漏れで6件が実行前に失敗（483 PASS／12 FAIL）したため、その6件だけ同じ固定runtimeのstdlib asyncio harnessで再実行し全PASS。初回結果を破棄せず、検査が実行された最終成否を集計した。Q1だけなら `cd ai` の上で `python -m pytest -q tests/test_cmee_emlis_q1_thread.py -p no:cacheprovider` で実行できる。
+- 既存442件は前回と全成否同一。6失敗は旧本文句期待1、同句がなくtamper前に停止1、bridge責務数の固定133対143が1、歴史的観測hash2、dated source receipt1。旧本文・個数・hash期待値を成功目的で変更していない。6件を新たな許容基準にしない。
+- 追加の旧契約file194件はcandidate91 baselineと全成否同一（123 PASS／46 FAIL／23 ERROR／2 SKIP）。これは広い履歴契約群の既存不整合で、成功扱いしない。新たな依存は追加していない。
+- Q1で共有sourceの宣言が増えたため一時的に追加失敗したactive owner-chain検査は、現在の共有9ownerを固定したtest fixtureへ移した。legacy composeが0、owner chain／AST閉包／18 payloadの改変検出は保持する。旧IM03_WORKING定数・runner・旧bundleは変更しない。このfixtureはQ1全体のidentityや商品合格証明ではない。
+- 同一canonical100の入力・実本文・status・reason全recordはcandidate91と一致。外側73 GENERATED／27 UNAVAILABLEを維持し、華恋が全100件を本文として読んだ。27件を質問対象数へ換算しない。個別本文・case・private digest／locatorは公開しない。
+
+固定検証sourceはremote `74b614a8164b43e8aabcf686aec86282bfbbf8ad`、tree `80f51ee2a751d35d4b7441bd48c83ab29f894f3c`。後続commitは本handoffと設計資料・PR説明の同期であり、runtime sourceの追加変更はない。PR #3のfresh remote headが継続owner。Cocolon PR #30の正本02 Q1節・05 thread profile・06 Q1順序と構造図00／01／04に同期する。
+
+### 限界と再開点
+
+Q1の意味・本文一往復は成立したが、自由文全体への対応や商品PASSではない。問い候補はsource上の有限な受領イベント＋同じ節の本人反応という対応範囲を持つ。別時点・複雑な複数主題・関係・未対応文法を推測で読了扱いしない。長い再掲、定型締め、単独応答の中心感情欠落等の既存品質課題は初回／回答後に共通して残り、商品NOT_CLEARを維持する。必要な範囲拡張は、実入力・回答から共通の意味／本文ownerのどこで落ちたかを確定し、同じ本文一往復まで変更して確認する。完成文のケース別追加では進めない。
+
+次の機能単位はQ2：checkpoint先行保存、回答／本文の別保存、認証・API・RN・履歴・削除・遅延回答・冪等性・明示再試行。Q1でDB／API／RNを接続したとは扱わない。国家の入力件数・課金event、TodayQuestion、Piece／Analysisの入力許可は変更していない。Q3の有料履歴・後続round、Q4のMash商品判断・公開接続も未実施。今回の終了を古いcandidate91単独修正ループやRound 0 PASS待ちへ戻さない。
+
+Draft/open/unmerged、disabled、candidate_ready=false、automatic_progression=false。Mash human PASS、商品採用、ready、merge、本番切替は成立していない。
