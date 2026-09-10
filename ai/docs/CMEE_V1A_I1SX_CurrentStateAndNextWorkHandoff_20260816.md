@@ -7086,3 +7086,16 @@ source checkpointを既存Draft PR3へ先に保存し、実試行と初期失敗
 他者・疑問・引用・伝聞・外側の過去／未来／否定／推量／条件・複数文・原fieldやoffset不一致は対象外。既存other_explicitの表現をreactionへ再分類しない。HR／Surface／Gate／meaning／contracts・最大3 Move・公開経路は不変更。STRUCTURE_MAP_DELTA_NONE。公開synthetic追加4検査は、背景・比喩・現在host・元行動の保持、NORMAL／LIMITED、全recovery、同一immutable input、改変本文を独立inverse／Gateが拒否すること、原文／主体／範囲と選択境界を確認して4 PASS。旧test全文はbyte exact prefixで維持する。初期試験はsyntheticの意味分類不一致で2 FAIL／2 PASS。負例検査の後段owner未到達も見つけ、今回の新検査だけを正しい経路へ直した。初期結果は非creditで保存し、旧入力・期待値・閾値は不変更。
 
 runnerは既存current13 identityだけ再導出し、非current ASTを維持する。この固定sourceで既存必須回帰と同じ100件を実行し、華恋が入力全field・観測・follow・可否と全理由を全件全文確認する。最終検証は未完。長い原文復唱・定型締め・他の中心material・複数主題・共有関係は残件。NOT_CLEAR・disabled・Draft/open/unmerged、candidate_ready=false・automatic_progression=false。Mash human PASS／ready／採用／merge／本番なし。System Context未使用・原典直接確認、PR37不変更。
+
+
+### 2026-09-10 current — candidate86（比喩としての気分を元行動とともに保持・品質未達）
+
+既存final OPで、本人の原memo全field・正確なoffset・引用外・単核を確認し、目的語付きの有限背景＋「だけで」と、比喩内の完了形＋現在の気分hostを全文で証明した。既存reaction／reaction／feeling／negative／current_inputと原属性を維持し、既存source_bounded_expression根拠を付す。同じ型・時点に限定した選択から、気分・背景と元の必要行動をともに保持する。HRの全文「という言葉」参照を用い、比喩を事実・performedへ確定しない。他者・疑問・引用・伝聞・外側の過去／未来／否定／推量／条件・複数文・原field不一致を除外。other_explicitの表現をreactionへ再分類しない。HR／Surface／Gate／meaning／contracts・最大3 Move・公開経路は不変更、STRUCTURE_MAP_DELTA_NONE。
+
+固定source local 5a32f19c63b4028a30734c6b9553e7419836ec00／remote b5be40598956c6e5c535b76424d7f052855b76b5／同一tree 9e9d4f59cb88dbec37ef6d0dbdca6c0bf91839edで必須回帰と同じ100件を実行した。華恋が前後全100件の原入力全field・観測・follow・可否と全理由を全文確認。1件で気分の比喩と背景を回復し、他99件は全record・Reception plan同一。全入力・順序・観測・可否・理由は同一で、旧138必要Moveのact／target／support／follow要素／source evidenceを全保持。direct100、73 GENERATED／27 UNAVAILABLE、必要Move／expression／binding各139。selected inputは当該1件のみ既存2対象経路へ変わり、元行動の対象・根拠・qualifierを保持した。独立比較は全文確認の補助として保存した。
+
+最終必須418は412 PASS／6 FAIL、ERROR／skip0。前回414の全成否は同じで、今回追加4は全PASS。6失敗は歴史的観測hash2、dated receipt1、bridge合計139対固定133の不一致1、旧句固定期待1、旧句tamperのreception_tamper_source_missing停止1。最後の停止をinverse到達成功にしない。初期追加検査は分類不一致で2 FAIL／2 PASS、負例の後段owner未到達も見つけて今回の新検査を修正し、初期結果は非creditで保持。旧test全文をbyte exact prefixで保ち、旧入力・期待値・閾値は不変更。runnerは既存current13だけ再導出、非current AST不変。既存Python3.12.13実体とlock・46依存versionを確認して再利用し、環境再構築なし。後段36件・RR5 post-hash96とcohort診断を実行し、保存済み前回診断との全文byte一致を確認した。歴史的観測hashとdated receiptの既存診断失敗も保持する。Stage3の過去8 PASS／2 FAILとV2別17検査／42件213候補は今回未再実行で、今回の固定source実行結果へ換算しない。
+
+商品NOT_CLEAR。気分の欠落は減ったが、原文復唱と定型締め、他の中心material、自己評価／選択肢の不確かさ、未来行動との組合せ、複数主題・共有関係は残件。変化したfollowは長くなり、集合内の定型句も増えた。同一本文の同じ締め二連続は従来の1件で増加なし。次はこの保存済み100件と既存source証明から、未保持の中心materialが原文確認と既存選択へ届かない原因を扱う。共有述語の2 Move／layered／min2契約、action-only二行動や未来行動への選択拡張、旧mapping整合は未解決。対象削除・同義語置換だけ・旧期待値変更で成功を作らない。
+
+sourceは既存Draft PR3へ先に保存・取得照合済み。結果は既存handoff／設計02・06と非公開継続記録へ保存し、最後に取得照合する。前回の大きな非公開原本は全体取得ができなかったため、必要な保存済み要素を記録済み照合値と一致確認して復元し、原本を変更せず今回分の継続記録を残す。結果資料だけの追記後は固定sourceの実行結果を再利用し、保存目的で再生成しない。System Context未使用・原典直接確認、PR37不変更、定例JSON／ZIP配布なし。disabled・Draft/open/unmerged、candidate_ready=false・automatic_progression=false、Mash human PASS／ready／採用／merge／本番なし。
