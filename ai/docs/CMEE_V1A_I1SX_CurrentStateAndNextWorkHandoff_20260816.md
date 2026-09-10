@@ -13,7 +13,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-10最新（candidate83 source checkpoint）：原文全体で証明した過去の「嫌だった」を現在の拒否から経験した気持ちへ整合し、元の行動とともに保持。関連4検査成功。固定sourceの必須回帰・同じ100件・華恋全文確認はこれから。締め反復と旧mapping不整合は残件。NOT_CLEAR、System Context未使用・原典直接確認、PR37不変更。
+2026-09-10最新（candidate83）：過去の「嫌だった」という気持ちと元の行動をともに保持。follow1件改善・他99件全record同一、全100件全文確認済み。必須406は400成功／6失敗、既存期待値不変更。前回Stage3の2失敗は未解決として引継ぎ（今回未再実行）。締め反復・他の中心感情欠落・旧mapping整合は残りNOT_CLEAR。詳細と再開点は末尾candidate83。System Context未使用・原典直接確認、PR37不変更。
 
 ## 1. GitHub anchors
 
@@ -7014,3 +7014,16 @@ sourceと結果は既存Draft PR3／30、実入力・実出力・初期失敗・
 追加4検査でwhole-field証明、NORMAL／LIMITEDの同一immutable入力、全recovery完成本文、背景・修飾・時制・owner・気持ち・actionの改変拒否、第三主題・optional・required関係の非拡張を確認した。初期8関連検査と連続句点修正後4検査のrawを保持する。旧検査・fixture・期待値不変更。runnerは現行13 identityのみ更新し、18 payload／9 source ownerと非current ASTの同一性を確認する。
 
 前回の二対象に同じ締めが続く問題を先に調査したが、自然な共有述語への統合は現在のReception Depth／Gateの二Move・layered・min2契約に関わる。Stage3のFOCUSEDを別軸のReceptionへ流用しない。今回その再分類、Gate緩和、同義語置換や必要対象削除は行わず残件化する。source-proven気持ちの保持は既存9月8日承認範囲で進める。HR／Gate／Surface／meaning／contracts不変更、owner／schema／family／最大3 Move不変更、STRUCTURE_MAP_DELTA_NONE。商品NOT_CLEAR・disabled、Draft PR3／30継続、candidate_ready=false、automatic_progression=false。Mash human PASS／ready／採用／merge／本番なし。
+
+
+### 2026-09-10 current — candidate83（原文証明した過去の嫌悪を保持・品質未達）
+
+過去に経験した「嫌だった」が現在の拒否へ分類され、併記した元の行動だけがfollowへ残る欠落を修正した。既存final OPで原memo_thought全field・offset・本人・引用外・単核・閉じた過去述語を証明した場合だけ、同一nucleusをreaction／feeling／pastへ整合する。受身背景、修飾、negative polarity、actor、ID、根拠、certaintyを保ち、新actor・因果・performedは作らない。既存source_past_negative_feeling根拠で、原行動と独立した気持ちを同familyの必要対象として保持する。現在拒否・他者・引用・伝聞・条件・未来・否定・複数文・曖昧な連続終端記号・丁寧形は対象外。連続句点を全て消して確定文扱いする初期境界は独立レビューで修正した。HR／Gate／Surface／meaning／contracts・既存owner／schema／family／最大3・公開経路は不変更。STRUCTURE_MAP_DELTA_NONE。
+
+固定source local bb4bd0f2bd33442eaef86d7f254f09a885d36f0c／remote 277aa109ab07cffd4548690d12143b3d09944800／同一tree 06f74605ff157a48907bfefd80f4c846ac4c1b63で必須回帰と同じ100件を確認した。華恋が原入力全field・観測・follow・outer・全理由を全件全文確認。1件で過去の嫌悪とその背景を元の伝達行動とともにfollowへ回復し、他99件は全record同一。全100件のinput・観測・outer・reasonsは同一で、旧136必要Moveのact／target／support／follow要素を保持。direct100、73 GENERATED／27 UNAVAILABLE、必要Move／expression／bindingは各137。変更はその1件のnucleus型整合・選択・Move・followのみ。read-only独立比較も保存し、華恋の全文確認の代替にはしない。
+
+関連8検査成功後、終端記号の境界修正を含む追加4検査を再確認して4 PASS。既存test全文をbyte exact prefixとして保ち4検査だけ追記した。最終必須406は400 PASS／6 FAIL、ERROR／skip0。前回402の状態は全て同じで、新規4件は全PASS。6失敗は歴史的観測hash2、dated receipt1、bridge必要Move合計137対固定133の不一致1、旧句固定期待1、旧句tamperのreception_tamper_source_missing停止1。最後のtamperはinverse到達成功を意味しない。旧fixture／期待値／閾値不変更、work79の384件381 PASS／3 FAILを歴史的比較基準として保持し、6失敗を受入へ変更しない。前回Stage3実行の8 PASS／2 FAILを履歴として保持する。既存external_ref条件停止と前回追加の旧mapping hash不一致は、該当contracts・固定期待が不変更で未解決のまま引き継ぐ。Stage3の10検査自体は今回未再実行であり、今回の実行結果とはしない。旧mapping整合は未解決。V2別17検査／42件213候補は今回未再実行。
+
+商品NOT_CLEAR。回復した気持ちも原文復唱と定型締めに留まり、前回の2文同じ締め、長い説明、他の中心感情・複数主題・共有関係の不足は残る。共有述語で2対象を一文へ統合する案は現在のReception Depth／Gateの2 Move・layered・min2に関わるため実装せず、その具体境界を非公開記録へ残した。Stage3 FOCUSEDは別軸であり流用しない。次は既存承認範囲の原文証明で残る中心material欠落を進め、共有述語案はDepth／Gate契約変更の扱いと合わせて判断する。必要対象削除・同義語だけの入替え・期待値書換えで改善や成功を作らない。
+
+既存Draft PR3／30へsourceと結果を保存し、実入力・実出力・初期試行・失敗・全件読了記録・再開点は従来の非公開記録へ継続する。結果資料のみの追記後も同じ固定sourceの結果を再利用し、保存目的で再生成しない。System Context未使用・原典直接確認、PR37不変更。NOT_CLEAR・disabled・Draft/open/unmerged、candidate_ready=false・automatic_progression=false、Mash human PASS／ready／採用／merge／本番未成立。
