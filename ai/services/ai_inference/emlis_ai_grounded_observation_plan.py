@@ -176,7 +176,10 @@ GroundedReceptionSurfaceStrategy = Literal[
     "explicit_emlis_counterposition",
 ]
 
-_TEXT_SOURCE_FIELDS: Final = frozenset({"memo", "memo_action"})
+# Text grammar may also be used by the Emlis thread adapter. The original
+# ledger still rejects that field; only its versioned source admission can
+# provide supplemental spans and their independently validated locators.
+_TEXT_SOURCE_FIELDS: Final = frozenset({"memo", "memo_action", "answer_text_private"})
 _LABEL_SOURCE_FIELDS: Final = frozenset({"emotion_details", "emotions", "category"})
 _EVIDENCE_ID_RE: Final = re.compile(r"^s[1-9][0-9]*$")
 _BODY_FREE_CODE_RE: Final = re.compile(r"^[A-Za-z0-9_.:-]+$")
@@ -7820,6 +7823,7 @@ def _build_response_and_policies(
     material_quality: str,
     include_reception_relation_support: bool = False,
     final_source_fidelity: bool = False,
+    primary_focus_nucleus_ids: Sequence[str] = (),
 ) -> tuple[GroundedResponsePlan, GroundedCoverageRequirements, GroundedSurfacePolicy, GroundedSafetyPolicy]:
     ordered = sorted(
         nuclei,
@@ -7887,6 +7891,10 @@ def _build_response_and_policies(
         primary_ids = selected_primary_ids or (text_required[0].nucleus_id,)
     else:
         primary_ids = tuple(required_ids or tuple(item.nucleus_id for item in ordered[:1]))
+    if primary_focus_nucleus_ids:
+        if not set(primary_focus_nucleus_ids).issubset({item.nucleus_id for item in text_required}):
+            raise GroundedObservationPlanError("source_bound_primary_focus_invalid")
+        primary_ids = tuple(primary_focus_nucleus_ids)
     supporting_ids = tuple(
         item.nucleus_id
         for item in ordered
@@ -8071,6 +8079,7 @@ def _build_response_and_policies(
             0 if item.nucleus_id in primary_set else 1 if item.nucleus_id in supporting_set else 2
         )
         return (
+            0 if item.nucleus_id in set(primary_focus_nucleus_ids) else 1,
             0 if item.nucleus_id in directional_follow_to_ids else 1,
             1
             if item.nucleus_id in supplemental_action_ids
@@ -10313,6 +10322,41 @@ def source_grounded_attention_subject_parts(text: str) -> tuple[str, str] | None
     return subject, host
 
 
+def _received_event_reaction_projections(span, base_frame):
+    """A finite passive event and a self reaction joined by concession.
+
+    The passive actor is left unspecified. Explicit foreign experiencers,
+    hypothetical/negated events and quoted reports cannot enter this rule.
+    Every projected fragment retains a scalar range into the same source.
+    """
+    text = _clean(span.raw_text)
+    match = re.fullmatch(
+        r"(?P<event>(?:(?:私|自分|わたし)(?:は|が))?"
+        r"(?:[一-鿿々ァ-ヶぁ-んー]{1,16}に)?"
+        r"(?:褒められ|ほめられ|言われ|伝えられ|評価され|断られ|誘われ|頼まれ|声をかけられ|声を掛けられ)"
+        r"(?:た|ました))(?P<link>のに|けれども?|けど)[、,]?"
+        r"(?P<reaction>(?:少し|とても|まだ|全然|あまり)?"
+        r"(?:嬉し|うれし|寂し|さびし|悲し|苦し|つら|辛|怖|こわ|楽し)"
+        r"(?:い|かった|くない|くなかった)(?:です)?)", text)
+    if match is None:
+        return ()
+    reaction = match.group("reaction")
+    negative = bool(re.search(r"くない|くなかった|寂|さび|悲|苦|つら|辛|怖|こわ", reaction))
+    rows = []
+    for name, kind, predicate, polarity, modality, roles in (
+        ("event", "event", "event", "neutral", "fact", ("semantic_role:contrast_before",)),
+        ("reaction", "reaction", "feeling", "negative" if negative else "positive", "feeling",
+         ("semantic_role:contrast_after", "operator:feeling")),
+    ):
+        start, end = match.span(name)
+        rows.append(_TypedNucleusProjection(
+            ":" + name, kind, predicate, polarity, modality, "past", start, end,
+            ("semantic_role:generic_relation_fragment", "semantic_role:final_stage1_compound_meaning",
+             f"source_fragment_scalar_range:{start}:{end}", "source_fragment_scalar_source:normalized_raw_text",
+             *roles, "time_scope:past"), relation_kind="contrast"))
+    return tuple(rows)
+
+
 def _final_stage1_typed_nuclei(
     plan: GroundedObservationPlan,
     evidence_spans: Sequence[EvidenceSpan],
@@ -10332,7 +10376,8 @@ def _final_stage1_typed_nuclei(
             if len(nucleus.source_span_ids) == 1
             else None
         )
-        canonical_projections = (
+        received_projections = _received_event_reaction_projections(span, nucleus.semantic_frame) if span is not None else ()
+        canonical_projections = received_projections or (
             _typed_nucleus_projections_for_span(
                 span,
                 base_frame=nucleus.semantic_frame,

@@ -1,3 +1,5 @@
+> 2026-09-10 Q1 implementation checkpoint (WIP): the authorized next unit is the Free-equivalent, process-local question/answer/meaning-update loop. The prior candidate91 remains the baseline, not a startup gate. Separate answer admission, immutable qualified evidence, pure checkpoint preparation and the shared meaning/Reception projection are being connected. A synthetic answered turn has reached actual two-layer prose and the independent inverse; the fixed semantic matrix, regression and canonical-doc synchronization are not complete at this checkpoint. Q2 persistence/API/RN, paid plans, human Product Read and publication remain unstarted. No private source bodies or result locators are included here. Continue the same Q1 implementation, not another standalone-body-only cycle.
+
 # CMEE V1-A I1-SX Current State and Next Work Handoff — 2026-08-16
 
 ## 0. この文書の役割

@@ -2559,6 +2559,13 @@ def _render_observation(
             return f"{prefix}{joined}が、同じ入力に置かれた出来事として並んでいます。"
         return f"{prefix}{joined}が、同じ入力の中で一つの流れになっています。"
     nucleus = nucleus_index[binding.nucleus_ids[0]]
+    thread_times = {code for code in nucleus.semantic_frame.attribute_codes if code.startswith("thread_time:")}
+    if thread_times:
+        if len(thread_times) != 1:
+            raise GroundedSentenceSurfaceError("thread_temporal_binding_ambiguous")
+        when = "回答した時点" if "thread_time:answer_time" in thread_times else "その時"
+        noun = "気持ち" if nucleus.semantic_frame.modality == "feeling" else "こと"
+        return f"{prefix}{when}の{noun}として、{joined}が見えます。"
     if typed_semantic_duties:
         typed_endpoint = _final_stage1_typed_relation_endpoint(
             binding.nucleus_ids[0],

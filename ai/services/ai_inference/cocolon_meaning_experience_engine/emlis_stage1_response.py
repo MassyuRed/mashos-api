@@ -2268,11 +2268,30 @@ def _candidate_rows(
         grounded_plan=grounded_plan,
         visible_claim_ids=visible_claim_ids,
     )
+    return _candidate_rows_from_binding(
+        graph=graph, parent_plan=parent_plan, binding=binding,
+        visible_claim_ids=visible_claim_ids,
+        obligation_kind_by_owner={
+            row.meaning_owner_id: row.obligation_kind
+            for row in source.owner_universe.obligations
+        },
+        stage1_response_schema_version=stage1_response_schema_version,
+    )
+
+
+def _candidate_rows_from_binding(
+    *, graph: GroundedMeaningGraph, parent_plan: ExperiencePlan,
+    binding: _PlanBinding, visible_claim_ids: set[str],
+    obligation_kind_by_owner: Mapping[str, str],
+    stage1_response_schema_version: str,
+) -> tuple[_CandidateRow, ...]:
+    """Shared semantic projection after the caller's versioned admission.
+
+    Legacy callers retain canonical CURRENT_INPUT replay above. The Emlis
+    thread owner supplies independently validated source/checkpoint bindings.
+    No sentence, question, or proposed answer enters this projection.
+    """
     node_by_id = {row.node_id: row for row in graph.nodes}
-    obligation_kind_by_owner = {
-        row.meaning_owner_id: row.obligation_kind
-        for row in source.owner_universe.obligations
-    }
     rows: list[_CandidateRow] = []
 
     # Required relations own endpoint coverage before direct alternatives.

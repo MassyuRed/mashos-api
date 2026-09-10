@@ -7230,6 +7230,13 @@ def project_selected_reading_plan_candidate(
             "STAGE1_SELECTED_PROJECTION_INPUT_TYPE_STOP"
         )
     authority = _validate_tagged_projection_inputs(inputs)
+    return _project_selected_reading_from_admitted_authority(inputs, authority)
+
+
+def _project_selected_reading_from_admitted_authority(
+    inputs: SelectedReadingProjectionInputs, authority: _ProjectionCommonAuthority,
+) -> EmlisSubjectiveMeaningPlan:
+    """Common projection after a source-version-specific admission boundary."""
     sealed_reading = inputs.sealed_reading_records[0]
     basis_rows, qualifier_rows, policy_basis_rows = (
         _projection_binding_rows(authority)
@@ -7738,6 +7745,13 @@ def project_limited_subjective_plan_candidate(
             "STAGE1_LIMITED_PROJECTION_INPUT_TYPE_STOP"
         )
     authority = _validate_tagged_projection_inputs(inputs)
+    return _project_limited_subjective_from_admitted_authority(inputs, authority)
+
+
+def _project_limited_subjective_from_admitted_authority(
+    inputs: LimitedProjectionInputs, authority: _ProjectionCommonAuthority,
+) -> EmlisSubjectiveMeaningPlan:
+    """Common projection after a source-version-specific admission boundary."""
     basis_rows, qualifier_rows, policy_basis_rows = (
         _projection_binding_rows(authority)
     )

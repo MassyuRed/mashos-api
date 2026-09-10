@@ -22,6 +22,7 @@ from itertools import combinations, product
 from typing import Iterable, Mapping, Sequence, Tuple
 
 from .contracts import (
+    stage1_visible_user_source_owner,
     BasisEpistemicTier,
     BasisProvenanceKind,
     BasisProvenanceRow,
@@ -482,10 +483,7 @@ def _relation_is_source_explicit(
         and bool(edge.evidence_ids)
         and any(
             disposition.meaning_owner_id == edge.owner_id
-            and disposition.visible_authority
-            is VisibleAuthority.SOURCE_EXPLICIT
-            and disposition.source_owner_disposition
-            is SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
+            and stage1_visible_user_source_owner(disposition, graph.source_version)
             and edge.edge_id in disposition.visible_claim_refs
             for disposition in graph.owner_dispositions
         )
@@ -736,9 +734,7 @@ def derive_grounded_situation_view(
         for disposition in graph.owner_dispositions
         if disposition.meaning_owner_id in required_owner_ids
         and disposition.owner_class is OwnerClass.REQUIRED
-        and disposition.visible_authority is VisibleAuthority.SOURCE_EXPLICIT
-        and disposition.source_owner_disposition
-        is SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
+        and stage1_visible_user_source_owner(disposition, graph.source_version)
         for claim_id in disposition.visible_claim_refs
     }
     source_explicit_objects = _canonical(

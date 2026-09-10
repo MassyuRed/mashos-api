@@ -4433,6 +4433,7 @@ class GenerationRequest:
     core_id: str = CoreId.EMLIS_AI.value
     product_job: str = ProductJob.OBSERVE_AND_CLARIFY.value
     execution_mode: str = ExecutionMode.OFFLINE_CANDIDATE.value
+    emlis_thread: object | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -4993,6 +4994,15 @@ def _graph_object_ref(row: object) -> str:
     raise CMEEStage1ContractError("foreground_scope_graph_object_type_invalid")
 
 
+def stage1_visible_user_source_owner(disposition: SourceOwnerResolution, source_version: str) -> bool:
+    """Admit supplemental authority only in the Emlis thread source version."""
+    pair = (disposition.visible_authority, disposition.source_owner_disposition)
+    return pair == (VisibleAuthority.SOURCE_EXPLICIT, SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE) or (
+        source_version == "cocolon.cmee.emlis_thread.v1"
+        and pair == (VisibleAuthority.SUPPLEMENTAL_USER, SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE)
+    )
+
+
 def stage1_source_explicit_target_topic_scope_refs(
     grounded_graph: GroundedMeaningGraph,
 ) -> Tuple[str, ...]:
@@ -5013,9 +5023,7 @@ def stage1_source_explicit_target_topic_scope_refs(
         for disposition in grounded_graph.owner_dispositions
         if disposition.meaning_owner_id in required_owner_ids
         and disposition.owner_class is OwnerClass.REQUIRED
-        and disposition.visible_authority is VisibleAuthority.SOURCE_EXPLICIT
-        and disposition.source_owner_disposition
-        is SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
+        and stage1_visible_user_source_owner(disposition, grounded_graph.source_version)
         for claim_id in disposition.visible_claim_refs
     }
     return tuple(

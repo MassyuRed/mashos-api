@@ -37,6 +37,10 @@ class MeaningExperienceEngine:
         if not str(request.request_id or "").strip():
             return self._rejected("request_id_required")
 
+        if request.emlis_thread is not None:
+            from .emlis_thread_engine import generate_emlis_thread
+            return generate_emlis_thread(self, request)
+
         try:
             source = freeze_text_source(request)
         except SourceAdmissionError as exc:
@@ -122,6 +126,17 @@ class MeaningExperienceEngine:
             terminal_state="CMEE_V1A_I1SX_REQUEST_REJECTED_STOP",
             automatic_progression=False,
         )
+
+    def prepare_emlis_update(self, request: GenerationRequest):
+        """Pure Emlis meaning checkpoint, before body generation or issuance."""
+        if (type(request) is not GenerationRequest
+                or request.core_id != CoreId.EMLIS_AI.value
+                or request.product_job != ProductJob.OBSERVE_AND_CLARIFY.value
+                or request.execution_mode != ExecutionMode.OFFLINE_CANDIDATE.value
+                or not str(request.request_id or "").strip()):
+            raise ValueError("emlis_update_request_out_of_scope")
+        from .emlis_answer_update import prepare_emlis_meaning
+        return prepare_emlis_meaning(request).checkpoint
 
 
 __all__ = ["MeaningExperienceEngine"]

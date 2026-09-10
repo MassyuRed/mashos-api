@@ -2405,11 +2405,17 @@ def source_grounded_current_expression_nominal(
         and {"operator:uncertainty", "lexical:source_bounded_expression"}
         <= set(nucleus.semantic_frame.attribute_codes)
     )
+    answer_clause = bool(
+        getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+        and fields == ("answer_text_private",)
+        and nucleus.allowed_claim_scope == "explicit_supplemental_answer"
+        and _typed_reception_source_fragment(nucleus, raw) == fragment
+    )
     if (profile.actor_kind != "SELF" or profile.quoted_boundary
         or profile.performed_action or profile.future_action
         or profile.modality not in {"fact", "feeling", "uncertain"}
-        or len(fields) != 1 or fields[0] not in {"memo", "memo_action"}
-        or raw != fragment
+        or len(fields) != 1 or (fields[0] not in {"memo", "memo_action"} and not answer_clause)
+        or (raw != fragment and not answer_clause)
         or any(re.search(r"[「」『』…‥?？!！]", span.raw_text)
                for span in resolver.resolve_many(resolver.span_ids)
                if span.source_field in fields)
@@ -2428,6 +2434,8 @@ def source_grounded_current_expression_nominal(
         profile.nucleus_kind == "reaction" and profile.modality == "feeling"
         and nucleus.semantic_frame.polarity == "negative"
         and (
+            answer_clause and profile.predicate_kind == "feeling"
+            or
             profile.predicate_kind == "feeling"
             and nucleus.semantic_frame.time_scope == "past"
             and "lexical:source_past_negative_feeling" in codes
@@ -4326,6 +4334,7 @@ _SOURCE_GROUNDED_FOCUS_NOMINAL: Final[dict[str, str]] = {
 }
 _SOURCE_GROUNDED_SCOPE_BY_PLAN_SCOPE: Final[dict[str, str]] = {
     "explicit_current_input": "source_bounded",
+    "explicit_supplemental_answer": "source_bounded",
     "source_bounded_relation": "source_bounded",
     "selected_label_only": "selected_label_only",
 }
@@ -6087,6 +6096,7 @@ _SOURCE_GROUNDED_SCOPE_PREFIX: Final[dict[str, str]] = {
     "source_bounded": "ここで示された範囲では、",
     "current_input": "ここで示された範囲では、",
     "explicit_current_input": "ここで示された範囲では、",
+    "explicit_supplemental_answer": "答えてくれた範囲では、",
     "source_bounded_relation": "ここで示されたつながりでは、",
     "selected_label_only": "示されたラベルの範囲では、",
 }
@@ -6356,6 +6366,7 @@ def _source_grounded_boundary_prefix(
         "source_bounded": "ここで示された内容",
         "current_input": "ここで示された内容",
         "explicit_current_input": "ここで示された内容",
+        "explicit_supplemental_answer": "答えてくれた内容",
         "source_bounded_relation": "ここで示されたつながり",
         "selected_label_only": "示されたラベル",
     }[scope]

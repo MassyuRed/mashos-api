@@ -33,6 +33,7 @@ from emlis_ai_grounded_human_reception import (
     source_grounded_unfinished_referent,
     source_grounded_current_expression_nominal,
     source_grounded_negative_context_nominal,
+    final_reception_source_anchor_text,
 )
 from emlis_ai_grounded_observation_plan import (
     FINAL_STAGE1_GROUNDED_PROJECTION_VERSION,
@@ -256,6 +257,8 @@ def _ledger_narration_visible(value: Any) -> bool:
 
 
 def _nucleus_source_text(nucleus: Any, resolver: EvidenceSpanResolver) -> str:
+    if getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1":
+        return final_reception_source_anchor_text(nucleus.nucleus_id, {nucleus.nucleus_id: nucleus}, resolver)
     return " ".join(
         str(resolver.resolve(span_id).raw_text or "")
         for span_id in nucleus.source_span_ids
