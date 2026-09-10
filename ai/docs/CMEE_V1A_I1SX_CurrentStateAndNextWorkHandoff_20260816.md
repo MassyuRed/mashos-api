@@ -13,7 +13,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-10最新（candidate85 source checkpoint）：否定状態の疑問補文と外側の過去感情を全fieldで分けて証明し、気持ち・背景と元の必要行動をfollowへ保持。関連初回11 PASS／新規1 FAILを修正し、追加4検査は固定実装でPASS。最終必須回帰・同100件・華恋全文確認はこれから実施。NOT_CLEAR、System Context未使用・原典直接確認、PR37不変更。
+2026-09-10最新（candidate85）：疑問補文の否定と外側の過去経験を全fieldで分け、失われていた気持ち・背景と元行動をfollowへ保持。1件変更・他99件全record同一、華恋が全100件全文確認済み。direct100／73 GENERATED・27 UNAVAILABLE、旧137責務を保持して各層138。必須414は408成功／6失敗、前回410の全成否・旧期待値不変更。原文復唱・定型締め・他の中心感情／関係の欠落は残りNOT_CLEAR。詳細と再開点は末尾candidate85。System Context未使用・原典直接確認、PR37不変更。
 
 ## 1. GitHub anchors
 
@@ -7064,3 +7064,16 @@ sourceと結果は既存Draft PR3／30、実入力・実出力・初期失敗・
 初回公開試行で自己接頭の分類欠落を確認し、関連12検査は11 PASS／新規1 FAIL。入力・期待値を変更せずsource証明への接続を修正し、追加4検査を固定実装で再実行して全PASS。原疑問の肯否・疑問性・背景・host時制・元行動の欠落を完成本文inverseとGateで拒否し、NORMAL／LIMITED・全recovery・同一immutable inputを確認した。初期失敗は保存し、途中source編集と重なった初回実行を最終固定source結果にしない。旧test全文・fixture・期待値を維持。既存Python実体とversion／required importsを確認して再利用し、環境再構築なし。
 
 runnerは既存current13 identityだけ再導出し、exact18／exact9と非current ASTを維持する。この固定sourceで必須回帰と同じ100件を実施し、華恋が全入力field・観測・follow・生成可否と理由を全件全文確認する。最終検証は未完。長い原文復唱、定型締め、他の中心感情・複数主題・共有関係は残件。NOT_CLEAR・disabled・Draft/open/unmerged・candidate_ready=false・automatic_progression=false。Mash human PASS／ready／採用／merge／本番なし。System Context未使用・原典直接確認、PR37不変更。
+
+
+### 2026-09-10 current — candidate85（疑問と過去の気持ちを元行動とともに保持・品質未達）
+
+既存final OPで、本人の原memo全fieldと正確なoffset・引用外・単核を確認し、非人物の情報／事情主題＋有限否定状態の疑問補文と、外側の閉じた過去経験hostを分けて証明した。受身背景、疑問、否定、程度、主体、ID、根拠、certaintyを同核で保持してreaction／feeling／negative／pastへ整合し、既存source_past_negative_feeling根拠とexact2選択から元の必要行動も残す。自己接頭でself_evaluationになった場合も同じ全文証明に限り整合する。任意人物主題、外側他者・否定経験・推量・報告・条件・未来・引用・別文・連続終端は除外。疑問内容の事実化、新actor／performed／因果追加なし。HR／Surface／Gate／meaning／contracts・選択条件・最大3 Move・公開経路は不変更。STRUCTURE_MAP_DELTA_NONE。
+
+固定source local 2c7f10c2234be011f820c8b5fd6c19ca3d7e67b2／remote 436a342e472ef47f93b2a73f3ad28eac3bb2abb8／同一tree 028d8f593011db7b5caf6b36ce3a66cef24db173で必須回帰と同じ100件を実行した。華恋が全100件の原入力全field・観測・follow・外側可否と全理由を全文確認。1件で疑問を含む過去の気持ちと背景をfollowへ回復し、元行動も保持。他99件は全record・実Reception plan同一。全100件の入力・順序・観測・可否・理由は同一で、旧137必要Moveのact／target／support／follow要素／source evidenceをすべて保持。direct100、73 GENERATED／27 UNAVAILABLE、必要Move／expression／bindingは各138。独立比較も保存し、華恋の全文確認の代替にはしない。
+
+初回関連12は11 PASS／新規1 FAILで、自己接頭の分類欠落を入力・期待値を変えず修正。固定実装の追加4検査は全PASS。最終必須414は408 PASS／6 FAIL、ERROR／skip0。前回410の全成否は同じで新規4は全PASS。6失敗は歴史的観測hash2、dated receipt1、bridge合計138対固定133の不一致1、旧句固定期待1、旧句tamperのreception_tamper_source_missing停止1。tamper停止をinverse到達成功にしない。旧fixture／期待値／閾値不変更、work79の384件381 PASS／3 FAILを歴史的比較基準として保持し、6失敗を受入基準へ変えない。後段36件・RR5 post-hash96とcohort診断は前回と同一。Stage3の過去実行8 PASS／2 FAIL（external_ref条件停止・旧mapping hash不一致）とV2別17検査／42件213候補は今回未再実行で、今回の検証成功へ換算しない。既存Pythonを実体・version／imports確認後に再利用し、環境再構築なし。
+
+商品NOT_CLEAR。回復したfollowも原文復唱と定型締めで、長さと集合内の定型句出現数は増えた。同一本文内の同じ締め二連続は従来の1件で増加なし。他の中心感情、自己評価、未来行動との組合せ、複数主題・共有関係の欠落は未解決。次は保存済み100件から、未保持の原materialが本人・有限host・時点の既存source証明と選択へ届かない原因を扱う。共有述語の2 Move／layered／min2契約、action-only二行動の選択拡張、旧mapping整合は未実装・未解決のまま保持する。必要対象削除・同義語だけの入替え・期待値書換えで解決扱いにしない。
+
+source checkpointを既存Draft PR3へ先に保存し、実試行と初期失敗も従来の非公開記録へ保存した。最終結果は既存handoff／設計02・06と同じ非公開記録へ継続し、取得内容と保存完了を確認する。資料だけの追記後は同じ固定sourceの検証を再利用する。System Context未使用・原典直接確認、PR37不変更、定例JSON／ZIP配布なし。disabled・Draft/open/unmerged・candidate_ready=false・automatic_progression=false、Mash human PASS／ready／採用／merge／本番なし。
